@@ -1,3 +1,10 @@
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
+
+# When COEP=require-corp is in effect on the page, every subresource
+# (including same-origin .wasm + .json + JS chunks) must declare a
+# Cross-Origin-Resource-Policy or the browser refuses to load it.
+# `same-site` is the safe default for our hashed assets.
+/_app/immutable/*
+  Cross-Origin-Resource-Policy: same-site
