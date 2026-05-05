@@ -1,0 +1,14 @@
+# Cloudflare Pages worker config for the patchtogether.live SvelteKit app.
+#
+# nodejs_compat is required because @grame/faustwasm's ESM build does
+# `await import("fs")` and `await import("url")` at module-eval time. Those
+# code paths only execute under real Node (Faust's CLI tooling) and are
+# unreachable in our browser-loaded code, but the bundler still has to
+# resolve them — nodejs_compat tells wrangler/Workers Runtime that Node
+# built-ins are available, which makes the bundle build cleanly.
+#
+# name + project_name are NOT used by `wrangler pages deploy --project-name=…`
+# — we override per-deploy. This file only contributes runtime config.
+
+compatibility_date = "2024-11-06"
+compatibility_flags = ["nodejs_compat"]
