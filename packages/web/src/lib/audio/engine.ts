@@ -97,14 +97,9 @@ export class AudioEngine implements DomainEngine {
   removeNode(nodeId: string): void {
     const handle = this.nodes.get(nodeId);
     if (!handle) return;
-    // Tear down any edges touching this node first
-    for (const [edgeId, undo] of this.edges) {
-      // We don't know which edges reference this node from inside; the caller
-      // (PatchEngine) is expected to call removeEdge first. Defensive cleanup
-      // just disposes the handle (which disconnects all this node's connections).
-      void edgeId;
-      void undo;
-    }
+    // Caller (PatchEngine / reconciler) is expected to call removeEdge for
+    // every edge touching this node before removeNode. handle.dispose()
+    // disconnects all of this node's Web Audio connections defensively.
     handle.dispose();
     this.nodes.delete(nodeId);
   }

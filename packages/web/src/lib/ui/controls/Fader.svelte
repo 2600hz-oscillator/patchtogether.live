@@ -173,6 +173,15 @@
     dragging = false;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   }
+  function pointercancel(e: PointerEvent) {
+    // Browser cancelled the gesture (e.g. touch interrupted, OS gesture). If
+    // we don't clear `dragging`, the motorized readLive loop stays gated off
+    // and the thumb freezes.
+    dragging = false;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch { /* capture may have been released already */ }
+  }
   function dblclick(e: MouseEvent) {
     e.stopPropagation();
     onchange(defaultValue);
@@ -225,6 +234,7 @@
     onpointerdown={pointerdown}
     onpointermove={pointermove}
     onpointerup={pointerup}
+    onpointercancel={pointercancel}
     ondblclick={dblclick}
     onwheel={wheel}
   >

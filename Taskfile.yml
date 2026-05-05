@@ -42,7 +42,7 @@ tasks:
 
   # ---------------- Dev loop ----------------
   dev:
-    desc: Start SvelteKit dev server (with Faust watch in parallel)
+    desc: Start SvelteKit dev server (DSP built once up-front; use dev:full for live Faust watch)
     deps: [dsp:build]
     cmds:
       - npm run dev -w {{.WEB}}

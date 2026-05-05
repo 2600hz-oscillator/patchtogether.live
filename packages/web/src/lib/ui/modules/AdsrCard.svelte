@@ -23,8 +23,16 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">ADSR</header>
 
-  <Handle type="target" position={Position.Left} id="gate" style="top: 56px; --handle-color: var(--cable-gate);" />
+  <Handle type="target" position={Position.Left} id="gate"    style="top: 56px;  --handle-color: var(--cable-gate);" />
+  <Handle type="target" position={Position.Left} id="attack"  style="top: 92px;  --handle-color: var(--cable-cv);" />
+  <Handle type="target" position={Position.Left} id="decay"   style="top: 128px; --handle-color: var(--cable-cv);" />
+  <Handle type="target" position={Position.Left} id="sustain" style="top: 164px; --handle-color: var(--cable-cv);" />
+  <Handle type="target" position={Position.Left} id="release" style="top: 200px; --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 50px;">gate</span>
+  <span class="port-label left" style="top: 86px;">a cv</span>
+  <span class="port-label left" style="top: 122px;">d cv</span>
+  <span class="port-label left" style="top: 158px;">s cv</span>
+  <span class="port-label left" style="top: 194px;">r cv</span>
 
   <Handle type="source" position={Position.Right} id="env" style="top: 56px; --handle-color: var(--cable-cv);" />
   <span class="port-label right" style="top: 50px;">env</span>
@@ -38,5 +46,6 @@
 </div>
 
 <style>
-  .adsr-card { width: 240px; min-height: 200px; }
+  .adsr-card { width: 240px; min-height: 280px; }
+  .adsr-card .fader-row { padding: 0 36px; margin-top: 60px; }
 </style>

@@ -52,11 +52,32 @@ class WavetableVcoProcessor extends AudioWorkletProcessor {
     super(options);
     this.port.onmessage = (e: MessageEvent) => {
       const m = e.data as LoadMessage;
-      if (m?.type === 'load') {
-        this.table = new Float32Array(m.table);
-        this.frameSize = m.frameSize;
-        this.frameCount = m.frameCount;
+      if (m?.type !== 'load') return;
+      // Validate before accepting: an undersized or mis-shaped table would
+      // cause out-of-bounds reads in process() (table[f1base + s1] etc).
+      if (
+        !m.table ||
+        !Number.isFinite(m.frameSize) ||
+        !Number.isFinite(m.frameCount) ||
+        m.frameSize <= 0 ||
+        m.frameCount <= 0 ||
+        !Number.isInteger(m.frameSize) ||
+        !Number.isInteger(m.frameCount)
+      ) {
+        console.error('[wavetable-vco] invalid LoadMessage shape', m);
+        return;
       }
+      const expectedSamples = m.frameSize * m.frameCount;
+      const tbl = new Float32Array(m.table);
+      if (tbl.length !== expectedSamples) {
+        console.error(
+          `[wavetable-vco] table length ${tbl.length} != frameSize*frameCount (${expectedSamples})`,
+        );
+        return;
+      }
+      this.table = tbl;
+      this.frameSize = m.frameSize;
+      this.frameCount = m.frameCount;
     };
   }
 

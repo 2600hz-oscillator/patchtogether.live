@@ -13,6 +13,7 @@ import { reverbDef } from './reverb';
 import { scopeDef } from './scope';
 import { sequencerDef } from './sequencer';
 import { wavetableVcoDef } from './wavetable-vco';
+import { lfoDef } from './lfo';
 
 let registered = false;
 
@@ -29,6 +30,7 @@ export function registerAudioModules(): void {
   registerModule(scopeDef);
   registerModule(sequencerDef);
   registerModule(wavetableVcoDef);
+  registerModule(lfoDef);
 }
 
 registerAudioModules();

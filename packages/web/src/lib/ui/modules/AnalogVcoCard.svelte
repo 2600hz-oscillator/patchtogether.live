@@ -99,11 +99,5 @@
     padding: 0 30px;
     justify-content: space-between;
   }
-  /* Style the Svelte Flow handles to use cable-color rings (D14) */
-  :global(.svelte-flow__handle) {
-    width: 12px !important;
-    height: 12px !important;
-    background: var(--module-bg) !important;
-    border: 2px solid var(--handle-color, var(--cable-audio)) !important;
-  }
+  /* Note: app-wide Svelte Flow handle styling lives in routes/global.css. */
 </style>

@@ -108,6 +108,21 @@ async function main() {
   const dspFiles = entries.filter((f) => f.endsWith('.dsp')).map((f) => join(SRC_DIR, f));
   const tsFiles = entries.filter((f) => f.endsWith('.ts')).map((f) => join(SRC_DIR, f));
 
+  // Preflight: a .dsp and a .ts that share the same stem would race for the
+  // same dist/<stem>.{js,wasm,sha} outputs and one would silently overwrite
+  // the other. Catch this before producing any files.
+  const stems = new Map(); // stem → originating filename
+  for (const f of [...dspFiles, ...tsFiles]) {
+    const stem = basename(f, extname(f));
+    const prior = stems.get(stem);
+    if (prior) {
+      throw new Error(
+        `Output stem collision: '${basename(prior)}' and '${basename(f)}' both produce dist/${stem}.sha. Rename one source file.`,
+      );
+    }
+    stems.set(stem, f);
+  }
+
   const built = [];
   for (const f of dspFiles) {
     const r = await buildDsp(f);

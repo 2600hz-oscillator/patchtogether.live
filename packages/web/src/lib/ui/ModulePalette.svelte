@@ -18,6 +18,23 @@
 
   let search = $state('');
   let inputEl: HTMLInputElement | null = $state(null);
+  let paletteEl: HTMLDivElement | null = $state(null);
+  let clampedX = $state(0);
+  let clampedY = $state(0);
+
+  // Clamp the popup into the viewport so right-click near the right or bottom
+  // edge doesn't push the palette off-screen.
+  $effect(() => {
+    if (!open || !paletteEl) {
+      clampedX = x;
+      clampedY = y;
+      return;
+    }
+    const w = paletteEl.offsetWidth;
+    const h = paletteEl.offsetHeight;
+    clampedX = Math.min(Math.max(0, x), Math.max(0, window.innerWidth - w));
+    clampedY = Math.min(Math.max(0, y), Math.max(0, window.innerHeight - h));
+  });
 
   // Re-read defs each open in case modules were registered after first import.
   let allDefs = $derived(open ? listModuleDefs() : []);
@@ -71,9 +88,10 @@
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div class="palette-overlay" onclick={onclose} role="presentation"></div>
   <div
+    bind:this={paletteEl}
     class="module-palette"
-    style:left="{x}px"
-    style:top="{y}px"
+    style:left="{clampedX}px"
+    style:top="{clampedY}px"
     onkeydown={onKeydown}
     role="dialog"
     aria-label="Add module"

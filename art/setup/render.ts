@@ -90,8 +90,16 @@ export async function readBaseline(scenario: string): Promise<Float32Array | nul
   const path = join(ART_DIR, 'baselines', `${scenario}.f32`);
   if (!existsSync(path)) return null;
   const buf = await readFile(path);
-  // Float32Array view over the buffer's bytes
-  return new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+  if (buf.byteLength % 4 !== 0) {
+    throw new Error(
+      `[ART] Baseline ${path} is ${buf.byteLength} bytes, not a multiple of 4 — file is truncated or corrupt.`,
+    );
+  }
+  // Copy the bytes into a fresh ArrayBuffer to sidestep any byteOffset/alignment
+  // weirdness from Buffer pooling. Length is bytes/4 since each float is 4 bytes.
+  const copy = new ArrayBuffer(buf.byteLength);
+  new Uint8Array(copy).set(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+  return new Float32Array(copy, 0, buf.byteLength / 4);
 }
 
 /** Write a baseline .f32 file (used by `npm run art:update`). */

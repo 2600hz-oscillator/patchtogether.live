@@ -148,10 +148,15 @@
     </button>
   </header>
 
+  <Handle type="target" position={Position.Left}  id="clock" style="top: 56px; --handle-color: var(--cable-gate);" />
+  <span class="port-label left" style="top: 50px;">clk in</span>
+
   <Handle type="source" position={Position.Right} id="pitch" style="top: 56px; --handle-color: var(--cable-pitch);" />
   <Handle type="source" position={Position.Right} id="gate"  style="top: 92px; --handle-color: var(--cable-gate);" />
+  <Handle type="source" position={Position.Right} id="clock" style="top: 128px; --handle-color: var(--cable-gate);" />
   <span class="port-label right" style="top: 50px;">pitch</span>
   <span class="port-label right" style="top: 86px;">gate</span>
+  <span class="port-label right" style="top: 122px;">clk out</span>
 
   <div class="grid">
     {#each steps.slice(0, STEP_COUNT) as step, i (i)}

@@ -25,7 +25,8 @@ type StandardModuleType =
   | 'mixer'
   | 'sequencer'
   | 'reverb'
-  | 'scope';
+  | 'scope'
+  | 'lfo';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

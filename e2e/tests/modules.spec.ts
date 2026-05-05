@@ -19,12 +19,13 @@ const MODULES: ModuleSpec[] = [
   { type: 'audioOut',     cardClass: 'svelte-flow__node-audioOut',     handleCount: 2, containsLabel: 'Audio Out' },
   { type: 'vca',          cardClass: 'svelte-flow__node-vca',          handleCount: 3, containsLabel: 'VCA' },
   { type: 'mixer',        cardClass: 'svelte-flow__node-mixer',        handleCount: 5, containsLabel: 'Mixer' },
-  { type: 'adsr',         cardClass: 'svelte-flow__node-adsr',         handleCount: 2, containsLabel: 'ADSR' },
+  { type: 'adsr',         cardClass: 'svelte-flow__node-adsr',         handleCount: 6, containsLabel: 'ADSR' },
   { type: 'filter',       cardClass: 'svelte-flow__node-filter',       handleCount: 4, containsLabel: 'Filter' },
   { type: 'reverb',       cardClass: 'svelte-flow__node-reverb',       handleCount: 2, containsLabel: 'Reverb' },
   { type: 'scope',        cardClass: 'svelte-flow__node-scope',        handleCount: 4, containsLabel: 'Scope' },
-  { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 2, containsLabel: 'Sequencer' },
+  { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 4, containsLabel: 'Sequencer' },
   { type: 'wavetableVco', cardClass: 'svelte-flow__node-wavetableVco', handleCount: 4, containsLabel: 'Wavetable VCO' },
+  { type: 'lfo',          cardClass: 'svelte-flow__node-lfo',          handleCount: 7, containsLabel: 'LFO' },
 ];
 
 test.describe.configure({ mode: 'parallel' });

@@ -28,13 +28,16 @@ export function attachReconciler(engine: PatchEngine, doc: Y.Doc = ydoc): Reconc
   let scheduled = false;
   let inFlight: Promise<void> = Promise.resolve();
 
-  /** Run reconcile through the in-flight chain so concurrent callers serialize. */
+  /** Run reconcile through the in-flight chain so concurrent callers serialize.
+   * Failures are logged but don't poison the chain — otherwise one bad reconcile
+   * would permanently freeze the engine since every subsequent enqueue() would
+   * await the rejected promise (which never resolves). */
   function enqueue(): Promise<void> {
-    inFlight = inFlight.then(() => doReconcile()).catch((err) => {
+    const next = inFlight.then(() => doReconcile());
+    inFlight = next.catch((err) => {
       console.error('[reconciler] reconcile failed:', err);
-      throw err;
     });
-    return inFlight;
+    return next;
   }
 
   async function doReconcile(): Promise<void> {

@@ -14,6 +14,27 @@
     type Connection,
   } from '@xyflow/svelte';
   import { patch, ydoc } from '$lib/graph/store';
+  import {
+    makeEnvelope,
+    downloadEnvelope,
+    pickAndLoadEnvelope,
+    parseEnvelope,
+    loadEnvelopeIntoStore,
+    EnvelopeParseError,
+    type PatchEnvelope,
+  } from '$lib/graph/persistence';
+
+  function persistenceLoad(env: unknown, ydocArg: typeof ydoc, patchArg: typeof patch) {
+    // Validate via parseEnvelope when a raw object is passed; if already typed,
+    // pass through.
+    let validated: PatchEnvelope;
+    if (typeof env === 'object' && env !== null && (env as PatchEnvelope).envelopeVersion === 1) {
+      validated = env as PatchEnvelope;
+    } else {
+      validated = parseEnvelope(JSON.stringify(env));
+    }
+    return loadEnvelopeIntoStore(validated, ydocArg, patchArg);
+  }
   import { AudioEngine, PatchEngine } from '$lib/audio/engine';
   import { attachReconciler } from '$lib/audio/reconciler';
   import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
@@ -29,7 +50,9 @@
   import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
   import SequencerCard from '$lib/ui/modules/SequencerCard.svelte';
   import WavetableVcoCard from '$lib/ui/modules/WavetableVcoCard.svelte';
+  import LfoCard from '$lib/ui/modules/LfoCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
+  import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import type { CableType } from '$lib/graph/types';
 
   const nodeTypes = {
@@ -43,6 +66,7 @@
     scope: ScopeCard,
     sequencer: SequencerCard,
     wavetableVco: WavetableVcoCard,
+    lfo: LfoCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
@@ -66,7 +90,26 @@
       (globalThis as any).__ydoc = ydoc;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__engine = () => engine;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__persistence = {
+        makeEnvelope,
+        // Wrap the bound versions so tests can call without args.
+        save: () => makeEnvelope(ydoc),
+        load: (env: unknown) => {
+          // Caller passes a parsed envelope object (or its JSON form).
+          if (typeof env === 'string') {
+            const parsed = JSON.parse(env);
+            return loadEnvelopeFromObject(parsed);
+          }
+          return loadEnvelopeFromObject(env);
+        },
+      };
     });
+  }
+  function loadEnvelopeFromObject(env: unknown) {
+    // Indirection so the test global doesn't need its own import of
+    // parseEnvelope / loadEnvelopeIntoStore.
+    return persistenceLoad(env, ydoc, patch);
   }
 
   // Bridge SyncedStore (Yjs) → Svelte 5 reactivity. Yjs doesn't push through
@@ -244,7 +287,40 @@
       for (const id of Object.keys(patch.edges)) delete patch.edges[id];
       for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
     });
+    // Explicitly drive Svelte Flow to empty arrays. The docVersion bridge
+    // covers the $effect path, but `bind:nodes` two-way sync can re-write
+    // stale state on the next render tick (most visible with the auto-playing
+    // sequencer card constantly re-rendering). Forcing the prop here makes
+    // the clear synchronous from Svelte Flow's perspective.
+    flowNodes = [];
+    flowEdges = [];
     trace('cleared patch');
+  }
+
+  function savePatch() {
+    const env = makeEnvelope(ydoc);
+    downloadEnvelope(env);
+    trace(`saved patch (${Object.keys(patch.nodes).length} nodes, ${Object.keys(patch.edges).length} edges)`);
+  }
+
+  async function loadPatch() {
+    try {
+      const result = await pickAndLoadEnvelope(ydoc, patch);
+      if (!result) {
+        trace('load cancelled');
+        return;
+      }
+      trace(`loaded patch (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
+      if (result.diagnostics.length > 0) {
+        for (const d of result.diagnostics) {
+          console.warn(`[load] ${d.nodeId} (${d.type}): ${d.reason}`);
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof EnvelopeParseError ? e.message : String(e);
+      error = `Load failed: ${msg}`;
+      trace(`load failed: ${msg}`);
+    }
   }
 
   // ---------------- Mirror Svelte Flow events back to the patch graph ----------------
@@ -374,6 +450,59 @@
     paletteOpen = true;
   }
 
+  // ---------------- Node right-click context menu ----------------
+
+  let ctxMenuOpen = $state(false);
+  let ctxMenuPos = $state({ x: 0, y: 0 });
+  let ctxMenuNodeId = $state<string | null>(null);
+  let ctxMenuLabel = $derived.by(() => {
+    void docVersion;
+    if (!ctxMenuNodeId) return '';
+    const n = patch.nodes[ctxMenuNodeId];
+    if (!n) return '';
+    return getModuleDef(n.type)?.label ?? n.type;
+  });
+
+  function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
+    event.preventDefault();
+    const me = event as MouseEvent;
+    ctxMenuPos = { x: me.clientX, y: me.clientY };
+    ctxMenuNodeId = node.id;
+    ctxMenuOpen = true;
+  }
+
+  function deleteNode(nodeId: string) {
+    ydoc.transact(() => {
+      // Remove every edge touching this node first so the engine sees a clean
+      // disconnect before disposal (avoids dangling-target warnings).
+      for (const [eid, edge] of Object.entries(patch.edges)) {
+        if (!edge) continue;
+        if (edge.source.nodeId === nodeId || edge.target.nodeId === nodeId) {
+          delete patch.edges[eid];
+        }
+      }
+      delete patch.nodes[nodeId];
+    });
+    // Defensive sync (same reason as clearPatch): keeps Svelte Flow from
+    // re-writing stale state when the deleted card is mid-render.
+    flowNodes = flowNodes.filter((n) => n.id !== nodeId);
+    flowEdges = flowEdges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+    trace(`deleted ${nodeId}`);
+  }
+
+  function unpatchNode(nodeId: string) {
+    ydoc.transact(() => {
+      for (const [eid, edge] of Object.entries(patch.edges)) {
+        if (!edge) continue;
+        if (edge.source.nodeId === nodeId || edge.target.nodeId === nodeId) {
+          delete patch.edges[eid];
+        }
+      }
+    });
+    flowEdges = flowEdges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+    trace(`unpatched ${nodeId}`);
+  }
+
   function spawnFromPalette(type: string) {
     const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
     ydoc.transact(() => {
@@ -390,15 +519,29 @@
     void ensureEngine();
   }
 
-  async function ensureEngine() {
+  let bootPromise: Promise<PatchEngine> | null = null;
+  async function ensureEngine(): Promise<PatchEngine> {
     if (engine) return engine;
-    audioCtx = new AudioContext();
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
-    engine = new PatchEngine();
-    engine.registerDomain(new AudioEngine(audioCtx));
-    reconciler = attachReconciler(engine);
-    trace(`engine + reconciler attached (sr=${audioCtx.sampleRate})`);
-    return engine;
+    // Memoize the in-flight boot. Without this, two parallel callers
+    // (e.g. spawnDemo + spawnVoiceDemo clicked rapidly) each create their
+    // own AudioContext, racing to overwrite the engine + reconciler bindings.
+    if (bootPromise) return bootPromise;
+    bootPromise = (async () => {
+      try {
+        audioCtx = new AudioContext();
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+        const e = new PatchEngine();
+        e.registerDomain(new AudioEngine(audioCtx));
+        reconciler = attachReconciler(e);
+        engine = e;
+        trace(`engine + reconciler attached (sr=${audioCtx.sampleRate})`);
+        return e;
+      } catch (err) {
+        bootPromise = null; // allow retry on next call
+        throw err;
+      }
+    })();
+    return bootPromise;
   }
 
   onDestroy(() => {
@@ -423,6 +566,8 @@
       <button onclick={spawnVoiceDemo} disabled={booting}>
         Spawn voice demo
       </button>
+      <button onclick={savePatch} disabled={nodeCount === 0}>Save</button>
+      <button onclick={loadPatch}>Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
     </div>
   </header>
@@ -443,6 +588,7 @@
       ondelete={handleDelete}
       onnodedragstop={handleNodeDragStop}
       onpanecontextmenu={onPaneContextMenu}
+      onnodecontextmenu={onNodeContextMenu}
     >
       <Background size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
       <Controls />
@@ -479,6 +625,16 @@
   y={palettePos.y}
   onselect={spawnFromPalette}
   onclose={() => (paletteOpen = false)}
+/>
+
+<NodeContextMenu
+  bind:open={ctxMenuOpen}
+  x={ctxMenuPos.x}
+  y={ctxMenuPos.y}
+  nodeLabel={ctxMenuLabel}
+  ondelete={() => ctxMenuNodeId && deleteNode(ctxMenuNodeId)}
+  onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
+  onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
 />
 
 <style>

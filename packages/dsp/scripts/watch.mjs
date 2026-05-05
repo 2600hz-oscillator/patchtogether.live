@@ -6,12 +6,14 @@
 
 import chokidar from 'chokidar';
 import { spawn } from 'node:child_process';
+import { rm } from 'node:fs/promises';
 import { join, basename, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = join(__dirname, '..');
 const SRC_DIR = join(PKG_ROOT, 'src');
+const DIST_DIR = join(PKG_ROOT, 'dist');
 
 console.log(`👀 watching ${SRC_DIR}`);
 
@@ -47,6 +49,16 @@ function rebuild(file) {
 
 watcher.on('change', rebuild);
 watcher.on('add', rebuild);
+watcher.on('unlink', async (file) => {
+  // Source removed → clean up its dist/ artifacts so stale wasm/js doesn't
+  // linger and trick the engine into loading a deleted module.
+  const name = basename(file, extname(file));
+  const targets = [`${name}.wasm`, `${name}.json`, `${name}.js`, `${name}.js.map`, `${name}.sha`];
+  for (const t of targets) {
+    await rm(join(DIST_DIR, t), { force: true });
+  }
+  console.log(`   removed dist/ artifacts for ${name}`);
+});
 
 // Initial full build
 queue = queue.then(

@@ -10,15 +10,17 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  let ch1 = $derived(node?.params.ch1 ?? 1);
-  let ch2 = $derived(node?.params.ch2 ?? 1);
-  let ch3 = $derived(node?.params.ch3 ?? 1);
-  let ch4 = $derived(node?.params.ch4 ?? 1);
-  let master = $derived(node?.params.master ?? 1);
+  // Source-of-truth defaults from the module def — keeps UI fallback in sync
+  // with engine defaults if either changes. Order in mixerDef.params is:
+  //   [0] ch1 [1] ch2 [2] ch3 [3] ch4 [4] master
+  let ch1    = $derived(node?.params.ch1    ?? mixerDef.params[0]!.defaultValue);
+  let ch2    = $derived(node?.params.ch2    ?? mixerDef.params[1]!.defaultValue);
+  let ch3    = $derived(node?.params.ch3    ?? mixerDef.params[2]!.defaultValue);
+  let ch4    = $derived(node?.params.ch4    ?? mixerDef.params[3]!.defaultValue);
+  let master = $derived(node?.params.master ?? mixerDef.params[4]!.defaultValue);
 
   const set = (id_: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[id_] = v; };
   const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
-  void mixerDef; // referenced for type-only completeness
 </script>
 
 <div class="mod-card mixer-card">

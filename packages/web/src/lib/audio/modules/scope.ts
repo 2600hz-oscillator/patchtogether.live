@@ -28,8 +28,17 @@ export const scopeDef: AudioModuleDef = {
     { id: 'ch1_out', type: 'audio' },
     { id: 'ch2_out', type: 'audio' },
   ],
+  // Most params are display-only (the audio passthrough is unchanged regardless
+  // of scale/offset/mode). The factory's setParam ignores them; the card reads
+  // them straight from patch.nodes[id].params.
   params: [
-    { id: 'timeMs', label: 'Time', defaultValue: 20, min: 1, max: 200, curve: 'log', units: 'ms' },
+    { id: 'timeMs',    label: 'Time',  defaultValue: 20, min: 1,    max: 200, curve: 'log',      units: 'ms' },
+    { id: 'ch1Scale',  label: 'Ch1 Sc', defaultValue: 1,  min: 0.1,  max: 10,  curve: 'log' },
+    { id: 'ch1Offset', label: 'Ch1 Y',  defaultValue: 0,  min: -1,   max: 1,   curve: 'linear' },
+    { id: 'ch2Scale',  label: 'Ch2 Sc', defaultValue: 1,  min: 0.1,  max: 10,  curve: 'log' },
+    { id: 'ch2Offset', label: 'Ch2 Y',  defaultValue: 0,  min: -1,   max: 1,   curve: 'linear' },
+    // 0 = split (two stacked traces), 1 = XY (ch1 vs ch2 plot).
+    { id: 'mode',      label: 'XY',    defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
   ],
 
   async factory(ctx, _node): Promise<AudioDomainNodeHandle> {

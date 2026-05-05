@@ -12,7 +12,17 @@ export const adsrDef: AudioModuleDef = {
   label: 'ADSR',
   category: 'modulation',
   schemaVersion: 1,
-  inputs: [{ id: 'gate', type: 'gate' }],
+  inputs: [
+    { id: 'gate',    type: 'gate' },
+    // CV inputs route directly to the corresponding AudioParam (sums into
+    // the param's intrinsic value at audio rate). Patch an LFO here to wobble
+    // the envelope shape over time; the corresponding fader's motorized poll
+    // tracks the modulated value.
+    { id: 'attack',  type: 'cv', paramTarget: 'attack'  },
+    { id: 'decay',   type: 'cv', paramTarget: 'decay'   },
+    { id: 'sustain', type: 'cv', paramTarget: 'sustain' },
+    { id: 'release', type: 'cv', paramTarget: 'release' },
+  ],
   outputs: [{ id: 'env', type: 'cv' }],
   params: [
     { id: 'attack',  label: 'A', defaultValue: 0.005, min: 0.001, max: 10, curve: 'log', units: 's' },
@@ -32,9 +42,21 @@ export const adsrDef: AudioModuleDef = {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
       params.get(`${PARAM_PREFIX}/${def.id}`)?.setValueAtTime(v, ctx.currentTime);
     }
+    const pAttack  = params.get(`${PARAM_PREFIX}/attack`);
+    const pDecay   = params.get(`${PARAM_PREFIX}/decay`);
+    const pSustain = params.get(`${PARAM_PREFIX}/sustain`);
+    const pRelease = params.get(`${PARAM_PREFIX}/release`);
     return {
       domain: 'audio',
-      inputs: new Map([['gate', { node: f, input: 0 }]]),
+      inputs: new Map([
+        ['gate',    { node: f, input: 0 }],
+        // CV → AudioParam routing. The engine recognizes `param` and uses
+        // sout.node.connect(param) instead of node-to-node.
+        ['attack',  { node: f, input: 0, param: pAttack! }],
+        ['decay',   { node: f, input: 0, param: pDecay! }],
+        ['sustain', { node: f, input: 0, param: pSustain! }],
+        ['release', { node: f, input: 0, param: pRelease! }],
+      ]),
       outputs: new Map([['env', { node: f, output: 0 }]]),
       setParam(paramId, value) {
         params.get(`${PARAM_PREFIX}/${paramId}`)?.setValueAtTime(value, ctx.currentTime);

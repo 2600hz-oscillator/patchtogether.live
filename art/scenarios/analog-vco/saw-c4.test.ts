@@ -30,10 +30,10 @@ describe('analog-vco / saw-c4', () => {
     });
     expect(result.buffer.length).toBeGreaterThan(0);
     expect(result.sampleRate).toBe(48000);
-    // No NaN / Inf
-    for (let i = 0; i < result.buffer.length; i++) {
-      expect(Number.isFinite(result.buffer[i])).toBe(true);
-    }
+    // No NaN / Inf — find the first bad sample (if any) instead of running 24k
+    // expects, so a failure prints one readable message with the offending index.
+    const badIdx = result.buffer.findIndex((v) => !Number.isFinite(v));
+    expect(badIdx, `non-finite sample at index ${badIdx}: ${result.buffer[badIdx]}`).toBe(-1);
   });
 
   it('SHA matches between source and built artifact', async () => {
