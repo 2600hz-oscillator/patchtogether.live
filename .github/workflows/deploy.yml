@@ -19,6 +19,14 @@ name: Deploy
 #
 # The three Cloudflare Pages projects must be created beforehand (UI or
 # `wrangler pages project create` from inside the flox env).
+#
+# Why each deploy job is self-contained (no shared build artifact):
+# wrangler's `pages deploy` re-bundles _worker.js with esbuild, so it needs
+# both the .svelte-kit/ build output AND the project's node_modules visible
+# in the same working tree. Passing only .svelte-kit/ as an artifact dropped
+# node_modules; uploading both is huge (~200 MB). Easier and only ~30 s
+# slower per deploy: install + build inline. npm cache makes repeat installs
+# quick, so the extra cost is just a build.
 
 on:
   push:
@@ -43,45 +51,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build (DSP + web)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - uses: flox/install-flox-action@v2
-
-      - name: Cache npm
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
-
-      - name: Install workspace deps
-        run: flox activate -- task install
-
-      - name: Build DSP + web
-        run: flox activate -- task build
-
-      - name: Upload build artifact
-        # Upload the whole .svelte-kit/ tree, not just .svelte-kit/cloudflare.
-        # adapter-cloudflare's _worker.js imports `../output/server/index.js`
-        # and `../cloudflare-tmp/manifest.js` — wrangler needs both visible
-        # (sibling to the cloudflare/ dir) when it bundles the worker.
-        # include-hidden-files is required because .svelte-kit/ starts with a
-        # dot; upload-artifact treats anything under a dotted dir as hidden.
-        uses: actions/upload-artifact@v4
-        with:
-          name: cloudflare-deploy
-          path: packages/web/.svelte-kit
-          include-hidden-files: true
-          retention-days: 7
-
   # Manual deploys (autotest / dev) require the latest CI run on the chosen
   # branch to be green. Prevents shipping broken code by accident from the
   # Actions UI. Skipped for `push` and `pull_request` events.
@@ -113,84 +82,111 @@ jobs:
 
   deploy-prod:
     name: Deploy → patchtogether.live (production)
-    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+        with: { lfs: true }
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
         with:
-          name: cloudflare-deploy
-          path: dist
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: flox activate -- task install
+      - run: flox activate -- task build
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist/cloudflare --project-name=patchtogether-live --branch=main
+          workingDirectory: packages/web
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live --branch=main
 
   # ---------------- PR previews: auto on PR events ----------------
 
   deploy-preview:
     name: Deploy → PR-${{ github.event.pull_request.number }} preview
-    needs: build
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       pull-requests: write
       contents: read
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+        with: { lfs: true }
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
         with:
-          name: cloudflare-deploy
-          path: dist
-      - id: deploy
-        uses: cloudflare/wrangler-action@v3
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: flox activate -- task install
+      - run: flox activate -- task build
+      - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/web
           # `--branch=pr-N` creates a Pages preview alias keyed off the PR
           # number; URL is `pr-N.patchtogether-live.pages.dev`. Each PR has
           # its own URL — never collides with main or with other PRs.
-          command: pages deploy dist/cloudflare --project-name=patchtogether-live --branch=pr-${{ github.event.pull_request.number }}
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live --branch=pr-${{ github.event.pull_request.number }}
 
   # ---------------- Manual: autotest / dev ----------------
 
   deploy-autotest:
     name: Deploy → autotest.patchtogether.live (autotest)
-    needs: [build, verify-ci]
+    needs: verify-ci
     if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.target, 'autotest')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+        with: { lfs: true }
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
         with:
-          name: cloudflare-deploy
-          path: dist
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: flox activate -- task install
+      - run: flox activate -- task build
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist/cloudflare --project-name=patchtogether-live-autotest --branch=main
+          workingDirectory: packages/web
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=main
 
   deploy-dev:
     name: Deploy → dev.patchtogether.live (dev)
-    needs: [build, verify-ci]
+    needs: verify-ci
     if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.target, 'dev')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+        with: { lfs: true }
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
         with:
-          name: cloudflare-deploy
-          path: dist
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: flox activate -- task install
+      - run: flox activate -- task build
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist/cloudflare --project-name=patchtogether-live-dev --branch=dev
+          workingDirectory: packages/web
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-dev --branch=dev
 
   # ---------------- Live smoke ----------------
-  # Runs after either an autotest deploy (manual) or a prod deploy (auto on
-  # main). For prod, smoke still hits autotest because that's the env we
-  # designate for chaotic / scheduled testing — but a prod merge means the
-  # next autotest claim is the way to verify the live build there too.
+  # Runs after a successful autotest deploy (manual). Hits the live URL with
+  # the @smoke-tagged subset of e2e/.
 
   smoke-live:
     name: Live smoke — autotest.patchtogether.live
@@ -202,25 +198,16 @@ jobs:
       E2E_BASE_URL: https://autotest.patchtogether.live
     steps:
       - uses: actions/checkout@v4
-
       - uses: flox/install-flox-action@v2
-
-      - name: Cache npm + Playwright
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.npm
             ~/.cache/ms-playwright
           key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
-
-      - name: Install + browsers
-        run: flox activate -- task setup
-
-      - name: Live smoke
-        run: flox activate -- task ci:smoke:live
-
-      - name: Upload Playwright report on failure
-        if: failure()
+      - run: flox activate -- task setup
+      - run: flox activate -- task ci:smoke:live
+      - if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: live-smoke-report
