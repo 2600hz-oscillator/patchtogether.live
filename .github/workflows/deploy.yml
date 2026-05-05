@@ -69,10 +69,14 @@ jobs:
         run: flox activate -- task build
 
       - name: Upload build artifact
+        # Upload the whole .svelte-kit/ tree, not just .svelte-kit/cloudflare.
+        # adapter-cloudflare's _worker.js imports `../output/server/index.js`
+        # and `../cloudflare-tmp/manifest.js` — wrangler needs both visible
+        # (sibling to the cloudflare/ dir) when it bundles the worker.
         uses: actions/upload-artifact@v4
         with:
           name: cloudflare-deploy
-          path: packages/web/.svelte-kit/cloudflare
+          path: packages/web/.svelte-kit
           retention-days: 7
 
   # Manual deploys (autotest / dev) require the latest CI run on the chosen
@@ -118,7 +122,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=patchtogether-live --branch=main
+          command: pages deploy dist/cloudflare --project-name=patchtogether-live --branch=main
 
   # ---------------- PR previews: auto on PR events ----------------
 
@@ -143,7 +147,7 @@ jobs:
           # `--branch=pr-N` creates a Pages preview alias keyed off the PR
           # number; URL is `pr-N.patchtogether-live.pages.dev`. Each PR has
           # its own URL — never collides with main or with other PRs.
-          command: pages deploy dist --project-name=patchtogether-live --branch=pr-${{ github.event.pull_request.number }}
+          command: pages deploy dist/cloudflare --project-name=patchtogether-live --branch=pr-${{ github.event.pull_request.number }}
 
   # ---------------- Manual: autotest / dev ----------------
 
@@ -161,7 +165,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=patchtogether-live-autotest --branch=main
+          command: pages deploy dist/cloudflare --project-name=patchtogether-live-autotest --branch=main
 
   deploy-dev:
     name: Deploy → dev.patchtogether.live (dev)
@@ -177,7 +181,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=patchtogether-live-dev --branch=dev
+          command: pages deploy dist/cloudflare --project-name=patchtogether-live-dev --branch=dev
 
   # ---------------- Live smoke ----------------
   # Runs after either an autotest deploy (manual) or a prod deploy (auto on
