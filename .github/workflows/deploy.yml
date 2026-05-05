@@ -73,10 +73,13 @@ jobs:
         # adapter-cloudflare's _worker.js imports `../output/server/index.js`
         # and `../cloudflare-tmp/manifest.js` — wrangler needs both visible
         # (sibling to the cloudflare/ dir) when it bundles the worker.
+        # include-hidden-files is required because .svelte-kit/ starts with a
+        # dot; upload-artifact treats anything under a dotted dir as hidden.
         uses: actions/upload-artifact@v4
         with:
           name: cloudflare-deploy
           path: packages/web/.svelte-kit
+          include-hidden-files: true
           retention-days: 7
 
   # Manual deploys (autotest / dev) require the latest CI run on the chosen
