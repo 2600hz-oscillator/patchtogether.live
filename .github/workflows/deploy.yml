@@ -2,7 +2,7 @@ name: Deploy
 
 # Deployment topology (per phase-2-deploy.md):
 #   main → prod    (patchtogether.live)            project: patchtogether-live
-#   main → ai      (ai.patchtogether.live)         project: patchtogether-live-ai
+#   main → autotest (autotest.patchtogether.live)        project: patchtogether-live-autotest
 #   dev  → dev     (dev.patchtogether.live)        project: patchtogether-live-dev
 #   PRs  → preview (auto via Cloudflare)
 #
@@ -71,8 +71,8 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name=patchtogether-live --branch=main
 
-  deploy-ai:
-    name: Deploy → ai.patchtogether.live (AI / autotest)
+  deploy-autotest:
+    name: Deploy → autotest.patchtogether.live (autotest)
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -85,7 +85,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=patchtogether-live-ai --branch=main
+          command: pages deploy dist --project-name=patchtogether-live-autotest --branch=main
 
   deploy-dev:
     name: Deploy → dev.patchtogether.live (internal dev)
@@ -104,13 +104,13 @@ jobs:
           command: pages deploy dist --project-name=patchtogether-live-dev --branch=dev
 
   smoke-live:
-    name: Live smoke — ai.patchtogether.live
-    needs: deploy-ai
+    name: Live smoke — autotest.patchtogether.live
+    needs: deploy-autotest
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
-      E2E_BASE_URL: https://ai.patchtogether.live
+      E2E_BASE_URL: https://autotest.patchtogether.live
     steps:
       - uses: actions/checkout@v4
 
