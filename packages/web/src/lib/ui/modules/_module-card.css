@@ -1,0 +1,42 @@
+/* Shared module-card styling. Per-card .svelte files import this from a global
+ * include in +layout.svelte (cleaner than re-pasting CSS in every card). */
+
+.mod-card {
+  background: var(--module-bg);
+  border: 1px solid #2a2f3a;
+  border-radius: 6px;
+  color: var(--text);
+  padding-top: 18px;
+  padding-bottom: 14px;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.mod-card .stripe {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  border-radius: 6px 6px 0 0;
+}
+.mod-card .title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: center;
+  margin: 0 0 8px;
+  letter-spacing: 0.02em;
+}
+.mod-card .port-label {
+  position: absolute;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  pointer-events: none;
+  font-family: ui-monospace, monospace;
+}
+.mod-card .port-label.left  { left: 14px; }
+.mod-card .port-label.right { right: 14px; }
+.mod-card .fader-row {
+  margin-top: 28px;
+  display: flex;
+  gap: 6px;
+  padding: 0 26px;
+  justify-content: center;
+}

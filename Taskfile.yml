@@ -1,0 +1,165 @@
+# Taskfile.yml — single command surface for inet.modular.
+# Usage:
+#   task            # list available tasks
+#   task dev        # start dev server + DSP watch
+#   task ai:check   # AI-friendly smoke check (concise pass/fail output)
+#
+# Every command runs inside the Flox env (which provides Node, Faust, esbuild,
+# git-lfs, go-task itself). Run `flox activate` once per shell, or use
+# `flox activate -- task <name>` to one-shot.
+
+version: '3'
+
+vars:
+  WEB: packages/web
+  DSP: packages/dsp
+  ART: art
+  E2E: e2e
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list-all
+    silent: true
+
+  # ---------------- Setup ----------------
+  install:
+    desc: Install all workspace dependencies
+    cmds:
+      - npm install
+
+  install:browsers:
+    desc: Install Playwright Chromium binary
+    cmds:
+      - npx --workspace {{.E2E}} playwright install chromium
+
+  setup:
+    desc: One-shot setup — npm install + Playwright browser
+    cmds:
+      - task: install
+      - task: install:browsers
+
+  # ---------------- Dev loop ----------------
+  dev:
+    desc: Start SvelteKit dev server (with Faust watch in parallel)
+    deps: [dsp:build]
+    cmds:
+      - npm run dev -w {{.WEB}}
+
+  dev:full:
+    desc: Dev server with DSP file watcher running in parallel
+    deps: [dsp:build]
+    cmds:
+      - |
+        npm run watch -w {{.DSP}} &
+        WATCHER_PID=$!
+        trap "kill $WATCHER_PID 2>/dev/null" EXIT
+        npm run dev -w {{.WEB}}
+
+  # ---------------- Build ----------------
+  build:
+    desc: Production build (DSP + web)
+    cmds:
+      - task: dsp:build
+      - npm run build -w {{.WEB}}
+
+  build:web:
+    desc: Build web only
+    cmds:
+      - npm run build -w {{.WEB}}
+
+  # ---------------- DSP ----------------
+  dsp:build:
+    desc: Compile Faust + JS worklets to packages/dsp/dist
+    cmds:
+      - npm run build -w {{.DSP}}
+
+  dsp:watch:
+    desc: Watch packages/dsp/src and rebuild on save
+    cmds:
+      - npm run watch -w {{.DSP}}
+
+  # ---------------- Type check / lint ----------------
+  typecheck:
+    desc: Type-check every workspace
+    cmds:
+      - npm run typecheck --workspaces --if-present
+
+  # ---------------- Unit + integration tests ----------------
+  test:
+    desc: Run all unit tests across workspaces
+    cmds:
+      - npm test --workspaces --if-present
+
+  # ---------------- Audio Regression Tests ----------------
+  art:
+    desc: Run Audio Regression Tests
+    deps: [dsp:build]
+    cmds:
+      - npm test -w {{.ART}}
+
+  art:update:
+    desc: Regenerate ART baselines (.f32 + .sha)
+    deps: [dsp:build]
+    cmds:
+      - npm run art:update -w {{.ART}}
+
+  # ---------------- E2E (Playwright) ----------------
+  e2e:
+    desc: Run end-to-end tests (headless Chromium)
+    cmds:
+      - npm test -w {{.E2E}}
+
+  e2e:headed:
+    desc: Run E2E tests with browser window visible
+    cmds:
+      - npm test -w {{.E2E}} -- --headed
+
+  e2e:debug:
+    desc: Run E2E tests in Playwright Inspector
+    cmds:
+      - npm test -w {{.E2E}} -- --debug
+
+  e2e:ui:
+    desc: Open Playwright UI mode (interactive test runner)
+    cmds:
+      - npm exec -w {{.E2E}} -- playwright test --ui
+
+  # ---------------- AI agent helpers ----------------
+  # These commands emit concise, parseable output suitable for an AI agent
+  # to validate "does the app work?" without a human in the loop.
+  ai:check:
+    desc: AI-friendly smoke check — concise pass/fail across all the things that matter
+    cmds:
+      - npm run ai:check -w {{.E2E}}
+
+  ai:debug:
+    desc: AI-friendly diagnostic — boots the page, captures DOM snapshot + console + screenshot
+    cmds:
+      - npm run ai:debug -w {{.E2E}}
+
+  # ---------------- CI shape ----------------
+  ci:
+    desc: Run the full PR-gate suite (typecheck + unit + ART + E2E)
+    cmds:
+      - task: typecheck
+      - task: test
+      - task: art
+      - task: e2e
+
+  # ---------------- Housekeeping ----------------
+  clean:
+    desc: Remove all build artifacts
+    cmds:
+      - rm -rf {{.DSP}}/dist
+      - rm -rf {{.WEB}}/.svelte-kit {{.WEB}}/build
+      - rm -rf {{.E2E}}/playwright-report {{.E2E}}/test-results
+      - rm -rf node_modules/.cache .vite
+
+  clean:deep:
+    desc: Nuke node_modules + lockfile (use sparingly)
+    prompt: This will delete node_modules and package-lock.json. Continue?
+    cmds:
+      - rm -rf node_modules packages/*/node_modules art/node_modules e2e/node_modules
+      - rm -f package-lock.json

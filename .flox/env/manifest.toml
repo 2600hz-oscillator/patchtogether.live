@@ -1,0 +1,50 @@
+schema-version = "1.11.0"
+
+
+[install]
+# Runtime
+nodejs_22.pkg-path = "nodejs_22"
+nodejs_22.version  = "22.22.2"
+
+# DSP toolchain
+faust2.pkg-path = "faust2"
+faust2.version  = "2.85.5"
+
+# Build tools
+esbuild.pkg-path = "esbuild"
+
+# Task runner (npm/script orchestration via Taskfile.yml)
+go-task.pkg-path = "go-task"
+
+# Git LFS for ART/VRT baselines
+git-lfs.pkg-path = "git-lfs"
+gh.pkg-path = "gh"
+
+
+[vars]
+# Project name surfaces in dev shell prompts and scripts
+PROJECT_NAME = "inet.modular"
+
+
+[hook]
+on-activate = '''
+  # Initialize git-lfs in the repo on first activation
+  if [ -d "$FLOX_ENV_PROJECT/.git" ] && ! git -C "$FLOX_ENV_PROJECT" lfs env >/dev/null 2>&1; then
+    git -C "$FLOX_ENV_PROJECT" lfs install --local >/dev/null 2>&1 || true
+  fi
+'''
+
+
+[profile]
+common = '''
+  echo "🎛  $PROJECT_NAME — node $(node --version), faust $(faust --version 2>&1 | head -1 | cut -d' ' -f3)"
+'''
+
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "x86_64-darwin",
+  "aarch64-linux",
+  "x86_64-linux",
+]

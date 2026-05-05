@@ -1,0 +1,21 @@
+{
+  "name": "@inet.modular/dsp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DSP modules for inet.modular — Faust-authored .dsp files plus custom JS AudioWorklet sources, all compiled to .wasm/.js bundles.",
+  "type": "module",
+  "exports": {
+    "./dist/*": "./dist/*",
+    "./src/*": "./src/*"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/watch.mjs",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@grame/faustwasm": "^0.7.0",
+    "chokidar": "^4.0.3",
+    "esbuild": "^0.27.0"
+  }
+}

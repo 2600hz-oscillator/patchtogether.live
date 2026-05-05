@@ -1,0 +1,25 @@
+{
+  "name": "inet.modular",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A multiplayer browser-native modular synthesizer.",
+  "workspaces": [
+    "packages/*",
+    "art",
+    "e2e"
+  ],
+  "overrides": {
+    "yjs": "^13.6.0"
+  },
+  "scripts": {
+    "dev": "npm run dev -w packages/web",
+    "build": "npm run build -w packages/dsp && npm run build -w packages/web",
+    "watch:dsp": "npm run watch -w packages/dsp",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
