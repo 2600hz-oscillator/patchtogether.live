@@ -1,10 +1,17 @@
 name: Deploy
 
 # Deployment topology (per phase-2-deploy.md):
-#   main → prod    (patchtogether.live)            project: patchtogether-live
-#   main → autotest (autotest.patchtogether.live)        project: patchtogether-live-autotest
-#   dev  → dev     (dev.patchtogether.live)        project: patchtogether-live-dev
-#   PRs  → preview (auto via Cloudflare)
+#
+#   prod      ←  push to main          → patchtogether.live
+#   preview   ←  PR open / push to PR  → pr-<N>.patchtogether-live.pages.dev   (per-PR isolated)
+#   autotest  ←  manual dispatch       → autotest.patchtogether.live           (any branch w/ green CI)
+#   dev       ←  manual dispatch       → dev.patchtogether.live                (any branch w/ green CI)
+#
+# Why manual for autotest + dev? Both are SHARED named URLs — automatic deploys
+# on every PR push would have multiple PRs flipping the live state. The per-PR
+# preview URL covers "let me look at this PR's deploy" without collisions; the
+# named envs are explicitly claimed by a human via the Actions UI for
+# longer-form dogfooding / agent testing.
 #
 # Required GitHub secrets:
 #   CLOUDFLARE_API_TOKEN  — Pages-deploy-scoped token
@@ -15,11 +22,24 @@ name: Deploy
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Named environment(s) to claim with this branch'
+        required: true
+        type: choice
+        options:
+          - autotest
+          - dev
+          - autotest+dev
 
+# Concurrency: each ref+target pair gets its own lane. Dispatches against the
+# same ref + same env cancel the in-flight run; PR pushes cancel stale previews.
 concurrency:
-  group: deploy-${{ github.workflow }}-${{ github.ref }}
+  group: deploy-${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.target || github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -55,10 +75,39 @@ jobs:
           path: packages/web/.svelte-kit/cloudflare
           retention-days: 7
 
+  # Manual deploys (autotest / dev) require the latest CI run on the chosen
+  # branch to be green. Prevents shipping broken code by accident from the
+  # Actions UI. Skipped for `push` and `pull_request` events.
+  verify-ci:
+    name: Verify CI passed for this branch
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check latest CI run for ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          echo "Looking up latest CI run for branch: $BRANCH"
+          STATUS=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --branch "$BRANCH" \
+            --workflow CI \
+            --limit 1 \
+            --json conclusion,headSha \
+            --jq '.[0].conclusion' || echo "missing")
+          echo "Latest CI conclusion: $STATUS"
+          if [[ "$STATUS" != "success" ]]; then
+            echo "::error::Refusing to deploy: latest CI run on '$BRANCH' is '$STATUS' (must be 'success')."
+            exit 1
+          fi
+
+  # ---------------- Production: auto on merge to main ----------------
+
   deploy-prod:
     name: Deploy → patchtogether.live (production)
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -71,10 +120,37 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name=patchtogether-live --branch=main
 
+  # ---------------- PR previews: auto on PR events ----------------
+
+  deploy-preview:
+    name: Deploy → PR-${{ github.event.pull_request.number }} preview
+    needs: build
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cloudflare-deploy
+          path: dist
+      - id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # `--branch=pr-N` creates a Pages preview alias keyed off the PR
+          # number; URL is `pr-N.patchtogether-live.pages.dev`. Each PR has
+          # its own URL — never collides with main or with other PRs.
+          command: pages deploy dist --project-name=patchtogether-live --branch=pr-${{ github.event.pull_request.number }}
+
+  # ---------------- Manual: autotest / dev ----------------
+
   deploy-autotest:
     name: Deploy → autotest.patchtogether.live (autotest)
-    needs: build
-    if: github.ref == 'refs/heads/main'
+    needs: [build, verify-ci]
+    if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.target, 'autotest')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -88,9 +164,9 @@ jobs:
           command: pages deploy dist --project-name=patchtogether-live-autotest --branch=main
 
   deploy-dev:
-    name: Deploy → dev.patchtogether.live (internal dev)
-    needs: build
-    if: github.ref == 'refs/heads/dev'
+    name: Deploy → dev.patchtogether.live (dev)
+    needs: [build, verify-ci]
+    if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.target, 'dev')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -103,10 +179,16 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name=patchtogether-live-dev --branch=dev
 
+  # ---------------- Live smoke ----------------
+  # Runs after either an autotest deploy (manual) or a prod deploy (auto on
+  # main). For prod, smoke still hits autotest because that's the env we
+  # designate for chaotic / scheduled testing — but a prod merge means the
+  # next autotest claim is the way to verify the live build there too.
+
   smoke-live:
     name: Live smoke — autotest.patchtogether.live
     needs: deploy-autotest
-    if: github.ref == 'refs/heads/main'
+    if: needs.deploy-autotest.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
