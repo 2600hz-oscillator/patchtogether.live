@@ -73,17 +73,22 @@ test('cv-to-fader-sync: LFO modulating ADSR.attack varies the AudioParam reading
   await page.waitForLoadState('networkidle');
 
   // LFO at high rate (10 Hz, square for max swing) → ADSR.attack CV input.
-  // The intrinsic attack is ~0.005s; LFO output [-1..+1] sums in, so the
-  // observed AudioParam.value should swing between roughly attack-1 and
-  // attack+1 (clamped to the param's [0.001..10] range).
+  // The intrinsic attack is ~5; LFO output [-1..+1] sums in, so the observed
+  // AudioParam.value should swing between roughly 4 and 6.
+  //
+  // We also patch the LFO into a silenced Audio Out: AudioWorkletNodes only
+  // process() when they have a path to AudioContext.destination, so without
+  // this leg the worklet is pruned and ADSR.attack just reads its intrinsic.
   await spawnPatch(
     page,
     [
-      { id: 'lfo',  type: 'lfo',  params: { rate: 10, shape: 2 } }, // square = ±1
+      { id: 'lfo',  type: 'lfo',  params: { rate: 10, shape: 2 } },
       { id: 'adsr', type: 'adsr', params: { attack: 5, decay: 0.1, sustain: 0.5, release: 0.3 } },
+      { id: 'out',  type: 'audioOut', params: { master: 0 } }, // silent — keeps the LFO graph alive
     ],
     [
       { id: 'e1', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'adsr', portId: 'attack' }, sourceType: 'cv', targetType: 'cv' },
+      { id: 'e2', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'out',  portId: 'L'      } },
     ],
   );
 

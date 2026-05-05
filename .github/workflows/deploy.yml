@@ -1,0 +1,139 @@
+name: Deploy
+
+# Deployment topology (per phase-2-deploy.md):
+#   main → prod    (patchtogether.live)            project: patchtogether-live
+#   main → ai      (ai.patchtogether.live)         project: patchtogether-live-ai
+#   dev  → dev     (dev.patchtogether.live)        project: patchtogether-live-dev
+#   PRs  → preview (auto via Cloudflare)
+#
+# Required GitHub secrets:
+#   CLOUDFLARE_API_TOKEN  — Pages-deploy-scoped token
+#   CLOUDFLARE_ACCOUNT_ID — your CF account id
+#
+# The three Cloudflare Pages projects must be created beforehand (UI or
+# `wrangler pages project create` from inside the flox env).
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (DSP + web)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: flox/install-flox-action@v2
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      - name: Build DSP + web
+        run: flox activate -- task build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-deploy
+          path: packages/web/.svelte-kit/cloudflare
+          retention-days: 7
+
+  deploy-prod:
+    name: Deploy → patchtogether.live (production)
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cloudflare-deploy
+          path: dist
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=patchtogether-live --branch=main
+
+  deploy-ai:
+    name: Deploy → ai.patchtogether.live (AI / autotest)
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cloudflare-deploy
+          path: dist
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=patchtogether-live-ai --branch=main
+
+  deploy-dev:
+    name: Deploy → dev.patchtogether.live (internal dev)
+    needs: build
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cloudflare-deploy
+          path: dist
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=patchtogether-live-dev --branch=dev
+
+  smoke-live:
+    name: Live smoke — ai.patchtogether.live
+    needs: deploy-ai
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      E2E_BASE_URL: https://ai.patchtogether.live
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+
+      - name: Install + browsers
+        run: flox activate -- task setup
+
+      - name: Live smoke
+        run: flox activate -- task ci:smoke:live
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-smoke-report
+          path: e2e/playwright-report
+          retention-days: 14

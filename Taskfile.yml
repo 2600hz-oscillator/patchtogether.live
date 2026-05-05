@@ -111,6 +111,12 @@ tasks:
     cmds:
       - npm test -w {{.E2E}}
 
+  ci:smoke:live:
+    desc: Live-deploy smoke (set E2E_BASE_URL; defaults to ai.patchtogether.live). Runs only the @smoke-tagged subset; never blocks the PR gate.
+    cmds:
+      - 'echo "→ Live smoke against: ${E2E_BASE_URL:-https://ai.patchtogether.live}"'
+      - cd {{.E2E}} && E2E_BASE_URL="${E2E_BASE_URL:-https://ai.patchtogether.live}" playwright test --grep @smoke
+
   e2e:headed:
     desc: Run E2E tests with browser window visible
     cmds:

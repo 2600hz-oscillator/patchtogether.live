@@ -10,7 +10,7 @@ import { captureConsole, formatConsole } from './helpers';
 import { spawnPatch } from './_helpers';
 
 test.describe('AI smoke check', () => {
-  test('app: HTTP 200 + COOP/COEP headers', async ({ page }) => {
+  test('app: HTTP 200 + COOP/COEP headers @smoke', async ({ page }) => {
     const response = await page.goto('/');
     expect(response, 'no response').toBeTruthy();
     expect(response!.status(), `status ${response!.status()}`).toBe(200);
@@ -25,12 +25,12 @@ test.describe('AI smoke check', () => {
     ).toBe('require-corp');
   });
 
-  test('app: title is patchtogether.live', async ({ page }) => {
+  test('app: title is patchtogether.live @smoke', async ({ page }) => {
     await page.goto('/');
     await expect(page).toHaveTitle('patchtogether.live');
   });
 
-  test('app: cross-origin-isolated context (Faust SharedArrayBuffer prereq)', async ({ page }) => {
+  test('app: cross-origin-isolated context (Faust SharedArrayBuffer prereq) @smoke', async ({ page }) => {
     await page.goto('/');
     const isolated = await page.evaluate(() => globalThis.crossOriginIsolated);
     expect(isolated, 'crossOriginIsolated must be true').toBe(true);
@@ -53,7 +53,7 @@ test.describe('AI smoke check', () => {
     }
   });
 
-  test('canvas: Spawn demo creates 2 Svelte Flow nodes', async ({ page }) => {
+  test('canvas: Spawn demo creates 2 Svelte Flow nodes @smoke', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: 'Spawn demo' }).click();
@@ -241,7 +241,7 @@ test.describe('AI smoke check', () => {
     expect(after, `node transform should change after drag (was ${before})`).not.toBe(before);
   });
 
-  test('canvas: spawned patch produces audio (peak meter > 0)', async ({ page }) => {
+  test('canvas: spawned patch produces audio (peak meter > 0) @smoke', async ({ page }) => {
     const cc = captureConsole(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');

@@ -8,6 +8,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
+// Skip the local webServer when targeting a deployed URL (live smoke / preview
+// builds). Detected by E2E_BASE_URL being set to anything non-localhost.
+const IS_LOCAL_TARGET =
+  BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
 
 export default defineConfig({
   testDir: './tests',
@@ -47,13 +51,16 @@ export default defineConfig({
   ],
 
   // Boot the SvelteKit dev server before tests run, reusing if already up.
-  webServer: {
-    command: 'npm run dev -w packages/web',
-    cwd: '..',
-    url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: 120_000,
-  },
+  // Skipped when E2E_BASE_URL points at a live deploy.
+  webServer: IS_LOCAL_TARGET
+    ? {
+        command: 'npm run dev -w packages/web',
+        cwd: '..',
+        url: BASE_URL,
+        reuseExistingServer: !process.env.CI,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: 120_000,
+      }
+    : undefined,
 });
