@@ -1,0 +1,67 @@
+name: CI
+
+# Runs the full PR-gate suite (typecheck + unit + ART + Playwright E2E) on every
+# push to main and every PR targeting main. The whole pipeline executes inside
+# the project's Flox environment so the toolchain (Node 22.22.2, Faust 2.85.5,
+# esbuild, go-task, git-lfs, gh) matches what developers run locally.
+
+on:
+  push:
+    branches: [main, first-mvp]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same ref when a new commit lands.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: typecheck + unit + ART + E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v3
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Build DSP (Faust → WASM)
+        run: flox activate -- task dsp:build
+
+      - name: Run full CI suite (typecheck + unit + ART + E2E)
+        run: flox activate -- task ci
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 14
+
+      - name: Upload Playwright test-results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: e2e/test-results
+          retention-days: 14

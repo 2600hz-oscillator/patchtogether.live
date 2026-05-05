@@ -1,0 +1,12 @@
+# Audio Regression Test baselines (D16 + testing-strategy.md)
+art/baselines/**/*.f32 filter=lfs diff=lfs merge=lfs -text
+art/baselines/**/*.wav filter=lfs diff=lfs merge=lfs -text
+
+# Visual Regression Test baselines
+vrt/__screenshots__/**/*.png filter=lfs diff=lfs merge=lfs -text
+
+# Bundled wavetables for Wavetable VCO
+packages/dsp/wavetables/*.wav filter=lfs diff=lfs merge=lfs -text
+
+# Built WASM is gitignored, but if any pre-built WASM ever gets checked in:
+**/*.wasm filter=lfs diff=lfs merge=lfs -text

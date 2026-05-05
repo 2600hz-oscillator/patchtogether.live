@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output
+packages/dsp/dist/
+packages/web/.svelte-kit/
+packages/web/build/
+packages/server/dist/
+**/.vite/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Test artifacts
+art/__diffs__/
+vrt/test-results/
+vrt/playwright-report/
+e2e/test-results/
+e2e/playwright-report/
+coverage/
+
+# Logs
+npm-debug.log*
+*.log
+
+# Flox keeps its run state local
+.flox/run/
+.flox/cache/
+
+# Local Claude Code settings (per-machine, don't commit)
+.claude/
+
+# Playwright artifacts that aren't already covered above
+e2e/.last-run.json
+**/playwright-report/
+**/test-results/
