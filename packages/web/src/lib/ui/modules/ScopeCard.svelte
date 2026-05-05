@@ -17,9 +17,17 @@
   let timeMs    = $derived(node?.params.timeMs    ?? scopeDef.params[0]!.defaultValue);
   let ch1Scale  = $derived(node?.params.ch1Scale  ?? scopeDef.params[1]!.defaultValue);
   let ch1Offset = $derived(node?.params.ch1Offset ?? scopeDef.params[2]!.defaultValue);
-  let ch2Scale  = $derived(node?.params.ch2Scale  ?? scopeDef.params[3]!.defaultValue);
-  let ch2Offset = $derived(node?.params.ch2Offset ?? scopeDef.params[4]!.defaultValue);
+  let ch1Range  = $derived(node?.params.ch1Range  ?? scopeDef.params[3]!.defaultValue);
+  let ch2Scale  = $derived(node?.params.ch2Scale  ?? scopeDef.params[4]!.defaultValue);
+  let ch2Offset = $derived(node?.params.ch2Offset ?? scopeDef.params[5]!.defaultValue);
+  let ch2Range  = $derived(node?.params.ch2Range  ?? scopeDef.params[6]!.defaultValue);
   let xyMode    = $derived((node?.params.mode ?? 0) >= 0.5);
+
+  // Range mode → vertical fullscale. Audio = ±1, CV = ±5.
+  const RANGE_MAX_AUDIO = 1;
+  const RANGE_MAX_CV = 5;
+  let ch1RangeMax = $derived(ch1Range >= 0.5 ? RANGE_MAX_CV : RANGE_MAX_AUDIO);
+  let ch2RangeMax = $derived(ch2Range >= 0.5 ? RANGE_MAX_CV : RANGE_MAX_AUDIO);
 
   function setParam(paramId: string) {
     return (v: number) => {
@@ -30,6 +38,12 @@
   function toggleXY() {
     const target = patch.nodes[id];
     if (target) target.params.mode = xyMode ? 0 : 1;
+  }
+  function toggleRange(channel: 1 | 2) {
+    const target = patch.nodes[id];
+    if (!target) return;
+    const key = channel === 1 ? 'ch1Range' : 'ch2Range';
+    target.params[key] = (target.params[key] ?? 0) >= 0.5 ? 0 : 1;
   }
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
@@ -98,8 +112,8 @@
     );
     const step = Math.max(1, Math.floor(samplesInWindow / w));
 
-    drawChannel(ctx2d, snap.ch1, samplesInWindow, step, w, h, ch1Color, 1, ch1Scale, ch1Offset);
-    drawChannel(ctx2d, snap.ch2, samplesInWindow, step, w, h, ch2Color, 0.6, ch2Scale, ch2Offset);
+    drawChannel(ctx2d, snap.ch1, samplesInWindow, step, w, h, ch1Color, 1,   ch1Scale, ch1Offset, ch1RangeMax);
+    drawChannel(ctx2d, snap.ch2, samplesInWindow, step, w, h, ch2Color, 0.6, ch2Scale, ch2Offset, ch2RangeMax);
   }
 
   /** XY plot — ch1 horizontal, ch2 vertical. Phase relationships visible. */
@@ -131,8 +145,9 @@
     ctx2d.lineWidth = 1.5;
     ctx2d.beginPath();
     for (let i = 0; i < samplesInWindow; i += step) {
-      const xv = (snap.ch1[start1 + i] ?? 0) * ch1Scale + ch1Offset;
-      const yv = (snap.ch2[start2 + i] ?? 0) * ch2Scale + ch2Offset;
+      // Per-channel range divides the sample so ±rangeMax fills the axis.
+      const xv = ((snap.ch1[start1 + i] ?? 0) / ch1RangeMax) * ch1Scale + ch1Offset;
+      const yv = ((snap.ch2[start2 + i] ?? 0) / ch2RangeMax) * ch2Scale + ch2Offset;
       const xPx = w / 2 + (xv * w) / 2;
       const yPx = h / 2 - (yv * h) / 2;
       if (i === 0) ctx2d.moveTo(xPx, yPx);
@@ -152,7 +167,8 @@
     color: string,
     alpha: number,
     scale: number,
-    offset: number
+    offset: number,
+    rangeMax: number
   ) {
     ctx2d.strokeStyle = color;
     ctx2d.globalAlpha = alpha;
@@ -160,7 +176,7 @@
     ctx2d.beginPath();
     const start = samples.length - samplesInWindow;
     for (let i = 0; i < samplesInWindow; i += step) {
-      const v = (samples[start + i] ?? 0) * scale + offset;
+      const v = ((samples[start + i] ?? 0) / rangeMax) * scale + offset;
       const x = (i / samplesInWindow) * w;
       const y = h / 2 - v * (h / 2);
       if (i === 0) ctx2d.moveTo(x, y);
@@ -175,6 +191,24 @@
   <div class="stripe"></div>
   <header class="title">
     Scope
+    <button
+      class="rng-btn"
+      class:cv={ch1Range >= 0.5}
+      style="color: {ch1Color};"
+      onclick={() => toggleRange(1)}
+      title={ch1Range >= 0.5 ? 'Ch1: CV range (±5)' : 'Ch1: audio range (±1)'}
+    >
+      1{ch1Range >= 0.5 ? 'cv' : 'a'}
+    </button>
+    <button
+      class="rng-btn"
+      class:cv={ch2Range >= 0.5}
+      style="color: {ch2Color};"
+      onclick={() => toggleRange(2)}
+      title={ch2Range >= 0.5 ? 'Ch2: CV range (±5)' : 'Ch2: audio range (±1)'}
+    >
+      2{ch2Range >= 0.5 ? 'cv' : 'a'}
+    </button>
     <button class="xy-btn" class:active={xyMode} onclick={toggleXY} title={xyMode ? 'Split mode' : 'XY mode'}>
       {xyMode ? 'XY' : '⇆'}
     </button>
@@ -250,6 +284,22 @@
     background: var(--cable-cv);
     color: #1a1d23;
     border-color: var(--cable-cv);
+  }
+  .rng-btn {
+    height: 18px;
+    min-width: 26px;
+    padding: 0 4px;
+    background: #14171c;
+    border: 1px solid #2a2f3a;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-family: ui-monospace, monospace;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .rng-btn.cv {
+    background: #1c2028;
+    border-color: currentColor;
   }
   .port-label {
     position: absolute;

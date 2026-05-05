@@ -35,8 +35,13 @@ export const scopeDef: AudioModuleDef = {
     { id: 'timeMs',    label: 'Time',  defaultValue: 20, min: 1,    max: 200, curve: 'log',      units: 'ms' },
     { id: 'ch1Scale',  label: 'Ch1 Sc', defaultValue: 1,  min: 0.1,  max: 10,  curve: 'log' },
     { id: 'ch1Offset', label: 'Ch1 Y',  defaultValue: 0,  min: -1,   max: 1,   curve: 'linear' },
+    // 0 = audio (±1 fills the canvas), 1 = cv (±5 — Eurorack pitch CV
+    // convention so a multi-octave pitch sweep is readable without cranking
+    // ch1Scale to 0.2). Per-channel; the scale fader still multiplies on top.
+    { id: 'ch1Range',  label: 'Ch1 R',  defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
     { id: 'ch2Scale',  label: 'Ch2 Sc', defaultValue: 1,  min: 0.1,  max: 10,  curve: 'log' },
     { id: 'ch2Offset', label: 'Ch2 Y',  defaultValue: 0,  min: -1,   max: 1,   curve: 'linear' },
+    { id: 'ch2Range',  label: 'Ch2 R',  defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
     // 0 = split (two stacked traces), 1 = XY (ch1 vs ch2 plot).
     { id: 'mode',      label: 'XY',    defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
   ],
