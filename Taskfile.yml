@@ -13,6 +13,7 @@ version: '3'
 vars:
   WEB: packages/web
   DSP: packages/dsp
+  SERVER: packages/server
   ART: art
   E2E: e2e
 
@@ -56,6 +57,16 @@ tasks:
         WATCHER_PID=$!
         trap "kill $WATCHER_PID 2>/dev/null" EXIT
         npm run dev -w {{.WEB}}
+
+  server:dev:
+    desc: Start the Hocuspocus collaboration server (Stage B). Defaults to ws://localhost:1234.
+    cmds:
+      - npm run dev -w {{.SERVER}}
+
+  server:build:
+    desc: Compile the Hocuspocus server to packages/server/dist
+    cmds:
+      - npm run build -w {{.SERVER}}
 
   # ---------------- Build ----------------
   build:

@@ -1,0 +1,99 @@
+{
+  "patch": {
+    "nodes": [
+      {
+        "id": "carl-n1-vca",
+        "type": "vca",
+        "params": {
+          "base": 0.5007294877432287
+        }
+      },
+      {
+        "id": "carl-n2-vca",
+        "type": "vca",
+        "params": {
+          "base": 0.29299163701944053
+        }
+      },
+      {
+        "id": "carl-n3-adsr",
+        "type": "adsr",
+        "params": {}
+      },
+      {
+        "id": "carl-n4-analogVco",
+        "type": "analogVco",
+        "params": {
+          "tune": 6.993331421166658
+        }
+      },
+      {
+        "id": "carl-n6-filter",
+        "type": "filter",
+        "params": {
+          "cutoff": 4669.778890791349
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "carl-e2",
+        "source": {
+          "nodeId": "carl-n2-vca",
+          "portId": "audio"
+        },
+        "target": {
+          "nodeId": "carl-n1-vca",
+          "portId": "audio"
+        },
+        "sourceType": "audio",
+        "targetType": "audio"
+      },
+      {
+        "id": "carl-e6",
+        "source": {
+          "nodeId": "carl-n1-vca",
+          "portId": "audio"
+        },
+        "target": {
+          "nodeId": "carl-n6-filter",
+          "portId": "audio"
+        },
+        "sourceType": "audio",
+        "targetType": "audio"
+      },
+      {
+        "id": "carl-e10",
+        "source": {
+          "nodeId": "carl-n4-analogVco",
+          "portId": "saw"
+        },
+        "target": {
+          "nodeId": "carl-n2-vca",
+          "portId": "audio"
+        },
+        "sourceType": "audio",
+        "targetType": "audio"
+      },
+      {
+        "id": "carl-e11",
+        "source": {
+          "nodeId": "carl-n3-adsr",
+          "portId": "cv"
+        },
+        "target": {
+          "nodeId": "carl-n4-analogVco",
+          "portId": "fm"
+        },
+        "sourceType": "cv",
+        "targetType": "cv"
+      }
+    ]
+  },
+  "engine": {
+    "ctxState": "unknown",
+    "sampleRate": 0,
+    "engineNodeCount": 5,
+    "engineEdgeCount": 3
+  }
+}
