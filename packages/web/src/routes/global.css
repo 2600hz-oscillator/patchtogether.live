@@ -1,0 +1,42 @@
+/* Global app styling — D14 visual language baseline. */
+
+:root {
+  --bg: #0e1116;
+  --bg-grid-dot: #1f242c;
+  --module-bg: #1a1d23;
+  --text: #e0e0e0;
+  --text-dim: #888;
+
+  --cable-audio: #fbbf24;
+  --cable-pitch: #60a5fa;
+  --cable-gate: #f87171;
+  --cable-cv: #34d399;
+
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Svelte Flow handles — cable-color rings (D14). Lives globally because every
+ * module card uses these; CSS lives here rather than scoped to one card so the
+ * :global selector isn't tied to which card happens to be in the DOM. */
+.svelte-flow__handle {
+  width: 12px !important;
+  height: 12px !important;
+  background: var(--module-bg) !important;
+  border: 2px solid var(--handle-color, var(--cable-audio)) !important;
+}

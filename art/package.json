@@ -1,0 +1,17 @@
+{
+  "name": "@inet.modular/art",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Audio Regression Tests — render compiled DSP through OfflineAudioContext-equivalent and compare to .f32 baselines stored in git-lfs (D16, D17, D19).",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "art:update": "UPDATE_BASELINES=1 vitest run --config vitest.config.ts",
+    "art:listen": "node scripts/listen-diff.mjs"
+  },
+  "devDependencies": {
+    "@grame/faustwasm": "^0.7.0",
+    "vitest": "^3.2.0",
+    "node-web-audio-api": "^1.0.0"
+  }
+}

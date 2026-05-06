@@ -36,6 +36,10 @@ npm-debug.log*
 .flox/run/
 .flox/cache/
 
+# Wrangler / Cloudflare local state
+.wrangler/
+**/.wrangler/
+
 # Local Claude Code settings (per-machine, don't commit)
 .claude/
 

@@ -1,0 +1,6 @@
+.svelte-kit/
+build/
+.vite/
+.env
+.env.*
+!.env.example

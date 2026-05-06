@@ -1,0 +1,15 @@
+{
+  "name": "@inet.modular/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end tests for inet.modular via Playwright. Doubles as an AI-agent self-validation harness — see scripts ai:check + ai:debug.",
+  "scripts": {
+    "test": "playwright test",
+    "ai:check": "playwright test --reporter=list ai-smoke.spec.ts",
+    "ai:debug": "playwright test --reporter=list ai-debug.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}
