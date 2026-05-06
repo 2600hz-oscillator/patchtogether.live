@@ -3,6 +3,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import wasmUrl from '@inet.modular/dsp/dist/vca.wasm?url';
 import metaUrl from '@inet.modular/dsp/dist/vca.json?url';
+import workletUrl from '@inet.modular/dsp/dist/vca.worklet.js?url';
 
 const PARAM_PREFIX = '/VCA';
 
@@ -23,7 +24,7 @@ export const vcaDef: AudioModuleDef = {
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'vca', wasmUrl, metaUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'vca', wasmUrl, metaUrl, workletUrl });
     const merger = ctx.createChannelMerger(2);
     merger.connect(f);
     // Keep the merger in the active graph (see analog-vco for why).

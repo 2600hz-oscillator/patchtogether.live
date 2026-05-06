@@ -1,12 +1,10 @@
 // packages/web/src/lib/audio/faust-runtime.ts
 //
 // Minimal runtime helper for instantiating a pre-compiled Faust module
-// (.wasm + metadata .json from packages/dsp/dist/) as an AudioWorkletNode.
-//
-// Day 5 scope: enough to play a single VCO. The full DomainEngine + module
-// registry that consumes this lands in Days 6–7.
+// (.wasm + metadata .json + pre-bundled .worklet.js from packages/dsp/dist/)
+// as an AudioWorkletNode.
 
-import { FaustMonoDspGenerator, FaustWasmInstantiator } from '@grame/faustwasm';
+import { FaustMonoAudioWorkletNode, FaustWasmInstantiator } from '@grame/faustwasm';
 
 export interface FaustModuleArtifact {
   /** DSP module name — matches the build output stem and the Faust processor name. */
@@ -15,28 +13,56 @@ export interface FaustModuleArtifact {
   wasmUrl: string;
   /** URL of the metadata .json. */
   metaUrl: string;
+  /** URL of the pre-bundled AudioWorklet processor. */
+  workletUrl: string;
 }
 
+/** Track which (context, processorName) pairs we've already addModule'd. */
+const loaded = new WeakMap<BaseAudioContext, Set<string>>();
+
 /**
- * Load a pre-compiled Faust module's wasm + metadata, build a factory, and
- * create an AudioWorkletNode under the given AudioContext.
+ * Load a pre-compiled Faust module's wasm + metadata + worklet, register the
+ * processor (once per context), and instantiate a FaustMonoAudioWorkletNode.
  *
- * The returned node has `meta.inputs` audio inputs and `meta.outputs` audio
- * outputs as declared by the Faust source. Faust UI parameters (hslider/nentry)
- * are exposed as AudioParams accessible by their full path.
+ * Why the explicit workletUrl: @grame/faustwasm normally builds the worklet
+ * processor JS at runtime by concatenating `${SomeClass.name}` +
+ * `${SomeClass.toString()}`. That breaks under Vite production minification
+ * because Rollup renames the classes before the minifier sees them, and the
+ * inlined .toString() bodies reference undefined identifiers inside
+ * AudioWorkletGlobalScope. We sidestep the whole runtime-stitching path by
+ * pre-bundling the worklet at DSP build time (see
+ * packages/dsp/scripts/build-worklet.mjs) and addModule-ing the resulting
+ * static .worklet.js here. The parent thread still uses Faust's
+ * MonoAudioWorkletNode wrapper to talk to it via port — that wrapper doesn't
+ * depend on .toString() and minifies cleanly.
  */
 export async function instantiateFaustModule(
   audioContext: AudioContext,
-  artifact: FaustModuleArtifact
+  artifact: FaustModuleArtifact,
 ): Promise<AudioWorkletNode> {
+  let registered = loaded.get(audioContext);
+  if (!registered) {
+    registered = new Set();
+    loaded.set(audioContext, registered);
+  }
+  if (!registered.has(artifact.name)) {
+    await audioContext.audioWorklet.addModule(artifact.workletUrl);
+    registered.add(artifact.name);
+  }
+
   const factory = await FaustWasmInstantiator.loadDSPFactory(artifact.wasmUrl, artifact.metaUrl);
   if (!factory) {
     throw new Error(`FaustWasmInstantiator.loadDSPFactory returned null for ${artifact.name}`);
   }
-  const generator = new FaustMonoDspGenerator();
-  const node = await generator.createNode(audioContext, artifact.name, factory);
-  if (!node) {
-    throw new Error(`FaustMonoDspGenerator.createNode returned null for ${artifact.name}`);
-  }
+
+  // sampleSize: 4 = single-precision floats (matches the -single flag baked
+  // into our DSP build's compile_options).
+  const node = new FaustMonoAudioWorkletNode(audioContext, {
+    processorOptions: {
+      name: artifact.name,
+      factory,
+      sampleSize: 4,
+    },
+  });
   return node as unknown as AudioWorkletNode;
 }

@@ -3,6 +3,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import wasmUrl from '@inet.modular/dsp/dist/filter.wasm?url';
 import metaUrl from '@inet.modular/dsp/dist/filter.json?url';
+import workletUrl from '@inet.modular/dsp/dist/filter.worklet.js?url';
 
 const PARAM_PREFIX = '/Filter';
 
@@ -25,7 +26,7 @@ export const filterDef: AudioModuleDef = {
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'filter', wasmUrl, metaUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'filter', wasmUrl, metaUrl, workletUrl });
     const merger = ctx.createChannelMerger(3);
     merger.connect(f);
     const silence = ctx.createConstantSource();

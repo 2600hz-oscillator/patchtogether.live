@@ -3,6 +3,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import wasmUrl from '@inet.modular/dsp/dist/adsr.wasm?url';
 import metaUrl from '@inet.modular/dsp/dist/adsr.json?url';
+import workletUrl from '@inet.modular/dsp/dist/adsr.worklet.js?url';
 
 const PARAM_PREFIX = '/ADSR';
 
@@ -32,7 +33,7 @@ export const adsrDef: AudioModuleDef = {
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'adsr', wasmUrl, metaUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'adsr', wasmUrl, metaUrl, workletUrl });
     const silence = ctx.createConstantSource();
     silence.offset.value = 0;
     silence.start();

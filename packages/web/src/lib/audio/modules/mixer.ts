@@ -3,6 +3,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import wasmUrl from '@inet.modular/dsp/dist/mixer.wasm?url';
 import metaUrl from '@inet.modular/dsp/dist/mixer.json?url';
+import workletUrl from '@inet.modular/dsp/dist/mixer.worklet.js?url';
 
 const PARAM_PREFIX = '/Mixer';
 
@@ -28,7 +29,7 @@ export const mixerDef: AudioModuleDef = {
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'mixer', wasmUrl, metaUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'mixer', wasmUrl, metaUrl, workletUrl });
     const merger = ctx.createChannelMerger(4);
     merger.connect(f);
     const params = f.parameters as unknown as Map<string, AudioParam>;

@@ -117,6 +117,14 @@ tasks:
       - 'echo "→ Live smoke against: ${E2E_BASE_URL:-https://autotest.patchtogether.live}"'
       - cd {{.E2E}} && E2E_BASE_URL="${E2E_BASE_URL:-https://autotest.patchtogether.live}" playwright test --grep @smoke
 
+  ci:smoke:prod-build:
+    desc: Build the prod bundle, boot `vite preview`, run @smoke specs against it. Catches minification + static-asset regressions before they ship.
+    deps: [build]
+    env:
+      E2E_USE_PREVIEW: '1'
+    cmds:
+      - npm test -w {{.E2E}} -- --grep @smoke
+
   e2e:headed:
     desc: Run E2E tests with browser window visible
     cmds:

@@ -7,9 +7,15 @@
 
 import { defineConfig, devices } from '@playwright/test';
 
-const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
-// Skip the local webServer when targeting a deployed URL (live smoke / preview
-// builds). Detected by E2E_BASE_URL being set to anything non-localhost.
+// E2E_USE_PREVIEW=1 swaps the dev server for `vite preview` so we can run the
+// @smoke subset against the prod-built bundle locally. Catches regressions
+// that only manifest under minification / static-asset paths (e.g. Faust's
+// runtime worklet stitching breaking when classes are mangled).
+const USE_PREVIEW = process.env.E2E_USE_PREVIEW === '1';
+const DEFAULT_LOCAL = USE_PREVIEW ? 'http://localhost:4173' : 'http://localhost:5173';
+const BASE_URL = process.env.E2E_BASE_URL ?? DEFAULT_LOCAL;
+// Skip the local webServer when targeting a deployed URL (live smoke). Detected
+// by E2E_BASE_URL being set to anything non-localhost.
 const IS_LOCAL_TARGET =
   BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
 
@@ -54,7 +60,9 @@ export default defineConfig({
   // Skipped when E2E_BASE_URL points at a live deploy.
   webServer: IS_LOCAL_TARGET
     ? {
-        command: 'npm run dev -w packages/web',
+        command: USE_PREVIEW
+          ? 'npm run preview -w packages/web -- --port 4173'
+          : 'npm run dev -w packages/web',
         cwd: '..',
         url: BASE_URL,
         reuseExistingServer: !process.env.CI,

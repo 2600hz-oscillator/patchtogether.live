@@ -3,6 +3,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import wasmUrl from '@inet.modular/dsp/dist/reverb.wasm?url';
 import metaUrl from '@inet.modular/dsp/dist/reverb.json?url';
+import workletUrl from '@inet.modular/dsp/dist/reverb.worklet.js?url';
 
 const PARAM_PREFIX = '/Reverb';
 
@@ -21,7 +22,7 @@ export const reverbDef: AudioModuleDef = {
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'reverb', wasmUrl, metaUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'reverb', wasmUrl, metaUrl, workletUrl });
     const silence = ctx.createConstantSource();
     silence.offset.value = 0;
     silence.start();

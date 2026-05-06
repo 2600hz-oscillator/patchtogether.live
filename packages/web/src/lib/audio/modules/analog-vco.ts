@@ -4,6 +4,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import wasmUrl from '@inet.modular/dsp/dist/analog-vco.wasm?url';
 import metaUrl from '@inet.modular/dsp/dist/analog-vco.json?url';
+import workletUrl from '@inet.modular/dsp/dist/analog-vco.worklet.js?url';
 
 const PARAM_PREFIX = '/Analog_VCO';
 
@@ -31,7 +32,7 @@ export const analogVcoDef: AudioModuleDef = {
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const faustNode = await instantiateFaustModule(ctx, { name: 'analog-vco', wasmUrl, metaUrl });
+    const faustNode = await instantiateFaustModule(ctx, { name: 'analog-vco', wasmUrl, metaUrl, workletUrl });
 
     // ChannelMerger routes per-port mono signals to distinct channels of
     // Faust's single multi-channel input. This is what makes sequencer.pitch

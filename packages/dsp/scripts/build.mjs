@@ -18,6 +18,7 @@ import { spawn } from 'node:child_process';
 import { join, basename, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build as esbuildBuild } from 'esbuild';
+import { buildWorkletForModule } from './build-worklet.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = join(__dirname, '..');
@@ -81,6 +82,12 @@ async function buildDsp(filePath) {
     await rename(fixedMeta, target);
   }
   await writeFile(join(DIST_DIR, `${name}.sha`), sha);
+  // Pre-bundle the AudioWorklet processor right alongside the wasm so the
+  // browser doesn't have to do runtime .toString()-stitching of Faust's
+  // classes — that pattern breaks under Vite minification (Rollup mangles
+  // the identifiers before the minifier sees them, so the inlined source
+  // references undefined symbols inside AudioWorkletGlobalScope).
+  await buildWorkletForModule(name);
   return { name, kind: 'faust', sha };
 }
 
