@@ -26,6 +26,10 @@ const MODULES: ModuleSpec[] = [
   { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 4, containsLabel: 'Sequencer' },
   { type: 'wavetableVco', cardClass: 'svelte-flow__node-wavetableVco', handleCount: 4, containsLabel: 'Wavetable VCO' },
   { type: 'lfo',          cardClass: 'svelte-flow__node-lfo',          handleCount: 7, containsLabel: 'LFO' },
+  { type: 'cartesian',    cardClass: 'svelte-flow__node-cartesian',    handleCount: 6, containsLabel: 'Cartesian' },
+  { type: 'destroy',      cardClass: 'svelte-flow__node-destroy',      handleCount: 5, containsLabel: 'DESTROY' },
+  { type: 'qbrt',         cardClass: 'svelte-flow__node-qbrt',         handleCount: 8, containsLabel: 'QBRT' },
+  { type: 'drummergirl',  cardClass: 'svelte-flow__node-drummergirl',  handleCount: 5, containsLabel: 'DRUMMERGIRL' },
 ];
 
 test.describe.configure({ mode: 'parallel' });
