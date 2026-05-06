@@ -53,6 +53,26 @@ test.describe('AI smoke check', () => {
     }
   });
 
+  // Regression: PR-2 preview shipped without any sign-in entry on the public
+  // canvas, so users had no way to reach /sign-in or /dashboard. ClerkProvider
+  // is intentionally not mounted on `/` (COEP would block its CDN), so the
+  // entry must be a plain link, not a Clerk component. This test runs against
+  // the live autotest env once main is deployed, catching regressions where a
+  // refactor removes the entry point or a layout change hides it.
+  test('auth: landing page exposes a sign-in entry point @smoke', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const link = page.getByTestId('signin-link');
+    await expect(link, 'sign-in link missing on landing page').toBeVisible();
+
+    // Must point at an auth-handled route. /dashboard is the canonical
+    // entry — it redirects to /sign-in?redirect_url=/dashboard when signed
+    // out, and renders the dashboard when signed in.
+    const href = await link.getAttribute('href');
+    expect(href, `sign-in link href: ${href}`).toMatch(/^\/(dashboard|sign-in)/);
+  });
+
   test('canvas: Load example creates 5 Svelte Flow nodes @smoke', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
