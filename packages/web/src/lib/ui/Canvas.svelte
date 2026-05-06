@@ -103,6 +103,11 @@
       // immediate clear-then-add transact spawnPatch does).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__ensureEngine = ensureEngine;
+      // Module registry, exposed for the chaos runner. Stripped in prod.
+      // Returned shape is the live ModuleDef array — chaos reads it once at
+      // boot to avoid maintaining a stale catalog mirror.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__listModuleDefs = listModuleDefs;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__persistence = {
         makeEnvelope,
