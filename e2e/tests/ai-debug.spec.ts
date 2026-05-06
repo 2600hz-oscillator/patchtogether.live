@@ -2,7 +2,7 @@
 //
 // AI-friendly diagnostic. Designed for the AI agent to run via `task ai:debug`
 // when something is broken and structured info is needed. Boots the page,
-// clicks Spawn demo, dumps a structured snapshot to stdout that the agent can
+// clicks Load example, dumps a structured snapshot to stdout that the agent can
 // grep for what went wrong.
 //
 // Output sections (printed to stdout):
@@ -25,7 +25,7 @@ function section(title: string, body: string) {
   console.log(body);
 }
 
-test('AI debug snapshot — Spawn demo flow', async ({ page }) => {
+test('AI debug snapshot — Load example flow', async ({ page }) => {
   await mkdir(ART_DIR, { recursive: true });
   const cc = captureConsole(page);
 
@@ -56,7 +56,7 @@ test('AI debug snapshot — Spawn demo flow', async ({ page }) => {
   const preDom = await page.evaluate(() => ({
     h1: document.querySelector('h1')?.textContent ?? null,
     spawnBtn: Array.from(document.querySelectorAll('button')).some(
-      (b) => b.textContent?.trim() === 'Spawn demo'
+      (b) => b.textContent?.trim() === 'Load example'
     ),
     allButtons: Array.from(document.querySelectorAll('button')).map((b) =>
       (b.textContent ?? '').trim().slice(0, 40)
@@ -68,10 +68,10 @@ test('AI debug snapshot — Spawn demo flow', async ({ page }) => {
   }));
   section('DOM (pre-click)', JSON.stringify(preDom, null, 2));
 
-  // ---------- Click Spawn demo ----------
+  // ---------- Click Load example ----------
   let clickError: string | null = null;
   try {
-    await page.getByRole('button', { name: 'Spawn demo' }).click({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Load example' }).click({ timeout: 5000 });
   } catch (err) {
     clickError = String(err);
   }

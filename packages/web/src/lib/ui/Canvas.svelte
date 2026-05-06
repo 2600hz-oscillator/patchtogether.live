@@ -1,7 +1,7 @@
 <script lang="ts">
   // Day 7 — Svelte Flow canvas + module cards + auto-reactive engine.
   //
-  // Click "Spawn demo" → patch graph populates → Svelte Flow renders cards →
+  // Click "Load example" → patch graph populates → Svelte Flow renders cards →
   // reconciler instantiates engine nodes → audio plays. Twiddle a knob →
   // patch graph mutates → reconciler calls engine.setParam → audible change.
   import { onDestroy } from 'svelte';
@@ -90,6 +90,11 @@
       (globalThis as any).__ydoc = ydoc;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__engine = () => engine;
+      // Tests bootstrap the engine without going through Load example (which
+      // creates an auto-playing Sequencer that races bind:nodes during the
+      // immediate clear-then-add transact spawnPatch does).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__ensureEngine = ensureEngine;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__persistence = {
         makeEnvelope,
@@ -162,66 +167,11 @@
 
   // (ensureEngine moved below the palette section so its types are colocated)
 
-  /** Minimal demo: a single Analog VCO connected straight to Audio Out.
-   *  Hear the saw at C4 immediately. The other "Voice demo" button builds
-   *  the larger Sequencer-driven chain. */
-  async function spawnDemo() {
-    error = null;
-    booting = true;
-    try {
-      await ensureEngine();
-      ydoc.transact(() => {
-        if (!patch.nodes['vco-1']) {
-          patch.nodes['vco-1'] = {
-            id: 'vco-1',
-            type: 'analogVco',
-            domain: 'audio',
-            position: { x: 100, y: 80 },
-            params: {},
-          };
-        }
-        if (!patch.nodes['out-1']) {
-          patch.nodes['out-1'] = {
-            id: 'out-1',
-            type: 'audioOut',
-            domain: 'audio',
-            position: { x: 420, y: 80 },
-            params: { master: 0.2 },
-          };
-        }
-        if (!patch.edges['e-vco-outL']) {
-          patch.edges['e-vco-outL'] = {
-            id: 'e-vco-outL',
-            source: { nodeId: 'vco-1', portId: 'saw' },
-            target: { nodeId: 'out-1', portId: 'L' },
-            sourceType: 'audio',
-            targetType: 'audio',
-          };
-        }
-        if (!patch.edges['e-vco-outR']) {
-          patch.edges['e-vco-outR'] = {
-            id: 'e-vco-outR',
-            source: { nodeId: 'vco-1', portId: 'saw' },
-            target: { nodeId: 'out-1', portId: 'R' },
-            sourceType: 'audio',
-            targetType: 'audio',
-          };
-        }
-      });
-      trace('demo patch in store; reconciler instantiating');
-      await reconciler?.reconcile();
-      trace('demo live — twiddle the knobs');
-    } catch (err) {
-      console.error(err);
-      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    } finally {
-      booting = false;
-    }
-  }
-
-  /** Voice-chain demo: Sequencer → VCO + ADSR → VCA → Audio Out. Pre-populated
-   *  with a 4-note motif. Sequencer auto-starts (isPlaying = 1). */
-  async function spawnVoiceDemo() {
+  /** "Load example": Sequencer → VCO + ADSR → VCA → Audio Out. Pre-populated
+   *  with an 8-note motif. Sequencer auto-starts (isPlaying = 1). This is
+   *  the only demo button — a quick way for a new user to hear the engine
+   *  doing something musical without learning the patching UI first. */
+  async function loadExample() {
     error = null;
     booting = true;
     try {
@@ -523,7 +473,7 @@
   async function ensureEngine(): Promise<PatchEngine> {
     if (engine) return engine;
     // Memoize the in-flight boot. Without this, two parallel callers
-    // (e.g. spawnDemo + spawnVoiceDemo clicked rapidly) each create their
+    // (e.g. two parallel callers) each create their
     // own AudioContext, racing to overwrite the engine + reconciler bindings.
     if (bootPromise) return bootPromise;
     bootPromise = (async () => {
@@ -560,11 +510,8 @@
     <span class="caption">Day 7 — Svelte Flow canvas + reactive engine</span>
     <div class="actions">
       <button onclick={openPaletteFromButton}>+ Add module</button>
-      <button onclick={spawnDemo} disabled={booting} class="primary">
-        {booting ? 'Loading…' : 'Spawn demo'}
-      </button>
-      <button onclick={spawnVoiceDemo} disabled={booting}>
-        Spawn voice demo
+      <button onclick={loadExample} disabled={booting} class="primary">
+        {booting ? 'Loading…' : 'Load example'}
       </button>
       <button onclick={savePatch} disabled={nodeCount === 0}>Save</button>
       <button onclick={loadPatch}>Load</button>

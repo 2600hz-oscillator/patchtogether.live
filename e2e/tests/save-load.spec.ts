@@ -154,7 +154,7 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
 test('save-load: Save button downloads a valid PatchEnvelope JSON', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Spawn voice demo' }).click();
+  await page.getByRole('button', { name: 'Load example' }).click();
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   // Click Save and wait for the download.
@@ -185,7 +185,7 @@ test('save-load: Load button restores the patch from a saved envelope', async ({
   await page.waitForLoadState('networkidle');
 
   // Start with a known patch and save it.
-  await page.getByRole('button', { name: 'Spawn voice demo' }).click();
+  await page.getByRole('button', { name: 'Load example' }).click();
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   const downloadPromise = page.waitForEvent('download');

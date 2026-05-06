@@ -36,7 +36,7 @@ test.describe('AI smoke check', () => {
     expect(isolated, 'crossOriginIsolated must be true').toBe(true);
   });
 
-  test('canvas: topbar + Spawn demo button render', async ({ page }) => {
+  test('canvas: topbar + Load example button render', async ({ page }) => {
     const cc = captureConsole(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
@@ -44,8 +44,8 @@ test.describe('AI smoke check', () => {
     const h1 = page.locator('h1', { hasText: 'patchtogether.live' });
     await expect(h1, 'topbar h1 missing').toBeVisible();
 
-    const spawnBtn = page.getByRole('button', { name: 'Spawn demo' });
-    await expect(spawnBtn, 'Spawn demo button missing').toBeVisible();
+    const spawnBtn = page.getByRole('button', { name: 'Load example' });
+    await expect(spawnBtn, 'Load example button missing').toBeVisible();
 
     const errors = cc.pageErrors.length + cc.errors.length;
     if (errors > 0) {
@@ -53,12 +53,12 @@ test.describe('AI smoke check', () => {
     }
   });
 
-  test('canvas: Spawn demo creates 2 Svelte Flow nodes @smoke', async ({ page }) => {
+  test('canvas: Load example creates 5 Svelte Flow nodes @smoke', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Spawn demo' }).click();
+    await page.getByRole('button', { name: 'Load example' }).click();
     const nodes = page.locator('.svelte-flow__node');
-    await expect(nodes, 'expected 2 module-card nodes after Spawn demo').toHaveCount(2, {
+    await expect(nodes, 'expected 5 module-card nodes after Load example').toHaveCount(5, {
       timeout: 10_000,
     });
   });
@@ -66,8 +66,8 @@ test.describe('AI smoke check', () => {
   test('canvas: spawned nodes are VISUALLY rendered (non-zero bounding rect)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Spawn demo' }).click();
-    await expect(page.locator('.svelte-flow__node')).toHaveCount(2, { timeout: 10_000 });
+    await page.getByRole('button', { name: 'Load example' }).click();
+    await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // Bounding rects: cards must be visible on screen (width × height > 0
     // AND inside the viewport). Catches the case where DOM exists but Svelte
@@ -94,8 +94,8 @@ test.describe('AI smoke check', () => {
   test('fader: dragging visibly moves the thumb (motorized state reflection)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Spawn demo' }).click();
-    await expect(page.locator('.svelte-flow__node')).toHaveCount(2, { timeout: 10_000 });
+    await page.getByRole('button', { name: 'Load example' }).click();
+    await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // First fader on the Analog VCO card = TUNE.
     const tuneTrack = page
@@ -204,9 +204,9 @@ test.describe('AI smoke check', () => {
   test('clear: Clear button removes all nodes + edges from patch + DOM', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Spawn demo' }).click();
-    await expect(page.locator('.svelte-flow__node')).toHaveCount(2, { timeout: 10_000 });
-    await expect(page.locator('.svelte-flow__edge')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Load example' }).click();
+    await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
+    await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
 
     await page.getByRole('button', { name: 'Clear' }).click();
     await page.waitForTimeout(150);
@@ -221,8 +221,8 @@ test.describe('AI smoke check', () => {
   test('node-drag: dragging a card persists position back to the patch graph', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Spawn demo' }).click();
-    await expect(page.locator('.svelte-flow__node')).toHaveCount(2, { timeout: 10_000 });
+    await page.getByRole('button', { name: 'Load example' }).click();
+    await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     const vco = page.locator('.svelte-flow__node-analogVco');
     const before = await vco.evaluate((el) => (el as HTMLElement).style.transform);
@@ -245,14 +245,14 @@ test.describe('AI smoke check', () => {
     const cc = captureConsole(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Spawn demo' }).click();
+    await page.getByRole('button', { name: 'Load example' }).click();
 
-    await expect(page.locator('.svelte-flow__node')).toHaveCount(2, { timeout: 10_000 });
+    await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     const statusText = (await page.locator('.bottombar').textContent()) ?? '';
     expect(statusText, `bottombar text: "${statusText}"`).toMatch(/ctx\s*running/);
-    expect(statusText).toMatch(/nodes\s*2/);
-    expect(statusText).toMatch(/edges\s*2/);
+    expect(statusText).toMatch(/nodes\s*5/);
+    expect(statusText).toMatch(/edges\s*6/);
 
     if (cc.pageErrors.length || cc.errors.length) {
       console.log(formatConsole(cc));

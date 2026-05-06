@@ -20,7 +20,7 @@ test.describe('@collab', () => {
       const [a, b] = session.pages;
 
       // A spawns the demo. B should see it via Yjs sync.
-      await a.getByRole('button', { name: 'Spawn demo' }).click();
+      await a.getByRole('button', { name: 'Load example' }).click();
       await expect(b.locator('.svelte-flow__node')).toHaveCount(2, { timeout: 1_000 });
     } finally {
       await session.close();
@@ -32,7 +32,7 @@ test.describe('@collab', () => {
     try {
       const [host, follower] = session.pages;
 
-      await host.getByRole('button', { name: 'Spawn voice demo' }).click();
+      await host.getByRole('button', { name: 'Load example' }).click();
       await expect(host.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
       // Phase 4 will assert the follower's hidden <audio> element receives
@@ -48,7 +48,7 @@ test.describe('@collab', () => {
     const session = await openCollab(browser, 2);
     try {
       const [host, follower] = session.pages;
-      await host.getByRole('button', { name: 'Spawn voice demo' }).click();
+      await host.getByRole('button', { name: 'Load example' }).click();
       await host.close();
 
       // Follower's role indicator should flip from FOLLOWER to HOST.
@@ -67,9 +67,9 @@ test.describe('@collab', () => {
       // Phase 4: audience joins via ?role=audience or invite-list role.
       // Then the topbar action buttons must be hidden / disabled for audience.
       await audience.goto(`/?canvas=${session.canvasId}&role=audience`);
-      await expect(audience.getByRole('button', { name: 'Spawn demo' })).toBeDisabled();
+      await expect(audience.getByRole('button', { name: 'Load example' })).toBeDisabled();
       // Performer can still edit:
-      await performer.getByRole('button', { name: 'Spawn demo' }).click();
+      await performer.getByRole('button', { name: 'Load example' }).click();
       await expect(audience.locator('.svelte-flow__node')).toHaveCount(2, { timeout: 1_000 });
     } finally {
       await session.close();

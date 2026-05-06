@@ -23,20 +23,28 @@ export interface SpawnEdge {
 /**
  * Spawn a set of nodes + edges into the patch graph atomically.
  * Requires the dev-only window globals (Canvas exposes them under `import.meta.env.DEV`).
- * Waits for engine to be booted (calls `Spawn demo` first if engine isn't up yet — the
- * easy way to ensure the AudioContext + reconciler are alive).
+ * Bootstraps the engine by clicking the "Load example" button (the click
+ * counts as the user gesture AudioContext needs); the example's nodes are
+ * cleared in the same transact that adds the test's patch.
  */
 export async function spawnPatch(
   page: Page,
   nodes: SpawnNode[],
   edges: SpawnEdge[] = []
 ): Promise<void> {
-  // Bootstrap AudioContext + reconciler via the dev's Spawn demo button. Wait
-  // for engine to come up.
-  await page.getByRole('button', { name: 'Spawn demo' }).click();
+  // Bootstrap the engine directly via the dev __ensureEngine global. We
+  // intentionally don't click "Load example" — its auto-playing Sequencer
+  // races spawnPatch's clear-then-add and leaves stale DOM. The browser
+  // launch flag --autoplay-policy=no-user-gesture-required (in
+  // playwright.config.ts) lets AudioContext start without a user gesture,
+  // so no click is needed.
   await page.waitForFunction(() => {
-    const w = globalThis as unknown as { __engine?: () => unknown };
-    return !!w.__engine && !!w.__engine();
+    const w = globalThis as unknown as { __ensureEngine?: () => Promise<unknown> };
+    return typeof w.__ensureEngine === 'function';
+  });
+  await page.evaluate(async () => {
+    const w = globalThis as unknown as { __ensureEngine: () => Promise<unknown> };
+    await w.__ensureEngine();
   });
 
   // Clear + rebuild the patch in a single page.evaluate to avoid race conditions
