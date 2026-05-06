@@ -27,13 +27,18 @@ test.describe('auth-route shape', () => {
     expect(typeof body.env.PUBLIC_CLERK_PUBLISHABLE_KEY).toBe('boolean');
   });
 
+  // Why "not 500" instead of "< 500": 503 is the *expected* response when
+  // Clerk env is missing — that's the friendly auth-not-configured page
+  // hooks.server.ts returns by design. 500 is what we actually want to
+  // forbid: an unhandled exception bubbling up from withClerkHandler. The
+  // assertion shape is "no opaque server crash," not "no 5xx of any kind."
   test('GET /sign-in is never a 500 @smoke', async ({ request }) => {
     const r = await request.get('/sign-in');
     expect(
       r.status(),
       `sign-in must not 500; got ${r.status()} (200 = Clerk-configured render, ` +
-        `503 = auth-not-configured friendly page, 30x = redirect — anything but 5xx is OK)`,
-    ).toBeLessThan(500);
+        `503 = auth-not-configured friendly page, 30x = redirect — all OK; 500 is the failure shape)`,
+    ).not.toBe(500);
   });
 
   test('GET /dashboard is never a 500 @smoke', async ({ request }) => {
@@ -41,17 +46,17 @@ test.describe('auth-route shape', () => {
     // 200 (Clerk-configured + authed — won't happen in a no-cookie smoke), or
     // 503 (Clerk env missing, friendly page).
     const r = await request.get('/dashboard', { maxRedirects: 0 });
-    expect(r.status(), `dashboard must not 500; got ${r.status()}`).toBeLessThan(500);
+    expect(r.status(), `dashboard must not 500; got ${r.status()}`).not.toBe(500);
   });
 
   test('GET /r/<id> on a fake id is never a 500 @smoke', async ({ request }) => {
     const r = await request.get('/r/not-a-real-rackspace', { maxRedirects: 0 });
-    expect(r.status(), `/r/[id] must not 500; got ${r.status()}`).toBeLessThan(500);
+    expect(r.status(), `/r/[id] must not 500; got ${r.status()}`).not.toBe(500);
   });
 
   test('GET /sign-up is never a 500 @smoke', async ({ request }) => {
     const r = await request.get('/sign-up');
-    expect(r.status(), `sign-up must not 500; got ${r.status()}`).toBeLessThan(500);
+    expect(r.status(), `sign-up must not 500; got ${r.status()}`).not.toBe(500);
   });
 
   // When auth IS configured, sign-in must actually serve a Clerk widget host
