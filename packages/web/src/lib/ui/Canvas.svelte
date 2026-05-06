@@ -51,6 +51,10 @@
   import SequencerCard from '$lib/ui/modules/SequencerCard.svelte';
   import WavetableVcoCard from '$lib/ui/modules/WavetableVcoCard.svelte';
   import LfoCard from '$lib/ui/modules/LfoCard.svelte';
+  import CartesianCard from '$lib/ui/modules/CartesianCard.svelte';
+  import DestroyCard from '$lib/ui/modules/DestroyCard.svelte';
+  import QbrtCard from '$lib/ui/modules/QbrtCard.svelte';
+  import DrummergirlCard from '$lib/ui/modules/DrummergirlCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import type { CableType } from '$lib/graph/types';
@@ -67,6 +71,10 @@
     sequencer: SequencerCard,
     wavetableVco: WavetableVcoCard,
     lfo: LfoCard,
+    cartesian: CartesianCard,
+    destroy: DestroyCard,
+    qbrt: QbrtCard,
+    drummergirl: DrummergirlCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
@@ -516,6 +524,7 @@
       <button onclick={savePatch} disabled={nodeCount === 0}>Save</button>
       <button onclick={loadPatch}>Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
+      <a class="signin-link" href="/dashboard" data-testid="signin-link">Sign in</a>
     </div>
   </header>
 
@@ -639,6 +648,21 @@
   .topbar button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+  .topbar .signin-link {
+    background: #2a2f3a;
+    color: var(--text);
+    border: 1px solid #404652;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.4rem;
+  }
+  .topbar .signin-link:hover {
+    background: #353a47;
   }
   .flow {
     position: relative;

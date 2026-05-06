@@ -26,6 +26,16 @@ const MODULES: ModuleSpec[] = [
   { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 4, containsLabel: 'Sequencer' },
   { type: 'wavetableVco', cardClass: 'svelte-flow__node-wavetableVco', handleCount: 4, containsLabel: 'Wavetable VCO' },
   { type: 'lfo',          cardClass: 'svelte-flow__node-lfo',          handleCount: 7, containsLabel: 'LFO' },
+  { type: 'cartesian',    cardClass: 'svelte-flow__node-cartesian',    handleCount: 6, containsLabel: 'Cartesian' },
+  { type: 'destroy',      cardClass: 'svelte-flow__node-destroy',      handleCount: 5, containsLabel: 'DESTROY' },
+  // QBRT: 9 handles = 6 inputs (L, R, ping, cutoff cv, resonance cv, mode cv,
+  //                              pingDecay cv) + 2 outputs (L, R) — wait, that's 7+2=9. Counting again:
+  //                              L-in, R-in, ping, cutoff cv, res cv, mode cv, pingDecay cv = 7 inputs;
+  //                              L-out, R-out = 2 outputs; total 9.
+  // DRUMMERGIRL: 7 handles = 6 inputs (gate, pitch cv, tone cv, shape cv,
+  //                              volume cv, decay cv) + 1 output (audio) = 7.
+  { type: 'qbrt',         cardClass: 'svelte-flow__node-qbrt',         handleCount: 9, containsLabel: 'QBRT' },
+  { type: 'drummergirl',  cardClass: 'svelte-flow__node-drummergirl',  handleCount: 7, containsLabel: 'DRUMMERGIRL' },
 ];
 
 test.describe.configure({ mode: 'parallel' });
