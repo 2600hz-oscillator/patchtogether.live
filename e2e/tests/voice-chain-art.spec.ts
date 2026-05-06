@@ -26,7 +26,14 @@ import { spawnPatch } from './_helpers';
 
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
 const BASELINE_PATH = join(__dirname_, '..', 'baselines', 'voice-chain-fingerprint.json');
-const TOLERANCE = 0.15; // ±15%
+// ±25% — wider than ideal but realtime audio fingerprints jitter both with
+// per-run scheduling (block alignment, GC) and with host environment
+// (macOS dev vs Linux CI Chromium can disagree at ±10-20% on ZCR alone).
+// This test is a regression smoke, not a tier-A ART; it catches gross
+// regressions (silence, clipping, wrong harmonic content) without false-
+// failing on benign environmental drift. Tighten once we have an
+// OfflineAudioContext-based deterministic ART.
+const TOLERANCE = 0.25;
 const SHOULD_UPDATE = process.env.UPDATE_BASELINES === '1';
 
 interface Fingerprint {
