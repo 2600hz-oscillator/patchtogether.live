@@ -26,7 +26,11 @@ type StandardModuleType =
   | 'sequencer'
   | 'reverb'
   | 'scope'
-  | 'lfo';
+  | 'lfo'
+  | 'cartesian'
+  | 'destroy'
+  | 'qbrt'
+  | 'drummergirl';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

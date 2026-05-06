@@ -14,6 +14,10 @@ import { scopeDef } from './scope';
 import { sequencerDef } from './sequencer';
 import { wavetableVcoDef } from './wavetable-vco';
 import { lfoDef } from './lfo';
+import { cartesianDef } from './cartesian';
+import { destroyDef } from './destroy';
+import { qbrtDef } from './qbrt';
+import { drummergirlDef } from './drummergirl';
 
 let registered = false;
 
@@ -31,6 +35,10 @@ export function registerAudioModules(): void {
   registerModule(sequencerDef);
   registerModule(wavetableVcoDef);
   registerModule(lfoDef);
+  registerModule(cartesianDef);
+  registerModule(destroyDef);
+  registerModule(qbrtDef);
+  registerModule(drummergirlDef);
 }
 
 registerAudioModules();

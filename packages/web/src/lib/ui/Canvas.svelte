@@ -51,6 +51,10 @@
   import SequencerCard from '$lib/ui/modules/SequencerCard.svelte';
   import WavetableVcoCard from '$lib/ui/modules/WavetableVcoCard.svelte';
   import LfoCard from '$lib/ui/modules/LfoCard.svelte';
+  import CartesianCard from '$lib/ui/modules/CartesianCard.svelte';
+  import DestroyCard from '$lib/ui/modules/DestroyCard.svelte';
+  import QbrtCard from '$lib/ui/modules/QbrtCard.svelte';
+  import DrummergirlCard from '$lib/ui/modules/DrummergirlCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import type { CableType } from '$lib/graph/types';
@@ -67,6 +71,10 @@
     sequencer: SequencerCard,
     wavetableVco: WavetableVcoCard,
     lfo: LfoCard,
+    cartesian: CartesianCard,
+    destroy: DestroyCard,
+    qbrt: QbrtCard,
+    drummergirl: DrummergirlCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
