@@ -1,11 +1,43 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { UserButton } from 'svelte-clerk';
   import Canvas from '$lib/ui/Canvas.svelte';
+  import { ydoc } from '$lib/graph/store';
+  import { attachProvider } from '$lib/multiplayer/provider';
+  import type { HocuspocusProvider } from '@hocuspocus/provider';
 
   let { data } = $props();
   let joining = $state(false);
   let joinError: string | null = $state(null);
+
+  // Hocuspocus provider wires the existing Yjs doc to the collaboration
+  // server so updates flow between participants. Stage B PR B: no auth
+  // verification yet (server stub-accepts any token), no layout split (so
+  // dragging on one client moves on the other — PR B-b fixes).
+  //
+  // Only attach for members; non-members see the join page and shouldn't
+  // hold an open WebSocket.
+  let provider: HocuspocusProvider | null = null;
+  $effect(() => {
+    if (!data.isMember) return;
+    const p = attachProvider({
+      rackspaceId: data.rackspace.id,
+      ydoc,
+      // TODO(stage-b-pr-c): pass Clerk session token here once the server
+      // wires Clerk verification in onAuthenticate.
+      token: 'stub',
+      debug: import.meta.env.DEV,
+    });
+    provider = p;
+    return () => {
+      p.destroy();
+      provider = null;
+    };
+  });
+  onDestroy(() => {
+    provider?.destroy();
+  });
 
   async function join() {
     joining = true;
