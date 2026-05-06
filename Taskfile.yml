@@ -111,6 +111,16 @@ tasks:
     cmds:
       - npm test -w {{.E2E}}
 
+  chaos:run:
+    desc: |
+      Chaos Stage-1 run. Spawns Chromium, drives Chaos Carl through 200 random
+      intents (configurable via CHAOS_ITERATIONS), checks invariants between
+      each. On a violation: dumps artifacts to e2e/chaos/findings/<dir>/ and
+      fails. Currently single-user only — Stage 4 adds multi-user invariants
+      (post-Stage B). Vars: CHAOS_SEED=<int>, CHAOS_ITERATIONS=<int>.
+    cmds:
+      - npm exec -w {{.E2E}} -- playwright test --config=chaos/chaos.config.ts
+
   ci:smoke:live:
     desc: Live-deploy smoke (set E2E_BASE_URL; defaults to autotest.patchtogether.live). Runs only the @smoke-tagged subset; never blocks the PR gate.
     cmds:
