@@ -129,10 +129,12 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/web
-          # `--branch=pr-N` creates a Pages preview alias keyed off the PR
-          # number; URL is `pr-N.patchtogether-live.pages.dev`. Each PR has
-          # its own URL — never collides with main or with other PRs.
-          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live --branch=pr-${{ github.event.pull_request.number }}
+          # PR previews deploy to the AUTOTEST project (not prod), so they
+          # inherit the test-instance Clerk env vars and full auth flow
+          # works. The prod project has no Clerk env until launch — putting
+          # PR previews there would break their auth too. URL becomes
+          # `pr-N.patchtogether-live-autotest.pages.dev`.
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=pr-${{ github.event.pull_request.number }}
 
   # ---------------- Manual: autotest / dev ----------------
 

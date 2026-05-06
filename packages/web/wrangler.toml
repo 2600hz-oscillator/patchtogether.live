@@ -18,11 +18,11 @@ pages_build_output_dir = ".svelte-kit/cloudflare"
 compatibility_date = "2024-11-06"
 compatibility_flags = ["nodejs_compat"]
 
-# Plain (non-secret) env vars. Pages reads these for both Production and
-# Preview unless overridden per-env. Secrets (CLERK_SECRET_KEY etc.) live in
-# the Pages dashboard, marked Encrypted.
-[vars]
-# Clerk's publishable key is designed to be embedded in client bundles —
-# safe to commit. Replace with pk_live_* when we move to a live Clerk
-# instance for prod (likely as part of going public).
-PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_bW9kZXN0LW1vbmtmaXNoLTgzLmNsZXJrLmFjY291bnRzLmRldiQ"
+# Clerk env vars are NOT in this file — we want different Clerk instances
+# per Pages project (test instance for autotest/dev/PR-preview, eventual
+# prod instance for patchtogether.live), and wrangler.toml [vars] applies
+# the same value to every project. Each project gets its own
+# PUBLIC_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY via the Cloudflare
+# dashboard's Variables and Secrets panel. Prod project: no Clerk env at
+# all until we promote to live keys (anonymous /  works; auth flows fail
+# loudly — by design until launch).
