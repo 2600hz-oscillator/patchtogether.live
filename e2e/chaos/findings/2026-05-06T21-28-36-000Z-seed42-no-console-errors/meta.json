@@ -1,8 +1,0 @@
-{
-  "ts": "2026-05-06T21:28:36.000Z",
-  "seed": 42,
-  "personality": "carl",
-  "iteration": 37,
-  "invariantId": "no-console-errors",
-  "message": "1 console errors:\n  [reconciler] reconcile failed: Error: AudioEngine.addEdge: no source port cv on carl-n3-adsr\n    at AudioEngine.addEdge (http://localhost:5173/src/lib/audio/engine.ts:75:22)\n    at PatchEngine.addEdge"
-}
