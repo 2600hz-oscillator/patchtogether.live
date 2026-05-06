@@ -115,7 +115,11 @@ tasks:
     desc: Live-deploy smoke (set E2E_BASE_URL; defaults to autotest.patchtogether.live). Runs only the @smoke-tagged subset; never blocks the PR gate.
     cmds:
       - 'echo "→ Live smoke against: ${E2E_BASE_URL:-https://autotest.patchtogether.live}"'
-      - cd {{.E2E}} && E2E_BASE_URL="${E2E_BASE_URL:-https://autotest.patchtogether.live}" playwright test --grep @smoke
+      # Use `npm exec -w` rather than a bare `playwright` so the binary
+      # resolves via the e2e workspace's node_modules/.bin without depending
+      # on shell PATH inheritance — go-task spawns a subshell that doesn't
+      # auto-pick up node_modules/.bin (caused exit 127 in CI).
+      - E2E_BASE_URL="${E2E_BASE_URL:-https://autotest.patchtogether.live}" npm exec -w {{.E2E}} -- playwright test --grep @smoke
 
   ci:smoke:prod-build:
     desc: Build the prod bundle, boot `vite preview`, run @smoke specs against it. Catches minification + static-asset regressions before they ship.
