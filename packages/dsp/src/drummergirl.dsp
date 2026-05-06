@@ -3,9 +3,16 @@ declare description "All-in-one drum voice. VCO+noise blend through ADSR. Shape 
 
 import("stdfaust.lib");
 
-pitchKnob = hslider("pitch[style:knob][unit:semi]", 0.0, -36.0, 36.0, 0.001) : si.smoo;
-toneKnob  = hslider("tone[style:knob]",             0.3, 0.0,    1.0,  0.001) : si.smoo;
-shapeKnob = hslider("shape[style:knob]",            0.3, 0.0,    1.0,  0.001) : si.smoo;
+pitchKnob  = hslider("pitch[style:knob][unit:semi]", 0.0,  -36.0, 36.0,  0.001) : si.smoo;
+toneKnob   = hslider("tone[style:knob]",             0.3,  0.0,    1.0,  0.001) : si.smoo;
+shapeKnob  = hslider("shape[style:knob]",            0.3,  0.0,    1.0,  0.001) : si.smoo;
+// Volume — direct gain on the output. >1.0 lets percussion poke above unity
+// without needing an external VCA gain-stage. Clamped at 2.0 (200%).
+volumeKnob = hslider("volume[style:knob]",           1.0,  0.0,    2.0,  0.001) : si.smoo;
+// Decay — direct override of the shape preset's decay time. Shape still drives
+// attack/sustain/release/sweep so each preset keeps its character; only the
+// decay axis is user-controlled.
+decayKnob  = hslider("decay[style:knob][unit:s]",    0.15, 0.001,  0.5,  0.001) : si.smoo;
 
 // Helper: clamp + smooth.
 clamp(lo, hi, x) = x : max(lo) : min(hi);
@@ -63,10 +70,10 @@ mixed(g) = vco(g) * toneKnob + noise * (1.0 - toneKnob);
 
 env(g) = en.adsr(
   max(0.0,    attackOf(shapeKnob)),
-  max(0.001,  decayOf(shapeKnob)),
+  max(0.001,  decayKnob),
   clamp(0.0, 1.0, sustainOf(shapeKnob)),
   max(0.001,  releaseOf(shapeKnob)),
   g
 );
 
-process(gate) = mixed(gate) * env(gate);
+process(gate) = mixed(gate) * env(gate) * volumeKnob;

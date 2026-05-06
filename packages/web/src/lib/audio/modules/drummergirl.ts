@@ -12,18 +12,24 @@ export const drummergirlDef: AudioModuleDef = {
   domain: 'audio',
   label: 'DRUMMERGIRL',
   category: 'sources',
-  schemaVersion: 1,
+  // v2: added `volume` (0-2.0) and `decay` (0.001-0.5s, log) params. Loading a
+  // v1 save will populate these from defaults — no migration callback needed.
+  schemaVersion: 2,
   inputs: [
-    { id: 'gate',  type: 'gate' },
-    { id: 'pitch', type: 'cv', paramTarget: 'pitch' },
-    { id: 'tone',  type: 'cv', paramTarget: 'tone' },
-    { id: 'shape', type: 'cv', paramTarget: 'shape' },
+    { id: 'gate',   type: 'gate' },
+    { id: 'pitch',  type: 'cv', paramTarget: 'pitch' },
+    { id: 'tone',   type: 'cv', paramTarget: 'tone' },
+    { id: 'shape',  type: 'cv', paramTarget: 'shape' },
+    { id: 'volume', type: 'cv', paramTarget: 'volume' },
+    { id: 'decay',  type: 'cv', paramTarget: 'decay' },
   ],
   outputs: [{ id: 'audio', type: 'audio' }],
   params: [
-    { id: 'pitch', label: 'Pitch', defaultValue: 0,   min: -36, max: 36, curve: 'linear', units: 'semi' },
-    { id: 'tone',  label: 'Tone',  defaultValue: 0.3, min: 0,   max: 1,  curve: 'linear' },
-    { id: 'shape', label: 'Shape', defaultValue: 0.3, min: 0,   max: 1,  curve: 'linear' },
+    { id: 'pitch',  label: 'Pitch',  defaultValue: 0,    min: -36,    max: 36,  curve: 'linear', units: 'semi' },
+    { id: 'tone',   label: 'Tone',   defaultValue: 0.3,  min: 0,      max: 1,   curve: 'linear' },
+    { id: 'shape',  label: 'Shape',  defaultValue: 0.3,  min: 0,      max: 1,   curve: 'linear' },
+    { id: 'volume', label: 'Volume', defaultValue: 1.0,  min: 0,      max: 2.0, curve: 'linear' },
+    { id: 'decay',  label: 'Decay',  defaultValue: 0.15, min: 0.001,  max: 0.5, curve: 'log',    units: 's' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -42,17 +48,21 @@ export const drummergirlDef: AudioModuleDef = {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
       params.get(`${PARAM_PREFIX}/${def.id}`)?.setValueAtTime(v, ctx.currentTime);
     }
-    const pPitch = params.get(`${PARAM_PREFIX}/pitch`);
-    const pTone  = params.get(`${PARAM_PREFIX}/tone`);
-    const pShape = params.get(`${PARAM_PREFIX}/shape`);
+    const pPitch  = params.get(`${PARAM_PREFIX}/pitch`);
+    const pTone   = params.get(`${PARAM_PREFIX}/tone`);
+    const pShape  = params.get(`${PARAM_PREFIX}/shape`);
+    const pVolume = params.get(`${PARAM_PREFIX}/volume`);
+    const pDecay  = params.get(`${PARAM_PREFIX}/decay`);
 
     return {
       domain: 'audio',
       inputs: new Map([
-        ['gate',  { node: merger, input: 0 }],
-        ['pitch', { node: f, input: 0, param: pPitch! }],
-        ['tone',  { node: f, input: 0, param: pTone! }],
-        ['shape', { node: f, input: 0, param: pShape! }],
+        ['gate',   { node: merger, input: 0 }],
+        ['pitch',  { node: f, input: 0, param: pPitch! }],
+        ['tone',   { node: f, input: 0, param: pTone! }],
+        ['shape',  { node: f, input: 0, param: pShape! }],
+        ['volume', { node: f, input: 0, param: pVolume! }],
+        ['decay',  { node: f, input: 0, param: pDecay! }],
       ]),
       outputs: new Map([['audio', { node: f, output: 0 }]]),
       setParam(paramId, value) {

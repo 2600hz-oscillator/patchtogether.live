@@ -12,7 +12,10 @@ export const qbrtDef: AudioModuleDef = {
   domain: 'audio',
   label: 'QBRT',
   category: 'filters',
-  schemaVersion: 1,
+  // v2: added `pingDecay` param + reworked the ping path to vactrol-style
+  // (Q boost + click excitation). Loading a v1 save populates pingDecay
+  // from default — no migration callback needed.
+  schemaVersion: 2,
   inputs: [
     { id: 'L',         type: 'audio' },
     { id: 'R',         type: 'audio' },
@@ -20,15 +23,17 @@ export const qbrtDef: AudioModuleDef = {
     { id: 'cutoff',    type: 'cv', paramTarget: 'cutoff' },
     { id: 'resonance', type: 'cv', paramTarget: 'resonance' },
     { id: 'mode',      type: 'cv', paramTarget: 'mode' },
+    { id: 'pingDecay', type: 'cv', paramTarget: 'pingDecay' },
   ],
   outputs: [
     { id: 'L', type: 'audio' },
     { id: 'R', type: 'audio' },
   ],
   params: [
-    { id: 'cutoff',    label: 'Cut',  defaultValue: 1000, min: 20, max: 20000, curve: 'log',    units: 'Hz' },
-    { id: 'resonance', label: 'Res',  defaultValue: 0.7,  min: 0,  max: 0.99,  curve: 'linear' },
-    { id: 'mode',      label: 'Mode', defaultValue: 0,    min: 0,  max: 1,     curve: 'linear' },
+    { id: 'cutoff',    label: 'Cut',  defaultValue: 1000, min: 20,    max: 20000, curve: 'log',    units: 'Hz' },
+    { id: 'resonance', label: 'Res',  defaultValue: 0.7,  min: 0,     max: 0.99,  curve: 'linear' },
+    { id: 'mode',      label: 'Mode', defaultValue: 0,    min: 0,     max: 1,     curve: 'linear' },
+    { id: 'pingDecay', label: 'Ping', defaultValue: 0.15, min: 0.005, max: 0.5,   curve: 'log',    units: 's' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -50,9 +55,10 @@ export const qbrtDef: AudioModuleDef = {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
       params.get(`${PARAM_PREFIX}/${def.id}`)?.setValueAtTime(v, ctx.currentTime);
     }
-    const pCutoff = params.get(`${PARAM_PREFIX}/cutoff`);
-    const pRes    = params.get(`${PARAM_PREFIX}/resonance`);
-    const pMode   = params.get(`${PARAM_PREFIX}/mode`);
+    const pCutoff    = params.get(`${PARAM_PREFIX}/cutoff`);
+    const pRes       = params.get(`${PARAM_PREFIX}/resonance`);
+    const pMode      = params.get(`${PARAM_PREFIX}/mode`);
+    const pPingDecay = params.get(`${PARAM_PREFIX}/pingDecay`);
 
     return {
       domain: 'audio',
@@ -63,6 +69,7 @@ export const qbrtDef: AudioModuleDef = {
         ['cutoff',    { node: f, input: 0, param: pCutoff! }],
         ['resonance', { node: f, input: 0, param: pRes! }],
         ['mode',      { node: f, input: 0, param: pMode! }],
+        ['pingDecay', { node: f, input: 0, param: pPingDecay! }],
       ]),
       outputs: new Map([
         ['L', { node: splitter, output: 0 }],
