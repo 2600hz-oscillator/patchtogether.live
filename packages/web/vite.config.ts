@@ -8,16 +8,20 @@ export default defineConfig({
   // Faust's worklet generator (`@grame/faustwasm`) inlines its classes into a
   // dynamically-built worklet source via `SomeClass.toString()` + `.name` so
   // each AudioWorkletProcessor can reference them by their original identifier.
-  // Vite/esbuild's default name-mangling renames the classes (FaustDspInstance
-  // → `tt`, etc.); the inlined toString() source then references minified
-  // names that Faust's template doesn't redeclare, and the worklet throws
-  // `tt is not defined` inside AudioWorkletGlobalScope. keepNames preserves
-  // the original identifiers in the bundle so the inlined source still resolves.
-  esbuild: {
-    keepNames: true,
-  },
+  // Minifying renames those classes (FaustDspInstance → `tt`); the inlined
+  // .toString() bodies then reference renamed identifiers Faust's template
+  // doesn't redeclare, and the worklet throws `tt is not defined` inside
+  // AudioWorkletGlobalScope.
+  //
+  // We tried `esbuild.keepNames: true` first but that emits `__name(target,
+  // name)` helpers that called Object.defineProperty on non-objects during
+  // SvelteKit's module init in the Cloudflare Worker, breaking deploy
+  // validation. Cleaner workaround: disable minification entirely. Bundle is
+  // ~30% larger but Faust survives and the Worker boots cleanly. Revisit
+  // once @grame/faustwasm ships a worklet path that doesn't depend on
+  // .toString()-stitching.
   build: {
-    minify: 'esbuild',
+    minify: false,
   },
   server: {
     headers: {
