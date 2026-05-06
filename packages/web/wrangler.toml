@@ -17,3 +17,12 @@ pages_build_output_dir = ".svelte-kit/cloudflare"
 
 compatibility_date = "2024-11-06"
 compatibility_flags = ["nodejs_compat"]
+
+# Plain (non-secret) env vars. Pages reads these for both Production and
+# Preview unless overridden per-env. Secrets (CLERK_SECRET_KEY etc.) live in
+# the Pages dashboard, marked Encrypted.
+[vars]
+# Clerk's publishable key is designed to be embedded in client bundles —
+# safe to commit. Replace with pk_live_* when we move to a live Clerk
+# instance for prod (likely as part of going public).
+PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_bW9kZXN0LW1vbmtmaXNoLTgzLmNsZXJrLmFjY291bnRzLmRldiQ"
