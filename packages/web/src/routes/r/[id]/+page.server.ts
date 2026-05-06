@@ -19,15 +19,17 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
   }
 
   const member = isMember(rackspace.id, userId);
+  // Don't leak Clerk user IDs to the client. The page only needs id/name +
+  // capacity + membership state. If a future feature actually needs to
+  // distinguish "you are the owner" vs "you are a member" we'll surface a
+  // boolean flag (`isOwner`) instead of the raw userId.
   return {
     rackspace: {
       id: rackspace.id,
       name: rackspace.name,
-      ownerUserId: rackspace.ownerUserId,
       memberCount: rackspace.memberUserIds.length,
       maxMembers: RACKSPACE_MAX_MEMBERS,
     },
     isMember: member,
-    userId,
   };
 };

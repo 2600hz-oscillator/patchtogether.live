@@ -11,13 +11,16 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const { userId } = locals.auth();
   if (!userId) throw error(401, 'unauthorized');
 
-  let body: { name?: string } = {};
+  let body: { name?: unknown } = {};
   try {
     body = await request.json();
   } catch {
-    /* empty body fine */
+    /* empty body or malformed JSON: fine, fall back to default */
   }
-  const name = (body.name ?? 'Untitled rackspace').slice(0, 80);
+  // Defensive: malformed JSON could yield body.name as number/object/null.
+  // Only string-typed names get through; everything else falls back.
+  const rawName = typeof body.name === 'string' ? body.name : 'Untitled rackspace';
+  const name = rawName.slice(0, 80);
   const rackspace = createRackspace(userId, name);
   return json({ rackspace });
 };

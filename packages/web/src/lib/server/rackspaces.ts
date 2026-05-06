@@ -21,12 +21,25 @@ export interface Rackspace {
 const rackspaces = new Map<string, Rackspace>();
 
 function generateId(): string {
-  // Short, URL-safe, 8 chars, no ambiguous letters. Collision space is small
-  // but Stage A uses an in-memory store wiped on restart — fine until D1.
+  // Rackspace IDs ARE the bearer token used by share-URL access — anyone with
+  // the URL gets visit-and-join rights. Math.random is not cryptographically
+  // suitable for that role; use crypto.getRandomValues, available
+  // synchronously on both Node and Cloudflare Workers.
+  //
+  // Rejection-sample bytes against the alphabet length to avoid modulo bias
+  // (256 % 31 != 0). Each rejected byte gets resampled until a usable one
+  // lands; expected total samples ≈ 8 / (248/256) ≈ 8.3 bytes — negligible.
   const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const cutoff = Math.floor(256 / alphabet.length) * alphabet.length;
   let id = 'r_';
-  for (let i = 0; i < 8; i++) {
-    id += alphabet[Math.floor(Math.random() * alphabet.length)];
+  while (id.length < 10) {
+    const buf = new Uint8Array(8);
+    crypto.getRandomValues(buf);
+    for (const b of buf) {
+      if (b >= cutoff) continue;
+      id += alphabet[b % alphabet.length];
+      if (id.length === 10) break;
+    }
   }
   return id;
 }

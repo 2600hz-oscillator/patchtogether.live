@@ -67,9 +67,43 @@ export class AudioEngine implements DomainEngine {
   nodes = new Map<string, AudioDomainNodeHandle>();
   /** edge id → undo function that disconnects the specific connection */
   edges = new Map<string, () => void>();
+  /**
+   * Per-modulated-param AnalyserNode taps so the UI can visualize the CURRENT
+   * computed value of an AudioParam (intrinsic + connected modulators).
+   *
+   * Why: AudioParam.value reflects only the *intrinsic* value last set by the
+   * fader. When an LFO/envelope is connected via .connect(audioParam) the
+   * audio-rate sum is computed in the audio thread but never surfaced back
+   * to JS. Without a tap, motorized faders look frozen even while modulation
+   * is clearly audible.
+   *
+   * One AnalyserNode per (nodeId, paramId). Multiple inbound edges to the
+   * same param all .connect() to the same analyser; Web Audio's connection
+   * summing means the analyser sees the cumulative modulator signal.
+   */
+  paramTaps = new Map<string, AnalyserNode>();
+  /** edge id → bookkeeping so removeEdge can untap. */
+  private paramTapEdges = new Map<string, { tapKey: string; src: AudioNode; output: number }>();
+  private paramTapBuf = new Float32Array(32);
 
   constructor(ctx: AudioContext) {
     this.ctx = ctx;
+  }
+
+  private paramTapKey(nodeId: string, paramId: string): string {
+    return `${nodeId}::${paramId}`;
+  }
+
+  private getOrCreateParamTap(nodeId: string, paramId: string): AnalyserNode {
+    const key = this.paramTapKey(nodeId, paramId);
+    let tap = this.paramTaps.get(key);
+    if (!tap) {
+      tap = this.ctx.createAnalyser();
+      tap.fftSize = 32;
+      tap.smoothingTimeConstant = 0;
+      this.paramTaps.set(key, tap);
+    }
+    return tap;
   }
 
   async addNode(node: ModuleNode): Promise<void> {
@@ -119,9 +153,25 @@ export class AudioEngine implements DomainEngine {
       `AudioEngine.addEdge: no target port ${edge.target.portId} on ${edge.target.nodeId}`
     );
     if (din.param) {
-      // CV → AudioParam routing
+      // CV → AudioParam routing.
       sout.node.connect(din.param, sout.output);
-      this.edges.set(edge.id, () => sout.node.disconnect(din.param!, sout.output));
+      // Also tee the source through a per-param AnalyserNode so readParam can
+      // report intrinsic + modulator sample for motorized fader rendering.
+      const tap = this.getOrCreateParamTap(edge.target.nodeId, edge.target.portId);
+      sout.node.connect(tap, sout.output);
+      const tapKey = this.paramTapKey(edge.target.nodeId, edge.target.portId);
+      this.paramTapEdges.set(edge.id, { tapKey, src: sout.node, output: sout.output });
+      this.edges.set(edge.id, () => {
+        sout.node.disconnect(din.param!, sout.output);
+        const bk = this.paramTapEdges.get(edge.id);
+        if (bk) {
+          const t = this.paramTaps.get(bk.tapKey);
+          if (t) {
+            try { bk.src.disconnect(t, bk.output); } catch { /* may have been torn down */ }
+          }
+          this.paramTapEdges.delete(edge.id);
+        }
+      });
     } else {
       sout.node.connect(din.node, sout.output, din.input);
       this.edges.set(edge.id, () => sout.node.disconnect(din.node, sout.output, din.input));
@@ -142,9 +192,18 @@ export class AudioEngine implements DomainEngine {
     handle.setParam(paramId, value);
   }
 
-  /** Read the live AudioParam value for motorized fader rendering. */
+  /** Read the live AudioParam value for motorized fader rendering.
+   *  Returns intrinsic + sample of any connected modulators (via the
+   *  per-param AnalyserNode tap), so faders visually track LFOs/envelopes. */
   readParam(nodeId: string, paramId: string): number | undefined {
-    return this.nodes.get(nodeId)?.readParam(paramId);
+    const intrinsic = this.nodes.get(nodeId)?.readParam(paramId);
+    if (intrinsic === undefined) return undefined;
+    const tap = this.paramTaps.get(this.paramTapKey(nodeId, paramId));
+    if (!tap) return intrinsic;
+    // Read 32 most-recent samples from the analyser. Use the tail sample as
+    // "current" — close enough at 60fps poll; fftSize=32 keeps perf cheap.
+    tap.getFloatTimeDomainData(this.paramTapBuf);
+    return intrinsic + this.paramTapBuf[this.paramTapBuf.length - 1];
   }
 
   /** Read arbitrary per-module data (e.g., scope buffer). */
@@ -156,6 +215,11 @@ export class AudioEngine implements DomainEngine {
   dispose(): void {
     for (const undo of this.edges.values()) undo();
     this.edges.clear();
+    for (const tap of this.paramTaps.values()) {
+      try { tap.disconnect(); } catch { /* may have been torn down */ }
+    }
+    this.paramTaps.clear();
+    this.paramTapEdges.clear();
     for (const handle of this.nodes.values()) handle.dispose();
     this.nodes.clear();
   }

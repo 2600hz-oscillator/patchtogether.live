@@ -59,9 +59,14 @@ sweepOf(s)   = sweepAt(seg(s))   * (1.0 - frac(s)) + sweepAt(seg2(s))   * frac(s
 // Base frequency: pitch knob in semis from C2 (~65 Hz).
 baseFreq = 65.406 * pow(2.0, pitchKnob / 12.0);
 
-// Pitch envelope: scale a fast-decaying envelope by sweepOf, multiply VCO freq
-// by 2^(sweep * env). en.are(attack, release, gate) is a simple AR.
-pitchEnv(g) = en.are(0.001, max(0.005, attackOf(shapeKnob) + 0.01), g) * sweepOf(shapeKnob) * 4.0;
+// Pitch envelope: a kick/tom should *start high* and decay to baseFreq during
+// the held gate (the classic downward thump). en.are with attack=0.001 attacks
+// instantly to 1 and HOLDS at 1 while gate is held, only decaying on release —
+// wrong direction. en.adsr with attack=0, decay=preset-decay, sustain=0 gives
+// "snap to 1, decay to 0" which is what we want, while gate is held.
+// sweepOf scales the pitch sweep amount; shapes with sweepOf=0 (cymbals/hats)
+// produce no pitch movement regardless.
+pitchEnv(g) = en.adsr(0.0, max(0.005, decayOf(shapeKnob)), 0.0, 0.001, g) * sweepOf(shapeKnob) * 4.0;
 
 vco(g) = os.osc(baseFreq * pow(2.0, pitchEnv(g)));
 noise = no.noise;
