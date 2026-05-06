@@ -110,6 +110,9 @@
     if (curve === 'exp') {
       return min + Math.sqrt(fr) * (max - min);
     }
+    if (curve === 'discrete') {
+      return Math.round(min + fr * (max - min));
+    }
     return min + fr * (max - min);
   }
 

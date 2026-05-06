@@ -121,8 +121,11 @@
     const newPitch = Math.max(-24, Math.min(24, dragging.startPitch + delta));
     const arr = readStepsCopy();
     const cur = arr[dragging.idx] ?? { on: false, pitch: 0 };
-    if (cur.pitch !== newPitch) {
-      arr[dragging.idx] = { ...cur, pitch: newPitch };
+    // Dragging implies "I want this step to fire at this pitch" — enable as a
+    // side effect so users don't have to click + drag separately. Click-
+    // without-drag (handled in stepPointerUp) keeps its toggle behavior.
+    if (cur.pitch !== newPitch || !cur.on) {
+      arr[dragging.idx] = { on: true, pitch: newPitch };
       writeSteps(arr);
     }
   }
