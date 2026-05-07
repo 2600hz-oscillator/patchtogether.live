@@ -1,7 +1,8 @@
 <script lang="ts">
-  // Right-click context menu for module nodes. Two actions:
-  //   Delete       — remove node + every edge touching it
+  // Right-click context menu for module nodes. Three actions:
+  //   Docs         — open this module's in-app docs page in a new tab
   //   Unpatch all  — keep node, remove every edge touching it
+  //   Delete       — remove node + every edge touching it
 
   interface Props {
     open: boolean;
@@ -10,12 +11,23 @@
     y: number;
     /** Module display label (e.g. "Analog VCO"). */
     nodeLabel: string;
+    /** Module type id (e.g. "analogVco"). Used to build the /docs URL. */
+    nodeType?: string | null;
     ondelete: () => void;
     onunpatch: () => void;
     onclose: () => void;
   }
 
-  let { open = $bindable(false), x, y, nodeLabel, ondelete, onunpatch, onclose }: Props = $props();
+  let {
+    open = $bindable(false),
+    x,
+    y,
+    nodeLabel,
+    nodeType = null,
+    ondelete,
+    onunpatch,
+    onclose,
+  }: Props = $props();
 
   // Window-level Escape handler — context menus traditionally don't take focus,
   // and the user expects Esc to dismiss regardless of where focus actually sits.
@@ -39,6 +51,13 @@
     onunpatch();
     onclose();
   }
+  function pickDocs() {
+    if (!nodeType) return;
+    // window.open with 'noopener' so the new tab can't reach back at this
+    // page via window.opener; matches the user's framing of the request.
+    window.open(`/docs/modules/${nodeType}`, '_blank', 'noopener');
+    onclose();
+  }
 </script>
 
 {#if open}
@@ -52,6 +71,12 @@
     aria-label="Module actions"
   >
     <div class="ctx-header">{nodeLabel}</div>
+    {#if nodeType}
+      <button class="ctx-item" onclick={pickDocs} role="menuitem">
+        Docs
+      </button>
+      <div class="ctx-sep" role="presentation"></div>
+    {/if}
     <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
       Unpatch all
     </button>
@@ -110,5 +135,10 @@
   .ctx-item.danger:hover,
   .ctx-item.danger:focus-visible {
     background: rgba(248, 113, 113, 0.12);
+  }
+  .ctx-sep {
+    height: 1px;
+    background: #404652;
+    margin: 4px 0;
   }
 </style>
