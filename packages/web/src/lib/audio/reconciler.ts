@@ -1,149 +1,144 @@
 // packages/web/src/lib/audio/reconciler.ts
 //
-// Auto-reactive reconciler. Subscribes to Yjs doc updates and diffs the
-// current SyncedStore patch graph against a snapshot of what the engine
-// currently has materialized. Applies adds/removes/param-changes per pass.
+// Auto-reactive reconciler. Subscribes to the shared PatchSnapshot bus
+// (`$lib/graph/snapshot`) and diffs the current snapshot against what the
+// engine currently has materialized. Applies adds/removes/param-changes
+// per pass.
 //
-// Day 7 design — runs after each Yjs update, batched via microtask so a
-// burst of mutations (e.g., adding 10 nodes via paste) collapses to one
-// reconcile call.
+// B3 (May 2026) — moved off `doc.on('update')` and `patchStore.nodes`
+// direct reads to the snapshot bus, sharing one subscription with the
+// Svelte UI. Both consumers see the same id-sorted ordering, eliminating
+// the "heard but didn't see" divergence between two browser windows.
+//
+// Within-pass ordering is now id-sorted at every bucket (removed-edges,
+// removed-nodes, added-nodes, added-edges, params) so two clients
+// applying identical Yjs ops drive engine.addNode in identical order
+// — the deterministic tiebreak that B3 calls for.
 
-import * as Y from 'yjs';
 import type { Edge, ModuleNode } from '$lib/graph/types';
 import type { PatchEngine } from './engine';
-import { patch as patchStore, ydoc } from '$lib/graph/store';
+import {
+  getDefaultSnapshotBus,
+  type PatchSnapshot,
+} from '$lib/graph/snapshot';
 
 interface ReconcilerHandle {
-  /** Run a reconcile pass immediately. */
+  /** Run a reconcile pass immediately against the current snapshot. */
   reconcile(): Promise<void>;
   /** Detach. */
   dispose(): void;
 }
 
-export function attachReconciler(engine: PatchEngine, doc: Y.Doc = ydoc): ReconcilerHandle {
-  // Cached snapshot of last-applied state, keyed by node/edge id.
+interface AttachOpts {
+  /** Override the default snapshot bus. Tests use this to pass a doc-scoped bus. */
+  bus?: ReturnType<typeof getDefaultSnapshotBus>;
+}
+
+export function attachReconciler(
+  engine: PatchEngine,
+  opts: AttachOpts = {},
+): ReconcilerHandle {
+  const bus = opts.bus ?? getDefaultSnapshotBus();
+
   const appliedNodes = new Map<string, ModuleNode>();
   const appliedEdges = new Map<string, Edge>();
 
+  let latest: PatchSnapshot = bus.current();
   let scheduled = false;
   let inFlight: Promise<void> = Promise.resolve();
 
-  /** Run reconcile through the in-flight chain so concurrent callers serialize.
-   * Failures are logged but don't poison the chain — otherwise one bad reconcile
-   * would permanently freeze the engine since every subsequent enqueue() would
-   * await the rejected promise (which never resolves). */
   function enqueue(): Promise<void> {
-    const next = inFlight.then(() => doReconcile());
+    const next = inFlight.then(() => doReconcile(latest));
     inFlight = next.catch((err) => {
       console.error('[reconciler] reconcile failed:', err);
     });
     return next;
   }
 
-  async function doReconcile(): Promise<void> {
-    // Snapshot primitive fields at iteration time. Async work between filter
-    // and engine.addNode would otherwise see undefined fields if the entry
-    // was deleted/mutated mid-flight. We keep `data` as a live reference for
-    // modules that need per-tick reads (e.g., Sequencer); when the patch
-    // entry is deleted, the engine disposes the handle and the live read
-    // stops via the handle's alive flag.
+  async function doReconcile(snap: PatchSnapshot): Promise<void> {
     const currentNodes = new Map<string, ModuleNode>();
-    for (const [id, n] of Object.entries(patchStore.nodes)) {
-      if (n && n.domain && n.type) {
-        currentNodes.set(id, {
-          id: n.id,
-          type: n.type,
-          domain: n.domain,
-          position: { x: n.position?.x ?? 0, y: n.position?.y ?? 0 },
-          params: { ...(n.params ?? {}) },
-          data: n.data,
-        });
-      }
-    }
+    for (const n of snap.nodes) currentNodes.set(n.id, n);
     const currentEdges = new Map<string, Edge>();
-    for (const [id, e] of Object.entries(patchStore.edges)) {
-      if (e && e.source && e.target) {
-        currentEdges.set(id, {
-          id: e.id,
-          source: { nodeId: e.source.nodeId, portId: e.source.portId },
-          target: { nodeId: e.target.nodeId, portId: e.target.portId },
-          sourceType: e.sourceType,
-          targetType: e.targetType,
-        });
-      }
-    }
+    for (const e of snap.edges) currentEdges.set(e.id, e);
+
+    // Within-pass id-sorted iteration so two clients run identical ops in
+    // identical order. The snapshot is already sorted, but applied* maps
+    // are insertion-order; we explicitly sort the key sets we iterate.
 
     // 1. Removed edges first (release node references).
-    for (const [id, prev] of appliedEdges) {
-      if (!currentEdges.has(id)) {
-        engine.removeEdge(prev, 'audio');
-        appliedEdges.delete(id);
-      }
+    const removedEdgeIds = [...appliedEdges.keys()]
+      .filter((id) => !currentEdges.has(id))
+      .sort();
+    for (const id of removedEdgeIds) {
+      const prev = appliedEdges.get(id)!;
+      engine.removeEdge(prev, 'audio');
+      appliedEdges.delete(id);
     }
 
     // 2. Removed nodes.
-    for (const [id, prev] of appliedNodes) {
-      if (!currentNodes.has(id)) {
-        engine.removeNode(prev);
-        appliedNodes.delete(id);
-      }
+    const removedNodeIds = [...appliedNodes.keys()]
+      .filter((id) => !currentNodes.has(id))
+      .sort();
+    for (const id of removedNodeIds) {
+      const prev = appliedNodes.get(id)!;
+      engine.removeNode(prev);
+      appliedNodes.delete(id);
     }
 
-    // 3. Added nodes (await — async factories).
-    for (const [id, node] of currentNodes) {
-      if (!appliedNodes.has(id)) {
-        await engine.addNode(node);
-        appliedNodes.set(id, snapshotNode(node));
-      }
+    // 3. Added nodes (await — async factories). Snapshot is sorted; we
+    // iterate it directly, skipping ids we already have.
+    for (const node of snap.nodes) {
+      if (appliedNodes.has(node.id)) continue;
+      await engine.addNode(node);
+      appliedNodes.set(node.id, snapshotNode(node));
     }
 
     // 4. Added edges.
-    for (const [id, edge] of currentEdges) {
-      if (!appliedEdges.has(id)) {
-        engine.addEdge(edge, 'audio');
-        appliedEdges.set(id, { ...edge });
-      }
+    for (const edge of snap.edges) {
+      if (appliedEdges.has(edge.id)) continue;
+      engine.addEdge(edge, 'audio');
+      appliedEdges.set(edge.id, { ...edge });
     }
 
     // 5. Param changes on existing nodes.
-    for (const [id, node] of currentNodes) {
-      const prev = appliedNodes.get(id);
+    for (const node of snap.nodes) {
+      const prev = appliedNodes.get(node.id);
       if (!prev) continue;
-      for (const [paramId, value] of Object.entries(node.params)) {
+      const paramKeys = Object.keys(node.params).sort();
+      for (const paramId of paramKeys) {
+        const value = node.params[paramId];
         if (prev.params[paramId] !== value) {
           engine.setParam(node, paramId, value);
         }
       }
-      appliedNodes.set(id, snapshotNode(node));
+      appliedNodes.set(node.id, snapshotNode(node));
     }
   }
 
-  function schedule() {
+  function schedule(snap: PatchSnapshot) {
+    latest = snap;
     if (scheduled) return;
     scheduled = true;
     queueMicrotask(() => {
       scheduled = false;
-      // Quietly absorb errors here — the explicit reconcile() caller will
-      // see them via its returned promise.
       enqueue().catch(() => {});
     });
   }
 
-  doc.on('update', schedule);
+  // The bus calls our listener synchronously with the current snapshot
+  // immediately, then again on each Yjs update. We schedule a microtask
+  // reconcile each time; the inFlight chain serializes them.
+  const unsubscribe = bus.subscribe((snap) => schedule(snap));
 
-  // Manual reconcile() also rides the same in-flight chain, so external
-  // callers can't race against the auto-scheduled microtask reconcile.
   return {
     reconcile: enqueue,
     dispose() {
-      doc.off('update', schedule);
+      unsubscribe();
     },
   };
 }
 
 function snapshotNode(node: ModuleNode): ModuleNode {
-  // structuredClone fails on SyncedStore/Yjs proxies; JSON round-trip is
-  // sufficient for our diff purposes (we only compare primitives).
   let dataCopy: Record<string, unknown> | undefined;
   if (node.data) {
     try {
