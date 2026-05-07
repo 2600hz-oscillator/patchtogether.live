@@ -5,16 +5,16 @@
 //     CF Pages project. nodejs_compat shims process.env to platform env.
 //   - vite dev (local):  process.env.DATABASE_URL or a sensible local default.
 //
-// The original B1 plan used Cloudflare Hyperdrive for ~30ms Worker→Fly
-// latency vs ~150ms naive, but Fly Postgres ships without TLS at the origin
-// and Hyperdrive requires TLS — fixing that needs Postgres to expose a
-// real cert. Direct connection is fine for beta load; revisit once RUM
-// shows query latency mattering.
+// Workers can't drive the standard `pg` package over the node:net shim — its
+// egress proxy returns "proxy request failed" because pg's socket use isn't
+// what cloudflare:sockets expects. We use @neondatabase/serverless's Pool,
+// which speaks Postgres-over-WebSocket and is Workers-native. API surface is
+// the same as pg.Pool / pg.Client so our query code is unchanged.
 //
-// Per-request Client (not Pool): Workers have no long-lived process to
-// hold a pool. Local dev pays the ~3ms TCP handshake per request, fine.
+// On Node (vite dev, the SvelteKit dev server) the same Pool works over a
+// real WebSocket — also fine. So one code path covers both runtimes.
 
-import pg from 'pg';
+import { Pool, type PoolClient } from '@neondatabase/serverless';
 
 function connectionString(): string {
   const url = process.env.DATABASE_URL;
@@ -22,20 +22,21 @@ function connectionString(): string {
   return 'postgresql://postgres:dev@localhost:54320/patchtogether_dev';
 }
 
-/** Open a per-request pg client. Caller must `client.end()` (typically in
- *  a try/finally — use `withDb` for the common case). */
-export async function getDb(): Promise<pg.Client> {
-  const client = new pg.Client({ connectionString: connectionString() });
-  await client.connect();
-  return client;
+// Module-scoped pool. On Workers a fresh isolate gets a fresh pool; the
+// pool's first query in that isolate pays the WebSocket handshake (~50ms),
+// subsequent queries reuse the connection within the same isolate.
+let _pool: Pool | undefined;
+function pool(): Pool {
+  if (!_pool) _pool = new Pool({ connectionString: connectionString() });
+  return _pool;
 }
 
-/** Convenience: open a client, run a query function, always close. */
-export async function withDb<T>(fn: (client: pg.Client) => Promise<T>): Promise<T> {
-  const client = await getDb();
+/** Open a per-request client, run a query function, always release. */
+export async function withDb<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool().connect();
   try {
     return await fn(client);
   } finally {
-    await client.end();
+    client.release();
   }
 }

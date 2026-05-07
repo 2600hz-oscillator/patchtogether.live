@@ -2,7 +2,12 @@
   // D15 Knob: vertical drag, Shift = ×0.1 fine, Cmd/Ctrl = ×0.01 fine,
   // double-click = reset to default, value tooltip on drag and on hover.
   // Curve maps display angle ↔ internal value while DSP stays linear (D15).
+  //
+  // Motorized: when readLive is provided and we're not dragging, the tick
+  // angle reflects the LIVE current value (intrinsic + connected CV) so
+  // patching an LFO into a knob's CV input visibly rotates the tick.
   import type { KnobCurve } from '$lib/graph/types';
+  import { onDestroy, untrack } from 'svelte';
 
   interface Props {
     value: number;
@@ -13,6 +18,11 @@
     units?: string;
     curve?: KnobCurve;
     onchange: (value: number) => void;
+    /**
+     * Optional live-value reader. If provided, the knob polls this each rAF
+     * (when not being dragged) and renders that as the tick angle.
+     */
+    readLive?: () => number | undefined;
   }
 
   let {
@@ -24,10 +34,43 @@
     units = '',
     curve = 'linear',
     onchange,
+    readLive,
   }: Props = $props();
 
   let dragging = $state(false);
   let hovering = $state(false);
+  // Display value for the tick. Driven by drag while user is interacting,
+  // by readLive when motorized + idle, by the prop value otherwise.
+  let liveValue = $state(untrack(() => value));
+  let raf: number | null = null;
+  let currentValue = $derived(value);
+
+  $effect(() => {
+    if (dragging) return;
+    if (!readLive) {
+      liveValue = currentValue;
+      return;
+    }
+    const reader = readLive;
+    function tick() {
+      const v = reader();
+      liveValue = v ?? currentValue;
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+      raf = null;
+    };
+  });
+
+  $effect(() => {
+    if (!dragging && !readLive) liveValue = currentValue;
+  });
+
+  onDestroy(() => {
+    if (raf !== null) cancelAnimationFrame(raf);
+  });
 
   // Map internal value ↔ normalized [0,1] using the declared curve.
   function valueToFrac(v: number): number {
@@ -56,7 +99,7 @@
     return min + fr * (max - min);
   }
 
-  let angle = $derived(-135 + valueToFrac(value) * 270);
+  let angle = $derived(-135 + valueToFrac(liveValue) * 270);
 
   let startY = 0;
   let startFrac = 0;
@@ -79,6 +122,7 @@
     const sensitivity = mod === 'fine' ? 1 / 20000 : mod === 'shift' ? 1 / 2000 : 1 / 200;
     const newFrac = startFrac + dy * sensitivity;
     const newValue = fracToValue(newFrac);
+    liveValue = newValue;
     if (newValue !== value) onchange(newValue);
   }
 
@@ -121,7 +165,7 @@
   role="presentation"
 >
   {#if dragging || hovering}
-    <div class="value">{format(value, units)}</div>
+    <div class="value">{format(liveValue, units)}</div>
   {/if}
   <div
     class="knob"
@@ -130,7 +174,7 @@
     aria-label={label}
     aria-valuemin={min}
     aria-valuemax={max}
-    aria-valuenow={value}
+    aria-valuenow={liveValue}
     onpointerdown={pointerdown}
     onpointermove={pointermove}
     onpointerup={pointerup}

@@ -55,6 +55,10 @@
   import DestroyCard from '$lib/ui/modules/DestroyCard.svelte';
   import QbrtCard from '$lib/ui/modules/QbrtCard.svelte';
   import DrummergirlCard from '$lib/ui/modules/DrummergirlCard.svelte';
+  import MeowboxCard from '$lib/ui/modules/MeowboxCard.svelte';
+  import MixmstrsCard from '$lib/ui/modules/MixmstrsCard.svelte';
+  import TimelordeCard from '$lib/ui/modules/TimelordeCard.svelte';
+  import CharlottesEchosCard from '$lib/ui/modules/CharlottesEchosCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import type { CableType } from '$lib/graph/types';
@@ -85,6 +89,10 @@
     destroy: DestroyCard,
     qbrt: QbrtCard,
     drummergirl: DrummergirlCard,
+    meowbox: MeowboxCard,
+    mixmstrs: MixmstrsCard,
+    timelorde: TimelordeCard,
+    charlottesEchos: CharlottesEchosCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
@@ -518,6 +526,22 @@
   }
 
   function spawnFromPalette(type: string) {
+    // Second-layer singleton guard. The palette filters at-cap modules out of
+    // the picker, but spawn paths that bypass it (drag-drop, keyboard short-
+    // cuts) still hit this. Pre-Yjs-write check inside transact closes the
+    // double-spawn race for a single client; the engine.addNode rejection is
+    // the ultimate defense for multiplayer.
+    const def = getModuleDef(type);
+    if (def?.maxInstances !== undefined) {
+      let existing = 0;
+      for (const node of Object.values(patch.nodes)) {
+        if (node && node.type === type) existing++;
+      }
+      if (existing >= def.maxInstances) {
+        trace(`refused spawn ${type}: at cap (${existing}/${def.maxInstances})`);
+        return;
+      }
+    }
     const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
     ydoc.transact(() => {
       patch.nodes[id] = {

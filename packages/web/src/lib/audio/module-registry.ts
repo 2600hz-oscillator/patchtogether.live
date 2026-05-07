@@ -19,6 +19,22 @@ export interface AudioModuleDef {
   params: readonly ParamDef[];
   schemaVersion: number;
   migrate?: (data: unknown, fromVersion: number) => unknown;
+  /**
+   * Hard cap on simultaneous instances per rackspace. Singleton modules
+   * (e.g. master mixer, master clock) set this to 1; omitted/undefined =
+   * unlimited. Enforced at three layers: palette filter (UI), spawn guard
+   * (Canvas), and engine.addNode (defensive — the only place that survives
+   * multiplayer races).
+   */
+  maxInstances?: number;
+  /**
+   * Optional declaration that two ports form a stereo pair for normaling
+   * purposes — when only the L side is patched, the engine virtually
+   * duplicates the connection to R. Encoded as [leftPortId, rightPortId]
+   * tuples. Inputs and outputs share the same set; the reconciler infers
+   * direction from the port's def.
+   */
+  stereoPairs?: readonly (readonly [string, string])[];
   factory: AudioModuleFactory;
 }
 

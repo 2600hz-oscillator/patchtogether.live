@@ -9,7 +9,7 @@
 // the SyncedStore graph and reconciles automatically lands in Day 7.
 
 import type { Edge, ModuleDef, ModuleNode } from '$lib/graph/types';
-import { getModuleDef } from './module-registry';
+import { getModuleDef, type AudioModuleDef } from './module-registry';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -118,6 +118,42 @@ export class AudioEngine implements DomainEngine {
       throw new Error(
         `AudioEngine.addNode: ${String(node.type)} has domain '${def.domain}', not 'audio'`
       );
+    }
+    // Third-layer singleton enforcement (defensive — outlives palette + spawn
+    // guards in the multiplayer race where two clients spawn concurrently).
+    // Tie-break: lexicographic-smaller-id wins. Loser's node id sorts later,
+    // we drop it and the reconciler retries no-op next tick.
+    const ad = def as AudioModuleDef;
+    if (ad.maxInstances !== undefined) {
+      const sameType: string[] = [];
+      for (const [id, h] of this.nodes) {
+        if (h.domain === 'audio') {
+          // The engine doesn't track type directly; cross-reference by node id.
+          // Naming convention from spawnFromPalette is `${type}-...` and saved
+          // patches retain that, but we should look at the live patch instead
+          // for correctness — but that creates a graph-store dep here. Use
+          // the engine's node-id prefix heuristic, which matches the spawn
+          // convention 100%; if a custom id is assigned, the palette + spawn
+          // guards still cover it and this is a defensive last line.
+          if (id.startsWith(`${node.type}-`)) sameType.push(id);
+        }
+      }
+      if (sameType.length >= ad.maxInstances) {
+        // Lex-tiebreak: if our id sorts LATER than every existing id, drop
+        // ourselves. If we'd win (sort first), kick the existing latest one.
+        const sortedExisting = [...sameType].sort();
+        if (node.id >= sortedExisting[sortedExisting.length - 1]!) {
+          // We're the loser. Skip add; the loser's UI sees no instance.
+          return;
+        }
+        // We win: evict the lex-largest existing instance to make room.
+        const evictId = sortedExisting[sortedExisting.length - 1]!;
+        const evictHandle = this.nodes.get(evictId);
+        if (evictHandle) {
+          evictHandle.dispose();
+          this.nodes.delete(evictId);
+        }
+      }
     }
     const handle = await (def.factory as AudioModuleFactory)(this.ctx, node);
     // Re-check after the await: another reconcile may have raced and added it.

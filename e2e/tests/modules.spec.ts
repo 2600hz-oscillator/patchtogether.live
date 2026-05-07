@@ -36,6 +36,17 @@ const MODULES: ModuleSpec[] = [
   //                              volume cv, decay cv) + 1 output (audio) = 7.
   { type: 'qbrt',         cardClass: 'svelte-flow__node-qbrt',         handleCount: 9, containsLabel: 'QBRT' },
   { type: 'drummergirl',  cardClass: 'svelte-flow__node-drummergirl',  handleCount: 7, containsLabel: 'DRUMMERGIRL' },
+  // MEOWBOX: 5 inputs (gate, pitch cv, morph cv, decay cv, level cv) + 2 outputs (L, R) = 7.
+  { type: 'meowbox',      cardClass: 'svelte-flow__node-meowbox',      handleCount: 7, containsLabel: 'MEOWBOX' },
+  // TIMELORDE: 1 input (clock) + 12 outputs (1x, 4x, 2x, 1/2 .. 1/64, swing) = 13.
+  { type: 'timelorde',    cardClass: 'svelte-flow__node-timelorde',    handleCount: 13, containsLabel: 'TIMELORDE' },
+  // CHARLOTTE'S ECHOS: 3 inputs (L, R, delay cv) + 2 outputs (L, R) = 5.
+  { type: 'charlottesEchos', cardClass: 'svelte-flow__node-charlottesEchos', handleCount: 5, containsLabel: "CHARLOTTE'S ECHOS" },
+  // MIXMSTRS: 12 audio inputs (4 ch stereo + 2 returns stereo) + 6 outputs
+  // (master L/R + 2 sends stereo) = 18 visible handles. Per-param CV inputs
+  // exist in the def but aren't rendered as visible jacks (37 jacks would
+  // overwhelm the card chrome) — they're reachable programmatically.
+  { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 18, containsLabel: 'MIXMSTRS' },
 ];
 
 test.describe.configure({ mode: 'parallel' });
