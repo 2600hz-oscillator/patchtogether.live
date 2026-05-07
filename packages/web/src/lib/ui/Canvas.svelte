@@ -64,6 +64,8 @@
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
+  import FlowBridge, { type FlowBridgeApi } from '$lib/ui/FlowBridge.svelte';
+  import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType } from '$lib/graph/types';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
@@ -167,6 +169,26 @@
           return loadEnvelopeFromObject(env);
         },
       };
+      // Right-click + Organize tests need flow-space coords + the same
+      // spawn path as the in-app palette (collision offset + maxInstances
+      // guard). Going through the in-app screenToFlowPosition keeps the
+      // test honest: if FlowBridge breaks, every test using __flow fails.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__flow = {
+        screenToFlowPosition: (p: { x: number; y: number }) =>
+          flowApi?.screenToFlowPosition(p) ?? p,
+        getInternalNode: (id: string) => flowApi?.getInternalNode(id),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__spawnAtFlowPos = (
+        type: string,
+        flowPos: { x: number; y: number },
+      ) => {
+        spawnFlowPos = flowPos;
+        spawnFromPalette(type);
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__organizeModules = () => organizeModules();
     });
   }
   function loadEnvelopeFromObject(env: unknown) {
@@ -477,23 +499,29 @@
   let paletteOpen = $state(false);
   let palettePos = $state({ x: 0, y: 0 });
   let spawnFlowPos = $state({ x: 0, y: 0 });
+  // The FlowBridge child of <SvelteFlow> calls useSvelteFlow() (which needs
+  // the xyflow context) and assigns its API here. We use it to convert the
+  // right-click client-space coords to flow-space coords so a spawned module
+  // anchors at the click point regardless of pan/zoom.
+  let flowApi = $state<FlowBridgeApi | null>(null);
 
   /** Right-click on canvas pane → open palette at cursor; spawn at that flow pos. */
   function onPaneContextMenu({ event }: { event: MouseEvent | TouchEvent }) {
     event.preventDefault();
     const me = event as MouseEvent;
     palettePos = { x: me.clientX, y: me.clientY };
-    // Approximate flow-pos when viewport is roughly at (0,0,1). For zoomed/panned
-    // viewports the spawn position will drift from the click location; users can
-    // drag to reposition or use the Controls fit-view to recenter.
-    spawnFlowPos = { x: me.clientX, y: me.clientY };
+    spawnFlowPos = flowApi
+      ? flowApi.screenToFlowPosition({ x: me.clientX, y: me.clientY })
+      : { x: me.clientX, y: me.clientY };
     paletteOpen = true;
   }
 
   /** Topbar button → open palette near top-left, spawn at canvas origin-ish. */
   function openPaletteFromButton() {
     palettePos = { x: 80, y: 60 };
-    spawnFlowPos = { x: 200, y: 200 };
+    spawnFlowPos = flowApi
+      ? flowApi.screenToFlowPosition({ x: 200, y: 200 })
+      : { x: 200, y: 200 };
     paletteOpen = true;
   }
 
@@ -552,6 +580,52 @@
     trace(`unpatched ${nodeId}`);
   }
 
+  /** "Organize modules" — declutter the current layout so no two cards overlap.
+   *  Preserves the user's overall arrangement (each node moves only as far as
+   *  needed to clear its neighbors) and grows the canvas bbox as required.
+   *  Multi-user mode writes to per-user layouts; single-user writes to the
+   *  shared node.position. Falls back to the snapshot's position + a default
+   *  card size when the xyflow measured size isn't available yet. */
+  function organizeModules() {
+    const snapNodes = snapshot.nodes;
+    if (snapNodes.length === 0) {
+      trace('organize: no modules to organize');
+      return;
+    }
+    const DEFAULT_W = 240;
+    const DEFAULT_H = 200;
+    const boxes: Box[] = snapNodes.map((n) => {
+      const internal = flowApi?.getInternalNode(n.id);
+      const measured = internal?.measured;
+      const pos = getNodePosition(ydoc, currentUserId, n.id, n.position);
+      return {
+        id: n.id,
+        x: pos.x,
+        y: pos.y,
+        w: measured?.width ?? DEFAULT_W,
+        h: measured?.height ?? DEFAULT_H,
+      };
+    });
+    const next = organizeLayout(boxes);
+    const byId = new Map(next.map((p) => [p.id, p]));
+    let movedCount = 0;
+    ydoc.transact(() => {
+      for (const b of boxes) {
+        const p = byId.get(b.id);
+        if (!p) continue;
+        if (Math.abs(p.x - b.x) < 0.5 && Math.abs(p.y - b.y) < 0.5) continue;
+        movedCount++;
+        if (currentUserId) {
+          setNodePosition(ydoc, currentUserId, b.id, { x: p.x, y: p.y });
+        } else {
+          const target = patch.nodes[b.id];
+          if (target) target.position = { x: p.x, y: p.y };
+        }
+      }
+    });
+    trace(`organize: nudged ${movedCount}/${boxes.length} module(s)`);
+  }
+
   function spawnFromPalette(type: string) {
     // Second-layer singleton guard. The palette filters at-cap modules out of
     // the picker, but spawn paths that bypass it (drag-drop, keyboard short-
@@ -570,12 +644,43 @@
       }
     }
     const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
+    // If the spawn point lands on top of an existing module (right-clicked
+    // a node, or repeatedly added at the same coords), offset down-right by
+    // STACK_OFFSET so the user can see the new card without first running
+    // Organize modules.
+    const STACK_OFFSET = 24;
+    let pos = { ...spawnFlowPos };
+    if (flowApi) {
+      const w = 240;
+      const h = 200;
+      let safety = 16;
+      while (safety-- > 0) {
+        let bumped = false;
+        for (const existing of Object.values(patch.nodes)) {
+          if (!existing) continue;
+          const epos = getNodePosition(
+            ydoc, currentUserId, existing.id, existing.position,
+          );
+          const internal = flowApi.getInternalNode(existing.id);
+          const ew = internal?.measured?.width ?? 240;
+          const eh = internal?.measured?.height ?? 200;
+          const xOverlap = Math.min(pos.x + w, epos.x + ew) - Math.max(pos.x, epos.x);
+          const yOverlap = Math.min(pos.y + h, epos.y + eh) - Math.max(pos.y, epos.y);
+          if (xOverlap > 0 && yOverlap > 0) {
+            pos = { x: pos.x + STACK_OFFSET, y: pos.y + STACK_OFFSET };
+            bumped = true;
+            break;
+          }
+        }
+        if (!bumped) break;
+      }
+    }
     ydoc.transact(() => {
       patch.nodes[id] = {
         id,
         type,
         domain: 'audio',
-        position: { ...spawnFlowPos },
+        position: pos,
         params: {},
       };
     }, LOCAL_ORIGIN);
@@ -898,6 +1003,7 @@
           nodeBorderRadius={2}
         />
       {/if}
+      <FlowBridge bind:api={flowApi} />
     </SvelteFlow>
     <button
       type="button"
@@ -943,6 +1049,7 @@
   x={palettePos.x}
   y={palettePos.y}
   onselect={spawnFromPalette}
+  onorganize={organizeModules}
   onclose={() => (paletteOpen = false)}
 />
 
