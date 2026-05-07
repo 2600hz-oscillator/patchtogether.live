@@ -23,6 +23,7 @@ import { mixmstrsDef } from './mixmstrs';
 import { timelordeDef } from './timelorde';
 import { charlottesEchosDef } from './charlottes-echos';
 import { plaitsFmDef } from './plaits-fm';
+import { dx7Def } from './dx7';
 
 let registered = false;
 
@@ -49,6 +50,7 @@ export function registerAudioModules(): void {
   registerModule(timelordeDef);
   registerModule(charlottesEchosDef);
   registerModule(plaitsFmDef);
+  registerModule(dx7Def);
 }
 
 registerAudioModules();

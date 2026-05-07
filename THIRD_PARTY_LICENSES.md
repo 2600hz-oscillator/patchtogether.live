@@ -11,7 +11,18 @@ other vendored trees that may be added later.
 Vendored at: `packages/dsp/vendor/plaits/plaits/**`
 Upstream:    https://github.com/pichenettes/eurorack/tree/master/plaits
 
-> Copyright 2016 Emilie Gillet.
+Per-file headers in the vendored source carry copyright dates in 2016 (engine
+scaffolding, FMEngine) and 2021 (engine2/six_op_engine and dsp/fm/* — the
+6-op DX7 emulation). All MIT.
+
+NB: `packages/dsp/vendor/plaits/plaits/resources.cc` declares Plaits' curated
+DX7 patch banks (`syx_bank_0..2`, `fm_patches_table`). patchtogether.live does
+NOT use these — the wasm linker drops them at -O2 because nothing in our
+vendored subset references them. The DX7 module ships with an in-house
+default patch generated programmatically in
+`packages/dsp/src/plaits-glue/worklet.cc`.
+
+> Copyright 2016, 2021 Emilie Gillet.
 >
 > Author: Emilie Gillet (emilie.o.gillet@gmail.com)
 >

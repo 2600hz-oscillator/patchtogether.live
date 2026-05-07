@@ -32,13 +32,29 @@ const FILES = [
   // Plaits — DSP scaffolding
   ['plaits/dsp/dsp.h',                              'plaits/dsp/dsp.h'],
   ['plaits/dsp/engine/engine.h',                    'plaits/dsp/engine/engine.h'],
-  // FM engine
+  // FM engine (PR-27)
   ['plaits/dsp/engine/fm_engine.h',                 'plaits/dsp/engine/fm_engine.h'],
   ['plaits/dsp/engine/fm_engine.cc',                'plaits/dsp/engine/fm_engine.cc'],
   // FM-engine deps
   ['plaits/dsp/oscillator/sine_oscillator.h',       'plaits/dsp/oscillator/sine_oscillator.h'],
   ['plaits/dsp/downsampler/4x_downsampler.h',       'plaits/dsp/downsampler/4x_downsampler.h'],
-  // Resources (LUTs)
+  // 6-op DX7 engine (this PR — Plaits' canonical full-DX7 emulation,
+  // exposed in patchtogether.live as the DX7 module).
+  ['plaits/dsp/engine2/six_op_engine.h',            'plaits/dsp/engine2/six_op_engine.h'],
+  ['plaits/dsp/engine2/six_op_engine.cc',           'plaits/dsp/engine2/six_op_engine.cc'],
+  ['plaits/dsp/fm/algorithms.h',                    'plaits/dsp/fm/algorithms.h'],
+  ['plaits/dsp/fm/algorithms.cc',                   'plaits/dsp/fm/algorithms.cc'],
+  ['plaits/dsp/fm/dx_units.h',                      'plaits/dsp/fm/dx_units.h'],
+  ['plaits/dsp/fm/dx_units.cc',                     'plaits/dsp/fm/dx_units.cc'],
+  ['plaits/dsp/fm/envelope.h',                      'plaits/dsp/fm/envelope.h'],
+  ['plaits/dsp/fm/lfo.h',                           'plaits/dsp/fm/lfo.h'],
+  ['plaits/dsp/fm/operator.h',                      'plaits/dsp/fm/operator.h'],
+  ['plaits/dsp/fm/patch.h',                         'plaits/dsp/fm/patch.h'],
+  ['plaits/dsp/fm/voice.h',                         'plaits/dsp/fm/voice.h'],
+  // Resources (LUTs). NB: this file also contains plaits' `syx_bank_0/1/2`
+  // arrays of curated DX7 patches — patches we deliberately do NOT use
+  // (they include Yamaha factory ROM data of uncertain redistribution
+  // status). The wasm linker DCEs the unused statics at -O2.
   ['plaits/resources.h',                            'plaits/resources.h'],
   ['plaits/resources.cc',                           'plaits/resources.cc'],
   // stmlib core
@@ -48,7 +64,10 @@ const FILES = [
   ['stmlib/dsp/units.cc',                           'stmlib/dsp/units.cc'],
   ['stmlib/dsp/parameter_interpolator.h',           'stmlib/dsp/parameter_interpolator.h'],
   ['stmlib/dsp/rsqrt.h',                            'stmlib/dsp/rsqrt.h'],
+  ['stmlib/dsp/hysteresis_quantizer.h',             'stmlib/dsp/hysteresis_quantizer.h'],
   ['stmlib/utils/buffer_allocator.h',               'stmlib/utils/buffer_allocator.h'],
+  ['stmlib/utils/random.h',                         'stmlib/utils/random.h'],
+  ['stmlib/utils/random.cc',                        'stmlib/utils/random.cc'],
 ];
 
 async function copyOne(src, dst) {

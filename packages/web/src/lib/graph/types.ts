@@ -35,7 +35,8 @@ type StandardModuleType =
   | 'mixmstrs'
   | 'timelorde'
   | 'charlottesEchos'
-  | 'plaitsFm';
+  | 'plaitsFm'
+  | 'dx7';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

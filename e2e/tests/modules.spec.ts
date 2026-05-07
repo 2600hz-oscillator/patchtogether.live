@@ -49,6 +49,8 @@ const MODULES: ModuleSpec[] = [
   { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 18, containsLabel: 'MIXMSTRS' },
   // PlaitsFM: 2 inputs (pitch, trigger) + 2 outputs (audio, sub) = 4.
   { type: 'plaitsFm',     cardClass: 'svelte-flow__node-plaitsFm',     handleCount: 4, containsLabel: 'PlaitsFM' },
+  // DX7 (6-op SixOpEngine): 2 inputs (pitch, trigger) + 2 outputs (audio, aux) = 4.
+  { type: 'dx7',          cardClass: 'svelte-flow__node-dx7',          handleCount: 4, containsLabel: 'DX7' },
 ];
 
 test.describe.configure({ mode: 'parallel' });
