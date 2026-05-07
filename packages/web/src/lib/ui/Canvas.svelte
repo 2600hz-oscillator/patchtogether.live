@@ -58,6 +58,16 @@
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import type { CableType } from '$lib/graph/types';
+  import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
+
+  // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
+  // passes the current user's id so per-user layouts are scoped correctly.
+  // On the public canvas at `/`, this stays undefined and the layout
+  // helpers fall through to node.position (single-user behavior preserved).
+  interface Props {
+    currentUserId?: string;
+  }
+  let { currentUserId }: Props = $props();
 
   const nodeTypes = {
     analogVco: AnalogVcoCard,
@@ -108,6 +118,15 @@
       // boot to avoid maintaining a stale catalog mirror.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__listModuleDefs = listModuleDefs;
+      // Stage-B Playwright @collab tests use these to drive the
+      // multi-user provider attach + per-user layout reads without
+      // routing through Clerk auth. See e2e/tests/collab.spec.ts.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__getNodePosition = (userId: string | undefined, nodeId: string, fb: { x: number; y: number }) =>
+        getNodePosition(ydoc, userId, nodeId, fb);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__setNodePosition = (userId: string | undefined, nodeId: string, pos: { x: number; y: number }) =>
+        setNodePosition(ydoc, userId, nodeId, pos);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__persistence = {
         makeEnvelope,
@@ -154,7 +173,10 @@
       .map(([id, n]) => ({
         id,
         type: n.type,
-        position: { x: n.position.x, y: n.position.y },
+        // Per-user layouts: getNodePosition returns the user's override
+        // (when in multiplayer) or falls back to n.position (when single-
+        // user OR when this user has no entry yet).
+        position: getNodePosition(ydoc, currentUserId, id, { x: n.position.x, y: n.position.y }),
         data: { node: n },
       }));
   });
@@ -387,15 +409,30 @@
     trace(`deleted ${payload.nodes.length} node(s), ${payload.edges.length} edge(s)`);
   }
 
-  /** User finished dragging one or more module cards. Persist new positions. */
+  /** User finished dragging one or more module cards. Persist new positions.
+   *
+   *  Multi-user mode (currentUserId defined): writes to layouts[userId][nodeId]
+   *  via setNodePosition. Other users do NOT see the move.
+   *
+   *  Single-user mode (currentUserId undefined): writes to the shared
+   *  node.position so a single-tab user sees layout persisted across
+   *  reloads. (No-op for layouts since the helper short-circuits on
+   *  undefined userId.) */
   function handleNodeDragStop({ targetNode, nodes }: { targetNode: FlowNode | null; nodes: FlowNode[] }) {
     const moved = nodes.length > 0 ? nodes : targetNode ? [targetNode] : [];
     if (moved.length === 0) return;
     ydoc.transact(() => {
       for (const n of moved) {
-        const target = patch.nodes[n.id];
-        if (target) {
-          target.position = { x: n.position.x, y: n.position.y };
+        if (currentUserId) {
+          // Multi-user: write to per-user layout map only.
+          setNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
+        } else {
+          // Single-user: write to the shared node.position (preserves
+          // backward compat with patches saved pre-layouts-split).
+          const target = patch.nodes[n.id];
+          if (target) {
+            target.position = { x: n.position.x, y: n.position.y };
+          }
         }
       }
     });

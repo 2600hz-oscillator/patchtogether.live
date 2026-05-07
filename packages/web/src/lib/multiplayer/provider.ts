@@ -35,9 +35,11 @@ const DEFAULT_WS_URL = (() => {
   // SvelteKit exposes Vite env to client code via import.meta.env. The
   // VITE_SERVER_WS_URL var is read at build time. In dev the default
   // points at the local Hocuspocus server; in prod it points at the
-  // deployed Fly.io instance.
+  // deployed Fly.io instance. Port 1235 (not Hocuspocus's documented
+  // 1234) to avoid colliding with BitwigStudio + other DAWs that reserve
+  // 1234 for OSC.
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
-  return env?.VITE_SERVER_WS_URL ?? 'ws://localhost:1234';
+  return env?.VITE_SERVER_WS_URL ?? 'ws://localhost:1235';
 })();
 
 export function attachProvider(opts: AttachProviderOptions): HocuspocusProvider {
