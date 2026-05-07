@@ -22,6 +22,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
+    services:
+      # Postgres for the persistence layer (Stage B1+). Both the SvelteKit
+      # webServer and the Hocuspocus server read DATABASE_URL.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+
     steps:
       - name: Checkout (with LFS for ART/VRT baselines)
         uses: actions/checkout@v4
@@ -46,6 +66,9 @@ jobs:
 
       - name: Build DSP (Faust → WASM)
         run: flox activate -- task dsp:build
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
 
       - name: Run full CI suite (typecheck + unit + ART + E2E)
         run: flox activate -- task ci
