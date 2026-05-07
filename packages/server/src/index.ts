@@ -10,6 +10,7 @@
 // persistence + per-user layout enforcement land in subsequent slices.
 
 import { Server } from '@hocuspocus/server';
+import { AUTH_REJECTION, verifyToken } from './auth';
 import { CAPACITY_REJECTION, createSlotTracker } from './capacity';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
@@ -28,38 +29,39 @@ Server.configure({
   address: HOST,
 
   // Auth hook runs BEFORE the WS is fully established, so it's the
-  // right place to gate capacity: throwing here aborts the handshake
-  // and the client gets `onAuthenticationFailed`. Slots acquired here
-  // are released in onDisconnect, which still fires for a connection
-  // that auth'd but then dropped before fully connecting.
+  // right place to gate auth + capacity: throwing here aborts the
+  // handshake and the client gets `onAuthenticationFailed`. Slots
+  // acquired here are released in onDisconnect, which still fires for
+  // a connection that auth'd but then dropped before fully connecting.
   //
-  // STAGE-B-PR-A: token verification stub-accepts. STAGE-B-PR-D will:
-  // verify Clerk session via @clerk/backend OR a valid invite-code
-  // token from PR-B-c, then populate context.userId for later hooks.
+  // Order matters: verify the token first, THEN reserve a slot. If we
+  // reserved before verifying, an unauth'd attacker spamming connections
+  // would fill the cap and lock out legitimate users.
   async onAuthenticate(data) {
-    if (!slots.acquire(data.documentName, data.socketId)) {
+    const auth = await verifyToken(data.token ?? '', data.documentName);
+    if (!auth.ok) {
       // eslint-disable-next-line no-console
-      console.log(`[hocuspocus] reject (full): doc=${data.documentName} sock=${data.socketId}`);
-      // Hocuspocus's auth-rejection wire format pulls `error.reason`
-      // (NOT `error.message`) and writes it as the PermissionDenied
-      // payload — so the rejection string the client sees is whatever
-      // we set here. The provider's onAuthenticationFailed handler
-      // matches against CAPACITY_REJECTION_CODE to route the user to
-      // the /full page.
+      console.log(`[hocuspocus] reject (${auth.reason}): doc=${data.documentName} sock=${data.socketId}`);
       // No message arg → `.message` is the empty string. Hocuspocus's
       // hooks() catch handler does `if (error?.message) console.error(…)`
       // — empty message skips that auto-log so we don't get a duplicate
-      // of our own `reject (full)` line above.
+      // of our own line above. `.reason` is what reaches the client via
+      // the PermissionDenied wire format.
+      const err = new Error() as Error & { reason: string };
+      err.reason = auth.reason === 'invalid-format' ? AUTH_REJECTION.invalidFormat : AUTH_REJECTION.unauthorized;
+      throw err;
+    }
+    if (!slots.acquire(data.documentName, data.socketId)) {
+      // eslint-disable-next-line no-console
+      console.log(`[hocuspocus] reject (full): doc=${data.documentName} sock=${data.socketId}`);
       const err = new Error() as Error & { reason: string };
       err.reason = CAPACITY_REJECTION.code;
       throw err;
     }
     return {
       // Anything assigned here lands on `connection.context` for later hooks.
-      // PR-D will populate userId from the Clerk JWT or an anon invite code
-      // and use it for membership checks.
-      userId: 'stub-user',
-      role: 'performer' as const,
+      userId: auth.userId,
+      role: auth.role,
     };
   },
 

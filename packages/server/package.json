@@ -13,6 +13,7 @@
     "test": "vitest run --reporter=default"
   },
   "dependencies": {
+    "@clerk/backend": "^2.20.0",
     "@hocuspocus/server": "^2.13.5",
     "yjs": "^13.6.0"
   },
