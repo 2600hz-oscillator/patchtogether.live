@@ -63,18 +63,26 @@
     min-height: 230px;
     background: var(--module-bg);
     border: 1px solid #2a2f3a;
-    border-radius: 6px;
+    border-radius: 2px;
     color: var(--text);
     padding-top: 18px;
     padding-bottom: 14px;
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
+  }
+  :global(.svelte-flow__node:hover) .card {
+    border-color: var(--accent-dim);
+  }
+  :global(.svelte-flow__node.selected) .card {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .stripe {
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 2px;
-    border-radius: 6px 6px 0 0;
+    border-radius: 2px 2px 0 0;
   }
   .title {
     font-size: 0.85rem;

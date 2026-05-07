@@ -78,7 +78,7 @@
     animation: audio-gate-fade-in 180ms ease-out;
   }
   .audio-gate:focus-visible {
-    outline: 2px solid var(--cable-cv);
+    outline: 2px solid var(--accent);
     outline-offset: -4px;
   }
   .audio-gate-inner {
