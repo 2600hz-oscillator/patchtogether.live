@@ -146,6 +146,12 @@ jobs:
           restore-keys: ${{ runner.os }}-npm-
       - run: flox activate -- task install
       - run: flox activate -- task build
+        env:
+          # VITE_* vars are baked into the client bundle at build time;
+          # CF Pages dashboard env vars are runtime-only and never reach
+          # the bundle. Set the Hocuspocus WS URL per tier here so the
+          # client knows where to connect.
+          VITE_SERVER_WS_URL: wss://patchtogether-server.fly.dev
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -174,6 +180,9 @@ jobs:
           restore-keys: ${{ runner.os }}-npm-
       - run: flox activate -- task install
       - run: flox activate -- task build
+        env:
+          # Previews share the autotest tier's Hocuspocus instance.
+          VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -212,6 +221,8 @@ jobs:
           restore-keys: ${{ runner.os }}-npm-
       - run: flox activate -- task install
       - run: flox activate -- task build
+        env:
+          VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -243,6 +254,8 @@ jobs:
           restore-keys: ${{ runner.os }}-npm-
       - run: flox activate -- task install
       - run: flox activate -- task build
+        env:
+          VITE_SERVER_WS_URL: wss://patchtogether-server-dev.fly.dev
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
