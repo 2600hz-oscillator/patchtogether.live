@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { UserButton } from 'svelte-clerk';
+  import { UserButton, SignOutButton } from 'svelte-clerk';
 
   let { data } = $props();
   let creating = $state(false);
@@ -36,6 +36,9 @@
     <h1><a href="/">patchtogether.live</a></h1>
     <span class="caption">Your rackspaces</span>
     <div class="actions">
+      <SignOutButton redirectUrl="/">
+        <button class="signout" title="Sign out">Sign out</button>
+      </SignOutButton>
       <UserButton />
     </div>
   </header>
@@ -101,6 +104,25 @@
     color: var(--text-dim);
     font-size: 0.85rem;
     flex: 1;
+  }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .signout {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid #404652;
+    padding: 6px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+  }
+  .signout:hover {
+    background: #2a2f3a;
+    color: var(--text);
   }
   main {
     padding: 24px;
