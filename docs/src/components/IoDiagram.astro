@@ -1,0 +1,80 @@
+---
+// IoDiagram.astro
+//
+// Tron-style I/O diagram for one module. Inputs render as labeled pins on the
+// left, outputs on the right. Cable types color-coded:
+//   audio = electric blue   cv    = orange
+//   gate  = magenta         pitch = cyan-green
+//
+// Auto-sizing: height grows with max(inputs, outputs).
+
+const { mod } = Astro.props;
+
+const inputs = mod.inputs || [];
+const outputs = mod.outputs || [];
+const rowH = 16;
+const headerH = 36;
+const padTop = 14;
+const padBottom = 14;
+const innerH = Math.max(inputs.length, outputs.length, 1) * rowH + 2;
+const totalH = headerH + padTop + innerH + padBottom + 22; // +22 for legend
+const W = 380;
+const boxX = 80;
+const boxW = W - 160;
+const boxY = headerH + padTop;
+const boxH = innerH;
+
+const pinClass = (t) => `pin pin-${t}`;
+---
+
+<svg class="io-svg" viewBox={`0 0 ${W} ${totalH}`} role="img" aria-label={`${mod.label} I/O`}>
+  <text x={W / 2} y={20} class="header" text-anchor="middle">
+    {mod.label}{mod.maxInstances === 1 ? ' · singleton' : ''}
+  </text>
+
+  <rect class="box" x={boxX} y={boxY} width={boxW} height={boxH} />
+
+  {inputs.map((p, i) => {
+    const y = boxY + 8 + i * rowH;
+    return (
+      <>
+        <line class={pinClass(p.type)} x1={4} y1={y} x2={boxX} y2={y} />
+        <circle class={pinClass(p.type)} cx={boxX} cy={y} r={2.4} fill="currentColor" />
+        <text class="label-name" x={boxX + 6} y={y + 3}>{p.id}</text>
+        <text class="label-type" x={4} y={y - 3}>{p.type}</text>
+      </>
+    );
+  })}
+
+  {outputs.map((p, i) => {
+    const y = boxY + 8 + i * rowH;
+    const x2 = W - 4;
+    return (
+      <>
+        <line class={pinClass(p.type)} x1={boxX + boxW} y1={y} x2={x2} y2={y} />
+        <circle class={pinClass(p.type)} cx={boxX + boxW} cy={y} r={2.4} fill="currentColor" />
+        <text class="label-name" x={boxX + boxW - 6} y={y + 3} text-anchor="end">{p.id}</text>
+        <text class="label-type" x={x2} y={y - 3} text-anchor="end">{p.type}</text>
+      </>
+    );
+  })}
+
+  <g transform={`translate(${boxX}, ${totalH - 14})`}>
+    <line class="pin-audio" x1={0}   y1={4} x2={14}  y2={4} />
+    <text class="legend-text" x={18} y={7}>audio</text>
+    <line class="pin-cv"    x1={56}  y1={4} x2={70}  y2={4} />
+    <text class="legend-text" x={74} y={7}>cv</text>
+    <line class="pin-gate"  x1={102} y1={4} x2={116} y2={4} />
+    <text class="legend-text" x={120} y={7}>gate</text>
+    <line class="pin-pitch" x1={150} y1={4} x2={164} y2={4} />
+    <text class="legend-text" x={168} y={7}>pitch</text>
+  </g>
+</svg>
+
+<style>
+  .io-svg circle { stroke: currentColor; }
+  .io-svg .pin-audio    { color: #00f0ff; }
+  .io-svg .pin-cv       { color: #ff8a00; }
+  .io-svg .pin-gate     { color: #ff3df0; }
+  .io-svg .pin-pitch    { color: #6effd6; }
+</style>
