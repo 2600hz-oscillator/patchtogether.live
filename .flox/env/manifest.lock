@@ -10,6 +10,9 @@
         "pkg-path": "faust2",
         "version": "2.85.5"
       },
+      "flyctl": {
+        "pkg-path": "flyctl"
+      },
       "gh": {
         "pkg-path": "gh"
       },
@@ -50,13 +53,13 @@
       "description": "Extremely fast JavaScript bundler",
       "install_id": "esbuild",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "esbuild-0.27.2",
       "pname": "esbuild",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:10:22.931953Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:07:16.146949Z",
       "stabilities": [
         "unstable"
       ],
@@ -79,13 +82,13 @@
       "description": "Extremely fast JavaScript bundler",
       "install_id": "esbuild",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "esbuild-0.27.2",
       "pname": "esbuild",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:44:34.750062Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:43:45.394498Z",
       "stabilities": [
         "unstable"
       ],
@@ -108,13 +111,13 @@
       "description": "Extremely fast JavaScript bundler",
       "install_id": "esbuild",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "esbuild-0.27.2",
       "pname": "esbuild",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:15:55.865236Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:16:10.070182Z",
       "stabilities": [
         "unstable"
       ],
@@ -137,13 +140,13 @@
       "description": "Extremely fast JavaScript bundler",
       "install_id": "esbuild",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "esbuild-0.27.2",
       "pname": "esbuild",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:52:11.996713Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:52:24.177816Z",
       "stabilities": [
         "unstable"
       ],
@@ -166,13 +169,13 @@
       "description": "Functional programming language for realtime audio signal processing",
       "install_id": "faust2",
       "license": "GPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "faust-2.85.5",
       "pname": "faust2",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:10:22.983824Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:07:16.200369Z",
       "stabilities": [
         "unstable"
       ],
@@ -195,13 +198,13 @@
       "description": "Functional programming language for realtime audio signal processing",
       "install_id": "faust2",
       "license": "GPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "faust-2.85.5",
       "pname": "faust2",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:44:34.840423Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:43:45.483244Z",
       "stabilities": [
         "unstable"
       ],
@@ -224,13 +227,13 @@
       "description": "Functional programming language for realtime audio signal processing",
       "install_id": "faust2",
       "license": "GPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "faust-2.85.5",
       "pname": "faust2",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:15:55.917074Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:16:10.123294Z",
       "stabilities": [
         "unstable"
       ],
@@ -253,13 +256,13 @@
       "description": "Functional programming language for realtime audio signal processing",
       "install_id": "faust2",
       "license": "GPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "faust-2.85.5",
       "pname": "faust2",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:52:12.112021Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:52:24.288523Z",
       "stabilities": [
         "unstable"
       ],
@@ -276,25 +279,142 @@
       "priority": 5
     },
     {
+      "attr_path": "flyctl",
+      "broken": false,
+      "derivation": "/nix/store/r5lf7a1yw7c793dvcvgn609ir2xk25qh-flyctl-0.4.42.drv",
+      "description": "Command line tools for fly.io services",
+      "install_id": "flyctl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "name": "flyctl-0.4.42",
+      "pname": "flyctl",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:07:16.302400Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.4.42",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/yf3nqfkfdjmjdm8mvmidlcfswwk55f98-flyctl-0.4.42"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "flyctl",
+      "broken": false,
+      "derivation": "/nix/store/7qf0l2x4p1m1jgrb7ss6ydkns5hc6fli-flyctl-0.4.42.drv",
+      "description": "Command line tools for fly.io services",
+      "install_id": "flyctl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "name": "flyctl-0.4.42",
+      "pname": "flyctl",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:43:45.657211Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.4.42",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/cm3nsdbrly9d2l7mkijb5dihlbxrv4w2-flyctl-0.4.42"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "flyctl",
+      "broken": false,
+      "derivation": "/nix/store/737a2hdg1vcxi301a2z60mpafibqznxk-flyctl-0.4.42.drv",
+      "description": "Command line tools for fly.io services",
+      "install_id": "flyctl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "name": "flyctl-0.4.42",
+      "pname": "flyctl",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:16:10.226896Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.4.42",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/8g50q7qx3ssfjzds219ccnnl9n23qcf8-flyctl-0.4.42"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "flyctl",
+      "broken": false,
+      "derivation": "/nix/store/qz8jp4nldzg4k82wwcw4h7sh3327311c-flyctl-0.4.42.drv",
+      "description": "Command line tools for fly.io services",
+      "install_id": "flyctl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "name": "flyctl-0.4.42",
+      "pname": "flyctl",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:52:24.472371Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.4.42",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/irc2pa5wsxcy8nfrp8gz20dygnvkal52-flyctl-0.4.42"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
       "attr_path": "gh",
       "broken": false,
       "derivation": "/nix/store/43bxjypc0n9qj4krksnjyqv1kwwv3vag-gh-2.92.0.drv",
       "description": "GitHub CLI tool",
       "install_id": "gh",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "gh-2.92.0",
       "pname": "gh",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:10:23.263740Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:07:16.478199Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
       "version": "2.92.0",
       "outputs_to_install": [
+        "out",
         "out"
       ],
       "outputs": {
@@ -311,19 +431,20 @@
       "description": "GitHub CLI tool",
       "install_id": "gh",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "gh-2.92.0",
       "pname": "gh",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:44:35.295753Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:43:45.932583Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
       "version": "2.92.0",
       "outputs_to_install": [
+        "out",
         "out"
       ],
       "outputs": {
@@ -340,19 +461,20 @@
       "description": "GitHub CLI tool",
       "install_id": "gh",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "gh-2.92.0",
       "pname": "gh",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:15:56.183272Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:16:10.390996Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
       "version": "2.92.0",
       "outputs_to_install": [
+        "out",
         "out"
       ],
       "outputs": {
@@ -369,19 +491,20 @@
       "description": "GitHub CLI tool",
       "install_id": "gh",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "gh-2.92.0",
       "pname": "gh",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:52:12.610880Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:52:24.765092Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
       "version": "2.92.0",
       "outputs_to_install": [
+        "out",
         "out"
       ],
       "outputs": {
@@ -398,13 +521,13 @@
       "description": "Git extension for versioning large files",
       "install_id": "git-lfs",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "git-lfs-3.7.1",
       "pname": "git-lfs",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:10:23.325683Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:07:16.536140Z",
       "stabilities": [
         "unstable"
       ],
@@ -427,13 +550,13 @@
       "description": "Git extension for versioning large files",
       "install_id": "git-lfs",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "git-lfs-3.7.1",
       "pname": "git-lfs",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:44:35.376992Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:43:46.011964Z",
       "stabilities": [
         "unstable"
       ],
@@ -456,13 +579,13 @@
       "description": "Git extension for versioning large files",
       "install_id": "git-lfs",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "git-lfs-3.7.1",
       "pname": "git-lfs",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:15:56.242720Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:16:10.447681Z",
       "stabilities": [
         "unstable"
       ],
@@ -485,13 +608,13 @@
       "description": "Git extension for versioning large files",
       "install_id": "git-lfs",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "git-lfs-3.7.1",
       "pname": "git-lfs",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:52:12.695738Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:52:24.847856Z",
       "stabilities": [
         "unstable"
       ],
@@ -514,13 +637,13 @@
       "description": "Task runner / simpler Make alternative written in Go",
       "install_id": "go-task",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "go-task-3.48.0",
       "pname": "go-task",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:10:23.449018Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:07:16.665937Z",
       "stabilities": [
         "unstable"
       ],
@@ -543,13 +666,13 @@
       "description": "Task runner / simpler Make alternative written in Go",
       "install_id": "go-task",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "go-task-3.48.0",
       "pname": "go-task",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:44:36.095820Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:43:46.695792Z",
       "stabilities": [
         "unstable"
       ],
@@ -572,13 +695,13 @@
       "description": "Task runner / simpler Make alternative written in Go",
       "install_id": "go-task",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "go-task-3.48.0",
       "pname": "go-task",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:15:56.412187Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:16:10.602588Z",
       "stabilities": [
         "unstable"
       ],
@@ -601,13 +724,13 @@
       "description": "Task runner / simpler Make alternative written in Go",
       "install_id": "go-task",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "go-task-3.48.0",
       "pname": "go-task",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:52:13.437538Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:52:25.589580Z",
       "stabilities": [
         "unstable"
       ],
@@ -630,13 +753,13 @@
       "description": "Event-driven I/O framework for the V8 JavaScript engine",
       "install_id": "nodejs_22",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "nodejs-22.22.2",
       "pname": "nodejs_22",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:10:46.947179Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:07:39.837666Z",
       "stabilities": [
         "unstable"
       ],
@@ -660,13 +783,13 @@
       "description": "Event-driven I/O framework for the V8 JavaScript engine",
       "install_id": "nodejs_22",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "nodejs-22.22.2",
       "pname": "nodejs_22",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T08:45:12.088639Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:44:22.689758Z",
       "stabilities": [
         "unstable"
       ],
@@ -690,13 +813,13 @@
       "description": "Event-driven I/O framework for the V8 JavaScript engine",
       "install_id": "nodejs_22",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "nodejs-22.22.2",
       "pname": "nodejs_22",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:16:20.084871Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:16:33.775886Z",
       "stabilities": [
         "unstable"
       ],
@@ -720,13 +843,13 @@
       "description": "Event-driven I/O framework for the V8 JavaScript engine",
       "install_id": "nodejs_22",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=15f4ee454b1dce334612fa6843b3e05cf546efab",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
       "name": "nodejs-22.22.2",
       "pname": "nodejs_22",
-      "rev": "15f4ee454b1dce334612fa6843b3e05cf546efab",
-      "rev_count": 990025,
-      "rev_date": "2026-04-30T19:45:37Z",
-      "scrape_date": "2026-05-03T09:52:51.742444Z",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:53:02.383579Z",
       "stabilities": [
         "unstable"
       ],

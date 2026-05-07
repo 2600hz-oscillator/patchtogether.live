@@ -19,11 +19,12 @@ go-task.pkg-path = "go-task"
 # Git LFS for ART/VRT baselines
 git-lfs.pkg-path = "git-lfs"
 gh.pkg-path = "gh"
+flyctl.pkg-path = "flyctl"
 
 
 [vars]
 # Project name surfaces in dev shell prompts and scripts
-PROJECT_NAME = "inet.modular"
+PROJECT_NAME = "patchtogether.live"
 
 
 [hook]
