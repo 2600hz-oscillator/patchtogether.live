@@ -14,6 +14,7 @@ import * as Y from 'yjs';
 import { AUTH_REJECTION, verifyToken } from './auth.js';
 import { CAPACITY_REJECTION, createSlotTracker } from './capacity.js';
 import { isRackspaceMember, loadSnapshot, storeSnapshot } from './db.js';
+import { SNAPSHOT_PERSISTENCE_CONFIG } from './snapshot-config.js';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
 // because BitwigStudio (and likely other DAWs) reserve 1234 for OSC.
@@ -29,6 +30,9 @@ const slots = createSlotTracker();
 Server.configure({
   port: PORT,
   address: HOST,
+
+  // Snapshot persistence — see ./snapshot-config.ts for the rationale.
+  ...SNAPSHOT_PERSISTENCE_CONFIG,
 
   // Auth hook runs BEFORE the WS is fully established, so it's the
   // right place to gate auth + capacity: throwing here aborts the
@@ -120,10 +124,10 @@ Server.configure({
     return ydoc;
   },
 
-  // Hocuspocus debounces this hook (default 2s) and only fires when the
-  // doc actually changed. Cheap enough to write the full state every time
-  // at our scale; switch to incremental updates if doc sizes grow into
-  // megabytes.
+  // Hocuspocus debounces this hook per the `debounce`/`maxDebounce` config
+  // above (2s normal, 5s cap), and only fires when the doc actually changed.
+  // Cheap enough to write the full state every time at our scale; switch to
+  // incremental updates if doc sizes grow into megabytes.
   async onStoreDocument(data) {
     const state = Y.encodeStateAsUpdate(data.document);
     await storeSnapshot(data.documentName, state);
