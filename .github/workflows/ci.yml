@@ -43,6 +43,9 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
 
     steps:
+      - name: Install ALSA (needed by node-web-audio-api in ART)
+        run: sudo apt-get update -qq && sudo apt-get install -y libasound2-dev
+
       - name: Checkout (with LFS for ART/VRT baselines)
         uses: actions/checkout@v4
         with:
