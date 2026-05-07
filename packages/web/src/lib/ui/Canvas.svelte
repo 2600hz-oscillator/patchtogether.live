@@ -61,17 +61,27 @@
   import CharlottesEchosCard from '$lib/ui/modules/CharlottesEchosCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
+  import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
   import type { CableType } from '$lib/graph/types';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
+  import type { HocuspocusProvider } from '@hocuspocus/provider';
+  import type { PresenceUser } from '$lib/multiplayer/presence';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
   // On the public canvas at `/`, this stays undefined and the layout
   // helpers fall through to node.position (single-user behavior preserved).
+  //
+  // Stage B PR B-c (awareness): the parent also passes the live HocuspocusProvider
+  // and the resolved presence-user so the canvas can broadcast cursor moves
+  // and render remote cursors. Both are optional so the public single-user
+  // canvas at `/` keeps its current behavior.
   interface Props {
     currentUserId?: string;
+    provider?: HocuspocusProvider | null;
+    presenceUser?: PresenceUser | null;
   }
-  let { currentUserId }: Props = $props();
+  let { currentUserId, provider = null, presenceUser = null }: Props = $props();
 
   const nodeTypes = {
     analogVco: AnalogVcoCard,
@@ -582,6 +592,105 @@
     return bootPromise;
   }
 
+  // ---------------- Awareness wiring (Stage B PR B-c) ----------------
+  //
+  // Sets the local awareness state's `user` field once the provider attaches,
+  // then forwards pointer-move events on the .flow region as `cursor` updates
+  // throttled to ~60Hz via requestAnimationFrame. Y.Awareness GCs disconnected
+  // peers automatically (30s default), so a tab close → cursor disappears
+  // after at most one keepalive cycle. Faster cleanup happens because the
+  // provider tears down the WS connection on destroy(), which broadcasts a
+  // null state for the local clientID.
+  let flowEl = $state<HTMLDivElement | null>(null);
+
+  $effect(() => {
+    const p = provider;
+    const user = presenceUser;
+    if (!p || !user) return;
+    const awareness = p.awareness;
+    if (!awareness) return;
+    awareness.setLocalStateField('user', user);
+    return () => {
+      try {
+        awareness.setLocalState(null);
+      } catch {
+        /* provider may already be torn down */
+      }
+    };
+  });
+
+  $effect(() => {
+    const p = provider;
+    const root = flowEl;
+    if (!p || !root) return;
+    const awareness = p.awareness;
+    if (!awareness) return;
+    let pendingX = 0;
+    let pendingY = 0;
+    let hasPending = false;
+    let rafId: number | null = null;
+    const flush = () => {
+      rafId = null;
+      if (!hasPending) return;
+      hasPending = false;
+      awareness.setLocalStateField('cursor', { x: pendingX, y: pendingY });
+    };
+    const onMove = (e: PointerEvent) => {
+      const rect = root.getBoundingClientRect();
+      pendingX = e.clientX - rect.left;
+      pendingY = e.clientY - rect.top;
+      hasPending = true;
+      if (rafId === null) rafId = requestAnimationFrame(flush);
+    };
+    const onLeave = () => {
+      hasPending = false;
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      const local = awareness.getLocalState();
+      if (local && 'cursor' in (local as object)) {
+        const next = { ...(local as Record<string, unknown>) };
+        delete next.cursor;
+        awareness.setLocalState(next);
+      }
+    };
+    root.addEventListener('pointermove', onMove);
+    root.addEventListener('pointerleave', onLeave);
+    return () => {
+      root.removeEventListener('pointermove', onMove);
+      root.removeEventListener('pointerleave', onLeave);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  });
+
+  // Dev-only: expose helpers so @collab Playwright tests can drive the
+  // awareness layer without wiring real Clerk auth + pointer events.
+  if (import.meta.env.DEV) {
+    $effect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__setLocalCursor = (x: number, y: number) => {
+        const a = provider?.awareness;
+        if (!a) return false;
+        a.setLocalStateField('cursor', { x, y });
+        return true;
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__getRemoteCursors = () => {
+        const a = provider?.awareness;
+        if (!a) return [];
+        const out: Array<{ clientId: number; user: unknown; cursor?: unknown }> = [];
+        for (const [clientId, state] of a.getStates()) {
+          if (clientId === a.clientID) continue;
+          const s = state as { user?: unknown; cursor?: unknown };
+          if (!s?.user) continue;
+          out.push({ clientId, user: s.user, cursor: s.cursor });
+        }
+        return out;
+      };
+    });
+  }
+
   onDestroy(() => {
     reconciler?.dispose();
     engine?.dispose();
@@ -612,7 +721,7 @@
     <pre class="error">{error}</pre>
   {/if}
 
-  <div class="flow">
+  <div class="flow" bind:this={flowEl}>
     <SvelteFlow
       bind:nodes={flowNodes}
       bind:edges={flowEdges}
@@ -629,6 +738,7 @@
       <Background size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
       <Controls />
     </SvelteFlow>
+    <AwarenessLayer {provider} />
   </div>
 
   <footer class="bottombar">
