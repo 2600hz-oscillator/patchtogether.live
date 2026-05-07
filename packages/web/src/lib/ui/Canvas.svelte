@@ -267,12 +267,25 @@
   }
 
   async function loadPatch() {
+    error = null;
     try {
+      // Bootstrap engine + reconciler from inside the click handler so that
+      // (a) the AudioContext resumes via this user gesture, and (b) a
+      // reconciler exists to observe the Yjs update applied by
+      // pickAndLoadEnvelope. Without this, loading a patch as the user's
+      // first action would silently apply the update with nothing to
+      // materialize the engine nodes — audio plays only ~50% of the time
+      // depending on whether the user had previously bootstrapped via
+      // Load example. Mirrors loadExample()'s ensureEngine + reconcile shape.
+      await ensureEngine();
       const result = await pickAndLoadEnvelope(ydoc, patch);
       if (!result) {
         trace('load cancelled');
         return;
       }
+      // Force a synchronous reconcile pass instead of trusting the
+      // doc.on('update') microtask scheduler — same reason loadExample does it.
+      await reconciler?.reconcile();
       trace(`loaded patch (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
       if (result.diagnostics.length > 0) {
         for (const d of result.diagnostics) {
