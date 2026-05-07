@@ -69,10 +69,18 @@
   // passes the current user's id so per-user layouts are scoped correctly.
   // On the public canvas at `/`, this stays undefined and the layout
   // helpers fall through to node.position (single-user behavior preserved).
+  //
+  // B5 audio gate: an optional AudioGate store from $lib/audio/audio-gate.
+  // When provided (currently only by /r/[id]/+page.svelte), Canvas wires
+  // the gate to its private `ensureEngine` + `audioCtx` so the overlay
+  // can boot + resume the AudioContext from a user-gesture handler. Left
+  // optional because the public `/` canvas doesn't render the overlay
+  // (Load example / + Add module already serve as user gestures there).
   interface Props {
     currentUserId?: string;
+    audioGate?: import('$lib/audio/audio-gate.svelte').AudioGate;
   }
-  let { currentUserId }: Props = $props();
+  let { currentUserId, audioGate }: Props = $props();
 
   const nodeTypes = {
     analogVco: AnalogVcoCard,
@@ -576,9 +584,30 @@
     return bootPromise;
   }
 
+  // B5 audio gate wiring. The optional AudioGate store (passed in by
+  // /r/[id]/+page.svelte) needs (a) the boot function to call on first
+  // user gesture and (b) the live AudioContext so it can track suspend/
+  // resume state via the ctx's `statechange` event. We register the
+  // booter once at mount and re-bind the ctx whenever it changes.
+  $effect(() => {
+    if (!audioGate) return;
+    audioGate.setBooter(async () => {
+      const e = await ensureEngine();
+      return { ctx: audioCtx ?? undefined, engine: e };
+    });
+    return () => {
+      audioGate.setBooter(null);
+    };
+  });
+  $effect(() => {
+    if (!audioGate) return;
+    audioGate.bind(audioCtx);
+  });
+
   onDestroy(() => {
     reconciler?.dispose();
     engine?.dispose();
+    audioGate?.bind(null);
   });
 
   let nodeCount = $derived(flowNodes.length);
