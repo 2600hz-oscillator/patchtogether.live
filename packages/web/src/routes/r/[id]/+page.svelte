@@ -61,31 +61,61 @@
   }
 
   async function copyShareUrl() {
-    const url = window.location.href;
+    // For owners/members we share an invite URL (?invite=<code>) so the
+    // recipient doesn't need to sign in. Bare URL still works for users
+    // who have a Clerk account and want to be added as a member.
+    const base = `${window.location.origin}${window.location.pathname}`;
+    const url = data.inviteCode ? `${base}?invite=${data.inviteCode}` : window.location.href;
     await navigator.clipboard.writeText(url);
+  }
+
+  function signInToClaim() {
+    // Send the user back to the same URL after sign-in (with invite intact)
+    // so the reload re-enters this page authed and they can request membership.
+    const here = window.location.pathname + window.location.search;
+    goto(`/sign-in?redirect_url=${encodeURIComponent(here)}`);
   }
 </script>
 
 <svelte:head><title>{data.rackspace.name || 'Rackspace'} — patchtogether.live</title></svelte:head>
 
 {#if data.isMember}
-  <!-- Member: render the canvas. Note: Stage A has no shared sync yet —
-       each user sees their own independent local Yjs doc. Stage B will
-       attach the Hocuspocus provider so the patch state actually syncs. -->
+  <!-- Member or anon-via-invite: render the canvas. The currentUserId
+       prop is null for anon, which Canvas interprets as single-user mode
+       for layouts (anon users share the default position). The shared
+       graph (nodes/edges/params) syncs for everyone. -->
   <div class="rackspace-shell">
     <div class="rackspace-bar">
-      <a href="/dashboard" class="back">← Dashboard</a>
+      {#if data.isAnon}
+        <span class="anon-badge" title="Guest viewer">guest</span>
+      {:else}
+        <a href="/dashboard" class="back">← Dashboard</a>
+      {/if}
       <span class="rackspace-name">{data.rackspace.name || 'Untitled'}</span>
       <span class="rackspace-id">{data.rackspace.id}</span>
       <span class="member-count">
         {data.rackspace.memberCount}/{data.rackspace.maxMembers} members
       </span>
-      <button class="share" onclick={copyShareUrl} title="Copy share URL">
-        Copy share URL
-      </button>
-      <UserButton />
+      {#if data.isAnon}
+        <button
+          class="share sign-in"
+          onclick={signInToClaim}
+          title="Sign in to claim ownership and save your own racks"
+        >
+          Sign in
+        </button>
+      {:else}
+        <button
+          class="share"
+          onclick={copyShareUrl}
+          title="Copy invite URL — recipients can join without signing in"
+        >
+          Copy invite URL
+        </button>
+        <UserButton />
+      {/if}
     </div>
-    <Canvas currentUserId={data.currentUserId} />
+    <Canvas currentUserId={data.currentUserId ?? undefined} />
   </div>
 {:else}
   <!-- Non-member: prompt to join, or show "full" -->
@@ -159,6 +189,23 @@
   }
   .share:hover {
     background: #353a47;
+  }
+  .share.sign-in {
+    margin-left: auto;
+    border-color: var(--cable-cv);
+    color: var(--cable-cv);
+  }
+  .anon-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: #14171c;
+    border: 1px solid #404652;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   .join-page {
