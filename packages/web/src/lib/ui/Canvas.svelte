@@ -14,6 +14,7 @@
     type Connection,
   } from '@xyflow/svelte';
   import { patch, ydoc } from '$lib/graph/store';
+  import { getDefaultSnapshotBus, type PatchSnapshot } from '$lib/graph/snapshot';
   import {
     makeEnvelope,
     downloadEnvelope,
@@ -157,50 +158,50 @@
     return persistenceLoad(env, ydoc, patch);
   }
 
-  // Bridge SyncedStore (Yjs) → Svelte 5 reactivity. Yjs doesn't push through
-  // Svelte's rune system on its own; bump a counter on every doc update and
-  // reference it in $effect so derivations recompute.
-  let docVersion = $state(0);
+  // B3: subscribe to the shared PatchSnapshot bus (one Yjs subscription
+  // for the whole app). The audio reconciler subscribes to the same bus,
+  // so UI + engine see the SAME id-sorted snapshot on the SAME tick. This
+  // closed the "heard but didn't see" gap in two-window collab where the
+  // engine materialized nodes from incoming Yjs ops but the canvas
+  // didn't render them in lockstep.
+  let snapshot = $state.raw<PatchSnapshot>(getDefaultSnapshotBus().current());
   $effect(() => {
-    const handler = () => {
-      docVersion = docVersion + 1;
-    };
-    ydoc.on('update', handler);
-    return () => ydoc.off('update', handler);
+    return getDefaultSnapshotBus().subscribe((snap) => {
+      snapshot = snap;
+    });
   });
 
-  // Mirror patch graph → SvelteFlow node/edge arrays. One-way for Day 7;
-  // drag-positions and connect-events get mirrored back in Day 7.B.
+  // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /
+  // bind:edges in favor of one-way props because the two-way bind let
+  // Svelte Flow's internal cache stomp our just-computed arrays after a
+  // rapid clear→load sequence — the immediate trigger of the B3 bug.
+  // Drag stops still flow back via onnodedragstop.
   let flowNodes = $state.raw<FlowNode[]>([]);
   let flowEdges = $state.raw<FlowEdge[]>([]);
 
   $effect(() => {
-    void docVersion; // depend on doc updates
-    flowNodes = Object.entries(patch.nodes)
-      .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => !!entry[1])
-      .map(([id, n]) => ({
-        id,
-        type: n.type,
-        // Per-user layouts: getNodePosition returns the user's override
-        // (when in multiplayer) or falls back to n.position (when single-
-        // user OR when this user has no entry yet).
-        position: getNodePosition(ydoc, currentUserId, id, { x: n.position.x, y: n.position.y }),
-        data: { node: n },
-      }));
+    const snap = snapshot;
+    flowNodes = snap.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      // Per-user layouts: getNodePosition returns the user's override
+      // (when in multiplayer) or falls back to n.position (when single-
+      // user OR when this user has no entry yet).
+      position: getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y }),
+      data: { node: n },
+    }));
   });
 
   $effect(() => {
-    void docVersion;
-    flowEdges = Object.entries(patch.edges)
-      .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => !!entry[1])
-      .map(([id, e]) => ({
-        id,
-        source: e.source.nodeId,
-        sourceHandle: e.source.portId,
-        target: e.target.nodeId,
-        targetHandle: e.target.portId,
-        style: `stroke: var(--cable-${e.sourceType}); stroke-width: 3;`,
-      }));
+    const snap = snapshot;
+    flowEdges = snap.edges.map((e) => ({
+      id: e.id,
+      source: e.source.nodeId,
+      sourceHandle: e.source.portId,
+      target: e.target.nodeId,
+      targetHandle: e.target.portId,
+      style: `stroke: var(--cable-${e.sourceType}); stroke-width: 3;`,
+    }));
   });
 
   function trace(line: string) {
@@ -281,13 +282,10 @@
       for (const id of Object.keys(patch.edges)) delete patch.edges[id];
       for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
     });
-    // Explicitly drive Svelte Flow to empty arrays. The docVersion bridge
-    // covers the $effect path, but `bind:nodes` two-way sync can re-write
-    // stale state on the next render tick (most visible with the auto-playing
-    // sequencer card constantly re-rendering). Forcing the prop here makes
-    // the clear synchronous from Svelte Flow's perspective.
-    flowNodes = [];
-    flowEdges = [];
+    // No defensive flowNodes=[] anymore: B3's snapshot bus pushes the
+    // empty snapshot to this $effect synchronously on the same Yjs
+    // update, and SvelteFlow now consumes a one-way `nodes` prop so it
+    // can't stomp the assignment.
     trace('cleared patch');
   }
 
@@ -478,7 +476,7 @@
   let ctxMenuPos = $state({ x: 0, y: 0 });
   let ctxMenuNodeId = $state<string | null>(null);
   let ctxMenuLabel = $derived.by(() => {
-    void docVersion;
+    void snapshot; // recompute when graph changes
     if (!ctxMenuNodeId) return '';
     const n = patch.nodes[ctxMenuNodeId];
     if (!n) return '';
@@ -505,10 +503,7 @@
       }
       delete patch.nodes[nodeId];
     });
-    // Defensive sync (same reason as clearPatch): keeps Svelte Flow from
-    // re-writing stale state when the deleted card is mid-render.
-    flowNodes = flowNodes.filter((n) => n.id !== nodeId);
-    flowEdges = flowEdges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+    // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     trace(`deleted ${nodeId}`);
   }
 
@@ -521,7 +516,6 @@
         }
       }
     });
-    flowEdges = flowEdges.filter((e) => e.source !== nodeId && e.target !== nodeId);
     trace(`unpatched ${nodeId}`);
   }
 
@@ -614,8 +608,8 @@
 
   <div class="flow">
     <SvelteFlow
-      bind:nodes={flowNodes}
-      bind:edges={flowEdges}
+      nodes={flowNodes}
+      edges={flowEdges}
       {nodeTypes}
       fitView
       colorMode="dark"
