@@ -59,6 +59,7 @@
   import MixmstrsCard from '$lib/ui/modules/MixmstrsCard.svelte';
   import TimelordeCard from '$lib/ui/modules/TimelordeCard.svelte';
   import CharlottesEchosCard from '$lib/ui/modules/CharlottesEchosCard.svelte';
+  import PlaitsFmCard from '$lib/ui/modules/PlaitsFmCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import type { CableType } from '$lib/graph/types';
@@ -93,6 +94,7 @@
     mixmstrs: MixmstrsCard,
     timelorde: TimelordeCard,
     charlottesEchos: CharlottesEchosCard,
+    plaitsFm: PlaitsFmCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);

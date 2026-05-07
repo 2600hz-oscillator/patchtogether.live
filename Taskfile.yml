@@ -91,6 +91,22 @@ tasks:
     cmds:
       - npm run watch -w {{.DSP}}
 
+  dsp:vendor:plaits:
+    desc: Sync the vendored Plaits + stmlib subset under packages/dsp/vendor/plaits/ from PLAITS_SRC (default ~/Documents/workspace/eurorack). Run once after pulling new MI upstream changes.
+    cmds:
+      - node {{.DSP}}/scripts/vendor-plaits.mjs
+
+  dsp:build:plaits:
+    desc: Compile vendored Plaits engines (FM today; Modal/Granular/etc. follow on) to packages/dsp/dist/plaits.wasm via emcc, then esbuild the worklet shim. Requires emscripten in flox env.
+    cmds:
+      - node {{.DSP}}/scripts/build-plaits.mjs
+
+  dsp:smoke:plaits:
+    desc: Boot dist/plaits.wasm in node, render 1s of FM audio, assert non-silence. Quick "is the wasm working" check before involving the browser.
+    deps: [dsp:build:plaits]
+    cmds:
+      - node {{.DSP}}/scripts/smoke-plaits.mjs
+
   # ---------------- Type check / lint ----------------
   typecheck:
     desc: Type-check every workspace

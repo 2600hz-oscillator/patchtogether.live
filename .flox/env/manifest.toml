@@ -10,6 +10,17 @@ nodejs_22.version  = "22.22.2"
 faust2.pkg-path = "faust2"
 faust2.version  = "2.85.5"
 
+# Emscripten (C/C++ → wasm) — used by `task dsp:build:plaits` to compile
+# the vendored Mutable Instruments Plaits engines under
+# packages/dsp/vendor/plaits into a single .wasm + JS glue. Pinned to a known
+# 4.x LTS-ish release so ART baselines stay deterministic across CI hosts.
+emscripten.pkg-path = "emscripten"
+emscripten.version  = "4.0.10"
+# Emscripten pulls a different llvm/clang/python toolchain than the rest of
+# the stack — keep it in its own pkg-group so we don't tighten constraints
+# on faust2 / nodejs.
+emscripten.pkg-group = "emcc"
+
 # Build tools
 esbuild.pkg-path = "esbuild"
 

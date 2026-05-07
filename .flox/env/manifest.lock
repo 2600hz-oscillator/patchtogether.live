@@ -10,6 +10,11 @@
           "aarch64-linux"
         ]
       },
+      "emscripten": {
+        "pkg-path": "emscripten",
+        "pkg-group": "emcc",
+        "version": "4.0.10"
+      },
       "esbuild": {
         "pkg-path": "esbuild"
       },
@@ -56,6 +61,126 @@
     }
   },
   "packages": [
+    {
+      "attr_path": "emscripten",
+      "broken": false,
+      "derivation": "/nix/store/9kw5bclwivzr3fp5mpp5cyq4vrph5ibj-emscripten-4.0.10.drv",
+      "description": "LLVM-to-JavaScript Compiler",
+      "install_id": "emscripten",
+      "license": "NCSA",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=62e0f05ede1da0d54515d4ea8ce9c733f12d9f08",
+      "name": "emscripten-4.0.10",
+      "pname": "emscripten",
+      "rev": "62e0f05ede1da0d54515d4ea8ce9c733f12d9f08",
+      "rev_count": 830073,
+      "rev_date": "2025-07-14T08:06:13Z",
+      "scrape_date": "2025-07-16T00:32:20.214003Z",
+      "stabilities": [
+        "unstable",
+        "staging"
+      ],
+      "unfree": false,
+      "version": "4.0.10",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/akhhxn11z9rmwllskgib9kpkzb3favs0-emscripten-4.0.10"
+      },
+      "system": "aarch64-darwin",
+      "group": "emcc",
+      "priority": 5
+    },
+    {
+      "attr_path": "emscripten",
+      "broken": false,
+      "derivation": "/nix/store/3r9qzxprhas3203plaif08byk1fl5md6-emscripten-4.0.10.drv",
+      "description": "LLVM-to-JavaScript Compiler",
+      "install_id": "emscripten",
+      "license": "NCSA",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=62e0f05ede1da0d54515d4ea8ce9c733f12d9f08",
+      "name": "emscripten-4.0.10",
+      "pname": "emscripten",
+      "rev": "62e0f05ede1da0d54515d4ea8ce9c733f12d9f08",
+      "rev_count": 830073,
+      "rev_date": "2025-07-14T08:06:13Z",
+      "scrape_date": "2025-07-16T00:57:19.418695Z",
+      "stabilities": [
+        "unstable",
+        "staging"
+      ],
+      "unfree": false,
+      "version": "4.0.10",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fyk5s93m3ary1ixrz4j1jhm7yr4ia70c-emscripten-4.0.10"
+      },
+      "system": "aarch64-linux",
+      "group": "emcc",
+      "priority": 5
+    },
+    {
+      "attr_path": "emscripten",
+      "broken": false,
+      "derivation": "/nix/store/71dml4qvcc3cvpvx2c0hdfirgy17r621-emscripten-4.0.10.drv",
+      "description": "LLVM-to-JavaScript Compiler",
+      "install_id": "emscripten",
+      "license": "NCSA",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=62e0f05ede1da0d54515d4ea8ce9c733f12d9f08",
+      "name": "emscripten-4.0.10",
+      "pname": "emscripten",
+      "rev": "62e0f05ede1da0d54515d4ea8ce9c733f12d9f08",
+      "rev_count": 830073,
+      "rev_date": "2025-07-14T08:06:13Z",
+      "scrape_date": "2025-07-16T01:18:54.939570Z",
+      "stabilities": [
+        "unstable",
+        "staging"
+      ],
+      "unfree": false,
+      "version": "4.0.10",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vdnijxsd960vxqq921431adcl5hv7flp-emscripten-4.0.10"
+      },
+      "system": "x86_64-darwin",
+      "group": "emcc",
+      "priority": 5
+    },
+    {
+      "attr_path": "emscripten",
+      "broken": false,
+      "derivation": "/nix/store/jz0ky0lvz75sw5p6413mrzhhn1y8vlna-emscripten-4.0.10.drv",
+      "description": "LLVM-to-JavaScript Compiler",
+      "install_id": "emscripten",
+      "license": "NCSA",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=62e0f05ede1da0d54515d4ea8ce9c733f12d9f08",
+      "name": "emscripten-4.0.10",
+      "pname": "emscripten",
+      "rev": "62e0f05ede1da0d54515d4ea8ce9c733f12d9f08",
+      "rev_count": 830073,
+      "rev_date": "2025-07-14T08:06:13Z",
+      "scrape_date": "2025-07-16T01:45:05.363211Z",
+      "stabilities": [
+        "unstable",
+        "staging"
+      ],
+      "unfree": false,
+      "version": "4.0.10",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/kis74q3c0pg4f3606j9q1pqa1a3nkal8-emscripten-4.0.10"
+      },
+      "system": "x86_64-linux",
+      "group": "emcc",
+      "priority": 5
+    },
     {
       "attr_path": "alsa-lib",
       "broken": false,

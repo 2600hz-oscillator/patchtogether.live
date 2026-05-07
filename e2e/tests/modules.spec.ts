@@ -47,6 +47,8 @@ const MODULES: ModuleSpec[] = [
   // exist in the def but aren't rendered as visible jacks (37 jacks would
   // overwhelm the card chrome) — they're reachable programmatically.
   { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 18, containsLabel: 'MIXMSTRS' },
+  // PlaitsFM: 2 inputs (pitch, trigger) + 2 outputs (audio, sub) = 4.
+  { type: 'plaitsFm',     cardClass: 'svelte-flow__node-plaitsFm',     handleCount: 4, containsLabel: 'PlaitsFM' },
 ];
 
 test.describe.configure({ mode: 'parallel' });
