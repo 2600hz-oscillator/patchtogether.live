@@ -40,6 +40,7 @@
   import { attachReconciler } from '$lib/audio/reconciler';
   import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
   import { provideEngineContext } from '$lib/audio/engine-context';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
   import '$lib/audio/modules'; // auto-registers analogVcoDef + audioOutDef
   import AnalogVcoCard from '$lib/ui/modules/AnalogVcoCard.svelte';
   import AudioOutCard from '$lib/ui/modules/AudioOutCard.svelte';
@@ -125,7 +126,7 @@
 
   // Dev-only: expose patch + ydoc on window so e2e tests can drive arbitrary
   // module-spawning combinations without a UI palette. Stripped in prod builds.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__patch = patch;
@@ -664,7 +665,7 @@
 
   // Dev-only: expose helpers so @collab Playwright tests can drive the
   // awareness layer without wiring real Clerk auth + pointer events.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__setLocalCursor = (x: number, y: number) => {

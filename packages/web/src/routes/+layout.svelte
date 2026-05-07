@@ -6,6 +6,7 @@
   import { page } from '$app/state';
   import { ydoc } from '$lib/graph/store';
   import { attachProvider } from '$lib/multiplayer/provider';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   let { data, children } = $props();
 
@@ -18,7 +19,13 @@
   // to drive the rejection paths (e.g. `'clerk:invalid'`).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let _activeProviderRef: any = null;
-  if (import.meta.env.DEV && typeof window !== 'undefined') {
+  // Test hooks: VITE_E2E_HOOKS=1 in the autotest+dev deploy steps re-exposes
+  // these on those tiers. The dev-secret token-derivation path inside still
+  // only works under DEV (the hardcoded fallback secret is only a match
+  // against local Hocuspocus). On autotest/dev tiers, callers must pass an
+  // explicit token — fetch a real invite via /api/rackspaces and pass it as
+  // `anon:<code>`.
+  if (testHooksEnabled() && typeof window !== 'undefined') {
     // MUST stay in lockstep with the dev fallback in invites.ts and
     // auth.ts. If you change one, change all three.
     const DEV_INVITE_SECRET = 'dev-only-invite-secret-change-me-x'.padEnd(32, '_');

@@ -183,6 +183,11 @@ jobs:
         env:
           # Previews share the autotest tier's Hocuspocus instance.
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
+          # Re-expose dev-only test hooks (`__patch`, `__ydoc`, `__engine`,
+          # `__attachProvider`, `__setLocalCursor`) on this beta tier so the
+          # cross-machine Playwright drift / collab tests can drive the
+          # rack page without a UI palette. Stays off for prod.
+          VITE_E2E_HOOKS: '1'
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -223,6 +228,8 @@ jobs:
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
+          # See deploy-preview comment — beta tier exposes test hooks.
+          VITE_E2E_HOOKS: '1'
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -256,6 +263,8 @@ jobs:
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-dev.fly.dev
+          # See deploy-preview comment — beta tier exposes test hooks.
+          VITE_E2E_HOOKS: '1'
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
