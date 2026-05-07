@@ -1,12 +1,18 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { UserButton, SignOutButton, getToken } from 'svelte-clerk';
+  import { UserButton, SignOutButton, getToken, useClerkContext } from 'svelte-clerk';
   import Canvas from '$lib/ui/Canvas.svelte';
   import AudioGate from '$lib/ui/AudioGate.svelte';
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
   import { ydoc } from '$lib/graph/store';
   import { attachProvider } from '$lib/multiplayer/provider';
+  import {
+    resolvePresenceUser,
+    getOrCreateAnonTabId,
+    type PresenceUser,
+    type RemotePresence,
+  } from '$lib/multiplayer/presence';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
 
   // Audio gate — Bug 2 (B5): F5 / cold-loads land with no AudioContext
@@ -18,6 +24,27 @@
   let joining = $state(false);
   let joinError: string | null = $state(null);
 
+  // Stage B PR B-c (awareness): resolve a stable presence identity for this
+  // session. Authed users pull displayName from Clerk's reactive context;
+  // anon users get a per-tab UUID (sessionStorage) → "guest 1234" + a
+  // deterministic palette color derived from that UUID.
+  const clerkCtx = data.isAnon ? null : useClerkContext();
+  const anonId = data.isAnon ? getOrCreateAnonTabId() : null;
+  let presenceUser = $derived.by<PresenceUser | null>(() => {
+    if (!data.isMember) return null;
+    if (data.isAnon) {
+      return resolvePresenceUser({ userId: anonId, isAnon: true });
+    }
+    const u = clerkCtx?.user;
+    const displayName =
+      u?.fullName ?? u?.username ?? u?.firstName ?? u?.primaryEmailAddress?.emailAddress ?? null;
+    return resolvePresenceUser({
+      userId: data.currentUserId ?? null,
+      displayName,
+      isAnon: false,
+    });
+  });
+
   // Hocuspocus provider wires the existing Yjs doc to the collaboration
   // server so updates flow between participants. Stage B PR B: no auth
   // verification yet (server stub-accepts any token), no layout split (so
@@ -25,7 +52,7 @@
   //
   // Only attach for members; non-members see the join page and shouldn't
   // hold an open WebSocket.
-  let provider: HocuspocusProvider | null = null;
+  let provider: HocuspocusProvider | null = $state(null);
   $effect(() => {
     if (!data.isMember) return;
     // PR-D: token is a callback so Hocuspocus pulls a fresh value on every
@@ -80,6 +107,38 @@
       provider = null;
     };
   });
+
+  // Subscribe to awareness updates so the rack bar can render a dot per
+  // currently-connected user. Includes the local user (so the owner sees
+  // their own dot too) — distinct from <AwarenessLayer> which filters
+  // local out (you don't render your own ghost cursor).
+  let allPresences = $state<RemotePresence[]>([]);
+  $effect(() => {
+    const p = provider;
+    if (!p) {
+      allPresences = [];
+      return;
+    }
+    const awareness = p.awareness;
+    if (!awareness) return;
+    const refresh = () => {
+      const all: RemotePresence[] = [];
+      for (const [clientId, state] of awareness.getStates()) {
+        const s = state as { user?: PresenceUser };
+        if (!s?.user) continue;
+        all.push({ clientId, user: s.user });
+      }
+      allPresences = all;
+    };
+    refresh();
+    awareness.on('change', refresh);
+    awareness.on('update', refresh);
+    return () => {
+      awareness.off('change', refresh);
+      awareness.off('update', refresh);
+    };
+  });
+
   onDestroy(() => {
     provider?.destroy();
   });
@@ -141,6 +200,17 @@
       <span class="member-count">
         {data.rackspace.memberCount}/{data.rackspace.maxMembers} members
       </span>
+      <span class="presence-dots" data-testid="presence-dots" aria-label="Active users">
+        {#each allPresences as p (p.clientId)}
+          <span
+            class="presence-dot"
+            data-testid="presence-dot"
+            data-user-id={p.user.id}
+            style:background={p.user.color}
+            title={p.user.displayName}
+          ></span>
+        {/each}
+      </span>
       {#if data.isAnon}
         <button
           class="share sign-in"
@@ -163,7 +233,12 @@
         <UserButton />
       {/if}
     </div>
-    <Canvas currentUserId={data.currentUserId ?? undefined} {audioGate} />
+    <Canvas
+      currentUserId={data.currentUserId ?? undefined}
+      {provider}
+      {presenceUser}
+      {audioGate}
+    />
     <AudioGate gate={audioGate} />
   </div>
 {:else}
@@ -224,6 +299,19 @@
     color: var(--text-dim);
     font-family: ui-monospace, monospace;
     font-size: 0.7rem;
+  }
+  .presence-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 2px;
+  }
+  .presence-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) inset;
   }
   .share {
     margin-left: auto;

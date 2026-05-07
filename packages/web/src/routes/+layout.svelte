@@ -16,6 +16,8 @@
   // via the same dev-only HMAC secret used by lib/server/invites.ts and
   // packages/server/src/auth.ts. Tests can also pass an explicit `token`
   // to drive the rejection paths (e.g. `'clerk:invalid'`).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let _activeProviderRef: any = null;
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     // MUST stay in lockstep with the dev fallback in invites.ts and
     // auth.ts. If you change one, change all three.
@@ -65,7 +67,41 @@
           resolve();
         });
       });
+      _activeProviderRef = provider;
       return provider;
+    };
+
+    // Stage B PR B-c: small awareness helpers so @collab tests can publish
+    // a presence identity + cursor without needing to plumb the provider
+    // reference back through Playwright's evaluate() (HocuspocusProvider
+    // doesn't survive structured-clone serialization).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__setAwarenessUser = (user: { id: string; displayName: string; color: string }) => {
+      const a = _activeProviderRef?.awareness;
+      if (!a) return false;
+      a.setLocalStateField('user', user);
+      return true;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__setAwarenessCursor = (x: number, y: number) => {
+      const a = _activeProviderRef?.awareness;
+      if (!a) return false;
+      a.setLocalStateField('cursor', { x, y });
+      return true;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__getAwarenessStates = () => {
+      const a = _activeProviderRef?.awareness;
+      if (!a) return [];
+      const out: Array<{ clientId: number; user?: unknown; cursor?: unknown }> = [];
+      for (const [clientId, state] of a.getStates()) {
+        out.push({ clientId, ...(state as object) });
+      }
+      return out;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__getLocalClientId = () => {
+      return _activeProviderRef?.awareness?.clientID ?? null;
     };
   }
 
