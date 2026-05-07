@@ -1,0 +1,384 @@
+{
+  "startedAt": "2026-05-07T17:36:24.299Z",
+  "finishedAt": "2026-05-07T17:39:19.572Z",
+  "baseURL": "http://localhost:5173",
+  "scenarios": [
+    {
+      "name": "01-static-vco",
+      "description": "AnalogVCO (sine, 220Hz / 0 semi tune) → audioOut. Both contexts should produce near-identical waveforms; only AudioContext epoch + ScriptProcessor block alignment cause divergence.",
+      "durationSec": 5,
+      "sampleRate": 44100,
+      "capturedSamplesA": 220500,
+      "capturedSamplesB": 220500,
+      "metrics": {
+        "pearson": 1,
+        "rmsDiff": 0,
+        "spectralPearsonAvg": 1,
+        "spectralPearsonWorst": 1,
+        "phaseDriftUsPerSec": 0,
+        "rmsA": 0.4949910160956917,
+        "rmsB": 0.4949910160956917
+      },
+      "runs": [
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.49499426000705826,
+          "rmsB": 0.49499426000705826
+        },
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.4949874659741412,
+          "rmsB": 0.4949874659741412
+        },
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.49499132230587556,
+          "rmsB": 0.49499132230587556
+        }
+      ],
+      "phaseDriftStdUsPerSec": 0,
+      "spectralAvgStd": 0,
+      "verdict": "sample-identical",
+      "acceptableForShipWithoutPhaseC": "yes"
+    },
+    {
+      "name": "02-filtered-vco",
+      "description": "AnalogVCO (saw) → Filter (LP, cutoff 800 Hz, res 0.3) → audioOut. Static filter, deterministic.",
+      "durationSec": 5,
+      "sampleRate": 44100,
+      "capturedSamplesA": 220500,
+      "capturedSamplesB": 220500,
+      "metrics": {
+        "pearson": 1,
+        "rmsDiff": 0,
+        "spectralPearsonAvg": 1,
+        "spectralPearsonWorst": 1,
+        "phaseDriftUsPerSec": 0,
+        "rmsA": 0.8325732870128703,
+        "rmsB": 0.8325732870128703
+      },
+      "runs": [
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.8325581697021701,
+          "rmsB": 0.8325581697021701
+        },
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.8325581697021701,
+          "rmsB": 0.8325581697021701
+        },
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.8326035216342704,
+          "rmsB": 0.8326035216342704
+        }
+      ],
+      "phaseDriftStdUsPerSec": 0,
+      "spectralAvgStd": 0,
+      "verdict": "sample-identical",
+      "acceptableForShipWithoutPhaseC": "yes"
+    },
+    {
+      "name": "03-lfo-modulated",
+      "description": "LFO (rate 2 Hz) → AnalogVCO.fm input → audioOut. LFO has its own internal phase; tests whether two independent LFOs in two engines stay in lockstep.",
+      "durationSec": 5,
+      "sampleRate": 44100,
+      "capturedSamplesA": 220500,
+      "capturedSamplesB": 220500,
+      "metrics": {
+        "pearson": 0.26231140014562887,
+        "rmsDiff": 0.987104597129259,
+        "spectralPearsonAvg": 0.9863099104696565,
+        "spectralPearsonWorst": 0.9714184511962513,
+        "phaseDriftUsPerSec": -41.17699430199429,
+        "rmsA": 0.4949845208605483,
+        "rmsB": 0.494959197020785
+      },
+      "runs": [
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.49495442178409943,
+          "rmsB": 0.49495442178409943
+        },
+        {
+          "pearson": 0.10572530874613353,
+          "rmsDiff": 1.3373275873435646,
+          "spectralPearsonAvg": 0.9589324337794548,
+          "spectralPearsonWorst": 0.9142783249948403,
+          "phaseDriftUsPerSec": -120.44270833333331,
+          "rmsA": 0.49499761088658556,
+          "rmsB": 0.4949687474941562
+        },
+        {
+          "pearson": -0.31879110830924695,
+          "rmsDiff": 1.6239862040442128,
+          "spectralPearsonAvg": 0.9999972976295148,
+          "spectralPearsonWorst": 0.9999770285939136,
+          "phaseDriftUsPerSec": -3.0882745726495697,
+          "rmsA": 0.4950015299109597,
+          "rmsB": 0.49495442178409943
+        }
+      ],
+      "phaseDriftStdUsPerSec": 68.66348684441049,
+      "spectralAvgStd": 0.02370959034373235,
+      "verdict": "musically equivalent",
+      "acceptableForShipWithoutPhaseC": "yes",
+      "notes": "LFO is a custom AudioWorklet — its internal phase counter starts when the worklet first processes a block. Two contexts have different ctx.currentTime origins, so absolute phase will differ; what we measure is whether the rate stays the same (no drift over time)."
+    },
+    {
+      "name": "04-sequenced",
+      "description": "Sequencer(120 BPM, 4 steps, fixed pattern) → VCO → ADSR → VCA → audioOut. Sequencer clock is the prime drift suspect.",
+      "durationSec": 5,
+      "sampleRate": 44100,
+      "capturedSamplesA": 220500,
+      "capturedSamplesB": 220500,
+      "metrics": {
+        "pearson": -0.3359769403892912,
+        "rmsDiff": 1.6083806765523914,
+        "spectralPearsonAvg": 0.9857458406318446,
+        "spectralPearsonWorst": 0.8050181492659548,
+        "phaseDriftUsPerSec": 110.85792824074075,
+        "rmsA": 0.34101058124563505,
+        "rmsB": 0.3410037155077792
+      },
+      "runs": [
+        {
+          "pearson": -0.1779727418602195,
+          "rmsDiff": 1.5348819553399269,
+          "spectralPearsonAvg": 0.978618868400574,
+          "spectralPearsonWorst": 0.7073067214084711,
+          "phaseDriftUsPerSec": 102.2886618589744,
+          "rmsA": 0.3410164499183083,
+          "rmsB": 0.34100445412358815
+        },
+        {
+          "pearson": 0.1631209262402689,
+          "rmsDiff": 1.2937183541142512,
+          "spectralPearsonAvg": 0.97861905474639,
+          "spectralPearsonWorst": 0.7077604005600975,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.3410129941480108,
+          "rmsB": 0.34100261084519856
+        },
+        {
+          "pearson": -0.9930790055479232,
+          "rmsDiff": 1.9965417202029956,
+          "spectralPearsonAvg": 0.9999995987485696,
+          "spectralPearsonWorst": 0.9999873258292958,
+          "phaseDriftUsPerSec": 230.28512286324784,
+          "rmsA": 0.34100229967058615,
+          "rmsB": 0.34100408155455086
+        }
+      ],
+      "phaseDriftStdUsPerSec": 115.38147033981038,
+      "spectralAvgStd": 0.012344116628834173,
+      "verdict": "musically similar (minor transient mismatch)",
+      "acceptableForShipWithoutPhaseC": "yes",
+      "notes": "Sequencer uses setTimeout-based JS scheduling at ~25ms tick. Each context has its own scheduler — drift is expected and is the central question of this research."
+    },
+    {
+      "name": "05-drummergirl",
+      "description": "Sequencer (120 BPM, every 4th step) → DRUMMERGIRL gate → audioOut. Tests Faust drum voice + clocked gate drift.",
+      "durationSec": 5,
+      "sampleRate": 44100,
+      "capturedSamplesA": 220500,
+      "capturedSamplesB": 220500,
+      "metrics": {
+        "pearson": 1,
+        "rmsDiff": 0,
+        "spectralPearsonAvg": 1,
+        "spectralPearsonWorst": 1,
+        "phaseDriftUsPerSec": 0,
+        "rmsA": 0.07679559927431724,
+        "rmsB": 0.07679559927431724
+      },
+      "runs": [
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.0768196860812462,
+          "rmsB": 0.0768196860812462
+        },
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.07678355587085277,
+          "rmsB": 0.07678355587085277
+        },
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.07678355587085277,
+          "rmsB": 0.07678355587085277
+        }
+      ],
+      "phaseDriftStdUsPerSec": 0,
+      "spectralAvgStd": 0,
+      "verdict": "sample-identical",
+      "acceptableForShipWithoutPhaseC": "yes"
+    },
+    {
+      "name": "06-fm-skipped",
+      "description": "DX7/PlaitsFM module not yet registered in module-registry.ts; scenario skipped.",
+      "durationSec": 0,
+      "sampleRate": 0,
+      "capturedSamplesA": 0,
+      "capturedSamplesB": 0,
+      "metrics": {
+        "pearson": 0,
+        "rmsDiff": 0,
+        "spectralPearsonAvg": 0,
+        "spectralPearsonWorst": 0,
+        "phaseDriftUsPerSec": 0,
+        "rmsA": 0,
+        "rmsB": 0
+      },
+      "runs": [],
+      "phaseDriftStdUsPerSec": 0,
+      "spectralAvgStd": 0,
+      "verdict": "skipped",
+      "acceptableForShipWithoutPhaseC": "with-caveats",
+      "notes": "Re-run this scenario once an FM module lands in the registry."
+    },
+    {
+      "name": "07-stochastic-echos",
+      "description": "AnalogVCO → CHARLOTTE'S ECHOS → audioOut. Stochastic effects expected to diverge but each side internally coherent.",
+      "durationSec": 5,
+      "sampleRate": 44100,
+      "capturedSamplesA": 220500,
+      "capturedSamplesB": 220500,
+      "metrics": {
+        "pearson": 0.6919123087078582,
+        "rmsDiff": 0.5120799989873267,
+        "spectralPearsonAvg": 0.9472094530213889,
+        "spectralPearsonWorst": 0.7603679327423469,
+        "phaseDriftUsPerSec": -441.8875756766383,
+        "rmsA": 0.6853496630705157,
+        "rmsB": 0.6586311889362518
+      },
+      "runs": [
+        {
+          "pearson": 0.5179649596990905,
+          "rmsDiff": 0.8129911287531424,
+          "spectralPearsonAvg": 0.9419977882944365,
+          "spectralPearsonWorst": 0.7309243853449034,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.658604218568448,
+          "rmsB": 0.6586275148518597
+        },
+        {
+          "pearson": 1,
+          "rmsDiff": 0,
+          "spectralPearsonAvg": 1,
+          "spectralPearsonWorst": 1,
+          "phaseDriftUsPerSec": 0,
+          "rmsA": 0.6586275148518597,
+          "rmsB": 0.6586275148518597
+        },
+        {
+          "pearson": 0.5577719664244842,
+          "rmsDiff": 0.7232488682088378,
+          "spectralPearsonAvg": 0.8996305707697305,
+          "spectralPearsonWorst": 0.5501794128821372,
+          "phaseDriftUsPerSec": -1325.6627270299148,
+          "rmsA": 0.7388172557912396,
+          "rmsB": 0.6586385371050364
+        }
+      ],
+      "phaseDriftStdUsPerSec": 765.3717323053746,
+      "spectralAvgStd": 0.05038726692252855,
+      "verdict": "audibly similar (same patch, different timing)",
+      "acceptableForShipWithoutPhaseC": "yes",
+      "notes": "CHARLOTTE'S ECHOS may not exist with that exact id or port shape — if scenario errors, the module registry naming convention is the issue, not a true result."
+    },
+    {
+      "name": "08-multi-user-edit",
+      "description": "Static VCO. Mid-recording (~2.5s in), A turns the tune knob +12 semitones via Yjs. Tests sync latency + transient divergence.",
+      "durationSec": 5,
+      "sampleRate": 44100,
+      "capturedSamplesA": 220500,
+      "capturedSamplesB": 220500,
+      "metrics": {
+        "pearson": 0.022387248606582116,
+        "rmsDiff": 1.3982881431750906,
+        "spectralPearsonAvg": 0.9989566696673026,
+        "spectralPearsonWorst": 0.8519165428684001,
+        "phaseDriftUsPerSec": -174.69618055555554,
+        "rmsA": 0.49499323381666477,
+        "rmsB": 0.4949926503966446
+      },
+      "runs": [
+        {
+          "pearson": 0.018763582847063878,
+          "rmsDiff": 1.400880965489448,
+          "spectralPearsonAvg": 0.99895667619049,
+          "spectralPearsonWorst": 0.8519194777851555,
+          "phaseDriftUsPerSec": 118.1056356837608,
+          "rmsA": 0.4949953092008159,
+          "rmsB": 0.494993964599275
+        },
+        {
+          "pearson": 0.018770245133808896,
+          "rmsDiff": 1.4008757114658061,
+          "spectralPearsonAvg": 0.9989567160367581,
+          "spectralPearsonWorst": 0.8519262529678217,
+          "phaseDriftUsPerSec": 128.6224626068377,
+          "rmsA": 0.4949908459092963,
+          "rmsB": 0.4949891528651359
+        },
+        {
+          "pearson": 0.02962791783887357,
+          "rmsDiff": 1.3931077525700182,
+          "spectralPearsonAvg": 0.9989566167746596,
+          "spectralPearsonWorst": 0.8519038978522231,
+          "phaseDriftUsPerSec": -770.8166399572651,
+          "rmsA": 0.4949935463398822,
+          "rmsB": 0.4949948337255227
+        }
+      ],
+      "phaseDriftStdUsPerSec": 516.2822411240885,
+      "spectralAvgStd": 4.9951526772437314e-8,
+      "verdict": "musically similar (minor transient mismatch)",
+      "acceptableForShipWithoutPhaseC": "yes",
+      "notes": "Spectral correlation drops during the brief propagation window when only A has the new tune value; recovers once Yjs syncs to B."
+    }
+  ]
+}
