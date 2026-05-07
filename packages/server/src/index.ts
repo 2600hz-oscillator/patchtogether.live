@@ -10,8 +10,8 @@
 // persistence + per-user layout enforcement land in subsequent slices.
 
 import { Server } from '@hocuspocus/server';
-import { AUTH_REJECTION, verifyToken } from './auth';
-import { CAPACITY_REJECTION, createSlotTracker } from './capacity';
+import { AUTH_REJECTION, verifyToken } from './auth.js';
+import { CAPACITY_REJECTION, createSlotTracker } from './capacity.js';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
 // because BitwigStudio (and likely other DAWs) reserve 1234 for OSC.

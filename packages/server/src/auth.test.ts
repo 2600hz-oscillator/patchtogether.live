@@ -18,7 +18,7 @@ vi.mock('@clerk/backend', () => ({
 
 const { verifyToken: clerkVerifyToken } = await import('@clerk/backend');
 const clerkVerifyMock = vi.mocked(clerkVerifyToken);
-const { verifyToken } = await import('./auth');
+const { verifyToken } = await import('./auth.js');
 
 beforeEach(() => {
   clerkVerifyMock.mockReset();
