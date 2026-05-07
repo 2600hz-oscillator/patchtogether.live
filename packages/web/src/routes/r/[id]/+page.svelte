@@ -3,6 +3,8 @@
   import { goto } from '$app/navigation';
   import { UserButton, SignOutButton, getToken, useClerkContext } from 'svelte-clerk';
   import Canvas from '$lib/ui/Canvas.svelte';
+  import AudioGate from '$lib/ui/AudioGate.svelte';
+  import { createAudioGate } from '$lib/audio/audio-gate.svelte';
   import { ydoc } from '$lib/graph/store';
   import { attachProvider } from '$lib/multiplayer/provider';
   import {
@@ -12,6 +14,11 @@
     type RemotePresence,
   } from '$lib/multiplayer/presence';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
+
+  // Audio gate — Bug 2 (B5): F5 / cold-loads land with no AudioContext
+  // (autoplay policy) so we render an overlay that boots the engine and
+  // resumes the ctx on first click. Hidden whenever the ctx is `running`.
+  const audioGate = createAudioGate();
 
   let { data } = $props();
   let joining = $state(false);
@@ -230,7 +237,9 @@
       currentUserId={data.currentUserId ?? undefined}
       {provider}
       {presenceUser}
+      {audioGate}
     />
+    <AudioGate gate={audioGate} />
   </div>
 {:else}
   <!-- Non-member: prompt to join, or show "full" -->
