@@ -257,7 +257,13 @@ jobs:
   smoke-live:
     name: Live smoke — autotest.patchtogether.live
     needs: deploy-autotest
-    if: needs.deploy-autotest.result == 'success'
+    # `always()` is required: deploy-autotest itself uses `always()` to run
+    # on push (where its sibling `verify-ci` is skipped). When a parent uses
+    # `always()`, GitHub propagates a "this job had a conditional ancestor"
+    # state to children, which makes plain `if: needs.X.result == 'Y'`
+    # evaluate to false. Adding `always()` here restores the intended
+    # gate: run only when the autotest deploy actually succeeded.
+    if: ${{ always() && needs.deploy-autotest.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
