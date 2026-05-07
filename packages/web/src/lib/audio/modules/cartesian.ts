@@ -10,17 +10,25 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
+import {
+  coerceToNoteStep,
+  midiToVOct,
+  migrateStepArrayV1ToV2,
+  C4_MIDI,
+} from '$lib/audio/note-entry';
 
 export interface Cell {
   on: boolean;
-  pitch: number; // semitones from root
+  /** MIDI int (a4 = 69) for this cell's pitch, or null = no note. v1 of this
+   *  module used `pitch: <semitones from C4>`. */
+  midi: number | null;
 }
 
 export const CELL_COUNT = 16;
 export const GRID_DIM = 4;
 
 export function defaultCells(): Cell[] {
-  return Array.from({ length: CELL_COUNT }, () => ({ on: false, pitch: 0 }));
+  return Array.from({ length: CELL_COUNT }, () => ({ on: false, midi: C4_MIDI }));
 }
 
 export const cartesianDef: AudioModuleDef = {
@@ -28,7 +36,13 @@ export const cartesianDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Cartesian',
   category: 'modulation',
-  schemaVersion: 1,
+  // v2: per-cell pitch encoding changed from `pitch: semitones` to `midi: int|null`.
+  // See sequencer.ts for the matching change.
+  schemaVersion: 2,
+  migrate(data, fromVersion) {
+    if (fromVersion >= 2) return data as Record<string, unknown> | undefined;
+    return migrateStepArrayV1ToV2(data, 'cells');
+  },
 
   inputs: [
     { id: 'clock', type: 'gate' },
@@ -87,7 +101,9 @@ export const cartesianDef: AudioModuleDef = {
     function readCells(): Cell[] {
       const live = livePatch.nodes[nodeId];
       const cells = (live?.data as Record<string, unknown> | undefined)?.cells;
-      if (Array.isArray(cells)) return cells as Cell[];
+      if (Array.isArray(cells)) {
+        return (cells as unknown[]).map(coerceToNoteStep);
+      }
       return defaultCells();
     }
     function readParam(id: string, fallback: number): number {
@@ -105,18 +121,25 @@ export const cartesianDef: AudioModuleDef = {
       clockOutSrc.offset.setValueAtTime(0, atTime + 0.01);
     }
 
+    let lastEmittedVOct = 0;
+    let lastEmittedGate = 0;
+
     function emitStep(idx: number, atTime: number, gateDur: number) {
       const octave = readParam('octave', 0);
       const gateLengthFrac = readParam('gateLength', 0.5);
       const cells = readCells();
       const cell = cells[idx];
       emitClockPulse(atTime);
-      if (cell && cell.on) {
-        const semitones = cell.pitch + octave * 12;
-        const vOct = semitones / 12;
+      if (cell && cell.on && cell.midi !== null) {
+        // Invalid pitches (midi === null) suppress the gate even if cell.on.
+        const vOct = midiToVOct(cell.midi) + octave;
         pitchSrc.offset.setValueAtTime(vOct, atTime);
         gateSrc.offset.setValueAtTime(1, atTime);
         gateSrc.offset.setValueAtTime(0, atTime + gateDur * gateLengthFrac);
+        lastEmittedVOct = vOct;
+        lastEmittedGate = 1;
+      } else {
+        lastEmittedGate = 0;
       }
     }
 
@@ -192,6 +215,8 @@ export const cartesianDef: AudioModuleDef = {
       read(key) {
         if (key === 'currentStep')   return currentStep;
         if (key === 'totalAdvances') return totalAdvances;
+        if (key === 'pitchVOct')     return lastEmittedVOct;
+        if (key === 'gateValue')     return lastEmittedGate;
         return undefined;
       },
       dispose() {

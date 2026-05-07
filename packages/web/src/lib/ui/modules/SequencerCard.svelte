@@ -1,19 +1,19 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import { patch, ydoc } from '$lib/graph/store';
   import { sequencerDef, defaultSteps, STEP_COUNT, type Step } from '$lib/audio/modules/sequencer';
   import { useEngine } from '$lib/audio/engine-context';
+  import { parseNoteName, coerceToNoteStep } from '$lib/audio/note-entry';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  // Bridge SyncedStore (Yjs) mutations into Svelte 5 reactivity. Same pattern
-  // Canvas uses for flowNodes — bump a counter on ydoc updates and reference
-  // it inside $derived so they refire when underlying patch state changes.
+  // Bridge SyncedStore (Yjs) mutations into Svelte 5 reactivity.
   let cardVersion = $state(0);
   $effect(() => {
     const h = () => {
@@ -33,7 +33,7 @@
   let steps = $derived.by<Step[]>(() => {
     void cardVersion;
     const raw = (node?.data as Record<string, unknown> | undefined)?.steps;
-    if (Array.isArray(raw)) return (raw as Step[]).map((s) => ({ on: !!s.on, pitch: s.pitch ?? 0 }));
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToNoteStep);
     return defaultSteps();
   });
 
@@ -53,15 +53,15 @@
   let currentStep = $state(0);
   let raf: number | null = null;
   $effect(() => {
-    function tick() {
+    function tickFrame() {
       const e = engineCtx.get();
       if (e && node) {
         const cs = e.read(node, 'currentStep');
         if (typeof cs === 'number') currentStep = cs;
       }
-      raf = requestAnimationFrame(tick);
+      raf = requestAnimationFrame(tickFrame);
     }
-    raf = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(tickFrame);
     return () => {
       if (raf !== null) cancelAnimationFrame(raf);
       raf = null;
@@ -71,16 +71,13 @@
     if (raf !== null) cancelAnimationFrame(raf);
   });
 
-  // --- Step interaction: click to toggle, drag to set pitch ---
+  // --- Step mutation helpers ---
 
   function readStepsCopy(): Step[] {
     const t = patch.nodes[id];
     if (!t?.data) return defaultSteps();
     const raw = (t.data as Record<string, unknown>).steps;
-    if (Array.isArray(raw)) {
-      // Deep-copy so we can mutate freely without touching the proxy.
-      return (raw as Step[]).map((s) => ({ on: !!s.on, pitch: s.pitch ?? 0 }));
-    }
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToNoteStep);
     return defaultSteps();
   }
 
@@ -91,58 +88,80 @@
       if (!t.data) t.data = {};
       // Replace the whole steps array (in-place index assignment doesn't
       // reliably propagate through SyncedStore for nested arrays-of-objects).
-      (t.data as Record<string, unknown>).steps = arr;
+      (t.data as Record<string, unknown>).steps = arr.map((s) => ({ on: s.on, midi: s.midi }));
     });
   }
 
-  function toggleStep(i: number) {
+  function commitPitch(i: number, input: string) {
     const arr = readStepsCopy();
-    const cur = arr[i] ?? { on: false, pitch: 0 };
-    arr[i] = { ...cur, on: !cur.on };
+    const cur = arr[i] ?? { on: false, midi: null };
+    const trimmed = input.trim();
+    const parsed = trimmed === '' ? null : parseNoteName(trimmed);
+    arr[i] = { on: cur.on, midi: parsed };
     writeSteps(arr);
   }
 
-  let dragging: { idx: number; startY: number; startPitch: number } | null = $state(null);
-
-  function stepPointerDown(e: PointerEvent, i: number) {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const arr = steps;
-    const cur = arr[i] ?? { on: false, pitch: 0 };
-    dragging = { idx: i, startY: e.clientY, startPitch: cur.pitch };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }
-
-  function stepPointerMove(e: PointerEvent) {
-    if (!dragging) return;
-    const dy = dragging.startY - e.clientY;
-    const delta = Math.round(dy / 8); // 8 px per semitone
-    const newPitch = Math.max(-24, Math.min(24, dragging.startPitch + delta));
+  function toggleGate(i: number) {
     const arr = readStepsCopy();
-    const cur = arr[dragging.idx] ?? { on: false, pitch: 0 };
-    // Dragging implies "I want this step to fire at this pitch" — enable as a
-    // side effect so users don't have to click + drag separately. Click-
-    // without-drag (handled in stepPointerUp) keeps its toggle behavior.
-    if (cur.pitch !== newPitch || !cur.on) {
-      arr[dragging.idx] = { on: true, pitch: newPitch };
-      writeSteps(arr);
-    }
+    const cur = arr[i] ?? { on: false, midi: null };
+    arr[i] = { on: !cur.on, midi: cur.midi };
+    writeSteps(arr);
   }
 
-  function stepPointerUp(e: PointerEvent, i: number) {
-    if (!dragging) return;
-    const moved = Math.abs(e.clientY - dragging.startY);
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    // If user didn't really drag (< 4 px), treat as a click → toggle.
-    if (moved < 4) {
-      toggleStep(i);
+  // --- Keyboard navigation ---
+
+  let gridEl: HTMLElement | undefined = $state();
+
+  function findCell(stepIdx: number, role: 'pitch' | 'gate'): HTMLElement | null {
+    if (!gridEl) return null;
+    return gridEl.querySelector<HTMLElement>(
+      `[data-step="${stepIdx}"][data-role="${role}"]`,
+    );
+  }
+
+  function focusCell(stepIdx: number, role: 'pitch' | 'gate'): boolean {
+    const target = findCell(stepIdx, role);
+    if (!target) return false;
+    target.focus();
+    if (target.tagName === 'INPUT') (target as HTMLInputElement).select();
+    return true;
+  }
+
+  // Navigation behavior is shared across all cells. Returns true if the parent
+  // handled the event (caller suppresses default). Sequencer is linear: arrows
+  // do NOT wrap by row — they clamp at the edges.
+  function handleNav(e: KeyboardEvent, stepIdx: number, role: 'pitch' | 'gate'): boolean {
+    const max = STEP_COUNT - 1;
+    if (e.key === 'ArrowLeft') {
+      const next = Math.max(0, stepIdx - 1);
+      return focusCell(next, role);
     }
-    dragging = null;
+    if (e.key === 'ArrowRight') {
+      const next = Math.min(max, stepIdx + 1);
+      return focusCell(next, role);
+    }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      // Swap pitch <-> gate within the same step.
+      const otherRole = role === 'pitch' ? 'gate' : 'pitch';
+      return focusCell(stepIdx, otherRole);
+    }
+    if (e.key === 'Enter' && role === 'pitch') {
+      // Commit happens in NoteEntry; advance to next pitch.
+      tick().then(() => focusCell(Math.min(max, stepIdx + 1), 'pitch'));
+      return true;
+    }
+    if (e.key === 'Tab') {
+      // Let parent decide: if shift, prev; else next. Skip to same-role cell.
+      const dir = e.shiftKey ? -1 : 1;
+      const next = stepIdx + dir;
+      if (next < 0 || next > max) return false; // let browser tab out
+      return focusCell(next, role);
+    }
+    return false;
   }
 </script>
 
-<div class="mod-card seq-card" onpointermove={stepPointerMove}>
+<div class="mod-card seq-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
     Sequencer
@@ -161,20 +180,26 @@
   <span class="port-label right" style="top: 86px;">gate</span>
   <span class="port-label right" style="top: 122px;">clk out</span>
 
-  <div class="grid">
+  <div class="grid" bind:this={gridEl} data-testid={`seq-grid-${id}`}>
     {#each steps.slice(0, STEP_COUNT) as step, i (i)}
-      <button
-        class="cell"
-        class:on={step.on}
-        class:active={i === currentStep}
-        class:dim={i >= length}
-        title={`step ${i + 1} · pitch ${step.pitch >= 0 ? '+' : ''}${step.pitch}`}
-        onpointerdown={(e) => stepPointerDown(e, i)}
-        onpointerup={(e) => stepPointerUp(e, i)}
-      >
-        <div class="pitch-bar" style:height="{Math.min(100, Math.abs(step.pitch) * 4 + 10)}%"></div>
+      <div class="cell-slot" data-step={i}>
         <div class="cell-num">{i + 1}</div>
-      </button>
+        <NoteEntry
+          midi={step.midi}
+          on={step.on}
+          isActive={i === currentStep}
+          dim={i >= length}
+          testId={`seq-pitch-${id}-${i}`}
+          gateTestId={`seq-gate-${id}-${i}`}
+          onCommit={(input) => commitPitch(i, input)}
+          onGateToggle={() => toggleGate(i)}
+          onNavKey={(e) => {
+            // We get a bare keyboardevent; figure out which role from the target.
+            const role = (e.target as HTMLElement)?.dataset?.role === 'gate' ? 'gate' : 'pitch';
+            return handleNav(e, i, role as 'pitch' | 'gate');
+          }}
+        />
+      </div>
     {/each}
   </div>
 
@@ -228,50 +253,21 @@
     grid-template-columns: repeat(16, 1fr);
     gap: 3px;
   }
-  .cell {
-    position: relative;
-    aspect-ratio: 1;
-    background: #14171c;
-    border: 1px solid #2a2f3a;
-    border-radius: 2px;
-    padding: 0;
-    cursor: ns-resize;
-    overflow: hidden;
-    user-select: none;
-    touch-action: none;
+  .cell-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
   }
-  .cell.dim {
-    opacity: 0.35;
-  }
-  .cell.on {
-    background: #2a2f3a;
-    border-color: var(--cable-gate);
-  }
-  .cell.active {
-    box-shadow: 0 0 0 1px var(--cable-cv);
-  }
-  .pitch-bar {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: var(--cable-pitch);
-    opacity: 0.4;
-    pointer-events: none;
-  }
-  .cell.on .pitch-bar { opacity: 0.85; }
   .cell-num {
-    position: absolute;
-    top: 1px;
-    right: 2px;
     font-size: 0.55rem;
     color: var(--text-dim);
     font-family: ui-monospace, monospace;
-    pointer-events: none;
-    line-height: 1;
+    text-align: center;
+    line-height: 1.4;
   }
   .fader-row {
-    margin-top: 0;
+    margin-top: 6px;
     padding: 0 22px;
     gap: 8px;
   }

@@ -133,32 +133,23 @@ test('chain: Sequencer → VCO → VCA (gated by ADSR) → Audio Out plays a rif
   expect(await readStatus(page, 'nodes')).toBe('5');
   expect(await readStatus(page, 'edges')).toBe('5');
 
-  // Sequencer renders the 32-cell grid
-  await expect(page.locator('.svelte-flow__node-sequencer .cell')).toHaveCount(32);
+  // Sequencer renders the 32-cell grid (one cell-slot per step).
+  await expect(page.locator('.svelte-flow__node-sequencer .cell-slot')).toHaveCount(32);
 
   expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('sequencer: clicking a cell toggles its visual on-state', async ({ page }) => {
+test('sequencer: clicking the gate button toggles its visual on-state', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'seq', type: 'sequencer' }]);
 
-  const cell0 = page.locator('.svelte-flow__node-sequencer .cell').first();
-  // Initially off
-  await expect(cell0).not.toHaveClass(/\bon\b/);
-
-  // Click toggles to on. Use mouse coords because pointerdown+up handlers
-  // implement click via "didn't drag" detection.
-  const box = await cell0.boundingBox();
-  if (!box) throw new Error('no cell box');
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.up();
-  await page.waitForTimeout(100);
-
-  await expect(cell0, 'cell should toggle on after click').toHaveClass(/\bon\b/);
+  // Each step's gate is the .gate button under its NoteEntry. Click the first.
+  const gate0 = page.locator('[data-testid="seq-gate-seq-0"]');
+  await expect(gate0).not.toHaveClass(/\bon\b/);
+  await gate0.click();
+  await expect(gate0, 'gate should toggle on after click').toHaveClass(/\bon\b/);
 });
 
 test('chain: VCO → Scope → Audio Out — Scope passes through', async ({ page }) => {

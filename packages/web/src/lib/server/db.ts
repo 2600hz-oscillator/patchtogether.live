@@ -1,26 +1,30 @@
 // packages/web/src/lib/server/db.ts
 //
-// Postgres connection helper. Reads DATABASE_URL from env on both runtimes:
-//   - Cloudflare Workers (production):  set as a secret_text env var on the
-//     CF Pages project. nodejs_compat shims process.env to platform env.
-//   - vite dev (local):  process.env.DATABASE_URL or a sensible local default.
+// Postgres connection helper. Reads DATABASE_URL via SvelteKit's
+// `$env/dynamic/private` so it works on both runtimes:
+//   - Cloudflare Workers (production):  CF Pages env vars come through
+//     the platform `env` parameter, NOT process.env. SvelteKit wraps that
+//     into $env/dynamic/private. Reading process.env.DATABASE_URL on
+//     Workers silently returns undefined and we fall back to localhost,
+//     which CF then 1003s as "Direct IP access not allowed" — that's how
+//     the original bug masqueraded as three different driver issues.
+//   - vite dev (local):  $env/dynamic/private reads from process.env / .env.
 //
-// Workers cannot drive standard `pg` (node:net shim returns "proxy request
-// failed") and cannot drive @neondatabase/serverless's WebSocket Pool
-// either (CF egress proxy 403s the outbound WS handshake — confirmed
-// via wrangler tail). The HTTP-only `neon` template tag uses fetch()
-// under the hood, which works in both Workers and Node, so we standardize
-// on it.
+// We use @neondatabase/serverless's HTTP `neon` template tag because
+// CF Workers can't drive raw `pg` sockets and CF's egress proxy 403s
+// the package's WebSocket Pool. HTTP via fetch() is the only path
+// that works across Workers, Node, and tests.
 //
 // Trade-off: HTTP transactions are a single round-trip array of queries
 // with no conditional logic between them. Anything that needed BEGIN /
 // conditional-INSERT / COMMIT is rewritten as a single SQL statement
 // (CTE with WHERE NOT EXISTS, ON CONFLICT, etc.) — see rackspaces.ts.
 
+import { env as privateEnv } from '$env/dynamic/private';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
 function connectionString(): string {
-  const url = process.env.DATABASE_URL;
+  const url = privateEnv.DATABASE_URL;
   if (url) return url;
   return 'postgresql://postgres:dev@localhost:54320/patchtogether_dev';
 }
