@@ -509,6 +509,12 @@
     if (!n) return '';
     return getModuleDef(n.type)?.label ?? n.type;
   });
+  let ctxMenuNodeType = $derived.by<string | null>(() => {
+    void snapshot;
+    if (!ctxMenuNodeId) return null;
+    const n = patch.nodes[ctxMenuNodeId];
+    return n?.type ?? null;
+  });
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
@@ -945,6 +951,7 @@
   x={ctxMenuPos.x}
   y={ctxMenuPos.y}
   nodeLabel={ctxMenuLabel}
+  nodeType={ctxMenuNodeType}
   ondelete={() => ctxMenuNodeId && deleteNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}

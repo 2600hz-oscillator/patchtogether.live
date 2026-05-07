@@ -4,7 +4,7 @@ Multiplayer browser-native modular synthesizer. Performers patch a shared rack l
 
 > Status: Stage B (multi-user) shipping. 19 audio modules. Visual modules planned post-Phase-5.
 
-Docs: <https://2600hz-oscillator.github.io/patchtogether.live/> (auto-deployed from `docs/` on every push to `main`).
+Docs: <https://patchtogether.live/docs> (in-app; statically prerendered alongside the SvelteKit app — every tier ships its own copy).
 
 ## Architecture
 
@@ -46,12 +46,12 @@ If you stay inside `flox activate` (one shell), drop the `flox activate --` pref
 
 ```
 packages/web        SvelteKit app (Svelte 5, @xyflow/svelte canvas, Web Audio)
+packages/web/src/routes/docs/   in-app docs site (statically prerendered)
 packages/dsp        Faust .dsp + TS AudioWorklets → built to packages/dsp/dist
 packages/server     Hocuspocus + Clerk JWT verify + capacity (Stage B+)
 db/                 Neon Postgres schema (apply in order)
 art/                Audio Regression Tests (offline render → FFT/PCM assertions)
 e2e/                Playwright end-to-end tests (full app, real Web Audio)
-docs/               Astro docs site, deployed to GitHub Pages
 ```
 
 ## Deploy
@@ -79,7 +79,7 @@ The PR gate runs typecheck + unit + ART + E2E inside Flox so the toolchain match
 
 ## Module catalog
 
-19 audio modules currently registered. Full per-module I/O diagrams + param tables are auto-generated from the registry and published with the docs site: <https://2600hz-oscillator.github.io/patchtogether.live/modules/>.
+19 audio modules currently registered. Full per-module I/O diagrams + param tables are auto-generated from the registry and published with the in-app docs site: <https://patchtogether.live/docs/modules>. Each module also exposes its docs page from the right-click context menu on the canvas.
 
 ## License
 
