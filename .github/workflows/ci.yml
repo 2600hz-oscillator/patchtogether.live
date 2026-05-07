@@ -43,9 +43,6 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
 
     steps:
-      - name: Install ALSA (needed by node-web-audio-api in ART)
-        run: sudo apt-get update -qq && sudo apt-get install -y libasound2-dev
-
       - name: Checkout (with LFS for ART/VRT baselines)
         uses: actions/checkout@v4
         with:
@@ -74,13 +71,7 @@ jobs:
         run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
 
       - name: Run full CI suite (typecheck + unit + ART + E2E)
-        # node-web-audio-api dlopens libasound.so.2 at runtime; apt installs
-        # it under /usr/lib/x86_64-linux-gnu, but flox activate sets
-        # LD_LIBRARY_PATH to its own store paths and the linker no longer
-        # falls back to /etc/ld.so.cache. Prepending the system path inside
-        # flox activate fixes the dlopen without poisoning flox itself
-        # (a job-wide env LD_LIBRARY_PATH breaks the flox binary at install).
-        run: flox activate -- bash -c 'export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" && task ci'
+        run: flox activate -- task ci
 
       - name: Upload Playwright report on failure
         if: failure()
