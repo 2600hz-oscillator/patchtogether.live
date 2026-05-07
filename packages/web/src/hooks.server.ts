@@ -111,9 +111,20 @@ const setCoopCoepHeaders: Handle = async ({ event, resolve }) => {
 // the only secret. Contributors should set BETA_GATE_USER too if they want
 // a non-default username, but `beta` is fine in 99% of cases.
 const BETA_GATE_USER_DEFAULT = 'beta';
-// Carve-out: uptime monitors and ops smoke probes need /api/health
-// reachable without a credential prompt.
+// Carve-outs from the beta gate. Exact-match paths cover ops endpoints
+// (e.g. /api/health for uptime monitors); prefix matches cover docs and
+// any future public marketing routes that should always be reachable
+// without a credential prompt.
 const BETA_GATE_PUBLIC_PATHS = ['/api/health'];
+const BETA_GATE_PUBLIC_PREFIXES = ['/docs'];
+
+function isBetaPublic(pathname: string): boolean {
+  if (BETA_GATE_PUBLIC_PATHS.includes(pathname)) return true;
+  for (const prefix of BETA_GATE_PUBLIC_PREFIXES) {
+    if (pathname === prefix || pathname.startsWith(prefix + '/')) return true;
+  }
+  return false;
+}
 
 const betaGate: Handle = async ({ event, resolve }) => {
   const pass = privateEnv.BETA_GATE_PASS;
@@ -121,7 +132,7 @@ const betaGate: Handle = async ({ event, resolve }) => {
     // Gate disabled (local dev, or any deploy without the env set).
     return resolve(event);
   }
-  if (BETA_GATE_PUBLIC_PATHS.includes(event.url.pathname)) {
+  if (isBetaPublic(event.url.pathname)) {
     return resolve(event);
   }
   const expectedUser = privateEnv.BETA_GATE_USER || BETA_GATE_USER_DEFAULT;

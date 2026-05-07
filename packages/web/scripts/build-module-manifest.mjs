@@ -1,37 +1,36 @@
 #!/usr/bin/env node
-// docs/scripts/build-module-manifest.mjs
+// packages/web/scripts/build-module-manifest.mjs
 //
-// Reads packages/web/src/lib/audio/modules/*.ts at build time and emits
-// docs/src/data/modules.json — a static manifest the Astro site uses to
-// generate the module catalog.
+// Build-time generator: reads packages/web/src/lib/audio/modules/*.ts and
+// emits packages/web/src/lib/docs/modules-manifest.ts — a typed module the
+// SvelteKit /docs routes import via +page.server.ts loaders.
 //
 // Why a regex parser, not the TS compiler API:
-// 1. No npm install required for the docs workspace beyond Astro.
-// 2. The module-def shape is enforced by AudioModuleDef + the (intentionally
-//    simple) literal-init pattern the codebase uses. A handful of well-tested
-//    regexes are easier to reason about than a partial AST walk.
+//   1. No extra dev-deps needed in the web workspace.
+//   2. The module-def shape is enforced by AudioModuleDef + the
+//      (intentionally simple) literal-init pattern the codebase uses.
+//   3. A handful of well-tested regexes are easier to reason about than
+//      a partial AST walk and are the same approach the prior gh-pages
+//      Astro site used (proven against the full registry).
 //
 // The parser is tolerant of registry additions: any export matching
-// `export const <name>Def: AudioModuleDef = { ... };` is picked up. It's also
-// tolerant of two computed-shape modules (mixmstrs uses helper functions to
-// build inputs/params); for those we fall back to a hardcoded extractor that
-// runs the helper expressions through `eval` against a synthesized PARAMS
-// array. If all else fails we emit a placeholder card and surface the failure
-// at build time.
+// `export const <name>Def: AudioModuleDef = { ... };` is picked up. For
+// modules that build their port/param arrays via a helper function
+// (currently mixmstrs) we synthesize the data from a hardcoded shape.
 
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..', '..');
-const MODULES_DIR = join(REPO_ROOT, 'packages', 'web', 'src', 'lib', 'audio', 'modules');
-const OUT = join(__dirname, '..', 'src', 'data', 'modules.json');
+const WEB_ROOT = resolve(__dirname, '..');
+const MODULES_DIR = join(WEB_ROOT, 'src', 'lib', 'audio', 'modules');
+const OUT_DIR = join(WEB_ROOT, 'src', 'lib', 'docs');
+const OUT = join(OUT_DIR, 'modules-manifest.ts');
 
-// One-line descriptions per module type. Edit here when adding modules.
 const DESCRIPTIONS = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
-  wavetableVco: 'Wavetable oscillator that morphs saw → square → triangle → sine across a 16-frame table.',
+  wavetableVco: 'Wavetable oscillator that morphs saw -> square -> triangle -> sine across a 16-frame table.',
   audioOut: 'Terminal stereo output. Two mono inputs (L, R) routed to the host AudioContext destination.',
   vca: 'Voltage-controlled amplifier. Multiplies the audio input by base + (cv * cvAmount).',
   mixer: 'Four-channel mono summing mixer with master gain.',
@@ -39,20 +38,18 @@ const DESCRIPTIONS = {
   filter: 'Multi-mode resonant filter (low / band / high). CV inputs sum into cutoff and resonance.',
   reverb: 'Algorithmic reverb. Size / damp / mix.',
   scope: '2-channel passthrough oscilloscope. Inputs flow unchanged to outputs while an AnalyserNode samples for display.',
-  sequencer: '32-step sequencer with internal BPM clock or external clock input.',
-  lfo: 'Clockable LFO with four phase outputs (0° / 90° / 180° / 270°).',
-  cartesian: '4×4 grid sequencer. Steps via clock; X/Y CV inputs scrub freely across the grid.',
+  sequencer: '32-step sequencer with internal BPM clock or external clock input. Stage-1 polyphony: per-step chord (mono / maj / min) on the polyPitchGate output.',
+  lfo: 'Clockable LFO with four phase outputs (0deg / 90deg / 180deg / 270deg).',
+  cartesian: '4x4 grid sequencer. Steps via clock; X/Y CV inputs scrub freely across the grid.',
   destroy: 'Bitcrusher + decimator distortion.',
   qbrt: 'Stereo state-variable filter with vactrol-style ping input.',
   drummergirl: 'Gate-triggered drum voice (kick / snare / hat morph).',
   meowbox: 'Gate-triggered cat-vocal synth voice (formant bank + harmonic + noise excitation).',
-  mixmstrs: 'Singleton 4×stereo mixer with EQ, compressor, two stereo aux sends/returns. 37 params.',
+  mixmstrs: 'Singleton 4xstereo mixer with EQ, compressor, two stereo aux sends/returns. 37 params.',
   timelorde: 'Singleton master clock. Internal or external BPM, twelve clock-divider outputs.',
   charlottesEchos: 'Destructive multi-head stereo delay. Pitch-shifted feedback with decay.',
 };
 
-// Per-port, per-module-type extra context. Keys are `<moduleType>.<portId>`.
-// Falls back to a generic blurb derived from port type when missing.
 const PORT_NOTES = {
   'analogVco.pitch':    'V/oct pitch input.',
   'analogVco.fm':       'Audio-rate FM input (depth set by FM param).',
@@ -62,77 +59,73 @@ const PORT_NOTES = {
   'analogVco.sine':     'Sine output.',
   'wavetableVco.pitch':   'V/oct pitch input.',
   'wavetableVco.fm':      'Audio-rate FM input.',
-  'wavetableVco.wavePos': 'CV → wavetable scan position.',
+  'wavetableVco.wavePos': 'CV -> wavetable scan position.',
   'wavetableVco.audio':   'Mixed wavetable output.',
-  'audioOut.L':           'Mono L → host destination L.',
-  'audioOut.R':           'Mono R → host destination R.',
+  'audioOut.L':           'Mono L -> host destination L.',
+  'audioOut.R':           'Mono R -> host destination R.',
   'vca.audio':            'Audio input (gets multiplied).',
   'vca.cv':               'Modulation CV (gain control).',
   'mixer.in1':            'Channel 1 input.',
   'mixer.in2':            'Channel 2 input.',
   'mixer.in3':            'Channel 3 input.',
   'mixer.in4':            'Channel 4 input.',
-  'adsr.gate':            'Triggers attack → decay → sustain on rising edge; release on falling.',
+  'adsr.gate':            'Triggers attack -> decay -> sustain on rising edge; release on falling.',
   'adsr.env':             'Envelope CV out (0..1).',
   'filter.audio':         'Audio in.',
-  'filter.cutoff':        'CV → cutoff freq.',
-  'filter.res':           'CV → resonance.',
+  'filter.cutoff':        'CV -> cutoff freq.',
+  'filter.res':           'CV -> resonance.',
   'reverb.audio':         'Pre-reverb mono in / wet+dry mix out.',
   'scope.ch1':            'Channel 1 in.',
   'scope.ch2':            'Channel 2 in.',
   'scope.ch1_out':        'Channel 1 passthrough.',
   'scope.ch2_out':        'Channel 2 passthrough.',
   'sequencer.clock':      'External clock (rising edges advance the step pointer).',
-  'sequencer.pitch':      'V/oct pitch out.',
+  'sequencer.pitch':      'V/oct pitch out (polyPitchGate; lane 0 mirrors mono root for back-compat).',
   'sequencer.gate':       'Gate out (high while step is on).',
-  'lfo.clock':            'External clock — locks LFO rate to incoming pulses.',
-  'lfo.rate':             'CV → rate AudioParam.',
-  'lfo.shape':            'CV → wave shape.',
-  'lfo.phase0':           'LFO at 0°.',
-  'lfo.phase90':          'LFO at 90°.',
-  'lfo.phase180':         'LFO at 180°.',
-  'lfo.phase270':         'LFO at 270°.',
+  'lfo.clock':            'External clock - locks LFO rate to incoming pulses.',
+  'lfo.rate':             'CV -> rate AudioParam.',
+  'lfo.shape':            'CV -> wave shape.',
+  'lfo.phase0':           'LFO at 0deg.',
+  'lfo.phase90':          'LFO at 90deg.',
+  'lfo.phase180':         'LFO at 180deg.',
+  'lfo.phase270':         'LFO at 270deg.',
   'cartesian.clock':      'Step advance (rising edge).',
   'cartesian.x_cv':       'CV scrub on the X axis.',
   'cartesian.y_cv':       'CV scrub on the Y axis.',
-  'cartesian.pitch':      'V/oct pitch out.',
+  'cartesian.pitch':      'V/oct pitch out (polyPitchGate; lane 0 mirrors mono root).',
   'cartesian.gate':       'Gate out.',
   'destroy.audio':        'Audio in / out.',
-  'destroy.decimate':     'CV → decimation factor.',
-  'destroy.bits':         'CV → bit depth.',
-  'destroy.wet':          'CV → wet/dry mix.',
+  'destroy.decimate':     'CV -> decimation factor.',
+  'destroy.bits':         'CV -> bit depth.',
+  'destroy.wet':          'CV -> wet/dry mix.',
   'qbrt.L':               'Stereo input L.',
   'qbrt.R':               'Stereo input R.',
-  'qbrt.ping':            'Gate → click excitation.',
-  'qbrt.cutoff':          'CV → cutoff.',
-  'qbrt.resonance':       'CV → resonance.',
-  'qbrt.mode':            'CV → filter mode.',
-  'qbrt.pingDecay':       'CV → ping envelope decay.',
+  'qbrt.ping':            'Gate -> click excitation.',
+  'qbrt.cutoff':          'CV -> cutoff.',
+  'qbrt.resonance':       'CV -> resonance.',
+  'qbrt.mode':            'CV -> filter mode.',
+  'qbrt.pingDecay':       'CV -> ping envelope decay.',
   'drummergirl.gate':     'Trigger.',
-  'drummergirl.pitch':    'CV → pitch.',
-  'drummergirl.tone':     'CV → tone.',
-  'drummergirl.shape':    'CV → shape.',
+  'drummergirl.pitch':    'CV -> pitch.',
+  'drummergirl.tone':     'CV -> tone.',
+  'drummergirl.shape':    'CV -> shape.',
   'drummergirl.audio':    'Mono drum out.',
   'meowbox.gate':         'Trigger.',
-  'meowbox.pitch':        'CV → pitch.',
-  'meowbox.morph':        'CV → vowel morph.',
-  'meowbox.decay':        'CV → decay.',
-  'meowbox.level':        'CV → output level.',
+  'meowbox.pitch':        'CV -> pitch.',
+  'meowbox.morph':        'CV -> vowel morph.',
+  'meowbox.decay':        'CV -> decay.',
+  'meowbox.level':        'CV -> output level.',
   'meowbox.L':            'Stereo L out.',
   'meowbox.R':            'Stereo R out.',
-  'timelorde.clock':      'External clock — snaps 1x to incoming rising edges; falls back to internal BPM after ~2 master periods.',
+  'timelorde.clock':      'External clock - snaps 1x to incoming rising edges; falls back to internal BPM after ~2 master periods.',
   'timelorde.1x':         'Master tempo gate.',
   'charlottesEchos.L':    'Stereo L in / out.',
   'charlottesEchos.R':    'Stereo R in / out.',
-  'charlottesEchos.delay': 'CV → delay time.',
+  'charlottesEchos.delay': 'CV -> delay time.',
 };
 
-// Source link template — relative to repo root, anchored at main.
 const SRC_BASE = 'https://github.com/2600hz-oscillator/patchtogether.live/blob/main/packages/web/src/lib/audio/modules';
 
-// Strip line + block comments. Replace with whitespace of the same length so
-// downstream offsets don't shift. Skips comment tokens that appear inside
-// strings or template literals.
 function stripComments(src) {
   let out = '';
   let inStr = null;
@@ -147,21 +140,19 @@ function stripComments(src) {
     }
     if (c === '\'' || c === '"' || c === '`') { inStr = c; out += c; continue; }
     if (c === '/' && next === '/') {
-      // line comment until newline
       while (i < src.length && src[i] !== '\n') { out += ' '; i++; }
       if (i < src.length) out += '\n';
       continue;
     }
     if (c === '/' && next === '*') {
-      // block comment until */
       out += '  ';
       i += 2;
       while (i < src.length - 1 && !(src[i] === '*' && src[i + 1] === '/')) {
         out += src[i] === '\n' ? '\n' : ' ';
         i++;
       }
-      out += '  '; // for the */
-      i += 1; // for-loop will i++ to advance past /
+      out += '  ';
+      i += 1;
       continue;
     }
     out += c;
@@ -177,23 +168,16 @@ function readModule(file) {
     sourceUrl: `${SRC_BASE}/${file}`,
   };
 
-  // Slice from `export const <name>Def: AudioModuleDef = {` to the matching `};`
-  // so we never accidentally pick up a label / param value from a helper
-  // function defined ABOVE the def (e.g. mixmstrs.buildParams()).
   const declRe = /export\s+const\s+(\w+Def)\s*:\s*AudioModuleDef\s*=\s*\{/;
   const declMatch = declRe.exec(fullSrc);
   if (!declMatch) {
-    return null; // not a module def file
+    return null;
   }
   const startBrace = declMatch.index + declMatch[0].length - 1;
   const src = sliceBalancedBraces(fullSrc, startBrace);
   if (!src) return null;
 
-  // Pull `type:`, `label:`, `category:`, `schemaVersion:`, `maxInstances:`.
-  // The extracted slice covers ONLY the def body, so the first `label:` is
-  // the def's label (not a param's).
   const grab = (key) => {
-    // Accept single, double, or backtick-quoted strings (no interpolation).
     const re = new RegExp(`\\b${key}:\\s*(['\"\`])((?:\\\\.|(?!\\1).)*)\\1`);
     const m = src.match(re);
     return m ? m[2] : undefined;
@@ -210,13 +194,10 @@ function readModule(file) {
   out.schemaVersion = numGrab('schemaVersion');
   out.maxInstances = numGrab('maxInstances');
 
-  // Parse inputs / outputs / params via a tiny brace-balanced extractor.
   out.inputs = parsePortList(extractArray(src, 'inputs'));
   out.outputs = parsePortList(extractArray(src, 'outputs'));
   out.params = parseParamList(extractArray(src, 'params'));
 
-  // Compute-by-helper modules (mixmstrs uses buildInputs() / buildParams())
-  // need a runtime fallback. We detect the pattern and synthesize the data.
   if (out.inputs.length === 0 && /inputs:\s*build/.test(src)) {
     const synth = synthesizeFromBuildHelper(src, out.type);
     if (synth) {
@@ -229,8 +210,6 @@ function readModule(file) {
 }
 
 function sliceBalancedBraces(src, startIdx) {
-  // startIdx points at '{'. Return the slice INSIDE the braces (excluding the
-  // outer `{` and `}`), ignoring strings + template literals.
   if (src[startIdx] !== '{') return null;
   let depth = 0;
   let inStr = null;
@@ -252,13 +231,11 @@ function sliceBalancedBraces(src, startIdx) {
 }
 
 function extractArray(src, key) {
-  // Find `<key>:` then walk forward and return the contents of the next [...]
-  // (top-level only for that key — handles arrays-of-objects with embedded {}).
   const re = new RegExp(`\\b${key}:\\s*\\[`);
   const m = re.exec(src);
   if (!m) return '';
   let depth = 0;
-  let i = m.index + m[0].length - 1; // points at '['
+  let i = m.index + m[0].length - 1;
   let start = i + 1;
   for (; i < src.length; i++) {
     const c = src[i];
@@ -274,11 +251,9 @@ function extractArray(src, key) {
 function parsePortList(body) {
   if (!body.trim()) return [];
   const out = [];
-  // Split on top-level `},` boundaries.
   const parts = splitTopLevelObjects(body);
   for (const part of parts) {
-    const id = (part.match(/\bid:\s*['\"]([^'\"]+)['\"]/) || [])[2] ||
-               (part.match(/\bid:\s*['\"]([^'\"]+)['\"]/) || [])[1];
+    const id = (part.match(/\bid:\s*['\"]([^'\"]+)['\"]/) || [])[1];
     const type = (part.match(/\btype:\s*['\"]([^'\"]+)['\"]/) || [])[1];
     const paramTarget = (part.match(/paramTarget:\s*['\"]([^'\"]+)['\"]/) || [])[1];
     if (id && type) {
@@ -348,9 +323,6 @@ function splitTopLevelObjects(body) {
   return out;
 }
 
-// Special-case fallback for modules that build their port/param arrays via a
-// helper function (currently: mixmstrs). We hardcode the known shapes; if a
-// future helper-built module appears the build will warn but not fail.
 function synthesizeFromBuildHelper(src, type) {
   if (type !== 'mixmstrs') return null;
 
@@ -381,26 +353,24 @@ function synthesizeFromBuildHelper(src, type) {
   return { inputs, params };
 }
 
-// ----------------------------------------------------------------------
-
 function describePort(moduleType, portId, port) {
   const key = `${moduleType}.${portId}`;
   if (PORT_NOTES[key]) return PORT_NOTES[key];
-  // Generic fallback by cable type.
   switch (port.type) {
     case 'audio': return 'Audio signal.';
     case 'pitch': return 'V/oct pitch CV.';
     case 'gate':  return 'Gate signal (rising/falling edge).';
     case 'cv':    return port.paramTarget
-                       ? `CV → ${port.paramTarget} param.`
+                       ? `CV -> ${port.paramTarget} param.`
                        : 'Control voltage.';
+    case 'polyPitchGate': return 'Stage-1 poly cable: 5 V/oct + 5 gate lanes.';
     default: return port.type;
   }
 }
 
 function describeModule(type) {
   return DESCRIPTIONS[type] ||
-    `Audio module (${type}). Add a one-line description in docs/scripts/build-module-manifest.mjs:DESCRIPTIONS.`;
+    `Audio module (${type}). Add a one-line description in packages/web/scripts/build-module-manifest.mjs:DESCRIPTIONS.`;
 }
 
 function main() {
@@ -427,7 +397,6 @@ function main() {
     modules.push(m);
   }
 
-  // Stable order by category then label.
   const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
   modules.sort((a, b) => {
     const ai = CAT_ORDER.indexOf(a.category);
@@ -438,16 +407,37 @@ function main() {
     return a.label.localeCompare(b.label);
   });
 
+  // Note: no `generatedAt` timestamp. The manifest is committed and we don't
+  // want every CI run to dirty git diffs purely because of a regenerated
+  // timestamp. Source of truth is the audio module registry's mtime in git.
   const manifest = {
-    generatedAt: new Date().toISOString(),
     moduleCount: modules.length,
     categories: [...new Set(modules.map((m) => m.category))],
     modules,
     warnings,
   };
 
-  writeFileSync(OUT, JSON.stringify(manifest, null, 2));
-  console.log(`[build-module-manifest] wrote ${modules.length} modules → ${OUT}`);
+  mkdirSync(OUT_DIR, { recursive: true });
+
+  // Emit a TypeScript module that the SvelteKit /docs +page.server.ts loaders
+  // can import directly. The shape is mirrored in lib/docs/types.ts so the
+  // pages get type safety without us having to hand-author the JSON-ish data.
+  const ts = `// packages/web/src/lib/docs/modules-manifest.ts
+//
+// AUTOGENERATED by packages/web/scripts/build-module-manifest.mjs.
+// DO NOT EDIT BY HAND. Regenerate with \`flox activate -- task docs:manifest\`.
+//
+// Source of truth: packages/web/src/lib/audio/modules/*.ts (the AudioModuleDef
+// exports). The /docs/modules and /docs/modules/[id] routes prerender from
+// this manifest at build time.
+
+import type { ModuleManifest } from './types';
+
+export const moduleManifest: ModuleManifest = ${JSON.stringify(manifest, null, 2)} as const;
+`;
+
+  writeFileSync(OUT, ts);
+  console.log(`[build-module-manifest] wrote ${modules.length} modules -> ${OUT}`);
   if (warnings.length) {
     console.warn(`[build-module-manifest] ${warnings.length} warning(s):`);
     for (const w of warnings) console.warn('  - ' + w);

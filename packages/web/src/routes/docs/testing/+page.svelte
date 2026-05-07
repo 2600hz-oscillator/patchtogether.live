@@ -1,0 +1,107 @@
+<script lang="ts">
+  let { data } = $props();
+</script>
+
+<svelte:head>
+  <title>testing · patchtogether.live</title>
+  <meta name="description" content="Unit / ART / VRT / E2E test layers." />
+</svelte:head>
+
+<section class="docs-hero">
+  <h1>testing</h1>
+  <div class="docs-sub">Multi-layer regression coverage. Each layer scoped at a different boundary.</div>
+</section>
+
+<p>
+  Four layers, by ascending integration scope: <strong>unit</strong> &rarr; <strong>ART</strong> &rarr;
+  <strong>VRT</strong> &rarr; <strong>E2E</strong>. The PR gate (<code>flox activate -- task ci</code>) runs
+  typecheck + unit + ART + E2E. VRT is not yet implemented (see below).
+</p>
+
+<h2>Unit</h2>
+<p>
+  Vitest, fast, scoped per workspace. Lives next to the code (<code>foo.ts</code> &harr; <code>foo.test.ts</code>).
+  Run all unit tests:
+</p>
+<pre><code>flox activate -- task test</code></pre>
+<p>Coverage areas today: graph store mutations, capacity logic, auth handshake, layout merging, note-entry coercion.</p>
+
+<h2>ART &mdash; Audio Regression Tests</h2>
+<p>
+  Offline render of compiled DSP through <code>node-web-audio-api</code> &rarr;
+  Float32 PCM. Tests assert on FFT peak frequency, harmonic ratios, silence floor,
+  and where deterministic, byte-identical match against a <code>.f32</code> baseline pinned in Git LFS.
+  The harness lives at <code>art/setup/render.ts</code>.
+</p>
+<pre><code>flox activate -- task art           # run
+flox activate -- task art:update    # regenerate .f32 + .sha baselines</code></pre>
+
+<h3>Scenarios ({data.artScenarios.length})</h3>
+<table>
+  <thead><tr><th>group</th><th>spec</th></tr></thead>
+  <tbody>
+    {#each data.artScenarios as s}
+      <tr><td>{s.group}</td><td><code>{s.file}</code></td></tr>
+    {/each}
+  </tbody>
+</table>
+
+{#if data.artBaselines.length > 0}
+  <h3>Baselines ({data.artBaselines.length})</h3>
+  <p>Pinned in Git LFS at <code>art/baselines/</code>. <code>.f32</code> = raw 32-bit PCM, <code>.sha</code> = sidecar hash.</p>
+  <table>
+    <thead><tr><th>group</th><th>file</th></tr></thead>
+    <tbody>
+      {#each data.artBaselines as b}
+        <tr><td>{b.group}</td><td><code>{b.file}</code></td></tr>
+      {/each}
+    </tbody>
+  </table>
+{:else}
+  <p class="docs-banner">No ART baselines committed yet &mdash; most ART scenarios assert on FFT/spectrum properties rather than byte-exact PCM.</p>
+{/if}
+
+<h2>VRT &mdash; Visual Regression Tests</h2>
+{#if data.vrtImplemented}
+  <p>VRT harness present at <code>vrt/</code>. (Auto-detected at docs build.)</p>
+{:else}
+  <div class="docs-banner">
+    <strong>Status: planned, not yet implemented.</strong> The plan
+    (<code>.myrobots/plans/testing-strategy.md</code>) calls for Playwright screenshot
+    diffs across pinned Chromium / WebKit / Firefox + a fixed font set in CI. The harness
+    directory <code>vrt/</code> does not exist yet; this section will populate with a baseline
+    gallery once it does.
+  </div>
+{/if}
+
+<h2>E2E &mdash; Playwright</h2>
+<p>
+  Headless Chromium, real Web Audio (worklets and all), against the actual SvelteKit app.
+  Boots a Vite dev server (or <code>vite preview</code> when <code>E2E_USE_PREVIEW=1</code>).
+  Lives under <code>e2e/tests/</code>; specs tagged <code>@smoke</code> double as the
+  post-deploy live check on autotest.
+</p>
+<pre><code>flox activate -- task e2e          # full suite
+flox activate -- task e2e:headed   # with the browser visible
+flox activate -- task ci:smoke:live  # smoke vs autotest.patchtogether.live</code></pre>
+
+<h3>Specs ({data.e2eSpecs.length})</h3>
+<ul>
+  {#each data.e2eSpecs as s}
+    <li><code>{s}</code></li>
+  {/each}
+</ul>
+
+<h2>Chaos</h2>
+<p>
+  Single-user randomized intent fuzzer. Drives the canvas through 200+ random patches /
+  mutations; checks invariants between each. Multi-user invariants land post-Stage B.
+</p>
+<pre><code>flox activate -- task chaos:run</code></pre>
+
+<h2>CI shape</h2>
+<p>
+  The full gate runs in <code>.github/workflows/ci.yml</code> inside Flox so the
+  toolchain (Node 22, Faust 2.85.5, esbuild) matches local. Postgres 17 is a service
+  container; the DB schema is applied before <code>task ci</code> runs.
+</p>

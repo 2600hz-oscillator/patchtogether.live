@@ -16,7 +16,6 @@ vars:
   SERVER: packages/server
   ART: art
   E2E: e2e
-  DOCS: docs
 
 tasks:
   default:
@@ -71,14 +70,16 @@ tasks:
 
   # ---------------- Build ----------------
   build:
-    desc: Production build (DSP + web)
+    desc: Production build (DSP + web). Regenerates the /docs module manifest first so prerender sees fresh data.
     cmds:
       - task: dsp:build
+      - task: docs:manifest
       - npm run build -w {{.WEB}}
 
   build:web:
-    desc: Build web only
+    desc: Build web only (regenerates docs manifest first).
     cmds:
+      - task: docs:manifest
       - npm run build -w {{.WEB}}
 
   # ---------------- DSP ----------------
@@ -188,23 +189,15 @@ tasks:
       - task: art
       - task: e2e
 
-  # ---------------- Docs site (GitHub Pages) ----------------
-  # Astro static site at docs/. The catalog page is generated from
-  # packages/web/src/lib/audio/module-registry.ts via a small build script.
+  # ---------------- Docs ----------------
+  # Docs site lives as SvelteKit routes at /docs inside the main web app
+  # (see packages/web/src/routes/docs/). The /docs/modules and
+  # /docs/modules/[id] pages prerender from a manifest generated out of
+  # packages/web/src/lib/audio/modules/*.ts at build time.
   docs:manifest:
-    desc: Regenerate docs/src/data/modules.json from the audio module registry
+    desc: Regenerate packages/web/src/lib/docs/modules-manifest.ts from the audio module registry
     cmds:
-      - npm run manifest -w {{.DOCS}}
-
-  docs:dev:
-    desc: Run the docs site dev server (http://localhost:4321/patchtogether.live/)
-    cmds:
-      - npm run dev -w {{.DOCS}}
-
-  docs:build:
-    desc: Build the docs site to docs/dist (used by the gh-pages workflow)
-    cmds:
-      - npm run build -w {{.DOCS}}
+      - npm run manifest -w {{.WEB}}
 
   # ---------------- Housekeeping ----------------
   clean:

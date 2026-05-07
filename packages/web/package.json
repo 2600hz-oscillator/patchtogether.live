@@ -11,7 +11,8 @@
     "prepare": "svelte-kit sync || true",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --threshold error",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "manifest": "node scripts/build-module-manifest.mjs"
   },
   "dependencies": {
     "@grame/faustwasm": "^0.7.0",

@@ -4,7 +4,7 @@ Multiplayer browser-native modular synthesizer. Performers patch a shared rack l
 
 > Status: Stage B (multi-user) shipping. 19 audio modules. Visual modules planned post-Phase-5.
 
-Docs: <https://2600hz-oscillator.github.io/patchtogether.live/> (auto-deployed from `docs/` on every push to `main`).
+Docs: <https://patchtogether.live/docs> (in-app SvelteKit routes; auto-generated module catalog at `/docs/modules`). Per-tier: <https://autotest.patchtogether.live/docs>, <https://dev.patchtogether.live/docs>.
 
 ## Architecture
 
@@ -46,12 +46,14 @@ If you stay inside `flox activate` (one shell), drop the `flox activate --` pref
 
 ```
 packages/web        SvelteKit app (Svelte 5, @xyflow/svelte canvas, Web Audio)
+                    /docs/* routes carry the in-app docs site; module catalog
+                    auto-generated from packages/web/src/lib/audio/modules/*.ts
+                    via packages/web/scripts/build-module-manifest.mjs
 packages/dsp        Faust .dsp + TS AudioWorklets → built to packages/dsp/dist
 packages/server     Hocuspocus + Clerk JWT verify + capacity (Stage B+)
 db/                 Neon Postgres schema (apply in order)
 art/                Audio Regression Tests (offline render → FFT/PCM assertions)
 e2e/                Playwright end-to-end tests (full app, real Web Audio)
-docs/               Astro docs site, deployed to GitHub Pages
 ```
 
 ## Deploy
@@ -79,7 +81,7 @@ The PR gate runs typecheck + unit + ART + E2E inside Flox so the toolchain match
 
 ## Module catalog
 
-19 audio modules currently registered. Full per-module I/O diagrams + param tables are auto-generated from the registry and published with the docs site: <https://2600hz-oscillator.github.io/patchtogether.live/modules/>.
+19 audio modules currently registered. Full per-module I/O diagrams + param tables are auto-generated from the registry and live at `/docs/modules` inside the app: <https://patchtogether.live/docs/modules>. A right-click on any module on the canvas opens its overview page (<code>/docs/modules/&lt;type&gt;</code>) in a new tab.
 
 ## License
 

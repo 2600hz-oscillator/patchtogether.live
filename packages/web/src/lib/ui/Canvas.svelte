@@ -498,6 +498,13 @@
     if (!n) return '';
     return getModuleDef(n.type)?.label ?? n.type;
   });
+  // Module type id (e.g. "analogVco") — feeds the "Docs" entry's
+  // /docs/modules/<type> URL. $derived.by mirrors ctxMenuLabel above.
+  let ctxMenuModuleType = $derived.by(() => {
+    void snapshot;
+    if (!ctxMenuNodeId) return undefined;
+    return patch.nodes[ctxMenuNodeId]?.type;
+  });
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
@@ -797,6 +804,7 @@
   x={ctxMenuPos.x}
   y={ctxMenuPos.y}
   nodeLabel={ctxMenuLabel}
+  moduleType={ctxMenuModuleType}
   ondelete={() => ctxMenuNodeId && deleteNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
