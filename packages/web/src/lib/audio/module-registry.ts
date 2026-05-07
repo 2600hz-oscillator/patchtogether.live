@@ -38,6 +38,33 @@ export interface AudioModuleDef {
   factory: AudioModuleFactory;
 }
 
+/**
+ * SyncedModuleDef — sibling subtype for time-driven modules whose state
+ * derives deterministically from `(epoch, params, prng)`. Phase 0 of the
+ * shared-state-sync plan; LFO is the proof-of-concept. Stateless modules
+ * keep using plain AudioModuleDef.
+ *
+ * Implementations expose:
+ *  - `computeStateAt(t_ms_since_epoch, params, prng) → state`
+ *      Pure function. Two clients with the same epoch + params + prng
+ *      seed call this with the same t_ms and get the same state.
+ *  - `resyncOnReset` — true for modules whose worklet phase needs to be
+ *      snapped back to zero on owner-driven epoch resets (LFO, sequencer).
+ */
+export interface SyncedModuleDef extends AudioModuleDef {
+  computeStateAt(
+    tMsSinceEpoch: number,
+    params: Record<string, number>,
+    prng: () => number,
+  ): Record<string, number>;
+  resyncOnReset: boolean;
+}
+
+/** Type-guard for treating an AudioModuleDef as a SyncedModuleDef. */
+export function isSyncedModuleDef(def: AudioModuleDef): def is SyncedModuleDef {
+  return typeof (def as Partial<SyncedModuleDef>).computeStateAt === 'function';
+}
+
 /** Discriminated union; future video module defs add another arm. */
 export type AnyModuleDef = AudioModuleDef;
 
