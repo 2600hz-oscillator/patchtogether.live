@@ -2,6 +2,7 @@
   // Searchable popup palette for adding modules. Right-click the canvas (or
   // click the topbar's + Add module) to open. Type to filter; click to spawn.
   import { listModuleDefs } from '$lib/audio/module-registry';
+  import { patch } from '$lib/graph/store';
 
   interface Props {
     open: boolean;
@@ -15,6 +16,15 @@
   }
 
   let { open = $bindable(false), x, y, onselect, onclose }: Props = $props();
+
+  /** Count instances of a module type currently in the patch. */
+  function instanceCount(type: string): number {
+    let n = 0;
+    for (const node of Object.values(patch.nodes)) {
+      if (node && node.type === type) n++;
+    }
+    return n;
+  }
 
   let search = $state('');
   let inputEl: HTMLInputElement | null = $state(null);
@@ -37,7 +47,15 @@
   });
 
   // Re-read defs each open in case modules were registered after first import.
-  let allDefs = $derived(open ? listModuleDefs() : []);
+  // Also drop any module at its `maxInstances` cap — first-line UI enforcement
+  // for singletons (engine.addNode is the defensive last line).
+  let allDefs = $derived(
+    open
+      ? listModuleDefs().filter(
+          (d) => d.maxInstances === undefined || instanceCount(d.type) < d.maxInstances,
+        )
+      : [],
+  );
   let filtered = $derived(
     allDefs.filter((d) => {
       if (!search) return true;
