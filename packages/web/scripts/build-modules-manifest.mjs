@@ -1,32 +1,27 @@
 #!/usr/bin/env node
-// docs/scripts/build-module-manifest.mjs
+// packages/web/scripts/build-modules-manifest.mjs
 //
 // Reads packages/web/src/lib/audio/modules/*.ts at build time and emits
-// docs/src/data/modules.json — a static manifest the Astro site uses to
-// generate the module catalog.
+// packages/web/src/lib/docs/modules-manifest.ts — a TS export the in-app
+// /docs routes import via +page.server.ts loaders. Replaces the previous
+// docs/scripts/build-module-manifest.mjs that fed the standalone Astro site.
 //
-// Why a regex parser, not the TS compiler API:
-// 1. No npm install required for the docs workspace beyond Astro.
-// 2. The module-def shape is enforced by AudioModuleDef + the (intentionally
-//    simple) literal-init pattern the codebase uses. A handful of well-tested
-//    regexes are easier to reason about than a partial AST walk.
-//
-// The parser is tolerant of registry additions: any export matching
-// `export const <name>Def: AudioModuleDef = { ... };` is picked up. It's also
-// tolerant of two computed-shape modules (mixmstrs uses helper functions to
-// build inputs/params); for those we fall back to a hardcoded extractor that
-// runs the helper expressions through `eval` against a synthesized PARAMS
-// array. If all else fails we emit a placeholder card and surface the failure
-// at build time.
+// Why a regex parser, not the TS compiler API: keeps the generator script
+// dependency-free so it can run before any npm install. The module-def shape
+// is enforced by AudioModuleDef + the (intentionally simple) literal-init
+// pattern the codebase uses; a handful of regexes are easier to reason about
+// than a partial AST walk. mixmstrs uses helper-built ports/params — for
+// that case we fall back to a hardcoded shape (mirrored against the runtime
+// helpers in mixmstrs.ts).
 
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..', '..');
-const MODULES_DIR = join(REPO_ROOT, 'packages', 'web', 'src', 'lib', 'audio', 'modules');
-const OUT = join(__dirname, '..', 'src', 'data', 'modules.json');
+const WEB_ROOT = resolve(__dirname, '..');
+const MODULES_DIR = join(WEB_ROOT, 'src', 'lib', 'audio', 'modules');
+const OUT = join(WEB_ROOT, 'src', 'lib', 'docs', 'modules-manifest.ts');
 
 // One-line descriptions per module type. Edit here when adding modules.
 const DESCRIPTIONS = {
@@ -46,13 +41,12 @@ const DESCRIPTIONS = {
   qbrt: 'Stereo state-variable filter with vactrol-style ping input.',
   drummergirl: 'Gate-triggered drum voice (kick / snare / hat morph).',
   meowbox: 'Gate-triggered cat-vocal synth voice (formant bank + harmonic + noise excitation).',
-  mixmstrs: 'Singleton 4×stereo mixer with EQ, compressor, two stereo aux sends/returns. 37 params.',
+  mixmstrs: 'Singleton 4×stereo mixer with EQ, compressor, two stereo aux sends/returns.',
   timelorde: 'Singleton master clock. Internal or external BPM, twelve clock-divider outputs.',
   charlottesEchos: 'Destructive multi-head stereo delay. Pitch-shifted feedback with decay.',
 };
 
 // Per-port, per-module-type extra context. Keys are `<moduleType>.<portId>`.
-// Falls back to a generic blurb derived from port type when missing.
 const PORT_NOTES = {
   'analogVco.pitch':    'V/oct pitch input.',
   'analogVco.fm':       'Audio-rate FM input (depth set by FM param).',
@@ -127,12 +121,8 @@ const PORT_NOTES = {
   'charlottesEchos.delay': 'CV → delay time.',
 };
 
-// Source link template — relative to repo root, anchored at main.
 const SRC_BASE = 'https://github.com/2600hz-oscillator/patchtogether.live/blob/main/packages/web/src/lib/audio/modules';
 
-// Strip line + block comments. Replace with whitespace of the same length so
-// downstream offsets don't shift. Skips comment tokens that appear inside
-// strings or template literals.
 function stripComments(src) {
   let out = '';
   let inStr = null;
@@ -147,21 +137,19 @@ function stripComments(src) {
     }
     if (c === '\'' || c === '"' || c === '`') { inStr = c; out += c; continue; }
     if (c === '/' && next === '/') {
-      // line comment until newline
       while (i < src.length && src[i] !== '\n') { out += ' '; i++; }
       if (i < src.length) out += '\n';
       continue;
     }
     if (c === '/' && next === '*') {
-      // block comment until */
       out += '  ';
       i += 2;
       while (i < src.length - 1 && !(src[i] === '*' && src[i + 1] === '/')) {
         out += src[i] === '\n' ? '\n' : ' ';
         i++;
       }
-      out += '  '; // for the */
-      i += 1; // for-loop will i++ to advance past /
+      out += '  ';
+      i += 1;
       continue;
     }
     out += c;
@@ -177,23 +165,14 @@ function readModule(file) {
     sourceUrl: `${SRC_BASE}/${file}`,
   };
 
-  // Slice from `export const <name>Def: AudioModuleDef = {` to the matching `};`
-  // so we never accidentally pick up a label / param value from a helper
-  // function defined ABOVE the def (e.g. mixmstrs.buildParams()).
   const declRe = /export\s+const\s+(\w+Def)\s*:\s*AudioModuleDef\s*=\s*\{/;
   const declMatch = declRe.exec(fullSrc);
-  if (!declMatch) {
-    return null; // not a module def file
-  }
+  if (!declMatch) return null;
   const startBrace = declMatch.index + declMatch[0].length - 1;
   const src = sliceBalancedBraces(fullSrc, startBrace);
   if (!src) return null;
 
-  // Pull `type:`, `label:`, `category:`, `schemaVersion:`, `maxInstances:`.
-  // The extracted slice covers ONLY the def body, so the first `label:` is
-  // the def's label (not a param's).
   const grab = (key) => {
-    // Accept single, double, or backtick-quoted strings (no interpolation).
     const re = new RegExp(`\\b${key}:\\s*(['\"\`])((?:\\\\.|(?!\\1).)*)\\1`);
     const m = src.match(re);
     return m ? m[2] : undefined;
@@ -210,13 +189,10 @@ function readModule(file) {
   out.schemaVersion = numGrab('schemaVersion');
   out.maxInstances = numGrab('maxInstances');
 
-  // Parse inputs / outputs / params via a tiny brace-balanced extractor.
   out.inputs = parsePortList(extractArray(src, 'inputs'));
   out.outputs = parsePortList(extractArray(src, 'outputs'));
   out.params = parseParamList(extractArray(src, 'params'));
 
-  // Compute-by-helper modules (mixmstrs uses buildInputs() / buildParams())
-  // need a runtime fallback. We detect the pattern and synthesize the data.
   if (out.inputs.length === 0 && /inputs:\s*build/.test(src)) {
     const synth = synthesizeFromBuildHelper(src, out.type);
     if (synth) {
@@ -229,8 +205,6 @@ function readModule(file) {
 }
 
 function sliceBalancedBraces(src, startIdx) {
-  // startIdx points at '{'. Return the slice INSIDE the braces (excluding the
-  // outer `{` and `}`), ignoring strings + template literals.
   if (src[startIdx] !== '{') return null;
   let depth = 0;
   let inStr = null;
@@ -252,13 +226,11 @@ function sliceBalancedBraces(src, startIdx) {
 }
 
 function extractArray(src, key) {
-  // Find `<key>:` then walk forward and return the contents of the next [...]
-  // (top-level only for that key — handles arrays-of-objects with embedded {}).
   const re = new RegExp(`\\b${key}:\\s*\\[`);
   const m = re.exec(src);
   if (!m) return '';
   let depth = 0;
-  let i = m.index + m[0].length - 1; // points at '['
+  let i = m.index + m[0].length - 1;
   let start = i + 1;
   for (; i < src.length; i++) {
     const c = src[i];
@@ -274,13 +246,11 @@ function extractArray(src, key) {
 function parsePortList(body) {
   if (!body.trim()) return [];
   const out = [];
-  // Split on top-level `},` boundaries.
   const parts = splitTopLevelObjects(body);
   for (const part of parts) {
-    const id = (part.match(/\bid:\s*['\"]([^'\"]+)['\"]/) || [])[2] ||
-               (part.match(/\bid:\s*['\"]([^'\"]+)['\"]/) || [])[1];
-    const type = (part.match(/\btype:\s*['\"]([^'\"]+)['\"]/) || [])[1];
-    const paramTarget = (part.match(/paramTarget:\s*['\"]([^'\"]+)['\"]/) || [])[1];
+    const id = (part.match(/\bid:\s*['"]([^'"]+)['"]/) || [])[1];
+    const type = (part.match(/\btype:\s*['"]([^'"]+)['"]/) || [])[1];
+    const paramTarget = (part.match(/paramTarget:\s*['"]([^'"]+)['"]/) || [])[1];
     if (id && type) {
       const port = { id, type };
       if (paramTarget) port.paramTarget = paramTarget;
@@ -295,13 +265,13 @@ function parseParamList(body) {
   const out = [];
   const parts = splitTopLevelObjects(body);
   for (const part of parts) {
-    const id = (part.match(/\bid:\s*['\"]([^'\"]+)['\"]/) || [])[1];
-    const label = (part.match(/\blabel:\s*['\"`]([^'\"`]+)['\"`]/) || [])[1];
+    const id = (part.match(/\bid:\s*['"]([^'"]+)['"]/) || [])[1];
+    const label = (part.match(/\blabel:\s*['"`]([^'"`]+)['"`]/) || [])[1];
     const dv = (part.match(/defaultValue:\s*(-?\d+(?:\.\d+)?)/) || [])[1];
     const min = (part.match(/\bmin:\s*(-?\d+(?:\.\d+)?)/) || [])[1];
     const max = (part.match(/\bmax:\s*(-?\d+(?:\.\d+)?)/) || [])[1];
-    const curve = (part.match(/\bcurve:\s*['\"]([^'\"]+)['\"]/) || [])[1];
-    const units = (part.match(/\bunits:\s*['\"]([^'\"]+)['\"]/) || [])[1];
+    const curve = (part.match(/\bcurve:\s*['"]([^'"]+)['"]/) || [])[1];
+    const units = (part.match(/\bunits:\s*['"]([^'"]+)['"]/) || [])[1];
     if (id) {
       out.push({
         id,
@@ -348,10 +318,7 @@ function splitTopLevelObjects(body) {
   return out;
 }
 
-// Special-case fallback for modules that build their port/param arrays via a
-// helper function (currently: mixmstrs). We hardcode the known shapes; if a
-// future helper-built module appears the build will warn but not fail.
-function synthesizeFromBuildHelper(src, type) {
+function synthesizeFromBuildHelper(_src, type) {
   if (type !== 'mixmstrs') return null;
 
   const params = [];
@@ -381,26 +348,22 @@ function synthesizeFromBuildHelper(src, type) {
   return { inputs, params };
 }
 
-// ----------------------------------------------------------------------
-
 function describePort(moduleType, portId, port) {
   const key = `${moduleType}.${portId}`;
   if (PORT_NOTES[key]) return PORT_NOTES[key];
-  // Generic fallback by cable type.
   switch (port.type) {
     case 'audio': return 'Audio signal.';
     case 'pitch': return 'V/oct pitch CV.';
     case 'gate':  return 'Gate signal (rising/falling edge).';
-    case 'cv':    return port.paramTarget
-                       ? `CV → ${port.paramTarget} param.`
-                       : 'Control voltage.';
+    case 'cv':    return port.paramTarget ? `CV → ${port.paramTarget} param.` : 'Control voltage.';
+    case 'polyPitchGate': return 'Stage-1 polyphony cable: pitch + gate per voice.';
     default: return port.type;
   }
 }
 
 function describeModule(type) {
   return DESCRIPTIONS[type] ||
-    `Audio module (${type}). Add a one-line description in docs/scripts/build-module-manifest.mjs:DESCRIPTIONS.`;
+    `Audio module (${type}). Add a one-line description in packages/web/scripts/build-modules-manifest.mjs:DESCRIPTIONS.`;
 }
 
 function main() {
@@ -427,7 +390,6 @@ function main() {
     modules.push(m);
   }
 
-  // Stable order by category then label.
   const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
   modules.sort((a, b) => {
     const ai = CAT_ORDER.indexOf(a.category);
@@ -446,10 +408,60 @@ function main() {
     warnings,
   };
 
-  writeFileSync(OUT, JSON.stringify(manifest, null, 2));
-  console.log(`[build-module-manifest] wrote ${modules.length} modules → ${OUT}`);
+  const tsHeader = `// packages/web/src/lib/docs/modules-manifest.ts
+//
+// AUTO-GENERATED by packages/web/scripts/build-modules-manifest.mjs.
+// DO NOT EDIT BY HAND. Regenerate with \`flox activate -- task docs:manifest\`.
+//
+// Source of truth: packages/web/src/lib/audio/modules/*.ts (parsed at build
+// time from each module's exported AudioModuleDef literal). The /docs routes
+// import this file for per-module pages + the catalog gallery.
+
+export interface ManifestPort {
+  id: string;
+  type: string;
+  paramTarget?: string;
+  note: string;
+}
+
+export interface ManifestParam {
+  id: string;
+  label: string;
+  defaultValue: number | null;
+  min: number | null;
+  max: number | null;
+  curve: string;
+  units?: string;
+}
+
+export interface ManifestModule {
+  file: string;
+  sourceUrl: string;
+  type: string;
+  label: string;
+  category: string;
+  schemaVersion: number;
+  maxInstances?: number;
+  description: string;
+  inputs: ManifestPort[];
+  outputs: ManifestPort[];
+  params: ManifestParam[];
+}
+
+export interface Manifest {
+  generatedAt: string;
+  moduleCount: number;
+  categories: string[];
+  modules: ManifestModule[];
+  warnings: string[];
+}
+
+export const manifest: Manifest = `;
+
+  writeFileSync(OUT, tsHeader + JSON.stringify(manifest, null, 2) + ';\n');
+  console.log(`[build-modules-manifest] wrote ${modules.length} modules → ${OUT}`);
   if (warnings.length) {
-    console.warn(`[build-module-manifest] ${warnings.length} warning(s):`);
+    console.warn(`[build-modules-manifest] ${warnings.length} warning(s):`);
     for (const w of warnings) console.warn('  - ' + w);
   }
 }

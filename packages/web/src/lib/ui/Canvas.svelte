@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Day 7 — Svelte Flow canvas + module cards + auto-reactive engine.
+  // Canvas — Svelte Flow + module cards + auto-reactive engine.
   //
   // Click "Load example" → patch graph populates → Svelte Flow renders cards →
   // reconciler instantiates engine nodes → audio plays. Twiddle a knob →
@@ -498,6 +498,12 @@
     if (!n) return '';
     return getModuleDef(n.type)?.label ?? n.type;
   });
+  // Module type id for the right-click "Docs" deep-link (→ /docs/modules/<type>).
+  let ctxMenuNodeType = $derived.by(() => {
+    void snapshot;
+    if (!ctxMenuNodeId) return '';
+    return patch.nodes[ctxMenuNodeId]?.type ?? '';
+  });
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
@@ -721,8 +727,12 @@
 
 <div class="root">
   <header class="topbar">
-    <h1>patchtogether.live</h1>
-    <span class="caption">Day 7 — Svelte Flow canvas + reactive engine</span>
+    <!-- Spaced wordmark — `letter-spacing` keeps the literal text "patchtogether.live"
+         in the DOM (so screen readers, page titles, and OG tags pronounce it as a
+         word) while rendering the title visually as `p a t c h t o g e t h e r . l i v e`.
+         No subtitle in 0.5.0 — the previous "Day 7 — Svelte Flow canvas + reactive
+         engine" caption belongs in changelogs, not on the running app's chrome. -->
+    <h1 class="wordmark" data-testid="app-wordmark">patchtogether.live</h1>
     <div class="actions">
       <button onclick={openPaletteFromButton}>+ Add module</button>
       <button onclick={loadExample} disabled={booting} class="primary">
@@ -797,6 +807,7 @@
   x={ctxMenuPos.x}
   y={ctxMenuPos.y}
   nodeLabel={ctxMenuLabel}
+  nodeType={ctxMenuNodeType}
   ondelete={() => ctxMenuNodeId && deleteNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
@@ -831,9 +842,12 @@
     font-weight: 500;
     font-size: 1.05rem;
   }
-  .topbar .caption {
-    color: var(--text-dim);
-    font-size: 0.8rem;
+  .topbar h1.wordmark {
+    /* `letter-spacing: 0.45em` reproduces the requested "p a t c h t o g e t h e r . l i v e"
+     * spacing visually while leaving the literal "patchtogether.live" string in
+     * the DOM (intent-preserving for assistive tech). */
+    letter-spacing: 0.45em;
+    text-transform: lowercase;
   }
   .topbar .actions {
     margin-left: auto;

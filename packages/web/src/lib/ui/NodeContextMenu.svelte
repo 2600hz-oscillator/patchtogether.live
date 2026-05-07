@@ -1,7 +1,12 @@
 <script lang="ts">
-  // Right-click context menu for module nodes. Two actions:
-  //   Delete       — remove node + every edge touching it
+  // Right-click context menu for module nodes. Three actions:
+  //   Docs         — open the module's docs page in a new tab (top of menu)
   //   Unpatch all  — keep node, remove every edge touching it
+  //   Delete       — remove node + every edge touching it
+  //
+  // The Docs entry is filtered to per-node right-clicks only; the canvas-pane
+  // right-click (handled by ModulePalette) keeps "Add Module" + "Organize" and
+  // does not show Docs because there's no module-type to deep-link to.
 
   interface Props {
     open: boolean;
@@ -10,12 +15,14 @@
     y: number;
     /** Module display label (e.g. "Analog VCO"). */
     nodeLabel: string;
+    /** Module type id (e.g. "analogVco"). Used to deep-link to the docs page. */
+    nodeType: string;
     ondelete: () => void;
     onunpatch: () => void;
     onclose: () => void;
   }
 
-  let { open = $bindable(false), x, y, nodeLabel, ondelete, onunpatch, onclose }: Props = $props();
+  let { open = $bindable(false), x, y, nodeLabel, nodeType, ondelete, onunpatch, onclose }: Props = $props();
 
   // Window-level Escape handler — context menus traditionally don't take focus,
   // and the user expects Esc to dismiss regardless of where focus actually sits.
@@ -39,6 +46,14 @@
     onunpatch();
     onclose();
   }
+  function pickDocs() {
+    // New tab so the user keeps their session/canvas state. noopener is the
+    // recommended posture for cross-tab links to a public docs page.
+    if (typeof window !== 'undefined' && nodeType) {
+      window.open(`/docs/modules/${nodeType}`, '_blank', 'noopener');
+    }
+    onclose();
+  }
 </script>
 
 {#if open}
@@ -52,6 +67,10 @@
     aria-label="Module actions"
   >
     <div class="ctx-header">{nodeLabel}</div>
+    <button class="ctx-item" onclick={pickDocs} role="menuitem" data-testid="ctx-docs">
+      Docs
+    </button>
+    <div class="ctx-sep" role="separator"></div>
     <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
       Unpatch all
     </button>
@@ -110,5 +129,10 @@
   .ctx-item.danger:hover,
   .ctx-item.danger:focus-visible {
     background: rgba(248, 113, 113, 0.12);
+  }
+  .ctx-sep {
+    height: 1px;
+    background: #2a2f3a;
+    margin: 4px 6px;
   }
 </style>
