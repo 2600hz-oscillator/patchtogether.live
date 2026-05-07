@@ -16,6 +16,11 @@
     type RemotePresence,
   } from '$lib/multiplayer/presence';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
+  import {
+    createSharedClock,
+    type SharedClockHandle,
+  } from '$lib/audio/shared-clock.svelte';
+  import { setActiveSharedClock } from '$lib/audio/modules/lfo';
 
   // Audio gate — Bug 2 (B5): F5 / cold-loads land with no AudioContext
   // (autoplay policy) so we render an overlay that boots the engine and
@@ -109,6 +114,38 @@
       provider = null;
     };
   });
+
+  // Phase 0 of the shared-state-sync plan: shared clock attached once
+  // the provider is up. The clock observes heartbeats via the same
+  // Awareness channel as cursors; LFO + future SyncedModuleDef instances
+  // pull the active clock via `setActiveSharedClock`.
+  let sharedClock: SharedClockHandle | null = $state(null);
+  $effect(() => {
+    if (!provider) return;
+    const clock = createSharedClock({ provider, ydoc });
+    sharedClock = clock;
+    setActiveSharedClock(clock);
+    return () => {
+      setActiveSharedClock(null);
+      clock.destroy();
+      sharedClock = null;
+    };
+  });
+
+  const isOwner = $derived(
+    !!data.rackspace.ownerUserId &&
+      !!data.currentUserId &&
+      data.rackspace.ownerUserId === data.currentUserId,
+  );
+
+  function resetSession() {
+    if (!sharedClock) return;
+    const ok = window.confirm(
+      'Reset all clocks to zero? Anyone listening will hear a moment of silence as nodes re-align.',
+    );
+    if (!ok) return;
+    sharedClock.resetEpoch();
+  }
 
   // Subscribe to awareness updates so the rack bar can render a dot per
   // currently-connected user. Includes the local user (so the owner sees
@@ -213,6 +250,7 @@
           ></span>
         {/each}
       </span>
+      <span class="bar-spacer"></span>
       {#if data.isAnon}
         <button
           class="share sign-in"
@@ -222,6 +260,17 @@
           Sign in
         </button>
       {:else}
+        {#if isOwner}
+          <button
+            class="reset-session"
+            data-testid="reset-session"
+            onclick={resetSession}
+            disabled={!sharedClock}
+            title="Re-broadcast a fresh epoch. All time-driven modules snap back to zero."
+          >
+            Reset session
+          </button>
+        {/if}
         <button
           class="share"
           onclick={copyShareUrl}
@@ -323,8 +372,28 @@
     border-radius: 50%;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) inset;
   }
+  .bar-spacer {
+    flex: 1;
+  }
+  .reset-session {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid #404652;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+  }
+  .reset-session:hover:not(:disabled) {
+    background: #2a2f3a;
+    color: var(--text);
+  }
+  .reset-session:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .share {
-    margin-left: auto;
     background: #2a2f3a;
     color: var(--text);
     border: 1px solid #404652;
@@ -338,7 +407,6 @@
     background: #353a47;
   }
   .share.sign-in {
-    margin-left: auto;
     border-color: var(--cable-cv);
     color: var(--cable-cv);
   }
