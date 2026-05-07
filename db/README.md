@@ -1,33 +1,34 @@
 # patchtogether.live persistence
 
-Stage B1+ stores rackspaces and Yjs document snapshots in **Postgres on Fly Managed Postgres**, accessed by:
+Stage B1+ stores rackspaces and Yjs document snapshots in **Neon Postgres**, accessed by:
 
-- **Hocuspocus server** (`@patchtogether.live/server`) — direct `pg.Pool` over Fly's internal network (~5ms)
-- **SvelteKit web** (`@patchtogether.live/web`) on Cloudflare Workers — per-request `pg.Client` over a public Fly IPv6 (~150ms cross-cloud). The original plan was Cloudflare Hyperdrive (~30ms), but Hyperdrive requires TLS at the origin and Fly Postgres ships plain TCP. Fixing that is its own scope; we accept the latency for beta and revisit when RUM shows it mattering. See "Future: Hyperdrive" at the bottom.
+- **SvelteKit web** (`@patchtogether.live/web`) on Cloudflare Workers — `@neondatabase/serverless`'s **HTTP** `neon` template tag (Workers can't drive raw `pg` sockets or the package's own WebSocket Pool — see the why-not section).
+- **Hocuspocus server** (`@patchtogether.live/server`) on Fly.io — standard `pg.Pool` over TCP. Node runtime, no Workers oddities.
 
 Schema lives in `db/schema/*.sql`. Apply in order; new files are append-only migrations.
 
 ## Per-tier topology
 
-Three tiers, each with its own Fly Postgres:
+One Neon project (`patchtogether`), three branches:
 
-| Tier | Fly Postgres app | Cloudflare Pages | Hocuspocus app |
+| Tier | Neon branch | Cloudflare Pages | Hocuspocus app |
 |---|---|---|---|
-| prod | `patchtogether-pg` | `patchtogether-live` | `patchtogether-server` |
-| autotest | `patchtogether-pg-autotest` | `patchtogether-live-autotest` | `patchtogether-server-autotest` |
-| dev | `patchtogether-pg-dev` | `patchtogether-live-dev` | `patchtogether-server-dev` |
+| prod | `production` | `patchtogether-live` | `patchtogether-server` |
+| autotest | `autotest` | `patchtogether-live-autotest` | `patchtogether-server-autotest` |
+| dev | `dev` | `patchtogether-live-dev` | `patchtogether-server-dev` |
+
+Each branch has its own endpoint host (`ep-XXX.c-8.us-east-1.aws.neon.tech`). Same role/password inherited from the parent branch.
 
 ## Local dev
 
 ```bash
-# One-time: install + init + start local Postgres
+# One-time: install + init + start local Postgres (matches CI shape)
 flox install postgresql
 mkdir -p ~/.local/share/patchtogether-pg
 flox activate -- initdb -D ~/.local/share/patchtogether-pg --auth=trust --username=postgres
 sed -i.bak 's/^#port = 5432/port = 54320/' ~/.local/share/patchtogether-pg/postgresql.conf
 flox activate -- pg_ctl -D ~/.local/share/patchtogether-pg -l ~/.local/share/patchtogether-pg/server.log start
 flox activate -- psql -p 54320 -U postgres -c 'CREATE DATABASE patchtogether_dev;'
-flox activate -- psql -p 54320 -U postgres -c 'CREATE DATABASE patchtogether_test;'
 
 # Apply schema
 flox activate -- psql -p 54320 -U postgres -d patchtogether_dev -f db/schema/001_init.sql
@@ -36,73 +37,45 @@ flox activate -- psql -p 54320 -U postgres -d patchtogether_dev -f db/schema/001
 export DATABASE_URL='postgresql://postgres:dev@localhost:54320/patchtogether_dev'
 ```
 
-The web side reads `DATABASE_URL` under `vite dev`. The wrangler.toml's
-`[[hyperdrive]]` `localConnectionString` covers `wrangler pages dev` if you
-ever use it.
+The web side reads `DATABASE_URL` under `vite dev`. The Neon HTTP API client also works against a local Postgres if you'd rather skip the local PG step entirely — point `DATABASE_URL` at the dev branch on Neon (see `~/.config/patchtogether/cf.env`).
 
-## First-time provisioning per tier (Fly + Cloudflare Hyperdrive)
+## Provisioning a new Neon branch
 
-### Fly Postgres
+API-driven so it scales to ephemeral tiers:
 
 ```bash
-# Cheapest single-node config; bump if/when needed.
-flox activate -- flyctl postgres create \
-  --name patchtogether-pg-dev \
-  --region iad \
-  --vm-size shared-cpu-1x \
-  --volume-size 1 \
-  --initial-cluster-size 1
-# When prompted, save the generated connection string somewhere safe — Fly
-# only shows it once. The shape is:
-#   postgres://postgres:<pwd>@patchtogether-pg-dev.flycast:5432
+source ~/.config/patchtogether/cf.env  # NEON_API_KEY, NEON_PROJECT_ID
+
+# Create branch off production
+curl -X POST "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
+  -H "Authorization: Bearer ${NEON_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"branch":{"name":"<tier>","parent_id":"<prod_branch_id>"},"endpoints":[{"type":"read_write"}]}'
+
+# Get endpoint host from the response, then build the connection string:
+# postgresql://neondb_owner:<pwd>@<endpoint-host>/neondb?sslmode=require
+
+# Apply schema
+flox activate -- psql "$DB_URL" -f db/schema/001_init.sql
+
+# Set on Cloudflare Pages project + Fly Hocuspocus app:
+curl -X PATCH ".../pages/projects/<proj>" \
+  --data "{\"deployment_configs\":{\"production\":{\"env_vars\":{\"DATABASE_URL\":{\"type\":\"secret_text\",\"value\":\"$DB_URL\"}}}}}"
+flyctl secrets set DATABASE_URL="$DB_URL" --app <hocuspocus-app>
 ```
 
-Attach to the corresponding Hocuspocus app (sets `DATABASE_URL` as a Fly secret):
+Trigger a redeploy of the web tier afterward — env vars apply on next build, not existing deployments.
 
-```bash
-flox activate -- flyctl postgres attach \
-  --app patchtogether-server-dev \
-  patchtogether-pg-dev
-```
+## Why not Fly Postgres + plain `pg` (the path we tried first)
 
-Apply the schema (Fly proxy + psql):
+CF Workers' `node:net` shim under `nodejs_compat` returns "proxy request failed" on any `pg.Client.connect()` — `pg` doesn't speak the `cloudflare:sockets` protocol. The Neon serverless package's WebSocket `Pool` also fails: CF's egress proxy 403s the outbound WS handshake. **Only the HTTP `neon` template tag works.** See `cf-workers-pg-blocker.md` in agent memory + `.myrobots/plans/workers-pg-blocker.md` for the full diagnosis trail.
 
-```bash
-flox activate -- flyctl proxy 5432 --app patchtogether-pg-dev &
-PROXY=$!
-flox activate -- psql "$FLY_PG_CONN_STRING" -f db/schema/001_init.sql
-kill $PROXY
-```
-
-Repeat per tier with the corresponding `-autotest` and `<no-suffix>` (prod) names.
-
-### Cloudflare Pages: DATABASE_URL
-
-For each tier, allocate a public IPv6 on the Postgres app (Fly's free shared IPv4 only exposes 80/443; IPv6 is free and routable for any port), add a DNS record so the IP has a stable hostname, then set `DATABASE_URL` on the matching Cloudflare Pages project as `secret_text`:
-
-```bash
-# Per tier — example for dev:
-flox activate -- flyctl ips allocate-v6 --app patchtogether-pg-dev
-# Copy the returned IPv6, e.g. 2a09:8280:1::aaaa:bbbb:0
-
-# DNS: pg-<tier>.patchtogether.live → that IPv6, AAAA, NOT proxied
-curl -X POST "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records" \
-  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-  -d '{"type":"AAAA","name":"pg-dev","content":"<IPv6>","ttl":1,"proxied":false}'
-
-# Set DATABASE_URL on the matching CF Pages project
-DB_URL='postgres://patchtogether_server_dev:<pwd>@pg-dev.patchtogether.live:5432/patchtogether_server_dev?sslmode=disable'
-curl -X PATCH "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/patchtogether-live-dev" \
-  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-  -d "{\"deployment_configs\":{\"production\":{\"env_vars\":{\"DATABASE_URL\":{\"type\":\"secret_text\",\"value\":\"${DB_URL}\"}}}}}"
-```
-
-Trigger a redeploy of the web tier afterward to pick up the new env (the env applies on next build, not on existing deployments).
-
-## Future: Hyperdrive (deferred optimization)
-
-The original plan used Cloudflare Hyperdrive between Workers and Fly Postgres for ~30ms latency vs the ~150ms direct connection. Hyperdrive requires TLS at the origin; Fly Postgres serves plain TCP. To unblock it later: either (a) configure Fly Postgres to terminate TLS on its public address (`stunnel`, custom certs, or Fly Tunnel), or (b) migrate to Neon Postgres (native Workers support, TLS by default). Revisit when RUM shows Worker→DB query latency dominating page-load p95.
+The first iteration of B1 ran Fly Managed Postgres (3 instances, one per tier, with dedicated IPv4 + AAAA DNS). That whole stack is decommissioned post-Neon — no Fly Postgres in use today.
 
 ## Adding a migration
 
-Bump the file number, write the SQL. Apply via `psql` against each tier (proxy through `flyctl proxy 5432 --app patchtogether-pg-…`). Down migrations: out of scope for now — beta means we can drop and recreate during pre-launch.
+Bump the file number, write the SQL. Apply via `psql` against each Neon branch (build the connection string from `~/.config/patchtogether/cf.env`'s `NEON_*_DIRECT_URL` vars). Down migrations: out of scope for now — beta means we can drop and recreate during pre-launch.
+
+## Code shape constraints
+
+The HTTP API has no client-side multi-statement transactions. Anything that needs atomicity (insert rack + insert owner; check-then-insert capacity) must be one SQL statement, typically a CTE. See `packages/web/src/lib/server/rackspaces.ts` for examples.
