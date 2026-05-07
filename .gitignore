@@ -28,6 +28,7 @@ art/__diffs__/
 vrt/test-results/
 vrt/playwright-report/
 e2e/test-results/
+e2e/test-results-audio-drift/
 e2e/playwright-report/
 coverage/
 

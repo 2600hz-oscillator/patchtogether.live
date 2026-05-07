@@ -207,11 +207,11 @@
     outline: none;
   }
   .knob:focus-visible {
-    box-shadow: 0 0 0 2px var(--cable-cv);
+    box-shadow: 0 0 0 2px var(--accent);
   }
   .knob-wrap.dragging .knob {
     background: #353a47;
-    box-shadow: 0 0 0 2px var(--cable-cv);
+    box-shadow: 0 0 0 2px var(--accent), 0 0 6px var(--accent-glow);
   }
   .tick {
     position: absolute;
