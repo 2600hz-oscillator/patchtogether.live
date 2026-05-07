@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { UserButton } from 'svelte-clerk';
+  import { UserButton, getToken } from 'svelte-clerk';
   import Canvas from '$lib/ui/Canvas.svelte';
   import { ydoc } from '$lib/graph/store';
   import { attachProvider } from '$lib/multiplayer/provider';
@@ -21,19 +21,43 @@
   let provider: HocuspocusProvider | null = null;
   $effect(() => {
     if (!data.isMember) return;
+    // PR-D: token is a callback so Hocuspocus pulls a fresh value on every
+    // (re)connect. Anon users carry their HMAC-derived invite code; authed
+    // users carry their Clerk session JWT. The server's onAuthenticate
+    // verifies one or the other and rejects bad tokens.
+    const tokenProvider = async (): Promise<string> => {
+      if (data.isAnon && data.inviteCode) return `anon:${data.inviteCode}`;
+      // Authed: getToken() returns a fresh JWT (or null if signed out).
+      // If null, send an empty `clerk:` token; server will reject and the
+      // page navigates to /sign-in via onAuthRejected.
+      const jwt = await getToken();
+      return `clerk:${jwt ?? ''}`;
+    };
     const p = attachProvider({
       rackspaceId: data.rackspace.id,
       ydoc,
-      // TODO(stage-b-pr-d): pass Clerk session token (or invite code for
-      // anon visitors) here once the server wires real verification in
-      // onAuthenticate. Stub still accepted by the server.
-      token: 'stub',
+      token: tokenProvider,
       debug: import.meta.env.DEV,
       onCapacityRejected: () => {
         // Server returned `rackspace-full`; route to the friendly page.
         // Use replaceState so the browser back button doesn't bounce
         // them right back to a 4/4 doc and re-trigger the rejection.
         goto(`/r/${data.rackspace.id}/full`, { replaceState: true });
+      },
+      onAuthRejected: (reason) => {
+        // Server rejected the token (signed-out user, expired JWT, or
+        // — rare — INVITE_SECRET mismatch between web and server). Send
+        // the user to /sign-in with the original rackspace URL so they
+        // come back here after auth. The HTTP route loader on /r/[id]
+        // already validated the page render, so an anon visitor reaching
+        // this branch means their invite was good HTTP-side but the
+        // server's HMAC disagrees — an ops issue worth surfacing in the
+        // sign-in URL via &reason=.
+        const here = window.location.pathname + window.location.search;
+        goto(
+          `/sign-in?redirect_url=${encodeURIComponent(here)}&reason=${encodeURIComponent(reason)}`,
+          { replaceState: true },
+        );
       },
     });
     provider = p;
