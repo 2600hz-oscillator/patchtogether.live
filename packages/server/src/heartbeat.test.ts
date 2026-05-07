@@ -48,9 +48,20 @@ class MockClock {
 interface AwarenessFieldWrite { field: string; value: unknown; }
 class MockDocument {
   awarenessWrites: AwarenessFieldWrite[] = [];
+  // Mirror y-protocols Awareness: Hocuspocus's Document constructor seeds
+  // the local state with `null`, and setLocalStateField bails silently
+  // until setLocalState is called with a non-null value. Tests cover the
+  // setLocalState path to keep the assertion surface honest.
+  private localState: Record<string, unknown> | null = null;
   awareness = {
-    setLocalStateField: (field: string, value: unknown) => {
-      this.awarenessWrites.push({ field, value });
+    getLocalState: () => this.localState,
+    setLocalState: (s: Record<string, unknown> | null) => {
+      this.localState = s;
+      if (s !== null) {
+        for (const [field, value] of Object.entries(s)) {
+          this.awarenessWrites.push({ field, value });
+        }
+      }
     },
   };
 }

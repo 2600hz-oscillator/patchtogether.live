@@ -16,9 +16,18 @@ import type { Extension } from '@hocuspocus/server';
 // compiled JS is bundled into hocuspocus-server.cjs/esm) and trips
 // nodenext + verbatimModuleSyntax. Local interface keeps the surface
 // area honest and the runtime cast obvious.
+//
+// We use setLocalState (not setLocalStateField) because the y-protocols
+// Awareness's setLocalStateField is a silent no-op when getLocalState()
+// is null — and Hocuspocus's Document constructor explicitly calls
+// `awareness.setLocalState(null)` at boot, which puts us in exactly that
+// state. setLocalState always emits an `update` event, which is what the
+// connected providers' awareness instances listen for to receive the
+// per-document heartbeat.
 interface DocumentLike {
   awareness: {
-    setLocalStateField(field: string, value: unknown): void;
+    getLocalState(): Record<string, unknown> | null;
+    setLocalState(state: Record<string, unknown> | null): void;
   };
 }
 
@@ -92,10 +101,15 @@ export function createHeartbeatExtension(
       ts_ms: deps.now(),
     };
     // Write to the document's awareness using the server's auto-assigned
-    // clientID. setLocalStateField merges the new field into whatever
-    // state is already there (none, in our case).
+    // clientID. We MUST call setLocalState (not setLocalStateField) because
+    // Hocuspocus's Document constructor seeds the awareness with
+    // setLocalState(null), which makes setLocalStateField a no-op forever
+    // (y-protocols/awareness.js bails when getLocalState() === null).
+    // We merge the heartbeat into whatever state is currently there so any
+    // future server-side awareness fields (none today) survive.
     try {
-      doc.awareness.setLocalStateField(HEARTBEAT_FIELD, payload);
+      const existing = doc.awareness.getLocalState() ?? {};
+      doc.awareness.setLocalState({ ...existing, [HEARTBEAT_FIELD]: payload });
     } catch {
       // Document might be mid-destroy; ignore. The next interval tick
       // will see liveDocs without the entry and bail.

@@ -131,7 +131,11 @@ export function createSharedClock(opts: CreateSharedClockOptions): SharedClockHa
     // reading — defer until the estimator has converged.
     const sn = estimator.snapshot();
     if (sn.offsetMs === null) return;
-    const nowShared = (deps.perfNow() + sn.offsetMs) | 0;
+    // No `| 0` here: shared-time is wall-clock-scale (Date.now-derived),
+    // which overflows int32 by ~3 orders of magnitude. Truncating to int32
+    // wraps the epoch into a meaningless small number and detunes every
+    // subsequent phase computation.
+    const nowShared = Math.round(deps.perfNow() + sn.offsetMs);
     opts.ydoc!.transact(() => {
       // Re-check inside the transact: another client may have written
       // between our last check and now.
@@ -209,6 +213,10 @@ export function createSharedClock(opts: CreateSharedClockOptions): SharedClockHa
     const aw = provider.awareness;
     aw.on('update', onAwarenessChange);
     aw.on('change', onAwarenessChange);
+    // Catch up on any heartbeats that arrived before we subscribed (the
+    // provider syncs awareness during the same handshake that resolves
+    // `synced`, so the burst's first ticks can land before this hook runs).
+    onAwarenessChange();
     awarenessUnsub = () => {
       aw.off('update', onAwarenessChange);
       aw.off('change', onAwarenessChange);
@@ -291,7 +299,9 @@ export function createSharedClock(opts: CreateSharedClockOptions): SharedClockHa
       if (!opts.ydoc || !meta) return;
       const off = effectiveOffset();
       if (off === null) return;
-      const fresh = (deps.perfNow() + off) | 0;
+      // Math.round (not `| 0`): shared-time is wall-clock ms, way past
+      // 32-bit int range. See bootstrapEpoch above for the same reason.
+      const fresh = Math.round(deps.perfNow() + off);
       opts.ydoc.transact(() => {
         meta.set(META_EPOCH_FIELD, fresh);
       });
