@@ -18,6 +18,18 @@ pages_build_output_dir = ".svelte-kit/cloudflare"
 compatibility_date = "2024-11-06"
 compatibility_flags = ["nodejs_compat"]
 
+# Hyperdrive binding for Postgres (B1 persistence). Each Cloudflare Pages
+# project (-prod, -autotest, -dev) gets its OWN Hyperdrive instance pointing
+# at its tier's Fly Postgres. Configure the per-project ID in the Cloudflare
+# dashboard → project → Settings → Bindings; this file just declares the
+# binding name. The localConnectionString is what `wrangler pages dev` uses;
+# SvelteKit's `vite dev` ignores wrangler.toml entirely and falls back to
+# process.env.DATABASE_URL via lib/server/db.ts.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000000000000000000000000000"
+localConnectionString = "postgresql://postgres:dev@localhost:54320/patchtogether_dev"
+
 # Clerk env vars are NOT in this file — we want different Clerk instances
 # per Pages project (test instance for autotest/dev/PR-preview, eventual
 # prod instance for patchtogether.live), and wrangler.toml [vars] applies

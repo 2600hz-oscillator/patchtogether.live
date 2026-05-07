@@ -7,7 +7,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createRackspace, listRackspacesForUser } from '$lib/server/rackspaces';
 
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, platform }) => {
   const { userId } = locals.auth();
   if (!userId) throw error(401, 'unauthorized');
 
@@ -21,13 +21,13 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   // Only string-typed names get through; everything else falls back.
   const rawName = typeof body.name === 'string' ? body.name : 'Untitled rackspace';
   const name = rawName.slice(0, 80);
-  const rackspace = createRackspace(userId, name);
+  const rackspace = await createRackspace(userId, name, platform?.env);
   return json({ rackspace });
 };
 
-export const GET: RequestHandler = ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, platform }) => {
   const { userId } = locals.auth();
   if (!userId) throw error(401, 'unauthorized');
-  const rackspaces = listRackspacesForUser(userId);
+  const rackspaces = await listRackspacesForUser(userId, platform?.env);
   return json({ rackspaces });
 };

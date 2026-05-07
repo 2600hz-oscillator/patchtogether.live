@@ -8,11 +8,11 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { joinRackspace } from '$lib/server/rackspaces';
 
-export const POST: RequestHandler = ({ locals, params }) => {
+export const POST: RequestHandler = async ({ locals, params, platform }) => {
   const { userId } = locals.auth();
   if (!userId) throw error(401, 'unauthorized');
 
-  const result = joinRackspace(params.id, userId);
+  const result = await joinRackspace(params.id, userId, platform?.env);
   switch (result.status) {
     case 'not-found':
       throw error(404, 'rackspace not found');
