@@ -1,0 +1,25 @@
+# .dockerignore — kept minimal; Dockerfile only COPYs the workspace
+# skeleton + packages/server/. Anything else is invisible to the build.
+
+# But still: speed up the daemon's tar of the build context.
+node_modules
+**/node_modules
+**/dist
+**/.svelte-kit
+**/.vite
+**/build
+**/playwright-report
+**/test-results
+**/coverage
+.git
+.github
+.flox
+.claude
+.myrobots
+e2e/chaos
+art/baselines
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
