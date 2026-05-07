@@ -30,7 +30,11 @@ type StandardModuleType =
   | 'cartesian'
   | 'destroy'
   | 'qbrt'
-  | 'drummergirl';
+  | 'drummergirl'
+  | 'meowbox'
+  | 'mixmstrs'
+  | 'timelorde'
+  | 'charlottesEchos';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
