@@ -54,6 +54,18 @@ test.describe('auth-route shape', () => {
     expect(r.status(), `/r/[id] must not 500; got ${r.status()}`).not.toBe(500);
   });
 
+  test('GET /r/<id>?invite=<bad> on a fake id is never a 500 @smoke', async ({ request }) => {
+    // Anon-via-invite (PR B-c) takes a separate code path through the route
+    // loader (HMAC verify + early return). Make sure it doesn't 500 either.
+    const r = await request.get('/r/not-a-real-rackspace?invite=0000000000000000', {
+      maxRedirects: 0,
+    });
+    expect(
+      r.status(),
+      `/r/[id]?invite=<bad> must not 500; got ${r.status()}`,
+    ).not.toBe(500);
+  });
+
   test('GET /sign-up is never a 500 @smoke', async ({ request }) => {
     const r = await request.get('/sign-up');
     expect(r.status(), `sign-up must not 500; got ${r.status()}`).not.toBe(500);
