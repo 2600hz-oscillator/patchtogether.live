@@ -6,6 +6,8 @@
   import { page } from '$app/state';
   import { ydoc } from '$lib/graph/store';
   import { attachProvider } from '$lib/multiplayer/provider';
+  import { createSharedClock } from '$lib/audio/shared-clock.svelte';
+  import { setActiveSharedClock } from '$lib/audio/modules/lfo';
 
   let { data, children } = $props();
 
@@ -102,6 +104,45 @@
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).__getLocalClientId = () => {
       return _activeProviderRef?.awareness?.clientID ?? null;
+    };
+
+    // Phase 0 of shared-state-sync: dev hook so @clock-sync Playwright
+    // tests can spin up a SharedClock against the active provider
+    // without needing to render /r/[id] (Clerk-protected). Idempotent —
+    // a second call returns the same handle.
+    let _sharedClockRef: ReturnType<typeof createSharedClock> | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__createSharedClock = () => {
+      if (_sharedClockRef) return _sharedClockRef;
+      if (!_activeProviderRef) throw new Error('__attachProvider must be called first');
+      _sharedClockRef = createSharedClock({ provider: _activeProviderRef, ydoc });
+      setActiveSharedClock(_sharedClockRef);
+      return _sharedClockRef;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__sharedClock = () => _sharedClockRef;
+
+    // Compute the deterministic phase a SyncedModuleDef LFO instance
+    // would produce *now* on this client. Calls through computeStateAt,
+    // so it matches the worklet's output to within the smoothing window
+    // and verifies that two clients with the same epoch see the same
+    // phase. Returns null until the shared clock has converged.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__lfoPhase = async (nodeId: string) => {
+      const clock = _sharedClockRef;
+      if (!clock) return null;
+      const sharedNow = clock.sharedTimeNow();
+      const epoch = clock.epoch_ms;
+      if (sharedNow === null || epoch === null) return null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const patch = (window as any).__patch as
+        | { nodes: Record<string, { type: string; params?: Record<string, number> }> }
+        | undefined;
+      const node = patch?.nodes[nodeId];
+      if (!node || node.type !== 'lfo') return null;
+      const { lfoDef } = await import('$lib/audio/modules/lfo');
+      const state = lfoDef.computeStateAt(sharedNow - epoch, node.params ?? { rate: 1 }, () => 0);
+      return state.phase;
     };
   }
 
