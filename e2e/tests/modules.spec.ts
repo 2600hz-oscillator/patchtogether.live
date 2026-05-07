@@ -26,7 +26,10 @@ const MODULES: ModuleSpec[] = [
   { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 4, containsLabel: 'Sequencer' },
   { type: 'wavetableVco', cardClass: 'svelte-flow__node-wavetableVco', handleCount: 4, containsLabel: 'Wavetable VCO' },
   { type: 'lfo',          cardClass: 'svelte-flow__node-lfo',          handleCount: 7, containsLabel: 'LFO' },
-  { type: 'cartesian',    cardClass: 'svelte-flow__node-cartesian',    handleCount: 6, containsLabel: 'Cartesian' },
+  // Cartesian: 4 inputs (clock, x cv, y cv, lfo clock) + 5 outputs (pitch,
+  // gate, clock, lfo x, lfo y) = 9 handles. lfo_clock + lfo_x + lfo_y were
+  // added by the embedded LFO subsystem.
+  { type: 'cartesian',    cardClass: 'svelte-flow__node-cartesian',    handleCount: 9, containsLabel: 'Cartesian' },
   { type: 'destroy',      cardClass: 'svelte-flow__node-destroy',      handleCount: 5, containsLabel: 'DESTROY' },
   // QBRT: 9 handles = 6 inputs (L, R, ping, cutoff cv, resonance cv, mode cv,
   //                              pingDecay cv) + 2 outputs (L, R) — wait, that's 7+2=9. Counting again:

@@ -9,12 +9,14 @@
     defaultCells,
     CELL_COUNT,
     GRID_DIM,
+    LFO_DIVISIONS,
     coerceToCartesianCell,
     type Cell,
   } from '$lib/audio/modules/cartesian';
   import { type ChordQuality, nextChordQuality } from '$lib/audio/poly';
   import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName } from '$lib/audio/note-entry';
+  import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
@@ -31,6 +33,29 @@
   let mode       = $derived((void cardVersion, (node?.params.mode ?? 0) >= 0.5 ? 1 : 0));
   let octave     = $derived((void cardVersion, node?.params.octave ?? 0));
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.5));
+  let lfoDiv     = $derived((void cardVersion, node?.params.lfoDiv ?? 3));
+  let lfoShape   = $derived((void cardVersion, node?.params.lfoShape ?? 0));
+
+  // Glyph rail for the LFO waveform slider: sine/tri/saw/square at the four
+  // morph anchor points (frac 0/1/3, 1/3, 2/3, 1). Active glyph is the one
+  // closest to the current shape value.
+  const LFO_SHAPE_GLYPHS: Array<{ frac: number; kind: 'sine' | 'tri' | 'saw' | 'square' }> = [
+    { frac: 0,         kind: 'sine'   },
+    { frac: 1 / 3,     kind: 'tri'    },
+    { frac: 2 / 3,     kind: 'saw'    },
+    { frac: 1,         kind: 'square' },
+  ];
+
+  // Tick rail for the LFO division slider — text labels at each snap point.
+  const LFO_DIV_TICKS = LFO_DIVISIONS.map((d, i) => ({
+    frac: i / (LFO_DIVISIONS.length - 1),
+    label: d.label,
+  }));
+
+  function formatLfoDiv(v: number): string {
+    const i = Math.max(0, Math.min(LFO_DIVISIONS.length - 1, Math.round(v)));
+    return LFO_DIVISIONS[i]?.label ?? '';
+  }
 
   let cells = $derived.by<Cell[]>(() => {
     void cardVersion;
@@ -122,7 +147,7 @@
 
   function findCell(idx: number, role: 'pitch' | 'gate'): HTMLElement | null {
     if (!gridEl) return null;
-    return gridEl.querySelector<HTMLElement>(`[data-step="${idx}"][data-role="${role}"]`);
+    return gridEl.querySelector<HTMLElement>(`[data-step="${idx}"] [data-role="${role}"]`);
   }
 
   function focusCell(idx: number, role: 'pitch' | 'gate'): boolean {
@@ -133,33 +158,24 @@
     return true;
   }
 
+  // Cartesian is a 4x4 cell grid. Each cell renders gate-on-top + pitch-below,
+  // so the conceptual keyboard grid is 8 rows x 4 cols. Up from pitch jumps to
+  // gate of the same cell; Up from a top-row gate clamps (no wrap). Same for
+  // Down at the bottom + Left/Right at row edges.
+  const NAV_SPEC = { cols: GRID_DIM, cellRows: GRID_DIM };
+
   function handleNav(e: KeyboardEvent, idx: number, role: 'pitch' | 'gate'): boolean {
     const max = CELL_COUNT - 1;
-    const col = idx % GRID_DIM;
-    const row = Math.floor(idx / GRID_DIM);
-    if (e.key === 'ArrowLeft') {
-      // Left wraps to previous row's last col.
-      const next = idx === 0 ? max : idx - 1;
-      return focusCell(next, role);
-    }
-    if (e.key === 'ArrowRight') {
-      const next = idx === max ? 0 : idx + 1;
-      return focusCell(next, role);
-    }
-    if (e.key === 'ArrowUp') {
-      // Up moves to the same column in the row above (linear semantics across
-      // the grid). For pitch row, allow swap to gate within the same cell on
-      // the *first* row only? Per spec: "swap row (pitch ↔ gate of same step
-      // index)" — i.e., toggle role, NOT move grid row. So Up/Down toggle role.
-      const otherRole = role === 'pitch' ? 'gate' : 'pitch';
-      return focusCell(idx, otherRole);
-    }
-    if (e.key === 'ArrowDown') {
-      const otherRole = role === 'pitch' ? 'gate' : 'pitch';
-      return focusCell(idx, otherRole);
+    if (
+      e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+      e.key === 'ArrowUp'   || e.key === 'ArrowDown'
+    ) {
+      const next = resolveArrowNav({ index: idx, role }, e.key as ArrowKey, NAV_SPEC);
+      if (!next) return false;
+      return focusCell(next.index, next.role);
     }
     if (e.key === 'Enter' && role === 'pitch') {
-      const next = idx === max ? 0 : idx + 1;
+      const next = idx === max ? max : idx + 1;
       Promise.resolve().then(() => focusCell(next, 'pitch'));
       return true;
     }
@@ -169,8 +185,6 @@
       if (next < 0 || next > max) return false;
       return focusCell(next, role);
     }
-    // Suppress unused-var warning from row/col (kept for readability).
-    void col; void row;
     return false;
   }
 </script>
@@ -184,19 +198,25 @@
     </button>
   </header>
 
-  <Handle type="target" position={Position.Left} id="clock" style="top: 56px;  --handle-color: var(--cable-gate);" />
-  <Handle type="target" position={Position.Left} id="x_cv"  style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="y_cv"  style="top: 128px; --handle-color: var(--cable-cv);" />
+  <Handle type="target" position={Position.Left} id="clock"     style="top: 56px;  --handle-color: var(--cable-gate);" />
+  <Handle type="target" position={Position.Left} id="x_cv"      style="top: 92px;  --handle-color: var(--cable-cv);" />
+  <Handle type="target" position={Position.Left} id="y_cv"      style="top: 128px; --handle-color: var(--cable-cv);" />
+  <Handle type="target" position={Position.Left} id="lfo_clock" style="top: 164px; --handle-color: var(--cable-gate);" />
   <span class="port-label left" style="top: 50px;">clk</span>
   <span class="port-label left" style="top: 86px;">x cv</span>
   <span class="port-label left" style="top: 122px;">y cv</span>
+  <span class="port-label left" style="top: 158px;">lfo clk</span>
 
   <Handle type="source" position={Position.Right} id="pitch" style="top: 56px;  --handle-color: var(--cable-polyPitchGate);" />
   <Handle type="source" position={Position.Right} id="gate"  style="top: 92px;  --handle-color: var(--cable-gate);" />
   <Handle type="source" position={Position.Right} id="clock" style="top: 128px; --handle-color: var(--cable-gate);" />
+  <Handle type="source" position={Position.Right} id="lfo_x" style="top: 164px; --handle-color: var(--cable-cv);" />
+  <Handle type="source" position={Position.Right} id="lfo_y" style="top: 200px; --handle-color: var(--cable-cv);" />
   <span class="port-label right" style="top: 50px;">pitch</span>
   <span class="port-label right" style="top: 86px;">gate</span>
   <span class="port-label right" style="top: 122px;">clk</span>
+  <span class="port-label right" style="top: 158px;">lfo x</span>
+  <span class="port-label right" style="top: 194px;">lfo y</span>
 
   <div class="grid" bind:this={gridEl} data-testid={`cart-grid-${id}`}>
     {#each cells.slice(0, CELL_COUNT) as cell, i (i)}
@@ -236,10 +256,55 @@
     <Fader value={octave}     min={-2}  max={2}    defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}     readLive={live('octave')} />
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} readLive={live('gateLength')} />
   </div>
+
+  <div class="lfo-row" data-testid={`cart-lfo-${id}`}>
+    <div class="lfo-label">LFO</div>
+    <Fader
+      value={lfoDiv}
+      min={0}
+      max={LFO_DIVISIONS.length - 1}
+      defaultValue={3}
+      label="Div"
+      curve="discrete"
+      onchange={set('lfoDiv')}
+      readLive={live('lfoDiv')}
+      ticks={LFO_DIV_TICKS}
+      formatValue={formatLfoDiv}
+    />
+    <Fader
+      value={lfoShape}
+      min={0}
+      max={3}
+      defaultValue={0}
+      label="Wave"
+      curve="linear"
+      onchange={set('lfoShape')}
+      readLive={live('lfoShape')}
+      glyphs={LFO_SHAPE_GLYPHS}
+    />
+  </div>
 </div>
 
 <style>
-  .cartesian-card { width: 320px; min-height: 320px; padding-right: 0; padding-left: 0; }
+  .cartesian-card { width: 360px; min-height: 460px; padding-right: 0; padding-left: 0; }
+  .lfo-row {
+    margin-top: 8px;
+    padding: 0 22px 12px;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 16px;
+    border-top: 1px solid #2a2f3a;
+    padding-top: 10px;
+  }
+  .lfo-label {
+    font-size: 0.62rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    align-self: center;
+    margin-right: 4px;
+  }
   .cartesian-card .title {
     padding-right: 22px;
     padding-left: 22px;

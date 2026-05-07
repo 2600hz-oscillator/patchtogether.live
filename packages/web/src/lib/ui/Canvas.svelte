@@ -14,6 +14,7 @@
     type Connection,
   } from '@xyflow/svelte';
   import { patch, ydoc } from '$lib/graph/store';
+  import { getDefaultSnapshotBus, type PatchSnapshot } from '$lib/graph/snapshot';
   import {
     makeEnvelope,
     downloadEnvelope,
@@ -61,17 +62,33 @@
   import CharlottesEchosCard from '$lib/ui/modules/CharlottesEchosCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
+  import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
   import type { CableType } from '$lib/graph/types';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
+  import type { HocuspocusProvider } from '@hocuspocus/provider';
+  import type { PresenceUser } from '$lib/multiplayer/presence';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
   // On the public canvas at `/`, this stays undefined and the layout
   // helpers fall through to node.position (single-user behavior preserved).
+  //
+  // Awareness (provider + presenceUser): cursor broadcast + remote cursor
+  // rendering. Audio gate: AudioGate store wires Canvas's ensureEngine into
+  // the overlay so the AudioContext can resume from a user gesture. All
+  // optional — the public `/` canvas leaves them undefined.
   interface Props {
     currentUserId?: string;
+    provider?: HocuspocusProvider | null;
+    presenceUser?: PresenceUser | null;
+    audioGate?: import('$lib/audio/audio-gate.svelte').AudioGate;
   }
-  let { currentUserId }: Props = $props();
+  let {
+    currentUserId,
+    provider = null,
+    presenceUser = null,
+    audioGate,
+  }: Props = $props();
 
   const nodeTypes = {
     analogVco: AnalogVcoCard,
@@ -157,50 +174,50 @@
     return persistenceLoad(env, ydoc, patch);
   }
 
-  // Bridge SyncedStore (Yjs) → Svelte 5 reactivity. Yjs doesn't push through
-  // Svelte's rune system on its own; bump a counter on every doc update and
-  // reference it in $effect so derivations recompute.
-  let docVersion = $state(0);
+  // B3: subscribe to the shared PatchSnapshot bus (one Yjs subscription
+  // for the whole app). The audio reconciler subscribes to the same bus,
+  // so UI + engine see the SAME id-sorted snapshot on the SAME tick. This
+  // closed the "heard but didn't see" gap in two-window collab where the
+  // engine materialized nodes from incoming Yjs ops but the canvas
+  // didn't render them in lockstep.
+  let snapshot = $state.raw<PatchSnapshot>(getDefaultSnapshotBus().current());
   $effect(() => {
-    const handler = () => {
-      docVersion = docVersion + 1;
-    };
-    ydoc.on('update', handler);
-    return () => ydoc.off('update', handler);
+    return getDefaultSnapshotBus().subscribe((snap) => {
+      snapshot = snap;
+    });
   });
 
-  // Mirror patch graph → SvelteFlow node/edge arrays. One-way for Day 7;
-  // drag-positions and connect-events get mirrored back in Day 7.B.
+  // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /
+  // bind:edges in favor of one-way props because the two-way bind let
+  // Svelte Flow's internal cache stomp our just-computed arrays after a
+  // rapid clear→load sequence — the immediate trigger of the B3 bug.
+  // Drag stops still flow back via onnodedragstop.
   let flowNodes = $state.raw<FlowNode[]>([]);
   let flowEdges = $state.raw<FlowEdge[]>([]);
 
   $effect(() => {
-    void docVersion; // depend on doc updates
-    flowNodes = Object.entries(patch.nodes)
-      .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => !!entry[1])
-      .map(([id, n]) => ({
-        id,
-        type: n.type,
-        // Per-user layouts: getNodePosition returns the user's override
-        // (when in multiplayer) or falls back to n.position (when single-
-        // user OR when this user has no entry yet).
-        position: getNodePosition(ydoc, currentUserId, id, { x: n.position.x, y: n.position.y }),
-        data: { node: n },
-      }));
+    const snap = snapshot;
+    flowNodes = snap.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      // Per-user layouts: getNodePosition returns the user's override
+      // (when in multiplayer) or falls back to n.position (when single-
+      // user OR when this user has no entry yet).
+      position: getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y }),
+      data: { node: n },
+    }));
   });
 
   $effect(() => {
-    void docVersion;
-    flowEdges = Object.entries(patch.edges)
-      .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => !!entry[1])
-      .map(([id, e]) => ({
-        id,
-        source: e.source.nodeId,
-        sourceHandle: e.source.portId,
-        target: e.target.nodeId,
-        targetHandle: e.target.portId,
-        style: `stroke: var(--cable-${e.sourceType}); stroke-width: 3;`,
-      }));
+    const snap = snapshot;
+    flowEdges = snap.edges.map((e) => ({
+      id: e.id,
+      source: e.source.nodeId,
+      sourceHandle: e.source.portId,
+      target: e.target.nodeId,
+      targetHandle: e.target.portId,
+      style: `stroke: var(--cable-${e.sourceType}); stroke-width: 3;`,
+    }));
   });
 
   function trace(line: string) {
@@ -281,13 +298,10 @@
       for (const id of Object.keys(patch.edges)) delete patch.edges[id];
       for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
     });
-    // Explicitly drive Svelte Flow to empty arrays. The docVersion bridge
-    // covers the $effect path, but `bind:nodes` two-way sync can re-write
-    // stale state on the next render tick (most visible with the auto-playing
-    // sequencer card constantly re-rendering). Forcing the prop here makes
-    // the clear synchronous from Svelte Flow's perspective.
-    flowNodes = [];
-    flowEdges = [];
+    // No defensive flowNodes=[] anymore: B3's snapshot bus pushes the
+    // empty snapshot to this $effect synchronously on the same Yjs
+    // update, and SvelteFlow now consumes a one-way `nodes` prop so it
+    // can't stomp the assignment.
     trace('cleared patch');
   }
 
@@ -478,7 +492,7 @@
   let ctxMenuPos = $state({ x: 0, y: 0 });
   let ctxMenuNodeId = $state<string | null>(null);
   let ctxMenuLabel = $derived.by(() => {
-    void docVersion;
+    void snapshot; // recompute when graph changes
     if (!ctxMenuNodeId) return '';
     const n = patch.nodes[ctxMenuNodeId];
     if (!n) return '';
@@ -505,10 +519,7 @@
       }
       delete patch.nodes[nodeId];
     });
-    // Defensive sync (same reason as clearPatch): keeps Svelte Flow from
-    // re-writing stale state when the deleted card is mid-render.
-    flowNodes = flowNodes.filter((n) => n.id !== nodeId);
-    flowEdges = flowEdges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+    // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     trace(`deleted ${nodeId}`);
   }
 
@@ -521,7 +532,6 @@
         }
       }
     });
-    flowEdges = flowEdges.filter((e) => e.source !== nodeId && e.target !== nodeId);
     trace(`unpatched ${nodeId}`);
   }
 
@@ -582,9 +592,126 @@
     return bootPromise;
   }
 
+  // ---------------- Awareness wiring (B4) ----------------
+  //
+  // Sets the local awareness state's `user` field once the provider attaches,
+  // then forwards pointer-move events on the .flow region as `cursor` updates
+  // throttled to ~60Hz via requestAnimationFrame. Y.Awareness GCs disconnected
+  // peers automatically (30s default); the provider's destroy() also
+  // broadcasts a null state so peers see cursors disappear immediately.
+  let flowEl = $state<HTMLDivElement | null>(null);
+
+  $effect(() => {
+    const p = provider;
+    const user = presenceUser;
+    if (!p || !user) return;
+    const awareness = p.awareness;
+    if (!awareness) return;
+    awareness.setLocalStateField('user', user);
+    return () => {
+      try {
+        awareness.setLocalState(null);
+      } catch {
+        /* provider may already be torn down */
+      }
+    };
+  });
+
+  $effect(() => {
+    const p = provider;
+    const root = flowEl;
+    if (!p || !root) return;
+    const awareness = p.awareness;
+    if (!awareness) return;
+    let pendingX = 0;
+    let pendingY = 0;
+    let hasPending = false;
+    let rafId: number | null = null;
+    const flush = () => {
+      rafId = null;
+      if (!hasPending) return;
+      hasPending = false;
+      awareness.setLocalStateField('cursor', { x: pendingX, y: pendingY });
+    };
+    const onMove = (e: PointerEvent) => {
+      const rect = root.getBoundingClientRect();
+      pendingX = e.clientX - rect.left;
+      pendingY = e.clientY - rect.top;
+      hasPending = true;
+      if (rafId === null) rafId = requestAnimationFrame(flush);
+    };
+    const onLeave = () => {
+      hasPending = false;
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      const local = awareness.getLocalState();
+      if (local && 'cursor' in (local as object)) {
+        const next = { ...(local as Record<string, unknown>) };
+        delete next.cursor;
+        awareness.setLocalState(next);
+      }
+    };
+    root.addEventListener('pointermove', onMove);
+    root.addEventListener('pointerleave', onLeave);
+    return () => {
+      root.removeEventListener('pointermove', onMove);
+      root.removeEventListener('pointerleave', onLeave);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  });
+
+  // Dev-only: expose helpers so @collab Playwright tests can drive the
+  // awareness layer without wiring real Clerk auth + pointer events.
+  if (import.meta.env.DEV) {
+    $effect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__setLocalCursor = (x: number, y: number) => {
+        const a = provider?.awareness;
+        if (!a) return false;
+        a.setLocalStateField('cursor', { x, y });
+        return true;
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__getRemoteCursors = () => {
+        const a = provider?.awareness;
+        if (!a) return [];
+        const out: Array<{ clientId: number; user: unknown; cursor?: unknown }> = [];
+        for (const [clientId, state] of a.getStates()) {
+          if (clientId === a.clientID) continue;
+          const s = state as { user?: unknown; cursor?: unknown };
+          if (!s?.user) continue;
+          out.push({ clientId, user: s.user, cursor: s.cursor });
+        }
+        return out;
+      };
+    });
+  }
+
+  // ---------------- B5 audio gate ----------------
+  // The optional AudioGate store (passed in by /r/[id]/+page.svelte) needs
+  // (a) the boot function to call on first user gesture and (b) the live
+  // AudioContext so it can track suspend/resume state.
+  $effect(() => {
+    if (!audioGate) return;
+    audioGate.setBooter(async () => {
+      const e = await ensureEngine();
+      return { ctx: audioCtx ?? undefined, engine: e };
+    });
+    return () => {
+      audioGate.setBooter(null);
+    };
+  });
+  $effect(() => {
+    if (!audioGate) return;
+    audioGate.bind(audioCtx);
+  });
+
   onDestroy(() => {
     reconciler?.dispose();
     engine?.dispose();
+    audioGate?.bind(null);
   });
 
   let nodeCount = $derived(flowNodes.length);
@@ -612,10 +739,10 @@
     <pre class="error">{error}</pre>
   {/if}
 
-  <div class="flow">
+  <div class="flow" bind:this={flowEl}>
     <SvelteFlow
-      bind:nodes={flowNodes}
-      bind:edges={flowEdges}
+      nodes={flowNodes}
+      edges={flowEdges}
       {nodeTypes}
       fitView
       colorMode="dark"
@@ -629,6 +756,7 @@
       <Background size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
       <Controls />
     </SvelteFlow>
+    <AwarenessLayer {provider} />
   </div>
 
   <footer class="bottombar">

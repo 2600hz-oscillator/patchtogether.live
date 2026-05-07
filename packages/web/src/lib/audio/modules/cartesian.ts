@@ -6,6 +6,11 @@
 //
 // Cells live in node.data.cells (length 16, row-major). Reads X/Y CV via
 // AnalyserNodes the same way Sequencer reads its clock_in.
+//
+// Embedded LFO (v3): a clock-locked LFO with two phase-quadrature outputs
+// (lfo_x, lfo_y). Patch them into x_cv + y_cv to draw circles, lissajous, etc.
+// Rate is derived from the lfo_clock input (Hz between rising edges) times
+// the lfoDiv multiplier. No auto-normaling — the user explicitly patches.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -13,7 +18,7 @@ import { patch as livePatch } from '$lib/graph/store';
 import {
   coerceToNoteStep,
   migrateStepArrayV1ToV2,
-  C4_MIDI,
+  C3_MIDI,
 } from '$lib/audio/note-entry';
 import {
   type ChordQuality,
@@ -22,6 +27,15 @@ import {
   createPolySender,
   voicingToVOct,
 } from '$lib/audio/poly';
+import {
+  LFO_DIVISIONS as _LFO_DIVISIONS,
+  LFO_DEFAULT_RATE_HZ as _LFO_DEFAULT_RATE_HZ,
+  lfoMorph,
+} from '$lib/audio/lfo-divisions';
+
+// Re-export for downstream consumers that already imported from here.
+export const LFO_DIVISIONS = _LFO_DIVISIONS;
+export const LFO_DEFAULT_RATE_HZ = _LFO_DEFAULT_RATE_HZ;
 
 export interface Cell {
   on: boolean;
@@ -48,8 +62,9 @@ export function coerceToCartesianCell(raw: unknown): Cell {
 export const CELL_COUNT = 16;
 export const GRID_DIM = 4;
 
+
 export function defaultCells(): Cell[] {
-  return Array.from({ length: CELL_COUNT }, () => ({ on: false, midi: C4_MIDI, chord: 'mono' }));
+  return Array.from({ length: CELL_COUNT }, () => ({ on: false, midi: C3_MIDI, chord: 'mono' }));
 }
 
 export const cartesianDef: AudioModuleDef = {
@@ -59,11 +74,15 @@ export const cartesianDef: AudioModuleDef = {
   category: 'modulation',
   // v2: per-cell pitch encoding changed from `pitch: semitones` to `midi: int|null`.
   //     See sequencer.ts for the matching change.
-  // v3: per-cell optional `chord: 'mono' | 'maj' | 'min'` for Stage-1 polyphony.
-  //     Pitch output port type changed to `polyPitchGate`. Backward-compat
-  //     resolved by engine.addEdge → resolveConnection().
-  schemaVersion: 3,
+  // v3: PR-31 — added lfo_clock input + lfo_x/lfo_y outputs + lfoDiv/lfoShape
+  //     params. Defaults for lfoDiv + lfoShape are applied lazily from
+  //     node.params at runtime; no persisted-data shape change.
+  // v4: PR-34 — per-cell optional `chord: 'mono' | 'maj' | 'min'` for Stage-1
+  //     polyphony. Pitch output port type changed to `polyPitchGate`.
+  //     Backward-compat resolved by engine.addEdge → resolveConnection().
+  schemaVersion: 4,
   migrate(data, fromVersion) {
+    // v1 -> v2: per-cell pitch encoding (semitones-from-C4) -> midi int.
     let migrated: Record<string, unknown> | undefined;
     if (fromVersion < 2) {
       migrated = migrateStepArrayV1ToV2(data, 'cells');
@@ -72,7 +91,10 @@ export const cartesianDef: AudioModuleDef = {
     } else {
       migrated = undefined;
     }
-    if (migrated && Array.isArray(migrated.cells)) {
+    // v2 -> v3: lfoDiv/lfoShape defaults applied lazily from node.params at
+    // runtime; nothing to do for the persisted shape.
+    // v3 -> v4: ensure each cell carries a `chord` field; missing -> 'mono'.
+    if (fromVersion < 4 && migrated && Array.isArray(migrated.cells)) {
       migrated.cells = (migrated.cells as unknown[]).map((c) => {
         const ns = coerceToCartesianCell(c);
         return { on: ns.on, midi: ns.midi, chord: ns.chord ?? 'mono' };
@@ -85,16 +107,23 @@ export const cartesianDef: AudioModuleDef = {
     { id: 'clock', type: 'gate' },
     { id: 'x_cv', type: 'cv' },
     { id: 'y_cv', type: 'cv' },
+    { id: 'lfo_clock', type: 'gate' },
   ],
   outputs: [
     { id: 'pitch', type: 'polyPitchGate' },
     { id: 'gate',  type: 'gate' },
     { id: 'clock', type: 'gate' },
+    { id: 'lfo_x', type: 'cv' },
+    { id: 'lfo_y', type: 'cv' },
   ],
   params: [
     { id: 'mode',       label: 'Mode', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
     { id: 'octave',     label: 'Oct',  defaultValue: 0,   min: -2,  max: 2,    curve: 'discrete' },
     { id: 'gateLength', label: 'Gate', defaultValue: 0.5, min: 0.1, max: 0.95, curve: 'linear' },
+    // LFO division: index 0..7 into LFO_DIVISIONS. Default = 1/1.
+    { id: 'lfoDiv',     label: 'Div',  defaultValue: 3,   min: 0,   max: 7,    curve: 'discrete' },
+    // LFO waveform morph: 0=sine, 1=tri, 2=saw, 3=square. Continuous between.
+    { id: 'lfoShape',   label: 'Wave', defaultValue: 0,   min: 0,   max: 3,    curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -123,6 +152,17 @@ export const cartesianDef: AudioModuleDef = {
     const clockIn = makeAnalyserPort();
     const xIn     = makeAnalyserPort();
     const yIn     = makeAnalyserPort();
+    const lfoClockIn = makeAnalyserPort();
+
+    // LFO outputs: two phase-quadrature ConstantSources we drive at high
+    // resolution from the JS tick. Quadrature so X→x_cv + Y→y_cv draws a
+    // circular path, which is the obvious self-modulation use.
+    const lfoXSrc = ctx.createConstantSource();
+    const lfoYSrc = ctx.createConstantSource();
+    lfoXSrc.offset.value = 0;
+    lfoYSrc.offset.value = 0;
+    lfoXSrc.start();
+    lfoYSrc.start();
 
     const nodeId = node.id;
     let lastClockSample = 0;
@@ -133,6 +173,23 @@ export const cartesianDef: AudioModuleDef = {
     let alive = true;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     const TICK_MS = 25;
+
+    // ---------------- LFO state ----------------
+    // Phase: 0..1 (one cycle = 0 -> 1). Updated each tick from the measured
+    // clock rate * division. Falls back to LFO_DEFAULT_RATE_HZ when no clock.
+    let lfoPhase = 0;
+    let lfoLastClockSample = 0;
+    /** Inferred rate of the lfo_clock input: Hz between rising edges. */
+    let lfoMeasuredHz = LFO_DEFAULT_RATE_HZ;
+    /** Time of most recent lfo_clock rising edge (audio-time seconds). */
+    let lfoLastEdgeTime = -1;
+    /** Audio-time at which we've already scheduled LFO output samples up to.
+     *  The next tick picks up from here. */
+    let lfoScheduledThrough = ctx.currentTime;
+    const LFO_LOOKAHEAD_S = 0.06;
+    /** Sample period for the lookahead schedule, in seconds. ~1ms is enough
+     *  for a smooth low-frequency LFO; 250 setValueAtTime calls/sec/output. */
+    const LFO_DT_S = 0.002;
 
     function readCells(): Cell[] {
       const live = livePatch.nodes[nodeId];
@@ -162,6 +219,65 @@ export const cartesianDef: AudioModuleDef = {
     const lastEmittedLaneVOct = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
     const lastEmittedLaneGate = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
 
+    /** Sample the lfo_clock analyser buffer for rising edges and update the
+     *  measured Hz from the time between consecutive edges. */
+    function updateLfoClock(nowAt: number, elapsed: number) {
+      lfoClockIn.an.getFloatTimeDomainData(lfoClockIn.buf);
+      const newSamples = Math.min(
+        lfoClockIn.buf.length,
+        Math.max(1, Math.ceil(elapsed * ctx.sampleRate)),
+      );
+      const start = lfoClockIn.buf.length - newSamples;
+      const sr = ctx.sampleRate;
+      for (let i = start; i < lfoClockIn.buf.length; i++) {
+        const cur = lfoClockIn.buf[i] ?? 0;
+        if (lfoLastClockSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
+          // Approximate audio-time of this sample: nowAt minus the offset of
+          // sample i back from the end of the analyser buffer.
+          const tHere = nowAt - (lfoClockIn.buf.length - 1 - i) / sr;
+          if (lfoLastEdgeTime > 0) {
+            const dt = Math.max(1e-6, tHere - lfoLastEdgeTime);
+            lfoMeasuredHz = 1 / dt;
+          }
+          lfoLastEdgeTime = tHere;
+        }
+        lfoLastClockSample = cur;
+      }
+    }
+
+    /** Schedule LFO output samples from `from` audio-time up through
+     *  `nowAt + LFO_LOOKAHEAD_S`. */
+    function scheduleLfo(nowAt: number) {
+      const targetEnd = nowAt + LFO_LOOKAHEAD_S;
+      // If the schedule pointer fell behind real time, snap it forward.
+      if (lfoScheduledThrough < nowAt) lfoScheduledThrough = nowAt;
+      const divIdx = Math.max(0, Math.min(LFO_DIVISIONS.length - 1, Math.round(readParam('lfoDiv', 3))));
+      const mult = LFO_DIVISIONS[divIdx]?.mult ?? 1;
+      const shape = readParam('lfoShape', 0);
+      // Effective LFO frequency.
+      const baseHz = lfoMeasuredHz > 0 ? lfoMeasuredHz : LFO_DEFAULT_RATE_HZ;
+      const hz = Math.max(0.01, Math.min(200, baseHz * mult));
+      let t = lfoScheduledThrough;
+      while (t < targetEnd) {
+        const x = lfoMorph(lfoPhase, shape);
+        const y = lfoMorph((lfoPhase + 0.25) % 1, shape);
+        try {
+          lfoXSrc.offset.setValueAtTime(x, t);
+          lfoYSrc.offset.setValueAtTime(y, t);
+        } catch { /* time may be in the past on audio thread; ignore */ }
+        lfoLastX = x;
+        lfoLastY = y;
+        lfoPhase += hz * LFO_DT_S;
+        if (lfoPhase >= 1) lfoPhase -= Math.floor(lfoPhase);
+        if (lfoPhase < 0) lfoPhase = 0;
+        t += LFO_DT_S;
+      }
+      lfoScheduledThrough = t;
+    }
+
+    let lfoLastX = 0;
+    let lfoLastY = 0;
+
     function emitStep(idx: number, atTime: number, gateDur: number) {
       const octave = readParam('octave', 0);
       const gateLengthFrac = readParam('gateLength', 0.5);
@@ -190,6 +306,8 @@ export const cartesianDef: AudioModuleDef = {
         lastEmittedVOct = lanes[0]?.pitch ?? 0;
         lastEmittedGate = 1;
       } else {
+        // Hold-on-off-gate CV: skip the pitch write so the port retains its
+        // last gated value through silent cells. Only the gate goes low.
         lastEmittedGate = 0;
       }
     }
@@ -204,6 +322,10 @@ export const cartesianDef: AudioModuleDef = {
         const mode = readParam('mode', 0) >= 0.5 ? 'cartesian' : 'linear';
         const nowAt = ctx.currentTime;
         const elapsed = nowAt - lastClockSampleTime;
+
+        // LFO: detect rising edges on lfo_clock + roll out lookahead samples.
+        updateLfoClock(nowAt, elapsed);
+        scheduleLfo(nowAt);
         const newSamples = Math.min(
           clockIn.buf.length,
           Math.max(1, Math.ceil(elapsed * ctx.sampleRate)),
@@ -246,14 +368,17 @@ export const cartesianDef: AudioModuleDef = {
     return {
       domain: 'audio',
       inputs: new Map([
-        ['clock', { node: clockIn.gain, input: 0 }],
-        ['x_cv',  { node: xIn.gain,     input: 0 }],
-        ['y_cv',  { node: yIn.gain,     input: 0 }],
+        ['clock',     { node: clockIn.gain,    input: 0 }],
+        ['x_cv',      { node: xIn.gain,        input: 0 }],
+        ['y_cv',      { node: yIn.gain,        input: 0 }],
+        ['lfo_clock', { node: lfoClockIn.gain, input: 0 }],
       ]),
       outputs: new Map([
         ['pitch', { node: polyPitch.output, output: 0 }],
         ['gate',  { node: gateSrc,  output: 0 }],
         ['clock', { node: clockOutSrc, output: 0 }],
+        ['lfo_x', { node: lfoXSrc,  output: 0 }],
+        ['lfo_y', { node: lfoYSrc,  output: 0 }],
       ]),
       setParam(_paramId, _value) {
         // Live-read from node.params each tick.
@@ -268,6 +393,10 @@ export const cartesianDef: AudioModuleDef = {
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'pitchVOct')     return lastEmittedVOct;
         if (key === 'gateValue')     return lastEmittedGate;
+        if (key === 'lfoX')          return lfoLastX;
+        if (key === 'lfoY')          return lfoLastY;
+        if (key === 'lfoMeasuredHz') return lfoMeasuredHz;
+        if (key === 'lfoPhase')      return lfoPhase;
         if (typeof key === 'string' && key.startsWith('pitchVOctLane:')) {
           const i = Number.parseInt(key.slice('pitchVOctLane:'.length), 10);
           return Number.isFinite(i) && i >= 0 && i < POLY_CHANNEL_PAIRS
@@ -287,15 +416,21 @@ export const cartesianDef: AudioModuleDef = {
         if (timeoutId !== null) clearTimeout(timeoutId);
         try { gateSrc.stop(); } catch { /* */ }
         try { clockOutSrc.stop(); } catch { /* */ }
+        try { lfoXSrc.stop(); } catch { /* */ }
+        try { lfoYSrc.stop(); } catch { /* */ }
         try { clockIn.sil.stop(); } catch { /* */ }
         try { xIn.sil.stop(); } catch { /* */ }
         try { yIn.sil.stop(); } catch { /* */ }
+        try { lfoClockIn.sil.stop(); } catch { /* */ }
         polyPitch.dispose();
         gateSrc.disconnect();
         clockOutSrc.disconnect();
-        clockIn.sil.disconnect();   clockIn.gain.disconnect(); clockIn.an.disconnect();
-        xIn.sil.disconnect();       xIn.gain.disconnect();     xIn.an.disconnect();
-        yIn.sil.disconnect();       yIn.gain.disconnect();     yIn.an.disconnect();
+        lfoXSrc.disconnect();
+        lfoYSrc.disconnect();
+        clockIn.sil.disconnect();    clockIn.gain.disconnect();    clockIn.an.disconnect();
+        xIn.sil.disconnect();        xIn.gain.disconnect();        xIn.an.disconnect();
+        yIn.sil.disconnect();        yIn.gain.disconnect();        yIn.an.disconnect();
+        lfoClockIn.sil.disconnect(); lfoClockIn.gain.disconnect(); lfoClockIn.an.disconnect();
       },
     };
   },

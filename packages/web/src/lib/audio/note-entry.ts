@@ -23,6 +23,10 @@ export const MAX_MIDI = 114; // f#8 = 5919.911 Hz
 // anchors (a4=69=440Hz universal; 5919.911 Hz at the top end) are unambiguous;
 // the MIDI column in the spec was a typo.
 export const C4_MIDI = 60;
+/** Default seed pitch for newly-created Sequencer steps + Cartesian cells.
+ *  C3 is one octave below the V/oct origin (C4 = 0V), which is in the middle
+ *  of a typical bass-to-lead range — easier to hear immediately than C4. */
+export const C3_MIDI = 48;
 export const A4_MIDI = 69;
 export const A4_HZ = 440;
 

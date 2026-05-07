@@ -14,6 +14,7 @@
   import { type ChordQuality, nextChordQuality } from '$lib/audio/poly';
   import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName } from '$lib/audio/note-entry';
+  import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
@@ -141,8 +142,10 @@
 
   function findCell(stepIdx: number, role: 'pitch' | 'gate'): HTMLElement | null {
     if (!gridEl) return null;
+    // The .cell-slot wrapper carries data-step; the inner input/button carries
+    // data-role. Use a descendant selector to find the role inside the slot.
     return gridEl.querySelector<HTMLElement>(
-      `[data-step="${stepIdx}"][data-role="${role}"]`,
+      `[data-step="${stepIdx}"] [data-role="${role}"]`,
     );
   }
 
@@ -154,23 +157,20 @@
     return true;
   }
 
-  // Navigation behavior is shared across all cells. Returns true if the parent
-  // handled the event (caller suppresses default). Sequencer is linear: arrows
-  // do NOT wrap by row — they clamp at the edges.
+  // Sequencer is linear: cellRows=1, cols=STEP_COUNT. Arrows clamp at the
+  // edges (no wrap). Up from a pitch input lands on the gate of the same step
+  // (gate is rendered above pitch). Up from a gate clamps (top of grid).
+  const NAV_SPEC = { cols: STEP_COUNT, cellRows: 1 };
+
   function handleNav(e: KeyboardEvent, stepIdx: number, role: 'pitch' | 'gate'): boolean {
     const max = STEP_COUNT - 1;
-    if (e.key === 'ArrowLeft') {
-      const next = Math.max(0, stepIdx - 1);
-      return focusCell(next, role);
-    }
-    if (e.key === 'ArrowRight') {
-      const next = Math.min(max, stepIdx + 1);
-      return focusCell(next, role);
-    }
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      // Swap pitch <-> gate within the same step.
-      const otherRole = role === 'pitch' ? 'gate' : 'pitch';
-      return focusCell(stepIdx, otherRole);
+    if (
+      e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+      e.key === 'ArrowUp'   || e.key === 'ArrowDown'
+    ) {
+      const next = resolveArrowNav({ index: stepIdx, role }, e.key as ArrowKey, NAV_SPEC);
+      if (!next) return false;
+      return focusCell(next.index, next.role);
     }
     if (e.key === 'Enter' && role === 'pitch') {
       // Commit happens in NoteEntry; advance to next pitch.
@@ -178,7 +178,6 @@
       return true;
     }
     if (e.key === 'Tab') {
-      // Let parent decide: if shift, prev; else next. Skip to same-role cell.
       const dir = e.shiftKey ? -1 : 1;
       const next = stepIdx + dir;
       if (next < 0 || next > max) return false; // let browser tab out

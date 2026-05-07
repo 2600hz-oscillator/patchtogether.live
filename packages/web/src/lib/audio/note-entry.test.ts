@@ -15,7 +15,10 @@ import {
   MIN_MIDI,
   MAX_MIDI,
   C4_MIDI,
+  C3_MIDI,
 } from './note-entry';
+import { defaultSteps } from './modules/sequencer';
+import { defaultCells } from './modules/cartesian';
 
 describe('parseNoteName: round-trip across the full a1..f#8 range', () => {
   it('parses every MIDI int from MIN..MAX through its canonical name', () => {
@@ -192,6 +195,37 @@ describe('coerceToNoteStep: legacy + new shape interop', () => {
     expect(coerceToNoteStep(null)).toEqual({ on: false, midi: null });
     expect(coerceToNoteStep(undefined)).toEqual({ on: false, midi: null });
     expect(coerceToNoteStep('not-an-object')).toEqual({ on: false, midi: null });
+  });
+});
+
+describe('default seed pitch is C3 for new modules', () => {
+  it('exposes C3_MIDI = 48 = parsed("c3")', () => {
+    expect(C3_MIDI).toBe(48);
+    expect(parseNoteName('c3')).toBe(C3_MIDI);
+    expect(noteNameForMidi(C3_MIDI)).toBe('c3');
+  });
+
+  it('Sequencer defaultSteps seeds every step with midi=C3_MIDI', () => {
+    const steps = defaultSteps();
+    expect(steps).toHaveLength(32);
+    for (const s of steps) {
+      expect(s.midi).toBe(C3_MIDI);
+      expect(s.on).toBe(false);
+    }
+  });
+
+  it('Cartesian defaultCells seeds every cell with midi=C3_MIDI', () => {
+    const cells = defaultCells();
+    expect(cells).toHaveLength(16);
+    for (const c of cells) {
+      expect(c.midi).toBe(C3_MIDI);
+      expect(c.on).toBe(false);
+    }
+  });
+
+  it('coerceToNoteStep preserves explicit C3 (48) on legacy reads', () => {
+    expect(coerceToNoteStep({ on: true, midi: C3_MIDI })).toEqual({ on: true, midi: 48 });
+    expect(coerceToNoteStep({ on: false, pitch: -12 })).toEqual({ on: false, midi: 48 });
   });
 });
 

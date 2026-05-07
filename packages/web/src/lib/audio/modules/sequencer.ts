@@ -14,7 +14,7 @@ import { patch as livePatch } from '$lib/graph/store';
 import {
   coerceToNoteStep,
   migrateStepArrayV1ToV2,
-  C4_MIDI,
+  C3_MIDI,
 } from '$lib/audio/note-entry';
 import {
   type ChordQuality,
@@ -58,7 +58,7 @@ export interface SequencerData {
 export const STEP_COUNT = 32;
 
 export function defaultSteps(): Step[] {
-  return Array.from({ length: STEP_COUNT }, () => ({ on: false, midi: C4_MIDI, chord: 'mono' }));
+  return Array.from({ length: STEP_COUNT }, () => ({ on: false, midi: C3_MIDI, chord: 'mono' }));
 }
 
 export const sequencerDef: AudioModuleDef = {
@@ -68,13 +68,16 @@ export const sequencerDef: AudioModuleDef = {
   category: 'modulation',
   // v2: each step's pitch encoding changed from `pitch: <semitones from C4>`
   //     (free-running ±24 slider) to `midi: <int 33..114> | null` (text-entry).
-  // v3: per-step optional `chord: 'mono' | 'maj' | 'min'` for Stage-1
+  // v3: PR-31 — keyboard-nav + hold-CV-on-off-gate + C3 default for new
+  //     sequencers. No data shape change; existing v2 saves load unchanged.
+  // v4: PR-34 — per-step optional `chord: 'mono' | 'maj' | 'min'` for Stage-1
   //     polyphony. Missing chord defaults to 'mono' so old saves load
   //     unchanged. The pitch output port type changed from 'pitch' to
   //     'polyPitchGate'; the engine's resolveConnection() routes lane 0 to
   //     mono pitch sinks so existing patches keep working.
-  schemaVersion: 3,
+  schemaVersion: 4,
   migrate(data, fromVersion) {
+    // v1 -> v2: per-step pitch encoding (semitones-from-C4) -> midi int.
     let migrated: Record<string, unknown> | undefined;
     if (fromVersion < 2) {
       migrated = migrateStepArrayV1ToV2(data, 'steps');
@@ -83,8 +86,11 @@ export const sequencerDef: AudioModuleDef = {
     } else {
       migrated = undefined;
     }
-    // v3 migration is additive: ensure each step carries a chord field.
-    if (migrated && Array.isArray(migrated.steps)) {
+    // v2 -> v3: PR-31's behavioral changes (keyboard-nav, hold-CV, C3 default
+    // for fresh instances). No persisted-data shape change; saved patches
+    // pass through untouched.
+    // v3 -> v4: ensure each step carries a `chord` field; missing -> 'mono'.
+    if (fromVersion < 4 && migrated && Array.isArray(migrated.steps)) {
       migrated.steps = (migrated.steps as unknown[]).map((s) => {
         const ns = coerceToSequencerStep(s);
         return { on: ns.on, midi: ns.midi, chord: ns.chord ?? 'mono' };
@@ -255,6 +261,12 @@ export const sequencerDef: AudioModuleDef = {
         lastEmittedVOct = lanes[0]?.pitch ?? 0;
         lastEmittedGate = 1;
       } else {
+        // Gate suppressed (off or invalid pitch). Hold-on-off-gate CV: we do
+        // NOT call polyPitch.scheduleStep() on suppressed steps — the pitch
+        // port keeps its last gated lane values for the duration of the
+        // silent step. lastEmittedVOct + lastEmittedLaneVOct are left alone
+        // for the same reason; lastEmittedGate flips to 0 so JS observers
+        // see the gate go low.
         lastEmittedGate = 0;
       }
     }
