@@ -124,10 +124,10 @@ test('voice-chain-art: deterministic patch matches fingerprint baseline', async 
     w.__ydoc.transact(() => {
       w.__patch.nodes['seq'].data = {
         steps: [
-          { on: true, pitch: 0 },
-          { on: true, pitch: 7 },
-          { on: true, pitch: 12 },
-          { on: true, pitch: 5 },
+          { on: true, midi: 60 },
+          { on: true, midi: 67 },
+          { on: true, midi: 72 },
+          { on: true, midi: 65 },
         ],
       };
     });

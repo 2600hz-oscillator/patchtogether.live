@@ -11,10 +11,20 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
+import {
+  coerceToNoteStep,
+  midiToVOct,
+  migrateStepArrayV1ToV2,
+  C4_MIDI,
+} from '$lib/audio/note-entry';
 
 export interface Step {
   on: boolean;
-  pitch: number; // semitones from root
+  /** MIDI int (a4 = 69) for this step's pitch, or null = no note. v1 of this
+   *  module used `pitch: <semitones from C4>`; the runtime accepts both shapes
+   *  via coerceToNoteStep, and persisted patches migrate via the def.migrate
+   *  callback. */
+  midi: number | null;
 }
 
 export interface SequencerData {
@@ -24,7 +34,7 @@ export interface SequencerData {
 export const STEP_COUNT = 32;
 
 export function defaultSteps(): Step[] {
-  return Array.from({ length: STEP_COUNT }, () => ({ on: false, pitch: 0 }));
+  return Array.from({ length: STEP_COUNT }, () => ({ on: false, midi: C4_MIDI }));
 }
 
 export const sequencerDef: AudioModuleDef = {
@@ -32,7 +42,14 @@ export const sequencerDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Sequencer',
   category: 'modulation',
-  schemaVersion: 1,
+  // v2: each step's pitch encoding changed from `pitch: <semitones from C4>`
+  // (free-running ±24 slider) to `midi: <int 33..114> | null` (text-entry).
+  // Old saves migrate per-step via migrateStepArrayV1ToV2.
+  schemaVersion: 2,
+  migrate(data, fromVersion) {
+    if (fromVersion >= 2) return data as Record<string, unknown> | undefined;
+    return migrateStepArrayV1ToV2(data, 'steps');
+  },
 
   inputs: [
     // External clock: when patched, the sequencer advances on incoming rising
@@ -122,7 +139,11 @@ export const sequencerDef: AudioModuleDef = {
     function readSteps(): Step[] {
       const live = livePatch.nodes[nodeId];
       const steps = (live?.data as Record<string, unknown> | undefined)?.steps;
-      if (Array.isArray(steps)) return steps as Step[];
+      if (Array.isArray(steps)) {
+        // Coerce each step shape so legacy {on, pitch} entries still drive
+        // audio while in-memory until a save+load triggers the def.migrate.
+        return (steps as unknown[]).map(coerceToNoteStep);
+      }
       return defaultSteps();
     }
     function readParam(id: string, fallback: number): number {
@@ -136,6 +157,14 @@ export const sequencerDef: AudioModuleDef = {
      * advance path. `stepDurForGate` is how long the gate stays high relative
      * to the step (passed as duration so external-clock mode can derive it
      * from observed inter-pulse spacing instead of from BPM). */
+    // Last V/oct written to pitchSrc + last gate emitted. Tracked here because
+    // AudioParam.value is the *intrinsic* value (subject to audio-thread
+    // scheduling) and not always observable from the JS thread immediately
+    // after setValueAtTime. Tests that need ground truth read these via
+    // engine.read(node, 'pitchVOct' | 'gateValue').
+    let lastEmittedVOct = 0;
+    let lastEmittedGate = 0;
+
     function emitStep(idx: number, atTime: number, stepDurForGate: number) {
       const octave = readParam('octave', 0);
       const gateLengthFrac = readParam('gateLength', 0.5);
@@ -144,12 +173,18 @@ export const sequencerDef: AudioModuleDef = {
       // Always emit a clock pulse on advance — that's the chain-out signal
       // and it fires regardless of step on/off.
       emitClockPulse(atTime);
-      if (step && step.on) {
-        const semitones = step.pitch + octave * 12;
-        const vOct = semitones / 12;
+      if (step && step.on && step.midi !== null) {
+        // Invalid pitches (midi === null) suppress the gate even if step.on.
+        const vOct = midiToVOct(step.midi) + octave;
         pitchSrc.offset.setValueAtTime(vOct, atTime);
         gateSrc.offset.setValueAtTime(1, atTime);
         gateSrc.offset.setValueAtTime(0, atTime + stepDurForGate * gateLengthFrac);
+        lastEmittedVOct = vOct;
+        lastEmittedGate = 1;
+      } else {
+        // Gate not fired this step (off or invalid pitch). Reset the tracking
+        // gate so JS-side observers can see the suppression.
+        lastEmittedGate = 0;
       }
     }
 
@@ -259,6 +294,12 @@ export const sequencerDef: AudioModuleDef = {
       read(key) {
         if (key === 'currentStep') return currentStep;
         if (key === 'totalAdvances') return totalAdvances;
+        // V/oct currently emitted on the pitch port — useful for tests that
+        // want to verify "step <X> drove the pitch port to the right voltage"
+        // without spinning up a VCO + Scope. Returns the last value passed to
+        // setValueAtTime on pitchSrc, which is what flows to downstream VCOs.
+        if (key === 'pitchVOct')  return lastEmittedVOct;
+        if (key === 'gateValue')  return lastEmittedGate;
         return undefined;
       },
       dispose() {

@@ -78,11 +78,12 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
       const seq = w.__patch.nodes['seq'];
       if (!seq.data) seq.data = {};
       seq.data.steps = [
-        { on: true, pitch: 0 },
-        { on: true, pitch: 4 },
-        { on: true, pitch: 7 },
-        { on: true, pitch: 12 },
-        ...Array.from({ length: 28 }, () => ({ on: false, pitch: 0 })),
+        // v2 step shape: midi int (60 = C4 = 261.626 Hz). null = empty.
+        { on: true, midi: 60 },
+        { on: true, midi: 64 },
+        { on: true, midi: 67 },
+        { on: true, midi: 72 },
+        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
       ];
     });
   });
@@ -167,11 +168,12 @@ test('voice-chain: stopping the sequencer silences the output (gate goes low)', 
       const seq = w.__patch.nodes['seq'];
       if (!seq.data) seq.data = {};
       seq.data.steps = [
-        { on: true, pitch: 0 },
-        { on: true, pitch: 4 },
-        { on: true, pitch: 7 },
-        { on: true, pitch: 12 },
-        ...Array.from({ length: 28 }, () => ({ on: false, pitch: 0 })),
+        // v2 step shape: midi int (60 = C4 = 261.626 Hz). null = empty.
+        { on: true, midi: 60 },
+        { on: true, midi: 64 },
+        { on: true, midi: 67 },
+        { on: true, midi: 72 },
+        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
       ];
     });
   });

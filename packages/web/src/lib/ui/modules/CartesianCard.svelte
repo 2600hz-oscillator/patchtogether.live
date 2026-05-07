@@ -2,9 +2,11 @@
   import { onDestroy } from 'svelte';
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import { patch, ydoc } from '$lib/graph/store';
   import { cartesianDef, defaultCells, CELL_COUNT, GRID_DIM, type Cell } from '$lib/audio/modules/cartesian';
   import { useEngine } from '$lib/audio/engine-context';
+  import { parseNoteName, coerceToNoteStep } from '$lib/audio/note-entry';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
@@ -25,7 +27,7 @@
   let cells = $derived.by<Cell[]>(() => {
     void cardVersion;
     const raw = (node?.data as Record<string, unknown> | undefined)?.cells;
-    if (Array.isArray(raw)) return (raw as Cell[]).map((c) => ({ on: !!c.on, pitch: c.pitch ?? 0 }));
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToNoteStep);
     return defaultCells();
   });
 
@@ -43,15 +45,15 @@
   let currentStep = $state(0);
   let raf: number | null = null;
   $effect(() => {
-    function tick() {
+    function tickFrame() {
       const e = engineCtx.get();
       if (e && node) {
         const cs = e.read(node, 'currentStep');
         if (typeof cs === 'number') currentStep = cs;
       }
-      raf = requestAnimationFrame(tick);
+      raf = requestAnimationFrame(tickFrame);
     }
-    raf = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(tickFrame);
     return () => {
       if (raf !== null) cancelAnimationFrame(raf);
       raf = null;
@@ -65,7 +67,7 @@
     const t = patch.nodes[id];
     if (!t?.data) return defaultCells();
     const raw = (t.data as Record<string, unknown>).cells;
-    if (Array.isArray(raw)) return (raw as Cell[]).map((c) => ({ on: !!c.on, pitch: c.pitch ?? 0 }));
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToNoteStep);
     return defaultCells();
   }
   function writeCells(arr: Cell[]) {
@@ -73,48 +75,84 @@
     if (!t) return;
     ydoc.transact(() => {
       if (!t.data) t.data = {};
-      (t.data as Record<string, unknown>).cells = arr;
+      (t.data as Record<string, unknown>).cells = arr.map((c) => ({ on: c.on, midi: c.midi }));
     });
   }
-  function toggleCell(i: number) {
+  function commitPitch(i: number, input: string) {
     const arr = readCellsCopy();
-    const cur = arr[i] ?? { on: false, pitch: 0 };
-    arr[i] = { ...cur, on: !cur.on };
+    const cur = arr[i] ?? { on: false, midi: null };
+    const trimmed = input.trim();
+    const parsed = trimmed === '' ? null : parseNoteName(trimmed);
+    arr[i] = { on: cur.on, midi: parsed };
+    writeCells(arr);
+  }
+  function toggleGate(i: number) {
+    const arr = readCellsCopy();
+    const cur = arr[i] ?? { on: false, midi: null };
+    arr[i] = { on: !cur.on, midi: cur.midi };
     writeCells(arr);
   }
 
-  let dragging: { idx: number; startY: number; startPitch: number } | null = $state(null);
+  // --- Keyboard navigation (4x4 with row-wrap) ---
 
-  function cellPointerDown(e: PointerEvent, i: number) {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const cur = cells[i] ?? { on: false, pitch: 0 };
-    dragging = { idx: i, startY: e.clientY, startPitch: cur.pitch };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  let gridEl: HTMLElement | undefined = $state();
+
+  function findCell(idx: number, role: 'pitch' | 'gate'): HTMLElement | null {
+    if (!gridEl) return null;
+    return gridEl.querySelector<HTMLElement>(`[data-step="${idx}"][data-role="${role}"]`);
   }
-  function cellPointerMove(e: PointerEvent) {
-    if (!dragging) return;
-    const dy = dragging.startY - e.clientY;
-    const delta = Math.round(dy / 8);
-    const newPitch = Math.max(-24, Math.min(24, dragging.startPitch + delta));
-    const arr = readCellsCopy();
-    const cur = arr[dragging.idx] ?? { on: false, pitch: 0 };
-    if (cur.pitch !== newPitch) {
-      arr[dragging.idx] = { ...cur, pitch: newPitch };
-      writeCells(arr);
+
+  function focusCell(idx: number, role: 'pitch' | 'gate'): boolean {
+    const target = findCell(idx, role);
+    if (!target) return false;
+    target.focus();
+    if (target.tagName === 'INPUT') (target as HTMLInputElement).select();
+    return true;
+  }
+
+  function handleNav(e: KeyboardEvent, idx: number, role: 'pitch' | 'gate'): boolean {
+    const max = CELL_COUNT - 1;
+    const col = idx % GRID_DIM;
+    const row = Math.floor(idx / GRID_DIM);
+    if (e.key === 'ArrowLeft') {
+      // Left wraps to previous row's last col.
+      const next = idx === 0 ? max : idx - 1;
+      return focusCell(next, role);
     }
-  }
-  function cellPointerUp(e: PointerEvent, i: number) {
-    if (!dragging) return;
-    const moved = Math.abs(e.clientY - dragging.startY);
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    if (moved < 4) toggleCell(i);
-    dragging = null;
+    if (e.key === 'ArrowRight') {
+      const next = idx === max ? 0 : idx + 1;
+      return focusCell(next, role);
+    }
+    if (e.key === 'ArrowUp') {
+      // Up moves to the same column in the row above (linear semantics across
+      // the grid). For pitch row, allow swap to gate within the same cell on
+      // the *first* row only? Per spec: "swap row (pitch ↔ gate of same step
+      // index)" — i.e., toggle role, NOT move grid row. So Up/Down toggle role.
+      const otherRole = role === 'pitch' ? 'gate' : 'pitch';
+      return focusCell(idx, otherRole);
+    }
+    if (e.key === 'ArrowDown') {
+      const otherRole = role === 'pitch' ? 'gate' : 'pitch';
+      return focusCell(idx, otherRole);
+    }
+    if (e.key === 'Enter' && role === 'pitch') {
+      const next = idx === max ? 0 : idx + 1;
+      Promise.resolve().then(() => focusCell(next, 'pitch'));
+      return true;
+    }
+    if (e.key === 'Tab') {
+      const dir = e.shiftKey ? -1 : 1;
+      const next = idx + dir;
+      if (next < 0 || next > max) return false;
+      return focusCell(next, role);
+    }
+    // Suppress unused-var warning from row/col (kept for readability).
+    void col; void row;
+    return false;
   }
 </script>
 
-<div class="mod-card cartesian-card" onpointermove={cellPointerMove}>
+<div class="mod-card cartesian-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
     Cartesian
@@ -137,19 +175,24 @@
   <span class="port-label right" style="top: 86px;">gate</span>
   <span class="port-label right" style="top: 122px;">clk</span>
 
-  <div class="grid">
+  <div class="grid" bind:this={gridEl} data-testid={`cart-grid-${id}`}>
     {#each cells.slice(0, CELL_COUNT) as cell, i (i)}
-      <button
-        class="cell"
-        class:on={cell.on}
-        class:active={i === currentStep}
-        title={`cell ${i} (row ${Math.floor(i / GRID_DIM)}, col ${i % GRID_DIM}) · pitch ${cell.pitch >= 0 ? '+' : ''}${cell.pitch}`}
-        onpointerdown={(e) => cellPointerDown(e, i)}
-        onpointerup={(e) => cellPointerUp(e, i)}
-      >
-        <div class="pitch-bar" style:height="{Math.min(100, Math.abs(cell.pitch) * 4 + 10)}%"></div>
+      <div class="cell-slot" data-step={i}>
         <div class="cell-num">{i}</div>
-      </button>
+        <NoteEntry
+          midi={cell.midi}
+          on={cell.on}
+          isActive={i === currentStep}
+          testId={`cart-pitch-${id}-${i}`}
+          gateTestId={`cart-gate-${id}-${i}`}
+          onCommit={(input) => commitPitch(i, input)}
+          onGateToggle={() => toggleGate(i)}
+          onNavKey={(e) => {
+            const role = (e.target as HTMLElement)?.dataset?.role === 'gate' ? 'gate' : 'pitch';
+            return handleNav(e, i, role as 'pitch' | 'gate');
+          }}
+        />
+      </div>
     {/each}
   </div>
 
@@ -193,44 +236,17 @@
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
   }
-  .cell {
-    position: relative;
-    aspect-ratio: 1;
-    background: #14171c;
-    border: 1px solid #2a2f3a;
-    border-radius: 3px;
-    padding: 0;
-    cursor: ns-resize;
-    overflow: hidden;
-    user-select: none;
-    touch-action: none;
+  .cell-slot {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
-  .cell.on {
-    background: #2a2f3a;
-    border-color: var(--cable-gate);
-  }
-  .cell.active {
-    box-shadow: 0 0 0 1px var(--cable-cv);
-  }
-  .pitch-bar {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: var(--cable-pitch);
-    opacity: 0.4;
-    pointer-events: none;
-  }
-  .cell.on .pitch-bar { opacity: 0.85; }
   .cell-num {
-    position: absolute;
-    top: 2px;
-    right: 4px;
     font-size: 0.6rem;
     color: var(--text-dim);
     font-family: ui-monospace, monospace;
-    pointer-events: none;
-    line-height: 1;
+    text-align: center;
+    line-height: 1.4;
   }
   .cartesian-card .fader-row {
     margin-top: 6px;
