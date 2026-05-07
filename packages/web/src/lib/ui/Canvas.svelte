@@ -772,6 +772,7 @@
       <li><span class="swatch pitch"></span> pitch</li>
       <li><span class="swatch gate"></span> gate</li>
       <li><span class="swatch cv"></span> CV</li>
+      <li><span class="swatch polyPitchGate"></span> poly</li>
     </ul>
   </footer>
 
@@ -934,6 +935,7 @@
   .swatch.pitch { background: var(--cable-pitch); }
   .swatch.gate { background: var(--cable-gate); }
   .swatch.cv { background: var(--cable-cv); }
+  .swatch.polyPitchGate { background: var(--cable-polyPitchGate); }
   .trace-panel {
     padding: 0.4rem 1.25rem 0.6rem;
     border-top: 1px solid #1f242c;
