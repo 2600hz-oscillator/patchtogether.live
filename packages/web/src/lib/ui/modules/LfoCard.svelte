@@ -15,6 +15,15 @@
 
   const set = (id_: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[id_] = v; };
   const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
+
+  // shape param is 0..2: 0=sine, 1=saw, 2=square. Glyphs anchor at the
+  // morph-source fractions so the user can see what each end of the slider
+  // crossfades into.
+  const SHAPE_GLYPHS: Array<{ frac: number; kind: 'sine' | 'tri' | 'saw' | 'square' }> = [
+    { frac: 0,   kind: 'sine'   },
+    { frac: 0.5, kind: 'saw'    },
+    { frac: 1,   kind: 'square' },
+  ];
 </script>
 
 <div class="mod-card lfo-card">
@@ -39,7 +48,7 @@
 
   <div class="fader-row">
     <Fader value={rate}  min={0.01} max={100} defaultValue={1} label="Rate"  units="Hz" curve="log"    onchange={set('rate')}  readLive={live('rate')} />
-    <Fader value={shape} min={0}    max={2}   defaultValue={0} label="Shape"            curve="linear" onchange={set('shape')} readLive={live('shape')} />
+    <Fader value={shape} min={0}    max={2}   defaultValue={0} label="Shape"            curve="linear" onchange={set('shape')} readLive={live('shape')} glyphs={SHAPE_GLYPHS} />
   </div>
 </div>
 

@@ -14,6 +14,23 @@
   // is actively dragging, drag input wins.
   import type { KnobCurve } from '$lib/graph/types';
   import { onDestroy, untrack } from 'svelte';
+  import WaveformGlyph from './WaveformGlyph.svelte';
+
+  /** A single inline glyph anchored at a normalized [0,1] fraction along the
+   *  fader track. Used by the LFO-shape sliders to render sine/tri/saw/square
+   *  icons alongside the slider so the user sees what they're morphing into. */
+  export interface FaderGlyph {
+    frac: number;
+    kind: 'sine' | 'tri' | 'saw' | 'square';
+  }
+
+  /** Optional inline label anchored at a [0,1] fraction along the track.
+   *  Cartesian's LFO division slider uses this to mark each snap point with
+   *  "1/8", "1/4", "x2", etc. */
+  export interface FaderTick {
+    frac: number;
+    label: string;
+  }
 
   interface Props {
     /** User-set value from the patch graph (drives initial position). */
@@ -32,6 +49,13 @@
      * "motorized fader" behavior.
      */
     readLive?: () => number | undefined;
+    /** Optional waveform glyphs anchored at fractions along the track. */
+    glyphs?: FaderGlyph[];
+    /** Optional text labels anchored at fractions along the track. */
+    ticks?: FaderTick[];
+    /** Optional override for the value-tag text. Useful when the underlying
+     *  numeric value is an index into a discrete list (e.g. division ratios). */
+    formatValue?: (v: number) => string;
   }
 
   let {
@@ -44,6 +68,9 @@
     curve = 'linear',
     onchange,
     readLive,
+    glyphs,
+    ticks,
+    formatValue,
   }: Props = $props();
 
   // Display value: what the thumb position renders against. Driven by either
@@ -214,6 +241,36 @@
   const TRACK_HEIGHT = 80;
   const THUMB_HEIGHT = 14;
   let thumbY = $derived((1 - displayFrac) * (TRACK_HEIGHT - THUMB_HEIGHT));
+
+  /** Pick the index of the glyph closest to the current frac (highlight). */
+  let activeGlyphIdx = $derived.by(() => {
+    if (!glyphs || glyphs.length === 0) return -1;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < glyphs.length; i++) {
+      const d = Math.abs((glyphs[i]?.frac ?? 0) - displayFrac);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  });
+
+  /** Pick index of nearest tick label (similar logic, separate list). */
+  let activeTickIdx = $derived.by(() => {
+    if (!ticks || ticks.length === 0) return -1;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < ticks.length; i++) {
+      const d = Math.abs((ticks[i]?.frac ?? 0) - displayFrac);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  });
+
+  /** Display string for the live value, applying the optional override. */
+  function valueText(v: number): string {
+    if (formatValue) return formatValue(v);
+    return format(v, units);
+  }
 </script>
 
 <div
@@ -224,25 +281,50 @@
   role="presentation"
 >
   {#if dragging || hovering}
-    <div class="value-tag">{format(liveValue, units)}</div>
+    <div class="value-tag">{valueText(liveValue)}</div>
   {/if}
-  <div
-    class="track"
-    role="slider"
-    tabindex="0"
-    aria-label={label}
-    aria-valuemin={min}
-    aria-valuemax={max}
-    aria-valuenow={liveValue}
-    onpointerdown={pointerdown}
-    onpointermove={pointermove}
-    onpointerup={pointerup}
-    onpointercancel={pointercancel}
-    ondblclick={dblclick}
-    onwheel={wheel}
-  >
-    <div class="track-line"></div>
-    <div class="thumb" style:top="{thumbY}px"></div>
+  <div class="fader-row-inner">
+    <div
+      class="track"
+      role="slider"
+      tabindex="0"
+      aria-label={label}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={liveValue}
+      onpointerdown={pointerdown}
+      onpointermove={pointermove}
+      onpointerup={pointerup}
+      onpointercancel={pointercancel}
+      ondblclick={dblclick}
+      onwheel={wheel}
+    >
+      <div class="track-line"></div>
+      <div class="thumb" style:top="{thumbY}px"></div>
+    </div>
+    {#if glyphs && glyphs.length > 0}
+      <div class="glyph-rail" aria-hidden="true">
+        {#each glyphs as g, i (i)}
+          <div
+            class="glyph-anchor"
+            style:top="{(1 - g.frac) * (TRACK_HEIGHT - THUMB_HEIGHT) + THUMB_HEIGHT / 2}px"
+          >
+            <WaveformGlyph kind={g.kind} active={i === activeGlyphIdx} size={14} />
+          </div>
+        {/each}
+      </div>
+    {/if}
+    {#if ticks && ticks.length > 0}
+      <div class="tick-rail" aria-hidden="true">
+        {#each ticks as t, i (i)}
+          <div
+            class="tick-anchor"
+            class:active={i === activeTickIdx}
+            style:top="{(1 - t.frac) * (TRACK_HEIGHT - THUMB_HEIGHT) + THUMB_HEIGHT / 2}px"
+          >{t.label}</div>
+        {/each}
+      </div>
+    {/if}
   </div>
   <div class="label">{label}</div>
 </div>
@@ -329,5 +411,38 @@
     top: 0;
     pointer-events: none;
     z-index: 10;
+  }
+  .fader-row-inner {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .glyph-rail, .tick-rail {
+    position: relative;
+    width: 16px;
+    height: 80px;
+    pointer-events: none;
+  }
+  .tick-rail {
+    width: auto;
+    min-width: 22px;
+  }
+  .glyph-anchor, .tick-anchor {
+    position: absolute;
+    left: 0;
+    transform: translateY(-50%);
+    line-height: 1;
+  }
+  .tick-anchor {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    white-space: nowrap;
+    transition: color 0.08s ease-out;
+  }
+  .tick-anchor.active {
+    color: var(--cable-cv);
   }
 </style>
