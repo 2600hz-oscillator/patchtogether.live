@@ -19,6 +19,7 @@
 import { sql } from './db.js';
 
 const MAX_MEMBERS = 4;
+const MAX_OWNED_PER_USER = 4;
 
 export interface Rackspace {
   id: string;
@@ -69,25 +70,87 @@ function rackFromRow(row: RackRow): Rackspace {
   };
 }
 
-export async function createRackspace(ownerUserId: string, name: string): Promise<Rackspace> {
+export type CreateResult =
+  | { status: 'ok'; rackspace: Rackspace }
+  | { status: 'cap-reached'; ownedCount: number };
+
+export async function createRackspace(
+  ownerUserId: string,
+  name: string,
+): Promise<CreateResult> {
   const id = generateId();
-  // Single statement: insert rack + owner row atomically. CTE forces
-  // both INSERTs to share one statement-level transaction.
+  // CTE: count user's owned racks; only insert if under cap. Single
+  // statement keeps the check + insert atomic against concurrent creates.
   const rows = (await sql()`
-    WITH new_rack AS (
+    WITH owned AS (
+      SELECT COUNT(*)::int AS n
+        FROM racks
+       WHERE owner_user_id = ${ownerUserId}
+    ),
+    new_rack AS (
       INSERT INTO racks (id, owner_user_id, name)
-      VALUES (${id}, ${ownerUserId}, ${name})
+      SELECT ${id}, ${ownerUserId}, ${name}
+        FROM owned
+       WHERE owned.n < ${MAX_OWNED_PER_USER}
       RETURNING id, owner_user_id, name, created_at
     ), new_member AS (
       INSERT INTO rack_members (rack_id, user_id, role)
       SELECT id, owner_user_id, 'owner' FROM new_rack
     )
-    SELECT id, owner_user_id, name, created_at,
-           ARRAY[${ownerUserId}::text] AS member_user_ids
-      FROM new_rack
-  `) as RackRow[];
-  return rackFromRow(rows[0]);
+    SELECT
+      (SELECT n FROM owned) AS owned_n,
+      (SELECT id            FROM new_rack) AS id,
+      (SELECT owner_user_id FROM new_rack) AS owner_user_id,
+      (SELECT name          FROM new_rack) AS name,
+      (SELECT created_at    FROM new_rack) AS created_at
+  `) as Array<{
+    owned_n: number;
+    id: string | null;
+    owner_user_id: string | null;
+    name: string | null;
+    created_at: string | null;
+  }>;
+  const row = rows[0];
+  if (row.id === null) {
+    return { status: 'cap-reached', ownedCount: row.owned_n };
+  }
+  return {
+    status: 'ok',
+    rackspace: rackFromRow({
+      id: row.id,
+      owner_user_id: row.owner_user_id!,
+      name: row.name!,
+      created_at: row.created_at!,
+      member_user_ids: [ownerUserId],
+    }),
+  };
 }
+
+export type DeleteResult = 'ok' | 'not-found' | 'forbidden';
+
+export async function deleteRackspace(
+  id: string,
+  requesterUserId: string,
+): Promise<DeleteResult> {
+  // Two-step semantics in one statement: rows hits if the rack exists AND
+  // the requester is the owner; otherwise the WHERE drops it. We then
+  // distinguish "not found" from "not owner" with a follow-up existence
+  // probe. The DELETE cascades to rack_members + rack_snapshots via
+  // ON DELETE CASCADE in the schema.
+  const deleted = (await sql()`
+    DELETE FROM racks
+     WHERE id = ${id}
+       AND owner_user_id = ${requesterUserId}
+    RETURNING id
+  `) as Array<{ id: string }>;
+  if (deleted.length > 0) return 'ok';
+  const exists = (await sql()`
+    SELECT 1 AS one FROM racks WHERE id = ${id} LIMIT 1
+  `) as Array<{ one: number }>;
+  return exists.length === 0 ? 'not-found' : 'forbidden';
+}
+
+export const RACKSPACE_MAX_OWNED = MAX_OWNED_PER_USER;
 
 export async function getRackspace(id: string): Promise<Rackspace | null> {
   const rows = (await sql()`
