@@ -98,3 +98,21 @@ AUDIO_DRIFT_SECONDS=10 AUDIO_DRIFT_RUNS=5 flox activate -- task audio-drift
 ```
 
 The harness is tagged `@audio-drift` and runs from a separate Playwright config (`e2e/audio-drift/audio-drift.config.ts`), so it stays out of the PR-gate CI path.
+
+## Cross-machine follow-up (2026-05-07)
+
+Per the same-machine harness's "Single-machine bias" caveat, a cross-machine workflow lives at `.github/workflows/audio-drift-cross-machine.yml`. Two `ubuntu-latest` runners join the same rackspace on `autotest.patchtogether.live`; runner-A authors the patch, runner-B listens; their captured audio is compared in a third coordination job. See `e2e/audio-drift/cross-machine/README.md` for full details.
+
+**Run results:** TBD — first run linked from the PR body. Update this section in-place with:
+
+- Spectral correlation cross-machine vs same-machine (same scenario, both target environments).
+- Phase drift μs/sec cross-machine vs same-machine.
+- Whether the per-scenario "Acceptable?" verdict matches the same-machine result.
+
+**How the cross-machine result affects the recommendation:**
+
+- If cross-machine spectral correlation stays ≥ 0.85 across all scenarios and drift stays inside ±500 μs/sec: **same-machine recommendation (skip Phase C) is confirmed.** Spend the budget elsewhere.
+- If a scenario falls below 0.85 spectral or exceeds 500 μs/sec drift: **revisit per-scenario.** The two targeted fixes (LFO phase reset + sequencer broadcast tick) likely become higher-priority. Phase C still doesn't solve the underlying problem (per-user latency dominates Phase C value), but the targeted fixes get a stronger forcing function.
+- If multiple scenarios fail badly (spectral < 0.7): the per-user-renders-locally model is genuinely struggling. Reconsider whether a hybrid model (sequencer/clock-sync over Yjs awareness, audio still per-user) covers the gap, or whether Phase C is warranted for the specific clocked scenarios. **Caveat:** Phase C's network latency cost is real; even if it improves alignment, it makes per-user latency worse. The decision matrix doesn't change just because cross-machine numbers are bad — it changes if cross-machine numbers reveal that "users hear the same content" is actually false.
+
+The cross-machine workflow is `workflow_dispatch` + weekly cron (Mondays 06:00 UTC), so we'll naturally accumulate a time series of drift data without burning CI cycles per PR. Track that in `art/audio-drift/cross-machine/` if a longitudinal pattern emerges.

@@ -138,6 +138,31 @@ tasks:
     cmds:
       - npm exec -w {{.E2E}} -- playwright test --config=audio-drift/audio-drift.config.ts
 
+  audio-drift:cross-machine:runner:
+    desc: |
+      Drive ONE side (author or listener) of the cross-machine audio-drift
+      harness. Used by .github/workflows/audio-drift-cross-machine.yml; rarely
+      run by hand. Required env:
+        AUDIO_DRIFT_SCENARIO   Scenario name (e.g. 04-sequenced).
+        AUDIO_DRIFT_ROLE       'author' or 'listener'.
+        AUDIO_DRIFT_RACK_URL   Full rack invite URL.
+        AUDIO_DRIFT_OUT_DIR    Where to write captured PCM + metadata.
+      Optional:
+        AUDIO_DRIFT_SECONDS                       Default 5.
+        AUDIO_DRIFT_LISTENER_PATCH_TIMEOUT_MS     Default 15000.
+    cmds:
+      - npm exec -w {{.E2E}} -- playwright test --config=audio-drift/cross-machine/cross-machine.config.ts
+
+  audio-drift:cross-machine:compare:
+    desc: |
+      Compare two runners' captured audio for the cross-machine drift test.
+      Required env: AUDIO_DRIFT_A_DIR, AUDIO_DRIFT_B_DIR, AUDIO_DRIFT_OUT_DIR.
+    cmds:
+      - npx tsx {{.E2E}}/audio-drift/cross-machine/compare.ts
+        --a-dir "${AUDIO_DRIFT_A_DIR}"
+        --b-dir "${AUDIO_DRIFT_B_DIR}"
+        --out-dir "${AUDIO_DRIFT_OUT_DIR}"
+
   chaos:run:
     desc: |
       Chaos Stage-1 run. Spawns Chromium, drives Chaos Carl through 200 random

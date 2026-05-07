@@ -1,0 +1,236 @@
+name: Audio drift — cross-machine
+
+# Two-runner cross-machine audio-drift measurement against autotest. Extends
+# the same-machine harness in e2e/audio-drift/ with a two-laptop-equivalent
+# setup: each runner is a separate ubuntu-latest VM connecting to the same
+# rackspace via the share-URL invite flow. The compare job downloads both
+# runners' captures and produces a CSV + markdown report.
+#
+# This is research-grade infra, not a PR gate. We trigger it manually
+# (workflow_dispatch) or weekly (Monday 6am UTC) to track drift over time.
+#
+# Required repo secrets:
+#   AUTOTEST_BETA_GATE_PASS            Existing — reused from live-smoke.
+#   AUTOTEST_TEST_RACK_ID              Stable test rackspace ID on autotest.
+#   AUTOTEST_TEST_RACK_INVITE          Invite code for that rackspace.
+#
+# To populate the rackspace secrets, an authed user signs into autotest
+# once, creates a rackspace, copies the share URL via the "Copy invite URL"
+# button, and stores the id + ?invite= portion as the two repo secrets.
+# See e2e/audio-drift/cross-machine/README.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: 'Comma-separated scenario names (default = all). e.g. 01-static-vco,04-sequenced'
+        required: false
+        default: ''
+        type: string
+      seconds:
+        description: 'Recording duration per scenario, in seconds'
+        required: false
+        default: '5'
+        type: string
+  schedule:
+    # Mondays 06:00 UTC. Track drift over time without burning cycles every PR.
+    - cron: '0 6 * * MON'
+
+concurrency:
+  group: audio-drift-cross-machine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Resolve the rack URL + scenario list. Outputs power both runner jobs and
+  # the compare job. This job is cheap; it just emits config.
+  setup-rack:
+    name: Resolve rack URL + scenario list
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      rack_url: ${{ steps.resolve.outputs.rack_url }}
+      rack_id: ${{ steps.resolve.outputs.rack_id }}
+      scenarios_json: ${{ steps.resolve.outputs.scenarios_json }}
+      seconds: ${{ steps.resolve.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: resolve
+        env:
+          RACK_ID: ${{ secrets.AUTOTEST_TEST_RACK_ID }}
+          INVITE: ${{ secrets.AUTOTEST_TEST_RACK_INVITE }}
+          INPUT_SCENARIOS: ${{ inputs.scenarios }}
+          INPUT_SECONDS: ${{ inputs.seconds }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RACK_ID:-}" ] || [ -z "${INVITE:-}" ]; then
+            echo "::error::AUTOTEST_TEST_RACK_ID and AUTOTEST_TEST_RACK_INVITE secrets must be set."
+            echo "::error::See e2e/audio-drift/cross-machine/README.md for setup steps."
+            exit 1
+          fi
+          RACK_URL="https://autotest.patchtogether.live/r/${RACK_ID}?invite=${INVITE}"
+          echo "rack_url=${RACK_URL}" >> "$GITHUB_OUTPUT"
+          echo "rack_id=${RACK_ID}" >> "$GITHUB_OUTPUT"
+          echo "seconds=${INPUT_SECONDS:-5}" >> "$GITHUB_OUTPUT"
+          # Build scenarios JSON array. If input is empty, default to all
+          # scenarios from scenarios.ts via a tiny grep — keeps the workflow
+          # honest when scenarios are added/removed without manual edits.
+          if [ -n "${INPUT_SCENARIOS:-}" ]; then
+            SCENARIOS_CSV="${INPUT_SCENARIOS}"
+          else
+            SCENARIOS_CSV=$(grep -oE "name: '[^']+'" e2e/audio-drift/cross-machine/scenarios.ts | sed "s/name: '//; s/'//" | paste -sd, -)
+          fi
+          # Convert CSV to JSON array for matrix expansion.
+          JSON=$(printf '%s' "$SCENARIOS_CSV" | python3 -c "import sys, json; print(json.dumps([s for s in sys.stdin.read().split(',') if s.strip()]))")
+          echo "scenarios_json=${JSON}" >> "$GITHUB_OUTPUT"
+          echo "Resolved scenarios: ${SCENARIOS_CSV}"
+          echo "Rack URL: ${RACK_URL}"
+
+  # Two matrix dimensions: scenarios × roles. We bind role to runner-id
+  # statically (author=runner-a, listener=runner-b) so the compare job can
+  # find files by predictable name.
+  runner-a:
+    name: Runner A (author) — ${{ matrix.scenario }}
+    needs: setup-rack
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJson(needs.setup-rack.outputs.scenarios_json) }}
+    env:
+      AUDIO_DRIFT_SCENARIO: ${{ matrix.scenario }}
+      AUDIO_DRIFT_ROLE: author
+      AUDIO_DRIFT_RACK_URL: ${{ needs.setup-rack.outputs.rack_url }}
+      AUDIO_DRIFT_OUT_DIR: ${{ github.workspace }}/audio-drift-artifacts
+      AUDIO_DRIFT_SECONDS: ${{ needs.setup-rack.outputs.seconds }}
+      BETA_GATE_USER: beta
+      BETA_GATE_PASS: ${{ secrets.AUTOTEST_BETA_GATE_PASS }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { lfs: true }
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-deps-
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+      - name: Network probe (RTT to autotest)
+        run: |
+          # Capture round-trip time as a metric (per the brief). Three pings,
+          # log result; never fails the build (network instability != test
+          # failure).
+          ping -c 3 autotest.patchtogether.live | tee rtt-runner-a.log || true
+          mkdir -p "${AUDIO_DRIFT_OUT_DIR}"
+          mv rtt-runner-a.log "${AUDIO_DRIFT_OUT_DIR}/" || true
+      - name: Run author runner — capture audio
+        run: flox activate -- task audio-drift:cross-machine:runner
+      - name: Upload runner-a artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-drift-runner-a-${{ matrix.scenario }}
+          path: ${{ env.AUDIO_DRIFT_OUT_DIR }}
+          retention-days: 14
+          if-no-files-found: error
+
+  runner-b:
+    name: Runner B (listener) — ${{ matrix.scenario }}
+    needs: setup-rack
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJson(needs.setup-rack.outputs.scenarios_json) }}
+    env:
+      AUDIO_DRIFT_SCENARIO: ${{ matrix.scenario }}
+      AUDIO_DRIFT_ROLE: listener
+      AUDIO_DRIFT_RACK_URL: ${{ needs.setup-rack.outputs.rack_url }}
+      AUDIO_DRIFT_OUT_DIR: ${{ github.workspace }}/audio-drift-artifacts
+      AUDIO_DRIFT_SECONDS: ${{ needs.setup-rack.outputs.seconds }}
+      # Listener waits longer because the author has to author the patch first.
+      AUDIO_DRIFT_LISTENER_PATCH_TIMEOUT_MS: '20000'
+      BETA_GATE_USER: beta
+      BETA_GATE_PASS: ${{ secrets.AUTOTEST_BETA_GATE_PASS }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { lfs: true }
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-deps-
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+      - name: Network probe (RTT to autotest)
+        run: |
+          ping -c 3 autotest.patchtogether.live | tee rtt-runner-b.log || true
+          mkdir -p "${AUDIO_DRIFT_OUT_DIR}"
+          mv rtt-runner-b.log "${AUDIO_DRIFT_OUT_DIR}/" || true
+      - name: Run listener runner — capture audio
+        run: flox activate -- task audio-drift:cross-machine:runner
+      - name: Upload runner-b artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-drift-runner-b-${{ matrix.scenario }}
+          path: ${{ env.AUDIO_DRIFT_OUT_DIR }}
+          retention-days: 14
+          if-no-files-found: error
+
+  compare:
+    name: Compare A vs B + report
+    needs: [setup-rack, runner-a, runner-b]
+    if: ${{ always() && needs.setup-rack.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: { lfs: true }
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-deps-
+      - name: Install workspace deps
+        run: flox activate -- task install
+      - name: Download runner-A artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: audio-drift-runner-a-*
+          path: artifacts/runner-a
+          merge-multiple: true
+      - name: Download runner-B artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: audio-drift-runner-b-*
+          path: artifacts/runner-b
+          merge-multiple: true
+      - name: List downloaded files
+        run: |
+          echo "Runner A:"
+          ls -la artifacts/runner-a || true
+          echo "Runner B:"
+          ls -la artifacts/runner-b || true
+      - name: Run comparator
+        env:
+          AUDIO_DRIFT_A_DIR: ${{ github.workspace }}/artifacts/runner-a
+          AUDIO_DRIFT_B_DIR: ${{ github.workspace }}/artifacts/runner-b
+          AUDIO_DRIFT_OUT_DIR: ${{ github.workspace }}/audio-drift-comparison
+        run: flox activate -- task audio-drift:cross-machine:compare
+      - name: Upload comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-drift-cross-machine-${{ github.run_id }}
+          path: audio-drift-comparison
+          retention-days: 30
+          if-no-files-found: warn
