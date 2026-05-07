@@ -13,10 +13,16 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import {
   coerceToNoteStep,
-  midiToVOct,
   migrateStepArrayV1ToV2,
   C4_MIDI,
 } from '$lib/audio/note-entry';
+import {
+  type ChordQuality,
+  POLY_CHANNEL_PAIRS,
+  chordVoicing,
+  createPolySender,
+  voicingToVOct,
+} from '$lib/audio/poly';
 
 export interface Step {
   on: boolean;
@@ -25,6 +31,24 @@ export interface Step {
    *  via coerceToNoteStep, and persisted patches migrate via the def.migrate
    *  callback. */
   midi: number | null;
+  /** Stage-1 polyphony (v3). Defaults to 'mono' = legacy single-note behavior.
+   *  'maj' / 'min' broadcast a triad (root/3rd/5th/octave) on the polyPitchGate
+   *  output. See packages/web/src/lib/audio/poly.ts. */
+  chord?: ChordQuality;
+}
+
+/** Normalize an arbitrary step-like object to a v3 Step (with chord). The
+ *  base coerceToNoteStep handles {on, midi}; we layer the chord field on top. */
+export function coerceToSequencerStep(raw: unknown): Step {
+  const base = coerceToNoteStep(raw);
+  let chord: ChordQuality = 'mono';
+  if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>;
+    if (r.chord === 'maj' || r.chord === 'min' || r.chord === 'mono') {
+      chord = r.chord;
+    }
+  }
+  return { on: base.on, midi: base.midi, chord };
 }
 
 export interface SequencerData {
@@ -34,7 +58,7 @@ export interface SequencerData {
 export const STEP_COUNT = 32;
 
 export function defaultSteps(): Step[] {
-  return Array.from({ length: STEP_COUNT }, () => ({ on: false, midi: C4_MIDI }));
+  return Array.from({ length: STEP_COUNT }, () => ({ on: false, midi: C4_MIDI, chord: 'mono' }));
 }
 
 export const sequencerDef: AudioModuleDef = {
@@ -43,12 +67,30 @@ export const sequencerDef: AudioModuleDef = {
   label: 'Sequencer',
   category: 'modulation',
   // v2: each step's pitch encoding changed from `pitch: <semitones from C4>`
-  // (free-running ±24 slider) to `midi: <int 33..114> | null` (text-entry).
-  // Old saves migrate per-step via migrateStepArrayV1ToV2.
-  schemaVersion: 2,
+  //     (free-running ±24 slider) to `midi: <int 33..114> | null` (text-entry).
+  // v3: per-step optional `chord: 'mono' | 'maj' | 'min'` for Stage-1
+  //     polyphony. Missing chord defaults to 'mono' so old saves load
+  //     unchanged. The pitch output port type changed from 'pitch' to
+  //     'polyPitchGate'; the engine's resolveConnection() routes lane 0 to
+  //     mono pitch sinks so existing patches keep working.
+  schemaVersion: 3,
   migrate(data, fromVersion) {
-    if (fromVersion >= 2) return data as Record<string, unknown> | undefined;
-    return migrateStepArrayV1ToV2(data, 'steps');
+    let migrated: Record<string, unknown> | undefined;
+    if (fromVersion < 2) {
+      migrated = migrateStepArrayV1ToV2(data, 'steps');
+    } else if (data && typeof data === 'object') {
+      migrated = { ...(data as Record<string, unknown>) };
+    } else {
+      migrated = undefined;
+    }
+    // v3 migration is additive: ensure each step carries a chord field.
+    if (migrated && Array.isArray(migrated.steps)) {
+      migrated.steps = (migrated.steps as unknown[]).map((s) => {
+        const ns = coerceToSequencerStep(s);
+        return { on: ns.on, midi: ns.midi, chord: ns.chord ?? 'mono' };
+      });
+    }
+    return migrated;
   },
 
   inputs: [
@@ -57,7 +99,12 @@ export const sequencerDef: AudioModuleDef = {
     { id: 'clock', type: 'gate' },
   ],
   outputs: [
-    { id: 'pitch', type: 'pitch' },
+    // Stage-1 polyphony: pitch is a 10-channel polyPitchGate cable. When a
+    // step's chord is 'mono', only lane 0 carries a non-zero gate, so a
+    // mono `pitch` sink (via the engine's backward-compat resolver) sees the
+    // same root-note V/oct as before. 'maj'/'min' broadcast a triad on
+    // lanes 0..3 with lane 4 reserved for future 7ths/9ths.
+    { id: 'pitch', type: 'polyPitchGate' },
     { id: 'gate', type: 'gate' },
     // Clock pulse per step advance (10 ms high). Fires on every advance,
     // regardless of step on/off — it's the "I just stepped" signal. Patch
@@ -75,14 +122,16 @@ export const sequencerDef: AudioModuleDef = {
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    // Output ConstantSources: pitch (V/oct), gate (0/1), clock pulse (0/1).
-    const pitchSrc = ctx.createConstantSource();
+    // Stage-1 polyphony: the pitch port is a polyPitchGate cable carrying 5
+    // voice pairs (10 channels). The mono gate port stays a single ConstantSource
+    // that goes high on any chord step (so the existing ADSR/VCA chain still
+    // triggers on every step regardless of chord quality). The polySender owns
+    // the per-lane pitch + gate ConstantSources for the cable.
+    const polyPitch = createPolySender(ctx);
     const gateSrc = ctx.createConstantSource();
     const clockOutSrc = ctx.createConstantSource();
-    pitchSrc.offset.value = 0;
     gateSrc.offset.value = 0;
     clockOutSrc.offset.value = 0;
-    pitchSrc.start();
     gateSrc.start();
     clockOutSrc.start();
 
@@ -142,7 +191,7 @@ export const sequencerDef: AudioModuleDef = {
       if (Array.isArray(steps)) {
         // Coerce each step shape so legacy {on, pitch} entries still drive
         // audio while in-memory until a save+load triggers the def.migrate.
-        return (steps as unknown[]).map(coerceToNoteStep);
+        return (steps as unknown[]).map(coerceToSequencerStep);
       }
       return defaultSteps();
     }
@@ -164,6 +213,10 @@ export const sequencerDef: AudioModuleDef = {
     // engine.read(node, 'pitchVOct' | 'gateValue').
     let lastEmittedVOct = 0;
     let lastEmittedGate = 0;
+    // Per-lane mirrors of the most-recently-scheduled values, for tests and
+    // motorized-fader-style introspection without reading the AudioParam.
+    const lastEmittedLaneVOct = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
+    const lastEmittedLaneGate = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
 
     function emitStep(idx: number, atTime: number, stepDurForGate: number) {
       const octave = readParam('octave', 0);
@@ -173,17 +226,35 @@ export const sequencerDef: AudioModuleDef = {
       // Always emit a clock pulse on advance — that's the chain-out signal
       // and it fires regardless of step on/off.
       emitClockPulse(atTime);
-      if (step && step.on && step.midi !== null) {
-        // Invalid pitches (midi === null) suppress the gate even if step.on.
-        const vOct = midiToVOct(step.midi) + octave;
-        pitchSrc.offset.setValueAtTime(vOct, atTime);
+
+      // Compute the chord voicing. If the step is off / has no pitch, every
+      // lane's gate is 0 and the mono `gate` output stays low.
+      const baseMidi = step && step.on && step.midi !== null ? step.midi : null;
+      const quality: ChordQuality = step?.chord ?? 'mono';
+      const voicing = chordVoicing(baseMidi, quality);
+      // Apply the octave param after chord math so the whole chord transposes
+      // together (octave shifts every gated lane by the same V/oct amount).
+      const lanes = voicingToVOct(voicing).map((l) =>
+        l.gate === 1 ? { pitch: l.pitch + octave, gate: 1 as const } : l,
+      );
+      const gateOff = stepDurForGate * gateLengthFrac;
+      polyPitch.scheduleStep(atTime, lanes, gateOff);
+
+      // Mirror per-lane values for tests / debugging.
+      for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+        const l = lanes[i] ?? { pitch: 0, gate: 0 };
+        lastEmittedLaneVOct[i] = l.pitch;
+        lastEmittedLaneGate[i] = l.gate;
+      }
+      // The mono gate output goes high if ANY lane is gated this step.
+      const anyGate = lanes.some((l) => l.gate === 1);
+      if (anyGate) {
         gateSrc.offset.setValueAtTime(1, atTime);
-        gateSrc.offset.setValueAtTime(0, atTime + stepDurForGate * gateLengthFrac);
-        lastEmittedVOct = vOct;
+        gateSrc.offset.setValueAtTime(0, atTime + gateOff);
+        // Backward-compat tracking: lastEmittedVOct mirrors lane 0 (root).
+        lastEmittedVOct = lanes[0]?.pitch ?? 0;
         lastEmittedGate = 1;
       } else {
-        // Gate not fired this step (off or invalid pitch). Reset the tracking
-        // gate so JS-side observers can see the suppression.
         lastEmittedGate = 0;
       }
     }
@@ -201,6 +272,7 @@ export const sequencerDef: AudioModuleDef = {
           nextStepTime = ctx.currentTime + 0.05;
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
+          polyPitch.silence(ctx.currentTime);
           // Reset clock-in detector so the first observed pulse counts.
           lastClockSample = 0;
           lastClockSampleTime = ctx.currentTime;
@@ -208,6 +280,7 @@ export const sequencerDef: AudioModuleDef = {
           // Transitioned to stopped: cancel pending events, force gate low
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
+          polyPitch.silence(ctx.currentTime);
         }
         prevPlaying = isPlaying;
 
@@ -278,7 +351,9 @@ export const sequencerDef: AudioModuleDef = {
       domain: 'audio',
       inputs: new Map([['clock', { node: clockInGain, input: 0 }]]),
       outputs: new Map([
-        ['pitch', { node: pitchSrc, output: 0 }],
+        // Pitch is now a 10-channel polyPitchGate. Backward-compat with mono
+        // pitch sinks is handled in engine.addEdge via resolveConnection().
+        ['pitch', { node: polyPitch.output, output: 0 }],
         ['gate', { node: gateSrc, output: 0 }],
         ['clock', { node: clockOutSrc, output: 0 }],
       ]),
@@ -294,22 +369,33 @@ export const sequencerDef: AudioModuleDef = {
       read(key) {
         if (key === 'currentStep') return currentStep;
         if (key === 'totalAdvances') return totalAdvances;
-        // V/oct currently emitted on the pitch port — useful for tests that
-        // want to verify "step <X> drove the pitch port to the right voltage"
-        // without spinning up a VCO + Scope. Returns the last value passed to
-        // setValueAtTime on pitchSrc, which is what flows to downstream VCOs.
+        // V/oct currently emitted on the pitch port (lane 0) — kept for
+        // backward compat with existing tests / UI that didn't know about
+        // polyphony.
         if (key === 'pitchVOct')  return lastEmittedVOct;
         if (key === 'gateValue')  return lastEmittedGate;
+        // Per-lane reads for poly tests.
+        if (typeof key === 'string' && key.startsWith('pitchVOctLane:')) {
+          const i = Number.parseInt(key.slice('pitchVOctLane:'.length), 10);
+          return Number.isFinite(i) && i >= 0 && i < POLY_CHANNEL_PAIRS
+            ? lastEmittedLaneVOct[i]
+            : undefined;
+        }
+        if (typeof key === 'string' && key.startsWith('gateLane:')) {
+          const i = Number.parseInt(key.slice('gateLane:'.length), 10);
+          return Number.isFinite(i) && i >= 0 && i < POLY_CHANNEL_PAIRS
+            ? lastEmittedLaneGate[i]
+            : undefined;
+        }
         return undefined;
       },
       dispose() {
         alive = false;
         if (timeoutId !== null) clearTimeout(timeoutId);
-        try { pitchSrc.stop(); } catch { /* already stopped */ }
         try { gateSrc.stop(); } catch { /* already stopped */ }
         try { clockOutSrc.stop(); } catch { /* already stopped */ }
         try { clockInSilence.stop(); } catch { /* already stopped */ }
-        pitchSrc.disconnect();
+        polyPitch.dispose();
         gateSrc.disconnect();
         clockOutSrc.disconnect();
         clockInSilence.disconnect();

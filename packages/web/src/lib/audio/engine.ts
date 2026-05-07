@@ -10,6 +10,7 @@
 
 import type { Edge, ModuleDef, ModuleNode } from '$lib/graph/types';
 import { getModuleDef, type AudioModuleDef } from './module-registry';
+import { POLY_CHANNELS, resolveConnection } from './poly';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -188,6 +189,18 @@ export class AudioEngine implements DomainEngine {
     if (!din) throw new Error(
       `AudioEngine.addEdge: no target port ${edge.target.portId} on ${edge.target.nodeId}`
     );
+
+    // Stage-1 polyphony: when either side speaks `polyPitchGate` and the other
+    // doesn't, we need an interposed splitter (poly→mono) or merger (mono→poly)
+    // to pick the right channel(s). The pure planning function lives in poly.ts;
+    // here we just apply its plan.
+    const plan = resolveConnection(edge.sourceType, edge.targetType);
+    if (plan.needSplitter || plan.needMerger) {
+      const undo = this.applyPolyPlan(edge, sout, din, plan);
+      this.edges.set(edge.id, undo);
+      return;
+    }
+
     if (din.param) {
       // CV → AudioParam routing.
       sout.node.connect(din.param, sout.output);
@@ -212,6 +225,113 @@ export class AudioEngine implements DomainEngine {
       sout.node.connect(din.node, sout.output, din.input);
       this.edges.set(edge.id, () => sout.node.disconnect(din.node, sout.output, din.input));
     }
+  }
+
+  /** Apply a poly-cable connection plan: insert a splitter or merger between
+   *  source and destination so the chosen channels route correctly. Returns
+   *  the undo function the engine stores in `edges`. */
+  private applyPolyPlan(
+    edge: Edge,
+    sout: { node: AudioNode; output: number },
+    din: { node: AudioNode; input: number; param?: AudioParam },
+    plan: ReturnType<typeof resolveConnection>,
+  ): () => void {
+    const ctx = this.ctx;
+    const teardowns: Array<() => void> = [];
+
+    if (plan.needSplitter) {
+      // poly source → mono sink. Tee the source through a 10-channel splitter
+      // and connect the requested channel(s) to the destination.
+      const splitter = ctx.createChannelSplitter(POLY_CHANNELS);
+      sout.node.connect(splitter, sout.output);
+      teardowns.push(() => {
+        try { sout.node.disconnect(splitter, sout.output); } catch { /* */ }
+      });
+
+      if (din.param) {
+        for (const ch of plan.splitChannels) {
+          splitter.connect(din.param, ch);
+        }
+        // Tap to per-param analyser so motorized faders still work.
+        const tap = this.getOrCreateParamTap(edge.target.nodeId, edge.target.portId);
+        for (const ch of plan.splitChannels) {
+          splitter.connect(tap, ch);
+        }
+        const tapKey = this.paramTapKey(edge.target.nodeId, edge.target.portId);
+        this.paramTapEdges.set(edge.id, { tapKey, src: splitter, output: plan.splitChannels[0] ?? 0 });
+        teardowns.push(() => {
+          try {
+            for (const ch of plan.splitChannels) {
+              splitter.disconnect(din.param!, ch);
+            }
+          } catch { /* */ }
+          const bk = this.paramTapEdges.get(edge.id);
+          if (bk) {
+            const t = this.paramTaps.get(bk.tapKey);
+            if (t) {
+              try {
+                for (const ch of plan.splitChannels) {
+                  splitter.disconnect(t, ch);
+                }
+              } catch { /* */ }
+            }
+            this.paramTapEdges.delete(edge.id);
+          }
+        });
+      } else if (plan.needGateSum && plan.splitChannels.length > 1) {
+        // OR-of-gates: connect every gate channel to the same destination
+        // input. Web Audio sums them — each gate is 0/1 so sum ∈ [0, 5];
+        // downstream gate consumers threshold ≥ 0.5 ⇒ effectively OR.
+        for (const ch of plan.splitChannels) {
+          splitter.connect(din.node, ch, din.input);
+        }
+        teardowns.push(() => {
+          for (const ch of plan.splitChannels) {
+            try { splitter.disconnect(din.node, ch, din.input); } catch { /* */ }
+          }
+        });
+      } else {
+        // Single channel pull (lane 0 pitch / cv / audio).
+        const ch = plan.splitChannels[0] ?? 0;
+        splitter.connect(din.node, ch, din.input);
+        teardowns.push(() => {
+          try { splitter.disconnect(din.node, ch, din.input); } catch { /* */ }
+        });
+      }
+
+      teardowns.push(() => { try { splitter.disconnect(); } catch { /* */ } });
+    } else if (plan.needMerger) {
+      // mono source → poly sink. Insert a 10-channel merger between source and
+      // destination, driving only the requested input(s).
+      const merger = ctx.createChannelMerger(POLY_CHANNELS);
+      for (const inp of plan.mergeInputs) {
+        sout.node.connect(merger, sout.output, inp);
+      }
+      teardowns.push(() => {
+        for (const inp of plan.mergeInputs) {
+          try { sout.node.disconnect(merger, sout.output, inp); } catch { /* */ }
+        }
+      });
+
+      if (din.param) {
+        // Highly unusual (poly input as AudioParam) — engine never declares one
+        // today, but be defensive: connect merger to param at output 0.
+        merger.connect(din.param, 0);
+        teardowns.push(() => { try { merger.disconnect(din.param!, 0); } catch { /* */ } });
+      } else {
+        merger.connect(din.node, 0, din.input);
+        teardowns.push(() => { try { merger.disconnect(din.node, 0, din.input); } catch { /* */ } });
+      }
+
+      teardowns.push(() => { try { merger.disconnect(); } catch { /* */ } });
+    }
+
+    // Run teardowns in reverse (LIFO) so we disconnect leaves before roots.
+    return () => {
+      for (let i = teardowns.length - 1; i >= 0; i--) {
+        try { teardowns[i]!(); } catch { /* */ }
+      }
+    };
   }
 
   removeEdge(edgeId: string): void {

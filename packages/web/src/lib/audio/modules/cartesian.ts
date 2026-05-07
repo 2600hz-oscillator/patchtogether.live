@@ -12,23 +12,44 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import {
   coerceToNoteStep,
-  midiToVOct,
   migrateStepArrayV1ToV2,
   C4_MIDI,
 } from '$lib/audio/note-entry';
+import {
+  type ChordQuality,
+  POLY_CHANNEL_PAIRS,
+  chordVoicing,
+  createPolySender,
+  voicingToVOct,
+} from '$lib/audio/poly';
 
 export interface Cell {
   on: boolean;
   /** MIDI int (a4 = 69) for this cell's pitch, or null = no note. v1 of this
    *  module used `pitch: <semitones from C4>`. */
   midi: number | null;
+  /** Stage-1 polyphony (v3). Defaults to 'mono' = legacy single-note behavior. */
+  chord?: ChordQuality;
+}
+
+/** Normalize an arbitrary cell-like object to a v3 Cell (with chord). */
+export function coerceToCartesianCell(raw: unknown): Cell {
+  const base = coerceToNoteStep(raw);
+  let chord: ChordQuality = 'mono';
+  if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>;
+    if (r.chord === 'maj' || r.chord === 'min' || r.chord === 'mono') {
+      chord = r.chord;
+    }
+  }
+  return { on: base.on, midi: base.midi, chord };
 }
 
 export const CELL_COUNT = 16;
 export const GRID_DIM = 4;
 
 export function defaultCells(): Cell[] {
-  return Array.from({ length: CELL_COUNT }, () => ({ on: false, midi: C4_MIDI }));
+  return Array.from({ length: CELL_COUNT }, () => ({ on: false, midi: C4_MIDI, chord: 'mono' }));
 }
 
 export const cartesianDef: AudioModuleDef = {
@@ -37,11 +58,27 @@ export const cartesianDef: AudioModuleDef = {
   label: 'Cartesian',
   category: 'modulation',
   // v2: per-cell pitch encoding changed from `pitch: semitones` to `midi: int|null`.
-  // See sequencer.ts for the matching change.
-  schemaVersion: 2,
+  //     See sequencer.ts for the matching change.
+  // v3: per-cell optional `chord: 'mono' | 'maj' | 'min'` for Stage-1 polyphony.
+  //     Pitch output port type changed to `polyPitchGate`. Backward-compat
+  //     resolved by engine.addEdge → resolveConnection().
+  schemaVersion: 3,
   migrate(data, fromVersion) {
-    if (fromVersion >= 2) return data as Record<string, unknown> | undefined;
-    return migrateStepArrayV1ToV2(data, 'cells');
+    let migrated: Record<string, unknown> | undefined;
+    if (fromVersion < 2) {
+      migrated = migrateStepArrayV1ToV2(data, 'cells');
+    } else if (data && typeof data === 'object') {
+      migrated = { ...(data as Record<string, unknown>) };
+    } else {
+      migrated = undefined;
+    }
+    if (migrated && Array.isArray(migrated.cells)) {
+      migrated.cells = (migrated.cells as unknown[]).map((c) => {
+        const ns = coerceToCartesianCell(c);
+        return { on: ns.on, midi: ns.midi, chord: ns.chord ?? 'mono' };
+      });
+    }
+    return migrated;
   },
 
   inputs: [
@@ -50,7 +87,7 @@ export const cartesianDef: AudioModuleDef = {
     { id: 'y_cv', type: 'cv' },
   ],
   outputs: [
-    { id: 'pitch', type: 'pitch' },
+    { id: 'pitch', type: 'polyPitchGate' },
     { id: 'gate',  type: 'gate' },
     { id: 'clock', type: 'gate' },
   ],
@@ -61,13 +98,12 @@ export const cartesianDef: AudioModuleDef = {
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const pitchSrc     = ctx.createConstantSource();
+    // Stage-1 polyphony: pitch port is polyPitchGate (5 voice pairs).
+    const polyPitch = createPolySender(ctx);
     const gateSrc      = ctx.createConstantSource();
     const clockOutSrc  = ctx.createConstantSource();
-    pitchSrc.offset.value = 0;
     gateSrc.offset.value = 0;
     clockOutSrc.offset.value = 0;
-    pitchSrc.start();
     gateSrc.start();
     clockOutSrc.start();
 
@@ -102,7 +138,7 @@ export const cartesianDef: AudioModuleDef = {
       const live = livePatch.nodes[nodeId];
       const cells = (live?.data as Record<string, unknown> | undefined)?.cells;
       if (Array.isArray(cells)) {
-        return (cells as unknown[]).map(coerceToNoteStep);
+        return (cells as unknown[]).map(coerceToCartesianCell);
       }
       return defaultCells();
     }
@@ -123,6 +159,8 @@ export const cartesianDef: AudioModuleDef = {
 
     let lastEmittedVOct = 0;
     let lastEmittedGate = 0;
+    const lastEmittedLaneVOct = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
+    const lastEmittedLaneGate = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
 
     function emitStep(idx: number, atTime: number, gateDur: number) {
       const octave = readParam('octave', 0);
@@ -130,13 +168,26 @@ export const cartesianDef: AudioModuleDef = {
       const cells = readCells();
       const cell = cells[idx];
       emitClockPulse(atTime);
-      if (cell && cell.on && cell.midi !== null) {
-        // Invalid pitches (midi === null) suppress the gate even if cell.on.
-        const vOct = midiToVOct(cell.midi) + octave;
-        pitchSrc.offset.setValueAtTime(vOct, atTime);
+
+      const baseMidi = cell && cell.on && cell.midi !== null ? cell.midi : null;
+      const quality: ChordQuality = cell?.chord ?? 'mono';
+      const voicing = chordVoicing(baseMidi, quality);
+      const lanes = voicingToVOct(voicing).map((l) =>
+        l.gate === 1 ? { pitch: l.pitch + octave, gate: 1 as const } : l,
+      );
+      const gateOff = gateDur * gateLengthFrac;
+      polyPitch.scheduleStep(atTime, lanes, gateOff);
+
+      for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+        const l = lanes[i] ?? { pitch: 0, gate: 0 };
+        lastEmittedLaneVOct[i] = l.pitch;
+        lastEmittedLaneGate[i] = l.gate;
+      }
+      const anyGate = lanes.some((l) => l.gate === 1);
+      if (anyGate) {
         gateSrc.offset.setValueAtTime(1, atTime);
-        gateSrc.offset.setValueAtTime(0, atTime + gateDur * gateLengthFrac);
-        lastEmittedVOct = vOct;
+        gateSrc.offset.setValueAtTime(0, atTime + gateOff);
+        lastEmittedVOct = lanes[0]?.pitch ?? 0;
         lastEmittedGate = 1;
       } else {
         lastEmittedGate = 0;
@@ -200,7 +251,7 @@ export const cartesianDef: AudioModuleDef = {
         ['y_cv',  { node: yIn.gain,     input: 0 }],
       ]),
       outputs: new Map([
-        ['pitch', { node: pitchSrc, output: 0 }],
+        ['pitch', { node: polyPitch.output, output: 0 }],
         ['gate',  { node: gateSrc,  output: 0 }],
         ['clock', { node: clockOutSrc, output: 0 }],
       ]),
@@ -217,18 +268,29 @@ export const cartesianDef: AudioModuleDef = {
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'pitchVOct')     return lastEmittedVOct;
         if (key === 'gateValue')     return lastEmittedGate;
+        if (typeof key === 'string' && key.startsWith('pitchVOctLane:')) {
+          const i = Number.parseInt(key.slice('pitchVOctLane:'.length), 10);
+          return Number.isFinite(i) && i >= 0 && i < POLY_CHANNEL_PAIRS
+            ? lastEmittedLaneVOct[i]
+            : undefined;
+        }
+        if (typeof key === 'string' && key.startsWith('gateLane:')) {
+          const i = Number.parseInt(key.slice('gateLane:'.length), 10);
+          return Number.isFinite(i) && i >= 0 && i < POLY_CHANNEL_PAIRS
+            ? lastEmittedLaneGate[i]
+            : undefined;
+        }
         return undefined;
       },
       dispose() {
         alive = false;
         if (timeoutId !== null) clearTimeout(timeoutId);
-        try { pitchSrc.stop(); } catch { /* */ }
         try { gateSrc.stop(); } catch { /* */ }
         try { clockOutSrc.stop(); } catch { /* */ }
         try { clockIn.sil.stop(); } catch { /* */ }
         try { xIn.sil.stop(); } catch { /* */ }
         try { yIn.sil.stop(); } catch { /* */ }
-        pitchSrc.disconnect();
+        polyPitch.dispose();
         gateSrc.disconnect();
         clockOutSrc.disconnect();
         clockIn.sil.disconnect();   clockIn.gain.disconnect(); clockIn.an.disconnect();

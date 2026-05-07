@@ -11,6 +11,9 @@
   --cable-pitch: #60a5fa;
   --cable-gate: #f87171;
   --cable-cv: #34d399;
+  /* Stage-1 polyphony cable: a richer purple-blue distinct from --cable-pitch
+   * so users can read at a glance which cables carry chords. */
+  --cable-polyPitchGate: #a78bfa;
 
   /* MEOWBOX cat ears. Skin-overridable. */
   --meowbox-ear-color: #f3bdcc;

@@ -39,7 +39,10 @@ test('note-entry: typing valid notes into Sequencer steps normalizes display + d
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
     return w.__patch.nodes['seq']?.data?.steps?.[0] ?? null;
   });
-  expect(seqData).toEqual({ on: false, midi: 69 });
+  // Stage-1 polyphony added an optional `chord` field (default 'mono') to
+  // each step's persisted shape. Use a partial match so this assertion is
+  // robust to that and any future additive fields.
+  expect(seqData).toMatchObject({ on: false, midi: 69 });
 
   // Flat form maps to sharp: 'db5' -> displayed as 'c#5', stored as MIDI 73.
   const step1 = page.locator('[data-testid="seq-pitch-seq-1"]');
@@ -147,7 +150,9 @@ test('note-entry: gate button toggles step.on without touching the pitch input',
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
     return w.__patch.nodes['seq']?.data?.steps?.[0] ?? null;
   });
-  expect(stepData).toEqual({ on: true, midi: 64 });
+  // toMatchObject (not toEqual) for forward-compat: Stage-1 polyphony adds
+  // an optional `chord` field to the persisted step shape.
+  expect(stepData).toMatchObject({ on: true, midi: 64 });
 });
 
 test('note-entry: legacy {on, pitch} step shape migrates to {on, midi} at read time', async ({ page }) => {

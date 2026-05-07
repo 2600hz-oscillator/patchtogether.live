@@ -4,9 +4,17 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import { patch, ydoc } from '$lib/graph/store';
-  import { cartesianDef, defaultCells, CELL_COUNT, GRID_DIM, type Cell } from '$lib/audio/modules/cartesian';
+  import {
+    cartesianDef,
+    defaultCells,
+    CELL_COUNT,
+    GRID_DIM,
+    coerceToCartesianCell,
+    type Cell,
+  } from '$lib/audio/modules/cartesian';
+  import { type ChordQuality, nextChordQuality } from '$lib/audio/poly';
   import { useEngine } from '$lib/audio/engine-context';
-  import { parseNoteName, coerceToNoteStep } from '$lib/audio/note-entry';
+  import { parseNoteName } from '$lib/audio/note-entry';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
@@ -27,7 +35,7 @@
   let cells = $derived.by<Cell[]>(() => {
     void cardVersion;
     const raw = (node?.data as Record<string, unknown> | undefined)?.cells;
-    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToNoteStep);
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToCartesianCell);
     return defaultCells();
   });
 
@@ -67,7 +75,7 @@
     const t = patch.nodes[id];
     if (!t?.data) return defaultCells();
     const raw = (t.data as Record<string, unknown>).cells;
-    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToNoteStep);
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToCartesianCell);
     return defaultCells();
   }
   function writeCells(arr: Cell[]) {
@@ -75,22 +83,37 @@
     if (!t) return;
     ydoc.transact(() => {
       if (!t.data) t.data = {};
-      (t.data as Record<string, unknown>).cells = arr.map((c) => ({ on: c.on, midi: c.midi }));
+      (t.data as Record<string, unknown>).cells = arr.map((c) => ({
+        on: c.on,
+        midi: c.midi,
+        chord: c.chord ?? 'mono',
+      }));
     });
   }
   function commitPitch(i: number, input: string) {
     const arr = readCellsCopy();
-    const cur = arr[i] ?? { on: false, midi: null };
+    const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
     const trimmed = input.trim();
     const parsed = trimmed === '' ? null : parseNoteName(trimmed);
-    arr[i] = { on: cur.on, midi: parsed };
+    arr[i] = { on: cur.on, midi: parsed, chord: cur.chord ?? 'mono' };
     writeCells(arr);
   }
   function toggleGate(i: number) {
     const arr = readCellsCopy();
-    const cur = arr[i] ?? { on: false, midi: null };
-    arr[i] = { on: !cur.on, midi: cur.midi };
+    const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
+    arr[i] = { on: !cur.on, midi: cur.midi, chord: cur.chord ?? 'mono' };
     writeCells(arr);
+  }
+  function cycleChord(i: number) {
+    const arr = readCellsCopy();
+    const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
+    arr[i] = { on: cur.on, midi: cur.midi, chord: nextChordQuality(cur.chord) };
+    writeCells(arr);
+  }
+  function chordLabel(c: ChordQuality | undefined): string {
+    if (c === 'maj') return 'M';
+    if (c === 'min') return 'm';
+    return '—';
   }
 
   // --- Keyboard navigation (4x4 with row-wrap) ---
@@ -168,7 +191,7 @@
   <span class="port-label left" style="top: 86px;">x cv</span>
   <span class="port-label left" style="top: 122px;">y cv</span>
 
-  <Handle type="source" position={Position.Right} id="pitch" style="top: 56px;  --handle-color: var(--cable-pitch);" />
+  <Handle type="source" position={Position.Right} id="pitch" style="top: 56px;  --handle-color: var(--cable-polyPitchGate);" />
   <Handle type="source" position={Position.Right} id="gate"  style="top: 92px;  --handle-color: var(--cable-gate);" />
   <Handle type="source" position={Position.Right} id="clock" style="top: 128px; --handle-color: var(--cable-gate);" />
   <span class="port-label right" style="top: 50px;">pitch</span>
@@ -192,6 +215,19 @@
             return handleNav(e, i, role as 'pitch' | 'gate');
           }}
         />
+        <button
+          class="chord-badge"
+          class:mono={(cell.chord ?? 'mono') === 'mono'}
+          class:maj={cell.chord === 'maj'}
+          class:min={cell.chord === 'min'}
+          type="button"
+          data-testid={`cart-chord-${id}-${i}`}
+          data-step={i}
+          data-role="chord"
+          data-chord={cell.chord ?? 'mono'}
+          title={`Chord: ${cell.chord ?? 'mono'} (click to cycle)`}
+          onclick={() => cycleChord(i)}
+        >{chordLabel(cell.chord)}</button>
       </div>
     {/each}
   </div>
@@ -247,6 +283,32 @@
     font-family: ui-monospace, monospace;
     text-align: center;
     line-height: 1.4;
+  }
+  .chord-badge {
+    width: 100%;
+    height: 14px;
+    margin-top: 1px;
+    background: #14171c;
+    border: 1px solid #2a2f3a;
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+  }
+  .chord-badge.maj {
+    color: var(--cable-pitch);
+    border-color: var(--cable-pitch);
+  }
+  .chord-badge.min {
+    color: #c084fc;
+    border-color: #c084fc;
+  }
+  .chord-badge:focus-visible {
+    outline: 1px solid var(--cable-cv);
+    outline-offset: -1px;
   }
   .cartesian-card .fader-row {
     margin-top: 6px;

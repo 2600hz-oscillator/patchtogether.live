@@ -4,9 +4,16 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import { patch, ydoc } from '$lib/graph/store';
-  import { sequencerDef, defaultSteps, STEP_COUNT, type Step } from '$lib/audio/modules/sequencer';
+  import {
+    sequencerDef,
+    defaultSteps,
+    STEP_COUNT,
+    coerceToSequencerStep,
+    type Step,
+  } from '$lib/audio/modules/sequencer';
+  import { type ChordQuality, nextChordQuality } from '$lib/audio/poly';
   import { useEngine } from '$lib/audio/engine-context';
-  import { parseNoteName, coerceToNoteStep } from '$lib/audio/note-entry';
+  import { parseNoteName } from '$lib/audio/note-entry';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
@@ -33,7 +40,7 @@
   let steps = $derived.by<Step[]>(() => {
     void cardVersion;
     const raw = (node?.data as Record<string, unknown> | undefined)?.steps;
-    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToNoteStep);
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToSequencerStep);
     return defaultSteps();
   });
 
@@ -77,7 +84,7 @@
     const t = patch.nodes[id];
     if (!t?.data) return defaultSteps();
     const raw = (t.data as Record<string, unknown>).steps;
-    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToNoteStep);
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToSequencerStep);
     return defaultSteps();
   }
 
@@ -88,24 +95,44 @@
       if (!t.data) t.data = {};
       // Replace the whole steps array (in-place index assignment doesn't
       // reliably propagate through SyncedStore for nested arrays-of-objects).
-      (t.data as Record<string, unknown>).steps = arr.map((s) => ({ on: s.on, midi: s.midi }));
+      (t.data as Record<string, unknown>).steps = arr.map((s) => ({
+        on: s.on,
+        midi: s.midi,
+        chord: s.chord ?? 'mono',
+      }));
     });
   }
 
   function commitPitch(i: number, input: string) {
     const arr = readStepsCopy();
-    const cur = arr[i] ?? { on: false, midi: null };
+    const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
     const trimmed = input.trim();
     const parsed = trimmed === '' ? null : parseNoteName(trimmed);
-    arr[i] = { on: cur.on, midi: parsed };
+    arr[i] = { on: cur.on, midi: parsed, chord: cur.chord ?? 'mono' };
     writeSteps(arr);
   }
 
   function toggleGate(i: number) {
     const arr = readStepsCopy();
-    const cur = arr[i] ?? { on: false, midi: null };
-    arr[i] = { on: !cur.on, midi: cur.midi };
+    const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
+    arr[i] = { on: !cur.on, midi: cur.midi, chord: cur.chord ?? 'mono' };
     writeSteps(arr);
+  }
+
+  /** Cycle a single step's chord quality: mono → maj → min → mono. */
+  function cycleChord(i: number) {
+    const arr = readStepsCopy();
+    const cur = arr[i] ?? { on: false, midi: null, chord: 'mono' as ChordQuality };
+    const next = nextChordQuality(cur.chord);
+    arr[i] = { on: cur.on, midi: cur.midi, chord: next };
+    writeSteps(arr);
+  }
+
+  /** UI label for the per-step chord badge. mono → blank circle ('—'), maj → 'M', min → 'm'. */
+  function chordLabel(c: ChordQuality | undefined): string {
+    if (c === 'maj') return 'M';
+    if (c === 'min') return 'm';
+    return '—';
   }
 
   // --- Keyboard navigation ---
@@ -173,7 +200,7 @@
   <Handle type="target" position={Position.Left}  id="clock" style="top: 56px; --handle-color: var(--cable-gate);" />
   <span class="port-label left" style="top: 50px;">clk in</span>
 
-  <Handle type="source" position={Position.Right} id="pitch" style="top: 56px; --handle-color: var(--cable-pitch);" />
+  <Handle type="source" position={Position.Right} id="pitch" style="top: 56px; --handle-color: var(--cable-polyPitchGate);" />
   <Handle type="source" position={Position.Right} id="gate"  style="top: 92px; --handle-color: var(--cable-gate);" />
   <Handle type="source" position={Position.Right} id="clock" style="top: 128px; --handle-color: var(--cable-gate);" />
   <span class="port-label right" style="top: 50px;">pitch</span>
@@ -199,6 +226,19 @@
             return handleNav(e, i, role as 'pitch' | 'gate');
           }}
         />
+        <button
+          class="chord-badge"
+          class:mono={(step.chord ?? 'mono') === 'mono'}
+          class:maj={step.chord === 'maj'}
+          class:min={step.chord === 'min'}
+          type="button"
+          data-testid={`seq-chord-${id}-${i}`}
+          data-step={i}
+          data-role="chord"
+          data-chord={step.chord ?? 'mono'}
+          title={`Chord: ${step.chord ?? 'mono'} (click to cycle mono → maj → min)`}
+          onclick={() => cycleChord(i)}
+        >{chordLabel(step.chord)}</button>
       </div>
     {/each}
   </div>
@@ -265,6 +305,32 @@
     font-family: ui-monospace, monospace;
     text-align: center;
     line-height: 1.4;
+  }
+  .chord-badge {
+    width: 100%;
+    height: 12px;
+    margin-top: 1px;
+    background: #14171c;
+    border: 1px solid #2a2f3a;
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+  }
+  .chord-badge.maj {
+    color: var(--cable-pitch);
+    border-color: var(--cable-pitch);
+  }
+  .chord-badge.min {
+    color: #c084fc;
+    border-color: #c084fc;
+  }
+  .chord-badge:focus-visible {
+    outline: 1px solid var(--cable-cv);
+    outline-offset: -1px;
   }
   .fader-row {
     margin-top: 6px;
