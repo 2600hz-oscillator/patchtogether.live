@@ -62,25 +62,33 @@
   import CharlottesEchosCard from '$lib/ui/modules/CharlottesEchosCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
+  import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
   import type { CableType } from '$lib/graph/types';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
+  import type { HocuspocusProvider } from '@hocuspocus/provider';
+  import type { PresenceUser } from '$lib/multiplayer/presence';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
   // On the public canvas at `/`, this stays undefined and the layout
   // helpers fall through to node.position (single-user behavior preserved).
   //
-  // B5 audio gate: an optional AudioGate store from $lib/audio/audio-gate.
-  // When provided (currently only by /r/[id]/+page.svelte), Canvas wires
-  // the gate to its private `ensureEngine` + `audioCtx` so the overlay
-  // can boot + resume the AudioContext from a user-gesture handler. Left
-  // optional because the public `/` canvas doesn't render the overlay
-  // (Load example / + Add module already serve as user gestures there).
+  // Awareness (provider + presenceUser): cursor broadcast + remote cursor
+  // rendering. Audio gate: AudioGate store wires Canvas's ensureEngine into
+  // the overlay so the AudioContext can resume from a user gesture. All
+  // optional — the public `/` canvas leaves them undefined.
   interface Props {
     currentUserId?: string;
+    provider?: HocuspocusProvider | null;
+    presenceUser?: PresenceUser | null;
     audioGate?: import('$lib/audio/audio-gate.svelte').AudioGate;
   }
-  let { currentUserId, audioGate }: Props = $props();
+  let {
+    currentUserId,
+    provider = null,
+    presenceUser = null,
+    audioGate,
+  }: Props = $props();
 
   const nodeTypes = {
     analogVco: AnalogVcoCard,
@@ -584,11 +592,107 @@
     return bootPromise;
   }
 
-  // B5 audio gate wiring. The optional AudioGate store (passed in by
-  // /r/[id]/+page.svelte) needs (a) the boot function to call on first
-  // user gesture and (b) the live AudioContext so it can track suspend/
-  // resume state via the ctx's `statechange` event. We register the
-  // booter once at mount and re-bind the ctx whenever it changes.
+  // ---------------- Awareness wiring (B4) ----------------
+  //
+  // Sets the local awareness state's `user` field once the provider attaches,
+  // then forwards pointer-move events on the .flow region as `cursor` updates
+  // throttled to ~60Hz via requestAnimationFrame. Y.Awareness GCs disconnected
+  // peers automatically (30s default); the provider's destroy() also
+  // broadcasts a null state so peers see cursors disappear immediately.
+  let flowEl = $state<HTMLDivElement | null>(null);
+
+  $effect(() => {
+    const p = provider;
+    const user = presenceUser;
+    if (!p || !user) return;
+    const awareness = p.awareness;
+    if (!awareness) return;
+    awareness.setLocalStateField('user', user);
+    return () => {
+      try {
+        awareness.setLocalState(null);
+      } catch {
+        /* provider may already be torn down */
+      }
+    };
+  });
+
+  $effect(() => {
+    const p = provider;
+    const root = flowEl;
+    if (!p || !root) return;
+    const awareness = p.awareness;
+    if (!awareness) return;
+    let pendingX = 0;
+    let pendingY = 0;
+    let hasPending = false;
+    let rafId: number | null = null;
+    const flush = () => {
+      rafId = null;
+      if (!hasPending) return;
+      hasPending = false;
+      awareness.setLocalStateField('cursor', { x: pendingX, y: pendingY });
+    };
+    const onMove = (e: PointerEvent) => {
+      const rect = root.getBoundingClientRect();
+      pendingX = e.clientX - rect.left;
+      pendingY = e.clientY - rect.top;
+      hasPending = true;
+      if (rafId === null) rafId = requestAnimationFrame(flush);
+    };
+    const onLeave = () => {
+      hasPending = false;
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      const local = awareness.getLocalState();
+      if (local && 'cursor' in (local as object)) {
+        const next = { ...(local as Record<string, unknown>) };
+        delete next.cursor;
+        awareness.setLocalState(next);
+      }
+    };
+    root.addEventListener('pointermove', onMove);
+    root.addEventListener('pointerleave', onLeave);
+    return () => {
+      root.removeEventListener('pointermove', onMove);
+      root.removeEventListener('pointerleave', onLeave);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  });
+
+  // Dev-only: expose helpers so @collab Playwright tests can drive the
+  // awareness layer without wiring real Clerk auth + pointer events.
+  if (import.meta.env.DEV) {
+    $effect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__setLocalCursor = (x: number, y: number) => {
+        const a = provider?.awareness;
+        if (!a) return false;
+        a.setLocalStateField('cursor', { x, y });
+        return true;
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__getRemoteCursors = () => {
+        const a = provider?.awareness;
+        if (!a) return [];
+        const out: Array<{ clientId: number; user: unknown; cursor?: unknown }> = [];
+        for (const [clientId, state] of a.getStates()) {
+          if (clientId === a.clientID) continue;
+          const s = state as { user?: unknown; cursor?: unknown };
+          if (!s?.user) continue;
+          out.push({ clientId, user: s.user, cursor: s.cursor });
+        }
+        return out;
+      };
+    });
+  }
+
+  // ---------------- B5 audio gate ----------------
+  // The optional AudioGate store (passed in by /r/[id]/+page.svelte) needs
+  // (a) the boot function to call on first user gesture and (b) the live
+  // AudioContext so it can track suspend/resume state.
   $effect(() => {
     if (!audioGate) return;
     audioGate.setBooter(async () => {
@@ -635,7 +739,7 @@
     <pre class="error">{error}</pre>
   {/if}
 
-  <div class="flow">
+  <div class="flow" bind:this={flowEl}>
     <SvelteFlow
       nodes={flowNodes}
       edges={flowEdges}
@@ -652,6 +756,7 @@
       <Background size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
       <Controls />
     </SvelteFlow>
+    <AwarenessLayer {provider} />
   </div>
 
   <footer class="bottombar">
