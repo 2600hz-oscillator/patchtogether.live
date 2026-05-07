@@ -103,20 +103,21 @@
       onNavKey?.(e);
       return;
     }
-    // Arrow keys + Tab: ask parent to handle. If parent handles, prevent
-    // default text-cursor movement.
+    // Arrow keys: ALWAYS preempt the browser's caret-move default — arrow
+    // keys are reserved for grid nav inside the patch. If the parent declines
+    // to move focus (clamped at an edge), focus stays put rather than the
+    // caret jumping inside the input. This is the "very rapid arrow-only
+    // editing" UX from the spec.
     if (
       e.key === 'ArrowLeft' ||
       e.key === 'ArrowRight' ||
       e.key === 'ArrowUp' ||
       e.key === 'ArrowDown'
     ) {
+      e.preventDefault();
       const handled = onNavKey?.(e) ?? false;
-      if (handled) {
-        // Commit pending edit before navigating away.
-        if (editing) commit();
-        e.preventDefault();
-      }
+      if (handled && editing) commit();
+      return;
     }
   }
 
@@ -140,6 +141,18 @@
 </script>
 
 <div class="note-cell" class:dim>
+  <button
+    class="gate"
+    class:on
+    class:active={isActive}
+    type="button"
+    aria-pressed={on}
+    data-testid={gateTestId}
+    data-role="gate"
+    onclick={onGateToggle}
+    onkeydown={onGateKeydown}
+    title={on ? 'Gate on (Space to toggle)' : 'Gate off (Space to toggle)'}
+  ></button>
   <input
     bind:this={inputEl}
     class="note-input"
@@ -159,18 +172,6 @@
     oninput={onInput}
     onkeydown={onKeydown}
   />
-  <button
-    class="gate"
-    class:on
-    class:active={isActive}
-    type="button"
-    aria-pressed={on}
-    data-testid={gateTestId}
-    data-role="gate"
-    onclick={onGateToggle}
-    onkeydown={onGateKeydown}
-    title={on ? 'Gate on (Space to toggle)' : 'Gate off (Space to toggle)'}
-  ></button>
 </div>
 
 <style>

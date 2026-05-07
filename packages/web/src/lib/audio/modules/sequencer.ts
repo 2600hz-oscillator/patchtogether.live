@@ -15,7 +15,7 @@ import {
   coerceToNoteStep,
   midiToVOct,
   migrateStepArrayV1ToV2,
-  C4_MIDI,
+  C3_MIDI,
 } from '$lib/audio/note-entry';
 
 export interface Step {
@@ -34,7 +34,7 @@ export interface SequencerData {
 export const STEP_COUNT = 32;
 
 export function defaultSteps(): Step[] {
-  return Array.from({ length: STEP_COUNT }, () => ({ on: false, midi: C4_MIDI }));
+  return Array.from({ length: STEP_COUNT }, () => ({ on: false, midi: C3_MIDI }));
 }
 
 export const sequencerDef: AudioModuleDef = {
@@ -182,8 +182,11 @@ export const sequencerDef: AudioModuleDef = {
         lastEmittedVOct = vOct;
         lastEmittedGate = 1;
       } else {
-        // Gate not fired this step (off or invalid pitch). Reset the tracking
-        // gate so JS-side observers can see the suppression.
+        // Gate suppressed (off or invalid pitch). Hold-on-off-gate CV: do NOT
+        // touch pitchSrc.offset on suppressed steps — the pitch port keeps its
+        // last gated value for the duration of the silent step. lastEmittedVOct
+        // is left alone for the same reason; lastEmittedGate flips to 0 so JS
+        // observers see the gate go low.
         lastEmittedGate = 0;
       }
     }
