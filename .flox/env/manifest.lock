@@ -3,6 +3,13 @@
   "manifest": {
     "schema-version": "1.11.0",
     "install": {
+      "alsa-lib": {
+        "pkg-path": "alsa-lib",
+        "systems": [
+          "x86_64-linux",
+          "aarch64-linux"
+        ]
+      },
       "esbuild": {
         "pkg-path": "esbuild"
       },
@@ -49,6 +56,68 @@
     }
   },
   "packages": [
+    {
+      "attr_path": "alsa-lib",
+      "broken": false,
+      "derivation": "/nix/store/0js6zpl8vdjbh0fxiin9hsplh6p269dg-alsa-lib-1.2.15.3.drv",
+      "description": "ALSA, the Advanced Linux Sound Architecture libraries",
+      "install_id": "alsa-lib",
+      "license": "LGPL-2.1-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "name": "alsa-lib-1.2.15.3",
+      "pname": "alsa-lib",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T08:43:44.090033Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.2.15.3",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/p0xjg45jrf7c1vk0m7z4j4za8qlwkbgl-alsa-lib-1.2.15.3-dev",
+        "out": "/nix/store/66gjb7hxqw8x6lpg9w52w4z2hr3vwijw-alsa-lib-1.2.15.3"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "alsa-lib",
+      "broken": false,
+      "derivation": "/nix/store/sqr2xmhlc46cn1s7w1c4qs2vl5kqk1q7-alsa-lib-1.2.15.3.drv",
+      "description": "ALSA, the Advanced Linux Sound Architecture libraries",
+      "install_id": "alsa-lib",
+      "license": "LGPL-2.1-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "name": "alsa-lib-1.2.15.3",
+      "pname": "alsa-lib",
+      "rev": "549bd84d6279f9852cae6225e372cc67fb91a4c1",
+      "rev_count": 992384,
+      "rev_date": "2026-05-05T04:14:16Z",
+      "scrape_date": "2026-05-06T09:52:22.737817Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.2.15.3",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/arai359zvs0pg7p2gsrq4wlik2kxcq9h-alsa-lib-1.2.15.3-dev",
+        "out": "/nix/store/3innqpmxwvmr2vc8h51g47aqdl6zj2b4-alsa-lib-1.2.15.3"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
     {
       "attr_path": "esbuild",
       "broken": false,
