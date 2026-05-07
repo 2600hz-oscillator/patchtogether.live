@@ -24,10 +24,17 @@
     const p = attachProvider({
       rackspaceId: data.rackspace.id,
       ydoc,
-      // TODO(stage-b-pr-c): pass Clerk session token here once the server
-      // wires Clerk verification in onAuthenticate.
+      // TODO(stage-b-pr-d): pass Clerk session token (or invite code for
+      // anon visitors) here once the server wires real verification in
+      // onAuthenticate. Stub still accepted by the server.
       token: 'stub',
       debug: import.meta.env.DEV,
+      onCapacityRejected: () => {
+        // Server returned `rackspace-full`; route to the friendly page.
+        // Use replaceState so the browser back button doesn't bounce
+        // them right back to a 4/4 doc and re-trigger the rejection.
+        goto(`/r/${data.rackspace.id}/full`, { replaceState: true });
+      },
     });
     provider = p;
     return () => {

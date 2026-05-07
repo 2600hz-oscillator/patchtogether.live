@@ -29,7 +29,15 @@ export interface AttachProviderOptions {
   url?: string;
   /** Optional: log connection state changes to console for debugging. */
   debug?: boolean;
+  /** Called once when the server rejects the connection because the
+   *  rackspace is at capacity (4/4). The page should route to /full. */
+  onCapacityRejected?: () => void;
 }
+
+// Server-side wire-format string for capacity rejection. Mirrors
+// CAPACITY_REJECTION.code in packages/server/src/capacity.ts; kept as a
+// duplicated literal so the client doesn't depend on the server package.
+export const CAPACITY_REJECTION_CODE = 'rackspace-full';
 
 const DEFAULT_WS_URL = (() => {
   // SvelteKit exposes Vite env to client code via import.meta.env. The
@@ -60,6 +68,22 @@ export function attachProvider(opts: AttachProviderOptions): HocuspocusProvider 
       console.log(`[hocuspocus] synced`);
     });
   }
+
+  // Server emits the rejection reason as a string-prefixed message. The
+  // .startsWith check matches CAPACITY_REJECTION_CODE without forcing
+  // the server to format JSON over the auth-handshake error channel.
+  provider.on('authenticationFailed', (e: { reason: string }) => {
+    if (e.reason?.startsWith(CAPACITY_REJECTION_CODE)) {
+      // Tear down the provider so it doesn't keep retrying — Hocuspocus
+      // re-attempts auth on a backoff schedule by default.
+      try {
+        provider.destroy();
+      } catch {
+        /* destroy is idempotent in practice */
+      }
+      opts.onCapacityRejected?.();
+    }
+  });
 
   return provider;
 }
