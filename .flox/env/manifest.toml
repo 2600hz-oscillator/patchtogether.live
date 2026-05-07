@@ -20,6 +20,7 @@ go-task.pkg-path = "go-task"
 git-lfs.pkg-path = "git-lfs"
 gh.pkg-path = "gh"
 flyctl.pkg-path = "flyctl"
+postgresql.pkg-path = "postgresql"
 
 
 [vars]

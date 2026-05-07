@@ -17,7 +17,9 @@
     "@grame/faustwasm": "^0.7.0",
     "@hocuspocus/provider": "^4.0.0",
     "@syncedstore/core": "^0.6.0",
+    "@types/pg": "^8.20.0",
     "@xyflow/svelte": "^1.0.0",
+    "pg": "^8.20.0",
     "svelte-clerk": "^1.1.6",
     "yjs": "^13.6.0"
   },

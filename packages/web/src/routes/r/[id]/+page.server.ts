@@ -17,7 +17,7 @@ import { getInviteCode, verifyInviteCode } from '$lib/server/invites';
 
 export const load: PageServerLoad = async ({ locals, params, url }) => {
   const { userId } = locals.auth();
-  const rackspace = getRackspace(params.id);
+  const rackspace = await getRackspace(params.id);
   if (!rackspace) {
     throw error(404, 'Rackspace not found');
   }
@@ -47,7 +47,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
     };
   }
 
-  const member = isMember(rackspace.id, userId);
+  const member = await isMember(rackspace.id, userId);
   // We surface ONLY the current user's own Clerk userId (`currentUserId`),
   // never another user's. The per-user layout system (Stage B PR B-b)
   // needs a stable per-user key to scope layout state in the Yjs doc.

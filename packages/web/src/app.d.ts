@@ -12,6 +12,10 @@ declare global {
     interface Locals {
       auth: () => SessionAuthObject;
     }
+    // No bespoke platform.env bindings yet — DATABASE_URL is read directly
+    // from process.env (shimmed by nodejs_compat on Workers). If we wire
+    // Hyperdrive later (needs Fly Postgres with TLS), bring back a typed
+    // HYPERDRIVE binding here.
   }
 }
 

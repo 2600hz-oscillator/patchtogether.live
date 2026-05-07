@@ -10,8 +10,10 @@
 // persistence + per-user layout enforcement land in subsequent slices.
 
 import { Server } from '@hocuspocus/server';
+import * as Y from 'yjs';
 import { AUTH_REJECTION, verifyToken } from './auth.js';
 import { CAPACITY_REJECTION, createSlotTracker } from './capacity.js';
+import { isRackspaceMember, loadSnapshot, storeSnapshot } from './db.js';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
 // because BitwigStudio (and likely other DAWs) reserve 1234 for OSC.
@@ -51,6 +53,32 @@ Server.configure({
       err.reason = auth.reason === 'invalid-format' ? AUTH_REJECTION.invalidFormat : AUTH_REJECTION.unauthorized;
       throw err;
     }
+
+    // Membership check (the B2 promise: now that storage is shared,
+    // the WS handshake can verify Clerk users actually belong to the
+    // rack — closes the "any authed user can WS into any rack" gap
+    // documented in PR-D).
+    //
+    // Anon visitors skip the lookup: their HMAC invite is itself a
+    // sufficient proof of access (it can only be derived with
+    // INVITE_SECRET, which only the server holds). We deliberately do
+    // NOT additionally check rackspaceExists for them — orphaned
+    // snapshot writes are FK-constrained against `racks` so a connect
+    // for a non-existent rack id would succeed at WS-handshake time
+    // but fail at first persist. That's acceptable noise for the test
+    // ergonomics (Playwright tests use ephemeral rack ids without
+    // seeding rows) and isn't exploitable.
+    if (auth.role === 'member') {
+      const allowed = await isRackspaceMember(data.documentName, auth.userId!);
+      if (!allowed) {
+        // eslint-disable-next-line no-console
+        console.log(`[hocuspocus] reject (not-member): doc=${data.documentName} user=${auth.userId}`);
+        const err = new Error() as Error & { reason: string };
+        err.reason = AUTH_REJECTION.unauthorized;
+        throw err;
+      }
+    }
+
     if (!slots.acquire(data.documentName, data.socketId)) {
       // eslint-disable-next-line no-console
       console.log(`[hocuspocus] reject (full): doc=${data.documentName} sock=${data.socketId}`);
@@ -77,11 +105,30 @@ Server.configure({
   },
 
   async onLoadDocument(data) {
-    // STAGE-B-PR-C will: load Y.encodeStateAsUpdate snapshot from D1 here.
-    // For now: return undefined so Hocuspocus creates a fresh doc in-memory.
+    // Restore the persisted Yjs state if any. New rackspaces (no snapshot
+    // row) get a fresh empty doc that Hocuspocus persists on first store.
+    const snapshot = await loadSnapshot(data.documentName);
+    if (!snapshot) {
+      // eslint-disable-next-line no-console
+      console.log(`[hocuspocus] load (fresh): doc=${data.documentName}`);
+      return undefined;
+    }
+    const ydoc = new Y.Doc();
+    Y.applyUpdate(ydoc, snapshot);
     // eslint-disable-next-line no-console
-    console.log(`[hocuspocus] load (in-memory): doc=${data.documentName}`);
-    return undefined;
+    console.log(`[hocuspocus] load (restored ${snapshot.byteLength} bytes): doc=${data.documentName}`);
+    return ydoc;
+  },
+
+  // Hocuspocus debounces this hook (default 2s) and only fires when the
+  // doc actually changed. Cheap enough to write the full state every time
+  // at our scale; switch to incremental updates if doc sizes grow into
+  // megabytes.
+  async onStoreDocument(data) {
+    const state = Y.encodeStateAsUpdate(data.document);
+    await storeSnapshot(data.documentName, state);
+    // eslint-disable-next-line no-console
+    console.log(`[hocuspocus] persist (${state.byteLength} bytes): doc=${data.documentName}`);
   },
 });
 
