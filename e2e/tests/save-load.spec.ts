@@ -63,11 +63,12 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
     };
     w.__ydoc.transact(() => {
       w.__patch.nodes['seq'].data = {
+        // v2 step encoding: midi int (60 = C4); null = empty.
         steps: [
-          { on: true, pitch: 0 }, { on: true, pitch: 7 },
-          { on: false, pitch: 0 }, { on: true, pitch: 12 },
-          { on: true, pitch: 7 }, { on: false, pitch: 0 },
-          { on: true, pitch: 5 }, { on: true, pitch: 4 },
+          { on: true, midi: 60 }, { on: true, midi: 67 },
+          { on: false, midi: null }, { on: true, midi: 72 },
+          { on: true, midi: 67 }, { on: false, midi: null },
+          { on: true, midi: 65 }, { on: true, midi: 64 },
         ],
       };
     });
@@ -128,8 +129,8 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
   const seqAfter = (result.nodesAfter as Record<string, { data?: { steps?: unknown[] } }>)['seq'];
   expect(seqAfter.data?.steps).toBeDefined();
   expect(seqAfter.data!.steps!.length).toBe(8);
-  expect(seqAfter.data!.steps![0]).toEqual({ on: true, pitch: 0 });
-  expect(seqAfter.data!.steps![3]).toEqual({ on: true, pitch: 12 });
+  expect(seqAfter.data!.steps![0]).toEqual({ on: true, midi: 60 });
+  expect(seqAfter.data!.steps![3]).toEqual({ on: true, midi: 72 });
 
   // Params preserved.
   const vcaAfter = (result.nodesAfter as Record<string, { params: Record<string, number> }>)['vca'];
