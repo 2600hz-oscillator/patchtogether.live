@@ -123,6 +123,21 @@ tasks:
     cmds:
       - npm test -w {{.E2E}}
 
+  audio-drift:
+    desc: |
+      Phase-C decision research harness. Drives two browser contexts on the same
+      Yjs rackspace, builds N patches, captures audio from each side, and writes
+      drift metrics + a recommendation to art/audio-drift/. Tagged @audio-drift
+      so it stays out of CI's PR-gate path. Vars:
+        AUDIO_DRIFT_SECONDS=<n>     Recording duration per scenario (default 5).
+        E2E_BASE_URL=<url>          Run against a remote target (default local).
+        DATABASE_URL=<conn>         Postgres URL for the local Hocuspocus server
+                                    (defaults to the Flox-provided dev DB).
+    env:
+      DATABASE_URL: '{{.DATABASE_URL | default "postgresql://postgres:dev@localhost:54320/patchtogether_dev"}}'
+    cmds:
+      - npm exec -w {{.E2E}} -- playwright test --config=audio-drift/audio-drift.config.ts
+
   chaos:run:
     desc: |
       Chaos Stage-1 run. Spawns Chromium, drives Chaos Carl through 200 random
