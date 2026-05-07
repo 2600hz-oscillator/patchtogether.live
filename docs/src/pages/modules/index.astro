@@ -1,0 +1,107 @@
+---
+import Base from '../../layouts/Base.astro';
+import IoDiagram from '../../components/IoDiagram.astro';
+import manifest from '../../data/modules.json';
+
+const byCat = {};
+for (const m of manifest.modules) {
+  (byCat[m.category] ??= []).push(m);
+}
+const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
+const cats = CAT_ORDER.filter((c) => byCat[c]).concat(
+  Object.keys(byCat).filter((c) => !CAT_ORDER.includes(c)),
+);
+---
+
+<Base title="modules · patchtogether.live" desc="Audio module catalog generated from the registry.">
+  <section class="hero">
+    <h1>module catalog</h1>
+    <div class="sub">{manifest.moduleCount} audio modules · generated from <code>module-registry.ts</code> at build time</div>
+  </section>
+
+  <p>
+    Cards below are auto-generated from each module's <code>AudioModuleDef</code>. I/O diagrams,
+    port lists, and param tables are ground-truthed against the source — there is no second
+    source of truth. If you change a module's ports or params, the next docs build picks it up.
+  </p>
+
+  <div class="cat-list">
+    {cats.map((c) => <a href={`#${c}`}>{c} ({byCat[c].length})</a>)}
+  </div>
+
+  {cats.map((c) => (
+    <section class="cat-section" id={c}>
+      <h2>{c}</h2>
+      <div class="module-grid">
+        {byCat[c].map((m) => (
+          <article class="mod-card">
+            <div class="head">
+              <span class="name">{m.label}</span>
+              <span class="cat">
+                {m.maxInstances === 1 ? <span class="tag singleton">singleton</span> : null}
+                {' '}
+                {m.category}
+              </span>
+            </div>
+            <p class="desc">{m.description}</p>
+            <IoDiagram mod={m} />
+            <div class="ports">
+              {m.inputs.length > 0 ? (
+                <>
+                  <h4>inputs</h4>
+                  <table>
+                    <tbody>
+                      {m.inputs.map((p) => (
+                        <tr>
+                          <td>{p.id}</td>
+                          <td>{p.type}</td>
+                          <td>{p.note || ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : null}
+              {m.outputs.length > 0 ? (
+                <>
+                  <h4>outputs</h4>
+                  <table>
+                    <tbody>
+                      {m.outputs.map((p) => (
+                        <tr>
+                          <td>{p.id}</td>
+                          <td>{p.type}</td>
+                          <td>{p.note || ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : null}
+              {m.params.length > 0 ? (
+                <>
+                  <h4>params</h4>
+                  <table>
+                    <tbody>
+                      {m.params.map((p) => (
+                        <tr>
+                          <td>{p.id}</td>
+                          <td>{p.units || p.curve}</td>
+                          <td>
+                            {p.min ?? '?'}..{p.max ?? '?'}
+                            {p.defaultValue !== null ? ` (default ${p.defaultValue})` : ''}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : null}
+            </div>
+            <a class="source-link" href={m.sourceUrl} rel="noopener">source · {m.file}</a>
+          </article>
+        ))}
+      </div>
+    </section>
+  ))}
+</Base>

@@ -1,0 +1,46 @@
+---
+import '../styles/global.css';
+
+const { title = 'patchtogether.live · docs', desc = '' } = Astro.props;
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const nav = [
+  { href: `${base}/`,         label: 'home' },
+  { href: `${base}/modules/`, label: 'modules' },
+  { href: `${base}/testing/`, label: 'testing' },
+  { href: `${base}/deploy/`,  label: 'deploy' },
+];
+const path = Astro.url.pathname.replace(/\/$/, '') || '/';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {desc ? <meta name="description" content={desc} /> : null}
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand"><a href={`${base}/`}>patchtogether.live</a></div>
+        <nav>
+          {nav.map((n) => {
+            const active = (n.href.replace(/\/$/, '') || '/') === path;
+            return <a href={n.href} class={active ? 'active' : ''}>{n.label}</a>;
+          })}
+        </nav>
+      </header>
+
+      <main>
+        <slot />
+      </main>
+
+      <footer class="footer">
+        Generated from packages/web/src/lib/audio/module-registry.ts ·
+        <a href="https://github.com/2600hz-oscillator/patchtogether.live">repo</a>
+      </footer>
+    </div>
+  </body>
+</html>
