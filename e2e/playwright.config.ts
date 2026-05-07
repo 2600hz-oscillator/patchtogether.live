@@ -58,17 +58,43 @@ export default defineConfig({
 
   // Boot the SvelteKit dev server before tests run, reusing if already up.
   // Skipped when E2E_BASE_URL points at a live deploy.
+  //
+  // Two webServers when targeting local: the SvelteKit app PLUS the
+  // Hocuspocus collaboration server. The @collab tests connect from two
+  // browser contexts to the Hocuspocus instance via __attachProvider.
+  // The Hocuspocus server is harmless to non-collab tests (they don't
+  // import the provider), so we boot it unconditionally for local runs.
   webServer: IS_LOCAL_TARGET
-    ? {
-        command: USE_PREVIEW
-          ? 'npm run preview -w packages/web -- --port 4173'
-          : 'npm run dev -w packages/web',
-        cwd: '..',
-        url: BASE_URL,
-        reuseExistingServer: !process.env.CI,
-        stdout: 'pipe',
-        stderr: 'pipe',
-        timeout: 120_000,
-      }
+    ? [
+        {
+          command: USE_PREVIEW
+            ? 'npm run preview -w packages/web -- --port 4173'
+            : 'npm run dev -w packages/web',
+          cwd: '..',
+          url: BASE_URL,
+          reuseExistingServer: !process.env.CI,
+          stdout: 'pipe',
+          stderr: 'pipe',
+          timeout: 120_000,
+        },
+        {
+          // Hocuspocus on ws://localhost:1235 (not Hocuspocus's documented
+          // default 1234, which BitwigStudio reserves for OSC). The provider
+          // in the web app reads VITE_SERVER_WS_URL with that as the default.
+          command: 'npm run dev -w packages/server',
+          cwd: '..',
+          // Ready signal: TCP port. Hocuspocus's HTTP request handler is
+          // intercepted by an internal extension that doesn't write a
+          // response (curl reports "Empty reply from server"), so url:
+          // can't be used. port: just waits for the OS-level port to
+          // accept connections, which is the meaningful readiness for a
+          // WebSocket server anyway.
+          port: 1235,
+          reuseExistingServer: !process.env.CI,
+          stdout: 'pipe',
+          stderr: 'pipe',
+          timeout: 60_000,
+        },
+      ]
     : undefined,
 });

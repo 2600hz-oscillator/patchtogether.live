@@ -11,7 +11,10 @@
 
 import { Server } from '@hocuspocus/server';
 
-const PORT = Number(process.env.PORT ?? 1234);
+// Port choice: 1235 instead of Hocuspocus's documented default 1234,
+// because BitwigStudio (and likely other DAWs) reserve 1234 for OSC.
+// Override with PORT=… for prod deploys.
+const PORT = Number(process.env.PORT ?? 1235);
 const HOST = process.env.HOST ?? '0.0.0.0';
 
 Server.configure({

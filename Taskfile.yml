@@ -59,7 +59,7 @@ tasks:
         npm run dev -w {{.WEB}}
 
   server:dev:
-    desc: Start the Hocuspocus collaboration server (Stage B). Defaults to ws://localhost:1234.
+    desc: Start the Hocuspocus collaboration server (Stage B). Defaults to ws://localhost:1235 (1234 conflicts with BitwigStudio + DAWs that reserve it for OSC).
     cmds:
       - npm run dev -w {{.SERVER}}
 
