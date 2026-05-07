@@ -6,6 +6,9 @@ packages/dsp/dist/
 packages/web/.svelte-kit/
 packages/web/build/
 packages/server/dist/
+docs/dist/
+docs/.astro/
+docs/src/data/modules.json
 **/.vite/
 
 # Environment

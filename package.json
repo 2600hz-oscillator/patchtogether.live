@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/*",
     "art",
-    "e2e"
+    "e2e",
+    "docs"
   ],
   "overrides": {
     "yjs": "^13.6.0"
