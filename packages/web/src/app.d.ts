@@ -12,14 +12,10 @@ declare global {
     interface Locals {
       auth: () => SessionAuthObject;
     }
-    interface Platform {
-      env?: {
-        // Cloudflare Hyperdrive binding for the patchtogether Postgres on Fly.
-        // Available on Workers / Pages runtime; undefined under `vite dev`
-        // (which falls back to process.env.DATABASE_URL — see lib/server/db.ts).
-        HYPERDRIVE?: { connectionString: string };
-      };
-    }
+    // No bespoke platform.env bindings yet — DATABASE_URL is read directly
+    // from process.env (shimmed by nodejs_compat on Workers). If we wire
+    // Hyperdrive later (needs Fly Postgres with TLS), bring back a typed
+    // HYPERDRIVE binding here.
   }
 }
 

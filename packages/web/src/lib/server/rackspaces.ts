@@ -5,10 +5,11 @@
 // Stage A's in-memory Map died on Cloudflare Workers because each
 // request can hit a different isolate; window 1 created a rack, window
 // 2 hit a different worker and 404'd. This module ports the same API
-// surface to a real datastore (Postgres on Fly via Hyperdrive in prod,
-// localhost:54320 in dev). Schema lives in db/schema/001_init.sql.
+// surface to a real datastore. Schema lives in db/schema/001_init.sql.
+// Connection details: see ./db.ts (DATABASE_URL on both Workers and
+// vite-dev; Hyperdrive deferred — see db/README.md).
 //
-// All functions are now async. Callers (4 routes as of B1) await.
+// All functions are async. Callers (4 routes as of B1) await.
 //
 // A Rackspace = an authenticated container for a multi-user patch
 // session. Owner creates one, gets a share URL, up to 4 total users
@@ -24,10 +25,6 @@ export interface Rackspace {
   name: string;
   createdAt: number;
   memberUserIds: string[]; // includes the owner
-}
-
-interface PlatformEnv {
-  HYPERDRIVE?: { connectionString: string };
 }
 
 function generateId(): string {
@@ -87,12 +84,8 @@ function rackFromRow(row: RackRow, memberUserIds: string[]): Rackspace {
   };
 }
 
-export function createRackspace(
-  ownerUserId: string,
-  name: string,
-  platformEnv?: PlatformEnv,
-): Promise<Rackspace> {
-  return withDb(platformEnv, async (client) => {
+export function createRackspace(ownerUserId: string, name: string): Promise<Rackspace> {
+  return withDb(async (client) => {
     const id = generateId();
     await client.query('BEGIN');
     try {
@@ -119,11 +112,8 @@ export function createRackspace(
   });
 }
 
-export function getRackspace(
-  id: string,
-  platformEnv?: PlatformEnv,
-): Promise<Rackspace | null> {
-  return withDb(platformEnv, async (client) => {
+export function getRackspace(id: string): Promise<Rackspace | null> {
+  return withDb(async (client) => {
     const { rows } = await client.query<RackRow>(
       'SELECT id, owner_user_id, name, created_at FROM racks WHERE id = $1',
       [id],
@@ -135,11 +125,8 @@ export function getRackspace(
 }
 
 /** Rackspaces this user is a member of (owner included). */
-export function listRackspacesForUser(
-  userId: string,
-  platformEnv?: PlatformEnv,
-): Promise<Rackspace[]> {
-  return withDb(platformEnv, async (client) => {
+export function listRackspacesForUser(userId: string): Promise<Rackspace[]> {
+  return withDb(async (client) => {
     const { rows } = await client.query<RackRow>(
       `SELECT r.id, r.owner_user_id, r.name, r.created_at
          FROM racks r
@@ -160,12 +147,8 @@ export type JoinResult =
   | { status: 'full'; rackspace: Rackspace }
   | { status: 'not-found' };
 
-export function joinRackspace(
-  rackspaceId: string,
-  userId: string,
-  platformEnv?: PlatformEnv,
-): Promise<JoinResult> {
-  return withDb(platformEnv, async (client) => {
+export function joinRackspace(rackspaceId: string, userId: string): Promise<JoinResult> {
+  return withDb(async (client) => {
     await client.query('BEGIN');
     try {
       const { rows: rackRows } = await client.query<RackRow>(
@@ -205,12 +188,8 @@ export function joinRackspace(
   });
 }
 
-export function isMember(
-  rackspaceId: string,
-  userId: string,
-  platformEnv?: PlatformEnv,
-): Promise<boolean> {
-  return withDb(platformEnv, async (client) => {
+export function isMember(rackspaceId: string, userId: string): Promise<boolean> {
+  return withDb(async (client) => {
     const { rowCount } = await client.query(
       'SELECT 1 FROM rack_members WHERE rack_id = $1 AND user_id = $2',
       [rackspaceId, userId],

@@ -3,19 +3,19 @@
 Stage B1+ stores rackspaces and Yjs document snapshots in **Postgres on Fly Managed Postgres**, accessed by:
 
 - **Hocuspocus server** (`@patchtogether.live/server`) — direct `pg.Pool` over Fly's internal network (~5ms)
-- **SvelteKit web** (`@patchtogether.live/web`) on Cloudflare Workers — `pg.Client` per request via **Cloudflare Hyperdrive** (~30–50ms via Hyperdrive's edge connection pool, vs ~150ms naïve cross-cloud)
+- **SvelteKit web** (`@patchtogether.live/web`) on Cloudflare Workers — per-request `pg.Client` over a public Fly IPv6 (~150ms cross-cloud). The original plan was Cloudflare Hyperdrive (~30ms), but Hyperdrive requires TLS at the origin and Fly Postgres ships plain TCP. Fixing that is its own scope; we accept the latency for beta and revisit when RUM shows it mattering. See "Future: Hyperdrive" at the bottom.
 
 Schema lives in `db/schema/*.sql`. Apply in order; new files are append-only migrations.
 
 ## Per-tier topology
 
-Three tiers, each with its own Fly Postgres + Hyperdrive binding:
+Three tiers, each with its own Fly Postgres:
 
-| Tier | Fly Postgres app | Cloudflare Hyperdrive | Cloudflare Pages |
+| Tier | Fly Postgres app | Cloudflare Pages | Hocuspocus app |
 |---|---|---|---|
-| prod | `patchtogether-pg` | `patchtogether-pg` | `patchtogether-live` |
-| autotest | `patchtogether-pg-autotest` | `patchtogether-pg-autotest` | `patchtogether-live-autotest` |
-| dev | `patchtogether-pg-dev` | `patchtogether-pg-dev` | `patchtogether-live-dev` |
+| prod | `patchtogether-pg` | `patchtogether-live` | `patchtogether-server` |
+| autotest | `patchtogether-pg-autotest` | `patchtogether-live-autotest` | `patchtogether-server-autotest` |
+| dev | `patchtogether-pg-dev` | `patchtogether-live-dev` | `patchtogether-server-dev` |
 
 ## Local dev
 
@@ -76,19 +76,32 @@ kill $PROXY
 
 Repeat per tier with the corresponding `-autotest` and `<no-suffix>` (prod) names.
 
-### Cloudflare Hyperdrive
+### Cloudflare Pages: DATABASE_URL
 
-For each tier, create a Hyperdrive instance pointing at the matching Fly Postgres external URL (NOT the `.flycast` internal one — Hyperdrive lives outside Fly's net):
+For each tier, allocate a public IPv6 on the Postgres app (Fly's free shared IPv4 only exposes 80/443; IPv6 is free and routable for any port), add a DNS record so the IP has a stable hostname, then set `DATABASE_URL` on the matching Cloudflare Pages project as `secret_text`:
 
 ```bash
-# Get the external URL from `flyctl status --app patchtogether-pg-dev` →
-# look for the external IPv4 + the credentials saved during create.
-flox activate -- npx wrangler hyperdrive create patchtogether-pg-dev \
-  --connection-string='postgresql://postgres:<pwd>@<external-ip>:5432/postgres'
-# Copy the returned id (32 hex chars).
+# Per tier — example for dev:
+flox activate -- flyctl ips allocate-v6 --app patchtogether-pg-dev
+# Copy the returned IPv6, e.g. 2a09:8280:1::aaaa:bbbb:0
+
+# DNS: pg-<tier>.patchtogether.live → that IPv6, AAAA, NOT proxied
+curl -X POST "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records" \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  -d '{"type":"AAAA","name":"pg-dev","content":"<IPv6>","ttl":1,"proxied":false}'
+
+# Set DATABASE_URL on the matching CF Pages project
+DB_URL='postgres://patchtogether_server_dev:<pwd>@pg-dev.patchtogether.live:5432/patchtogether_server_dev?sslmode=disable'
+curl -X PATCH "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/patchtogether-live-dev" \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  -d "{\"deployment_configs\":{\"production\":{\"env_vars\":{\"DATABASE_URL\":{\"type\":\"secret_text\",\"value\":\"${DB_URL}\"}}}}}"
 ```
 
-Then update the matching Cloudflare Pages project's binding to that id (via dashboard or `wrangler.toml` per-env stanza). The `[[hyperdrive]]` block in `packages/web/wrangler.toml` declares the binding name (`HYPERDRIVE`) but the per-tier `id` lives in the Pages project's Bindings panel since that's how Cloudflare Pages currently handles per-env binding overrides.
+Trigger a redeploy of the web tier afterward to pick up the new env (the env applies on next build, not on existing deployments).
+
+## Future: Hyperdrive (deferred optimization)
+
+The original plan used Cloudflare Hyperdrive between Workers and Fly Postgres for ~30ms latency vs the ~150ms direct connection. Hyperdrive requires TLS at the origin; Fly Postgres serves plain TCP. To unblock it later: either (a) configure Fly Postgres to terminate TLS on its public address (`stunnel`, custom certs, or Fly Tunnel), or (b) migrate to Neon Postgres (native Workers support, TLS by default). Revisit when RUM shows Worker→DB query latency dominating page-load p95.
 
 ## Adding a migration
 

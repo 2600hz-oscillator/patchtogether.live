@@ -7,11 +7,11 @@ import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { listRackspacesForUser } from '$lib/server/rackspaces';
 
-export const load: PageServerLoad = async ({ locals, platform }) => {
+export const load: PageServerLoad = async ({ locals }) => {
   const { userId } = locals.auth();
   if (!userId) {
     throw redirect(303, '/sign-in?redirect_url=/dashboard');
   }
-  const rackspaces = await listRackspacesForUser(userId, platform?.env);
+  const rackspaces = await listRackspacesForUser(userId);
   return { rackspaces, userId };
 };
