@@ -58,7 +58,7 @@ interface RackRow {
 }
 
 async function loadMembers(
-  client: import('pg').Client,
+  client: import('@neondatabase/serverless').PoolClient,
   rackIds: string[],
 ): Promise<Map<string, string[]>> {
   if (rackIds.length === 0) return new Map();
