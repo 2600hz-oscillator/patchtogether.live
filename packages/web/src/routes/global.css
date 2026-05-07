@@ -15,6 +15,15 @@
    * so users can read at a glance which cables carry chords. */
   --cable-polyPitchGate: #a78bfa;
 
+  /* Tron-influenced UI accent. Used for chrome only — focus rings, hover
+   * glow, selected-card outline, drag-active glow. Explicitly NOT a cable
+   * type; the four cable hues above remain the semantic signal-type
+   * channel. Matches docs/src/styles/global.css so the app reads as
+   * "from the same house" without going full Tron in long sessions. */
+  --accent: #00f0ff;
+  --accent-dim: #006e7a;
+  --accent-glow: rgba(0, 240, 255, 0.45);
+
   /* MEOWBOX cat ears. Skin-overridable. */
   --meowbox-ear-color: #f3bdcc;
 
@@ -46,4 +55,87 @@ body {
   height: 12px !important;
   background: var(--module-bg) !important;
   border: 2px solid var(--handle-color, var(--cable-audio)) !important;
+  transition: box-shadow 80ms ease-out;
+}
+.svelte-flow__handle:hover {
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* Cable hover-shift (Voltage-Modular trick). Hover a cable to lift it
+ * visually: thicker stroke, brighter, raised z-index so it pops over its
+ * neighbors. CSS-only — no JS, no schema change. */
+.svelte-flow__edge {
+  transition: opacity 80ms ease-out;
+}
+.svelte-flow__edge .svelte-flow__edge-path {
+  transition: stroke-width 80ms ease-out, filter 80ms ease-out;
+}
+.svelte-flow__edge:hover {
+  z-index: 1000;
+}
+.svelte-flow__edge:hover .svelte-flow__edge-path,
+.svelte-flow__edge.cable-hover .svelte-flow__edge-path {
+  stroke-width: 5 !important;
+  filter: drop-shadow(0 0 4px var(--accent-glow));
+}
+
+/* Card-hover cable de-emphasis. When a node card is hovered, dim every
+ * edge that doesn't terminate on it. The Canvas component sets the
+ * data-hovered-node attribute on the .svelte-flow root and adds the
+ * `cable-related` class to edges connected to the hovered node so the
+ * "dim everyone else" rule below is a single CSS selector. */
+.svelte-flow[data-hovered-node] .svelte-flow__edge:not(.cable-related) {
+  opacity: 0.18;
+}
+.svelte-flow[data-hovered-node] .svelte-flow__edge.cable-related .svelte-flow__edge-path {
+  stroke-width: 4 !important;
+}
+
+/* Selected-card chrome — Tron corner brackets + accent glow. Applies
+ * globally because Svelte Flow toggles `.selected` on `.svelte-flow__node`
+ * for all cards uniformly; per-card .mod-card already supplies its own
+ * border, so the glow lives on the wrapper. */
+.svelte-flow__node {
+  transition: filter 80ms ease-out;
+}
+.svelte-flow__node.selected {
+  filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+.svelte-flow__node.selected::before,
+.svelte-flow__node.selected::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+.svelte-flow__node.selected::before {
+  top: -2px;
+  left: -2px;
+  border-top: 1px solid var(--accent);
+  border-left: 1px solid var(--accent);
+}
+.svelte-flow__node.selected::after {
+  bottom: -2px;
+  right: -2px;
+  border-bottom: 1px solid var(--accent);
+  border-right: 1px solid var(--accent);
+}
+
+/* MiniMap — Tron palette: black bg, accent border + viewport mask. */
+.svelte-flow__minimap {
+  background: var(--bg) !important;
+  border: 1px solid var(--accent-dim) !important;
+  border-radius: 2px;
+  transition: border-color 120ms ease-out, opacity 120ms ease-out;
+}
+.svelte-flow__minimap:hover {
+  border-color: var(--accent) !important;
+}
+.svelte-flow__minimap-mask {
+  fill: var(--accent-glow) !important;
+  fill-opacity: 0.18 !important;
+  stroke: var(--accent) !important;
+  stroke-width: 1 !important;
 }

@@ -328,7 +328,7 @@
     border-color: #c084fc;
   }
   .chord-badge:focus-visible {
-    outline: 1px solid var(--cable-cv);
+    outline: 1px solid var(--accent);
     outline-offset: -1px;
   }
   .fader-row {
