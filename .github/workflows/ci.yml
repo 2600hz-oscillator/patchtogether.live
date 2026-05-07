@@ -41,6 +41,13 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      # node-web-audio-api dlopens libasound.so.2 at runtime. apt-installed
+      # libs land in /usr/lib/x86_64-linux-gnu but flox activate's
+      # LD_LIBRARY_PATH points only at its own store paths, so the linker
+      # can't find them. Prepending the system path here is preserved
+      # through `flox activate --` (flox appends to LD_LIBRARY_PATH, not
+      # overwrites).
+      LD_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu
 
     steps:
       - name: Install ALSA (needed by node-web-audio-api in ART)
