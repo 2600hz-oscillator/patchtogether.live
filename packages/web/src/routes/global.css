@@ -12,7 +12,11 @@
   --cable-gate: #f87171;
   --cable-cv: #34d399;
 
+  /* MEOWBOX cat ears. Skin-overridable. */
+  --meowbox-ear-color: #f3bdcc;
+
   --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 html,

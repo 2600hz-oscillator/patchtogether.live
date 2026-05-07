@@ -18,6 +18,10 @@ import { cartesianDef } from './cartesian';
 import { destroyDef } from './destroy';
 import { qbrtDef } from './qbrt';
 import { drummergirlDef } from './drummergirl';
+import { meowboxDef } from './meowbox';
+import { mixmstrsDef } from './mixmstrs';
+import { timelordeDef } from './timelorde';
+import { charlottesEchosDef } from './charlottes-echos';
 
 let registered = false;
 
@@ -39,6 +43,10 @@ export function registerAudioModules(): void {
   registerModule(destroyDef);
   registerModule(qbrtDef);
   registerModule(drummergirlDef);
+  registerModule(meowboxDef);
+  registerModule(mixmstrsDef);
+  registerModule(timelordeDef);
+  registerModule(charlottesEchosDef);
 }
 
 registerAudioModules();
