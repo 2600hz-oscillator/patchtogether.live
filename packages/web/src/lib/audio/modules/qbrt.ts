@@ -1,9 +1,9 @@
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import wasmUrl from '@inet.modular/dsp/dist/qbrt.wasm?url';
-import metaUrl from '@inet.modular/dsp/dist/qbrt.json?url';
-import workletUrl from '@inet.modular/dsp/dist/qbrt.worklet.js?url';
+import wasmUrl from '@patchtogether.live/dsp/dist/qbrt.wasm?url';
+import metaUrl from '@patchtogether.live/dsp/dist/qbrt.json?url';
+import workletUrl from '@patchtogether.live/dsp/dist/qbrt.worklet.js?url';
 
 const PARAM_PREFIX = '/QBRT';
 

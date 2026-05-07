@@ -1,24 +1,26 @@
 name: Deploy
 
-# Deployment topology (per phase-2-deploy.md):
+# Deployment topology:
 #
-#   prod      ←  push to main          → patchtogether.live
-#   preview   ←  PR open / push to PR  → pr-<N>.patchtogether-live.pages.dev   (per-PR isolated)
-#   autotest  ←  manual dispatch       → autotest.patchtogether.live           (any branch w/ green CI)
-#   dev       ←  manual dispatch       → dev.patchtogether.live                (any branch w/ green CI)
+#   preview   ←  PR open / push to PR    → pr-<N>.patchtogether-live-autotest.pages.dev
+#   autotest  ←  push to main            → autotest.patchtogether.live
+#   dev       ←  push to main            → dev.patchtogether.live
+#   prod      ←  version bump on main    → patchtogether.live
+#                (`package.json:.version` changed vs HEAD~1)
+#   any tier  ←  workflow_dispatch       → escape hatch for manual deploys
 #
-# Why manual for autotest + dev? Both are SHARED named URLs — automatic deploys
-# on every PR push would have multiple PRs flipping the live state. The per-PR
-# preview URL covers "let me look at this PR's deploy" without collisions; the
-# named envs are explicitly claimed by a human via the Actions UI for
-# longer-form dogfooding / agent testing.
+# Why this shape?
+# - PR previews keep the existing per-PR isolated URL on the autotest project
+#   so test Clerk env + Hocuspocus stub still work for review.
+# - Every merge to main fans out to autotest + dev so both stay in sync with
+#   what's about to ship — these are the dog-food / agent-testing surfaces.
+# - Prod is gated by an explicit version bump (PR that bumps `package.json:.version`)
+#   so accidental prod deploys aren't possible from a routine merge.
+# - workflow_dispatch keeps any tier reachable manually if something goes sideways.
 #
 # Required GitHub secrets:
 #   CLOUDFLARE_API_TOKEN  — Pages-deploy-scoped token
-#   CLOUDFLARE_ACCOUNT_ID — your CF account id
-#
-# The three Cloudflare Pages projects must be created beforehand (UI or
-# `wrangler pages project create` from inside the flox env).
+#   CLOUDFLARE_ACCOUNT_ID — CF account id
 #
 # Why each deploy job is self-contained (no shared build artifact):
 # wrangler's `pages deploy` re-bundles _worker.js with esbuild, so it needs
@@ -36,12 +38,13 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: 'Named environment(s) to claim with this branch'
+        description: 'Named environment to claim with this branch'
         required: true
         type: choice
         options:
           - autotest
           - dev
+          - prod
           - autotest+dev
 
 # Concurrency: each ref+target pair gets its own lane. Dispatches against the
@@ -51,9 +54,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Manual deploys (autotest / dev) require the latest CI run on the chosen
-  # branch to be green. Prevents shipping broken code by accident from the
-  # Actions UI. Skipped for `push` and `pull_request` events.
+  # Manual deploys require the latest CI run on the chosen branch to be green.
+  # Prevents shipping broken code by accident from the Actions UI.
   verify-ci:
     name: Verify CI passed for this branch
     if: github.event_name == 'workflow_dispatch'
@@ -78,11 +80,59 @@ jobs:
             exit 1
           fi
 
-  # ---------------- Production: auto on merge to main ----------------
+  # Detect whether this main-push bumped `package.json:.version`. Other jobs
+  # gate on the output. Skipped for non-push events; outputs default to false.
+  detect-version-bump:
+    name: Detect version bump on main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      bumped: ${{ steps.diff.outputs.bumped }}
+      version: ${{ steps.diff.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: diff
+        run: |
+          CUR=$(jq -r .version package.json)
+          # HEAD~1 is the merge parent (or the prior main commit). If it's a
+          # genesis push and HEAD~1 doesn't exist, treat as not-bumped.
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            PREV=$(git show HEAD~1:package.json | jq -r .version 2>/dev/null || echo "0.0.0")
+          else
+            PREV="$CUR"
+          fi
+          echo "previous: $PREV"
+          echo "current:  $CUR"
+          if [[ "$PREV" != "$CUR" ]]; then
+            echo "bumped=true"  >> "$GITHUB_OUTPUT"
+            echo "version=$CUR" >> "$GITHUB_OUTPUT"
+            echo "::notice::Version bumped $PREV → $CUR; prod deploy will fire."
+          else
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            echo "version=$CUR" >> "$GITHUB_OUTPUT"
+            echo "::notice::No version change ($CUR); prod deploy skipped."
+          fi
+
+  # ---------------- Production: gated on version bump ----------------
 
   deploy-prod:
     name: Deploy → patchtogether.live (production)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [detect-version-bump, verify-ci]
+    # `always()` runs the if-check even when needed jobs are skipped (the
+    # detect-version-bump job is skipped on workflow_dispatch, verify-ci is
+    # skipped on push). The body picks the right path per event.
+    if: |
+      always()
+      && (
+        (github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && needs.detect-version-bump.outputs.bumped == 'true')
+        || (github.event_name == 'workflow_dispatch'
+          && needs.verify-ci.result == 'success'
+          && contains(github.event.inputs.target, 'prod'))
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -131,17 +181,24 @@ jobs:
           workingDirectory: packages/web
           # PR previews deploy to the AUTOTEST project (not prod), so they
           # inherit the test-instance Clerk env vars and full auth flow
-          # works. The prod project has no Clerk env until launch — putting
-          # PR previews there would break their auth too. URL becomes
-          # `pr-N.patchtogether-live-autotest.pages.dev`.
+          # works. URL becomes `pr-N.patchtogether-live-autotest.pages.dev`.
           command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=pr-${{ github.event.pull_request.number }}
 
-  # ---------------- Manual: autotest / dev ----------------
+  # ---------------- Autotest + dev: auto on merge to main ----------------
 
   deploy-autotest:
     name: Deploy → autotest.patchtogether.live (autotest)
-    needs: verify-ci
-    if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.target, 'autotest')
+    needs: [verify-ci]
+    # `always()` lets us fire on push (where verify-ci is skipped). The body
+    # gates the dispatch path on verify-ci success.
+    if: |
+      always()
+      && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        || (github.event_name == 'workflow_dispatch'
+          && needs.verify-ci.result == 'success'
+          && contains(github.event.inputs.target, 'autotest'))
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -164,8 +221,15 @@ jobs:
 
   deploy-dev:
     name: Deploy → dev.patchtogether.live (dev)
-    needs: verify-ci
-    if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.target, 'dev')
+    needs: [verify-ci]
+    if: |
+      always()
+      && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        || (github.event_name == 'workflow_dispatch'
+          && needs.verify-ci.result == 'success'
+          && contains(github.event.inputs.target, 'dev'))
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -187,8 +251,8 @@ jobs:
           command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-dev --branch=dev
 
   # ---------------- Live smoke ----------------
-  # Runs after a successful autotest deploy (manual). Hits the live URL with
-  # the @smoke-tagged subset of e2e/.
+  # Runs after a successful autotest deploy. Hits the live URL with the
+  # @smoke-tagged subset of e2e/.
 
   smoke-live:
     name: Live smoke — autotest.patchtogether.live
@@ -198,6 +262,10 @@ jobs:
     timeout-minutes: 8
     env:
       E2E_BASE_URL: https://autotest.patchtogether.live
+      # Beta gate is on for autotest; smoke needs to pass through. Picked up
+      # by playwright.config.ts → use.httpCredentials.
+      BETA_GATE_USER: beta
+      BETA_GATE_PASS: ${{ secrets.AUTOTEST_BETA_GATE_PASS }}
     steps:
       - uses: actions/checkout@v4
       - uses: flox/install-flox-action@v2

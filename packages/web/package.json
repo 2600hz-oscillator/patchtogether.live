@@ -1,9 +1,9 @@
 {
-  "name": "@inet.modular/web",
+  "name": "@patchtogether.live/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "SvelteKit app for inet.modular — patch canvas + audio engine + UI.",
+  "description": "SvelteKit app for patchtogether.live — patch canvas + audio engine + UI.",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
