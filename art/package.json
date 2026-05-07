@@ -1,5 +1,5 @@
 {
-  "name": "@inet.modular/art",
+  "name": "@patchtogether.live/art",
   "version": "0.0.0",
   "private": true,
   "description": "Audio Regression Tests — render compiled DSP through OfflineAudioContext-equivalent and compare to .f32 baselines stored in git-lfs (D16, D17, D19).",

@@ -1,6 +1,6 @@
 // e2e/playwright.config.ts
 //
-// Playwright config for inet.modular E2E tests.
+// Playwright config for patchtogether.live E2E tests.
 // Targets Chromium with autoplay-allowed flags so AudioContext can start
 // without a real user gesture (Playwright's button.click() counts as one,
 // but the flags belt-and-suspender it).
@@ -38,6 +38,16 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // Basic-auth gate: hooks.server.ts enforces it when BETA_GATE_PASS is
+    // set in the deploy env. Live-smoke jobs forward the gate creds via
+    // BETA_GATE_USER + BETA_GATE_PASS env vars; Playwright auto-attaches
+    // them to every request when httpCredentials is configured.
+    httpCredentials: process.env.BETA_GATE_PASS
+      ? {
+          username: process.env.BETA_GATE_USER || 'beta',
+          password: process.env.BETA_GATE_PASS,
+        }
+      : undefined,
   },
 
   projects: [

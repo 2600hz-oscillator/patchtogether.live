@@ -1,8 +1,8 @@
-# inet.modular
+# patchtogether.live
 
 A multiplayer browser-native modular synthesizer.
 
-> **Codebase:** `inet.modular` &nbsp;·&nbsp; **Deployed as:** [patchtogether.live](https://patchtogether.live)
+> Multiplayer browser-native modular synthesizer.
 
 Performers patch a shared rack live in their browser; audience members listen via a stream. The patch graph is the canonical state — everything else (audio, UI, eventually visuals) is a renderer of that graph.
 

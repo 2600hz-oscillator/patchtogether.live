@@ -1,10 +1,13 @@
 // packages/web/src/hooks.server.ts
 //
-// Server-side request middleware. Two handles composed in sequence:
+// Server-side request middleware. Three handles composed in sequence:
 //
-//   1. Clerk auth — populates event.locals.auth with session info every
+//   1. Beta gate — basic-auth gate while in beta. Off when BETA_GATE_PASS
+//      is unset (local dev), so contributors don't have to keep punching
+//      a credential prompt. /api/health is exempt for uptime monitors.
+//   2. Clerk auth — populates event.locals.auth with session info every
 //      request, lets +page.server.ts loaders use locals.auth.userId.
-//   2. COOP/COEP headers — required for SharedArrayBuffer (Faust may use
+//   3. COOP/COEP headers — required for SharedArrayBuffer (Faust may use
 //      it). In production, packages/web/_headers is the belt-and-suspender;
 //      hooks.server.ts handles dev + edge cases.
 
@@ -104,4 +107,47 @@ const setCoopCoepHeaders: Handle = async ({ event, resolve }) => {
   return response;
 };
 
-export const handle = sequence(conditionalClerk, setCoopCoepHeaders);
+// Username is fixed (just for the basic-auth dialog UX); the password is
+// the only secret. Contributors should set BETA_GATE_USER too if they want
+// a non-default username, but `beta` is fine in 99% of cases.
+const BETA_GATE_USER_DEFAULT = 'beta';
+// Carve-out: uptime monitors and ops smoke probes need /api/health
+// reachable without a credential prompt.
+const BETA_GATE_PUBLIC_PATHS = ['/api/health'];
+
+const betaGate: Handle = async ({ event, resolve }) => {
+  const pass = privateEnv.BETA_GATE_PASS;
+  if (!pass) {
+    // Gate disabled (local dev, or any deploy without the env set).
+    return resolve(event);
+  }
+  if (BETA_GATE_PUBLIC_PATHS.includes(event.url.pathname)) {
+    return resolve(event);
+  }
+  const expectedUser = privateEnv.BETA_GATE_USER || BETA_GATE_USER_DEFAULT;
+  const header = event.request.headers.get('authorization') ?? '';
+  const expected = 'Basic ' + btoa(`${expectedUser}:${pass}`);
+  // Constant-time compare so we don't leak length info via timing.
+  if (header.length === expected.length && timingSafeEqual(header, expected)) {
+    return resolve(event);
+  }
+  return new Response('Authentication required.\n', {
+    status: 401,
+    headers: {
+      'WWW-Authenticate': 'Basic realm="patchtogether.live (beta)", charset="UTF-8"',
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': 'no-store',
+    },
+  });
+};
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+export const handle = sequence(betaGate, conditionalClerk, setCoopCoepHeaders);

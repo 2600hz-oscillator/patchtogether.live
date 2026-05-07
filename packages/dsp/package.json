@@ -1,8 +1,8 @@
 {
-  "name": "@inet.modular/dsp",
+  "name": "@patchtogether.live/dsp",
   "version": "0.0.0",
   "private": true,
-  "description": "DSP modules for inet.modular — Faust-authored .dsp files plus custom JS AudioWorklet sources, all compiled to .wasm/.js bundles.",
+  "description": "DSP modules for patchtogether.live — Faust-authored .dsp files plus custom JS AudioWorklet sources, all compiled to .wasm/.js bundles.",
   "type": "module",
   "exports": {
     "./dist/*": "./dist/*",

@@ -6,7 +6,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import workletUrl from '@inet.modular/dsp/dist/lfo.js?url';
+import workletUrl from '@patchtogether.live/dsp/dist/lfo.js?url';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 

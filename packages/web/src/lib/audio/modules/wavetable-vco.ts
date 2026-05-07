@@ -7,7 +7,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import workletUrl from '@inet.modular/dsp/dist/wavetable-vco.js?url';
+import workletUrl from '@patchtogether.live/dsp/dist/wavetable-vco.js?url';
 
 const FRAME_SIZE = 2048;
 const FRAME_COUNT = 16;
