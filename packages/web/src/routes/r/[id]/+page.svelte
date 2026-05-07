@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { UserButton, getToken } from 'svelte-clerk';
+  import { UserButton, SignOutButton, getToken } from 'svelte-clerk';
   import Canvas from '$lib/ui/Canvas.svelte';
   import { ydoc } from '$lib/graph/store';
   import { attachProvider } from '$lib/multiplayer/provider';
@@ -26,7 +26,14 @@
     // users carry their Clerk session JWT. The server's onAuthenticate
     // verifies one or the other and rejects bad tokens.
     const tokenProvider = async (): Promise<string> => {
-      if (data.isAnon && data.inviteCode) return `anon:${data.inviteCode}`;
+      if (data.isAnon) {
+        // Anon users land here only after page-server.ts validated the
+        // ?invite=<code> query. The page load doesn't expose that code in
+        // `data` (we don't want anon users redistributing their own URL),
+        // so read it back from the URL for the WS handshake.
+        const code = new URLSearchParams(window.location.search).get('invite');
+        return `anon:${code ?? ''}`;
+      }
       // Authed: getToken() returns a fresh JWT (or null if signed out).
       // If null, send an empty `clerk:` token; server will reject and the
       // page navigates to /sign-in via onAuthRejected.
@@ -143,6 +150,9 @@
         >
           Copy invite URL
         </button>
+        <SignOutButton redirectUrl="/">
+          <button class="signout" title="Sign out">Sign out</button>
+        </SignOutButton>
         <UserButton />
       {/if}
     </div>
@@ -225,6 +235,20 @@
     margin-left: auto;
     border-color: var(--cable-cv);
     color: var(--cable-cv);
+  }
+  .signout {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid #404652;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+  }
+  .signout:hover {
+    background: #2a2f3a;
+    color: var(--text);
   }
   .anon-badge {
     display: inline-block;
