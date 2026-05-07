@@ -22,6 +22,8 @@ import { meowboxDef } from './meowbox';
 import { mixmstrsDef } from './mixmstrs';
 import { timelordeDef } from './timelorde';
 import { charlottesEchosDef } from './charlottes-echos';
+import { riotgirlsDef, triggerVoice as riotgirlsTriggerVoice } from './riotgirls';
+import { testHooksEnabled } from '$lib/dev/test-hooks';
 
 let registered = false;
 
@@ -47,6 +49,16 @@ export function registerAudioModules(): void {
   registerModule(mixmstrsDef);
   registerModule(timelordeDef);
   registerModule(charlottesEchosDef);
+  registerModule(riotgirlsDef);
+
+  if (testHooksEnabled() && typeof window !== 'undefined') {
+    // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
+    // node id without spawning a Sequencer. Returns true if the voice was
+    // triggered, false if no instance / voice found.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__riotgirlsTriggerVoice = (nodeId: string, voiceIdx: number) =>
+      riotgirlsTriggerVoice(nodeId, voiceIdx);
+  }
 }
 
 registerAudioModules();
