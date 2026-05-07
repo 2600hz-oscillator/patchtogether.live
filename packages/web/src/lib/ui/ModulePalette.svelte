@@ -13,9 +13,12 @@
     onselect: (type: string) => void;
     /** Called when the palette wants to dismiss itself (Esc, click outside). */
     onclose: () => void;
+    /** Optional: triggered by the Organize modules entry. When provided the
+     *  entry is shown; the palette closes after invoking. */
+    onorganize?: () => void;
   }
 
-  let { open = $bindable(false), x, y, onselect, onclose }: Props = $props();
+  let { open = $bindable(false), x, y, onselect, onclose, onorganize }: Props = $props();
 
   /** Count instances of a module type currently in the patch. */
   function instanceCount(type: string): number {
@@ -90,6 +93,11 @@
     onclose();
   }
 
+  function pickOrganize() {
+    onorganize?.();
+    onclose();
+  }
+
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -122,6 +130,12 @@
       spellcheck="false"
     />
     <div class="palette-body">
+      {#if onorganize}
+        <div class="category">tools</div>
+        <button class="item tool" onclick={pickOrganize} data-testid="palette-organize">
+          Organize modules
+        </button>
+      {/if}
       {#if Object.keys(grouped).length === 0}
         <div class="empty">no matches</div>
       {/if}
@@ -198,6 +212,9 @@
   .item:focus-visible {
     background: rgba(96, 165, 250, 0.1);
     outline: none;
+  }
+  .item.tool {
+    color: var(--text);
   }
   .empty {
     color: var(--text-dim);
