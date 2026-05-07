@@ -5,16 +5,19 @@
 //     CF Pages project. nodejs_compat shims process.env to platform env.
 //   - vite dev (local):  process.env.DATABASE_URL or a sensible local default.
 //
-// Workers can't drive the standard `pg` package over the node:net shim — its
-// egress proxy returns "proxy request failed" because pg's socket use isn't
-// what cloudflare:sockets expects. We use @neondatabase/serverless's Pool,
-// which speaks Postgres-over-WebSocket and is Workers-native. API surface is
-// the same as pg.Pool / pg.Client so our query code is unchanged.
+// Workers cannot drive standard `pg` (node:net shim returns "proxy request
+// failed") and cannot drive @neondatabase/serverless's WebSocket Pool
+// either (CF egress proxy 403s the outbound WS handshake — confirmed
+// via wrangler tail). The HTTP-only `neon` template tag uses fetch()
+// under the hood, which works in both Workers and Node, so we standardize
+// on it.
 //
-// On Node (vite dev, the SvelteKit dev server) the same Pool works over a
-// real WebSocket — also fine. So one code path covers both runtimes.
+// Trade-off: HTTP transactions are a single round-trip array of queries
+// with no conditional logic between them. Anything that needed BEGIN /
+// conditional-INSERT / COMMIT is rewritten as a single SQL statement
+// (CTE with WHERE NOT EXISTS, ON CONFLICT, etc.) — see rackspaces.ts.
 
-import { Pool, type PoolClient } from '@neondatabase/serverless';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
 function connectionString(): string {
   const url = process.env.DATABASE_URL;
@@ -22,21 +25,10 @@ function connectionString(): string {
   return 'postgresql://postgres:dev@localhost:54320/patchtogether_dev';
 }
 
-// Module-scoped pool. On Workers a fresh isolate gets a fresh pool; the
-// pool's first query in that isolate pays the WebSocket handshake (~50ms),
-// subsequent queries reuse the connection within the same isolate.
-let _pool: Pool | undefined;
-function pool(): Pool {
-  if (!_pool) _pool = new Pool({ connectionString: connectionString() });
-  return _pool;
-}
+let _sql: NeonQueryFunction<false, false> | undefined;
 
-/** Open a per-request client, run a query function, always release. */
-export async function withDb<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool().connect();
-  try {
-    return await fn(client);
-  } finally {
-    client.release();
-  }
+/** Tagged-template query function. Returns rows for SELECT, full result for others. */
+export function sql(): NeonQueryFunction<false, false> {
+  if (!_sql) _sql = neon(connectionString());
+  return _sql;
 }
