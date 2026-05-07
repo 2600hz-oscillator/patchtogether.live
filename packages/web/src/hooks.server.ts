@@ -4,7 +4,8 @@
 //
 //   1. Beta gate — basic-auth gate while in beta. Off when BETA_GATE_PASS
 //      is unset (local dev), so contributors don't have to keep punching
-//      a credential prompt. /api/health is exempt for uptime monitors.
+//      a credential prompt. /api/health (uptime monitors) and /docs/*
+//      (the in-app docs site, which is public on every tier) are exempt.
 //   2. Clerk auth — populates event.locals.auth with session info every
 //      request, lets +page.server.ts loaders use locals.auth.userId.
 //   3. COOP/COEP headers — required for SharedArrayBuffer (Faust may use
@@ -111,9 +112,20 @@ const setCoopCoepHeaders: Handle = async ({ event, resolve }) => {
 // the only secret. Contributors should set BETA_GATE_USER too if they want
 // a non-default username, but `beta` is fine in 99% of cases.
 const BETA_GATE_USER_DEFAULT = 'beta';
-// Carve-out: uptime monitors and ops smoke probes need /api/health
-// reachable without a credential prompt.
+// Carve-outs:
+//   - /api/health      — uptime monitors + ops smoke probes need this
+//                        reachable without a credential prompt.
+//   - /docs (+ /docs/*) — the in-app docs site is public on every tier so
+//                        prospective users can read it without punching a
+//                        beta-gate password.
 const BETA_GATE_PUBLIC_PATHS = ['/api/health'];
+const BETA_GATE_PUBLIC_PREFIXES = ['/docs/'];
+
+export function isBetaGatePublic(pathname: string): boolean {
+  if (BETA_GATE_PUBLIC_PATHS.includes(pathname)) return true;
+  if (pathname === '/docs') return true;
+  return BETA_GATE_PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
+}
 
 const betaGate: Handle = async ({ event, resolve }) => {
   const pass = privateEnv.BETA_GATE_PASS;
@@ -121,7 +133,7 @@ const betaGate: Handle = async ({ event, resolve }) => {
     // Gate disabled (local dev, or any deploy without the env set).
     return resolve(event);
   }
-  if (BETA_GATE_PUBLIC_PATHS.includes(event.url.pathname)) {
+  if (isBetaGatePublic(event.url.pathname)) {
     return resolve(event);
   }
   const expectedUser = privateEnv.BETA_GATE_USER || BETA_GATE_USER_DEFAULT;

@@ -5,7 +5,11 @@
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createRackspace, listRackspacesForUser } from '$lib/server/rackspaces';
+import {
+  createRackspace,
+  listRackspacesForUser,
+  RACKSPACE_MAX_OWNED,
+} from '$lib/server/rackspaces';
 
 export const POST: RequestHandler = async ({ locals, request }) => {
   const { userId } = locals.auth();
@@ -17,12 +21,15 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   } catch {
     /* empty body or malformed JSON: fine, fall back to default */
   }
-  // Defensive: malformed JSON could yield body.name as number/object/null.
-  // Only string-typed names get through; everything else falls back.
   const rawName = typeof body.name === 'string' ? body.name : 'Untitled rackspace';
   const name = rawName.slice(0, 80);
-  const rackspace = await createRackspace(userId, name);
-  return json({ rackspace });
+  const result = await createRackspace(userId, name);
+  if (result.status === 'cap-reached') {
+    throw error(409, {
+      message: `rackspace limit reached (${result.ownedCount}/${RACKSPACE_MAX_OWNED}); delete one to create a new rackspace`,
+    } as App.Error);
+  }
+  return json({ rackspace: result.rackspace });
 };
 
 export const GET: RequestHandler = async ({ locals }) => {

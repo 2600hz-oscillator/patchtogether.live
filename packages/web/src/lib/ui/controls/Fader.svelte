@@ -350,11 +350,12 @@
     outline: none;
   }
   .track:focus-visible {
-    box-shadow: 0 0 0 2px var(--cable-cv);
+    box-shadow: 0 0 0 2px var(--accent);
   }
   .fader-wrap.dragging .track {
     background: #1c2028;
-    border-color: var(--cable-cv);
+    border-color: var(--accent);
+    box-shadow: 0 0 6px var(--accent-glow);
   }
   .track-line {
     position: absolute;

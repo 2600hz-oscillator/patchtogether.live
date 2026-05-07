@@ -1,0 +1,99 @@
+// e2e/tests/docs.spec.ts
+//
+// In-app docs site (post Astro/gh-pages migration). Three things to prove:
+//   1. /docs/* is reachable unauthenticated and free of the beta gate.
+//   2. The auto-generated catalog actually renders an I/O diagram per module.
+//   3. The per-module right-click "Docs" entry on the canvas opens the
+//      matching /docs/modules/<id> page in a new tab.
+
+import { test, expect } from '@playwright/test';
+
+test.describe.configure({ mode: 'parallel' });
+
+test('docs index renders unauthenticated', async ({ page }) => {
+  const res = await page.goto('/docs');
+  expect(res?.status()).toBeLessThan(400);
+  await expect(page.getByRole('heading', { name: 'patchtogether.live', level: 1 })).toBeVisible();
+  await expect(page.getByRole('link', { name: /modules/i }).first()).toBeVisible();
+});
+
+test('docs modules gallery loads with diagrams', async ({ page }) => {
+  await page.goto('/docs/modules');
+  await expect(page.getByRole('heading', { name: 'module catalog' })).toBeVisible();
+  // At least 19 module cards rendered (registry has 19 today; assertion is
+  // a floor, not exact, so adding modules doesn't break the test).
+  const cards = page.locator('.mod-card');
+  await expect.poll(async () => cards.count(), { timeout: 5_000 }).toBeGreaterThanOrEqual(19);
+  // I/O diagram per card.
+  const diagrams = page.locator('[data-testid="io-diagram"]');
+  await expect.poll(async () => diagrams.count()).toBeGreaterThanOrEqual(19);
+});
+
+test('docs per-module page renders diagram + port counts (sequencer)', async ({ page }) => {
+  await page.goto('/docs/modules/sequencer');
+  await expect(page.getByRole('heading', { name: 'Sequencer' })).toBeVisible();
+
+  const diagram = page.locator('[data-testid="module-diagram"] [data-testid="io-diagram"]');
+  await expect(diagram).toBeVisible();
+
+  // Sequencer registry today: 1 input (clock) + 2 outputs (pitch, gate).
+  // Per-port note text comes from the manifest builder's PORT_NOTES table.
+  await expect(page.locator('[data-testid="input-count"]')).toContainText(/\d+ inputs/);
+  await expect(page.locator('[data-testid="output-count"]')).toContainText(/\d+ outputs/);
+
+  // SVG pin elements ground-truth the I/O wiring (one stroke line per port).
+  const pins = page.locator('.io-svg .pin-audio, .io-svg .pin-cv, .io-svg .pin-gate, .io-svg .pin-pitch, .io-svg .pin-polyPitchGate');
+  // pitch + gate outputs + clock input = at least 3 pin lines.
+  await expect.poll(async () => pins.count()).toBeGreaterThanOrEqual(3);
+});
+
+test('docs page is not behind the Clerk auth wall', async ({ page }) => {
+  // Anonymous fetch — should NOT redirect to /sign-in.
+  const res = await page.goto('/docs/modules/analogVco');
+  expect(res?.status()).toBeLessThan(400);
+  expect(page.url()).toContain('/docs/modules/analogVco');
+  await expect(page.getByRole('heading', { name: 'Analog VCO' })).toBeVisible();
+});
+
+test('right-click on a module opens the Docs entry, which opens the per-module docs page in a new tab', async ({
+  page,
+  context,
+}) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await page.getByRole('button', { name: 'Load example' }).click();
+  await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
+
+  // Right-click on the analog VCO card — its module type is 'analogVco', so
+  // the Docs link should resolve to /docs/modules/analogVco.
+  const vco = page.locator('.svelte-flow__node-analogVco').first();
+  await vco.click({ button: 'right' });
+
+  const menu = page.locator('[role="menu"][aria-label="Module actions"]');
+  await expect(menu).toBeVisible();
+  const docsItem = menu.locator('[role="menuitem"]', { hasText: 'Docs' });
+  await expect(docsItem).toBeVisible();
+
+  const newPagePromise = context.waitForEvent('page');
+  await docsItem.click();
+  const newPage = await newPagePromise;
+  await newPage.waitForLoadState('domcontentloaded');
+  expect(newPage.url()).toContain('/docs/modules/analogVco');
+  await expect(newPage.getByRole('heading', { name: 'Analog VCO' })).toBeVisible();
+  await newPage.close();
+});
+
+test('right-clicking the empty canvas does NOT show a Docs entry (it shows the Add Module palette path instead)', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  // Empty canvas — right-click on the SvelteFlow viewport, NOT on a node.
+  const viewport = page.locator('.svelte-flow__pane, .svelte-flow__viewport').first();
+  await viewport.click({ button: 'right' });
+  // Whatever the empty-canvas menu surfaces (palette / Add Module / nothing),
+  // the per-module Docs entry must not be present — that one is gated on a
+  // node being right-clicked.
+  const moduleMenu = page.locator('[role="menu"][aria-label="Module actions"]');
+  await expect(moduleMenu).toHaveCount(0);
+});

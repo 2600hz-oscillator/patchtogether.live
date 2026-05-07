@@ -203,8 +203,8 @@
     transition: box-shadow 0.05s ease-out, border-color 0.05s ease-out;
   }
   .note-input:focus-visible.valid {
-    border-color: var(--cable-cv);
-    box-shadow: 0 0 0 2px var(--cable-cv);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
   }
   .note-input:focus-visible.invalid {
     border-color: var(--cable-gate);
@@ -226,11 +226,11 @@
     border-color: var(--cable-gate);
   }
   .gate.active {
-    outline: 1px solid var(--cable-cv);
+    outline: 1px solid var(--accent);
     outline-offset: -1px;
   }
   .gate:focus-visible {
-    border-color: var(--cable-cv);
-    box-shadow: 0 0 0 2px var(--cable-cv);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
   }
 </style>

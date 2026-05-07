@@ -9,11 +9,12 @@
     SvelteFlow,
     Background,
     Controls,
+    MiniMap,
     type Node as FlowNode,
     type Edge as FlowEdge,
     type Connection,
   } from '@xyflow/svelte';
-  import { patch, ydoc } from '$lib/graph/store';
+  import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
   import { getDefaultSnapshotBus, type PatchSnapshot } from '$lib/graph/snapshot';
   import {
     makeEnvelope,
@@ -194,6 +195,10 @@
   // Drag stops still flow back via onnodedragstop.
   let flowNodes = $state.raw<FlowNode[]>([]);
   let flowEdges = $state.raw<FlowEdge[]>([]);
+  // Card hover state for the cable-dim affordance: tracks the id of the
+  // currently-hovered .svelte-flow__node. Declared up here so the edges
+  // mapping below can read it without forward-references.
+  let hoveredNodeId = $state<string | null>(null);
 
   $effect(() => {
     const snap = snapshot;
@@ -210,14 +215,20 @@
 
   $effect(() => {
     const snap = snapshot;
-    flowEdges = snap.edges.map((e) => ({
-      id: e.id,
-      source: e.source.nodeId,
-      sourceHandle: e.source.portId,
-      target: e.target.nodeId,
-      targetHandle: e.target.portId,
-      style: `stroke: var(--cable-${e.sourceType}); stroke-width: 3;`,
-    }));
+    const hovered = hoveredNodeId;
+    flowEdges = snap.edges.map((e) => {
+      const related = !!hovered && (e.source.nodeId === hovered || e.target.nodeId === hovered);
+      const edge: FlowEdge = {
+        id: e.id,
+        source: e.source.nodeId,
+        sourceHandle: e.source.portId,
+        target: e.target.nodeId,
+        targetHandle: e.target.portId,
+        style: `stroke: var(--cable-${e.sourceType}); stroke-width: 3;`,
+      };
+      if (related) edge.class = 'cable-related';
+      return edge;
+    });
   });
 
   function trace(line: string) {
@@ -386,7 +397,7 @@
         sourceType,
         targetType,
       };
-    });
+    }, LOCAL_ORIGIN);
     trace(`connect ${connection.source}.${connection.sourceHandle} → ${connection.target}.${connection.targetHandle}`);
   }
 
@@ -408,7 +419,7 @@
           removed++;
         }
       }
-    });
+    }, LOCAL_ORIGIN);
     if (removed > 0) trace(`detached cable from ${params.nodeId}.${params.handleId} (rewiring)`);
   }
 
@@ -428,7 +439,7 @@
           }
         }
       }
-    });
+    }, LOCAL_ORIGIN);
     trace(`deleted ${payload.nodes.length} node(s), ${payload.edges.length} edge(s)`);
   }
 
@@ -458,7 +469,7 @@
           }
         }
       }
-    });
+    }, LOCAL_ORIGIN);
   }
 
   // ---------------- Module-add palette ----------------
@@ -498,6 +509,12 @@
     if (!n) return '';
     return getModuleDef(n.type)?.label ?? n.type;
   });
+  let ctxMenuNodeType = $derived.by<string | null>(() => {
+    void snapshot;
+    if (!ctxMenuNodeId) return null;
+    const n = patch.nodes[ctxMenuNodeId];
+    return n?.type ?? null;
+  });
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
@@ -518,7 +535,7 @@
         }
       }
       delete patch.nodes[nodeId];
-    });
+    }, LOCAL_ORIGIN);
     // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     trace(`deleted ${nodeId}`);
   }
@@ -531,7 +548,7 @@
           delete patch.edges[eid];
         }
       }
-    });
+    }, LOCAL_ORIGIN);
     trace(`unpatched ${nodeId}`);
   }
 
@@ -561,7 +578,7 @@
         position: { ...spawnFlowPos },
         params: {},
       };
-    });
+    }, LOCAL_ORIGIN);
     trace(`spawned ${type} (${id})`);
     // Engine instantiation happens via the reconciler microtask.
     void ensureEngine();
@@ -708,6 +725,117 @@
     audioGate.bind(audioCtx);
   });
 
+  // ---------------- Undo / redo (Cmd-Z / Cmd-Shift-Z) ----------------
+  // Y.UndoManager scoped to this client's edits only (LOCAL_ORIGIN). Remote
+  // collaborators' ops arrive with a different origin and are intentionally
+  // skipped by the manager — Cmd-Z means "undo what I just did," matching
+  // multiplayer expectations. captureTimeout (500ms) coalesces bursts so a
+  // drag-knob-then-release becomes one undo entry instead of dozens.
+  $effect(() => {
+    function isUndo(e: KeyboardEvent): boolean {
+      const mod = e.metaKey || e.ctrlKey;
+      return mod && !e.shiftKey && (e.key === 'z' || e.key === 'Z');
+    }
+    function isRedo(e: KeyboardEvent): boolean {
+      const mod = e.metaKey || e.ctrlKey;
+      // Cmd-Shift-Z (mac standard) AND Cmd-Y (windows standard) both mapped.
+      return (
+        mod && ((e.shiftKey && (e.key === 'z' || e.key === 'Z')) || e.key === 'y' || e.key === 'Y')
+      );
+    }
+    function shouldIgnore(target: EventTarget | null): boolean {
+      // Don't hijack OS-level undo inside text inputs (note-name boxes,
+      // save/load dialogs, anywhere a textarea is focused). Lets the
+      // browser handle text-edit undo natively.
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return true;
+      return false;
+    }
+    function onKey(e: KeyboardEvent) {
+      if (shouldIgnore(e.target)) return;
+      if (isUndo(e)) {
+        if (undoManager.undoStack.length === 0) return;
+        e.preventDefault();
+        undoManager.undo();
+        trace('undo');
+      } else if (isRedo(e)) {
+        if (undoManager.redoStack.length === 0) return;
+        e.preventDefault();
+        undoManager.redo();
+        trace('redo');
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // Dev-only: expose undoManager so e2e tests can assert state without
+  // racing against the captureTimeout debouncer. Stripped in prod.
+  if (import.meta.env.DEV) {
+    $effect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__undoManager = undoManager;
+    });
+  }
+
+  // ---------------- Card / cable hover affordances ----------------
+  //
+  // hoveredNodeId (declared near the top of <script>) is set on
+  // .svelte-flow__node mouseenter and cleared on mouseleave. Two CSS
+  // hooks consume it:
+  //   1. a `data-hovered-node` attribute on the .svelte-flow root, so
+  //      `.svelte-flow[data-hovered-node]` can dim non-related cables;
+  //   2. a `cable-related` class on each edge whose source or target
+  //      matches the hovered node, so dimmed sibling cables don't dim
+  //      the ones a user is trying to trace.
+
+  /** Programmatically wire mouseover/leave on the .flow root so we don't
+   *  invite a11y warnings on a <div> that has no other interactive role.
+   *  Walks up the DOM from e.target to find the nearest .svelte-flow__node
+   *  and reads its data-id. */
+  $effect(() => {
+    const root = flowEl;
+    if (!root) return;
+    const onOver = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const node = target.closest('.svelte-flow__node');
+      if (node) {
+        const id = node.getAttribute('data-id');
+        if (id && id !== hoveredNodeId) hoveredNodeId = id;
+      } else if (hoveredNodeId !== null) {
+        hoveredNodeId = null;
+      }
+    };
+    const onLeave = () => {
+      hoveredNodeId = null;
+    };
+    root.addEventListener('mouseover', onOver);
+    root.addEventListener('mouseleave', onLeave);
+    return () => {
+      root.removeEventListener('mouseover', onOver);
+      root.removeEventListener('mouseleave', onLeave);
+    };
+  });
+
+  // (Edges receive the `cable-related` class via the snapshot→flowEdges
+  // mapper above, which reads hoveredNodeId. Single source of truth, no
+  // ping-pong between effects.)
+
+  // Push the hovered-node id onto the .svelte-flow root so the global
+  // [data-hovered-node] selector can fire.
+  $effect(() => {
+    if (!flowEl) return;
+    const root = flowEl.querySelector('.svelte-flow');
+    if (!root) return;
+    if (hoveredNodeId) root.setAttribute('data-hovered-node', hoveredNodeId);
+    else root.removeAttribute('data-hovered-node');
+  });
+
+  // ---------------- MiniMap toggle ----------------
+  let minimapOpen = $state(true);
+
   onDestroy(() => {
     reconciler?.dispose();
     engine?.dispose();
@@ -755,7 +883,33 @@
     >
       <Background size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
       <Controls />
+      {#if minimapOpen}
+        <MiniMap
+          position="bottom-right"
+          width={160}
+          height={110}
+          pannable
+          zoomable
+          ariaLabel="Canvas overview"
+          maskColor="rgba(0, 240, 255, 0.06)"
+          nodeColor="#1c2a32"
+          nodeStrokeColor="#00f0ff"
+          nodeStrokeWidth={1}
+          nodeBorderRadius={2}
+        />
+      {/if}
     </SvelteFlow>
+    <button
+      type="button"
+      class="minimap-toggle"
+      class:open={minimapOpen}
+      data-testid="minimap-toggle"
+      title={minimapOpen ? 'Hide minimap' : 'Show minimap'}
+      aria-pressed={minimapOpen}
+      onclick={() => (minimapOpen = !minimapOpen)}
+    >
+      {minimapOpen ? '▾ map' : '▴ map'}
+    </button>
     <AwarenessLayer {provider} />
   </div>
 
@@ -772,6 +926,7 @@
       <li><span class="swatch pitch"></span> pitch</li>
       <li><span class="swatch gate"></span> gate</li>
       <li><span class="swatch cv"></span> CV</li>
+      <li><span class="swatch polyPitchGate"></span> poly</li>
     </ul>
   </footer>
 
@@ -796,6 +951,7 @@
   x={ctxMenuPos.x}
   y={ctxMenuPos.y}
   nodeLabel={ctxMenuLabel}
+  nodeType={ctxMenuNodeType}
   ondelete={() => ctxMenuNodeId && deleteNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
@@ -886,6 +1042,32 @@
     inset: 0;
     background: var(--bg);
   }
+  /* MiniMap toggle: tiny pill above the bottom-right minimap. Pure chrome,
+   * uses --accent for hover so a power user can collapse the overview when
+   * working tight to the corner of the canvas. */
+  .minimap-toggle {
+    position: absolute;
+    bottom: 8px;
+    right: 12px;
+    z-index: 6;
+    background: rgba(14, 17, 22, 0.85);
+    color: var(--text-dim);
+    border: 1px solid #2a2f3a;
+    border-radius: 2px;
+    padding: 2px 8px;
+    font-size: 0.65rem;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: color 80ms ease-out, border-color 80ms ease-out, bottom 120ms ease-out;
+  }
+  .minimap-toggle:hover {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+  }
+  .minimap-toggle.open {
+    bottom: 124px;
+  }
   .error {
     margin: 0;
     padding: 0.6rem 1.25rem;
@@ -934,6 +1116,7 @@
   .swatch.pitch { background: var(--cable-pitch); }
   .swatch.gate { background: var(--cable-gate); }
   .swatch.cv { background: var(--cable-cv); }
+  .swatch.polyPitchGate { background: var(--cable-polyPitchGate); }
   .trace-panel {
     padding: 0.4rem 1.25rem 0.6rem;
     border-top: 1px solid #1f242c;

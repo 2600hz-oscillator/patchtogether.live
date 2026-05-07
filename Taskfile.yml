@@ -16,7 +16,6 @@ vars:
   SERVER: packages/server
   ART: art
   E2E: e2e
-  DOCS: docs
 
 tasks:
   default:
@@ -202,24 +201,6 @@ tasks:
       - task: test
       - task: art
       - task: e2e
-
-  # ---------------- Docs site (GitHub Pages) ----------------
-  # Astro static site at docs/. The catalog page is generated from
-  # packages/web/src/lib/audio/module-registry.ts via a small build script.
-  docs:manifest:
-    desc: Regenerate docs/src/data/modules.json from the audio module registry
-    cmds:
-      - npm run manifest -w {{.DOCS}}
-
-  docs:dev:
-    desc: Run the docs site dev server (http://localhost:4321/patchtogether.live/)
-    cmds:
-      - npm run dev -w {{.DOCS}}
-
-  docs:build:
-    desc: Build the docs site to docs/dist (used by the gh-pages workflow)
-    cmds:
-      - npm run build -w {{.DOCS}}
 
   # ---------------- Housekeeping ----------------
   clean:

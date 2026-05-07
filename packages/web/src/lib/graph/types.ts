@@ -11,7 +11,10 @@ type StandardDomain = 'audio';
 export type Domain = StandardDomain | (string & {});
 
 // ---------------- Cable types (D6, D7, D18) ----------------
-type StandardCableType = 'audio' | 'pitch' | 'gate' | 'cv';
+// `polyPitchGate` is the Stage-1 polyphony cable (10 audio channels packed
+// (p0,g0,p1,g1,...,p4,g4) — 5 voice pairs). See packages/web/src/lib/audio/poly.ts
+// and .myrobots/plans/dx7-and-polyphony.md §5 for the architecture.
+type StandardCableType = 'audio' | 'pitch' | 'gate' | 'cv' | 'polyPitchGate';
 export type CableType = StandardCableType | (string & {});
 
 // ---------------- Module types (D5) ----------------
