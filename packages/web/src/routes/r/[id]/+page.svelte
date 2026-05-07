@@ -85,7 +85,7 @@
       </button>
       <UserButton />
     </div>
-    <Canvas />
+    <Canvas currentUserId={data.currentUserId} />
   </div>
 {:else}
   <!-- Non-member: prompt to join, or show "full" -->
