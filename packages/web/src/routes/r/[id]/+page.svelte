@@ -4,8 +4,10 @@
   import { UserButton, SignOutButton, getToken, useClerkContext } from 'svelte-clerk';
   import Canvas from '$lib/ui/Canvas.svelte';
   import AudioGate from '$lib/ui/AudioGate.svelte';
+  import FeedbackBox from '$lib/ui/FeedbackBox.svelte';
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
   import { ydoc } from '$lib/graph/store';
+  import { makeEnvelope } from '$lib/graph/persistence';
   import { attachProvider } from '$lib/multiplayer/provider';
   import {
     resolvePresenceUser,
@@ -227,6 +229,14 @@
         >
           Copy invite URL
         </button>
+        {#if data.currentUserId}
+          <span class="feedback-slot">
+            <FeedbackBox
+              rackId={data.rackspace.id}
+              getPatchJson={() => makeEnvelope(ydoc)}
+            />
+          </span>
+        {/if}
         <SignOutButton redirectUrl="/">
           <button class="signout" title="Sign out">Sign out</button>
         </SignOutButton>
