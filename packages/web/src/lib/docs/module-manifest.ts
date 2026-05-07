@@ -483,7 +483,14 @@ export function buildModuleManifest(
       const file = path.split('/').pop() ?? path;
       return { file, src };
     })
-    .filter(({ file }) => file.endsWith('.ts') && file !== 'index.ts')
+    .filter(({ file }) => {
+      if (!file.endsWith('.ts') || file === 'index.ts') return false;
+      // Skip companion / test files — they live next to module sources but
+      // aren't module definitions themselves.
+      if (file.endsWith('.test.ts')) return false;
+      if (file.endsWith('-state.ts')) return false;
+      return true;
+    })
     .sort((a, b) => a.file.localeCompare(b.file));
 
   const modules: ManifestModule[] = [];
