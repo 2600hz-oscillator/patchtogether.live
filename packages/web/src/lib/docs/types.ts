@@ -43,3 +43,16 @@ export interface ModuleManifest {
   modules: readonly ManifestModule[];
   warnings: readonly string[];
 }
+
+export interface ScenarioRef {
+  group: string;
+  file: string;
+  path: string;
+}
+
+export interface TestingManifest {
+  artScenarios: readonly ScenarioRef[];
+  artBaselines: readonly ScenarioRef[];
+  vrtImplemented: boolean;
+  e2eSpecs: readonly string[];
+}

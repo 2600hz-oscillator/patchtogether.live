@@ -62,11 +62,11 @@ describe('docs/modules-manifest', () => {
   // isn't quietly dropping ports — these are stable and load-bearing for the
   // catalog accuracy the README/PR brief calls out.
   const SPOT_CHECKS: Record<string, { inputs: string[]; outputs: string[]; minParams: number }> = {
-    analogVco:    { inputs: ['pitch', 'fm'],                outputs: ['saw', 'square', 'triangle', 'sine'], minParams: 1 },
-    audioOut:     { inputs: ['L', 'R'],                     outputs: [],                                   minParams: 0 },
-    vca:          { inputs: ['audio', 'cv'],                outputs: ['audio'],                            minParams: 1 },
-    adsr:         { inputs: ['gate'],                       outputs: ['env'],                              minParams: 4 },
-    sequencer:    { inputs: ['clock'],                      outputs: ['pitch', 'gate', 'clock'],           minParams: 5 },
+    analogVco:    { inputs: ['pitch', 'fm'],                                      outputs: ['saw', 'square', 'triangle', 'sine'], minParams: 1 },
+    audioOut:     { inputs: ['L', 'R'],                                           outputs: [],                                   minParams: 0 },
+    vca:          { inputs: ['audio', 'cv'],                                      outputs: ['audio'],                            minParams: 1 },
+    adsr:         { inputs: ['gate', 'attack', 'decay', 'sustain', 'release'],    outputs: ['env'],                              minParams: 4 },
+    sequencer:    { inputs: ['clock'],                                            outputs: ['pitch', 'gate', 'clock'],           minParams: 5 },
   };
   for (const [type, expected] of Object.entries(SPOT_CHECKS)) {
     it(`spot-check: ${type} ports + params`, () => {

@@ -6,19 +6,24 @@
   }
   let { mod }: Props = $props();
 
-  const inputs = mod.inputs ?? [];
-  const outputs = mod.outputs ?? [];
+  // The diagram dims are derived from `mod` so we have to keep them
+  // reactive — using $derived rather than top-level `const` keeps Svelte 5
+  // from warning about a state reference that only captures the initial
+  // value (https://svelte.dev/e/state_referenced_locally).
   const rowH = 16;
   const headerH = 36;
   const padTop = 14;
   const padBottom = 14;
-  const innerH = Math.max(inputs.length, outputs.length, 1) * rowH + 2;
-  const totalH = headerH + padTop + innerH + padBottom + 22;
   const W = 380;
   const boxX = 80;
   const boxW = W - 160;
-  const boxY = headerH + padTop;
-  const boxH = innerH;
+
+  const inputs = $derived(mod.inputs ?? []);
+  const outputs = $derived(mod.outputs ?? []);
+  const innerH = $derived(Math.max(inputs.length, outputs.length, 1) * rowH + 2);
+  const totalH = $derived(headerH + padTop + innerH + padBottom + 22);
+  const boxY = $derived(headerH + padTop);
+  const boxH = $derived(innerH);
 
   const pinClass = (t: string) => `docs-io-pin docs-io-pin-${t}`;
 </script>

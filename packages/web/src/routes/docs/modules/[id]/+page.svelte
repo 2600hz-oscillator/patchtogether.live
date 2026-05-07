@@ -2,7 +2,9 @@
   import IoDiagram from '$lib/docs/IoDiagram.svelte';
 
   let { data } = $props();
-  const m = data.mod;
+  // `data` is a reactive prop in Svelte 5; $derived keeps `m` from
+  // capturing only the initial value when the route param changes.
+  const m = $derived(data.mod);
 </script>
 
 <svelte:head>

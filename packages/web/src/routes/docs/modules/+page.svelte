@@ -4,13 +4,20 @@
 
   let { data } = $props();
 
-  const byCat: Record<string, ManifestModule[]> = {};
-  for (const m of data.manifest.modules) {
-    (byCat[m.category] ??= []).push(m as ManifestModule);
-  }
+  // $derived because `data` is a Svelte 5 reactive prop; assigning into a
+  // plain `const` would only capture the initial value.
+  const byCat = $derived.by(() => {
+    const out: Record<string, ManifestModule[]> = {};
+    for (const m of data.manifest.modules) {
+      (out[m.category] ??= []).push(m as ManifestModule);
+    }
+    return out;
+  });
   const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
-  const cats = CAT_ORDER.filter((c) => byCat[c]).concat(
-    Object.keys(byCat).filter((c) => !CAT_ORDER.includes(c)),
+  const cats = $derived(
+    CAT_ORDER.filter((c) => byCat[c]).concat(
+      Object.keys(byCat).filter((c) => !CAT_ORDER.includes(c)),
+    ),
   );
 </script>
 
