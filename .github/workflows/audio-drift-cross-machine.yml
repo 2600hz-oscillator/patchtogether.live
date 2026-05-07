@@ -20,6 +20,11 @@ name: Audio drift — cross-machine
 # See e2e/audio-drift/cross-machine/README.md.
 
 on:
+  # Temporary: push trigger on this branch lets us validate the workflow
+  # before merging to main (workflow_dispatch is gated on default-branch
+  # presence). REMOVE before merge.
+  push:
+    branches: [research/audio-drift-cross-machine]
   workflow_dispatch:
     inputs:
       scenarios:
