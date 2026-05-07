@@ -169,6 +169,26 @@
           return loadEnvelopeFromObject(env);
         },
       };
+      // Right-click + Organize tests need flow-space coords + the same
+      // spawn path as the in-app palette (collision offset + maxInstances
+      // guard). Going through the in-app screenToFlowPosition keeps the
+      // test honest: if FlowBridge breaks, every test using __flow fails.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__flow = {
+        screenToFlowPosition: (p: { x: number; y: number }) =>
+          flowApi?.screenToFlowPosition(p) ?? p,
+        getInternalNode: (id: string) => flowApi?.getInternalNode(id),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__spawnAtFlowPos = (
+        type: string,
+        flowPos: { x: number; y: number },
+      ) => {
+        spawnFlowPos = flowPos;
+        spawnFromPalette(type);
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__organizeModules = () => organizeModules();
     });
   }
   function loadEnvelopeFromObject(env: unknown) {
