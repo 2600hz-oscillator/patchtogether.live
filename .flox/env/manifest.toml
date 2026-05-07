@@ -22,6 +22,11 @@ gh.pkg-path = "gh"
 flyctl.pkg-path = "flyctl"
 postgresql.pkg-path = "postgresql"
 
+# ALSA runtime — node-web-audio-api dlopens libasound.so.2 even for
+# OfflineAudioContext use. Linux only; macOS uses CoreAudio.
+alsa-lib.pkg-path = "alsa-lib"
+alsa-lib.systems = ["x86_64-linux", "aarch64-linux"]
+
 
 [vars]
 # Project name surfaces in dev shell prompts and scripts
