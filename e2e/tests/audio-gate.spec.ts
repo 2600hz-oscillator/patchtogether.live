@@ -18,16 +18,17 @@
 
 import { test, expect } from '@playwright/test';
 
-test.describe('@audio-gate', () => {
-  // Disable Chromium's autoplay-policy override so the AudioContext
-  // genuinely starts suspended; the gate's whole reason to exist is to
-  // unblock the suspended-by-policy state.
-  test.use({
-    launchOptions: {
-      args: ['--autoplay-policy=user-gesture-required'],
-    },
-  });
+// Disable Chromium's autoplay-policy override so the AudioContext genuinely
+// starts suspended; the gate's whole reason to exist is to unblock the
+// suspended-by-policy state. Playwright requires test.use() at file top
+// level (or in config), not inside a describe block.
+test.use({
+  launchOptions: {
+    args: ['--autoplay-policy=user-gesture-required'],
+  },
+});
 
+test.describe('@audio-gate', () => {
   test.skip(
     'overlay appears on cold-load of /r/[id] and dismisses on click @needs-rackspace-seed',
     async ({ page }) => {
