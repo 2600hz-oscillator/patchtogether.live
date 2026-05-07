@@ -419,7 +419,7 @@ interface RawModule {
 function readModule(file: string, rawSrc: string): RawModule | null {
   const fullSrc = stripComments(rawSrc);
 
-  const declRe = /export\s+const\s+(\w+Def)\s*:\s*AudioModuleDef\s*=\s*\{/;
+  const declRe = /export\s+const\s+(\w+Def)\s*:\s*(?:AudioModuleDef|SyncedModuleDef)\s*=\s*\{/;
   const declMatch = declRe.exec(fullSrc);
   if (!declMatch) return null;
   const startBrace = declMatch.index + declMatch[0].length - 1;
