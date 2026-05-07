@@ -5,7 +5,7 @@
 // browser contexts against the same rackspace.
 
 import { describe, it, expect } from 'vitest';
-import { createSlotTracker, RACKSPACE_MAX_CONNECTIONS } from './capacity';
+import { createSlotTracker, RACKSPACE_MAX_CONNECTIONS } from './capacity.js';
 
 describe('SlotTracker', () => {
   it('admits up to limit connections per doc', () => {
