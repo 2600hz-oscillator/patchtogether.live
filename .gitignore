@@ -28,7 +28,6 @@ art/__diffs__/
 vrt/test-results/
 vrt/playwright-report/
 e2e/test-results/
-e2e/test-results-audio-drift/
 e2e/playwright-report/
 coverage/
 
@@ -46,6 +45,9 @@ npm-debug.log*
 
 # Local Claude Code settings (per-machine, don't commit)
 .claude/
+
+# Local agent / planning notes (treated like a scratchpad — never commit)
+.myrobots/
 
 # Playwright artifacts that aren't already covered above
 e2e/.last-run.json
