@@ -50,6 +50,8 @@ const MODULES: ModuleSpec[] = [
   // exist in the def but aren't rendered as visible jacks (37 jacks would
   // overwhelm the card chrome) — they're reachable programmatically.
   { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 18, containsLabel: 'MIXMSTRS' },
+  // SCORE: 5 inputs (clock + A/D/S/R cv) + 4 outputs (pitch, gate, env, clock) = 9.
+  { type: 'score',        cardClass: 'svelte-flow__node-score',        handleCount: 9, containsLabel: 'Score' },
 ];
 
 test.describe.configure({ mode: 'parallel' });

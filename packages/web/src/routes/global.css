@@ -1,5 +1,14 @@
 /* Global app styling — D14 visual language baseline. */
 
+/* Bravura music font (SIL OFL). Used by SCORE module to render SMuFL glyphs
+ * (clef / noteheads / accidentals) as <text> nodes in SVG. Source:
+ * https://github.com/steinbergmedia/bravura — woff2 only is bundled. */
+@font-face {
+  font-family: 'Bravura';
+  src: url('/fonts/Bravura.woff2') format('woff2');
+  font-display: swap;
+}
+
 :root {
   --bg: #0e1116;
   --bg-grid-dot: #1f242c;
