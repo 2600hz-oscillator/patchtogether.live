@@ -101,10 +101,21 @@ const conditionalClerk: Handle = async ({ event, resolve }) => {
   return clerkHandle({ event, resolve });
 };
 
+// COOP/COEP enable SharedArrayBuffer for Faust's WASM thread, but they also
+// block third-party resources without CORP headers — including Clerk's
+// Turnstile widget on /sign-in/sso-callback. Auth routes don't need SAB,
+// so we scope these headers to routes that DO: the public canvas at `/`
+// and the rack canvas at `/r/`. Everything else (sign-in/up, dashboard,
+// docs, api) gets no isolation headers and can load Clerk's widgets.
+const SAB_ROUTES = ['/r/'];
 const setCoopCoepHeaders: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
-  response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-  response.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  const path = event.url.pathname;
+  const needsIsolation = path === '/' || SAB_ROUTES.some((p) => path.startsWith(p));
+  if (needsIsolation) {
+    response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+    response.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  }
   return response;
 };
 
