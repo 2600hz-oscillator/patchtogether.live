@@ -326,3 +326,303 @@ test('score: bar overflow rejected — second whole note in the same bar does NO
   const data = await readScoreData(page);
   expect(data.notes.length).toBe(1);
 });
+
+// ----------------------------------------------------------------------
+// v2 features: page navigation, stop-bar + loop, tied-note single envelope
+// ----------------------------------------------------------------------
+
+async function readScoreV2(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+    };
+    const n = w.__patch.nodes['score'];
+    const d = (n?.data ?? {}) as Record<string, unknown>;
+    return {
+      pages: typeof d.pages === 'number' ? (d.pages as number) : 1,
+      loop: typeof d.loop === 'boolean' ? (d.loop as boolean) : false,
+      stopBar: d.stopBar as { bar: number; tick: number } | undefined,
+    };
+  });
+}
+
+test('score: page nav — add a page, navigate via arrows, counter shows correctly', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+
+  // Default: 1 page. Counter shows "1 / 1".
+  const counter = page.locator('[data-testid="score-page-counter-score"]');
+  await expect(counter).toHaveText('1 / 1');
+  // Prev disabled at page 1; Next disabled when only 1 page.
+  await expect(page.locator('[data-testid="score-page-prev-score"]')).toBeDisabled();
+  await expect(page.locator('[data-testid="score-page-next-score"]')).toBeDisabled();
+
+  // Add a page. Counter denominator updates; current page stays at 1 until
+  // the user navigates with the → arrow.
+  await page.locator('[data-testid="score-page-add-score"]').click();
+  await expect.poll(async () => (await readScoreV2(page)).pages).toBe(2);
+  await expect(counter).toHaveText('1 / 2');
+  await expect(page.locator('[data-testid="score-page-next-score"]')).toBeEnabled();
+
+  // Navigate to page 2 via →.
+  await page.locator('[data-testid="score-page-next-score"]').click();
+  await expect(counter).toHaveText('2 / 2');
+  // Prev now enabled, next disabled.
+  await expect(page.locator('[data-testid="score-page-prev-score"]')).toBeEnabled();
+  await expect(page.locator('[data-testid="score-page-next-score"]')).toBeDisabled();
+
+  // Add up to MAX_PAGES (4 total). Click "+" twice more.
+  await page.locator('[data-testid="score-page-add-score"]').click();
+  await page.locator('[data-testid="score-page-add-score"]').click();
+  await expect.poll(async () => (await readScoreV2(page)).pages).toBe(4);
+  // Counter denominator now 4; we're still on page 2 (no auto-jump).
+  await expect(counter).toHaveText('2 / 4');
+  // Add button now disabled (cap reached).
+  await expect(page.locator('[data-testid="score-page-add-score"]')).toBeDisabled();
+
+  // Navigate forward to page 4.
+  await page.locator('[data-testid="score-page-next-score"]').click();
+  await expect(counter).toHaveText('3 / 4');
+  await page.locator('[data-testid="score-page-next-score"]').click();
+  await expect(counter).toHaveText('4 / 4');
+  // Next disabled (already on last page).
+  await expect(page.locator('[data-testid="score-page-next-score"]')).toBeDisabled();
+
+  // Navigate prev twice.
+  await page.locator('[data-testid="score-page-prev-score"]').click();
+  await expect(counter).toHaveText('3 / 4');
+  await page.locator('[data-testid="score-page-prev-score"]').click();
+  await expect(counter).toHaveText('2 / 4');
+
+  // Next.
+  await page.locator('[data-testid="score-page-next-score"]').click();
+  await expect(counter).toHaveText('3 / 4');
+});
+
+test('score: page count is capped at 4 — add button disabled at max', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  // Seed with 4 pages directly.
+  await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['score'];
+      if (!n) return;
+      n.data = {
+        notes: [],
+        dynamics: [],
+        ties: [],
+        keySignature: 0,
+        pages: 4,
+        loop: false,
+      };
+    });
+  });
+  await expect(page.locator('[data-testid="score-page-add-score"]')).toBeDisabled();
+  await expect(page.locator('[data-testid="score-page-counter-score"]')).toHaveText('1 / 4');
+});
+
+test('score: loop toggle persists in score data', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+
+  // Default: loop=false.
+  await expect.poll(async () => (await readScoreV2(page)).loop).toBe(false);
+
+  await page.locator('[data-testid="score-tool-loop-score"]').click();
+  await expect.poll(async () => (await readScoreV2(page)).loop).toBe(true);
+
+  await page.locator('[data-testid="score-tool-loop-score"]').click();
+  await expect.poll(async () => (await readScoreV2(page)).loop).toBe(false);
+});
+
+test('score: stop-bar — placing the marker writes to score data', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'score', type: 'score' }]);
+
+  // Activate stop-bar tool.
+  await page.locator('[data-testid="score-tool-stop-score"]').click();
+
+  // Click on the staff at a known position. The exact (bar, tick) depends on
+  // the layout — we just assert that *some* stopBar gets written.
+  const staff = page.locator('[data-testid="score-staff-score"]');
+  const box = await staff.boundingBox();
+  if (!box) throw new Error('no staff bbox');
+  await page.mouse.click(box.x + 200, box.y + 30);
+
+  await expect.poll(async () => {
+    const d = await readScoreV2(page);
+    return d.stopBar !== undefined;
+  }).toBe(true);
+  const sb = (await readScoreV2(page)).stopBar;
+  expect(sb).toBeDefined();
+  expect(typeof sb!.bar).toBe('number');
+  expect(typeof sb!.tick).toBe('number');
+  // Tick should be quantized to a 16th boundary.
+  expect(sb!.tick % 3).toBe(0);
+
+  // Stop-bar SVG is rendered.
+  await expect(page.locator('[data-testid="score-stop-bar-score"]')).toBeVisible();
+});
+
+test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'score', type: 'score', params: { bpm: 240, isPlaying: 1 } },
+  ]);
+
+  // Tiny sequence: notes only in bars 0..1, stop-bar at bar 2, loop ON.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['score'];
+      if (!n) return;
+      n.data = {
+        notes: [
+          { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+        ],
+        dynamics: [],
+        ties: [],
+        keySignature: 0,
+        pages: 1,
+        loop: true,
+        stopBar: { bar: 2, tick: 0 },
+      };
+    });
+  });
+
+  // Wait long enough for several wraps. 240 BPM 16th = ~15.625ms;
+  // stop at bar 2 means stop at 32nd 16th-step (~500ms). Wait ~2 seconds.
+  await page.waitForTimeout(1500);
+  const tickIdx = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine?: () => { read: (node: unknown, key: string) => unknown } | null;
+      __patch: { nodes: Record<string, unknown> };
+    };
+    const e = w.__engine?.();
+    if (!e) return -1;
+    const v = e.read(w.__patch.nodes['score'], 'tickIndex');
+    return typeof v === 'number' ? v : -1;
+  });
+  // tickIndex must remain in [0, stop16ths-1] = [0, 31] when looping.
+  // The stopBar bar=2 tick=0 = grid 96 → 32 sixteenths.
+  expect(tickIdx).toBeGreaterThanOrEqual(0);
+  expect(tickIdx).toBeLessThan(32);
+});
+
+test('score: stop-bar + loop=off stops playback at end of sequence', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'score', type: 'score', params: { bpm: 480, isPlaying: 1 } },
+  ]);
+
+  // Stop after just 1 bar at high BPM → ~125ms total.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown>; params?: Record<string, number> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['score'];
+      if (!n) return;
+      n.data = {
+        notes: [
+          { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+        ],
+        dynamics: [],
+        ties: [],
+        keySignature: 0,
+        pages: 1,
+        loop: false,
+        stopBar: { bar: 1, tick: 0 },
+      };
+    });
+  });
+
+  // Wait well past end-of-sequence.
+  await page.waitForTimeout(800);
+  // isPlaying should have been cleared by the engine.
+  const isPlaying = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { params?: Record<string, number> }> };
+    };
+    return (w.__patch.nodes['score']?.params?.isPlaying ?? 0) >= 0.5;
+  });
+  expect(isPlaying).toBe(false);
+});
+
+test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'score', type: 'score', params: { bpm: 120, isPlaying: 1 } },
+  ]);
+
+  // Tied chain: A -> B -> C, three quarters at MIDI 60. With our held-gate
+  // emission the engine reports `currentNoteId` as 'A' for the entire span,
+  // and `tiedGateHoldUntilTick` is the chain-end grid tick (36).
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['score'];
+      if (!n) return;
+      n.data = {
+        notes: [
+          { id: 'A', bar: 0, tick: 0, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+          { id: 'B', bar: 0, tick: 12, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+          { id: 'C', bar: 0, tick: 24, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+        ],
+        dynamics: [],
+        ties: [
+          { id: 't1', fromNoteId: 'A', toNoteId: 'B' },
+          { id: 't2', fromNoteId: 'B', toNoteId: 'C' },
+        ],
+        keySignature: 0,
+        pages: 1,
+        loop: false,
+      };
+    });
+  });
+
+  // Wait long enough for note A to start (a few hundred ms at 120 BPM).
+  await page.waitForTimeout(400);
+  // The engine should have set tiedGateHoldUntilTick to 36 (chain end).
+  const hold = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine?: () => { read: (node: unknown, key: string) => unknown } | null;
+      __patch: { nodes: Record<string, unknown> };
+    };
+    const e = w.__engine?.();
+    if (!e) return -999;
+    const v = e.read(w.__patch.nodes['score'], 'tiedGateHoldUntilTick');
+    return typeof v === 'number' ? v : -999;
+  });
+  expect(hold).toBe(36);
+  // Gate should be high (1) during the tied span.
+  const gate = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine?: () => { read: (node: unknown, key: string) => unknown } | null;
+      __patch: { nodes: Record<string, unknown> };
+    };
+    const e = w.__engine?.();
+    if (!e) return -1;
+    const v = e.read(w.__patch.nodes['score'], 'gateValue');
+    return typeof v === 'number' ? v : -1;
+  });
+  expect(gate).toBe(1);
+});

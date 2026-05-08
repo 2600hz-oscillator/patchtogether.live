@@ -5,24 +5,29 @@
   import { patch, ydoc } from '$lib/graph/store';
   import { useEngine } from '$lib/audio/engine-context';
   import {
+    BARS_PER_PAGE,
     BARS_PER_ROW,
+    DEFAULT_PAGES,
     DYNAMIC_SCALE,
+    MAX_PAGES,
+    ROWS_PER_PAGE,
     SCORE_MAX_MIDI,
     SCORE_MIN_MIDI,
     SMUFL,
     TICKS_PER_BAR,
-    TOTAL_BARS,
     canPlace,
     keySignatureLetters,
     quantizeTick,
     staffStepToMidi,
     tickWidth,
+    totalBars,
     type Accidental,
     type DynamicLevel,
     type DynamicMarker,
     type NoteDuration,
     type ScoreData,
     type ScoreNote,
+    type StopBar,
     type Tie,
   } from '$lib/audio/modules/score-data';
   import type { ModuleNode } from '$lib/graph/types';
@@ -53,7 +58,25 @@
       dynamics: Array.isArray(raw.dynamics) ? (raw.dynamics as DynamicMarker[]) : [],
       ties: Array.isArray(raw.ties) ? (raw.ties as Tie[]) : [],
       keySignature: typeof raw.keySignature === 'number' ? (raw.keySignature as number) : 0,
+      pages:
+        typeof raw.pages === 'number'
+          ? Math.max(1, Math.min(MAX_PAGES, raw.pages as number))
+          : DEFAULT_PAGES,
+      loop: typeof raw.loop === 'boolean' ? (raw.loop as boolean) : false,
+      stopBar: (() => {
+        const sb = raw.stopBar as { bar?: number; tick?: number } | undefined;
+        return sb && typeof sb === 'object' && typeof sb.bar === 'number' && typeof sb.tick === 'number'
+          ? { bar: sb.bar, tick: sb.tick }
+          : undefined;
+      })(),
     };
+  });
+
+  let totalPages = $derived(scoreData.pages);
+  let currentPage = $state(0); // zero-based; UI displays +1
+  // Clamp current page when pages shrink (e.g. via collab edit).
+  $effect(() => {
+    if (currentPage >= totalPages) currentPage = Math.max(0, totalPages - 1);
   });
 
   const set = (k: string) => (v: number) => {
@@ -84,9 +107,8 @@
   onDestroy(() => { if (raf !== null) cancelAnimationFrame(raf); });
 
   // ---------------- Layout constants ----------------
-  // 2 rows × 4 bars. Pixel layout for a single staff row:
-  //   left margin 60px (clef + key sig + time sig)
-  //   per-bar tickWidth = (rowWidth - 60) / 4
+  // 4 rows × 4 bars per page. Each page renders 4 staff rows; only the active
+  // page is visible at a time.
   const CARD_WIDTH = 720;
   const ROW_LEFT_PAD = 60;
   const ROW_RIGHT_PAD = 12;
@@ -95,24 +117,31 @@
   const TICK_PX = BAR_W / TICKS_PER_BAR;
   const STAFF_LINE_GAP = 8;        // px between adjacent lines
   const STAFF_STEP_PX = STAFF_LINE_GAP / 2; // 4px per staff step
-  const ROW_HEIGHT = 110;
-  const ROW1_TOP_LINE_Y = 30;      // top staff line of row 1
-  const ROW2_TOP_LINE_Y = ROW1_TOP_LINE_Y + ROW_HEIGHT;
+  const ROW_HEIGHT = 80;           // tighter than v1 to fit 4 rows
+  const ROW_TOP_PAD = 18;
   const STAFF_LINES = 5;
-  const TOTAL_HEIGHT = ROW2_TOP_LINE_Y + (STAFF_LINES - 1) * STAFF_LINE_GAP + 60;
-
-  // Range step bounds: top=C6 (step -2), bottom=C4 (step 10) per our staff math.
-  // step 0 = F5, so C6 = step -2, C4 = step 10. We allow ±2 ledger lines
-  // either side: extreme staff steps clamp to MIDI range anyway.
-
-  function rowOf(bar: number): number {
-    return Math.floor(bar / BARS_PER_ROW);
+  // Y of the top staff line for the i-th row on the visible page.
+  function rowTopLineY(rowIdx: number): number {
+    return ROW_TOP_PAD + rowIdx * ROW_HEIGHT;
   }
+  const TOTAL_HEIGHT = ROW_TOP_PAD + ROWS_PER_PAGE * ROW_HEIGHT + 36;
+
+  /** Page index for an absolute bar. */
+  function pageOf(bar: number): number {
+    return Math.floor(bar / BARS_PER_PAGE);
+  }
+  /** Row index (0..ROWS_PER_PAGE-1) within the bar's page. */
+  function rowOf(bar: number): number {
+    const local = bar - pageOf(bar) * BARS_PER_PAGE;
+    return Math.floor(local / BARS_PER_ROW);
+  }
+  /** Local bar within its row (0..BARS_PER_ROW-1). */
   function rowLocalBar(bar: number): number {
-    return bar % BARS_PER_ROW;
+    const local = bar - pageOf(bar) * BARS_PER_PAGE;
+    return local % BARS_PER_ROW;
   }
   function topLineY(bar: number): number {
-    return rowOf(bar) === 0 ? ROW1_TOP_LINE_Y : ROW2_TOP_LINE_Y;
+    return rowTopLineY(rowOf(bar));
   }
   function barLeftX(bar: number): number {
     return ROW_LEFT_PAD + rowLocalBar(bar) * BAR_W;
@@ -123,27 +152,35 @@
   function noteY(bar: number, staffStep: number): number {
     return topLineY(bar) + staffStep * STAFF_STEP_PX;
   }
+  /** Bar is currently visible on the active page. */
+  function isBarOnPage(bar: number): boolean {
+    return pageOf(bar) === currentPage;
+  }
 
-  /** Convert pixel y within a row to a staff-step index. */
+  /** Convert pixel y to a row index on the current page. */
+  function yToRowIdx(py: number): number {
+    const r = Math.floor((py - ROW_TOP_PAD + ROW_HEIGHT * 0.6) / ROW_HEIGHT);
+    return Math.max(0, Math.min(ROWS_PER_PAGE - 1, r));
+  }
   function yToStep(rowIdx: number, py: number): number {
-    const top = rowIdx === 0 ? ROW1_TOP_LINE_Y : ROW2_TOP_LINE_Y;
+    const top = rowTopLineY(rowIdx);
     return Math.round((py - top) / STAFF_STEP_PX);
   }
 
-  /** Convert (clientX, clientY) to (bar, tick, step) in score-space. */
+  /** Convert (clientX, clientY) to (bar, tick, step) in score-space — using
+   *  the active page index. */
   function pointerToCell(svgEl: SVGSVGElement, clientX: number, clientY: number): {
     bar: number; tick: number; step: number;
   } | null {
     const rect = svgEl.getBoundingClientRect();
     const px = ((clientX - rect.left) / rect.width) * CARD_WIDTH;
     const py = ((clientY - rect.top) / rect.height) * TOTAL_HEIGHT;
-    // Determine row by y coord.
-    const rowIdx = py < (ROW1_TOP_LINE_Y + ROW_HEIGHT - 10) ? 0 : 1;
+    const rowIdx = yToRowIdx(py);
     const step = yToStep(rowIdx, py);
-    // Determine bar by x coord.
     if (px < ROW_LEFT_PAD || px > ROW_LEFT_PAD + ROW_INNER_W + 4) return null;
     const localBar = Math.min(BARS_PER_ROW - 1, Math.max(0, Math.floor((px - ROW_LEFT_PAD) / BAR_W)));
-    const bar = rowIdx * BARS_PER_ROW + localBar;
+    const bar = currentPage * BARS_PER_PAGE + rowIdx * BARS_PER_ROW + localBar;
+    if (bar >= totalPages * BARS_PER_PAGE) return null;
     const xInBar = px - barLeftX(bar) - 6;
     const rawTick = Math.max(0, Math.min(TICKS_PER_BAR - 1, Math.round(xInBar / TICK_PX)));
     return { bar, tick: rawTick, step };
@@ -156,6 +193,7 @@
     | { kind: 'flat' }
     | { kind: 'tie' }
     | { kind: 'dynamic'; level: DynamicLevel }
+    | { kind: 'stopBar' }
     | { kind: 'select' };
   let activeTool = $state<Tool>({ kind: 'duration', duration: 'quarter' });
 
@@ -195,6 +233,9 @@
         dynamics: cur.dynamics.map((d) => ({ ...d })),
         ties: cur.ties.map((t) => ({ ...t })),
         keySignature: cur.keySignature,
+        pages: cur.pages,
+        loop: cur.loop,
+        stopBar: cur.stopBar ? { ...cur.stopBar } : undefined,
       };
       mut(next);
       const td = t.data as Record<string, unknown>;
@@ -202,6 +243,11 @@
       td.dynamics = next.dynamics;
       td.ties = next.ties;
       td.keySignature = next.keySignature;
+      td.pages = next.pages;
+      td.loop = next.loop;
+      // Use null-sentinel to remove the marker (Yjs map shape).
+      if (next.stopBar) td.stopBar = next.stopBar;
+      else td.stopBar = undefined;
     });
   }
 
@@ -210,7 +256,8 @@
     const midi = staffStepToMidi(step, ks, null);
     if (midi < SCORE_MIN_MIDI || midi > SCORE_MAX_MIDI) return;
     const snapTick = quantizeTick(tick, duration);
-    if (!canPlace(bar, snapTick, duration, midi, scoreData.notes)) {
+    const maxBar = totalBars(scoreData);
+    if (!canPlace(bar, snapTick, duration, midi, scoreData.notes, undefined, maxBar)) {
       flashShake(bar);
       return;
     }
@@ -229,10 +276,40 @@
 
   function placeDynamic(bar: number, tick: number, level: DynamicLevel) {
     writeData((d) => {
-      // Replace existing marker at same (bar,tick) if present.
       d.dynamics = d.dynamics.filter((m) => !(m.bar === bar && m.tick === tick));
       d.dynamics.push({ id: genId('d'), bar, tick, level });
     });
+  }
+
+  function setStopBar(bar: number, tick: number) {
+    writeData((d) => {
+      // Snap tick to 16th boundaries (multiples of 3).
+      const snap = Math.max(0, Math.min(TICKS_PER_BAR, Math.round(tick / 3) * 3));
+      d.stopBar = { bar, tick: snap };
+    });
+  }
+
+  function clearStopBar() {
+    writeData((d) => {
+      d.stopBar = undefined;
+    });
+  }
+
+  function toggleLoop() {
+    writeData((d) => { d.loop = !d.loop; });
+  }
+
+  function addPage() {
+    if (totalPages >= MAX_PAGES) return;
+    writeData((d) => { d.pages = Math.min(MAX_PAGES, d.pages + 1); });
+    // Don't auto-jump — the user explicitly navigates to the new page via
+    // the → arrow. Auto-jumping fights the clamp $effect (totalPages is
+    // $derived from scoreData and lags by one tick after writeData).
+  }
+
+  function gotoPage(idx: number) {
+    if (idx < 0 || idx >= totalPages) return;
+    currentPage = idx;
   }
 
   function toggleAccidentalOnNote(noteId: string, kind: 'sharp' | 'flat') {
@@ -251,7 +328,6 @@
     writeData((d) => {
       const next = Math.max(-7, Math.min(7, d.keySignature + delta));
       d.keySignature = next;
-      // Recompute midi for notes with no override.
       d.notes = d.notes.map((n) =>
         n.accidental === null ? { ...n, midi: staffStepToMidi(n.staffStep, next, null) } : n,
       );
@@ -284,12 +360,23 @@
   let svgEl: SVGSVGElement | undefined = $state();
   let dragNoteId: string | null = null;
   let dragOffset: { dx: number; dy: number } = { dx: 0, dy: 0 };
+  let dragStopBar = $state(false);
 
   function onSvgPointerDown(ev: PointerEvent) {
     if (!svgEl) return;
     const target = ev.target as Element;
     const noteEl = target.closest('[data-note-id]') as Element | null;
     const noteId = noteEl?.getAttribute('data-note-id') ?? null;
+    const stopEl = target.closest('[data-stop-bar]') as Element | null;
+
+    // Stop-bar drag (existing marker)
+    if (stopEl && (activeTool.kind === 'duration' || activeTool.kind === 'select' || activeTool.kind === 'stopBar')) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      dragStopBar = true;
+      svgEl.setPointerCapture(ev.pointerId);
+      return;
+    }
 
     // Tie picking: clicking a note when tie tool active.
     if (activeTool.kind === 'tie' && noteId) {
@@ -345,6 +432,15 @@
       return;
     }
 
+    // Place stop-bar marker (or move existing).
+    if (activeTool.kind === 'stopBar') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const cell = pointerToCell(svgEl, ev.clientX, ev.clientY);
+      if (cell) setStopBar(cell.bar, cell.tick);
+      return;
+    }
+
     // Place note
     if (activeTool.kind === 'duration') {
       ev.preventDefault();
@@ -356,10 +452,17 @@
   }
 
   function onSvgPointerMove(ev: PointerEvent) {
-    if (!svgEl || !dragNoteId) return;
+    if (!svgEl) return;
+    if (dragStopBar) {
+      const cell = pointerToCell(svgEl, ev.clientX, ev.clientY);
+      if (cell) setStopBar(cell.bar, cell.tick);
+      return;
+    }
+    if (!dragNoteId) return;
     const cell = pointerToCell(svgEl, ev.clientX, ev.clientY);
     if (!cell) return;
     const id = dragNoteId;
+    const maxBar = totalBars(scoreData);
     writeData((d) => {
       const idx = d.notes.findIndex((n) => n.id === id);
       if (idx < 0) return;
@@ -367,7 +470,7 @@
       const snapTick = quantizeTick(cell.tick, n.duration);
       const newMidi = staffStepToMidi(cell.step, d.keySignature, n.accidental);
       if (newMidi < SCORE_MIN_MIDI || newMidi > SCORE_MAX_MIDI) return;
-      if (!canPlace(cell.bar, snapTick, n.duration, newMidi, d.notes, n.id)) return;
+      if (!canPlace(cell.bar, snapTick, n.duration, newMidi, d.notes, n.id, maxBar)) return;
       n.bar = cell.bar;
       n.tick = snapTick;
       n.staffStep = cell.step;
@@ -377,10 +480,11 @@
   }
 
   function onSvgPointerUp(ev: PointerEvent) {
-    if (svgEl && dragNoteId) {
+    if (svgEl && (dragNoteId || dragStopBar)) {
       try { svgEl.releasePointerCapture(ev.pointerId); } catch { /* noop */ }
     }
     dragNoteId = null;
+    dragStopBar = false;
   }
 
   function onSvgKeyDown(ev: KeyboardEvent) {
@@ -390,7 +494,6 @@
       ev.preventDefault();
       return;
     }
-    // Per-note keyboard ops: focus on a <g.note> element via Tab.
     const target = ev.target as Element | null;
     const noteEl = target?.closest('[data-note-id]') as HTMLElement | null;
     const noteId = noteEl?.getAttribute('data-note-id');
@@ -435,11 +538,10 @@
     return { sharps: [...res.sharps], flats: [...res.flats] };
   });
 
-  function dynamicYForRow(rowIdx: number): number {
-    // 4px below bottom staff line
-    const baseTop = rowIdx === 0 ? ROW1_TOP_LINE_Y : ROW2_TOP_LINE_Y;
+  function dynamicYForBar(bar: number): number {
+    const baseTop = topLineY(bar);
     const bottomLine = baseTop + (STAFF_LINES - 1) * STAFF_LINE_GAP;
-    return bottomLine + 24;
+    return bottomLine + 18;
   }
 
   function noteGlyph(d: NoteDuration): string {
@@ -459,7 +561,6 @@
     const ay = noteY(from.bar, from.staffStep);
     const cx = noteX(to.bar, to.tick);
     const cy = noteY(to.bar, to.staffStep);
-    // Arc up if both above the middle line (step <= 4), else down.
     const arcUp = (from.staffStep + to.staffStep) / 2 <= 4;
     const midX = (ax + cx) / 2;
     const midY = arcUp ? Math.min(ay, cy) - 12 : Math.max(ay, cy) + 12;
@@ -471,6 +572,7 @@
   function selectFlat() { activeTool = { kind: 'flat' }; tiePickFirst = null; }
   function selectTie() { activeTool = { kind: 'tie' }; tiePickFirst = null; }
   function selectDynamic(level: DynamicLevel) { activeTool = { kind: 'dynamic', level }; }
+  function selectStopBar() { activeTool = { kind: 'stopBar' }; tiePickFirst = null; }
 
   function isDurationActive(d: NoteDuration): boolean {
     return activeTool.kind === 'duration' && activeTool.duration === d;
@@ -486,14 +588,12 @@
     }
   }
 
-  // For the key-signature glyph row: we render sharps/flats inline next to the
-  // clef. Pixel positions are minimal — accidentals are stacked horizontally.
   function keySigGlyphs(rowIdx: number): Array<{ x: number; y: number; glyph: string }> {
     const out: Array<{ x: number; y: number; glyph: string }> = [];
-    const top = rowIdx === 0 ? ROW1_TOP_LINE_Y : ROW2_TOP_LINE_Y;
+    const top = rowTopLineY(rowIdx);
     let xCursor = 30;
     if (activeKey > 0) {
-      const sharpStaffStep = [0, 3, -1, 2, 5, 1, 4]; // standard treble sharp positions for F#,C#,G#,D#,A#,E#,B#
+      const sharpStaffStep = [0, 3, -1, 2, 5, 1, 4];
       for (let i = 0; i < Math.min(7, activeKey); i++) {
         out.push({
           x: xCursor,
@@ -515,6 +615,21 @@
     }
     return out;
   }
+
+  // Bars on the active page only, for note rendering.
+  let visibleNotes = $derived(scoreData.notes.filter((n) => isBarOnPage(n.bar)));
+  let visibleDynamics = $derived(scoreData.dynamics.filter((d) => isBarOnPage(d.bar)));
+  let visibleTies = $derived(
+    scoreData.ties.filter((t) => {
+      const fromN = scoreData.notes.find((n) => n.id === t.fromNoteId);
+      const toN = scoreData.notes.find((n) => n.id === t.toNoteId);
+      return fromN && toN && (isBarOnPage(fromN.bar) || isBarOnPage(toN.bar));
+    }),
+  );
+  let stopBarVisible = $derived.by<StopBar | null>(() => {
+    if (!scoreData.stopBar) return null;
+    return isBarOnPage(scoreData.stopBar.bar) ? scoreData.stopBar : null;
+  });
 </script>
 
 <div class="mod-card score-card">
@@ -594,6 +709,22 @@
         onclick={() => selectDynamic(level)}
       >{level}</button>
     {/each}
+    <button
+      type="button"
+      class="tool-btn"
+      class:active={activeTool.kind === 'stopBar'}
+      data-testid={`score-tool-stop-${id}`}
+      title="Stop-music double-bar — click on the staff to set the end of the sequence"
+      onclick={selectStopBar}
+    >stop</button>
+    <button
+      type="button"
+      class="tool-btn loop"
+      class:active={scoreData.loop}
+      data-testid={`score-tool-loop-${id}`}
+      title={scoreData.loop ? 'Loop ON — wraps to start at end of sequence' : 'Loop OFF — stops at end of sequence'}
+      onclick={toggleLoop}
+    >loop</button>
   </div>
 
   <!-- Staff SVG -->
@@ -613,58 +744,59 @@
     oncontextmenu={onContextMenu}
     onkeydown={onSvgKeyDown}
   >
-    <!-- Two staff rows -->
-    {#each [0, 1] as rowIdx (rowIdx)}
+    <!-- Four staff rows for the active page -->
+    {#each Array(ROWS_PER_PAGE) as _row, rowIdx (rowIdx)}
       {#each Array(STAFF_LINES) as _line, li (li)}
         <line
           class="staff-line"
           x1={ROW_LEFT_PAD - 4}
           x2={ROW_LEFT_PAD + ROW_INNER_W + 4}
-          y1={(rowIdx === 0 ? ROW1_TOP_LINE_Y : ROW2_TOP_LINE_Y) + li * STAFF_LINE_GAP}
-          y2={(rowIdx === 0 ? ROW1_TOP_LINE_Y : ROW2_TOP_LINE_Y) + li * STAFF_LINE_GAP}
+          y1={rowTopLineY(rowIdx) + li * STAFF_LINE_GAP}
+          y2={rowTopLineY(rowIdx) + li * STAFF_LINE_GAP}
         />
       {/each}
       <!-- Bar lines -->
       {#each Array(BARS_PER_ROW + 1) as _bar, bi (bi)}
         <line
           class="bar-line"
-          class:end={bi === BARS_PER_ROW || (rowIdx === 1 && bi === BARS_PER_ROW)}
+          class:end={bi === BARS_PER_ROW}
           x1={ROW_LEFT_PAD + bi * BAR_W}
           x2={ROW_LEFT_PAD + bi * BAR_W}
-          y1={rowIdx === 0 ? ROW1_TOP_LINE_Y : ROW2_TOP_LINE_Y}
-          y2={(rowIdx === 0 ? ROW1_TOP_LINE_Y : ROW2_TOP_LINE_Y) + (STAFF_LINES - 1) * STAFF_LINE_GAP}
+          y1={rowTopLineY(rowIdx)}
+          y2={rowTopLineY(rowIdx) + (STAFF_LINES - 1) * STAFF_LINE_GAP}
         />
       {/each}
-      <!-- Clef + key sig (and time sig on row 1) -->
-      <text class="smufl clef" x={6} y={(rowIdx === 0 ? ROW1_TOP_LINE_Y : ROW2_TOP_LINE_Y) + 25}>{SMUFL.gClef}</text>
+      <!-- Clef + key sig (and time sig on first row of page) -->
+      <text class="smufl clef" x={6} y={rowTopLineY(rowIdx) + 25}>{SMUFL.gClef}</text>
       {#each keySigGlyphs(rowIdx) as g (g.x + g.glyph + rowIdx)}
         <text class="smufl key-acc" x={g.x} y={g.y}>{g.glyph}</text>
       {/each}
       {#if rowIdx === 0}
-        <text class="smufl ts" x={48} y={ROW1_TOP_LINE_Y + 10}>{SMUFL.timeSig4}</text>
-        <text class="smufl ts" x={48} y={ROW1_TOP_LINE_Y + 26}>{SMUFL.timeSig4}</text>
+        <text class="smufl ts" x={48} y={rowTopLineY(0) + 10}>{SMUFL.timeSig4}</text>
+        <text class="smufl ts" x={48} y={rowTopLineY(0) + 26}>{SMUFL.timeSig4}</text>
       {/if}
     {/each}
 
     <!-- Per-bar shake overlay -->
-    {#each Array(TOTAL_BARS) as _bar, b (b)}
-      {#if shakeBar === b}
-        <rect
-          class="bar-shake"
-          x={barLeftX(b)}
-          y={topLineY(b) - 4}
-          width={BAR_W}
-          height={(STAFF_LINES - 1) * STAFF_LINE_GAP + 8}
-          data-testid={`score-shake-${id}-${b}`}
-        />
-      {/if}
+    {#each scoreData.notes as _n, idx (idx)}
+      {idx === 0 ? '' : ''}
     {/each}
+    {#if shakeBar !== null && isBarOnPage(shakeBar)}
+      <rect
+        class="bar-shake"
+        x={barLeftX(shakeBar)}
+        y={topLineY(shakeBar) - 4}
+        width={BAR_W}
+        height={(STAFF_LINES - 1) * STAFF_LINE_GAP + 8}
+        data-testid={`score-shake-${id}-${shakeBar}`}
+      />
+    {/if}
 
     <!-- Tie arcs -->
-    {#each scoreData.ties as t (t.id)}
-      {#if scoreData.notes.find((n) => n.id === t.fromNoteId) && scoreData.notes.find((n) => n.id === t.toNoteId)}
-        {@const from = scoreData.notes.find((n) => n.id === t.fromNoteId)!}
-        {@const to = scoreData.notes.find((n) => n.id === t.toNoteId)!}
+    {#each visibleTies as t (t.id)}
+      {@const from = scoreData.notes.find((n) => n.id === t.fromNoteId)!}
+      {@const to = scoreData.notes.find((n) => n.id === t.toNoteId)!}
+      {#if from && to && isBarOnPage(from.bar) && isBarOnPage(to.bar)}
         <path
           class="tie"
           d={tiePathD(from, to)}
@@ -680,7 +812,7 @@
     <!-- Currently-playing highlight -->
     {#if currentNoteId}
       {@const playing = scoreData.notes.find((n) => n.id === currentNoteId)}
-      {#if playing}
+      {#if playing && isBarOnPage(playing.bar)}
         <rect
           class="playing-highlight"
           x={noteX(playing.bar, playing.tick) - 6}
@@ -693,8 +825,8 @@
       {/if}
     {/if}
 
-    <!-- Notes -->
-    {#each scoreData.notes as n (n.id)}
+    <!-- Notes (visible on this page) -->
+    {#each visibleNotes as n (n.id)}
       <g
         class="note"
         class:tie-pick={tiePickFirst === n.id}
@@ -729,15 +861,38 @@
     {/each}
 
     <!-- Dynamic markers -->
-    {#each scoreData.dynamics as d (d.id)}
+    {#each visibleDynamics as d (d.id)}
       <text
         class="dynamic"
         x={noteX(d.bar, d.tick)}
-        y={dynamicYForRow(rowOf(d.bar))}
+        y={dynamicYForBar(d.bar)}
         data-dynamic-id={d.id}
         data-testid={`score-dyn-${id}-${d.id}`}
       >{d.level}</text>
     {/each}
+
+    <!-- Stop-music double-bar marker (visible on this page) -->
+    {#if stopBarVisible}
+      {@const sx = (() => {
+        // tick = TICKS_PER_BAR is allowed (end-of-bar). Project onto the row.
+        const safeTick = Math.min(TICKS_PER_BAR - 0.001, Math.max(0, stopBarVisible.tick));
+        return noteX(stopBarVisible.bar, safeTick) - 4;
+      })()}
+      {@const sy0 = topLineY(stopBarVisible.bar)}
+      {@const sy1 = sy0 + (STAFF_LINES - 1) * STAFF_LINE_GAP}
+      <g
+        class="stop-bar"
+        data-stop-bar="1"
+        data-testid={`score-stop-bar-${id}`}
+        data-bar={stopBarVisible.bar}
+        data-tick={stopBarVisible.tick}
+      >
+        <line class="stop-line" x1={sx} x2={sx} y1={sy0 - 2} y2={sy1 + 2} />
+        <line class="stop-line" x1={sx + 4} x2={sx + 4} y1={sy0 - 2} y2={sy1 + 2} />
+        <!-- Wide hit target for drag -->
+        <rect class="stop-hit" x={sx - 5} y={sy0 - 6} width={16} height={sy1 - sy0 + 12} />
+      </g>
+    {/if}
   </svg>
 
   <!-- ADSR + BPM faders -->
@@ -748,6 +903,37 @@
     <Fader value={sustain} min={0}     max={1}   defaultValue={0.7}   label="S"   curve="linear" onchange={set('sustain')} readLive={live('sustain')} />
     <Fader value={release} min={0.001} max={10}  defaultValue={0.3}   label="R"   curve="log"    onchange={set('release')} readLive={live('release')} />
   </div>
+
+  <!-- Page navigation (lower right) -->
+  <div class="page-nav" data-testid={`score-page-nav-${id}`}>
+    <button
+      type="button"
+      class="page-btn"
+      data-testid={`score-page-prev-${id}`}
+      title="Previous page"
+      disabled={currentPage <= 0}
+      onclick={() => gotoPage(currentPage - 1)}
+    >‹</button>
+    <span class="page-counter" data-testid={`score-page-counter-${id}`}>
+      {currentPage + 1} / {totalPages}
+    </span>
+    <button
+      type="button"
+      class="page-btn"
+      data-testid={`score-page-next-${id}`}
+      title="Next page"
+      disabled={currentPage >= totalPages - 1}
+      onclick={() => gotoPage(currentPage + 1)}
+    >›</button>
+    <button
+      type="button"
+      class="page-btn add"
+      data-testid={`score-page-add-${id}`}
+      title="Add page"
+      disabled={totalPages >= MAX_PAGES}
+      onclick={addPage}
+    >+</button>
+  </div>
 </div>
 
 <style>
@@ -756,6 +942,7 @@
     min-height: 480px;
     padding-left: 0;
     padding-right: 0;
+    position: relative;
   }
   .score-card > .title {
     padding-right: 22px;
@@ -804,7 +991,8 @@
     font-size: 0.85rem;
     line-height: 1;
   }
-  .tool-btn.dyn {
+  .tool-btn.dyn,
+  .tool-btn.loop {
     font-family: ui-serif, serif;
     font-style: italic;
     font-size: 0.85rem;
@@ -891,5 +1079,56 @@
     padding: 0 22px;
     gap: 8px;
     display: flex;
+  }
+  .stop-bar { cursor: ew-resize; }
+  .stop-line {
+    stroke: var(--accent, #d05050);
+    stroke-width: 2;
+  }
+  .stop-hit {
+    fill: transparent;
+    pointer-events: all;
+  }
+  .page-nav {
+    position: absolute;
+    right: 16px;
+    bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(20, 23, 28, 0.85);
+    border: 1px solid #2a2f3a;
+    border-radius: 4px;
+    padding: 3px 6px;
+  }
+  .page-btn {
+    background: #14171c;
+    border: 1px solid #2a2f3a;
+    color: var(--text-dim);
+    border-radius: 3px;
+    height: 22px;
+    min-width: 22px;
+    padding: 0 5px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    line-height: 1;
+  }
+  .page-btn:hover:not(:disabled) {
+    border-color: var(--accent-dim);
+    color: var(--text);
+  }
+  .page-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .page-btn.add {
+    color: var(--accent);
+  }
+  .page-counter {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    min-width: 32px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
 </style>
