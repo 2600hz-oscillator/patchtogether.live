@@ -36,9 +36,16 @@ void main() {
   // 0.5) so the rotation happens around the canvas middle instead of the
   // bottom-left corner, which would slide the pattern off-screen at high
   // orient values.
+  //
+  // Spec convention: orient=0 -> HORIZONTAL lines (wave varies along Y),
+  // orient=1 -> VERTICAL lines (wave varies along X). We swap sin/cos
+  // from the naive (cos, sin) ordering so theta=0 reads t = c.y and
+  // theta=PI/2 reads t = c.x. The earlier r1 mapping had this inverted
+  // (orient=0 produced vertical lines); this is the section 3.7 fix
+  // carried into Phase-1.
   float theta = uOrient * 1.5707963; // 0 → 0, 1 → π/2
   vec2 c = vUv - 0.5;
-  float t = c.x * cos(theta) + c.y * sin(theta);
+  float t = c.x * sin(theta) + c.y * cos(theta);
 
   // Procedural line waveform. The sin() argument is the per-pixel phase;
   // we use smoothstep on its absolute distance from a zero crossing to

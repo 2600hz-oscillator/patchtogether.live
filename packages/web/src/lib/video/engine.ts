@@ -136,6 +136,26 @@ export class VideoEngine implements DomainEngine {
   private nodeMeta = new Map<string, ModuleNode>();
   private edges = new Map<string, Edge>();
 
+  /**
+   * Cross-domain CV bridges. Each entry samples one audio-side AnalyserNode
+   * once per video frame and writes the value into a target video module's
+   * param uniform. Edges of type cv→video param flow through this list (set
+   * up by `PatchEngine.addEdge` when it detects a cross-domain edge).
+   *
+   * The map is keyed by edge id so removal is symmetric with addEdge.
+   * Each entry owns its own AnalyserNode + a small Float32Array buffer.
+   */
+  private cvBridges = new Map<string, {
+    analyser: AnalyserNode;
+    /** Backed by a fresh ArrayBuffer (not SharedArrayBuffer) so TS's
+     *  strict typed-array signature for getFloatTimeDomainData is met. */
+    buf: Float32Array<ArrayBuffer>;
+    targetNodeId: string;
+    targetParamId: string;
+    /** Disconnect the upstream AudioNode tap into our analyser. */
+    teardown: () => void;
+  }>();
+
   private startTime = performance.now();
   private frameCount = 0;
   private rafId: number | null = null;
@@ -236,6 +256,10 @@ export class VideoEngine implements DomainEngine {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
+    for (const bridge of this.cvBridges.values()) {
+      try { bridge.teardown(); } catch { /* */ }
+    }
+    this.cvBridges.clear();
     for (const handle of this.nodes.values()) handle.dispose();
     this.nodes.clear();
     this.nodeMeta.clear();
@@ -253,6 +277,14 @@ export class VideoEngine implements DomainEngine {
    *  doesn't have to wait for rAF. */
   step(): void {
     if (this.topoStale) this.recomputeTopo();
+    // 1. Sample every active cross-domain CV bridge BEFORE drawing this
+    //    frame's modules. Each sample becomes the param value for the
+    //    upcoming draw, so a frame's-worth of CV → video param coupling
+    //    is one-frame-deterministic. Quantization at 60fps from a 48kHz
+    //    audio source is the documented limit (see plan §2 'Cross-domain
+    //    CV adapter').
+    this.tickCvBridges();
+
     const ctx: VideoFrameContext = {
       gl: this.gl,
       time: (performance.now() - this.startTime) / 1000,
@@ -263,6 +295,64 @@ export class VideoEngine implements DomainEngine {
       const handle = this.nodes.get(id);
       if (!handle) continue;
       handle.surface.draw(ctx);
+    }
+  }
+
+  // -------- Cross-domain CV bridges --------
+
+  /**
+   * Register a cv → video param bridge. Caller (PatchEngine) creates an
+   * AnalyserNode tapped to the audio source's output and hands it here
+   * along with the target video node + param. Each frame, we read one
+   * sample from the analyser and write it into the target module's
+   * param via setParam. The teardown closes the upstream tap.
+   *
+   * Idempotent on edge id: re-adding the same id replaces the previous
+   * entry (its teardown is invoked first).
+   */
+  addCvBridge(
+    edgeId: string,
+    analyser: AnalyserNode,
+    targetNodeId: string,
+    targetParamId: string,
+    teardown: () => void,
+  ): void {
+    const existing = this.cvBridges.get(edgeId);
+    if (existing) {
+      try { existing.teardown(); } catch { /* */ }
+    }
+    // 32-sample buffer matches the audio-side per-param tap (engine.ts
+    // line 88). Tail-sample is the "current" value at the read instant.
+    // Allocate from a fresh ArrayBuffer (not ArrayBufferLike) so TS's
+    // strict template-typed Float32Array signature is satisfied for
+    // analyser.getFloatTimeDomainData (which requires ArrayBuffer-backed).
+    const bufLen = Math.max(32, analyser.fftSize);
+    const buf = new Float32Array(new ArrayBuffer(bufLen * 4));
+    this.cvBridges.set(edgeId, {
+      analyser,
+      buf,
+      targetNodeId,
+      targetParamId,
+      teardown,
+    });
+  }
+
+  removeCvBridge(edgeId: string): void {
+    const entry = this.cvBridges.get(edgeId);
+    if (!entry) return;
+    try { entry.teardown(); } catch { /* */ }
+    this.cvBridges.delete(edgeId);
+  }
+
+  private tickCvBridges(): void {
+    if (this.cvBridges.size === 0) return;
+    for (const bridge of this.cvBridges.values()) {
+      const handle = this.nodes.get(bridge.targetNodeId);
+      if (!handle) continue;
+      bridge.analyser.getFloatTimeDomainData(bridge.buf);
+      // Tail sample is "newest" in the rolling window analyser semantics.
+      const v = bridge.buf[bridge.buf.length - 1] ?? 0;
+      handle.setParam(bridge.targetParamId, v);
     }
   }
 

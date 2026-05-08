@@ -157,6 +157,15 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     // Video-domain (Phase 0 spike, .myrobots/plans/video-modules-mvp.md):
     'lines',
     'videoOut',
+    // Video-domain (Phase 1):
+    'inwards',
+    'picturebox',
+    'destructor',
+    'chroma',
+    'luma',
+    'colorizer',
+    'feedback',
+    'videoMixer',
   ];
 
   for (const type of MODULE_TYPES) {

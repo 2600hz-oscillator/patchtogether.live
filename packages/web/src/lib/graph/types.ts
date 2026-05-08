@@ -100,7 +100,16 @@ type StandardModuleType =
   | 'drumseqz'
   // Video-domain modules (Phase 0 spike):
   | 'lines'
-  | 'videoOut';
+  | 'videoOut'
+  // Video-domain modules (Phase 1 — .myrobots/plans/video-modules-mvp.md):
+  | 'inwards'
+  | 'picturebox'
+  | 'destructor'
+  | 'chroma'
+  | 'luma'
+  | 'colorizer'
+  | 'feedback'
+  | 'videoMixer';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
