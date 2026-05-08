@@ -35,6 +35,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
       rackspace: {
         id: rackspace.id,
         name: rackspace.name,
+        ownerUserId: rackspace.ownerUserId,
         memberCount: rackspace.memberUserIds.length,
         maxMembers: RACKSPACE_MAX_MEMBERS,
       },
@@ -57,6 +58,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
     rackspace: {
       id: rackspace.id,
       name: rackspace.name,
+      ownerUserId: rackspace.ownerUserId,
       memberCount: rackspace.memberUserIds.length,
       maxMembers: RACKSPACE_MAX_MEMBERS,
     },

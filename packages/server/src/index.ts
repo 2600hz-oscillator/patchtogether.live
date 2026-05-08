@@ -15,6 +15,7 @@ import { AUTH_REJECTION, verifyToken } from './auth.js';
 import { CAPACITY_REJECTION, createSlotTracker } from './capacity.js';
 import { isRackspaceMember, loadSnapshot, storeSnapshot } from './db.js';
 import { SNAPSHOT_PERSISTENCE_CONFIG } from './snapshot-config.js';
+import { createHeartbeatExtension } from './heartbeat.js';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
 // because BitwigStudio (and likely other DAWs) reserve 1234 for OSC.
@@ -30,6 +31,11 @@ const slots = createSlotTracker();
 Server.configure({
   port: PORT,
   address: HOST,
+
+  // Heartbeat extension: per-doc Awareness broadcast at 1 Hz steady-state /
+  // 8 Hz burst on connect. Clients use these for clock-sync (Phase 0 of the
+  // shared-state-sync plan).
+  extensions: [createHeartbeatExtension()],
 
   // Snapshot persistence — see ./snapshot-config.ts for the rationale.
   ...SNAPSHOT_PERSISTENCE_CONFIG,
