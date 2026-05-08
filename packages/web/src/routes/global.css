@@ -1,5 +1,17 @@
 /* Global app styling — D14 visual language baseline. */
 
+/* Bravura music font (SIL OFL). Used by the SCORE module's SVG glyphs.
+ * Subsetting for SMuFL is ~250 KB; we ship the full font. font-display:swap
+ * keeps the staff legible while the font streams in. */
+@font-face {
+  font-family: 'Bravura';
+  src: url('/fonts/Bravura.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+
 :root {
   --bg: #0e1116;
   --bg-grid-dot: #1f242c;

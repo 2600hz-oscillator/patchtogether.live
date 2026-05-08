@@ -100,6 +100,7 @@ const DESCRIPTIONS: Record<string, string> = {
     'Singleton 4xstereo mixer with EQ, compressor, two stereo aux sends/returns. 37 params.',
   timelorde: 'Singleton master clock. Internal or external BPM, twelve clock-divider outputs.',
   charlottesEchos: 'Destructive multi-head stereo delay. Pitch-shifted feedback with decay.',
+  score: 'Sheet-music sequencer. Two rows of four bars (4/4) on a treble staff; click to place notes, drag to move, dynamics + ties + key signatures. Outputs pitch / gate / env (ADSR x dynamic) / clock.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -175,6 +176,14 @@ const PORT_NOTES: Record<string, string> = {
   'charlottesEchos.L': 'Stereo L in / out.',
   'charlottesEchos.R': 'Stereo R in / out.',
   'charlottesEchos.delay': 'CV -> delay time.',
+  'score.clock': 'External clock (16th-note rate); rising edges advance the playhead.',
+  'score.attack': 'CV -> ADSR attack.',
+  'score.decay': 'CV -> ADSR decay.',
+  'score.sustain': 'CV -> ADSR sustain.',
+  'score.release': 'CV -> ADSR release.',
+  'score.pitch': 'V/oct pitch out (mono).',
+  'score.gate': 'Gate out (high while a note is sounding).',
+  'score.env': 'ADSR envelope CV scaled by the most recent dynamic marker.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];

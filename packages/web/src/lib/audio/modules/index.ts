@@ -22,6 +22,7 @@ import { meowboxDef } from './meowbox';
 import { mixmstrsDef } from './mixmstrs';
 import { timelordeDef } from './timelorde';
 import { charlottesEchosDef } from './charlottes-echos';
+import { scoreDef } from './score';
 
 let registered = false;
 
@@ -47,6 +48,7 @@ export function registerAudioModules(): void {
   registerModule(mixmstrsDef);
   registerModule(timelordeDef);
   registerModule(charlottesEchosDef);
+  registerModule(scoreDef);
 }
 
 registerAudioModules();
