@@ -83,6 +83,8 @@
   import ColorizerCard from '$lib/ui/modules/ColorizerCard.svelte';
   import FeedbackCard from '$lib/ui/modules/FeedbackCard.svelte';
   import VideoMixerCard from '$lib/ui/modules/VideoMixerCard.svelte';
+  // CAMERA input (local-only) — see .myrobots/plans/module-camera-input.md.
+  import CameraInputCard from '$lib/ui/modules/CameraInputCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
@@ -152,6 +154,8 @@
     colorizer: ColorizerCard,
     feedback: FeedbackCard,
     videoMixer: VideoMixerCard,
+    // CAMERA input (local-only):
+    cameraInput: CameraInputCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);

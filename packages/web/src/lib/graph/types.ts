@@ -112,7 +112,9 @@ type StandardModuleType =
   | 'luma'
   | 'colorizer'
   | 'feedback'
-  | 'videoMixer';
+  | 'videoMixer'
+  // CAMERA — webcam input (local-only). Spec: .myrobots/plans/module-camera-input.md.
+  | 'cameraInput';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
