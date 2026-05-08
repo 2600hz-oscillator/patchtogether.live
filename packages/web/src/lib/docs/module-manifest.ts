@@ -419,7 +419,12 @@ interface RawModule {
 function readModule(file: string, rawSrc: string): RawModule | null {
   const fullSrc = stripComments(rawSrc);
 
-  const declRe = /export\s+const\s+(\w+Def)\s*:\s*AudioModuleDef\s*=\s*\{/;
+  // Match either `export const xxxDef: AudioModuleDef = {` OR a non-exported
+  // `const xxxDef: AudioModuleDef = {` — the latter case picks up internal
+  // base defs (e.g. lfo's `baseDef` that gets spread into a wrapper
+  // SyncedModuleDef). Catalog dedupes by `type`, so two matches in one file
+  // collapse to one entry.
+  const declRe = /(?:export\s+)?const\s+(\w+Def)\s*:\s*(?:AudioModuleDef|SyncedModuleDef)\s*=\s*\{/;
   const declMatch = declRe.exec(fullSrc);
   if (!declMatch) return null;
   const startBrace = declMatch.index + declMatch[0].length - 1;
@@ -478,7 +483,14 @@ export function buildModuleManifest(
       const file = path.split('/').pop() ?? path;
       return { file, src };
     })
-    .filter(({ file }) => file.endsWith('.ts') && file !== 'index.ts')
+    .filter(({ file }) => {
+      if (!file.endsWith('.ts') || file === 'index.ts') return false;
+      // Skip companion / test files — they live next to module sources but
+      // aren't module definitions themselves.
+      if (file.endsWith('.test.ts')) return false;
+      if (file.endsWith('-state.ts')) return false;
+      return true;
+    })
     .sort((a, b) => a.file.localeCompare(b.file));
 
   const modules: ManifestModule[] = [];

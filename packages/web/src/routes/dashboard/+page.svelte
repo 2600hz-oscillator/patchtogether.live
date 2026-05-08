@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { UserButton, SignOutButton } from 'svelte-clerk';
+  import FeedbackBox from '$lib/ui/FeedbackBox.svelte';
 
   const RACK_CAP = 4;
 
@@ -67,6 +68,7 @@
     <h1><a href="/">patchtogether.live</a></h1>
     <span class="caption">Your rackspaces</span>
     <div class="actions">
+      <FeedbackBox />
       <SignOutButton redirectUrl="/">
         <button class="signout" title="Sign out">Sign out</button>
       </SignOutButton>
