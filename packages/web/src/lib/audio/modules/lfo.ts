@@ -3,14 +3,54 @@
 // Module def for the clockable LFO. DSP is a custom JS AudioWorklet
 // (packages/dsp/src/lfo.ts). Four outputs at 0°/90°/180°/270° let one LFO
 // drive multiple voices in stereo / quadrature without needing to re-tune.
+//
+// Phase 1 of the shared-state-sync plan: phase is derived from the rack
+// epoch + rate. The factory reads epoch_ms from the active SharedClock
+// (window-global) and sends it to the worklet on `init`. A 5 s/200 ms
+// resync loop keeps the phase aligned despite hardware-clock drift.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
-import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { AudioModuleDef, SyncedModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/lfo.js?url';
+import { mulberry32 } from '$lib/sync/prng';
+import {
+  RESYNC_INTERVAL_MS,
+  RESYNC_SMOOTHING_MS,
+  type SharedClockHandle,
+} from '$lib/audio/shared-clock.svelte';
+import { computeLfoState } from './lfo-state';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-export const lfoDef: AudioModuleDef = {
+/** A test-friendly hook so the engine / page can publish the active
+ *  shared clock without coupling the module def to a Svelte context.
+ *  The factory reads from this slot on construction; null = legacy
+ *  free-running behavior. */
+let activeSharedClock: SharedClockHandle | null = null;
+
+/** Live LFO worklet handles; the active shared clock pings these on
+ *  every resync interval (or whenever resetEpoch fires) so previously-
+ *  constructed instances pick up a new epoch retroactively. */
+type LfoResyncListener = (kind: 'init' | 'resync' | 'reset') => void;
+const liveListeners = new Set<LfoResyncListener>();
+
+export function setActiveSharedClock(clock: SharedClockHandle | null): void {
+  activeSharedClock = clock;
+  // Push a fresh init to every live LFO so they pick up the new clock
+  // (or fall back to free-running if clock is null).
+  if (clock) {
+    for (const fn of liveListeners) fn('init');
+  }
+}
+export function getActiveSharedClock(): SharedClockHandle | null {
+  return activeSharedClock;
+}
+/** Test-only: count how many LFO worklets are currently registered. */
+export function _liveLfoCount(): number {
+  return liveListeners.size;
+}
+
+const baseDef: AudioModuleDef = {
   type: 'lfo',
   domain: 'audio',
   label: 'LFO',
@@ -49,7 +89,7 @@ export const lfoDef: AudioModuleDef = {
     });
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
-    for (const def of lfoDef.params) {
+    for (const def of baseDef.params) {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
       params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
     }
@@ -57,7 +97,47 @@ export const lfoDef: AudioModuleDef = {
     const rateParam = params.get('rate');
     const shapeParam = params.get('shape');
 
-    return {
+    // Wire up shared-clock anchoring. If no clock is active (e.g., the
+    // public single-user `/` canvas), the worklet free-runs from phase=0
+    // exactly like the pre-shared-clock behavior — there is no audible
+    // regression for solo users.
+    let resyncTimer: ReturnType<typeof setInterval> | null = null;
+    const initFromClock = (kind: 'init' | 'resync' | 'reset') => {
+      const clock = activeSharedClock;
+      if (!clock) return;
+      const epoch = clock.epoch_ms;
+      const sharedNow = clock.sharedTimeNow();
+      if (epoch === null || sharedNow === null) return;
+      // ctx.currentTime is the audio-thread "now" expressed in seconds;
+      // map it to shared-time-seconds via (sharedNow / 1000) being the
+      // shared time at the moment we read ctx.currentTime.
+      const audioOrigin_s = ctx.currentTime;
+      const messageType = kind === 'reset' ? 'init' : kind;
+      workletNode.port.postMessage({
+        type: messageType,
+        epoch_ms: epoch,
+        audioOrigin_s,
+        smoothing_ms: kind === 'init' || kind === 'reset' ? 0 : RESYNC_SMOOTHING_MS,
+      });
+    };
+    // Register so a later setActiveSharedClock(...) fires init even if
+    // the worklet was constructed before the clock arrived (typical
+    // ordering: page mount → spawn modules → provider attach → clock
+    // attach → first epoch from heartbeat).
+    const listener: LfoResyncListener = (kind) => initFromClock(kind);
+    liveListeners.add(listener);
+    let resetUnsub: (() => void) | null = null;
+    if (activeSharedClock) {
+      // Try once now; if the clock hasn't converged yet we'll catch up via
+      // the resync timer + the listener push.
+      initFromClock('init');
+      resetUnsub = activeSharedClock.onReset(() => initFromClock('reset'));
+    }
+    // Periodic resync (drift compensation, plan §6) runs even when no
+    // clock is active — it's a no-op in that case.
+    resyncTimer = setInterval(() => initFromClock('resync'), RESYNC_INTERVAL_MS);
+
+    const handle: AudioDomainNodeHandle & { read?: (key: string) => unknown } = {
       domain: 'audio',
       inputs: new Map([
         ['clock', { node: workletNode, input: 0 }],
@@ -77,8 +157,33 @@ export const lfoDef: AudioModuleDef = {
         return params.get(paramId)?.value;
       },
       dispose() {
+        if (resyncTimer !== null) clearInterval(resyncTimer);
+        liveListeners.delete(listener);
+        resetUnsub?.();
         workletNode.disconnect();
+        try { workletNode.port.close(); } catch { /* port may already be closed */ }
       },
     };
+    return handle;
   },
 };
+
+/**
+ * SyncedModuleDef view of the same module. Adds a pure
+ * `computeStateAt(t_ms_since_epoch, params, prng)` so unit tests + future
+ * offline simulators can reproduce the worklet's instantaneous phase
+ * without instantiating a real AudioWorkletProcessor.
+ */
+export const lfoDef: SyncedModuleDef = {
+  ...baseDef,
+  resyncOnReset: true,
+  computeStateAt(tMsSinceEpoch, params, _prng) {
+    return computeLfoState(tMsSinceEpoch, params);
+  },
+};
+
+// Sanity: prng helper exposed so consumers can build per-instance PRNGs.
+// LFO itself is fully deterministic from (epoch, rate), so prng is unused
+// in computeStateAt. Imported so the dependency is explicit and tree-shake
+// friendly even if no other module touches sync/prng.
+void mulberry32;

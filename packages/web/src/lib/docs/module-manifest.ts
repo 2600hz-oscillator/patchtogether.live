@@ -102,6 +102,8 @@ const DESCRIPTIONS: Record<string, string> = {
   charlottesEchos: 'Destructive multi-head stereo delay. Pitch-shifted feedback with decay.',
   drumseqz:
     '4-channel x 16-step drum sequencer. Per-track Euclidean fill (Bjorklund) + per-track quantized pitch CV. Outputs 4 gate + 4 pitch + chained clock.',
+  riotgirls:
+    '4-voice drum machine. 3x DRUMMERGIRL + 1x Wavetable VCO/ADSR/VCA, per-voice equal-power pan, master QBRT filter, stereo out.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -187,6 +189,8 @@ const PORT_NOTES: Record<string, string> = {
   'drumseqz.pitch2': 'Track 2 V/oct pitch out.',
   'drumseqz.pitch3': 'Track 3 V/oct pitch out.',
   'drumseqz.pitch4': 'Track 4 V/oct pitch out.',
+  'riotgirls.outL': 'Stereo L out.',
+  'riotgirls.outR': 'Stereo R out.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
@@ -365,30 +369,103 @@ function parseParamList(body: string): ManifestParam[] {
 function synthesizeFromBuildHelper(
   type: string,
 ): { inputs: ManifestPort[]; params: ManifestParam[] } | null {
-  if (type !== 'mixmstrs') return null;
-  const params: ManifestParam[] = [];
-  for (const ch of [1, 2, 3, 4]) {
-    params.push({ id: `ch${ch}_volume`, label: `${ch}V`, defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
-    params.push({ id: `ch${ch}_low`, label: `${ch}Lo`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
-    params.push({ id: `ch${ch}_mid`, label: `${ch}Md`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
-    params.push({ id: `ch${ch}_high`, label: `${ch}Hi`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
-    params.push({ id: `ch${ch}_thresh`, label: `${ch}Th`, defaultValue: -12, min: -36, max: 0, curve: 'linear', units: 'dB' });
-    params.push({ id: `ch${ch}_ratio`, label: `${ch}Rt`, defaultValue: 2, min: 1, max: 10, curve: 'linear' });
-    params.push({ id: `ch${ch}_compEnable`, label: `${ch}Cp`, defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
-    params.push({ id: `ch${ch}_send1`, label: `${ch}S1`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
-    params.push({ id: `ch${ch}_send2`, label: `${ch}S2`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
+  if (type === 'mixmstrs') {
+    const params: ManifestParam[] = [];
+    for (const ch of [1, 2, 3, 4]) {
+      params.push({ id: `ch${ch}_volume`, label: `${ch}V`, defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
+      params.push({ id: `ch${ch}_low`, label: `${ch}Lo`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
+      params.push({ id: `ch${ch}_mid`, label: `${ch}Md`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
+      params.push({ id: `ch${ch}_high`, label: `${ch}Hi`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
+      params.push({ id: `ch${ch}_thresh`, label: `${ch}Th`, defaultValue: -12, min: -36, max: 0, curve: 'linear', units: 'dB' });
+      params.push({ id: `ch${ch}_ratio`, label: `${ch}Rt`, defaultValue: 2, min: 1, max: 10, curve: 'linear' });
+      params.push({ id: `ch${ch}_compEnable`, label: `${ch}Cp`, defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+      params.push({ id: `ch${ch}_send1`, label: `${ch}S1`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
+      params.push({ id: `ch${ch}_send2`, label: `${ch}S2`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
+    }
+    params.push({ id: 'master_volume', label: 'Master', defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
+    const inputs: ManifestPort[] = [
+      { id: 'ch1L', type: 'audio' }, { id: 'ch1R', type: 'audio' },
+      { id: 'ch2L', type: 'audio' }, { id: 'ch2R', type: 'audio' },
+      { id: 'ch3L', type: 'audio' }, { id: 'ch3R', type: 'audio' },
+      { id: 'ch4L', type: 'audio' }, { id: 'ch4R', type: 'audio' },
+      { id: 'ret1L', type: 'audio' }, { id: 'ret1R', type: 'audio' },
+      { id: 'ret2L', type: 'audio' }, { id: 'ret2R', type: 'audio' },
+    ];
+    for (const p of params) inputs.push({ id: p.id, type: 'cv', paramTarget: p.id });
+    return { inputs, params };
   }
-  params.push({ id: 'master_volume', label: 'Master', defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
-  const inputs: ManifestPort[] = [
-    { id: 'ch1L', type: 'audio' }, { id: 'ch1R', type: 'audio' },
-    { id: 'ch2L', type: 'audio' }, { id: 'ch2R', type: 'audio' },
-    { id: 'ch3L', type: 'audio' }, { id: 'ch3R', type: 'audio' },
-    { id: 'ch4L', type: 'audio' }, { id: 'ch4R', type: 'audio' },
-    { id: 'ret1L', type: 'audio' }, { id: 'ret1R', type: 'audio' },
-    { id: 'ret2L', type: 'audio' }, { id: 'ret2R', type: 'audio' },
-  ];
-  for (const p of params) inputs.push({ id: p.id, type: 'cv', paramTarget: p.id });
-  return { inputs, params };
+  if (type === 'riotgirls') {
+    const params: ManifestParam[] = [];
+    for (const v of [1, 2, 3]) {
+      params.push({ id: `v${v}_pitch`,  label: `${v}P`, defaultValue: 0,    min: -36,   max: 36,  curve: 'linear', units: 'st' });
+      params.push({ id: `v${v}_tone`,   label: `${v}T`, defaultValue: 0.3,  min: 0,     max: 1,   curve: 'linear' });
+      params.push({ id: `v${v}_shape`,  label: `${v}S`, defaultValue: 0.3,  min: 0,     max: 1,   curve: 'linear' });
+      params.push({ id: `v${v}_volume`, label: `${v}V`, defaultValue: 1.0,  min: 0,     max: 2.0, curve: 'linear' });
+      params.push({ id: `v${v}_decay`,  label: `${v}D`, defaultValue: 0.15, min: 0.001, max: 0.5, curve: 'log',    units: 's' });
+    }
+    params.push({ id: 'v4_tune',     label: '4T',  defaultValue: 0,     min: -36,    max: 36,  curve: 'linear', units: 'st' });
+    params.push({ id: 'v4_fine',     label: '4F',  defaultValue: 0,     min: -100,   max: 100, curve: 'linear', units: '¢' });
+    params.push({ id: 'v4_wavePos',  label: '4W',  defaultValue: 0,     min: 0,      max: 1,   curve: 'linear' });
+    params.push({ id: 'v4_fmAmount', label: '4FM', defaultValue: 0,     min: 0,      max: 1,   curve: 'linear' });
+    params.push({ id: 'v4_attack',   label: '4A',  defaultValue: 0.005, min: 0.001,  max: 2.0, curve: 'log',    units: 's' });
+    params.push({ id: 'v4_decay',    label: '4D',  defaultValue: 0.1,   min: 0.001,  max: 4.0, curve: 'log',    units: 's' });
+    params.push({ id: 'v4_sustain',  label: '4S',  defaultValue: 0.7,   min: 0,      max: 1,   curve: 'linear' });
+    params.push({ id: 'v4_release',  label: '4R',  defaultValue: 0.3,   min: 0.001,  max: 8.0, curve: 'log',    units: 's' });
+    params.push({ id: 'v4_volume',   label: '4V',  defaultValue: 0.8,   min: 0,      max: 2.0, curve: 'linear' });
+    for (const v of [1, 2, 3, 4]) {
+      params.push({ id: `v${v}_pan`,   label: `${v}Pn`, defaultValue: 0, min: -1, max: 1, curve: 'linear' });
+      params.push({ id: `v${v}_sendA`, label: `${v}sA`, defaultValue: 0, min:  0, max: 1, curve: 'linear' });
+      params.push({ id: `v${v}_sendB`, label: `${v}sB`, defaultValue: 0, min:  0, max: 1, curve: 'linear' });
+    }
+    params.push({ id: 'bc_decimate', label: 'bcDec',  defaultValue: 1,  min: 1, max: 64, curve: 'linear' });
+    params.push({ id: 'bc_bits',     label: 'bcBits', defaultValue: 16, min: 1, max: 16, curve: 'linear' });
+    params.push({ id: 'bc_wet',      label: 'bcWet',  defaultValue: 1,  min: 0, max: 1,  curve: 'linear' });
+    params.push({ id: 'rv_size', label: 'rvSize', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' });
+    params.push({ id: 'rv_damp', label: 'rvDamp', defaultValue: 0.3, min: 0, max: 1, curve: 'linear' });
+    params.push({ id: 'rv_mix',  label: 'rvMix',  defaultValue: 0.3, min: 0, max: 1, curve: 'linear' });
+    params.push({ id: 'flt_cutoff',    label: 'fCut', defaultValue: 18000, min: 20,    max: 20000, curve: 'log',    units: 'Hz' });
+    params.push({ id: 'flt_resonance', label: 'fRes', defaultValue: 0.4,   min: 0,     max: 0.99,  curve: 'linear' });
+    params.push({ id: 'flt_mode',      label: 'fMod', defaultValue: 0,     min: 0,     max: 1,     curve: 'linear' });
+    params.push({ id: 'flt_pingDecay', label: 'fPng', defaultValue: 0.15,  min: 0.005, max: 0.5,   curve: 'log',    units: 's' });
+    params.push({ id: 'returnA', label: 'retA', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' });
+    params.push({ id: 'returnB', label: 'retB', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' });
+
+    const inputs: ManifestPort[] = [];
+    for (let v = 1; v <= 4; v++) inputs.push({ id: `trig${v}`,  type: 'gate' });
+    for (let v = 1; v <= 4; v++) inputs.push({ id: `pitch${v}`, type: 'pitch' });
+    for (const v of [1, 2, 3]) {
+      inputs.push({ id: `v${v}_tone`,   type: 'cv', paramTarget: `v${v}_tone` });
+      inputs.push({ id: `v${v}_shape`,  type: 'cv', paramTarget: `v${v}_shape` });
+      inputs.push({ id: `v${v}_volume`, type: 'cv', paramTarget: `v${v}_volume` });
+      inputs.push({ id: `v${v}_decay`,  type: 'cv', paramTarget: `v${v}_decay` });
+    }
+    inputs.push({ id: 'v4_fm',      type: 'audio' });
+    inputs.push({ id: 'v4_wavePos', type: 'cv', paramTarget: 'v4_wavePos' });
+    inputs.push({ id: 'v4_attack',  type: 'cv', paramTarget: 'v4_attack' });
+    inputs.push({ id: 'v4_decay',   type: 'cv', paramTarget: 'v4_decay' });
+    inputs.push({ id: 'v4_sustain', type: 'cv', paramTarget: 'v4_sustain' });
+    inputs.push({ id: 'v4_release', type: 'cv', paramTarget: 'v4_release' });
+    inputs.push({ id: 'v4_volume',  type: 'cv', paramTarget: 'v4_volume' });
+    for (let v = 1; v <= 4; v++) {
+      inputs.push({ id: `v${v}_pan`,   type: 'cv', paramTarget: `v${v}_pan` });
+      inputs.push({ id: `v${v}_sendA`, type: 'cv', paramTarget: `v${v}_sendA` });
+      inputs.push({ id: `v${v}_sendB`, type: 'cv', paramTarget: `v${v}_sendB` });
+    }
+    inputs.push({ id: 'bc_decimate', type: 'cv', paramTarget: 'bc_decimate' });
+    inputs.push({ id: 'bc_bits',     type: 'cv', paramTarget: 'bc_bits' });
+    inputs.push({ id: 'bc_wet',      type: 'cv', paramTarget: 'bc_wet' });
+    inputs.push({ id: 'rv_size',     type: 'cv', paramTarget: 'rv_size' });
+    inputs.push({ id: 'rv_damp',     type: 'cv', paramTarget: 'rv_damp' });
+    inputs.push({ id: 'rv_mix',      type: 'cv', paramTarget: 'rv_mix' });
+    inputs.push({ id: 'flt_cutoff',    type: 'cv', paramTarget: 'flt_cutoff' });
+    inputs.push({ id: 'flt_resonance', type: 'cv', paramTarget: 'flt_resonance' });
+    inputs.push({ id: 'flt_mode',      type: 'cv', paramTarget: 'flt_mode' });
+    inputs.push({ id: 'flt_pingDecay', type: 'cv', paramTarget: 'flt_pingDecay' });
+    inputs.push({ id: 'returnA', type: 'cv', paramTarget: 'returnA' });
+    inputs.push({ id: 'returnB', type: 'cv', paramTarget: 'returnB' });
+    return { inputs, params };
+  }
+  return null;
 }
 
 function describePort(moduleType: string, portId: string, port: ManifestPort): string {
@@ -431,7 +508,12 @@ interface RawModule {
 function readModule(file: string, rawSrc: string): RawModule | null {
   const fullSrc = stripComments(rawSrc);
 
-  const declRe = /export\s+const\s+(\w+Def)\s*:\s*AudioModuleDef\s*=\s*\{/;
+  // Match either `export const xxxDef: AudioModuleDef = {` OR a non-exported
+  // `const xxxDef: AudioModuleDef = {` — the latter case picks up internal
+  // base defs (e.g. lfo's `baseDef` that gets spread into a wrapper
+  // SyncedModuleDef). Catalog dedupes by `type`, so two matches in one file
+  // collapse to one entry.
+  const declRe = /(?:export\s+)?const\s+(\w+Def)\s*:\s*(?:AudioModuleDef|SyncedModuleDef)\s*=\s*\{/;
   const declMatch = declRe.exec(fullSrc);
   if (!declMatch) return null;
   const startBrace = declMatch.index + declMatch[0].length - 1;
@@ -462,7 +544,10 @@ function readModule(file: string, rawSrc: string): RawModule | null {
     params: parseParamList(extractArray(src, 'params')),
   };
 
-  if (out.inputs.length === 0 && /inputs:\s*build/.test(src) && out.type) {
+  // Inputs are computed (e.g. `inputs: INPUTS` or `inputs: buildInputs()`)
+  // when the literal-array extractor returns nothing — fall back to the
+  // hard-coded synthesizer keyed by module type.
+  if (out.inputs.length === 0 && out.type) {
     const synth = synthesizeFromBuildHelper(out.type);
     if (synth) {
       out.inputs = synth.inputs;
@@ -490,7 +575,14 @@ export function buildModuleManifest(
       const file = path.split('/').pop() ?? path;
       return { file, src };
     })
-    .filter(({ file }) => file.endsWith('.ts') && file !== 'index.ts')
+    .filter(({ file }) => {
+      if (!file.endsWith('.ts') || file === 'index.ts') return false;
+      // Skip companion / test files — they live next to module sources but
+      // aren't module definitions themselves.
+      if (file.endsWith('.test.ts')) return false;
+      if (file.endsWith('-state.ts')) return false;
+      return true;
+    })
     .sort((a, b) => a.file.localeCompare(b.file));
 
   const modules: ManifestModule[] = [];
