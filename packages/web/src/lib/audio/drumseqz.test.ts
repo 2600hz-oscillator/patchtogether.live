@@ -108,8 +108,14 @@ describe('drumseqz / Eucl slider transact contract', () => {
     return { patch, ydoc };
   }
 
+  // SyncedStore types `patch.nodes` as `Partial<Record<string, ModuleNode>>`
+  // (every key is implicitly optional). Use the runtime shape directly via
+  // `typeof patch` so the inner setEuclid sees the same MappedTypeDescription
+  // the constructor returns.
+  type LivePatch = ReturnType<typeof setupStore>['patch'];
+
   function setEuclid(
-    patch: Store,
+    patch: LivePatch,
     ydoc: ReturnType<typeof getYjsDoc>,
     nodeId: string,
     trackIdx: number,
