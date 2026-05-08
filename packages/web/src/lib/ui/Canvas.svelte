@@ -63,6 +63,7 @@
   import CharlottesEchosCard from '$lib/ui/modules/CharlottesEchosCard.svelte';
   import RiotgirlsCard from '$lib/ui/modules/RiotgirlsCard.svelte';
   import ScoreCard from '$lib/ui/modules/ScoreCard.svelte';
+  import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
@@ -117,6 +118,7 @@
     charlottesEchos: CharlottesEchosCard,
     riotgirls: RiotgirlsCard,
     score: ScoreCard,
+    drumseqz: DrumseqzCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);

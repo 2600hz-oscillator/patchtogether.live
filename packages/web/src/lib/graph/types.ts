@@ -40,6 +40,7 @@ type StandardModuleType =
   | 'charlottesEchos'
   | 'riotgirls'
   | 'score';
+  | 'drumseqz';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

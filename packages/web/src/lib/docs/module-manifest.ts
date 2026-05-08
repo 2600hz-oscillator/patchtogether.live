@@ -103,6 +103,8 @@ const DESCRIPTIONS: Record<string, string> = {
   riotgirls:
     '4-voice drum machine. 3x DRUMMERGIRL + 1x Wavetable VCO/ADSR/VCA, per-voice equal-power pan, master QBRT filter, stereo out.',
   score: 'Sheet-music sequencer. 8-bar treble-clef staff, click to place notes. Outputs pitch / gate / env (ADSR x dynamic) / clock.',
+  drumseqz:
+    '4-channel x 16-step drum sequencer with per-track Euclidean fills + quantized CV. Sister module to RIOTGIRLS.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -188,6 +190,15 @@ const PORT_NOTES: Record<string, string> = {
   'score.pitch': 'V/oct pitch out (mono).',
   'score.gate': 'Gate out, held for the notated duration of each note.',
   'score.env': 'Envelope out: ADSR x dynamic (mf=0.55, ff=0.95, etc).',
+  'drumseqz.clock': 'External clock (rising edges advance the step pointer).',
+  'drumseqz.gate1': 'Track 1 gate out.',
+  'drumseqz.gate2': 'Track 2 gate out.',
+  'drumseqz.gate3': 'Track 3 gate out.',
+  'drumseqz.gate4': 'Track 4 gate out.',
+  'drumseqz.pitch1': 'Track 1 V/oct pitch out (track root + per-step override).',
+  'drumseqz.pitch2': 'Track 2 V/oct pitch out.',
+  'drumseqz.pitch3': 'Track 3 V/oct pitch out.',
+  'drumseqz.pitch4': 'Track 4 V/oct pitch out.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];

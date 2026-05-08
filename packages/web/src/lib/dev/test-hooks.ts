@@ -1,7 +1,8 @@
 // packages/web/src/lib/dev/test-hooks.ts
 //
 // Single gate for the dev-only window globals (`__patch`, `__ydoc`,
-// `__engine`, `__riotgirlsTriggerVoice`, etc.) that Playwright drives.
+// `__engine`, `__riotgirlsTriggerVoice`, `__drumseqzCellAt`,
+// `__drumseqzSetCell`, etc.) that Playwright drives.
 // Originally gated on `import.meta.env.DEV` only, which Vite strips in
 // production builds — so the autotest tier (a prod build) couldn't use them.
 // VITE_E2E_HOOKS=1 set in the autotest + dev deploy steps re-exposes them
