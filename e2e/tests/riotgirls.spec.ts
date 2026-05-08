@@ -131,6 +131,60 @@ test('RIOTGIRLS: __riotgirlsTriggerVoice test hook fires the requested voice', a
   expect(errors, `RIOTGIRLS test-hook errors: ${errors.join('; ')}`).toEqual([]);
 });
 
+test('RIOTGIRLS: every input port in the def has a visible handle', async ({ page }) => {
+  // Regression for "card only renders 3 input handles per voice" bug — the
+  // module def declares 55 inputs but the card was only rendering trig/gate/
+  // pitch + outL/outR. This test asserts that every input id from the def is
+  // reachable via Svelte Flow's `data-handleid` attribute on the rendered
+  // card. The expected list is hardcoded to keep the test in sync with the
+  // module def by intent — adding a new port to the def should require
+  // updating this list (and adding the handle to the card).
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', params: {} }], []);
+
+  const expectedInputIds = [
+    'trig1', 'trig2', 'trig3', 'trig4',
+    'gate1', 'gate2', 'gate3', 'gate4',
+    'pitch1', 'pitch2', 'pitch3', 'pitch4',
+    // Per-voice CV (DRUMMERGIRL voices 1-3).
+    ...[1, 2, 3].flatMap((v) => [`v${v}_tone`, `v${v}_shape`, `v${v}_volume`, `v${v}_decay`]),
+    // Voice 4 distinct CV set.
+    'v4_fm', 'v4_wavePos', 'v4_attack', 'v4_decay', 'v4_sustain', 'v4_release', 'v4_volume',
+    // Per-voice pan + sends (v1-4).
+    ...[1, 2, 3, 4].flatMap((v) => [`v${v}_pan`, `v${v}_sendA`, `v${v}_sendB`]),
+    // Master strip.
+    'bc_decimate', 'bc_bits', 'bc_wet',
+    'rv_size', 'rv_damp', 'rv_mix',
+    'flt_cutoff', 'flt_resonance', 'flt_mode', 'flt_pingDecay',
+    'returnA', 'returnB',
+  ];
+
+  for (const portId of expectedInputIds) {
+    const handle = page.locator(
+      `.svelte-flow__node[data-id="rg"] .svelte-flow__handle[data-handleid="${portId}"]`,
+    );
+    await expect(handle, `riotgirls.${portId} input handle missing`).toHaveCount(1);
+  }
+
+  // Sanity: outputs are also rendered.
+  for (const outId of ['outL', 'outR']) {
+    const handle = page.locator(
+      `.svelte-flow__node[data-id="rg"] .svelte-flow__handle[data-handleid="${outId}"]`,
+    );
+    await expect(handle, `riotgirls.${outId} output handle missing`).toHaveCount(1);
+  }
+
+  expect(errors, `RIOTGIRLS port-handle errors: ${errors.join('; ')}`).toEqual([]);
+});
+
 test('RIOTGIRLS: Sequencer-driven gate1 (alt port) produces audio on outL', async ({ page }) => {
   // Mirror of the trig1 test, but routes the Sequencer gate cable into the
   // gateN alternate port. trigN and gateN share the same underlying gate-input
