@@ -199,11 +199,29 @@ export const drumseqzDef: AudioModuleDef = {
 
     const gateSrcs: ConstantSourceNode[] = [];
     const pitchSrcs: ConstantSourceNode[] = [];
+    // One AnalyserNode per gate src so `read('gateValue:N')` returns the
+    // ACTUAL audio-rate gate value over a recent window — not the JS
+    // bookkeeping flag from the most-recent emitStep call. Without this
+    // tap, polling `lastEmittedGate[t]` is racy: with a 4-of-16 Bjorklund
+    // pattern, the most-recent emitStep call is an OFF-step ~75% of the
+    // time, even though the gate is actively firing in audio every 4 steps.
+    // fftSize=2048 at 44.1kHz covers ~46ms of recent audio — long enough
+    // to catch a gate-on at any reasonable BPM. The read() path takes the
+    // peak across that window; any sample >= 0.5 == "gate fired recently".
+    // We keep `lastEmittedGate[t]` as a fallback for tests that poll before
+    // the audio thread has rendered the first quantum of gate samples.
+    const gateAnalysers: AnalyserNode[] = [];
+    const gateAnalyserBuf = new Float32Array(2048);
     for (let t = 0; t < TRACK_COUNT; t++) {
       const g = ctx.createConstantSource();
       g.offset.value = 0;
       g.start();
       gateSrcs.push(g);
+      const ga = ctx.createAnalyser();
+      ga.fftSize = 2048;
+      ga.smoothingTimeConstant = 0;
+      g.connect(ga);
+      gateAnalysers.push(ga);
       const p = ctx.createConstantSource();
       p.offset.value = 0;
       p.start();
@@ -404,9 +422,19 @@ export const drumseqzDef: AudioModuleDef = {
         }
         if (typeof key === 'string' && key.startsWith('gateValue:')) {
           const i = Number.parseInt(key.slice('gateValue:'.length), 10);
-          return Number.isFinite(i) && i >= 0 && i < TRACK_COUNT
-            ? lastEmittedGate[i]
-            : undefined;
+          if (!Number.isFinite(i) || i < 0 || i >= TRACK_COUNT) return undefined;
+          // Sample the actual audio-rate gate signal. The analyser's recent
+          // buffer covers ~46ms at 44.1kHz; any sample at-or-above 0.5
+          // means the gate was high during that window. Falls back to the
+          // JS bookkeeping flag if the analyser hasn't been ticked yet
+          // (very early in the lifecycle, before audio has rendered).
+          gateAnalysers[i].getFloatTimeDomainData(gateAnalyserBuf);
+          let peak = 0;
+          for (let j = 0; j < gateAnalyserBuf.length; j++) {
+            const v = gateAnalyserBuf[j];
+            if (v > peak) peak = v;
+          }
+          return peak >= 0.5 ? peak : lastEmittedGate[i];
         }
         return undefined;
       },
@@ -416,6 +444,9 @@ export const drumseqzDef: AudioModuleDef = {
         for (const g of gateSrcs) {
           try { g.stop(); } catch { /* already stopped */ }
           g.disconnect();
+        }
+        for (const ga of gateAnalysers) {
+          ga.disconnect();
         }
         for (const p of pitchSrcs) {
           try { p.stop(); } catch { /* already stopped */ }

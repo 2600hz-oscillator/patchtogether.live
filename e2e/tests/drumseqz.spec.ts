@@ -209,24 +209,32 @@ test('drumseqz → drummergirl → audioOut: gate1 fires audio when trk1 has any
   await page.waitForTimeout(400);
 
   // Sample the per-track gate value over a window — at 240 BPM 16ths, step
-  // duration = 62.5 ms; gate-on at gateLength=0.9 lasts 56 ms. We poll
-  // gateValue:0 over ~150 ms and assert at least one sample is high.
-  const samples = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return null;
-    const node = w.__patch.nodes['drum'];
-    return Array.from({ length: 30 }, () => {
-      const v = eng.read(node, 'gateValue:0');
-      return typeof v === 'number' ? v : NaN;
+  // duration = 62.5 ms; gate-on at gateLength=0.9 lasts 56 ms; on-steps are
+  // every 4 steps (= every 250 ms). We sample 12 times across ~600 ms (50 ms
+  // between samples) so the polling window guarantees catching at least one
+  // gate-on transient regardless of phase. The previous form did 30
+  // synchronous samples in a tight `Array.from` — all 30 read the same
+  // engine state since JS is single-threaded between page.evaluate calls,
+  // making the 4-in-16 pattern caught only ~25% of the time (CI flake).
+  const samples: number[] = [];
+  for (let i = 0; i < 12; i++) {
+    const v = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const eng = w.__engine?.();
+      if (!eng) return null;
+      const node = w.__patch.nodes['drum'];
+      const r = eng.read(node, 'gateValue:0');
+      return typeof r === 'number' ? r : NaN;
     });
-  });
-  expect(samples).not.toBeNull();
-  const seenGate = samples!.some((s) => s >= 0.5);
-  expect(seenGate, 'at least one gateValue:0 sample must go high after isPlaying=1').toBe(true);
+    expect(v).not.toBeNull();
+    samples.push(v as number);
+    await page.waitForTimeout(50);
+  }
+  const seenGate = samples.some((s) => s >= 0.5);
+  expect(seenGate, `at least one gateValue:0 sample must go high after isPlaying=1; got ${JSON.stringify(samples)}`).toBe(true);
 
   // Pitch1 should have been written to (track root C4 = 0V). It might still
   // be 0 if the first gated step hasn't fired yet, but we polled long enough.
