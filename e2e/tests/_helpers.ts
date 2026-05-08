@@ -10,6 +10,12 @@ export interface SpawnNode {
   type: string;
   position?: { x: number; y: number };
   params?: Record<string, number>;
+  /** Phase 0 video spike — when omitted, defaults to 'audio'. Tests that
+   *  spawn video modules (LINES, OUTPUT) pass 'video' explicitly. The
+   *  io-spec consistency test infers it from the registered module def
+   *  by reading window.__moduleSpecs first; see that test's spawnPatch
+   *  call for the pattern. */
+  domain?: 'audio' | 'video';
 }
 
 export interface SpawnEdge {
@@ -64,7 +70,7 @@ export async function spawnPatch(
           w.__patch.nodes[n.id] = {
             id: n.id,
             type: n.type,
-            domain: 'audio',
+            domain: (n as { domain?: string }).domain ?? 'audio',
             position: n.position ?? { x: 100, y: 100 },
             params: n.params ?? {},
           };

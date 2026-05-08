@@ -1,0 +1,61 @@
+name: Deploy Video Branch (dev only)
+
+# Deploys the long-lived `feat/video-domain` branch to the existing CF
+# Pages dev project (`patchtogether-live-dev`) under a branch-named
+# CF Pages branch so it's reachable at a stable URL during the
+# multi-week visual-modules build-out. Only fires on direct pushes to
+# `feat/video-domain` itself — sub-branch PRs against video-domain get
+# their per-PR preview from the main `deploy.yml` workflow's PR-event
+# job (which targets `patchtogether-live-autotest`, the same way every
+# other PR does).
+#
+# Critical guards:
+#   - branches filter restricts to `feat/video-domain`
+#   - we never trigger on PRs (no `pull_request` key)
+#   - we never trigger on main (different ref)
+#   - prod is never touched here
+#
+# After feat/video-domain merges to main, this workflow file should be
+# deleted (or the branch filter swapped to a different long-lived
+# feature branch). The main `deploy.yml` autotest+dev fan-out takes
+# over once the work is on main.
+
+on:
+  push:
+    branches: [feat/video-domain]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-video-branch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-dev:
+    name: Deploy → dev.patchtogether.live (video-branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { lfs: true }
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: flox activate -- task install
+      - run: flox activate -- task build
+        env:
+          # Same dev-tier Hocuspocus the regular dev deploy uses, so
+          # multiplayer rackspaces still work for in-progress video
+          # patches.
+          VITE_SERVER_WS_URL: wss://patchtogether-server-dev.fly.dev
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/web
+          # Branch arg becomes part of the preview URL; using a stable
+          # name (`feat-video-domain`) keeps the dog-food URL constant
+          # across pushes so the user can bookmark it.
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-dev --branch=feat-video-domain

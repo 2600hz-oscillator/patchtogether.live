@@ -15,6 +15,7 @@
 // browser-evaluated JS.
 
 import { listModuleDefs } from '$lib/audio/module-registry';
+import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { testHooksEnabled } from './test-hooks';
 
 export interface ModuleSpecPort {
@@ -24,6 +25,10 @@ export interface ModuleSpecPort {
 
 export interface ModuleSpec {
   type: string;
+  /** 'audio' for Phase-1 modules, 'video' for the Phase-0 video spike's
+   *  modules. Used by e2e tests to set node.domain correctly when
+   *  spawning a module by type. */
+  domain: string;
   inputs: ModuleSpecPort[];
   outputs: ModuleSpecPort[];
 }
@@ -33,11 +38,21 @@ export interface ModuleSpec {
  * `inputs` are computed via a builder function (e.g. RIOTGIRLS,
  * MIXMSTRS) work transparently — by the time they're registered, the
  * computed array is already attached to the def.
+ *
+ * Includes both audio-domain and video-domain modules. The Phase-0
+ * video spike (.myrobots/plans/video-modules-mvp.md) registers `lines`
+ * + `videoOut` here so the existing I/O-spec consistency e2e
+ * (e2e/tests/io-spec-consistency.spec.ts) covers them too.
  */
 export function getAllModuleSpecs(): ModuleSpec[] {
-  return listModuleDefs()
+  const all = [
+    ...listModuleDefs(),
+    ...listVideoModuleDefs(),
+  ];
+  return all
     .map((def) => ({
-      type: def.type,
+      type: def.type as string,
+      domain: def.domain as string,
       inputs: def.inputs.map((p) => ({ id: p.id, type: p.type })),
       outputs: def.outputs.map((p) => ({ id: p.id, type: p.type })),
     }))

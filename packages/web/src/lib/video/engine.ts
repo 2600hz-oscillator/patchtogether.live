@@ -1,0 +1,488 @@
+// packages/web/src/lib/video/engine.ts
+//
+// Video-domain runtime engine — Phase 0 spike.
+//
+// Sibling to AudioEngine (packages/web/src/lib/audio/engine.ts). Implements
+// the same domain-agnostic DomainEngine contract; PatchEngine dispatches to
+// us when a node's `domain` field is `'video'`.
+//
+// Scope of this round:
+//   - WebGL2 + OffscreenCanvas. Each module owns one FBO (fullscreen-quad
+//     fragment shader pipeline). Topologically sorted; one rAF loop drives
+//     all nodes. Worker hoist is deferred to Phase 5 polish per
+//     .myrobots/plans/video-modules-mvp.md §1.
+//   - Two demo modules: `lines` (procedural mono-video source) and
+//     `videoOut` (visible-canvas sink). Module defs live at
+//     packages/web/src/lib/video/modules/*.
+//   - Cross-domain CV bridges, FEEDBACK ping-pong, MIXER composites: all
+//     deferred to Phase 1+. The interface is shaped so they can land
+//     without retrofits.
+//
+// Design notes:
+//   - VIDEO_RES is fixed at instantiate time. For the spike we keep it
+//     small (640×360) — cheap on every laptop, plenty for a demo render.
+//     Phase 1 bumps to 1280×720 once we've measured perf headroom.
+//   - We share ONE WebGL2 context + OffscreenCanvas across all video
+//     nodes. Each node has its own FBO + texture. OUTPUT modules
+//     subscribe to a downstream visible <canvas> by exposing a
+//     `pullFrame(targetCanvas)` hook on their handle; the card UI drives
+//     that pull each rAF tick (so card-removal doesn't leak callbacks).
+
+import type { Edge, ModuleNode } from '$lib/graph/types';
+import type { DomainEngine } from '$lib/audio/engine';
+import { getVideoModuleDef, type VideoModuleDef } from './module-registry';
+
+/** Resolution of every per-module FBO. Phase-0 keeps this small for
+ *  fastest startup on the demo path; Phase 1 bumps it to 1280×720. */
+export const VIDEO_RES = { width: 640, height: 360 } as const;
+
+/** Per-module surface — FBO + texture. Output modules can leave `fbo` null
+ *  and consume their input textures directly. */
+export interface VideoNodeSurface {
+  /** The framebuffer this module renders into. Null for sinks (OUTPUT). */
+  fbo: WebGLFramebuffer | null;
+  /** The colour-attachment texture. Downstream modules sample from this.
+   *  Null for sinks. */
+  texture: WebGLTexture | null;
+  /** Per-frame draw — invoked by the engine loop in topological order.
+   *  Modules read uniforms + bind any input textures (looked up from the
+   *  edge graph) and render a fullscreen quad into `fbo`. */
+  draw(ctx: VideoFrameContext): void;
+  /** Tear-down hook. Should release GL resources (textures, framebuffers,
+   *  programs the module owns) and any non-GL resources (e.g. `<video>`
+   *  elements for INWARDS, `Image` decode buffers for PICTUREBOX). */
+  dispose(): void;
+}
+
+export interface VideoFrameContext {
+  /** Shared WebGL2 context. */
+  gl: WebGL2RenderingContext;
+  /** Wall-clock seconds since engine init. Modules use this for time-domain
+   *  pattern generation (LINES phase scroll, FEEDBACK ping-pong phase). */
+  time: number;
+  /** Current frame index (0, 1, 2, ...). Useful for "first-frame" guards. */
+  frame: number;
+  /**
+   * Look up the colour-attachment texture for the source side of an edge
+   * terminating at this module's `inputId`. Returns null if no edge is
+   * connected, or if the source module has no texture (e.g. another sink).
+   * Modules treat null as "input is unpatched" — they MUST tolerate that
+   * and render a sensible default (typically: skip drawing, or write zeros).
+   */
+  getInputTexture(thisNodeId: string, inputId: string): WebGLTexture | null;
+}
+
+export interface VideoNodeHandle {
+  domain: 'video';
+  /** The module's runtime surface — engine reads this every frame. */
+  surface: VideoNodeSurface;
+  /** Apply a param value (fader change). Routes to a uniform or internal
+   *  state that `draw()` reads next frame. */
+  setParam(paramId: string, value: number): void;
+  /** Read a param's live value (motorized fader convention). For Phase 0
+   *  this just returns the most-recently-set intrinsic value; once the
+   *  CV→video bridge lands it will include modulator contributions. */
+  readParam(paramId: string): number | undefined;
+  /** Optional: arbitrary per-module data read (e.g. last frame ImageData
+   *  for tests, current device id for INWARDS). Modules that need to
+   *  expose internal state to their UI implement this. */
+  read?(key: string): unknown;
+  /** Tear down GL + non-GL resources. Idempotent. */
+  dispose(): void;
+}
+
+/** Factory that materializes a video module instance. The engine passes a
+ *  shared `VideoEngineContext` so the factory can compile shaders,
+ *  allocate FBOs, etc. */
+export type VideoModuleFactory = (
+  ctx: VideoEngineContext,
+  node: ModuleNode,
+) => VideoNodeHandle;
+
+/** Resources every video module factory needs. Wraps the WebGL2 context
+ *  and a fullscreen-quad helper so individual modules don't reinvent the
+ *  basics. */
+export interface VideoEngineContext {
+  gl: WebGL2RenderingContext;
+  res: { readonly width: number; readonly height: number };
+  /** Compile + link a fragment-shader program. The vertex shader is
+   *  shared across modules — every video module is a fullscreen quad, so
+   *  the vertex shader is fixed. Throws on compile/link failure with the
+   *  shader log + source for debug. */
+  compileFragment(fragSource: string): WebGLProgram;
+  /** Allocate an RGBA8 framebuffer + texture at engine resolution.
+   *  Returns both so the caller can both render-into and sample-from. */
+  createFbo(): { fbo: WebGLFramebuffer; texture: WebGLTexture };
+  /** Issue the fullscreen quad draw call. Caller has already bound their
+   *  framebuffer and program + uniforms. Used by every module's draw(). */
+  drawFullscreenQuad(): void;
+}
+
+// ----------------------------------------------------------------------
+// VideoEngine
+// ----------------------------------------------------------------------
+
+export class VideoEngine implements DomainEngine {
+  domain = 'video' as const;
+  /** Underlying drawing surface. We use OffscreenCanvas where available
+   *  (every browser we ship to has it as of 2026 except old Safari, where
+   *  we fall back to a regular HTMLCanvasElement). Either way, the
+   *  context is WebGL2; modules never see the surface type. */
+  readonly canvas: OffscreenCanvas | HTMLCanvasElement;
+  readonly gl: WebGL2RenderingContext;
+  readonly res = VIDEO_RES;
+
+  private nodes = new Map<string, VideoNodeHandle>();
+  private nodeMeta = new Map<string, ModuleNode>();
+  private edges = new Map<string, Edge>();
+
+  private startTime = performance.now();
+  private frameCount = 0;
+  private rafId: number | null = null;
+
+  // Cached topological order — recomputed on graph mutations.
+  private topoOrder: string[] = [];
+  private topoStale = true;
+
+  // Lazily-created shared resources.
+  private fullscreenVao: WebGLVertexArrayObject | null = null;
+  private vertexShader: WebGLShader | null = null;
+
+  constructor(opts: { canvas?: OffscreenCanvas | HTMLCanvasElement } = {}) {
+    if (opts.canvas) {
+      this.canvas = opts.canvas;
+    } else if (typeof OffscreenCanvas !== 'undefined') {
+      this.canvas = new OffscreenCanvas(this.res.width, this.res.height);
+    } else {
+      // jsdom / old Safari path. Module-registry tests still work — they
+      // never touch GL state — so we keep the door open by stubbing.
+      const c = (typeof document !== 'undefined' ? document.createElement('canvas') : null);
+      if (!c) throw new Error('VideoEngine: no canvas surface available in this environment');
+      c.width = this.res.width;
+      c.height = this.res.height;
+      this.canvas = c;
+    }
+
+    const gl = this.canvas.getContext('webgl2', {
+      // Don't flip the framebuffer alpha — we want black backgrounds in
+      // OUTPUT to read as opaque so the canvas doesn't show through to
+      // the rack background and create a halo around the live render.
+      alpha: false,
+      premultipliedAlpha: false,
+      antialias: false,
+      // Keep the drawing buffer so OUTPUT's blit-to-visible-canvas can
+      // captureStream() in the future without surprises.
+      preserveDrawingBuffer: true,
+    });
+    if (!gl) throw new Error('VideoEngine: WebGL2 not supported on this device');
+    this.gl = gl as WebGL2RenderingContext;
+  }
+
+  // -------- DomainEngine surface --------
+
+  /** Async signature matches AudioEngine. We don't actually await here —
+   *  video factories are synchronous (no shader fetch over the network) —
+   *  but the reconciler treats every domain identically. */
+  async addNode(node: ModuleNode): Promise<void> {
+    if (this.nodes.has(node.id)) return;
+    const def = getVideoModuleDef(node.type);
+    if (!def) throw new Error(`VideoEngine.addNode: no video def for ${String(node.type)}`);
+    if (def.domain !== 'video') {
+      throw new Error(
+        `VideoEngine.addNode: ${String(node.type)} has domain '${def.domain}', not 'video'`,
+      );
+    }
+    const handle = (def as VideoModuleDef).factory(this.context(), node);
+    this.nodes.set(node.id, handle);
+    this.nodeMeta.set(node.id, node);
+    this.topoStale = true;
+    this.ensureLoop();
+  }
+
+  removeNode(nodeId: string): void {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return;
+    handle.dispose();
+    this.nodes.delete(nodeId);
+    this.nodeMeta.delete(nodeId);
+    this.topoStale = true;
+  }
+
+  addEdge(edge: Edge): void {
+    if (this.edges.has(edge.id)) return;
+    this.edges.set(edge.id, edge);
+    this.topoStale = true;
+  }
+
+  removeEdge(edgeId: string): void {
+    if (this.edges.delete(edgeId)) this.topoStale = true;
+  }
+
+  setParam(nodeId: string, paramId: string, value: number): void {
+    this.nodes.get(nodeId)?.setParam(paramId, value);
+  }
+
+  readParam(nodeId: string, paramId: string): number | undefined {
+    return this.nodes.get(nodeId)?.readParam(paramId);
+  }
+
+  read(nodeId: string, key: string): unknown {
+    const h = this.nodes.get(nodeId);
+    return h?.read ? h.read(key) : undefined;
+  }
+
+  dispose(): void {
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    for (const handle of this.nodes.values()) handle.dispose();
+    this.nodes.clear();
+    this.nodeMeta.clear();
+    this.edges.clear();
+    this.topoOrder = [];
+
+    const gl = this.gl;
+    if (this.fullscreenVao) gl.deleteVertexArray(this.fullscreenVao);
+    if (this.vertexShader) gl.deleteShader(this.vertexShader);
+  }
+
+  // -------- Render loop --------
+
+  /** Run one frame's worth of draws. Test code calls this directly so it
+   *  doesn't have to wait for rAF. */
+  step(): void {
+    if (this.topoStale) this.recomputeTopo();
+    const ctx: VideoFrameContext = {
+      gl: this.gl,
+      time: (performance.now() - this.startTime) / 1000,
+      frame: this.frameCount++,
+      getInputTexture: (thisNodeId, inputId) => this.lookupInput(thisNodeId, inputId),
+    };
+    for (const id of this.topoOrder) {
+      const handle = this.nodes.get(id);
+      if (!handle) continue;
+      handle.surface.draw(ctx);
+    }
+  }
+
+  private ensureLoop(): void {
+    if (this.rafId !== null) return;
+    if (typeof requestAnimationFrame !== 'function') return; // SSR / tests
+    const tick = () => {
+      this.rafId = null;
+      this.step();
+      // Continue while we have nodes; idle out otherwise so the engine
+      // doesn't burn CPU on an empty rack.
+      if (this.nodes.size > 0) {
+        this.rafId = requestAnimationFrame(tick);
+      }
+    };
+    this.rafId = requestAnimationFrame(tick);
+  }
+
+  // -------- Topology --------
+
+  private recomputeTopo(): void {
+    const adj = new Map<string, Set<string>>(); // src -> dsts
+    const indeg = new Map<string, number>();
+    for (const id of this.nodes.keys()) {
+      adj.set(id, new Set());
+      indeg.set(id, 0);
+    }
+    for (const e of this.edges.values()) {
+      const s = e.source.nodeId;
+      const d = e.target.nodeId;
+      if (!adj.has(s) || !adj.has(d)) continue; // edge across domains
+      const dsts = adj.get(s)!;
+      if (!dsts.has(d)) {
+        dsts.add(d);
+        indeg.set(d, (indeg.get(d) ?? 0) + 1);
+      }
+    }
+    // Kahn's algorithm. Insertion-id order on ties keeps the topo stable
+    // across repeated reconcile passes (so motion in the demo is steady).
+    const q: string[] = [];
+    for (const [id, n] of indeg) if (n === 0) q.push(id);
+    q.sort();
+    const out: string[] = [];
+    while (q.length) {
+      const id = q.shift()!;
+      out.push(id);
+      for (const nb of adj.get(id) ?? []) {
+        indeg.set(nb, (indeg.get(nb) ?? 0) - 1);
+        if (indeg.get(nb) === 0) {
+          // Maintain id-sorted insertion to keep the order stable.
+          let i = 0;
+          while (i < q.length && q[i]! < nb) i++;
+          q.splice(i, 0, nb);
+        }
+      }
+    }
+    if (out.length !== this.nodes.size) {
+      // Cycle. Fall back to all nodes in id order — Phase 0 doesn't
+      // support FEEDBACK yet, so this is a soft warning rather than a
+      // hard fail. Phase 1's FEEDBACK module will use ping-pong FBOs and
+      // explicitly mark its input as a self-loop the engine ignores in
+      // topo terms.
+      console.warn('[VideoEngine] cycle in graph; falling back to id-order');
+      this.topoOrder = [...this.nodes.keys()].sort();
+    } else {
+      this.topoOrder = out;
+    }
+    this.topoStale = false;
+  }
+
+  /** Resolve `(thisNode, inputId)` → upstream texture by walking edges.
+   *  Multi-edge to a single input takes the first connected source by
+   *  edge id; Phase 1 will add explicit policy (sum / pick first / etc.). */
+  private lookupInput(thisNodeId: string, inputId: string): WebGLTexture | null {
+    // Iterate edges in id order so a deterministic edge wins on multi-
+    // connect. The user shouldn't hit that case for Phase 0 demos.
+    const hits: Edge[] = [];
+    for (const e of this.edges.values()) {
+      if (e.target.nodeId === thisNodeId && e.target.portId === inputId) hits.push(e);
+    }
+    hits.sort((a, b) => a.id.localeCompare(b.id));
+    for (const e of hits) {
+      const src = this.nodes.get(e.source.nodeId);
+      if (src && src.surface.texture) return src.surface.texture;
+    }
+    return null;
+  }
+
+  // -------- Shared GL helpers exposed to module factories --------
+
+  context(): VideoEngineContext {
+    return {
+      gl: this.gl,
+      res: this.res,
+      compileFragment: (src) => this.compileFragmentImpl(src),
+      createFbo: () => this.createFboImpl(),
+      drawFullscreenQuad: () => this.drawFullscreenQuadImpl(),
+    };
+  }
+
+  /** Vertex shader is shared across every module — they're all fullscreen
+   *  quads. Inline because it's three lines. */
+  private static readonly VERT_SRC = `#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+  private getOrCreateVertexShader(): WebGLShader {
+    if (this.vertexShader) return this.vertexShader;
+    const gl = this.gl;
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    if (!vs) throw new Error('VideoEngine: cannot create vertex shader');
+    gl.shaderSource(vs, VideoEngine.VERT_SRC);
+    gl.compileShader(vs);
+    if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(vs);
+      gl.deleteShader(vs);
+      throw new Error(`VideoEngine: vertex shader compile failed: ${log}`);
+    }
+    this.vertexShader = vs;
+    return vs;
+  }
+
+  private compileFragmentImpl(fragSource: string): WebGLProgram {
+    const gl = this.gl;
+    const vs = this.getOrCreateVertexShader();
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    if (!fs) throw new Error('VideoEngine: cannot create fragment shader');
+    gl.shaderSource(fs, fragSource);
+    gl.compileShader(fs);
+    if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(fs);
+      gl.deleteShader(fs);
+      throw new Error(`VideoEngine: fragment shader compile failed: ${log}\n${fragSource}`);
+    }
+    const prog = gl.createProgram();
+    if (!prog) {
+      gl.deleteShader(fs);
+      throw new Error('VideoEngine: cannot create program');
+    }
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.bindAttribLocation(prog, 0, 'aPos');
+    gl.linkProgram(prog);
+    gl.deleteShader(fs); // linker keeps a copy
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      const log = gl.getProgramInfoLog(prog);
+      gl.deleteProgram(prog);
+      throw new Error(`VideoEngine: program link failed: ${log}`);
+    }
+    return prog;
+  }
+
+  private createFboImpl(): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    if (!tex) throw new Error('VideoEngine: createTexture failed');
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8,
+      this.res.width,
+      this.res.height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const fbo = gl.createFramebuffer();
+    if (!fbo) {
+      gl.deleteTexture(tex);
+      throw new Error('VideoEngine: createFramebuffer failed');
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.deleteTexture(tex);
+      gl.deleteFramebuffer(fbo);
+      throw new Error(`VideoEngine: framebuffer incomplete: 0x${status.toString(16)}`);
+    }
+    return { fbo, texture: tex };
+  }
+
+  private drawFullscreenQuadImpl(): void {
+    const gl = this.gl;
+    if (!this.fullscreenVao) {
+      // Create one VAO + buffer the first time. Two-triangle strip at
+      // clip-space corners — every fragment shader sees the full screen.
+      const vao = gl.createVertexArray();
+      if (!vao) throw new Error('VideoEngine: createVertexArray failed');
+      gl.bindVertexArray(vao);
+      const buf = gl.createBuffer();
+      if (!buf) {
+        gl.deleteVertexArray(vao);
+        throw new Error('VideoEngine: createBuffer failed');
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+        gl.STATIC_DRAW,
+      );
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.bindVertexArray(null);
+      this.fullscreenVao = vao;
+    }
+    gl.bindVertexArray(this.fullscreenVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindVertexArray(null);
+  }
+}
