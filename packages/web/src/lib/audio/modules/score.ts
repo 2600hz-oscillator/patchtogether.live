@@ -1,15 +1,26 @@
 // packages/web/src/lib/audio/modules/score.ts
 //
-// SCORE — sheet-music sequencer module. Renders 2 rows × 4 bars (8 bars total,
-// 4/4 fixed) as SVG and emits pitch / gate / env / clock CV. Internal ADSR
-// (Faust adsr.wasm worklet) shapes the env output, scaled by the dynamic
-// marker active at each tick (forward-fill: mf default, levels pp..ff).
+// SCORE — sheet-music sequencer module. Renders 1..MAX_PAGES (4) pages of
+// 4 rows × 4 bars each (4/4 fixed) as SVG and emits pitch / gate / env /
+// clock CV. Internal ADSR (Faust adsr.wasm worklet) shapes the env output,
+// scaled by the dynamic marker active at each tick (forward-fill: mf
+// default, levels pp..ff).
 //
 // Scheduler model is the same two-clocks lookahead the Sequencer + Cartesian
 // modules use: a setTimeout at TICK_MS reads node.params/data live, advances
 // a 16th-rate tickIndex, and schedules pitch / gate / env events on the audio
 // thread up to LOOKAHEAD_S ahead. External `clock` input overrides the
 // internal BPM (rising-edge advance).
+//
+// Tie semantics: when a note is the start (or middle) of a tie chain we
+// emit a SINGLE held gate covering the full chain duration. Only the LAST
+// note in the chain triggers the gate-off. Mid-chain notes update pitch but
+// keep the gate high — a single ADSR envelope shapes the entire span.
+//
+// Stop-bar + loop: when the playhead reaches the optional stop-music marker
+// (or the end of the last allocated page when no marker is set) the engine
+// either (a) stops if `loop` is false, or (b) wraps back to bar 0 if `loop`
+// is true.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -20,13 +31,17 @@ import wasmUrl from '@patchtogether.live/dsp/dist/adsr.wasm?url';
 import metaUrl from '@patchtogether.live/dsp/dist/adsr.json?url';
 import workletUrl from '@patchtogether.live/dsp/dist/adsr.worklet.js?url';
 import {
+  BARS_PER_PAGE,
+  DEFAULT_PAGES,
   DYNAMIC_SCALE,
+  MAX_PAGES,
   TICKS_PER_BAR,
-  TOTAL_BARS,
-  TOTAL_TICKS,
   dynamicAt,
   emptyScoreData,
+  migrateScoreV1ToV2,
   tickWidth,
+  tieChainFrom,
+  tieRoleFor,
   type ScoreData,
   type ScoreNote,
   type DynamicMarker,
@@ -43,7 +58,17 @@ function readScoreData(nodeId: string): ScoreData {
   const dynamics = Array.isArray(raw.dynamics) ? (raw.dynamics as DynamicMarker[]) : [];
   const ties = Array.isArray(raw.ties) ? (raw.ties as Tie[]) : [];
   const ks = typeof raw.keySignature === 'number' ? (raw.keySignature as number) : 0;
-  return { notes, dynamics, ties, keySignature: ks };
+  const pages =
+    typeof raw.pages === 'number'
+      ? Math.max(1, Math.min(MAX_PAGES, raw.pages as number))
+      : DEFAULT_PAGES;
+  const loop = typeof raw.loop === 'boolean' ? (raw.loop as boolean) : false;
+  const sb = raw.stopBar as { bar?: number; tick?: number } | undefined;
+  const stopBar =
+    sb && typeof sb === 'object' && typeof sb.bar === 'number' && typeof sb.tick === 'number'
+      ? { bar: sb.bar, tick: sb.tick }
+      : undefined;
+  return { notes, dynamics, ties, keySignature: ks, pages, loop, stopBar };
 }
 
 export const scoreDef: AudioModuleDef = {
@@ -51,7 +76,11 @@ export const scoreDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Score',
   category: 'modulation',
-  schemaVersion: 1,
+  schemaVersion: 2,
+  migrate(data, fromVersion) {
+    if (fromVersion < 2) return migrateScoreV1ToV2(data);
+    return data;
+  },
   inputs: [
     { id: 'clock', type: 'gate' },
     { id: 'attack', type: 'cv', paramTarget: 'attack' },
@@ -143,10 +172,10 @@ export const scoreDef: AudioModuleDef = {
     }
 
     // ---- Tick loop ----
-    // The score timeline is `TOTAL_TICKS` 16th-note slots (8 bars × 16 = 128
-    // 16ths, expressed as 8 bars × 48 ticks-per-bar = 384 grid ticks; one
-    // 16th = 3 grid ticks). We advance by 16th-note increments — each
-    // advance moves `tickIndex` by 3.
+    // The score timeline is `pages * BARS_PER_PAGE * TICKS_PER_BAR` grid
+    // ticks. We advance by 16th-note increments — each advance moves
+    // `tickIndex` by 3 (one 16th = 3 grid ticks). `tickIndex` is in 16th
+    // units, so `tickIndex * 3` is the absolute grid position.
     let tickIndex = 0;
     let nextStepTime = ctx.currentTime + 0.05;
     let prevPlaying = false;
@@ -160,6 +189,11 @@ export const scoreDef: AudioModuleDef = {
     let lastEmittedGate = 0;
     let lastDynamicScale = DYNAMIC_SCALE.mf;
     let totalAdvances = 0;
+    /** When >0, gate is being held high through a tied span. The value is
+     *  the absolute grid tick at which the chain ends + the chain's last
+     *  note's full duration — i.e. the gate-off boundary. While set we
+     *  suppress per-step gate drops. */
+    let tiedGateHoldUntilTick = -1;
 
     /** Look up a note that starts exactly at this absolute grid position. */
     function noteStartingAt(absTick: number, notes: ScoreNote[]): ScoreNote | null {
@@ -171,18 +205,31 @@ export const scoreDef: AudioModuleDef = {
       return null;
     }
 
+    /** Compute the absolute grid tick at which a given note's gate-off is
+     *  due, factoring in tie chains. For a stand-alone or tie-end note this
+     *  is `note.bar*TICKS_PER_BAR + note.tick + tickWidth(note.duration)`.
+     *  For a tie-start note we walk the chain forward and return the LAST
+     *  note's gate-off boundary. Returns the absolute grid tick. */
+    function gateOffAbsTickFor(note: ScoreNote, data: ScoreData): number {
+      const role = tieRoleFor(note.id, data.ties);
+      if (role === 'tied-start') {
+        const chain = tieChainFrom(note.id, data.ties, data.notes);
+        const last = chain[chain.length - 1] ?? note;
+        return last.bar * TICKS_PER_BAR + last.tick + tickWidth(last.duration);
+      }
+      return note.bar * TICKS_PER_BAR + note.tick + tickWidth(note.duration);
+    }
+
     /** Schedule the start (and gate-off) of one 16th-note slot's note (if
-     *  any). `slotDurForGate` is how long the gate would stay on if the note
-     *  ran exactly one 16th — we extend per the note's actual duration. */
+     *  any). `slotDur` is how long one 16th would last in seconds. */
     function emitTick(absTick: number, atTime: number, slotDur: number) {
       emitClockPulse(atTime);
       const data = readScoreData(nodeId);
       const note = noteStartingAt(absTick, data.notes);
-      if (!note) {
-        // No note starts here. We do NOT preemptively close the gate — the
-        // previous note's scheduled gate-off handles that. Just advance.
-        return;
-      }
+      if (!note) return;
+
+      const role = tieRoleFor(note.id, data.ties);
+
       // Forward-fill dynamic.
       const lvl = dynamicAt(note.bar, note.tick, data.dynamics);
       const dynScale = DYNAMIC_SCALE[lvl];
@@ -191,18 +238,73 @@ export const scoreDef: AudioModuleDef = {
         dynGain.gain.setValueAtTime(dynScale, atTime);
       } catch { /* time may be in the past on audio thread; ignore */ }
 
-      // Pitch as V/oct.
+      // Pitch as V/oct. ALWAYS update pitch — even mid-chain notes change
+      // pitch (a tie usually implies same pitch but we don't enforce that
+      // and let the engine track whatever the user wired up).
       const vOct = midiToVOct(note.midi);
       lastEmittedVOct = vOct;
       pitchSrc.offset.setValueAtTime(vOct, atTime);
 
-      // Gate timing: held for the note's actual duration in seconds.
-      // slotDur = duration of one 16th in seconds; one 16th = 3 grid ticks.
-      const noteSec = (tickWidth(note.duration) / 3) * slotDur;
-      gateSrc.offset.setValueAtTime(1, atTime);
-      gateSrc.offset.setValueAtTime(0, atTime + noteSec * 0.95);
-      lastEmittedGate = 1;
+      // Gate emission depends on tie role:
+      //   - 'none': open gate now, close at note end (current behavior).
+      //   - 'tied-start': open gate now, close at LAST chain note's end.
+      //     Suppress per-step gate-off until then.
+      //   - 'tied-mid': do NOT re-open the gate. Pitch was updated above.
+      //   - 'tied-end': do NOT re-open the gate; the chain's gate-off was
+      //     already scheduled by the start. Pitch updated above.
+      //
+      // We recalculate the gate-off each time the chain's start fires
+      // (instead of mid-chain) so that subsequent edits to a chain remain
+      // correct on the next loop pass.
+      if (role === 'none') {
+        const noteSec = (tickWidth(note.duration) / 3) * slotDur;
+        gateSrc.offset.setValueAtTime(1, atTime);
+        gateSrc.offset.setValueAtTime(0, atTime + noteSec * 0.95);
+        lastEmittedGate = 1;
+        tiedGateHoldUntilTick = -1;
+      } else if (role === 'tied-start') {
+        const chain = tieChainFrom(note.id, data.ties, data.notes);
+        const last = chain[chain.length - 1] ?? note;
+        // Total grid-ticks from this note's start to last note's end.
+        const startAbs = note.bar * TICKS_PER_BAR + note.tick;
+        const endAbs = last.bar * TICKS_PER_BAR + last.tick + tickWidth(last.duration);
+        const spanGridTicks = Math.max(1, endAbs - startAbs);
+        const spanSec = (spanGridTicks / 3) * slotDur;
+        gateSrc.offset.setValueAtTime(1, atTime);
+        gateSrc.offset.setValueAtTime(0, atTime + spanSec * 0.98);
+        lastEmittedGate = 1;
+        tiedGateHoldUntilTick = endAbs;
+      }
+      // tied-mid / tied-end: pitch already updated, gate left alone.
       currentNoteId = note.id;
+    }
+
+    /** Total bars currently allocated by the score (live read). */
+    function liveTotalGridTicks(): number {
+      const data = readScoreData(nodeId);
+      const pages = Math.max(1, Math.min(MAX_PAGES, data.pages || DEFAULT_PAGES));
+      return pages * BARS_PER_PAGE * TICKS_PER_BAR;
+    }
+
+    /** Absolute grid-tick at which the sequence ends. If a stop-music marker
+     *  is set, returns its absolute position; otherwise end-of-final-page. */
+    function liveStopGridTick(): number {
+      const data = readScoreData(nodeId);
+      const pages = Math.max(1, Math.min(MAX_PAGES, data.pages || DEFAULT_PAGES));
+      const endOfPages = pages * BARS_PER_PAGE * TICKS_PER_BAR;
+      if (data.stopBar) {
+        const abs = data.stopBar.bar * TICKS_PER_BAR + data.stopBar.tick;
+        // Clamp into the allocated range.
+        return Math.max(1, Math.min(endOfPages, abs));
+      }
+      return endOfPages;
+    }
+
+    function silenceGate(atTime: number) {
+      gateSrc.offset.cancelScheduledValues(atTime);
+      gateSrc.offset.setValueAtTime(0, atTime);
+      lastEmittedGate = 0;
+      tiedGateHoldUntilTick = -1;
     }
 
     function tick() {
@@ -216,11 +318,13 @@ export const scoreDef: AudioModuleDef = {
           nextStepTime = ctx.currentTime + 0.05;
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
+          tiedGateHoldUntilTick = -1;
           lastClockSample = 0;
           lastClockSampleTime = ctx.currentTime;
         } else if (!isPlaying && prevPlaying) {
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
+          tiedGateHoldUntilTick = -1;
         }
         prevPlaying = isPlaying;
 
@@ -228,6 +332,11 @@ export const scoreDef: AudioModuleDef = {
           timeoutId = setTimeout(tick, TICK_MS);
           return;
         }
+
+        const totalGrid = liveTotalGridTicks();
+        const stopGrid = liveStopGridTick();
+        const total16ths = Math.max(1, Math.floor(totalGrid / 3));
+        const stop16ths = Math.max(1, Math.floor(stopGrid / 3));
 
         if (externalClock) {
           clockInAnalyser.getFloatTimeDomainData(clockInBuffer);
@@ -243,8 +352,20 @@ export const scoreDef: AudioModuleDef = {
           for (let i = start; i < clockInBuffer.length; i++) {
             const cur = clockInBuffer[i] ?? 0;
             if (lastClockSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
+              if (tickIndex >= stop16ths) {
+                if (readScoreData(nodeId).loop) {
+                  tickIndex = 0;
+                } else {
+                  // Stop the sequencer.
+                  silenceGate(nowAt + 0.005);
+                  // Clear isPlaying so the next tick takes the !isPlaying path.
+                  const live = livePatch.nodes[nodeId];
+                  if (live?.params) live.params.isPlaying = 0;
+                  break;
+                }
+              }
               emitTick(tickIndex * 3, nowAt + 0.005, slotDur);
-              tickIndex = (tickIndex + 1) % (TOTAL_TICKS / 3);
+              tickIndex = (tickIndex + 1) % total16ths;
               totalAdvances++;
             }
             lastClockSample = cur;
@@ -254,9 +375,20 @@ export const scoreDef: AudioModuleDef = {
           while (nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
             const bpm = readParam('bpm', 120);
             const slotDur = 60 / bpm / 4;
+            if (tickIndex >= stop16ths) {
+              if (readScoreData(nodeId).loop) {
+                tickIndex = 0;
+              } else {
+                // Stop and exit the schedule loop.
+                silenceGate(nextStepTime);
+                const live = livePatch.nodes[nodeId];
+                if (live?.params) live.params.isPlaying = 0;
+                break;
+              }
+            }
             emitTick(tickIndex * 3, nextStepTime, slotDur);
             nextStepTime += slotDur;
-            tickIndex = (tickIndex + 1) % (TOTAL_TICKS / 3);
+            tickIndex = (tickIndex + 1) % total16ths;
             totalAdvances++;
           }
         }
@@ -298,6 +430,8 @@ export const scoreDef: AudioModuleDef = {
         if (key === 'pitchVOct') return lastEmittedVOct;
         if (key === 'gateValue') return lastEmittedGate;
         if (key === 'dynamicScale') return lastDynamicScale;
+        if (key === 'tickIndex') return tickIndex;
+        if (key === 'tiedGateHoldUntilTick') return tiedGateHoldUntilTick;
         return undefined;
       },
       dispose() {
@@ -319,3 +453,14 @@ export const scoreDef: AudioModuleDef = {
     };
   },
 };
+
+// Export this for the gateOffAbsTickFor helper used in tests.
+export function _testGateOffAbsTickFor(note: ScoreNote, data: ScoreData): number {
+  const role = tieRoleFor(note.id, data.ties);
+  if (role === 'tied-start') {
+    const chain = tieChainFrom(note.id, data.ties, data.notes);
+    const last = chain[chain.length - 1] ?? note;
+    return last.bar * TICKS_PER_BAR + last.tick + tickWidth(last.duration);
+  }
+  return note.bar * TICKS_PER_BAR + note.tick + tickWidth(note.duration);
+}

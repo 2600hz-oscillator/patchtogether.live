@@ -3,10 +3,32 @@
 // Pure data helpers for the SCORE module. Kept separate from score.ts so the
 // vitest suite (node env) can exercise the math without pulling Faust runtime
 // imports.
+//
+// v2 schema (PR #x): pages model. Each score holds 1..MAX_PAGES pages, each
+// page is ROWS_PER_PAGE × BARS_PER_ROW = BARS_PER_PAGE bars. Notes/dynamics
+// continue to use an absolute `bar` index that ranges 0..(pages*BARS_PER_PAGE)
+// — the page index for a given bar is just `Math.floor(bar / BARS_PER_PAGE)`.
+//
+// Loop + stop-bar control end-of-sequence behavior:
+//   - stopBar (one max, optional): when the playhead reaches this absolute
+//     bar position the engine either stops (loop=false) or wraps to bar 0
+//     (loop=true). Defaults to end-of-final-page when unset.
+//   - loop: persisted toggle, shared across collaborators in the rackspace.
 
 export const TICKS_PER_BAR = 48;
 export const BARS_PER_ROW = 4;
-export const TOTAL_BARS = 8;
+export const ROWS_PER_PAGE = 4;
+export const BARS_PER_PAGE = BARS_PER_ROW * ROWS_PER_PAGE; // 16
+export const MAX_PAGES = 4;
+export const DEFAULT_PAGES = 1;
+
+/** Convenience constant for "max possible bars" (a fully-expanded score). */
+export const MAX_TOTAL_BARS = BARS_PER_PAGE * MAX_PAGES; // 64
+
+/** Default total bars for a fresh score. Kept for backwards compat — anywhere
+ *  this used to mean "the entire timeline" should now compute from pages. */
+export const TOTAL_BARS = BARS_PER_PAGE * DEFAULT_PAGES; // 16
+
 export const TOTAL_TICKS = TICKS_PER_BAR * TOTAL_BARS;
 
 // Pitch range C4..C6 inclusive (per plan).
@@ -27,7 +49,7 @@ export type Accidental = 'natural' | 'sharp' | 'flat' | null;
 
 export interface ScoreNote {
   id: string;
-  bar: number; // 0..TOTAL_BARS-1
+  bar: number; // 0..(pages*BARS_PER_PAGE)-1
   tick: number; // 0..TICKS_PER_BAR-1
   duration: NoteDuration;
   midi: number;
@@ -48,19 +70,36 @@ export interface Tie {
   toNoteId: string;
 }
 
+/** Stop-music double-bar marker. Exactly one allowed per score; placed at
+ *  (bar, tick) on the staff. When the playhead reaches this position the
+ *  engine either stops or wraps depending on `loop`. */
+export interface StopBar {
+  bar: number;
+  tick: number; // 0..TICKS_PER_BAR; tick=TICKS_PER_BAR means "end-of-bar"
+}
+
 export interface ScoreData {
   notes: ScoreNote[];
   dynamics: DynamicMarker[];
   ties: Tie[];
   keySignature: number; // -7..+7
+  /** Number of allocated pages (1..MAX_PAGES). v2+. */
+  pages: number;
+  /** Loop-on-end toggle. v2+. */
+  loop: boolean;
+  /** Optional stop-music double-bar. v2+. */
+  stopBar?: StopBar;
 }
 
+// New dynamics scale: pp 10% quieter, ff 10% louder. Other levels unchanged.
+// pp 0.25 -> 0.225;  ff 0.95 -> 1.045 (raw — VCA path is clip-safe; the
+// downstream Faust DSP saturates gracefully past 1.0).
 export const DYNAMIC_SCALE: Record<DynamicLevel, number> = {
-  pp: 0.25,
+  pp: 0.225,
   p: 0.4,
   mf: 0.55,
   f: 0.75,
-  ff: 0.95,
+  ff: 1.045,
 };
 
 const DURATION_TICKS: Record<NoteDuration, number> = {
@@ -77,7 +116,19 @@ export function tickWidth(duration: NoteDuration): number {
 }
 
 export function emptyScoreData(): ScoreData {
-  return { notes: [], dynamics: [], ties: [], keySignature: 0 };
+  return {
+    notes: [],
+    dynamics: [],
+    ties: [],
+    keySignature: 0,
+    pages: DEFAULT_PAGES,
+    loop: false,
+  };
+}
+
+/** Total bars currently allocated by the score (pages × BARS_PER_PAGE). */
+export function totalBars(data: ScoreData): number {
+  return Math.max(1, Math.min(MAX_PAGES, data.pages)) * BARS_PER_PAGE;
 }
 
 /** Sum of tick widths used inside a given bar. */
@@ -89,7 +140,10 @@ export function barCapacityRemaining(bar: number, notes: ScoreNote[]): number {
   return Math.max(0, TICKS_PER_BAR - used);
 }
 
-/** Rejects bar overflow + overlap + out-of-range pitch. */
+/** Rejects bar overflow + overlap + out-of-range pitch. Optional `maxBar`
+ *  (exclusive) defaults to TOTAL_BARS for backward compat with the v1 tests
+ *  that omit a page count. Callers in the live UI should pass the score's
+ *  current `totalBars(data)`. */
 export function canPlace(
   bar: number,
   tick: number,
@@ -97,8 +151,9 @@ export function canPlace(
   midi: number,
   existingNotes: ScoreNote[],
   ignoreNoteId?: string,
+  maxBar: number = TOTAL_BARS,
 ): boolean {
-  if (bar < 0 || bar >= TOTAL_BARS) return false;
+  if (bar < 0 || bar >= maxBar) return false;
   if (tick < 0 || tick >= TICKS_PER_BAR) return false;
   if (midi < SCORE_MIN_MIDI || midi > SCORE_MAX_MIDI) return false;
   const w = tickWidth(duration);
@@ -255,6 +310,53 @@ export function tieSpanNotes(
   return sorted.slice(lo, hi + 1);
 }
 
+/**
+ * Resolve a note's tie role:
+ *   - 'tied-start' — first note of a tie chain (gate stays high through chain)
+ *   - 'tied-mid'   — interior note (gate stays high; pitch update only)
+ *   - 'tied-end'   — last note of a tie chain (gate drops at end)
+ *   - 'none'       — not part of any tie chain
+ *
+ * A note is 'tied-start' if it appears as a fromNoteId in some tie and not as
+ * a toNoteId; 'tied-end' if vice versa; 'tied-mid' if both. Reuse-friendly:
+ * a single tie object {from: A, to: B} makes A start and B end.
+ */
+export type TieRole = 'tied-start' | 'tied-mid' | 'tied-end' | 'none';
+
+export function tieRoleFor(noteId: string, ties: Tie[]): TieRole {
+  let isFrom = false;
+  let isTo = false;
+  for (const t of ties) {
+    if (t.fromNoteId === noteId) isFrom = true;
+    if (t.toNoteId === noteId) isTo = true;
+  }
+  if (isFrom && isTo) return 'tied-mid';
+  if (isFrom) return 'tied-start';
+  if (isTo) return 'tied-end';
+  return 'none';
+}
+
+/**
+ * For a given note that starts a tie chain (or stands alone), return the
+ * sequence of consecutive tied notes [start, mid..., end]. Walks the ties
+ * graph forward from `noteId`, hopping fromNoteId -> toNoteId until no more
+ * outgoing tie. Cycles are guarded against (each visited id tracked).
+ */
+export function tieChainFrom(noteId: string, ties: Tie[], notes: ScoreNote[]): ScoreNote[] {
+  const visited = new Set<string>();
+  const chain: ScoreNote[] = [];
+  let cur: string | null = noteId;
+  while (cur && !visited.has(cur)) {
+    visited.add(cur);
+    const n = notes.find((x) => x.id === cur);
+    if (!n) break;
+    chain.push(n);
+    const next = ties.find((t) => t.fromNoteId === cur);
+    cur = next ? next.toNoteId : null;
+  }
+  return chain;
+}
+
 /** Quantize a tick within a bar to the active duration's grid. */
 export function quantizeTick(rawTick: number, duration: NoteDuration): number {
   const w = tickWidth(duration);
@@ -264,6 +366,39 @@ export function quantizeTick(rawTick: number, duration: NoteDuration): number {
   const snap = Math.max(1, w);
   const n = Math.round(rawTick / snap) * snap;
   return Math.max(0, Math.min(TICKS_PER_BAR - 1, n));
+}
+
+/**
+ * Migrate a v1 score-data shape (pre-pages) to the v2 shape. v1 had a single
+ * 8-bar timeline (TOTAL_BARS=8); v2 expands to a single 16-bar page with the
+ * same 8 bars in the first 8 slots. Notes/dynamics/ties keep their absolute
+ * `bar` values (0..7) and are fully backward-compatible because page 1
+ * occupies bars 0..15.
+ *
+ * Behavior:
+ *   - if data already has a numeric `pages`, return as-is (idempotent for
+ *     forward-rolled data)
+ *   - otherwise: notes/dynamics/ties/keySignature passed through, pages=1,
+ *     loop=false, no stopBar.
+ */
+export function migrateScoreV1ToV2(raw: unknown): ScoreData {
+  if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>;
+    const notes = Array.isArray(r.notes) ? (r.notes as ScoreNote[]) : [];
+    const dynamics = Array.isArray(r.dynamics) ? (r.dynamics as DynamicMarker[]) : [];
+    const ties = Array.isArray(r.ties) ? (r.ties as Tie[]) : [];
+    const ks = typeof r.keySignature === 'number' ? (r.keySignature as number) : 0;
+    const pages =
+      typeof r.pages === 'number' ? Math.max(1, Math.min(MAX_PAGES, r.pages as number)) : DEFAULT_PAGES;
+    const loop = typeof r.loop === 'boolean' ? (r.loop as boolean) : false;
+    const sb = r.stopBar as StopBar | undefined;
+    const stopBar =
+      sb && typeof sb === 'object' && typeof sb.bar === 'number' && typeof sb.tick === 'number'
+        ? { bar: sb.bar, tick: sb.tick }
+        : undefined;
+    return { notes, dynamics, ties, keySignature: ks, pages, loop, stopBar };
+  }
+  return emptyScoreData();
 }
 
 // SMuFL Unicode codepoints used by the renderer. Bravura ships these.

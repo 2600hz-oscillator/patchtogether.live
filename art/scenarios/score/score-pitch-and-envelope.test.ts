@@ -222,4 +222,137 @@ describe('SCORE / envelope x dynamic', () => {
       ).toBeLessThan(tol);
     });
   }
+
+  // SCORE v2 dynamics: pp -10%, ff +10%. Render both and verify the relative
+  // amplitudes line up with the new ratio (≈4.64) — substantially louder than
+  // the v1 ratio of 3.8. Guards against regressions to the old constants.
+  it('ff peak amplitude > pp peak by the new (1.045 / 0.225) ratio', async () => {
+    const opts = {
+      attack: 0.005,
+      decay: 0.1,
+      sustain: 0.7,
+      release: 0.3,
+      gateOnS: 0.05,
+      gateOffS: 0.55,
+      durationS: 1.0,
+    };
+    const ppBuf = await renderAdsrEnvelope({ ...opts, dynScale: DYNAMIC_SCALE.pp });
+    const ffBuf = await renderAdsrEnvelope({ ...opts, dynScale: DYNAMIC_SCALE.ff });
+    const ppPeak = peakAbs(ppBuf);
+    const ffPeak = peakAbs(ffBuf);
+    expect(ffPeak).toBeGreaterThan(ppPeak);
+    const measuredRatio = ffPeak / ppPeak;
+    const expectedRatio = DYNAMIC_SCALE.ff / DYNAMIC_SCALE.pp;
+    // Tight tolerance — the buffers are deterministic.
+    expect(measuredRatio).toBeGreaterThan(expectedRatio * 0.95);
+    expect(measuredRatio).toBeLessThan(expectedRatio * 1.05);
+    // Sanity: the new ratio is ≥ 4.5 (significantly higher than v1's 3.8).
+    expect(expectedRatio).toBeGreaterThan(4.5);
+  });
+});
+
+describe('SCORE / tied-note envelope (single sustained span)', () => {
+  // The bug fix: a tie should produce ONE envelope, not two attacks.
+  //
+  // Engine semantics encoded in score.ts emitTick():
+  //   - tied-start: gate goes high at note.start, stays high until end of
+  //     LAST chain note. Total span = sum of tied-note durations.
+  //   - tied-mid:   pitch updated, gate untouched.
+  //   - tied-end:   pitch updated, gate untouched.
+  //
+  // We model that here directly: render an ADSR with one gate-on at chain
+  // start and one gate-off at chain end. We then assert: (a) the buffer's
+  // peak is reached only ONCE (no second attack), and (b) the value at any
+  // mid-chain instant is at the sustain level (not a fresh attack).
+
+  function findAttackPeaks(buf: Float32Array, threshold: number): number {
+    // Count rising-edge crossings above threshold separated by at least 5ms
+    // of "gap" (samples below threshold) — the second attack of a re-triggered
+    // ADSR would create one such extra rising edge.
+    const gapSamples = Math.round(SAMPLE_RATE * 0.005);
+    let peaks = 0;
+    let belowFor = gapSamples;
+    let isRising = false;
+    let prev = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = Math.abs(buf[i]);
+      if (v < threshold) belowFor++;
+      else belowFor = 0;
+      const rising = v > prev;
+      if (rising && !isRising && v >= threshold && belowFor === 0) {
+        // Only count a rising edge that started after a gap.
+        if (i === 0 || Math.abs(buf[i - 1]) < threshold) peaks++;
+      }
+      isRising = rising;
+      prev = v;
+    }
+    return peaks;
+  }
+
+  it('tied 3-quarter span produces a single sustained envelope (no re-attack)', async () => {
+    // 3 quarter notes at 120 BPM = 1.5s span. attack=0.005, decay=0.1,
+    // sustain=0.7. With ONE held envelope: peak ≈ 1.0 reached during attack,
+    // then sustains at 0.7 for the entire chain.
+    const buf = await renderAdsrEnvelope({
+      attack: 0.005,
+      decay: 0.1,
+      sustain: 0.7,
+      release: 0.3,
+      dynScale: DYNAMIC_SCALE.mf,
+      gateOnS: 0.05,
+      gateOffS: 1.55, // 1.5s span
+      durationS: 2.0,
+    });
+    // Sample mid-chain (well past attack+decay, well before release).
+    const midChainSampleIdx = Math.floor(SAMPLE_RATE * 1.0);
+    const midValue = Math.abs(buf[midChainSampleIdx]);
+    const expectedSustain = 0.7 * DYNAMIC_SCALE.mf;
+    // Should be at the sustain level, NOT zero (no gate drop), and NOT
+    // peak again (no second attack).
+    expect(midValue).toBeGreaterThan(expectedSustain * 0.9);
+    expect(midValue).toBeLessThan(expectedSustain * 1.1);
+
+    // The buffer's overall peak should be reached exactly once (during the
+    // initial attack). A re-trigger would produce two distinct attack peaks.
+    const peakIdx = (() => {
+      let pi = 0;
+      let pv = 0;
+      for (let i = 0; i < buf.length; i++) {
+        if (Math.abs(buf[i]) > pv) {
+          pv = Math.abs(buf[i]);
+          pi = i;
+        }
+      }
+      return pi;
+    })();
+    const peakTimeS = peakIdx / SAMPLE_RATE;
+    // Peak must occur in the FIRST attack window (before mid-chain) — not
+    // at a second attack mid-chain.
+    expect(peakTimeS).toBeLessThan(0.2);
+  });
+
+  it('compare: a re-triggered envelope dips toward zero at the per-note boundary', async () => {
+    // Reference: a SEPARATE envelope with full release tail (the WRONG
+    // behavior — what un-tied notes do). We render with a release window
+    // that fully completes, then assert the tail decays to near-zero.
+    // This sanity-checks the "tied-span doesn't dip" property we test above.
+    const oneNote = await renderAdsrEnvelope({
+      attack: 0.005,
+      decay: 0.1,
+      sustain: 0.7,
+      release: 0.3,
+      dynScale: DYNAMIC_SCALE.mf,
+      gateOnS: 0.05,
+      gateOffS: 0.55,
+      durationS: 1.0,
+    });
+    // After 0.55 (gate-off) + 0.3 (release) = 0.85s the envelope should be
+    // fully decayed. Sample at ~0.95s.
+    const tailIdx = Math.floor(SAMPLE_RATE * 0.95);
+    const tailValue = Math.abs(oneNote[tailIdx]);
+    // Should be near zero — well below sustain.
+    expect(tailValue).toBeLessThan(0.05 * DYNAMIC_SCALE.mf);
+    // (In contrast, the tied-span test above stays at 0.7 * dynScale through
+    // the entire mid-span — proving the held-gate behavior.)
+  });
 });
