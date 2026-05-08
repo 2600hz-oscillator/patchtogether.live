@@ -43,11 +43,14 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">RIOTGIRLS</header>
 
-  <!-- Voice columns: trig + pitch input handles on the LEFT side, stacked
-       per voice across 4 vertical strips. -->
+  <!-- Voice columns: trig + gate + pitch input handles on the LEFT side,
+       stacked per voice across 4 vertical strips. trigN and gateN are alternate
+       names for the same underlying gate-input node — gateN exists so a
+       Sequencer can patch its named "gate" output without a port-name mismatch. -->
   {#each [1, 2, 3, 4] as v (v)}
-    <Handle type="target" position={Position.Left} id={`trig${v}`} style="top: {inY(0)}px; --handle-color: var(--cable-gate);" />
-    <Handle type="target" position={Position.Left} id={`pitch${v}`} style="top: {inY(1)}px; --handle-color: var(--cable-cv);" />
+    <Handle type="target" position={Position.Left} id={`trig${v}`}  style="top: {inY(0)}px; --handle-color: var(--cable-gate);" />
+    <Handle type="target" position={Position.Left} id={`gate${v}`}  style="top: {inY(1)}px; --handle-color: var(--cable-gate);" />
+    <Handle type="target" position={Position.Left} id={`pitch${v}`} style="top: {inY(2)}px; --handle-color: var(--cable-cv);" />
   {/each}
 
   <!-- Outputs (right edge, bottom). -->
@@ -63,6 +66,9 @@
         <div class="col-label">V{v} (DG)</div>
         <div class="port-stub">
           <span class="port-marker port-gate"></span><span class="port-text">trig</span>
+        </div>
+        <div class="port-stub">
+          <span class="port-marker port-gate"></span><span class="port-text">gate</span>
         </div>
         <div class="port-stub">
           <span class="port-marker port-cv"></span><span class="port-text">pitch</span>
@@ -85,6 +91,9 @@
       <div class="col-label">V4 (WT)</div>
       <div class="port-stub">
         <span class="port-marker port-gate"></span><span class="port-text">trig</span>
+      </div>
+      <div class="port-stub">
+        <span class="port-marker port-gate"></span><span class="port-text">gate</span>
       </div>
       <div class="port-stub">
         <span class="port-marker port-cv"></span><span class="port-text">pitch</span>

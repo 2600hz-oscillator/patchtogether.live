@@ -130,3 +130,56 @@ test('RIOTGIRLS: __riotgirlsTriggerVoice test hook fires the requested voice', a
   expect(peak, `RIOTGIRLS test-hook scope peak (got ${peak})`).toBeGreaterThan(0.001);
   expect(errors, `RIOTGIRLS test-hook errors: ${errors.join('; ')}`).toEqual([]);
 });
+
+test('RIOTGIRLS: Sequencer-driven gate1 (alt port) produces audio on outL', async ({ page }) => {
+  // Mirror of the trig1 test, but routes the Sequencer gate cable into the
+  // gateN alternate port. trigN and gateN share the same underlying gate-input
+  // node (Web Audio sums multiple sources), so audio activity should be
+  // identical.
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(
+    page,
+    [
+      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'rg',  type: 'riotgirls', params: { v1_volume: 1.5, flt_cutoff: 18000 } },
+      { id: 'scope', type: 'scope', params: {} },
+      { id: 'out', type: 'audioOut', params: { master: 0.1 } },
+    ],
+    [
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'rg', portId: 'gate1' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e2', from: { nodeId: 'rg', portId: 'outL' },  to: { nodeId: 'scope', portId: 'ch1' } },
+      { id: 'e3', from: { nodeId: 'scope', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' } },
+      { id: 'e4', from: { nodeId: 'rg', portId: 'outR' },  to: { nodeId: 'out', portId: 'R' } },
+    ],
+  );
+
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const seq = w.__patch.nodes['seq'];
+      if (!seq.data) seq.data = {};
+      seq.data.steps = Array.from({ length: 32 }, (_, i) => ({ on: i < 4, midi: 60 }));
+    });
+  });
+
+  let peak = 0;
+  const start = Date.now();
+  while (Date.now() - start < 2500) {
+    await page.waitForTimeout(150);
+    peak = await readScopePeak(page, 'scope');
+    if (peak > 0.001) break;
+  }
+  expect(peak, `RIOTGIRLS gate1 scope peak (got ${peak})`).toBeGreaterThan(0.001);
+  expect(errors, `RIOTGIRLS gate1 errors: ${errors.join('; ')}`).toEqual([]);
+});

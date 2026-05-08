@@ -6,7 +6,7 @@
 //   - voice-4 chain dispatch (vN_attack/decay/sustain/release -> v4 ADSR)
 
 import { describe, it, expect } from 'vitest';
-import { equalPowerPan, dispatchParam, type SetParamSink } from './riotgirls';
+import { equalPowerPan, dispatchParam, riotgirlsDef, type SetParamSink } from './riotgirls';
 
 describe('equalPowerPan: -3 dB equal-power law', () => {
   it('pan = -1 -> (1, 0) hard left', () => {
@@ -201,5 +201,27 @@ describe('dispatchParam: FX routing', () => {
       { id: 'returnA', v: 0.3 },
       { id: 'returnB', v: 0.6 },
     ]);
+  });
+});
+
+describe('riotgirlsDef.inputs: per-voice gate ports', () => {
+  it('exposes gate1..gate4 input ports (alongside trig1..trig4)', () => {
+    const ids = riotgirlsDef.inputs.map((p) => p.id);
+    expect(ids).toContain('trig1');
+    expect(ids).toContain('trig2');
+    expect(ids).toContain('trig3');
+    expect(ids).toContain('trig4');
+    expect(ids).toContain('gate1');
+    expect(ids).toContain('gate2');
+    expect(ids).toContain('gate3');
+    expect(ids).toContain('gate4');
+  });
+
+  it('gate1..gate4 are typed as gate ports', () => {
+    for (let v = 1; v <= 4; v++) {
+      const port = riotgirlsDef.inputs.find((p) => p.id === `gate${v}`);
+      expect(port, `gate${v} port should exist`).toBeDefined();
+      expect(port!.type).toBe('gate');
+    }
   });
 });
