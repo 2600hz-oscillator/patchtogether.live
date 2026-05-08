@@ -23,6 +23,7 @@ import { mixmstrsDef } from './mixmstrs';
 import { timelordeDef } from './timelorde';
 import { charlottesEchosDef } from './charlottes-echos';
 import { riotgirlsDef, triggerVoice as riotgirlsTriggerVoice } from './riotgirls';
+import { scoreDef } from './score';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 
 let registered = false;
@@ -50,6 +51,7 @@ export function registerAudioModules(): void {
   registerModule(timelordeDef);
   registerModule(charlottesEchosDef);
   registerModule(riotgirlsDef);
+  registerModule(scoreDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

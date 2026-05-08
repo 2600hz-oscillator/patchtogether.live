@@ -102,6 +102,7 @@ const DESCRIPTIONS: Record<string, string> = {
   charlottesEchos: 'Destructive multi-head stereo delay. Pitch-shifted feedback with decay.',
   riotgirls:
     '4-voice drum machine. 3x DRUMMERGIRL + 1x Wavetable VCO/ADSR/VCA, per-voice equal-power pan, master QBRT filter, stereo out.',
+  score: 'Sheet-music sequencer. 8-bar treble-clef staff, click to place notes. Outputs pitch / gate / env (ADSR x dynamic) / clock.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -179,6 +180,14 @@ const PORT_NOTES: Record<string, string> = {
   'charlottesEchos.delay': 'CV -> delay time.',
   'riotgirls.outL': 'Stereo L out.',
   'riotgirls.outR': 'Stereo R out.',
+  'score.clock': 'External 16th-rate clock; rising edges advance one slot. Disconnect -> internal BPM.',
+  'score.attack': 'CV -> ADSR attack.',
+  'score.decay': 'CV -> ADSR decay.',
+  'score.sustain': 'CV -> ADSR sustain.',
+  'score.release': 'CV -> ADSR release.',
+  'score.pitch': 'V/oct pitch out (mono).',
+  'score.gate': 'Gate out, held for the notated duration of each note.',
+  'score.env': 'Envelope out: ADSR x dynamic (mf=0.55, ff=0.95, etc).',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
@@ -570,6 +579,7 @@ export function buildModuleManifest(
       // aren't module definitions themselves.
       if (file.endsWith('.test.ts')) return false;
       if (file.endsWith('-state.ts')) return false;
+      if (file.endsWith('-data.ts')) return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));

@@ -33,7 +33,9 @@ test('palette: Enter picks the first filtered match', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: '+ Add module' }).click();
-  await page.keyboard.type('Sco'); // matches Scope
+  // Scope is alphabetically first among Sc-prefix modules (Scope, Score), so
+  // "Scop" uniquely matches Scope.
+  await page.keyboard.type('Scop');
   await page.keyboard.press('Enter');
   await expect(page.locator('.svelte-flow__node-scope')).toHaveCount(1);
 });
