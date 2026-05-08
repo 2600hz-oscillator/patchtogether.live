@@ -48,10 +48,6 @@ interface ModuleSpec {
 // Modules whose UI is intentionally lagging the def — skipped with a
 // TODO. Empty when the codebase is fully consistent.
 const SKIP_DEF_VS_UI: Record<string, string> = {
-  // RIOTGIRLS def grew the full CV-port surface in MVP-A but the card
-  // still renders only trig/gate/pitch per voice + outL/outR. Tracked
-  // in branch fix/riotgirls-render-all-ports.
-  riotgirls: 'pending fix in fix/riotgirls-render-all-ports',
   // MIXMSTRS exposes 37 per-param CV inputs in the def for graph-level
   // routing, but rendering all of them on the card would overwhelm the
   // chrome. Visible jacks are the 12 audio inputs + 6 outputs only;
