@@ -30,6 +30,59 @@
   note-entry coercion, docs module-manifest generator.
 </p>
 
+<h2>I/O spec consistency</h2>
+<p>
+  Three sources describe each module&rsquo;s port surface and they have to agree:
+</p>
+<ol>
+  <li>
+    The <strong>module def</strong> at <code>packages/web/src/lib/audio/modules/&lt;type&gt;.ts</code>
+    (the runtime source of truth — what the engine wires up).
+  </li>
+  <li>
+    The <strong>published manifest</strong> at <code>/docs/modules/&lt;type&gt;</code>
+    (built from <code>packages/web/src/lib/docs/module-manifest.ts</code>).
+  </li>
+  <li>
+    The <strong>card UI</strong> at <code>packages/web/src/lib/ui/modules/&lt;Type&gt;Card.svelte</code>
+    (the Svelte Flow Handle elements the user can plug cables into).
+  </li>
+</ol>
+<p>
+  Drift between the three was the root cause of the <code>RIOTGIRLS</code> regression where the
+  def grew dozens of CV inputs but the card only rendered three handles per voice — cables had
+  nothing visible to land on. The consistency check is enforced by two tests at two layers:
+</p>
+<ul>
+  <li>
+    <strong>Unit:</strong> <code>packages/web/src/lib/docs/module-manifest.test.ts</code> iterates
+    over <code>getAllModuleSpecs()</code> and asserts the manifest&rsquo;s input/output ids equal
+    the def&rsquo;s. Catches drift between the def and the docs builder
+    (e.g. forgetting to update the build-helper synthesizer when a computed-shape module gains a
+    new port).
+  </li>
+  <li>
+    <strong>E2E:</strong> <code>e2e/tests/io-spec-consistency.spec.ts</code> spawns each module
+    type, reads <code>window.__moduleSpecs</code>, and asserts every Handle&rsquo;s
+    <code>data-handleid</code> matches the def. Catches drift between the def and the rendered UI.
+  </li>
+</ul>
+<p>
+  <strong>Adding a new module:</strong> the unit test iterates the registry automatically — no
+  edit needed. For the E2E test, add the new <code>ModuleType</code> string to the
+  <code>MODULE_TYPES</code> array in <code>io-spec-consistency.spec.ts</code> and make sure the
+  card&rsquo;s <code>&lt;Handle&gt;</code> <code>id=</code> values match the def&rsquo;s port ids
+  exactly. If the UI is intentionally lagging the def (e.g. some CV ports kept off-card to avoid
+  chrome overload), add an entry to <code>SKIP_DEF_VS_UI</code> with a TODO pointing at the
+  follow-up branch.
+</p>
+<p>
+  Helper: <code>packages/web/src/lib/dev/module-specs.ts</code> exposes
+  <code>getAllModuleSpecs()</code> as a thin projection of the registry. In dev /
+  <code>VITE_E2E_HOOKS=1</code> builds it&rsquo;s also published as
+  <code>window.__moduleSpecs</code>.
+</p>
+
 <h2>ART — Audio Regression Tests</h2>
 <p>
   Offline render of compiled DSP through <code>node-web-audio-api</code> → Float32 PCM. Tests

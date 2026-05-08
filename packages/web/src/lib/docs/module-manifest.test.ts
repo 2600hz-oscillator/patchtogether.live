@@ -6,8 +6,10 @@
 // test surface. The assertions are deliberately structural, not pinned to
 // exact module counts, so adding a new module doesn't break this file.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, test } from 'vitest';
 import { buildModuleManifest } from './module-manifest';
+import '$lib/audio/modules'; // side-effect: registers all module defs
+import { getAllModuleSpecs } from '$lib/dev/module-specs';
 
 const m = buildModuleManifest();
 
@@ -88,4 +90,35 @@ describe('buildModuleManifest', () => {
       expect(indexes[i]).toBeGreaterThanOrEqual(indexes[i - 1]);
     }
   });
+});
+
+// ----------------------------------------------------------------------------
+// I/O-spec consistency: published manifest <-> registered module def.
+//
+// Catches drift introduced by:
+//  - Adding a new port to the def but forgetting to update the manifest's
+//    build-helper synthesizer (relevant for modules with computed inputs).
+//  - Renaming a port id without updating PORT_NOTES (the parser still emits
+//    the renamed id, so this checks the registry is the single source of
+//    truth).
+//
+// The reverse direction (UI handles match the def) is enforced by the
+// e2e/tests/io-spec-consistency.spec.ts harness.
+// ----------------------------------------------------------------------------
+describe('manifest stays in sync with module defs', () => {
+  for (const spec of getAllModuleSpecs()) {
+    test(`${spec.type}: manifest input/output ids match def`, () => {
+      const mod = m.modules.find((x) => x.type === spec.type);
+      expect(mod, `manifest entry for ${spec.type}`).toBeDefined();
+      if (!mod) return;
+      expect(
+        mod.inputs.map((p) => p.id).sort(),
+        `${spec.type} input ids`,
+      ).toEqual(spec.inputs.map((p) => p.id).sort());
+      expect(
+        mod.outputs.map((p) => p.id).sort(),
+        `${spec.type} output ids`,
+      ).toEqual(spec.outputs.map((p) => p.id).sort());
+    });
+  }
 });
