@@ -19,60 +19,146 @@
     return e.readParam(node, k);
   };
 
-  // Voice column inputs sit in 4 vertical strips (left half of card).
-  // FX-rack inputs hug the right edge above the master out handles.
-  const VOICE_COL_W = 200;
-  const TOP = 56;
-  const ROW = 28;
+  // ---- Handle layout ----
+  // The card exposes a handle for every input port in the riotgirls module def
+  // (55 inputs + 2 outputs). Voice handles stack down the LEFT edge in 4
+  // sections (V1, V2, V3, V4). FX-rack handles stack down the RIGHT edge above
+  // the master output handles.
+  //
+  // The sections are sized so the longest voice (V4 — 13 ports) fits, with the
+  // 3 shorter voices (V1-V3 — 10 ports each) padded with empty rows so each
+  // section starts at a predictable y-offset. This keeps the section labels
+  // aligned with the rest of the card's vertical rhythm.
 
-  // y-stride of input handles down each voice column.
-  function inY(slot: number): number {
-    return TOP + slot * ROW;
+  const ROW = 18;             // y-stride between handles
+  const SECTION_GAP = 14;     // extra gap between voice sections
+  const TOP = 56;             // first handle's y-offset
+
+  // Per-voice port slots — V1-V3 = 10, V4 = 13. We pad V1-V3 to 13 so all
+  // four voices align to the same section height (simpler math, also leaves
+  // room for future per-voice CV additions).
+  const PER_VOICE_SLOTS = 13;
+  const SECTION_HEIGHT = PER_VOICE_SLOTS * ROW + SECTION_GAP;
+
+  // y-offset for the n-th port within voice v (0-indexed v).
+  function voiceY(v: number, slot: number): number {
+    return TOP + v * SECTION_HEIGHT + slot * ROW;
   }
 
-  // FX rack handles + outputs on the right edge.
+  // FX rack stacks down the right edge — 12 master CV handles, then 2 outputs.
   function fxY(slot: number): number {
     return TOP + slot * ROW;
   }
-  // Outputs sit at the bottom-right of the card.
-  const OUT_Y_L = 540;
-  const OUT_Y_R = 564;
+
+  // Outputs sit directly under the FX stack on the right.
+  const FX_SLOT_COUNT = 12;
+  const OUT_Y_L = TOP + (FX_SLOT_COUNT + 2) * ROW;
+  const OUT_Y_R = OUT_Y_L + ROW;
+
+  // Voice descriptors — each voice declares the ordered list of input ports
+  // displayed on the LEFT edge. v1-v3 share the DRUMMERGIRL surface; v4 has
+  // its WT+ADSR+VCA-specific set. The label is rendered next to the handle.
+  type VoicePort = { id: string; label: string; cable: string };
+  const VOICE_PORTS_DG = (v: 1 | 2 | 3): VoicePort[] => [
+    { id: `trig${v}`,     label: 'TRG', cable: 'var(--cable-gate)' },
+    { id: `gate${v}`,     label: 'GAT', cable: 'var(--cable-gate)' },
+    { id: `pitch${v}`,    label: 'PIT', cable: 'var(--cable-cv)' },
+    { id: `v${v}_tone`,   label: 'TON', cable: 'var(--cable-cv)' },
+    { id: `v${v}_shape`,  label: 'SHP', cable: 'var(--cable-cv)' },
+    { id: `v${v}_volume`, label: 'VOL', cable: 'var(--cable-cv)' },
+    { id: `v${v}_decay`,  label: 'DCY', cable: 'var(--cable-cv)' },
+    { id: `v${v}_pan`,    label: 'PAN', cable: 'var(--cable-cv)' },
+    { id: `v${v}_sendA`,  label: 'SDA', cable: 'var(--cable-cv)' },
+    { id: `v${v}_sendB`,  label: 'SDB', cable: 'var(--cable-cv)' },
+  ];
+  const VOICE_PORTS_V4: VoicePort[] = [
+    { id: 'trig4',      label: 'TRG', cable: 'var(--cable-gate)' },
+    { id: 'gate4',      label: 'GAT', cable: 'var(--cable-gate)' },
+    { id: 'pitch4',     label: 'PIT', cable: 'var(--cable-cv)' },
+    { id: 'v4_fm',      label: 'FM',  cable: 'var(--cable-audio)' },
+    { id: 'v4_wavePos', label: 'WAV', cable: 'var(--cable-cv)' },
+    { id: 'v4_attack',  label: 'ATK', cable: 'var(--cable-cv)' },
+    { id: 'v4_decay',   label: 'DCY', cable: 'var(--cable-cv)' },
+    { id: 'v4_sustain', label: 'SUS', cable: 'var(--cable-cv)' },
+    { id: 'v4_release', label: 'REL', cable: 'var(--cable-cv)' },
+    { id: 'v4_volume',  label: 'VOL', cable: 'var(--cable-cv)' },
+    { id: 'v4_pan',     label: 'PAN', cable: 'var(--cable-cv)' },
+    { id: 'v4_sendA',   label: 'SDA', cable: 'var(--cable-cv)' },
+    { id: 'v4_sendB',   label: 'SDB', cable: 'var(--cable-cv)' },
+  ];
+
+  const VOICE_SECTIONS: { label: string; ports: VoicePort[] }[] = [
+    { label: 'V1 (DG)', ports: VOICE_PORTS_DG(1) },
+    { label: 'V2 (DG)', ports: VOICE_PORTS_DG(2) },
+    { label: 'V3 (DG)', ports: VOICE_PORTS_DG(3) },
+    { label: 'V4 (WT)', ports: VOICE_PORTS_V4 },
+  ];
+
+  // Master FX strip on the right edge.
+  type FxPort = { id: string; label: string };
+  const FX_PORTS: FxPort[] = [
+    { id: 'bc_decimate',   label: 'DEC' },
+    { id: 'bc_bits',       label: 'BIT' },
+    { id: 'bc_wet',        label: 'WET' },
+    { id: 'rv_size',       label: 'SIZ' },
+    { id: 'rv_damp',       label: 'DMP' },
+    { id: 'rv_mix',        label: 'MIX' },
+    { id: 'flt_cutoff',    label: 'CUT' },
+    { id: 'flt_resonance', label: 'RES' },
+    { id: 'flt_mode',      label: 'MOD' },
+    { id: 'flt_pingDecay', label: 'PNG' },
+    { id: 'returnA',       label: 'RTA' },
+    { id: 'returnB',       label: 'RTB' },
+  ];
+
+  // Card height auto-derives from the longest of the two strips. With 4 voice
+  // sections × 13 slots × 18 px/row + section gaps + bottom padding, the card
+  // is ~1000 px tall.
+  const CARD_HEIGHT = TOP + 4 * SECTION_HEIGHT + 40;
 </script>
 
-<div class="mod-card riotgirls-card">
+<div class="mod-card riotgirls-card" style="min-height: {CARD_HEIGHT}px;">
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">RIOTGIRLS</header>
 
-  <!-- Voice columns: trig + gate + pitch input handles on the LEFT side,
-       stacked per voice across 4 vertical strips. trigN and gateN are alternate
-       names for the same underlying gate-input node — gateN exists so a
-       Sequencer can patch its named "gate" output without a port-name mismatch. -->
-  {#each [1, 2, 3, 4] as v (v)}
-    <Handle type="target" position={Position.Left} id={`trig${v}`}  style="top: {inY(0)}px; --handle-color: var(--cable-gate);" />
-    <Handle type="target" position={Position.Left} id={`gate${v}`}  style="top: {inY(1)}px; --handle-color: var(--cable-gate);" />
-    <Handle type="target" position={Position.Left} id={`pitch${v}`} style="top: {inY(2)}px; --handle-color: var(--cable-cv);" />
+  <!-- LEFT-edge handles: 4 voice sections, top-to-bottom.
+       Each port renders a Handle + a port-label + a section-divider header. -->
+  {#each VOICE_SECTIONS as section, vIdx (section.label)}
+    <div class="section-header" style="top: {voiceY(vIdx, 0) - 16}px;">{section.label}</div>
+    {#each section.ports as port, slot (port.id)}
+      <Handle
+        type="target"
+        position={Position.Left}
+        id={port.id}
+        style="top: {voiceY(vIdx, slot)}px; --handle-color: {port.cable};"
+      />
+      <span class="port-label left" style="top: {voiceY(vIdx, slot) - 6}px;">{port.label}</span>
+    {/each}
   {/each}
 
-  <!-- Outputs (right edge, bottom). -->
+  <!-- RIGHT-edge handles: master FX strip + outputs. -->
+  <div class="section-header right" style="top: {fxY(0) - 16}px;">MASTER</div>
+  {#each FX_PORTS as port, slot (port.id)}
+    <Handle
+      type="target"
+      position={Position.Right}
+      id={port.id}
+      style="top: {fxY(slot)}px; --handle-color: var(--cable-cv);"
+    />
+    <span class="port-label right" style="top: {fxY(slot) - 6}px;">{port.label}</span>
+  {/each}
+
+  <!-- Outputs (right edge, below the FX stack). -->
   <Handle type="source" position={Position.Right} id="outL" style="top: {OUT_Y_L}px; --handle-color: var(--cable-audio);" />
   <Handle type="source" position={Position.Right} id="outR" style="top: {OUT_Y_R}px; --handle-color: var(--cable-audio);" />
   <span class="port-label right" style="top: {OUT_Y_L - 6}px;">outL</span>
   <span class="port-label right" style="top: {OUT_Y_R - 6}px;">outR</span>
 
-  <!-- Voice strips + FX rack -->
+  <!-- Knob grid (unchanged from MVP-A) — voice strips + FX rack. -->
   <div class="grid">
     {#each [1, 2, 3] as v (v)}
       <div class="voice-col">
         <div class="col-label">V{v} (DG)</div>
-        <div class="port-stub">
-          <span class="port-marker port-gate"></span><span class="port-text">trig</span>
-        </div>
-        <div class="port-stub">
-          <span class="port-marker port-gate"></span><span class="port-text">gate</span>
-        </div>
-        <div class="port-stub">
-          <span class="port-marker port-cv"></span><span class="port-text">pitch</span>
-        </div>
         <Knob value={paramVal(`v${v}_pitch`,  0)}    min={-36}   max={36}  defaultValue={0}    label="PIT" curve="linear" onchange={set(`v${v}_pitch`)}  readLive={live(`v${v}_pitch`)} />
         <Knob value={paramVal(`v${v}_tone`,   0.3)}  min={0}     max={1}   defaultValue={0.3}  label="TON" curve="linear" onchange={set(`v${v}_tone`)}   readLive={live(`v${v}_tone`)} />
         <Knob value={paramVal(`v${v}_shape`,  0.3)}  min={0}     max={1}   defaultValue={0.3}  label="SHP" curve="linear" onchange={set(`v${v}_shape`)}  readLive={live(`v${v}_shape`)} />
@@ -89,15 +175,6 @@
     <!-- Voice 4: WT + ADSR + VCA -->
     <div class="voice-col">
       <div class="col-label">V4 (WT)</div>
-      <div class="port-stub">
-        <span class="port-marker port-gate"></span><span class="port-text">trig</span>
-      </div>
-      <div class="port-stub">
-        <span class="port-marker port-gate"></span><span class="port-text">gate</span>
-      </div>
-      <div class="port-stub">
-        <span class="port-marker port-cv"></span><span class="port-text">pitch</span>
-      </div>
       <Knob value={paramVal('v4_tune',     0)}     min={-36}   max={36}  defaultValue={0}     label="TUN" curve="linear" onchange={set('v4_tune')}     readLive={live('v4_tune')} />
       <Knob value={paramVal('v4_wavePos',  0)}     min={0}     max={1}   defaultValue={0}     label="WAV" curve="linear" onchange={set('v4_wavePos')}  readLive={live('v4_wavePos')} />
       <Knob value={paramVal('v4_attack',   0.005)} min={0.001} max={2.0} defaultValue={0.005} label="ATK" curve="log"    onchange={set('v4_attack')}   readLive={live('v4_attack')} />
@@ -112,8 +189,7 @@
       </div>
     </div>
 
-    <!-- FX rack column. WIP knobs (no audio in MVP-A) and the master QBRT
-         filter (which IS wired). -->
+    <!-- FX rack column. -->
     <div class="fx-col">
       <div class="col-label">FX <span class="wip">(WIP)</span></div>
       <div class="fx-section">
@@ -147,14 +223,13 @@
 <style>
   .riotgirls-card {
     width: 1100px;
-    min-height: 600px;
   }
   .grid {
     margin-top: 28px;
     display: grid;
     grid-template-columns: repeat(4, 200px) 1fr;
     gap: 8px;
-    padding: 0 16px 0 40px;
+    padding: 0 80px 0 60px;
   }
   .voice-col,
   .fx-col {
@@ -179,22 +254,6 @@
     color: var(--accent-dim, #607080);
     opacity: 0.7;
   }
-  .port-stub {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    font-size: 0.55rem;
-    color: var(--text-dim);
-    font-family: ui-monospace, monospace;
-  }
-  .port-marker {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-dim);
-  }
-  .port-marker.port-gate { background: var(--cable-gate); }
-  .port-marker.port-cv   { background: var(--cable-cv); }
   .send-row {
     display: flex;
     gap: 6px;
@@ -217,5 +276,20 @@
     color: var(--text-dim);
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+  /* Section dividers for the LEFT/RIGHT edge handle stacks. */
+  .section-header {
+    position: absolute;
+    left: 6px;
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+    font-family: ui-monospace, monospace;
+  }
+  .section-header.right {
+    left: auto;
+    right: 6px;
   }
 </style>
