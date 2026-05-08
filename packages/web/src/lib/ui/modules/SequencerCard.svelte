@@ -247,7 +247,7 @@
     <Fader value={length}     min={1}   max={32}  defaultValue={16}  label="Len"  curve="discrete" onchange={set('length')}   readLive={live('length')} />
     <Fader value={octave}     min={-2}  max={2}   defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}   readLive={live('octave')} />
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear" onchange={set('gateLength')} readLive={live('gateLength')} />
-    <Fader value={swing}      min={0}   max={0.75} defaultValue={0}  label="Sw"   curve="linear" onchange={set('swing')}     readLive={live('swing')} />
+    <Fader value={swing}      min={0}   max={0.75} defaultValue={0}  label="SWG"  curve="linear" onchange={set('swing')}     readLive={live('swing')} />
   </div>
 </div>
 

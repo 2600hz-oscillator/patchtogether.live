@@ -70,12 +70,12 @@
         <div class="ch-label">CH {ch}</div>
         <Knob value={paramVal(`ch${ch}_volume`, 0.8)} min={0}    max={1}   defaultValue={0.8} label="Vol" curve="linear"   onchange={set(`ch${ch}_volume`)}     readLive={live(`ch${ch}_volume`)} />
         {#if !compact}
-          <Knob value={paramVal(`ch${ch}_low`, 0)}    min={-12}  max={12}  defaultValue={0}   label="Lo"  curve="linear"   onchange={set(`ch${ch}_low`)}        readLive={live(`ch${ch}_low`)} />
-          <Knob value={paramVal(`ch${ch}_mid`, 0)}    min={-12}  max={12}  defaultValue={0}   label="Md"  curve="linear"   onchange={set(`ch${ch}_mid`)}        readLive={live(`ch${ch}_mid`)} />
-          <Knob value={paramVal(`ch${ch}_high`, 0)}   min={-12}  max={12}  defaultValue={0}   label="Hi"  curve="linear"   onchange={set(`ch${ch}_high`)}       readLive={live(`ch${ch}_high`)} />
-          <Knob value={paramVal(`ch${ch}_thresh`, -12)}  min={-36} max={0}   defaultValue={-12} label="Th"  curve="linear"   onchange={set(`ch${ch}_thresh`)}     readLive={live(`ch${ch}_thresh`)} />
-          <Knob value={paramVal(`ch${ch}_ratio`, 2)}     min={1}   max={10}  defaultValue={2}   label="Rt"  curve="linear"   onchange={set(`ch${ch}_ratio`)}      readLive={live(`ch${ch}_ratio`)} />
-          <Knob value={paramVal(`ch${ch}_compEnable`, 0)} min={0}  max={1}   defaultValue={0}   label="Cp"  curve="discrete" onchange={set(`ch${ch}_compEnable`)} readLive={live(`ch${ch}_compEnable`)} />
+          <Knob value={paramVal(`ch${ch}_low`, 0)}    min={-12}  max={12}  defaultValue={0}   label="LOW" curve="linear"   onchange={set(`ch${ch}_low`)}        readLive={live(`ch${ch}_low`)} />
+          <Knob value={paramVal(`ch${ch}_mid`, 0)}    min={-12}  max={12}  defaultValue={0}   label="MID" curve="linear"   onchange={set(`ch${ch}_mid`)}        readLive={live(`ch${ch}_mid`)} />
+          <Knob value={paramVal(`ch${ch}_high`, 0)}   min={-12}  max={12}  defaultValue={0}   label="HGH" curve="linear"   onchange={set(`ch${ch}_high`)}       readLive={live(`ch${ch}_high`)} />
+          <Knob value={paramVal(`ch${ch}_thresh`, -12)}  min={-36} max={0}   defaultValue={-12} label="THR" curve="linear"   onchange={set(`ch${ch}_thresh`)}     readLive={live(`ch${ch}_thresh`)} />
+          <Knob value={paramVal(`ch${ch}_ratio`, 2)}     min={1}   max={10}  defaultValue={2}   label="RAT" curve="linear"   onchange={set(`ch${ch}_ratio`)}      readLive={live(`ch${ch}_ratio`)} />
+          <Knob value={paramVal(`ch${ch}_compEnable`, 0)} min={0}  max={1}   defaultValue={0}   label="CMP" curve="discrete" onchange={set(`ch${ch}_compEnable`)} readLive={live(`ch${ch}_compEnable`)} />
         {/if}
         <Knob value={paramVal(`ch${ch}_send1`, 0)}  min={0}  max={1}   defaultValue={0}   label="S1"  curve="linear"   onchange={set(`ch${ch}_send1`)}      readLive={live(`ch${ch}_send1`)} />
         <Knob value={paramVal(`ch${ch}_send2`, 0)}  min={0}  max={1}   defaultValue={0}   label="S2"  curve="linear"   onchange={set(`ch${ch}_send2`)}      readLive={live(`ch${ch}_send2`)} />

@@ -38,10 +38,10 @@
   <span class="port-label right" style="top: 50px;">env</span>
 
   <div class="fader-row">
-    <Fader value={attack}  min={0.001} max={10} defaultValue={0.005} label="A" units="s" curve="log"    onchange={set('attack')}  readLive={live('attack')} />
-    <Fader value={decay}   min={0.001} max={10} defaultValue={0.1}   label="D" units="s" curve="log"    onchange={set('decay')}   readLive={live('decay')} />
-    <Fader value={sustain} min={0}     max={1}  defaultValue={0.7}   label="S"           curve="linear" onchange={set('sustain')} readLive={live('sustain')} />
-    <Fader value={release} min={0.001} max={10} defaultValue={0.3}   label="R" units="s" curve="log"    onchange={set('release')} readLive={live('release')} />
+    <Fader value={attack}  min={0.001} max={10} defaultValue={0.005} label="ATK" units="s" curve="log"    onchange={set('attack')}  readLive={live('attack')} />
+    <Fader value={decay}   min={0.001} max={10} defaultValue={0.1}   label="DCY" units="s" curve="log"    onchange={set('decay')}   readLive={live('decay')} />
+    <Fader value={sustain} min={0}     max={1}  defaultValue={0.7}   label="SUS"           curve="linear" onchange={set('sustain')} readLive={live('sustain')} />
+    <Fader value={release} min={0.001} max={10} defaultValue={0.3}   label="REL" units="s" curve="log"    onchange={set('release')} readLive={live('release')} />
   </div>
 </div>
 

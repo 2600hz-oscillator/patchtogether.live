@@ -36,7 +36,7 @@
 
   <div class="fader-row">
     <Fader value={base}     min={0}  max={1} defaultValue={0}   label="Base" curve="linear" onchange={set('base')}     readLive={live('base')} />
-    <Fader value={cvAmount} min={-1} max={1} defaultValue={1.0} label="CV"   curve="linear" onchange={set('cvAmount')} readLive={live('cvAmount')} />
+    <Fader value={cvAmount} min={-1} max={1} defaultValue={1.0} label="CV Amt" curve="linear" onchange={set('cvAmount')} readLive={live('cvAmount')} />
   </div>
 </div>
 
