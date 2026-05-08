@@ -25,6 +25,7 @@ import { charlottesEchosDef } from './charlottes-echos';
 import { riotgirlsDef, triggerVoice as riotgirlsTriggerVoice } from './riotgirls';
 import { scoreDef } from './score';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
+import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
 let registered = false;
 
@@ -61,6 +62,7 @@ export function registerAudioModules(): void {
     (window as any).__riotgirlsTriggerVoice = (nodeId: string, voiceIdx: number) =>
       riotgirlsTriggerVoice(nodeId, voiceIdx);
   }
+  exposeModuleSpecsForTests();
 }
 
 registerAudioModules();
