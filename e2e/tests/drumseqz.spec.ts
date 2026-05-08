@@ -32,13 +32,17 @@ test('drumseqz: drop module renders 64 cells + Eucl sliders default 0', async ({
   const cells = grid.locator('.cell-slot');
   await expect(cells).toHaveCount(64);
 
-  // Eucl sliders should all start at 0 — read the underlying patch params.
+  // Eucl sliders should all start at 0. Params are sparse on a freshly-spawned
+  // node (only the entries spawnPatch passed in are populated); the runtime
+  // and the card both fall back to the schema defaultValue (0 for trkN_euclid)
+  // when the key is absent, so the test mirrors that fallback rather than
+  // asserting on the stored value.
   const eucls = await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { params: Record<string, number> }> };
     };
     const p = w.__patch.nodes['ds']?.params ?? {};
-    return [1, 2, 3, 4].map((t) => p[`trk${t}_euclid`] ?? null);
+    return [1, 2, 3, 4].map((t) => p[`trk${t}_euclid`] ?? 0);
   });
   expect(eucls).toEqual([0, 0, 0, 0]);
 });
@@ -201,37 +205,50 @@ test('drumseqz: gate1+pitch1 → DRUMMERGIRL → audioOut produces audible signa
     });
   });
 
-  // Wait long enough for the sequencer to fire several gates. At 240 BPM
-  // 16th-notes = 16 steps/sec; 1500ms gives us plenty of hits.
-  await page.waitForTimeout(1500);
-
-  const result = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return { error: 'no engine' } as const;
-    const node = w.__patch.nodes['scp'];
-    const snap = eng.read(node, 'snapshot') as { ch1: Float32Array; sampleRate: number } | undefined;
-    if (!snap) return { error: 'no snapshot' } as const;
-    let peak = 0;
-    let energy = 0;
-    let nonzero = 0;
-    for (let i = 0; i < snap.ch1.length; i++) {
-      const v = snap.ch1[i];
-      const a = Math.abs(v);
-      if (a > peak) peak = a;
-      energy += v * v;
-      if (a > 1e-5) nonzero++;
+  // Poll the scope's analyser for ~2s, looking for a window that captures a
+  // drum hit. The scope's analyser holds ~42ms of recent samples; DRUMSEQZ
+  // fires four hits per bar (every ~250ms at 240 BPM with E(4,16)), so most
+  // sampling windows will land between hits and read silence. Track the peak
+  // and stop early once a hit lands above the threshold.
+  let peak = 0;
+  let rms = 0;
+  let nonzero = 0;
+  const start = Date.now();
+  while (Date.now() - start < 2500) {
+    const r = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const eng = w.__engine?.();
+      if (!eng) return null;
+      const node = w.__patch.nodes['scp'];
+      const snap = eng.read(node, 'snapshot') as { ch1: Float32Array } | undefined;
+      if (!snap) return null;
+      let p = 0;
+      let energy = 0;
+      let nz = 0;
+      for (let i = 0; i < snap.ch1.length; i++) {
+        const v = snap.ch1[i];
+        const a = Math.abs(v);
+        if (a > p) p = a;
+        energy += v * v;
+        if (a > 1e-5) nz++;
+      }
+      return { peak: p, rms: Math.sqrt(energy / snap.ch1.length), nonzero: nz };
+    });
+    if (r) {
+      if (r.peak > peak) peak = r.peak;
+      if (r.rms > rms) rms = r.rms;
+      if (r.nonzero > nonzero) nonzero = r.nonzero;
+      if (peak > 0.005 && nonzero > 50) break;
     }
-    return { peak, rms: Math.sqrt(energy / snap.ch1.length), nonzero, total: snap.ch1.length };
-  });
-  if ('error' in result) throw new Error(result.error);
+    await page.waitForTimeout(50);
+  }
 
   expect(
-    result.peak,
-    `expected audible drum hits via DRUMSEQZ→DRUMMERGIRL chain (peak=${result.peak.toFixed(4)}, rms=${result.rms.toFixed(4)})`,
+    peak,
+    `expected audible drum hits via DRUMSEQZ→DRUMMERGIRL chain (peak=${peak.toFixed(4)}, rms=${rms.toFixed(4)})`,
   ).toBeGreaterThan(0.005);
-  expect(result.nonzero).toBeGreaterThan(50);
+  expect(nonzero).toBeGreaterThan(50);
 });
