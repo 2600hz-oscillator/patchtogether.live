@@ -420,6 +420,7 @@ function synthesizeFromBuildHelper(
 
     const inputs: ManifestPort[] = [];
     for (let v = 1; v <= 4; v++) inputs.push({ id: `trig${v}`,  type: 'gate' });
+    for (let v = 1; v <= 4; v++) inputs.push({ id: `gate${v}`,  type: 'gate' });
     for (let v = 1; v <= 4; v++) inputs.push({ id: `pitch${v}`, type: 'pitch' });
     for (const v of [1, 2, 3]) {
       inputs.push({ id: `v${v}_tone`,   type: 'cv', paramTarget: `v${v}_tone` });

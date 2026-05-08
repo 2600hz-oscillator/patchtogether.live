@@ -137,17 +137,23 @@ const PARAMS = buildParams();
 
 // -------------------- Port schema --------------------
 //
-// 51 inputs:
-//   4 trig + 4 pitch
+// 55 inputs:
+//   4 trig + 4 gate + 4 pitch
 // + 12 voice 1-3 CVs (tone, shape, volume, decay × 3)
 // + 7 voice 4 CVs (fm, wavePos, attack, decay, sustain, release, volume)
 // + 12 per-voice (pan, sendA, sendB × 4)
 // + 12 effect CVs (3 bc, 3 rv, 4 flt, 2 returns)
 // 2 outputs: outL, outR
+//
+// gate1..gate4 share the same gate-input nodes as trig1..trig4 — Web Audio
+// sums multiple sources into the same input, so a Sequencer gate cable can
+// land on either port. Useful when patching alongside an external trigger
+// source (e.g. drum machine triggers + sequencer gates).
 
 function buildInputs(): PortDef[] {
   const inputs: PortDef[] = [];
   for (let v = 1; v <= 4; v++) inputs.push({ id: `trig${v}`,  type: 'gate' });
+  for (let v = 1; v <= 4; v++) inputs.push({ id: `gate${v}`,  type: 'gate' });
   for (let v = 1; v <= 4; v++) inputs.push({ id: `pitch${v}`, type: 'pitch' });
 
   for (const v of [1, 2, 3]) {
@@ -487,6 +493,14 @@ export const riotgirlsDef: AudioModuleDef = {
     inputsMap.set('trig2', { node: v2, input: 0 });
     inputsMap.set('trig3', { node: v3, input: 0 });
     inputsMap.set('trig4', { node: v4Adsr, input: 0 });
+
+    // gate1..gate4 are alternate names for the same gate-input target node.
+    // Web Audio sums multiple sources into the same input, so a Sequencer's
+    // gate cable can land on either trigN or gateN.
+    inputsMap.set('gate1', { node: v1, input: 0 });
+    inputsMap.set('gate2', { node: v2, input: 0 });
+    inputsMap.set('gate3', { node: v3, input: 0 });
+    inputsMap.set('gate4', { node: v4Adsr, input: 0 });
 
     // pitch1..3 route to DRUMMERGIRL pitch AudioParam. pitch4 routes to
     // wavetable VCO's pitch input (input 0, audio-rate V/oct).

@@ -43,11 +43,14 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">RIOTGIRLS</header>
 
-  <!-- Voice columns: trig + pitch input handles on the LEFT side, stacked
-       per voice across 4 vertical strips. -->
+  <!-- Voice columns: trig + gate + pitch input handles on the LEFT side,
+       stacked per voice across 4 vertical strips. trigN and gateN are alternate
+       names for the same underlying gate-input node — gateN exists so a
+       Sequencer can patch its named "gate" output without a port-name mismatch. -->
   {#each [1, 2, 3, 4] as v (v)}
-    <Handle type="target" position={Position.Left} id={`trig${v}`} style="top: {inY(0)}px; --handle-color: var(--cable-gate);" />
-    <Handle type="target" position={Position.Left} id={`pitch${v}`} style="top: {inY(1)}px; --handle-color: var(--cable-cv);" />
+    <Handle type="target" position={Position.Left} id={`trig${v}`}  style="top: {inY(0)}px; --handle-color: var(--cable-gate);" />
+    <Handle type="target" position={Position.Left} id={`gate${v}`}  style="top: {inY(1)}px; --handle-color: var(--cable-gate);" />
+    <Handle type="target" position={Position.Left} id={`pitch${v}`} style="top: {inY(2)}px; --handle-color: var(--cable-cv);" />
   {/each}
 
   <!-- Outputs (right edge, bottom). -->
@@ -65,17 +68,20 @@
           <span class="port-marker port-gate"></span><span class="port-text">trig</span>
         </div>
         <div class="port-stub">
+          <span class="port-marker port-gate"></span><span class="port-text">gate</span>
+        </div>
+        <div class="port-stub">
           <span class="port-marker port-cv"></span><span class="port-text">pitch</span>
         </div>
-        <Knob value={paramVal(`v${v}_pitch`,  0)}    min={-36}   max={36}  defaultValue={0}    label="P"  curve="linear" onchange={set(`v${v}_pitch`)}  readLive={live(`v${v}_pitch`)} />
-        <Knob value={paramVal(`v${v}_tone`,   0.3)}  min={0}     max={1}   defaultValue={0.3}  label="T"  curve="linear" onchange={set(`v${v}_tone`)}   readLive={live(`v${v}_tone`)} />
-        <Knob value={paramVal(`v${v}_shape`,  0.3)}  min={0}     max={1}   defaultValue={0.3}  label="S"  curve="linear" onchange={set(`v${v}_shape`)}  readLive={live(`v${v}_shape`)} />
-        <Knob value={paramVal(`v${v}_decay`,  0.15)} min={0.001} max={0.5} defaultValue={0.15} label="D"  curve="log"    onchange={set(`v${v}_decay`)}  readLive={live(`v${v}_decay`)} />
-        <Knob value={paramVal(`v${v}_volume`, 1.0)}  min={0}     max={2.0} defaultValue={1.0}  label="V"  curve="linear" onchange={set(`v${v}_volume`)} readLive={live(`v${v}_volume`)} />
-        <Knob value={paramVal(`v${v}_pan`,    0)}    min={-1}    max={1}   defaultValue={0}    label="Pn" curve="linear" onchange={set(`v${v}_pan`)}    readLive={live(`v${v}_pan`)} />
+        <Knob value={paramVal(`v${v}_pitch`,  0)}    min={-36}   max={36}  defaultValue={0}    label="PIT" curve="linear" onchange={set(`v${v}_pitch`)}  readLive={live(`v${v}_pitch`)} />
+        <Knob value={paramVal(`v${v}_tone`,   0.3)}  min={0}     max={1}   defaultValue={0.3}  label="TON" curve="linear" onchange={set(`v${v}_tone`)}   readLive={live(`v${v}_tone`)} />
+        <Knob value={paramVal(`v${v}_shape`,  0.3)}  min={0}     max={1}   defaultValue={0.3}  label="SHP" curve="linear" onchange={set(`v${v}_shape`)}  readLive={live(`v${v}_shape`)} />
+        <Knob value={paramVal(`v${v}_decay`,  0.15)} min={0.001} max={0.5} defaultValue={0.15} label="DCY" curve="log"    onchange={set(`v${v}_decay`)}  readLive={live(`v${v}_decay`)} />
+        <Knob value={paramVal(`v${v}_volume`, 1.0)}  min={0}     max={2.0} defaultValue={1.0}  label="VOL" curve="linear" onchange={set(`v${v}_volume`)} readLive={live(`v${v}_volume`)} />
+        <Knob value={paramVal(`v${v}_pan`,    0)}    min={-1}    max={1}   defaultValue={0}    label="PAN" curve="linear" onchange={set(`v${v}_pan`)}    readLive={live(`v${v}_pan`)} />
         <div class="send-row">
-          <Knob value={paramVal(`v${v}_sendA`, 0)} min={0} max={1} defaultValue={0} label="sA" curve="linear" onchange={set(`v${v}_sendA`)} readLive={live(`v${v}_sendA`)} />
-          <Knob value={paramVal(`v${v}_sendB`, 0)} min={0} max={1} defaultValue={0} label="sB" curve="linear" onchange={set(`v${v}_sendB`)} readLive={live(`v${v}_sendB`)} />
+          <Knob value={paramVal(`v${v}_sendA`, 0)} min={0} max={1} defaultValue={0} label="SDA" curve="linear" onchange={set(`v${v}_sendA`)} readLive={live(`v${v}_sendA`)} />
+          <Knob value={paramVal(`v${v}_sendB`, 0)} min={0} max={1} defaultValue={0} label="SDB" curve="linear" onchange={set(`v${v}_sendB`)} readLive={live(`v${v}_sendB`)} />
         </div>
       </div>
     {/each}
@@ -87,19 +93,22 @@
         <span class="port-marker port-gate"></span><span class="port-text">trig</span>
       </div>
       <div class="port-stub">
+        <span class="port-marker port-gate"></span><span class="port-text">gate</span>
+      </div>
+      <div class="port-stub">
         <span class="port-marker port-cv"></span><span class="port-text">pitch</span>
       </div>
-      <Knob value={paramVal('v4_tune',     0)}     min={-36}   max={36}  defaultValue={0}     label="Tn" curve="linear" onchange={set('v4_tune')}     readLive={live('v4_tune')} />
-      <Knob value={paramVal('v4_wavePos',  0)}     min={0}     max={1}   defaultValue={0}     label="Wv" curve="linear" onchange={set('v4_wavePos')}  readLive={live('v4_wavePos')} />
-      <Knob value={paramVal('v4_attack',   0.005)} min={0.001} max={2.0} defaultValue={0.005} label="A"  curve="log"    onchange={set('v4_attack')}   readLive={live('v4_attack')} />
-      <Knob value={paramVal('v4_decay',    0.1)}   min={0.001} max={4.0} defaultValue={0.1}   label="D"  curve="log"    onchange={set('v4_decay')}    readLive={live('v4_decay')} />
-      <Knob value={paramVal('v4_sustain',  0.7)}   min={0}     max={1}   defaultValue={0.7}   label="S"  curve="linear" onchange={set('v4_sustain')}  readLive={live('v4_sustain')} />
-      <Knob value={paramVal('v4_release',  0.3)}   min={0.001} max={8.0} defaultValue={0.3}   label="R"  curve="log"    onchange={set('v4_release')}  readLive={live('v4_release')} />
-      <Knob value={paramVal('v4_volume',   0.8)}   min={0}     max={2.0} defaultValue={0.8}   label="V"  curve="linear" onchange={set('v4_volume')}   readLive={live('v4_volume')} />
-      <Knob value={paramVal('v4_pan',      0)}     min={-1}    max={1}   defaultValue={0}     label="Pn" curve="linear" onchange={set('v4_pan')}      readLive={live('v4_pan')} />
+      <Knob value={paramVal('v4_tune',     0)}     min={-36}   max={36}  defaultValue={0}     label="TUN" curve="linear" onchange={set('v4_tune')}     readLive={live('v4_tune')} />
+      <Knob value={paramVal('v4_wavePos',  0)}     min={0}     max={1}   defaultValue={0}     label="WAV" curve="linear" onchange={set('v4_wavePos')}  readLive={live('v4_wavePos')} />
+      <Knob value={paramVal('v4_attack',   0.005)} min={0.001} max={2.0} defaultValue={0.005} label="ATK" curve="log"    onchange={set('v4_attack')}   readLive={live('v4_attack')} />
+      <Knob value={paramVal('v4_decay',    0.1)}   min={0.001} max={4.0} defaultValue={0.1}   label="DCY" curve="log"    onchange={set('v4_decay')}    readLive={live('v4_decay')} />
+      <Knob value={paramVal('v4_sustain',  0.7)}   min={0}     max={1}   defaultValue={0.7}   label="SUS" curve="linear" onchange={set('v4_sustain')}  readLive={live('v4_sustain')} />
+      <Knob value={paramVal('v4_release',  0.3)}   min={0.001} max={8.0} defaultValue={0.3}   label="REL" curve="log"    onchange={set('v4_release')}  readLive={live('v4_release')} />
+      <Knob value={paramVal('v4_volume',   0.8)}   min={0}     max={2.0} defaultValue={0.8}   label="VOL" curve="linear" onchange={set('v4_volume')}   readLive={live('v4_volume')} />
+      <Knob value={paramVal('v4_pan',      0)}     min={-1}    max={1}   defaultValue={0}     label="PAN" curve="linear" onchange={set('v4_pan')}      readLive={live('v4_pan')} />
       <div class="send-row">
-        <Knob value={paramVal('v4_sendA', 0)} min={0} max={1} defaultValue={0} label="sA" curve="linear" onchange={set('v4_sendA')} readLive={live('v4_sendA')} />
-        <Knob value={paramVal('v4_sendB', 0)} min={0} max={1} defaultValue={0} label="sB" curve="linear" onchange={set('v4_sendB')} readLive={live('v4_sendB')} />
+        <Knob value={paramVal('v4_sendA', 0)} min={0} max={1} defaultValue={0} label="SDA" curve="linear" onchange={set('v4_sendA')} readLive={live('v4_sendA')} />
+        <Knob value={paramVal('v4_sendB', 0)} min={0} max={1} defaultValue={0} label="SDB" curve="linear" onchange={set('v4_sendB')} readLive={live('v4_sendB')} />
       </div>
     </div>
 
