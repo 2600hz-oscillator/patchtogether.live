@@ -6,16 +6,73 @@
 // touching this file's union members.
 
 // ---------------- Domain (D18) ----------------
-// Phase 1 only has 'audio'. Future visual modules add 'video' etc.
-type StandardDomain = 'audio';
+// Phase 1 ships 'audio'. The video-domain spike (Phase 0 of the visual
+// modules MVP) adds 'video' alongside; future domains (e.g. MIDI, OSC)
+// follow the same pattern. The `(string & {})` open union preserves
+// autocomplete on the well-known set while leaving the door open for
+// runtime-registered domains.
+type StandardDomain = 'audio' | 'video';
 export type Domain = StandardDomain | (string & {});
 
 // ---------------- Cable types (D6, D7, D18) ----------------
 // `polyPitchGate` is the Stage-1 polyphony cable (10 audio channels packed
 // (p0,g0,p1,g1,...,p4,g4) — 5 voice pairs). See packages/web/src/lib/audio/poly.ts
 // and .myrobots/plans/dx7-and-polyphony.md §5 for the architecture.
-type StandardCableType = 'audio' | 'pitch' | 'gate' | 'cv' | 'polyPitchGate';
+//
+// Video-domain cable types (Phase 0):
+//   keys       — single-channel still mono image (no time axis)
+//   image      — RGB still image (no time axis)
+//   mono-video — single-channel animated video stream
+//   video      — RGB animated video stream
+// Implicit upcasting `keys → mono-video`, `image → video`, `keys → image`
+// is allowed; the upcast is free at the shader layer. See `canConnect`.
+type StandardCableType =
+  | 'audio'
+  | 'pitch'
+  | 'gate'
+  | 'cv'
+  | 'polyPitchGate'
+  | 'keys'
+  | 'image'
+  | 'mono-video'
+  | 'video';
 export type CableType = StandardCableType | (string & {});
+
+/** True if `type` is one of the four video-domain cable types. */
+export function isVideoCableType(type: CableType): boolean {
+  return type === 'keys' || type === 'image' || type === 'mono-video' || type === 'video';
+}
+
+/**
+ * Returns true if a cable of `srcType` may legally terminate on a port
+ * declaring `dstType`. Equal types always pass; the explicit upcast set
+ * (keys→mono-video, image→video, mono-video→video, keys→image) covers the
+ * "free" video-domain conversions. Audio CV is allowed to terminate on a
+ * video param input — the cross-domain bridge (frame-rate S&H) is wired in
+ * Phase 1; for Phase 0 we permit the connection at the type level so the
+ * wiring story doesn't change later.
+ *
+ * Strictly out: audio/pitch/gate/polyPitchGate → any video port; any video
+ * stream → any audio port.
+ */
+export function canConnect(srcType: CableType, dstType: CableType): boolean {
+  if (srcType === dstType) return true;
+
+  const upcasts: Record<string, readonly string[]> = {
+    keys: ['mono-video', 'image'],
+    image: ['video'],
+    'mono-video': ['video'],
+  };
+  const ok = upcasts[srcType as string];
+  if (ok && ok.includes(dstType as string)) return true;
+
+  // Audio CV → video param input (frame-rate sample-and-hold; deferred
+  // bridge in Phase 1). Permit at the type level so the eventual bridge
+  // doesn't change call-site type checks.
+  if (srcType === 'cv' && isVideoCableType(dstType)) return true;
+
+  return false;
+}
 
 // ---------------- Module types (D5) ----------------
 type StandardModuleType =
@@ -40,7 +97,10 @@ type StandardModuleType =
   | 'charlottesEchos'
   | 'riotgirls'
   | 'score'
-  | 'drumseqz';
+  | 'drumseqz'
+  // Video-domain modules (Phase 0 spike):
+  | 'lines'
+  | 'videoOut';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

@@ -12,6 +12,10 @@ interface ModuleSpec {
   cardClass: string;       // .svelte-flow__node-<type>
   handleCount: number;     // visible handle elements (input + output)
   containsLabel: string;   // substring expected in the card
+  /** 'audio' (default) or 'video'. Phase 0 video spike modules need
+   *  this so spawnPatch sets node.domain correctly and the reconciler
+   *  routes the new node to the VideoEngine. */
+  domain?: 'audio' | 'video';
 }
 
 const MODULES: ModuleSpec[] = [
@@ -52,6 +56,11 @@ const MODULES: ModuleSpec[] = [
   { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 18, containsLabel: 'MIXMSTRS' },
   // SCORE: 5 inputs (clock + A/D/S/R cv) + 4 outputs (pitch, gate, env, clock) = 9.
   { type: 'score',        cardClass: 'svelte-flow__node-score',        handleCount: 9, containsLabel: 'Score' },
+  // ---- Video-domain (Phase 0 spike) ----
+  // LINES: 1 input (fm) + 1 output (out) = 2 handles.
+  { type: 'lines',        cardClass: 'svelte-flow__node-lines',        handleCount: 2, containsLabel: 'LINES',  domain: 'video' },
+  // OUTPUT (videoOut): 1 input (in) + 0 outputs = 1 handle.
+  { type: 'videoOut',     cardClass: 'svelte-flow__node-videoOut',     handleCount: 1, containsLabel: 'OUTPUT', domain: 'video' },
 ];
 
 test.describe.configure({ mode: 'parallel' });
@@ -69,7 +78,7 @@ for (const spec of MODULES) {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    await spawnPatch(page, [{ id: 'm-1', type: spec.type, position: { x: 100, y: 100 } }]);
+    await spawnPatch(page, [{ id: 'm-1', type: spec.type, position: { x: 100, y: 100 }, domain: spec.domain }]);
 
     const card = page.locator(`.${spec.cardClass}`);
     await expect(card, `${spec.type} card visible`).toBeVisible();

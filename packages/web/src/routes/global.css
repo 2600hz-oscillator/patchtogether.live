@@ -24,6 +24,18 @@
    * so users can read at a glance which cables carry chords. */
   --cable-polyPitchGate: #a78bfa;
 
+  /* Video-domain cables (Phase 0 of the visual-modules MVP). Pink/violet
+   * band — visually distinct from the audio palette (yellow/red/green/blue)
+   * and from --cable-cv (#34d399) so users can read at a glance which
+   * cables carry video-domain signals. The CSS-var name MUST match the
+   * CableType id verbatim because Canvas.svelte does
+   * `var(--cable-${e.sourceType})` to resolve the stroke colour;
+   * `mono-video` keeps its hyphen for the same reason. */
+  --cable-keys: #d8b4fe;
+  --cable-image: #ec4899;
+  --cable-mono-video: #c084fc;
+  --cable-video: #f472b6;
+
   /* Tron-influenced UI accent. Used for chrome only — focus rings, hover
    * glow, selected-card outline, drag-active glow. Explicitly NOT a cable
    * type; the four cable hues above remain the semantic signal-type

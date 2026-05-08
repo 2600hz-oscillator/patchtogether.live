@@ -2,6 +2,7 @@
   // Searchable popup palette for adding modules. Right-click the canvas (or
   // click the topbar's + Add module) to open. Type to filter; click to spawn.
   import { listModuleDefs } from '$lib/audio/module-registry';
+  import { listVideoModuleDefs } from '$lib/video/module-registry';
   import { patch } from '$lib/graph/store';
 
   interface Props {
@@ -52,9 +53,17 @@
   // Re-read defs each open in case modules were registered after first import.
   // Also drop any module at its `maxInstances` cap — first-line UI enforcement
   // for singletons (engine.addNode is the defensive last line).
+  //
+  // Phase 0 video spike: list audio + video module defs side-by-side. The two
+  // registries are kept distinct (different factory shapes) so the palette
+  // stitches them at read-time. Video defs appear after audio defs of the
+  // same category, so users hit familiar audio modules first when scanning.
   let allDefs = $derived(
     open
-      ? listModuleDefs().filter(
+      ? [
+          ...listModuleDefs(),
+          ...listVideoModuleDefs(),
+        ].filter(
           (d) => d.maxInstances === undefined || instanceCount(d.type) < d.maxInstances,
         )
       : [],

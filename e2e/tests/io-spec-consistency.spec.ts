@@ -41,6 +41,8 @@ interface SpecPort {
 }
 interface ModuleSpec {
   type: string;
+  /** 'audio' / 'video' (Phase 0 video spike adds the second domain). */
+  domain?: string;
   inputs: SpecPort[];
   outputs: SpecPort[];
 }
@@ -152,6 +154,9 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'charlottesEchos',
     'riotgirls',
     'score',
+    // Video-domain (Phase 0 spike, .myrobots/plans/video-modules-mvp.md):
+    'lines',
+    'videoOut',
   ];
 
   for (const type of MODULE_TYPES) {
@@ -165,7 +170,12 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
       expect(spec, `module ${type} is registered`).toBeDefined();
       if (!spec) return;
 
-      await spawnPatch(page, [{ id: 'm-1', type, position: { x: 100, y: 100 } }]);
+      // Pass the registered domain through to spawnPatch so video modules
+      // (Phase 0) get the right domain on their node — otherwise the
+      // reconciler would route them to the audio engine and addNode
+      // would throw on a video-domain def.
+      const domain = (spec.domain === 'video' ? 'video' : 'audio') as 'audio' | 'video';
+      await spawnPatch(page, [{ id: 'm-1', type, position: { x: 100, y: 100 }, domain }]);
 
       const cardClass = `svelte-flow__node-${type}`;
       const { inputs: handleInputs, outputs: handleOutputs } = await readHandleIds(
