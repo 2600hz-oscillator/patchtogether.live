@@ -100,6 +100,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Singleton 4xstereo mixer with EQ, compressor, two stereo aux sends/returns. 37 params.',
   timelorde: 'Singleton master clock. Internal or external BPM, twelve clock-divider outputs.',
   charlottesEchos: 'Destructive multi-head stereo delay. Pitch-shifted feedback with decay.',
+  drumseqz:
+    '4-channel x 16-step drum sequencer. Per-track Euclidean fill (Bjorklund) + per-track quantized pitch CV. Outputs 4 gate + 4 pitch + chained clock.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -175,6 +177,16 @@ const PORT_NOTES: Record<string, string> = {
   'charlottesEchos.L': 'Stereo L in / out.',
   'charlottesEchos.R': 'Stereo R in / out.',
   'charlottesEchos.delay': 'CV -> delay time.',
+  'drumseqz.clock':
+    'Clock — when used as input, rising edges advance the step pointer; when used as output, fires a 10 ms pulse on every advance (chain into another sequencer).',
+  'drumseqz.gate1': 'Track 1 gate out.',
+  'drumseqz.gate2': 'Track 2 gate out.',
+  'drumseqz.gate3': 'Track 3 gate out.',
+  'drumseqz.gate4': 'Track 4 gate out.',
+  'drumseqz.pitch1': 'Track 1 V/oct pitch out.',
+  'drumseqz.pitch2': 'Track 2 V/oct pitch out.',
+  'drumseqz.pitch3': 'Track 3 V/oct pitch out.',
+  'drumseqz.pitch4': 'Track 4 V/oct pitch out.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];

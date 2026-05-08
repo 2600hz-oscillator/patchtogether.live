@@ -61,6 +61,7 @@
   import MixmstrsCard from '$lib/ui/modules/MixmstrsCard.svelte';
   import TimelordeCard from '$lib/ui/modules/TimelordeCard.svelte';
   import CharlottesEchosCard from '$lib/ui/modules/CharlottesEchosCard.svelte';
+  import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
@@ -111,6 +112,7 @@
     mixmstrs: MixmstrsCard,
     timelorde: TimelordeCard,
     charlottesEchos: CharlottesEchosCard,
+    drumseqz: DrumseqzCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);

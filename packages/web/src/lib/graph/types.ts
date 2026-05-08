@@ -37,7 +37,8 @@ type StandardModuleType =
   | 'meowbox'
   | 'mixmstrs'
   | 'timelorde'
-  | 'charlottesEchos';
+  | 'charlottesEchos'
+  | 'drumseqz';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
