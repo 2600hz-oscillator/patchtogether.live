@@ -61,6 +61,23 @@ const MODULES: ModuleSpec[] = [
   { type: 'lines',        cardClass: 'svelte-flow__node-lines',        handleCount: 2, containsLabel: 'LINES',  domain: 'video' },
   // OUTPUT (videoOut): 1 input (in) + 0 outputs = 1 handle.
   { type: 'videoOut',     cardClass: 'svelte-flow__node-videoOut',     handleCount: 1, containsLabel: 'OUTPUT', domain: 'video' },
+  // ---- Video-domain (Phase 1 — .myrobots/plans/video-modules-mvp.md) ----
+  // INWARDS: 0 inputs + 1 output (out) = 1 handle.
+  { type: 'inwards',      cardClass: 'svelte-flow__node-inwards',      handleCount: 1, containsLabel: 'INWARDS',    domain: 'video' },
+  // PICTUREBOX: 1 input (gain cv) + 1 output (out) = 2 handles.
+  { type: 'picturebox',   cardClass: 'svelte-flow__node-picturebox',   handleCount: 2, containsLabel: 'PICTUREBOX', domain: 'video' },
+  // DESTRUCTOR: 2 inputs (in, mangle) + 1 output (out) = 3 handles.
+  { type: 'destructor',   cardClass: 'svelte-flow__node-destructor',   handleCount: 3, containsLabel: 'DESTRUCTOR', domain: 'video' },
+  // CHROMA: 6 inputs (in, keyR, keyG, keyB, tolerance, softness) + 1 output (out) = 7.
+  { type: 'chroma',       cardClass: 'svelte-flow__node-chroma',       handleCount: 7, containsLabel: 'CHROMA',     domain: 'video' },
+  // LUMA: 2 inputs (in, threshold) + 1 output (out) = 3 handles.
+  { type: 'luma',         cardClass: 'svelte-flow__node-luma',         handleCount: 3, containsLabel: 'LUMA',       domain: 'video' },
+  // COLORIZER: 4 inputs (in, tintR, tintG, tintB) + 1 output (out) = 5 handles.
+  { type: 'colorizer',    cardClass: 'svelte-flow__node-colorizer',    handleCount: 5, containsLabel: 'COLORIZER',  domain: 'video' },
+  // FEEDBACK: 7 inputs (in + wet/decay/zoom/rotate/offsetX/offsetY cv) + 1 output (out) = 8.
+  { type: 'feedback',     cardClass: 'svelte-flow__node-feedback',     handleCount: 8, containsLabel: 'FEEDBACK',   domain: 'video' },
+  // V-MIXER: 4 video inputs (in1..in4) + 4 cv inputs (amount1..4) + 1 output (out) = 9.
+  { type: 'videoMixer',   cardClass: 'svelte-flow__node-videoMixer',   handleCount: 9, containsLabel: 'V-MIXER',    domain: 'video' },
 ];
 
 test.describe.configure({ mode: 'parallel' });

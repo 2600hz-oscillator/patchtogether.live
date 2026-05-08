@@ -72,6 +72,15 @@
   import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
   import LinesCard from '$lib/ui/modules/LinesCard.svelte';
   import VideoOutCard from '$lib/ui/modules/VideoOutCard.svelte';
+  // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
+  import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
+  import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
+  import DestructorCard from '$lib/ui/modules/DestructorCard.svelte';
+  import ChromaCard from '$lib/ui/modules/ChromaCard.svelte';
+  import LumaCard from '$lib/ui/modules/LumaCard.svelte';
+  import ColorizerCard from '$lib/ui/modules/ColorizerCard.svelte';
+  import FeedbackCard from '$lib/ui/modules/FeedbackCard.svelte';
+  import VideoMixerCard from '$lib/ui/modules/VideoMixerCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
@@ -130,6 +139,15 @@
     // Video-domain (Phase 0):
     lines: LinesCard,
     videoOut: VideoOutCard,
+    // Video-domain (Phase 1):
+    inwards: InwardsCard,
+    picturebox: PictureboxCard,
+    destructor: DestructorCard,
+    chroma: ChromaCard,
+    luma: LumaCard,
+    colorizer: ColorizerCard,
+    feedback: FeedbackCard,
+    videoMixer: VideoMixerCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);

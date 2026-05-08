@@ -1,0 +1,96 @@
+<script lang="ts">
+  // VideoMixerCard — 4-channel video mixer. Each row pairs an `in{N}`
+  // video input with an `amount{N}` CV input + corresponding fader.
+  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import Fader from '$lib/ui/controls/Fader.svelte';
+  import { patch } from '$lib/graph/store';
+  import { mixerVideoDef } from '$lib/video/modules/mixer';
+  import type { ModuleNode } from '$lib/graph/types';
+
+  let { id, data }: NodeProps = $props();
+  let node = $derived(data?.node as ModuleNode);
+
+  function p(name: string): number {
+    const def = mixerVideoDef.params.find((d) => d.id === name);
+    return node?.params[name] ?? def?.defaultValue ?? 0;
+  }
+  function setParam(paramId: string) {
+    return (v: number) => {
+      const target = patch.nodes[id];
+      if (target) target.params[paramId] = v;
+    };
+  }
+
+  // Channel rows: one per input. ~36px between handles for visual
+  // separation. Video inputs in the upper half, CV amounts below.
+  const VIDEO_HANDLES = [
+    { id: 'in1', y: 56,  label: 'IN1' },
+    { id: 'in2', y: 92,  label: 'IN2' },
+    { id: 'in3', y: 124, label: 'IN3' },
+    { id: 'in4', y: 156, label: 'IN4' },
+  ];
+  const CV_HANDLES = [
+    { id: 'amount1', y: 200, label: 'A1' },
+    { id: 'amount2', y: 232, label: 'A2' },
+    { id: 'amount3', y: 264, label: 'A3' },
+    { id: 'amount4', y: 296, label: 'A4' },
+  ];
+</script>
+
+<div class="card video">
+  <div class="stripe"></div>
+  <header class="title">V-MIXER</header>
+
+  {#each VIDEO_HANDLES as h}
+    <Handle type="target" position={Position.Left} id={h.id} style={`top: ${h.y}px; --handle-color: var(--cable-video);`} />
+    <span class="port-label left" style={`top: ${h.y - 6}px;`}>{h.label}</span>
+  {/each}
+  {#each CV_HANDLES as h}
+    <Handle type="target" position={Position.Left} id={h.id} style={`top: ${h.y}px; --handle-color: var(--cable-cv);`} />
+    <span class="port-label left" style={`top: ${h.y - 6}px;`}>{h.label}</span>
+  {/each}
+
+  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
+  <span class="port-label right" style="top: 50px;">OUT</span>
+
+  <div class="fader-grid">
+    <Fader value={p('amount1')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount1')!.defaultValue} label="A1" curve="linear" onchange={setParam('amount1')} />
+    <Fader value={p('amount2')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount2')!.defaultValue} label="A2" curve="linear" onchange={setParam('amount2')} />
+    <Fader value={p('amount3')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount3')!.defaultValue} label="A3" curve="linear" onchange={setParam('amount3')} />
+    <Fader value={p('amount4')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount4')!.defaultValue} label="A4" curve="linear" onchange={setParam('amount4')} />
+  </div>
+</div>
+
+<style>
+  .card {
+    width: 280px;
+    min-height: 420px;
+    background: var(--module-bg);
+    border: 1px solid #2a2f3a;
+    border-radius: 2px;
+    color: var(--text);
+    padding-top: 18px;
+    padding-bottom: 14px;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
+  }
+  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
+  :global(.svelte-flow__node.selected) .card {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
+  .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
+  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
+  .port-label.left { left: 14px; }
+  .port-label.right { right: 14px; }
+  .fader-grid {
+    margin-top: 220px;
+    padding: 0 10px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px 4px;
+    justify-items: center;
+  }
+</style>

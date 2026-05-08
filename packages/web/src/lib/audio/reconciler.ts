@@ -78,6 +78,15 @@ export function attachReconciler(
       return sourceNode?.domain ?? 'audio';
     }
 
+    /** Target node's domain. Mirrors edgeDomain but for the destination
+     *  endpoint. PatchEngine.addEdge uses this to detect cross-domain
+     *  cv → video param bridges. */
+    function edgeTargetDomain(edge: Edge): string {
+      const targetNode = currentNodes.get(edge.target.nodeId)
+        ?? appliedNodes.get(edge.target.nodeId);
+      return targetNode?.domain ?? 'audio';
+    }
+
     // 1. Removed edges first (release node references).
     const removedEdgeIds = [...appliedEdges.keys()]
       .filter((id) => !currentEdges.has(id))
@@ -109,7 +118,7 @@ export function attachReconciler(
     // 4. Added edges.
     for (const edge of snap.edges) {
       if (appliedEdges.has(edge.id)) continue;
-      engine.addEdge(edge, edgeDomain(edge));
+      engine.addEdge(edge, edgeDomain(edge), edgeTargetDomain(edge));
       appliedEdges.set(edge.id, { ...edge });
     }
 
