@@ -73,6 +73,8 @@
   import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
   import VizvcoCard from '$lib/ui/modules/VizvcoCard.svelte';
   import WavvizCard from '$lib/ui/modules/WavvizCard.svelte';
+  // SWOLEVCO — Buchla 259-style complex VCO with built-in scope output.
+  import SwolevcoCard from '$lib/ui/modules/SwolevcoCard.svelte';
   import LinesCard from '$lib/ui/modules/LinesCard.svelte';
   import VideoOutCard from '$lib/ui/modules/VideoOutCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
@@ -151,6 +153,7 @@
     drumseqz: DrumseqzCard,
     vizvco: VizvcoCard,
     wavviz: WavvizCard,
+    swolevco: SwolevcoCard,
     // Video-domain (Phase 0):
     lines: LinesCard,
     videoOut: VideoOutCard,

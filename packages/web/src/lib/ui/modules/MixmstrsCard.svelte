@@ -59,6 +59,10 @@
             <Knob value={paramVal(`ch${ch}_ratio`, 2)}     min={1}   max={10}  defaultValue={2}   label="RAT" curve="linear"   onchange={set(`ch${ch}_ratio`)}      readLive={live(`ch${ch}_ratio`)} />
             <Knob value={paramVal(`ch${ch}_compEnable`, 0)} min={0}  max={1}   defaultValue={0}   label="CMP" curve="discrete" onchange={set(`ch${ch}_compEnable`)} readLive={live(`ch${ch}_compEnable`)} />
           {/if}
+          <!-- Per-channel comp macro knob (always visible — even in compact
+               mode — because it's the user-friendly path; the THR/RAT/CMP
+               triple above is for power users in expanded mode). -->
+          <Knob value={paramVal(`comp${ch}`, 0)}         min={0}   max={1}   defaultValue={0}   label="Comp" curve="linear"   onchange={set(`comp${ch}`)}          readLive={live(`comp${ch}`)} />
           <Knob value={paramVal(`ch${ch}_send1`, 0)}  min={0}  max={1}   defaultValue={0}   label="S1"  curve="linear"   onchange={set(`ch${ch}_send1`)}      readLive={live(`ch${ch}_send1`)} />
           <Knob value={paramVal(`ch${ch}_send2`, 0)}  min={0}  max={1}   defaultValue={0}   label="S2"  curve="linear"   onchange={set(`ch${ch}_send2`)}      readLive={live(`ch${ch}_send2`)} />
         </div>
