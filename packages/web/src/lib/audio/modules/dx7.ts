@@ -1,0 +1,216 @@
+// packages/web/src/lib/audio/modules/dx7.ts
+//
+// DX7-style FM synth module. Pure-TypeScript 6-op AudioWorklet (no Plaits
+// dependency). See packages/dsp/src/dx7.ts for the worklet, and
+// packages/web/src/lib/audio/dx7-syx.ts for the SYX bank parser.
+//
+// I/O:
+//   inputs:
+//     poly      — polyPitchGate (5 voice pairs of pitch+gate). Preferred.
+//     pitch_cv  — mono V/oct (legacy single-voice use).
+//     gate      — mono gate  (legacy single-voice use).
+//   outputs:
+//     out       — mono audio.
+//
+// Params (live, AudioParam):
+//   algorithm   — 1..32 (DX7 algorithm; quantized; live editing OK)
+//   voiceCount  — 1..5 (poly limit)
+//   level       — master output level
+//   transpose   — ±24 semitones
+//
+// Patch selection (data-side, not AudioParam):
+//   node.data.preset  — name of bundled patch (DX7_BUILTIN_BANK).
+//   node.data.userPatches — array of DX7Voice loaded from SYX (in-memory,
+//                           per-instance; persistence is future work).
+//
+// On preset change, the host sends a `{type:'patch', voice}` message to the
+// worklet which rebuilds its internal patch state.
+
+import type { AudioDomainNodeHandle } from '$lib/audio/engine';
+import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { DX7Voice } from '$lib/audio/dx7-syx';
+import { DX7_BUILTIN_BANK, findBuiltinPatch } from '$lib/audio/dx7-banks';
+import { patch as livePatch } from '$lib/graph/store';
+import workletUrl from '@patchtogether.live/dsp/dist/dx7.js?url';
+
+const POLL_MS = 100;
+
+// Track of which AudioContexts already have the worklet module loaded.
+const loadedContexts = new WeakSet<BaseAudioContext>();
+
+/** Default preset for fresh modules. */
+export const DX7_DEFAULT_PRESET = 'E.PIANO 1';
+
+export const dx7Def: AudioModuleDef = {
+  type: 'dx7',
+  domain: 'audio',
+  label: 'DX7',
+  category: 'sources',
+  schemaVersion: 1,
+
+  inputs: [
+    // poly: 10-channel polyPitchGate; lane i drives voice i.
+    { id: 'poly',     type: 'polyPitchGate' },
+    // mono fallbacks for legacy single-voice patching:
+    { id: 'pitch_cv', type: 'cv' },
+    { id: 'gate',     type: 'gate' },
+  ],
+  outputs: [
+    { id: 'out', type: 'audio' },
+  ],
+
+  params: [
+    { id: 'algorithm',  label: 'Algorithm',   defaultValue: 5,   min: 1,   max: 32, curve: 'discrete' },
+    { id: 'voiceCount', label: 'Voices',      defaultValue: 5,   min: 1,   max: 5,  curve: 'discrete' },
+    { id: 'level',      label: 'Level',       defaultValue: 0.7, min: 0,   max: 2,  curve: 'linear' },
+    { id: 'transpose',  label: 'Transpose',   defaultValue: 0,   min: -24, max: 24, curve: 'linear', units: 'st' },
+  ],
+
+  async factory(ctx, node): Promise<AudioDomainNodeHandle> {
+    if (!loadedContexts.has(ctx)) {
+      await ctx.audioWorklet.addModule(workletUrl);
+      loadedContexts.add(ctx);
+    }
+
+    const workletNode = new AudioWorkletNode(ctx, 'dx7', {
+      // 3 inputs: poly (10ch) + pitch_cv (mono) + gate (mono).
+      // The poly input port is 10 channels; mono inputs are 1 channel each.
+      // Web Audio honors per-input channelCount via the source's connection
+      // shape (the engine connects a 10-channel source to input 0). The
+      // worklet reads inputs[0][channel] for each lane, so no special config
+      // needed here — channelCountMode on AudioWorkletNode defaults to
+      // 'max' which lets multi-channel sources pass through cleanly.
+      numberOfInputs: 3,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    } as AudioWorkletNodeOptions);
+
+    // Apply initial param values.
+    const params = workletNode.parameters as unknown as Map<string, AudioParam>;
+    for (const def of dx7Def.params) {
+      if (def.id === 'algorithm') continue; // applied via patch message
+      const v = (node.params ?? {})[def.id] ?? def.defaultValue;
+      params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
+    }
+
+    // Track currently-applied preset name + algorithm. We poll
+    // livePatch.nodes[id].data.preset so Card-driven preset changes flow
+    // through to the worklet without a custom engine API.
+    function readUserPatches(): DX7Voice[] {
+      const live = livePatch.nodes[node.id];
+      const arr = (live?.data as Record<string, unknown> | undefined)?.userPatches;
+      return Array.isArray(arr) ? (arr as DX7Voice[]) : [];
+    }
+    function readPresetName(): string {
+      const live = livePatch.nodes[node.id];
+      const p = (live?.data as Record<string, unknown> | undefined)?.preset;
+      return typeof p === 'string' && p.length > 0 ? p : DX7_DEFAULT_PRESET;
+    }
+
+    let currentPresetName = readPresetName();
+    let currentAlgo = (node.params?.algorithm ?? 5) as number;
+
+    function findPatch(name: string): DX7Voice {
+      const user = readUserPatches();
+      return (
+        user.find((p) => p.name === name) ??
+        findBuiltinPatch(name) ??
+        DX7_BUILTIN_BANK[0]!
+      );
+    }
+
+    function sendPatch(voice: DX7Voice, algoOverride?: number): void {
+      const a = algoOverride ?? voice.algorithm;
+      workletNode.port.postMessage({
+        type: 'patch',
+        voice: {
+          name: voice.name,
+          algorithm: a,
+          feedback: voice.feedback,
+          operators: voice.operators.map((o) => ({
+            r: o.r, l: o.l, ratio: o.ratio, detune: o.detune,
+            detuneFactor: o.detuneFactor, level: o.level,
+            fixedMode: o.fixedMode, velocitySens: o.velocitySens,
+          })),
+          transpose: voice.transpose,
+        },
+      });
+    }
+
+    // Initial patch send.
+    {
+      const v = findPatch(currentPresetName);
+      // If the saved patch had an algorithm value, prefer it; otherwise use
+      // the preset's stored algorithm.
+      const initialAlgo =
+        node.params?.algorithm !== undefined ? (node.params.algorithm as number) : v.algorithm;
+      currentAlgo = Math.max(1, Math.min(32, Math.round(initialAlgo)));
+      sendPatch(v, currentAlgo);
+      params.get('algorithm')?.setValueAtTime(currentAlgo, ctx.currentTime);
+    }
+
+    // Poll for preset changes. Yjs syncs node.data updates from remote
+    // collaborators (and local Card edits), so this captures both.
+    let alive = true;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    function pollPresetChange(): void {
+      if (!alive) return;
+      const name = readPresetName();
+      if (name !== currentPresetName) {
+        currentPresetName = name;
+        const v = findPatch(name);
+        // Adopt the patch's algorithm on preset change. The Card reads the
+        // algorithm via the live AudioParam (motorized fader path) so the
+        // knob position will follow without us writing back to node.params
+        // — keeps the data flow one-way (Card → engine, never engine → Card
+        // for params, which would loop through Yjs).
+        currentAlgo = v.algorithm;
+        sendPatch(v, currentAlgo);
+        params.get('algorithm')?.setValueAtTime(currentAlgo, ctx.currentTime);
+      }
+      pollTimer = setTimeout(pollPresetChange, POLL_MS);
+    }
+    pollTimer = setTimeout(pollPresetChange, POLL_MS);
+
+    return {
+      domain: 'audio',
+      inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
+        ['poly',     { node: workletNode, input: 0 }],
+        ['pitch_cv', { node: workletNode, input: 1 }],
+        ['gate',     { node: workletNode, input: 2 }],
+      ]),
+      outputs: new Map([['out', { node: workletNode, output: 0 }]]),
+      setParam(paramId, value) {
+        const p = params.get(paramId);
+        if (!p) return;
+        if (paramId === 'algorithm') {
+          const a = Math.max(1, Math.min(32, Math.round(value)));
+          if (a !== currentAlgo) {
+            currentAlgo = a;
+            // Re-send current preset with overridden algorithm.
+            const base = findPatch(currentPresetName);
+            sendPatch(base, a);
+          }
+          p.setValueAtTime(a, ctx.currentTime);
+          return;
+        }
+        p.setValueAtTime(value, ctx.currentTime);
+      },
+      readParam(paramId) {
+        return params.get(paramId)?.value;
+      },
+      read(key) {
+        if (key === 'preset') return currentPresetName;
+        if (key === 'algorithm') return currentAlgo;
+        return undefined;
+      },
+      dispose() {
+        alive = false;
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+        try { workletNode.port.close(); } catch { /* */ }
+        try { workletNode.disconnect(); } catch { /* */ }
+      },
+    };
+  },
+};
+

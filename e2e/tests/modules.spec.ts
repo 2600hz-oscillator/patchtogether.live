@@ -97,6 +97,8 @@ const MODULES: ModuleSpec[] = [
   // ILLOGIC: 4 cv inputs + 10 outputs (att1..att4 + sum + diff + and + nand
   // + or + not) = 14. Combined attenuverter / math / logic utility.
   { type: 'illogic',      cardClass: 'svelte-flow__node-illogic',      handleCount: 14, containsLabel: 'ILLOGIC' },
+  // DX7: 3 inputs (poly + pitch_cv + gate) + 1 output (out) = 4 handles.
+  { type: 'dx7',          cardClass: 'svelte-flow__node-dx7',          handleCount: 4, containsLabel: 'DX7' },
 ];
 
 test.describe.configure({ mode: 'parallel' });

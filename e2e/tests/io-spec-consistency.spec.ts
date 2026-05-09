@@ -172,6 +172,8 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'cameraInput',
     // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
     'illogic',
+    // DX7 — pure-TS 6-op FM synth (audio domain).
+    'dx7',
   ];
 
   for (const type of MODULE_TYPES) {

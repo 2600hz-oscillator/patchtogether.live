@@ -113,6 +113,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Webcam input (LOCAL ONLY). Live <video> -> WebGL2 texture; gain / mirror / on params. The captured stream is local to your browser tab and is NOT sent to other rack-mates — collaborators see a presence badge ("user X has CAMERA active") via Y-awareness, not the video itself. Multiplayer streaming (WebRTC + SFU) is deferred to a future phase. Spec: .myrobots/plans/module-camera-input.md.',
   illogic:
     'Combined attenuverter / math / logic utility. 4 cv inputs feed bipolar attenuverters (-1..+1); post-attenuverter outputs sum into `sum` and `diff`. Inputs in1+in2 are also gate-thresholded (>= 0.5) and combined into AND/NAND/OR; in1 alone drives a NOT.',
+  dx7:
+    'Pure-TypeScript 6-operator DX7-style FM synthesizer. 32 algorithms, 5-voice polyphony via the polyPitchGate cable, bundled bank of factory-inspired patches (E.PIANO 1, BASS 1, HARMONICA, STRINGS 1, MARIMBA, etc.), and a .syx file picker for loading custom 32-voice cartridge dumps (in-memory only). NOT a Plaits-backed implementation — see .myrobots/plans/dx7-and-polyphony.md for the design rationale.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -255,6 +257,11 @@ const PORT_NOTES: Record<string, string> = {
   'illogic.nand': 'Logic NAND of in1 & in2 as gates. NOT (in1 AND in2).',
   'illogic.or':   'Logic OR of in1 & in2 as gates. High when EITHER input >= 0.5.',
   'illogic.not':  'Logic NOT of in1 alone (single-input). High when in1 < 0.5.',
+  'dx7.poly':
+    'Polyphonic pitch+gate input (10 channels = 5 lanes of pitch+gate). Drive from a SEQUENCER / CARTESIAN poly output for chord playback; each lane allocates one DX7 voice. Round-robin allocation with steal-oldest when all 5 voices busy.',
+  'dx7.pitch_cv': 'Mono V/oct pitch input (legacy / single-voice fallback — drives lane 0 if no poly cable is patched).',
+  'dx7.gate':     'Mono gate input (legacy / single-voice fallback — drives lane 0).',
+  'dx7.out':      'Mono audio output (sum of all active voice carriers).',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
