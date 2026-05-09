@@ -27,6 +27,30 @@ test.describe('auth-route shape', () => {
     expect(typeof body.env.PUBLIC_CLERK_PUBLISHABLE_KEY).toBe('boolean');
   });
 
+  // Phase-1 observability shape: /api/health gained `status`, `version`,
+  // and `deps.hocuspocus`. BetterStack JSON-keyword monitor matches on
+  // `"status":"healthy"` so an outage flips to "degraded" without changing
+  // the HTTP code (which still has to be 200 for the @smoke assertion
+  // above + every external uptime probe written before this PR).
+  test('GET /api/health surfaces observability fields @smoke', async ({ request }) => {
+    const r = await request.get('/api/health');
+    const body = await r.json();
+    expect(['healthy', 'degraded']).toContain(body.status);
+    expect(typeof body.version).toBe('string');
+    expect(body.deps).toBeTruthy();
+    expect(typeof body.deps.hocuspocus.ok).toBe('boolean');
+  });
+
+  // Request-id middleware: every response now carries x-request-id, even
+  // for unauth'd public probes. Critical for log correlation.
+  test('responses carry x-request-id header @smoke', async ({ request }) => {
+    const r = await request.get('/api/health');
+    const id = r.headers()['x-request-id'];
+    expect(id, 'x-request-id header present').toBeTruthy();
+    // UUID-ish OR fallback hex; either way it should be at least 16 chars.
+    expect(id.length).toBeGreaterThanOrEqual(16);
+  });
+
   // Why "not 500" instead of "< 500": 503 is the *expected* response when
   // Clerk env is missing — that's the friendly auth-not-configured page
   // hooks.server.ts returns by design. 500 is what we actually want to

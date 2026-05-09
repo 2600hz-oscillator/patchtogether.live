@@ -11,6 +11,10 @@ declare global {
   namespace App {
     interface Locals {
       auth: () => SessionAuthObject;
+      // Per-request UUID assigned by hooks.server.ts → requestIdAndLog. Loaders
+      // and endpoints can include this in error responses so a user copy-paste
+      // gives the agent a correlation key for log search.
+      requestId: string;
     }
     // No bespoke platform.env bindings yet — DATABASE_URL is read directly
     // from process.env (shimmed by nodejs_compat on Workers). If we wire

@@ -1,14 +1,19 @@
 // packages/web/src/hooks.server.ts
 //
-// Server-side request middleware. Three handles composed in sequence:
+// Server-side request middleware. Four handles composed in sequence:
 //
-//   1. Beta gate — basic-auth gate while in beta. Off when BETA_GATE_PASS
+//   1. Request-id + structured access log — assigns a uuid per request,
+//      surfaces it as `event.locals.requestId` AND the `x-request-id`
+//      response header, and emits one JSON line per request that an LLM
+//      agent + Axiom can consume (CF Workers `console.log` lands in the
+//      Pages logs dashboard + flows to any logpush destination).
+//   2. Beta gate — basic-auth gate while in beta. Off when BETA_GATE_PASS
 //      is unset (local dev), so contributors don't have to keep punching
 //      a credential prompt. /api/health (uptime monitors) and /docs/*
 //      (the in-app docs site, which is public on every tier) are exempt.
-//   2. Clerk auth — populates event.locals.auth with session info every
+//   3. Clerk auth — populates event.locals.auth with session info every
 //      request, lets +page.server.ts loaders use locals.auth.userId.
-//   3. COOP/COEP headers — required for SharedArrayBuffer (Faust may use
+//   4. COOP/COEP headers — required for SharedArrayBuffer (Faust may use
 //      it). In production, packages/web/_headers is the belt-and-suspender;
 //      hooks.server.ts handles dev + edge cases.
 
@@ -173,4 +178,80 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export const handle = sequence(betaGate, conditionalClerk, setCoopCoepHeaders);
+// Request-id + structured access log middleware.
+//
+// Why this shape:
+//   - Every request gets a `request_id` (crypto.randomUUID, available on
+//     CF Workers + Node 20+); the loader/handler can read it from
+//     event.locals.requestId, and clients see it back as `x-request-id`
+//     so a user copy-pasting an error has a correlation key.
+//   - Logs one JSON line per response — single line so log-shipping tools
+//     (Axiom HTTP ingest, CF logpush) can parse without multi-line buffer
+//     handling. Health-check noise is deliberately dropped (it's hit every
+//     few sec by uptime monitors and adds nothing).
+//   - Failures during resolve still get logged, with a 500 status field,
+//     before the exception propagates.
+const HEALTH_PATH = '/api/health';
+
+function makeRequestId(): string {
+  // Globally available on CF Workers + Node 20+; defensive fallback is the
+  // 32-char hex of crypto.getRandomValues for older Node test harnesses.
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const requestIdAndLog: Handle = async ({ event, resolve }) => {
+  const requestId = event.request.headers.get('x-request-id') ?? makeRequestId();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (event.locals as any).requestId = requestId;
+  const start = Date.now();
+  let response: Response;
+  try {
+    response = await resolve(event);
+  } catch (err) {
+    // Log + rethrow. SvelteKit's handleError will turn this into a 500
+    // shape; we just want the structured log line out before that.
+    const ms = Date.now() - start;
+    if (event.url.pathname !== HEALTH_PATH) {
+      // eslint-disable-next-line no-console
+      console.error(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          level: 'error',
+          msg: 'request_failed',
+          request_id: requestId,
+          method: event.request.method,
+          path: event.url.pathname,
+          status: 500,
+          ms,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+    throw err;
+  }
+  response.headers.set('x-request-id', requestId);
+  const ms = Date.now() - start;
+  if (event.url.pathname !== HEALTH_PATH) {
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        level: response.status >= 500 ? 'error' : response.status >= 400 ? 'warn' : 'info',
+        msg: 'request',
+        request_id: requestId,
+        method: event.request.method,
+        path: event.url.pathname,
+        status: response.status,
+        ms,
+      }),
+    );
+  }
+  return response;
+};
+
+export const handle = sequence(requestIdAndLog, betaGate, conditionalClerk, setCoopCoepHeaders);
