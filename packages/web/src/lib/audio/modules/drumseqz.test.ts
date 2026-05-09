@@ -10,6 +10,7 @@ import {
   applyEuclideanToTrack,
   resolveStepVOct,
   defaultTrack,
+  defaultTracks,
   STEP_COUNT,
   TRACK_COUNT,
   coerceTracks,
@@ -180,8 +181,12 @@ describe('drumseqzDef shape', () => {
     ]);
   });
 
-  it('declares one clock input', () => {
-    expect(drumseqzDef.inputs.map((p) => p.id)).toEqual(['clock']);
+  it('declares clock + transport CV inputs', () => {
+    expect(drumseqzDef.inputs.map((p) => p.id)).toEqual([
+      'clock',
+      'play_cv', 'reset_cv',
+      'queue1_cv', 'queue2_cv', 'queue3_cv', 'queue4_cv',
+    ]);
   });
 
   it('declares per-track euclid/root/octave params', () => {
@@ -198,5 +203,125 @@ describe('drumseqzDef shape', () => {
 
   it('schemaVersion is 1', () => {
     expect(drumseqzDef.schemaVersion).toBe(1);
+  });
+});
+
+describe('quicksave snapshot helpers (transport-card)', () => {
+  // Round-trip: SAVE → LOAD restores the snapshot exactly.
+  // We simulate the card-side flow without instantiating Svelte: build a
+  // fake patch + ModuleNode, run handleSlotClick under each pendingMode.
+
+  type Cell = { on: boolean; midi: number | null };
+
+  function makeNode(): {
+    nodeId: string;
+    patch: { nodes: Record<string, { id: string; type: string; domain: 'audio'; position: { x: number; y: number }; params: Record<string, number>; data?: Record<string, unknown> } | undefined> };
+    deps: import('./transport-card').TransportCardDeps;
+    snap: () => Record<string, unknown>;
+    apply: (s: Record<string, unknown>) => void;
+  } {
+    const nodeId = 'drum-test';
+    const patch = {
+      nodes: {
+        [nodeId]: {
+          id: nodeId,
+          type: 'drumseqz',
+          domain: 'audio' as const,
+          position: { x: 0, y: 0 },
+          params: { bpm: 120, length: 16 },
+          data: { tracks: defaultTracks() },
+        },
+      },
+    };
+    const snap = () => {
+      const t = patch.nodes[nodeId]!;
+      return {
+        tracks: ((t.data as Record<string, unknown>).tracks as Cell[][]).map((tr) =>
+          tr.map((c) => ({ on: c.on, midi: c.midi })),
+        ),
+        bpm: t.params.bpm,
+        length: t.params.length,
+      };
+    };
+    const apply = (s: Record<string, unknown>) => {
+      const t = patch.nodes[nodeId]!;
+      if (Array.isArray(s.tracks)) {
+        (t.data as Record<string, unknown>).tracks = s.tracks;
+      }
+      if (typeof s.bpm === 'number') t.params.bpm = s.bpm;
+      if (typeof s.length === 'number') t.params.length = s.length;
+    };
+    return {
+      nodeId,
+      patch,
+      snap,
+      apply,
+      deps: {
+        nodeId,
+        patch,
+        transact: (fn) => fn(),
+        snapshot: snap,
+        applySnapshot: apply,
+      },
+    };
+  }
+
+  it('SAVE writes the snapshot into slots[N]', async () => {
+    const { handleSlotClick, setPendingMode } = await import('./transport-card');
+    const env = makeNode();
+    // Mutate one cell so the snapshot is non-default.
+    const t = env.patch.nodes[env.nodeId]!;
+    (t.data as { tracks: Cell[][] }).tracks[0][0] = { on: true, midi: 60 };
+    setPendingMode(env.deps, 'save');
+    const action = handleSlotClick(env.deps, '2');
+    expect(action).toBe('save');
+    const slots = (t.data as { slots?: Record<string, unknown> }).slots;
+    expect(slots).toBeDefined();
+    expect(slots?.['2']).toBeTruthy();
+    const stored = slots!['2'] as { tracks: Cell[][] };
+    expect(stored.tracks[0][0]).toEqual({ on: true, midi: 60 });
+  });
+
+  it('LOAD restores the snapshot saved earlier', async () => {
+    const { handleSlotClick, setPendingMode } = await import('./transport-card');
+    const env = makeNode();
+    const t = env.patch.nodes[env.nodeId]!;
+    (t.data as { tracks: Cell[][] }).tracks[0][0] = { on: true, midi: 64 };
+    setPendingMode(env.deps, 'save');
+    handleSlotClick(env.deps, '1');
+    // Now mutate so the live state differs from slot 1.
+    (t.data as { tracks: Cell[][] }).tracks[0][0] = { on: false, midi: null };
+    expect((t.data as { tracks: Cell[][] }).tracks[0][0]).toEqual({ on: false, midi: null });
+    setPendingMode(env.deps, 'load');
+    const action = handleSlotClick(env.deps, '1');
+    expect(action).toBe('load');
+    expect((t.data as { tracks: Cell[][] }).tracks[0][0]).toEqual({ on: true, midi: 64 });
+    // After LOAD, lastLoadedSlot is set + queuedSlot is cleared.
+    expect((t.data as { lastLoadedSlot?: string }).lastLoadedSlot).toBe('1');
+  });
+
+  it('QUEUE sets queuedSlot but does not load immediately', async () => {
+    const { handleSlotClick, setPendingMode } = await import('./transport-card');
+    const env = makeNode();
+    const t = env.patch.nodes[env.nodeId]!;
+    // Pre-populate slot 3.
+    (t.data as { tracks: Cell[][] }).tracks[1][0] = { on: true, midi: 67 };
+    setPendingMode(env.deps, 'save');
+    handleSlotClick(env.deps, '3');
+    // Mutate live so slot 3 differs.
+    (t.data as { tracks: Cell[][] }).tracks[1][0] = { on: false, midi: null };
+    setPendingMode(env.deps, 'queue');
+    const action = handleSlotClick(env.deps, '3');
+    expect(action).toBe('queue');
+    expect((t.data as { queuedSlot?: string }).queuedSlot).toBe('3');
+    // Live state is UNCHANGED — engine performs the swap on sequence-end.
+    expect((t.data as { tracks: Cell[][] }).tracks[1][0]).toEqual({ on: false, midi: null });
+  });
+
+  it('clicking a slot button without a pending mode is a noop', async () => {
+    const { handleSlotClick } = await import('./transport-card');
+    const env = makeNode();
+    const action = handleSlotClick(env.deps, '4');
+    expect(action).toBe('noop');
   });
 });

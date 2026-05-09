@@ -4,6 +4,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import {
@@ -21,6 +22,17 @@
   import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
   import type { ModuleNode } from '$lib/graph/types';
+  import {
+    handleSlotClick,
+    readSlots,
+    readPendingMode,
+    readQueuedSlot,
+    readLastLoadedSlot,
+    setPendingMode,
+    setQueuedSlot,
+    type TransportCardDeps,
+  } from '$lib/audio/modules/transport-card';
+  import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -222,8 +234,82 @@
     };
   });
 
+  // ---------------- Quicksave + transport ----------------
+
+  const transportDeps: TransportCardDeps = {
+    nodeId: id,
+    patch,
+    transact: (fn) => ydoc.transact(fn),
+    snapshot: (): Snapshot => {
+      const t = patch.nodes[id];
+      const tracksSnap = readTracksCopy().map((tr) =>
+        tr.map((c) => ({ on: c.on, midi: c.midi })),
+      );
+      const snap: Snapshot = {
+        tracks: tracksSnap,
+        bpm: t?.params.bpm ?? 120,
+        length: t?.params.length ?? STEP_COUNT,
+        octave: t?.params.octave ?? 0,
+        gateLength: t?.params.gateLength ?? 0.5,
+        swing: t?.params.swing ?? 0,
+      };
+      for (let i = 1; i <= TRACK_COUNT; i++) {
+        for (const suffix of ['_euclid', '_root', '_octave'] as const) {
+          const k = `trk${i}${suffix}`;
+          const v = t?.params[k];
+          if (typeof v === 'number') snap[k] = v;
+        }
+      }
+      return snap;
+    },
+    applySnapshot: (snap: Snapshot) => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      ydoc.transact(() => {
+        if (Array.isArray(snap.tracks)) {
+          if (!t.data) t.data = {};
+          (t.data as Record<string, unknown>).tracks = (snap.tracks as unknown[]).map((tr) =>
+            (Array.isArray(tr) ? tr : []).map((c) => coerceCell(c)),
+          );
+        }
+        for (const k of ['bpm', 'length', 'octave', 'gateLength', 'swing'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') t.params[k] = v;
+        }
+        for (let i = 1; i <= TRACK_COUNT; i++) {
+          for (const suffix of ['_euclid', '_root', '_octave'] as const) {
+            const k = `trk${i}${suffix}`;
+            const v = snap[k];
+            if (typeof v === 'number') t.params[k] = v;
+          }
+        }
+      });
+    },
+  };
+
+  let slotsState = $derived((void cardVersion, readSlots(node)));
+  let pendingMode = $derived<PendingMode>((void cardVersion, readPendingMode(node)));
+  let queuedSlot = $derived<SlotKey | null>((void cardVersion, readQueuedSlot(node)));
+  let lastLoadedSlot = $derived<SlotKey | null>((void cardVersion, readLastLoadedSlot(node)));
+
+  function onSetMode(m: PendingMode) { setPendingMode(transportDeps, m); }
+  function onSlotClick(k: SlotKey) { handleSlotClick(transportDeps, k); }
+  function onPlayToggle() { togglePlay(); }
+  function onReset() {
+    const wasPlaying = isPlaying;
+    setQueuedSlot(transportDeps, null);
+    set('isPlaying')(0);
+    if (wasPlaying) requestAnimationFrame(() => set('isPlaying')(1));
+  }
+
   const inputs: PortDescriptor[] = [
     { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
+    { id: 'play_cv',   label: 'PLAY GATE',     cable: 'gate' },
+    { id: 'reset_cv',  label: 'RESET GATE',    cable: 'gate' },
+    { id: 'queue1_cv', label: 'PLAY QUEUE 1',  cable: 'gate' },
+    { id: 'queue2_cv', label: 'PLAY QUEUE 2',  cable: 'gate' },
+    { id: 'queue3_cv', label: 'PLAY QUEUE 3',  cable: 'gate' },
+    { id: 'queue4_cv', label: 'PLAY QUEUE 4',  cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = [
     ...Array.from({ length: TRACK_COUNT }, (_, t) => ({
@@ -323,6 +409,19 @@
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} readLive={live('gateLength')} />
     <Fader value={swing}      min={0}   max={0.75} defaultValue={0}   label="Sw"   curve="linear"   onchange={set('swing')}      readLive={live('swing')} />
   </div>
+
+  <QuicksaveControls
+    nodeId={id}
+    slots={slotsState}
+    {pendingMode}
+    {queuedSlot}
+    {lastLoadedSlot}
+    {isPlaying}
+    {onSetMode}
+    {onSlotClick}
+    {onPlayToggle}
+    {onReset}
+  />
   </PatchPanel>
 </div>
 

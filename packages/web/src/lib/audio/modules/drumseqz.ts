@@ -17,6 +17,15 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { C3_MIDI, midiToVOct } from '$lib/audio/note-entry';
+import {
+  createTransportCv,
+  pickQueuedSlotFromEvents,
+  TRANSPORT_CV_PORT_DEFS,
+} from './transport-cv';
+import {
+  coerceSlots,
+  coerceSlotKey,
+} from './transport-helpers';
 
 export const TRACK_COUNT = 4;
 export const STEP_COUNT = 16;
@@ -161,6 +170,11 @@ export const drumseqzDef: AudioModuleDef = {
 
   inputs: [
     { id: 'clock', type: 'gate' },
+    // Shared transport CV inputs (PR feat/sequencer-transport-quicksave):
+    //   play_cv      → toggles isPlaying on rising edge
+    //   reset_cv     → resets stepIndex to 0 on rising edge
+    //   queue1..4_cv → queues slot N on rising edge
+    ...TRANSPORT_CV_PORT_DEFS,
   ],
   outputs: [
     { id: 'gate1',  type: 'gate' },
@@ -246,6 +260,11 @@ export const drumseqzDef: AudioModuleDef = {
     let lastClockSampleTime = ctx.currentTime;
     const CLOCK_THRESHOLD = 0.5;
 
+    // Shared transport CV inputs (play_cv, reset_cv, queue{1..4}_cv).
+    const transportCv = createTransportCv(ctx);
+    let lastTransportPollTime = ctx.currentTime;
+    let totalSequenceEnds = 0;
+
     function emitClockPulse(atTime: number) {
       clockOutSrc.offset.setValueAtTime(1, atTime);
       clockOutSrc.offset.setValueAtTime(0, atTime + 0.01);
@@ -309,10 +328,80 @@ export const drumseqzDef: AudioModuleDef = {
       }
     }
 
+    /** Drain transport CV inputs and dispatch effects. */
+    function pollTransportCv(): boolean {
+      const nowAt = ctx.currentTime;
+      const elapsed = nowAt - lastTransportPollTime;
+      lastTransportPollTime = nowAt;
+      const ev = transportCv.drain(elapsed);
+      const live = livePatch.nodes[nodeId];
+      let isPlaying = readParam('isPlaying', 0) >= 0.5;
+      if (ev.play % 2 === 1) {
+        isPlaying = !isPlaying;
+        if (live?.params) live.params.isPlaying = isPlaying ? 1 : 0;
+      }
+      if (ev.reset > 0) {
+        stepIndex = 0;
+        currentStep = 0;
+        nextStepTime = ctx.currentTime + 0.05;
+      }
+      const queued = pickQueuedSlotFromEvents(ev);
+      if (queued !== null && live) {
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).queuedSlot = queued;
+      }
+      return isPlaying;
+    }
+
+    /** Apply queued slot's snapshot. Snapshot shape (DRUMSEQZ):
+     *  { tracks: DrumseqzTrack[], bpm, length, octave, gateLength, swing,
+     *    trk{1..4}_euclid, trk{N}_root, trk{N}_octave }. */
+    function maybeApplyQueuedSlot(): boolean {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return false;
+      const data = live.data as Record<string, unknown> | undefined;
+      const queued = coerceSlotKey(data?.queuedSlot);
+      if (!queued) return false;
+      const slots = coerceSlots(data?.slots);
+      const snap = slots[queued];
+      if (!snap) {
+        if (data) data.queuedSlot = null;
+        return false;
+      }
+      if (!live.data) live.data = {};
+      const d = live.data as Record<string, unknown>;
+      // Deep-clone the tracks array (and each track's cells) so we don't
+      // reassign Y-tree-resident objects from slots[N] into data.tracks.
+      if (Array.isArray(snap.tracks)) {
+        d.tracks = (snap.tracks as Array<Array<Record<string, unknown>>>).map((tr) =>
+          (Array.isArray(tr) ? tr : []).map((c) => ({ ...c })),
+        );
+      }
+      if (live.params) {
+        for (const k of ['bpm', 'length', 'octave', 'gateLength', 'swing'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') live.params[k] = v;
+        }
+        for (let t = 1; t <= TRACK_COUNT; t++) {
+          for (const suffix of ['_euclid', '_root', '_octave'] as const) {
+            const k = `trk${t}${suffix}`;
+            const v = snap[k];
+            if (typeof v === 'number') live.params[k] = v;
+          }
+        }
+      }
+      d.lastLoadedSlot = queued;
+      d.queuedSlot = null;
+      stepIndex = 0;
+      currentStep = 0;
+      nextStepTime = ctx.currentTime + 0.005;
+      return true;
+    }
+
     function tick() {
       if (!alive) return;
       try {
-        const isPlaying = readParam('isPlaying', 0) >= 0.5;
+        const isPlaying = pollTransportCv();
         const externalClock = isClockInConnected();
 
         if (isPlaying && !prevPlaying) {
@@ -325,6 +414,8 @@ export const drumseqzDef: AudioModuleDef = {
           }
           lastClockSample = 0;
           lastClockSampleTime = ctx.currentTime;
+          transportCv.resetEdges();
+          lastTransportPollTime = ctx.currentTime;
         } else if (!isPlaying && prevPlaying) {
           for (let t = 0; t < TRACK_COUNT; t++) {
             gateSrcs[t].offset.cancelScheduledValues(ctx.currentTime);
@@ -354,7 +445,15 @@ export const drumseqzDef: AudioModuleDef = {
             const cur = clockInBuffer[i] ?? 0;
             if (lastClockSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
               emitStep(stepIndex, nowAt + 0.005, stepDurForGate);
-              stepIndex = (stepIndex + 1) % length;
+              const nextIdx = (stepIndex + 1) % length;
+              if (nextIdx === 0) {
+                totalSequenceEnds++;
+                if (maybeApplyQueuedSlot()) {
+                  // stepIndex/currentStep reset; skip the natural advance.
+                  continue;
+                }
+              }
+              stepIndex = nextIdx;
               currentStep = stepIndex;
               totalAdvances++;
             }
@@ -375,8 +474,17 @@ export const drumseqzDef: AudioModuleDef = {
 
             emitStep(stepIndex, nextStepTime, stepDur);
 
-            nextStepTime += stepDur;
-            stepIndex = (stepIndex + 1) % length;
+            const nextIdx = (stepIndex + 1) % length;
+            const nextStartTime = nextStepTime + stepDur;
+            if (nextIdx === 0) {
+              totalSequenceEnds++;
+              if (maybeApplyQueuedSlot()) {
+                nextStepTime = nextStartTime;
+                continue;
+              }
+            }
+            nextStepTime = nextStartTime;
+            stepIndex = nextIdx;
             currentStep = stepIndex;
             totalAdvances++;
           }
@@ -392,6 +500,9 @@ export const drumseqzDef: AudioModuleDef = {
     const inputs = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
       ['clock', { node: clockInGain, input: 0 }],
     ]);
+    for (const [id, entry] of transportCv.inputs) {
+      inputs.set(id, entry);
+    }
     const outputs = new Map<string, { node: AudioNode; output: number }>();
     for (let t = 0; t < TRACK_COUNT; t++) {
       outputs.set(`gate${t + 1}`, { node: gateSrcs[t], output: 0 });
@@ -414,6 +525,7 @@ export const drumseqzDef: AudioModuleDef = {
       read(key) {
         if (key === 'currentStep') return currentStep;
         if (key === 'totalAdvances') return totalAdvances;
+        if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (typeof key === 'string' && key.startsWith('pitchVOct:')) {
           const i = Number.parseInt(key.slice('pitchVOct:'.length), 10);
           return Number.isFinite(i) && i >= 0 && i < TRACK_COUNT
@@ -458,6 +570,7 @@ export const drumseqzDef: AudioModuleDef = {
         clockInSilence.disconnect();
         clockInGain.disconnect();
         clockInAnalyser.disconnect();
+        transportCv.dispose();
       },
     };
   },
