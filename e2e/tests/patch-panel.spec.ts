@@ -221,6 +221,128 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     ).toBeGreaterThan(40);
   });
 
+  test('output cables anchor at top-left affordance when source panel is collapsed', async ({
+    page,
+  }) => {
+    // Bug: when the source module's panel is closed, an output cable's
+    // SVG endpoint must terminate at the source card's top-left
+    // affordance — not at the row position the handle would occupy if
+    // the panel were open. This was broken on PR-76 / SWOLEVCO: the
+    // output cable visually traced back to the right side of the card
+    // (where the open-state OUTPUT handle row lives) even with the panel
+    // closed. The collapsed-state CSS rule needs higher specificity than
+    // the open-state OUTPUT positioning rule (which uses both the
+    // .panel-row.right selector AND the .svelte-flow__handle.source
+    // selector — the original specificity hack only countered one of
+    // them).
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // ADSR (env source, an output) wired to VCA (cv target, an input).
+    await spawnPatch(
+      page,
+      [
+        { id: 'adsr', type: 'adsr', position: { x: 100, y: 100 } },
+        { id: 'vca', type: 'vca', position: { x: 600, y: 100 } },
+      ],
+      [
+        {
+          id: 'e1',
+          from: { nodeId: 'adsr', portId: 'env' },
+          to: { nodeId: 'vca', portId: 'cv' },
+          sourceType: 'cv',
+          targetType: 'cv',
+        },
+      ],
+    );
+
+    await expect(
+      page.locator(`.svelte-flow__edge[data-id="e1"] .svelte-flow__edge-path`),
+    ).toHaveCount(1);
+
+    // Move mouse far away so neither panel is open.
+    await page.mouse.move(50, 50);
+    await page.waitForTimeout(300);
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`),
+    ).toHaveAttribute('aria-hidden', 'true');
+
+    // Anchor: the source-side trigger affordance the user sees in the
+    // top-left corner of the source card.
+    const sourceCardTrigger = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`,
+    );
+    const triggerBox = await sourceCardTrigger.boundingBox();
+    expect(triggerBox, 'source-card top-left trigger has a box').toBeTruthy();
+    if (!triggerBox) return;
+
+    // Output handle (env, type=source). When the panel is closed, this
+    // handle must visually anchor near the trigger affordance — which
+    // is what the cable's SVG endpoint follows.
+    const outputHandle = page.locator(
+      `.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid="env"][class*="source"]`,
+    );
+    const handleBox = await outputHandle.boundingBox();
+    expect(handleBox, 'output handle has a box').toBeTruthy();
+    if (!handleBox) return;
+
+    // The output handle's centre must be within ~30px of the trigger's
+    // centre. Anything further means the handle is still positioned at
+    // the open-state row coordinates (right edge of the card, ~card-
+    // width away from the top-left affordance).
+    const triggerCx = triggerBox.x + triggerBox.width / 2;
+    const triggerCy = triggerBox.y + triggerBox.height / 2;
+    const handleCx = handleBox.x + handleBox.width / 2;
+    const handleCy = handleBox.y + handleBox.height / 2;
+    const dx = Math.abs(handleCx - triggerCx);
+    const dy = Math.abs(handleCy - triggerCy);
+    expect(
+      dx,
+      `output handle x must anchor near top-left trigger when panel closed (got dx=${dx}px from trigger centre)`,
+    ).toBeLessThan(30);
+    expect(
+      dy,
+      `output handle y must anchor near top-left trigger when panel closed (got dy=${dy}px from trigger centre)`,
+    ).toBeLessThan(30);
+
+    // And the cable's source endpoint (the start of the SVG <path d>)
+    // must follow the handle — i.e. the cable visually terminates at
+    // the trigger area, not at a row on the right edge of the card.
+    const edgePath = page
+      .locator(`.svelte-flow__edge[data-id="e1"] .svelte-flow__edge-path`)
+      .first();
+    const sourceEndpoint = await edgePath.evaluate((el) => {
+      // svelte-flow edge paths start with `M x,y ...` — the M coordinate
+      // is the source-side endpoint in SVG coords. Convert to viewport
+      // coords via getCTM so we can compare to handle/trigger boxes.
+      const path = el as SVGPathElement;
+      const d = path.getAttribute('d') ?? '';
+      const m = d.match(/^M\s*([-\d.]+)[ ,]([-\d.]+)/);
+      if (!m) return null;
+      const sx = Number(m[1]);
+      const sy = Number(m[2]);
+      const ctm = path.getScreenCTM();
+      if (!ctm) return null;
+      const pt = (path.ownerSVGElement ?? path).createSVGPoint();
+      pt.x = sx;
+      pt.y = sy;
+      const screen = pt.matrixTransform(ctm);
+      return { x: screen.x, y: screen.y };
+    });
+    expect(sourceEndpoint, 'edge has parseable source endpoint').not.toBeNull();
+    if (!sourceEndpoint) return;
+    const ex = Math.abs(sourceEndpoint.x - triggerCx);
+    const ey = Math.abs(sourceEndpoint.y - triggerCy);
+    expect(
+      ex,
+      `cable source endpoint x must anchor near top-left trigger when source panel closed (got dx=${ex}px from trigger centre)`,
+    ).toBeLessThan(40);
+    expect(
+      ey,
+      `cable source endpoint y must anchor near top-left trigger when source panel closed (got dy=${ey}px from trigger centre)`,
+    ).toBeLessThan(40);
+  });
+
   test('top-right trigger opens the same panel as top-left', async ({ page }) => {
     // Per user feedback (PR-69): every module gets a SECOND hover
     // affordance in the top-right corner that opens the same panel
