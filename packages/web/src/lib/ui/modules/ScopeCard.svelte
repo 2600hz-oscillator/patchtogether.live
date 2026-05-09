@@ -173,7 +173,7 @@
     width: 320px;
     min-height: 270px;
     background: var(--module-bg);
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
     padding-top: 18px;
@@ -229,7 +229,7 @@
     min-width: 26px;
     padding: 0 4px;
     background: #14171c;
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     border-radius: 3px;
     font-size: 0.6rem;
     font-family: ui-monospace, monospace;
@@ -242,7 +242,7 @@
   }
   .screen-wrap {
     margin: 16px 30px 8px;
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     border-radius: 3px;
     overflow: hidden;
     line-height: 0;

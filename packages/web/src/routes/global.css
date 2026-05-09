@@ -16,6 +16,24 @@
   --text: #e0e0e0;
   --text-dim: #888;
 
+  /* Skin-system surface (introduced by the UI skins PR). Lifts literals
+   * that previously appeared inline in cards / chrome (#2a2f3a, #404652,
+   * #14171c, #1f242c, #353a47, #151a21). These default values are the
+   * baseline "default" skin — the SkinStore re-applies the same values
+   * inline at boot, and switching to another skin overrides them via
+   * `document.documentElement.style.setProperty`. See
+   * .myrobots/plans/ui-skins-v2.md §3 + the `default` skin in
+   * $lib/ui/skins/default.ts (which mirrors these values byte-for-byte
+   * so default-skin renders match an unskinned page exactly). */
+  --surface-1: #151a21;
+  --surface-2: #2a2f3a;
+  --surface-3: #353a47;
+  --module-bg-deep: #14171c;
+  --border: #2a2f3a;
+  --border-strong: #404652;
+  --divider: #1f242c;
+  --text-on-accent: #1a1d23;
+
   --cable-audio: #fbbf24;
   --cable-pitch: #60a5fa;
   --cable-gate: #f87171;

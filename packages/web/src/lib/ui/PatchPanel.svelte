@@ -390,8 +390,12 @@
     top: 4px;
     width: 18px;
     height: 18px;
-    background: rgba(20, 23, 28, 0.85);
-    border: 1px solid #2a2f3a;
+    /* Skin-aware: --module-bg-deep is the lifted version of the literal
+     * `rgba(20, 23, 28, 0.85)` (close enough — both are "darker than the
+     * card body"); --border is the lifted `#2a2f3a`. Default skin keeps
+     * the visual identical; non-default skins recolour both. */
+    background: var(--module-bg-deep);
+    border: 1px solid var(--border);
     border-radius: 2px;
     padding: 0;
     cursor: pointer;
@@ -479,7 +483,8 @@
   .panel-section + .panel-section {
     margin-top: 10px;
     padding-top: 8px;
-    border-top: 1px solid #1f242c;
+    /* Skin-aware divider; lifted from the literal #1f242c. */
+    border-top: 1px solid var(--divider);
   }
   .section-title {
     font-size: 0.65rem;
