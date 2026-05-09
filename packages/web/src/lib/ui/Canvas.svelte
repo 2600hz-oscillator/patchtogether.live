@@ -41,7 +41,14 @@
   import { attachReconciler } from '$lib/audio/reconciler';
   import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
   import { provideEngineContext } from '$lib/audio/engine-context';
+  import { provideProviderContext } from '$lib/multiplayer/provider-context';
   import '$lib/audio/modules'; // auto-registers analogVcoDef + audioOutDef
+  // Video-domain (Phase 0 spike) — sibling registry + engine class. Imported
+  // here so module defs are present in the registry by the time the palette
+  // reads listModuleDefs(); engine instance is created lazily in ensureEngine.
+  import { VideoEngine } from '$lib/video/engine';
+  import { listVideoModuleDefs, getVideoModuleDef } from '$lib/video/module-registry';
+  import '$lib/video/modules'; // auto-registers linesDef + videoOutDef
   import AnalogVcoCard from '$lib/ui/modules/AnalogVcoCard.svelte';
   import AudioOutCard from '$lib/ui/modules/AudioOutCard.svelte';
   import VcaCard from '$lib/ui/modules/VcaCard.svelte';
@@ -64,6 +71,21 @@
   import RiotgirlsCard from '$lib/ui/modules/RiotgirlsCard.svelte';
   import ScoreCard from '$lib/ui/modules/ScoreCard.svelte';
   import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
+  import VizvcoCard from '$lib/ui/modules/VizvcoCard.svelte';
+  import WavvizCard from '$lib/ui/modules/WavvizCard.svelte';
+  import LinesCard from '$lib/ui/modules/LinesCard.svelte';
+  import VideoOutCard from '$lib/ui/modules/VideoOutCard.svelte';
+  // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
+  import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
+  import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
+  import DestructorCard from '$lib/ui/modules/DestructorCard.svelte';
+  import ChromaCard from '$lib/ui/modules/ChromaCard.svelte';
+  import LumaCard from '$lib/ui/modules/LumaCard.svelte';
+  import ColorizerCard from '$lib/ui/modules/ColorizerCard.svelte';
+  import FeedbackCard from '$lib/ui/modules/FeedbackCard.svelte';
+  import VideoMixerCard from '$lib/ui/modules/VideoMixerCard.svelte';
+  // CAMERA input (local-only) — see .myrobots/plans/module-camera-input.md.
+  import CameraInputCard from '$lib/ui/modules/CameraInputCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
@@ -119,6 +141,22 @@
     riotgirls: RiotgirlsCard,
     score: ScoreCard,
     drumseqz: DrumseqzCard,
+    vizvco: VizvcoCard,
+    wavviz: WavvizCard,
+    // Video-domain (Phase 0):
+    lines: LinesCard,
+    videoOut: VideoOutCard,
+    // Video-domain (Phase 1):
+    inwards: InwardsCard,
+    picturebox: PictureboxCard,
+    destructor: DestructorCard,
+    chroma: ChromaCard,
+    luma: LumaCard,
+    colorizer: ColorizerCard,
+    feedback: FeedbackCard,
+    videoMixer: VideoMixerCard,
+    // CAMERA input (local-only):
+    cameraInput: CameraInputCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
@@ -131,6 +169,10 @@
   // Provide the engine to descendant module-card components (motorized faders
   // use this to read live AudioParam values).
   provideEngineContext(() => engine);
+  // Provide the multiplayer provider too, so cards can write per-module
+  // presence into Y.Awareness (e.g., CAMERA publishes "this user has CAMERA
+  // active here" without sending pixels — see camera-presence.ts).
+  provideProviderContext(() => provider);
 
   // Dev-only: expose patch + ydoc on window so e2e tests can drive arbitrary
   // module-spawning combinations without a UI palette. Stripped in prod builds.
@@ -395,8 +437,11 @@
     const srcNode = patch.nodes[connection.source];
     const dstNode = patch.nodes[connection.target];
     if (!srcNode || !dstNode) return;
-    const srcDef = getModuleDef(srcNode.type);
-    const dstDef = getModuleDef(dstNode.type);
+    // Phase 0 video spike: a node may belong to either domain registry.
+    // Try audio first (the common case), fall back to video so a video
+    // module's port types resolve correctly.
+    const srcDef = getModuleDef(srcNode.type) ?? getVideoModuleDef(srcNode.type);
+    const dstDef = getModuleDef(dstNode.type) ?? getVideoModuleDef(dstNode.type);
     if (!srcDef || !dstDef) return;
 
     const srcPort = srcDef.outputs.find((p) => p.id === connection.sourceHandle);
@@ -638,7 +683,15 @@
     // cuts) still hit this. Pre-Yjs-write check inside transact closes the
     // double-spawn race for a single client; the engine.addNode rejection is
     // the ultimate defense for multiplayer.
-    const def = getModuleDef(type);
+    //
+    // Domain dispatch (Phase 0 video spike): try the audio registry first;
+    // fall back to the video registry. The two registries are kept separate
+    // so domain-specific def shapes don't bleed across; the spawn path just
+    // needs the `domain` + `maxInstances` fields and either works.
+    const audioDef = getModuleDef(type);
+    const videoDef = !audioDef ? getVideoModuleDef(type) : undefined;
+    const def = audioDef ?? videoDef;
+    const domain: 'audio' | 'video' = audioDef ? 'audio' : 'video';
     if (def?.maxInstances !== undefined) {
       let existing = 0;
       for (const node of Object.values(patch.nodes)) {
@@ -685,7 +738,7 @@
       patch.nodes[id] = {
         id,
         type,
-        domain: 'audio',
+        domain,
         position: pos,
         params: {},
       };
@@ -708,6 +761,19 @@
         if (audioCtx.state === 'suspended') await audioCtx.resume();
         const e = new PatchEngine();
         e.registerDomain(new AudioEngine(audioCtx));
+        // Video engine — registers alongside audio so a single PatchEngine
+        // dispatches both. Construction is cheap (no GL alloc until a video
+        // module is added; OffscreenCanvas + WebGL2 init does happen here).
+        // If WebGL2 is unsupported we surface the error via the trace log
+        // but keep the audio path alive — this lets the existing audio
+        // demo run on browsers that lack WebGL2.
+        try {
+          e.registerDomain(new VideoEngine());
+          trace('video engine registered');
+        } catch (videoErr) {
+          console.warn('[canvas] video engine unavailable:', videoErr);
+          trace(`video engine unavailable: ${videoErr instanceof Error ? videoErr.message : videoErr}`);
+        }
         reconciler = attachReconciler(e);
         engine = e;
         trace(`engine + reconciler attached (sr=${audioCtx.sampleRate})`);
@@ -955,7 +1021,7 @@
 
   let nodeCount = $derived(flowNodes.length);
   let edgeCount = $derived(flowEdges.length);
-  let availableModules = $derived(listModuleDefs().length);
+  let availableModules = $derived(listModuleDefs().length + listVideoModuleDefs().length);
 </script>
 
 <div class="root">
@@ -1039,6 +1105,12 @@
       <li><span class="swatch gate"></span> gate</li>
       <li><span class="swatch cv"></span> CV</li>
       <li><span class="swatch polyPitchGate"></span> poly</li>
+      <!-- Phase 0 video-domain cables. Swatch styles are colocated in the
+           same .swatch ruleset below; declared here in legend order -->
+      <li><span class="swatch keys"></span> keys</li>
+      <li><span class="swatch image"></span> image</li>
+      <li><span class="swatch mono-video"></span> m-video</li>
+      <li><span class="swatch video"></span> video</li>
     </ul>
   </footer>
 
@@ -1230,6 +1302,13 @@
   .swatch.gate { background: var(--cable-gate); }
   .swatch.cv { background: var(--cable-cv); }
   .swatch.polyPitchGate { background: var(--cable-polyPitchGate); }
+  /* Video-domain swatches (Phase 0 spike). The CSS-class name shape
+   * mirrors the cable-type id exactly so e.g. mono-video lines up
+   * with --cable-mono-video without an extra mapping table. */
+  .swatch.keys { background: var(--cable-keys); }
+  .swatch.image { background: var(--cable-image); }
+  .swatch.mono-video { background: var(--cable-mono-video); }
+  .swatch.video { background: var(--cable-video); }
   .trace-panel {
     padding: 0.4rem 1.25rem 0.6rem;
     border-top: 1px solid #1f242c;

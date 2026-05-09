@@ -53,6 +53,11 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      // Default project — every spec EXCEPT the camera spec lives here.
+      // The camera spec runs under chromium-camera (below) so the fake-
+      // camera flag doesn't leak a synthetic green-screen pattern into
+      // tests that don't expect it.
+      testIgnore: ['**/camera-input.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
@@ -60,6 +65,28 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             // COOP/COEP isolation only matters when the headers are set;
             // Playwright doesn't need extra flags for this.
+          ],
+        },
+      },
+    },
+    {
+      name: 'chromium-camera',
+      // Specs that need a webcam: getUserMedia returns a synthetic
+      // green/red striped MediaStream produced by Chromium's fake video
+      // device, and the permission prompt UI is auto-accepted (the
+      // newContext({ permissions: ['camera'] }) call in the spec covers
+      // most cases, but --use-fake-ui covers the prompt edge cases).
+      testMatch: ['**/camera-input.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        // Grant camera permission in this project so the spec doesn't
+        // need to wire it on every newContext.
+        permissions: ['camera'],
+        launchOptions: {
+          args: [
+            '--autoplay-policy=no-user-gesture-required',
+            '--use-fake-ui-for-media-stream',
+            '--use-fake-device-for-media-stream',
           ],
         },
       },

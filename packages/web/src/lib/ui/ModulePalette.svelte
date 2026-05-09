@@ -2,6 +2,7 @@
   // Searchable popup palette for adding modules. Right-click the canvas (or
   // click the topbar's + Add module) to open. Type to filter; click to spawn.
   import { listModuleDefs } from '$lib/audio/module-registry';
+  import { listVideoModuleDefs } from '$lib/video/module-registry';
   import { patch } from '$lib/graph/store';
 
   interface Props {
@@ -52,9 +53,17 @@
   // Re-read defs each open in case modules were registered after first import.
   // Also drop any module at its `maxInstances` cap — first-line UI enforcement
   // for singletons (engine.addNode is the defensive last line).
+  //
+  // Phase 0 video spike: list audio + video module defs side-by-side. The two
+  // registries are kept distinct (different factory shapes) so the palette
+  // stitches them at read-time. Audio defs appear first; users hit familiar
+  // audio modules first when scanning.
   let allDefs = $derived(
     open
-      ? listModuleDefs().filter(
+      ? [
+          ...listModuleDefs(),
+          ...listVideoModuleDefs(),
+        ].filter(
           (d) => d.maxInstances === undefined || instanceCount(d.type) < d.maxInstances,
         )
       : [],
@@ -67,16 +76,44 @@
     })
   );
 
-  // Group by category, preserving insertion order.
-  let grouped = $derived.by(() => {
-    const out: Record<string, typeof filtered> = {};
-    const order = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
-    for (const cat of order) out[cat] = [];
+  // Group by domain first (AUDIO / VIDEO), then by category within each domain.
+  // Domain headers separate the two worlds so users can scan an obviously-
+  // visual section without sifting through 20+ audio modules. Category
+  // sub-grouping inside each domain preserves the existing palette mental
+  // model (sources → modulation → filters → ...).
+  const CATEGORY_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
+  const DOMAIN_ORDER: Array<'audio' | 'video'> = ['audio', 'video'];
+  const DOMAIN_LABEL: Record<string, string> = { audio: 'AUDIO', video: 'VIDEO' };
+
+  /** [domain, [category, defs]] tuples in deterministic order. */
+  let groupedByDomain = $derived.by(() => {
+    const byDomain: Record<string, Record<string, typeof filtered>> = { audio: {}, video: {} };
     for (const d of filtered) {
-      (out[d.category] ??= []).push(d);
+      const dom = (d.domain ?? 'audio') as 'audio' | 'video';
+      const bucket = byDomain[dom] ?? (byDomain[dom] = {});
+      (bucket[d.category] ??= []).push(d);
     }
-    // Drop empty categories
-    return Object.fromEntries(Object.entries(out).filter(([_, v]) => v.length > 0));
+    const out: Array<{ domain: 'audio' | 'video'; categories: Array<{ name: string; defs: typeof filtered }> }> = [];
+    for (const dom of DOMAIN_ORDER) {
+      const bucket = byDomain[dom] ?? {};
+      const categories: Array<{ name: string; defs: typeof filtered }> = [];
+      // Iterate the canonical order first, then any custom categories alphabetically.
+      const seen = new Set<string>();
+      for (const cat of CATEGORY_ORDER) {
+        const defs = bucket[cat];
+        if (defs && defs.length > 0) {
+          categories.push({ name: cat, defs });
+          seen.add(cat);
+        }
+      }
+      for (const cat of Object.keys(bucket).sort()) {
+        if (seen.has(cat)) continue;
+        const defs = bucket[cat]!;
+        if (defs.length > 0) categories.push({ name: cat, defs });
+      }
+      if (categories.length > 0) out.push({ domain: dom, categories });
+    }
+    return out;
   });
 
   $effect(() => {
@@ -136,15 +173,20 @@
           Organize modules
         </button>
       {/if}
-      {#if Object.keys(grouped).length === 0}
+      {#if groupedByDomain.length === 0}
         <div class="empty">no matches</div>
       {/if}
-      {#each Object.entries(grouped) as [cat, defs] (cat)}
-        <div class="category">{cat}</div>
-        {#each defs as def (def.type)}
-          <button class="item" onclick={() => pick(def.type)}>
-            {def.label}
-          </button>
+      {#each groupedByDomain as group (group.domain)}
+        <div class="domain" data-testid="palette-domain-{group.domain}">
+          {DOMAIN_LABEL[group.domain]}
+        </div>
+        {#each group.categories as cat (group.domain + ':' + cat.name)}
+          <div class="category">{cat.name}</div>
+          {#each cat.defs as def (def.type)}
+            <button class="item" onclick={() => pick(def.type)} data-testid="palette-item-{def.type}">
+              {def.label}
+            </button>
+          {/each}
         {/each}
       {/each}
     </div>
@@ -187,6 +229,23 @@
   .palette-body {
     overflow-y: auto;
     padding: 4px 0;
+  }
+  .domain {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text);
+    background: rgba(96, 165, 250, 0.08);
+    border-top: 1px solid #2a2f3a;
+    border-bottom: 1px solid #2a2f3a;
+    padding: 6px 12px;
+    pointer-events: none;
+    font-weight: 600;
+  }
+  /* First domain header has no top border so it sits flush with the
+   * search input divider. */
+  .domain:first-child {
+    border-top: none;
   }
   .category {
     font-size: 0.65rem;

@@ -16,6 +16,7 @@
   const outputs: PortDescriptor[] = [
     { id: 'ch1_out', label: 'CHANNEL 1 OUT', cable: 'audio' },
     { id: 'ch2_out', label: 'CHANNEL 2 OUT', cable: 'audio' },
+    { id: 'out', label: 'VIDEO OUT', cable: 'mono-video' },
   ];
 
   let { id, data }: NodeProps = $props();

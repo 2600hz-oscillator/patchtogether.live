@@ -65,13 +65,35 @@ export function attachReconciler(
     // identical order. The snapshot is already sorted, but applied* maps
     // are insertion-order; we explicitly sort the key sets we iterate.
 
+    // Helper: pick an edge's transport domain from its source node's
+    // domain. The source's engine owns the routing primitives. The first
+    // generation of this code hardcoded 'audio'; the Phase-0 video spike
+    // (.myrobots/plans/video-modules-mvp.md §1) introduces a second
+    // domain so we now look it up. Cross-domain edges (e.g. audio CV
+    // feeding a video module's param input) keep the source-side dispatch
+    // — the bridge module on the audio side handles the rate conversion.
+    function edgeDomain(edge: Edge): string {
+      const sourceNode = currentNodes.get(edge.source.nodeId)
+        ?? appliedNodes.get(edge.source.nodeId);
+      return sourceNode?.domain ?? 'audio';
+    }
+
+    /** Target node's domain. Mirrors edgeDomain but for the destination
+     *  endpoint. PatchEngine.addEdge uses this to detect cross-domain
+     *  cv → video param bridges. */
+    function edgeTargetDomain(edge: Edge): string {
+      const targetNode = currentNodes.get(edge.target.nodeId)
+        ?? appliedNodes.get(edge.target.nodeId);
+      return targetNode?.domain ?? 'audio';
+    }
+
     // 1. Removed edges first (release node references).
     const removedEdgeIds = [...appliedEdges.keys()]
       .filter((id) => !currentEdges.has(id))
       .sort();
     for (const id of removedEdgeIds) {
       const prev = appliedEdges.get(id)!;
-      engine.removeEdge(prev, 'audio');
+      engine.removeEdge(prev, edgeDomain(prev));
       appliedEdges.delete(id);
     }
 
@@ -96,7 +118,7 @@ export function attachReconciler(
     // 4. Added edges.
     for (const edge of snap.edges) {
       if (appliedEdges.has(edge.id)) continue;
-      engine.addEdge(edge, 'audio');
+      engine.addEdge(edge, edgeDomain(edge), edgeTargetDomain(edge));
       appliedEdges.set(edge.id, { ...edge });
     }
 
