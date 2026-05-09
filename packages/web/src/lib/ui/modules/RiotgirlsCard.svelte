@@ -90,7 +90,15 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">RIOTGIRLS</header>
 
-  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={340}>
+  <!--
+    panelWidth is the total open-state popover width. RIOTGIRLS has
+    55 inputs + 2 outputs across 5 sections (V1/V2/V3/V4/Master FX);
+    600 gives the inputs column ~290px — wide enough for verbose
+    labels like "FILTER PING DECAY". The inputs column scrolls
+    independently when content overflows, so the panel never grows
+    taller than 70vh.
+  -->
+  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={600}>
     <!-- Knob grid (unchanged from MVP-A) — voice strips + FX rack. -->
     <div class="grid">
       {#each [1, 2, 3] as v (v)}

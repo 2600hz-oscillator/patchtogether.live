@@ -184,12 +184,13 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     );
   });
 
-  test('MIXMSTRS: dense panel (59 inputs) fits on a 1366×768 viewport', async ({ page }) => {
-    // The whole point of the two-column layout: MIXMSTRS has 59 input
-    // ports (12 audio + 37 CV-per-param + extras). On a single column
-    // with 22px-tall rows + headers, the panel was ~1500px tall and
-    // overflowed the viewport. With two columns + per-column scroll,
-    // the panel must fit within the viewport bounds.
+  test('MIXMSTRS: dense panel (49 inputs) fits on a 1366×768 viewport', async ({ page }) => {
+    // The whole point of the two-column layout: MIXMSTRS has 49 input
+    // ports (12 audio: 6 stereo pairs + 37 CV: 9 params × 4 channels +
+    // master). On a single column with 22px-tall rows + headers, the
+    // panel was ~1500px tall and overflowed the viewport. With two
+    // columns + per-column scroll, the panel must fit within the
+    // viewport bounds.
     await page.setViewportSize({ width: 1366, height: 768 });
     await page.goto('/');
     await page.waitForLoadState('networkidle');
@@ -213,14 +214,14 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
       Math.round(1366 * 0.8) + 2,
     );
 
-    // All 59 input ports + outputs are in the DOM (the I/O spec test
-    // covers this strictly; here we just confirm the column-scroll
-    // architecture didn't drop anything).
+    // All 49 input ports are in the DOM under the inputs column (the
+    // I/O spec test covers exact-id matching; here we just confirm the
+    // column-scroll architecture didn't drop anything).
     const inputsCol = page.locator(
       `.svelte-flow__node[data-id="mm"] [data-testid="patch-panel-inputs"]`,
     );
     const inputCount = await inputsCol.locator('[data-testid="port-row-label"]').count();
-    expect(inputCount, 'MIXMSTRS: 59 input rows present').toBe(59);
+    expect(inputCount, 'MIXMSTRS: 49 input rows present').toBe(49);
   });
 
   test('RIOTGIRLS: dense sectioned panel (55 inputs) fits on a 1366×768 viewport', async ({

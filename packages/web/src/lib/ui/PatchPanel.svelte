@@ -40,13 +40,15 @@
    *   for mega-modules like RIOTGIRLS where voices need their own grouping.
    * - `sections`: when groupingStrategy === 'sectioned', an array of
    *   { label, inputs, outputs } that PatchPanel renders top-to-bottom.
-   * - `panelWidth`: CSS width per column (default 280, RIOTGIRLS uses
-   *   bigger). The open panel renders as a 2-column grid (inputs left,
-   *   outputs right), so the rendered popover is roughly
-   *   `2 * panelWidth + gap`, capped at 80vw to avoid overflowing
-   *   smaller viewports — dense modules (MIXMSTRS 59 inputs, RIOTGIRLS
-   *   55 inputs) fit on a 1366×768 laptop because each column scrolls
-   *   independently.
+   * - `panelWidth`: CSS width of the OPEN popover (default 280).
+   *   The open panel hosts a 2-column grid (inputs left, outputs
+   *   right), so each column is ~half this width minus gap. Dense
+   *   modules pass a wider `panelWidth` (MIXMSTRS 560, RIOTGIRLS 600)
+   *   so each column has enough horizontal space for verbose labels
+   *   like "FILTER PING DECAY". Each column also scrolls independently,
+   *   so the panel never grows tall enough to overflow the viewport.
+   *   `panelWidth` is capped at 80vw on the panel itself so smaller
+   *   viewports stay legible.
    * - `children`: the slot for the card's main content (knobs, buttons,
    *   widgets — everything that is NOT a Handle).
    */
@@ -111,14 +113,10 @@
   );
   let visibleColumnCount = $derived((hasInputs ? 1 : 0) + (hasOutputs ? 1 : 0) || 1);
 
-  // Derived popover widths. Each visible column is `panelWidth` wide;
-  // the total popover is capped at 80vw on the panel itself so smaller
-  // viewports (laptops, side-docked browser windows) never produce a
-  // popover wider than the screen.
-  const COLUMN_GAP_PX = 12;
-  let totalPanelWidth = $derived(
-    panelWidth * visibleColumnCount + (visibleColumnCount > 1 ? COLUMN_GAP_PX : 0),
-  );
+  // panelWidth is the TOTAL popover width — preserving the prop's
+  // pre-two-column semantics so existing test geometry (handles land
+  // near the card edge, not 280px further out) continues to work.
+  // The 2-column grid divides this width internally.
 
   // ---------------- Hover-intent state machine ----------------
   //
@@ -317,7 +315,7 @@
     class:open
     class:two-col={visibleColumnCount === 2}
     class:one-col={visibleColumnCount === 1}
-    style:width="{totalPanelWidth}px"
+    style:width="{panelWidth}px"
     data-testid="patch-panel"
     aria-hidden={!open}
     onmouseenter={openNow}
@@ -327,16 +325,17 @@
   >
     <!--
       Open-state layout is a 2-column grid so dense modules
-      (MIXMSTRS 59 inputs, RIOTGIRLS 55 inputs) fit on a typical laptop
-      viewport. Inputs always render in the left column, outputs in the
-      right column. Each column scrolls independently when its content
-      exceeds the panel max-height. Sectioned grouping (RIOTGIRLS) keeps
-      sections stacked WITHIN the inputs column; outputs from any
-      section fall into the single right column.
+      (MIXMSTRS 49 inputs, RIOTGIRLS 55 inputs) fit on a typical
+      laptop viewport. Inputs always render in the left column,
+      outputs in the right column. Each column scrolls independently
+      when its content exceeds the panel max-height. Sectioned
+      grouping (RIOTGIRLS) keeps sections stacked WITHIN the inputs
+      column; outputs from any section fall into the single right
+      column.
 
       When a module has only inputs (AudioOut) or only outputs, the
-      panel collapses to a single visible column to avoid rendering a
-      blank grid track.
+      panel collapses to a single visible column to avoid rendering
+      a blank grid track.
     -->
     <div class="panel-grid">
       {#if hasInputs}
@@ -568,7 +567,7 @@
   /* ---------------- Two-column grid (open state) ---------------- */
   /*
    * Inputs left, outputs right. Each column owns its own vertical
-   * scroll so dense modules (MIXMSTRS 59 inputs / RIOTGIRLS 55 inputs)
+   * scroll so dense modules (MIXMSTRS 49 inputs / RIOTGIRLS 55 inputs)
    * fit on a 1366×768 laptop viewport. The grid columns share the
    * panel max-height; each column is a flex container so its sticky
    * .section-title pins as the user scrolls within that column.
