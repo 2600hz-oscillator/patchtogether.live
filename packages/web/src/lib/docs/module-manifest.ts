@@ -111,6 +111,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Wavetable VCO sister of wavetableVco with a built-in West-Coast wavefolder + a mono-video scope output. Same morphing wavetable as wavetableVco; post-fold signal feeds both audio and scope-video out.',
   cameraInput:
     'Webcam input (LOCAL ONLY). Live <video> -> WebGL2 texture; gain / mirror / on params. The captured stream is local to your browser tab and is NOT sent to other rack-mates — collaborators see a presence badge ("user X has CAMERA active") via Y-awareness, not the video itself. Multiplayer streaming (WebRTC + SFU) is deferred to a future phase. Spec: .myrobots/plans/module-camera-input.md.',
+  illogic:
+    'Combined attenuverter / math / logic utility. 4 cv inputs feed bipolar attenuverters (-1..+1); post-attenuverter outputs sum into `sum` and `diff`. Inputs in1+in2 are also gate-thresholded (>= 0.5) and combined into AND/NAND/OR; in1 alone drives a NOT.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -126,14 +128,18 @@ const PORT_NOTES: Record<string, string> = {
   'wavetableVco.audio': 'Mixed wavetable output.',
   'audioOut.L': 'Mono L -> host destination L.',
   'audioOut.R': 'Mono R -> host destination R.',
-  'vca.audio': 'Audio input (gets multiplied).',
+  'vca.audio': 'Audio input (gets multiplied) / main audio output.',
   'vca.cv': 'Modulation CV (gain control).',
+  'vca.audio_inv':
+    'Sign-inverted audio output: -out (phase-flipped audio). Useful for stereo widening, side-chain feedback prevention, and mid/side processing. Different operation from ADSR.env_inv (which is 1 - env on a unipolar envelope).',
   'mixer.in1': 'Channel 1 input.',
   'mixer.in2': 'Channel 2 input.',
   'mixer.in3': 'Channel 3 input.',
   'mixer.in4': 'Channel 4 input.',
   'adsr.gate': 'Triggers attack -> decay -> sustain on rising edge; release on falling.',
   'adsr.env': 'Envelope CV out (0..1).',
+  'adsr.env_inv':
+    'Inverted envelope CV out: 1 - env (unipolar 0..1 flip). When env=0 (rest), env_inv=1; when env=peak=1, env_inv=0. Useful for ducking, reverse-modulation, and "sidechain"-style envelopes. Different operation from VCA.audio_inv (which is a sign flip on bipolar audio).',
   'filter.audio': 'Audio in.',
   'filter.cutoff': 'CV -> cutoff freq.',
   'filter.res': 'CV -> resonance.',
@@ -223,6 +229,21 @@ const PORT_NOTES: Record<string, string> = {
   'drumseqz.pitch2': 'Track 2 V/oct pitch out.',
   'drumseqz.pitch3': 'Track 3 V/oct pitch out.',
   'drumseqz.pitch4': 'Track 4 V/oct pitch out.',
+  // ILLOGIC ports — combined attenuverter / math / logic utility.
+  'illogic.in1': 'Input 1 (cv/audio). Feeds att1 attenuverter AND the AND/NAND/OR/NOT logic block (gate-thresholded at 0.5).',
+  'illogic.in2': 'Input 2 (cv/audio). Feeds att2 attenuverter AND the AND/NAND/OR logic block (gate-thresholded at 0.5).',
+  'illogic.in3': 'Input 3 (cv/audio). Feeds att3 attenuverter only (no logic tap).',
+  'illogic.in4': 'Input 4 (cv/audio). Feeds att4 attenuverter only (no logic tap).',
+  'illogic.att1': 'in1 × bipolar attenuverter (-1..0..+1). Negative values invert sign.',
+  'illogic.att2': 'in2 × bipolar attenuverter (-1..0..+1).',
+  'illogic.att3': 'in3 × bipolar attenuverter (-1..0..+1).',
+  'illogic.att4': 'in4 × bipolar attenuverter (-1..0..+1).',
+  'illogic.sum':  'Post-attenuverter sum of all 4 channels: att1 + att2 + att3 + att4.',
+  'illogic.diff': 'Post-attenuverter difference: (att1 + att2) - (att3 + att4).',
+  'illogic.and':  'Logic AND of in1 & in2 as gates (threshold = 0.5). High when BOTH inputs >= 0.5.',
+  'illogic.nand': 'Logic NAND of in1 & in2 as gates. NOT (in1 AND in2).',
+  'illogic.or':   'Logic OR of in1 & in2 as gates. High when EITHER input >= 0.5.',
+  'illogic.not':  'Logic NOT of in1 alone (single-input). High when in1 < 0.5.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];

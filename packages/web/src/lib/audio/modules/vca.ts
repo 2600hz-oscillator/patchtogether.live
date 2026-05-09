@@ -17,7 +17,13 @@ export const vcaDef: AudioModuleDef = {
     { id: 'audio', type: 'audio' },
     { id: 'cv', type: 'cv' },
   ],
-  outputs: [{ id: 'audio', type: 'audio' }],
+  outputs: [
+    { id: 'audio',     type: 'audio' },
+    // Sign-inverted (phase-flipped) audio. Standard "phase invert" semantic
+    // for stereo widening, side-chain feedback prevention, mid/side
+    // processing. Implemented as a parallel GainNode(-1) tap.
+    { id: 'audio_inv', type: 'audio' },
+  ],
   params: [
     { id: 'base',     label: 'Base', defaultValue: 0,   min:  0, max: 1, curve: 'linear' },
     { id: 'cvAmount', label: 'CV',   defaultValue: 1.0, min: -1, max: 1, curve: 'linear' },
@@ -38,13 +44,24 @@ export const vcaDef: AudioModuleDef = {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
       params.get(`${PARAM_PREFIX}/${def.id}`)?.setValueAtTime(v, ctx.currentTime);
     }
+
+    // ----- audio_inv: -audio -----
+    // Parallel tap of the VCA's main output through a GainNode(-1). The
+    // inverted output is sample-accurate sign-flipped relative to `audio`.
+    const inverter = ctx.createGain();
+    inverter.gain.value = -1;
+    f.connect(inverter);
+
     return {
       domain: 'audio',
       inputs: new Map([
         ['audio', { node: merger, input: 0 }],
         ['cv',    { node: merger, input: 1 }],
       ]),
-      outputs: new Map([['audio', { node: f, output: 0 }]]),
+      outputs: new Map([
+        ['audio',     { node: f,        output: 0 }],
+        ['audio_inv', { node: inverter, output: 0 }],
+      ]),
       setParam(paramId, value) {
         params.get(`${PARAM_PREFIX}/${paramId}`)?.setValueAtTime(value, ctx.currentTime);
       },
@@ -55,6 +72,7 @@ export const vcaDef: AudioModuleDef = {
         try { silence.stop(); } catch { /* already stopped */ }
         silence.disconnect();
         merger.disconnect();
+        inverter.disconnect();
         f.disconnect();
       },
     };

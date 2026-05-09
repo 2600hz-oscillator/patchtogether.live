@@ -27,7 +27,10 @@
     { id: 'sustain', cable: 'cv' },
     { id: 'release', cable: 'cv' },
   ];
-  const outputs: PortDescriptor[] = [{ id: 'env', cable: 'cv' }];
+  const outputs: PortDescriptor[] = [
+    { id: 'env',     cable: 'cv' },
+    { id: 'env_inv', label: 'ENV INV', cable: 'cv' },
+  ];
 </script>
 
 <div class="mod-card adsr-card">

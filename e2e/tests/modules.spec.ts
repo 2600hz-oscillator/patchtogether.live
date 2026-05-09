@@ -21,9 +21,13 @@ interface ModuleSpec {
 const MODULES: ModuleSpec[] = [
   { type: 'analogVco',    cardClass: 'svelte-flow__node-analogVco',    handleCount: 6, containsLabel: 'Analog VCO' },
   { type: 'audioOut',     cardClass: 'svelte-flow__node-audioOut',     handleCount: 2, containsLabel: 'Audio Out' },
-  { type: 'vca',          cardClass: 'svelte-flow__node-vca',          handleCount: 3, containsLabel: 'VCA' },
+  // VCA: 2 inputs (audio, cv) + 2 outputs (audio, audio_inv) = 4. The
+  // audio_inv port is a phase-flipped (-1×) tap of the main output.
+  { type: 'vca',          cardClass: 'svelte-flow__node-vca',          handleCount: 4, containsLabel: 'VCA' },
   { type: 'mixer',        cardClass: 'svelte-flow__node-mixer',        handleCount: 5, containsLabel: 'Mixer' },
-  { type: 'adsr',         cardClass: 'svelte-flow__node-adsr',         handleCount: 6, containsLabel: 'ADSR' },
+  // ADSR: 5 inputs (gate + 4 cv) + 2 outputs (env, env_inv) = 7. env_inv
+  // is the unipolar (1 - env) flipped envelope.
+  { type: 'adsr',         cardClass: 'svelte-flow__node-adsr',         handleCount: 7, containsLabel: 'ADSR' },
   { type: 'filter',       cardClass: 'svelte-flow__node-filter',       handleCount: 4, containsLabel: 'Filter' },
   { type: 'reverb',       cardClass: 'svelte-flow__node-reverb',       handleCount: 2, containsLabel: 'Reverb' },
   // SCOPE: 2 audio inputs + 2 audio passthrough outputs + 1 mono-video output = 5.
@@ -84,6 +88,9 @@ const MODULES: ModuleSpec[] = [
   { type: 'feedback',     cardClass: 'svelte-flow__node-feedback',     handleCount: 8, containsLabel: 'FEEDBACK',   domain: 'video' },
   // V-MIXER: 4 video inputs (in1..in4) + 4 cv inputs (amount1..4) + 1 output (out) = 9.
   { type: 'videoMixer',   cardClass: 'svelte-flow__node-videoMixer',   handleCount: 9, containsLabel: 'V-MIXER',    domain: 'video' },
+  // ILLOGIC: 4 cv inputs + 10 outputs (att1..att4 + sum + diff + and + nand
+  // + or + not) = 14. Combined attenuverter / math / logic utility.
+  { type: 'illogic',      cardClass: 'svelte-flow__node-illogic',      handleCount: 14, containsLabel: 'ILLOGIC' },
 ];
 
 test.describe.configure({ mode: 'parallel' });

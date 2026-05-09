@@ -86,6 +86,8 @@
   import VideoMixerCard from '$lib/ui/modules/VideoMixerCard.svelte';
   // CAMERA input (local-only) — see .myrobots/plans/module-camera-input.md.
   import CameraInputCard from '$lib/ui/modules/CameraInputCard.svelte';
+  // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
+  import IllogicCard from '$lib/ui/modules/IllogicCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
@@ -157,6 +159,7 @@
     videoMixer: VideoMixerCard,
     // CAMERA input (local-only):
     cameraInput: CameraInputCard,
+    illogic: IllogicCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);

@@ -149,6 +149,7 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'charlottesEchos',
     'riotgirls',
     'score',
+    'drumseqz',
     // Sister VCOs with built-in wavefolders + waveform-video out:
     'vizvco',
     'wavviz',
@@ -166,6 +167,8 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'videoMixer',
     // CAMERA — webcam input (local-only). Spec: .myrobots/plans/module-camera-input.md.
     'cameraInput',
+    // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
+    'illogic',
   ];
 
   for (const type of MODULE_TYPES) {
