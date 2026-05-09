@@ -264,7 +264,7 @@ class Evaluator {
         stmt.to.pos.col,
       );
     }
-    if (!canConnect(srcPort.type, dstPort.type)) {
+    if (!isCompatible(srcPort.type, dstPort.type)) {
       throw new DslError(
         `Cannot connect ${srcPort.type} to ${dstPort.type} ` +
           `(${this.displayName(src)}.${srcPort.id} → ${this.displayName(dst)}.${dstPort.id})`,
@@ -507,6 +507,43 @@ export function noteToMidi(text: string, pos: Pos): number {
   else if (accidental === 'b') s -= 1;
   // MIDI: c-1 = 0, c0 = 12, c4 = 60.
   return s + (oct + 1) * 12;
+}
+
+/**
+ * Cable-type compatibility for the DSL evaluator. Wider than `canConnect`
+ * because we want to mirror the audio engine's runtime behavior:
+ *
+ *   - polyPitchGate → pitch / gate / cv / audio: the engine inserts a
+ *     channel splitter and pulls lane 0 (or summed gates). See
+ *     packages/web/src/lib/audio/poly.ts:resolveConnection.
+ *   - pitch / gate / cv → polyPitchGate: the engine merges the mono
+ *     signal into all 5 lanes via a channel merger.
+ *
+ * Returning true here lets the user write the same patches the canvas's
+ * drag-to-connect produces — the engine takes care of the actual rate
+ * conversion. The "Load example" recreation test relies on this.
+ */
+function isCompatible(srcType: CableType, dstType: CableType): boolean {
+  if (canConnect(srcType, dstType)) return true;
+  // Polyphony cable plumbing — both directions.
+  if (srcType === 'polyPitchGate') {
+    return dstType === 'pitch' || dstType === 'gate' || dstType === 'cv' || dstType === 'audio';
+  }
+  if (dstType === 'polyPitchGate') {
+    return srcType === 'pitch' || srcType === 'gate' || srcType === 'cv' || srcType === 'audio';
+  }
+  // Common audio-domain widening that the engine permits transparently:
+  //   pitch / gate / cv are all single-channel CV signals; the runtime
+  //   doesn't care which lane they were declared as. Allow any → any
+  //   among them so user scripts don't have to know about the type
+  //   declarations on every port.
+  const monoCv: ReadonlySet<CableType> = new Set<CableType>(['pitch', 'gate', 'cv']);
+  if (monoCv.has(srcType) && monoCv.has(dstType)) return true;
+  // Audio CV crossover: the engine's connect path also accepts cv ↔ audio
+  // since they're both Float32 signals.
+  const audioOrCv: ReadonlySet<CableType> = new Set<CableType>(['audio', 'cv', 'pitch', 'gate']);
+  if (audioOrCv.has(srcType) && audioOrCv.has(dstType)) return true;
+  return false;
 }
 
 function cryptoRandomShort(): string {
