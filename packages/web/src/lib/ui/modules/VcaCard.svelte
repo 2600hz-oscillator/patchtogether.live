@@ -27,7 +27,10 @@
     { id: 'audio', cable: 'audio' },
     { id: 'cv',    cable: 'cv' },
   ];
-  const outputs: PortDescriptor[] = [{ id: 'audio', cable: 'audio' }];
+  const outputs: PortDescriptor[] = [
+    { id: 'audio',     cable: 'audio' },
+    { id: 'audio_inv', label: 'AUDIO INV', cable: 'audio' },
+  ];
 </script>
 
 <div class="mod-card vca-card">

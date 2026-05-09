@@ -27,6 +27,7 @@ import { scoreDef } from './score';
 import { drumseqzDef } from './drumseqz';
 import { vizvcoDef } from './vizvco';
 import { wavvizDef } from './wavviz';
+import { illogicDef } from './illogic';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -59,6 +60,7 @@ export function registerAudioModules(): void {
   registerModule(drumseqzDef);
   registerModule(vizvcoDef);
   registerModule(wavvizDef);
+  registerModule(illogicDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

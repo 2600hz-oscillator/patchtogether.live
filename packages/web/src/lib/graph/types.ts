@@ -114,7 +114,9 @@ type StandardModuleType =
   | 'feedback'
   | 'videoMixer'
   // CAMERA — webcam input (local-only). Spec: .myrobots/plans/module-camera-input.md.
-  | 'cameraInput';
+  | 'cameraInput'
+  // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
+  | 'illogic';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

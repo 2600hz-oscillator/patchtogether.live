@@ -24,7 +24,13 @@ export const adsrDef: AudioModuleDef = {
     { id: 'sustain', type: 'cv', paramTarget: 'sustain' },
     { id: 'release', type: 'cv', paramTarget: 'release' },
   ],
-  outputs: [{ id: 'env', type: 'cv' }],
+  outputs: [
+    { id: 'env',     type: 'cv' },
+    // Inverted envelope: 1 - env. Standard Eurorack semantic for unipolar
+    // envelopes — ducking, reverse-modulation, "sidechain"-style ADSR.
+    // Implemented as ConstantSource(+1) + GainNode(-1)·env, summed.
+    { id: 'env_inv', type: 'cv' },
+  ],
   params: [
     { id: 'attack',  label: 'A', defaultValue: 0.005, min: 0.001, max: 10, curve: 'log', units: 's' },
     { id: 'decay',   label: 'D', defaultValue: 0.1,   min: 0.001, max: 10, curve: 'log', units: 's' },
@@ -47,6 +53,26 @@ export const adsrDef: AudioModuleDef = {
     const pDecay   = params.get(`${PARAM_PREFIX}/decay`);
     const pSustain = params.get(`${PARAM_PREFIX}/sustain`);
     const pRelease = params.get(`${PARAM_PREFIX}/release`);
+
+    // ----- env_inv: 1 - env -----
+    // Build (one + neg(env)) via two GainNodes sharing a sum bus.
+    //   one    = ConstantSource(+1) → invBus (gain 1)
+    //   negEnv = env (Faust output) → GainNode(-1) → invBus (gain 1)
+    //   invBus output = 1 + (-env) = 1 - env  (clamped to 0..1 since env ∈ [0, 1])
+    //
+    // The ConstantSource lives for the lifetime of the module. invBus's
+    // output is registered as the env_inv source.
+    const oneSrc = ctx.createConstantSource();
+    oneSrc.offset.value = 1;
+    oneSrc.start();
+    const invBus = ctx.createGain();
+    invBus.gain.value = 1;
+    const negEnv = ctx.createGain();
+    negEnv.gain.value = -1;
+    oneSrc.connect(invBus);
+    f.connect(negEnv);
+    negEnv.connect(invBus);
+
     return {
       domain: 'audio',
       inputs: new Map([
@@ -58,7 +84,10 @@ export const adsrDef: AudioModuleDef = {
         ['sustain', { node: f, input: 0, param: pSustain! }],
         ['release', { node: f, input: 0, param: pRelease! }],
       ]),
-      outputs: new Map([['env', { node: f, output: 0 }]]),
+      outputs: new Map([
+        ['env',     { node: f,      output: 0 }],
+        ['env_inv', { node: invBus, output: 0 }],
+      ]),
       setParam(paramId, value) {
         params.get(`${PARAM_PREFIX}/${paramId}`)?.setValueAtTime(value, ctx.currentTime);
       },
@@ -67,7 +96,11 @@ export const adsrDef: AudioModuleDef = {
       },
       dispose() {
         try { silence.stop(); } catch { /* already stopped */ }
+        try { oneSrc.stop(); } catch { /* already stopped */ }
         silence.disconnect();
+        oneSrc.disconnect();
+        invBus.disconnect();
+        negEnv.disconnect();
         f.disconnect();
       },
     };
