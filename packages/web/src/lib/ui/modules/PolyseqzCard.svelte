@@ -4,6 +4,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import {
@@ -23,6 +24,17 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName } from '$lib/audio/note-entry';
   import type { ModuleNode } from '$lib/graph/types';
+  import {
+    handleSlotClick,
+    readSlots,
+    readPendingMode,
+    readQueuedSlot,
+    readLastLoadedSlot,
+    setPendingMode,
+    setQueuedSlot,
+    type TransportCardDeps,
+  } from '$lib/audio/modules/transport-card';
+  import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -169,11 +181,92 @@
     return v === 'closed' ? 'C' : v === 'open' ? 'O' : 'S';
   }
 
+  // ---------------- Quicksave + transport ----------------
+  //
+  // POLYSEQZ snapshot shape: per-step {root, quality, inversion, voicing}
+  // array + length + bpm + octave + gateLength + humanize. We deep-clone
+  // every step when applying a snapshot back to data.steps — without the
+  // clone Yjs throws "reassigning object that already occurs in the tree"
+  // because the snap usually still lives at slots[N] in the same Y.Doc.
+
+  const transportDeps: TransportCardDeps = {
+    nodeId: id,
+    patch,
+    transact: (fn) => ydoc.transact(fn),
+    snapshot: (): Snapshot => {
+      const t = patch.nodes[id];
+      return {
+        steps: readStepsCopy().map((s) => ({
+          on: s.on,
+          root: s.root,
+          quality: s.quality,
+          inversion: s.inversion,
+          voicing: s.voicing,
+        })),
+        bpm: t?.params.bpm ?? 90,
+        length: t?.params.length ?? 8,
+        octave: t?.params.octave ?? 0,
+        gateLength: t?.params.gateLength ?? 0.6,
+        humanize: t?.params.humanize ?? 0,
+      };
+    },
+    applySnapshot: (snap: Snapshot) => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      ydoc.transact(() => {
+        if (Array.isArray(snap.steps)) {
+          if (!t.data) t.data = {};
+          // Coerce + deep-clone each step so the same Y-Map doesn't end up at
+          // two paths in the Y.Doc tree (slots[N] AND data.steps).
+          (t.data as Record<string, unknown>).steps = (snap.steps as unknown[]).map((s) => {
+            const cs = coerceToChordStep(s);
+            return {
+              on: cs.on,
+              root: cs.root,
+              quality: cs.quality,
+              inversion: cs.inversion,
+              voicing: cs.voicing,
+            };
+          });
+        }
+        for (const k of ['bpm', 'length', 'octave', 'gateLength', 'humanize'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') t.params[k] = v;
+        }
+      });
+    },
+  };
+
+  let slotsState = $derived((void cardVersion, readSlots(node)));
+  let pendingMode = $derived<PendingMode>((void cardVersion, readPendingMode(node)));
+  let queuedSlot = $derived<SlotKey | null>((void cardVersion, readQueuedSlot(node)));
+  let lastLoadedSlot = $derived<SlotKey | null>((void cardVersion, readLastLoadedSlot(node)));
+
+  function onSetMode(m: PendingMode) { setPendingMode(transportDeps, m); }
+  function onSlotClick(k: SlotKey) { handleSlotClick(transportDeps, k); }
+  function onPlayToggle() { togglePlay(); }
+  function onReset() {
+    // RESET clears any pending queue and forces step counter back to 0. The
+    // engine resets stepIndex on a play=off→on transition, so toggle play
+    // off (and back on if we were playing) to nudge the prev/cur edge.
+    const wasPlaying = isPlaying;
+    setQueuedSlot(transportDeps, null);
+    set('isPlaying')(0);
+    if (wasPlaying) requestAnimationFrame(() => set('isPlaying')(1));
+  }
+
   const inputs: PortDescriptor[] = [
     { id: 'clock',       label: 'CLOCK IN', cable: 'gate' },
-    { id: 'reset_cv',    label: 'RESET',    cable: 'gate' },
-    { id: 'play_cv',     label: 'PLAY CV',  cable: 'cv' },
-    { id: 'humanize_cv', label: 'HUMAN CV', cable: 'cv' },
+    // Shared transport CV — replaces the old POLYSEQZ play_cv (cv→param) +
+    // reset_cv (gate). Same labels as Sequencer / DRUMSEQZ / SCORE for muscle
+    // memory across modules.
+    { id: 'play_cv',     label: 'PLAY GATE',    cable: 'gate' },
+    { id: 'reset_cv',    label: 'RESET GATE',   cable: 'gate' },
+    { id: 'queue1_cv',   label: 'PLAY QUEUE 1', cable: 'gate' },
+    { id: 'queue2_cv',   label: 'PLAY QUEUE 2', cable: 'gate' },
+    { id: 'queue3_cv',   label: 'PLAY QUEUE 3', cable: 'gate' },
+    { id: 'queue4_cv',   label: 'PLAY QUEUE 4', cable: 'gate' },
+    { id: 'humanize_cv', label: 'HUMAN CV',     cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'poly',  label: 'POLY OUT',  cable: 'polyPitchGate' },
@@ -250,6 +343,19 @@
       <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.6} label="Gate" curve="linear"  onchange={set('gateLength')} readLive={live('gateLength')} />
       <Fader value={humanize}   min={0}   max={1}   defaultValue={0}   label="Hum"  curve="linear"   onchange={set('humanize')}   readLive={live('humanize')} />
     </div>
+
+    <QuicksaveControls
+      nodeId={id}
+      slots={slotsState}
+      {pendingMode}
+      {queuedSlot}
+      {lastLoadedSlot}
+      {isPlaying}
+      {onSetMode}
+      {onSlotClick}
+      {onPlayToggle}
+      {onReset}
+    />
   </PatchPanel>
 </div>
 
