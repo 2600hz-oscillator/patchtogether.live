@@ -52,13 +52,22 @@ test.describe('VIZVCO -> OUTPUT', () => {
         const ctx = c.getContext('2d');
         if (!ctx) return null;
         const img = ctx.getImageData(0, 0, c.width, c.height);
+        const w = c.width, h = c.height;
         let s = 0, sq = 0, n = 0;
-        for (let i = 0; i < img.data.length; i += 16) {
-          const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-          s += v; sq += v * v; n++;
+        // Distinct y-rows touched by the trace. Distinguishes a real
+        // waveform (~100 rows on a 184-tall canvas) from a flat line
+        // at center (~4 rows) — Bug-2 regression guard.
+        const brightRows = new Set<number>();
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
+            s += v; sq += v * v; n++;
+            if (v > 100) brightRows.add(y);
+          }
         }
         const mean = s / n;
-        return { mean, variance: sq / n - mean * mean };
+        return { mean, variance: sq / n - mean * mean, brightRows: brightRows.size };
       });
     }
 
@@ -90,6 +99,14 @@ test.describe('VIZVCO -> OUTPUT', () => {
     // the spectral effect of fold is covered by the ART suite.
     expect(sampleA.variance, `sampleA variance > 5`).toBeGreaterThan(5);
     expect(sampleB.variance, `sampleB variance > 5`).toBeGreaterThan(5);
+    expect(
+      sampleA.brightRows,
+      `sampleA must trace many rows (got ${sampleA.brightRows}); flat line ≈ 4`,
+    ).toBeGreaterThanOrEqual(20);
+    expect(
+      sampleB.brightRows,
+      `sampleB must trace many rows (got ${sampleB.brightRows}); flat line ≈ 4`,
+    ).toBeGreaterThanOrEqual(20);
 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });

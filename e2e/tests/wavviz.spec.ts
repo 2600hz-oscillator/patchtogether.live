@@ -46,13 +46,22 @@ test.describe('WAVVIZ -> OUTPUT', () => {
         const ctx = c.getContext('2d');
         if (!ctx) return null;
         const img = ctx.getImageData(0, 0, c.width, c.height);
+        const w = c.width, h = c.height;
         let s = 0, sq = 0, n = 0;
-        for (let i = 0; i < img.data.length; i += 16) {
-          const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-          s += v; sq += v * v; n++;
+        // Distinct bright rows — guards against the Bug-2 flat-line
+        // failure mode (LINEAR-filtered R32F texture returning all
+        // zeros, leaving a horizontal trace at canvas center).
+        const brightRows = new Set<number>();
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
+            s += v; sq += v * v; n++;
+            if (v > 100) brightRows.add(y);
+          }
         }
         const mean = s / n;
-        return { mean, variance: sq / n - mean * mean };
+        return { mean, variance: sq / n - mean * mean, brightRows: brightRows.size };
       });
     }
 
@@ -81,6 +90,14 @@ test.describe('WAVVIZ -> OUTPUT', () => {
     // active is the load-bearing assertion here.
     expect(a.variance, 'sampleA variance > 5').toBeGreaterThan(5);
     expect(b.variance, 'sampleB variance > 5').toBeGreaterThan(5);
+    expect(
+      a.brightRows,
+      `sampleA must trace many rows (got ${a.brightRows}); flat line ≈ 4`,
+    ).toBeGreaterThanOrEqual(20);
+    expect(
+      b.brightRows,
+      `sampleB must trace many rows (got ${b.brightRows}); flat line ≈ 4`,
+    ).toBeGreaterThanOrEqual(20);
 
     expect(errors).toEqual([]);
   });

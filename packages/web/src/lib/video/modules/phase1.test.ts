@@ -181,3 +181,26 @@ describe('video Phase-0 — LINES orient fix', () => {
     expect(orient).toBeDefined();
   });
 });
+
+describe('video LINES — per-param CV inputs', () => {
+  // PR-65 user report: LINES needs CV control for its 4 modulatable
+  // params (orient/amp/thickness/phase). The cross-domain CV bridge in
+  // PatchEngine routes audio cv signals into VideoEngine.setParam, where
+  // the target param id == this input port id. So the def MUST expose
+  // one cv input per param, with port id == param id.
+  it('exposes 4 cv inputs (orient/amp/thickness/phase) plus the fm mono-video input', () => {
+    const def = getVideoModuleDef('lines')!;
+    const inputs = def.inputs;
+    const cvIds = inputs.filter((i) => i.type === 'cv').map((i) => i.id).sort();
+    expect(cvIds).toEqual(['amp', 'orient', 'phase', 'thickness']);
+    // fm input still present alongside cv inputs.
+    const fm = inputs.find((i) => i.id === 'fm');
+    expect(fm?.type).toBe('mono-video');
+  });
+  it('every cv input declares paramTarget == its own id (so the bridge writes the right param)', () => {
+    const def = getVideoModuleDef('lines')!;
+    for (const port of def.inputs.filter((i) => i.type === 'cv')) {
+      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
+    }
+  });
+});

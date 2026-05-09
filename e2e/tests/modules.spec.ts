@@ -62,8 +62,8 @@ const MODULES: ModuleSpec[] = [
   // WAVVIZ: 4 inputs (pitch, fm, wavePos cv, foldAmount cv) + 2 outputs (audio, scope mono-video) = 6.
   { type: 'wavviz',       cardClass: 'svelte-flow__node-wavviz',       handleCount: 6, containsLabel: 'WAVVIZ' },
   // ---- Video-domain (Phase 0 spike) ----
-  // LINES: 1 input (fm) + 1 output (out) = 2 handles.
-  { type: 'lines',        cardClass: 'svelte-flow__node-lines',        handleCount: 2, containsLabel: 'LINES',  domain: 'video' },
+  // LINES: 5 inputs (fm + 4 cv: orient, amp, thickness, phase) + 1 output (out) = 6 handles.
+  { type: 'lines',        cardClass: 'svelte-flow__node-lines',        handleCount: 6, containsLabel: 'LINES',  domain: 'video' },
   // OUTPUT (videoOut): 1 input (in) + 0 outputs = 1 handle.
   { type: 'videoOut',     cardClass: 'svelte-flow__node-videoOut',     handleCount: 1, containsLabel: 'OUTPUT', domain: 'video' },
   // ---- Video-domain (Phase 1 — .myrobots/plans/video-modules-mvp.md) ----

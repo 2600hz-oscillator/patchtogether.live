@@ -40,10 +40,13 @@ uniform float uRangeMax;     // vertical scale: ±uRangeMax fills the canvas (1.
 
 void main() {
   // Read the waveform value at this column's x. uWave is a 1-D
-  // texture; we read by uv.x. Texture filter is LINEAR so we get
-  // sub-pixel interpolation between stored samples. NB: GLSL ES 3.0
-  // reserves the identifier "sample" so we use "wv" for the local
-  // float that holds the per-column waveform value.
+  // texture; we read by uv.x. Texture filter is NEAREST — R32F is
+  // core-WebGL2 sampleable but NOT core-WebGL2 filterable, and a
+  // LINEAR read of an R32F texture returns 0.0 on conformant
+  // browsers without OES_texture_float_linear (the Bug-2 root
+  // cause: every column read as 0 → trace stayed at canvas center,
+  // a "thin horizontal line"). NB: GLSL ES 3.0 reserves the
+  // identifier "sample" so we use "wv" for the local float.
   float texX = vUv.x;
   float wv = texture(uWave, vec2(texX, 0.5)).r;
 
@@ -210,8 +213,17 @@ export function createWaveformRenderer(
     gl.FLOAT,
     null,
   );
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  // R32F is core-WebGL2 SAMPLEABLE but NOT core-WebGL2 FILTERABLE. The
+  // `OES_texture_float_linear` extension would unlock LINEAR — but it's
+  // not universally available, and on conformant browsers without it
+  // LINEAR-sampling an R32F texture returns 0.0 for every read (the
+  // earlier "thin horizontal line at center" Bug-2 root cause). NEAREST
+  // is core, always works, and the per-column step in the shader is
+  // already small enough (1 sample per pixel column at sampleCount ≥
+  // canvas-width) that LINEAR's interpolation isn't load-bearing for
+  // the trace shape — only the shader's smoothstep along Y matters.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 

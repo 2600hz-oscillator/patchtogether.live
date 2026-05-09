@@ -30,8 +30,19 @@
   <div class="stripe"></div>
   <header class="title">LINES</header>
 
-  <Handle type="target" position={Position.Left} id="fm" style="top: 56px; --handle-color: var(--cable-mono-video);" />
+  <Handle type="target" position={Position.Left} id="fm"        style="top: 56px;  --handle-color: var(--cable-mono-video);" />
   <span class="port-label left" style="top: 50px;">FM</span>
+  <!-- CV inputs — one per modulatable param. The cross-domain CV
+       bridge in VideoEngine routes audio-side cv onto setParam(portId),
+       so the handle id MUST match the param id. -->
+  <Handle type="target" position={Position.Left} id="orient"    style="top: 92px;  --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 86px;">O</span>
+  <Handle type="target" position={Position.Left} id="amp"       style="top: 124px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 118px;">A</span>
+  <Handle type="target" position={Position.Left} id="thickness" style="top: 156px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 150px;">T</span>
+  <Handle type="target" position={Position.Left} id="phase"     style="top: 188px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 182px;">P</span>
 
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-mono-video);" />
   <span class="port-label right" style="top: 50px;">OUT</span>
@@ -47,7 +58,9 @@
 <style>
   .card {
     width: 220px;
-    min-height: 230px;
+    /* Bumped from 230 to 320 so the extra 4 CV input handles (top 92,
+       124, 156, 188) don't overlap the fader grid below. */
+    min-height: 320px;
     background: var(--module-bg);
     border: 1px solid #2a2f3a;
     border-radius: 2px;
@@ -89,7 +102,9 @@
   .port-label.left { left: 14px; }
   .port-label.right { right: 14px; }
   .fader-grid {
-    margin-top: 28px;
+    /* Pushed down so the top of the grid clears the lowest CV-input
+       handle (top: 188px). Was 28px when LINES had only the FM input. */
+    margin-top: 110px;
     padding: 0 12px;
     display: grid;
     grid-template-columns: 1fr 1fr;
