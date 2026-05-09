@@ -20,8 +20,11 @@
 //
 // Patch selection (data-side, not AudioParam):
 //   node.data.preset  — name of bundled patch (DX7_BUILTIN_BANK).
-//   node.data.userPatches — array of DX7Voice loaded from SYX (in-memory,
-//                           per-instance; persistence is future work).
+//   node.data.userPatches — array of DX7Voice loaded from SYX. Lives in
+//                           node.data, so it rides the Y.Doc out to every
+//                           rack-mate AND is persisted by Hocuspocus snapshots
+//                           and the .imp.json export envelope. See
+//                           .myrobots/plans/rackspace-persistence.md.
 //
 // On preset change, the host sends a `{type:'patch', voice}` message to the
 // worklet which rebuilds its internal patch state.

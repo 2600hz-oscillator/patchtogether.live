@@ -316,3 +316,160 @@ describe('persistence: round-trip', () => {
     ).toThrow();
   });
 });
+
+// ---------------- Asset-bytes round-trip ----------------
+//
+// Regression net for the rackspace-persistence audit (see
+// .myrobots/plans/rackspace-persistence.md). The audit's working assumption
+// is that every "asset" (PICTUREBOX bytes, DX7 SYX user banks, sequencer
+// step data, ...) survives the export/import path because each one already
+// rides in `node.data`. These tests pin that assumption by stuffing
+// asset-shaped payloads into node.data and asserting the round-trip
+// preserves them byte-for-byte.
+
+describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
+  it('preserves PICTUREBOX-shaped image bytes through save → JSON → load', () => {
+    // PICTUREBOX writes JPEG-encoded base64 strings into node.data.imageBytes
+    // (see lib/video/modules/picturebox.ts PictureboxData). We don't depend on
+    // the picturebox def being registered here — the persistence layer treats
+    // node.data as opaque, so a stub def at type='picturebox' is enough.
+    registerModule({
+      type: 'picturebox',
+      domain: 'audio', // domain doesn't matter for the persistence layer
+      label: 'PICTUREBOX',
+      category: 'sources',
+      schemaVersion: 2,
+      inputs: [],
+      outputs: [],
+      params: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      factory: throwingFactory as any,
+    });
+
+    // Build a long, deterministic base64 payload — wider than the chunked
+    // base64 encoder's 32 KB chunk size to exercise the multi-chunk path.
+    const payloadBase64 = btoa(
+      Array.from({ length: 4096 }, (_, i) => String.fromCharCode((i * 31 + 7) & 0xff)).join(''),
+    ).repeat(4); // ~24 KB of base64 text
+
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['pb'] = {
+        id: 'pb',
+        type: 'picturebox',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: { gain: 1 },
+        data: {
+          imageBytes: payloadBase64,
+          imageMime: 'image/jpeg',
+          imageName: 'photo.jpg',
+          creatorId: 'user_123',
+        },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    // Round-trip through serialize → parse → load to prove the bytes survive
+    // both the Yjs encode and the JSON encode.
+    const reparsed = parseEnvelope(serializeEnvelope(env));
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(reparsed, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+
+    const loaded = dest.store.nodes['pb'];
+    expect(loaded).toBeDefined();
+    const loadedData = loaded!.data as {
+      imageBytes: string;
+      imageMime: string;
+      imageName: string;
+      creatorId: string;
+    };
+    expect(loadedData.imageBytes).toBe(payloadBase64);
+    expect(loadedData.imageBytes.length).toBe(payloadBase64.length); // sanity
+    expect(loadedData.imageMime).toBe('image/jpeg');
+    expect(loadedData.imageName).toBe('photo.jpg');
+    expect(loadedData.creatorId).toBe('user_123');
+  });
+
+  it('preserves DX7 SYX userPatches arrays through save → JSON → load', () => {
+    // DX7 stores user-uploaded SYX banks as an array of DX7Voice objects
+    // under node.data.userPatches (see lib/audio/modules/dx7.ts). Each voice
+    // is structurally rich (6 operators, pitch-eg, lfo, ...) so we use a
+    // realistic-shaped fixture rather than a flat dict.
+    registerModule({
+      type: 'dx7',
+      domain: 'audio',
+      label: 'DX7',
+      category: 'sources',
+      schemaVersion: 1,
+      inputs: [],
+      outputs: [],
+      params: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      factory: throwingFactory as any,
+    });
+
+    const fakeVoice = (i: number) => ({
+      name: `USER ${String(i).padStart(2, '0')}`,
+      algorithm: (i % 32) + 1,
+      feedback: i % 8,
+      operators: Array.from({ length: 6 }, (_, opIdx) => ({
+        r: [99 - opIdx, 50, 30, 60],
+        l: [99, 70, 50, 0],
+        ratio: opIdx === 0 ? 1 : opIdx + 1,
+        level: 99 - opIdx * 8,
+        detune: 7,
+        detuneFactor: 1.0,
+        velocitySens: 4,
+        fixedMode: false,
+      })),
+      pitchEg: { r: [99, 99, 99, 99], l: [50, 50, 50, 50] },
+      lfo: {
+        speed: 35, delay: 0, pmd: 0, amd: 0,
+        sync: false, waveform: 0, pitchModSens: 0,
+      },
+      transpose: 24,
+    });
+    const userPatches = Array.from({ length: 32 }, (_, i) => fakeVoice(i));
+
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['dx'] = {
+        id: 'dx',
+        type: 'dx7',
+        domain: 'audio',
+        position: { x: 100, y: 200 },
+        params: { algorithm: 5, voiceCount: 5, level: 0.7, transpose: 0 },
+        data: { preset: 'USER 03', userPatches },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const reparsed = parseEnvelope(serializeEnvelope(env));
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(reparsed, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+
+    const loaded = dest.store.nodes['dx'];
+    expect(loaded).toBeDefined();
+    const loadedData = loaded!.data as {
+      preset: string;
+      userPatches: typeof userPatches;
+    };
+    // Selected preset name preserved.
+    expect(loadedData.preset).toBe('USER 03');
+    // Full bank length + name + algorithm + per-op shape preserved.
+    expect(loadedData.userPatches).toHaveLength(32);
+    expect(loadedData.userPatches[0]?.name).toBe('USER 00');
+    expect(loadedData.userPatches[31]?.name).toBe('USER 31');
+    expect(loadedData.userPatches[3]?.algorithm).toBe(4);
+    // Operator-level structural integrity (6 ops × per-op fields).
+    expect(loadedData.userPatches[0]?.operators).toHaveLength(6);
+    expect(loadedData.userPatches[0]?.operators[0]?.r).toEqual([99, 50, 30, 60]);
+    expect(loadedData.userPatches[0]?.operators[5]?.level).toBe(99 - 5 * 8);
+    expect(loadedData.userPatches[0]?.lfo.speed).toBe(35);
+  });
+});

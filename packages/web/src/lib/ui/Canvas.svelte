@@ -1089,8 +1089,15 @@
       <button onclick={loadExample} disabled={booting} class="primary">
         {booting ? 'Loading…' : 'Load example'}
       </button>
-      <button onclick={savePatch} disabled={nodeCount === 0}>Save</button>
-      <button onclick={loadPatch}>Load</button>
+      <button
+        onclick={savePatch}
+        disabled={nodeCount === 0}
+        title="Download a .imp.json backup of this rack (auto-save to your account already runs while you edit; this button gives you a portable file)."
+      >Save</button>
+      <button
+        onclick={loadPatch}
+        title="Replace the current rack with a .imp.json file from disk."
+      >Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
       <SkinSwitcher />
       <a class="signin-link" href="/dashboard" data-testid="signin-link">Sign in</a>
