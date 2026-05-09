@@ -95,6 +95,11 @@
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType } from '$lib/graph/types';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
+  import {
+    pictureboxSpawnDecision,
+    explainSpawnDenial,
+    PICTUREBOX_TYPE,
+  } from '$lib/multiplayer/picturebox-limits';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
 
@@ -705,6 +710,36 @@
         return;
       }
     }
+    // PICTUREBOX has its OWN per-user cap on top of the shared
+    // maxInstances workspace cap (see picturebox-limits.ts). Per-user
+    // is checked first because it's user-actionable ("delete one of
+    // yours"); workspace-cap is a social constraint that the
+    // maxInstances gate above already covers but we re-check via the
+    // helper for a friendlier message + structured trace.
+    //
+    // Single-user mode (currentUserId undefined): the per-user cap is
+    // moot — there's only one user, who can fill the whole workspace.
+    // We pass `null` to the helper so it skips the per-user check and
+    // only enforces the workspace cap (which the maxInstances gate
+    // above already enforces; this is just for the friendlier message).
+    if (type === PICTUREBOX_TYPE) {
+      const decision = pictureboxSpawnDecision(
+        patch.nodes,
+        currentUserId ?? null,
+      );
+      if (!decision.ok) {
+        const msg = explainSpawnDenial(decision);
+        trace(`refused spawn ${type}: ${decision.reason} ${decision.current}/${decision.cap}`);
+        // Surface to the user via the same `error` band the rest of
+        // Canvas uses (loadPatch failures, etc). Auto-clear after 4s
+        // so the band doesn't stick around forever.
+        error = msg;
+        setTimeout(() => {
+          if (error === msg) error = null;
+        }, 4000);
+        return;
+      }
+    }
     const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
     // If the spawn point lands on top of an existing module (right-clicked
     // a node, or repeatedly added at the same coords), offset down-right by
@@ -737,6 +772,15 @@
         if (!bumped) break;
       }
     }
+    // Per-module spawn-time data stamping. PICTUREBOX writes creatorId
+    // (only when we have a real userId — single-user mode leaves it
+    // unattributed, matching the per-user-cap-skipped behavior of the
+    // decision helper above). See lib/multiplayer/picturebox-limits.ts.
+    const initialData: Record<string, unknown> | undefined =
+      type === PICTUREBOX_TYPE && currentUserId
+        ? { creatorId: currentUserId }
+        : undefined;
+
     ydoc.transact(() => {
       patch.nodes[id] = {
         id,
@@ -744,6 +788,7 @@
         domain,
         position: pos,
         params: {},
+        ...(initialData ? { data: initialData } : {}),
       };
     }, LOCAL_ORIGIN);
     trace(`spawned ${type} (${id})`);
