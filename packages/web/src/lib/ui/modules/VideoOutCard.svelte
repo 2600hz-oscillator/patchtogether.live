@@ -51,10 +51,24 @@
     // HTMLCanvasElement for the SSR-fallback case) identically. The
     // OUTPUT module's draw() pass already wrote into the engine's
     // default framebuffer this frame; we just blit it across.
+    //
+    // Y-flip: WebGL framebuffers use a bottom-left origin; the 2D canvas
+    // 2d-context uses top-left. drawImage of an OffscreenCanvas backed by
+    // a WebGL2 context reads the framebuffer bytes as-is (origin at
+    // bottom-left of the WebGL surface), then writes them top-down on the
+    // 2D destination — which renders the image upside-down. Procedural
+    // sources (LINES horizontal stripes, INWARDS concentric rings) are
+    // visually Y-symmetric so the bug went unnoticed at Phase-0; PICTUREBOX
+    // (real photos with an obvious "up") makes it visible. Flip here so
+    // every module renders right-side-up downstream.
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
       const src = videoEngine.canvas as CanvasImageSource;
+      ctx2d.save();
+      ctx2d.translate(0, canvasEl.height);
+      ctx2d.scale(1, -1);
       ctx2d.drawImage(src, 0, 0, canvasEl.width, canvasEl.height);
+      ctx2d.restore();
     }
 
     rafId = requestAnimationFrame(draw);
