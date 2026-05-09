@@ -56,8 +56,13 @@ async function typeAndRun(page: Page, livecodeNodeId: string, script: string): P
   // Clear any existing text first.
   await editor.fill('');
   await editor.fill(script);
-  // Blur the editor so commitText runs (commitText also runs from Run).
-  await card.locator('[data-testid="livecode-run"]').click();
+  // Verify the text actually landed in the textarea before clicking Run.
+  await expect(editor).toHaveValue(script);
+  // Click Run. Force is intentional: xyflow's drag listener can briefly
+  // intercept pointer events near the card edge during a node-stack
+  // re-layout; the button has class `nodrag` but force bypasses
+  // Playwright's actionability checks for resilience.
+  await card.locator('[data-testid="livecode-run"]').click({ force: true });
 }
 
 test('livecode: spawn → type → run produces named modules', async ({ page }) => {

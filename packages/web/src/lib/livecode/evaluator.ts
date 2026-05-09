@@ -22,6 +22,14 @@ import type { ModuleNode, Edge, ModuleType, CableType } from '$lib/graph/types';
 import { canConnect } from '$lib/graph/types';
 import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
 import { getVideoModuleDef, listVideoModuleDefs } from '$lib/video/module-registry';
+// Force-import the per-domain module registries so DSL lookups resolve
+// regardless of which chunk loads first under code-splitting. Both
+// modules' top-level side effects register their module defs into the
+// shared registry; without these imports a prerendered bundle could ship
+// LivecodeCard in a chunk that boots before audio/modules has run, and
+// `getModuleDef('analogVco')` would return undefined.
+import '$lib/audio/modules';
+import '$lib/video/modules';
 import { findNodeByName, nextDefaultName } from '$lib/multiplayer/module-naming';
 import { parse, DslError, type Program, type Stmt, type Expr, type Pos } from './parser';
 

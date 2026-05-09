@@ -17,8 +17,6 @@
   import { useStore, type NodeProps } from '@xyflow/svelte';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { evaluate, type EvaluateResult, type Mutation } from '$lib/livecode/evaluator';
-  import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
@@ -175,11 +173,11 @@
   }
 
   // ---------- Sizing ----------
-  // Editor area = card height minus header (title + name + button row)
-  // and minus the bottom output area. The output area uses up to 1/3 of
-  // remaining height; the editor takes the rest.
-  const HEADER_PX = 92;
-  const FOOTER_PX = 16;
+  // Editor area = card height minus header (title) and minus the bottom
+  // output area. The output area uses up to 1/3 of remaining height;
+  // the editor takes the rest.
+  const HEADER_PX = 56;
+  const FOOTER_PX = 20;
   let bodyHeight = $derived(Math.max(160, cardHeight - HEADER_PX - FOOTER_PX));
   let outputHeight = $derived(Math.round(Math.max(80, bodyHeight * 0.32)));
   let editorHeight = $derived(Math.max(80, bodyHeight - outputHeight - 8));
@@ -220,52 +218,47 @@
   data-node-id={id}
 >
   <div class="stripe"></div>
-  <header class="title">
-    <span class="kind">LIVECODE</span>
-    <ModuleNameLabel {node} />
-  </header>
+  <header class="title">LIVECODE</header>
 
-  <PatchPanel nodeId={id} inputs={[]} outputs={[]}>
-    <div class="body" style="height: {bodyHeight}px;">
-      <div class="toolbar">
-        <button
-          type="button"
-          class="run-btn nodrag"
-          data-testid="livecode-run"
-          onclick={runScript}
-        >
-          Run
-        </button>
-        <span
-          class="status"
-          class:err={!!(lastResult && !lastResult.ok)}
-          data-testid="livecode-status"
-        >{statusText}</span>
-      </div>
-      <textarea
-        class="editor nodrag"
-        data-testid="livecode-editor"
-        bind:value={draft}
-        oninput={onTextInput}
-        onblur={commitText}
-        spellcheck="false"
-        autocomplete="off"
-        autocapitalize="off"
-        wrap="off"
-        placeholder={'// Live-code your rack:\n\nv = analogVco.new()\no = audioOut.new()\nv.sine -> o.L\nv.sine -> o.R\nv.tune = 0\n\n// Press Run to apply.'}
-        style="height: {editorHeight}px;"
-      ></textarea>
-      <div class="output" data-testid="livecode-output" style="height: {outputHeight}px;">
-        {#if logLines.length === 0}
-          <div class="output-empty">output log appears here after Run</div>
-        {:else}
-          {#each logLines as line, i (i)}
-            <div class="output-line">{line}</div>
-          {/each}
-        {/if}
-      </div>
+  <div class="body" style="height: {bodyHeight}px;">
+    <div class="toolbar">
+      <button
+        type="button"
+        class="run-btn nodrag"
+        data-testid="livecode-run"
+        onclick={(e) => { e.preventDefault(); e.stopPropagation(); runScript(); }}
+      >
+        Run
+      </button>
+      <span
+        class="status"
+        class:err={!!(lastResult && !lastResult.ok)}
+        data-testid="livecode-status"
+      >{statusText}</span>
     </div>
-  </PatchPanel>
+    <textarea
+      class="editor nodrag"
+      data-testid="livecode-editor"
+      bind:value={draft}
+      oninput={onTextInput}
+      onblur={commitText}
+      spellcheck="false"
+      autocomplete="off"
+      autocapitalize="off"
+      wrap="off"
+      placeholder={'// Live-code your rack:\n\nv = analogVco.new()\no = audioOut.new()\nv.sine -> o.L\nv.sine -> o.R\nv.tune = 0\n\n// Press Run to apply.'}
+      style="height: {editorHeight}px;"
+    ></textarea>
+    <div class="output" data-testid="livecode-output" style="height: {outputHeight}px;">
+      {#if logLines.length === 0}
+        <div class="output-empty">output log appears here after Run</div>
+      {:else}
+        {#each logLines as line, i (i)}
+          <div class="output-line">{line}</div>
+        {/each}
+      {/if}
+    </div>
+  </div>
 
   <div
     class="resize-handle nodrag"
@@ -305,19 +298,11 @@
     background: var(--cable-cv);
   }
   .title {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin: 0 0 8px;
-    gap: 2px;
-    /* Push content a bit so the patch-trigger affordances clear it. */
-    padding: 0 28px;
-  }
-  .title .kind {
-    font-size: 0.7rem;
+    font-size: 0.85rem;
     font-weight: 500;
-    letter-spacing: 0.06em;
-    color: var(--text-dim);
+    text-align: center;
+    margin: 0 0 8px;
+    letter-spacing: 0.05em;
   }
   .body {
     display: flex;
