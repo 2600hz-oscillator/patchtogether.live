@@ -35,6 +35,19 @@ export interface AudioDomainNodeHandle {
    * to their UI implement this; others omit it.
    */
   read?(key: string): unknown;
+  /**
+   * Optional: per-port AnalyserNode taps that surface this module's
+   * audio output as a video-domain source (cross-domain handoff).
+   *
+   * Modules that declare a port whose `type` is `mono-video` / `video`
+   * (e.g. VIZVCO's `scope` port, SCOPE's `out` port) populate this map
+   * with one entry per such port. The PatchEngine reads the analyser
+   * via `getVideoSource(nodeId, portId)` when materializing an
+   * audio→video edge; the VideoEngine then drives a waveform-video
+   * renderer per frame, sampling from the analyser. Audio modules
+   * with no video output omit this map entirely.
+   */
+  videoSources?: Map<string, { analyser: AnalyserNode; sampleRate: number }>;
   dispose(): void;
 }
 
@@ -386,6 +399,24 @@ export class AudioEngine implements DomainEngine {
     return out ?? null;
   }
 
+  /**
+   * Cross-domain bridge support (audio → video texture). Modules that
+   * carry a `mono-video`/`video` output port populate
+   * AudioDomainNodeHandle.videoSources with an analyser-tap per such
+   * port; this method exposes that to the PatchEngine. Returns null if
+   * the node isn't materialized OR doesn't declare a video source for
+   * the given port — the caller defers to a later reconcile pass.
+   */
+  getVideoSource(
+    nodeId: string,
+    portId: string,
+  ): { analyser: AnalyserNode; sampleRate: number } | null {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return null;
+    const src = handle.videoSources?.get(portId);
+    return src ?? null;
+  }
+
   dispose(): void {
     for (const undo of this.edges.values()) undo();
     this.edges.clear();
@@ -408,6 +439,10 @@ export class PatchEngine {
    *  are NOT routed to either domain engine on addEdge — they're owned
    *  exclusively by the bridge. */
   private cvBridgeEdgeIds = new Set<string>();
+  /** Edges that became cross-domain audio → video texture bridges.
+   *  Bookkept like cvBridgeEdgeIds so removeEdge can route to the
+   *  video engine's removeVideoTextureBridge. */
+  private videoTextureBridgeEdgeIds = new Set<string>();
 
   registerDomain(engine: DomainEngine): void {
     this.domains.set(engine.domain, engine);
@@ -467,6 +502,24 @@ export class PatchEngine {
       this.addCrossDomainCvBridge(edge, sourceDomain, targetDomain);
       return;
     }
+    // Cross-domain audio → video texture bridge. The audio source
+    // module exposes an AnalyserNode (videoSources map); we register
+    // a synthetic video source node in the VideoEngine that owns a
+    // waveform-video renderer pulling samples from the analyser each
+    // frame, plus an "edge" so the target video module sees a normal
+    // input texture during draw().
+    if (
+      targetDomain !== undefined
+      && sourceDomain === 'audio'
+      && targetDomain === 'video'
+      && (edge.sourceType === 'mono-video'
+        || edge.sourceType === 'video'
+        || edge.sourceType === 'image'
+        || edge.sourceType === 'keys')
+    ) {
+      this.addCrossDomainVideoTextureBridge(edge);
+      return;
+    }
     const engine = this.getDomain(sourceDomain);
     engine.addEdge(edge);
   }
@@ -474,6 +527,10 @@ export class PatchEngine {
   removeEdge(edge: Edge, sourceDomain: string): void {
     if (this.cvBridgeEdgeIds.has(edge.id)) {
       this.removeCrossDomainCvBridge(edge);
+      return;
+    }
+    if (this.videoTextureBridgeEdgeIds.has(edge.id)) {
+      this.removeCrossDomainVideoTextureBridge(edge);
       return;
     }
     const engine = this.getDomain(sourceDomain);
@@ -550,6 +607,69 @@ export class PatchEngine {
     }
   }
 
+  /**
+   * Establish an audio → video texture bridge. The audio source
+   * declares an AnalyserNode tap on the named port (via
+   * AudioDomainNodeHandle.videoSources); the VideoEngine registers a
+   * synthetic source node + an edge that delivers the waveform-video
+   * texture to the target video module's input port.
+   *
+   * Failure modes (mirror addCrossDomainCvBridge):
+   *  - audio source not yet materialized: defer (mark id, no-op).
+   *  - video engine not present / lacks bridge API: fall back to
+   *    audio-domain dispatch so the call doesn't silently drop.
+   */
+  private addCrossDomainVideoTextureBridge(edge: Edge): void {
+    const audioEngine = this.domains.get('audio');
+    const videoEngine = this.domains.get('video');
+    if (!audioEngine || !videoEngine) {
+      audioEngine?.addEdge(edge);
+      return;
+    }
+    const ae = audioEngine as AudioEngine;
+    const ve = videoEngine as DomainEngine & {
+      addVideoTextureBridge?: (
+        edgeId: string,
+        sourceNodeId: string,
+        sourcePortId: string,
+        analyser: AnalyserNode,
+        sampleRate: number,
+        targetEdge: Edge,
+      ) => void;
+    };
+    if (typeof ae.getVideoSource !== 'function' || typeof ve.addVideoTextureBridge !== 'function') {
+      audioEngine.addEdge(edge);
+      return;
+    }
+    const src = ae.getVideoSource(edge.source.nodeId, edge.source.portId);
+    if (!src) {
+      // Source not materialized yet (or doesn't declare a video port).
+      // Mark the edge id so a later removeEdge knows we own it; the
+      // reconciler will not retry until edges change.
+      this.videoTextureBridgeEdgeIds.add(edge.id);
+      return;
+    }
+    ve.addVideoTextureBridge!(
+      edge.id,
+      edge.source.nodeId,
+      edge.source.portId,
+      src.analyser,
+      src.sampleRate,
+      edge,
+    );
+    this.videoTextureBridgeEdgeIds.add(edge.id);
+  }
+
+  private removeCrossDomainVideoTextureBridge(edge: Edge): void {
+    this.videoTextureBridgeEdgeIds.delete(edge.id);
+    const ve = this.domains.get('video') as
+      | (DomainEngine & { removeVideoTextureBridge?: (id: string) => void })
+      | undefined;
+    if (ve && typeof ve.removeVideoTextureBridge === 'function') {
+      ve.removeVideoTextureBridge!(edge.id);
+    }
+  }
+
   setParam(node: ModuleNode, paramId: string, value: number): void {
     const engine = this.getDomain(node.domain);
     engine.setParam(node.id, paramId, value);
@@ -565,6 +685,7 @@ export class PatchEngine {
 
   dispose(): void {
     this.cvBridgeEdgeIds.clear();
+    this.videoTextureBridgeEdgeIds.clear();
     for (const e of this.domains.values()) e.dispose();
     this.domains.clear();
   }

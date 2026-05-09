@@ -31,6 +31,7 @@
 import type { Edge, ModuleNode } from '$lib/graph/types';
 import type { DomainEngine } from '$lib/audio/engine';
 import { getVideoModuleDef, type VideoModuleDef } from './module-registry';
+import { createWaveformRenderer, type WaveformRenderer } from './waveform-video';
 
 /** Resolution of every per-module FBO. Phase-0 keeps this small for
  *  fastest startup on the demo path; Phase 1 bumps it to 1280×720. */
@@ -156,6 +157,29 @@ export class VideoEngine implements DomainEngine {
     teardown: () => void;
   }>();
 
+  /**
+   * Cross-domain audio → video texture bridges. The PatchEngine
+   * registers one entry per edge whose source is an audio module's
+   * mono-video output and whose target is a video module's input.
+   * Each bridge owns a waveform-video renderer drawing into its own
+   * FBO+texture; the engine ticks all bridges (samples + renders)
+   * before per-module draw() passes so target modules see fresh
+   * input textures via lookupInput.
+   *
+   * Keyed by edge id (symmetric add/remove). Multiple distinct edges
+   * sharing the same source port get independent renderers (cheap)
+   * — keeps the bookkeeping uniform.
+   */
+  private videoTextureBridges = new Map<string, {
+    sourceNodeId: string;
+    sourcePortId: string;
+    analyser: AnalyserNode;
+    sampleRate: number;
+    buf: Float32Array<ArrayBuffer>;
+    renderer: WaveformRenderer;
+    edge: Edge;
+  }>();
+
   private startTime = performance.now();
   private frameCount = 0;
   private rafId: number | null = null;
@@ -260,6 +284,10 @@ export class VideoEngine implements DomainEngine {
       try { bridge.teardown(); } catch { /* */ }
     }
     this.cvBridges.clear();
+    for (const bridge of this.videoTextureBridges.values()) {
+      try { bridge.renderer.dispose(); } catch { /* */ }
+    }
+    this.videoTextureBridges.clear();
     for (const handle of this.nodes.values()) handle.dispose();
     this.nodes.clear();
     this.nodeMeta.clear();
@@ -284,6 +312,12 @@ export class VideoEngine implements DomainEngine {
     //    audio source is the documented limit (see plan §2 'Cross-domain
     //    CV adapter').
     this.tickCvBridges();
+    // 1b. Render every active audio → video texture bridge so the
+    //     target video modules see fresh waveform textures during their
+    //     draw() pass. Doing this BEFORE the topo loop matches the CV
+    //     bridge ordering — both kinds of cross-domain handoff happen
+    //     "before" intra-domain rendering each frame.
+    this.tickVideoTextureBridges();
 
     const ctx: VideoFrameContext = {
       gl: this.gl,
@@ -353,6 +387,67 @@ export class VideoEngine implements DomainEngine {
       // Tail sample is "newest" in the rolling window analyser semantics.
       const v = bridge.buf[bridge.buf.length - 1] ?? 0;
       handle.setParam(bridge.targetParamId, v);
+    }
+  }
+
+  /**
+   * Register an audio → video texture bridge. Owns a waveform-video
+   * renderer that, each frame, samples the analyser and writes a
+   * waveform trace into its own FBO+texture. The target video module's
+   * input texture lookup (via lookupInput) returns this texture so the
+   * standard per-module draw() logic stays untouched.
+   *
+   * Idempotent on edge id: a re-add disposes the previous renderer.
+   */
+  addVideoTextureBridge(
+    edgeId: string,
+    sourceNodeId: string,
+    sourcePortId: string,
+    analyser: AnalyserNode,
+    sampleRate: number,
+    edge: Edge,
+  ): void {
+    const existing = this.videoTextureBridges.get(edgeId);
+    if (existing) {
+      try { existing.renderer.dispose(); } catch { /* */ }
+    }
+    // 2048 samples covers ~46ms at 44.1kHz — long enough to read a
+    // few cycles at audio-rate. Match the analyser's fftSize when
+    // larger, so we never request more than the analyser can give.
+    const bufLen = Math.max(1024, analyser.fftSize);
+    const buf = new Float32Array(new ArrayBuffer(bufLen * 4));
+    const renderer = createWaveformRenderer(this.gl, this.res.width, this.res.height, {
+      sampleCount: bufLen,
+    });
+    this.videoTextureBridges.set(edgeId, {
+      sourceNodeId,
+      sourcePortId,
+      analyser,
+      sampleRate,
+      buf,
+      renderer,
+      edge,
+    });
+    // Touch topo so an immediately-following step() sees the bridge.
+    this.topoStale = true;
+    // Boot the rAF loop if it isn't running — bridges are sources too.
+    this.ensureLoop();
+  }
+
+  removeVideoTextureBridge(edgeId: string): void {
+    const entry = this.videoTextureBridges.get(edgeId);
+    if (!entry) return;
+    try { entry.renderer.dispose(); } catch { /* */ }
+    this.videoTextureBridges.delete(edgeId);
+    this.topoStale = true;
+  }
+
+  private tickVideoTextureBridges(): void {
+    if (this.videoTextureBridges.size === 0) return;
+    for (const bridge of this.videoTextureBridges.values()) {
+      bridge.analyser.getFloatTimeDomainData(bridge.buf);
+      bridge.renderer.update(bridge.buf);
+      bridge.renderer.draw(this.res.width, this.res.height);
     }
   }
 
@@ -427,8 +522,24 @@ export class VideoEngine implements DomainEngine {
    *  Multi-edge to a single input takes the first connected source by
    *  edge id; Phase 1 will add explicit policy (sum / pick first / etc.). */
   private lookupInput(thisNodeId: string, inputId: string): WebGLTexture | null {
-    // Iterate edges in id order so a deterministic edge wins on multi-
-    // connect. The user shouldn't hit that case for Phase 0 demos.
+    // 1. Cross-domain audio → video texture bridges. The bridge holds
+    //    the source nodeId+portId from the audio side AND the original
+    //    edge (which carries the video-side target nodeId+portId).
+    //    Iterate by edge id to keep multi-bridge tie-breaking stable.
+    if (this.videoTextureBridges.size > 0) {
+      const bridgeHits: Array<{ edgeId: string; tex: WebGLTexture }> = [];
+      for (const [edgeId, b] of this.videoTextureBridges) {
+        if (b.edge.target.nodeId === thisNodeId && b.edge.target.portId === inputId) {
+          bridgeHits.push({ edgeId, tex: b.renderer.texture });
+        }
+      }
+      if (bridgeHits.length > 0) {
+        bridgeHits.sort((a, b) => a.edgeId.localeCompare(b.edgeId));
+        return bridgeHits[0]!.tex;
+      }
+    }
+    // 2. Standard intra-domain edges. Iterate edges in id order so a
+    //    deterministic edge wins on multi-connect.
     const hits: Edge[] = [];
     for (const e of this.edges.values()) {
       if (e.target.nodeId === thisNodeId && e.target.portId === inputId) hits.push(e);

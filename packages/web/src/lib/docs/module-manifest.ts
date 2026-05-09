@@ -105,6 +105,10 @@ const DESCRIPTIONS: Record<string, string> = {
   score: 'Sheet-music sequencer. 8-bar treble-clef staff, click to place notes. Outputs pitch / gate / env (ADSR x dynamic) / clock.',
   drumseqz:
     '4-channel x 16-step drum sequencer with per-track Euclidean fills + quantized CV. Sister module to RIOTGIRLS.',
+  vizvco:
+    'Analog VCO sister of analogVco with a built-in West-Coast wavefolder + a mono-video scope output. Saw / square / triangle / sine outs feed a sin(x*(1+fold)) wave-shaper; the scope tap drives the shared waveform-video renderer.',
+  wavviz:
+    'Wavetable VCO sister of wavetableVco with a built-in West-Coast wavefolder + a mono-video scope output. Same morphing wavetable as wavetableVco; post-fold signal feeds both audio and scope-video out.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -136,6 +140,24 @@ const PORT_NOTES: Record<string, string> = {
   'scope.ch2': 'Channel 2 in.',
   'scope.ch1_out': 'Channel 1 passthrough.',
   'scope.ch2_out': 'Channel 2 passthrough.',
+  'scope.out':
+    'Mono-video output: ch1 waveform rendered to a GL texture by the shared waveform-video renderer (same trace as the on-card canvas).',
+  'vizvco.pitch': 'V/oct pitch input.',
+  'vizvco.fm': 'Audio-rate FM input.',
+  'vizvco.foldAmount': 'CV -> wavefolder fold amount.',
+  'vizvco.saw': 'Sawtooth output (post-wavefolder).',
+  'vizvco.square': 'Square output (post-wavefolder).',
+  'vizvco.triangle': 'Triangle output (post-wavefolder).',
+  'vizvco.sine': 'Sine output (post-wavefolder).',
+  'vizvco.scope':
+    'Mono-video output: oscilloscope trace of the post-fold mixed waveform (RGB grayscale).',
+  'wavviz.pitch': 'V/oct pitch input.',
+  'wavviz.fm': 'Audio-rate FM input.',
+  'wavviz.wavePos': 'CV -> wavetable scan position.',
+  'wavviz.foldAmount': 'CV -> wavefolder fold amount.',
+  'wavviz.audio': 'Post-fold mixed wavetable output.',
+  'wavviz.scope':
+    'Mono-video output: oscilloscope trace of the post-fold waveform (RGB grayscale).',
   'sequencer.clock': 'External clock (rising edges advance the step pointer).',
   'sequencer.pitch': 'V/oct pitch out.',
   'sequencer.gate': 'Gate out (high while step is on).',

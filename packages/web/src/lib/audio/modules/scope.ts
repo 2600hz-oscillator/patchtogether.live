@@ -27,6 +27,13 @@ export const scopeDef: AudioModuleDef = {
   outputs: [
     { id: 'ch1_out', type: 'audio' },
     { id: 'ch2_out', type: 'audio' },
+    // Mono-video output: the same waveform users see on the SCOPE
+    // card's on-card 2D canvas, exposed as a GL texture for downstream
+    // video-domain consumers (OUTPUT, MIXER, etc.). Driven by the
+    // shared waveform-video renderer; the audio side just exposes an
+    // analyser tap on ch1 here. Multi-channel scopes (ch1+ch2 sum)
+    // could be added in a follow-up if a use case emerges.
+    { id: 'out',     type: 'mono-video' },
   ],
   // Most params are display-only (the audio passthrough is unchanged regardless
   // of scale/offset/mode). The factory's setParam ignores them; the card reads
@@ -75,6 +82,15 @@ export const scopeDef: AudioModuleDef = {
       outputs: new Map([
         ['ch1_out', { node: gain1, output: 0 }],
         ['ch2_out', { node: gain2, output: 0 }],
+      ]),
+      // Cross-domain: expose ch1's analyser as a video source so a
+      // downstream OUTPUT/MIXER on the video side sees the same trace
+      // the on-card canvas draws. We use ch1's analyser directly
+      // (not a separate one) so reads via .read('snapshot') and reads
+      // via the video bridge see the EXACT same buffer — no two-source
+      // drift between the on-card canvas and the GL texture.
+      videoSources: new Map([
+        ['out', { analyser: analyser1, sampleRate: ctx.sampleRate }],
       ]),
       setParam(_paramId, _value) {
         // Time knob is read-only by the card; nothing to set on the audio path.
