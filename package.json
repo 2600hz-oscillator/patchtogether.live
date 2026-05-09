@@ -1,6 +1,6 @@
 {
   "name": "patchtogether.live",
-  "version": "0.5.1",
+  "version": "1.0.1",
   "private": true,
   "description": "A multiplayer browser-native modular synthesizer.",
   "workspaces": [
