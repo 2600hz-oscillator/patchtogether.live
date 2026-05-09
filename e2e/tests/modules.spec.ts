@@ -99,6 +99,9 @@ const MODULES: ModuleSpec[] = [
   { type: 'illogic',      cardClass: 'svelte-flow__node-illogic',      handleCount: 14, containsLabel: 'ILLOGIC' },
   // DX7: 3 inputs (poly + pitch_cv + gate) + 1 output (out) = 4 handles.
   { type: 'dx7',          cardClass: 'svelte-flow__node-dx7',          handleCount: 4, containsLabel: 'DX7' },
+  // POLYSEQZ: polyphonic chord sequencer. 4 inputs (clock, reset_cv,
+  // play_cv, humanize_cv) + 3 outputs (poly, gate, clock) = 7 handles.
+  { type: 'polyseqz',     cardClass: 'svelte-flow__node-polyseqz',     handleCount: 7, containsLabel: 'POLYSEQZ' },
 ];
 
 test.describe.configure({ mode: 'parallel' });
