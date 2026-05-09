@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import {
     sequencerDef,
@@ -185,6 +187,15 @@
     }
     return false;
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'pitch', cable: 'polyPitchGate' },
+    { id: 'gate',  cable: 'gate' },
+    { id: 'clock', label: 'CLOCK OUT', cable: 'gate' },
+  ];
 </script>
 
 <div class="mod-card seq-card">
@@ -196,16 +207,7 @@
     </button>
   </header>
 
-  <Handle type="target" position={Position.Left}  id="clock" style="top: 56px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 50px;">clk in</span>
-
-  <Handle type="source" position={Position.Right} id="pitch" style="top: 56px; --handle-color: var(--cable-polyPitchGate);" />
-  <Handle type="source" position={Position.Right} id="gate"  style="top: 92px; --handle-color: var(--cable-gate);" />
-  <Handle type="source" position={Position.Right} id="clock" style="top: 128px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 50px;">pitch</span>
-  <span class="port-label right" style="top: 86px;">gate</span>
-  <span class="port-label right" style="top: 122px;">clk out</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="grid" bind:this={gridEl} data-testid={`seq-grid-${id}`}>
     {#each steps.slice(0, STEP_COUNT) as step, i (i)}
       <div class="cell-slot" data-step={i}>
@@ -249,6 +251,7 @@
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear" onchange={set('gateLength')} readLive={live('gateLength')} />
     <Fader value={swing}      min={0}   max={0.75} defaultValue={0}  label="SWG"  curve="linear" onchange={set('swing')}     readLive={live('swing')} />
   </div>
+  </PatchPanel>
 </div>
 
 <style>

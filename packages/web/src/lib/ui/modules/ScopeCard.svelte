@@ -1,11 +1,22 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { scopeDef, type ScopeSnapshot } from '$lib/audio/modules/scope';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+
+  const inputs: PortDescriptor[] = [
+    { id: 'ch1', label: 'CHANNEL 1', cable: 'audio' },
+    { id: 'ch2', label: 'CHANNEL 2', cable: 'audio' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'ch1_out', label: 'CHANNEL 1 OUT', cable: 'audio' },
+    { id: 'ch2_out', label: 'CHANNEL 2 OUT', cable: 'audio' },
+  ];
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -214,27 +225,19 @@
     </button>
   </header>
 
-  <Handle type="target" position={Position.Left} id="ch1" style="top: 56px; --handle-color: var(--cable-audio);" />
-  <Handle type="target" position={Position.Left} id="ch2" style="top: 92px; --handle-color: var(--cable-audio);" />
-  <span class="port-label left" style="top: 50px;">ch1</span>
-  <span class="port-label left" style="top: 86px;">ch2</span>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="screen-wrap">
+      <canvas bind:this={canvasEl} width="280" height="120"></canvas>
+    </div>
 
-  <Handle type="source" position={Position.Right} id="ch1_out" style="top: 56px; --handle-color: var(--cable-audio);" />
-  <Handle type="source" position={Position.Right} id="ch2_out" style="top: 92px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 50px;">out1</span>
-  <span class="port-label right" style="top: 86px;">out2</span>
-
-  <div class="screen-wrap">
-    <canvas bind:this={canvasEl} width="280" height="120"></canvas>
-  </div>
-
-  <div class="fader-row">
-    <Fader value={timeMs}    min={1}    max={200} defaultValue={20} label="Time" units="ms" curve="log"    onchange={setParam('timeMs')} />
-    <Fader value={ch1Scale}  min={0.1}  max={10}  defaultValue={1}  label="1 Sc"            curve="log"    onchange={setParam('ch1Scale')} />
-    <Fader value={ch1Offset} min={-1}   max={1}   defaultValue={0}  label="1 Y"             curve="linear" onchange={setParam('ch1Offset')} />
-    <Fader value={ch2Scale}  min={0.1}  max={10}  defaultValue={1}  label="2 Sc"            curve="log"    onchange={setParam('ch2Scale')} />
-    <Fader value={ch2Offset} min={-1}   max={1}   defaultValue={0}  label="2 Y"             curve="linear" onchange={setParam('ch2Offset')} />
-  </div>
+    <div class="fader-row">
+      <Fader value={timeMs}    min={1}    max={200} defaultValue={20} label="Time" units="ms" curve="log"    onchange={setParam('timeMs')} />
+      <Fader value={ch1Scale}  min={0.1}  max={10}  defaultValue={1}  label="1 Sc"            curve="log"    onchange={setParam('ch1Scale')} />
+      <Fader value={ch1Offset} min={-1}   max={1}   defaultValue={0}  label="1 Y"             curve="linear" onchange={setParam('ch1Offset')} />
+      <Fader value={ch2Scale}  min={0.1}  max={10}  defaultValue={1}  label="2 Sc"            curve="log"    onchange={setParam('ch2Scale')} />
+      <Fader value={ch2Offset} min={-1}   max={1}   defaultValue={0}  label="2 Y"             curve="linear" onchange={setParam('ch2Offset')} />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -309,17 +312,8 @@
     background: #1c2028;
     border-color: currentColor;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .screen-wrap {
-    margin: 30px 30px 8px;
+    margin: 16px 30px 8px;
     border: 1px solid #2a2f3a;
     border-radius: 3px;
     overflow: hidden;

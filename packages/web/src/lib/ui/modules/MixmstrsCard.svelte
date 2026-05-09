@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { mixmstrsDef } from '$lib/audio/modules/mixmstrs';
   import { useEngine } from '$lib/audio/engine-context';
-  import type { ModuleNode } from '$lib/graph/types';
+  import type { ModuleNode, PortDef } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -22,14 +24,16 @@
     return e.readParam(node, k);
   };
 
-  // Per-channel y offset for handle alignment. 4 stereo pairs × 32 px stride
-  // starting at top:56.
-  const CH_HANDLE_TOP = (i: number, side: 'L' | 'R') => 56 + i * 64 + (side === 'R' ? 24 : 0);
-  const RET_HANDLE_TOP = (i: number, side: 'L' | 'R') => 56 + 4 * 64 + i * 64 + (side === 'R' ? 24 : 0);
-  const OUT_HANDLE_TOP = (i: number) => 56 + i * 32;
-
   const CH = [1, 2, 3, 4] as const;
-  const PARAM_KEYS = ['volume', 'low', 'mid', 'high', 'thresh', 'ratio', 'compEnable', 'send1', 'send2'] as const;
+
+  // Pull every input port off the def — 12 audio + 37 CV-per-param. The
+  // panel's auto-grouping puts Audio first, then CV, with verbose labels
+  // resolved from the id stems via patch-panel-labels.ts.
+  function defPortToDescriptor(p: PortDef): PortDescriptor {
+    return { id: p.id, cable: p.type };
+  }
+  const inputs: PortDescriptor[] = mixmstrsDef.inputs.map(defPortToDescriptor);
+  const outputs: PortDescriptor[] = mixmstrsDef.outputs.map(defPortToDescriptor);
 </script>
 
 <div class="mod-card mixmstrs-card" class:compact>
@@ -41,60 +45,39 @@
     </button>
   </header>
 
-  <!-- Channel inputs (left side, top half) -->
-  {#each CH as ch, i (ch)}
-    <Handle type="target" position={Position.Left} id={`ch${ch}L`} style="top: {CH_HANDLE_TOP(i, 'L')}px; --handle-color: var(--cable-audio);" />
-    <Handle type="target" position={Position.Left} id={`ch${ch}R`} style="top: {CH_HANDLE_TOP(i, 'R')}px; --handle-color: var(--cable-audio);" />
-    <span class="port-label left" style="top: {CH_HANDLE_TOP(i, 'L') - 6}px;">ch{ch} L</span>
-    <span class="port-label left" style="top: {CH_HANDLE_TOP(i, 'R') - 6}px;">ch{ch} R</span>
-  {/each}
-
-  <!-- Returns (left side, bottom half) -->
-  {#each [1, 2] as ret, i (ret)}
-    <Handle type="target" position={Position.Left} id={`ret${ret}L`} style="top: {RET_HANDLE_TOP(i, 'L')}px; --handle-color: var(--cable-audio);" />
-    <Handle type="target" position={Position.Left} id={`ret${ret}R`} style="top: {RET_HANDLE_TOP(i, 'R')}px; --handle-color: var(--cable-audio);" />
-    <span class="port-label left" style="top: {RET_HANDLE_TOP(i, 'L') - 6}px;">ret{ret}L</span>
-    <span class="port-label left" style="top: {RET_HANDLE_TOP(i, 'R') - 6}px;">ret{ret}R</span>
-  {/each}
-
-  <!-- Outputs (right side) -->
-  {#each ['masterL', 'masterR', 'send1L', 'send1R', 'send2L', 'send2R'] as out, i (out)}
-    <Handle type="source" position={Position.Right} id={out} style="top: {OUT_HANDLE_TOP(i)}px; --handle-color: var(--cable-audio);" />
-    <span class="port-label right" style="top: {OUT_HANDLE_TOP(i) - 6}px;">{out}</span>
-  {/each}
-
-  <!-- Knob grid -->
-  <div class="grid">
-    {#each CH as ch (ch)}
-      <div class="ch-col">
-        <div class="ch-label">CH {ch}</div>
-        <Knob value={paramVal(`ch${ch}_volume`, 0.8)} min={0}    max={1}   defaultValue={0.8} label="Vol" curve="linear"   onchange={set(`ch${ch}_volume`)}     readLive={live(`ch${ch}_volume`)} />
-        {#if !compact}
-          <Knob value={paramVal(`ch${ch}_low`, 0)}    min={-12}  max={12}  defaultValue={0}   label="LOW" curve="linear"   onchange={set(`ch${ch}_low`)}        readLive={live(`ch${ch}_low`)} />
-          <Knob value={paramVal(`ch${ch}_mid`, 0)}    min={-12}  max={12}  defaultValue={0}   label="MID" curve="linear"   onchange={set(`ch${ch}_mid`)}        readLive={live(`ch${ch}_mid`)} />
-          <Knob value={paramVal(`ch${ch}_high`, 0)}   min={-12}  max={12}  defaultValue={0}   label="HGH" curve="linear"   onchange={set(`ch${ch}_high`)}       readLive={live(`ch${ch}_high`)} />
-          <Knob value={paramVal(`ch${ch}_thresh`, -12)}  min={-36} max={0}   defaultValue={-12} label="THR" curve="linear"   onchange={set(`ch${ch}_thresh`)}     readLive={live(`ch${ch}_thresh`)} />
-          <Knob value={paramVal(`ch${ch}_ratio`, 2)}     min={1}   max={10}  defaultValue={2}   label="RAT" curve="linear"   onchange={set(`ch${ch}_ratio`)}      readLive={live(`ch${ch}_ratio`)} />
-          <Knob value={paramVal(`ch${ch}_compEnable`, 0)} min={0}  max={1}   defaultValue={0}   label="CMP" curve="discrete" onchange={set(`ch${ch}_compEnable`)} readLive={live(`ch${ch}_compEnable`)} />
-        {/if}
-        <Knob value={paramVal(`ch${ch}_send1`, 0)}  min={0}  max={1}   defaultValue={0}   label="S1"  curve="linear"   onchange={set(`ch${ch}_send1`)}      readLive={live(`ch${ch}_send1`)} />
-        <Knob value={paramVal(`ch${ch}_send2`, 0)}  min={0}  max={1}   defaultValue={0}   label="S2"  curve="linear"   onchange={set(`ch${ch}_send2`)}      readLive={live(`ch${ch}_send2`)} />
+  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={320}>
+    <div class="grid">
+      {#each CH as ch (ch)}
+        <div class="ch-col">
+          <div class="ch-label">CH {ch}</div>
+          <Knob value={paramVal(`ch${ch}_volume`, 0.8)} min={0}    max={1}   defaultValue={0.8} label="Vol" curve="linear"   onchange={set(`ch${ch}_volume`)}     readLive={live(`ch${ch}_volume`)} />
+          {#if !compact}
+            <Knob value={paramVal(`ch${ch}_low`, 0)}    min={-12}  max={12}  defaultValue={0}   label="LOW" curve="linear"   onchange={set(`ch${ch}_low`)}        readLive={live(`ch${ch}_low`)} />
+            <Knob value={paramVal(`ch${ch}_mid`, 0)}    min={-12}  max={12}  defaultValue={0}   label="MID" curve="linear"   onchange={set(`ch${ch}_mid`)}        readLive={live(`ch${ch}_mid`)} />
+            <Knob value={paramVal(`ch${ch}_high`, 0)}   min={-12}  max={12}  defaultValue={0}   label="HGH" curve="linear"   onchange={set(`ch${ch}_high`)}       readLive={live(`ch${ch}_high`)} />
+            <Knob value={paramVal(`ch${ch}_thresh`, -12)}  min={-36} max={0}   defaultValue={-12} label="THR" curve="linear"   onchange={set(`ch${ch}_thresh`)}     readLive={live(`ch${ch}_thresh`)} />
+            <Knob value={paramVal(`ch${ch}_ratio`, 2)}     min={1}   max={10}  defaultValue={2}   label="RAT" curve="linear"   onchange={set(`ch${ch}_ratio`)}      readLive={live(`ch${ch}_ratio`)} />
+            <Knob value={paramVal(`ch${ch}_compEnable`, 0)} min={0}  max={1}   defaultValue={0}   label="CMP" curve="discrete" onchange={set(`ch${ch}_compEnable`)} readLive={live(`ch${ch}_compEnable`)} />
+          {/if}
+          <Knob value={paramVal(`ch${ch}_send1`, 0)}  min={0}  max={1}   defaultValue={0}   label="S1"  curve="linear"   onchange={set(`ch${ch}_send1`)}      readLive={live(`ch${ch}_send1`)} />
+          <Knob value={paramVal(`ch${ch}_send2`, 0)}  min={0}  max={1}   defaultValue={0}   label="S2"  curve="linear"   onchange={set(`ch${ch}_send2`)}      readLive={live(`ch${ch}_send2`)} />
+        </div>
+      {/each}
+      <div class="ch-col master-col">
+        <div class="ch-label">MASTER</div>
+        <Knob value={paramVal('master_volume', 0.8)} min={0} max={1} defaultValue={0.8} label="Vol" curve="linear" onchange={set('master_volume')} readLive={live('master_volume')} />
       </div>
-    {/each}
-    <div class="ch-col master-col">
-      <div class="ch-label">MASTER</div>
-      <Knob value={paramVal('master_volume', 0.8)} min={0} max={1} defaultValue={0.8} label="Vol" curve="linear" onchange={set('master_volume')} readLive={live('master_volume')} />
     </div>
-  </div>
+  </PatchPanel>
 </div>
 
 <style>
   .mixmstrs-card {
     width: 520px;
-    min-height: 480px;
+    min-height: 460px;
   }
   .mixmstrs-card.compact {
-    min-height: 220px;
+    min-height: 200px;
   }
   .mixmstrs-card .title {
     display: flex;
@@ -115,11 +98,11 @@
     line-height: 1;
   }
   .grid {
-    margin-top: 30px;
+    margin-top: 16px;
     display: grid;
     grid-template-columns: repeat(4, 1fr) 80px;
     gap: 8px;
-    padding: 0 60px;
+    padding: 0 18px;
   }
   .ch-col {
     display: flex;

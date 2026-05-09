@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { audioOutDef } from '$lib/audio/modules/audio-out';
   import { useEngine } from '$lib/audio/engine-context';
@@ -25,29 +27,31 @@
       return e.readParam(node, paramId);
     };
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'L', cable: 'audio' },
+    { id: 'R', cable: 'audio' },
+  ];
 </script>
 
 <div class="card">
   <div class="stripe"></div>
   <header class="title">Audio Out</header>
 
-  <Handle type="target" position={Position.Left} id="L" style="top: 56px; --handle-color: var(--cable-audio);" />
-  <Handle type="target" position={Position.Left} id="R" style="top: 92px; --handle-color: var(--cable-audio);" />
-  <span class="port-label left" style="top: 50px;">L</span>
-  <span class="port-label left" style="top: 86px;">R</span>
-
-  <div class="fader-row">
-    <Fader
-      value={master}
-      min={0}
-      max={1}
-      defaultValue={0.7}
-      label="Master"
-      curve="linear"
-      onchange={setParam('master')}
-      readLive={readLive('master')}
-    />
-  </div>
+  <PatchPanel nodeId={id} {inputs}>
+    <div class="fader-row">
+      <Fader
+        value={master}
+        min={0}
+        max={1}
+        defaultValue={0.7}
+        label="Master"
+        curve="linear"
+        onchange={setParam('master')}
+        readLive={readLive('master')}
+      />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -84,16 +88,8 @@
     text-align: center;
     margin: 0 0 8px;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
   .fader-row {
-    margin-top: 28px;
+    margin-top: 12px;
     display: flex;
     justify-content: center;
   }
