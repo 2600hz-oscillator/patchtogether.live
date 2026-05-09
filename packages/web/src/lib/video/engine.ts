@@ -182,8 +182,17 @@ export class VideoEngine implements DomainEngine {
     analyser: AnalyserNode;
     sampleRate: number;
     buf: Float32Array<ArrayBuffer>;
-    renderer: WaveformRenderer;
+    renderer: WaveformRenderer | null;
     edge: Edge;
+    /** Module-driven 2D draw path (SCOPE). When set, the bridge holds an
+     *  OffscreenCanvas + 2D context, asks the source module to draw into
+     *  it each frame via this callback, then uploads the canvas pixels
+     *  into `customTexture` for the standard input-texture lookup. The
+     *  GL `renderer` field is null in this mode. */
+    drawFrame?: (canvas: OffscreenCanvas | HTMLCanvasElement) => void;
+    customCanvas?: OffscreenCanvas;
+    customCtx2d?: OffscreenCanvasRenderingContext2D;
+    customTexture?: WebGLTexture;
   }>();
 
   private startTime = performance.now();
@@ -309,7 +318,10 @@ export class VideoEngine implements DomainEngine {
     }
     this.cvBridges.clear();
     for (const bridge of this.videoTextureBridges.values()) {
-      try { bridge.renderer.dispose(); } catch { /* */ }
+      try { bridge.renderer?.dispose(); } catch { /* */ }
+      if (bridge.customTexture) {
+        try { this.gl.deleteTexture(bridge.customTexture); } catch { /* */ }
+      }
     }
     this.videoTextureBridges.clear();
     for (const handle of this.nodes.values()) handle.dispose();
@@ -430,28 +442,113 @@ export class VideoEngine implements DomainEngine {
     analyser: AnalyserNode,
     sampleRate: number,
     edge: Edge,
+    drawFrame?: (canvas: OffscreenCanvas | HTMLCanvasElement) => void,
   ): void {
     const existing = this.videoTextureBridges.get(edgeId);
     if (existing) {
-      try { existing.renderer.dispose(); } catch { /* */ }
+      try { existing.renderer?.dispose(); } catch { /* */ }
+      if (existing.customTexture) {
+        try { this.gl.deleteTexture(existing.customTexture); } catch { /* */ }
+      }
     }
     // 2048 samples covers ~46ms at 44.1kHz — long enough to read a
     // few cycles at audio-rate. Match the analyser's fftSize when
     // larger, so we never request more than the analyser can give.
     const bufLen = Math.max(1024, analyser.fftSize);
     const buf = new Float32Array(new ArrayBuffer(bufLen * 4));
-    const renderer = createWaveformRenderer(this.gl, this.res.width, this.res.height, {
-      sampleCount: bufLen,
-    });
-    this.videoTextureBridges.set(edgeId, {
-      sourceNodeId,
-      sourcePortId,
-      analyser,
-      sampleRate,
-      buf,
-      renderer,
-      edge,
-    });
+
+    if (drawFrame) {
+      // Module-driven 2D draw path (SCOPE). The module owns the pixel
+      // logic; we own the canvas, the texture, and the per-frame
+      // canvas → texture upload. Use OffscreenCanvas so this works in
+      // tests + workers; fall back to a regular canvas where missing.
+      let canvas: OffscreenCanvas;
+      if (typeof OffscreenCanvas !== 'undefined') {
+        canvas = new OffscreenCanvas(this.res.width, this.res.height);
+      } else {
+        // No-op in environments without OffscreenCanvas — the bridge
+        // still registers so removeVideoTextureBridge is symmetric, but
+        // the texture stays at its initial cleared state.
+        this.videoTextureBridges.set(edgeId, {
+          sourceNodeId,
+          sourcePortId,
+          analyser,
+          sampleRate,
+          buf,
+          renderer: null,
+          edge,
+          drawFrame,
+        });
+        this.topoStale = true;
+        this.ensureLoop();
+        return;
+      }
+      const ctx2d = canvas.getContext('2d', { willReadFrequently: false }) as
+        | OffscreenCanvasRenderingContext2D
+        | null;
+      if (!ctx2d) {
+        // Same fall-through as no-OffscreenCanvas — register the bridge
+        // for symmetric teardown but skip texture work. Should never
+        // happen in mainstream browsers.
+        this.videoTextureBridges.set(edgeId, {
+          sourceNodeId,
+          sourcePortId,
+          analyser,
+          sampleRate,
+          buf,
+          renderer: null,
+          edge,
+          drawFrame,
+        });
+        this.topoStale = true;
+        this.ensureLoop();
+        return;
+      }
+      const tex = this.gl.createTexture();
+      if (!tex) throw new Error('VideoEngine: createTexture(custom) failed');
+      this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
+      this.gl.texImage2D(
+        this.gl.TEXTURE_2D,
+        0,
+        this.gl.RGBA8,
+        this.res.width,
+        this.res.height,
+        0,
+        this.gl.RGBA,
+        this.gl.UNSIGNED_BYTE,
+        null,
+      );
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+      this.videoTextureBridges.set(edgeId, {
+        sourceNodeId,
+        sourcePortId,
+        analyser,
+        sampleRate,
+        buf,
+        renderer: null,
+        edge,
+        drawFrame,
+        customCanvas: canvas,
+        customCtx2d: ctx2d,
+        customTexture: tex,
+      });
+    } else {
+      const renderer = createWaveformRenderer(this.gl, this.res.width, this.res.height, {
+        sampleCount: bufLen,
+      });
+      this.videoTextureBridges.set(edgeId, {
+        sourceNodeId,
+        sourcePortId,
+        analyser,
+        sampleRate,
+        buf,
+        renderer,
+        edge,
+      });
+    }
     // Touch topo so an immediately-following step() sees the bridge.
     this.topoStale = true;
     // Boot the rAF loop if it isn't running — bridges are sources too.
@@ -461,7 +558,10 @@ export class VideoEngine implements DomainEngine {
   removeVideoTextureBridge(edgeId: string): void {
     const entry = this.videoTextureBridges.get(edgeId);
     if (!entry) return;
-    try { entry.renderer.dispose(); } catch { /* */ }
+    try { entry.renderer?.dispose(); } catch { /* */ }
+    if (entry.customTexture) {
+      try { this.gl.deleteTexture(entry.customTexture); } catch { /* */ }
+    }
     this.videoTextureBridges.delete(edgeId);
     this.topoStale = true;
   }
@@ -469,9 +569,32 @@ export class VideoEngine implements DomainEngine {
   private tickVideoTextureBridges(): void {
     if (this.videoTextureBridges.size === 0) return;
     for (const bridge of this.videoTextureBridges.values()) {
-      bridge.analyser.getFloatTimeDomainData(bridge.buf);
-      bridge.renderer.update(bridge.buf);
-      bridge.renderer.draw(this.res.width, this.res.height);
+      if (bridge.drawFrame && bridge.customCanvas && bridge.customTexture) {
+        // Module-driven 2D draw path. The module reads its own state
+        // (analysers, params); we just hand it the canvas and upload
+        // the result. texSubImage2D from a canvas is the WebGL2-blessed
+        // path for canvas → texture transfer (no manual ImageData).
+        try { bridge.drawFrame(bridge.customCanvas); } catch { /* don't crash the engine on a bad module draw */ }
+        this.gl.bindTexture(this.gl.TEXTURE_2D, bridge.customTexture);
+        // UNPACK_FLIP_Y_WEBGL flips the canvas's top-down 2D coords to
+        // match the bottom-up GL convention so the trace renders the
+        // right way up downstream. We restore the default afterwards
+        // so other modules' texture uploads aren't affected.
+        this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, true);
+        this.gl.texSubImage2D(
+          this.gl.TEXTURE_2D,
+          0,
+          0, 0,
+          this.gl.RGBA,
+          this.gl.UNSIGNED_BYTE,
+          bridge.customCanvas as unknown as TexImageSource,
+        );
+        this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
+      } else if (bridge.renderer) {
+        bridge.analyser.getFloatTimeDomainData(bridge.buf);
+        bridge.renderer.update(bridge.buf);
+        bridge.renderer.draw(this.res.width, this.res.height);
+      }
     }
   }
 
@@ -554,7 +677,11 @@ export class VideoEngine implements DomainEngine {
       const bridgeHits: Array<{ edgeId: string; tex: WebGLTexture }> = [];
       for (const [edgeId, b] of this.videoTextureBridges) {
         if (b.edge.target.nodeId === thisNodeId && b.edge.target.portId === inputId) {
-          bridgeHits.push({ edgeId, tex: b.renderer.texture });
+          // Module-driven 2D draw bridges expose their own texture; the
+          // GL-renderer flavor exposes the renderer's. Either is a
+          // standard sampler2D from the consumer module's POV.
+          const tex = b.customTexture ?? b.renderer?.texture ?? null;
+          if (tex) bridgeHits.push({ edgeId, tex });
         }
       }
       if (bridgeHits.length > 0) {

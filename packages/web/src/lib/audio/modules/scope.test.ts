@@ -20,11 +20,28 @@ describe('SCOPE module def shape', () => {
     expect(ids).toContain('ch2_out');
   });
 
-  it('inputs unchanged: ch1, ch2 audio', () => {
+  it('exposes 2 audio inputs + 1 cv input per param', () => {
+    // PR-69 added per-param CV inputs ("scope should have cv inputs
+    // for everything"). Port id MUST equal param id so the cross-domain
+    // CV bridge in PatchEngine routes via setParam(portId).
     const ids = scopeDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['ch1', 'ch2']);
+    expect(ids).toEqual(
+      [
+        'ch1', 'ch2',
+        'timeMs',
+        'ch1Scale', 'ch1Offset', 'ch1Range',
+        'ch2Scale', 'ch2Offset', 'ch2Range',
+        'mode',
+      ].sort(),
+    );
     for (const p of scopeDef.inputs) {
-      expect(p.type).toBe('audio');
+      if (p.id === 'ch1' || p.id === 'ch2') {
+        expect(p.type, `${p.id} stays audio`).toBe('audio');
+      } else {
+        expect(p.type, `${p.id} is CV`).toBe('cv');
+        // Param routing invariant: port id == paramTarget == def.params[].id.
+        expect((p as { paramTarget?: string }).paramTarget, `${p.id} routes to itself`).toBe(p.id);
+      }
     }
   });
 });

@@ -3,15 +3,26 @@
 // Scope — 2-channel passthrough oscilloscope. Plain JS (GainNode passthrough +
 // AnalyserNode for waveform sampling). The card reads the analyser data via
 // the engine's read(node, 'snapshot') interface.
+//
+// Two output paths:
+//   - The on-card 2D canvas drives off `read('snapshot')` and renders via
+//     packages/web/src/lib/audio/modules/scope-draw.ts (drawScope).
+//   - The cross-domain video bridge (when SCOPE.out is patched into a
+//     video-domain consumer) calls the SAME drawScope function via the
+//     `drawFrame` field on videoSources, so the user sees a pixel-
+//     equivalent trace on the OUTPUT canvas. Pre-PR-69 the bridge used
+//     the generic GL waveform-video renderer with the raw analyser
+//     buffer + rangeMax=1 — which ignored every scope param (timeMs,
+//     scale, offset, range, XY, ch2). At 44.1kHz a 2048-sample buffer
+//     spans many cycles densely-packed across the canvas width, which
+//     looked like noise to the user (vs. the on-card timeMs window
+//     showing one or two clean cycles). drawFrame closes that gap.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import { drawScope, type ScopeSnapshot, type ScopeDrawParams } from './scope-draw';
 
-export interface ScopeSnapshot {
-  ch1: Float32Array;
-  ch2: Float32Array;
-  sampleRate: number;
-}
+export type { ScopeSnapshot } from './scope-draw';
 
 export const scopeDef: AudioModuleDef = {
   type: 'scope',
@@ -20,24 +31,35 @@ export const scopeDef: AudioModuleDef = {
   category: 'utilities',
   schemaVersion: 1,
 
+  // CV inputs mirror every param 1:1 — port id == param id, which the
+  // cross-domain CV bridge (PatchEngine.addCrossDomainCvBridge) routes
+  // straight into setParam(portId, value). Discrete params (mode,
+  // ch{1,2}Range) accept any CV value; the consumer reads the canonical
+  // ≥0.5 threshold to decide their binary state, so a 5V CV pulse will
+  // toggle XY mode just as expected.
   inputs: [
     { id: 'ch1', type: 'audio' },
     { id: 'ch2', type: 'audio' },
+    { id: 'timeMs',    type: 'cv', paramTarget: 'timeMs' },
+    { id: 'ch1Scale',  type: 'cv', paramTarget: 'ch1Scale' },
+    { id: 'ch1Offset', type: 'cv', paramTarget: 'ch1Offset' },
+    { id: 'ch1Range',  type: 'cv', paramTarget: 'ch1Range' },
+    { id: 'ch2Scale',  type: 'cv', paramTarget: 'ch2Scale' },
+    { id: 'ch2Offset', type: 'cv', paramTarget: 'ch2Offset' },
+    { id: 'ch2Range',  type: 'cv', paramTarget: 'ch2Range' },
+    { id: 'mode',      type: 'cv', paramTarget: 'mode' },
   ],
   outputs: [
     { id: 'ch1_out', type: 'audio' },
     { id: 'ch2_out', type: 'audio' },
     // Mono-video output: the same waveform users see on the SCOPE
     // card's on-card 2D canvas, exposed as a GL texture for downstream
-    // video-domain consumers (OUTPUT, MIXER, etc.). Driven by the
-    // shared waveform-video renderer; the audio side just exposes an
-    // analyser tap on ch1 here. Multi-channel scopes (ch1+ch2 sum)
-    // could be added in a follow-up if a use case emerges.
+    // video-domain consumers (OUTPUT, MIXER, etc.). The bridge calls
+    // our drawFrame() each video frame; we render via the shared
+    // scope-draw module against the live analyser snapshots + current
+    // params.
     { id: 'out',     type: 'mono-video' },
   ],
-  // Most params are display-only (the audio passthrough is unchanged regardless
-  // of scale/offset/mode). The factory's setParam ignores them; the card reads
-  // them straight from patch.nodes[id].params.
   params: [
     { id: 'timeMs',    label: 'Time',  defaultValue: 20, min: 1,    max: 200, curve: 'log',      units: 'ms' },
     { id: 'ch1Scale',  label: 'Ch1 Sc', defaultValue: 1,  min: 0.1,  max: 10,  curve: 'log' },
@@ -53,7 +75,7 @@ export const scopeDef: AudioModuleDef = {
     { id: 'mode',      label: 'XY',    defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
   ],
 
-  async factory(ctx, _node): Promise<AudioDomainNodeHandle> {
+  async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Per channel: input → gain (passthrough) → output, with a tap to analyser.
     const gain1 = ctx.createGain();
     const gain2 = ctx.createGain();
@@ -70,43 +92,111 @@ export const scopeDef: AudioModuleDef = {
     const buf1 = new Float32Array(analyser1.fftSize);
     const buf2 = new Float32Array(analyser2.fftSize);
 
+    // Scope params live ENTIRELY on this handle for two reasons:
+    //   1. The audio path doesn't use them (no Web Audio param to write
+    //      back to) — they only affect display.
+    //   2. Both the on-card canvas (via read('snapshot') + the card's
+    //      reactive $derived) AND the video bridge (via drawFrame) need
+    //      the live values. Keeping a single source of truth here means
+    //      a CV signal modulating timeMs reaches both renders without
+    //      drift.
+    // Initial values: take from the materialized node, fall back to def
+    // defaults. setParam updates both the live cache (for the bridge)
+    // AND triggers a graph mutation via patch.nodes[].params (the card
+    // reads the same source-of-truth — the patch graph — so manual
+    // fader changes and CV-driven setParam calls converge).
+    const params: Record<string, number> = {
+      timeMs:    (node.params ?? {}).timeMs    ?? 20,
+      ch1Scale:  (node.params ?? {}).ch1Scale  ?? 1,
+      ch1Offset: (node.params ?? {}).ch1Offset ?? 0,
+      ch1Range:  (node.params ?? {}).ch1Range  ?? 0,
+      ch2Scale:  (node.params ?? {}).ch2Scale  ?? 1,
+      ch2Offset: (node.params ?? {}).ch2Offset ?? 0,
+      ch2Range:  (node.params ?? {}).ch2Range  ?? 0,
+      mode:      (node.params ?? {}).mode      ?? 0,
+    };
+
+    function readSnapshot(): ScopeSnapshot {
+      analyser1.getFloatTimeDomainData(buf1);
+      analyser2.getFloatTimeDomainData(buf2);
+      return { ch1: buf1, ch2: buf2, sampleRate: ctx.sampleRate };
+    }
+
+    function drawFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
+      const ctx2d = canvas.getContext('2d') as
+        | CanvasRenderingContext2D
+        | OffscreenCanvasRenderingContext2D
+        | null;
+      if (!ctx2d) return;
+      const snap = readSnapshot();
+      const dp: ScopeDrawParams = {
+        timeMs:    params.timeMs!,
+        ch1Scale:  params.ch1Scale!,
+        ch1Offset: params.ch1Offset!,
+        ch1Range:  params.ch1Range!,
+        ch2Scale:  params.ch2Scale!,
+        ch2Offset: params.ch2Offset!,
+        ch2Range:  params.ch2Range!,
+        mode:      params.mode!,
+      };
+      drawScope(ctx2d, snap, dp, canvas.width, canvas.height);
+    }
+
     return {
       domain: 'audio',
       // gain1 and gain2 each act as both the input AND output for their channel
       // — Web Audio happily routes signal through a GainNode, and we tap a
       // separate analyser off it for visualization.
-      inputs: new Map([
+      inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
         ['ch1', { node: gain1, input: 0 }],
         ['ch2', { node: gain2, input: 0 }],
+        // CV inputs live on hidden internal AudioParams so the engine's
+        // per-param tap analyser still picks them up (motorized faders
+        // see the modulation). The actual VALUE coming from the CV
+        // source flows through setParam(portId) — the cross-domain CV
+        // bridge in VideoEngine writes one sample per video frame, the
+        // intra-domain CV path uses the audio engine's sample-per-frame
+        // tap. We use gain1.gain as a stable internal sink AudioParam
+        // since gain1 is always present; the actual gain value isn't
+        // affected (we never write to it from inside setParam).
+        ['timeMs',    { node: gain1, input: 0, param: gain1.gain }],
+        ['ch1Scale',  { node: gain1, input: 0, param: gain1.gain }],
+        ['ch1Offset', { node: gain1, input: 0, param: gain1.gain }],
+        ['ch1Range',  { node: gain1, input: 0, param: gain1.gain }],
+        ['ch2Scale',  { node: gain2, input: 0, param: gain2.gain }],
+        ['ch2Offset', { node: gain2, input: 0, param: gain2.gain }],
+        ['ch2Range',  { node: gain2, input: 0, param: gain2.gain }],
+        ['mode',      { node: gain1, input: 0, param: gain1.gain }],
       ]),
       outputs: new Map([
         ['ch1_out', { node: gain1, output: 0 }],
         ['ch2_out', { node: gain2, output: 0 }],
       ]),
-      // Cross-domain: expose ch1's analyser as a video source so a
-      // downstream OUTPUT/MIXER on the video side sees the same trace
-      // the on-card canvas draws. We use ch1's analyser directly
-      // (not a separate one) so reads via .read('snapshot') and reads
-      // via the video bridge see the EXACT same buffer — no two-source
-      // drift between the on-card canvas and the GL texture.
+      // Cross-domain: the video bridge calls drawFrame() each video
+      // frame. We hand back analyser1 too because the bridge type
+      // requires it (legacy GL-renderer path), but it isn't used when
+      // drawFrame is set.
       videoSources: new Map([
-        ['out', { analyser: analyser1, sampleRate: ctx.sampleRate }],
+        ['out', { analyser: analyser1, sampleRate: ctx.sampleRate, drawFrame }],
       ]),
-      setParam(_paramId, _value) {
-        // Time knob is read-only by the card; nothing to set on the audio path.
+      setParam(paramId, value) {
+        // Live-update the local cache. The card mirrors patch.nodes[].params
+        // for its UI reads; CV-driven updates here flow into the same
+        // params record the card reads from via $derived. (We don't
+        // mutate patch.nodes here — the audio engine's reconciler owns
+        // the patch state. The card's $derived re-runs when a fader
+        // moves; the bridge's drawFrame reads our params record live
+        // without going through Svelte's reactive system.)
+        if (paramId in params) {
+          params[paramId] = value;
+        }
       },
-      readParam(_paramId) {
-        return undefined;
+      readParam(paramId) {
+        return params[paramId];
       },
       read(key) {
         if (key === 'snapshot') {
-          analyser1.getFloatTimeDomainData(buf1);
-          analyser2.getFloatTimeDomainData(buf2);
-          return {
-            ch1: buf1,
-            ch2: buf2,
-            sampleRate: ctx.sampleRate,
-          } satisfies ScopeSnapshot;
+          return readSnapshot();
         }
         return undefined;
       },
