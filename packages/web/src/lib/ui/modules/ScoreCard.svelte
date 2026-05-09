@@ -3,9 +3,21 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import { useEngine } from '$lib/audio/engine-context';
+  import {
+    handleSlotClick,
+    readSlots,
+    readPendingMode,
+    readQueuedSlot,
+    readLastLoadedSlot,
+    setPendingMode,
+    setQueuedSlot,
+    type TransportCardDeps,
+  } from '$lib/audio/modules/transport-card';
+  import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
 
   const SCORE_INPUTS: PortDescriptor[] = [
     { id: 'clock',   label: 'CLOCK IN', cable: 'gate' },
@@ -13,6 +25,12 @@
     { id: 'decay',   cable: 'cv' },
     { id: 'sustain', cable: 'cv' },
     { id: 'release', cable: 'cv' },
+    { id: 'play_cv',   label: 'PLAY GATE',     cable: 'gate' },
+    { id: 'reset_cv',  label: 'RESET GATE',    cable: 'gate' },
+    { id: 'queue1_cv', label: 'PLAY QUEUE 1',  cable: 'gate' },
+    { id: 'queue2_cv', label: 'PLAY QUEUE 2',  cable: 'gate' },
+    { id: 'queue3_cv', label: 'PLAY QUEUE 3',  cable: 'gate' },
+    { id: 'queue4_cv', label: 'PLAY QUEUE 4',  cable: 'gate' },
   ];
   const SCORE_OUTPUTS: PortDescriptor[] = [
     { id: 'pitch', cable: 'pitch' },
@@ -632,6 +650,96 @@
     return out;
   }
 
+  // ---------------- Quicksave + transport ----------------
+
+  // Read directly from patch.nodes[id] inside each snapshot/apply call so
+  // we capture LIVE state (Svelte 5 closures over $derived/$props snapshot
+  // their initial value otherwise — see svelte.dev/e/state_referenced_locally).
+  const transportDeps: TransportCardDeps = {
+    nodeId: id,
+    patch,
+    transact: (fn) => ydoc.transact(fn),
+    snapshot: (): Snapshot => {
+      const t = patch.nodes[id];
+      const raw = (t?.data as Record<string, unknown> | undefined) ?? {};
+      const notes = (Array.isArray(raw.notes) ? (raw.notes as ScoreNote[]) : []).map((n) => ({ ...n }));
+      const dynamics = (Array.isArray(raw.dynamics) ? (raw.dynamics as DynamicMarker[]) : []).map((d) => ({ ...d }));
+      const ties = (Array.isArray(raw.ties) ? (raw.ties as Tie[]) : []).map((tt) => ({ ...tt }));
+      const keySignature = typeof raw.keySignature === 'number' ? (raw.keySignature as number) : 0;
+      const pages =
+        typeof raw.pages === 'number' ? Math.max(1, Math.min(MAX_PAGES, raw.pages as number)) : DEFAULT_PAGES;
+      const loop = typeof raw.loop === 'boolean' ? (raw.loop as boolean) : false;
+      const sb = raw.stopBar as { bar?: number; tick?: number } | undefined;
+      const stopBar =
+        sb && typeof sb === 'object' && typeof sb.bar === 'number' && typeof sb.tick === 'number'
+          ? { bar: sb.bar, tick: sb.tick }
+          : undefined;
+      return {
+        notes,
+        dynamics,
+        ties,
+        keySignature,
+        pages,
+        loop,
+        stopBar,
+        bpm: t?.params.bpm ?? 120,
+        attack: t?.params.attack ?? 0.005,
+        decay: t?.params.decay ?? 0.1,
+        sustain: t?.params.sustain ?? 0.7,
+        release: t?.params.release ?? 0.3,
+      };
+    },
+    applySnapshot: (snap: Snapshot) => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      // Deep-clone array/object fields so we don't reassign Y-tree references
+      // (the snapshot may itself live inside slots[N], and Yjs forbids the
+      // same Y.Map appearing at two places — "Not supported: reassigning
+      // object that already occurs in the tree.").
+      ydoc.transact(() => {
+        if (!t.data) t.data = {};
+        const td = t.data as Record<string, unknown>;
+        if (Array.isArray(snap.notes)) {
+          td.notes = (snap.notes as ScoreNote[]).map((n) => ({ ...n }));
+        }
+        if (Array.isArray(snap.dynamics)) {
+          td.dynamics = (snap.dynamics as DynamicMarker[]).map((d) => ({ ...d }));
+        }
+        if (Array.isArray(snap.ties)) {
+          td.ties = (snap.ties as Tie[]).map((tt) => ({ ...tt }));
+        }
+        if (typeof snap.keySignature === 'number') td.keySignature = snap.keySignature;
+        if (typeof snap.pages === 'number') td.pages = snap.pages;
+        if (typeof snap.loop === 'boolean') td.loop = snap.loop;
+        if (snap.stopBar && typeof snap.stopBar === 'object') {
+          const sb = snap.stopBar as { bar: number; tick: number };
+          td.stopBar = { bar: sb.bar, tick: sb.tick };
+        } else if ('stopBar' in snap) {
+          td.stopBar = undefined;
+        }
+        for (const k of ['bpm', 'attack', 'decay', 'sustain', 'release'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') t.params[k] = v;
+        }
+      });
+    },
+  };
+
+  let slotsState = $derived((void cardVersion, readSlots(node)));
+  let pendingMode = $derived<PendingMode>((void cardVersion, readPendingMode(node)));
+  let queuedSlot = $derived<SlotKey | null>((void cardVersion, readQueuedSlot(node)));
+  let lastLoadedSlot = $derived<SlotKey | null>((void cardVersion, readLastLoadedSlot(node)));
+
+  function onSetMode(m: PendingMode) { setPendingMode(transportDeps, m); }
+  function onSlotClick(k: SlotKey) { handleSlotClick(transportDeps, k); }
+  function onPlayToggle() { togglePlay(); }
+  function onReset() {
+    const wasPlaying = isPlaying;
+    setQueuedSlot(transportDeps, null);
+    set('isPlaying')(0);
+    if (wasPlaying) requestAnimationFrame(() => set('isPlaying')(1));
+  }
+
   // Bars on the active page only, for note rendering.
   let visibleNotes = $derived(scoreData.notes.filter((n) => isBarOnPage(n.bar)));
   let visibleDynamics = $derived(scoreData.dynamics.filter((d) => isBarOnPage(d.bar)));
@@ -900,6 +1008,19 @@
     <Fader value={sustain} min={0}     max={1}   defaultValue={0.7}   label="S"   curve="linear" onchange={set('sustain')} readLive={live('sustain')} />
     <Fader value={release} min={0.001} max={10}  defaultValue={0.3}   label="R"   curve="log"    onchange={set('release')} readLive={live('release')} />
   </div>
+
+  <QuicksaveControls
+    nodeId={id}
+    slots={slotsState}
+    {pendingMode}
+    {queuedSlot}
+    {lastLoadedSlot}
+    {isPlaying}
+    {onSetMode}
+    {onSlotClick}
+    {onPlayToggle}
+    {onReset}
+  />
 
   <!-- Page navigation (lower right) -->
   <div class="page-nav" data-testid={`score-page-nav-${id}`}>

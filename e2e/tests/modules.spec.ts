@@ -34,7 +34,10 @@ const MODULES: ModuleSpec[] = [
   // ch1Range / ch2Scale / ch2Offset / ch2Range / mode) + 2 audio out
   // + 1 mono-video out = 13.
   { type: 'scope',        cardClass: 'svelte-flow__node-scope',        handleCount: 13, containsLabel: 'Scope' },
-  { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 4, containsLabel: 'Sequencer' },
+  // Sequencer: 1 clock-in + 6 transport CV inputs (play_cv, reset_cv,
+  // queue1..4_cv) + 3 outputs (pitch, gate, clock-out) = 10. Was 4 before
+  // PR feat/sequencer-transport-quicksave added the shared transport ports.
+  { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 10, containsLabel: 'Sequencer' },
   { type: 'wavetableVco', cardClass: 'svelte-flow__node-wavetableVco', handleCount: 4, containsLabel: 'Wavetable VCO' },
   { type: 'lfo',          cardClass: 'svelte-flow__node-lfo',          handleCount: 7, containsLabel: 'LFO' },
   // Cartesian: 4 inputs (clock, x cv, y cv, lfo clock) + 5 outputs (pitch,
@@ -62,8 +65,10 @@ const MODULES: ModuleSpec[] = [
   // Post-PatchPanel-refactor every def-declared port renders a Handle
   // (visually hidden until the panel is hovered open).
   { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 59, containsLabel: 'MIXMSTRS' },
-  // SCORE: 5 inputs (clock + A/D/S/R cv) + 4 outputs (pitch, gate, env, clock) = 9.
-  { type: 'score',        cardClass: 'svelte-flow__node-score',        handleCount: 9, containsLabel: 'Score' },
+  // SCORE: 5 inputs (clock + A/D/S/R cv) + 6 transport CV inputs (play_cv,
+  // reset_cv, queue1..4_cv) + 4 outputs (pitch, gate, env, clock) = 15.
+  // Was 9 before PR feat/sequencer-transport-quicksave added transport ports.
+  { type: 'score',        cardClass: 'svelte-flow__node-score',        handleCount: 15, containsLabel: 'Score' },
   // VIZVCO: 3 inputs (pitch, fm, foldAmount cv) + 5 outputs (saw, square, triangle, sine, scope mono-video) = 8.
   { type: 'vizvco',       cardClass: 'svelte-flow__node-vizvco',       handleCount: 8, containsLabel: 'VIZVCO' },
   // WAVVIZ: 4 inputs (pitch, fm, wavePos cv, foldAmount cv) + 2 outputs (audio, scope mono-video) = 6.

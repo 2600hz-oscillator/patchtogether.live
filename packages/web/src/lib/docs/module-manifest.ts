@@ -405,6 +405,19 @@ function splitTopLevelObjects(body: string): string[] {
 function parsePortList(body: string): ManifestPort[] {
   if (!body.trim()) return [];
   const out: ManifestPort[] = [];
+  // Inline expansion of well-known shared port-array spreads. Keeps the
+  // regex parser simple but lets sequencer-style modules declare the 6
+  // shared transport CV inputs via `...TRANSPORT_CV_PORT_DEFS`.
+  if (/\.\.\.TRANSPORT_CV_PORT_DEFS\b/.test(body)) {
+    out.push(
+      { id: 'play_cv',   type: 'gate' },
+      { id: 'reset_cv',  type: 'gate' },
+      { id: 'queue1_cv', type: 'gate' },
+      { id: 'queue2_cv', type: 'gate' },
+      { id: 'queue3_cv', type: 'gate' },
+      { id: 'queue4_cv', type: 'gate' },
+    );
+  }
   const parts = splitTopLevelObjects(body);
   for (const part of parts) {
     const id = (part.match(/\bid:\s*['"]([^'"]+)['"]/) || [])[1];
@@ -670,6 +683,12 @@ export function buildModuleManifest(
       // both ScopeCard.svelte and the cross-domain video bridge use).
       // Not a ModuleDef.
       if (file.endsWith('-draw.ts')) return false;
+      // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
+      // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
+      // Not a ModuleDef.
+      if (file === 'transport-helpers.ts') return false;
+      if (file === 'transport-cv.ts') return false;
+      if (file === 'transport-card.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));

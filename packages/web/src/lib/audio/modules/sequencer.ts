@@ -23,6 +23,16 @@ import {
   createPolySender,
   voicingToVOct,
 } from '$lib/audio/poly';
+import {
+  createTransportCv,
+  pickQueuedSlotFromEvents,
+  TRANSPORT_CV_PORT_DEFS,
+} from './transport-cv';
+import {
+  coerceSlots,
+  coerceSlotKey,
+  type SlotKey,
+} from './transport-helpers';
 
 export interface Step {
   on: boolean;
@@ -103,6 +113,11 @@ export const sequencerDef: AudioModuleDef = {
     // External clock: when patched, the sequencer advances on incoming rising
     // edges instead of its internal BPM. Disconnect to fall back to BPM.
     { id: 'clock', type: 'gate' },
+    // Shared transport CV inputs (PR feat/sequencer-transport-quicksave):
+    //   play_cv      → rising edge toggles isPlaying
+    //   reset_cv     → rising edge resets stepIndex to 0
+    //   queue1..4_cv → rising edge sets node.data.queuedSlot to N
+    ...TRANSPORT_CV_PORT_DEFS,
   ],
   outputs: [
     // Stage-1 polyphony: pitch is a 10-channel polyPitchGate cable. When a
@@ -160,6 +175,11 @@ export const sequencerDef: AudioModuleDef = {
     let lastClockSample = 0;
     let lastClockSampleTime = ctx.currentTime;
     const CLOCK_THRESHOLD = 0.5;
+
+    // Shared transport CV inputs (play_cv, reset_cv, queue{1..4}_cv).
+    const transportCv = createTransportCv(ctx);
+    let lastTransportPollTime = ctx.currentTime;
+    let totalSequenceEnds = 0;
 
     function emitClockPulse(atTime: number) {
       clockOutSrc.offset.setValueAtTime(1, atTime);
@@ -271,10 +291,84 @@ export const sequencerDef: AudioModuleDef = {
       }
     }
 
+    /** Drain the transport CV inputs + dispatch effects. Returns the
+     *  isPlaying value AFTER any play_cv toggle (so the caller's
+     *  subsequent prev/cur transition logic stays correct). */
+    function pollTransportCv(): boolean {
+      const nowAt = ctx.currentTime;
+      const elapsed = nowAt - lastTransportPollTime;
+      lastTransportPollTime = nowAt;
+      const ev = transportCv.drain(elapsed);
+      const live = livePatch.nodes[nodeId];
+      let isPlaying = readParam('isPlaying', 0) >= 0.5;
+      // Each play_cv rising edge toggles isPlaying. In practice you'd see
+      // one edge per gate pulse; multiple edges in one tick collapse to
+      // an overall toggle (XOR).
+      if (ev.play % 2 === 1) {
+        isPlaying = !isPlaying;
+        if (live?.params) live.params.isPlaying = isPlaying ? 1 : 0;
+      }
+      if (ev.reset > 0) {
+        // Reset the step counter; next clock tick starts at step 0.
+        stepIndex = 0;
+        currentStep = 0;
+        nextStepTime = ctx.currentTime + 0.05;
+      }
+      const queued = pickQueuedSlotFromEvents(ev);
+      if (queued !== null && live) {
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).queuedSlot = queued;
+      }
+      return isPlaying;
+    }
+
+    /** Apply the queued slot's snapshot to node.data + node.params, and
+     *  reset the step counter. Called on sequence-end when queuedSlot is
+     *  set. The snapshot shape is module-specific; for the Sequencer it
+     *  carries `steps` + a few params. */
+    function maybeApplyQueuedSlot(): boolean {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return false;
+      const data = live.data as Record<string, unknown> | undefined;
+      const queuedRaw = data?.queuedSlot;
+      const queued = coerceSlotKey(queuedRaw);
+      if (!queued) return false;
+      const slots = coerceSlots(data?.slots);
+      const snap = slots[queued];
+      if (!snap) {
+        // Slot is empty — drop the queue.
+        if (data) data.queuedSlot = null;
+        return false;
+      }
+      if (!live.data) live.data = {};
+      const d = live.data as Record<string, unknown>;
+      // Snapshot's `steps` flow into data.steps; module-specific param
+      // keys flow into params. Deep-clone steps because the snapshot is
+      // still a Y-tree resident at slots[N] and Yjs forbids reassigning
+      // the same Y.Map at two paths.
+      if (Array.isArray(snap.steps)) {
+        d.steps = (snap.steps as Array<Record<string, unknown>>).map((s) => ({ ...s }));
+      }
+      if (live.params) {
+        for (const k of ['bpm', 'length', 'octave', 'gateLength', 'swing'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') live.params[k] = v;
+        }
+      }
+      d.lastLoadedSlot = queued;
+      d.queuedSlot = null;
+      // Reset position so the next emit starts at step 0 of the new pattern.
+      stepIndex = 0;
+      currentStep = 0;
+      nextStepTime = ctx.currentTime + 0.005;
+      return true;
+    }
+
     function tick() {
       if (!alive) return;
       try {
-        const isPlaying = readParam('isPlaying', 0) >= 0.5;
+        // Drain transport CV first; play_cv may have just toggled isPlaying.
+        const isPlaying = pollTransportCv();
         const externalClock = isClockInConnected();
 
         if (isPlaying && !prevPlaying) {
@@ -288,6 +382,8 @@ export const sequencerDef: AudioModuleDef = {
           // Reset clock-in detector so the first observed pulse counts.
           lastClockSample = 0;
           lastClockSampleTime = ctx.currentTime;
+          transportCv.resetEdges();
+          lastTransportPollTime = ctx.currentTime;
         } else if (!isPlaying && prevPlaying) {
           // Transitioned to stopped: cancel pending events, force gate low
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
@@ -323,7 +419,19 @@ export const sequencerDef: AudioModuleDef = {
               // Rising edge — schedule the step a hair in the future to give
               // the audio thread a render quantum of headroom.
               emitStep(stepIndex, nowAt + 0.005, stepDurForGate);
-              stepIndex = (stepIndex + 1) % length;
+              const nextIdx = (stepIndex + 1) % length;
+              if (nextIdx === 0) {
+                // Wrap: sequence end. Try to apply any queued slot before
+                // advancing — the new pattern's step 0 will fire on the
+                // next clock pulse.
+                totalSequenceEnds++;
+                if (maybeApplyQueuedSlot()) {
+                  // stepIndex was reset to 0 by the apply; skip the
+                  // normal advance.
+                  continue;
+                }
+              }
+              stepIndex = nextIdx;
               currentStep = stepIndex;
               totalAdvances++;
             }
@@ -343,8 +451,22 @@ export const sequencerDef: AudioModuleDef = {
 
             emitStep(stepIndex, nextStepTime, stepDur);
 
-            nextStepTime += stepDur;
-            stepIndex = (stepIndex + 1) % length;
+            const nextIdx = (stepIndex + 1) % length;
+            const nextStartTime = nextStepTime + stepDur;
+            if (nextIdx === 0) {
+              totalSequenceEnds++;
+              if (maybeApplyQueuedSlot()) {
+                // Snapshot was applied; the next step time we want to
+                // schedule is the same boundary, but for the new pattern's
+                // step 0. maybeApplyQueuedSlot resets nextStepTime to
+                // ctx.currentTime + tiny, so re-anchor it to the natural
+                // step boundary instead.
+                nextStepTime = nextStartTime;
+                continue;
+              }
+            }
+            nextStepTime = nextStartTime;
+            stepIndex = nextIdx;
             currentStep = stepIndex;
             totalAdvances++;
           }
@@ -359,9 +481,16 @@ export const sequencerDef: AudioModuleDef = {
     let totalAdvances = 0; // monotonic — useful for tests asserting "did we step N times"
     timeoutId = setTimeout(tick, TICK_MS);
 
+    const inputsMap = new Map<string, { node: AudioNode; input: number }>([
+      ['clock', { node: clockInGain, input: 0 }],
+    ]);
+    for (const [id, entry] of transportCv.inputs) {
+      inputsMap.set(id, entry);
+    }
+
     return {
       domain: 'audio',
-      inputs: new Map([['clock', { node: clockInGain, input: 0 }]]),
+      inputs: inputsMap,
       outputs: new Map([
         // Pitch is now a 10-channel polyPitchGate. Backward-compat with mono
         // pitch sinks is handled in engine.addEdge via resolveConnection().
@@ -381,6 +510,7 @@ export const sequencerDef: AudioModuleDef = {
       read(key) {
         if (key === 'currentStep') return currentStep;
         if (key === 'totalAdvances') return totalAdvances;
+        if (key === 'totalSequenceEnds') return totalSequenceEnds;
         // V/oct currently emitted on the pitch port (lane 0) — kept for
         // backward compat with existing tests / UI that didn't know about
         // polyphony.
@@ -413,6 +543,7 @@ export const sequencerDef: AudioModuleDef = {
         clockInSilence.disconnect();
         clockInGain.disconnect();
         clockInAnalyser.disconnect();
+        transportCv.dispose();
       },
     };
   },

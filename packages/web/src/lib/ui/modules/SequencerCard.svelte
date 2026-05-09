@@ -4,6 +4,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import {
@@ -18,6 +19,17 @@
   import { parseNoteName } from '$lib/audio/note-entry';
   import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
   import type { ModuleNode } from '$lib/graph/types';
+  import {
+    handleSlotClick,
+    readSlots,
+    readPendingMode,
+    readQueuedSlot,
+    readLastLoadedSlot,
+    setPendingMode,
+    setQueuedSlot,
+    type TransportCardDeps,
+  } from '$lib/audio/modules/transport-card';
+  import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -188,8 +200,79 @@
     return false;
   }
 
+  // ---------------- Quicksave + transport ----------------
+
+  const transportDeps: TransportCardDeps = {
+    nodeId: id,
+    patch,
+    transact: (fn) => ydoc.transact(fn),
+    snapshot: (): Snapshot => {
+      const t = patch.nodes[id];
+      return {
+        steps: readStepsCopy().map((s) => ({ on: s.on, midi: s.midi, chord: s.chord ?? 'mono' })),
+        bpm: t?.params.bpm ?? 120,
+        length: t?.params.length ?? 16,
+        octave: t?.params.octave ?? 0,
+        gateLength: t?.params.gateLength ?? 0.5,
+        swing: t?.params.swing ?? 0,
+      };
+    },
+    applySnapshot: (snap: Snapshot) => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      // Deep-clone steps before reassigning so the same Y.Map doesn't end
+      // up at two paths in the Y.Doc tree (Yjs throws "reassigning object
+      // that already occurs in the tree" otherwise — the snap usually lives
+      // inside slots[N] still).
+      ydoc.transact(() => {
+        if (Array.isArray(snap.steps)) {
+          if (!t.data) t.data = {};
+          (t.data as Record<string, unknown>).steps = (snap.steps as unknown[]).map((s) => {
+            const ns = coerceToSequencerStep(s);
+            return { on: ns.on, midi: ns.midi, chord: ns.chord ?? 'mono' };
+          });
+        }
+        for (const k of ['bpm', 'length', 'octave', 'gateLength', 'swing'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') t.params[k] = v;
+        }
+      });
+    },
+  };
+
+  let slots = $derived((void cardVersion, readSlots(node)));
+  let pendingMode = $derived<PendingMode>((void cardVersion, readPendingMode(node)));
+  let queuedSlot = $derived<SlotKey | null>((void cardVersion, readQueuedSlot(node)));
+  let lastLoadedSlot = $derived<SlotKey | null>((void cardVersion, readLastLoadedSlot(node)));
+
+  function onSetMode(m: PendingMode) { setPendingMode(transportDeps, m); }
+  function onSlotClick(k: SlotKey) { handleSlotClick(transportDeps, k); }
+  function onPlayToggle() { togglePlay(); }
+  function onReset() {
+    // RESET: clear any pending queue, force the engine to step 0 by writing
+    // node.data.queuedSlot=null (no swap) and signaling reset via... the
+    // engine doesn't have a direct "reset" param, but the wrapping logic
+    // observes data.queuedSlot. We toggle isPlaying off→on to nudge the
+    // engine's prevPlaying transition (which resets stepIndex to 0).
+    // Simpler: write isPlaying=0, then back to whatever it was.
+    const wasPlaying = isPlaying;
+    setQueuedSlot(transportDeps, null);
+    set('isPlaying')(0);
+    if (wasPlaying) {
+      // Re-arm play next tick so the engine sees the prev/cur transition
+      // and resets the step counter.
+      requestAnimationFrame(() => set('isPlaying')(1));
+    }
+  }
+
   const inputs: PortDescriptor[] = [
     { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
+    { id: 'play_cv',   label: 'PLAY GATE',     cable: 'gate' },
+    { id: 'reset_cv',  label: 'RESET GATE',    cable: 'gate' },
+    { id: 'queue1_cv', label: 'PLAY QUEUE 1',  cable: 'gate' },
+    { id: 'queue2_cv', label: 'PLAY QUEUE 2',  cable: 'gate' },
+    { id: 'queue3_cv', label: 'PLAY QUEUE 3',  cable: 'gate' },
+    { id: 'queue4_cv', label: 'PLAY QUEUE 4',  cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'pitch', cable: 'polyPitchGate' },
@@ -251,6 +334,19 @@
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear" onchange={set('gateLength')} readLive={live('gateLength')} />
     <Fader value={swing}      min={0}   max={0.75} defaultValue={0}  label="SWG"  curve="linear" onchange={set('swing')}     readLive={live('swing')} />
   </div>
+
+  <QuicksaveControls
+    nodeId={id}
+    {slots}
+    {pendingMode}
+    {queuedSlot}
+    {lastLoadedSlot}
+    {isPlaying}
+    {onSetMode}
+    {onSlotClick}
+    {onPlayToggle}
+    {onReset}
+  />
   </PatchPanel>
 </div>
 

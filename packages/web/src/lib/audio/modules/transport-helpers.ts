@@ -1,0 +1,145 @@
+// packages/web/src/lib/audio/modules/transport-helpers.ts
+//
+// Shared transport + quicksave logic used by Sequencer / DRUMSEQZ / SCORE.
+//
+// Spec: .myrobots/plans/sequencer-transport-and-quicksave.md
+//
+// Three concerns live here:
+//
+// 1. **Slot data shape** — every sequencer-style module persists 4 quicksave
+//    slots in `node.data.slots` ({ '1': snapshot|null, '2': ..., '3': ...,
+//    '4': ... }). The snapshot type is module-specific; this file only
+//    defines the slot envelope + coercion + defaults.
+//
+// 2. **Pending-mode state machine** — the SAVE / LOAD / QUEUE buttons arm
+//    the next 1-4 click. State lives on `node.data.pendingMode` (sync'd
+//    over Y.Doc so collaborators see the armed action), and is consumed
+//    on the slot button press.
+//
+// 3. **Rising-edge detector** — the play_cv / reset_cv / queue{1..4}_cv
+//    inputs all share the same Float32Array → rising-edge scan that the
+//    existing clock_cv input uses. We extract it here so each module's
+//    factory doesn't re-implement it 6 times.
+//
+// All helpers are pure (no AudioContext, no Y.Doc) so vitest runs in a
+// node env without additional plumbing.
+
+export type SlotKey = '1' | '2' | '3' | '4';
+export const SLOT_KEYS: readonly SlotKey[] = ['1', '2', '3', '4'] as const;
+
+/** A snapshot is whatever shape the module wants to persist into a slot.
+ *  We don't care about the inner shape here — just that it's serializable. */
+export type Snapshot = Record<string, unknown>;
+
+export type SlotMap = Record<SlotKey, Snapshot | null>;
+
+/** Pending button-mode (transient): null when idle. */
+export type PendingMode = 'save' | 'load' | 'queue' | null;
+
+/** Default slots for a fresh module — all null. */
+export function defaultSlots(): SlotMap {
+  return { '1': null, '2': null, '3': null, '4': null };
+}
+
+/** Coerce arbitrary input back into a SlotMap. Used both for migration
+ *  (old patches without `slots`) and for runtime reads (collaborator
+ *  edits arrive over the wire as `unknown`). Slots that aren't an object
+ *  (or are arrays / primitives) become null. */
+export function coerceSlots(raw: unknown): SlotMap {
+  const out = defaultSlots();
+  if (!raw || typeof raw !== 'object') return out;
+  const r = raw as Record<string, unknown>;
+  for (const k of SLOT_KEYS) {
+    const v = r[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      out[k] = v as Snapshot;
+    } else {
+      out[k] = null;
+    }
+  }
+  return out;
+}
+
+/** Coerce an arbitrary value into a PendingMode (or null). */
+export function coercePendingMode(raw: unknown): PendingMode {
+  if (raw === 'save' || raw === 'load' || raw === 'queue') return raw;
+  return null;
+}
+
+/** Coerce an arbitrary value into a SlotKey (or null). Accepts numbers. */
+export function coerceSlotKey(raw: unknown): SlotKey | null {
+  if (raw === '1' || raw === '2' || raw === '3' || raw === '4') return raw;
+  if (raw === 1 || raw === 2 || raw === 3 || raw === 4) return String(raw) as SlotKey;
+  return null;
+}
+
+// ---------------- Rising-edge detector ----------------
+
+/**
+ * Returned by `createRisingEdgeDetector`: hold cross-tick state (the last
+ * sample we observed) and a `scan(buffer, fromIdx)` method that returns
+ * how many rising edges crossed the threshold inside [fromIdx, end).
+ *
+ * fromIdx exists because each module's tick observes the analyser's full
+ * 2048-sample ring buffer but only the last `elapsed * sampleRate` samples
+ * are "new" since the previous tick — scanning from anywhere else
+ * double-counts.
+ */
+export interface RisingEdgeDetector {
+  /** Reset cross-tick state (e.g. after PLAY transitions). */
+  reset(): void;
+  /** Scan a window of samples. Returns how many rising edges crossed
+   *  the threshold. Updates internal state to remember the last sample
+   *  so the next call's first comparison uses it. */
+  scan(samples: ArrayLike<number>, fromIdx: number, endIdx: number): number;
+}
+
+export function createRisingEdgeDetector(threshold = 0.5): RisingEdgeDetector {
+  let last = 0;
+  return {
+    reset() {
+      last = 0;
+    },
+    scan(samples, fromIdx, endIdx) {
+      let count = 0;
+      const start = Math.max(0, fromIdx);
+      const end = Math.min(samples.length, endIdx);
+      for (let i = start; i < end; i++) {
+        const cur = samples[i] ?? 0;
+        if (last < threshold && cur >= threshold) {
+          count++;
+        }
+        last = cur;
+      }
+      return count;
+    },
+
+  };
+}
+
+/** Pure rising-edge predicate for unit tests / one-off comparisons. */
+export function isRisingEdge(prev: number, cur: number, threshold = 0.5): boolean {
+  return prev < threshold && cur >= threshold;
+}
+
+// ---------------- Pending-mode state transitions ----------------
+
+/** Result of a click on a slot 1-4 button.
+ *  - 'save'  → write current snapshot into slot N, clear pendingMode
+ *  - 'load'  → apply slot N's snapshot immediately (no step reset),
+ *              clear pendingMode + queuedSlot
+ *  - 'queue' → set queuedSlot = N, clear pendingMode
+ *  - 'noop'  → no pendingMode armed; click is ignored
+ */
+export type SlotClickAction =
+  | { kind: 'save'; slot: SlotKey }
+  | { kind: 'load'; slot: SlotKey }
+  | { kind: 'queue'; slot: SlotKey }
+  | { kind: 'noop' };
+
+export function resolveSlotClick(pending: PendingMode, slot: SlotKey): SlotClickAction {
+  if (pending === 'save') return { kind: 'save', slot };
+  if (pending === 'load') return { kind: 'load', slot };
+  if (pending === 'queue') return { kind: 'queue', slot };
+  return { kind: 'noop' };
+}

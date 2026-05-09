@@ -47,6 +47,15 @@ import {
   type DynamicMarker,
   type Tie,
 } from './score-data';
+import {
+  createTransportCv,
+  pickQueuedSlotFromEvents,
+  TRANSPORT_CV_PORT_DEFS,
+} from './transport-cv';
+import {
+  coerceSlots,
+  coerceSlotKey,
+} from './transport-helpers';
 
 const ADSR_PREFIX = '/ADSR';
 
@@ -87,6 +96,11 @@ export const scoreDef: AudioModuleDef = {
     { id: 'decay', type: 'cv', paramTarget: 'decay' },
     { id: 'sustain', type: 'cv', paramTarget: 'sustain' },
     { id: 'release', type: 'cv', paramTarget: 'release' },
+    // Shared transport CV inputs (PR feat/sequencer-transport-quicksave):
+    //   play_cv      → toggles isPlaying on rising edge
+    //   reset_cv     → resets tickIndex to 0 on rising edge
+    //   queue1..4_cv → queues slot N on rising edge
+    ...TRANSPORT_CV_PORT_DEFS,
   ],
   outputs: [
     { id: 'pitch', type: 'pitch' },
@@ -151,6 +165,11 @@ export const scoreDef: AudioModuleDef = {
     let lastClockSample = 0;
     let lastClockSampleTime = ctx.currentTime;
     const CLOCK_THRESHOLD = 0.5;
+
+    // Shared transport CV inputs (play_cv, reset_cv, queue{1..4}_cv).
+    const transportCv = createTransportCv(ctx);
+    let lastTransportPollTime = ctx.currentTime;
+    let totalSequenceEnds = 0;
 
     function isClockInConnected(): boolean {
       for (const edge of Object.values(livePatch.edges)) {
@@ -307,10 +326,87 @@ export const scoreDef: AudioModuleDef = {
       tiedGateHoldUntilTick = -1;
     }
 
+    /** Drain transport CV and dispatch effects. Returns the CURRENT
+     *  isPlaying value (after any play_cv toggle). */
+    function pollTransportCv(): boolean {
+      const nowAt = ctx.currentTime;
+      const elapsed = nowAt - lastTransportPollTime;
+      lastTransportPollTime = nowAt;
+      const ev = transportCv.drain(elapsed);
+      const live = livePatch.nodes[nodeId];
+      let isPlaying = readParam('isPlaying', 0) >= 0.5;
+      if (ev.play % 2 === 1) {
+        isPlaying = !isPlaying;
+        if (live?.params) live.params.isPlaying = isPlaying ? 1 : 0;
+      }
+      if (ev.reset > 0) {
+        tickIndex = 0;
+        nextStepTime = ctx.currentTime + 0.05;
+      }
+      const queued = pickQueuedSlotFromEvents(ev);
+      if (queued !== null && live) {
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).queuedSlot = queued;
+      }
+      return isPlaying;
+    }
+
+    /** Apply queued slot's snapshot to node.data + node.params. SCORE
+     *  snapshot shape: { notes, dynamics, ties, keySignature, pages,
+     *  loop, stopBar?, bpm, attack, decay, sustain, release }. */
+    function maybeApplyQueuedSlot(): boolean {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return false;
+      const data = live.data as Record<string, unknown> | undefined;
+      const queued = coerceSlotKey(data?.queuedSlot);
+      if (!queued) return false;
+      const slots = coerceSlots(data?.slots);
+      const snap = slots[queued];
+      if (!snap) {
+        if (data) data.queuedSlot = null;
+        return false;
+      }
+      if (!live.data) live.data = {};
+      const d = live.data as Record<string, unknown>;
+      // Deep-clone object/array fields to avoid reassigning Y-tree-resident
+      // objects out of slots[N]. Yjs throws "reassigning object that already
+      // occurs in the tree" otherwise.
+      if (Array.isArray(snap.notes)) {
+        d.notes = (snap.notes as Array<Record<string, unknown>>).map((n) => ({ ...n }));
+      }
+      if (Array.isArray(snap.dynamics)) {
+        d.dynamics = (snap.dynamics as Array<Record<string, unknown>>).map((m) => ({ ...m }));
+      }
+      if (Array.isArray(snap.ties)) {
+        d.ties = (snap.ties as Array<Record<string, unknown>>).map((tt) => ({ ...tt }));
+      }
+      if (typeof snap.keySignature === 'number') d.keySignature = snap.keySignature;
+      if (typeof snap.pages === 'number') d.pages = snap.pages;
+      if (typeof snap.loop === 'boolean') d.loop = snap.loop;
+      if (snap.stopBar && typeof snap.stopBar === 'object') {
+        const sb = snap.stopBar as { bar: number; tick: number };
+        d.stopBar = { bar: sb.bar, tick: sb.tick };
+      } else if ('stopBar' in snap) {
+        d.stopBar = undefined;
+      }
+      if (live.params) {
+        for (const k of ['bpm', 'attack', 'decay', 'sustain', 'release'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') live.params[k] = v;
+        }
+      }
+      d.lastLoadedSlot = queued;
+      d.queuedSlot = null;
+      tickIndex = 0;
+      nextStepTime = ctx.currentTime + 0.005;
+      tiedGateHoldUntilTick = -1;
+      return true;
+    }
+
     function tick() {
       if (!alive) return;
       try {
-        const isPlaying = readParam('isPlaying', 0) >= 0.5;
+        const isPlaying = pollTransportCv();
         const externalClock = isClockInConnected();
 
         if (isPlaying && !prevPlaying) {
@@ -321,6 +417,8 @@ export const scoreDef: AudioModuleDef = {
           tiedGateHoldUntilTick = -1;
           lastClockSample = 0;
           lastClockSampleTime = ctx.currentTime;
+          transportCv.resetEdges();
+          lastTransportPollTime = ctx.currentTime;
         } else if (!isPlaying && prevPlaying) {
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
@@ -353,7 +451,11 @@ export const scoreDef: AudioModuleDef = {
             const cur = clockInBuffer[i] ?? 0;
             if (lastClockSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
               if (tickIndex >= stop16ths) {
-                if (readScoreData(nodeId).loop) {
+                totalSequenceEnds++;
+                if (maybeApplyQueuedSlot()) {
+                  // Pattern swapped + tickIndex reset to 0; emit the
+                  // new pattern's first slot on this very pulse.
+                } else if (readScoreData(nodeId).loop) {
                   tickIndex = 0;
                 } else {
                   // Stop the sequencer.
@@ -376,7 +478,14 @@ export const scoreDef: AudioModuleDef = {
             const bpm = readParam('bpm', 120);
             const slotDur = 60 / bpm / 4;
             if (tickIndex >= stop16ths) {
-              if (readScoreData(nodeId).loop) {
+              totalSequenceEnds++;
+              if (maybeApplyQueuedSlot()) {
+                // tickIndex reset to 0 + nextStepTime nudged forward by the
+                // helper. Re-anchor nextStepTime to the natural slot
+                // boundary so we don't introduce drift.
+                // (helper sets nextStepTime to ctx.currentTime + 0.005;
+                //  the next emitTick call uses that as step-0's at-time.)
+              } else if (readScoreData(nodeId).loop) {
                 tickIndex = 0;
               } else {
                 // Stop and exit the schedule loop.
@@ -399,15 +508,20 @@ export const scoreDef: AudioModuleDef = {
     }
     timeoutId = setTimeout(tick, TICK_MS);
 
+    const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
+      ['clock', { node: clockInGain, input: 0 }],
+      ['attack', { node: adsr, input: 0, param: adsrParams.get(`${ADSR_PREFIX}/attack`)! }],
+      ['decay', { node: adsr, input: 0, param: adsrParams.get(`${ADSR_PREFIX}/decay`)! }],
+      ['sustain', { node: adsr, input: 0, param: adsrParams.get(`${ADSR_PREFIX}/sustain`)! }],
+      ['release', { node: adsr, input: 0, param: adsrParams.get(`${ADSR_PREFIX}/release`)! }],
+    ]);
+    for (const [id, entry] of transportCv.inputs) {
+      inputsMap.set(id, entry);
+    }
+
     return {
       domain: 'audio',
-      inputs: new Map([
-        ['clock', { node: clockInGain, input: 0 }],
-        ['attack', { node: adsr, input: 0, param: adsrParams.get(`${ADSR_PREFIX}/attack`)! }],
-        ['decay', { node: adsr, input: 0, param: adsrParams.get(`${ADSR_PREFIX}/decay`)! }],
-        ['sustain', { node: adsr, input: 0, param: adsrParams.get(`${ADSR_PREFIX}/sustain`)! }],
-        ['release', { node: adsr, input: 0, param: adsrParams.get(`${ADSR_PREFIX}/release`)! }],
-      ]),
+      inputs: inputsMap,
       outputs: new Map([
         ['pitch', { node: pitchSrc, output: 0 }],
         ['gate', { node: gateSrc, output: 0 }],
@@ -427,6 +541,7 @@ export const scoreDef: AudioModuleDef = {
       read(key) {
         if (key === 'currentNoteId') return currentNoteId;
         if (key === 'totalAdvances') return totalAdvances;
+        if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (key === 'pitchVOct') return lastEmittedVOct;
         if (key === 'gateValue') return lastEmittedGate;
         if (key === 'dynamicScale') return lastDynamicScale;
@@ -449,6 +564,7 @@ export const scoreDef: AudioModuleDef = {
         clockInSilence.disconnect();
         dynGain.disconnect();
         adsr.disconnect();
+        transportCv.dispose();
       },
     };
   },
