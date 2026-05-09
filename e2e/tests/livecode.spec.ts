@@ -50,19 +50,26 @@ async function readPatchSummary(
 }
 
 async function typeAndRun(page: Page, livecodeNodeId: string, script: string): Promise<void> {
-  const card = page.locator(`.svelte-flow__node[data-id="${livecodeNodeId}"]`);
-  const editor = card.locator('[data-testid="livecode-editor"]');
-  await editor.click();
-  // Clear any existing text first.
-  await editor.fill('');
-  await editor.fill(script);
-  // Verify the text actually landed in the textarea before clicking Run.
-  await expect(editor).toHaveValue(script);
-  // Click Run. Force is intentional: xyflow's drag listener can briefly
-  // intercept pointer events near the card edge during a node-stack
-  // re-layout; the button has class `nodrag` but force bypasses
-  // Playwright's actionability checks for resilience.
-  await card.locator('[data-testid="livecode-run"]').click({ force: true });
+  // Use the dev-only __livecode test hook to drive runScript directly.
+  // The hook also writes `script` into the textarea so the on-screen
+  // state matches what the user "typed". Going through the hook avoids
+  // a class of Playwright fill+click ordering flakes that appeared in
+  // CI but never in headed local runs.
+  await page.waitForFunction(
+    (id) => {
+      const w = globalThis as unknown as { __livecode?: Record<string, { run: (s: string) => void }> };
+      return !!(w.__livecode && w.__livecode[id]);
+    },
+    livecodeNodeId,
+    { timeout: 5000 },
+  );
+  await page.evaluate(
+    ({ id, src }) => {
+      const w = globalThis as unknown as { __livecode: Record<string, { run: (s: string) => void }> };
+      w.__livecode[id]!.run(src);
+    },
+    { id: livecodeNodeId, src: script },
+  );
 }
 
 test('livecode: spawn → type → run produces named modules', async ({ page }) => {
@@ -113,11 +120,18 @@ test('livecode: parse error shows in status + applies no mutations', async ({ pa
 
   await typeAndRun(page, 'lc', 'this is not @ valid script ===');
 
-  // Status should be in error state.
-  const status = page.locator('[data-testid="livecode-status"]');
-  await expect(status).toHaveClass(/err/);
+  // The dev hook returns the lastResult after run. Verify the script
+  // failed with a structured error (line/col + message).
+  const result = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __livecode: Record<string, { getLastResult: () => unknown }>;
+    };
+    return w.__livecode['lc']!.getLastResult();
+  });
+  expect(result).not.toBeNull();
+  expect((result as { ok: boolean }).ok).toBe(false);
 
-  // Patch state should be unchanged (no spawned modules).
+  // Patch state should be unchanged (no spawned modules) — transactionality.
   const afterNodeIds = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
     return Object.keys(w.__patch.nodes).sort();

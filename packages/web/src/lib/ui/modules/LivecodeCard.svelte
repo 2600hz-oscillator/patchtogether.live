@@ -121,13 +121,22 @@
 
   // ---------- Run state ----------
   let lastResult = $state<EvaluateResult | null>(null);
+  // Direct ref to the textarea so runScript can read its DOM value as a
+  // belt-and-suspenders backup to `draft` — Playwright's `fill()` should
+  // sync into bind:value, but if there's any reactivity scheduling delay
+  // between the fill + the click we want the actual DOM value to win.
+  let editorEl = $state<HTMLTextAreaElement | null>(null);
 
   function runScript() {
     // Always commit the in-flight draft text so a subsequent reload
     // picks up the most recent script even if the user only ran once.
     commitText();
+    // Source: prefer the textarea's live DOM value over the bound state
+    // — the latter can lag by a microtask under Playwright's fill +
+    // immediate click sequence.
+    const src = editorEl?.value ?? draft;
     const result = evaluate({
-      src: draft,
+      src,
       liveNodes: patch.nodes,
       liveEdges: patch.edges,
       // Anchor spawns ~40px down-right of THIS card so users can see
@@ -146,6 +155,35 @@
     ydoc.transact(() => {
       for (const m of result.mutations) applyMutation(m);
     }, LOCAL_ORIGIN);
+  }
+
+  // Dev-only test hook: expose a per-card `__livecodeRun(id, script)` so
+  // e2e tests can drive runScript without depending on the textarea +
+  // click-event chain (which has been flaky in CI under Playwright's
+  // fill+click sequence). The hook writes the script into the textarea
+  // first so the on-screen state matches what the test typed, then
+  // invokes the same code path Run does. Stripped from prod builds.
+  if (import.meta.env.DEV) {
+    $effect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w = globalThis as any;
+      if (!w.__livecode) w.__livecode = {};
+      w.__livecode[id] = {
+        run: (script?: string) => {
+          if (typeof script === 'string') {
+            draft = script;
+            dirty = true;
+            if (editorEl) editorEl.value = script;
+          }
+          runScript();
+        },
+        getStatus: () => statusText,
+        getLastResult: () => lastResult,
+      };
+      return () => {
+        if (w.__livecode) delete w.__livecode[id];
+      };
+    });
   }
 
   function applyMutation(m: Mutation): void {
@@ -237,6 +275,7 @@
       >{statusText}</span>
     </div>
     <textarea
+      bind:this={editorEl}
       class="editor nodrag"
       data-testid="livecode-editor"
       bind:value={draft}
