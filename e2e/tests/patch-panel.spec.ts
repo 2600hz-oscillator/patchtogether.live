@@ -138,6 +138,129 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     expect(labelTexts.length).toBe(57);
   });
 
+  test('two-column layout: inputs render left, outputs render right (ADSR)', async ({ page }) => {
+    // The two-column open-state layout splits ports across two visible
+    // grid columns: inputs on the left, outputs on the right. Both
+    // columns are testid-tagged so positional assertions don't depend
+    // on pixel measurements (which would flake under CSS shifts).
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
+    await openPanel(page, 'adsr');
+
+    const inputsCol = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel-inputs"]`,
+    );
+    const outputsCol = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel-outputs"]`,
+    );
+    await expect(inputsCol).toHaveCount(1);
+    await expect(outputsCol).toHaveCount(1);
+
+    // ADSR inputs: GATE / ATTACK / DECAY / SUSTAIN / RELEASE.
+    const inputLabels = (await inputsCol
+      .locator('[data-testid="port-row-label"]')
+      .allTextContents()).map((s) => s.trim());
+    expect(inputLabels).toContain('GATE');
+    expect(inputLabels).toContain('ATTACK');
+    // ADSR output: ENVELOPE — must NOT live in inputs column.
+    expect(inputLabels).not.toContain('ENVELOPE');
+
+    const outputLabels = (await outputsCol
+      .locator('[data-testid="port-row-label"]')
+      .allTextContents()).map((s) => s.trim());
+    expect(outputLabels).toContain('ENVELOPE');
+    expect(outputLabels).not.toContain('GATE');
+
+    // Geometric sanity: outputs column is to the RIGHT of inputs column.
+    const inputsBox = await inputsCol.boundingBox();
+    const outputsBox = await outputsCol.boundingBox();
+    expect(inputsBox).toBeTruthy();
+    expect(outputsBox).toBeTruthy();
+    if (!inputsBox || !outputsBox) return;
+    expect(outputsBox.x, 'outputs column starts to the right of inputs column').toBeGreaterThan(
+      inputsBox.x + inputsBox.width / 2,
+    );
+  });
+
+  test('MIXMSTRS: dense panel (59 inputs) fits on a 1366×768 viewport', async ({ page }) => {
+    // The whole point of the two-column layout: MIXMSTRS has 59 input
+    // ports (12 audio + 37 CV-per-param + extras). On a single column
+    // with 22px-tall rows + headers, the panel was ~1500px tall and
+    // overflowed the viewport. With two columns + per-column scroll,
+    // the panel must fit within the viewport bounds.
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'mm', type: 'mixmstrs', position: { x: 100, y: 100 } },
+    ]);
+    await openPanel(page, 'mm');
+
+    const panel = page.locator(
+      `.svelte-flow__node[data-id="mm"] [data-testid="patch-panel"]`,
+    );
+    const box = await panel.boundingBox();
+    expect(box, 'MIXMSTRS panel has a bounding box').toBeTruthy();
+    if (!box) return;
+
+    // Panel must fit within the viewport (height) and not exceed 80%
+    // of the viewport width.
+    expect(box.height, 'MIXMSTRS panel height fits within viewport').toBeLessThanOrEqual(768);
+    expect(box.width, 'MIXMSTRS panel width <= 80% viewport').toBeLessThanOrEqual(
+      Math.round(1366 * 0.8) + 2,
+    );
+
+    // All 59 input ports + outputs are in the DOM (the I/O spec test
+    // covers this strictly; here we just confirm the column-scroll
+    // architecture didn't drop anything).
+    const inputsCol = page.locator(
+      `.svelte-flow__node[data-id="mm"] [data-testid="patch-panel-inputs"]`,
+    );
+    const inputCount = await inputsCol.locator('[data-testid="port-row-label"]').count();
+    expect(inputCount, 'MIXMSTRS: 59 input rows present').toBe(59);
+  });
+
+  test('RIOTGIRLS: dense sectioned panel (55 inputs) fits on a 1366×768 viewport', async ({
+    page,
+  }) => {
+    // Same fit-on-laptop guarantee for the sectioned grouping path
+    // (RIOTGIRLS is the densest case: 4 voice sections + master FX,
+    // 55 inputs total). All sections live in the inputs column;
+    // outL/outR live in the outputs column.
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 100, y: 100 } }]);
+    await openPanel(page, 'rg');
+
+    const panel = page.locator(
+      `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel"]`,
+    );
+    const box = await panel.boundingBox();
+    expect(box, 'RIOTGIRLS panel has a bounding box').toBeTruthy();
+    if (!box) return;
+
+    expect(box.height, 'RIOTGIRLS panel height fits within viewport').toBeLessThanOrEqual(768);
+    expect(box.width, 'RIOTGIRLS panel width <= 80% viewport').toBeLessThanOrEqual(
+      Math.round(1366 * 0.8) + 2,
+    );
+
+    const inputsCol = page.locator(
+      `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel-inputs"]`,
+    );
+    const outputsCol = page.locator(
+      `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel-outputs"]`,
+    );
+    const inputCount = await inputsCol.locator('[data-testid="port-row-label"]').count();
+    const outputCount = await outputsCol.locator('[data-testid="port-row-label"]').count();
+    expect(inputCount, 'RIOTGIRLS: 55 input rows in left column').toBe(55);
+    expect(outputCount, 'RIOTGIRLS: 2 output rows (outL, outR) in right column').toBe(2);
+  });
+
   test('cables visually anchor at top-left when both panels are closed', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
