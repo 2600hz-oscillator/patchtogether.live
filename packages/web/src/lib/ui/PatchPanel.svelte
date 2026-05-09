@@ -579,21 +579,45 @@
 
   /* ---------------- Collapsed-state handle stacking ---------------- */
   /*
-   * When the panel is closed, ALL handles inside it are stacked at the
-   * affordance corner. Edges therefore visually anchor to top-left.
-   * pointer-events:none stops a stray click on the stack of invisible
-   * handles from starting a connect-drag (the user must hover-open first).
+   * When the panel is closed, ALL handles inside it — inputs AND outputs
+   * — must collapse to the SAME on-screen point: the top-left affordance
+   * corner of the card. Cables follow handle positions natively, so this
+   * is what makes every closed cable visually terminate at the trigger.
    *
-   * Specificity hack: we need higher specificity than the open-state row
-   * rules above. Doubling the .patch-panel class gets us there without
-   * adding a chain of arbitrary parents.
+   * The trick: when closed, drop `position: relative` on .panel-row so
+   * the absolutely-positioned handle resolves against .patch-panel
+   * itself (which sits at top:28px;left:4px of the card). Then a single
+   * pair of absolute top/left values lifts every handle up to the card
+   * top-left, regardless of which row it lives in or whether the row
+   * is .right (output) or default (input).
+   *
+   * Without this, handles instead anchored at each row's top-left —
+   * which for inputs landed near (but not on) the affordance, and for
+   * outputs/long panels landed hundreds of px down/right (so output
+   * cables visually traced back to the wrong side of the card).
+   *
+   * Specificity hack: we need higher specificity than every open-state
+   * positioning rule above. The open-state output rule combines BOTH
+   * `.panel-row.right .svelte-flow__handle` AND
+   * `.panel-row .svelte-flow__handle.source` — so we double both
+   * `.patch-panel` AND `.panel-row` to win against either selector for
+   * either handle type. pointer-events:none stops a stray click on the
+   * stack of invisible handles from starting a connect-drag.
    */
-  .patch-panel.patch-panel:not(.open) .panel-row :global(.svelte-flow__handle),
-  .patch-panel.patch-panel:not(.open) .panel-row.right :global(.svelte-flow__handle) {
+  .patch-panel.patch-panel:not(.open) .panel-row.panel-row {
+    position: static;
+  }
+  .patch-panel.patch-panel:not(.open) .panel-row.panel-row :global(.svelte-flow__handle) {
     position: absolute !important;
-    left: -16px !important;
-    top: -16px !important;
+    /* Lift the handle from the panel's interior up to the card's top-
+     * left corner. The panel's box top-edge sits at card y=28px; the
+     * trigger sits at card y=4px and is 18px tall. -22px puts the
+     * handle's top edge at card y=6px, which is on top of the trigger
+     * (and therefore the visual cable terminus the user sees). */
+    top: -22px !important;
+    left: 0 !important;
     right: auto !important;
+    bottom: auto !important;
     transform: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
