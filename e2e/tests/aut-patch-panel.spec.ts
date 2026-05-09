@@ -56,11 +56,12 @@ test.describe('@aut PatchPanel acceptance flow', () => {
       expect(labelTexts).toContain(expected);
     }
 
-    // 4. Open the source panel and drag the cable. Pointerdown on the
-    //    source handle activates stayOpenForDrag so the source panel
-    //    survives the mouse traversal toward the target.
-    await (await trigger(page, 'seq')).hover();
+    // 4. Pin both panels open via click (the click toggle locks the panel
+    //    open until another click or an outside tap closes it).
+    await (await trigger(page, 'seq')).click();
+    await (await trigger(page, 'adsr')).click();
     await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'false');
+    await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'false');
 
     const seqGate = page.locator(
       `.svelte-flow__node[data-id="seq"] .svelte-flow__handle[data-handleid="gate"][class*="source"]`,
@@ -70,36 +71,21 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     );
 
     const seqBox = await seqGate.boundingBox();
+    const adsrBox = await adsrGate.boundingBox();
     expect(seqBox, 'seq gate has box').toBeTruthy();
-    if (!seqBox) return;
+    expect(adsrBox, 'adsr gate has box').toBeTruthy();
+    if (!seqBox || !adsrBox) return;
 
     await page.mouse.move(seqBox.x + seqBox.width / 2, seqBox.y + seqBox.height / 2);
     await page.mouse.down();
 
-    // Source panel stayed open mid-drag (stayOpenForDrag flag).
+    // Source panel stays open mid-drag (pinned + stayOpenForDrag).
     await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'false');
 
-    // Open the target's panel by hovering its trigger en route — must
-    // happen BEFORE we drop so the target handle's hit-zone is alive.
-    const adsrTrigger = await trigger(page, 'adsr');
-    const adsrTriggerBox = await adsrTrigger.boundingBox();
-    expect(adsrTriggerBox, 'adsr trigger has box').toBeTruthy();
-    if (!adsrTriggerBox) return;
-    await page.mouse.move(
-      adsrTriggerBox.x + adsrTriggerBox.width / 2,
-      adsrTriggerBox.y + adsrTriggerBox.height / 2,
-      { steps: 6 },
-    );
-    await page.waitForTimeout(150);
-    await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'false');
-
-    const adsrBox = await adsrGate.boundingBox();
-    expect(adsrBox, 'adsr gate has box').toBeTruthy();
-    if (!adsrBox) return;
     await page.mouse.move(
       adsrBox.x + adsrBox.width / 2,
       adsrBox.y + adsrBox.height / 2,
-      { steps: 6 },
+      { steps: 10 },
     );
     await page.mouse.up();
 
@@ -108,10 +94,10 @@ test.describe('@aut PatchPanel acceptance flow', () => {
       page.locator(`.svelte-flow__edge[data-id*="seq-gate-adsr-gate"]`),
     ).toHaveCount(1);
 
-    // 5. Move mouse away — panel closes (after the 200ms intent timeout).
-    await page.mouse.move(50, 50);
-    // Wait for close timeout to fire (~200ms) plus padding.
-    await page.waitForTimeout(450);
+    // 5. Outside-click closes both pinned panels (an outside pointerdown
+    //    drops the pinned + hovered drivers).
+    await page.mouse.click(50, 50);
+    await page.waitForTimeout(100);
     await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'true');
     await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'true');
   });

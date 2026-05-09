@@ -72,9 +72,23 @@
   }: Props = $props();
 
   // ---------------- Hover-intent state machine ----------------
+  //
+  // Three drivers can keep the panel open:
+  //   * `hovered`        — mouse is over the trigger or panel
+  //   * `pinned`         — user clicked the trigger to lock it open (until
+  //                        another click or an outside tap)
+  //   * `stayOpenForDrag` — user is mid-connect-drag with a handle inside
+  //                        this panel (released on pointerup)
+  //
+  // Any one of those keeps the panel open; the panel closes only when all
+  // three drop. The 200ms hover-close delay only applies to the `hovered`
+  // driver, so a click stays sticky and a drag never blinks shut.
 
-  let open = $state(false);
+  let hovered = $state(false);
+  let pinned = $state(false);
   let stayOpenForDrag = $state(false);
+
+  let open = $derived(hovered || pinned || stayOpenForDrag);
 
   const CLOSE_DELAY_MS = 200;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -88,37 +102,44 @@
 
   function openNow() {
     clearCloseTimer();
-    open = true;
+    hovered = true;
   }
 
   function scheduleClose() {
-    if (stayOpenForDrag) return;
     clearCloseTimer();
     closeTimer = setTimeout(() => {
-      // Stay-open during drag is the only escape hatch; otherwise close.
-      if (!stayOpenForDrag) open = false;
+      hovered = false;
       closeTimer = null;
     }, CLOSE_DELAY_MS);
   }
 
   function toggle() {
-    if (open) {
-      open = false;
-      clearCloseTimer();
+    // Click toggles the pinned driver. We also set hovered=true so the
+    // very next mouseleave doesn't immediately schedule-close.
+    if (pinned) {
+      pinned = false;
+      // If the cursor's still on the trigger/panel, hover-driver keeps it
+      // open until the user moves away.
     } else {
-      openNow();
+      pinned = true;
+      clearCloseTimer();
     }
   }
 
-  // Close on outside-click for touch / mobile users.
+  // Close on outside-click for touch / mobile users. We treat ANY
+  // patch-panel host (not just this one) as "inside" — clicking a port
+  // handle in a sibling panel must not close THIS panel, which is the
+  // common multi-card patching case.
   onMount(() => {
     const onDocPointerDown = (e: PointerEvent) => {
       if (!open) return;
       if (stayOpenForDrag) return;
       const target = e.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest(`[data-patch-panel-node="${nodeId}"]`)) return;
-      open = false;
+      if (target.closest('[data-patch-panel-node]')) return;
+      pinned = false;
+      hovered = false;
+      clearCloseTimer();
     };
     document.addEventListener('pointerdown', onDocPointerDown, true);
     return () => document.removeEventListener('pointerdown', onDocPointerDown, true);

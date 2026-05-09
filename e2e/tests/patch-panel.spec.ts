@@ -237,48 +237,36 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
       `.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid="gate"][class*="target"]`,
     );
 
-    // Open the source panel first so the source handle is reachable. Then
-    // start the drag — stayOpenForDrag holds the panel open while we travel
-    // toward the target.
-    await openPanel(page, 'seq');
+    // Pin both panels open via click — once pinned, the panel stays
+    // open until an outside tap or another click on the trigger.
+    await page
+      .locator(`.svelte-flow__node[data-id="seq"] [data-testid="patch-trigger"]`)
+      .click();
+    await page
+      .locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`)
+      .click();
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="seq"] [data-testid="patch-panel"]`),
+    ).toHaveAttribute('aria-hidden', 'false');
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`),
+    ).toHaveAttribute('aria-hidden', 'false');
+
     const sBox = await sourceHandle.boundingBox();
-    expect(sBox, 'source handle has box').toBeTruthy();
-    if (!sBox) return;
+    const tBox = await targetHandle.boundingBox();
+    expect(sBox && tBox, 'both handles have boxes').toBeTruthy();
+    if (!sBox || !tBox) return;
 
     await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
     await page.mouse.down();
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 8 });
 
-    // Mid-drag (still on the source side): the source panel must remain
-    // open. Without stayOpenForDrag, leaving the trigger via mouse.down
-    // would have triggered the close timer.
+    // Mid-drag: the source panel is still open (pinned + stayOpenForDrag).
     const seqPanel = page.locator(
       `.svelte-flow__node[data-id="seq"] [data-testid="patch-panel"]`,
     );
     await expect(seqPanel).toHaveAttribute('aria-hidden', 'false');
 
-    // Now traverse to the target side and open its panel (hovering the
-    // trigger en route). Open the target panel BEFORE we drop so the
-    // target handle's hit zone is alive.
-    const adsrTrigger = page.locator(
-      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`,
-    );
-    const adsrTriggerBox = await adsrTrigger.boundingBox();
-    expect(adsrTriggerBox, 'adsr trigger has box').toBeTruthy();
-    if (!adsrTriggerBox) return;
-    await page.mouse.move(
-      adsrTriggerBox.x + adsrTriggerBox.width / 2,
-      adsrTriggerBox.y + adsrTriggerBox.height / 2,
-      { steps: 5 },
-    );
-    await page.waitForTimeout(150);
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`),
-    ).toHaveAttribute('aria-hidden', 'false');
-
-    const tBox = await targetHandle.boundingBox();
-    expect(tBox, 'target handle has box').toBeTruthy();
-    if (!tBox) return;
-    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 5 });
     await page.mouse.up();
 
     // Assert connection landed.

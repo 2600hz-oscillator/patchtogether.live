@@ -61,16 +61,38 @@ test.describe('Cable hover affordances', () => {
     await page.getByRole('button', { name: 'Load example' }).click();
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6, { timeout: 10_000 });
 
-    const firstEdgePath = page.locator('.svelte-flow__edge .svelte-flow__edge-path').first();
-    const initial = await firstEdgePath.evaluate((el) =>
+    // Post-PatchPanel: cables anchor at the top-left of each card by default
+    // (all handles stack at the affordance). Open the source-side panel of
+    // an edge so its endpoints fan out and the cable has a hover-friendly
+    // mid-section. We use the @collab/dev test hooks to grab the patch + a
+    // known edge, then click the source card's trigger to pin its panel.
+    const sourceTrigger = page
+      .locator(`.svelte-flow__node[data-id="vd-seq"] [data-testid="patch-trigger"]`);
+    await sourceTrigger.click();
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="vd-seq"] [data-testid="patch-panel"]`),
+    ).toHaveAttribute('aria-hidden', 'false');
+    await page.waitForTimeout(200); // edge re-route after panel open
+
+    // Pick an edge sourced from vd-seq (e.g. vd-seq.gate → vd-adsr.gate).
+    const edge = page.locator(
+      `.svelte-flow__edge[data-id*="vd-seq-gate-"]`,
+    ).first();
+    const edgePath = edge.locator('.svelte-flow__edge-path');
+    const initial = await edgePath.evaluate((el) =>
       window.getComputedStyle(el).strokeWidth,
     );
 
-    await page.locator('.svelte-flow__edge').first().hover();
+    // Hover the SVG edge path directly via mouse coords near its midpoint
+    // so we don't get intercepted by overlapping card chrome.
+    const pathBox = await edgePath.boundingBox();
+    expect(pathBox, 'edge path has a bounding box').toBeTruthy();
+    if (!pathBox) return;
+    await page.mouse.move(pathBox.x + pathBox.width / 2, pathBox.y + pathBox.height / 2);
     // Allow the 80ms transition to settle.
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(200);
 
-    const afterHover = await firstEdgePath.evaluate((el) =>
+    const afterHover = await edgePath.evaluate((el) =>
       window.getComputedStyle(el).strokeWidth,
     );
 
