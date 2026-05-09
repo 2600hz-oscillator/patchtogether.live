@@ -978,7 +978,7 @@
   }
   .tool-btn {
     background: #14171c;
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     color: var(--text-dim);
     border-radius: 3px;
     height: 26px;
@@ -1095,13 +1095,13 @@
     align-items: center;
     gap: 4px;
     background: rgba(20, 23, 28, 0.85);
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 3px 6px;
   }
   .page-btn {
     background: #14171c;
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     color: var(--text-dim);
     border-radius: 3px;
     height: 22px;

@@ -352,7 +352,7 @@
     height: 14px;
     margin-top: 1px;
     background: #14171c;
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text-dim);
     font-family: ui-monospace, monospace;

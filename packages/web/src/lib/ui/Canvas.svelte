@@ -91,6 +91,7 @@
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
+  import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import FlowBridge, { type FlowBridgeApi } from '$lib/ui/FlowBridge.svelte';
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType } from '$lib/graph/types';
@@ -1084,6 +1085,7 @@
       <button onclick={savePatch} disabled={nodeCount === 0}>Save</button>
       <button onclick={loadPatch}>Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
+      <SkinSwitcher />
       <a class="signin-link" href="/dashboard" data-testid="signin-link">Sign in</a>
     </div>
   </header>
@@ -1285,7 +1287,9 @@
     z-index: 6;
     background: rgba(14, 17, 22, 0.85);
     color: var(--text-dim);
-    border: 1px solid #2a2f3a;
+    /* Skin-aware border; matches the lifted --border surface used by
+     * .mod-card so chrome reads as one family across themes. */
+    border: 1px solid var(--border);
     border-radius: 2px;
     padding: 2px 8px;
     font-size: 0.65rem;

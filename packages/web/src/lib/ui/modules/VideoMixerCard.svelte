@@ -66,7 +66,7 @@
     width: 280px;
     min-height: 420px;
     background: var(--module-bg);
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
     padding-top: 18px;

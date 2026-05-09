@@ -522,7 +522,7 @@
     width: 280px;
     min-height: 360px;
     background: var(--module-bg);
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
     padding-top: 18px;
@@ -580,7 +580,7 @@
     flex: 1 1 auto;
     background: #0c0e13;
     color: var(--text);
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
     border-radius: 1px;
     padding: 2px 4px;
     font-size: 0.7rem;
@@ -683,7 +683,7 @@
     cursor: pointer;
     background: #14171f;
     color: var(--text);
-    border: 1px solid #2a2f3a;
+    border: 1px solid var(--border);
   }
   button:hover:not(:disabled) { border-color: var(--accent-dim); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
