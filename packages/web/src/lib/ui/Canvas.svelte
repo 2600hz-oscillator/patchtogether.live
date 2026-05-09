@@ -71,6 +71,7 @@
   import RiotgirlsCard from '$lib/ui/modules/RiotgirlsCard.svelte';
   import ScoreCard from '$lib/ui/modules/ScoreCard.svelte';
   import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
+  import PolyseqzCard from '$lib/ui/modules/PolyseqzCard.svelte';
   import VizvcoCard from '$lib/ui/modules/VizvcoCard.svelte';
   import WavvizCard from '$lib/ui/modules/WavvizCard.svelte';
   // SWOLEVCO — Buchla 259-style complex VCO with built-in scope output.
@@ -152,6 +153,7 @@
     riotgirls: RiotgirlsCard,
     score: ScoreCard,
     drumseqz: DrumseqzCard,
+    polyseqz: PolyseqzCard,
     vizvco: VizvcoCard,
     wavviz: WavvizCard,
     swolevco: SwolevcoCard,

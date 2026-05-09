@@ -25,6 +25,7 @@ import { charlottesEchosDef } from './charlottes-echos';
 import { riotgirlsDef, triggerVoice as riotgirlsTriggerVoice } from './riotgirls';
 import { scoreDef } from './score';
 import { drumseqzDef } from './drumseqz';
+import { polyseqzDef } from './polyseqz';
 import { vizvcoDef } from './vizvco';
 import { wavvizDef } from './wavviz';
 import { swolevcoDef } from './swolevco';
@@ -60,6 +61,7 @@ export function registerAudioModules(): void {
   registerModule(riotgirlsDef);
   registerModule(scoreDef);
   registerModule(drumseqzDef);
+  registerModule(polyseqzDef);
   registerModule(vizvcoDef);
   registerModule(wavvizDef);
   registerModule(swolevcoDef);

@@ -150,6 +150,7 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'riotgirls',
     'score',
     'drumseqz',
+    'polyseqz',
     // Sister VCOs with built-in wavefolders + waveform-video out:
     'vizvco',
     'wavviz',

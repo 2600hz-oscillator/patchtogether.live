@@ -105,6 +105,8 @@ const DESCRIPTIONS: Record<string, string> = {
   score: 'Sheet-music sequencer. 8-bar treble-clef staff, click to place notes. Outputs pitch / gate / env (ADSR x dynamic) / clock.',
   drumseqz:
     '4-channel x 16-step drum sequencer with per-track Euclidean fills + quantized CV. Sister module to RIOTGIRLS.',
+  polyseqz:
+    'Polyphonic chord sequencer. 32-step grid; each step holds a root note + chord quality (maj/min/maj7/min7/dom7/sus2/sus4/dim/aug) + inversion (0/1/2) + voicing (closed/open/spread). Outputs the full 5-voice chord on a polyPitchGate cable. HUMANIZE knob adds per-voice timing offsets (linear/uniform at low values, chaotic clusters at high values) for a human-pianist feel. Tested as the chord source for DX7-style polyphonic synth voices.',
   vizvco:
     'Analog VCO sister of analogVco with a built-in West-Coast wavefolder + a mono-video scope output. Saw / square / triangle / sine outs feed a sin(x*(1+fold)) wave-shaper; the scope tap drives the shared waveform-video renderer.',
   wavviz:
@@ -242,6 +244,13 @@ const PORT_NOTES: Record<string, string> = {
   'drumseqz.pitch2': 'Track 2 V/oct pitch out.',
   'drumseqz.pitch3': 'Track 3 V/oct pitch out.',
   'drumseqz.pitch4': 'Track 4 V/oct pitch out.',
+  // POLYSEQZ — polyphonic chord sequencer (5-voice polyPitchGate output).
+  'polyseqz.clock':       'CLOCK port. Input direction: external clock (rising edges advance the step pointer). Output direction: per-step clock pulse on every advance.',
+  'polyseqz.reset_cv':    'Rising edge on this gate resets stepIndex to 0 next tick.',
+  'polyseqz.play_cv':     'CV → isPlaying. Above 0.5 starts the sequencer; below 0.5 stops.',
+  'polyseqz.humanize_cv': 'CV → humanize amount (0..1). Sums on top of the knob value, clamped to [0, 1].',
+  'polyseqz.poly':        'polyPitchGate output: 5-voice chord (root + 3rd + 5th + (7th or octave) + (octave or 5th doubling)) per step.',
+  'polyseqz.gate':        'Mono gate out: high while ANY voice is gated. Useful for ADSR/scope-trigger without unwrapping the poly cable.',
   // ILLOGIC ports — combined attenuverter / math / logic utility.
   'illogic.in1': 'Input 1 (cv/audio). Feeds att1 attenuverter AND the AND/NAND/OR/NOT logic block (gate-thresholded at 0.5).',
   'illogic.in2': 'Input 2 (cv/audio). Feeds att2 attenuverter AND the AND/NAND/OR logic block (gate-thresholded at 0.5).',

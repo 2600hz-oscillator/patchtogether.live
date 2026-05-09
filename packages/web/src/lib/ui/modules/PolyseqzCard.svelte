@@ -1,0 +1,356 @@
+<script lang="ts">
+  import { onDestroy } from 'svelte';
+  import type { NodeProps } from '@xyflow/svelte';
+  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
+  import { patch, ydoc } from '$lib/graph/store';
+  import {
+    defaultChordSteps,
+    STEP_COUNT,
+    coerceToChordStep,
+    type ChordStep,
+  } from '$lib/audio/modules/polyseqz';
+  import {
+    type ChordQualityName,
+    type ChordInversion,
+    type ChordVoicingName,
+    nextChordQualityName,
+    nextChordVoicingName,
+    nextInversion,
+  } from '$lib/audio/chord-tables';
+  import { useEngine } from '$lib/audio/engine-context';
+  import { parseNoteName } from '$lib/audio/note-entry';
+  import type { ModuleNode } from '$lib/graph/types';
+
+  let { id, data }: NodeProps = $props();
+  let node = $derived(data?.node as ModuleNode);
+  const engineCtx = useEngine();
+
+  let cardVersion = $state(0);
+  $effect(() => {
+    const h = () => { cardVersion = cardVersion + 1; };
+    ydoc.on('update', h);
+    return () => ydoc.off('update', h);
+  });
+
+  let bpm        = $derived((void cardVersion, node?.params.bpm        ?? 90));
+  let length     = $derived((void cardVersion, node?.params.length     ?? 8));
+  let octave     = $derived((void cardVersion, node?.params.octave     ?? 0));
+  let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.6));
+  let humanize   = $derived((void cardVersion, node?.params.humanize   ?? 0));
+  let isPlaying  = $derived((void cardVersion, (node?.params.isPlaying ?? 0) >= 0.5));
+
+  let steps = $derived.by<ChordStep[]>(() => {
+    void cardVersion;
+    const raw = (node?.data as Record<string, unknown> | undefined)?.steps;
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToChordStep);
+    return defaultChordSteps();
+  });
+
+  const set = (k: string) => (v: number) => {
+    const t = patch.nodes[id]; if (t) t.params[k] = v;
+  };
+
+  function togglePlay() {
+    set('isPlaying')(isPlaying ? 0 : 1);
+  }
+  const live = (k: string) => () => {
+    const e = engineCtx.get(); if (!e || !node) return undefined;
+    return e.readParam(node, k);
+  };
+
+  // Visual current step indicator polled from engine.
+  let currentStep = $state(0);
+  let raf: number | null = null;
+  $effect(() => {
+    function tickFrame() {
+      const e = engineCtx.get();
+      if (e && node) {
+        const cs = e.read(node, 'currentStep');
+        if (typeof cs === 'number') currentStep = cs;
+      }
+      raf = requestAnimationFrame(tickFrame);
+    }
+    raf = requestAnimationFrame(tickFrame);
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+      raf = null;
+    };
+  });
+  onDestroy(() => {
+    if (raf !== null) cancelAnimationFrame(raf);
+  });
+
+  // Step mutation helpers.
+
+  function readStepsCopy(): ChordStep[] {
+    const t = patch.nodes[id];
+    if (!t?.data) return defaultChordSteps();
+    const raw = (t.data as Record<string, unknown>).steps;
+    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToChordStep);
+    return defaultChordSteps();
+  }
+
+  function writeSteps(arr: ChordStep[]) {
+    const t = patch.nodes[id];
+    if (!t) return;
+    ydoc.transact(() => {
+      if (!t.data) t.data = {};
+      (t.data as Record<string, unknown>).steps = arr.map((s) => ({
+        on: s.on,
+        root: s.root,
+        quality: s.quality,
+        inversion: s.inversion,
+        voicing: s.voicing,
+      }));
+    });
+  }
+
+  function commitRoot(i: number, input: string) {
+    const arr = readStepsCopy();
+    const cur = arr[i] ?? {
+      on: false, root: null, quality: 'maj' as ChordQualityName,
+      inversion: 0 as ChordInversion, voicing: 'closed' as ChordVoicingName,
+    };
+    const trimmed = input.trim();
+    const parsed = trimmed === '' ? null : parseNoteName(trimmed);
+    arr[i] = { ...cur, root: parsed };
+    writeSteps(arr);
+  }
+
+  function toggleGate(i: number) {
+    const arr = readStepsCopy();
+    const cur = arr[i] ?? {
+      on: false, root: null, quality: 'maj' as ChordQualityName,
+      inversion: 0 as ChordInversion, voicing: 'closed' as ChordVoicingName,
+    };
+    arr[i] = { ...cur, on: !cur.on };
+    writeSteps(arr);
+  }
+
+  function cycleQuality(i: number) {
+    const arr = readStepsCopy();
+    const cur = arr[i];
+    if (!cur) return;
+    arr[i] = { ...cur, quality: nextChordQualityName(cur.quality) };
+    writeSteps(arr);
+  }
+
+  function cycleInversion(i: number) {
+    const arr = readStepsCopy();
+    const cur = arr[i];
+    if (!cur) return;
+    arr[i] = { ...cur, inversion: nextInversion(cur.inversion) };
+    writeSteps(arr);
+  }
+
+  function cycleVoicing(i: number) {
+    const arr = readStepsCopy();
+    const cur = arr[i];
+    if (!cur) return;
+    arr[i] = { ...cur, voicing: nextChordVoicingName(cur.voicing) };
+    writeSteps(arr);
+  }
+
+  function qualityLabel(q: ChordQualityName): string {
+    // 4-char compact glyph for the badge. Lower-case for non-major qualities.
+    const map: Record<ChordQualityName, string> = {
+      maj: 'M', min: 'm',
+      maj7: 'M7', min7: 'm7', dom7: '7',
+      sus2: 's2', sus4: 's4',
+      dim: 'o',  aug: '+',
+    };
+    return map[q] ?? q;
+  }
+
+  function voicingLabel(v: ChordVoicingName): string {
+    return v === 'closed' ? 'C' : v === 'open' ? 'O' : 'S';
+  }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'clock',       label: 'CLOCK IN', cable: 'gate' },
+    { id: 'reset_cv',    label: 'RESET',    cable: 'gate' },
+    { id: 'play_cv',     label: 'PLAY CV',  cable: 'cv' },
+    { id: 'humanize_cv', label: 'HUMAN CV', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'poly',  label: 'POLY OUT',  cable: 'polyPitchGate' },
+    { id: 'gate',  label: 'GATE',      cable: 'gate' },
+    { id: 'clock', label: 'CLOCK OUT', cable: 'gate' },
+  ];
+</script>
+
+<div class="mod-card poly-card">
+  <div class="stripe" style="background: var(--cable-pitch);"></div>
+  <header class="title">
+    POLYSEQZ
+    <button
+      class="play-btn"
+      class:playing={isPlaying}
+      onclick={togglePlay}
+      data-testid={`polyseqz-play-${id}`}
+      title={isPlaying ? 'Stop' : 'Play'}
+    >{isPlaying ? '■' : '▶'}</button>
+  </header>
+
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="grid" data-testid={`polyseqz-grid-${id}`}>
+      {#each steps.slice(0, STEP_COUNT) as step, i (i)}
+        <div class="cell-slot" data-step={i}>
+          <div class="cell-num">{i + 1}</div>
+          <NoteEntry
+            midi={step.root}
+            on={step.on}
+            isActive={i === currentStep}
+            dim={i >= length}
+            testId={`polyseqz-root-${id}-${i}`}
+            gateTestId={`polyseqz-gate-${id}-${i}`}
+            onCommit={(input) => commitRoot(i, input)}
+            onGateToggle={() => toggleGate(i)}
+          />
+          <button
+            class="quality-badge"
+            type="button"
+            data-testid={`polyseqz-quality-${id}-${i}`}
+            data-step={i}
+            data-quality={step.quality}
+            title={`Quality: ${step.quality} (click to cycle)`}
+            onclick={() => cycleQuality(i)}
+          >{qualityLabel(step.quality)}</button>
+          <div class="meta-row">
+            <button
+              class="inv-badge"
+              type="button"
+              data-testid={`polyseqz-inv-${id}-${i}`}
+              data-step={i}
+              data-inversion={step.inversion}
+              title={`Inversion: ${step.inversion} (click to cycle)`}
+              onclick={() => cycleInversion(i)}
+            >{step.inversion}</button>
+            <button
+              class="voicing-badge"
+              type="button"
+              data-testid={`polyseqz-voicing-${id}-${i}`}
+              data-step={i}
+              data-voicing={step.voicing}
+              title={`Voicing: ${step.voicing} (click to cycle)`}
+              onclick={() => cycleVoicing(i)}
+            >{voicingLabel(step.voicing)}</button>
+          </div>
+        </div>
+      {/each}
+    </div>
+
+    <div class="fader-row">
+      <Fader value={bpm}        min={30}  max={300} defaultValue={90}  label="BPM"  curve="linear"   onchange={set('bpm')}        readLive={live('bpm')} />
+      <Fader value={length}     min={1}   max={32}  defaultValue={8}   label="Len"  curve="discrete" onchange={set('length')}     readLive={live('length')} />
+      <Fader value={octave}     min={-2}  max={2}   defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}     readLive={live('octave')} />
+      <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.6} label="Gate" curve="linear"  onchange={set('gateLength')} readLive={live('gateLength')} />
+      <Fader value={humanize}   min={0}   max={1}   defaultValue={0}   label="Hum"  curve="linear"   onchange={set('humanize')}   readLive={live('humanize')} />
+    </div>
+  </PatchPanel>
+</div>
+
+<style>
+  .poly-card {
+    width: 540px;
+    min-height: 320px;
+    padding-right: 0;
+    padding-left: 0;
+  }
+  .poly-card > .title {
+    padding-right: 22px;
+    padding-left: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .play-btn {
+    width: 22px;
+    height: 22px;
+    background: #2a2f3a;
+    border: 1px solid #404652;
+    color: var(--text);
+    border-radius: 3px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+  }
+  .play-btn.playing {
+    background: var(--cable-gate);
+    color: #1a1d23;
+    border-color: var(--cable-gate);
+  }
+  .grid {
+    margin: 30px 22px 12px;
+    display: grid;
+    grid-template-columns: repeat(16, 1fr);
+    gap: 3px;
+  }
+  .cell-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+  }
+  .cell-num {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .quality-badge {
+    width: 100%;
+    height: 14px;
+    margin-top: 1px;
+    background: #14171c;
+    border: 1px solid var(--cable-pitch);
+    border-radius: 2px;
+    color: var(--cable-pitch);
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+  }
+  .quality-badge:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .meta-row {
+    margin-top: 1px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+  }
+  .inv-badge,
+  .voicing-badge {
+    height: 11px;
+    background: #14171c;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.5rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+  }
+  .voicing-badge {
+    color: #c084fc;
+    border-color: #2a2f3a;
+  }
+  .fader-row {
+    margin-top: 6px;
+    padding: 0 22px;
+    gap: 8px;
+  }
+</style>
