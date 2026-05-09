@@ -14,11 +14,33 @@
 import * as Y from 'yjs';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import {
-  getModuleDef,
-  listModuleDefs,
-  type AnyModuleDef,
+  getModuleDef as getAudioModuleDef,
+  listModuleDefs as listAudioModuleDefs,
 } from '$lib/audio/module-registry';
+import {
+  getVideoModuleDef,
+  listVideoModuleDefs,
+} from '$lib/video/module-registry';
 import type { ModuleNode, Edge } from './types';
+
+/** Per-module-type schemaVersion + migrate, abstracted across the two
+ *  per-domain registries so the persistence layer doesn't have to know
+ *  which one a given type lives in. Returns undefined when the type is
+ *  unknown to either registry (used to flag dropped nodes on load).
+ *
+ *  Both AudioModuleDef and VideoModuleDef carry `schemaVersion: number`
+ *  and an optional `migrate(data, fromVersion) => unknown`, so the structural
+ *  type below is satisfied by either. */
+interface AnyDomainDef {
+  schemaVersion: number;
+  migrate?: (data: unknown, fromVersion: number) => unknown;
+}
+
+function getAnyDomainDef(type: string): AnyDomainDef | undefined {
+  // Audio-first because most types are audio; the lookup is a simple Map
+  // get either way so order is purely cosmetic.
+  return getAudioModuleDef(type) ?? getVideoModuleDef(type);
+}
 
 /** SyncedStore-shaped patch — keys map to their value or undefined (post-delete).
  * Mirrors MappedTypeDescription<PatchStore> so this module accepts the live
@@ -74,7 +96,13 @@ function base64ToBytes(b64: string): Uint8Array {
  */
 export function makeEnvelope(ydoc: Y.Doc): PatchEnvelope {
   const moduleSchemas: Record<string, number> = {};
-  for (const def of listModuleDefs()) {
+  // Both domain registries contribute their schemaVersions; load-time
+  // migration looks up by type id (which is unique across both registries
+  // because a `type` is the union over both modules' StandardModuleType).
+  for (const def of listAudioModuleDefs()) {
+    moduleSchemas[def.type] = def.schemaVersion;
+  }
+  for (const def of listVideoModuleDefs()) {
     moduleSchemas[def.type] = def.schemaVersion;
   }
   return {
@@ -180,7 +208,11 @@ export function loadEnvelopeIntoStore(
   const diagnostics: LoadDiagnostic[] = [];
   const migratedNodes: Record<string, ModuleNode> = {};
   for (const [id, node] of Object.entries(loadedNodes)) {
-    const def = getModuleDef(node.type) as AnyModuleDef | undefined;
+    // Look up across both per-domain registries — video modules
+    // (PICTUREBOX, CAMERA, LINES, ...) live in the video registry and
+    // would otherwise be silently dropped on load. See
+    // .myrobots/plans/rackspace-persistence.md (Phase A audit).
+    const def = getAnyDomainDef(node.type);
     if (!def) {
       diagnostics.push({
         nodeId: id,

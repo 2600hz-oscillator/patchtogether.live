@@ -23,6 +23,10 @@ import {
 import type { ModuleNode, Edge } from './types';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { registerModule, getModuleDef } from '$lib/audio/module-registry';
+import {
+  registerVideoModule,
+  type VideoModuleDef,
+} from '$lib/video/module-registry';
 
 // ---------------- Test fixtures ----------------
 
@@ -329,13 +333,13 @@ describe('persistence: round-trip', () => {
 
 describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
   it('preserves PICTUREBOX-shaped image bytes through save → JSON → load', () => {
-    // PICTUREBOX writes JPEG-encoded base64 strings into node.data.imageBytes
-    // (see lib/video/modules/picturebox.ts PictureboxData). We don't depend on
-    // the picturebox def being registered here — the persistence layer treats
-    // node.data as opaque, so a stub def at type='picturebox' is enough.
-    registerModule({
+    // PICTUREBOX is a VIDEO-domain module — registered via registerVideoModule,
+    // not registerModule. Pinning this here also covers the audit's finding
+    // that pre-fix, the persistence loader only consulted the audio registry,
+    // so video-domain nodes round-tripped as "unknown module" and got dropped.
+    registerVideoModule({
       type: 'picturebox',
-      domain: 'audio', // domain doesn't matter for the persistence layer
+      domain: 'video',
       label: 'PICTUREBOX',
       category: 'sources',
       schemaVersion: 2,
@@ -344,7 +348,7 @@ describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
       params: [],
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       factory: throwingFactory as any,
-    });
+    } satisfies VideoModuleDef);
 
     // Build a long, deterministic base64 payload — wider than the chunked
     // base64 encoder's 32 KB chunk size to exercise the multi-chunk path.
@@ -357,7 +361,7 @@ describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
       src.store.nodes['pb'] = {
         id: 'pb',
         type: 'picturebox',
-        domain: 'audio',
+        domain: 'video',
         position: { x: 0, y: 0 },
         params: { gain: 1 },
         data: {
