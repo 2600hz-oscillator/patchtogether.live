@@ -20,6 +20,7 @@ import { lumaDef } from './luma';
 import { colorizerDef } from './colorizer';
 import { feedbackDef } from './feedback';
 import { mixerVideoDef } from './mixer';
+import { cameraInputDef } from './camera-input';
 
 let registered = false;
 
@@ -38,6 +39,8 @@ export function registerVideoModules(): void {
   registerVideoModule(colorizerDef);
   registerVideoModule(feedbackDef);
   registerVideoModule(mixerVideoDef);
+  // Camera input (local-only)
+  registerVideoModule(cameraInputDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

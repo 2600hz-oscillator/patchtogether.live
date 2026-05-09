@@ -41,6 +41,7 @@
   import { attachReconciler } from '$lib/audio/reconciler';
   import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
   import { provideEngineContext } from '$lib/audio/engine-context';
+  import { provideProviderContext } from '$lib/multiplayer/provider-context';
   import '$lib/audio/modules'; // auto-registers analogVcoDef + audioOutDef
   // Video-domain (Phase 0 spike) — sibling registry + engine class. Imported
   // here so module defs are present in the registry by the time the palette
@@ -83,6 +84,8 @@
   import ColorizerCard from '$lib/ui/modules/ColorizerCard.svelte';
   import FeedbackCard from '$lib/ui/modules/FeedbackCard.svelte';
   import VideoMixerCard from '$lib/ui/modules/VideoMixerCard.svelte';
+  // CAMERA input (local-only) — see .myrobots/plans/module-camera-input.md.
+  import CameraInputCard from '$lib/ui/modules/CameraInputCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
@@ -152,6 +155,8 @@
     colorizer: ColorizerCard,
     feedback: FeedbackCard,
     videoMixer: VideoMixerCard,
+    // CAMERA input (local-only):
+    cameraInput: CameraInputCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
@@ -164,6 +169,10 @@
   // Provide the engine to descendant module-card components (motorized faders
   // use this to read live AudioParam values).
   provideEngineContext(() => engine);
+  // Provide the multiplayer provider too, so cards can write per-module
+  // presence into Y.Awareness (e.g., CAMERA publishes "this user has CAMERA
+  // active here" without sending pixels — see camera-presence.ts).
+  provideProviderContext(() => provider);
 
   // Dev-only: expose patch + ydoc on window so e2e tests can drive arbitrary
   // module-spawning combinations without a UI palette. Stripped in prod builds.

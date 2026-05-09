@@ -1,0 +1,282 @@
+// packages/web/src/lib/video/modules/camera-input.ts
+//
+// CAMERA — webcam-as-source video module. Implementation of the spec at
+// .myrobots/plans/module-camera-input.md.
+//
+// Frame ingestion path (the single technical decision): a card-owned
+// HTMLVideoElement is attached to the module's runtime via
+// `handle.attachExternalSource('video', el)`. Every engine tick we sample
+// that element with `gl.texImage2D(target, 0, RGBA, RGBA, UNSIGNED_BYTE,
+// videoEl)` (first call) → `texSubImage2D` (subsequent calls; cheaper, no
+// re-allocation). The output is a fullscreen-quad pass-through with a
+// gain multiplier and an optional horizontal flip ("mirror"), rendered
+// into the module's FBO so downstream modules see standard `video`
+// frames.
+//
+// The factory is DOM-free. The card UI handles `getUserMedia`, the
+// device dropdown, and lifecycle of the `<video>` element. That keeps
+// engine code testable without jsdom MediaStream shims.
+
+import type { VideoModuleDef } from '$lib/video/module-registry';
+import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+
+const FRAG_SRC = `#version 300 es
+precision highp float;
+
+in vec2 vUv;
+out vec4 outColor;
+
+uniform sampler2D uTex;
+uniform float uHasInput;     // 0 = idle pattern, 1 = sample texture
+uniform float uGain;         // post-multiplier on RGB
+uniform float uMirror;       // 0 = passthrough, 1 = horizontal flip
+
+void main() {
+  if (uHasInput < 0.5) {
+    // Idle: dark navy with a faint vertical sweep, matching OUTPUT's
+    // idle look so an unconfigured CAMERA card reads as "alive but
+    // nothing here yet" rather than "broken".
+    float v = vUv.y * 0.05;
+    outColor = vec4(0.04, 0.06, 0.10 + v, 1.0);
+    return;
+  }
+  // Sample with optional horizontal mirror. The webcam frame comes in
+  // upside-down relative to GL clip space, but we use UNPACK_FLIP_Y_WEBGL
+  // at upload time to fix that — so vUv here is already top-left-origin
+  // for the camera frame.
+  vec2 uv = vUv;
+  if (uMirror > 0.5) uv.x = 1.0 - uv.x;
+  // 'sample' is a reserved word in GLSL ES 3.00 — use 'src' instead.
+  vec4 src = texture(uTex, uv);
+  outColor = vec4(src.rgb * uGain, 1.0);
+}`;
+
+interface CameraParams {
+  gain: number;
+  enabled: number;   // 0 | 1
+  mirror: number;    // 0 | 1
+}
+
+const DEFAULTS: CameraParams = {
+  gain: 1.0,
+  enabled: 1,
+  mirror: 1,
+};
+
+export const cameraInputDef: VideoModuleDef = {
+  type: 'cameraInput',
+  domain: 'video',
+  label: 'CAMERA',
+  category: 'sources',
+  schemaVersion: 1,
+  inputs: [
+    // CV input for gain modulation. Phase-0 reconciler doesn't yet wire
+    // CV→video bridges (see engine.ts §1 deferral), but we expose the
+    // port so future bridge plumbing finds it.
+    { id: 'gain', type: 'cv' },
+  ],
+  outputs: [
+    { id: 'out', type: 'video' },
+  ],
+  params: [
+    { id: 'gain',    label: 'Gain',   defaultValue: DEFAULTS.gain,    min: 0, max: 2, curve: 'linear' },
+    { id: 'enabled', label: 'On',     defaultValue: DEFAULTS.enabled, min: 0, max: 1, curve: 'discrete' },
+    { id: 'mirror',  label: 'Mirror', defaultValue: DEFAULTS.mirror,  min: 0, max: 1, curve: 'discrete' },
+  ],
+  // Soft cap mirroring the multiplayer per-rackspace user limit. The
+  // browser will fail extra getUserMedia calls anyway with NotReadableError
+  // if the hardware can't multiplex; this just keeps the patch graph
+  // sane when someone spawns ten CAMERA cards by accident.
+  maxInstances: 4,
+
+  factory(ctx, _node): VideoNodeHandle {
+    const gl = ctx.gl;
+    const program = ctx.compileFragment(FRAG_SRC);
+
+    const uTex      = gl.getUniformLocation(program, 'uTex');
+    const uHasInput = gl.getUniformLocation(program, 'uHasInput');
+    const uGain     = gl.getUniformLocation(program, 'uGain');
+    const uMirror   = gl.getUniformLocation(program, 'uMirror');
+
+    const { fbo, texture: outTexture } = ctx.createFbo();
+
+    // The per-instance source texture — populated from the card's
+    // <video> element. Allocated lazily on the first frame upload so
+    // we don't reserve GPU memory for a stream that may never start.
+    let sourceTexture: WebGLTexture | null = null;
+    let sourceTexAllocated = false;
+
+    // The DOM element the card hands us. Null until the card mounts.
+    let videoEl: HTMLVideoElement | null = null;
+
+    // True when a fresh frame is available since the last upload.
+    // requestVideoFrameCallback (Chrome/FF/Safari 16.4+) sets this; on
+    // older browsers we fall back to checking video.readyState every tick.
+    let frameDirty = false;
+    let rvfcId: number | null = null;
+    let rvfcSupported = false;
+
+    const params: CameraParams = { ...DEFAULTS };
+
+    function attachRvfc(): void {
+      if (!videoEl) return;
+      // requestVideoFrameCallback isn't in the lib.dom yet for this
+      // codebase; feature-test on the prototype.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const v = videoEl as any;
+      if (typeof v.requestVideoFrameCallback !== 'function') {
+        rvfcSupported = false;
+        return;
+      }
+      rvfcSupported = true;
+      const tick = (): void => {
+        frameDirty = true;
+        if (videoEl) rvfcId = v.requestVideoFrameCallback(tick);
+      };
+      rvfcId = v.requestVideoFrameCallback(tick);
+    }
+
+    function detachRvfc(): void {
+      if (rvfcId === null || !videoEl) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const v = videoEl as any;
+      if (typeof v.cancelVideoFrameCallback === 'function') {
+        v.cancelVideoFrameCallback(rvfcId);
+      }
+      rvfcId = null;
+    }
+
+    function ensureSourceTexture(): WebGLTexture {
+      if (sourceTexture) return sourceTexture;
+      const tex = gl.createTexture();
+      if (!tex) throw new Error('cameraInput: createTexture failed');
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      sourceTexture = tex;
+      return tex;
+    }
+
+    /**
+     * Upload one frame from `videoEl` into the source texture. Returns
+     * true if a fresh frame landed (so the shader pass should run with
+     * uHasInput=1), false otherwise (idle pattern).
+     */
+    function uploadIfReady(): boolean {
+      if (!videoEl) return false;
+      // HAVE_CURRENT_DATA = 2; the spec's minimum readiness for a
+      // sampleable frame. We don't gate on HAVE_ENOUGH_DATA (4) because
+      // it's overly strict for an always-live stream.
+      if (videoEl.readyState < 2) return false;
+      if (videoEl.videoWidth === 0 || videoEl.videoHeight === 0) return false;
+
+      // If rVFC is wired AND we've already uploaded at least one frame,
+      // skip when no new frame is queued — saves the GPU sync cost on a
+      // 30 fps camera with a 60 fps engine. On the first call we ALWAYS
+      // upload (sourceTexAllocated=false), regardless of rVFC; otherwise
+      // headless / fake-device streams (which may never fire rVFC in
+      // some Chromium builds) leave the texture empty forever and
+      // downstream OUTPUT renders a black canvas.
+      if (rvfcSupported && !frameDirty && sourceTexAllocated) return true;
+      frameDirty = false;
+
+      const tex = ensureSourceTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      try {
+        if (!sourceTexAllocated) {
+          gl.texImage2D(
+            gl.TEXTURE_2D, 0, gl.RGBA,
+            gl.RGBA, gl.UNSIGNED_BYTE,
+            videoEl,
+          );
+          sourceTexAllocated = true;
+        } else {
+          // texSubImage2D after the first upload — same texture object,
+          // no re-allocation. ~30% cheaper end-to-end on commodity GPUs.
+          gl.texSubImage2D(
+            gl.TEXTURE_2D, 0, 0, 0,
+            gl.RGBA, gl.UNSIGNED_BYTE,
+            videoEl,
+          );
+        }
+      } catch (err) {
+        // SecurityError can happen if COEP blocks the upload — surface
+        // once via console; the OUTPUT will read as idle. Don't crash
+        // the engine.
+        console.error('[cameraInput] texImage2D failed:', err);
+        return false;
+      } finally {
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      }
+      return true;
+    }
+
+    const surface: VideoNodeSurface = {
+      fbo,
+      texture: outTexture,
+      draw(frame) {
+        const g = frame.gl;
+        const uploaded = uploadIfReady();
+        const hasInput = params.enabled > 0.5 && uploaded;
+
+        g.bindFramebuffer(g.FRAMEBUFFER, fbo);
+        g.viewport(0, 0, ctx.res.width, ctx.res.height);
+        g.useProgram(program);
+
+        g.uniform1f(uHasInput, hasInput ? 1.0 : 0.0);
+        g.uniform1f(uGain,     params.gain);
+        g.uniform1f(uMirror,   params.mirror);
+
+        if (hasInput && sourceTexture) {
+          g.activeTexture(g.TEXTURE0);
+          g.bindTexture(g.TEXTURE_2D, sourceTexture);
+          g.uniform1i(uTex, 0);
+        }
+
+        ctx.drawFullscreenQuad();
+        g.bindFramebuffer(g.FRAMEBUFFER, null);
+      },
+      dispose() {
+        detachRvfc();
+        gl.deleteFramebuffer(fbo);
+        gl.deleteTexture(outTexture);
+        if (sourceTexture) gl.deleteTexture(sourceTexture);
+        gl.deleteProgram(program);
+        sourceTexture = null;
+        sourceTexAllocated = false;
+        videoEl = null;
+      },
+    };
+
+    return {
+      domain: 'video',
+      surface,
+      setParam(paramId, value) {
+        if (paramId in params) {
+          (params as unknown as Record<string, number>)[paramId] = value;
+        }
+      },
+      readParam(paramId) {
+        return (params as unknown as Record<string, number>)[paramId];
+      },
+      attachExternalSource(kind, el) {
+        if (kind !== 'video') return;
+        // Clean up any previous element's rVFC subscription.
+        detachRvfc();
+        sourceTexAllocated = false; // re-alloc against the new dimensions
+        videoEl = (el as HTMLVideoElement) ?? null;
+        if (videoEl) attachRvfc();
+      },
+      read(key) {
+        if (key === 'hasVideoElement') return videoEl !== null;
+        if (key === 'rvfcSupported') return rvfcSupported;
+        return undefined;
+      },
+      dispose() { surface.dispose(); },
+    };
+  },
+};

@@ -88,6 +88,12 @@ export interface VideoNodeHandle {
    *  for tests, current device id for INWARDS). Modules that need to
    *  expose internal state to their UI implement this. */
   read?(key: string): unknown;
+  /** Optional: card-owned DOM elements that the module samples per
+   *  frame (CAMERA's `<video>`, future PICTUREBOX's `<img>`). The card
+   *  invokes this on mount with the element and on unmount with null.
+   *  The factory itself stays DOM-free (so it remains testable in
+   *  jsdom); the bridge runs through this hook. */
+  attachExternalSource?(kind: 'video' | 'image', el: HTMLElement | null): void;
   /** Tear down GL + non-GL resources. Idempotent. */
   dispose(): void;
 }
@@ -273,6 +279,24 @@ export class VideoEngine implements DomainEngine {
   read(nodeId: string, key: string): unknown {
     const h = this.nodes.get(nodeId);
     return h?.read ? h.read(key) : undefined;
+  }
+
+  /**
+   * Forward a card-owned external DOM source (a `<video>` for CAMERA, a
+   * future `<img>` for PICTUREBOX) to the named node's handle. No-op if
+   * the node doesn't exist or doesn't implement the hook. Cards call this
+   * on mount with the element and on unmount with `null`. Lives on
+   * VideoEngine (not the cross-domain PatchEngine) because it's a
+   * video-only concern; calling code reaches it via
+   * `engine.getDomain<VideoEngine>('video').attachExternalSource(...)`.
+   */
+  attachExternalSource(
+    nodeId: string,
+    kind: 'video' | 'image',
+    el: HTMLElement | null,
+  ): void {
+    const h = this.nodes.get(nodeId);
+    h?.attachExternalSource?.(kind, el);
   }
 
   dispose(): void {

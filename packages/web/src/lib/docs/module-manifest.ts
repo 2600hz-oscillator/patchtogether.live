@@ -109,6 +109,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Analog VCO sister of analogVco with a built-in West-Coast wavefolder + a mono-video scope output. Saw / square / triangle / sine outs feed a sin(x*(1+fold)) wave-shaper; the scope tap drives the shared waveform-video renderer.',
   wavviz:
     'Wavetable VCO sister of wavetableVco with a built-in West-Coast wavefolder + a mono-video scope output. Same morphing wavetable as wavetableVco; post-fold signal feeds both audio and scope-video out.',
+  cameraInput:
+    'Webcam input (LOCAL ONLY). Live <video> -> WebGL2 texture; gain / mirror / on params. The captured stream is local to your browser tab and is NOT sent to other rack-mates — collaborators see a presence badge ("user X has CAMERA active") via Y-awareness, not the video itself. Multiplayer streaming (WebRTC + SFU) is deferred to a future phase. Spec: .myrobots/plans/module-camera-input.md.',
 };
 
 const PORT_NOTES: Record<string, string> = {
