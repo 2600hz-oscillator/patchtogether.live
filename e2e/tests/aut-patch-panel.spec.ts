@@ -56,7 +56,9 @@ test.describe('@aut PatchPanel acceptance flow', () => {
       expect(labelTexts).toContain(expected);
     }
 
-    // 4. Open the source panel and drag the cable.
+    // 4. Open the source panel and drag the cable. Pointerdown on the
+    //    source handle activates stayOpenForDrag so the source panel
+    //    survives the mouse traversal toward the target.
     await (await trigger(page, 'seq')).hover();
     await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'false');
 
@@ -66,26 +68,39 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     const adsrGate = page.locator(
       `.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid="gate"][class*="target"]`,
     );
-    // Re-open ADSR panel since hovering Seq may have closed it.
-    await (await trigger(page, 'adsr')).hover();
-    await (await trigger(page, 'seq')).hover();
 
     const seqBox = await seqGate.boundingBox();
-    const adsrBox = await adsrGate.boundingBox();
-    expect(seqBox && adsrBox).toBeTruthy();
-    if (!seqBox || !adsrBox) return;
+    expect(seqBox, 'seq gate has box').toBeTruthy();
+    if (!seqBox) return;
 
     await page.mouse.move(seqBox.x + seqBox.width / 2, seqBox.y + seqBox.height / 2);
     await page.mouse.down();
+
+    // Source panel stayed open mid-drag (stayOpenForDrag flag).
+    await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'false');
+
+    // Open the target's panel by hovering its trigger en route — must
+    // happen BEFORE we drop so the target handle's hit-zone is alive.
+    const adsrTrigger = await trigger(page, 'adsr');
+    const adsrTriggerBox = await adsrTrigger.boundingBox();
+    expect(adsrTriggerBox, 'adsr trigger has box').toBeTruthy();
+    if (!adsrTriggerBox) return;
+    await page.mouse.move(
+      adsrTriggerBox.x + adsrTriggerBox.width / 2,
+      adsrTriggerBox.y + adsrTriggerBox.height / 2,
+      { steps: 6 },
+    );
+    await page.waitForTimeout(150);
+    await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'false');
+
+    const adsrBox = await adsrGate.boundingBox();
+    expect(adsrBox, 'adsr gate has box').toBeTruthy();
+    if (!adsrBox) return;
     await page.mouse.move(
       adsrBox.x + adsrBox.width / 2,
       adsrBox.y + adsrBox.height / 2,
-      { steps: 10 },
+      { steps: 6 },
     );
-
-    // Source panel stayed open during the drag.
-    await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'false');
-
     await page.mouse.up();
 
     // Edge created.

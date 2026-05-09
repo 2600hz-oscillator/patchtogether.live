@@ -45,11 +45,11 @@ const MODULES: ModuleSpec[] = [
   { type: 'timelorde',    cardClass: 'svelte-flow__node-timelorde',    handleCount: 13, containsLabel: 'TIMELORDE' },
   // CHARLOTTE'S ECHOS: 3 inputs (L, R, delay cv) + 2 outputs (L, R) = 5.
   { type: 'charlottesEchos', cardClass: 'svelte-flow__node-charlottesEchos', handleCount: 5, containsLabel: "CHARLOTTE'S ECHOS" },
-  // MIXMSTRS: 12 audio inputs (4 ch stereo + 2 returns stereo) + 6 outputs
-  // (master L/R + 2 sends stereo) = 18 visible handles. Per-param CV inputs
-  // exist in the def but aren't rendered as visible jacks (37 jacks would
-  // overwhelm the card chrome) — they're reachable programmatically.
-  { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 18, containsLabel: 'MIXMSTRS' },
+  // MIXMSTRS: 12 audio inputs (4 ch stereo + 2 returns stereo) + 37 CV-per-
+  // param inputs + 6 outputs (master L/R + 2 sends stereo) = 55 handles.
+  // Post-PatchPanel-refactor every def-declared port renders a Handle
+  // (visually hidden until the panel is hovered open).
+  { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 55, containsLabel: 'MIXMSTRS' },
   // SCORE: 5 inputs (clock + A/D/S/R cv) + 4 outputs (pitch, gate, env, clock) = 9.
   { type: 'score',        cardClass: 'svelte-flow__node-score',        handleCount: 9, containsLabel: 'Score' },
 ];

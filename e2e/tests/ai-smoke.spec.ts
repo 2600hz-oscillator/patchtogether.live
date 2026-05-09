@@ -195,6 +195,12 @@ test.describe('AI smoke check', () => {
     );
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
 
+    // Post-PatchPanel: jacks live in a hover-revealed panel. Hover the
+    // top-left affordance first so the input handle is visible / clickable.
+    await page
+      .locator('.svelte-flow__node-audioOut [data-testid="patch-trigger"]')
+      .hover();
+
     const audioIn = page.locator('.svelte-flow__node-audioOut .svelte-flow__handle[data-handleid="L"]');
     const box = await audioIn.boundingBox();
     if (!box) throw new Error('audio input handle not found');

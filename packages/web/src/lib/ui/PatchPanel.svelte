@@ -522,12 +522,15 @@
   /*
    * When the panel is closed, ALL handles inside it are stacked at the
    * affordance corner. Edges therefore visually anchor to top-left.
-   * !important needed because the row-edge rule above also uses !important
-   * (Svelte Flow's own inline-style position is what we're overriding in
-   * both directions). pointer-events:none means a stray click on a stack
-   * of invisible handles doesn't start a connect-drag.
+   * pointer-events:none stops a stray click on the stack of invisible
+   * handles from starting a connect-drag (the user must hover-open first).
+   *
+   * Specificity hack: we need higher specificity than the open-state row
+   * rules above. Doubling the .patch-panel class gets us there without
+   * adding a chain of arbitrary parents.
    */
-  .patch-panel:not(.open) :global(.svelte-flow__handle) {
+  .patch-panel.patch-panel:not(.open) .panel-row :global(.svelte-flow__handle),
+  .patch-panel.patch-panel:not(.open) .panel-row.right :global(.svelte-flow__handle) {
     position: absolute !important;
     left: -16px !important;
     top: -16px !important;

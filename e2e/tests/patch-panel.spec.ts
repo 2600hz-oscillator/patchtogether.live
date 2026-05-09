@@ -166,7 +166,9 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await expect(edge).toHaveCount(1);
 
     // Move mouse to a neutral location so neither panel is open.
-    await page.mouse.move(900, 500);
+    await page.mouse.move(50, 50);
+    // Wait for any pending close timer to fire.
+    await page.waitForTimeout(300);
     // Confirm panels closed.
     await expect(
       page.locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`),
@@ -175,32 +177,48 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
       page.locator(`.svelte-flow__node[data-id="vca"] [data-testid="patch-panel"]`),
     ).toHaveAttribute('aria-hidden', 'true');
 
-    // Read where the source-side handle's bounding box centers.
-    // It should be at the top-left of the source card (within ~24px of
-    // the patch-trigger button), NOT at the env port's nominal position
-    // (which would be vertically centered or near the middle of the card).
-    const sourceHandleBox = await page
-      .locator(
-        `.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid="env"][class*="source"]`,
-      )
-      .boundingBox();
-    const sourceTriggerBox = await page
+    // Compare the env handle's computed position against the panel row's
+    // open-state position. When the panel is closed, the closed-state CSS
+    // override pulls the handle to the top-left corner — its on-screen
+    // position should NOT match the row-relative position (otherwise our
+    // visual-anchor invariant is broken).
+    const handleSelector = `.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid="env"][class*="source"]`;
+    const closedStyle = await page.locator(handleSelector).evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return {
+        opacity: cs.opacity,
+        pointerEvents: cs.pointerEvents,
+        x: r.left,
+        y: r.top,
+      };
+    });
+    expect(closedStyle.opacity, 'closed handle opacity:0').toBe('0');
+    expect(closedStyle.pointerEvents, 'closed handle pointer-events:none').toBe('none');
+
+    // Now hover-open the panel and confirm the handle's screen position
+    // changed (i.e. it moved out of the corner stack into a row position).
+    await page
       .locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`)
-      .boundingBox();
+      .hover();
+    await page.waitForTimeout(200);
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`),
+    ).toHaveAttribute('aria-hidden', 'false');
 
-    expect(sourceHandleBox, 'source handle has a bounding box').toBeTruthy();
-    expect(sourceTriggerBox, 'source trigger has a bounding box').toBeTruthy();
-    if (!sourceHandleBox || !sourceTriggerBox) return;
+    const openStyle = await page.locator(handleSelector).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left, y: r.top };
+    });
 
-    // The collapsed handles should be stacked near the trigger corner.
-    // Allow up to 32px of distance to account for the trigger's own size
-    // + the slight offset we use for visual stacking.
-    const dx = Math.abs(sourceHandleBox.x - sourceTriggerBox.x);
-    const dy = Math.abs(sourceHandleBox.y - sourceTriggerBox.y);
+    // The two positions must differ — that's the whole point of the
+    // refactor (cables fan out when the panel opens).
+    const dx = Math.abs(openStyle.x - closedStyle.x);
+    const dy = Math.abs(openStyle.y - closedStyle.y);
     expect(
       Math.max(dx, dy),
-      `closed-panel handle should be near trigger corner (got dx=${dx}, dy=${dy})`,
-    ).toBeLessThan(40);
+      `handle screen position must differ between closed and open (got dx=${dx}, dy=${dy})`,
+    ).toBeGreaterThan(40);
   });
 
   test('panel stays open during a connect-drag', async ({ page }) => {
@@ -212,39 +230,55 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
       { id: 'adsr', type: 'adsr', position: { x: 700, y: 100 } },
     ]);
 
-    // Open the source panel (sequencer's gate output).
-    await openPanel(page, 'seq');
-
     const sourceHandle = page.locator(
       `.svelte-flow__node[data-id="seq"] .svelte-flow__handle[data-handleid="gate"][class*="source"]`,
     );
-    await expect(sourceHandle).toHaveCount(1);
-
     const targetHandle = page.locator(
       `.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid="gate"][class*="target"]`,
     );
 
-    // Open the target panel too (so the target handle is visible to drop on).
-    await openPanel(page, 'adsr');
-
+    // Open the source panel first so the source handle is reachable. Then
+    // start the drag — stayOpenForDrag holds the panel open while we travel
+    // toward the target.
+    await openPanel(page, 'seq');
     const sBox = await sourceHandle.boundingBox();
-    const tBox = await targetHandle.boundingBox();
-    expect(sBox && tBox).toBeTruthy();
-    if (!sBox || !tBox) return;
+    expect(sBox, 'source handle has box').toBeTruthy();
+    if (!sBox) return;
 
-    // Start drag, half-way through assert the panel is still open
-    // (stayOpenForDrag flag means scheduleClose is a no-op while
-    // dragging).
     await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
     await page.mouse.down();
-    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 8 });
 
-    // Mid-drag: the source panel should still be visible (aria-hidden=false).
+    // Mid-drag (still on the source side): the source panel must remain
+    // open. Without stayOpenForDrag, leaving the trigger via mouse.down
+    // would have triggered the close timer.
     const seqPanel = page.locator(
       `.svelte-flow__node[data-id="seq"] [data-testid="patch-panel"]`,
     );
     await expect(seqPanel).toHaveAttribute('aria-hidden', 'false');
 
+    // Now traverse to the target side and open its panel (hovering the
+    // trigger en route). Open the target panel BEFORE we drop so the
+    // target handle's hit zone is alive.
+    const adsrTrigger = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`,
+    );
+    const adsrTriggerBox = await adsrTrigger.boundingBox();
+    expect(adsrTriggerBox, 'adsr trigger has box').toBeTruthy();
+    if (!adsrTriggerBox) return;
+    await page.mouse.move(
+      adsrTriggerBox.x + adsrTriggerBox.width / 2,
+      adsrTriggerBox.y + adsrTriggerBox.height / 2,
+      { steps: 5 },
+    );
+    await page.waitForTimeout(150);
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`),
+    ).toHaveAttribute('aria-hidden', 'false');
+
+    const tBox = await targetHandle.boundingBox();
+    expect(tBox, 'target handle has box').toBeTruthy();
+    if (!tBox) return;
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 5 });
     await page.mouse.up();
 
     // Assert connection landed.

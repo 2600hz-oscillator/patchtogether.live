@@ -613,8 +613,11 @@ test('rclick on a port handle does not crash and surfaces SOME menu', async ({ p
   // Ports live inside the node card. Right-click on the card area triggers
   // the per-node context menu (xyflow's onnodecontextmenu). We assert: NO
   // crash, palette never appears, per-node menu does appear.
+  // Post-PatchPanel: the handle is hover-revealed, so we hover the trigger
+  // first to make it interactive.
   await ready(page);
   await spawnPatch(page, [{ id: 'm', type: 'lfo', position: { x: 200, y: 200 } }]);
+  await page.locator('.svelte-flow__node-lfo [data-testid="patch-trigger"]').hover();
   // Find a port handle inside the LFO card and right-click it.
   const handle = page.locator('.svelte-flow__node-lfo .svelte-flow__handle').first();
   await expect(handle).toBeVisible();
