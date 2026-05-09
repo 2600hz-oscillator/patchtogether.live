@@ -99,9 +99,14 @@ tasks:
 
   # ---------------- Unit + integration tests ----------------
   test:
-    desc: Run all unit tests across workspaces
+    desc: Run unit/integration tests (server + web only — ART + E2E are run via dedicated tasks)
+    # NOTE: deliberately scoped to server + web. Using
+    # `npm test --workspaces --if-present` would also invoke `art` (vitest) and
+    # `e2e` (playwright), which are heavier suites with their own task targets
+    # — and `task ci` would then run them twice. See chore/build-perf PR.
     cmds:
-      - npm test --workspaces --if-present
+      - npm test -w {{.SERVER}}
+      - npm test -w {{.WEB}}
 
   # ---------------- Audio Regression Tests ----------------
   art:
