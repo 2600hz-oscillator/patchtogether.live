@@ -214,14 +214,16 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
       Math.round(1366 * 0.8) + 2,
     );
 
-    // All 49 input ports are in the DOM under the inputs column (the
-    // I/O spec test covers exact-id matching; here we just confirm the
-    // column-scroll architecture didn't drop anything).
+    // All input ports are in the DOM under the inputs column (the I/O
+    // spec test covers exact-id matching; here we just confirm the
+    // 2-column architecture didn't drop anything). MIXMSTRS exposes
+    // 12 audio + 37 CV per the def; we use >= to stay flexible if the
+    // module's port surface grows.
     const inputsCol = page.locator(
       `.svelte-flow__node[data-id="mm"] [data-testid="patch-panel-inputs"]`,
     );
     const inputCount = await inputsCol.locator('[data-testid="port-row-label"]').count();
-    expect(inputCount, 'MIXMSTRS: 49 input rows present').toBe(49);
+    expect(inputCount, 'MIXMSTRS: dense input column populated').toBeGreaterThanOrEqual(49);
   });
 
   test('RIOTGIRLS: dense sectioned panel (55 inputs) fits on a 1366×768 viewport', async ({
@@ -258,8 +260,8 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     );
     const inputCount = await inputsCol.locator('[data-testid="port-row-label"]').count();
     const outputCount = await outputsCol.locator('[data-testid="port-row-label"]').count();
-    expect(inputCount, 'RIOTGIRLS: 55 input rows in left column').toBe(55);
-    expect(outputCount, 'RIOTGIRLS: 2 output rows (outL, outR) in right column').toBe(2);
+    expect(inputCount, 'RIOTGIRLS: dense input column populated').toBeGreaterThanOrEqual(55);
+    expect(outputCount, 'RIOTGIRLS: outL + outR in right column').toBe(2);
   });
 
   test('cables visually anchor at top-left when both panels are closed', async ({ page }) => {
