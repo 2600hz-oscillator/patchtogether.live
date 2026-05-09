@@ -50,9 +50,16 @@ describe('video Phase-1 — module registration', () => {
 });
 
 describe('video Phase-1 — INWARDS', () => {
-  it('no inputs, single mono-video output', () => {
+  it('one cv input per param, single mono-video output', () => {
     const def = getVideoModuleDef('inwards')!;
-    expect(def.inputs).toEqual([]);
+    // Inputs are 3 cv ports (one per modulatable param), no other input
+    // types — INWARDS is procedural so there is no source video to
+    // accept.
+    const inIds = def.inputs.map((p) => p.id).sort();
+    expect(inIds).toEqual(['density', 'speed', 'thickness']);
+    for (const port of def.inputs) {
+      expect(port.type, `input ${port.id} type`).toBe('cv');
+    }
     expect(def.outputs).toHaveLength(1);
     expect(def.outputs[0]?.id).toBe('out');
     expect(def.outputs[0]?.type).toBe('mono-video');
@@ -61,6 +68,14 @@ describe('video Phase-1 — INWARDS', () => {
     const def = getVideoModuleDef('inwards')!;
     const ids = def.params.map((p) => p.id).sort();
     expect(ids).toEqual(['density', 'speed', 'thickness']);
+  });
+  it('every cv input declares paramTarget == its own id (so the bridge writes the right param)', () => {
+    // Mirrors the LINES PR-65 invariant — without it, the cross-domain
+    // CV bridge has nothing to route into setParam.
+    const def = getVideoModuleDef('inwards')!;
+    for (const port of def.inputs.filter((i) => i.type === 'cv')) {
+      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
+    }
   });
 });
 

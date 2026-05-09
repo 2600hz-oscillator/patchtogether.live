@@ -70,7 +70,16 @@ export const inwardsDef: VideoModuleDef = {
   label: 'INWARDS',
   category: 'sources',
   schemaVersion: 1,
-  inputs: [],
+  inputs: [
+    // Per-param CV inputs. Mirrors the LINES CV pattern (PR-65): the
+    // cross-domain CV bridge in PatchEngine routes audio-side cv signals
+    // into VideoEngine.setParam, where the target param id == this input
+    // port id. So the port ids MUST match the param ids exactly
+    // (`speed`, `density`, `thickness`).
+    { id: 'speed',     type: 'cv', paramTarget: 'speed' },
+    { id: 'density',   type: 'cv', paramTarget: 'density' },
+    { id: 'thickness', type: 'cv', paramTarget: 'thickness' },
+  ],
   outputs: [
     { id: 'out', type: 'mono-video' },
   ],
