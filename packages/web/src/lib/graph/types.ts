@@ -98,6 +98,9 @@ type StandardModuleType =
   | 'riotgirls'
   | 'score'
   | 'drumseqz'
+  // Sister modules with built-in wavefolder + waveform-video output:
+  | 'vizvco'
+  | 'wavviz'
   // Video-domain modules (Phase 0 spike):
   | 'lines'
   | 'videoOut'

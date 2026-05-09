@@ -91,6 +91,16 @@ export const linesDef: VideoModuleDef = {
   schemaVersion: 1,
   inputs: [
     { id: 'fm', type: 'mono-video' },
+    // Per-param CV inputs. The cross-domain CV bridge in PatchEngine
+    // routes audio-side cv signals into VideoEngine.setParam, where the
+    // target param id == this input port id. So the port ids MUST match
+    // the param ids exactly (`orient`, `amp`, `thickness`, `phase`).
+    // `fmDepth` is omitted — that's what the `fm` mono-video input is
+    // for; modulating its depth via cv would double-up the same idea.
+    { id: 'orient',    type: 'cv', paramTarget: 'orient' },
+    { id: 'amp',       type: 'cv', paramTarget: 'amp' },
+    { id: 'thickness', type: 'cv', paramTarget: 'thickness' },
+    { id: 'phase',     type: 'cv', paramTarget: 'phase' },
   ],
   outputs: [
     { id: 'out', type: 'mono-video' },

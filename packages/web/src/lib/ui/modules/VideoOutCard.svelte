@@ -1,21 +1,38 @@
 <script lang="ts">
-  // VideoOutCard — UI for the Phase 0 OUTPUT sink. The card body IS the
-  // visible canvas; we drive a per-card 2D-context blit at rAF cadence,
-  // pulling the most recent VideoEngine frame out of the engine's
-  // OffscreenCanvas via `engine.getDomain('video').canvas` and drawing it
-  // into our visible canvas.
+  // VideoOutCard — UI for the Phase 0 OUTPUT sink with Phase-1 resize
+  // polish (task #17). The card body IS the visible canvas; we drive a
+  // per-card 2D-context blit at rAF cadence, pulling the most recent
+  // VideoEngine frame out of the engine's OffscreenCanvas via
+  // `engine.getDomain('video').canvas` and drawing it into our visible
+  // canvas.
   //
-  // Why a 2D blit rather than a second WebGL2 context: the engine already
-  // owns the only WebGL2 surface (one per page). Sharing that context
-  // across multiple OUTPUT cards is messy (context bookkeeping, viewport
-  // restoration). A 2D blit of the engine canvas — which the spec
-  // explicitly endorses (drawImage of an OffscreenCanvas is well-defined)
-  // — gives us per-card visible canvases without a second GL context.
-  // Phase 1 will revisit if we need higher fidelity.
+  // Resize:
+  //   - Bottom-right corner-drag handle. Width + height stored in
+  //     `node.data.width` / `node.data.height` so they sync via Y.Doc
+  //     to other collaborators (data is part of ModuleNode and is
+  //     persisted alongside params).
+  //   - Resize is INDEPENDENT of Svelte Flow's canvas zoom: drag delta
+  //     is divided by the current viewport zoom factor before being
+  //     applied to the card's intrinsic size, so a 1px screen-drag
+  //     always == 1px of card growth regardless of zoom.
+  //   - The video content scales aspect-fit (letterbox) inside the
+  //     resized card. VideoEngine renders to 640×360 (16:9); we fit
+  //     that into the resized canvas-wrap, leaving black bars on the
+  //     short axis.
+  //
+  // Y-flip: WebGL framebuffers use a bottom-left origin; the 2D canvas
+  // 2d-context uses top-left. drawImage of an OffscreenCanvas backed by
+  // a WebGL2 context reads the framebuffer bytes as-is (origin at
+  // bottom-left of the WebGL surface), then writes them top-down on
+  // the 2D destination — which renders the image upside-down.
+  // Procedural sources happen to be Y-symmetric so the bug went
+  // unnoticed at Phase-0; PICTUREBOX (real photos) made it visible.
+  // Flip here so every module renders right-side-up downstream.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
+  import { patch } from '$lib/graph/store';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
 
@@ -23,8 +40,62 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
+  // Read viewport reactively so resize math always uses the live zoom
+  // factor. The store is provided by <SvelteFlow>; this card is
+  // rendered inside it, so the call always succeeds.
+  const flowStore = useStore();
+
+  // Defaults: keep 16:9 aspect, plenty of room to read at the default
+  // zoom level. Stored in node.data so they sync via Y.Doc.
+  const DEFAULT_WIDTH = 360;
+  const DEFAULT_HEIGHT = 240;
+  const MIN_WIDTH = 240;
+  const MIN_HEIGHT = 160;
+  // Engine render resolution — must match VIDEO_RES in
+  // packages/web/src/lib/video/engine.ts. Hardcoded here so we don't
+  // need to import the engine module just for this constant (it
+  // pulls in WebGL boot code).
+  const ENGINE_W = 640;
+  const ENGINE_H = 360;
+
+  let cardWidth = $derived<number>(
+    (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,
+  );
+  let cardHeight = $derived<number>(
+    (node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT,
+  );
+
+  // Inside the card, the canvas-wrap fills the area minus header
+  // (~52px) + padding. The actual <canvas> element gets sized to an
+  // aspect-fit inside that area. Width/height of the <canvas>
+  // attribute matches the container; the inner draw scales the engine
+  // texture to fit-with-letterbox.
+  const HEADER_PX = 56;
+  const PAD_PX = 20;
+  let innerWidth = $derived(Math.max(MIN_WIDTH - PAD_PX, cardWidth - PAD_PX));
+  let innerHeight = $derived(Math.max(MIN_HEIGHT - HEADER_PX, cardHeight - HEADER_PX));
+
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
+
+  /** Compute the aspect-fit destination rect for an engine-resolution
+   *  source drawn into a (cw, ch) canvas. Returns top-left (x, y) and
+   *  width/height of the letterbox-fit area. */
+  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
+    const srcAspect = ENGINE_W / ENGINE_H;
+    const dstAspect = cw / ch;
+    if (dstAspect > srcAspect) {
+      // Destination is wider than source: letterbox left/right.
+      const h = ch;
+      const w = Math.round(h * srcAspect);
+      return { x: Math.round((cw - w) / 2), y: 0, w, h };
+    } else {
+      // Destination is taller: letterbox top/bottom.
+      const w = cw;
+      const h = Math.round(w / srcAspect);
+      return { x: 0, y: Math.round((ch - h) / 2), w, h };
+    }
+  }
 
   function draw() {
     rafId = null;
@@ -37,7 +108,6 @@
     try {
       videoEngine = e.getDomain<VideoEngine>('video');
     } catch {
-      // No video engine registered (e.g. test that only spawns audio).
       rafId = requestAnimationFrame(draw);
       return;
     }
@@ -45,32 +115,24 @@
       rafId = requestAnimationFrame(draw);
       return;
     }
-
-    // Draw the engine's offscreen canvas onto our visible canvas, scaled
-    // to fit our card dimensions. drawImage handles OffscreenCanvas (and
-    // HTMLCanvasElement for the SSR-fallback case) identically. The
-    // OUTPUT module's draw() pass already wrote into the engine's
-    // default framebuffer this frame; we just blit it across.
-    //
-    // Y-flip: WebGL framebuffers use a bottom-left origin; the 2D canvas
-    // 2d-context uses top-left. drawImage of an OffscreenCanvas backed by
-    // a WebGL2 context reads the framebuffer bytes as-is (origin at
-    // bottom-left of the WebGL surface), then writes them top-down on the
-    // 2D destination — which renders the image upside-down. Procedural
-    // sources (LINES horizontal stripes, INWARDS concentric rings) are
-    // visually Y-symmetric so the bug went unnoticed at Phase-0; PICTUREBOX
-    // (real photos with an obvious "up") makes it visible. Flip here so
-    // every module renders right-side-up downstream.
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
       const src = videoEngine.canvas as CanvasImageSource;
+      const cw = canvasEl.width;
+      const ch = canvasEl.height;
+      // Black background, then aspect-fit blit with Y-flip.
+      ctx2d.fillStyle = '#050608';
+      ctx2d.fillRect(0, 0, cw, ch);
+      const r = fitRect(cw, ch);
       ctx2d.save();
-      ctx2d.translate(0, canvasEl.height);
+      // Y-flip the engine canvas. Translate to dst.y + dst.h then
+      // scale(1, -1) so a top-left drawImage at (dst.x, 0) produces a
+      // visually-upright image inside the letterbox.
+      ctx2d.translate(r.x, r.y + r.h);
       ctx2d.scale(1, -1);
-      ctx2d.drawImage(src, 0, 0, canvasEl.width, canvasEl.height);
+      ctx2d.drawImage(src, 0, 0, r.w, r.h);
       ctx2d.restore();
     }
-
     rafId = requestAnimationFrame(draw);
   }
 
@@ -80,34 +142,89 @@
 
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
+    if (resizeAbort) resizeAbort.abort();
   });
+
+  // ---------- Corner-drag resize ----------
+  // Pointer-driven; div coords are screen-space, so we divide by the
+  // current viewport zoom to get card-intrinsic delta. We persist the
+  // result onto node.data inside the patch store, which Svelte Flow
+  // re-renders us against on next frame.
+  let resizing = $state(false);
+  let resizeAbort: AbortController | null = null;
+
+  function onResizeStart(ev: PointerEvent) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    resizing = true;
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const startW = cardWidth;
+    const startH = cardHeight;
+    resizeAbort = new AbortController();
+    const sig = resizeAbort.signal;
+
+    const onMove = (mev: PointerEvent) => {
+      const zoom = flowStore.viewport.zoom || 1;
+      const dx = (mev.clientX - startX) / zoom;
+      const dy = (mev.clientY - startY) / zoom;
+      const w = Math.max(MIN_WIDTH, Math.round(startW + dx));
+      const h = Math.max(MIN_HEIGHT, Math.round(startH + dy));
+      const target = patch.nodes[id];
+      if (target) {
+        if (!target.data) target.data = {};
+        target.data.width = w;
+        target.data.height = h;
+      }
+    };
+    const stop = () => {
+      resizing = false;
+      resizeAbort?.abort();
+      resizeAbort = null;
+    };
+    window.addEventListener('pointermove', onMove, { signal: sig });
+    window.addEventListener('pointerup', stop, { signal: sig });
+    window.addEventListener('pointercancel', stop, { signal: sig });
+  }
 </script>
 
-<div class="card video">
+<div
+  class="card video"
+  class:resizing
+  style="width: {cardWidth}px; height: {cardHeight}px;"
+  data-testid="video-out-card"
+  data-node-id={id}
+>
   <div class="stripe"></div>
   <header class="title">OUTPUT</header>
 
   <Handle type="target" position={Position.Left} id="in" style="top: 56px; --handle-color: var(--cable-video);" />
   <span class="port-label left" style="top: 50px;">IN</span>
 
-  <div class="canvas-wrap">
-    <!-- Visible canvas at a sensible default size. Phase 1 polish adds a
-         corner-drag resize handle; for now a fixed-aspect frame proves
-         out the engine → visible-canvas pipeline. -->
+  <div class="canvas-wrap" style="width: {innerWidth}px; height: {innerHeight}px;">
     <canvas
       bind:this={canvasEl}
-      width="320"
-      height="180"
+      width={innerWidth}
+      height={innerHeight}
       data-testid="video-out-canvas"
       data-node-id={id}
     ></canvas>
   </div>
+
+  <!-- Bottom-right corner-drag resize handle. The svelte-flow nodrag
+       class is required so xyflow's node-drag listener doesn't
+       hijack the pointerdown event before we see it. -->
+  <div
+    class="resize-handle nodrag"
+    role="separator"
+    aria-label="Resize OUTPUT"
+    data-testid="video-out-resize-handle"
+    onpointerdown={onResizeStart}
+  ></div>
 </div>
 
 <style>
   .card {
-    width: 360px;
-    min-height: 240px;
     background: var(--module-bg);
     border: 1px solid #2a2f3a;
     border-radius: 2px;
@@ -117,6 +234,7 @@
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
+    overflow: hidden;
   }
   :global(.svelte-flow__node:hover) .card {
     border-color: var(--accent-dim);
@@ -124,6 +242,10 @@
   :global(.svelte-flow__node.selected) .card {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  .card.resizing {
+    /* Avoid hover/selected pulses while the user drags. */
+    transition: none;
   }
   .stripe {
     position: absolute;
@@ -148,19 +270,42 @@
   }
   .port-label.left { left: 14px; }
   .canvas-wrap {
-    margin-top: 18px;
-    padding: 0 16px;
+    margin: 18px auto 0;
     display: flex;
     justify-content: center;
+    align-items: center;
   }
   .canvas-wrap canvas {
     background: #050608;
     border: 1px solid var(--cable-video);
     border-radius: 1px;
     image-rendering: pixelated;
-    /* Use a fixed display size so the visual is repeatable in screenshots
-     * and ART. The engine renders to its own resolution and we scale. */
-    width: 320px;
-    height: 180px;
+    width: 100%;
+    height: 100%;
+    display: block;
   }
+  .resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    /* Triangle in the corner so it's visible without dominating the
+     * card chrome. */
+    background: linear-gradient(
+      135deg,
+      transparent 50%,
+      var(--cable-video) 50%,
+      var(--cable-video) 60%,
+      transparent 60%,
+      transparent 70%,
+      var(--cable-video) 70%,
+      var(--cable-video) 80%,
+      transparent 80%
+    );
+    opacity: 0.7;
+    z-index: 5;
+  }
+  .resize-handle:hover { opacity: 1; }
 </style>

@@ -154,6 +154,9 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'charlottesEchos',
     'riotgirls',
     'score',
+    // Sister VCOs with built-in wavefolders + waveform-video out:
+    'vizvco',
+    'wavviz',
     // Video-domain (Phase 0 spike, .myrobots/plans/video-modules-mvp.md):
     'lines',
     'videoOut',

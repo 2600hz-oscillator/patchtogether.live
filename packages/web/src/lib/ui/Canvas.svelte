@@ -70,6 +70,8 @@
   import RiotgirlsCard from '$lib/ui/modules/RiotgirlsCard.svelte';
   import ScoreCard from '$lib/ui/modules/ScoreCard.svelte';
   import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
+  import VizvcoCard from '$lib/ui/modules/VizvcoCard.svelte';
+  import WavvizCard from '$lib/ui/modules/WavvizCard.svelte';
   import LinesCard from '$lib/ui/modules/LinesCard.svelte';
   import VideoOutCard from '$lib/ui/modules/VideoOutCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
@@ -136,6 +138,8 @@
     riotgirls: RiotgirlsCard,
     score: ScoreCard,
     drumseqz: DrumseqzCard,
+    vizvco: VizvcoCard,
+    wavviz: WavvizCard,
     // Video-domain (Phase 0):
     lines: LinesCard,
     videoOut: VideoOutCard,

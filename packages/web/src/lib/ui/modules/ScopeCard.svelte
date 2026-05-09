@@ -221,8 +221,10 @@
 
   <Handle type="source" position={Position.Right} id="ch1_out" style="top: 56px; --handle-color: var(--cable-audio);" />
   <Handle type="source" position={Position.Right} id="ch2_out" style="top: 92px; --handle-color: var(--cable-audio);" />
+  <Handle type="source" position={Position.Right} id="out"     style="top: 128px; --handle-color: var(--cable-mono-video);" />
   <span class="port-label right" style="top: 50px;">out1</span>
   <span class="port-label right" style="top: 86px;">out2</span>
+  <span class="port-label right" style="top: 122px;">vid</span>
 
   <div class="screen-wrap">
     <canvas bind:this={canvasEl} width="280" height="120"></canvas>

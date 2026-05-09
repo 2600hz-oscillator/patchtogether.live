@@ -26,7 +26,8 @@ const MODULES: ModuleSpec[] = [
   { type: 'adsr',         cardClass: 'svelte-flow__node-adsr',         handleCount: 6, containsLabel: 'ADSR' },
   { type: 'filter',       cardClass: 'svelte-flow__node-filter',       handleCount: 4, containsLabel: 'Filter' },
   { type: 'reverb',       cardClass: 'svelte-flow__node-reverb',       handleCount: 2, containsLabel: 'Reverb' },
-  { type: 'scope',        cardClass: 'svelte-flow__node-scope',        handleCount: 4, containsLabel: 'Scope' },
+  // SCOPE: 2 audio inputs + 2 audio passthrough outputs + 1 mono-video output = 5.
+  { type: 'scope',        cardClass: 'svelte-flow__node-scope',        handleCount: 5, containsLabel: 'Scope' },
   { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 4, containsLabel: 'Sequencer' },
   { type: 'wavetableVco', cardClass: 'svelte-flow__node-wavetableVco', handleCount: 4, containsLabel: 'Wavetable VCO' },
   { type: 'lfo',          cardClass: 'svelte-flow__node-lfo',          handleCount: 7, containsLabel: 'LFO' },
@@ -56,9 +57,13 @@ const MODULES: ModuleSpec[] = [
   { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 18, containsLabel: 'MIXMSTRS' },
   // SCORE: 5 inputs (clock + A/D/S/R cv) + 4 outputs (pitch, gate, env, clock) = 9.
   { type: 'score',        cardClass: 'svelte-flow__node-score',        handleCount: 9, containsLabel: 'Score' },
+  // VIZVCO: 3 inputs (pitch, fm, foldAmount cv) + 5 outputs (saw, square, triangle, sine, scope mono-video) = 8.
+  { type: 'vizvco',       cardClass: 'svelte-flow__node-vizvco',       handleCount: 8, containsLabel: 'VIZVCO' },
+  // WAVVIZ: 4 inputs (pitch, fm, wavePos cv, foldAmount cv) + 2 outputs (audio, scope mono-video) = 6.
+  { type: 'wavviz',       cardClass: 'svelte-flow__node-wavviz',       handleCount: 6, containsLabel: 'WAVVIZ' },
   // ---- Video-domain (Phase 0 spike) ----
-  // LINES: 1 input (fm) + 1 output (out) = 2 handles.
-  { type: 'lines',        cardClass: 'svelte-flow__node-lines',        handleCount: 2, containsLabel: 'LINES',  domain: 'video' },
+  // LINES: 5 inputs (fm + 4 cv: orient, amp, thickness, phase) + 1 output (out) = 6 handles.
+  { type: 'lines',        cardClass: 'svelte-flow__node-lines',        handleCount: 6, containsLabel: 'LINES',  domain: 'video' },
   // OUTPUT (videoOut): 1 input (in) + 0 outputs = 1 handle.
   { type: 'videoOut',     cardClass: 'svelte-flow__node-videoOut',     handleCount: 1, containsLabel: 'OUTPUT', domain: 'video' },
   // ---- Video-domain (Phase 1 — .myrobots/plans/video-modules-mvp.md) ----

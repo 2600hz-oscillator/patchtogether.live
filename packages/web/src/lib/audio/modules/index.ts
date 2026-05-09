@@ -25,6 +25,8 @@ import { charlottesEchosDef } from './charlottes-echos';
 import { riotgirlsDef, triggerVoice as riotgirlsTriggerVoice } from './riotgirls';
 import { scoreDef } from './score';
 import { drumseqzDef } from './drumseqz';
+import { vizvcoDef } from './vizvco';
+import { wavvizDef } from './wavviz';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -55,6 +57,8 @@ export function registerAudioModules(): void {
   registerModule(riotgirlsDef);
   registerModule(scoreDef);
   registerModule(drumseqzDef);
+  registerModule(vizvcoDef);
+  registerModule(wavvizDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
