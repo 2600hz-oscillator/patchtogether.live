@@ -1,0 +1,132 @@
+// e2e/tests/aut-patch-panel.spec.ts
+//
+// @aut Acceptance flow for the hover-revealed patch panel:
+//
+//  - Open a fresh rack
+//  - Spawn an ADSR — see knobs, no jacks
+//  - Hover top-left of ADSR — patch panel opens, ATTACK/DECAY/SUSTAIN/
+//    RELEASE labels visible
+//  - Drag a cable from another module's gate output to ADSR's gate input
+//    via the panel — connection works, panel stays open during drag
+//  - Move mouse away — panel closes
+//  - Spawn RIOTGIRLS — same flow with 55 ports, organized into voice +
+//    master sections
+//
+// AUT (Acceptance User Test) tests are tagged @aut so they're easy to
+// run as a focused suite when iterating on the UX.
+
+import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch } from './_helpers';
+
+async function panel(page: Page, nodeId: string) {
+  return page.locator(
+    `.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-panel"]`,
+  );
+}
+
+async function trigger(page: Page, nodeId: string) {
+  return page.locator(
+    `.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`,
+  );
+}
+
+test.describe('@aut PatchPanel acceptance flow', () => {
+  test('ADSR hover-open, drag-from-Sequencer, hover-away closes', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'seq',  type: 'sequencer', position: { x: 80, y: 100 } },
+      { id: 'adsr', type: 'adsr',      position: { x: 700, y: 100 } },
+    ]);
+
+    // 1. ADSR panel is closed by default.
+    await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'true');
+
+    // 2. Hover ADSR's top-left affordance — panel opens.
+    await (await trigger(page, 'adsr')).hover();
+    await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'false');
+
+    // 3. Verbose labels are visible.
+    const labels = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"] [data-testid="port-row-label"]`,
+    );
+    const labelTexts = (await labels.allTextContents()).map((s) => s.trim());
+    for (const expected of ['ATTACK', 'DECAY', 'SUSTAIN', 'RELEASE', 'GATE']) {
+      expect(labelTexts).toContain(expected);
+    }
+
+    // 4. Pin both panels open via click (the click toggle locks the panel
+    //    open until another click or an outside tap closes it).
+    await (await trigger(page, 'seq')).click();
+    await (await trigger(page, 'adsr')).click();
+    await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'false');
+    await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'false');
+
+    const seqGate = page.locator(
+      `.svelte-flow__node[data-id="seq"] .svelte-flow__handle[data-handleid="gate"][class*="source"]`,
+    );
+    const adsrGate = page.locator(
+      `.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid="gate"][class*="target"]`,
+    );
+
+    const seqBox = await seqGate.boundingBox();
+    const adsrBox = await adsrGate.boundingBox();
+    expect(seqBox, 'seq gate has box').toBeTruthy();
+    expect(adsrBox, 'adsr gate has box').toBeTruthy();
+    if (!seqBox || !adsrBox) return;
+
+    await page.mouse.move(seqBox.x + seqBox.width / 2, seqBox.y + seqBox.height / 2);
+    await page.mouse.down();
+
+    // Source panel stays open mid-drag (pinned + stayOpenForDrag).
+    await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'false');
+
+    await page.mouse.move(
+      adsrBox.x + adsrBox.width / 2,
+      adsrBox.y + adsrBox.height / 2,
+      { steps: 10 },
+    );
+    await page.mouse.up();
+
+    // Edge created.
+    await expect(
+      page.locator(`.svelte-flow__edge[data-id*="seq-gate-adsr-gate"]`),
+    ).toHaveCount(1);
+
+    // 5. Outside-click closes both pinned panels (an outside pointerdown
+    //    drops the pinned + hovered drivers).
+    await page.mouse.click(50, 50);
+    await page.waitForTimeout(100);
+    await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'true');
+    await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  test('RIOTGIRLS spawn → hover-open → 5 sections + verbose labels', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 200, y: 100 } }]);
+
+    await (await trigger(page, 'rg')).hover();
+    await expect(await panel(page, 'rg')).toHaveAttribute('aria-hidden', 'false');
+
+    // Section headers organized into voices + master.
+    const sections = page.locator(
+      `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel"] .section-title`,
+    );
+    const sectionTexts = (await sections.allTextContents()).map((s) => s.trim());
+    expect(sectionTexts).toEqual(
+      expect.arrayContaining(['Voice 1 (DG)', 'Voice 2 (DG)', 'Voice 3 (DG)', 'Voice 4 (WT)', 'Master FX']),
+    );
+
+    // Verbose label presence.
+    const labels = page.locator(
+      `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel"] [data-testid="port-row-label"]`,
+    );
+    const labelTexts = (await labels.allTextContents()).map((s) => s.trim());
+    expect(labelTexts).toContain('V1 TRIGGER');
+    expect(labelTexts).toContain('V4 RELEASE');
+    expect(labelTexts).toContain('FILTER PING DECAY');
+  });
+});

@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { qbrtDef } from '$lib/audio/modules/qbrt';
   import { useEngine } from '$lib/audio/engine-context';
@@ -17,41 +19,37 @@
 
   const set = (id_: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[id_] = v; };
   const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
+
+  const inputs: PortDescriptor[] = [
+    { id: 'L',         cable: 'audio' },
+    { id: 'R',         cable: 'audio' },
+    { id: 'ping',      cable: 'gate' },
+    { id: 'cutoff',    cable: 'cv' },
+    { id: 'resonance', cable: 'cv' },
+    { id: 'mode',      cable: 'cv' },
+    { id: 'pingDecay', label: 'PING DECAY', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'L', cable: 'audio' },
+    { id: 'R', cable: 'audio' },
+  ];
 </script>
 
 <div class="mod-card qbrt-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <header class="title">QBRT</header>
 
-  <Handle type="target" position={Position.Left} id="L"         style="top: 56px;  --handle-color: var(--cable-audio);" />
-  <Handle type="target" position={Position.Left} id="R"         style="top: 92px;  --handle-color: var(--cable-audio);" />
-  <Handle type="target" position={Position.Left} id="ping"      style="top: 128px; --handle-color: var(--cable-gate);" />
-  <Handle type="target" position={Position.Left} id="cutoff"    style="top: 164px; --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="resonance" style="top: 200px; --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="mode"      style="top: 236px; --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="pingDecay" style="top: 272px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">L</span>
-  <span class="port-label left" style="top: 86px;">R</span>
-  <span class="port-label left" style="top: 122px;">ping</span>
-  <span class="port-label left" style="top: 158px;">cut cv</span>
-  <span class="port-label left" style="top: 194px;">res cv</span>
-  <span class="port-label left" style="top: 230px;">mod cv</span>
-  <span class="port-label left" style="top: 266px;">png cv</span>
-
-  <Handle type="source" position={Position.Right} id="L" style="top: 56px; --handle-color: var(--cable-audio);" />
-  <Handle type="source" position={Position.Right} id="R" style="top: 92px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 50px;">L</span>
-  <span class="port-label right" style="top: 86px;">R</span>
-
-  <div class="fader-row">
-    <Fader value={cutoff}    min={20}    max={20000} defaultValue={1000} label="Cut"  units="Hz" curve="log"    onchange={set('cutoff')}    readLive={live('cutoff')} />
-    <Fader value={resonance} min={0}     max={0.99}  defaultValue={0.7}  label="Res"             curve="linear" onchange={set('resonance')} readLive={live('resonance')} />
-    <Fader value={mode}      min={0}     max={1}     defaultValue={0}    label="Mode"            curve="linear" onchange={set('mode')}      readLive={live('mode')} />
-    <Fader value={pingDecay} min={0.005} max={0.5}   defaultValue={0.15} label="Ping" units="s"  curve="log"    onchange={set('pingDecay')} readLive={live('pingDecay')} />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="fader-row">
+      <Fader value={cutoff}    min={20}    max={20000} defaultValue={1000} label="Cutoff"     units="Hz" curve="log"    onchange={set('cutoff')}    readLive={live('cutoff')} />
+      <Fader value={resonance} min={0}     max={0.99}  defaultValue={0.7}  label="Resonance"             curve="linear" onchange={set('resonance')} readLive={live('resonance')} />
+      <Fader value={mode}      min={0}     max={1}     defaultValue={0}    label="Mode"                  curve="linear" onchange={set('mode')}      readLive={live('mode')} />
+      <Fader value={pingDecay} min={0.005} max={0.5}   defaultValue={0.15} label="Ping Decay" units="s"  curve="log"    onchange={set('pingDecay')} readLive={live('pingDecay')} />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
-  .qbrt-card { width: 280px; min-height: 360px; }
-  .qbrt-card .fader-row { padding: 0 30px; margin-top: 130px; }
+  .qbrt-card { width: 280px; min-height: 240px; }
+  .qbrt-card .fader-row { padding: 0 24px; margin-top: 14px; }
 </style>

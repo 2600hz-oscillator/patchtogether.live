@@ -1,9 +1,25 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import { useEngine } from '$lib/audio/engine-context';
+
+  const SCORE_INPUTS: PortDescriptor[] = [
+    { id: 'clock',   label: 'CLOCK IN', cable: 'gate' },
+    { id: 'attack',  cable: 'cv' },
+    { id: 'decay',   cable: 'cv' },
+    { id: 'sustain', cable: 'cv' },
+    { id: 'release', cable: 'cv' },
+  ];
+  const SCORE_OUTPUTS: PortDescriptor[] = [
+    { id: 'pitch', cable: 'pitch' },
+    { id: 'gate',  cable: 'gate' },
+    { id: 'env',   cable: 'cv' },
+    { id: 'clock', label: 'CLOCK OUT', cable: 'gate' },
+  ];
   import {
     BARS_PER_PAGE,
     BARS_PER_ROW,
@@ -641,26 +657,7 @@
     </button>
   </header>
 
-  <Handle type="target" position={Position.Left}  id="clock"   style="top: 64px;  --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 58px;">clk in</span>
-  <Handle type="target" position={Position.Left}  id="attack"  style="top: 100px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 94px;">A cv</span>
-  <Handle type="target" position={Position.Left}  id="decay"   style="top: 128px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 122px;">D cv</span>
-  <Handle type="target" position={Position.Left}  id="sustain" style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">S cv</span>
-  <Handle type="target" position={Position.Left}  id="release" style="top: 184px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 178px;">R cv</span>
-
-  <Handle type="source" position={Position.Right} id="pitch" style="top: 64px;  --handle-color: var(--cable-pitch);" />
-  <Handle type="source" position={Position.Right} id="gate"  style="top: 92px;  --handle-color: var(--cable-gate);" />
-  <Handle type="source" position={Position.Right} id="env"   style="top: 120px; --handle-color: var(--cable-cv);" />
-  <Handle type="source" position={Position.Right} id="clock" style="top: 148px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 58px;">pitch</span>
-  <span class="port-label right" style="top: 86px;">gate</span>
-  <span class="port-label right" style="top: 114px;">env</span>
-  <span class="port-label right" style="top: 142px;">clk out</span>
-
+  <PatchPanel nodeId={id} inputs={SCORE_INPUTS} outputs={SCORE_OUTPUTS}>
   <!-- Toolbar -->
   <div class="toolbar" data-testid={`score-toolbar-${id}`}>
     {#each DURATION_BUTTONS as btn (btn.d)}
@@ -934,6 +931,7 @@
       onclick={addPage}
     >+</button>
   </div>
+  </PatchPanel>
 </div>
 
 <style>

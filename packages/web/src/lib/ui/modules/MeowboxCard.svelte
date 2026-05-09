@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { meowboxDef } from '$lib/audio/modules/meowbox';
   import { useEngine } from '$lib/audio/engine-context';
@@ -20,6 +22,18 @@
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, k);
   };
+
+  const inputs: PortDescriptor[] = [
+    { id: 'gate',  cable: 'gate' },
+    { id: 'pitch', cable: 'cv' },
+    { id: 'morph', cable: 'cv' },
+    { id: 'decay', cable: 'cv' },
+    { id: 'level', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'L', cable: 'audio' },
+    { id: 'R', cable: 'audio' },
+  ];
 </script>
 
 <div class="mod-card meowbox-card">
@@ -28,34 +42,20 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">MEOWBOX</header>
 
-  <Handle type="target" position={Position.Left} id="gate"  style="top: 56px;  --handle-color: var(--cable-gate);" />
-  <Handle type="target" position={Position.Left} id="pitch" style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="morph" style="top: 128px; --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="decay" style="top: 164px; --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="level" style="top: 200px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">gate</span>
-  <span class="port-label left" style="top: 86px;">p cv</span>
-  <span class="port-label left" style="top: 122px;">m cv</span>
-  <span class="port-label left" style="top: 158px;">d cv</span>
-  <span class="port-label left" style="top: 194px;">l cv</span>
-
-  <Handle type="source" position={Position.Right} id="L" style="top: 56px; --handle-color: var(--cable-audio);" />
-  <Handle type="source" position={Position.Right} id="R" style="top: 92px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 50px;">L</span>
-  <span class="port-label right" style="top: 86px;">R</span>
-
-  <div class="knob-row">
-    <Knob value={pitch} min={-36}  max={36} defaultValue={0}    label="Ptch"  units="st" curve="linear" onchange={set('pitch')} readLive={live('pitch')} />
-    <Knob value={morph} min={0}    max={1}  defaultValue={0.25} label="Morph"            curve="linear" onchange={set('morph')} readLive={live('morph')} />
-    <Knob value={decay} min={0.05} max={2}  defaultValue={0.4}  label="Dcy"   units="s"  curve="log"    onchange={set('decay')} readLive={live('decay')} />
-    <Knob value={level} min={0}    max={2}  defaultValue={1}    label="Lvl"              curve="linear" onchange={set('level')} readLive={live('level')} />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="knob-row">
+      <Knob value={pitch} min={-36}  max={36} defaultValue={0}    label="Pitch"  units="st" curve="linear" onchange={set('pitch')} readLive={live('pitch')} />
+      <Knob value={morph} min={0}    max={1}  defaultValue={0.25} label="Morph"             curve="linear" onchange={set('morph')} readLive={live('morph')} />
+      <Knob value={decay} min={0.05} max={2}  defaultValue={0.4}  label="Decay"  units="s"  curve="log"    onchange={set('decay')} readLive={live('decay')} />
+      <Knob value={level} min={0}    max={2}  defaultValue={1}    label="Level"             curve="linear" onchange={set('level')} readLive={live('level')} />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .meowbox-card {
     width: 240px;
-    min-height: 340px;
+    min-height: 240px;
     overflow: visible;
   }
   .meowbox-card .ear {
@@ -76,10 +76,11 @@
     transform: rotate(12deg);
   }
   .meowbox-card .knob-row {
-    margin-top: 220px;
+    margin-top: 32px;
     display: flex;
     justify-content: center;
     gap: 14px;
     padding: 0 16px;
+    flex-wrap: wrap;
   }
 </style>

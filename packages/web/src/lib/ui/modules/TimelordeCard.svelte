@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import { timelordeDef } from '$lib/audio/modules/timelorde';
   import { useEngine } from '$lib/audio/engine-context';
@@ -22,7 +24,6 @@
   let swingSource = $derived((void cardVersion, node?.params.swingSource ?? 0));
   let isPlaying   = $derived((void cardVersion, (node?.params.isPlaying  ?? 0) >= 0.5));
 
-  // External clock detected when any edge targets our `clock` input.
   let hasExternalClock = $derived.by(() => {
     void cardVersion;
     for (const edge of Object.values(patch.edges)) {
@@ -43,12 +44,17 @@
     set('isPlaying')(isPlaying ? 0 : 1);
   }
 
-  // Output port labels matching def order.
   const OUT_LABELS = ['1x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64', 'swing'];
-
-  // Discrete labels for the swingSource knob (display purposes only — the
-  // underlying param is 0..10 lin discrete).
   const SRC_LABELS = ['1x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64'];
+
+  const inputs: PortDescriptor[] = [
+    { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
+  ];
+  const outputs: PortDescriptor[] = OUT_LABELS.map((label) => ({
+    id: label,
+    label: `CLOCK ${label.toUpperCase()}`,
+    cable: 'gate',
+  }));
 </script>
 
 <div class="mod-card timelorde-card">
@@ -62,30 +68,24 @@
     {/if}
   </header>
 
-  <Handle type="target" position={Position.Left} id="clock" style="top: 56px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 50px;">clk in</span>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="knob-row">
+      <Knob value={bpm}         min={10} max={300} defaultValue={120} label="BPM"   curve="log"      onchange={set('bpm')}         readLive={live('bpm')} />
+      <Knob value={swingAmount} min={0}  max={90}  defaultValue={0}   label="Swing" curve="linear"   onchange={set('swingAmount')} readLive={live('swingAmount')} />
+      <Knob value={swingSource} min={0}  max={10}  defaultValue={0}   label="Src"   curve="discrete" onchange={set('swingSource')} />
+    </div>
 
-  {#each OUT_LABELS as label, i (label)}
-    <Handle type="source" position={Position.Right} id={label} style="top: {56 + i * 28}px; --handle-color: var(--cable-gate);" />
-    <span class="port-label right" style="top: {50 + i * 28}px;">{label}</span>
-  {/each}
-
-  <div class="knob-row">
-    <Knob value={bpm}         min={10} max={300} defaultValue={120} label="BPM"   curve="log"      onchange={set('bpm')}         readLive={live('bpm')} />
-    <Knob value={swingAmount} min={0}  max={90}  defaultValue={0}   label="Swing" curve="linear"   onchange={set('swingAmount')} readLive={live('swingAmount')} />
-    <Knob value={swingSource} min={0}  max={10}  defaultValue={0}   label="Src"   curve="discrete" onchange={set('swingSource')} />
-  </div>
-
-  <div class="footer">
-    {bpm.toFixed(0)} BPM ({hasExternalClock ? 'external' : 'internal'}) · src={SRC_LABELS[Math.round(swingSource)] ?? '1x'}
-  </div>
+    <div class="footer">
+      {bpm.toFixed(0)} BPM ({hasExternalClock ? 'external' : 'internal'}) · src={SRC_LABELS[Math.round(swingSource)] ?? '1x'}
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .timelorde-card {
     width: 280px;
-    min-height: 430px;
-    padding-bottom: 40px;
+    min-height: 180px;
+    padding-bottom: 26px;
   }
   .timelorde-card > .title {
     display: flex;
@@ -114,17 +114,14 @@
     border-color: var(--cable-gate);
   }
   .knob-row {
-    margin: 28px 0 0 22px;
+    margin: 16px 0 0;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    justify-content: center;
     gap: 14px;
-    width: 70px;
   }
   .footer {
-    position: absolute;
-    bottom: 12px;
-    left: 0;
-    right: 0;
+    margin-top: 12px;
     text-align: center;
     font-size: 0.6rem;
     color: var(--text-dim);
