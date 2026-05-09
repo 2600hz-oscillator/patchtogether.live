@@ -119,7 +119,9 @@ type StandardModuleType =
   // CAMERA — webcam input (local-only). Spec: .myrobots/plans/module-camera-input.md.
   | 'cameraInput'
   // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
-  | 'illogic';
+  | 'illogic'
+  // DX7 — pure-TypeScript 6-op FM synth with bundled factory-inspired patches.
+  | 'dx7';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

@@ -90,6 +90,7 @@
   import CameraInputCard from '$lib/ui/modules/CameraInputCard.svelte';
   // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
   import IllogicCard from '$lib/ui/modules/IllogicCard.svelte';
+  import Dx7Card from '$lib/ui/modules/Dx7Card.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
@@ -169,6 +170,7 @@
     // CAMERA input (local-only):
     cameraInput: CameraInputCard,
     illogic: IllogicCard,
+    dx7: Dx7Card,
   };
 
   let audioCtx: AudioContext | null = $state(null);
