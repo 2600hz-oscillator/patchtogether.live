@@ -45,8 +45,9 @@
    *   right), so each column is ~half this width minus gap. Dense
    *   modules pass a wider `panelWidth` (MIXMSTRS 560, RIOTGIRLS 600)
    *   so each column has enough horizontal space for verbose labels
-   *   like "FILTER PING DECAY". Each column also scrolls independently,
-   *   so the panel never grows tall enough to overflow the viewport.
+   *   like "FILTER PING DECAY". The panel scrolls vertically when
+   *   the dense column overflows max-height (70vh), so RIOTGIRLS's
+   *   55-row inputs column doesn't push the panel past the viewport.
    *   `panelWidth` is capped at 80vw on the panel itself so smaller
    *   viewports stay legible.
    * - `children`: the slot for the card's main content (knobs, buttons,
@@ -327,15 +328,16 @@
       Open-state layout is a 2-column grid so dense modules
       (MIXMSTRS 49 inputs, RIOTGIRLS 55 inputs) fit on a typical
       laptop viewport. Inputs always render in the left column,
-      outputs in the right column. Each column scrolls independently
-      when its content exceeds the panel max-height. Sectioned
-      grouping (RIOTGIRLS) keeps sections stacked WITHIN the inputs
-      column; outputs from any section fall into the single right
-      column.
+      outputs in the right column. The panel itself scrolls vertically
+      when the dense column overflows max-height (per-column scroll
+      would clip handles — see .panel-col CSS for the rationale).
+      Sectioned grouping (RIOTGIRLS) keeps sections stacked WITHIN the
+      inputs column; outputs from any section fall into the single
+      right column.
 
       When a module has only inputs (AudioOut) or only outputs, the
-      panel collapses to a single visible column to avoid rendering
-      a blank grid track.
+      panel collapses to a single visible column to avoid rendering a
+      blank grid track.
     -->
     <div class="panel-grid">
       {#if hasInputs}
@@ -549,13 +551,15 @@
     transform: translateX(-8px);
     transition: opacity 120ms ease-out, transform 120ms ease-out;
     max-height: 70vh;
-    /* Cap at 80vw — the inline `style:width` is the per-column width *
-     * 2 + gap, but on small viewports the panel must stay onscreen. */
+    /* Cap at 80vw on smaller viewports so the popover stays onscreen. */
     max-width: 80vw;
-    /* Each column scrolls independently — the panel itself does NOT
-     * scroll vertically, so headers in one column don't slide past
-     * rows in the other. */
-    overflow: hidden;
+    /* Panel-level vertical scroll. The handle dots (12x12, positioned
+     * at -7px / +5px from .panel-row's leading/trailing edge) sit
+     * within the panel's 10px padding, so the panel's content-box
+     * comfortably contains them and the auto scrollbar doesn't clip.
+     * (Per CSS spec, `overflow-y: auto` is effectively `overflow: auto`
+     * — so per-column scrolling would clip the handles instead.) */
+    overflow-y: auto;
     z-index: 10;
   }
   .patch-panel.open {
@@ -566,23 +570,23 @@
 
   /* ---------------- Two-column grid (open state) ---------------- */
   /*
-   * Inputs left, outputs right. Each column owns its own vertical
-   * scroll so dense modules (MIXMSTRS 49 inputs / RIOTGIRLS 55 inputs)
-   * fit on a 1366×768 laptop viewport. The grid columns share the
-   * panel max-height; each column is a flex container so its sticky
-   * .section-title pins as the user scrolls within that column.
+   * Inputs left, outputs right. The dense column (usually inputs)
+   * drives panel height; the panel scrolls vertically when content
+   * overflows. Per-column scroll would clip the handle dots that sit
+   * at left:-7px / right:-7px on each row (CSS spec: any axis !=
+   * visible promotes the other axis to auto). Dense modules (MIXMSTRS
+   * 49 inputs / RIOTGIRLS 55 inputs) get their full label width and a
+   * scroll bar inside the panel; the panel's max-height keeps it
+   * onscreen.
    */
   .panel-grid {
     display: grid;
     gap: 12px;
-    /* Subtract the panel's own padding from the available height so the
-     * columns don't overflow into the box-shadow region. The panel pad
-     * is 8px top + 10px bottom = 18px; max-height is 70vh; columns
-     * therefore get up to (70vh - 18px). */
-    max-height: calc(70vh - 18px);
     /* Width tracks the inline style:width on .patch-panel so the grid
      * never grows past the viewport cap (max-width: 80vw on the panel
-     * trims the rendered width on small screens). */
+     * trims the rendered width on small screens). The panel itself
+     * owns the vertical scroll — the grid stretches to whatever its
+     * content needs and the panel scrolls when needed. */
     width: 100%;
   }
   .patch-panel.two-col .panel-grid {
@@ -594,9 +598,16 @@
   .panel-col {
     display: flex;
     flex-direction: column;
-    /* Each column scrolls vertically when its content overflows. */
-    overflow-y: auto;
-    overflow-x: hidden;
+    /* IMPORTANT: columns must NOT clip overflow. Output handles are
+     * positioned at `right: -7px` relative to .panel-row, which puts
+     * them past the column's right edge. CSS treats `overflow-y: auto`
+     * + `overflow-x: visible` as `overflow: auto` (per spec), so a
+     * scrolling column would clip the handles and break xyflow's
+     * connect-drag hit-testing on neighbouring modules. The PANEL
+     * itself owns the vertical scroll instead (overflow-y: auto on
+     * .patch-panel). The dense column (usually inputs) drives the
+     * scroll height; the shorter column (usually outputs) sits at the
+     * top and is short enough to never need scrolling. */
     min-width: 0;
     min-height: 0;
   }
@@ -615,10 +626,10 @@
     letter-spacing: 0.08em;
     margin: 0 0 4px;
     position: sticky;
-    /* Inside a scrolling column, sticky pins to the column's top
-     * edge — top:0 keeps the section-title visible while the user
-     * scrolls long sections (RIOTGIRLS Voice 1, MIXMSTRS CV bank). */
-    top: 0;
+    /* Sticky pins to the panel's scrollport. -8px offsets the panel's
+     * 8px top padding so the title hugs the panel's top edge as the
+     * user scrolls a long inputs column. */
+    top: -8px;
     background: rgba(14, 17, 22, 0.97);
     padding-top: 4px;
     padding-bottom: 2px;
