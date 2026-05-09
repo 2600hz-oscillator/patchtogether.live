@@ -6,12 +6,27 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { scopeDef, type ScopeSnapshot } from '$lib/audio/modules/scope';
+  import { drawScope } from '$lib/audio/modules/scope-draw';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
 
+  // Inputs: 2 audio channels + 1 CV per param. Port ids match SCOPE's
+  // module def 1:1 (the io-spec consistency e2e test enforces this);
+  // the CV bridge auto-routes via setParam(portId).
   const inputs: PortDescriptor[] = [
     { id: 'ch1', label: 'CHANNEL 1', cable: 'audio' },
     { id: 'ch2', label: 'CHANNEL 2', cable: 'audio' },
+    { id: 'timeMs',    label: 'TIME (CV)',     cable: 'cv' },
+    { id: 'ch1Scale',  label: 'CH1 SCALE (CV)',  cable: 'cv' },
+    { id: 'ch1Offset', label: 'CH1 OFFSET (CV)', cable: 'cv' },
+    // ch{1,2}Range and mode are discrete (0/1) but accepting CV is
+    // useful: any signal ≥ 0.5 flips to the alt state. Stable Eurorack
+    // gate convention.
+    { id: 'ch1Range',  label: 'CH1 RANGE (CV)',  cable: 'cv' },
+    { id: 'ch2Scale',  label: 'CH2 SCALE (CV)',  cable: 'cv' },
+    { id: 'ch2Offset', label: 'CH2 OFFSET (CV)', cable: 'cv' },
+    { id: 'ch2Range',  label: 'CH2 RANGE (CV)',  cable: 'cv' },
+    { id: 'mode',      label: 'XY MODE (CV)',    cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'ch1_out', label: 'CHANNEL 1 OUT', cable: 'audio' },
@@ -23,9 +38,13 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  // All scope params are display-only; read from the patch directly. The
-  // factory's setParam ignores writes — there's nothing to apply on the audio
-  // path. (timeMs / ch{1,2}Scale / ch{1,2}Offset / mode all live on the card.)
+  // Scope params: read from the patch (single source of truth). The
+  // engine's SCOPE handle keeps a parallel cache that drives the video-
+  // bridge's drawFrame; that cache is updated both by the reconciler
+  // (when the user moves a fader → patch.nodes[].params changes) and
+  // by setParam from the cross-domain CV bridge (per-frame writes).
+  // The card reads the patch directly so on-card and bridge renders
+  // converge.
   let timeMs    = $derived(node?.params.timeMs    ?? scopeDef.params[0]!.defaultValue);
   let ch1Scale  = $derived(node?.params.ch1Scale  ?? scopeDef.params[1]!.defaultValue);
   let ch1Offset = $derived(node?.params.ch1Offset ?? scopeDef.params[2]!.defaultValue);
@@ -34,12 +53,6 @@
   let ch2Offset = $derived(node?.params.ch2Offset ?? scopeDef.params[5]!.defaultValue);
   let ch2Range  = $derived(node?.params.ch2Range  ?? scopeDef.params[6]!.defaultValue);
   let xyMode    = $derived((node?.params.mode ?? 0) >= 0.5);
-
-  // Range mode → vertical fullscale. Audio = ±1, CV = ±5.
-  const RANGE_MAX_AUDIO = 1;
-  const RANGE_MAX_CV = 5;
-  let ch1RangeMax = $derived(ch1Range >= 0.5 ? RANGE_MAX_CV : RANGE_MAX_AUDIO);
-  let ch2RangeMax = $derived(ch2Range >= 0.5 ? RANGE_MAX_CV : RANGE_MAX_AUDIO);
 
   function setParam(paramId: string) {
     return (v: number) => {
@@ -61,9 +74,12 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let raf: number | null = null;
 
-  // Resolve cable colors once at mount.
-  let ch1Color = '#fbbf24';
-  let ch2Color = '#60a5fa';
+  // Resolve cable colors once at mount. $state so the draw() reads the
+  // post-mount values (the existing warning called this out — making
+  // these reactive both fixes the warning and ensures the on-card
+  // canvas re-paints with the right colors on theme reload).
+  let ch1Color = $state('#fbbf24');
+  let ch2Color = $state('#60a5fa');
   onMount(() => {
     const cs = getComputedStyle(document.documentElement);
     ch1Color = cs.getPropertyValue('--cable-audio').trim() || ch1Color;
@@ -94,108 +110,19 @@
   function draw(c: HTMLCanvasElement, snap: ScopeSnapshot) {
     const ctx2d = c.getContext('2d');
     if (!ctx2d) return;
-    const w = c.width;
-    const h = c.height;
-    ctx2d.clearRect(0, 0, w, h);
-
-    ctx2d.fillStyle = '#0a0c10';
-    ctx2d.fillRect(0, 0, w, h);
-
-    if (xyMode) {
-      drawXY(ctx2d, snap, w, h);
-    } else {
-      drawSplit(ctx2d, snap, w, h);
-    }
-  }
-
-  /** Two traces stacked, sharing the same horizontal time axis. */
-  function drawSplit(ctx2d: CanvasRenderingContext2D, snap: ScopeSnapshot, w: number, h: number) {
-    // Center line
-    ctx2d.strokeStyle = '#1f242c';
-    ctx2d.lineWidth = 1;
-    ctx2d.beginPath();
-    ctx2d.moveTo(0, h / 2);
-    ctx2d.lineTo(w, h / 2);
-    ctx2d.stroke();
-
-    const samplesInWindow = Math.min(
-      snap.ch1.length,
-      Math.max(2, Math.round((timeMs / 1000) * snap.sampleRate))
+    drawScope(
+      ctx2d,
+      snap,
+      {
+        timeMs,
+        ch1Scale, ch1Offset, ch1Range,
+        ch2Scale, ch2Offset, ch2Range,
+        mode: node?.params.mode ?? 0,
+        ch1Color, ch2Color,
+      },
+      c.width,
+      c.height,
     );
-    const step = Math.max(1, Math.floor(samplesInWindow / w));
-
-    drawChannel(ctx2d, snap.ch1, samplesInWindow, step, w, h, ch1Color, 1,   ch1Scale, ch1Offset, ch1RangeMax);
-    drawChannel(ctx2d, snap.ch2, samplesInWindow, step, w, h, ch2Color, 0.6, ch2Scale, ch2Offset, ch2RangeMax);
-  }
-
-  /** XY plot — ch1 horizontal, ch2 vertical. Phase relationships visible. */
-  function drawXY(ctx2d: CanvasRenderingContext2D, snap: ScopeSnapshot, w: number, h: number) {
-    // Crosshair grid through the (offset-aware) origin.
-    const cx = w / 2 + (ch1Offset * w) / 2;
-    const cy = h / 2 - (ch2Offset * h) / 2;
-    ctx2d.strokeStyle = '#1f242c';
-    ctx2d.lineWidth = 1;
-    ctx2d.beginPath();
-    ctx2d.moveTo(0, cy);
-    ctx2d.lineTo(w, cy);
-    ctx2d.moveTo(cx, 0);
-    ctx2d.lineTo(cx, h);
-    ctx2d.stroke();
-
-    const samplesInWindow = Math.min(
-      snap.ch1.length,
-      Math.max(2, Math.round((timeMs / 1000) * snap.sampleRate))
-    );
-    const start1 = snap.ch1.length - samplesInWindow;
-    const start2 = snap.ch2.length - samplesInWindow;
-    const step = Math.max(1, Math.floor(samplesInWindow / w));
-
-    // Blend ch1+ch2 colors for the XY trace — the underlying signal carries
-    // both channels' identity, so neither cable color is strictly correct.
-    ctx2d.strokeStyle = ch1Color;
-    ctx2d.globalAlpha = 0.85;
-    ctx2d.lineWidth = 1.5;
-    ctx2d.beginPath();
-    for (let i = 0; i < samplesInWindow; i += step) {
-      // Per-channel range divides the sample so ±rangeMax fills the axis.
-      const xv = ((snap.ch1[start1 + i] ?? 0) / ch1RangeMax) * ch1Scale + ch1Offset;
-      const yv = ((snap.ch2[start2 + i] ?? 0) / ch2RangeMax) * ch2Scale + ch2Offset;
-      const xPx = w / 2 + (xv * w) / 2;
-      const yPx = h / 2 - (yv * h) / 2;
-      if (i === 0) ctx2d.moveTo(xPx, yPx);
-      else ctx2d.lineTo(xPx, yPx);
-    }
-    ctx2d.stroke();
-    ctx2d.globalAlpha = 1;
-  }
-
-  function drawChannel(
-    ctx2d: CanvasRenderingContext2D,
-    samples: Float32Array,
-    samplesInWindow: number,
-    step: number,
-    w: number,
-    h: number,
-    color: string,
-    alpha: number,
-    scale: number,
-    offset: number,
-    rangeMax: number
-  ) {
-    ctx2d.strokeStyle = color;
-    ctx2d.globalAlpha = alpha;
-    ctx2d.lineWidth = 1.5;
-    ctx2d.beginPath();
-    const start = samples.length - samplesInWindow;
-    for (let i = 0; i < samplesInWindow; i += step) {
-      const v = ((samples[start + i] ?? 0) / rangeMax) * scale + offset;
-      const x = (i / samplesInWindow) * w;
-      const y = h / 2 - v * (h / 2);
-      if (i === 0) ctx2d.moveTo(x, y);
-      else ctx2d.lineTo(x, y);
-    }
-    ctx2d.stroke();
-    ctx2d.globalAlpha = 1;
   }
 </script>
 

@@ -149,7 +149,18 @@ const PORT_NOTES: Record<string, string> = {
   'scope.ch1_out': 'Channel 1 passthrough.',
   'scope.ch2_out': 'Channel 2 passthrough.',
   'scope.out':
-    'Mono-video output: ch1 waveform rendered to a GL texture by the shared waveform-video renderer (same trace as the on-card canvas).',
+    'Mono-video output: pixel-equivalent of the on-card 2D scope render — both channels, scale/offset, range, XY/split mode, timeMs window. Driven by the cross-domain video bridge calling SCOPE.drawFrame() each video frame, so every scope control affects what downstream video modules see.',
+  'scope.timeMs':
+    'CV -> time window (ms across canvas width). Mirrors the Time fader 1:1 — the bridge re-reads the same params record so the on-card and video-out renders converge.',
+  'scope.ch1Scale': 'CV -> ch1 vertical scale.',
+  'scope.ch1Offset': 'CV -> ch1 vertical offset.',
+  'scope.ch1Range':
+    'CV -> ch1 range (≥0.5 switches to CV ±5 fullscale; <0.5 keeps audio ±1).',
+  'scope.ch2Scale': 'CV -> ch2 vertical scale.',
+  'scope.ch2Offset': 'CV -> ch2 vertical offset.',
+  'scope.ch2Range': 'CV -> ch2 range (≥0.5 = CV ±5, <0.5 = audio ±1).',
+  'scope.mode':
+    'CV -> XY mode toggle. Any signal ≥ 0.5 flips to XY (ch1 horizontal, ch2 vertical); below 0.5 = split (two stacked traces).',
   'vizvco.pitch': 'V/oct pitch input.',
   'vizvco.fm': 'Audio-rate FM input.',
   'vizvco.foldAmount': 'CV -> wavefolder fold amount.',
@@ -636,6 +647,10 @@ export function buildModuleManifest(
       if (file.endsWith('.test.ts')) return false;
       if (file.endsWith('-state.ts')) return false;
       if (file.endsWith('-data.ts')) return false;
+      // -draw.ts: shared 2D-canvas draw helpers (e.g. scope-draw.ts that
+      // both ScopeCard.svelte and the cross-domain video bridge use).
+      // Not a ModuleDef.
+      if (file.endsWith('-draw.ts')) return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));

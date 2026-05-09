@@ -30,8 +30,10 @@ const MODULES: ModuleSpec[] = [
   { type: 'adsr',         cardClass: 'svelte-flow__node-adsr',         handleCount: 7, containsLabel: 'ADSR' },
   { type: 'filter',       cardClass: 'svelte-flow__node-filter',       handleCount: 4, containsLabel: 'Filter' },
   { type: 'reverb',       cardClass: 'svelte-flow__node-reverb',       handleCount: 2, containsLabel: 'Reverb' },
-  // SCOPE: 2 audio inputs + 2 audio passthrough outputs + 1 mono-video output = 5.
-  { type: 'scope',        cardClass: 'svelte-flow__node-scope',        handleCount: 5, containsLabel: 'Scope' },
+  // SCOPE: 2 audio in + 8 cv in (timeMs / ch1Scale / ch1Offset /
+  // ch1Range / ch2Scale / ch2Offset / ch2Range / mode) + 2 audio out
+  // + 1 mono-video out = 13.
+  { type: 'scope',        cardClass: 'svelte-flow__node-scope',        handleCount: 13, containsLabel: 'Scope' },
   { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 4, containsLabel: 'Sequencer' },
   { type: 'wavetableVco', cardClass: 'svelte-flow__node-wavetableVco', handleCount: 4, containsLabel: 'Wavetable VCO' },
   { type: 'lfo',          cardClass: 'svelte-flow__node-lfo',          handleCount: 7, containsLabel: 'LFO' },

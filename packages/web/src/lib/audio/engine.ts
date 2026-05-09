@@ -46,8 +46,36 @@ export interface AudioDomainNodeHandle {
    * audio→video edge; the VideoEngine then drives a waveform-video
    * renderer per frame, sampling from the analyser. Audio modules
    * with no video output omit this map entirely.
+   *
+   * Two flavors of video source:
+   *
+   *  - "simple analyser tap" (VIZVCO/WAVVIZ): a single AnalyserNode is
+   *    handed to the bridge, which drives the shared GL waveform-video
+   *    renderer. The audio module has no opinion on per-frame visual
+   *    treatment — the renderer just shows the raw signal as a
+   *    full-canvas, full-buffer trace.
+   *
+   *  - "module-driven 2D draw" (SCOPE): the module wants control over
+   *    every pixel — XY mode, dual-channel, scale/offset/range,
+   *    timeMs window, all the on-card scope knobs should affect the
+   *    video output too. Such modules pass `drawFrame` AND set
+   *    `drawFrameUsesCanvas2D: true`. The bridge owns an OffscreenCanvas,
+   *    invokes `drawFrame(canvas)` each video frame, then uploads the
+   *    canvas pixels to a GL texture for downstream video modules.
+   *    `analyser` is still required (legacy: the bridge needs SOMETHING
+   *    to satisfy `getVideoSource` callers); when `drawFrame` is set the
+   *    bridge ignores the analyser and lets the module read whatever
+   *    sources it needs internally.
    */
-  videoSources?: Map<string, { analyser: AnalyserNode; sampleRate: number }>;
+  videoSources?: Map<string, {
+    analyser: AnalyserNode;
+    sampleRate: number;
+    /** When set, the bridge calls this each frame instead of running
+     *  the GL waveform-video renderer. The module owns all pixel logic
+     *  (scope mode, scale/offset, dual-channel layout, etc.). The
+     *  canvas is sized to the engine's video resolution. */
+    drawFrame?: (canvas: OffscreenCanvas | HTMLCanvasElement) => void;
+  }>;
   dispose(): void;
 }
 
@@ -410,7 +438,11 @@ export class AudioEngine implements DomainEngine {
   getVideoSource(
     nodeId: string,
     portId: string,
-  ): { analyser: AnalyserNode; sampleRate: number } | null {
+  ): {
+    analyser: AnalyserNode;
+    sampleRate: number;
+    drawFrame?: (canvas: OffscreenCanvas | HTMLCanvasElement) => void;
+  } | null {
     const handle = this.nodes.get(nodeId);
     if (!handle) return null;
     const src = handle.videoSources?.get(portId);
@@ -635,6 +667,7 @@ export class PatchEngine {
         analyser: AnalyserNode,
         sampleRate: number,
         targetEdge: Edge,
+        drawFrame?: (canvas: OffscreenCanvas | HTMLCanvasElement) => void,
       ) => void;
     };
     if (typeof ae.getVideoSource !== 'function' || typeof ve.addVideoTextureBridge !== 'function') {
@@ -656,6 +689,7 @@ export class PatchEngine {
       src.analyser,
       src.sampleRate,
       edge,
+      src.drawFrame,
     );
     this.videoTextureBridgeEdgeIds.add(edge.id);
   }

@@ -221,6 +221,93 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     ).toBeGreaterThan(40);
   });
 
+  test('top-right trigger opens the same panel as top-left', async ({ page }) => {
+    // Per user feedback (PR-69): every module gets a SECOND hover
+    // affordance in the top-right corner that opens the same panel
+    // as the existing top-left one. Both share state.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } },
+    ]);
+
+    const panel = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`,
+    );
+    const rightTrigger = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger-right"]`,
+    );
+
+    // Sanity: the right trigger exists and is visible.
+    await expect(rightTrigger).toHaveCount(1);
+
+    // Default closed.
+    await expect(panel).toHaveAttribute('aria-hidden', 'true');
+
+    // Hover top-right → panel opens.
+    await rightTrigger.hover();
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+
+    // Move mouse far away → panel closes (after the 200ms hover-close
+    // timer fires).
+    await page.mouse.move(50, 50);
+    await page.waitForTimeout(350);
+    await expect(panel).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  test('mousing from top-left across the card top to top-right keeps panel open', async ({
+    page,
+  }) => {
+    // Hover-intent guard: the user reaches across the card to switch
+    // affordances, the panel must NOT blink shut mid-trip. Both
+    // triggers share state, and the panel itself is also hoverable
+    // (the cursor crosses through the panel area en route).
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } },
+    ]);
+
+    const leftTrigger = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`,
+    );
+    const rightTrigger = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger-right"]`,
+    );
+    const panel = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`,
+    );
+
+    // Open via left trigger.
+    await leftTrigger.hover();
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+
+    // Walk cursor across the panel to the right trigger. Each
+    // intermediate hover keeps the panel open via either the panel's
+    // own onmouseenter or the right trigger's onmouseenter; the
+    // 200ms scheduleClose timer never has a chance to fire as long as
+    // each step lands within the close delay.
+    const rightBox = await rightTrigger.boundingBox();
+    expect(rightBox, 'right trigger has box').toBeTruthy();
+    if (!rightBox) return;
+
+    // Step through the panel area (which is between left and right
+    // triggers vertically); each move is a fresh mouse event the
+    // browser dispatches mouseenter/mouseleave for.
+    await page.mouse.move(rightBox.x + rightBox.width / 2, rightBox.y + rightBox.height / 2, {
+      steps: 10,
+    });
+    // The whole walk takes <100ms; the close timer is 200ms; the panel
+    // must still be open.
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+
+    // Settle on the right trigger — explicit hover for the assertion.
+    await rightTrigger.hover();
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+  });
+
   test('panel stays open during a connect-drag', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');

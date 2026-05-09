@@ -215,8 +215,18 @@
   class="patch-panel-host"
   data-patch-panel-node={nodeId}
 >
+  <!--
+    Two trigger affordances — top-left + top-right — both open the SAME
+    panel, share state, and obey the same hover-intent rules. Per user
+    feedback ("UI roll up looks great, but lets make another area in the
+    upper right of each module that opens the same panel"), the right
+    side gives a more natural reach when the user's already on that side
+    of a card (e.g. dragging an OUTPUT cable from the right edge of a
+    module). Both triggers are kept identical structurally so screen
+    readers announce them the same way.
+  -->
   <button
-    class="patch-trigger"
+    class="patch-trigger left"
     type="button"
     data-testid="patch-trigger"
     aria-label="Open patch panel"
@@ -228,6 +238,24 @@
     onclick={toggle}
   >
     <!-- Plug glyph — two short verticals + a horizontal stem. CSS-only. -->
+    <span class="trigger-glyph" aria-hidden="true">
+      <span class="prong"></span>
+      <span class="prong"></span>
+      <span class="stem"></span>
+    </span>
+  </button>
+  <button
+    class="patch-trigger right"
+    type="button"
+    data-testid="patch-trigger-right"
+    aria-label="Open patch panel"
+    aria-expanded={open}
+    onmouseenter={openNow}
+    onmouseleave={scheduleClose}
+    onfocus={openNow}
+    onblur={scheduleClose}
+    onclick={toggle}
+  >
     <span class="trigger-glyph" aria-hidden="true">
       <span class="prong"></span>
       <span class="prong"></span>
@@ -355,12 +383,11 @@
     display: contents;
   }
 
-  /* ---------------- Trigger affordance (top-left corner) ---------------- */
+  /* ---------------- Trigger affordance (top-left + top-right) ---------------- */
 
   .patch-trigger {
     position: absolute;
     top: 4px;
-    left: 4px;
     width: 18px;
     height: 18px;
     background: rgba(20, 23, 28, 0.85);
@@ -373,6 +400,12 @@
     justify-content: center;
     z-index: 6;
     transition: border-color 80ms ease-out, background 80ms ease-out;
+  }
+  .patch-trigger.left {
+    left: 4px;
+  }
+  .patch-trigger.right {
+    right: 4px;
   }
   .patch-trigger:hover,
   .patch-trigger[aria-expanded='true'] {
