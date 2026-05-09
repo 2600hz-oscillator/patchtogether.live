@@ -1,14 +1,22 @@
 // packages/web/src/lib/video/modules/picturebox.ts
 //
-// PICTUREBOX — image-file source. User picks a file in the card UI; the
-// decoded ImageBitmap is uploaded into our output texture and the
-// shader passes it through (with a gain knob).
+// PICTUREBOX — image-file source. User picks a file in the card UI;
+// the file is downscaled to 640x480 + JPEG-encoded + base64-stored in
+// `node.data.imageBytes`, which rides the Y.Doc out to all rack-mates.
+// On every peer (including the loader), the card decodes those bytes
+// back into an ImageBitmap and uploads it into our source texture.
 //
-// Phase-1 scope: single-output `image` cable; the `r/g/b` per-channel
-// outputs from §3.2 are deferred — DESTRUCTOR + downstream COLORIZER
-// give the same effect via composition. IndexedDB-backed multiplayer
-// sharing is also deferred (the multiplayer story for image bytes is
-// non-trivial; see PR notes).
+// schemaVersion bumped to 2 in this PR; v1 had no imageBytes field
+// (file-picker was local-only). `migrate` here ensures legacy patches
+// load without warnings.
+//
+// Limits (see lib/multiplayer/picturebox-limits.ts): 2 PICTUREBOX per
+// user, 8 per workspace. The 8/workspace cap is mirrored as
+// `maxInstances` so the palette greys out the picker at the cap; the
+// per-user cap is enforced in Canvas's spawnFromPalette.
+//
+// Future: 4-image variant with CV switching. The storage shape will
+// generalise to `data.images: string[]` (length 1 today). Not in this PR.
 //
 // File-picker UX lives in PictureboxCard.svelte; this factory exposes
 // `setImage(bitmap)` via the handle's `read` channel so the card can
@@ -61,12 +69,39 @@ export interface PictureboxHandleExtras {
   filename: () => string | null;
 }
 
+/** Persisted shape on `node.data` for PICTUREBOX nodes (schemaVersion 2). */
+export interface PictureboxData {
+  /** base64-encoded JPEG q=85 bytes, downscaled to 640x480 zoom-fit-crop.
+   *  null when no image has been loaded yet. */
+  imageBytes: string | null;
+  /** MIME of the encoded bytes. Reserved for future codec switching;
+   *  always 'image/jpeg' in this version. */
+  imageMime: string;
+  /** Human-friendly source filename, surfaced in the card UI. */
+  imageName: string | null;
+  /** User id of whoever spawned this node (Canvas writes this on spawn).
+   *  Used by the per-user cap. Pre-this-PR nodes have no creatorId; they
+   *  count toward the workspace total but not toward any user's cap. */
+  creatorId?: string;
+}
+
+const DATA_DEFAULTS: Pick<PictureboxData, 'imageBytes' | 'imageMime' | 'imageName'> = {
+  imageBytes: null,
+  imageMime: 'image/jpeg',
+  imageName: null,
+};
+
 export const pictureboxDef: VideoModuleDef = {
   type: 'picturebox',
   domain: 'video',
   label: 'PICTUREBOX',
   category: 'sources',
-  schemaVersion: 1,
+  schemaVersion: 2,
+  // Workspace cap (8 per rack). Mirrored from
+  // lib/multiplayer/picturebox-limits.ts → PICTUREBOX_LIMITS.perWorkspace.
+  // The palette uses this to grey out the option once the cap is hit;
+  // Canvas's spawnFromPalette is the secondary gate.
+  maxInstances: 8,
   inputs: [
     { id: 'gain', type: 'cv' },
   ],
@@ -76,6 +111,24 @@ export const pictureboxDef: VideoModuleDef = {
   params: [
     { id: 'gain', label: 'Gain', defaultValue: DEFAULTS.gain, min: 0, max: 2, curve: 'linear' },
   ],
+
+  // v1 had no imageBytes/imageMime/imageName/creatorId fields. v2 adds
+  // them; the migration just fills in defaults so the card's reactive
+  // reads find well-defined values rather than `undefined`.
+  migrate(data, fromVersion) {
+    const d = (data as Partial<PictureboxData> | null | undefined) ?? {};
+    if (fromVersion < 2) {
+      return {
+        ...d,
+        imageBytes: d.imageBytes ?? DATA_DEFAULTS.imageBytes,
+        imageMime: d.imageMime ?? DATA_DEFAULTS.imageMime,
+        imageName: d.imageName ?? DATA_DEFAULTS.imageName,
+        // creatorId intentionally NOT defaulted: legacy nodes stay
+        // unattributed (loose grandfathering — see picturebox-limits.ts).
+      };
+    }
+    return d;
+  },
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
