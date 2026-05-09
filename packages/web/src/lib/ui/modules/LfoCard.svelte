@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { lfoDef } from '$lib/audio/modules/lfo';
   import { useEngine } from '$lib/audio/engine-context';
@@ -16,13 +18,22 @@
   const set = (id_: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[id_] = v; };
   const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
-  // shape param is 0..2: 0=sine, 1=saw, 2=square. Glyphs anchor at the
-  // morph-source fractions so the user can see what each end of the slider
-  // crossfades into.
   const SHAPE_GLYPHS: Array<{ frac: number; kind: 'sine' | 'tri' | 'saw' | 'square' }> = [
     { frac: 0,   kind: 'sine'   },
     { frac: 0.5, kind: 'saw'    },
     { frac: 1,   kind: 'square' },
+  ];
+
+  const inputs: PortDescriptor[] = [
+    { id: 'clock', cable: 'gate' },
+    { id: 'rate',  cable: 'cv' },
+    { id: 'shape', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'phase0',   label: 'PHASE 0°',   cable: 'cv' },
+    { id: 'phase90',  label: 'PHASE 90°',  cable: 'cv' },
+    { id: 'phase180', label: 'PHASE 180°', cable: 'cv' },
+    { id: 'phase270', label: 'PHASE 270°', cable: 'cv' },
   ];
 </script>
 
@@ -30,29 +41,15 @@
   <div class="stripe" style="background: var(--cable-cv);"></div>
   <header class="title">LFO</header>
 
-  <Handle type="target" position={Position.Left} id="clock" style="top: 56px;  --handle-color: var(--cable-gate);" />
-  <Handle type="target" position={Position.Left} id="rate"  style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="shape" style="top: 128px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">clk</span>
-  <span class="port-label left" style="top: 86px;">rate</span>
-  <span class="port-label left" style="top: 122px;">shape</span>
-
-  <Handle type="source" position={Position.Right} id="phase0"   style="top: 56px;  --handle-color: var(--cable-cv);" />
-  <Handle type="source" position={Position.Right} id="phase90"  style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <Handle type="source" position={Position.Right} id="phase180" style="top: 128px; --handle-color: var(--cable-cv);" />
-  <Handle type="source" position={Position.Right} id="phase270" style="top: 164px; --handle-color: var(--cable-cv);" />
-  <span class="port-label right" style="top: 50px;">0°</span>
-  <span class="port-label right" style="top: 86px;">90°</span>
-  <span class="port-label right" style="top: 122px;">180°</span>
-  <span class="port-label right" style="top: 158px;">270°</span>
-
-  <div class="fader-row">
-    <Fader value={rate}  min={0.01} max={100} defaultValue={1} label="Rate"  units="Hz" curve="log"    onchange={set('rate')}  readLive={live('rate')} />
-    <Fader value={shape} min={0}    max={2}   defaultValue={0} label="Shape"            curve="linear" onchange={set('shape')} readLive={live('shape')} glyphs={SHAPE_GLYPHS} />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="fader-row">
+      <Fader value={rate}  min={0.01} max={100} defaultValue={1} label="Rate"  units="Hz" curve="log"    onchange={set('rate')}  readLive={live('rate')} />
+      <Fader value={shape} min={0}    max={2}   defaultValue={0} label="Shape"            curve="linear" onchange={set('shape')} readLive={live('shape')} glyphs={SHAPE_GLYPHS} />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
-  .lfo-card { width: 200px; min-height: 240px; }
-  .lfo-card .fader-row { padding: 0 30px; margin-top: 60px; gap: 12px; }
+  .lfo-card { width: 200px; min-height: 200px; }
+  .lfo-card .fader-row { padding: 0 30px; margin-top: 16px; gap: 12px; }
 </style>

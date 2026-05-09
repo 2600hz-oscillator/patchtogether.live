@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { analogVcoDef } from '$lib/audio/modules/analog-vco';
   import { useEngine } from '$lib/audio/engine-context';
@@ -29,38 +31,37 @@
       return eng.readParam(node, paramId);
     };
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'pitch', cable: 'pitch' },
+    { id: 'fm',    cable: 'audio' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'saw',      cable: 'audio' },
+    { id: 'square',   cable: 'audio' },
+    { id: 'triangle', cable: 'audio' },
+    { id: 'sine',     cable: 'audio' },
+  ];
 </script>
 
 <div class="card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <header class="title">Analog VCO</header>
 
-  <Handle type="target" position={Position.Left} id="pitch" style="top: 56px; --handle-color: var(--cable-pitch);" />
-  <Handle type="target" position={Position.Left} id="fm"    style="top: 92px; --handle-color: var(--cable-audio);" />
-  <span class="port-label left" style="top: 50px;">pitch</span>
-  <span class="port-label left" style="top: 86px;">fm</span>
-
-  <Handle type="source" position={Position.Right} id="saw"      style="top: 56px;  --handle-color: var(--cable-audio);" />
-  <Handle type="source" position={Position.Right} id="square"   style="top: 92px;  --handle-color: var(--cable-audio);" />
-  <Handle type="source" position={Position.Right} id="triangle" style="top: 128px; --handle-color: var(--cable-audio);" />
-  <Handle type="source" position={Position.Right} id="sine"     style="top: 164px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 50px;">saw</span>
-  <span class="port-label right" style="top: 86px;">sqr</span>
-  <span class="port-label right" style="top: 122px;">tri</span>
-  <span class="port-label right" style="top: 158px;">sin</span>
-
-  <div class="fader-row">
-    <Fader value={tune}     min={-36} max={36}  defaultValue={0}   label="Tune" units="st" curve="linear" onchange={setParam('tune')}     readLive={readLive('tune')} />
-    <Fader value={fine}     min={-100} max={100} defaultValue={0}  label="Fine" units="¢"  curve="linear" onchange={setParam('fine')}     readLive={readLive('fine')} />
-    <Fader value={fmAmount} min={0}  max={1}    defaultValue={0}   label="FM"              curve="linear" onchange={setParam('fmAmount')} readLive={readLive('fmAmount')} />
-    <Fader value={pw}       min={0.05} max={0.95} defaultValue={0.5} label="PW"            curve="linear" onchange={setParam('pw')}       readLive={readLive('pw')} />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="fader-row">
+      <Fader value={tune}     min={-36} max={36}  defaultValue={0}   label="Tune" units="st" curve="linear" onchange={setParam('tune')}     readLive={readLive('tune')} />
+      <Fader value={fine}     min={-100} max={100} defaultValue={0}  label="Fine" units="¢"  curve="linear" onchange={setParam('fine')}     readLive={readLive('fine')} />
+      <Fader value={fmAmount} min={0}  max={1}    defaultValue={0}   label="FM"              curve="linear" onchange={setParam('fmAmount')} readLive={readLive('fmAmount')} />
+      <Fader value={pw}       min={0.05} max={0.95} defaultValue={0.5} label="PW"            curve="linear" onchange={setParam('pw')}       readLive={readLive('pw')} />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 240px;
-    min-height: 230px;
+    min-height: 200px;
     background: var(--module-bg);
     border: 1px solid #2a2f3a;
     border-radius: 2px;
@@ -91,21 +92,11 @@
     margin: 0 0 8px;
     letter-spacing: 0.02em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left  { left: 14px; }
-  .port-label.right { right: 14px; }
   .fader-row {
-    margin-top: 28px;
+    margin-top: 16px;
     display: flex;
     gap: 6px;
-    padding: 0 30px;
+    padding: 0 18px;
     justify-content: space-between;
   }
-  /* Note: app-wide Svelte Flow handle styling lives in routes/global.css. */
 </style>

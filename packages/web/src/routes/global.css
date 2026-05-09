@@ -100,6 +100,15 @@ body {
   filter: drop-shadow(0 0 4px var(--accent-glow));
 }
 
+/* PatchPanel: float the entire .svelte-flow__node above its peers when
+ * its hover-revealed patch panel is open. The panel itself uses z-index 10
+ * within the card's local stacking context, but Svelte Flow's node
+ * containers form their own stacking contexts — so the panel is otherwise
+ * clipped behind any later-painted neighbor. :has() lifts the host node. */
+.svelte-flow__node:has(.patch-panel.open) {
+  z-index: 1000 !important;
+}
+
 /* Card-hover cable de-emphasis. When a node card is hovered, dim every
  * edge that doesn't terminate on it. The Canvas component sets the
  * data-hovered-node attribute on the .svelte-flow root and adds the

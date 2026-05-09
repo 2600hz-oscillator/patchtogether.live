@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
   import { useEngine } from '$lib/audio/engine-context';
@@ -17,30 +19,30 @@
 
   const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
   const live = (k: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, k); };
+
+  const inputs: PortDescriptor[] = [
+    { id: 'pitch',   cable: 'pitch' },
+    { id: 'fm',      cable: 'audio' },
+    { id: 'wavePos', label: 'WAVE POSITION', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [{ id: 'audio', cable: 'audio' }];
 </script>
 
 <div class="mod-card wt-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <header class="title">Wavetable VCO</header>
 
-  <Handle type="target" position={Position.Left} id="pitch"   style="top: 56px;  --handle-color: var(--cable-pitch);" />
-  <Handle type="target" position={Position.Left} id="fm"      style="top: 92px;  --handle-color: var(--cable-audio);" />
-  <Handle type="target" position={Position.Left} id="wavePos" style="top: 128px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">pitch</span>
-  <span class="port-label left" style="top: 86px;">fm</span>
-  <span class="port-label left" style="top: 122px;">wave</span>
-
-  <Handle type="source" position={Position.Right} id="audio" style="top: 56px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 50px;">audio</span>
-
-  <div class="fader-row">
-    <Fader value={tune}     min={-36} max={36}   defaultValue={0} label="Tune" units="st" curve="linear" onchange={set('tune')}     readLive={live('tune')} />
-    <Fader value={fine}     min={-100} max={100} defaultValue={0} label="Fine" units="¢"  curve="linear" onchange={set('fine')}     readLive={live('fine')} />
-    <Fader value={wavePos}  min={0}   max={1}    defaultValue={0} label="Wave"            curve="linear" onchange={set('wavePos')}  readLive={live('wavePos')} />
-    <Fader value={fmAmount} min={0}   max={1}    defaultValue={0} label="FM"              curve="linear" onchange={set('fmAmount')} readLive={live('fmAmount')} />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="fader-row">
+      <Fader value={tune}     min={-36} max={36}   defaultValue={0} label="Tune" units="st" curve="linear" onchange={set('tune')}     readLive={live('tune')} />
+      <Fader value={fine}     min={-100} max={100} defaultValue={0} label="Fine" units="¢"  curve="linear" onchange={set('fine')}     readLive={live('fine')} />
+      <Fader value={wavePos}  min={0}   max={1}    defaultValue={0} label="Wave"            curve="linear" onchange={set('wavePos')}  readLive={live('wavePos')} />
+      <Fader value={fmAmount} min={0}   max={1}    defaultValue={0} label="FM"              curve="linear" onchange={set('fmAmount')} readLive={live('fmAmount')} />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
-  .wt-card { width: 240px; min-height: 240px; }
+  .wt-card { width: 240px; min-height: 200px; }
+  .wt-card .fader-row { padding: 0 18px; margin-top: 14px; }
 </style>

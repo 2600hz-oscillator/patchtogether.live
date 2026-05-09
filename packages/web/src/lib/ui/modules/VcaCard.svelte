@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { vcaDef } from '$lib/audio/modules/vca';
   import { useEngine } from '$lib/audio/engine-context';
@@ -20,26 +22,26 @@
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, id_);
   };
+
+  const inputs: PortDescriptor[] = [
+    { id: 'audio', cable: 'audio' },
+    { id: 'cv',    cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [{ id: 'audio', cable: 'audio' }];
 </script>
 
 <div class="mod-card vca-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
   <header class="title">VCA</header>
 
-  <Handle type="target" position={Position.Left} id="audio" style="top: 56px; --handle-color: var(--cable-audio);" />
-  <Handle type="target" position={Position.Left} id="cv"    style="top: 92px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">audio</span>
-  <span class="port-label left" style="top: 86px;">cv</span>
-
-  <Handle type="source" position={Position.Right} id="audio" style="top: 56px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 50px;">out</span>
-
-  <div class="fader-row">
-    <Fader value={base}     min={0}  max={1} defaultValue={0}   label="Base" curve="linear" onchange={set('base')}     readLive={live('base')} />
-    <Fader value={cvAmount} min={-1} max={1} defaultValue={1.0} label="CV Amt" curve="linear" onchange={set('cvAmount')} readLive={live('cvAmount')} />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="fader-row">
+      <Fader value={base}     min={0}  max={1} defaultValue={0}   label="Base" curve="linear" onchange={set('base')}     readLive={live('base')} />
+      <Fader value={cvAmount} min={-1} max={1} defaultValue={1.0} label="CV Amt" curve="linear" onchange={set('cvAmount')} readLive={live('cvAmount')} />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
-  .vca-card { width: 160px; min-height: 200px; }
+  .vca-card { width: 160px; min-height: 180px; }
 </style>

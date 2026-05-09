@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import {
     cartesianDef,
@@ -187,6 +189,20 @@
     }
     return false;
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'clock',     label: 'CLOCK', cable: 'gate' },
+    { id: 'x_cv',      label: 'X CV',  cable: 'cv' },
+    { id: 'y_cv',      label: 'Y CV',  cable: 'cv' },
+    { id: 'lfo_clock', label: 'LFO CLOCK', cable: 'gate' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'pitch', cable: 'polyPitchGate' },
+    { id: 'gate',  cable: 'gate' },
+    { id: 'clock', cable: 'gate' },
+    { id: 'lfo_x', label: 'LFO X', cable: 'cv' },
+    { id: 'lfo_y', label: 'LFO Y', cable: 'cv' },
+  ];
 </script>
 
 <div class="mod-card cartesian-card">
@@ -198,26 +214,7 @@
     </button>
   </header>
 
-  <Handle type="target" position={Position.Left} id="clock"     style="top: 56px;  --handle-color: var(--cable-gate);" />
-  <Handle type="target" position={Position.Left} id="x_cv"      style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="y_cv"      style="top: 128px; --handle-color: var(--cable-cv);" />
-  <Handle type="target" position={Position.Left} id="lfo_clock" style="top: 164px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 50px;">clk</span>
-  <span class="port-label left" style="top: 86px;">x cv</span>
-  <span class="port-label left" style="top: 122px;">y cv</span>
-  <span class="port-label left" style="top: 158px;">lfo clk</span>
-
-  <Handle type="source" position={Position.Right} id="pitch" style="top: 56px;  --handle-color: var(--cable-polyPitchGate);" />
-  <Handle type="source" position={Position.Right} id="gate"  style="top: 92px;  --handle-color: var(--cable-gate);" />
-  <Handle type="source" position={Position.Right} id="clock" style="top: 128px; --handle-color: var(--cable-gate);" />
-  <Handle type="source" position={Position.Right} id="lfo_x" style="top: 164px; --handle-color: var(--cable-cv);" />
-  <Handle type="source" position={Position.Right} id="lfo_y" style="top: 200px; --handle-color: var(--cable-cv);" />
-  <span class="port-label right" style="top: 50px;">pitch</span>
-  <span class="port-label right" style="top: 86px;">gate</span>
-  <span class="port-label right" style="top: 122px;">clk</span>
-  <span class="port-label right" style="top: 158px;">lfo x</span>
-  <span class="port-label right" style="top: 194px;">lfo y</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="grid" bind:this={gridEl} data-testid={`cart-grid-${id}`}>
     {#each cells.slice(0, CELL_COUNT) as cell, i (i)}
       <div class="cell-slot" data-step={i}>
@@ -283,6 +280,7 @@
       glyphs={LFO_SHAPE_GLYPHS}
     />
   </div>
+  </PatchPanel>
 </div>
 
 <style>

@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import {
     drumseqzDef,
@@ -219,6 +221,23 @@
       return true;
     };
   });
+
+  const inputs: PortDescriptor[] = [
+    { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
+  ];
+  const outputs: PortDescriptor[] = [
+    ...Array.from({ length: TRACK_COUNT }, (_, t) => ({
+      id: `gate${t + 1}`,
+      label: `TRACK ${t + 1} GATE`,
+      cable: 'gate' as const,
+    })),
+    ...Array.from({ length: TRACK_COUNT }, (_, t) => ({
+      id: `pitch${t + 1}`,
+      label: `TRACK ${t + 1} PITCH`,
+      cable: 'pitch' as const,
+    })),
+    { id: 'clock', label: 'CLOCK OUT', cable: 'gate' as const },
+  ];
 </script>
 
 <div class="mod-card drumseqz-card">
@@ -236,38 +255,7 @@
     </button>
   </header>
 
-  <Handle
-    type="target"
-    position={Position.Left}
-    id="clock"
-    style="top: 56px; --handle-color: var(--cable-gate);"
-  />
-  <span class="port-label left" style="top: 50px;">clk in</span>
-
-  {#each Array.from({ length: TRACK_COUNT }, (_, t) => t) as t (t)}
-    <Handle
-      type="source"
-      position={Position.Right}
-      id={`gate${t + 1}`}
-      style={`top: ${56 + t * 70}px; --handle-color: var(--cable-gate);`}
-    />
-    <span class="port-label right" style={`top: ${50 + t * 70}px;`}>g{t + 1}</span>
-    <Handle
-      type="source"
-      position={Position.Right}
-      id={`pitch${t + 1}`}
-      style={`top: ${82 + t * 70}px; --handle-color: var(--cable-pitch);`}
-    />
-    <span class="port-label right" style={`top: ${76 + t * 70}px;`}>p{t + 1}</span>
-  {/each}
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="clock"
-    style="top: 336px; --handle-color: var(--cable-gate);"
-  />
-  <span class="port-label right" style="top: 330px;">clk</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="grid-area">
     <div class="grid" bind:this={gridEl} data-testid={`drumseqz-grid-${id}`}>
       {#each Array.from({ length: TRACK_COUNT }, (_, t) => t) as t (t)}
@@ -335,6 +323,7 @@
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} readLive={live('gateLength')} />
     <Fader value={swing}      min={0}   max={0.75} defaultValue={0}   label="Sw"   curve="linear"   onchange={set('swing')}      readLive={live('swing')} />
   </div>
+  </PatchPanel>
 </div>
 
 <style>
