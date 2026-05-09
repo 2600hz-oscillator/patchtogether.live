@@ -26,6 +26,16 @@
   <div class="stripe"></div>
   <header class="title">INWARDS</header>
 
+  <!-- CV inputs — one per modulatable param. The cross-domain CV
+       bridge in VideoEngine routes audio-side cv onto setParam(portId),
+       so the handle id MUST match the param id. -->
+  <Handle type="target" position={Position.Left} id="speed"     style="top: 56px;  --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 50px;">S</span>
+  <Handle type="target" position={Position.Left} id="density"   style="top: 88px;  --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 82px;">D</span>
+  <Handle type="target" position={Position.Left} id="thickness" style="top: 120px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 114px;">T</span>
+
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-mono-video);" />
   <span class="port-label right" style="top: 50px;">OUT</span>
 
@@ -39,7 +49,9 @@
 <style>
   .card {
     width: 220px;
-    min-height: 230px;
+    /* Bumped from 230 to 280 so the 3 CV input handles (top 56, 88,
+       120) plus port labels clear the fader grid below. */
+    min-height: 280px;
     background: var(--module-bg);
     border: 1px solid #2a2f3a;
     border-radius: 2px;
@@ -78,9 +90,12 @@
     pointer-events: none;
     font-family: ui-monospace, monospace;
   }
+  .port-label.left { left: 14px; }
   .port-label.right { right: 14px; }
   .fader-grid {
-    margin-top: 28px;
+    /* Pushed down so the top of the grid clears the lowest CV-input
+       handle (top: 120px). Was 28px when INWARDS had no inputs. */
+    margin-top: 60px;
     padding: 0 12px;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;

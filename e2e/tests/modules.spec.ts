@@ -67,8 +67,9 @@ const MODULES: ModuleSpec[] = [
   // OUTPUT (videoOut): 1 input (in) + 0 outputs = 1 handle.
   { type: 'videoOut',     cardClass: 'svelte-flow__node-videoOut',     handleCount: 1, containsLabel: 'OUTPUT', domain: 'video' },
   // ---- Video-domain (Phase 1 — .myrobots/plans/video-modules-mvp.md) ----
-  // INWARDS: 0 inputs + 1 output (out) = 1 handle.
-  { type: 'inwards',      cardClass: 'svelte-flow__node-inwards',      handleCount: 1, containsLabel: 'INWARDS',    domain: 'video' },
+  // INWARDS: 3 cv inputs (speed, density, thickness — match LINES PR-65 pattern)
+  // + 1 output (out) = 4 handles.
+  { type: 'inwards',      cardClass: 'svelte-flow__node-inwards',      handleCount: 4, containsLabel: 'INWARDS',    domain: 'video' },
   // PICTUREBOX: 1 input (gain cv) + 1 output (out) = 2 handles.
   { type: 'picturebox',   cardClass: 'svelte-flow__node-picturebox',   handleCount: 2, containsLabel: 'PICTUREBOX', domain: 'video' },
   // DESTRUCTOR: 2 inputs (in, mangle) + 1 output (out) = 3 handles.
