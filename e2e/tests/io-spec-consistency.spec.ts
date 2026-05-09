@@ -153,6 +153,9 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     // Sister VCOs with built-in wavefolders + waveform-video out:
     'vizvco',
     'wavviz',
+    // SWOLEVCO — Buchla 259-style complex VCO (primary + modulator + cross-mod
+    // + symmetry morph + wavefolder + scope mono-video out).
+    'swolevco',
     // Video-domain (Phase 0 spike, .myrobots/plans/video-modules-mvp.md):
     'lines',
     'videoOut',

@@ -101,6 +101,9 @@ type StandardModuleType =
   // Sister modules with built-in wavefolder + waveform-video output:
   | 'vizvco'
   | 'wavviz'
+  // SWOLEVCO — Buchla 259-style complex VCO (primary + modulator + cross-mod
+  // + symmetry morph + wavefolder + scope video out).
+  | 'swolevco'
   // Video-domain modules (Phase 0 spike):
   | 'lines'
   | 'videoOut'

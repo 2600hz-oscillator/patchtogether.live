@@ -97,7 +97,7 @@ const DESCRIPTIONS: Record<string, string> = {
   meowbox:
     'Gate-triggered cat-vocal synth voice (formant bank + harmonic + noise excitation).',
   mixmstrs:
-    'Singleton 4xstereo mixer with EQ, compressor, two stereo aux sends/returns. 37 params.',
+    'Singleton 4xstereo mixer with EQ, per-channel compressor (single-dial macro + power-user thresh/ratio), two stereo aux sends/returns. 41 params.',
   timelorde: 'Singleton master clock. Internal or external BPM, twelve clock-divider outputs.',
   charlottesEchos: 'Destructive multi-head stereo delay. Pitch-shifted feedback with decay.',
   riotgirls:
@@ -443,6 +443,9 @@ function synthesizeFromBuildHelper(
       params.push({ id: `ch${ch}_thresh`, label: `${ch}Th`, defaultValue: -12, min: -36, max: 0, curve: 'linear', units: 'dB' });
       params.push({ id: `ch${ch}_ratio`, label: `${ch}Rt`, defaultValue: 2, min: 1, max: 10, curve: 'linear' });
       params.push({ id: `ch${ch}_compEnable`, label: `${ch}Cp`, defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+      // Per-channel comp macro knob (single-dial wrapper around
+      // thresh/ratio/compEnable, added in feat/audio-fidelity-...).
+      params.push({ id: `comp${ch}`, label: `${ch}Cm`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
       params.push({ id: `ch${ch}_send1`, label: `${ch}S1`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
       params.push({ id: `ch${ch}_send2`, label: `${ch}S2`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
     }

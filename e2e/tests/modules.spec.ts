@@ -56,17 +56,21 @@ const MODULES: ModuleSpec[] = [
   { type: 'timelorde',    cardClass: 'svelte-flow__node-timelorde',    handleCount: 13, containsLabel: 'TIMELORDE' },
   // CHARLOTTE'S ECHOS: 3 inputs (L, R, delay cv) + 2 outputs (L, R) = 5.
   { type: 'charlottesEchos', cardClass: 'svelte-flow__node-charlottesEchos', handleCount: 5, containsLabel: "CHARLOTTE'S ECHOS" },
-  // MIXMSTRS: 12 audio inputs (4 ch stereo + 2 returns stereo) + 37 CV-per-
-  // param inputs + 6 outputs (master L/R + 2 sends stereo) = 55 handles.
+  // MIXMSTRS: 12 audio inputs (4 ch stereo + 2 returns stereo) + 41 CV-per-
+  // param inputs (37 originals + 4 per-channel `comp` macro knobs added in
+  // feat/audio-fidelity-...) + 6 outputs (master L/R + 2 sends stereo) = 59.
   // Post-PatchPanel-refactor every def-declared port renders a Handle
   // (visually hidden until the panel is hovered open).
-  { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 55, containsLabel: 'MIXMSTRS' },
+  { type: 'mixmstrs',     cardClass: 'svelte-flow__node-mixmstrs',     handleCount: 59, containsLabel: 'MIXMSTRS' },
   // SCORE: 5 inputs (clock + A/D/S/R cv) + 4 outputs (pitch, gate, env, clock) = 9.
   { type: 'score',        cardClass: 'svelte-flow__node-score',        handleCount: 9, containsLabel: 'Score' },
   // VIZVCO: 3 inputs (pitch, fm, foldAmount cv) + 5 outputs (saw, square, triangle, sine, scope mono-video) = 8.
   { type: 'vizvco',       cardClass: 'svelte-flow__node-vizvco',       handleCount: 8, containsLabel: 'VIZVCO' },
   // WAVVIZ: 4 inputs (pitch, fm, wavePos cv, foldAmount cv) + 2 outputs (audio, scope mono-video) = 6.
   { type: 'wavviz',       cardClass: 'svelte-flow__node-wavviz',       handleCount: 6, containsLabel: 'WAVVIZ' },
+  // SWOLEVCO: 7 inputs (pitch + mod_pitch + fm + 4 cv: timbre, symmetry, fold, ratio)
+  // + 4 outputs (out, mod_out, sum_out, scope mono-video) = 11. Buchla 259 complex VCO.
+  { type: 'swolevco',     cardClass: 'svelte-flow__node-swolevco',     handleCount: 11, containsLabel: 'SWOLEVCO' },
   // ---- Video-domain (Phase 0 spike) ----
   // LINES: 5 inputs (fm + 4 cv: orient, amp, thickness, phase) + 1 output (out) = 6 handles.
   { type: 'lines',        cardClass: 'svelte-flow__node-lines',        handleCount: 6, containsLabel: 'LINES',  domain: 'video' },

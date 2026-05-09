@@ -27,6 +27,7 @@ import { scoreDef } from './score';
 import { drumseqzDef } from './drumseqz';
 import { vizvcoDef } from './vizvco';
 import { wavvizDef } from './wavviz';
+import { swolevcoDef } from './swolevco';
 import { illogicDef } from './illogic';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
@@ -60,6 +61,7 @@ export function registerAudioModules(): void {
   registerModule(drumseqzDef);
   registerModule(vizvcoDef);
   registerModule(wavvizDef);
+  registerModule(swolevcoDef);
   registerModule(illogicDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
