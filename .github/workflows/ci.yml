@@ -8,8 +8,16 @@ name: CI
 on:
   push:
     branches: [main, first-mvp]
+    paths-ignore:
+      - '**/*.md'
+      - '.myrobots/**'
+      - 'LICENSE'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - '.myrobots/**'
+      - 'LICENSE'
 
 # Cancel in-progress runs for the same ref when a new commit lands.
 concurrency:
@@ -61,15 +69,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deps-
 
+      # Cache .svelte-kit/. svelte-kit sync regenerates this from svelte.config.js
+      # + the routes tree; if those didn't change, the cached output (generated
+      # types + tsconfig) is valid and svelte-check skips work. Stale-cache
+      # failure mode is "type errors at typecheck time", which is loud — safe.
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
-
-      - name: Build DSP (Faust → WASM)
-        run: flox activate -- task dsp:build
 
       - name: Apply DB schema
         run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
 
+      # Note: dsp:build is no longer a separate step. `task ci` runs `task art`
+      # which already declares `deps: [dsp:build]`, so the WASM bundle is built
+      # exactly once per run instead of twice (saves ~4s).
       - name: Run full CI suite (typecheck + unit + ART + E2E)
         run: flox activate -- task ci
 

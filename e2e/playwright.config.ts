@@ -25,7 +25,11 @@ export default defineConfig({
   // run serially. Each worker gets its own browser context (separate
   // AudioContexts), so audio-related tests don't interfere across files.
   fullyParallel: true,
-  workers: process.env.CI ? 2 : undefined, // undefined = Playwright default (≈ half cores)
+  // ubuntu-latest runners have 4 vCPU. Bumped CI workers 2 → 3 to use more
+  // cores while leaving one for the dev server + Hocuspocus. Each test gets
+  // its own browser context (own AudioContext), so cross-test interference is
+  // bounded; if flake regresses, drop back to 2.
+  workers: process.env.CI ? 3 : undefined, // undefined = Playwright default (≈ half cores)
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI
