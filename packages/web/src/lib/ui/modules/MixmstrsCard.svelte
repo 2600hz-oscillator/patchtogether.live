@@ -45,7 +45,15 @@
     </button>
   </header>
 
-  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={320}>
+  <!--
+    panelWidth is the total open-state popover width. With the
+    two-column open layout (inputs left, outputs right), 560 gives
+    each column ~265px — wide enough for verbose labels like
+    "ch1 SEND 1" without truncation. MIXMSTRS has 49 inputs + 6
+    outputs, so the inputs column scrolls but the panel itself fits
+    on a typical 1366px-wide laptop viewport (560 < 1093 = 80vw).
+  -->
+  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={560}>
     <div class="grid">
       {#each CH as ch (ch)}
         <div class="ch-col">

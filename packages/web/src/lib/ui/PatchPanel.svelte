@@ -40,8 +40,16 @@
    *   for mega-modules like RIOTGIRLS where voices need their own grouping.
    * - `sections`: when groupingStrategy === 'sectioned', an array of
    *   { label, inputs, outputs } that PatchPanel renders top-to-bottom.
-   * - `panelWidth`: CSS width of the popover (default 280, RIOTGIRLS uses
-   *   bigger).
+   * - `panelWidth`: CSS width of the OPEN popover (default 280).
+   *   The open panel hosts a 2-column grid (inputs left, outputs
+   *   right), so each column is ~half this width minus gap. Dense
+   *   modules pass a wider `panelWidth` (MIXMSTRS 560, RIOTGIRLS 600)
+   *   so each column has enough horizontal space for verbose labels
+   *   like "FILTER PING DECAY". The panel scrolls vertically when
+   *   the dense column overflows max-height (70vh), so RIOTGIRLS's
+   *   55-row inputs column doesn't push the panel past the viewport.
+   *   `panelWidth` is capped at 80vw on the panel itself so smaller
+   *   viewports stay legible.
    * - `children`: the slot for the card's main content (knobs, buttons,
    *   widgets — everything that is NOT a Handle).
    */
@@ -70,6 +78,46 @@
     panelWidth = 280,
     children,
   }: Props = $props();
+
+  // For sectioned grouping (RIOTGIRLS), pull the outputs across all
+  // sections into a single flat list rendered in the right column.
+  // Each section keeps its inputs in the left column. This is
+  // "Option A" from the layout spec — simpler than splitting each
+  // section into its own column, and fits within width budget.
+  interface SectionedOutputEntry {
+    sectionLabel: string;
+    ports: PortDescriptor[];
+  }
+  let sectionedOutputs = $derived<SectionedOutputEntry[]>(
+    groupingStrategy === 'sectioned'
+      ? sections
+          .filter((s) => s.outputs && s.outputs.length > 0)
+          .map((s) => ({
+            sectionLabel: s.label,
+            ports: s.outputs ?? [],
+          }))
+      : [],
+  );
+  let sectionedHasInputs = $derived<boolean>(
+    groupingStrategy === 'sectioned' &&
+      sections.some((s) => s.inputs && s.inputs.length > 0),
+  );
+
+  // Layout column count: AudioOut has no outputs; some hypothetical
+  // source modules might have no inputs. In either case collapse to a
+  // single visible column so we don't render an awkward empty grid track.
+  let hasInputs = $derived(
+    groupingStrategy === 'sectioned' ? sectionedHasInputs : inputs.length > 0,
+  );
+  let hasOutputs = $derived(
+    groupingStrategy === 'sectioned' ? sectionedOutputs.length > 0 : outputs.length > 0,
+  );
+  let visibleColumnCount = $derived((hasInputs ? 1 : 0) + (hasOutputs ? 1 : 0) || 1);
+
+  // panelWidth is the TOTAL popover width — preserving the prop's
+  // pre-two-column semantics so existing test geometry (handles land
+  // near the card edge, not 280px further out) continues to work.
+  // The 2-column grid divides this width internally.
 
   // ---------------- Hover-intent state machine ----------------
   //
@@ -266,6 +314,8 @@
   <div
     class="patch-panel"
     class:open
+    class:two-col={visibleColumnCount === 2}
+    class:one-col={visibleColumnCount === 1}
     style:width="{panelWidth}px"
     data-testid="patch-panel"
     aria-hidden={!open}
@@ -274,101 +324,131 @@
     onpointerdown={onPanelPointerDown}
     role="group"
   >
-    {#if groupingStrategy === 'sectioned'}
-      {#each sections as section, sIdx (section.label + '-' + sIdx)}
-        <section class="panel-section">
-          <h3 class="section-title">{section.label}</h3>
-          {#if section.inputs && section.inputs.length > 0}
-            <h4 class="subgroup-title">Inputs</h4>
-            <ul class="row-list">
-              {#each section.inputs as port (port.id)}
-                <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
-                  <span class="row-stripe" aria-hidden="true"></span>
-                  <span class="row-label" data-testid="port-row-label">
-                    {resolveVerboseLabel(port)}
-                  </span>
-                  <Handle
-                    type="target"
-                    position={Position.Left}
-                    id={port.id}
-                    style={`--handle-color: ${cableColorVar(port.cable)};`}
-                  />
-                </li>
-              {/each}
-            </ul>
-          {/if}
-          {#if section.outputs && section.outputs.length > 0}
-            <h4 class="subgroup-title">Outputs</h4>
-            <ul class="row-list">
-              {#each section.outputs as port (port.id)}
-                <li class="panel-row right" style:--row-cable={cableColorVar(port.cable)}>
-                  <Handle
-                    type="source"
-                    position={Position.Right}
-                    id={port.id}
-                    style={`--handle-color: ${cableColorVar(port.cable)};`}
-                  />
-                  <span class="row-label right" data-testid="port-row-label">
-                    {resolveVerboseLabel(port)}
-                  </span>
-                  <span class="row-stripe right" aria-hidden="true"></span>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </section>
-      {/each}
-    {:else}
-      <!-- 'auto' grouping -->
-      {#if inputGroups.length > 0}
-        <section class="panel-section">
-          <h3 class="section-title">Inputs</h3>
-          {#each inputGroups as group (group.cable)}
-            <h4 class="subgroup-title">{group.label}</h4>
-            <ul class="row-list">
-              {#each group.ports as port (port.id)}
-                <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
-                  <span class="row-stripe" aria-hidden="true"></span>
-                  <span class="row-label" data-testid="port-row-label">
-                    {resolveVerboseLabel(port)}
-                  </span>
-                  <Handle
-                    type="target"
-                    position={Position.Left}
-                    id={port.id}
-                    style={`--handle-color: ${cableColorVar(port.cable)};`}
-                  />
-                </li>
-              {/each}
-            </ul>
+    <!--
+      Open-state layout is a 2-column grid so dense modules
+      (MIXMSTRS 49 inputs, RIOTGIRLS 55 inputs) fit on a typical
+      laptop viewport. Inputs always render in the left column,
+      outputs in the right column. The panel itself scrolls vertically
+      when the dense column overflows max-height (per-column scroll
+      would clip handles — see .panel-col CSS for the rationale).
+      Sectioned grouping (RIOTGIRLS) keeps sections stacked WITHIN the
+      inputs column; outputs from any section fall into the single
+      right column.
+
+      When a module has only inputs (AudioOut) or only outputs, the
+      panel collapses to a single visible column to avoid rendering a
+      blank grid track.
+    -->
+    <div class="panel-grid">
+      {#if hasInputs}
+      <div class="panel-col panel-col-inputs" data-testid="patch-panel-inputs">
+        {#if groupingStrategy === 'sectioned'}
+          {#each sections as section, sIdx (section.label + '-' + sIdx)}
+            {#if section.inputs && section.inputs.length > 0}
+              <section class="panel-section">
+                <h3 class="section-title">{section.label}</h3>
+                <ul class="row-list">
+                  {#each section.inputs as port (port.id)}
+                    <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
+                      <span class="row-stripe" aria-hidden="true"></span>
+                      <span class="row-label" data-testid="port-row-label">
+                        {resolveVerboseLabel(port)}
+                      </span>
+                      <Handle
+                        type="target"
+                        position={Position.Left}
+                        id={port.id}
+                        style={`--handle-color: ${cableColorVar(port.cable)};`}
+                      />
+                    </li>
+                  {/each}
+                </ul>
+              </section>
+            {/if}
           {/each}
-        </section>
+        {:else if inputGroups.length > 0}
+          <section class="panel-section">
+            <h3 class="section-title">Inputs</h3>
+            {#each inputGroups as group (group.cable)}
+              <h4 class="subgroup-title">{group.label}</h4>
+              <ul class="row-list">
+                {#each group.ports as port (port.id)}
+                  <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
+                    <span class="row-stripe" aria-hidden="true"></span>
+                    <span class="row-label" data-testid="port-row-label">
+                      {resolveVerboseLabel(port)}
+                    </span>
+                    <Handle
+                      type="target"
+                      position={Position.Left}
+                      id={port.id}
+                      style={`--handle-color: ${cableColorVar(port.cable)};`}
+                    />
+                  </li>
+                {/each}
+              </ul>
+            {/each}
+          </section>
+        {/if}
+      </div>
       {/if}
-      {#if outputGroups.length > 0}
-        <section class="panel-section">
-          <h3 class="section-title">Outputs</h3>
-          {#each outputGroups as group (group.cable)}
-            <h4 class="subgroup-title">{group.label}</h4>
-            <ul class="row-list">
-              {#each group.ports as port (port.id)}
-                <li class="panel-row right" style:--row-cable={cableColorVar(port.cable)}>
-                  <Handle
-                    type="source"
-                    position={Position.Right}
-                    id={port.id}
-                    style={`--handle-color: ${cableColorVar(port.cable)};`}
-                  />
-                  <span class="row-label right" data-testid="port-row-label">
-                    {resolveVerboseLabel(port)}
-                  </span>
-                  <span class="row-stripe right" aria-hidden="true"></span>
-                </li>
+
+      {#if hasOutputs}
+      <div class="panel-col panel-col-outputs" data-testid="patch-panel-outputs">
+        {#if groupingStrategy === 'sectioned'}
+          {#if sectionedOutputs.length > 0}
+            <section class="panel-section">
+              <h3 class="section-title">Outputs</h3>
+              {#each sectionedOutputs as entry (entry.sectionLabel)}
+                {#if sectionedOutputs.length > 1}
+                  <h4 class="subgroup-title">{entry.sectionLabel}</h4>
+                {/if}
+                <ul class="row-list">
+                  {#each entry.ports as port (port.id)}
+                    <li class="panel-row right" style:--row-cable={cableColorVar(port.cable)}>
+                      <Handle
+                        type="source"
+                        position={Position.Right}
+                        id={port.id}
+                        style={`--handle-color: ${cableColorVar(port.cable)};`}
+                      />
+                      <span class="row-label right" data-testid="port-row-label">
+                        {resolveVerboseLabel(port)}
+                      </span>
+                      <span class="row-stripe right" aria-hidden="true"></span>
+                    </li>
+                  {/each}
+                </ul>
               {/each}
-            </ul>
-          {/each}
-        </section>
+            </section>
+          {/if}
+        {:else if outputGroups.length > 0}
+          <section class="panel-section">
+            <h3 class="section-title">Outputs</h3>
+            {#each outputGroups as group (group.cable)}
+              <h4 class="subgroup-title">{group.label}</h4>
+              <ul class="row-list">
+                {#each group.ports as port (port.id)}
+                  <li class="panel-row right" style:--row-cable={cableColorVar(port.cable)}>
+                    <Handle
+                      type="source"
+                      position={Position.Right}
+                      id={port.id}
+                      style={`--handle-color: ${cableColorVar(port.cable)};`}
+                    />
+                    <span class="row-label right" data-testid="port-row-label">
+                      {resolveVerboseLabel(port)}
+                    </span>
+                    <span class="row-stripe right" aria-hidden="true"></span>
+                  </li>
+                {/each}
+              </ul>
+            {/each}
+          </section>
+        {/if}
+      </div>
       {/if}
-    {/if}
+    </div>
   </div>
 
   {@render children?.()}
@@ -471,6 +551,14 @@
     transform: translateX(-8px);
     transition: opacity 120ms ease-out, transform 120ms ease-out;
     max-height: 70vh;
+    /* Cap at 80vw on smaller viewports so the popover stays onscreen. */
+    max-width: 80vw;
+    /* Panel-level vertical scroll. The handle dots (12x12, positioned
+     * at -7px / +5px from .panel-row's leading/trailing edge) sit
+     * within the panel's 10px padding, so the panel's content-box
+     * comfortably contains them and the auto scrollbar doesn't clip.
+     * (Per CSS spec, `overflow-y: auto` is effectively `overflow: auto`
+     * — so per-column scrolling would clip the handles instead.) */
     overflow-y: auto;
     z-index: 10;
   }
@@ -478,6 +566,50 @@
     opacity: 1;
     pointer-events: auto;
     transform: translateX(0);
+  }
+
+  /* ---------------- Two-column grid (open state) ---------------- */
+  /*
+   * Inputs left, outputs right. The dense column (usually inputs)
+   * drives panel height; the panel scrolls vertically when content
+   * overflows. Per-column scroll would clip the handle dots that sit
+   * at left:-7px / right:-7px on each row (CSS spec: any axis !=
+   * visible promotes the other axis to auto). Dense modules (MIXMSTRS
+   * 49 inputs / RIOTGIRLS 55 inputs) get their full label width and a
+   * scroll bar inside the panel; the panel's max-height keeps it
+   * onscreen.
+   */
+  .panel-grid {
+    display: grid;
+    gap: 12px;
+    /* Width tracks the inline style:width on .patch-panel so the grid
+     * never grows past the viewport cap (max-width: 80vw on the panel
+     * trims the rendered width on small screens). The panel itself
+     * owns the vertical scroll — the grid stretches to whatever its
+     * content needs and the panel scrolls when needed. */
+    width: 100%;
+  }
+  .patch-panel.two-col .panel-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .patch-panel.one-col .panel-grid {
+    grid-template-columns: 1fr;
+  }
+  .panel-col {
+    display: flex;
+    flex-direction: column;
+    /* IMPORTANT: columns must NOT clip overflow. Output handles are
+     * positioned at `right: -7px` relative to .panel-row, which puts
+     * them past the column's right edge. CSS treats `overflow-y: auto`
+     * + `overflow-x: visible` as `overflow: auto` (per spec), so a
+     * scrolling column would clip the handles and break xyflow's
+     * connect-drag hit-testing on neighbouring modules. The PANEL
+     * itself owns the vertical scroll instead (overflow-y: auto on
+     * .patch-panel). The dense column (usually inputs) drives the
+     * scroll height; the shorter column (usually outputs) sits at the
+     * top and is short enough to never need scrolling. */
+    min-width: 0;
+    min-height: 0;
   }
 
   .panel-section + .panel-section {
@@ -494,9 +626,13 @@
     letter-spacing: 0.08em;
     margin: 0 0 4px;
     position: sticky;
+    /* Sticky pins to the panel's scrollport. -8px offsets the panel's
+     * 8px top padding so the title hugs the panel's top edge as the
+     * user scrolls a long inputs column. */
     top: -8px;
-    background: inherit;
+    background: rgba(14, 17, 22, 0.97);
     padding-top: 4px;
+    padding-bottom: 2px;
     z-index: 1;
   }
   .subgroup-title {
