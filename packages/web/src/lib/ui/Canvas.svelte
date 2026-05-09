@@ -41,6 +41,7 @@
   import { attachReconciler } from '$lib/audio/reconciler';
   import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
   import { provideEngineContext } from '$lib/audio/engine-context';
+  import { provideProviderContext } from '$lib/multiplayer/provider-context';
   import '$lib/audio/modules'; // auto-registers analogVcoDef + audioOutDef
   // Video-domain (Phase 0 spike) — sibling registry + engine class. Imported
   // here so module defs are present in the registry by the time the palette
@@ -168,6 +169,10 @@
   // Provide the engine to descendant module-card components (motorized faders
   // use this to read live AudioParam values).
   provideEngineContext(() => engine);
+  // Provide the multiplayer provider too, so cards can write per-module
+  // presence into Y.Awareness (e.g., CAMERA publishes "this user has CAMERA
+  // active here" without sending pixels — see camera-presence.ts).
+  provideProviderContext(() => provider);
 
   // Dev-only: expose patch + ydoc on window so e2e tests can drive arbitrary
   // module-spawning combinations without a UI palette. Stripped in prod builds.

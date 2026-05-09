@@ -22,6 +22,14 @@
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
+  import { useProvider } from '$lib/multiplayer/provider-context';
+  import {
+    addLocalCameraNodeId,
+    removeLocalCameraNodeId,
+    readRemoteCameraPresence,
+    type RemoteCameraPresence,
+  } from '$lib/multiplayer/camera-presence';
+  import type { PresenceUser } from '$lib/multiplayer/presence';
   import { patch } from '$lib/graph/store';
   import { cameraInputDef } from '$lib/video/modules/camera-input';
   import type { VideoEngine } from '$lib/video/engine';
@@ -42,6 +50,7 @@
   let node = $derived(data?.node as ModuleNode);
 
   const engineCtx = useEngine();
+  const providerCtx = useProvider();
 
   let videoEl: HTMLVideoElement | null = $state(null);
   let stream: MediaStream | null = null;
@@ -49,6 +58,11 @@
   let errorMsg = $state<string | null>(null);
   let devices = $state<MediaDeviceInfo[]>([]);
   let selectedDeviceId = $state<string | null>(null);
+  // Awareness: who else (if anyone) has THIS card's CAMERA active. The
+  // stream itself is local-only, so we render a presence badge instead of
+  // pixels. Null = no remote user; non-null = the first remote user we
+  // see in the awareness states whose cameraNodeIds includes our id.
+  let remoteCameraUser = $state<PresenceUser | null>(null);
 
   // Hydrate selectedDeviceId from node.data.deviceId once on mount.
   // Subsequent picks write back to node.data.deviceId.
@@ -208,6 +222,11 @@
     }
 
     camState = 'streaming';
+    // Awareness signal: tell rack-mates THIS user has a CAMERA active here.
+    // Stream itself stays local — the awareness field is just an id list,
+    // so the receiving side can render a presence badge over the matching
+    // node without seeing pixels.
+    addLocalCameraNodeId(providerCtx.get(), id);
   }
 
   function stopStream(): void {
@@ -220,6 +239,10 @@
     }
     const ve = videoEngine();
     ve?.attachExternalSource(id, 'video', null);
+    // Awareness signal cleanup: peers should drop the badge when the
+    // stream ends (whether user-initiated, hardware-disconnected, or
+    // permission-revoked).
+    removeLocalCameraNodeId(providerCtx.get(), id);
   }
 
   function onPickDevice(deviceId: string): void {
@@ -315,6 +338,41 @@
     stopStream();
     const ve = videoEngine();
     ve?.attachExternalSource(id, 'video', null);
+    // Defensive: if stopStream's clear didn't run (e.g. card unmounted
+    // mid-stream-acquisition), still scrub our awareness footprint.
+    removeLocalCameraNodeId(providerCtx.get(), id);
+  });
+
+  // Subscribe to awareness changes — if a remote rack-mate has THIS node
+  // id in their cameraNodeIds set, render the presence badge over our
+  // preview area. Single-user / no-provider canvases get null and the
+  // overlay never shows.
+  $effect(() => {
+    const provider = providerCtx.get();
+    if (!provider) {
+      remoteCameraUser = null;
+      return;
+    }
+    const aw = provider.awareness;
+    if (!aw) {
+      remoteCameraUser = null;
+      return;
+    }
+    const refresh = (): void => {
+      const remotes: RemoteCameraPresence[] = readRemoteCameraPresence(
+        aw,
+        aw.clientID,
+      );
+      const owner = remotes.find((r) => r.nodeIds.includes(id));
+      remoteCameraUser = owner ? owner.user : null;
+    };
+    refresh();
+    aw.on('change', refresh);
+    aw.on('update', refresh);
+    return () => {
+      aw.off('change', refresh);
+      aw.off('update', refresh);
+    };
   });
 
   // Status text for the LED row.
@@ -389,6 +447,31 @@
         autoplay
         style:transform={p('mirror') > 0.5 ? 'scaleX(-1)' : 'none'}
       ></video>
+      <!-- Local-only hint. The captured stream stays inside this browser
+           tab — collaborators see only a presence badge, not the pixels.
+           Multiplayer streaming (WebRTC + SFU) is deferred to a future
+           phase; see .myrobots/plans/module-camera-input.md. -->
+      {#if camState === 'streaming'}
+        <div class="local-only-hint" data-testid="camera-local-only-hint">
+          Local only — others won't see your camera stream
+        </div>
+      {/if}
+      <!-- Remote-camera presence badge: shown when a rack-mate has this
+           CAMERA active in THEIR browser. We can't see their pixels (the
+           stream is local to their tab), but we know who's holding it. -->
+      {#if remoteCameraUser && camState !== 'streaming'}
+        <div
+          class="remote-camera-badge"
+          data-testid="camera-remote-presence"
+          data-remote-user-id={remoteCameraUser.id}
+          style:--remote-color={remoteCameraUser.color}
+        >
+          <span class="badge-dot" aria-hidden="true"></span>
+          <span class="badge-text">
+            {remoteCameraUser.displayName} has CAMERA active
+          </span>
+        </div>
+      {/if}
     </div>
 
     <div class="controls">
@@ -530,8 +613,10 @@
 
   .preview-wrap {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     margin: 4px 0;
+    gap: 2px;
   }
   video {
     width: 200px;
@@ -540,6 +625,48 @@
     border: 1px solid var(--cable-video);
     border-radius: 1px;
     object-fit: cover;
+  }
+  .local-only-hint {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    opacity: 0.6;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    text-align: center;
+    line-height: 1.2;
+    max-width: 200px;
+    letter-spacing: 0.01em;
+  }
+  .remote-camera-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+    padding: 3px 7px;
+    border-radius: 10px;
+    background: rgba(20, 23, 31, 0.6);
+    border: 1px solid var(--remote-color, #3b82f6);
+    font-size: 0.65rem;
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    line-height: 1.2;
+  }
+  .badge-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--remote-color, #3b82f6);
+    box-shadow: 0 0 4px var(--remote-color, #3b82f6);
+    animation: badge-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .badge-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 175px;
   }
 
   .controls {
