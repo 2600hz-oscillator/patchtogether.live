@@ -146,7 +146,10 @@ type StandardModuleType =
   // BUGGLES — chaotic random voltage source (wogglebug-style).
   | 'buggles'
   // VDELAY — video delay + feedback echo (ring buffer of FBO textures).
-  | 'vdelay';
+  | 'vdelay'
+  // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder + 3D viz.
+  // Loads E352 Cloud Terrarium-format WAV wavetables.
+  | 'wavecel';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
