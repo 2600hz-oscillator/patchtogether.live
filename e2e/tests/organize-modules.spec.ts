@@ -644,19 +644,20 @@ test('Organize entry is present in palette and is the first tools entry', async 
 });
 
 test('rclick on a port handle does not crash and surfaces SOME menu', async ({ page }) => {
-  // Ports live inside the node card. Right-click on the card area triggers
-  // the per-node context menu (xyflow's onnodecontextmenu). We assert: NO
-  // crash, palette never appears, per-node menu does appear.
-  // Post-PatchPanel: the handle is hover-revealed, so we hover the trigger
-  // first to make it interactive.
+  // Ports live inside the node card. Post-"Patch to..." (PR #104) right-
+  // clicking a handle opens the port-level context menu (the cascading
+  // patch-to flow), NOT the module actions menu. We assert: NO crash,
+  // palette never appears, port-context menu does appear.
+  // PatchPanel handles are hover-revealed, so we click the trigger first
+  // to pin the panel open and make the handle interactive.
   await ready(page);
   await spawnPatch(page, [{ id: 'm', type: 'lfo', position: { x: 200, y: 200 } }]);
-  await page.locator('.svelte-flow__node-lfo [data-testid="patch-trigger"]').hover();
+  await page.locator('.svelte-flow__node-lfo [data-testid="patch-trigger"]').click();
   // Find a port handle inside the LFO card and right-click it.
   const handle = page.locator('.svelte-flow__node-lfo .svelte-flow__handle').first();
   await expect(handle).toBeVisible();
   await handle.click({ button: 'right' });
-  await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
+  await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
   await expect(page.locator('.module-palette')).toHaveCount(0);
 });
 
