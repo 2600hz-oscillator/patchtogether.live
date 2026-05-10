@@ -5,7 +5,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { scopeDef, type ScopeSnapshot } from '$lib/audio/modules/scope';
+  import { scopeDef, type ScopeSnapshot, type PitchResult } from '$lib/audio/modules/scope';
   import { drawScope } from '$lib/audio/modules/scope-draw';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -74,6 +74,12 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let raf: number | null = null;
 
+  // Pitch tuner readout — sampled at ~10 Hz (NOT rAF; frame-rate jitter would
+  // make the Hz value flicker). When ch1 has no pitched signal, all three
+  // fields read null and the UI shows em-dashes.
+  let pitch: PitchResult = $state({ hz: null, note: null, cents: null, confidence: null });
+  let pitchTimer: ReturnType<typeof setInterval> | null = null;
+
   // Resolve cable colors once at mount. $state so the draw() reads the
   // post-mount values (the existing warning called this out — making
   // these reactive both fixes the warning and ensures the on-card
@@ -103,9 +109,33 @@
     };
   });
 
+  $effect(() => {
+    pitchTimer = setInterval(() => {
+      const eng = engineCtx.get();
+      if (!eng || !node) return;
+      const p = eng.read(node, 'pitch') as PitchResult | undefined;
+      if (p) pitch = p;
+    }, 100);
+    return () => {
+      if (pitchTimer !== null) clearInterval(pitchTimer);
+      pitchTimer = null;
+    };
+  });
+
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
+    if (pitchTimer !== null) clearInterval(pitchTimer);
   });
+
+  function fmtHz(hz: number | null): string {
+    if (hz === null) return '—';
+    return `${hz.toFixed(1)} Hz`;
+  }
+  // Tuning meter: cents → percentage offset from center. -50 → 0%, 0 → 50%, +50 → 100%.
+  let meterPct = $derived(
+    pitch.cents === null ? 50 : Math.max(0, Math.min(100, 50 + pitch.cents)),
+  );
+  let inTune = $derived(pitch.cents !== null && Math.abs(pitch.cents) <= 5);
 
   function draw(c: HTMLCanvasElement, snap: ScopeSnapshot) {
     const ctx2d = c.getContext('2d');
@@ -156,6 +186,26 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="screen-wrap">
       <canvas bind:this={canvasEl} width="280" height="120"></canvas>
+    </div>
+
+    <div class="tuner" data-testid="scope-tuner">
+      <div class="tuner-readout">
+        <span class="lbl">PITCH</span>
+        <span class="val val-hz" data-testid="pitch-hz">{fmtHz(pitch.hz)}</span>
+        <span class="sep">|</span>
+        <span class="lbl">NOTE</span>
+        <span class="val val-note" data-testid="pitch-note">{pitch.note ?? '—'}</span>
+      </div>
+      <div class="meter" data-testid="tuning-meter">
+        <div class="meter-tick" data-testid="tuning-meter-center"></div>
+        <div
+          class="meter-marker"
+          class:in-tune={inTune}
+          class:idle={pitch.cents === null}
+          style="left: {meterPct}%;"
+          data-testid="tuning-meter-marker"
+        ></div>
+      </div>
     </div>
 
     <div class="fader-row">
@@ -258,5 +308,77 @@
     gap: 6px;
     margin-top: 4px;
     padding: 0 12px;
+  }
+  .tuner {
+    margin: 6px 30px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: stretch;
+  }
+  .tuner-readout {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 6px;
+    font-size: 0.6rem;
+    color: var(--text-dim);
+  }
+  .tuner-readout .lbl {
+    font-variant: small-caps;
+    letter-spacing: 0.04em;
+  }
+  .tuner-readout .val {
+    font-family: ui-monospace, monospace;
+    color: var(--text);
+    font-size: 0.7rem;
+  }
+  .tuner-readout .val-hz {
+    min-width: 5.5em;
+    text-align: right;
+  }
+  .tuner-readout .val-note {
+    min-width: 2.5em;
+    text-align: left;
+  }
+  .tuner-readout .sep {
+    opacity: 0.4;
+  }
+  .meter {
+    position: relative;
+    height: 8px;
+    background: #14171c;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin: 0 auto;
+    width: 100%;
+    max-width: 220px;
+  }
+  .meter-tick {
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    left: 50%;
+    width: 1px;
+    background: var(--text-dim);
+    opacity: 0.6;
+    transform: translateX(-0.5px);
+  }
+  .meter-marker {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 3px;
+    background: #f59e0b;
+    border-radius: 1px;
+    transform: translateX(-1.5px);
+    transition: left 80ms linear, background 80ms linear;
+  }
+  .meter-marker.in-tune {
+    background: #4ade80;
+  }
+  .meter-marker.idle {
+    background: var(--text-dim);
+    opacity: 0.3;
   }
 </style>
