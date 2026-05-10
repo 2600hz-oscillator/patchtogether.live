@@ -115,6 +115,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Webcam input (LOCAL ONLY). Live <video> -> WebGL2 texture; gain / mirror / on params. The captured stream is local to your browser tab and is NOT sent to other rack-mates — collaborators see a presence badge ("user X has CAMERA active") via Y-awareness, not the video itself. Multiplayer streaming (WebRTC + SFU) is deferred to a future phase. Spec: .myrobots/plans/module-camera-input.md.',
   illogic:
     'Combined attenuverter / math / logic utility. 4 cv inputs feed bipolar attenuverters (-1..+1); post-attenuverter outputs sum into `sum` and `diff`. Inputs in1+in2 are also gate-thresholded (>= 0.5) and combined into AND/NAND/OR; in1 alone drives a NOT.',
+  unityscalemathematik:
+    'Bipolar CV-shaping utility with three independent channels: a UNITY scaler (input * atten) plus two attenuvert sections (A, B) whose curve knob morphs the response from linear (k=1) to steep exponential (k=3) via y = sign(x) * |x|^k * atten. Sign is preserved across the curve morph so the transform stays bipolar. CV inputs on every atten/curve knob — useful for envelope shaping, LFO sculpting, or driving any modulation through a tunable response curve.',
   dx7:
     'Pure-TypeScript 6-operator DX7-style FM synthesizer. 32 algorithms, 5-voice polyphony via the polyPitchGate cable, bundled bank of factory-inspired patches (E.PIANO 1, BASS 1, HARMONICA, STRINGS 1, MARIMBA, etc.), and a .syx file picker for loading custom 32-voice cartridge dumps (in-memory only). NOT a Plaits-backed implementation — see .myrobots/plans/dx7-and-polyphony.md for the design rationale.',
   noise:
@@ -270,6 +272,18 @@ const PORT_NOTES: Record<string, string> = {
   'illogic.nand': 'Logic NAND of in1 & in2 as gates. NOT (in1 AND in2).',
   'illogic.or':   'Logic OR of in1 & in2 as gates. High when EITHER input >= 0.5.',
   'illogic.not':  'Logic NOT of in1 alone (single-input). High when in1 < 0.5.',
+  // UNITYSCALEMATHEMATIK ports.
+  'unityscalemathematik.u_in':       'UNITY section signal input (cv, bipolar -1..+1).',
+  'unityscalemathematik.u_atten_cv': 'CV -> UNITY attenuvert knob (linear scale).',
+  'unityscalemathematik.a_in':       'A section signal input (cv, bipolar).',
+  'unityscalemathematik.a_atten_cv': 'CV -> A attenuvert knob (linear scale).',
+  'unityscalemathematik.a_curve_cv': 'CV -> A curve morph (linear scale, 0=linear, 1=steep expo).',
+  'unityscalemathematik.b_in':       'B section signal input (cv, bipolar).',
+  'unityscalemathematik.b_atten_cv': 'CV -> B attenuvert knob (linear scale).',
+  'unityscalemathematik.b_curve_cv': 'CV -> B curve morph (linear scale).',
+  'unityscalemathematik.u_out':      'UNITY output: u_in * unityAtten (bipolar).',
+  'unityscalemathematik.a_out':      'A output: sign(a_in) * |a_in|^k * aAtten with k = 1 + 2*aCurve.',
+  'unityscalemathematik.b_out':      'B output: sign(b_in) * |b_in|^k * bAtten with k = 1 + 2*bCurve.',
   'dx7.poly':
     'Polyphonic pitch+gate input (10 channels = 5 lanes of pitch+gate). Drive from a SEQUENCER / CARTESIAN poly output for chord playback; each lane allocates one DX7 voice. Round-robin allocation with steal-oldest when all 5 voices busy.',
   'dx7.pitch_cv': 'Mono V/oct pitch input (legacy / single-voice fallback — drives lane 0 if no poly cable is patched).',
