@@ -292,24 +292,46 @@ describe('video — RUTTETRA raster-scan-coordinate processor', () => {
 });
 
 describe('video — SHAPEDRAMPS sync-locked ramp generator', () => {
-  it('exposes 6 cv inputs (h_/v_ shape/phase/freq) and 4 mono-video outputs', () => {
+  it('exposes 8 cv inputs + 4 mono-video mixer inputs and 6 mono-video outputs', () => {
     const def = getVideoModuleDef('shapedramps')!;
     expect(def).toBeDefined();
     expect(def.label).toBe('SHAPEDRAMPS');
     expect(def.category).toBe('sources');
     const inIds = def.inputs.map((p) => p.id).sort();
-    expect(inIds).toEqual(['h_freq', 'h_phase', 'h_shape', 'v_freq', 'v_phase', 'v_shape']);
+    expect(inIds).toEqual([
+      'h_freq', 'h_phase', 'h_shape',
+      'mix1_a', 'mix1_b', 'mix1_cv',
+      'mix2_a', 'mix2_b', 'mix2_cv',
+      'v_freq', 'v_phase', 'v_shape',
+    ]);
+    // Param-target CV ports (the 6 ramp morph CVs + 2 mixer CVs) must
+    // declare paramTarget == port.id; signal inputs (mix{N}_a/b) are
+    // mono-video and have no paramTarget.
+    const PARAM_CV_IDS = new Set([
+      'h_shape', 'v_shape', 'h_phase', 'v_phase', 'h_freq', 'v_freq',
+      'mix1_cv', 'mix2_cv',
+    ]);
+    const SIGNAL_IDS = new Set(['mix1_a', 'mix1_b', 'mix2_a', 'mix2_b']);
     for (const port of def.inputs) {
-      expect(port.type, `${port.id} type`).toBe('cv');
-      expect(port.paramTarget, `${port.id} paramTarget`).toBe(port.id);
+      if (PARAM_CV_IDS.has(port.id)) {
+        expect(port.type, `${port.id} type`).toBe('cv');
+        // mix{N}_cv targets the mix{N} param; the rest target their own id.
+        const expectedTarget = port.id.endsWith('_cv') ? port.id.slice(0, -3) : port.id;
+        expect(port.paramTarget, `${port.id} paramTarget`).toBe(expectedTarget);
+        expect(port.cvScale?.mode, `${port.id} cvScale mode`).toBe('linear');
+      } else if (SIGNAL_IDS.has(port.id)) {
+        expect(port.type, `${port.id} type`).toBe('mono-video');
+      } else {
+        throw new Error(`unexpected SHAPEDRAMPS input port ${port.id}`);
+      }
     }
     const outIds = def.outputs.map((p) => p.id).sort();
-    expect(outIds).toEqual(['h_lin', 'h_out', 'v_lin', 'v_out']);
+    expect(outIds).toEqual(['h_lin', 'h_out', 'mix1_out', 'mix2_out', 'v_lin', 'v_out']);
     for (const port of def.outputs) {
       expect(port.type, `${port.id} output type`).toBe('mono-video');
     }
   });
-  it('exposes 6 morph params with correct ranges', () => {
+  it('exposes 8 params with correct ranges (6 morph + mix1 + mix2)', () => {
     const def = getVideoModuleDef('shapedramps')!;
     const find = (id: string) => def.params.find((p) => p.id === id);
     expect(find('h_shape')?.min).toBe(0);
@@ -320,6 +342,12 @@ describe('video — SHAPEDRAMPS sync-locked ramp generator', () => {
     expect(find('h_freq')?.min).toBe(0.5);
     expect(find('h_freq')?.max).toBe(8);
     expect(find('v_freq')?.max).toBe(8);
+    expect(find('mix1')?.min).toBe(0);
+    expect(find('mix1')?.max).toBe(1);
+    expect(find('mix1')?.defaultValue).toBe(0.5);
+    expect(find('mix2')?.min).toBe(0);
+    expect(find('mix2')?.max).toBe(1);
+    expect(find('mix2')?.defaultValue).toBe(0.5);
   });
 });
 

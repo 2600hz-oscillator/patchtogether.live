@@ -160,4 +160,82 @@ test.describe('RUTTETRA + SHAPEDRAMPS integration', () => {
 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
+
+  test('onboard mix1 crossfades two LINES into RUTTETRA.x and reacts to mix1 knob', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // Two distinct LINES sources → SHAPEDRAMPS.mix1_a / mix1_b.
+    // SHAPEDRAMPS.mix1_out → RUTTETRA.x. Linear v_lin → RUTTETRA.y so the
+    // vertical axis is well-defined. LINES1 also drives RUTTETRA.z (the
+    // source signal we're scanning).
+    await spawnPatch(
+      page,
+      [
+        { id: 'v-lines1', type: 'lines',       position: { x: 40,  y: 40  }, domain: 'video', params: { orient: 0.0, amp: 12, thickness: 0.4 } },
+        { id: 'v-lines2', type: 'lines',       position: { x: 40,  y: 280 }, domain: 'video', params: { orient: 1.0, amp: 18, thickness: 0.6 } },
+        { id: 'v-ramps',  type: 'shapedramps', position: { x: 320, y: 40  }, domain: 'video', params: { mix1: 0.0 } },
+        { id: 'v-rutt',   type: 'ruttetra',    position: { x: 700, y: 40  }, domain: 'video', params: { intensity: 1.2, xDisp: 0.4, yDisp: 0.4 } },
+      ],
+      [
+        { id: 'e-l1-mix1a',  from: { nodeId: 'v-lines1', portId: 'out'      }, to: { nodeId: 'v-ramps', portId: 'mix1_a' }, sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-l2-mix1b',  from: { nodeId: 'v-lines2', portId: 'out'      }, to: { nodeId: 'v-ramps', portId: 'mix1_b' }, sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-mix1-x',    from: { nodeId: 'v-ramps',  portId: 'mix1_out' }, to: { nodeId: 'v-rutt',  portId: 'x' },      sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-vlin-y',    from: { nodeId: 'v-ramps',  portId: 'v_lin'    }, to: { nodeId: 'v-rutt',  portId: 'y' },      sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-l1-z',      from: { nodeId: 'v-lines1', portId: 'out'      }, to: { nodeId: 'v-rutt',  portId: 'z' },      sourceType: 'mono-video', targetType: 'video' },
+      ],
+    );
+
+    await expect(page.locator('.svelte-flow__node-shapedramps'), 'SHAPEDRAMPS visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node-ruttetra'),    'RUTTETRA visible').toBeVisible();
+
+    await page.waitForTimeout(800);
+
+    // RUTTETRA renders something visible (non-flat).
+    const stats0 = await readCanvasStats('canvas[data-testid="ruttetra-canvas"]', page);
+    expect(stats0, 'RUTTETRA stats at mix1=0').not.toBeNull();
+    if (!stats0) return;
+    expect(stats0.variance, `variance ${stats0.variance} > 50 at mix1=0`).toBeGreaterThan(50);
+    expect(stats0.nonZero / stats0.samples, 'bright fraction > 5% at mix1=0').toBeGreaterThan(0.05);
+
+    // Sweep mix1 from 0 → 1. The mixer crossfades from LINES1 (oriented
+    // horizontal, amp 12) to LINES2 (oriented vertical, amp 18). The
+    // resulting RUTTETRA scan should change visibly as the X coordinate
+    // field swings between the two distinct ramp sources.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const target = w.__patch.nodes['v-ramps'];
+        if (target) target.params['mix1'] = 1.0;
+      });
+    });
+    await page.waitForTimeout(400);
+
+    const stats1 = await readCanvasStats('canvas[data-testid="ruttetra-canvas"]', page);
+    expect(stats1, 'RUTTETRA stats at mix1=1').not.toBeNull();
+    if (!stats1) return;
+    expect(stats1.variance, `variance ${stats1.variance} > 50 at mix1=1`).toBeGreaterThan(50);
+
+    // The two snapshots should differ — if mix1 had no effect the means
+    // would be identical (modulo LINES auto-scrolling jitter, which we
+    // tolerate by requiring at least 2.5 luma units of difference).
+    const meanDelta = Math.abs(stats0.mean - stats1.mean);
+    const varianceDelta = Math.abs(stats0.variance - stats1.variance);
+    const movement = meanDelta + Math.sqrt(varianceDelta);
+    expect(
+      movement,
+      `mix1 sweep should change RUTTETRA output (mean ${stats0.mean}→${stats1.mean}, var ${stats0.variance}→${stats1.variance})`,
+    ).toBeGreaterThan(2.5);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+  });
 });
