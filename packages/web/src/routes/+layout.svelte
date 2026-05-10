@@ -144,6 +144,38 @@
       const state = lfoDef.computeStateAt(sharedNow - epoch, node.params ?? { rate: 1 }, () => 0);
       return state.phase;
     };
+
+    // Like __lfoPhase, but evaluates the LFO at a CALLER-SUPPLIED shared
+    // time (in ms). The previous helper sampled `clock.sharedTimeNow()`
+    // inside each tab — and because each tab's `performance.now()` epoch
+    // is independent (CDP latency from Playwright + JS-engine pauses
+    // between `Promise.all` legs), two tabs sampling "now" can land
+    // 5–10 ms apart in shared-time. At rate=1 Hz, 10 ms is 3.6° of
+    // phase — nearly 4× the 1° tolerance the test cares about, so the
+    // test was effectively measuring sample-time jitter rather than
+    // shared-clock convergence.
+    //
+    // Passing an EXPLICIT shared-time eliminates that jitter entirely:
+    // both tabs do the same arithmetic on the same input, so the only
+    // remaining delta is whether their `epoch_ms` agrees (the property
+    // we actually want to assert). Returns null until the shared clock
+    // has converged + has a published epoch.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__lfoPhaseAt = async (nodeId: string, sharedTimeMs: number) => {
+      const clock = _sharedClockRef;
+      if (!clock) return null;
+      const epoch = clock.epoch_ms;
+      if (epoch === null) return null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const patch = (window as any).__patch as
+        | { nodes: Record<string, { type: string; params?: Record<string, number> }> }
+        | undefined;
+      const node = patch?.nodes[nodeId];
+      if (!node || node.type !== 'lfo') return null;
+      const { lfoDef } = await import('$lib/audio/modules/lfo');
+      const state = lfoDef.computeStateAt(sharedTimeMs - epoch, node.params ?? { rate: 1 }, () => 0);
+      return state.phase;
+    };
   }
 
   // Clerk's JS bundle is loaded cross-origin from clerk.accounts.dev. With

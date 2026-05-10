@@ -195,19 +195,62 @@ test.describe('AI smoke check', () => {
     );
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
 
-    // Post-PatchPanel: jacks live in a hover-revealed panel. Hover the
-    // top-left affordance first so the input handle is visible / clickable.
+    // Post-PatchPanel: jacks live in a hover-revealed panel. Open the
+    // panel first so the input handle is at its row position (not
+    // stacked-at-trigger with pointer-events:none) before we measure.
+    //
+    // ROOT-CAUSE FIX (May 2026): the previous test used .hover() then
+    // immediately read boundingBox(). Two distinct failure modes hit
+    // CI:
+    //
+    //   1. The panel runs a 120 ms opacity + translateX(-8px → 0)
+    //      transition on .open. The translateX moves the handle by 8 px
+    //      in viewport coords. A bounding-box read mid-transition
+    //      reports the in-flight position; by the time the mouse-down
+    //      reaches the browser via CDP, the handle has moved. The
+    //      mouse-down lands beside the handle, gets ignored by the
+    //      `pointer-events:none` closed-state stack, and bubbles up
+    //      to the SvelteFlow node — Svelte Flow treats it as a node-
+    //      drag, NOT a connect-drag. handleConnectStart never fires.
+    //
+    //   2. After hover() the panel opens via the `hovered` driver, but
+    //      that driver is sticky for only 200 ms past the next
+    //      mouseleave. Playwright moves the mouse during measure +
+    //      drag setup; if the panel auto-closes mid-drag, the handle
+    //      vanishes and Svelte Flow can't register the connect.
+    //
+    // Fix: CLICK the trigger to PIN the panel open (the `pinned`
+    // driver locks the panel until another click). Then assert
+    // aria-hidden=false so we know the .open class is applied AND
+    // the panel finished the transition (Playwright's auto-retry
+    // gives us the polling for free). Pump 2 RAFs to let
+    // useUpdateNodeInternals refresh Svelte Flow's handleBounds.
     await page
       .locator('.svelte-flow__node-audioOut [data-testid="patch-trigger"]')
-      .hover();
+      .click();
+    await expect(
+      page.locator('.svelte-flow__node-audioOut [data-testid="patch-panel"]'),
+    ).toHaveAttribute('aria-hidden', 'false');
+    await page.evaluate(
+      () =>
+        new Promise<void>((res) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => res())),
+        ),
+    );
 
     const audioIn = page.locator('.svelte-flow__node-audioOut .svelte-flow__handle[data-handleid="L"]');
+    // Wait for the handle to be visible (panel is .open → handle has
+    // pointer-events:auto + opacity > 0). toBeVisible auto-retries.
+    await expect(audioIn).toBeVisible();
     const box = await audioIn.boundingBox();
     if (!box) throw new Error('audio input handle not found');
 
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2, box.y + 300, { steps: 8 });
+    // 20 steps so Svelte Flow's drag tracker sees the pointermove
+    // sequence (a too-fast drag has been observed to confuse the
+    // connection-line state machine on slow runners).
+    await page.mouse.move(box.x + box.width / 2, box.y + 300, { steps: 20 });
     await page.mouse.up();
     await page.waitForTimeout(150);
 

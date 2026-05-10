@@ -82,12 +82,17 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     // Source panel stays open mid-drag (pinned + stayOpenForDrag).
     await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'false');
 
+    // Use 25 intermediate steps so Svelte Flow's drag tracker reliably
+    // sees the pointermove sequence; a coarser drag (steps: 10 across
+    // 600+ px = 60 px/step) was observed to skip handle hit-tests on
+    // slower CI runners and leave the connection unformed.
     await page.mouse.move(
       adsrBox.x + adsrBox.width / 2,
       adsrBox.y + adsrBox.height / 2,
-      { steps: 10 },
+      { steps: 25 },
     );
     await page.mouse.up();
+    await page.waitForTimeout(150);
 
     // Edge created.
     await expect(
