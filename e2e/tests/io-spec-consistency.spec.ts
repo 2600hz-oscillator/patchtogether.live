@@ -178,6 +178,10 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'illogic',
     // DX7 — pure-TS 6-op FM synth (audio domain).
     'dx7',
+    // NOISE — basic noise source (white / pink / brown).
+    'noise',
+    // BUGGLES — chaotic random voltage source (wogglebug-style).
+    'buggles',
   ];
 
   for (const type of MODULE_TYPES) {

@@ -117,6 +117,11 @@ const MODULES: ModuleSpec[] = [
   // feat/polyseqz-transport-parity — + humanize_cv) + 3 outputs (poly, gate,
   // clock) = 11 handles. Was 7 before transport parity landed.
   { type: 'polyseqz',     cardClass: 'svelte-flow__node-polyseqz',     handleCount: 11, containsLabel: 'POLYSEQZ' },
+  // NOISE: 0 inputs + 3 outputs (white / pink / brown) = 3 handles.
+  { type: 'noise',        cardClass: 'svelte-flow__node-noise',        handleCount: 3, containsLabel: 'NOISE' },
+  // BUGGLES: 3 inputs (clock_cv + chaos_cv + external_clock) + 5 outputs
+  // (smooth + stepped + clock + burst + ring) = 8 handles.
+  { type: 'buggles',      cardClass: 'svelte-flow__node-buggles',      handleCount: 8, containsLabel: 'BUGGLES' },
 ];
 
 test.describe.configure({ mode: 'parallel' });
