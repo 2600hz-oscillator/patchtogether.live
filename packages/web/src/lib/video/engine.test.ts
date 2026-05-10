@@ -162,6 +162,22 @@ describe('video — VideoEngine constructor surfaces the right error in headless
   });
 });
 
+describe('video — VideoEngine API surface for multi-OUTPUT routing', () => {
+  it('exposes blitOutputToDrawingBuffer on the prototype', async () => {
+    // Per-OUTPUT visible-canvas blit lives on VideoEngine so each
+    // OUTPUT card can render its own FBO into the engine's drawing
+    // buffer right before reading via drawImage. The shape check here
+    // keeps the prototype contract from drifting silently — actual GL
+    // behavior is covered by the e2e multi-output suite.
+    const { VideoEngine } = await import('./engine');
+    const proto = VideoEngine.prototype as unknown as Record<string, unknown>;
+    expect(typeof proto.blitOutputToDrawingBuffer).toBe('function');
+    // One arg: the OUTPUT node id.
+    const fn = proto.blitOutputToDrawingBuffer as (...args: unknown[]) => unknown;
+    expect(fn.length).toBe(1);
+  });
+});
+
 describe('video — module def shape sanity', () => {
   it('LINES def: ports + params shape', () => {
     const def = getVideoModuleDef('lines');
