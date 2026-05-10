@@ -101,6 +101,14 @@
   import BugglesCard from '$lib/ui/modules/BugglesCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
+  import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
+  import {
+    buildModuleEntries,
+    compatibleTargetPorts,
+    type AnyDef,
+    type CandidatePort,
+    type ModuleEntry,
+  } from '$lib/ui/port-patch-helpers';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import FlowBridge, { type FlowBridgeApi } from '$lib/ui/FlowBridge.svelte';
@@ -653,6 +661,183 @@
     ctxMenuPos = { x: me.clientX, y: me.clientY };
     ctxMenuNodeId = node.id;
     ctxMenuOpen = true;
+  }
+
+  // ---------------- Port right-click context menu ("Patch to..." flow) ----------------
+  //
+  // Right-click on any handle dot opens a cascading menu: Patch to... →
+  // every other module in the patch → that module's compatible ports.
+  // Picking a port creates the same edge a drag-connect would.
+  //
+  // Wired as a delegated listener on the SvelteFlow root via a window-
+  // level capture-phase contextmenu handler — Svelte Flow swallows the
+  // event on handle elements so they never reach onnodecontextmenu /
+  // onpanecontextmenu. Capture phase + closest('.svelte-flow__handle')
+  // handles every card style (PatchPanel-mounted handles AND directly-
+  // rendered handles on cards like LINES / VIDEOOUT / SCOPE).
+
+  function defLookup(type: string): AnyDef | undefined {
+    return getModuleDef(type) ?? getVideoModuleDef(type);
+  }
+
+  let portMenuOpen = $state(false);
+  let portMenuPos = $state({ x: 0, y: 0 });
+  let portMenuSourceNodeId = $state<string | null>(null);
+  let portMenuSourcePortId = $state<string | null>(null);
+  let portMenuSourceDirection = $state<'output' | 'input'>('output');
+  let portMenuSourceType = $state<string>('audio');
+
+  let portMenuSourceLabel = $derived.by(() => {
+    void snapshot;
+    if (!portMenuSourceNodeId || !portMenuSourcePortId) return '';
+    const n = patch.nodes[portMenuSourceNodeId];
+    if (!n) return '';
+    const def = defLookup(n.type);
+    const typeLabel = def?.label ?? n.type;
+    return `${typeLabel}.${portMenuSourcePortId}`;
+  });
+
+  let portMenuModuleEntries = $derived.by<ModuleEntry[]>(() => {
+    void snapshot;
+    if (!portMenuOpen || !portMenuSourceNodeId) return [];
+    return buildModuleEntries(patch.nodes, defLookup, portMenuSourceNodeId);
+  });
+
+  function portMenuCandidatesFor(targetNodeId: string): CandidatePort[] {
+    void snapshot;
+    const n = patch.nodes[targetNodeId];
+    if (!n) return [];
+    const def = defLookup(n.type);
+    if (!def) return [];
+    return compatibleTargetPorts(
+      portMenuSourceType,
+      portMenuSourceDirection,
+      def,
+      targetNodeId,
+      patch.edges,
+      patch.nodes,
+      defLookup,
+    );
+  }
+
+  /** Resolve a contextmenu MouseEvent on a Handle DOM element to the
+   *  source-port descriptor we need. Returns null if the click wasn't
+   *  on a handle (so the regular pane / node menu can take over). */
+  function handleInfoFromEvent(e: MouseEvent): {
+    nodeId: string;
+    portId: string;
+    direction: 'output' | 'input';
+    type: string;
+  } | null {
+    const target = e.target as HTMLElement | null;
+    if (!target) return null;
+    const handleEl = target.closest('.svelte-flow__handle') as HTMLElement | null;
+    if (!handleEl) return null;
+    const portId = handleEl.getAttribute('data-handleid');
+    if (!portId) return null;
+    const nodeEl = handleEl.closest('.svelte-flow__node') as HTMLElement | null;
+    if (!nodeEl) return null;
+    // Svelte Flow stores nodeId on the node wrapper as data-id.
+    const nodeId = nodeEl.getAttribute('data-id');
+    if (!nodeId) return null;
+    const isSource = handleEl.classList.contains('source');
+    const isTarget = handleEl.classList.contains('target');
+    let direction: 'output' | 'input' = isSource ? 'output' : 'input';
+    if (!isSource && !isTarget) {
+      // Fallback: look up via the def. (xyflow always sets the class but
+      // belt + braces.)
+      direction = 'output';
+    }
+    const node = patch.nodes[nodeId];
+    if (!node) return null;
+    const def = defLookup(node.type);
+    let type = 'audio';
+    if (def) {
+      const port =
+        direction === 'output'
+          ? def.outputs.find((p) => p.id === portId)
+          : def.inputs.find((p) => p.id === portId);
+      if (port) type = port.type as string;
+    }
+    return { nodeId, portId, direction, type };
+  }
+
+  function onPortContextMenu(e: MouseEvent) {
+    const info = handleInfoFromEvent(e);
+    if (!info) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    portMenuPos = { x: e.clientX, y: e.clientY };
+    portMenuSourceNodeId = info.nodeId;
+    portMenuSourcePortId = info.portId;
+    portMenuSourceDirection = info.direction;
+    portMenuSourceType = info.type;
+    portMenuOpen = true;
+  }
+
+  // Capture-phase document listener guarantees we fire before any xyflow
+  // contextmenu handling kicks in on the handle. Without capture, xyflow's
+  // own contextmenu attempt to start a connect-drag preview can swallow
+  // the event before bubble-phase reaches our .flow div.
+  $effect(() => {
+    const onDocCtxMenu = (e: MouseEvent) => {
+      onPortContextMenu(e);
+    };
+    document.addEventListener('contextmenu', onDocCtxMenu, true);
+    return () => document.removeEventListener('contextmenu', onDocCtxMenu, true);
+  });
+
+  function pickPortMenuTarget({ nodeId, portId }: { nodeId: string; portId: string }) {
+    if (!portMenuSourceNodeId || !portMenuSourcePortId) return;
+    // Resolve source/target by direction. If the right-clicked port is an
+    // OUTPUT, the picked port is the INPUT — cable runs srcNode.srcPort →
+    // pickedNode.pickedPort. If the right-clicked port is an INPUT, the
+    // picked port is the OUTPUT.
+    let from: { nodeId: string; portId: string };
+    let to: { nodeId: string; portId: string };
+    if (portMenuSourceDirection === 'output') {
+      from = { nodeId: portMenuSourceNodeId, portId: portMenuSourcePortId };
+      to = { nodeId, portId };
+    } else {
+      from = { nodeId, portId };
+      to = { nodeId: portMenuSourceNodeId, portId: portMenuSourcePortId };
+    }
+    const srcNode = patch.nodes[from.nodeId];
+    const dstNode = patch.nodes[to.nodeId];
+    if (!srcNode || !dstNode) return;
+    const srcDef = defLookup(srcNode.type);
+    const dstDef = defLookup(dstNode.type);
+    if (!srcDef || !dstDef) return;
+    const srcPort = srcDef.outputs.find((p) => p.id === from.portId);
+    const dstPort = dstDef.inputs.find((p) => p.id === to.portId);
+    const sourceType: CableType = srcPort?.type ?? 'audio';
+    const targetType: CableType = dstPort?.type ?? sourceType;
+
+    const id = `e-${from.nodeId}-${from.portId}-${to.nodeId}-${to.portId}`;
+    if (patch.edges[id]) {
+      trace(`patch-to: edge already exists ${id}`);
+      return;
+    }
+    ydoc.transact(() => {
+      for (const [edgeId, edge] of Object.entries(patch.edges)) {
+        if (
+          edge &&
+          edge.target.nodeId === to.nodeId &&
+          edge.target.portId === to.portId
+        ) {
+          delete patch.edges[edgeId];
+        }
+      }
+      patch.edges[id] = {
+        id,
+        source: from,
+        target: to,
+        sourceType,
+        targetType,
+      };
+    }, LOCAL_ORIGIN);
+    trace(`patch-to ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
   }
 
   function deleteNode(nodeId: string) {
@@ -1297,6 +1482,21 @@
   onduplicate={() => ctxMenuNodeId && duplicateNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
+/>
+
+<PortContextMenu
+  bind:open={portMenuOpen}
+  x={portMenuPos.x}
+  y={portMenuPos.y}
+  sourceLabel={portMenuSourceLabel}
+  moduleEntries={portMenuModuleEntries}
+  candidatesFor={portMenuCandidatesFor}
+  onpick={pickPortMenuTarget}
+  onclose={() => {
+    portMenuOpen = false;
+    portMenuSourceNodeId = null;
+    portMenuSourcePortId = null;
+  }}
 />
 
 <style>
