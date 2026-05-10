@@ -42,7 +42,7 @@
     </main>
 
     <footer class="footer">
-      Generated from packages/web/src/lib/{audio,video}/module-registry.ts ·
+      Generated from <code>packages/web/src/lib/&lbrace;audio,video&rbrace;/module-registry.ts</code> ·
       <a href="https://github.com/2600hz-oscillator/patchtogether.live">repo</a>
     </footer>
   </div>

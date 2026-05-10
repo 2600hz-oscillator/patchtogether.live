@@ -40,7 +40,7 @@
 <ol>
   <li>
     The <strong>module def</strong> at
-    <code>packages/web/src/lib/{audio,video}/modules/&lt;type&gt;.ts</code> (the runtime source
+    <code>packages/web/src/lib/&lbrace;audio,video&rbrace;/modules/&lt;type&gt;.ts</code> (the runtime source
     of truth — what the engine wires up).
   </li>
   <li>
