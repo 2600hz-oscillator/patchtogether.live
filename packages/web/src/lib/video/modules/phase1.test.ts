@@ -197,6 +197,67 @@ describe('video Phase-0 — LINES orient fix', () => {
   });
 });
 
+describe('video — SHAPES geometry source', () => {
+  it('exposes 4 cv inputs (shape/tile/rotate/zoom) plus mono-video out', () => {
+    const def = getVideoModuleDef('shapes')!;
+    expect(def).toBeDefined();
+    expect(def.label).toBe('SHAPES');
+    expect(def.category).toBe('sources');
+    const inIds = def.inputs.map((p) => p.id).sort();
+    expect(inIds).toEqual(['rotate', 'shape', 'tile', 'zoom']);
+    for (const port of def.inputs) {
+      expect(port.type, `input ${port.id} type`).toBe('cv');
+    }
+    expect(def.outputs).toHaveLength(1);
+    expect(def.outputs[0]?.id).toBe('out');
+    expect(def.outputs[0]?.type).toBe('mono-video');
+  });
+  it('every cv input declares paramTarget == its own id', () => {
+    const def = getVideoModuleDef('shapes')!;
+    for (const port of def.inputs.filter((i) => i.type === 'cv')) {
+      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
+    }
+  });
+  it('exposes shape/tile/tileN/rotate/zoom params', () => {
+    const def = getVideoModuleDef('shapes')!;
+    const ids = def.params.map((p) => p.id).sort();
+    expect(ids).toEqual(['rotate', 'shape', 'tile', 'tileN', 'zoom']);
+    const shape = def.params.find((p) => p.id === 'shape');
+    expect(shape?.min).toBe(0);
+    expect(shape?.max).toBe(2);
+  });
+});
+
+describe('video — RUTTETRA scanline output', () => {
+  it('is an OUTPUT (no output ports), takes video in + 3 cv', () => {
+    const def = getVideoModuleDef('ruttetra')!;
+    expect(def).toBeDefined();
+    expect(def.label).toBe('RUTTETRA');
+    expect(def.category).toBe('output');
+    expect(def.outputs).toHaveLength(0);
+    const inIds = def.inputs.map((p) => p.id).sort();
+    expect(inIds).toEqual(['hRamp', 'in', 'intensity', 'vRamp']);
+    const inPort = def.inputs.find((p) => p.id === 'in');
+    expect(inPort?.type).toBe('video');
+    for (const port of def.inputs.filter((i) => i.id !== 'in')) {
+      expect(port.type, `${port.id} type`).toBe('cv');
+    }
+  });
+  it('every cv input declares paramTarget == its own id', () => {
+    const def = getVideoModuleDef('ruttetra')!;
+    for (const port of def.inputs.filter((i) => i.type === 'cv')) {
+      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
+    }
+  });
+  it('exposes hRamp/vRamp/intensity/lines/spacing/tintR/tintG/tintB params', () => {
+    const def = getVideoModuleDef('ruttetra')!;
+    const ids = def.params.map((p) => p.id).sort();
+    expect(ids).toEqual([
+      'hRamp', 'intensity', 'lines', 'spacing', 'tintR', 'tintG', 'tintB', 'vRamp',
+    ].sort());
+  });
+});
+
 describe('video LINES — per-param CV inputs', () => {
   // PR-65 user report: LINES needs CV control for its 4 modulatable
   // params (orient/amp/thickness/phase). The cross-domain CV bridge in

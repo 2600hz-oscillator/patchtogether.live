@@ -78,6 +78,8 @@
   import SwolevcoCard from '$lib/ui/modules/SwolevcoCard.svelte';
   import LinesCard from '$lib/ui/modules/LinesCard.svelte';
   import VideoOutCard from '$lib/ui/modules/VideoOutCard.svelte';
+  import ShapesCard from '$lib/ui/modules/ShapesCard.svelte';
+  import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
   import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
   import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
@@ -160,6 +162,8 @@
     // Video-domain (Phase 0):
     lines: LinesCard,
     videoOut: VideoOutCard,
+    shapes: ShapesCard,
+    ruttetra: RuttetraCard,
     // Video-domain (Phase 1):
     inwards: InwardsCard,
     picturebox: PictureboxCard,

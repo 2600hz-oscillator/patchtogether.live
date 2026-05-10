@@ -21,6 +21,8 @@ import { colorizerDef } from './colorizer';
 import { feedbackDef } from './feedback';
 import { mixerVideoDef } from './mixer';
 import { cameraInputDef } from './camera-input';
+import { shapesDef } from './shapes';
+import { ruttetraDef } from './ruttetra';
 
 let registered = false;
 
@@ -41,6 +43,9 @@ export function registerVideoModules(): void {
   registerVideoModule(mixerVideoDef);
   // Camera input (local-only)
   registerVideoModule(cameraInputDef);
+  // SHAPES + RUTTETRA — geometry source + Rutt-Etra scanline output.
+  registerVideoModule(shapesDef);
+  registerVideoModule(ruttetraDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

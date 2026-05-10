@@ -99,6 +99,14 @@ const MODULES: ModuleSpec[] = [
   { type: 'feedback',     cardClass: 'svelte-flow__node-feedback',     handleCount: 8, containsLabel: 'FEEDBACK',   domain: 'video' },
   // V-MIXER: 4 video inputs (in1..in4) + 4 cv inputs (amount1..4) + 1 output (out) = 9.
   { type: 'videoMixer',   cardClass: 'svelte-flow__node-videoMixer',   handleCount: 9, containsLabel: 'V-MIXER',    domain: 'video' },
+  // SHAPES: 4 cv inputs (shape, tile, rotate, zoom) + 1 output (out) = 5.
+  // tileN is a fader-only param (no CV input) so the handle count stays
+  // sibling-sized to LINES/INWARDS without crowding the card edge.
+  { type: 'shapes',       cardClass: 'svelte-flow__node-shapes',       handleCount: 5, containsLabel: 'SHAPES',     domain: 'video' },
+  // RUTTETRA: 1 video input (in) + 3 cv inputs (hRamp, vRamp, intensity) + 0 outputs = 4.
+  // SINK module — no video output port (it's an OUTPUT, like videoOut).
+  // Faders for lines / spacing / tint(R/G/B) are knobs-only (no CV input).
+  { type: 'ruttetra',     cardClass: 'svelte-flow__node-ruttetra',     handleCount: 4, containsLabel: 'RUTTETRA',   domain: 'video' },
   // ILLOGIC: 4 cv inputs + 10 outputs (att1..att4 + sum + diff + and + nand
   // + or + not) = 14. Combined attenuverter / math / logic utility.
   { type: 'illogic',      cardClass: 'svelte-flow__node-illogic',      handleCount: 14, containsLabel: 'ILLOGIC' },
