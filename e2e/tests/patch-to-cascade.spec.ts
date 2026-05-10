@@ -1,11 +1,15 @@
-// e2e/tests/right-click-patch-to.spec.ts
+// e2e/tests/patch-to-cascade.spec.ts
 //
-// Right-click "Patch to..." cascading flow on every port:
-//   port → "Patch to..." → module → compatible port → edge created.
+// "Patch to..." cascading flow on every port. Two gestures route to the
+// same cascade:
+//   * right-click on a port handle  (PR-104, power-user shortcut)
+//   * double-click on a port handle (more discoverable)
+// Both lead to: port → "Patch to..." → module → compatible port → edge.
 //
-// The flow lets users build cables click-by-click instead of click-and-drag.
-// PatchPanel-mounted handles need the panel opened first (default UX); cards
-// that render handles directly (e.g. LINES) get right-click immediately.
+// PatchPanel-mounted handles need the panel opened first (default UX);
+// cards that render handles directly (e.g. LINES) get the gesture
+// immediately. While a cascade is active, the source port's PatchPanel
+// stays open underneath the cascade until commit / Esc / new cascade.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -377,4 +381,164 @@ test('closes on commit (port click) after pointer movement', async ({ page }) =>
   expect(edges.length).toBe(1);
   expect(edges[0]!.source).toEqual({ nodeId: 'lfo1', portId: 'phase0' });
   expect(edges[0]!.target).toEqual({ nodeId: 'flt1', portId: 'cutoff' });
+});
+
+// ---------------------------------------------------------------------------
+// Double-click trigger contract (added for discoverability).
+// Right-click stays as a power-user shortcut; both gestures end at the
+// same cascade. The source port's PatchPanel stays open underneath while
+// the cascade is up.
+// ---------------------------------------------------------------------------
+
+/** Double-click a handle inside an OPEN PatchPanel. Mirrors
+ *  rightClickPanelHandle but uses dblclick instead of right-click. */
+async function dblClickPanelHandle(
+  page: Page,
+  nodeId: string,
+  portId: string,
+): Promise<void> {
+  await openPanel(page, nodeId);
+  const handle = page.locator(
+    `.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-panel"] .svelte-flow__handle[data-handleid="${portId}"]`,
+  );
+  await expect(handle).toBeVisible();
+  await handle.hover();
+  await handle.dblclick();
+  await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
+}
+
+test('double-click opens cascade', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  await dblClickPanelHandle(page, 'lfo1', 'phase0');
+  const menu = page.locator('[data-testid="port-context-menu"]');
+  await expect(menu).toBeVisible();
+
+  // Sanity: cascade behaves the same as right-click — modules submenu
+  // lists FILTER, picking it lists FILTER's compatible inputs.
+  await page.locator('[data-testid="patch-to-module"][data-node-id="flt1"]').click();
+  const ports = page.locator('[data-testid="patch-to-port"]');
+  const portIds = await ports.evaluateAll((els) =>
+    els.map((el) => (el as HTMLElement).getAttribute('data-port-id') ?? ''),
+  );
+  expect(portIds).toEqual(['cutoff', 'res']);
+});
+
+test('PatchPanel stays open underneath cascade (double-click trigger)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 600, y: 200 } },
+    ],
+    [],
+  );
+
+  await dblClickPanelHandle(page, 'lfo1', 'phase0');
+  const menu = page.locator('[data-testid="port-context-menu"]');
+  const lfoPanel = page.locator(
+    '.svelte-flow__node[data-id="lfo1"] [data-testid="patch-panel"]',
+  );
+  await expect(menu).toBeVisible();
+  await expect(lfoPanel).toHaveAttribute('aria-hidden', 'false');
+
+  // Wander the pointer around — over other modules, off-canvas, back.
+  // Both the cascade AND the source PatchPanel must remain visible.
+  await page.mouse.move(800, 300, { steps: 10 });
+  await expect(menu, 'cascade still visible after pointer over other module').toBeVisible();
+  await expect(
+    lfoPanel,
+    'source PatchPanel still open after pointer over other module',
+  ).toHaveAttribute('aria-hidden', 'false');
+
+  await page.mouse.move(10, 10, { steps: 10 });
+  await expect(menu, 'cascade still visible off-canvas').toBeVisible();
+  await expect(lfoPanel, 'source PatchPanel still open off-canvas').toHaveAttribute(
+    'aria-hidden',
+    'false',
+  );
+
+  await page.mouse.move(400, 400, { steps: 10 });
+  await expect(menu).toBeVisible();
+  await expect(lfoPanel).toHaveAttribute('aria-hidden', 'false');
+
+  // Esc closes the cascade — the source PatchPanel is then free to
+  // close per its normal hover-intent rules (no longer locked).
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+});
+
+test('right-click still opens cascade (PR-104 regression)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  await rightClickPanelHandle(page, 'lfo1', 'phase0');
+  const menu = page.locator('[data-testid="port-context-menu"]');
+  await expect(menu).toBeVisible();
+
+  // Source PatchPanel is also locked open under the cascade for
+  // right-click (parity with double-click).
+  const lfoPanel = page.locator(
+    '.svelte-flow__node[data-id="lfo1"] [data-testid="patch-panel"]',
+  );
+  await expect(lfoPanel).toHaveAttribute('aria-hidden', 'false');
+  await page.mouse.move(800, 300, { steps: 10 });
+  await expect(lfoPanel).toHaveAttribute('aria-hidden', 'false');
+});
+
+test('single-click on a handle does NOT open the cascade', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  await openPanel(page, 'lfo1');
+  const handle = page.locator(
+    '.svelte-flow__node[data-id="lfo1"] [data-testid="patch-panel"] .svelte-flow__handle[data-handleid="phase0"]',
+  );
+  await expect(handle).toBeVisible();
+  await handle.hover();
+  await handle.click();
+
+  // No cascade should appear after a single click (single-click is
+  // reserved for normal Svelte Flow drag-source / no-op behavior).
+  await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
+});
+
+test('double-click disabled state: lone module shows "no other modules"', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'lfo1', type: 'lfo', position: { x: 200, y: 200 } }], []);
+
+  await dblClickPanelHandle(page, 'lfo1', 'phase0');
+
+  const disabled = page.locator('[data-testid="patch-to-disabled"]');
+  await expect(disabled).toBeVisible();
+  await expect(disabled).toHaveAttribute('aria-disabled', 'true');
+  await expect(disabled).toHaveAttribute('title', /no other modules/i);
 });

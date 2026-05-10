@@ -159,12 +159,24 @@
   // dragLockEngaged is the fifth: a Svelte Flow connect-drag is in
   // flight AND this panel is the one that opened first during the drag,
   // so the panel must persist until the drag commits or releases.
+  // cascadeLockEngaged is the sixth: a patch-to cascade (right-click /
+  // double-click) is open AND was triggered from a port inside this
+  // panel — so the panel must stay visible underneath the cascade
+  // until the cascade closes (commit / Esc / new cascade).
   let postClickHoldActive = $derived(postClickHoldUntil > 0);
   let dragLockEngaged = $derived(
     connectDragState.active && connectDragState.lockedPanelNodeId === nodeId,
   );
+  let cascadeLockEngaged = $derived(
+    connectDragState.cascadeActiveForPanel === nodeId,
+  );
   let open = $derived(
-    hovered || pinned || stayOpenForDrag || postClickHoldActive || dragLockEngaged,
+    hovered ||
+      pinned ||
+      stayOpenForDrag ||
+      postClickHoldActive ||
+      dragLockEngaged ||
+      cascadeLockEngaged,
   );
 
   // First panel to TRANSITION to open during an active drag claims the
@@ -261,6 +273,9 @@
       // until the drag commits / releases (then connectDragState.end()
       // fires from Canvas's onconnect / onconnectend).
       if (dragLockEngaged) return;
+      // Cascade-lock owns this panel — outside-click can't dismiss it
+      // until the patch-to cascade closes (commit / Esc / new cascade).
+      if (cascadeLockEngaged) return;
       const target = e.target as HTMLElement | null;
       if (!target) return;
       if (target.closest('[data-patch-panel-node]')) return;
