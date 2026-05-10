@@ -128,7 +128,11 @@ type StandardModuleType =
   // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
   | 'illogic'
   // DX7 — pure-TypeScript 6-op FM synth with bundled factory-inspired patches.
-  | 'dx7';
+  | 'dx7'
+  // NOISE — basic noise source with white / pink / brown outputs.
+  | 'noise'
+  // BUGGLES — chaotic random voltage source (wogglebug-style).
+  | 'buggles';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

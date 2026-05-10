@@ -95,6 +95,10 @@
   // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
   import IllogicCard from '$lib/ui/modules/IllogicCard.svelte';
   import Dx7Card from '$lib/ui/modules/Dx7Card.svelte';
+  // NOISE — basic noise source (white / pink / brown).
+  import NoiseCard from '$lib/ui/modules/NoiseCard.svelte';
+  // BUGGLES — chaotic random voltage source (wogglebug-style).
+  import BugglesCard from '$lib/ui/modules/BugglesCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
@@ -178,6 +182,8 @@
     cameraInput: CameraInputCard,
     illogic: IllogicCard,
     dx7: Dx7Card,
+    noise: NoiseCard,
+    buggles: BugglesCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);

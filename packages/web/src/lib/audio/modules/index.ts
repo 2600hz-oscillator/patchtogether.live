@@ -31,6 +31,8 @@ import { wavvizDef } from './wavviz';
 import { swolevcoDef } from './swolevco';
 import { illogicDef } from './illogic';
 import { dx7Def } from './dx7';
+import { noiseDef } from './noise';
+import { bugglesDef } from './buggles';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -67,6 +69,8 @@ export function registerAudioModules(): void {
   registerModule(swolevcoDef);
   registerModule(illogicDef);
   registerModule(dx7Def);
+  registerModule(noiseDef);
+  registerModule(bugglesDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
