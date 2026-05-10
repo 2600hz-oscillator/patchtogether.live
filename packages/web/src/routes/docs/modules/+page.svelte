@@ -22,21 +22,25 @@
 
 <svelte:head>
   <title>modules · patchtogether.live</title>
-  <meta name="description" content="Audio module catalog generated from the registry." />
+  <meta name="description" content="Module catalog auto-generated from the audio + video registries." />
 </svelte:head>
 
 <section class="hero">
   <h1>module catalog</h1>
   <div class="sub">
-    {manifest.moduleCount} audio modules · generated from <code>module-registry.ts</code> at build
-    time
+    {manifest.moduleCount} modules · generated from
+    <code>packages/web/src/lib/&lbrace;audio,video&rbrace;/modules/*.ts</code> at build time
   </div>
 </section>
 
 <p>
-  Cards below are auto-generated from each module's <code>AudioModuleDef</code>. I/O diagrams,
-  port lists, and param tables are ground-truthed against the source — there is no second source
-  of truth. If you change a module's ports or params, the next docs build picks it up.
+  Cards below are auto-generated from each module's <code>AudioModuleDef</code>,
+  <code>SyncedModuleDef</code>, or <code>VideoModuleDef</code>. I/O diagrams, port lists, and
+  param tables are ground-truthed against the source — there is no second source of truth. If
+  you change a module's ports or params, the next docs build picks it up. Ports are coloured
+  by cable type: audio (cyan), cv (orange), gate (magenta), pitch (mint), polyPitchGate
+  (violet); video cables (image / mono-video / video / keys) follow the same audio-cyan tone
+  for now.
 </p>
 
 <div class="cat-list" data-testid="cat-list">

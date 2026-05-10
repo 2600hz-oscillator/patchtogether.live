@@ -4,7 +4,7 @@
 
 <svelte:head>
   <title>testing · patchtogether.live</title>
-  <meta name="description" content="Unit / ART / VRT / E2E test layers." />
+  <meta name="description" content="Unit / ART / E2E test layers + port-surface consistency gates." />
 </svelte:head>
 
 <section class="hero">
@@ -13,10 +13,10 @@
 </section>
 
 <p>
-  Four layers, by ascending integration scope: <strong>unit</strong> → <strong>ART</strong> →
-  <strong>VRT</strong> → <strong>E2E</strong>. The PR gate
-  (<code>flox activate -- task ci</code>) runs typecheck + unit + ART + E2E. VRT is not yet
-  implemented (see below).
+  Three layers in CI today, by ascending integration scope: <strong>unit</strong> →
+  <strong>ART</strong> → <strong>E2E</strong>. The PR gate
+  (<code>flox activate -- task ci</code>) runs typecheck + unit + ART + E2E. VRT (Visual
+  Regression Tests) is planned for the video domain but not yet implemented — see below.
 </p>
 
 <h2>Unit</h2>
@@ -30,14 +30,18 @@
   note-entry coercion, docs module-manifest generator.
 </p>
 
-<h2>I/O spec consistency</h2>
+<h2>Port-surface consistency gates</h2>
 <p>
-  Three sources describe each module&rsquo;s port surface and they have to agree:
+  Three gates keep each module&rsquo;s I/O surface consistent across def, published manifest,
+  and rendered UI — drift between them was the root cause of the <code>RIOTGIRLS</code>
+  regression where the def grew dozens of CV inputs but the card only rendered three handles
+  per voice (cables had nothing visible to land on).
 </p>
 <ol>
   <li>
-    The <strong>module def</strong> at <code>packages/web/src/lib/audio/modules/&lt;type&gt;.ts</code>
-    (the runtime source of truth — what the engine wires up).
+    The <strong>module def</strong> at
+    <code>packages/web/src/lib/&lbrace;audio,video&rbrace;/modules/&lt;type&gt;.ts</code> (the runtime source
+    of truth — what the engine wires up).
   </li>
   <li>
     The <strong>published manifest</strong> at <code>/docs/modules/&lt;type&gt;</code>
@@ -48,23 +52,26 @@
     (the Svelte Flow Handle elements the user can plug cables into).
   </li>
 </ol>
-<p>
-  Drift between the three was the root cause of the <code>RIOTGIRLS</code> regression where the
-  def grew dozens of CV inputs but the card only rendered three handles per voice — cables had
-  nothing visible to land on. The consistency check is enforced by two tests at two layers:
-</p>
 <ul>
   <li>
-    <strong>Unit:</strong> <code>packages/web/src/lib/docs/module-manifest.test.ts</code> iterates
-    over <code>getAllModuleSpecs()</code> and asserts the manifest&rsquo;s input/output ids equal
-    the def&rsquo;s. Catches drift between the def and the docs builder
-    (e.g. forgetting to update the build-helper synthesizer when a computed-shape module gains a
-    new port).
+    <strong>Unit — manifest stays in sync with defs:</strong>
+    <code>packages/web/src/lib/docs/module-manifest.test.ts</code> iterates over
+    <code>getAllModuleSpecs()</code> and asserts the manifest&rsquo;s input/output ids equal
+    the def&rsquo;s. Catches drift between the def and the docs builder.
   </li>
   <li>
-    <strong>E2E:</strong> <code>e2e/tests/io-spec-consistency.spec.ts</code> spawns each module
-    type, reads <code>window.__moduleSpecs</code>, and asserts every Handle&rsquo;s
-    <code>data-handleid</code> matches the def. Catches drift between the def and the rendered UI.
+    <strong>E2E — UI matches def:</strong>
+    <code>e2e/tests/io-spec-consistency.spec.ts</code> spawns each module type, reads
+    <code>window.__moduleSpecs</code>, and asserts every Handle&rsquo;s
+    <code>data-handleid</code> matches the def.
+  </li>
+  <li>
+    <strong>E2E — CV range uniformity:</strong>
+    <code>e2e/tests/cv-range-uniformity.spec.ts</code> walks every <code>cv</code> input port
+    and asserts a <code>cvScale</code> hint is declared, then drives an LFO at ±1 to confirm
+    the target slider sweeps edge-to-edge. Catches the regression where a new module is added
+    with a raw <code>passthrough</code> CV input, leaving an LFO touching only ~10% of the
+    natural range. See <code>.myrobots/plans/cv-range-standard.md</code>.
   </li>
 </ul>
 <p>

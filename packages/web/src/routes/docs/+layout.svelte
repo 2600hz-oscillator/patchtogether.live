@@ -9,6 +9,7 @@
   const nav = [
     { href: '/docs', label: 'home' },
     { href: '/docs/modules', label: 'modules' },
+    { href: '/docs/rackspace-persistence', label: 'persistence' },
     { href: '/docs/testing', label: 'testing' },
     { href: '/docs/deploy', label: 'deploy' },
   ];
@@ -41,7 +42,7 @@
     </main>
 
     <footer class="footer">
-      Generated from packages/web/src/lib/audio/module-registry.ts ·
+      Generated from <code>packages/web/src/lib/&lbrace;audio,video&rbrace;/module-registry.ts</code> ·
       <a href="https://github.com/2600hz-oscillator/patchtogether.live">repo</a>
     </footer>
   </div>
