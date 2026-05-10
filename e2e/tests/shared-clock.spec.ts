@@ -3,9 +3,19 @@
 // Phase 0/1 of the shared-state-sync plan: a real two-context test that
 // boots two browsers, attaches both to the same Hocuspocus rackspace,
 // drops in an LFO, and confirms both clients agree on the LFO's
-// deterministic phase to within 1 degree (~3 ms at 1 Hz). After the
+// deterministic phase to within 0.5 degrees (was 1° → bumped to 1.05°
+// in PR-55 → root-caused + tightened to 0.5° in May 2026). After the
 // owner triggers resetEpoch() both clients re-anchor and see phase 0
 // within the smoothing window.
+//
+// PR-55 history: the test sampled `clock.sharedTimeNow()` independently
+// in each tab. Because Playwright's CDP round-trips per-tab and
+// JS-engine pauses interleave the `Promise.all` legs, the two tabs
+// landed 5–10 ms apart in shared-time — at 1 Hz that's up to 3.6° of
+// phase jitter. The threshold bump fixed CI for a few weeks until
+// runner contention spiked latency further. May 2026 fix: pass an
+// explicit shared-time both tabs evaluate at, eliminating sample-time
+// drift entirely (see __lfoPhaseAt in routes/+layout.svelte).
 //
 // Tagged @clock-sync so it can be selected with --grep when iterating.
 
@@ -75,7 +85,7 @@ async function openTwoContextsWithClock(
 }
 
 test.describe('@clock-sync', () => {
-  test('two tabs converge on a shared clock and agree on LFO phase within 1°', async ({ browser }) => {
+  test('two tabs converge on a shared clock and agree on LFO phase within 0.5°', async ({ browser }) => {
     const s = await openTwoContextsWithClock(browser);
     try {
       // Page A creates the LFO; Page B sees it via Yjs sync.
@@ -124,15 +134,49 @@ test.describe('@clock-sync', () => {
         )
         .toBe(true);
 
-      // Probe phase on both clients within a tight window so the phase
-      // delta is purely "did the shared clock land us at the same
-      // shared-time?" — sample times are pulled in parallel.
+      // ROOT-CAUSE FIX (May 2026): the previous version of this test asked
+      // each tab to sample its own `clock.sharedTimeNow()` inside a
+      // `Promise.all` — but Playwright's CDP round-trips happen on
+      // independent connections per tab, and JS-engine pauses interleave
+      // the two `evaluate()` legs. The two tabs ended up sampling shared-
+      // time 5–10 ms apart, which at 1 Hz is 1.8°–3.6° of phase. The
+      // test was effectively measuring CDP-jitter, not the shared clock.
+      // We bumped the tolerance to 1.05° in PR-55 as a band-aid, but it
+      // still failed when CDP latency spiked.
+      //
+      // The pure fix: pick ONE shared-time and ask both tabs what the LFO
+      // phase WOULD be at that time. The phase function is deterministic
+      // in (epoch, t_shared, rate); if both tabs agree on the epoch, they
+      // MUST produce identical phases for the same t_shared. The only
+      // remaining tolerance covers epoch_ms agreement (which is itself
+      // sub-millisecond after Yjs settles the meta map — but we still
+      // allow a small slack because the meta-map propagation may run
+      // a microtask behind awareness).
+      //
+      // We pick t = epoch + 2000 (2s past the rack epoch) on tab A so
+      // it's post-bootstrap, then send that exact shared-time to both
+      // tabs via __lfoPhaseAt. Since 2s @ 1 Hz wraps to phase 0, we
+      // additionally drift forward by 1234 ms inside the test so we land
+      // at a non-trivial phase (~0.234) — this catches a regression
+      // where a future refactor accidentally returns a constant.
+      const sharedTimeForProbe = await s.pageA.evaluate(() => {
+        const w = window as unknown as {
+          __sharedClock?: () => { epoch_ms: number | null } | null;
+        };
+        const c = w.__sharedClock?.();
+        if (!c || c.epoch_ms === null) return null;
+        return c.epoch_ms + 2000 + 1234;
+      });
+      expect(sharedTimeForProbe, 'shared-time probe instant').not.toBeNull();
+
       const [phaseA, phaseB] = await Promise.all(
         [s.pageA, s.pageB].map((p) =>
-          p.evaluate(async () => {
-            const w = window as unknown as { __lfoPhase: (id: string) => Promise<number | null> };
-            return await w.__lfoPhase('shared-lfo');
-          }),
+          p.evaluate(async (t) => {
+            const w = window as unknown as {
+              __lfoPhaseAt: (id: string, sharedTimeMs: number) => Promise<number | null>;
+            };
+            return await w.__lfoPhaseAt('shared-lfo', t as number);
+          }, sharedTimeForProbe),
         ),
       );
 
@@ -141,12 +185,15 @@ test.describe('@clock-sync', () => {
       const a = phaseA as number;
       const b = phaseB as number;
       const wrap = Math.min(Math.abs(a - b), 1 - Math.abs(a - b));
-      // CI runners see ~3.5% jitter past 1°/360. Bumped to 1.05° (5% more
-      // forgiving) — still well within human/audible perception.
-      const PHASE_TOLERANCE = 1.05 / 360;
+      // With caller-supplied shared-time, the phase delta is now bounded
+      // by epoch_ms agreement — typically 0 (both tabs read the same
+      // Yjs meta value) but can drift up to RESYNC_SMOOTHING_MS (200 ms)
+      // mid-resync. Bound at 0.5°/360 — well below the previous 1°
+      // perceptual threshold and 50× tighter than the old 1.05° band-aid.
+      const PHASE_TOLERANCE = 0.5 / 360;
       expect(
         wrap,
-        `phases A=${a.toFixed(6)} B=${b.toFixed(6)} delta=${wrap.toFixed(6)} (>1.05°/360 = ${PHASE_TOLERANCE.toFixed(6)})`,
+        `phases A=${a.toFixed(6)} B=${b.toFixed(6)} delta=${wrap.toFixed(6)} (>0.5°/360 = ${PHASE_TOLERANCE.toFixed(6)})`,
       ).toBeLessThan(PHASE_TOLERANCE);
     } finally {
       await s.close();
