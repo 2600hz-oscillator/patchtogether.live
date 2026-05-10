@@ -66,6 +66,29 @@ export interface PatchEnvelope {
  * enough to avoid collision with generic `.json` files. */
 export const DEFAULT_FILENAME = 'patch.imp.json';
 
+// Stripped (not replaced) so user intent stays legible — `my:patch` becomes
+// `mypatch`, not `my_patch`. Windows is the strict superset of cross-platform
+// invalid characters; allow-listing here keeps macOS/Linux happy too.
+const INVALID_FILENAME_CHARS = /[/\\:*?"<>|]/g;
+
+/**
+ * Normalize a user-supplied filename for the export download:
+ *   - strips filesystem-invalid characters
+ *   - falls back to `fallback` if input is empty / whitespace-only / sanitizes to empty
+ *   - appends `.imp.json` if missing (case-insensitive match)
+ *
+ * Pure function — no I/O. Exposed for unit tests + the prompt UI.
+ */
+export function sanitizeFilename(
+  input: string | null | undefined,
+  fallback = DEFAULT_FILENAME,
+): string {
+  const raw = (input ?? '').trim();
+  const stripped = raw.replace(INVALID_FILENAME_CHARS, '').trim();
+  const base = stripped.length > 0 ? stripped : fallback;
+  return /\.imp\.json$/i.test(base) ? base : `${base}.imp.json`;
+}
+
 // ---------------- base64 <-> bytes (browser + jsdom safe) ----------------
 
 function bytesToBase64(bytes: Uint8Array): string {

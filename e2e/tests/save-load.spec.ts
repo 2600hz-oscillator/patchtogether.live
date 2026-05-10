@@ -158,7 +158,9 @@ test('save-load: Save button downloads a valid PatchEnvelope JSON', async ({ pag
   await page.getByRole('button', { name: 'Load example' }).click();
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-  // Click Save and wait for the download.
+  // Save now prompts for filename (default = patch.imp.json). Accepting the
+  // prompt with no edit produces the same filename the prompt-less flow did.
+  page.once('dialog', (dialog) => dialog.accept());
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const download = await downloadPromise;
@@ -189,6 +191,7 @@ test('save-load: Load button restores the patch from a saved envelope', async ({
   await page.getByRole('button', { name: 'Load example' }).click();
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
+  page.once('dialog', (dialog) => dialog.accept());
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const download = await downloadPromise;
