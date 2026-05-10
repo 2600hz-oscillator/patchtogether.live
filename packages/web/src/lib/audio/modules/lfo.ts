@@ -59,11 +59,12 @@ const baseDef: AudioModuleDef = {
 
   inputs: [
     { id: 'clock', type: 'gate' },
-    // CV → AudioParam routing: patching here sums into the param's intrinsic
-    // value at audio rate, and the corresponding fader's motorized poll
-    // visibly tracks the modulation.
-    { id: 'rate',  type: 'cv', paramTarget: 'rate'  },
-    { id: 'shape', type: 'cv', paramTarget: 'shape' },
+    // CV → AudioParam routing with cvScale per
+    // .myrobots/plans/cv-range-standard.md.
+    // rate: log (0.01..100Hz spans ~13 octaves; cv=±1 = ±~6.5 octaves).
+    // shape: linear (0..2 morph axis).
+    { id: 'rate',  type: 'cv', paramTarget: 'rate',  cvScale: { mode: 'log' } },
+    { id: 'shape', type: 'cv', paramTarget: 'shape', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'phase0',   type: 'cv' },

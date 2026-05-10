@@ -8,9 +8,10 @@
 // caller can drive the engine directly. The auto-reactive flavor that watches
 // the SyncedStore graph and reconciles automatically lands in Day 7.
 
-import type { Edge, ModuleDef, ModuleNode } from '$lib/graph/types';
+import type { Edge, ModuleDef, ModuleNode, CvScaleHint, ParamDef } from '$lib/graph/types';
 import { getModuleDef, type AudioModuleDef } from './module-registry';
 import { POLY_CHANNELS, resolveConnection } from './poly';
+import { attachCvScale } from './cv-scale';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -110,6 +111,14 @@ export class AudioEngine implements DomainEngine {
   /** edge id → undo function that disconnects the specific connection */
   edges = new Map<string, () => void>();
   /**
+   * Per-node module-type cache. Populated in addNode. Used by addEdge to
+   * look up the source/target module's PortDef (and thus its `cvScale`
+   * hint) without rebuilding the patch graph from the snapshot. Without
+   * this, addEdge would have to walk the snapshot bus to recover the
+   * type — but the engine is supposed to be UI-agnostic.
+   */
+  private nodeTypes = new Map<string, string>();
+  /**
    * Per-modulated-param AnalyserNode taps so the UI can visualize the CURRENT
    * computed value of an AudioParam (intrinsic + connected modulators).
    *
@@ -204,6 +213,7 @@ export class AudioEngine implements DomainEngine {
       return;
     }
     this.nodes.set(node.id, handle);
+    this.nodeTypes.set(node.id, String(node.type));
   }
 
   removeNode(nodeId: string): void {
@@ -214,6 +224,31 @@ export class AudioEngine implements DomainEngine {
     // disconnects all of this node's Web Audio connections defensively.
     handle.dispose();
     this.nodes.delete(nodeId);
+    this.nodeTypes.delete(nodeId);
+  }
+
+  /**
+   * Look up the CV-scaling hint for a (target node, target port) pair.
+   * Returns null if the destination port doesn't declare cvScale (legacy
+   * behavior: passthrough sum-into-AudioParam) or if either lookup fails.
+   *
+   * Also returns the destination param's def so the scaler can read
+   * min/max/defaultValue. The two come together because the scaling math
+   * needs both pieces.
+   */
+  private getCvScaleForTarget(
+    targetNodeId: string,
+    targetPortId: string,
+  ): { hint: CvScaleHint; paramDef: ParamDef } | null {
+    const moduleType = this.nodeTypes.get(targetNodeId);
+    if (!moduleType) return null;
+    const def = getModuleDef(moduleType) as AudioModuleDef | undefined;
+    if (!def) return null;
+    const port = def.inputs.find((p) => p.id === targetPortId);
+    if (!port || !port.cvScale || !port.paramTarget) return null;
+    const paramDef = def.params.find((p) => p.id === port.paramTarget);
+    if (!paramDef) return null;
+    return { hint: port.cvScale, paramDef };
   }
 
   addEdge(edge: Edge): void {
@@ -244,15 +279,48 @@ export class AudioEngine implements DomainEngine {
 
     if (din.param) {
       // CV → AudioParam routing.
-      sout.node.connect(din.param, sout.output);
-      // Also tee the source through a per-param AnalyserNode so readParam can
-      // report intrinsic + modulator sample for motorized fader rendering.
+      //
+      // If the destination port declares a `cvScale` hint AND the cable
+      // type is `cv` (not audio/pitch/gate which sometimes also land on
+      // AudioParams via Web Audio's lenient typing), interpose a scaling
+      // chain so a -1..+1 CV signal sweeps the param's full natural range.
+      // See packages/web/src/lib/audio/cv-scale.ts and
+      // .myrobots/plans/cv-range-standard.md.
+      //
+      // For passthrough / no-hint cases, the legacy direct-connect behavior
+      // is preserved (Web Audio sums sout.node's signal into din.param at
+      // audio rate without modification).
+      const scaleInfo = edge.sourceType === 'cv' || edge.targetType === 'cv'
+        ? this.getCvScaleForTarget(edge.target.nodeId, edge.target.portId)
+        : null;
+      let scaleTeardown: (() => void) | null = null;
+      let connectSource: AudioNode = sout.node;
+      let connectOutput: number = sout.output;
+      if (scaleInfo && scaleInfo.hint.mode !== 'passthrough') {
+        const chain = attachCvScale(this.ctx, scaleInfo.paramDef, scaleInfo.hint);
+        // source → scaler input; scaler output → param + tap.
+        sout.node.connect(chain.input, sout.output);
+        // The scaler is a single WaveShaperNode whose output we use for
+        // both the param AND the tap analyser. Web Audio is happy to
+        // connect one output to multiple destinations.
+        connectSource = chain.output;
+        connectOutput = 0;
+        scaleTeardown = () => {
+          try { sout.node.disconnect(chain.input, sout.output); } catch { /* */ }
+          chain.teardown();
+        };
+      }
+      connectSource.connect(din.param, connectOutput);
+      // Also tee the (scaled or raw) source through a per-param AnalyserNode
+      // so readParam can report intrinsic + modulator sample for motorized
+      // fader rendering. The tap sees the SAME signal that's being summed
+      // into the param — so the motorized fader visualizes actual modulation.
       const tap = this.getOrCreateParamTap(edge.target.nodeId, edge.target.portId);
-      sout.node.connect(tap, sout.output);
+      connectSource.connect(tap, connectOutput);
       const tapKey = this.paramTapKey(edge.target.nodeId, edge.target.portId);
-      this.paramTapEdges.set(edge.id, { tapKey, src: sout.node, output: sout.output });
+      this.paramTapEdges.set(edge.id, { tapKey, src: connectSource, output: connectOutput });
       this.edges.set(edge.id, () => {
-        sout.node.disconnect(din.param!, sout.output);
+        try { connectSource.disconnect(din.param!, connectOutput); } catch { /* */ }
         const bk = this.paramTapEdges.get(edge.id);
         if (bk) {
           const t = this.paramTaps.get(bk.tapKey);
@@ -261,6 +329,7 @@ export class AudioEngine implements DomainEngine {
           }
           this.paramTapEdges.delete(edge.id);
         }
+        if (scaleTeardown) scaleTeardown();
       });
     } else {
       sout.node.connect(din.node, sout.output, din.input);
@@ -459,6 +528,7 @@ export class AudioEngine implements DomainEngine {
     this.paramTapEdges.clear();
     for (const handle of this.nodes.values()) handle.dispose();
     this.nodes.clear();
+    this.nodeTypes.clear();
   }
 }
 

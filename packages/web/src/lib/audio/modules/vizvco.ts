@@ -73,8 +73,9 @@ export const vizvcoDef: AudioModuleDef = {
   inputs: [
     { id: 'pitch', type: 'pitch' },
     { id: 'fm', type: 'audio' },
-    // CV → wavefolder fold amount.
-    { id: 'foldAmount', type: 'cv', paramTarget: 'foldAmount' },
+    // CV → wavefolder fold amount. Linear scaling per
+    // .myrobots/plans/cv-range-standard.md (0..1 native; LFO ±1 sweeps full range).
+    { id: 'foldAmount', type: 'cv', paramTarget: 'foldAmount', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'saw',      type: 'audio' },
