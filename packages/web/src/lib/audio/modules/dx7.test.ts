@@ -12,8 +12,16 @@
 // `setParam('algorithm') posts a patch message even though ...`.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { dx7Def, DX7_DEFAULT_PRESET } from './dx7';
+import { parseSyxBank } from '$lib/audio/dx7-syx';
+import { patch as graphPatch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const AAAHGOOD_SYX = join(__dirname, '..', '__fixtures__', 'AAAHGOOD.SYX');
 
 // ---------------- module-def shape ----------------
 
@@ -181,4 +189,90 @@ describe('dx7Def: factory + setParam algorithm bridge', () => {
     handle.setParam('level', 1.5);
     expect(paramSet.get('level')?.value).toBe(1.5);
   });
+});
+
+// ---------------- SYX-load → SyncedStore → patch-message regression ----------------
+//
+// REGRESSION (PR fix/dx7-syx-bank-loading): the user reported that uploading a
+// .syx cartridge made every patch sound like the bundled E.PIANO 1. Root
+// cause: when SYX voices live in node.data.userPatches (which is backed by
+// the SyncedStore Y.Doc), reading them returns Yjs PROXY objects — Y.Map
+// for the voice + Y.Array for op.r/op.l. The previous sendPatch built a
+// payload that referenced those proxies directly, then handed it to
+// `worklet.port.postMessage`. structuredClone (which postMessage uses
+// under the hood in real browsers) rejects Yjs proxies — so the worklet
+// never received the new patch and kept playing whatever it last got
+// (E.PIANO 1, sent on factory init from the plain-JS DX7_BUILTIN_BANK).
+//
+// The fix: deep-unwrap to plain JS in sendPatch — every primitive coerced
+// via Number()/Boolean()/String(), every array materialized into a fresh
+// Array<number>. This test asserts the posted payload structured-clones
+// successfully and that the cloned operators carry through the SYX
+// voice's actual ratios + levels (NOT the E.PIANO defaults).
+describe('dx7Def: SYX upload → patch message survives structured-clone (the bug)', () => {
+  beforeEach(() => {
+    // Wipe any leftover nodes from previous tests.
+    for (const id of Object.keys(graphPatch.nodes)) {
+      delete graphPatch.nodes[id];
+    }
+  });
+
+  it('after SYX upload+select, posted patch (a) clones cleanly and (b) carries SYX voice data', async () => {
+    const { posted, ctx } = makeMockEnv();
+    const nodeId = 'dx7-syx-regression';
+
+    // Spawn the dx7 factory against the SHARED graphPatch (the same one
+    // Dx7Card.svelte writes through).
+    const node: ModuleNode = {
+      id: nodeId, type: 'dx7', domain: 'audio',
+      position: { x: 0, y: 0 }, params: {}, data: {},
+    };
+    graphPatch.nodes[nodeId] = node;
+    await dx7Def.factory(ctx as unknown as AudioContext, node);
+    // Initial post is the bundled default (no SYX yet).
+    expect(posted[0]?.voice?.name).toBe(DX7_DEFAULT_PRESET);
+
+    // Mimic the Card: parse a real cartridge + write the voices into
+    // node.data.userPatches via the SyncedStore (NOT plain JS — this is
+    // what triggers the Yjs-proxy wrapping).
+    const bytes = new Uint8Array(readFileSync(AAAHGOOD_SYX));
+    const result = parseSyxBank(bytes);
+    expect(result.voices.length).toBe(32);
+    const t = graphPatch.nodes[nodeId]!;
+    if (!t.data) t.data = {};
+    (t.data as Record<string, unknown>).userPatches = result.voices;
+    const target = result.voices[0]!; // "Trombones" — algorithm 18
+    (t.data as Record<string, unknown>).preset = target.name;
+
+    // Wait for the dx7 factory's poll loop (POLL_MS = 100) to react.
+    await new Promise((r) => setTimeout(r, 200));
+
+    // The posted payload must (a) survive structuredClone — the actual
+    // browser postMessage path, and (b) reflect the SYX voice fields.
+    const lastPatch = [...posted].reverse().find((m) => m.type === 'patch');
+    expect(lastPatch, 'a patch message was posted after SYX preset select').toBeDefined();
+    // (a) survives structured-clone — this is the regression assertion.
+    expect(() => structuredClone(lastPatch)).not.toThrow();
+    const cloned = structuredClone(lastPatch) as typeof lastPatch & {
+      voice?: {
+        name: string;
+        algorithm: number;
+        operators?: Array<{ r: number[]; l: number[]; ratio: number; level: number }>;
+      };
+    };
+    // (b) carries SYX voice data after the clone — operators are real
+    // Array<number>s, ratios + levels match the parsed voice (NOT the
+    // bundled E.PIANO 1 defaults).
+    expect(cloned.voice?.name).toBe(target.name);
+    expect(cloned.voice?.algorithm).toBe(target.algorithm);
+    const op0 = cloned.voice?.operators?.[0];
+    expect(op0).toBeDefined();
+    expect(Array.isArray(op0!.r)).toBe(true);
+    expect(op0!.r).toEqual(target.operators[0]!.r);
+    expect(op0!.l).toEqual(target.operators[0]!.l);
+    expect(op0!.level).toBe(target.operators[0]!.level);
+    // Spot-check op4 (where the SYX ratios diverge most from defaults).
+    const op4 = cloned.voice?.operators?.[4];
+    expect(op4!.ratio).toBeCloseTo(target.operators[4]!.ratio, 4);
+  }, 5000);
 });
