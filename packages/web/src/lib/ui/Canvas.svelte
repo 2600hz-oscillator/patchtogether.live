@@ -23,6 +23,8 @@
     pickAndLoadEnvelope,
     parseEnvelope,
     loadEnvelopeIntoStore,
+    sanitizeFilename,
+    DEFAULT_FILENAME,
     EnvelopeParseError,
     type PatchEnvelope,
   } from '$lib/graph/persistence';
@@ -452,9 +454,15 @@
   }
 
   function savePatch() {
+    const input = window.prompt('Save patch as…', DEFAULT_FILENAME);
+    if (input === null) {
+      trace('save cancelled');
+      return;
+    }
+    const filename = sanitizeFilename(input);
     const env = makeEnvelope(ydoc);
-    downloadEnvelope(env);
-    trace(`saved patch (${Object.keys(patch.nodes).length} nodes, ${Object.keys(patch.edges).length} edges)`);
+    downloadEnvelope(env, filename);
+    trace(`saved patch as ${filename} (${Object.keys(patch.nodes).length} nodes, ${Object.keys(patch.edges).length} edges)`);
   }
 
   async function loadPatch() {

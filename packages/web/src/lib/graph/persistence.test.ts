@@ -17,7 +17,9 @@ import {
   parseEnvelope,
   serializeEnvelope,
   loadEnvelopeIntoStore,
+  sanitizeFilename,
   ENVELOPE_VERSION,
+  DEFAULT_FILENAME,
   type LivePatch,
 } from './persistence';
 import type { ModuleNode, Edge } from './types';
@@ -475,5 +477,42 @@ describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
     expect(loadedData.userPatches[0]?.operators[0]?.r).toEqual([99, 50, 30, 60]);
     expect(loadedData.userPatches[0]?.operators[5]?.level).toBe(99 - 5 * 8);
     expect(loadedData.userPatches[0]?.lfo.speed).toBe(35);
+  });
+});
+
+// ---------------- sanitizeFilename ----------------
+
+describe('persistence: sanitizeFilename', () => {
+  it('appends .imp.json when missing', () => {
+    expect(sanitizeFilename('mypatch')).toBe('mypatch.imp.json');
+  });
+
+  it('preserves a name that already ends in .imp.json (case-insensitive)', () => {
+    expect(sanitizeFilename('mypatch.imp.json')).toBe('mypatch.imp.json');
+    expect(sanitizeFilename('MyPatch.IMP.JSON')).toBe('MyPatch.IMP.JSON');
+  });
+
+  it('falls back to DEFAULT_FILENAME on empty or whitespace-only input', () => {
+    expect(sanitizeFilename('')).toBe(DEFAULT_FILENAME);
+    expect(sanitizeFilename('   ')).toBe(DEFAULT_FILENAME);
+    expect(sanitizeFilename(null)).toBe(DEFAULT_FILENAME);
+    expect(sanitizeFilename(undefined)).toBe(DEFAULT_FILENAME);
+  });
+
+  it('strips filesystem-invalid characters', () => {
+    expect(sanitizeFilename('a/b\\c:d*e?f"g<h>i|j')).toBe('abcdefghij.imp.json');
+  });
+
+  it('falls back when input sanitizes to empty', () => {
+    expect(sanitizeFilename('///***')).toBe(DEFAULT_FILENAME);
+  });
+
+  it('honors a custom fallback', () => {
+    expect(sanitizeFilename('', 'rack-1.imp.json')).toBe('rack-1.imp.json');
+  });
+
+  it('preserves spaces and unicode in the middle of the name', () => {
+    expect(sanitizeFilename('my cool patch')).toBe('my cool patch.imp.json');
+    expect(sanitizeFilename('café')).toBe('café.imp.json');
   });
 });
