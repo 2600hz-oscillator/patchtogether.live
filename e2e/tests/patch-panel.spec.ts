@@ -896,7 +896,14 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
 
     await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
     await page.mouse.down();
-    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 8 });
+    // Mirror aut-patch-panel.spec.ts: 25 intermediate steps so Svelte
+    // Flow's drag tracker reliably sees the pointermove sequence on
+    // slower CI runners (a coarser drag was observed to skip handle
+    // hit-tests and leave the connection unformed). With this PR
+    // moving handles outward by ~9px, the drag path is slightly
+    // longer; bumping steps keeps the per-step delta inside xyflow's
+    // hit-test bucket.
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 25 });
 
     // Mid-drag: the source panel is still open (pinned + stayOpenForDrag).
     const seqPanel = page.locator(
@@ -905,6 +912,9 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await expect(seqPanel).toHaveAttribute('aria-hidden', 'false');
 
     await page.mouse.up();
+    // Same 150ms post-mouseup beat the AUT spec uses to give xyflow's
+    // connect-end handler time to commit the new edge before we assert.
+    await page.waitForTimeout(150);
 
     // Assert connection landed.
     const newEdge = page.locator(
