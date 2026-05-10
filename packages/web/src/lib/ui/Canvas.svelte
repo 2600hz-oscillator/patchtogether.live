@@ -795,9 +795,7 @@
     return { nodeId, portId, direction, type };
   }
 
-  function onPortContextMenu(e: MouseEvent) {
-    const info = handleInfoFromEvent(e);
-    if (!info) return;
+  function openPortMenu(e: MouseEvent, info: NonNullable<ReturnType<typeof handleInfoFromEvent>>) {
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -807,22 +805,47 @@
     portMenuSourceDirection = info.direction;
     portMenuSourceType = info.type;
     portMenuOpen = true;
+    // Lock the source-port's PatchPanel open while the cascade is up.
+    connectDragState.beginCascade(info.nodeId);
   }
 
-  // Capture-phase document listener guarantees we fire before any xyflow
-  // contextmenu handling kicks in on the handle. Without capture, xyflow's
-  // own contextmenu attempt to start a connect-drag preview can swallow
-  // the event before bubble-phase reaches our .flow div.
+  function onPortContextMenu(e: MouseEvent) {
+    const info = handleInfoFromEvent(e);
+    if (!info) return;
+    openPortMenu(e, info);
+  }
+
+  function onPortDoubleClick(e: MouseEvent) {
+    const info = handleInfoFromEvent(e);
+    if (!info) return;
+    openPortMenu(e, info);
+  }
+
+  // Capture-phase document listeners guarantee we fire before any xyflow
+  // handling kicks in on the handle. Without capture, xyflow's own
+  // contextmenu / pointerdown handling can swallow the event before
+  // bubble-phase reaches our .flow div. Both right-click and double-click
+  // route to the same openPortMenu — both gestures end at the same
+  // PortContextMenu cascade.
   $effect(() => {
     const onDocCtxMenu = (e: MouseEvent) => {
       onPortContextMenu(e);
     };
+    const onDocDblClick = (e: MouseEvent) => {
+      onPortDoubleClick(e);
+    };
     document.addEventListener('contextmenu', onDocCtxMenu, true);
-    return () => document.removeEventListener('contextmenu', onDocCtxMenu, true);
+    document.addEventListener('dblclick', onDocDblClick, true);
+    return () => {
+      document.removeEventListener('contextmenu', onDocCtxMenu, true);
+      document.removeEventListener('dblclick', onDocDblClick, true);
+    };
   });
 
   function pickPortMenuTarget({ nodeId, portId }: { nodeId: string; portId: string }) {
     if (!portMenuSourceNodeId || !portMenuSourcePortId) return;
+    // Cascade is committing — release the source PatchPanel's lock.
+    connectDragState.endCascade();
     // Resolve source/target by direction. If the right-clicked port is an
     // OUTPUT, the picked port is the INPUT — cable runs srcNode.srcPort →
     // pickedNode.pickedPort. If the right-clicked port is an INPUT, the
@@ -1530,6 +1553,7 @@
     portMenuOpen = false;
     portMenuSourceNodeId = null;
     portMenuSourcePortId = null;
+    connectDragState.endCascade();
   }}
 />
 
