@@ -37,6 +37,50 @@ async function readScopeStats(page: Page, scopeNodeId: string): Promise<ScopeSta
   }, scopeNodeId);
 }
 
+/**
+ * Poll the scope analyser until any one snapshot's peak exceeds `threshold`,
+ * or `timeoutMs` elapses. The analyser holds only ~43ms of audio (fftSize 2048
+ * @ 48kHz), so a single waitForTimeout + read can land entirely inside a dead
+ * zone of a transient signal — e.g. an ADSR envelope between gate triggers,
+ * which decays to 0 within attack+release after each pulse and stays there
+ * until the next gate. Polling at 50ms over multiple gate cycles guarantees
+ * we catch the envelope at its peak as long as the signal is firing at all.
+ *
+ * Returns the highest stats observed across all polls. If we never crossed
+ * the threshold, that highest value is what the caller's assertion sees.
+ */
+async function pollScopePeak(
+  page: Page,
+  scopeNodeId: string,
+  threshold: number,
+  timeoutMs: number,
+): Promise<ScopeStats> {
+  const deadline = Date.now() + timeoutMs;
+  let best: ScopeStats = { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
+  while (Date.now() < deadline) {
+    let s: ScopeStats;
+    try {
+      s = await readScopeStats(page, scopeNodeId);
+    } catch (err) {
+      // Vite dev-server HMR can drop the execution context mid-poll under
+      // load (`Execution context was destroyed, most likely because of a
+      // navigation`). Wait for the page to settle and retry — it's not a
+      // BUGGLES signal issue.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Execution context was destroyed')) {
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await page.waitForTimeout(50);
+        continue;
+      }
+      throw err;
+    }
+    if (s.peak > best.peak) best = s;
+    if (best.peak > threshold) return best;
+    await page.waitForTimeout(50);
+  }
+  return best;
+}
+
 test('buggles: drop module → card mounts with no console errors', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -111,18 +155,19 @@ test('buggles: CLOCK output triggers ADSR envelope', async ({ page }) => {
   await spawnPatch(
     page,
     [
-      // Moderate woggle rate (knob 0.6 → ~5 Hz, period ~200ms) so each
-      // envelope cycle has time to peak before the next trigger arrives.
-      // Chaos 0 = predictable timing (no jitter) — keeps the pattern of
-      // hits inside the analyser's 42ms snapshot reliable across runs.
+      // Moderate woggle rate (knob 0.6 → ~4 Hz, period ~240ms). Chaos 0 keeps
+      // the period stable so the polling loop below catches a peak quickly.
       { id: 'b',    type: 'buggles',
         params: { rate: 0.6, chaos: 0, level: 1.0 } },
-      // Long-tail envelope (attack 5ms, decay 200ms, sustain 0.4, release
-      // 100ms) so any analyser snapshot lands somewhere on a non-zero
-      // segment of the envelope — peak ≥ 0.4 (sustain) within ~205ms of
-      // any trigger.
+      // Short attack + brief release. BUGGLES.clock is a 5ms gate, so the
+      // ADSR enters release immediately after attack — sustain is never
+      // held between triggers. The envelope is non-zero for ~attack+release
+      // = ~75ms per trigger, then sits at 0 for the rest of the period
+      // (~165ms). The single-shot read pattern (waitForTimeout + read once)
+      // had a ~38% chance of sampling the analyser entirely inside that
+      // dead zone; pollScopePeak below catches the next peak deterministically.
       { id: 'env',  type: 'adsr',
-        params: { attack: 0.005, decay: 0.2, sustain: 0.4, release: 0.1 } },
+        params: { attack: 0.005, decay: 0.05, sustain: 0.4, release: 0.07 } },
       { id: 'scp',  type: 'scope',
         params: { timeMs: 1000, ch1Range: 1 } },
       { id: 'out',  type: 'audioOut', params: { master: 0 } },
@@ -135,12 +180,10 @@ test('buggles: CLOCK output triggers ADSR envelope', async ({ page }) => {
       { id: 'e3', from: { nodeId: 'scp', portId: 'ch1_out'}, to: { nodeId: 'out', portId: 'L' } },
     ],
   );
-  // Wait long enough for several woggle clocks → envelope hits.
-  await page.waitForTimeout(2000);
-  const stats = await readScopeStats(page, 'scp');
-  // Envelope output should hit ~peak (~1.0) on attack, sit at sustain
-  // (~0.4) until next trigger. Anywhere in that 0.4..1.0 range counts
-  // as "envelope is firing." Allow margin for sample-rate boundary.
+  // Poll the analyser over up to 8 woggle periods (~2s). With BUGGLES firing
+  // every ~240ms and the envelope rising to ~1.0 on each gate, a 50ms-cadence
+  // poll will land on a peak within at most one period.
+  const stats = await pollScopePeak(page, 'scp', 0.1, 2000);
   expect(stats.peak, `ADSR env peak from BUGGLES.clock=${stats.peak}`).toBeGreaterThan(0.1);
 });
 
