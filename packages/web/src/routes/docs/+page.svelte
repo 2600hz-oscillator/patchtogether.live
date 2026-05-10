@@ -102,6 +102,10 @@
 <h2>What to read next</h2>
 <ul>
   <li><a href="/docs/modules">Module catalog</a> — every module, its I/O, params, source link.</li>
+  <li>
+    <a href="/docs/rackspace-persistence">Rackspace persistence</a> —
+    where patches + assets live, what Save/Load do, what auto-saves.
+  </li>
   <li><a href="/docs/testing">Testing</a> — unit / ART / E2E layers.</li>
   <li><a href="/docs/deploy">Deploy + ops</a> — the 3-tier flow, Workers↔Postgres caveats.</li>
 </ul>
