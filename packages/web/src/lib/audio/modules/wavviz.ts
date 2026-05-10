@@ -65,7 +65,7 @@ export const wavvizDef: AudioModuleDef = {
   inputs: [
     { id: 'pitch',      type: 'pitch' },
     { id: 'fm',         type: 'audio' },
-    { id: 'wavePos',    type: 'cv' },
+    { id: 'wavePos',    type: 'cv', paramTarget: 'wavePos' },
     { id: 'foldAmount', type: 'cv', paramTarget: 'foldAmount' },
   ],
   outputs: [

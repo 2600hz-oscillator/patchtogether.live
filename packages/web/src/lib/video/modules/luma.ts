@@ -61,7 +61,9 @@ export const lumaDef: VideoModuleDef = {
   schemaVersion: 1,
   inputs: [
     { id: 'in',        type: 'video' },
-    { id: 'threshold', type: 'cv' },
+    // paramTarget == port.id keeps docs manifest in sync; bridge uses
+    // port id directly so the runtime works either way.
+    { id: 'threshold', type: 'cv', paramTarget: 'threshold' },
   ],
   outputs: [
     { id: 'out', type: 'mono-video' },

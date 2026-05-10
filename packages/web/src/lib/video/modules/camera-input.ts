@@ -70,10 +70,10 @@ export const cameraInputDef: VideoModuleDef = {
   category: 'sources',
   schemaVersion: 1,
   inputs: [
-    // CV input for gain modulation. Phase-0 reconciler doesn't yet wire
-    // CV→video bridges (see engine.ts §1 deferral), but we expose the
-    // port so future bridge plumbing finds it.
-    { id: 'gain', type: 'cv' },
+    // CV input for gain modulation. paramTarget == port id keeps the
+    // docs manifest in sync; the cross-domain CV bridge looks up the
+    // target via port id directly.
+    { id: 'gain', type: 'cv', paramTarget: 'gain' },
   ],
   outputs: [
     { id: 'out', type: 'video' },
