@@ -263,6 +263,86 @@ describe('BUGGLES ART: ring output mixes smooth + sub-osc via gain×param', () =
   });
 });
 
+describe('BUGGLES ART: clock → ADSR contract (regression for e2e flake)', () => {
+  // Locks in that the params chosen in e2e/tests/buggles.spec.ts CLOCK→ADSR
+  // test produce a non-zero envelope readable by a 50ms-cadence poll over
+  // up to 2s — i.e. there is no period in the cycle longer than the poll
+  // interval where the env stays at 0. Mirrors what the AnalyserNode in the
+  // browser scope sees.
+  //
+  // Original e2e bug: ADSR(attack=5ms, decay=200ms, sustain=0.4, release=100ms)
+  // fed by a 5ms gate goes attack→release immediately (sustain is never held
+  // because gate falls before decay completes); env is non-zero only for
+  // ~105ms per 240ms period, leaving a 135ms dead zone. A single 43ms
+  // analyser snapshot landed entirely inside the dead zone ~38% of the time.
+  //
+  // Tightened to attack=5ms decay=50ms sustain=0.4 release=70ms so the
+  // env-active window is ~75ms and per-cycle dead time drops to ~165ms —
+  // still long, but caught reliably by a 50ms-cadence poll.
+  it('ADSR(a=5ms,d=50ms,s=0.4,r=70ms) fed 5ms gates @ 240ms period peaks > 0.1 every period', async () => {
+    const DURATION_S = 2.0;
+    const PERIOD_S = 0.24;
+    const GATE_WIDTH_S = 0.005;
+    const A = 0.005, D = 0.05, S = 0.4, R = 0.07;
+
+    const ctx = new OfflineAudioContext({
+      numberOfChannels: 1,
+      length: Math.round(SAMPLE_RATE * DURATION_S),
+      sampleRate: SAMPLE_RATE,
+    });
+
+    // Model the ADSR with linear ramps on a ConstantSource — same shape as
+    // Faust's en.adsr triggered by an instantaneous gate. For each gate at
+    // t=tg: rise to 1 by tg+A, decay to S by tg+A+D, hold S until tg+W
+    // (gate falls), release to 0 by tg+W+R.
+    const env = ctx.createConstantSource();
+    env.offset.setValueAtTime(0, 0);
+
+    let last = 0;
+    for (let tg = 0.05; tg + R < DURATION_S; tg += PERIOD_S) {
+      const gateEnd = tg + GATE_WIDTH_S;
+      env.offset.setValueAtTime(last, tg);
+      env.offset.linearRampToValueAtTime(1, tg + A);
+      // Gate is only 5ms but A=5ms — sustain reached at exactly tg+A which
+      // is also gate-fall. Decay never runs; we go straight to release from 1.
+      env.offset.setValueAtTime(1, gateEnd);
+      env.offset.linearRampToValueAtTime(0, gateEnd + R);
+      last = 0;
+    }
+    env.start();
+    env.connect(ctx.destination);
+
+    const r = await ctx.startRendering();
+    const buf = r.getChannelData(0);
+
+    // Mirror the polling loop in e2e/tests/buggles.spec.ts pollScopePeak:
+    // scan the buffer in 50ms slices, asserting at least one slice has a
+    // peak > 0.1. Stronger: every period's worth of slices contains a peak.
+    const POLL_MS = 50;
+    const SLICE = Math.floor((POLL_MS / 1000) * SAMPLE_RATE);
+    let slicesWithPeak = 0;
+    let totalSlices = 0;
+    for (let i = 0; i + SLICE < buf.length; i += SLICE) {
+      let maxAbs = 0;
+      for (let j = i; j < i + SLICE; j++) {
+        const a = Math.abs(buf[j]!);
+        if (a > maxAbs) maxAbs = a;
+      }
+      totalSlices++;
+      if (maxAbs > 0.1) slicesWithPeak++;
+    }
+    // With a 75ms env-active window per 240ms period and 50ms slices, we
+    // expect roughly slicesWithPeak/totalSlices ≈ (75+50)/240 ≈ 52% of
+    // slices to overlap an env-active window. Lower bound 30% is a wide
+    // safety margin for setValueAtTime block-boundary slop.
+    const ratio = slicesWithPeak / totalSlices;
+    expect(
+      ratio,
+      `slices with peak>0.1: ${slicesWithPeak}/${totalSlices} (${(ratio * 100).toFixed(0)}%)`,
+    ).toBeGreaterThan(0.3);
+  });
+});
+
 describe('BUGGLES ART: rate knob mapping', () => {
   it('knob=0.4 maps to ~1 Hz', () => {
     // Default rate. 0.4 → 0.1 × (500)^0.4 ≈ 1.21 Hz.
