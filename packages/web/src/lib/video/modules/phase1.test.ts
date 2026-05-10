@@ -229,12 +229,14 @@ describe('video — SHAPES geometry source', () => {
 });
 
 describe('video — MONOGLITCH scanline-displacement output', () => {
-  it('is an OUTPUT (no output ports), takes video in + 3 cv', () => {
+  it('is a chainable OUTPUT (1 video output) with video in + 3 cv', () => {
     const def = getVideoModuleDef('monoglitch')!;
     expect(def).toBeDefined();
     expect(def.label).toBe('MONOGLITCH');
     expect(def.category).toBe('output');
-    expect(def.outputs).toHaveLength(0);
+    expect(def.outputs).toHaveLength(1);
+    expect(def.outputs[0]?.id).toBe('out');
+    expect(def.outputs[0]?.type).toBe('video');
     const inIds = def.inputs.map((p) => p.id).sort();
     expect(inIds).toEqual(['hRamp', 'in', 'intensity', 'vRamp']);
     const inPort = def.inputs.find((p) => p.id === 'in');
@@ -259,12 +261,14 @@ describe('video — MONOGLITCH scanline-displacement output', () => {
 });
 
 describe('video — RUTTETRA raster-scan-coordinate processor', () => {
-  it('is an OUTPUT (no output ports), takes 3 video + 3 cv inputs', () => {
+  it('is a chainable OUTPUT (1 video output) with 3 video + 3 cv inputs', () => {
     const def = getVideoModuleDef('ruttetra')!;
     expect(def).toBeDefined();
     expect(def.label).toBe('RUTTETRA');
     expect(def.category).toBe('output');
-    expect(def.outputs).toHaveLength(0);
+    expect(def.outputs).toHaveLength(1);
+    expect(def.outputs[0]?.id).toBe('out');
+    expect(def.outputs[0]?.type).toBe('video');
     const inIds = def.inputs.map((p) => p.id).sort();
     expect(inIds).toEqual(['intensity', 'x', 'xDisp', 'y', 'yDisp', 'z']);
     expect(def.inputs.find((p) => p.id === 'x')?.type).toBe('mono-video');

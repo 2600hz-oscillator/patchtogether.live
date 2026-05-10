@@ -9,13 +9,14 @@
 // remap, see packages/web/src/lib/video/modules/ruttetra.ts.
 //
 // Architecture parity with OUTPUT (videoOut, post-PR-85):
-//   - This is a SINK — no video output port. Inputs are: video-in plus
-//     three CV inputs (H ramp, V ramp, Z displacement amount).
 //   - Renders into its own per-instance FBO. The card driving the visible
 //     <canvas> calls `engine.blitOutputToDrawingBuffer(nodeId)` right
 //     before its `drawImage(engine.canvas, ...)` blit so each card pulls
 //     its own per-instance content (multi-MONOGLITCH + multi-OUTPUT patches
 //     stay independent — no last-output-wins coupling on the shared FB).
+//   - CHAINABLE OUTPUT: exposes its FBO texture via the standard `out`
+//     port (same surface.texture used by the on-card preview), so users
+//     can chain MONOGLITCH into downstream video modules.
 //
 // Render approach: per-scanline displacement in a fragment shader. We
 // sample the input video, derive luminance per pixel, and for each
@@ -137,7 +138,9 @@ export const monoglitchDef: VideoModuleDef = {
     { id: 'vRamp',     type: 'cv', paramTarget: 'vRamp' },
     { id: 'intensity', type: 'cv', paramTarget: 'intensity' },
   ],
-  outputs: [],
+  outputs: [
+    { id: 'out', type: 'video' },
+  ],
   params: [
     { id: 'hRamp',     label: 'H Ramp',    defaultValue: DEFAULTS.hRamp,     min: -1, max: 1, curve: 'linear' },
     { id: 'vRamp',     label: 'V Ramp',    defaultValue: DEFAULTS.vRamp,     min: -1, max: 1, curve: 'linear' },

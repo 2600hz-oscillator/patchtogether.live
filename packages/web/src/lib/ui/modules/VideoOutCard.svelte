@@ -221,6 +221,9 @@
   <Handle type="target" position={Position.Left} id="in" style="top: 56px; --handle-color: var(--cable-video);" />
   <span class="port-label left" style="top: 50px;">IN</span>
 
+  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
+  <span class="port-label right" style="top: 50px;">OUT</span>
+
   <div class="canvas-wrap" style="width: {innerWidth}px; height: {innerHeight}px;">
     <canvas
       bind:this={canvasEl}
@@ -294,6 +297,7 @@
     font-family: ui-monospace, monospace;
   }
   .port-label.left { left: 14px; }
+  .port-label.right { right: 14px; }
   .canvas-wrap {
     margin: 18px auto 0;
     display: flex;

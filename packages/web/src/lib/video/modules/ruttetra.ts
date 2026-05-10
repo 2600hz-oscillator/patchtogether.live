@@ -27,9 +27,12 @@
 // Defaults when X/Y are unpatched: identity ramps. So an unpatched
 // RUTTETRA with a Z source still acts like a regular display.
 //
-// SINK module — no video output port. The card's draw() calls
-// engine.blitOutputToDrawingBuffer(nodeId) right before its
-// drawImage(engine.canvas) blit, matching the OUTPUT/MONOGLITCH pattern.
+// CHAINABLE OUTPUT — exposes its rendered FBO texture via the standard
+// `out` port (same texture the on-card preview reads via blitOutputTo-
+// DrawingBuffer). This lets users chain RUTTETRA into downstream video
+// modules (e.g. LINES → RUTTETRA → MONOGLITCH → OUTPUT). The card still
+// blits to its visible canvas the same way as before; the new port just
+// publishes the same texture for graph consumers.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -119,7 +122,9 @@ export const ruttetraDef: VideoModuleDef = {
     { id: 'xDisp',     type: 'cv', paramTarget: 'xDisp',     cvScale: { mode: 'linear' } },
     { id: 'yDisp',     type: 'cv', paramTarget: 'yDisp',     cvScale: { mode: 'linear' } },
   ],
-  outputs: [],
+  outputs: [
+    { id: 'out', type: 'video' },
+  ],
   params: [
     { id: 'intensity', label: 'Intensity', defaultValue: DEFAULTS.intensity, min: 0,  max: 2, curve: 'linear' },
     { id: 'xDisp',     label: 'X Disp',    defaultValue: DEFAULTS.xDisp,     min: -1, max: 1, curve: 'linear' },

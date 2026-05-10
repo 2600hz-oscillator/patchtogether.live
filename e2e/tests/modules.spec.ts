@@ -79,8 +79,10 @@ const MODULES: ModuleSpec[] = [
   // ---- Video-domain (Phase 0 spike) ----
   // LINES: 5 inputs (fm + 4 cv: orient, amp, thickness, phase) + 1 output (out) = 6 handles.
   { type: 'lines',        cardClass: 'svelte-flow__node-lines',        handleCount: 6, containsLabel: 'LINES',  domain: 'video' },
-  // OUTPUT (videoOut): 1 input (in) + 0 outputs = 1 handle.
-  { type: 'videoOut',     cardClass: 'svelte-flow__node-videoOut',     handleCount: 1, containsLabel: 'OUTPUT', domain: 'video' },
+  // OUTPUT (videoOut): 1 input (in) + 1 output (out, pass-through monitor)
+  // = 2 handles. The `out` port publishes the same FBO texture the on-card
+  // canvas previews so users can chain monitor cards into downstream effects.
+  { type: 'videoOut',     cardClass: 'svelte-flow__node-videoOut',     handleCount: 2, containsLabel: 'OUTPUT', domain: 'video' },
   // ---- Video-domain (Phase 1 — .myrobots/plans/video-modules-mvp.md) ----
   // INWARDS: 3 cv inputs (speed, density, thickness — match LINES PR-65 pattern)
   // + 1 output (out) = 4 handles.
@@ -103,19 +105,25 @@ const MODULES: ModuleSpec[] = [
   // tileN is a fader-only param (no CV input) so the handle count stays
   // sibling-sized to LINES/INWARDS without crowding the card edge.
   { type: 'shapes',       cardClass: 'svelte-flow__node-shapes',       handleCount: 5, containsLabel: 'SHAPES',     domain: 'video' },
-  // MONOGLITCH: luma → vertical-scanline displacement OUTPUT (formerly
-  // shipped as RUTTETRA — renamed when the actual Rutt/Etra raster-scan
-  // module landed under that name). 1 video input (in) + 3 cv inputs
-  // (hRamp, vRamp, intensity) + 0 outputs = 4. SINK module — no output port.
-  { type: 'monoglitch',   cardClass: 'svelte-flow__node-monoglitch',   handleCount: 4, containsLabel: 'MONOGLITCH', domain: 'video' },
+  // MONOGLITCH: luma → vertical-scanline displacement (formerly shipped
+  // as RUTTETRA — renamed when the actual Rutt/Etra raster-scan module
+  // landed under that name). 1 video input (in) + 3 cv inputs (hRamp,
+  // vRamp, intensity) + 1 output (out, the rendered scanline result for
+  // chaining) = 5.
+  { type: 'monoglitch',   cardClass: 'svelte-flow__node-monoglitch',   handleCount: 5, containsLabel: 'MONOGLITCH', domain: 'video' },
   // RUTTETRA: true Rutt/Etra raster-scan-coordinate processor. 3 video
   // inputs (x mono-video coord field, y mono-video coord field, z source
-  // video) + 3 cv inputs (intensity, xDisp, yDisp) + 0 outputs = 6.
-  { type: 'ruttetra',     cardClass: 'svelte-flow__node-ruttetra',     handleCount: 6, containsLabel: 'RUTTETRA',   domain: 'video' },
+  // video) + 3 cv inputs (intensity, xDisp, yDisp) + 1 output (out, the
+  // rendered Rutt-Etra result for chaining) = 7.
+  { type: 'ruttetra',     cardClass: 'svelte-flow__node-ruttetra',     handleCount: 7, containsLabel: 'RUTTETRA',   domain: 'video' },
   // SHAPEDRAMPS: sync-locked ramp generator. 6 cv inputs (h_shape,
   // v_shape, h_phase, v_phase, h_freq, v_freq) + 4 mono-video outputs
   // (h_lin, v_lin stable identity ramps; h_out, v_out shaped) = 10.
   { type: 'shapedramps',  cardClass: 'svelte-flow__node-shapedramps',  handleCount: 10, containsLabel: 'SHAPEDRAMPS', domain: 'video' },
+  // VDELAY: video delay + feedback echo. 4 inputs (in + time/feedback/mix
+  // cv) + 1 output (out) = 5. Ring buffer of FBO textures (32 frames cap
+  // for ~533ms max delay at 60fps).
+  { type: 'vdelay',       cardClass: 'svelte-flow__node-vdelay',       handleCount: 5, containsLabel: 'VDELAY',     domain: 'video' },
   // ILLOGIC: 4 cv inputs + 10 outputs (att1..att4 + sum + diff + and + nand
   // + or + not) = 14. Combined attenuverter / math / logic utility.
   { type: 'illogic',      cardClass: 'svelte-flow__node-illogic',      handleCount: 14, containsLabel: 'ILLOGIC' },

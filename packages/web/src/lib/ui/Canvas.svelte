@@ -85,6 +85,7 @@
   import MonoglitchCard from '$lib/ui/modules/MonoglitchCard.svelte';
   import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
+  import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
   import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
   import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
@@ -187,6 +188,7 @@
     monoglitch: MonoglitchCard,
     ruttetra: RuttetraCard,
     shapedramps: ShapedrampsCard,
+    vdelay: VdelayCard,
     // Video-domain (Phase 1):
     inwards: InwardsCard,
     picturebox: PictureboxCard,

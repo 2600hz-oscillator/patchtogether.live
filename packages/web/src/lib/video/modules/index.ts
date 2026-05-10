@@ -25,6 +25,7 @@ import { shapesDef } from './shapes';
 import { monoglitchDef } from './monoglitch';
 import { ruttetraDef } from './ruttetra';
 import { shapedrampsDef } from './shapedramps';
+import { vdelayDef } from './vdelay';
 
 let registered = false;
 
@@ -58,6 +59,9 @@ export function registerVideoModules(): void {
   // v_lin) outputs for clean raster passthrough, plus shaped (h_out/
   // v_out) outputs for morphable raster-coordinate fields.
   registerVideoModule(shapedrampsDef);
+  // VDELAY — video delay + feedback echo (visual analog to CHARLOTTE'S
+  // ECHOS). Ring buffer of FBO textures, configurable delay/feedback/mix.
+  registerVideoModule(vdelayDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e
