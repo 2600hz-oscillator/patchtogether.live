@@ -822,8 +822,50 @@
 
   function onPortDoubleClick(e: MouseEvent) {
     const info = handleInfoFromEvent(e);
-    if (!info) return;
-    openPortMenu(e, info);
+    if (info) {
+      openPortMenu(e, info);
+      return;
+    }
+    // Fallback: dblclick on a PatchPanel corner trigger opens the cascade
+    // sourced from the module's first declared output port. Lets users
+    // bypass the open-panel-then-find-the-handle dance for the common
+    // "patch this module's main output somewhere" workflow.
+    const triggerInfo = triggerInfoFromEvent(e);
+    if (triggerInfo) {
+      openPortMenu(e, triggerInfo);
+    }
+  }
+
+  /** Resolve a dblclick MouseEvent on a PatchPanel corner trigger to the
+   *  module's first declared output port. Returns null if the click wasn't
+   *  on a trigger, or if the module has no outputs (no-op — no empty
+   *  cascade). */
+  function triggerInfoFromEvent(e: MouseEvent): {
+    nodeId: string;
+    portId: string;
+    direction: 'output' | 'input';
+    type: string;
+  } | null {
+    const target = e.target as HTMLElement | null;
+    if (!target) return null;
+    const triggerEl = target.closest('.patch-trigger') as HTMLElement | null;
+    if (!triggerEl) return null;
+    const hostEl = triggerEl.closest('[data-patch-panel-node]') as HTMLElement | null;
+    if (!hostEl) return null;
+    const nodeId = hostEl.getAttribute('data-patch-panel-node');
+    if (!nodeId) return null;
+    const node = patch.nodes[nodeId];
+    if (!node) return null;
+    const def = defLookup(node.type);
+    if (!def) return null;
+    const firstOut = def.outputs[0];
+    if (!firstOut) return null;
+    return {
+      nodeId,
+      portId: firstOut.id,
+      direction: 'output',
+      type: firstOut.type as string,
+    };
   }
 
   // Capture-phase document listeners guarantee we fire before any xyflow
