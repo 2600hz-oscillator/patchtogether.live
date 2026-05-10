@@ -44,6 +44,15 @@ import {
   VOICE_LANES,
 } from '$lib/audio/chord-tables';
 import { sampleHumanizeOffsets } from '$lib/audio/humanize';
+import {
+  createTransportCv,
+  pickQueuedSlotFromEvents,
+  TRANSPORT_CV_PORT_DEFS,
+} from './transport-cv';
+import {
+  coerceSlots,
+  coerceSlotKey,
+} from './transport-helpers';
 
 // ---------------- Step schema ----------------
 
@@ -120,10 +129,14 @@ export const polyseqzDef: AudioModuleDef = {
   inputs: [
     // External clock (optional). When patched, advances on rising edges.
     { id: 'clock', type: 'gate' },
-    // CV-controllable transport — drive isPlaying via a CV/gate signal.
-    { id: 'play_cv',  type: 'cv', paramTarget: 'isPlaying' },
-    // Reset CV: rising edge resets stepIndex to 0 next tick.
-    { id: 'reset_cv', type: 'gate' },
+    // Shared transport CV inputs (PR feat/sequencer-transport-quicksave):
+    //   play_cv      → toggles isPlaying on rising edge
+    //   reset_cv     → resets stepIndex to 0 on rising edge
+    //   queue1..4_cv → queues slot N on rising edge (loaded at sequence-end)
+    // These replace the original POLYSEQZ play_cv (cv→param) + reset_cv (gate);
+    // both behaviors fold into the shared edge-detect-and-dispatch path so the
+    // transport surface matches Sequencer / DRUMSEQZ / SCORE 1:1.
+    ...TRANSPORT_CV_PORT_DEFS,
     // CV → humanize amount (0..1).
     { id: 'humanize_cv', type: 'cv', paramTarget: 'humanize' },
   ],
@@ -166,25 +179,13 @@ export const polyseqzDef: AudioModuleDef = {
     clockInSilence.start();
     clockInSilence.connect(clockInGain);
 
-    // Reset-CV input — same analyser pattern as clock.
-    const resetInGain = ctx.createGain();
-    const resetInAnalyser = ctx.createAnalyser();
-    resetInAnalyser.fftSize = 2048;
-    resetInGain.connect(resetInAnalyser);
-    const resetInBuffer = new Float32Array(resetInAnalyser.fftSize);
-    const resetInSilence = ctx.createConstantSource();
-    resetInSilence.offset.value = 0;
-    resetInSilence.start();
-    resetInSilence.connect(resetInGain);
-
-    // play_cv + humanize_cv: declared as paramTarget inputs. The engine
-    // connects an external CV signal into the AudioParam target. We back the
-    // target with an internal ConstantSource — its offset receives the CV
-    // sum and the tick polls the offset value via an analyser tap each
-    // iteration. (We don't have a real AudioParam for `isPlaying`/`humanize`
-    // because the param store is JS-side; this constant-source-as-AudioParam
-    // gives the engine something to connect to and lets us read the live CV
-    // value with an AnalyserNode.)
+    // humanize_cv: declared as paramTarget input. The engine connects an
+    // external CV signal into the AudioParam target. We back the target with
+    // an internal ConstantSource — its offset receives the CV sum and the
+    // tick polls the offset value via an analyser tap each iteration. (We
+    // don't have a real AudioParam for `humanize` because the param store is
+    // JS-side; this constant-source-as-AudioParam gives the engine something
+    // to connect to and lets us read the live CV value with an AnalyserNode.)
     function makeParamCV(initial: number): {
       param: AudioParam;
       pollValue: () => number;
@@ -216,12 +217,19 @@ export const polyseqzDef: AudioModuleDef = {
         },
       };
     }
-    const playCV = makeParamCV(0);
     const humanizeCV = makeParamCV(0);
+
+    // Shared transport CV inputs (play_cv, reset_cv, queue{1..4}_cv). Each
+    // input is a GainNode → AnalyserNode tap whose recent samples we scan for
+    // rising edges every tick. play_cv toggles isPlaying, reset_cv resets the
+    // step counter, queue{N}_cv writes node.data.queuedSlot = N for the
+    // sequence-end swap.
+    const transportCv = createTransportCv(ctx);
+    let lastTransportPollTime = ctx.currentTime;
+    let totalSequenceEnds = 0;
 
     let lastClockSample = 0;
     let lastClockSampleTime = ctx.currentTime;
-    let lastResetSample = 0;
     const CLOCK_THRESHOLD = 0.5;
 
     const nodeId = node.id;
@@ -251,18 +259,17 @@ export const polyseqzDef: AudioModuleDef = {
       const live = livePatch.nodes[nodeId];
       const v = live?.params?.[id];
       const base = typeof v === 'number' ? v : fallback;
-      // Fold in CV-modulated params: if a connection is driving humanize_cv
-      // or play_cv, the constant-source offset's signal sums on top of the
-      // base value. We only fold on params we actually publish as
-      // paramTargets — everything else returns `base` verbatim.
+      // Fold in CV-modulated params: if a connection is driving humanize_cv,
+      // the constant-source offset's signal sums on top of the base value.
+      // We only fold on params we actually publish as paramTargets —
+      // everything else returns `base` verbatim. (play_cv used to fold here
+      // too, but PR feat/polyseqz-transport-parity migrated it to the shared
+      // edge-detect transport CV — toggles isPlaying instead of additively
+      // modulating it.)
       if (id === 'humanize') {
         const cv = humanizeCV.pollValue();
         const sum = base + cv;
         return sum < 0 ? 0 : sum > 1 ? 1 : sum;
-      }
-      if (id === 'isPlaying') {
-        const cv = playCV.pollValue();
-        return base + cv;
       }
       return base;
     }
@@ -353,35 +360,86 @@ export const polyseqzDef: AudioModuleDef = {
       }
     }
 
-    function checkResetEdge(nowAt: number) {
-      // Read the reset-CV analyser and bump stepIndex back to 0 on a rising
-      // edge. We only inspect samples since last poll.
-      resetInAnalyser.getFloatTimeDomainData(resetInBuffer);
-      const elapsed = nowAt - lastClockSampleTime; // share the timing window
-      const newSamples = Math.min(
-        resetInBuffer.length,
-        Math.max(1, Math.ceil(elapsed * ctx.sampleRate)),
-      );
-      const start = resetInBuffer.length - newSamples;
-      let triggered = false;
-      for (let i = start; i < resetInBuffer.length; i++) {
-        const cur = resetInBuffer[i] ?? 0;
-        if (lastResetSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
-          triggered = true;
-        }
-        lastResetSample = cur;
+    /** Drain the transport CV inputs + dispatch effects. Returns the
+     *  isPlaying value AFTER any play_cv toggle (so the caller's
+     *  subsequent prev/cur transition logic stays correct). */
+    function pollTransportCv(): boolean {
+      const nowAt = ctx.currentTime;
+      const elapsed = nowAt - lastTransportPollTime;
+      lastTransportPollTime = nowAt;
+      const ev = transportCv.drain(elapsed);
+      const live = livePatch.nodes[nodeId];
+      let isPlaying = readParam('isPlaying', 0) >= 0.5;
+      // Each play_cv rising edge toggles isPlaying. Multiple edges in one
+      // tick collapse to an XOR-style overall toggle.
+      if (ev.play % 2 === 1) {
+        isPlaying = !isPlaying;
+        if (live?.params) live.params.isPlaying = isPlaying ? 1 : 0;
       }
-      if (triggered) {
+      if (ev.reset > 0) {
+        // Reset the step counter; next clock tick starts at step 0. Reset is
+        // honored even when stopped (debounce-style) — same semantics as the
+        // pre-shared-transport behavior in checkResetEdge.
         stepIndex = 0;
         currentStep = 0;
         nextStepTime = ctx.currentTime + 0.005;
       }
+      const queued = pickQueuedSlotFromEvents(ev);
+      if (queued !== null && live) {
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).queuedSlot = queued;
+      }
+      return isPlaying;
+    }
+
+    /** Apply queued slot's snapshot. Snapshot shape (POLYSEQZ):
+     *  { steps: ChordStep[], bpm, length, octave, gateLength, humanize }.
+     *  Each ChordStep carries {on, root, quality, inversion, voicing}; we
+     *  deep-clone every entry so the same Y-Map doesn't end up at two paths
+     *  (slots[N] AND data.steps) — Yjs throws "reassigning object that
+     *  already occurs in the tree" otherwise. */
+    function maybeApplyQueuedSlot(): boolean {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return false;
+      const data = live.data as Record<string, unknown> | undefined;
+      const queuedRaw = data?.queuedSlot;
+      const queued = coerceSlotKey(queuedRaw);
+      if (!queued) return false;
+      const slots = coerceSlots(data?.slots);
+      const snap = slots[queued];
+      if (!snap) {
+        // Slot is empty — drop the queue.
+        if (data) data.queuedSlot = null;
+        return false;
+      }
+      if (!live.data) live.data = {};
+      const d = live.data as Record<string, unknown>;
+      // Deep-clone steps before reassigning. Each ChordStep is a plain object
+      // (no nested arrays) so a single spread suffices per step.
+      if (Array.isArray(snap.steps)) {
+        d.steps = (snap.steps as Array<Record<string, unknown>>).map((s) => ({ ...s }));
+      }
+      if (live.params) {
+        for (const k of ['bpm', 'length', 'octave', 'gateLength', 'humanize'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') live.params[k] = v;
+        }
+      }
+      d.lastLoadedSlot = queued;
+      d.queuedSlot = null;
+      // Reset position so the next emit starts at step 0 of the new pattern.
+      stepIndex = 0;
+      currentStep = 0;
+      nextStepTime = ctx.currentTime + 0.005;
+      return true;
     }
 
     function tick() {
       if (!alive) return;
       try {
-        const isPlaying = readParam('isPlaying', 0) >= 0.5;
+        // Drain transport CV first; play_cv may have just toggled isPlaying
+        // and reset_cv may have just bumped stepIndex.
+        const isPlaying = pollTransportCv();
         const externalClock = isClockInConnected();
         const nowAt = ctx.currentTime;
 
@@ -393,17 +451,15 @@ export const polyseqzDef: AudioModuleDef = {
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
           polyPitch.silence(ctx.currentTime);
           lastClockSample = 0;
-          lastResetSample = 0;
           lastClockSampleTime = ctx.currentTime;
+          transportCv.resetEdges();
+          lastTransportPollTime = ctx.currentTime;
         } else if (!isPlaying && prevPlaying) {
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
           polyPitch.silence(ctx.currentTime);
         }
         prevPlaying = isPlaying;
-
-        // Reset CV is honored even when stopped (debounce-style).
-        checkResetEdge(nowAt);
 
         if (!isPlaying) {
           timeoutId = setTimeout(tick, TICK_MS);
@@ -425,7 +481,19 @@ export const polyseqzDef: AudioModuleDef = {
             const cur = clockInBuffer[i] ?? 0;
             if (lastClockSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
               emitStep(stepIndex, nowAt + 0.005, stepDurForGate);
-              stepIndex = (stepIndex + 1) % length;
+              const nextIdx = (stepIndex + 1) % length;
+              if (nextIdx === 0) {
+                // Wrap: sequence end. Try to apply any queued slot before
+                // advancing — the new pattern's step 0 will fire on the next
+                // clock pulse.
+                totalSequenceEnds++;
+                if (maybeApplyQueuedSlot()) {
+                  // stepIndex/currentStep reset by the apply; skip the
+                  // natural advance.
+                  continue;
+                }
+              }
+              stepIndex = nextIdx;
               currentStep = stepIndex;
               totalAdvances++;
             }
@@ -441,8 +509,21 @@ export const polyseqzDef: AudioModuleDef = {
             // appropriate for chord changes.
             const stepDur = 60 / bpm / 2;
             emitStep(stepIndex, nextStepTime, stepDur);
-            nextStepTime += stepDur;
-            stepIndex = (stepIndex + 1) % length;
+            const nextIdx = (stepIndex + 1) % length;
+            const nextStartTime = nextStepTime + stepDur;
+            if (nextIdx === 0) {
+              totalSequenceEnds++;
+              if (maybeApplyQueuedSlot()) {
+                // Snapshot was applied; the next step time we want to
+                // schedule is the natural step boundary, but for the new
+                // pattern's step 0. maybeApplyQueuedSlot() resets nextStepTime
+                // to ctx.currentTime + tiny, so re-anchor it here.
+                nextStepTime = nextStartTime;
+                continue;
+              }
+            }
+            nextStepTime = nextStartTime;
+            stepIndex = nextIdx;
             currentStep = stepIndex;
             totalAdvances++;
           }
@@ -456,18 +537,21 @@ export const polyseqzDef: AudioModuleDef = {
 
     timeoutId = setTimeout(tick, TICK_MS);
 
+    const inputs = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
+      ['clock', { node: clockInGain, input: 0 }],
+      // humanize_cv is a paramTarget input — the engine routes the CV signal
+      // directly into the AudioParam. .node is unused when .param is set; we
+      // point at the closest in-graph node to keep the type happy.
+      ['humanize_cv', { node: clockInGain, input: 0, param: humanizeCV.param }],
+    ]);
+    // Shared transport CV inputs (play_cv, reset_cv, queue1..4_cv).
+    for (const [id, entry] of transportCv.inputs) {
+      inputs.set(id, entry);
+    }
+
     return {
       domain: 'audio',
-      inputs: new Map([
-        ['clock',       { node: clockInGain, input: 0 }],
-        ['reset_cv',    { node: resetInGain, input: 0 }],
-        // paramTarget inputs route CV directly to an AudioParam. We back
-        // play_cv / humanize_cv with internal ConstantSource.offset targets
-        // (the .node field is unused when .param is set; we point at the
-        // closest in-graph node to keep the type happy).
-        ['play_cv',     { node: clockInGain, input: 0, param: playCV.param }],
-        ['humanize_cv', { node: clockInGain, input: 0, param: humanizeCV.param }],
-      ]),
+      inputs,
       outputs: new Map([
         ['poly',  { node: polyPitch.output, output: 0 }],
         ['gate',  { node: gateSrc, output: 0 }],
@@ -484,6 +568,7 @@ export const polyseqzDef: AudioModuleDef = {
       read(key) {
         if (key === 'currentStep') return currentStep;
         if (key === 'totalAdvances') return totalAdvances;
+        if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (key === 'pitchVOct')  return lastEmittedVOct;
         if (key === 'gateValue')  return lastEmittedGate;
         if (typeof key === 'string' && key.startsWith('pitchVOctLane:')) {
@@ -512,18 +597,14 @@ export const polyseqzDef: AudioModuleDef = {
         try { gateSrc.stop(); } catch { /* */ }
         try { clockOutSrc.stop(); } catch { /* */ }
         try { clockInSilence.stop(); } catch { /* */ }
-        try { resetInSilence.stop(); } catch { /* */ }
         polyPitch.dispose();
         gateSrc.disconnect();
         clockOutSrc.disconnect();
         clockInSilence.disconnect();
         clockInGain.disconnect();
         clockInAnalyser.disconnect();
-        resetInSilence.disconnect();
-        resetInGain.disconnect();
-        resetInAnalyser.disconnect();
-        playCV.dispose();
         humanizeCV.dispose();
+        transportCv.dispose();
       },
     };
   },
