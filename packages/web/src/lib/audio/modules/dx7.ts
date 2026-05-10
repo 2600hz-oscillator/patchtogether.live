@@ -129,18 +129,37 @@ export const dx7Def: AudioModuleDef = {
 
     function sendPatch(voice: DX7Voice, algoOverride?: number): void {
       const a = algoOverride ?? voice.algorithm;
+      // BUG-FIX (PR fix/dx7-syx-bank-loading): SYX-loaded voices live in the
+      // SyncedStore (Yjs Y.Doc). Reading `node.data.userPatches[i]` returns
+      // a Yjs PROXY (not a plain object): the operators are Y.Map proxies
+      // and `op.r`/`op.l` are Y.Array proxies. Passing those through
+      // `port.postMessage` triggers structuredClone, which throws
+      // "[object Array] could not be cloned" on Yjs proxies — so the
+      // worklet never sees the new patch and keeps playing whatever it last
+      // received (the bundled E.PIANO 1 sent on factory init).
+      //
+      // Fix: deep-unwrap to plain JS before posting. We hand-build the
+      // payload (rather than JSON-roundtrip the whole voice) so we stay
+      // explicit about which fields cross the boundary, and so primitive
+      // arrays (`r`, `l`) are forced to plain Array<number>.
+      const ops = voice.operators.map((o) => ({
+        r: [Number(o.r[0]), Number(o.r[1]), Number(o.r[2]), Number(o.r[3])] as [number, number, number, number],
+        l: [Number(o.l[0]), Number(o.l[1]), Number(o.l[2]), Number(o.l[3])] as [number, number, number, number],
+        ratio: Number(o.ratio),
+        detune: Number(o.detune),
+        detuneFactor: Number(o.detuneFactor),
+        level: Number(o.level),
+        fixedMode: Boolean(o.fixedMode),
+        velocitySens: Number(o.velocitySens),
+      }));
       workletNode.port.postMessage({
         type: 'patch',
         voice: {
-          name: voice.name,
+          name: String(voice.name ?? ''),
           algorithm: a,
-          feedback: voice.feedback,
-          operators: voice.operators.map((o) => ({
-            r: o.r, l: o.l, ratio: o.ratio, detune: o.detune,
-            detuneFactor: o.detuneFactor, level: o.level,
-            fixedMode: o.fixedMode, velocitySens: o.velocitySens,
-          })),
-          transpose: voice.transpose,
+          feedback: Number(voice.feedback),
+          operators: ops,
+          transpose: Number(voice.transpose),
         },
       });
     }

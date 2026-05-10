@@ -5,6 +5,9 @@
 // copyrighted ROM dump as a fixture) and roundtrip it through the parser.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import {
   parseSyxBank,
   dx7Ratio,
@@ -13,6 +16,14 @@ import {
   dx7RateToCoef,
   dx7LevelToAmp,
 } from './dx7-syx';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+/** Real-world DX7 cartridge fixture from the user's bug report. The
+ *  SYX-load fix (PR fix/dx7-syx-bank-loading) regression-asserts against
+ *  this file: every patch must parse with a unique name + at least 4
+ *  distinct algorithms across the 32 voices, and operator ratios+levels
+ *  must vary patch-to-patch (no all-uniform fallback). */
+const AAAHGOOD_SYX = join(__dirname, '__fixtures__', 'AAAHGOOD.SYX');
 
 // ---------------- Fixture builder ----------------
 
@@ -273,6 +284,82 @@ describe('parseSyxBank — flexible inputs', () => {
     const result = parseSyxBank(fullBank);
     expect(result.voices).toHaveLength(32);
     expect(result.warnings.some((w) => w.includes('checksum'))).toBe(true);
+  });
+});
+
+describe('parseSyxBank — real-world AAAHGOOD.SYX cartridge', () => {
+  // This is the file the user actually reported broken — full canonical
+  // 32-voice 4104-byte SYX dump. If the parser regresses, the symptom in
+  // the bug report ("everything sounds like electric piano") returns.
+  const fixture = new Uint8Array(readFileSync(AAAHGOOD_SYX));
+
+  it('parses without throwing and yields 32 voices', () => {
+    const result = parseSyxBank(fixture);
+    expect(result.voices).toHaveLength(32);
+  });
+
+  it('does not warn (well-formed cartridge: header, format byte, checksum all valid)', () => {
+    const result = parseSyxBank(fixture);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('every voice has a non-empty ASCII name', () => {
+    const result = parseSyxBank(fixture);
+    for (const v of result.voices) {
+      expect(v.name.length).toBeGreaterThan(0);
+      // All chars printable ASCII (or our '?' substitution, which is also ASCII).
+      for (const ch of v.name) {
+        const code = ch.charCodeAt(0);
+        expect(code).toBeGreaterThanOrEqual(32);
+        expect(code).toBeLessThan(127);
+      }
+    }
+  });
+
+  it('every voice has a UNIQUE name (no aliasing collapse to one voice)', () => {
+    // The bug we're catching: if the parser silently mapped every patch to
+    // the first slot, we'd see name uniqueness collapse to 1.
+    const result = parseSyxBank(fixture);
+    const names = new Set(result.voices.map((v) => v.name));
+    expect(names.size).toBe(32);
+  });
+
+  it('algorithms span at least 4 distinct values across the 32 patches', () => {
+    // AAAHGOOD.SYX uses 14 distinct algorithms (2,3,4,5,6,8,9,15,16,18,22,26,28,32);
+    // we assert ≥4 to leave room for SYX banks that happen to use fewer
+    // algorithms while still catching the "stuck on alg 1" regression.
+    const result = parseSyxBank(fixture);
+    const algos = new Set(result.voices.map((v) => v.algorithm));
+    expect(algos.size).toBeGreaterThanOrEqual(4);
+    // Every algorithm in 1..32.
+    for (const a of algos) {
+      expect(a).toBeGreaterThanOrEqual(1);
+      expect(a).toBeLessThanOrEqual(32);
+    }
+  });
+
+  it('operator ratios vary patch-to-patch (not all the same default)', () => {
+    const result = parseSyxBank(fixture);
+    // Build the set of unique (op0_ratio, op1_ratio, ..., op5_ratio) tuples.
+    const ratioFingerprints = new Set(
+      result.voices.map((v) => v.operators.map((o) => o.ratio.toFixed(3)).join(',')),
+    );
+    expect(ratioFingerprints.size).toBeGreaterThan(10);
+  });
+
+  it('operator levels vary patch-to-patch (not all the same default)', () => {
+    const result = parseSyxBank(fixture);
+    const levelFingerprints = new Set(
+      result.voices.map((v) => v.operators.map((o) => o.level).join(',')),
+    );
+    expect(levelFingerprints.size).toBeGreaterThan(10);
+  });
+
+  it('each voice has exactly 6 operators', () => {
+    const result = parseSyxBank(fixture);
+    for (const v of result.voices) {
+      expect(v.operators).toHaveLength(6);
+    }
   });
 });
 
