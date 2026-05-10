@@ -67,7 +67,10 @@
   <li>Per-user node positions (multiplayer doesn't make you fight over layout).</li>
   <li>Sequencer step data (notes, midi, chord mode).</li>
   <li>SCORE pages, ties, dynamics.</li>
-  <li>DRUMSEQZ track grids.</li>
+  <li>DRUMSEQZ track grids + per-track Euclidean settings.</li>
+  <li>POLYSEQZ chord steps (root, quality, inversion, voicing, humanize).</li>
+  <li>Sequencer / DRUMSEQZ / SCORE / POLYSEQZ quicksave slots
+    (4 per module, accessible via the transport card).</li>
   <li>PICTUREBOX images — uploaded files are downscaled to 640x480 JPEG and
     base64-stored in <code>node.data.imageBytes</code>, so the image is part of
     the rack and shows up for everyone.</li>
