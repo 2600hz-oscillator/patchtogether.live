@@ -53,6 +53,7 @@ import {
   coerceSlots,
   coerceSlotKey,
 } from './transport-helpers';
+import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
 // ---------------- Step schema ----------------
 
@@ -279,9 +280,13 @@ export const polyseqzDef: AudioModuleDef = {
     let nextStepTime = ctx.currentTime + 0.05;
     let prevPlaying = false;
     let alive = true;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const LOOKAHEAD_S = 0.1;
-    const TICK_MS = 25;
+    let unsubscribeTick: (() => void) | null = null;
+    // 200 ms lookahead (was 100 ms): see sequencer.ts and the
+    // tempo-stability fix PR for the rationale. Wider window absorbs
+    // main-thread blocking from drag/render so the audio thread doesn't
+    // run dry between scheduler ticks.
+    const LOOKAHEAD_S = 0.2;
+    const TICK_MS = SCHEDULER_TICK_MS;
 
     // Tracking for tests / introspection.
     let lastEmittedVOct = 0;
@@ -462,7 +467,6 @@ export const polyseqzDef: AudioModuleDef = {
         prevPlaying = isPlaying;
 
         if (!isPlaying) {
-          timeoutId = setTimeout(tick, TICK_MS);
           return;
         }
 
@@ -532,10 +536,13 @@ export const polyseqzDef: AudioModuleDef = {
       } catch (err) {
         console.error('[polyseqz] tick error', err);
       }
-      if (alive) timeoutId = setTimeout(tick, TICK_MS);
     }
 
-    timeoutId = setTimeout(tick, TICK_MS);
+    // Subscribe to the shared scheduler-clock (Worker-driven). Replaces
+    // the legacy per-module `setTimeout(tick, TICK_MS)` self-loop, which
+    // would queue up behind main-thread blocking and starve the
+    // lookahead window mid-drag.
+    unsubscribeTick = getSchedulerClock().subscribe(tick);
 
     const inputs = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
       ['clock', { node: clockInGain, input: 0 }],
@@ -593,7 +600,7 @@ export const polyseqzDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
-        if (timeoutId !== null) clearTimeout(timeoutId);
+        if (unsubscribeTick) { unsubscribeTick(); unsubscribeTick = null; }
         try { gateSrc.stop(); } catch { /* */ }
         try { clockOutSrc.stop(); } catch { /* */ }
         try { clockInSilence.stop(); } catch { /* */ }
