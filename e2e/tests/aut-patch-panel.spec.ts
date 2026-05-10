@@ -116,16 +116,27 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     await (await trigger(page, 'rg')).hover();
     await expect(await panel(page, 'rg')).toHaveAttribute('aria-hidden', 'false');
 
-    // Section headers organized into voices + master.
-    const sections = page.locator(
-      `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel"] .section-title`,
-    );
-    const sectionTexts = (await sections.allTextContents()).map((s) => s.trim());
-    expect(sectionTexts).toEqual(
-      expect.arrayContaining(['Voice 1 (DG)', 'Voice 2 (DG)', 'Voice 3 (DG)', 'Voice 4 (WT)', 'Master FX']),
-    );
+    // Section headers organized into voices + master. Post-PR(nested-
+    // sections) the per-section header is a clickable <button> exposing
+    // data-section-label; we assert via that attribute rather than text
+    // content (which now bundles the disclosure glyph + port-count).
+    for (const label of [
+      'Voice 1 (DG)',
+      'Voice 2 (DG)',
+      'Voice 3 (DG)',
+      'Voice 4 (WT)',
+      'Master FX',
+    ]) {
+      const header = page.locator(
+        `.svelte-flow__node[data-id="rg"] ` +
+          `[data-testid="patch-panel-section-toggle"][data-section-label="${label}"]`,
+      );
+      await expect(header, `header for "${label}" rendered`).toHaveCount(1);
+    }
 
-    // Verbose label presence.
+    // Verbose label presence — labels stay in DOM regardless of
+    // section expand/collapse state, so allTextContents() finds them
+    // even with all sections defaulting to collapsed.
     const labels = page.locator(
       `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel"] [data-testid="port-row-label"]`,
     );

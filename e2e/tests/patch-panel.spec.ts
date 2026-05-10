@@ -114,15 +114,28 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await openPanel(page, 'rg');
 
     // Section headers (one per voice + master) should all be present.
-    const sectionHeaders = page.locator(
-      `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel"] .section-title`,
-    );
-    const sectionTexts = (await sectionHeaders.allTextContents()).map((s) => s.trim());
-    expect(sectionTexts).toEqual(
-      expect.arrayContaining(['Voice 1 (DG)', 'Voice 2 (DG)', 'Voice 3 (DG)', 'Voice 4 (WT)', 'Master FX']),
-    );
+    // Post-PR(nested-sections) the section header is a clickable
+    // <button> exposing data-section-label="Voice 1 (DG)" / etc.; we
+    // assert via that attribute rather than text content (which now
+    // includes the disclosure glyph + port-count badge).
+    for (const label of [
+      'Voice 1 (DG)',
+      'Voice 2 (DG)',
+      'Voice 3 (DG)',
+      'Voice 4 (WT)',
+      'Master FX',
+    ]) {
+      const header = page.locator(
+        `.svelte-flow__node[data-id="rg"] ` +
+          `[data-testid="patch-panel-section-toggle"][data-section-label="${label}"]`,
+      );
+      await expect(header, `header for "${label}" rendered`).toHaveCount(1);
+    }
 
-    // Spot-check verbose labels.
+    // Spot-check verbose labels — even with sections collapsed, the
+    // <li class="panel-row"> elements (and their port-row-label spans)
+    // remain in the DOM under each section's <ul>. Text content is
+    // accessible regardless of CSS visibility.
     const labels = page.locator(
       `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel"] [data-testid="port-row-label"]`,
     );
