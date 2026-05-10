@@ -469,6 +469,180 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     ).toBeLessThan(40);
   });
 
+  test('open-panel: cable visually plugs into handle hole (not occluded by panel chrome)', async ({
+    page,
+  }) => {
+    // User report: "patch cables need to stick into the holes they go to,
+    // it's unclear now because they are under the panel". Before this fix
+    // the target handle's CENTRE sat ~9px inside the panel chrome
+    // (panel.left + panel.padding-left - half-handle), so the last ~9px
+    // of the cable approach was painted UNDERNEATH the opaque panel
+    // background (rgba(14,17,22,0.97)) and the user saw cables stop at
+    // the panel border instead of reaching the visible ○ ring icons.
+    //
+    // Fix: handles now anchor with their visible centre AT the panel's
+    // outer border line — half of the ring sits OUTSIDE the panel chrome
+    // (where the cable terminates without occlusion) and half inside.
+    // This regression locks the geometry: with the target panel open,
+    // the cable's TARGET endpoint must be within ~3px of the target
+    // handle's centre, AND the handle's centre must be within ~6px of
+    // the panel's outer left border (i.e. NOT 9+ px inside it).
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // Wire LFO out → ADSR attack input. We want the *target* side
+    // because the bug is most obvious for inputs (the user's screenshot
+    // showed input cables disappearing into the panel left edge).
+    await spawnPatch(
+      page,
+      [
+        { id: 'lfo', type: 'lfo', position: { x: 100, y: 100 } },
+        { id: 'adsr', type: 'adsr', position: { x: 600, y: 100 } },
+      ],
+      [
+        {
+          id: 'e1',
+          from: { nodeId: 'lfo', portId: 'phase0' },
+          to: { nodeId: 'adsr', portId: 'attack' },
+          sourceType: 'cv',
+          targetType: 'cv',
+        },
+      ],
+    );
+
+    await expect(
+      page.locator(`.svelte-flow__edge[data-id="e1"] .svelte-flow__edge-path`),
+    ).toHaveCount(1);
+
+    // Open the ADSR panel (target side) so the attack handle sits in
+    // its open-state row position, not the closed-state corner stack.
+    // PatchPanel's $effect calls useUpdateNodeInternals after two RAF
+    // ticks (so CSS transitions land before measurement); wait a beat
+    // longer here so xyflow has fully re-routed the cable to the new
+    // handle position before we sample the path endpoint.
+    await openPanel(page, 'adsr');
+    await page.waitForTimeout(250);
+
+    const panel = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`,
+    );
+    const panelBox = await panel.boundingBox();
+    expect(panelBox, 'open panel has a box').toBeTruthy();
+    if (!panelBox) return;
+
+    const targetHandle = page.locator(
+      `.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid="attack"][class*="target"]`,
+    );
+    const handleBox = await targetHandle.boundingBox();
+    expect(handleBox, 'attack handle has a box').toBeTruthy();
+    if (!handleBox) return;
+
+    const handleCx = handleBox.x + handleBox.width / 2;
+    const handleCy = handleBox.y + handleBox.height / 2;
+
+    // Invariant 1 — the visible ring icon is reachable: its centre must
+    // sit at (or just outside) the panel's outer left border, NOT 9+ px
+    // inside it where the panel chrome would occlude the cable approach.
+    //
+    // Why "half-handle-width" as the tolerance: the user's complaint was
+    // "cables stop at the panel border" — i.e. the cable's last segment
+    // lands inside the panel chrome and gets occluded. A handle centred
+    // exactly on the border is the borderline case (half the ring sticks
+    // outside, half inside); centred half-a-handle inside is the largest
+    // offset that still leaves the ring's leftmost edge on the visible
+    // chrome edge for the cable to terminate against. The bounding-box
+    // thresholds use handleBox.width (which absorbs the canvas zoom) so
+    // the assertion is invariant under default-zoom changes.
+    const halfHandle = handleBox.width / 2;
+    const insideOffset = handleCx - panelBox.x;
+    expect(
+      insideOffset,
+      `handle centre must be at/near the panel's outer left border (got ${insideOffset}px inside panel.left, max ${halfHandle}px); larger means cable approach is occluded by panel chrome`,
+    ).toBeLessThanOrEqual(halfHandle);
+
+    // Allow the handle to protrude outward — a "jack on the front
+    // panel" affordance — but not so far that it loses association
+    // with its label row (cap at one full handle width outside).
+    expect(
+      insideOffset,
+      `handle centre must not float far outside the panel (got ${insideOffset}px from panel.left)`,
+    ).toBeGreaterThanOrEqual(-handleBox.width);
+
+    // Invariant 2 — the cable's TARGET endpoint must visibly terminate
+    // at or past the panel's outer border line, so the user perceives
+    // the cable "plugging into" the visible ring icon. xyflow computes
+    // edge endpoints from `handleBounds.left + node.positionAbsolute`
+    // (Position.Left) at the moment of `useUpdateNodeInternals`, so the
+    // endpoint typically tracks the handle's left edge rather than its
+    // centre — we therefore assert "endpoint within one handle-width of
+    // the handle area" + "endpoint NOT pulled inward of the panel
+    // border" rather than pixel-exact centre coincidence.
+    const edgePath = page
+      .locator(`.svelte-flow__edge[data-id="e1"] .svelte-flow__edge-path`)
+      .first();
+    const targetEndpoint = await edgePath.evaluate((el) => {
+      const path = el as SVGPathElement;
+      const len = path.getTotalLength();
+      const local = path.getPointAtLength(len);
+      const ctm = path.getScreenCTM();
+      if (!ctm) return null;
+      const pt = (path.ownerSVGElement ?? path).createSVGPoint();
+      pt.x = local.x;
+      pt.y = local.y;
+      const screen = pt.matrixTransform(ctm);
+      return { x: screen.x, y: screen.y };
+    });
+    expect(targetEndpoint, 'edge has parseable target endpoint').not.toBeNull();
+    if (!targetEndpoint) return;
+
+    // The endpoint must be at or LEFT of the panel's outer left border
+    // (i.e. NOT pulled inward by 10+ px the way the bug had it). One
+    // handle-width of inward-tolerance covers xyflow's left-edge vs
+    // centre semantics; anything more means the user sees the cable
+    // disappear into the panel chrome (the original bug).
+    const inwardOffset = targetEndpoint.x - panelBox.x;
+    expect(
+      inwardOffset,
+      `cable target endpoint must terminate at/left of the panel border (got ${inwardOffset}px inside panel.left, max ${handleBox.width}px)`,
+    ).toBeLessThanOrEqual(handleBox.width);
+
+    // The endpoint must also be vertically aligned with the handle row
+    // (otherwise the cable misses the visible hole entirely).
+    const ey = Math.abs(targetEndpoint.y - handleCy);
+    expect(
+      ey,
+      `cable target endpoint y must align with handle row centre (got dy=${ey}px)`,
+    ).toBeLessThan(handleBox.height);
+
+    // Symmetric check on the SOURCE side (LFO output panel): open the
+    // source panel and assert the same "handle centre at panel border"
+    // invariant for an output handle.
+    await openPanel(page, 'lfo');
+    const lfoPanel = page.locator(
+      `.svelte-flow__node[data-id="lfo"] [data-testid="patch-panel"]`,
+    );
+    const lfoPanelBox = await lfoPanel.boundingBox();
+    if (!lfoPanelBox) return;
+
+    const sourceHandle = page.locator(
+      `.svelte-flow__node[data-id="lfo"] .svelte-flow__handle[data-handleid="phase0"][class*="source"]`,
+    );
+    const sourceBox = await sourceHandle.boundingBox();
+    if (!sourceBox) return;
+
+    const sourceCx = sourceBox.x + sourceBox.width / 2;
+    const sourceHalfHandle = sourceBox.width / 2;
+    const sourceInsideOffset = lfoPanelBox.x + lfoPanelBox.width - sourceCx;
+    expect(
+      sourceInsideOffset,
+      `output handle centre must be at/near the panel's outer right border (got ${sourceInsideOffset}px inside panel.right, max ${sourceHalfHandle}px)`,
+    ).toBeLessThanOrEqual(sourceHalfHandle);
+    expect(
+      sourceInsideOffset,
+      `output handle centre must not float far outside the panel (got ${sourceInsideOffset}px from panel.right)`,
+    ).toBeGreaterThanOrEqual(-sourceBox.width);
+  });
+
   test('top-right trigger opens the same panel as top-left', async ({ page }) => {
     // Per user feedback (PR-69): every module gets a SECOND hover
     // affordance in the top-right corner that opens the same panel
@@ -688,8 +862,14 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
+    // Mirror aut-patch-panel.spec.ts's positioning so the drag has the
+    // same proven-stable geometry: seq starts close to the left edge
+    // (x=80), adsr at x=700. That keeps both modules + their open
+    // panels inside the default 1280×720 viewport at the typical
+    // initial zoom; pushing adsr further right offscreens the target
+    // handle and the mouseup never lands on it.
     await spawnPatch(page, [
-      { id: 'seq', type: 'sequencer', position: { x: 100, y: 100 } },
+      { id: 'seq', type: 'sequencer', position: { x: 80, y: 100 } },
       { id: 'adsr', type: 'adsr', position: { x: 700, y: 100 } },
     ]);
 
@@ -715,6 +895,16 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
       page.locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`),
     ).toHaveAttribute('aria-hidden', 'false');
 
+    // Wait for the panel's 120ms opacity+transform transition to land
+    // AND for the two-RAF useUpdateNodeInternals beat that re-measures
+    // handleBounds inside xyflow. Without this wait, boundingBox()
+    // returns the mid-transform handle position; the mouse moves there
+    // but by the time the mousemove sequence reaches xyflow's
+    // hit-tester the handle has finished moving, so mouseup lands on
+    // empty space and the connection silently drops. 250ms covers
+    // both the CSS transition + the RAF re-measure on slow CI.
+    await page.waitForTimeout(250);
+
     const sBox = await sourceHandle.boundingBox();
     const tBox = await targetHandle.boundingBox();
     expect(sBox && tBox, 'both handles have boxes').toBeTruthy();
@@ -722,7 +912,14 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
 
     await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
     await page.mouse.down();
-    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 8 });
+    // Mirror aut-patch-panel.spec.ts: 25 intermediate steps so Svelte
+    // Flow's drag tracker reliably sees the pointermove sequence on
+    // slower CI runners (a coarser drag was observed to skip handle
+    // hit-tests and leave the connection unformed). With this PR
+    // moving handles outward by ~9px, the drag path is slightly
+    // longer; bumping steps keeps the per-step delta inside xyflow's
+    // hit-test bucket.
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 25 });
 
     // Mid-drag: the source panel is still open (pinned + stayOpenForDrag).
     const seqPanel = page.locator(
@@ -731,6 +928,9 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await expect(seqPanel).toHaveAttribute('aria-hidden', 'false');
 
     await page.mouse.up();
+    // Same 150ms post-mouseup beat the AUT spec uses to give xyflow's
+    // connect-end handler time to commit the new edge before we assert.
+    await page.waitForTimeout(150);
 
     // Assert connection landed.
     const newEdge = page.locator(

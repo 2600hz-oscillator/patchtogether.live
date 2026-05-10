@@ -784,23 +784,54 @@
   /* ---------------- Handle positioning ---------------- */
   /*
    * Default xyflow handle styling (in routes/global.css) is a 12x12 ringed
-   * dot. Inside our panel rows, the handle anchors at the row's leading
-   * (left) or trailing (right) edge.
+   * dot. Inside our panel rows, the handle anchors so its visible centre
+   * sits AT the panel's outer border line — half outside the panel chrome
+   * (where the cable terminates without occlusion) and half inside (where
+   * it visually associates with its label row).
+   *
+   * Why straddle the border instead of nesting the handle deep inside the
+   * panel? Cable edges paint as a single SVG layer at the SvelteFlow
+   * viewport level. The open-state panel chrome (rgba(14,17,22,0.97)
+   * background + 1px border) sits ABOVE that layer (z-index:10 plus the
+   * :has(.patch-panel.open) lift to z-index:1000 on the host node), so
+   * any cable approach that lands inside the panel's bounding box gets
+   * occluded by the chrome — the user sees cables "stop at the panel
+   * border" instead of plugging into the visible ○ ring icons (the
+   * handles).
+   *
+   * Geometry math:
+   *   .patch-panel padding = 8px 10px 10px (left padding = 10px)
+   *   .panel-row.left = .patch-panel.left + 10
+   *   handle width = 12px → half-width = 6px
+   *   For input handle CENTRE to land at .patch-panel.left:
+   *     handle.left_offset (relative to panel-row) = -16
+   *     (= -10 to back out the panel padding, -6 to half-out the dot)
+   *   For output handle (mirror), same offset on the right side:
+   *     handle.right_offset (relative to panel-row) = -16
+   *
+   * Result: every cable now visibly continues from the panel border
+   * inward to the centre of the ring icon, then stops cleanly at the
+   * dot. Eurorack-style "jacks on the front panel" affordance.
    */
   .patch-panel .panel-row :global(.svelte-flow__handle) {
     position: absolute !important;
     top: 50% !important;
     transform: translateY(-50%);
+    /* Lift handle DOM above the panel chrome so the visible ring
+     * (and its border) renders on top of the panel background, not
+     * underneath it. Keeps the whole ○ visible whether the centre
+     * sits half-on/half-off the border. */
+    z-index: 11 !important;
   }
   .patch-panel .panel-row :global(.svelte-flow__handle.target),
   .patch-panel .panel-row:not(.right) :global(.svelte-flow__handle) {
-    left: -7px !important;
+    left: -16px !important;
     right: auto !important;
   }
   .patch-panel .panel-row.right :global(.svelte-flow__handle),
   .patch-panel .panel-row :global(.svelte-flow__handle.source) {
     left: auto !important;
-    right: -7px !important;
+    right: -16px !important;
   }
 
   /* ---------------- Collapsed-state handle stacking ---------------- */
