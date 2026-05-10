@@ -136,6 +136,9 @@ type StandardModuleType =
   | 'cameraInput'
   // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
   | 'illogic'
+  // UNITYSCALEMATHEMATIK — three independent CV-shaping channels (1 unity
+  // attenuvert + 2 attenuvert-with-linear/expo-curve sections), all bipolar.
+  | 'unityscalemathematik'
   // DX7 — pure-TypeScript 6-op FM synth with bundled factory-inspired patches.
   | 'dx7'
   // NOISE — basic noise source with white / pink / brown outputs.
