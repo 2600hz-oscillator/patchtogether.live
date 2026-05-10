@@ -207,6 +207,11 @@ export class VideoEngine implements DomainEngine {
   private fullscreenVao: WebGLVertexArrayObject | null = null;
   private vertexShader: WebGLShader | null = null;
 
+  // Lazily-created copy program for blitting an OUTPUT module's texture
+  // into the engine's drawing buffer on demand. See blitOutputToDrawingBuffer.
+  private copyProgram: WebGLProgram | null = null;
+  private copyUTex: WebGLUniformLocation | null = null;
+
   constructor(opts: { canvas?: OffscreenCanvas | HTMLCanvasElement } = {}) {
     if (opts.canvas) {
       this.canvas = opts.canvas;
@@ -333,6 +338,11 @@ export class VideoEngine implements DomainEngine {
     const gl = this.gl;
     if (this.fullscreenVao) gl.deleteVertexArray(this.fullscreenVao);
     if (this.vertexShader) gl.deleteShader(this.vertexShader);
+    if (this.copyProgram) {
+      gl.deleteProgram(this.copyProgram);
+      this.copyProgram = null;
+      this.copyUTex = null;
+    }
   }
 
   // -------- Render loop --------
@@ -367,6 +377,70 @@ export class VideoEngine implements DomainEngine {
       handle.surface.draw(ctx);
     }
   }
+
+  // -------- Per-OUTPUT visible-canvas blit --------
+  //
+  // Multi-OUTPUT routing fix (PR following PR-65):
+  //
+  // Phase-0 OUTPUT module wrote its result to BOTH its own FBO AND the
+  // engine's default framebuffer (the OffscreenCanvas drawing buffer)
+  // because every OUTPUT card's `drawImage(engine.canvas, ...)` reads from
+  // that default FB. With one OUTPUT that worked. With N OUTPUTs they all
+  // ran in topo order each frame and the LAST one to draw won — every
+  // card showed the same content (whatever the last OUTPUT had as its
+  // input), regardless of what was patched into each card.
+  //
+  // Fix: OUTPUT no longer writes to the default FB during its per-frame
+  // draw(). Instead, each OUTPUT card calls this method right before its
+  // `drawImage(engine.canvas, ...)` blit to selectively render ITS OWN
+  // OUTPUT's FBO texture into the drawing buffer. The cards' rAF ticks
+  // run sequentially in the JS event loop, so each card sees its own
+  // freshly-blitted content via `engine.canvas`.
+  //
+  // The browser is required to flush GL writes before drawImage reads
+  // from a WebGL canvas (HTML spec: drawImage from a WebGL canvas takes
+  // a synchronization snapshot), so multiple cards reading from the same
+  // engine canvas in the same frame all see consistent per-OUTPUT data.
+  //
+  // No-op if `nodeId` doesn't refer to a registered OUTPUT, or if the
+  // OUTPUT's input is unpatched (the OUTPUT's own FBO is still
+  // initialized in that case — to its idle pattern — so we always have
+  // SOMETHING to blit).
+  blitOutputToDrawingBuffer(nodeId: string): void {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return;
+    // Only OUTPUT-shaped modules (those with both an FBO texture AND no
+    // declared video output port) make sense to blit. We don't enforce
+    // the type check here — any module with a surface.texture can in
+    // principle be visualized — but in practice only OUTPUT calls this
+    // path. Sources / effects render their own outputs to FBOs anyway.
+    const tex = handle.surface.texture;
+    if (!tex) return;
+    const gl = this.gl;
+    if (!this.copyProgram) {
+      this.copyProgram = this.compileFragmentImpl(VideoEngine.COPY_FRAG_SRC);
+      this.copyUTex = gl.getUniformLocation(this.copyProgram, 'uTex');
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.res.width, this.res.height);
+    gl.useProgram(this.copyProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    if (this.copyUTex) gl.uniform1i(this.copyUTex, 0);
+    this.drawFullscreenQuadImpl();
+  }
+
+  // Tiny pass-through fragment shader used by blitOutputToDrawingBuffer.
+  // Independent from videoOut's COPY_FRAG_SRC so the engine has no
+  // module-level dependency on a specific module file.
+  private static readonly COPY_FRAG_SRC = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uTex;
+void main() {
+  outColor = texture(uTex, vUv);
+}`;
 
   // -------- Cross-domain CV bridges --------
 

@@ -7,13 +7,24 @@
 //   - Declares a single polymorphic input (`in`, type `video`). Implicit
 //     upcasts (keys → mono-video → video, image → video) are handled at
 //     the engine level so users can wire any video-domain output into us.
-//   - Exposes a `pullFrame(targetCanvas)` hook on its handle that the UI
-//     card invokes each rAF tick, blitting the input texture onto the
-//     card's visible <canvas>. The card owns the rAF; we don't, because
-//     the engine's offscreen canvas is the source-of-truth FBO and
-//     several OUTPUTs may render simultaneously (one per browser tab).
+//   - Per-frame draw renders the input texture into THIS instance's own
+//     FBO. The card driving the visible <canvas> calls
+//     `engine.blitOutputToDrawingBuffer(nodeId)` right before its
+//     `drawImage(engine.canvas, ...)` blit so each OUTPUT card pulls its
+//     own per-instance content (not whatever the last OUTPUT happened to
+//     write to the shared default framebuffer).
 //
-// Phase-1 polish (resize, letterbox, mono-input grayscale) deferred.
+// Multi-OUTPUT routing fix (post-PR-65):
+//
+// Phase-0 had the OUTPUT module rendering BOTH into its own FBO (pass 1)
+// AND into the engine's default FB (pass 2) so the cards' shared
+// `drawImage(engine.canvas)` would have something to read. With one
+// OUTPUT that worked. With N OUTPUTs in the same engine, every OUTPUT's
+// pass 2 wrote to the same shared default FB — the LAST one in topo
+// order won, so all N cards displayed the same content (the last
+// OUTPUT's input). Fix: pass 2 is gone; engine.blitOutputToDrawingBuffer
+// hands ownership of the default-FB write to the card so each card can
+// request its own OUTPUT's content right before reading.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -73,28 +84,12 @@ export const videoOutDef: VideoModuleDef = {
         const inputTex = frame.getInputTexture(node.id, 'in');
         lastInputTexture = inputTex;
 
-        // Pass 1: render into our own FBO so test harnesses + future
-        // captureStream() pulls have a consistent texture to read.
+        // Render into our own FBO. The card driving the visible
+        // <canvas> selectively re-blits THIS instance's FBO into the
+        // engine's drawing buffer via engine.blitOutputToDrawingBuffer
+        // before each rAF tick — that's how multiple OUTPUTs each show
+        // their own input rather than all sharing the default FB.
         g.bindFramebuffer(g.FRAMEBUFFER, fbo);
-        g.viewport(0, 0, ctx.res.width, ctx.res.height);
-        g.useProgram(program);
-        g.uniform1f(uHasInput, inputTex ? 1.0 : 0.0);
-        if (inputTex) {
-          g.activeTexture(g.TEXTURE0);
-          g.bindTexture(g.TEXTURE_2D, inputTex);
-          g.uniform1i(uTex, 0);
-        }
-        ctx.drawFullscreenQuad();
-
-        // Pass 2: ALSO render into the engine's default framebuffer (the
-        // OffscreenCanvas's drawing buffer). The cards drive their per-
-        // card visible <canvas> via `drawImage(engineCanvas, ...)`; that
-        // pulls from the default buffer, NOT module FBOs. Without this
-        // second pass the visible canvas stays black even though FBOs
-        // are alive. Phase 1 will revisit (last-OUTPUT-wins is fine for
-        // single-OUTPUT patches, but multi-OUTPUT will need per-OUTPUT
-        // visible canvases driven from individual FBO reads).
-        g.bindFramebuffer(g.FRAMEBUFFER, null);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
         g.uniform1f(uHasInput, inputTex ? 1.0 : 0.0);

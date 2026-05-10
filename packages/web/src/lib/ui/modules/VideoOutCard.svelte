@@ -1,10 +1,19 @@
 <script lang="ts">
   // VideoOutCard — UI for the Phase 0 OUTPUT sink with Phase-1 resize
   // polish (task #17). The card body IS the visible canvas; we drive a
-  // per-card 2D-context blit at rAF cadence, pulling the most recent
-  // VideoEngine frame out of the engine's OffscreenCanvas via
-  // `engine.getDomain('video').canvas` and drawing it into our visible
-  // canvas.
+  // per-card 2D-context blit at rAF cadence, pulling THIS OUTPUT's
+  // content out of the VideoEngine's OffscreenCanvas via
+  // `engine.getDomain('video').canvas` after asking the engine to
+  // selectively render this OUTPUT instance's FBO into its drawing
+  // buffer (`videoEngine.blitOutputToDrawingBuffer(id)`).
+  //
+  // Multi-OUTPUT routing: with N OUTPUT cards in the same rack, each
+  // card's draw() calls blitOutputToDrawingBuffer with its own node id
+  // immediately before reading engine.canvas. The cards' rAF ticks run
+  // sequentially in the JS event loop, and drawImage() from a WebGL
+  // canvas takes a synchronization snapshot — so each card sees its own
+  // freshly-blitted content instead of last-OUTPUT-wins (the pre-fix
+  // behavior, where every card showed the same content).
   //
   // Resize:
   //   - Bottom-right corner-drag handle. Width + height stored in
@@ -117,6 +126,17 @@
     }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
+      // Tell the engine to render THIS OUTPUT's per-instance FBO into
+      // its drawing buffer right before we read it. With multiple
+      // OUTPUT cards on the same engine, each card's draw() does this
+      // step with its own id so cards stay independent (no
+      // last-OUTPUT-wins coupling through the shared default FB).
+      try {
+        videoEngine.blitOutputToDrawingBuffer(id);
+      } catch {
+        // Engine method shouldn't throw, but we never want a single
+        // OUTPUT card to nuke its own rAF loop on an unexpected error.
+      }
       const src = videoEngine.canvas as CanvasImageSource;
       const cw = canvasEl.width;
       const ch = canvasEl.height;
