@@ -126,59 +126,75 @@ test.describe('video Phase-1: cross-domain CV bridge', () => {
     const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
     await expect(canvas).toHaveCount(1);
 
-    // Sample mean luma at two distinct LFO phases. Phase A: ~250ms
-    // (about a half-cycle into the LFO). Phase B: another ~500ms later
-    // (LFO has completed another cycle, but timing is approximate;
-    // we just need two non-equal samples).
-    await page.waitForTimeout(250);
-    const sampleA = await canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return null;
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      let sum = 0, sumSq = 0, n = 0;
-      for (let i = 0; i < img.data.length; i += 16) {
-        const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-        sum += v; sumSq += v * v; n++;
+    // The naive "two samples 500ms apart on a 2Hz LFO" approach aliases:
+    // both samples land at the same LFO phase (sin zero crossings at
+    // t=0.25s and t=0.75s), so DESTRUCTOR's mangle reads the same value
+    // both times and the global mean/variance are nearly identical
+    // (LINES is a periodic pattern, so its phase scroll barely shifts
+    // the GLOBAL stats — only DESTRUCTOR's mangle-driven mode change
+    // does). Plus, on a cold engine, the very first read can land
+    // before any frames have rendered (both samples = empty canvas =
+    // 0,0 deltas).
+    //
+    // Fix: warm-up wait that confirms the engine has actually rendered
+    // (variance > 50 — same threshold the multi-module test uses), then
+    // take SIX snapshots across non-aliased intervals (37ms gaps; the
+    // LFO period is 500ms so 37ms gaps cover ~7° of phase per step,
+    // hitting many distinct LFO phases including non-zero-crossings).
+    // The assertion: max-pairwise mean OR variance delta exceeds 1% of
+    // the corresponding scale. With mangle sweeping -1..1, at least
+    // one pair of samples MUST land at clearly different LFO phases
+    // and produce a measurable global-stat shift.
+    const sampleStats = async () =>
+      canvas.evaluate((el) => {
+        const c = el as HTMLCanvasElement;
+        const ctx = c.getContext('2d');
+        if (!ctx) return null;
+        const img = ctx.getImageData(0, 0, c.width, c.height);
+        let sum = 0, sumSq = 0, n = 0;
+        for (let i = 0; i < img.data.length; i += 16) {
+          const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
+          sum += v; sumSq += v * v; n++;
+        }
+        const mean = sum / n;
+        const variance = sumSq / n - mean * mean;
+        return { mean, variance };
+      });
+
+    // Warm up: wait until the engine has actually started rendering.
+    // Polls every 50ms up to 3s; fails the test if the canvas stays
+    // flat (which would indicate the bridge OR the chain is broken).
+    let warm = false;
+    for (let i = 0; i < 60; i++) {
+      await page.waitForTimeout(50);
+      const s = await sampleStats();
+      if (s && s.variance > 50) { warm = true; break; }
+    }
+    expect(warm, 'engine warmed up: canvas variance > 50').toBe(true);
+
+    const samples: Array<{ mean: number; variance: number }> = [];
+    for (let i = 0; i < 6; i++) {
+      const s = await sampleStats();
+      expect(s, `sample ${i} non-null`).not.toBeNull();
+      if (s) samples.push(s);
+      await page.waitForTimeout(37);
+    }
+
+    let maxMeanDelta = 0;
+    let maxVarianceDelta = 0;
+    let meanScale = 1;
+    let varianceScale = 1;
+    for (let i = 0; i < samples.length; i++) {
+      meanScale = Math.max(meanScale, samples[i]!.mean);
+      varianceScale = Math.max(varianceScale, samples[i]!.variance);
+      for (let j = i + 1; j < samples.length; j++) {
+        maxMeanDelta = Math.max(maxMeanDelta, Math.abs(samples[i]!.mean - samples[j]!.mean));
+        maxVarianceDelta = Math.max(maxVarianceDelta, Math.abs(samples[i]!.variance - samples[j]!.variance));
       }
-      const mean = sum / n;
-      const variance = sumSq / n - mean * mean;
-      return { mean, variance };
-    });
+    }
+    const moved = (maxMeanDelta / meanScale) > 0.01 || (maxVarianceDelta / varianceScale) > 0.01;
 
-    await page.waitForTimeout(500);
-    const sampleB = await canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return null;
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      let sum = 0, sumSq = 0, n = 0;
-      for (let i = 0; i < img.data.length; i += 16) {
-        const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-        sum += v; sumSq += v * v; n++;
-      }
-      const mean = sum / n;
-      const variance = sumSq / n - mean * mean;
-      return { mean, variance };
-    });
-
-    expect(sampleA, 'sampleA non-null').not.toBeNull();
-    expect(sampleB, 'sampleB non-null').not.toBeNull();
-    if (!sampleA || !sampleB) return;
-
-    // The output ALWAYS has variance from the line pattern. The LFO
-    // bridge effect is observed via mean shifting between samples (since
-    // mangle changes brightness roll-off through posterize/scanline).
-    // Tolerance: at minimum we want some statistic to differ. A
-    // strict assertion is risky if the LFO phases coincidentally align,
-    // so we accept "at least one of mean/variance differs by >1%".
-    const meanDelta = Math.abs(sampleA.mean - sampleB.mean);
-    const varianceDelta = Math.abs(sampleA.variance - sampleB.variance);
-    const meanScale = Math.max(1, sampleA.mean, sampleB.mean);
-    const varianceScale = Math.max(1, sampleA.variance, sampleB.variance);
-    const moved = (meanDelta / meanScale) > 0.01 || (varianceDelta / varianceScale) > 0.01;
-
-    expect(moved, `pixel pattern shifted between LFO phases (meanΔ=${meanDelta.toFixed(2)}, varΔ=${varianceDelta.toFixed(2)})`).toBe(true);
+    expect(moved, `pixel pattern shifted across LFO phases (maxMeanΔ=${maxMeanDelta.toFixed(2)}, maxVarΔ=${maxVarianceDelta.toFixed(2)}, meanScale=${meanScale.toFixed(2)}, varScale=${varianceScale.toFixed(2)})`).toBe(true);
 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
