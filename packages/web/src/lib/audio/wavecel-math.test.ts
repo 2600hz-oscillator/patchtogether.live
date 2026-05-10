@@ -10,6 +10,7 @@ import {
   fold,
   sampleFrame,
   spreadMix,
+  spreadTaps,
   WAVECEL_FRAME_SIZE,
 } from './wavecel-math';
 
@@ -126,3 +127,46 @@ describe('spreadMix', () => {
     expect(div3).toBeLessThanOrEqual(div5 * 1.5);
   });
 });
+
+describe('spreadTaps', () => {
+  it('spread=1 yields a single center tap with weight 1, pan 0', () => {
+    const taps = spreadTaps(1, 5);
+    expect(taps).toHaveLength(1);
+    expect(taps[0]!.frameFloat).toBeCloseTo(5, 6);
+    expect(taps[0]!.weight).toBeCloseTo(1, 6);
+    expect(taps[0]!.pan).toBeCloseTo(0, 6);
+  });
+
+  it('integer spread=3 yields 3 taps centered on morph', () => {
+    const taps = spreadTaps(3, 5);
+    expect(taps).toHaveLength(3);
+    const indices = taps.map((t) => t.frameFloat).sort((a, b) => a - b);
+    expect(indices).toEqual([4, 5, 6]);
+    for (const t of taps) expect(t.weight).toBeGreaterThan(0);
+  });
+
+  it('integer spread=5 yields 5 taps centered on morph', () => {
+    const taps = spreadTaps(5, 8);
+    expect(taps).toHaveLength(5);
+    const indices = taps.map((t) => t.frameFloat).sort((a, b) => a - b);
+    expect(indices).toEqual([6, 7, 8, 9, 10]);
+  });
+
+  it('fractional spread=2.5 yields 3 taps with reduced edge weights', () => {
+    const taps = spreadTaps(2.5, 5);
+    expect(taps).toHaveLength(3);
+    const sorted = [...taps].sort((a, b) => a.frameFloat - b.frameFloat);
+    expect(sorted[1]!.weight).toBeCloseTo(1, 6);
+    expect(sorted[0]!.weight).toBeLessThan(1);
+    expect(sorted[0]!.weight).toBeGreaterThan(0);
+    expect(sorted[2]!.weight).toBeLessThan(1);
+    expect(sorted[2]!.weight).toBeGreaterThan(0);
+    expect(sorted[0]!.weight).toBeCloseTo(sorted[2]!.weight, 6);
+  });
+
+  it('clamps spread to [1, 5]', () => {
+    expect(spreadTaps(0.1, 5)).toHaveLength(1);
+    expect(spreadTaps(99, 5)).toHaveLength(5);
+  });
+});
+

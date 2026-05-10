@@ -98,6 +98,12 @@ export interface DomainEngine {
   removeEdge(edgeId: string): void;
   setParam(nodeId: string, paramId: string, value: number): void;
   readParam(nodeId: string, paramId: string): number | undefined;
+  /** Optional: most-recent sample at a per-port modulator-tap analyser.
+   *  Only AudioEngine implements this today. Card visualizers call
+   *  PatchEngine.readModulatorTap(nodeId, portId) to read CV-side
+   *  modulation when the input port id differs from the AudioParam id
+   *  (e.g. WAVECEL: 'morph_cv' → param 'morph'). */
+  readModulatorTap?(nodeId: string, portId: string): number | undefined;
   read(nodeId: string, key: string): unknown;
   dispose(): void;
 }
@@ -529,6 +535,18 @@ export class AudioEngine implements DomainEngine {
     return intrinsic + this.paramTapBuf[this.paramTapBuf.length - 1];
   }
 
+  /** Read the most-recent sample from a modulator tap by CV-input portId,
+   *  not paramId. Used by PatchEngine.readParam to fold in modulator
+   *  samples for modules whose CV port id differs from the AudioParam id
+   *  (e.g. WAVECEL: port 'morph_cv' → param 'morph'). Returns undefined
+   *  when no edge is connected to that port. */
+  readModulatorTap(nodeId: string, portId: string): number | undefined {
+    const tap = this.paramTaps.get(this.paramTapKey(nodeId, portId));
+    if (!tap) return undefined;
+    tap.getFloatTimeDomainData(this.paramTapBuf);
+    return this.paramTapBuf[this.paramTapBuf.length - 1];
+  }
+
   /** Read arbitrary per-module data (e.g., scope buffer). */
   read(nodeId: string, key: string): unknown {
     const handle = this.nodes.get(nodeId);
@@ -839,6 +857,16 @@ export class PatchEngine {
 
   readParam(node: ModuleNode, paramId: string): number | undefined {
     return this.getDomain(node.domain).readParam(node.id, paramId);
+  }
+
+  /** Most-recent sample at a per-port modulator-tap analyser. Returns 0
+   *  when no edge is connected to that port (or the domain doesn't
+   *  implement taps). Card visualizers use this to read CV signals on
+   *  ports whose id differs from the AudioParam id (e.g. WAVECEL's
+   *  `morph_cv` port targets the `morph` AudioParam). */
+  readModulatorTap(nodeId: string, portId: string, domain: string = 'audio'): number {
+    const dom = this.domains.get(domain);
+    return dom?.readModulatorTap?.(nodeId, portId) ?? 0;
   }
 
   read(node: ModuleNode, key: string): unknown {
