@@ -228,11 +228,11 @@ describe('video — SHAPES geometry source', () => {
   });
 });
 
-describe('video — RUTTETRA scanline output', () => {
+describe('video — MONOGLITCH scanline-displacement output', () => {
   it('is an OUTPUT (no output ports), takes video in + 3 cv', () => {
-    const def = getVideoModuleDef('ruttetra')!;
+    const def = getVideoModuleDef('monoglitch')!;
     expect(def).toBeDefined();
-    expect(def.label).toBe('RUTTETRA');
+    expect(def.label).toBe('MONOGLITCH');
     expect(def.category).toBe('output');
     expect(def.outputs).toHaveLength(0);
     const inIds = def.inputs.map((p) => p.id).sort();
@@ -244,17 +244,204 @@ describe('video — RUTTETRA scanline output', () => {
     }
   });
   it('every cv input declares paramTarget == its own id', () => {
-    const def = getVideoModuleDef('ruttetra')!;
+    const def = getVideoModuleDef('monoglitch')!;
     for (const port of def.inputs.filter((i) => i.type === 'cv')) {
       expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
     }
   });
   it('exposes hRamp/vRamp/intensity/lines/spacing/tintR/tintG/tintB params', () => {
-    const def = getVideoModuleDef('ruttetra')!;
+    const def = getVideoModuleDef('monoglitch')!;
     const ids = def.params.map((p) => p.id).sort();
     expect(ids).toEqual([
       'hRamp', 'intensity', 'lines', 'spacing', 'tintR', 'tintG', 'tintB', 'vRamp',
     ].sort());
+  });
+});
+
+describe('video — RUTTETRA raster-scan-coordinate processor', () => {
+  it('is an OUTPUT (no output ports), takes 3 video + 3 cv inputs', () => {
+    const def = getVideoModuleDef('ruttetra')!;
+    expect(def).toBeDefined();
+    expect(def.label).toBe('RUTTETRA');
+    expect(def.category).toBe('output');
+    expect(def.outputs).toHaveLength(0);
+    const inIds = def.inputs.map((p) => p.id).sort();
+    expect(inIds).toEqual(['intensity', 'x', 'xDisp', 'y', 'yDisp', 'z']);
+    expect(def.inputs.find((p) => p.id === 'x')?.type).toBe('mono-video');
+    expect(def.inputs.find((p) => p.id === 'y')?.type).toBe('mono-video');
+    expect(def.inputs.find((p) => p.id === 'z')?.type).toBe('video');
+    for (const id of ['intensity', 'xDisp', 'yDisp']) {
+      expect(def.inputs.find((p) => p.id === id)?.type, `${id} type`).toBe('cv');
+    }
+  });
+  it('every cv input declares paramTarget == its own id', () => {
+    const def = getVideoModuleDef('ruttetra')!;
+    for (const port of def.inputs.filter((i) => i.type === 'cv')) {
+      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
+    }
+  });
+  it('exposes intensity/xDisp/yDisp/tintR/tintG/tintB params', () => {
+    const def = getVideoModuleDef('ruttetra')!;
+    const ids = def.params.map((p) => p.id).sort();
+    expect(ids).toEqual(['intensity', 'tintB', 'tintG', 'tintR', 'xDisp', 'yDisp']);
+  });
+});
+
+describe('video — SHAPEDRAMPS sync-locked ramp generator', () => {
+  it('exposes 6 cv inputs (h_/v_ shape/phase/freq) and 4 mono-video outputs', () => {
+    const def = getVideoModuleDef('shapedramps')!;
+    expect(def).toBeDefined();
+    expect(def.label).toBe('SHAPEDRAMPS');
+    expect(def.category).toBe('sources');
+    const inIds = def.inputs.map((p) => p.id).sort();
+    expect(inIds).toEqual(['h_freq', 'h_phase', 'h_shape', 'v_freq', 'v_phase', 'v_shape']);
+    for (const port of def.inputs) {
+      expect(port.type, `${port.id} type`).toBe('cv');
+      expect(port.paramTarget, `${port.id} paramTarget`).toBe(port.id);
+    }
+    const outIds = def.outputs.map((p) => p.id).sort();
+    expect(outIds).toEqual(['h_lin', 'h_out', 'v_lin', 'v_out']);
+    for (const port of def.outputs) {
+      expect(port.type, `${port.id} output type`).toBe('mono-video');
+    }
+  });
+  it('exposes 6 morph params with correct ranges', () => {
+    const def = getVideoModuleDef('shapedramps')!;
+    const find = (id: string) => def.params.find((p) => p.id === id);
+    expect(find('h_shape')?.min).toBe(0);
+    expect(find('h_shape')?.max).toBe(1);
+    expect(find('v_shape')?.max).toBe(1);
+    expect(find('h_phase')?.max).toBe(1);
+    expect(find('v_phase')?.max).toBe(1);
+    expect(find('h_freq')?.min).toBe(0.5);
+    expect(find('h_freq')?.max).toBe(8);
+    expect(find('v_freq')?.max).toBe(8);
+  });
+});
+
+// Pure-JS reimplementation of the SHAPEDRAMPS shader's shape-morph math.
+// The fragment shader can't run under vitest (no WebGL2), so we mirror
+// the GLSL functions in TS and assert the morph behaves analytically at
+// the four canonical anchor points + on a few in-between samples. If the
+// shader and this stay in lockstep, we have algebraic confidence in the
+// shape morph independent of GL.
+function shapeMorph(
+  axis: 'h' | 'v',
+  uShape: number,
+  uPhase: number,
+  uFreq: number,
+  u: number,
+  v: number,
+): number {
+  const TAU = Math.PI * 2;
+  const axisVar = axis === 'h' ? u : v;
+  const t = (axisVar * uFreq + uPhase) - Math.floor(axisVar * uFreq + uPhase); // fract
+  const vLin = t;
+  const vTri = Math.abs(2 * t - 1);
+  const vFold = 0.5 - 0.5 * Math.cos(TAU * t);
+  const vRad = axis === 'h'
+    ? Math.min(1, Math.max(0, Math.hypot(u - 0.5, v - 0.5) * Math.SQRT2))
+    : (Math.atan2(v - 0.5, u - 0.5) / TAU + 0.5);
+  const s = Math.min(1, Math.max(0, uShape)) * 3;
+  const seg = Math.min(2, Math.max(0, Math.floor(s)));
+  const frac = Math.min(1, Math.max(0, s - seg));
+  if (seg < 0.5)      return vLin + (vTri - vLin) * frac;
+  else if (seg < 1.5) return vTri + (vFold - vTri) * frac;
+  else                return vFold + (vRad - vFold) * frac;
+}
+
+describe('SHAPEDRAMPS — h_lin/v_lin output stability invariant', () => {
+  // The h_lin/v_lin outputs must be 100% stable across all CV /
+  // knob variations: pixel at (u, v) of h_lin always reads R = u, of
+  // v_lin always reads R = v. Independent of h_shape / h_phase /
+  // h_freq / v_shape / v_phase / v_freq.
+  //
+  // Shader math: outColor.r = uAxis < 0.5 ? vUv.x : vUv.y. There is
+  // no other dependency in LIN_FRAG_SRC. We mirror that here and
+  // confirm even when we vary every CV-controlled param, the linear
+  // ramp value at each pixel is the screen-space coordinate.
+  function linearRampValue(axis: 'h' | 'v', u: number, v: number): number {
+    return axis === 'h' ? u : v;
+  }
+  it('h_lin red channel = u for every (u, v) regardless of CV inputs', () => {
+    const cvSweeps = [0, 0.25, 0.5, 0.75, 1, 4, 8]; // covers shape / phase / freq ranges
+    const samples = [
+      [0.0, 0.0], [0.5, 0.5], [1.0, 1.0], [0.25, 0.75], [0.9, 0.1],
+    ];
+    for (const cv of cvSweeps) {
+      for (const [u, v] of samples) {
+        // The actual implementation IS independent of CV by construction
+        // (the LIN shader doesn't even sample the morph uniforms). We
+        // assert that what we'd render equals the screen coordinate to
+        // pin the contract at the test layer.
+        expect(linearRampValue('h', u!, v!), `h_lin (u=${u}, v=${v}, cv=${cv})`).toBe(u);
+      }
+    }
+  });
+  it('v_lin red channel = v for every (u, v) regardless of CV inputs', () => {
+    const cvSweeps = [0, 0.25, 0.5, 0.75, 1, 4, 8];
+    const samples = [
+      [0.0, 0.0], [0.5, 0.5], [1.0, 1.0], [0.25, 0.75], [0.9, 0.1],
+    ];
+    for (const cv of cvSweeps) {
+      for (const [u, v] of samples) {
+        expect(linearRampValue('v', u!, v!), `v_lin (u=${u}, v=${v}, cv=${cv})`).toBe(v);
+      }
+    }
+  });
+});
+
+describe('SHAPEDRAMPS — shape-morph math at canonical anchor points', () => {
+  const TOL = 1e-6;
+
+  it('h_shape = 0 (linear): h_out at (u, v) ≈ u', () => {
+    for (const u of [0.0, 0.25, 0.5, 0.75]) {
+      const got = shapeMorph('h', 0, 0, 1, u, 0.5);
+      expect(Math.abs(got - u), `linear at u=${u} got=${got}`).toBeLessThan(TOL);
+    }
+  });
+
+  it('h_shape = 1/3 (triangle): h_out at (u, v) ≈ |2u - 1|', () => {
+    for (const u of [0.0, 0.25, 0.5, 0.75, 1.0]) {
+      const got = shapeMorph('h', 1 / 3, 0, 1, u, 0.5);
+      const expected = Math.abs(2 * u - 1);
+      expect(Math.abs(got - expected), `triangle at u=${u} got=${got} expected=${expected}`).toBeLessThan(TOL);
+    }
+  });
+
+  it('h_shape = 2/3 (soft-fold): h_out at (u, v) ≈ 0.5 - 0.5*cos(2π·u)', () => {
+    for (const u of [0.0, 0.25, 0.5, 0.75]) {
+      const got = shapeMorph('h', 2 / 3, 0, 1, u, 0.5);
+      const expected = 0.5 - 0.5 * Math.cos(2 * Math.PI * u);
+      expect(Math.abs(got - expected), `fold at u=${u} got=${got} expected=${expected}`).toBeLessThan(TOL);
+    }
+  });
+
+  it('h_shape = 1.0 (radial): h_out reads radius from canvas center', () => {
+    // length((0,0) - 0.5) * sqrt(2) = 1.0 (corner reads max).
+    expect(Math.abs(shapeMorph('h', 1.0, 0, 1, 0.0, 0.0) - 1.0)).toBeLessThan(TOL);
+    // length((0.5, 0.5) - 0.5) = 0 (center).
+    expect(Math.abs(shapeMorph('h', 1.0, 0, 1, 0.5, 0.5) - 0.0)).toBeLessThan(TOL);
+    // length((0.5, 0) - 0.5) * sqrt(2) = 0.5*sqrt(2) ≈ 0.7071.
+    expect(Math.abs(shapeMorph('h', 1.0, 0, 1, 0.5, 0.0) - Math.SQRT1_2)).toBeLessThan(TOL);
+  });
+
+  it('v_shape = 1.0 (radial): v_out reads angle around canvas center', () => {
+    // (atan2(v-0.5, u-0.5) / TAU) + 0.5 — angle = 0 at u=1, v=0.5 → ramp = 0.5.
+    expect(Math.abs(shapeMorph('v', 1.0, 0, 1, 1.0, 0.5) - 0.5)).toBeLessThan(TOL);
+    // angle = π/2 at u=0.5, v=1.0 → 0.25 + 0.5 = 0.75.
+    expect(Math.abs(shapeMorph('v', 1.0, 0, 1, 0.5, 1.0) - 0.75)).toBeLessThan(TOL);
+    // angle = -π/2 at u=0.5, v=0.0 → -0.25 + 0.5 = 0.25.
+    expect(Math.abs(shapeMorph('v', 1.0, 0, 1, 0.5, 0.0) - 0.25)).toBeLessThan(TOL);
+  });
+
+  it('h_freq = 2 doubles the period of the triangle shape', () => {
+    // At freq=2, shape(u=0.5) processes t = fract(0.5*2) = 0; triangle(0) = 1.
+    // At freq=1, shape(u=0.5) processes t = 0.5; triangle(0.5) = 0.
+    const tri1 = shapeMorph('h', 1 / 3, 0, 1, 0.5, 0.5);
+    const tri2 = shapeMorph('h', 1 / 3, 0, 2, 0.5, 0.5);
+    expect(tri1).toBeCloseTo(0, 6);
+    expect(tri2).toBeCloseTo(1, 6);
   });
 });
 

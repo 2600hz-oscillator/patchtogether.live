@@ -111,9 +111,18 @@ type StandardModuleType =
   // SHAPES — geometry source (circle / square / triangle, optional tile,
   // CV-controllable rotate + zoom). Sibling to LINES.
   | 'shapes'
-  // RUTTETRA — Rutt-Etra-style scanline OUTPUT. Video-in plus H/V ramp +
-  // Z (intensity) CV inputs.
+  // MONOGLITCH — luma → vertical-scanline displacement OUTPUT. Originally
+  // shipped as "RUTTETRA" (PR-99) but renamed once the actual Rutt/Etra
+  // raster-coord-remap model landed under that name.
+  | 'monoglitch'
+  // RUTTETRA — true Rutt/Etra raster-scan-coordinate processor. X/Y are
+  // mono-video coordinate fields, Z is the source video. Pair with
+  // SHAPEDRAMPS for shaped/folded/radial coordinate remaps.
   | 'ruttetra'
+  // SHAPEDRAMPS — sync-locked ramp generator. Stable linear h_lin/v_lin
+  // outputs (clean raster passthrough) plus shaped h_out/v_out outputs
+  // (morphable for RUTTETRA's raster-coord remap).
+  | 'shapedramps'
   // Video-domain modules (Phase 1 — .myrobots/plans/video-modules-mvp.md):
   | 'inwards'
   | 'picturebox'

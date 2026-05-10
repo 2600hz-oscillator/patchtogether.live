@@ -103,10 +103,19 @@ const MODULES: ModuleSpec[] = [
   // tileN is a fader-only param (no CV input) so the handle count stays
   // sibling-sized to LINES/INWARDS without crowding the card edge.
   { type: 'shapes',       cardClass: 'svelte-flow__node-shapes',       handleCount: 5, containsLabel: 'SHAPES',     domain: 'video' },
-  // RUTTETRA: 1 video input (in) + 3 cv inputs (hRamp, vRamp, intensity) + 0 outputs = 4.
-  // SINK module — no video output port (it's an OUTPUT, like videoOut).
-  // Faders for lines / spacing / tint(R/G/B) are knobs-only (no CV input).
-  { type: 'ruttetra',     cardClass: 'svelte-flow__node-ruttetra',     handleCount: 4, containsLabel: 'RUTTETRA',   domain: 'video' },
+  // MONOGLITCH: luma → vertical-scanline displacement OUTPUT (formerly
+  // shipped as RUTTETRA — renamed when the actual Rutt/Etra raster-scan
+  // module landed under that name). 1 video input (in) + 3 cv inputs
+  // (hRamp, vRamp, intensity) + 0 outputs = 4. SINK module — no output port.
+  { type: 'monoglitch',   cardClass: 'svelte-flow__node-monoglitch',   handleCount: 4, containsLabel: 'MONOGLITCH', domain: 'video' },
+  // RUTTETRA: true Rutt/Etra raster-scan-coordinate processor. 3 video
+  // inputs (x mono-video coord field, y mono-video coord field, z source
+  // video) + 3 cv inputs (intensity, xDisp, yDisp) + 0 outputs = 6.
+  { type: 'ruttetra',     cardClass: 'svelte-flow__node-ruttetra',     handleCount: 6, containsLabel: 'RUTTETRA',   domain: 'video' },
+  // SHAPEDRAMPS: sync-locked ramp generator. 6 cv inputs (h_shape,
+  // v_shape, h_phase, v_phase, h_freq, v_freq) + 4 mono-video outputs
+  // (h_lin, v_lin stable identity ramps; h_out, v_out shaped) = 10.
+  { type: 'shapedramps',  cardClass: 'svelte-flow__node-shapedramps',  handleCount: 10, containsLabel: 'SHAPEDRAMPS', domain: 'video' },
   // ILLOGIC: 4 cv inputs + 10 outputs (att1..att4 + sum + diff + and + nand
   // + or + not) = 14. Combined attenuverter / math / logic utility.
   { type: 'illogic',      cardClass: 'svelte-flow__node-illogic',      handleCount: 14, containsLabel: 'ILLOGIC' },

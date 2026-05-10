@@ -1,27 +1,35 @@
 // packages/web/src/lib/video/modules/ruttetra.ts
 //
-// RUTTETRA — vector-display OUTPUT module modeled on the Rutt-Etra Video
-// Synthesizer (Steve Rutt + Bill Etra, 1972). Iconic 1970s/80s analog
-// scanline-displacement aesthetic: a video signal is fed into the vertical
-// deflection of a vector oscilloscope while H/V ramps drive horizontal +
-// vertical scanning, so bright pixels push each scanline up to make a
-// 3D-landscape look.
+// RUTTETRA — true Rutt/Etra raster-scan-coordinate processor.
 //
-// Architecture parity with OUTPUT (videoOut, post-PR-85):
-//   - This is a SINK — no video output port. Inputs are: video-in plus
-//     three CV inputs (H ramp, V ramp, Z displacement amount).
-//   - Renders into its own per-instance FBO. The card driving the visible
-//     <canvas> calls `engine.blitOutputToDrawingBuffer(nodeId)` right
-//     before its `drawImage(engine.canvas, ...)` blit so each card pulls
-//     its own per-instance content (multi-RUTTETRA + multi-OUTPUT patches
-//     stay independent — no last-output-wins coupling on the shared FB).
+// Conceptually: a CRT raster scan draws each pixel at coordinate (h, v)
+// where h, v ramp linearly across the screen and luma at (h, v) sets the
+// pixel brightness. The Rutt/Etra approach replaces the linear (h, v)
+// ramps with patchable signals — when X is folded, mirrored, or radial,
+// the source video gets remapped into the deformed coordinate system.
 //
-// Render approach: per-scanline displacement in a fragment shader. We
-// sample the input video, derive luminance per pixel, and for each
-// horizontal scanline draw a thin band whose vertical position is
-// shifted by luminance × intensity. The H/V CV inputs act as additional
-// pan/zoom-style sweep offsets so plugging in saw LFOs makes the canvas
-// pan as expected.
+//   x = X_function(u, v)           // patched in via X (mono-video coord field)
+//   y = Y_function(u, v)           // patched in via Y (mono-video coord field)
+//   z = source video               // patched in via Z
+//   draw_point(x, y, brightness=z)
+//
+// In our pipeline, ramps are video-rate textures: each pixel of the X
+// or Y texture stores the coordinate value at that screen position. The
+// fragment shader samples X at the current output pixel (u, v) to get
+// the new u-coordinate, samples Y to get the new v-coordinate, then
+// samples Z at (newU, newV).
+//
+// When X is the identity horizontal ramp (R = u) and Y the identity
+// vertical ramp (R = v), output equals input — clean raster passthrough.
+// When X is folded / triangle / radial via SHAPEDRAMPS, the source is
+// remapped into a folded / mirrored / circular coordinate system.
+//
+// Defaults when X/Y are unpatched: identity ramps. So an unpatched
+// RUTTETRA with a Z source still acts like a regular display.
+//
+// SINK module — no video output port. The card's draw() calls
+// engine.blitOutputToDrawingBuffer(nodeId) right before its
+// drawImage(engine.canvas) blit, matching the OUTPUT/MONOGLITCH pattern.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -32,13 +40,15 @@ precision highp float;
 in vec2 vUv;
 out vec4 outColor;
 
-uniform sampler2D uTex;
-uniform float uHasInput;
-uniform float uHRamp;       // -1..1 — horizontal pan from external CV
-uniform float uVRamp;       // -1..1 — vertical pan from external CV
-uniform float uIntensity;   // 0..1 — luminance → displacement magnitude
-uniform float uLines;       // 8..240 — scanline count
-uniform float uSpacing;     // 0..1 — extra row gap (visual line separation)
+uniform sampler2D uX;       // mono-video horizontal coordinate field
+uniform sampler2D uY;       // mono-video vertical coordinate field
+uniform sampler2D uZ;       // source video
+uniform float uHasX;
+uniform float uHasY;
+uniform float uHasZ;
+uniform float uIntensity;
+uniform float uXDisp;
+uniform float uYDisp;
 uniform float uTintR;
 uniform float uTintG;
 uniform float uTintB;
@@ -48,76 +58,45 @@ float luma(vec3 rgb) {
 }
 
 void main() {
-  if (uHasInput < 0.5) {
-    // Idle pattern matches OUTPUT — dark navy with a faint sweep so the
-    // user can see the card is alive even when nothing's patched in.
-    float v = vUv.y * 0.05;
-    outColor = vec4(0.04, 0.06, 0.10 + v, 1.0);
-    return;
-  }
+  // Identity ramps when X/Y unpatched: rampX = u, rampY = v → no remap.
+  float rampX = uHasX > 0.5 ? texture(uX, vUv).r : vUv.x;
+  float rampY = uHasY > 0.5 ? texture(uY, vUv).r : vUv.y;
 
-  // Apply ramp offsets (pan). Wrap at the edges so a saw LFO produces
-  // smooth horizontal/vertical scrolling instead of clipping.
-  vec2 srcUv = vec2(
-    fract(vUv.x + uHRamp * 0.5 + 1.0),
-    fract(vUv.y + uVRamp * 0.5 + 1.0)
-  );
+  // Re-read luma at the SAME screen position as the ramp lookup (per
+  // spec). The displacement is "what the source video says is bright at
+  // this screen location" not "what's bright at the displaced location."
+  vec3 srcHere = uHasZ > 0.5 ? texture(uZ, vUv).rgb : vec3(0.5);
+  float lumaHere = luma(srcHere);
 
-  // Quantize to N scanlines along Y. For each pixel, find which
-  // scanline it belongs to + how close it is to the line center after
-  // luminance displacement. The "line center" is the scanline's base Y
-  // shifted upward by luminance × intensity.
-  float n = max(8.0, uLines);
-  float scanIdx = floor(srcUv.y * n);
-  // Sample luminance once per scanline at the row's horizontal position
-  // (matching the source pixel for this fragment).
-  vec2 sampleUv = vec2(srcUv.x, (scanIdx + 0.5) / n);
-  vec3 src = texture(uTex, sampleUv).rgb;
-  float l = luma(src);
+  // Luma → coordinate displacement. xDisp + yDisp mirror the classic
+  // Rutt/Etra "raised terrain" effect: bright pixels lift / push.
+  float finalU = rampX + (lumaHere - 0.5) * uXDisp;
+  float finalV = rampY + (lumaHere - 0.5) * uYDisp;
 
-  // Each scanline's nominal Y in the destination canvas, biased upward
-  // by luminance × intensity so bright pixels lift the line. The 0.4
-  // factor caps maximum displacement so even at uIntensity=1 a fully-
-  // bright scanline can't overlap the line above by more than ~half a
-  // band.
-  float baseY = (scanIdx + 0.5) / n;
-  float displacedY = baseY - l * uIntensity * 0.4;
+  // Sample the source at the deformed coordinate. Default mid-grey when
+  // Z unpatched so the card isn't a black void on cold-spawn.
+  vec3 rgb = uHasZ > 0.5 ? texture(uZ, vec2(finalU, finalV)).rgb : vec3(0.5);
 
-  // Distance of THIS fragment from the displaced line center, in
-  // canvas-Y units. Compare against a thin band whose height shrinks
-  // as line count grows so dense scanlines stay readable.
-  float bandHeight = (1.0 / n) * (1.0 - clamp(uSpacing, 0.0, 0.95)) * 0.5;
-  float d = abs(vUv.y - displacedY);
-  float intensity = 1.0 - smoothstep(bandHeight * 0.5, bandHeight, d);
-
-  // Color: tint × intensity, with a subtle brightness bonus from the
-  // source luminance so a "bright" pixel reads brighter than a "dim"
-  // displaced one.
-  vec3 col = vec3(uTintR, uTintG, uTintB) * intensity * (0.4 + l * 0.8);
-  outColor = vec4(col, 1.0);
+  vec3 col = rgb * uIntensity * vec3(uTintR, uTintG, uTintB);
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
 interface RuttetraParams {
-  hRamp: number;
-  vRamp: number;
   intensity: number;
-  lines: number;
-  spacing: number;
+  xDisp: number;
+  yDisp: number;
   tintR: number;
   tintG: number;
   tintB: number;
 }
 
 const DEFAULTS: RuttetraParams = {
-  hRamp: 0,
-  vRamp: 0,
-  intensity: 0.6,
-  lines: 96,
-  spacing: 0.2,
-  // Default tint: classic green phosphor.
-  tintR: 0.4,
+  intensity: 1.0,
+  xDisp: 0,
+  yDisp: 0,
+  tintR: 1.0,
   tintG: 1.0,
-  tintB: 0.5,
+  tintB: 1.0,
 };
 
 export const ruttetraDef: VideoModuleDef = {
@@ -127,22 +106,24 @@ export const ruttetraDef: VideoModuleDef = {
   category: 'output',
   schemaVersion: 1,
   inputs: [
-    // Video source. `video` is the polymorphic type so users can patch
+    // Coordinate fields. mono-video so SHAPEDRAMPS h_*/v_* outputs
+    // patch in cleanly without an upcast detour.
+    { id: 'x',         type: 'mono-video' },
+    { id: 'y',         type: 'mono-video' },
+    // Source video. Polymorphic 'video' so users can patch
     // mono-video / image / keys via the engine's implicit upcasts.
-    { id: 'in',        type: 'video' },
-    // CV inputs — port id == param id so the cross-domain CV bridge in
-    // PatchEngine routes audio cv signals into setParam(portId).
-    { id: 'hRamp',     type: 'cv', paramTarget: 'hRamp' },
-    { id: 'vRamp',     type: 'cv', paramTarget: 'vRamp' },
-    { id: 'intensity', type: 'cv', paramTarget: 'intensity' },
+    { id: 'z',         type: 'video' },
+    // CV inputs. port id == param id so the cross-domain CV bridge
+    // routes audio cv → setParam(portId).
+    { id: 'intensity', type: 'cv', paramTarget: 'intensity', cvScale: { mode: 'linear' } },
+    { id: 'xDisp',     type: 'cv', paramTarget: 'xDisp',     cvScale: { mode: 'linear' } },
+    { id: 'yDisp',     type: 'cv', paramTarget: 'yDisp',     cvScale: { mode: 'linear' } },
   ],
   outputs: [],
   params: [
-    { id: 'hRamp',     label: 'H Ramp',    defaultValue: DEFAULTS.hRamp,     min: -1, max: 1, curve: 'linear' },
-    { id: 'vRamp',     label: 'V Ramp',    defaultValue: DEFAULTS.vRamp,     min: -1, max: 1, curve: 'linear' },
-    { id: 'intensity', label: 'Z',         defaultValue: DEFAULTS.intensity, min: 0,  max: 1, curve: 'linear' },
-    { id: 'lines',     label: 'Lines',     defaultValue: DEFAULTS.lines,     min: 8,  max: 240, curve: 'linear' },
-    { id: 'spacing',   label: 'Spacing',   defaultValue: DEFAULTS.spacing,   min: 0,  max: 0.95, curve: 'linear' },
+    { id: 'intensity', label: 'Intensity', defaultValue: DEFAULTS.intensity, min: 0,  max: 2, curve: 'linear' },
+    { id: 'xDisp',     label: 'X Disp',    defaultValue: DEFAULTS.xDisp,     min: -1, max: 1, curve: 'linear' },
+    { id: 'yDisp',     label: 'Y Disp',    defaultValue: DEFAULTS.yDisp,     min: -1, max: 1, curve: 'linear' },
     { id: 'tintR',     label: 'Tint R',    defaultValue: DEFAULTS.tintR,     min: 0,  max: 1, curve: 'linear' },
     { id: 'tintG',     label: 'Tint G',    defaultValue: DEFAULTS.tintG,     min: 0,  max: 1, curve: 'linear' },
     { id: 'tintB',     label: 'Tint B',    defaultValue: DEFAULTS.tintB,     min: 0,  max: 1, curve: 'linear' },
@@ -152,63 +133,78 @@ export const ruttetraDef: VideoModuleDef = {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
 
-    const uTex       = gl.getUniformLocation(program, 'uTex');
-    const uHasInput  = gl.getUniformLocation(program, 'uHasInput');
-    const uHRamp     = gl.getUniformLocation(program, 'uHRamp');
-    const uVRamp     = gl.getUniformLocation(program, 'uVRamp');
+    const uX         = gl.getUniformLocation(program, 'uX');
+    const uY         = gl.getUniformLocation(program, 'uY');
+    const uZ         = gl.getUniformLocation(program, 'uZ');
+    const uHasX      = gl.getUniformLocation(program, 'uHasX');
+    const uHasY      = gl.getUniformLocation(program, 'uHasY');
+    const uHasZ      = gl.getUniformLocation(program, 'uHasZ');
     const uIntensity = gl.getUniformLocation(program, 'uIntensity');
-    const uLines     = gl.getUniformLocation(program, 'uLines');
-    const uSpacing   = gl.getUniformLocation(program, 'uSpacing');
+    const uXDisp     = gl.getUniformLocation(program, 'uXDisp');
+    const uYDisp     = gl.getUniformLocation(program, 'uYDisp');
     const uTintR     = gl.getUniformLocation(program, 'uTintR');
     const uTintG     = gl.getUniformLocation(program, 'uTintG');
     const uTintB     = gl.getUniformLocation(program, 'uTintB');
 
-    // Own FBO for test-harness reads + future per-OUTPUT visible-canvas
-    // routing. Mirrors videoOut's pattern.
+    // Per-instance FBO — same pattern as videoOut / monoglitch. Card
+    // calls blitOutputToDrawingBuffer(nodeId) before its drawImage blit.
     const { fbo, texture } = ctx.createFbo();
 
-    const params: RuttetraParams = { ...DEFAULTS, ...(node.params as Partial<RuttetraParams>) };
-    let lastInputTexture: WebGLTexture | null = null;
+    // Sentinel 1×1 black texture for unbound video inputs. Same reason
+    // as V-MIXER: avoid GL feedback loops by NOT binding our own output.
+    const emptyTex = gl.createTexture();
+    if (!emptyTex) throw new Error('RUTTETRA: createTexture failed');
+    gl.bindTexture(gl.TEXTURE_2D, emptyTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+      new Uint8Array([0, 0, 0, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    function bindInputAndUniforms(inputTex: WebGLTexture | null) {
-      gl.uniform1f(uHasInput, inputTex ? 1.0 : 0.0);
-      if (inputTex) {
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, inputTex);
-        gl.uniform1i(uTex, 0);
-      }
-      gl.uniform1f(uHRamp,     params.hRamp);
-      gl.uniform1f(uVRamp,     params.vRamp);
-      gl.uniform1f(uIntensity, params.intensity);
-      gl.uniform1f(uLines,     params.lines);
-      gl.uniform1f(uSpacing,   params.spacing);
-      gl.uniform1f(uTintR,     params.tintR);
-      gl.uniform1f(uTintG,     params.tintG);
-      gl.uniform1f(uTintB,     params.tintB);
-    }
+    const params: RuttetraParams = { ...DEFAULTS, ...(node.params as Partial<RuttetraParams>) };
 
     const surface: VideoNodeSurface = {
       fbo,
       texture,
       draw(frame) {
         const g = frame.gl;
-        const inputTex = frame.getInputTexture(node.id, 'in');
-        lastInputTexture = inputTex;
+        const xTex = frame.getInputTexture(node.id, 'x');
+        const yTex = frame.getInputTexture(node.id, 'y');
+        const zTex = frame.getInputTexture(node.id, 'z');
 
-        // Render into our own per-instance FBO. The card's draw() calls
-        // engine.blitOutputToDrawingBuffer(nodeId) right before its
-        // drawImage(engine.canvas) blit, so each RUTTETRA card shows its
-        // own input rather than racing other OUTPUTs through the shared
-        // default framebuffer (PR-85 multi-OUTPUT pattern).
         g.bindFramebuffer(g.FRAMEBUFFER, fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
-        bindInputAndUniforms(inputTex);
+
+        g.activeTexture(g.TEXTURE0);
+        g.bindTexture(g.TEXTURE_2D, xTex ?? emptyTex);
+        g.uniform1i(uX, 0);
+        g.uniform1f(uHasX, xTex ? 1.0 : 0.0);
+
+        g.activeTexture(g.TEXTURE1);
+        g.bindTexture(g.TEXTURE_2D, yTex ?? emptyTex);
+        g.uniform1i(uY, 1);
+        g.uniform1f(uHasY, yTex ? 1.0 : 0.0);
+
+        g.activeTexture(g.TEXTURE2);
+        g.bindTexture(g.TEXTURE_2D, zTex ?? emptyTex);
+        g.uniform1i(uZ, 2);
+        g.uniform1f(uHasZ, zTex ? 1.0 : 0.0);
+
+        g.uniform1f(uIntensity, params.intensity);
+        g.uniform1f(uXDisp,     params.xDisp);
+        g.uniform1f(uYDisp,     params.yDisp);
+        g.uniform1f(uTintR,     params.tintR);
+        g.uniform1f(uTintG,     params.tintG);
+        g.uniform1f(uTintB,     params.tintB);
+
         ctx.drawFullscreenQuad();
       },
       dispose() {
         gl.deleteFramebuffer(fbo);
         gl.deleteTexture(texture);
+        gl.deleteTexture(emptyTex);
         gl.deleteProgram(program);
       },
     };
@@ -223,7 +219,6 @@ export const ruttetraDef: VideoModuleDef = {
         return (params as unknown as Record<string, number>)[paramId];
       },
       read(key) {
-        if (key === 'hasInput') return lastInputTexture !== null;
         if (key === 'fboTexture') return texture;
         return undefined;
       },

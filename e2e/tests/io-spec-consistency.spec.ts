@@ -169,9 +169,16 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'colorizer',
     'feedback',
     'videoMixer',
-    // SHAPES + RUTTETRA — geometry source + Rutt-Etra scanline output.
+    // SHAPES — geometry source.
     'shapes',
+    // MONOGLITCH — luma → vertical-scanline displacement OUTPUT (formerly
+    // RUTTETRA — renamed when the real raster-scan model took that name).
+    'monoglitch',
+    // RUTTETRA — true Rutt/Etra raster-scan-coordinate processor (X/Y
+    // mono-video coordinate fields + Z source video).
     'ruttetra',
+    // SHAPEDRAMPS — sync-locked ramp generator (linear + shaped outputs).
+    'shapedramps',
     // CAMERA — webcam input (local-only). Spec: .myrobots/plans/module-camera-input.md.
     'cameraInput',
     // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
