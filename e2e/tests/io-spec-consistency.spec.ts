@@ -183,6 +183,9 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'cameraInput',
     // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
     'illogic',
+    // UNITYSCALEMATHEMATIK — bipolar CV-shaping utility (1 unity scaler +
+    // 2 attenuvert sections with linear/expo curve morph).
+    'unityscalemathematik',
     // DX7 — pure-TS 6-op FM synth (audio domain).
     'dx7',
     // NOISE — basic noise source (white / pink / brown).
