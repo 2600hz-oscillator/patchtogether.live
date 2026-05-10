@@ -5,6 +5,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { wavecelDef, type WavecelData } from '$lib/audio/modules/wavecel';
+  import { drawWave3D, drawWaveScope } from '$lib/audio/modules/wavecel-draw';
   import {
     getFactoryTables,
     DEFAULT_FACTORY_TABLE_ID,
@@ -41,6 +42,11 @@
   const outputs: PortDescriptor[] = [
     { id: 'out_l', label: 'OUT L', cable: 'audio' },
     { id: 'out_r', label: 'OUT R', cable: 'audio' },
+    // Two video outs. The card toggle picks 2D/3D for the on-card
+    // preview only; these ports ALWAYS emit their respective view
+    // regardless of the toggle. See wavecel-draw.ts.
+    { id: 'scope_out',  label: 'SCOPE VIDEO',   cable: 'mono-video' },
+    { id: 'wave3d_out', label: '3D VIDEO',      cable: 'video' },
   ];
 
   // Visualizer state.
@@ -133,12 +139,12 @@
       }
       const w = canvasEl.width;
       const h = canvasEl.height;
-      ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = '#0a0c11';
-      ctx.fillRect(0, 0, w, h);
 
       const fs = frames;
       if (!fs || fs.length === 0) {
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#0a0c11';
+        ctx.fillRect(0, 0, w, h);
         raf = requestAnimationFrame(tick);
         return;
       }
@@ -148,9 +154,9 @@
       const activeFrame = Math.round((liveMorph as number) * (fs.length - 1));
 
       if (vizMode === '3d') {
-        draw3D(ctx, fs, w, h, activeFrame);
+        drawWave3D(ctx, fs, w, h, { activeFrame });
       } else {
-        drawScope(ctx, fs, w, h, activeFrame);
+        drawWaveScope(ctx, fs, w, h, { activeFrame });
       }
       raf = requestAnimationFrame(tick);
     }
@@ -160,84 +166,6 @@
       raf = null;
     };
   });
-
-  function draw3D(
-    ctx: CanvasRenderingContext2D,
-    fs: Float32Array[],
-    w: number,
-    h: number,
-    activeFrame: number,
-  ) {
-    const FC = fs.length;
-    const margin = 8;
-    const drawW = w - margin * 2;
-    const drawH = h - margin * 2;
-    // Pseudo-perspective: frame 0 sits at the back (highest y, smallest
-    // width); frame FC-1 sits at the front. Each successive frame is
-    // shifted DOWN-RIGHT by (xStep, yStep) and drawn slightly wider.
-    const backWidth = drawW * 0.55;
-    const frontWidth = drawW * 0.95;
-    const totalDepth = drawH * 0.7;
-    const yBack = margin + drawH * 0.05;
-    for (let f = 0; f < FC; f++) {
-      const t = FC > 1 ? f / (FC - 1) : 0;
-      const frameW = backWidth + (frontWidth - backWidth) * t;
-      const frameY = yBack + totalDepth * t;
-      const xLeft = margin + (drawW - frameW) / 2 + (drawW * 0.05) * (t - 0.5) * 2;
-      const isActive = f === activeFrame;
-      ctx.beginPath();
-      const arr = fs[f]!;
-      const N = arr.length;
-      const sliceH = drawH * 0.16 * (0.6 + 0.4 * t);
-      for (let s = 0; s < N; s++) {
-        const x = xLeft + (s / (N - 1)) * frameW;
-        const y = frameY - (arr[s]! ?? 0) * sliceH;
-        if (s === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      if (isActive) {
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.6;
-      } else {
-        // Orange, dimmer toward the back for depth.
-        const alpha = 0.25 + 0.6 * t;
-        ctx.strokeStyle = `rgba(255,150,40,${alpha.toFixed(3)})`;
-        ctx.lineWidth = 0.9;
-      }
-      ctx.stroke();
-    }
-  }
-
-  function drawScope(
-    ctx: CanvasRenderingContext2D,
-    fs: Float32Array[],
-    w: number,
-    h: number,
-    activeFrame: number,
-  ) {
-    const arr = fs[Math.max(0, Math.min(fs.length - 1, activeFrame))]!;
-    const margin = 8;
-    const drawW = w - margin * 2;
-    const drawH = h - margin * 2;
-    const midY = margin + drawH / 2;
-    ctx.strokeStyle = '#1f242e';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(margin, midY);
-    ctx.lineTo(margin + drawW, midY);
-    ctx.stroke();
-    ctx.beginPath();
-    const N = arr.length;
-    for (let s = 0; s < N; s++) {
-      const x = margin + (s / (N - 1)) * drawW;
-      const y = midY - arr[s]! * (drawH / 2) * 0.9;
-      if (s === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = '#ff9628';
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-  }
 </script>
 
 <div class="mod-card wavecel-card" data-testid="wavecel-card">
