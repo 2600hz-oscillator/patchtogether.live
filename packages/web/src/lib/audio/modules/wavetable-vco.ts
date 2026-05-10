@@ -63,7 +63,11 @@ export const wavetableVcoDef: AudioModuleDef = {
   inputs: [
     { id: 'pitch',   type: 'pitch' },
     { id: 'fm',      type: 'audio' },
-    { id: 'wavePos', type: 'cv' },
+    // paramTarget == port id keeps the docs manifest in sync with the
+    // codebase convention (LINES, ADSR, etc.). The runtime CV routing
+    // uses the worklet's per-sample wavePos input — paramTarget is a
+    // documentation hint only, so this line is purely additive.
+    { id: 'wavePos', type: 'cv', paramTarget: 'wavePos' },
   ],
   outputs: [{ id: 'audio', type: 'audio' }],
   params: [

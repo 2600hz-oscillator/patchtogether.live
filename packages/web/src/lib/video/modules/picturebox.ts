@@ -103,7 +103,9 @@ export const pictureboxDef: VideoModuleDef = {
   // Canvas's spawnFromPalette is the secondary gate.
   maxInstances: 8,
   inputs: [
-    { id: 'gain', type: 'cv' },
+    // paramTarget == port id keeps docs manifest in sync. Bridge uses
+    // port id directly so the runtime works either way.
+    { id: 'gain', type: 'cv', paramTarget: 'gain' },
   ],
   outputs: [
     { id: 'out', type: 'image' },

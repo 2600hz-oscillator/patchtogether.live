@@ -79,7 +79,9 @@ export const destructorDef: VideoModuleDef = {
   schemaVersion: 1,
   inputs: [
     { id: 'in',     type: 'video' },
-    { id: 'mangle', type: 'cv' },
+    // paramTarget == port.id keeps docs manifest in sync; bridge uses
+    // port id directly so the runtime works either way.
+    { id: 'mangle', type: 'cv', paramTarget: 'mangle' },
   ],
   outputs: [
     { id: 'out', type: 'video' },

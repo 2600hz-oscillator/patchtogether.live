@@ -62,10 +62,14 @@ export const colorizerDef: VideoModuleDef = {
     // Per-channel CV inputs — the cross-domain bridge writes these
     // values into the corresponding params each frame. CV→param is
     // the canonical pattern; see ChromaCard for the same shape with
-    // more channels.
-    { id: 'tintR', type: 'cv' },
-    { id: 'tintG', type: 'cv' },
-    { id: 'tintB', type: 'cv' },
+    // more channels. paramTarget == port.id is required for the docs
+    // manifest (module-manifest.ts) to render the correct "CV -> X
+    // param." description; the runtime bridge looks up via port id
+    // directly so it works without paramTarget — see issue #G.1 in
+    // .myrobots/plans/test-coverage-audit.md.
+    { id: 'tintR', type: 'cv', paramTarget: 'tintR' },
+    { id: 'tintG', type: 'cv', paramTarget: 'tintG' },
+    { id: 'tintB', type: 'cv', paramTarget: 'tintB' },
   ],
   outputs: [
     { id: 'out', type: 'video' },

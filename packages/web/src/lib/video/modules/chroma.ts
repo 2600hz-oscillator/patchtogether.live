@@ -72,11 +72,13 @@ export const chromaDef: VideoModuleDef = {
   schemaVersion: 1,
   inputs: [
     { id: 'in',        type: 'video' },
-    { id: 'keyR',      type: 'cv' },
-    { id: 'keyG',      type: 'cv' },
-    { id: 'keyB',      type: 'cv' },
-    { id: 'tolerance', type: 'cv' },
-    { id: 'softness',  type: 'cv' },
+    // paramTarget == port.id keeps the docs manifest in sync with the
+    // LINES/INWARDS convention; runtime bridge uses port id directly.
+    { id: 'keyR',      type: 'cv', paramTarget: 'keyR' },
+    { id: 'keyG',      type: 'cv', paramTarget: 'keyG' },
+    { id: 'keyB',      type: 'cv', paramTarget: 'keyB' },
+    { id: 'tolerance', type: 'cv', paramTarget: 'tolerance' },
+    { id: 'softness',  type: 'cv', paramTarget: 'softness' },
   ],
   outputs: [
     { id: 'out', type: 'mono-video' },

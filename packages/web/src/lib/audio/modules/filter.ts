@@ -15,7 +15,19 @@ export const filterDef: AudioModuleDef = {
   schemaVersion: 1,
   inputs: [
     { id: 'audio',  type: 'audio' },
-    { id: 'cutoff', type: 'cv' },
+    // CV inputs are routed through the channel merger (channels 1, 2)
+    // so they sum into the Faust DSP's per-sample CV input — they are
+    // NOT AudioParam-routed. paramTarget is declared anyway so the
+    // docs manifest renders "CV -> cutoff param." consistently with
+    // every other CV input in the codebase. The runtime ignores
+    // paramTarget on this module (the engine looks at the factory's
+    // inputs map, where these ports are wired to merger channels).
+    //
+    // NOTE: port id 'res' intentionally short for the panel; the
+    // matching param is 'resonance'. paramTarget is omitted on `res`
+    // because it would falsely advertise a `res` param that doesn't
+    // exist; CV routing still works via the merger (DSP channel 2).
+    { id: 'cutoff', type: 'cv', paramTarget: 'cutoff' },
     { id: 'res',    type: 'cv' },
   ],
   outputs: [{ id: 'audio', type: 'audio' }],
