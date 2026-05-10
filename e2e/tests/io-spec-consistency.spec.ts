@@ -169,6 +169,9 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'colorizer',
     'feedback',
     'videoMixer',
+    // SHAPES + RUTTETRA — geometry source + Rutt-Etra scanline output.
+    'shapes',
+    'ruttetra',
     // CAMERA — webcam input (local-only). Spec: .myrobots/plans/module-camera-input.md.
     'cameraInput',
     // ILLOGIC — combined attenuverter / math / logic utility (audio domain).

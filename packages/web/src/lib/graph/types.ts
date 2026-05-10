@@ -108,6 +108,12 @@ type StandardModuleType =
   // Video-domain modules (Phase 0 spike):
   | 'lines'
   | 'videoOut'
+  // SHAPES — geometry source (circle / square / triangle, optional tile,
+  // CV-controllable rotate + zoom). Sibling to LINES.
+  | 'shapes'
+  // RUTTETRA — Rutt-Etra-style scanline OUTPUT. Video-in plus H/V ramp +
+  // Z (intensity) CV inputs.
+  | 'ruttetra'
   // Video-domain modules (Phase 1 — .myrobots/plans/video-modules-mvp.md):
   | 'inwards'
   | 'picturebox'
