@@ -16,6 +16,9 @@
     getNode: (id: string) => FlowNode | undefined;
     getInternalNode: (id: string) => { measured: { width?: number; height?: number } } | undefined;
     getNodes: () => FlowNode[];
+    /** Current viewport: pan offset (x,y in screen px) + zoom factor. Used by
+     *  Organize-modules to compute the visible region in flow-space. */
+    getViewport: () => { x: number; y: number; zoom: number };
   }
 
   interface Props {
@@ -33,6 +36,7 @@
       getInternalNode: (id: string) => flow.getInternalNode(id) as unknown as
         { measured: { width?: number; height?: number } } | undefined,
       getNodes: () => flow.getNodes(),
+      getViewport: () => flow.getViewport(),
     };
     return () => {
       api = null;

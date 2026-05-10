@@ -300,25 +300,75 @@ test('organize: 2 fully-stacked modules become disjoint', async ({ page }) => {
   )).toBe(false);
 });
 
-test('organize: 3 already-disjoint modules in a row are not perturbed', async ({ page }) => {
+test('organize: 3 already-disjoint modules preserve left-to-right order + remain non-overlapping', async ({ page }) => {
   await ready(page);
+  // The previous "are not perturbed" assertion belonged to the old strict
+  // declutter pass. The new dense-pack always relayouts so the user gets the
+  // gap-tightening they asked for — but it MUST still preserve relative order
+  // (a → b → c stays a → b → c) and avoid overlap.
   await spawnPatch(page, [
     { id: 'a', type: 'mixer', position: { x: 0, y: 0 } },
     { id: 'b', type: 'reverb', position: { x: 400, y: 0 } },
     { id: 'c', type: 'lfo', position: { x: 800, y: 0 } },
   ]);
-  const before = await readNodes(page);
   await page.evaluate(() => {
     const w = window as unknown as { __organizeModules: () => void };
     w.__organizeModules();
   });
   const after = await readNodes(page);
-  // Sort by id so we compare like-for-like.
-  const beforeById = Object.fromEntries(before.map((n) => [n.id, n.position]));
-  const afterById = Object.fromEntries(after.map((n) => [n.id, n.position]));
-  for (const id of Object.keys(beforeById)) {
-    expect(afterById[id]).toEqual(beforeById[id]);
+  const a = after.find((n) => n.id === 'a')!;
+  const b = after.find((n) => n.id === 'b')!;
+  const c = after.find((n) => n.id === 'c')!;
+  // Left-to-right order preserved (within their row, however the row-pack chose).
+  if (a.position.y === b.position.y) expect(a.position.x).toBeLessThan(b.position.x);
+  if (b.position.y === c.position.y) expect(b.position.x).toBeLessThan(c.position.x);
+  // No overlap between any pair.
+  const sizes = await Promise.all(after.map((n) => getInternalSize(page, n.id)));
+  for (let i = 0; i < after.length; i++) {
+    for (let j = i + 1; j < after.length; j++) {
+      expect(rectsOverlap(
+        { x: after[i].position.x, y: after[i].position.y, w: sizes[i].w, h: sizes[i].h },
+        { x: after[j].position.x, y: after[j].position.y, w: sizes[j].w, h: sizes[j].h },
+      )).toBe(false);
+    }
   }
+});
+
+test('organize: dense-pack moves a far-apart layout closer together', async ({ page }) => {
+  await ready(page);
+  // The user's complaint was "leaves big gaps". Spread modules far apart and
+  // assert organize actually moves them: the max pairwise distance after the
+  // pass must be strictly less than before. (Bbox-area is a noisier metric
+  // because the viewport-aware row pack may stretch across the whole canvas
+  // width to put everything on one row — that's the desired behavior, but it
+  // doesn't always shrink the bbox.)
+  await spawnPatch(page, [
+    { id: 'a', type: 'mixer', position: { x: 0, y: 0 } },
+    { id: 'b', type: 'reverb', position: { x: 2000, y: 0 } },
+    { id: 'c', type: 'lfo', position: { x: 0, y: 2000 } },
+    { id: 'd', type: 'scope', position: { x: 2000, y: 2000 } },
+  ]);
+  const maxPairwise = (nodes: PatchNode[]) => {
+    let m = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[i].position.x - nodes[j].position.x;
+        const dy = nodes[i].position.y - nodes[j].position.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > m) m = d;
+      }
+    }
+    return m;
+  };
+  const before = await readNodes(page);
+  const beforeMax = maxPairwise(before);
+  await page.evaluate(() => {
+    const w = window as unknown as { __organizeModules: () => void };
+    w.__organizeModules();
+  });
+  const after = await readNodes(page);
+  const afterMax = maxPairwise(after);
+  expect(afterMax).toBeLessThan(beforeMax);
 });
 
 test('organize: many modules with mixed overlap end up fully disjoint', async ({ page }) => {

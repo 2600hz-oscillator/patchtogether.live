@@ -738,9 +738,11 @@
     void ensureEngine();
   }
 
-  /** "Organize modules" — declutter the current layout so no two cards overlap.
-   *  Preserves the user's overall arrangement (each node moves only as far as
-   *  needed to clear its neighbors) and grows the canvas bbox as required.
+  /** "Organize modules" — pack the current layout densely while preserving the
+   *  user's relative arrangement (top stays top, left stays left). Wraps to a
+   *  new row when the visible viewport width is exceeded so the result fits on
+   *  one screen at the current zoom.
+   *
    *  Multi-user mode writes to per-user layouts; single-user writes to the
    *  shared node.position. Falls back to the snapshot's position + a default
    *  card size when the xyflow measured size isn't available yet. */
@@ -764,7 +766,24 @@
         h: measured?.height ?? DEFAULT_H,
       };
     });
-    const next = organizeLayout(boxes);
+    // Viewport in flow-space: dom width / current zoom. Origin is the top-left
+    // of the visible viewport in flow-space (xyflow's getViewport returns the
+    // pan offset as { x, y } where {0,0} flow-coord maps to that screen pixel,
+    // so visible flow-space top-left is (-x/zoom, -y/zoom)).
+    let viewport: { width: number; height: number; originX: number; originY: number } | undefined;
+    if (flowEl && flowApi) {
+      const rect = flowEl.getBoundingClientRect();
+      const vp = flowApi.getViewport?.();
+      const zoom = vp?.zoom && vp.zoom > 0 ? vp.zoom : 1;
+      const originX = vp ? -vp.x / zoom : 0;
+      const originY = vp ? -vp.y / zoom : 0;
+      const width = rect.width / zoom;
+      const height = rect.height / zoom;
+      if (width > 0 && height > 0) {
+        viewport = { width, height, originX, originY };
+      }
+    }
+    const next = organizeLayout(boxes, viewport ? { viewport } : {});
     const byId = new Map(next.map((p) => [p.id, p]));
     let movedCount = 0;
     ydoc.transact(() => {
