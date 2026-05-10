@@ -25,6 +25,11 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   dx7: ['pitch_cv'],
   // illogic in1..in4: passthrough attenuverter inputs (the module IS the attenuverter).
   illogic: ['in1', 'in2', 'in3', 'in4'],
+  // unityscalemathematik u_in / a_in / b_in: signal inputs that the module
+  // ITSELF shapes via attenuvert + (for A/B) curve. These are audio-rate
+  // node connections to the worklet, not CV->AudioParam routings, so
+  // cvScale doesn't apply. The atten/curve CV ports do carry cvScale.
+  unityscalemathematik: ['u_in', 'a_in', 'b_in'],
   // cartesian x_cv/y_cv: address-selector signals (-1..+1 = full grid select).
   cartesian: ['x_cv', 'y_cv'],
   // VCA.cv: audio-rate gain control. base + cvAmount * cv with cvAmount knob

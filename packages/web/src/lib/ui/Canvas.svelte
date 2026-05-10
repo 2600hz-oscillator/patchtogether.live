@@ -96,6 +96,9 @@
   import CameraInputCard from '$lib/ui/modules/CameraInputCard.svelte';
   // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
   import IllogicCard from '$lib/ui/modules/IllogicCard.svelte';
+  // UNITYSCALEMATHEMATIK — bipolar CV shaper (unity scaler + 2 linear/expo
+  // attenuvert sections).
+  import UnityscalemathematikCard from '$lib/ui/modules/UnityscalemathematikCard.svelte';
   import Dx7Card from '$lib/ui/modules/Dx7Card.svelte';
   // NOISE — basic noise source (white / pink / brown).
   import NoiseCard from '$lib/ui/modules/NoiseCard.svelte';
@@ -194,6 +197,7 @@
     // CAMERA input (local-only):
     cameraInput: CameraInputCard,
     illogic: IllogicCard,
+    unityscalemathematik: UnityscalemathematikCard,
     dx7: Dx7Card,
     noise: NoiseCard,
     buggles: BugglesCard,
