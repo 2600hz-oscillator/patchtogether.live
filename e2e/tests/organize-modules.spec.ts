@@ -4,10 +4,15 @@
 // feature added in PR #36. This suite is intentionally extensive:
 //
 //   - Right-click context-menu basics (palette + per-node menu)
-//   - "Add Module" sub-menu (categories, click-to-spawn, click-anchor, offset)
+//   - "Add Module" sub-menu (categories, click-to-spawn, click-anchor)
 //   - "Organize modules" action (separates overlap, preserves layout, no-ops)
 //   - Multi-user collab safety (organize + spawn cross-sync via Yjs)
 //   - Edge cases (drag-vs-rclick, port-handle behavior, suppressed paths)
+//
+// NOTE: spawn-on-collision used to auto-offset by STACK_OFFSET (24px) until
+// the new card cleared every sibling. That was changed to literal-cursor +
+// visual-on-top (zIndex) per user feedback — see spawn-at-cursor.spec.ts
+// for the new invariants.
 //
 // Conventions:
 //   - Prefer data-driven assertions via the dev test hooks (__patch, __ydoc,
@@ -213,13 +218,14 @@ test('spawned node anchors at the click point in flow-space (within the card)', 
   expect(Math.abs(pos.y - expected.y)).toBeLessThan(4);
 });
 
-test('spawn over an existing node offsets down-right to avoid stacking', async ({ page }) => {
+test('spawn over an existing node lands AT the cursor position (overlap allowed)', async ({ page }) => {
+  // Behavior change vs PR #36: the user explicitly wants the new card under
+  // the cursor even if it overlaps an existing module. Visual stacking is
+  // handled by topNodeId/zIndex (see spawn-at-cursor.spec.ts), so here we
+  // only assert the position invariant — the new card sits at the requested
+  // flow-space coords, NOT auto-offset away.
   await ready(page);
   await spawnPatch(page, [{ id: 'a', type: 'mixer', position: { x: 200, y: 200 } }]);
-  // Drive the spawn through __spawnAtFlowPos to bypass the rclick-targets-node
-  // gotcha: pane right-clicks atop a node go to onNodeContextMenu instead.
-  // The collision logic is the same code path; the test hook only sets the
-  // spawnFlowPos and then calls spawnFromPalette.
   await page.evaluate(() => {
     const w = window as unknown as {
       __spawnAtFlowPos: (type: string, p: NodePos) => void;
@@ -230,24 +236,13 @@ test('spawn over an existing node offsets down-right to avoid stacking', async (
   const mixer = nodes.find((n) => n.type === 'mixer')!;
   const reverb = nodes.find((n) => n.type === 'reverb');
   expect(reverb).toBeTruthy();
-  // STACK_OFFSET (24px) iterates until the new card clears the existing one.
-  // Both x and y must have moved (down-right), and the resulting boxes must
-  // not overlap.
-  expect(reverb!.position.x).toBeGreaterThan(mixer.position.x);
-  expect(reverb!.position.y).toBeGreaterThan(mixer.position.y);
-  const sizeM = await getInternalSize(page, mixer.id);
-  const sizeR = await getInternalSize(page, reverb!.id);
-  expect(rectsOverlap(
-    { x: mixer.position.x, y: mixer.position.y, w: sizeM.w, h: sizeM.h },
-    { x: reverb!.position.x, y: reverb!.position.y, w: sizeR.w, h: sizeR.h },
-  )).toBe(false);
-  // Step quantum is the configured STACK_OFFSET — both axes increased by the
-  // same multiple of 24 per the loop. Sanity-check the multiple-of-24 invariant.
-  expect((reverb!.position.x - mixer.position.x) % 24).toBe(0);
-  expect((reverb!.position.y - mixer.position.y) % 24).toBe(0);
+  expect(reverb!.position).toEqual({ x: 200, y: 200 });
+  expect(mixer.position).toEqual({ x: 200, y: 200 });
 });
 
-test('spawn over multiple stacked nodes keeps offsetting until clear', async ({ page }) => {
+test('spawn over multiple stacked nodes still lands AT the cursor (overlap allowed)', async ({ page }) => {
+  // Same change as above — the previous behavior iterated STACK_OFFSET until
+  // clear; new behavior trusts the user and stacks visually via zIndex.
   await ready(page);
   await spawnPatch(page, [
     { id: 'a', type: 'mixer', position: { x: 200, y: 200 } },
@@ -263,18 +258,7 @@ test('spawn over multiple stacked nodes keeps offsetting until clear', async ({ 
   const nodes = await readNodes(page);
   const scope = nodes.find((n) => n.type === 'scope');
   expect(scope).toBeTruthy();
-  // Either 24*N down-right (no overlap with any of a/b/c) or whatever the
-  // collision iteration produces — assert no overlap with measured boxes
-  // rather than a hard-coded coord (cards measure to non-trivial dims).
-  const sizeS = await getInternalSize(page, scope!.id);
-  for (const other of nodes) {
-    if (other.id === scope!.id) continue;
-    const sizeO = await getInternalSize(page, other.id);
-    expect(rectsOverlap(
-      { x: scope!.position.x, y: scope!.position.y, w: sizeS.w, h: sizeS.h },
-      { x: other.position.x, y: other.position.y, w: sizeO.w, h: sizeO.h },
-    )).toBe(false);
-  }
+  expect(scope!.position).toEqual({ x: 200, y: 200 });
 });
 
 test('palette spawned via topbar + Add module goes through screenToFlowPosition', async ({ page }) => {

@@ -290,18 +290,35 @@
   // currently-hovered .svelte-flow__node. Declared up here so the edges
   // mapping below can read it without forward-references.
   let hoveredNodeId = $state<string | null>(null);
+  // Most-recently-spawned node id. We lift this node's z-index so it
+  // visually renders on top of any cards it overlaps — matches the
+  // user's "place under cursor + on top" expectation. Cleared when the
+  // user drags or interacts with a different node so subsequent spawns
+  // get a fresh slot. xyflow honors a `zIndex` field on Node directly.
+  let topNodeId = $state<string | null>(null);
 
   $effect(() => {
     const snap = snapshot;
-    flowNodes = snap.nodes.map((n) => ({
-      id: n.id,
-      type: n.type,
-      // Per-user layouts: getNodePosition returns the user's override
-      // (when in multiplayer) or falls back to n.position (when single-
-      // user OR when this user has no entry yet).
-      position: getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y }),
-      data: { node: n },
-    }));
+    const top = topNodeId;
+    flowNodes = snap.nodes.map((n) => {
+      const node: FlowNode = {
+        id: n.id,
+        type: n.type,
+        // Per-user layouts: getNodePosition returns the user's override
+        // (when in multiplayer) or falls back to n.position (when single-
+        // user OR when this user has no entry yet).
+        position: getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y }),
+        data: { node: n },
+      };
+      // Lift the most-recently-spawned node above its siblings so it's
+      // visible immediately when it lands on top of an existing card.
+      // xyflow's default node zIndex is 0; bumping to 1000 puts the new
+      // card above everything without colliding with selected-node
+      // styling (which xyflow handles internally via the .selected class
+      // rather than a competing zIndex).
+      if (top === n.id) node.zIndex = 1000;
+      return node;
+    });
   });
 
   $effect(() => {
@@ -534,6 +551,9 @@
         }
       }
     }, LOCAL_ORIGIN);
+    if (topNodeId && payload.nodes.some((n) => n.id === topNodeId)) {
+      topNodeId = null;
+    }
     trace(`deleted ${payload.nodes.length} node(s), ${payload.edges.length} edge(s)`);
   }
 
@@ -549,6 +569,11 @@
   function handleNodeDragStop({ targetNode, nodes }: { targetNode: FlowNode | null; nodes: FlowNode[] }) {
     const moved = nodes.length > 0 ? nodes : targetNode ? [targetNode] : [];
     if (moved.length === 0) return;
+    // Drag of any other node clears the spawn-on-top hint — natural
+    // stacking-by-DOM-order resumes for the next overlap interaction.
+    if (topNodeId && !moved.some((n) => n.id === topNodeId)) {
+      topNodeId = null;
+    }
     ydoc.transact(() => {
       for (const n of moved) {
         if (currentUserId) {
@@ -637,6 +662,7 @@
       delete patch.nodes[nodeId];
     }, LOCAL_ORIGIN);
     // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
+    if (topNodeId === nodeId) topNodeId = null;
     trace(`deleted ${nodeId}`);
   }
 
@@ -808,37 +834,13 @@
       }
     }
     const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
-    // If the spawn point lands on top of an existing module (right-clicked
-    // a node, or repeatedly added at the same coords), offset down-right by
-    // STACK_OFFSET so the user can see the new card without first running
-    // Organize modules.
-    const STACK_OFFSET = 24;
-    let pos = { ...spawnFlowPos };
-    if (flowApi) {
-      const w = 240;
-      const h = 200;
-      let safety = 16;
-      while (safety-- > 0) {
-        let bumped = false;
-        for (const existing of Object.values(patch.nodes)) {
-          if (!existing) continue;
-          const epos = getNodePosition(
-            ydoc, currentUserId, existing.id, existing.position,
-          );
-          const internal = flowApi.getInternalNode(existing.id);
-          const ew = internal?.measured?.width ?? 240;
-          const eh = internal?.measured?.height ?? 200;
-          const xOverlap = Math.min(pos.x + w, epos.x + ew) - Math.max(pos.x, epos.x);
-          const yOverlap = Math.min(pos.y + h, epos.y + eh) - Math.max(pos.y, epos.y);
-          if (xOverlap > 0 && yOverlap > 0) {
-            pos = { x: pos.x + STACK_OFFSET, y: pos.y + STACK_OFFSET };
-            bumped = true;
-            break;
-          }
-        }
-        if (!bumped) break;
-      }
-    }
+    // The new card is placed exactly under the cursor (spawnFlowPos was
+    // computed via screenToFlowPosition by the caller). Earlier versions
+    // here looped a STACK_OFFSET nudge to clear collisions; we removed it
+    // so spawn-at-cursor honors the user intent literally — overlapping
+    // is fine, the new card just renders on top via topNodeId/zIndex below.
+    // Users who want a tidy layout still have right-click → Organize modules.
+    const pos = { ...spawnFlowPos };
     // Per-module spawn-time data stamping. PICTUREBOX writes creatorId
     // (only when we have a real userId — single-user mode leaves it
     // unattributed, matching the per-user-cap-skipped behavior of the
@@ -858,6 +860,12 @@
         ...(initialData ? { data: initialData } : {}),
       };
     }, LOCAL_ORIGIN);
+    // Mark this node as the visual top of the stacking order so it
+    // renders on top of any cards it overlaps. Cleared as soon as the
+    // user touches a different card (drag, right-click) so the lift is
+    // strictly an at-spawn affordance — long-lived "always on top"
+    // would surprise users who expect drag-to-front to win later.
+    topNodeId = id;
     trace(`spawned ${type} (${id})`);
     // Engine instantiation happens via the reconciler microtask.
     void ensureEngine();
