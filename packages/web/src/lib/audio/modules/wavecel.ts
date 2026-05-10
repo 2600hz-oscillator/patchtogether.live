@@ -1,0 +1,193 @@
+// packages/web/src/lib/audio/modules/wavecel.ts
+//
+// WAVECEL — stereo wavetable VCO with morph + spread + wavefolder. Distinct
+// from the existing wavetableVco (more advanced: stereo, spread, fold, runtime
+// upload of E352-format WAV files). Card UI provides a 3D wavetable
+// visualization mode in addition to the standard scope view.
+//
+// DSP: packages/dsp/src/wavecel.ts (TS AudioWorklet, no Faust — wavetable
+// playback + per-sample interpolation + spread mixing + wavefolder
+// composition is cleaner in JS).
+//
+// Wavetable selection lives in node.data (rides Y.Doc out to every rack-mate
+// + persisted by Hocuspocus snapshots). Same shape as the DX7 preset pattern:
+// the host polls livePatch.nodes[id].data and reposts via port.postMessage on
+// change. Frames are stored as plain JS number[][] — never Yjs proxies —
+// because structuredClone over postMessage chokes on Yjs Y.Array proxies
+// (DX7 SYX bug from PR-94).
+
+import type { AudioDomainNodeHandle } from '$lib/audio/engine';
+import type { AudioModuleDef } from '$lib/audio/module-registry';
+import { patch as livePatch } from '$lib/graph/store';
+import workletUrl from '@patchtogether.live/dsp/dist/wavecel.js?url';
+import {
+  framesToPlain,
+  framesFromPlain,
+  getFactoryTable,
+  getFactoryTables,
+  DEFAULT_FACTORY_TABLE_ID,
+  type FactoryTable,
+} from '$lib/audio/wavecel-factory-tables';
+
+const POLL_MS = 200;
+
+const loadedContexts = new WeakSet<BaseAudioContext>();
+
+export interface WavecelData {
+  /** Either 'factory:<id>' (bundled synth table) or 'user' (uploaded WAV
+   *  whose frames live in `wavetableFrames`). Default = first factory. */
+  wavetableSource?: string;
+  /** Plain JS arrays so Yjs sync + postMessage structuredClone work
+   *  reliably (PR-94 DX7 SYX bug: Yjs proxies fail structuredClone). */
+  wavetableFrames?: number[][];
+  /** Optional friendly name for an uploaded table — shown in the card. */
+  wavetableLabel?: string;
+}
+
+interface ResolvedFrames {
+  frames: Float32Array[];
+  label: string;
+  /** Stable signature for cheap change detection in the poll loop. */
+  signature: string;
+}
+
+function resolveFrames(data: WavecelData | undefined): ResolvedFrames {
+  const src = data?.wavetableSource ?? `factory:${DEFAULT_FACTORY_TABLE_ID}`;
+  if (src === 'user' && Array.isArray(data?.wavetableFrames)) {
+    return {
+      frames: framesFromPlain(data!.wavetableFrames!),
+      label: data?.wavetableLabel ?? 'USER',
+      signature: `user:${data!.wavetableFrames!.length}:${data?.wavetableLabel ?? ''}`,
+    };
+  }
+  if (src.startsWith('factory:')) {
+    const id = src.slice('factory:'.length);
+    const t = getFactoryTable(id) ?? getFactoryTable(DEFAULT_FACTORY_TABLE_ID);
+    if (t) {
+      return {
+        frames: t.frames.map((f) => new Float32Array(f)),
+        label: t.label,
+        signature: `factory:${t.id}`,
+      };
+    }
+  }
+  const fb = getFactoryTables()[0]!;
+  return {
+    frames: fb.frames.map((f) => new Float32Array(f)),
+    label: fb.label,
+    signature: `factory:${fb.id}`,
+  };
+}
+
+export const wavecelDef: AudioModuleDef = {
+  type: 'wavecel',
+  domain: 'audio',
+  label: 'WAVECEL',
+  category: 'sources',
+  schemaVersion: 1,
+  stereoPairs: [['out_l', 'out_r']],
+
+  inputs: [
+    { id: 'pitch',     type: 'pitch' },
+    { id: 'fm',        type: 'audio' },
+    // CV → AudioParam routings per .myrobots/plans/cv-range-standard.md:
+    //   morph (0..1) + fold (0..1) are linear; spread (1..5) is also linear
+    //   so fractional CV smoothly cross-fades adjacent taps (discrete would
+    //   click at integer crossings).
+    { id: 'morph_cv',  type: 'cv',    paramTarget: 'morph',  cvScale: { mode: 'linear' } },
+    { id: 'spread_cv', type: 'cv',    paramTarget: 'spread', cvScale: { mode: 'linear' } },
+    { id: 'fold_cv',   type: 'cv',    paramTarget: 'fold',   cvScale: { mode: 'linear' } },
+  ],
+  outputs: [
+    { id: 'out_l', type: 'audio' },
+    { id: 'out_r', type: 'audio' },
+  ],
+  params: [
+    { id: 'tune',   label: 'Tune',  defaultValue: 0, min: -36,  max: 36,  curve: 'linear', units: 'st' },
+    { id: 'fine',   label: 'Fine',  defaultValue: 0, min: -100, max: 100, curve: 'linear', units: '¢' },
+    { id: 'morph',  label: 'Morph', defaultValue: 0, min: 0,    max: 1,   curve: 'linear' },
+    { id: 'spread', label: 'Sprd',  defaultValue: 1, min: 1,    max: 5,   curve: 'linear' },
+    { id: 'fold',   label: 'Fold',  defaultValue: 0, min: 0,    max: 1,   curve: 'linear' },
+  ],
+
+  async factory(ctx, node): Promise<AudioDomainNodeHandle> {
+    if (!loadedContexts.has(ctx)) {
+      await ctx.audioWorklet.addModule(workletUrl);
+      loadedContexts.add(ctx);
+    }
+
+    const workletNode = new AudioWorkletNode(ctx, 'wavecel', {
+      numberOfInputs: 5,
+      numberOfOutputs: 2,
+      outputChannelCount: [1, 1],
+    });
+
+    const initialData = (node.data ?? {}) as WavecelData;
+    let resolved = resolveFrames(initialData);
+    workletNode.port.postMessage({
+      type: 'loadWavetable',
+      frames: framesToPlain(resolved.frames),
+    });
+
+    const params = workletNode.parameters as unknown as Map<string, AudioParam>;
+    for (const def of wavecelDef.params) {
+      const v = (node.params ?? {})[def.id] ?? def.defaultValue;
+      params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
+    }
+    const pMorph = params.get('morph')!;
+    const pSpread = params.get('spread')!;
+    const pFold = params.get('fold')!;
+
+    let alive = true;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    function poll(): void {
+      if (!alive) return;
+      const live = livePatch.nodes[node.id];
+      if (live) {
+        const next = resolveFrames(live.data as WavecelData | undefined);
+        if (next.signature !== resolved.signature) {
+          resolved = next;
+          workletNode.port.postMessage({
+            type: 'loadWavetable',
+            frames: framesToPlain(next.frames),
+          });
+        }
+      }
+      pollTimer = setTimeout(poll, POLL_MS);
+    }
+    pollTimer = setTimeout(poll, POLL_MS);
+
+    return {
+      domain: 'audio',
+      inputs: new Map([
+        ['pitch',     { node: workletNode, input: 0 }],
+        ['fm',        { node: workletNode, input: 1 }],
+        ['morph_cv',  { node: workletNode, input: 2, param: pMorph }],
+        ['spread_cv', { node: workletNode, input: 3, param: pSpread }],
+        ['fold_cv',   { node: workletNode, input: 4, param: pFold }],
+      ]),
+      outputs: new Map([
+        ['out_l', { node: workletNode, output: 0 }],
+        ['out_r', { node: workletNode, output: 1 }],
+      ]),
+      setParam(paramId, value) {
+        params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
+      },
+      readParam(paramId) {
+        return params.get(paramId)?.value;
+      },
+      read(key) {
+        if (key === 'wavetableFrames') return resolved.frames;
+        if (key === 'wavetableLabel') return resolved.label;
+        return undefined;
+      },
+      dispose() {
+        alive = false;
+        if (pollTimer !== null) clearTimeout(pollTimer);
+        workletNode.disconnect();
+      },
+    };
+  },
+};
+
+export type { FactoryTable };

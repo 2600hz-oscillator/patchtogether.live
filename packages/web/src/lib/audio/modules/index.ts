@@ -34,6 +34,7 @@ import { unityscalemathematikDef } from './unityscalemathematik';
 import { dx7Def } from './dx7';
 import { noiseDef } from './noise';
 import { bugglesDef } from './buggles';
+import { wavecelDef } from './wavecel';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -73,6 +74,7 @@ export function registerAudioModules(): void {
   registerModule(dx7Def);
   registerModule(noiseDef);
   registerModule(bugglesDef);
+  registerModule(wavecelDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

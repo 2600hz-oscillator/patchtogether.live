@@ -194,6 +194,8 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'noise',
     // BUGGLES — chaotic random voltage source (wogglebug-style).
     'buggles',
+    // WAVECEL — stereo wavetable VCO (E352 WAV loader, morph + spread + fold).
+    'wavecel',
   ];
 
   for (const type of MODULE_TYPES) {

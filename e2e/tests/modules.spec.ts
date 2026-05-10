@@ -144,6 +144,11 @@ const MODULES: ModuleSpec[] = [
   // BUGGLES: 3 inputs (clock_cv + chaos_cv + external_clock) + 5 outputs
   // (smooth + stepped + clock + burst + ring) = 8 handles.
   { type: 'buggles',      cardClass: 'svelte-flow__node-buggles',      handleCount: 8, containsLabel: 'BUGGLES' },
+  // WAVECEL: 5 inputs (pitch + fm + 3 cv: morph_cv, spread_cv, fold_cv)
+  // + 2 outputs (out_l, out_r) = 7 handles. Stereo wavetable VCO with
+  // morph + spread + wavefolder, 3D wavetable visualization, and
+  // E352-format WAV upload (Synthesis Technology Cloud Terrarium).
+  { type: 'wavecel',      cardClass: 'svelte-flow__node-wavecel',      handleCount: 7, containsLabel: 'WAVECEL' },
 ];
 
 test.describe.configure({ mode: 'parallel' });
