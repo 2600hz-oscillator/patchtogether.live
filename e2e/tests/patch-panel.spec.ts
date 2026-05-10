@@ -862,16 +862,15 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Place the modules far enough apart that BOTH open panels can
-    // co-exist without the wider-of-the-two (sequencer, with 7 input
-    // rows + 3 output rows + 32 step grid) overlapping the ADSR's
-    // input column. With both panels open the drag path runs past
-    // every panel chrome edge, so any overlap would put the target
-    // handle UNDER the source panel's chrome and silently drop the
-    // connection.
+    // Mirror aut-patch-panel.spec.ts's positioning so the drag has the
+    // same proven-stable geometry: seq starts close to the left edge
+    // (x=80), adsr at x=700. That keeps both modules + their open
+    // panels inside the default 1280×720 viewport at the typical
+    // initial zoom; pushing adsr further right offscreens the target
+    // handle and the mouseup never lands on it.
     await spawnPatch(page, [
-      { id: 'seq', type: 'sequencer', position: { x: 100, y: 100 } },
-      { id: 'adsr', type: 'adsr', position: { x: 1100, y: 100 } },
+      { id: 'seq', type: 'sequencer', position: { x: 80, y: 100 } },
+      { id: 'adsr', type: 'adsr', position: { x: 700, y: 100 } },
     ]);
 
     const sourceHandle = page.locator(
@@ -895,6 +894,16 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await expect(
       page.locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`),
     ).toHaveAttribute('aria-hidden', 'false');
+
+    // Wait for the panel's 120ms opacity+transform transition to land
+    // AND for the two-RAF useUpdateNodeInternals beat that re-measures
+    // handleBounds inside xyflow. Without this wait, boundingBox()
+    // returns the mid-transform handle position; the mouse moves there
+    // but by the time the mousemove sequence reaches xyflow's
+    // hit-tester the handle has finished moving, so mouseup lands on
+    // empty space and the connection silently drops. 250ms covers
+    // both the CSS transition + the RAF re-measure on slow CI.
+    await page.waitForTimeout(250);
 
     const sBox = await sourceHandle.boundingBox();
     const tBox = await targetHandle.boundingBox();
