@@ -196,6 +196,8 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'buggles',
     // WAVECEL — stereo wavetable VCO (E352 WAV loader, morph + spread + fold).
     'wavecel',
+    // WARRENSPECTRUM — stereo 8-band filterbank + vactrol ping + acidwarp viz.
+    'warrenspectrum',
   ];
 
   for (const type of MODULE_TYPES) {

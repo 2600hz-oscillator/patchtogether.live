@@ -123,6 +123,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Basic noise source. Three independent audio outputs — WHITE (full-spectrum), PINK (1/f, -3 dB/oct via Voss-McCartney), BROWN (1/f², -6 dB/oct via leaky-integrated white). All outputs share a single LEVEL knob. No CV inputs.',
   buggles:
     'Chaotic random voltage source — clean-room functional implementation of the Buchla / Make Noise wogglebug archetype. Internal "woggle clock" emits triggers at the RATE knob; outputs include SMOOTH (slewed random), STEPPED (sample-and-held), CLOCK (woggle gate), BURST (probabilistic clusters of 3-7 triggers), and RING (smooth × sub-osc ring-mod, the signature dirty texture). CV inputs modulate rate + chaos; EXT CLK replaces the internal scheduler when patched. The "Wogglebug" name is Make Noise\'s trademark — BUGGLES is our name; no proprietary schematic is copied.',
+  warrenspectrum:
+    'Stereo 8-band filterbank with vactrol-style ping excitation and acidwarp video viz. Eight RBJ bandpass filters at octave-spaced centers (80, 160, 320, 640, 1280, 2560, 5120, 10240 Hz, Q=6). Each band carries its own ping gate input — rising edges distribute excitation across n±2 neighbors via a 1.0 / 0.35 / 0.12 bleed matrix into a vactrol envelope (soft-attack 10-30 ms with ±10% jitter, exponential decay 100-800 ms with ±10% jitter, tanh-saturated). The envelope simultaneously injects a fast broadband click into the bandpass (filter rings at fc) and pumps the band gain. viz_out is a mono-video cross-domain bridge: the on-card EQ-curve + audio-waveform overlay + cycling acidwarp hue palette + per-band ping flashes are also published as a video texture for downstream video modules.',
 };
 
 const PORT_NOTES: Record<string, string> = {

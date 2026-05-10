@@ -149,7 +149,12 @@ type StandardModuleType =
   | 'vdelay'
   // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder + 3D viz.
   // Loads E352 Cloud Terrarium-format WAV wavetables.
-  | 'wavecel';
+  | 'wavecel'
+  // WARRENSPECTRUM — stereo 8-band filterbank with vactrol-style ping
+  // excitation + acidwarp video visualizer. Audio domain with a
+  // cross-domain `viz_out` mono-video bridge for the EQ-curve+waveform+
+  // ping-flash visualization.
+  | 'warrenspectrum';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

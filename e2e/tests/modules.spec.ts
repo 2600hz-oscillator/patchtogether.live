@@ -153,6 +153,10 @@ const MODULES: ModuleSpec[] = [
   // regardless of the on-card scope/3D toggle (which controls only the
   // on-card preview).
   { type: 'wavecel',      cardClass: 'svelte-flow__node-wavecel',      handleCount: 9, containsLabel: 'WAVECEL' },
+  // WARRENSPECTRUM: 19 inputs (in_l, in_r + 8 level_cv + 8 ping + viznoise_cv)
+  // + 3 outputs (out_l, out_r, viz_out mono-video) = 22 handles. Stereo
+  // 8-band filterbank with vactrol ping excitation + acidwarp viz.
+  { type: 'warrenspectrum', cardClass: 'svelte-flow__node-warrenspectrum', handleCount: 22, containsLabel: 'WARRENSPECTRUM' },
 ];
 
 test.describe.configure({ mode: 'parallel' });

@@ -109,6 +109,8 @@
   import BugglesCard from '$lib/ui/modules/BugglesCard.svelte';
   // WAVECEL — stereo wavetable VCO (E352 WAV loader, 3D viz, spread, fold).
   import WavecelCard from '$lib/ui/modules/WavecelCard.svelte';
+  // WARRENSPECTRUM — 8-band filterbank with vactrol ping + acidwarp video viz.
+  import WarrenspectrumCard from '$lib/ui/modules/WarrenspectrumCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
@@ -208,6 +210,7 @@
     noise: NoiseCard,
     buggles: BugglesCard,
     wavecel: WavecelCard,
+    warrenspectrum: WarrenspectrumCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
