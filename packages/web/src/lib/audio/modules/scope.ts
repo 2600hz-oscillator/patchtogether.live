@@ -21,8 +21,10 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { drawScope, type ScopeSnapshot, type ScopeDrawParams } from './scope-draw';
+import { detectPitch, type PitchResult } from '$lib/audio/pitch-detect';
 
 export type { ScopeSnapshot } from './scope-draw';
+export type { PitchResult } from '$lib/audio/pitch-detect';
 
 export const scopeDef: AudioModuleDef = {
   type: 'scope',
@@ -122,6 +124,14 @@ export const scopeDef: AudioModuleDef = {
       return { ch1: buf1, ch2: buf2, sampleRate: ctx.sampleRate };
     }
 
+    // Pitch tuner reads ch1 (the analyser already mirrors what the user sees
+    // on the trace). The card polls this on a ~100ms interval; YIN over a
+    // 2048-sample window at 48kHz takes ~1ms.
+    function readPitch(): PitchResult {
+      analyser1.getFloatTimeDomainData(buf1);
+      return detectPitch(buf1, ctx.sampleRate);
+    }
+
     function drawFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
       const ctx2d = canvas.getContext('2d') as
         | CanvasRenderingContext2D
@@ -197,6 +207,9 @@ export const scopeDef: AudioModuleDef = {
       read(key) {
         if (key === 'snapshot') {
           return readSnapshot();
+        }
+        if (key === 'pitch') {
+          return readPitch();
         }
         return undefined;
       },
