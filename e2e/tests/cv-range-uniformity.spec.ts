@@ -93,15 +93,23 @@ test('LFO sweeps ADSR attack (log) across multiple orders of magnitude', async (
   );
   await page.waitForTimeout(400);
 
-  const sweep = await sampleParamSweep(page, 'a', 'attack', 16, 110);
+  // Sample more aggressively to catch LFO peaks: 32 samples × 60ms ≈ 1.92s
+  // window. At 4Hz LFO that's ~7.7 cycles, sampled with stride 60ms = 0.24
+  // cycles/sample — phase coverage is dense enough to pick up samples within
+  // ±0.05 of the peak (sin amplitude ≥ 0.95) at least once across the window.
+  const sweep = await sampleParamSweep(page, 'a', 'attack', 32, 60);
+
   // Param natural range: 0.001..10s. Log-symmetric scaling at knob 0.1:
   // cv=-1 → 0.1/sqrt(10000) = 0.001 (clamp); cv=+1 → 0.1*100 = 10 (clamp).
   // Observed span should be ≥ ~9s in the worst case.
   expect(
     sweep.span,
-    `ADSR attack sweep span ${sweep.span} (samples ${sweep.samples.slice(0, 5).join(', ')}…)`,
+    `ADSR attack sweep span ${sweep.span} (samples ${sweep.samples.slice(0, 8).join(', ')}…)`,
   ).toBeGreaterThanOrEqual(0.05);
-  expect(sweep.max).toBeGreaterThanOrEqual(0.5);
+  expect(
+    sweep.max,
+    `ADSR attack sweep max ${sweep.max} (samples ${sweep.samples.slice(0, 8).join(', ')}…)`,
+  ).toBeGreaterThanOrEqual(0.5);
 });
 
 test('LFO sweeps QBRT cutoff (log) across multiple octaves', async ({ page }) => {

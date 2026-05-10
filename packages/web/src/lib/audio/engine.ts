@@ -119,6 +119,27 @@ export class AudioEngine implements DomainEngine {
    */
   private nodeTypes = new Map<string, string>();
   /**
+   * Per-node knob value cache: latest value passed via addNode(node.params)
+   * or setParam. Used by addEdge to bake the user's CURRENT knob position
+   * into the cv-scale WaveShaper LUT (centring the modulation sweep on the
+   * actual knob, not the static ParamDef.defaultValue).
+   *
+   * Why not read AudioParam.value directly? Chromium's AudioWorkletNode
+   * AudioParam.value getter reflects the audio-thread-rendered value at the
+   * last block boundary, which can lag the most-recent setValueAtTime call
+   * (the audio thread has to process the schedule event before .value
+   * sees it). For the test path "spawn node with params; immediately patch
+   * cable", reading .value returns the param's static defaultValue rather
+   * than the just-set runtime value — making the LUT bake on the wrong
+   * centre. Caching the knob on the JS side sidesteps that race.
+   *
+   * Map key: `${nodeId}::${paramId}`.
+   */
+  private knobValues = new Map<string, number>();
+  private knobKey(nodeId: string, paramId: string): string {
+    return `${nodeId}::${paramId}`;
+  }
+  /**
    * Per-modulated-param AnalyserNode taps so the UI can visualize the CURRENT
    * computed value of an AudioParam (intrinsic + connected modulators).
    *
@@ -214,6 +235,13 @@ export class AudioEngine implements DomainEngine {
     }
     this.nodes.set(node.id, handle);
     this.nodeTypes.set(node.id, String(node.type));
+    // Seed the knob cache with the patch-graph values + the def's defaults
+    // for any unseeded params. addEdge will read these to bake the LUT.
+    const moduleDef = def as AudioModuleDef;
+    for (const paramDef of moduleDef.params) {
+      const v = (node.params ?? {})[paramDef.id] ?? paramDef.defaultValue;
+      this.knobValues.set(this.knobKey(node.id, paramDef.id), v);
+    }
   }
 
   removeNode(nodeId: string): void {
@@ -225,6 +253,12 @@ export class AudioEngine implements DomainEngine {
     handle.dispose();
     this.nodes.delete(nodeId);
     this.nodeTypes.delete(nodeId);
+    // Drop any cached knob values for this node so a re-spawn at the same
+    // id starts fresh from its def defaults.
+    const prefix = `${nodeId}::`;
+    for (const key of this.knobValues.keys()) {
+      if (key.startsWith(prefix)) this.knobValues.delete(key);
+    }
   }
 
   /**
@@ -297,7 +331,26 @@ export class AudioEngine implements DomainEngine {
       let connectSource: AudioNode = sout.node;
       let connectOutput: number = sout.output;
       if (scaleInfo && scaleInfo.hint.mode !== 'passthrough') {
-        const chain = attachCvScale(this.ctx, scaleInfo.paramDef, scaleInfo.hint);
+        // Bake the LIVE knob value into the LUT, not the ParamDef.defaultValue.
+        // The user may have moved the knob away from the default before patching
+        // the cable; a curve baked at the def's default would centre the sweep
+        // on the wrong position.
+        //
+        // We use our own JS-side `knobValues` cache (seeded in addNode and kept
+        // in sync by setParam) rather than reading `din.param.value` directly.
+        // For Faust AudioWorkletNode params, AudioParam.value reflects the
+        // audio-thread-rendered value at the last block boundary, which lags
+        // the most-recent setValueAtTime call until the audio thread processes
+        // the schedule event. In the "spawn node with params; immediately
+        // patch cable" path (e.g. cv-range-uniformity e2e), reading .value at
+        // addEdge time returns the static defaultValue rather than the just-
+        // set runtime value — making the LUT bake on the wrong centre. The
+        // JS-side cache sidesteps that race. Hot-rebuild on subsequent knob
+        // changes is left to a follow-up; cf. attachCvScale notes.
+        const liveKnob = this.knobValues.get(
+          this.knobKey(edge.target.nodeId, scaleInfo.paramDef.id),
+        ) ?? scaleInfo.paramDef.defaultValue;
+        const chain = attachCvScale(this.ctx, scaleInfo.paramDef, scaleInfo.hint, liveKnob);
         // source → scaler input; scaler output → param + tap.
         sout.node.connect(chain.input, sout.output);
         // The scaler is a single WaveShaperNode whose output we use for
@@ -456,6 +509,10 @@ export class AudioEngine implements DomainEngine {
     const handle = this.nodes.get(nodeId);
     if (!handle) return;
     handle.setParam(paramId, value);
+    // Keep the LUT-bake knob cache in sync so a future addEdge centres the
+    // sweep on the user's CURRENT knob position. (LUT hot-rebuild for
+    // already-attached cables is a follow-up; cf. attachCvScale notes.)
+    this.knobValues.set(this.knobKey(nodeId, paramId), value);
   }
 
   /** Read the live AudioParam value for motorized fader rendering.
@@ -529,6 +586,7 @@ export class AudioEngine implements DomainEngine {
     for (const handle of this.nodes.values()) handle.dispose();
     this.nodes.clear();
     this.nodeTypes.clear();
+    this.knobValues.clear();
   }
 }
 

@@ -112,19 +112,17 @@ function clamp(v: number, lo: number, hi: number): number {
  *
  * Inputs:
  *   ctx        — the AudioContext to allocate Web Audio nodes in
- *   sourceNode — the upstream node providing the cv signal (LFO output, etc.)
- *   sourceOut  — output index on sourceNode
- *   targetParam — the destination AudioParam (the param being modulated)
- *   getKnob    — closure returning the param's current intrinsic value
- *                (the "knob position"). Called when the chain is built;
- *                the scaling LUT bakes this in. Future: subscribe to knob
+ *   paramDef   — the modulated param's def (range + curve)
+ *   hint       — the cvScale hint (mode + depth)
+ *   knob       — the param's CURRENT intrinsic value at the moment the cable
+ *                is plugged in. Baked into the LUT so the modulation
+ *                centres on the user's actual knob position rather than
+ *                the static defaultValue. Future: subscribe to knob
  *                changes and rebuild the LUT — for v1 we accept that
  *                manual knob movements after the cable is plugged update
  *                only the additive part (Web Audio sums knob + delta) so
  *                the user still sees their knob position drive the
- *                center of the sweep.
- *   paramDef   — the modulated param's def (range + curve)
- *   hint       — the cvScale hint (mode + depth)
+ *                centre of the sweep.
  *
  * Returns:
  *   { input: AudioNode (where source connects), output: AudioNode (where the
@@ -145,6 +143,7 @@ export function attachCvScale(
   ctx: AudioContext,
   paramDef: ParamDef,
   hint: CvScaleHint,
+  knob: number = paramDef.defaultValue,
 ): {
   /** Where the upstream source should connect. */
   input: AudioNode;
@@ -154,7 +153,6 @@ export function attachCvScale(
   teardown: () => void;
 } {
   const depth = hint.depth ?? 1.0;
-  const knob = paramDef.defaultValue;
   const min = paramDef.min;
   const max = paramDef.max;
 

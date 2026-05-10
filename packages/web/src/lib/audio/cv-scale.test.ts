@@ -167,4 +167,28 @@ describe('cv-scale / integration', () => {
     expect(allFinite).toBe(true);
     expect(spread).toBeGreaterThan(0.01);
   });
+
+  // Regression for the e2e cv-range-uniformity ADSR-attack failure: the
+  // LUT MUST be built around the runtime knob value, not the static
+  // ParamDef.defaultValue. ADSR attack defaults to 0.005s; if the user
+  // turns the knob to 0.1s and patches an LFO, cv=+1 should sweep up to
+  // 0.1 × √(10000) = 10s (clamped to the param's max). With the bug,
+  // the LUT was always built at knob=0.005, capping cv=+1 at 0.5s and
+  // making `sweep.max ≥ 0.5` an unreliable threshold.
+  it('builds the curve at the live knob position, not the def default', () => {
+    const adsrAttack: ParamDef = {
+      id: 'attack',
+      label: 'A',
+      defaultValue: 0.005,
+      min: 0.001,
+      max: 10,
+      curve: 'log',
+    };
+    const liveKnob = 0.1;
+    const c = buildCvCurve(adsrAttack.min, adsrAttack.max, liveKnob, { mode: 'log' });
+    // cv=+1 with knob=0.1 → effective 10s; delta = 10 - 0.1 = 9.9.
+    expect(c[c.length - 1]).toBeCloseTo(9.9, 1);
+    // Sanity: cv=-1 should clamp at min (0.001), delta = 0.001 - 0.1 = -0.099.
+    expect(c[0]).toBeCloseTo(-0.099, 3);
+  });
 });

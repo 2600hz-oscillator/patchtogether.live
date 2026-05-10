@@ -231,6 +231,155 @@ describe('engine + cv-scale integration', () => {
     ).toBeUndefined();
   });
 
+  // Regression for the e2e cv-range-uniformity failure: when addEdge wires
+  // up the WaveShaper, it MUST bake the LIVE knob value (the patch graph's
+  // node.params or a previous setParam) into the LUT, not the static
+  // ParamDef.defaultValue. We assert by checking the curve table the engine
+  // installed on the WaveShaperNode.
+  //
+  // Why we don't read AudioParam.value directly: Chromium's
+  // AudioWorkletNode.parameters[path].value reflects the audio-thread-rendered
+  // value at the last block boundary, which lags the most-recent
+  // setValueAtTime call until the audio thread processes the schedule event.
+  // The engine therefore caches the JS-side knob in `knobValues`
+  // (seeded in addNode from node.params, updated in setParam).
+  it('addEdge bakes the LIVE knob value (node.params) into the WaveShaper curve', async () => {
+    // Define a target with a log-mode CV input so the live-knob skew is
+    // unmistakable: cv=+1 at knob=k yields k×√(max/min), so the difference
+    // between baking knob=0.05 (def default) vs. knob=0.5 (live) shows up as
+    // a 10× shift in delta at the curve endpoints.
+    const LIVE_TEST_DEF: AudioModuleDef = {
+      type: 'cvScaleLiveKnobTestModule',
+      domain: 'audio',
+      label: 'CV Scale Live Knob Test Module',
+      category: 'utilities',
+      schemaVersion: 1,
+      inputs: [
+        { id: 'gain', type: 'cv', paramTarget: 'gain', cvScale: { mode: 'log' } },
+      ],
+      outputs: [{ id: 'audio', type: 'audio' }],
+      params: [{ id: 'gain', label: 'Gain', defaultValue: 0.05, min: 0.01, max: 5, curve: 'log' }],
+      async factory(_ctx, _node) {
+        const node = makeFakeNode('test-target');
+        const param = makeFakeParam('test.gain', _node.params?.gain ?? 0.05);
+        return {
+          domain: 'audio' as const,
+          inputs: new Map([
+            ['gain', { node: node as unknown as AudioNode, input: 0, param: param as unknown as AudioParam }],
+          ]),
+          outputs: new Map([
+            ['audio', { node: node as unknown as AudioNode, output: 0 }],
+          ]),
+          setParam(_id, _v) { /* */ },
+          readParam(_id) { return param.value; },
+          dispose() { /* */ },
+        };
+      },
+    };
+    registerModule(LIVE_TEST_DEF);
+
+    connectionLog = [];
+    let installedCurve: Float32Array | null = null;
+    const ctx = makeFakeAudioContext() as unknown as AudioContext;
+    // Override createWaveShaper so we can intercept the curve setter and
+    // assert the engine wrote a curve baked at the LIVE knob (0.5), not
+    // the default (0.05).
+    (ctx as unknown as { createWaveShaper: () => unknown }).createWaveShaper = () => {
+      const ws = makeFakeNode('waveshaper');
+      return {
+        ...ws,
+        get curve() { return installedCurve; },
+        set curve(c: Float32Array | null) { installedCurve = c; },
+        oversample: 'none' as const,
+      };
+    };
+    const eng = new AudioEngine(ctx);
+
+    await eng.addNode({
+      id: 'src',
+      type: 'cvScaleTestSource',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: {},
+    });
+    // Critical: spawn the target with a NON-default knob value via
+    // node.params. The engine must seed knobValues from this and use it
+    // when addEdge bakes the LUT.
+    await eng.addNode({
+      id: 'tgt',
+      type: 'cvScaleLiveKnobTestModule',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: { gain: 0.5 },
+    });
+    eng.addEdge({
+      id: 'e1',
+      source: { nodeId: 'src', portId: 'cv_out' },
+      target: { nodeId: 'tgt', portId: 'gain' },
+      sourceType: 'cv',
+      targetType: 'cv',
+    });
+
+    expect(installedCurve, 'WaveShaper curve was never set').not.toBeNull();
+    // With knob=0.5 (LIVE), log scaling, range 0.01..5:
+    //   cv=+1 → 0.5 × sqrt(5/0.01) = 0.5 × sqrt(500) ≈ 11.18 → clamp to 5;
+    //          delta = 5 - 0.5 = 4.5.
+    // With knob=0.05 (BUG / def default):
+    //   cv=+1 → 0.05 × sqrt(500) ≈ 1.118; delta = 1.068. Far from 4.5.
+    // We assert on the curve's last sample (cv=+1) to catch the regression.
+    const last = installedCurve![installedCurve!.length - 1]!;
+    expect(last).toBeCloseTo(4.5, 1);
+  });
+
+  // Companion: setParam after addNode but before addEdge MUST update the
+  // LUT-bake knob cache. Mirrors the runtime path "user moves the knob
+  // (setParam) and THEN drags a cable in (addEdge)".
+  it('addEdge after setParam picks up the most-recent knob value', async () => {
+    // Reuse the LIVE_TEST_DEF registered in the previous test.
+    connectionLog = [];
+    let installedCurve: Float32Array | null = null;
+    const ctx = makeFakeAudioContext() as unknown as AudioContext;
+    (ctx as unknown as { createWaveShaper: () => unknown }).createWaveShaper = () => {
+      const ws = makeFakeNode('waveshaper');
+      return {
+        ...ws,
+        get curve() { return installedCurve; },
+        set curve(c: Float32Array | null) { installedCurve = c; },
+        oversample: 'none' as const,
+      };
+    };
+    const eng = new AudioEngine(ctx);
+
+    await eng.addNode({
+      id: 'src',
+      type: 'cvScaleTestSource',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: {},
+    });
+    // Spawn with the def default (0.05).
+    await eng.addNode({
+      id: 'tgt2',
+      type: 'cvScaleLiveKnobTestModule',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: {},
+    });
+    // User turns the knob to 0.5 BEFORE patching the cable.
+    eng.setParam('tgt2', 'gain', 0.5);
+    eng.addEdge({
+      id: 'e2',
+      source: { nodeId: 'src', portId: 'cv_out' },
+      target: { nodeId: 'tgt2', portId: 'gain' },
+      sourceType: 'cv',
+      targetType: 'cv',
+    });
+
+    expect(installedCurve).not.toBeNull();
+    const last = installedCurve![installedCurve!.length - 1]!;
+    expect(last).toBeCloseTo(4.5, 1);
+  });
+
   it('addEdge falls back to passthrough when cvScale is omitted', async () => {
     // Quick variant: clone the test target def but drop cvScale.
     const PASSTHROUGH_DEF: AudioModuleDef = {
