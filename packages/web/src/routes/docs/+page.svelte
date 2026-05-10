@@ -10,19 +10,20 @@
 <section class="hero">
   <h1>patchtogether.live</h1>
   <div class="sub">
-    Multiplayer browser-native modular synthesizer. Patches are CRDT-shared; audio runs locally.
+    Multiplayer browser-native modular synthesizer. Audio + video. Patches are CRDT-shared; rendering is local.
   </div>
 </section>
 
 <p>
   Performers patch a shared rack live in their browser. The patch graph is the canonical state —
-  audio (today) and visuals (later) are renderers of that graph. Authoring is collaborative;
-  rendering is local.
+  audio (Web Audio + AudioWorklet) and video (WebGL2 fragment shaders) are renderers of that
+  graph. Authoring is collaborative; rendering is local.
 </p>
 
 <p>
-  Currently <strong>{data.moduleCount} audio modules</strong> in the registry. Catalog:
-  <a href="/docs/modules">/docs/modules</a>.
+  <strong>{data.moduleCount} modules</strong> in the registry today (audio + video). Catalog:
+  <a href="/docs/modules">/docs/modules</a>. Right-click any module on the canvas to open its
+  per-module docs page in a new tab.
 </p>
 
 <h2>Multi-user model</h2>
@@ -35,35 +36,35 @@
   page. Anonymous edits persist in the shared graph the same as any signed-in user's.
 </p>
 
-<h2>DSP pipeline</h2>
+<h2>Domains</h2>
 <p>
-  Two flavors of audio module sit behind a uniform <code>AudioModuleDef</code> registry:
+  Two domains today, with the architecture from day 1 to drop in more:
 </p>
 <ul>
   <li>
-    <strong>Faust → WASM</strong>. Most generators / filters / effects are
-    <code>.dsp</code> files compiled to WebAssembly + an AudioWorkletProcessor wrapper. See
-    <code>packages/dsp/src/*.dsp</code>.
+    <strong>Audio.</strong> Web Audio + AudioWorklet. Most DSP is Faust 2 → WASM
+    (<code>packages/dsp/src/*.dsp</code>). A handful of modules — LFO, Wavetable VCO, TIMELORDE,
+    CHARLOTTE'S ECHOS, DX7 — ship as hand-written <code>AudioWorkletProcessor</code>s in TS
+    (<code>packages/dsp/src/*.ts</code>) when they need clock arithmetic, lookahead schedulers,
+    or in-JS state. CV cables carry a bipolar −1..+1 signal where ±1 sweeps the target param
+    edge-to-edge; per-port <code>cvScale</code> hints (<code>linear</code>/<code>log</code>/
+    <code>discrete</code>/<code>passthrough</code>) drive the scaling.
   </li>
   <li>
-    <strong>TS AudioWorklets</strong>. Modules that need clock arithmetic, lookahead schedulers,
-    or buffer state in JS land — LFO, Wavetable VCO, TIMELORDE, CHARLOTTE'S ECHOS — ship as
-    hand-written <code>AudioWorkletProcessor</code> classes in <code>packages/dsp/src/*.ts</code>.
+    <strong>Video.</strong> WebGL2 fragment shaders. Each video module ships its own GLSL +
+    a <code>VideoModuleDef</code> factory under
+    <code>packages/web/src/lib/video/modules/</code>. Cable types: <code>image</code> (still
+    RGB), <code>mono-video</code> (1-channel animated), <code>video</code> (RGB animated),
+    <code>keys</code> (1-channel still). Free upcasts handle the obvious widenings.
   </li>
 </ul>
 <p>
-  The web runtime imports each module's compiled artifact via Vite's <code>?url</code> asset
-  pipeline; the module factory wires up <code>ChannelMerger</code> / <code>Splitter</code> nodes
-  so per-port mono signals route into the right Faust / worklet input channels.
-</p>
-
-<h2>Patch graph (Yjs CRDT)</h2>
-<p>
   The graph is a <code>Y.Doc</code> with <code>nodes</code>, <code>edges</code>, and per-user
-  <code>layouts</code>. A <code>PatchEngine</code> reconciler diffs the live graph against a
-  per-domain rendering engine (today: audio) and issues add / remove / setParam calls. The
-  architecture is multi-domain from day 1 so visual modules (LZX-style) can register a second
-  engine without re-plumbing.
+  <code>layouts</code>. A <code>PatchEngine</code> reconciler diffs the live graph against
+  per-domain rendering engines (<code>AudioEngine</code>, <code>VideoEngine</code>) and issues
+  add / remove / setParam calls. Audio-side <code>cv</code> cables can also terminate on a
+  video module's CV input — the cross-domain bridge reads the audio CV at frame rate and
+  pushes it into <code>VideoEngine.setParam</code>.
 </p>
 
 <h2>Persistence</h2>
@@ -73,7 +74,9 @@
   HTTP <code>neon</code> template tag (<code>pg</code> sockets and the WebSocket
   <code>Pool</code> both fail in Workers — see <a href="/docs/deploy">deploy notes</a>).
   Hocuspocus on Fly runs Node and uses standard <code>pg.Pool</code> over TCP. Rackspace
-  metadata, owner, member list, and Yjs snapshots all live in Postgres.
+  metadata, owner, member list, and Yjs snapshots all live in Postgres. PICTUREBOX images and
+  DX7 user banks ride inside the Yjs snapshot — see
+  <a href="/docs/rackspace-persistence">rackspace persistence</a>.
 </p>
 
 <h2>Deploy topology</h2>
@@ -106,6 +109,6 @@
     <a href="/docs/rackspace-persistence">Rackspace persistence</a> —
     where patches + assets live, what Save/Load do, what auto-saves.
   </li>
-  <li><a href="/docs/testing">Testing</a> — unit / ART / E2E layers.</li>
+  <li><a href="/docs/testing">Testing</a> — unit / ART / E2E layers + port-surface consistency gates.</li>
   <li><a href="/docs/deploy">Deploy + ops</a> — the 3-tier flow, Workers↔Postgres caveats.</li>
 </ul>
