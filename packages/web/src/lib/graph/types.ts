@@ -52,6 +52,16 @@ export function isVideoCableType(type: CableType): boolean {
  * Phase 1; for Phase 0 we permit the connection at the type level so the
  * wiring story doesn't change later.
  *
+ * cv → audio is also permitted: in Eurorack convention there is no hard
+ * distinction between control voltage and audio, only signal frequency
+ * content. A slow CV summed into an audio input simply behaves as a DC
+ * + low-frequency tremolo source; an audio-rate signal patched into a
+ * "cv" port already worked because cv ports tolerate any signal in the
+ * audio sample domain. Codifying cv → audio as a legal upcast lets
+ * modules like STEREOVCA accept BOTH an LFO (cv, slow → tremolo) AND an
+ * oscillator (audio-rate → ring modulation) on the same strength input
+ * without the user having to think about cable types.
+ *
  * Strictly out: audio/pitch/gate/polyPitchGate → any video port; any video
  * stream → any audio port.
  */
@@ -62,6 +72,8 @@ export function canConnect(srcType: CableType, dstType: CableType): boolean {
     keys: ['mono-video', 'image'],
     image: ['video'],
     'mono-video': ['video'],
+    // cv → audio: Eurorack-style same-substrate upcast. See block comment.
+    cv: ['audio'],
   };
   const ok = upcasts[srcType as string];
   if (ok && ok.includes(dstType as string)) return true;
@@ -149,7 +161,11 @@ type StandardModuleType =
   | 'vdelay'
   // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder + 3D viz.
   // Loads E352 Cloud Terrarium-format WAV wavetables.
-  | 'wavecel';
+  | 'wavecel'
+  // STEREOVCA — stereo VCA + ring modulator. Same per-channel multiply
+  // behaves as VCA gain (slow strength) or ring mod (audio-rate strength);
+  // INDEPENDENT normalling on the audio and strength halves.
+  | 'stereovca';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

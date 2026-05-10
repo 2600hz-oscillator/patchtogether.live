@@ -151,6 +151,12 @@ const MODULES: ModuleSpec[] = [
   // morph + spread + wavefolder, 3D wavetable visualization, and
   // E352-format WAV upload (Synthesis Technology Cloud Terrarium).
   { type: 'wavecel',      cardClass: 'svelte-flow__node-wavecel',      handleCount: 7, containsLabel: 'WAVECEL' },
+  // STEREOVCA: 4 audio inputs (in_l, in_r, strength_l, strength_r) +
+  // 2 audio outputs (out_l, out_r) = 6 handles. Stereo VCA + ring
+  // modulator with INDEPENDENT normalling on the audio and strength
+  // halves; strength inputs declare `audio` cable type and the
+  // graph/types.ts cv→audio upcast lets LFOs / ADSRs land here.
+  { type: 'stereovca',    cardClass: 'svelte-flow__node-stereovca',    handleCount: 6, containsLabel: 'STEREOVCA' },
 ];
 
 test.describe.configure({ mode: 'parallel' });

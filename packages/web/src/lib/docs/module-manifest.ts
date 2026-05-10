@@ -123,6 +123,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Basic noise source. Three independent audio outputs — WHITE (full-spectrum), PINK (1/f, -3 dB/oct via Voss-McCartney), BROWN (1/f², -6 dB/oct via leaky-integrated white). All outputs share a single LEVEL knob. No CV inputs.',
   buggles:
     'Chaotic random voltage source — clean-room functional implementation of the Buchla / Make Noise wogglebug archetype. Internal "woggle clock" emits triggers at the RATE knob; outputs include SMOOTH (slewed random), STEPPED (sample-and-held), CLOCK (woggle gate), BURST (probabilistic clusters of 3-7 triggers), and RING (smooth × sub-osc ring-mod, the signature dirty texture). CV inputs modulate rate + chaos; EXT CLK replaces the internal scheduler when patched. The "Wogglebug" name is Make Noise\'s trademark — BUGGLES is our name; no proprietary schematic is copied.',
+  stereovca:
+    'Stereo VCA + ring modulator. Per-channel multiply: out_l = in_l * (strength_l + offset) * level; out_r = in_r * (strength_r + offset) * level. The same math behaves as VCA gain control when strength is slow (CV / LFO / envelope) and as ring modulation when strength is audio-rate — no mode toggle, the perceptual difference emerges from signal content. INDEPENDENT normalling: if in_r is unpatched it copies in_l (mono → stereo); if strength_r is unpatched it copies strength_l (one strength drives both VCAs). The two halves normal independently, so true-stereo audio + mono strength works, as does mono audio + per-side strength. Strength inputs declare cable type `audio` so audio-rate sources patch natively; LFOs / ADSRs reach them via the cv → audio upcast in graph/types.ts:canConnect.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -302,6 +304,13 @@ const PORT_NOTES: Record<string, string> = {
   'buggles.clock':          '5ms gate pulse fired on each woggle event. Use as a chaotic clock for sequencers / drum triggers.',
   'buggles.burst':          'Cluster of 3-7 closely-spaced 4ms gate pulses, fired at probability BURST per woggle event. Probabilistic chaos — sometimes silent, sometimes a buzz of triggers.',
   'buggles.ring':           'Audio-rate ring-modulation output: SMOOTH voltage × sine sub-oscillator (rate/4 Hz). The wogglebug\'s signature complex-random texture.',
+  // STEREOVCA — stereo VCA + ring modulator.
+  'stereovca.in_l':       'Left audio input. Multiplied by (strength_l + offset) * level.',
+  'stereovca.in_r':       'Right audio input. Multiplied by (strength_r + offset) * level. Normalled to in_l when unpatched (mono → stereo).',
+  'stereovca.strength_l': 'Left strength / ring carrier. Cable type `audio` so any signal — LFO/ADSR (slow → tremolo), oscillator (audio-rate → ring mod) — patches without thinking about cable types.',
+  'stereovca.strength_r': 'Right strength / ring carrier. Normalled to strength_l when unpatched (one strength drives both VCAs).',
+  'stereovca.out_l':      'Left output: in_l * (strength_l + offset) * level.',
+  'stereovca.out_r':      'Right output: in_r * (strength_r + offset) * level.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
