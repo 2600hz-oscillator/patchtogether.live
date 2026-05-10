@@ -22,7 +22,9 @@ import { feedbackDef } from './feedback';
 import { mixerVideoDef } from './mixer';
 import { cameraInputDef } from './camera-input';
 import { shapesDef } from './shapes';
+import { monoglitchDef } from './monoglitch';
 import { ruttetraDef } from './ruttetra';
+import { shapedrampsDef } from './shapedramps';
 
 let registered = false;
 
@@ -43,9 +45,19 @@ export function registerVideoModules(): void {
   registerVideoModule(mixerVideoDef);
   // Camera input (local-only)
   registerVideoModule(cameraInputDef);
-  // SHAPES + RUTTETRA — geometry source + Rutt-Etra scanline output.
+  // SHAPES — geometry source.
   registerVideoModule(shapesDef);
+  // MONOGLITCH — luma → vertical-scanline displacement OUTPUT (the
+  // original "Rutt-Etra-style" effect from PR-99, renamed when the real
+  // raster-coordinate-remap RUTTETRA landed alongside SHAPEDRAMPS).
+  registerVideoModule(monoglitchDef);
+  // RUTTETRA — true Rutt/Etra raster-scan-coordinate processor. Inputs
+  // X/Y are mono-video coordinate fields, Z is the source video.
   registerVideoModule(ruttetraDef);
+  // SHAPEDRAMPS — sync-locked ramp generator. Stable linear (h_lin/
+  // v_lin) outputs for clean raster passthrough, plus shaped (h_out/
+  // v_out) outputs for morphable raster-coordinate fields.
+  registerVideoModule(shapedrampsDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

@@ -1,17 +1,15 @@
 <script lang="ts">
-  // RuttetraCard — UI for the true Rutt/Etra raster-scan-coordinate
-  // processor. X/Y inputs are mono-video coordinate fields (typically
-  // patched from SHAPEDRAMPS); Z is the source video. Combines
-  // VideoOutCard's on-card visible canvas (pulled from the engine via
-  // drawImage(engine.canvas, ...)) with input handles and faders for
-  // intensity, X/Y luma displacement, and color tint.
+  // MonoglitchCard — UI for the MONOGLITCH luma-displacement OUTPUT.
+  // Combines VideoOutCard's on-card visible canvas (pulled from the engine
+  // via drawImage(engine.canvas, ...)) with extra CV inputs + faders for
+  // the H/V ramps, Z displacement, line count, spacing, and color tint.
 
   import { onMount, onDestroy } from 'svelte';
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
-  import { ruttetraDef } from '$lib/video/modules/ruttetra';
+  import { monoglitchDef } from '$lib/video/modules/monoglitch';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
 
@@ -20,7 +18,7 @@
   const engineCtx = useEngine();
 
   function p(name: string): number {
-    const def = ruttetraDef.params.find((d) => d.id === name);
+    const def = monoglitchDef.params.find((d) => d.id === name);
     return node?.params[name] ?? def?.defaultValue ?? 0;
   }
   function setParam(paramId: string) {
@@ -30,11 +28,17 @@
     };
   }
 
+  // Engine render resolution — matches VIDEO_RES in
+  // packages/web/src/lib/video/engine.ts. Hardcoded so we don't pull in
+  // WebGL boot code just for the constant.
   const ENGINE_W = 640;
   const ENGINE_H = 360;
 
+  // Card-internal canvas size. Matches the small fixed footprint of
+  // SCOPE — MONOGLITCH shares "compact display + controls" footprint
+  // rather than VideoOutCard's resizable card. Keeps the patch dense.
   const CANVAS_W = 280;
-  const CANVAS_H = 158;
+  const CANVAS_H = 158; // 16:9-ish
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
@@ -73,6 +77,9 @@
     }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
+      // PR-85 multi-OUTPUT pattern: ask the engine to copy THIS instance's
+      // FBO to its drawing buffer right before we read it, so multiple
+      // MONOGLITCH / OUTPUT cards on one engine each render independently.
       try {
         videoEngine.blitOutputToDrawingBuffer(id);
       } catch {
@@ -84,6 +91,8 @@
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
       const r = fitRect(cw, ch);
+      // Y-flip — same reason as VideoOutCard: WebGL framebuffer is
+      // bottom-left origin, 2D canvas is top-left.
       ctx2d.save();
       ctx2d.translate(r.x, r.y + r.h);
       ctx2d.scale(1, -1);
@@ -101,48 +110,47 @@
   });
 </script>
 
-<div class="card video" data-testid="ruttetra-card" data-node-id={id}>
+<div class="card video" data-testid="monoglitch-card" data-node-id={id}>
   <div class="stripe"></div>
-  <header class="title">RUTTETRA</header>
+  <header class="title">MONOGLITCH</header>
 
-  <!-- 3 video inputs (x, y, z) + 3 cv inputs (intensity, xDisp, yDisp) -->
-  <Handle type="target" position={Position.Left} id="x"         style="top: 56px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 50px;">X</span>
-  <Handle type="target" position={Position.Left} id="y"         style="top: 88px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 82px;">Y</span>
-  <Handle type="target" position={Position.Left} id="z"         style="top: 120px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 114px;">Z</span>
+  <!-- Video input + 3 CV inputs. Port id MUST match param id for the CV
+       bridge (PatchEngine routes audio cv → setParam(portId)). -->
+  <Handle type="target" position={Position.Left} id="in"        style="top: 56px;  --handle-color: var(--cable-video);" />
+  <span class="port-label left" style="top: 50px;">VIDEO</span>
+  <Handle type="target" position={Position.Left} id="hRamp"     style="top: 92px;  --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 86px;">H</span>
+  <Handle type="target" position={Position.Left} id="vRamp"     style="top: 124px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 118px;">V</span>
   <Handle type="target" position={Position.Left} id="intensity" style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">I</span>
-  <Handle type="target" position={Position.Left} id="xDisp"     style="top: 188px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 182px;">XD</span>
-  <Handle type="target" position={Position.Left} id="yDisp"     style="top: 220px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 214px;">YD</span>
+  <span class="port-label left" style="top: 150px;">Z</span>
 
   <div class="canvas-wrap">
     <canvas
       bind:this={canvasEl}
       width={CANVAS_W}
       height={CANVAS_H}
-      data-testid="ruttetra-canvas"
+      data-testid="monoglitch-canvas"
       data-node-id={id}
     ></canvas>
   </div>
 
   <div class="fader-grid">
-    <Fader value={p('intensity')} min={0}  max={2}  defaultValue={ruttetraDef.params.find((x) => x.id === 'intensity')!.defaultValue} label="I"   curve="linear" onchange={setParam('intensity')} />
-    <Fader value={p('xDisp')}     min={-1} max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'xDisp')!.defaultValue}     label="XD"  curve="linear" onchange={setParam('xDisp')} />
-    <Fader value={p('yDisp')}     min={-1} max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'yDisp')!.defaultValue}     label="YD"  curve="linear" onchange={setParam('yDisp')} />
-    <Fader value={p('tintR')}     min={0}  max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'tintR')!.defaultValue}     label="R"   curve="linear" onchange={setParam('tintR')} />
-    <Fader value={p('tintG')}     min={0}  max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'tintG')!.defaultValue}     label="G"   curve="linear" onchange={setParam('tintG')} />
-    <Fader value={p('tintB')}     min={0}  max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"   curve="linear" onchange={setParam('tintB')} />
+    <Fader value={p('hRamp')}     min={-1} max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'hRamp')!.defaultValue}     label="H"     curve="linear" onchange={setParam('hRamp')} />
+    <Fader value={p('vRamp')}     min={-1} max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'vRamp')!.defaultValue}     label="V"     curve="linear" onchange={setParam('vRamp')} />
+    <Fader value={p('intensity')} min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'intensity')!.defaultValue} label="Z"     curve="linear" onchange={setParam('intensity')} />
+    <Fader value={p('lines')}     min={8}  max={240} defaultValue={monoglitchDef.params.find((x) => x.id === 'lines')!.defaultValue}     label="Lines" curve="linear" onchange={setParam('lines')} />
+    <Fader value={p('spacing')}   min={0}  max={0.95} defaultValue={monoglitchDef.params.find((x) => x.id === 'spacing')!.defaultValue}  label="Gap"   curve="linear" onchange={setParam('spacing')} />
+    <Fader value={p('tintR')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintR')!.defaultValue}     label="R"     curve="linear" onchange={setParam('tintR')} />
+    <Fader value={p('tintG')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintG')!.defaultValue}     label="G"     curve="linear" onchange={setParam('tintG')} />
+    <Fader value={p('tintB')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"     curve="linear" onchange={setParam('tintB')} />
   </div>
 </div>
 
 <style>
   .card {
     width: 320px;
-    min-height: 480px;
+    min-height: 420px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -181,7 +189,7 @@
   }
   .port-label.left { left: 14px; }
   .canvas-wrap {
-    margin: 12px 18px 8px 40px;
+    margin: 12px 18px 8px 28px;
     border: 1px solid var(--cable-video);
     border-radius: 2px;
     overflow: hidden;
@@ -199,7 +207,7 @@
     margin-top: 10px;
     padding: 0 14px;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 10px 4px;
     justify-items: center;
   }

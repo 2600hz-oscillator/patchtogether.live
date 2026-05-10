@@ -772,7 +772,17 @@ void main() {
     hits.sort((a, b) => a.id.localeCompare(b.id));
     for (const e of hits) {
       const src = this.nodes.get(e.source.nodeId);
-      if (src && src.surface.texture) return src.surface.texture;
+      if (!src) continue;
+      // Multi-output sources (SHAPEDRAMPS — h_lin / v_lin / h_out / v_out)
+      // can't share a single surface.texture across distinct ports. They
+      // expose per-port textures via `read('outputTexture:<portId>')`,
+      // which we honor here before falling back to surface.texture (the
+      // single-output convention every Phase-0/1 module uses).
+      if (src.read) {
+        const tex = src.read(`outputTexture:${e.source.portId}`) as WebGLTexture | null | undefined;
+        if (tex) return tex;
+      }
+      if (src.surface.texture) return src.surface.texture;
     }
     return null;
   }
