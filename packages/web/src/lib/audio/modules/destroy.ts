@@ -15,9 +15,13 @@ export const destroyDef: AudioModuleDef = {
   schemaVersion: 1,
   inputs: [
     { id: 'audio',    type: 'audio' },
-    { id: 'decimate', type: 'cv', paramTarget: 'decimate' },
-    { id: 'bits',     type: 'cv', paramTarget: 'bits' },
-    { id: 'wet',      type: 'cv', paramTarget: 'wet' },
+    // CV scaling per .myrobots/plans/cv-range-standard.md.
+    // decimate: linear (1..64; cv=±1 sweeps ±31.5 from knob).
+    // bits: linear (1..16).
+    // wet: linear (0..1).
+    { id: 'decimate', type: 'cv', paramTarget: 'decimate', cvScale: { mode: 'linear' } },
+    { id: 'bits',     type: 'cv', paramTarget: 'bits',     cvScale: { mode: 'linear' } },
+    { id: 'wet',      type: 'cv', paramTarget: 'wet',      cvScale: { mode: 'linear' } },
   ],
   outputs: [{ id: 'audio', type: 'audio' }],
   params: [

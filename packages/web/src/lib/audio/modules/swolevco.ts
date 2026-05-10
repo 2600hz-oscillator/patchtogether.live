@@ -137,10 +137,12 @@ export const swolevcoDef: AudioModuleDef = {
     { id: 'pitch',     type: 'pitch' },
     { id: 'mod_pitch', type: 'pitch' },
     { id: 'fm',        type: 'audio' },
-    { id: 'timbre',    type: 'cv', paramTarget: 'timbre' },
-    { id: 'symmetry',  type: 'cv', paramTarget: 'symmetry' },
-    { id: 'fold',      type: 'cv', paramTarget: 'fold' },
-    { id: 'ratio',     type: 'cv', paramTarget: 'ratio' },
+    // CV scaling per .myrobots/plans/cv-range-standard.md (LFO ±1 sweeps
+    // each param's full natural range centered on the knob).
+    { id: 'timbre',    type: 'cv', paramTarget: 'timbre',   cvScale: { mode: 'linear' } },
+    { id: 'symmetry',  type: 'cv', paramTarget: 'symmetry', cvScale: { mode: 'linear' } },
+    { id: 'fold',      type: 'cv', paramTarget: 'fold',     cvScale: { mode: 'linear' } },
+    { id: 'ratio',     type: 'cv', paramTarget: 'ratio',    cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out',     type: 'audio' },

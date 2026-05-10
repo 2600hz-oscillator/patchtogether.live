@@ -150,6 +150,21 @@ const PARAMS = buildParams();
 // land on either port. Useful when patching alongside an external trigger
 // source (e.g. drum machine triggers + sequencer gates).
 
+// Per .myrobots/plans/cv-range-standard.md, every CV input gets a cvScale
+// hint inferred from the param's natural curve so an LFO at ±1 sweeps the
+// param's full natural range. Pure helper so the test can pin the mapping.
+function cvScaleFor(paramId: string): { mode: 'linear' | 'log' | 'discrete' } {
+  const p = PARAMS.find((q) => q.id === paramId);
+  if (!p) return { mode: 'linear' };
+  if (p.curve === 'discrete') return { mode: 'discrete' };
+  if (p.curve === 'log') return { mode: 'log' };
+  return { mode: 'linear' };
+}
+
+function cvIn(id: string, paramTarget: string): PortDef {
+  return { id, type: 'cv', paramTarget, cvScale: cvScaleFor(paramTarget) };
+}
+
 function buildInputs(): PortDef[] {
   const inputs: PortDef[] = [];
   for (let v = 1; v <= 4; v++) inputs.push({ id: `trig${v}`,  type: 'gate' });
@@ -157,38 +172,38 @@ function buildInputs(): PortDef[] {
   for (let v = 1; v <= 4; v++) inputs.push({ id: `pitch${v}`, type: 'pitch' });
 
   for (const v of [1, 2, 3]) {
-    inputs.push({ id: `v${v}_tone`,   type: 'cv', paramTarget: `v${v}_tone` });
-    inputs.push({ id: `v${v}_shape`,  type: 'cv', paramTarget: `v${v}_shape` });
-    inputs.push({ id: `v${v}_volume`, type: 'cv', paramTarget: `v${v}_volume` });
-    inputs.push({ id: `v${v}_decay`,  type: 'cv', paramTarget: `v${v}_decay` });
+    inputs.push(cvIn(`v${v}_tone`,   `v${v}_tone`));
+    inputs.push(cvIn(`v${v}_shape`,  `v${v}_shape`));
+    inputs.push(cvIn(`v${v}_volume`, `v${v}_volume`));
+    inputs.push(cvIn(`v${v}_decay`,  `v${v}_decay`));
   }
 
   inputs.push({ id: 'v4_fm',      type: 'audio' });
-  inputs.push({ id: 'v4_wavePos', type: 'cv', paramTarget: 'v4_wavePos' });
-  inputs.push({ id: 'v4_attack',  type: 'cv', paramTarget: 'v4_attack' });
-  inputs.push({ id: 'v4_decay',   type: 'cv', paramTarget: 'v4_decay' });
-  inputs.push({ id: 'v4_sustain', type: 'cv', paramTarget: 'v4_sustain' });
-  inputs.push({ id: 'v4_release', type: 'cv', paramTarget: 'v4_release' });
-  inputs.push({ id: 'v4_volume',  type: 'cv', paramTarget: 'v4_volume' });
+  inputs.push(cvIn('v4_wavePos', 'v4_wavePos'));
+  inputs.push(cvIn('v4_attack',  'v4_attack'));
+  inputs.push(cvIn('v4_decay',   'v4_decay'));
+  inputs.push(cvIn('v4_sustain', 'v4_sustain'));
+  inputs.push(cvIn('v4_release', 'v4_release'));
+  inputs.push(cvIn('v4_volume',  'v4_volume'));
 
   for (let v = 1; v <= 4; v++) {
-    inputs.push({ id: `v${v}_pan`,   type: 'cv', paramTarget: `v${v}_pan` });
-    inputs.push({ id: `v${v}_sendA`, type: 'cv', paramTarget: `v${v}_sendA` });
-    inputs.push({ id: `v${v}_sendB`, type: 'cv', paramTarget: `v${v}_sendB` });
+    inputs.push(cvIn(`v${v}_pan`,   `v${v}_pan`));
+    inputs.push(cvIn(`v${v}_sendA`, `v${v}_sendA`));
+    inputs.push(cvIn(`v${v}_sendB`, `v${v}_sendB`));
   }
 
-  inputs.push({ id: 'bc_decimate', type: 'cv', paramTarget: 'bc_decimate' });
-  inputs.push({ id: 'bc_bits',     type: 'cv', paramTarget: 'bc_bits' });
-  inputs.push({ id: 'bc_wet',      type: 'cv', paramTarget: 'bc_wet' });
-  inputs.push({ id: 'rv_size',     type: 'cv', paramTarget: 'rv_size' });
-  inputs.push({ id: 'rv_damp',     type: 'cv', paramTarget: 'rv_damp' });
-  inputs.push({ id: 'rv_mix',      type: 'cv', paramTarget: 'rv_mix' });
-  inputs.push({ id: 'flt_cutoff',    type: 'cv', paramTarget: 'flt_cutoff' });
-  inputs.push({ id: 'flt_resonance', type: 'cv', paramTarget: 'flt_resonance' });
-  inputs.push({ id: 'flt_mode',      type: 'cv', paramTarget: 'flt_mode' });
-  inputs.push({ id: 'flt_pingDecay', type: 'cv', paramTarget: 'flt_pingDecay' });
-  inputs.push({ id: 'returnA', type: 'cv', paramTarget: 'returnA' });
-  inputs.push({ id: 'returnB', type: 'cv', paramTarget: 'returnB' });
+  inputs.push(cvIn('bc_decimate', 'bc_decimate'));
+  inputs.push(cvIn('bc_bits',     'bc_bits'));
+  inputs.push(cvIn('bc_wet',      'bc_wet'));
+  inputs.push(cvIn('rv_size',     'rv_size'));
+  inputs.push(cvIn('rv_damp',     'rv_damp'));
+  inputs.push(cvIn('rv_mix',      'rv_mix'));
+  inputs.push(cvIn('flt_cutoff',    'flt_cutoff'));
+  inputs.push(cvIn('flt_resonance', 'flt_resonance'));
+  inputs.push(cvIn('flt_mode',      'flt_mode'));
+  inputs.push(cvIn('flt_pingDecay', 'flt_pingDecay'));
+  inputs.push(cvIn('returnA', 'returnA'));
+  inputs.push(cvIn('returnB', 'returnB'));
 
   return inputs;
 }

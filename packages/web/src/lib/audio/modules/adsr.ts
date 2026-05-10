@@ -15,14 +15,22 @@ export const adsrDef: AudioModuleDef = {
   schemaVersion: 1,
   inputs: [
     { id: 'gate',    type: 'gate' },
-    // CV inputs route directly to the corresponding AudioParam (sums into
-    // the param's intrinsic value at audio rate). Patch an LFO here to wobble
-    // the envelope shape over time; the corresponding fader's motorized poll
-    // tracks the modulated value.
-    { id: 'attack',  type: 'cv', paramTarget: 'attack'  },
-    { id: 'decay',   type: 'cv', paramTarget: 'decay'   },
-    { id: 'sustain', type: 'cv', paramTarget: 'sustain' },
-    { id: 'release', type: 'cv', paramTarget: 'release' },
+    // CV inputs route to the corresponding AudioParam, with engine-level
+    // scaling (cvScale) so a -1..+1 LFO sweeps each param's full natural
+    // range centered on the user's knob position. See
+    // .myrobots/plans/cv-range-standard.md. Without scaling, an LFO would
+    // touch only ~10% of attack/decay/release (0.001-10s log range).
+    //
+    // attack/decay/release use log scaling: knob × (max/min)^(cv/2) so cv=±1
+    // multiplies the time constant by sqrt(10000) = 100× — symmetrical in
+    // log space. Default knob 0.005s × 100 = 0.5s; cv=-1 → 0.005/100 = 50µs
+    // (clamped to 1ms = the param's min). Plenty of motion for either way.
+    //
+    // sustain is unipolar 0..1 — linear scaling sweeps the full range.
+    { id: 'attack',  type: 'cv', paramTarget: 'attack',  cvScale: { mode: 'log' } },
+    { id: 'decay',   type: 'cv', paramTarget: 'decay',   cvScale: { mode: 'log' } },
+    { id: 'sustain', type: 'cv', paramTarget: 'sustain', cvScale: { mode: 'linear' } },
+    { id: 'release', type: 'cv', paramTarget: 'release', cvScale: { mode: 'log' } },
   ],
   outputs: [
     { id: 'env',     type: 'cv' },
