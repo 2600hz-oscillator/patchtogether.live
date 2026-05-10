@@ -20,10 +20,17 @@ export const qbrtDef: AudioModuleDef = {
     { id: 'L',         type: 'audio' },
     { id: 'R',         type: 'audio' },
     { id: 'ping',      type: 'gate' },
-    { id: 'cutoff',    type: 'cv', paramTarget: 'cutoff' },
-    { id: 'resonance', type: 'cv', paramTarget: 'resonance' },
-    { id: 'mode',      type: 'cv', paramTarget: 'mode' },
-    { id: 'pingDecay', type: 'cv', paramTarget: 'pingDecay' },
+    // CV scaling per .myrobots/plans/cv-range-standard.md — LFO ±1 sweeps
+    // the param's full musical range centered on the knob.
+    //
+    // cutoff: log scaling (20Hz..20kHz spans 10 octaves; cv=±1 = ±5 octaves).
+    // resonance: linear (0..0.99 — already small but full sweep).
+    // mode: discrete bucket (0/1).
+    // pingDecay: log (0.005..0.5s spans ~6.6 octaves).
+    { id: 'cutoff',    type: 'cv', paramTarget: 'cutoff',    cvScale: { mode: 'log' } },
+    { id: 'resonance', type: 'cv', paramTarget: 'resonance', cvScale: { mode: 'linear' } },
+    { id: 'mode',      type: 'cv', paramTarget: 'mode',      cvScale: { mode: 'discrete' } },
+    { id: 'pingDecay', type: 'cv', paramTarget: 'pingDecay', cvScale: { mode: 'log' } },
   ],
   outputs: [
     { id: 'L', type: 'audio' },

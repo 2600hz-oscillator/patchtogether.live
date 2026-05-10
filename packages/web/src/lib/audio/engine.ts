@@ -8,9 +8,10 @@
 // caller can drive the engine directly. The auto-reactive flavor that watches
 // the SyncedStore graph and reconciles automatically lands in Day 7.
 
-import type { Edge, ModuleDef, ModuleNode } from '$lib/graph/types';
+import type { Edge, ModuleDef, ModuleNode, CvScaleHint, ParamDef } from '$lib/graph/types';
 import { getModuleDef, type AudioModuleDef } from './module-registry';
 import { POLY_CHANNELS, resolveConnection } from './poly';
+import { attachCvScale } from './cv-scale';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -110,6 +111,35 @@ export class AudioEngine implements DomainEngine {
   /** edge id → undo function that disconnects the specific connection */
   edges = new Map<string, () => void>();
   /**
+   * Per-node module-type cache. Populated in addNode. Used by addEdge to
+   * look up the source/target module's PortDef (and thus its `cvScale`
+   * hint) without rebuilding the patch graph from the snapshot. Without
+   * this, addEdge would have to walk the snapshot bus to recover the
+   * type — but the engine is supposed to be UI-agnostic.
+   */
+  private nodeTypes = new Map<string, string>();
+  /**
+   * Per-node knob value cache: latest value passed via addNode(node.params)
+   * or setParam. Used by addEdge to bake the user's CURRENT knob position
+   * into the cv-scale WaveShaper LUT (centring the modulation sweep on the
+   * actual knob, not the static ParamDef.defaultValue).
+   *
+   * Why not read AudioParam.value directly? Chromium's AudioWorkletNode
+   * AudioParam.value getter reflects the audio-thread-rendered value at the
+   * last block boundary, which can lag the most-recent setValueAtTime call
+   * (the audio thread has to process the schedule event before .value
+   * sees it). For the test path "spawn node with params; immediately patch
+   * cable", reading .value returns the param's static defaultValue rather
+   * than the just-set runtime value — making the LUT bake on the wrong
+   * centre. Caching the knob on the JS side sidesteps that race.
+   *
+   * Map key: `${nodeId}::${paramId}`.
+   */
+  private knobValues = new Map<string, number>();
+  private knobKey(nodeId: string, paramId: string): string {
+    return `${nodeId}::${paramId}`;
+  }
+  /**
    * Per-modulated-param AnalyserNode taps so the UI can visualize the CURRENT
    * computed value of an AudioParam (intrinsic + connected modulators).
    *
@@ -204,6 +234,14 @@ export class AudioEngine implements DomainEngine {
       return;
     }
     this.nodes.set(node.id, handle);
+    this.nodeTypes.set(node.id, String(node.type));
+    // Seed the knob cache with the patch-graph values + the def's defaults
+    // for any unseeded params. addEdge will read these to bake the LUT.
+    const moduleDef = def as AudioModuleDef;
+    for (const paramDef of moduleDef.params) {
+      const v = (node.params ?? {})[paramDef.id] ?? paramDef.defaultValue;
+      this.knobValues.set(this.knobKey(node.id, paramDef.id), v);
+    }
   }
 
   removeNode(nodeId: string): void {
@@ -214,6 +252,37 @@ export class AudioEngine implements DomainEngine {
     // disconnects all of this node's Web Audio connections defensively.
     handle.dispose();
     this.nodes.delete(nodeId);
+    this.nodeTypes.delete(nodeId);
+    // Drop any cached knob values for this node so a re-spawn at the same
+    // id starts fresh from its def defaults.
+    const prefix = `${nodeId}::`;
+    for (const key of this.knobValues.keys()) {
+      if (key.startsWith(prefix)) this.knobValues.delete(key);
+    }
+  }
+
+  /**
+   * Look up the CV-scaling hint for a (target node, target port) pair.
+   * Returns null if the destination port doesn't declare cvScale (legacy
+   * behavior: passthrough sum-into-AudioParam) or if either lookup fails.
+   *
+   * Also returns the destination param's def so the scaler can read
+   * min/max/defaultValue. The two come together because the scaling math
+   * needs both pieces.
+   */
+  private getCvScaleForTarget(
+    targetNodeId: string,
+    targetPortId: string,
+  ): { hint: CvScaleHint; paramDef: ParamDef } | null {
+    const moduleType = this.nodeTypes.get(targetNodeId);
+    if (!moduleType) return null;
+    const def = getModuleDef(moduleType) as AudioModuleDef | undefined;
+    if (!def) return null;
+    const port = def.inputs.find((p) => p.id === targetPortId);
+    if (!port || !port.cvScale || !port.paramTarget) return null;
+    const paramDef = def.params.find((p) => p.id === port.paramTarget);
+    if (!paramDef) return null;
+    return { hint: port.cvScale, paramDef };
   }
 
   addEdge(edge: Edge): void {
@@ -244,15 +313,67 @@ export class AudioEngine implements DomainEngine {
 
     if (din.param) {
       // CV → AudioParam routing.
-      sout.node.connect(din.param, sout.output);
-      // Also tee the source through a per-param AnalyserNode so readParam can
-      // report intrinsic + modulator sample for motorized fader rendering.
+      //
+      // If the destination port declares a `cvScale` hint AND the cable
+      // type is `cv` (not audio/pitch/gate which sometimes also land on
+      // AudioParams via Web Audio's lenient typing), interpose a scaling
+      // chain so a -1..+1 CV signal sweeps the param's full natural range.
+      // See packages/web/src/lib/audio/cv-scale.ts and
+      // .myrobots/plans/cv-range-standard.md.
+      //
+      // For passthrough / no-hint cases, the legacy direct-connect behavior
+      // is preserved (Web Audio sums sout.node's signal into din.param at
+      // audio rate without modification).
+      const scaleInfo = edge.sourceType === 'cv' || edge.targetType === 'cv'
+        ? this.getCvScaleForTarget(edge.target.nodeId, edge.target.portId)
+        : null;
+      let scaleTeardown: (() => void) | null = null;
+      let connectSource: AudioNode = sout.node;
+      let connectOutput: number = sout.output;
+      if (scaleInfo && scaleInfo.hint.mode !== 'passthrough') {
+        // Bake the LIVE knob value into the LUT, not the ParamDef.defaultValue.
+        // The user may have moved the knob away from the default before patching
+        // the cable; a curve baked at the def's default would centre the sweep
+        // on the wrong position.
+        //
+        // We use our own JS-side `knobValues` cache (seeded in addNode and kept
+        // in sync by setParam) rather than reading `din.param.value` directly.
+        // For Faust AudioWorkletNode params, AudioParam.value reflects the
+        // audio-thread-rendered value at the last block boundary, which lags
+        // the most-recent setValueAtTime call until the audio thread processes
+        // the schedule event. In the "spawn node with params; immediately
+        // patch cable" path (e.g. cv-range-uniformity e2e), reading .value at
+        // addEdge time returns the static defaultValue rather than the just-
+        // set runtime value — making the LUT bake on the wrong centre. The
+        // JS-side cache sidesteps that race. Hot-rebuild on subsequent knob
+        // changes is left to a follow-up; cf. attachCvScale notes.
+        const liveKnob = this.knobValues.get(
+          this.knobKey(edge.target.nodeId, scaleInfo.paramDef.id),
+        ) ?? scaleInfo.paramDef.defaultValue;
+        const chain = attachCvScale(this.ctx, scaleInfo.paramDef, scaleInfo.hint, liveKnob);
+        // source → scaler input; scaler output → param + tap.
+        sout.node.connect(chain.input, sout.output);
+        // The scaler is a single WaveShaperNode whose output we use for
+        // both the param AND the tap analyser. Web Audio is happy to
+        // connect one output to multiple destinations.
+        connectSource = chain.output;
+        connectOutput = 0;
+        scaleTeardown = () => {
+          try { sout.node.disconnect(chain.input, sout.output); } catch { /* */ }
+          chain.teardown();
+        };
+      }
+      connectSource.connect(din.param, connectOutput);
+      // Also tee the (scaled or raw) source through a per-param AnalyserNode
+      // so readParam can report intrinsic + modulator sample for motorized
+      // fader rendering. The tap sees the SAME signal that's being summed
+      // into the param — so the motorized fader visualizes actual modulation.
       const tap = this.getOrCreateParamTap(edge.target.nodeId, edge.target.portId);
-      sout.node.connect(tap, sout.output);
+      connectSource.connect(tap, connectOutput);
       const tapKey = this.paramTapKey(edge.target.nodeId, edge.target.portId);
-      this.paramTapEdges.set(edge.id, { tapKey, src: sout.node, output: sout.output });
+      this.paramTapEdges.set(edge.id, { tapKey, src: connectSource, output: connectOutput });
       this.edges.set(edge.id, () => {
-        sout.node.disconnect(din.param!, sout.output);
+        try { connectSource.disconnect(din.param!, connectOutput); } catch { /* */ }
         const bk = this.paramTapEdges.get(edge.id);
         if (bk) {
           const t = this.paramTaps.get(bk.tapKey);
@@ -261,6 +382,7 @@ export class AudioEngine implements DomainEngine {
           }
           this.paramTapEdges.delete(edge.id);
         }
+        if (scaleTeardown) scaleTeardown();
       });
     } else {
       sout.node.connect(din.node, sout.output, din.input);
@@ -387,6 +509,10 @@ export class AudioEngine implements DomainEngine {
     const handle = this.nodes.get(nodeId);
     if (!handle) return;
     handle.setParam(paramId, value);
+    // Keep the LUT-bake knob cache in sync so a future addEdge centres the
+    // sweep on the user's CURRENT knob position. (LUT hot-rebuild for
+    // already-attached cables is a follow-up; cf. attachCvScale notes.)
+    this.knobValues.set(this.knobKey(nodeId, paramId), value);
   }
 
   /** Read the live AudioParam value for motorized fader rendering.
@@ -459,6 +585,8 @@ export class AudioEngine implements DomainEngine {
     this.paramTapEdges.clear();
     for (const handle of this.nodes.values()) handle.dispose();
     this.nodes.clear();
+    this.nodeTypes.clear();
+    this.knobValues.clear();
   }
 }
 

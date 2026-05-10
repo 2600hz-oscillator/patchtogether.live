@@ -17,11 +17,19 @@ export const filterDef: AudioModuleDef = {
     { id: 'audio',  type: 'audio' },
     // CV inputs are routed through the channel merger (channels 1, 2)
     // so they sum into the Faust DSP's per-sample CV input — they are
-    // NOT AudioParam-routed. paramTarget is declared anyway so the
-    // docs manifest renders "CV -> cutoff param." consistently with
-    // every other CV input in the codebase. The runtime ignores
-    // paramTarget on this module (the engine looks at the factory's
-    // inputs map, where these ports are wired to merger channels).
+    // NOT AudioParam-routed. paramTarget is declared so the docs
+    // manifest renders "CV -> cutoff param." consistently with every
+    // other CV input in the codebase. The runtime ignores paramTarget
+    // on this module (the engine looks at the factory's inputs map,
+    // where these ports are wired to merger channels).
+    //
+    // We intentionally do NOT request cvScale here because:
+    //   1. These ports route through the merger as audio-rate signals,
+    //      not via the CV→AudioParam fast path. The cv-scale registry
+    //      treats this as PASSTHROUGH_BY_DESIGN.
+    //   2. The Faust source already maps -1..+1 onto the param's full
+    //      musical range (cutoff: ±5 octaves around knob; res additive),
+    //      which is exactly the standard's intent.
     //
     // NOTE: port id 'res' intentionally short for the panel; the
     // matching param is 'resonance'. paramTarget is omitted on `res`

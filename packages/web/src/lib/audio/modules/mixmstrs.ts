@@ -94,6 +94,13 @@ function buildParams(): readonly ParamDef[] {
 const PARAMS = buildParams();
 
 // Inputs: 12 audio + 41 paramTarget CV inputs (37 originals + 4 comp macros).
+//
+// Every CV input gets a `cvScale: linear` hint per
+// .myrobots/plans/cv-range-standard.md so an LFO at ±1 sweeps the param's
+// full natural range centered on the user's knob position. All MIXMSTRS
+// params have linear knob curves (volume, dB EQ bands, dB threshold,
+// ratio, send amounts); none use log scaling natively, so linear here is
+// the right match.
 function buildInputs(): PortDef[] {
   const inputs: PortDef[] = [
     { id: 'ch1L', type: 'audio' }, { id: 'ch1R', type: 'audio' },
@@ -104,7 +111,12 @@ function buildInputs(): PortDef[] {
     { id: 'ret2L', type: 'audio' }, { id: 'ret2R', type: 'audio' },
   ];
   for (const p of PARAMS) {
-    inputs.push({ id: p.id, type: 'cv', paramTarget: p.id });
+    inputs.push({
+      id: p.id,
+      type: 'cv',
+      paramTarget: p.id,
+      cvScale: { mode: p.curve === 'discrete' ? 'discrete' : 'linear' },
+    });
   }
   return inputs;
 }

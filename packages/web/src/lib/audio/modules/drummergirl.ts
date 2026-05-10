@@ -17,11 +17,16 @@ export const drummergirlDef: AudioModuleDef = {
   schemaVersion: 2,
   inputs: [
     { id: 'gate',   type: 'gate' },
-    { id: 'pitch',  type: 'cv', paramTarget: 'pitch' },
-    { id: 'tone',   type: 'cv', paramTarget: 'tone' },
-    { id: 'shape',  type: 'cv', paramTarget: 'shape' },
-    { id: 'volume', type: 'cv', paramTarget: 'volume' },
-    { id: 'decay',  type: 'cv', paramTarget: 'decay' },
+    // CV scaling per .myrobots/plans/cv-range-standard.md.
+    // pitch: linear (-36..+36 semi; cv=±1 sweeps ±36 semi from knob center).
+    // tone/shape: linear (already 0..1 native).
+    // volume: linear (0..2; cv=±1 sweeps ±1.0 from knob).
+    // decay: log (0.001..0.5s).
+    { id: 'pitch',  type: 'cv', paramTarget: 'pitch',  cvScale: { mode: 'linear' } },
+    { id: 'tone',   type: 'cv', paramTarget: 'tone',   cvScale: { mode: 'linear' } },
+    { id: 'shape',  type: 'cv', paramTarget: 'shape',  cvScale: { mode: 'linear' } },
+    { id: 'volume', type: 'cv', paramTarget: 'volume', cvScale: { mode: 'linear' } },
+    { id: 'decay',  type: 'cv', paramTarget: 'decay',  cvScale: { mode: 'log' } },
   ],
   outputs: [{ id: 'audio', type: 'audio' }],
   params: [

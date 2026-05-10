@@ -140,8 +140,9 @@ export const polyseqzDef: AudioModuleDef = {
     // both behaviors fold into the shared edge-detect-and-dispatch path so the
     // transport surface matches Sequencer / DRUMSEQZ / SCORE 1:1.
     ...TRANSPORT_CV_PORT_DEFS,
-    // CV → humanize amount (0..1).
-    { id: 'humanize_cv', type: 'cv', paramTarget: 'humanize' },
+    // CV → humanize amount (0..1). Linear scaling per
+    // .myrobots/plans/cv-range-standard.md (LFO ±1 sweeps 0..1 around knob).
+    { id: 'humanize_cv', type: 'cv', paramTarget: 'humanize', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'poly',  type: 'polyPitchGate' },

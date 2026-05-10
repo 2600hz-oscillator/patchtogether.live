@@ -65,8 +65,13 @@ export const wavvizDef: AudioModuleDef = {
   inputs: [
     { id: 'pitch',      type: 'pitch' },
     { id: 'fm',         type: 'audio' },
+    // wavePos is an audio-rate input on the wavetable worklet (channel 2);
+    // it does NOT route through the CV→AudioParam fast path. paramTarget
+    // is declared so the docs manifest is consistent with the rest of the
+    // codebase. The cv-scale registry treats this as PASSTHROUGH_BY_DESIGN.
     { id: 'wavePos',    type: 'cv', paramTarget: 'wavePos' },
-    { id: 'foldAmount', type: 'cv', paramTarget: 'foldAmount' },
+    // foldAmount: linear cv scaling per .myrobots/plans/cv-range-standard.md.
+    { id: 'foldAmount', type: 'cv', paramTarget: 'foldAmount', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'audio', type: 'audio' },

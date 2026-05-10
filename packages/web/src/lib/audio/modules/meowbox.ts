@@ -48,10 +48,22 @@ export const meowboxDef: AudioModuleDef = {
   schemaVersion: 2,
   inputs: [
     { id: 'gate',  type: 'gate' },
+    // `pitch` is a true 1V/octave audio-rate input (PR fix/meowbox-voct):
+    // the DSP consumes the volts directly from a merger channel — NOT
+    // routed via the CV→AudioParam fast path. cvScale therefore does
+    // not apply (the cv-scale registry treats `pitch` typed inputs as
+    // out-of-scope; the DSP's exp2 mapping is the V/oct standard).
+    //
+    // morph / decay / level remain CV→AudioParam — cvScale per
+    // .myrobots/plans/cv-range-standard.md so an LFO at ±1 sweeps the
+    // full natural range:
+    //   morph: linear (0..1).
+    //   decay: log    (0.05..2s).
+    //   level: linear (0..2).
     { id: 'pitch', type: 'pitch' },
-    { id: 'morph', type: 'cv',   paramTarget: 'morph' },
-    { id: 'decay', type: 'cv',   paramTarget: 'decay' },
-    { id: 'level', type: 'cv',   paramTarget: 'level' },
+    { id: 'morph', type: 'cv',    paramTarget: 'morph', cvScale: { mode: 'linear' } },
+    { id: 'decay', type: 'cv',    paramTarget: 'decay', cvScale: { mode: 'log' } },
+    { id: 'level', type: 'cv',    paramTarget: 'level', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'L', type: 'audio' },

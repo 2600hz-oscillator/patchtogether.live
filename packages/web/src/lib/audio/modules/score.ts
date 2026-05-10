@@ -97,10 +97,13 @@ export const scoreDef: AudioModuleDef = {
   },
   inputs: [
     { id: 'clock', type: 'gate' },
-    { id: 'attack', type: 'cv', paramTarget: 'attack' },
-    { id: 'decay', type: 'cv', paramTarget: 'decay' },
-    { id: 'sustain', type: 'cv', paramTarget: 'sustain' },
-    { id: 'release', type: 'cv', paramTarget: 'release' },
+    // CV scaling per .myrobots/plans/cv-range-standard.md (mirrors ADSR's
+    // own param scaling — SCORE forwards these directly to its embedded
+    // ADSR worklet).
+    { id: 'attack', type: 'cv', paramTarget: 'attack', cvScale: { mode: 'log' } },
+    { id: 'decay', type: 'cv', paramTarget: 'decay', cvScale: { mode: 'log' } },
+    { id: 'sustain', type: 'cv', paramTarget: 'sustain', cvScale: { mode: 'linear' } },
+    { id: 'release', type: 'cv', paramTarget: 'release', cvScale: { mode: 'log' } },
     // Shared transport CV inputs (PR feat/sequencer-transport-quicksave):
     //   play_cv      → toggles isPlaying on rising edge
     //   reset_cv     → resets tickIndex to 0 on rising edge

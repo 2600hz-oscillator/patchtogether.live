@@ -136,12 +136,59 @@ type StandardModuleType =
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
+
+/**
+ * CV-input scaling hint (see .myrobots/plans/cv-range-standard.md).
+ *
+ * Project convention: the `cv` cable type carries a bipolar -1..+1
+ * "modulation" signal where ±1 should sweep the target param through its
+ * full natural range, centered on the user-set knob position. Without
+ * scaling, an LFO of ±1 summed into an AudioParam whose natural range is
+ * (e.g.) 0.001..10s touches only ~10% of the slider's motion — far short
+ * of the user's expectation that an LFO drives a slider through its full
+ * range of motion.
+ *
+ * Setting `cvScale` on an input PortDef tells `AudioEngine.addEdge` to
+ * interpose a scaling node (GainNode for `linear`, WaveShaperNode for
+ * `log`/`discrete`) between the source and the target AudioParam, so the
+ * incoming -1..+1 maps to the param's full natural span.
+ *
+ * Modes:
+ *   - `linear`: effective = clamp( knob + cv * depth * (max-min)/2, min, max )
+ *     Used for params where additive modulation is the natural musical
+ *     metaphor — volume, pan, mix amount, EQ band gain, etc.
+ *   - `log`: effective = clamp( knob * pow(max/min, cv * depth / 2), min, max )
+ *     Used for params whose perceptual range is logarithmic — frequency in
+ *     Hz, time in seconds. ±1 cv = ±half the param's full octave span.
+ *   - `discrete`: integer bucketing — `floor((cv+1)/2 * (max-min+1))`
+ *     mapped to [min, max]. Used for mode toggles, range selectors.
+ *   - `passthrough`: no scaling (Web Audio sums the source directly into
+ *     the AudioParam, the legacy behavior). Use when the destination DSP
+ *     already implements its own CV scaling (e.g. filter.dsp's ±5oct map).
+ *
+ * `depth` is reserved for a future per-param "modulation depth" knob;
+ * default 1.0 = full sweep.
+ */
+export interface CvScaleHint {
+  mode: 'linear' | 'log' | 'discrete' | 'passthrough';
+  /** Per-param modulation depth. 1.0 = full natural-range sweep. */
+  depth?: number;
+}
+
 export interface PortDef {
   id: string;
   type: CableType;
   // Whether the input is an audio-rate node connection or a CV → AudioParam routing.
   // Outputs are always nodes; this hint lives on inputs only.
   paramTarget?: string; // when set, CV connections route to this AudioParam
+  /**
+   * Optional: scaling hint for `cv`-typed input ports that target a
+   * paramTarget. See CvScaleHint for the mapping. When omitted, behavior
+   * is `passthrough` — Web Audio sums the source directly into the
+   * AudioParam (the legacy behavior). Set explicitly to opt into the
+   * "LFO sweeps full range" semantics.
+   */
+  cvScale?: CvScaleHint;
 }
 
 export type KnobCurve = 'linear' | 'log' | 'exp' | 'discrete';
