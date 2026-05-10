@@ -135,8 +135,28 @@
   let hovered = $state(false);
   let pinned = $state(false);
   let stayOpenForDrag = $state(false);
+  // Active trigger corner — set by whichever affordance most recently
+  // received a hover/focus/click. Drives panel positioning so the
+  // popover anchors under the corner the user reached for, instead of
+  // always anchoring to the top-left. ('topLeft' is the historical
+  // default; the cable-anchor-top-left invariant from PR-78 still
+  // applies to closed-state handles regardless of corner.)
+  let triggerCorner = $state<'topLeft' | 'topRight'>('topLeft');
+  // Post-click hold: a click on either trigger sets this to a wall-
+  // clock timestamp 300ms in the future. While `now < postClickHoldUntil`,
+  // the panel stays open even if the cursor leaves — so the user can
+  // navigate from the click target down into a port row without the
+  // panel snapping shut mid-motion. After the hold expires, normal
+  // hover-intent rules (200ms close-grace) resume.
+  const POST_CLICK_HOLD_MS = 300;
+  let postClickHoldUntil = $state<number>(0);
+  let postClickHoldTimer: ReturnType<typeof setTimeout> | null = null;
 
-  let open = $derived(hovered || pinned || stayOpenForDrag);
+  // The panel is open if ANY driver wants it open. postClickHoldActive
+  // joins the hover/pin/drag drivers as a fourth keep-open signal —
+  // it's a time-bounded version of `pinned` that auto-expires.
+  let postClickHoldActive = $derived(postClickHoldUntil > 0);
+  let open = $derived(hovered || pinned || stayOpenForDrag || postClickHoldActive);
 
   const CLOSE_DELAY_MS = 200;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -148,6 +168,13 @@
     }
   }
 
+  function clearPostClickHoldTimer() {
+    if (postClickHoldTimer !== null) {
+      clearTimeout(postClickHoldTimer);
+      postClickHoldTimer = null;
+    }
+  }
+
   function openNow() {
     clearCloseTimer();
     hovered = true;
@@ -155,15 +182,39 @@
 
   function scheduleClose() {
     clearCloseTimer();
+    // If a post-click hold is in flight, defer the hover-close until
+    // after the hold expires (then the normal 200ms grace applies).
+    const now = Date.now();
+    const remaining = postClickHoldUntil - now;
+    const delay = remaining > 0 ? remaining + CLOSE_DELAY_MS : CLOSE_DELAY_MS;
     closeTimer = setTimeout(() => {
       hovered = false;
       closeTimer = null;
-    }, CLOSE_DELAY_MS);
+    }, delay);
   }
 
-  function toggle() {
-    // Click toggles the pinned driver. We also set hovered=true so the
-    // very next mouseleave doesn't immediately schedule-close.
+  function startPostClickHold() {
+    // Extend the keep-open window to now + 300ms. Multiple clicks just
+    // restart the timer (the latest click wins).
+    clearPostClickHoldTimer();
+    postClickHoldUntil = Date.now() + POST_CLICK_HOLD_MS;
+    postClickHoldTimer = setTimeout(() => {
+      postClickHoldUntil = 0;
+      postClickHoldTimer = null;
+    }, POST_CLICK_HOLD_MS);
+  }
+
+  function onTriggerEnter(corner: 'topLeft' | 'topRight') {
+    triggerCorner = corner;
+    openNow();
+  }
+
+  function onTriggerClick(corner: 'topLeft' | 'topRight') {
+    triggerCorner = corner;
+    // Always seed the 300ms post-click hold so the user has a forgiving
+    // window to move toward a port. Pin-toggle still works on top of it
+    // for explicit lock-open / lock-close.
+    startPostClickHold();
     if (pinned) {
       pinned = false;
       // If the cursor's still on the trigger/panel, hover-driver keeps it
@@ -187,6 +238,10 @@
       if (target.closest('[data-patch-panel-node]')) return;
       pinned = false;
       hovered = false;
+      // Outside-click overrides the post-click hold — the user is
+      // explicitly steering away from this panel, so honour the close.
+      clearPostClickHoldTimer();
+      postClickHoldUntil = 0;
       clearCloseTimer();
     };
     document.addEventListener('pointerdown', onDocPointerDown, true);
@@ -244,6 +299,20 @@
     };
   });
 
+  // When the panel fully closes, reset the active corner back to
+  // topLeft so the closed-state CSS (which collapses every handle to
+  // the panel's top-left interior — PR-78's cable-anchor invariant)
+  // resolves against the topLeft trigger position. Without this, a
+  // panel that was last opened from the right would keep its
+  // .anchor-right class while closed, parking the closed-state
+  // handles under the right trigger and breaking output-cable visual
+  // termination at the top-left affordance.
+  $effect(() => {
+    if (!open) {
+      triggerCorner = 'topLeft';
+    }
+  });
+
   // ---------------- Group/sort port lists ----------------
 
   let inputGroups = $derived<GroupedPorts[]>(
@@ -279,11 +348,11 @@
     data-testid="patch-trigger"
     aria-label="Open patch panel"
     aria-expanded={open}
-    onmouseenter={openNow}
+    onmouseenter={() => onTriggerEnter('topLeft')}
     onmouseleave={scheduleClose}
-    onfocus={openNow}
+    onfocus={() => onTriggerEnter('topLeft')}
     onblur={scheduleClose}
-    onclick={toggle}
+    onclick={() => onTriggerClick('topLeft')}
   >
     <!-- Plug glyph — two short verticals + a horizontal stem. CSS-only. -->
     <span class="trigger-glyph" aria-hidden="true">
@@ -298,11 +367,11 @@
     data-testid="patch-trigger-right"
     aria-label="Open patch panel"
     aria-expanded={open}
-    onmouseenter={openNow}
+    onmouseenter={() => onTriggerEnter('topRight')}
     onmouseleave={scheduleClose}
-    onfocus={openNow}
+    onfocus={() => onTriggerEnter('topRight')}
     onblur={scheduleClose}
-    onclick={toggle}
+    onclick={() => onTriggerClick('topRight')}
   >
     <span class="trigger-glyph" aria-hidden="true">
       <span class="prong"></span>
@@ -316,8 +385,11 @@
     class:open
     class:two-col={visibleColumnCount === 2}
     class:one-col={visibleColumnCount === 1}
+    class:anchor-left={triggerCorner === 'topLeft'}
+    class:anchor-right={triggerCorner === 'topRight'}
     style:width="{panelWidth}px"
     data-testid="patch-panel"
+    data-anchor-corner={triggerCorner}
     aria-hidden={!open}
     onmouseenter={openNow}
     onmouseleave={scheduleClose}
@@ -535,6 +607,10 @@
   .patch-panel {
     position: absolute;
     top: 28px;
+    /* Default anchor: top-left corner. Overridden by .anchor-right
+     * below when the user opened the panel via the top-right trigger.
+     * Either way the panel pops down from beneath the trigger that
+     * fired; the panel content (input/output 2-col grid) is unchanged. */
     left: 4px;
     background: rgba(14, 17, 22, 0.97);
     border: 1px solid var(--accent-dim);
@@ -561,6 +637,20 @@
      * — so per-column scrolling would clip the handles instead.) */
     overflow-y: auto;
     z-index: 10;
+  }
+  /* Anchor variants — pick which corner of the card the popover
+   * pops down from. The topRight variant clears `left` and pins to
+   * `right: 4px` so the panel's right edge sits under the right
+   * trigger and the panel grows leftward. */
+  .patch-panel.anchor-left {
+    left: 4px;
+    right: auto;
+    transform: translateX(-8px);
+  }
+  .patch-panel.anchor-right {
+    left: auto;
+    right: 4px;
+    transform: translateX(8px);
   }
   .patch-panel.open {
     opacity: 1;
