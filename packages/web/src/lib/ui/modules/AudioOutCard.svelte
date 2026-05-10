@@ -58,7 +58,8 @@
   .card {
     width: 160px;
     min-height: 170px;
-    background: var(--module-bg);
+    background-color: #000;
+    background-image: linear-gradient(var(--module-bg), var(--module-bg));
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
@@ -67,6 +68,7 @@
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
+    isolation: isolate;
   }
   :global(.svelte-flow__node:hover) .card {
     border-color: var(--accent-dim);

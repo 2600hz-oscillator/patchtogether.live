@@ -100,17 +100,41 @@ body {
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
+/* Cable layering — when no node is being dragged, cables ALWAYS render
+ * UNDER every module card. xyflow renders `.svelte-flow__edges` before
+ * `.svelte-flow__nodes` in DOM order and gives each edge wrapper an
+ * inline z-index, but selecting a node bumps the connected edge's
+ * z-index high enough to leap over other (non-selected) cards' default
+ * z=0 — so the edge can paint across an unrelated card body. Promoting
+ * `.svelte-flow__nodes` to its own stacking context above
+ * `.svelte-flow__edges` confines all per-edge inline z-indexes to the
+ * edges layer; nothing inside the edges layer can ever paint over the
+ * nodes layer.
+ *
+ * The :has() guard preserves Svelte Flow's drag-time behavior: while
+ * ANY node is being dragged, xyflow toggles `.dragging` on that node
+ * (see node_modules/@xyflow/svelte/dist/lib/components/NodeWrapper/
+ * NodeWrapper.svelte → `class:dragging`). During drag we drop the
+ * stacking-context split so cables float over neighbor cards as the
+ * dragged module sweeps past them — that's the existing UX and is
+ * intentional. The fix is idle-state only. */
+.svelte-flow__viewport:not(:has(.svelte-flow__node.dragging)) .svelte-flow__edges {
+  z-index: 0;
+}
+.svelte-flow__viewport:not(:has(.svelte-flow__node.dragging)) .svelte-flow__nodes {
+  position: relative;
+  z-index: 1;
+}
+
 /* Cable hover-shift (Voltage-Modular trick). Hover a cable to lift it
- * visually: thicker stroke, brighter, raised z-index so it pops over its
- * neighbors. CSS-only — no JS, no schema change. */
+ * visually: thicker stroke, brighter. CSS-only — no JS, no schema
+ * change. Note: hover only re-orders cables among themselves; cables
+ * still stay below cards because of the layer split above. */
 .svelte-flow__edge {
   transition: opacity 80ms ease-out;
 }
 .svelte-flow__edge .svelte-flow__edge-path {
   transition: stroke-width 80ms ease-out, filter 80ms ease-out;
-}
-.svelte-flow__edge:hover {
-  z-index: 1000;
 }
 .svelte-flow__edge:hover .svelte-flow__edge-path,
 .svelte-flow__edge.cable-hover .svelte-flow__edge-path {

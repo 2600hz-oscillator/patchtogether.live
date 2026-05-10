@@ -245,7 +245,11 @@
 
 <style>
   .card {
-    background: var(--module-bg);
+    /* Solid black underlay + opaque module-bg overlay — even if a skin
+     * shipped a translucent --module-bg, no cable routed behind the
+     * OUTPUT card can bleed through the live-video canvas. */
+    background-color: #000;
+    background-image: linear-gradient(var(--module-bg), var(--module-bg));
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
@@ -255,6 +259,7 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
     overflow: hidden;
+    isolation: isolate;
   }
   :global(.svelte-flow__node:hover) .card {
     border-color: var(--accent-dim);
