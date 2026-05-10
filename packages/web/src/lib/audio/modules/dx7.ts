@@ -12,11 +12,16 @@
 //   outputs:
 //     out       — mono audio.
 //
-// Params (live, AudioParam):
-//   algorithm   — 1..32 (DX7 algorithm; quantized; live editing OK)
-//   voiceCount  — 1..5 (poly limit)
-//   level       — master output level
-//   transpose   — ±24 semitones
+// Params:
+//   algorithm   — 1..32 (DX7 algorithm; quantized; live editing OK).
+//                 NOT an AudioParam on the worklet — host bridge sends a
+//                 fresh patch message via port.postMessage when the knob
+//                 moves. The setParam handler MUST check this branch
+//                 before the AudioParam-lookup early-out (regression PR
+//                 fix/dx7-algorithm-switching).
+//   voiceCount  — 1..5 (poly limit). AudioParam.
+//   level       — master output level. AudioParam.
+//   transpose   — ±24 semitones. AudioParam.
 //
 // Patch selection (data-side, not AudioParam):
 //   node.data.preset  — name of bundled patch (DX7_BUILTIN_BANK).
@@ -149,7 +154,9 @@ export const dx7Def: AudioModuleDef = {
         node.params?.algorithm !== undefined ? (node.params.algorithm as number) : v.algorithm;
       currentAlgo = Math.max(1, Math.min(32, Math.round(initialAlgo)));
       sendPatch(v, currentAlgo);
-      params.get('algorithm')?.setValueAtTime(currentAlgo, ctx.currentTime);
+      // Note: 'algorithm' is host-tracked, not an AudioParam. The Card's
+      // motorized live-read goes through readParam('algorithm') below which
+      // returns `currentAlgo`.
     }
 
     // Poll for preset changes. Yjs syncs node.data updates from remote
@@ -162,14 +169,12 @@ export const dx7Def: AudioModuleDef = {
       if (name !== currentPresetName) {
         currentPresetName = name;
         const v = findPatch(name);
-        // Adopt the patch's algorithm on preset change. The Card reads the
-        // algorithm via the live AudioParam (motorized fader path) so the
-        // knob position will follow without us writing back to node.params
-        // — keeps the data flow one-way (Card → engine, never engine → Card
-        // for params, which would loop through Yjs).
+        // Adopt the patch's algorithm on preset change. We deliberately do
+        // NOT write back to node.params.algorithm — that would loop through
+        // Yjs and conflict with the Card→engine knob path. The Card's
+        // motorized live-read picks up the change via readParam('algorithm').
         currentAlgo = v.algorithm;
         sendPatch(v, currentAlgo);
-        params.get('algorithm')?.setValueAtTime(currentAlgo, ctx.currentTime);
       }
       pollTimer = setTimeout(pollPresetChange, POLL_MS);
     }
@@ -184,22 +189,33 @@ export const dx7Def: AudioModuleDef = {
       ]),
       outputs: new Map([['out', { node: workletNode, output: 0 }]]),
       setParam(paramId, value) {
-        const p = params.get(paramId);
-        if (!p) return;
+        // BUG-FIX (PR fix/dx7-algorithm-switching): `algorithm` is NOT an
+        // AudioParam on the worklet — only `voiceCount`, `level`, and
+        // `transpose` are. Algorithm changes flow through the patch-message
+        // channel (worklet.port.postMessage) instead. So we MUST handle
+        // 'algorithm' BEFORE the `if (!p) return` early-out — otherwise
+        // moving the algo knob silently no-ops (the visible bug fixed here).
         if (paramId === 'algorithm') {
           const a = Math.max(1, Math.min(32, Math.round(value)));
           if (a !== currentAlgo) {
             currentAlgo = a;
-            // Re-send current preset with overridden algorithm.
+            // Re-send current preset with overridden algorithm. The worklet
+            // re-binds its routing graph from `this.patch.algorithm` on the
+            // next render block, so this takes effect within ~3ms.
             const base = findPatch(currentPresetName);
             sendPatch(base, a);
           }
-          p.setValueAtTime(a, ctx.currentTime);
           return;
         }
+        const p = params.get(paramId);
+        if (!p) return;
         p.setValueAtTime(value, ctx.currentTime);
       },
       readParam(paramId) {
+        // 'algorithm' has no AudioParam (see setParam comment) — return the
+        // host-tracked value so the Knob's motorized live-read can render
+        // the current algo.
+        if (paramId === 'algorithm') return currentAlgo;
         return params.get(paramId)?.value;
       },
       read(key) {
