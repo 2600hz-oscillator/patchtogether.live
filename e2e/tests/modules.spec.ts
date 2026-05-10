@@ -116,10 +116,12 @@ const MODULES: ModuleSpec[] = [
   // video) + 3 cv inputs (intensity, xDisp, yDisp) + 1 output (out, the
   // rendered Rutt-Etra result for chaining) = 7.
   { type: 'ruttetra',     cardClass: 'svelte-flow__node-ruttetra',     handleCount: 7, containsLabel: 'RUTTETRA',   domain: 'video' },
-  // SHAPEDRAMPS: sync-locked ramp generator. 6 cv inputs (h_shape,
-  // v_shape, h_phase, v_phase, h_freq, v_freq) + 4 mono-video outputs
-  // (h_lin, v_lin stable identity ramps; h_out, v_out shaped) = 10.
-  { type: 'shapedramps',  cardClass: 'svelte-flow__node-shapedramps',  handleCount: 10, containsLabel: 'SHAPEDRAMPS', domain: 'video' },
+  // SHAPEDRAMPS: sync-locked ramp generator with 2 onboard 2-channel
+  // mixers. 8 cv inputs (h_shape, v_shape, h_phase, v_phase, h_freq,
+  // v_freq, mix1_cv, mix2_cv) + 4 mono-video signal inputs (mix1_a,
+  // mix1_b, mix2_a, mix2_b) + 6 mono-video outputs (h_lin, v_lin stable
+  // identity ramps; h_out, v_out shaped; mix1_out, mix2_out blended) = 18.
+  { type: 'shapedramps',  cardClass: 'svelte-flow__node-shapedramps',  handleCount: 18, containsLabel: 'SHAPEDRAMPS', domain: 'video' },
   // VDELAY: video delay + feedback echo. 4 inputs (in + time/feedback/mix
   // cv) + 1 output (out) = 5. Ring buffer of FBO textures (32 frames cap
   // for ~533ms max delay at 60fps).
