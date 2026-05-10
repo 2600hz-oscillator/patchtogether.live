@@ -42,6 +42,7 @@
   import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
+  import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
 
@@ -174,37 +175,22 @@
   let resizeAbort: AbortController | null = null;
 
   function onResizeStart(ev: PointerEvent) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    resizing = true;
-    const startX = ev.clientX;
-    const startY = ev.clientY;
-    const startW = cardWidth;
-    const startH = cardHeight;
-    resizeAbort = new AbortController();
-    const sig = resizeAbort.signal;
-
-    const onMove = (mev: PointerEvent) => {
-      const zoom = flowStore.viewport.zoom || 1;
-      const dx = (mev.clientX - startX) / zoom;
-      const dy = (mev.clientY - startY) / zoom;
-      const w = Math.max(MIN_WIDTH, Math.round(startW + dx));
-      const h = Math.max(MIN_HEIGHT, Math.round(startH + dy));
-      const target = patch.nodes[id];
-      if (target) {
-        if (!target.data) target.data = {};
-        target.data.width = w;
-        target.data.height = h;
-      }
-    };
-    const stop = () => {
-      resizing = false;
-      resizeAbort?.abort();
-      resizeAbort = null;
-    };
-    window.addEventListener('pointermove', onMove, { signal: sig });
-    window.addEventListener('pointerup', stop, { signal: sig });
-    window.addEventListener('pointercancel', stop, { signal: sig });
+    resizeAbort = startCornerResize(ev, {
+      flowStore,
+      minWidth: MIN_WIDTH,
+      minHeight: MIN_HEIGHT,
+      getStartSize: () => ({ width: cardWidth, height: cardHeight }),
+      apply: (w, h) => {
+        const target = patch.nodes[id];
+        if (target) {
+          if (!target.data) target.data = {};
+          target.data.width = w;
+          target.data.height = h;
+        }
+      },
+      onStart: () => { resizing = true; },
+      onEnd: () => { resizing = false; resizeAbort = null; },
+    });
   }
 </script>
 

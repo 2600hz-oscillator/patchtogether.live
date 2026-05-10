@@ -7,17 +7,19 @@
   // intensity, X/Y luma displacement, and color tint.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { ruttetraDef } from '$lib/video/modules/ruttetra';
+  import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+  const flowStore = useStore();
 
   function p(name: string): number {
     const def = ruttetraDef.params.find((d) => d.id === name);
@@ -35,6 +37,28 @@
 
   const CANVAS_W = 280;
   const CANVAS_H = 158;
+
+  // Hide-controls (video-only resizable) defaults. Min keeps the canvas
+  // legible at small zoom; default mirrors OUTPUT's 360x240.
+  const MIN_WIDTH = 240;
+  const MIN_HEIGHT = 160;
+  const DEFAULT_WIDTH = 360;
+  const DEFAULT_HEIGHT = 240;
+  // Letterbox padding when in hide-controls mode (matches VideoOut).
+  const HEADER_PX = 56;
+  const PAD_PX = 20;
+
+  let hideControls = $derived<boolean>(
+    Boolean(node?.data?.hideControls),
+  );
+  let resizedWidth = $derived<number>(
+    (node?.data?.resizedWidth as number | undefined) ?? DEFAULT_WIDTH,
+  );
+  let resizedHeight = $derived<number>(
+    (node?.data?.resizedHeight as number | undefined) ?? DEFAULT_HEIGHT,
+  );
+  let innerWidth = $derived(Math.max(MIN_WIDTH - PAD_PX, resizedWidth - PAD_PX));
+  let innerHeight = $derived(Math.max(MIN_HEIGHT - HEADER_PX, resizedHeight - HEADER_PX));
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
@@ -98,48 +122,141 @@
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
+    if (resizeAbort) resizeAbort.abort();
   });
+
+  // ---------- Hide-controls toggle + corner-drag resize ----------
+  let resizing = $state(false);
+  let resizeAbort: AbortController | null = null;
+
+  function toggleHideControls(ev: MouseEvent) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const target = patch.nodes[id];
+    if (!target) return;
+    if (!target.data) target.data = {};
+    const next = !target.data.hideControls;
+    target.data.hideControls = next;
+    if (!next) {
+      delete target.data.resizedWidth;
+      delete target.data.resizedHeight;
+    }
+  }
+
+  function onResizeStart(ev: PointerEvent) {
+    resizeAbort = startCornerResize(ev, {
+      flowStore,
+      minWidth: MIN_WIDTH,
+      minHeight: MIN_HEIGHT,
+      getStartSize: () => ({ width: resizedWidth, height: resizedHeight }),
+      apply: (w, h) => {
+        const target = patch.nodes[id];
+        if (target) {
+          if (!target.data) target.data = {};
+          target.data.resizedWidth = w;
+          target.data.resizedHeight = h;
+        }
+      },
+      onStart: () => { resizing = true; },
+      onEnd: () => { resizing = false; resizeAbort = null; },
+    });
+  }
+
+  // Restore defaults via dblclick on the card body when in hide-controls.
+  // We stop propagation so the document-level patch-to dblclick (which
+  // only fires on .svelte-flow__handle anyway) never triggers; handle
+  // dblclicks bubble past us because the handles sit OUTSIDE this body.
+  function onBodyDblClick(ev: MouseEvent) {
+    if (!hideControls) return;
+    const t = ev.target as HTMLElement | null;
+    if (t && t.closest('.svelte-flow__handle')) return;
+    ev.stopPropagation();
+    const target = patch.nodes[id];
+    if (!target) return;
+    if (!target.data) target.data = {};
+    target.data.hideControls = false;
+    delete target.data.resizedWidth;
+    delete target.data.resizedHeight;
+  }
 </script>
 
-<div class="card video" data-testid="ruttetra-card" data-node-id={id}>
+<!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
+<div
+  class="card video"
+  class:hide-controls={hideControls}
+  class:resizing
+  style={hideControls ? `width: ${resizedWidth}px; height: ${resizedHeight}px;` : ''}
+  data-testid="ruttetra-card"
+  data-node-id={id}
+  data-hide-controls={hideControls ? 'true' : 'false'}
+  ondblclick={onBodyDblClick}
+>
   <div class="stripe"></div>
   <header class="title">RUTTETRA</header>
 
   <!-- 3 video inputs (x, y, z) + 3 cv inputs (intensity, xDisp, yDisp) -->
   <Handle type="target" position={Position.Left} id="x"         style="top: 56px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 50px;">X</span>
+  {#if !hideControls}<span class="port-label left" style="top: 50px;">X</span>{/if}
   <Handle type="target" position={Position.Left} id="y"         style="top: 88px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 82px;">Y</span>
+  {#if !hideControls}<span class="port-label left" style="top: 82px;">Y</span>{/if}
   <Handle type="target" position={Position.Left} id="z"         style="top: 120px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 114px;">Z</span>
+  {#if !hideControls}<span class="port-label left" style="top: 114px;">Z</span>{/if}
   <Handle type="target" position={Position.Left} id="intensity" style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">I</span>
+  {#if !hideControls}<span class="port-label left" style="top: 150px;">I</span>{/if}
   <Handle type="target" position={Position.Left} id="xDisp"     style="top: 188px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 182px;">XD</span>
+  {#if !hideControls}<span class="port-label left" style="top: 182px;">XD</span>{/if}
   <Handle type="target" position={Position.Left} id="yDisp"     style="top: 220px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 214px;">YD</span>
+  {#if !hideControls}<span class="port-label left" style="top: 214px;">YD</span>{/if}
 
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
+  {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
 
-  <div class="canvas-wrap">
-    <canvas
-      bind:this={canvasEl}
-      width={CANVAS_W}
-      height={CANVAS_H}
-      data-testid="ruttetra-canvas"
-      data-node-id={id}
-    ></canvas>
-  </div>
+  <button
+    type="button"
+    class="hide-toggle nodrag"
+    aria-label={hideControls ? 'Show RUTTETRA controls' : 'Hide RUTTETRA controls'}
+    title={hideControls ? 'Show controls (or double-click frame)' : 'Hide controls'}
+    data-testid="ruttetra-hide-toggle"
+    onclick={toggleHideControls}
+  >{hideControls ? '+' : '–'}</button>
 
-  <div class="fader-grid">
-    <Fader value={p('intensity')} min={0}  max={2}  defaultValue={ruttetraDef.params.find((x) => x.id === 'intensity')!.defaultValue} label="I"   curve="linear" onchange={setParam('intensity')} />
-    <Fader value={p('xDisp')}     min={-1} max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'xDisp')!.defaultValue}     label="XD"  curve="linear" onchange={setParam('xDisp')} />
-    <Fader value={p('yDisp')}     min={-1} max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'yDisp')!.defaultValue}     label="YD"  curve="linear" onchange={setParam('yDisp')} />
-    <Fader value={p('tintR')}     min={0}  max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'tintR')!.defaultValue}     label="R"   curve="linear" onchange={setParam('tintR')} />
-    <Fader value={p('tintG')}     min={0}  max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'tintG')!.defaultValue}     label="G"   curve="linear" onchange={setParam('tintG')} />
-    <Fader value={p('tintB')}     min={0}  max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"   curve="linear" onchange={setParam('tintB')} />
-  </div>
+  {#if hideControls}
+    <div class="canvas-wrap canvas-wrap-resizable" style="width: {innerWidth}px; height: {innerHeight}px;">
+      <canvas
+        bind:this={canvasEl}
+        width={innerWidth}
+        height={innerHeight}
+        data-testid="ruttetra-canvas"
+        data-node-id={id}
+      ></canvas>
+    </div>
+    <div
+      class="resize-handle nodrag"
+      role="separator"
+      aria-label="Resize RUTTETRA"
+      data-testid="ruttetra-resize-handle"
+      onpointerdown={onResizeStart}
+    ></div>
+  {:else}
+    <div class="canvas-wrap">
+      <canvas
+        bind:this={canvasEl}
+        width={CANVAS_W}
+        height={CANVAS_H}
+        data-testid="ruttetra-canvas"
+        data-node-id={id}
+      ></canvas>
+    </div>
+
+    <div class="fader-grid" data-testid="ruttetra-controls">
+      <Fader value={p('intensity')} min={0}  max={2}  defaultValue={ruttetraDef.params.find((x) => x.id === 'intensity')!.defaultValue} label="I"   curve="linear" onchange={setParam('intensity')} />
+      <Fader value={p('xDisp')}     min={-1} max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'xDisp')!.defaultValue}     label="XD"  curve="linear" onchange={setParam('xDisp')} />
+      <Fader value={p('yDisp')}     min={-1} max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'yDisp')!.defaultValue}     label="YD"  curve="linear" onchange={setParam('yDisp')} />
+      <Fader value={p('tintR')}     min={0}  max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'tintR')!.defaultValue}     label="R"   curve="linear" onchange={setParam('tintR')} />
+      <Fader value={p('tintG')}     min={0}  max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'tintG')!.defaultValue}     label="G"   curve="linear" onchange={setParam('tintG')} />
+      <Fader value={p('tintB')}     min={0}  max={1}  defaultValue={ruttetraDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"   curve="linear" onchange={setParam('tintB')} />
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -155,6 +272,18 @@
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
+  }
+  .card.hide-controls {
+    /* Solid black underlay so cables routed behind don't bleed through. */
+    background-color: #000;
+    background-image: linear-gradient(var(--module-bg), var(--module-bg));
+    min-height: 0;
+    padding-bottom: 14px;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .card.resizing {
+    transition: none;
   }
   :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
   :global(.svelte-flow__node.selected) .card {
@@ -192,12 +321,22 @@
     line-height: 0;
     background: #050608;
   }
+  .canvas-wrap-resizable {
+    margin: 12px auto 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid var(--cable-video);
+  }
   canvas {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%;
     image-rendering: pixelated;
     background: #050608;
+  }
+  .canvas-wrap:not(.canvas-wrap-resizable) canvas {
+    height: auto;
   }
   .fader-grid {
     margin-top: 10px;
@@ -207,4 +346,47 @@
     gap: 10px 4px;
     justify-items: center;
   }
+  .hide-toggle {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    line-height: 14px;
+    font-size: 12px;
+    font-family: ui-monospace, monospace;
+    color: var(--text-dim);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    cursor: pointer;
+    z-index: 6;
+  }
+  .hide-toggle:hover {
+    color: var(--text);
+    border-color: var(--cable-video);
+  }
+  .resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    background: linear-gradient(
+      135deg,
+      transparent 50%,
+      var(--cable-video) 50%,
+      var(--cable-video) 60%,
+      transparent 60%,
+      transparent 70%,
+      var(--cable-video) 70%,
+      var(--cable-video) 80%,
+      transparent 80%
+    );
+    opacity: 0.7;
+    z-index: 5;
+  }
+  .resize-handle:hover { opacity: 1; }
 </style>
