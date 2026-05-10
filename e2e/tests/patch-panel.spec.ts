@@ -862,9 +862,16 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
+    // Place the modules far enough apart that BOTH open panels can
+    // co-exist without the wider-of-the-two (sequencer, with 7 input
+    // rows + 3 output rows + 32 step grid) overlapping the ADSR's
+    // input column. With both panels open the drag path runs past
+    // every panel chrome edge, so any overlap would put the target
+    // handle UNDER the source panel's chrome and silently drop the
+    // connection.
     await spawnPatch(page, [
       { id: 'seq', type: 'sequencer', position: { x: 100, y: 100 } },
-      { id: 'adsr', type: 'adsr', position: { x: 700, y: 100 } },
+      { id: 'adsr', type: 'adsr', position: { x: 1100, y: 100 } },
     ]);
 
     const sourceHandle = page.locator(
