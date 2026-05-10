@@ -282,6 +282,11 @@
   $effect(() => {
     // Read `open` so this effect re-runs on every flip.
     void open;
+    // Also re-run on every section-expand toggle (sectioned modules) so
+    // the handles that fan out / collapse get their bounds re-measured
+    // and any in-flight cables re-route to the new positions. Reading
+    // expandedSections here registers the rune as a dep.
+    void expandedSections;
     // RAF-defer to let CSS transitions land their endpoint values before
     // we measure — Svelte Flow uses getBoundingClientRect, which sees
     // mid-transition values. Two RAFs gives the panel enough time to
@@ -310,6 +315,50 @@
   $effect(() => {
     if (!open) {
       triggerCorner = 'topLeft';
+    }
+  });
+
+  // ---------------- Click-to-expand nested sections ----------------
+  //
+  // For sectioned modules (RIOTGIRLS, MIXMSTRS) the inputs column would
+  // otherwise overflow even a 1366×768 viewport. By default, collapse
+  // every section to its header row + a port-count badge; the user clicks
+  // a header to fan out that section's handles inline. Multiple sections
+  // can be open at once (the top-level decision is "what voices am I
+  // patching right now?" — usually a few, not all).
+  //
+  // CRITICAL: Handle elements stay in the DOM under collapsed sections —
+  // io-spec-consistency e2e walks `.svelte-flow__handle[data-handleid]`
+  // via `count()` + `getAttribute()`, both of which work on hidden
+  // descendants. The collapsed-section CSS (see .section-rows-collapsed
+  // below) pulls the <ul> out of layout flow with position:absolute +
+  // visibility:hidden + height:0, NOT display:none — display:none would
+  // zero out getBoundingClientRect on the inner Handle elements and
+  // break Svelte Flow's handle-bounds cache. Svelte's {#each} block
+  // still renders the Handle children either way so their
+  // data-handleid attributes are reachable for the spec test.
+  //
+  // State persistence: kept in a local rune. When the panel closes we
+  // wipe it so the next hover-open starts every section collapsed —
+  // "fresh hover starts collapsed reduces stale state confusion" per
+  // the spec. Pinned panels retain their expanded state until they
+  // close (the rune isn't cleared while `open` stays true).
+  let expandedSections = $state<Record<string, boolean>>({});
+
+  function isSectionExpanded(label: string): boolean {
+    return expandedSections[label] === true;
+  }
+
+  function toggleSection(label: string) {
+    expandedSections = {
+      ...expandedSections,
+      [label]: !expandedSections[label],
+    };
+  }
+
+  $effect(() => {
+    if (!open) {
+      expandedSections = {};
     }
   });
 
@@ -417,9 +466,60 @@
         {#if groupingStrategy === 'sectioned'}
           {#each sections as section, sIdx (section.label + '-' + sIdx)}
             {#if section.inputs && section.inputs.length > 0}
-              <section class="panel-section">
-                <h3 class="section-title">{section.label}</h3>
-                <ul class="row-list">
+              {@const expanded = isSectionExpanded(section.label)}
+              <section
+                class="panel-section sectioned"
+                class:section-expanded={expanded}
+                class:section-collapsed={!expanded}
+                data-testid="patch-panel-section"
+                data-section-label={section.label}
+                data-section-expanded={expanded ? 'true' : 'false'}
+              >
+                <!--
+                  Header is a real <button> so keyboard users get
+                  Enter/Space activation for free. The disclosure
+                  triangle + port-count badge live inside the button
+                  so the whole row is one click target. Stop
+                  propagation so the click doesn't bubble out to the
+                  panel's pointerdown drag-guard (which would
+                  otherwise treat the click as a connect-drag start
+                  attempt on the surrounding panel surface).
+                -->
+                <button
+                  type="button"
+                  class="section-toggle section-title"
+                  data-testid="patch-panel-section-toggle"
+                  data-section-label={section.label}
+                  aria-expanded={expanded}
+                  aria-controls="section-{nodeId}-{sIdx}"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    toggleSection(section.label);
+                  }}
+                >
+                  <span class="disclosure" aria-hidden="true">{expanded ? '▼' : '▶'}</span>
+                  <span class="section-toggle-label">{section.label}</span>
+                  <span class="section-count" aria-label="{section.inputs.length} ports">
+                    ({section.inputs.length})
+                  </span>
+                </button>
+                <!--
+                  IMPORTANT: <ul> stays in the DOM unconditionally
+                  (no {#if}) so the Handle elements inside it remain
+                  attached. io-spec-consistency e2e + Svelte Flow's
+                  internal node-handles bookkeeping both rely on
+                  data-handleid being present even when the section
+                  is collapsed. CSS in .section-rows-collapsed
+                  hides the <ul> via position:absolute + visibility:
+                  hidden + height:0 (NOT display:none, which would
+                  zero out the inner Handle bounding boxes and break
+                  Svelte Flow's handle-bounds cache).
+                -->
+                <ul
+                  id="section-{nodeId}-{sIdx}"
+                  class="row-list section-rows"
+                  class:section-rows-collapsed={!expanded}
+                >
                   {#each section.inputs as port (port.id)}
                     <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
                       <span class="row-stripe" aria-hidden="true"></span>
@@ -737,6 +837,110 @@
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+
+  /* ---------------- Click-to-expand section header (sectioned only) ---------------- */
+  /*
+   * Replaces the flat <h3 class="section-title"> for sectioned-grouping
+   * modules (RIOTGIRLS, MIXMSTRS) with a clickable button row. Default
+   * state hides every section's port list — the user clicks a header
+   * to fan out that section's handles inline. Multiple sections can be
+   * expanded simultaneously.
+   *
+   * Sticky-pin matches the original .section-title behaviour so the
+   * header stays visible as the user scrolls a long expanded section.
+   */
+  .section-toggle {
+    /* Reset native <button>. */
+    appearance: none;
+    background: rgba(14, 17, 22, 0.97);
+    border: none;
+    border-radius: 2px;
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    padding: 4px 6px 3px;
+    margin: 0 0 2px;
+    width: 100%;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    /* Sticky-pin to the panel's scrollport (matches .section-title's
+     * -8px offset against the panel's 8px top padding). */
+    position: sticky;
+    top: -8px;
+    z-index: 1;
+    transition: background 80ms ease-out;
+  }
+  .section-toggle:hover {
+    background: rgba(0, 240, 255, 0.06);
+  }
+  .section-toggle:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .section-toggle .disclosure {
+    display: inline-block;
+    width: 0.7em;
+    color: var(--text-dim);
+    /* Fixed-width so the label doesn't shift when the glyph swaps. */
+    text-align: center;
+  }
+  .section-toggle-label {
+    flex: 1;
+  }
+  .section-count {
+    color: var(--text-dim);
+    font-weight: 400;
+    /* Tabular figures keep the badge aligned across sections with
+     * different port counts (e.g. RIOTGIRLS V1=10 vs Master=12). */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Collapsed-section row list: the <ul> + every <li> inside it must
+   * collapse to zero visible height, but the <Handle> elements need
+   * to remain in the DOM AND have a sensible bounding box so any
+   * already-connected cables route to the section header (instead of
+   * (0, 0) in the page) and Svelte Flow's handle-bounds book-keeping
+   * stays consistent. We achieve this by:
+   *
+   *   * pulling the <ul> out of layout flow with `position: absolute`
+   *     so it contributes 0px to the inputs column's flow height;
+   *   * pinning it to (0, 0) of the .panel-section so its inner
+   *     handles inherit the section header's screen position;
+   *   * hiding it visually with visibility:hidden + pointer-events:
+   *     none (NOT display:none, which would zero out
+   *     getBoundingClientRect and break Svelte Flow's bounds cache).
+   *
+   * The Handle children stay in the DOM with their data-handleid
+   * attributes, so io-spec-consistency.spec.ts continues to find
+   * them by id, and any pre-existing cables route to the collapsed
+   * section's header coordinate (a sane "this port lives here, the
+   * user has hidden it" visual). Click the section open and the
+   * <ul> reverts to its in-flow position; cables re-route via the
+   * RAF-deferred updateNodeInternals call above.
+   */
+  .panel-section.sectioned {
+    /* Anchor for the collapsed-state absolute <ul> child. */
+    position: relative;
+  }
+  .section-rows.section-rows-collapsed {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    visibility: hidden;
+    pointer-events: none;
+    /* Keep height at 0 so the absolute box doesn't visually overlap
+     * the next section's header. The handles inside still expose a
+     * real (degenerate) bounding box at the header coordinate. */
+    height: 0;
+    overflow: hidden;
   }
 
   /* ---------------- Panel rows ---------------- */

@@ -26,14 +26,78 @@
 
   const CH = [1, 2, 3, 4] as const;
 
-  // Pull every input port off the def — 12 audio + 37 CV-per-param. The
-  // panel's auto-grouping puts Audio first, then CV, with verbose labels
-  // resolved from the id stems via patch-panel-labels.ts.
+  // Sectioned grouping: Ch1..Ch4 + Master, so the patch panel's
+  // click-to-expand UX kicks in (each section's row list collapses by
+  // default; user clicks a header to fan out the channel's handles).
+  // Without this the 49-input column overflows even a 1366×768 viewport
+  // when every section is expanded simultaneously.
+  //
+  // The audio + CV ports for each channel live in the same section so
+  // the user can scan one channel's full I/O surface in a single
+  // expand. Returns + master live under the Master section alongside
+  // the master-bus volume + the 6 master/send outputs.
   function defPortToDescriptor(p: PortDef): PortDescriptor {
     return { id: p.id, cable: p.type };
   }
-  const inputs: PortDescriptor[] = mixmstrsDef.inputs.map(defPortToDescriptor);
-  const outputs: PortDescriptor[] = mixmstrsDef.outputs.map(defPortToDescriptor);
+  // Lookup map keyed on port id so the section builder can pluck
+  // exactly the def-declared port (and its cable type) without
+  // re-deriving the id mapping in two places.
+  const inputById = new Map<string, PortDescriptor>(
+    mixmstrsDef.inputs.map((p) => [p.id, defPortToDescriptor(p)] as const),
+  );
+  const outputById = new Map<string, PortDescriptor>(
+    mixmstrsDef.outputs.map((p) => [p.id, defPortToDescriptor(p)] as const),
+  );
+
+  function pickInputs(ids: string[]): PortDescriptor[] {
+    return ids
+      .map((id) => inputById.get(id))
+      .filter((p): p is PortDescriptor => p !== undefined);
+  }
+  function pickOutputs(ids: string[]): PortDescriptor[] {
+    return ids
+      .map((id) => outputById.get(id))
+      .filter((p): p is PortDescriptor => p !== undefined);
+  }
+
+  function chSection(ch: 1 | 2 | 3 | 4) {
+    return {
+      label: `Ch${ch}`,
+      inputs: pickInputs([
+        `ch${ch}L`,
+        `ch${ch}R`,
+        `ch${ch}_volume`,
+        `ch${ch}_low`,
+        `ch${ch}_mid`,
+        `ch${ch}_high`,
+        `ch${ch}_thresh`,
+        `ch${ch}_ratio`,
+        `ch${ch}_compEnable`,
+        `comp${ch}`,
+        `ch${ch}_send1`,
+        `ch${ch}_send2`,
+      ]),
+    };
+  }
+
+  const sections = [
+    chSection(1),
+    chSection(2),
+    chSection(3),
+    chSection(4),
+    {
+      label: 'Master',
+      inputs: pickInputs([
+        'ret1L', 'ret1R', 'ret2L', 'ret2R',
+        'master_volume',
+      ]),
+      outputs: pickOutputs([
+        'masterL', 'masterR',
+        'send1L', 'send1R',
+        'send2L', 'send2R',
+      ]),
+    },
+  ];
 </script>
 
 <div class="mod-card mixmstrs-card" class:compact>
@@ -50,10 +114,12 @@
     two-column open layout (inputs left, outputs right), 560 gives
     each column ~265px — wide enough for verbose labels like
     "ch1 SEND 1" without truncation. MIXMSTRS has 49 inputs + 6
-    outputs, so the inputs column scrolls but the panel itself fits
-    on a typical 1366px-wide laptop viewport (560 < 1093 = 80vw).
+    outputs across 5 sections (Ch1..Ch4 + Master); sections
+    collapse by default via PatchPanel's click-to-expand UX so the
+    panel fits on a 1366×768 laptop viewport even with one or two
+    sections open.
   -->
-  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={560}>
+  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={560}>
     <div class="grid">
       {#each CH as ch (ch)}
         <div class="ch-col">
