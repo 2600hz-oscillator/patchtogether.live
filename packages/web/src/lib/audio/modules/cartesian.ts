@@ -32,6 +32,7 @@ import {
   LFO_DEFAULT_RATE_HZ as _LFO_DEFAULT_RATE_HZ,
   lfoMorph,
 } from '$lib/audio/lfo-divisions';
+import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
 // Re-export for downstream consumers that already imported from here.
 export const LFO_DIVISIONS = _LFO_DIVISIONS;
@@ -171,8 +172,8 @@ export const cartesianDef: AudioModuleDef = {
 
     let stepIndex = 0;
     let alive = true;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const TICK_MS = 25;
+    let unsubscribeTick: (() => void) | null = null;
+    const TICK_MS = SCHEDULER_TICK_MS;
 
     // ---------------- LFO state ----------------
     // Phase: 0..1 (one cycle = 0 -> 1). Updated each tick from the measured
@@ -358,12 +359,12 @@ export const cartesianDef: AudioModuleDef = {
       } catch (err) {
         console.error('[cartesian] tick error', err);
       }
-      if (alive) timeoutId = setTimeout(tick, TICK_MS);
     }
 
     let currentStep = 0;
     let totalAdvances = 0;
-    timeoutId = setTimeout(tick, TICK_MS);
+    // Worker-driven tick (jank-immune); see scheduler-clock.ts.
+    unsubscribeTick = getSchedulerClock().subscribe(tick);
 
     return {
       domain: 'audio',
@@ -413,7 +414,7 @@ export const cartesianDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
-        if (timeoutId !== null) clearTimeout(timeoutId);
+        if (unsubscribeTick) { unsubscribeTick(); unsubscribeTick = null; }
         try { gateSrc.stop(); } catch { /* */ }
         try { clockOutSrc.stop(); } catch { /* */ }
         try { lfoXSrc.stop(); } catch { /* */ }

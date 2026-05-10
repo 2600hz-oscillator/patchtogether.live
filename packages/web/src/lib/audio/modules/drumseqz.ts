@@ -4,9 +4,10 @@
 // quantized CV. Sister module to RIOTGIRLS (the canonical pairing wires gate{N}
 // + pitch{N} into RIOTGIRLS' four voices).
 //
-// No Faust / no AudioWorklet — this is a clock + CV module. The factory clones
-// the existing Sequencer's setTimeout lookahead scheduler with eight
-// ConstantSource outputs (4 gate + 4 pitch) plus a chained clock out.
+// No Faust / no AudioWorklet — this is a clock + CV module. The factory uses
+// the shared scheduler-clock (Worker tick, jank-immune) to drive a 200 ms
+// lookahead scheduler with eight ConstantSource outputs (4 gate + 4 pitch)
+// plus a chained clock out.
 //
 // Per-step state shape: 4 tracks x 16 cells, each {on, midi: number | null}.
 // midi === null means the track-root pitch falls through.
@@ -26,6 +27,7 @@ import {
   coerceSlots,
   coerceSlotKey,
 } from './transport-helpers';
+import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
 export const TRACK_COUNT = 4;
 export const STEP_COUNT = 16;
@@ -295,9 +297,12 @@ export const drumseqzDef: AudioModuleDef = {
     let nextStepTime = ctx.currentTime + 0.05;
     let prevPlaying = false;
     let alive = true;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const LOOKAHEAD_S = 0.1;
-    const TICK_MS = 25;
+    let unsubscribeTick: (() => void) | null = null;
+    // 200 ms lookahead (was 100 ms). See sequencer.ts comment + the
+    // PR description — a wider window absorbs main-thread jank without
+    // glitching the audio thread.
+    const LOOKAHEAD_S = 0.2;
+    const TICK_MS = SCHEDULER_TICK_MS;
 
     let currentStep = 0;
     let totalAdvances = 0;
@@ -425,7 +430,6 @@ export const drumseqzDef: AudioModuleDef = {
         prevPlaying = isPlaying;
 
         if (!isPlaying) {
-          timeoutId = setTimeout(tick, TICK_MS);
           return;
         }
 
@@ -492,10 +496,10 @@ export const drumseqzDef: AudioModuleDef = {
       } catch (err) {
         console.error('[drumseqz] tick error', err);
       }
-      if (alive) timeoutId = setTimeout(tick, TICK_MS);
     }
 
-    timeoutId = setTimeout(tick, TICK_MS);
+    // Worker-driven tick (jank-immune); replaces self-rescheduling setTimeout.
+    unsubscribeTick = getSchedulerClock().subscribe(tick);
 
     const inputs = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
       ['clock', { node: clockInGain, input: 0 }],
@@ -552,7 +556,7 @@ export const drumseqzDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
-        if (timeoutId !== null) clearTimeout(timeoutId);
+        if (unsubscribeTick) { unsubscribeTick(); unsubscribeTick = null; }
         for (const g of gateSrcs) {
           try { g.stop(); } catch { /* already stopped */ }
           g.disconnect();

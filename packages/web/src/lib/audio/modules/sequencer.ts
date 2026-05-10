@@ -1,9 +1,11 @@
 // packages/web/src/lib/audio/modules/sequencer.ts
 //
 // 32-step sequencer. Plain JS — internal clock + ConstantSourceNodes for
-// pitch/gate outputs. The "two clocks" lookahead scheduler runs in setTimeout
-// at ~25 ms intervals and queues sample-accurate AudioParam writes ~100 ms
-// ahead.
+// pitch/gate outputs. The "two clocks" lookahead scheduler runs off the
+// shared scheduler-clock (a Worker tick, isolated from main-thread jank) and
+// queues sample-accurate AudioParam writes ~200 ms ahead. The Worker timer
+// keeps firing even when the main thread is busy (drag, render, Y.Doc
+// rebroadcast); the bumped lookahead absorbs any remaining backlog.
 //
 // Per-step state lives in node.data.steps as an array of {on, pitch}. Knob
 // params live in node.params.
@@ -33,6 +35,7 @@ import {
   coerceSlotKey,
   type SlotKey,
 } from './transport-helpers';
+import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
 export interface Step {
   on: boolean;
@@ -207,9 +210,14 @@ export const sequencerDef: AudioModuleDef = {
     let nextStepTime = ctx.currentTime + 0.05;
     let prevPlaying = false;
     let alive = true;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const LOOKAHEAD_S = 0.1;
-    const TICK_MS = 25;
+    let unsubscribeTick: (() => void) | null = null;
+    // Lookahead 200 ms (was 100 ms) — gives the audio thread a 4x cushion
+    // when the main thread is briefly blocked by drag/render. Combined with
+    // the scheduler-clock Worker (which keeps emitting tick events even
+    // while main-thread JS is starving), this is the difference between
+    // "audible tempo jitter when dragging" and "stable tempo".
+    const LOOKAHEAD_S = 0.2;
+    const TICK_MS = SCHEDULER_TICK_MS;
 
     function readSteps(): Step[] {
       const live = livePatch.nodes[nodeId];
@@ -393,7 +401,6 @@ export const sequencerDef: AudioModuleDef = {
         prevPlaying = isPlaying;
 
         if (!isPlaying) {
-          timeoutId = setTimeout(tick, TICK_MS);
           return;
         }
 
@@ -474,12 +481,15 @@ export const sequencerDef: AudioModuleDef = {
       } catch (err) {
         console.error('[sequencer] tick error', err);
       }
-      if (alive) timeoutId = setTimeout(tick, TICK_MS);
     }
 
     let currentStep = 0;
     let totalAdvances = 0; // monotonic — useful for tests asserting "did we step N times"
-    timeoutId = setTimeout(tick, TICK_MS);
+    // Subscribe to the shared scheduler-clock — a Worker tick that's
+    // immune to main-thread blocking. Replaces the legacy
+    // `setTimeout(tick, TICK_MS)` self-loop, which would queue up behind
+    // drag/render jank and starve the audio thread's lookahead window.
+    unsubscribeTick = getSchedulerClock().subscribe(tick);
 
     const inputsMap = new Map<string, { node: AudioNode; input: number }>([
       ['clock', { node: clockInGain, input: 0 }],
@@ -533,7 +543,7 @@ export const sequencerDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
-        if (timeoutId !== null) clearTimeout(timeoutId);
+        if (unsubscribeTick) { unsubscribeTick(); unsubscribeTick = null; }
         try { gateSrc.stop(); } catch { /* already stopped */ }
         try { clockOutSrc.stop(); } catch { /* already stopped */ }
         try { clockInSilence.stop(); } catch { /* already stopped */ }

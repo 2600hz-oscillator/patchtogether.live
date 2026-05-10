@@ -7,10 +7,12 @@
 // default, levels pp..ff).
 //
 // Scheduler model is the same two-clocks lookahead the Sequencer + Cartesian
-// modules use: a setTimeout at TICK_MS reads node.params/data live, advances
-// a 16th-rate tickIndex, and schedules pitch / gate / env events on the audio
-// thread up to LOOKAHEAD_S ahead. External `clock` input overrides the
-// internal BPM (rising-edge advance).
+// modules use: a Worker-driven scheduler-clock subscription reads node.params
+// /data live, advances a 16th-rate tickIndex, and schedules pitch / gate /
+// env events on the audio thread up to LOOKAHEAD_S ahead. External `clock`
+// input overrides the internal BPM (rising-edge advance). The Worker tick
+// keeps firing under main-thread blocking; the 200 ms lookahead absorbs any
+// resulting backlog without audible jitter.
 //
 // Tie semantics: when a note is the start (or middle) of a tie chain we
 // emit a SINGLE held gate covering the full chain duration. Only the LAST
@@ -56,6 +58,7 @@ import {
   coerceSlots,
   coerceSlotKey,
 } from './transport-helpers';
+import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
 const ADSR_PREFIX = '/ADSR';
 
@@ -199,9 +202,12 @@ export const scoreDef: AudioModuleDef = {
     let nextStepTime = ctx.currentTime + 0.05;
     let prevPlaying = false;
     let alive = true;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const TICK_MS = 25;
-    const LOOKAHEAD_S = 0.1;
+    let unsubscribeTick: (() => void) | null = null;
+    const TICK_MS = SCHEDULER_TICK_MS;
+    // 200 ms lookahead (was 100 ms): widens the cushion the audio thread
+    // can survive before the next main-thread tick runs. See sequencer.ts
+    // for the full rationale.
+    const LOOKAHEAD_S = 0.2;
 
     let currentNoteId: string | null = null;
     let lastEmittedVOct = 0;
@@ -427,7 +433,6 @@ export const scoreDef: AudioModuleDef = {
         prevPlaying = isPlaying;
 
         if (!isPlaying) {
-          timeoutId = setTimeout(tick, TICK_MS);
           return;
         }
 
@@ -504,9 +509,9 @@ export const scoreDef: AudioModuleDef = {
       } catch (err) {
         console.error('[score] tick error', err);
       }
-      if (alive) timeoutId = setTimeout(tick, TICK_MS);
     }
-    timeoutId = setTimeout(tick, TICK_MS);
+    // Subscribe to the shared scheduler-clock (worker-driven, jank-immune).
+    unsubscribeTick = getSchedulerClock().subscribe(tick);
 
     const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
       ['clock', { node: clockInGain, input: 0 }],
@@ -551,7 +556,7 @@ export const scoreDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
-        if (timeoutId !== null) clearTimeout(timeoutId);
+        if (unsubscribeTick) { unsubscribeTick(); unsubscribeTick = null; }
         try { pitchSrc.stop(); } catch { /* already stopped */ }
         try { gateSrc.stop(); } catch { /* already stopped */ }
         try { clockOutSrc.stop(); } catch { /* already stopped */ }
