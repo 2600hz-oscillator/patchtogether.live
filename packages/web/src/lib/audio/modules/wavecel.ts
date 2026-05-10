@@ -28,6 +28,7 @@ import {
   DEFAULT_FACTORY_TABLE_ID,
   type FactoryTable,
 } from '$lib/audio/wavecel-factory-tables';
+import { drawWave3D, drawWaveScope } from './wavecel-draw';
 
 const POLL_MS = 200;
 
@@ -101,6 +102,15 @@ export const wavecelDef: AudioModuleDef = {
   outputs: [
     { id: 'out_l', type: 'audio' },
     { id: 'out_r', type: 'audio' },
+    // Cross-domain video outputs. The on-card visualizer toggle picks
+    // between scope/3D for preview only — the two video ports below
+    // ALWAYS render their respective views regardless of the card
+    // toggle. See packages/web/src/lib/audio/modules/wavecel-draw.ts
+    // (shared with the card) + the videoSources bridge below.
+    //   - scope_out: single-color trace on a dark background (mono-video).
+    //   - wave3d_out: orange polylines + white active frame (RGB video).
+    { id: 'scope_out',  type: 'mono-video' },
+    { id: 'wave3d_out', type: 'video' },
   ],
   params: [
     { id: 'tune',   label: 'Tune',  defaultValue: 0, min: -36,  max: 36,  curve: 'linear', units: 'st' },
@@ -138,6 +148,46 @@ export const wavecelDef: AudioModuleDef = {
     const pSpread = params.get('spread')!;
     const pFold = params.get('fold')!;
 
+    // Cross-domain video bridge sink. The bridge expects an AnalyserNode
+    // even when drawFrame is set (legacy contract — see
+    // AudioDomainNodeHandle.videoSources docs in engine.ts). It is
+    // ignored when drawFrame is present, but we still need a real node
+    // to satisfy `getVideoSource`. Tap from the worklet's left output
+    // so the analyser sees something live (cheap, no DSP impact).
+    const vizAnalyser = ctx.createAnalyser();
+    vizAnalyser.fftSize = 256;
+    vizAnalyser.smoothingTimeConstant = 0;
+    workletNode.connect(vizAnalyser, 0);
+
+    function readActiveFrame(): number {
+      const fc = resolved.frames.length;
+      if (fc <= 1) return 0;
+      const morphVal = pMorph.value;
+      return Math.max(0, Math.min(fc - 1, Math.round(morphVal * (fc - 1))));
+    }
+
+    function drawScopeFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
+      const ctx2d = canvas.getContext('2d') as
+        | CanvasRenderingContext2D
+        | OffscreenCanvasRenderingContext2D
+        | null;
+      if (!ctx2d) return;
+      drawWaveScope(ctx2d, resolved.frames, canvas.width, canvas.height, {
+        activeFrame: readActiveFrame(),
+      });
+    }
+
+    function drawWave3DFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
+      const ctx2d = canvas.getContext('2d') as
+        | CanvasRenderingContext2D
+        | OffscreenCanvasRenderingContext2D
+        | null;
+      if (!ctx2d) return;
+      drawWave3D(ctx2d, resolved.frames, canvas.width, canvas.height, {
+        activeFrame: readActiveFrame(),
+      });
+    }
+
     let alive = true;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     function poll(): void {
@@ -170,6 +220,10 @@ export const wavecelDef: AudioModuleDef = {
         ['out_l', { node: workletNode, output: 0 }],
         ['out_r', { node: workletNode, output: 1 }],
       ]),
+      videoSources: new Map([
+        ['scope_out',  { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawScopeFrame }],
+        ['wave3d_out', { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawWave3DFrame }],
+      ]),
       setParam(paramId, value) {
         params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
       },
@@ -184,6 +238,8 @@ export const wavecelDef: AudioModuleDef = {
       dispose() {
         alive = false;
         if (pollTimer !== null) clearTimeout(pollTimer);
+        try { workletNode.disconnect(vizAnalyser); } catch { /* */ }
+        try { vizAnalyser.disconnect(); } catch { /* */ }
         workletNode.disconnect();
       },
     };
