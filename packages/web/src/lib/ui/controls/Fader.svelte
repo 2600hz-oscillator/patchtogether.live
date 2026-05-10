@@ -242,6 +242,14 @@
   const THUMB_HEIGHT = 14;
   let thumbY = $derived((1 - displayFrac) * (TRACK_HEIGHT - THUMB_HEIGHT));
 
+  /** Bipolar = the param's natural range straddles zero, so the visual
+   *  center of the track corresponds to 0V / "no modulation". For these
+   *  sliders we render a center hash mark so the user can see the zero
+   *  crossing at a glance (per the global ±1 CV convention). Unipolar
+   *  sliders (e.g. cutoff freq, attack time) have no meaningful midpoint
+   *  hash — we omit it to avoid implying one. */
+  let isBipolar = $derived(min < 0 && max > 0);
+
   /** Pick the index of the glyph closest to the current frac (highlight). */
   let activeGlyphIdx = $derived.by(() => {
     if (!glyphs || glyphs.length === 0) return -1;
@@ -300,6 +308,9 @@
       onwheel={wheel}
     >
       <div class="track-line"></div>
+      {#if isBipolar}
+        <div class="zero-hash" aria-hidden="true" data-testid="fader-zero-hash"></div>
+      {/if}
       <div class="thumb" style:top="{thumbY}px"></div>
     </div>
     {#if glyphs && glyphs.length > 0}
@@ -366,6 +377,21 @@
     margin-left: -1px;
     background: #2a2f3a;
     border-radius: 1px;
+    pointer-events: none;
+  }
+  .zero-hash {
+    /* 0V / center indicator for bipolar faders. Sits at the visual
+       midpoint of the track (which IS the value-zero point because
+       min < 0 < max with the linear/exp/log mapping symmetric for
+       bipolar ranges). Subtle but legible — slightly brighter than
+       the track-line so the eye picks it up. */
+    position: absolute;
+    top: 50%;
+    left: 2px;
+    right: 2px;
+    height: 1px;
+    margin-top: -0.5px;
+    background: var(--text-dim, #6a7080);
     pointer-events: none;
   }
   .thumb {
