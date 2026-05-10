@@ -224,3 +224,157 @@ test('compatible direction: right-click an INPUT lists OUTPUTs of the chosen tar
   expect(edges[0]!.source).toEqual({ nodeId: 'lfo1', portId: 'phase90' });
   expect(edges[0]!.target).toEqual({ nodeId: 'flt1', portId: 'cutoff' });
 });
+
+// ---------------------------------------------------------------------------
+// Persistence contract: once opened, the menu stays visible through ALL
+// pointer movements. Closes only on Escape, on picking a target port, or
+// when the user right-clicks a different port (a fresh menu replaces it).
+// ---------------------------------------------------------------------------
+
+test('persists through pointer movement across the viewport', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  await rightClickPanelHandle(page, 'lfo1', 'phase0');
+  const menu = page.locator('[data-testid="port-context-menu"]');
+  await expect(menu).toBeVisible();
+
+  // Walk the cursor around the viewport: across modules, off-canvas,
+  // back onto canvas. Without the persistence fix, the click-outside
+  // overlay (or eager pointerleave) would dismiss the menu mid-trip.
+  await page.mouse.move(50, 50, { steps: 10 });
+  await expect(menu, 'menu still visible after moving to top-left').toBeVisible();
+
+  await page.mouse.move(700, 500, { steps: 10 });
+  await expect(menu, 'menu still visible after moving to bottom-right').toBeVisible();
+
+  await page.mouse.move(10, 10, { steps: 10 });
+  await expect(menu, 'menu still visible after moving off-canvas').toBeVisible();
+
+  await page.mouse.move(400, 300, { steps: 10 });
+  await expect(menu, 'menu still visible after returning').toBeVisible();
+});
+
+test('both panels stay open while hovering through modules', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 100 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 100 } },
+      { id: 'vca1', type: 'vca', position: { x: 100, y: 400 } },
+    ],
+    [],
+  );
+
+  await rightClickPanelHandle(page, 'lfo1', 'phase0');
+  const menu = page.locator('[data-testid="port-context-menu"]');
+  await expect(menu).toBeVisible();
+
+  // Hover module A (filter) → ports panel for filter shows up.
+  const filterEntry = page.locator('[data-testid="patch-to-module"][data-node-id="flt1"]');
+  await filterEntry.hover();
+  const portsPanel = page.locator('[data-testid="patch-to-ports"]');
+  await expect(portsPanel).toBeVisible();
+  let portIds = await portsPanel.locator('[data-testid="patch-to-port"]').evaluateAll((els) =>
+    els.map((el) => (el as HTMLElement).getAttribute('data-port-id') ?? ''),
+  );
+  expect(portIds).toEqual(['cutoff', 'res']);
+
+  // Hover module B (vca) → ports panel content swaps.
+  const vcaEntry = page.locator('[data-testid="patch-to-module"][data-node-id="vca1"]');
+  await vcaEntry.hover();
+  await expect(menu, 'modules panel still open').toBeVisible();
+  await expect(portsPanel, 'ports panel still open after switching modules').toBeVisible();
+  portIds = await portsPanel.locator('[data-testid="patch-to-port"]').evaluateAll((els) =>
+    els.map((el) => (el as HTMLElement).getAttribute('data-port-id') ?? ''),
+  );
+  expect(portIds, 'ports panel content reflects new active module').toContain('cv');
+
+  // Hover back to A — both panels still visible, content updates again.
+  await filterEntry.hover();
+  await expect(menu).toBeVisible();
+  await expect(portsPanel).toBeVisible();
+  portIds = await portsPanel.locator('[data-testid="patch-to-port"]').evaluateAll((els) =>
+    els.map((el) => (el as HTMLElement).getAttribute('data-port-id') ?? ''),
+  );
+  expect(portIds).toEqual(['cutoff', 'res']);
+});
+
+test('closes on Escape after pointer movement', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  await rightClickPanelHandle(page, 'lfo1', 'phase0');
+  const menu = page.locator('[data-testid="port-context-menu"]');
+  await expect(menu).toBeVisible();
+
+  // Open the ports panel by hovering a module.
+  await page.locator('[data-testid="patch-to-module"][data-node-id="flt1"]').hover();
+  const portsPanel = page.locator('[data-testid="patch-to-ports"]');
+  await expect(portsPanel).toBeVisible();
+
+  // Walk the pointer around to prove the menu is sticky.
+  await page.mouse.move(50, 50, { steps: 10 });
+  await page.mouse.move(700, 500, { steps: 10 });
+  await expect(menu, 'menu still open after walk').toBeVisible();
+  await expect(portsPanel, 'ports panel still open after walk').toBeVisible();
+
+  // Escape closes both panels.
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(portsPanel).toHaveCount(0);
+});
+
+test('closes on commit (port click) after pointer movement', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  await rightClickPanelHandle(page, 'lfo1', 'phase0');
+  const menu = page.locator('[data-testid="port-context-menu"]');
+
+  await page.locator('[data-testid="patch-to-module"][data-node-id="flt1"]').hover();
+  const portsPanel = page.locator('[data-testid="patch-to-ports"]');
+  await expect(portsPanel).toBeVisible();
+
+  // Pointer wandering proves the menu persists right up to commit.
+  await page.mouse.move(50, 50, { steps: 10 });
+  await page.mouse.move(700, 500, { steps: 10 });
+  await expect(menu).toBeVisible();
+  await expect(portsPanel).toBeVisible();
+
+  // Commit by clicking a port.
+  await page.locator('[data-testid="patch-to-port"][data-port-id="cutoff"]').click();
+  await expect(menu).toHaveCount(0);
+  await expect(portsPanel).toHaveCount(0);
+
+  const edges = await readEdges(page);
+  expect(edges.length).toBe(1);
+  expect(edges[0]!.source).toEqual({ nodeId: 'lfo1', portId: 'phase0' });
+  expect(edges[0]!.target).toEqual({ nodeId: 'flt1', portId: 'cutoff' });
+});
