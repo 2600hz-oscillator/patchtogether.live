@@ -196,7 +196,7 @@ describe('video — module def shape sanity', () => {
     expect(orient?.max).toBe(1);
   });
 
-  it('OUTPUT def: single video input, no outputs, no CV params', () => {
+  it('OUTPUT def: single video input + chainable video output, no CV params', () => {
     const def = getVideoModuleDef('videoOut');
     expect(def).toBeDefined();
     if (!def) return;
@@ -205,7 +205,9 @@ describe('video — module def shape sanity', () => {
     expect(def.inputs).toHaveLength(1);
     expect(def.inputs[0]?.id).toBe('in');
     expect(def.inputs[0]?.type).toBe('video');
-    expect(def.outputs).toHaveLength(0);
+    expect(def.outputs).toHaveLength(1);
+    expect(def.outputs[0]?.id).toBe('out');
+    expect(def.outputs[0]?.type).toBe('video');
     expect(def.params).toHaveLength(0);
   });
 });

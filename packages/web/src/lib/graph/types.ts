@@ -144,7 +144,9 @@ type StandardModuleType =
   // NOISE — basic noise source with white / pink / brown outputs.
   | 'noise'
   // BUGGLES — chaotic random voltage source (wogglebug-style).
-  | 'buggles';
+  | 'buggles'
+  // VDELAY — video delay + feedback echo (ring buffer of FBO textures).
+  | 'vdelay';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

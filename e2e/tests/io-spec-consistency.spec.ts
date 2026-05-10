@@ -179,6 +179,8 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'ruttetra',
     // SHAPEDRAMPS — sync-locked ramp generator (linear + shaped outputs).
     'shapedramps',
+    // VDELAY — video delay + feedback echo (ring buffer of FBO textures).
+    'vdelay',
     // CAMERA — webcam input (local-only). Spec: .myrobots/plans/module-camera-input.md.
     'cameraInput',
     // ILLOGIC — combined attenuverter / math / logic utility (audio domain).

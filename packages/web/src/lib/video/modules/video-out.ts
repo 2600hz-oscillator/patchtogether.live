@@ -14,6 +14,16 @@
 //     own per-instance content (not whatever the last OUTPUT happened to
 //     write to the shared default framebuffer).
 //
+// Chainable output (post-video-chain-outputs):
+//
+// OUTPUT also exposes its FBO texture via the standard `out` port so users
+// can chain monitor cards into downstream effects without breaking the
+// signal flow. Since OUTPUT's draw writes the input texture (or idle
+// pattern) into its FBO every frame, the `out` port is effectively a
+// pass-through of `in` (input → FBO → out). The engine's lookupInput
+// falls back to surface.texture for single-output modules, so no special
+// routing is needed beyond declaring the port.
+//
 // Multi-OUTPUT routing fix (post-PR-65):
 //
 // Phase-0 had the OUTPUT module rendering BOTH into its own FBO (pass 1)
@@ -59,7 +69,9 @@ export const videoOutDef: VideoModuleDef = {
   inputs: [
     { id: 'in', type: 'video' },
   ],
-  outputs: [],
+  outputs: [
+    { id: 'out', type: 'video' },
+  ],
   params: [],
 
   factory(ctx, node): VideoNodeHandle {

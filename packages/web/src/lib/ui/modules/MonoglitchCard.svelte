@@ -125,6 +125,9 @@
   <Handle type="target" position={Position.Left} id="intensity" style="top: 156px; --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 150px;">Z</span>
 
+  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
+  <span class="port-label right" style="top: 50px;">OUT</span>
+
   <div class="canvas-wrap">
     <canvas
       bind:this={canvasEl}
@@ -188,6 +191,7 @@
     font-family: ui-monospace, monospace;
   }
   .port-label.left { left: 14px; }
+  .port-label.right { right: 14px; }
   .canvas-wrap {
     margin: 12px 18px 8px 28px;
     border: 1px solid var(--cable-video);
