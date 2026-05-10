@@ -52,6 +52,8 @@ import {
 import {
   coerceSlots,
   coerceSlotKey,
+  isInputPortConnected,
+  shouldSequencerRun,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
@@ -241,11 +243,10 @@ export const polyseqzDef: AudioModuleDef = {
     }
 
     function isClockInConnected(): boolean {
-      for (const edge of Object.values(livePatch.edges)) {
-        if (!edge) continue;
-        if (edge.target.nodeId === nodeId && edge.target.portId === 'clock') return true;
-      }
-      return false;
+      return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'clock');
+    }
+    function isPlayCvConnected(): boolean {
+      return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'play_cv');
     }
 
     function readSteps(): ChordStep[] {
@@ -446,9 +447,13 @@ export const polyseqzDef: AudioModuleDef = {
         // and reset_cv may have just bumped stepIndex.
         const isPlaying = pollTransportCv();
         const externalClock = isClockInConnected();
+        // Orthogonality fix: clock-only mode (clock patched, play_cv not)
+        // treats incoming pulses as the play signal even when isPlaying=false.
+        const playCvPatched = isPlayCvConnected();
+        const shouldRun = shouldSequencerRun(isPlaying, externalClock, playCvPatched);
         const nowAt = ctx.currentTime;
 
-        if (isPlaying && !prevPlaying) {
+        if (shouldRun && !prevPlaying) {
           stepIndex = 0;
           currentStep = 0;
           nextStepTime = ctx.currentTime + 0.05;
@@ -459,14 +464,17 @@ export const polyseqzDef: AudioModuleDef = {
           lastClockSampleTime = ctx.currentTime;
           transportCv.resetEdges();
           lastTransportPollTime = ctx.currentTime;
-        } else if (!isPlaying && prevPlaying) {
+        } else if (!shouldRun && prevPlaying) {
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
           polyPitch.silence(ctx.currentTime);
         }
-        prevPlaying = isPlaying;
+        prevPlaying = shouldRun;
 
-        if (!isPlaying) {
+        if (!shouldRun) {
+          // Worker-driven scheduler-clock owns re-tick scheduling — see the
+          // getSchedulerClock().subscribe(tick) below — so no timeoutId
+          // self-loop is needed when we early-return.
           return;
         }
 

@@ -33,6 +33,8 @@ import {
 import {
   coerceSlots,
   coerceSlotKey,
+  isInputPortConnected,
+  shouldSequencerRun,
   type SlotKey,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
@@ -190,13 +192,10 @@ export const sequencerDef: AudioModuleDef = {
     }
 
     function isClockInConnected(): boolean {
-      for (const edge of Object.values(livePatch.edges)) {
-        if (!edge) continue;
-        if (edge.target.nodeId === nodeId && edge.target.portId === 'clock') {
-          return true;
-        }
-      }
-      return false;
+      return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'clock');
+    }
+    function isPlayCvConnected(): boolean {
+      return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'play_cv');
     }
 
     // The reconciler passes a snapshot of the node, but the Sequencer needs
@@ -378,8 +377,13 @@ export const sequencerDef: AudioModuleDef = {
         // Drain transport CV first; play_cv may have just toggled isPlaying.
         const isPlaying = pollTransportCv();
         const externalClock = isClockInConnected();
+        // Orthogonality fix: when clock is patched but play_cv isn't, the
+        // clock pulses ARE the play signal — sequencer should advance even
+        // if isPlaying is false. play_cv (when patched) still wins.
+        const playCvPatched = isPlayCvConnected();
+        const shouldRun = shouldSequencerRun(isPlaying, externalClock, playCvPatched);
 
-        if (isPlaying && !prevPlaying) {
+        if (shouldRun && !prevPlaying) {
           // Transitioned to playing: reset position + cancel any stale future events
           stepIndex = 0;
           currentStep = 0;
@@ -392,15 +396,19 @@ export const sequencerDef: AudioModuleDef = {
           lastClockSampleTime = ctx.currentTime;
           transportCv.resetEdges();
           lastTransportPollTime = ctx.currentTime;
-        } else if (!isPlaying && prevPlaying) {
+        } else if (!shouldRun && prevPlaying) {
           // Transitioned to stopped: cancel pending events, force gate low
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
           polyPitch.silence(ctx.currentTime);
         }
-        prevPlaying = isPlaying;
+        prevPlaying = shouldRun;
 
-        if (!isPlaying) {
+        if (!shouldRun) {
+          // No timeoutId self-loop here: HEAD switched the sequencer over to
+          // getSchedulerClock().subscribe(tick) (Worker tick, immune to main-
+          // thread jank), so simply returning leaves the next invocation to
+          // the shared scheduler.
           return;
         }
 

@@ -143,3 +143,65 @@ export function resolveSlotClick(pending: PendingMode, slot: SlotKey): SlotClick
   if (pending === 'queue') return { kind: 'queue', slot };
   return { kind: 'noop' };
 }
+
+// ---------------- Port-connected query ----------------
+
+/**
+ * Minimal edge shape we read for connectivity checks. We accept anything that
+ * has a `target.{nodeId, portId}` so callers can pass either the live patch
+ * edge map (Object.values(livePatch.edges)) or a hand-built array in tests.
+ */
+export interface EdgeLike {
+  target: { nodeId: string; portId: string };
+}
+
+/**
+ * Returns true iff some edge in `edges` terminates at (nodeId, portId).
+ * Used by sequencers to detect "is the clock input patched?" / "is the
+ * play_cv input patched?" — both of which gate the transport state.
+ *
+ * Pure (no AudioContext, no Y.Doc reads) so vitest can exercise it without
+ * spinning up the engine. Callers pass `Object.values(livePatch.edges)`.
+ */
+export function isInputPortConnected(
+  edges: ReadonlyArray<EdgeLike | undefined | null>,
+  nodeId: string,
+  portId: string,
+): boolean {
+  for (const edge of edges) {
+    if (!edge) continue;
+    if (edge.target.nodeId === nodeId && edge.target.portId === portId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---------------- Sequencer transport predicate ----------------
+
+/**
+ * The shared "should this sequencer be advancing right now?" predicate.
+ * Encodes the desired truth table for the transport state machine:
+ *
+ *   | playing | clockConnected | playCvConnected | shouldRun |
+ *   |---------|----------------|-----------------|-----------|
+ *   | true    | *              | *               | true      |  ← Play button OR play_cv high
+ *   | false   | true           | false           | true      |  ← clock-only mode: clock pulses ARE the play signal
+ *   | false   | true           | true            | false     |  ← play_cv patched + low → respect play_cv
+ *   | false   | false          | *               | false     |  ← stopped
+ *
+ * The clock-only case is the bug PR-82 introduced: previously, gating the
+ * sequencer's tick on `playing` alone meant a patched-but-unplayed clock
+ * couldn't drive the sequencer. play_cv and clock are now orthogonal: when
+ * play_cv is unpatched, the clock's mere presence means "run".
+ *
+ * Pure (no AudioContext) — exercised by transport-helpers.test.ts.
+ */
+export function shouldSequencerRun(
+  playing: boolean,
+  clockConnected: boolean,
+  playCvConnected: boolean,
+): boolean {
+  if (playing) return true;
+  return clockConnected && !playCvConnected;
+}
