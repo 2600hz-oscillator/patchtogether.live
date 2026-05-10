@@ -1,6 +1,7 @@
 <script lang="ts">
-  // Right-click context menu for module nodes. Three actions:
+  // Right-click context menu for module nodes. Four actions:
   //   Docs         — open this module's in-app docs page in a new tab
+  //   Duplicate    — clone the module with all params/data into a new node
   //   Unpatch all  — keep node, remove every edge touching it
   //   Delete       — remove node + every edge touching it
 
@@ -14,6 +15,7 @@
     /** Module type id (e.g. "analogVco"). Used to build the /docs URL. */
     nodeType?: string | null;
     ondelete: () => void;
+    onduplicate: () => void;
     onunpatch: () => void;
     onclose: () => void;
   }
@@ -25,6 +27,7 @@
     nodeLabel,
     nodeType = null,
     ondelete,
+    onduplicate,
     onunpatch,
     onclose,
   }: Props = $props();
@@ -45,6 +48,10 @@
 
   function pickDelete() {
     ondelete();
+    onclose();
+  }
+  function pickDuplicate() {
+    onduplicate();
     onclose();
   }
   function pickUnpatch() {
@@ -77,6 +84,9 @@
       </button>
       <div class="ctx-sep" role="presentation"></div>
     {/if}
+    <button class="ctx-item" onclick={pickDuplicate} role="menuitem">
+      Duplicate
+    </button>
     <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
       Unpatch all
     </button>

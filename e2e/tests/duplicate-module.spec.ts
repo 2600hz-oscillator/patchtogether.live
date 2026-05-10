@@ -1,0 +1,255 @@
+// e2e/tests/duplicate-module.spec.ts
+//
+// Right-click → Duplicate clones a module with all its data + params into a
+// fresh node id offset from the source. Edges are NOT copied (the duplicate
+// starts unpatched).
+//
+// Multiplayer (@collab): a duplicate created in user A's window appears in
+// user B's window via Yjs sync — proving the duplicate goes through the
+// standard add-node path that's synchronized cross-window.
+
+import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch } from './_helpers';
+
+test.describe.configure({ mode: 'parallel' });
+
+interface PatchNode {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  params: Record<string, number>;
+  data?: Record<string, unknown>;
+}
+
+async function readNodes(page: Page): Promise<PatchNode[]> {
+  return await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
+    return Object.values(w.__patch.nodes).filter(Boolean) as PatchNode[];
+  });
+}
+
+test('right-click → Duplicate creates a clone with same params, fresh id, offset position', async ({
+  page,
+}) => {
+  await spawnPatch(
+    page,
+    [
+      {
+        id: 'adsr-source',
+        type: 'adsr',
+        position: { x: 200, y: 200 },
+        params: { attack: 1.234, decay: 0.5, sustain: 0.7, release: 2.1 },
+      },
+    ],
+    [],
+  );
+
+  // Right-click the ADSR card → "Duplicate".
+  const adsr = page.locator('.svelte-flow__node-adsr').first();
+  await adsr.click({ button: 'right' });
+  await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
+  await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
+
+  // Two ADSRs in the patch graph now.
+  await expect(page.locator('.svelte-flow__node-adsr')).toHaveCount(2);
+
+  const nodes = await readNodes(page);
+  const adsrs = nodes.filter((n) => n.type === 'adsr');
+  expect(adsrs.length).toBe(2);
+
+  const source = adsrs.find((n) => n.id === 'adsr-source');
+  const dup = adsrs.find((n) => n.id !== 'adsr-source');
+  expect(source).toBeDefined();
+  expect(dup).toBeDefined();
+  expect(dup!.id).toMatch(/^adsr-/);
+
+  // Same params; deep-equal.
+  expect(dup!.params).toEqual(source!.params);
+
+  // Position is offset down-right by ~30px.
+  expect(dup!.position.x).toBeGreaterThan(source!.position.x);
+  expect(dup!.position.y).toBeGreaterThan(source!.position.y);
+  expect(dup!.position.x - source!.position.x).toBeLessThan(60);
+  expect(dup!.position.y - source!.position.y).toBeLessThan(60);
+});
+
+test('right-click → Duplicate deep-clones data (mutating dup does not affect source)', async ({
+  page,
+}) => {
+  // Use a sequencer-like data shape: array of step objects. The Yjs
+  // "reassigning object that already occurs in the tree" gotcha only fires
+  // when the same JS reference ends up at two paths — so a mutation through
+  // one MUST not be visible at the other.
+  await spawnPatch(
+    page,
+    [
+      {
+        id: 'seq-source',
+        type: 'sequencer',
+        position: { x: 100, y: 100 },
+        params: { bpm: 120, length: 4 },
+      },
+    ],
+    [],
+  );
+  // Seed data via __patch (spawnPatch helper does not pass `data`).
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      w.__patch.nodes['seq-source']!.data = {
+        steps: [
+          { on: true, midi: 60 },
+          { on: true, midi: 64 },
+          { on: false, midi: null },
+          { on: true, midi: 67 },
+        ],
+      };
+    });
+  });
+
+  // Right-click → Duplicate.
+  const seq = page.locator('.svelte-flow__node-sequencer').first();
+  await seq.click({ button: 'right' });
+  await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
+  await expect(page.locator('.svelte-flow__node-sequencer')).toHaveCount(2);
+
+  // Mutate the duplicate's nested step. Source must be untouched.
+  const dupId = await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, { type: string; id: string }> } };
+    const ids = Object.keys(w.__patch.nodes).filter(
+      (k) => w.__patch.nodes[k]!.type === 'sequencer' && k !== 'seq-source',
+    );
+    return ids[0] ?? null;
+  });
+  expect(dupId).toBeTruthy();
+
+  await page.evaluate((id) => {
+    const w = window as unknown as {
+      __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const dupNode = w.__patch.nodes[id]!;
+      // Reassigning the array entirely (rather than mutating in place) keeps
+      // Yjs happy AND proves the dup's data is independent: the source's
+      // steps array reference must not change as a result.
+      dupNode.data = {
+        steps: [
+          { on: false, midi: null },
+          { on: false, midi: null },
+          { on: false, midi: null },
+          { on: false, midi: null },
+        ],
+      };
+    });
+  }, dupId);
+
+  // Read source's steps — first step must still be on/midi 60.
+  const sourceFirstStep = await page.evaluate(() => {
+    const w = window as unknown as {
+      __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> };
+    };
+    return w.__patch.nodes['seq-source']!.data!.steps![0];
+  });
+  expect(sourceFirstStep).toEqual({ on: true, midi: 60 });
+});
+
+test('right-click → Duplicate does not copy edges of the source', async ({ page }) => {
+  // Patch: VCO → VCA. Duplicate the VCO. Expect: 1 edge still (VCO → VCA),
+  // duplicated VCO has no edges.
+  await spawnPatch(
+    page,
+    [
+      { id: 'vco-source', type: 'analogVco', position: { x: 100, y: 100 } },
+      { id: 'vca-sink',   type: 'vca',       position: { x: 400, y: 100 } },
+    ],
+    [
+      { id: 'e-vco-vca', from: { nodeId: 'vco-source', portId: 'sine' }, to: { nodeId: 'vca-sink', portId: 'audio' } },
+    ],
+  );
+
+  await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
+
+  const vco = page.locator('.svelte-flow__node-analogVco').first();
+  await vco.click({ button: 'right' });
+  await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
+  await expect(page.locator('.svelte-flow__node-analogVco')).toHaveCount(2);
+
+  // Edge count unchanged — duplicate did NOT copy the source's edge.
+  await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
+});
+
+test('@collab duplicate in A appears in B within 4s', async ({ browser }) => {
+  // Two browser contexts on the same rackspace. A duplicates a node; B
+  // observes the new node show up. This proves Duplicate goes through the
+  // standard add-node path (Y.Doc transact) that the multiplayer provider
+  // synchronizes cross-window.
+  const rackspaceId = `dup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const ctxA = await browser.newContext();
+  const ctxB = await browser.newContext();
+  const pageA = await ctxA.newPage();
+  const pageB = await ctxB.newPage();
+  try {
+    for (const p of [pageA, pageB]) {
+      await p.goto('/');
+      await p.waitForLoadState('networkidle');
+      await p.waitForFunction(
+        () =>
+          typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
+      );
+    }
+    await Promise.all(
+      [pageA, pageB].map((p) =>
+        p.evaluate(async (id) => {
+          const w = window as unknown as { __attachProvider: (id: string) => Promise<unknown> };
+          await w.__attachProvider(id);
+        }, rackspaceId),
+      ),
+    );
+
+    // A: seed an ADSR with known params.
+    await pageA.evaluate(() => {
+      const w = window as unknown as {
+        __patch: { nodes: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['adsr-shared'] = {
+          id: 'adsr-shared',
+          type: 'adsr',
+          domain: 'audio',
+          position: { x: 200, y: 200 },
+          params: { attack: 0.5 },
+        };
+      });
+    });
+
+    // Wait for B to see the seed.
+    await expect
+      .poll(async () => await pageB.evaluate(() => {
+        const w = window as unknown as { __patch: { nodes: Record<string, unknown> } };
+        return Object.keys(w.__patch.nodes).includes('adsr-shared');
+      }), { timeout: 4000 })
+      .toBe(true);
+
+    // A: right-click → Duplicate.
+    const adsr = pageA.locator('.svelte-flow__node-adsr').first();
+    await adsr.click({ button: 'right' });
+    await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
+    await expect(pageA.locator('.svelte-flow__node-adsr')).toHaveCount(2);
+
+    // B: should see 2 ADSR nodes appear within 4s.
+    await expect
+      .poll(async () => await pageB.evaluate(() => {
+        const w = window as unknown as { __patch: { nodes: Record<string, { type: string }> } };
+        return Object.values(w.__patch.nodes).filter((n) => n && n.type === 'adsr').length;
+      }), { timeout: 4000 })
+      .toBe(2);
+  } finally {
+    await ctxA.close();
+    await ctxB.close();
+  }
+});

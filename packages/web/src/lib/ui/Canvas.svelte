@@ -15,6 +15,7 @@
     type Connection,
   } from '@xyflow/svelte';
   import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { buildDuplicate } from '$lib/graph/duplicate';
   import { getDefaultSnapshotBus, type PatchSnapshot } from '$lib/graph/snapshot';
   import {
     makeEnvelope,
@@ -651,6 +652,60 @@
     trace(`unpatched ${nodeId}`);
   }
 
+  /** Right-click → Duplicate. Clones the node with all data + params into a
+   *  fresh id, offset 30px down-right of the source so the new card lands
+   *  visibly on top. Edges are NOT copied — the duplicate starts unpatched.
+   *  Refuses when the source's module def has a maxInstances cap that's
+   *  already met (matches spawnFromPalette's gate). */
+  function duplicateNode(nodeId: string) {
+    const source = patch.nodes[nodeId];
+    if (!source) {
+      trace(`duplicate refused: node ${nodeId} not found`);
+      return;
+    }
+    // Re-check the same maxInstances + per-user PICTUREBOX caps the
+    // palette path enforces — duplicate is just another spawn route.
+    const audioDef = getModuleDef(source.type);
+    const videoDef = !audioDef ? getVideoModuleDef(source.type) : undefined;
+    const def = audioDef ?? videoDef;
+    if (def?.maxInstances !== undefined) {
+      let existing = 0;
+      for (const node of Object.values(patch.nodes)) {
+        if (node && node.type === source.type) existing++;
+      }
+      if (existing >= def.maxInstances) {
+        const msg = `${def.label ?? source.type}: at instance cap (${existing}/${def.maxInstances})`;
+        trace(`duplicate refused: ${source.type} at cap (${existing}/${def.maxInstances})`);
+        error = msg;
+        setTimeout(() => {
+          if (error === msg) error = null;
+        }, 4000);
+        return;
+      }
+    }
+    if (source.type === PICTUREBOX_TYPE) {
+      const decision = pictureboxSpawnDecision(
+        patch.nodes,
+        currentUserId ?? null,
+      );
+      if (!decision.ok) {
+        const msg = explainSpawnDenial(decision);
+        trace(`duplicate refused: ${source.type} ${decision.reason} ${decision.current}/${decision.cap}`);
+        error = msg;
+        setTimeout(() => {
+          if (error === msg) error = null;
+        }, 4000);
+        return;
+      }
+    }
+    const dup = buildDuplicate(source, Object.keys(patch.nodes));
+    ydoc.transact(() => {
+      patch.nodes[dup.id] = dup;
+    }, LOCAL_ORIGIN);
+    trace(`duplicated ${nodeId} → ${dup.id}`);
+    void ensureEngine();
+  }
+
   /** "Organize modules" — declutter the current layout so no two cards overlap.
    *  Preserves the user's overall arrangement (each node moves only as far as
    *  needed to clear its neighbors) and grows the canvas bbox as required.
@@ -1206,6 +1261,7 @@
   nodeLabel={ctxMenuLabel}
   nodeType={ctxMenuNodeType}
   ondelete={() => ctxMenuNodeId && deleteNode(ctxMenuNodeId)}
+  onduplicate={() => ctxMenuNodeId && duplicateNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
 />
