@@ -3,8 +3,11 @@ declare description "Gate-triggered cat-vocal synth voice. Three-formant bank + 
 
 import("stdfaust.lib");
 
-// V/oct pitch — 0 V = C4 (~261.6 Hz). Direct semitone equivalence.
-pitchKnob = hslider("pitch[style:knob]",        0.0,  -36.0, 36.0, 0.001) : si.smoo;
+// Pitch knob is now a TRANSPOSITION in semitones (like analog-vco's `tune`),
+// added on top of the audio-rate `pitch` V/oct input. 0V + 0 semis = C4.
+// See process() at the bottom — `pitch` (volts) and `pitchKnob` (semis)
+// combine to drive baseFreq.
+pitchKnob = hslider("pitch[style:knob][unit:semi]", 0.0,  -36.0, 36.0, 0.001) : si.smoo;
 morphKnob = hslider("morph[style:knob]",        0.25, 0.0,    1.0, 0.001) : si.smoo;
 decayKnob = hslider("decay[style:knob][unit:s]", 0.4,  0.05,  2.0, 0.001) : si.smoo;
 levelKnob = hslider("level[style:knob]",        1.0,  0.0,    2.0, 0.001) : si.smoo;
@@ -59,8 +62,11 @@ riseAmtOf(m)    = xfade(riseAmtAt, m);
 fallAmtOf(m)    = xfade(fallAmtAt, m);
 decayScaleOf(m) = xfade(decayScaleAt, m);
 
-// Base frequency: pitchKnob is in semitones from C4.
-baseFreq(p) = 261.6256 * pow(2.0, p / 12.0);
+// Base frequency: standard 1V/oct convention (matches analog-vco.dsp).
+//   `pVolt`  — audio-rate pitch CV in volts (1V = 1 octave). 0V = C4.
+//   `pSemi`  — knob transposition in semitones (added on top of the CV).
+// At pVolt=0, pSemi=0 → 261.6256 Hz (C4). At pVolt=1, pSemi=0 → 523.25 Hz (C5).
+baseFreq(pVolt, pSemi) = 261.6256 * pow(2.0, pVolt + pSemi / 12.0);
 
 // Pitch contour: a fast rise + slow fall, tagged with morph-dependent
 // rise/fall amounts. Returns semitone offset.
@@ -70,15 +76,15 @@ pitchEnvSemi(g, m) =
   en.are(0.03, 0.08, g) * riseAmtOf(m) * 12.0
   - en.adsr(0.0, 0.25, 0.0, decayKnob * decayScaleOf(m), g) * fallAmtOf(m) * 12.0;
 
-freqHz(p, g, m) = baseFreq(p) * pow(2.0, pitchEnvSemi(g, m) / 12.0);
+freqHz(pVolt, pSemi, g, m) = baseFreq(pVolt, pSemi) * pow(2.0, pitchEnvSemi(g, m) / 12.0);
 
 // Excitation: a small harmonic stack (F + 2F + 3F + 4F at decreasing amplitudes)
 // representing voiced cat phonation, blended with white noise for hiss/breath.
-voicedExc(p, g, m) =
-  os.osc(freqHz(p, g, m)) * 1.0
-  + os.osc(freqHz(p, g, m) * 2.0) * 0.5
-  + os.osc(freqHz(p, g, m) * 3.0) * 0.25
-  + os.osc(freqHz(p, g, m) * 4.0) * 0.125;
+voicedExc(pVolt, pSemi, g, m) =
+  os.osc(freqHz(pVolt, pSemi, g, m)) * 1.0
+  + os.osc(freqHz(pVolt, pSemi, g, m) * 2.0) * 0.5
+  + os.osc(freqHz(pVolt, pSemi, g, m) * 3.0) * 0.25
+  + os.osc(freqHz(pVolt, pSemi, g, m) * 4.0) * 0.125;
 
 // Tremolo for purr — adds a 15 Hz amplitude wobble. Strength scales with
 // voicedOf(m) so non-purr presets aren't affected (their voiced is high
@@ -86,8 +92,8 @@ voicedExc(p, g, m) =
 // so tremolo has minimal effect anyway).
 tremolo(m) = 1.0 - 0.4 * (1.0 - voicedOf(m)) + 0.4 * (1.0 - voicedOf(m)) * os.osc(15.0);
 
-excit(p, g, m) =
-  voicedExc(p, g, m) * voicedOf(m) * tremolo(m)
+excit(pVolt, pSemi, g, m) =
+  voicedExc(pVolt, pSemi, g, m) * voicedOf(m) * tremolo(m)
   + no.noise * (1.0 - voicedOf(m));
 
 // Three parallel resonant bandpass formants.
@@ -104,9 +110,11 @@ ampEnv(g, m) = en.adsr(0.005, 0.05, 0.4, decayKnob * decayScaleOf(m), g);
 maxDelay = 0.001 * ma.SR;
 stereoSpread(g, m) = (1.0 - ampEnv(g, m)) * 0.6;
 
-leftCh(p, g, m)  = formants(excit(p, g, m), m) * ampEnv(g, m) * levelKnob;
-rightCh(p, g, m) = de.fdelay(maxDelay, stereoSpread(g, m) * maxDelay, leftCh(p, g, m));
+leftCh(pVolt, pSemi, g, m)  = formants(excit(pVolt, pSemi, g, m), m) * ampEnv(g, m) * levelKnob;
+rightCh(pVolt, pSemi, g, m) = de.fdelay(maxDelay, stereoSpread(g, m) * maxDelay, leftCh(pVolt, pSemi, g, m));
 
-process(gate) =
-  leftCh(pitchKnob, gate, morphKnob),
-  rightCh(pitchKnob, gate, morphKnob);
+// Two audio-rate inputs: gate (0/1 trigger) + pitch (V/oct CV; 0 = C4).
+// pitchKnob (semitones) is added on top of the pitch CV inside baseFreq.
+process(gate, pitch) =
+  leftCh(pitch, pitchKnob, gate, morphKnob),
+  rightCh(pitch, pitchKnob, gate, morphKnob);

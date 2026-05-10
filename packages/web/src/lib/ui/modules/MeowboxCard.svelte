@@ -25,7 +25,9 @@
 
   const inputs: PortDescriptor[] = [
     { id: 'gate',  cable: 'gate' },
-    { id: 'pitch', cable: 'cv' },
+    // pitch is now a true 1V/oct audio-rate input (matches sequencer/score
+    // pitch outputs). Schema v2; see meowbox.ts.
+    { id: 'pitch', cable: 'pitch' },
     { id: 'morph', cable: 'cv' },
     { id: 'decay', cable: 'cv' },
     { id: 'level', cable: 'cv' },
