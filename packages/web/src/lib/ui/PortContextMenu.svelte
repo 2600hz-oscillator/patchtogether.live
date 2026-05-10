@@ -5,8 +5,11 @@
   //   level 3: candidate ports on the chosen module, with "!" prefix on
   //            inputs already receiving a cable (destructive overwrite).
   //
-  // Esc / click-outside dismiss everything. Picking a candidate port fires
-  // `onpick({ targetNodeId, targetPortId })` and closes.
+  // The menu persists through ALL pointer movements while open. It closes
+  // only on Escape, on picking a candidate port (which fires
+  // `onpick({ targetNodeId, targetPortId })`), or implicitly when the
+  // user right-clicks a different port (Canvas opens a fresh menu in
+  // place of the old one).
 
   import type { ModuleEntry, CandidatePort } from '$lib/ui/port-patch-helpers';
 
@@ -73,13 +76,15 @@
 </script>
 
 {#if open}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div
-    class="ctx-overlay"
-    onclick={onclose}
-    oncontextmenu={(e) => { e.preventDefault(); onclose(); }}
-    role="presentation"
-  ></div>
+  <!--
+    No click-outside overlay: the patch-context menu must persist through
+    ALL pointer movements while the user is mid-patching. It closes only
+    on (a) Escape, (b) picking a target port, or (c) a fresh contextmenu
+    on a different port (Canvas's capture-phase listener replaces this
+    open with a new one, no explicit close needed). An overlay with
+    onclick={onclose} would dismiss the menu on incidental clicks
+    elsewhere on the canvas, which broke the cascade mid-trip.
+  -->
   <div
     class="ctx-menu"
     style:left="{x}px"
@@ -188,11 +193,6 @@
 {/if}
 
 <style>
-  .ctx-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 200;
-  }
   .ctx-menu {
     position: fixed;
     z-index: 201;

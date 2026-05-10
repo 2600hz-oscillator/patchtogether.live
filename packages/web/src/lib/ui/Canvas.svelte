@@ -104,6 +104,7 @@
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
+  import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
     buildModuleEntries,
     compatibleTargetPorts,
@@ -233,6 +234,10 @@
       // boot to avoid maintaining a stale catalog mirror.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__listModuleDefs = listModuleDefs;
+      // Drag-lock state for e2e — patch-menus-persist tests inspect this
+      // to confirm the lock engaged + released at the right moments.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__connectDragState = connectDragState;
       // Stage-B Playwright @collab tests use these to drive the
       // multi-user provider attach + per-user layout reads without
       // routing through Clerk auth. See e2e/tests/collab.spec.ts.
@@ -487,6 +492,8 @@
    *  Behavior: an input accepts only ONE connection at a time — patching onto an
    *  occupied input replaces the existing edge. Outputs may fan out to many. */
   function handleConnect(connection: Connection) {
+    // Drag committed — release any drag-induced PatchPanel lock.
+    connectDragState.end();
     if (!connection.source || !connection.target) return;
     if (!connection.sourceHandle || !connection.targetHandle) return;
 
@@ -534,6 +541,9 @@
    *  existing cable on that input. Lets you grab a patched input and rewire it
    *  somewhere else with one motion. */
   function handleConnectStart(_event: MouseEvent | TouchEvent, params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null }) {
+    // Mark a connect-drag in flight — PatchPanels opened during this drag
+    // will lock open until handleConnect / handleConnectEnd fires.
+    connectDragState.begin();
     if (params.handleType !== 'target') return;
     if (!params.nodeId || !params.handleId) return;
     let removed = 0;
@@ -550,6 +560,13 @@
       }
     }, LOCAL_ORIGIN);
     if (removed > 0) trace(`detached cable from ${params.nodeId}.${params.handleId} (rewiring)`);
+  }
+
+  /** Cable drag finished — committed-or-not. Always release the drag-
+   *  induced PatchPanel lock so the locked panel can resume normal
+   *  hover-intent behaviour. */
+  function handleConnectEnd() {
+    connectDragState.end();
   }
 
   /** Svelte Flow deleted nodes/edges (Backspace on selection). Mirror to patch. */
@@ -1398,6 +1415,7 @@
       colorMode="dark"
       onconnect={handleConnect}
       onconnectstart={handleConnectStart}
+      onconnectend={handleConnectEnd}
       ondelete={handleDelete}
       onnodedragstop={handleNodeDragStop}
       onpanecontextmenu={onPaneContextMenu}

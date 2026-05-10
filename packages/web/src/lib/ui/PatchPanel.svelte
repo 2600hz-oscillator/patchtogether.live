@@ -22,6 +22,7 @@
     type GroupedPorts,
     type PortDescriptor,
   } from '$lib/ui/patch-panel-labels';
+  import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import type { Snippet } from 'svelte';
 
   /**
@@ -155,8 +156,31 @@
   // The panel is open if ANY driver wants it open. postClickHoldActive
   // joins the hover/pin/drag drivers as a fourth keep-open signal —
   // it's a time-bounded version of `pinned` that auto-expires.
+  // dragLockEngaged is the fifth: a Svelte Flow connect-drag is in
+  // flight AND this panel is the one that opened first during the drag,
+  // so the panel must persist until the drag commits or releases.
   let postClickHoldActive = $derived(postClickHoldUntil > 0);
-  let open = $derived(hovered || pinned || stayOpenForDrag || postClickHoldActive);
+  let dragLockEngaged = $derived(
+    connectDragState.active && connectDragState.lockedPanelNodeId === nodeId,
+  );
+  let open = $derived(
+    hovered || pinned || stayOpenForDrag || postClickHoldActive || dragLockEngaged,
+  );
+
+  // First panel to TRANSITION to open during an active drag claims the
+  // lock. We ignore panels that were already open when the drag started
+  // (e.g. the source panel, pinned by the user before grabbing the
+  // cable) — only a destination panel that opens *as a result of* the
+  // drag should be locked. We track the previous-frame value of `open`
+  // so we can detect the closed→open transition.
+  let prevOpen = $state(false);
+  $effect(() => {
+    const nextOpen = open;
+    if (!prevOpen && nextOpen && connectDragState.active) {
+      connectDragState.tryLock(nodeId);
+    }
+    prevOpen = nextOpen;
+  });
 
   const CLOSE_DELAY_MS = 200;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -233,6 +257,10 @@
     const onDocPointerDown = (e: PointerEvent) => {
       if (!open) return;
       if (stayOpenForDrag) return;
+      // Drag-lock owns this panel — outside-click can't dismiss it
+      // until the drag commits / releases (then connectDragState.end()
+      // fires from Canvas's onconnect / onconnectend).
+      if (dragLockEngaged) return;
       const target = e.target as HTMLElement | null;
       if (!target) return;
       if (target.closest('[data-patch-panel-node]')) return;
