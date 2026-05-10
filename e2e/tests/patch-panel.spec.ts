@@ -556,6 +556,134 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
   });
 
+  test('top-right click anchors panel to right corner; top-left click anchors to left', async ({
+    page,
+  }) => {
+    // The popover should pop down from whichever corner the user
+    // activated. The previous behavior (always anchored top-left) made
+    // the right trigger feel disconnected — clicking it spawned the
+    // panel under the OPPOSITE corner.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // RIOTGIRLS is wide (panelWidth: 600) — the gap between left and
+    // right anchors is dramatic enough to assert with confidence on
+    // any viewport.
+    await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 100, y: 100 } }]);
+
+    const leftTrigger = page.locator(
+      `.svelte-flow__node[data-id="rg"] [data-testid="patch-trigger"]`,
+    );
+    const rightTrigger = page.locator(
+      `.svelte-flow__node[data-id="rg"] [data-testid="patch-trigger-right"]`,
+    );
+    const panel = page.locator(
+      `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel"]`,
+    );
+
+    // Click left → panel anchors top-left (its LEFT edge sits under
+    // the left trigger; the panel grows rightward).
+    await leftTrigger.click();
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+    await expect(panel).toHaveAttribute('data-anchor-corner', 'topLeft');
+
+    const leftBox = await leftTrigger.boundingBox();
+    const panelBoxLeftAnchor = await panel.boundingBox();
+    expect(leftBox && panelBoxLeftAnchor, 'have boxes').toBeTruthy();
+    if (!leftBox || !panelBoxLeftAnchor) return;
+    // Panel's left edge must be near the left trigger's left edge.
+    expect(
+      Math.abs(panelBoxLeftAnchor.x - leftBox.x),
+      `topLeft anchor: panel.left ~= leftTrigger.left (panel.x=${panelBoxLeftAnchor.x}, trigger.x=${leftBox.x})`,
+    ).toBeLessThan(20);
+
+    // Outside click to dismiss the pinned panel before the next test
+    // step (also clears the post-click hold, per spec).
+    await page.mouse.click(20, 20);
+    await page.waitForTimeout(100);
+    await expect(panel).toHaveAttribute('aria-hidden', 'true');
+
+    // Click right → panel anchors top-right (its RIGHT edge sits
+    // under the right trigger; the panel grows leftward).
+    await rightTrigger.click();
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+    await expect(panel).toHaveAttribute('data-anchor-corner', 'topRight');
+
+    const rightBox = await rightTrigger.boundingBox();
+    const panelBoxRightAnchor = await panel.boundingBox();
+    expect(rightBox && panelBoxRightAnchor, 'have boxes').toBeTruthy();
+    if (!rightBox || !panelBoxRightAnchor) return;
+    // Panel's RIGHT edge must be near the right trigger's right edge.
+    const panelRight = panelBoxRightAnchor.x + panelBoxRightAnchor.width;
+    const triggerRight = rightBox.x + rightBox.width;
+    expect(
+      Math.abs(panelRight - triggerRight),
+      `topRight anchor: panel.right ~= rightTrigger.right (panel.right=${panelRight}, trigger.right=${triggerRight})`,
+    ).toBeLessThan(20);
+
+    // And the panel should now sit further to the right than when it
+    // was anchored from the left trigger — concrete evidence the
+    // anchor point shifted.
+    expect(
+      panelBoxRightAnchor.x,
+      `right-anchored panel must start to the right of left-anchored panel (right=${panelBoxRightAnchor.x}, left=${panelBoxLeftAnchor.x})`,
+    ).toBeGreaterThan(panelBoxLeftAnchor.x + 50);
+  });
+
+  test('click triggers a 300ms post-click hold; panel survives mouseleave inside the window', async ({
+    page,
+  }) => {
+    // After CLICK (release), the panel must persist for at least 300ms
+    // even if the mouse leaves the trigger and panel — so the user can
+    // navigate from the click target down to a port without the panel
+    // snapping shut. After the 300ms expires, the normal 200ms hover-
+    // close grace resumes.
+    //
+    // The first click pins the panel (pinned=true), which would mask
+    // the 300ms hold's effect. To isolate the post-click hold, we
+    // double-click the trigger: the second click unpins, and the hold
+    // is the ONLY remaining keep-open driver.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
+
+    const trigger = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`,
+    );
+    const panel = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`,
+    );
+
+    // Click 1 → pins.
+    await trigger.click();
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+    // Click 2 → unpins. Now ONLY the post-click hold (and maybe hover)
+    // can keep it open.
+    await trigger.click();
+    // Mouse off immediately after the click release.
+    await page.mouse.move(20, 20);
+
+    // After 250ms (longer than the 200ms hover-close grace would take
+    // WITHOUT the hold) the panel must STILL be open — proving the
+    // 300ms hold is what's keeping it alive. Without the hold, the
+    // mouseleave-scheduled close at +200ms would have already fired.
+    await page.waitForTimeout(250);
+    await expect(
+      panel,
+      'panel still open at +250ms (past the 200ms hover-grace) thanks to the 300ms post-click hold',
+    ).toHaveAttribute('aria-hidden', 'false');
+
+    // After the 300ms hold + 200ms hover-close grace expire, the panel
+    // must close. Total wait from the 2nd click: 300+200 = 500ms; we
+    // already waited 250ms, so wait ~450ms more for safety on slow CI.
+    await page.waitForTimeout(450);
+    await expect(panel, 'panel closes after the 300ms hold + 200ms grace expire').toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
+  });
+
   test('panel stays open during a connect-drag', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
