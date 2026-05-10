@@ -57,6 +57,8 @@ import {
 import {
   coerceSlots,
   coerceSlotKey,
+  isInputPortConnected,
+  shouldSequencerRun,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
@@ -175,11 +177,10 @@ export const scoreDef: AudioModuleDef = {
     let totalSequenceEnds = 0;
 
     function isClockInConnected(): boolean {
-      for (const edge of Object.values(livePatch.edges)) {
-        if (!edge) continue;
-        if (edge.target.nodeId === nodeId && edge.target.portId === 'clock') return true;
-      }
-      return false;
+      return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'clock');
+    }
+    function isPlayCvConnected(): boolean {
+      return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'play_cv');
     }
 
     function readParam(id: string, fallback: number): number {
@@ -414,8 +415,17 @@ export const scoreDef: AudioModuleDef = {
       try {
         const isPlaying = pollTransportCv();
         const externalClock = isClockInConnected();
+        // Orthogonality fix: clock-only mode (clock patched, play_cv not)
+        // treats incoming pulses as the play signal even when isPlaying=false.
+        // Note: SCORE's "stop at end-of-stop-bar when not looping" path writes
+        // isPlaying=0 to halt — in clock-only mode that single-shot stop is
+        // not honored (the next clock pulse re-runs from step 0, since
+        // shouldRun stays true). Stopping in clock-only mode is the clock
+        // source's responsibility.
+        const playCvPatched = isPlayCvConnected();
+        const shouldRun = shouldSequencerRun(isPlaying, externalClock, playCvPatched);
 
-        if (isPlaying && !prevPlaying) {
+        if (shouldRun && !prevPlaying) {
           tickIndex = 0;
           nextStepTime = ctx.currentTime + 0.05;
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
@@ -425,14 +435,17 @@ export const scoreDef: AudioModuleDef = {
           lastClockSampleTime = ctx.currentTime;
           transportCv.resetEdges();
           lastTransportPollTime = ctx.currentTime;
-        } else if (!isPlaying && prevPlaying) {
+        } else if (!shouldRun && prevPlaying) {
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
           tiedGateHoldUntilTick = -1;
         }
-        prevPlaying = isPlaying;
+        prevPlaying = shouldRun;
 
-        if (!isPlaying) {
+        if (!shouldRun) {
+          // Worker-driven scheduler-clock owns re-tick scheduling — see the
+          // getSchedulerClock().subscribe(tick) below — so no timeoutId
+          // self-loop is needed when we early-return.
           return;
         }
 

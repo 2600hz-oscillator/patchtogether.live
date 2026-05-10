@@ -8,8 +8,10 @@ import {
   coercePendingMode,
   coerceSlotKey,
   createRisingEdgeDetector,
+  isInputPortConnected,
   isRisingEdge,
   resolveSlotClick,
+  shouldSequencerRun,
 } from './transport-helpers';
 
 describe('defaultSlots / coerceSlots', () => {
@@ -132,5 +134,62 @@ describe('resolveSlotClick', () => {
 
   it('returns noop for null pending', () => {
     expect(resolveSlotClick(null, '1')).toEqual({ kind: 'noop' });
+  });
+});
+
+describe('isInputPortConnected', () => {
+  const edges = [
+    { target: { nodeId: 'seqA', portId: 'clock' } },
+    { target: { nodeId: 'seqA', portId: 'play_cv' } },
+    { target: { nodeId: 'seqB', portId: 'clock' } },
+  ];
+
+  it('returns true when an edge terminates at (nodeId, portId)', () => {
+    expect(isInputPortConnected(edges, 'seqA', 'clock')).toBe(true);
+    expect(isInputPortConnected(edges, 'seqA', 'play_cv')).toBe(true);
+    expect(isInputPortConnected(edges, 'seqB', 'clock')).toBe(true);
+  });
+
+  it('returns false when no edge matches', () => {
+    expect(isInputPortConnected(edges, 'seqA', 'reset_cv')).toBe(false);
+    expect(isInputPortConnected(edges, 'seqB', 'play_cv')).toBe(false);
+    expect(isInputPortConnected(edges, 'nope', 'clock')).toBe(false);
+  });
+
+  it('tolerates undefined / null entries in the edge list', () => {
+    expect(isInputPortConnected([null, undefined, ...edges], 'seqA', 'clock')).toBe(true);
+    expect(isInputPortConnected([null, undefined], 'seqA', 'clock')).toBe(false);
+    expect(isInputPortConnected([], 'seqA', 'clock')).toBe(false);
+  });
+});
+
+describe('shouldSequencerRun (transport state truth table)', () => {
+  // PR fix/clock-without-play — these cases lock the orthogonality contract
+  // between play_cv and the clock input. The bug PR-82 introduced was that
+  // the sequencer's tick was gated on `playing` alone, so a patched-but-
+  // unplayed clock couldn't drive the sequencer.
+
+  it('runs whenever playing is true (regardless of patches)', () => {
+    expect(shouldSequencerRun(true, false, false)).toBe(true);
+    expect(shouldSequencerRun(true, true,  false)).toBe(true);
+    expect(shouldSequencerRun(true, false, true )).toBe(true);
+    expect(shouldSequencerRun(true, true,  true )).toBe(true);
+  });
+
+  it('clock-only mode: clock patched, play_cv NOT patched, isPlaying=false → runs', () => {
+    // The bug fix: this used to return false. Now the clock pulses ARE the
+    // play signal in this configuration.
+    expect(shouldSequencerRun(false, true, false)).toBe(true);
+  });
+
+  it('play_cv patched: respect play_cv state (do NOT run on clock alone)', () => {
+    // play_cv patched + low (isPlaying=false) → stay stopped, even if clock
+    // is also patched. play_cv overrides.
+    expect(shouldSequencerRun(false, true,  true)).toBe(false);
+    expect(shouldSequencerRun(false, false, true)).toBe(false);
+  });
+
+  it('nothing patched + not playing → stopped', () => {
+    expect(shouldSequencerRun(false, false, false)).toBe(false);
   });
 });
