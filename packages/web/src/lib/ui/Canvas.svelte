@@ -1468,8 +1468,7 @@
 
 <div class="root">
   <header class="topbar">
-    <h1>patchtogether.live</h1>
-    <span class="caption">Day 7 — Svelte Flow canvas + reactive engine</span>
+    <h1>2600hz</h1>
     <div class="actions">
       <button onclick={openPaletteFromButton}>+ Add module</button>
       <button onclick={loadExample} disabled={booting} class="primary">
