@@ -96,7 +96,11 @@ const MODULES: VrtModule[] = [
   { type: 'vdelay', domain: 'video', mask: [{ selector: 'canvas' }] },
 ];
 
-test.describe.configure({ mode: 'serial' });
+// 'default' mode = independent tests; one failing doesn't skip the rest.
+// We keep workers: 1 in vrt.config.ts so paint-timing variability still
+// stays bounded, but unlike 'serial' we get a full report of every drifted
+// baseline in one CI run instead of bisecting them one-at-a-time.
+test.describe.configure({ mode: 'default' });
 
 test.describe('VRT: every module card matches its baseline', () => {
   for (const mod of MODULES) {
