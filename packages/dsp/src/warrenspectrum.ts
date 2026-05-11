@@ -14,10 +14,16 @@
 // 1.0 / 0.35 / 0.12 — the cluster rings as a group, the way a real
 // resonator bank cross-couples mechanical excitation.
 //
-// The envelope drives a brief excitation impulse that's summed into the
-// bandpass input (so the filter rings at its own center frequency), AND
-// it modulates the per-band gain post-filter slightly (vactrol "pump"
-// — the LDR brightens, then dims, more than just opening/closing).
+// Excitation path: TWO injections into the bandpass input —
+//   (1) a fast click impulse (0.98/sample decay, ~1ms) on rising edge —
+//       gives the initial transient/attack;
+//   (2) envelope-modulated broadband noise — keeps exciting the bandpass
+//       through the envelope's full 100-800ms decay so the band rings
+//       audibly for the whole vactrol decay (matches QBRT's "pew" tail
+//       where the boosted Q+click rings for the envelope duration).
+// Both routes hit the SAME bandpass input so the filter rings at fc
+// with energy that decays alongside the envelope. The envelope also
+// pumps the per-band gain slightly (vactrol "brightens").
 //
 // Inputs (3): in_l (audio L), in_r (audio R), pings_packed (8 gate
 // channels packed 0..7). CV inputs route to AudioParams directly via
@@ -290,6 +296,14 @@ class WarrenspectrumProcessor extends AudioWorkletProcessor {
     const pingDecaySec = 0.1 + pingDecayKnob * 0.7;
     const ATTACK_MS_BASE = 20; // mid of 10-30 range
     const DRIVE = 4.0;
+    // Excitation drive levels. CLICK is the initial transient amplitude
+    // (gives the sharp attack). NOISE is the sustained excitation that
+    // keeps the bandpass ringing through the envelope decay. Values
+    // tuned so a single ping at level=1 produces ~0.3 peak output on the
+    // center band before master*0.25 master attenuation — clearly audible
+    // without clipping.
+    const CLICK_DRIVE = 8.0;
+    const NOISE_DRIVE = 1.5;
 
     const masterArr = parameters.master!;
 
@@ -323,28 +337,31 @@ class WarrenspectrumProcessor extends AudioWorkletProcessor {
 
       for (let b = 0; b < NUM_BANDS; b++) {
         const e = this.envs[b]!;
-        // Step envelope once per sample.
         const envOut = stepEnv(e, DRIVE);
 
-        // Click impulse: fast-decay broadband injection that drives the
-        // bandpass into ringing at fc. Decays at ~1ms so the filter sees
-        // a single sharp transient (vs. the smooth envelope which has
-        // no high-frequency content of its own).
-        const clickAmp = e.click;
+        // (1) Click impulse — sharp broadband transient on rising edge.
+        //     ~1ms decay; gives the initial attack/click character.
+        const clickAmp = e.click * CLICK_DRIVE;
         e.click = e.click * 0.98;
         if (e.click < 1e-5) e.click = 0;
-        const ring = clickAmp;
 
-        // Per-sample CV-modulated gain: paramArray length 1 or blockSize.
+        // (2) Envelope-gated noise — sustains the bandpass excitation
+        //     through the vactrol's full 100-800ms decay so the band
+        //     rings audibly for the whole envelope. Without this the
+        //     bandpass (Q=6) only rings ~3ms past the click and the
+        //     vactrol envelope has nothing to shape.
+        const noise = (Math.random() * 2 - 1) * envOut * NOISE_DRIVE;
+
+        const excitation = clickAmp + noise;
+
         const lvlArr = parameters[`level${b + 1}`]!;
         const lvl = lvlArr.length > 1 ? lvlArr[i]! : lvlArr[0]!;
-        // Vactrol "pump": envOut slightly boosts the band gain when
-        // active — adds liveliness on ping without sacrificing the
-        // baseline EQ behavior.
+        // Vactrol "pump": envOut boosts the band's post-filter gain so
+        // the perceived brightness peaks with the envelope, then dims.
         const bandGain = lvl * (1 + envOut * 0.5);
 
-        const yL = processBiquad(this.bpfL[b]!, xL + ring) * bandGain;
-        const yR = processBiquad(this.bpfR[b]!, xR + ring) * bandGain;
+        const yL = processBiquad(this.bpfL[b]!, xL + excitation) * bandGain;
+        const yR = processBiquad(this.bpfR[b]!, xR + excitation) * bandGain;
         sumL += yL;
         sumR += yR;
       }
