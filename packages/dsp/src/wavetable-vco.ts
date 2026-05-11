@@ -36,10 +36,13 @@ interface LoadMessage {
 class WavetableVcoProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'tune',     defaultValue: 0,   minValue: -36,  maxValue: 36,  automationRate: 'k-rate' as const },
-      { name: 'fine',     defaultValue: 0,   minValue: -100, maxValue: 100, automationRate: 'k-rate' as const },
+      // tune/fine bumped to a-rate so external CV (LFO summed into AudioParam)
+      // is sampled per-frame rather than per-block; matches AnalogVCO behavior.
+      { name: 'tune',     defaultValue: 0,   minValue: -36,  maxValue: 36,  automationRate: 'a-rate' as const },
+      { name: 'fine',     defaultValue: 0,   minValue: -100, maxValue: 100, automationRate: 'a-rate' as const },
       { name: 'wavePos',  defaultValue: 0,   minValue: 0,    maxValue: 1,   automationRate: 'a-rate' as const },
       { name: 'fmAmount', defaultValue: 0,   minValue: 0,    maxValue: 1,   automationRate: 'a-rate' as const },
+      { name: 'pmAmount', defaultValue: 0,   minValue: 0,    maxValue: 1,   automationRate: 'a-rate' as const },
     ];
   }
 
@@ -97,11 +100,13 @@ class WavetableVcoProcessor extends AudioWorkletProcessor {
     const pitchIn = inputs[0]?.[0];
     const fmIn = inputs[1]?.[0];
     const wavePosCv = inputs[2]?.[0];
+    const pmIn = inputs[3]?.[0];
 
-    const tune = parameters.tune[0] ?? 0;
-    const fine = parameters.fine[0] ?? 0;
+    const tuneArr = parameters.tune;
+    const fineArr = parameters.fine;
     const wavePosArr = parameters.wavePos;
     const fmAmountArr = parameters.fmAmount;
+    const pmAmountArr = parameters.pmAmount;
 
     const FS = this.frameSize;
     const FC = this.frameCount;
@@ -111,8 +116,12 @@ class WavetableVcoProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < out.length; i++) {
       const pitch = pitchIn ? pitchIn[i] : 0;
       const fm = fmIn ? fmIn[i] : 0;
+      const pm = pmIn ? pmIn[i] : 0;
       const wpCv = wavePosCv ? wavePosCv[i] : 0;
+      const tune = tuneArr.length > 1 ? tuneArr[i] : tuneArr[0];
+      const fine = fineArr.length > 1 ? fineArr[i] : fineArr[0];
       const fma = fmAmountArr.length > 1 ? fmAmountArr[i] : fmAmountArr[0];
+      const pma = pmAmountArr.length > 1 ? pmAmountArr[i] : pmAmountArr[0];
       const wpKnob = wavePosArr.length > 1 ? wavePosArr[i] : wavePosArr[0];
 
       let wp = wpKnob + wpCv;
@@ -126,6 +135,13 @@ class WavetableVcoProcessor extends AudioWorkletProcessor {
 
       this.phase += freq / sr;
       while (this.phase >= 1) this.phase -= 1;
+      while (this.phase < 0) this.phase += 1;
+
+      // PM: external pm signal × pmAmount adds a phase offset (cycles). The
+      // accumulator stays unchanged so its frequency tracking is still correct;
+      // only the readout phase is shifted. ±1 pm × pmAmount=1 → ±1 cycle shift.
+      let p = this.phase + pma * pm;
+      p = p - Math.floor(p);
 
       // Frame interpolation
       const frameFloat = wp * (FC - 1);
@@ -134,7 +150,7 @@ class WavetableVcoProcessor extends AudioWorkletProcessor {
       const frameFrac = frameFloat - f1;
 
       // Sample interpolation within a frame
-      const sampleFloat = this.phase * FS;
+      const sampleFloat = p * FS;
       const sFloor = Math.floor(sampleFloat);
       const s1 = sFloor % FS;
       const s2 = (sFloor + 1) % FS;

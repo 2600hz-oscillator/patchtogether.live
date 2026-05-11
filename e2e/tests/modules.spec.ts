@@ -19,7 +19,10 @@ interface ModuleSpec {
 }
 
 const MODULES: ModuleSpec[] = [
-  { type: 'analogVco',    cardClass: 'svelte-flow__node-analogVco',    handleCount: 6, containsLabel: 'Analog VCO' },
+  // Analog VCO: 3 audio-rate inputs (pitch, fm, pm) + 4 CV→AudioParam inputs
+  // (tune, fine, fmAmount, pmAmount) + 4 outputs (saw, square, triangle, sine)
+  // = 11. PM input + pmAmount knob added in feat/vco-cv-inputs (DSP rebuilt).
+  { type: 'analogVco',    cardClass: 'svelte-flow__node-analogVco',    handleCount: 11, containsLabel: 'Analog VCO' },
   { type: 'audioOut',     cardClass: 'svelte-flow__node-audioOut',     handleCount: 2, containsLabel: 'Audio Out' },
   // VCA: 2 inputs (audio, cv) + 2 outputs (audio, audio_inv) = 4. The
   // audio_inv port is a phase-flipped (-1×) tap of the main output.
@@ -38,7 +41,10 @@ const MODULES: ModuleSpec[] = [
   // queue1..4_cv) + 3 outputs (pitch, gate, clock-out) = 10. Was 4 before
   // PR feat/sequencer-transport-quicksave added the shared transport ports.
   { type: 'sequencer',    cardClass: 'svelte-flow__node-sequencer',    handleCount: 10, containsLabel: 'Sequencer' },
-  { type: 'wavetableVco', cardClass: 'svelte-flow__node-wavetableVco', handleCount: 4, containsLabel: 'Wavetable VCO' },
+  // Wavetable VCO: 3 audio-rate inputs (pitch, fm, pm) + 1 audio-rate cv input
+  // (wavePos) + 4 CV→AudioParam inputs (tune, fine, fmAmount, pmAmount) +
+  // 1 output (audio) = 9. PM input + pmAmount knob added in feat/vco-cv-inputs.
+  { type: 'wavetableVco', cardClass: 'svelte-flow__node-wavetableVco', handleCount: 9, containsLabel: 'Wavetable VCO' },
   { type: 'lfo',          cardClass: 'svelte-flow__node-lfo',          handleCount: 7, containsLabel: 'LFO' },
   // Cartesian: 4 inputs (clock, x cv, y cv, lfo clock) + 5 outputs (pitch,
   // gate, clock, lfo x, lfo y) = 9 handles. lfo_clock + lfo_x + lfo_y were

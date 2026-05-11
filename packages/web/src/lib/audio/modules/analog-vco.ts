@@ -13,10 +13,26 @@ export const analogVcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Analog VCO',
   category: 'sources',
-  schemaVersion: 1,
+  schemaVersion: 2,
+  migrate(data, fromVersion) {
+    if (fromVersion < 2) {
+      // v1 → v2: pmAmount param added. Seed with default 0 if missing so the
+      // legacy DSP-less behavior (no PM) is preserved for v1 saved patches.
+      const d = (data ?? {}) as { params?: Record<string, number> };
+      const params = { ...(d.params ?? {}) };
+      if (params.pmAmount === undefined) params.pmAmount = 0;
+      return { ...d, params };
+    }
+    return data;
+  },
   inputs: [
     { id: 'pitch', type: 'pitch' },
-    { id: 'fm', type: 'audio' },
+    { id: 'fm',    type: 'audio' },
+    { id: 'pm',    type: 'audio' },
+    { id: 'tune',     type: 'cv', paramTarget: 'tune',     cvScale: { mode: 'linear' } },
+    { id: 'fine',     type: 'cv', paramTarget: 'fine',     cvScale: { mode: 'linear' } },
+    { id: 'fmAmount', type: 'cv', paramTarget: 'fmAmount', cvScale: { mode: 'linear' } },
+    { id: 'pmAmount', type: 'cv', paramTarget: 'pmAmount', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'saw',      type: 'audio' },
@@ -25,10 +41,11 @@ export const analogVcoDef: AudioModuleDef = {
     { id: 'sine',     type: 'audio' },
   ],
   params: [
-    { id: 'tune', label: 'Tune', defaultValue: 0,   min: -36, max: 36, curve: 'linear', units: 'semi' },
-    { id: 'fine', label: 'Fine', defaultValue: 0,   min: -100, max: 100, curve: 'linear', units: 'cent' },
-    { id: 'fmAmount', label: 'FM', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
-    { id: 'pw',       label: 'PW', defaultValue: 0.5, min: 0.05, max: 0.95, curve: 'linear' },
+    { id: 'tune',     label: 'Tune', defaultValue: 0,   min: -36,   max: 36,   curve: 'linear', units: 'semi' },
+    { id: 'fine',     label: 'Fine', defaultValue: 0,   min: -100,  max: 100,  curve: 'linear', units: 'cent' },
+    { id: 'fmAmount', label: 'FM',   defaultValue: 0,   min: 0,     max: 1,    curve: 'linear' },
+    { id: 'pmAmount', label: 'PM',   defaultValue: 0,   min: 0,     max: 1,    curve: 'linear' },
+    { id: 'pw',       label: 'PW',   defaultValue: 0.5, min: 0.05,  max: 0.95, curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -36,8 +53,8 @@ export const analogVcoDef: AudioModuleDef = {
 
     // ChannelMerger routes per-port mono signals to distinct channels of
     // Faust's single multi-channel input. This is what makes sequencer.pitch
-    // affect ONLY the pitch channel without bleeding into fm.
-    const merger = ctx.createChannelMerger(2);
+    // affect ONLY the pitch channel without bleeding into fm/pm.
+    const merger = ctx.createChannelMerger(3);
     merger.connect(faustNode);
     // Feed silence to every merger input so the node stays in the active
     // processing graph even when nothing's externally patched. Without this,
@@ -47,6 +64,7 @@ export const analogVcoDef: AudioModuleDef = {
     silence.start();
     silence.connect(merger, 0, 0);
     silence.connect(merger, 0, 1);
+    silence.connect(merger, 0, 2);
 
     // Splitter for the 4-channel output (saw / square / triangle / sine).
     const splitter = ctx.createChannelSplitter(4);
@@ -63,6 +81,14 @@ export const analogVcoDef: AudioModuleDef = {
       inputs: new Map([
         ['pitch', { node: merger, input: 0 }],
         ['fm',    { node: merger, input: 1 }],
+        ['pm',    { node: merger, input: 2 }],
+        // CV → AudioParam routing. The engine's addEdge fast-path uses `param`
+        // to interpose the cvScale chain so an LFO ±1 sweeps the param's
+        // natural range centered on the knob position.
+        ['tune',     { node: faustNode, input: 0, param: params.get(`${PARAM_PREFIX}/tune`)!     }],
+        ['fine',     { node: faustNode, input: 0, param: params.get(`${PARAM_PREFIX}/fine`)!     }],
+        ['fmAmount', { node: faustNode, input: 0, param: params.get(`${PARAM_PREFIX}/fmAmount`)! }],
+        ['pmAmount', { node: faustNode, input: 0, param: params.get(`${PARAM_PREFIX}/pmAmount`)! }],
       ]),
       outputs: new Map([
         ['saw',      { node: splitter, output: 0 }],

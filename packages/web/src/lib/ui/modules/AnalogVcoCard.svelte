@@ -13,10 +13,11 @@
 
   const engineCtx = useEngine();
 
-  let tune = $derived(node?.params.tune ?? analogVcoDef.params[0]!.defaultValue);
-  let fine = $derived(node?.params.fine ?? analogVcoDef.params[1]!.defaultValue);
-  let fmAmount = $derived(node?.params.fmAmount ?? analogVcoDef.params[2]!.defaultValue);
-  let pw = $derived(node?.params.pw ?? analogVcoDef.params[3]!.defaultValue);
+  let tune     = $derived(node?.params.tune     ?? analogVcoDef.params.find((p) => p.id === 'tune')!.defaultValue);
+  let fine     = $derived(node?.params.fine     ?? analogVcoDef.params.find((p) => p.id === 'fine')!.defaultValue);
+  let fmAmount = $derived(node?.params.fmAmount ?? analogVcoDef.params.find((p) => p.id === 'fmAmount')!.defaultValue);
+  let pmAmount = $derived(node?.params.pmAmount ?? analogVcoDef.params.find((p) => p.id === 'pmAmount')!.defaultValue);
+  let pw       = $derived(node?.params.pw       ?? analogVcoDef.params.find((p) => p.id === 'pw')!.defaultValue);
 
   function setParam(paramId: string) {
     return (v: number) => {
@@ -33,8 +34,13 @@
   }
 
   const inputs: PortDescriptor[] = [
-    { id: 'pitch', cable: 'pitch' },
-    { id: 'fm',    cable: 'audio' },
+    { id: 'pitch',    cable: 'pitch' },
+    { id: 'fm',       cable: 'audio' },
+    { id: 'pm',       cable: 'audio' },
+    { id: 'tune',     cable: 'cv' },
+    { id: 'fine',     cable: 'cv' },
+    { id: 'fmAmount', label: 'FM AMT', cable: 'cv' },
+    { id: 'pmAmount', label: 'PM AMT', cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'saw',      cable: 'audio' },
@@ -50,10 +56,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={tune}     min={-36} max={36}  defaultValue={0}   label="Tune" units="st" curve="linear" onchange={setParam('tune')}     readLive={readLive('tune')} />
-      <Fader value={fine}     min={-100} max={100} defaultValue={0}  label="Fine" units="¢"  curve="linear" onchange={setParam('fine')}     readLive={readLive('fine')} />
-      <Fader value={fmAmount} min={0}  max={1}    defaultValue={0}   label="FM"              curve="linear" onchange={setParam('fmAmount')} readLive={readLive('fmAmount')} />
-      <Fader value={pw}       min={0.05} max={0.95} defaultValue={0.5} label="PW"            curve="linear" onchange={setParam('pw')}       readLive={readLive('pw')} />
+      <Fader value={tune}     min={-36} max={36}     defaultValue={0}   label="Tune" units="st" curve="linear" onchange={setParam('tune')}     readLive={readLive('tune')} />
+      <Fader value={fine}     min={-100} max={100}   defaultValue={0}   label="Fine" units="¢"  curve="linear" onchange={setParam('fine')}     readLive={readLive('fine')} />
+      <Fader value={fmAmount} min={0}   max={1}      defaultValue={0}   label="FM"              curve="linear" onchange={setParam('fmAmount')} readLive={readLive('fmAmount')} />
+      <Fader value={pmAmount} min={0}   max={1}      defaultValue={0}   label="PM"              curve="linear" onchange={setParam('pmAmount')} readLive={readLive('pmAmount')} />
+      <Fader value={pw}       min={0.05} max={0.95}  defaultValue={0.5} label="PW"              curve="linear" onchange={setParam('pw')}       readLive={readLive('pw')} />
     </div>
   </PatchPanel>
 </div>

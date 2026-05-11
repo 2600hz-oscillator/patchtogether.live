@@ -727,3 +727,71 @@ test('corner-trigger single-click still toggles the panel (no regression)', asyn
   // No cascade fires on a single click.
   await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
 });
+
+// ---------------------------------------------------------------------------
+// Regression: ADSR.env → Analog VCO previously showed "No compatible ports"
+// because AnalogVCO's tune/fine/fm/pm knobs had no CV input ports. After
+// feat/vco-cv-inputs, right-clicking ADSR.env and navigating to Analog VCO
+// must list tune/fine/fmAmount/pmAmount as compatible destinations.
+// ---------------------------------------------------------------------------
+
+test('ADSR.env → Analog VCO shows tune/fine/fmAmount/pmAmount as compatible CV destinations', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'adsr1', type: 'adsr',      position: { x: 100, y: 200 } },
+      { id: 'vco1',  type: 'analogVco', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  await rightClickPanelHandle(page, 'adsr1', 'env');
+  await page.locator('[data-testid="patch-to-module"][data-node-id="vco1"]').click();
+
+  const ports = page.locator('[data-testid="patch-to-port"]');
+  const portIds = await ports.evaluateAll((els) =>
+    els.map((el) => (el as HTMLElement).getAttribute('data-port-id') ?? ''),
+  );
+  // ADSR.env is type='cv'; AnalogVCO's compatible CV-typed inputs are tune,
+  // fine, fmAmount, pmAmount (pitch/fm/pm are audio-rate). Order follows
+  // declaration order in the module def.
+  expect(portIds).toContain('tune');
+  expect(portIds).toContain('fine');
+  expect(portIds).toContain('fmAmount');
+  expect(portIds).toContain('pmAmount');
+  // Sanity: no "No compatible ports" — the original user-report bug.
+  await expect(page.locator('[data-testid="no-compatible-ports"]')).toHaveCount(0);
+});
+
+test('ADSR.env → Wavetable VCO shows tune/fine/fmAmount/pmAmount/wavePos as compatible', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'adsr1', type: 'adsr',         position: { x: 100, y: 200 } },
+      { id: 'wt1',   type: 'wavetableVco', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  await rightClickPanelHandle(page, 'adsr1', 'env');
+  await page.locator('[data-testid="patch-to-module"][data-node-id="wt1"]').click();
+
+  const ports = page.locator('[data-testid="patch-to-port"]');
+  const portIds = await ports.evaluateAll((els) =>
+    els.map((el) => (el as HTMLElement).getAttribute('data-port-id') ?? ''),
+  );
+  expect(portIds).toContain('tune');
+  expect(portIds).toContain('fine');
+  expect(portIds).toContain('fmAmount');
+  expect(portIds).toContain('pmAmount');
+  expect(portIds).toContain('wavePos');
+  await expect(page.locator('[data-testid="no-compatible-ports"]')).toHaveCount(0);
+});
