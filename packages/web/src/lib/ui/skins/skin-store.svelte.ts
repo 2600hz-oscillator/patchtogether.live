@@ -81,11 +81,50 @@ class SkinStore {
 }
 
 /** Write every var in `skin.vars` to documentElement.style. Public so
- *  tests can drive the applier without going through the store. */
+ *  tests can drive the applier without going through the store.
+ *
+ *  Also writes the sprite-extension CSS vars (--panel-bg, --fader-track-bg,
+ *  --font-silkscreen, --control-style) so components can consume them
+ *  via plain CSS without importing the skin object. Each var is REMOVED
+ *  rather than left stale when the new skin doesn't define it — that
+ *  way switching from Vintage back to Default fully unsets the panel bg
+ *  instead of leaving a vestigial overlay. */
 export function applySkinToRoot(skin: Skin): void {
   const root = document.documentElement;
   for (const [k, v] of Object.entries(skin.vars)) {
     root.style.setProperty(k, v);
+  }
+  // Sprite-extension CSS vars — write or clear.
+  const ext: Array<[string, string | undefined]> = [
+    ['--control-style', skin.controlStyle],
+    ['--panel-bg', skin.panelBg],
+    ['--fader-track-bg', skin.faderTrackBg],
+    ['--font-silkscreen', skin.silkscreenFontFamily],
+  ];
+  for (const [k, v] of ext) {
+    if (v) root.style.setProperty(k, v);
+    else root.style.removeProperty(k);
+  }
+  // Optional font stylesheet — inject as a <link rel=stylesheet> tagged
+  // with data-skin-font so we can swap/remove on subsequent skin changes.
+  if (typeof document !== 'undefined' && document.head) {
+    const FONT_TAG = 'data-skin-font';
+    const existing = document.head.querySelector(`link[${FONT_TAG}]`);
+    if (skin.silkscreenFontStylesheet) {
+      if (existing instanceof HTMLLinkElement) {
+        if (existing.href !== skin.silkscreenFontStylesheet) {
+          existing.href = skin.silkscreenFontStylesheet;
+        }
+      } else {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = skin.silkscreenFontStylesheet;
+        link.setAttribute(FONT_TAG, '');
+        document.head.appendChild(link);
+      }
+    } else if (existing) {
+      existing.remove();
+    }
   }
 }
 

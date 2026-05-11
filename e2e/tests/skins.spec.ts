@@ -10,6 +10,7 @@
 // trips).
 
 import { test, expect } from '@playwright/test';
+import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -35,11 +36,11 @@ test('skins: switcher renders in topbar with default skin active', async ({ page
   await expect(page.getByTestId('skin-current-label')).toHaveText('Default');
 });
 
-test('skins: popover lists all 4 in-tree skins', async ({ page }) => {
+test('skins: popover lists all 5 in-tree skins', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await openSwitcher(page);
-  for (const id of ['default', 'terminal-green', 'brutalist', 'vaporwave']) {
+  for (const id of ['default', 'terminal-green', 'brutalist', 'vaporwave', 'vintage']) {
     await expect(page.getByTestId(`skin-option-${id}`)).toBeVisible();
   }
 });
@@ -84,6 +85,7 @@ test('skins: each shipped skin sets the expected --bg', async ({ page }) => {
     { id: 'terminal-green', bg: '#000000' },
     { id: 'brutalist', bg: '#000000' },
     { id: 'vaporwave', bg: '#0a0521' },
+    { id: 'vintage', bg: '#1f1a10' },
   ];
   for (const c of cases) {
     await openSwitcher(page);
@@ -91,6 +93,65 @@ test('skins: each shipped skin sets the expected --bg', async ({ page }) => {
     await expect(page.getByTestId('skin-current-id')).toHaveText(c.id);
     expect(await readVar(page, '--bg')).toBe(c.bg);
   }
+});
+
+test('skins: switching to Vintage renders sprite-based fader handles', async ({ page }) => {
+  // Vintage is the first skin to opt into controlStyle:'sprite'. When
+  // active, every Fader thumb must render an inline <svg> handle
+  // (data-testid=fader-handle-sprite) instead of the CSS-gradient block,
+  // and the bipolar 0V hash (PR-106) must still appear in both modes.
+  //
+  // VCA has both a unipolar Fader (Base, min=0) and a bipolar one
+  // (CV Amt, min=-1, max=1) — so the same card exercises the with-hash
+  // and without-hash paths in sprite mode.
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [{ id: 'vca', type: 'vca', position: { x: 100, y: 100 } }],
+    [],
+  );
+  await expect(page.locator('.svelte-flow__node-vca')).toBeVisible();
+
+  // Pre-switch sanity: in default (css) mode the 0V hash for the
+  // bipolar CV-Amt fader is already present.
+  expect(await page.locator('.svelte-flow__node-vca [data-testid="fader-zero-hash"]').count())
+    .toBeGreaterThan(0);
+
+  // Switch to Vintage.
+  await openSwitcher(page);
+  await page.getByTestId('skin-option-vintage').click();
+  await expect(page.getByTestId('skin-current-id')).toHaveText('vintage');
+
+  // Sprite-mode CSS vars now live on documentElement.
+  expect(await readVar(page, '--control-style')).toBe('sprite');
+  expect(await readVar(page, '--panel-bg')).toMatch(/^url\(/);
+  expect(await readVar(page, '--fader-track-bg')).toMatch(/^url\(/);
+
+  // The VCA card's fader handles should render inline SVG sprites.
+  const sprites = page.locator('.svelte-flow__node-vca [data-testid="fader-handle-sprite"]');
+  await expect(sprites.first()).toBeVisible();
+  await expect(sprites.first().locator('svg')).toBeVisible();
+  // Fader-wrap on this card is in sprite mode.
+  await expect(
+    page.locator('.svelte-flow__node-vca .fader-wrap[data-control-style="sprite"]').first(),
+  ).toBeVisible();
+
+  // 0V hash MUST still render in sprite mode for the bipolar CV-Amt
+  // fader (PR-106 contract must hold across both rendering paths).
+  expect(await page.locator('.svelte-flow__node-vca [data-testid="fader-zero-hash"]').count())
+    .toBeGreaterThan(0);
+
+  // Switching back to default removes the sprite handles + clears panel-bg.
+  await openSwitcher(page);
+  await page.getByTestId('skin-option-default').click();
+  await expect(page.getByTestId('skin-current-id')).toHaveText('default');
+  expect(await readVar(page, '--control-style')).toBe('');
+  expect(await readVar(page, '--panel-bg')).toBe('');
+  await expect(page.locator('[data-testid="fader-handle-sprite"]')).toHaveCount(0);
+  // 0V hash still present in default (css) mode.
+  expect(await page.locator('.svelte-flow__node-vca [data-testid="fader-zero-hash"]').count())
+    .toBeGreaterThan(0);
 });
 
 test('skins: clicking outside closes the popover without changing skin', async ({ page }) => {
