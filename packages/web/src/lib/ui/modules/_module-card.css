@@ -2,7 +2,16 @@
  * include in +layout.svelte (cleaner than re-pasting CSS in every card). */
 
 .mod-card {
-  background: var(--module-bg);
+  /* --panel-bg is the sprite-skin extension hook (set by skin-store
+   * when the active skin defines a panelBg data:URL). It layers ABOVE
+   * the flat --module-bg so skins without panel art (the four legacy
+   * ones) render exactly the same; only Vintage et al. paint a texture.
+   * The two-prop form (background-image + background-color) is used
+   * rather than the `background` shorthand so we don't reset the other
+   * background-* properties that the legacy snapshots baked in. */
+  background-color: var(--module-bg);
+  background-image: var(--panel-bg, none);
+  background-size: cover;
   /* Skin-aware: --border lifts the literal #2a2f3a so non-default
    * skins recolour every audio module card consistently. */
   border: 1px solid var(--border);
@@ -28,6 +37,12 @@
   border-radius: 2px 2px 0 0;
 }
 .mod-card .title {
+  /* Sprite-skin extension: --font-silkscreen is set by skin-store when
+   * the active skin defines a silkscreenFontFamily (Vintage et al.).
+   * The `inherit` fallback preserves the previous behavior for the four
+   * legacy CSS-only skins — they didn't set font-family at all and the
+   * title inherited from body, which is what `inherit` here recreates. */
+  font-family: var(--font-silkscreen, inherit);
   font-size: 0.85rem;
   font-weight: 500;
   text-align: center;

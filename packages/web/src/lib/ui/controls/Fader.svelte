@@ -15,6 +15,7 @@
   import type { KnobCurve } from '$lib/graph/types';
   import { onDestroy, untrack } from 'svelte';
   import WaveformGlyph from './WaveformGlyph.svelte';
+  import { skinStore } from '$lib/ui/skins/skin-store.svelte';
 
   /** A single inline glyph anchored at a normalized [0,1] fraction along the
    *  fader track. Used by the LFO-shape sliders to render sine/tri/saw/square
@@ -279,11 +280,21 @@
     if (formatValue) return formatValue(v);
     return format(v, units);
   }
+
+  // Sprite-mode: when the active skin opts into controlStyle:'sprite',
+  // render the handle as an inline <svg> sprite + paint the track with
+  // the skin's faderTrackBg image. CSS rendering path is preserved for
+  // every other skin (controlStyle undefined => 'css').
+  let activeSkin = $derived(skinStore.currentSkin);
+  let useSprite = $derived(activeSkin.controlStyle === 'sprite');
+  let handleSvg = $derived(activeSkin.faderHandleSvg ?? '');
 </script>
 
 <div
   class="fader-wrap"
   class:dragging
+  class:sprite={useSprite}
+  data-control-style={useSprite ? 'sprite' : 'css'}
   onpointerenter={() => (hovering = true)}
   onpointerleave={() => (hovering = false)}
   role="presentation"
@@ -311,7 +322,20 @@
       {#if isBipolar}
         <div class="zero-hash" aria-hidden="true" data-testid="fader-zero-hash"></div>
       {/if}
-      <div class="thumb" style:top="{thumbY}px"></div>
+      {#if useSprite && handleSvg}
+        <!-- Sprite handle. {@html} is safe because handleSvg comes from a
+             trusted, in-tree skin object — never user input — and is the
+             only path that consumes inline SVG markup. -->
+        <div
+          class="thumb thumb-sprite"
+          style:top="{thumbY}px"
+          data-testid="fader-handle-sprite"
+        >
+          {@html handleSvg}
+        </div>
+      {:else}
+        <div class="thumb" style:top="{thumbY}px"></div>
+      {/if}
     </div>
     {#if glyphs && glyphs.length > 0}
       <div class="glyph-rail" aria-hidden="true">
@@ -359,6 +383,15 @@
     border-radius: 3px;
     cursor: ns-resize;
     outline: none;
+  }
+  /* Sprite mode: paint the track with the skin's faderTrackBg image
+   * (data: URL) so the slot reads as a routed hardware cutout. The
+   * fallback chain still resolves to the CSS-mode track if the var is
+   * missing — the cover-size + center-position keep the inlay aligned
+   * regardless of which skin set the var. */
+  .fader-wrap.sprite .track {
+    background: var(--fader-track-bg, #14171c) center/cover no-repeat, #14171c;
+    border-color: var(--border-strong);
   }
   .track:focus-visible {
     box-shadow: 0 0 0 2px var(--accent);
@@ -417,12 +450,36 @@
     transform: translateY(-50%);
     border-radius: 0.5px;
   }
+  /* Sprite handle: SVG fills the thumb box, no CSS gradient overlay, no
+   * pseudo-element tick (the sprite paints its own indicator). The
+   * stroke + border are removed so the SVG owns the silhouette. */
+  .thumb-sprite {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    overflow: hidden;
+  }
+  .thumb-sprite::after { content: none; }
+  .thumb-sprite :global(svg) {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
   .label {
     font-size: 0.62rem;
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     pointer-events: none;
+  }
+  /* Sprite-mode label — bumps weight + size + applies the skin-supplied
+   * silkscreen font (falls back to the inherited stack when unset). */
+  .fader-wrap.sprite .label {
+    font-family: var(--font-silkscreen, inherit);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text);
   }
   .value-tag {
     position: absolute;

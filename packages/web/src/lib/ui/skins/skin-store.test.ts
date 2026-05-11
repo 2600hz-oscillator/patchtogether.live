@@ -50,6 +50,7 @@ const { defaultSkin } = await import('./default');
 const { terminalGreenSkin } = await import('./terminal-green');
 const { brutalistSkin } = await import('./brutalist');
 const { vaporwaveSkin } = await import('./vaporwave');
+const { vintageSkin } = await import('./vintage');
 
 const STORAGE_KEY = 'pt.skin';
 
@@ -66,8 +67,8 @@ beforeEach(() => {
 });
 
 describe('skin types + registry', () => {
-  it('exposes 4 in-tree skins, default first', () => {
-    expect(SKINS.length).toBe(4);
+  it('exposes 5 in-tree skins, default first', () => {
+    expect(SKINS.length).toBe(5);
     expect(SKINS[0]?.id).toBe('default');
   });
 
@@ -189,5 +190,41 @@ describe('skinStore', () => {
     } finally {
       setItem.mockRestore();
     }
+  });
+});
+
+describe('vintage skin + sprite extension', () => {
+  it('loads cleanly with every required sprite field populated', () => {
+    expect(vintageSkin.id).toBe('vintage');
+    expect(vintageSkin.controlStyle).toBe('sprite');
+    // All sprite hooks present + non-empty.
+    expect(vintageSkin.faderHandleSvg).toMatch(/<svg/);
+    expect(vintageSkin.faderTrackBg).toMatch(/^url\(/);
+    expect(vintageSkin.panelBg).toMatch(/^url\(/);
+    expect(vintageSkin.silkscreenFontFamily).toMatch(/Plex/);
+    expect(vintageSkin.silkscreenFontStylesheet).toMatch(/^https:/);
+  });
+
+  it('legacy 4 skins keep controlStyle undefined (CSS path)', () => {
+    expect(defaultSkin.controlStyle).toBeUndefined();
+    expect(terminalGreenSkin.controlStyle).toBeUndefined();
+    expect(brutalistSkin.controlStyle).toBeUndefined();
+    expect(vaporwaveSkin.controlStyle).toBeUndefined();
+  });
+
+  it('applySkinToRoot writes sprite-extension vars only for vintage', () => {
+    applySkinToRoot(vintageSkin);
+    expect(styleStub.getPropertyValue('--control-style')).toBe('sprite');
+    expect(styleStub.getPropertyValue('--panel-bg')).toMatch(/^url\(/);
+    expect(styleStub.getPropertyValue('--fader-track-bg')).toMatch(/^url\(/);
+    expect(styleStub.getPropertyValue('--font-silkscreen')).toMatch(/Plex/);
+
+    // Switching back to default CLEARS the sprite-extension vars so the
+    // legacy CSS path isn't contaminated by a stale panel texture.
+    applySkinToRoot(defaultSkin);
+    expect(styleStub.getPropertyValue('--control-style')).toBe('');
+    expect(styleStub.getPropertyValue('--panel-bg')).toBe('');
+    expect(styleStub.getPropertyValue('--fader-track-bg')).toBe('');
+    expect(styleStub.getPropertyValue('--font-silkscreen')).toBe('');
   });
 });
