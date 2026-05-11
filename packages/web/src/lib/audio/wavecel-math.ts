@@ -53,6 +53,42 @@ export function sampleFrame(
   return va + (vb - va) * frameFrac;
 }
 
+/** Per-tap descriptor returned by `spreadTaps`. `frameFloat` is the (possibly
+ *  out-of-range) fractional frame index the worklet samples; `weight` is the
+ *  edge-fade weight in [0, 1]; `pan` is in [-1, +1] (-1 = full L, +1 = full R,
+ *  0 = center). The visualizer uses (frameFloat, weight) to highlight active
+ *  frames; the worklet uses all three to compute the stereo mix. */
+export interface SpreadTap {
+  frameFloat: number;
+  weight: number;
+  pan: number;
+}
+
+/** Compute the active-tap descriptors for the given spread + center frame.
+ *  Used by both the audio worklet (for stereo mixing — see wavecel.ts) and
+ *  the on-card visualizer (for highlighting active frames in WavecelCard.svelte).
+ *
+ *  spread=1 → single tap at center, weight=1, pan=0 (mono).
+ *  spread=N>1 → ceil(N) taps spaced 1 frame apart around center; outermost
+ *  tap weights fade as the fractional spread leaves them behind. */
+export function spreadTaps(spread: number, centerFrame: number): SpreadTap[] {
+  const N = clampRange(spread, 1, 5);
+  const halfSpan = (N - 1) / 2;
+  if (halfSpan === 0) {
+    return [{ frameFloat: centerFrame, weight: 1, pan: 0 }];
+  }
+  const tapCount = Math.max(1, Math.ceil(N));
+  const taps: SpreadTap[] = [];
+  for (let t = 0; t < tapCount; t++) {
+    const offset = t - (tapCount - 1) / 2;
+    const edgeWeight = Math.max(0, Math.min(1, halfSpan + 0.5 - Math.abs(offset)));
+    if (edgeWeight <= 0) continue;
+    const norm = clampRange(offset / halfSpan, -1, 1);
+    taps.push({ frameFloat: centerFrame + offset, weight: edgeWeight, pan: norm });
+  }
+  return taps;
+}
+
 /** Stereo-spread mix of `tapCount` samples around `centerFrame`, returning
  *  (L, R) gains aggregated as a sum. Pure-math companion to the per-sample
  *  inner loop in wavecel.ts — sample fetch is left to the caller (in the
@@ -69,33 +105,20 @@ export function spreadMix(
   centerFrame: number,
   fetchSampleAtFrame: (frameFloat: number) => number,
 ): { l: number; r: number } {
-  const N = clampRange(spread, 1, 5);
-  const halfSpan = (N - 1) / 2;
-  // spread=1 is "mono on both channels": pass the single tap through at
-  // unity to both L and R (no equal-power center attenuation, no spread
-  // normalization). Above 1, taps cross-fade out from the center via
-  // equal-power panning, and we sqrt-normalize so RMS stays roughly flat
-  // across spread values.
-  if (halfSpan === 0) {
-    const s = fetchSampleAtFrame(centerFrame);
+  const taps = spreadTaps(spread, centerFrame);
+  if (taps.length === 1 && taps[0]!.pan === 0 && taps[0]!.weight === 1) {
+    const s = fetchSampleAtFrame(taps[0]!.frameFloat);
     return { l: s, r: s };
   }
-  const tapCount = Math.max(1, Math.ceil(N));
   let sumL = 0;
   let sumR = 0;
   let weightSum = 0;
-  for (let t = 0; t < tapCount; t++) {
-    const offset = t - (tapCount - 1) / 2;
-    if (Math.abs(offset) > halfSpan + 0.5) continue;
-    const sample = fetchSampleAtFrame(centerFrame + offset);
-    const norm = offset / halfSpan;
-    const panAngle = (Math.PI / 4) * (1 + clampRange(norm, -1, 1));
-    const lg = Math.cos(panAngle);
-    const rg = Math.sin(panAngle);
-    const edgeWeight = Math.max(0, Math.min(1, halfSpan + 0.5 - Math.abs(offset)));
-    sumL += sample * lg * edgeWeight;
-    sumR += sample * rg * edgeWeight;
-    weightSum += edgeWeight;
+  for (const tap of taps) {
+    const sample = fetchSampleAtFrame(tap.frameFloat);
+    const panAngle = (Math.PI / 4) * (1 + tap.pan);
+    sumL += sample * Math.cos(panAngle) * tap.weight;
+    sumR += sample * Math.sin(panAngle) * tap.weight;
+    weightSum += tap.weight;
   }
   const norm = weightSum > 0 ? 1 / Math.sqrt(weightSum) : 0;
   return { l: sumL * norm, r: sumR * norm };

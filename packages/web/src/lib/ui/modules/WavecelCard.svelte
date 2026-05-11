@@ -14,6 +14,7 @@
   } from '$lib/audio/wavecel-factory-tables';
   import { parseE352Wav } from '$lib/audio/wavetable-parser';
   import { useEngine } from '$lib/audio/engine-context';
+  import { spreadTaps } from '$lib/audio/wavecel-math';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
@@ -126,7 +127,8 @@
 
   // Visualizer render loop. Draws either:
   //  - 3D mode: orange polylines per frame, stacked back-to-front in
-  //    perspective. Active frame (== morph * (FC-1)) highlighted in white.
+  //    perspective. Active frame range (= morph CV ± spread window)
+  //    blended toward white per tap weight.
   //  - Scope mode: single oscilloscope-style trace of the active frame.
   $effect(() => {
     if (!canvasEl) return;
@@ -149,12 +151,23 @@
         return;
       }
 
+      // Effective morph/spread = knob value (from node.params; immediate,
+      // not subject to the AudioParam.value lag — PR-100) PLUS any CV
+      // modulation sample read from the engine's per-port analyser tap.
+      // Mirror the worklet's clamps (wavecel.ts: clamp01 + clampRange) so
+      // the highlight stays on-canvas when CV pushes morph past [0,1] or
+      // spread past [1,5].
       const eng = engineCtx.get();
-      const liveMorph = (eng && node ? eng.readParam(node, 'morph') : undefined) ?? morph;
-      const activeFrame = Math.round((liveMorph as number) * (fs.length - 1));
+      const morphCv = eng?.readModulatorTap(id, 'morph_cv') ?? 0;
+      const spreadCv = eng?.readModulatorTap(id, 'spread_cv') ?? 0;
+      const liveMorph = Math.max(0, Math.min(1, morph + morphCv));
+      const liveSpread = Math.max(1, Math.min(5, spread + spreadCv * 2));
+      const centerFrame = liveMorph * (fs.length - 1);
+      const taps = spreadTaps(liveSpread, centerFrame);
+      const activeFrame = Math.round(centerFrame);
 
       if (vizMode === '3d') {
-        drawWave3D(ctx, fs, w, h, { activeFrame });
+        drawWave3D(ctx, fs, w, h, { activeFrame, taps });
       } else {
         drawWaveScope(ctx, fs, w, h, { activeFrame });
       }
