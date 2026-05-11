@@ -58,16 +58,34 @@ export const wavetableVcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Wavetable VCO',
   category: 'sources',
-  schemaVersion: 1,
+  schemaVersion: 2,
+  migrate(data, fromVersion) {
+    if (fromVersion < 2) {
+      const d = (data ?? {}) as { params?: Record<string, number> };
+      const params = { ...(d.params ?? {}) };
+      if (params.pmAmount === undefined) params.pmAmount = 0;
+      return { ...d, params };
+    }
+    return data;
+  },
 
   inputs: [
     { id: 'pitch',   type: 'pitch' },
     { id: 'fm',      type: 'audio' },
-    // paramTarget == port id keeps the docs manifest in sync with the
-    // codebase convention (LINES, ADSR, etc.). The runtime CV routing
-    // uses the worklet's per-sample wavePos input — paramTarget is a
-    // documentation hint only, so this line is purely additive.
+    // wavePos is audio-rate (the worklet sums wpKnob + wpCv per-sample), so
+    // it doesn't go through the CV→AudioParam fast path. paramTarget keeps
+    // docs labelling correct; cvScale would do nothing here (the input is
+    // not summed onto an AudioParam — see PASSTHROUGH_BY_DESIGN registry).
     { id: 'wavePos', type: 'cv', paramTarget: 'wavePos' },
+    // pm: audio-rate phase modulation input. ±1 input × pmAmount = up to
+    // ±1 cycle of phase shift at the wavetable readout.
+    { id: 'pm',      type: 'audio' },
+    // CV → AudioParam routings (engine attaches a WaveShaperNode scaler so
+    // an LFO ±1 sweeps the full natural range centered on the knob).
+    { id: 'tune',     type: 'cv', paramTarget: 'tune',     cvScale: { mode: 'linear' } },
+    { id: 'fine',     type: 'cv', paramTarget: 'fine',     cvScale: { mode: 'linear' } },
+    { id: 'fmAmount', type: 'cv', paramTarget: 'fmAmount', cvScale: { mode: 'linear' } },
+    { id: 'pmAmount', type: 'cv', paramTarget: 'pmAmount', cvScale: { mode: 'linear' } },
   ],
   outputs: [{ id: 'audio', type: 'audio' }],
   params: [
@@ -75,6 +93,7 @@ export const wavetableVcoDef: AudioModuleDef = {
     { id: 'fine',     label: 'Fine', defaultValue: 0,   min: -100, max: 100, curve: 'linear', units: '¢' },
     { id: 'wavePos',  label: 'Wave', defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
     { id: 'fmAmount', label: 'FM',   defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
+    { id: 'pmAmount', label: 'PM',   defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -84,7 +103,7 @@ export const wavetableVcoDef: AudioModuleDef = {
     }
 
     const workletNode = new AudioWorkletNode(ctx, 'wavetable-vco', {
-      numberOfInputs: 3,
+      numberOfInputs: 4,
       numberOfOutputs: 1,
       outputChannelCount: [1],
     });
@@ -110,6 +129,12 @@ export const wavetableVcoDef: AudioModuleDef = {
         ['pitch',   { node: workletNode, input: 0 }],
         ['fm',      { node: workletNode, input: 1 }],
         ['wavePos', { node: workletNode, input: 2 }],
+        ['pm',      { node: workletNode, input: 3 }],
+        // CV → AudioParam fast-path; engine sums the scaled CV into these AudioParams.
+        ['tune',     { node: workletNode, input: 0, param: params.get('tune')!     }],
+        ['fine',     { node: workletNode, input: 0, param: params.get('fine')!     }],
+        ['fmAmount', { node: workletNode, input: 0, param: params.get('fmAmount')! }],
+        ['pmAmount', { node: workletNode, input: 0, param: params.get('pmAmount')! }],
       ]),
       outputs: new Map([['audio', { node: workletNode, output: 0 }]]),
       setParam(paramId, value) {

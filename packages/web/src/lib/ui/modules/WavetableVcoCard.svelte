@@ -12,18 +12,24 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  let tune     = $derived(node?.params.tune     ?? wavetableVcoDef.params[0]!.defaultValue);
-  let fine     = $derived(node?.params.fine     ?? wavetableVcoDef.params[1]!.defaultValue);
-  let wavePos  = $derived(node?.params.wavePos  ?? wavetableVcoDef.params[2]!.defaultValue);
-  let fmAmount = $derived(node?.params.fmAmount ?? wavetableVcoDef.params[3]!.defaultValue);
+  let tune     = $derived(node?.params.tune     ?? wavetableVcoDef.params.find((p) => p.id === 'tune')!.defaultValue);
+  let fine     = $derived(node?.params.fine     ?? wavetableVcoDef.params.find((p) => p.id === 'fine')!.defaultValue);
+  let wavePos  = $derived(node?.params.wavePos  ?? wavetableVcoDef.params.find((p) => p.id === 'wavePos')!.defaultValue);
+  let fmAmount = $derived(node?.params.fmAmount ?? wavetableVcoDef.params.find((p) => p.id === 'fmAmount')!.defaultValue);
+  let pmAmount = $derived(node?.params.pmAmount ?? wavetableVcoDef.params.find((p) => p.id === 'pmAmount')!.defaultValue);
 
   const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
   const live = (k: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, k); };
 
   const inputs: PortDescriptor[] = [
-    { id: 'pitch',   cable: 'pitch' },
-    { id: 'fm',      cable: 'audio' },
-    { id: 'wavePos', label: 'WAVE POSITION', cable: 'cv' },
+    { id: 'pitch',    cable: 'pitch' },
+    { id: 'fm',       cable: 'audio' },
+    { id: 'pm',       cable: 'audio' },
+    { id: 'wavePos',  label: 'WAVE POSITION', cable: 'cv' },
+    { id: 'tune',     cable: 'cv' },
+    { id: 'fine',     cable: 'cv' },
+    { id: 'fmAmount', label: 'FM AMT', cable: 'cv' },
+    { id: 'pmAmount', label: 'PM AMT', cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [{ id: 'audio', cable: 'audio' }];
 </script>
@@ -38,6 +44,7 @@
       <Fader value={fine}     min={-100} max={100} defaultValue={0} label="Fine" units="¢"  curve="linear" onchange={set('fine')}     readLive={live('fine')} />
       <Fader value={wavePos}  min={0}   max={1}    defaultValue={0} label="Wave"            curve="linear" onchange={set('wavePos')}  readLive={live('wavePos')} />
       <Fader value={fmAmount} min={0}   max={1}    defaultValue={0} label="FM"              curve="linear" onchange={set('fmAmount')} readLive={live('fmAmount')} />
+      <Fader value={pmAmount} min={0}   max={1}    defaultValue={0} label="PM"              curve="linear" onchange={set('pmAmount')} readLive={live('pmAmount')} />
     </div>
   </PatchPanel>
 </div>
