@@ -17,9 +17,19 @@
 // style) regardless of the card's vizMode toggle — the toggle controls
 // only the on-card preview.
 
+import type { SpreadTap } from '$lib/audio/wavecel-math';
+
 export interface WavecelDrawParams {
-  /** Active wavetable frame index (== morph * (frames.length - 1)). */
+  /** Active wavetable frame index (== morph * (frames.length - 1)).
+   *  Used by the scope view AND by the 3D view as the fallback single-
+   *  frame highlight when `taps` is omitted (e.g. video-bridge calls). */
   activeFrame: number;
+  /** Optional per-tap descriptors from spreadTaps(). When provided to
+   *  drawWave3D, the 3D view paints a multi-frame highlight blended
+   *  toward white per tap weight (the on-card preview's behavior, which
+   *  reflects spread + morph CV). When omitted, the 3D view falls back
+   *  to a single white line at `activeFrame` (the video-bridge path). */
+  taps?: SpreadTap[];
   /** Override stroke colors for the scope view. Defaults match the
    *  on-card orange so video-out parity is exact. */
   scopeColor?: string;
@@ -66,12 +76,26 @@ export function drawWave3D(
   const totalDepth = drawH * 0.7;
   const yBack = margin + drawH * 0.05;
 
+  // Per-frame highlight weight: when `taps` is supplied (on-card preview),
+  // each tap contributes its weight to the two adjacent integer frames so
+  // multi-frame spread + fractional morph paint a blended highlight. With
+  // no taps (video-bridge call), fall back to a single white line at
+  // params.activeFrame — preserves the original wave3d_out behavior.
+  const highlight = new Float32Array(FC);
+  if (params.taps && params.taps.length > 0) {
+    for (const tap of params.taps) {
+      const f1 = Math.floor(tap.frameFloat);
+      const f2 = f1 + 1;
+      if (f1 >= 0 && f1 < FC) highlight[f1] = Math.max(highlight[f1]!, tap.weight);
+      if (f2 >= 0 && f2 < FC) highlight[f2] = Math.max(highlight[f2]!, tap.weight);
+    }
+  }
+
   for (let f = 0; f < FC; f++) {
     const t = FC > 1 ? f / (FC - 1) : 0;
     const frameW = backWidth + (frontWidth - backWidth) * t;
     const frameY = yBack + totalDepth * t;
     const xLeft = margin + (drawW - frameW) / 2 + (drawW * 0.05) * (t - 0.5) * 2;
-    const isActive = f === params.activeFrame;
     ctx.beginPath();
     const arr = fs[f]!;
     const N = arr.length;
@@ -82,7 +106,18 @@ export function drawWave3D(
       if (s === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
-    if (isActive) {
+    const hw = highlight[f]!;
+    if (params.taps && hw > 0) {
+      // Blend orange (depth-faded) → white as highlight weight grows.
+      const baseAlpha = 0.25 + 0.6 * t;
+      const orangeR = 255, orangeG = 150, orangeB = 40;
+      const r = Math.round(orangeR + (255 - orangeR) * hw);
+      const g = Math.round(orangeG + (255 - orangeG) * hw);
+      const b = Math.round(orangeB + (255 - orangeB) * hw);
+      const alpha = Math.min(1, baseAlpha + (1 - baseAlpha) * hw);
+      ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+      ctx.lineWidth = Math.max(0.9, Math.min(w, h) / 100) + 0.7 * hw;
+    } else if (!params.taps && f === params.activeFrame) {
       ctx.strokeStyle = ACTIVE_3D;
       ctx.lineWidth = Math.max(1.2, Math.min(w, h) / 80);
     } else {
