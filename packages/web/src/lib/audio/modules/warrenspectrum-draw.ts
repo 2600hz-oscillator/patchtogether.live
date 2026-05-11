@@ -46,20 +46,11 @@ export function drawWarrenspectrum(
     tops.push({ x: bandX(i), y });
   }
 
-  // 1. Ping flash columns — drawn BEFORE the EQ so the spline rides on top.
-  for (let i = 0; i < NUM_BANDS; i++) {
-    const f = snap.flash[i] ?? 0;
-    if (f <= 0) continue;
-    const x = bandX(i);
-    const colW = usable / (NUM_BANDS - 1) * 0.7;
-    const grad = ctx2d.createLinearGradient(x - colW / 2, 0, x + colW / 2, 0);
-    const flashHue = (baseHue + i * 30) % 360;
-    grad.addColorStop(0,   `hsla(${flashHue}, 90%, 60%, 0)`);
-    grad.addColorStop(0.5, `hsla(${flashHue}, 90%, 70%, ${f * 0.9})`);
-    grad.addColorStop(1,   `hsla(${flashHue}, 90%, 60%, 0)`);
-    ctx2d.fillStyle = grad;
-    ctx2d.fillRect(x - colW / 2, 0, colW, h);
-  }
+  // 1. Per-band LED meter columns — drawn BEFORE the EQ so the spline
+  //    rides on top. Discrete segments green→yellow→red bottom-up; lit
+  //    segment count tracks snap.flash[i] (0..1). Unlit LEDs render at
+  //    18% alpha so the column structure stays visible at idle.
+  drawLedColumns(ctx2d, snap.flash, bandX, usable, h);
 
   // 2. Vertical bars at slider positions, hue cycling per band.
   const barW = (usable / (NUM_BANDS - 1)) * 0.18;
@@ -114,5 +105,49 @@ export function drawWarrenspectrum(
   const labels = ['80', '160', '320', '640', '1.3k', '2.6k', '5.1k', '10k'];
   for (let i = 0; i < NUM_BANDS; i++) {
     ctx2d.fillText(labels[i]!, bandX(i), h - 1);
+  }
+}
+
+const SEGMENT_COUNT = 10;
+const UNLIT_ALPHA = 0.18;
+
+// Hue stops bottom→top: green (130), yellow-green (90), yellow (55), red (0).
+// We pick hues per-segment so the gradient visibly moves through the
+// classic VU palette regardless of canvas height.
+function ledHueForSegment(i: number): number {
+  const t = i / (SEGMENT_COUNT - 1);
+  // Two-piece linear: 0..0.6 = 130→55 (green→yellow), 0.6..1 = 55→0 (yellow→red).
+  if (t < 0.6) return 130 - (t / 0.6) * (130 - 55);
+  return 55 - ((t - 0.6) / 0.4) * 55;
+}
+
+function drawLedColumns(
+  ctx2d: Ctx2d,
+  flash: number[],
+  bandX: (i: number) => number,
+  usable: number,
+  h: number,
+): void {
+  const colW = (usable / (NUM_BANDS - 1)) * 0.45;
+  // Reserve top 4% + bottom 12% (label area) so the meter has breathing
+  // room and never collides with the frequency labels.
+  const botY = h * 0.88;
+  const stackH = botY - h * 0.04;
+  const segGap = Math.max(1, Math.floor(stackH * 0.012));
+  const segH = (stackH - segGap * (SEGMENT_COUNT - 1)) / SEGMENT_COUNT;
+
+  for (let i = 0; i < NUM_BANDS; i++) {
+    const level = Math.max(0, Math.min(1, flash[i] ?? 0));
+    const litCount = Math.round(level * SEGMENT_COUNT);
+    const x = bandX(i) - colW / 2;
+    for (let s = 0; s < SEGMENT_COUNT; s++) {
+      const hue = ledHueForSegment(s);
+      const isLit = s < litCount;
+      ctx2d.fillStyle = isLit
+        ? `hsl(${hue}, 90%, 55%)`
+        : `hsla(${hue}, 70%, 35%, ${UNLIT_ALPHA})`;
+      const y = botY - (s + 1) * segH - s * segGap;
+      ctx2d.fillRect(x, y, colW, segH);
+    }
   }
 }
