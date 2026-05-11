@@ -405,6 +405,40 @@
     }
   });
 
+  // ---------------- Drag-hover auto-expand for nested sections ----------------
+  //
+  // When a connect-drag is in flight and the pointer enters a collapsed
+  // section header, auto-expand that section so the user can drag the
+  // cable down into its now-visible port rows. We snapshot the user's
+  // manual expand state at drag start and restore it when the drag ends
+  // — sections that were manually expanded stay open; sections that were
+  // only auto-expanded by drag-hover collapse back.
+  //
+  // The auto-expand persists for the duration of the drag (no
+  // auto-collapse on pointer leave) — same persistence philosophy as the
+  // drag-induced panel lock in PR-108.
+  let preDragExpandedSnapshot: Record<string, boolean> | null = null;
+
+  $effect(() => {
+    const dragActive = connectDragState.active;
+    if (dragActive && preDragExpandedSnapshot === null) {
+      preDragExpandedSnapshot = { ...expandedSections };
+    } else if (!dragActive && preDragExpandedSnapshot !== null) {
+      const snapshot = preDragExpandedSnapshot;
+      preDragExpandedSnapshot = null;
+      if (open) {
+        expandedSections = { ...snapshot };
+      }
+    }
+  });
+
+  function onSectionHeaderPointerEnter(label: string) {
+    if (!connectDragState.active) return;
+    if (!open) return;
+    if (expandedSections[label]) return;
+    expandedSections = { ...expandedSections, [label]: true };
+  }
+
   // ---------------- Group/sort port lists ----------------
 
   let inputGroups = $derived<GroupedPorts[]>(
@@ -539,6 +573,8 @@
                     e.stopPropagation();
                     toggleSection(section.label);
                   }}
+                  onpointerenter={() => onSectionHeaderPointerEnter(section.label)}
+                  onpointerover={() => onSectionHeaderPointerEnter(section.label)}
                 >
                   <span class="disclosure" aria-hidden="true">{expanded ? '▼' : '▶'}</span>
                   <span class="section-toggle-label">{section.label}</span>

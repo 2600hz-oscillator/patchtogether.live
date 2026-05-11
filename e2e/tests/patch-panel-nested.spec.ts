@@ -352,3 +352,274 @@ test.describe('PatchPanel: click-to-expand nested sections', () => {
     ).toBe(59);
   });
 });
+
+// ---------------- Drag-into / drag-from nested-section ports ----------------
+//
+// Bug fix: hovering a collapsed nested section header during an active
+// connect-drag now auto-expands that section so the cable can reach
+// ports inside it. On drag end, sections that were only auto-expanded
+// (not manually opened by the user before the drag) collapse back.
+
+interface PatchEdge {
+  id: string;
+  source: { nodeId: string; portId: string };
+  target: { nodeId: string; portId: string };
+}
+
+async function readEdges(page: Page): Promise<PatchEdge[]> {
+  return await page.evaluate(() => {
+    const w = window as unknown as { __patch: { edges: Record<string, PatchEdge> } };
+    return Object.values(w.__patch.edges).filter(Boolean) as PatchEdge[];
+  });
+}
+
+test.describe('PatchPanel: nested-section auto-expand during cable drag', () => {
+  test('drag cable INTO a nested target port: hover collapsed section header auto-expands it', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'lfo', type: 'lfo', position: { x: 80, y: 100 } },
+      { id: 'mm', type: 'mixmstrs', position: { x: 800, y: 100 } },
+    ]);
+
+    // Open the LFO panel via click so phase0's source handle sits in
+    // its open-state row position (the drag must originate from a
+    // visible handle).
+    await page
+      .locator(`.svelte-flow__node[data-id="lfo"] [data-testid="patch-trigger"]`)
+      .click();
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="lfo"] [data-testid="patch-panel"]`),
+    ).toHaveAttribute('aria-hidden', 'false');
+
+    // Confirm the MIXMSTRS panel starts CLOSED and every section is
+    // collapsed by default.
+    const mmPanel = page.locator(
+      `.svelte-flow__node[data-id="mm"] [data-testid="patch-panel"]`,
+    );
+    await expect(mmPanel).toHaveAttribute('aria-hidden', 'true');
+
+    await page.waitForTimeout(250);
+
+    const sourceHandle = page.locator(
+      `.svelte-flow__node[data-id="lfo"] .svelte-flow__handle[data-handleid="phase0"][class*="source"]`,
+    );
+    const sBox = await sourceHandle.boundingBox();
+    expect(sBox, 'LFO phase0 handle has box').toBeTruthy();
+    if (!sBox) return;
+
+    // Begin the drag from the source handle.
+    await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
+    await page.mouse.down();
+
+    // Move pointer onto the MIXMSTRS corner trigger — panel opens
+    // mid-drag via PR-108's drag-induced hover-open + drag-lock.
+    const mmTrigger = page.locator(
+      `.svelte-flow__node[data-id="mm"] [data-testid="patch-trigger"]`,
+    );
+    const triggerBox = await mmTrigger.boundingBox();
+    expect(triggerBox, 'MIXMSTRS trigger has box').toBeTruthy();
+    if (!triggerBox) return;
+
+    await page.mouse.move(
+      triggerBox.x + triggerBox.width / 2,
+      triggerBox.y + triggerBox.height / 2,
+      { steps: 20 },
+    );
+
+    await expect(mmPanel, 'MIXMSTRS panel opens mid-drag').toHaveAttribute(
+      'aria-hidden',
+      'false',
+    );
+
+    // Every section is collapsed at the moment the panel opens (per
+    // PR-92's "fresh hover starts collapsed" rule).
+    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
+      expect(
+        await sectionExpanded(page, 'mm', label),
+        `${label} starts collapsed mid-drag`,
+      ).toBe(false);
+    }
+
+    // Hover the Ch1 section header — must auto-expand because a drag
+    // is in flight.
+    const ch1Header = page.locator(
+      `.svelte-flow__node[data-id="mm"] ` +
+        `[data-testid="patch-panel-section-toggle"][data-section-label="Ch1"]`,
+    );
+    const hBox = await ch1Header.boundingBox();
+    expect(hBox, 'Ch1 header has box').toBeTruthy();
+    if (!hBox) return;
+    await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2, { steps: 10 });
+    await page.waitForTimeout(80);
+
+    expect(
+      await sectionExpanded(page, 'mm', 'Ch1'),
+      'Ch1 auto-expanded after pointer hovered its header during drag',
+    ).toBe(true);
+
+    // Sister sections still collapsed (auto-expand is per-section, not
+    // a broadcast).
+    expect(await sectionExpanded(page, 'mm', 'Ch2')).toBe(false);
+
+    // Move pointer onto the ch1L target handle inside the now-expanded
+    // section, then release to commit the connection.
+    const targetHandle = page.locator(
+      `.svelte-flow__node[data-id="mm"] .svelte-flow__handle[data-handleid="ch1L"][class*="target"]`,
+    );
+    // Wait for the auto-expand to settle handle geometry — the panel
+    // calls updateNodeInternals via RAF when expandedSections flips.
+    await page.waitForTimeout(120);
+    const tBox = await targetHandle.boundingBox();
+    expect(tBox, 'ch1L handle has box after auto-expand').toBeTruthy();
+    if (!tBox) return;
+
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 20 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+
+    const edges = await readEdges(page);
+    expect(edges.length, 'one edge created').toBe(1);
+    expect(edges[0]!.source).toEqual({ nodeId: 'lfo', portId: 'phase0' });
+    expect(edges[0]!.target).toEqual({ nodeId: 'mm', portId: 'ch1L' });
+  });
+
+  test('drag cable INTO a pre-expanded nested section: manual expand persists after drag end', async ({
+    page,
+  }) => {
+    // Companion to the auto-expand test above: when the user has
+    // manually expanded a section BEFORE the drag starts, the cable
+    // can land on a port in that section without any auto-expand
+    // path being triggered, AND the section remains expanded after
+    // the drag ends (snapshot-restore preserves user state).
+    //
+    // Outputs in sectioned panels live in the always-visible flat
+    // outputs column, not behind a section-toggle — so "nested
+    // source port" can't be exercised against current modules.
+    // Instead we exercise the symmetric path: a manually-expanded
+    // source-side section that hosts the cable-drag DESTINATION,
+    // with the cable originating from a non-sectioned source (LFO).
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'lfo', type: 'lfo', position: { x: 80, y: 100 } },
+      { id: 'mm', type: 'mixmstrs', position: { x: 800, y: 100 } },
+    ]);
+
+    // Pin the LFO panel so phase0's source handle is in its
+    // open-state row position.
+    await page
+      .locator(`.svelte-flow__node[data-id="lfo"] [data-testid="patch-trigger"]`)
+      .click();
+    await page.waitForTimeout(200);
+
+    // Pin MIXMSTRS open and manually expand Ch3 before any drag.
+    await pinPanelOpen(page, 'mm');
+    await clickSection(page, 'mm', 'Ch3');
+    expect(await sectionExpanded(page, 'mm', 'Ch3')).toBe(true);
+
+    await page.waitForTimeout(200);
+
+    const sourceHandle = page.locator(
+      `.svelte-flow__node[data-id="lfo"] .svelte-flow__handle[data-handleid="phase0"][class*="source"]`,
+    );
+    const sBox = await sourceHandle.boundingBox();
+    expect(sBox, 'LFO phase0 handle has box').toBeTruthy();
+    if (!sBox) return;
+
+    await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
+    await page.mouse.down();
+
+    // Drag onto ch3_volume (in the pre-expanded Ch3 section). The
+    // handle is already visible — no auto-expand needs to fire.
+    const targetHandle = page.locator(
+      `.svelte-flow__node[data-id="mm"] .svelte-flow__handle[data-handleid="ch3_volume"][class*="target"]`,
+    );
+    const tBox = await targetHandle.boundingBox();
+    expect(tBox, 'ch3_volume handle visible because Ch3 was manually expanded').toBeTruthy();
+    if (!tBox) return;
+
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 25 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+
+    const edges = await readEdges(page);
+    expect(edges.length, 'edge created into pre-expanded section port').toBe(1);
+    expect(edges[0]!.source).toEqual({ nodeId: 'lfo', portId: 'phase0' });
+    expect(edges[0]!.target).toEqual({ nodeId: 'mm', portId: 'ch3_volume' });
+
+    // Ch3 was manually expanded before the drag — it stays expanded
+    // after drag end (the snapshot-restore preserves user state).
+    expect(
+      await sectionExpanded(page, 'mm', 'Ch3'),
+      'manually-expanded section persists after drag end',
+    ).toBe(true);
+  });
+
+  test('drag-auto-expanded sections collapse back after drag end (snapshot restore)', async ({
+    page,
+  }) => {
+    // Sister regression: a section that was ONLY auto-expanded by
+    // drag-hover (not manually clicked open) must collapse again once
+    // the drag releases — otherwise the user is left with stale UI
+    // every time they brush a header mid-drag.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'lfo', type: 'lfo', position: { x: 80, y: 100 } },
+      { id: 'mm', type: 'mixmstrs', position: { x: 800, y: 100 } },
+    ]);
+
+    await page
+      .locator(`.svelte-flow__node[data-id="lfo"] [data-testid="patch-trigger"]`)
+      .click();
+    await page.waitForTimeout(200);
+
+    // Pin the MIXMSTRS panel open BEFORE the drag so that after drag
+    // end the panel remains open (otherwise it closes and
+    // expandedSections is wiped — masking whether snapshot restore
+    // worked).
+    await pinPanelOpen(page, 'mm');
+
+    const sourceHandle = page.locator(
+      `.svelte-flow__node[data-id="lfo"] .svelte-flow__handle[data-handleid="phase0"][class*="source"]`,
+    );
+    const sBox = await sourceHandle.boundingBox();
+    if (!sBox) return;
+
+    await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
+    await page.mouse.down();
+
+    // Hover Ch2 header → auto-expand.
+    const ch2Header = page.locator(
+      `.svelte-flow__node[data-id="mm"] ` +
+        `[data-testid="patch-panel-section-toggle"][data-section-label="Ch2"]`,
+    );
+    const hBox = await ch2Header.boundingBox();
+    if (!hBox) return;
+    await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2, { steps: 10 });
+    await page.waitForTimeout(80);
+    expect(await sectionExpanded(page, 'mm', 'Ch2')).toBe(true);
+
+    // Cancel the drag (release outside any port).
+    await page.mouse.move(hBox.x, hBox.y - 400, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+
+    // No edge created.
+    const edges = await readEdges(page);
+    expect(edges.length).toBe(0);
+
+    // Ch2 was only auto-expanded by the drag — it collapses back to
+    // match the pre-drag snapshot.
+    expect(
+      await sectionExpanded(page, 'mm', 'Ch2'),
+      'drag-auto-expanded section collapses after drag end',
+    ).toBe(false);
+  });
+});
