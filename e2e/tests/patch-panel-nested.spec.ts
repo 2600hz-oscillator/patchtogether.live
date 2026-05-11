@@ -487,21 +487,22 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
     expect(edges[0]!.target).toEqual({ nodeId: 'mm', portId: 'ch1L' });
   });
 
-  test('drag cable INTO a pre-expanded nested section: manual expand persists after drag end', async ({
+  test('drag-induced auto-expand coexists with pre-existing manual expand (snapshot preserves both)', async ({
     page,
   }) => {
     // Companion to the auto-expand test above: when the user has
-    // manually expanded a section BEFORE the drag starts, the cable
-    // can land on a port in that section without any auto-expand
-    // path being triggered, AND the section remains expanded after
-    // the drag ends (snapshot-restore preserves user state).
+    // manually expanded a section BEFORE the drag starts, AND a
+    // different section is auto-expanded by drag-hover, the
+    // snapshot taken at drag start preserves the manually-expanded
+    // section and reverts the auto-expanded one on drag end.
     //
     // Outputs in sectioned panels live in the always-visible flat
-    // outputs column, not behind a section-toggle — so "nested
-    // source port" can't be exercised against current modules.
-    // Instead we exercise the symmetric path: a manually-expanded
-    // source-side section that hosts the cable-drag DESTINATION,
-    // with the cable originating from a non-sectioned source (LFO).
+    // outputs column, not behind a section-toggle — so "drag FROM
+    // a nested source port" can't be exercised against the current
+    // module catalogue. This test instead covers the second half
+    // of the snapshot-restore contract: manual + auto coexist
+    // mid-drag, then sort themselves out per the user's pre-drag
+    // intent on release.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -517,10 +518,13 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
       .click();
     await page.waitForTimeout(200);
 
-    // Pin MIXMSTRS open and manually expand Ch3 before any drag.
+    // Pin MIXMSTRS open and manually expand Master (last section,
+    // its y-coord stays stable regardless of which earlier sections
+    // auto-expand mid-drag).
     await pinPanelOpen(page, 'mm');
-    await clickSection(page, 'mm', 'Ch3');
-    expect(await sectionExpanded(page, 'mm', 'Ch3')).toBe(true);
+    await clickSection(page, 'mm', 'Master');
+    expect(await sectionExpanded(page, 'mm', 'Master')).toBe(true);
+    expect(await sectionExpanded(page, 'mm', 'Ch1')).toBe(false);
 
     await page.waitForTimeout(200);
 
@@ -534,30 +538,47 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
     await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
     await page.mouse.down();
 
-    // Drag onto ch3_volume (in the pre-expanded Ch3 section). The
-    // handle is already visible — no auto-expand needs to fire.
-    const targetHandle = page.locator(
-      `.svelte-flow__node[data-id="mm"] .svelte-flow__handle[data-handleid="ch3_volume"][class*="target"]`,
+    // Hover the Ch1 section header — drag-auto-expand fires on Ch1.
+    const ch1Header = page.locator(
+      `.svelte-flow__node[data-id="mm"] ` +
+        `[data-testid="patch-panel-section-toggle"][data-section-label="Ch1"]`,
     );
-    const tBox = await targetHandle.boundingBox();
-    expect(tBox, 'ch3_volume handle visible because Ch3 was manually expanded').toBeTruthy();
-    if (!tBox) return;
+    const hBox = await ch1Header.boundingBox();
+    if (!hBox) return;
+    await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2, { steps: 15 });
+    await page.waitForTimeout(80);
 
-    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 25 });
+    // Mid-drag: Ch1 auto-expanded, Master still manually expanded.
+    expect(
+      await sectionExpanded(page, 'mm', 'Ch1'),
+      'Ch1 auto-expanded mid-drag via hover',
+    ).toBe(true);
+    expect(
+      await sectionExpanded(page, 'mm', 'Master'),
+      'Master stays expanded mid-drag (manually opened pre-drag)',
+    ).toBe(true);
+
+    // Cancel the drag — release away from any handle.
+    await page.mouse.move(hBox.x - 600, hBox.y - 200, { steps: 10 });
     await page.mouse.up();
     await page.waitForTimeout(200);
 
+    // No edge committed (the drag ended in empty space).
     const edges = await readEdges(page);
-    expect(edges.length, 'edge created into pre-expanded section port').toBe(1);
-    expect(edges[0]!.source).toEqual({ nodeId: 'lfo', portId: 'phase0' });
-    expect(edges[0]!.target).toEqual({ nodeId: 'mm', portId: 'ch3_volume' });
+    expect(edges.length, 'no edge created (drag cancelled)').toBe(0);
 
-    // Ch3 was manually expanded before the drag — it stays expanded
-    // after drag end (the snapshot-restore preserves user state).
+    // Snapshot restore: Ch1 (drag-auto-expanded) collapses back;
+    // Master (manually pre-expanded) stays open. Each section ends
+    // in the state the user left it in pre-drag, regardless of
+    // mid-drag side effects.
     expect(
-      await sectionExpanded(page, 'mm', 'Ch3'),
+      await sectionExpanded(page, 'mm', 'Master'),
       'manually-expanded section persists after drag end',
     ).toBe(true);
+    expect(
+      await sectionExpanded(page, 'mm', 'Ch1'),
+      'drag-auto-expanded section reverts to pre-drag (collapsed) state',
+    ).toBe(false);
   });
 
   test('drag-auto-expanded sections collapse back after drag end (snapshot restore)', async ({

@@ -573,6 +573,8 @@
                     e.stopPropagation();
                     toggleSection(section.label);
                   }}
+                  onmouseenter={() => onSectionHeaderPointerEnter(section.label)}
+                  onmouseover={() => onSectionHeaderPointerEnter(section.label)}
                   onpointerenter={() => onSectionHeaderPointerEnter(section.label)}
                   onpointerover={() => onSectionHeaderPointerEnter(section.label)}
                 >
