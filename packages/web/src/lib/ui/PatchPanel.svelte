@@ -455,17 +455,25 @@
     const handler = (e: PointerEvent) => {
       if (!connectDragState.active) return;
       if (!open) return;
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      if (!el) return;
-      const toggle = el.closest(
-        '[data-testid="patch-panel-section-toggle"]',
-      ) as HTMLElement | null;
-      if (!toggle) return;
-      const owner = toggle.closest('[data-patch-panel-node]');
-      if (!owner || owner.getAttribute('data-patch-panel-node') !== nodeId) return;
-      const label = toggle.getAttribute('data-section-label');
-      if (!label) return;
-      onSectionHeaderPointerEnter(label);
+      // Use elementsFromPoint (plural) to look past xyflow's
+      // connection-line SVG overlay (z-index 1001, which sits above
+      // everything during a drag). The single elementFromPoint() would
+      // return the overlay and miss the section button underneath. We
+      // walk the hit-test stack from top to bottom until we find a
+      // section-toggle button inside THIS panel.
+      const stack = document.elementsFromPoint(e.clientX, e.clientY);
+      for (const el of stack) {
+        const toggle = el.closest(
+          '[data-testid="patch-panel-section-toggle"]',
+        ) as HTMLElement | null;
+        if (!toggle) continue;
+        const owner = toggle.closest('[data-patch-panel-node]');
+        if (!owner || owner.getAttribute('data-patch-panel-node') !== nodeId) continue;
+        const label = toggle.getAttribute('data-section-label');
+        if (!label) continue;
+        onSectionHeaderPointerEnter(label);
+        return;
+      }
     };
     document.addEventListener('pointermove', handler, true);
     return () => document.removeEventListener('pointermove', handler, true);
