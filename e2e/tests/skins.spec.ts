@@ -97,9 +97,9 @@ test('skins: clicking outside closes the popover without changing skin', async (
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await openSwitcher(page);
-  // Click the topbar's caption — outside the switcher, inside the topbar
+  // Click the topbar's h1 — outside the switcher, inside the topbar
   // (avoids accidentally triggering Add-module / Load-example).
-  await page.locator('.topbar .caption').click();
+  await page.locator('.topbar h1').click();
   await expect(page.getByTestId('skin-switcher-popover')).not.toBeVisible();
   await expect(page.getByTestId('skin-current-id')).toHaveText('default');
 });
