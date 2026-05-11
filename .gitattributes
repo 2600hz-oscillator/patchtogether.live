@@ -2,8 +2,13 @@
 art/baselines/**/*.f32 filter=lfs diff=lfs merge=lfs -text
 art/baselines/**/*.wav filter=lfs diff=lfs merge=lfs -text
 
-# Visual Regression Test baselines
-vrt/__screenshots__/**/*.png filter=lfs diff=lfs merge=lfs -text
+# Visual Regression Test baselines (Playwright `toHaveScreenshot`,
+# config at e2e/vrt/vrt.config.ts, baselines under e2e/vrt/__screenshots__/).
+# Scoped path on purpose so other PNGs in the repo (icons, docs assets)
+# are stored as ordinary blobs — only the VRT card baselines are LFS-tracked.
+# CI must `actions/checkout@v4` with `lfs: true` for the VRT job to compare
+# against real bytes instead of LFS pointer files.
+e2e/vrt/__screenshots__/**/*.png filter=lfs diff=lfs merge=lfs -text
 
 # Bundled wavetables for Wavetable VCO
 packages/dsp/wavetables/*.wav filter=lfs diff=lfs merge=lfs -text

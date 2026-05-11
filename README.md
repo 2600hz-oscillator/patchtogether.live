@@ -116,7 +116,7 @@ Three port-surface consistency gates run inside the unit + e2e layers:
 
 The PR gate (`flox activate -- task ci`) runs typecheck + unit + ART + E2E inside Flox so the toolchain matches local. Postgres 17 is a CI service container.
 
-VRT (Visual Regression Tests) is planned but not yet implemented — see `/docs/testing` for current status.
+- **VRT** — Visual Regression Tests. Playwright `toHaveScreenshot` against every registered module card; baselines under `e2e/vrt/__screenshots__/` (LFS-tracked). `flox activate -- task vrt` to run; `task vrt:update` to refresh baselines after an intentional UI change; `task vrt:gallery` to rebuild the side-by-side HTML report under `docs/vrt/`. CI publishes the latest gallery to GitHub Pages on push to `main`. Modeled on the doomviz VRT pattern; non-blocking initially while baselines settle. When CI VRT fails: download the `vrt-test-results` + `vrt-gallery` artifacts from the run, eyeball the diff PNGs, and either re-run `task vrt:update` (intentional UI change) or fix the regression.
 
 ## Conventions
 

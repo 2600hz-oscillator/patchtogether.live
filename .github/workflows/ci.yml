@@ -106,3 +106,107 @@ jobs:
           name: playwright-test-results
           path: e2e/test-results
           retention-days: 14
+
+  # -----------------------------------------------------------------------
+  # Visual Regression Tests (Playwright `toHaveScreenshot`). Separate job
+  # from the main `ci` so a baseline drift on one card doesn't kneecap the
+  # functional E2E run, and so we can flip `continue-on-error` off later
+  # without changing the gate shape.
+  #
+  # Modeled on doomviz's vrt job: lfs-true checkout (baselines are
+  # LFS-tracked under e2e/vrt/__screenshots__/**), upload test-results +
+  # generated gallery as artifacts, allow failures while the suite settles.
+  # -----------------------------------------------------------------------
+  vrt:
+    name: VRT (visual regression, advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Non-blocking initially. Once baselines have stabilised across
+    # 2-3 weeks of merges we'll flip this to false and add to required
+    # checks. Don't quietly remove this without a follow-up PR.
+    continue-on-error: true
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+
+    steps:
+      - name: Checkout (LFS required for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          # MUST be true — VRT baselines live under e2e/vrt/__screenshots__/
+          # and are stored as LFS pointers in the regular tree. Without
+          # this, `toHaveScreenshot` compares against the pointer-file
+          # bytes (~130 bytes of metadata) instead of the real PNG and
+          # every test "fails" with a giant diff.
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Run VRT
+        run: flox activate -- task vrt
+
+      - name: Build VRT gallery (baselines + last run's diffs)
+        if: always()
+        run: flox activate -- task vrt:gallery
+
+      - name: Upload VRT gallery
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-gallery
+          path: docs/vrt
+          retention-days: 14
+
+      - name: Upload Playwright VRT report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-playwright-report
+          path: e2e/vrt/report
+          retention-days: 14
+
+      - name: Upload Playwright VRT test-results (actual + diff PNGs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-test-results
+          path: e2e/vrt/test-results
+          retention-days: 14
