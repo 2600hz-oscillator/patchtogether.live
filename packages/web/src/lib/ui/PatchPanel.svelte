@@ -439,6 +439,36 @@
     expandedSections = { ...expandedSections, [label]: true };
   }
 
+  // Document-level pointermove watcher (drag-only fallback). xyflow's
+  // pointer-capture on the source handle during a connect-drag
+  // suppresses element-level pointerenter / mouseenter on intermediate
+  // hit-test targets in some browsers (Chromium under CDP automation
+  // on slow CI). To make drag-hover-auto-expand reliable we also
+  // hit-test every pointermove via elementFromPoint. Listener is
+  // attached only while connectDragState.active is true, so the cost
+  // is bounded to drag duration. Element-level handlers above remain
+  // the primary (lower-latency) path; this is the capture-suppression-
+  // tolerant fallback.
+  $effect(() => {
+    if (!connectDragState.active) return;
+    const handler = (e: PointerEvent) => {
+      if (!open) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el) return;
+      const toggle = el.closest(
+        '[data-testid="patch-panel-section-toggle"]',
+      ) as HTMLElement | null;
+      if (!toggle) return;
+      const owner = toggle.closest('[data-patch-panel-node]');
+      if (!owner || owner.getAttribute('data-patch-panel-node') !== nodeId) return;
+      const label = toggle.getAttribute('data-section-label');
+      if (!label) return;
+      onSectionHeaderPointerEnter(label);
+    };
+    document.addEventListener('pointermove', handler, true);
+    return () => document.removeEventListener('pointermove', handler, true);
+  });
+
   // ---------------- Group/sort port lists ----------------
 
   let inputGroups = $derived<GroupedPorts[]>(
