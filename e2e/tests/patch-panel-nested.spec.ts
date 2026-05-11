@@ -375,6 +375,23 @@ async function readEdges(page: Page): Promise<PatchEdge[]> {
   });
 }
 
+/** Wait until xyflow's onConnectStart has fired and the global drag-
+ *  state singleton reports active=true. xyflow has a drag-threshold,
+ *  so a single pointermove after pointerdown isn't always enough on
+ *  slow headless Chromium; poll instead of relying on a fixed delay. */
+async function waitForConnectDragActive(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const w = window as unknown as {
+        __connectDragState?: { active: boolean };
+      };
+      return w.__connectDragState?.active === true;
+    },
+    null,
+    { timeout: 3000 },
+  );
+}
+
 test.describe('PatchPanel: nested-section auto-expand during cable drag', () => {
   test('drag cable INTO a nested target port: all sections auto-expand when panel opens mid-drag', async ({
     page,
@@ -437,10 +454,16 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
       'false',
     );
 
+    // Wait for xyflow's onConnectStart to flip __connectDragState.active
+    // before checking expand-all — the panel can open via hover-intent
+    // a frame or two before xyflow's drag-threshold-gated start fires.
+    await waitForConnectDragActive(page);
+    // Give the snapshot $effect a frame to react to (active && open).
+    await page.waitForTimeout(120);
+
     // Expand-all fires when the panel opens with a drag in flight —
     // every section transitions to expanded so the user sees every
     // possible target port without hunting through section headers.
-    await page.waitForTimeout(160);
     for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
       expect(
         await sectionExpanded(page, 'mm', label),
@@ -525,11 +548,15 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
 
     await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
     await page.mouse.down();
-    // Nudge to satisfy xyflow's drag-threshold and fire onConnectStart.
-    await page.mouse.move(sBox.x + sBox.width / 2 + 30, sBox.y + sBox.height / 2 + 30, {
-      steps: 10,
+    // Long, multi-step move past xyflow's connection-drag threshold —
+    // 80px in 20 steps is enough on slow headless Chromium to trigger
+    // onConnectStart. We aim away from any node to keep the move in
+    // empty canvas.
+    await page.mouse.move(sBox.x + sBox.width / 2 + 80, sBox.y + sBox.height / 2 + 80, {
+      steps: 20,
     });
-    await page.waitForTimeout(80);
+    await waitForConnectDragActive(page);
+    await page.waitForTimeout(100);
 
     // Mid-drag: every section is expanded (drag-time expand-all),
     // including Master which was already manually expanded.
@@ -608,11 +635,13 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
 
     await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
     await page.mouse.down();
-    // Nudge past xyflow's drag threshold so onConnectStart fires.
-    await page.mouse.move(sBox.x + sBox.width / 2 + 30, sBox.y + sBox.height / 2 + 30, {
-      steps: 10,
+    // Long, multi-step move past xyflow's connection-drag threshold so
+    // onConnectStart fires on slow headless Chromium.
+    await page.mouse.move(sBox.x + sBox.width / 2 + 80, sBox.y + sBox.height / 2 + 80, {
+      steps: 20,
     });
-    await page.waitForTimeout(80);
+    await waitForConnectDragActive(page);
+    await page.waitForTimeout(100);
 
     // Mid-drag: every section is expanded.
     for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
