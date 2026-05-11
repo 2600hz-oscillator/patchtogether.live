@@ -147,15 +147,17 @@ const MODULES: ModuleSpec[] = [
   // (smooth + stepped + clock + burst + ring) = 8 handles.
   { type: 'buggles',      cardClass: 'svelte-flow__node-buggles',      handleCount: 8, containsLabel: 'BUGGLES' },
   // WAVECEL: 5 inputs (pitch + fm + 3 cv: morph_cv, spread_cv, fold_cv)
-  // + 2 outputs (out_l, out_r) = 7 handles. Stereo wavetable VCO with
-  // morph + spread + wavefolder, 3D wavetable visualization, and
-  // E352-format WAV upload (Synthesis Technology Cloud Terrarium).
-  { type: 'wavecel',      cardClass: 'svelte-flow__node-wavecel',      handleCount: 7, containsLabel: 'WAVECEL' },
-  // STEREOVCA: 4 audio inputs (in_l, in_r, strength_l, strength_r) +
-  // 2 audio outputs (out_l, out_r) = 6 handles. Stereo VCA + ring
-  // modulator with INDEPENDENT normalling on the audio and strength
-  // halves; strength inputs declare `audio` cable type and the
-  // graph/types.ts cv→audio upcast lets LFOs / ADSRs land here.
+  // + 4 outputs (out_l, out_r, scope_out, wave3d_out) = 9 handles.
+  // Stereo wavetable VCO with morph + spread + wavefolder. The two
+  // video outputs (scope_out + wave3d_out) always render their views
+  // regardless of the on-card scope/3D toggle (which controls only the
+  // on-card preview). 3D wavetable visualization + E352-format WAV
+  // upload (Synthesis Technology Cloud Terrarium).
+  { type: 'wavecel',      cardClass: 'svelte-flow__node-wavecel',      handleCount: 9, containsLabel: 'WAVECEL' },
+  // STEREOVCA: 4 inputs (in_l/in_r audio carriers + strength_l/strength_r cv)
+  // + 2 audio outputs (out_l, out_r) = 6 handles. Stereo VCA + ring
+  // modulator with INDEPENDENT normalling on the audio and strength halves;
+  // strength inputs declare `cv` (PASSTHROUGH_BY_DESIGN — raw bipolar carrier).
   { type: 'stereovca',    cardClass: 'svelte-flow__node-stereovca',    handleCount: 6, containsLabel: 'STEREOVCA' },
 ];
 

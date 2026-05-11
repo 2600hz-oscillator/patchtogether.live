@@ -542,3 +542,188 @@ test('double-click disabled state: lone module shows "no other modules"', async 
   await expect(disabled).toHaveAttribute('aria-disabled', 'true');
   await expect(disabled).toHaveAttribute('title', /no other modules/i);
 });
+
+// ---------------------------------------------------------------------------
+// Real-gesture coverage: drives the dblclick via page.mouse.dblclick(x, y)
+// at the handle's bounding-box center, NOT via Playwright's locator.dblclick
+// wrapper. Catches the failure mode where the handle is technically in the
+// DOM but the synthetic gesture only succeeds when Playwright targets the
+// element by selector (DOM-bypass tell). If this test passes, a real user
+// holding a real mouse over the handle dot can open the cascade.
+// ---------------------------------------------------------------------------
+
+test('real-gesture: page.mouse.dblclick at handle center opens cascade', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  await openPanel(page, 'lfo1');
+  const handle = page.locator(
+    '.svelte-flow__node[data-id="lfo1"] [data-testid="patch-panel"] .svelte-flow__handle[data-handleid="phase0"]',
+  );
+  await expect(handle).toBeVisible();
+  await handle.hover();
+  const box = await handle.boundingBox();
+  expect(box, 'handle has bounding box').not.toBeNull();
+  const cx = box!.x + box!.width / 2;
+  const cy = box!.y + box!.height / 2;
+  await page.mouse.dblclick(cx, cy);
+
+  await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
+  // Source label confirms the dblclick was recognised as LFO.phase0, not
+  // some accidental click on a panel row or label.
+  await expect(page.locator('[data-testid="port-context-menu"] .ctx-header')).toHaveText(
+    'LFO.phase0',
+  );
+});
+
+test('real-gesture: dblclick on direct-render handle (LINES card)', async ({ page }) => {
+  // LINES renders <Handle> children directly on the card (no PatchPanel
+  // popover). The dblclick path must work on these too — covering the
+  // video-domain card pattern.
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lines1', type: 'lines', position: { x: 100, y: 200 }, domain: 'video' },
+      { id: 'vout1', type: 'videoOut', position: { x: 600, y: 200 }, domain: 'video' },
+    ],
+    [],
+  );
+
+  const out = page.locator(
+    '.svelte-flow__node[data-id="lines1"] .svelte-flow__handle[data-handleid="out"]',
+  );
+  await expect(out).toBeVisible();
+  await out.hover();
+  const box = await out.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.dblclick(box!.x + box!.width / 2, box!.y + box!.height / 2);
+
+  await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
+  await expect(page.locator('[data-testid="port-context-menu"] .ctx-header')).toHaveText(
+    'LINES.out',
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Corner-trigger dblclick: dblclick on either PatchPanel trigger affordance
+// opens the cascade sourced from the module's FIRST declared output. Lets
+// users skip the open-panel-then-find-the-handle dance for the common
+// "I want to patch this module's main output somewhere" workflow.
+// ---------------------------------------------------------------------------
+
+test('corner-trigger dblclick: opens cascade sourced from first declared output', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  const trigger = page.locator(
+    '.svelte-flow__node[data-id="lfo1"] [data-testid="patch-trigger"]',
+  );
+  await expect(trigger).toBeVisible();
+  await trigger.dblclick();
+
+  const menu = page.locator('[data-testid="port-context-menu"]');
+  await expect(menu).toBeVisible();
+  // LFO's first output is phase0 — confirms we selected the first declared
+  // entry from the def's outputs array, not some other rule.
+  await expect(menu.locator('.ctx-header')).toHaveText('LFO.phase0');
+
+  // Cascade behaves identically to the handle dblclick path from here on:
+  // pick FILTER, get its cv-accepting inputs.
+  await page.locator('[data-testid="patch-to-module"][data-node-id="flt1"]').click();
+  const portIds = await page
+    .locator('[data-testid="patch-to-port"]')
+    .evaluateAll((els) => els.map((el) => (el as HTMLElement).getAttribute('data-port-id') ?? ''));
+  expect(portIds).toEqual(['cutoff', 'res']);
+});
+
+test('corner-trigger dblclick: right-side trigger also opens cascade', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  const trigger = page.locator(
+    '.svelte-flow__node[data-id="lfo1"] [data-testid="patch-trigger-right"]',
+  );
+  await expect(trigger).toBeVisible();
+  await trigger.dblclick();
+
+  await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
+  await expect(page.locator('[data-testid="port-context-menu"] .ctx-header')).toHaveText(
+    'LFO.phase0',
+  );
+});
+
+test('corner-trigger dblclick: zero-output module (AudioOut) is a no-op', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'ao1', type: 'audioOut', position: { x: 100, y: 200 } },
+      { id: 'lfo1', type: 'lfo', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  const trigger = page.locator(
+    '.svelte-flow__node[data-id="ao1"] [data-testid="patch-trigger"]',
+  );
+  await expect(trigger).toBeVisible();
+  await trigger.dblclick();
+
+  // No outputs → no cascade. Trigger's single-click behavior (toggle panel)
+  // is unaffected — we're asserting the dblclick path specifically declines
+  // to open an empty cascade, not breaking the click pipeline.
+  await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
+});
+
+test('corner-trigger single-click still toggles the panel (no regression)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
+      { id: 'flt1', type: 'filter', position: { x: 500, y: 200 } },
+    ],
+    [],
+  );
+
+  const trigger = page.locator(
+    '.svelte-flow__node[data-id="lfo1"] [data-testid="patch-trigger"]',
+  );
+  const panel = page.locator(
+    '.svelte-flow__node[data-id="lfo1"] [data-testid="patch-panel"]',
+  );
+  await trigger.click();
+  await expect(panel).toHaveAttribute('aria-hidden', 'false');
+  // No cascade fires on a single click.
+  await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
+});
