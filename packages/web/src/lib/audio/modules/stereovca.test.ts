@@ -206,11 +206,19 @@ describe('stereovcaDef: module-def shape', () => {
     expect(stereovcaDef.domain).toBe('audio');
   });
 
-  it('exposes 4 audio inputs (in_l, in_r, strength_l, strength_r)', () => {
+  it('exposes 4 inputs: in_l/in_r (audio) + strength_l/strength_r (cv)', () => {
     const ids = stereovcaDef.inputs.map((p) => p.id).sort();
     expect(ids).toEqual(['in_l', 'in_r', 'strength_l', 'strength_r']);
+    const byId = Object.fromEntries(stereovcaDef.inputs.map((p) => [p.id, p]));
+    // Audio carriers stay `audio` so an oscillator → in_l works as same-type.
+    expect(byId.in_l!.type).toBe('audio');
+    expect(byId.in_r!.type).toBe('audio');
+    // Strength inputs are `cv` so LFOs / ADSRs land without a cross-type cast;
+    // PASSTHROUGH_BY_DESIGN in cv-scale-registry.test.ts justifies omitting cvScale
+    // (the worklet treats strength as a raw bipolar carrier in the per-sample multiply).
+    expect(byId.strength_l!.type).toBe('cv');
+    expect(byId.strength_r!.type).toBe('cv');
     for (const p of stereovcaDef.inputs) {
-      expect(p.type, `${p.id} type`).toBe('audio');
       // No paramTarget — these are audio-rate node inputs, not CV→param.
       expect(p.paramTarget, `${p.id} paramTarget`).toBeUndefined();
       expect(p.cvScale, `${p.id} cvScale`).toBeUndefined();

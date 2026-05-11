@@ -124,7 +124,7 @@ const DESCRIPTIONS: Record<string, string> = {
   buggles:
     'Chaotic random voltage source — clean-room functional implementation of the Buchla / Make Noise wogglebug archetype. Internal "woggle clock" emits triggers at the RATE knob; outputs include SMOOTH (slewed random), STEPPED (sample-and-held), CLOCK (woggle gate), BURST (probabilistic clusters of 3-7 triggers), and RING (smooth × sub-osc ring-mod, the signature dirty texture). CV inputs modulate rate + chaos; EXT CLK replaces the internal scheduler when patched. The "Wogglebug" name is Make Noise\'s trademark — BUGGLES is our name; no proprietary schematic is copied.',
   stereovca:
-    'Stereo VCA + ring modulator. Per-channel multiply: out_l = in_l * (strength_l + offset) * level; out_r = in_r * (strength_r + offset) * level. The same math behaves as VCA gain control when strength is slow (CV / LFO / envelope) and as ring modulation when strength is audio-rate — no mode toggle, the perceptual difference emerges from signal content. INDEPENDENT normalling: if in_r is unpatched it copies in_l (mono → stereo); if strength_r is unpatched it copies strength_l (one strength drives both VCAs). The two halves normal independently, so true-stereo audio + mono strength works, as does mono audio + per-side strength. Strength inputs declare cable type `audio` so audio-rate sources patch natively; LFOs / ADSRs reach them via the cv → audio upcast in graph/types.ts:canConnect.',
+    'Stereo VCA + ring modulator. Per-channel multiply: out_l = in_l * (strength_l + offset) * level; out_r = in_r * (strength_r + offset) * level. The same math behaves as VCA gain control when strength is slow (CV / LFO / envelope) and as ring modulation when strength is audio-rate — no mode toggle, the perceptual difference emerges from signal content. INDEPENDENT normalling: if in_r is unpatched it copies in_l (mono → stereo); if strength_r is unpatched it copies strength_l (one strength drives both VCAs). The two halves normal independently, so true-stereo audio + mono strength works, as does mono audio + per-side strength. Audio carriers (in_l/in_r) declare cable type `audio`; strength inputs declare `cv` (raw bipolar carrier consumed in the multiply with no scaling — listed in PASSTHROUGH_BY_DESIGN) so any cv source (LFO, ADSR, sequencer step CV) lands without a cross-type cast.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -307,7 +307,7 @@ const PORT_NOTES: Record<string, string> = {
   // STEREOVCA — stereo VCA + ring modulator.
   'stereovca.in_l':       'Left audio input. Multiplied by (strength_l + offset) * level.',
   'stereovca.in_r':       'Right audio input. Multiplied by (strength_r + offset) * level. Normalled to in_l when unpatched (mono → stereo).',
-  'stereovca.strength_l': 'Left strength / ring carrier. Cable type `audio` so any signal — LFO/ADSR (slow → tremolo), oscillator (audio-rate → ring mod) — patches without thinking about cable types.',
+  'stereovca.strength_l': 'Left strength / ring carrier. Cable type `cv` so LFOs / ADSRs / sequencer-step CV land natively. Slow CV gives tremolo; an audio-rate signal patched here gives ring modulation (PASSTHROUGH_BY_DESIGN — the worklet treats strength as a raw bipolar carrier, no cv scaling).',
   'stereovca.strength_r': 'Right strength / ring carrier. Normalled to strength_l when unpatched (one strength drives both VCAs).',
   'stereovca.out_l':      'Left output: in_l * (strength_l + offset) * level.',
   'stereovca.out_r':      'Right output: in_r * (strength_r + offset) * level.',

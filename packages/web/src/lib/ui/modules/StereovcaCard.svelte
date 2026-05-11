@@ -4,11 +4,10 @@
   // bipolar OFFSET that lifts the strength signal so an unpatched
   // (0V) strength can still pass audio at unity (offset=+1).
   //
-  // Strength inputs declare cable type `audio` and the
-  // graph/types.ts:canConnect cv → audio upcast lets LFOs / ADSRs land
-  // on them without friction. The card surfaces L/R-grouped port labels
-  // so the panel hover layout matches the L-on-top, R-below stereo
-  // convention.
+  // Strength inputs declare cable type `cv` so LFOs / ADSRs land
+  // natively (no cross-type cast). The card surfaces L/R-grouped port
+  // labels so the panel hover layout matches the L-on-top, R-below
+  // stereo convention.
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -36,8 +35,8 @@
   const inputs: PortDescriptor[] = [
     { id: 'in_l',       label: 'IN L',  cable: 'audio' },
     { id: 'in_r',       label: 'IN R',  cable: 'audio' },
-    { id: 'strength_l', label: 'STR L', cable: 'audio' },
-    { id: 'strength_r', label: 'STR R', cable: 'audio' },
+    { id: 'strength_l', label: 'STR L', cable: 'cv' },
+    { id: 'strength_r', label: 'STR R', cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out_l', label: 'OUT L', cable: 'audio' },

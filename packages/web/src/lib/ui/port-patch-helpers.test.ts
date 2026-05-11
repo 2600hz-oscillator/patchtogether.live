@@ -137,19 +137,12 @@ describe('compatibleTargetPorts (output → ?)', () => {
       nodes,
       defs({ filter: filterDef }),
     );
-    // canConnect(cv, cv) is true and canConnect(cv, audio) is permitted as
-    // an Eurorack-style same-substrate upcast (see types.ts:canConnect),
-    // so 'cutoff', 'res' AND 'audio' are all valid targets for a cv source.
-    expect(out.map((p) => p.portId).sort()).toEqual(['audio', 'cutoff', 'res']);
+    // canConnect(cv, audio) is false; canConnect(cv, cv) is true. So 'cutoff'
+    // and 'res' are kept; 'audio' is filtered out.
+    expect(out.map((p) => p.portId)).toEqual(['cutoff', 'res']);
   });
 
-  it('permits cv → audio (LFO into AudioOut: tremolo / DC test signal)', () => {
-    // Pre-PR-stereovca this was rejected — the codebase split cv vs audio
-    // for tooling (cvScale) reasons but the underlying voltage carrier is
-    // identical. STEREOVCA needs both an LFO (cv, slow → tremolo) and an
-    // oscillator (audio-rate → ring modulation) to land on the same
-    // strength input without the user thinking about cable types, so
-    // cv → audio is now a legal upcast.
+  it('rejects cv → audio (LFO into AudioOut)', () => {
     const nodes = { ao1: makeNode('ao1', 'audioOut') };
     const out = compatibleTargetPorts(
       'cv',
@@ -160,7 +153,7 @@ describe('compatibleTargetPorts (output → ?)', () => {
       nodes,
       defs({ audioOut: audioOutDef }),
     );
-    expect(out.map((p) => p.portId).sort()).toEqual(['L', 'R']);
+    expect(out).toEqual([]);
   });
 
   it('allows cv → mono-video (cross-domain bridge)', () => {

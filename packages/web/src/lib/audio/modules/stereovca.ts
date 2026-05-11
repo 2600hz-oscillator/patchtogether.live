@@ -8,12 +8,16 @@
 //
 // The same per-channel multiply behaves as a VCA gain control when the
 // strength input is slow (CV / LFO / envelope) and as a ring modulator
-// when the strength input is audio-rate (oscillator). No mode toggle —
-// the perceptual difference is purely a function of signal frequency
-// content, matching Eurorack hardware convention. The strength inputs
-// declare cable type `audio` and the `cv → audio` upcast in
-// graph/types.ts:canConnect lets a cv-typed source (LFO, ADSR) terminate
-// here without friction.
+// when the strength input is audio-rate. No mode toggle — the perceptual
+// difference is purely a function of signal frequency content, matching
+// Eurorack hardware convention (CV is just slow audio). The strength
+// inputs declare cable type `cv` (raw bipolar carrier consumed directly
+// in the per-sample multiply with NO scaling — listed in the
+// PASSTHROUGH_BY_DESIGN ledger in cv-scale-registry.test.ts), so any
+// cv-typed source (LFO, ADSR, sequencer step CV) lands without a
+// cross-type cast. Audio-rate ring mod is achieved by patching
+// audio-rate signals into the in_l/in_r audio carriers and any
+// modulator into strength_*.
 //
 // Normalling rules (independent for the two domains):
 //   in_r unpatched       → in_r := in_l        (mono → stereo)
@@ -82,8 +86,8 @@ export const stereovcaDef: AudioModuleDef = {
   inputs: [
     { id: 'in_l',       type: 'audio' },
     { id: 'in_r',       type: 'audio' },
-    { id: 'strength_l', type: 'audio' },
-    { id: 'strength_r', type: 'audio' },
+    { id: 'strength_l', type: 'cv' },
+    { id: 'strength_r', type: 'cv' },
   ],
   outputs: [
     { id: 'out_l', type: 'audio' },

@@ -50,6 +50,10 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // module rather than by interposing a WaveShaperNode. Adding cvScale would
   // do nothing — there's no AudioParam fast path to scale.
   buggles: ['clock_cv', 'chaos_cv'],
+  // STEREOVCA strength_l/r: raw bipolar carrier consumed directly in the
+  // per-sample multiply (out = in * (strength + offset) * level). No
+  // scaling — slow CV gives tremolo, audio-rate CV gives ring modulation.
+  stereovca: ['strength_l', 'strength_r'],
 };
 
 describe('cv-scale / registry coverage', () => {
