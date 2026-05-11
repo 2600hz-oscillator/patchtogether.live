@@ -145,6 +145,8 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
       - run: flox activate -- task install
+      - id: appver
+        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           # VITE_* vars are baked into the client bundle at build time;
@@ -152,6 +154,9 @@ jobs:
           # the bundle. Set the Hocuspocus WS URL per tier here so the
           # client knows where to connect.
           VITE_SERVER_WS_URL: wss://patchtogether-server.fly.dev
+          # VITE_APP_VERSION surfaces in /api/health so an LLM agent can
+          # confirm the deployed version after a release.
+          VITE_APP_VERSION: ${{ steps.appver.outputs.version }}
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -179,10 +184,13 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
       - run: flox activate -- task install
+      - id: appver
+        run: echo "version=$(jq -r .version package.json)-pr${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           # Previews share the autotest tier's Hocuspocus instance.
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
+          VITE_APP_VERSION: ${{ steps.appver.outputs.version }}
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -220,9 +228,12 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
       - run: flox activate -- task install
+      - id: appver
+        run: echo "version=$(jq -r .version package.json)-autotest" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
+          VITE_APP_VERSION: ${{ steps.appver.outputs.version }}
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -253,9 +264,12 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
       - run: flox activate -- task install
+      - id: appver
+        run: echo "version=$(jq -r .version package.json)-dev" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-dev.fly.dev
+          VITE_APP_VERSION: ${{ steps.appver.outputs.version }}
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

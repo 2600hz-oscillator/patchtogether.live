@@ -1,4 +1,4 @@
-// Hocuspocus server — Stage B scaffold.
+// Hocuspocus server — Stage B scaffold + Phase-1 observability.
 //
 // One process serves all rackspaces. Each rackspace = one Yjs doc keyed by
 // `name` in the Hocuspocus protocol; when a client connects with that name,
@@ -8,6 +8,14 @@
 // Stage B scope (this slice): in-memory doc storage, no auth (any client
 // accepted), no D1 persistence. The server proves the wire works. Auth +
 // persistence + per-user layout enforcement land in subsequent slices.
+//
+// Phase-1 observability adds:
+//   - Structured JSON logger (`logger.ts`) — every connect/disconnect/persist
+//     emits a single-line JSON event with a stable boot_id so the crash-loop
+//     detector can count distinct boots in a window.
+//   - HTTP /health endpoint mounted on the same port via Hocuspocus's
+//     onRequest hook — surfaces uptime, mem, conn count for BetterStack
+//     and `pttools health` to query.
 
 import { Server } from '@hocuspocus/server';
 import * as Y from 'yjs';
@@ -16,6 +24,11 @@ import { CAPACITY_REJECTION, createSlotTracker } from './capacity.js';
 import { isRackspaceMember, loadSnapshot, storeSnapshot } from './db.js';
 import { SNAPSHOT_PERSISTENCE_CONFIG } from './snapshot-config.js';
 import { createHeartbeatExtension } from './heartbeat.js';
+import { initBootId, log } from './logger.js';
+import { handleHealthRequest } from './health.js';
+
+// Initialise boot id immediately so the startup log line carries it.
+const BOOT_ID = initBootId();
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
 // because BitwigStudio (and likely other DAWs) reserve 1234 for OSC.
@@ -27,6 +40,12 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 // tracker is correct. When the server scales horizontally (post-Stage-B),
 // this becomes a Durable Object or Redis-backed counter.
 const slots = createSlotTracker();
+
+// Live connection count — bumped in onConnect / onDisconnect, queried by
+// the /health endpoint. Tracking on the slot side already gives us per-doc
+// counts but not a single global total without a sum loop; the explicit
+// counter is cheaper.
+let totalConns = 0;
 
 Server.configure({
   port: PORT,
@@ -52,8 +71,13 @@ Server.configure({
   async onAuthenticate(data) {
     const auth = await verifyToken(data.token ?? '', data.documentName);
     if (!auth.ok) {
-      // eslint-disable-next-line no-console
-      console.log(`[hocuspocus] reject (${auth.reason}): doc=${data.documentName} sock=${data.socketId}`);
+      log({
+        level: 'warn',
+        msg: 'reject',
+        reason: auth.reason,
+        doc: data.documentName,
+        sock: data.socketId,
+      });
       // No message arg → `.message` is the empty string. Hocuspocus's
       // hooks() catch handler does `if (error?.message) console.error(…)`
       // — empty message skips that auto-log so we don't get a duplicate
@@ -81,8 +105,13 @@ Server.configure({
     if (auth.role === 'member') {
       const allowed = await isRackspaceMember(data.documentName, auth.userId!);
       if (!allowed) {
-        // eslint-disable-next-line no-console
-        console.log(`[hocuspocus] reject (not-member): doc=${data.documentName} user=${auth.userId}`);
+        log({
+          level: 'warn',
+          msg: 'reject',
+          reason: 'not-member',
+          doc: data.documentName,
+          user: auth.userId,
+        });
         const err = new Error() as Error & { reason: string };
         err.reason = AUTH_REJECTION.unauthorized;
         throw err;
@@ -90,8 +119,13 @@ Server.configure({
     }
 
     if (!slots.acquire(data.documentName, data.socketId)) {
-      // eslint-disable-next-line no-console
-      console.log(`[hocuspocus] reject (full): doc=${data.documentName} sock=${data.socketId}`);
+      log({
+        level: 'warn',
+        msg: 'reject',
+        reason: 'full',
+        doc: data.documentName,
+        sock: data.socketId,
+      });
       const err = new Error() as Error & { reason: string };
       err.reason = CAPACITY_REJECTION.code;
       throw err;
@@ -104,14 +138,22 @@ Server.configure({
   },
 
   async onConnect(data) {
-    // eslint-disable-next-line no-console
-    console.log(`[hocuspocus] connect: doc=${data.documentName} (${slots.size(data.documentName)}/4)`);
+    totalConns += 1;
+    log({
+      msg: 'connect',
+      doc: data.documentName,
+      count: slots.size(data.documentName),
+    });
   },
 
   async onDisconnect(data) {
     slots.release(data.documentName, data.socketId);
-    // eslint-disable-next-line no-console
-    console.log(`[hocuspocus] disconnect: doc=${data.documentName} (${slots.size(data.documentName)}/4)`);
+    totalConns = Math.max(0, totalConns - 1);
+    log({
+      msg: 'disconnect',
+      doc: data.documentName,
+      count: slots.size(data.documentName),
+    });
   },
 
   async onLoadDocument(data) {
@@ -119,14 +161,12 @@ Server.configure({
     // row) get a fresh empty doc that Hocuspocus persists on first store.
     const snapshot = await loadSnapshot(data.documentName);
     if (!snapshot) {
-      // eslint-disable-next-line no-console
-      console.log(`[hocuspocus] load (fresh): doc=${data.documentName}`);
+      log({ msg: 'load', doc: data.documentName, fresh: true });
       return undefined;
     }
     const ydoc = new Y.Doc();
     Y.applyUpdate(ydoc, snapshot);
-    // eslint-disable-next-line no-console
-    console.log(`[hocuspocus] load (restored ${snapshot.byteLength} bytes): doc=${data.documentName}`);
+    log({ msg: 'load', doc: data.documentName, size: snapshot.byteLength });
     return ydoc;
   },
 
@@ -137,21 +177,35 @@ Server.configure({
   async onStoreDocument(data) {
     const state = Y.encodeStateAsUpdate(data.document);
     await storeSnapshot(data.documentName, state);
-    // eslint-disable-next-line no-console
-    console.log(`[hocuspocus] persist (${state.byteLength} bytes): doc=${data.documentName}`);
+    log({ msg: 'persist', doc: data.documentName, size: state.byteLength });
+  },
+
+  // HTTP /health on the same port. Hocuspocus's onRequest is invoked for
+  // any non-WS HTTP request to its listener; we short-circuit by writing
+  // the response and throwing an empty error (the server treats a falsy
+  // error as "hook handled it, suppress default").
+  async onRequest(data) {
+    if (handleHealthRequest(data.request, data.response, totalConns)) {
+      // Throwing falsy short-circuits Hocuspocus's default "OK" response.
+      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      throw null;
+    }
   },
 });
 
 Server.listen().then(() => {
-  // eslint-disable-next-line no-console
-  console.log(`[hocuspocus] listening ws://${HOST}:${PORT}`);
+  log({
+    msg: 'startup',
+    port: PORT,
+    host: HOST,
+    boot_id: BOOT_ID,
+  });
 });
 
 // Clean shutdown on SIGTERM (Fly.io sends this on deploys).
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, async () => {
-    // eslint-disable-next-line no-console
-    console.log(`[hocuspocus] received ${sig}, draining…`);
+    log({ msg: 'shutdown', signal: sig });
     await Server.destroy();
     process.exit(0);
   });

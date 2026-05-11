@@ -15,6 +15,10 @@ primary_region = "iad"
 [env]
   NODE_ENV = "production"
   PORT = "8080"
+  # SERVER_VERSION surfaces in /health so the AI introspection toolkit can
+  # confirm what's actually running. Bump when shipping a meaningful change;
+  # not gated by Fly itself, this is a free-form label.
+  SERVER_VERSION = "1.0.1-prod"
 
 [[services]]
   protocol = "tcp"
@@ -47,6 +51,20 @@ primary_region = "iad"
     interval = "15s"
     timeout = "2s"
     grace_period = "10s"
+
+  # Phase-1 observability: HTTP /health probes the JSON endpoint exposed
+  # by packages/server/src/health.ts. TCP check above remains as belt+
+  # suspenders (catches "process up but port not listening"); HTTP catches
+  # "port up but app deadlocked / health endpoint missing fields."
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "3s"
+    grace_period = "15s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    [services.http_checks.headers]
+      Accept = "application/json"
 
 [[vm]]
   cpu_kind = "shared"
