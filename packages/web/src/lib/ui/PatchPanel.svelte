@@ -443,15 +443,17 @@
   // pointer-capture on the source handle during a connect-drag
   // suppresses element-level pointerenter / mouseenter on intermediate
   // hit-test targets in some browsers (Chromium under CDP automation
-  // on slow CI). To make drag-hover-auto-expand reliable we also
-  // hit-test every pointermove via elementFromPoint. Listener is
-  // attached only while connectDragState.active is true, so the cost
-  // is bounded to drag duration. Element-level handlers above remain
-  // the primary (lower-latency) path; this is the capture-suppression-
-  // tolerant fallback.
-  $effect(() => {
-    if (!connectDragState.active) return;
+  // on slow CI). To make drag-hover-auto-expand reliable we hit-test
+  // every pointermove via elementFromPoint and short-circuit when
+  // there's no active drag. The listener is permanently attached (not
+  // gated by a $effect that re-attaches on every active flip), so
+  // there's no microtask race between "drag starts" and "listener
+  // becomes ready" when xyflow's dragThreshold fires onConnectStart
+  // mid-move. Element-level handlers on the section button remain the
+  // primary (lower-latency) path for non-capture-suppressed browsers.
+  onMount(() => {
     const handler = (e: PointerEvent) => {
+      if (!connectDragState.active) return;
       if (!open) return;
       const el = document.elementFromPoint(e.clientX, e.clientY);
       if (!el) return;
