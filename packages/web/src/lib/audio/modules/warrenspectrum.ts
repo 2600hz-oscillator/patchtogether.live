@@ -168,6 +168,11 @@ export const warrenspectrumDef: AudioModuleDef = {
     // drawFrame can read it without re-posting.
     let latestWave: Float32Array = new Float32Array(256);
     const latestFlash = new Float32Array(NUM_BANDS);
+    // Display-side flash: refreshed on every other readSnapshot call so
+    // the LED meter visibly steps at ~30Hz instead of 60Hz. The hue
+    // cycle / spline / waveform still update each frame (smooth motion
+    // for the rest of the viz).
+    const displayFlash = new Float32Array(NUM_BANDS);
     let frameCounter = 0;
     workletNode.port.onmessage = (e: MessageEvent) => {
       const m = e.data as WarrenspectrumSnapshotMessage | undefined;
@@ -197,14 +202,19 @@ export const warrenspectrumDef: AudioModuleDef = {
       // (1 + viznoise*8) frames/hue-degree. Saved as a derived field so
       // the renderer is dumb about counter math.
       frameCounter = (frameCounter + 1) >>> 0;
-      // Decay flash per draw call (matches the spec's 0.92/frame).
-      for (let i = 0; i < NUM_BANDS; i++) {
-        latestFlash[i] = latestFlash[i]! * 0.92;
-        if (latestFlash[i]! < 1e-3) latestFlash[i] = 0;
+      // Half-rate update of the displayed meter: only on even frames do
+      // we (a) decay the latched flash and (b) latch into displayFlash.
+      // This halves the visible LED-meter sample rate from ~60Hz → ~30Hz.
+      if ((frameCounter & 1) === 0) {
+        for (let i = 0; i < NUM_BANDS; i++) {
+          latestFlash[i] = latestFlash[i]! * 0.92;
+          if (latestFlash[i]! < 1e-3) latestFlash[i] = 0;
+          displayFlash[i] = latestFlash[i]!;
+        }
       }
       return {
         wave: latestWave,
-        flash: Array.from(latestFlash),
+        flash: Array.from(displayFlash),
         levels: getLevels(),
         frame: frameCounter,
         viznoise: vizParams.viznoise!,
