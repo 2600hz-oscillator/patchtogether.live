@@ -7,7 +7,7 @@
   // (used by the Organize-modules layout pass). This tiny child component
   // sits inside `<SvelteFlow>`, calls the hook, and forwards the API via the
   // bound api prop. Renders nothing.
-  import { useSvelteFlow } from '@xyflow/svelte';
+  import { useSvelteFlow, useStore } from '@xyflow/svelte';
   import type { XYPosition } from '@xyflow/system';
   import type { Node as FlowNode } from '@xyflow/svelte';
 
@@ -19,6 +19,11 @@
     /** Current viewport: pan offset (x,y in screen px) + zoom factor. Used by
      *  Organize-modules to compute the visible region in flow-space. */
     getViewport: () => { x: number; y: number; zoom: number };
+    /** Clear xyflow's internal click-connect-start handle. Used by the
+     *  pickup-mode Esc handler — without this, xyflow would still think
+     *  the user's mid-click-connect and a subsequent click on a handle
+     *  would commit instead of starting a fresh pickup. */
+    cancelClickConnect: () => void;
   }
 
   interface Props {
@@ -28,6 +33,7 @@
   let { api = $bindable(null) }: Props = $props();
 
   const flow = useSvelteFlow();
+  const store = useStore();
 
   $effect(() => {
     api = {
@@ -37,6 +43,9 @@
         { measured: { width?: number; height?: number } } | undefined,
       getNodes: () => flow.getNodes(),
       getViewport: () => flow.getViewport(),
+      cancelClickConnect: () => {
+        store.clickConnectStartHandle = null;
+      },
     };
     return () => {
       api = null;

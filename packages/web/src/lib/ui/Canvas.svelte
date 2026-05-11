@@ -127,6 +127,7 @@
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import FlowBridge, { type FlowBridgeApi } from '$lib/ui/FlowBridge.svelte';
+  import PickupCable from '$lib/ui/PickupCable.svelte';
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType } from '$lib/graph/types';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
@@ -592,6 +593,63 @@
     connectDragState.end();
   }
 
+  /** User clicked a handle without dragging past the connectionDragThreshold.
+   *  Svelte Flow stores the source handle internally (clickConnectStartHandle)
+   *  and will commit on the next handle click. We mirror that into our
+   *  pickup state so PatchPanel locks + section expand-all engage the
+   *  same way they do for a drag — and so the canvas can render a ghost
+   *  cable from the source port to the cursor. Touchscreen-friendly
+   *  alternative to the press-drag-release gesture. */
+  function handleClickConnectStart(
+    _event: MouseEvent | TouchEvent,
+    params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null },
+  ) {
+    if (!params.nodeId || !params.handleId || !params.handleType) return;
+    // Resolve cable type for compatibility filtering on the commit click.
+    const node = patch.nodes[params.nodeId];
+    const def = node ? defLookup(node.type) : undefined;
+    let cableType: string | undefined;
+    if (def) {
+      const port =
+        params.handleType === 'source'
+          ? def.outputs.find((p) => p.id === params.handleId)
+          : def.inputs.find((p) => p.id === params.handleId);
+      cableType = port?.type as string | undefined;
+    }
+    connectDragState.pickup({
+      nodeId: params.nodeId,
+      portId: params.handleId,
+      handleType: params.handleType,
+      cableType,
+    });
+    // If this is a target-side pickup, immediately detach any cable already
+    // on this input — same one-motion-rewire behaviour as drag-start.
+    if (params.handleType === 'target') {
+      let removed = 0;
+      ydoc.transact(() => {
+        for (const [edgeId, edge] of Object.entries(patch.edges)) {
+          if (
+            edge &&
+            edge.target.nodeId === params.nodeId &&
+            edge.target.portId === params.handleId
+          ) {
+            delete patch.edges[edgeId];
+            removed++;
+          }
+        }
+      }, LOCAL_ORIGIN);
+      if (removed > 0) trace(`detached cable from ${params.nodeId}.${params.handleId} (pickup-rewire)`);
+    }
+    trace(`pickup-start ${params.nodeId}.${params.handleId}`);
+  }
+
+  /** Click-connect committed (user clicked a compatible target handle) OR
+   *  the click-connect was abandoned by xyflow's internal logic. Either
+   *  way clear pickup state. */
+  function handleClickConnectEnd() {
+    connectDragState.cancelPickup();
+  }
+
   /** Svelte Flow deleted nodes/edges (Backspace on selection). Mirror to patch. */
   function handleDelete(payload: { nodes: FlowNode[]; edges: FlowEdge[] }) {
     if (payload.nodes.length === 0 && payload.edges.length === 0) return;
@@ -892,6 +950,38 @@
     return () => {
       document.removeEventListener('contextmenu', onDocCtxMenu, true);
       document.removeEventListener('dblclick', onDocDblClick, true);
+    };
+  });
+
+  // ---------------- Pickup-mode cursor tracking + Esc cancel ----------------
+  //
+  // While pickup mode is active, the ghost cable follows the cursor. We
+  // track mousemove globally and write into connectDragState; the ghost
+  // cable rendering reads pickupCursor and draws an SVG path from the
+  // source port to that screen-space point.
+  //
+  // Esc cancels pickup: clears our state AND xyflow's internal
+  // clickConnectStartHandle so the next handle click starts a fresh
+  // pickup instead of committing.
+  $effect(() => {
+    const onPointerMove = (e: PointerEvent) => {
+      if (connectDragState.mode !== 'pickup') return;
+      connectDragState.updatePickupCursor(e.clientX, e.clientY);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (connectDragState.mode !== 'pickup') return;
+      e.preventDefault();
+      e.stopPropagation();
+      connectDragState.cancelPickup();
+      flowApi?.cancelClickConnect();
+      trace('pickup-cancelled (Esc)');
+    };
+    document.addEventListener('pointermove', onPointerMove, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('pointermove', onPointerMove, true);
+      document.removeEventListener('keydown', onKeyDown, true);
     };
   });
 
@@ -1503,6 +1593,9 @@
       onconnect={handleConnect}
       onconnectstart={handleConnectStart}
       onconnectend={handleConnectEnd}
+      onclickconnectstart={handleClickConnectStart}
+      onclickconnectend={handleClickConnectEnd}
+      connectionDragThreshold={5}
       ondelete={handleDelete}
       onnodedragstop={handleNodeDragStop}
       onpanecontextmenu={onPaneContextMenu}
@@ -1539,6 +1632,7 @@
       {minimapOpen ? '▾ map' : '▴ map'}
     </button>
     <AwarenessLayer {provider} />
+    <PickupCable />
   </div>
 
   <footer class="bottombar">
