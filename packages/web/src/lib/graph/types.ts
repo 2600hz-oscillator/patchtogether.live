@@ -154,7 +154,11 @@ type StandardModuleType =
   // excitation + acidwarp video visualizer. Audio domain with a
   // cross-domain `viz_out` mono-video bridge for the EQ-curve+waveform+
   // ping-flash visualization.
-  | 'warrenspectrum';
+  | 'warrenspectrum'
+  // STEREOVCA — stereo VCA + ring modulator. Same per-channel multiply
+  // behaves as VCA gain (slow strength) or ring mod (audio-rate strength);
+  // INDEPENDENT normalling on the audio and strength halves.
+  | 'stereovca';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

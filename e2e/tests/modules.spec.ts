@@ -151,12 +151,18 @@ const MODULES: ModuleSpec[] = [
   // Stereo wavetable VCO with morph + spread + wavefolder. The two
   // video outputs (scope_out + wave3d_out) always render their views
   // regardless of the on-card scope/3D toggle (which controls only the
-  // on-card preview).
+  // on-card preview). 3D wavetable visualization + E352-format WAV
+  // upload (Synthesis Technology Cloud Terrarium).
   { type: 'wavecel',      cardClass: 'svelte-flow__node-wavecel',      handleCount: 9, containsLabel: 'WAVECEL' },
   // WARRENSPECTRUM: 19 inputs (in_l, in_r + 8 level_cv + 8 ping + viznoise_cv)
   // + 3 outputs (out_l, out_r, viz_out mono-video) = 22 handles. Stereo
   // 8-band filterbank with vactrol ping excitation + acidwarp viz.
   { type: 'warrenspectrum', cardClass: 'svelte-flow__node-warrenspectrum', handleCount: 22, containsLabel: 'WARRENSPECTRUM' },
+  // STEREOVCA: 4 inputs (in_l/in_r audio carriers + strength_l/strength_r cv)
+  // + 2 audio outputs (out_l, out_r) = 6 handles. Stereo VCA + ring
+  // modulator with INDEPENDENT normalling on the audio and strength halves;
+  // strength inputs declare `cv` (PASSTHROUGH_BY_DESIGN — raw bipolar carrier).
+  { type: 'stereovca',    cardClass: 'svelte-flow__node-stereovca',    handleCount: 6, containsLabel: 'STEREOVCA' },
 ];
 
 test.describe.configure({ mode: 'parallel' });

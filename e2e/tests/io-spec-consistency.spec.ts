@@ -198,6 +198,8 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'wavecel',
     // WARRENSPECTRUM — stereo 8-band filterbank + vactrol ping + acidwarp viz.
     'warrenspectrum',
+    // STEREOVCA — stereo VCA + ring modulator with independent normalling.
+    'stereovca',
   ];
 
   for (const type of MODULE_TYPES) {
