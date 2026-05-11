@@ -58,6 +58,14 @@
     label: string;
     inputs?: PortDescriptor[];
     outputs?: PortDescriptor[];
+    /** Optional nested sub-sections. Recursive — sub-sections may
+     *  themselves declare further sub-sections. Drag-time expand-all
+     *  recurses through this tree so every section + sub-section is
+     *  reachable when a cable is in flight. No card currently uses this
+     *  (today's data model is single-level), but the recursion is here
+     *  so future mega-modules can opt into 2-level layouts without
+     *  re-discovering the expand-all gap. */
+    subsections?: SectionedGroup[];
   }
 
   interface Props {
@@ -420,6 +428,22 @@
   // inconsistently between local + headless Chromium on CI).
   let preDragExpandedSnapshot: Record<string, boolean> | null = null;
 
+  // Recursively walk a section tree and mark every node + descendant as
+  // expanded. Today's sectioned modules are single-level — every entry
+  // in `sections` is a leaf — but the recursion keeps the contract
+  // intact if a future card opts into nested sub-sections.
+  function expandSectionAndChildren(s: SectionedGroup, into: Record<string, boolean>): void {
+    if ((s.inputs && s.inputs.length > 0) || (s.outputs && s.outputs.length > 0)) {
+      into[s.label] = true;
+    }
+    if (s.subsections && s.subsections.length > 0) {
+      for (const child of s.subsections) {
+        expandSectionAndChildren(child, into);
+      }
+      into[s.label] = true;
+    }
+  }
+
   $effect(() => {
     const dragActive = connectDragState.active;
     const isOpen = open;
@@ -428,7 +452,7 @@
       if (groupingStrategy === 'sectioned' && sections.length > 0) {
         const next: Record<string, boolean> = { ...expandedSections };
         for (const s of sections) {
-          if (s.inputs && s.inputs.length > 0) next[s.label] = true;
+          expandSectionAndChildren(s, next);
         }
         expandedSections = next;
       }
