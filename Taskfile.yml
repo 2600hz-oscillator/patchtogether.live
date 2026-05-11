@@ -127,11 +127,19 @@ tasks:
   # adapted to Playwright + TS. Initially non-blocking in CI (continue-on-error).
   vrt:
     desc: Run the VRT suite (Playwright; compares card screenshots against e2e/vrt/__screenshots__/)
+    # dsp:build is required because several module Card.svelte files
+    # import `?url`-suffixed WASM artifacts from packages/dsp/dist/
+    # (e.g. riotgirls.ts imports drummergirl.wasm?url). Without the
+    # bundled DSP on disk Vite's dev server fails the import with a
+    # 500 + an HMR overlay, which Playwright detects as a hung page
+    # and the suite times out after 30s on every module.
+    deps: [dsp:build]
     cmds:
       - npm run vrt -w {{.E2E}} -- {{.CLI_ARGS}}
 
   vrt:update:
     desc: Refresh VRT baselines (e2e/vrt/__screenshots__/**). Inspect the diff and commit.
+    deps: [dsp:build]
     cmds:
       - npm run vrt:update -w {{.E2E}} -- {{.CLI_ARGS}}
 
