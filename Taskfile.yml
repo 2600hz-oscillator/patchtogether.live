@@ -121,6 +121,28 @@ tasks:
     cmds:
       - npm run art:update -w {{.ART}}
 
+  # ---------------- Visual Regression Tests (Playwright VRT) ----------------
+  # Baselines live under e2e/vrt/__screenshots__/ and are LFS-tracked (see
+  # .gitattributes). Modeled on the doomviz VRT pattern — same gallery shape,
+  # adapted to Playwright + TS. Initially non-blocking in CI (continue-on-error).
+  vrt:
+    desc: Run the VRT suite (Playwright; compares card screenshots against e2e/vrt/__screenshots__/)
+    cmds:
+      - npm run vrt -w {{.E2E}} -- {{.CLI_ARGS}}
+
+  vrt:update:
+    desc: Refresh VRT baselines (e2e/vrt/__screenshots__/**). Inspect the diff and commit.
+    cmds:
+      - npm run vrt:update -w {{.E2E}} -- {{.CLI_ARGS}}
+
+  vrt:gallery:
+    desc: Build the VRT gallery HTML (docs/vrt/) from the latest baselines + last test-results
+    cmds:
+      - python3 e2e/vrt/build_gallery.py
+          --baseline-dir e2e/vrt/__screenshots__
+          --results-dir  e2e/vrt/test-results
+          --output-dir   docs/vrt
+
   # ---------------- E2E (Playwright) ----------------
   e2e:
     desc: 'Run end-to-end tests (headless Chromium). Pass extra Playwright args after `--` (e.g. `task e2e -- tests/foo.spec.ts`).'

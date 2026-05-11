@@ -1,0 +1,75 @@
+name: Deploy VRT gallery (GitHub Pages)
+
+# Builds + publishes the VRT gallery (e2e/vrt/build_gallery.py renders
+# docs/vrt/index.html from e2e/vrt/__screenshots__/**) on every push to
+# main. Modeled on doomviz's pages.yml — see the LFS checkout for why
+# `lfs: true` is required (otherwise the gallery embeds pointer-file PNGs
+# that render as broken images).
+#
+# Idempotent: a green run just rewrites docs/vrt/index.html with the same
+# baselines + an updated commit short-SHA. No state on the runner survives
+# between runs.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'e2e/vrt/__screenshots__/**'
+      - 'e2e/vrt/build_gallery.py'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with LFS for baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build VRT gallery
+        run: |
+          mkdir -p docs/vrt
+          python3 e2e/vrt/build_gallery.py \
+            --baseline-dir e2e/vrt/__screenshots__ \
+            --output-dir   docs/vrt
+          # Land an index.html at the docs/ root that just redirects into
+          # docs/vrt/ — saves reviewers a click + future-proofs the path.
+          cat > docs/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>patchtogether.live — VRT gallery</title>
+          <meta http-equiv="refresh" content="0; url=vrt/">
+          <link rel="canonical" href="vrt/">
+          <p><a href="vrt/">VRT gallery</a></p>
+          HTML
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
