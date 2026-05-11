@@ -109,6 +109,7 @@
   import BugglesCard from '$lib/ui/modules/BugglesCard.svelte';
   // WAVECEL — stereo wavetable VCO (E352 WAV loader, 3D viz, spread, fold).
   import WavecelCard from '$lib/ui/modules/WavecelCard.svelte';
+  import StereovcaCard from '$lib/ui/modules/StereovcaCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
@@ -208,6 +209,7 @@
     noise: NoiseCard,
     buggles: BugglesCard,
     wavecel: WavecelCard,
+    stereovca: StereovcaCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);

@@ -149,7 +149,11 @@ type StandardModuleType =
   | 'vdelay'
   // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder + 3D viz.
   // Loads E352 Cloud Terrarium-format WAV wavetables.
-  | 'wavecel';
+  | 'wavecel'
+  // STEREOVCA — stereo VCA + ring modulator. Same per-channel multiply
+  // behaves as VCA gain (slow strength) or ring mod (audio-rate strength);
+  // INDEPENDENT normalling on the audio and strength halves.
+  | 'stereovca';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
