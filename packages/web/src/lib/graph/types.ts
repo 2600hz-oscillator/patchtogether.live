@@ -150,6 +150,11 @@ type StandardModuleType =
   // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder + 3D viz.
   // Loads E352 Cloud Terrarium-format WAV wavetables.
   | 'wavecel'
+  // WARRENSPECTRUM — stereo 8-band filterbank with vactrol-style ping
+  // excitation + acidwarp video visualizer. Audio domain with a
+  // cross-domain `viz_out` mono-video bridge for the EQ-curve+waveform+
+  // ping-flash visualization.
+  | 'warrenspectrum'
   // STEREOVCA — stereo VCA + ring modulator. Same per-channel multiply
   // behaves as VCA gain (slow strength) or ring mod (audio-rate strength);
   // INDEPENDENT normalling on the audio and strength halves.
