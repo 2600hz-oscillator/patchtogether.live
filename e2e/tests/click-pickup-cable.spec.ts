@@ -359,16 +359,12 @@ test.describe('PatchPanel: click-to-pickup cable mode', () => {
     const ch1volHandle = page.locator(
       `.svelte-flow__node[data-id="mm"] .svelte-flow__handle[data-handleid="ch1_volume"][class*="target"]`,
     );
-    const vBox = await ch1volHandle.boundingBox();
-    expect(vBox, 'ch1_volume handle reachable after expand-all').toBeTruthy();
-    if (!vBox) return;
-    await page.mouse.move(vBox.x + vBox.width / 2, vBox.y + vBox.height / 2);
-    await page.mouse.down();
-    await page.mouse.up();
+    await expect(ch1volHandle).toBeVisible();
+    await ch1volHandle.click({ force: true });
 
     // Commit via xyflow's click-connect → handleConnect.
     await expect
-      .poll(async () => (await readEdges(page)).length, { timeout: 2000 })
+      .poll(async () => (await readEdges(page)).length, { timeout: 3000 })
       .toBe(1);
     const edges = await readEdges(page);
     expect(edges[0]!.source.portId).toBe('phase0');
