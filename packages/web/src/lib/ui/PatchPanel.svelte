@@ -405,6 +405,42 @@
     }
   });
 
+  // ---------------- Drag-time expand-all for nested sections ----------------
+  //
+  // When a connect-drag becomes active and this panel is open, auto-
+  // expand every section so the user sees every possible target at
+  // once. We snapshot the pre-drag expandedSections map and restore it
+  // when the drag ends — sections the user manually expanded before
+  // the drag stay open; everything else reverts to collapsed.
+  //
+  // This replaces the earlier hover-based per-section auto-expand:
+  // expanding all sections has the same UX intent ("show me where this
+  // cable can go") without depending on hover-detection through
+  // xyflow's pointer-capture + connection-line overlay (which behaved
+  // inconsistently between local + headless Chromium on CI).
+  let preDragExpandedSnapshot: Record<string, boolean> | null = null;
+
+  $effect(() => {
+    const dragActive = connectDragState.active;
+    const isOpen = open;
+    if (dragActive && isOpen && preDragExpandedSnapshot === null) {
+      preDragExpandedSnapshot = { ...expandedSections };
+      if (groupingStrategy === 'sectioned' && sections.length > 0) {
+        const next: Record<string, boolean> = { ...expandedSections };
+        for (const s of sections) {
+          if (s.inputs && s.inputs.length > 0) next[s.label] = true;
+        }
+        expandedSections = next;
+      }
+    } else if (!dragActive && preDragExpandedSnapshot !== null) {
+      const snapshot = preDragExpandedSnapshot;
+      preDragExpandedSnapshot = null;
+      if (isOpen) {
+        expandedSections = { ...snapshot };
+      }
+    }
+  });
+
   // ---------------- Group/sort port lists ----------------
 
   let inputGroups = $derived<GroupedPorts[]>(
