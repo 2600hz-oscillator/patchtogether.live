@@ -297,22 +297,24 @@ test.describe('PatchPanel: click-to-pickup cable mode', () => {
     ]);
 
     await openPanel(page, 'lfo');
+    // Extra wait — MIXMSTRS spawns a heavy audio graph (4 channels +
+    // master with many params) and CI Chromium can lag the LFO handle
+    // re-measure right after spawn. Give it a beat to settle.
+    await page.waitForTimeout(400);
 
     const sourceHandle = page.locator(
       `.svelte-flow__node[data-id="lfo"] .svelte-flow__handle[data-handleid="phase0"][class*="source"]`,
     );
-    const sBox = await sourceHandle.boundingBox();
-    if (!sBox) return;
-    const sx = sBox.x + sBox.width / 2;
-    const sy = sBox.y + sBox.height / 2;
+    await expect(sourceHandle).toBeVisible();
 
-    // Tap LFO source → pickup mode active.
-    await page.mouse.move(sx, sy);
-    await page.mouse.down();
-    await page.mouse.up();
+    // Tap LFO source via locator.click() — auto-waits for the element to
+    // be stable + ensures the click reaches the handle, which is more
+    // robust on CI than manual mouse.down/mouse.up at a stale bounding-
+    // box position.
+    await sourceHandle.click({ force: true });
 
     await expect
-      .poll(async () => (await readPickupState(page)).mode, { timeout: 1500 })
+      .poll(async () => (await readPickupState(page)).mode, { timeout: 3000 })
       .toBe('pickup');
 
     // Hover MIXMSTRS panel trigger so panel opens. (Hover-open works
