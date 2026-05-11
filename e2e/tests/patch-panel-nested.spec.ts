@@ -355,10 +355,12 @@ test.describe('PatchPanel: click-to-expand nested sections', () => {
 
 // ---------------- Drag-into / drag-from nested-section ports ----------------
 //
-// Bug fix: hovering a collapsed nested section header during an active
-// connect-drag now auto-expands that section so the cable can reach
-// ports inside it. On drag end, sections that were only auto-expanded
-// (not manually opened by the user before the drag) collapse back.
+// Bug fix: when a connect-drag is in flight and the patch panel is
+// open, every collapsed nested section auto-expands so the user can
+// reach any port inside the panel without first hunting and clicking
+// section headers. We snapshot the pre-drag expanded state at drag
+// start and restore it on drag end — sections the user manually
+// expanded BEFORE the drag stay open; the rest revert to collapsed.
 
 interface PatchEdge {
   id: string;
@@ -374,7 +376,7 @@ async function readEdges(page: Page): Promise<PatchEdge[]> {
 }
 
 test.describe('PatchPanel: nested-section auto-expand during cable drag', () => {
-  test('drag cable INTO a nested target port: hover collapsed section header auto-expands it', async ({
+  test('drag cable INTO a nested target port: all sections auto-expand when panel opens mid-drag', async ({
     page,
   }) => {
     await page.goto('/');
@@ -435,51 +437,40 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
       'false',
     );
 
-    // Every section is collapsed at the moment the panel opens (per
-    // PR-92's "fresh hover starts collapsed" rule).
+    // Expand-all fires when the panel opens with a drag in flight —
+    // every section transitions to expanded so the user sees every
+    // possible target port without hunting through section headers.
+    await page.waitForTimeout(160);
     for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
       expect(
         await sectionExpanded(page, 'mm', label),
-        `${label} starts collapsed mid-drag`,
-      ).toBe(false);
+        `${label} auto-expanded when panel opens during drag`,
+      ).toBe(true);
     }
 
-    // Hover the Ch1 section header — must auto-expand because a drag
-    // is in flight.
-    const ch1Header = page.locator(
-      `.svelte-flow__node[data-id="mm"] ` +
-        `[data-testid="patch-panel-section-toggle"][data-section-label="Ch1"]`,
-    );
-    const hBox = await ch1Header.boundingBox();
-    expect(hBox, 'Ch1 header has box').toBeTruthy();
-    if (!hBox) return;
-    await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2, { steps: 10 });
-    await page.waitForTimeout(80);
-
-    expect(
-      await sectionExpanded(page, 'mm', 'Ch1'),
-      'Ch1 auto-expanded after pointer hovered its header during drag',
-    ).toBe(true);
-
-    // Sister sections still collapsed (auto-expand is per-section, not
-    // a broadcast).
-    expect(await sectionExpanded(page, 'mm', 'Ch2')).toBe(false);
-
     // Move pointer onto the ch1L target handle inside the now-expanded
-    // section, then release to commit the connection.
+    // panel, then release to commit the connection.
     const targetHandle = page.locator(
       `.svelte-flow__node[data-id="mm"] .svelte-flow__handle[data-handleid="ch1L"][class*="target"]`,
     );
-    // Wait for the auto-expand to settle handle geometry — the panel
-    // calls updateNodeInternals via RAF when expandedSections flips.
-    await page.waitForTimeout(120);
+    // Wait for expand-all to settle handle geometry — PatchPanel's
+    // updateNodeInternals runs in a 2-RAF chain and xyflow caches
+    // handle bounds for connect-drop targeting.
+    await page.waitForTimeout(250);
     const tBox = await targetHandle.boundingBox();
     expect(tBox, 'ch1L handle has box after auto-expand').toBeTruthy();
     if (!tBox) return;
 
+    // Multi-step approach so xyflow's connection-line tracks the move
+    // and the final small jiggle settles into the handle's hit region
+    // before we release.
     await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 20 });
+    await page.waitForTimeout(60);
+    await page.mouse.move(tBox.x + tBox.width / 2 + 1, tBox.y + tBox.height / 2);
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2);
+    await page.waitForTimeout(40);
     await page.mouse.up();
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(250);
 
     const edges = await readEdges(page);
     expect(edges.length, 'one edge created').toBe(1);
@@ -487,22 +478,21 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
     expect(edges[0]!.target).toEqual({ nodeId: 'mm', portId: 'ch1L' });
   });
 
-  test('drag-induced auto-expand coexists with pre-existing manual expand (snapshot preserves both)', async ({
+  test('drag-induced expand-all coexists with pre-existing manual expand (snapshot preserves manual)', async ({
     page,
   }) => {
-    // Companion to the auto-expand test above: when the user has
-    // manually expanded a section BEFORE the drag starts, AND a
-    // different section is auto-expanded by drag-hover, the
-    // snapshot taken at drag start preserves the manually-expanded
-    // section and reverts the auto-expanded one on drag end.
+    // When the user has manually expanded a section BEFORE the drag
+    // starts, the drag-time expand-all opens every OTHER section too;
+    // on drag end the snapshot taken at drag start restores the pre-
+    // drag map — sections opened only by the drag revert, sections
+    // opened manually stay open.
     //
     // Outputs in sectioned panels live in the always-visible flat
-    // outputs column, not behind a section-toggle — so "drag FROM
-    // a nested source port" can't be exercised against the current
-    // module catalogue. This test instead covers the second half
-    // of the snapshot-restore contract: manual + auto coexist
-    // mid-drag, then sort themselves out per the user's pre-drag
-    // intent on release.
+    // outputs column, not behind a section-toggle — so "drag FROM a
+    // nested source port" can't be exercised against the current
+    // module catalogue. This test exercises the snapshot-restore
+    // contract via "panel already open + Master manually expanded"
+    // pre-drag.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -518,9 +508,7 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
       .click();
     await page.waitForTimeout(200);
 
-    // Pin MIXMSTRS open and manually expand Master (last section,
-    // its y-coord stays stable regardless of which earlier sections
-    // auto-expand mid-drag).
+    // Pin MIXMSTRS open and manually expand Master before the drag.
     await pinPanelOpen(page, 'mm');
     await clickSection(page, 'mm', 'Master');
     expect(await sectionExpanded(page, 'mm', 'Master')).toBe(true);
@@ -537,29 +525,23 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
 
     await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
     await page.mouse.down();
-
-    // Hover the Ch1 section header — drag-auto-expand fires on Ch1.
-    const ch1Header = page.locator(
-      `.svelte-flow__node[data-id="mm"] ` +
-        `[data-testid="patch-panel-section-toggle"][data-section-label="Ch1"]`,
-    );
-    const hBox = await ch1Header.boundingBox();
-    if (!hBox) return;
-    await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2, { steps: 15 });
+    // Nudge to satisfy xyflow's drag-threshold and fire onConnectStart.
+    await page.mouse.move(sBox.x + sBox.width / 2 + 30, sBox.y + sBox.height / 2 + 30, {
+      steps: 10,
+    });
     await page.waitForTimeout(80);
 
-    // Mid-drag: Ch1 auto-expanded, Master still manually expanded.
-    expect(
-      await sectionExpanded(page, 'mm', 'Ch1'),
-      'Ch1 auto-expanded mid-drag via hover',
-    ).toBe(true);
-    expect(
-      await sectionExpanded(page, 'mm', 'Master'),
-      'Master stays expanded mid-drag (manually opened pre-drag)',
-    ).toBe(true);
+    // Mid-drag: every section is expanded (drag-time expand-all),
+    // including Master which was already manually expanded.
+    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
+      expect(
+        await sectionExpanded(page, 'mm', label),
+        `${label} expanded mid-drag (expand-all)`,
+      ).toBe(true);
+    }
 
     // Cancel the drag — release away from any handle.
-    await page.mouse.move(hBox.x - 600, hBox.y - 200, { steps: 10 });
+    await page.mouse.move(sBox.x - 200, sBox.y + 400, { steps: 10 });
     await page.mouse.up();
     await page.waitForTimeout(200);
 
@@ -567,27 +549,30 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
     const edges = await readEdges(page);
     expect(edges.length, 'no edge created (drag cancelled)').toBe(0);
 
-    // Snapshot restore: Ch1 (drag-auto-expanded) collapses back;
-    // Master (manually pre-expanded) stays open. Each section ends
-    // in the state the user left it in pre-drag, regardless of
-    // mid-drag side effects.
+    // Snapshot restore: every channel section that was only opened by
+    // the drag collapses back; Master (manually pre-expanded) stays
+    // open. Each section ends in the state the user left it in
+    // pre-drag, regardless of mid-drag side effects.
     expect(
       await sectionExpanded(page, 'mm', 'Master'),
       'manually-expanded section persists after drag end',
     ).toBe(true);
-    expect(
-      await sectionExpanded(page, 'mm', 'Ch1'),
-      'drag-auto-expanded section reverts to pre-drag (collapsed) state',
-    ).toBe(false);
+    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4']) {
+      expect(
+        await sectionExpanded(page, 'mm', label),
+        `${label} (drag-auto-expanded) reverts to pre-drag (collapsed) state`,
+      ).toBe(false);
+    }
   });
 
   test('drag-auto-expanded sections collapse back after drag end (snapshot restore)', async ({
     page,
   }) => {
-    // Sister regression: a section that was ONLY auto-expanded by
-    // drag-hover (not manually clicked open) must collapse again once
-    // the drag releases — otherwise the user is left with stale UI
-    // every time they brush a header mid-drag.
+    // Sister regression: sections that were ONLY auto-expanded by
+    // drag-time expand-all (not manually clicked open before the drag)
+    // must collapse again once the drag releases — otherwise the user
+    // is left with every section gaping open after every cable they
+    // pull.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -607,6 +592,14 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
     // worked).
     await pinPanelOpen(page, 'mm');
 
+    // Confirm pre-drag state: every section collapsed.
+    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
+      expect(
+        await sectionExpanded(page, 'mm', label),
+        `${label} collapsed pre-drag`,
+      ).toBe(false);
+    }
+
     const sourceHandle = page.locator(
       `.svelte-flow__node[data-id="lfo"] .svelte-flow__handle[data-handleid="phase0"][class*="source"]`,
     );
@@ -615,20 +608,22 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
 
     await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
     await page.mouse.down();
-
-    // Hover Ch2 header → auto-expand.
-    const ch2Header = page.locator(
-      `.svelte-flow__node[data-id="mm"] ` +
-        `[data-testid="patch-panel-section-toggle"][data-section-label="Ch2"]`,
-    );
-    const hBox = await ch2Header.boundingBox();
-    if (!hBox) return;
-    await page.mouse.move(hBox.x + hBox.width / 2, hBox.y + hBox.height / 2, { steps: 10 });
+    // Nudge past xyflow's drag threshold so onConnectStart fires.
+    await page.mouse.move(sBox.x + sBox.width / 2 + 30, sBox.y + sBox.height / 2 + 30, {
+      steps: 10,
+    });
     await page.waitForTimeout(80);
-    expect(await sectionExpanded(page, 'mm', 'Ch2')).toBe(true);
 
-    // Cancel the drag (release outside any port).
-    await page.mouse.move(hBox.x, hBox.y - 400, { steps: 10 });
+    // Mid-drag: every section is expanded.
+    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
+      expect(
+        await sectionExpanded(page, 'mm', label),
+        `${label} expanded mid-drag`,
+      ).toBe(true);
+    }
+
+    // Cancel the drag (release in empty space).
+    await page.mouse.move(sBox.x - 200, sBox.y + 400, { steps: 10 });
     await page.mouse.up();
     await page.waitForTimeout(200);
 
@@ -636,11 +631,13 @@ test.describe('PatchPanel: nested-section auto-expand during cable drag', () => 
     const edges = await readEdges(page);
     expect(edges.length).toBe(0);
 
-    // Ch2 was only auto-expanded by the drag — it collapses back to
-    // match the pre-drag snapshot.
-    expect(
-      await sectionExpanded(page, 'mm', 'Ch2'),
-      'drag-auto-expanded section collapses after drag end',
-    ).toBe(false);
+    // Every section was only auto-expanded by the drag — they all
+    // collapse back to match the pre-drag snapshot.
+    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
+      expect(
+        await sectionExpanded(page, 'mm', label),
+        `${label} (drag-auto-expanded only) collapses after drag end`,
+      ).toBe(false);
+    }
   });
 });

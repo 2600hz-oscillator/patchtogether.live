@@ -405,78 +405,40 @@
     }
   });
 
-  // ---------------- Drag-hover auto-expand for nested sections ----------------
+  // ---------------- Drag-time expand-all for nested sections ----------------
   //
-  // When a connect-drag is in flight and the pointer enters a collapsed
-  // section header, auto-expand that section so the user can drag the
-  // cable down into its now-visible port rows. We snapshot the user's
-  // manual expand state at drag start and restore it when the drag ends
-  // — sections that were manually expanded stay open; sections that were
-  // only auto-expanded by drag-hover collapse back.
+  // When a connect-drag becomes active and this panel is open, auto-
+  // expand every section so the user sees every possible target at
+  // once. We snapshot the pre-drag expandedSections map and restore it
+  // when the drag ends — sections the user manually expanded before
+  // the drag stay open; everything else reverts to collapsed.
   //
-  // The auto-expand persists for the duration of the drag (no
-  // auto-collapse on pointer leave) — same persistence philosophy as the
-  // drag-induced panel lock in PR-108.
+  // This replaces the earlier hover-based per-section auto-expand:
+  // expanding all sections has the same UX intent ("show me where this
+  // cable can go") without depending on hover-detection through
+  // xyflow's pointer-capture + connection-line overlay (which behaved
+  // inconsistently between local + headless Chromium on CI).
   let preDragExpandedSnapshot: Record<string, boolean> | null = null;
 
   $effect(() => {
     const dragActive = connectDragState.active;
-    if (dragActive && preDragExpandedSnapshot === null) {
+    const isOpen = open;
+    if (dragActive && isOpen && preDragExpandedSnapshot === null) {
       preDragExpandedSnapshot = { ...expandedSections };
+      if (groupingStrategy === 'sectioned' && sections.length > 0) {
+        const next: Record<string, boolean> = { ...expandedSections };
+        for (const s of sections) {
+          if (s.inputs && s.inputs.length > 0) next[s.label] = true;
+        }
+        expandedSections = next;
+      }
     } else if (!dragActive && preDragExpandedSnapshot !== null) {
       const snapshot = preDragExpandedSnapshot;
       preDragExpandedSnapshot = null;
-      if (open) {
+      if (isOpen) {
         expandedSections = { ...snapshot };
       }
     }
-  });
-
-  function onSectionHeaderPointerEnter(label: string) {
-    if (!connectDragState.active) return;
-    if (!open) return;
-    if (expandedSections[label]) return;
-    expandedSections = { ...expandedSections, [label]: true };
-  }
-
-  // Document-level pointermove watcher (drag-only fallback). xyflow's
-  // pointer-capture on the source handle during a connect-drag
-  // suppresses element-level pointerenter / mouseenter on intermediate
-  // hit-test targets in some browsers (Chromium under CDP automation
-  // on slow CI). To make drag-hover-auto-expand reliable we hit-test
-  // every pointermove via elementFromPoint and short-circuit when
-  // there's no active drag. The listener is permanently attached (not
-  // gated by a $effect that re-attaches on every active flip), so
-  // there's no microtask race between "drag starts" and "listener
-  // becomes ready" when xyflow's dragThreshold fires onConnectStart
-  // mid-move. Element-level handlers on the section button remain the
-  // primary (lower-latency) path for non-capture-suppressed browsers.
-  onMount(() => {
-    const handler = (e: PointerEvent) => {
-      if (!connectDragState.active) return;
-      if (!open) return;
-      // Use elementsFromPoint (plural) to look past xyflow's
-      // connection-line SVG overlay (z-index 1001, which sits above
-      // everything during a drag). The single elementFromPoint() would
-      // return the overlay and miss the section button underneath. We
-      // walk the hit-test stack from top to bottom until we find a
-      // section-toggle button inside THIS panel.
-      const stack = document.elementsFromPoint(e.clientX, e.clientY);
-      for (const el of stack) {
-        const toggle = el.closest(
-          '[data-testid="patch-panel-section-toggle"]',
-        ) as HTMLElement | null;
-        if (!toggle) continue;
-        const owner = toggle.closest('[data-patch-panel-node]');
-        if (!owner || owner.getAttribute('data-patch-panel-node') !== nodeId) continue;
-        const label = toggle.getAttribute('data-section-label');
-        if (!label) continue;
-        onSectionHeaderPointerEnter(label);
-        return;
-      }
-    };
-    document.addEventListener('pointermove', handler, true);
-    return () => document.removeEventListener('pointermove', handler, true);
   });
 
   // ---------------- Group/sort port lists ----------------
@@ -613,10 +575,6 @@
                     e.stopPropagation();
                     toggleSection(section.label);
                   }}
-                  onmouseenter={() => onSectionHeaderPointerEnter(section.label)}
-                  onmouseover={() => onSectionHeaderPointerEnter(section.label)}
-                  onpointerenter={() => onSectionHeaderPointerEnter(section.label)}
-                  onpointerover={() => onSectionHeaderPointerEnter(section.label)}
                 >
                   <span class="disclosure" aria-hidden="true">{expanded ? '▼' : '▶'}</span>
                   <span class="section-toggle-label">{section.label}</span>
