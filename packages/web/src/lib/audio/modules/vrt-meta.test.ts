@@ -30,6 +30,12 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // (frame-time clock) that the baseline would flap. Functional coverage
   // is e2e/tests/camera-input.spec.ts.
   cameraInput: 'live MediaStream defeats deterministic capture',
+  // GROUP is a Phase-1 collapse-N-modules container with no engine
+  // binding. A bare GROUP! has no exposed ports → its visual surface
+  // is just the card chrome + label, which carries no module-specific
+  // pixels worth fingerprinting. Functional coverage is
+  // e2e/tests/grouping-phase1.spec.ts.
+  group: 'no-op render until exposed-ports are set by Create-Group; e2e covers the full flow',
 };
 
 function repoRoot(): string {

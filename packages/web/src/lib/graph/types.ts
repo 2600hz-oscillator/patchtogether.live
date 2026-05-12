@@ -162,7 +162,12 @@ type StandardModuleType =
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
-  | 'sticky';
+  | 'sticky'
+  // GROUP — collapses N modules into a single card (domain 'meta'). No
+  // engine binding; ports are dynamic from data.exposedPorts, projected
+  // through to the underlying child ports by group-projection.ts so the
+  // engine never sees groups. Module-grouping Phase 1 feature.
+  | 'group';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
