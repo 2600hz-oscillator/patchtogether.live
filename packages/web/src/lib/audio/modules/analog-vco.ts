@@ -13,7 +13,7 @@ export const analogVcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Analog VCO',
   category: 'sources',
-  schemaVersion: 2,
+  schemaVersion: 3,
   migrate(data, fromVersion) {
     if (fromVersion < 2) {
       // v1 → v2: pmAmount param added. Seed with default 0 if missing so the
@@ -23,6 +23,10 @@ export const analogVcoDef: AudioModuleDef = {
       if (params.pmAmount === undefined) params.pmAmount = 0;
       return { ...d, params };
     }
+    // v2 → v3: fmAmount / pmAmount widened from [0..1] to [-1..+1]. Existing
+    // values are already in [0..1] which is a legal subset of [-1..+1] — the
+    // user's stored value lands at the same audible position with new
+    // headroom below zero. No transform required.
     return data;
   },
   inputs: [
@@ -43,8 +47,8 @@ export const analogVcoDef: AudioModuleDef = {
   params: [
     { id: 'tune',     label: 'Tune', defaultValue: 0,   min: -36,   max: 36,   curve: 'linear', units: 'semi' },
     { id: 'fine',     label: 'Fine', defaultValue: 0,   min: -100,  max: 100,  curve: 'linear', units: 'cent' },
-    { id: 'fmAmount', label: 'FM',   defaultValue: 0,   min: 0,     max: 1,    curve: 'linear' },
-    { id: 'pmAmount', label: 'PM',   defaultValue: 0,   min: 0,     max: 1,    curve: 'linear' },
+    { id: 'fmAmount', label: 'FM',   defaultValue: 0,   min: -1,    max: 1,    curve: 'linear' },
+    { id: 'pmAmount', label: 'PM',   defaultValue: 0,   min: -1,    max: 1,    curve: 'linear' },
     { id: 'pw',       label: 'PW',   defaultValue: 0.5, min: 0.05,  max: 0.95, curve: 'linear' },
   ],
 

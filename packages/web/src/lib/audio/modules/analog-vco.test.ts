@@ -64,13 +64,20 @@ describe('analogVcoDef: module def shape', () => {
     expect(port!.type).toBe('audio');
   });
 
-  it('pmAmount CV input: paramTarget=pmAmount, cvScale=linear, 0..1 unipolar', () => {
+  it('pmAmount CV input: paramTarget=pmAmount, cvScale=linear, ±1 bipolar', () => {
     const port = analogVcoDef.inputs.find((p) => p.id === 'pmAmount');
     expect(port!.type).toBe('cv');
     expect(port!.paramTarget).toBe('pmAmount');
     expect(port!.cvScale).toEqual({ mode: 'linear' });
     const param = analogVcoDef.params.find((p) => p.id === 'pmAmount')!;
-    expect(param.min).toBe(0);
+    expect(param.min).toBe(-1);
+    expect(param.max).toBe(1);
+    expect(param.defaultValue).toBe(0);
+  });
+
+  it('fmAmount param: ±1 bipolar (negative inverts the modulator)', () => {
+    const param = analogVcoDef.params.find((p) => p.id === 'fmAmount')!;
+    expect(param.min).toBe(-1);
     expect(param.max).toBe(1);
     expect(param.defaultValue).toBe(0);
   });
@@ -84,11 +91,16 @@ describe('analogVcoDef: module def shape', () => {
     }
   });
 
-  it('schemaVersion=2 (pmAmount migration from v1)', () => {
-    expect(analogVcoDef.schemaVersion).toBe(2);
+  it('schemaVersion=3 (v1→v2 pmAmount migration; v2→v3 bipolar fm/pmAmount widen)', () => {
+    expect(analogVcoDef.schemaVersion).toBe(3);
     expect(analogVcoDef.migrate).toBeDefined();
+    // v1 → v3 still seeds the missing pmAmount param at default 0.
     const migrated = analogVcoDef.migrate!({ params: { tune: 0 } }, 1) as { params: Record<string, number> };
     expect(migrated.params.pmAmount).toBe(0);
     expect(migrated.params.tune).toBe(0);
+    // v2 → v3 is a no-op: old [0..1] values are a legal subset of [-1..+1].
+    const v2 = analogVcoDef.migrate!({ params: { fmAmount: 0.5, pmAmount: 0.25 } }, 2) as { params: Record<string, number> };
+    expect(v2.params.fmAmount).toBe(0.5);
+    expect(v2.params.pmAmount).toBe(0.25);
   });
 });

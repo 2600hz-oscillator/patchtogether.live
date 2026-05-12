@@ -41,8 +41,11 @@ class WavetableVcoProcessor extends AudioWorkletProcessor {
       { name: 'tune',     defaultValue: 0,   minValue: -36,  maxValue: 36,  automationRate: 'a-rate' as const },
       { name: 'fine',     defaultValue: 0,   minValue: -100, maxValue: 100, automationRate: 'a-rate' as const },
       { name: 'wavePos',  defaultValue: 0,   minValue: 0,    maxValue: 1,   automationRate: 'a-rate' as const },
-      { name: 'fmAmount', defaultValue: 0,   minValue: 0,    maxValue: 1,   automationRate: 'a-rate' as const },
-      { name: 'pmAmount', defaultValue: 0,   minValue: 0,    maxValue: 1,   automationRate: 'a-rate' as const },
+      // fmAmount / pmAmount are bipolar: negative inverts the modulator
+      // (180° phase flip on the FM/PM signal). Existing math below is naturally
+      // signed (`fma * fm` for FM, `pma * pm` for the PM phase offset).
+      { name: 'fmAmount', defaultValue: 0,   minValue: -1,   maxValue: 1,   automationRate: 'a-rate' as const },
+      { name: 'pmAmount', defaultValue: 0,   minValue: -1,   maxValue: 1,   automationRate: 'a-rate' as const },
     ];
   }
 
@@ -139,7 +142,8 @@ class WavetableVcoProcessor extends AudioWorkletProcessor {
 
       // PM: external pm signal × pmAmount adds a phase offset (cycles). The
       // accumulator stays unchanged so its frequency tracking is still correct;
-      // only the readout phase is shifted. ±1 pm × pmAmount=1 → ±1 cycle shift.
+      // only the readout phase is shifted. ±1 pm × pmAmount=±1 → ±1 cycle shift;
+      // negative pmAmount inverts the direction of the phase offset.
       let p = this.phase + pma * pm;
       p = p - Math.floor(p);
 

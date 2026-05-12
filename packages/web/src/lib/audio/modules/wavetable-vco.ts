@@ -58,7 +58,7 @@ export const wavetableVcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Wavetable VCO',
   category: 'sources',
-  schemaVersion: 2,
+  schemaVersion: 3,
   migrate(data, fromVersion) {
     if (fromVersion < 2) {
       const d = (data ?? {}) as { params?: Record<string, number> };
@@ -66,6 +66,8 @@ export const wavetableVcoDef: AudioModuleDef = {
       if (params.pmAmount === undefined) params.pmAmount = 0;
       return { ...d, params };
     }
+    // v2 → v3: fmAmount / pmAmount widened from [0..1] to [-1..+1]. Old values
+    // are already legal in the new range, so this is a no-op.
     return data;
   },
 
@@ -92,8 +94,8 @@ export const wavetableVcoDef: AudioModuleDef = {
     { id: 'tune',     label: 'Tune', defaultValue: 0,   min: -36,  max: 36,  curve: 'linear', units: 'st' },
     { id: 'fine',     label: 'Fine', defaultValue: 0,   min: -100, max: 100, curve: 'linear', units: '¢' },
     { id: 'wavePos',  label: 'Wave', defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
-    { id: 'fmAmount', label: 'FM',   defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
-    { id: 'pmAmount', label: 'PM',   defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
+    { id: 'fmAmount', label: 'FM',   defaultValue: 0,   min: -1,   max: 1,   curve: 'linear' },
+    { id: 'pmAmount', label: 'PM',   defaultValue: 0,   min: -1,   max: 1,   curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
