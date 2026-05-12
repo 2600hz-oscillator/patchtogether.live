@@ -55,6 +55,10 @@ function generateBasicTable(): Float32Array {
   return table;
 }
 
+// Module-grouping Phase 3A: `vizPassthrough` is available on AudioModuleDef
+// for viz-capable cards (WAVVIZ renders a wavetable scope). Left UNSET
+// until the card adopts the `data-viz-passthrough` <canvas> contract
+// ScopeCard uses for GroupCard portal-hoisting.
 export const wavvizDef: AudioModuleDef = {
   type: 'wavviz',
   domain: 'audio',

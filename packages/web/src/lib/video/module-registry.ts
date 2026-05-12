@@ -27,6 +27,14 @@ export interface VideoModuleDef {
    *  Phase 0 modules don't enforce caps; Phase 1's INWARDS will (one
    *  webcam-using module max by default to avoid getUserMedia conflicts). */
   maxInstances?: number;
+  /**
+   * Module-grouping Phase 3A: see {@link AudioModuleDef#vizPassthrough}.
+   * When set, this module renders an on-card visualization that can be
+   * portaled into the parent GroupCard. No video modules opt in yet — the
+   * flag exists here so cross-domain GroupCard projection can treat audio
+   * + video viz uniformly when future video modules adopt it.
+   */
+  vizPassthrough?: boolean;
 }
 
 const registry = new Map<ModuleType, VideoModuleDef>();

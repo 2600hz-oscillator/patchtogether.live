@@ -127,6 +127,10 @@ export function tuneFineToHz(tuneSt: number, fineCents: number): number {
   return C4_HZ * Math.pow(2, tuneSt / 12 + fineCents / 1200);
 }
 
+// Module-grouping Phase 3A: `vizPassthrough` is available on AudioModuleDef
+// for SWOLEVCO's on-card scope-style viz canvas. Left UNSET until the
+// card adopts the `data-viz-passthrough` <canvas> contract used by
+// ScopeCard for GroupCard portal-hoisting.
 export const swolevcoDef: AudioModuleDef = {
   type: 'swolevco',
   domain: 'audio',
