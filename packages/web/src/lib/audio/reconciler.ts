@@ -21,6 +21,7 @@ import {
   getDefaultSnapshotBus,
   type PatchSnapshot,
 } from '$lib/graph/snapshot';
+import { projectGroups } from '$lib/graph/group-projection';
 
 interface ReconcilerHandle {
   /** Run a reconcile pass immediately against the current snapshot. */
@@ -55,13 +56,22 @@ export function attachReconciler(
     return next;
   }
 
-  async function doReconcile(snap: PatchSnapshot): Promise<void> {
-    // Meta-domain nodes (e.g. STICKY notes) are pure-UI cards with no
-    // engine binding. Filter them out of every map this reconciler
-    // builds so PatchEngine.addNode + setParam never see them — there's
-    // no DomainEngine registered for 'meta' and the dispatch would
-    // throw. Edges referencing meta nodes are dropped too; the type
-    // system already forbids cables to/from sticky (no ports).
+  async function doReconcile(rawSnap: PatchSnapshot): Promise<void> {
+    // Module-grouping Phase 1 — project the snapshot through any GROUP!
+    // nodes BEFORE the reconciler reads it. Edge endpoints that name a
+    // group's exposed port are rewritten to point at the real child port,
+    // so the engine never knows groups exist. Empty fast-path: when no
+    // group nodes are present, projectGroups returns the snapshot
+    // unchanged (same reference) → zero overhead for the common case.
+    const snap = projectGroups(rawSnap);
+
+    // Meta-domain nodes (e.g. STICKY notes, GROUP! collapses) are pure-UI
+    // cards with no engine binding. Filter them out of every map this
+    // reconciler builds so PatchEngine.addNode + setParam never see them
+    // — there's no DomainEngine registered for 'meta' and the dispatch
+    // would throw. Edges referencing meta nodes are dropped too; the type
+    // system already forbids cables to/from sticky (no ports), and
+    // projectGroups has already rewritten edges to/from groups.
     const isMeta = (n: ModuleNode): boolean => n.domain === 'meta';
     const currentNodes = new Map<string, ModuleNode>();
     for (const n of snap.nodes) {

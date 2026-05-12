@@ -14,9 +14,13 @@
     nodeLabel: string;
     /** Module type id (e.g. "analogVco"). Used to build the /docs URL. */
     nodeType?: string | null;
+    /** Module-grouping Phase 1: when true the menu surfaces "Ungroup" and
+     *  hides Duplicate (Phase 2 will add group duplication). */
+    isGroup?: boolean;
     ondelete: () => void;
     onduplicate: () => void;
     onunpatch: () => void;
+    onungroup?: () => void;
     onclose: () => void;
   }
 
@@ -26,9 +30,11 @@
     y,
     nodeLabel,
     nodeType = null,
+    isGroup = false,
     ondelete,
     onduplicate,
     onunpatch,
+    onungroup,
     onclose,
   }: Props = $props();
 
@@ -65,6 +71,10 @@
     window.open(`/docs/modules/${nodeType}`, '_blank', 'noopener');
     onclose();
   }
+  function pickUngroup() {
+    onungroup?.();
+    onclose();
+  }
 </script>
 
 {#if open}
@@ -78,20 +88,27 @@
     aria-label="Module actions"
   >
     <div class="ctx-header">{nodeLabel}</div>
-    {#if nodeType}
+    {#if nodeType && !isGroup}
       <button class="ctx-item" onclick={pickDocs} role="menuitem">
         Docs
       </button>
       <div class="ctx-sep" role="presentation"></div>
     {/if}
-    <button class="ctx-item" onclick={pickDuplicate} role="menuitem">
-      Duplicate
-    </button>
-    <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
-      Unpatch all
-    </button>
+    {#if isGroup}
+      <button class="ctx-item" onclick={pickUngroup} role="menuitem" data-testid="ctx-ungroup">
+        Ungroup
+      </button>
+      <div class="ctx-sep" role="presentation"></div>
+    {:else}
+      <button class="ctx-item" onclick={pickDuplicate} role="menuitem">
+        Duplicate
+      </button>
+      <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
+        Unpatch all
+      </button>
+    {/if}
     <button class="ctx-item danger" onclick={pickDelete} role="menuitem">
-      Delete
+      {isGroup ? 'Delete group + children' : 'Delete'}
     </button>
   </div>
 {/if}

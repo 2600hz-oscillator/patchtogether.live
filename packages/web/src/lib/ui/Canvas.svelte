@@ -118,9 +118,22 @@
   import StereovcaCard from '$lib/ui/modules/StereovcaCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
+  // GROUP — meta-domain N-modules-as-one card (no engine binding).
+  import GroupCard from '$lib/ui/modules/GroupCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
+  import SelectionContextMenu from '$lib/ui/SelectionContextMenu.svelte';
+  import GroupBuilderModal from '$lib/ui/GroupBuilderModal.svelte';
+  import {
+    buildPortCandidates,
+    buildExposedPorts,
+    planCreateGroup,
+    planUngroup,
+    type PortCandidate,
+    type PortLookupModule,
+  } from '$lib/graph/group-actions';
+  import { SelectionMode } from '@xyflow/svelte';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
     buildModuleEntries,
@@ -134,7 +147,7 @@
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
-  import type { CableType, Edge, PortDef } from '$lib/graph/types';
+  import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
   import { canConnect } from '$lib/graph/types';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
   import {
@@ -223,6 +236,7 @@
     stereovca: StereovcaCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
+    group: GroupCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
@@ -307,6 +321,16 @@
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__organizeModules = () => organizeModules();
+      // Module-grouping Phase 1: tests need to drive the GroupBuilderModal
+      // open + the commitGroup callback without going through the marquee +
+      // right-click pipeline (which is hard to script reliably across
+      // SvelteFlow's pointer-event handling). The hook takes the selection
+      // ids and seeds the same state `openGroupBuilder` would.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__openGroupBuilder = (ids: string[]) => {
+        selCtxMenuIds = ids;
+        openGroupBuilder();
+      };
     });
   }
   function loadEnvelopeFromObject(env: unknown) {
@@ -346,10 +370,46 @@
   // get a fresh slot. xyflow honors a `zIndex` field on Node directly.
   let topNodeId = $state<string | null>(null);
 
+  // Module-grouping Phase 1 — build the "collapsed groups" filter once per
+  // snapshot. A child node whose data.parentGroupId points at an existing,
+  // non-expanded GROUP! is hidden from the canvas (its handles + cables
+  // route through the group's exposed ports instead). The group node
+  // itself is always rendered as a single GroupCard.
+  let collapsedGroupIds = $derived.by<Set<string>>(() => {
+    const ids = new Set<string>();
+    for (const n of snapshot.nodes) {
+      if (n.type !== 'group') continue;
+      const expanded = (n.data as { expanded?: boolean } | undefined)?.expanded === true;
+      if (!expanded) ids.add(n.id);
+    }
+    return ids;
+  });
+
+  // Module-grouping Phase 1 — quick map from child node → its collapsed
+  // group id, for edge-filtering below. Built per snapshot, O(n).
+  let nodeIdToCollapsedGroupId = $derived.by<Map<string, string>>(() => {
+    const map = new Map<string, string>();
+    const collapsed = collapsedGroupIds;
+    for (const n of snapshot.nodes) {
+      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
+      if (parentGroupId && collapsed.has(parentGroupId)) {
+        map.set(n.id, parentGroupId);
+      }
+    }
+    return map;
+  });
+
   $effect(() => {
     const snap = snapshot;
     const top = topNodeId;
-    flowNodes = snap.nodes.map((n) => {
+    const collapsed = collapsedGroupIds;
+    const next: FlowNode[] = [];
+    for (const n of snap.nodes) {
+      // Skip children belonging to a collapsed group — the group card
+      // stands in for them visually. Phase 2 will flip to inline-rendering
+      // children when data.expanded === true on the parent group.
+      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
+      if (parentGroupId && collapsed.has(parentGroupId)) continue;
       const node: FlowNode = {
         id: n.id,
         type: n.type,
@@ -366,14 +426,25 @@
       // styling (which xyflow handles internally via the .selected class
       // rather than a competing zIndex).
       if (top === n.id) node.zIndex = 1000;
-      return node;
-    });
+      next.push(node);
+    }
+    flowNodes = next;
   });
 
   $effect(() => {
     const snap = snapshot;
     const hovered = hoveredNodeId;
-    flowEdges = snap.edges.map((e) => {
+    const childToGroup = nodeIdToCollapsedGroupId;
+    const next: FlowEdge[] = [];
+    for (const e of snap.edges) {
+      // Skip edges whose endpoint references a hidden child (i.e. a
+      // member of a collapsed group). Internal edges between two children
+      // of the same group are hidden entirely; external edges to a single
+      // hidden child get rewritten at create-group time to terminate on
+      // the group's exposed port, so they'd already point at the group
+      // node here. A leftover edge to a hidden child indicates a
+      // pre-group-creation snapshot — defensive drop.
+      if (childToGroup.has(e.source.nodeId) || childToGroup.has(e.target.nodeId)) continue;
       const related = !!hovered && (e.source.nodeId === hovered || e.target.nodeId === hovered);
       const edge: FlowEdge = {
         id: e.id,
@@ -384,8 +455,9 @@
         style: `stroke: var(--cable-${e.sourceType}); stroke-width: 3;`,
       };
       if (related) edge.class = 'cable-related';
-      return edge;
-    });
+      next.push(edge);
+    }
+    flowEdges = next;
   });
 
   function trace(line: string) {
@@ -771,6 +843,194 @@
     ctxMenuPos = { x: me.clientX, y: me.clientY };
     ctxMenuNodeId = node.id;
     ctxMenuOpen = true;
+  }
+
+  // ---------------- Marquee select (Module-grouping Phase 1) ----------------
+  //
+  // Left-drag inside the pane draws a marquee (SelectionMode.Partial).
+  // Middle-drag pans the canvas. Space-hold inverts: left-drag pans
+  // (Figma affordance); marquee disengages while Space is down.
+  //
+  // We INTENTIONALLY do NOT include right-mouse-button (2) in panOnDrag.
+  // SvelteFlow's pane handler short-circuits `oncontextmenu` whenever
+  // panOnDragActive includes 2 (see Pane.svelte's onContextMenu) — that
+  // would kill our right-click-pane → palette context menu (covered by
+  // e2e/tests/palette.spec.ts + organize-modules.spec.ts). Users still
+  // get right-DRAG-style canvas panning via middle-drag or Space+left-drag.
+  let spacePanHeld = $state(false);
+  $effect(() => {
+    const onDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !spacePanHeld) {
+        const t = e.target as HTMLElement | null;
+        const editable =
+          t?.tagName === 'INPUT' ||
+          t?.tagName === 'TEXTAREA' ||
+          (t?.isContentEditable ?? false);
+        if (editable) return;
+        spacePanHeld = true;
+      }
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') spacePanHeld = false;
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+    };
+  });
+
+  // ---------------- Module-grouping Phase 1 ----------------
+  //
+  // Marquee-selection right-click → SelectionContextMenu (single item:
+  // "Group modules…") → GroupBuilderModal (table of all ports across
+  // the selection, pre-checked for cables crossing the boundary) →
+  // "Create group" → planCreateGroup + ydoc.transact.
+  //
+  // The group is a meta-domain card with no engine binding; the
+  // snapshot-projection layer (group-projection.ts) rewrites edge
+  // endpoints from the group's exposed ports → the real child ports
+  // before the reconciler runs. See packages/web/src/lib/graph/group-projection.ts.
+
+  let selCtxMenuOpen = $state(false);
+  let selCtxMenuPos = $state({ x: 0, y: 0 });
+  let selCtxMenuIds = $state<string[]>([]);
+
+  let groupBuilderOpen = $state(false);
+  let groupBuilderCandidates = $state<PortCandidate[]>([]);
+  let groupBuilderSelectionIds = $state<string[]>([]);
+  let groupBuilderModuleLabels = $state<Map<string, string>>(new Map());
+
+  function onSelectionContextMenu({ nodes, event }: { nodes: FlowNode[]; event: MouseEvent }) {
+    event.preventDefault();
+    const me = event as MouseEvent;
+    selCtxMenuPos = { x: me.clientX, y: me.clientY };
+    selCtxMenuIds = nodes.map((n) => n.id);
+    selCtxMenuOpen = true;
+  }
+
+  function openGroupBuilder() {
+    // Skip any selected nodes that are themselves groups or stickies —
+    // Phase 1 doesn't nest groups; meta-domain non-port cards can't be
+    // grouped meaningfully (sticky has no ports).
+    const eligible = selCtxMenuIds.filter((id) => {
+      const n = patch.nodes[id];
+      if (!n) return false;
+      if (n.type === 'group' || n.type === 'sticky') return false;
+      return true;
+    });
+    if (eligible.length < 2) {
+      trace(`group refused: only ${eligible.length} eligible module(s) selected`);
+      return;
+    }
+
+    const modulesById = new Map<string, PortLookupModule>();
+    const labels = new Map<string, string>();
+    for (const id of eligible) {
+      const node = patch.nodes[id];
+      if (!node) continue;
+      const def = defLookup(node.type);
+      if (!def) continue;
+      modulesById.set(id, {
+        id,
+        type: node.type,
+        inputs: def.inputs,
+        outputs: def.outputs,
+        label: def.label,
+      });
+      labels.set(id, def.label ?? node.type);
+    }
+
+    groupBuilderCandidates = buildPortCandidates({
+      selectionIds: eligible,
+      nodes: snapshot.nodes,
+      edges: snapshot.edges,
+      modulesById,
+    });
+    groupBuilderSelectionIds = eligible;
+    groupBuilderModuleLabels = labels;
+    groupBuilderOpen = true;
+  }
+
+  function commitGroup(selectedCandidates: PortCandidate[], label: string) {
+    const ids = groupBuilderSelectionIds;
+    const groupId = `group-${Math.random().toString(36).slice(2, 10)}`;
+    const exposedPorts = buildExposedPorts({ selectedCandidates });
+    const plan = planCreateGroup({
+      groupId,
+      selectionIds: ids,
+      exposedPorts,
+      nodes: snapshot.nodes,
+      edges: snapshot.edges,
+      label,
+    });
+
+    ydoc.transact(() => {
+      patch.nodes[plan.groupNode.id] = plan.groupNode;
+      for (const { childId, parentGroupId } of plan.childParentSets) {
+        const target = patch.nodes[childId];
+        if (!target) continue;
+        if (!target.data) target.data = {};
+        target.data.parentGroupId = parentGroupId;
+      }
+      for (const rw of plan.edges.rewrite) {
+        const target = patch.edges[rw.id];
+        if (!target) continue;
+        if (rw.newSource) target.source = rw.newSource;
+        if (rw.newTarget) target.target = rw.newTarget;
+      }
+      for (const id of plan.edges.deleteIds) {
+        delete patch.edges[id];
+      }
+    }, LOCAL_ORIGIN);
+    trace(`grouped ${ids.length} modules into ${groupId} (${exposedPorts.length} exposed)`);
+  }
+
+  function ungroupNode(groupId: string) {
+    const groupNode = patch.nodes[groupId];
+    if (!groupNode || groupNode.type !== 'group') {
+      trace(`ungroup refused: ${groupId} is not a group`);
+      return;
+    }
+    const plan = planUngroup({ groupNode: groupNode as unknown as ModuleNode, edges: snapshot.edges });
+    ydoc.transact(() => {
+      for (const rw of plan.rewrite) {
+        const target = patch.edges[rw.id];
+        if (!target) continue;
+        if (rw.newSource) target.source = rw.newSource;
+        if (rw.newTarget) target.target = rw.newTarget;
+      }
+      for (const childId of plan.childrenToClear) {
+        const child = patch.nodes[childId];
+        if (!child || !child.data) continue;
+        delete child.data.parentGroupId;
+      }
+      delete patch.nodes[plan.groupNodeId];
+    }, LOCAL_ORIGIN);
+    trace(`ungrouped ${groupId} (restored ${plan.childrenToClear.length} children)`);
+  }
+
+  function deleteGroupAndChildren(groupId: string) {
+    const groupNode = patch.nodes[groupId];
+    if (!groupNode || groupNode.type !== 'group') return;
+    const data = groupNode.data as { childIds?: string[] } | undefined;
+    const childIds = Array.isArray(data?.childIds) ? [...data!.childIds!] : [];
+    const ok = window.confirm(
+      `Delete this group and its ${childIds.length} module${childIds.length === 1 ? '' : 's'}? This can't be undone.`,
+    );
+    if (!ok) return;
+    ydoc.transact(() => {
+      const doomed = new Set<string>([groupId, ...childIds]);
+      for (const [eid, edge] of Object.entries(patch.edges)) {
+        if (!edge) continue;
+        if (doomed.has(edge.source.nodeId) || doomed.has(edge.target.nodeId)) {
+          delete patch.edges[eid];
+        }
+      }
+      for (const id of doomed) delete patch.nodes[id];
+    }, LOCAL_ORIGIN);
+    trace(`deleted group ${groupId} + ${childIds.length} children`);
   }
 
   // ---------------- Port right-click context menu ("Patch to..." flow) ----------------
@@ -1739,6 +1999,10 @@
       onnodedragstop={handleNodeDragStop}
       onpanecontextmenu={onPaneContextMenu}
       onnodecontextmenu={onNodeContextMenu}
+      onselectioncontextmenu={onSelectionContextMenu}
+      selectionMode={SelectionMode.Partial}
+      selectionOnDrag={true}
+      panOnDrag={spacePanHeld ? [0, 1] : [1]}
     >
       <Background size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
       <Controls />
@@ -1820,10 +2084,34 @@
   y={ctxMenuPos.y}
   nodeLabel={ctxMenuLabel}
   nodeType={ctxMenuNodeType}
-  ondelete={() => ctxMenuNodeId && deleteNode(ctxMenuNodeId)}
+  isGroup={ctxMenuNodeType === 'group'}
+  ondelete={() => {
+    if (!ctxMenuNodeId) return;
+    if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
+    else deleteNode(ctxMenuNodeId);
+  }}
   onduplicate={() => ctxMenuNodeId && duplicateNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
+  onungroup={() => ctxMenuNodeId && ungroupNode(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
+/>
+
+<SelectionContextMenu
+  bind:open={selCtxMenuOpen}
+  x={selCtxMenuPos.x}
+  y={selCtxMenuPos.y}
+  selectionCount={selCtxMenuIds.length}
+  ongroup={openGroupBuilder}
+  onclose={() => { selCtxMenuOpen = false; }}
+/>
+
+<GroupBuilderModal
+  bind:open={groupBuilderOpen}
+  candidates={groupBuilderCandidates}
+  selectionIds={groupBuilderSelectionIds}
+  moduleLabels={groupBuilderModuleLabels}
+  oncreate={commitGroup}
+  onclose={() => { groupBuilderOpen = false; }}
 />
 
 <PortContextMenu
