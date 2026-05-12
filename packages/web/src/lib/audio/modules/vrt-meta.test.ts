@@ -4,7 +4,8 @@
 //
 // Asserts every registered audio + video module has:
 //   1. an entry in e2e/vrt/vrt.spec.ts's MODULES list
-//   2. a baseline PNG under e2e/vrt/__screenshots__/vrt.spec.ts/
+//   2. a baseline PNG under e2e/vrt/__screenshots__/vrt.spec.ts/{platform}/
+//      for every platform we ship (linux + darwin)
 //
 // Catches the "added a new module, forgot the baseline" case in the
 // vitest pass (~1s) rather than in the Playwright pass (~3min on CI),
@@ -49,10 +50,17 @@ function readVrtSpecModuleList(): Set<string> {
   return out;
 }
 
-function baselinePath(type: string): string {
+// Platforms we ship baselines for. Matches the {platform} substitution
+// in vrt.config.ts's snapshotPathTemplate (Playwright fills it from
+// process.platform). Keep in sync with the committed subdirs under
+// e2e/vrt/__screenshots__/vrt.spec.ts/. Adding a new platform here
+// without committing baselines will (correctly) fail this test.
+const VRT_PLATFORMS = ['linux', 'darwin'] as const;
+
+function baselinePath(type: string, platform: string): string {
   return resolve(
     repoRoot(),
-    `e2e/vrt/__screenshots__/vrt.spec.ts/${type}.png`,
+    `e2e/vrt/__screenshots__/vrt.spec.ts/${platform}/${type}.png`,
   );
 }
 
@@ -99,17 +107,24 @@ describe('VRT coverage self-test', () => {
     ).toEqual([]);
   });
 
-  it('every VRT-listed module has a baseline PNG on disk', async () => {
+  it('every VRT-listed module has a baseline PNG on disk for every shipped platform', async () => {
     await import('$lib/audio/modules');
     await import('$lib/video/modules');
     const inSpec = readVrtSpecModuleList();
+    // `${platform}/${type}` keys so the failure message names the exact
+    // file the dev needs to regenerate. Cross-platform contributors will
+    // typically only have one platform locally; CI runs Linux. A PR that
+    // adds a baseline on one platform but forgets the other lands here
+    // with a precise missing-file list.
     const missingBaseline: string[] = [];
     for (const t of inSpec) {
-      if (!existsSync(baselinePath(t))) missingBaseline.push(t);
+      for (const platform of VRT_PLATFORMS) {
+        if (!existsSync(baselinePath(t, platform))) missingBaseline.push(`${platform}/${t}`);
+      }
     }
     expect(
       missingBaseline,
-      `run \`task vrt:update\` to (re)generate baselines for: ${missingBaseline.join(', ')}`,
+      `run \`task vrt:update\` on each platform to (re)generate baselines for: ${missingBaseline.join(', ')}`,
     ).toEqual([]);
   });
 

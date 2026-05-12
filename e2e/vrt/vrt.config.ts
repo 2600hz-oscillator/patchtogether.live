@@ -54,25 +54,30 @@ export default defineConfig({
   // Snapshot path template. Default would scatter PNGs under
   // test-results/; we want them under __screenshots__/ so they're easy
   // to commit + diff in PRs.
-  snapshotPathTemplate: '__screenshots__/{testFilePath}/{arg}{ext}',
+  //
+  // Per-platform subdir ({platform}) — Playwright substitutes
+  // process.platform (`linux` on CI, `darwin` on local macOS dev,
+  // `win32` on Windows). Without this, devs on macOS see the entire
+  // 49-baseline set as drifted because the authoritative baselines
+  // are captured under Linux CI. Each platform gets its own committed
+  // baseline directory; both are LFS-tracked via the path-glob in
+  // .gitattributes (`e2e/vrt/__screenshots__/**/*.png filter=lfs`).
+  snapshotPathTemplate: '__screenshots__/{testFilePath}/{platform}/{arg}{ext}',
 
   expect: {
     toHaveScreenshot: {
-      // Tolerance budget. Browsers + GPU drivers + cross-platform font
-      // rendering emit sub-pixel anti-aliasing differences that aren't
-      // semantically meaningful. The baselines are captured on Linux CI
-      // (authoritative) but devs run macOS / Windows locally; without
-      // headroom, the cross-platform AA delta on knob labels alone
-      // (~2-3% of pixels on a typical card) keeps every PR red.
+      // Tolerance budget. Browsers + GPU drivers emit sub-pixel
+      // anti-aliasing differences that aren't semantically meaningful
+      // even on the same platform across runs. Baselines are committed
+      // per-platform (see snapshotPathTemplate above), so we no longer
+      // need to absorb cross-platform AA drift here — but small
+      // intra-platform drift on text-heavy cards still does occur.
       //
       // 0.2 = a pixel must differ by >20% per channel before it counts.
       // maxDiffPixelRatio = 0.05 = up to 5% of pixels can be "different"
-      // under that per-channel threshold. Observed drift across the
-      // first 2-3 CI runs was 2-3% on a couple modules with the most
-      // text. Once we settle on Linux baselines this can be tightened
-      // back toward 0.01. Down the road, baselines per platform via the
-      // Playwright {browserName}-{platform} snapshot path template is
-      // the more rigorous fix.
+      // under that per-channel threshold. Now that platform drift is
+      // factored out by the path template, this can be tightened toward
+      // 0.01 once baselines settle on each platform.
       threshold: 0.2,
       maxDiffPixelRatio: 0.05,
       // Disable animations so on-card LEDs / hover effects / running

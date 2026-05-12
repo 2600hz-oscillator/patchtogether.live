@@ -116,7 +116,21 @@ Three port-surface consistency gates run inside the unit + e2e layers:
 
 The PR gate (`flox activate -- task ci`) runs typecheck + unit + ART + E2E inside Flox so the toolchain matches local. Postgres 17 is a CI service container.
 
-- **VRT** — Visual Regression Tests. Playwright `toHaveScreenshot` against every registered module card; baselines under `e2e/vrt/__screenshots__/` (LFS-tracked). `flox activate -- task vrt` to run; `task vrt:update` to refresh baselines after an intentional UI change; `task vrt:gallery` to rebuild the side-by-side HTML report under `docs/vrt/`. CI publishes the latest gallery to GitHub Pages on push to `main`. Modeled on the doomviz VRT pattern; non-blocking initially while baselines settle. When CI VRT fails: download the `vrt-test-results` + `vrt-gallery` artifacts from the run, eyeball the diff PNGs, and either re-run `task vrt:update` (intentional UI change) or fix the regression.
+- **VRT** — Visual Regression Tests. Playwright `toHaveScreenshot` against every registered module card; baselines under `e2e/vrt/__screenshots__/vrt.spec.ts/{platform}/` (LFS-tracked) where `{platform}` is `linux` / `darwin` / `win32` (matches `process.platform`). The per-platform layout lets devs on macOS pass against `darwin/*.png` while CI on Linux passes against `linux/*.png` — same suite, no cross-platform AA flake. `flox activate -- task vrt` to run; `task vrt:update` to refresh the baselines for whichever platform you're on (commit both subdirs when you ship); `task vrt:gallery` to rebuild the side-by-side HTML report under `docs/vrt/`. CI publishes the latest gallery to GitHub Pages on push to `main` (see "VRT gallery on GitHub Pages" below for the one-time admin enablement). Modeled on the doomviz VRT pattern; non-blocking initially while baselines settle. When CI VRT fails: download the `vrt-test-results` + `vrt-gallery` artifacts from the run, eyeball the diff PNGs, and either re-run `task vrt:update` (intentional UI change) or fix the regression.
+
+### VRT gallery on GitHub Pages (one-time admin step)
+
+The VRT gallery publishes to GitHub Pages after every push to `main` via `.github/workflows/pages.yml`. This requires Pages to be enabled at the repo level — until that toggle is flipped, every `pages.yml` run fails at `actions/configure-pages@v5` with `Pages site failed. Please verify that the repository has Pages enabled`.
+
+To enable (repo admin, one-time):
+
+1. Go to <https://github.com/2600hz-oscillator/patchtogether.live/settings/pages>.
+2. Under **Build and deployment → Source**, select **GitHub Actions**.
+3. Save.
+
+After enablement the gallery is live at <https://2600hz-oscillator.github.io/patchtogether.live/> (the `docs/index.html` redirect lands you on `/vrt/`).
+
+Until then, the gallery is uploaded as a `vrt-gallery` artifact on every CI run and can be downloaded from the run page.
 
 ## Conventions
 
