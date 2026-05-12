@@ -217,3 +217,70 @@ test('selection context menu exposes "Group modules…" but only ≥2 modules ar
   // spec when we have a stable input recipe.)
   expect(true).toBe(true);
 });
+
+// --------------------------------------------------------------------
+// Group-name input — the modal prompts for a user-supplied label and
+// uses it as the GroupCard's display name. Blank/whitespace-only falls
+// back to "GROUP!". See packages/web/src/lib/ui/GroupBuilderModal.svelte.
+// --------------------------------------------------------------------
+
+/** Open the modal via the dev-only window hook + wait for it to render. */
+async function openModal(page: Page, selectionIds: string[]): Promise<void> {
+  await page.evaluate((ids) => {
+    const w = window as unknown as { __openGroupBuilder: (ids: string[]) => void };
+    w.__openGroupBuilder(ids);
+  }, selectionIds);
+  await expect(page.locator('[data-testid="group-builder-modal"]')).toBeVisible();
+}
+
+test('group name input: user-supplied name becomes the GroupCard label', async ({ page }) => {
+  await setupChain(page);
+  await openModal(page, ['lfo-1', 'flt-1']);
+
+  const nameInput = page.locator('[data-testid="group-builder-name"]');
+  // Modal auto-focuses the input so the user can type immediately.
+  await expect(nameInput).toBeFocused();
+  await nameInput.fill('my voice');
+  await page.locator('[data-testid="group-builder-create"]').click();
+
+  // GroupCard renders with the user's name.
+  const groupLabel = page.locator('[data-testid="group-card"] [data-testid="group-card-label"]');
+  await expect(groupLabel).toHaveText('my voice');
+});
+
+test('group name input: blank/whitespace name falls back to GROUP!', async ({ page }) => {
+  await setupChain(page);
+  await openModal(page, ['lfo-1', 'flt-1']);
+
+  const nameInput = page.locator('[data-testid="group-builder-name"]');
+  await nameInput.fill('   '); // whitespace only
+  await page.locator('[data-testid="group-builder-create"]').click();
+
+  const groupLabel = page.locator('[data-testid="group-card"] [data-testid="group-card-label"]');
+  await expect(groupLabel).toHaveText('GROUP!');
+});
+
+test('group name input: leading/trailing whitespace is trimmed', async ({ page }) => {
+  await setupChain(page);
+  await openModal(page, ['lfo-1', 'flt-1']);
+
+  await page.locator('[data-testid="group-builder-name"]').fill('  bass voice  ');
+  await page.locator('[data-testid="group-builder-create"]').click();
+
+  const groupLabel = page.locator('[data-testid="group-card"] [data-testid="group-card-label"]');
+  await expect(groupLabel).toHaveText('bass voice');
+});
+
+test('group name input: Enter in the name field submits the modal', async ({ page }) => {
+  await setupChain(page);
+  await openModal(page, ['lfo-1', 'flt-1']);
+
+  const nameInput = page.locator('[data-testid="group-builder-name"]');
+  await nameInput.fill('keys');
+  await nameInput.press('Enter');
+
+  // Modal closes + group renders with the typed name.
+  await expect(page.locator('[data-testid="group-builder-modal"]')).toHaveCount(0);
+  const groupLabel = page.locator('[data-testid="group-card"] [data-testid="group-card-label"]');
+  await expect(groupLabel).toHaveText('keys');
+});

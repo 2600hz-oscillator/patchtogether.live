@@ -321,6 +321,16 @@
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__organizeModules = () => organizeModules();
+      // Module-grouping Phase 1: tests need to drive the GroupBuilderModal
+      // open + the commitGroup callback without going through the marquee +
+      // right-click pipeline (which is hard to script reliably across
+      // SvelteFlow's pointer-event handling). The hook takes the selection
+      // ids and seeds the same state `openGroupBuilder` would.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__openGroupBuilder = (ids: string[]) => {
+        selCtxMenuIds = ids;
+        openGroupBuilder();
+      };
     });
   }
   function loadEnvelopeFromObject(env: unknown) {
@@ -943,7 +953,7 @@
     groupBuilderOpen = true;
   }
 
-  function commitGroup(selectedCandidates: PortCandidate[]) {
+  function commitGroup(selectedCandidates: PortCandidate[], label: string) {
     const ids = groupBuilderSelectionIds;
     const groupId = `group-${Math.random().toString(36).slice(2, 10)}`;
     const exposedPorts = buildExposedPorts({ selectedCandidates });
@@ -953,6 +963,7 @@
       exposedPorts,
       nodes: snapshot.nodes,
       edges: snapshot.edges,
+      label,
     });
 
     ydoc.transact(() => {

@@ -45,7 +45,7 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="group-body">
-      <div class="group-label">{label}</div>
+      <div class="group-label" data-testid="group-card-label">{label}</div>
       <div class="group-children-count">{childCount} module{childCount === 1 ? '' : 's'}</div>
     </div>
   </PatchPanel>

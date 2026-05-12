@@ -12,6 +12,11 @@
 
   import type { PortCandidate } from '$lib/graph/group-actions';
 
+  /** Hard cap on name length — sanity guard, not validation. */
+  const NAME_MAX_LENGTH = 32;
+  /** Fallback label when the user leaves the name blank. */
+  const DEFAULT_GROUP_LABEL = 'GROUP!';
+
   interface Props {
     open: boolean;
     /** All candidate ports for the selection, pre-ordered by module. */
@@ -20,7 +25,7 @@
     selectionIds: string[];
     /** Per-childId display label (e.g. "FILTER"). Falls back to childId. */
     moduleLabels: Map<string, string>;
-    oncreate: (selectedCandidates: PortCandidate[]) => void;
+    oncreate: (selectedCandidates: PortCandidate[], label: string) => void;
     onclose: () => void;
   }
 
@@ -32,6 +37,11 @@
     oncreate,
     onclose,
   }: Props = $props();
+
+  // Group name input — defaults to '' so the placeholder is visible. Reset
+  // each time the modal opens so a previous session's name doesn't carry over.
+  let groupName = $state<string>('');
+  let nameInputEl = $state<HTMLInputElement | null>(null);
 
   // Stable key for the candidate identity (used as Map key + DOM id).
   function keyOf(c: PortCandidate): string {
@@ -48,6 +58,10 @@
     const next: Record<string, boolean> = {};
     for (const c of candidates) next[keyOf(c)] = c.hasExternalCable;
     checked = next;
+    // Reset the name + auto-focus the input on (re)open — matches the
+    // ModulePalette search-box behavior.
+    groupName = '';
+    queueMicrotask(() => nameInputEl?.focus());
   });
 
   let _selectionIds = $derived(selectionIds); // referenced for reactivity hygiene
@@ -105,12 +119,24 @@
       );
       if (!ok) return;
     }
-    oncreate(picks);
+    const trimmed = groupName.trim();
+    const label = trimmed.length > 0 ? trimmed : DEFAULT_GROUP_LABEL;
+    oncreate(picks, label);
     onclose();
   }
 
   function handleCancel() {
     onclose();
+  }
+
+  // Enter in the name input triggers Create (same as clicking the button).
+  // The port-list validation lives entirely inside handleCreate, so we just
+  // delegate to it.
+  function onNameKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleCreate();
+    }
   }
 
   // Esc closes the modal.
@@ -144,6 +170,22 @@
       </p>
     </header>
     <div class="modal-body">
+      <div class="name-row">
+        <label class="name-label" for="group-builder-name">Group name</label>
+        <input
+          id="group-builder-name"
+          bind:this={nameInputEl}
+          bind:value={groupName}
+          type="text"
+          class="name-input"
+          placeholder={DEFAULT_GROUP_LABEL}
+          maxlength={NAME_MAX_LENGTH}
+          onkeydown={onNameKeydown}
+          data-testid="group-builder-name"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
       {#each groups as g (g.childId)}
         <div class="mod-group">
           <div class="mod-header">{g.label} <span class="mod-id">({g.childId})</span></div>
@@ -233,6 +275,31 @@
     flex: 1 1 auto;
     overflow-y: auto;
     padding: 10px 18px;
+  }
+  .name-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 14px;
+  }
+  .name-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-dim);
+  }
+  .name-input {
+    background: #11141a;
+    color: var(--text, #f1f1f1);
+    border: 1px solid #404652;
+    padding: 6px 10px;
+    font-size: 0.9rem;
+    border-radius: 4px;
+    font-family: inherit;
+    outline: none;
+  }
+  .name-input:focus {
+    border-color: var(--accent, #60a5fa);
   }
   .mod-group {
     margin-bottom: 14px;
