@@ -837,12 +837,16 @@
 
   // ---------------- Marquee select (Module-grouping Phase 1) ----------------
   //
-  // Left-drag inside the pane draws a marquee. Right-drag + middle-drag
-  // pan the canvas. Holding Space at any time inverts back to Figma-style
-  // "left-drag pans"; this is the canonical pan affordance for users who
-  // expect spatial-navigation-first canvases. We document it explicitly so
-  // future maintainers don't see the panOnDrag dual-mode and try to
-  // simplify it.
+  // Left-drag inside the pane draws a marquee (SelectionMode.Partial).
+  // Middle-drag pans the canvas. Space-hold inverts: left-drag pans
+  // (Figma affordance); marquee disengages while Space is down.
+  //
+  // We INTENTIONALLY do NOT include right-mouse-button (2) in panOnDrag.
+  // SvelteFlow's pane handler short-circuits `oncontextmenu` whenever
+  // panOnDragActive includes 2 (see Pane.svelte's onContextMenu) — that
+  // would kill our right-click-pane → palette context menu (covered by
+  // e2e/tests/palette.spec.ts + organize-modules.spec.ts). Users still
+  // get right-DRAG-style canvas panning via middle-drag or Space+left-drag.
   let spacePanHeld = $state(false);
   $effect(() => {
     const onDown = (e: KeyboardEvent) => {
@@ -1987,7 +1991,7 @@
       onselectioncontextmenu={onSelectionContextMenu}
       selectionMode={SelectionMode.Partial}
       selectionOnDrag={true}
-      panOnDrag={spacePanHeld ? [0, 1, 2] : [1, 2]}
+      panOnDrag={spacePanHeld ? [0, 1] : [1]}
     >
       <Background size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
       <Controls />
