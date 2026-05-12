@@ -95,6 +95,13 @@ body {
   background: var(--module-bg) !important;
   border: 2px solid var(--handle-color, var(--cable-audio)) !important;
   transition: box-shadow 80ms ease-out;
+  /* Lift handles above the card body so the opaque module-bg fill occludes
+   * the cable terminus inside the ring — cable visually "enters" the jack
+   * instead of passing under it. Same z-index PatchPanel uses (PR-97); this
+   * global rule extends the behavior to always-visible-handle cards
+   * (LINES / RIOTGIRLS / MIXMSTRS / etc.). PatchPanel's higher-specificity
+   * rule with !important still wins for its own scope. */
+  z-index: 11;
 }
 .svelte-flow__handle:hover {
   box-shadow: 0 0 0 2px var(--accent-glow);

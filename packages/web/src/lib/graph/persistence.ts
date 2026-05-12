@@ -21,6 +21,7 @@ import {
   getVideoModuleDef,
   listVideoModuleDefs,
 } from '$lib/video/module-registry';
+import { getMetaModuleDef, listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ModuleNode, Edge } from './types';
 
 /** Per-module-type schemaVersion + migrate, abstracted across the two
@@ -38,8 +39,9 @@ interface AnyDomainDef {
 
 function getAnyDomainDef(type: string): AnyDomainDef | undefined {
   // Audio-first because most types are audio; the lookup is a simple Map
-  // get either way so order is purely cosmetic.
-  return getAudioModuleDef(type) ?? getVideoModuleDef(type);
+  // get either way so order is purely cosmetic. Meta is checked last
+  // (only STICKY today, but the registry is open-ended).
+  return getAudioModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
 }
 
 /** SyncedStore-shaped patch — keys map to their value or undefined (post-delete).
@@ -126,6 +128,9 @@ export function makeEnvelope(ydoc: Y.Doc): PatchEnvelope {
     moduleSchemas[def.type] = def.schemaVersion;
   }
   for (const def of listVideoModuleDefs()) {
+    moduleSchemas[def.type] = def.schemaVersion;
+  }
+  for (const def of listMetaModuleDefs()) {
     moduleSchemas[def.type] = def.schemaVersion;
   }
   return {

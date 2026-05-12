@@ -14,9 +14,13 @@ import type { Edge, ModuleNode, PortDef } from '$lib/graph/types';
 import { canConnect } from '$lib/graph/types';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { VideoModuleDef } from '$lib/video/module-registry';
+import type { MetaModuleDef } from '$lib/meta/module-registry';
 
-/** Either-domain module def — both share the port shape we need. */
-export type AnyDef = AudioModuleDef | VideoModuleDef;
+/** Any-domain module def — they all share the port shape we need. Meta
+ *  modules (sticky etc.) declare empty inputs/outputs so they're never
+ *  actual candidates in the patch-to menu; including them in the union
+ *  keeps the type plumbing uniform with the spawn + persistence paths. */
+export type AnyDef = AudioModuleDef | VideoModuleDef | MetaModuleDef;
 
 export interface ModuleEntry {
   nodeId: string;

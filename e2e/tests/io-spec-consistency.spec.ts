@@ -115,9 +115,12 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     await page.waitForLoadState('networkidle');
     const specs = await readModuleSpecs(page);
     expect(specs.length, 'at least one module def is registered').toBeGreaterThan(0);
-    // Sanity: every spec has at least one port (input or output) so we're
-    // not silently passing on a stub def.
+    // Sanity: every audio/video spec has at least one port (input or
+    // output) so we're not silently passing on a stub def. Meta-domain
+    // modules (STICKY etc.) intentionally have zero ports — they're
+    // pure-UI cards with no signal-routing surface.
     for (const s of specs) {
+      if (s.domain === 'meta') continue;
       const total = s.inputs.length + s.outputs.length;
       expect(total, `${s.type} has at least one port`).toBeGreaterThan(0);
     }
@@ -200,6 +203,11 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'warrenspectrum',
     // STEREOVCA — stereo VCA + ring modulator with independent normalling.
     'stereovca',
+    // STICKY — meta-domain paper-style sticky note (no engine binding, no
+    // ports). Covered by this test because the def↔UI parity rule is
+    // trivially zero ports both sides; if either side accidentally grows
+    // a port the gate catches it.
+    'sticky',
   ];
 
   for (const type of MODULE_TYPES) {
@@ -216,8 +224,15 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
       // Pass the registered domain through to spawnPatch so video modules
       // (Phase 0) get the right domain on their node — otherwise the
       // reconciler would route them to the audio engine and addNode
-      // would throw on a video-domain def.
-      const domain = (spec.domain === 'video' ? 'video' : 'audio') as 'audio' | 'video';
+      // would throw on a video-domain def. Meta domain (sticky notes)
+      // is the third arm; reconciler skips meta nodes outright.
+      const domain = (
+        spec.domain === 'video'
+          ? 'video'
+          : spec.domain === 'meta'
+            ? 'meta'
+            : 'audio'
+      ) as 'audio' | 'video' | 'meta';
       await spawnPatch(page, [{ id: 'm-1', type, position: { x: 100, y: 100 }, domain }]);
 
       const cardClass = `svelte-flow__node-${type}`;

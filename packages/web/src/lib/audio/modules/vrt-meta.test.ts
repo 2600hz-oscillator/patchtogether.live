@@ -19,6 +19,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
+import { listMetaModuleDefs } from '$lib/meta/module-registry';
 
 // Modules that intentionally skip VRT. Each entry needs a reason +
 // (where applicable) the alternative test that covers the same surface.
@@ -71,16 +72,20 @@ describe('VRT coverage self-test', () => {
   it('imports module barrels so registries are populated', async () => {
     await import('$lib/audio/modules');
     await import('$lib/video/modules');
-    const total = listModuleDefs().length + listVideoModuleDefs().length;
+    await import('$lib/meta/modules');
+    const total =
+      listModuleDefs().length + listVideoModuleDefs().length + listMetaModuleDefs().length;
     expect(total, 'at least one module is registered').toBeGreaterThan(0);
   });
 
   it('every registered module is listed in vrt.spec.ts (or exempted)', async () => {
     await import('$lib/audio/modules');
     await import('$lib/video/modules');
+    await import('$lib/meta/modules');
     const registered = [
       ...listModuleDefs().map((d) => d.type as string),
       ...listVideoModuleDefs().map((d) => d.type as string),
+      ...listMetaModuleDefs().map((d) => d.type as string),
     ];
     const inSpec = readVrtSpecModuleList();
     const missing: string[] = [];

@@ -52,6 +52,9 @@
   import { VideoEngine } from '$lib/video/engine';
   import { listVideoModuleDefs, getVideoModuleDef } from '$lib/video/module-registry';
   import '$lib/video/modules'; // auto-registers linesDef + videoOutDef
+  // Meta-domain registry — sticky notes etc. (no engine binding).
+  import { listMetaModuleDefs, getMetaModuleDef } from '$lib/meta/module-registry';
+  import '$lib/meta/modules'; // auto-registers stickyDef
   import AnalogVcoCard from '$lib/ui/modules/AnalogVcoCard.svelte';
   import AudioOutCard from '$lib/ui/modules/AudioOutCard.svelte';
   import VcaCard from '$lib/ui/modules/VcaCard.svelte';
@@ -113,6 +116,8 @@
   import WarrenspectrumCard from '$lib/ui/modules/WarrenspectrumCard.svelte';
   // STEREOVCA — stereo VCA + ring modulator.
   import StereovcaCard from '$lib/ui/modules/StereovcaCard.svelte';
+  // STICKY — meta-domain paper-style sticky note (no engine binding).
+  import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
@@ -126,10 +131,11 @@
   } from '$lib/ui/port-patch-helpers';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
-  import FlowBridge, { type FlowBridgeApi } from '$lib/ui/FlowBridge.svelte';
+  import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
-  import type { CableType } from '$lib/graph/types';
+  import type { CableType, Edge, PortDef } from '$lib/graph/types';
+  import { canConnect } from '$lib/graph/types';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
   import {
     pictureboxSpawnDecision,
@@ -215,6 +221,8 @@
     wavecel: WavecelCard,
     warrenspectrum: WarrenspectrumCard,
     stereovca: StereovcaCard,
+    // Meta-domain (no engine binding):
+    sticky: StickyCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
@@ -779,7 +787,11 @@
   // rendered handles on cards like LINES / VIDEOOUT / SCOPE).
 
   function defLookup(type: string): AnyDef | undefined {
-    return getModuleDef(type) ?? getVideoModuleDef(type);
+    // Meta defs (sticky etc.) carry inputs/outputs/params shaped
+    // identically to AudioModuleDef / VideoModuleDef; AnyDef is the
+    // shared union. Meta domains never reach the engine, so the lack
+    // of a factory is irrelevant for the patch-panel UI helpers.
+    return getModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
   }
 
   let portMenuOpen = $state(false);
@@ -1083,7 +1095,8 @@
     // palette path enforces — duplicate is just another spawn route.
     const audioDef = getModuleDef(source.type);
     const videoDef = !audioDef ? getVideoModuleDef(source.type) : undefined;
-    const def = audioDef ?? videoDef;
+    const metaDef = !audioDef && !videoDef ? getMetaModuleDef(source.type) : undefined;
+    const def = audioDef ?? videoDef ?? metaDef;
     if (def?.maxInstances !== undefined) {
       let existing = 0;
       for (const node of Object.values(patch.nodes)) {
@@ -1194,14 +1207,19 @@
     // double-spawn race for a single client; the engine.addNode rejection is
     // the ultimate defense for multiplayer.
     //
-    // Domain dispatch (Phase 0 video spike): try the audio registry first;
-    // fall back to the video registry. The two registries are kept separate
-    // so domain-specific def shapes don't bleed across; the spawn path just
-    // needs the `domain` + `maxInstances` fields and either works.
+    // Domain dispatch: try audio, then video, then meta (sticky lives
+    // here). The three registries are kept separate so domain-specific
+    // def shapes don't bleed across; the spawn path just needs `domain`
+    // + `maxInstances`.
     const audioDef = getModuleDef(type);
     const videoDef = !audioDef ? getVideoModuleDef(type) : undefined;
-    const def = audioDef ?? videoDef;
-    const domain: 'audio' | 'video' = audioDef ? 'audio' : 'video';
+    const metaDef = !audioDef && !videoDef ? getMetaModuleDef(type) : undefined;
+    const def = audioDef ?? videoDef ?? metaDef;
+    const domain: 'audio' | 'video' | 'meta' = audioDef
+      ? 'audio'
+      : videoDef
+        ? 'video'
+        : 'meta';
     if (def?.maxInstances !== undefined) {
       let existing = 0;
       for (const node of Object.values(patch.nodes)) {
@@ -1259,6 +1277,13 @@
         ? { creatorId: currentUserId }
         : undefined;
 
+    // Insert-on-cable (Proposal B2): if the cursor is close to an
+    // existing cable's midpoint AND the new module has a compatible
+    // input + compatible output for the cable's cableType, splice the
+    // new card into the cable (delete original, add src→new + new→dst).
+    // Falls back to a plain spawn-at-cursor on no match.
+    const splice = tryFindInsertSpliceTarget(spawnFlowPos, def);
+
     ydoc.transact(() => {
       patch.nodes[id] = {
         id,
@@ -1268,6 +1293,25 @@
         params: {},
         ...(initialData ? { data: initialData } : {}),
       };
+      if (splice) {
+        delete patch.edges[splice.edge.id];
+        const e1id = `e-${splice.edge.source.nodeId}-${splice.edge.source.portId}-${id}-${splice.inPort.id}`;
+        const e2id = `e-${id}-${splice.outPort.id}-${splice.edge.target.nodeId}-${splice.edge.target.portId}`;
+        patch.edges[e1id] = {
+          id: e1id,
+          source: { ...splice.edge.source },
+          target: { nodeId: id, portId: splice.inPort.id },
+          sourceType: splice.edge.sourceType,
+          targetType: splice.inPort.type,
+        };
+        patch.edges[e2id] = {
+          id: e2id,
+          source: { nodeId: id, portId: splice.outPort.id },
+          target: { ...splice.edge.target },
+          sourceType: splice.outPort.type,
+          targetType: splice.edge.targetType,
+        };
+      }
     }, LOCAL_ORIGIN);
     // Mark this node as the visual top of the stacking order so it
     // renders on top of any cards it overlaps. Cleared as soon as the
@@ -1275,9 +1319,104 @@
     // strictly an at-spawn affordance — long-lived "always on top"
     // would surprise users who expect drag-to-front to win later.
     topNodeId = id;
-    trace(`spawned ${type} (${id})`);
+    if (splice) {
+      trace(`spliced ${type} (${id}) into edge ${splice.edge.id}`);
+    } else {
+      trace(`spawned ${type} (${id})`);
+    }
     // Engine instantiation happens via the reconciler microtask.
     void ensureEngine();
+  }
+
+  // ----- Insert-on-cable (Proposal B2) hit-test + compatibility -----
+
+  /** Maximum distance (flow-space px) between cursor drop point and a
+   *  cable's geometric midpoint that still counts as a splice. Matches
+   *  the threshold called out in the B2 spec. */
+  const INSERT_ON_CABLE_THRESHOLD_PX = 12;
+
+  /** Best-effort flow-space midpoint of an edge. Reads xyflow's internal
+   *  per-handle bounds when measured; falls back to the node's center
+   *  when the bounds aren't computed yet (immediately post-spawn). */
+  function edgeMidpoint(edge: Edge): { x: number; y: number } | null {
+    if (!flowApi) return null;
+    const src = flowApi.getInternalNode(edge.source.nodeId);
+    const dst = flowApi.getInternalNode(edge.target.nodeId);
+    if (!src || !dst) return null;
+    const srcPt = handlePointAbsolute(src, 'source', edge.source.portId);
+    const dstPt = handlePointAbsolute(dst, 'target', edge.target.portId);
+    if (!srcPt || !dstPt) return null;
+    return { x: (srcPt.x + dstPt.x) / 2, y: (srcPt.y + dstPt.y) / 2 };
+  }
+
+  function handlePointAbsolute(
+    internal: InternalFlowNode,
+    side: 'source' | 'target',
+    portId: string,
+  ): { x: number; y: number } | null {
+    const pa = internal.internals?.positionAbsolute
+      ?? { x: (internal.position?.x ?? 0), y: (internal.position?.y ?? 0) };
+    const bucket = internal.internals?.handleBounds?.[side];
+    const handle = bucket?.find((h) => h.id === portId);
+    if (handle) {
+      return {
+        x: pa.x + handle.x + handle.width / 2,
+        y: pa.y + handle.y + handle.height / 2,
+      };
+    }
+    // Fallback: approximate as left/right midpoint of the node's
+    // bounding box. Conservative — keeps the splice working immediately
+    // after spawn before handle bounds get measured.
+    const w = internal.measured?.width ?? 240;
+    const h = internal.measured?.height ?? 200;
+    return {
+      x: pa.x + (side === 'source' ? w : 0),
+      y: pa.y + h / 2,
+    };
+  }
+
+  /** Pick the first input port on `inputs` whose type accepts a cable
+   *  carrying `cableType`. Mirrors PR-118's first-declared selection
+   *  rule so the spawn path and the dblclick-corner-trigger path agree. */
+  function firstCompatibleInput(inputs: PortDef[] | undefined, cableType: CableType): PortDef | undefined {
+    if (!inputs) return undefined;
+    return inputs.find((p) => canConnect(cableType, p.type));
+  }
+  /** Pick the first output port whose type can drive `dstType`. */
+  function firstCompatibleOutput(outputs: PortDef[] | undefined, dstType: CableType): PortDef | undefined {
+    if (!outputs) return undefined;
+    return outputs.find((p) => canConnect(p.type, dstType));
+  }
+
+  /** Search every edge in the current snapshot for one whose midpoint
+   *  lies within INSERT_ON_CABLE_THRESHOLD_PX of `pos`, AND for which
+   *  the new module def `newDef` has a compatible input + output for
+   *  the cable's source / target types. Returns the first match (sorted
+   *  by edge id for determinism) or null. */
+  function tryFindInsertSpliceTarget(
+    pos: { x: number; y: number },
+    newDef: { inputs?: PortDef[]; outputs?: PortDef[] } | undefined,
+  ): { edge: Edge; inPort: PortDef; outPort: PortDef } | null {
+    if (!newDef) return null;
+    const threshold = INSERT_ON_CABLE_THRESHOLD_PX;
+    const t2 = threshold * threshold;
+    const edges = [...snapshot.edges].sort((a, b) => a.id.localeCompare(b.id));
+    for (const e of edges) {
+      const mid = edgeMidpoint(e);
+      if (!mid) continue;
+      const dx = mid.x - pos.x;
+      const dy = mid.y - pos.y;
+      if (dx * dx + dy * dy > t2) continue;
+      const inPort = firstCompatibleInput(newDef.inputs, e.sourceType);
+      if (!inPort) continue;
+      // Output side: pick the first declared output that can drive the
+      // downstream port. The downstream port's declared type is
+      // edge.targetType; canConnect(outPort.type, targetType) gates it.
+      const outPort = firstCompatibleOutput(newDef.outputs, e.targetType);
+      if (!outPort) continue;
+      return { edge: e, inPort, outPort };
+    }
+    return null;
   }
 
   let bootPromise: Promise<PatchEngine> | null = null;

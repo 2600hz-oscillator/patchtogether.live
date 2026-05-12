@@ -16,6 +16,7 @@
 
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
+import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import { testHooksEnabled } from './test-hooks';
 
 export interface ModuleSpecPort {
@@ -48,6 +49,7 @@ export function getAllModuleSpecs(): ModuleSpec[] {
   const all = [
     ...listModuleDefs(),
     ...listVideoModuleDefs(),
+    ...listMetaModuleDefs(),
   ];
   return all
     .map((def) => ({

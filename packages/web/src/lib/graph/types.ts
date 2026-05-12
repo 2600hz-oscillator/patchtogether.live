@@ -158,7 +158,11 @@ type StandardModuleType =
   // STEREOVCA — stereo VCA + ring modulator. Same per-channel multiply
   // behaves as VCA gain (slow strength) or ring mod (audio-rate strength);
   // INDEPENDENT normalling on the audio and strength halves.
-  | 'stereovca';
+  | 'stereovca'
+  // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
+  // binding; just an editable, resizable, Yjs-synced text card. Lives in
+  // the palette's "meta" category.
+  | 'sticky';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
