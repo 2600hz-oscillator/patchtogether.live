@@ -130,9 +130,12 @@
     buildExposedPorts,
     planCreateGroup,
     planUngroup,
+    planEditExposed,
+    planDuplicateGroup,
     type PortCandidate,
     type PortLookupModule,
   } from '$lib/graph/group-actions';
+  import type { ExposedPort, GroupData } from '$lib/graph/group-projection';
   import { SelectionMode } from '@xyflow/svelte';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
@@ -836,6 +839,15 @@
     const n = patch.nodes[ctxMenuNodeId];
     return n?.type ?? null;
   });
+  // Module-grouping Phase 2A — track whether the right-clicked group is
+  // currently expanded so the menu can label the toggle appropriately.
+  let ctxMenuGroupExpanded = $derived.by<boolean>(() => {
+    void snapshot;
+    if (!ctxMenuNodeId) return false;
+    const n = patch.nodes[ctxMenuNodeId];
+    if (!n || n.type !== 'group') return false;
+    return (n.data as { expanded?: boolean } | undefined)?.expanded === true;
+  });
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
@@ -1009,6 +1021,196 @@
       delete patch.nodes[plan.groupNodeId];
     }, LOCAL_ORIGIN);
     trace(`ungrouped ${groupId} (restored ${plan.childrenToClear.length} children)`);
+  }
+
+  // ---------------- Module-grouping Phase 2A — edit-knob-positions ----------------
+  //
+  // Toggling `data.expanded` flips the group from "single GroupCard" mode
+  // into "render children inline" mode. The flowNodes/flowEdges $effects
+  // already respect the flag (children are skipped only when their parent
+  // group is in `collapsedGroupIds`, which excludes expanded groups). The
+  // GroupCard itself notices `expanded` and renders a thin header instead
+  // of its full body. A floating "Update group" button surfaces above
+  // the viewport while any group is expanded — clicking it collapses
+  // all currently-expanded groups so the user can't get stuck.
+  function toggleGroupExpanded(groupId: string) {
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    const current = (group.data as { expanded?: boolean } | undefined)?.expanded === true;
+    ydoc.transact(() => {
+      const target = patch.nodes[groupId];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as { expanded?: boolean }).expanded = !current;
+    }, LOCAL_ORIGIN);
+    trace(`group ${groupId} expanded → ${!current}`);
+  }
+
+  // Collapses every currently-expanded group. Wired to the floating
+  // "Update group" button so a user can exit edit-knob mode in one click
+  // regardless of how many groups they cracked open.
+  function collapseAllExpandedGroups() {
+    ydoc.transact(() => {
+      for (const node of Object.values(patch.nodes)) {
+        if (!node || node.type !== 'group') continue;
+        const data = node.data as { expanded?: boolean } | undefined;
+        if (data?.expanded === true) {
+          (node.data as { expanded?: boolean }).expanded = false;
+        }
+      }
+    }, LOCAL_ORIGIN);
+    trace('collapsed every expanded group');
+  }
+
+  // Snapshot-derived: are there any expanded groups right now? Drives
+  // the floating "Update group" button's visibility.
+  let anyGroupExpanded = $derived.by(() => {
+    void snapshot;
+    for (const n of snapshot.nodes) {
+      if (n.type !== 'group') continue;
+      if ((n.data as { expanded?: boolean } | undefined)?.expanded === true) return true;
+    }
+    return false;
+  });
+
+  // ---------------- Module-grouping Phase 2B — edit-exposed-jacks ----------------
+  //
+  // Right-click → "Edit exposed patch jacks…" re-opens the GroupBuilderModal
+  // in EDIT mode. The modal seeds checked rows from the group's current
+  // exposedPorts list; on commit we diff old vs new via planEditExposed
+  // and update the group + drop any cables to now-removed exposed ports.
+
+  /** Active group-id being edited via the exposed-jacks modal. null when
+   *  the modal is open in create mode. */
+  let editExposedGroupId = $state<string | null>(null);
+  let editExposedExistingPorts = $state<ExposedPort[] | undefined>(undefined);
+  let editExposedExistingLabel = $state<string | undefined>(undefined);
+
+  function openEditExposedJacks(groupId: string) {
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    const data = group.data as unknown as GroupData | undefined;
+    if (!data) return;
+    const eligible = data.childIds.filter((id) => Boolean(patch.nodes[id]));
+    if (eligible.length === 0) return;
+
+    const modulesById = new Map<string, PortLookupModule>();
+    const labels = new Map<string, string>();
+    for (const id of eligible) {
+      const node = patch.nodes[id];
+      if (!node) continue;
+      const def = defLookup(node.type);
+      if (!def) continue;
+      modulesById.set(id, {
+        id,
+        type: node.type,
+        inputs: def.inputs,
+        outputs: def.outputs,
+        label: def.label,
+      });
+      labels.set(id, def.label ?? node.type);
+    }
+
+    groupBuilderCandidates = buildPortCandidates({
+      selectionIds: eligible,
+      nodes: snapshot.nodes,
+      edges: snapshot.edges,
+      modulesById,
+    });
+    groupBuilderSelectionIds = eligible;
+    groupBuilderModuleLabels = labels;
+    editExposedGroupId = groupId;
+    editExposedExistingPorts = data.exposedPorts.slice();
+    editExposedExistingLabel = data.label;
+    groupBuilderOpen = true;
+  }
+
+  function commitEditExposed(selectedCandidates: PortCandidate[], label: string) {
+    const groupId = editExposedGroupId;
+    if (!groupId) return;
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    const newExposed = buildExposedPorts({ selectedCandidates });
+    const plan = planEditExposed({
+      group: group as unknown as ModuleNode,
+      edges: snapshot.edges,
+      newExposedPorts: newExposed,
+      newLabel: label,
+    });
+    ydoc.transact(() => {
+      const target = patch.nodes[groupId];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      const data = target.data as unknown as GroupData;
+      data.exposedPorts = plan.mergedExposedPorts;
+      if (plan.newLabel !== undefined) data.label = plan.newLabel;
+      for (const id of plan.deleteEdgeIds) delete patch.edges[id];
+    }, LOCAL_ORIGIN);
+    trace(
+      `group ${groupId} re-exposed (${plan.mergedExposedPorts.length} ports, dropped ${plan.deleteEdgeIds.length} cables)`,
+    );
+  }
+
+  // ---------------- Module-grouping Phase 2C — duplicate group ----------------
+  //
+  // Right-click → "Duplicate" on a group clones the group + every child
+  // into a fresh id space, offsets by 30px down-right (cascading from
+  // the source), and re-creates internal edges. External cables are NOT
+  // cloned. Hits the same maxInstances guard as duplicateNode for each
+  // child type.
+  function duplicateGroupAction(groupId: string) {
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') {
+      trace(`duplicate-group refused: ${groupId} is not a group`);
+      return;
+    }
+    const data = group.data as unknown as GroupData | undefined;
+    if (!data) return;
+    const children: ModuleNode[] = [];
+    for (const id of data.childIds) {
+      const n = patch.nodes[id];
+      if (n) children.push(n as unknown as ModuleNode);
+    }
+    // maxInstances preflight: count each type that's at/over cap.
+    const typeCounts = new Map<string, number>();
+    for (const node of Object.values(patch.nodes)) {
+      if (!node) continue;
+      typeCounts.set(node.type, (typeCounts.get(node.type) ?? 0) + 1);
+    }
+    for (const child of children) {
+      const def = defLookup(child.type);
+      const cap = def?.maxInstances;
+      if (cap === undefined) continue;
+      const willBe = (typeCounts.get(child.type) ?? 0) + 1; // +1 because we're about to add one more
+      if (willBe > cap) {
+        const msg = `${def?.label ?? child.type}: duplicating this group would exceed instance cap (${willBe}/${cap})`;
+        trace(`duplicate-group refused: ${child.type} would exceed cap (${willBe}/${cap})`);
+        error = msg;
+        setTimeout(() => {
+          if (error === msg) error = null;
+        }, 4000);
+        return;
+      }
+      typeCounts.set(child.type, willBe);
+    }
+
+    const plan = planDuplicateGroup({
+      group: group as unknown as ModuleNode,
+      children,
+      edges: snapshot.edges,
+      existingNodeIds: Object.keys(patch.nodes),
+      existingEdgeIds: Object.keys(patch.edges),
+    });
+
+    ydoc.transact(() => {
+      for (const c of plan.newChildren) patch.nodes[c.id] = c;
+      patch.nodes[plan.newGroup.id] = plan.newGroup;
+      for (const e of plan.newEdges) patch.edges[e.id] = e;
+    }, LOCAL_ORIGIN);
+    trace(
+      `duplicated group ${groupId} → ${plan.newGroup.id} (${plan.newChildren.length} children, ${plan.newEdges.length} internal edges)`,
+    );
+    void ensureEngine();
   }
 
   function deleteGroupAndChildren(groupId: string) {
@@ -2036,6 +2238,20 @@
     </button>
     <AwarenessLayer {provider} />
     <PickupCable />
+    {#if anyGroupExpanded}
+      <!-- Module-grouping Phase 2A: floating "Update group" CTA visible
+           whenever any group is expanded. One click collapses every
+           expanded group so the user never gets stuck in edit-knob mode. -->
+      <button
+        type="button"
+        class="update-group-cta"
+        data-testid="update-group-cta"
+        onclick={collapseAllExpandedGroups}
+        title="Collapse expanded group(s)"
+      >
+        Update group
+      </button>
+    {/if}
   </div>
 
   <footer class="bottombar">
@@ -2085,6 +2301,7 @@
   nodeLabel={ctxMenuLabel}
   nodeType={ctxMenuNodeType}
   isGroup={ctxMenuNodeType === 'group'}
+  groupExpanded={ctxMenuGroupExpanded}
   ondelete={() => {
     if (!ctxMenuNodeId) return;
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
@@ -2093,6 +2310,9 @@
   onduplicate={() => ctxMenuNodeId && duplicateNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onungroup={() => ctxMenuNodeId && ungroupNode(ctxMenuNodeId)}
+  ontoggleexpanded={() => ctxMenuNodeId && toggleGroupExpanded(ctxMenuNodeId)}
+  oneditexposed={() => ctxMenuNodeId && openEditExposedJacks(ctxMenuNodeId)}
+  onduplicategroup={() => ctxMenuNodeId && duplicateGroupAction(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
 />
 
@@ -2110,8 +2330,18 @@
   candidates={groupBuilderCandidates}
   selectionIds={groupBuilderSelectionIds}
   moduleLabels={groupBuilderModuleLabels}
-  oncreate={commitGroup}
-  onclose={() => { groupBuilderOpen = false; }}
+  existingExposedPorts={editExposedExistingPorts}
+  existingLabel={editExposedExistingLabel}
+  oncreate={(picks, label) => {
+    if (editExposedGroupId) commitEditExposed(picks, label);
+    else commitGroup(picks, label);
+  }}
+  onclose={() => {
+    groupBuilderOpen = false;
+    editExposedGroupId = null;
+    editExposedExistingPorts = undefined;
+    editExposedExistingLabel = undefined;
+  }}
 />
 
 <PortContextMenu
@@ -2242,6 +2472,27 @@
   }
   .minimap-toggle.open {
     bottom: 124px;
+  }
+  /* Module-grouping Phase 2A: "Update group" floating CTA pinned to the
+   * top-center of the canvas viewport while any group is expanded. */
+  .update-group-cta {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 12;
+    background: var(--accent, #60a5fa);
+    color: #0e1116;
+    border: 1px solid var(--accent, #60a5fa);
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  }
+  .update-group-cta:hover {
+    filter: brightness(1.05);
   }
   .error {
     margin: 0;

@@ -11,6 +11,7 @@
   // parent which builds the ExposedPort[] + plans the create-group action.
 
   import type { PortCandidate } from '$lib/graph/group-actions';
+  import type { ExposedPort } from '$lib/graph/group-projection';
 
   /** Hard cap on name length — sanity guard, not validation. */
   const NAME_MAX_LENGTH = 32;
@@ -25,6 +26,13 @@
     selectionIds: string[];
     /** Per-childId display label (e.g. "FILTER"). Falls back to childId. */
     moduleLabels: Map<string, string>;
+    /** Module-grouping Phase 2B — when set, the modal is in EDIT mode for
+     *  an existing group: pre-check ports already exposed, change the
+     *  primary button label to "Update", seed the name input with the
+     *  group's current label. */
+    existingExposedPorts?: ExposedPort[];
+    /** Existing label to seed the name input with in edit mode. */
+    existingLabel?: string;
     oncreate: (selectedCandidates: PortCandidate[], label: string) => void;
     onclose: () => void;
   }
@@ -34,9 +42,13 @@
     candidates,
     selectionIds,
     moduleLabels,
+    existingExposedPorts,
+    existingLabel,
     oncreate,
     onclose,
   }: Props = $props();
+
+  let isEditMode = $derived(Array.isArray(existingExposedPorts));
 
   // Group name input — defaults to '' so the placeholder is visible. Reset
   // each time the modal opens so a previous session's name doesn't carry over.
@@ -56,11 +68,22 @@
   $effect(() => {
     if (!open) return;
     const next: Record<string, boolean> = {};
-    for (const c of candidates) next[keyOf(c)] = c.hasExternalCable;
+    if (Array.isArray(existingExposedPorts)) {
+      // Edit mode: pre-check ports that are currently exposed on the group.
+      const exposedKeys = new Set<string>();
+      for (const ep of existingExposedPorts) {
+        exposedKeys.add(`${ep.direction}::${ep.childId}::${ep.childPortId}`);
+      }
+      for (const c of candidates) next[keyOf(c)] = exposedKeys.has(keyOf(c));
+    } else {
+      // Create mode: pre-check ports whose cables would otherwise be dropped.
+      for (const c of candidates) next[keyOf(c)] = c.hasExternalCable;
+    }
     checked = next;
     // Reset the name + auto-focus the input on (re)open — matches the
-    // ModulePalette search-box behavior.
-    groupName = '';
+    // ModulePalette search-box behavior. Edit mode seeds with the
+    // existing label so the user sees what's there before retyping.
+    groupName = existingLabel ?? '';
     queueMicrotask(() => nameInputEl?.focus());
   });
 
@@ -91,9 +114,23 @@
     }));
   });
 
-  // Count of would-be-dropped cables — sum of `hasExternalCable` rows
-  // currently NOT checked. Drives the confirmation hint.
+  // Count of would-be-dropped cables. In CREATE mode this is the count
+  // of ports whose existing external cable would be dropped because the
+  // user unchecked the auto-exposure. In EDIT mode the more useful count
+  // is "currently-exposed ports being un-exposed" — those drop the
+  // external cables that previously terminated there.
   let dropCount = $derived.by(() => {
+    if (Array.isArray(existingExposedPorts)) {
+      const exposedKeys = new Set<string>();
+      for (const ep of existingExposedPorts) {
+        exposedKeys.add(`${ep.direction}::${ep.childId}::${ep.childPortId}`);
+      }
+      let n = 0;
+      for (const c of candidates) {
+        if (exposedKeys.has(keyOf(c)) && !checked[keyOf(c)]) n++;
+      }
+      return n;
+    }
     let n = 0;
     for (const c of candidates) {
       if (c.hasExternalCable && !checked[keyOf(c)]) n++;
@@ -114,9 +151,10 @@
     // surface a confirm() prompt — they're explicitly dropping those
     // connections, and the spec says to require an extra tap.
     if (dropCount > 0) {
-      const ok = window.confirm(
-        `${dropCount} cable${dropCount === 1 ? '' : 's'} crossing the group boundary will be DROPPED. Continue?`,
-      );
+      const msg = Array.isArray(existingExposedPorts)
+        ? `${dropCount} cable${dropCount === 1 ? '' : 's'} terminating on a now-un-exposed port will be DROPPED. Continue?`
+        : `${dropCount} cable${dropCount === 1 ? '' : 's'} crossing the group boundary will be DROPPED. Continue?`;
+      const ok = window.confirm(msg);
       if (!ok) return;
     }
     const trimmed = groupName.trim();
@@ -163,10 +201,18 @@
     data-testid="group-builder-modal"
   >
     <header class="modal-header">
-      <h2 id="group-builder-title">Group modules</h2>
+      <h2 id="group-builder-title">
+        {isEditMode ? 'Edit exposed patch jacks' : 'Group modules'}
+      </h2>
       <p class="modal-sub">
-        Pick the ports to expose on the group. Cables that would cross the
-        boundary are pre-checked; uncheck to drop them.
+        {#if isEditMode}
+          Toggle which child ports are exposed on the group's boundary.
+          Un-checking a currently-exposed port will drop any cables
+          terminating there.
+        {:else}
+          Pick the ports to expose on the group. Cables that would cross the
+          boundary are pre-checked; uncheck to drop them.
+        {/if}
       </p>
     </header>
     <div class="modal-body">
@@ -228,7 +274,7 @@
       {/if}
       <button class="btn" onclick={handleCancel} data-testid="group-builder-cancel">Cancel</button>
       <button class="btn primary" onclick={handleCreate} data-testid="group-builder-create">
-        Create group
+        {isEditMode ? 'Update' : 'Create group'}
       </button>
     </footer>
   </div>

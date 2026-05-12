@@ -241,3 +241,177 @@ describe('planUngroup', () => {
     expect(plan.groupNodeId).toBe('g-1');
   });
 });
+
+// --------------------------------------------------------------------
+// Phase 2B — planEditExposed
+// --------------------------------------------------------------------
+
+import { planEditExposed, planDuplicateGroup } from './group-actions';
+
+describe('planEditExposed', () => {
+  it('preserves stable exposed-port ids for ports kept in both old and new lists', () => {
+    const oldExposed: ExposedPort[] = [
+      { id: 'out--flt-1--out', childId: 'flt-1', childPortId: 'out', direction: 'output', cableType: 'audio' },
+    ];
+    const group = node('g-1', 'group', {
+      childIds: ['lfo-1', 'flt-1'],
+      exposedPorts: oldExposed,
+    } as unknown as Record<string, unknown>);
+    const newExposed: ExposedPort[] = [
+      // Caller minted a fresh id, but planEditExposed should keep the old one.
+      { id: 'BOGUS-NEW-ID', childId: 'flt-1', childPortId: 'out', direction: 'output', cableType: 'audio' },
+      { id: 'in--flt-1--cutoff', childId: 'flt-1', childPortId: 'cutoff', direction: 'input', cableType: 'cv' },
+    ];
+    const plan = planEditExposed({
+      group,
+      edges: [],
+      newExposedPorts: newExposed,
+    });
+    expect(plan.mergedExposedPorts).toHaveLength(2);
+    const kept = plan.mergedExposedPorts.find((p) => p.childPortId === 'out')!;
+    expect(kept.id).toBe('out--flt-1--out'); // OLD id preserved
+    const added = plan.mergedExposedPorts.find((p) => p.childPortId === 'cutoff')!;
+    expect(added.id).toBe('in--flt-1--cutoff'); // new id used for fresh port
+  });
+
+  it('drops edges terminating on un-exposed ports', () => {
+    const oldExposed: ExposedPort[] = [
+      { id: 'out--flt-1--out', childId: 'flt-1', childPortId: 'out', direction: 'output', cableType: 'audio' },
+      { id: 'in--flt-1--cutoff', childId: 'flt-1', childPortId: 'cutoff', direction: 'input', cableType: 'cv' },
+    ];
+    const group = node('g-1', 'group', {
+      childIds: ['flt-1'],
+      exposedPorts: oldExposed,
+    } as unknown as Record<string, unknown>);
+    const plan = planEditExposed({
+      group,
+      edges: [
+        edge('e-keep', { n: 'g-1', p: 'out--flt-1--out' }, { n: 'out-1', p: 'L' }),
+        edge('e-drop', { n: 'lfo-1', p: 'phase0' }, { n: 'g-1', p: 'in--flt-1--cutoff' }),
+      ],
+      newExposedPorts: [
+        // Drop the cutoff exposure; keep the out exposure.
+        { id: 'out--flt-1--out', childId: 'flt-1', childPortId: 'out', direction: 'output', cableType: 'audio' },
+      ],
+    });
+    expect(plan.deleteEdgeIds).toEqual(['e-drop']);
+    expect(plan.mergedExposedPorts).toHaveLength(1);
+  });
+
+  it('propagates an explicit label update', () => {
+    const group = node('g-1', 'group', {
+      childIds: [],
+      exposedPorts: [],
+      label: 'old',
+    } as unknown as Record<string, unknown>);
+    const plan = planEditExposed({ group, edges: [], newExposedPorts: [], newLabel: 'shiny' });
+    expect(plan.newLabel).toBe('shiny');
+  });
+
+  it('handles a group with no prior exposedPorts', () => {
+    const group = node('g-1', 'group');
+    const newExposed: ExposedPort[] = [
+      { id: 'in--flt-1--cutoff', childId: 'flt-1', childPortId: 'cutoff', direction: 'input', cableType: 'cv' },
+    ];
+    const plan = planEditExposed({ group, edges: [], newExposedPorts: newExposed });
+    expect(plan.mergedExposedPorts).toHaveLength(1);
+    expect(plan.mergedExposedPorts[0]!.id).toBe('in--flt-1--cutoff');
+    expect(plan.deleteEdgeIds).toEqual([]);
+  });
+});
+
+// --------------------------------------------------------------------
+// Phase 2C — planDuplicateGroup
+// --------------------------------------------------------------------
+
+describe('planDuplicateGroup', () => {
+  it('mints fresh ids for group + every child + every internal edge; external edges NOT cloned', () => {
+    const lfo: ModuleNode = { id: 'lfo-1', type: 'lfo', domain: 'audio', position: { x: 0, y: 0 }, params: { rate: 2 } };
+    const flt: ModuleNode = { id: 'flt-1', type: 'filter', domain: 'audio', position: { x: 100, y: 0 }, params: {} };
+    const group: ModuleNode = {
+      id: 'g-1',
+      type: 'group',
+      domain: 'meta',
+      position: { x: 200, y: 200 },
+      params: {},
+      data: {
+        childIds: ['lfo-1', 'flt-1'],
+        exposedPorts: [
+          { id: 'out--flt-1--out', childId: 'flt-1', childPortId: 'out', direction: 'output', cableType: 'audio' },
+        ],
+      } as unknown as Record<string, unknown>,
+    };
+    const internalEdge: Edge = {
+      id: 'e-internal',
+      source: { nodeId: 'lfo-1', portId: 'phase0' },
+      target: { nodeId: 'flt-1', portId: 'cutoff' },
+      sourceType: 'cv',
+      targetType: 'cv',
+    };
+    const externalEdge: Edge = {
+      id: 'e-external',
+      source: { nodeId: 'g-1', portId: 'out--flt-1--out' },
+      target: { nodeId: 'out-1', portId: 'L' },
+      sourceType: 'audio',
+      targetType: 'audio',
+    };
+    const plan = planDuplicateGroup({
+      group,
+      children: [lfo, flt],
+      edges: [internalEdge, externalEdge],
+      existingNodeIds: ['lfo-1', 'flt-1', 'g-1', 'out-1'],
+      existingEdgeIds: ['e-internal', 'e-external'],
+      positionOffset: { x: 30, y: 30 },
+    });
+
+    expect(plan.newChildren).toHaveLength(2);
+    const ids = new Set(plan.newChildren.map((c) => c.id));
+    expect(ids.has('lfo-1')).toBe(false);
+    expect(ids.has('flt-1')).toBe(false);
+    expect(plan.newGroup.id).not.toBe('g-1');
+    // Positions cascaded.
+    const newLfo = plan.newChildren.find((c) => c.type === 'lfo')!;
+    expect(newLfo.position).toEqual({ x: 30, y: 30 });
+    expect(plan.newGroup.position).toEqual({ x: 230, y: 230 });
+    // Params deep-cloned (independent object) but values copied.
+    expect(newLfo.params).toEqual({ rate: 2 });
+    expect(newLfo.params).not.toBe(lfo.params);
+
+    // ExposedPort rewritten to point at the new child id.
+    const newExposed = (plan.newGroup.data as { exposedPorts: ExposedPort[] }).exposedPorts;
+    expect(newExposed).toHaveLength(1);
+    const newFlt = plan.newChildren.find((c) => c.type === 'filter')!;
+    expect(newExposed[0]!.childId).toBe(newFlt.id);
+
+    // Internal edge cloned, external NOT.
+    expect(plan.newEdges).toHaveLength(1);
+    expect(plan.newEdges[0]!.source.nodeId).toBe(newLfo.id);
+    expect(plan.newEdges[0]!.target.nodeId).toBe(newFlt.id);
+    expect(plan.newEdges[0]!.id).not.toBe('e-internal');
+
+    // parentGroupId stamped on the new children, NOT the old group id.
+    for (const c of plan.newChildren) {
+      expect((c.data as { parentGroupId?: string }).parentGroupId).toBe(plan.newGroup.id);
+    }
+  });
+
+  it('returns an empty plan when the group has no data', () => {
+    const group: ModuleNode = {
+      id: 'g-1',
+      type: 'group',
+      domain: 'meta',
+      position: { x: 0, y: 0 },
+      params: {},
+    };
+    const plan = planDuplicateGroup({
+      group,
+      children: [],
+      edges: [],
+      existingNodeIds: ['g-1'],
+      existingEdgeIds: [],
+    });
+    expect(plan.newChildren).toHaveLength(0);
+    expect(plan.newEdges).toHaveLength(0);
+    expect((plan.newGroup.data as { exposedPorts: ExposedPort[] }).exposedPorts).toEqual([]);
+  });
+});
