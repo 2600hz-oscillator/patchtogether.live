@@ -173,6 +173,36 @@ describe('reconciler — determinism (B3)', () => {
     expect(recA.ops).toEqual(recB.ops);
   });
 
+  it('skips meta-domain nodes (no engine binding)', async () => {
+    A.ydoc.transact(() => {
+      A.patch.nodes['st-1'] = {
+        id: 'st-1',
+        type: 'sticky',
+        domain: 'meta',
+        position: { x: 0, y: 0 },
+        params: {},
+        data: { text: 'hello' },
+      };
+      A.patch.nodes['v-1'] = n('v-1', 'analogVco');
+    });
+    await flushMicrotasks();
+    await handleA.reconcile();
+    // Engine receives the audio node but NOT the sticky.
+    expect(recA.ops).toContain('addNode v-1');
+    expect(recA.ops).not.toContain('addNode st-1');
+
+    // Updating the sticky's data does not produce engine ops.
+    recA.ops.length = 0;
+    A.ydoc.transact(() => {
+      const target = A.patch.nodes['st-1']!;
+      if (!target.data) target.data = {};
+      target.data.text = 'updated';
+    });
+    await flushMicrotasks();
+    await handleA.reconcile();
+    expect(recA.ops).toEqual([]);
+  });
+
   it('removed-edges run before removed-nodes, both sorted by id', async () => {
     A.ydoc.transact(() => {
       A.patch.nodes['x'] = n('x');

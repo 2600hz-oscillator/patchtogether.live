@@ -3,6 +3,7 @@
   // click the topbar's + Add module) to open. Type to filter; click to spawn.
   import { listModuleDefs } from '$lib/audio/module-registry';
   import { listVideoModuleDefs } from '$lib/video/module-registry';
+  import { listMetaModuleDefs } from '$lib/meta/module-registry';
   import { patch } from '$lib/graph/store';
 
   interface Props {
@@ -63,6 +64,7 @@
       ? [
           ...listModuleDefs(),
           ...listVideoModuleDefs(),
+          ...listMetaModuleDefs(),
         ].filter(
           (d) => d.maxInstances === undefined || instanceCount(d.type) < d.maxInstances,
         )
@@ -81,19 +83,21 @@
   // visual section without sifting through 20+ audio modules. Category
   // sub-grouping inside each domain preserves the existing palette mental
   // model (sources → modulation → filters → ...).
-  const CATEGORY_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
-  const DOMAIN_ORDER: Array<'audio' | 'video'> = ['audio', 'video'];
-  const DOMAIN_LABEL: Record<string, string> = { audio: 'AUDIO', video: 'VIDEO' };
+  const CATEGORY_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output', 'tools'];
+  // Meta sits at the bottom — sticky-note-style tools live there. Putting
+  // them last keeps the familiar audio→video reading order intact.
+  const DOMAIN_ORDER: Array<'audio' | 'video' | 'meta'> = ['audio', 'video', 'meta'];
+  const DOMAIN_LABEL: Record<string, string> = { audio: 'AUDIO', video: 'VIDEO', meta: 'META' };
 
   /** [domain, [category, defs]] tuples in deterministic order. */
   let groupedByDomain = $derived.by(() => {
-    const byDomain: Record<string, Record<string, typeof filtered>> = { audio: {}, video: {} };
+    const byDomain: Record<string, Record<string, typeof filtered>> = { audio: {}, video: {}, meta: {} };
     for (const d of filtered) {
-      const dom = (d.domain ?? 'audio') as 'audio' | 'video';
+      const dom = (d.domain ?? 'audio') as 'audio' | 'video' | 'meta';
       const bucket = byDomain[dom] ?? (byDomain[dom] = {});
       (bucket[d.category] ??= []).push(d);
     }
-    const out: Array<{ domain: 'audio' | 'video'; categories: Array<{ name: string; defs: typeof filtered }> }> = [];
+    const out: Array<{ domain: 'audio' | 'video' | 'meta'; categories: Array<{ name: string; defs: typeof filtered }> }> = [];
     for (const dom of DOMAIN_ORDER) {
       const bucket = byDomain[dom] ?? {};
       const categories: Array<{ name: string; defs: typeof filtered }> = [];

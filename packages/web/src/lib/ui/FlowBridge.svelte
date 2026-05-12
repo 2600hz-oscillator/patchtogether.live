@@ -11,10 +11,35 @@
   import type { XYPosition } from '@xyflow/system';
   import type { Node as FlowNode } from '@xyflow/svelte';
 
+  /** xyflow's per-handle bounds entry (relative to the node's top-left
+   *  in flow-space). Inlined here so the canvas's insert-on-cable code
+   *  can read it without importing from @xyflow/system. */
+  export interface HandleBoundsEntry {
+    id: string | null;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }
+
+  /** Shape of `useSvelteFlow().getInternalNode(id)` — a FlowNode plus an
+   *  `internals` bag holding the measured positionAbsolute + handle
+   *  bounds. We type just the fields the canvas reads. */
+  export type InternalFlowNode = FlowNode & {
+    measured?: { width?: number; height?: number };
+    internals?: {
+      positionAbsolute?: { x: number; y: number };
+      handleBounds?: {
+        source?: HandleBoundsEntry[];
+        target?: HandleBoundsEntry[];
+      };
+    };
+  };
+
   export interface FlowBridgeApi {
     screenToFlowPosition: (p: XYPosition) => XYPosition;
     getNode: (id: string) => FlowNode | undefined;
-    getInternalNode: (id: string) => { measured: { width?: number; height?: number } } | undefined;
+    getInternalNode: (id: string) => InternalFlowNode | undefined;
     getNodes: () => FlowNode[];
     /** Current viewport: pan offset (x,y in screen px) + zoom factor. Used by
      *  Organize-modules to compute the visible region in flow-space. */
@@ -39,8 +64,7 @@
     api = {
       screenToFlowPosition: flow.screenToFlowPosition,
       getNode: flow.getNode,
-      getInternalNode: (id: string) => flow.getInternalNode(id) as unknown as
-        { measured: { width?: number; height?: number } } | undefined,
+      getInternalNode: (id: string) => flow.getInternalNode(id) as unknown as InternalFlowNode | undefined,
       getNodes: () => flow.getNodes(),
       getViewport: () => flow.getViewport(),
       cancelClickConnect: () => {

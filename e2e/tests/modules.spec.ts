@@ -14,8 +14,9 @@ interface ModuleSpec {
   containsLabel: string;   // substring expected in the card
   /** 'audio' (default) or 'video'. Phase 0 video spike modules need
    *  this so spawnPatch sets node.domain correctly and the reconciler
-   *  routes the new node to the VideoEngine. */
-  domain?: 'audio' | 'video';
+   *  routes the new node to the VideoEngine. 'meta' is the third arm
+   *  for STICKY-style non-engine cards. */
+  domain?: 'audio' | 'video' | 'meta';
 }
 
 const MODULES: ModuleSpec[] = [
@@ -169,6 +170,11 @@ const MODULES: ModuleSpec[] = [
   // modulator with INDEPENDENT normalling on the audio and strength halves;
   // strength inputs declare `cv` (PASSTHROUGH_BY_DESIGN — raw bipolar carrier).
   { type: 'stereovca',    cardClass: 'svelte-flow__node-stereovca',    handleCount: 6, containsLabel: 'STEREOVCA' },
+  // STICKY: meta-domain card. No ports → 0 handles. Domain 'meta' tells
+  // spawnPatch + the io-spec-consistency gate not to route through the
+  // audio/video engines.
+  { type: 'sticky',       cardClass: 'svelte-flow__node-sticky',       handleCount: 0, containsLabel: 'STICKY',
+    domain: 'meta' },
 ];
 
 test.describe.configure({ mode: 'parallel' });

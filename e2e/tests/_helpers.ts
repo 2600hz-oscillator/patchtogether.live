@@ -14,8 +14,9 @@ export interface SpawnNode {
    *  spawn video modules (LINES, OUTPUT) pass 'video' explicitly. The
    *  io-spec consistency test infers it from the registered module def
    *  by reading window.__moduleSpecs first; see that test's spawnPatch
-   *  call for the pattern. */
-  domain?: 'audio' | 'video';
+   *  call for the pattern. The 'meta' domain covers non-engine cards
+   *  (sticky notes, future paper-like utilities). */
+  domain?: 'audio' | 'video' | 'meta';
 }
 
 export interface SpawnEdge {

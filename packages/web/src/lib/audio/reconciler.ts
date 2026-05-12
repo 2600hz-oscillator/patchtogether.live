@@ -56,8 +56,18 @@ export function attachReconciler(
   }
 
   async function doReconcile(snap: PatchSnapshot): Promise<void> {
+    // Meta-domain nodes (e.g. STICKY notes) are pure-UI cards with no
+    // engine binding. Filter them out of every map this reconciler
+    // builds so PatchEngine.addNode + setParam never see them — there's
+    // no DomainEngine registered for 'meta' and the dispatch would
+    // throw. Edges referencing meta nodes are dropped too; the type
+    // system already forbids cables to/from sticky (no ports).
+    const isMeta = (n: ModuleNode): boolean => n.domain === 'meta';
     const currentNodes = new Map<string, ModuleNode>();
-    for (const n of snap.nodes) currentNodes.set(n.id, n);
+    for (const n of snap.nodes) {
+      if (isMeta(n)) continue;
+      currentNodes.set(n.id, n);
+    }
     const currentEdges = new Map<string, Edge>();
     for (const e of snap.edges) currentEdges.set(e.id, e);
 
@@ -108,22 +118,31 @@ export function attachReconciler(
     }
 
     // 3. Added nodes (await — async factories). Snapshot is sorted; we
-    // iterate it directly, skipping ids we already have.
+    // iterate it directly, skipping ids we already have AND any meta-
+    // domain nodes (which carry no engine binding).
     for (const node of snap.nodes) {
+      if (isMeta(node)) continue;
       if (appliedNodes.has(node.id)) continue;
       await engine.addNode(node);
       appliedNodes.set(node.id, snapshotNode(node));
     }
 
-    // 4. Added edges.
+    // 4. Added edges. Skip edges whose source or target is a meta node —
+    // sticky notes have no ports so legitimate edges never reference
+    // them, but defending against corrupt envelopes keeps the reconciler
+    // robust.
     for (const edge of snap.edges) {
       if (appliedEdges.has(edge.id)) continue;
+      const src = currentNodes.get(edge.source.nodeId);
+      const dst = currentNodes.get(edge.target.nodeId);
+      if (!src || !dst) continue;
       engine.addEdge(edge, edgeDomain(edge), edgeTargetDomain(edge));
       appliedEdges.set(edge.id, { ...edge });
     }
 
     // 5. Param changes on existing nodes.
     for (const node of snap.nodes) {
+      if (isMeta(node)) continue;
       const prev = appliedNodes.get(node.id);
       if (!prev) continue;
       const paramKeys = Object.keys(node.params).sort();

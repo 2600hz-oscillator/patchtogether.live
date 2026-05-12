@@ -27,7 +27,7 @@ import { spawnPatch } from '../tests/_helpers';
 //     card body. The audio-out level meter freezes at 0 with no input.
 interface VrtModule {
   type: string;
-  domain: 'audio' | 'video';
+  domain: 'audio' | 'video' | 'meta';
   /** Pixels on the card whose contents are inherently non-deterministic
    *  (free-running canvas viz, scope sweep, etc.). When set, Playwright
    *  fills these rects with a uniform colour in both baseline + actual
@@ -94,6 +94,10 @@ const MODULES: VrtModule[] = [
   { type: 'ruttetra', domain: 'video', mask: [{ selector: 'canvas' }] },
   { type: 'shapedramps', domain: 'video', mask: [{ selector: 'canvas' }] },
   { type: 'vdelay', domain: 'video', mask: [{ selector: 'canvas' }] },
+  // ----- meta domain -----
+  // STICKY — paper-style sticky note (no engine binding). Default size +
+  // empty textarea render deterministically.
+  { type: 'sticky', domain: 'meta' },
 ];
 
 // 'default' mode = independent tests; one failing doesn't skip the rest.
