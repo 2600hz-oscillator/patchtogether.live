@@ -60,7 +60,14 @@ export const wavvizDef: AudioModuleDef = {
   domain: 'audio',
   label: 'WAVVIZ',
   category: 'sources',
-  schemaVersion: 1,
+  schemaVersion: 2,
+  migrate(data, fromVersion) {
+    if (fromVersion < 2) {
+      // v1 → v2: fmAmount widened from [0..1] to [-1..+1]. Old values are
+      // already legal in the new range, so this is a no-op.
+    }
+    return data;
+  },
 
   inputs: [
     { id: 'pitch',      type: 'pitch' },
@@ -81,7 +88,7 @@ export const wavvizDef: AudioModuleDef = {
     { id: 'tune',       label: 'Tune', defaultValue: 0,   min: -36,  max: 36,  curve: 'linear', units: 'st' },
     { id: 'fine',       label: 'Fine', defaultValue: 0,   min: -100, max: 100, curve: 'linear', units: '¢' },
     { id: 'wavePos',    label: 'Wave', defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
-    { id: 'fmAmount',   label: 'FM',   defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
+    { id: 'fmAmount',   label: 'FM',   defaultValue: 0,   min: -1,   max: 1,   curve: 'linear' },
     { id: 'foldAmount', label: 'Fold', defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
   ],
 
