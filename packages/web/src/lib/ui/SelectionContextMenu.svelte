@@ -10,6 +10,11 @@
     y: number;
     /** Count of selected nodes — used to enable/disable "Group modules…". */
     selectionCount: number;
+    /** Module-grouping Phase 3C — when a remote rack-mate's group-builder
+     *  selection overlaps the local selection, soft-lock our action.
+     *  `lockedByRemote` is that user's displayName (or undefined when
+     *  there's no conflict). */
+    lockedByRemote?: string;
     ongroup: () => void;
     onclose: () => void;
   }
@@ -19,6 +24,7 @@
     x,
     y,
     selectionCount,
+    lockedByRemote,
     ongroup,
     onclose,
   }: Props = $props();
@@ -35,7 +41,7 @@
     return () => window.removeEventListener('keydown', onWindowKeydown);
   });
 
-  let canGroup = $derived(selectionCount >= 2);
+  let canGroup = $derived(selectionCount >= 2 && !lockedByRemote);
 
   function pickGroup() {
     if (!canGroup) return;
@@ -67,8 +73,13 @@
       role="menuitem"
       disabled={!canGroup}
       data-testid="ctx-group-modules"
+      title={lockedByRemote ? `${lockedByRemote} is currently grouping these modules.` : ''}
     >
-      Group modules…
+      {#if lockedByRemote}
+        {lockedByRemote} is grouping…
+      {:else}
+        Group modules…
+      {/if}
     </button>
   </div>
 {/if}

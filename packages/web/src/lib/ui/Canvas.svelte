@@ -45,6 +45,7 @@
   import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
   import { provideEngineContext } from '$lib/audio/engine-context';
   import { provideProviderContext } from '$lib/multiplayer/provider-context';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
   import '$lib/audio/modules'; // auto-registers analogVcoDef + audioOutDef
   // Video-domain (Phase 0 spike) — sibling registry + engine class. Imported
   // here so module defs are present in the registry by the time the palette
@@ -146,6 +147,13 @@
     type ModuleEntry,
   } from '$lib/ui/port-patch-helpers';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
+  import {
+    setLocalGroupBuildingSelection,
+    readRemoteGroupBuilding,
+    indexRemoteGroupBuildingByNode,
+    overlapsRemoteGroupBuilding,
+    type RemoteGroupBuilding,
+  } from '$lib/multiplayer/group-building-presence';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
@@ -257,9 +265,11 @@
   // active here" without sending pixels — see camera-presence.ts).
   provideProviderContext(() => provider);
 
-  // Dev-only: expose patch + ydoc on window so e2e tests can drive arbitrary
-  // module-spawning combinations without a UI palette. Stripped in prod builds.
-  if (import.meta.env.DEV) {
+  // Dev-only (gated on testHooksEnabled): expose patch + ydoc on window so
+  // e2e tests + chaos musician-bots can drive arbitrary module-spawning
+  // combinations without a UI palette. Stripped in prod builds (autotest
+  // sets VITE_E2E_HOOKS=1 to re-enable).
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__patch = patch;
@@ -406,6 +416,7 @@
     const snap = snapshot;
     const top = topNodeId;
     const collapsed = collapsedGroupIds;
+    const remoteByNode = remoteGroupBuildingByNode;
     const next: FlowNode[] = [];
     for (const n of snap.nodes) {
       // Skip children belonging to a collapsed group — the group card
@@ -413,6 +424,7 @@
       // children when data.expanded === true on the parent group.
       const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
       if (parentGroupId && collapsed.has(parentGroupId)) continue;
+      const remoteUser = remoteByNode[n.id];
       const node: FlowNode = {
         id: n.id,
         type: n.type,
@@ -420,7 +432,17 @@
         // (when in multiplayer) or falls back to n.position (when single-
         // user OR when this user has no entry yet).
         position: getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y }),
-        data: { node: n },
+        data: {
+          node: n,
+          // Phase 3C: when a remote rack-mate has this node in their
+          // active group-builder selection, expose the user's identity
+          // so the per-card overlay can render the soft-lock badge.
+          ...(remoteUser ? { remoteGrouping: remoteUser } : {}),
+        },
+        // Mark the SvelteFlow node with a class our global CSS can dim
+        // via opacity, without each card having to wire its own
+        // remote-state branching.
+        ...(remoteUser ? { className: 'remote-group-building' } : {}),
       };
       // Lift the most-recently-spawned node above its siblings so it's
       // visible immediately when it lands on top of an existing card.
@@ -914,6 +936,48 @@
   let groupBuilderSelectionIds = $state<string[]>([]);
   let groupBuilderModuleLabels = $state<Map<string, string>>(new Map());
 
+  // ---------------- Module-grouping Phase 3C — soft-lock via Y.Awareness ----
+  //
+  // When the local user opens the group builder, broadcast the selection
+  // ids so remote rack-mates can dim those cards + badge them. Remote
+  // peers' selections likewise flow IN here so we can disable our own
+  // "Group modules…" action when any of our marquee selection overlaps
+  // theirs. The actual rendering of the dim+badge is in AwarenessLayer
+  // (Phase 3C consumes the indexRemoteGroupBuildingByNode helper output).
+  let remoteGroupBuilders = $state<RemoteGroupBuilding[]>([]);
+  $effect(() => {
+    const p = provider;
+    if (!p) {
+      remoteGroupBuilders = [];
+      return;
+    }
+    const awareness = p.awareness;
+    if (!awareness) return;
+    const refresh = () => {
+      remoteGroupBuilders = readRemoteGroupBuilding(awareness, awareness.clientID);
+    };
+    refresh();
+    awareness.on('change', refresh);
+    awareness.on('update', refresh);
+    return () => {
+      awareness.off('change', refresh);
+      awareness.off('update', refresh);
+    };
+  });
+  let remoteGroupBuildingByNode = $derived<Record<string, PresenceUser>>(
+    indexRemoteGroupBuildingByNode(remoteGroupBuilders),
+  );
+  // Sync the local user's group-builder selection out to peers whenever
+  // the modal opens/closes/changes selection. Clearing on close uses
+  // setLocalGroupBuildingSelection(null).
+  $effect(() => {
+    if (groupBuilderOpen && groupBuilderSelectionIds.length > 0) {
+      setLocalGroupBuildingSelection(provider, groupBuilderSelectionIds);
+    } else {
+      setLocalGroupBuildingSelection(provider, null);
+    }
+  });
+
   function onSelectionContextMenu({ nodes, event }: { nodes: FlowNode[]; event: MouseEvent }) {
     event.preventDefault();
     const me = event as MouseEvent;
@@ -921,6 +985,21 @@
     selCtxMenuIds = nodes.map((n) => n.id);
     selCtxMenuOpen = true;
   }
+
+  /** Phase 3C — derive the displayName of any remote rack-mate whose
+   *  group-builder selection currently overlaps the local marquee.
+   *  Drives the SelectionContextMenu's lockedByRemote prop so user B
+   *  sees "Alice is grouping…" instead of "Group modules…" when Alice
+   *  is already in the middle of grouping any of those same nodes. */
+  let selCtxMenuLockedByRemote = $derived.by<string | undefined>(() => {
+    if (selCtxMenuIds.length === 0) return undefined;
+    if (!overlapsRemoteGroupBuilding(selCtxMenuIds, remoteGroupBuilders)) return undefined;
+    for (const id of selCtxMenuIds) {
+      const u = remoteGroupBuildingByNode[id];
+      if (u) return u.displayName;
+    }
+    return undefined;
+  });
 
   function openGroupBuilder() {
     // Skip any selected nodes that are themselves groups or stickies —
@@ -934,6 +1013,21 @@
     });
     if (eligible.length < 2) {
       trace(`group refused: only ${eligible.length} eligible module(s) selected`);
+      return;
+    }
+    // Phase 3C soft-lock: if any of our eligible nodes intersects a
+    // remote user's active group-builder selection, refuse to open the
+    // modal. Two users would otherwise race-create overlapping groups.
+    if (overlapsRemoteGroupBuilding(eligible, remoteGroupBuilders)) {
+      const overlap = eligible.find((id) => remoteGroupBuildingByNode[id]);
+      const blocker = overlap ? remoteGroupBuildingByNode[overlap] : undefined;
+      const who = blocker?.displayName ?? 'another user';
+      trace(`group refused: selection overlaps ${who}'s active group-builder selection`);
+      const msg = `${who} is currently grouping these modules.`;
+      error = msg;
+      setTimeout(() => {
+        if (error === msg) error = null;
+      }, 4000);
       return;
     }
 
@@ -2321,6 +2415,7 @@
   x={selCtxMenuPos.x}
   y={selCtxMenuPos.y}
   selectionCount={selCtxMenuIds.length}
+  lockedByRemote={selCtxMenuLockedByRemote}
   ongroup={openGroupBuilder}
   onclose={() => { selCtxMenuOpen = false; }}
 />
@@ -2493,6 +2588,15 @@
   }
   .update-group-cta:hover {
     filter: brightness(1.05);
+  }
+  /* Phase 3C: cards in a remote rack-mate's active group-builder selection
+   * render semi-transparent + with a dashed outline so the local user can
+   * see at a glance which modules are off-limits. */
+  :global(.svelte-flow__node.remote-group-building) {
+    opacity: 0.55;
+    outline: 1px dashed var(--accent, #60a5fa);
+    outline-offset: 2px;
+    transition: opacity 120ms ease-out;
   }
   .error {
     margin: 0;
