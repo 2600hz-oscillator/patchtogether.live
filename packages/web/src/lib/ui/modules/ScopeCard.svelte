@@ -185,7 +185,16 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="screen-wrap">
-      <canvas bind:this={canvasEl} width="280" height="120"></canvas>
+      <!-- data-viz-passthrough lets GroupCard locate this canvas + portal-
+           hoist it into the group body when SCOPE is collapsed inside a
+           group (see Module-grouping Phase 3B + scopeDef.vizPassthrough). -->
+      <canvas
+        bind:this={canvasEl}
+        width="280"
+        height="120"
+        data-viz-passthrough="scope"
+        data-testid="scope-canvas"
+      ></canvas>
     </div>
 
     <div class="tuner" data-testid="scope-tuner">

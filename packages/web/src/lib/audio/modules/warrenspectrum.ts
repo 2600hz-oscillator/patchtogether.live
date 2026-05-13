@@ -34,6 +34,10 @@ export interface WarrenspectrumSnapshotMessage {
   flash: Float32Array;
 }
 
+// Module-grouping Phase 3A: `vizPassthrough` is available on AudioModuleDef
+// for WARRENSPECTRUM's acidwarp+EQ-curve+ping visualizer canvas. Left
+// UNSET until the card adopts the `data-viz-passthrough` <canvas> contract
+// used by ScopeCard for GroupCard portal-hoisting.
 export const warrenspectrumDef: AudioModuleDef = {
   type: 'warrenspectrum',
   domain: 'audio',

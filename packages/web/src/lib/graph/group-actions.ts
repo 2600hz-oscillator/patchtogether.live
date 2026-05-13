@@ -348,3 +348,268 @@ export function planUngroup(args: UngroupArgs): UngroupPlan {
     groupNodeId: args.groupNode.id,
   };
 }
+
+// --------------------------------------------------------------------
+// Module-grouping Phase 2B — edit-exposed-jacks
+// --------------------------------------------------------------------
+//
+// Reopening the group builder for an existing group requires diffing the
+// old exposedPorts list against the new one:
+//   - "kept" ports keep their existing exposed-port id (so any external
+//     cables already terminating there stay valid).
+//   - "added" ports gain a fresh exposed-port id; the user may have just
+//     wired one of them externally, so post-commit they appear unpatched
+//     until the user drags a cable to them.
+//   - "removed" ports get their exposed-port id deleted; any external
+//     cables that point at them get dropped.
+
+export interface EditExposedArgs {
+  group: ModuleNode;
+  /** Snapshot edges. */
+  edges: readonly Edge[];
+  /** New exposed-port set chosen by the user. The plan reconciles this
+   *  against `group.data.exposedPorts` to compute the diff. */
+  newExposedPorts: ExposedPort[];
+  /** Optional new label. When omitted, the existing label is preserved. */
+  newLabel?: string;
+}
+
+export interface EditExposedPlan {
+  /** The merged exposed-ports list to write back to group.data.
+   *  Preserves stable ids for kept ports + adds new ids for additions. */
+  mergedExposedPorts: ExposedPort[];
+  /** Edge ids referencing now-removed exposed ports — caller should drop. */
+  deleteEdgeIds: string[];
+  /** Edge id rewrites — when a port stays exposed but its id changed
+   *  (defensive; shouldn't fire since we preserve ids for kept ports). */
+  rewriteEdges: Array<{
+    id: string;
+    newSource?: { nodeId: string; portId: string };
+    newTarget?: { nodeId: string; portId: string };
+  }>;
+  /** Optional label change (undefined → don't touch). */
+  newLabel?: string;
+}
+
+/**
+ * Build the plan for "Edit exposed patch jacks…". Pure function.
+ *
+ * The "stable id for kept ports" rule is the load-bearing piece:
+ * external cables in the snapshot terminate on `{groupId, exposedId}`,
+ * and rewriting them in lockstep with the exposed-port list would force
+ * a full Yjs round-trip every time the user toggles a checkbox. Instead
+ * we keep the old id for any port that's in both the old + new lists.
+ */
+export function planEditExposed(args: EditExposedArgs): EditExposedPlan {
+  const data = (args.group.data as unknown as GroupData | undefined) ?? null;
+  const oldExposed = data?.exposedPorts ?? [];
+
+  // Key a port by its underlying child + direction so we can match it
+  // against the new list independent of its current id.
+  const portKey = (e: { childId: string; childPortId: string; direction: 'input' | 'output' }) =>
+    `${e.direction}::${e.childId}::${e.childPortId}`;
+
+  const oldByKey = new Map<string, ExposedPort>();
+  for (const ep of oldExposed) oldByKey.set(portKey(ep), ep);
+
+  // Merge: for each new port, prefer the old id (if present) else use
+  // whatever id the caller minted.
+  const merged: ExposedPort[] = [];
+  const newKeys = new Set<string>();
+  for (const ep of args.newExposedPorts) {
+    const k = portKey(ep);
+    newKeys.add(k);
+    const old = oldByKey.get(k);
+    merged.push(old ? { ...old, label: ep.label ?? old.label } : ep);
+  }
+
+  // Removed-port ids are the ones present in oldByKey but absent from
+  // newKeys. We collect their exposed-ids so the edge-dropper can find
+  // any cables that referenced them.
+  const removedExposedIds = new Set<string>();
+  for (const [k, ep] of oldByKey) {
+    if (!newKeys.has(k)) removedExposedIds.add(ep.id);
+  }
+
+  const deleteEdgeIds: string[] = [];
+  for (const edge of args.edges) {
+    if (edge.source.nodeId === args.group.id && removedExposedIds.has(edge.source.portId)) {
+      deleteEdgeIds.push(edge.id);
+      continue;
+    }
+    if (edge.target.nodeId === args.group.id && removedExposedIds.has(edge.target.portId)) {
+      deleteEdgeIds.push(edge.id);
+    }
+  }
+
+  const plan: EditExposedPlan = {
+    mergedExposedPorts: merged,
+    deleteEdgeIds,
+    rewriteEdges: [],
+  };
+  if (args.newLabel !== undefined) plan.newLabel = args.newLabel;
+  return plan;
+}
+
+// --------------------------------------------------------------------
+// Module-grouping Phase 2C — duplicate group
+// --------------------------------------------------------------------
+//
+// Atomically clone a group + every child into a fresh id space:
+//   - Each child node gets a fresh id (deep-cloned data + params).
+//   - The group's exposedPorts have their childId refs rewritten to the
+//     new child ids.
+//   - INTERNAL edges (both endpoints inside the source group) are cloned
+//     with fresh ids + rewritten endpoint nodeIds.
+//   - EXTERNAL edges (one endpoint inside the source group, terminating
+//     on the source group node's exposed port) are NOT cloned — the
+//     duplicate starts un-patched on its boundary, matching the
+//     duplicate-module spec.
+//   - Position offsets cascade by DUPLICATE_OFFSET per existing
+//     duplicate, matching PR-93's behavior.
+
+export interface DuplicateGroupArgs {
+  /** The group node to duplicate. */
+  group: ModuleNode;
+  /** All child nodes that the group references. */
+  children: ModuleNode[];
+  /** All edges in the snapshot — internal ones are cloned, others ignored. */
+  edges: readonly Edge[];
+  /** Existing node ids in the snapshot, used to mint collision-free fresh ids. */
+  existingNodeIds: Iterable<string>;
+  /** Existing edge ids in the snapshot, used to mint collision-free fresh edge ids. */
+  existingEdgeIds: Iterable<string>;
+  /** Position offset applied to every duplicated node. Default = 30px down-right. */
+  positionOffset?: { x: number; y: number };
+  /** Optional override for the new group id (tests pass a deterministic seed). */
+  newGroupIdSuffix?: string;
+}
+
+export interface DuplicateGroupPlan {
+  /** The new group node to insert. */
+  newGroup: ModuleNode;
+  /** New child nodes to insert. */
+  newChildren: ModuleNode[];
+  /** New edges to insert (internal-only clones). */
+  newEdges: Edge[];
+}
+
+const DEFAULT_DUPLICATE_GROUP_OFFSET = { x: 30, y: 30 };
+
+export function planDuplicateGroup(args: DuplicateGroupArgs): DuplicateGroupPlan {
+  const offset = args.positionOffset ?? DEFAULT_DUPLICATE_GROUP_OFFSET;
+  const takenNodes = new Set<string>(args.existingNodeIds);
+  const takenEdges = new Set<string>(args.existingEdgeIds);
+
+  // Mint child ids first so we can rewrite exposedPorts + edges in one
+  // pass after.
+  const oldToNewChildId = new Map<string, string>();
+  const newChildren: ModuleNode[] = [];
+  for (const child of args.children) {
+    const newId = mintIdLocal(child.type, takenNodes);
+    takenNodes.add(newId);
+    oldToNewChildId.set(child.id, newId);
+    const clone: ModuleNode = {
+      id: newId,
+      type: child.type,
+      domain: child.domain,
+      position: { x: child.position.x + offset.x, y: child.position.y + offset.y },
+      params: { ...child.params },
+    };
+    if (child.data !== undefined) clone.data = deepCloneJson(child.data);
+    // Clear the old parentGroupId; the new group id is filled in below.
+    if (clone.data && typeof clone.data === 'object') {
+      delete (clone.data as { parentGroupId?: string }).parentGroupId;
+    }
+    newChildren.push(clone);
+  }
+
+  // Mint the new group id.
+  const newGroupId = args.newGroupIdSuffix
+    ? `group-${args.newGroupIdSuffix}`
+    : mintIdLocal('group', takenNodes);
+  takenNodes.add(newGroupId);
+
+  // Stamp parentGroupId on each new child.
+  for (const child of newChildren) {
+    if (!child.data) child.data = {};
+    (child.data as { parentGroupId?: string }).parentGroupId = newGroupId;
+  }
+
+  // Clone the group node + rewrite its exposedPorts to point at new child ids.
+  const sourceData = (args.group.data as unknown as GroupData | undefined) ?? null;
+  const newExposed: ExposedPort[] = (sourceData?.exposedPorts ?? []).map((ep) => {
+    const newChildId = oldToNewChildId.get(ep.childId) ?? ep.childId;
+    return {
+      id: ep.id, // id is unique within a group, not across groups, so reuse is fine
+      childId: newChildId,
+      childPortId: ep.childPortId,
+      direction: ep.direction,
+      cableType: ep.cableType,
+      ...(ep.label !== undefined ? { label: ep.label } : {}),
+    };
+  });
+  const newGroupData: GroupData = {
+    childIds: newChildren.map((c) => c.id),
+    exposedPorts: newExposed,
+  };
+  if (sourceData?.label !== undefined) newGroupData.label = sourceData.label;
+  // The duplicate inherits the source's expanded state — defaulting to
+  // collapsed feels less surprising, so we force it off.
+  newGroupData.expanded = false;
+  const newGroup: ModuleNode = {
+    id: newGroupId,
+    type: 'group',
+    domain: 'meta',
+    position: { x: args.group.position.x + offset.x, y: args.group.position.y + offset.y },
+    params: {},
+    data: newGroupData as unknown as Record<string, unknown>,
+  };
+
+  // Clone internal edges. An edge is "internal" iff both endpoints'
+  // nodeIds are in the old-id → new-id map.
+  const newEdges: Edge[] = [];
+  for (const edge of args.edges) {
+    const srcNew = oldToNewChildId.get(edge.source.nodeId);
+    const tgtNew = oldToNewChildId.get(edge.target.nodeId);
+    if (!srcNew || !tgtNew) continue; // not strictly internal
+    const newEdgeId = mintEdgeIdLocal(takenEdges);
+    takenEdges.add(newEdgeId);
+    newEdges.push({
+      id: newEdgeId,
+      source: { nodeId: srcNew, portId: edge.source.portId },
+      target: { nodeId: tgtNew, portId: edge.target.portId },
+      sourceType: edge.sourceType,
+      targetType: edge.targetType,
+    });
+  }
+
+  return { newGroup, newChildren, newEdges };
+}
+
+function mintIdLocal(type: string, taken: Set<string>): string {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = `${type}-${randomSliceLocal()}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${type}-${randomSliceLocal()}-${randomSliceLocal()}`;
+}
+
+function mintEdgeIdLocal(taken: Set<string>): string {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = `e-${randomSliceLocal()}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `e-${randomSliceLocal()}-${randomSliceLocal()}`;
+}
+
+function randomSliceLocal(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().slice(0, 8);
+  }
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function deepCloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}

@@ -32,6 +32,13 @@ export const scopeDef: AudioModuleDef = {
   label: 'Scope',
   category: 'utilities',
   schemaVersion: 1,
+  // Module-grouping Phase 3B: SCOPE's on-card 2D canvas is hoisted into
+  // the parent GroupCard's body when SCOPE is collapsed inside a group.
+  // The card's <canvas data-viz-passthrough> element is portaled (i.e.
+  // appendChild-moved) into the GroupCard so the same draw loop drives
+  // both render paths without re-mounting the card. See GroupCard.svelte
+  // for the portal mechanics + ScopeCard.svelte for the canvas marker.
+  vizPassthrough: true,
 
   // CV inputs mirror every param 1:1 — port id == param id, which the
   // cross-domain CV bridge (PatchEngine.addCrossDomainCvBridge) routes

@@ -15,12 +15,24 @@
     /** Module type id (e.g. "analogVco"). Used to build the /docs URL. */
     nodeType?: string | null;
     /** Module-grouping Phase 1: when true the menu surfaces "Ungroup" and
-     *  hides Duplicate (Phase 2 will add group duplication). */
+     *  group-specific actions (Phase 2 adds Edit knob positions, Edit
+     *  exposed jacks, Duplicate). */
     isGroup?: boolean;
+    /** Module-grouping Phase 2A: current expanded state of the group.
+     *  Drives the label of the "Edit knob positions" toggle. */
+    groupExpanded?: boolean;
     ondelete: () => void;
     onduplicate: () => void;
     onunpatch: () => void;
     onungroup?: () => void;
+    /** Module-grouping Phase 2A — toggle data.expanded on the group. */
+    ontoggleexpanded?: () => void;
+    /** Module-grouping Phase 2B — re-open the group builder for an
+     *  existing group, pre-checking currently-exposed ports. */
+    oneditexposed?: () => void;
+    /** Module-grouping Phase 2C — duplicate group + every child with
+     *  fresh ids + cascade offset. */
+    onduplicategroup?: () => void;
     onclose: () => void;
   }
 
@@ -31,10 +43,14 @@
     nodeLabel,
     nodeType = null,
     isGroup = false,
+    groupExpanded = false,
     ondelete,
     onduplicate,
     onunpatch,
     onungroup,
+    ontoggleexpanded,
+    oneditexposed,
+    onduplicategroup,
     onclose,
   }: Props = $props();
 
@@ -75,6 +91,18 @@
     onungroup?.();
     onclose();
   }
+  function pickToggleExpanded() {
+    ontoggleexpanded?.();
+    onclose();
+  }
+  function pickEditExposed() {
+    oneditexposed?.();
+    onclose();
+  }
+  function pickDuplicateGroup() {
+    onduplicategroup?.();
+    onclose();
+  }
 </script>
 
 {#if open}
@@ -95,6 +123,30 @@
       <div class="ctx-sep" role="presentation"></div>
     {/if}
     {#if isGroup}
+      <button
+        class="ctx-item"
+        onclick={pickToggleExpanded}
+        role="menuitem"
+        data-testid="ctx-toggle-expanded"
+      >
+        {groupExpanded ? 'Finish editing knob positions' : 'Edit knob positions'}
+      </button>
+      <button
+        class="ctx-item"
+        onclick={pickEditExposed}
+        role="menuitem"
+        data-testid="ctx-edit-exposed"
+      >
+        Edit exposed patch jacks…
+      </button>
+      <button
+        class="ctx-item"
+        onclick={pickDuplicateGroup}
+        role="menuitem"
+        data-testid="ctx-duplicate-group"
+      >
+        Duplicate
+      </button>
       <button class="ctx-item" onclick={pickUngroup} role="menuitem" data-testid="ctx-ungroup">
         Ungroup
       </button>

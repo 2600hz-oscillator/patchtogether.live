@@ -64,6 +64,11 @@ export function buildFoldCurve(fold: number): Float32Array<ArrayBuffer> {
   return curve;
 }
 
+// Module-grouping Phase 3A: `vizPassthrough` is available on AudioModuleDef
+// for viz-capable cards (this one renders a waveform-video canvas). Left
+// UNSET until VIZVCO's card adopts the `data-viz-passthrough` <canvas>
+// contract that ScopeCard ships with; the GroupCard portal pattern then
+// hoists this card's viz into the group body without further plumbing.
 export const vizvcoDef: AudioModuleDef = {
   type: 'vizvco',
   domain: 'audio',

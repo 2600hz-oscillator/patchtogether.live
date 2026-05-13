@@ -35,6 +35,17 @@ export interface AudioModuleDef {
    * direction from the port's def.
    */
   stereoPairs?: readonly (readonly [string, string])[];
+  /**
+   * Module-grouping Phase 3A: when set, this module renders an on-card
+   * visualization (typically a <canvas>) that can be portaled into the
+   * parent GroupCard so the group "becomes" the viz. SCOPE is the
+   * pioneering case — the on-card 2D oscilloscope canvas is hoisted to
+   * the GroupCard body when SCOPE is a member of a collapsed group.
+   * Other viz-capable modules (vizvco, wavviz, swolevco, warrenspectrum,
+   * wavecel, …) leave this UNSET for now; once their cards stabilize their
+   * canvas DOM contract the flag flips on without further plumbing.
+   */
+  vizPassthrough?: boolean;
   factory: AudioModuleFactory;
 }
 

@@ -278,4 +278,13 @@ export interface ModuleDef {
   schemaVersion: number;
   /** Migrate older saved data forward to the current schemaVersion. */
   migrate?: (data: unknown, fromVersion: number) => unknown;
+  /**
+   * Module-grouping Phase 3A: when set, this module renders an on-card
+   * visualization (typically a <canvas>) that can be portaled into the
+   * parent GroupCard. See AudioModuleDef.vizPassthrough for the canonical
+   * doc. Mirrored here so callers that read the loose ModuleDef shape
+   * (e.g. defLookup helpers in Canvas.svelte) can read the flag without
+   * downcasting to a domain-specific def.
+   */
+  vizPassthrough?: boolean;
 }
