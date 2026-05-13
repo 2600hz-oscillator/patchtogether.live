@@ -117,6 +117,8 @@
   import WarrenspectrumCard from '$lib/ui/modules/WarrenspectrumCard.svelte';
   // STEREOVCA — stereo VCA + ring modulator.
   import StereovcaCard from '$lib/ui/modules/StereovcaCard.svelte';
+  // SHIMMERSHINE — lush shimmer reverb (Schroeder tank + pitch-shifted feedback).
+  import ShimmershineCard from '$lib/ui/modules/ShimmershineCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -245,6 +247,7 @@
     wavecel: WavecelCard,
     warrenspectrum: WarrenspectrumCard,
     stereovca: StereovcaCard,
+    shimmershine: ShimmershineCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

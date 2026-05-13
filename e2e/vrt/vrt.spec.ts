@@ -76,6 +76,7 @@ const MODULES: VrtModule[] = [
   // WARRENSPECTRUM has the acidwarp video viz canvas.
   { type: 'warrenspectrum', domain: 'audio', mask: [{ selector: 'canvas' }] },
   { type: 'stereovca', domain: 'audio' },
+  { type: 'shimmershine', domain: 'audio' },
   // ----- video domain -----
   // Every video module renders a preview canvas. Mask it; assert the
   // chrome (title, ports, knobs).
