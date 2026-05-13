@@ -1,11 +1,13 @@
 // packages/web/src/lib/audio/modules/cartesian.ts
 //
-// 4×4 grid sequencer (Make Noise René-style). Two modes:
-//   linear   : clock advances row-major through 16 steps.
-//   cartesian: clock just emits gate; X/Y CV inputs select column/row.
-//
-// Cells live in node.data.cells (length 16, row-major). Reads X/Y CV via
-// AnalyserNodes the same way Sequencer reads its clock_in.
+// 4×4 grid sequencer. The X and Y CV inputs select
+// column/row when patched (each split into four 25% bands across -1..+1).
+// Per-axis behavior depends on what's patched into `clock`, `x_cv`, `y_cv`:
+//   - clock unpatched: selected pad tracks X/Y instantly. Gate fires when the
+//     selected pad changes.
+//   - clock patched: pad updates only on each clock rising edge. If an axis
+//     is unpatched, that axis advances by 1 each clock tick (wrap at 4).
+// CV pitch output holds the last gated note (implicit sample-and-hold).
 //
 // Embedded LFO (v3): a clock-locked LFO with two phase-quadrature outputs
 // (lfo_x, lfo_y). Patch them into x_cv + y_cv to draw circles, lissajous, etc.
@@ -15,6 +17,7 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
+import { isInputPortConnected } from './transport-helpers';
 import {
   coerceToNoteStep,
   migrateStepArrayV1ToV2,
@@ -172,6 +175,13 @@ export const cartesianDef: AudioModuleDef = {
     const CLOCK_THRESHOLD = 0.5;
 
     let stepIndex = 0;
+    // X/Y advance counters used when clock is patched but the corresponding
+    // axis CV is not (clock ticks then advance that axis modulo GRID_DIM).
+    let xStep = 0;
+    let yStep = 0;
+    // Last pad selected — used in clock-unpatched mode to detect pad changes
+    // and fire a gate exactly when the selection moves.
+    let lastSelectedIdx = -1;
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
     const TICK_MS = SCHEDULER_TICK_MS;
@@ -314,6 +324,12 @@ export const cartesianDef: AudioModuleDef = {
       }
     }
 
+    function cvToCell(buf: Float32Array): number {
+      const v = readMostRecent(buf);
+      // CV is conventionally -1..+1; clamp + quantize into 4 equal bands.
+      return Math.max(0, Math.min(GRID_DIM - 1, Math.floor((v + 1) / 2 * GRID_DIM)));
+    }
+
     function tick() {
       if (!alive) return;
       try {
@@ -321,42 +337,57 @@ export const cartesianDef: AudioModuleDef = {
         xIn.an.getFloatTimeDomainData(xIn.buf);
         yIn.an.getFloatTimeDomainData(yIn.buf);
 
-        const mode = readParam('mode', 0) >= 0.5 ? 'cartesian' : 'linear';
         const nowAt = ctx.currentTime;
         const elapsed = nowAt - lastClockSampleTime;
 
         // LFO: detect rising edges on lfo_clock + roll out lookahead samples.
         updateLfoClock(nowAt, elapsed);
         scheduleLfo(nowAt);
-        const newSamples = Math.min(
-          clockIn.buf.length,
-          Math.max(1, Math.ceil(elapsed * ctx.sampleRate)),
-        );
-        const start = clockIn.buf.length - newSamples;
+
+        const edges = Object.values(livePatch.edges);
+        const clockPatched = isInputPortConnected(edges, nodeId, 'clock');
+        const xPatched     = isInputPortConnected(edges, nodeId, 'x_cv');
+        const yPatched     = isInputPortConnected(edges, nodeId, 'y_cv');
         const gateDur = Math.max(0.01, elapsed);
 
-        for (let i = start; i < clockIn.buf.length; i++) {
-          const cur = clockIn.buf[i] ?? 0;
-          if (lastClockSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
-            let idx: number;
-            if (mode === 'cartesian') {
-              const x = readMostRecent(xIn.buf);
-              const y = readMostRecent(yIn.buf);
-              const col = Math.max(0, Math.min(GRID_DIM - 1, Math.floor((x + 1) / 2 * GRID_DIM)));
-              const row = Math.max(0, Math.min(GRID_DIM - 1, Math.floor((y + 1) / 2 * GRID_DIM)));
-              idx = row * GRID_DIM + col;
-            } else {
-              idx = stepIndex;
-              stepIndex = (stepIndex + 1) % CELL_COUNT;
+        if (clockPatched) {
+          const newSamples = Math.min(
+            clockIn.buf.length,
+            Math.max(1, Math.ceil(elapsed * ctx.sampleRate)),
+          );
+          const start = clockIn.buf.length - newSamples;
+          for (let i = start; i < clockIn.buf.length; i++) {
+            const cur = clockIn.buf[i] ?? 0;
+            if (lastClockSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
+              const col = xPatched ? cvToCell(xIn.buf) : xStep;
+              const row = yPatched ? cvToCell(yIn.buf) : yStep;
+              if (!xPatched) xStep = (xStep + 1) % GRID_DIM;
+              if (!yPatched) yStep = (yStep + 1) % GRID_DIM;
+              const idx = row * GRID_DIM + col;
+              playhead.schedule(idx, nowAt + 0.005);
+              emitStep(idx, nowAt + 0.005, gateDur);
+              lastSelectedIdx = idx;
+              totalAdvances++;
             }
-            // Scheduler lookahead vs sounding-now: emit is +5 ms ahead which is
-            // already below visual frame-rate, but we go through the tracker
-            // for consistency with the other sequencers.
+            lastClockSample = cur;
+          }
+        } else if (xPatched || yPatched) {
+          // Clock unpatched: pad tracks X/Y CV continuously. Fire when the
+          // selected pad changes. Unpatched axis stays on its current step.
+          const col = xPatched ? cvToCell(xIn.buf) : xStep;
+          const row = yPatched ? cvToCell(yIn.buf) : yStep;
+          const idx = row * GRID_DIM + col;
+          if (idx !== lastSelectedIdx) {
             playhead.schedule(idx, nowAt + 0.005);
             emitStep(idx, nowAt + 0.005, gateDur);
+            lastSelectedIdx = idx;
             totalAdvances++;
           }
-          lastClockSample = cur;
+          // Keep lastClockSample synced so a later patched-clock doesn't see
+          // a stale prev value and mis-detect the first edge.
+          lastClockSample = readMostRecent(clockIn.buf);
+        } else {
+          lastClockSample = readMostRecent(clockIn.buf);
         }
         lastClockSampleTime = nowAt;
       } catch (err) {
