@@ -66,6 +66,9 @@ decayScaleOf(m) = xfade(decayScaleAt, m);
 //   `pVolt`  — audio-rate pitch CV in volts (1V = 1 octave). 0V = C4.
 //   `pSemi`  — knob transposition in semitones (added on top of the CV).
 // At pVolt=0, pSemi=0 → 261.6256 Hz (C4). At pVolt=1, pSemi=0 → 523.25 Hz (C5).
+// Knob and CV are commutative: +1V CV is equivalent to +12 semi knob — the
+// two paths land in the same exp2 so an external pitch source is
+// indistinguishable from twisting the knob to the matching transposition.
 baseFreq(pVolt, pSemi) = 261.6256 * pow(2.0, pVolt + pSemi / 12.0);
 
 // Pitch contour: a fast rise + slow fall, tagged with morph-dependent
