@@ -166,6 +166,11 @@ test('sequencer: per-step playhead baselines (step 0, 1, 15)', async ({ page }) 
 });
 
 test('drumseqz: per-step playhead baselines (step 0, 1, 15)', async ({ page }) => {
+  // DrumseqzCard.svelte conditions `isActive={i === currentStep && isPlaying}`
+  // on isPlaying, so the freeze-via-stop trick the other sequencers use would
+  // wipe the highlight. Use a very slow BPM (10 → 1.5 s per step) instead and
+  // snapshot mid-step while playback is still running. Animations are frozen
+  // for the screenshot capture itself.
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
@@ -192,11 +197,15 @@ test('drumseqz: per-step playhead baselines (step 0, 1, 15)', async ({ page }) =
   const card = page.locator('.svelte-flow__node-drumseqz').first();
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
+  // Start playing once, capture each step as the playhead passes it.
+  await setPlaying(page, 'd', 1);
   for (const step of [0, 1, 15]) {
-    await setPlaying(page, 'd', 1);
-    await waitForStep(page, 'd', step);
-    await setPlaying(page, 'd', 0);
+    await waitForStep(page, 'd', step, /* timeoutMs */ 30_000);
+    // No stop — sound is still playing; the screenshot freezes at the
+    // moment waitForStep resolves. At BPM 10 we have ~1.5 s before the
+    // next step advance, way more than the screenshot path takes (<200 ms).
     await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
     await expect(card).toHaveScreenshot(`drumseqz-step-${step}.png`, { animations: 'disabled' });
   }
+  await setPlaying(page, 'd', 0);
 });
