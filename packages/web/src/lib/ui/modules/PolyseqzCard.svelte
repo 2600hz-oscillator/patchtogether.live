@@ -54,6 +54,31 @@
   let humanize   = $derived((void cardVersion, node?.params.humanize   ?? 0));
   let isPlaying  = $derived((void cardVersion, (node?.params.isPlaying ?? 0) >= 0.5));
 
+  // EVOLVE — when on, the engine destructively mutates the progression at
+  // each sequence-end boundary (see polyseqz.ts maybeEvolveSteps). State
+  // persists in node.data so it survives reload + multi-user.
+  let evolveEnabled = $derived<boolean>((() => {
+    void cardVersion;
+    const v = (node?.data as Record<string, unknown> | undefined)?.evolveEnabled;
+    return v === true;
+  })());
+  let evolveGeneration = $derived<number>((() => {
+    void cardVersion;
+    const v = (node?.data as Record<string, unknown> | undefined)?.evolveGeneration;
+    return typeof v === 'number' ? v : 0;
+  })());
+
+  function toggleEvolve() {
+    const t = patch.nodes[id];
+    if (!t) return;
+    ydoc.transact(() => {
+      if (!t.data) t.data = {};
+      const d = t.data as Record<string, unknown>;
+      d.evolveEnabled = !(d.evolveEnabled === true);
+      if (typeof d.evolveGeneration !== 'number') d.evolveGeneration = 0;
+    });
+  }
+
   let steps = $derived.by<ChordStep[]>(() => {
     void cardVersion;
     const raw = (node?.data as Record<string, unknown> | undefined)?.steps;
@@ -286,6 +311,17 @@
       data-testid={`polyseqz-play-${id}`}
       title={isPlaying ? 'Stop' : 'Play'}
     >{isPlaying ? '■' : '▶'}</button>
+    <button
+      class="evolve-btn"
+      class:on={evolveEnabled}
+      onclick={toggleEvolve}
+      data-testid={`polyseqz-evolve-${id}`}
+      data-evolve-enabled={evolveEnabled ? 'true' : 'false'}
+      data-evolve-generation={evolveGeneration}
+      title={evolveEnabled
+        ? `EVOLVE on — ${evolveGeneration} pass${evolveGeneration === 1 ? '' : 'es'}`
+        : 'EVOLVE off — click to enable destructive progression mutation'}
+    >EVOLVE{evolveEnabled && evolveGeneration > 0 ? ` ${evolveGeneration}` : ''}</button>
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
@@ -393,6 +429,31 @@
     background: var(--cable-gate);
     color: #1a1d23;
     border-color: var(--cable-gate);
+  }
+  .evolve-btn {
+    height: 22px;
+    padding: 0 8px;
+    background: #2a2f3a;
+    border: 1px solid #404652;
+    color: var(--text-dim);
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+  }
+  .evolve-btn.on {
+    background: var(--cable-pitch);
+    color: #1a1d23;
+    border-color: var(--cable-pitch);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--cable-pitch) 40%, transparent);
+  }
+  .evolve-btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
   }
   .grid {
     margin: 30px 22px 12px;

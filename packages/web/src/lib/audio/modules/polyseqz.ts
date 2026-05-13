@@ -45,6 +45,10 @@ import {
 } from '$lib/audio/chord-tables';
 import { sampleHumanizeOffsets } from '$lib/audio/humanize';
 import {
+  evolveProgression,
+  type EvolveStep,
+} from '$lib/audio/progression-evolve';
+import {
   createTransportCv,
   pickQueuedSlotFromEvents,
   TRANSPORT_CV_PORT_DEFS,
@@ -127,7 +131,9 @@ export const polyseqzDef: AudioModuleDef = {
   domain: 'audio',
   label: 'POLYSEQZ',
   category: 'modulation',
-  schemaVersion: 1,
+  // v2: adds evolveEnabled + evolveGeneration to node.data (EVOLVE button).
+  // Migration is no-op — both default to falsy on read.
+  schemaVersion: 2,
 
   inputs: [
     // External clock (optional). When patched, advances on rising edges.
@@ -441,6 +447,57 @@ export const polyseqzDef: AudioModuleDef = {
       return true;
     }
 
+    // Recent mutation history (last 2 generations). EVOLVE rules avoid
+    // these indices so the same step doesn't get hammered pass after pass.
+    const recentlyMutatedHistory: Array<number> = [];
+
+    /** EVOLVE — when node.data.evolveEnabled is true, run ONE mutation rule
+     *  against the live steps and write the result back. Increments
+     *  node.data.evolveGeneration. No-op when EVOLVE is off or there are no
+     *  real (on=true, root non-null) steps. Called at sequence-end boundary. */
+    function maybeEvolveSteps(): void {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return;
+      const data = live.data as Record<string, unknown> | undefined;
+      if (!data || data.evolveEnabled !== true) return;
+      const rawSteps = data.steps;
+      if (!Array.isArray(rawSteps)) return;
+      const length = Math.max(1, Math.round(readParam('length', 8)));
+      // Only feed the active-length subset of steps to the evolver — we
+      // don't want it mutating "dead" cells past the loop's length param.
+      const active = (rawSteps as unknown[])
+        .slice(0, length)
+        .map(coerceToChordStep) as EvolveStep[];
+      const hasReal = active.some((s) => s.on && s.root !== null);
+      if (!hasReal) return;
+      const result = evolveProgression(active, {
+        recentlyMutated: recentlyMutatedHistory,
+      });
+      if (result.rule === 'noop' || result.changedIndex === null) return;
+
+      // Replace data.steps with the new array (only the active slice
+      // changed; preserve any trailing cells past `length`). Same direct-
+      // mutation pattern as maybeApplyQueuedSlot above — the upstream Yjs
+      // adapter batches these writes into a transaction automatically.
+      const tail = (rawSteps as unknown[])
+        .slice(length)
+        .map(coerceToChordStep) as EvolveStep[];
+      const next = [...result.steps, ...tail];
+      data.steps = next.map((s) => ({
+        on: s.on,
+        root: s.root,
+        quality: s.quality,
+        inversion: s.inversion,
+        voicing: s.voicing,
+      }));
+      const gen = typeof data.evolveGeneration === 'number' ? data.evolveGeneration : 0;
+      data.evolveGeneration = gen + 1;
+
+      // Track which index mutated for the next 2 passes' blocklist.
+      recentlyMutatedHistory.push(result.changedIndex);
+      if (recentlyMutatedHistory.length > 2) recentlyMutatedHistory.shift();
+    }
+
     function tick() {
       if (!alive) return;
       try {
@@ -505,6 +562,8 @@ export const polyseqzDef: AudioModuleDef = {
                   // natural advance.
                   continue;
                 }
+                // EVOLVE — destructively mutates data.steps when enabled.
+                maybeEvolveSteps();
               }
               stepIndex = nextIdx;
               currentStep = stepIndex;
@@ -534,6 +593,8 @@ export const polyseqzDef: AudioModuleDef = {
                 nextStepTime = nextStartTime;
                 continue;
               }
+              // EVOLVE — destructively mutates data.steps when enabled.
+              maybeEvolveSteps();
             }
             nextStepTime = nextStartTime;
             stepIndex = nextIdx;
