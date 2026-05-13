@@ -38,6 +38,7 @@ import {
   type SlotKey,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { createPlayheadTracker } from './playhead-tracker';
 
 export interface Step {
   on: boolean;
@@ -259,6 +260,10 @@ export const sequencerDef: AudioModuleDef = {
       // Always emit a clock pulse on advance — that's the chain-out signal
       // and it fires regardless of step on/off.
       emitClockPulse(atTime);
+      // Scheduler lookahead vs sounding-now: queue the (idx, atTime) entry so
+      // the visual playhead derives "which step is the audio thread playing
+      // right now" instead of "which step is about to be scheduled".
+      playhead.schedule(idx, atTime);
 
       // Compute the chord voicing. If the step is off / has no pitch, every
       // lane's gate is 0 and the mono `gate` output stays low.
@@ -318,7 +323,7 @@ export const sequencerDef: AudioModuleDef = {
       if (ev.reset > 0) {
         // Reset the step counter; next clock tick starts at step 0.
         stepIndex = 0;
-        currentStep = 0;
+        playhead.reset();
         nextStepTime = ctx.currentTime + 0.05;
       }
       const queued = pickQueuedSlotFromEvents(ev);
@@ -366,7 +371,7 @@ export const sequencerDef: AudioModuleDef = {
       d.queuedSlot = null;
       // Reset position so the next emit starts at step 0 of the new pattern.
       stepIndex = 0;
-      currentStep = 0;
+      playhead.reset();
       nextStepTime = ctx.currentTime + 0.005;
       return true;
     }
@@ -386,7 +391,7 @@ export const sequencerDef: AudioModuleDef = {
         if (shouldRun && !prevPlaying) {
           // Transitioned to playing: reset position + cancel any stale future events
           stepIndex = 0;
-          currentStep = 0;
+          playhead.reset();
           nextStepTime = ctx.currentTime + 0.05;
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
@@ -447,7 +452,6 @@ export const sequencerDef: AudioModuleDef = {
                 }
               }
               stepIndex = nextIdx;
-              currentStep = stepIndex;
               totalAdvances++;
             }
             lastClockSample = cur;
@@ -482,7 +486,6 @@ export const sequencerDef: AudioModuleDef = {
             }
             nextStepTime = nextStartTime;
             stepIndex = nextIdx;
-            currentStep = stepIndex;
             totalAdvances++;
           }
         }
@@ -491,7 +494,12 @@ export const sequencerDef: AudioModuleDef = {
       }
     }
 
-    let currentStep = 0;
+    // Scheduler lookahead vs sounding-now: stepIndex is the NEXT step the
+    // lookahead loop will queue; the tracker derives the playhead from the
+    // (idx, atTime) entries pushed inside emitStep so the visual highlight
+    // matches what the audio thread is playing right now. Fixes the off-by-one
+    // playhead lag.
+    const playhead = createPlayheadTracker();
     let totalAdvances = 0; // monotonic — useful for tests asserting "did we step N times"
     // Subscribe to the shared scheduler-clock — a Worker tick that's
     // immune to main-thread blocking. Replaces the legacy
@@ -526,7 +534,7 @@ export const sequencerDef: AudioModuleDef = {
         return typeof v === 'number' ? v : undefined;
       },
       read(key) {
-        if (key === 'currentStep') return currentStep;
+        if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
         // V/oct currently emitted on the pitch port (lane 0) — kept for
