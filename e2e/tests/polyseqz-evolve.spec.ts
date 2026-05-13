@@ -156,7 +156,19 @@ test('polyseqz-evolve: toggling EVOLVE off freezes mutations', async ({ page }) 
   // Let it run + mutate for ~2 seconds (5+ passes at 300 BPM 4-step).
   await page.waitForTimeout(2000);
 
-  // Snapshot the current state, then toggle EVOLVE off.
+  // Toggle EVOLVE off FIRST, then snapshot — capturing the snapshot before
+  // the toggle would race with the engine's next loop-wrap mutation between
+  // the read and the click.
+  const evolveBtn = page.getByTestId('polyseqz-evolve-p');
+  await evolveBtn.click();
+  await expect(evolveBtn).toHaveAttribute('data-evolve-enabled', 'false');
+
+  // Settle: wait long enough for any in-flight loop-wrap mutation that
+  // started BEFORE the toggle to complete. One full 4-step pass at 300
+  // BPM is 800ms; 1.5s buffer is safe.
+  await page.waitForTimeout(1500);
+
+  // Snapshot AFTER the freeze is in effect.
   const beforeOff = await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -167,14 +179,11 @@ test('polyseqz-evolve: toggling EVOLVE off freezes mutations', async ({ page }) 
       steps: JSON.parse(JSON.stringify(d?.steps ?? [])),
     };
   });
+  // Some mutation must have occurred before the toggle.
   expect(beforeOff.gen).toBeGreaterThan(0);
 
-  const evolveBtn = page.getByTestId('polyseqz-evolve-p');
-  await evolveBtn.click();
-  await expect(evolveBtn).toHaveAttribute('data-evolve-enabled', 'false');
-
-  // Wait another ~2 seconds (more passes) — but EVOLVE is off so no
-  // mutations should occur.
+  // Wait another ~2 seconds (more loop passes) — but EVOLVE is off so no
+  // further mutations should occur.
   await page.waitForTimeout(2000);
 
   const afterOff = await page.evaluate(() => {
@@ -188,9 +197,8 @@ test('polyseqz-evolve: toggling EVOLVE off freezes mutations', async ({ page }) 
     };
   });
 
-  // Generation counter must not have advanced after EVOLVE was toggled off.
+  // Generation counter must not have advanced while EVOLVE is off.
   expect(afterOff.gen).toBe(beforeOff.gen);
-  // Steps must be byte-identical to the snapshot taken at the EVOLVE-off
-  // boundary.
+  // Steps must be byte-identical to the snapshot taken after the freeze.
   expect(JSON.stringify(afterOff.steps)).toBe(JSON.stringify(beforeOff.steps));
 });
