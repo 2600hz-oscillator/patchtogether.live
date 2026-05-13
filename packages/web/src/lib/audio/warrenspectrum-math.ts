@@ -14,6 +14,48 @@ export const WARRENSPECTRUM_Q = 6.0;
 export const WARRENSPECTRUM_CENTER_HZ = [80, 160, 320, 640, 1280, 2560, 5120, 10240] as const;
 export const WARRENSPECTRUM_BLEED = [1.0, 0.35, 0.12] as const;
 
+/** Tuning modes for the 8 bandpass centers.
+ *  - 'log': fixed octave-spaced 80..10240 Hz (legacy spectral-EQ behavior).
+ *  - 'harm': harmonic partials f[i] = rootHz * (i+1), root chosen by the
+ *    `root` param (MIDI note number → Hz). Mimics Rings-style modal resonators. */
+export type WarrenspectrumTuning = 'log' | 'harm';
+
+/** Default root for harmonic mode = MIDI 60 = C4 (middle C, ~261.63 Hz). */
+export const WARRENSPECTRUM_ROOT_DEFAULT_MIDI = 60;
+
+/** MIDI note → Hz. A4 = 69 = 440. */
+export function midiToHz(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+/** Center frequency for band index `i` (0..7) given mode + root MIDI. */
+export function bandCenterHz(mode: WarrenspectrumTuning, rootMidi: number, i: number): number {
+  if (mode === 'harm') {
+    const rootHz = midiToHz(rootMidi);
+    return rootHz * (i + 1);
+  }
+  return WARRENSPECTRUM_CENTER_HZ[i] ?? 0;
+}
+
+/** Equal-power constant-power pan. position is -1 (left) .. +1 (right). */
+export function panGains(position: number): { l: number; r: number } {
+  const p = Math.max(-1, Math.min(1, position));
+  const theta = ((p + 1) / 2) * (Math.PI / 2);
+  return { l: Math.cos(theta), r: Math.sin(theta) };
+}
+
+/** Pan position for band `i` with spread amount `s` (0..1).
+ *  Even bands lean left, odd bands lean right; magnitude scales with
+ *  distance from the band-array center so outer bands at spread=1 are
+ *  fully hard-panned, and at spread=0 every band is centered (mono). */
+export function bandPanPosition(i: number, n: number, spread: number): number {
+  const center = (n - 1) / 2;
+  const dist = Math.abs(i - center) / center; // 0 at center, 1 at edges
+  const sign = i % 2 === 0 ? -1 : 1;
+  const v = sign * dist * spread;
+  return v === 0 ? 0 : Math.max(-1, Math.min(1, v));
+}
+
 export interface VactrolEnv {
   excitation: number;
   env: number;

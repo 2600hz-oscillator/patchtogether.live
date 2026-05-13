@@ -1,26 +1,36 @@
 // packages/web/src/lib/audio/modules/warrenspectrum.ts
 //
-// WARRENSPECTRUM — stereo 8-band filterbank with vactrol-style ping
-// excitation and an acidwarp video visualization.
+// WARRENSPECTRUM — stereo 8-band resonator bank with vactrol-style ping
+// excitation, per-band sends/returns, and an acidwarp video visualization.
 //
-// Audio: 8 octave-spaced bandpass filters (80, 160, 320, 640, 1280,
-// 2560, 5120, 10240 Hz) at Q=6. Each band has its own ping gate input;
-// rising edges distribute excitation across n±2 bands via a bleed
-// matrix (1.0 / 0.35 / 0.12) into a vactrol-style envelope (soft
-// attack 10-30 ms ±10% jitter, exponential decay 100-800 ms ±10%
-// jitter, tanh-saturated). The envelope simultaneously injects a brief
-// impulse into the bandpass input (filter rings at its center freq)
-// and pumps the band's post-filter gain slightly.
+// Audio: 8 bandpass resonators, tuned either as octave-spaced log bands
+// (80..10240 Hz, the legacy "spectral EQ" behavior) or as harmonic
+// partials (f[i] = rootHz * (i+1)) selected by the `tuning_mode` param.
+// `root` (MIDI note) sets the fundamental in harmonic mode (default
+// MIDI 60 = middle C). Each band has its own ping gate; rising edges
+// distribute excitation across n±2 bands via a bleed matrix (scaled by
+// the `bleed` knob) into a vactrol-style envelope (soft attack 10-30ms
+// ±10% jitter, exp decay 100-800ms ±10% jitter, tanh-saturated). The
+// envelope simultaneously injects a brief impulse into the bandpass
+// input (filter rings at its center freq) and pumps the band's
+// post-filter gain slightly. Per-band stereo pan is derived from the
+// `spread` knob.
 //
-// Video: viz_out is a mono-video cross-domain bridge. The card renders
-// an EQ-curve overlay (8 bars connected by a Catmull-Rom spline) with
-// a semi-transparent audio waveform trace, cycling hue palette
-// (acidwarp), and ping-flash columns for each band. Same drawFrame
-// pattern as SCOPE — drawWarrenspectrum is the shared renderer, called
-// both by the on-card canvas effect AND the audio→video bridge.
+// Per-band sends + returns: each band has a mono audio output (the
+// internal filtered signal, post-envelope, post-level) and a mono audio
+// input. When a return is patched, that band's contribution to the
+// stereo mix becomes the return signal (replace, not sum) — letting you
+// route each partial through an external effect. The host watches
+// livePatch.edges and posts a 'returnMask' message to the worklet
+// whenever the set of patched returns changes.
+//
+// Video: viz_out is a mono-video cross-domain bridge driving the same
+// acidwarp EQ-curve renderer used by the on-card canvas.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import { patch as livePatch } from '$lib/graph/store';
+import { isInputPortConnected } from './transport-helpers';
 import workletUrl from '@patchtogether.live/dsp/dist/warrenspectrum.js?url';
 import { drawWarrenspectrum, type WarrenspectrumSnapshot } from './warrenspectrum-draw';
 
@@ -34,29 +44,25 @@ export interface WarrenspectrumSnapshotMessage {
   flash: Float32Array;
 }
 
-// Module-grouping Phase 3A: `vizPassthrough` is available on AudioModuleDef
-// for WARRENSPECTRUM's acidwarp+EQ-curve+ping visualizer canvas. Left
-// UNSET until the card adopts the `data-viz-passthrough` <canvas> contract
-// used by ScopeCard for GroupCard portal-hoisting.
 export const warrenspectrumDef: AudioModuleDef = {
   type: 'warrenspectrum',
   domain: 'audio',
+  // v2 adds: tuning_mode, root, q, spread, bleed params; 8 band returns
+  // (band1_in..band8_in audio inputs); 8 per-band sends (band1_out..
+  // band8_out audio outputs); root_cv / spread_cv / q_cv CV inputs;
+  // global_ping gate input.
   label: 'WARRENSPECTRUM',
   category: 'effects',
-  schemaVersion: 1,
+  schemaVersion: 2,
   stereoPairs: [
     ['in_l', 'in_r'],
     ['out_l', 'out_r'],
   ],
 
-  // 19 inputs: stereo audio in + 8 level CV + 8 ping gates + 1 viznoise CV.
-  // 3 outputs: stereo audio + mono-video viz.
   inputs: [
     { id: 'in_l', type: 'audio' },
     { id: 'in_r', type: 'audio' },
-    // Per-band level CV. CV → AudioParam (level1..level8) via the engine's
-    // standard CV→param fast path. Linear scaling: ±1 cv = ±1.0 (full
-    // 0..2 sweep) — see .myrobots/plans/cv-range-standard.md.
+    // Per-band level CV → AudioParam fast path (linear ±1cv = ±1.0).
     { id: 'level1_cv', type: 'cv', paramTarget: 'level1', cvScale: { mode: 'linear' } },
     { id: 'level2_cv', type: 'cv', paramTarget: 'level2', cvScale: { mode: 'linear' } },
     { id: 'level3_cv', type: 'cv', paramTarget: 'level3', cvScale: { mode: 'linear' } },
@@ -65,7 +71,7 @@ export const warrenspectrumDef: AudioModuleDef = {
     { id: 'level6_cv', type: 'cv', paramTarget: 'level6', cvScale: { mode: 'linear' } },
     { id: 'level7_cv', type: 'cv', paramTarget: 'level7', cvScale: { mode: 'linear' } },
     { id: 'level8_cv', type: 'cv', paramTarget: 'level8', cvScale: { mode: 'linear' } },
-    // 8 ping gates — rising-edge triggered per band.
+    // Per-band ping gates.
     { id: 'ping1', type: 'gate' },
     { id: 'ping2', type: 'gate' },
     { id: 'ping3', type: 'gate' },
@@ -74,26 +80,60 @@ export const warrenspectrumDef: AudioModuleDef = {
     { id: 'ping6', type: 'gate' },
     { id: 'ping7', type: 'gate' },
     { id: 'ping8', type: 'gate' },
-    // viznoise CV: speed of the acidwarp hue cycle.
+    // Global ping — host fans this gate out to all 8 ping channels of
+    // the worklet's ping bus.
+    { id: 'global_ping', type: 'gate' },
+    // viznoise CV: hue-cycle speed for the visualizer.
     { id: 'viznoise_cv', type: 'cv', paramTarget: 'viznoise', cvScale: { mode: 'linear' } },
+    // Tuning + topology CV.
+    { id: 'root_cv',   type: 'cv', paramTarget: 'root',   cvScale: { mode: 'linear' } },
+    { id: 'spread_cv', type: 'cv', paramTarget: 'spread', cvScale: { mode: 'linear' } },
+    { id: 'q_cv',      type: 'cv', paramTarget: 'q',      cvScale: { mode: 'linear' } },
+    { id: 'decay_cv',  type: 'cv', paramTarget: 'ping_decay', cvScale: { mode: 'linear' } },
+    // Per-band audio returns. When patched, that band's mix is the
+    // external return (post-effects); when unpatched, internal is used.
+    { id: 'band1_in', type: 'audio' },
+    { id: 'band2_in', type: 'audio' },
+    { id: 'band3_in', type: 'audio' },
+    { id: 'band4_in', type: 'audio' },
+    { id: 'band5_in', type: 'audio' },
+    { id: 'band6_in', type: 'audio' },
+    { id: 'band7_in', type: 'audio' },
+    { id: 'band8_in', type: 'audio' },
   ],
   outputs: [
     { id: 'out_l',   type: 'audio' },
     { id: 'out_r',   type: 'audio' },
     { id: 'viz_out', type: 'mono-video' },
+    // Per-band mono sends (pre-pan, post-envelope, post-level).
+    { id: 'band1_out', type: 'audio' },
+    { id: 'band2_out', type: 'audio' },
+    { id: 'band3_out', type: 'audio' },
+    { id: 'band4_out', type: 'audio' },
+    { id: 'band5_out', type: 'audio' },
+    { id: 'band6_out', type: 'audio' },
+    { id: 'band7_out', type: 'audio' },
+    { id: 'band8_out', type: 'audio' },
   ],
   params: [
-    { id: 'level1',    label: 'B1',   defaultValue: 1.0, min: 0,   max: 2,   curve: 'linear' },
-    { id: 'level2',    label: 'B2',   defaultValue: 1.0, min: 0,   max: 2,   curve: 'linear' },
-    { id: 'level3',    label: 'B3',   defaultValue: 1.0, min: 0,   max: 2,   curve: 'linear' },
-    { id: 'level4',    label: 'B4',   defaultValue: 1.0, min: 0,   max: 2,   curve: 'linear' },
-    { id: 'level5',    label: 'B5',   defaultValue: 1.0, min: 0,   max: 2,   curve: 'linear' },
-    { id: 'level6',    label: 'B6',   defaultValue: 1.0, min: 0,   max: 2,   curve: 'linear' },
-    { id: 'level7',    label: 'B7',   defaultValue: 1.0, min: 0,   max: 2,   curve: 'linear' },
-    { id: 'level8',    label: 'B8',   defaultValue: 1.0, min: 0,   max: 2,   curve: 'linear' },
-    { id: 'master',    label: 'Mas',  defaultValue: 1.0, min: 0,   max: 2,   curve: 'linear' },
-    { id: 'viznoise',  label: 'Hue',  defaultValue: 0.3, min: 0,   max: 1,   curve: 'linear' },
-    { id: 'ping_decay',label: 'Dcy',  defaultValue: 0.5, min: 0,   max: 1,   curve: 'linear' },
+    { id: 'level1',     label: 'B1',   defaultValue: 1.0, min: 0,  max: 2,   curve: 'linear' },
+    { id: 'level2',     label: 'B2',   defaultValue: 1.0, min: 0,  max: 2,   curve: 'linear' },
+    { id: 'level3',     label: 'B3',   defaultValue: 1.0, min: 0,  max: 2,   curve: 'linear' },
+    { id: 'level4',     label: 'B4',   defaultValue: 1.0, min: 0,  max: 2,   curve: 'linear' },
+    { id: 'level5',     label: 'B5',   defaultValue: 1.0, min: 0,  max: 2,   curve: 'linear' },
+    { id: 'level6',     label: 'B6',   defaultValue: 1.0, min: 0,  max: 2,   curve: 'linear' },
+    { id: 'level7',     label: 'B7',   defaultValue: 1.0, min: 0,  max: 2,   curve: 'linear' },
+    { id: 'level8',     label: 'B8',   defaultValue: 1.0, min: 0,  max: 2,   curve: 'linear' },
+    { id: 'master',     label: 'Mas',  defaultValue: 1.0, min: 0,  max: 2,   curve: 'linear' },
+    { id: 'viznoise',   label: 'Hue',  defaultValue: 0.3, min: 0,  max: 1,   curve: 'linear' },
+    { id: 'ping_decay', label: 'Dcy',  defaultValue: 0.5, min: 0,  max: 1,   curve: 'linear' },
+    // 0 = log (octave-spaced), 1 = harm (harmonic partials).
+    { id: 'tuning_mode', label: 'Mode', defaultValue: 0,  min: 0,  max: 1,   curve: 'discrete' },
+    // MIDI note number; 60 = middle C. Used only in harmonic mode.
+    { id: 'root',        label: 'Root', defaultValue: 60, min: 24, max: 108, curve: 'linear' },
+    { id: 'q',           label: 'Q',    defaultValue: 6,  min: 1,  max: 40,  curve: 'linear' },
+    { id: 'spread',      label: 'Spd',  defaultValue: 0,  min: 0,  max: 1,   curve: 'linear' },
+    { id: 'bleed',       label: 'Bld',  defaultValue: 1,  min: 0,  max: 1,   curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -102,25 +142,21 @@ export const warrenspectrumDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    // Worklet has 3 inputs:
-    //   0 — in_l (mono)
-    //   1 — in_r (mono)
-    //   2 — pings (8 channels, one per band)
-    // and 2 outputs: out_l, out_r.
+    // Worklet topology:
+    //   inputs:  0=in_l, 1=in_r, 2=pings(8ch), 3=returns(8ch)
+    //   outputs: 0=out_l, 1=out_r, 2=bandOut(8ch)
     const workletNode = new AudioWorkletNode(ctx, 'warrenspectrum', {
-      numberOfInputs: 3,
-      numberOfOutputs: 2,
-      outputChannelCount: [1, 1],
+      numberOfInputs: 4,
+      numberOfOutputs: 3,
+      outputChannelCount: [1, 1, NUM_BANDS],
     });
 
-    // Ping merger: collects the 8 ping inputs into a single 8-channel
-    // bus that feeds worklet input #2.
+    // ---- Ping bus (input #2) ----
     const pingMerger = ctx.createChannelMerger(NUM_BANDS);
     pingMerger.connect(workletNode, 0, 2);
 
-    // Per-ping silence sources so each channel is always active (mirrors
-    // the mixmstrs / filter pattern — without this, channels with no
-    // edge would idle at 0 but the channel itself wouldn't be allocated).
+    // Per-channel silence sources keep the merger's channels allocated
+    // even when no edges are patched.
     const silenceSources: ConstantSourceNode[] = [];
     for (let i = 0; i < NUM_BANDS; i++) {
       const sil = ctx.createConstantSource();
@@ -130,10 +166,7 @@ export const warrenspectrumDef: AudioModuleDef = {
       silenceSources.push(sil);
     }
 
-    // Per-ping fan-in gain nodes. Each ping_n input goes to a dedicated
-    // GainNode (1×) which connects to pingMerger channel n. This gives
-    // each ping input a stable AudioNode pin for the engine to hand
-    // back in the inputs map.
+    // Per-band ping fan-in.
     const pingGains: GainNode[] = [];
     for (let i = 0; i < NUM_BANDS; i++) {
       const g = ctx.createGain();
@@ -142,55 +175,101 @@ export const warrenspectrumDef: AudioModuleDef = {
       pingGains.push(g);
     }
 
+    // Global ping: fan out to all 8 ping merger channels.
+    const globalPingGain = ctx.createGain();
+    globalPingGain.gain.value = 1;
+    for (let i = 0; i < NUM_BANDS; i++) {
+      globalPingGain.connect(pingMerger, 0, i);
+    }
+
+    // ---- Returns bus (input #3) ----
+    const returnsMerger = ctx.createChannelMerger(NUM_BANDS);
+    returnsMerger.connect(workletNode, 0, 3);
+    const returnSilence: ConstantSourceNode[] = [];
+    const returnGains: GainNode[] = [];
+    for (let i = 0; i < NUM_BANDS; i++) {
+      const sil = ctx.createConstantSource();
+      sil.offset.value = 0;
+      sil.start();
+      sil.connect(returnsMerger, 0, i);
+      returnSilence.push(sil);
+      const g = ctx.createGain();
+      g.gain.value = 1;
+      g.connect(returnsMerger, 0, i);
+      returnGains.push(g);
+    }
+
+    // ---- Per-band sends (output #2 → splitter → individual GainNodes) ----
+    const bandSplitter = ctx.createChannelSplitter(NUM_BANDS);
+    workletNode.connect(bandSplitter, 2, 0);
+    const bandOutGains: GainNode[] = [];
+    for (let i = 0; i < NUM_BANDS; i++) {
+      const g = ctx.createGain();
+      g.gain.value = 1;
+      // Splitter channel i → individual mono output node.
+      bandSplitter.connect(g, i, 0);
+      bandOutGains.push(g);
+    }
+
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
-    // Worklet param names: level1..level8, master, pingDecay. Card param
-    // ids map level*/master 1:1; viznoise + ping_decay are handle-local
-    // (viznoise affects only display; ping_decay is mapped to the
-    // worklet's pingDecay param by setParam).
+
+    // Initialize all AudioParams from node.params (defaults for new
+    // params apply when node.params is missing them).
+    const nodeParams = node.params ?? {};
     for (let i = 1; i <= NUM_BANDS; i++) {
       const k = `level${i}`;
-      const v = (node.params ?? {})[k] ?? 1.0;
-      params.get(k)?.setValueAtTime(v, ctx.currentTime);
+      params.get(k)?.setValueAtTime(nodeParams[k] ?? 1.0, ctx.currentTime);
     }
-    {
-      const v = (node.params ?? {}).master ?? 1.0;
-      params.get('master')?.setValueAtTime(v, ctx.currentTime);
-    }
+    params.get('master')?.setValueAtTime(nodeParams.master ?? 1.0, ctx.currentTime);
+    params.get('pingDecay')?.setValueAtTime(nodeParams.ping_decay ?? 0.5, ctx.currentTime);
+    params.get('tuningMode')?.setValueAtTime(nodeParams.tuning_mode ?? 0, ctx.currentTime);
+    params.get('root')?.setValueAtTime(nodeParams.root ?? 60, ctx.currentTime);
+    params.get('q')?.setValueAtTime(nodeParams.q ?? 6, ctx.currentTime);
+    params.get('spread')?.setValueAtTime(nodeParams.spread ?? 0, ctx.currentTime);
+    params.get('bleed')?.setValueAtTime(nodeParams.bleed ?? 1, ctx.currentTime);
 
-    // viznoise + ping_decay live as a handle-local cache. ping_decay is
-    // mirrored into the worklet's pingDecay AudioParam below.
     const vizParams: Record<string, number> = {
-      viznoise:   (node.params ?? {}).viznoise   ?? 0.3,
-      ping_decay: (node.params ?? {}).ping_decay ?? 0.5,
+      viznoise:   nodeParams.viznoise   ?? 0.3,
+      ping_decay: nodeParams.ping_decay ?? 0.5,
     };
 
-    params.get('pingDecay')?.setValueAtTime(vizParams.ping_decay, ctx.currentTime);
-
-    // ---- Visualization snapshot pipe ----
-    // The worklet posts { wave, flash } at ~30Hz. We cache the latest
-    // snapshot here so both the on-card draw effect AND the cross-domain
-    // drawFrame can read it without re-posting.
+    // ---- Snapshot pipe ----
     let latestWave: Float32Array = new Float32Array(256);
     const latestFlash = new Float32Array(NUM_BANDS);
-    // Display-side flash: refreshed on every other readSnapshot call so
-    // the LED meter visibly steps at ~30Hz instead of 60Hz. The hue
-    // cycle / spline / waveform still update each frame (smooth motion
-    // for the rest of the viz).
     const displayFlash = new Float32Array(NUM_BANDS);
     let frameCounter = 0;
     workletNode.port.onmessage = (e: MessageEvent) => {
       const m = e.data as WarrenspectrumSnapshotMessage | undefined;
       if (!m || m.type !== 'snapshot') return;
-      // Copy into a fresh ArrayBuffer-backed Float32Array so the type
-      // matches our `let` (TS distinguishes <ArrayBuffer> from
-      // <ArrayBufferLike> after the lib.dom 2025 update).
       latestWave = new Float32Array(m.wave);
-      // Worklet sends absolute flash values; we max(local, sent) so the
-      // local-decay per frame doesn't fight the worklet's snapshot.
       for (let i = 0; i < NUM_BANDS; i++) {
         latestFlash[i] = Math.max(latestFlash[i]!, m.flash[i]!);
       }
     };
+
+    // ---- Return-mask watcher ----
+    // Poll livePatch.edges on each snapshot post (~30Hz). When the set
+    // of patched band returns changes, post a 'returnMask' message so
+    // the worklet swaps internal-vs-external for each band.
+    const lastMask = new Array<boolean>(NUM_BANDS).fill(false);
+    function updateReturnMask(): void {
+      const edges = Object.values(livePatch.edges);
+      let changed = false;
+      const next = new Array<boolean>(NUM_BANDS);
+      for (let i = 0; i < NUM_BANDS; i++) {
+        const patched = isInputPortConnected(edges, node.id, `band${i + 1}_in`);
+        next[i] = patched;
+        if (patched !== lastMask[i]) changed = true;
+      }
+      if (changed) {
+        for (let i = 0; i < NUM_BANDS; i++) lastMask[i] = next[i]!;
+        try {
+          workletNode.port.postMessage({ type: 'returnMask', mask: next });
+        } catch { /* worklet may be torn down */ }
+      }
+    }
+    // Push once at startup so the initial state is correct.
+    updateReturnMask();
 
     function getLevels(): number[] {
       const out: number[] = [];
@@ -202,13 +281,10 @@ export const warrenspectrumDef: AudioModuleDef = {
     }
 
     function readSnapshot(): WarrenspectrumSnapshot {
-      // Frame counter drives hue cycle; viznoise speed maps to
-      // (1 + viznoise*8) frames/hue-degree. Saved as a derived field so
-      // the renderer is dumb about counter math.
       frameCounter = (frameCounter + 1) >>> 0;
-      // Half-rate update of the displayed meter: only on even frames do
-      // we (a) decay the latched flash and (b) latch into displayFlash.
-      // This halves the visible LED-meter sample rate from ~60Hz → ~30Hz.
+      // Refresh return-mask on every snapshot read (cheap; only posts
+      // a message when actually changed).
+      updateReturnMask();
       if ((frameCounter & 1) === 0) {
         for (let i = 0; i < NUM_BANDS; i++) {
           latestFlash[i] = latestFlash[i]! * 0.92;
@@ -235,14 +311,13 @@ export const warrenspectrumDef: AudioModuleDef = {
       drawWarrenspectrum(ctx2d, snap, canvas.width, canvas.height);
     }
 
-    // ---- Output bus + analyser (legacy field for getVideoSource) ----
     const outBus = ctx.createGain();
     outBus.gain.value = 1;
     workletNode.connect(outBus, 0);
     workletNode.connect(outBus, 1);
     const vizAnalyser = ctx.createAnalyser();
     vizAnalyser.fftSize = 2048;
-    outBus.connect(vizAnalyser); // sink — analyser doesn't connect onward.
+    outBus.connect(vizAnalyser);
 
     const inputs = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>();
     inputs.set('in_l', { node: workletNode, input: 0 });
@@ -254,18 +329,27 @@ export const warrenspectrumDef: AudioModuleDef = {
     for (let i = 0; i < NUM_BANDS; i++) {
       inputs.set(`ping${i + 1}`, { node: pingGains[i]!, input: 0 });
     }
-    // viznoise_cv: use the worklet's outputBus.gain as a sink AudioParam so
-    // the engine's per-param tap analyser still picks up modulation for
-    // motorized-fader feedback. setParam(viznoise) does the actual update.
+    inputs.set('global_ping', { node: globalPingGain, input: 0 });
+    for (let i = 0; i < NUM_BANDS; i++) {
+      inputs.set(`band${i + 1}_in`, { node: returnGains[i]!, input: 0 });
+    }
     inputs.set('viznoise_cv', { node: outBus, input: 0, param: outBus.gain });
+    inputs.set('root_cv',     { node: workletNode, input: 0, param: params.get('root')! });
+    inputs.set('spread_cv',   { node: workletNode, input: 0, param: params.get('spread')! });
+    inputs.set('q_cv',        { node: workletNode, input: 0, param: params.get('q')! });
+    inputs.set('decay_cv',    { node: workletNode, input: 0, param: params.get('pingDecay')! });
+
+    const outputs = new Map<string, { node: AudioNode; output: number }>();
+    outputs.set('out_l', { node: workletNode, output: 0 });
+    outputs.set('out_r', { node: workletNode, output: 1 });
+    for (let i = 0; i < NUM_BANDS; i++) {
+      outputs.set(`band${i + 1}_out`, { node: bandOutGains[i]!, output: 0 });
+    }
 
     return {
       domain: 'audio',
       inputs,
-      outputs: new Map([
-        ['out_l', { node: workletNode, output: 0 }],
-        ['out_r', { node: workletNode, output: 1 }],
-      ]),
+      outputs,
       videoSources: new Map([
         ['viz_out', { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame }],
       ]),
@@ -276,8 +360,11 @@ export const warrenspectrumDef: AudioModuleDef = {
         }
         if (paramId === 'ping_decay') {
           vizParams.ping_decay = value;
-          // Mirror into the worklet's pingDecay AudioParam.
           params.get('pingDecay')?.setValueAtTime(value, ctx.currentTime);
+          return;
+        }
+        if (paramId === 'tuning_mode') {
+          params.get('tuningMode')?.setValueAtTime(value, ctx.currentTime);
           return;
         }
         params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
@@ -285,6 +372,7 @@ export const warrenspectrumDef: AudioModuleDef = {
       readParam(paramId) {
         if (paramId === 'viznoise') return vizParams.viznoise;
         if (paramId === 'ping_decay') return vizParams.ping_decay;
+        if (paramId === 'tuning_mode') return params.get('tuningMode')?.value;
         return params.get(paramId)?.value;
       },
       read(key) {
@@ -295,11 +383,20 @@ export const warrenspectrumDef: AudioModuleDef = {
       dispose() {
         try { workletNode.port.onmessage = null; } catch { /* ignore */ }
         for (const s of silenceSources) {
-          try { s.stop(); } catch { /* already stopped */ }
+          try { s.stop(); } catch { /* */ }
+          s.disconnect();
+        }
+        for (const s of returnSilence) {
+          try { s.stop(); } catch { /* */ }
           s.disconnect();
         }
         for (const g of pingGains) g.disconnect();
+        for (const g of returnGains) g.disconnect();
+        for (const g of bandOutGains) g.disconnect();
+        globalPingGain.disconnect();
         pingMerger.disconnect();
+        returnsMerger.disconnect();
+        bandSplitter.disconnect();
         outBus.disconnect();
         vizAnalyser.disconnect();
         workletNode.disconnect();

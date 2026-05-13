@@ -47,15 +47,39 @@
     { id: `level${b}_cv`, label: `B${b} (${BAND_LABELS[i]}) LEVEL CV`, cable: 'cv' as const },
     { id: `ping${b}`,     label: `B${b} (${BAND_LABELS[i]}) PING`,     cable: 'gate' as const },
   ]);
+  // Per-band sends + returns (mono audio each), grouped together so the
+  // user can patch a band's send through an effect and back into its
+  // return as a self-contained spectral processing loop.
+  const bandIo: { inputs: PortDescriptor[]; outputs: PortDescriptor[] } = {
+    inputs:  BANDS.map((b, i) => ({ id: `band${b}_in`,  label: `B${b} (${BAND_LABELS[i]}) RET`,  cable: 'audio' as const })),
+    outputs: BANDS.map((b, i) => ({ id: `band${b}_out`, label: `B${b} (${BAND_LABELS[i]}) SEND`, cable: 'audio' as const })),
+  };
+  const topologyInputs: PortDescriptor[] = [
+    { id: 'global_ping', label: 'PING ALL', cable: 'gate' },
+    { id: 'root_cv',     label: 'ROOT CV',  cable: 'cv' },
+    { id: 'spread_cv',   label: 'SPRD CV',  cable: 'cv' },
+    { id: 'q_cv',        label: 'Q CV',     cable: 'cv' },
+    { id: 'decay_cv',    label: 'DCY CV',   cable: 'cv' },
+  ];
   const vizInput: PortDescriptor[] = [
     { id: 'viznoise_cv', label: 'HUE CV', cable: 'cv' },
   ];
 
   const sections = [
-    { label: 'Audio', inputs: audioInputs, outputs: audioOutputs },
-    { label: 'Bands', inputs: cvInputs },
-    { label: 'Viz',   inputs: vizInput },
+    { label: 'Audio',    inputs: audioInputs, outputs: audioOutputs },
+    { label: 'Bands',    inputs: cvInputs },
+    { label: 'Send/Ret', inputs: bandIo.inputs, outputs: bandIo.outputs },
+    { label: 'Topo',     inputs: topologyInputs },
+    { label: 'Viz',      inputs: vizInput },
   ];
+
+  function toggleTuning(): void {
+    const t = patch.nodes[id];
+    if (!t) return;
+    const cur = (t.params.tuning_mode ?? 0) >= 0.5 ? 1 : 0;
+    t.params.tuning_mode = cur === 1 ? 0 : 1;
+  }
+  let tuningMode = $derived(param('tuning_mode', 0) >= 0.5 ? 1 : 0);
 
   // ---- On-card visualization ----
   let canvasEl: HTMLCanvasElement | null = $state(null);
@@ -114,7 +138,29 @@
     <div class="side-knobs">
       <Knob value={param('master', 1.0)}     min={0} max={2} defaultValue={1.0} label="Mas"  curve="linear" onchange={set('master')}     readLive={live('master')} />
       <Knob value={param('ping_decay', 0.5)} min={0} max={1} defaultValue={0.5} label="Dcy"  curve="linear" onchange={set('ping_decay')} readLive={live('ping_decay')} />
+      <Knob value={param('q', 6)}            min={1} max={40} defaultValue={6}  label="Q"    curve="linear" onchange={set('q')}          readLive={live('q')} />
+      <Knob value={param('spread', 0)}       min={0} max={1} defaultValue={0}   label="Spd"  curve="linear" onchange={set('spread')}     readLive={live('spread')} />
+      <Knob value={param('bleed', 1)}        min={0} max={1} defaultValue={1}   label="Bld"  curve="linear" onchange={set('bleed')}      readLive={live('bleed')} />
       <Knob value={param('viznoise', 0.3)}   min={0} max={1} defaultValue={0.3} label="Hue"  curve="linear" onchange={set('viznoise')}   readLive={live('viznoise')} />
+    </div>
+
+    <div class="tuning-row">
+      <button
+        class="mode-btn"
+        class:harm={tuningMode === 1}
+        type="button"
+        data-testid={`warrenspectrum-tuning-${id}`}
+        title={tuningMode === 1 ? 'Harmonic partials (× root)' : 'Log-spaced bands (80..10240 Hz)'}
+        onclick={toggleTuning}
+      >{tuningMode === 1 ? 'HARM' : 'LOG'}</button>
+      <Fader
+        value={param('root', 60)}
+        min={24} max={108} defaultValue={60}
+        label="Root"
+        curve="linear"
+        onchange={set('root')}
+        readLive={live('root')}
+      />
     </div>
   </PatchPanel>
 </div>
@@ -159,6 +205,32 @@
     margin-top: 12px;
     display: flex;
     justify-content: center;
-    gap: 16px;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .tuning-row {
+    margin-top: 10px;
+    padding: 0 18px 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .mode-btn {
+    width: 44px;
+    height: 22px;
+    background: #2a2f3a;
+    border: 1px solid #404652;
+    color: var(--text);
+    border-radius: 3px;
+    font-size: 0.6rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    font-family: ui-monospace, monospace;
+  }
+  .mode-btn.harm {
+    background: var(--cable-pitch);
+    color: #1a1d23;
+    border-color: var(--cable-pitch);
   }
 </style>
