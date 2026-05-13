@@ -6,9 +6,16 @@
 // fails the test.
 //
 // Configuration via env:
-//   CHAOS_SEED=<int>          deterministic seed (default: time-derived)
-//   CHAOS_ITERATIONS=<int>    number of intents (default 200)
-//   CHAOS_PERSONALITY=<str>   currently only "carl" supported
+//   CHAOS_SEED=<int>            deterministic seed (default: time-derived)
+//   CHAOS_ITERATIONS=<int>      number of intents (default 200)
+//   CHAOS_PERSONALITY=<str>     currently only "carl" supported
+//   CHAOS_MAX_NODES=<int>       per-bot module cap (default 6). Prevents the
+//                               bot from filling a shared rackspace with junk.
+//   CHAOS_RACKSPACE_URL=<url>   absolute URL the bot navigates to instead of
+//                               '/'. Use the invite link form
+//                               (https://host/r/<id>?invite=<code>) so the
+//                               bot joins as an anon participant and Canvas
+//                               actually mounts (hooks aren't exposed on '/').
 
 import { test } from '@playwright/test';
 import { SeededRng, defaultSeed } from './lib/seed-rng';
@@ -23,12 +30,17 @@ import type { Intent } from './lib/intent';
 const SEED = process.env.CHAOS_SEED ? parseInt(process.env.CHAOS_SEED, 10) : defaultSeed();
 const ITERATIONS = parseInt(process.env.CHAOS_ITERATIONS ?? '200', 10);
 const PERSONALITY = process.env.CHAOS_PERSONALITY ?? 'carl';
+const MAX_NODES = parseInt(process.env.CHAOS_MAX_NODES ?? '6', 10);
+const RACKSPACE_URL = process.env.CHAOS_RACKSPACE_URL;
 
 test(`chaos run [seed=${SEED}, ${ITERATIONS}× ${PERSONALITY}]`, async ({ page }) => {
   test.setTimeout(180_000);
 
   // eslint-disable-next-line no-console
-  console.log(`[chaos] seed=${SEED} iterations=${ITERATIONS} personality=${PERSONALITY}`);
+  console.log(
+    `[chaos] seed=${SEED} iterations=${ITERATIONS} personality=${PERSONALITY} ` +
+      `maxNodes=${MAX_NODES} target=${RACKSPACE_URL ?? '/'}`,
+  );
 
   // Console event capture. Drained per-tick so errors are attributed to the
   // iteration that produced them.
@@ -40,17 +52,19 @@ test(`chaos run [seed=${SEED}, ${ITERATIONS}× ${PERSONALITY}]`, async ({ page }
     consoleBuffer.push({ type: 'pageerror', text: err.message, at: Date.now() });
   });
 
-  await page.goto('/');
+  await page.goto(RACKSPACE_URL ?? '/');
   await page.waitForLoadState('networkidle');
   await ensureEngineBooted(page);
-  await clearPatch(page);
+  // Shared rackspaces must not be wiped — only clear in solo mode where the
+  // bot owns the patch end-to-end.
+  if (!RACKSPACE_URL) await clearPatch(page);
 
   const catalog = await loadCatalog(page);
   // eslint-disable-next-line no-console
   console.log(`[chaos] catalog loaded: ${catalog.length} modules — ${catalog.map((m) => m.type).join(', ')}`);
 
   const rng = new SeededRng(SEED);
-  const carl = new ChaosCarl(catalog, { idPrefix: 'carl', maxOwnedNodes: 6 });
+  const carl = new ChaosCarl(catalog, { idPrefix: 'carl', maxOwnedNodes: MAX_NODES });
   const intentTrace: Intent[] = [];
 
   for (let i = 0; i < ITERATIONS; i++) {

@@ -8,8 +8,20 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
-const IS_LOCAL_TARGET =
-  BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
+const RACKSPACE_URL = process.env.CHAOS_RACKSPACE_URL;
+// Skip the local dev server boot if we're hitting a deployed tier — either
+// because E2E_BASE_URL points there or because CHAOS_RACKSPACE_URL is an
+// absolute non-localhost URL the bot will navigate to.
+const isLocal = (url: string) =>
+  url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1');
+const IS_LOCAL_TARGET = isLocal(BASE_URL) && (!RACKSPACE_URL || isLocal(RACKSPACE_URL));
+
+// HTTP Basic credentials for the deployed tiers' beta gate (see
+// packages/web/src/hooks.server.ts). Username defaults to `beta`; pass the
+// password via BETA_GATE_PASS (matches the server env var name so contributors
+// don't have to learn a second name).
+const BETA_USER = process.env.BETA_GATE_USER || 'beta';
+const BETA_PASS = process.env.BETA_GATE_PASS;
 
 export default defineConfig({
   testDir: '.',
@@ -28,6 +40,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    ...(BETA_PASS ? { httpCredentials: { username: BETA_USER, password: BETA_PASS } } : {}),
   },
   projects: [
     {

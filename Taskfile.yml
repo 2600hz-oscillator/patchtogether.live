@@ -177,8 +177,23 @@ tasks:
       Chaos Stage-1 run. Spawns Chromium, drives Chaos Carl through 200 random
       intents (configurable via CHAOS_ITERATIONS), checks invariants between
       each. On a violation: dumps artifacts to e2e/chaos/findings/<dir>/ and
-      fails. Currently single-user only — Stage 4 adds multi-user invariants
-      (post-Stage B). Vars: CHAOS_SEED=<int>, CHAOS_ITERATIONS=<int>.
+      fails. Vars:
+        CHAOS_SEED=<int>            deterministic seed
+        CHAOS_ITERATIONS=<int>      intents per run (default 200)
+        CHAOS_MAX_NODES=<int>       per-bot module cap (default 6) — keep low
+                                    in shared rackspaces so bots don't flood
+                                    the canvas
+        CHAOS_RACKSPACE_URL=<url>   join a deployed rackspace via invite link
+                                    instead of running solo against '/'. Skips
+                                    clearPatch so the bot just shows up and
+                                    plays.
+        BETA_GATE_PASS=<pw>         beta-gate basic-auth password for
+                                    deployed tiers (user is `beta` by
+                                    default; matches the server env var).
+                                    Example:
+                                    BETA_GATE_PASS=$BETA_GATE_PASS \
+                                      CHAOS_RACKSPACE_URL='https://autotest.patchtogether.live/r/abc?invite=xyz' \
+                                      E2E_BASE_URL=https://autotest.patchtogether.live task chaos:run
     cmds:
       - npm exec -w {{.E2E}} -- playwright test --config=chaos/chaos.config.ts
 
