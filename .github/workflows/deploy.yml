@@ -183,6 +183,12 @@ jobs:
         env:
           # Previews share the autotest tier's Hocuspocus instance.
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
+          # Re-expose the dev-only window globals (__patch / __ydoc /
+          # __ensureEngine / __listModuleDefs) on the built bundle so the
+          # chaos runner + e2e suites can drive a deployed preview. Gated
+          # via testHooksEnabled() in lib/dev/test-hooks.ts; never set on
+          # prod.
+          VITE_E2E_HOOKS: '1'
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -223,6 +229,9 @@ jobs:
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
+          # See preview-deploy comment — autotest is the canonical target for
+          # chaos + e2e runs, so the in-page test hooks must be exposed here.
+          VITE_E2E_HOOKS: '1'
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -256,6 +265,8 @@ jobs:
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-dev.fly.dev
+          # See preview-deploy comment — dev tier also runs chaos + e2e.
+          VITE_E2E_HOOKS: '1'
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
