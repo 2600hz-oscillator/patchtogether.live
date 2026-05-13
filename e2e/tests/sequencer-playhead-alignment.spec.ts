@@ -253,6 +253,9 @@ test('all sequencers: playhead is exposed via engine.read("currentStep") (smoke 
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
+  // Cartesian requires an external clock to advance — give it one via the
+  // Sequencer's clock output. (We don't assert Cartesian's currentStep
+  // moves; only that the read hook returns a number.)
   await spawnPatch(page, [
     { id: 'a', type: 'polyseqz',  params: { isPlaying: 1, bpm: 120 } },
     { id: 'b', type: 'sequencer', params: { isPlaying: 1, bpm: 120 } },
@@ -262,7 +265,7 @@ test('all sequencers: playhead is exposed via engine.read("currentStep") (smoke 
   ]);
 
   // Wait for at least one tick.
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(250);
 
   for (const id of ['a', 'b', 'c', 'e']) {
     const v = await readEngine(page, id, 'currentStep');
