@@ -14,6 +14,13 @@
 //   delay = 0       — clamped to 0.001 s (1 ms minimum, ~48 samples).
 //   delay jumps     — handled organically: spawn-trigger uses current delay.
 //   feedback = 1.0  — destruction loss prevents DC; we hard-clamp on write.
+//
+// Head fadeout: each alive head's `volume` decays exponentially per sample
+// so it fades to ~5% over one delay cycle at decay=0.2 (classic tape feel).
+// Without this, head 0's volume stayed at 1.0 forever and successive heads
+// stacked at compounding gain — the wet sum at mix=1.0 ran away (peak ~3.8
+// over 3s) and the audio-out master limiter choked it to silence, which
+// the user reported as "zero audio at fully wet".
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor {
@@ -175,6 +182,13 @@ class CharlottesEchosProcessor extends AudioWorkletProcessor {
       // forward at h.rate per output sample, so the head reads `delaySamples`
       // behind its current position. Multiple heads simulate stacked taps
       // each with their own (volume, rate) snapshot from spawn time.
+      //
+      // Per-sample volume decay: head fades to `cycleAtten` over one full
+      // delay cycle. At decay=0.2 that's ~0.29 per cycle (a gentle tape
+      // tail); at decay=1.0 the head dies within a sample. Without this,
+      // head 0 played forever at vol=1 and the wet sum ran away.
+      const cycleAtten = Math.max(0.001, (1 - decay) * 0.3 + 0.05);
+      const perSampleDecay = Math.pow(cycleAtten, 1 / Math.max(1, delaySamples));
       let wetL = 0;
       let wetR = 0;
       for (const h of this.heads) {
@@ -186,7 +200,7 @@ class CharlottesEchosProcessor extends AudioWorkletProcessor {
         wetL += sl;
         wetR += sr;
         h.pos += h.rate;
-        // If head's volume has decayed below noise floor, retire it.
+        h.volume *= perSampleDecay;
         if (h.volume < 1e-5) h.alive = false;
       }
 
