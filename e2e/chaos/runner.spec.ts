@@ -16,6 +16,9 @@
 //                               (https://host/r/<id>?invite=<code>) so the
 //                               bot joins as an anon participant and Canvas
 //                               actually mounts (hooks aren't exposed on '/').
+//   CHAOS_INFINITE=1            ignore CHAOS_ITERATIONS and loop forever
+//                               (until killed). Implies log-only invariants
+//                               so a single finding doesn't stop the show.
 
 import { test } from '@playwright/test';
 import { SeededRng, defaultSeed } from './lib/seed-rng';
@@ -32,14 +35,22 @@ const ITERATIONS = parseInt(process.env.CHAOS_ITERATIONS ?? '200', 10);
 const PERSONALITY = process.env.CHAOS_PERSONALITY ?? 'carl';
 const MAX_NODES = parseInt(process.env.CHAOS_MAX_NODES ?? '6', 10);
 const RACKSPACE_URL = process.env.CHAOS_RACKSPACE_URL;
+const INFINITE = process.env.CHAOS_INFINITE === '1';
+// In shared-rack mode invariants are "findings, not failures": the engine
+// reconciler can legitimately lag the Yjs doc across clients, so the solo-mode
+// "patch must equal engine" checks fire false positives. Same when INFINITE is
+// requested — a single finding shouldn't stop the show.
+const LOG_ONLY_INVARIANTS = Boolean(RACKSPACE_URL) || INFINITE;
 
-test(`chaos run [seed=${SEED}, ${ITERATIONS}× ${PERSONALITY}]`, async ({ page }) => {
-  test.setTimeout(180_000);
+test(`chaos run [seed=${SEED}, ${INFINITE ? '∞' : ITERATIONS}× ${PERSONALITY}]`, async ({ page }) => {
+  // No upper bound in INFINITE mode — Playwright's 0 disables the timeout.
+  test.setTimeout(INFINITE ? 0 : 180_000);
 
   // eslint-disable-next-line no-console
   console.log(
-    `[chaos] seed=${SEED} iterations=${ITERATIONS} personality=${PERSONALITY} ` +
-      `maxNodes=${MAX_NODES} target=${RACKSPACE_URL ?? '/'}`,
+    `[chaos] seed=${SEED} iterations=${INFINITE ? '∞' : ITERATIONS} personality=${PERSONALITY} ` +
+      `maxNodes=${MAX_NODES} target=${RACKSPACE_URL ?? '/'} ` +
+      `invariants=${LOG_ONLY_INVARIANTS ? 'log-only' : 'fail-fast'}`,
   );
 
   // Console event capture. Drained per-tick so errors are attributed to the
@@ -91,11 +102,22 @@ test(`chaos run [seed=${SEED}, ${ITERATIONS}× ${PERSONALITY}]`, async ({ page }
   // eslint-disable-next-line no-console
   console.log(`[chaos] catalog loaded: ${catalog.length} modules — ${catalog.map((m) => m.type).join(', ')}`);
 
+  // In shared-rack mode, plant an audioOut so Carl's random edge picks have a
+  // sink to terminate on. Carl himself never spawns audioOut (singleton sink,
+  // see catalog NEVER_SPAWN), but he WILL route TO any existing audioOut —
+  // so the bot's vco→mixer→audioOut chains emerge naturally.
+  if (RACKSPACE_URL) {
+    await applyIntent(page, { kind: 'addNode', id: 'carl-audioOut', type: 'audioOut' });
+    // eslint-disable-next-line no-console
+    console.log('[chaos] pre-spawned carl-audioOut as chain sink');
+  }
+
   const rng = new SeededRng(SEED);
   const carl = new ChaosCarl(catalog, { idPrefix: 'carl', maxOwnedNodes: MAX_NODES });
   const intentTrace: Intent[] = [];
 
-  for (let i = 0; i < ITERATIONS; i++) {
+  let findings = 0;
+  for (let i = 0; INFINITE || i < ITERATIONS; i++) {
     const patchBefore = await readPatch(page);
     const intent = carl.next(rng, patchBefore);
     intentTrace.push(intent);
@@ -117,6 +139,7 @@ test(`chaos run [seed=${SEED}, ${ITERATIONS}× ${PERSONALITY}]`, async ({ page }
     });
 
     if (v) {
+      findings++;
       const findingDir = await saveFinding(page, {
         meta: violationMeta(v, { seed: SEED, personality: PERSONALITY, iteration: i }),
         patch: patchAfter,
@@ -125,16 +148,26 @@ test(`chaos run [seed=${SEED}, ${ITERATIONS}× ${PERSONALITY}]`, async ({ page }
         intentTrace,
       });
       // eslint-disable-next-line no-console
-      console.log(`[chaos] FINDING saved: ${findingDir}`);
-      throw new Error(
-        `Invariant ${v.invariantId} violated at iteration ${i} (seed ${SEED}):\n` +
-        `  ${v.message}\n` +
-        `  artifacts: ${findingDir}\n` +
-        `  replay: CHAOS_SEED=${SEED} CHAOS_ITERATIONS=${i + 1} task chaos:run`,
+      console.log(
+        `[chaos] FINDING #${findings} at iter ${i}: ${v.invariantId} — ${v.message} (${findingDir})`,
       );
+      if (!LOG_ONLY_INVARIANTS) {
+        throw new Error(
+          `Invariant ${v.invariantId} violated at iteration ${i} (seed ${SEED}):\n` +
+          `  ${v.message}\n` +
+          `  artifacts: ${findingDir}\n` +
+          `  replay: CHAOS_SEED=${SEED} CHAOS_ITERATIONS=${i + 1} task chaos:run`,
+        );
+      }
+    }
+
+    // Heartbeat every 50 iters in long runs so the operator knows it's alive.
+    if (INFINITE && i > 0 && i % 50 === 0) {
+      // eslint-disable-next-line no-console
+      console.log(`[chaos] iter ${i} — ${patchAfter.nodes.length} nodes, ${patchAfter.edges.length} edges, ${findings} findings so far`);
     }
   }
 
   // eslint-disable-next-line no-console
-  console.log(`[chaos] OK — ${ITERATIONS} intents, no invariant violations`);
+  console.log(`[chaos] OK — ${ITERATIONS} intents, ${findings} finding(s)`);
 });
