@@ -270,3 +270,177 @@ test('polyseqz: humanize=0 keeps gates synchronous; humanize=1 spreads them', as
     }
   }
 });
+
+// ---------------- Keyboard navigation parity ----------------
+//
+// POLYSEQZ matches Sequencer/DRUMSEQZ/SCORE keyboard nav semantics:
+//   - Left/Right move between steps in the same role (clamp at edges).
+//   - Up/Down move within a step through the role stack:
+//       gate → pitch → quality → inversion → voicing (clamp at edges).
+//   - Space/Enter on gate, quality, inv, or voicing cycles/toggles that field.
+//   - Enter on pitch commits + advances to next step's pitch.
+//   - Tab moves between steps in same role.
+
+test('keyboard-nav POLYSEQZ: Right/Left across steps in same role', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
+
+  const pitch0 = page.locator('[data-testid="polyseqz-root-p-0"]');
+  await pitch0.focus();
+  await pitch0.press('ArrowLeft');
+  await expect(pitch0).toBeFocused();
+  await pitch0.press('ArrowRight');
+  await expect(page.locator('[data-testid="polyseqz-root-p-1"]')).toBeFocused();
+});
+
+test('keyboard-nav POLYSEQZ: Down cycles gate → pitch → quality → inversion → voicing', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
+
+  const gate2 = page.locator('[data-testid="polyseqz-gate-p-2"]');
+  await gate2.focus();
+  await expect(gate2).toBeFocused();
+
+  await gate2.press('ArrowDown');
+  await expect(page.locator('[data-testid="polyseqz-root-p-2"]')).toBeFocused();
+
+  await page.locator('[data-testid="polyseqz-root-p-2"]').press('ArrowDown');
+  await expect(page.locator('[data-testid="polyseqz-quality-p-2"]')).toBeFocused();
+
+  await page.locator('[data-testid="polyseqz-quality-p-2"]').press('ArrowDown');
+  await expect(page.locator('[data-testid="polyseqz-inv-p-2"]')).toBeFocused();
+
+  await page.locator('[data-testid="polyseqz-inv-p-2"]').press('ArrowDown');
+  await expect(page.locator('[data-testid="polyseqz-voicing-p-2"]')).toBeFocused();
+
+  // ArrowDown from the bottom-most role clamps (focus stays on voicing).
+  await page.locator('[data-testid="polyseqz-voicing-p-2"]').press('ArrowDown');
+  await expect(page.locator('[data-testid="polyseqz-voicing-p-2"]')).toBeFocused();
+});
+
+test('keyboard-nav POLYSEQZ: Up reverses the role stack and clamps at gate', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
+
+  const voicing0 = page.locator('[data-testid="polyseqz-voicing-p-0"]');
+  await voicing0.focus();
+  await voicing0.press('ArrowUp');
+  await expect(page.locator('[data-testid="polyseqz-inv-p-0"]')).toBeFocused();
+  await page.locator('[data-testid="polyseqz-inv-p-0"]').press('ArrowUp');
+  await expect(page.locator('[data-testid="polyseqz-quality-p-0"]')).toBeFocused();
+  await page.locator('[data-testid="polyseqz-quality-p-0"]').press('ArrowUp');
+  await expect(page.locator('[data-testid="polyseqz-root-p-0"]')).toBeFocused();
+  await page.locator('[data-testid="polyseqz-root-p-0"]').press('ArrowUp');
+  const gate0 = page.locator('[data-testid="polyseqz-gate-p-0"]');
+  await expect(gate0).toBeFocused();
+  // Clamp at the top.
+  await gate0.press('ArrowUp');
+  await expect(gate0).toBeFocused();
+});
+
+test('keyboard-nav POLYSEQZ: Space/Enter on quality badge cycles quality', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
+
+  const quality = page.locator('[data-testid="polyseqz-quality-p-1"]');
+  await quality.focus();
+  await expect(quality).toHaveAttribute('data-quality', 'maj');
+  await quality.press(' ');
+  await expect(quality).toHaveAttribute('data-quality', 'min');
+  await quality.press('Enter');
+  await expect(quality).toHaveAttribute('data-quality', 'maj7');
+});
+
+test('keyboard-nav POLYSEQZ: Space on inversion + voicing cycles each field', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
+
+  const inv = page.locator('[data-testid="polyseqz-inv-p-3"]');
+  await inv.focus();
+  await expect(inv).toHaveAttribute('data-inversion', '0');
+  await inv.press(' ');
+  await expect(inv).toHaveAttribute('data-inversion', '1');
+  await inv.press(' ');
+  await expect(inv).toHaveAttribute('data-inversion', '2');
+  await inv.press(' ');
+  await expect(inv).toHaveAttribute('data-inversion', '0');
+
+  const voicing = page.locator('[data-testid="polyseqz-voicing-p-3"]');
+  await voicing.focus();
+  await expect(voicing).toHaveAttribute('data-voicing', 'closed');
+  await voicing.press(' ');
+  await expect(voicing).toHaveAttribute('data-voicing', 'open');
+  await voicing.press(' ');
+  await expect(voicing).toHaveAttribute('data-voicing', 'spread');
+});
+
+test('keyboard-nav POLYSEQZ: Space on gate toggles step on (matches Sequencer)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
+
+  const gate1 = page.locator('[data-testid="polyseqz-gate-p-1"]');
+  await gate1.focus();
+  await gate1.press(' ');
+  const stepOn = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean }> } }> };
+    };
+    return w.__patch.nodes['p']?.data?.steps?.[1]?.on ?? null;
+  });
+  expect(stepOn).toBe(true);
+});
+
+test('keyboard-nav POLYSEQZ: rapid-add (type root, ArrowRight, type root, ...)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [
+    { id: 'p', type: 'polyseqz', params: { bpm: 90, length: 4, isPlaying: 0 } },
+  ]);
+
+  const roots = ['c3', 'e3', 'g3', 'b3'];
+  const cur0 = page.locator('[data-testid="polyseqz-root-p-0"]');
+  await cur0.focus();
+  for (let i = 0; i < roots.length; i++) {
+    const cur = page.locator(`[data-testid="polyseqz-root-p-${i}"]`);
+    await expect(cur).toBeFocused();
+    await cur.fill(roots[i]!);
+    if (i < roots.length - 1) await cur.press('ArrowRight');
+  }
+  await page.locator(`[data-testid="polyseqz-root-p-${roots.length - 1}"]`).blur();
+
+  const stored = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: { steps?: Array<{ root: number | null }> } }> };
+    };
+    return w.__patch.nodes['p']?.data?.steps?.slice(0, 4).map((s) => s.root) ?? [];
+  });
+  // c3 e3 g3 b3 -> 48 52 55 59
+  expect(stored).toEqual([48, 52, 55, 59]);
+});
+
+test('keyboard-nav POLYSEQZ: ArrowLeft/Right inside pitch input never moves caret', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
+
+  const step0 = page.locator('[data-testid="polyseqz-root-p-0"]');
+  await step0.focus();
+  await step0.fill('a4');
+  await step0.press('ArrowLeft'); // clamped at step 0
+  await expect(step0).toBeFocused();
+  await expect(step0).toHaveValue('a4');
+});

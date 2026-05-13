@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
@@ -23,6 +23,7 @@
   } from '$lib/audio/chord-tables';
   import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName } from '$lib/audio/note-entry';
+  import { resolveArrowNav, type ArrowKey, type GridSpec } from '$lib/audio/grid-nav';
   import type { ModuleNode } from '$lib/graph/types';
   import {
     handleSlotClick,
@@ -166,6 +167,90 @@
     writeSteps(arr);
   }
 
+  // --- Keyboard navigation ---
+  //
+  // POLYSEQZ matches Sequencer/DRUMSEQZ/SCORE: arrow keys never move the caret
+  // inside the pitch input; they navigate the focus grid. POLYSEQZ extends the
+  // 2-role (gate/pitch) model with three extra roles for the per-step chord
+  // sub-fields: quality, inversion, voicing. Up/Down cycles through all five
+  // roles within a step (gate → pitch → quality → inversion → voicing);
+  // Left/Right moves across steps in the same role.
+  //
+  // Why this model (not Tab-cycles-sub-fields, not Up/Down=root only):
+  //   1. Keeps gate/pitch nav identical to Sequencer so muscle memory carries.
+  //   2. Every chord sub-field is reachable from the keyboard without modifier
+  //      keys (consistency with the click-to-cycle UI).
+  //   3. Tab also still moves between steps in the same role (same as Sequencer).
+
+  type PolyRole = 'gate' | 'pitch' | 'quality' | 'inversion' | 'voicing';
+  const POLY_ROLES: readonly PolyRole[] = ['gate', 'pitch', 'quality', 'inversion', 'voicing'] as const;
+  const NAV_SPEC: GridSpec<PolyRole> = { cols: STEP_COUNT, cellRows: 1, roles: POLY_ROLES };
+
+  let gridEl: HTMLElement | undefined = $state();
+
+  function findCell(stepIdx: number, role: PolyRole): HTMLElement | null {
+    if (!gridEl) return null;
+    return gridEl.querySelector<HTMLElement>(
+      `[data-step="${stepIdx}"] [data-role="${role}"]`,
+    );
+  }
+
+  function focusCell(stepIdx: number, role: PolyRole): boolean {
+    const target = findCell(stepIdx, role);
+    if (!target) return false;
+    target.focus();
+    if (target.tagName === 'INPUT') (target as HTMLInputElement).select();
+    return true;
+  }
+
+  function handleNav(e: KeyboardEvent, stepIdx: number, role: PolyRole): boolean {
+    const max = STEP_COUNT - 1;
+    if (
+      e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+      e.key === 'ArrowUp'   || e.key === 'ArrowDown'
+    ) {
+      const next = resolveArrowNav({ index: stepIdx, role }, e.key as ArrowKey, NAV_SPEC);
+      if (!next) return false;
+      return focusCell(next.index, next.role);
+    }
+    if (e.key === 'Enter' && role === 'pitch') {
+      tick().then(() => focusCell(Math.min(max, stepIdx + 1), 'pitch'));
+      return true;
+    }
+    if (e.key === 'Tab') {
+      const dir = e.shiftKey ? -1 : 1;
+      const nextIdx = stepIdx + dir;
+      if (nextIdx < 0 || nextIdx > max) return false;
+      return focusCell(nextIdx, role);
+    }
+    return false;
+  }
+
+  /** Keydown handler for the chord sub-field badges (quality / inversion /
+   *  voicing). Space + Enter cycle the value (matching click semantics);
+   *  arrow keys + Tab navigate via handleNav. */
+  function onBadgeKeydown(
+    e: KeyboardEvent,
+    stepIdx: number,
+    role: 'quality' | 'inversion' | 'voicing',
+  ) {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      if (role === 'quality')   cycleQuality(stepIdx);
+      else if (role === 'inversion') cycleInversion(stepIdx);
+      else                       cycleVoicing(stepIdx);
+      return;
+    }
+    if (
+      e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+      e.key === 'ArrowUp'   || e.key === 'ArrowDown' ||
+      e.key === 'Tab'
+    ) {
+      const handled = handleNav(e, stepIdx, role);
+      if (handled) e.preventDefault();
+    }
+  }
+
   function qualityLabel(q: ChordQualityName): string {
     // 4-char compact glyph for the badge. Lower-case for non-major qualities.
     const map: Record<ChordQualityName, string> = {
@@ -289,7 +374,7 @@
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <div class="grid" data-testid={`polyseqz-grid-${id}`}>
+    <div class="grid" bind:this={gridEl} data-testid={`polyseqz-grid-${id}`}>
       {#each steps.slice(0, STEP_COUNT) as step, i (i)}
         <div class="cell-slot" data-step={i}>
           <div class="cell-num">{i + 1}</div>
@@ -302,15 +387,21 @@
             gateTestId={`polyseqz-gate-${id}-${i}`}
             onCommit={(input) => commitRoot(i, input)}
             onGateToggle={() => toggleGate(i)}
+            onNavKey={(e) => {
+              const role = (e.target as HTMLElement)?.dataset?.role === 'gate' ? 'gate' : 'pitch';
+              return handleNav(e, i, role as PolyRole);
+            }}
           />
           <button
             class="quality-badge"
             type="button"
             data-testid={`polyseqz-quality-${id}-${i}`}
             data-step={i}
+            data-role="quality"
             data-quality={step.quality}
-            title={`Quality: ${step.quality} (click to cycle)`}
+            title={`Quality: ${step.quality} (click or Space/Enter to cycle)`}
             onclick={() => cycleQuality(i)}
+            onkeydown={(e) => onBadgeKeydown(e, i, 'quality')}
           >{qualityLabel(step.quality)}</button>
           <div class="meta-row">
             <button
@@ -318,18 +409,22 @@
               type="button"
               data-testid={`polyseqz-inv-${id}-${i}`}
               data-step={i}
+              data-role="inversion"
               data-inversion={step.inversion}
-              title={`Inversion: ${step.inversion} (click to cycle)`}
+              title={`Inversion: ${step.inversion} (click or Space/Enter to cycle)`}
               onclick={() => cycleInversion(i)}
+              onkeydown={(e) => onBadgeKeydown(e, i, 'inversion')}
             >{step.inversion}</button>
             <button
               class="voicing-badge"
               type="button"
               data-testid={`polyseqz-voicing-${id}-${i}`}
               data-step={i}
+              data-role="voicing"
               data-voicing={step.voicing}
-              title={`Voicing: ${step.voicing} (click to cycle)`}
+              title={`Voicing: ${step.voicing} (click or Space/Enter to cycle)`}
               onclick={() => cycleVoicing(i)}
+              onkeydown={(e) => onBadgeKeydown(e, i, 'voicing')}
             >{voicingLabel(step.voicing)}</button>
           </div>
         </div>

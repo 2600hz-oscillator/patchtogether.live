@@ -11,6 +11,7 @@ import {
   focusToCoord,
   coordToFocus,
   type GridSpec,
+  type FocusPos,
 } from './grid-nav';
 
 const SEQ: GridSpec = { cols: 16, cellRows: 1 }; // 1 cell row -> 2 conceptual rows
@@ -142,5 +143,75 @@ describe('grid-nav: Cartesian (4x4, no wrap)', () => {
     expect(pos).toEqual({ index: 4, role: 'pitch' });
     pos = resolveArrowNav(pos, 'ArrowDown', CART)!;
     expect(pos).toEqual({ index: 8, role: 'gate' });
+  });
+});
+
+// POLYSEQZ uses 5 roles per cell, top→bottom: gate, pitch, quality, inversion,
+// voicing. Linear (cellRows=1) by 32 cols.
+type PolyRole = 'gate' | 'pitch' | 'quality' | 'inversion' | 'voicing';
+const POLY_ROLES: readonly PolyRole[] = ['gate', 'pitch', 'quality', 'inversion', 'voicing'] as const;
+const POLY: GridSpec<PolyRole> = {
+  cols: 32,
+  cellRows: 1,
+  roles: POLY_ROLES,
+};
+
+describe('grid-nav: POLYSEQZ (5-role per cell)', () => {
+  it('Down cycles gate -> pitch -> quality -> inversion -> voicing within a step', () => {
+    let pos: FocusPos<PolyRole> = { index: 4, role: 'gate' };
+    pos = resolveArrowNav(pos, 'ArrowDown', POLY)!;
+    expect(pos).toEqual({ index: 4, role: 'pitch' });
+    pos = resolveArrowNav(pos, 'ArrowDown', POLY)!;
+    expect(pos).toEqual({ index: 4, role: 'quality' });
+    pos = resolveArrowNav(pos, 'ArrowDown', POLY)!;
+    expect(pos).toEqual({ index: 4, role: 'inversion' });
+    pos = resolveArrowNav(pos, 'ArrowDown', POLY)!;
+    expect(pos).toEqual({ index: 4, role: 'voicing' });
+  });
+
+  it('Down from voicing clamps (bottom of cell column)', () => {
+    expect(resolveArrowNav<PolyRole>({ index: 4, role: 'voicing' }, 'ArrowDown', POLY)).toBeNull();
+  });
+
+  it('Up from gate clamps (top of cell column)', () => {
+    expect(resolveArrowNav<PolyRole>({ index: 4, role: 'gate' }, 'ArrowUp', POLY)).toBeNull();
+  });
+
+  it('Up reverses the role stack', () => {
+    let pos: FocusPos<PolyRole> = { index: 7, role: 'voicing' };
+    for (const expectRole of ['inversion', 'quality', 'pitch', 'gate'] as const) {
+      pos = resolveArrowNav(pos, 'ArrowUp', POLY)!;
+      expect(pos.role).toBe(expectRole);
+      expect(pos.index).toBe(7);
+    }
+  });
+
+  it('Right moves to next step, same role (works for every role)', () => {
+    for (const role of POLY_ROLES) {
+      expect(resolveArrowNav<PolyRole>({ index: 5, role }, 'ArrowRight', POLY))
+        .toEqual({ index: 6, role });
+    }
+  });
+
+  it('Left at step 0 clamps for every role', () => {
+    for (const role of POLY_ROLES) {
+      expect(resolveArrowNav<PolyRole>({ index: 0, role }, 'ArrowLeft', POLY)).toBeNull();
+    }
+  });
+
+  it('Right at step 31 clamps for every role', () => {
+    for (const role of POLY_ROLES) {
+      expect(resolveArrowNav<PolyRole>({ index: 31, role }, 'ArrowRight', POLY)).toBeNull();
+    }
+  });
+
+  it('round-trips every (index, role) on POLYSEQZ', () => {
+    for (let i = 0; i < 32; i++) {
+      for (const role of POLY_ROLES) {
+        const coord = focusToCoord<PolyRole>({ index: i, role }, POLY);
+        const back = coordToFocus<PolyRole>(coord.row, coord.col, POLY);
+        expect(back).toEqual({ index: i, role });
+      }
+    }
   });
 });
