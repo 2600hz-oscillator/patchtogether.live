@@ -61,6 +61,7 @@ import {
   shouldSequencerRun,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { createPlayheadTracker, createPlayheadTrackerOf } from './playhead-tracker';
 
 const ADSR_PREFIX = '/ADSR';
 
@@ -213,7 +214,15 @@ export const scoreDef: AudioModuleDef = {
     // for the full rationale.
     const LOOKAHEAD_S = 0.2;
 
-    let currentNoteId: string | null = null;
+    // Scheduler lookahead vs sounding-now: tickIndex is the NEXT slot the
+    // lookahead loop will queue; the trackers derive playhead state from the
+    // (idx, atTime) entries pushed inside emitTick so the visual highlight
+    // matches what the audio thread is playing right now. Fixes the off-by-one
+    // playhead lag.
+    //   tickPlayhead   — sounding 16th-slot tickIndex
+    //   notePlayhead   — note id sounding at the current slot (null if rest)
+    const tickPlayhead = createPlayheadTracker();
+    const notePlayhead = createPlayheadTrackerOf<string | null>();
     let lastEmittedVOct = 0;
     let lastEmittedGate = 0;
     let lastDynamicScale = DYNAMIC_SCALE.mf;
@@ -256,6 +265,10 @@ export const scoreDef: AudioModuleDef = {
       const data = readScoreData(nodeId);
       const note = noteStartingAt(absTick, data.notes);
       if (!note) return;
+      // Queue the note id so the visual playhead lights up at the exact moment
+      // the audio thread starts emitting this note (not when the scheduler
+      // lookahead-queued it up to 200 ms earlier).
+      notePlayhead.schedule(note.id, atTime);
 
       const role = tieRoleFor(note.id, data.ties);
 
@@ -305,7 +318,9 @@ export const scoreDef: AudioModuleDef = {
         tiedGateHoldUntilTick = endAbs;
       }
       // tied-mid / tied-end: pitch already updated, gate left alone.
-      currentNoteId = note.id;
+      // (note: currentNoteId is now derived from notePlayhead.currentAt(now)
+      //  rather than written eagerly here — see the schedule() at the top of
+      //  this function. Keeps the visual highlight aligned with audio output.)
     }
 
     /** Total bars currently allocated by the score (live read). */
@@ -351,6 +366,8 @@ export const scoreDef: AudioModuleDef = {
       }
       if (ev.reset > 0) {
         tickIndex = 0;
+        tickPlayhead.reset();
+        notePlayhead.reset();
         nextStepTime = ctx.currentTime + 0.05;
       }
       const queued = pickQueuedSlotFromEvents(ev);
@@ -408,6 +425,8 @@ export const scoreDef: AudioModuleDef = {
       d.lastLoadedSlot = queued;
       d.queuedSlot = null;
       tickIndex = 0;
+      tickPlayhead.reset();
+      notePlayhead.reset();
       nextStepTime = ctx.currentTime + 0.005;
       tiedGateHoldUntilTick = -1;
       return true;
@@ -430,6 +449,8 @@ export const scoreDef: AudioModuleDef = {
 
         if (shouldRun && !prevPlaying) {
           tickIndex = 0;
+          tickPlayhead.reset();
+          notePlayhead.reset();
           nextStepTime = ctx.currentTime + 0.05;
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
@@ -487,6 +508,7 @@ export const scoreDef: AudioModuleDef = {
                   break;
                 }
               }
+              tickPlayhead.schedule(tickIndex, nowAt + 0.005);
               emitTick(tickIndex * 3, nowAt + 0.005, slotDur);
               tickIndex = (tickIndex + 1) % total16ths;
               totalAdvances++;
@@ -516,6 +538,7 @@ export const scoreDef: AudioModuleDef = {
                 break;
               }
             }
+            tickPlayhead.schedule(tickIndex, nextStepTime);
             emitTick(tickIndex * 3, nextStepTime, slotDur);
             nextStepTime += slotDur;
             tickIndex = (tickIndex + 1) % total16ths;
@@ -560,13 +583,19 @@ export const scoreDef: AudioModuleDef = {
         return adsrParams.get(`${ADSR_PREFIX}/${paramId}`)?.value;
       },
       read(key) {
-        if (key === 'currentNoteId') return currentNoteId;
+        const now = ctx.currentTime;
+        if (key === 'currentNoteId') return notePlayhead.currentAt(now, null);
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (key === 'pitchVOct') return lastEmittedVOct;
         if (key === 'gateValue') return lastEmittedGate;
         if (key === 'dynamicScale') return lastDynamicScale;
-        if (key === 'tickIndex') return tickIndex;
+        // tickIndex is the SCHEDULER's lookahead pointer; tests + the
+        // visual playhead want the sounding-now slot. We expose both so
+        // existing scheduler-state tests can still introspect the
+        // lookahead, but reroute the read to the playhead.
+        if (key === 'tickIndex') return tickPlayhead.currentAt(now);
+        if (key === 'schedulerTickIndex') return tickIndex;
         if (key === 'tiedGateHoldUntilTick') return tiedGateHoldUntilTick;
         return undefined;
       },

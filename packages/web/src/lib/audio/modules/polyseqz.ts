@@ -60,6 +60,7 @@ import {
   shouldSequencerRun,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { createPlayheadTracker } from './playhead-tracker';
 
 // ---------------- Step schema ----------------
 
@@ -302,7 +303,12 @@ export const polyseqzDef: AudioModuleDef = {
     const lastEmittedLaneVOct = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
     const lastEmittedLaneGate = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
     const lastHumanizeOffsets = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
-    let currentStep = 0;
+    // Scheduler lookahead vs sounding-now: stepIndex is the NEXT step the
+    // lookahead loop will queue; the tracker derives the playhead from the
+    // (idx, atTime) entries pushed inside emitStep so the visual highlight
+    // matches what the audio thread is playing right now (not the next-to-be-
+    // scheduled step). Fixes the off-by-one playhead lag.
+    const playhead = createPlayheadTracker();
     let totalAdvances = 0;
 
     /** Schedule one step's chord at the given audio time. Per-voice gate-on
@@ -316,6 +322,9 @@ export const polyseqzDef: AudioModuleDef = {
       const step = steps[idx];
       // Step clock pulse (chain-out signal) always fires on advance.
       emitClockPulse(atTime);
+      // Record this step's start time so the visual playhead can derive
+      // "sounding now" rather than "about-to-be-scheduled".
+      playhead.schedule(idx, atTime);
 
       const root = step && step.on && step.root !== null ? step.root : null;
       const voices = chordToVoices(
@@ -394,7 +403,7 @@ export const polyseqzDef: AudioModuleDef = {
         // honored even when stopped (debounce-style) — same semantics as the
         // pre-shared-transport behavior in checkResetEdge.
         stepIndex = 0;
-        currentStep = 0;
+        playhead.reset();
         nextStepTime = ctx.currentTime + 0.005;
       }
       const queued = pickQueuedSlotFromEvents(ev);
@@ -442,7 +451,7 @@ export const polyseqzDef: AudioModuleDef = {
       d.queuedSlot = null;
       // Reset position so the next emit starts at step 0 of the new pattern.
       stepIndex = 0;
-      currentStep = 0;
+      playhead.reset();
       nextStepTime = ctx.currentTime + 0.005;
       return true;
     }
@@ -513,7 +522,7 @@ export const polyseqzDef: AudioModuleDef = {
 
         if (shouldRun && !prevPlaying) {
           stepIndex = 0;
-          currentStep = 0;
+          playhead.reset();
           nextStepTime = ctx.currentTime + 0.05;
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
@@ -566,7 +575,6 @@ export const polyseqzDef: AudioModuleDef = {
                 maybeEvolveSteps();
               }
               stepIndex = nextIdx;
-              currentStep = stepIndex;
               totalAdvances++;
             }
             lastClockSample = cur;
@@ -598,7 +606,6 @@ export const polyseqzDef: AudioModuleDef = {
             }
             nextStepTime = nextStartTime;
             stepIndex = nextIdx;
-            currentStep = stepIndex;
             totalAdvances++;
           }
           lastClockSampleTime = nowAt;
@@ -643,7 +650,7 @@ export const polyseqzDef: AudioModuleDef = {
         return typeof v === 'number' ? v : undefined;
       },
       read(key) {
-        if (key === 'currentStep') return currentStep;
+        if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (key === 'pitchVOct')  return lastEmittedVOct;

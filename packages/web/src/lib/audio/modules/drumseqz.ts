@@ -30,6 +30,7 @@ import {
   shouldSequencerRun,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { createPlayheadTracker } from './playhead-tracker';
 
 export const TRACK_COUNT = 4;
 export const STEP_COUNT = 16;
@@ -303,7 +304,12 @@ export const drumseqzDef: AudioModuleDef = {
     const LOOKAHEAD_S = 0.2;
     const TICK_MS = SCHEDULER_TICK_MS;
 
-    let currentStep = 0;
+    // Scheduler lookahead vs sounding-now: stepIndex is the NEXT step the
+    // lookahead loop will queue; the tracker derives the playhead from the
+    // (idx, atTime) entries pushed inside emitStep so the visual highlight
+    // matches what the audio thread is playing right now. Fixes the off-by-one
+    // playhead lag.
+    const playhead = createPlayheadTracker();
     let totalAdvances = 0;
     const lastEmittedVOct = new Array<number>(TRACK_COUNT).fill(0);
     const lastEmittedGate = new Array<number>(TRACK_COUNT).fill(0);
@@ -313,6 +319,7 @@ export const drumseqzDef: AudioModuleDef = {
       const gateLengthFrac = readParam('gateLength', 0.5);
       const tracks = readTracks();
       emitClockPulse(atTime);
+      playhead.schedule(idx, atTime);
       for (let t = 0; t < TRACK_COUNT; t++) {
         const cell = tracks[t]?.[idx] ?? defaultCell();
         if (!cell.on) {
@@ -346,7 +353,7 @@ export const drumseqzDef: AudioModuleDef = {
       }
       if (ev.reset > 0) {
         stepIndex = 0;
-        currentStep = 0;
+        playhead.reset();
         nextStepTime = ctx.currentTime + 0.05;
       }
       const queued = pickQueuedSlotFromEvents(ev);
@@ -397,7 +404,7 @@ export const drumseqzDef: AudioModuleDef = {
       d.lastLoadedSlot = queued;
       d.queuedSlot = null;
       stepIndex = 0;
-      currentStep = 0;
+      playhead.reset();
       nextStepTime = ctx.currentTime + 0.005;
       return true;
     }
@@ -414,7 +421,7 @@ export const drumseqzDef: AudioModuleDef = {
 
         if (shouldRun && !prevPlaying) {
           stepIndex = 0;
-          currentStep = 0;
+          playhead.reset();
           nextStepTime = ctx.currentTime + 0.05;
           for (let t = 0; t < TRACK_COUNT; t++) {
             gateSrcs[t].offset.cancelScheduledValues(ctx.currentTime);
@@ -464,7 +471,6 @@ export const drumseqzDef: AudioModuleDef = {
                 }
               }
               stepIndex = nextIdx;
-              currentStep = stepIndex;
               totalAdvances++;
             }
             lastClockSample = cur;
@@ -495,7 +501,6 @@ export const drumseqzDef: AudioModuleDef = {
             }
             nextStepTime = nextStartTime;
             stepIndex = nextIdx;
-            currentStep = stepIndex;
             totalAdvances++;
           }
         }
@@ -533,7 +538,7 @@ export const drumseqzDef: AudioModuleDef = {
         return typeof v === 'number' ? v : undefined;
       },
       read(key) {
-        if (key === 'currentStep') return currentStep;
+        if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (typeof key === 'string' && key.startsWith('pitchVOct:')) {

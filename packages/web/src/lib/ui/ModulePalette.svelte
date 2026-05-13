@@ -18,9 +18,21 @@
     /** Optional: triggered by the Organize modules entry. When provided the
      *  entry is shown; the palette closes after invoking. */
     onorganize?: () => void;
+    /** Optional: triggered by the Create group entry. When provided the
+     *  entry is shown; the palette closes after invoking. The parent then
+     *  enters lasso mode anchored at the click point. */
+    oncreategroup?: () => void;
   }
 
-  let { open = $bindable(false), x, y, onselect, onclose, onorganize }: Props = $props();
+  let {
+    open = $bindable(false),
+    x,
+    y,
+    onselect,
+    onclose,
+    onorganize,
+    oncreategroup,
+  }: Props = $props();
 
   /** Count instances of a module type currently in the patch. */
   function instanceCount(type: string): number {
@@ -139,6 +151,11 @@
     onclose();
   }
 
+  function pickCreateGroup() {
+    oncreategroup?.();
+    onclose();
+  }
+
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -171,11 +188,18 @@
       spellcheck="false"
     />
     <div class="palette-body">
-      {#if onorganize}
+      {#if onorganize || oncreategroup}
         <div class="category">tools</div>
-        <button class="item tool" onclick={pickOrganize} data-testid="palette-organize">
-          Organize modules
-        </button>
+        {#if oncreategroup}
+          <button class="item tool" onclick={pickCreateGroup} data-testid="palette-create-group">
+            Create group
+          </button>
+        {/if}
+        {#if onorganize}
+          <button class="item tool" onclick={pickOrganize} data-testid="palette-organize">
+            Organize modules
+          </button>
+        {/if}
       {/if}
       {#if groupedByDomain.length === 0}
         <div class="empty">no matches</div>

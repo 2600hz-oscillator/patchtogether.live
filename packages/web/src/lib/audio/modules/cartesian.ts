@@ -33,6 +33,7 @@ import {
   lfoMorph,
 } from '$lib/audio/lfo-divisions';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { createPlayheadTracker } from './playhead-tracker';
 
 // Re-export for downstream consumers that already imported from here.
 export const LFO_DIVISIONS = _LFO_DIVISIONS;
@@ -344,12 +345,14 @@ export const cartesianDef: AudioModuleDef = {
               const col = Math.max(0, Math.min(GRID_DIM - 1, Math.floor((x + 1) / 2 * GRID_DIM)));
               const row = Math.max(0, Math.min(GRID_DIM - 1, Math.floor((y + 1) / 2 * GRID_DIM)));
               idx = row * GRID_DIM + col;
-              currentStep = idx;
             } else {
               idx = stepIndex;
               stepIndex = (stepIndex + 1) % CELL_COUNT;
-              currentStep = idx;
             }
+            // Scheduler lookahead vs sounding-now: emit is +5 ms ahead which is
+            // already below visual frame-rate, but we go through the tracker
+            // for consistency with the other sequencers.
+            playhead.schedule(idx, nowAt + 0.005);
             emitStep(idx, nowAt + 0.005, gateDur);
             totalAdvances++;
           }
@@ -361,7 +364,7 @@ export const cartesianDef: AudioModuleDef = {
       }
     }
 
-    let currentStep = 0;
+    const playhead = createPlayheadTracker();
     let totalAdvances = 0;
     // Worker-driven tick (jank-immune); see scheduler-clock.ts.
     unsubscribeTick = getSchedulerClock().subscribe(tick);
@@ -390,7 +393,7 @@ export const cartesianDef: AudioModuleDef = {
         return typeof v === 'number' ? v : undefined;
       },
       read(key) {
-        if (key === 'currentStep')   return currentStep;
+        if (key === 'currentStep')   return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'pitchVOct')     return lastEmittedVOct;
         if (key === 'gateValue')     return lastEmittedGate;
