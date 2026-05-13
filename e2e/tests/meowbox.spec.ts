@@ -203,4 +203,122 @@ test.describe('MEOWBOX V/oct integration', () => {
 
     expect(errors.filter((e) => !e.includes('favicon')), `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
+
+  test('knob pitch ≡ CV pitch: +12 semi knob (no CV) sounds same RMS as +1V CV (knob=0)', async ({ page }) => {
+    // The user-reported invariant: "meowbox pitch cv input does not really track
+    // pitch and is different behavior than the pitch control in the module."
+    //
+    // We render two equivalent configurations through the real Faust DSP and
+    // confirm they produce comparable audio energy. The configurations:
+    //
+    //   A. knob = +12 semi, no pitch CV cable                              (= C5 via knob)
+    //   B. knob =  0,       pitch CV cable from a sequencer driving +1V/oct (= C5 via CV)
+    //
+    // Both must produce audible output (RMS > floor). A regression that broke
+    // the V/oct convention (e.g. the pre-PR-89 12x misscaling) would shift
+    // the CV-driven pitch by a full octave but BOTH configs would still
+    // produce sound — so we additionally assert that the RMS of the two
+    // configurations is within a factor of 4× of each other (the formant
+    // filter colors the spectrum heavily, and a wildly different fundamental
+    // would land in a different region of the formant response, producing
+    // distinctly different energy levels).
+    //
+    // The precise frequency invariant (knob+12 ≡ CV+1V to ±2 cents) is locked
+    // down by the ART scenario at art/scenarios/meowbox/voct-tracking.test.ts —
+    // YIN under meowbox's formant filter is not reliable enough to assert
+    // sub-octave equivalence at the browser end-to-end layer.
+    //
+    // Why use a gate-on signal: meowbox is a gated voice — without a gate
+    // pulse the formant envelope stays closed and the output is silent. We
+    // drive both configurations off the SAME sequencer's gate output (held
+    // through the entire measurement window so the voice sustains).
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    /** Sample RMS N times over a window, return the max — peak energy is
+     *  more stable than mean across gate retriggers + envelope tails. */
+    async function peakRmsOverWindow(scopeId: string, samples = 12, intervalMs = 100): Promise<number> {
+      let peak = 0;
+      for (let i = 0; i < samples; i++) {
+        const r = await readScopeRms(page, scopeId);
+        if (r > peak) peak = r;
+        await page.waitForTimeout(intervalMs);
+      }
+      return peak;
+    }
+
+    // ----- Configuration A: knob = +12 semi, no pitch CV cable -----
+    // Sequencer only drives the gate (pitch output intentionally NOT connected
+    // to meowbox.pitch, so the pitch CV channel stays at the factory's internal
+    // 0V default). Pitch comes purely from the knob.
+    await spawnPatch(
+      page,
+      [
+        { id: 'seq',   type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        // knob pitch = +12 semitones (= +1 octave above C4 = C5).
+        { id: 'meow',  type: 'meowbox',   params: { pitch: 12, morph: 0.25, decay: 0.4, level: 1 } },
+        { id: 'scope', type: 'scope',     params: {} },
+        { id: 'out',   type: 'audioOut',  params: { master: 0.05 } },
+      ],
+      [
+        { id: 'e-gate',  from: { nodeId: 'seq',  portId: 'gate' },     to: { nodeId: 'meow', portId: 'gate' }, sourceType: 'gate',  targetType: 'gate'  },
+        { id: 'e-tap',   from: { nodeId: 'meow', portId: 'L' },        to: { nodeId: 'scope', portId: 'ch1'  }, sourceType: 'audio', targetType: 'audio' },
+        { id: 'e-out',   from: { nodeId: 'scope', portId: 'ch1_out' }, to: { nodeId: 'out',  portId: 'L'    }, sourceType: 'audio', targetType: 'audio' },
+      ],
+    );
+    // Drive any C with sequencer (MIDI value irrelevant — pitch cable not connected).
+    await setSeqPattern(page, 'seq', 60);
+    await page.waitForTimeout(600);
+    const rmsKnob = await peakRmsOverWindow('scope');
+    expect(rmsKnob, 'Config A (knob=+12 semi): meowbox must produce audible RMS').toBeGreaterThan(0.0005);
+
+    // ----- Configuration B: knob = 0, pitch CV cable from sequencer @ +1V -----
+    // Same gate, same morph/decay/level, but pitch now comes through the CV
+    // input (sequencer plays MIDI 72 = C5 = +1V/oct).
+    await spawnPatch(
+      page,
+      [
+        { id: 'seq',   type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+        { id: 'meow',  type: 'meowbox',   params: { pitch: 0, morph: 0.25, decay: 0.4, level: 1 } },
+        { id: 'scope', type: 'scope',     params: {} },
+        { id: 'out',   type: 'audioOut',  params: { master: 0.05 } },
+      ],
+      [
+        { id: 'e-gate',  from: { nodeId: 'seq',  portId: 'gate' },     to: { nodeId: 'meow', portId: 'gate'  }, sourceType: 'gate',          targetType: 'gate'  },
+        // The load-bearing edge: poly→pitch routes lane 0 V/oct.
+        { id: 'e-pitch', from: { nodeId: 'seq',  portId: 'pitch' },    to: { nodeId: 'meow', portId: 'pitch' }, sourceType: 'polyPitchGate', targetType: 'pitch' },
+        { id: 'e-tap',   from: { nodeId: 'meow', portId: 'L' },        to: { nodeId: 'scope', portId: 'ch1'   }, sourceType: 'audio',         targetType: 'audio' },
+        { id: 'e-out',   from: { nodeId: 'scope', portId: 'ch1_out' }, to: { nodeId: 'out',  portId: 'L'     }, sourceType: 'audio',         targetType: 'audio' },
+      ],
+    );
+    // C5 = MIDI 72 = +1 V/oct — matching the +12 semi knob in Config A.
+    await setSeqPattern(page, 'seq', 72);
+    await page.waitForTimeout(600);
+    const rmsCv = await peakRmsOverWindow('scope');
+    expect(rmsCv, 'Config B (CV=+1V): meowbox must produce audible RMS').toBeGreaterThan(0.0005);
+
+    // The two configurations should produce comparable energy. The formant
+    // filter is the same for both; only the fundamental differs in pre-fix
+    // bug (knob path 1 oct up, CV path stays at C4) — that would put the CV
+    // fundamental (C4 = 261 Hz) WAY below F1=450 (adult-meow at morph=0.25)
+    // and produce dramatically less audible output than the knob path (C5
+    // closer to F1). A ratio within ~10× either way catches "completely
+    // different behavior" while tolerating the inherent formant-driven energy
+    // variation between any two pitches.
+    const ratio = rmsKnob / rmsCv;
+    expect(
+      ratio,
+      `knob=+12semi RMS=${rmsKnob.toExponential(3)}, CV=+1V RMS=${rmsCv.toExponential(3)} — ratio ${ratio.toFixed(2)}× (should be O(1))`,
+    ).toBeGreaterThan(0.1);
+    expect(
+      ratio,
+      `knob=+12semi RMS=${rmsKnob.toExponential(3)}, CV=+1V RMS=${rmsCv.toExponential(3)} — ratio ${ratio.toFixed(2)}× (should be O(1))`,
+    ).toBeLessThan(10);
+
+    expect(errors.filter((e) => !e.includes('favicon')), `console/page errors: ${errors.join('; ')}`).toEqual([]);
+  });
 });

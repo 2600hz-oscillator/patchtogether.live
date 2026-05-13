@@ -140,3 +140,87 @@ describe('meowboxBaseFreqHz: V/oct → Hz (mirrors Faust baseFreq)', () => {
     expect(meowboxBaseFreqHz(0, 9)).toBeCloseTo(440.0, 1);
   });
 });
+
+describe('meowboxBaseFreqHz: knob ↔ CV equivalence (the user-reported invariant)', () => {
+  // The bug report: "meowbox pitch cv input does not really track pitch and is
+  // different behavior than the pitch control in the module". The fix lives in
+  // packages/dsp/src/meowbox.dsp, where baseFreq sums CV (volts) + knob (semis/12)
+  // inside a single exp2 — so the two paths are mathematically commutative and
+  // any (V, semi) ↔ (V', semi') pair with `V + semi/12 = V' + semi'/12` yields
+  // the same Hz. These cases nail down that invariant numerically; the actual
+  // audible rendering is exercised in
+  // art/scenarios/meowbox/voct-tracking.test.ts (FFT) and
+  // e2e/tests/meowbox.spec.ts (sequencer → meowbox).
+  //
+  // ±2 cent tolerance — well below the just-noticeable-difference of ~5 cents
+  // for trained ears, so any future regression that splits the two paths
+  // would fail audibly AND fail this test.
+  const TOL_CENTS = 2;
+  const centsBetween = (a: number, b: number) => 1200 * Math.log2(a / b);
+
+  function expectEquivalent(a: { v: number; s: number }, b: { v: number; s: number }, label: string) {
+    const hzA = meowboxBaseFreqHz(a.v, a.s);
+    const hzB = meowboxBaseFreqHz(b.v, b.s);
+    const cents = Math.abs(centsBetween(hzA, hzB));
+    expect(
+      cents,
+      `${label}: (${a.v}V,${a.s}semi)=${hzA.toFixed(3)} Hz vs (${b.v}V,${b.s}semi)=${hzB.toFixed(3)} Hz — diff ${cents.toFixed(2)} cents`,
+    ).toBeLessThan(TOL_CENTS);
+  }
+
+  it('knob +12 semi (octave) ≡ CV +1V (octave) — at C4 baseline', () => {
+    expectEquivalent({ v: 0, s: 12 }, { v: 1, s: 0 }, 'octave up via knob vs CV');
+  });
+
+  it('knob +24 semi ≡ CV +2V — two octaves', () => {
+    expectEquivalent({ v: 0, s: 24 }, { v: 2, s: 0 }, 'two octaves up');
+  });
+
+  it('knob -12 semi ≡ CV -1V — octave down', () => {
+    expectEquivalent({ v: 0, s: -12 }, { v: -1, s: 0 }, 'octave down');
+  });
+
+  it('partial split: knob +6 semi + CV +0.5V ≡ knob 0 + CV +1V (full octave)', () => {
+    // The non-trivial case — the sum-point inside baseFreq must add linearly
+    // before the exp2, not separately exp2 and multiply (which would also
+    // give the right answer here but break for asymmetric splits).
+    expectEquivalent({ v: 0.5, s: 6 }, { v: 1, s: 0 }, '½ knob + ½ CV vs full CV');
+  });
+
+  it('asymmetric: knob -12 semi + CV +2V ≡ knob 0 + CV +1V (CV - 1oct of knob)', () => {
+    expectEquivalent({ v: 2, s: -12 }, { v: 1, s: 0 }, 'CV +2V minus 1oct knob == CV +1V');
+  });
+
+  it('fine-grained: knob +1 semi ≡ CV +1/12 V (the finest 1V/oct division)', () => {
+    expectEquivalent({ v: 0, s: 1 }, { v: 1 / 12, s: 0 }, 'one semitone');
+  });
+
+  it('full knob range matches CV at ±3V (the knob spans ±3 octaves)', () => {
+    // The pitch knob's -36..+36 semi range = ±3 octaves. So twisting the knob
+    // fully one way matches the same pitch you'd get from a ±3V CV input —
+    // confirming the knob is a true subset of V/oct semantics.
+    expectEquivalent({ v: 0, s: 36 }, { v: 3, s: 0 }, 'knob max ≡ +3V CV');
+    expectEquivalent({ v: 0, s: -36 }, { v: -3, s: 0 }, 'knob min ≡ -3V CV');
+  });
+
+  it('zero point: knob=0 + CV=0V always produces C4 (no DC offset bug)', () => {
+    // Guards against a regression where someone might add a "+ 0.5" or "* 2"
+    // term that breaks the (0,0) → C4 anchor.
+    expect(meowboxBaseFreqHz(0, 0)).toBeCloseTo(MEOWBOX_C4_HZ, 6);
+  });
+
+  it('sweep equivalence: across 0..+1V, knob path equals CV path at every step', () => {
+    // Walks the (V/oct CV) ↔ (knob semis) tradeoff in 1-semi steps from C4 up
+    // to C5 (12 semis = 1 V). Every point must agree. This is the "the knob
+    // is just a different control surface for the same V/oct quantity" claim.
+    for (let s = 0; s <= 12; s++) {
+      const viaKnob = meowboxBaseFreqHz(0, s);
+      const viaCv = meowboxBaseFreqHz(s / 12, 0);
+      const cents = Math.abs(centsBetween(viaKnob, viaCv));
+      expect(
+        cents,
+        `step ${s}: knob=${s}semi (${viaKnob.toFixed(3)} Hz) vs CV=${(s/12).toFixed(4)}V (${viaCv.toFixed(3)} Hz) — diff ${cents.toFixed(3)} cents`,
+      ).toBeLessThan(TOL_CENTS);
+    }
+  });
+});
