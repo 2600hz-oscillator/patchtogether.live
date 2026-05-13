@@ -731,6 +731,9 @@ export function buildModuleManifest(
       if (file === 'transport-helpers.ts') return false;
       if (file === 'transport-cv.ts') return false;
       if (file === 'transport-card.ts') return false;
+      // Shared lookahead-vs-sounding-now playhead helper used by Sequencer /
+      // POLYSEQZ / DRUMSEQZ / SCORE / Cartesian. Not a ModuleDef.
+      if (file === 'playhead-tracker.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));
