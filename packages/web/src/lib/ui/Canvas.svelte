@@ -126,6 +126,7 @@
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
   import SelectionContextMenu from '$lib/ui/SelectionContextMenu.svelte';
   import GroupBuilderModal from '$lib/ui/GroupBuilderModal.svelte';
+  import LassoOverlay from '$lib/ui/LassoOverlay.svelte';
   import {
     buildPortCandidates,
     buildExposedPorts,
@@ -137,7 +138,6 @@
     type PortLookupModule,
   } from '$lib/graph/group-actions';
   import type { ExposedPort, GroupData } from '$lib/graph/group-projection';
-  import { SelectionMode } from '@xyflow/svelte';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
     buildModuleEntries,
@@ -343,6 +343,29 @@
       (globalThis as any).__openGroupBuilder = (ids: string[]) => {
         selCtxMenuIds = ids;
         openGroupBuilder();
+      };
+      // Lasso mode test hook — Playwright drives lasso flow via these
+      // entry points instead of synthesizing pointer events (deterministic
+      // across CI + headed runs).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__lasso = {
+        enter: (clientX: number, clientY: number) => enterLassoMode(clientX, clientY),
+        setCursor: (clientX: number, clientY: number) => {
+          if (!flowApi) return;
+          lassoCursorScreen = { x: clientX, y: clientY };
+          lassoCursorFlow = flowApi.screenToFlowPosition({ x: clientX, y: clientY });
+          recomputeLassoHits();
+        },
+        commit: () => {
+          const ids = lassoHitIds.slice();
+          exitLassoMode();
+          if (ids.length < 2) return;
+          selCtxMenuIds = ids;
+          openGroupBuilder();
+        },
+        cancel: () => exitLassoMode(),
+        hits: () => lassoHitIds.slice(),
+        active: () => lassoMode,
       };
     });
   }
@@ -879,40 +902,129 @@
     ctxMenuOpen = true;
   }
 
-  // ---------------- Marquee select (Module-grouping Phase 1) ----------------
+  // ---------------- Lasso group-select (right-click → Create group) --------
   //
-  // Left-drag inside the pane draws a marquee (SelectionMode.Partial).
-  // Middle-drag pans the canvas. Space-hold inverts: left-drag pans
-  // (Figma affordance); marquee disengages while Space is down.
+  // SvelteFlow defaults restored: left-drag empty canvas pans (no marquee).
+  // Grouping discovery now flows through the pane context menu:
+  //   1. right-click empty pane → ModulePalette opens (existing flow)
+  //   2. user clicks "Create group" tool entry → lasso mode engages
+  //   3. cursor drags a bounding-box; nodes inside are previewed-selected
+  //   4. right-click (or left-click) commits → GroupBuilderModal opens
+  //   5. Esc cancels silently
   //
-  // We INTENTIONALLY do NOT include right-mouse-button (2) in panOnDrag.
-  // SvelteFlow's pane handler short-circuits `oncontextmenu` whenever
-  // panOnDragActive includes 2 (see Pane.svelte's onContextMenu) — that
-  // would kill our right-click-pane → palette context menu (covered by
-  // e2e/tests/palette.spec.ts + organize-modules.spec.ts). Users still
-  // get right-DRAG-style canvas panning via middle-drag or Space+left-drag.
-  let spacePanHeld = $state(false);
+  // State lives in flow-space coords so pan/zoom mid-lasso keeps the box
+  // anchored to the original click point. The overlay maps back to screen
+  // px each render via flowApi.flowToScreenPosition.
+  let lassoMode = $state(false);
+  let lassoOriginFlow = $state<{ x: number; y: number } | null>(null);
+  let lassoCursorFlow = $state<{ x: number; y: number } | null>(null);
+  let lassoOriginScreen = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+  let lassoCursorScreen = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+  let lassoHitIds = $state<string[]>([]);
+
+  function enterLassoMode(originClientX: number, originClientY: number) {
+    if (!flowApi) return;
+    const flowPt = flowApi.screenToFlowPosition({ x: originClientX, y: originClientY });
+    lassoOriginFlow = flowPt;
+    lassoCursorFlow = flowPt;
+    lassoOriginScreen = { x: originClientX, y: originClientY };
+    lassoCursorScreen = { x: originClientX, y: originClientY };
+    lassoHitIds = [];
+    lassoMode = true;
+  }
+
+  function exitLassoMode() {
+    lassoMode = false;
+    lassoOriginFlow = null;
+    lassoCursorFlow = null;
+    lassoHitIds = [];
+  }
+
+  function recomputeLassoHits(): void {
+    if (!lassoOriginFlow || !lassoCursorFlow || !flowApi) {
+      lassoHitIds = [];
+      return;
+    }
+    const x1 = Math.min(lassoOriginFlow.x, lassoCursorFlow.x);
+    const y1 = Math.min(lassoOriginFlow.y, lassoCursorFlow.y);
+    const x2 = Math.max(lassoOriginFlow.x, lassoCursorFlow.x);
+    const y2 = Math.max(lassoOriginFlow.y, lassoCursorFlow.y);
+    const hits: string[] = [];
+    for (const n of flowApi.getNodes()) {
+      const w =
+        (n as FlowNode & { measured?: { width?: number; height?: number } })
+          .measured?.width ?? (n as FlowNode & { width?: number }).width ?? 0;
+      const h =
+        (n as FlowNode & { measured?: { width?: number; height?: number } })
+          .measured?.height ?? (n as FlowNode & { height?: number }).height ?? 0;
+      const nx1 = n.position.x;
+      const ny1 = n.position.y;
+      const nx2 = nx1 + w;
+      const ny2 = ny1 + h;
+      const overlap = !(nx2 < x1 || nx1 > x2 || ny2 < y1 || ny1 > y2);
+      if (overlap) hits.push(n.id);
+    }
+    lassoHitIds = hits;
+  }
+
   $effect(() => {
-    const onDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !spacePanHeld) {
-        const t = e.target as HTMLElement | null;
-        const editable =
-          t?.tagName === 'INPUT' ||
-          t?.tagName === 'TEXTAREA' ||
-          (t?.isContentEditable ?? false);
-        if (editable) return;
-        spacePanHeld = true;
+    if (!lassoMode) return;
+    const onMove = (e: PointerEvent) => {
+      if (!flowApi) return;
+      lassoCursorScreen = { x: e.clientX, y: e.clientY };
+      lassoCursorFlow = flowApi.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      recomputeLassoHits();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        exitLassoMode();
       }
     };
-    const onUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') spacePanHeld = false;
+    const commit = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const ids = lassoHitIds.slice();
+      exitLassoMode();
+      if (ids.length < 2) return;
+      selCtxMenuIds = ids;
+      openGroupBuilder();
     };
-    window.addEventListener('keydown', onDown);
-    window.addEventListener('keyup', onUp);
+    const onContextMenu = (e: MouseEvent) => { commit(e); };
+    const onClick = (e: MouseEvent) => { commit(e); };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('contextmenu', onContextMenu, true);
+    window.addEventListener('click', onClick, true);
     return () => {
-      window.removeEventListener('keydown', onDown);
-      window.removeEventListener('keyup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('contextmenu', onContextMenu, true);
+      window.removeEventListener('click', onClick, true);
     };
+  });
+
+  // Re-anchor the overlay's screen-space origin whenever flow-space coords
+  // or viewport transform change. Keeps the rectangle glued to its initial
+  // click point even while the user pans/zooms mid-lasso.
+  $effect(() => {
+    if (!lassoMode || !flowApi || !lassoOriginFlow) return;
+    lassoOriginScreen = flowApi.flowToScreenPosition(lassoOriginFlow);
+  });
+
+  // Live highlight preview: mirror lassoHitIds → DOM classes on flow nodes.
+  $effect(() => {
+    if (!flowEl) return;
+    const root = flowEl.querySelector('.svelte-flow');
+    if (!root) return;
+    const prev = root.querySelectorAll('.svelte-flow__node.lasso-hit');
+    prev.forEach((el) => el.classList.remove('lasso-hit'));
+    if (!lassoMode) return;
+    for (const id of lassoHitIds) {
+      const el = root.querySelector(`.svelte-flow__node[data-id="${id}"]`);
+      if (el) el.classList.add('lasso-hit');
+    }
   });
 
   // ---------------- Module-grouping Phase 1 ----------------
@@ -2251,7 +2363,7 @@
   let availableModules = $derived(listModuleDefs().length + listVideoModuleDefs().length);
 </script>
 
-<div class="root">
+<div class="root" class:lasso-mode={lassoMode} data-testid="canvas-root">
   <header class="topbar">
     <h1>2600hz</h1>
     <div class="actions">
@@ -2296,9 +2408,6 @@
       onpanecontextmenu={onPaneContextMenu}
       onnodecontextmenu={onNodeContextMenu}
       onselectioncontextmenu={onSelectionContextMenu}
-      selectionMode={SelectionMode.Partial}
-      selectionOnDrag={true}
-      panOnDrag={spacePanHeld ? [0, 1] : [1]}
     >
       <Background size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
       <Controls />
@@ -2332,6 +2441,9 @@
     </button>
     <AwarenessLayer {provider} />
     <PickupCable />
+    {#if lassoMode && lassoOriginFlow}
+      <LassoOverlay origin={lassoOriginScreen} cursor={lassoCursorScreen} />
+    {/if}
     {#if anyGroupExpanded}
       <!-- Module-grouping Phase 2A: floating "Update group" CTA visible
            whenever any group is expanded. One click collapses every
@@ -2385,6 +2497,7 @@
   y={palettePos.y}
   onselect={spawnFromPalette}
   onorganize={organizeModules}
+  oncreategroup={() => enterLassoMode(palettePos.x, palettePos.y)}
   onclose={() => (paletteOpen = false)}
 />
 
@@ -2597,6 +2710,20 @@
     outline: 1px dashed var(--accent, #60a5fa);
     outline-offset: 2px;
     transition: opacity 120ms ease-out;
+  }
+  /* Lasso group-select: live highlight preview while the user drags the
+   * Create-group bounding box. Solid accent outline distinguishes from
+   * the dashed remote-group-building state above. */
+  :global(.svelte-flow__node.lasso-hit) {
+    outline: 2px solid var(--accent, #60a5fa);
+    outline-offset: 2px;
+  }
+  /* Crosshair cursor while lasso mode is active. Class is toggled on
+   * .root via class:lasso-mode in the markup. */
+  .root.lasso-mode :global(.svelte-flow),
+  .root.lasso-mode :global(.svelte-flow__pane),
+  .root.lasso-mode :global(.svelte-flow__node) {
+    cursor: crosshair !important;
   }
   .error {
     margin: 0;
