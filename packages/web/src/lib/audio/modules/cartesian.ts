@@ -33,6 +33,7 @@ import {
   lfoMorph,
 } from '$lib/audio/lfo-divisions';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { breathePass, coerceBreatheDirection } from '$lib/audio/breathe-mutation';
 
 // Re-export for downstream consumers that already imported from here.
 export const LFO_DIVISIONS = _LFO_DIVISIONS;
@@ -81,7 +82,9 @@ export const cartesianDef: AudioModuleDef = {
   // v4: PR-34 — per-cell optional `chord: 'mono' | 'maj' | 'min'` for Stage-1
   //     polyphony. Pitch output port type changed to `polyPitchGate`.
   //     Backward-compat resolved by engine.addEdge → resolveConnection().
-  schemaVersion: 4,
+  // v5: BREATHE — alternating Euclidean gate-density mutation per loop wrap.
+  //     New params default to disabled; persisted shape unchanged.
+  schemaVersion: 5,
   migrate(data, fromVersion) {
     // v1 -> v2: per-cell pitch encoding (semitones-from-C4) -> midi int.
     let migrated: Record<string, unknown> | undefined;
@@ -125,6 +128,12 @@ export const cartesianDef: AudioModuleDef = {
     { id: 'lfoDiv',     label: 'Div',  defaultValue: 3,   min: 0,   max: 7,    curve: 'discrete' },
     // LFO waveform morph: 0=sine, 1=tri, 2=saw, 3=square. Continuous between.
     { id: 'lfoShape',   label: 'Wave', defaultValue: 0,   min: 0,   max: 3,    curve: 'linear' },
+    // BREATHE: alternating Euclidean gate-density mutation. In linear mode
+    // it fires on each loop wrap (cell index returns to 0). In cartesian
+    // mode (X/Y CV-driven) there's no loop, so BREATHE is a no-op until
+    // mode flips back to linear.
+    { id: 'breatheEnabled', label: 'Brth',  defaultValue: 0,    min: 0, max: 1, curve: 'discrete' },
+    { id: 'breathPercent',  label: 'Brth%', defaultValue: 0.25, min: 0, max: 1, curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -313,6 +322,30 @@ export const cartesianDef: AudioModuleDef = {
       }
     }
 
+    /** BREATHE: alternate exhale/inhale Euclidean gate-density mutation across
+     *  all 16 grid cells. Called on linear-mode loop wrap (cell 0 again).
+     *  midi + chord values preserved. */
+    function maybeBreathe(): void {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return;
+      const enabled = (readParam('breatheEnabled', 0) >= 0.5);
+      if (!enabled) return;
+      const cells = readCells();
+      const gates = cells.map((c) => !!c.on);
+      const data = (live.data ?? {}) as Record<string, unknown>;
+      const direction = coerceBreatheDirection(data.breatheDirection);
+      const pct = readParam('breathPercent', 0.25);
+      const { gates: nextGates, nextDirection } = breathePass(gates, direction, pct);
+      const nextCells = cells.map((c, i) => ({
+        on: !!nextGates[i],
+        midi: c.midi,
+        chord: c.chord ?? 'mono',
+      }));
+      if (!live.data) live.data = {};
+      (live.data as Record<string, unknown>).cells = nextCells;
+      (live.data as Record<string, unknown>).breatheDirection = nextDirection;
+    }
+
     function tick() {
       if (!alive) return;
       try {
@@ -349,6 +382,8 @@ export const cartesianDef: AudioModuleDef = {
               idx = stepIndex;
               stepIndex = (stepIndex + 1) % CELL_COUNT;
               currentStep = idx;
+              // Linear-mode loop wrap: stepIndex returned to 0 → fire BREATHE.
+              if (stepIndex === 0) maybeBreathe();
             }
             emitStep(idx, nowAt + 0.005, gateDur);
             totalAdvances++;

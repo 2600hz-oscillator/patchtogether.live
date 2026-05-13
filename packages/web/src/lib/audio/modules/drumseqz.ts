@@ -30,6 +30,7 @@ import {
   shouldSequencerRun,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { breathePass, coerceBreatheDirection } from '$lib/audio/breathe-mutation';
 
 export const TRACK_COUNT = 4;
 export const STEP_COUNT = 16;
@@ -170,7 +171,14 @@ export const drumseqzDef: AudioModuleDef = {
   domain: 'audio',
   label: 'DRUMSEQZ',
   category: 'modulation',
-  schemaVersion: 1,
+  // v2: BREATHE — alternating Euclidean gate-density mutation per loop wrap.
+  //     New params default to disabled; persisted shape unchanged.
+  schemaVersion: 2,
+  migrate(data, _fromVersion) {
+    // v1 -> v2: no persisted-data shape change. BREATHE param defaults apply
+    // lazily at runtime (defaultValue on the param defs).
+    return data;
+  },
 
   inputs: [
     { id: 'clock', type: 'gate' },
@@ -210,6 +218,12 @@ export const drumseqzDef: AudioModuleDef = {
     { id: 'trk4_euclid', label: 'T4E',  defaultValue: 0,        min: 0,   max: 16,   curve: 'discrete' },
     { id: 'trk4_root',   label: 'T4R',  defaultValue: C3_MIDI,  min: 33,  max: 114,  curve: 'discrete' },
     { id: 'trk4_octave', label: 'T4O',  defaultValue: 0,        min: -2,  max: 2,    curve: 'discrete' },
+    // BREATHE: alternating Euclidean gate-density mutation per loop wrap.
+    // For DRUMSEQZ v1 the breath is applied across ALL 64 cells (4 tracks ×
+    // 16 steps) as a single flat gate array — simpler and more organic-
+    // feeling than per-track breath. Per-track granularity can land later.
+    { id: 'breatheEnabled', label: 'Brth',  defaultValue: 0,    min: 0, max: 1, curve: 'discrete' },
+    { id: 'breathPercent',  label: 'Brth%', defaultValue: 0.25, min: 0, max: 1, curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -357,6 +371,35 @@ export const drumseqzDef: AudioModuleDef = {
       return isPlaying;
     }
 
+    /** BREATHE: alternate exhale/inhale Euclidean gate-density mutation over
+     *  ALL 64 cells (4 tracks × 16 steps) per loop wrap. The cells are
+     *  flattened track-major (track 0 cells 0..15, then track 1, ...) before
+     *  the pass + unflattened back. midi values are preserved untouched. */
+    function maybeBreathe(): void {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return;
+      const enabled = (readParam('breatheEnabled', 0) >= 0.5);
+      if (!enabled) return;
+      const tracks = readTracks();
+      const flatGates: boolean[] = [];
+      for (let t = 0; t < TRACK_COUNT; t++) {
+        for (let i = 0; i < STEP_COUNT; i++) {
+          flatGates.push(!!tracks[t]?.[i]?.on);
+        }
+      }
+      const data = (live.data ?? {}) as Record<string, unknown>;
+      const direction = coerceBreatheDirection(data.breatheDirection);
+      const pct = readParam('breathPercent', 0.25);
+      const { gates: nextGates, nextDirection } = breathePass(flatGates, direction, pct);
+      // Unflatten + write back (preserve midi per cell).
+      const nextTracks = tracks.map((tr, t) =>
+        tr.map((c, i) => ({ on: !!nextGates[t * STEP_COUNT + i], midi: c.midi })),
+      );
+      if (!live.data) live.data = {};
+      (live.data as Record<string, unknown>).tracks = nextTracks;
+      (live.data as Record<string, unknown>).breatheDirection = nextDirection;
+    }
+
     /** Apply queued slot's snapshot. Snapshot shape (DRUMSEQZ):
      *  { tracks: DrumseqzTrack[], bpm, length, octave, gateLength, swing,
      *    trk{1..4}_euclid, trk{N}_root, trk{N}_octave }. */
@@ -462,6 +505,7 @@ export const drumseqzDef: AudioModuleDef = {
                   // stepIndex/currentStep reset; skip the natural advance.
                   continue;
                 }
+                maybeBreathe();
               }
               stepIndex = nextIdx;
               currentStep = stepIndex;
@@ -492,6 +536,7 @@ export const drumseqzDef: AudioModuleDef = {
                 nextStepTime = nextStartTime;
                 continue;
               }
+              maybeBreathe();
             }
             nextStepTime = nextStartTime;
             stepIndex = nextIdx;

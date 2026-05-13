@@ -2,6 +2,7 @@
   import { onDestroy, tick } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import BreatheControls from '$lib/ui/controls/BreatheControls.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
@@ -51,6 +52,8 @@
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.5));
   let swing      = $derived((void cardVersion, node?.params.swing      ?? 0));
   let isPlaying  = $derived((void cardVersion, (node?.params.isPlaying ?? 0) >= 0.5));
+  let breatheEnabled = $derived((void cardVersion, (node?.params.breatheEnabled ?? 0) >= 0.5));
+  let breathPercent  = $derived((void cardVersion, node?.params.breathPercent ?? 0.25));
 
   let steps = $derived.by<Step[]>(() => {
     void cardVersion;
@@ -65,6 +68,9 @@
 
   function togglePlay() {
     set('isPlaying')(isPlaying ? 0 : 1);
+  }
+  function toggleBreathe() {
+    set('breatheEnabled')(breatheEnabled ? 0 : 1);
   }
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
@@ -333,6 +339,13 @@
     <Fader value={octave}     min={-2}  max={2}   defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}   readLive={live('octave')} />
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear" onchange={set('gateLength')} readLive={live('gateLength')} />
     <Fader value={swing}      min={0}   max={0.75} defaultValue={0}  label="SWG"  curve="linear" onchange={set('swing')}     readLive={live('swing')} />
+    <BreatheControls
+      nodeId={id}
+      enabled={breatheEnabled}
+      percent={breathPercent}
+      onToggleEnabled={toggleBreathe}
+      onSetPercent={set('breathPercent')}
+    />
   </div>
 
   <QuicksaveControls

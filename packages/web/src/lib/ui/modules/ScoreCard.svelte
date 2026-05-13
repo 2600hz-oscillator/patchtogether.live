@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import BreatheControls from '$lib/ui/controls/BreatheControls.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -83,6 +84,8 @@
   let sustain = $derived((void cardVersion, node?.params.sustain ?? 0.7));
   let release = $derived((void cardVersion, node?.params.release ?? 0.3));
   let isPlaying = $derived((void cardVersion, (node?.params.isPlaying ?? 0) >= 0.5));
+  let breatheEnabled = $derived((void cardVersion, (node?.params.breatheEnabled ?? 0) >= 0.5));
+  let breathPercent  = $derived((void cardVersion, node?.params.breathPercent ?? 0.25));
 
   let scoreData = $derived.by<ScoreData>(() => {
     void cardVersion;
@@ -122,6 +125,7 @@
   };
 
   function togglePlay() { set('isPlaying')(isPlaying ? 0 : 1); }
+  function toggleBreathe() { set('breatheEnabled')(breatheEnabled ? 0 : 1); }
 
   // ----- rAF poll for currently-playing note id -----
   let currentNoteId = $state<string | null>(null);
@@ -1007,6 +1011,13 @@
     <Fader value={decay}   min={0.001} max={10}  defaultValue={0.1}   label="D"   curve="log"    onchange={set('decay')}   readLive={live('decay')} />
     <Fader value={sustain} min={0}     max={1}   defaultValue={0.7}   label="S"   curve="linear" onchange={set('sustain')} readLive={live('sustain')} />
     <Fader value={release} min={0.001} max={10}  defaultValue={0.3}   label="R"   curve="log"    onchange={set('release')} readLive={live('release')} />
+    <BreatheControls
+      nodeId={id}
+      enabled={breatheEnabled}
+      percent={breathPercent}
+      onToggleEnabled={toggleBreathe}
+      onSetPercent={set('breathPercent')}
+    />
   </div>
 
   <QuicksaveControls

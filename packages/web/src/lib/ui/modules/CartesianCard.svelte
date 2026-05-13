@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import BreatheControls from '$lib/ui/controls/BreatheControls.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -37,6 +38,8 @@
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.5));
   let lfoDiv     = $derived((void cardVersion, node?.params.lfoDiv ?? 3));
   let lfoShape   = $derived((void cardVersion, node?.params.lfoShape ?? 0));
+  let breatheEnabled = $derived((void cardVersion, (node?.params.breatheEnabled ?? 0) >= 0.5));
+  let breathPercent  = $derived((void cardVersion, node?.params.breathPercent ?? 0.25));
 
   // Glyph rail for the LFO waveform slider: sine/tri/saw/square at the four
   // morph anchor points (frac 0/1/3, 1/3, 2/3, 1). Active glyph is the one
@@ -75,6 +78,9 @@
   };
   function toggleMode() {
     set('mode')(mode === 1 ? 0 : 1);
+  }
+  function toggleBreathe() {
+    set('breatheEnabled')(breatheEnabled ? 0 : 1);
   }
 
   let currentStep = $state(0);
@@ -252,6 +258,13 @@
   <div class="fader-row">
     <Fader value={octave}     min={-2}  max={2}    defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}     readLive={live('octave')} />
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} readLive={live('gateLength')} />
+    <BreatheControls
+      nodeId={id}
+      enabled={breatheEnabled}
+      percent={breathPercent}
+      onToggleEnabled={toggleBreathe}
+      onSetPercent={set('breathPercent')}
+    />
   </div>
 
   <div class="lfo-row" data-testid={`cart-lfo-${id}`}>

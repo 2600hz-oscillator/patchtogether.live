@@ -56,6 +56,7 @@ import {
   shouldSequencerRun,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { breathePass, coerceBreatheDirection } from '$lib/audio/breathe-mutation';
 
 // ---------------- Step schema ----------------
 
@@ -127,7 +128,12 @@ export const polyseqzDef: AudioModuleDef = {
   domain: 'audio',
   label: 'POLYSEQZ',
   category: 'modulation',
-  schemaVersion: 1,
+  // v2: BREATHE — alternating Euclidean gate-density mutation per loop wrap.
+  //     New params default to disabled; persisted shape unchanged.
+  schemaVersion: 2,
+  migrate(data, _fromVersion) {
+    return data;
+  },
 
   inputs: [
     // External clock (optional). When patched, advances on rising edges.
@@ -161,6 +167,9 @@ export const polyseqzDef: AudioModuleDef = {
     { id: 'gateLength', label: 'Gate', defaultValue: 0.6, min: 0.1, max: 0.95, curve: 'linear' },
     { id: 'humanize',   label: 'Hum',  defaultValue: 0,   min: 0,   max: 1,    curve: 'linear' },
     { id: 'isPlaying',  label: 'Play', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
+    // BREATHE: alternating Euclidean gate-density mutation per loop wrap.
+    { id: 'breatheEnabled', label: 'Brth',  defaultValue: 0,    min: 0, max: 1, curve: 'discrete' },
+    { id: 'breathPercent',  label: 'Brth%', defaultValue: 0.25, min: 0, max: 1, curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -399,6 +408,36 @@ export const polyseqzDef: AudioModuleDef = {
       return isPlaying;
     }
 
+    /** BREATHE: alternate exhale/inhale Euclidean gate-density mutation across
+     *  all 32 step.on flags per loop wrap. root/quality/inversion/voicing are
+     *  preserved untouched. */
+    function maybeBreathe(): void {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return;
+      const enabled = (readParam('breatheEnabled', 0) >= 0.5);
+      if (!enabled) return;
+      const data = (live.data ?? {}) as Record<string, unknown>;
+      const stepsRaw = data.steps;
+      if (!Array.isArray(stepsRaw)) return;
+      const gates = (stepsRaw as unknown[]).map((s) => !!coerceToChordStep(s).on);
+      const direction = coerceBreatheDirection(data.breatheDirection);
+      const pct = readParam('breathPercent', 0.25);
+      const { gates: nextGates, nextDirection } = breathePass(gates, direction, pct);
+      const nextSteps = (stepsRaw as unknown[]).map((s, i) => {
+        const cs = coerceToChordStep(s);
+        return {
+          on: !!nextGates[i],
+          root: cs.root,
+          quality: cs.quality,
+          inversion: cs.inversion,
+          voicing: cs.voicing,
+        };
+      });
+      if (!live.data) live.data = {};
+      (live.data as Record<string, unknown>).steps = nextSteps;
+      (live.data as Record<string, unknown>).breatheDirection = nextDirection;
+    }
+
     /** Apply queued slot's snapshot. Snapshot shape (POLYSEQZ):
      *  { steps: ChordStep[], bpm, length, octave, gateLength, humanize }.
      *  Each ChordStep carries {on, root, quality, inversion, voicing}; we
@@ -505,6 +544,7 @@ export const polyseqzDef: AudioModuleDef = {
                   // natural advance.
                   continue;
                 }
+                maybeBreathe();
               }
               stepIndex = nextIdx;
               currentStep = stepIndex;
@@ -534,6 +574,7 @@ export const polyseqzDef: AudioModuleDef = {
                 nextStepTime = nextStartTime;
                 continue;
               }
+              maybeBreathe();
             }
             nextStepTime = nextStartTime;
             stepIndex = nextIdx;

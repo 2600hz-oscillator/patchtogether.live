@@ -61,6 +61,7 @@ import {
   shouldSequencerRun,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { breathePass, coerceBreatheDirection } from '$lib/audio/breathe-mutation';
 
 const ADSR_PREFIX = '/ADSR';
 
@@ -90,7 +91,10 @@ export const scoreDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Score',
   category: 'modulation',
-  schemaVersion: 2,
+  // v3: BREATHE — note-presence Euclidean mutation per loop wrap. New params
+  //      default to disabled; persisted shape unchanged. The mutator tracks
+  //      `data.breatheOffIds: string[]` (note IDs currently exhaled).
+  schemaVersion: 3,
   migrate(data, fromVersion) {
     if (fromVersion < 2) return migrateScoreV1ToV2(data);
     return data;
@@ -123,6 +127,11 @@ export const scoreDef: AudioModuleDef = {
     { id: 'sustain', label: 'S', defaultValue: 0.7, min: 0, max: 1, curve: 'linear' },
     { id: 'release', label: 'R', defaultValue: 0.3, min: 0.001, max: 10, curve: 'log', units: 's' },
     { id: 'isPlaying', label: 'Play', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    // BREATHE: alternating Euclidean mutation that hides/restores notes
+    // (treating each note as a "gate" — note placed = gate on). Hidden notes
+    // live in data.breatheOffIds[] so the next inhale can restore them.
+    { id: 'breatheEnabled', label: 'Brth',  defaultValue: 0,    min: 0, max: 1, curve: 'discrete' },
+    { id: 'breathPercent',  label: 'Brth%', defaultValue: 0.25, min: 0, max: 1, curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -224,14 +233,60 @@ export const scoreDef: AudioModuleDef = {
      *  suppress per-step gate drops. */
     let tiedGateHoldUntilTick = -1;
 
-    /** Look up a note that starts exactly at this absolute grid position. */
+    /** Read the set of note IDs currently exhaled (BREATHE off). Live from
+     *  node.data.breatheOffIds — refreshed every emit so the engine picks up
+     *  mutations made on the previous wrap. */
+    function readBreatheOffIds(): Set<string> {
+      const live = livePatch.nodes[nodeId];
+      const raw = (live?.data as Record<string, unknown> | undefined)?.breatheOffIds;
+      if (!Array.isArray(raw)) return new Set();
+      const out = new Set<string>();
+      for (const v of raw) {
+        if (typeof v === 'string') out.add(v);
+      }
+      return out;
+    }
+
+    /** Look up a note that starts exactly at this absolute grid position,
+     *  excluding any notes currently in the BREATHE-off set. */
     function noteStartingAt(absTick: number, notes: ScoreNote[]): ScoreNote | null {
       const bar = Math.floor(absTick / TICKS_PER_BAR);
       const tick = absTick - bar * TICKS_PER_BAR;
+      const offIds = readBreatheOffIds();
       for (const n of notes) {
-        if (n.bar === bar && n.tick === tick) return n;
+        if (n.bar === bar && n.tick === tick && !offIds.has(n.id)) return n;
       }
       return null;
+    }
+
+    /** BREATHE: alternate exhale/inhale Euclidean mutation of the note-presence
+     *  set. We treat each note as a "gate" — placed = ON, exhaled = OFF. The
+     *  exhaled set lives in data.breatheOffIds (array of note IDs); the engine
+     *  filters those out in noteStartingAt(). Note: we DON'T delete notes
+     *  from the score itself, so toggling BREATHE off restores the full score.
+     */
+    function maybeBreathe(): void {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return;
+      const enabled = (readParam('breatheEnabled', 0) >= 0.5);
+      if (!enabled) return;
+      const data = readScoreData(nodeId);
+      if (!data.notes.length) return;
+      const liveData = (live.data ?? {}) as Record<string, unknown>;
+      const offIds = readBreatheOffIds();
+      // Gate array indexed by note: true = currently ON (not in offIds).
+      const gates = data.notes.map((n) => !offIds.has(n.id));
+      const direction = coerceBreatheDirection(liveData.breatheDirection);
+      const pct = readParam('breathPercent', 0.25);
+      const { gates: nextGates, nextDirection } = breathePass(gates, direction, pct);
+      // Compute the new off-set from the flipped gates.
+      const nextOff: string[] = [];
+      for (let i = 0; i < data.notes.length; i++) {
+        if (!nextGates[i]) nextOff.push(data.notes[i].id);
+      }
+      if (!live.data) live.data = {};
+      (live.data as Record<string, unknown>).breatheOffIds = nextOff;
+      (live.data as Record<string, unknown>).breatheDirection = nextDirection;
     }
 
     /** Compute the absolute grid tick at which a given note's gate-off is
@@ -478,6 +533,7 @@ export const scoreDef: AudioModuleDef = {
                   // new pattern's first slot on this very pulse.
                 } else if (readScoreData(nodeId).loop) {
                   tickIndex = 0;
+                  maybeBreathe();
                 } else {
                   // Stop the sequencer.
                   silenceGate(nowAt + 0.005);
@@ -508,6 +564,7 @@ export const scoreDef: AudioModuleDef = {
                 //  the next emitTick call uses that as step-0's at-time.)
               } else if (readScoreData(nodeId).loop) {
                 tickIndex = 0;
+                maybeBreathe();
               } else {
                 // Stop and exit the schedule loop.
                 silenceGate(nextStepTime);

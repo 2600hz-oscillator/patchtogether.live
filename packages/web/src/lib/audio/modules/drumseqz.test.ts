@@ -201,8 +201,8 @@ describe('drumseqzDef shape', () => {
     expect(ids).toContain('swing');
   });
 
-  it('schemaVersion is 1', () => {
-    expect(drumseqzDef.schemaVersion).toBe(1);
+  it('schemaVersion is 2 (bumped for BREATHE params)', () => {
+    expect(drumseqzDef.schemaVersion).toBe(2);
   });
 });
 

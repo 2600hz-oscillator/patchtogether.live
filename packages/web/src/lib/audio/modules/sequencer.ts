@@ -38,6 +38,7 @@ import {
   type SlotKey,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { breathePass, coerceBreatheDirection } from '$lib/audio/breathe-mutation';
 
 export interface Step {
   on: boolean;
@@ -90,7 +91,10 @@ export const sequencerDef: AudioModuleDef = {
   //     unchanged. The pitch output port type changed from 'pitch' to
   //     'polyPitchGate'; the engine's resolveConnection() routes lane 0 to
   //     mono pitch sinks so existing patches keep working.
-  schemaVersion: 4,
+  // v5: BREATHE — alternating Euclidean gate-density mutation per loop wrap.
+  //     New params (breatheEnabled, breathPercent) default to disabled, so
+  //     existing patches play identically. No persisted-data shape change.
+  schemaVersion: 5,
   migrate(data, fromVersion) {
     // v1 -> v2: per-step pitch encoding (semitones-from-C4) -> midi int.
     let migrated: Record<string, unknown> | undefined;
@@ -111,6 +115,10 @@ export const sequencerDef: AudioModuleDef = {
         return { on: ns.on, midi: ns.midi, chord: ns.chord ?? 'mono' };
       });
     }
+    // v4 -> v5: BREATHE params default off — no persisted-data shape change.
+    // The defaultValue on the param defs handles fresh instances; saved
+    // patches without breatheEnabled/breathPercent stay disabled until the
+    // user enables them.
     return migrated;
   },
 
@@ -145,6 +153,11 @@ export const sequencerDef: AudioModuleDef = {
     { id: 'swing',      label: 'Sw',   defaultValue: 0,   min: 0,   max: 0.75, curve: 'linear' },
     // 0 = stopped, 1 = playing. Default stopped — explicit play.
     { id: 'isPlaying',  label: 'Play', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
+    // BREATHE: 0=off, 1=on. When on, the sequencer alternates inhale/exhale
+    // Euclidean gate-density mutations on each loop wrap (last step → step 0).
+    { id: 'breatheEnabled', label: 'Brth', defaultValue: 0,    min: 0, max: 1, curve: 'discrete' },
+    // Fraction of total gates flipped per breath pass (0..1).
+    { id: 'breathPercent',  label: 'Brth%', defaultValue: 0.25, min: 0, max: 1, curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -329,6 +342,35 @@ export const sequencerDef: AudioModuleDef = {
       return isPlaying;
     }
 
+    /** Apply one breathe pass to the live step array if breatheEnabled. Called
+     *  on each loop wrap (alongside queued-slot swap + EVOLVE if present). The
+     *  alternation toggles direction unconditionally so the breath stays
+     *  rhythmic even when there's nothing to flip this pass. */
+    function maybeBreathe(): void {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return;
+      const enabled = (readParam('breatheEnabled', 0) >= 0.5);
+      if (!enabled) return;
+      const data = (live.data ?? {}) as Record<string, unknown>;
+      const stepsRaw = data.steps;
+      if (!Array.isArray(stepsRaw)) return;
+      const gates = (stepsRaw as unknown[]).map((s) => {
+        const ns = coerceToSequencerStep(s);
+        return !!ns.on;
+      });
+      const direction = coerceBreatheDirection(data.breatheDirection);
+      const pct = readParam('breathPercent', 0.25);
+      const { gates: nextGates, nextDirection } = breathePass(gates, direction, pct);
+      // Write back: preserve each step's midi+chord while replacing `on`.
+      const nextSteps = (stepsRaw as unknown[]).map((s, i) => {
+        const ns = coerceToSequencerStep(s);
+        return { on: !!nextGates[i], midi: ns.midi, chord: ns.chord ?? 'mono' };
+      });
+      if (!live.data) live.data = {};
+      (live.data as Record<string, unknown>).steps = nextSteps;
+      (live.data as Record<string, unknown>).breatheDirection = nextDirection;
+    }
+
     /** Apply the queued slot's snapshot to node.data + node.params, and
      *  reset the step counter. Called on sequence-end when queuedSlot is
      *  set. The snapshot shape is module-specific; for the Sequencer it
@@ -442,9 +484,13 @@ export const sequencerDef: AudioModuleDef = {
                 totalSequenceEnds++;
                 if (maybeApplyQueuedSlot()) {
                   // stepIndex was reset to 0 by the apply; skip the
-                  // normal advance.
+                  // normal advance. BREATHE doesn't apply to the swapped-in
+                  // pattern this pass — the new pattern gets its first
+                  // breath next wrap.
                   continue;
                 }
+                // BREATHE mutates gate density per pass when enabled.
+                maybeBreathe();
               }
               stepIndex = nextIdx;
               currentStep = stepIndex;
@@ -479,6 +525,8 @@ export const sequencerDef: AudioModuleDef = {
                 nextStepTime = nextStartTime;
                 continue;
               }
+              // BREATHE mutates gate density per pass when enabled.
+              maybeBreathe();
             }
             nextStepTime = nextStartTime;
             stepIndex = nextIdx;
