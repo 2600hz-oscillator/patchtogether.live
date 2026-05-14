@@ -40,9 +40,11 @@ export type Catalog = readonly CatalogModule[];
  */
 const NEVER_SPAWN: ReadonlySet<string> = new Set([
   'audioOut',     // singleton sink; pre-spawned for tests, never random-added
-  'scope',        // visualization only; chaos doesn't need to spam scopes
-  'sequencer',    // its `data.steps` shape is non-trivial; defer to a later pass
-  'cartesian',    // sequencer-shaped; same reason
+  // sequencer / cartesian / scope used to be excluded but the bot is now
+  // a musician — it needs sequencers, video sinks, and per-band tools to
+  // build full clock→seq→vco→vca chains. Each module reader falls back
+  // to defaults when `data` is absent, so spawning with an empty data
+  // shape is safe.
 ]);
 
 export function isChaosSpawnable(module: CatalogModule): boolean {
