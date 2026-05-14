@@ -9,10 +9,15 @@ import {
   WARRENSPECTRUM_NUM_BANDS,
   WARRENSPECTRUM_BLEED,
   WARRENSPECTRUM_CENTER_HZ,
+  WARRENSPECTRUM_ROOT_DEFAULT_MIDI,
   applyPing,
+  bandCenterHz,
+  bandPanPosition,
   bleedWeight,
   biquadBpfCoeffs,
   makeEnv,
+  midiToHz,
+  panGains,
   stepEnv,
   vactrolShape,
 } from './warrenspectrum-math';
@@ -164,6 +169,62 @@ describe('biquad bandpass coefficients', () => {
     }
   });
 
+  it('log mode returns the legacy octave-spaced bank', () => {
+    for (let i = 0; i < WARRENSPECTRUM_NUM_BANDS; i++) {
+      expect(bandCenterHz('log', WARRENSPECTRUM_ROOT_DEFAULT_MIDI, i))
+        .toBe(WARRENSPECTRUM_CENTER_HZ[i]);
+    }
+  });
+
+  it('harm mode at middle C produces integer-multiple partials of C4', () => {
+    const rootMidi = WARRENSPECTRUM_ROOT_DEFAULT_MIDI; // 60 = C4
+    const rootHz = midiToHz(rootMidi);
+    expect(rootHz).toBeCloseTo(261.6256, 3);
+    for (let i = 0; i < WARRENSPECTRUM_NUM_BANDS; i++) {
+      expect(bandCenterHz('harm', rootMidi, i)).toBeCloseTo(rootHz * (i + 1), 6);
+    }
+  });
+
+  it('harm mode root tracks MIDI semitones (A4 = 440)', () => {
+    expect(bandCenterHz('harm', 69, 0)).toBeCloseTo(440, 4);
+    expect(bandCenterHz('harm', 69, 1)).toBeCloseTo(880, 4);
+  });
+});
+
+describe('pan / spread', () => {
+  it('panGains is equal-power: l² + r² == 1', () => {
+    for (const p of [-1, -0.5, 0, 0.5, 1]) {
+      const { l, r } = panGains(p);
+      expect(l * l + r * r).toBeCloseTo(1, 6);
+    }
+  });
+
+  it('center is equal L/R, full-left is l=1 r=0', () => {
+    const c = panGains(0);
+    expect(c.l).toBeCloseTo(c.r, 6);
+    const left = panGains(-1);
+    expect(left.l).toBeCloseTo(1, 6);
+    expect(left.r).toBeCloseTo(0, 6);
+  });
+
+  it('spread=0 puts every band at center', () => {
+    for (let i = 0; i < WARRENSPECTRUM_NUM_BANDS; i++) {
+      expect(bandPanPosition(i, WARRENSPECTRUM_NUM_BANDS, 0)).toBe(0);
+    }
+  });
+
+  it('spread=1 puts outer bands at full L/R, alternating', () => {
+    // Even bands → negative (left-ish), odd bands → positive (right-ish).
+    const p0 = bandPanPosition(0, WARRENSPECTRUM_NUM_BANDS, 1);
+    const p7 = bandPanPosition(7, WARRENSPECTRUM_NUM_BANDS, 1);
+    expect(p0).toBeLessThanOrEqual(0);
+    expect(p7).toBeGreaterThanOrEqual(0);
+    expect(Math.abs(p0)).toBeCloseTo(1, 6);
+    expect(Math.abs(p7)).toBeCloseTo(1, 6);
+  });
+});
+
+describe('biquad bandpass coefficients (continued)', () => {
   it('Biquad bandpass peak frequency response matches center freq', () => {
     // Pick band 3 (640 Hz). Compute |H(e^jw)| at several frequencies;
     // peak should be near fc. We use the closed-form transfer function
