@@ -8,6 +8,18 @@
 import type { Page } from '@playwright/test';
 import type { Intent } from './intent';
 
+/** Invoke the canvas's "Organize modules" pass to repack the layout. The
+ *  runner calls this after each spawn so the bot's view stays legible
+ *  (and so VRT recordings of the chaos run aren't a wall of overlapping
+ *  cards). No-op if the hook isn't yet on `window` (e.g. before the
+ *  Canvas effect runs). */
+export async function organizeModules(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __organizeModules?: () => void };
+    if (typeof w.__organizeModules === 'function') w.__organizeModules();
+  });
+}
+
 /** Boot the engine once. Mirrors the helpers.ts pattern. */
 export async function ensureEngineBooted(page: Page): Promise<void> {
   await page.waitForFunction(() => {
