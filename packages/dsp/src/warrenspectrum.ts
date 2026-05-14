@@ -1,40 +1,44 @@
 // packages/dsp/src/warrenspectrum.ts
 //
-// WARRENSPECTRUM — stereo 8-band filterbank with vactrol-style ping
-// excitation. Each band is a per-channel pair of biquad bandpass filters
-// (RBJ cookbook BPF, peaking variant — 0 dB at center, log-symmetric
-// skirts) at fixed octave-spaced center frequencies covering 80 Hz to
-// 10.24 kHz.
+// WARRENSPECTRUM — stereo 8-band resonator filterbank with vactrol-style
+// ping excitation. Two tuning modes:
+//   - 'log'  : fixed octave-spaced 80..10240 Hz (legacy spectral-EQ).
+//   - 'harm' : harmonic partials f[i] = rootHz * (i+1), root selected via
+//              the `root` k-rate AudioParam (MIDI note number).
+// Q, spread, and bleed are also k-rate so the topology can morph live.
 //
-// Ping behavior: each band has its own gate input. Rising edge triggers
-// a vactrol-style envelope (soft attack 10-30 ms with ±10% jitter,
-// exponential decay 100-800 ms via the pingDecay knob with ±10% jitter,
-// soft-saturated via tanh(env * 4) / tanh(4)). The ping fires not just
-// the band itself but the adjacent two on each side with bleed weights
-// 1.0 / 0.35 / 0.12 — the cluster rings as a group, the way a real
-// resonator bank cross-couples mechanical excitation.
+// Ping behavior: each band has its own gate input. Rising edge triggers a
+// vactrol-style envelope (soft attack 10-30 ms with ±10% jitter, exp decay
+// 100-800 ms via the pingDecay knob with ±10% jitter, soft-saturated via
+// tanh). The ping fires not just the band itself but the adjacent two on
+// each side with weights [1.0, 0.35, 0.12] scaled by the bleed param —
+// the cluster rings as a group like a mechanical resonator bank.
 //
 // Excitation path: TWO injections into the bandpass input —
-//   (1) a fast click impulse (0.98/sample decay, ~1ms) on rising edge —
+//   (1) fast click impulse (0.98/sample decay, ~1ms) on rising edge —
 //       gives the initial transient/attack;
 //   (2) envelope-modulated broadband noise — keeps exciting the bandpass
 //       through the envelope's full 100-800ms decay so the band rings
-//       audibly for the whole vactrol decay (matches QBRT's "pew" tail
-//       where the boosted Q+click rings for the envelope duration).
-// Both routes hit the SAME bandpass input so the filter rings at fc
-// with energy that decays alongside the envelope. The envelope also
-// pumps the per-band gain slightly (vactrol "brightens").
+//       audibly for the whole envelope (without this, Q=6 only rings ~3ms
+//       past the click).
 //
-// Inputs (3): in_l (audio L), in_r (audio R), pings_packed (8 gate
-// channels packed 0..7). CV inputs route to AudioParams directly via
-// the standard CV→param mechanism so this worklet doesn't need extra
-// input ports for them. We expose 8 ping channels as a single 8-channel
-// input bus rather than 8 separate inputs because AudioWorkletNode has
-// a hard cap of 16 inputs and we'd burn 10 of them on pings — too
-// brittle. The host materializes 8 GainNode pin-points and merges them
-// into channels 0..7 of the same AudioNode input.
+// Inputs (4):
+//   0: in_l           (1 channel)
+//   1: in_r           (1 channel)
+//   2: pings_packed   (8 channels; ch n = band n+1 gate; plus the host
+//                      ORs global_ping into all 8 channels)
+//   3: returns_packed (8 channels; ch n = mono audio return for band n+1)
 //
-// Outputs (2): out_l, out_r.
+// Outputs (3):
+//   0: out_l            (1 channel — stereo mix L)
+//   1: out_r            (1 channel — stereo mix R)
+//   2: per_band_packed  (8 channels — band 1..8 mono signals, pre-pan,
+//                        post-envelope, post-level — for external sends)
+//
+// Return-mask: per-band booleans posted by the host as a 'returnMask'
+// message when edges change. When mask[b]=true, that band's contribution
+// to the stereo mix is the return signal (replace). When false, the
+// internal filtered+enveloped signal is used.
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor {
@@ -52,11 +56,22 @@ declare function registerProcessor(
 ): void;
 
 const NUM_BANDS = 8;
-const Q = 6.0;
-const BLEED_WEIGHTS = [1.0, 0.35, 0.12] as const; // offsets 0, ±1, ±2
+const BLEED_BASE = [1.0, 0.35, 0.12] as const; // offsets 0, ±1, ±2
 
-// Center frequencies — octave-spaced, log-uniform 80 Hz .. 10.24 kHz.
-const CENTER_HZ = [80, 160, 320, 640, 1280, 2560, 5120, 10240] as const;
+// Log-spaced (legacy spectral-EQ) center frequencies.
+const LOG_CENTER_HZ = [80, 160, 320, 640, 1280, 2560, 5120, 10240] as const;
+
+function midiToHz(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function bandCenterHz(tuningMode: number, rootMidi: number, i: number): number {
+  // tuningMode: 0 = log, 1 = harm
+  if (tuningMode >= 0.5) {
+    return midiToHz(rootMidi) * (i + 1);
+  }
+  return LOG_CENTER_HZ[i] ?? 0;
+}
 
 interface BiquadState {
   // RBJ biquad direct form II transposed
@@ -66,11 +81,12 @@ interface BiquadState {
 }
 
 function makeBiquadBpf(fc: number, q: number, sr: number): BiquadState {
-  // RBJ bandpass, constant 0dB peak gain.
-  const w0 = (2 * Math.PI * fc) / sr;
+  // Clamp fc to the Nyquist-safe band — high harmonics can exceed sr/2.
+  const fcClamped = Math.max(20, Math.min(sr * 0.45, fc));
+  const w0 = (2 * Math.PI * fcClamped) / sr;
   const cosW = Math.cos(w0);
   const sinW = Math.sin(w0);
-  const alpha = sinW / (2 * q);
+  const alpha = sinW / (2 * Math.max(0.5, q));
   const b0 = alpha;
   const b1 = 0;
   const b2 = -alpha;
@@ -88,6 +104,22 @@ function makeBiquadBpf(fc: number, q: number, sr: number): BiquadState {
   };
 }
 
+function refreshBiquad(state: BiquadState, fc: number, q: number, sr: number): void {
+  // Recompute coefficients in place, preserving z1/z2 state so the filter
+  // doesn't click when frequency/Q is modulated.
+  const fcClamped = Math.max(20, Math.min(sr * 0.45, fc));
+  const w0 = (2 * Math.PI * fcClamped) / sr;
+  const cosW = Math.cos(w0);
+  const sinW = Math.sin(w0);
+  const alpha = sinW / (2 * Math.max(0.5, q));
+  const a0 = 1 + alpha;
+  state.b0 = alpha / a0;
+  state.b1 = 0;
+  state.b2 = -alpha / a0;
+  state.a1 = (-2 * cosW) / a0;
+  state.a2 = (1 - alpha) / a0;
+}
+
 function processBiquad(state: BiquadState, x: number): number {
   // Direct form II transposed.
   const y = state.b0 * x + state.z1;
@@ -97,23 +129,13 @@ function processBiquad(state: BiquadState, x: number): number {
 }
 
 interface VactrolEnv {
-  /** Excitation amplitude — accumulated bleed from this and neighbors. */
   excitation: number;
-  /** Current envelope output (0..1). */
   env: number;
-  /** Attack ramp accumulator while in attack phase. */
   attackProgress: number;
-  /** Per-ping randomized attack samples (10-30 ms × ±10%). */
   attackSamples: number;
-  /** Per-ping randomized decay coefficient (computed from knob × ±10%). */
   decayCoef: number;
-  /** Phase: 0 = idle, 1 = attack, 2 = decay. */
   phase: 0 | 1 | 2;
-  /** Previous gate value for rising-edge detection. */
   prevGate: number;
-  /** Fast broadband click amplitude — decays per-sample at ~1ms; injected
-   *  into the bandpass to make it ring at its center freq (vs. the
-   *  smooth envelope which has no high-frequency content). */
   click: number;
 }
 
@@ -130,50 +152,33 @@ function makeEnv(): VactrolEnv {
   };
 }
 
-/**
- * Soft-saturating nonlinear shaper. Maps unbounded positive excitation
- * onto 0..1 with a gentle compression curve so heavy retriggering
- * doesn't produce a runaway envelope. This is the "vactrol gets warm
- * and refuses to brighten further" character — physically a saturating
- * LDR response.
- */
 export function vactrolShape(env: number, drive: number): number {
-  // tanh-based; tanh(drive) is the asymptote at excitation → ∞.
   return Math.tanh(env * drive) / Math.tanh(drive);
 }
 
-/**
- * Compute the bleed contribution of one ping at band `n` to band `k`
- * given the BLEED_WEIGHTS array. Returns 0 if |n-k| > 2.
- */
-export function bleedWeight(n: number, k: number): number {
+export function bleedWeight(n: number, k: number, bleedScale: number): number {
   const d = Math.abs(n - k);
-  if (d >= BLEED_WEIGHTS.length) return 0;
-  return BLEED_WEIGHTS[d]!;
+  if (d >= BLEED_BASE.length) return 0;
+  // Distance 0 always returns 1.0 (the pinged band itself). Off-diagonal
+  // weights scale with the bleed knob.
+  if (d === 0) return 1.0;
+  return (BLEED_BASE[d] ?? 0) * bleedScale;
 }
 
-/**
- * Apply a fresh ping to band `n`: distribute excitation across n±2 using
- * BLEED_WEIGHTS, randomize attack + decay times per ±10% jitter, and
- * arm the attack phase. Pure function on the env array — used both at
- * worklet runtime and in the unit tests.
- */
 export function applyPing(
   envs: VactrolEnv[],
   n: number,
   pingDecaySec: number,
   attackMsBase: number,
+  bleedScale: number,
   sr: number,
   rand: () => number,
 ): void {
   for (let k = 0; k < envs.length; k++) {
-    const w = bleedWeight(n, k);
+    const w = bleedWeight(n, k, bleedScale);
     if (w === 0) continue;
     const e = envs[k]!;
-    // Add excitation (clamped — adjacent pings within a band don't
-    // accumulate past unity).
     e.excitation = Math.min(1.5, e.excitation + w);
-    // Jitter: ±10% on attack and decay per ping.
     const aJ = 1 + (rand() - 0.5) * 0.2;
     const dJ = 1 + (rand() - 0.5) * 0.2;
     const attackMs = attackMsBase * aJ;
@@ -181,18 +186,11 @@ export function applyPing(
     e.attackSamples = Math.max(1, Math.round((attackMs / 1000) * sr));
     e.attackProgress = 0;
     e.decayCoef = Math.exp(-1 / (decaySec * sr));
-    e.phase = 1; // attack
-    // Click impulse: scaled by bleed weight so neighbors get a softer
-    // hit. Decays at ~98% per sample (≈1ms time constant at 48kHz),
-    // so the bandpass sees a brief broadband impulse and rings at fc.
+    e.phase = 1;
     e.click = Math.max(e.click, w * 0.8);
   }
 }
 
-/**
- * Step the envelope one sample. Returns the post-shape output.
- * Linear attack to excitation level, then exponential decay.
- */
 export function stepEnv(e: VactrolEnv, drive: number): number {
   if (e.phase === 0) {
     e.env = 0;
@@ -219,9 +217,8 @@ export function stepEnv(e: VactrolEnv, drive: number): number {
   return vactrolShape(e.env, drive);
 }
 
-// Re-exported types for the test mirror.
 export type { VactrolEnv };
-export { NUM_BANDS, BLEED_WEIGHTS, CENTER_HZ };
+export { NUM_BANDS, BLEED_BASE, LOG_CENTER_HZ };
 
 class WarrenspectrumProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -241,38 +238,81 @@ class WarrenspectrumProcessor extends AudioWorkletProcessor {
         automationRate: 'a-rate',
       });
     }
-    descs.push({ name: 'master',     defaultValue: 1.0, minValue: 0, maxValue: 2, automationRate: 'a-rate' });
-    descs.push({ name: 'pingDecay',  defaultValue: 0.5, minValue: 0, maxValue: 1, automationRate: 'k-rate' });
+    descs.push({ name: 'master',     defaultValue: 1.0, minValue: 0, maxValue: 2,  automationRate: 'a-rate' });
+    descs.push({ name: 'pingDecay',  defaultValue: 0.5, minValue: 0, maxValue: 1,  automationRate: 'k-rate' });
+    descs.push({ name: 'tuningMode', defaultValue: 0,   minValue: 0, maxValue: 1,  automationRate: 'k-rate' });
+    descs.push({ name: 'root',       defaultValue: 60,  minValue: 24, maxValue: 108, automationRate: 'k-rate' });
+    descs.push({ name: 'q',          defaultValue: 6,   minValue: 1, maxValue: 40, automationRate: 'k-rate' });
+    descs.push({ name: 'spread',     defaultValue: 0,   minValue: 0, maxValue: 1,  automationRate: 'k-rate' });
+    descs.push({ name: 'bleed',      defaultValue: 1,   minValue: 0, maxValue: 1,  automationRate: 'k-rate' });
     return descs;
   }
 
   private bpfL: BiquadState[] = [];
   private bpfR: BiquadState[] = [];
   private envs: VactrolEnv[] = [];
-  /** Most recent waveform snapshot of the L input — drained by the host
-   *  for the on-card visualization at ~30Hz. We send 256 samples per
-   *  message so the host always has a fresh trace to render. */
+  /** Last-seen values for change detection — avoids per-block coef refresh. */
+  private lastMode = -1;
+  private lastRoot = -1;
+  private lastQ = -1;
+  /** Cached pan gains per band, recomputed when `spread` changes. */
+  private panL = new Float32Array(NUM_BANDS).fill(Math.SQRT1_2);
+  private panR = new Float32Array(NUM_BANDS).fill(Math.SQRT1_2);
+  private lastSpread = -1;
+  /** Per-band "use external return" mask, set via 'returnMask' message. */
+  private returnPatched = new Array<boolean>(NUM_BANDS).fill(false);
+
   private wavBuf = new Float32Array(256);
   private wavWriteIdx = 0;
   private framesSincePost = 0;
-  /** Bandflash array sent alongside wavBuf so the card flash-decays in
-   *  sync with the worklet's envelopes (rather than tracking pings
-   *  separately on the main thread). */
   private bandFlash = new Float32Array(NUM_BANDS);
 
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
     for (let i = 0; i < NUM_BANDS; i++) {
-      this.bpfL.push(makeBiquadBpf(CENTER_HZ[i]!, Q, sampleRate));
-      this.bpfR.push(makeBiquadBpf(CENTER_HZ[i]!, Q, sampleRate));
+      this.bpfL.push(makeBiquadBpf(LOG_CENTER_HZ[i]!, 6.0, sampleRate));
+      this.bpfR.push(makeBiquadBpf(LOG_CENTER_HZ[i]!, 6.0, sampleRate));
       this.envs.push(makeEnv());
     }
+    this.port.onmessage = (ev: MessageEvent): void => {
+      const data = ev.data as { type?: string; mask?: boolean[] } | null;
+      if (data && data.type === 'returnMask' && Array.isArray(data.mask)) {
+        for (let b = 0; b < NUM_BANDS; b++) {
+          this.returnPatched[b] = !!data.mask[b];
+        }
+      }
+    };
   }
 
   private rand(): number {
-    // Mulberry32-style PRNG would be nicer; Math.random suffices since
-    // jitter is purely cosmetic.
     return Math.random();
+  }
+
+  private refreshPan(spread: number): void {
+    if (spread === this.lastSpread) return;
+    this.lastSpread = spread;
+    const n = NUM_BANDS;
+    const center = (n - 1) / 2;
+    for (let i = 0; i < n; i++) {
+      const dist = Math.abs(i - center) / center;
+      const sign = i % 2 === 0 ? -1 : 1;
+      const p = Math.max(-1, Math.min(1, sign * dist * spread));
+      const theta = ((p + 1) / 2) * (Math.PI / 2);
+      this.panL[i] = Math.cos(theta);
+      this.panR[i] = Math.sin(theta);
+    }
+  }
+
+  private refreshFilters(tuningMode: number, rootMidi: number, q: number): void {
+    if (tuningMode === this.lastMode && rootMidi === this.lastRoot && q === this.lastQ) return;
+    this.lastMode = tuningMode;
+    this.lastRoot = rootMidi;
+    this.lastQ = q;
+    for (let b = 0; b < NUM_BANDS; b++) {
+      const fc = bandCenterHz(tuningMode, rootMidi, b);
+      refreshBiquad(this.bpfL[b]!, fc, q, sampleRate);
+      refreshBiquad(this.bpfR[b]!, fc, q, sampleRate);
+    }
   }
 
   process(
@@ -284,44 +324,40 @@ class WarrenspectrumProcessor extends AudioWorkletProcessor {
     const outR = outputs[1]?.[0];
     if (!outL || !outR) return true;
 
+    const outBands = outputs[2]; // 8-channel per-band out (optional)
+
     const inL = inputs[0]?.[0];
     const inR = inputs[1]?.[0];
-    // Pings: input index 2 is the 8-channel ping bus. Each channel maps
-    // to one band. The host wires 8 separate ping inputs into channels
-    // 0..7 of this input via a ChannelMergerNode.
     const pingsInput = inputs[2];
+    const returnsInput = inputs[3];
 
-    const pingDecayKnob = parameters.pingDecay![0] ?? 0.5;
-    // Map 0..1 → 100..800ms (ping decay range per spec).
+    const pingDecayKnob = parameters.pingDecay?.[0] ?? 0.5;
     const pingDecaySec = 0.1 + pingDecayKnob * 0.7;
-    const ATTACK_MS_BASE = 20; // mid of 10-30 range
+    const ATTACK_MS_BASE = 20;
     const DRIVE = 4.0;
-    // Excitation drive levels. CLICK is the initial transient amplitude
-    // (gives the sharp attack). NOISE is the sustained excitation that
-    // keeps the bandpass ringing through the envelope decay. Values
-    // tuned so a single ping at level=1 produces ~0.3 peak output on the
-    // center band before master*0.25 master attenuation — clearly audible
-    // without clipping.
     const CLICK_DRIVE = 8.0;
     const NOISE_DRIVE = 1.5;
 
-    const masterArr = parameters.master!;
+    const tuningMode = parameters.tuningMode?.[0] ?? 0;
+    const rootMidi = parameters.root?.[0] ?? 60;
+    const qVal = parameters.q?.[0] ?? 6;
+    const spreadVal = parameters.spread?.[0] ?? 0;
+    const bleedVal = parameters.bleed?.[0] ?? 1;
 
+    this.refreshFilters(tuningMode, rootMidi, qVal);
+    this.refreshPan(spreadVal);
+
+    const masterArr = parameters.master ?? new Float32Array([1]);
     const blockSize = outL.length;
 
-    // Detect rising edges per band, then apply ping (which writes into
-    // multiple envs via bleed). We do edge detection at the start of
-    // the block — sample-accurate within a 128-sample block, which is
-    // ~2.7ms — well below perceptual ping timing.
     if (pingsInput) {
       for (let b = 0; b < NUM_BANDS; b++) {
         const ch = pingsInput[b];
         if (!ch) continue;
-        // Use the FIRST sample of the block as the gate level.
         const gate = ch[0] ?? 0;
         const prev = this.envs[b]!.prevGate;
         if (gate >= 0.5 && prev < 0.5) {
-          applyPing(this.envs, b, pingDecaySec, ATTACK_MS_BASE, sampleRate, () => this.rand());
+          applyPing(this.envs, b, pingDecaySec, ATTACK_MS_BASE, bleedVal, sampleRate, () => this.rand());
           this.bandFlash[b] = 1.0;
         }
         this.envs[b]!.prevGate = gate;
@@ -339,49 +375,50 @@ class WarrenspectrumProcessor extends AudioWorkletProcessor {
         const e = this.envs[b]!;
         const envOut = stepEnv(e, DRIVE);
 
-        // (1) Click impulse — sharp broadband transient on rising edge.
-        //     ~1ms decay; gives the initial attack/click character.
         const clickAmp = e.click * CLICK_DRIVE;
         e.click = e.click * 0.98;
         if (e.click < 1e-5) e.click = 0;
 
-        // (2) Envelope-gated noise — sustains the bandpass excitation
-        //     through the vactrol's full 100-800ms decay so the band
-        //     rings audibly for the whole envelope. Without this the
-        //     bandpass (Q=6) only rings ~3ms past the click and the
-        //     vactrol envelope has nothing to shape.
         const noise = (Math.random() * 2 - 1) * envOut * NOISE_DRIVE;
-
         const excitation = clickAmp + noise;
 
-        const lvlArr = parameters[`level${b + 1}`]!;
-        const lvl = lvlArr.length > 1 ? lvlArr[i]! : lvlArr[0]!;
-        // Vactrol "pump": envOut boosts the band's post-filter gain so
-        // the perceived brightness peaks with the envelope, then dims.
+        const lvlArr = parameters[`level${b + 1}`];
+        const lvl = lvlArr ? (lvlArr.length > 1 ? lvlArr[i]! : lvlArr[0]!) : 1.0;
         const bandGain = lvl * (1 + envOut * 0.5);
 
-        const yL = processBiquad(this.bpfL[b]!, xL + excitation) * bandGain;
-        const yR = processBiquad(this.bpfR[b]!, xR + excitation) * bandGain;
-        sumL += yL;
-        sumR += yR;
+        const filteredL = processBiquad(this.bpfL[b]!, xL + excitation) * bandGain;
+        const filteredR = processBiquad(this.bpfR[b]!, xR + excitation) * bandGain;
+
+        // Per-band mono send: pre-pan, post-envelope, post-level so the
+        // external send carries the same band signal the internal mix
+        // uses (minus pan).
+        const bandMono = (filteredL + filteredR) * 0.5;
+        const bandOutCh = outBands?.[b];
+        if (bandOutCh) bandOutCh[i] = bandMono;
+
+        // Stereo mix contribution: if a band return is patched, use the
+        // external return (post-effect) for the mix; otherwise use the
+        // internal band signal. Pan via equal-power gains derived from
+        // the spread param.
+        const mixMono = (this.returnPatched[b] && returnsInput?.[b])
+          ? (returnsInput[b]![i] ?? 0)
+          : bandMono;
+        sumL += mixMono * this.panL[b]!;
+        sumR += mixMono * this.panR[b]!;
       }
 
       const master = masterArr.length > 1 ? masterArr[i]! : masterArr[0]!;
       outL[i] = sumL * master * 0.25;
       outR[i] = sumR * master * 0.25;
 
-      // Capture L-input snapshot (the dry input) for the viz.
       this.wavBuf[this.wavWriteIdx] = xL;
       this.wavWriteIdx = (this.wavWriteIdx + 1) % this.wavBuf.length;
     }
 
-    // Post snapshot to the main thread at ~30Hz.
     this.framesSincePost += blockSize;
     const POST_INTERVAL_SAMPLES = sampleRate / 30;
     if (this.framesSincePost >= POST_INTERVAL_SAMPLES) {
       this.framesSincePost = 0;
-      // Decay flashes by ~30% per snapshot (matches ~0.92/frame at 60fps
-      // on the card draw — close enough; card also decays locally).
       const flashCopy = new Float32Array(this.bandFlash);
       for (let b = 0; b < NUM_BANDS; b++) {
         this.bandFlash[b] = this.bandFlash[b]! * 0.65;
