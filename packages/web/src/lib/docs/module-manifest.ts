@@ -139,6 +139,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Dual-channel multi-mode utility (Mutable Instruments Peaks archetype, Émilie Gillet, 2013, MIT-licensed). Each channel selects one of five modes — KICK (sine carrier + pitch envelope + amp envelope), SNARE (body sine + filtered noise + decay), HIHAT (six-square metallic cluster + bandpass + decay), ENV (attack-decay envelope, CV-output 0..1, re-attacks on gate), LFO (sine/triangle/square, CV-output ±1, phase resets on gate). Two mode-dependent knobs per channel: knob1 = pitch/mix/brightness/attack/rate; knob2 = decay or waveshape. Gate input retriggers the active engine on rising edges. v1 ships five modes; multistage envelope / tap-LFO / BPF mode deferred to follow-up.',
   warps:
     'Meta-modulator / signal masher (Mutable Instruments Warps archetype, Émilie Gillet, 2014, MIT-licensed). Clean-room pure-TypeScript port — four cross-modulation algorithms (0=XFADE equal-power crossfade, 1=RING-MOD digital ring modulation with TIMBRE drive, 2=XOR 16-bit bit-mash crossfaded against a 0.7-sum, 3=COMPARE Warps\' direct/threshold/window comparator suite). An internal carrier oscillator (sine / triangle / saw / square selectable via the SHAPE knob) drives the carrier path when carrier_in is unpatched, so the module is usable as a one-input ring modulator or with no inputs at all. PITCH is V/oct on the internal carrier; NOTE is a ±60-semitone offset. LEVEL 1 / LEVEL 2 scale the carrier and modulator inputs. Output is mono softclipped through x/(1+|x|). FOLD / ANALOG-RING / FREQUENCY-SHIFTER / DOPPLER / VOCODER algorithms deferred to a follow-up PR.',
+  veils:
+    'Quad VCA + soft-clip summing mix (Mutable Instruments Veils archetype — analog hardware, clean-room from-spec impl). Four independent VCAs, each with audio in, CV in (summed with knob), gain knob spanning [0, 2], and a per-channel response toggle: LIN for CV / control signals, EXP (squared) for audio / smooth fades. Per-channel direct outs are pre-mix, pre-clip. A separate MIX out sums all four channels and applies a tanh soft-clip — gain is NOT clamped at 1.0 per channel, so knob + CV can push above unity for warm overdrive on the mix bus.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -325,6 +327,20 @@ const PORT_NOTES: Record<string, string> = {
   'stereovca.strength_r': 'Right strength / ring carrier. Normalled to strength_l when unpatched (one strength drives both VCAs).',
   'stereovca.out_l':      'Left output: in_l * (strength_l + offset) * level.',
   'stereovca.out_r':      'Right output: in_r * (strength_r + offset) * level.',
+  // VEILS — quad VCA + soft-clip summing mix.
+  'veils.in1':   'Channel 1 audio input. Multiplied by shape(gain1 + cv1).',
+  'veils.in2':   'Channel 2 audio input. Multiplied by shape(gain2 + cv2).',
+  'veils.in3':   'Channel 3 audio input. Multiplied by shape(gain3 + cv3).',
+  'veils.in4':   'Channel 4 audio input. Multiplied by shape(gain4 + cv4).',
+  'veils.cv1':   'Channel 1 gain CV. Sums with the gain knob; raw bipolar carrier (PASSTHROUGH_BY_DESIGN — knob range [0,2] already accommodates a ±1V LFO swing at unity-knob).',
+  'veils.cv2':   'Channel 2 gain CV. Sums with the gain knob.',
+  'veils.cv3':   'Channel 3 gain CV. Sums with the gain knob.',
+  'veils.cv4':   'Channel 4 gain CV. Sums with the gain knob.',
+  'veils.out1':  'Channel 1 direct out (post-VCA, pre-mix, pre-clip).',
+  'veils.out2':  'Channel 2 direct out (post-VCA, pre-mix, pre-clip).',
+  'veils.out3':  'Channel 3 direct out (post-VCA, pre-mix, pre-clip).',
+  'veils.out4':  'Channel 4 direct out (post-VCA, pre-mix, pre-clip).',
+  'veils.mix':   'Soft-clipped mix output: tanh(out1 + out2 + out3 + out4). Gain is not clamped at 1.0 per channel, so summing pushes the mix into warm tanh saturation when knob + CV drive the channels hard.',
   // MACROOSCILLATOR — Plaits-style macro oscillator.
   'macrooscillator.pitch':    'V/oct pitch input (1 unit = 1 octave). Sums with the NOTE param.',
   'macrooscillator.trig':     'Gate input — rising edge resets the oscillator phase accumulators for clean percussive attack alignment.',

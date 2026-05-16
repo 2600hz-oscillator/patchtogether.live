@@ -200,6 +200,12 @@ type StandardModuleType =
   // FOLD / ANALOG-RING / FREQUENCY-SHIFTER / DOPPLER / VOCODER deferred
   // to follow-up.
   | 'warps'
+  // VEILS — quad VCA + soft-clip summing mix (Mutable Instruments Veils
+  // archetype). 4 independent VCAs each with audio in, CV in, gain knob,
+  // per-channel response toggle (linear / exponential), and a direct out;
+  // plus a tanh-soft-clipped sum mix out. Gain knobs span [0, 2] so
+  // knob+CV can push past unity into warm overdrive.
+  | 'veils'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
