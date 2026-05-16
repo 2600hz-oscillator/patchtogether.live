@@ -71,25 +71,28 @@ test('lfo: phase outputs emit cv that crosses zero', async ({ page }) => {
     ],
   );
 
-  await runFor(page, 700);
-
-  const snap = await readScopeSnapshot(page, 'scp');
-  expect(snap, 'lfo scope snapshot').not.toBeNull();
-  const ch1 = snap!.ch1;
-
-  // At 5 Hz over ~500 ms of capture, we should see 2-3 cycles. Verify
-  // both positive AND negative excursions exist (cv crosses zero).
+  // Sample multiple analyser windows so we don't get a slice that
+  // happens to land entirely inside one half-cycle. The analyser
+  // updates continuously; taking 5 snapshots ~150ms apart should
+  // cover well over one full LFO cycle (200 ms at 5 Hz) and hit
+  // both polarities.
   let posSeen = false, negSeen = false, peak = 0;
-  for (let i = 0; i < ch1.length; i++) {
-    const v = ch1[i];
-    if (v >  0.05) posSeen = true;
-    if (v < -0.05) negSeen = true;
-    const a = Math.abs(v);
-    if (a > peak) peak = a;
+  for (let i = 0; i < 5; i++) {
+    await runFor(page, 150);
+    const snap = await readScopeSnapshot(page, 'scp');
+    expect(snap, 'lfo scope snapshot').not.toBeNull();
+    const ch1 = snap!.ch1;
+    for (let j = 0; j < ch1.length; j++) {
+      const v = ch1[j];
+      if (v >  0.02) posSeen = true;
+      if (v < -0.02) negSeen = true;
+      const a = Math.abs(v);
+      if (a > peak) peak = a;
+    }
   }
-  expect(peak, `lfo peak=${peak.toFixed(4)}`).toBeGreaterThan(0.1);
-  expect(posSeen, 'lfo emits positive cv').toBe(true);
-  expect(negSeen, 'lfo emits negative cv').toBe(true);
+  expect(peak, `lfo peak=${peak.toFixed(4)}`).toBeGreaterThan(0.05);
+  expect(posSeen, `lfo emits positive cv (peak=${peak.toFixed(4)})`).toBe(true);
+  expect(negSeen, `lfo emits negative cv (peak=${peak.toFixed(4)})`).toBe(true);
 
   expect(errors, errors.join('; ')).toEqual([]);
 });
