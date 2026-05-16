@@ -133,6 +133,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Plaits-style macro oscillator (Mutable Instruments archetype). Clean-room pure-TypeScript implementation — not a port of Plaits\' C++ source (see PR #27 for the closed emscripten attempt). First-slice scope ships two synthesis models behind the three canonical macros (HARMONICS / TIMBRE / MORPH): (0) virtual analog (VA) — morphing saw→square→triangle PolyBLEP wave + detuned partner (HARMONICS = detune amount) + wavefolder (TIMBRE = fold amount); (1) waveshape — sine through a morphable wavefolder/tanh-waveshaper (TIMBRE = drive, MORPH = wavefolder↔tanh, HARMONICS = sub-octave mix). PITCH input is V/oct; NOTE param is a ±60-semitone offset on top. TRIG resets phase on rising edge for percussive attack alignment. OUT is the level-scaled main output; AUX is a per-model raw tap (unfolded sub-octave triangle in VA, pre-distortion body in waveshape). More models (granular, FM, chord, speech, kick/snare/hat, modal, etc.) land in follow-up PRs.',
   clouds:
     'Granular texture processor (Mutable Instruments Clouds archetype, Émilie Gillet, 2014, MIT-licensed) — 2-second stereo ring buffer + overlap-added grain cloud (up to 24 grains) + latched FREEZE. Six macros (Position / Size / Pitch / Density / Texture / Blend) with V/oct grain-pitch tracking on the pitch input. v1 ships GRANULAR mode only; STRETCH / LOOPING-DELAY / SPECTRAL modes deferred to follow-up.',
+  rings:
+    'Modal / sympathetic-string resonator (Mutable Instruments Rings archetype). Faithful TypeScript port of the eurorack/rings/ DSP (MIT-licensed). v1 ships two resonator models: (0) MODAL — bank of 24 parallel stiffness-stretched RBJ bandpasses with cosine-weighted Odd/Even pickup taps; (1) SYMPATHETIC — 2 parallel Karplus-Strong delay lines with one-pole damping. STRUCTURE/BRIGHTNESS/DAMPING/POSITION are the canonical Rings knobs; LEVEL is a soft-limited output gain. EXCITER in drives both engines; STRUM rising edge re-ignites a ~10ms noise burst (KS) or impulse (modal). Outputs odd / even — patch both for stereo. Polyphony 1; STRING+REVERB deferred.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -330,6 +332,20 @@ const PORT_NOTES: Record<string, string> = {
   'macrooscillator.level_cv': 'CV → LEVEL (0..1) — final scalar on the OUT port (AUX is unaffected).',
   'macrooscillator.out':      'Main audio output, post-LEVEL.',
   'macrooscillator.aux':      'Auxiliary output — per-model raw tap: unfolded sub-octave triangle (VA) or pre-distortion body sine (WAVESHAPE). Not LEVEL-scaled.',
+
+  // RINGS
+  'rings.in':        'Audio exciter — drives the resonator(s).',
+  'rings.pitch':     'V/oct pitch input.',
+  'rings.strum':     'Gate — rising edge re-ignites burst (KS) or impulse (modal).',
+  'rings.model_cv':  'CV → model (discrete: 0=MODAL, 1=SYMPATHETIC).',
+  'rings.note_cv':   'CV → note (±60-semitone offset).',
+  'rings.str_cv':    'CV → STRUCTURE (0..1).',
+  'rings.bright_cv': 'CV → BRIGHTNESS (0..1).',
+  'rings.damp_cv':   'CV → DAMPING (0..1). Low = long ring; high = fast decay.',
+  'rings.pos_cv':    'CV → POSITION (0..1).',
+  'rings.level_cv':  'CV → LEVEL (0..1) — soft-limited output gain.',
+  'rings.odd':       'Primary output — odd-indexed mode sum (MODAL) or odd-tap string mix (SYMPATHETIC).',
+  'rings.even':      'Secondary output — even-indexed mode sum / even-tap mix.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];

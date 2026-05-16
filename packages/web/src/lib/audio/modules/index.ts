@@ -42,6 +42,7 @@ import { macrooscillatorDef } from './macrooscillator';
 import { samsloopDef } from './samsloop';
 import { cloudsDef } from './clouds';
 import { macseqDef } from './macseq';
+import { ringsDef } from './rings';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -89,6 +90,7 @@ export function registerAudioModules(): void {
   registerModule(samsloopDef);
   registerModule(cloudsDef);
   registerModule(macseqDef);
+  registerModule(ringsDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
