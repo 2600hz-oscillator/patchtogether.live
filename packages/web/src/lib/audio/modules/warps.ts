@@ -1,0 +1,224 @@
+// packages/web/src/lib/audio/modules/warps.ts
+//
+// WARPS — Mutable Instruments Warps meta-modulator / signal masher.
+// Clean-room TypeScript port. Original C++ Copyright 2014 Emilie Gillet,
+// MIT-licensed (https://github.com/pichenettes/eurorack/tree/master/warps).
+// Pure-math mirror lives in this file; the actual audio path runs in the
+// worklet at packages/dsp/src/warps.ts. Keep the two implementations
+// numerically identical — drift here means the unit tests + ART scenarios
+// diverge from the audible output.
+//
+// v1 algorithm slice (mandatory): XFADE / RING-MOD / XOR / COMPARATOR.
+// Stretch (deferred): FOLD, ANALOG-RING, FREQUENCY-SHIFTER, DOPPLER,
+// VOCODER — see PR body for the deferral note.
+
+import type { AudioDomainNodeHandle } from '$lib/audio/engine';
+import type { AudioModuleDef } from '$lib/audio/module-registry';
+import workletUrl from '@patchtogether.live/dsp/dist/warps.js?url';
+
+const PROCESSOR_NAME = 'warps';
+const loadedContexts = new WeakSet<BaseAudioContext>();
+
+// ----------------------------------------------------------------------------
+// Pure-math mirror — see worklet for line-by-line counterpart.
+// ----------------------------------------------------------------------------
+
+function _softLimit(x: number): number {
+  return x / (1 + Math.abs(x));
+}
+
+class _InternalOsc {
+  phase = 0;
+  tick(freq: number, shape: number, sr: number): number {
+    const dt = freq / sr;
+    this.phase += dt;
+    if (this.phase >= 1) this.phase -= 1;
+    const t = this.phase;
+    const s = Math.max(0, Math.min(1, shape));
+    if (s < 0.25) return Math.sin(2 * Math.PI * t);
+    if (s < 0.5)  return 1 - 4 * Math.abs(t - 0.5);
+    if (s < 0.75) return 2 * t - 1;
+    return t < 0.5 ? 1 : -1;
+  }
+  reset(): void { this.phase = 0; }
+}
+
+export function warpsXfade(carrier: number, modulator: number, parameter: number): number {
+  const p = Math.max(0, Math.min(1, parameter));
+  const g1 = Math.cos(p * Math.PI * 0.5);
+  const g2 = Math.sin(p * Math.PI * 0.5);
+  return carrier * g1 + modulator * g2;
+}
+
+export function warpsRingMod(x1: number, x2: number, parameter: number): number {
+  const ring = 4 * x1 * x2 * (1 + parameter * 8);
+  return ring / (1 + Math.abs(ring));
+}
+
+export function warpsXor(x1: number, x2: number, parameter: number): number {
+  const x1s = Math.max(-32768, Math.min(32767, Math.round(x1 * 32768))) | 0;
+  const x2s = Math.max(-32768, Math.min(32767, Math.round(x2 * 32768))) | 0;
+  const mod = (x1s ^ x2s) / 32768;
+  const sum = (x1 + x2) * 0.7;
+  return sum + (mod - sum) * parameter;
+}
+
+export function warpsComparator(modulator: number, carrier: number, parameter: number): number {
+  const x = Math.max(0, Math.min(2.995, parameter * 2.995));
+  const xInt = Math.floor(x);
+  const xFrac = x - xInt;
+  const direct = modulator < carrier ? modulator : carrier;
+  const window = Math.abs(modulator) > Math.abs(carrier) ? modulator : carrier;
+  const window2 = Math.abs(modulator) > Math.abs(carrier)
+    ? Math.abs(modulator) : -Math.abs(carrier);
+  const threshold = carrier > 0.05 ? carrier : modulator;
+  const sequence = [direct, threshold, window, window2];
+  const a = sequence[xInt]!;
+  const b = sequence[xInt + 1] ?? sequence[xInt]!;
+  return a + (b - a) * xFrac;
+}
+
+export function warpsApplyAlgorithm(
+  algorithm: number,
+  carrier: number,
+  modulator: number,
+  parameter: number,
+): number {
+  const idx = Math.max(0, Math.min(WARPS_MAX_ALGORITHM, Math.round(algorithm)));
+  switch (idx) {
+    case 0: return warpsXfade(carrier, modulator, parameter);
+    case 1: return warpsRingMod(carrier, modulator, parameter);
+    case 2: return warpsXor(carrier, modulator, parameter);
+    case 3: return warpsComparator(modulator, carrier, parameter);
+    default: return warpsXfade(carrier, modulator, parameter);
+  }
+}
+
+/** Highest legal algorithm index. Bump when more Xmod algorithms land. */
+export const WARPS_MAX_ALGORITHM = 3;
+
+export const WARPS_ALGORITHM_NAMES = ['XFADE', 'RING-MOD', 'XOR', 'COMPARE'] as const;
+
+export interface WarpsParams {
+  algorithm: number;
+  carrier_shape: number;
+  timbre: number;
+  level_1: number;
+  level_2: number;
+  note: number;
+}
+
+/** Pure-math render — called from unit tests + ART. The worklet at
+ *  packages/dsp/src/warps.ts implements the same loop. */
+export const warpsMath = {
+  xfade: warpsXfade,
+  ringMod: warpsRingMod,
+  xor: warpsXor,
+  comparator: warpsComparator,
+  applyAlgorithm: warpsApplyAlgorithm,
+  internalOsc(sr: number): _InternalOsc { return new _InternalOsc(); },
+
+  /** Render n samples at constant params. `carrierIn` and `modulatorIn`
+   *  may be null to leave them unpatched (internal carrier osc takes over;
+   *  modulator goes to zero). pitchV is V/oct, summed with params.note. */
+  render(
+    n: number,
+    sr: number,
+    pitchV: number,
+    params: WarpsParams,
+    carrierIn: Float32Array | null,
+    modulatorIn: Float32Array | null,
+  ): Float32Array {
+    const out = new Float32Array(n);
+    const osc = new _InternalOsc();
+    const semis = pitchV * 12 + params.note;
+    let freq = 261.6256 * Math.pow(2, semis / 12);
+    if (freq < 1) freq = 1; else if (freq > 20000) freq = 20000;
+    for (let i = 0; i < n; i++) {
+      const internal = osc.tick(freq, params.carrier_shape, sr);
+      const carrier = carrierIn ? (carrierIn[i] ?? 0) : internal;
+      const modulator = modulatorIn ? (modulatorIn[i] ?? 0) : 0;
+      const cScaled = carrier * params.level_1;
+      const mScaled = modulator * params.level_2;
+      const y = warpsApplyAlgorithm(params.algorithm, cScaled, mScaled, params.timbre);
+      out[i] = _softLimit(y);
+    }
+    return out;
+  },
+};
+
+export const warpsDef: AudioModuleDef = {
+  type: 'warps',
+  domain: 'audio',
+  label: 'WARPS',
+  category: 'effects',
+  schemaVersion: 1,
+
+  inputs: [
+    { id: 'carrier_in',      type: 'audio' },
+    { id: 'modulator_in',    type: 'audio' },
+    { id: 'pitch',           type: 'pitch' },
+    { id: 'algorithm_cv',    type: 'cv', paramTarget: 'algorithm',     cvScale: { mode: 'discrete' } },
+    { id: 'carrier_shape_cv', type: 'cv', paramTarget: 'carrier_shape', cvScale: { mode: 'linear' } },
+    { id: 'timbre_cv',       type: 'cv', paramTarget: 'timbre',        cvScale: { mode: 'linear' } },
+    { id: 'level_1_cv',      type: 'cv', paramTarget: 'level_1',       cvScale: { mode: 'linear' } },
+    { id: 'level_2_cv',      type: 'cv', paramTarget: 'level_2',       cvScale: { mode: 'linear' } },
+  ],
+  outputs: [
+    { id: 'out', type: 'audio' },
+  ],
+  params: [
+    { id: 'algorithm',     label: 'Algorithm', defaultValue: 0,   min: 0,   max: WARPS_MAX_ALGORITHM, curve: 'discrete' },
+    { id: 'carrier_shape', label: 'Shape',     defaultValue: 0,   min: 0,   max: 1,                   curve: 'linear' },
+    { id: 'timbre',        label: 'Timbre',    defaultValue: 0.5, min: 0,   max: 1,                   curve: 'linear' },
+    { id: 'level_1',       label: 'Level 1',   defaultValue: 1.0, min: 0,   max: 1,                   curve: 'linear' },
+    { id: 'level_2',       label: 'Level 2',   defaultValue: 1.0, min: 0,   max: 1,                   curve: 'linear' },
+    { id: 'note',          label: 'Note',      defaultValue: 0,   min: -60, max: 60,                  curve: 'linear', units: 'st' },
+  ],
+
+  async factory(ctx, node): Promise<AudioDomainNodeHandle> {
+    if (!loadedContexts.has(ctx)) {
+      await ctx.audioWorklet.addModule(workletUrl);
+      loadedContexts.add(ctx);
+    }
+
+    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+      numberOfInputs: 3,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+
+    const params = worklet.parameters as unknown as Map<string, AudioParam>;
+    const initial = node.params ?? {};
+    for (const def of warpsDef.params) {
+      const v = initial[def.id] ?? def.defaultValue;
+      params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
+    }
+
+    return {
+      domain: 'audio',
+      inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
+        ['carrier_in',       { node: worklet, input: 0 }],
+        ['modulator_in',     { node: worklet, input: 1 }],
+        ['pitch',            { node: worklet, input: 2 }],
+        ['algorithm_cv',     { node: worklet, input: 0, param: params.get('algorithm')! }],
+        ['carrier_shape_cv', { node: worklet, input: 0, param: params.get('carrier_shape')! }],
+        ['timbre_cv',        { node: worklet, input: 0, param: params.get('timbre')! }],
+        ['level_1_cv',       { node: worklet, input: 0, param: params.get('level_1')! }],
+        ['level_2_cv',       { node: worklet, input: 0, param: params.get('level_2')! }],
+      ]),
+      outputs: new Map([
+        ['out', { node: worklet, output: 0 }],
+      ]),
+      setParam(paramId, value) {
+        params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
+      },
+      readParam(paramId) {
+        return params.get(paramId)?.value;
+      },
+      dispose() {
+        try { worklet.disconnect(); } catch { /* */ }
+      },
+    };
+  },
+};
