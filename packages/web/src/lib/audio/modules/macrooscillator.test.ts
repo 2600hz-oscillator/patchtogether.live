@@ -370,6 +370,169 @@ describe('macrooscillatorMath — FM 6-OP model', () => {
   });
 });
 
+describe('macrooscillatorMath — CHORD model', () => {
+  const baseParams: MacroParams = {
+    model: 4,
+    note: 0,
+    harmonics: 0.0, // first shape: octaves
+    timbre: 0.0,    // sine voices
+    morph: 1.0,     // full ensemble
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio at A4', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'CHORD peak above silence').toBeGreaterThan(0.1);
+  });
+
+  it('major-triad shape (harmonics≈0.4 → idx 3) carries energy at the major third (5 semitones up from root = E5 ≈ 554Hz at 440 root)', () => {
+    // floor(0.4 * 8) = 3 → major triad [0, 4, 7, 12]. Root at 440 →
+    // major third at 440 * 2^(4/12) ≈ 554.37 Hz.
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      ...baseParams, harmonics: 0.4, morph: 1.0,
+    }).main.slice(SR / 2);
+    const pRoot = powerAt(tail, 440, SR);
+    const pThird = powerAt(tail, 554.37, SR);
+    const pOffBin = powerAt(tail, 700, SR);
+    expect(pThird, `major 3rd ${pThird} > off-bin ${pOffBin}`).toBeGreaterThan(pOffBin * 5);
+    // Root should still be louder (or comparable) than the third.
+    expect(pRoot).toBeGreaterThan(pOffBin * 5);
+  });
+
+  it('MORPH=0 collapses to root-only (other voices muted)', () => {
+    // At morph=0 only the root voice plays — so the 3rd-bin (554Hz) for
+    // the major triad should be very weak.
+    const root = macrooscillatorMath.render(SR, SR, 0.75, {
+      ...baseParams, harmonics: 0.4, morph: 0,
+    }).main.slice(SR / 2);
+    const full = macrooscillatorMath.render(SR, SR, 0.75, {
+      ...baseParams, harmonics: 0.4, morph: 1,
+    }).main.slice(SR / 2);
+    const root554 = powerAt(root, 554.37, SR);
+    const full554 = powerAt(full, 554.37, SR);
+    expect(
+      full554,
+      `morph=1 3rd-bin ${full554} should massively exceed morph=0 ${root554}`,
+    ).toBeGreaterThan(root554 * 20);
+  });
+
+  it('AUX is the clean root sine (single voice, no chord stack)', () => {
+    const { aux } = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, harmonics: 0.4 });
+    const tail = aux.slice(SR / 2);
+    const pRoot = powerAt(tail, 440, SR);
+    const pThird = powerAt(tail, 554.37, SR);
+    // The chord's 3rd-bin should be tiny on the aux output (root only).
+    expect(pRoot, `aux root ${pRoot} >> aux 3rd ${pThird}`).toBeGreaterThan(pThird * 20);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 4, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `CHORD peak ${peak}`).toBeLessThan(1.5);
+  });
+});
+
+describe('macrooscillatorMath — ADDITIVE model', () => {
+  const baseParams: MacroParams = {
+    model: 5,
+    note: 0,
+    harmonics: 0.0, // integer (no inharmonicity)
+    timbre: 0.0,    // bright spectral tilt
+    morph: 0.5,     // saw-shape (all partials)
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio at A4', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'ADDITIVE peak above silence').toBeGreaterThan(0.05);
+  });
+
+  it('integer partials (harmonics=0) carry strong energy at 2H, 3H, 4H', () => {
+    // All partials at exact integer multiples → 440, 880, 1320, 1760, ...
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, baseParams).main.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pH2 = powerAt(tail, 880, SR);
+    const pH3 = powerAt(tail, 1320, SR);
+    const pH4 = powerAt(tail, 1760, SR);
+    const pOff = powerAt(tail, 600, SR);
+    expect(pFund, `fund ${pFund} > off ${pOff}`).toBeGreaterThan(pOff * 5);
+    expect(pH2, `H2 ${pH2} > off ${pOff}`).toBeGreaterThan(pOff * 3);
+    expect(pH3, `H3 ${pH3} > off ${pOff}`).toBeGreaterThan(pOff * 3);
+    expect(pH4, `H4 ${pH4} > off ${pOff}`).toBeGreaterThan(pOff * 3);
+  });
+
+  it('MORPH=0 (odd-only) suppresses even harmonics (square-like)', () => {
+    const all = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, morph: 0.5 }).main.slice(SR / 2);
+    const oddOnly = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, morph: 0 }).main.slice(SR / 2);
+    const allH2 = powerAt(all, 880, SR);
+    const oddH2 = powerAt(oddOnly, 880, SR);
+    // Even harmonics should be far weaker at morph=0 than morph=0.5.
+    expect(
+      allH2,
+      `morph=0.5 H2 ${allH2} should exceed morph=0 H2 ${oddH2}`,
+    ).toBeGreaterThan(oddH2 * 5);
+  });
+
+  it('TIMBRE controls spectral tilt: high TIMBRE → weak HF rolloff', () => {
+    // At timbre=0, 1/n^0.5 rolloff (bright). At timbre=1, 1/n^2 (warm).
+    // Compare H8/H1 ratio between the two — should drop sharply as TIMBRE grows.
+    const bright = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 0 }).main.slice(SR / 2);
+    const warm = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 1 }).main.slice(SR / 2);
+    const brightRatio = powerAt(bright, 3520, SR) / Math.max(1e-12, powerAt(bright, 440, SR));
+    const warmRatio = powerAt(warm, 3520, SR) / Math.max(1e-12, powerAt(warm, 440, SR));
+    expect(
+      brightRatio,
+      `bright H8/fund ratio ${brightRatio} > warm ${warmRatio}`,
+    ).toBeGreaterThan(warmRatio * 2);
+  });
+
+  it('HARMONICS (inharmonicity) detunes upper partials away from integer harmonics', () => {
+    // At inharm=0, H8 lands at exactly 8 * 440 = 3520. At inharm=1,
+    // H8 lands at 8 * 440 * (1 + 0.1 * 7) = 8 * 440 * 1.7 = 5984.
+    // So the 3520 Hz bin's energy should drop as inharm grows.
+    const integerStack = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, harmonics: 0 }).main.slice(SR / 2);
+    const stretchedStack = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, harmonics: 1 }).main.slice(SR / 2);
+    const integ3520 = powerAt(integerStack, 3520, SR);
+    const stretch3520 = powerAt(stretchedStack, 3520, SR);
+    expect(
+      integ3520,
+      `integer H8 at 3520 ${integ3520} > stretched ${stretch3520}`,
+    ).toBeGreaterThan(stretch3520 * 5);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 5, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `ADDITIVE peak ${peak}`).toBeLessThan(1.5);
+  });
+});
+
 describe('macrooscillatorMath — pitch tracking', () => {
   it('pitchV=0 → C4 (261.6Hz fundamental in VA at morph=0)', () => {
     const { main } = macrooscillatorMath.render(SR, SR, 0, { model: 0, note: 0, harmonics: 0, timbre: 0, morph: 0, level: 1 });
