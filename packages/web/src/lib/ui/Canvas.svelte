@@ -123,6 +123,8 @@
   import MacrooscillatorCard from '$lib/ui/modules/MacrooscillatorCard.svelte';
   // SAMSLOOP — loop-based WAV sample player with varispeed + reverse.
   import SamsloopCard from '$lib/ui/modules/SamsloopCard.svelte';
+  // CLOUDS — granular texture processor (Mutable Instruments Clouds archetype).
+  import CloudsCard from '$lib/ui/modules/CloudsCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -254,6 +256,7 @@
     shimmershine: ShimmershineCard,
     macrooscillator: MacrooscillatorCard,
     samsloop: SamsloopCard,
+    clouds: CloudsCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

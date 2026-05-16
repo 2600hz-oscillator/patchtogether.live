@@ -169,6 +169,14 @@ type StandardModuleType =
   // waveshape. Pure-TS clean-room implementation; not a port of Plaits' C++
   // (see PR #27 for the closed emscripten attempt + .myrobots note).
   | 'macrooscillator'
+  // CLOUDS — granular texture processor (Mutable Instruments Clouds
+  // archetype, Émilie Gillet, 2014, MIT-licensed). Pure-TypeScript port
+  // of the GRANULAR mode: 2-second stereo ring buffer + overlap-added
+  // grain cloud (up to 24 grains) + latched FREEZE + V/oct grain-pitch
+  // tracking. 6 macros (Position / Size / Pitch / Density / Texture /
+  // Blend). v1 ships GRANULAR mode only; STRETCH / LOOPING-DELAY /
+  // SPECTRAL deferred.
+  | 'clouds'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
