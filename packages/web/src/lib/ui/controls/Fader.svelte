@@ -16,6 +16,7 @@
   import { onDestroy, untrack } from 'svelte';
   import WaveformGlyph from './WaveformGlyph.svelte';
   import { skinStore } from '$lib/ui/skins/skin-store.svelte';
+  import { createDragCommit } from './drag-commit';
 
   /** A single inline glyph anchored at a normalized [0,1] fraction along the
    *  fader track. Used by the LFO-shape sliders to render sine/tri/saw/square
@@ -112,8 +113,21 @@
     if (!dragging && !readLive) liveValue = currentValue;
   });
 
+  // rAF-coalesced commit pump. During a drag, pointermove fires at
+  // 120–240 Hz on modern hardware; each call to onchange() mutates the
+  // SyncedStore patch graph and triggers a full snapshot rebuild +
+  // reconciler walk + Svelte UI re-render. Without coalescing, the
+  // resulting main-thread storm starves the audio scheduler's lookahead
+  // window and causes audible tempo drift / glitches (LFOs driving the
+  // same AudioParam don't have this problem — they bypass JS entirely).
+  // dragCommit batches all pointermove updates within one frame into a
+  // single onchange call. Local liveValue still updates synchronously,
+  // so visual feedback is unaffected.
+  const dragCommit = createDragCommit((v) => onchange(v));
+
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
+    dragCommit.dispose();
   });
 
   // Map value ↔ normalized [0,1] using the curve.
@@ -194,14 +208,19 @@
     const newFrac = Math.max(0, Math.min(1, startFrac + dy * sensitivity));
     const newValue = fracToValue(newFrac);
     // Update the local thumb position IMMEDIATELY so the drag feels real,
-    // then propagate to the patch state. The $effect won't re-sync liveValue
-    // while dragging is true, so this assignment is the source of truth for
-    // the thumb during the drag.
+    // then stage the patch-state commit for the next animation frame.
+    // The $effect won't re-sync liveValue while dragging is true, so this
+    // assignment is the source of truth for the thumb during the drag.
     liveValue = newValue;
-    if (newValue !== value) onchange(newValue);
+    if (newValue !== value) dragCommit.commit(newValue);
   }
   function pointerup(e: PointerEvent) {
     dragging = false;
+    // Force-commit the final drag position before the pointer is fully
+    // released. Without this, a trailing rAF could be cancelled by a
+    // re-render storm and the patch store would lag the last visible
+    // thumb position by one frame.
+    dragCommit.flush();
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   }
   function pointercancel(e: PointerEvent) {
@@ -209,6 +228,7 @@
     // we don't clear `dragging`, the motorized readLive loop stays gated off
     // and the thumb freezes.
     dragging = false;
+    dragCommit.flush();
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch { /* capture may have been released already */ }
