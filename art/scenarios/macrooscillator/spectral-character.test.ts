@@ -503,6 +503,121 @@ describe('ART macrooscillator / MODAL model spectral character', () => {
   });
 });
 
+describe('ART macrooscillator / KICK drum spectral character', () => {
+  it('kick has LF-dominated spectrum (energy below 200Hz dominates HF)', () => {
+    // Kick at note=-24 (~65 Hz) with no sweep → mostly LF energy.
+    const { main } = macrooscillatorMath.render(SR, SR, 0, {
+      model: 8, note: -24, harmonics: 0, timbre: 0.2, morph: 0.5, level: 1,
+    });
+    const window = main.slice(0, Math.floor(0.1 * SR));
+    let lfSum = 0;
+    let hfSum = 0;
+    for (const f of [60, 90, 120, 180]) lfSum += powerAt(window, f, SR);
+    for (const f of [2000, 3000, 4000, 5000]) hfSum += powerAt(window, f, SR);
+    expect(lfSum, `kick LF ${lfSum} > HF ${hfSum}`).toBeGreaterThan(hfSum * 3);
+  });
+
+  it('HARMONICS controls pitch sweep: high HARMONICS adds initial chirp HF energy', () => {
+    // With harmonics=1 the kick starts 4 octaves higher and sweeps down,
+    // so the first 5ms should have significant HF content.
+    const noSweep = macrooscillatorMath.render(Math.floor(0.01 * SR), SR, 0, {
+      model: 8, note: -24, harmonics: 0, timbre: 0, morph: 0.3, level: 1,
+    }).main;
+    const fullSweep = macrooscillatorMath.render(Math.floor(0.01 * SR), SR, 0, {
+      model: 8, note: -24, harmonics: 1, timbre: 0, morph: 0.3, level: 1,
+    }).main;
+    const noSweepHF = powerAt(noSweep, 800, SR);
+    const fullSweepHF = powerAt(fullSweep, 800, SR);
+    expect(
+      fullSweepHF,
+      `chirp HF ${fullSweepHF} > no-sweep HF ${noSweepHF}`,
+    ).toBeGreaterThan(noSweepHF * 3);
+  });
+});
+
+describe('ART macrooscillator / SNARE drum spectral character', () => {
+  it('snare with HARMONICS=1 is noise-dominated (energy spread across HF)', () => {
+    const { main } = macrooscillatorMath.render(SR / 4, SR, 0, {
+      model: 9, note: -12, harmonics: 1, timbre: 0.8, morph: 0.3, level: 1,
+    });
+    // Variance of energy across many off-harmonic bins should be small —
+    // noise spreads roughly evenly. Use sum of HF bins as a proxy for
+    // "broadband energy present".
+    let hfBandSum = 0;
+    for (const f of [1500, 2500, 3500, 5500, 7000]) {
+      hfBandSum += powerAt(main, f, SR);
+    }
+    expect(hfBandSum, `snare HF band sum ${hfBandSum}`).toBeGreaterThan(0.01);
+  });
+
+  it('snare with HARMONICS=0 carries the body fundamental at the note pitch', () => {
+    // note=-12 → 130.8 Hz body.
+    const { main } = macrooscillatorMath.render(SR / 4, SR, 0, {
+      model: 9, note: -12, harmonics: 0, timbre: 0.5, morph: 0.3, level: 1,
+    });
+    const window = main.slice(0, Math.floor(0.05 * SR));
+    const pFund = powerAt(window, 130.8, SR);
+    const pOff = powerAt(window, 700, SR);
+    expect(pFund, `body fund ${pFund} > off ${pOff}`).toBeGreaterThan(pOff);
+  });
+});
+
+describe('ART macrooscillator / HIHAT drum spectral character', () => {
+  it('open hihat (MORPH=1) decays much slower than closed hihat (MORPH=0)', () => {
+    const closed = macrooscillatorMath.render(SR / 2, SR, 0, {
+      model: 10, note: 24, harmonics: 0.5, timbre: 0.5, morph: 0, level: 1,
+    }).main;
+    const open = macrooscillatorMath.render(SR / 2, SR, 0, {
+      model: 10, note: 24, harmonics: 0.5, timbre: 0.5, morph: 1, level: 1,
+    }).main;
+    let closedTail = 0;
+    let openTail = 0;
+    const start = Math.floor(0.2 * SR);
+    const end = Math.floor(0.4 * SR);
+    for (let i = start; i < end; i++) {
+      closedTail += closed[i]! * closed[i]!;
+      openTail += open[i]! * open[i]!;
+    }
+    closedTail = Math.sqrt(closedTail / (end - start));
+    openTail = Math.sqrt(openTail / (end - start));
+    expect(openTail, `open tail ${openTail} > closed tail ${closedTail}`).toBeGreaterThan(closedTail * 5);
+  });
+
+  it('HARMONICS shifts the bandpass centre (low → closed, high → open)', () => {
+    // At harmonics=0 the bandpass centre is 2kHz; at harmonics=1 it's 10kHz.
+    // Compare energy at 8kHz between the two.
+    const low = macrooscillatorMath.render(Math.floor(0.05 * SR), SR, 0, {
+      model: 10, note: 24, harmonics: 0, timbre: 0.3, morph: 0.5, level: 1,
+    }).main;
+    const high = macrooscillatorMath.render(Math.floor(0.05 * SR), SR, 0, {
+      model: 10, note: 24, harmonics: 1, timbre: 0.3, morph: 0.5, level: 1,
+    }).main;
+    const low8k = powerAt(low, 8000, SR);
+    const high8k = powerAt(high, 8000, SR);
+    expect(high8k, `high-cut 8kHz ${high8k} > low-cut 8kHz ${low8k}`).toBeGreaterThan(low8k * 2);
+  });
+
+  it('KICK + SNARE + HIHAT finite + bounded at extreme params', () => {
+    for (const model of [8, 9, 10]) {
+      const { main, aux } = macrooscillatorMath.render(SR, SR, 0, {
+        model, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+      });
+      let mainPeak = 0;
+      let auxPeak = 0;
+      for (let i = 0; i < main.length; i++) {
+        expect(Number.isFinite(main[i]!), `model=${model} main[${i}] finite`).toBe(true);
+        expect(Number.isFinite(aux[i]!), `model=${model} aux[${i}] finite`).toBe(true);
+        const a = Math.abs(main[i]!);
+        const b = Math.abs(aux[i]!);
+        if (a > mainPeak) mainPeak = a;
+        if (b > auxPeak) auxPeak = b;
+      }
+      expect(mainPeak, `model=${model} main peak ${mainPeak}`).toBeLessThan(2.5);
+      expect(auxPeak, `model=${model} aux peak ${auxPeak}`).toBeLessThan(2.5);
+    }
+  });
+});
+
 describe('ART macrooscillator / V/oct tracking', () => {
   // CV-range-uniformity / V/oct convention is 1 unit = 1 octave from C4
   // (261.6256 Hz). MACROOSCILLATOR's pitch input must follow this exactly

@@ -275,6 +275,143 @@ const _MODAL_PRESETS: { ratios: number[]; amps: number[] }[] = [
 
 const _MODAL_MODES = 6;
 
+class _KickEngine {
+  phase = 0;
+  pitchEnv = 0;
+  ampEnv = 0;
+  clickEnv = 0;
+  rngState = 0x12345678 | 0;
+  reset(): void {
+    this.phase = 0;
+    this.pitchEnv = 1;
+    this.ampEnv = 1;
+    this.clickEnv = 1;
+  }
+  noise(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff * 2 - 1;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const pitchDecaySec = 0.03;
+    const pitchDecayCoef = Math.exp(-1 / (pitchDecaySec * sr));
+    this.pitchEnv *= pitchDecayCoef;
+    const sweepOctaves = harmonics * 4;
+    const sweepMul = Math.pow(2, sweepOctaves * this.pitchEnv);
+    const currentFreq = Math.min(20000, freq * sweepMul);
+    const ampDecaySec = 0.05 + morph * 1.45;
+    const ampDecayCoef = Math.exp(-1 / (ampDecaySec * sr));
+    this.ampEnv *= ampDecayCoef;
+    const clickDecayCoef = Math.exp(-1 / (0.003 * sr));
+    this.clickEnv *= clickDecayCoef;
+    this.phase += currentFreq / sr;
+    if (this.phase >= 1) this.phase -= 1;
+    const body = Math.sin(2 * Math.PI * this.phase) * this.ampEnv;
+    const click = this.noise() * this.clickEnv * timbre * 0.8;
+    const main = body + click;
+    const auxBody = Math.sin(2 * Math.PI * this.phase) * this.ampEnv;
+    return [main, auxBody];
+  }
+}
+
+class _SnareEngine {
+  phaseA = 0;
+  phaseB = 0.5;
+  bodyEnv = 0;
+  noiseEnv = 0;
+  hpState = 0;
+  rngState = 0xfacefeed | 0;
+  reset(): void {
+    this.phaseA = 0;
+    this.phaseB = 0.5;
+    this.bodyEnv = 1;
+    this.noiseEnv = 1;
+    this.hpState = 0;
+  }
+  noise(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff * 2 - 1;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const bodyDecaySec = 0.05 + morph * 0.45;
+    const bodyDecayCoef = Math.exp(-1 / (bodyDecaySec * sr));
+    this.bodyEnv *= bodyDecayCoef;
+    const noiseDecaySec = 0.1 + morph * 0.6;
+    const noiseDecayCoef = Math.exp(-1 / (noiseDecaySec * sr));
+    this.noiseEnv *= noiseDecayCoef;
+    this.phaseA += freq / sr;
+    if (this.phaseA >= 1) this.phaseA -= 1;
+    this.phaseB += (freq * 1.5) / sr;
+    if (this.phaseB >= 1) this.phaseB -= 1;
+    const body = (Math.sin(2 * Math.PI * this.phaseA) + Math.sin(2 * Math.PI * this.phaseB) * 0.5) * this.bodyEnv * 0.7;
+    const hpCutHz = 200 + timbre * 4800;
+    const hpAlpha = 1 - Math.exp(-2 * Math.PI * hpCutHz / sr);
+    const rawNoise = this.noise();
+    this.hpState += hpAlpha * (rawNoise - this.hpState);
+    const noiseTone = (rawNoise - this.hpState) * this.noiseEnv;
+    const main = body * (1 - harmonics) + noiseTone * harmonics;
+    const aux = body;
+    return [main, aux];
+  }
+}
+
+const _HIHAT_RATIOS = [2.0, 3.0, 4.16, 5.43, 6.79, 8.21];
+
+class _HihatEngine {
+  phases = new Float32Array(_HIHAT_RATIOS.length);
+  ampEnv = 0;
+  bpX1 = 0;
+  bpX2 = 0;
+  bpY1 = 0;
+  bpY2 = 0;
+  rngState = 0xdeadbeef | 0;
+  reset(): void {
+    // Use deterministic offsets (not Math.random) in the math mirror so
+    // tests are repeatable. The worklet uses Math.random for variety;
+    // tests don't care about exact phase, only spectral character.
+    for (let i = 0; i < _HIHAT_RATIOS.length; i++) this.phases[i] = (i + 1) * 0.1;
+    this.ampEnv = 1;
+    this.bpX1 = 0; this.bpX2 = 0; this.bpY1 = 0; this.bpY2 = 0;
+  }
+  noise(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff * 2 - 1;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const decaySec = 0.04 + morph * 0.46;
+    const decayCoef = Math.exp(-1 / (decaySec * sr));
+    this.ampEnv *= decayCoef;
+    let metallic = 0;
+    for (let i = 0; i < _HIHAT_RATIOS.length; i++) {
+      const ratio = _HIHAT_RATIOS[i]!;
+      this.phases[i]! += (freq * ratio) / sr;
+      if (this.phases[i]! >= 1) this.phases[i]! -= 1;
+      const sq = this.phases[i]! < 0.5 ? 1 : -1;
+      metallic += sq;
+    }
+    metallic /= _HIHAT_RATIOS.length;
+    const src = metallic * (1 - timbre) + this.noise() * timbre;
+    const bpFreq = 2000 + harmonics * 8000;
+    const Q = 0.7;
+    const w0 = 2 * Math.PI * bpFreq / sr;
+    const cosW0 = Math.cos(w0);
+    const sinW0 = Math.sin(w0);
+    const alpha = sinW0 / (2 * Q);
+    const b0 = alpha;
+    const b2 = -alpha;
+    const a0 = 1 + alpha;
+    const a1 = -2 * cosW0;
+    const a2 = 1 - alpha;
+    const filtered = (b0 * src + b2 * this.bpX2 - a1 * this.bpY1 - a2 * this.bpY2) / a0;
+    this.bpX2 = this.bpX1;
+    this.bpX1 = src;
+    this.bpY2 = this.bpY1;
+    this.bpY1 = filtered;
+    const main = filtered * this.ampEnv * 0.8;
+    const aux = metallic * this.ampEnv;
+    return [main, aux];
+  }
+}
+
 class _ModalEngine {
   x1 = new Float32Array(_MODAL_MODES);
   x2 = new Float32Array(_MODAL_MODES);
@@ -394,7 +531,8 @@ class _FM6OpEngine {
 
 export interface MacroParams {
   /** 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE,
-   *  6=STRING, 7=MODAL. Rounded to integer in render. */
+   *  6=STRING, 7=MODAL, 8=KICK, 9=SNARE, 10=HIHAT.
+   *  Rounded to integer in render. */
   model: number;
   /** Semitones offset on top of the V/oct pitch input. */
   note: number;
@@ -407,7 +545,7 @@ export interface MacroParams {
 /** Maximum legal model index. Grows as engines land; keep equal to
  *  (number-of-engines − 1) and in sync with MODEL_NAMES on the card +
  *  the model AudioParam's maxValue. */
-export const MACRO_MAX_MODEL = 7;
+export const MACRO_MAX_MODEL = 10;
 
 /** Pure-math helpers — called from unit tests + ART. The actual audio runs
  *  in the worklet at packages/dsp/src/macrooscillator.ts. */
@@ -427,9 +565,15 @@ export const macrooscillatorMath = {
     const add = new _AdditiveEngine();
     const str = new _StringEngine();
     const modal = new _ModalEngine();
-    // STRING needs an excitation burst — emulate the gate rising-edge
-    // reset by calling reset() on the math mirror up front.
+    const kick = new _KickEngine();
+    const snare = new _SnareEngine();
+    const hihat = new _HihatEngine();
+    // STRING + drum models need an excitation burst — emulate the gate
+    // rising-edge reset by calling reset() on the math mirror up front.
     str.reset();
+    kick.reset();
+    snare.reset();
+    hihat.reset();
     const main = new Float32Array(n);
     const aux = new Float32Array(n);
     const semitones = pitchV * 12 + params.note;
@@ -450,6 +594,9 @@ export const macrooscillatorMath = {
       const [addMain, addAux] = add.tick(freq, h, t, m, sr);
       const [strMain, strAux] = str.tick(freq, h, t, m, sr);
       const [modMain, modAux] = modal.tick(freq, h, t, m, sr);
+      const [kickMain, kickAux] = kick.tick(freq, h, t, m, sr);
+      const [snareMain, snareAux] = snare.tick(freq, h, t, m, sr);
+      const [hhMain, hhAux] = hihat.tick(freq, h, t, m, sr);
       let mp = vaMain;
       let ap = vaAux;
       if (modelIdx === 1) { mp = wsMain; ap = wsAux; }
@@ -459,6 +606,9 @@ export const macrooscillatorMath = {
       else if (modelIdx === 5) { mp = addMain; ap = addAux; }
       else if (modelIdx === 6) { mp = strMain; ap = strAux; }
       else if (modelIdx === 7) { mp = modMain; ap = modAux; }
+      else if (modelIdx === 8) { mp = kickMain; ap = kickAux; }
+      else if (modelIdx === 9) { mp = snareMain; ap = snareAux; }
+      else if (modelIdx === 10) { mp = hhMain; ap = hhAux; }
       main[i] = mp * lvl;
       aux[i] = ap;
     }

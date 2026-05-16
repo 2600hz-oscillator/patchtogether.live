@@ -75,6 +75,24 @@
 //     tone keeps ringing without a gate; gate input retriggers the
 //     impulse phase (useful for rhythmic patches).
 //
+//   model = 8  KICK
+//     808-style kick drum: pitched sine with a fast exponential pitch
+//     sweep + amplitude envelope. HARMONICS = sweep range (how far above
+//     base pitch the kick starts; 0 = no chirp, 1 = 4-octave drop).
+//     TIMBRE = click / transient amount (clicks at start). MORPH = body
+//     decay length (short tom, long sub-kick). Re-triggers on gate.
+//   model = 9  SNARE
+//     Pitched 2-osc body + filtered noise burst. HARMONICS = noise/tone
+//     balance (0 = pure tom, 1 = pure noise crack). TIMBRE = noise hipass
+//     cutoff (woody → bright). MORPH = body decay length. Re-triggers
+//     on gate.
+//   model = 10  HIHAT
+//     Six-square-wave metallic core (808 hihat trick — square waves at
+//     incommensurate frequencies) → bandpass → noise gate. HARMONICS
+//     biases the bandpass centre (low = closed, high = open). TIMBRE =
+//     metallic vs noisy balance (square cluster vs filtered noise).
+//     MORPH = decay time (short closed → long open). Gate re-triggers.
+//
 // Both models share:
 //   - PolyBLEP antialiasing on the saw + square primitives (VA).
 //   - PITCH input is V/oct (1 unit = 1 octave) summed with the NOTE param
@@ -808,18 +826,237 @@ class ModalEngine {
   }
 }
 
+// ---------- KICK engine ----------
+
+/** 808-style synthesised kick. Sine carrier with an exponential pitch
+ *  envelope (drops from start-pitch down to PITCH freq over ~30 ms) plus
+ *  an amplitude envelope. A click is layered on for transient attack. */
+class KickEngine {
+  phase = 0;
+  // Pitch envelope (decays exponentially from 1 → 0 over ~30 ms).
+  pitchEnv = 0;
+  // Amplitude envelope (decays exp from 1 → 0 over MORPH-dependent time).
+  ampEnv = 0;
+  // Click envelope (very short transient).
+  clickEnv = 0;
+  // LCG for click noise.
+  rngState = 0x12345678 | 0;
+
+  reset(): void {
+    this.phase = 0;
+    this.pitchEnv = 1;
+    this.ampEnv = 1;
+    this.clickEnv = 1;
+  }
+
+  noise(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff * 2 - 1;
+  }
+
+  tick(
+    freq: number,
+    harmonics: number,
+    timbre: number,
+    morph: number,
+    sr: number,
+  ): [number, number] {
+    // Pitch envelope: decays exp from 1 to 0 over ~30 ms.
+    const pitchDecaySec = 0.03;
+    const pitchDecayCoef = Math.exp(-1 / (pitchDecaySec * sr));
+    this.pitchEnv *= pitchDecayCoef;
+    // HARMONICS scales the sweep range. 0 → no sweep; 1 → up to 4 octaves.
+    const sweepOctaves = harmonics * 4;
+    const sweepMul = Math.pow(2, sweepOctaves * this.pitchEnv);
+    const currentFreq = Math.min(20000, freq * sweepMul);
+
+    // Amplitude envelope. MORPH 0→1 maps to decay 0.05s → 1.5s.
+    const ampDecaySec = 0.05 + morph * 1.45;
+    const ampDecayCoef = Math.exp(-1 / (ampDecaySec * sr));
+    this.ampEnv *= ampDecayCoef;
+
+    // Click envelope (very short — 3 ms).
+    const clickDecayCoef = Math.exp(-1 / (0.003 * sr));
+    this.clickEnv *= clickDecayCoef;
+
+    // Carrier.
+    this.phase += currentFreq / sr;
+    if (this.phase >= 1) this.phase -= 1;
+    const body = Math.sin(2 * Math.PI * this.phase) * this.ampEnv;
+
+    // Click: noise burst weighted by TIMBRE.
+    const click = this.noise() * this.clickEnv * timbre * 0.8;
+
+    const main = body + click;
+    // AUX: clean body only (no click, no pitch sweep — useful for layering).
+    const auxBody = Math.sin(2 * Math.PI * this.phase) * this.ampEnv;
+    return [main, auxBody];
+  }
+}
+
+// ---------- SNARE engine ----------
+
+class SnareEngine {
+  // Two body oscillators detuned for a thicker body.
+  phaseA = 0;
+  phaseB = 0;
+  // Body amplitude envelope.
+  bodyEnv = 0;
+  // Noise amplitude envelope (decays slightly slower than body).
+  noiseEnv = 0;
+  // One-pole hipass state on the noise.
+  hpState = 0;
+  rngState = 0xfacefeed | 0;
+
+  reset(): void {
+    this.phaseA = 0;
+    this.phaseB = 0.5; // anti-phase start so they don't cancel
+    this.bodyEnv = 1;
+    this.noiseEnv = 1;
+    this.hpState = 0;
+  }
+
+  noise(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff * 2 - 1;
+  }
+
+  tick(
+    freq: number,
+    harmonics: number,
+    timbre: number,
+    morph: number,
+    sr: number,
+  ): [number, number] {
+    // Body decay: MORPH 0→1 maps to 0.05s → 0.5s.
+    const bodyDecaySec = 0.05 + morph * 0.45;
+    const bodyDecayCoef = Math.exp(-1 / (bodyDecaySec * sr));
+    this.bodyEnv *= bodyDecayCoef;
+    // Noise decay slightly longer than body — gives the snare its
+    // characteristic "trail".
+    const noiseDecaySec = 0.1 + morph * 0.6;
+    const noiseDecayCoef = Math.exp(-1 / (noiseDecaySec * sr));
+    this.noiseEnv *= noiseDecayCoef;
+
+    // Body oscillators.
+    this.phaseA += freq / sr;
+    if (this.phaseA >= 1) this.phaseA -= 1;
+    // Second osc detuned up a perfect 5th for a body that sounds like a
+    // real snare's resonance.
+    this.phaseB += (freq * 1.5) / sr;
+    if (this.phaseB >= 1) this.phaseB -= 1;
+    const body = (Math.sin(2 * Math.PI * this.phaseA) + Math.sin(2 * Math.PI * this.phaseB) * 0.5) * this.bodyEnv * 0.7;
+
+    // Filtered noise: one-pole hipass with cutoff = 200 Hz + TIMBRE * 4800 Hz.
+    const hpCutHz = 200 + timbre * 4800;
+    const hpAlpha = 1 - Math.exp(-2 * Math.PI * hpCutHz / sr);
+    const rawNoise = this.noise();
+    this.hpState += hpAlpha * (rawNoise - this.hpState);
+    const noiseTone = (rawNoise - this.hpState) * this.noiseEnv;
+
+    // HARMONICS = noise/tone balance. 0 = pure body, 1 = pure noise.
+    const main = body * (1 - harmonics) + noiseTone * harmonics;
+    const aux = body;
+    return [main, aux];
+  }
+}
+
+// ---------- HIHAT engine ----------
+
+/** 808-style hihat: 6 incommensurate square waves clustered above the
+ *  fundamental, bandpassed for metallic shimmer. */
+const HIHAT_RATIOS = [2.0, 3.0, 4.16, 5.43, 6.79, 8.21];
+
+class HihatEngine {
+  // 6 square-wave phase accumulators.
+  phases = new Float32Array(HIHAT_RATIOS.length);
+  // Amplitude envelope.
+  ampEnv = 0;
+  // Bandpass biquad state for the metallic cluster.
+  bpX1 = 0;
+  bpX2 = 0;
+  bpY1 = 0;
+  bpY2 = 0;
+  rngState = 0xdeadbeef | 0;
+
+  reset(): void {
+    for (let i = 0; i < HIHAT_RATIOS.length; i++) {
+      this.phases[i] = Math.random(); // randomise start phases for variety
+    }
+    this.ampEnv = 1;
+    this.bpX1 = 0; this.bpX2 = 0; this.bpY1 = 0; this.bpY2 = 0;
+  }
+
+  noise(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff * 2 - 1;
+  }
+
+  tick(
+    freq: number,
+    harmonics: number,
+    timbre: number,
+    morph: number,
+    sr: number,
+  ): [number, number] {
+    // Decay: MORPH 0→1 maps to 0.04s (closed) → 0.5s (open).
+    const decaySec = 0.04 + morph * 0.46;
+    const decayCoef = Math.exp(-1 / (decaySec * sr));
+    this.ampEnv *= decayCoef;
+
+    // Square cluster.
+    let metallic = 0;
+    for (let i = 0; i < HIHAT_RATIOS.length; i++) {
+      const ratio = HIHAT_RATIOS[i]!;
+      this.phases[i]! += (freq * ratio) / sr;
+      if (this.phases[i]! >= 1) this.phases[i]! -= 1;
+      const sq = this.phases[i]! < 0.5 ? 1 : -1;
+      metallic += sq;
+    }
+    metallic /= HIHAT_RATIOS.length;
+
+    // Source: TIMBRE crossfades between metallic cluster and pure noise.
+    const src = metallic * (1 - timbre) + this.noise() * timbre;
+
+    // Bandpass: centre frequency moved by HARMONICS.
+    // 0 = 2 kHz (closed-hat-like), 1 = 10 kHz (open-hat-like).
+    const bpFreq = 2000 + harmonics * 8000;
+    const Q = 0.7; // wide bandpass; closer to a high-shelf in feel.
+    const w0 = 2 * Math.PI * bpFreq / sr;
+    const cosW0 = Math.cos(w0);
+    const sinW0 = Math.sin(w0);
+    const alpha = sinW0 / (2 * Q);
+    const b0 = alpha;
+    const b2 = -alpha;
+    const a0 = 1 + alpha;
+    const a1 = -2 * cosW0;
+    const a2 = 1 - alpha;
+    const filtered = (b0 * src + b2 * this.bpX2 - a1 * this.bpY1 - a2 * this.bpY2) / a0;
+    this.bpX2 = this.bpX1;
+    this.bpX1 = src;
+    this.bpY2 = this.bpY1;
+    this.bpY1 = filtered;
+
+    const main = filtered * this.ampEnv * 0.8;
+    // AUX: the raw metallic cluster (pre-filter), useful as a different
+    // tonal tap.
+    const aux = metallic * this.ampEnv;
+    return [main, aux];
+  }
+}
+
 // ---------- Top-level processor ----------
 
 class MacrooscillatorProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       // model: 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE,
-      // 6=STRING, 7=MODAL. Quantised in render via Math.round. a-rate so
-      // live model-switching from the CV input is smooth (well, glitchy —
-      // the engines have different state — but the model knob never wants
-      // k-rate quantisation lag). maxValue grows as new engines land; keep
-      // it equal to (MODEL_NAMES.length - 1).
-      { name: 'model',     defaultValue: 0,   minValue: 0,    maxValue: 7, automationRate: 'a-rate' as const },
+      // 6=STRING, 7=MODAL, 8=KICK, 9=SNARE, 10=HIHAT. Quantised in render
+      // via Math.round. a-rate so live model-switching from the CV input
+      // is smooth (well, glitchy — the engines have different state — but
+      // the model knob never wants k-rate quantisation lag). maxValue grows
+      // as new engines land; keep it equal to (MODEL_NAMES.length - 1).
+      { name: 'model',     defaultValue: 0,   minValue: 0,    maxValue: 10, automationRate: 'a-rate' as const },
       // note: ±60 semitones offset on top of the V/oct pitch input.
       { name: 'note',      defaultValue: 0,   minValue: -60,  maxValue: 60, automationRate: 'a-rate' as const },
       { name: 'harmonics', defaultValue: 0.3, minValue: 0,    maxValue: 1,  automationRate: 'a-rate' as const },
@@ -837,6 +1074,9 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
   private add = new AdditiveEngine();
   private str = new StringEngine();
   private modal = new ModalEngine();
+  private kick = new KickEngine();
+  private snare = new SnareEngine();
+  private hihat = new HihatEngine();
   /** Last-block gate value — used for rising-edge detection across the
    *  block boundary so a gate ↑ that lands at the first sample of a new
    *  block still triggers phase reset. */
@@ -895,12 +1135,15 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
         this.add.reset();
         this.str.reset();
         this.modal.reset();
+        this.kick.reset();
+        this.snare.reset();
+        this.hihat.reset();
       }
       this.lastGate = trig;
 
       // Clamp + round model. maxValue grows as engines are added — keep in
       // sync with MODEL_NAMES length in the card.
-      const modelIdx = Math.max(0, Math.min(7, Math.round(model)));
+      const modelIdx = Math.max(0, Math.min(10, Math.round(model)));
 
       const hClamp = Math.max(0, Math.min(1, harmonics));
       const tClamp = Math.max(0, Math.min(1, timbre));
@@ -919,6 +1162,9 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
       const [addMain, addAux] = this.add.tick(freq, hClamp, tClamp, mClamp, sr);
       const [strMain, strAux] = this.str.tick(freq, hClamp, tClamp, mClamp, sr);
       const [modMain, modAux] = this.modal.tick(freq, hClamp, tClamp, mClamp, sr);
+      const [kickMain, kickAux] = this.kick.tick(freq, hClamp, tClamp, mClamp, sr);
+      const [snareMain, snareAux] = this.snare.tick(freq, hClamp, tClamp, mClamp, sr);
+      const [hhMain, hhAux] = this.hihat.tick(freq, hClamp, tClamp, mClamp, sr);
 
       let mainPick = vaMain;
       let auxPick = vaAux;
@@ -929,6 +1175,9 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
       else if (modelIdx === 5) { mainPick = addMain; auxPick = addAux; }
       else if (modelIdx === 6) { mainPick = strMain; auxPick = strAux; }
       else if (modelIdx === 7) { mainPick = modMain; auxPick = modAux; }
+      else if (modelIdx === 8) { mainPick = kickMain; auxPick = kickAux; }
+      else if (modelIdx === 9) { mainPick = snareMain; auxPick = snareAux; }
+      else if (modelIdx === 10) { mainPick = hhMain; auxPick = hhAux; }
 
       const lvl = Math.max(0, Math.min(1, level));
       outMain[i] = mainPick * lvl;

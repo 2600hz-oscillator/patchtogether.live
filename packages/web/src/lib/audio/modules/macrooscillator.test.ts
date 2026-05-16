@@ -681,6 +681,201 @@ describe('macrooscillatorMath — MODAL model', () => {
   });
 });
 
+describe('macrooscillatorMath — KICK model', () => {
+  const baseParams: MacroParams = {
+    model: 8,
+    note: -24, // drop to a kick-drum-y register (~65 Hz)
+    harmonics: 0.7, // sweep ~3 octaves
+    timbre: 0.3,
+    morph: 0.5,
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio on trigger', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'KICK peak above silence').toBeGreaterThan(0.1);
+  });
+
+  it('KICK has decaying amplitude envelope (later samples quieter than initial)', () => {
+    // Force a short morph so the decay test is robust regardless of
+    // exact tuning of the env-time mapping.
+    const { main } = macrooscillatorMath.render(SR / 2, SR, 0, { ...baseParams, morph: 0.0 });
+    // Compare initial RMS (first 20ms) vs late RMS (200-300ms in).
+    let initRms = 0;
+    let lateRms = 0;
+    const initEnd = Math.floor(0.02 * SR);
+    const lateStart = Math.floor(0.2 * SR);
+    const lateEnd = Math.floor(0.3 * SR);
+    for (let i = 0; i < initEnd; i++) initRms += main[i]! * main[i]!;
+    for (let i = lateStart; i < lateEnd; i++) lateRms += main[i]! * main[i]!;
+    initRms = Math.sqrt(initRms / initEnd);
+    lateRms = Math.sqrt(lateRms / (lateEnd - lateStart));
+    expect(initRms, `init RMS ${initRms} > late RMS ${lateRms}`).toBeGreaterThan(lateRms * 5);
+  });
+
+  it('MORPH controls body decay length: morph=0 decays much faster than morph=1', () => {
+    // Long-tail samples (300-500 ms): short-decay should be near silent,
+    // long-decay should still be ringing.
+    const short = macrooscillatorMath.render(SR, SR, 0, { ...baseParams, morph: 0 }).main;
+    const long = macrooscillatorMath.render(SR, SR, 0, { ...baseParams, morph: 1 }).main;
+    let shortRms = 0;
+    let longRms = 0;
+    const start = Math.floor(0.3 * SR);
+    const end = Math.floor(0.5 * SR);
+    for (let i = start; i < end; i++) {
+      shortRms += short[i]! * short[i]!;
+      longRms += long[i]! * long[i]!;
+    }
+    shortRms = Math.sqrt(shortRms / (end - start));
+    longRms = Math.sqrt(longRms / (end - start));
+    expect(longRms, `long ${longRms} > short ${shortRms}`).toBeGreaterThan(shortRms * 5);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0, {
+      model: 8, note: -24, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `KICK peak ${peak}`).toBeLessThan(2.0);
+  });
+});
+
+describe('macrooscillatorMath — SNARE model', () => {
+  const baseParams: MacroParams = {
+    model: 9,
+    note: -12, // ~130 Hz body
+    harmonics: 0.5, // 50/50 body/noise
+    timbre: 0.5,
+    morph: 0.3,
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'SNARE peak above silence').toBeGreaterThan(0.05);
+  });
+
+  it('HARMONICS=0 (pure body) has strong tonal content at the body fundamental', () => {
+    // Note=-12 from pitchV=0 → C4*2^(-1) = 130.8 Hz. Pure body (harmonics=0)
+    // should carry strong energy at 130.8.
+    const { main } = macrooscillatorMath.render(SR / 2, SR, 0, { ...baseParams, harmonics: 0 });
+    // Use the first 100ms before the body decays.
+    const window = main.slice(0, Math.floor(0.1 * SR));
+    const pFund = powerAt(window, 130.8, SR);
+    const pOff = powerAt(window, 800, SR);
+    expect(pFund, `body fund ${pFund} > off-bin ${pOff}`).toBeGreaterThan(pOff * 2);
+  });
+
+  it('HARMONICS=1 (pure noise) has broader spectrum than pure body', () => {
+    const body = macrooscillatorMath.render(SR / 4, SR, 0, { ...baseParams, harmonics: 0 }).main;
+    const noisy = macrooscillatorMath.render(SR / 4, SR, 0, { ...baseParams, harmonics: 1 }).main;
+    // Sum 4 off-fundamental bins. Noise should distribute energy widely
+    // across them; pure body concentrates at the fundamental and its
+    // harmonics.
+    let bodyOffSum = 0;
+    let noisyOffSum = 0;
+    for (const f of [1500, 2500, 3500, 5000]) {
+      bodyOffSum += powerAt(body, f, SR);
+      noisyOffSum += powerAt(noisy, f, SR);
+    }
+    expect(
+      noisyOffSum,
+      `noisy off-band ${noisyOffSum} > body off-band ${bodyOffSum}`,
+    ).toBeGreaterThan(bodyOffSum * 2);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0, {
+      model: 9, note: -12, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `SNARE peak ${peak}`).toBeLessThan(2.0);
+  });
+});
+
+describe('macrooscillatorMath — HIHAT model', () => {
+  const baseParams: MacroParams = {
+    model: 10,
+    note: 24, // ~1 kHz body register
+    harmonics: 0.5, // mid bandpass
+    timbre: 0.5,
+    morph: 0.3, // moderately short decay
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio', () => {
+    const { main } = macrooscillatorMath.render(SR / 4, SR, 0, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'HIHAT peak above silence').toBeGreaterThan(0.01);
+  });
+
+  it('HIHAT has HF-dominated spectrum (energy above 2kHz)', () => {
+    const { main } = macrooscillatorMath.render(SR / 4, SR, 0, baseParams);
+    // HF band (3-7 kHz) should dominate vs LF band (200-800 Hz).
+    let hfSum = 0;
+    let lfSum = 0;
+    for (const f of [3000, 4000, 5500, 7000]) hfSum += powerAt(main, f, SR);
+    for (const f of [200, 400, 600, 800]) lfSum += powerAt(main, f, SR);
+    expect(hfSum, `hihat HF ${hfSum} > LF ${lfSum}`).toBeGreaterThan(lfSum);
+  });
+
+  it('MORPH controls decay length (open vs closed)', () => {
+    const closed = macrooscillatorMath.render(SR / 2, SR, 0, { ...baseParams, morph: 0 }).main;
+    const open = macrooscillatorMath.render(SR / 2, SR, 0, { ...baseParams, morph: 1 }).main;
+    let closedTail = 0;
+    let openTail = 0;
+    const start = Math.floor(0.15 * SR);
+    const end = Math.floor(0.3 * SR);
+    for (let i = start; i < end; i++) {
+      closedTail += closed[i]! * closed[i]!;
+      openTail += open[i]! * open[i]!;
+    }
+    closedTail = Math.sqrt(closedTail / (end - start));
+    openTail = Math.sqrt(openTail / (end - start));
+    expect(openTail, `open tail ${openTail} > closed tail ${closedTail}`).toBeGreaterThan(closedTail * 3);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0, {
+      model: 10, note: 24, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `HIHAT peak ${peak}`).toBeLessThan(2.0);
+  });
+});
+
 describe('macrooscillatorMath — pitch tracking', () => {
   it('pitchV=0 → C4 (261.6Hz fundamental in VA at morph=0)', () => {
     const { main } = macrooscillatorMath.render(SR, SR, 0, { model: 0, note: 0, harmonics: 0, timbre: 0, morph: 0, level: 1 });
