@@ -2,9 +2,21 @@
 //
 // SAMSLOOP — loop-based sample player. User uploads a small audio file
 // (≤250 KB) — anything the browser's AudioContext.decodeAudioData accepts:
-// wav, mp3, m4a/aac, ogg, flac, opus, weba. The file is decoded into a
-// Float32Array, mono-mixed if stereo, and posted into the worklet at
-// packages/dsp/src/samsloop.ts.
+// wav, mp3, m4a/aac, ogg, flac, opus, weba — OR records from the
+// microphone in-place. The source audio is decoded (uploads) or captured
+// (mic) into a Float32Array, mono-mixed if stereo, and posted into the
+// worklet at packages/dsp/src/samsloop.ts.
+//
+// INVARIANT: SAMSLOOP can only hold one sample at a time. A new upload
+// REPLACES the previously loaded sample. A new mic recording REPLACES the
+// previously loaded sample. There is no playlist, no slot system — one
+// instance, one buffer. This is the contract every code path here MUST
+// preserve (the worklet's `loadSample` message replaces its private
+// buffer, and node.data.samples is overwritten in one go). Keeping this
+// invariant means the per-instance memory ceiling is deterministic and
+// our cap math (lib/multiplayer/samsloop-limits.ts) doesn't have to
+// account for any per-slot multiplier.
+//
 // Playback runs via a fractional read-cursor with linear interpolation in
 // the worklet so varispeed (including reverse) doesn't need a separate
 // playback path.
@@ -45,14 +57,28 @@ import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-/** Hard size cap on the uploaded audio file. 250 KB — see card UI. */
+/** Hard size cap on the uploaded audio file. 250 KB — see card UI.
+ *  Also bounds the maximum recorded PCM length (max bytes / 4 = max
+ *  Float32 samples), so mic-record runtime can't bypass the cap. */
 export const SAMSLOOP_MAX_FILE_BYTES = 250 * 1024;
+
+/** Maximum recorded PCM length in samples. Matches the file-upload byte
+ *  cap divided by sizeof(Float32). At 22050 Hz that's ~2.84 seconds; at
+ *  44100 Hz ~1.42 seconds — short enough to feel like a loop, long enough
+ *  to capture a phrase. The mic-record path enforces this hard cap by
+ *  auto-stopping when it would be exceeded. */
+export const SAMSLOOP_MAX_SAMPLES = Math.floor(SAMSLOOP_MAX_FILE_BYTES / 4);
 
 export interface SamsloopData {
   samples?: number[];
   sampleRate?: number;
   sampleLength?: number;
   fileName?: string;
+  /** Multiplayer attribution — set by Canvas's spawnFromPalette when a
+   *  real userId is available. Powers the per-user cap; unattributed
+   *  legacy nodes count toward the rackspace cap only. See
+   *  lib/multiplayer/samsloop-limits.ts. */
+  creatorId?: string;
 }
 
 /** Result of attempting to decode + size-check an audio upload. The card
@@ -109,6 +135,119 @@ export async function loadSamsloopWav(
  *  share one source of truth. See the comment block at the top of the
  *  file for the convention. */
 export const SAMSLOOP_RATE_RANGE = { min: -2, max: 2, defaultValue: 1 } as const;
+
+// ---------- mic-record state machine ----------
+//
+// The card owns the actual MediaStream + AudioContext nodes; this
+// machine is the pure-logic core driving it. Three states:
+//   'idle'      → not recording, ready to start.
+//   'recording' → live capture in progress; samples accumulating.
+//   'stopped'   → recording just ended, sample is loaded into the
+//                  node and the machine is back at idle on next start.
+//
+// Errors (mic permission denied, no device, AudioContext not ready) are
+// surfaced via `error: string | null` rather than thrown — the card
+// renders them inline next to the REC button, matching the upload error
+// surface. The card guarantees that REC and file-upload are mutually
+// exclusive: when one is in-flight the other is disabled.
+
+export type SamsloopRecState = 'idle' | 'recording' | 'stopped';
+
+export interface SamsloopRecMachine {
+  state: SamsloopRecState;
+  /** Recorded samples so far. Empty until `start()` is called, populated
+   *  during 'recording', frozen at the same length when 'stopped'. */
+  samples: Float32Array;
+  /** Sample-rate the recording was captured at. Comes from the
+   *  AudioContext driving the mic-tap node. */
+  sampleRate: number;
+  /** Most recent inline error message, or null. Set on permission-denied
+   *  / no-device / bad-state transitions. */
+  error: string | null;
+  /** Reason the most recent recording terminated, or null while idle/
+   *  active. 'user' = user clicked stop; 'cap' = auto-stop triggered by
+   *  reaching SAMSLOOP_MAX_SAMPLES. */
+  stopReason: 'user' | 'cap' | null;
+}
+
+/** Initial state — fresh idle machine with no samples and no error. */
+export function createSamsloopRecMachine(sampleRate = 22050): SamsloopRecMachine {
+  return {
+    state: 'idle',
+    samples: new Float32Array(0),
+    sampleRate,
+    error: null,
+    stopReason: null,
+  };
+}
+
+/**
+ * Transition: begin recording. Resets the sample buffer (the one-sample
+ * invariant — start always discards the previous take). Only valid from
+ * 'idle' or 'stopped'; calling while 'recording' is a no-op (idempotent
+ * UI clicks shouldn't drop the in-flight capture).
+ *
+ * Pure: returns a NEW machine; does not mutate the input.
+ */
+export function samsloopRecStart(m: SamsloopRecMachine, sampleRate: number): SamsloopRecMachine {
+  if (m.state === 'recording') return m;
+  return {
+    state: 'recording',
+    samples: new Float32Array(0),
+    sampleRate,
+    error: null,
+    stopReason: null,
+  };
+}
+
+/**
+ * Append a chunk of mono Float32 samples to the in-progress recording.
+ * If the new total would exceed SAMSLOOP_MAX_SAMPLES the chunk is
+ * truncated, the machine auto-transitions to 'stopped' with
+ * stopReason='cap', and the caller is expected to surface the
+ * "max length reached" UI message. Called from a MediaStream tap (an
+ * AudioWorkletNode or ScriptProcessor in the card).
+ *
+ * Returns a new machine. Allocates a new Float32Array each call so
+ * downstream consumers can rely on identity changes for reactivity.
+ */
+export function samsloopRecAppend(m: SamsloopRecMachine, chunk: Float32Array): SamsloopRecMachine {
+  if (m.state !== 'recording') return m;
+  const remaining = SAMSLOOP_MAX_SAMPLES - m.samples.length;
+  if (remaining <= 0) {
+    // Already at cap — flip to stopped without altering samples.
+    return { ...m, state: 'stopped', stopReason: 'cap' };
+  }
+  const take = Math.min(remaining, chunk.length);
+  const next = new Float32Array(m.samples.length + take);
+  next.set(m.samples, 0);
+  next.set(chunk.subarray(0, take), m.samples.length);
+  if (next.length >= SAMSLOOP_MAX_SAMPLES) {
+    return { ...m, samples: next, state: 'stopped', stopReason: 'cap' };
+  }
+  return { ...m, samples: next };
+}
+
+/** Transition: stop recording on user request. No-op when already
+ *  stopped or idle (idempotent). */
+export function samsloopRecStop(m: SamsloopRecMachine): SamsloopRecMachine {
+  if (m.state !== 'recording') return m;
+  return { ...m, state: 'stopped', stopReason: 'user' };
+}
+
+/** Transition: mic permission error / no device / context not ready.
+ *  Drops back to idle with the error string set; the card renders it
+ *  inline. NOT a thrown exception — error surfacing is the caller's
+ *  job (we don't want a permission-denied to propagate uncaught). */
+export function samsloopRecFail(m: SamsloopRecMachine, error: string): SamsloopRecMachine {
+  return {
+    state: 'idle',
+    samples: new Float32Array(0),
+    sampleRate: m.sampleRate,
+    error,
+    stopReason: null,
+  };
+}
 
 /** Pure-math helpers — call site is unit tests + the card. Mirrors the
  *  worklet's playback logic (cursor with linear interpolation, wrap on
