@@ -8,6 +8,7 @@
   // patching an LFO into a knob's CV input visibly rotates the tick.
   import type { KnobCurve } from '$lib/graph/types';
   import { onDestroy, untrack } from 'svelte';
+  import { createDragCommit } from './drag-commit';
 
   interface Props {
     value: number;
@@ -68,8 +69,15 @@
     if (!dragging && !readLive) liveValue = currentValue;
   });
 
+  // rAF-coalesced commit pump — see Fader.svelte for the full rationale.
+  // Knob lives on the same pointermove → onchange → SyncedStore mutation
+  // path that produces the hand-modulation tempo-drift symptom; without
+  // coalescing, a 240 Hz drag floods the snapshot bus + reconciler.
+  const dragCommit = createDragCommit((v) => onchange(v));
+
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
+    dragCommit.dispose();
   });
 
   // Map internal value ↔ normalized [0,1] using the declared curve.
@@ -123,11 +131,14 @@
     const newFrac = startFrac + dy * sensitivity;
     const newValue = fracToValue(newFrac);
     liveValue = newValue;
-    if (newValue !== value) onchange(newValue);
+    if (newValue !== value) dragCommit.commit(newValue);
   }
 
   function pointerup(e: PointerEvent) {
     dragging = false;
+    // Force-commit the final drag position so the patch store can't lag
+    // the last visible tick angle by one frame on release.
+    dragCommit.flush();
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   }
 
