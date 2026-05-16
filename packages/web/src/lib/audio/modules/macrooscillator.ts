@@ -412,6 +412,146 @@ class _HihatEngine {
   }
 }
 
+function _wavetableFrame(phase: number, frameIdx: number, secondPhase: number): number {
+  switch (frameIdx) {
+    case 0: return Math.sin(2 * Math.PI * phase);
+    case 1: return 1 - 4 * Math.abs(phase - 0.5);
+    case 2: return 2 * phase - 1;
+    case 3: return phase < 0.5 ? 1 : -1;
+    case 4: return phase < 0.25 ? 1 : -0.5;
+    case 5: {
+      const a = 2 * phase - 1;
+      const b = 2 * secondPhase - 1;
+      return (a + b) * 0.5;
+    }
+    case 6: {
+      let sum = 0;
+      for (let k = 1; k <= 7; k += 2) {
+        sum += Math.sin(2 * Math.PI * k * phase) / (k * k);
+      }
+      return sum;
+    }
+    case 7: {
+      const i = Math.floor(phase * 64);
+      const x = Math.sin(i * 12.9898) * 43758.5453;
+      return (x - Math.floor(x)) * 2 - 1;
+    }
+    default: return 0;
+  }
+}
+
+class _WavetableEngine {
+  phase = 0;
+  secondPhase = 0;
+  lpState = 0;
+  reset(): void {
+    this.phase = 0;
+    this.secondPhase = 0;
+    this.lpState = 0;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    this.phase += freq / sr;
+    if (this.phase >= 1) this.phase -= 1;
+    this.secondPhase += (freq * 1.01) / sr;
+    if (this.secondPhase >= 1) this.secondPhase -= 1;
+    const frameF = harmonics * 7;
+    const frameLo = Math.floor(frameF);
+    const frameHi = Math.min(7, frameLo + 1);
+    const blend = frameF - frameLo;
+    const morphPhase = morph < 0.5
+      ? this.phase
+      : (this.phase < (1 - (morph - 0.5)) ? this.phase / (1 - (morph - 0.5)) : 1);
+    const morphSecondPhase = morph < 0.5
+      ? this.secondPhase
+      : (this.secondPhase < (1 - (morph - 0.5)) ? this.secondPhase / (1 - (morph - 0.5)) : 1);
+    const wLo = _wavetableFrame(morphPhase, frameLo, morphSecondPhase);
+    const wHi = _wavetableFrame(morphPhase, frameHi, morphSecondPhase);
+    const raw = wLo * (1 - blend) + wHi * blend;
+    const cutHz = 200 + timbre * 11800;
+    const alpha = 1 - Math.exp(-2 * Math.PI * cutHz / sr);
+    this.lpState += alpha * (raw - this.lpState);
+    return [this.lpState, raw];
+  }
+}
+
+interface _Grain {
+  active: boolean;
+  pos: number;
+  length: number;
+  pitchMul: number;
+  phase: number;
+}
+
+const _GRAN_MAX_GRAINS = 8;
+
+class _GranularEngine {
+  grains: _Grain[] = [];
+  spawnTimer = 0;
+  rngState = 0xcafef00d | 0;
+  constructor() {
+    for (let i = 0; i < _GRAN_MAX_GRAINS; i++) {
+      this.grains.push({ active: false, pos: 0, length: 0, pitchMul: 1, phase: 0 });
+    }
+  }
+  reset(): void {
+    for (const g of this.grains) {
+      g.active = false;
+      g.pos = 0;
+      g.length = 0;
+      g.pitchMul = 1;
+      g.phase = 0;
+    }
+    this.spawnTimer = 0;
+  }
+  rand(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff;
+  }
+  grainEnv(pos: number, length: number, morph: number): number {
+    const t = pos / length;
+    if (t < 0 || t >= 1) return 0;
+    if (morph < 0.33) return 1;
+    if (morph < 0.66) return 1 - Math.abs(2 * t - 1);
+    return 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const spawnRateHz = 5 + harmonics * 195;
+    const spawnEvery = sr / spawnRateHz;
+    this.spawnTimer += 1;
+    if (this.spawnTimer >= spawnEvery) {
+      this.spawnTimer -= spawnEvery;
+      for (const g of this.grains) {
+        if (!g.active) {
+          g.active = true;
+          g.pos = 0;
+          g.length = Math.floor(0.01 * sr);
+          const jitter = (this.rand() * 2 - 1) * timbre * 0.06;
+          g.pitchMul = 1 + jitter;
+          g.phase = this.rand();
+          break;
+        }
+      }
+    }
+    let main = 0;
+    let auxClean = 0;
+    let activeCount = 0;
+    for (const g of this.grains) {
+      if (!g.active) continue;
+      const env = this.grainEnv(g.pos, g.length, morph);
+      g.phase += (freq * g.pitchMul) / sr;
+      if (g.phase >= 1) g.phase -= 1;
+      const grainSample = Math.sin(2 * Math.PI * g.phase) * env;
+      main += grainSample;
+      activeCount++;
+      g.pos += 1;
+      if (g.pos >= g.length) g.active = false;
+    }
+    auxClean = Math.sin(2 * Math.PI * (this.spawnTimer / spawnEvery));
+    if (activeCount > 1) main /= Math.sqrt(activeCount);
+    return [main * 0.7, auxClean];
+  }
+}
+
 class _ModalEngine {
   x1 = new Float32Array(_MODAL_MODES);
   x2 = new Float32Array(_MODAL_MODES);
@@ -531,8 +671,8 @@ class _FM6OpEngine {
 
 export interface MacroParams {
   /** 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE,
-   *  6=STRING, 7=MODAL, 8=KICK, 9=SNARE, 10=HIHAT.
-   *  Rounded to integer in render. */
+   *  6=STRING, 7=MODAL, 8=KICK, 9=SNARE, 10=HIHAT, 11=WAVETABLE,
+   *  12=GRANULAR. Rounded to integer in render. */
   model: number;
   /** Semitones offset on top of the V/oct pitch input. */
   note: number;
@@ -545,7 +685,7 @@ export interface MacroParams {
 /** Maximum legal model index. Grows as engines land; keep equal to
  *  (number-of-engines − 1) and in sync with MODEL_NAMES on the card +
  *  the model AudioParam's maxValue. */
-export const MACRO_MAX_MODEL = 10;
+export const MACRO_MAX_MODEL = 12;
 
 /** Pure-math helpers — called from unit tests + ART. The actual audio runs
  *  in the worklet at packages/dsp/src/macrooscillator.ts. */
@@ -568,6 +708,8 @@ export const macrooscillatorMath = {
     const kick = new _KickEngine();
     const snare = new _SnareEngine();
     const hihat = new _HihatEngine();
+    const wt = new _WavetableEngine();
+    const gran = new _GranularEngine();
     // STRING + drum models need an excitation burst — emulate the gate
     // rising-edge reset by calling reset() on the math mirror up front.
     str.reset();
@@ -597,6 +739,8 @@ export const macrooscillatorMath = {
       const [kickMain, kickAux] = kick.tick(freq, h, t, m, sr);
       const [snareMain, snareAux] = snare.tick(freq, h, t, m, sr);
       const [hhMain, hhAux] = hihat.tick(freq, h, t, m, sr);
+      const [wtMain, wtAux] = wt.tick(freq, h, t, m, sr);
+      const [granMain, granAux] = gran.tick(freq, h, t, m, sr);
       let mp = vaMain;
       let ap = vaAux;
       if (modelIdx === 1) { mp = wsMain; ap = wsAux; }
@@ -609,6 +753,8 @@ export const macrooscillatorMath = {
       else if (modelIdx === 8) { mp = kickMain; ap = kickAux; }
       else if (modelIdx === 9) { mp = snareMain; ap = snareAux; }
       else if (modelIdx === 10) { mp = hhMain; ap = hhAux; }
+      else if (modelIdx === 11) { mp = wtMain; ap = wtAux; }
+      else if (modelIdx === 12) { mp = granMain; ap = granAux; }
       main[i] = mp * lvl;
       aux[i] = ap;
     }

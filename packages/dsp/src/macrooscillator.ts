@@ -93,6 +93,24 @@
 //     metallic vs noisy balance (square cluster vs filtered noise).
 //     MORPH = decay time (short closed → long open). Gate re-triggers.
 //
+//   model = 11  WAVETABLE
+//     8-frame sweep through a small built-in wavetable bank. Each frame
+//     is computed analytically (sine / triangle / saw / square / pulse /
+//     supersaw-ish / bell-spectrum / noisy). HARMONICS sweeps the frame
+//     index (0..1 → frames 0..7, with linear blend between adjacent
+//     frames). TIMBRE applies a per-sample lowpass (warm filter
+//     analogue). MORPH = pulse-width / phase-distortion on the rendered
+//     waveform.
+//
+//   model = 12  GRANULAR
+//     Sample-and-hold grain cloud. Internally synthesises a sine + noise
+//     "source" then chops it into ~10 ms grains with random pitch jitter
+//     (per-grain detune). HARMONICS = grain rate / density (sparse →
+//     dense). TIMBRE = grain pitch jitter range (0 = perfectly aligned,
+//     1 = chaotic). MORPH = grain envelope shape (square → triangular
+//     → Hann window) — short attack/release gives the classic granular
+//     "smear".
+//
 // Both models share:
 //   - PolyBLEP antialiasing on the saw + square primitives (VA).
 //   - PITCH input is V/oct (1 unit = 1 octave) summed with the NOTE param
@@ -1045,18 +1063,242 @@ class HihatEngine {
   }
 }
 
+// ---------- WAVETABLE engine ----------
+
+/** Render one frame of the wavetable analytically given a phase 0..1 and
+ *  a frame index 0..7. Each frame is a different waveform — this is
+ *  cheaper than carrying an actual frame table and lets the bank scale
+ *  to any oversampling factor at compile-time.
+ *
+ *  Frame design — chosen to give a smooth perceptual sweep:
+ *    0  sine
+ *    1  triangle
+ *    2  saw
+ *    3  square
+ *    4  pulse 25%
+ *    5  super-saw-ish (saw + detuned saw)
+ *    6  bell spectrum (sum of 4 sines at odd partials with steep rolloff)
+ *    7  noisy texture (low-pass-filtered noise — actually generated here
+ *       as a deterministic pseudo-noise based on the integer-rounded phase
+ *       so the table is still a function of phase only) */
+function wavetableFrame(phase: number, frameIdx: number, secondPhase: number): number {
+  // secondPhase is the unison-detune partner used by frames 5+.
+  switch (frameIdx) {
+    case 0: return Math.sin(2 * Math.PI * phase);
+    case 1: return 1 - 4 * Math.abs(phase - 0.5);
+    case 2: return 2 * phase - 1;
+    case 3: return phase < 0.5 ? 1 : -1;
+    case 4: return phase < 0.25 ? 1 : -0.5;
+    case 5: {
+      // Super-saw-ish: primary saw + detuned saw at 1.01x.
+      const a = 2 * phase - 1;
+      const b = 2 * secondPhase - 1;
+      return (a + b) * 0.5;
+    }
+    case 6: {
+      // Bell spectrum: sum of 4 sines at odd partials with 1/k^2 rolloff.
+      let sum = 0;
+      for (let k = 1; k <= 7; k += 2) {
+        sum += Math.sin(2 * Math.PI * k * phase) / (k * k);
+      }
+      return sum;
+    }
+    case 7: {
+      // Noisy: deterministic pseudo-noise from a hash of phase * 64 (so the
+      // table is reproducible — same phase → same noise sample).
+      const i = Math.floor(phase * 64);
+      const x = Math.sin(i * 12.9898) * 43758.5453;
+      return (x - Math.floor(x)) * 2 - 1;
+    }
+    default: return 0;
+  }
+}
+
+class WavetableEngine {
+  phase = 0;
+  secondPhase = 0;
+  // One-pole lowpass state for TIMBRE filter.
+  lpState = 0;
+
+  reset(): void {
+    this.phase = 0;
+    this.secondPhase = 0;
+    this.lpState = 0;
+  }
+
+  tick(
+    freq: number,
+    harmonics: number,
+    timbre: number,
+    morph: number,
+    sr: number,
+  ): [number, number] {
+    this.phase += freq / sr;
+    if (this.phase >= 1) this.phase -= 1;
+    // Detuned partner — 1.01x freq for the super-saw frame.
+    this.secondPhase += (freq * 1.01) / sr;
+    if (this.secondPhase >= 1) this.secondPhase -= 1;
+
+    // Frame sweep: HARMONICS 0..1 → frame index 0..7 with linear blend.
+    const frameF = harmonics * 7;
+    const frameLo = Math.floor(frameF);
+    const frameHi = Math.min(7, frameLo + 1);
+    const blend = frameF - frameLo;
+
+    // MORPH: pulse-width / phase-distortion on the rendered waveform.
+    // 0 = identity. 1 = phase wraps at 0.25 (squashes the back of the
+    // waveform into nothing). Effectively a phase warp.
+    const morphPhase = morph < 0.5
+      ? this.phase
+      : (this.phase < (1 - (morph - 0.5)) ? this.phase / (1 - (morph - 0.5)) : 1);
+    const morphSecondPhase = morph < 0.5
+      ? this.secondPhase
+      : (this.secondPhase < (1 - (morph - 0.5)) ? this.secondPhase / (1 - (morph - 0.5)) : 1);
+
+    const wLo = wavetableFrame(morphPhase, frameLo, morphSecondPhase);
+    const wHi = wavetableFrame(morphPhase, frameHi, morphSecondPhase);
+    const raw = wLo * (1 - blend) + wHi * blend;
+
+    // TIMBRE = LP filter. 0 = 200 Hz cutoff (very warm), 1 = 12 kHz (open).
+    const cutHz = 200 + timbre * 11800;
+    const alpha = 1 - Math.exp(-2 * Math.PI * cutHz / sr);
+    this.lpState += alpha * (raw - this.lpState);
+
+    // AUX: raw waveform (pre-filter), useful as a contrast tap.
+    return [this.lpState, raw];
+  }
+}
+
+// ---------- GRANULAR engine ----------
+
+/** Internal grain cloud. The "source" is a deterministic noisy sine
+ *  rendered at the input PITCH; grains pick random offsets and pitch
+ *  jitter to construct a granular texture without needing a real
+ *  external sample buffer. */
+
+interface Grain {
+  active: boolean;
+  pos: number;        // current samples since grain start.
+  length: number;     // total grain length in samples.
+  pitchMul: number;   // per-grain pitch multiplier.
+  phase: number;      // grain's source phase accumulator.
+}
+
+const GRAN_MAX_GRAINS = 8;
+
+class GranularEngine {
+  grains: Grain[] = [];
+  // Time since last grain spawn.
+  spawnTimer = 0;
+  // RNG.
+  rngState = 0xcafef00d | 0;
+
+  constructor() {
+    for (let i = 0; i < GRAN_MAX_GRAINS; i++) {
+      this.grains.push({ active: false, pos: 0, length: 0, pitchMul: 1, phase: 0 });
+    }
+  }
+
+  reset(): void {
+    for (const g of this.grains) {
+      g.active = false;
+      g.pos = 0;
+      g.length = 0;
+      g.pitchMul = 1;
+      g.phase = 0;
+    }
+    this.spawnTimer = 0;
+  }
+
+  rand(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff;
+  }
+
+  /** Compute a grain envelope (0..1) for the given position. */
+  grainEnv(pos: number, length: number, morph: number): number {
+    const t = pos / length;
+    if (t < 0 || t >= 1) return 0;
+    if (morph < 0.33) {
+      // Square window — just check bounds.
+      return 1;
+    } else if (morph < 0.66) {
+      // Triangular window.
+      return 1 - Math.abs(2 * t - 1);
+    } else {
+      // Hann window.
+      return 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
+    }
+  }
+
+  tick(
+    freq: number,
+    harmonics: number,
+    timbre: number,
+    morph: number,
+    sr: number,
+  ): [number, number] {
+    // Spawn cadence: HARMONICS 0..1 → 5 grains/s..200 grains/s.
+    const spawnRateHz = 5 + harmonics * 195;
+    const spawnEvery = sr / spawnRateHz;
+    this.spawnTimer += 1;
+
+    if (this.spawnTimer >= spawnEvery) {
+      this.spawnTimer -= spawnEvery;
+      // Pick a free grain.
+      for (const g of this.grains) {
+        if (!g.active) {
+          g.active = true;
+          g.pos = 0;
+          // Grain length: 10 ms baseline. Could parameterise but for the
+          // macro-slot keep it fixed.
+          g.length = Math.floor(0.01 * sr);
+          // Pitch jitter: TIMBRE controls range. 0 = no jitter, 1 = ±semitone (~5.9% freq).
+          const jitter = (this.rand() * 2 - 1) * timbre * 0.06;
+          g.pitchMul = 1 + jitter;
+          g.phase = this.rand();
+          break;
+        }
+      }
+    }
+
+    // Sum active grains.
+    let main = 0;
+    let auxClean = 0;
+    let activeCount = 0;
+    for (const g of this.grains) {
+      if (!g.active) continue;
+      const env = this.grainEnv(g.pos, g.length, morph);
+      g.phase += (freq * g.pitchMul) / sr;
+      if (g.phase >= 1) g.phase -= 1;
+      const grainSample = Math.sin(2 * Math.PI * g.phase) * env;
+      main += grainSample;
+      activeCount++;
+      g.pos += 1;
+      if (g.pos >= g.length) g.active = false;
+    }
+    // Aux: clean source sine (no grain envelope).
+    auxClean = Math.sin(2 * Math.PI * (this.spawnTimer / spawnEvery));
+
+    // Normalise to keep amplitude in check as grain density grows.
+    if (activeCount > 1) main /= Math.sqrt(activeCount);
+    return [main * 0.7, auxClean];
+  }
+}
+
 // ---------- Top-level processor ----------
 
 class MacrooscillatorProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       // model: 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE,
-      // 6=STRING, 7=MODAL, 8=KICK, 9=SNARE, 10=HIHAT. Quantised in render
-      // via Math.round. a-rate so live model-switching from the CV input
-      // is smooth (well, glitchy — the engines have different state — but
-      // the model knob never wants k-rate quantisation lag). maxValue grows
-      // as new engines land; keep it equal to (MODEL_NAMES.length - 1).
-      { name: 'model',     defaultValue: 0,   minValue: 0,    maxValue: 10, automationRate: 'a-rate' as const },
+      // 6=STRING, 7=MODAL, 8=KICK, 9=SNARE, 10=HIHAT, 11=WAVETABLE,
+      // 12=GRANULAR. Quantised in render via Math.round. a-rate so live
+      // model-switching from the CV input is smooth (well, glitchy — the
+      // engines have different state — but the model knob never wants
+      // k-rate quantisation lag). maxValue grows as new engines land; keep
+      // it equal to (MODEL_NAMES.length - 1).
+      { name: 'model',     defaultValue: 0,   minValue: 0,    maxValue: 12, automationRate: 'a-rate' as const },
       // note: ±60 semitones offset on top of the V/oct pitch input.
       { name: 'note',      defaultValue: 0,   minValue: -60,  maxValue: 60, automationRate: 'a-rate' as const },
       { name: 'harmonics', defaultValue: 0.3, minValue: 0,    maxValue: 1,  automationRate: 'a-rate' as const },
@@ -1077,6 +1319,8 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
   private kick = new KickEngine();
   private snare = new SnareEngine();
   private hihat = new HihatEngine();
+  private wt = new WavetableEngine();
+  private gran = new GranularEngine();
   /** Last-block gate value — used for rising-edge detection across the
    *  block boundary so a gate ↑ that lands at the first sample of a new
    *  block still triggers phase reset. */
@@ -1138,12 +1382,14 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
         this.kick.reset();
         this.snare.reset();
         this.hihat.reset();
+        this.wt.reset();
+        this.gran.reset();
       }
       this.lastGate = trig;
 
       // Clamp + round model. maxValue grows as engines are added — keep in
       // sync with MODEL_NAMES length in the card.
-      const modelIdx = Math.max(0, Math.min(10, Math.round(model)));
+      const modelIdx = Math.max(0, Math.min(12, Math.round(model)));
 
       const hClamp = Math.max(0, Math.min(1, harmonics));
       const tClamp = Math.max(0, Math.min(1, timbre));
@@ -1165,6 +1411,8 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
       const [kickMain, kickAux] = this.kick.tick(freq, hClamp, tClamp, mClamp, sr);
       const [snareMain, snareAux] = this.snare.tick(freq, hClamp, tClamp, mClamp, sr);
       const [hhMain, hhAux] = this.hihat.tick(freq, hClamp, tClamp, mClamp, sr);
+      const [wtMain, wtAux] = this.wt.tick(freq, hClamp, tClamp, mClamp, sr);
+      const [granMain, granAux] = this.gran.tick(freq, hClamp, tClamp, mClamp, sr);
 
       let mainPick = vaMain;
       let auxPick = vaAux;
@@ -1178,6 +1426,8 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
       else if (modelIdx === 8) { mainPick = kickMain; auxPick = kickAux; }
       else if (modelIdx === 9) { mainPick = snareMain; auxPick = snareAux; }
       else if (modelIdx === 10) { mainPick = hhMain; auxPick = hhAux; }
+      else if (modelIdx === 11) { mainPick = wtMain; auxPick = wtAux; }
+      else if (modelIdx === 12) { mainPick = granMain; auxPick = granAux; }
 
       const lvl = Math.max(0, Math.min(1, level));
       outMain[i] = mainPick * lvl;

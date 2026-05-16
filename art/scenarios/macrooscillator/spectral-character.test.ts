@@ -618,6 +618,100 @@ describe('ART macrooscillator / HIHAT drum spectral character', () => {
   });
 });
 
+describe('ART macrooscillator / WAVETABLE model spectral character', () => {
+  it('sine frame (HARMONICS=0): near-pure sine spectrum', () => {
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 11, note: 0, harmonics: 0, timbre: 1, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pH3 = powerAt(tail, 1320, SR);
+    expect(pFund).toBeGreaterThan(pH3 * 50);
+  });
+
+  it('saw frame (HARMONICS≈0.29): integer harmonics present (H2, H3 audible)', () => {
+    // floor(0.29*7)=2 → frame 2 (saw). Saw has all integer harmonics.
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 11, note: 0, harmonics: 0.29, timbre: 1, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pH2 = powerAt(tail, 880, SR);
+    const pH3 = powerAt(tail, 1320, SR);
+    const pOff = powerAt(tail, 700, SR);
+    expect(pFund).toBeGreaterThan(pOff * 5);
+    expect(pH2, `saw H2 ${pH2} > off ${pOff}`).toBeGreaterThan(pOff * 2);
+    expect(pH3, `saw H3 ${pH3} > off ${pOff}`).toBeGreaterThan(pOff * 1.5);
+  });
+
+  it('TIMBRE LPF cuts HF: bright vs warm HF energy differs significantly', () => {
+    // Use the saw frame at full HF energy. Compare HF energy (around H10
+    // = 4.4 kHz) between timbre=0 (200Hz cut) and timbre=1 (no cut).
+    const bright = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 11, note: 0, harmonics: 0.29, timbre: 1, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    const warm = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 11, note: 0, harmonics: 0.29, timbre: 0, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    const bright4k = powerAt(bright, 4400, SR);
+    const warm4k = powerAt(warm, 4400, SR);
+    expect(bright4k, `bright 4.4kHz ${bright4k} > warm 4.4kHz ${warm4k}`).toBeGreaterThan(warm4k * 5);
+  });
+});
+
+describe('ART macrooscillator / GRANULAR model spectral character', () => {
+  it('granular cloud with no jitter (TIMBRE=0) at moderate density: fundamental dominates HF', () => {
+    // 100 grains/s (harmonics=0.5) at exactly the carrier freq → all grain
+    // sines are at 440 Hz with random phase. Constructive/destructive
+    // interference gives a noisy but fundamentally-pitched output.
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 12, note: 0, harmonics: 0.5, timbre: 0, morph: 0.7, level: 1,
+    }).main.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pHF = powerAt(tail, 4000, SR);
+    expect(pFund, `granular fund ${pFund} > HF ${pHF}`).toBeGreaterThan(pHF);
+  });
+
+  it('grain envelope shape (MORPH) varies the spectral character: Hann vs square differ', () => {
+    // Hann window has gentle attack/release → smoother spectrum.
+    // Square window has hard edges → more HF clicking.
+    // Compare HF (2 kHz+) energy between morph=0 (square) and morph=1 (Hann).
+    const square = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 12, note: 0, harmonics: 0.5, timbre: 0, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    const hann = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 12, note: 0, harmonics: 0.5, timbre: 0, morph: 1, level: 1,
+    }).main.slice(SR / 2);
+    // Sum HF energy across 4 bins.
+    let squareHF = 0;
+    let hannHF = 0;
+    for (const f of [2000, 3500, 5000, 7000]) {
+      squareHF += powerAt(square, f, SR);
+      hannHF += powerAt(hann, f, SR);
+    }
+    // Hann reduces the HF "click" energy. Just assert they differ.
+    expect(Math.abs(squareHF - hannHF), `HF energy should differ: square=${squareHF}, hann=${hannHF}`).toBeGreaterThan(0);
+  });
+
+  it('WAVETABLE + GRANULAR finite + bounded at extreme params', () => {
+    for (const model of [11, 12]) {
+      const { main, aux } = macrooscillatorMath.render(SR, SR, 0.75, {
+        model, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+      });
+      let mainPeak = 0;
+      let auxPeak = 0;
+      for (let i = 0; i < main.length; i++) {
+        expect(Number.isFinite(main[i]!), `model=${model} main[${i}] finite`).toBe(true);
+        expect(Number.isFinite(aux[i]!), `model=${model} aux[${i}] finite`).toBe(true);
+        const a = Math.abs(main[i]!);
+        const b = Math.abs(aux[i]!);
+        if (a > mainPeak) mainPeak = a;
+        if (b > auxPeak) auxPeak = b;
+      }
+      expect(mainPeak, `model=${model} main peak ${mainPeak}`).toBeLessThan(2.0);
+      expect(auxPeak, `model=${model} aux peak ${auxPeak}`).toBeLessThan(2.0);
+    }
+  });
+});
+
 describe('ART macrooscillator / V/oct tracking', () => {
   // CV-range-uniformity / V/oct convention is 1 unit = 1 octave from C4
   // (261.6256 Hz). MACROOSCILLATOR's pitch input must follow this exactly

@@ -876,6 +876,152 @@ describe('macrooscillatorMath — HIHAT model', () => {
   });
 });
 
+describe('macrooscillatorMath — WAVETABLE model', () => {
+  const baseParams: MacroParams = {
+    model: 11,
+    note: 0,
+    harmonics: 0.0, // frame 0 (sine)
+    timbre: 1.0,    // no LPF
+    morph: 0.0,     // no phase warp
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio at A4', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'WAVETABLE peak above silence').toBeGreaterThan(0.1);
+  });
+
+  it('frame 0 (HARMONICS=0) is dominated by the fundamental (sine)', () => {
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, baseParams).main.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pH3 = powerAt(tail, 1320, SR);
+    expect(pFund, `fund ${pFund} >> H3 ${pH3}`).toBeGreaterThan(pH3 * 20);
+  });
+
+  it('frame ~3 (HARMONICS≈0.43, square) carries odd harmonics', () => {
+    // frame index = 0.43*7 = 3.01 → frame 3 (square) blended with frame 4 (pulse).
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      ...baseParams, harmonics: 0.43,
+    }).main.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pH3 = powerAt(tail, 1320, SR);
+    const pH5 = powerAt(tail, 2200, SR);
+    // Square has strong 3rd + 5th harmonics. Ratio H3/fund for an ideal
+    // square is 1/3 (0.33). Even our crude un-bandlimited square should
+    // hit at least a 0.1 ratio.
+    expect(
+      pH3 / Math.max(1e-12, pFund),
+      `H3/fund ratio ${pH3 / Math.max(1e-12, pFund)}`,
+    ).toBeGreaterThan(0.1);
+    expect(pH5).toBeGreaterThan(0);
+  });
+
+  it('TIMBRE lowpass: TIMBRE=0 (200Hz cut) attenuates HF severely', () => {
+    const bright = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, harmonics: 0.43, timbre: 1.0 }).main.slice(SR / 2);
+    const warm = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, harmonics: 0.43, timbre: 0.0 }).main.slice(SR / 2);
+    const brightH5 = powerAt(bright, 2200, SR);
+    const warmH5 = powerAt(warm, 2200, SR);
+    expect(brightH5, `bright H5 ${brightH5} > warm H5 ${warmH5}`).toBeGreaterThan(warmH5 * 5);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 11, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `WAVETABLE peak ${peak}`).toBeLessThan(2.0);
+  });
+});
+
+describe('macrooscillatorMath — GRANULAR model', () => {
+  const baseParams: MacroParams = {
+    model: 12,
+    note: 0,
+    harmonics: 1.0, // max grain density (200 grains/s)
+    timbre: 0.0,    // no pitch jitter
+    morph: 0.7,     // Hann window
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'GRANULAR peak above silence').toBeGreaterThan(0.05);
+  });
+
+  it('GRANULAR at low TIMBRE (no jitter) carries pitched energy near the fundamental', () => {
+    // With pitch jitter=0 all grains play at exactly the carrier freq;
+    // accumulated energy lands at the input pitch.
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, baseParams);
+    const tail = main.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pOff = powerAt(tail, 1234, SR);
+    expect(pFund, `granular fund ${pFund} > off ${pOff}`).toBeGreaterThan(pOff);
+  });
+
+  it('HARMONICS controls density: high HARMONICS yields more active grains (louder output on average)', () => {
+    // Compare RMS of the steady-state portion between sparse (harmonics=0
+    // → 5 grains/s) and dense (harmonics=1 → 200 grains/s). Dense should
+    // be substantially louder on average.
+    const sparse = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, harmonics: 0 }).main.slice(SR / 2);
+    const dense = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, harmonics: 1 }).main.slice(SR / 2);
+    let sparseRms = 0;
+    let denseRms = 0;
+    for (let i = 0; i < sparse.length; i++) sparseRms += sparse[i]! * sparse[i]!;
+    for (let i = 0; i < dense.length; i++) denseRms += dense[i]! * dense[i]!;
+    sparseRms = Math.sqrt(sparseRms / sparse.length);
+    denseRms = Math.sqrt(denseRms / dense.length);
+    expect(denseRms, `dense RMS ${denseRms} > sparse RMS ${sparseRms}`).toBeGreaterThan(sparseRms * 2);
+  });
+
+  it('TIMBRE adds pitch jitter: max jitter smears the fundamental', () => {
+    // Without jitter, energy concentrates at 440. With jitter, energy
+    // spreads → fundamental bin loses energy relative to its neighbours.
+    const noJitter = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 0 }).main.slice(SR / 2);
+    const fullJitter = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 1 }).main.slice(SR / 2);
+    const noJit440 = powerAt(noJitter, 440, SR);
+    const fullJit440 = powerAt(fullJitter, 440, SR);
+    const noJitNeighbour = powerAt(noJitter, 450, SR); // 10 Hz off
+    const fullJitNeighbour = powerAt(fullJitter, 450, SR);
+    // The fundamental's relative dominance over its neighbour should drop.
+    const noJitRatio = noJit440 / Math.max(1e-12, noJitNeighbour);
+    const fullJitRatio = fullJit440 / Math.max(1e-12, fullJitNeighbour);
+    expect(
+      noJitRatio,
+      `no-jitter 440/450 ratio ${noJitRatio} > full-jitter ${fullJitRatio}`,
+    ).toBeGreaterThan(fullJitRatio);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 12, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `GRANULAR peak ${peak}`).toBeLessThan(2.0);
+  });
+});
+
 describe('macrooscillatorMath — pitch tracking', () => {
   it('pitchV=0 → C4 (261.6Hz fundamental in VA at morph=0)', () => {
     const { main } = macrooscillatorMath.render(SR, SR, 0, { model: 0, note: 0, harmonics: 0, timbre: 0, morph: 0, level: 1 });
