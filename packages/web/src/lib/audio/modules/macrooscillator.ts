@@ -217,6 +217,117 @@ class _ChordEngine {
   }
 }
 
+const _STRING_MAX_DELAY = 2400;
+
+class _StringEngine {
+  buf = new Float32Array(_STRING_MAX_DELAY);
+  bufWrite = 0;
+  lpState = 0;
+  apX1 = 0;
+  apY1 = 0;
+  excAmp = 0;
+  rngState = 0xa5a5a5a5 | 0;
+  reset(): void {
+    for (let i = 0; i < _STRING_MAX_DELAY; i++) this.buf[i] = 0;
+    this.bufWrite = 0;
+    this.lpState = 0;
+    this.apX1 = 0;
+    this.apY1 = 0;
+    this.excAmp = 1.0;
+  }
+  noise(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff * 2 - 1;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const delayLen = Math.max(2, Math.min(_STRING_MAX_DELAY - 1, Math.round(sr / freq)));
+    const readIdx = (this.bufWrite - delayLen + _STRING_MAX_DELAY) % _STRING_MAX_DELAY;
+    const delayed = this.buf[readIdx]!;
+    const burst = this.excAmp > 0 ? this.noise() * this.excAmp : 0;
+    if (this.excAmp > 0) {
+      const burstDecay = Math.exp(-1 / (0.01 * sr));
+      this.excAmp *= burstDecay;
+    }
+    const burstCutHz = 200 + timbre * 7800;
+    const burstAlpha = 1 - Math.exp(-2 * Math.PI * burstCutHz / sr);
+    const filteredBurst = burst * burstAlpha;
+    const loopIn = delayed + filteredBurst;
+    const dampHz = 200 + morph * 11800;
+    const dampAlpha = 1 - Math.exp(-2 * Math.PI * dampHz / sr);
+    this.lpState += dampAlpha * (loopIn - this.lpState);
+    const a = harmonics * 0.5;
+    const filtered = -a * this.lpState + this.apX1 + a * this.apY1;
+    this.apX1 = this.lpState;
+    this.apY1 = filtered;
+    const looped = filtered * 0.998;
+    this.buf[this.bufWrite] = looped;
+    this.bufWrite = (this.bufWrite + 1) % _STRING_MAX_DELAY;
+    return [looped, delayed];
+  }
+}
+
+const _MODAL_PRESETS: { ratios: number[]; amps: number[] }[] = [
+  { ratios: [1.0, 2.76, 5.41, 8.93, 13.34, 18.64], amps: [1.0, 0.6, 0.4, 0.3, 0.2, 0.15] },
+  { ratios: [1.0, 4.0, 10.0, 16.0, 23.0, 30.0], amps: [1.0, 0.7, 0.3, 0.15, 0.1, 0.05] },
+  { ratios: [0.5, 1.0, 1.2, 2.4, 3.0, 4.5], amps: [0.8, 1.0, 0.4, 0.3, 0.2, 0.15] },
+  { ratios: [1.0, 4.0, 9.5, 14.0, 18.0, 24.0], amps: [1.0, 0.4, 0.2, 0.1, 0.05, 0.03] },
+];
+
+const _MODAL_MODES = 6;
+
+class _ModalEngine {
+  x1 = new Float32Array(_MODAL_MODES);
+  x2 = new Float32Array(_MODAL_MODES);
+  y1 = new Float32Array(_MODAL_MODES);
+  y2 = new Float32Array(_MODAL_MODES);
+  impPhase = 0;
+  reset(): void {
+    for (let i = 0; i < _MODAL_MODES; i++) {
+      this.x1[i] = 0; this.x2[i] = 0; this.y1[i] = 0; this.y2[i] = 0;
+    }
+    this.impPhase = 0;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const presetIdx = Math.max(0, Math.min(_MODAL_PRESETS.length - 1, Math.floor(harmonics * _MODAL_PRESETS.length)));
+    const preset = _MODAL_PRESETS[presetIdx]!;
+    const Q = 5 + timbre * 195;
+    const impulseEvery = sr / 4;
+    this.impPhase += 1;
+    let impulse = 0;
+    if (this.impPhase >= impulseEvery) {
+      impulse = 1.0;
+      this.impPhase -= impulseEvery;
+    }
+    let main = 0;
+    let auxFund = 0;
+    for (let m = 0; m < _MODAL_MODES; m++) {
+      const ratio = preset.ratios[m]!;
+      const baseAmp = preset.amps[m]!;
+      const morphAmp = baseAmp * (1 - morph) + (m / _MODAL_MODES) * morph;
+      const modeFreq = Math.min(sr * 0.45, freq * ratio);
+      const w0 = 2 * Math.PI * modeFreq / sr;
+      const cosW0 = Math.cos(w0);
+      const sinW0 = Math.sin(w0);
+      const alpha = sinW0 / (2 * Q);
+      const b0 = alpha;
+      const b2 = -alpha;
+      const a0 = 1 + alpha;
+      const a1 = -2 * cosW0;
+      const a2 = 1 - alpha;
+      const inSample = impulse;
+      const y = (b0 * inSample + b2 * this.x2[m]! - a1 * this.y1[m]! - a2 * this.y2[m]!) / a0;
+      this.x2[m] = this.x1[m]!;
+      this.x1[m] = inSample;
+      this.y2[m] = this.y1[m]!;
+      this.y1[m] = y;
+      main += y * morphAmp;
+      if (m === 0) auxFund = y * baseAmp;
+    }
+    main *= 0.25;
+    return [main, auxFund * 0.25];
+  }
+}
+
 class _AdditiveEngine {
   phases = new Float32Array(_ADDITIVE_PARTIALS);
   reset(): void {
@@ -282,8 +393,8 @@ class _FM6OpEngine {
 }
 
 export interface MacroParams {
-  /** 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE.
-   *  Rounded to integer in render. */
+  /** 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE,
+   *  6=STRING, 7=MODAL. Rounded to integer in render. */
   model: number;
   /** Semitones offset on top of the V/oct pitch input. */
   note: number;
@@ -296,7 +407,7 @@ export interface MacroParams {
 /** Maximum legal model index. Grows as engines land; keep equal to
  *  (number-of-engines − 1) and in sync with MODEL_NAMES on the card +
  *  the model AudioParam's maxValue. */
-export const MACRO_MAX_MODEL = 5;
+export const MACRO_MAX_MODEL = 7;
 
 /** Pure-math helpers — called from unit tests + ART. The actual audio runs
  *  in the worklet at packages/dsp/src/macrooscillator.ts. */
@@ -314,6 +425,11 @@ export const macrooscillatorMath = {
     const fm6 = new _FM6OpEngine();
     const chord = new _ChordEngine();
     const add = new _AdditiveEngine();
+    const str = new _StringEngine();
+    const modal = new _ModalEngine();
+    // STRING needs an excitation burst — emulate the gate rising-edge
+    // reset by calling reset() on the math mirror up front.
+    str.reset();
     const main = new Float32Array(n);
     const aux = new Float32Array(n);
     const semitones = pitchV * 12 + params.note;
@@ -332,6 +448,8 @@ export const macrooscillatorMath = {
       const [fm6Main, fm6Aux] = fm6.tick(freq, h, t, m, sr);
       const [chordMain, chordAux] = chord.tick(freq, h, t, m, sr);
       const [addMain, addAux] = add.tick(freq, h, t, m, sr);
+      const [strMain, strAux] = str.tick(freq, h, t, m, sr);
+      const [modMain, modAux] = modal.tick(freq, h, t, m, sr);
       let mp = vaMain;
       let ap = vaAux;
       if (modelIdx === 1) { mp = wsMain; ap = wsAux; }
@@ -339,6 +457,8 @@ export const macrooscillatorMath = {
       else if (modelIdx === 3) { mp = fm6Main; ap = fm6Aux; }
       else if (modelIdx === 4) { mp = chordMain; ap = chordAux; }
       else if (modelIdx === 5) { mp = addMain; ap = addAux; }
+      else if (modelIdx === 6) { mp = strMain; ap = strAux; }
+      else if (modelIdx === 7) { mp = modMain; ap = modAux; }
       main[i] = mp * lvl;
       aux[i] = ap;
     }
