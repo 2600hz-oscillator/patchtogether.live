@@ -27,7 +27,10 @@
   let morph     = $derived(node?.params.morph     ?? defaultFor('morph'));
   let level     = $derived(node?.params.level     ?? defaultFor('level'));
 
-  const MODEL_NAMES = ['VA', 'WAVESHAPE', 'FM 2OP', 'FM 6OP', 'CHORD', 'ADDITIVE', 'STRING', 'MODAL', 'KICK', 'SNARE', 'HIHAT'];
+  const MODEL_NAMES = [
+    'VA', 'WAVESHAPE', 'FM 2OP', 'FM 6OP', 'CHORD', 'ADDITIVE',
+    'STRING', 'MODAL', 'KICK', 'SNARE', 'HIHAT', 'WAVETABLE', 'GRANULAR',
+  ];
   const MAX_MODEL = MODEL_NAMES.length - 1;
   let modelLabel = $derived(MODEL_NAMES[Math.max(0, Math.min(MODEL_NAMES.length - 1, Math.round(model)))]);
 
