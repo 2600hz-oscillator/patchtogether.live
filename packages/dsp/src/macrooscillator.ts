@@ -111,6 +111,15 @@
 //     → Hann window) — short attack/release gives the classic granular
 //     "smear".
 //
+//   model = 13  SPEECH
+//     Formant-synthesis vowel (ah, eh, ee, oh, oo, uh). A pulse-shaped
+//     glottal source drives 3 parallel resonant bandpass filters tuned
+//     to the formant frequencies of the selected vowel. HARMONICS picks
+//     the vowel from a 6-entry table. TIMBRE = formant Q (clarity vs
+//     muffled). MORPH = source crossfade (0 = pitched glottal pulse →
+//     1 = whitened noise / whispered consonants). Pitched source uses
+//     PITCH V/oct as the fundamental, so chromatic vowel singing works.
+//
 // Both models share:
 //   - PolyBLEP antialiasing on the saw + square primitives (VA).
 //   - PITCH input is V/oct (1 unit = 1 octave) summed with the NOTE param
@@ -1286,6 +1295,117 @@ class GranularEngine {
   }
 }
 
+// ---------- SPEECH engine ----------
+
+/** Vowel-formant table — F1, F2, F3 (Hz) + relative gains for each formant.
+ *  Values from a generic adult male vowel chart (Peterson & Barney, 1952);
+ *  not a specific speaker — vowels feel recognisable but stylised. */
+const VOWEL_PRESETS: { f: [number, number, number]; g: [number, number, number] }[] = [
+  // ah (as in "father")
+  { f: [730, 1090, 2440], g: [1.0, 0.5, 0.3] },
+  // eh (as in "bed")
+  { f: [530, 1840, 2480], g: [1.0, 0.6, 0.3] },
+  // ee (as in "beet")
+  { f: [270, 2290, 3010], g: [1.0, 0.4, 0.2] },
+  // oh (as in "boat")
+  { f: [570, 840, 2410], g: [1.0, 0.5, 0.3] },
+  // oo (as in "boot")
+  { f: [300, 870, 2240], g: [1.0, 0.3, 0.2] },
+  // uh (as in "but")
+  { f: [640, 1190, 2390], g: [1.0, 0.5, 0.3] },
+];
+
+class SpeechEngine {
+  // Glottal pulse phase.
+  phase = 0;
+  // Three formant biquad-bandpass states.
+  x1 = [0, 0, 0];
+  x2 = [0, 0, 0];
+  y1 = [0, 0, 0];
+  y2 = [0, 0, 0];
+  rngState = 0x1badc0de | 0;
+
+  reset(): void {
+    this.phase = 0;
+    for (let i = 0; i < 3; i++) {
+      this.x1[i] = 0; this.x2[i] = 0; this.y1[i] = 0; this.y2[i] = 0;
+    }
+  }
+
+  noise(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff * 2 - 1;
+  }
+
+  /** Glottal pulse — approximation of a Liljencrants-Fant pulse. Simple
+   *  shape: positive bump in the first 30% of the period, negative dip in
+   *  the next 20%, silence the rest. Sounds vowel-y enough at the macro slot. */
+  glottal(t: number): number {
+    if (t < 0.3) {
+      // sin half-cycle going positive.
+      return Math.sin(Math.PI * (t / 0.3));
+    } else if (t < 0.5) {
+      // Negative dip.
+      return -0.3 * Math.sin(Math.PI * ((t - 0.3) / 0.2));
+    }
+    return 0;
+  }
+
+  tick(
+    freq: number,
+    harmonics: number,
+    timbre: number,
+    morph: number,
+    sr: number,
+  ): [number, number] {
+    // Vowel pick.
+    const vowelIdx = Math.max(0, Math.min(VOWEL_PRESETS.length - 1, Math.floor(harmonics * VOWEL_PRESETS.length)));
+    const vowel = VOWEL_PRESETS[vowelIdx]!;
+
+    // Q from TIMBRE: 3..40. Higher Q = clearer formant peaks; lower Q =
+    // muffled / breathy.
+    const Q = 3 + timbre * 37;
+
+    // Advance glottal phase.
+    this.phase += freq / sr;
+    if (this.phase >= 1) this.phase -= 1;
+    const pulse = this.glottal(this.phase);
+
+    // Source: MORPH crossfades from pitched pulse → noise (whispered).
+    const src = pulse * (1 - morph) + this.noise() * morph * 0.5;
+
+    // Three parallel formant bandpasses, summed.
+    let main = 0;
+    for (let i = 0; i < 3; i++) {
+      const fc = vowel.f[i]!;
+      const gain = vowel.g[i]!;
+      const w0 = 2 * Math.PI * fc / sr;
+      const cosW0 = Math.cos(w0);
+      const sinW0 = Math.sin(w0);
+      const alpha = sinW0 / (2 * Q);
+      const b0 = alpha;
+      const b2 = -alpha;
+      const a0 = 1 + alpha;
+      const a1 = -2 * cosW0;
+      const a2 = 1 - alpha;
+      const y = (b0 * src + b2 * this.x2[i]! - a1 * this.y1[i]! - a2 * this.y2[i]!) / a0;
+      this.x2[i] = this.x1[i]!;
+      this.x1[i] = src;
+      this.y2[i] = this.y1[i]!;
+      this.y1[i] = y;
+      main += y * gain;
+    }
+
+    // Scale: formant bandpass gains are very small (alpha is tiny at high
+    // sample rates); compensate with a constant gain to keep macro output
+    // near ±1 at the brightest setting without saturating at the dim end.
+    main *= 4.0;
+    // AUX: the raw glottal pulse before formant filtering.
+    const aux = pulse;
+    return [main, aux];
+  }
+}
+
 // ---------- Top-level processor ----------
 
 class MacrooscillatorProcessor extends AudioWorkletProcessor {
@@ -1293,12 +1413,12 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
     return [
       // model: 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE,
       // 6=STRING, 7=MODAL, 8=KICK, 9=SNARE, 10=HIHAT, 11=WAVETABLE,
-      // 12=GRANULAR. Quantised in render via Math.round. a-rate so live
-      // model-switching from the CV input is smooth (well, glitchy — the
-      // engines have different state — but the model knob never wants
-      // k-rate quantisation lag). maxValue grows as new engines land; keep
-      // it equal to (MODEL_NAMES.length - 1).
-      { name: 'model',     defaultValue: 0,   minValue: 0,    maxValue: 12, automationRate: 'a-rate' as const },
+      // 12=GRANULAR, 13=SPEECH. Quantised in render via Math.round. a-rate
+      // so live model-switching from the CV input is smooth (well, glitchy
+      // — the engines have different state — but the model knob never
+      // wants k-rate quantisation lag). maxValue grows as new engines land;
+      // keep it equal to (MODEL_NAMES.length - 1).
+      { name: 'model',     defaultValue: 0,   minValue: 0,    maxValue: 13, automationRate: 'a-rate' as const },
       // note: ±60 semitones offset on top of the V/oct pitch input.
       { name: 'note',      defaultValue: 0,   minValue: -60,  maxValue: 60, automationRate: 'a-rate' as const },
       { name: 'harmonics', defaultValue: 0.3, minValue: 0,    maxValue: 1,  automationRate: 'a-rate' as const },
@@ -1321,6 +1441,7 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
   private hihat = new HihatEngine();
   private wt = new WavetableEngine();
   private gran = new GranularEngine();
+  private speech = new SpeechEngine();
   /** Last-block gate value — used for rising-edge detection across the
    *  block boundary so a gate ↑ that lands at the first sample of a new
    *  block still triggers phase reset. */
@@ -1384,12 +1505,13 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
         this.hihat.reset();
         this.wt.reset();
         this.gran.reset();
+        this.speech.reset();
       }
       this.lastGate = trig;
 
       // Clamp + round model. maxValue grows as engines are added — keep in
       // sync with MODEL_NAMES length in the card.
-      const modelIdx = Math.max(0, Math.min(12, Math.round(model)));
+      const modelIdx = Math.max(0, Math.min(13, Math.round(model)));
 
       const hClamp = Math.max(0, Math.min(1, harmonics));
       const tClamp = Math.max(0, Math.min(1, timbre));
@@ -1413,6 +1535,7 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
       const [hhMain, hhAux] = this.hihat.tick(freq, hClamp, tClamp, mClamp, sr);
       const [wtMain, wtAux] = this.wt.tick(freq, hClamp, tClamp, mClamp, sr);
       const [granMain, granAux] = this.gran.tick(freq, hClamp, tClamp, mClamp, sr);
+      const [speechMain, speechAux] = this.speech.tick(freq, hClamp, tClamp, mClamp, sr);
 
       let mainPick = vaMain;
       let auxPick = vaAux;
@@ -1428,6 +1551,7 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
       else if (modelIdx === 10) { mainPick = hhMain; auxPick = hhAux; }
       else if (modelIdx === 11) { mainPick = wtMain; auxPick = wtAux; }
       else if (modelIdx === 12) { mainPick = granMain; auxPick = granAux; }
+      else if (modelIdx === 13) { mainPick = speechMain; auxPick = speechAux; }
 
       const lvl = Math.max(0, Math.min(1, level));
       outMain[i] = mainPick * lvl;

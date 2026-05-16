@@ -712,6 +712,57 @@ describe('ART macrooscillator / GRANULAR model spectral character', () => {
   });
 });
 
+describe('ART macrooscillator / SPEECH model spectral character', () => {
+  it('"ah" vowel has formant-shaped spectrum (F1, F2, F3 peaks)', () => {
+    // ah formants: F1=730, F2=1090, F3=2440. Render a long buffer with
+    // high Q (timbre=0.9) so the formants are clear.
+    const tail = macrooscillatorMath.render(SR * 2, SR, 0, {
+      model: 13, note: 0, harmonics: 0, timbre: 0.9, morph: 0, level: 1,
+    }).main.slice(SR);
+    // Sum each formant band vs the gaps between them.
+    const f1 = powerAt(tail, 730, SR) + powerAt(tail, 700, SR) + powerAt(tail, 760, SR);
+    const f2 = powerAt(tail, 1090, SR) + powerAt(tail, 1060, SR) + powerAt(tail, 1120, SR);
+    const gap = powerAt(tail, 900, SR) + powerAt(tail, 1300, SR);
+    expect(f1 + f2, `formant bands ${f1 + f2} > gap ${gap}`).toBeGreaterThan(gap * 1.5);
+  });
+
+  it('vowel sweep: "ee" vs "oo" differ in HF energy distribution', () => {
+    // ee: F1=270, F2=2290, F3=3010 (high front vowel — HF rich).
+    // oo: F1=300, F2=870, F3=2240 (back vowel — LF heavy).
+    const ee = macrooscillatorMath.render(SR, SR, 0, {
+      model: 13, note: 0, harmonics: 0.4, timbre: 0.9, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    const oo = macrooscillatorMath.render(SR, SR, 0, {
+      model: 13, note: 0, harmonics: 0.7, timbre: 0.9, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    let eeBand = 0;
+    let ooBand = 0;
+    for (const f of [2000, 2300, 2600, 2900]) {
+      eeBand += powerAt(ee, f, SR);
+      ooBand += powerAt(oo, f, SR);
+    }
+    expect(eeBand, `ee 2-3kHz ${eeBand} > oo ${ooBand}`).toBeGreaterThan(ooBand);
+  });
+
+  it('SPEECH finite + bounded at extreme params', () => {
+    const { main, aux } = macrooscillatorMath.render(SR, SR, 0, {
+      model: 13, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let mainPeak = 0;
+    let auxPeak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!), `main[${i}] finite`).toBe(true);
+      expect(Number.isFinite(aux[i]!), `aux[${i}] finite`).toBe(true);
+      const a = Math.abs(main[i]!);
+      const b = Math.abs(aux[i]!);
+      if (a > mainPeak) mainPeak = a;
+      if (b > auxPeak) auxPeak = b;
+    }
+    expect(mainPeak, `main peak ${mainPeak}`).toBeLessThan(2.5);
+    expect(auxPeak, `aux peak ${auxPeak}`).toBeLessThan(2.0);
+  });
+});
+
 describe('ART macrooscillator / V/oct tracking', () => {
   // CV-range-uniformity / V/oct convention is 1 unit = 1 octave from C4
   // (261.6256 Hz). MACROOSCILLATOR's pitch input must follow this exactly
