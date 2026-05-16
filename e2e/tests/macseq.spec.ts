@@ -124,9 +124,15 @@ test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODEL
     {
       id: 'ms',
       type: 'macseq',
-      // 240 BPM, 16 16th-note steps = 16 advances/sec; the whole pattern
-      // takes 1 s, so we get every step inside a 1.2 s sampling window.
-      params: { bpm: 240, length: 16, isPlaying: 1, gateLength: 0.6 },
+      // Tempo chosen to avoid aliasing against the sample interval below.
+      // 150 BPM × 16th notes = 60/150/4 = 100 ms per step. We sample every
+      // 10 ms (one decade faster than the step duration), so we get ~10
+      // samples per step regardless of phase, and 3.5 s of sampling covers
+      // 35 steps ≈ 2 full pattern loops. Originally this used 240 BPM
+      // (62.5 ms / step) sampled at 30 ms, which aliased against the step
+      // boundary and intermittently missed 1–2 model indices (see PR #168
+      // CI flake).
+      params: { bpm: 150, length: 16, isPlaying: 1, gateLength: 0.6 },
     },
     {
       id: 'mo',
@@ -183,9 +189,12 @@ test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODEL
     { N: modelNames.length },
   );
 
-  // Sample MACSEQ's last-emitted modelCv index every 30 ms for ~1.5 s.
-  // At 240 BPM = 62.5 ms / step; 1.5 s ≈ 24 steps which guarantees we
-  // sweep through all 14 models at least once.
+  // Sample MACSEQ's last-emitted modelCv index every 10 ms for ~3.5 s.
+  // At 150 BPM the 16th-note step is 100 ms, so 10 ms gives ~10 samples
+  // per step and the sampler can never alias against the step boundary
+  // (a strict decade of separation). 3.5 s ≈ 35 steps ≈ 2+ full passes
+  // through the 16-step pattern, comfortably covering all 14 distinct
+  // model indices.
   //
   // We sample MACSEQ's own `modelCv` read-key (the logical INDEX) rather
   // than the macrooscillator's `model` AudioParam because Web Audio's
@@ -201,18 +210,45 @@ test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODEL
   // resolves correctly AND that the MODELCV ConstantSource is being
   // written. The macrooscillator-side wiring is exercised in the audio
   // assertion below (we get a sound that's clearly different per step).
+  //
+  // We collect the whole sample buffer inside a SINGLE page.evaluate
+  // (running setInterval in-browser) rather than ping-ponging one
+  // readEngineKey per sample. 350 round-trips at 10 ms each blow well past
+  // the 30 s test timeout on a loaded CI runner — but the actual sampling
+  // window only needs to be ~3.5 s of wall-clock time, which the in-page
+  // approach delivers cleanly.
+  const SAMPLE_MS = 10;
+  const SAMPLE_COUNT = 350; // 350 * 10ms ≈ 3.5 s
+  const seenSamples = await page.evaluate(
+    ({ id, key, intervalMs, count }) =>
+      new Promise<number[]>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+          } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const out: number[] = [];
+        const node = w.__patch.nodes[id];
+        const tick = () => {
+          const eng = w.__engine?.();
+          if (eng && node) {
+            const v = eng.read(node, key);
+            if (typeof v === 'number') out.push(v);
+          }
+          if (out.length >= count) {
+            clearInterval(handle);
+            resolve(out);
+          }
+        };
+        const handle = setInterval(tick, intervalMs);
+      }),
+    { id: 'ms', key: 'modelCv', intervalMs: SAMPLE_MS, count: SAMPLE_COUNT },
+  );
   const seenModels = new Set<number>();
-  const seenSamples: number[] = [];
-  const SAMPLE_MS = 30;
-  const SAMPLE_COUNT = 50; // 50 * 30ms = 1.5 s
-  for (let i = 0; i < SAMPLE_COUNT; i++) {
-    const v = await readEngineKey(page, 'ms', 'modelCv');
-    if (v !== null) {
-      const idx = Math.max(0, Math.min(modelNames.length - 1, Math.round(v)));
-      seenModels.add(idx);
-      seenSamples.push(idx);
-    }
-    await page.waitForTimeout(SAMPLE_MS);
+  for (const v of seenSamples) {
+    const idx = Math.max(0, Math.min(modelNames.length - 1, Math.round(v)));
+    seenModels.add(idx);
   }
 
   // Every model must have appeared at least once. This is the headline

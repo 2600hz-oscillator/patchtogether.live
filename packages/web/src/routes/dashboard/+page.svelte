@@ -9,11 +9,34 @@
   let creating = $state(false);
   let error: string | null = $state(null);
   let deletingId: string | null = $state(null);
+  let savedGroups = $state(data.savedGroups);
+  let deletingSavedGroupId: string | null = $state(null);
+  let savedGroupsError: string | null = $state(null);
 
   let ownedCount = $derived(
     data.rackspaces.filter((r) => r.ownerUserId === data.userId).length,
   );
   let atCap = $derived(ownedCount >= RACK_CAP);
+
+  async function deleteSavedGroup(id: string, label: string) {
+    if (deletingSavedGroupId) return;
+    if (!confirm(`Delete saved group "${label}"? This can't be undone.`)) return;
+    deletingSavedGroupId = id;
+    savedGroupsError = null;
+    try {
+      const res = await fetch(`/api/saved-groups/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string };
+        savedGroupsError = body.message ?? `Delete failed: ${res.status}`;
+        return;
+      }
+      savedGroups = savedGroups.filter((g) => g.id !== id);
+    } catch (e) {
+      savedGroupsError = e instanceof Error ? e.message : String(e);
+    } finally {
+      deletingSavedGroupId = null;
+    }
+  }
 
   async function createRackspace() {
     if (atCap) return;
@@ -127,6 +150,42 @@
         {/each}
       </ul>
     {/if}
+
+    <section class="saved-groups" data-testid="saved-groups-library">
+      <h2>Saved groups</h2>
+      {#if savedGroupsError}
+        <pre class="error">{savedGroupsError}</pre>
+      {/if}
+      {#if savedGroups.length === 0}
+        <p class="empty">
+          No saved groups yet. In a rack, right-click a group → "Save group to library…"
+          to add one here.
+        </p>
+      {:else}
+        <ul class="saved-group-list">
+          {#each savedGroups as sg (sg.id)}
+            <li class="saved-group-row" data-testid="saved-group-row">
+              <div class="info">
+                <span class="name">{sg.label}</span>
+                <span class="meta">
+                  {sg.payload.children.length} module{sg.payload.children.length === 1 ? '' : 's'}
+                  · {sg.payload.internalEdges.length} internal cable{sg.payload.internalEdges.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <button
+                class="delete"
+                onclick={() => deleteSavedGroup(sg.id, sg.label)}
+                disabled={deletingSavedGroupId === sg.id}
+                data-testid="saved-group-delete"
+                title="Delete saved group"
+              >
+                {deletingSavedGroupId === sg.id ? 'Deleting…' : 'Delete'}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
   </main>
 </div>
 
@@ -284,5 +343,36 @@
     padding: 8px 12px;
     border-radius: 4px;
     font-size: 0.85rem;
+  }
+  .saved-groups {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid #2a2f3a;
+  }
+  .saved-groups h2 {
+    margin: 0 0 12px;
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+  .saved-group-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .saved-group-list li {
+    border: 1px solid #2a2f3a;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .saved-group-row {
+    display: flex;
+    align-items: stretch;
+  }
+  .saved-group-row .info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
   }
 </style>
