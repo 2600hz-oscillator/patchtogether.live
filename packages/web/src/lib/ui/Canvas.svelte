@@ -133,6 +133,8 @@
   import PeaksCard from '$lib/ui/modules/PeaksCard.svelte';
   // WARPS — meta-modulator / signal masher (Mutable Instruments Warps archetype).
   import WarpsCard from '$lib/ui/modules/WarpsCard.svelte';
+  // VEILS — quad VCA + soft-clip summing mix (Mutable Instruments archetype).
+  import VeilsCard from '$lib/ui/modules/VeilsCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -280,6 +282,7 @@
     rings: RingsCard,
     peaks: PeaksCard,
     warps: WarpsCard,
+    veils: VeilsCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

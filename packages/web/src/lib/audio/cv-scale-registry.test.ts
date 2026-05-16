@@ -54,6 +54,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // per-sample multiply (out = in * (strength + offset) * level). No
   // scaling — slow CV gives tremolo, audio-rate CV gives ring modulation.
   stereovca: ['strength_l', 'strength_r'],
+  // VEILS cv1..cv4: per-channel gain CV summed directly with the gain knob
+  // inside the worklet's per-sample multiply. The gain knob's natural
+  // range is [0, 2], so a ±1V LFO at unity-knob already swings the
+  // effective gain from 0 to 2 — already a full natural-range sweep.
+  // Applying cvScale 'linear' would compute scale = (max-min)/2 = 1.0
+  // and pass the CV through unchanged anyway.
+  veils: ['cv1', 'cv2', 'cv3', 'cv4'],
 };
 
 describe('cv-scale / registry coverage', () => {
