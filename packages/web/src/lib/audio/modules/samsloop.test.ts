@@ -17,7 +17,13 @@ import {
   samsloopMath,
   loadSamsloopWav,
   SAMSLOOP_MAX_FILE_BYTES,
+  SAMSLOOP_MAX_SAMPLES,
   SAMSLOOP_RATE_RANGE,
+  createSamsloopRecMachine,
+  samsloopRecStart,
+  samsloopRecAppend,
+  samsloopRecStop,
+  samsloopRecFail,
 } from './samsloop';
 
 // ---------- module-def shape ----------
@@ -355,5 +361,139 @@ describe('samsloopMath.render — empty buffer', () => {
     const { out, active } = samsloopMath.render(empty, 50, 1, 0, 100, 'loop');
     expect(active).toBe(false);
     for (let i = 0; i < out.length; i++) expect(out[i]).toBe(0);
+  });
+});
+
+// ---------- mic-record state machine ----------
+//
+// The state machine is pure; the card owns the actual MediaStream and
+// AudioContext wiring. We test the transitions, the cap-enforcement
+// auto-stop, and the one-sample-only invariant.
+
+describe('samsloop mic-record state machine — transitions', () => {
+  it('createSamsloopRecMachine starts in idle with empty samples', () => {
+    const m = createSamsloopRecMachine(48000);
+    expect(m.state).toBe('idle');
+    expect(m.samples.length).toBe(0);
+    expect(m.sampleRate).toBe(48000);
+    expect(m.error).toBeNull();
+    expect(m.stopReason).toBeNull();
+  });
+
+  it('samsloopRecStart: idle → recording, resets sample buffer', () => {
+    const m = createSamsloopRecMachine(48000);
+    const r = samsloopRecStart(m, 44100);
+    expect(r.state).toBe('recording');
+    expect(r.samples.length).toBe(0);
+    expect(r.sampleRate).toBe(44100);
+    expect(r.error).toBeNull();
+  });
+
+  it('samsloopRecStart on already-recording is a no-op (idempotent)', () => {
+    let m = createSamsloopRecMachine(48000);
+    m = samsloopRecStart(m, 48000);
+    m = samsloopRecAppend(m, new Float32Array([0.1, 0.2, 0.3]));
+    const before = m.samples;
+    const after = samsloopRecStart(m, 48000);
+    // Same object identity ⇒ no transition happened.
+    expect(after).toBe(m);
+    expect(after.samples).toBe(before);
+  });
+
+  it('samsloopRecStop: recording → stopped with stopReason=user', () => {
+    let m = samsloopRecStart(createSamsloopRecMachine(), 48000);
+    m = samsloopRecAppend(m, new Float32Array([0.5, 0.4]));
+    const stopped = samsloopRecStop(m);
+    expect(stopped.state).toBe('stopped');
+    expect(stopped.stopReason).toBe('user');
+    expect(stopped.samples.length).toBe(2);
+  });
+
+  it('samsloopRecStop is a no-op when not recording', () => {
+    const idle = createSamsloopRecMachine();
+    expect(samsloopRecStop(idle)).toBe(idle);
+    const stopped = samsloopRecStop(samsloopRecStop(samsloopRecStart(idle, 48000)));
+    expect(stopped.state).toBe('stopped');
+    // Calling stop on an already-stopped machine returns the same ref.
+    expect(samsloopRecStop(stopped)).toBe(stopped);
+  });
+
+  it('samsloopRecFail returns to idle with an inline error message (NOT thrown)', () => {
+    const m = samsloopRecStart(createSamsloopRecMachine(), 48000);
+    const failed = samsloopRecFail(m, 'Microphone permission denied');
+    expect(failed.state).toBe('idle');
+    expect(failed.error).toBe('Microphone permission denied');
+    // Fresh sample buffer — failed recording does not leak partial samples.
+    expect(failed.samples.length).toBe(0);
+  });
+
+  it('starting a fresh recording clears a previous error', () => {
+    let m = samsloopRecFail(createSamsloopRecMachine(), 'No microphone available');
+    expect(m.error).toBe('No microphone available');
+    m = samsloopRecStart(m, 48000);
+    expect(m.error).toBeNull();
+    expect(m.state).toBe('recording');
+  });
+});
+
+describe('samsloop mic-record state machine — append + cap', () => {
+  it('samsloopRecAppend grows the sample buffer in order', () => {
+    let m = samsloopRecStart(createSamsloopRecMachine(), 48000);
+    m = samsloopRecAppend(m, new Float32Array([0.1, 0.2]));
+    m = samsloopRecAppend(m, new Float32Array([0.3, 0.4]));
+    expect(Array.from(m.samples)).toEqual([
+      // toBeCloseTo not needed — we wrote literal values.
+      expect.closeTo(0.1, 6),
+      expect.closeTo(0.2, 6),
+      expect.closeTo(0.3, 6),
+      expect.closeTo(0.4, 6),
+    ]);
+    expect(m.state).toBe('recording');
+  });
+
+  it('samsloopRecAppend on non-recording state is a no-op', () => {
+    const idle = createSamsloopRecMachine();
+    const out = samsloopRecAppend(idle, new Float32Array([0.5]));
+    expect(out).toBe(idle);
+    expect(out.samples.length).toBe(0);
+  });
+
+  it('SAMSLOOP_MAX_SAMPLES is SAMSLOOP_MAX_FILE_BYTES / 4 (Float32 size)', () => {
+    expect(SAMSLOOP_MAX_SAMPLES).toBe(Math.floor(SAMSLOOP_MAX_FILE_BYTES / 4));
+  });
+
+  it('auto-stops with stopReason=cap when the cap is exceeded mid-chunk', () => {
+    let m = samsloopRecStart(createSamsloopRecMachine(), 22050);
+    // Fill to one short of the cap.
+    const fill = new Float32Array(SAMSLOOP_MAX_SAMPLES - 1);
+    m = samsloopRecAppend(m, fill);
+    expect(m.state).toBe('recording');
+    // One more chunk pushes over: the helper truncates and stops.
+    const oversize = new Float32Array(100);
+    m = samsloopRecAppend(m, oversize);
+    expect(m.state).toBe('stopped');
+    expect(m.stopReason).toBe('cap');
+    expect(m.samples.length).toBe(SAMSLOOP_MAX_SAMPLES);
+  });
+
+  it('append on a cap-stopped machine is a no-op (no further growth)', () => {
+    let m = samsloopRecStart(createSamsloopRecMachine(), 22050);
+    m = samsloopRecAppend(m, new Float32Array(SAMSLOOP_MAX_SAMPLES));
+    expect(m.state).toBe('stopped');
+    const before = m.samples;
+    m = samsloopRecAppend(m, new Float32Array([0.99]));
+    expect(m.samples).toBe(before);
+  });
+
+  it('one-sample invariant: re-start while stopped DROPS the previous take', () => {
+    let m = samsloopRecStart(createSamsloopRecMachine(), 48000);
+    m = samsloopRecAppend(m, new Float32Array([0.1, 0.2, 0.3]));
+    m = samsloopRecStop(m);
+    expect(m.samples.length).toBe(3);
+    // Starting fresh wipes the previous samples — SAMSLOOP holds ONE
+    // sample at a time (see header comment on samsloop.ts).
+    m = samsloopRecStart(m, 48000);
+    expect(m.samples.length).toBe(0);
+    expect(m.state).toBe('recording');
   });
 });

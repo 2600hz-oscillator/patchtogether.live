@@ -186,6 +186,11 @@
     explainSpawnDenial,
     PICTUREBOX_TYPE,
   } from '$lib/multiplayer/picturebox-limits';
+  import {
+    samsloopSpawnDecision,
+    SAMSLOOP_TYPE,
+    SAMSLOOP_LIMIT_MESSAGE,
+  } from '$lib/multiplayer/samsloop-limits';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
 
@@ -314,6 +319,12 @@
       // boot to avoid maintaining a stale catalog mirror.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__listModuleDefs = listModuleDefs;
+      // Lets E2E tests exercise the palette spawn path (with all its
+      // per-user / per-rackspace / maxInstances guards) without driving
+      // the right-click → palette → click sequence. Used by SAMSLOOP
+      // cap-enforcement tests in particular.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__spawnFromPalette = spawnFromPalette;
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1913,6 +1924,25 @@
         return;
       }
     }
+    if (source.type === SAMSLOOP_TYPE) {
+      // Mirror the spawnFromPalette per-user/per-rackspace gate for
+      // duplicate-route adds. The exact `SAMSLOOP_LIMIT_MESSAGE` text
+      // is mandated by the brief; we use it for both reasons so the
+      // surface message is stable.
+      const decision = samsloopSpawnDecision(
+        patch.nodes,
+        currentUserId ?? null,
+      );
+      if (!decision.ok) {
+        trace(`duplicate refused: ${source.type} ${decision.reason} ${decision.current}/${decision.cap}`);
+        const msg = SAMSLOOP_LIMIT_MESSAGE;
+        error = msg;
+        setTimeout(() => {
+          if (error === msg) error = null;
+        }, 4000);
+        return;
+      }
+    }
     const dup = buildDuplicate(source, Object.keys(patch.nodes));
     ydoc.transact(() => {
       patch.nodes[dup.id] = dup;
@@ -2046,6 +2076,25 @@
         return;
       }
     }
+    // SAMSLOOP — same pattern as PICTUREBOX. Memory cost per instance
+    // dominated by the syncedstore CRDT proxy chain wrapping the sample
+    // payload; cap derived empirically. See
+    // lib/multiplayer/samsloop-limits.ts for the bench + math.
+    if (type === SAMSLOOP_TYPE) {
+      const decision = samsloopSpawnDecision(
+        patch.nodes,
+        currentUserId ?? null,
+      );
+      if (!decision.ok) {
+        trace(`refused spawn ${type}: ${decision.reason} ${decision.current}/${decision.cap}`);
+        const msg = SAMSLOOP_LIMIT_MESSAGE;
+        error = msg;
+        setTimeout(() => {
+          if (error === msg) error = null;
+        }, 4000);
+        return;
+      }
+    }
     const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
     // The new card is placed exactly under the cursor (spawnFlowPos was
     // computed via screenToFlowPosition by the caller). Earlier versions
@@ -2054,12 +2103,13 @@
     // is fine, the new card just renders on top via topNodeId/zIndex below.
     // Users who want a tidy layout still have right-click → Organize modules.
     const pos = { ...spawnFlowPos };
-    // Per-module spawn-time data stamping. PICTUREBOX writes creatorId
-    // (only when we have a real userId — single-user mode leaves it
-    // unattributed, matching the per-user-cap-skipped behavior of the
-    // decision helper above). See lib/multiplayer/picturebox-limits.ts.
+    // Per-module spawn-time data stamping. PICTUREBOX + SAMSLOOP both
+    // write creatorId (only when we have a real userId — single-user
+    // mode leaves it unattributed, matching the per-user-cap-skipped
+    // behavior of the decision helpers). See
+    // lib/multiplayer/picturebox-limits.ts and samsloop-limits.ts.
     const initialData: Record<string, unknown> | undefined =
-      type === PICTUREBOX_TYPE && currentUserId
+      (type === PICTUREBOX_TYPE || type === SAMSLOOP_TYPE) && currentUserId
         ? { creatorId: currentUserId }
         : undefined;
 

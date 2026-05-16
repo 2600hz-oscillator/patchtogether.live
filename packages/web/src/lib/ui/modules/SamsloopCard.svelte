@@ -14,8 +14,15 @@
     samsloopDef,
     loadSamsloopWav,
     SAMSLOOP_MAX_FILE_BYTES,
+    SAMSLOOP_MAX_SAMPLES,
     SAMSLOOP_RATE_RANGE,
+    createSamsloopRecMachine,
+    samsloopRecStart,
+    samsloopRecAppend,
+    samsloopRecStop,
+    samsloopRecFail,
     type SamsloopData,
+    type SamsloopRecMachine,
   } from '$lib/audio/modules/samsloop';
   import { useEngine } from '$lib/audio/engine-context';
   import { AudioEngine } from '$lib/audio/engine';
@@ -63,6 +70,192 @@
   let uploadStatus = $state<string | null>(null);
   let uploadError = $state<string | null>(null);
   let isLoop = $derived(Math.round(mode) === 1);
+
+  // ---------- mic-record state ----------
+  //
+  // The state machine in `recMachine` is the source of truth for what's
+  // currently happening (idle / recording / stopped). The MediaStream +
+  // AudioContext nodes that drive it are held in plain locals — we tear
+  // them down on stop / on failure / on component destroy. SAMSLOOP holds
+  // ONE sample at a time (see header on samsloop.ts) so finishing a
+  // recording REPLACES whatever sample was previously loaded.
+  let recMachine = $state<SamsloopRecMachine>(createSamsloopRecMachine(22050));
+  let micStream: MediaStream | null = null;
+  let micSource: MediaStreamAudioSourceNode | null = null;
+  let micTap: ScriptProcessorNode | null = null;
+  let recStartTimeMs = $state<number>(0);
+  // Tick state for the ms counter so the readout updates while
+  // recording. setInterval rather than rAF — we display milliseconds at
+  // 100ms granularity, not 60fps.
+  let recCounterTicker: ReturnType<typeof setInterval> | null = null;
+  let recCounterMs = $state<number>(0);
+
+  let isRecording = $derived(recMachine.state === 'recording');
+  let isCapStopped = $derived(
+    recMachine.state === 'stopped' && recMachine.stopReason === 'cap',
+  );
+  // REC and file-upload are mutually exclusive: while one is in-flight
+  // the other is disabled. uploadStatus is set transiently during
+  // decode; recording state covers the live-capture window.
+  let uploadInFlight = $derived(uploadStatus !== null);
+  let recButtonDisabled = $derived(uploadInFlight);
+  let fileInputDisabled = $derived(isRecording);
+
+  function tearDownMicGraph() {
+    if (micTap) {
+      try { micTap.disconnect(); } catch { /* */ }
+      // The processor's onaudioprocess holds a closure over recMachine —
+      // null it explicitly so a residual fire after disconnect is a no-op.
+      micTap.onaudioprocess = null;
+      micTap = null;
+    }
+    if (micSource) {
+      try { micSource.disconnect(); } catch { /* */ }
+      micSource = null;
+    }
+    if (micStream) {
+      for (const track of micStream.getTracks()) {
+        try { track.stop(); } catch { /* */ }
+      }
+      micStream = null;
+    }
+    if (recCounterTicker !== null) {
+      clearInterval(recCounterTicker);
+      recCounterTicker = null;
+    }
+  }
+
+  /** Write a finished recording into node.data, replacing any previous
+   *  sample (one-sample invariant). Mirrors the file-upload commit path
+   *  so playback wiring stays identical. */
+  function commitRecordingToNode(samples: Float32Array, sampleRate: number) {
+    const target = patch.nodes[id];
+    if (!target) return;
+    if (!target.data) target.data = {};
+    const d = target.data as SamsloopData;
+    d.samples = Array.from(samples);
+    d.sampleRate = sampleRate;
+    d.sampleLength = samples.length;
+    // Use a stable filename so the card displays "mic recording" instead
+    // of nothing — visually distinguishable from an uploaded WAV.
+    d.fileName = `mic ${(samples.length / sampleRate).toFixed(2)}s`;
+    target.params.start = 0;
+    target.params.end = samples.length;
+  }
+
+  async function toggleRecord() {
+    if (isRecording) {
+      // User-driven stop. tearDown + commit the captured samples.
+      const finished = samsloopRecStop(recMachine);
+      const samples = finished.samples;
+      const sr = finished.sampleRate;
+      recMachine = finished;
+      tearDownMicGraph();
+      if (samples.length > 0) commitRecordingToNode(samples, sr);
+      return;
+    }
+    // Begin a fresh recording. Clear any prior upload status so the
+    // status row only shows live state.
+    uploadStatus = null;
+    uploadError = null;
+
+    // Grab the AudioContext from the engine. We tap the mic through it
+    // rather than spawning a separate context so the captured samples
+    // are at the graph's native rate (no resampling later).
+    const eng = engineCtx.get();
+    let ctx: BaseAudioContext | undefined;
+    try {
+      if (eng?.hasDomain('audio')) {
+        const audioEngine = eng.getDomain<AudioEngine>('audio');
+        ctx = audioEngine.ctx;
+      }
+    } catch {
+      ctx = undefined;
+    }
+    if (!ctx || typeof (ctx as AudioContext).createMediaStreamSource !== 'function') {
+      recMachine = samsloopRecFail(
+        recMachine,
+        'Audio engine not ready yet — start audio first.',
+      );
+      return;
+    }
+    const audioCtx = ctx as AudioContext;
+
+    // Permission + device acquisition. getUserMedia rejects on denial /
+    // no-device / SecureContext violations; we route those into the
+    // state machine as inline errors rather than letting them throw.
+    if (!navigator.mediaDevices?.getUserMedia) {
+      recMachine = samsloopRecFail(
+        recMachine,
+        'Microphone capture not supported in this browser.',
+      );
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      const name = (err as { name?: string } | null)?.name;
+      const msg =
+        name === 'NotAllowedError' || name === 'PermissionDeniedError'
+          ? 'Microphone permission denied.'
+          : name === 'NotFoundError' || name === 'DevicesNotFoundError'
+            ? 'No microphone found.'
+            : `Mic capture failed: ${err instanceof Error ? err.message : String(err)}`;
+      recMachine = samsloopRecFail(recMachine, msg);
+      return;
+    }
+
+    micStream = stream;
+    // ScriptProcessorNode is deprecated but universally available and
+    // doesn't require a separate worklet bundle for capture — fine for
+    // a short (max ~2.84s) mono recording. The cap auto-stop bounds the
+    // total CPU exposure to the processor's lifetime.
+    micSource = audioCtx.createMediaStreamSource(stream);
+    const tap = audioCtx.createScriptProcessor(2048, 1, 1);
+    micTap = tap;
+    recMachine = samsloopRecStart(recMachine, audioCtx.sampleRate);
+    recStartTimeMs = performance.now();
+    recCounterMs = 0;
+    recCounterTicker = setInterval(() => {
+      recCounterMs = Math.floor(performance.now() - recStartTimeMs);
+    }, 100);
+
+    tap.onaudioprocess = (ev) => {
+      // input[0] is mono (we asked for 1 input channel). Copy out — the
+      // event's buffer is reused.
+      const ch = ev.inputBuffer.getChannelData(0);
+      const chunk = new Float32Array(ch.length);
+      chunk.set(ch);
+      const updated = samsloopRecAppend(recMachine, chunk);
+      // If the helper auto-stopped on cap, tear down the mic graph here
+      // and commit the captured samples. Mirrors the user-stop path.
+      if (recMachine.state === 'recording' && updated.state === 'stopped') {
+        recMachine = updated;
+        const samples = updated.samples;
+        const sr = updated.sampleRate;
+        tearDownMicGraph();
+        commitRecordingToNode(samples, sr);
+      } else {
+        recMachine = updated;
+      }
+    };
+    micSource.connect(tap);
+    // ScriptProcessorNode requires connection to a destination to fire
+    // onaudioprocess. Connect to a muted GainNode so we don't echo back
+    // into the user's speakers (which would cause feedback).
+    const sink = audioCtx.createGain();
+    sink.gain.value = 0;
+    tap.connect(sink);
+    sink.connect(audioCtx.destination);
+  }
+
+  // Tear down the mic graph on unmount so we don't leave the mic LED on
+  // and don't leak the ScriptProcessorNode. Recording-state machine is
+  // pure so it doesn't need explicit cleanup.
+  $effect(() => {
+    return () => tearDownMicGraph();
+  });
 
   async function onAudioFileChange(ev: Event) {
     const input = ev.target as HTMLInputElement;
@@ -178,15 +371,36 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
       <div class="upload-row">
-        <label class="upload-btn" data-testid="samsloop-upload-label">
+        <label
+          class="upload-btn"
+          class:disabled={fileInputDisabled}
+          data-testid="samsloop-upload-label"
+        >
           <input
             type="file"
             accept="audio/*"
             onchange={onAudioFileChange}
+            disabled={fileInputDisabled}
             data-testid="samsloop-wav-input"
           />
           <span>Load audio (≤ {SAMSLOOP_MAX_FILE_BYTES / 1024} KB)…</span>
         </label>
+        <button
+          type="button"
+          class="rec-btn"
+          class:active={isRecording}
+          disabled={recButtonDisabled}
+          onclick={toggleRecord}
+          data-testid="samsloop-rec-button"
+          aria-label={isRecording ? 'Stop recording' : 'Start recording from microphone'}
+        >
+          {#if isRecording}
+            <span class="rec-dot"></span>
+            REC <span class="rec-counter" data-testid="samsloop-rec-counter">{recCounterMs} ms</span>
+          {:else}
+            REC
+          {/if}
+        </button>
         <button
           type="button"
           class="mode-btn"
@@ -204,6 +418,12 @@
       {/if}
       {#if uploadError}
         <div class="upload-error" data-testid="samsloop-upload-error">{uploadError}</div>
+      {/if}
+      {#if isCapStopped}
+        <div class="upload-status" data-testid="samsloop-rec-cap-msg">max length reached</div>
+      {/if}
+      {#if recMachine.error}
+        <div class="upload-error" data-testid="samsloop-rec-error">{recMachine.error}</div>
       {/if}
 
       <div class="waveform-row">
@@ -307,6 +527,10 @@
     color: var(--text, #d8dde6);
     border-color: #6a7282;
   }
+  .samsloop-card .upload-btn.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
   .samsloop-card .mode-btn {
     background: #1a1f2a;
     color: var(--text-dim, #8b94a5);
@@ -325,6 +549,52 @@
   }
   .samsloop-card .mode-btn:hover {
     border-color: #6a7282;
+  }
+  .samsloop-card .rec-btn {
+    background: #1a1f2a;
+    color: var(--text-dim, #8b94a5);
+    border: 1px solid #404652;
+    border-radius: 2px;
+    padding: 4px 8px;
+    font-size: 0.6rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    font-family: ui-monospace, monospace;
+    min-width: 64px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .samsloop-card .rec-btn:hover {
+    border-color: #6a7282;
+  }
+  .samsloop-card .rec-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .samsloop-card .rec-btn.active {
+    color: #ffffff;
+    background: #c0282e;
+    border-color: #ff6b6b;
+  }
+  .samsloop-card .rec-btn .rec-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #ffffff;
+    display: inline-block;
+    /* Pulse only while recording (parent .active) so non-recording
+     * REC buttons don't blink. */
+    animation: samsloop-rec-pulse 1s ease-in-out infinite;
+  }
+  .samsloop-card .rec-btn .rec-counter {
+    font-size: 0.55rem;
+    opacity: 0.9;
+  }
+  @keyframes samsloop-rec-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
   }
   .samsloop-card .filename {
     font-size: 0.55rem;
