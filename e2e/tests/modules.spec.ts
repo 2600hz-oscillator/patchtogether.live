@@ -175,6 +175,10 @@ const MODULES: ModuleSpec[] = [
   // size_cv, mix_cv) + 2 audio outputs (out_l, out_r) = 8 handles.
   // Schroeder reverb tank + pitch-shifted feedback shimmer.
   { type: 'shimmershine', cardClass: 'svelte-flow__node-shimmershine', handleCount: 8, containsLabel: 'SHIMMERSHINE' },
+  // MACROOSCILLATOR: 8 inputs (pitch, trig, model_cv, note_cv, harm_cv,
+  // timb_cv, morph_cv, level_cv) + 2 outputs (out, aux) = 10 handles.
+  // Plaits-style macro oscillator — VA + waveshape models in first slice.
+  { type: 'macrooscillator', cardClass: 'svelte-flow__node-macrooscillator', handleCount: 10, containsLabel: 'MACROOSCILLATOR' },
   // STICKY: meta-domain card. No ports → 0 handles. Domain 'meta' tells
   // spawnPatch + the io-spec-consistency gate not to route through the
   // audio/video engines.

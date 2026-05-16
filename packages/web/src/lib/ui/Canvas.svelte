@@ -119,6 +119,8 @@
   import StereovcaCard from '$lib/ui/modules/StereovcaCard.svelte';
   // SHIMMERSHINE — lush shimmer reverb (Schroeder tank + pitch-shifted feedback).
   import ShimmershineCard from '$lib/ui/modules/ShimmershineCard.svelte';
+  // MACROOSCILLATOR — Plaits-style macro oscillator (VA + waveshape models).
+  import MacrooscillatorCard from '$lib/ui/modules/MacrooscillatorCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -248,6 +250,7 @@
     warrenspectrum: WarrenspectrumCard,
     stereovca: StereovcaCard,
     shimmershine: ShimmershineCard,
+    macrooscillator: MacrooscillatorCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

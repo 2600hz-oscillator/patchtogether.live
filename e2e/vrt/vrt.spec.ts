@@ -77,6 +77,9 @@ const MODULES: VrtModule[] = [
   { type: 'warrenspectrum', domain: 'audio', mask: [{ selector: 'canvas' }] },
   { type: 'stereovca', domain: 'audio' },
   { type: 'shimmershine', domain: 'audio' },
+  // MACROOSCILLATOR — Plaits-style macro oscillator (VA + waveshape models).
+  // Static card chrome — no canvas / live preview, so no mask needed.
+  { type: 'macrooscillator', domain: 'audio' },
   // ----- video domain -----
   // Every video module renders a preview canvas. Mask it; assert the
   // chrome (title, ports, knobs).
