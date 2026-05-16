@@ -44,6 +44,10 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // which proves the headline MACSEQ→MACROOSCILLATOR MODELCV wiring works.
   // A follow-up PR will capture the darwin + linux pixel baselines.
   macseq: 'VRT baseline pending; e2e/tests/macseq.spec.ts covers MODELCV wiring',
+  // RINGS first-slice PR: VRT baseline pending; ART + unit + E2E
+  // provide coverage. Linux baseline is darwin-only for v1; a
+  // follow-up PR will capture both platforms and promote into MODULES.
+  rings: 'VRT baseline pending; ART + unit + E2E provide coverage. Linux baseline is darwin-only for v1.',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
