@@ -94,6 +94,12 @@ export function applySkinToRoot(skin: Skin): void {
   for (const [k, v] of Object.entries(skin.vars)) {
     root.style.setProperty(k, v);
   }
+  // Expose the active skin id as `data-skin` on <html> so skins can opt
+  // into scoped CSS overlays (e.g. MATRIXCOWBOY's CRT scanlines + flicker
+  // animation in global.css) without each skin needing to re-declare the
+  // tokens. Default + CSS-only skins ignore this attribute; only skins
+  // with a matching `html[data-skin="…"]` rule are affected.
+  root.setAttribute('data-skin', skin.id);
   // Sprite-extension CSS vars — write or clear.
   const ext: Array<[string, string | undefined]> = [
     ['--control-style', skin.controlStyle],

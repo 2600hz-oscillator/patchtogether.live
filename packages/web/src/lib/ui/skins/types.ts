@@ -14,7 +14,13 @@
 // See `.myrobots/plans/ui-skins-v2.md` §3 for the token surface rationale
 // and §4 for the per-skin design notes.
 
-export type SkinId = 'default' | 'terminal-green' | 'brutalist' | 'vaporwave' | 'vintage';
+export type SkinId =
+  | 'default'
+  | 'terminal-green'
+  | 'brutalist'
+  | 'vaporwave'
+  | 'vintage'
+  | 'matrixcowboy';
 
 /** Every skin MUST set every key. The keys are the public skin contract;
  *  adding/removing a key is a breaking change for any future custom-skin

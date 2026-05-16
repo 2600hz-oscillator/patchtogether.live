@@ -9,6 +9,7 @@ import { terminalGreenSkin } from './terminal-green';
 import { brutalistSkin } from './brutalist';
 import { vaporwaveSkin } from './vaporwave';
 import { vintageSkin } from './vintage';
+import { matrixcowboySkin } from './matrixcowboy';
 import type { Skin, SkinId } from './types';
 
 export type { Skin, SkinId } from './types';
@@ -20,6 +21,7 @@ export const SKINS: readonly Skin[] = [
   brutalistSkin,
   vaporwaveSkin,
   vintageSkin,
+  matrixcowboySkin,
 ] as const;
 
 const SKIN_BY_ID: Map<SkinId, Skin> = new Map(SKINS.map((s) => [s.id, s]));

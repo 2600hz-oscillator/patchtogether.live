@@ -37,7 +37,16 @@ const storageStub = new StorageStub();
 // Globals must be in place before the .svelte.ts module is evaluated;
 // the module's IIFE constructs the singleton, which probes both.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-(globalThis as any).document = { documentElement: { style: styleStub } };
+const attrStub: Record<string, string> = {};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).document = {
+  documentElement: {
+    style: styleStub,
+    setAttribute(name: string, value: string) { attrStub[name] = value; },
+    getAttribute(name: string): string | null { return attrStub[name] ?? null; },
+    removeAttribute(name: string) { delete attrStub[name]; },
+  },
+};
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).localStorage = storageStub;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,6 +60,7 @@ const { terminalGreenSkin } = await import('./terminal-green');
 const { brutalistSkin } = await import('./brutalist');
 const { vaporwaveSkin } = await import('./vaporwave');
 const { vintageSkin } = await import('./vintage');
+const { matrixcowboySkin } = await import('./matrixcowboy');
 
 const STORAGE_KEY = 'pt.skin';
 
@@ -67,8 +77,8 @@ beforeEach(() => {
 });
 
 describe('skin types + registry', () => {
-  it('exposes 5 in-tree skins, default first', () => {
-    expect(SKINS.length).toBe(5);
+  it('exposes 6 in-tree skins, default first', () => {
+    expect(SKINS.length).toBe(6);
     expect(SKINS[0]?.id).toBe('default');
   });
 
@@ -210,6 +220,22 @@ describe('vintage skin + sprite extension', () => {
     expect(terminalGreenSkin.controlStyle).toBeUndefined();
     expect(brutalistSkin.controlStyle).toBeUndefined();
     expect(vaporwaveSkin.controlStyle).toBeUndefined();
+  });
+
+  it('matrixcowboy stays on the CSS path but ships a monospace font', () => {
+    // MATRIXCOWBOY reuses the silkscreen-font hook for IBM Plex Mono but
+    // does NOT opt into sprite-based controls — chrome stays CSS-rendered
+    // so the CRT scanline overlay reads cleanly across every module card.
+    expect(matrixcowboySkin.controlStyle).toBeUndefined();
+    expect(matrixcowboySkin.silkscreenFontFamily).toMatch(/Plex Mono/);
+    expect(matrixcowboySkin.silkscreenFontStylesheet).toMatch(/^https:/);
+  });
+
+  it('applying a skin writes data-skin on documentElement', () => {
+    applySkinToRoot(matrixcowboySkin);
+    expect(attrStub['data-skin']).toBe('matrixcowboy');
+    applySkinToRoot(defaultSkin);
+    expect(attrStub['data-skin']).toBe('default');
   });
 
   it('applySkinToRoot writes sprite-extension vars only for vintage', () => {
