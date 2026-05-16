@@ -171,6 +171,10 @@ const MODULES: ModuleSpec[] = [
   // modulator with INDEPENDENT normalling on the audio and strength halves;
   // strength inputs declare `cv` (PASSTHROUGH_BY_DESIGN — raw bipolar carrier).
   { type: 'stereovca',    cardClass: 'svelte-flow__node-stereovca',    handleCount: 6, containsLabel: 'STEREOVCA' },
+  // SHIMMERSHINE: 6 inputs (in_l, in_r + 4 cv: decay_cv, shimmer_cv,
+  // size_cv, mix_cv) + 2 audio outputs (out_l, out_r) = 8 handles.
+  // Schroeder reverb tank + pitch-shifted feedback shimmer.
+  { type: 'shimmershine', cardClass: 'svelte-flow__node-shimmershine', handleCount: 8, containsLabel: 'SHIMMERSHINE' },
   // STICKY: meta-domain card. No ports → 0 handles. Domain 'meta' tells
   // spawnPatch + the io-spec-consistency gate not to route through the
   // audio/video engines.

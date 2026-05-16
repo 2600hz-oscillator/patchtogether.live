@@ -159,6 +159,10 @@ type StandardModuleType =
   // behaves as VCA gain (slow strength) or ring mod (audio-rate strength);
   // INDEPENDENT normalling on the audio and strength halves.
   | 'stereovca'
+  // SHIMMERSHINE — lush stereo shimmer reverb. Schroeder tank
+  // (4 combs + 2 allpasses per channel) with a pitch-shifted (+12 semis)
+  // feedback loop using a granular-fade dual-head pitch shifter.
+  | 'shimmershine'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.

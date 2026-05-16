@@ -37,6 +37,7 @@ import { bugglesDef } from './buggles';
 import { wavecelDef } from './wavecel';
 import { warrenspectrumDef } from './warrenspectrum';
 import { stereovcaDef } from './stereovca';
+import { shimmershineDef } from './shimmershine';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -79,6 +80,7 @@ export function registerAudioModules(): void {
   registerModule(wavecelDef);
   registerModule(warrenspectrumDef);
   registerModule(stereovcaDef);
+  registerModule(shimmershineDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

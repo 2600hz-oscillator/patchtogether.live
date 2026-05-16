@@ -203,6 +203,8 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'warrenspectrum',
     // STEREOVCA — stereo VCA + ring modulator with independent normalling.
     'stereovca',
+    // SHIMMERSHINE — stereo shimmer reverb (Schroeder + pitch-shifted feedback).
+    'shimmershine',
     // STICKY — meta-domain paper-style sticky note (no engine binding, no
     // ports). Covered by this test because the def↔UI parity rule is
     // trivially zero ports both sides; if either side accidentally grows
