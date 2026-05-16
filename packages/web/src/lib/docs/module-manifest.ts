@@ -137,6 +137,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Modal / sympathetic-string resonator (Mutable Instruments Rings archetype). Faithful TypeScript port of the eurorack/rings/ DSP (MIT-licensed). v1 ships two resonator models: (0) MODAL — bank of 24 parallel stiffness-stretched RBJ bandpasses with cosine-weighted Odd/Even pickup taps; (1) SYMPATHETIC — 2 parallel Karplus-Strong delay lines with one-pole damping. STRUCTURE/BRIGHTNESS/DAMPING/POSITION are the canonical Rings knobs; LEVEL is a soft-limited output gain. EXCITER in drives both engines; STRUM rising edge re-ignites a ~10ms noise burst (KS) or impulse (modal). Outputs odd / even — patch both for stereo. Polyphony 1; STRING+REVERB deferred.',
   peaks:
     'Dual-channel multi-mode utility (Mutable Instruments Peaks archetype, Émilie Gillet, 2013, MIT-licensed). Each channel selects one of five modes — KICK (sine carrier + pitch envelope + amp envelope), SNARE (body sine + filtered noise + decay), HIHAT (six-square metallic cluster + bandpass + decay), ENV (attack-decay envelope, CV-output 0..1, re-attacks on gate), LFO (sine/triangle/square, CV-output ±1, phase resets on gate). Two mode-dependent knobs per channel: knob1 = pitch/mix/brightness/attack/rate; knob2 = decay or waveshape. Gate input retriggers the active engine on rising edges. v1 ships five modes; multistage envelope / tap-LFO / BPF mode deferred to follow-up.',
+  warps:
+    'Meta-modulator / signal masher (Mutable Instruments Warps archetype, Émilie Gillet, 2014, MIT-licensed). Clean-room pure-TypeScript port — four cross-modulation algorithms (0=XFADE equal-power crossfade, 1=RING-MOD digital ring modulation with TIMBRE drive, 2=XOR 16-bit bit-mash crossfaded against a 0.7-sum, 3=COMPARE Warps\' direct/threshold/window comparator suite). An internal carrier oscillator (sine / triangle / saw / square selectable via the SHAPE knob) drives the carrier path when carrier_in is unpatched, so the module is usable as a one-input ring modulator or with no inputs at all. PITCH is V/oct on the internal carrier; NOTE is a ±60-semitone offset. LEVEL 1 / LEVEL 2 scale the carrier and modulator inputs. Output is mono softclipped through x/(1+|x|). FOLD / ANALOG-RING / FREQUENCY-SHIFTER / DOPPLER / VOCODER algorithms deferred to a follow-up PR.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -348,6 +350,16 @@ const PORT_NOTES: Record<string, string> = {
   'rings.level_cv':  'CV → LEVEL (0..1) — soft-limited output gain.',
   'rings.odd':       'Primary output — odd-indexed mode sum (MODAL) or odd-tap string mix (SYMPATHETIC).',
   'rings.even':      'Secondary output — even-indexed mode sum / even-tap mix.',
+  // WARPS — meta-modulator / signal masher.
+  'warps.carrier_in':       'Audio carrier input. When patched, replaces the internal oscillator as the carrier signal feeding the selected Xmod algorithm.',
+  'warps.modulator_in':     'Audio modulator input. Multiplied by LEVEL 2 before entering the Xmod algorithm.',
+  'warps.pitch':            'V/oct pitch input for the internal carrier oscillator (1 unit = 1 octave on top of C4 = 261.6256 Hz). Sums with the NOTE param.',
+  'warps.algorithm_cv':     'CV → ALGORITHM (discrete: 0=XFADE, 1=RING-MOD, 2=XOR, 3=COMPARE).',
+  'warps.carrier_shape_cv': 'CV → SHAPE (internal-oscillator waveform: 0..0.25 sine, 0.25..0.5 triangle, 0.5..0.75 saw, 0.75..1 square).',
+  'warps.timbre_cv':        'CV → TIMBRE — per-algorithm intensity / mix. XFADE: crossfade position. RING-MOD: drive (0=clean ring, 1=overdriven). XOR: dry/wet between 0.7-sum and the XOR-mash. COMPARE: position through the 4 sub-mode interpolation.',
+  'warps.level_1_cv':       'CV → LEVEL 1 (carrier-input gain).',
+  'warps.level_2_cv':       'CV → LEVEL 2 (modulator-input gain).',
+  'warps.out':              'Mono audio output, post-softlimit (x / (1 + |x|)).',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
