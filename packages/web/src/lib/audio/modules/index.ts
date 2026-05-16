@@ -41,6 +41,7 @@ import { shimmershineDef } from './shimmershine';
 import { macrooscillatorDef } from './macrooscillator';
 import { samsloopDef } from './samsloop';
 import { cloudsDef } from './clouds';
+import { macseqDef } from './macseq';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -87,6 +88,7 @@ export function registerAudioModules(): void {
   registerModule(macrooscillatorDef);
   registerModule(samsloopDef);
   registerModule(cloudsDef);
+  registerModule(macseqDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

@@ -177,6 +177,8 @@ type StandardModuleType =
   // Blend). v1 ships GRANULAR mode only; STRETCH / LOOPING-DELAY /
   // SPECTRAL deferred.
   | 'clouds'
+  // MACSEQ — 16-step sequencer with per-step MACROOSCILLATOR voice picker.
+  | 'macseq'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
