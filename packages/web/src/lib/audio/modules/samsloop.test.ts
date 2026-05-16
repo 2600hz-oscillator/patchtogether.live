@@ -128,6 +128,67 @@ describe('loadSamsloopWav size limit', () => {
   });
 });
 
+// ---------- multi-format gate (not WAV-only) ----------
+//
+// The gate must NOT discriminate by extension or magic bytes — it hands
+// any bytes the picker accepts straight to decodeAudioData and lets the
+// browser decide. This guards against the regression where the loader
+// (or, more commonly, the file picker `accept` attribute) was wav-only,
+// which silently rejected m4a / mp3 / ogg / flac uploads even though
+// the underlying decoder supports them. The decoder is stubbed so the
+// test exercises only the gate, not any real codec.
+describe('loadSamsloopWav accepts any browser-decodable audio', () => {
+  function makeMockingCtx(): BaseAudioContext {
+    return {
+      decodeAudioData: async (_ab: ArrayBuffer): Promise<AudioBuffer> => ({
+        length: 8,
+        numberOfChannels: 1,
+        sampleRate: 44100,
+        getChannelData: () => new Float32Array([0.1, 0.2, 0.3, 0.4, -0.1, -0.2, -0.3, -0.4]),
+      } as unknown as AudioBuffer),
+    } as unknown as BaseAudioContext;
+  }
+
+  it('accepts an m4a file under the size cap (gate is not wav-only)', async () => {
+    const fakeM4a = {
+      size: 25 * 1024,
+      arrayBuffer: async () => new ArrayBuffer(25 * 1024),
+    };
+    const result = await loadSamsloopWav(fakeM4a, makeMockingCtx());
+    expect(result.ok).toBe(true);
+    expect(result.samples).toBeDefined();
+    expect(result.samples!.length).toBe(8);
+    expect(result.sampleRate).toBe(44100);
+  });
+
+  it('accepts an mp3 file under the size cap', async () => {
+    const fakeMp3 = {
+      size: 50 * 1024,
+      arrayBuffer: async () => new ArrayBuffer(50 * 1024),
+    };
+    const result = await loadSamsloopWav(fakeMp3, makeMockingCtx());
+    expect(result.ok).toBe(true);
+    expect(result.samples).toBeDefined();
+  });
+
+  it('reports a friendly "could not decode audio" error (no "WAV" in the copy)', async () => {
+    // The decoder rejects → the gate surfaces a format-agnostic message.
+    const failingCtx = {
+      decodeAudioData: async (_ab: ArrayBuffer): Promise<AudioBuffer> => {
+        throw new Error('EncodingError: Unable to decode audio data');
+      },
+    } as unknown as BaseAudioContext;
+    const fakeBlob = {
+      size: 1024,
+      arrayBuffer: async () => new ArrayBuffer(1024),
+    };
+    const result = await loadSamsloopWav(fakeBlob, failingCtx);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/could not decode audio/i);
+    expect(result.error).not.toMatch(/\bWAV\b/);
+  });
+});
+
 // ---------- varispeed mapping ----------
 
 describe('samsloopMath.sliderToRate', () => {
