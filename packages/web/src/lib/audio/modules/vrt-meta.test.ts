@@ -52,6 +52,10 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // coverage. Promote into MODULES + capture baselines on both platforms
   // in a follow-up PR.
   peaks: 'VRT baseline pending; ART + unit + E2E provide coverage.',
+  // WARPS first-slice PR: VRT baseline pending; ART + unit + E2E provide
+  // coverage. Promote into MODULES + capture baselines on both platforms
+  // in a follow-up PR.
+  warps: 'VRT baseline pending; ART + unit + E2E provide coverage.',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
