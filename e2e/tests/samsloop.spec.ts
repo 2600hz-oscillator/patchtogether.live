@@ -166,6 +166,71 @@ test.describe('SAMSLOOP module', () => {
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
+  test('REC button is present and clicking it does not crash the card', async ({ page }) => {
+    // Mic capture itself is exercised in samsloop-mic.spec.ts (fake-mic
+    // project). Here we just assert the button mounts + clicking it in
+    // the default (no fake-mic flag) project doesn't throw — a missing
+    // permission rejects to an inline error string, not a page error.
+    const errors = await setupPage(page);
+    await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
+    const rec = page.locator('[data-testid="samsloop-rec-button"]');
+    await expect(rec).toBeVisible();
+    await expect(rec).toContainText('REC');
+    // Click + give the (eventual) getUserMedia rejection a beat to settle.
+    await rec.click();
+    await page.waitForTimeout(500);
+    // The card should NOT have thrown. Filter known mic-permission noise
+    // (we EXPECT getUserMedia to reject under the default Chromium project
+    // since no permission was granted) — that surfaces inline, not as a
+    // page error.
+    const noisy = (e: string) => /Permission denied|NotAllowed|getUserMedia|permission|microphone/i.test(e);
+    expect(errors.filter((e) => !noisy(e)), errors.join('; ')).toEqual([]);
+  });
+
+  test('per-rackspace cap: adding samsloop #21 surfaces "sorry, SAMSLOOP limit exceeded"', async ({ page }) => {
+    // The per-rackspace cap is 20 (see lib/multiplayer/samsloop-limits.ts).
+    // In single-user E2E mode the per-user cap is skipped (null userId) so
+    // the rackspace cap is what we hit. We spawn 20 directly into the
+    // patch then attempt one more via spawnFromPalette and expect the
+    // error band to surface the exact mandated message.
+    const errors = await setupPage(page);
+    const seed = Array.from({ length: 20 }, (_, i) => ({
+      id: `s-${i}`,
+      type: 'samsloop',
+      position: { x: 80 + (i % 5) * 40, y: 80 + Math.floor(i / 5) * 40 },
+    }));
+    await spawnPatch(page, seed);
+    await page.waitForTimeout(300);
+    // Open the palette and try to add one more SAMSLOOP — should be
+    // blocked. We invoke spawnFromPalette via the dev-only window helper
+    // so this test isn't coupled to the right-click → palette UX (which
+    // is covered separately).
+    const present = await page.evaluate(() => {
+      const w = globalThis as unknown as { __spawnFromPalette?: (type: string) => void };
+      const ok = typeof w.__spawnFromPalette === 'function';
+      if (ok) w.__spawnFromPalette!('samsloop');
+      return ok;
+    });
+    expect(present, '__spawnFromPalette must be exposed in dev mode').toBe(true);
+    // Error band (Canvas's pre.error) surfaces the exact brief-mandated
+    // string. The band auto-clears after 4s — assert within that window.
+    await expect(page.locator('pre.error'))
+      .toContainText('sorry, SAMSLOOP limit exceeded', { timeout: 4000 });
+    // And the patch did NOT acquire a 21st samsloop.
+    const samsloopCount = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { type?: string }> };
+      };
+      let n = 0;
+      for (const node of Object.values(w.__patch.nodes)) {
+        if (node?.type === 'samsloop') n++;
+      }
+      return n;
+    });
+    expect(samsloopCount).toBe(20);
+    expect(errors, errors.join('; ')).toEqual([]);
+  });
+
   test('rejects oversize files (>250 KB) with the size-limit error', async ({ page }) => {
     const errors = await setupPage(page);
     await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
