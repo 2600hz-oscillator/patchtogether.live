@@ -45,6 +45,7 @@ import { macseqDef } from './macseq';
 import { ringsDef } from './rings';
 import { peaksDef } from './peaks';
 import { warpsDef } from './warps';
+import { veilsDef } from './veils';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -95,6 +96,7 @@ export function registerAudioModules(): void {
   registerModule(ringsDef);
   registerModule(peaksDef);
   registerModule(warpsDef);
+  registerModule(veilsDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
