@@ -44,12 +44,40 @@ test(`chaos run [seed=${SEED}, ${ITERATIONS}× ${PERSONALITY}]`, async ({ page }
 
   // Console event capture. Drained per-tick so errors are attributed to the
   // iteration that produced them.
+  //
+  // Issue #146 fix: capture err.stack/err.name on pageerror, and pull
+  // msg.location() on console-error events. Without this enrichment, raw
+  // ErrorEvent dispatches (typical of AudioWorklet failures) reach the
+  // invariant as the literal string "ErrorEvent" and the finding bundle
+  // is useless for triage.
   const consoleBuffer: ConsoleEvent[] = [];
   page.on('console', (msg) => {
-    consoleBuffer.push({ type: msg.type() as ConsoleEvent['type'], text: msg.text(), at: Date.now() });
+    const type = msg.type() as ConsoleEvent['type'];
+    let stack: string | undefined;
+    if (type === 'error') {
+      // Playwright doesn't expose the in-page JS stack on console.error
+      // events, but msg.location() carries "${url}:${line}:${col}" which
+      // beats no provenance at all. We synthesize a one-line "stack" so
+      // findings can be grouped by source location.
+      const loc = msg.location();
+      if (loc?.url) stack = `at ${loc.url}:${loc.lineNumber ?? '?'}:${loc.columnNumber ?? '?'}`;
+    }
+    consoleBuffer.push({ type, text: msg.text(), at: Date.now(), stack });
   });
   page.on('pageerror', (err) => {
-    consoleBuffer.push({ type: 'pageerror', text: err.message, at: Date.now() });
+    // For bare ErrorEvent dispatches (no Error instance underneath),
+    // err.message is the constructor name — combine name + message so the
+    // captured text is always non-empty.
+    const text = err.message && err.message !== 'ErrorEvent'
+      ? err.message
+      : `${err.name ?? 'Error'}: ${err.message ?? '(no message)'}`;
+    consoleBuffer.push({
+      type: 'pageerror',
+      text,
+      at: Date.now(),
+      name: err.name,
+      stack: err.stack,
+    });
   });
 
   await page.goto(RACKSPACE_URL ?? '/');

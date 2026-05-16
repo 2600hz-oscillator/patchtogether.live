@@ -260,10 +260,23 @@ export class AudioEngine implements DomainEngine {
     this.nodes.delete(nodeId);
     this.nodeTypes.delete(nodeId);
     // Drop any cached knob values for this node so a re-spawn at the same
-    // id starts fresh from its def defaults.
+    // id starts fresh from its def defaults. Also clear any per-param
+    // modulator-tap AnalyserNodes keyed by this node — without this, the
+    // paramTaps Map grows monotonically over an add/remove churn (chaos
+    // 24/7 reproduces this in seconds) and the orphaned AnalyserNodes
+    // outlive their source AudioNodes, leaking GC pressure.
     const prefix = `${nodeId}::`;
     for (const key of this.knobValues.keys()) {
       if (key.startsWith(prefix)) this.knobValues.delete(key);
+    }
+    for (const key of this.paramTaps.keys()) {
+      if (key.startsWith(prefix)) {
+        const tap = this.paramTaps.get(key);
+        if (tap) {
+          try { tap.disconnect(); } catch { /* already torn down */ }
+        }
+        this.paramTaps.delete(key);
+      }
     }
   }
 

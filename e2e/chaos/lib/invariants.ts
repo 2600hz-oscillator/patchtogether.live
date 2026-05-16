@@ -17,6 +17,15 @@ export interface ConsoleEvent {
   type: 'log' | 'info' | 'warning' | 'error' | 'pageerror';
   text: string;
   at: number;
+  /** Optional Error.name (e.g. "TypeError"). Set for pageerror events when
+   *  the thrown value is an Error instance; undefined for raw ErrorEvent
+   *  dispatches and plain console.* calls. */
+  name?: string;
+  /** Optional stack trace. For pageerror: err.stack. For console.error:
+   *  Playwright doesn't surface a JS stack directly, so we fall back to
+   *  `${url}:${line}:${col}` from msg.location() — at least the source
+   *  file/line is preserved instead of literally storing "ErrorEvent". */
+  stack?: string;
 }
 
 export interface InvariantContext {
@@ -47,6 +56,18 @@ function isBenignConsoleMessage(text: string): boolean {
   return ALLOWED_CONSOLE_PATTERNS.some((re) => re.test(text));
 }
 
+/** Render a captured ConsoleEvent for the violation message. Surfaces
+ *  name + first stack line when present (issue #146 — without this the
+ *  message is the literal string "ErrorEvent" and triage is impossible). */
+function formatErrorEvent(e: ConsoleEvent): string {
+  const head = (e.name && !e.text.startsWith(e.name))
+    ? `${e.name}: ${e.text.slice(0, 200)}`
+    : e.text.slice(0, 200);
+  if (!e.stack) return head;
+  const firstStackLine = e.stack.split('\n').find((l) => l.trim().length > 0) ?? '';
+  return `${head}\n    ${firstStackLine.trim()}`;
+}
+
 export function checkInvariants(ctx: InvariantContext): Violation | null {
   // 1. AudioContext stays running.
   if (ctx.engine.ctxState !== 'running' && ctx.engine.ctxState !== 'unknown') {
@@ -66,7 +87,7 @@ export function checkInvariants(ctx: InvariantContext): Violation | null {
   if (errs.length > 0) {
     return {
       invariantId: 'no-console-errors',
-      message: `${errs.length} console errors:\n  ${errs.slice(0, 3).map((e) => e.text.slice(0, 200)).join('\n  ')}`,
+      message: `${errs.length} console errors:\n  ${errs.slice(0, 3).map(formatErrorEvent).join('\n  ')}`,
     };
   }
 

@@ -2464,7 +2464,7 @@
     <div class="status">
       <span>nodes <b>{nodeCount}</b></span>
       <span>edges <b>{edgeCount}</b></span>
-      <span>modules registered <b>{availableModules}</b></span>
+      <span title="Number of distinct module types in the registry (catalog size, not live instance count)">catalog <b>{availableModules}</b></span>
       <span>ctx <b>{audioCtx?.state ?? '—'}</b></span>
       <span>sr <b>{audioCtx?.sampleRate ?? '—'}</b></span>
     </div>
