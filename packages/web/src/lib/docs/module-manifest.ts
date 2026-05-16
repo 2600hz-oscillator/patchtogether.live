@@ -129,6 +129,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Stereo VCA + ring modulator. Per-channel multiply: out_l = in_l * (strength_l + offset) * level; out_r = in_r * (strength_r + offset) * level. The same math behaves as VCA gain control when strength is slow (CV / LFO / envelope) and as ring modulation when strength is audio-rate — no mode toggle, the perceptual difference emerges from signal content. INDEPENDENT normalling: if in_r is unpatched it copies in_l (mono → stereo); if strength_r is unpatched it copies strength_l (one strength drives both VCAs). The two halves normal independently, so true-stereo audio + mono strength works, as does mono audio + per-side strength. Audio carriers (in_l/in_r) declare cable type `audio`; strength inputs declare `cv` (raw bipolar carrier consumed in the multiply with no scaling — listed in PASSTHROUGH_BY_DESIGN) so any cv source (LFO, ADSR, sequencer step CV) lands without a cross-type cast.',
   shimmershine:
     'Stereo shimmer reverb. Schroeder-style tank (4 parallel comb filters with damped feedback + 2 series allpasses per channel) feeds a +12-semitone granular-fade pitch shifter; the shifted signal is summed back into the tank input (gain hard-capped at 0.55 to prevent runaway). Decay sets tank tail length, Shimmer the pitch-shifted feedback amount (0 = plain reverb, 1 = strong octave-up halo), Size the comb-feedback scale, Damp the in-loop high-frequency rolloff, Mix dry/wet. More processor-intensive than the plain Reverb module by design.',
+  macrooscillator:
+    'Plaits-style macro oscillator (Mutable Instruments archetype). Clean-room pure-TypeScript implementation — not a port of Plaits\' C++ source (see PR #27 for the closed emscripten attempt). First-slice scope ships two synthesis models behind the three canonical macros (HARMONICS / TIMBRE / MORPH): (0) virtual analog (VA) — morphing saw→square→triangle PolyBLEP wave + detuned partner (HARMONICS = detune amount) + wavefolder (TIMBRE = fold amount); (1) waveshape — sine through a morphable wavefolder/tanh-waveshaper (TIMBRE = drive, MORPH = wavefolder↔tanh, HARMONICS = sub-octave mix). PITCH input is V/oct; NOTE param is a ±60-semitone offset on top. TRIG resets phase on rising edge for percussive attack alignment. OUT is the level-scaled main output; AUX is a per-model raw tap (unfolded sub-octave triangle in VA, pre-distortion body in waveshape). More models (granular, FM, chord, speech, kick/snare/hat, modal, etc.) land in follow-up PRs.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -315,6 +317,17 @@ const PORT_NOTES: Record<string, string> = {
   'stereovca.strength_r': 'Right strength / ring carrier. Normalled to strength_l when unpatched (one strength drives both VCAs).',
   'stereovca.out_l':      'Left output: in_l * (strength_l + offset) * level.',
   'stereovca.out_r':      'Right output: in_r * (strength_r + offset) * level.',
+  // MACROOSCILLATOR — Plaits-style macro oscillator.
+  'macrooscillator.pitch':    'V/oct pitch input (1 unit = 1 octave). Sums with the NOTE param.',
+  'macrooscillator.trig':     'Gate input — rising edge resets the oscillator phase accumulators for clean percussive attack alignment.',
+  'macrooscillator.model_cv': 'CV → model param (discrete switch: 0=VA, 1=WAVESHAPE).',
+  'macrooscillator.note_cv':  'CV → note param (±60-semitone offset on top of pitch V/oct).',
+  'macrooscillator.harm_cv':  'CV → HARMONICS macro (0..1). In VA: detune amount of the partner voice; in WAVESHAPE: sub-octave sine mix.',
+  'macrooscillator.timb_cv':  'CV → TIMBRE macro (0..1). In VA: wavefolder amount on the summed wave; in WAVESHAPE: waveshaper drive.',
+  'macrooscillator.morph_cv': 'CV → MORPH macro (0..1). In VA: saw→square→triangle wave morph; in WAVESHAPE: wavefolder↔tanh waveshaper crossfade.',
+  'macrooscillator.level_cv': 'CV → LEVEL (0..1) — final scalar on the OUT port (AUX is unaffected).',
+  'macrooscillator.out':      'Main audio output, post-LEVEL.',
+  'macrooscillator.aux':      'Auxiliary output — per-model raw tap: unfolded sub-octave triangle (VA) or pre-distortion body sine (WAVESHAPE). Not LEVEL-scaled.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];

@@ -163,6 +163,12 @@ type StandardModuleType =
   // (4 combs + 2 allpasses per channel) with a pitch-shifted (+12 semis)
   // feedback loop using a granular-fade dual-head pitch shifter.
   | 'shimmershine'
+  // MACROOSCILLATOR — Plaits-style macro oscillator (Mutable Instruments
+  // archetype). First slice ships two synthesis models behind the three
+  // canonical macros (HARMONICS / TIMBRE / MORPH): virtual analog (VA) and
+  // waveshape. Pure-TS clean-room implementation; not a port of Plaits' C++
+  // (see PR #27 for the closed emscripten attempt + .myrobots note).
+  | 'macrooscillator'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
