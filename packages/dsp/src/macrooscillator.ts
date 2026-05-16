@@ -39,6 +39,22 @@
 //     signal (clean sine fundamental, no modulators) for chord-stacking
 //     or sidechain reference.
 //
+//   model = 4  CHORD
+//     Four-voice harmonic chord. HARMONICS picks the chord shape from a
+//     table (octave, fifth, minor, major, sus2, sus4, 7th, dim7). TIMBRE
+//     selects the per-voice waveform (sine → saw morph). MORPH spreads
+//     the voices in frequency (chorus-like detuning) and amplitude
+//     (front voice vs full ensemble). The root note is whatever PITCH
+//     V/oct dictates; the other voices are exact-ratio intervals above.
+//
+//   model = 5  ADDITIVE
+//     Sum of 16 sine partials with controlled spectral envelope.
+//     HARMONICS = inharmonicity factor (0 → exact integer multiples,
+//     1 → bell-like stretched partials). TIMBRE = spectral tilt (low =
+//     bright, high = warm; biases the partial-amplitude rolloff). MORPH
+//     = even/odd balance (0 = odd-only square-shape, 0.5 = saw-shape,
+//     1 = even-only metallic).
+//
 // Both models share:
 //   - PolyBLEP antialiasing on the saw + square primitives (VA).
 //   - PITCH input is V/oct (1 unit = 1 octave) summed with the NOTE param
@@ -393,17 +409,170 @@ class FM6OpEngine {
   }
 }
 
+// ---------- CHORD engine ----------
+
+/** Chord-shape tables — intervals in semitones above the root. Four voices
+ *  each so the engine has a fixed-cost render loop. Index with HARMONICS.
+ *  Voices are listed root-first; subsequent voices stack on top. */
+const CHORD_SHAPES: number[][] = [
+  [0, 12, 24, 36],  // octaves — sounds like a single thick voice
+  [0, 7, 12, 19],   // power-5th (no third, perfect 5ths + octaves)
+  [0, 3, 7, 12],    // minor triad + octave
+  [0, 4, 7, 12],    // major triad + octave
+  [0, 2, 7, 12],    // sus2
+  [0, 5, 7, 12],    // sus4
+  [0, 4, 7, 10],    // dominant 7
+  [0, 3, 6, 9],     // diminished 7 (symmetric)
+];
+
+class ChordEngine {
+  // One phase per voice (4 voices).
+  phases = [0, 0, 0, 0];
+
+  reset(): void {
+    for (let i = 0; i < 4; i++) this.phases[i] = 0;
+  }
+
+  tick(
+    freq: number,
+    harmonics: number,
+    timbre: number,
+    morph: number,
+    sr: number,
+  ): [number, number] {
+    // Pick a chord shape.
+    const shapeIdx = Math.max(0, Math.min(CHORD_SHAPES.length - 1, Math.floor(harmonics * CHORD_SHAPES.length)));
+    const intervals = CHORD_SHAPES[shapeIdx]!;
+
+    // MORPH: voice spread (chorus-like detune) + amplitude balance.
+    // 0 = root only (other voices muted); 1 = full ensemble with up to
+    // ±5 cents detune per voice for choral movement.
+    const detuneCents = morph * 5;
+
+    // Per-voice waveform: sine at timbre=0, saw at timbre=1. Quick linear
+    // morph rather than a polyBLEP saw because chord voices typically sit
+    // an octave or two above the fundamental — aliasing risk is real but
+    // the chord engine doesn't push the fundamental into the high octaves
+    // very often. Cap the freq at 8 kHz to keep aliasing manageable.
+    let main = 0;
+    let aux = 0;
+    for (let v = 0; v < 4; v++) {
+      const interval = intervals[v]!;
+      // Per-voice detune — odd voices go up, even voices go down so the
+      // average pitch stays correct.
+      const sign = v % 2 === 0 ? 1 : -1;
+      const cents = (v === 0 ? 0 : sign * detuneCents);
+      const voiceFreqHz = Math.min(8000, freq * Math.pow(2, (interval + cents / 100) / 12));
+      const dt = voiceFreqHz / sr;
+
+      this.phases[v]! += dt;
+      if (this.phases[v]! >= 1) this.phases[v]! -= 1;
+
+      const t = this.phases[v]!;
+      const sine = Math.sin(2 * Math.PI * t);
+      const saw = 2 * t - 1;
+      const sample = sine * (1 - timbre) + saw * timbre;
+
+      // Voice gain: root always full; higher voices fade in with MORPH.
+      const voiceGain = v === 0 ? 1.0 : morph;
+      main += sample * voiceGain;
+
+      // AUX gets the root voice only (clean reference).
+      if (v === 0) aux = sine;
+    }
+
+    // Normalize main by max possible sum (1 + 3*morph) to keep ±1 ceiling.
+    main /= 1 + 3 * morph;
+    return [main * 0.8, aux];
+  }
+}
+
+// ---------- ADDITIVE engine ----------
+
+/** Number of partials in the additive synth. 16 is enough for a full
+ *  square / saw approximation up to ~10× the fundamental, which is the
+ *  practical perceptual ceiling. Going to 32+ partials gives diminishing
+ *  returns and stresses the per-sample loop. */
+const ADDITIVE_PARTIALS = 16;
+
+class AdditiveEngine {
+  // Per-partial phase accumulators.
+  phases = new Float32Array(ADDITIVE_PARTIALS);
+
+  reset(): void {
+    for (let i = 0; i < ADDITIVE_PARTIALS; i++) this.phases[i] = 0;
+  }
+
+  tick(
+    freq: number,
+    harmonics: number,
+    timbre: number,
+    morph: number,
+    sr: number,
+  ): [number, number] {
+    // HARMONICS = inharmonicity. 0 → integer partials (n × freq).
+    // 1 → bell-like stretched partials (n × freq × (1 + 0.1 * n)).
+    // The bell stretch formula echoes the perceptual "stretched octave"
+    // effect of struck rods / bells.
+    const inharm = harmonics;
+
+    // MORPH biases the even/odd partial balance.
+    //   morph=0 → odd-only (square-like)
+    //   morph=0.5 → all partials present (saw-like)
+    //   morph=1 → even-only (metallic)
+    let main = 0;
+    let auxFund = 0;
+    let normSum = 0;
+    for (let p = 0; p < ADDITIVE_PARTIALS; p++) {
+      const n = p + 1; // partial number 1..16
+      // Stretch: f_n = n * f * (1 + inharm * 0.1 * (n - 1)).
+      const partialFreq = n * freq * (1 + inharm * 0.1 * (n - 1));
+      if (partialFreq >= sr * 0.5) continue; // skip aliasing partials.
+
+      this.phases[p]! += partialFreq / sr;
+      if (this.phases[p]! >= 1) this.phases[p]! -= 1;
+
+      // Spectral tilt from TIMBRE: 1/n^(0.5 + 1.5 * timbre).
+      // timbre=0 → 1/n^0.5 (bright, slow rolloff).
+      // timbre=1 → 1/n^2 (warm, sharp rolloff — pure tone-ish).
+      const tiltExp = 0.5 + 1.5 * timbre;
+      let amp = 1 / Math.pow(n, tiltExp);
+
+      // Even/odd morph.
+      if (n % 2 === 1) {
+        // odd partial — emphasised at morph=0, muted at morph=1.
+        amp *= 1 - morph;
+      } else {
+        // even partial — muted at morph=0, emphasised at morph=1.
+        // At morph=0.5 we want all partials approximately equal, so the
+        // even-partial gain at morph=0.5 should equal odd's gain at 0.5,
+        // i.e. both are 0.5. → even amp = morph. Linear blend.
+        amp *= morph;
+      }
+
+      main += Math.sin(2 * Math.PI * this.phases[p]!) * amp;
+      normSum += amp;
+      if (p === 0) auxFund = Math.sin(2 * Math.PI * this.phases[p]!);
+    }
+    // Normalise so the sum doesn't blow past ±1. normSum is the worst-case
+    // amplitude (every partial in phase) — divide by it for a tight bound.
+    if (normSum > 1) main /= normSum;
+    return [main * 0.9, auxFund];
+  }
+}
+
 // ---------- Top-level processor ----------
 
 class MacrooscillatorProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      // model: 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP. Quantised in render
-      // via Math.round. a-rate so live model-switching from the CV input is
-      // smooth (well, glitchy — the engines have different state — but the
-      // model knob never wants k-rate quantisation lag). maxValue grows as
-      // new engines land; keep it equal to (MODEL_NAMES.length - 1).
-      { name: 'model',     defaultValue: 0,   minValue: 0,    maxValue: 3, automationRate: 'a-rate' as const },
+      // model: 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE.
+      // Quantised in render via Math.round. a-rate so live model-switching
+      // from the CV input is smooth (well, glitchy — the engines have
+      // different state — but the model knob never wants k-rate
+      // quantisation lag). maxValue grows as new engines land; keep it
+      // equal to (MODEL_NAMES.length - 1).
+      { name: 'model',     defaultValue: 0,   minValue: 0,    maxValue: 5, automationRate: 'a-rate' as const },
       // note: ±60 semitones offset on top of the V/oct pitch input.
       { name: 'note',      defaultValue: 0,   minValue: -60,  maxValue: 60, automationRate: 'a-rate' as const },
       { name: 'harmonics', defaultValue: 0.3, minValue: 0,    maxValue: 1,  automationRate: 'a-rate' as const },
@@ -417,6 +586,8 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
   private ws = new WaveshapeEngine();
   private fm2 = new FM2OpEngine();
   private fm6 = new FM6OpEngine();
+  private chord = new ChordEngine();
+  private add = new AdditiveEngine();
   /** Last-block gate value — used for rising-edge detection across the
    *  block boundary so a gate ↑ that lands at the first sample of a new
    *  block still triggers phase reset. */
@@ -471,12 +642,14 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
         this.ws.reset();
         this.fm2.reset();
         this.fm6.reset();
+        this.chord.reset();
+        this.add.reset();
       }
       this.lastGate = trig;
 
       // Clamp + round model. maxValue grows as engines are added — keep in
       // sync with MODEL_NAMES length in the card.
-      const modelIdx = Math.max(0, Math.min(3, Math.round(model)));
+      const modelIdx = Math.max(0, Math.min(5, Math.round(model)));
 
       const hClamp = Math.max(0, Math.min(1, harmonics));
       const tClamp = Math.max(0, Math.min(1, timbre));
@@ -491,12 +664,16 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
       const [wsMain, wsAux] = this.ws.tick(freq, hClamp, tClamp, mClamp, sr);
       const [fm2Main, fm2Aux] = this.fm2.tick(freq, hClamp, tClamp, mClamp, sr);
       const [fm6Main, fm6Aux] = this.fm6.tick(freq, hClamp, tClamp, mClamp, sr);
+      const [chordMain, chordAux] = this.chord.tick(freq, hClamp, tClamp, mClamp, sr);
+      const [addMain, addAux] = this.add.tick(freq, hClamp, tClamp, mClamp, sr);
 
       let mainPick = vaMain;
       let auxPick = vaAux;
       if (modelIdx === 1) { mainPick = wsMain; auxPick = wsAux; }
       else if (modelIdx === 2) { mainPick = fm2Main; auxPick = fm2Aux; }
       else if (modelIdx === 3) { mainPick = fm6Main; auxPick = fm6Aux; }
+      else if (modelIdx === 4) { mainPick = chordMain; auxPick = chordAux; }
+      else if (modelIdx === 5) { mainPick = addMain; auxPick = addAux; }
 
       const lvl = Math.max(0, Math.min(1, level));
       outMain[i] = mainPick * lvl;

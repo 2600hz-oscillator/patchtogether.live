@@ -171,6 +171,81 @@ class _FM2OpEngine {
 
 const _FM6_BASE_RATIOS = [1.0, 1.0, 2.0, 3.0, 4.0, 1.0];
 
+// Mirror of CHORD_SHAPES — semitone intervals above the root, 4 voices.
+const _CHORD_SHAPES: number[][] = [
+  [0, 12, 24, 36],
+  [0, 7, 12, 19],
+  [0, 3, 7, 12],
+  [0, 4, 7, 12],
+  [0, 2, 7, 12],
+  [0, 5, 7, 12],
+  [0, 4, 7, 10],
+  [0, 3, 6, 9],
+];
+
+const _ADDITIVE_PARTIALS = 16;
+
+class _ChordEngine {
+  phases = [0, 0, 0, 0];
+  reset(): void {
+    for (let i = 0; i < 4; i++) this.phases[i] = 0;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const shapeIdx = Math.max(0, Math.min(_CHORD_SHAPES.length - 1, Math.floor(harmonics * _CHORD_SHAPES.length)));
+    const intervals = _CHORD_SHAPES[shapeIdx]!;
+    const detuneCents = morph * 5;
+    let main = 0;
+    let aux = 0;
+    for (let v = 0; v < 4; v++) {
+      const interval = intervals[v]!;
+      const sign = v % 2 === 0 ? 1 : -1;
+      const cents = v === 0 ? 0 : sign * detuneCents;
+      const voiceFreqHz = Math.min(8000, freq * Math.pow(2, (interval + cents / 100) / 12));
+      const dt = voiceFreqHz / sr;
+      this.phases[v]! += dt;
+      if (this.phases[v]! >= 1) this.phases[v]! -= 1;
+      const t = this.phases[v]!;
+      const sine = Math.sin(2 * Math.PI * t);
+      const saw = 2 * t - 1;
+      const sample = sine * (1 - timbre) + saw * timbre;
+      const voiceGain = v === 0 ? 1.0 : morph;
+      main += sample * voiceGain;
+      if (v === 0) aux = sine;
+    }
+    main /= 1 + 3 * morph;
+    return [main * 0.8, aux];
+  }
+}
+
+class _AdditiveEngine {
+  phases = new Float32Array(_ADDITIVE_PARTIALS);
+  reset(): void {
+    for (let i = 0; i < _ADDITIVE_PARTIALS; i++) this.phases[i] = 0;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const inharm = harmonics;
+    let main = 0;
+    let auxFund = 0;
+    let normSum = 0;
+    for (let p = 0; p < _ADDITIVE_PARTIALS; p++) {
+      const n = p + 1;
+      const partialFreq = n * freq * (1 + inharm * 0.1 * (n - 1));
+      if (partialFreq >= sr * 0.5) continue;
+      this.phases[p]! += partialFreq / sr;
+      if (this.phases[p]! >= 1) this.phases[p]! -= 1;
+      const tiltExp = 0.5 + 1.5 * timbre;
+      let amp = 1 / Math.pow(n, tiltExp);
+      if (n % 2 === 1) amp *= 1 - morph;
+      else amp *= morph;
+      main += Math.sin(2 * Math.PI * this.phases[p]!) * amp;
+      normSum += amp;
+      if (p === 0) auxFund = Math.sin(2 * Math.PI * this.phases[p]!);
+    }
+    if (normSum > 1) main /= normSum;
+    return [main * 0.9, auxFund];
+  }
+}
+
 class _FM6OpEngine {
   phases = [0, 0, 0, 0, 0, 0];
   fbkPrev = 0;
@@ -207,7 +282,8 @@ class _FM6OpEngine {
 }
 
 export interface MacroParams {
-  /** 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP. Rounded to integer in render. */
+  /** 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE.
+   *  Rounded to integer in render. */
   model: number;
   /** Semitones offset on top of the V/oct pitch input. */
   note: number;
@@ -220,7 +296,7 @@ export interface MacroParams {
 /** Maximum legal model index. Grows as engines land; keep equal to
  *  (number-of-engines − 1) and in sync with MODEL_NAMES on the card +
  *  the model AudioParam's maxValue. */
-export const MACRO_MAX_MODEL = 3;
+export const MACRO_MAX_MODEL = 5;
 
 /** Pure-math helpers — called from unit tests + ART. The actual audio runs
  *  in the worklet at packages/dsp/src/macrooscillator.ts. */
@@ -236,6 +312,8 @@ export const macrooscillatorMath = {
     const ws = new _WaveshapeEngine();
     const fm2 = new _FM2OpEngine();
     const fm6 = new _FM6OpEngine();
+    const chord = new _ChordEngine();
+    const add = new _AdditiveEngine();
     const main = new Float32Array(n);
     const aux = new Float32Array(n);
     const semitones = pitchV * 12 + params.note;
@@ -252,11 +330,15 @@ export const macrooscillatorMath = {
       const [wsMain, wsAux] = ws.tick(freq, h, t, m, sr);
       const [fm2Main, fm2Aux] = fm2.tick(freq, h, t, m, sr);
       const [fm6Main, fm6Aux] = fm6.tick(freq, h, t, m, sr);
+      const [chordMain, chordAux] = chord.tick(freq, h, t, m, sr);
+      const [addMain, addAux] = add.tick(freq, h, t, m, sr);
       let mp = vaMain;
       let ap = vaAux;
       if (modelIdx === 1) { mp = wsMain; ap = wsAux; }
       else if (modelIdx === 2) { mp = fm2Main; ap = fm2Aux; }
       else if (modelIdx === 3) { mp = fm6Main; ap = fm6Aux; }
+      else if (modelIdx === 4) { mp = chordMain; ap = chordAux; }
+      else if (modelIdx === 5) { mp = addMain; ap = addAux; }
       main[i] = mp * lvl;
       aux[i] = ap;
     }

@@ -292,6 +292,126 @@ describe('ART macrooscillator / FM 6-OP model spectral character', () => {
   });
 });
 
+describe('ART macrooscillator / CHORD model spectral character', () => {
+  it('major triad at harmonics≈0.4 produces a 3-note chord: root + maj3 + perfect5', () => {
+    // floor(0.4 * 8) = 3 → [0, 4, 7, 12]. Root 440 → 554.37 (maj3), 659.26 (5th), 880 (8va).
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 4, note: 0, harmonics: 0.4, timbre: 0, morph: 1, level: 1,
+    }).main.slice(SR / 2);
+    const pRoot = powerAt(tail, 440, SR);
+    const pMaj3 = powerAt(tail, 554.37, SR);
+    const pPerf5 = powerAt(tail, 659.26, SR);
+    const pOctave = powerAt(tail, 880, SR);
+    const pOffBin = powerAt(tail, 700, SR);
+    // All four chord tones should be well above the off-bin noise floor.
+    expect(pRoot).toBeGreaterThan(pOffBin * 3);
+    expect(pMaj3).toBeGreaterThan(pOffBin * 3);
+    expect(pPerf5).toBeGreaterThan(pOffBin * 3);
+    expect(pOctave).toBeGreaterThan(pOffBin * 3);
+  });
+
+  it('minor triad (harmonics≈0.3) carries a minor 3rd instead of a major 3rd', () => {
+    // floor(0.3 * 8) = 2 → [0, 3, 7, 12]. Minor 3rd = 440 * 2^(3/12) ≈ 523.25.
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 4, note: 0, harmonics: 0.3, timbre: 0, morph: 1, level: 1,
+    }).main.slice(SR / 2);
+    const pMaj3 = powerAt(tail, 554.37, SR); // major 3rd bin
+    const pMin3 = powerAt(tail, 523.25, SR); // minor 3rd bin
+    expect(
+      pMin3,
+      `minor triad: min3 ${pMin3} should exceed maj3 ${pMaj3}`,
+    ).toBeGreaterThan(pMaj3 * 5);
+  });
+
+  it('TIMBRE crossfades voice waveform from sine to saw (3rd harmonic of root grows with timbre)', () => {
+    // Same chord shape, sine voices vs saw voices. Saw voices have rich
+    // harmonic content; sine voices have almost none above the fundamental.
+    // The 3rd harmonic of the root (1320Hz at 440) should grow as timbre
+    // moves sine→saw.
+    const sine = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 4, note: 0, harmonics: 0.4, timbre: 0, morph: 1, level: 1,
+    }).main.slice(SR / 2);
+    const saw = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 4, note: 0, harmonics: 0.4, timbre: 1, morph: 1, level: 1,
+    }).main.slice(SR / 2);
+    const sine1320 = powerAt(sine, 1320, SR);
+    const saw1320 = powerAt(saw, 1320, SR);
+    expect(saw1320, `saw 1320 ${saw1320} > sine 1320 ${sine1320}`).toBeGreaterThan(sine1320 * 5);
+  });
+});
+
+describe('ART macrooscillator / ADDITIVE model spectral character', () => {
+  it('many integer partials are audible (additive synthesis signature)', () => {
+    // At inharm=0, timbre=0 (bright tilt), morph=0.5 (all partials), the
+    // spectrum is roughly a band-limited saw. Count how many integer harmonic
+    // bins clear a fixed threshold.
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 5, note: 0, harmonics: 0, timbre: 0, morph: 0.5, level: 1,
+    }).main.slice(SR / 2);
+    const fund = powerAt(tail, 440, SR);
+    const threshold = fund * 0.05;
+    let audibleCount = 0;
+    for (let h = 1; h <= 12; h++) {
+      if (powerAt(tail, 440 * h, SR) > threshold) audibleCount++;
+    }
+    expect(audibleCount, `audible partials at threshold: ${audibleCount}`).toBeGreaterThanOrEqual(6);
+  });
+
+  it('inharmonicity (HARMONICS=1) shifts partials away from integer multiples', () => {
+    // At harmonics=1, partial n lands at n * f * (1 + 0.1 * (n-1)).
+    // For n=4 at 440: 4 * 440 * 1.3 = 2288 Hz instead of 1760 Hz.
+    // → 2288 should have non-trivial energy, 1760 (the would-be integer
+    // partial) should be relatively weak.
+    const stretched = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 5, note: 0, harmonics: 1, timbre: 0, morph: 0.5, level: 1,
+    }).main.slice(SR / 2);
+    const p2288 = powerAt(stretched, 2288, SR);
+    const p1760 = powerAt(stretched, 1760, SR);
+    expect(
+      p2288,
+      `stretched partial at 2288 ${p2288} > integer-position 1760 ${p1760}`,
+    ).toBeGreaterThan(p1760);
+  });
+
+  it('TIMBRE shifts spectral centroid: bright → warm reduces HF energy', () => {
+    // Sum HF energy above 2 kHz at timbre=0 and timbre=1. Bright should
+    // dominate.
+    const bright = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 5, note: 0, harmonics: 0, timbre: 0, morph: 0.5, level: 1,
+    }).main.slice(SR / 2);
+    const warm = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 5, note: 0, harmonics: 0, timbre: 1, morph: 0.5, level: 1,
+    }).main.slice(SR / 2);
+    let brightHF = 0;
+    let warmHF = 0;
+    for (let h = 5; h <= 10; h++) {
+      brightHF += powerAt(bright, 440 * h, SR);
+      warmHF += powerAt(warm, 440 * h, SR);
+    }
+    expect(brightHF, `bright HF ${brightHF} > warm HF ${warmHF}`).toBeGreaterThan(warmHF * 5);
+  });
+
+  it('CHORD + ADDITIVE finite + bounded at extreme params', () => {
+    for (const model of [4, 5]) {
+      const { main, aux } = macrooscillatorMath.render(SR, SR, 0.75, {
+        model, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+      });
+      let mainPeak = 0;
+      let auxPeak = 0;
+      for (let i = 0; i < main.length; i++) {
+        expect(Number.isFinite(main[i]!), `model=${model} main[${i}] finite`).toBe(true);
+        expect(Number.isFinite(aux[i]!), `model=${model} aux[${i}] finite`).toBe(true);
+        const a = Math.abs(main[i]!);
+        const b = Math.abs(aux[i]!);
+        if (a > mainPeak) mainPeak = a;
+        if (b > auxPeak) auxPeak = b;
+      }
+      expect(mainPeak, `model=${model} main peak ${mainPeak}`).toBeLessThan(1.5);
+      expect(auxPeak, `model=${model} aux peak ${auxPeak}`).toBeLessThan(1.5);
+    }
+  });
+});
+
 describe('ART macrooscillator / V/oct tracking', () => {
   // CV-range-uniformity / V/oct convention is 1 unit = 1 octave from C4
   // (261.6256 Hz). MACROOSCILLATOR's pitch input must follow this exactly
