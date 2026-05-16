@@ -36,6 +36,10 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // pixels worth fingerprinting. Functional coverage is
   // e2e/tests/grouping-phase1.spec.ts.
   group: 'no-op render until exposed-ports are set by Create-Group; e2e covers the full flow',
+  // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
+  // provide coverage. Promote into MODULES + capture baselines on both
+  // platforms in a follow-up PR.
+  clouds: 'VRT baseline pending; ART + unit + E2E provide coverage.',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
