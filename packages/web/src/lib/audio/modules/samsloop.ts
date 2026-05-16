@@ -1,8 +1,10 @@
 // packages/web/src/lib/audio/modules/samsloop.ts
 //
-// SAMSLOOP — loop-based sample player. User uploads a small .wav (≤250 KB),
-// the file is decoded by AudioContext.decodeAudioData into a Float32Array,
-// mono-mixed if stereo, and posted into the worklet at packages/dsp/src/samsloop.ts.
+// SAMSLOOP — loop-based sample player. User uploads a small audio file
+// (≤250 KB) — anything the browser's AudioContext.decodeAudioData accepts:
+// wav, mp3, m4a/aac, ogg, flac, opus, weba. The file is decoded into a
+// Float32Array, mono-mixed if stereo, and posted into the worklet at
+// packages/dsp/src/samsloop.ts.
 // Playback runs via a fractional read-cursor with linear interpolation in
 // the worklet so varispeed (including reverse) doesn't need a separate
 // playback path.
@@ -32,7 +34,9 @@
 //   sampleLength: number       // samples.length, cached.
 //   fileName?: string          // for display.
 //
-// Hard limit: 250 KB on the raw .wav file. Larger files are rejected.
+// Hard limit: 250 KB on the raw upload file. Larger files are rejected.
+// (Compressed formats at 250 KB decode to roughly 5–15 s of audio at
+// typical bitrates, which is the intended scope for a sample looper.)
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -41,7 +45,7 @@ import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-/** Hard size cap on the uploaded WAV file. 250 KB — see card UI. */
+/** Hard size cap on the uploaded audio file. 250 KB — see card UI. */
 export const SAMSLOOP_MAX_FILE_BYTES = 250 * 1024;
 
 export interface SamsloopData {
@@ -51,7 +55,7 @@ export interface SamsloopData {
   fileName?: string;
 }
 
-/** Result of attempting to decode + size-check a WAV upload. The card
+/** Result of attempting to decode + size-check an audio upload. The card
  *  consumes this — `error` populated means the upload was rejected and
  *  the message is suitable for display. */
 export interface SamsloopLoadResult {
@@ -61,11 +65,12 @@ export interface SamsloopLoadResult {
   sampleRate?: number;
 }
 
-/** Validate + decode an uploaded WAV. Decoupled from the card so unit
- *  tests can exercise the rejection path without a DOM. Pass an
- *  AudioContext that supports decodeAudioData (a real one or an
- *  OfflineAudioContext) — the function signs the contract; we don't
- *  mock the decoder. */
+/** Validate + decode an uploaded audio file (any format the browser's
+ *  decodeAudioData accepts — wav, mp3, m4a/aac, ogg, flac, opus, weba).
+ *  Decoupled from the card so unit tests can exercise the rejection path
+ *  without a DOM. Pass an AudioContext that supports decodeAudioData (a
+ *  real one or an OfflineAudioContext) — the function signs the contract;
+ *  we don't mock the decoder. */
 export async function loadSamsloopWav(
   file: { size: number; arrayBuffer(): Promise<ArrayBuffer> },
   ctx: BaseAudioContext,
@@ -85,7 +90,7 @@ export async function loadSamsloopWav(
   } catch (err) {
     return {
       ok: false,
-      error: `Could not decode WAV: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Could not decode audio: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
   // Mono-mix if stereo. The worklet plays one channel; stereo modules
