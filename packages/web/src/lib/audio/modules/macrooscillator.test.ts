@@ -1022,6 +1022,101 @@ describe('macrooscillatorMath — GRANULAR model', () => {
   });
 });
 
+describe('macrooscillatorMath — SPEECH model', () => {
+  // Speech engine uses the input pitch as the glottal-pulse fundamental.
+  // Use a low pitch (130 Hz, note=-12) for natural-sounding vowel territory.
+  const baseParams: MacroParams = {
+    model: 13,
+    note: -12,
+    harmonics: 0.0,  // first vowel (ah)
+    timbre: 0.5,     // mid Q
+    morph: 0.0,      // pitched glottal source (not whisper)
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'SPEECH peak above silence').toBeGreaterThan(0.05);
+  });
+
+  it('"ah" vowel (HARMONICS=0) carries energy near F1=730Hz formant', () => {
+    // Render long enough for the formant filter to settle.
+    const tail = macrooscillatorMath.render(SR, SR, 0, baseParams).main.slice(SR / 2);
+    const pF1 = powerAt(tail, 730, SR);
+    const pOff = powerAt(tail, 1500, SR);
+    expect(pF1, `F1 ${pF1} > off-bin ${pOff}`).toBeGreaterThan(pOff * 1.5);
+  });
+
+  it('"ee" vowel (HARMONICS≈0.4) has spectral centroid above "ah" (high front vowel)', () => {
+    // floor(0.4 * 6) = 2 → "ee" vowel (F1=270, F2=2290, F3=3010).
+    // "ah" (idx 0): F1=730, F2=1090, F3=2440.
+    // Compare HF energy (~2 kHz band) between the two — "ee"'s F2 is
+    // much higher than "ah"'s, so the HF band should grow.
+    // Use a higher pitch (note=0 → 261 Hz) so the glottal source has
+    // harmonics that land in the F2 region.
+    const ah = macrooscillatorMath.render(SR, SR, 0, {
+      ...baseParams, harmonics: 0.0, note: 0, timbre: 0.8,
+    }).main.slice(SR / 2);
+    const ee = macrooscillatorMath.render(SR, SR, 0, {
+      ...baseParams, harmonics: 0.4, note: 0, timbre: 0.8,
+    }).main.slice(SR / 2);
+    // Sum energy in the 2-3 kHz band — strong for "ee" (F2 here), weak
+    // for "ah" (F2 at 1090).
+    let ahHF = 0;
+    let eeHF = 0;
+    for (const f of [2000, 2300, 2600, 2900]) {
+      ahHF += powerAt(ah, f, SR);
+      eeHF += powerAt(ee, f, SR);
+    }
+    expect(eeHF, `ee 2-3kHz band ${eeHF} > ah ${ahHF}`).toBeGreaterThan(ahHF);
+  });
+
+  it('MORPH=1 (whispered noise) loses pitched-fundamental peakiness', () => {
+    // Compare the fundamental-bin energy ratio between pitched and whispered.
+    // Pitched glottal pulse puts strong energy at 130 + harmonics; whispered
+    // noise floods the spectrum without spectral peaks at integer multiples.
+    const pitched = macrooscillatorMath.render(SR, SR, 0, { ...baseParams, morph: 0 }).main.slice(SR / 2);
+    const whispered = macrooscillatorMath.render(SR, SR, 0, { ...baseParams, morph: 1 }).main.slice(SR / 2);
+    const pitchedFund = powerAt(pitched, 130.8, SR);
+    const pitchedOff = powerAt(pitched, 200, SR);
+    const whisperedFund = powerAt(whispered, 130.8, SR);
+    const whisperedOff = powerAt(whispered, 200, SR);
+    const pitchedRatio = pitchedFund / Math.max(1e-12, pitchedOff);
+    const whisperedRatio = whisperedFund / Math.max(1e-12, whisperedOff);
+    expect(
+      pitchedRatio,
+      `pitched fund/off ratio ${pitchedRatio} > whispered ${whisperedRatio}`,
+    ).toBeGreaterThan(whisperedRatio);
+  });
+
+  it('SPEECH AUX is the raw glottal pulse (pitched at fundamental)', () => {
+    const { aux } = macrooscillatorMath.render(SR / 2, SR, 0, baseParams);
+    const tail = aux.slice(SR / 4);
+    const pFund = powerAt(tail, 130.8, SR);
+    const pOff = powerAt(tail, 350, SR);
+    expect(pFund, `aux fund ${pFund} > off ${pOff}`).toBeGreaterThan(pOff);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0, {
+      model: 13, note: -12, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `SPEECH peak ${peak}`).toBeLessThan(2.0);
+  });
+});
+
 describe('macrooscillatorMath — pitch tracking', () => {
   it('pitchV=0 → C4 (261.6Hz fundamental in VA at morph=0)', () => {
     const { main } = macrooscillatorMath.render(SR, SR, 0, { model: 0, note: 0, harmonics: 0, timbre: 0, morph: 0, level: 1 });

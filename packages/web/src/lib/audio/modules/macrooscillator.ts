@@ -552,6 +552,71 @@ class _GranularEngine {
   }
 }
 
+const _VOWEL_PRESETS: { f: [number, number, number]; g: [number, number, number] }[] = [
+  { f: [730, 1090, 2440], g: [1.0, 0.5, 0.3] },
+  { f: [530, 1840, 2480], g: [1.0, 0.6, 0.3] },
+  { f: [270, 2290, 3010], g: [1.0, 0.4, 0.2] },
+  { f: [570, 840, 2410], g: [1.0, 0.5, 0.3] },
+  { f: [300, 870, 2240], g: [1.0, 0.3, 0.2] },
+  { f: [640, 1190, 2390], g: [1.0, 0.5, 0.3] },
+];
+
+class _SpeechEngine {
+  phase = 0;
+  x1 = [0, 0, 0];
+  x2 = [0, 0, 0];
+  y1 = [0, 0, 0];
+  y2 = [0, 0, 0];
+  rngState = 0x1badc0de | 0;
+  reset(): void {
+    this.phase = 0;
+    for (let i = 0; i < 3; i++) {
+      this.x1[i] = 0; this.x2[i] = 0; this.y1[i] = 0; this.y2[i] = 0;
+    }
+  }
+  noise(): number {
+    this.rngState = (this.rngState * 16807) | 0;
+    return (this.rngState & 0x7fffffff) / 0x7fffffff * 2 - 1;
+  }
+  glottal(t: number): number {
+    if (t < 0.3) return Math.sin(Math.PI * (t / 0.3));
+    if (t < 0.5) return -0.3 * Math.sin(Math.PI * ((t - 0.3) / 0.2));
+    return 0;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const vowelIdx = Math.max(0, Math.min(_VOWEL_PRESETS.length - 1, Math.floor(harmonics * _VOWEL_PRESETS.length)));
+    const vowel = _VOWEL_PRESETS[vowelIdx]!;
+    const Q = 3 + timbre * 37;
+    this.phase += freq / sr;
+    if (this.phase >= 1) this.phase -= 1;
+    const pulse = this.glottal(this.phase);
+    const src = pulse * (1 - morph) + this.noise() * morph * 0.5;
+    let main = 0;
+    for (let i = 0; i < 3; i++) {
+      const fc = vowel.f[i]!;
+      const gain = vowel.g[i]!;
+      const w0 = 2 * Math.PI * fc / sr;
+      const cosW0 = Math.cos(w0);
+      const sinW0 = Math.sin(w0);
+      const alpha = sinW0 / (2 * Q);
+      const b0 = alpha;
+      const b2 = -alpha;
+      const a0 = 1 + alpha;
+      const a1 = -2 * cosW0;
+      const a2 = 1 - alpha;
+      const y = (b0 * src + b2 * this.x2[i]! - a1 * this.y1[i]! - a2 * this.y2[i]!) / a0;
+      this.x2[i] = this.x1[i]!;
+      this.x1[i] = src;
+      this.y2[i] = this.y1[i]!;
+      this.y1[i] = y;
+      main += y * gain;
+    }
+    main *= 4.0;
+    const aux = pulse;
+    return [main, aux];
+  }
+}
+
 class _ModalEngine {
   x1 = new Float32Array(_MODAL_MODES);
   x2 = new Float32Array(_MODAL_MODES);
@@ -672,7 +737,7 @@ class _FM6OpEngine {
 export interface MacroParams {
   /** 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP, 4=CHORD, 5=ADDITIVE,
    *  6=STRING, 7=MODAL, 8=KICK, 9=SNARE, 10=HIHAT, 11=WAVETABLE,
-   *  12=GRANULAR. Rounded to integer in render. */
+   *  12=GRANULAR, 13=SPEECH. Rounded to integer in render. */
   model: number;
   /** Semitones offset on top of the V/oct pitch input. */
   note: number;
@@ -685,7 +750,7 @@ export interface MacroParams {
 /** Maximum legal model index. Grows as engines land; keep equal to
  *  (number-of-engines − 1) and in sync with MODEL_NAMES on the card +
  *  the model AudioParam's maxValue. */
-export const MACRO_MAX_MODEL = 12;
+export const MACRO_MAX_MODEL = 13;
 
 /** Pure-math helpers — called from unit tests + ART. The actual audio runs
  *  in the worklet at packages/dsp/src/macrooscillator.ts. */
@@ -710,6 +775,7 @@ export const macrooscillatorMath = {
     const hihat = new _HihatEngine();
     const wt = new _WavetableEngine();
     const gran = new _GranularEngine();
+    const speech = new _SpeechEngine();
     // STRING + drum models need an excitation burst — emulate the gate
     // rising-edge reset by calling reset() on the math mirror up front.
     str.reset();
@@ -741,6 +807,7 @@ export const macrooscillatorMath = {
       const [hhMain, hhAux] = hihat.tick(freq, h, t, m, sr);
       const [wtMain, wtAux] = wt.tick(freq, h, t, m, sr);
       const [granMain, granAux] = gran.tick(freq, h, t, m, sr);
+      const [speechMain, speechAux] = speech.tick(freq, h, t, m, sr);
       let mp = vaMain;
       let ap = vaAux;
       if (modelIdx === 1) { mp = wsMain; ap = wsAux; }
@@ -755,6 +822,7 @@ export const macrooscillatorMath = {
       else if (modelIdx === 10) { mp = hhMain; ap = hhAux; }
       else if (modelIdx === 11) { mp = wtMain; ap = wtAux; }
       else if (modelIdx === 12) { mp = granMain; ap = granAux; }
+      else if (modelIdx === 13) { mp = speechMain; ap = speechAux; }
       main[i] = mp * lvl;
       aux[i] = ap;
     }
