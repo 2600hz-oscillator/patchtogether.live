@@ -33,6 +33,13 @@
     /** Module-grouping Phase 2C — duplicate group + every child with
      *  fresh ids + cascade offset. */
     onduplicategroup?: () => void;
+    /** Saved-groups library — Canvas passes this for signed-in users when
+     *  the right-clicked node is a group. Renders "Save group to library…". */
+    onsavegroup?: () => void;
+    /** Saved-groups library — gates the menu entry. The wiring up in
+     *  Canvas already constrains this to signed-in users + group nodes;
+     *  the menu just respects whatever the parent asserts. */
+    canSaveGroup?: boolean;
     onclose: () => void;
   }
 
@@ -51,6 +58,8 @@
     ontoggleexpanded,
     oneditexposed,
     onduplicategroup,
+    onsavegroup,
+    canSaveGroup = false,
     onclose,
   }: Props = $props();
 
@@ -103,6 +112,10 @@
     onduplicategroup?.();
     onclose();
   }
+  function pickSaveGroup() {
+    onsavegroup?.();
+    onclose();
+  }
 </script>
 
 {#if open}
@@ -147,6 +160,16 @@
       >
         Duplicate
       </button>
+      {#if canSaveGroup && onsavegroup}
+        <button
+          class="ctx-item"
+          onclick={pickSaveGroup}
+          role="menuitem"
+          data-testid="ctx-save-group"
+        >
+          Save group to library…
+        </button>
+      {/if}
       <button class="ctx-item" onclick={pickUngroup} role="menuitem" data-testid="ctx-ungroup">
         Ungroup
       </button>
