@@ -80,6 +80,10 @@ const MODULES: VrtModule[] = [
   // MACROOSCILLATOR — Plaits-style macro oscillator (VA + waveshape models).
   // Static card chrome — no canvas / live preview, so no mask needed.
   { type: 'macrooscillator', domain: 'audio' },
+  // SAMSLOOP — loop-based WAV sample player. The waveform canvas is static
+  // after upload, but unloaded shows "NO SAMPLE LOADED" text — mask the
+  // canvas so the chrome diffs deterministically.
+  { type: 'samsloop', domain: 'audio', mask: [{ selector: 'canvas' }] },
   // ----- video domain -----
   // Every video module renders a preview canvas. Mask it; assert the
   // chrome (title, ports, knobs).
