@@ -412,6 +412,97 @@ describe('ART macrooscillator / ADDITIVE model spectral character', () => {
   });
 });
 
+describe('ART macrooscillator / STRING model spectral character', () => {
+  it('Karplus-Strong loop carries strong fundamental (string is pitched)', () => {
+    // 200 ms into the burst, the delay loop has settled into a periodic
+    // ring at ~freq Hz. Use a generous window to see the lock.
+    const buf = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 6, note: 0, harmonics: 0, timbre: 0.5, morph: 0.9, level: 1,
+    }).main;
+    const window = buf.slice(Math.floor(0.1 * SR), Math.floor(0.4 * SR));
+    const pFund = powerAt(window, 440, SR);
+    const pH2 = powerAt(window, 880, SR);
+    const pOff = powerAt(window, 200, SR);
+    expect(pFund, `fund ${pFund} > off-bin ${pOff}`).toBeGreaterThan(pOff * 2);
+    // Karplus-Strong also generates significant H2 + H3 content.
+    expect(pH2).toBeGreaterThan(pOff);
+  });
+
+  it('TIMBRE controls excitation brightness: brighter pluck has more initial HF energy', () => {
+    // Compare the first 20 ms of the burst — bright excitation = high
+    // HF energy, dull excitation = mostly LF.
+    const dull = macrooscillatorMath.render(Math.floor(0.05 * SR), SR, 0.75, {
+      model: 6, note: 0, harmonics: 0, timbre: 0, morph: 0.8, level: 1,
+    }).main;
+    const bright = macrooscillatorMath.render(Math.floor(0.05 * SR), SR, 0.75, {
+      model: 6, note: 0, harmonics: 0, timbre: 1, morph: 0.8, level: 1,
+    }).main;
+    // HF energy band 3-6 kHz (sum 3 bins).
+    let dullHF = 0, brightHF = 0;
+    for (const f of [3000, 4500, 6000]) {
+      dullHF += powerAt(dull, f, SR);
+      brightHF += powerAt(bright, f, SR);
+    }
+    expect(brightHF, `bright HF ${brightHF} > dull HF ${dullHF}`).toBeGreaterThan(dullHF * 2);
+  });
+
+  it('STRING + MODAL finite + bounded at extreme params', () => {
+    for (const model of [6, 7]) {
+      const { main, aux } = macrooscillatorMath.render(SR, SR, 0.75, {
+        model, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+      });
+      let mainPeak = 0;
+      let auxPeak = 0;
+      for (let i = 0; i < main.length; i++) {
+        expect(Number.isFinite(main[i]!), `model=${model} main[${i}] finite`).toBe(true);
+        expect(Number.isFinite(aux[i]!), `model=${model} aux[${i}] finite`).toBe(true);
+        const a = Math.abs(main[i]!);
+        const b = Math.abs(aux[i]!);
+        if (a > mainPeak) mainPeak = a;
+        if (b > auxPeak) auxPeak = b;
+      }
+      expect(mainPeak, `model=${model} main peak ${mainPeak}`).toBeLessThan(2.0);
+      expect(auxPeak, `model=${model} aux peak ${auxPeak}`).toBeLessThan(2.0);
+    }
+  });
+});
+
+describe('ART macrooscillator / MODAL model spectral character', () => {
+  it('struck-bar preset: multiple inharmonic partials audible at 1×, 2.76×, 5.41× fund', () => {
+    // Render 2 seconds at mid-Q to let multiple impulses excite the
+    // resonators and settle into a steady ring.
+    const tail = macrooscillatorMath.render(SR * 2, SR, 0.75, {
+      model: 7, note: 0, harmonics: 0, timbre: 0.6, morph: 0, level: 1,
+    }).main.slice(SR);
+    const pFund = powerAt(tail, 440, SR);
+    const pH276 = powerAt(tail, 440 * 2.76, SR);
+    const pH541 = powerAt(tail, 440 * 5.41, SR);
+    const pOff = powerAt(tail, 700, SR);
+    expect(pFund, `fund ${pFund} > off ${pOff}`).toBeGreaterThan(pOff * 2);
+    expect(pH276, `2.76x ${pH276} > off ${pOff}`).toBeGreaterThan(pOff * 1.5);
+    expect(pH541, `5.41x ${pH541} > off ${pOff}`).toBeGreaterThan(pOff * 0.5); // upper partials are weaker
+  });
+
+  it('MORPH biases mode amplitudes: high MORPH emphasises upper modes', () => {
+    // At morph=0 the base amps [1.0, 0.6, 0.4, 0.3, 0.2, 0.15] dominate
+    // → fundamental loudest. At morph=1 the linear ramp i/N dominates
+    // → 5th and 6th modes ascend, fundamental falls back.
+    const lowMorph = macrooscillatorMath.render(SR * 2, SR, 0.75, {
+      model: 7, note: 0, harmonics: 0, timbre: 0.6, morph: 0, level: 1,
+    }).main.slice(SR);
+    const highMorph = macrooscillatorMath.render(SR * 2, SR, 0.75, {
+      model: 7, note: 0, harmonics: 0, timbre: 0.6, morph: 1, level: 1,
+    }).main.slice(SR);
+    // Highest mode is 18.64×440 = 8200 Hz. Compare its bin between the two.
+    const lowMorph8200 = powerAt(lowMorph, 8200, SR);
+    const highMorph8200 = powerAt(highMorph, 8200, SR);
+    expect(
+      highMorph8200,
+      `morph=1 8.2kHz mode ${highMorph8200} > morph=0 ${lowMorph8200}`,
+    ).toBeGreaterThan(lowMorph8200);
+  });
+});
+
 describe('ART macrooscillator / V/oct tracking', () => {
   // CV-range-uniformity / V/oct convention is 1 unit = 1 octave from C4
   // (261.6256 Hz). MACROOSCILLATOR's pitch input must follow this exactly

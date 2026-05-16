@@ -533,6 +533,154 @@ describe('macrooscillatorMath — ADDITIVE model', () => {
   });
 });
 
+describe('macrooscillatorMath — STRING model', () => {
+  const baseParams: MacroParams = {
+    model: 6,
+    note: 0,
+    harmonics: 0.0, // no dispersion (pure string)
+    timbre: 0.5,    // mid-brightness pluck
+    morph: 0.5,     // moderate damping
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio at A4 (Karplus-Strong burst)', () => {
+    // The math mirror's render() calls str.reset() once so the burst fires.
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    // KS bursts settle to small amplitudes — peak above 0.001 is enough
+    // to assert it sounds, but it should be much higher in practice.
+    expect(peak, 'STRING peak above silence').toBeGreaterThan(0.001);
+  });
+
+  it('STRING carries energy at the fundamental (440Hz)', () => {
+    // After the burst settles the delay loop should ring at ~freq Hz.
+    // Look at the first 200 ms (mid-burst / early-loop). Karplus-Strong
+    // doesn't always lock cleanly at the exact pitch (delay-line quantisation
+    // detunes by a few cents) so allow a slightly wider band.
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, morph: 0.8 });
+    // Use the early ring (samples 50ms..200ms) where amplitude is highest.
+    const window = main.slice(Math.floor(0.05 * SR), Math.floor(0.2 * SR));
+    const pFund = powerAt(window, 440, SR);
+    const pOff = powerAt(window, 200, SR);
+    expect(pFund, `fund ${pFund} > off-bin ${pOff}`).toBeGreaterThan(pOff * 2);
+  });
+
+  it('MORPH controls decay: morph=0 (low damping cutoff) decays fast', () => {
+    // morph=0 → damp filter cutoff = 200 Hz, kills HF + most string energy.
+    // Compare RMS of the tail 200ms→500ms between morph=0 and morph=1.
+    const fast = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, morph: 0 }).main;
+    const slow = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, morph: 1 }).main;
+    const start = Math.floor(0.2 * SR);
+    const end = Math.floor(0.5 * SR);
+    let fastRms = 0;
+    let slowRms = 0;
+    for (let i = start; i < end; i++) {
+      fastRms += fast[i]! * fast[i]!;
+      slowRms += slow[i]! * slow[i]!;
+    }
+    fastRms = Math.sqrt(fastRms / (end - start));
+    slowRms = Math.sqrt(slowRms / (end - start));
+    expect(
+      slowRms,
+      `slow-decay RMS ${slowRms} > fast-decay RMS ${fastRms}`,
+    ).toBeGreaterThan(fastRms * 2);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 6, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `STRING peak ${peak}`).toBeLessThan(1.5);
+  });
+});
+
+describe('macrooscillatorMath — MODAL model', () => {
+  const baseParams: MacroParams = {
+    model: 7,
+    note: 0,
+    harmonics: 0.0, // preset 0 (struck bar)
+    timbre: 0.6,    // mid-Q (rings audibly without runaway)
+    morph: 0.0,     // emphasise base amplitudes
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio at A4', () => {
+    const { main } = macrooscillatorMath.render(SR * 2, SR, 0.75, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'MODAL peak above silence').toBeGreaterThan(0.001);
+  });
+
+  it('STRUCK BAR preset (harmonics=0) carries inharmonic partial at 2.76 × fundamental', () => {
+    // Preset 0 partial ratios: [1, 2.76, 5.41, 8.93, ...]. At 440 fund,
+    // the 2.76× partial sits at 1214.4 Hz. Use a long window so the
+    // resonators reach their steady-state amplitude.
+    const tail = macrooscillatorMath.render(SR * 2, SR, 0.75, baseParams).main.slice(SR);
+    const p1214 = powerAt(tail, 440 * 2.76, SR);
+    const p1100 = powerAt(tail, 1100, SR);
+    // p1214 should beat the off-bin (1100) by a wide margin — resonance
+    // is narrow at high Q.
+    expect(p1214, `2.76x partial ${p1214} > off-bin ${p1100}`).toBeGreaterThan(p1100 * 2);
+  });
+
+  it('BELL preset (harmonics≈0.55) carries the 0.5× sub-fundamental partial', () => {
+    // floor(0.55 * 4) = 2 → bell preset. Ratios [0.5, 1.0, 1.2, ...].
+    // The 0.5× partial sits at 220 Hz when freq=440.
+    const tail = macrooscillatorMath.render(SR * 2, SR, 0.75, {
+      ...baseParams, harmonics: 0.55,
+    }).main.slice(SR);
+    const p220 = powerAt(tail, 220, SR);
+    const pOff = powerAt(tail, 300, SR);
+    expect(p220, `bell sub at 220Hz ${p220} > off-bin ${pOff}`).toBeGreaterThan(pOff * 1.5);
+  });
+
+  it('TIMBRE controls Q: high TIMBRE narrows resonance (peak-to-band ratio grows)', () => {
+    // High Q → very narrow bandpass per mode → peak energy concentrates
+    // exactly at the partial frequency, with steeper drop-off at neighbouring
+    // bins. Compare 1214 (the exact 2.76x partial) vs 1100 (off-bin).
+    const lowQ = macrooscillatorMath.render(SR * 2, SR, 0.75, { ...baseParams, timbre: 0.1 }).main.slice(SR);
+    const highQ = macrooscillatorMath.render(SR * 2, SR, 0.75, { ...baseParams, timbre: 0.95 }).main.slice(SR);
+    const lowQPeak = powerAt(lowQ, 440 * 2.76, SR);
+    const lowQOff = powerAt(lowQ, 1100, SR);
+    const highQPeak = powerAt(highQ, 440 * 2.76, SR);
+    const highQOff = powerAt(highQ, 1100, SR);
+    const lowQRatio = lowQPeak / Math.max(1e-12, lowQOff);
+    const highQRatio = highQPeak / Math.max(1e-12, highQOff);
+    expect(
+      highQRatio,
+      `high-Q peak/off ratio ${highQRatio} > low-Q ${lowQRatio}`,
+    ).toBeGreaterThan(lowQRatio);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 7, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `MODAL peak ${peak}`).toBeLessThan(1.5);
+  });
+});
+
 describe('macrooscillatorMath — pitch tracking', () => {
   it('pitchV=0 → C4 (261.6Hz fundamental in VA at morph=0)', () => {
     const { main } = macrooscillatorMath.render(SR, SR, 0, { model: 0, note: 0, harmonics: 0, timbre: 0, morph: 0, level: 1 });
