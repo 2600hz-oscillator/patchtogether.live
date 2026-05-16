@@ -1,8 +1,10 @@
 <script lang="ts">
-  // SamsloopCard — loop-based sample player. Upload a small WAV, set the
-  // playback window, scrub varispeed (forward or reverse), toggle loop /
-  // one-shot. Matches the visual language of WAVECEL (file upload + canvas
-  // waveform) and MACROOSCILLATOR (fader column for the params).
+  // SamsloopCard — loop-based sample player. Upload a small audio file
+  // (anything the browser's decodeAudioData can read — wav, mp3, m4a/aac,
+  // ogg, flac, opus, weba), set the playback window, scrub varispeed
+  // (forward or reverse), toggle loop / one-shot. Matches the visual
+  // language of WAVECEL (file upload + canvas waveform) and
+  // MACROOSCILLATOR (fader column for the params).
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -62,7 +64,7 @@
   let uploadError = $state<string | null>(null);
   let isLoop = $derived(Math.round(mode) === 1);
 
-  async function onWavFileChange(ev: Event) {
+  async function onAudioFileChange(ev: Event) {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
@@ -179,11 +181,11 @@
         <label class="upload-btn" data-testid="samsloop-upload-label">
           <input
             type="file"
-            accept=".wav,audio/wav"
-            onchange={onWavFileChange}
+            accept="audio/*"
+            onchange={onAudioFileChange}
             data-testid="samsloop-wav-input"
           />
-          <span>Load WAV (≤ {SAMSLOOP_MAX_FILE_BYTES / 1024} KB)…</span>
+          <span>Load audio (≤ {SAMSLOOP_MAX_FILE_BYTES / 1024} KB)…</span>
         </label>
         <button
           type="button"
