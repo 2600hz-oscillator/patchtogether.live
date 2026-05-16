@@ -125,6 +125,8 @@
   import SamsloopCard from '$lib/ui/modules/SamsloopCard.svelte';
   // CLOUDS — granular texture processor (Mutable Instruments Clouds archetype).
   import CloudsCard from '$lib/ui/modules/CloudsCard.svelte';
+  // MACSEQ — 16-step sequencer with per-step macrooscillator voice picker.
+  import MacseqCard from '$lib/ui/modules/MacseqCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -263,6 +265,7 @@
     macrooscillator: MacrooscillatorCard,
     samsloop: SamsloopCard,
     clouds: CloudsCard,
+    macseq: MacseqCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
