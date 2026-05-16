@@ -6,9 +6,10 @@ name: Chaos 24/7
 # the findings/ bundle as a workflow artifact so we can triage offline.
 #
 # Required repo secrets:
-#   BETA_GATE_PASS         — autotest beta-gate password (matches the deploy)
-#   CHAOS_RACKSPACE_URL    — invite-link URL the bot joins; e.g.
-#                            https://autotest.patchtogether.live/r/<id>?invite=<code>
+#   AUTOTEST_BETA_GATE_PASS  — autotest beta-gate password (reuses the secret
+#                              already set for the live-smoke workflow).
+#   CHAOS_RACKSPACE_URL      — invite-link URL the bot joins; e.g.
+#                              https://autotest.patchtogether.live/r/<id>?invite=<code>
 #
 # Why hourly instead of always-on:
 #   - GH Actions billed by the minute; an always-on runner burns the quota.
@@ -55,7 +56,7 @@ jobs:
       - run: flox activate -- task install:browsers
       - name: Run chaos against autotest
         env:
-          BETA_GATE_PASS: ${{ secrets.BETA_GATE_PASS }}
+          BETA_GATE_PASS: ${{ secrets.AUTOTEST_BETA_GATE_PASS }}
           CHAOS_RACKSPACE_URL: ${{ secrets.CHAOS_RACKSPACE_URL }}
           E2E_BASE_URL: https://autotest.patchtogether.live
           CHAOS_ITERATIONS: ${{ github.event.inputs.iterations || '1000' }}
