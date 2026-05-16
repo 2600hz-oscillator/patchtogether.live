@@ -179,6 +179,13 @@ type StandardModuleType =
   | 'clouds'
   // MACSEQ — 16-step sequencer with per-step MACROOSCILLATOR voice picker.
   | 'macseq'
+  // RINGS — modal / sympathetic-string resonator (Mutable Instruments
+  // Rings archetype; faithful algorithm port of Émilie Gillet eurorack/rings/
+  // DSP, MIT-licensed). v1 ships two resonator models:
+  // (0) MODAL — 24 parallel stiffness-stretched RBJ bandpasses;
+  // (1) SYMPATHETIC — 2 parallel Karplus-Strong delay lines.
+  // Polyphony 1 only; STRING + REVERB deferred to follow-up PRs.
+  | 'rings'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
