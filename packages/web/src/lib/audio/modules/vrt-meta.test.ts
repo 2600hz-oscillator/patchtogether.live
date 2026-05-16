@@ -52,6 +52,9 @@ const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // darwin pixels. The linux VRT job is `continue-on-error: true` so a
   // missing baseline does not block the PR.
   'linux/macrooscillator',
+  // SAMSLOOP first-slice PR: same situation — darwin baseline committed,
+  // linux pending. Remove when the linux baseline lands.
+  'linux/samsloop',
 ]);
 
 function repoRoot(): string {
