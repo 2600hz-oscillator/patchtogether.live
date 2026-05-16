@@ -40,6 +40,10 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.
   clouds: 'VRT baseline pending; ART + unit + E2E provide coverage.',
+  // MACSEQ — VRT baseline pending. Functional coverage is e2e/tests/macseq.spec.ts
+  // which proves the headline MACSEQ→MACROOSCILLATOR MODELCV wiring works.
+  // A follow-up PR will capture the darwin + linux pixel baselines.
+  macseq: 'VRT baseline pending; e2e/tests/macseq.spec.ts covers MODELCV wiring',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
