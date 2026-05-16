@@ -22,6 +22,10 @@
      *  entry is shown; the palette closes after invoking. The parent then
      *  enters lasso mode anchored at the click point. */
     oncreategroup?: () => void;
+    /** Optional: triggered by the Insert-saved-group entry. When provided
+     *  the entry is shown; the palette closes after invoking. Canvas only
+     *  passes this for signed-in users. */
+    oninsertsavedgroup?: () => void;
   }
 
   let {
@@ -32,6 +36,7 @@
     onclose,
     onorganize,
     oncreategroup,
+    oninsertsavedgroup,
   }: Props = $props();
 
   /** Count instances of a module type currently in the patch. */
@@ -156,6 +161,11 @@
     onclose();
   }
 
+  function pickInsertSavedGroup() {
+    oninsertsavedgroup?.();
+    onclose();
+  }
+
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -188,11 +198,20 @@
       spellcheck="false"
     />
     <div class="palette-body">
-      {#if onorganize || oncreategroup}
+      {#if onorganize || oncreategroup || oninsertsavedgroup}
         <div class="category">tools</div>
         {#if oncreategroup}
           <button class="item tool" onclick={pickCreateGroup} data-testid="palette-create-group">
             Create group
+          </button>
+        {/if}
+        {#if oninsertsavedgroup}
+          <button
+            class="item tool"
+            onclick={pickInsertSavedGroup}
+            data-testid="palette-insert-saved-group"
+          >
+            Insert saved group…
           </button>
         {/if}
         {#if onorganize}
