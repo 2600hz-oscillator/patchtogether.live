@@ -150,15 +150,20 @@ Per the runbook:
 
 ## Status (auto-updated per PR)
 
-- [x] Group 1 — sinks + utility (this PR)
-- [ ] Group 2 — audio sources
-- [ ] Group 3 — modulation
-- [ ] Group 4 — sequencers
-- [ ] Group 5 — VCAs / filters / mixers
-- [ ] Group 6 — time effects
-- [ ] Group 7 — drum voices
-- [ ] Group 8 — video
-- [ ] Group 9 — cross-domain
+- [x] Group 1 — sinks + utility (PR #154)
+- [x] Group 2 — audio sources (PR #159)
+- [x] Group 3 — modulation (PR #161, batched)
+- [x] Group 4 — sequencers (PR #161, batched)
+- [x] Group 5 — VCAs / filters / mixers (PR #161, batched)
+- [x] Group 6 — time effects (this PR)
+- [x] Group 7 — drum voices (this PR)
+- [x] Group 8 — video (this PR)
+- [x] Group 9 — cross-domain (this PR)
+
+Groups 3+4+5 were batched and 6+7+8+9 batched here to reduce the
+rebase storm we hit shipping single-group PRs (the repo's strict
+required-checks policy means each main commit during our CI window
+invalidates the pass, forcing rebase + re-run).
 
 ## Open questions / notes
 
