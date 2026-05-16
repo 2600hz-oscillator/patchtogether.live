@@ -1,0 +1,73 @@
+name: Chaos 24/7
+
+# Continuously fuzz autotest.patchtogether.live with Chaos Carl. Every hour
+# a fresh job joins a fixed rackspace (CHAOS_RACKSPACE_URL secret) as an anon
+# participant via invite link, runs a 1000-iteration chaos loop, and uploads
+# the findings/ bundle as a workflow artifact so we can triage offline.
+#
+# Required repo secrets:
+#   AUTOTEST_BETA_GATE_PASS  — autotest beta-gate password (reuses the secret
+#                              already set for the live-smoke workflow).
+#   CHAOS_RACKSPACE_URL      — invite-link URL the bot joins; e.g.
+#                              https://autotest.patchtogether.live/r/<id>?invite=<code>
+#
+# Why hourly instead of always-on:
+#   - GH Actions billed by the minute; an always-on runner burns the quota.
+#   - 1000 iters at autotest's pace is ~3 min wall, so each fire stays well
+#     inside the free-tier per-job cap.
+#   - Findings persist to artifacts (90-day retention), so gaps between runs
+#     aren't observability gaps — they're just sampling cadence.
+#
+# Log-only invariants mode is implied: CHAOS_RACKSPACE_URL flips the runner
+# into "findings, not failures" (see runner.spec.ts LOG_ONLY_INVARIANTS).
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Iterations per run (default 1000)'
+        required: false
+        default: '1000'
+      seed:
+        description: 'Optional fixed seed (default: time-derived)'
+        required: false
+
+concurrency:
+  group: chaos-24-7
+  cancel-in-progress: false
+
+jobs:
+  chaos:
+    name: Chaos run against autotest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { lfs: true }
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: flox activate -- task install
+      - run: flox activate -- task install:browsers
+      - name: Run chaos against autotest
+        env:
+          BETA_GATE_PASS: ${{ secrets.AUTOTEST_BETA_GATE_PASS }}
+          CHAOS_RACKSPACE_URL: ${{ secrets.CHAOS_RACKSPACE_URL }}
+          E2E_BASE_URL: https://autotest.patchtogether.live
+          CHAOS_ITERATIONS: ${{ github.event.inputs.iterations || '1000' }}
+          CHAOS_SEED: ${{ github.event.inputs.seed }}
+          CHAOS_MAX_NODES: '5'
+        run: flox activate -- task chaos:run
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-findings-${{ github.run_id }}
+          path: e2e/chaos/findings/
+          if-no-files-found: ignore
+          retention-days: 90
