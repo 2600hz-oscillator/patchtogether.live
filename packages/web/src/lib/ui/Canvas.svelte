@@ -129,6 +129,8 @@
   import MacseqCard from '$lib/ui/modules/MacseqCard.svelte';
   // RINGS — modal / sympathetic-string resonator (Mutable Instruments Rings port).
   import RingsCard from '$lib/ui/modules/RingsCard.svelte';
+  // PEAKS — dual-channel multi-mode utility (Peaks archetype, kick/snare/hihat/env/lfo).
+  import PeaksCard from '$lib/ui/modules/PeaksCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -269,6 +271,7 @@
     clouds: CloudsCard,
     macseq: MacseqCard,
     rings: RingsCard,
+    peaks: PeaksCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
