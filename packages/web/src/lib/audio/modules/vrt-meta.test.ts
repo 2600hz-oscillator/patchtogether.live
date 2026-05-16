@@ -48,6 +48,10 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // provide coverage. Linux baseline is darwin-only for v1; a
   // follow-up PR will capture both platforms and promote into MODULES.
   rings: 'VRT baseline pending; ART + unit + E2E provide coverage. Linux baseline is darwin-only for v1.',
+  // PEAKS first-slice PR: VRT baseline pending; ART + unit + E2E provide
+  // coverage. Promote into MODULES + capture baselines on both platforms
+  // in a follow-up PR.
+  peaks: 'VRT baseline pending; ART + unit + E2E provide coverage.',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more

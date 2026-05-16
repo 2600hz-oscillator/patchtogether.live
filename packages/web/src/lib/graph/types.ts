@@ -186,6 +186,12 @@ type StandardModuleType =
   // (1) SYMPATHETIC — 2 parallel Karplus-Strong delay lines.
   // Polyphony 1 only; STRING + REVERB deferred to follow-up PRs.
   | 'rings'
+  // PEAKS — dual-channel multi-mode utility (Mutable Instruments Peaks
+  // archetype, Émilie Gillet, 2013, MIT-licensed). Each channel runs one
+  // of five modes (KICK / SNARE / HIHAT / ENV / LFO) with two mode-
+  // dependent knobs, a gate input, and CV-routed knob inputs. v1 ships
+  // five modes; multistage envelope / tap-LFO / BPF mode deferred.
+  | 'peaks'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
