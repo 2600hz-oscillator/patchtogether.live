@@ -9,7 +9,7 @@
 // reset) is covered by the ART scenario.
 
 import { describe, expect, it } from 'vitest';
-import { macrooscillatorDef, macrooscillatorMath, type MacroParams } from './macrooscillator';
+import { macrooscillatorDef, macrooscillatorMath, MACRO_MAX_MODEL, type MacroParams } from './macrooscillator';
 
 describe('macrooscillatorDef shape', () => {
   it('declares type=macrooscillator, label=MACROOSCILLATOR, category=sources', () => {
@@ -47,11 +47,11 @@ describe('macrooscillatorDef shape', () => {
     }
   });
 
-  it('model param: discrete 0..1 (room to grow as more models land)', () => {
+  it(`model param: discrete 0..${MACRO_MAX_MODEL} (grows as more models land)`, () => {
     const p = macrooscillatorDef.params.find((p) => p.id === 'model')!;
     expect(p.curve).toBe('discrete');
     expect(p.min).toBe(0);
-    expect(p.max).toBe(1);
+    expect(p.max).toBe(MACRO_MAX_MODEL);
     // model_cv must use the `discrete` CV scaling — linear would interpret a
     // ±1 LFO as a continuous interpolation across model space, which makes
     // no audio sense for what's effectively a switch.
@@ -201,6 +201,172 @@ describe('macrooscillatorMath — WAVESHAPE model', () => {
     // at ±1 but the morph crossfade between them can briefly land at 1.0
     // exactly. 1.5 is a generous ceiling that still catches a runaway bug.
     expect(peak, `WAVESHAPE peak ${peak}`).toBeLessThan(1.5);
+  });
+});
+
+describe('macrooscillatorMath — FM 2-OP model', () => {
+  const baseParams: MacroParams = {
+    model: 2,
+    note: 0,
+    harmonics: 0.0, // ratio idx 0 (1:1) at floor()
+    timbre: 0.0,    // no modulation index → clean carrier sine
+    morph: 0.0,     // no feedback
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio at A4', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'FM 2OP peak above silence').toBeGreaterThan(0.1);
+  });
+
+  it('clean carrier baseline (timbre=0, morph=0, ratio 1:1) is dominated by the fundamental', () => {
+    // With modulation index = 0 the carrier is a clean sine at the fundamental.
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, baseParams).main.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pH2 = powerAt(tail, 880, SR);
+    const pH3 = powerAt(tail, 1320, SR);
+    expect(pFund, `fund ${pFund} should dominate H2/H3 (${pH2}/${pH3})`).toBeGreaterThan(pH2 * 50);
+    expect(pFund).toBeGreaterThan(pH3 * 50);
+  });
+
+  it('TIMBRE (modulation index) adds sidebands: high TIMBRE produces more energy outside the fundamental bin', () => {
+    // At ratio 1:1, the modulator IS the carrier frequency, so the
+    // sidebands land at integer multiples of 440 — H2 (880), H3 (1320), etc.
+    // High mod index → energy redistributes into the sidebands. Compare
+    // the off-fundamental energy at H2 between timbre=0 and timbre=1.
+    const clean = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 0.0 }).main.slice(SR / 2);
+    const dirty = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 1.0 }).main.slice(SR / 2);
+    const cleanH2 = powerAt(clean, 880, SR);
+    const dirtyH2 = powerAt(dirty, 880, SR);
+    expect(
+      dirtyH2,
+      `timbre=1 H2 ${dirtyH2} should exceed timbre=0 H2 ${cleanH2} (sideband growth)`,
+    ).toBeGreaterThan(cleanH2 * 10);
+  });
+
+  it('HARMONICS picks a different ratio: harmonics=0 (1:1) vs harmonics≈0.3 (2:1) shifts spectral centroid up', () => {
+    // At harmonics=0 → ratio 1:1 (idx 0): carrier=440, modulator=440 →
+    // sidebands at 440, 880, 1320, ...
+    // At harmonics=0.3 → floor(0.3*8)=2 → ratio 2:1: carrier=880, modulator=440
+    // → sidebands at 880, 440, 1320, 0. The carrier doubles to 880, so
+    // there is significantly more energy at 880 (and higher) and less at 440.
+    const r0 = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, harmonics: 0.0, timbre: 1.0 }).main.slice(SR / 2);
+    const r2 = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, harmonics: 0.3, timbre: 1.0 }).main.slice(SR / 2);
+    // r2's carrier is 880Hz — so 880 should have markedly more energy
+    // than in r0 (where 880 is just the first sideband above the fund).
+    const r0_880 = powerAt(r0, 880, SR);
+    const r2_880 = powerAt(r2, 880, SR);
+    expect(
+      r2_880,
+      `harmonics=0.3 (2:1, carrier=880) 880Hz energy ${r2_880} should exceed harmonics=0 (1:1) ${r0_880}`,
+    ).toBeGreaterThan(r0_880 * 1.5);
+  });
+
+  it('FM 2-OP aux output is a clean carrier sine (no modulation)', () => {
+    const { aux } = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 1.0 });
+    // AUX should still be near-pure sine even with TIMBRE=1, because
+    // modulation is applied only to MAIN.
+    const tail = aux.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pH2 = powerAt(tail, 880, SR);
+    expect(pFund, `aux fund ${pFund} vs H2 ${pH2}`).toBeGreaterThan(pH2 * 20);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 2, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `FM 2OP peak ${peak}`).toBeLessThan(1.5);
+  });
+});
+
+describe('macrooscillatorMath — FM 6-OP model', () => {
+  const baseParams: MacroParams = {
+    model: 3,
+    note: 0,
+    harmonics: 0.5,
+    timbre: 0.0,   // no FM → near-pure sine
+    morph: 1.0,    // long decay so the envelope doesn't decay to silence
+    level: 1.0,
+  };
+
+  it('produces non-silent, finite audio at A4', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, baseParams);
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, 'FM 6OP peak above silence').toBeGreaterThan(0.1);
+  });
+
+  it('TIMBRE adds spectral complexity: high TIMBRE produces more energy at upper harmonics', () => {
+    // At timbre=0 the carrier is a clean sine; at timbre=1 the carrier is
+    // heavily phase-modulated by op1 (which itself is modulated by op2..op4)
+    // → rich, often inharmonic spectrum.
+    const clean = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 0.0 }).main.slice(0, SR / 4);
+    const dirty = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 1.0 }).main.slice(0, SR / 4);
+    // Energy in a HF band that the clean sine wouldn't have.
+    const cleanHF = powerAt(clean, 3000, SR);
+    const dirtyHF = powerAt(dirty, 3000, SR);
+    expect(
+      dirtyHF,
+      `timbre=1 HF energy ${dirtyHF} should exceed timbre=0 HF ${cleanHF}`,
+    ).toBeGreaterThan(cleanHF * 3);
+  });
+
+  it('MORPH biases envelope decay: short MORPH decays faster than long MORPH', () => {
+    // morph=0 → 50ms decay; morph=1 → 5s decay. Render 0.5s and look at
+    // peak in the second half — short decay should be near-silent there,
+    // long decay should still ring.
+    const shortDecay = macrooscillatorMath.render(SR / 2, SR, 0.75, { ...baseParams, morph: 0.0, timbre: 0.5 }).main;
+    const longDecay = macrooscillatorMath.render(SR / 2, SR, 0.75, { ...baseParams, morph: 1.0, timbre: 0.5 }).main;
+    let shortTailPeak = 0;
+    let longTailPeak = 0;
+    for (let i = SR / 4; i < SR / 2; i++) {
+      const a = Math.abs(shortDecay[i]!);
+      if (a > shortTailPeak) shortTailPeak = a;
+      const b = Math.abs(longDecay[i]!);
+      if (b > longTailPeak) longTailPeak = b;
+    }
+    expect(
+      longTailPeak,
+      `long-decay tail peak ${longTailPeak} should exceed short-decay tail peak ${shortTailPeak}`,
+    ).toBeGreaterThan(shortTailPeak * 2);
+  });
+
+  it('FM 6-OP aux output is a clean carrier sine', () => {
+    const { aux } = macrooscillatorMath.render(SR, SR, 0.75, { ...baseParams, timbre: 1.0 });
+    const tail = aux.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pHF = powerAt(tail, 3000, SR);
+    expect(pFund, `aux fund ${pFund} vs HF ${pHF}`).toBeGreaterThan(pHF * 5);
+  });
+
+  it('bounded output at extreme params', () => {
+    const { main } = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 3, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+    });
+    let peak = 0;
+    for (let i = 0; i < main.length; i++) {
+      expect(Number.isFinite(main[i]!)).toBe(true);
+      const a = Math.abs(main[i]!);
+      if (a > peak) peak = a;
+    }
+    expect(peak, `FM 6OP peak ${peak}`).toBeLessThan(1.5);
   });
 });
 

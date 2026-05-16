@@ -157,6 +157,141 @@ describe('ART macrooscillator / WAVESHAPE model spectral character', () => {
   });
 });
 
+describe('ART macrooscillator / FM 2-OP model spectral character', () => {
+  it('clean carrier at timbre=0 → fundamental-dominated sine spectrum', () => {
+    // FM with modulation index 0 is just the carrier sine — fundamental
+    // should be far above any harmonic.
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 2, note: 0, harmonics: 0, timbre: 0, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    const pFund = powerAt(tail, 440, SR);
+    const pH2 = powerAt(tail, 880, SR);
+    const pH3 = powerAt(tail, 1320, SR);
+    expect(pFund).toBeGreaterThan(pH2 * 50);
+    expect(pFund).toBeGreaterThan(pH3 * 50);
+  });
+
+  it('TIMBRE increases the number of audible sidebands (FM richness)', () => {
+    // Chowning: FM produces (modulation index) ~= number of audible sidebands.
+    // At index=0 we have 1 (the carrier). At index=8 we have ~8+ sidebands.
+    // Test by counting bins above a threshold relative to the strongest bin.
+    const dirty = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 2, note: 0, harmonics: 0, timbre: 1, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    const peak = Math.max(
+      powerAt(dirty, 440, SR),
+      powerAt(dirty, 880, SR),
+    );
+    const threshold = peak * 0.05;
+    let aboveCount = 0;
+    for (let h = 1; h <= 12; h++) {
+      if (powerAt(dirty, 440 * h, SR) > threshold) aboveCount++;
+    }
+    // Expect at least 4 harmonics above the 5%-of-peak threshold.
+    expect(aboveCount, `audible harmonics above 5% of peak: ${aboveCount}`).toBeGreaterThanOrEqual(4);
+  });
+
+  it('feedback (MORPH) reshapes the spectrum at low TIMBRE (extends sideband structure)', () => {
+    // At low modulation index a clean carrier has very little harmonic
+    // content; adding self-feedback pushes the carrier toward a saw-like
+    // shape and grows the upper-harmonic band. Compare HF (1320Hz) energy
+    // between feedback=0 and feedback=1 at low timbre, where feedback is
+    // the dominant timbral influence rather than the modulator.
+    const noFbk = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 2, note: 0, harmonics: 0, timbre: 0.05, morph: 0, level: 1,
+    }).main.slice(SR / 2);
+    const fullFbk = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 2, note: 0, harmonics: 0, timbre: 0.05, morph: 1, level: 1,
+    }).main.slice(SR / 2);
+    // Sum harmonic energy from H2..H5 — feedback should grow it significantly.
+    let noBand = 0;
+    let fbkBand = 0;
+    for (let h = 2; h <= 5; h++) {
+      noBand += powerAt(noFbk, 440 * h, SR);
+      fbkBand += powerAt(fullFbk, 440 * h, SR);
+    }
+    expect(
+      fbkBand,
+      `feedback=1 H2..H5 band ${fbkBand} > feedback=0 ${noBand}`,
+    ).toBeGreaterThan(noBand * 2);
+  });
+});
+
+describe('ART macrooscillator / FM 6-OP model spectral character', () => {
+  it('clean stack at timbre=0 has dominant fundamental (carrier sees no FM)', () => {
+    // At modulation index = 0 all modulators are silent → carrier is pure
+    // sine. Long MORPH so the envelope doesn't decay over the test window.
+    const tail = macrooscillatorMath.render(SR, SR, 0.75, {
+      model: 3, note: 0, harmonics: 0.5, timbre: 0, morph: 1, level: 1,
+    }).main.slice(0, SR / 4);
+    const pFund = powerAt(tail, 440, SR);
+    const pH3 = powerAt(tail, 1320, SR);
+    expect(pFund, `fund ${pFund} should dominate H3 ${pH3}`).toBeGreaterThan(pH3 * 10);
+  });
+
+  it('TIMBRE produces wide-band content (FM stack with multiple modulators)', () => {
+    // 6-op FM with high mod index across multiple operators produces
+    // very dense spectra. Check that HF content exists.
+    const buf = macrooscillatorMath.render(SR / 2, SR, 0.75, {
+      model: 3, note: 0, harmonics: 0.7, timbre: 1, morph: 1, level: 1,
+    }).main.slice(0, SR / 8);
+    // Energy at 2kHz, 4kHz should both be non-trivial.
+    const p2k = powerAt(buf, 2000, SR);
+    const p4k = powerAt(buf, 4000, SR);
+    // Compare with a "clean" reference (modIndex=0).
+    const cleanBuf = macrooscillatorMath.render(SR / 2, SR, 0.75, {
+      model: 3, note: 0, harmonics: 0.7, timbre: 0, morph: 1, level: 1,
+    }).main.slice(0, SR / 8);
+    const clean2k = powerAt(cleanBuf, 2000, SR);
+    const clean4k = powerAt(cleanBuf, 4000, SR);
+    expect(p2k, `dirty 2kHz ${p2k} vs clean ${clean2k}`).toBeGreaterThan(clean2k * 3);
+    expect(p4k, `dirty 4kHz ${p4k} vs clean ${clean4k}`).toBeGreaterThan(clean4k * 3);
+  });
+
+  it('MORPH controls envelope length: percussive vs sustain', () => {
+    // morph=0 → 50ms decay. Energy in samples 0.2s → 0.4s should be very low.
+    // morph=1 → 5s decay. Same window should still ring.
+    const shortDecay = macrooscillatorMath.render(SR / 2, SR, 0.75, {
+      model: 3, note: 0, harmonics: 0.5, timbre: 0.5, morph: 0, level: 1,
+    }).main;
+    const longDecay = macrooscillatorMath.render(SR / 2, SR, 0.75, {
+      model: 3, note: 0, harmonics: 0.5, timbre: 0.5, morph: 1, level: 1,
+    }).main;
+    // RMS over 0.2s → 0.5s.
+    const start = Math.floor(SR * 0.2);
+    const end = Math.floor(SR * 0.5);
+    let shortRms = 0;
+    let longRms = 0;
+    for (let i = start; i < end; i++) {
+      shortRms += shortDecay[i]! * shortDecay[i]!;
+      longRms += longDecay[i]! * longDecay[i]!;
+    }
+    shortRms = Math.sqrt(shortRms / (end - start));
+    longRms = Math.sqrt(longRms / (end - start));
+    expect(longRms, `long-tail RMS ${longRms} > short-tail RMS ${shortRms}`).toBeGreaterThan(shortRms * 5);
+  });
+
+  it('finite + bounded output at extreme FM params', () => {
+    for (const model of [2, 3]) {
+      const { main, aux } = macrooscillatorMath.render(SR, SR, 0.75, {
+        model, note: 0, harmonics: 1, timbre: 1, morph: 1, level: 1,
+      });
+      let mainPeak = 0;
+      let auxPeak = 0;
+      for (let i = 0; i < main.length; i++) {
+        expect(Number.isFinite(main[i]!), `model=${model} main[${i}] finite`).toBe(true);
+        expect(Number.isFinite(aux[i]!), `model=${model} aux[${i}] finite`).toBe(true);
+        const a = Math.abs(main[i]!);
+        const b = Math.abs(aux[i]!);
+        if (a > mainPeak) mainPeak = a;
+        if (b > auxPeak) auxPeak = b;
+      }
+      expect(mainPeak, `model=${model} main peak ${mainPeak}`).toBeLessThan(1.5);
+      expect(auxPeak, `model=${model} aux peak ${auxPeak}`).toBeLessThan(1.5);
+    }
+  });
+});
+
 describe('ART macrooscillator / V/oct tracking', () => {
   // CV-range-uniformity / V/oct convention is 1 unit = 1 octave from C4
   // (261.6256 Hz). MACROOSCILLATOR's pitch input must follow this exactly

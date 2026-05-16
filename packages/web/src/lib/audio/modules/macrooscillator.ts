@@ -134,8 +134,80 @@ class _WaveshapeEngine {
   }
 }
 
+// Carrier:modulator ratio table for FM 2-op (mirror — keep in sync with
+// FM2_RATIOS in packages/dsp/src/macrooscillator.ts).
+const _FM2_RATIOS: [number, number][] = [
+  [1, 1], [1, 2], [2, 1], [1, 3], [3, 1], [1, 4], [2, 3], [3, 2],
+];
+
+class _FM2OpEngine {
+  cPhase = 0;
+  mPhase = 0;
+  cPrev = 0;
+  reset(): void {
+    this.cPhase = 0;
+    this.mPhase = 0;
+    this.cPrev = 0;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const ratioIdx = Math.max(0, Math.min(_FM2_RATIOS.length - 1, Math.floor(harmonics * _FM2_RATIOS.length)));
+    const [cRatio, mRatio] = _FM2_RATIOS[ratioIdx]!;
+    const cFreq = freq * cRatio;
+    const mFreq = freq * mRatio;
+    this.cPhase += cFreq / sr;
+    if (this.cPhase >= 1) this.cPhase -= 1;
+    this.mPhase += mFreq / sr;
+    if (this.mPhase >= 1) this.mPhase -= 1;
+    const modIndex = timbre * 8;
+    const mod = Math.sin(2 * Math.PI * this.mPhase) * modIndex;
+    const fbk = morph * Math.PI;
+    const carrierPhase = 2 * Math.PI * this.cPhase + mod + this.cPrev * fbk;
+    const carrier = Math.sin(carrierPhase);
+    this.cPrev = carrier;
+    const aux = Math.sin(2 * Math.PI * this.cPhase);
+    return [carrier * 0.8, aux];
+  }
+}
+
+const _FM6_BASE_RATIOS = [1.0, 1.0, 2.0, 3.0, 4.0, 1.0];
+
+class _FM6OpEngine {
+  phases = [0, 0, 0, 0, 0, 0];
+  fbkPrev = 0;
+  envs = [1, 1, 1, 1, 1, 1];
+  reset(): void {
+    for (let i = 0; i < 6; i++) this.phases[i] = 0;
+    this.fbkPrev = 0;
+    for (let i = 0; i < 6; i++) this.envs[i] = 1;
+  }
+  tick(freq: number, harmonics: number, timbre: number, morph: number, sr: number): [number, number] {
+    const ratioScale = 0.25 + harmonics * 0.75;
+    const decaySec = 0.05 * Math.pow(100, morph);
+    const decayCoef = Math.exp(-1 / (decaySec * sr));
+    for (let i = 0; i < 6; i++) {
+      const ratio = i === 0 ? 1.0 : _FM6_BASE_RATIOS[i]! * ratioScale;
+      this.phases[i]! += (freq * ratio) / sr;
+      if (this.phases[i]! >= 1) this.phases[i]! -= 1;
+      this.envs[i]! *= decayCoef;
+    }
+    const modIndex = timbre * 6;
+    const fbkAmt = 0.5 * modIndex;
+    const fbkPhase = 2 * Math.PI * this.phases[5]! + this.fbkPrev * fbkAmt;
+    const fbk = Math.sin(fbkPhase) * this.envs[5]!;
+    this.fbkPrev = fbk;
+    const op4 = Math.sin(2 * Math.PI * this.phases[4]!) * this.envs[4]! * modIndex * 0.5;
+    const op3 = Math.sin(2 * Math.PI * this.phases[3]! + op4) * this.envs[3]! * modIndex * 0.5;
+    const op2 = Math.sin(2 * Math.PI * this.phases[2]! + op3) * this.envs[2]! * modIndex * 0.5;
+    const op1 = Math.sin(2 * Math.PI * this.phases[1]! + op2) * this.envs[1]! * modIndex * 0.5;
+    const carrierMod = op1 + fbk * 0.5;
+    const carrier = Math.sin(2 * Math.PI * this.phases[0]! + carrierMod) * this.envs[0]!;
+    const aux = Math.sin(2 * Math.PI * this.phases[0]!);
+    return [carrier * 0.7, aux];
+  }
+}
+
 export interface MacroParams {
-  /** 0 = VA, 1 = WAVESHAPE. Floored to integer in render. */
+  /** 0=VA, 1=WAVESHAPE, 2=FM 2-OP, 3=FM 6-OP. Rounded to integer in render. */
   model: number;
   /** Semitones offset on top of the V/oct pitch input. */
   note: number;
@@ -144,6 +216,11 @@ export interface MacroParams {
   morph: number;
   level: number;
 }
+
+/** Maximum legal model index. Grows as engines land; keep equal to
+ *  (number-of-engines − 1) and in sync with MODEL_NAMES on the card +
+ *  the model AudioParam's maxValue. */
+export const MACRO_MAX_MODEL = 3;
 
 /** Pure-math helpers — called from unit tests + ART. The actual audio runs
  *  in the worklet at packages/dsp/src/macrooscillator.ts. */
@@ -157,13 +234,15 @@ export const macrooscillatorMath = {
   ): { main: Float32Array; aux: Float32Array } {
     const va = new _VAEngine();
     const ws = new _WaveshapeEngine();
+    const fm2 = new _FM2OpEngine();
+    const fm6 = new _FM6OpEngine();
     const main = new Float32Array(n);
     const aux = new Float32Array(n);
     const semitones = pitchV * 12 + params.note;
     let freq = 261.6256 * Math.pow(2, semitones / 12);
     if (freq < 1) freq = 1;
     else if (freq > 20000) freq = 20000;
-    const modelIdx = Math.max(0, Math.min(1, Math.round(params.model)));
+    const modelIdx = Math.max(0, Math.min(MACRO_MAX_MODEL, Math.round(params.model)));
     const h = Math.max(0, Math.min(1, params.harmonics));
     const t = Math.max(0, Math.min(1, params.timbre));
     const m = Math.max(0, Math.min(1, params.morph));
@@ -171,8 +250,15 @@ export const macrooscillatorMath = {
     for (let i = 0; i < n; i++) {
       const [vaMain, vaAux] = va.tick(freq, h, t, m, sr);
       const [wsMain, wsAux] = ws.tick(freq, h, t, m, sr);
-      main[i] = (modelIdx === 0 ? vaMain : wsMain) * lvl;
-      aux[i] = modelIdx === 0 ? vaAux : wsAux;
+      const [fm2Main, fm2Aux] = fm2.tick(freq, h, t, m, sr);
+      const [fm6Main, fm6Aux] = fm6.tick(freq, h, t, m, sr);
+      let mp = vaMain;
+      let ap = vaAux;
+      if (modelIdx === 1) { mp = wsMain; ap = wsAux; }
+      else if (modelIdx === 2) { mp = fm2Main; ap = fm2Aux; }
+      else if (modelIdx === 3) { mp = fm6Main; ap = fm6Aux; }
+      main[i] = mp * lvl;
+      aux[i] = ap;
     }
     return { main, aux };
   },
@@ -204,7 +290,7 @@ export const macrooscillatorDef: AudioModuleDef = {
     { id: 'aux', type: 'audio' },
   ],
   params: [
-    { id: 'model',     label: 'Model',     defaultValue: 0,   min: 0,   max: 1,  curve: 'discrete' },
+    { id: 'model',     label: 'Model',     defaultValue: 0,   min: 0,   max: MACRO_MAX_MODEL,  curve: 'discrete' },
     { id: 'note',      label: 'Note',      defaultValue: 0,   min: -60, max: 60, curve: 'linear', units: 'st' },
     { id: 'harmonics', label: 'Harmonics', defaultValue: 0.3, min: 0,   max: 1,  curve: 'linear' },
     { id: 'timbre',    label: 'Timbre',    defaultValue: 0.3, min: 0,   max: 1,  curve: 'linear' },

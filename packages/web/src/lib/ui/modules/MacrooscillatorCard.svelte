@@ -27,7 +27,8 @@
   let morph     = $derived(node?.params.morph     ?? defaultFor('morph'));
   let level     = $derived(node?.params.level     ?? defaultFor('level'));
 
-  const MODEL_NAMES = ['VA', 'WAVESHAPE'];
+  const MODEL_NAMES = ['VA', 'WAVESHAPE', 'FM 2OP', 'FM 6OP'];
+  const MAX_MODEL = MODEL_NAMES.length - 1;
   let modelLabel = $derived(MODEL_NAMES[Math.max(0, Math.min(MODEL_NAMES.length - 1, Math.round(model)))]);
 
   const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
@@ -59,7 +60,7 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={model}     min={0}   max={1}  defaultValue={0}   label="Model"     curve="discrete" onchange={set('model')}     readLive={live('model')} />
+      <Fader value={model}     min={0}   max={MAX_MODEL}  defaultValue={0}   label="Model"     curve="discrete" onchange={set('model')}     readLive={live('model')} />
       <Fader value={note}      min={-60} max={60} defaultValue={0}   label="Note"      units="st" curve="linear" onchange={set('note')}      readLive={live('note')} />
       <Fader value={harmonics} min={0}   max={1}  defaultValue={0.3} label="Harmonics" curve="linear" onchange={set('harmonics')} readLive={live('harmonics')} />
       <Fader value={timbre}    min={0}   max={1}  defaultValue={0.3} label="Timbre"    curve="linear" onchange={set('timbre')}    readLive={live('timbre')} />
