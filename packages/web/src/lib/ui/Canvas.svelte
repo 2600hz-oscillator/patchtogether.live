@@ -131,6 +131,8 @@
   import RingsCard from '$lib/ui/modules/RingsCard.svelte';
   // PEAKS — dual-channel multi-mode utility (Peaks archetype, kick/snare/hihat/env/lfo).
   import PeaksCard from '$lib/ui/modules/PeaksCard.svelte';
+  // WARPS — meta-modulator / signal masher (Mutable Instruments Warps archetype).
+  import WarpsCard from '$lib/ui/modules/WarpsCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -277,6 +279,7 @@
     macseq: MacseqCard,
     rings: RingsCard,
     peaks: PeaksCard,
+    warps: WarpsCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

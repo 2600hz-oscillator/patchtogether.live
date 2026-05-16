@@ -192,6 +192,14 @@ type StandardModuleType =
   // dependent knobs, a gate input, and CV-routed knob inputs. v1 ships
   // five modes; multistage envelope / tap-LFO / BPF mode deferred.
   | 'peaks'
+  // WARPS — meta-modulator / signal masher (Mutable Instruments Warps
+  // archetype, Émilie Gillet, 2014, MIT-licensed). Clean-room TypeScript
+  // port. v1 ships 4 Xmod algorithms (XFADE / RING-MOD / XOR / COMPARE)
+  // with an internal carrier oscillator (sine / triangle / saw / square)
+  // so the module is usable with a single input or no inputs at all.
+  // FOLD / ANALOG-RING / FREQUENCY-SHIFTER / DOPPLER / VOCODER deferred
+  // to follow-up.
+  | 'warps'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
