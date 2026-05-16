@@ -128,6 +128,7 @@
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
   import GroupCard from '$lib/ui/modules/GroupCard.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
+  import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
   import SelectionContextMenu from '$lib/ui/SelectionContextMenu.svelte';
@@ -144,6 +145,11 @@
     type PortLookupModule,
   } from '$lib/graph/group-actions';
   import type { ExposedPort, GroupData } from '$lib/graph/group-projection';
+  import {
+    extractSavedGroupPayload,
+    resurrectSavedGroup,
+  } from '$lib/graph/saved-group-resurrect';
+  import type { SavedGroup } from '$lib/server/saved-groups';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
     buildModuleEntries,
@@ -1426,6 +1432,97 @@
       `duplicated group ${groupId} → ${plan.newGroup.id} (${plan.newChildren.length} children, ${plan.newEdges.length} internal edges)`,
     );
     void ensureEngine();
+  }
+
+  // ---------------- Saved-groups library ----------------
+  let savingGroupId = $state<string | null>(null);
+
+  async function saveGroupToLibrary(groupId: string) {
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    if (!currentUserId) {
+      error = 'Sign in to save groups to your library.';
+      setTimeout(() => { if (error?.startsWith('Sign in to save')) error = null; }, 4000);
+      return;
+    }
+    const extracted = extractSavedGroupPayload({
+      group: group as unknown as ModuleNode,
+      nodes: snapshot.nodes,
+      edges: snapshot.edges,
+    });
+    if (!extracted) {
+      trace(`save-group refused: ${groupId} has no group data`);
+      return;
+    }
+    const name = window.prompt('Save group to your library as:', extracted.label);
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (trimmed.length === 0) return;
+
+    savingGroupId = groupId;
+    try {
+      const res = await fetch('/api/saved-groups', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ label: trimmed, payload: extracted.payload }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string };
+        const msg = body.message ?? `Save failed: ${res.status}`;
+        error = msg;
+        setTimeout(() => { if (error === msg) error = null; }, 5000);
+        trace(`save-group failed: ${msg}`);
+        return;
+      }
+      trace(`saved group ${groupId} to library as "${trimmed}"`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      error = `Save failed: ${msg}`;
+      setTimeout(() => { if (error === `Save failed: ${msg}`) error = null; }, 5000);
+    } finally {
+      savingGroupId = null;
+    }
+  }
+
+  function insertSavedGroup(sg: SavedGroup) {
+    const plan = resurrectSavedGroup({
+      payload: sg.payload,
+      existingNodeIds: Object.keys(patch.nodes),
+      existingEdgeIds: Object.keys(patch.edges),
+      groupPosition: { ...spawnFlowPos },
+    });
+    const typeCounts = new Map<string, number>();
+    for (const node of Object.values(patch.nodes)) {
+      if (!node) continue;
+      typeCounts.set(node.type, (typeCounts.get(node.type) ?? 0) + 1);
+    }
+    for (const child of plan.newChildren) {
+      const def = defLookup(child.type);
+      const cap = def?.maxInstances;
+      if (cap === undefined) continue;
+      const willBe = (typeCounts.get(child.type) ?? 0) + 1;
+      if (willBe > cap) {
+        const msg = `${def?.label ?? child.type}: inserting this saved group would exceed instance cap (${willBe}/${cap})`;
+        error = msg;
+        setTimeout(() => { if (error === msg) error = null; }, 4000);
+        trace(`insert-saved-group refused: ${child.type} would exceed cap`);
+        return;
+      }
+      typeCounts.set(child.type, willBe);
+    }
+    ydoc.transact(() => {
+      for (const c of plan.newChildren) patch.nodes[c.id] = c;
+      patch.nodes[plan.newGroup.id] = plan.newGroup;
+      for (const e of plan.newEdges) patch.edges[e.id] = e;
+    }, LOCAL_ORIGIN);
+    trace(`inserted saved group "${sg.label}" → ${plan.newGroup.id} (${plan.newChildren.length} children, ${plan.newEdges.length} internal edges)`);
+    void ensureEngine();
+  }
+
+  let savedGroupsPickerOpen = $state(false);
+  function openSavedGroupsPicker() {
+    if (!currentUserId) return;
+    savedGroupsPickerOpen = true;
   }
 
   function deleteGroupAndChildren(groupId: string) {
