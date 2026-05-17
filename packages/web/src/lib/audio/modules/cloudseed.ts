@@ -711,7 +711,13 @@ export function cloudseedImpulseResponse(
     for (let li = 0; li < ch.lineCount; li++) {
       const buf = ch.lineBufs[li]!;
       const wi = ch.lineWrites[li]!;
-      const di = ((wi - ch.lineDelays[li]!) | 0 + buf.length) % buf.length;
+      // Correct precedence: ((wi - delay) % L + L) % L for non-negative wrap.
+      // Earlier ((wi - delay) | 0 + L) % L was a JS-precedence bug — `+`
+      // binds tighter than `|`, producing wrong (often negative) indices
+      // and NaN feedback on the EQ-on path.
+      const delaySamples = ch.lineDelays[li]! | 0;
+      let di = wi - delaySamples;
+      di = ((di % buf.length) + buf.length) % buf.length;
       const dOut = buf[di]!;
       let v = preOut + dOut * ch.lineFeedbacks[li]!;
       // EQ stages on the line feedback path.
