@@ -251,7 +251,11 @@ type StandardModuleType =
   // LIVECODE — text-DSL module that spawns + patches modules from a script.
   // No audio I/O; the card body holds a textarea + Run button. The DSL
   // parser/evaluator live in $lib/livecode. See /docs/modules/livecode.
-  | 'livecode';
+  | 'livecode'
+  // PONG — interactive game module (research prototype). CV paddles in,
+  // gate scores out. Single-user in this slice; multi-user wiring
+  // documented in docs/design/game-modules.md.
+  | 'pong';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

@@ -68,6 +68,11 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // octave mapping). The res_cv / color_cv / mix_mode_cv ports DO carry
   // cvScale because they route via the AudioParam fast path.
   blades: ['voct1', 'voct2', 'cutoff1_cv', 'cutoff2_cv'],
+  // PONG paddle_left / paddle_right: CV is sampled per scheduler-tick into
+  // a JS-side stepper (paddleCvToY maps -1..+1 → 0..1 paddle Y). No
+  // AudioParam fast path — the CV doesn't modulate any knob, it IS the
+  // paddle position. Same shape as BUGGLES.clock_cv / chaos_cv above.
+  pong: ['paddle_left', 'paddle_right'],
 };
 
 describe('cv-scale / registry coverage', () => {
