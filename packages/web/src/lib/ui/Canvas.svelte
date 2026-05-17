@@ -135,6 +135,8 @@
   import WarpsCard from '$lib/ui/modules/WarpsCard.svelte';
   // VEILS — quad VCA + soft-clip summing mix (Mutable Instruments archetype).
   import VeilsCard from '$lib/ui/modules/VeilsCard.svelte';
+  // BLADES — dual SVF VCF + COLOR overdrive + mix bus (Blades archetype).
+  import BladesCard from '$lib/ui/modules/BladesCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -283,6 +285,7 @@
     peaks: PeaksCard,
     warps: WarpsCard,
     veils: VeilsCard,
+    blades: BladesCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

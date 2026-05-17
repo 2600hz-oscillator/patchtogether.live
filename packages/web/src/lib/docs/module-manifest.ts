@@ -141,6 +141,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Meta-modulator / signal masher (Mutable Instruments Warps archetype, Émilie Gillet, 2014, MIT-licensed). Clean-room pure-TypeScript port — four cross-modulation algorithms (0=XFADE equal-power crossfade, 1=RING-MOD digital ring modulation with TIMBRE drive, 2=XOR 16-bit bit-mash crossfaded against a 0.7-sum, 3=COMPARE Warps\' direct/threshold/window comparator suite). An internal carrier oscillator (sine / triangle / saw / square selectable via the SHAPE knob) drives the carrier path when carrier_in is unpatched, so the module is usable as a one-input ring modulator or with no inputs at all. PITCH is V/oct on the internal carrier; NOTE is a ±60-semitone offset. LEVEL 1 / LEVEL 2 scale the carrier and modulator inputs. Output is mono softclipped through x/(1+|x|). FOLD / ANALOG-RING / FREQUENCY-SHIFTER / DOPPLER / VOCODER algorithms deferred to a follow-up PR.',
   veils:
     'Quad VCA + soft-clip summing mix (Mutable Instruments Veils archetype — analog hardware, clean-room from-spec impl). Four independent VCAs, each with audio in, CV in (summed with knob), gain knob spanning [0, 2], and a per-channel response toggle: LIN for CV / control signals, EXP (squared) for audio / smooth fades. Per-channel direct outs are pre-mix, pre-clip. A separate MIX out sums all four channels and applies a tanh soft-clip — gain is NOT clamped at 1.0 per channel, so knob + CV can push above unity for warm overdrive on the mix bus.',
+  blades:
+    'Dual state-variable filter + COLOR overdrive + mix bus (Mutable Instruments Blades archetype). Blades is analog hardware with no firmware to port; this is a from-spec TypeScript implementation. Each of the two SVF cores has its own cutoff knob (20 Hz – 20 kHz, log fader), resonance knob (0..1, just shy of self-oscillation at the top), V/oct CV input (1 V per octave centered on the cutoff knob), audio-rate cutoff CV (±5 octaves at full deflection), and a mode toggle cycling LP → BP → HP. The global COLOR knob applies a tanh soft-clip pre-stage to each filter input — drive ranges 1× (clean) to 10× (heavily saturated) for the signature Blades grit. The MIX output toggles between PARALLEL (sum of both filters, soft-clipped) and SERIAL (filter1 → filter2 cascade, filter 2 ignores its own IN); the per-filter direct OUTs always track each filter operating on its own audio input independent of the mix routing. v1 ships LP/BP/HP modes; notch + linear-FM cutoff modulation deferred to follow-up.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -366,6 +368,20 @@ const PORT_NOTES: Record<string, string> = {
   'rings.level_cv':  'CV → LEVEL (0..1) — soft-limited output gain.',
   'rings.odd':       'Primary output — odd-indexed mode sum (MODAL) or odd-tap string mix (SYMPATHETIC).',
   'rings.even':      'Secondary output — even-indexed mode sum / even-tap mix.',
+  // BLADES — dual SVF + COLOR + mix bus.
+  'blades.in1':         'Filter 1 audio input. Routed through the COLOR pre-stage tanh before filter 1.',
+  'blades.in2':         'Filter 2 audio input. Routed through the COLOR pre-stage tanh before filter 2. In SERIAL mix mode, in2 still drives out2 — only the mix bus ignores it.',
+  'blades.voct1':       '1 V/oct CV input for filter 1 cutoff. Sums in octaves on top of the cutoff knob.',
+  'blades.voct2':       '1 V/oct CV input for filter 2 cutoff.',
+  'blades.cutoff1_cv':  'Audio-rate cutoff CV for filter 1. ±1 = ±5 octaves around the cutoff knob — matches the simple FILTER module convention.',
+  'blades.cutoff2_cv':  'Audio-rate cutoff CV for filter 2.',
+  'blades.res1_cv':     'CV → resonance 1 (linear cvScale, sweeps 0..1).',
+  'blades.res2_cv':     'CV → resonance 2 (linear cvScale, sweeps 0..1).',
+  'blades.color_cv':    'CV → COLOR (linear cvScale, sweeps 0..1) — modulates pre-filter drive.',
+  'blades.mix_mode_cv': 'CV → mix mode (discrete cvScale; ≥0.5 = SERIAL, <0.5 = PARALLEL).',
+  'blades.out1':        'Filter 1 direct output (LP/BP/HP per mode1).',
+  'blades.out2':        'Filter 2 direct output (LP/BP/HP per mode2).',
+  'blades.mix':         'Mix bus output. PARALLEL: tanh(out1 + out2). SERIAL: tanh(filter2(filter1(in1))).',
   // WARPS — meta-modulator / signal masher.
   'warps.carrier_in':       'Audio carrier input. When patched, replaces the internal oscillator as the carrier signal feeding the selected Xmod algorithm.',
   'warps.modulator_in':     'Audio modulator input. Multiplied by LEVEL 2 before entering the Xmod algorithm.',
