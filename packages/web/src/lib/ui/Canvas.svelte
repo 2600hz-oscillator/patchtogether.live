@@ -169,6 +169,11 @@
   } from '$lib/graph/group-actions';
   import type { ExposedPort, GroupData } from '$lib/graph/group-projection';
   import {
+    nextGroupNameForNewGroup,
+    planDefaultGroupNames,
+    LEGACY_GROUP_PLACEHOLDER,
+  } from '$lib/graph/group-naming';
+  import {
     extractSavedGroupPayload,
     resurrectSavedGroup,
   } from '$lib/graph/saved-group-resurrect';
@@ -448,6 +453,22 @@
   $effect(() => {
     return getDefaultSnapshotBus().subscribe((snap) => {
       snapshot = snap;
+      // Group-name migration runs any time a snapshot surfaces a group
+      // node whose label is blank or the legacy "GROUP!" placeholder.
+      // Triggered per-snapshot (rather than once-per-mount) so a second
+      // group added after the first migration still picks up a name.
+      // planDefaultGroupNames is no-op when every group already has a
+      // real label, so the steady-state cost is one cheap scan.
+      let needsMigration = false;
+      for (const n of snap.nodes) {
+        if (n.type !== 'group') continue;
+        const lbl = (n.data as { label?: unknown } | undefined)?.label;
+        if (typeof lbl !== 'string' || lbl.trim() === '' || lbl === LEGACY_GROUP_PLACEHOLDER) {
+          needsMigration = true;
+          break;
+        }
+      }
+      if (needsMigration) maybeMigrateGroupNames();
     });
   });
 
@@ -1240,13 +1261,20 @@
     const ids = groupBuilderSelectionIds;
     const groupId = `group-${Math.random().toString(36).slice(2, 10)}`;
     const exposedPorts = buildExposedPorts({ selectedCandidates });
+    // If the user accepted the placeholder name, bump to the next free
+    // GROUP<N> slot so multiple groups in the same rack don't all show
+    // the same label. A real user-typed name passes through untouched.
+    const effectiveLabel =
+      label.trim().length === 0 || label === LEGACY_GROUP_PLACEHOLDER
+        ? nextGroupNameForNewGroup(patch.nodes)
+        : label;
     const plan = planCreateGroup({
       groupId,
       selectionIds: ids,
       exposedPorts,
       nodes: snapshot.nodes,
       edges: snapshot.edges,
-      label,
+      label: effectiveLabel,
     });
 
     ydoc.transact(() => {
@@ -1315,6 +1343,64 @@
       (target.data as { expanded?: boolean }).expanded = !current;
     }, LOCAL_ORIGIN);
     trace(`group ${groupId} expanded → ${!current}`);
+  }
+
+  /**
+   * Set a group's user-facing name. Empty/whitespace input falls back to
+   * the next free `GROUP<N>` slot so groups can never end up nameless.
+   * The label is stored on `data.label` (already round-tripped by every
+   * existing group code path — same field saved-group `payload.label`
+   * is derived from).
+   */
+  function renameGroup(groupId: string, rawName: string) {
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    const trimmed = rawName.trim();
+    const next =
+      trimmed.length === 0 || trimmed === LEGACY_GROUP_PLACEHOLDER
+        ? nextGroupNameForNewGroup(patch.nodes)
+        : trimmed;
+    const currentLabel =
+      typeof (group.data as { label?: unknown } | undefined)?.label === 'string'
+        ? ((group.data as { label?: string }).label ?? '').trim()
+        : '';
+    if (currentLabel === next) return;
+    ydoc.transact(() => {
+      const target = patch.nodes[groupId];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as { label?: string }).label = next;
+    }, LOCAL_ORIGIN);
+    trace(`renamed group ${groupId} → "${next}"`);
+  }
+
+  /**
+   * Assign `GROUP<N>` to every group that's currently nameless or stuck on
+   * the legacy "GROUP!" placeholder. Driven by the snapshot subscriber:
+   * the migration runs any time a snapshot exposes a group needing a name,
+   * so a second group added after the first migration still picks up a
+   * fresh slot. The plan is id-sorted so peers running concurrently
+   * produce identical assignments (Y.js conflict-resolution makes the
+   * writes idempotent).
+   */
+  function maybeMigrateGroupNames() {
+    const plan = planDefaultGroupNames(patch.nodes);
+    if (plan.length === 0) return;
+    ydoc.transact(() => {
+      for (const { groupId, name } of plan) {
+        const target = patch.nodes[groupId];
+        if (!target) continue;
+        // Mutate the existing data sub-object so syncedstore propagates the
+        // change through the Y.Map view. Replacing `data` wholesale would
+        // detach any references the caller (or test eval) is holding.
+        if (!target.data || typeof target.data !== 'object') {
+          target.data = { label: name };
+        } else {
+          (target.data as { label?: string }).label = name;
+        }
+      }
+    }, LOCAL_ORIGIN);
+    trace(`group-name migration: assigned default names to ${plan.length} group(s)`);
   }
 
   // Collapses every currently-expanded group. Wired to the floating
@@ -2619,6 +2705,7 @@
       {nodeTypes}
       fitView
       colorMode="dark"
+      zoomOnDoubleClick={false}
       onconnect={handleConnect}
       onconnectstart={handleConnectStart}
       onconnectend={handleConnectEnd}
@@ -2738,6 +2825,7 @@
   onselect={spawnFromPalette}
   onorganize={organizeModules}
   oncreategroup={() => enterLassoMode(palettePos.x, palettePos.y)}
+  oninsertsavedgroup={currentUserId ? openSavedGroupsPicker : undefined}
   onclose={() => (paletteOpen = false)}
 />
 
@@ -2749,6 +2837,7 @@
   nodeType={ctxMenuNodeType}
   isGroup={ctxMenuNodeType === 'group'}
   groupExpanded={ctxMenuGroupExpanded}
+  canSaveGroup={Boolean(currentUserId) && ctxMenuNodeType === 'group'}
   ondelete={() => {
     if (!ctxMenuNodeId) return;
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
@@ -2760,7 +2849,14 @@
   ontoggleexpanded={() => ctxMenuNodeId && toggleGroupExpanded(ctxMenuNodeId)}
   oneditexposed={() => ctxMenuNodeId && openEditExposedJacks(ctxMenuNodeId)}
   onduplicategroup={() => ctxMenuNodeId && duplicateGroupAction(ctxMenuNodeId)}
+  onsavegroup={() => ctxMenuNodeId && void saveGroupToLibrary(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
+/>
+
+<SavedGroupsPicker
+  bind:open={savedGroupsPickerOpen}
+  oninsert={(sg) => insertSavedGroup(sg)}
+  onclose={() => (savedGroupsPickerOpen = false)}
 />
 
 <SelectionContextMenu

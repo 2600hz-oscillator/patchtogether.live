@@ -23,7 +23,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { ModuleNode } from '$lib/graph/types';
   import type { GroupData, ExposedPort } from '$lib/graph/group-projection';
-  import { patch } from '$lib/graph/store';
+  import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
@@ -49,6 +49,76 @@
 
   let label = $derived<string>(groupData?.label ?? 'GROUP!');
   let childCount = $derived<number>(groupData?.childIds?.length ?? 0);
+
+  // ---- Editable label (double-click to edit, Enter/blur to commit) ----
+  // Stored on `data.label`; round-trips through Yjs so peers see renames
+  // live. Empty input is rejected (keeps the previous label) — group
+  // creation enforces the GROUP<N> default so the field is never blank
+  // in steady state.
+  let editingLabel = $state(false);
+  let labelDraft = $state('');
+  let labelInputEl: HTMLInputElement | null = $state(null);
+
+  function startEditLabel(e?: MouseEvent) {
+    e?.stopPropagation();
+    editingLabel = true;
+    labelDraft = label;
+    // queueMicrotask so the input is mounted before we focus + select.
+    queueMicrotask(() => {
+      if (labelInputEl) {
+        labelInputEl.focus();
+        labelInputEl.select();
+      }
+    });
+  }
+
+  function commitLabel() {
+    const next = labelDraft.trim();
+    editingLabel = false;
+    if (next.length === 0) return;
+    if (next === label) return;
+    ydoc.transact(() => {
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as { label?: string }).label = next;
+    }, LOCAL_ORIGIN);
+  }
+
+  function cancelLabelEdit() {
+    editingLabel = false;
+    labelDraft = '';
+  }
+
+  function onLabelKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitLabel();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelLabelEdit();
+    }
+  }
+
+  /**
+   * Defer blur-commit to a microtask so playwright's `fill()` (which
+   * focus → clear → type → blur internally) doesn't close edit mode
+   * mid-action. If focus returns to one of the label inputs by the time
+   * the microtask runs, we treat it as a no-op blur (focus bounced).
+   */
+  function onLabelBlur(e: FocusEvent) {
+    const fromEl = e.target as HTMLInputElement | null;
+    queueMicrotask(() => {
+      const active = document.activeElement;
+      const stillFocused =
+        active === fromEl ||
+        (active instanceof HTMLInputElement &&
+          (active.getAttribute('data-testid') === 'group-card-label-input' ||
+            active.getAttribute('data-testid') === 'group-card-label-input-body'));
+      if (stillFocused) return;
+      commitLabel();
+    });
+  }
   // Module-grouping Phase 2A — when `expanded` is true the card shrinks to
   // a thin header so the children render visibly underneath. The PatchPanel
   // still renders (so external cables remain attached) but the body label
@@ -193,13 +263,44 @@
 >
   <div class="stripe" style="background: var(--accent, #60a5fa);"></div>
   <header class="title">
-    {#if expanded}
-      <span data-testid="group-card-label">{label}</span>
+    {#if editingLabel}
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        bind:this={labelInputEl}
+        bind:value={labelDraft}
+        class="label-input nodrag"
+        type="text"
+        data-testid="group-card-label-input"
+        onkeydown={onLabelKeydown}
+        onblur={onLabelBlur}
+        onclick={(e) => e.stopPropagation()}
+        ondblclick={(e) => e.stopPropagation()}
+      />
+    {:else if expanded}
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <span
+        data-testid="group-card-label"
+        class="label-text nodrag"
+        ondblclick={startEditLabel}
+        title="Double-click to rename"
+      >{label}</span>
       <span class="thin-hint">editing knob positions</span>
     {:else if hasViz}
-      <span data-testid="group-card-label">{label}</span>
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <span
+        data-testid="group-card-label"
+        class="label-text nodrag"
+        ondblclick={startEditLabel}
+        title="Double-click to rename"
+      >{label}</span>
     {:else}
-      GROUP!
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <span
+        data-testid="group-card-header-label"
+        class="label-text nodrag"
+        ondblclick={startEditLabel}
+        title="Double-click to rename"
+      >{label}</span>
     {/if}
   </header>
 
@@ -224,7 +325,28 @@
       </div>
     {:else}
       <div class="group-body">
-        <div class="group-label" data-testid="group-card-label">{label}</div>
+        {#if editingLabel}
+          <div class="group-label">
+            <input
+              bind:value={labelDraft}
+              class="label-input label-input-body nodrag"
+              type="text"
+              data-testid="group-card-label-input-body"
+              onkeydown={onLabelKeydown}
+              onblur={onLabelBlur}
+              onclick={(e) => e.stopPropagation()}
+              ondblclick={(e) => e.stopPropagation()}
+            />
+          </div>
+        {:else}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div
+            class="group-label label-text nodrag"
+            data-testid="group-card-label"
+            ondblclick={startEditLabel}
+            title="Double-click to rename"
+          >{label}</div>
+        {/if}
         <div class="group-children-count">{childCount} module{childCount === 1 ? '' : 's'}</div>
       </div>
     {/if}
@@ -346,5 +468,33 @@
     color: var(--text-dim, #8e94a2);
     letter-spacing: 0.05em;
     text-transform: uppercase;
+  }
+  /* Editable label affordance: subtle hover cue so users discover the
+     double-click-to-rename interaction without a permanent visual badge. */
+  .label-text {
+    cursor: text;
+    border-radius: 2px;
+    padding: 1px 3px;
+    margin: -1px -3px;
+  }
+  .label-text:hover {
+    background: rgba(96, 165, 250, 0.12);
+  }
+  .label-input {
+    font: inherit;
+    color: inherit;
+    background: rgba(20, 23, 28, 0.85);
+    border: 1px solid var(--accent, #60a5fa);
+    border-radius: 3px;
+    padding: 1px 4px;
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .label-input-body {
+    text-align: center;
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+    font-weight: 500;
   }
 </style>
