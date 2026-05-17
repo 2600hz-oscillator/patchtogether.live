@@ -218,4 +218,41 @@ describe('round-trip', () => {
     expect(data.exposedPorts).toHaveLength(2);
     expect(data.childIds).toEqual(plan.newChildren.map((c) => c.id));
   });
+
+  it('round-trips exposedControls + remaps childId references (Phase 4)', () => {
+    // Same group fixture but with an exposedControls entry pointing at lfo-1.
+    const groupWithControls: ModuleNode = {
+      ...groupNode,
+      data: {
+        ...(groupNode.data as Record<string, unknown>),
+        exposedControls: [{ childId: 'lfo-1', controlId: 'playStop' }],
+      } as unknown as Record<string, unknown>,
+    };
+    const extracted = extractSavedGroupPayload({
+      group: groupWithControls,
+      nodes: [groupWithControls, ...nodes.filter((n) => n.id !== 'group-src')],
+      edges,
+    })!;
+    expect(extracted.payload.exposedControls).toEqual([
+      { childId: 'lfo-1', controlId: 'playStop' },
+    ]);
+
+    const plan = resurrectSavedGroup({
+      payload: extracted.payload,
+      existingNodeIds: [],
+      existingEdgeIds: [],
+      groupPosition: { x: 0, y: 0 },
+    });
+    const data = plan.newGroup.data as unknown as GroupData;
+    expect(data.exposedControls).toHaveLength(1);
+    // The remap MUST point at one of the freshly-minted children.
+    const newChildIds = new Set(plan.newChildren.map((c) => c.id));
+    expect(newChildIds.has(data.exposedControls![0].childId)).toBe(true);
+    expect(data.exposedControls![0].controlId).toBe('playStop');
+  });
+
+  it('omits exposedControls from the payload when none are set', () => {
+    const extracted = extractSavedGroupPayload({ group: groupNode, nodes, edges })!;
+    expect(extracted.payload.exposedControls).toBeUndefined();
+  });
 });

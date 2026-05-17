@@ -158,6 +158,7 @@
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
   import SelectionContextMenu from '$lib/ui/SelectionContextMenu.svelte';
   import GroupBuilderModal from '$lib/ui/GroupBuilderModal.svelte';
+  import ExposedControlsModal from '$lib/ui/ExposedControlsModal.svelte';
   import LassoOverlay from '$lib/ui/LassoOverlay.svelte';
   import {
     buildPortCandidates,
@@ -169,7 +170,8 @@
     type PortCandidate,
     type PortLookupModule,
   } from '$lib/graph/group-actions';
-  import type { ExposedPort, GroupData } from '$lib/graph/group-projection';
+  import type { ExposedPort, ExposedControl, GroupData } from '$lib/graph/group-projection';
+  import { listExposableControls, validateExposedControls } from '$lib/graph/group-controls';
   import {
     nextGroupNameForNewGroup,
     planDefaultGroupNames,
@@ -1509,6 +1511,65 @@
     trace(
       `group ${groupId} re-exposed (${plan.mergedExposedPorts.length} ports, dropped ${plan.deleteEdgeIds.length} cables)`,
     );
+  }
+
+  // ---------------- Module-grouping Phase 4 — exposed controls ----------------
+  //
+  // Right-click on a group → "Configure exposed controls…" opens a modal
+  // listing each child module's exposable controls (buttons + knobs the
+  // module def declares). User-checked entries land in data.exposedControls
+  // and surface as bounded boxes on the group bar (GroupExposedControls).
+
+  let configureControlsOpen = $state(false);
+  let configureControlsGroupId = $state<string | null>(null);
+  interface ExposedControlsChildBlock {
+    childId: string;
+    label: string;
+    controls: readonly import('$lib/audio/module-registry').ExposableControl[];
+  }
+  let configureControlsChildren = $state<ExposedControlsChildBlock[]>([]);
+  let configureControlsExisting = $state<ExposedControl[]>([]);
+
+  function openConfigureExposedControls(groupId: string) {
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    const data = group.data as unknown as GroupData | undefined;
+    if (!data) return;
+    const blocks: ExposedControlsChildBlock[] = [];
+    for (const cid of data.childIds) {
+      const child = patch.nodes[cid];
+      if (!child) continue;
+      const def = defLookup(child.type);
+      const controls = listExposableControls(child.type, (t: string) => getModuleDef(t));
+      if (controls.length === 0) continue;
+      blocks.push({ childId: cid, label: def?.label ?? child.type, controls });
+    }
+    configureControlsChildren = blocks;
+    configureControlsExisting = (data.exposedControls ?? []).slice();
+    configureControlsGroupId = groupId;
+    configureControlsOpen = true;
+  }
+
+  function commitExposedControls(picks: ExposedControl[]) {
+    const groupId = configureControlsGroupId;
+    if (!groupId) return;
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    // Defensive: revalidate against the live patch in case a child was
+    // deleted between modal-open and Save. validateExposedControls also
+    // guards against any future ExposedControl bug-class like #187.
+    const validated = validateExposedControls(picks, {
+      nodes: patch.nodes as Record<string, ModuleNode | undefined>,
+      defLookup: (t: string) => getModuleDef(t),
+    });
+    ydoc.transact(() => {
+      const target = patch.nodes[groupId];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      const data = target.data as unknown as GroupData;
+      data.exposedControls = validated;
+    }, LOCAL_ORIGIN);
+    trace(`group ${groupId} exposed controls updated (${validated.length} entries)`);
   }
 
   // ---------------- Module-grouping Phase 2C — duplicate group ----------------
@@ -2851,6 +2912,7 @@
   onungroup={() => ctxMenuNodeId && ungroupNode(ctxMenuNodeId)}
   ontoggleexpanded={() => ctxMenuNodeId && toggleGroupExpanded(ctxMenuNodeId)}
   oneditexposed={() => ctxMenuNodeId && openEditExposedJacks(ctxMenuNodeId)}
+  onconfigurecontrols={() => ctxMenuNodeId && openConfigureExposedControls(ctxMenuNodeId)}
   onduplicategroup={() => ctxMenuNodeId && duplicateGroupAction(ctxMenuNodeId)}
   onsavegroup={() => ctxMenuNodeId && void saveGroupToLibrary(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
@@ -2888,6 +2950,19 @@
     editExposedGroupId = null;
     editExposedExistingPorts = undefined;
     editExposedExistingLabel = undefined;
+  }}
+/>
+
+<ExposedControlsModal
+  bind:open={configureControlsOpen}
+  children={configureControlsChildren}
+  existing={configureControlsExisting}
+  onsave={commitExposedControls}
+  onclose={() => {
+    configureControlsOpen = false;
+    configureControlsGroupId = null;
+    configureControlsChildren = [];
+    configureControlsExisting = [];
   }}
 />
 
