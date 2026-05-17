@@ -67,6 +67,14 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // textarea chrome (selection rect, scrollbar fade) makes baselines
   // flap. Functional coverage is e2e/tests/livecode.spec.ts.
   livecode: 'textarea caret + native chrome defeats deterministic capture; e2e covers the run-flow',
+  // MIDI-CV-BUDDY card body depends on connected MIDI device (which
+  // doesn't exist under VRT) — the "Connect MIDI…" empty state would
+  // be the only deterministic baseline, and even that paints differently
+  // once the user has previously granted permission (the card auto-
+  // populates the device list on next reload). Functional coverage is
+  // e2e/tests/midi-cv-buddy.spec.ts (asserts the Connect-MIDI button +
+  // module mount). Real-device E2E is a known follow-up.
+  midiCvBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more

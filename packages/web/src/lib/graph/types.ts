@@ -234,6 +234,11 @@ type StandardModuleType =
   // knobs). Bundled v1 preset bank: DIVINE INSPIRATION (DarkPlate from
   // the C++ Programs.h verbatim), SHORT ROOM, BRIGHT HALL, INFINITE PAD.
   | 'cloudseed'
+  // MIDI-CV-BUDDY — hardware MIDI controller → pitch + gate + velocity CV.
+  // Main-thread Web MIDI handler writing into three ConstantSourceNode
+  // outputs. Monophonic with user-selectable voice priority (LAST / LOW /
+  // HIGH), retrigger toggle, channel filter, and a device picker.
+  | 'midiCvBuddy'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.

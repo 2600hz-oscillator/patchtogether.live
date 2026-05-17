@@ -70,6 +70,11 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   rings: { top: 'Audio modules', sub: 'VCOs' },
   riotgirls: { top: 'Audio modules', sub: 'VCOs' },
   samsloop: { top: 'Audio modules', sub: 'VCOs' },
+  // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI
+  // controller — it's not an oscillator itself, but it's a SOURCE that
+  // a player drives a synth voice from, so it sits in VCOs alongside
+  // the other "first thing in the patch" modules.
+  midiCvBuddy: { top: 'Audio modules', sub: 'VCOs' },
 
   // ───────── Audio modules → Utility ─────────
   adsr: { top: 'Audio modules', sub: 'Utility' },
