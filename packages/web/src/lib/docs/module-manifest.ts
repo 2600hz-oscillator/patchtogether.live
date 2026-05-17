@@ -149,6 +149,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Exact algorithm port of Ghost Note Audio\'s CloudSeed reverb (MIT-licensed, github.com/GhostNoteAudio/CloudSeedCore). Stereo input cross-mixes then per-channel passes through: optional 1-pole HP + LP pre-EQ → modulated pre-delay → multitap early-reflection field (up to 256 taps, seed-deterministic) → AllpassDiffuser (up to 12 stages) → 12 parallel late-field DelayLine voices, each with optional in-loop AllpassDiffuser + LowShelf + HighShelf + LP, with T60-targeted feedback that produces a precise decay-seconds tail. Cross-seed control divides the L/R seeded delay layouts for stereo decorrelation. 45 parameters total — 7 macros (DRY / EARLY / LATE faders, INPUT MIX, LOW CUT, HIGH CUT, CROSS SEED) are exposed as AudioParams for CV summing; 38 toggle/integer/seed/modulation parameters live on the worklet\'s message port. Bundled v1 preset bank: DIVINE INSPIRATION (DarkPlate from Programs.h verbatim), SHORT ROOM, BRIGHT HALL, INFINITE PAD. Card footer cycles through the preset bank with click-numbered slots, prev/next arrows, and a live DECAY readout that reflects LateLineDecay\'s computed RT60.',
   livecode:
     'Text-DSL module — type a script, hit Run, the rack reshapes itself. Spawns modules, draws patch cables, sets params, writes sequencer arrays. No audio I/O — the card is a side-tool. Full syntax + examples at /docs/modules/livecode.',
+  midiCvBuddy:
+    'Hardware MIDI controller → pitch + gate + velocity CV. Uses the browser\'s built-in Web MIDI API (no third-party library) and converts incoming note-on / note-off / pitch-bend messages into three ConstantSourceNode outputs: pitch_cv (V/oct, 0V = C4 = MIDI 60, with pitch-bend summed in at the MIDI-standard ±2 semitones), gate (0/1), and velocity_cv (0..1). Monophonic with three voice-priority modes (LAST = newest key wins, the conventional default; LOW = lowest key, classic mono-bass behavior; HIGH = highest), a RETRIG toggle that drops the gate to 0 for one audio block between successive note-ons (so a downstream ADSR re-fires) versus legato (gate stays high through key changes), an ALL/1..16 channel filter, and a device-picker dropdown that hot-plugs when controllers connect/disconnect. The user clicks "Connect MIDI…" once per origin to grant permission; subsequent reloads reuse the grant. End-to-end latency is honest about the Web MIDI main-thread path (~5-10 ms typical on Chrome/macOS); event.timeStamp is mapped to ctx.currentTime + a 2 ms lookahead so scheduling lands at the start of the next audio block rather than mid-block.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -424,6 +426,10 @@ const PORT_NOTES: Record<string, string> = {
   'stages.out3': 'CV output for segment 4 — mirrors chain value.',
   'stages.out4': 'CV output for segment 5 — mirrors chain value.',
   'stages.out5': 'CV output for segment 6 — mirrors chain value.',
+  // MIDI-CV-BUDDY — hardware MIDI controller → pitch + gate + velocity CV.
+  'midiCvBuddy.pitch_cv':    'V/oct pitch output (0V = C4 = MIDI 60). Pitch-bend is summed in at the MIDI-standard ±2 semitones each side.',
+  'midiCvBuddy.gate':        'Gate output. HIGH while any key is held; with RETRIG on, dips to 0 for one audio block on each new note-on so a downstream ADSR re-fires.',
+  'midiCvBuddy.velocity_cv': 'Velocity CV (0..1, raw MIDI velocity / 127). Updated on each note-on; latched between events.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];

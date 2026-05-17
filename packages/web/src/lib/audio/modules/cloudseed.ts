@@ -403,6 +403,7 @@ export const cloudseedDef: AudioModuleDef = {
   category: 'effects',
   schemaVersion: 1,
   stereoPairs: [['in_l', 'in_r'], ['out_l', 'out_r']],
+  ossAttribution: { author: 'Ghost Note Audio' },
 
   inputs: [
     { id: 'in_l',           type: 'audio' },

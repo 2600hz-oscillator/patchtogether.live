@@ -143,6 +143,8 @@
   import StagesCard from '$lib/ui/modules/StagesCard.svelte';
   // CLOUDSEED — exact port of Ghost Note Audio CloudSeed reverb (MIT).
   import CloudseedCard from '$lib/ui/modules/CloudseedCard.svelte';
+  // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
+  import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -306,6 +308,7 @@
     blades: BladesCard,
     stages: StagesCard,
     cloudseed: CloudseedCard,
+    midiCvBuddy: MidiCvBuddyCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
