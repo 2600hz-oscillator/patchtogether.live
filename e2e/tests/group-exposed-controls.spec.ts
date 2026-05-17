@@ -146,7 +146,10 @@ test.describe('Group exposed controls — sequencer play/stop', () => {
 
     const header = page.locator('[data-testid="ctrl-box"][data-child-id="seq-1"] [data-testid="ctrl-box-header"]');
     await expect(header).toBeVisible();
-    await expect(header).toHaveText('DRUMSEQZ');
+    // Livecode auto-name (PR #81) stamps data.name = "DRUMSEQZ1" on freshly
+    // spawned sequencers; pre-livecode patches without data.name fall back
+    // to the def label "DRUMSEQZ". Accept either.
+    await expect(header).toHaveText(/^DRUMSEQZ\d*$/);
   });
 });
 
