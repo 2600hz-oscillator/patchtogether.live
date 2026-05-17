@@ -75,6 +75,12 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // e2e/tests/midi-cv-buddy.spec.ts (asserts the Connect-MIDI button +
   // module mount). Real-device E2E is a known follow-up.
   midiCvBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
+  // PONG research prototype: animated game state (ball moving) defeats a
+  // deterministic single-frame baseline. Unit + ART + E2E provide coverage
+  // until either (a) a deterministic-time test harness is added so VRT can
+  // freeze the ball at a known position, or (b) the prototype is promoted
+  // out of research/.
+  pong: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
