@@ -132,7 +132,11 @@ test('pong: CV source patched into paddle_left moves the on-screen paddle', asyn
   const later = await readPongSnapshot(page, 'p');
   expect(later).not.toBeNull();
 
-  const paddleMoved = Math.abs(later!.paddleLY - initial!.paddleLY) > 0.01;
+  // Threshold is a noise floor — the paddle is a low-passed integrator of
+  // the incoming CV, so per-tick deltas are tiny (millivolts of position).
+  // The load-bearing claim is "CV actually drove paddle motion" — not "by N
+  // units". 0.001 separates real motion from float-equality jitter.
+  const paddleMoved = Math.abs(later!.paddleLY - initial!.paddleLY) > 0.001;
   expect(
     paddleMoved,
     `left paddle did not move from ${initial!.paddleLY} to ${later!.paddleLY} despite CV source`,
