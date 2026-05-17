@@ -48,6 +48,7 @@ import { warpsDef } from './warps';
 import { veilsDef } from './veils';
 import { bladesDef } from './blades';
 import { stagesDef } from './stages';
+import { cloudseedDef } from './cloudseed';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -101,6 +102,7 @@ export function registerAudioModules(): void {
   registerModule(veilsDef);
   registerModule(bladesDef);
   registerModule(stagesDef);
+  registerModule(cloudseedDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

@@ -58,6 +58,10 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   warps: 'VRT baseline pending; ART + unit + E2E provide coverage.',
   // VEILS quad-VCA: VRT baseline pending; ART + unit + E2E provide coverage.
   veils: 'VRT baseline pending; ART + unit + E2E provide coverage',
+  // CLOUDSEED first-slice PR: VRT baseline pending; complex card (4 panels
+  // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
+  // into MODULES + capture darwin/linux baselines in a follow-up PR.
+  cloudseed: 'VRT baseline pending; complex card; ART + unit + E2E provide coverage.',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more

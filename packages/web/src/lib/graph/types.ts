@@ -224,6 +224,16 @@ type StandardModuleType =
   // v1 ships TYPE + LINK + GATE + TRIG; Outliner / chord-mode / looping
   // LFO mode deferred to follow-up.
   | 'stages'
+  // CLOUDSEED — exact algorithm port of Ghost Note Audio CloudSeed reverb
+  // (MIT-licensed). Stereo input → cross-mix → per-channel: optional pre-EQ
+  // HP/LP → modulated pre-delay → multitap early field → AllpassDiffuser
+  // (up to 12 stages) → 12 parallel late-field DelayLine voices each with
+  // optional in-loop AllpassDiffuser + LowShelf + HighShelf + LP. Exposes
+  // 7 macro AudioParams (DRY/EARLY/LATE/INPUT_MIX/LOW_CUT/HIGH_CUT/CROSS_SEED)
+  // + 38 message-port params (toggles, integer counts, seeds, modulation
+  // knobs). Bundled v1 preset bank: DIVINE INSPIRATION (DarkPlate from
+  // the C++ Programs.h verbatim), SHORT ROOM, BRIGHT HALL, INFINITE PAD.
+  | 'cloudseed'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
