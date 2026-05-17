@@ -141,6 +141,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // cleanly under audio or video and the user can re-bucket on dev.
   sticky: { top: 'Hybrid', sub: 'Hybrid' },
   group: { top: 'Hybrid', sub: 'Hybrid' },
+  livecode: { top: 'Hybrid', sub: 'Hybrid' },
 };
 
 /** Look up a module's category, falling back to Uncategorized. */
