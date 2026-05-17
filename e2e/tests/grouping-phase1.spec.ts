@@ -248,7 +248,10 @@ test('group name input: user-supplied name becomes the GroupCard label', async (
   await expect(groupLabel).toHaveText('my voice');
 });
 
-test('group name input: blank/whitespace name falls back to GROUP!', async ({ page }) => {
+test('group name input: blank/whitespace name auto-assigns GROUP<N> default', async ({ page }) => {
+  // Updated by feat(groups): groups never end up showing the literal
+  // "GROUP!" placeholder. Empty/whitespace input is bumped to the next
+  // free GROUP<N> slot (GROUP1 when the rack has no other groups).
   await setupChain(page);
   await openModal(page, ['lfo-1', 'flt-1']);
 
@@ -257,7 +260,7 @@ test('group name input: blank/whitespace name falls back to GROUP!', async ({ pa
   await page.locator('[data-testid="group-builder-create"]').click();
 
   const groupLabel = page.locator('[data-testid="group-card"] [data-testid="group-card-label"]');
-  await expect(groupLabel).toHaveText('GROUP!');
+  await expect(groupLabel).toHaveText('GROUP1');
 });
 
 test('group name input: leading/trailing whitespace is trimmed', async ({ page }) => {
