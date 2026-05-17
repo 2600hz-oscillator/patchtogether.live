@@ -263,46 +263,62 @@
     if (!file) return;
     uploadError = null;
     uploadStatus = 'parsing...';
-    const eng = engineCtx.get();
-    // The PatchEngine wraps per-domain engines; the audio engine holds the
-    // live AudioContext we need for decodeAudioData. hasDomain() guards so
-    // we don't throw if the engine isn't booted yet.
-    let ctx: BaseAudioContext | undefined;
+    // Track whether we set a success status inside the try block so the
+    // finally clause knows whether to clear it (failure paths) or leave
+    // the success message in place. Every exit path resets the file
+    // input + clears the spinner — this fixes the regression where
+    // `if (!target) return;` left the spinner forever.
+    let successStatus: string | null = null;
     try {
-      if (eng?.hasDomain('audio')) {
-        const audioEngine = eng.getDomain<AudioEngine>('audio');
-        ctx = audioEngine.ctx;
+      const eng = engineCtx.get();
+      // The PatchEngine wraps per-domain engines; the audio engine holds
+      // the live AudioContext we need for decodeAudioData. hasDomain()
+      // guards so we don't throw if the engine isn't booted yet.
+      let ctx: BaseAudioContext | undefined;
+      try {
+        if (eng?.hasDomain('audio')) {
+          const audioEngine = eng.getDomain<AudioEngine>('audio');
+          ctx = audioEngine.ctx;
+        }
+      } catch {
+        ctx = undefined;
       }
-    } catch {
-      ctx = undefined;
-    }
-    if (!ctx) {
-      uploadError = 'Audio engine not ready yet — start audio first.';
-      uploadStatus = null;
+      if (!ctx) {
+        uploadError = 'Audio engine not ready yet — start audio first.';
+        return;
+      }
+      const result = await loadSamsloopWav(file, ctx);
+      if (!result.ok) {
+        uploadError = result.error ?? 'Unknown error';
+        return;
+      }
+      const samples = result.samples!;
+      const target = patch.nodes[id];
+      if (!target) {
+        // Node was deleted between picking the file and the decode
+        // returning. Surface a clear error rather than leaving the
+        // spinner forever (the prior bug at this line).
+        uploadError = 'Module was removed during upload.';
+        return;
+      }
+      if (!target.data) target.data = {};
+      const d = target.data as SamsloopData;
+      // Storing the samples into node.data writes them into the
+      // syncedstore CRDT — that's where most of the load-time cost lives
+      // (one YArray record per sample, plus broadcast to peers). The
+      // decoded-buffer cap inside loadSamsloopWav keeps this bounded.
+      d.samples = Array.from(samples);
+      d.sampleRate = result.sampleRate;
+      d.sampleLength = samples.length;
+      d.fileName = file.name;
+      // Reset playback window to the full sample.
+      target.params.start = 0;
+      target.params.end = samples.length;
+      successStatus = `loaded ${samples.length} samples @ ${result.sampleRate} Hz`;
+    } finally {
+      uploadStatus = successStatus;
       try { input.value = ''; } catch { /* */ }
-      return;
     }
-    const result = await loadSamsloopWav(file, ctx);
-    if (!result.ok) {
-      uploadError = result.error ?? 'Unknown error';
-      uploadStatus = null;
-      try { input.value = ''; } catch { /* */ }
-      return;
-    }
-    const samples = result.samples!;
-    const target = patch.nodes[id];
-    if (!target) return;
-    if (!target.data) target.data = {};
-    const d = target.data as SamsloopData;
-    d.samples = Array.from(samples);
-    d.sampleRate = result.sampleRate;
-    d.sampleLength = samples.length;
-    d.fileName = file.name;
-    // Reset playback window to the full sample.
-    target.params.start = 0;
-    target.params.end = samples.length;
-    uploadStatus = `loaded ${samples.length} samples @ ${result.sampleRate} Hz`;
-    try { input.value = ''; } catch { /* */ }
   }
 
   function toggleMode() {

@@ -58,8 +58,11 @@ import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 /** Hard size cap on the uploaded audio file. 250 KB — see card UI.
- *  Also bounds the maximum recorded PCM length (max bytes / 4 = max
- *  Float32 samples), so mic-record runtime can't bypass the cap. */
+ *  This is the RAW file-size gate (cheap reject before we touch the
+ *  decoder). The decoded-buffer gate (SAMSLOOP_MAX_DECODED_SAMPLES)
+ *  fires AFTER decode + downsample to catch the case where a small
+ *  source file decodes to a large in-memory buffer (8-bit 16 kHz WAV
+ *  upsampled to 48 kHz Float32 = 12× memory expansion). */
 export const SAMSLOOP_MAX_FILE_BYTES = 250 * 1024;
 
 /** Maximum recorded PCM length in samples. Matches the file-upload byte
@@ -68,6 +71,28 @@ export const SAMSLOOP_MAX_FILE_BYTES = 250 * 1024;
  *  to capture a phrase. The mic-record path enforces this hard cap by
  *  auto-stopping when it would be exceeded. */
 export const SAMSLOOP_MAX_SAMPLES = Math.floor(SAMSLOOP_MAX_FILE_BYTES / 4);
+
+/** Target sample rate for stored samples. AudioContext.decodeAudioData
+ *  ALWAYS decodes at the context's native rate (typically 48 kHz on
+ *  modern Chromium/macOS). For a sample looper we don't need that
+ *  fidelity — downsample to 24 kHz to halve memory + halve the cost of
+ *  the syncedstore CRDT proxy chain (one YArray record per sample;
+ *  this is the dominant per-instance cost — see samsloop-limits.ts).
+ *  Only downsample DOWN; if the source was already ≤ this rate, keep
+ *  it as-is. */
+export const SAMSLOOP_TARGET_SAMPLE_RATE = 24000;
+
+/** Hard cap on stored decoded samples. ~6 seconds at the target 24 kHz
+ *  rate. The raw-file gate (SAMSLOOP_MAX_FILE_BYTES) passes a 43 KB
+ *  8-bit 16 kHz mono WAV (the bug-report fixture), which decodes to
+ *  ~21K samples at source rate but ~65K at 48 kHz native. Without
+ *  this cap a contrived small file (e.g. a low-bitrate mp3) could
+ *  decode to hundreds of thousands of samples and lock up the main
+ *  thread when written into the syncedstore CRDT.
+ *
+ *  At 24 kHz target rate, 144_000 samples = 6 seconds — well within
+ *  the "loop a phrase" use case the module is scoped to. */
+export const SAMSLOOP_MAX_DECODED_SAMPLES = 144_000;
 
 export interface SamsloopData {
   samples?: number[];
@@ -91,12 +116,44 @@ export interface SamsloopLoadResult {
   sampleRate?: number;
 }
 
+/** Downsample a mono Float32 buffer by an integer factor with a brief
+ *  box filter (averaging window) to suppress aliasing. Sufficient for
+ *  a sample looper — we're not targeting studio fidelity, just keeping
+ *  the stored buffer small enough that the syncedstore CRDT write
+ *  doesn't block the main thread.
+ *
+ *  Exported for tests. */
+export function samsloopDownsample(input: Float32Array, factor: number): Float32Array {
+  if (factor <= 1) return input;
+  const outLen = Math.floor(input.length / factor);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const base = i * factor;
+    let sum = 0;
+    let count = 0;
+    for (let j = 0; j < factor && base + j < input.length; j++) {
+      sum += input[base + j]!;
+      count++;
+    }
+    out[i] = count > 0 ? sum / count : 0;
+  }
+  return out;
+}
+
 /** Validate + decode an uploaded audio file (any format the browser's
  *  decodeAudioData accepts — wav, mp3, m4a/aac, ogg, flac, opus, weba).
  *  Decoupled from the card so unit tests can exercise the rejection path
  *  without a DOM. Pass an AudioContext that supports decodeAudioData (a
  *  real one or an OfflineAudioContext) — the function signs the contract;
- *  we don't mock the decoder. */
+ *  we don't mock the decoder.
+ *
+ *  After decode this function downsamples to SAMSLOOP_TARGET_SAMPLE_RATE
+ *  (24 kHz) if the decoder's native rate is higher. Reason: AudioContext
+ *  decode ALWAYS upsamples to the context rate (48 kHz on modern hardware),
+ *  which inflates the in-memory buffer 2-3×. Since each Float32 sample
+ *  becomes a YArray CRDT record on write into node.data, that inflation
+ *  is the difference between a snappy load and a 10+ second main-thread
+ *  freeze on a 43 KB 16 kHz WAV (the bug-report fixture). */
 export async function loadSamsloopWav(
   file: { size: number; arrayBuffer(): Promise<ArrayBuffer> },
   ctx: BaseAudioContext,
@@ -128,7 +185,33 @@ export async function loadSamsloopWav(
     const ch = buf.getChannelData(c);
     for (let i = 0; i < len; i++) mono[i]! += ch[i]! / channels;
   }
-  return { ok: true, samples: mono, sampleRate: buf.sampleRate };
+  // Downsample to SAMSLOOP_TARGET_SAMPLE_RATE if the decoder gave us a
+  // higher rate. Use the largest integer factor that keeps the output
+  // rate >= target — preserves fidelity better than a non-integer ratio
+  // and avoids the cost of a proper resampler for a v1 sample looper.
+  let outSamples = mono;
+  let outRate = buf.sampleRate;
+  if (buf.sampleRate > SAMSLOOP_TARGET_SAMPLE_RATE) {
+    const factor = Math.floor(buf.sampleRate / SAMSLOOP_TARGET_SAMPLE_RATE);
+    if (factor >= 2) {
+      outSamples = samsloopDownsample(mono, factor);
+      outRate = buf.sampleRate / factor;
+    }
+  }
+  // Decoded-buffer cap. Fires AFTER downsample so a small upload that
+  // decodes to a huge buffer is rejected with a clear message rather
+  // than blocking the main thread on the syncedstore write.
+  if (outSamples.length > SAMSLOOP_MAX_DECODED_SAMPLES) {
+    return {
+      ok: false,
+      error: `Decoded buffer too large: ${outSamples.length} samples exceeds the ${
+        SAMSLOOP_MAX_DECODED_SAMPLES
+      }-sample cap (~${(SAMSLOOP_MAX_DECODED_SAMPLES / SAMSLOOP_TARGET_SAMPLE_RATE).toFixed(1)} s at ${
+        SAMSLOOP_TARGET_SAMPLE_RATE / 1000
+      } kHz).`,
+    };
+  }
+  return { ok: true, samples: outSamples, sampleRate: outRate };
 }
 
 /** Slider position semantics — exported so the card AND the unit tests

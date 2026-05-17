@@ -231,6 +231,36 @@ test.describe('SAMSLOOP module', () => {
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
+  test('upload status clears within 2s on success (no stuck "parsing..." spinner)', async ({ page }) => {
+    // Regression: a small 8-bit 16 kHz mono WAV used to hang on
+    // "parsing..." forever because the decoder upsampled to native
+    // 48 kHz and the resulting 65K-element JS array took 10+ seconds
+    // to serialize into the syncedstore CRDT. Fix downsamples to 24 kHz
+    // before storing + uses try/finally so every exit path clears the
+    // spinner. This test asserts the user-visible outcome: the load
+    // status either advances to a success message or clears, but does
+    // not get stuck on "parsing..." indefinitely.
+    const errors = await setupPage(page);
+    await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
+
+    const wavBytes = readFileSync(WAV_PATH);
+    const fileInput = page.locator('[data-testid="samsloop-wav-input"]');
+    await fileInput.setInputFiles({
+      name: 'samsloop-test.wav',
+      mimeType: 'audio/wav',
+      buffer: wavBytes,
+    });
+
+    // Upload status MUST resolve to a "loaded ..." message within 2 s
+    // — never get stuck on "parsing...". The 2 s budget covers a slow
+    // CI runner; the fix makes a 43 KB upload land in tens of ms.
+    const status = page.locator('[data-testid="samsloop-upload-status"]');
+    await expect(status).toContainText(/loaded \d+ samples/i, { timeout: 2000 });
+    await expect(status).not.toContainText(/parsing/i);
+
+    expect(errors, errors.join('; ')).toEqual([]);
+  });
+
   test('rejects oversize files (>250 KB) with the size-limit error', async ({ page }) => {
     const errors = await setupPage(page);
     await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);

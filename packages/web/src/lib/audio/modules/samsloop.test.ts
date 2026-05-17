@@ -16,8 +16,11 @@ import {
   samsloopDef,
   samsloopMath,
   loadSamsloopWav,
+  samsloopDownsample,
   SAMSLOOP_MAX_FILE_BYTES,
   SAMSLOOP_MAX_SAMPLES,
+  SAMSLOOP_MAX_DECODED_SAMPLES,
+  SAMSLOOP_TARGET_SAMPLE_RATE,
   SAMSLOOP_RATE_RANGE,
   createSamsloopRecMachine,
   samsloopRecStart,
@@ -192,6 +195,141 @@ describe('loadSamsloopWav accepts any browser-decodable audio', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/could not decode audio/i);
     expect(result.error).not.toMatch(/\bWAV\b/);
+  });
+});
+
+// ---------- decoded-buffer cap + downsample (load-hang regression) ----------
+//
+// Regression: a 43 KB 8-bit mono 16 kHz WAV got stuck on "parsing..."
+// indefinitely. The raw-file gate (250 KB) passed, but the decoder
+// upsampled to the context's native 48 kHz rate (3× sample count), and
+// writing the resulting Array<number> into the syncedstore CRDT
+// serialized one YArray record per sample — locking the main thread
+// for 10+ seconds and broadcasting the same payload to every peer in
+// the rackspace. The fix downsamples to a target rate (24 kHz) before
+// returning + adds a decoded-buffer cap that fires AFTER decode so a
+// small upload that decodes to a huge buffer is rejected cleanly.
+
+describe('samsloopDownsample', () => {
+  it('returns the input unchanged when factor <= 1', () => {
+    const buf = new Float32Array([0.1, 0.2, 0.3]);
+    expect(samsloopDownsample(buf, 1)).toBe(buf);
+    expect(samsloopDownsample(buf, 0)).toBe(buf);
+  });
+
+  it('halves length when factor=2 with a box-filter average', () => {
+    const buf = new Float32Array([0.0, 1.0, 0.0, 1.0]);
+    const out = samsloopDownsample(buf, 2);
+    expect(out.length).toBe(2);
+    expect(out[0]).toBeCloseTo(0.5, 6);
+    expect(out[1]).toBeCloseTo(0.5, 6);
+  });
+
+  it('preserves DC offset (constant input → constant output)', () => {
+    const buf = new Float32Array(12);
+    buf.fill(0.42);
+    const out = samsloopDownsample(buf, 3);
+    expect(out.length).toBe(4);
+    for (let i = 0; i < out.length; i++) {
+      expect(out[i]).toBeCloseTo(0.42, 6);
+    }
+  });
+});
+
+describe('loadSamsloopWav downsamples high-rate decoder output', () => {
+  function makeCtx(decodedRate: number, decodedLen: number): BaseAudioContext {
+    const data = new Float32Array(decodedLen);
+    for (let i = 0; i < decodedLen; i++) data[i] = (i % 100) / 100;
+    return {
+      decodeAudioData: async (_ab: ArrayBuffer): Promise<AudioBuffer> => ({
+        length: decodedLen,
+        numberOfChannels: 1,
+        sampleRate: decodedRate,
+        getChannelData: () => data,
+      } as unknown as AudioBuffer),
+    } as unknown as BaseAudioContext;
+  }
+
+  it('downsamples 48 kHz decoder output to ~24 kHz (factor 2)', async () => {
+    // Simulates the bug-report case: 8-bit mono 16 kHz WAV decoded by a
+    // 48 kHz AudioContext → 65K samples in. After downsample factor 2
+    // we get ~32K samples at 24 kHz.
+    const ctx = makeCtx(48000, 65_000);
+    const file = { size: 43_000, arrayBuffer: async () => new ArrayBuffer(43_000) };
+    const result = await loadSamsloopWav(file, ctx);
+    expect(result.ok).toBe(true);
+    expect(result.sampleRate).toBe(24000);
+    // Length halves (factor=2 from floor(48000/24000)).
+    expect(result.samples!.length).toBe(32_500);
+  });
+
+  it('keeps low-rate decoder output at its native rate (no downsample)', async () => {
+    // 22 kHz decoder output is already below target — pass through.
+    const ctx = makeCtx(22050, 10_000);
+    const file = { size: 20_000, arrayBuffer: async () => new ArrayBuffer(20_000) };
+    const result = await loadSamsloopWav(file, ctx);
+    expect(result.ok).toBe(true);
+    expect(result.sampleRate).toBe(22050);
+    expect(result.samples!.length).toBe(10_000);
+  });
+
+  it('confirms SAMSLOOP_TARGET_SAMPLE_RATE is 24 kHz', () => {
+    expect(SAMSLOOP_TARGET_SAMPLE_RATE).toBe(24000);
+  });
+});
+
+describe('loadSamsloopWav decoded-buffer cap', () => {
+  function makeCtx(decodedLen: number): BaseAudioContext {
+    return {
+      decodeAudioData: async (_ab: ArrayBuffer): Promise<AudioBuffer> => ({
+        length: decodedLen,
+        numberOfChannels: 1,
+        sampleRate: 22050,
+        getChannelData: () => new Float32Array(decodedLen),
+      } as unknown as AudioBuffer),
+    } as unknown as BaseAudioContext;
+  }
+
+  it('rejects buffers exceeding SAMSLOOP_MAX_DECODED_SAMPLES with a clear error', async () => {
+    // Source rate 22050 (below target → no downsample applied) so we can
+    // construct a buffer larger than the cap directly. The raw-file gate
+    // is 250 KB which we satisfy with size: 100_000.
+    const ctx = makeCtx(SAMSLOOP_MAX_DECODED_SAMPLES + 1);
+    const file = { size: 100_000, arrayBuffer: async () => new ArrayBuffer(100_000) };
+    const result = await loadSamsloopWav(file, ctx);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/decoded buffer too large/i);
+    expect(result.error).toMatch(new RegExp(String(SAMSLOOP_MAX_DECODED_SAMPLES)));
+    expect(result.samples).toBeUndefined();
+  });
+
+  it('accepts buffers exactly at the cap', async () => {
+    const ctx = makeCtx(SAMSLOOP_MAX_DECODED_SAMPLES);
+    const file = { size: 100_000, arrayBuffer: async () => new ArrayBuffer(100_000) };
+    const result = await loadSamsloopWav(file, ctx);
+    expect(result.ok).toBe(true);
+    expect(result.samples!.length).toBe(SAMSLOOP_MAX_DECODED_SAMPLES);
+  });
+
+  it('cap fires AFTER downsample — high-rate input that fits post-downsample is accepted', async () => {
+    // 48 kHz decoder output that's just over the cap pre-downsample but
+    // comfortably under post-downsample (factor=2). Used to verify that
+    // we measure the STORED buffer size, not the decoder's raw output.
+    const preDownsampleLen = SAMSLOOP_MAX_DECODED_SAMPLES + 10_000;
+    const ctx = {
+      decodeAudioData: async (_ab: ArrayBuffer): Promise<AudioBuffer> => ({
+        length: preDownsampleLen,
+        numberOfChannels: 1,
+        sampleRate: 48000,
+        getChannelData: () => new Float32Array(preDownsampleLen),
+      } as unknown as AudioBuffer),
+    } as unknown as BaseAudioContext;
+    const file = { size: 100_000, arrayBuffer: async () => new ArrayBuffer(100_000) };
+    const result = await loadSamsloopWav(file, ctx);
+    expect(result.ok).toBe(true);
+    // Length should be the downsampled count, well under the cap.
+    expect(result.samples!.length).toBeLessThanOrEqual(SAMSLOOP_MAX_DECODED_SAMPLES);
+    expect(result.sampleRate).toBe(24000);
   });
 });
 
