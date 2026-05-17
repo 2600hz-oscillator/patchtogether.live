@@ -122,6 +122,60 @@ test('rings: NOISE exciter into RINGS produces audio at ODD output (sympathetic 
   expect(stats.peak).toBeLessThanOrEqual(1.0);
 });
 
+test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)', async ({ page }) => {
+  // The bug we're fixing: MODAL used to require an external exciter and was
+  // silent on STRUM alone. After the fix, STRUM injects a short noise burst
+  // into MODAL so the resonator rings out without any audio input patched.
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'seq', type: 'sequencer', position: { x:  50, y: 100 } },
+      { id: 'r',   type: 'rings',  position: { x: 350, y: 100 },
+        params: {
+          model: 0,           // MODAL
+          note: 0,
+          structure: 0.3,
+          brightness: 0.7,
+          damping: 0.15,      // long-ish ring so the burst is audible
+          position: 0.0,
+          level: 0.9,
+        } },
+      { id: 'scp', type: 'scope',  position: { x: 700, y: 100 },
+        params: { timeMs: 200, ch1Range: 1 } },
+      { id: 'out', type: 'audioOut', position: { x: 1000, y: 100 },
+        params: { master: 0 } },
+    ],
+    [
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'r',   portId: 'strum' },
+        sourceType: 'gate', targetType: 'gate' },
+      { id: 'e2', from: { nodeId: 'r',   portId: 'odd'   }, to: { nodeId: 'scp', portId: 'ch1' } },
+      { id: 'e3', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' } },
+    ],
+  );
+  const stats = await pollScopePeak(page, 'scp', 0.01, 4000);
+  expect(stats.peak, `MODAL self-excite peak ${stats.peak}`).toBeGreaterThan(0.01);
+  expect(stats.peak).toBeLessThanOrEqual(1.0);
+});
+
+test('rings: model button cycles MODAL ↔ SYMPATHETIC and updates label', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'r', type: 'rings', position: { x: 200, y: 200 } }]);
+
+  const modelBtn = page.getByTestId('rings-model-btn');
+  const modelName = page.getByTestId('rings-model-name');
+  await expect(modelBtn).toBeVisible();
+  await expect(modelName).toHaveText('MODAL');
+
+  await modelBtn.click();
+  await expect(modelName).toHaveText('SYMPATHETIC');
+
+  await modelBtn.click();
+  await expect(modelName).toHaveText('MODAL');
+});
+
 test('rings: model switch (MODAL ↔ SYMPATHETIC) — both produce audio', async ({ page }) => {
   // Spawn with MODAL, verify audio; then change model → SYMPATHETIC,
   // verify audio again. Both should be non-silent.
