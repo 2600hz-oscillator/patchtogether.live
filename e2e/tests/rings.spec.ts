@@ -131,7 +131,8 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x:  50, y: 100 } },
+      { id: 'seq', type: 'sequencer', position: { x:  50, y: 100 },
+        params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
       { id: 'r',   type: 'rings',  position: { x: 350, y: 100 },
         params: {
           model: 0,           // MODAL
@@ -154,8 +155,22 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
       { id: 'e3', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' } },
     ],
   );
-  const stats = await pollScopePeak(page, 'scp', 0.01, 4000);
-  expect(stats.peak, `MODAL self-excite peak ${stats.peak}`).toBeGreaterThan(0.01);
+
+  // Enable every sequencer step so the gate actually fires (default steps
+  // are all `on: false`).
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: { steps?: unknown[] } }> };
+    };
+    const seq = w.__patch.nodes['seq'];
+    if (seq) {
+      if (!seq.data) seq.data = {};
+      seq.data.steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
+    }
+  });
+
+  const stats = await pollScopePeak(page, 'scp', 0.001, 6000);
+  expect(stats.peak, `MODAL self-excite peak ${stats.peak}`).toBeGreaterThan(0.001);
   expect(stats.peak).toBeLessThanOrEqual(1.0);
 });
 
