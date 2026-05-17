@@ -147,6 +147,8 @@
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // PONG — interactive game module (research prototype).
   import PongCard from '$lib/ui/modules/PongCard.svelte';
+  // MODTRIS — Tetris-clone game module (research prototype).
+  import ModtrisCard from '$lib/ui/modules/ModtrisCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -312,6 +314,7 @@
     cloudseed: CloudseedCard,
     midiCvBuddy: MidiCvBuddyCard,
     pong: PongCard,
+    modtris: ModtrisCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
