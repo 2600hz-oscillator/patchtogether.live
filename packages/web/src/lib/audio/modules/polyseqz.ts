@@ -72,7 +72,9 @@ export interface ChordStep {
   voicing: ChordVoicingName;
 }
 
-export const STEP_COUNT = 32;
+// Pre-pages PR this was 32 — see sequencer-pages.ts. Old patches load fine
+// (shorter steps[] arrays widen via coerceToChordStep + ensureCapacity).
+export const STEP_COUNT = 128;
 
 export function defaultChordSteps(): ChordStep[] {
   return Array.from({ length: STEP_COUNT }, () => ({
@@ -157,7 +159,7 @@ export const polyseqzDef: AudioModuleDef = {
 
   params: [
     { id: 'bpm',        label: 'BPM',  defaultValue: 90,  min: 30,  max: 300,  curve: 'linear' },
-    { id: 'length',     label: 'Len',  defaultValue: 8,   min: 1,   max: 32,   curve: 'discrete' },
+    { id: 'length',     label: 'Len',  defaultValue: 8,   min: 1,   max: 128,  curve: 'discrete' },
     { id: 'octave',     label: 'Oct',  defaultValue: 0,   min: -2,  max: 2,    curve: 'discrete' },
     { id: 'gateLength', label: 'Gate', defaultValue: 0.6, min: 0.1, max: 0.95, curve: 'linear' },
     { id: 'humanize',   label: 'Hum',  defaultValue: 0,   min: 0,   max: 1,    curve: 'linear' },
@@ -497,7 +499,9 @@ export const polyseqzDef: AudioModuleDef = {
           );
           const start = clockInBuffer.length - newSamples;
           const bpm = readParam('bpm', 90);
-          const length = Math.max(1, Math.round(readParam('length', 8)));
+          // Clamp to [1, STEP_COUNT] so stepIndex stays in bounds even
+          // if a future patch persists length > STEP_COUNT.
+          const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 8))));
           const stepDurForGate = 60 / Math.max(1, bpm) / 2; // 8th-note feel
           for (let i = start; i < clockInBuffer.length; i++) {
             const cur = clockInBuffer[i] ?? 0;
@@ -524,7 +528,9 @@ export const polyseqzDef: AudioModuleDef = {
         } else {
           while (nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
             const bpm = readParam('bpm', 90);
-            const length = Math.max(1, Math.round(readParam('length', 8)));
+            // Clamp to [1, STEP_COUNT] so stepIndex stays in bounds even
+          // if a future patch persists length > STEP_COUNT.
+          const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 8))));
             // POLYSEQZ defaults to 8th-note step grid — chords feel slower
             // than the Sequencer's 16th default, which is more musically
             // appropriate for chord changes.

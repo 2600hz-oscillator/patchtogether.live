@@ -91,7 +91,13 @@ if (MODEL_NAMES.length !== MACRO_MAX_MODEL + 1) {
 // Re-export for the card + tests.
 export { MACRO_MAX_MODEL };
 
-export const STEP_COUNT = 16;
+// Pre-pages PR this was 16 (a single 16-step page). The card renders 16 cells
+// per page and offers up to 8 pages via the shared SequencerPageNav. Data
+// arrays widen to MAX_STEPS=128 via coerceSteps + ensureCapacity in the card.
+export const STEP_COUNT = 128;
+/** Number of steps rendered in one screen row — load-bearing for the card's
+ *  per-page grid templating. */
+export const PAGE_SIZE = 16;
 
 export interface MacseqStep {
   on: boolean;
@@ -225,7 +231,7 @@ export const macseqDef: AudioModuleDef = {
   ],
   params: [
     { id: 'bpm',        label: 'BPM',  defaultValue: 120, min: 30,  max: 300,  curve: 'linear' },
-    { id: 'length',     label: 'Len',  defaultValue: 16,  min: 1,   max: 16,   curve: 'discrete' },
+    { id: 'length',     label: 'Len',  defaultValue: 16,  min: 1,   max: 128,  curve: 'discrete' },
     { id: 'octave',     label: 'Oct',  defaultValue: 0,   min: -2,  max: 2,    curve: 'discrete' },
     { id: 'gateLength', label: 'Gate', defaultValue: 0.5, min: 0.1, max: 0.95, curve: 'linear' },
     { id: 'isPlaying',  label: 'Play', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
@@ -375,7 +381,9 @@ export const macseqDef: AudioModuleDef = {
           );
           const start = clockInBuffer.length - newSamples;
           const bpm = readParam('bpm', 120);
-          const length = Math.max(1, Math.round(readParam('length', STEP_COUNT)));
+          // Clamp to [1, STEP_COUNT] so a stale persisted value (or a
+          // post-PR widening default) can't sample past the data array.
+          const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 16))));
           const stepDurForGate = 60 / Math.max(1, bpm) / 4;
           for (let i = start; i < clockInBuffer.length; i++) {
             const cur = clockInBuffer[i] ?? 0;
@@ -392,7 +400,9 @@ export const macseqDef: AudioModuleDef = {
         } else {
           while (nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
             const bpm = readParam('bpm', 120);
-            const length = Math.max(1, Math.round(readParam('length', STEP_COUNT)));
+            // Clamp to [1, STEP_COUNT] so a stale persisted value (or a
+          // post-PR widening default) can't sample past the data array.
+          const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 16))));
             const stepDur = 60 / bpm / 4; // 16th-note grid
             emitStep(stepIndex, nextStepTime, stepDur);
             const nextIdx = (stepIndex + 1) % length;
