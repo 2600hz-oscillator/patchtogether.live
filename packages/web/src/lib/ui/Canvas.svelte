@@ -10,6 +10,8 @@
     Background,
     Controls,
     MiniMap,
+    NodeToolbar,
+    Position,
     type Node as FlowNode,
     type Edge as FlowEdge,
     type Connection,
@@ -145,6 +147,9 @@
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
   import GroupCard from '$lib/ui/modules/GroupCard.svelte';
+  // LIVECODE — text-DSL module (no audio I/O); see /docs/modules/livecode.
+  import LivecodeCard from '$lib/ui/modules/LivecodeCard.svelte';
+  import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
@@ -201,6 +206,10 @@
     SAMSLOOP_TYPE,
     SAMSLOOP_LIMIT_MESSAGE,
   } from '$lib/multiplayer/samsloop-limits';
+  import {
+    nextDefaultName,
+    migrateAssignNames,
+  } from '$lib/multiplayer/module-naming';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
 
@@ -295,6 +304,7 @@
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
+    livecode: LivecodeCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
@@ -599,7 +609,9 @@
         };
         for (const [id, n] of Object.entries(nodes)) {
           if (!patch.nodes[id]) {
-            patch.nodes[id] = { id, type: n.type, domain: 'audio', position: n.position, params: n.params, data: n.data };
+            const autoName = nextDefaultName(patch.nodes, n.type);
+            const data = { ...(n.data ?? {}), name: autoName };
+            patch.nodes[id] = { id, type: n.type, domain: 'audio', position: n.position, params: n.params, data };
           }
         }
         const wires: Array<[string, string, string, string, 'pitch' | 'gate' | 'audio' | 'cv']> = [
@@ -2123,10 +2135,15 @@
     // mode leaves it unattributed, matching the per-user-cap-skipped
     // behavior of the decision helpers). See
     // lib/multiplayer/picturebox-limits.ts and samsloop-limits.ts.
-    const initialData: Record<string, unknown> | undefined =
-      (type === PICTUREBOX_TYPE || type === SAMSLOOP_TYPE) && currentUserId
-        ? { creatorId: currentUserId }
-        : undefined;
+    //
+    // Auto-name: every spawn assigns the next-available <TYPE><N> name.
+    // The DSL evaluator + click-to-edit label both read node.data.name.
+    // See lib/multiplayer/module-naming.ts.
+    const autoName = nextDefaultName(patch.nodes, type);
+    const initialData: Record<string, unknown> = { name: autoName };
+    if ((type === PICTUREBOX_TYPE || type === SAMSLOOP_TYPE) && currentUserId) {
+      initialData.creatorId = currentUserId;
+    }
 
     // Insert-on-cable (Proposal B2): if the cursor is close to an
     // existing cable's midpoint AND the new module has a compatible
@@ -2142,7 +2159,7 @@
         domain,
         position: pos,
         params: {},
-        ...(initialData ? { data: initialData } : {}),
+        data: initialData,
       };
       if (splice) {
         delete patch.edges[splice.edge.id];
@@ -2171,9 +2188,9 @@
     // would surprise users who expect drag-to-front to win later.
     topNodeId = id;
     if (splice) {
-      trace(`spliced ${type} (${id}) into edge ${splice.edge.id}`);
+      trace(`spliced ${type} as ${autoName} (${id}) into edge ${splice.edge.id}`);
     } else {
-      trace(`spawned ${type} (${id})`);
+      trace(`spawned ${type} as ${autoName} (${id})`);
     }
     // Engine instantiation happens via the reconciler microtask.
     void ensureEngine();
@@ -2532,6 +2549,28 @@
     else root.removeAttribute('data-hovered-node');
   });
 
+  // ---------------- Module-name migration ----------------
+  // First-paint: if any existing node lacks a `data.name`, assign it the
+  // next-available <TYPE><N> default. Idempotent — re-runs are no-ops.
+  // Wraps in a transact so the assigned names show up as one Yjs update
+  // (single undo entry, one collaborative broadcast). The migration is
+  // ordered by node id so two clients running it concurrently land on
+  // identical names.
+  $effect(() => {
+    void snapshot; // re-check after snapshots arrive (e.g. multiplayer load)
+    let needs = 0;
+    for (const node of Object.values(patch.nodes)) {
+      if (!node) continue;
+      if (typeof node.data?.name === 'string') continue;
+      needs++;
+      if (needs > 0) break;
+    }
+    if (needs === 0) return;
+    ydoc.transact(() => {
+      migrateAssignNames(patch.nodes);
+    }, LOCAL_ORIGIN);
+  });
+
   // ---------------- MiniMap toggle ----------------
   let minimapOpen = $state(true);
 
@@ -2610,6 +2649,24 @@
         />
       {/if}
       <FlowBridge bind:api={flowApi} />
+      <!-- Per-node editable name labels. Rendered as Svelte Flow
+           NodeToolbar instances anchored at the top of every card so
+           every module — old or new — gets the click-to-rename label
+           without each card having to opt in. The label sits ABOVE the
+           card chrome (Position.Top); a small offset keeps it from
+           overlapping the patch-panel triggers in the corners. -->
+      {#each flowNodes as fn (fn.id)}
+        <NodeToolbar
+          nodeId={fn.id}
+          position={Position.Top}
+          isVisible={true}
+          offset={4}
+        >
+          <div class="node-name-toolbar nodrag">
+            <ModuleNameLabel node={(fn.data as { node: import('$lib/graph/types').ModuleNode }).node} />
+          </div>
+        </NodeToolbar>
+      {/each}
     </SvelteFlow>
     <button
       type="button"
@@ -2957,6 +3014,16 @@
   .swatch.gate { background: var(--cable-gate); }
   .swatch.cv { background: var(--cable-cv); }
   .swatch.polyPitchGate { background: var(--cable-polyPitchGate); }
+  /* Per-node editable name label, rendered via NodeToolbar above each
+   * card. Mute background so the label reads as part of the card chrome
+   * without competing with the card's own title text. */
+  :global(.node-name-toolbar) {
+    background: rgba(14, 17, 22, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 2px 4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
   /* Video-domain swatches (Phase 0 spike). The CSS-class name shape
    * mirrors the cable-type id exactly so e.g. mono-video lines up
    * with --cable-mono-video without an extra mapping table. */

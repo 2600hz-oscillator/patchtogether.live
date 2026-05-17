@@ -242,7 +242,11 @@ type StandardModuleType =
   // engine binding; ports are dynamic from data.exposedPorts, projected
   // through to the underlying child ports by group-projection.ts so the
   // engine never sees groups. Module-grouping Phase 1 feature.
-  | 'group';
+  | 'group'
+  // LIVECODE — text-DSL module that spawns + patches modules from a script.
+  // No audio I/O; the card body holds a textarea + Run button. The DSL
+  // parser/evaluator live in $lib/livecode. See /docs/modules/livecode.
+  | 'livecode';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

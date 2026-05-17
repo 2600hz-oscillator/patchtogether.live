@@ -62,6 +62,11 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.
   cloudseed: 'VRT baseline pending; complex card; ART + unit + E2E provide coverage.',
+  // LIVECODE is a text-DSL editor card with no ports. Its visual
+  // surface is a <textarea> + Run button — the blinking caret + native
+  // textarea chrome (selection rect, scrollbar fade) makes baselines
+  // flap. Functional coverage is e2e/tests/livecode.spec.ts.
+  livecode: 'textarea caret + native chrome defeats deterministic capture; e2e covers the run-flow',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
