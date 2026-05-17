@@ -99,6 +99,26 @@
       cancelLabelEdit();
     }
   }
+
+  /**
+   * Defer blur-commit to a microtask so playwright's `fill()` (which
+   * focus → clear → type → blur internally) doesn't close edit mode
+   * mid-action. If focus returns to one of the label inputs by the time
+   * the microtask runs, we treat it as a no-op blur (focus bounced).
+   */
+  function onLabelBlur(e: FocusEvent) {
+    const fromEl = e.target as HTMLInputElement | null;
+    queueMicrotask(() => {
+      const active = document.activeElement;
+      const stillFocused =
+        active === fromEl ||
+        (active instanceof HTMLInputElement &&
+          (active.getAttribute('data-testid') === 'group-card-label-input' ||
+            active.getAttribute('data-testid') === 'group-card-label-input-body'));
+      if (stillFocused) return;
+      commitLabel();
+    });
+  }
   // Module-grouping Phase 2A — when `expanded` is true the card shrinks to
   // a thin header so the children render visibly underneath. The PatchPanel
   // still renders (so external cables remain attached) but the body label
@@ -248,11 +268,11 @@
       <input
         bind:this={labelInputEl}
         bind:value={labelDraft}
-        class="label-input"
+        class="label-input nodrag"
         type="text"
         data-testid="group-card-label-input"
         onkeydown={onLabelKeydown}
-        onblur={commitLabel}
+        onblur={onLabelBlur}
         onclick={(e) => e.stopPropagation()}
         ondblclick={(e) => e.stopPropagation()}
       />
@@ -260,7 +280,7 @@
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <span
         data-testid="group-card-label"
-        class="label-text"
+        class="label-text nodrag"
         ondblclick={startEditLabel}
         title="Double-click to rename"
       >{label}</span>
@@ -269,7 +289,7 @@
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <span
         data-testid="group-card-label"
-        class="label-text"
+        class="label-text nodrag"
         ondblclick={startEditLabel}
         title="Double-click to rename"
       >{label}</span>
@@ -277,7 +297,7 @@
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <span
         data-testid="group-card-header-label"
-        class="label-text"
+        class="label-text nodrag"
         ondblclick={startEditLabel}
         title="Double-click to rename"
       >{label}</span>
@@ -309,11 +329,11 @@
           <div class="group-label">
             <input
               bind:value={labelDraft}
-              class="label-input label-input-body"
+              class="label-input label-input-body nodrag"
               type="text"
               data-testid="group-card-label-input-body"
               onkeydown={onLabelKeydown}
-              onblur={commitLabel}
+              onblur={onLabelBlur}
               onclick={(e) => e.stopPropagation()}
               ondblclick={(e) => e.stopPropagation()}
             />
@@ -321,7 +341,7 @@
         {:else}
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div
-            class="group-label label-text"
+            class="group-label label-text nodrag"
             data-testid="group-card-label"
             ondblclick={startEditLabel}
             title="Double-click to rename"
