@@ -22,6 +22,19 @@
     type CarlLeaderInfo,
   } from '$lib/carl/session-leader-elected';
   import { evictCarlPatch } from '$lib/carl/driver';
+  import { createMikeController, type MikeController } from '$lib/mike/controller';
+  import { buildCatalogFromRegistry as buildMikeCatalog } from '$lib/mike/catalog';
+  import {
+    attemptSpawn as attemptMikeSpawn,
+    clearSession as clearMikeSession,
+    observeSession as observeMikeSession,
+    publishLeaderCandidacy as publishMikeCandidacy,
+    withdrawLeaderCandidacy as withdrawMikeCandidacy,
+    observeLeader as observeMikeLeader,
+    type MikeSessionRecord,
+    type MikeLeaderInfo,
+  } from '$lib/mike/session-leader-elected';
+  import { evictMikePatch } from '$lib/mike/driver';
   import {
     resolvePresenceUser,
     getOrCreateAnonTabId,
@@ -244,6 +257,86 @@
     clearCarlSession(ydoc);
   }
 
+  // ---------- Meticulous Mike (sibling bot) ----------
+  //
+  // Same leader-elected session pattern as Carl, but uses a separate
+  // awareness candidacy field (`mikeLeader`) and the shared bot lock for
+  // mutual exclusion: spawning Mike while Carl is active is refused at
+  // the bot-lock layer, and the UI gates the Spawn button so it's not
+  // even clickable in that state.
+  let mikeSession = $state<MikeSessionRecord | null>(null);
+  let mikeLeader = $state<MikeLeaderInfo>({
+    leaderClientId: null,
+    isLocalLeader: false,
+    candidates: [],
+  });
+  let mikeController: MikeController | null = $state(null);
+
+  $effect(() => {
+    if (!data.isMember) return;
+    return observeMikeSession(ydoc, (rec) => {
+      mikeSession = rec;
+    });
+  });
+
+  $effect(() => {
+    if (!provider) return;
+    return observeMikeLeader(provider, (info) => {
+      mikeLeader = info;
+    });
+  });
+
+  $effect(() => {
+    if (!provider?.awareness) return;
+    if (!mikeSession?.active) return;
+    publishMikeCandidacy(provider.awareness as unknown as Parameters<typeof publishMikeCandidacy>[0]);
+    return () => {
+      if (provider?.awareness) {
+        withdrawMikeCandidacy(provider.awareness as unknown as Parameters<typeof withdrawMikeCandidacy>[0]);
+      }
+    };
+  });
+
+  $effect(() => {
+    if (!mikeSession?.active) return;
+    if (!mikeLeader.isLocalLeader) return;
+    const catalog = buildMikeCatalog();
+    const ctrl = createMikeController({
+      catalog,
+      driver: { patch, ydoc },
+      seed: mikeSession.seed,
+      // In production Mike pauses 5–15 s between actions (deliberate
+      // pacing — see lib/mike/controller.ts).
+    });
+    ctrl.start();
+    mikeController = ctrl;
+    return () => {
+      ctrl.stop();
+      mikeController = null;
+    };
+  });
+
+  function spawnMike() {
+    if (!data.currentUserId) return;
+    if (mikeSession?.active) return;
+    if (carlSession?.active) return; // belt + suspenders; the bot lock would refuse anyway
+    const displayName = presenceUser?.displayName ?? data.currentUserId.slice(0, 8);
+    const seed = Math.floor(Date.now() % 0x7fffffff);
+    attemptMikeSpawn(ydoc, {
+      ownerUserId: data.currentUserId,
+      ownerDisplayName: displayName,
+      spawnedAt: Date.now(),
+      seed,
+    });
+  }
+
+  function evictMike() {
+    if (!mikeSession?.active) return;
+    mikeController?.stop();
+    evictMikePatch({ patch, ydoc }, 'mike');
+    clearMikeSession(ydoc);
+  }
+
   function resetSession() {
     if (!sharedClock) return;
     const ok = window.confirm(
@@ -370,6 +463,20 @@
           Carl by {carlSession.ownerDisplayName}
         </span>
       {/if}
+      {#if mikeSession}
+        <span
+          class="mike-indicator"
+          data-testid="mike-indicator"
+          title={`Mike spawned by ${mikeSession.ownerDisplayName} at ${new Date(mikeSession.spawnedAt).toLocaleTimeString()} — currently ticking on clientID ${mikeLeader.leaderClientId ?? '?'}${mikeLeader.isLocalLeader ? ' (this tab)' : ''}`}
+        >
+          <span
+            class="mike-dot"
+            class:mike-dot-leader={mikeLeader.isLocalLeader}
+            aria-hidden="true"
+          ></span>
+          Mike by {mikeSession.ownerDisplayName}
+        </span>
+      {/if}
       <span class="bar-spacer"></span>
       {#if !data.isAnon}
         {#if !carlSession}
@@ -377,7 +484,10 @@
             class="carl-btn carl-spawn"
             data-testid="carl-spawn-button"
             onclick={spawnCarl}
-            title="Spawn Carl — a chaos musician bot that plays with the patch. Anyone in the rack can stop him; he keeps ticking as long as at least one of you is here."
+            disabled={!!mikeSession}
+            title={mikeSession
+              ? 'Only one bot at a time — 86 Mike first if you want Carl instead.'
+              : 'Spawn Carl — a chaos musician bot that plays with the patch. Anyone in the rack can stop him; he keeps ticking as long as at least one of you is here.'}
           >
             spawn carl
           </button>
@@ -389,6 +499,28 @@
             title="Stop Carl and remove his modules"
           >
             86 carl
+          </button>
+        {/if}
+        {#if !mikeSession}
+          <button
+            class="mike-btn mike-spawn"
+            data-testid="mike-spawn-button"
+            onclick={spawnMike}
+            disabled={!!carlSession}
+            title={carlSession
+              ? 'Only one bot at a time — 86 Carl first if you want Mike instead.'
+              : 'Spawn Mike — a meticulous musician bot that slowly assembles a tidy, in-key patch. Anyone in the rack can stop him.'}
+          >
+            spawn mike
+          </button>
+        {:else}
+          <button
+            class="mike-btn mike-evict"
+            data-testid="mike-evict-button"
+            onclick={evictMike}
+            title="Stop Mike and remove his modules"
+          >
+            86 mike
           </button>
         {/if}
       {/if}
@@ -562,6 +694,58 @@
   .carl-btn.carl-evict {
     border-color: var(--cable-cv, #3b82f6);
     color: var(--cable-cv, #3b82f6);
+  }
+  .carl-btn:disabled,
+  .mike-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  /* Mike's indicator + buttons. Mike uses a green tint to differentiate
+     from Carl's orange; the "leader glow" rule mirrors Carl's dot. */
+  .mike-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: #14171c;
+    border: 1px solid #404652;
+    color: var(--text);
+    font-family: ui-monospace, monospace;
+    font-size: 0.7rem;
+  }
+  .mike-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    opacity: 0.5;
+  }
+  .mike-dot-leader {
+    opacity: 1;
+    box-shadow: 0 0 6px #22c55e;
+  }
+  .mike-btn {
+    background: #2a2f3a;
+    color: var(--text);
+    border: 1px solid #404652;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+  }
+  .mike-btn:hover:not(:disabled) {
+    background: #353a47;
+  }
+  .mike-btn.mike-spawn {
+    border-color: #22c55e;
+    color: #22c55e;
+  }
+  .mike-btn.mike-evict {
+    border-color: #f59e0b;
+    color: #f59e0b;
   }
   .reset-session {
     background: transparent;
