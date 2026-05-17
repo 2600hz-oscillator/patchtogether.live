@@ -118,9 +118,14 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     // Sanity: every audio/video spec has at least one port (input or
     // output) so we're not silently passing on a stub def. Meta-domain
     // modules (STICKY etc.) intentionally have zero ports — they're
-    // pure-UI cards with no signal-routing surface.
+    // pure-UI cards with no signal-routing surface. LIVECODE is a
+    // side-tool module that mutates the rack via a text DSL and also
+    // intentionally has no patch I/O (its card chrome is just the
+    // editor + run button), so it's explicitly allow-listed here.
+    const ZERO_PORT_OK = new Set(['livecode']);
     for (const s of specs) {
       if (s.domain === 'meta') continue;
+      if (ZERO_PORT_OK.has(s.type)) continue;
       const total = s.inputs.length + s.outputs.length;
       expect(total, `${s.type} has at least one port`).toBeGreaterThan(0);
     }
@@ -212,6 +217,11 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     // trivially zero ports both sides; if either side accidentally grows
     // a port the gate catches it.
     'sticky',
+    // LIVECODE — text-DSL module (no audio I/O). The seed test's
+    // ZERO_PORT_OK allowlist whitelists this; the per-module loop below
+    // still asserts that the rendered handles match the def exactly
+    // (which is "no handles" for LIVECODE).
+    'livecode',
   ];
 
   for (const type of MODULE_TYPES) {
