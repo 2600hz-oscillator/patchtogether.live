@@ -143,6 +143,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Quad VCA + soft-clip summing mix (Mutable Instruments Veils archetype — analog hardware, clean-room from-spec impl). Four independent VCAs, each with audio in, CV in (summed with knob), gain knob spanning [0, 2], and a per-channel response toggle: LIN for CV / control signals, EXP (squared) for audio / smooth fades. Per-channel direct outs are pre-mix, pre-clip. A separate MIX out sums all four channels and applies a tanh soft-clip — gain is NOT clamped at 1.0 per channel, so knob + CV can push above unity for warm overdrive on the mix bus.',
   blades:
     'Dual state-variable filter + COLOR overdrive + mix bus (Mutable Instruments Blades archetype). Blades is analog hardware with no firmware to port; this is a from-spec TypeScript implementation. Each of the two SVF cores has its own cutoff knob (20 Hz – 20 kHz, log fader), resonance knob (0..1, just shy of self-oscillation at the top), V/oct CV input (1 V per octave centered on the cutoff knob), audio-rate cutoff CV (±5 octaves at full deflection), and a mode toggle cycling LP → BP → HP. The global COLOR knob applies a tanh soft-clip pre-stage to each filter input — drive ranges 1× (clean) to 10× (heavily saturated) for the signature Blades grit. The MIX output toggles between PARALLEL (sum of both filters, soft-clipped) and SERIAL (filter1 → filter2 cascade, filter 2 ignores its own IN); the per-filter direct OUTs always track each filter operating on its own audio input independent of the mix routing. v1 ships LP/BP/HP modes; notch + linear-FM cutoff modulation deferred to follow-up.',
+  stages:
+    '6-segment cascadable function generator (Mutable Instruments Stages archetype, Émilie Gillet, 2017, MIT-licensed). Each segment selects a TYPE — RAMP (phase 0→1 over TIME seconds, shape-warped via the Tides-style curve from the C++ segment_generator), HOLD (constant LEVEL with shape-controlled portamento), or STEP (sample-and-hold of LEVEL on each gate rising edge). Adjacent segments can be LINKed via 5 boundary toggles to form multi-stage envelopes: a single RAMP→HOLD→RAMP chain reproduces an AHD envelope; chaining all 6 segments builds an AHDSR or arbitrary multi-stage curve. The leader segment of each chain group fires on its own GATE input; subsequent linked segments take over in sequence as each completes. A global TRIG input fires every chain group\'s leader at once. Each segment has its own CV output that mirrors its chain\'s current value, so any segment can be tapped. v1 ships TYPE + LINK + GATE + TRIG + per-segment CV inputs for primary + shape; Outliner / chord mode, the all-STEP tap-tempo grid mode, and looping LFO mode (with rate CV) are deferred to follow-up PRs.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -392,6 +394,32 @@ const PORT_NOTES: Record<string, string> = {
   'warps.level_1_cv':       'CV → LEVEL 1 (carrier-input gain).',
   'warps.level_2_cv':       'CV → LEVEL 2 (modulator-input gain).',
   'warps.out':              'Mono audio output, post-softlimit (x / (1 + |x|)).',
+  // STAGES — 6-segment cascadable function generator.
+  'stages.gate0': 'Per-segment gate input — rising edge fires segment 1\'s chain group, IFF segment 1 is its chain\'s leader. (Leader = first segment in any maximal run of LINKed adjacent segments.)',
+  'stages.gate1': 'Per-segment gate input for segment 2 — only fires the chain when segment 2 is a chain leader (i.e. not LINKed to segment 1).',
+  'stages.gate2': 'Per-segment gate input for segment 3 — same leader-only semantics as gate0/gate1.',
+  'stages.gate3': 'Per-segment gate input for segment 4 — same leader-only semantics as gate0/gate1.',
+  'stages.gate4': 'Per-segment gate input for segment 5 — same leader-only semantics as gate0/gate1.',
+  'stages.gate5': 'Per-segment gate input for segment 6 — same leader-only semantics as gate0/gate1.',
+  'stages.trig':  'Global trigger — rising edge fires every chain group\'s leader simultaneously. Useful for "reset all chains" patches.',
+  'stages.primary0_cv': 'CV → segment 1 primary knob (TIME for RAMP, LEVEL for HOLD/STEP).',
+  'stages.primary1_cv': 'CV → segment 2 primary knob.',
+  'stages.primary2_cv': 'CV → segment 3 primary knob.',
+  'stages.primary3_cv': 'CV → segment 4 primary knob.',
+  'stages.primary4_cv': 'CV → segment 5 primary knob.',
+  'stages.primary5_cv': 'CV → segment 6 primary knob.',
+  'stages.shape0_cv': 'CV → segment 1 SHAPE knob (phase warp for RAMP, portamento for HOLD/STEP).',
+  'stages.shape1_cv': 'CV → segment 2 SHAPE knob.',
+  'stages.shape2_cv': 'CV → segment 3 SHAPE knob.',
+  'stages.shape3_cv': 'CV → segment 4 SHAPE knob.',
+  'stages.shape4_cv': 'CV → segment 5 SHAPE knob.',
+  'stages.shape5_cv': 'CV → segment 6 SHAPE knob.',
+  'stages.out0': 'CV output for segment 1 — mirrors its chain group\'s current value (so any segment in the chain can be tapped).',
+  'stages.out1': 'CV output for segment 2 — mirrors chain value.',
+  'stages.out2': 'CV output for segment 3 — mirrors chain value.',
+  'stages.out3': 'CV output for segment 4 — mirrors chain value.',
+  'stages.out4': 'CV output for segment 5 — mirrors chain value.',
+  'stages.out5': 'CV output for segment 6 — mirrors chain value.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
@@ -804,6 +832,10 @@ export function buildModuleManifest(
       // both ScopeCard.svelte and the cross-domain video bridge use).
       // Not a ModuleDef.
       if (file.endsWith('-draw.ts')) return false;
+      // -engine.ts: pure-math worklet-engine mirror (e.g. stages-engine.ts).
+      // Not a ModuleDef — exported only for the parallel module file's
+      // import + the tests / ART scenarios.
+      if (file.endsWith('-engine.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.
