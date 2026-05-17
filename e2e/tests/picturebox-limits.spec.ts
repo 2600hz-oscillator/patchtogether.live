@@ -22,6 +22,9 @@ async function openPalette(page: Page): Promise<void> {
 
 async function pickPicturebox(page: Page): Promise<boolean> {
   await openPalette(page);
+  // Search-mode flattens the nested menu so the palette-item-* testid is
+  // queryable without drilling into Video modules → Sources.
+  await page.keyboard.type('PICTUREBOX');
   const pbItem = page.locator('[data-testid="palette-item-picturebox"]');
   const present = (await pbItem.count()) > 0;
   if (present) {
@@ -58,6 +61,7 @@ test.describe('PICTUREBOX spawn limits', () => {
     // The palette should now hide the picturebox option entirely
     // (maxInstances filter on the def). Open it and assert.
     await openPalette(page);
+    await page.keyboard.type('PICTUREBOX');
     await expect(page.locator('[data-testid="palette-item-picturebox"]')).toHaveCount(0);
     await page.keyboard.press('Escape');
 
