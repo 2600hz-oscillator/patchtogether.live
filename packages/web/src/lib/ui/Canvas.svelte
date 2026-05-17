@@ -453,16 +453,22 @@
   $effect(() => {
     return getDefaultSnapshotBus().subscribe((snap) => {
       snapshot = snap;
-      // Group-name migration runs once per mount, the first time we see a
-      // snapshot that actually contains group nodes. By that point the
-      // provider (if any) has synced enough state that the migration is
-      // operating on the real doc, not an empty starter snapshot. The
-      // migration helper guards itself with `groupNameMigrationRan` so
-      // subsequent snapshots are no-ops.
-      if (!groupNameMigrationRan) {
-        const hasAnyGroup = snap.nodes.some((n) => n.type === 'group');
-        if (hasAnyGroup) maybeMigrateGroupNames();
+      // Group-name migration runs any time a snapshot surfaces a group
+      // node whose label is blank or the legacy "GROUP!" placeholder.
+      // Triggered per-snapshot (rather than once-per-mount) so a second
+      // group added after the first migration still picks up a name.
+      // planDefaultGroupNames is no-op when every group already has a
+      // real label, so the steady-state cost is one cheap scan.
+      let needsMigration = false;
+      for (const n of snap.nodes) {
+        if (n.type !== 'group') continue;
+        const lbl = (n.data as { label?: unknown } | undefined)?.label;
+        if (typeof lbl !== 'string' || lbl.trim() === '' || lbl === LEGACY_GROUP_PLACEHOLDER) {
+          needsMigration = true;
+          break;
+        }
       }
+      if (needsMigration) maybeMigrateGroupNames();
     });
   });
 
@@ -1369,26 +1375,29 @@
   }
 
   /**
-   * One-shot migration: assign `GROUP<N>` to every group that's currently
-   * nameless or stuck on the legacy "GROUP!" placeholder. Runs once per
-   * Canvas mount after we've observed at least one snapshot — by then any
-   * provider sync has had a chance to populate patch.nodes. The plan is
-   * id-sorted so peers running the migration concurrently produce
-   * identical assignments (Y.js conflict-resolution makes the resulting
+   * Assign `GROUP<N>` to every group that's currently nameless or stuck on
+   * the legacy "GROUP!" placeholder. Driven by the snapshot subscriber:
+   * the migration runs any time a snapshot exposes a group needing a name,
+   * so a second group added after the first migration still picks up a
+   * fresh slot. The plan is id-sorted so peers running concurrently
+   * produce identical assignments (Y.js conflict-resolution makes the
    * writes idempotent).
    */
-  let groupNameMigrationRan = false;
   function maybeMigrateGroupNames() {
-    if (groupNameMigrationRan) return;
     const plan = planDefaultGroupNames(patch.nodes);
-    groupNameMigrationRan = true;
     if (plan.length === 0) return;
     ydoc.transact(() => {
       for (const { groupId, name } of plan) {
         const target = patch.nodes[groupId];
         if (!target) continue;
-        if (!target.data) target.data = {};
-        (target.data as { label?: string }).label = name;
+        // Mutate the existing data sub-object so syncedstore propagates the
+        // change through the Y.Map view. Replacing `data` wholesale would
+        // detach any references the caller (or test eval) is holding.
+        if (!target.data || typeof target.data !== 'object') {
+          target.data = { label: name };
+        } else {
+          (target.data as { label?: string }).label = name;
+        }
       }
     }, LOCAL_ORIGIN);
     trace(`group-name migration: assigned default names to ${plan.length} group(s)`);
@@ -2696,6 +2705,7 @@
       {nodeTypes}
       fitView
       colorMode="dark"
+      zoomOnDoubleClick={false}
       onconnect={handleConnect}
       onconnectstart={handleConnectStart}
       onconnectend={handleConnectEnd}
