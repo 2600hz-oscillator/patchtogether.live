@@ -2738,6 +2738,7 @@
   onselect={spawnFromPalette}
   onorganize={organizeModules}
   oncreategroup={() => enterLassoMode(palettePos.x, palettePos.y)}
+  oninsertsavedgroup={currentUserId ? openSavedGroupsPicker : undefined}
   onclose={() => (paletteOpen = false)}
 />
 
@@ -2749,6 +2750,7 @@
   nodeType={ctxMenuNodeType}
   isGroup={ctxMenuNodeType === 'group'}
   groupExpanded={ctxMenuGroupExpanded}
+  canSaveGroup={Boolean(currentUserId) && ctxMenuNodeType === 'group'}
   ondelete={() => {
     if (!ctxMenuNodeId) return;
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
@@ -2760,7 +2762,14 @@
   ontoggleexpanded={() => ctxMenuNodeId && toggleGroupExpanded(ctxMenuNodeId)}
   oneditexposed={() => ctxMenuNodeId && openEditExposedJacks(ctxMenuNodeId)}
   onduplicategroup={() => ctxMenuNodeId && duplicateGroupAction(ctxMenuNodeId)}
+  onsavegroup={() => ctxMenuNodeId && void saveGroupToLibrary(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
+/>
+
+<SavedGroupsPicker
+  bind:open={savedGroupsPickerOpen}
+  oninsert={(sg) => insertSavedGroup(sg)}
+  onclose={() => (savedGroupsPickerOpen = false)}
 />
 
 <SelectionContextMenu
