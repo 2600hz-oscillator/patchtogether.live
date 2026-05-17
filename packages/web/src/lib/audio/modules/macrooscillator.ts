@@ -836,6 +836,7 @@ export const macrooscillatorDef: AudioModuleDef = {
   label: 'MACROOSCILLATOR',
   category: 'sources',
   schemaVersion: 1,
+  ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [
     { id: 'pitch',    type: 'pitch' },

@@ -196,6 +196,7 @@ export const peaksDef: AudioModuleDef = {
   label: 'PEAKS',
   category: 'modulation',
   schemaVersion: 1,
+  ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [
     { id: 'gate0',  type: 'gate' },
