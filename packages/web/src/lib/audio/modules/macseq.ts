@@ -237,6 +237,12 @@ export const macseqDef: AudioModuleDef = {
     { id: 'isPlaying',  label: 'Play', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
   ],
 
+  // Module-grouping Phase 4 — surface PLAY/STOP as a single button a
+  // containing GROUP! can opt to expose on its bar.
+  exposableControls: [
+    { id: 'playStop', label: 'Play', kind: 'button', paramId: 'isPlaying' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
 
