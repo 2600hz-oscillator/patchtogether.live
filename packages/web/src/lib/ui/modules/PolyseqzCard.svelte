@@ -13,6 +13,13 @@
     coerceToChordStep,
     type ChordStep,
   } from '$lib/audio/modules/polyseqz';
+  import SequencerPageNav from '$lib/ui/modules/SequencerPageNav.svelte';
+  import {
+    PAGE_SIZE,
+    visiblePageFor,
+    pageRange,
+    ensureCapacity,
+  } from '$lib/audio/modules/sequencer-pages';
   import {
     type ChordQualityName,
     type ChordInversion,
@@ -55,11 +62,18 @@
   let humanize   = $derived((void cardVersion, node?.params.humanize   ?? 0));
   let isPlaying  = $derived((void cardVersion, (node?.params.isPlaying ?? 0) >= 0.5));
 
+  // POLYSEQZ readers historically returned a variable-length array (mirrors
+  // the persisted steps[] length verbatim). After pages-PR the card wants a
+  // STEP_COUNT-wide capacity so the page-nav can address page 1..7 even on
+  // freshly-loaded patches with shorter saved arrays.
   let steps = $derived.by<ChordStep[]>(() => {
     void cardVersion;
     const raw = (node?.data as Record<string, unknown> | undefined)?.steps;
-    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToChordStep);
-    return defaultChordSteps();
+    if (!Array.isArray(raw)) return defaultChordSteps();
+    return ensureCapacity<ChordStep>(
+      (raw as unknown[]).map(coerceToChordStep),
+      () => coerceToChordStep(null),
+    );
   });
 
   const set = (k: string) => (v: number) => {
@@ -76,6 +90,12 @@
 
   // Visual current step indicator polled from engine.
   let currentStep = $state(0);
+  // Per-user view state. Local Svelte state — see sequencer-pages.ts.
+  let userPage = $state(0);
+  let hold = $state(false);
+  let visiblePage = $derived(visiblePageFor(userPage, currentStep, length, hold));
+  let pageStart = $derived(pageRange(visiblePage).start);
+
   let raf: number | null = null;
   $effect(() => {
     function tickFrame() {
@@ -184,7 +204,9 @@
 
   type PolyRole = 'gate' | 'pitch' | 'quality' | 'inversion' | 'voicing';
   const POLY_ROLES: readonly PolyRole[] = ['gate', 'pitch', 'quality', 'inversion', 'voicing'] as const;
-  const NAV_SPEC: GridSpec<PolyRole> = { cols: STEP_COUNT, cellRows: 1, roles: POLY_ROLES };
+  // The grid now renders one page (PAGE_SIZE columns). Keyboard nav stays
+  // within the visible page — the < / > nav buttons are the page-cross UX.
+  const NAV_SPEC: GridSpec<PolyRole> = { cols: PAGE_SIZE, cellRows: 1, roles: POLY_ROLES };
 
   let gridEl: HTMLElement | undefined = $state();
 
@@ -204,23 +226,25 @@
   }
 
   function handleNav(e: KeyboardEvent, stepIdx: number, role: PolyRole): boolean {
-    const max = STEP_COUNT - 1;
+    const col = stepIdx - pageStart;
+    const minStep = pageStart;
+    const maxStep = pageStart + PAGE_SIZE - 1;
     if (
       e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
       e.key === 'ArrowUp'   || e.key === 'ArrowDown'
     ) {
-      const next = resolveArrowNav({ index: stepIdx, role }, e.key as ArrowKey, NAV_SPEC);
+      const next = resolveArrowNav({ index: col, role }, e.key as ArrowKey, NAV_SPEC);
       if (!next) return false;
-      return focusCell(next.index, next.role);
+      return focusCell(pageStart + next.index, next.role);
     }
     if (e.key === 'Enter' && role === 'pitch') {
-      tick().then(() => focusCell(Math.min(max, stepIdx + 1), 'pitch'));
+      tick().then(() => focusCell(Math.min(maxStep, stepIdx + 1), 'pitch'));
       return true;
     }
     if (e.key === 'Tab') {
       const dir = e.shiftKey ? -1 : 1;
       const nextIdx = stepIdx + dir;
-      if (nextIdx < 0 || nextIdx > max) return false;
+      if (nextIdx < minStep || nextIdx > maxStep) return false;
       return focusCell(nextIdx, role);
     }
     return false;
@@ -374,8 +398,20 @@
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="page-nav-row">
+      <SequencerPageNav
+        length={length}
+        currentStep={currentStep}
+        userPage={userPage}
+        hold={hold}
+        testIdPrefix={`polyseqz-${id}`}
+        onUserPageChange={(p) => (userPage = p)}
+        onHoldChange={(h) => (hold = h)}
+      />
+    </div>
     <div class="grid" bind:this={gridEl} data-testid={`polyseqz-grid-${id}`}>
-      {#each steps.slice(0, STEP_COUNT) as step, i (i)}
+      {#each steps.slice(pageStart, pageStart + PAGE_SIZE) as step, c (pageStart + c)}
+        {@const i = pageStart + c}
         <div class="cell-slot" data-step={i}>
           <div class="cell-num">{i + 1}</div>
           <NoteEntry
@@ -433,7 +469,7 @@
 
     <div class="fader-row">
       <Fader value={bpm}        min={30}  max={300} defaultValue={90}  label="BPM"  curve="linear"   onchange={set('bpm')}        readLive={live('bpm')} />
-      <Fader value={length}     min={1}   max={32}  defaultValue={8}   label="Len"  curve="discrete" onchange={set('length')}     readLive={live('length')} />
+      <Fader value={length}     min={1}   max={128} defaultValue={8}   label="Len"  curve="discrete" onchange={set('length')}     readLive={live('length')} />
       <Fader value={octave}     min={-2}  max={2}   defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}     readLive={live('octave')} />
       <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.6} label="Gate" curve="linear"  onchange={set('gateLength')} readLive={live('gateLength')} />
       <Fader value={humanize}   min={0}   max={1}   defaultValue={0}   label="Hum"  curve="linear"   onchange={set('humanize')}   readLive={live('humanize')} />
@@ -489,8 +525,14 @@
     color: #1a1d23;
     border-color: var(--cable-gate);
   }
+  .page-nav-row {
+    margin: 12px 22px 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+  }
   .grid {
-    margin: 30px 22px 12px;
+    margin: 8px 22px 12px;
     display: grid;
     grid-template-columns: repeat(16, 1fr);
     gap: 3px;

@@ -103,7 +103,11 @@ describe('sequencer-transport / SAVE-then-LOAD round-trip preserves the snapshot
   });
 
   it('DRUMSEQZ snapshot: per-track Bjorklund pattern round-trips', () => {
-    // Track 0: Bjorklund(4, 16). Track 1: Bjorklund(7, 16).
+    // Track 0: Bjorklund(4, 16). Track 1: Bjorklund(7, 16). Post-pages PR
+    // the per-page (16-cell) Bjorklund pattern repeats across every page,
+    // so a 128-cell track holds 4 × 8 = 32 on-cells for k=4. Assert the
+    // page-0 count to keep this regression-tight without coupling to
+    // MAX_PAGES.
     const tracks: DrumseqzTrack[] = defaultTracks();
     tracks[0] = applyEuclideanToTrack(tracks[0], 4);
     tracks[1] = applyEuclideanToTrack(tracks[1], 7);
@@ -116,9 +120,9 @@ describe('sequencer-transport / SAVE-then-LOAD round-trip preserves the snapshot
     const restored = coerceSlots(slots)['1'] as Snapshot;
     expect(restored.bpm).toBe(174);
     const restoredTracks = restored.tracks as DrumseqzTrack[];
-    // 4 pulses on track 0, 7 on track 1.
-    expect(restoredTracks[0].filter((c) => c.on).length).toBe(4);
-    expect(restoredTracks[1].filter((c) => c.on).length).toBe(7);
+    // 4 pulses on track 0 page 0, 7 on track 1 page 0.
+    expect(restoredTracks[0].slice(0, 16).filter((c) => c.on).length).toBe(4);
+    expect(restoredTracks[1].slice(0, 16).filter((c) => c.on).length).toBe(7);
   });
 
   it('SCORE snapshot: notes + ties + stop-bar round-trip', () => {

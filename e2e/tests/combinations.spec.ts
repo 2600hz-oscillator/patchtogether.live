@@ -133,8 +133,9 @@ test('chain: Sequencer → VCO → VCA (gated by ADSR) → Audio Out plays a rif
   expect(await readStatus(page, 'nodes')).toBe('5');
   expect(await readStatus(page, 'edges')).toBe('5');
 
-  // Sequencer renders the 32-cell grid (one cell-slot per step).
-  await expect(page.locator('.svelte-flow__node-sequencer .cell-slot')).toHaveCount(32);
+  // Sequencer's grid renders one page (16 cell-slots) at a time post-pages
+  // PR. Data array is 128 wide; user navigates pages via the < / > buttons.
+  await expect(page.locator('.svelte-flow__node-sequencer .cell-slot')).toHaveCount(16);
 
   expect(errors, errors.join('; ')).toEqual([]);
 });

@@ -15,8 +15,11 @@
     applyEuclideanToTrack,
     TRACK_COUNT,
     STEP_COUNT,
+    PAGE_SIZE,
     type DrumseqzTrack,
   } from '$lib/audio/modules/drumseqz';
+  import SequencerPageNav from '$lib/ui/modules/SequencerPageNav.svelte';
+  import { visiblePageFor, pageRange } from '$lib/audio/modules/sequencer-pages';
   import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName, noteNameForMidi, C3_MIDI } from '$lib/audio/note-entry';
   import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
@@ -48,7 +51,7 @@
   });
 
   let bpm        = $derived((void cardVersion, node?.params.bpm        ?? 120));
-  let length     = $derived((void cardVersion, node?.params.length     ?? STEP_COUNT));
+  let length     = $derived((void cardVersion, node?.params.length     ?? 16));
   let octave     = $derived((void cardVersion, node?.params.octave     ?? 0));
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.5));
   let swing      = $derived((void cardVersion, node?.params.swing      ?? 0));
@@ -81,6 +84,14 @@
   };
 
   let currentStep = $state(0);
+  // Per-user view state. NOT persisted via Y.Doc — two peers in the same rack
+  // can be on different pages with different HOLD states. See file header in
+  // sequencer-pages.ts for the policy.
+  let userPage = $state(0);
+  let hold = $state(false);
+  let visiblePage = $derived(visiblePageFor(userPage, currentStep, length, hold));
+  let pageStart = $derived(pageRange(visiblePage).start);
+
   let raf: number | null = null;
   $effect(() => {
     function tickFrame() {
@@ -146,10 +157,16 @@
   }
 
   // --- Keyboard navigation ---
+  //
+  // After the pages PR, the grid only renders PAGE_SIZE (16) cells per track
+  // at a time — the visible page's slice — so keyboard nav operates over a
+  // 16-cell row. Crossing the page boundary via arrows is intentionally NOT
+  // supported here (the UX is "use the < / > buttons"); within the visible
+  // page the muscle memory is unchanged.
 
   let gridEl: HTMLElement | undefined = $state();
 
-  const NAV_SPEC = { cols: STEP_COUNT, cellRows: TRACK_COUNT };
+  const NAV_SPEC = { cols: PAGE_SIZE, cellRows: TRACK_COUNT };
 
   function findCell(track: number, step: number, role: 'pitch' | 'gate'): HTMLElement | null {
     if (!gridEl) return null;
@@ -172,25 +189,28 @@
     step: number,
     role: 'pitch' | 'gate',
   ): boolean {
-    const cellIdx = track * STEP_COUNT + step;
+    // Convert absolute step → page-local column for the grid-nav math, then
+    // back when we focus a cell (data-step uses absolute indices).
+    const col = step - pageStart;
+    const cellIdx = track * PAGE_SIZE + col;
     if (
       e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
       e.key === 'ArrowUp'   || e.key === 'ArrowDown'
     ) {
       const next = resolveArrowNav({ index: cellIdx, role }, e.key as ArrowKey, NAV_SPEC);
       if (!next) return false;
-      const nT = Math.floor(next.index / STEP_COUNT);
-      const nS = next.index % STEP_COUNT;
-      return focusCell(nT, nS, next.role);
+      const nT = Math.floor(next.index / PAGE_SIZE);
+      const nCol = next.index % PAGE_SIZE;
+      return focusCell(nT, pageStart + nCol, next.role);
     }
     if (e.key === 'Enter' && role === 'pitch') {
-      tick().then(() => focusCell(track, Math.min(STEP_COUNT - 1, step + 1), 'pitch'));
+      tick().then(() => focusCell(track, Math.min(pageStart + PAGE_SIZE - 1, step + 1), 'pitch'));
       return true;
     }
     if (e.key === 'Tab') {
       const dir = e.shiftKey ? -1 : 1;
       const nextStep = step + dir;
-      if (nextStep < 0 || nextStep > STEP_COUNT - 1) return false;
+      if (nextStep < pageStart || nextStep > pageStart + PAGE_SIZE - 1) return false;
       return focusCell(track, nextStep, role);
     }
     return false;
@@ -248,7 +268,7 @@
       const snap: Snapshot = {
         tracks: tracksSnap,
         bpm: t?.params.bpm ?? 120,
-        length: t?.params.length ?? STEP_COUNT,
+        length: t?.params.length ?? 16,
         octave: t?.params.octave ?? 0,
         gateLength: t?.params.gateLength ?? 0.5,
         swing: t?.params.swing ?? 0,
@@ -342,11 +362,22 @@
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
+  <div class="page-nav-row">
+    <SequencerPageNav
+      length={length}
+      currentStep={currentStep}
+      userPage={userPage}
+      hold={hold}
+      testIdPrefix={`drumseqz-${id}`}
+      onUserPageChange={(p) => (userPage = p)}
+      onHoldChange={(h) => (hold = h)}
+    />
+  </div>
   <div class="grid-area">
     <div class="grid" bind:this={gridEl} data-testid={`drumseqz-grid-${id}`}>
       {#each Array.from({ length: TRACK_COUNT }, (_, t) => t) as t (t)}
         <div class="track-label">T{t + 1}</div>
-        {#each Array.from({ length: STEP_COUNT }, (_, i) => i) as i (i)}
+        {#each Array.from({ length: PAGE_SIZE }, (_, c) => pageStart + c) as i (i)}
           <div class="cell-slot" data-track={t} data-step={i}>
             <NoteEntry
               midi={tracks[t]?.[i]?.midi ?? null}
@@ -368,7 +399,7 @@
           <Fader
             value={readTrkParam(t, 'euclid', 0)}
             min={0}
-            max={STEP_COUNT}
+            max={PAGE_SIZE}
             defaultValue={0}
             label={`E${t + 1}`}
             curve="discrete"
@@ -404,7 +435,7 @@
 
   <div class="fader-row">
     <Fader value={bpm}        min={30}  max={300}  defaultValue={120} label="BPM"  curve="linear"   onchange={set('bpm')}        readLive={live('bpm')} />
-    <Fader value={length}     min={1}   max={STEP_COUNT}  defaultValue={STEP_COUNT}  label="Len"  curve="discrete" onchange={set('length')}     readLive={live('length')} />
+    <Fader value={length}     min={1}   max={STEP_COUNT}  defaultValue={16}          label="Len"  curve="discrete" onchange={set('length')}     readLive={live('length')} />
     <Fader value={octave}     min={-2}  max={2}    defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}     readLive={live('octave')} />
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} readLive={live('gateLength')} />
     <Fader value={swing}      min={0}   max={0.75} defaultValue={0}   label="Sw"   curve="linear"   onchange={set('swing')}      readLive={live('swing')} />
@@ -461,7 +492,13 @@
     border-color: var(--cable-gate);
   }
   .grid-area {
-    margin: 18px 22px 8px;
+    margin: 8px 22px 8px;
+  }
+  .page-nav-row {
+    margin: 12px 22px 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
   }
   .grid {
     display: grid;

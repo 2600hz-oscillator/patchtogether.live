@@ -825,6 +825,11 @@ export function buildModuleManifest(
     })
     .filter(({ file }) => {
       if (!file.endsWith('.ts') || file === 'index.ts') return false;
+      // iCloud / Dropbox-style sync-conflict siblings ("foo 2.ts", "bar 3.ts")
+      // are local-machine artifacts, not real module sources. They have a
+      // bare-int marker before the extension; the canonical sources never
+      // contain a space. Skipping by `' ' in basename` is safe + simple.
+      if (file.includes(' ')) return false;
       // Skip companion / test files — they live next to module sources but
       // aren't module definitions themselves.
       if (file.endsWith('.test.ts')) return false;
@@ -847,6 +852,9 @@ export function buildModuleManifest(
       // Shared lookahead-vs-sounding-now playhead helper used by Sequencer /
       // POLYSEQZ / DRUMSEQZ / SCORE / Cartesian. Not a ModuleDef.
       if (file === 'playhead-tracker.ts') return false;
+      // Shared per-user-view-state page-nav helpers (DRUMSEQZ / POLYSEQZ /
+      // MACSEQ / Sequencer). Not a ModuleDef.
+      if (file === 'sequencer-pages.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));
