@@ -4,6 +4,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { cloudsDef } from '$lib/audio/modules/clouds';
@@ -85,6 +86,7 @@
       </button>
     </div>
   </PatchPanel>
+  <OssAttribution author={cloudsDef.ossAttribution?.author} />
 </div>
 
 <style>

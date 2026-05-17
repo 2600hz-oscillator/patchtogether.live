@@ -20,6 +20,7 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import {
@@ -289,6 +290,7 @@
       </footer>
     </div>
   </PatchPanel>
+  <OssAttribution author={cloudseedDef.ossAttribution?.author} />
 </div>
 
 <style>

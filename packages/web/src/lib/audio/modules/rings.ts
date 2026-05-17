@@ -254,6 +254,7 @@ export const ringsDef: AudioModuleDef = {
   stereoPairs: [
     ['odd', 'even'],
   ],
+  ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [
     { id: 'in',        type: 'audio' },

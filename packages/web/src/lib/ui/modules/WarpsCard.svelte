@@ -10,6 +10,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { warpsDef, WARPS_MAX_ALGORITHM, WARPS_ALGORITHM_NAMES } from '$lib/audio/modules/warps';
@@ -70,6 +71,7 @@
       <Fader value={note}         min={-60} max={60} defaultValue={0}   label="Note"   units="st" curve="linear" onchange={set('note')} readLive={live('note')} />
     </div>
   </PatchPanel>
+  <OssAttribution author={warpsDef.ossAttribution?.author} />
 </div>
 
 <style>
