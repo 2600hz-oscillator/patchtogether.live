@@ -77,6 +77,9 @@ const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // SAMSLOOP first-slice PR: same situation — darwin baseline committed,
   // linux pending. Remove when the linux baseline lands.
   'linux/samsloop',
+  // BLADES first-slice PR: darwin baseline committed, linux pending —
+  // CI capture in a follow-up PR. Remove when the linux baseline lands.
+  'linux/blades',
 ]);
 
 function repoRoot(): string {

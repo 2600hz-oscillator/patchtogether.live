@@ -206,6 +206,13 @@ type StandardModuleType =
   // plus a tanh-soft-clipped sum mix out. Gain knobs span [0, 2] so
   // knob+CV can push past unity into warm overdrive.
   | 'veils'
+  // BLADES — dual state-variable VCF + COLOR overdrive + mix bus
+  // (Mutable Instruments Blades archetype, analog hardware → from-spec
+  // TS implementation). Two independent SVF cores each with LP/BP/HP
+  // mode + V/oct CV + cutoff CV + resonance CV; global COLOR knob
+  // tanh-soft-clips the input pre-filter for the signature grit; mix
+  // bus toggles PARALLEL (sum) vs SERIAL (filter1 → filter2).
+  | 'blades'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
