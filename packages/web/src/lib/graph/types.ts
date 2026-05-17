@@ -213,6 +213,17 @@ type StandardModuleType =
   // tanh-soft-clips the input pre-filter for the signature grit; mix
   // bus toggles PARALLEL (sum) vs SERIAL (filter1 → filter2).
   | 'blades'
+  // STAGES — 6-segment cascadable function generator (Mutable Instruments
+  // Stages archetype, Émilie Gillet, 2017, MIT-licensed). Clean-room TS
+  // port: 6 segments, each with a TYPE select (RAMP / HOLD / STEP), a
+  // primary knob (TIME for RAMP; LEVEL for HOLD/STEP), and a SHAPE knob
+  // (phase warp for RAMP; portamento for HOLD/STEP). Adjacent segments
+  // can be LINKed via 5 boundary bits to form multi-stage envelopes (AHD,
+  // AHDSR, longer arbitrary shapes). Each segment has its own GATE input
+  // and CV output; a global TRIG input re-fires every chain's leader.
+  // v1 ships TYPE + LINK + GATE + TRIG; Outliner / chord-mode / looping
+  // LFO mode deferred to follow-up.
+  | 'stages'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.

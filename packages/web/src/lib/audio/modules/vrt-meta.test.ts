@@ -80,6 +80,10 @@ const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // BLADES first-slice PR: darwin baseline committed, linux pending —
   // CI capture in a follow-up PR. Remove when the linux baseline lands.
   'linux/blades',
+  // STAGES first-slice PR: darwin baseline committed; linux pending.
+  // The linux VRT job is `continue-on-error: true` so this does not
+  // block the PR gate. Remove when the linux baseline lands.
+  'linux/stages',
 ]);
 
 function repoRoot(): string {

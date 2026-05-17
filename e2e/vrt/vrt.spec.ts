@@ -87,6 +87,10 @@ const MODULES: VrtModule[] = [
   // BLADES — dual SVF VCF + COLOR overdrive + mix bus. Static card
   // chrome (faders + mode/mix buttons + ports), no canvas / live viz.
   { type: 'blades', domain: 'audio' },
+  // STAGES — 6-segment cascadable function generator (Mutable Instruments
+  // archetype). Static card chrome — no canvas / live preview, so no mask
+  // needed.
+  { type: 'stages', domain: 'audio' },
   // ----- video domain -----
   // Every video module renders a preview canvas. Mask it; assert the
   // chrome (title, ports, knobs).

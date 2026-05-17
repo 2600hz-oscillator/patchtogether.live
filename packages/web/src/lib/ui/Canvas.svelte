@@ -137,6 +137,8 @@
   import VeilsCard from '$lib/ui/modules/VeilsCard.svelte';
   // BLADES — dual SVF VCF + COLOR overdrive + mix bus (Blades archetype).
   import BladesCard from '$lib/ui/modules/BladesCard.svelte';
+  // STAGES — 6-segment cascadable function generator (Mutable Instruments Stages archetype).
+  import StagesCard from '$lib/ui/modules/StagesCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -286,6 +288,7 @@
     warps: WarpsCard,
     veils: VeilsCard,
     blades: BladesCard,
+    stages: StagesCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
