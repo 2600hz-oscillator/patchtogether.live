@@ -19,6 +19,18 @@
   import { buildCatalogFromRegistry } from '$lib/carl/catalog';
   import { createCarlController, type CarlController } from '$lib/carl/controller';
   import { evictCarlPatch } from '$lib/carl/driver';
+  import {
+    attemptSpawn as mikeAttemptSpawn,
+    clearSession as mikeClearSession,
+    readMikeSession,
+    publishLeaderCandidacy as mikePublishCandidacy,
+    withdrawLeaderCandidacy as mikeWithdrawCandidacy,
+    readLeader as mikeReadLeader,
+  } from '$lib/mike/session-leader-elected';
+  import { buildCatalogFromRegistry as buildMikeCatalogReg } from '$lib/mike/catalog';
+  import { createMikeController, type MikeController } from '$lib/mike/controller';
+  import { evictMikePatch } from '$lib/mike/driver';
+  import { readBotSession } from '$lib/bot/session-lock';
 
   let { data, children } = $props();
 
@@ -226,6 +238,64 @@
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).__carlEvictPatch = () => evictCarlPatch({ patch, ydoc }, 'carl');
+
+    // ---------- Meticulous Mike dev hooks (mirror of Carl's) ----------
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let _mikeController: MikeController | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mikeAttemptSpawn = (
+      ownerUserId: string,
+      displayName: string,
+      seed?: number,
+    ) => {
+      return mikeAttemptSpawn(ydoc, {
+        ownerUserId,
+        ownerDisplayName: displayName,
+        spawnedAt: Date.now(),
+        seed: seed ?? Math.floor(Date.now() % 0x7fffffff),
+      });
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mikeReadSession = () => readMikeSession(ydoc);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mikeClearSession = () => mikeClearSession(ydoc);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mikePublishCandidacy = () => {
+      if (!_activeProviderRef?.awareness) return false;
+      mikePublishCandidacy(_activeProviderRef.awareness);
+      return true;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mikeWithdrawCandidacy = () => {
+      if (!_activeProviderRef?.awareness) return false;
+      mikeWithdrawCandidacy(_activeProviderRef.awareness);
+      return true;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mikeReadLeader = () => mikeReadLeader(_activeProviderRef);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mikeStartLoop = (opts?: { seed?: number; baseTickMs?: number; maxTickMs?: number }) => {
+      if (_mikeController) return false;
+      const catalog = buildMikeCatalogReg();
+      _mikeController = createMikeController({
+        catalog,
+        driver: { patch, ydoc },
+        seed: opts?.seed,
+        baseTickMs: opts?.baseTickMs ?? 150,
+        maxTickMs: opts?.maxTickMs ?? 400,
+      });
+      _mikeController.start();
+      return true;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mikeStopLoop = () => {
+      _mikeController?.stop();
+      _mikeController = null;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mikeEvictPatch = () => evictMikePatch({ patch, ydoc }, 'mike');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__readBotSession = () => readBotSession(ydoc);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).__lfoPhaseAt = async (nodeId: string, sharedTimeMs: number) => {
