@@ -1,4 +1,5 @@
 // packages/web/src/lib/audio/modules/pong.ts
+// Architectural reference: docs/design/game-modules.md
 //
 // PONG — interactive game module (research prototype).
 //
