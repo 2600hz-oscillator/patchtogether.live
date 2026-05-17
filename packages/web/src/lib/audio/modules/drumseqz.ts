@@ -33,7 +33,13 @@ import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock
 import { createPlayheadTracker } from './playhead-tracker';
 
 export const TRACK_COUNT = 4;
-export const STEP_COUNT = 16;
+/** Cells rendered per page (one screen row). Bjorklund operates on this
+ *  unit — the same Euclidean pattern repeats across every page. */
+export const PAGE_SIZE = 16;
+/** Maximum cells per track = PAGE_SIZE * MAX_PAGES. Pre-pages PR this was
+ *  16 (single page). Old saves widen on read via coerceTracks +
+ *  ensureCapacity in the card. */
+export const STEP_COUNT = 128;
 
 export interface DrumseqzCell {
   on: boolean;
@@ -128,16 +134,19 @@ export function bjorklund(k: number, n: number): number[] {
 }
 
 /** Apply a Bjorklund pattern to an existing track: REWRITE the `on` flags
- *  while preserving each cell's `midi`. Length-stable (always 16 cells). */
+ *  while preserving each cell's `midi`. Length-stable: always STEP_COUNT
+ *  (128) cells. The Bjorklund pattern is computed over PAGE_SIZE (16) and
+ *  repeated across every page — this keeps the slider's range modest
+ *  (0..PAGE_SIZE) and the visual rhythm consistent across pages. */
 export function applyEuclideanToTrack(
   track: DrumseqzTrack,
   k: number,
 ): DrumseqzTrack {
-  const pattern = bjorklund(k, STEP_COUNT);
+  const pattern = bjorklund(k, PAGE_SIZE);
   const out: DrumseqzTrack = [];
   for (let i = 0; i < STEP_COUNT; i++) {
     const prev = track[i] ?? defaultCell();
-    out.push({ on: pattern[i] === 1, midi: prev.midi });
+    out.push({ on: pattern[i % PAGE_SIZE] === 1, midi: prev.midi });
   }
   return out;
 }
@@ -194,7 +203,7 @@ export const drumseqzDef: AudioModuleDef = {
   ],
   params: [
     { id: 'bpm',         label: 'BPM',  defaultValue: 120,      min: 30,  max: 300,  curve: 'linear' },
-    { id: 'length',      label: 'Len',  defaultValue: 16,       min: 1,   max: 16,   curve: 'discrete' },
+    { id: 'length',      label: 'Len',  defaultValue: 16,       min: 1,   max: 128,  curve: 'discrete' },
     { id: 'octave',      label: 'Oct',  defaultValue: 0,        min: -2,  max: 2,    curve: 'discrete' },
     { id: 'gateLength',  label: 'Gate', defaultValue: 0.5,      min: 0.1, max: 0.95, curve: 'linear' },
     { id: 'swing',       label: 'Sw',   defaultValue: 0,        min: 0,   max: 0.75, curve: 'linear' },
@@ -456,7 +465,9 @@ export const drumseqzDef: AudioModuleDef = {
           );
           const start = clockInBuffer.length - newSamples;
           const bpm = readParam('bpm', 120);
-          const length = Math.max(1, Math.round(readParam('length', STEP_COUNT)));
+          // Clamp to [1, STEP_COUNT] — STEP_COUNT (128) is the data array
+          // capacity; the param defaultValue is the audible default (16).
+          const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 16))));
           const stepDurForGate = 60 / Math.max(1, bpm) / 4;
           for (let i = start; i < clockInBuffer.length; i++) {
             const cur = clockInBuffer[i] ?? 0;
@@ -479,7 +490,9 @@ export const drumseqzDef: AudioModuleDef = {
         } else {
           while (nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
             const bpm = readParam('bpm', 120);
-            const length = Math.max(1, Math.round(readParam('length', STEP_COUNT)));
+            // Clamp to [1, STEP_COUNT] — STEP_COUNT (128) is the data array
+          // capacity; the param defaultValue is the audible default (16).
+          const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 16))));
             const swing = readParam('swing', 0);
 
             const stepDurBase = 60 / bpm / 4;

@@ -149,41 +149,28 @@ test('rclick while palette open re-anchors at new click position', async ({ page
 // B. Add-Module sub-menu
 // ============================================================================
 
-test('palette lists every documented category at least once', async ({ page }) => {
+test('palette renders the 3 top-level categories (audio / video / hybrid)', async ({ page }) => {
   await ready(page);
   const box = await paneBox(page);
   await page.mouse.click(box.x + 200, box.y + 200, { button: 'right' });
   await expect(page.locator('.module-palette')).toBeVisible();
-  // Categories rendered as .category divs. Order is fixed by the palette,
-  // singletons that are at-cap are filtered before render — fresh canvas
-  // has none of them, so all categories should appear.
-  const cats = await page.locator('.module-palette .category').allTextContents();
-  // 'tools' is the always-present Organize header. Module categories from
-  // the registry: sources, modulation, filters, effects, utilities, output.
-  for (const expected of ['tools', 'sources', 'modulation', 'filters', 'effects', 'utilities', 'output']) {
-    expect(cats).toContain(expected);
-  }
+  // The nested menu starts collapsed: the three top-level rows are visible
+  // and the per-domain sub-categories surface after expanding.
+  await expect(page.getByTestId('palette-top-audio-modules')).toBeVisible();
+  await expect(page.getByTestId('palette-top-video-modules')).toBeVisible();
+  await expect(page.getByTestId('palette-top-hybrid')).toBeVisible();
 });
 
-test('palette lists Reverb under effects and Mixer under utilities', async ({ page }) => {
+test('palette: drilling into Audio modules → Effects surfaces Reverb', async ({ page }) => {
   await ready(page);
   const box = await paneBox(page);
   await page.mouse.click(box.x + 200, box.y + 200, { button: 'right' });
   await expect(page.locator('.module-palette')).toBeVisible();
-  // The palette body is a flat alternating sequence of .category dividers and
-  // .item buttons. We can read the DOM order to verify a button follows the
-  // expected category header without a more elaborate group selector.
-  const body = page.locator('.palette-body');
-  const html = (await body.innerHTML()).replace(/\s+/g, ' ');
-  const reverbIdx = html.indexOf('Reverb');
-  const effectsIdx = html.indexOf('>effects<');
-  const utilitiesIdx = html.indexOf('>utilities<');
-  const mixerIdx = html.indexOf('>Mixer<');
-  expect(reverbIdx).toBeGreaterThan(effectsIdx);
-  expect(mixerIdx).toBeGreaterThan(utilitiesIdx);
-  // Reverb belongs to effects, not utilities — index must be earlier than the
-  // utilities header (effects comes before utilities in the registry order).
-  expect(reverbIdx).toBeLessThan(utilitiesIdx);
+  await page.getByTestId('palette-top-audio-modules').click();
+  await page.getByTestId('palette-sub-effects').click();
+  await expect(page.getByTestId('palette-item-reverb')).toBeVisible();
+  // Mixer is NOT under Effects — it's under Mixing.
+  await expect(page.getByTestId('palette-item-mixer')).toHaveCount(0);
 });
 
 test('clicking a palette item spawns exactly one module of that type', async ({ page }) => {
@@ -191,7 +178,9 @@ test('clicking a palette item spawns exactly one module of that type', async ({ 
   const box = await paneBox(page);
   await page.mouse.click(box.x + 200, box.y + 200, { button: 'right' });
   await expect(page.locator('.module-palette')).toBeVisible();
-  await page.getByRole('button', { name: 'Reverb', exact: true }).click();
+  await page.getByTestId('palette-top-audio-modules').click();
+  await page.getByTestId('palette-sub-effects').click();
+  await page.getByTestId('palette-item-reverb').click();
   await expect(page.locator('.module-palette')).not.toBeVisible();
   const nodes = await readNodes(page);
   expect(nodes.filter((n) => n.type === 'reverb')).toHaveLength(1);
@@ -208,7 +197,10 @@ test('spawned node anchors at the click point in flow-space (within the card)', 
   const expected = await screenToFlow(page, { x: clickClientX, y: clickClientY });
   await page.mouse.click(clickClientX, clickClientY, { button: 'right' });
   await expect(page.locator('.module-palette')).toBeVisible();
-  await page.getByRole('button', { name: 'Reverb', exact: true }).click();
+  // Search-mode shortcut so the test doesn't have to know that Reverb
+  // currently lives under Audio modules → Effects.
+  await page.keyboard.type('Reverb');
+  await page.keyboard.press('Enter');
   const nodes = await readNodes(page);
   expect(nodes).toHaveLength(1);
   const pos = nodes[0].position;
@@ -270,7 +262,8 @@ test('palette spawned via topbar + Add module goes through screenToFlowPosition'
   const expected = await screenToFlow(page, { x: 200, y: 200 });
   await page.getByRole('button', { name: '+ Add module' }).click();
   await expect(page.locator('.module-palette')).toBeVisible();
-  await page.getByRole('button', { name: 'Reverb', exact: true }).click();
+  await page.keyboard.type('Reverb');
+  await page.keyboard.press('Enter');
   const nodes = await readNodes(page);
   expect(nodes).toHaveLength(1);
   expect(Math.abs(nodes[0].position.x - expected.x)).toBeLessThan(4);
@@ -627,8 +620,9 @@ test('palette filters out at-cap singletons (timelorde hidden when one exists)',
   const box = await paneBox(page);
   await page.mouse.click(box.x + 50, box.y + 50, { button: 'right' });
   await expect(page.locator('.module-palette')).toBeVisible();
-  // The TIMELORDE label should NOT appear because it's a singleton with one
-  // already in the patch.
+  // Use search mode (flat results) so we don't have to drill into the
+  // correct sub-category just to assert the item is missing.
+  await page.keyboard.type('TIMELORDE');
   const items = await page.locator('.module-palette .item').allTextContents();
   expect(items.map((s) => s.trim())).not.toContain('TIMELORDE');
 });
@@ -676,7 +670,9 @@ test('rclick after the canvas pans/scrolls still anchors at the cursor (flow-spa
   const expected = await screenToFlow(page, click);
   await page.mouse.click(click.x, click.y, { button: 'right' });
   await expect(page.locator('.module-palette')).toBeVisible();
-  await page.getByRole('button', { name: 'Reverb', exact: true }).click();
+  // Search-mode flatten + Enter shortcut (avoids drilling Audio → Effects).
+  await page.keyboard.type('Reverb');
+  await page.keyboard.press('Enter');
   const nodes = await readNodes(page);
   const reverb = nodes.find((n) => n.type === 'reverb');
   expect(reverb).toBeTruthy();

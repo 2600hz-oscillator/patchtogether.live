@@ -61,6 +61,18 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // Applying cvScale 'linear' would compute scale = (max-min)/2 = 1.0
   // and pass the CV through unchanged anyway.
   veils: ['cv1', 'cv2', 'cv3', 'cv4'],
+  // BLADES voct1/voct2 + cutoff1_cv/cutoff2_cv: these are audio-rate
+  // node inputs that the worklet itself maps onto octaves via
+  // pow(2, voct + cv*5). Interposing a WaveShaperNode here would
+  // double-process the signal (the worklet already applies a musical
+  // octave mapping). The res_cv / color_cv / mix_mode_cv ports DO carry
+  // cvScale because they route via the AudioParam fast path.
+  blades: ['voct1', 'voct2', 'cutoff1_cv', 'cutoff2_cv'],
+  // PONG paddle_left / paddle_right: CV is sampled per scheduler-tick into
+  // a JS-side stepper (paddleCvToY maps -1..+1 → 0..1 paddle Y). No
+  // AudioParam fast path — the CV doesn't modulate any knob, it IS the
+  // paddle position. Same shape as BUGGLES.clock_cv / chaos_cv above.
+  pong: ['paddle_left', 'paddle_right'],
 };
 
 describe('cv-scale / registry coverage', () => {

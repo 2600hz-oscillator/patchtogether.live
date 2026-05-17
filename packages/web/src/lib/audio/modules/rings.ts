@@ -201,6 +201,7 @@ export const ringsMath = {
   ): { odd: Float32Array; even: Float32Array } {
     const modal = new _RingsModal();
     const symp = new _RingsSympatheticStrings();
+    const modalPlucker = new _Plucker();
     modal.reset();
     symp.reset();
     const odd = new Float32Array(n);
@@ -223,13 +224,17 @@ export const ringsMath = {
     modal.setPosition(p);
 
     for (let i = 0; i < n; i++) {
-      if (i === strumAt) symp.triggerStrum(sr);
+      if (i === strumAt) {
+        symp.triggerStrum(sr);
+        // Self-excite MODAL too so STRUM produces sound without an external exciter.
+        modalPlucker.trigger(Math.floor(0.01 * sr));
+      }
       const exc = exciter ? (exciter[i] ?? 0) : 0;
       let o: number;
       let e: number;
       if (modelIdx === 0) {
-        const inj = (i === strumAt) ? 0.25 : 0;
-        [o, e] = modal.process(exc + inj);
+        const burst = modalPlucker.next();
+        [o, e] = modal.process(exc + burst);
       } else {
         [o, e] = symp.process(exc, p, sr);
       }
@@ -249,6 +254,7 @@ export const ringsDef: AudioModuleDef = {
   stereoPairs: [
     ['odd', 'even'],
   ],
+  ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [
     { id: 'in',        type: 'audio' },

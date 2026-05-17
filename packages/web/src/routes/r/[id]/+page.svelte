@@ -6,9 +6,22 @@
   import AudioGate from '$lib/ui/AudioGate.svelte';
   import FeedbackBox from '$lib/ui/FeedbackBox.svelte';
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
-  import { ydoc } from '$lib/graph/store';
+  import { ydoc, patch } from '$lib/graph/store';
   import { makeEnvelope } from '$lib/graph/persistence';
   import { attachProvider } from '$lib/multiplayer/provider';
+  import { createCarlController, type CarlController } from '$lib/carl/controller';
+  import { buildCatalogFromRegistry } from '$lib/carl/catalog';
+  import {
+    attemptSpawn as attemptCarlSpawn,
+    clearSession as clearCarlSession,
+    observeSession as observeCarlSession,
+    publishLeaderCandidacy,
+    withdrawLeaderCandidacy,
+    observeLeader,
+    type CarlSessionRecord,
+    type CarlLeaderInfo,
+  } from '$lib/carl/session-leader-elected';
+  import { evictCarlPatch } from '$lib/carl/driver';
   import {
     resolvePresenceUser,
     getOrCreateAnonTabId,
@@ -138,6 +151,99 @@
       data.rackspace.ownerUserId === data.currentUserId,
   );
 
+  // ---------- Rackspace Carl (Approach B: Leader-Elected) ----------
+  //
+  // - Spawn/86 buttons are visible ONLY for authed users (data.isAnon=false).
+  // - At most one Carl per rackspace; exclusivity = `active` flag in
+  //   the carlSession Y.Map.
+  // - Tick loop runs in the LEADER's tab. Leader = lowest awareness
+  //   clientID among peers who have published a carlLeader candidacy
+  //   field. Election re-runs on every awareness change, so when the
+  //   current leader's tab closes, the next-lowest takes over within
+  //   the awareness GC window (~30 s by default; we don't accelerate
+  //   it here, the natural cadence is fine for a musical bot).
+  // - Any participant (not just the spawner) can 86 Carl.
+  let carlSession = $state<CarlSessionRecord | null>(null);
+  let carlLeader = $state<CarlLeaderInfo>({
+    leaderClientId: null,
+    isLocalLeader: false,
+    candidates: [],
+  });
+  let carlController: CarlController | null = $state(null);
+
+  // Subscribe to session changes.
+  $effect(() => {
+    if (!data.isMember) return;
+    return observeCarlSession(ydoc, (rec) => {
+      carlSession = rec;
+    });
+  });
+
+  // Subscribe to leader changes via Y.Awareness.
+  $effect(() => {
+    if (!provider) return;
+    return observeLeader(provider, (info) => {
+      carlLeader = info;
+    });
+  });
+
+  // Whenever a session is active AND we have a provider, publish our
+  // candidacy for the election. When the session goes inactive or our
+  // provider tears down, withdraw.
+  $effect(() => {
+    if (!provider?.awareness) return;
+    if (!carlSession?.active) return;
+    publishLeaderCandidacy(provider.awareness as unknown as Parameters<typeof publishLeaderCandidacy>[0]);
+    return () => {
+      if (provider?.awareness) {
+        withdrawLeaderCandidacy(provider.awareness as unknown as Parameters<typeof withdrawLeaderCandidacy>[0]);
+      }
+    };
+  });
+
+  // The actual tick loop runs only on the elected leader.
+  $effect(() => {
+    if (!carlSession?.active) return;
+    if (!carlLeader.isLocalLeader) return;
+    const catalog = buildCatalogFromRegistry();
+    const ctrl = createCarlController({
+      catalog,
+      driver: { patch, ydoc },
+      seed: carlSession.seed,
+      baseTickMs: 600,
+    });
+    ctrl.start();
+    carlController = ctrl;
+    return () => {
+      ctrl.stop();
+      carlController = null;
+    };
+  });
+
+  function spawnCarl() {
+    if (!data.currentUserId) return;
+    if (carlSession?.active) return;
+    const displayName = presenceUser?.displayName ?? data.currentUserId.slice(0, 8);
+    const seed = Math.floor(Date.now() % 0x7fffffff);
+    attemptCarlSpawn(ydoc, {
+      ownerUserId: data.currentUserId,
+      ownerDisplayName: displayName,
+      spawnedAt: Date.now(),
+      seed,
+    });
+  }
+
+  function evictCarl() {
+    if (!carlSession?.active) return;
+    // Stop our own controller if we're the leader (the effect tears
+    // down anyway once carlSession.active flips, but stopping eagerly
+    // closes the 1-tick window where a pending intent might race the
+    // eviction wipe).
+    carlController?.stop();
+    evictCarlPatch({ patch, ydoc }, 'carl');
+    clearCarlSession(ydoc);
+  }
+
   function resetSession() {
     if (!sharedClock) return;
     const ok = window.confirm(
@@ -250,7 +356,42 @@
           ></span>
         {/each}
       </span>
+      {#if carlSession}
+        <span
+          class="carl-indicator"
+          data-testid="carl-indicator"
+          title={`Carl spawned by ${carlSession.ownerDisplayName} at ${new Date(carlSession.spawnedAt).toLocaleTimeString()} — currently ticking on clientID ${carlLeader.leaderClientId ?? '?'}${carlLeader.isLocalLeader ? ' (this tab)' : ''}`}
+        >
+          <span
+            class="carl-dot"
+            class:carl-dot-leader={carlLeader.isLocalLeader}
+            aria-hidden="true"
+          ></span>
+          Carl by {carlSession.ownerDisplayName}
+        </span>
+      {/if}
       <span class="bar-spacer"></span>
+      {#if !data.isAnon}
+        {#if !carlSession}
+          <button
+            class="carl-btn carl-spawn"
+            data-testid="carl-spawn-button"
+            onclick={spawnCarl}
+            title="Spawn Carl — a chaos musician bot that plays with the patch. Anyone in the rack can stop him; he keeps ticking as long as at least one of you is here."
+          >
+            spawn carl
+          </button>
+        {:else}
+          <button
+            class="carl-btn carl-evict"
+            data-testid="carl-evict-button"
+            onclick={evictCarl}
+            title="Stop Carl and remove his modules"
+          >
+            86 carl
+          </button>
+        {/if}
+      {/if}
       {#if data.isAnon}
         <button
           class="share sign-in"
@@ -374,6 +515,53 @@
   }
   .bar-spacer {
     flex: 1;
+  }
+  .carl-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: #14171c;
+    border: 1px solid #404652;
+    color: var(--text);
+    font-family: ui-monospace, monospace;
+    font-size: 0.7rem;
+  }
+  .carl-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--cable-gate, #f97316);
+    opacity: 0.5;
+  }
+  /* Subtle "this tab is the active ticker" cue — bright glow on the
+     leader's screen, dim everywhere else. */
+  .carl-dot-leader {
+    opacity: 1;
+    box-shadow: 0 0 6px var(--cable-gate, #f97316);
+  }
+  .carl-btn {
+    background: #2a2f3a;
+    color: var(--text);
+    border: 1px solid #404652;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+  }
+  .carl-btn:hover {
+    background: #353a47;
+  }
+  .carl-btn.carl-spawn {
+    border-color: var(--cable-gate, #f97316);
+    color: var(--cable-gate, #f97316);
+  }
+  .carl-btn.carl-evict {
+    border-color: var(--cable-cv, #3b82f6);
+    color: var(--cable-cv, #3b82f6);
   }
   .reset-session {
     background: transparent;

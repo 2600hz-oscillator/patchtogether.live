@@ -5,6 +5,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { peaksDef, peaksMath, PEAKS_MODE_NAMES, PEAKS_MAX_MODE, type PeaksMode } from '$lib/audio/modules/peaks';
@@ -113,6 +114,7 @@
       </div>
     </div>
   </PatchPanel>
+  <OssAttribution author={peaksDef.ossAttribution?.author} />
 </div>
 
 <style>

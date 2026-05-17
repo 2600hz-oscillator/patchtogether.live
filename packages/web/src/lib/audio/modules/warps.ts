@@ -153,6 +153,7 @@ export const warpsDef: AudioModuleDef = {
   label: 'WARPS',
   category: 'effects',
   schemaVersion: 1,
+  ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [
     { id: 'carrier_in',      type: 'audio' },

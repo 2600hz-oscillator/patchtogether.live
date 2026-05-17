@@ -28,13 +28,16 @@ import {
   applyEuclideanToTrack,
   defaultTrack,
   TRACK_COUNT,
-  STEP_COUNT,
+  PAGE_SIZE,
 } from '../../../packages/web/src/lib/audio/modules/drumseqz';
 
 const SAMPLE_RATE = 48000;
 const BPM = 120;
 const STEP_DUR_S = 60 / BPM / 4; // 16th note: 0.125 s
-const BAR_S = STEP_DUR_S * STEP_COUNT; // 2 s
+// The ART asserts gate timing over a 16-step "bar". STEP_COUNT in drumseqz is
+// the track capacity (now 128 / 8 pages post-pages PR); PAGE_SIZE (16) is
+// the per-page step count this ART exercises.
+const BAR_S = STEP_DUR_S * PAGE_SIZE; // 2 s
 const DURATION_S = BAR_S; // exactly one bar
 const GATE_LENGTH_FRAC = 0.5;
 const GATE_HIGH_S = STEP_DUR_S * GATE_LENGTH_FRAC; // 62.5 ms
@@ -98,7 +101,7 @@ function detectOnsets(buf: Float32Array, threshold: number, holdoffSamples: numb
 
 describe('drumseqz / Euclidean fill renders transients at expected step positions', () => {
   it('k=4 n=16 → 4 transients at 16th-note step indices 0/4/8/12 (one bar @ 120 BPM)', async () => {
-    const track = applyEuclideanToTrack(defaultTrack(), 4);
+    const track = applyEuclideanToTrack(defaultTrack(), 4).slice(0, PAGE_SIZE);
     const onTimes = track
       .map((c, i) => (c.on ? i * STEP_DUR_S : null))
       .filter((t): t is number => t !== null);
@@ -124,7 +127,10 @@ describe('drumseqz / Euclidean fill renders transients at expected step position
     expect(ks).toHaveLength(TRACK_COUNT);
     const expectedCounts = ks.map((k) => k);
 
-    const tracks = ks.map((k) => applyEuclideanToTrack(defaultTrack(), k));
+    // Slice each track to the first page (16 cells) — the post-pages PR
+    // repeats the Bjorklund pattern across every page, but this ART asserts
+    // the per-page count + transient timing.
+    const tracks = ks.map((k) => applyEuclideanToTrack(defaultTrack(), k).slice(0, PAGE_SIZE));
     for (let t = 0; t < TRACK_COUNT; t++) {
       const times = tracks[t]
         .map((c, i) => (c.on ? i * STEP_DUR_S : null))
@@ -152,7 +158,7 @@ describe('drumseqz / Euclidean fill renders transients at expected step position
     // pulse's onset relative to the first is identical at swing=0 and
     // swing=0.5 when both pulses straddle an even number of intervening steps
     // (the property the existing Sequencer relies on).
-    const track = applyEuclideanToTrack(defaultTrack(), 4);
+    const track = applyEuclideanToTrack(defaultTrack(), 4).slice(0, PAGE_SIZE);
     const flatTimes = track
       .map((c, i) => (c.on ? i * STEP_DUR_S : null))
       .filter((t): t is number => t !== null);

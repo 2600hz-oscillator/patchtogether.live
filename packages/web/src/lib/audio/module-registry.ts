@@ -46,6 +46,16 @@ export interface AudioModuleDef {
    * canvas DOM contract the flag flips on without further plumbing.
    */
   vizPassthrough?: boolean;
+  /**
+   * Attribution for modules that are direct ports of MIT-licensed open-source
+   * DSP code. Rendered as a subdued disclaimer at the bottom of the module
+   * card via <OssAttribution>. Set ONLY when the module's DSP/algorithm code
+   * is a port of an upstream OSS project — modules merely "inspired by" or
+   * named after an upstream module (no shared algorithm code) should NOT
+   * carry this attribution. See packages/dsp/src/*.ts header comments for
+   * the canonical port-vs-from-spec distinction.
+   */
+  ossAttribution?: { author: string };
   factory: AudioModuleFactory;
 }
 

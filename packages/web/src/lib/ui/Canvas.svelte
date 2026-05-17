@@ -10,6 +10,8 @@
     Background,
     Controls,
     MiniMap,
+    NodeToolbar,
+    Position,
     type Node as FlowNode,
     type Edge as FlowEdge,
     type Connection,
@@ -135,10 +137,23 @@
   import WarpsCard from '$lib/ui/modules/WarpsCard.svelte';
   // VEILS — quad VCA + soft-clip summing mix (Mutable Instruments archetype).
   import VeilsCard from '$lib/ui/modules/VeilsCard.svelte';
+  // BLADES — dual SVF VCF + COLOR overdrive + mix bus (Blades archetype).
+  import BladesCard from '$lib/ui/modules/BladesCard.svelte';
+  // STAGES — 6-segment cascadable function generator (Mutable Instruments Stages archetype).
+  import StagesCard from '$lib/ui/modules/StagesCard.svelte';
+  // CLOUDSEED — exact port of Ghost Note Audio CloudSeed reverb (MIT).
+  import CloudseedCard from '$lib/ui/modules/CloudseedCard.svelte';
+  // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
+  import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
+  // PONG — interactive game module (research prototype).
+  import PongCard from '$lib/ui/modules/PongCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
   import GroupCard from '$lib/ui/modules/GroupCard.svelte';
+  // LIVECODE — text-DSL module (no audio I/O); see /docs/modules/livecode.
+  import LivecodeCard from '$lib/ui/modules/LivecodeCard.svelte';
+  import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
@@ -157,6 +172,11 @@
     type PortLookupModule,
   } from '$lib/graph/group-actions';
   import type { ExposedPort, GroupData } from '$lib/graph/group-projection';
+  import {
+    nextGroupNameForNewGroup,
+    planDefaultGroupNames,
+    LEGACY_GROUP_PLACEHOLDER,
+  } from '$lib/graph/group-naming';
   import {
     extractSavedGroupPayload,
     resurrectSavedGroup,
@@ -195,6 +215,10 @@
     SAMSLOOP_TYPE,
     SAMSLOOP_LIMIT_MESSAGE,
   } from '$lib/multiplayer/samsloop-limits';
+  import {
+    nextDefaultName,
+    migrateAssignNames,
+  } from '$lib/multiplayer/module-naming';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
 
@@ -283,9 +307,15 @@
     peaks: PeaksCard,
     warps: WarpsCard,
     veils: VeilsCard,
+    blades: BladesCard,
+    stages: StagesCard,
+    cloudseed: CloudseedCard,
+    midiCvBuddy: MidiCvBuddyCard,
+    pong: PongCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
+    livecode: LivecodeCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);
@@ -429,6 +459,22 @@
   $effect(() => {
     return getDefaultSnapshotBus().subscribe((snap) => {
       snapshot = snap;
+      // Group-name migration runs any time a snapshot surfaces a group
+      // node whose label is blank or the legacy "GROUP!" placeholder.
+      // Triggered per-snapshot (rather than once-per-mount) so a second
+      // group added after the first migration still picks up a name.
+      // planDefaultGroupNames is no-op when every group already has a
+      // real label, so the steady-state cost is one cheap scan.
+      let needsMigration = false;
+      for (const n of snap.nodes) {
+        if (n.type !== 'group') continue;
+        const lbl = (n.data as { label?: unknown } | undefined)?.label;
+        if (typeof lbl !== 'string' || lbl.trim() === '' || lbl === LEGACY_GROUP_PLACEHOLDER) {
+          needsMigration = true;
+          break;
+        }
+      }
+      if (needsMigration) maybeMigrateGroupNames();
     });
   });
 
@@ -590,7 +636,9 @@
         };
         for (const [id, n] of Object.entries(nodes)) {
           if (!patch.nodes[id]) {
-            patch.nodes[id] = { id, type: n.type, domain: 'audio', position: n.position, params: n.params, data: n.data };
+            const autoName = nextDefaultName(patch.nodes, n.type);
+            const data = { ...(n.data ?? {}), name: autoName };
+            patch.nodes[id] = { id, type: n.type, domain: 'audio', position: n.position, params: n.params, data };
           }
         }
         const wires: Array<[string, string, string, string, 'pitch' | 'gate' | 'audio' | 'cv']> = [
@@ -1219,13 +1267,20 @@
     const ids = groupBuilderSelectionIds;
     const groupId = `group-${Math.random().toString(36).slice(2, 10)}`;
     const exposedPorts = buildExposedPorts({ selectedCandidates });
+    // If the user accepted the placeholder name, bump to the next free
+    // GROUP<N> slot so multiple groups in the same rack don't all show
+    // the same label. A real user-typed name passes through untouched.
+    const effectiveLabel =
+      label.trim().length === 0 || label === LEGACY_GROUP_PLACEHOLDER
+        ? nextGroupNameForNewGroup(patch.nodes)
+        : label;
     const plan = planCreateGroup({
       groupId,
       selectionIds: ids,
       exposedPorts,
       nodes: snapshot.nodes,
       edges: snapshot.edges,
-      label,
+      label: effectiveLabel,
     });
 
     ydoc.transact(() => {
@@ -1294,6 +1349,64 @@
       (target.data as { expanded?: boolean }).expanded = !current;
     }, LOCAL_ORIGIN);
     trace(`group ${groupId} expanded → ${!current}`);
+  }
+
+  /**
+   * Set a group's user-facing name. Empty/whitespace input falls back to
+   * the next free `GROUP<N>` slot so groups can never end up nameless.
+   * The label is stored on `data.label` (already round-tripped by every
+   * existing group code path — same field saved-group `payload.label`
+   * is derived from).
+   */
+  function renameGroup(groupId: string, rawName: string) {
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    const trimmed = rawName.trim();
+    const next =
+      trimmed.length === 0 || trimmed === LEGACY_GROUP_PLACEHOLDER
+        ? nextGroupNameForNewGroup(patch.nodes)
+        : trimmed;
+    const currentLabel =
+      typeof (group.data as { label?: unknown } | undefined)?.label === 'string'
+        ? ((group.data as { label?: string }).label ?? '').trim()
+        : '';
+    if (currentLabel === next) return;
+    ydoc.transact(() => {
+      const target = patch.nodes[groupId];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as { label?: string }).label = next;
+    }, LOCAL_ORIGIN);
+    trace(`renamed group ${groupId} → "${next}"`);
+  }
+
+  /**
+   * Assign `GROUP<N>` to every group that's currently nameless or stuck on
+   * the legacy "GROUP!" placeholder. Driven by the snapshot subscriber:
+   * the migration runs any time a snapshot exposes a group needing a name,
+   * so a second group added after the first migration still picks up a
+   * fresh slot. The plan is id-sorted so peers running concurrently
+   * produce identical assignments (Y.js conflict-resolution makes the
+   * writes idempotent).
+   */
+  function maybeMigrateGroupNames() {
+    const plan = planDefaultGroupNames(patch.nodes);
+    if (plan.length === 0) return;
+    ydoc.transact(() => {
+      for (const { groupId, name } of plan) {
+        const target = patch.nodes[groupId];
+        if (!target) continue;
+        // Mutate the existing data sub-object so syncedstore propagates the
+        // change through the Y.Map view. Replacing `data` wholesale would
+        // detach any references the caller (or test eval) is holding.
+        if (!target.data || typeof target.data !== 'object') {
+          target.data = { label: name };
+        } else {
+          (target.data as { label?: string }).label = name;
+        }
+      }
+    }, LOCAL_ORIGIN);
+    trace(`group-name migration: assigned default names to ${plan.length} group(s)`);
   }
 
   // Collapses every currently-expanded group. Wired to the floating
@@ -2114,10 +2227,15 @@
     // mode leaves it unattributed, matching the per-user-cap-skipped
     // behavior of the decision helpers). See
     // lib/multiplayer/picturebox-limits.ts and samsloop-limits.ts.
-    const initialData: Record<string, unknown> | undefined =
-      (type === PICTUREBOX_TYPE || type === SAMSLOOP_TYPE) && currentUserId
-        ? { creatorId: currentUserId }
-        : undefined;
+    //
+    // Auto-name: every spawn assigns the next-available <TYPE><N> name.
+    // The DSL evaluator + click-to-edit label both read node.data.name.
+    // See lib/multiplayer/module-naming.ts.
+    const autoName = nextDefaultName(patch.nodes, type);
+    const initialData: Record<string, unknown> = { name: autoName };
+    if ((type === PICTUREBOX_TYPE || type === SAMSLOOP_TYPE) && currentUserId) {
+      initialData.creatorId = currentUserId;
+    }
 
     // Insert-on-cable (Proposal B2): if the cursor is close to an
     // existing cable's midpoint AND the new module has a compatible
@@ -2133,7 +2251,7 @@
         domain,
         position: pos,
         params: {},
-        ...(initialData ? { data: initialData } : {}),
+        data: initialData,
       };
       if (splice) {
         delete patch.edges[splice.edge.id];
@@ -2162,9 +2280,9 @@
     // would surprise users who expect drag-to-front to win later.
     topNodeId = id;
     if (splice) {
-      trace(`spliced ${type} (${id}) into edge ${splice.edge.id}`);
+      trace(`spliced ${type} as ${autoName} (${id}) into edge ${splice.edge.id}`);
     } else {
-      trace(`spawned ${type} (${id})`);
+      trace(`spawned ${type} as ${autoName} (${id})`);
     }
     // Engine instantiation happens via the reconciler microtask.
     void ensureEngine();
@@ -2523,6 +2641,28 @@
     else root.removeAttribute('data-hovered-node');
   });
 
+  // ---------------- Module-name migration ----------------
+  // First-paint: if any existing node lacks a `data.name`, assign it the
+  // next-available <TYPE><N> default. Idempotent — re-runs are no-ops.
+  // Wraps in a transact so the assigned names show up as one Yjs update
+  // (single undo entry, one collaborative broadcast). The migration is
+  // ordered by node id so two clients running it concurrently land on
+  // identical names.
+  $effect(() => {
+    void snapshot; // re-check after snapshots arrive (e.g. multiplayer load)
+    let needs = 0;
+    for (const node of Object.values(patch.nodes)) {
+      if (!node) continue;
+      if (typeof node.data?.name === 'string') continue;
+      needs++;
+      if (needs > 0) break;
+    }
+    if (needs === 0) return;
+    ydoc.transact(() => {
+      migrateAssignNames(patch.nodes);
+    }, LOCAL_ORIGIN);
+  });
+
   // ---------------- MiniMap toggle ----------------
   let minimapOpen = $state(true);
 
@@ -2571,6 +2711,7 @@
       {nodeTypes}
       fitView
       colorMode="dark"
+      zoomOnDoubleClick={false}
       onconnect={handleConnect}
       onconnectstart={handleConnectStart}
       onconnectend={handleConnectEnd}
@@ -2601,6 +2742,24 @@
         />
       {/if}
       <FlowBridge bind:api={flowApi} />
+      <!-- Per-node editable name labels. Rendered as Svelte Flow
+           NodeToolbar instances anchored at the top of every card so
+           every module — old or new — gets the click-to-rename label
+           without each card having to opt in. The label sits ABOVE the
+           card chrome (Position.Top); a small offset keeps it from
+           overlapping the patch-panel triggers in the corners. -->
+      {#each flowNodes as fn (fn.id)}
+        <NodeToolbar
+          nodeId={fn.id}
+          position={Position.Top}
+          isVisible={true}
+          offset={4}
+        >
+          <div class="node-name-toolbar nodrag">
+            <ModuleNameLabel node={(fn.data as { node: import('$lib/graph/types').ModuleNode }).node} />
+          </div>
+        </NodeToolbar>
+      {/each}
     </SvelteFlow>
     <button
       type="button"
@@ -2672,6 +2831,7 @@
   onselect={spawnFromPalette}
   onorganize={organizeModules}
   oncreategroup={() => enterLassoMode(palettePos.x, palettePos.y)}
+  oninsertsavedgroup={currentUserId ? openSavedGroupsPicker : undefined}
   onclose={() => (paletteOpen = false)}
 />
 
@@ -2683,6 +2843,7 @@
   nodeType={ctxMenuNodeType}
   isGroup={ctxMenuNodeType === 'group'}
   groupExpanded={ctxMenuGroupExpanded}
+  canSaveGroup={Boolean(currentUserId) && ctxMenuNodeType === 'group'}
   ondelete={() => {
     if (!ctxMenuNodeId) return;
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
@@ -2694,7 +2855,14 @@
   ontoggleexpanded={() => ctxMenuNodeId && toggleGroupExpanded(ctxMenuNodeId)}
   oneditexposed={() => ctxMenuNodeId && openEditExposedJacks(ctxMenuNodeId)}
   onduplicategroup={() => ctxMenuNodeId && duplicateGroupAction(ctxMenuNodeId)}
+  onsavegroup={() => ctxMenuNodeId && void saveGroupToLibrary(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
+/>
+
+<SavedGroupsPicker
+  bind:open={savedGroupsPickerOpen}
+  oninsert={(sg) => insertSavedGroup(sg)}
+  onclose={() => (savedGroupsPickerOpen = false)}
 />
 
 <SelectionContextMenu
@@ -2948,6 +3116,16 @@
   .swatch.gate { background: var(--cable-gate); }
   .swatch.cv { background: var(--cable-cv); }
   .swatch.polyPitchGate { background: var(--cable-polyPitchGate); }
+  /* Per-node editable name label, rendered via NodeToolbar above each
+   * card. Mute background so the label reads as part of the card chrome
+   * without competing with the card's own title text. */
+  :global(.node-name-toolbar) {
+    background: rgba(14, 17, 22, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 2px 4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
   /* Video-domain swatches (Phase 0 spike). The CSS-class name shape
    * mirrors the cable-type id exactly so e.g. mono-video lines up
    * with --cable-mono-video without an extra mapping table. */

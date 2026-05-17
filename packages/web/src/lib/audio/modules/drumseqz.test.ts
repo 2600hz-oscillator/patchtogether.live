@@ -11,6 +11,7 @@ import {
   resolveStepVOct,
   defaultTrack,
   defaultTracks,
+  PAGE_SIZE,
   STEP_COUNT,
   TRACK_COUNT,
   coerceTracks,
@@ -63,8 +64,8 @@ describe('bjorklund', () => {
   });
 
   it('always emits exactly k pulses for 0 < k < n', () => {
-    for (let k = 1; k < STEP_COUNT; k++) {
-      const out = bjorklund(k, STEP_COUNT);
+    for (let k = 1; k < PAGE_SIZE; k++) {
+      const out = bjorklund(k, PAGE_SIZE);
       const sum = out.reduce((a, b) => a + b, 0);
       expect(sum, `k=${k}`).toBe(k);
     }
@@ -72,15 +73,27 @@ describe('bjorklund', () => {
 });
 
 describe('applyEuclideanToTrack (Eucl slider rewrite contract)', () => {
-  it('rewrites on flags from Bjorklund pattern', () => {
+  it('rewrites on flags from Bjorklund pattern (page 0)', () => {
     const blank = defaultTrack();
     const out = applyEuclideanToTrack(blank, 4);
-    expect(out.map((c) => (c.on ? 1 : 0))).toEqual([
+    // The 16-cell Bjorklund pattern repeats across every page (since pages-PR
+    // 128-step capacity). Page 0 matches the pre-pages expectation.
+    expect(out.slice(0, PAGE_SIZE).map((c) => (c.on ? 1 : 0))).toEqual([
       1, 0, 0, 0,
       1, 0, 0, 0,
       1, 0, 0, 0,
       1, 0, 0, 0,
     ]);
+  });
+
+  it('repeats the page-0 Bjorklund pattern across every page', () => {
+    const out = applyEuclideanToTrack(defaultTrack(), 4);
+    // Same per-page rhythm at the start of page 1 (steps 16..31) and page 7.
+    expect(out[16].on).toBe(true);
+    expect(out[20].on).toBe(true);
+    expect(out[24].on).toBe(true);
+    expect(out[28].on).toBe(true);
+    expect(out[112].on).toBe(true); // page 7, step 0
   });
 
   it('preserves per-step midi overrides while rewriting on flags', () => {
@@ -107,7 +120,7 @@ describe('applyEuclideanToTrack (Eucl slider rewrite contract)', () => {
     expect(out[3].midi).toBe(65);
   });
 
-  it('always returns a length-16 track', () => {
+  it('always returns a length-STEP_COUNT track', () => {
     expect(applyEuclideanToTrack([], 5)).toHaveLength(STEP_COUNT);
     expect(applyEuclideanToTrack(defaultTrack(), 5)).toHaveLength(STEP_COUNT);
   });

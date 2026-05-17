@@ -206,8 +206,10 @@ describe('default seed pitch is C3 for new modules', () => {
   });
 
   it('Sequencer defaultSteps seeds every step with midi=C3_MIDI', () => {
+    // Pre-pages PR this was 32; the sequencer now allocates 128 cells across
+    // 8 visible pages. Defaults still seed every cell with C3 + off.
     const steps = defaultSteps();
-    expect(steps).toHaveLength(32);
+    expect(steps).toHaveLength(128);
     for (const s of steps) {
       expect(s.midi).toBe(C3_MIDI);
       expect(s.on).toBe(false);

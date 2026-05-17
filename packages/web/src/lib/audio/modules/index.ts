@@ -46,6 +46,12 @@ import { ringsDef } from './rings';
 import { peaksDef } from './peaks';
 import { warpsDef } from './warps';
 import { veilsDef } from './veils';
+import { bladesDef } from './blades';
+import { stagesDef } from './stages';
+import { cloudseedDef } from './cloudseed';
+import { livecodeDef } from './livecode';
+import { midiCvBuddyDef } from './midi-cv-buddy';
+import { pongDef } from './pong';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -97,6 +103,12 @@ export function registerAudioModules(): void {
   registerModule(peaksDef);
   registerModule(warpsDef);
   registerModule(veilsDef);
+  registerModule(bladesDef);
+  registerModule(stagesDef);
+  registerModule(cloudseedDef);
+  registerModule(livecodeDef);
+  registerModule(midiCvBuddyDef);
+  registerModule(pongDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
