@@ -52,6 +52,7 @@ import { cloudseedDef } from './cloudseed';
 import { livecodeDef } from './livecode';
 import { midiCvBuddyDef } from './midi-cv-buddy';
 import { pongDef } from './pong';
+import { modtrisDef } from './modtris';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -109,6 +110,7 @@ export function registerAudioModules(): void {
   registerModule(livecodeDef);
   registerModule(midiCvBuddyDef);
   registerModule(pongDef);
+  registerModule(modtrisDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

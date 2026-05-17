@@ -81,6 +81,10 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // freeze the ball at a known position, or (b) the prototype is promoted
   // out of research/.
   pong: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
+  // MODTRIS research prototype: same rationale as PONG — falling pieces +
+  // gravity-driven state defeats deterministic single-frame capture. Unit +
+  // ART + E2E provide coverage.
+  modtris: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
