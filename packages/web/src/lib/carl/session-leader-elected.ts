@@ -45,6 +45,7 @@
 import type * as Y from 'yjs';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import { LOCAL_ORIGIN } from '$lib/graph/store';
+import { attemptBotSpawn, clearBotSession, readBotSession } from '$lib/bot/session-lock';
 
 export const CARL_SESSION_MAP_KEY = 'carlSession';
 export const CARL_LEADER_AWARENESS_FIELD = 'carlLeader';
@@ -97,6 +98,13 @@ export function attemptSpawn(
 ): boolean {
   const m = getCarlSessionMap(ydoc);
   if (m.get('active') === true) return false;
+  // Mike-era exclusivity: refuse if a different-kind bot (e.g. Mike) is
+  // already active in the shared bot-session map. Same-kind active or
+  // no active bot → proceed and write BOTH the legacy carlSession map
+  // (for back-compat readers) AND the shared botSession map (so peers
+  // running the new bot-aware code see Carl as the active bot).
+  const otherBot = readBotSession(ydoc);
+  if (otherBot?.active && otherBot.kind !== 'carl') return false;
   ydoc.transact(() => {
     m.set('ownerUserId', record.ownerUserId);
     m.set('ownerDisplayName', record.ownerDisplayName);
@@ -104,6 +112,20 @@ export function attemptSpawn(
     m.set('seed', record.seed);
     m.set('active', true);
   }, LOCAL_ORIGIN);
+  // Mirror to the shared bot lock. We don't gate on its return value
+  // because we've already verified non-conflict above; a `false` here
+  // would indicate a TOCTOU race where Mike spawned between the read
+  // and the write, in which case the next provider sync will rectify
+  // via Yjs's deterministic merge (Mike will win the bot-session map
+  // even though Carl's carlSession map shows active=true — and the UI
+  // reads from botSession so Mike is correctly displayed as the bot).
+  attemptBotSpawn(ydoc, {
+    kind: 'carl',
+    ownerUserId: record.ownerUserId,
+    ownerDisplayName: record.ownerDisplayName,
+    spawnedAt: record.spawnedAt,
+    seed: record.seed,
+  });
   return true;
 }
 
@@ -121,6 +143,10 @@ export function clearSession(ydoc: Y.Doc): void {
     m.delete('spawnedAt');
     m.delete('seed');
   }, LOCAL_ORIGIN);
+  // Mirror clear to the shared bot lock too, so Mike's spawn button
+  // re-enables in time for the next click.
+  const bot = readBotSession(ydoc);
+  if (bot?.kind === 'carl') clearBotSession(ydoc);
 }
 
 export function observeSession(
