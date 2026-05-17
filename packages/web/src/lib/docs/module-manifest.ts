@@ -141,6 +141,12 @@ const DESCRIPTIONS: Record<string, string> = {
     'Meta-modulator / signal masher (Mutable Instruments Warps archetype, Émilie Gillet, 2014, MIT-licensed). Clean-room pure-TypeScript port — four cross-modulation algorithms (0=XFADE equal-power crossfade, 1=RING-MOD digital ring modulation with TIMBRE drive, 2=XOR 16-bit bit-mash crossfaded against a 0.7-sum, 3=COMPARE Warps\' direct/threshold/window comparator suite). An internal carrier oscillator (sine / triangle / saw / square selectable via the SHAPE knob) drives the carrier path when carrier_in is unpatched, so the module is usable as a one-input ring modulator or with no inputs at all. PITCH is V/oct on the internal carrier; NOTE is a ±60-semitone offset. LEVEL 1 / LEVEL 2 scale the carrier and modulator inputs. Output is mono softclipped through x/(1+|x|). FOLD / ANALOG-RING / FREQUENCY-SHIFTER / DOPPLER / VOCODER algorithms deferred to a follow-up PR.',
   veils:
     'Quad VCA + soft-clip summing mix (Mutable Instruments Veils archetype — analog hardware, clean-room from-spec impl). Four independent VCAs, each with audio in, CV in (summed with knob), gain knob spanning [0, 2], and a per-channel response toggle: LIN for CV / control signals, EXP (squared) for audio / smooth fades. Per-channel direct outs are pre-mix, pre-clip. A separate MIX out sums all four channels and applies a tanh soft-clip — gain is NOT clamped at 1.0 per channel, so knob + CV can push above unity for warm overdrive on the mix bus.',
+  blades:
+    'Dual state-variable filter + COLOR overdrive + mix bus (Mutable Instruments Blades archetype). Blades is analog hardware with no firmware to port; this is a from-spec TypeScript implementation. Each of the two SVF cores has its own cutoff knob (20 Hz – 20 kHz, log fader), resonance knob (0..1, just shy of self-oscillation at the top), V/oct CV input (1 V per octave centered on the cutoff knob), audio-rate cutoff CV (±5 octaves at full deflection), and a mode toggle cycling LP → BP → HP. The global COLOR knob applies a tanh soft-clip pre-stage to each filter input — drive ranges 1× (clean) to 10× (heavily saturated) for the signature Blades grit. The MIX output toggles between PARALLEL (sum of both filters, soft-clipped) and SERIAL (filter1 → filter2 cascade, filter 2 ignores its own IN); the per-filter direct OUTs always track each filter operating on its own audio input independent of the mix routing. v1 ships LP/BP/HP modes; notch + linear-FM cutoff modulation deferred to follow-up.',
+  stages:
+    '6-segment cascadable function generator (Mutable Instruments Stages archetype, Émilie Gillet, 2017, MIT-licensed). Each segment selects a TYPE — RAMP (phase 0→1 over TIME seconds, shape-warped via the Tides-style curve from the C++ segment_generator), HOLD (constant LEVEL with shape-controlled portamento), or STEP (sample-and-hold of LEVEL on each gate rising edge). Adjacent segments can be LINKed via 5 boundary toggles to form multi-stage envelopes: a single RAMP→HOLD→RAMP chain reproduces an AHD envelope; chaining all 6 segments builds an AHDSR or arbitrary multi-stage curve. The leader segment of each chain group fires on its own GATE input; subsequent linked segments take over in sequence as each completes. A global TRIG input fires every chain group\'s leader at once. Each segment has its own CV output that mirrors its chain\'s current value, so any segment can be tapped. v1 ships TYPE + LINK + GATE + TRIG + per-segment CV inputs for primary + shape; Outliner / chord mode, the all-STEP tap-tempo grid mode, and looping LFO mode (with rate CV) are deferred to follow-up PRs.',
+  cloudseed:
+    'Exact algorithm port of Ghost Note Audio\'s CloudSeed reverb (MIT-licensed, github.com/GhostNoteAudio/CloudSeedCore). Stereo input cross-mixes then per-channel passes through: optional 1-pole HP + LP pre-EQ → modulated pre-delay → multitap early-reflection field (up to 256 taps, seed-deterministic) → AllpassDiffuser (up to 12 stages) → 12 parallel late-field DelayLine voices, each with optional in-loop AllpassDiffuser + LowShelf + HighShelf + LP, with T60-targeted feedback that produces a precise decay-seconds tail. Cross-seed control divides the L/R seeded delay layouts for stereo decorrelation. 45 parameters total — 7 macros (DRY / EARLY / LATE faders, INPUT MIX, LOW CUT, HIGH CUT, CROSS SEED) are exposed as AudioParams for CV summing; 38 toggle/integer/seed/modulation parameters live on the worklet\'s message port. Bundled v1 preset bank: DIVINE INSPIRATION (DarkPlate from Programs.h verbatim), SHORT ROOM, BRIGHT HALL, INFINITE PAD. Card footer cycles through the preset bank with click-numbered slots, prev/next arrows, and a live DECAY readout that reflects LateLineDecay\'s computed RT60.',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -366,6 +372,20 @@ const PORT_NOTES: Record<string, string> = {
   'rings.level_cv':  'CV → LEVEL (0..1) — soft-limited output gain.',
   'rings.odd':       'Primary output — odd-indexed mode sum (MODAL) or odd-tap string mix (SYMPATHETIC).',
   'rings.even':      'Secondary output — even-indexed mode sum / even-tap mix.',
+  // BLADES — dual SVF + COLOR + mix bus.
+  'blades.in1':         'Filter 1 audio input. Routed through the COLOR pre-stage tanh before filter 1.',
+  'blades.in2':         'Filter 2 audio input. Routed through the COLOR pre-stage tanh before filter 2. In SERIAL mix mode, in2 still drives out2 — only the mix bus ignores it.',
+  'blades.voct1':       '1 V/oct CV input for filter 1 cutoff. Sums in octaves on top of the cutoff knob.',
+  'blades.voct2':       '1 V/oct CV input for filter 2 cutoff.',
+  'blades.cutoff1_cv':  'Audio-rate cutoff CV for filter 1. ±1 = ±5 octaves around the cutoff knob — matches the simple FILTER module convention.',
+  'blades.cutoff2_cv':  'Audio-rate cutoff CV for filter 2.',
+  'blades.res1_cv':     'CV → resonance 1 (linear cvScale, sweeps 0..1).',
+  'blades.res2_cv':     'CV → resonance 2 (linear cvScale, sweeps 0..1).',
+  'blades.color_cv':    'CV → COLOR (linear cvScale, sweeps 0..1) — modulates pre-filter drive.',
+  'blades.mix_mode_cv': 'CV → mix mode (discrete cvScale; ≥0.5 = SERIAL, <0.5 = PARALLEL).',
+  'blades.out1':        'Filter 1 direct output (LP/BP/HP per mode1).',
+  'blades.out2':        'Filter 2 direct output (LP/BP/HP per mode2).',
+  'blades.mix':         'Mix bus output. PARALLEL: tanh(out1 + out2). SERIAL: tanh(filter2(filter1(in1))).',
   // WARPS — meta-modulator / signal masher.
   'warps.carrier_in':       'Audio carrier input. When patched, replaces the internal oscillator as the carrier signal feeding the selected Xmod algorithm.',
   'warps.modulator_in':     'Audio modulator input. Multiplied by LEVEL 2 before entering the Xmod algorithm.',
@@ -376,6 +396,32 @@ const PORT_NOTES: Record<string, string> = {
   'warps.level_1_cv':       'CV → LEVEL 1 (carrier-input gain).',
   'warps.level_2_cv':       'CV → LEVEL 2 (modulator-input gain).',
   'warps.out':              'Mono audio output, post-softlimit (x / (1 + |x|)).',
+  // STAGES — 6-segment cascadable function generator.
+  'stages.gate0': 'Per-segment gate input — rising edge fires segment 1\'s chain group, IFF segment 1 is its chain\'s leader. (Leader = first segment in any maximal run of LINKed adjacent segments.)',
+  'stages.gate1': 'Per-segment gate input for segment 2 — only fires the chain when segment 2 is a chain leader (i.e. not LINKed to segment 1).',
+  'stages.gate2': 'Per-segment gate input for segment 3 — same leader-only semantics as gate0/gate1.',
+  'stages.gate3': 'Per-segment gate input for segment 4 — same leader-only semantics as gate0/gate1.',
+  'stages.gate4': 'Per-segment gate input for segment 5 — same leader-only semantics as gate0/gate1.',
+  'stages.gate5': 'Per-segment gate input for segment 6 — same leader-only semantics as gate0/gate1.',
+  'stages.trig':  'Global trigger — rising edge fires every chain group\'s leader simultaneously. Useful for "reset all chains" patches.',
+  'stages.primary0_cv': 'CV → segment 1 primary knob (TIME for RAMP, LEVEL for HOLD/STEP).',
+  'stages.primary1_cv': 'CV → segment 2 primary knob.',
+  'stages.primary2_cv': 'CV → segment 3 primary knob.',
+  'stages.primary3_cv': 'CV → segment 4 primary knob.',
+  'stages.primary4_cv': 'CV → segment 5 primary knob.',
+  'stages.primary5_cv': 'CV → segment 6 primary knob.',
+  'stages.shape0_cv': 'CV → segment 1 SHAPE knob (phase warp for RAMP, portamento for HOLD/STEP).',
+  'stages.shape1_cv': 'CV → segment 2 SHAPE knob.',
+  'stages.shape2_cv': 'CV → segment 3 SHAPE knob.',
+  'stages.shape3_cv': 'CV → segment 4 SHAPE knob.',
+  'stages.shape4_cv': 'CV → segment 5 SHAPE knob.',
+  'stages.shape5_cv': 'CV → segment 6 SHAPE knob.',
+  'stages.out0': 'CV output for segment 1 — mirrors its chain group\'s current value (so any segment in the chain can be tapped).',
+  'stages.out1': 'CV output for segment 2 — mirrors chain value.',
+  'stages.out2': 'CV output for segment 3 — mirrors chain value.',
+  'stages.out3': 'CV output for segment 4 — mirrors chain value.',
+  'stages.out4': 'CV output for segment 5 — mirrors chain value.',
+  'stages.out5': 'CV output for segment 6 — mirrors chain value.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
@@ -779,6 +825,11 @@ export function buildModuleManifest(
     })
     .filter(({ file }) => {
       if (!file.endsWith('.ts') || file === 'index.ts') return false;
+      // iCloud / Dropbox-style sync-conflict siblings ("foo 2.ts", "bar 3.ts")
+      // are local-machine artifacts, not real module sources. They have a
+      // bare-int marker before the extension; the canonical sources never
+      // contain a space. Skipping by `' ' in basename` is safe + simple.
+      if (file.includes(' ')) return false;
       // Skip companion / test files — they live next to module sources but
       // aren't module definitions themselves.
       if (file.endsWith('.test.ts')) return false;
@@ -788,6 +839,10 @@ export function buildModuleManifest(
       // both ScopeCard.svelte and the cross-domain video bridge use).
       // Not a ModuleDef.
       if (file.endsWith('-draw.ts')) return false;
+      // -engine.ts: pure-math worklet-engine mirror (e.g. stages-engine.ts).
+      // Not a ModuleDef — exported only for the parallel module file's
+      // import + the tests / ART scenarios.
+      if (file.endsWith('-engine.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.
@@ -797,6 +852,9 @@ export function buildModuleManifest(
       // Shared lookahead-vs-sounding-now playhead helper used by Sequencer /
       // POLYSEQZ / DRUMSEQZ / SCORE / Cartesian. Not a ModuleDef.
       if (file === 'playhead-tracker.ts') return false;
+      // Shared per-user-view-state page-nav helpers (DRUMSEQZ / POLYSEQZ /
+      // MACSEQ / Sequencer). Not a ModuleDef.
+      if (file === 'sequencer-pages.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));

@@ -135,6 +135,12 @@
   import WarpsCard from '$lib/ui/modules/WarpsCard.svelte';
   // VEILS — quad VCA + soft-clip summing mix (Mutable Instruments archetype).
   import VeilsCard from '$lib/ui/modules/VeilsCard.svelte';
+  // BLADES — dual SVF VCF + COLOR overdrive + mix bus (Blades archetype).
+  import BladesCard from '$lib/ui/modules/BladesCard.svelte';
+  // STAGES — 6-segment cascadable function generator (Mutable Instruments Stages archetype).
+  import StagesCard from '$lib/ui/modules/StagesCard.svelte';
+  // CLOUDSEED — exact port of Ghost Note Audio CloudSeed reverb (MIT).
+  import CloudseedCard from '$lib/ui/modules/CloudseedCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -283,6 +289,9 @@
     peaks: PeaksCard,
     warps: WarpsCard,
     veils: VeilsCard,
+    blades: BladesCard,
+    stages: StagesCard,
+    cloudseed: CloudseedCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

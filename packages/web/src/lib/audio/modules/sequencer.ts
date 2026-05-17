@@ -68,10 +68,14 @@ export function coerceToSequencerStep(raw: unknown): Step {
 }
 
 export interface SequencerData {
-  steps: Step[]; // length 32
+  steps: Step[]; // length MAX_STEPS (128) — was 32 pre-pages PR.
 }
 
-export const STEP_COUNT = 32;
+// Visible capacity per page UI render = 16 (kept under PAGE_SIZE in
+// sequencer-pages.ts). STEP_COUNT is the data array capacity: 128 across
+// 8 pages of 16. Old saves with shorter steps[] arrays are widened on read
+// via coerceToSequencerStep + ensureCapacity in the card path.
+export const STEP_COUNT = 128;
 
 export function defaultSteps(): Step[] {
   return Array.from({ length: STEP_COUNT }, () => ({ on: false, midi: C3_MIDI, chord: 'mono' }));
@@ -140,7 +144,7 @@ export const sequencerDef: AudioModuleDef = {
   ],
   params: [
     { id: 'bpm',        label: 'BPM',  defaultValue: 120, min: 30,  max: 300,  curve: 'linear' },
-    { id: 'length',     label: 'Len',  defaultValue: 16,  min: 1,   max: 32,   curve: 'discrete' },
+    { id: 'length',     label: 'Len',  defaultValue: 16,  min: 1,   max: 128,  curve: 'discrete' },
     { id: 'octave',     label: 'Oct',  defaultValue: 0,   min: -2,  max: 2,    curve: 'discrete' },
     { id: 'gateLength', label: 'Gate', defaultValue: 0.5, min: 0.1, max: 0.95, curve: 'linear' },
     { id: 'swing',      label: 'Sw',   defaultValue: 0,   min: 0,   max: 0.75, curve: 'linear' },
@@ -461,7 +465,9 @@ export const sequencerDef: AudioModuleDef = {
           // Internal-BPM mode: classic two-clocks lookahead scheduler.
           while (nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
             const bpm = readParam('bpm', 120);
-            const length = Math.max(1, Math.round(readParam('length', 16)));
+            // Clamp to [1, STEP_COUNT] so a stale or out-of-range param
+            // never makes stepIndex sample past the data array.
+            const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 16))));
             const swing = readParam('swing', 0);
 
             const stepDurBase = 60 / bpm / 4; // 16th-note step

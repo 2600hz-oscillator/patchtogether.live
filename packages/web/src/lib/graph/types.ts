@@ -206,6 +206,34 @@ type StandardModuleType =
   // plus a tanh-soft-clipped sum mix out. Gain knobs span [0, 2] so
   // knob+CV can push past unity into warm overdrive.
   | 'veils'
+  // BLADES — dual state-variable VCF + COLOR overdrive + mix bus
+  // (Mutable Instruments Blades archetype, analog hardware → from-spec
+  // TS implementation). Two independent SVF cores each with LP/BP/HP
+  // mode + V/oct CV + cutoff CV + resonance CV; global COLOR knob
+  // tanh-soft-clips the input pre-filter for the signature grit; mix
+  // bus toggles PARALLEL (sum) vs SERIAL (filter1 → filter2).
+  | 'blades'
+  // STAGES — 6-segment cascadable function generator (Mutable Instruments
+  // Stages archetype, Émilie Gillet, 2017, MIT-licensed). Clean-room TS
+  // port: 6 segments, each with a TYPE select (RAMP / HOLD / STEP), a
+  // primary knob (TIME for RAMP; LEVEL for HOLD/STEP), and a SHAPE knob
+  // (phase warp for RAMP; portamento for HOLD/STEP). Adjacent segments
+  // can be LINKed via 5 boundary bits to form multi-stage envelopes (AHD,
+  // AHDSR, longer arbitrary shapes). Each segment has its own GATE input
+  // and CV output; a global TRIG input re-fires every chain's leader.
+  // v1 ships TYPE + LINK + GATE + TRIG; Outliner / chord-mode / looping
+  // LFO mode deferred to follow-up.
+  | 'stages'
+  // CLOUDSEED — exact algorithm port of Ghost Note Audio CloudSeed reverb
+  // (MIT-licensed). Stereo input → cross-mix → per-channel: optional pre-EQ
+  // HP/LP → modulated pre-delay → multitap early field → AllpassDiffuser
+  // (up to 12 stages) → 12 parallel late-field DelayLine voices each with
+  // optional in-loop AllpassDiffuser + LowShelf + HighShelf + LP. Exposes
+  // 7 macro AudioParams (DRY/EARLY/LATE/INPUT_MIX/LOW_CUT/HIGH_CUT/CROSS_SEED)
+  // + 38 message-port params (toggles, integer counts, seeds, modulation
+  // knobs). Bundled v1 preset bank: DIVINE INSPIRATION (DarkPlate from
+  // the C++ Programs.h verbatim), SHORT ROOM, BRIGHT HALL, INFINITE PAD.
+  | 'cloudseed'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.

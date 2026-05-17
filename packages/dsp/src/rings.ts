@@ -222,6 +222,7 @@ class RingsProcessor extends AudioWorkletProcessor {
 
   private modal = new RingsModal();
   private symp = new RingsSympatheticStrings();
+  private modalPlucker = new Plucker();
   private lastStrum = 0;
   private cfgCounter = 0;
 
@@ -283,14 +284,19 @@ class RingsProcessor extends AudioWorkletProcessor {
       this.modal.setPosition(pClamp);
 
       const risingEdge = strum >= 0.5 && this.lastStrum < 0.5;
-      if (risingEdge) this.symp.triggerStrum(sr);
+      if (risingEdge) {
+        this.symp.triggerStrum(sr);
+        // Self-excite MODAL too: a short noise burst (~10ms) so STRUM produces
+        // sound regardless of whether an external exciter is patched.
+        this.modalPlucker.trigger(Math.floor(0.01 * sr));
+      }
       this.lastStrum = strum;
 
       let odd: number;
       let even: number;
       if (modelIdx === 0) {
-        const inj = risingEdge ? 0.25 : 0;
-        [odd, even] = this.modal.process(exc + inj);
+        const burst = this.modalPlucker.next();
+        [odd, even] = this.modal.process(exc + burst);
       } else {
         [odd, even] = this.symp.process(exc, pClamp, sr);
       }

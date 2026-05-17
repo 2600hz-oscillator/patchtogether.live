@@ -17,12 +17,15 @@
   import { patch, ydoc } from '$lib/graph/store';
   import {
     STEP_COUNT,
+    PAGE_SIZE,
     coerceSteps,
     defaultSteps,
     MODEL_NAMES,
     MACRO_MAX_MODEL,
     type MacseqStep,
   } from '$lib/audio/modules/macseq';
+  import SequencerPageNav from '$lib/ui/modules/SequencerPageNav.svelte';
+  import { visiblePageFor, pageRange } from '$lib/audio/modules/sequencer-pages';
   import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName } from '$lib/audio/note-entry';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
@@ -41,7 +44,7 @@
   });
 
   let bpm        = $derived((void cardVersion, node?.params.bpm        ?? 120));
-  let length     = $derived((void cardVersion, node?.params.length     ?? STEP_COUNT));
+  let length     = $derived((void cardVersion, node?.params.length     ?? 16));
   let octave     = $derived((void cardVersion, node?.params.octave     ?? 0));
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.5));
   let isPlaying  = $derived((void cardVersion, (node?.params.isPlaying ?? 0) >= 0.5));
@@ -68,6 +71,12 @@
 
   // Visual playhead (sounding now, not next-to-be-scheduled).
   let currentStep = $state(0);
+  // Per-user view state. Local Svelte state — see sequencer-pages.ts header.
+  let userPage = $state(0);
+  let hold = $state(false);
+  let visiblePage = $derived(visiblePageFor(userPage, currentStep, length, hold));
+  let pageStart = $derived(pageRange(visiblePage).start);
+
   let raf: number | null = null;
   $effect(() => {
     function tickFrame() {
@@ -204,7 +213,9 @@
     { id: 'clock',   label: 'CLOCK',    cable: 'gate' },
   ];
 
-  // Default steps for when the data slot has not yet been populated.
+  // Default steps for when the data slot has not yet been populated. The
+  // length check tolerates legacy short arrays — coerceSteps will pad them
+  // out to STEP_COUNT on read.
   let displayedSteps = $derived(steps.length === STEP_COUNT ? steps : defaultSteps());
 </script>
 
@@ -224,9 +235,20 @@
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="page-nav-row">
+      <SequencerPageNav
+        length={length}
+        currentStep={currentStep}
+        userPage={userPage}
+        hold={hold}
+        testIdPrefix={`macseq-${id}`}
+        onUserPageChange={(p) => (userPage = p)}
+        onHoldChange={(h) => (hold = h)}
+      />
+    </div>
     <div class="grid-area">
       <div class="grid" data-testid={`macseq-grid-${id}`}>
-        {#each Array.from({ length: STEP_COUNT }, (_, i) => i) as i (i)}
+        {#each Array.from({ length: PAGE_SIZE }, (_, c) => pageStart + c) as i (i)}
           <div class="cell" data-step={i} class:active={i === currentStep && isPlaying}>
             <div class="step-num">{i + 1}</div>
             <NoteEntry
@@ -259,7 +281,7 @@
 
     <div class="fader-row">
       <Fader value={bpm}        min={30}  max={300}  defaultValue={120} label="BPM"  curve="linear"   onchange={set('bpm')}        readLive={live('bpm')} />
-      <Fader value={length}     min={1}   max={STEP_COUNT}  defaultValue={STEP_COUNT}  label="Len"  curve="discrete" onchange={set('length')}     readLive={live('length')} />
+      <Fader value={length}     min={1}   max={STEP_COUNT}  defaultValue={16}          label="Len"  curve="discrete" onchange={set('length')}     readLive={live('length')} />
       <Fader value={octave}     min={-2}  max={2}    defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}     readLive={live('octave')} />
       <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} readLive={live('gateLength')} />
     </div>
@@ -302,7 +324,13 @@
     border-color: var(--cable-cv);
   }
   .grid-area {
-    margin: 18px 22px 8px;
+    margin: 6px 22px 8px;
+  }
+  .page-nav-row {
+    margin: 12px 22px 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
   }
   .grid {
     display: grid;

@@ -25,15 +25,23 @@
   let level      = $derived(node?.params.level      ?? defaultFor('level'));
 
   const MAX_MODEL = RINGS_MODEL_NAMES.length - 1;
-  let modelLabel = $derived(
-    RINGS_MODEL_NAMES[Math.max(0, Math.min(RINGS_MODEL_NAMES.length - 1, Math.round(model)))]
-  );
+  function clampModel(v: number): number {
+    return Math.max(0, Math.min(MAX_MODEL, Math.round(v)));
+  }
+  let modelLabel = $derived(RINGS_MODEL_NAMES[clampModel(model)]);
 
   const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, k);
   };
+
+  function cycleModel(): void {
+    const cur = clampModel(model);
+    const next = (cur + 1) % (MAX_MODEL + 1);
+    const t = patch.nodes[id];
+    if (t) t.params.model = next;
+  }
 
   const inputs: PortDescriptor[] = [
     { id: 'in',        cable: 'audio' },
@@ -56,11 +64,18 @@
 <div class="mod-card rings-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <header class="title">RINGS</header>
-  <div class="model-readout" data-testid="rings-model-name">{modelLabel}</div>
+  <button
+    type="button"
+    class="model-btn"
+    data-testid="rings-model-btn"
+    onclick={cycleModel}
+  >
+    <span class="model-btn-label">Model</span>
+    <span class="model-btn-value" data-testid="rings-model-name">{modelLabel}</span>
+  </button>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={model}      min={0}   max={MAX_MODEL} defaultValue={0}    label="Model"      curve="discrete" onchange={set('model')}      readLive={live('model')} />
       <Fader value={note}       min={-60} max={60}        defaultValue={0}    label="Note"       units="st" curve="linear" onchange={set('note')}       readLive={live('note')} />
       <Fader value={structure}  min={0}   max={1}         defaultValue={0.25} label="Structure"  curve="linear" onchange={set('structure')}  readLive={live('structure')} />
       <Fader value={brightness} min={0}   max={1}         defaultValue={0.5}  label="Brightness" curve="linear" onchange={set('brightness')} readLive={live('brightness')} />
@@ -78,13 +93,31 @@
     font-size: 0.85rem;
     letter-spacing: 0.04em;
   }
-  .rings-card .model-readout {
-    text-align: center;
+  .rings-card .model-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: calc(100% - 24px);
+    margin: 2px 12px 4px;
+    border: 1px solid var(--border, #555);
+    background: var(--bg-elevated, #1a1a1a);
+    color: var(--text, #eee);
+    padding: 4px 10px;
+    font-family: var(--font-display, monospace);
     font-size: 0.7rem;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  .rings-card .model-btn:hover {
+    background: var(--bg-hover, #2a2a2a);
+  }
+  .rings-card .model-btn-label {
     color: var(--text-muted, #999);
-    margin-top: -2px;
-    margin-bottom: 2px;
+  }
+  .rings-card .model-btn-value {
+    color: var(--text, #eee);
+    font-weight: 600;
   }
   .rings-card .fader-row {
     margin-top: 10px;

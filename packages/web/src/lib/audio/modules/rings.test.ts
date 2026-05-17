@@ -3,7 +3,7 @@
 // Unit tests for RINGS: module-def shape; pure-math engine sanity.
 
 import { describe, expect, it } from 'vitest';
-import { ringsDef, ringsMath, RINGS_MAX_MODEL, type RingsParams } from './rings';
+import { ringsDef, ringsMath, RINGS_MAX_MODEL, RINGS_MODEL_NAMES, type RingsParams } from './rings';
 
 describe('ringsDef shape', () => {
   it('declares type=rings, label=RINGS, category=sources', () => {
@@ -199,6 +199,68 @@ describe('ringsMath — SYMPATHETIC_STRING model', () => {
     }
     expect(peakO).toBeLessThanOrEqual(1.0);
     expect(peakE).toBeLessThanOrEqual(1.0);
+  });
+});
+
+describe('ringsMath — STRUM self-excites both models', () => {
+  it('STRUM with no external exciter + MODAL produces non-silent output', () => {
+    const modalParams: RingsParams = {
+      ...baseParams, model: 0, structure: 0.3, damping: 0.2, position: 0.0,
+    };
+    // Strum at sample 0, run ~50ms (longer than the 10ms burst so the resonator
+    // has time to ring out). Pass null exciter so any output must come from the
+    // self-excite burst.
+    const n = Math.floor(SR * 0.05);
+    const { odd, even } = ringsMath.render(n, SR, 0.75, modalParams, null, 0);
+    let peakOdd = 0;
+    let peakEven = 0;
+    for (let i = 0; i < n; i++) {
+      expect(Number.isFinite(odd[i]!)).toBe(true);
+      expect(Number.isFinite(even[i]!)).toBe(true);
+      if (Math.abs(odd[i]!)  > peakOdd)  peakOdd  = Math.abs(odd[i]!);
+      if (Math.abs(even[i]!) > peakEven) peakEven = Math.abs(even[i]!);
+    }
+    // At least one channel must be audibly above the silence floor.
+    expect(Math.max(peakOdd, peakEven)).toBeGreaterThan(0.01);
+  });
+
+  it('STRUM with no external exciter + SYMPATHETIC still works', () => {
+    const sympParams: RingsParams = { ...baseParams, model: 1, damping: 0.1 };
+    const n = Math.floor(SR * 0.05);
+    const { odd, even } = ringsMath.render(n, SR, 0.75, sympParams, null, 0);
+    let peak = 0;
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(Math.abs(odd[i]!), Math.abs(even[i]!));
+      if (a > peak) peak = a;
+    }
+    expect(peak).toBeGreaterThan(0.01);
+  });
+
+  it('no STRUM + MODAL + no exciter → silent (control)', () => {
+    const modalParams: RingsParams = { ...baseParams, model: 0 };
+    const n = Math.floor(SR * 0.05);
+    const { odd, even } = ringsMath.render(n, SR, 0.75, modalParams, null, -1);
+    let peak = 0;
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(Math.abs(odd[i]!), Math.abs(even[i]!));
+      if (a > peak) peak = a;
+    }
+    expect(peak).toBeLessThan(1e-6);
+  });
+});
+
+describe('RINGS model name table', () => {
+  it('lists MODAL then SYMPATHETIC', () => {
+    expect(RINGS_MODEL_NAMES[0]).toBe('MODAL');
+    expect(RINGS_MODEL_NAMES[1]).toBe('SYMPATHETIC');
+  });
+
+  it('cycling logic wraps 0 → 1 → 0', () => {
+    // Mirrors the cycleModel() function in RingsCard.svelte.
+    const MAX = RINGS_MAX_MODEL;
+    const next = (v: number): number => (v + 1) % (MAX + 1);
+    expect(next(0)).toBe(1);
+    expect(next(1)).toBe(0);
   });
 });
 

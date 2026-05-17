@@ -14,6 +14,13 @@
     coerceToSequencerStep,
     type Step,
   } from '$lib/audio/modules/sequencer';
+  import SequencerPageNav from '$lib/ui/modules/SequencerPageNav.svelte';
+  import {
+    PAGE_SIZE,
+    visiblePageFor,
+    pageRange,
+    ensureCapacity,
+  } from '$lib/audio/modules/sequencer-pages';
   import { type ChordQuality, nextChordQuality } from '$lib/audio/poly';
   import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName } from '$lib/audio/note-entry';
@@ -52,11 +59,18 @@
   let swing      = $derived((void cardVersion, node?.params.swing      ?? 0));
   let isPlaying  = $derived((void cardVersion, (node?.params.isPlaying ?? 0) >= 0.5));
 
+  // Widen to STEP_COUNT capacity on read so the page-nav can address page
+  // 1..7 even when the persisted steps[] array is shorter (e.g. legacy
+  // 32-cell saves). Backward-compat: legacy slots 0..N preserved; tail
+  // padded with empty {on:false, midi:C3, chord:'mono'} steps.
   let steps = $derived.by<Step[]>(() => {
     void cardVersion;
     const raw = (node?.data as Record<string, unknown> | undefined)?.steps;
-    if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToSequencerStep);
-    return defaultSteps();
+    if (!Array.isArray(raw)) return defaultSteps();
+    return ensureCapacity<Step>(
+      (raw as unknown[]).map(coerceToSequencerStep),
+      () => coerceToSequencerStep(null),
+    );
   });
 
   const set = (k: string) => (v: number) => {
@@ -73,6 +87,12 @@
 
   // --- Visual current step indicator (polled from engine) ---
   let currentStep = $state(0);
+  // Per-user view state. Local Svelte state — see sequencer-pages.ts header.
+  let userPage = $state(0);
+  let hold = $state(false);
+  let visiblePage = $derived(visiblePageFor(userPage, currentStep, length, hold));
+  let pageStart = $derived(pageRange(visiblePage).start);
+
   let raf: number | null = null;
   $effect(() => {
     function tickFrame() {
@@ -171,30 +191,33 @@
     return true;
   }
 
-  // Sequencer is linear: cellRows=1, cols=STEP_COUNT. Arrows clamp at the
-  // edges (no wrap). Up from a pitch input lands on the gate of the same step
-  // (gate is rendered above pitch). Up from a gate clamps (top of grid).
-  const NAV_SPEC = { cols: STEP_COUNT, cellRows: 1 };
+  // Sequencer is linear: cellRows=1, cols=PAGE_SIZE. Arrows clamp at the
+  // edges of the visible page (no wrap, no page-cross — use the < / > nav
+  // buttons for that). Up from a pitch input lands on the gate of the same
+  // step (gate is rendered above pitch). Up from a gate clamps (top of grid).
+  const NAV_SPEC = { cols: PAGE_SIZE, cellRows: 1 };
 
   function handleNav(e: KeyboardEvent, stepIdx: number, role: 'pitch' | 'gate'): boolean {
-    const max = STEP_COUNT - 1;
+    const col = stepIdx - pageStart;
+    const minStep = pageStart;
+    const maxStep = pageStart + PAGE_SIZE - 1;
     if (
       e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
       e.key === 'ArrowUp'   || e.key === 'ArrowDown'
     ) {
-      const next = resolveArrowNav({ index: stepIdx, role }, e.key as ArrowKey, NAV_SPEC);
+      const next = resolveArrowNav({ index: col, role }, e.key as ArrowKey, NAV_SPEC);
       if (!next) return false;
-      return focusCell(next.index, next.role);
+      return focusCell(pageStart + next.index, next.role);
     }
     if (e.key === 'Enter' && role === 'pitch') {
       // Commit happens in NoteEntry; advance to next pitch.
-      tick().then(() => focusCell(Math.min(max, stepIdx + 1), 'pitch'));
+      tick().then(() => focusCell(Math.min(maxStep, stepIdx + 1), 'pitch'));
       return true;
     }
     if (e.key === 'Tab') {
       const dir = e.shiftKey ? -1 : 1;
       const next = stepIdx + dir;
-      if (next < 0 || next > max) return false; // let browser tab out
+      if (next < minStep || next > maxStep) return false; // let browser tab out
       return focusCell(next, role);
     }
     return false;
@@ -291,8 +314,20 @@
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
+  <div class="page-nav-row">
+    <SequencerPageNav
+      length={length}
+      currentStep={currentStep}
+      userPage={userPage}
+      hold={hold}
+      testIdPrefix={`sequencer-${id}`}
+      onUserPageChange={(p) => (userPage = p)}
+      onHoldChange={(h) => (hold = h)}
+    />
+  </div>
   <div class="grid" bind:this={gridEl} data-testid={`seq-grid-${id}`}>
-    {#each steps.slice(0, STEP_COUNT) as step, i (i)}
+    {#each steps.slice(pageStart, pageStart + PAGE_SIZE) as step, c (pageStart + c)}
+      {@const i = pageStart + c}
       <div class="cell-slot" data-step={i}>
         <div class="cell-num">{i + 1}</div>
         <NoteEntry
@@ -329,7 +364,7 @@
 
   <div class="fader-row">
     <Fader value={bpm}        min={30}  max={300} defaultValue={120} label="BPM"  curve="linear" onchange={set('bpm')}        readLive={live('bpm')} />
-    <Fader value={length}     min={1}   max={32}  defaultValue={16}  label="Len"  curve="discrete" onchange={set('length')}   readLive={live('length')} />
+    <Fader value={length}     min={1}   max={128} defaultValue={16}  label="Len"  curve="discrete" onchange={set('length')}   readLive={live('length')} />
     <Fader value={octave}     min={-2}  max={2}   defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}   readLive={live('octave')} />
     <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear" onchange={set('gateLength')} readLive={live('gateLength')} />
     <Fader value={swing}      min={0}   max={0.75} defaultValue={0}  label="SWG"  curve="linear" onchange={set('swing')}     readLive={live('swing')} />
@@ -385,8 +420,14 @@
     color: #1a1d23;
     border-color: var(--cable-gate);
   }
+  .page-nav-row {
+    margin: 12px 22px 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+  }
   .grid {
-    margin: 30px 22px 12px;
+    margin: 8px 22px 12px;
     display: grid;
     grid-template-columns: repeat(16, 1fr);
     gap: 3px;

@@ -74,14 +74,14 @@ describe('coerceStep', () => {
 });
 
 describe('coerceSteps', () => {
-  it('returns default 16-length array for non-array input', () => {
+  it('returns default STEP_COUNT-length array for non-array input', () => {
     expect(coerceSteps(null)).toHaveLength(STEP_COUNT);
     expect(coerceSteps(undefined)).toHaveLength(STEP_COUNT);
     expect(coerceSteps({})).toHaveLength(STEP_COUNT);
     expect(coerceSteps(coerceSteps(null))).toEqual(defaultSteps());
   });
 
-  it('pads short arrays to length 16', () => {
+  it('pads short arrays to length STEP_COUNT (preserves existing slots)', () => {
     const out = coerceSteps([{ on: true, midi: 60, model: 0 }]);
     expect(out).toHaveLength(STEP_COUNT);
     expect(out[0]).toEqual({ on: true, midi: 60, model: 0 });
@@ -90,8 +90,22 @@ describe('coerceSteps', () => {
     }
   });
 
-  it('truncates over-long arrays to length 16', () => {
-    const raw = Array.from({ length: 32 }, () => ({ on: true, midi: 60, model: 1 }));
+  it('backward-compat: a length-16 saved array widens to STEP_COUNT with empty tail', () => {
+    // Pre-pages PR saved 16 steps; old patches must load without losing data
+    // (slots 0..15 preserved, 16..127 default-empty).
+    const old = Array.from({ length: 16 }, (_, i) => ({ on: i % 2 === 0, midi: 60 + i, model: 0 }));
+    const out = coerceSteps(old);
+    expect(out).toHaveLength(STEP_COUNT);
+    for (let i = 0; i < 16; i++) {
+      expect(out[i], `legacy step ${i}`).toEqual({ on: i % 2 === 0, midi: 60 + i, model: 0 });
+    }
+    for (let i = 16; i < STEP_COUNT; i++) {
+      expect(out[i], `widened tail step ${i}`).toEqual(defaultStep());
+    }
+  });
+
+  it('truncates over-long arrays to STEP_COUNT', () => {
+    const raw = Array.from({ length: STEP_COUNT + 16 }, () => ({ on: true, midi: 60, model: 1 }));
     const out = coerceSteps(raw);
     expect(out).toHaveLength(STEP_COUNT);
   });
@@ -221,8 +235,15 @@ describe('macseqDef (module def shape)', () => {
     expect(p?.defaultValue).toBe(0);
   });
 
-  it('has 16 steps (STEP_COUNT)', () => {
-    expect(STEP_COUNT).toBe(16);
-    expect(defaultSteps()).toHaveLength(16);
+  it('has 128 steps (STEP_COUNT) — page-nav PR widened capacity', () => {
+    expect(STEP_COUNT).toBe(128);
+    expect(defaultSteps()).toHaveLength(128);
+  });
+
+  it('length param: max=128, default=16 (1 page of audible steps)', () => {
+    const p = macseqDef.params.find((x) => x.id === 'length');
+    expect(p?.max).toBe(128);
+    expect(p?.defaultValue).toBe(16);
+    expect(p?.min).toBe(1);
   });
 });

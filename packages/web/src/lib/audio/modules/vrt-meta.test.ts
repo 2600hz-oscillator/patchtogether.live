@@ -58,6 +58,10 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   warps: 'VRT baseline pending; ART + unit + E2E provide coverage.',
   // VEILS quad-VCA: VRT baseline pending; ART + unit + E2E provide coverage.
   veils: 'VRT baseline pending; ART + unit + E2E provide coverage',
+  // CLOUDSEED first-slice PR: VRT baseline pending; complex card (4 panels
+  // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
+  // into MODULES + capture darwin/linux baselines in a follow-up PR.
+  cloudseed: 'VRT baseline pending; complex card; ART + unit + E2E provide coverage.',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
@@ -77,6 +81,13 @@ const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // SAMSLOOP first-slice PR: same situation — darwin baseline committed,
   // linux pending. Remove when the linux baseline lands.
   'linux/samsloop',
+  // BLADES first-slice PR: darwin baseline committed, linux pending —
+  // CI capture in a follow-up PR. Remove when the linux baseline lands.
+  'linux/blades',
+  // STAGES first-slice PR: darwin baseline committed; linux pending.
+  // The linux VRT job is `continue-on-error: true` so this does not
+  // block the PR gate. Remove when the linux baseline lands.
+  'linux/stages',
 ]);
 
 function repoRoot(): string {
