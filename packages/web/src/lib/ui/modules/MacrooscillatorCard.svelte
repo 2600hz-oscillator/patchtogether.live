@@ -7,6 +7,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
@@ -72,6 +73,7 @@
       <Fader value={level}     min={0}   max={1}  defaultValue={0.8} label="Level"     curve="linear" onchange={set('level')}     readLive={live('level')} />
     </div>
   </PatchPanel>
+  <OssAttribution author={macrooscillatorDef.ossAttribution?.author} />
 </div>
 
 <style>

@@ -10,6 +10,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import {
@@ -126,6 +127,7 @@
       {/each}
     </div>
   </PatchPanel>
+  <OssAttribution author={stagesDef.ossAttribution?.author} />
 </div>
 
 <style>
