@@ -6,9 +6,20 @@
   import AudioGate from '$lib/ui/AudioGate.svelte';
   import FeedbackBox from '$lib/ui/FeedbackBox.svelte';
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
-  import { ydoc } from '$lib/graph/store';
+  import { ydoc, patch } from '$lib/graph/store';
   import { makeEnvelope } from '$lib/graph/persistence';
   import { attachProvider } from '$lib/multiplayer/provider';
+  import { createCarlController, type CarlController } from '$lib/carl/controller';
+  import { buildCatalogFromRegistry } from '$lib/carl/catalog';
+  import {
+    attemptSpawn as attemptCarlSpawn,
+    clearSession as clearCarlSession,
+    observeSession as observeCarlSession,
+    publishOwnerClientId,
+    isOrphaned,
+    type CarlSessionRecord,
+  } from '$lib/carl/session-ephemeral';
+  import { evictCarlPatch } from '$lib/carl/driver';
   import {
     resolvePresenceUser,
     getOrCreateAnonTabId,
@@ -138,6 +149,102 @@
       data.rackspace.ownerUserId === data.currentUserId,
   );
 
+  // ---------- Rackspace Carl (Approach A: Ephemeral) ----------
+  //
+  // - Spawn/86 buttons are visible ONLY for authed users (data.isAnon=false).
+  // - At most one Carl per rackspace; exclusivity enforced via a Y.Map
+  //   record (see lib/carl/session-ephemeral.ts).
+  // - Tick loop runs in the SPAWNER'S tab; when they close it, the
+  //   session record stays but the loop dies. Other peers see the
+  //   spawner's awareness drop after ~30s and can "force 86".
+  let carlSession = $state<CarlSessionRecord | null>(null);
+  let carlController: CarlController | null = $state(null);
+  let carlOrphaned = $state(false);
+
+  // Subscribe to session changes. Fires once on subscribe with the
+  // current value, then on every observe tick.
+  $effect(() => {
+    if (!data.isMember) return;
+    return observeCarlSession(ydoc, (rec) => {
+      carlSession = rec;
+    });
+  });
+
+  // Owner-side: when our session record is present and WE are the owner,
+  // run the tick loop. Tearing down on either condition flipping false
+  // stops the loop synchronously.
+  $effect(() => {
+    if (!data.currentUserId) return;
+    if (!carlSession) return;
+    if (carlSession.ownerUserId !== data.currentUserId) return;
+    const catalog = buildCatalogFromRegistry();
+    const ctrl = createCarlController({
+      catalog,
+      driver: { patch, ydoc },
+      seed: carlSession.seed,
+      baseTickMs: 600, // human-pace; 1-2 actions per second.
+    });
+    ctrl.start();
+    carlController = ctrl;
+    return () => {
+      ctrl.stop();
+      carlController = null;
+    };
+  });
+
+  // Non-owners (or post-tab-close detection): poll Y.Awareness once a
+  // second to determine whether the spawner is still present. If not,
+  // surface the "force 86" affordance.
+  $effect(() => {
+    if (!carlSession) {
+      carlOrphaned = false;
+      return;
+    }
+    if (carlSession.ownerUserId === data.currentUserId) {
+      // We're the owner — by definition not orphaned.
+      carlOrphaned = false;
+      return;
+    }
+    const tick = () => {
+      carlOrphaned = isOrphaned(ydoc, provider);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  });
+
+  // Owner-side: stamp our clientID into the session map AFTER spawn so
+  // other peers can detect "the spawner has dropped" via awareness.
+  $effect(() => {
+    if (!carlController) return;
+    if (!provider?.awareness) return;
+    const clientId = provider.awareness.clientID;
+    publishOwnerClientId(ydoc, clientId);
+  });
+
+  function spawnCarl() {
+    if (!data.currentUserId) return;
+    if (carlSession) return;
+    const displayName = presenceUser?.displayName ?? data.currentUserId.slice(0, 8);
+    const seed = Math.floor(Date.now() % 0x7fffffff);
+    attemptCarlSpawn(ydoc, {
+      ownerUserId: data.currentUserId,
+      ownerDisplayName: displayName,
+      spawnedAt: Date.now(),
+      seed,
+    });
+  }
+
+  function evictCarl() {
+    if (!carlSession) return;
+    // Stop our own controller if we're the owner (the effect's teardown
+    // also runs once carlSession flips to null, but stopping eagerly
+    // avoids a 1-tick race where the loop sees a stale session).
+    carlController?.stop();
+    evictCarlPatch({ patch, ydoc }, 'carl');
+    clearCarlSession(ydoc);
+  }
+
   function resetSession() {
     if (!sharedClock) return;
     const ok = window.confirm(
@@ -250,7 +357,55 @@
           ></span>
         {/each}
       </span>
+      {#if carlSession}
+        <span
+          class="carl-indicator"
+          data-testid="carl-indicator"
+          title={`Carl spawned by ${carlSession.ownerDisplayName} at ${new Date(carlSession.spawnedAt).toLocaleTimeString()}`}
+        >
+          <span class="carl-dot" aria-hidden="true"></span>
+          Carl by {carlSession.ownerDisplayName}
+        </span>
+      {/if}
       <span class="bar-spacer"></span>
+      {#if !data.isAnon}
+        {#if !carlSession}
+          <button
+            class="carl-btn carl-spawn"
+            data-testid="carl-spawn-button"
+            onclick={spawnCarl}
+            title="Spawn Carl — a chaos musician bot that plays with the patch"
+          >
+            spawn carl
+          </button>
+        {:else if carlSession.ownerUserId === data.currentUserId}
+          <button
+            class="carl-btn carl-evict"
+            data-testid="carl-evict-button"
+            onclick={evictCarl}
+            title="Stop Carl and remove his modules"
+          >
+            86 carl
+          </button>
+        {:else if carlOrphaned}
+          <button
+            class="carl-btn carl-evict"
+            data-testid="carl-evict-button"
+            onclick={evictCarl}
+            title={`Carl's spawner (${carlSession.ownerDisplayName}) has dropped off — clear the session`}
+          >
+            86 carl (orphaned)
+          </button>
+        {:else}
+          <span
+            class="carl-btn carl-disabled"
+            data-testid="carl-spawn-disabled"
+            title={`Carl is already in this rackspace (spawned by ${carlSession.ownerDisplayName})`}
+          >
+            carl is here
+          </span>
+        {/if}
+      {/if}
       {#if data.isAnon}
         <button
           class="share sign-in"
@@ -374,6 +529,51 @@
   }
   .bar-spacer {
     flex: 1;
+  }
+  .carl-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: #14171c;
+    border: 1px solid #404652;
+    color: var(--text);
+    font-family: ui-monospace, monospace;
+    font-size: 0.7rem;
+  }
+  .carl-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--cable-gate, #f97316);
+    box-shadow: 0 0 6px var(--cable-gate, #f97316);
+  }
+  .carl-btn {
+    background: #2a2f3a;
+    color: var(--text);
+    border: 1px solid #404652;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+  }
+  .carl-btn:hover {
+    background: #353a47;
+  }
+  .carl-btn.carl-spawn {
+    border-color: var(--cable-gate, #f97316);
+    color: var(--cable-gate, #f97316);
+  }
+  .carl-btn.carl-evict {
+    border-color: var(--cable-cv, #3b82f6);
+    color: var(--cable-cv, #3b82f6);
+  }
+  .carl-btn.carl-disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
   .reset-session {
     background: transparent;

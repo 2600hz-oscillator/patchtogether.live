@@ -4,10 +4,18 @@
   import '$lib/ui/modules/_module-card.css';
   import { ClerkProvider } from 'svelte-clerk';
   import { page } from '$app/state';
-  import { ydoc } from '$lib/graph/store';
+  import { ydoc, patch } from '$lib/graph/store';
   import { attachProvider } from '$lib/multiplayer/provider';
   import { createSharedClock } from '$lib/audio/shared-clock.svelte';
   import { setActiveSharedClock } from '$lib/audio/modules/lfo';
+  import {
+    attemptSpawn as carlAttemptSpawn,
+    clearSession as carlClearSession,
+    readCarlSession,
+  } from '$lib/carl/session-ephemeral';
+  import { buildCatalogFromRegistry } from '$lib/carl/catalog';
+  import { createCarlController, type CarlController } from '$lib/carl/controller';
+  import { evictCarlPatch } from '$lib/carl/driver';
 
   let { data, children } = $props();
 
@@ -160,6 +168,48 @@
     // remaining delta is whether their `epoch_ms` agrees (the property
     // we actually want to assert). Returns null until the shared clock
     // has converged + has a published epoch.
+    // Rackspace Carl — Approach A dev hooks so e2e tests can drive the
+    // session API + tick loop against `/` (no Clerk required).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let _carlController: CarlController | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__carlAttemptSpawn = (
+      ownerUserId: string,
+      displayName: string,
+      seed?: number,
+    ) => {
+      return carlAttemptSpawn(ydoc, {
+        ownerUserId,
+        ownerDisplayName: displayName,
+        spawnedAt: Date.now(),
+        seed: seed ?? Math.floor(Date.now() % 0x7fffffff),
+      });
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__carlReadSession = () => readCarlSession(ydoc);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__carlClearSession = () => carlClearSession(ydoc);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__carlStartLoop = (opts?: { seed?: number; baseTickMs?: number }) => {
+      if (_carlController) return false;
+      const catalog = buildCatalogFromRegistry();
+      _carlController = createCarlController({
+        catalog,
+        driver: { patch, ydoc },
+        seed: opts?.seed,
+        baseTickMs: opts?.baseTickMs ?? 150, // faster in tests
+      });
+      _carlController.start();
+      return true;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__carlStopLoop = () => {
+      _carlController?.stop();
+      _carlController = null;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__carlEvictPatch = () => evictCarlPatch({ patch, ydoc }, 'carl');
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).__lfoPhaseAt = async (nodeId: string, sharedTimeMs: number) => {
       const clock = _sharedClockRef;
