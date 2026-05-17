@@ -27,10 +27,26 @@
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
+  import GroupExposedControls from '$lib/ui/GroupExposedControls.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   let groupData = $derived(node?.data as unknown as GroupData | undefined);
+
+  // Phase 4 — re-render the exposed-controls block whenever any patch
+  // mutation lands. Reading the children's params live (rather than
+  // snapshotting on mount) is essential so a remote peer toggling an
+  // exposed sequencer's play state updates the group's button instantly.
+  let cardVersion = $state(0);
+  $effect(() => {
+    const h = () => { cardVersion = cardVersion + 1; };
+    ydoc.on('update', h);
+    return () => ydoc.off('update', h);
+  });
+  let hasExposedControls = $derived.by(() => {
+    void cardVersion;
+    return (groupData?.exposedControls?.length ?? 0) > 0;
+  });
 
   function descriptor(ep: ExposedPort): PortDescriptor {
     return {
@@ -322,6 +338,9 @@
             data-child-id={vc.id}
           ></div>
         {/each}
+        {#if hasExposedControls && node}
+          <GroupExposedControls group={node} {cardVersion} />
+        {/if}
       </div>
     {:else}
       <div class="group-body">
@@ -348,6 +367,9 @@
           >{label}</div>
         {/if}
         <div class="group-children-count">{childCount} module{childCount === 1 ? '' : 's'}</div>
+        {#if hasExposedControls && node}
+          <GroupExposedControls group={node} {cardVersion} />
+        {/if}
       </div>
     {/if}
   </PatchPanel>

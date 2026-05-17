@@ -50,6 +50,18 @@ export const timelordeDef: AudioModuleDef = {
     { id: 'isPlaying',   label: 'Play',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
   ],
 
+  // Module-grouping Phase 4 — surface every knob (BPM / Swing / Src) so a
+  // containing GROUP! can opt to expose any subset on its bar. The play
+  // toggle is intentionally NOT exposable here because TIMELORDE's local
+  // play UI hides itself whenever an external clock is patched; the same
+  // gating logic would have to be ported into the group bar to avoid
+  // surprises. v1 covers knobs only; the button can be added later.
+  exposableControls: [
+    { id: 'bpm',         label: 'BPM',   kind: 'knob', paramId: 'bpm' },
+    { id: 'swingAmount', label: 'Swing', kind: 'knob', paramId: 'swingAmount' },
+    { id: 'swingSource', label: 'Src',   kind: 'knob', paramId: 'swingSource' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

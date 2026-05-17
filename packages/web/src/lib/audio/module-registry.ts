@@ -8,6 +8,30 @@
 import type { ModuleDef, ModuleType, ParamDef, PortDef, Domain } from '$lib/graph/types';
 import type { AudioModuleFactory } from './engine';
 
+/**
+ * Module-grouping Phase 4 — exposed controls.
+ *
+ * A module declares its "exposable" controls so a containing group can opt
+ * into surfacing them on the group's bar. Buttons (e.g. sequencer play/stop)
+ * and knobs (e.g. TIMELORDE rate/swing) are the v1 kinds. The id is a stable
+ * key the user-side group config saves; `paramId` names the underlying
+ * number param the control writes to. Buttons read/write the same param as
+ * a 0/1 toggle (>=0.5 = on); knobs reuse the same min/max/curve as the
+ * ParamDef on the def.
+ */
+export interface ExposableControl {
+  /** Stable id, unique within a single module def. Used as the key in
+   *  GroupData.exposedControls entries; rename = data migration. */
+  id: string;
+  /** Display label shown next to the control on the group's bar. */
+  label: string;
+  /** What primitive renders this control. v1: 'button' or 'knob'. */
+  kind: 'button' | 'knob';
+  /** The underlying param this control reads/writes. Must reference an
+   *  entry in this def's `params` array. */
+  paramId: string;
+}
+
 /** Audio-domain module def carries an audio factory. */
 export interface AudioModuleDef {
   type: ModuleType;
@@ -56,6 +80,13 @@ export interface AudioModuleDef {
    * the canonical port-vs-from-spec distinction.
    */
   ossAttribution?: { author: string };
+  /**
+   * Module-grouping Phase 4 — the set of controls a containing GROUP! can
+   * opt into surfacing on its bar. When omitted/empty, the module has no
+   * group-exposable controls (its UI lives entirely on its own card).
+   * v1 coverage: sequencer play/stop + TIMELORDE knobs.
+   */
+  exposableControls?: readonly ExposableControl[];
   factory: AudioModuleFactory;
 }
 
