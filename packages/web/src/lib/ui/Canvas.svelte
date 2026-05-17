@@ -169,6 +169,11 @@
   } from '$lib/graph/group-actions';
   import type { ExposedPort, GroupData } from '$lib/graph/group-projection';
   import {
+    nextGroupNameForNewGroup,
+    planDefaultGroupNames,
+    LEGACY_GROUP_PLACEHOLDER,
+  } from '$lib/graph/group-naming';
+  import {
     extractSavedGroupPayload,
     resurrectSavedGroup,
   } from '$lib/graph/saved-group-resurrect';
@@ -448,6 +453,16 @@
   $effect(() => {
     return getDefaultSnapshotBus().subscribe((snap) => {
       snapshot = snap;
+      // Group-name migration runs once per mount, the first time we see a
+      // snapshot that actually contains group nodes. By that point the
+      // provider (if any) has synced enough state that the migration is
+      // operating on the real doc, not an empty starter snapshot. The
+      // migration helper guards itself with `groupNameMigrationRan` so
+      // subsequent snapshots are no-ops.
+      if (!groupNameMigrationRan) {
+        const hasAnyGroup = snap.nodes.some((n) => n.type === 'group');
+        if (hasAnyGroup) maybeMigrateGroupNames();
+      }
     });
   });
 
@@ -1240,13 +1255,20 @@
     const ids = groupBuilderSelectionIds;
     const groupId = `group-${Math.random().toString(36).slice(2, 10)}`;
     const exposedPorts = buildExposedPorts({ selectedCandidates });
+    // If the user accepted the placeholder name, bump to the next free
+    // GROUP<N> slot so multiple groups in the same rack don't all show
+    // the same label. A real user-typed name passes through untouched.
+    const effectiveLabel =
+      label.trim().length === 0 || label === LEGACY_GROUP_PLACEHOLDER
+        ? nextGroupNameForNewGroup(patch.nodes)
+        : label;
     const plan = planCreateGroup({
       groupId,
       selectionIds: ids,
       exposedPorts,
       nodes: snapshot.nodes,
       edges: snapshot.edges,
-      label,
+      label: effectiveLabel,
     });
 
     ydoc.transact(() => {
@@ -1315,6 +1337,61 @@
       (target.data as { expanded?: boolean }).expanded = !current;
     }, LOCAL_ORIGIN);
     trace(`group ${groupId} expanded → ${!current}`);
+  }
+
+  /**
+   * Set a group's user-facing name. Empty/whitespace input falls back to
+   * the next free `GROUP<N>` slot so groups can never end up nameless.
+   * The label is stored on `data.label` (already round-tripped by every
+   * existing group code path — same field saved-group `payload.label`
+   * is derived from).
+   */
+  function renameGroup(groupId: string, rawName: string) {
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    const trimmed = rawName.trim();
+    const next =
+      trimmed.length === 0 || trimmed === LEGACY_GROUP_PLACEHOLDER
+        ? nextGroupNameForNewGroup(patch.nodes)
+        : trimmed;
+    const currentLabel =
+      typeof (group.data as { label?: unknown } | undefined)?.label === 'string'
+        ? ((group.data as { label?: string }).label ?? '').trim()
+        : '';
+    if (currentLabel === next) return;
+    ydoc.transact(() => {
+      const target = patch.nodes[groupId];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as { label?: string }).label = next;
+    }, LOCAL_ORIGIN);
+    trace(`renamed group ${groupId} → "${next}"`);
+  }
+
+  /**
+   * One-shot migration: assign `GROUP<N>` to every group that's currently
+   * nameless or stuck on the legacy "GROUP!" placeholder. Runs once per
+   * Canvas mount after we've observed at least one snapshot — by then any
+   * provider sync has had a chance to populate patch.nodes. The plan is
+   * id-sorted so peers running the migration concurrently produce
+   * identical assignments (Y.js conflict-resolution makes the resulting
+   * writes idempotent).
+   */
+  let groupNameMigrationRan = false;
+  function maybeMigrateGroupNames() {
+    if (groupNameMigrationRan) return;
+    const plan = planDefaultGroupNames(patch.nodes);
+    groupNameMigrationRan = true;
+    if (plan.length === 0) return;
+    ydoc.transact(() => {
+      for (const { groupId, name } of plan) {
+        const target = patch.nodes[groupId];
+        if (!target) continue;
+        if (!target.data) target.data = {};
+        (target.data as { label?: string }).label = name;
+      }
+    }, LOCAL_ORIGIN);
+    trace(`group-name migration: assigned default names to ${plan.length} group(s)`);
   }
 
   // Collapses every currently-expanded group. Wired to the floating
