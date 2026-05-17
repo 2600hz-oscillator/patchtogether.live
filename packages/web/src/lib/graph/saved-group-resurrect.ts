@@ -75,14 +75,25 @@ export function extractSavedGroupPayload(args: ExtractSavedGroupArgs): Extracted
     : 'GROUP!';
   const exposedPorts: ExposedPort[] = data.exposedPorts.map((p) => ({ ...p }));
 
+  // Phase 4 — round-trip exposed controls. Entries that reference a missing
+  // child are silently dropped (defensive — extract should never see one
+  // because the group's childIds + nodes lists are consistent at save time).
+  const exposedControlsSrc = data.exposedControls ?? [];
+  const exposedControls = exposedControlsSrc
+    .filter((ec) => childIdSet.has(ec.childId))
+    .map((ec) => ({ childId: ec.childId, controlId: ec.controlId }));
+
+  const payload: SavedGroupPayload = {
+    label,
+    exposedPorts,
+    children,
+    internalEdges,
+  };
+  if (exposedControls.length > 0) payload.exposedControls = exposedControls;
+
   return {
     label,
-    payload: {
-      label,
-      exposedPorts,
-      children,
-      internalEdges,
-    },
+    payload,
   };
 }
 
@@ -184,6 +195,21 @@ export function resurrectSavedGroup(args: ResurrectSavedGroupArgs): ResurrectSav
     exposedPorts: newExposed,
     expanded: false,
   };
+  // Phase 4: rewrite each exposedControl's childId to the freshly-minted
+  // copy. Entries that lost their child (defensive — shouldn't happen
+  // because the payload's children + exposedControls are saved together)
+  // are dropped silently.
+  const incomingControls = args.payload.exposedControls;
+  if (Array.isArray(incomingControls) && incomingControls.length > 0) {
+    const remapped = incomingControls
+      .map((ec) => {
+        const newChildId = oldToNew.get(ec.childId);
+        if (!newChildId) return null;
+        return { childId: newChildId, controlId: ec.controlId };
+      })
+      .filter((x): x is { childId: string; controlId: string } => x !== null);
+    if (remapped.length > 0) newGroupData.exposedControls = remapped;
+  }
   const newGroup: ModuleNode = {
     id: newGroupId,
     type: 'group',

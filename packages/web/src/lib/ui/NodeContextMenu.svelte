@@ -30,6 +30,9 @@
     /** Module-grouping Phase 2B — re-open the group builder for an
      *  existing group, pre-checking currently-exposed ports. */
     oneditexposed?: () => void;
+    /** Module-grouping Phase 4 — open the exposed-controls picker
+     *  modal for a group. */
+    onconfigurecontrols?: () => void;
     /** Module-grouping Phase 2C — duplicate group + every child with
      *  fresh ids + cascade offset. */
     onduplicategroup?: () => void;
@@ -57,6 +60,7 @@
     onungroup,
     ontoggleexpanded,
     oneditexposed,
+    onconfigurecontrols,
     onduplicategroup,
     onsavegroup,
     canSaveGroup = false,
@@ -108,6 +112,10 @@
     oneditexposed?.();
     onclose();
   }
+  function pickConfigureControls() {
+    onconfigurecontrols?.();
+    onclose();
+  }
   function pickDuplicateGroup() {
     onduplicategroup?.();
     onclose();
@@ -151,6 +159,14 @@
         data-testid="ctx-edit-exposed"
       >
         Edit exposed patch jacks…
+      </button>
+      <button
+        class="ctx-item"
+        onclick={pickConfigureControls}
+        role="menuitem"
+        data-testid="ctx-configure-controls"
+      >
+        Configure exposed controls…
       </button>
       <button
         class="ctx-item"

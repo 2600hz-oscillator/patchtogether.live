@@ -43,6 +43,23 @@ export interface ExposedPort {
 }
 
 /**
+ * Module-grouping Phase 4 — exposed controls.
+ *
+ * A control surfaced from a child module onto the group's bar. The pair
+ * `{childId, controlId}` references an entry in the child module def's
+ * `exposableControls` list. The group renderer reads the def at render
+ * time so any future control kinds (e.g. mode toggles, faders) flow
+ * through without touching this schema. Sister to ExposedPort but for
+ * UI controls instead of patch jacks.
+ */
+export interface ExposedControl {
+  /** The child module instance owning the control. */
+  childId: string;
+  /** Stable id of the exposable control on the child def. */
+  controlId: string;
+}
+
+/**
  * A group node's `data` shape. `childIds` records membership so a follow-up
  * Ungroup can iterate them; `parentGroupId` on each child node also encodes
  * the inverse pointer for fast canvas-side filtering.
@@ -54,6 +71,9 @@ export interface GroupData {
   /** Phase 2: when true, the group renders its children in place instead of
    *  collapsing them. Phase 1 always collapses. */
   expanded?: boolean;
+  /** Phase 4: per-(childId, controlId) opt-ins surfaced on the group bar.
+   *  Empty/omitted = nothing surfaced. */
+  exposedControls?: ExposedControl[];
 }
 
 /**
@@ -70,7 +90,7 @@ function asGroupData(data: unknown): GroupData | null {
   const d = data as Partial<GroupData>;
   if (!Array.isArray(d.exposedPorts)) return null;
   if (!Array.isArray(d.childIds)) return null;
-  return {
+  const out: GroupData = {
     label: typeof d.label === 'string' ? d.label : undefined,
     childIds: d.childIds.filter((x): x is string => typeof x === 'string'),
     exposedPorts: d.exposedPorts.filter((p): p is ExposedPort => {
@@ -85,6 +105,14 @@ function asGroupData(data: unknown): GroupData | null {
     }),
     expanded: d.expanded === true,
   };
+  if (Array.isArray(d.exposedControls)) {
+    out.exposedControls = d.exposedControls.filter((c): c is ExposedControl => {
+      if (!c || typeof c !== 'object') return false;
+      const ec = c as Partial<ExposedControl>;
+      return typeof ec.childId === 'string' && typeof ec.controlId === 'string';
+    });
+  }
+  return out;
 }
 
 /**

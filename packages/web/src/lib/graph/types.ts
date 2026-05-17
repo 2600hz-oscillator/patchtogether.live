@@ -255,7 +255,12 @@ type StandardModuleType =
   // PONG — interactive game module (research prototype). CV paddles in,
   // gate scores out. Single-user in this slice; multi-user wiring
   // documented in docs/design/game-modules.md.
-  | 'pong';
+  | 'pong'
+  // MODTRIS — Tetris-clone game module (research prototype). 5 gate inputs
+  // (rotate L/R, drop, move L/R), 2 gate outputs (line_cleared, overfill).
+  // Single-user in this slice; multi-user via 30 Hz awareness snapshot is
+  // a follow-up per docs/design/game-modules.md §2.
+  | 'modtris';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
