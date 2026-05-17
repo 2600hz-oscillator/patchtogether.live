@@ -107,7 +107,7 @@ test('CLOUDSEED survives macro-knob sweeps without console errors', async ({ pag
     [
       { id: 'a-vco', type: 'analogVco', position: { x: 60,  y: 60 } },
       { id: 'a-cs',  type: 'cloudseed', position: { x: 360, y: 60 } },
-      { id: 'a-out', type: 'audioOut',  position: { x: 760, y: 60 } },
+      { id: 'a-out', type: 'audioOut',  position: { x: 1300, y: 60 } },
     ],
     [
       { id: 'e1', from: { nodeId: 'a-vco', portId: 'saw' },   to: { nodeId: 'a-cs',  portId: 'in_l' } },
@@ -140,9 +140,12 @@ test('CLOUDSEED survives macro-knob sweeps without console errors', async ({ pag
   }
 
   // Also toggle the panel-pill switches — exercises the message-port path.
+  // force-click bypasses any neighbour overlap on Playwright's hit-test
+  // (the cloudseed card is wide; the audio-out's fader-row can shadow
+  // adjacent UI in the layout).
   const pills = ['cs-tap-enabled', 'cs-diff-enabled', 'cs-late-diffuse-enabled', 'cs-eq-low', 'cs-eq-high', 'cs-eq-lp', 'cs-loc-enabled', 'cs-hic-enabled'];
   for (const t of pills) {
-    await page.locator(`[data-testid="${t}"]`).click();
+    await page.locator(`[data-testid="${t}"]`).click({ force: true });
     await page.waitForTimeout(40);
   }
 
