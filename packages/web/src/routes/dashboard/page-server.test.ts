@@ -88,7 +88,7 @@ describe('dashboard load — saved-groups fallback', () => {
     listRackspacesForUserMock.mockResolvedValue([]);
     listSavedGroupsForUserMock.mockRejectedValue('plain string boom');
 
-    const out = await load(makeEvent());
+    const out = (await load(makeEvent())) as { savedGroups: unknown[] };
 
     expect(out.savedGroups).toEqual([]);
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -107,7 +107,7 @@ describe('dashboard load — saved-groups fallback', () => {
     };
     listSavedGroupsForUserMock.mockResolvedValue([sg]);
 
-    const out = await load(makeEvent());
+    const out = (await load(makeEvent())) as { savedGroups: unknown[] };
 
     expect(out.savedGroups).toEqual([sg]);
     expect(warnSpy).not.toHaveBeenCalled();
