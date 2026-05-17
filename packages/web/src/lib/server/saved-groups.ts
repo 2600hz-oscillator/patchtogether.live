@@ -13,7 +13,7 @@
 
 import { sql } from './db.js';
 import type { Edge, ModuleNode } from '$lib/graph/types';
-import type { ExposedPort } from '$lib/graph/group-projection';
+import type { ExposedControl, ExposedPort } from '$lib/graph/group-projection';
 
 /** Hard cap on label length (DB CHECK enforces 1..64 too). */
 export const SAVED_GROUP_LABEL_MAX = 64;
@@ -36,6 +36,9 @@ export interface SavedGroupPayload {
   /** Edges with both endpoints inside the group. Endpoints reference
    *  childIds within this payload. */
   internalEdges: Edge[];
+  /** Module-grouping Phase 4: exposed controls on the group bar. Optional
+   *  for backward-compat with payloads saved before Phase 4 shipped. */
+  exposedControls?: ExposedControl[];
 }
 
 export interface SavedGroup {
