@@ -146,6 +146,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // visual game state on the card. Sits in Hybrid alongside the other
   // audio-engine-bound modules that also draw rich visuals.
   pong: { top: 'Hybrid', sub: 'Hybrid' },
+  // MODTRIS — research-prototype Tetris-clone game module. Gate-in controls
+  // + gate-out events. Same bucket as PONG.
+  modtris: { top: 'Hybrid', sub: 'Hybrid' },
   // Meta-domain organizational tools live here — they don't fit
   // cleanly under audio or video and the user can re-bucket on dev.
   sticky: { top: 'Hybrid', sub: 'Hybrid' },
