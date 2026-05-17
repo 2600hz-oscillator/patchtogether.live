@@ -14,7 +14,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('polyseqz: drop module → 32-cell grid renders + defaults shown', async ({ page }) => {
+test('polyseqz: drop module → 16-cell page-0 grid renders + defaults shown', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
@@ -22,10 +22,14 @@ test('polyseqz: drop module → 32-cell grid renders + defaults shown', async ({
     { id: 'p', type: 'polyseqz', params: { isPlaying: 0 } },
   ]);
 
+  // Post-pages PR the grid renders one page (16 cell-slots) at a time. Each
+  // .cell-slot carries data-step; its inner badges also carry data-step.
+  // Count .cell-slot wrappers specifically so the assertion isn't sensitive
+  // to badge-count drift.
   const cells = await page
-    .locator('[data-testid="polyseqz-grid-p"] [data-step]')
+    .locator('[data-testid="polyseqz-grid-p"] .cell-slot')
     .count();
-  expect(cells).toBeGreaterThanOrEqual(32);
+  expect(cells).toBe(16);
 
   // Default for every quality badge is 'maj'.
   await expect(page.getByTestId('polyseqz-quality-p-0')).toHaveAttribute('data-quality', 'maj');
