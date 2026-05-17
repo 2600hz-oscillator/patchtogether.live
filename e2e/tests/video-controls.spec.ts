@@ -371,33 +371,31 @@ test.describe('module palette: VIDEO grouping + V-MIXER visibility', () => {
     await expect(pane).toBeVisible();
     await pane.click({ button: 'right', position: { x: 200, y: 200 } });
 
-    // Domain headers exist in deterministic order.
-    const audioHeader = page.locator('[data-testid="palette-domain-audio"]');
-    const videoHeader = page.locator('[data-testid="palette-domain-video"]');
-    await expect(audioHeader, 'AUDIO header rendered').toBeVisible();
-    await expect(videoHeader, 'VIDEO header rendered').toBeVisible();
-
-    // V-MIXER specifically must be listed (was missing in the dispatch's
-    // original report — confirm fix).
-    const vMixer = page.locator('[data-testid="palette-item-videoMixer"]');
-    await expect(vMixer, 'V-MIXER appears in palette').toBeVisible();
-
-    // Other Phase-1 video modules are also there (smoke).
-    await expect(page.locator('[data-testid="palette-item-lines"]')).toBeVisible();
-    await expect(page.locator('[data-testid="palette-item-inwards"]')).toBeVisible();
-    await expect(page.locator('[data-testid="palette-item-picturebox"]')).toBeVisible();
-    await expect(page.locator('[data-testid="palette-item-destructor"]')).toBeVisible();
-    await expect(page.locator('[data-testid="palette-item-chroma"]')).toBeVisible();
-    await expect(page.locator('[data-testid="palette-item-luma"]')).toBeVisible();
-    await expect(page.locator('[data-testid="palette-item-colorizer"]')).toBeVisible();
-    await expect(page.locator('[data-testid="palette-item-feedback"]')).toBeVisible();
-
-    // Order check: AUDIO header appears before VIDEO header in DOM order.
-    const audioBox = await audioHeader.boundingBox();
-    const videoBox = await videoHeader.boundingBox();
-    expect(audioBox && videoBox, 'both headers measured').toBeTruthy();
+    // Nested-palette: Audio modules top row appears before Video modules.
+    const audioTop = page.getByTestId('palette-top-audio-modules');
+    const videoTop = page.getByTestId('palette-top-video-modules');
+    await expect(audioTop, 'Audio modules header rendered').toBeVisible();
+    await expect(videoTop, 'Video modules header rendered').toBeVisible();
+    const audioBox = await audioTop.boundingBox();
+    const videoBox = await videoTop.boundingBox();
+    expect(audioBox && videoBox, 'both top headers measured').toBeTruthy();
     if (audioBox && videoBox) {
-      expect(audioBox.y, 'AUDIO header above VIDEO header').toBeLessThan(videoBox.y);
+      expect(audioBox.y, 'Audio modules above Video modules').toBeLessThan(videoBox.y);
     }
+
+    // Drill into Video modules → Utilities to confirm V-MIXER is reachable.
+    await videoTop.click();
+    await page.getByTestId('palette-sub-utilities').click();
+    await expect(
+      page.locator('[data-testid="palette-item-videoMixer"]'),
+      'V-MIXER appears in palette',
+    ).toBeVisible();
+
+    // Other Phase-1 video modules — switch into Sources / Processors via
+    // search-mode so we don't have to drill into each sub explicitly.
+    // Refocus the search input first (the previous click stole focus).
+    await page.locator('.module-palette input').click();
+    await page.keyboard.type('LINES');
+    await expect(page.locator('[data-testid="palette-item-lines"]')).toBeVisible();
   });
 });

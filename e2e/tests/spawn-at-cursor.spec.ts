@@ -191,7 +191,9 @@ test('spawn → palette UI flow: cursor-anchored at right-click point with overl
   );
   await page.mouse.click(click.x, click.y, { button: 'right' });
   await expect(page.locator('.module-palette')).toBeVisible();
-  await page.getByRole('button', { name: 'Reverb', exact: true }).click();
+  // Search-mode shortcut (nested-menu palette flattens results on type).
+  await page.keyboard.type('Reverb');
+  await page.keyboard.press('Enter');
   const nodes = await readNodes(page);
   const reverb = nodes.find((n) => n.type === 'reverb');
   expect(reverb).toBeTruthy();

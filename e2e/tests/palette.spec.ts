@@ -49,7 +49,10 @@ test('palette: right-click on canvas pane opens at cursor', async ({ page }) => 
   if (!box) throw new Error('no pane');
   await page.mouse.click(box.x + 200, box.y + 200, { button: 'right' });
   await expect(page.locator('.module-palette')).toBeVisible();
-  // Spawn a module — the palette stays positioned where it opened.
-  await page.getByRole('button', { name: 'Mixer', exact: true }).click();
+  // Spawn a module by drilling into the nested menu — the palette stays
+  // positioned where it opened.
+  await page.getByTestId('palette-top-audio-modules').click();
+  await page.getByTestId('palette-sub-mixing').click();
+  await page.getByTestId('palette-item-mixer').click();
   await expect(page.locator('.svelte-flow__node-mixer')).toHaveCount(1);
 });
