@@ -189,12 +189,17 @@ export async function loadSamsloopWav(
   // higher rate. Use the largest integer factor that keeps the output
   // rate >= target — preserves fidelity better than a non-integer ratio
   // and avoids the cost of a proper resampler for a v1 sample looper.
-  let outSamples = mono;
+  let outSamples: Float32Array<ArrayBuffer> = mono;
   let outRate = buf.sampleRate;
   if (buf.sampleRate > SAMSLOOP_TARGET_SAMPLE_RATE) {
     const factor = Math.floor(buf.sampleRate / SAMSLOOP_TARGET_SAMPLE_RATE);
     if (factor >= 2) {
-      outSamples = samsloopDownsample(mono, factor);
+      // samsloopDownsample's return type widens to Float32Array<ArrayBufferLike>
+      // under TS 5.7+ generic-typed-arrays. Its implementation always
+      // constructs via `new Float32Array(outLen)` so the runtime buffer IS
+      // a plain ArrayBuffer — the cast just pins the static type to match
+      // `outSamples` and the downstream consumers.
+      outSamples = samsloopDownsample(mono, factor) as Float32Array<ArrayBuffer>;
       outRate = buf.sampleRate / factor;
     }
   }
