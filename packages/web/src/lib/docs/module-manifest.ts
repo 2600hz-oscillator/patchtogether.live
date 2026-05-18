@@ -117,6 +117,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Combined attenuverter / math / logic utility. 4 cv inputs feed bipolar attenuverters (-1..+1); post-attenuverter outputs sum into `sum` and `diff`. Inputs in1+in2 are also gate-thresholded (>= 0.5) and combined into AND/NAND/OR; in1 alone drives a NOT.',
   unityscalemathematik:
     'Bipolar CV-shaping utility with three independent channels: a UNITY scaler (input * atten) plus two attenuvert sections (A, B) whose curve knob morphs the response from linear (k=1) to steep exponential (k=3) via y = sign(x) * |x|^k * atten. Sign is preserved across the curve morph so the transform stays bipolar. CV inputs on every atten/curve knob — useful for envelope shaping, LFO sculpting, or driving any modulation through a tunable response curve.',
+  analogLogicMaths:
+    'Analog-logic mixer inspired by Mystic Instruments ANA (hardware-only — this is a from-spec implementation, not a port). Two continuous-signal inputs A and B feed bipolar attenuverters (-1..+1) and the post-attenuverter signals fan out into FIVE simultaneous algebraic outputs: MIN = min(A\',B\'), MAX = max(A\',B\'), DIFF = A\'-B\', SUM = tanh(A\'+B\') (soft-clipped), PRODUCT = tanh(A\'*B\') (soft-clipped, gives ring-mod-ish behavior for audio + smooth blending for CV). MIN/MAX of two waveforms mashes shapes; MAX of two envelopes = "either-trigger fires"; DIFF of two LFOs is anti-correlated motion; PRODUCT of two CVs is smooth blending. Continuous-signal "analog logic" — NOT the digital boolean logic that ILLOGIC ships. Tanh soft-clip on SUM + PRODUCT only (the operations that can leave [-1, +1]); MIN/MAX/DIFF stay bounded naturally.',
   dx7:
     'Pure-TypeScript 6-operator DX7-style FM synthesizer. 32 algorithms, 5-voice polyphony via the polyPitchGate cable, bundled bank of factory-inspired patches (E.PIANO 1, BASS 1, HARMONICA, STRINGS 1, MARIMBA, etc.), and a .syx file picker for loading custom 32-voice cartridge dumps (in-memory only). NOT a Plaits-backed implementation — see .myrobots/plans/dx7-and-polyphony.md for the design rationale.',
   noise:
@@ -312,6 +314,16 @@ const PORT_NOTES: Record<string, string> = {
   'unityscalemathematik.u_out':      'UNITY output: u_in * unityAtten (bipolar).',
   'unityscalemathematik.a_out':      'A output: sign(a_in) * |a_in|^k * aAtten with k = 1 + 2*aCurve.',
   'unityscalemathematik.b_out':      'B output: sign(b_in) * |b_in|^k * bAtten with k = 1 + 2*bCurve.',
+  // ANALOGLOGICMATHS — analog-logic mixer (MIN/MAX/DIFF/SUM/PRODUCT).
+  'analogLogicMaths.a':       'Signal input A (cv/audio, bipolar). Multiplied by attA before the math.',
+  'analogLogicMaths.b':       'Signal input B (cv/audio, bipolar). Multiplied by attB before the math.',
+  'analogLogicMaths.attA_cv': 'CV → Att A attenuverter knob (linear scale, bipolar -1..+1).',
+  'analogLogicMaths.attB_cv': 'CV → Att B attenuverter knob (linear scale, bipolar -1..+1).',
+  'analogLogicMaths.min':     'Sample-wise MIN(A\', B\') where A\'/B\' are the attenuverted inputs.',
+  'analogLogicMaths.max':     'Sample-wise MAX(A\', B\').',
+  'analogLogicMaths.diff':    'Sample-wise DIFF: A\' - B\'. Anti-symmetric (DIFF(a,b) = -DIFF(b,a)).',
+  'analogLogicMaths.sum':     'Sample-wise SUM with tanh soft-clip: tanh(A\' + B\'). Stays in (-1, +1) for any inputs.',
+  'analogLogicMaths.product': 'Sample-wise PRODUCT with tanh soft-clip: tanh(A\' * B\'). Audio × audio = ring mod; CV × CV = smooth blending.',
   'dx7.poly':
     'Polyphonic pitch+gate input (10 channels = 5 lanes of pitch+gate). Drive from a SEQUENCER / CARTESIAN poly output for chord playback; each lane allocates one DX7 voice. Round-robin allocation with steal-oldest when all 5 voices busy.',
   'dx7.pitch_cv': 'Mono V/oct pitch input (legacy / single-voice fallback — drives lane 0 if no poly cable is patched).',

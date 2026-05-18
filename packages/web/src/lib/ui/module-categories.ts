@@ -85,6 +85,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   qbrt: { top: 'Audio modules', sub: 'Utility' },
   illogic: { top: 'Audio modules', sub: 'Utility' },
   unityscalemathematik: { top: 'Audio modules', sub: 'Utility' },
+  analogLogicMaths: { top: 'Audio modules', sub: 'Utility' },
   veils: { top: 'Audio modules', sub: 'Utility' },
   peaks: { top: 'Audio modules', sub: 'Utility' },
   stages: { top: 'Audio modules', sub: 'Utility' },
