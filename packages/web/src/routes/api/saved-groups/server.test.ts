@@ -11,7 +11,7 @@ const listSavedGroupsForUserMock = vi.fn();
 
 vi.mock('$lib/server/saved-groups', () => ({
   SAVED_GROUP_LABEL_MAX: 64,
-  SAVED_GROUP_MAX_PAYLOAD_BYTES: 256 * 1024,
+  SAVED_GROUP_MAX_PAYLOAD_BYTES: 8 * 1024 * 1024,
   SAVED_GROUP_MAX_PER_USER: 100,
   saveGroup: saveGroupMock,
   listSavedGroupsForUser: listSavedGroupsForUserMock,
@@ -144,14 +144,15 @@ describe('POST /api/saved-groups validation', () => {
     expect(r.message).toMatch(/child/i);
   });
 
-  it('413 when payload exceeds 256 KB', async () => {
-    const heavyChildren = Array.from({ length: 5000 }, (_, i) => ({
+  it('413 when payload exceeds 8 MB cap, with size + cap in the message', async () => {
+    // ~9 MB blob — comfortably over the 8 MB cap.
+    const heavyChildren = Array.from({ length: 9 }, (_, i) => ({
       id: `n-${i}`,
-      type: 'lfo',
+      type: 'samsloop',
       domain: 'audio',
       position: { x: 0, y: 0 },
-      params: { freq: 220, amp: 1 },
-      data: { blob: 'x'.repeat(60) },
+      params: {},
+      data: { blob: 'x'.repeat(1024 * 1024) },
     }));
     const r = await runPost(
       makePostEvent({
@@ -159,6 +160,11 @@ describe('POST /api/saved-groups validation', () => {
       }),
     );
     expect(r.status).toBe(413);
+    // Message must include the actual size (KB) and the cap (MB) so the
+    // user can see how far over they are.
+    expect(r.message).toMatch(/\d+\s*KB/);
+    expect(r.message).toMatch(/8\s*MB/);
+    expect(r.message).toMatch(/SAMSLOOP|CLOUDSEED/);
   });
 
   it('409 when the per-user cap is reached', async () => {

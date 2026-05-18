@@ -72,7 +72,12 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
   const serialized = JSON.stringify(validated);
   if (serialized.length > SAVED_GROUP_MAX_PAYLOAD_BYTES) {
-    throw error(413, `payload exceeds ${SAVED_GROUP_MAX_PAYLOAD_BYTES} bytes`);
+    const actualKB = Math.ceil(serialized.length / 1024);
+    const capMB = Math.round((SAVED_GROUP_MAX_PAYLOAD_BYTES / (1024 * 1024)) * 10) / 10;
+    throw error(
+      413,
+      `Group too large (${actualKB} KB exceeds the ${capMB} MB cap). Try removing modules that carry large data (SAMSLOOP/CLOUDSEED instances with loaded samples).`,
+    );
   }
 
   const result = await saveGroup(userId, label, validated);
