@@ -206,6 +206,12 @@ type StandardModuleType =
   // plus a tanh-soft-clipped sum mix out. Gain knobs span [0, 2] so
   // knob+CV can push past unity into warm overdrive.
   | 'veils'
+  // ATTENUMIX — the simple 4-channel attenuating mixer. Per-channel
+  // attenuator (knob 0..1) + CV-summed input + post-attenuator direct out
+  // + master knob (0..2) → tanh-soft-clipped mix output. Same topology as
+  // VEILS but capped attenuators (no per-channel boost), no response
+  // toggle, simpler labeling — this is the "I just want a mixer" mixer.
+  | 'attenumix'
   // BLADES — dual state-variable VCF + COLOR overdrive + mix bus
   // (Mutable Instruments Blades archetype, analog hardware → from-spec
   // TS implementation). Two independent SVF cores each with LP/BP/HP

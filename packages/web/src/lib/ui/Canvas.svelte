@@ -137,6 +137,8 @@
   import WarpsCard from '$lib/ui/modules/WarpsCard.svelte';
   // VEILS — quad VCA + soft-clip summing mix (Mutable Instruments archetype).
   import VeilsCard from '$lib/ui/modules/VeilsCard.svelte';
+  // ATTENUMIX — the simple 4-channel attenuating mixer (per-channel direct outs + master + tanh soft-clip on mix).
+  import AttenumixCard from '$lib/ui/modules/AttenumixCard.svelte';
   // BLADES — dual SVF VCF + COLOR overdrive + mix bus (Blades archetype).
   import BladesCard from '$lib/ui/modules/BladesCard.svelte';
   // STAGES — 6-segment cascadable function generator (Mutable Instruments Stages archetype).
@@ -311,6 +313,7 @@
     peaks: PeaksCard,
     warps: WarpsCard,
     veils: VeilsCard,
+    attenumix: AttenumixCard,
     blades: BladesCard,
     stages: StagesCard,
     cloudseed: CloudseedCard,

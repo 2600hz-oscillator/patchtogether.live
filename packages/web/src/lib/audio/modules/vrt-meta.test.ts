@@ -58,6 +58,11 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   warps: 'VRT baseline pending; ART + unit + E2E provide coverage.',
   // VEILS quad-VCA: VRT baseline pending; ART + unit + E2E provide coverage.
   veils: 'VRT baseline pending; ART + unit + E2E provide coverage',
+  // ATTENUMIX simple mixer: VRT baseline pending; ART + unit + E2E cover it.
+  // 4 attenuator faders + master + standard PatchPanel — no unique visual
+  // surface beyond what VEILS already exercises; baseline can be promoted
+  // in a follow-up. Same rationale as VEILS.
+  attenumix: 'VRT baseline pending; ART + unit + E2E provide coverage',
   // CLOUDSEED first-slice PR: VRT baseline pending; complex card (4 panels
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.
