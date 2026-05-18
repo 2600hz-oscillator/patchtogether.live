@@ -19,8 +19,13 @@ import type { ExposedControl, ExposedPort } from '$lib/graph/group-projection';
 export const SAVED_GROUP_LABEL_MAX = 64;
 /** Per-user cap on saved groups. */
 export const SAVED_GROUP_MAX_PER_USER = 100;
-/** Hard cap on payload JSON size (bytes after JSON.stringify). */
-export const SAVED_GROUP_MAX_PAYLOAD_BYTES = 256 * 1024;
+/** Hard cap on payload JSON size (bytes after JSON.stringify).
+ *  8 MB sits well under both Neon JSONB (TOAST up to ~1 GB) and the CF
+ *  Workers 100 MB request-body limit, while accommodating ~10 modules
+ *  per group that carry large decoded buffers (SAMSLOOP samples,
+ *  CLOUDSEED impulse responses). Bumped from 256 KB after users hit the
+ *  cap with a single SAMSLOOP carrying a few seconds of audio. */
+export const SAVED_GROUP_MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
 
 /**
  * Serializable snapshot of a group + everything you need to re-stamp it
