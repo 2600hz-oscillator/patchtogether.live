@@ -80,6 +80,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // AudioParam fast path — the CV doesn't modulate any knob, it IS the
   // paddle position. Same shape as BUGGLES.clock_cv / chaos_cv above.
   pong: ['paddle_left', 'paddle_right'],
+  // ANALOGLOGICMATHS a / b: raw bipolar signal inputs consumed directly by
+  // the worklet's per-sample MIN/MAX/DIFF/SUM/PRODUCT. The module IS the
+  // shaper — the user attenuverts via the attA / attB knobs (which DO carry
+  // cvScale on their respective _cv ports). No AudioParam fast path on
+  // a / b themselves, and the math is amplitude-preserving by design.
+  analogLogicMaths: ['a', 'b'],
 };
 
 describe('cv-scale / registry coverage', () => {

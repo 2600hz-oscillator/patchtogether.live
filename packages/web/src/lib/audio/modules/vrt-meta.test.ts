@@ -90,6 +90,13 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // gravity-driven state defeats deterministic single-frame capture. Unit +
   // ART + E2E provide coverage.
   modtris: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
+  // ANALOGLOGICMATHS first-slice PR: VRT baseline pending; ART + unit + E2E
+  // provide coverage. Card is small (2 attenuverter knobs + patch panel) and
+  // stable; a follow-up PR will capture darwin + linux baselines once the
+  // user has dogfooded any UI tweaks (multi-user testing surfaced the
+  // ILLOGIC naming issue that motivated this module — give the panel a
+  // beat to settle before pinning pixels).
+  analogLogicMaths: 'VRT baseline pending; ART + unit + E2E provide coverage. UI is stable but new — pinning baselines in a follow-up PR.',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more

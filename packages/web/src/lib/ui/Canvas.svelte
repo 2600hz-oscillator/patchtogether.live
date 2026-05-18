@@ -108,6 +108,10 @@
   // UNITYSCALEMATHEMATIK — bipolar CV shaper (unity scaler + 2 linear/expo
   // attenuvert sections).
   import UnityscalemathematikCard from '$lib/ui/modules/UnityscalemathematikCard.svelte';
+  // ANALOGLOGICMATHS — analog-logic mixer (MIN/MAX/DIFF/SUM/PRODUCT) inspired
+  // by Mystic Instruments ANA. Continuous-signal counterpart to ILLOGIC's
+  // digital boolean logic.
+  import AnalogLogicMathsCard from '$lib/ui/modules/AnalogLogicMathsCard.svelte';
   import Dx7Card from '$lib/ui/modules/Dx7Card.svelte';
   // NOISE — basic noise source (white / pink / brown).
   import NoiseCard from '$lib/ui/modules/NoiseCard.svelte';
@@ -298,6 +302,7 @@
     cameraInput: CameraInputCard,
     illogic: IllogicCard,
     unityscalemathematik: UnityscalemathematikCard,
+    analogLogicMaths: AnalogLogicMathsCard,
     dx7: Dx7Card,
     noise: NoiseCard,
     buggles: BugglesCard,

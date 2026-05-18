@@ -31,6 +31,7 @@ import { wavvizDef } from './wavviz';
 import { swolevcoDef } from './swolevco';
 import { illogicDef } from './illogic';
 import { unityscalemathematikDef } from './unityscalemathematik';
+import { analogLogicMathsDef } from './analog-logic-maths';
 import { dx7Def } from './dx7';
 import { noiseDef } from './noise';
 import { bugglesDef } from './buggles';
@@ -90,6 +91,7 @@ export function registerAudioModules(): void {
   registerModule(swolevcoDef);
   registerModule(illogicDef);
   registerModule(unityscalemathematikDef);
+  registerModule(analogLogicMathsDef);
   registerModule(dx7Def);
   registerModule(noiseDef);
   registerModule(bugglesDef);

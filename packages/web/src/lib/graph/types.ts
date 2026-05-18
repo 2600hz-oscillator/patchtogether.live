@@ -139,6 +139,11 @@ type StandardModuleType =
   // UNITYSCALEMATHEMATIK — three independent CV-shaping channels (1 unity
   // attenuvert + 2 attenuvert-with-linear/expo-curve sections), all bipolar.
   | 'unityscalemathematik'
+  // ANALOGLOGICMATHS — analog-logic mixer (MIN/MAX/DIFF/SUM/PRODUCT) inspired
+  // by Mystic Instruments ANA. Two continuous inputs feed bipolar
+  // attenuverters, then five simultaneous algebraic outs. Continuous-signal
+  // analog logic — NOT the digital boolean logic of ILLOGIC.
+  | 'analogLogicMaths'
   // DX7 — pure-TypeScript 6-op FM synth with bundled factory-inspired patches.
   | 'dx7'
   // NOISE — basic noise source with white / pink / brown outputs.
