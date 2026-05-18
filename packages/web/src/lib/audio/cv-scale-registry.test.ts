@@ -61,6 +61,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // Applying cvScale 'linear' would compute scale = (max-min)/2 = 1.0
   // and pass the CV through unchanged anyway.
   veils: ['cv1', 'cv2', 'cv3', 'cv4'],
+  // ATTENUMIX cv1..cv4: per-channel attenuator CV summed with the knob
+  // inside the worklet's per-sample multiply (then clamp 0..1). The
+  // attenuator's natural range is [0, 1], so a ±1V LFO at knob=0 already
+  // sweeps full range (clamp drops the negative half, the positive half
+  // opens the channel). A `linear` cvScale would compute (1-0)/2 = 0.5
+  // and HALVE the LFO's reach — strictly worse than passthrough.
+  attenumix: ['cv1', 'cv2', 'cv3', 'cv4'],
   // BLADES voct1/voct2 + cutoff1_cv/cutoff2_cv: these are audio-rate
   // node inputs that the worklet itself maps onto octaves via
   // pow(2, voct + cv*5). Interposing a WaveShaperNode here would

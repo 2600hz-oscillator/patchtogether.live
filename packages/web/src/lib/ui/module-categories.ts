@@ -109,6 +109,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // ───────── Audio modules → Mixing ─────────
   mixer: { top: 'Audio modules', sub: 'Mixing' },
   mixmstrs: { top: 'Audio modules', sub: 'Mixing' },
+  attenumix: { top: 'Audio modules', sub: 'Mixing' },
 
   // ───────── Audio modules → End of chain ─────────
   audioOut: { top: 'Audio modules', sub: 'End of chain' },

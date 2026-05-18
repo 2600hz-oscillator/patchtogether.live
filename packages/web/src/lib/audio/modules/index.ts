@@ -46,6 +46,7 @@ import { ringsDef } from './rings';
 import { peaksDef } from './peaks';
 import { warpsDef } from './warps';
 import { veilsDef } from './veils';
+import { attenumixDef } from './attenumix';
 import { bladesDef } from './blades';
 import { stagesDef } from './stages';
 import { cloudseedDef } from './cloudseed';
@@ -104,6 +105,7 @@ export function registerAudioModules(): void {
   registerModule(peaksDef);
   registerModule(warpsDef);
   registerModule(veilsDef);
+  registerModule(attenumixDef);
   registerModule(bladesDef);
   registerModule(stagesDef);
   registerModule(cloudseedDef);
