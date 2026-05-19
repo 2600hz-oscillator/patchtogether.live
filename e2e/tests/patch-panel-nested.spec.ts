@@ -37,7 +37,8 @@ async function openPanel(page: Page, nodeId: string): Promise<Locator> {
   const trigger = page.locator(
     `.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`,
   );
-  await trigger.hover();
+  // Post-PR-204: click (not hover) opens the panel.
+  await trigger.click();
   const panel = page.locator(
     `.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-panel"]`,
   );
