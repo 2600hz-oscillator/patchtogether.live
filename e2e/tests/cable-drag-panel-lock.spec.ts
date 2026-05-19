@@ -198,10 +198,10 @@ test.describe('PatchPanel: drag-induced lock', () => {
     await expect(filterPanel).toHaveAttribute('aria-hidden', 'true');
   });
 
-  test('non-drag PatchPanel hover behavior is unchanged (PR-66/PR-88)', async ({ page }) => {
-    // No cable drag at all — pure hover. The panel must follow the
-    // existing 200ms hover-close grace AND the 300ms post-click hold,
-    // unaffected by the new drag-lock plumbing.
+  test('non-drag PatchPanel click-open / outside-click-close (PR-204)', async ({ page }) => {
+    // No cable drag at all — pure click-open. Post-PR-204 the panel is
+    // click-to-open and stays open until an outside click in negative
+    // space; hover does nothing.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -214,17 +214,18 @@ test.describe('PatchPanel: drag-induced lock', () => {
       `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`,
     );
 
-    // Hover opens.
+    // Hover ALONE no longer opens.
     await trigger.hover();
-    await expect(panel).toHaveAttribute('aria-hidden', 'false');
-
-    // Move away — panel closes after the hover-close grace.
-    await page.mouse.move(20, 20);
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(150);
     await expect(panel).toHaveAttribute('aria-hidden', 'true');
 
     // Click pins the panel open (no drag involved).
     await trigger.click();
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+
+    // Cursor leaving the panel area does NOT close it.
+    await page.mouse.move(20, 20);
+    await page.waitForTimeout(400);
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
 
     // Outside click dismisses the pin.
