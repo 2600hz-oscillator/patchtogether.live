@@ -102,6 +102,15 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // + E2E provide coverage. Same gap as PONG/MODTRIS; promote once a
   // deterministic-time test harness exists.
   bentbox: 'animated CRT simulation (feedback + per-line time drift) defeats deterministic capture; unit + E2E provide coverage',
+  // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
+  // ports), VRT baseline pending. Unit + E2E provide coverage; a follow-up
+  // PR will pin pixel baselines on both platforms.
+  joystick: 'VRT baseline pending; unit + E2E provide coverage. UI is small + stable — pinning baselines in a follow-up PR.',
+  // WAVESCULPT first-slice PR: animated 3D render + CRT feedback means a
+  // single-frame pixel baseline can't match between runs. Unit + E2E
+  // cover the module-def shape, distance-falloff math, and live audio +
+  // canvas mount. Same rationale as BENTBOX/PONG/MODTRIS.
+  wavesculpt: 'animated 3D ribbon render + CRT frame-feedback defeats deterministic capture; unit + E2E provide coverage',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
