@@ -16,6 +16,25 @@
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 
+// Baselines intentionally missing for one (platform, type) pair while a
+// follow-up CI capture lands the other platform's PNG. Mirror of the same
+// list in packages/web/src/lib/audio/modules/vrt-meta.test.ts.
+//
+// When the VRT job became a required status check (was advisory until the
+// expanded-coverage PR), we had to teach the spec itself about these
+// exemptions: Playwright's `toHaveScreenshot` errors on a missing baseline
+// (not just on a diff), and a hard error on linux CI for a darwin-only
+// baseline would block every PR. The exempted (platform, type) pair is
+// SKIPPED at the test level rather than allowed to fail.
+const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  'linux/macrooscillator',
+  'linux/samsloop',
+  'linux/blades',
+  'linux/stages',
+]);
+
+const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
+
 // Mirror of e2e/tests/io-spec-consistency.spec.ts MODULE_TYPES. Two
 // modules are intentionally absent here:
 //   - cameraInput: needs a real (or fake) MediaStream + getUserMedia
@@ -124,6 +143,10 @@ test.describe.configure({ mode: 'default' });
 test.describe('VRT: every module card matches its baseline', () => {
   for (const mod of MODULES) {
     test(`${mod.type} card matches baseline`, async ({ page }) => {
+      test.skip(
+        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${mod.type}`),
+        `${mod.type} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
+      );
       // Capture page errors so a broken card fails the test before the
       // screenshot diff does — easier to debug than a thousand-pixel diff.
       const errors: string[] = [];
