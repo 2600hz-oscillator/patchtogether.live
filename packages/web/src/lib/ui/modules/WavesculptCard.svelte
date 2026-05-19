@@ -33,6 +33,7 @@
     uninstallWavesculptFrameDrawer,
   } from '$lib/audio/modules/wavesculpt';
   import { clampJoy } from '$lib/audio/modules/joystick';
+  import type { VideoEngine } from '$lib/video/engine';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -116,6 +117,11 @@
   let D4 = $derived(pget('D4'));
   let S4 = $derived(pget('S4'));
   let R4 = $derived(pget('R4'));
+  // Per-osc thickness (0..1) → vertex-shader perpendicular-extrusion scale.
+  let thickness1 = $derived(pget('thickness1'));
+  let thickness2 = $derived(pget('thickness2'));
+  let thickness3 = $derived(pget('thickness3'));
+  let thickness4 = $derived(pget('thickness4'));
 
   // ---- XY pad (joystick) on the card ----
   let padEl: HTMLDivElement | null = $state(null);
@@ -179,6 +185,16 @@
   let ribbonSamplesBuf: WebGLBuffer | null = null;
   let postPingTex: WebGLTexture | null = null;
   let postPingFbo: WebGLFramebuffer | null = null;
+  // ALPHA-mask-only FBO: a SECOND ribbon-pass renders ONLY the ALPHA
+  // oscillator into this FBO. The bentbox post-pass samples uAlphaMask
+  // from here to decide where to blend uAlphaInTex.
+  let alphaMaskFbo: WebGLFramebuffer | null = null;
+  let alphaMaskTex: WebGLTexture | null = null;
+  // GPU texture for the upstream `alpha_in` video source. We upload the
+  // video engine's canvas into this texture each frame (via texImage2D);
+  // the bentbox FS samples it via uAlphaInTex.
+  let alphaInTex: WebGLTexture | null = null;
+  let hasAlphaInPatched = false;
 
   // Number of segments per ribbon. 32 is plenty for v1 (the visual
   // language is "wave with thickness", not "high-res 3D model").
@@ -198,7 +214,9 @@
   //   uSrc[4]     — vec4 (x,y,z, _) per-osc source position
   //   uVec[4]     — vec4 (x,y,z, _) per-osc inward direction
   //   uMorph[4]   — float per-osc morph (0..1; 0=saw, 0.5=sine, 1=tri)
-  //   uEnv[4]     — float per-osc envelope amplitude (0..1)
+  //   uThickness[4] — float per-osc ribbon thickness (0..1)
+  //   uBolt[4]    — float per-osc ADSR amplitude (0..1) for blue energy bolt
+  //   uBoltPhase[4] — float per-osc bolt's current position along ribbon (0..1)
   //   uTime       — seconds since start (for animated phase)
   //   uPhase[4]   — float per-osc audible Hz / scale factor (we pass a
   //                low-frequency "visual" phase rate to keep motion
@@ -212,37 +230,13 @@ uniform mat4  uMVP;
 uniform vec4  uSrc[4];
 uniform vec4  uVec[4];
 uniform float uMorph[4];
-uniform float uEnv[4];
 uniform float uPhase[4];
+uniform float uThickness[4];
 
 out float vT;     // 0..1 along ribbon
 flat out int vOsc;
 
 const float PI = 3.14159265;
-
-float wave(float morph, float t, float env) {
-  // Map t∈[0..1] to phase∈[0..4π] so we get 2 visible periods along
-  // the ribbon. Selects saw / sine / triangle by morph (closest-shape
-  // with smooth crossfade so the visual flows).
-  float phi = t * 4.0 * PI + uPhase[0]; // shared visual phase — replaced per-osc below
-  // saw: 2*frac(t/(2π)) - 1
-  float saw = 2.0 * fract(phi / (2.0 * PI)) - 1.0;
-  // sine
-  float sine = sin(phi);
-  // triangle: 2*|2*frac(t/(2π)) - 1| - 1
-  float tri = 2.0 * abs(2.0 * fract(phi / (2.0 * PI)) - 1.0) - 1.0;
-  // Crossfade by morph ∈ [0..1]: 0=saw, 0.5=sine, 1=tri.
-  float w;
-  if (morph < 0.5) {
-    float k = morph * 2.0;
-    w = mix(saw, sine, k);
-  } else {
-    float k = (morph - 0.5) * 2.0;
-    w = mix(sine, tri, k);
-  }
-  // Scale by envelope amplitude.
-  return w * env;
-}
 
 void main() {
   int idx = int(aOsc);
@@ -258,10 +252,10 @@ void main() {
   vec3 up = abs(dir.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0);
   vec3 perp = normalize(cross(dir, up));
 
-  // Wave offset: oscillator-specific phase. We re-derive it inside the
-  // shader because the uPhase[] array is referenced via dynamic index
-  // (some GLSL impls reject that). Simpler: compute morph result with
-  // a per-osc phase term added.
+  // Wave offset: oscillator-specific phase. The dynamic-index lookup
+  // into uPhase[] is computed inline (some older GLSL ES impls reject
+  // dynamic indexing into uniform arrays; we keep the math inline to
+  // sidestep that).
   float phi = t * 4.0 * PI + uPhase[idx];
   float saw = 2.0 * fract(phi / (2.0 * PI)) - 1.0;
   float sine = sin(phi);
@@ -273,13 +267,18 @@ void main() {
   } else {
     w = mix(sine, tri, (m - 0.5) * 2.0);
   }
-  // Scale wave by env, then by a "visual amplitude" constant so even
-  // env=1 doesn't fly out of the box.
-  float wAmt = w * uEnv[idx] * 0.45;
+  // POST-DOGFOOD: ribbons are PRE-ADSR — fixed wave-amplitude so the
+  // wave shape stays visible continuously. ADSR drives the bolt
+  // intensity (see fragment shader's uBolt path) — NOT the ribbon's
+  // visibility. Constant 0.45 matches the v1 baseline at env=1.0.
+  float wAmt = w * 0.45;
 
-  // Ribbon thickness — small (0.02 units of the unit box).
+  // Ribbon thickness — driven per-osc by uThickness (0..1). At
+  // thickness=0 the ribbon collapses to a thin line; at thickness=1 it
+  // widens to ~0.06 units of the unit box (~2x the v1 baseline).
   float side = aSide * 2.0 - 1.0; // -1 or +1
-  vec3 thick = perp * side * 0.02 * (0.6 + 0.4 * uEnv[idx]);
+  float thicknessAmt = 0.012 + uThickness[idx] * 0.06;
+  vec3 thick = perp * side * thicknessAmt;
 
   // Final position: along + perp displacement (the wave) + thickness.
   vec3 p = along + perp * wAmt + thick;
@@ -294,16 +293,34 @@ in float vT;
 flat in int vOsc;
 out vec4 outColor;
 
-uniform vec4 uOscColor[4];
-uniform float uEnv[4];
+uniform vec4  uOscColor[4];
+uniform float uBolt[4];      // 0..1 — ADSR-driven bolt intensity per osc
+uniform float uBoltPhase[4]; // 0..1 — bolt's current position along ribbon
 
 void main() {
   vec4 base = uOscColor[vOsc];
-  float env = uEnv[vOsc];
-  // Glow along the ribbon (brighter in the middle, dimmer at ends).
+  float bolt = uBolt[vOsc];
+  // Pre-ADSR fixed-level ribbon glow: brighter in the middle, dimmer at
+  // ends, no envelope multiplier. The ribbon is always "alive" so the
+  // user sees the wave shape continuously.
   float band = smoothstep(0.0, 0.15, vT) * smoothstep(1.0, 0.85, vT);
-  vec3 col = base.rgb * (0.6 + 0.6 * band) * (0.4 + 0.6 * env);
-  outColor = vec4(col, base.a * (0.3 + 0.7 * env));
+  vec3 col = base.rgb * (0.4 + 0.5 * band);
+  float alpha = base.a * (0.35 + 0.35 * band);
+
+  // Soft blue energy bolt — a Gaussian pulse traveling from t=0
+  // (source position) toward t=1 (camera-visible end of ribbon). The
+  // pulse position is uBoltPhase (advanced per frame on the JS side);
+  // a Gaussian width of ~0.08 keeps the bolt subtle. Intensity scales
+  // with bolt (which is the ADSR amplitude). Color is soft blue.
+  if (bolt > 0.001) {
+    float d = vT - uBoltPhase[vOsc];
+    float pulse = exp(-d * d / 0.012); // Gaussian, σ ≈ 0.077
+    vec3 boltCol = vec3(0.35, 0.55, 1.0) * pulse * bolt * 0.9;
+    col += boltCol;
+    alpha = min(1.0, alpha + pulse * bolt * 0.6);
+  }
+
+  outColor = vec4(col, alpha);
 }`;
 
   // BENTBOX post-process. Same algorithmic shape as bentbox.ts. We
@@ -316,6 +333,9 @@ out vec4 outColor;
 
 uniform sampler2D uIn;
 uniform sampler2D uPrev;
+uniform sampler2D uAlphaMask;  // ALPHA-osc-only ribbon render
+uniform sampler2D uAlphaInTex; // upstream video patched into alpha_in
+uniform float uHasAlphaIn;
 uniform float uTime;
 uniform float uFieldParity;
 
@@ -415,6 +435,20 @@ void main() {
     float n = hash21(vUv * vec2(740.0, 421.0) + uTime) - 0.5;
     decoded += vec3(n) * uNoise * 0.18;
   }
+
+  // ALPHA LAYER IN compositing. The ALPHA-osc mask (R = mask strength)
+  // is rendered into uAlphaMask by a dedicated pass before this one.
+  // Where the mask is non-zero AND a video source is patched into
+  // alpha_in, we blend the alpha_in texture sampled at the screen-space
+  // vUv (1:1 mapping per spec) INTO the decoded scene, scaled by mask
+  // strength. The mask covers the ALPHA oscillator's projected ribbon
+  // geometry — that's the gating shape.
+  float alphaMaskStrength = texture(uAlphaMask, vUv).r;
+  if (uHasAlphaIn > 0.5 && alphaMaskStrength > 0.001) {
+    vec3 alphaInSample = texture(uAlphaInTex, vUv).rgb;
+    decoded = mix(decoded, alphaInSample, clamp(alphaMaskStrength, 0.0, 1.0));
+  }
+
   outColor = vec4(clamp(decoded, 0.0, 1.0), 1.0);
 }`;
 
@@ -577,7 +611,70 @@ void main() {
   let renderStartMs = 0;
   let frameCount = 0;
   let phaseAcc: number[] = [0, 0, 0, 0];
+  // Per-osc bolt position (0..1 along the ribbon). Each frame the
+  // position advances based on dt; the bolt is rendered only when the
+  // corresponding voice's envelope is non-zero (env drives uBolt
+  // intensity directly, while boltPhase tracks the traveling pulse).
+  let boltPhase: number[] = [0, 0, 0, 0];
+  // Travel speed (rotations of the ribbon per second). Tuned for "gentle
+  // pulse" feel — neither too fast (gunshot) nor too slow (no motion).
+  const BOLT_SPEED = 0.6;
   let lastFrameMs = 0;
+
+  /** Find the source node ID + port for an alpha_in edge into THIS node,
+   *  or null if unpatched. Edges are scanned each frame; this is cheap
+   *  (4-5 edges typical, <50ns lookup). */
+  function findAlphaInSource(): { nodeId: string; portId: string } | null {
+    for (const eid of Object.keys(patch.edges)) {
+      const e = patch.edges[eid];
+      if (!e) continue;
+      if (e.target?.nodeId === id && e.target?.portId === 'alpha_in') {
+        return { nodeId: e.source.nodeId, portId: e.source.portId };
+      }
+    }
+    return null;
+  }
+
+  /** Ask the VideoEngine to blit the upstream source's FBO to its
+   *  shared canvas, then upload that canvas to our GL context's
+   *  `alphaInTex`. Sets `hasAlphaInPatched` to reflect whether we
+   *  actually got a frame. Robust to missing engine / source not
+   *  materialized — falls back to "no alpha input" silently. */
+  function tryUploadAlphaIn(): void {
+    if (!gl || !alphaInTex) {
+      hasAlphaInPatched = false;
+      return;
+    }
+    const src = findAlphaInSource();
+    if (!src) {
+      hasAlphaInPatched = false;
+      return;
+    }
+    const e = engineCtx.get();
+    if (!e) { hasAlphaInPatched = false; return; }
+    let videoEngine: VideoEngine | undefined;
+    try { videoEngine = e.getDomain<VideoEngine>('video'); } catch { videoEngine = undefined; }
+    if (!videoEngine) { hasAlphaInPatched = false; return; }
+    try {
+      videoEngine.blitOutputToDrawingBuffer(src.nodeId);
+    } catch {
+      hasAlphaInPatched = false;
+      return;
+    }
+    const srcCanvas = videoEngine.canvas as CanvasImageSource | undefined;
+    if (!srcCanvas) { hasAlphaInPatched = false; return; }
+    try {
+      gl.bindTexture(gl.TEXTURE_2D, alphaInTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(
+        gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE,
+        srcCanvas as TexImageSource,
+      );
+      hasAlphaInPatched = true;
+    } catch {
+      hasAlphaInPatched = false;
+    }
+  }
 
   function initGl(): boolean {
     // Use OffscreenCanvas where available; in tests/jsdom this may be
@@ -656,6 +753,22 @@ void main() {
     prevFbo = fboB.fbo; prevTex = fboB.tex;
     const fboC = createFboTex(gl, RES_W, RES_H);
     postPingFbo = fboC.fbo; postPingTex = fboC.tex;
+    // ALPHA-mask FBO (osc-3-only ribbon render → red channel = mask).
+    const fboD = createFboTex(gl, RES_W, RES_H);
+    alphaMaskFbo = fboD.fbo; alphaMaskTex = fboD.tex;
+    // ALPHA-in texture (uploaded from upstream video each frame). 1x1
+    // black placeholder so the sampler isn't dangling before the first
+    // upload; texImage2D in tryUploadAlphaIn() replaces with real data.
+    alphaInTex = gl.createTexture();
+    if (alphaInTex) {
+      gl.bindTexture(gl.TEXTURE_2D, alphaInTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+        new Uint8Array([0, 0, 0, 255]));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
 
     renderStartMs = performance.now();
     lastFrameMs = renderStartMs;
@@ -675,6 +788,9 @@ void main() {
       if (prevTex) gl.deleteTexture(prevTex);
       if (postPingFbo) gl.deleteFramebuffer(postPingFbo);
       if (postPingTex) gl.deleteTexture(postPingTex);
+      if (alphaMaskFbo) gl.deleteFramebuffer(alphaMaskFbo);
+      if (alphaMaskTex) gl.deleteTexture(alphaMaskTex);
+      if (alphaInTex) gl.deleteTexture(alphaInTex);
       if (ribbonSamplesBuf) gl.deleteBuffer(ribbonSamplesBuf);
     } catch { /* */ }
     gl = null;
@@ -684,6 +800,11 @@ void main() {
   function renderToOffscreen() {
     if (!gl || !ribbonProgram || !bentboxProgram) return;
     const g = gl;
+
+    // 0) Try to refresh the alpha_in texture from the patched upstream
+    //    video source (if any). Cheap when unpatched — early-returns.
+    tryUploadAlphaIn();
+
     // 1) Render ribbons into sceneFbo.
     g.bindFramebuffer(g.FRAMEBUFFER, sceneFbo);
     g.viewport(0, 0, RES_W, RES_H);
@@ -694,18 +815,11 @@ void main() {
 
     g.useProgram(ribbonProgram);
 
-    // Camera setup. Read the LIVE AudioParam values (knob + CV-summed)
-    // via engine.readParam so patched CV actually moves the camera —
-    // node.params.* is the static knob value only and doesn't see CV.
-    const ePcam = engineCtx.get();
-    const liveOr = (k: string, fb: number): number => {
-      const v = node && ePcam ? (ePcam.readParam(node, k) as number | undefined) : undefined;
-      return typeof v === 'number' ? v : fb;
-    };
-    const camX = clampJoy(liveOr('pos_x', (node?.params.pos_x as number) ?? 0));
-    const camY = clampJoy(liveOr('pos_y', (node?.params.pos_y as number) ?? 0));
-    const camZ = clampJoy(liveOr('pos_z', (node?.params.pos_z as number) ?? 0));
-    const zoomVal = Math.max(0.3, Math.min(3, liveOr('zoom', (node?.params.zoom as number) ?? 1)));
+    // Camera setup.
+    const camX = clampJoy(node?.params.pos_x as number ?? 0);
+    const camY = clampJoy(node?.params.pos_y as number ?? 0);
+    const camZ = clampJoy(node?.params.pos_z as number ?? 0);
+    const zoomVal = Math.max(0.3, Math.min(3, node?.params.zoom as number ?? 1));
     const fovy = 1.2 / zoomVal; // shrink fov as zoom increases
     const aspect = RES_W / RES_H;
     mat4Perspective(projMat, fovy, aspect, 0.05, 6.0);
@@ -732,11 +846,15 @@ void main() {
 
     // Update visual phase per-osc — slow constant rate so motion stays
     // readable. Per-osc rate scales mildly with osc index for variation.
+    // Also advance the per-osc bolt position (a 0..1 along-ribbon sweep
+    // driven at BOLT_SPEED). The bolt phase wraps every 1/BOLT_SPEED s.
     const now = performance.now();
     const dt = Math.max(0, Math.min(0.5, (now - lastFrameMs) / 1000));
     lastFrameMs = now;
     for (let i = 0; i < 4; i++) {
       phaseAcc[i] = (phaseAcc[i]! + VISUAL_PHASE_RATE * (0.8 + 0.4 * i) * dt) % (Math.PI * 2);
+      // Advance bolt position; wrap at 1.0 so it loops along the ribbon.
+      boltPhase[i] = (boltPhase[i]! + BOLT_SPEED * dt) % 1.0;
     }
 
     // Pass per-osc arrays as Float32Array.
@@ -744,7 +862,9 @@ void main() {
     const vecArr = new Float32Array(16);
     const colArr = new Float32Array(16);
     const morphArr = new Float32Array(4);
-    const envArr = new Float32Array(4);
+    const thicknessArr = new Float32Array(4);
+    const boltArr = new Float32Array(4);
+    const boltPhaseArr = new Float32Array(4);
     const phaseArr = new Float32Array(4);
     for (let i = 0; i < 4; i++) {
       const wall = [
@@ -767,20 +887,28 @@ void main() {
       colArr[i * 4 + 2] = col[2]!;
       colArr[i * 4 + 3] = col[3]!;
       morphArr[i] = (node?.params?.[`morph${i + 1}`] as number | undefined) ?? 0.5;
-      envArr[i] = voiceEnv[i] ?? 0;
+      thicknessArr[i] = (node?.params?.[`thickness${i + 1}`] as number | undefined) ?? 0.3;
+      // Bolt intensity = ADSR envelope amplitude (0..1). Pre-ADSR
+      // ribbons render at fixed level; bolts pulse with ADSR.
+      boltArr[i] = voiceEnv[i] ?? 0;
+      boltPhaseArr[i] = boltPhase[i]!;
       phaseArr[i] = phaseAcc[i]!;
     }
     const uSrcLoc = g.getUniformLocation(ribbonProgram, 'uSrc[0]');
     const uVecLoc = g.getUniformLocation(ribbonProgram, 'uVec[0]');
     const uColLoc = g.getUniformLocation(ribbonProgram, 'uOscColor[0]');
     const uMorphLoc = g.getUniformLocation(ribbonProgram, 'uMorph[0]');
-    const uEnvLoc = g.getUniformLocation(ribbonProgram, 'uEnv[0]');
+    const uThicknessLoc = g.getUniformLocation(ribbonProgram, 'uThickness[0]');
+    const uBoltLoc = g.getUniformLocation(ribbonProgram, 'uBolt[0]');
+    const uBoltPhaseLoc = g.getUniformLocation(ribbonProgram, 'uBoltPhase[0]');
     const uPhaseLoc = g.getUniformLocation(ribbonProgram, 'uPhase[0]');
     if (uSrcLoc) g.uniform4fv(uSrcLoc, srcArr);
     if (uVecLoc) g.uniform4fv(uVecLoc, vecArr);
     if (uColLoc) g.uniform4fv(uColLoc, colArr);
     if (uMorphLoc) g.uniform1fv(uMorphLoc, morphArr);
-    if (uEnvLoc) g.uniform1fv(uEnvLoc, envArr);
+    if (uThicknessLoc) g.uniform1fv(uThicknessLoc, thicknessArr);
+    if (uBoltLoc) g.uniform1fv(uBoltLoc, boltArr);
+    if (uBoltPhaseLoc) g.uniform1fv(uBoltPhaseLoc, boltPhaseArr);
     if (uPhaseLoc) g.uniform1fv(uPhaseLoc, phaseArr);
 
     // Draw the big stitched triangle strip.
@@ -789,9 +917,35 @@ void main() {
     const ribbonVerts = 4 * (2 * RIBBON_SEGMENTS) + 3 * 2;
     g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
     g.bindVertexArray(null);
+
+    // 1b) ALPHA-mask pass: re-render to alphaMaskFbo with all-OSC colors
+    //     forced to ZERO except for osc 3 (ALPHA), whose color becomes
+    //     pure red (R=1). This produces a binary mask in the red channel
+    //     covering the ALPHA oscillator's projected ribbon — exactly the
+    //     region where uAlphaInTex should be composited in.
+    g.bindFramebuffer(g.FRAMEBUFFER, alphaMaskFbo);
+    g.viewport(0, 0, RES_W, RES_H);
+    g.clearColor(0, 0, 0, 1);
+    g.clear(g.COLOR_BUFFER_BIT);
+    const maskColArr = new Float32Array(16);
+    // osc 0/1/2 → transparent black; osc 3 → red mask.
+    maskColArr[3 * 4 + 0] = 1.0;
+    maskColArr[3 * 4 + 1] = 0.0;
+    maskColArr[3 * 4 + 2] = 0.0;
+    maskColArr[3 * 4 + 3] = 1.0;
+    if (uColLoc) g.uniform4fv(uColLoc, maskColArr);
+    // Disable bolts on the mask pass so the mask boundary isn't pulsed
+    // by ADSR — the spec says the alpha REGION is determined purely by
+    // the ALPHA osc's waveform projection (pre-ADSR-decoupled).
+    const zeros4 = new Float32Array(4);
+    if (uBoltLoc) g.uniform1fv(uBoltLoc, zeros4);
+    g.bindVertexArray(ribbonVao);
+    g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
+    g.bindVertexArray(null);
     g.disable(g.BLEND);
 
-    // 2) Bentbox post-pass: sceneTex + prevTex → postPingFbo (or default).
+    // 2) Bentbox post-pass: sceneTex + prevTex + alphaMaskTex + alphaInTex
+    //    → postPingFbo (or default).
     g.bindFramebuffer(g.FRAMEBUFFER, postPingFbo);
     g.viewport(0, 0, RES_W, RES_H);
     g.useProgram(bentboxProgram);
@@ -803,6 +957,17 @@ void main() {
     g.bindTexture(g.TEXTURE_2D, prevTex);
     const uPrev = g.getUniformLocation(bentboxProgram, 'uPrev');
     if (uPrev) g.uniform1i(uPrev, 1);
+    // Bind alpha mask + alpha-in textures on units 2 & 3.
+    g.activeTexture(g.TEXTURE2);
+    g.bindTexture(g.TEXTURE_2D, alphaMaskTex);
+    const uAlphaMask = g.getUniformLocation(bentboxProgram, 'uAlphaMask');
+    if (uAlphaMask) g.uniform1i(uAlphaMask, 2);
+    g.activeTexture(g.TEXTURE3);
+    g.bindTexture(g.TEXTURE_2D, alphaInTex);
+    const uAlphaInTexLoc = g.getUniformLocation(bentboxProgram, 'uAlphaInTex');
+    if (uAlphaInTexLoc) g.uniform1i(uAlphaInTexLoc, 3);
+    const uHasAlphaInLoc = g.getUniformLocation(bentboxProgram, 'uHasAlphaIn');
+    if (uHasAlphaInLoc) g.uniform1f(uHasAlphaInLoc, hasAlphaInPatched ? 1.0 : 0.0);
     const tSec = (performance.now() - renderStartMs) / 1000;
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uTime'), tSec);
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uFieldParity'), (frameCount & 1) ? 1 : 0);
@@ -824,21 +989,13 @@ void main() {
     g.drawArrays(g.TRIANGLE_STRIP, 0, 4);
     g.bindVertexArray(null);
 
-    // 3) Blit postPing → default framebuffer (the OffscreenCanvas surface).
-    g.bindFramebuffer(g.FRAMEBUFFER, null);
-    g.viewport(0, 0, RES_W, RES_H);
-    g.useProgram(bentboxProgram);
-    g.activeTexture(g.TEXTURE0);
-    g.bindTexture(g.TEXTURE_2D, postPingTex);
-    if (uIn) g.uniform1i(uIn, 0);
-    // 4) Save current post output as next-frame's feedback source by
-    //    swapping prevTex with postPingTex names — simplest path is to
-    //    just copy the postPing texture into prevTex via a copy pass.
-    //    For v1, we re-use sceneFbo's prev slot by drawing again.
-    // Simpler v1: snapshot postPing → prevTex by re-binding.
+    // 3) Snapshot postPing → prevTex (next-frame feedback source). We
+    //    re-use bentboxProgram but turn off the alpha-in composite for
+    //    this passthrough pass (the composite already happened in pass 2
+    //    and was baked into postPingTex; re-applying would double-blend).
+    if (uHasAlphaInLoc) g.uniform1f(uHasAlphaInLoc, 0.0);
     g.bindFramebuffer(g.FRAMEBUFFER, prevFbo);
     g.viewport(0, 0, RES_W, RES_H);
-    g.useProgram(bentboxProgram);
     g.activeTexture(g.TEXTURE0);
     g.bindTexture(g.TEXTURE_2D, postPingTex);
     if (uIn) g.uniform1i(uIn, 0);
@@ -847,11 +1004,9 @@ void main() {
     g.bindVertexArray(null);
     g.bindFramebuffer(g.FRAMEBUFFER, null);
 
-    // Render the final image to default fb a second time so the canvas
-    // shows the user-visible frame (we just clobbered the canvas's
-    // default fb with the prevFbo draw above).
+    // 4) Final blit to default fb so the canvas surface shows the user-
+    //    visible frame. Same passthrough — alpha-in already composited.
     g.viewport(0, 0, RES_W, RES_H);
-    g.useProgram(bentboxProgram);
     g.activeTexture(g.TEXTURE0);
     g.bindTexture(g.TEXTURE_2D, postPingTex);
     if (uIn) g.uniform1i(uIn, 0);
@@ -1017,6 +1172,11 @@ void main() {
                 value={i === 0 ? morph1 : i === 1 ? morph2 : i === 2 ? morph3 : morph4}
                 min={0} max={1} defaultValue={0.5} label="Morph" curve="linear"
                 onchange={set(`morph${i + 1}`)} readLive={live(`morph${i + 1}`)}
+              />
+              <Knob
+                value={i === 0 ? thickness1 : i === 1 ? thickness2 : i === 2 ? thickness3 : thickness4}
+                min={0} max={1} defaultValue={0.3} label="Thick" curve="linear"
+                onchange={set(`thickness${i + 1}`)} readLive={live(`thickness${i + 1}`)}
               />
               <Knob
                 value={i === 0 ? A1 : i === 1 ? A2 : i === 2 ? A3 : A4}
