@@ -26,6 +26,7 @@ import { monoglitchDef } from './monoglitch';
 import { ruttetraDef } from './ruttetra';
 import { shapedrampsDef } from './shapedramps';
 import { vdelayDef } from './vdelay';
+import { bentboxDef } from './bentbox';
 
 let registered = false;
 
@@ -62,6 +63,10 @@ export function registerVideoModules(): void {
   // VDELAY — video delay + feedback echo (visual analog to CHARLOTTE'S
   // ECHOS). Ring buffer of FBO textures, configurable delay/feedback/mix.
   registerVideoModule(vdelayDef);
+  // BENTBOX — CRT output simulating an NTSC composite signal bent through
+  // an Archer-Video-Enhancer-style "AVEmod" feedback circuit. 12 CV-controllable
+  // bending knobs (timing drift, chroma corruption, wavefolding, recursion).
+  registerVideoModule(bentboxDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e
