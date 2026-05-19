@@ -254,6 +254,12 @@ type StandardModuleType =
   // outputs. Monophonic with user-selectable voice priority (LAST / LOW /
   // HIGH), retrigger toggle, channel filter, and a device picker.
   | 'midiCvBuddy'
+  // HELM — polyphonic subtractive synth (algorithm port of Matt Tytel's
+  // Helm GPL-3.0). 2 morphing oscillators + sub + noise → SVF filter →
+  // 3 ADSR envelopes → 2 mono LFOs → 16-step step sequencer; polyphonic
+  // MIDI input via gear-icon settings menu (device picker + per-channel
+  // rx multi-select). Stereo output.
+  | 'helm'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.
@@ -275,17 +281,7 @@ type StandardModuleType =
   // (rotate L/R, drop, move L/R), 2 gate outputs (line_cleared, overfill).
   // Single-user in this slice; multi-user via 30 Hz awareness snapshot is
   // a follow-up per docs/design/game-modules.md §2.
-  | 'modtris'
-  // JOYSTICK — manual XY pad. Outputs x, y, nx (= -x), ny (= -y) as CV.
-  // No inputs in v1 (future: MIDI-mappable). Mirrors how an LFO emits
-  // multiple inverted/quadrature outputs from a single source of motion.
-  | 'joystick'
-  // WAVESCULPT — hybrid 4-oscillator video synth. Four "wall-mounted"
-  // virtual oscillators emit 3D wave ribbons inside a unit box; a user-
-  // controlled camera (XY joystick + height + zoom) renders a view of
-  // the scene. Audio output is the distance-attenuated sum of all four
-  // voices (stereo). Final video pass: BENTBOX-style CRT.
-  | 'wavesculpt';
+  | 'modtris';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
