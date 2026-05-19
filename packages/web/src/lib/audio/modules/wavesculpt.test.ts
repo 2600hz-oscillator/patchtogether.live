@@ -60,7 +60,7 @@ describe('wavesculpt: module-def shape', () => {
     expect(['video', 'mono-video']).toContain(v!.type);
   });
 
-  it('exposes per-oscillator morph + ADSR + pitch params', () => {
+  it('exposes per-oscillator morph + ADSR + pitch + thickness params', () => {
     const ids = wavesculptDef.params.map((p) => p.id);
     for (let i = 1; i <= 4; i++) {
       expect(ids).toContain(`morph${i}`);
@@ -69,7 +69,24 @@ describe('wavesculpt: module-def shape', () => {
       expect(ids).toContain(`S${i}`);
       expect(ids).toContain(`R${i}`);
       expect(ids).toContain(`pitch${i}`);
+      expect(ids).toContain(`thickness${i}`);
     }
+  });
+
+  it('thickness params default to 0.3 in [0..1] range', () => {
+    for (let i = 1; i <= 4; i++) {
+      const p = wavesculptDef.params.find((q) => q.id === `thickness${i}`);
+      expect(p, `thickness${i} param exists`).toBeDefined();
+      expect(p!.defaultValue).toBe(0.3);
+      expect(p!.min).toBe(0);
+      expect(p!.max).toBe(1);
+    }
+  });
+
+  it('declares an alpha_in video input port', () => {
+    const ai = wavesculptDef.inputs.find((p) => p.id === 'alpha_in');
+    expect(ai, 'alpha_in port exists').toBeDefined();
+    expect(ai!.type).toBe('video');
   });
 
   it('exposes UNISON + Detune + camera + 12 bentscreen-wiggle params', () => {
