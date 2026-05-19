@@ -118,25 +118,11 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
 // platform's baseline. Each entry MUST list the specific {platform}/{type}
 // keys that are intentionally absent — anything else stays a hard failure.
 //
-// When the linux baseline lands for MACROOSCILLATOR, delete this map entry
-// (the test re-promotes to strict-check automatically).
-const EXEMPT_BASELINE_PAIRS = new Set<string>([
-  // MACROOSCILLATOR first-slice PR: author was on darwin only, linux
-  // baseline pending. Darwin baseline IS committed; VRT will still cover
-  // darwin pixels. The linux VRT job is `continue-on-error: true` so a
-  // missing baseline does not block the PR.
-  'linux/macrooscillator',
-  // SAMSLOOP first-slice PR: same situation — darwin baseline committed,
-  // linux pending. Remove when the linux baseline lands.
-  'linux/samsloop',
-  // BLADES first-slice PR: darwin baseline committed, linux pending —
-  // CI capture in a follow-up PR. Remove when the linux baseline lands.
-  'linux/blades',
-  // STAGES first-slice PR: darwin baseline committed; linux pending.
-  // The linux VRT job is `continue-on-error: true` so this does not
-  // block the PR gate. Remove when the linux baseline lands.
-  'linux/stages',
-]);
+// Empty: all currently-registered modules ship baselines on both
+// darwin + linux. New first-slice modules whose author only had a
+// darwin (or linux) box can add an entry here referencing the
+// missing pair, with a follow-up PR to drop it.
+const EXEMPT_BASELINE_PAIRS = new Set<string>([]);
 
 function repoRoot(): string {
   // This file lives at packages/web/src/lib/audio/modules/. Six `..`
