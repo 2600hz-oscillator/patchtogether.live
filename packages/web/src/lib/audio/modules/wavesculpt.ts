@@ -252,13 +252,13 @@ export const wavesculptDef: AudioModuleDef = {
   inputs: [
     // Per-oscillator gate + pitch CV (V/oct).
     { id: 'gate1',     type: 'gate' },
-    { id: 'pitch_cv1', type: 'cv' },
+    { id: 'pitch_cv1', type: 'pitch' },
     { id: 'gate2',     type: 'gate' },
-    { id: 'pitch_cv2', type: 'cv' },
+    { id: 'pitch_cv2', type: 'pitch' },
     { id: 'gate3',     type: 'gate' },
-    { id: 'pitch_cv3', type: 'cv' },
+    { id: 'pitch_cv3', type: 'pitch' },
     { id: 'gate4',     type: 'gate' },
-    { id: 'pitch_cv4', type: 'cv' },
+    { id: 'pitch_cv4', type: 'pitch' },
     // Camera-position CV inputs (joystick X/Y + HEIGHT Z).
     { id: 'pos_x', type: 'cv', paramTarget: 'pos_x', cvScale: { mode: 'linear' } },
     { id: 'pos_y', type: 'cv', paramTarget: 'pos_y', cvScale: { mode: 'linear' } },
