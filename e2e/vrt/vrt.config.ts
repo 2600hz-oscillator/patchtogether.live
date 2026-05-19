@@ -31,7 +31,13 @@ const IS_LOCAL_TARGET =
 
 export default defineConfig({
   testDir: '.',
-  testMatch: ['vrt.spec.ts', 'playhead.spec.ts'],
+  testMatch: [
+    'vrt.spec.ts',
+    'playhead.spec.ts',
+    'interactions.spec.ts',
+    'groups.spec.ts',
+    'dashboard.spec.ts',
+  ],
   // Single-worker by design. VRT screenshots care about exact pixel
   // output; running multiple workers in parallel against the same dev
   // server creates GPU contention + paint-timing variability that
