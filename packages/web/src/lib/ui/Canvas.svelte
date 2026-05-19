@@ -93,6 +93,10 @@
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
   import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
+  // JOYSTICK + WAVESCULPT: a manual CV utility + a hybrid 4-osc 3D video
+  // synth with embedded CRT post-process.
+  import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
+  import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
   import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
   import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
@@ -327,6 +331,8 @@
     midiCvBuddy: MidiCvBuddyCard,
     pong: PongCard,
     modtris: ModtrisCard,
+    joystick: JoystickCard,
+    wavesculpt: WavesculptCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
