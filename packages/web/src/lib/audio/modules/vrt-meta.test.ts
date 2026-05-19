@@ -97,6 +97,11 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // ILLOGIC naming issue that motivated this module — give the panel a
   // beat to settle before pinning pixels).
   analogLogicMaths: 'VRT baseline pending; ART + unit + E2E provide coverage. UI is stable but new — pinning baselines in a follow-up PR.',
+  // BENTBOX — CRT-emulation OUTPUT. Frame feedback + per-line sync jitter
+  // animated by uTime defeats a deterministic single-frame baseline. Unit
+  // + E2E provide coverage. Same gap as PONG/MODTRIS; promote once a
+  // deterministic-time test harness exists.
+  bentbox: 'animated CRT simulation (feedback + per-line time drift) defeats deterministic capture; unit + E2E provide coverage',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
