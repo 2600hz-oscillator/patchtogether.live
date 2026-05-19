@@ -694,11 +694,18 @@ void main() {
 
     g.useProgram(ribbonProgram);
 
-    // Camera setup.
-    const camX = clampJoy(node?.params.pos_x as number ?? 0);
-    const camY = clampJoy(node?.params.pos_y as number ?? 0);
-    const camZ = clampJoy(node?.params.pos_z as number ?? 0);
-    const zoomVal = Math.max(0.3, Math.min(3, node?.params.zoom as number ?? 1));
+    // Camera setup. Read the LIVE AudioParam values (knob + CV-summed)
+    // via engine.readParam so patched CV actually moves the camera —
+    // node.params.* is the static knob value only and doesn't see CV.
+    const ePcam = engineCtx.get();
+    const liveOr = (k: string, fb: number): number => {
+      const v = node && ePcam ? (ePcam.readParam(node, k) as number | undefined) : undefined;
+      return typeof v === 'number' ? v : fb;
+    };
+    const camX = clampJoy(liveOr('pos_x', (node?.params.pos_x as number) ?? 0));
+    const camY = clampJoy(liveOr('pos_y', (node?.params.pos_y as number) ?? 0));
+    const camZ = clampJoy(liveOr('pos_z', (node?.params.pos_z as number) ?? 0));
+    const zoomVal = Math.max(0.3, Math.min(3, liveOr('zoom', (node?.params.zoom as number) ?? 1)));
     const fovy = 1.2 / zoomVal; // shrink fov as zoom increases
     const aspect = RES_W / RES_H;
     mat4Perspective(projMat, fovy, aspect, 0.05, 6.0);
