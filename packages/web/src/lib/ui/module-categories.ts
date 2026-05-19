@@ -99,6 +99,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   polyseqz: { top: 'Audio modules', sub: 'Utility' },
   macseq: { top: 'Audio modules', sub: 'Utility' },
   score: { top: 'Audio modules', sub: 'Utility' },
+  joystick: { top: 'Audio modules', sub: 'Utility' },
 
   // ───────── Audio modules → Effects ─────────
   filter: { top: 'Audio modules', sub: 'Effects' },
@@ -158,6 +159,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // MODTRIS — research-prototype Tetris-clone game module. Gate-in controls
   // + gate-out events. Same bucket as PONG.
   modtris: { top: 'Hybrid', sub: 'Hybrid' },
+  // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
+  wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
   // Meta-domain organizational tools live here — they don't fit
   // cleanly under audio or video and the user can re-bucket on dev.
   sticky: { top: 'Hybrid', sub: 'Hybrid' },

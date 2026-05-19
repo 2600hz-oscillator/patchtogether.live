@@ -157,6 +157,10 @@
   import PongCard from '$lib/ui/modules/PongCard.svelte';
   // MODTRIS — Tetris-clone game module (research prototype).
   import ModtrisCard from '$lib/ui/modules/ModtrisCard.svelte';
+  // JOYSTICK — manual XY pad CV source.
+  import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
+  // WAVESCULPT — hybrid 4-osc synth (audio + 3D ribbon video).
+  import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -329,6 +333,8 @@
     helm: HelmCard,
     pong: PongCard,
     modtris: ModtrisCard,
+    joystick: JoystickCard,
+    wavesculpt: WavesculptCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

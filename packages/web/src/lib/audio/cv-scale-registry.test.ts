@@ -92,6 +92,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // cvScale on their respective _cv ports). No AudioParam fast path on
   // a / b themselves, and the math is amplitude-preserving by design.
   analogLogicMaths: ['a', 'b'],
+  // WAVESCULPT pitch_cv1..4: per-oscillator V/oct inputs that the module IS
+  // the oscillator for — pitch is consumed directly in the per-voice osc
+  // graph (oscillator.frequency.value = midiToHz(60 + cv*60)). No AudioParam
+  // fast path / WaveShaperNode interposition would apply meaningfully — the
+  // V/oct mapping is intrinsic to the module. Same shape as DX7.pitch_cv.
+  wavesculpt: ["pitch_cv1", "pitch_cv2", "pitch_cv3", "pitch_cv4"],
 };
 
 describe('cv-scale / registry coverage', () => {
