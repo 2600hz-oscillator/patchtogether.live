@@ -202,27 +202,33 @@ describe('tickEnvelope', () => {
 
   it('attack ramps from 0 to 1 over A seconds', () => {
     // A=0.05s = 50ms; 25ms in → ~0.5.
-    let s = { env: 0, gateHigh: true, phase: 'attack' as const, phaseT: 0 };
-    s = { ...s, ...tickEnvelope(s, 25, { A: 0.05, D: 0.1, S: 0.5, R: 0.2 }) };
+    let s: Parameters<typeof tickEnvelope>[0] = {
+      env: 0, gateHigh: true, phase: 'attack', phaseT: 0,
+    };
+    s = tickEnvelope(s, 25, { A: 0.05, D: 0.1, S: 0.5, R: 0.2 });
     expect(s.env).toBeGreaterThan(0.3);
     expect(s.env).toBeLessThan(0.7);
   });
 
   it('attack completing transitions to decay at env=1', () => {
-    let s = { env: 0, gateHigh: true, phase: 'attack' as const, phaseT: 0 };
+    let s: Parameters<typeof tickEnvelope>[0] = {
+      env: 0, gateHigh: true, phase: 'attack', phaseT: 0,
+    };
     // Advance well past A (50ms).
-    s = { ...s, ...tickEnvelope(s, 100, { A: 0.05, D: 0.1, S: 0.5, R: 0.2 }) };
+    s = tickEnvelope(s, 100, { A: 0.05, D: 0.1, S: 0.5, R: 0.2 });
     expect(s.phase).toBe('decay');
     expect(s.env).toBe(1);
   });
 
   it('release ramps env down to ~0', () => {
-    let s = {
-      env: 0.7, gateHigh: false, phase: 'release' as const, phaseT: 0,
-      _releaseStart: 0.7,
-    } as Parameters<typeof tickEnvelope>[0];
+    let s: Parameters<typeof tickEnvelope>[0] = {
+      env: 0.7, gateHigh: false, phase: 'release', phaseT: 0,
+    };
+    // The tickEnvelope helper expects an internal _releaseStart attached
+    // before the release phase starts; mirror what the factory does.
+    (s as { _releaseStart?: number })._releaseStart = 0.7;
     // Advance well past R (200ms).
-    s = { ...s, ...tickEnvelope(s, 500, { A: 0.05, D: 0.1, S: 0.5, R: 0.2 }) };
+    s = tickEnvelope(s, 500, { A: 0.05, D: 0.1, S: 0.5, R: 0.2 });
     expect(s.env).toBeLessThan(0.01);
     expect(s.phase).toBe('idle');
   });
