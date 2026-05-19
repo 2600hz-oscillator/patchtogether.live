@@ -15,8 +15,11 @@
 
   /** Hard cap on name length — sanity guard, not validation. */
   const NAME_MAX_LENGTH = 32;
-  /** Fallback label when the user leaves the name blank. */
+  /** Fallback label when the user leaves the name blank. The legacy value
+   *  ('GROUP!') is kept on disk for back-compat; the placeholder shown in
+   *  the UI is the friendlier "Instrument" word. */
   const DEFAULT_GROUP_LABEL = 'GROUP!';
+  const NAME_PLACEHOLDER = 'INSTRUMENT';
 
   interface Props {
     open: boolean;
@@ -153,7 +156,7 @@
     if (dropCount > 0) {
       const msg = Array.isArray(existingExposedPorts)
         ? `${dropCount} cable${dropCount === 1 ? '' : 's'} terminating on a now-un-exposed port will be DROPPED. Continue?`
-        : `${dropCount} cable${dropCount === 1 ? '' : 's'} crossing the group boundary will be DROPPED. Continue?`;
+        : `${dropCount} cable${dropCount === 1 ? '' : 's'} crossing the instrument boundary will be DROPPED. Continue?`;
       const ok = window.confirm(msg);
       if (!ok) return;
     }
@@ -202,29 +205,29 @@
   >
     <header class="modal-header">
       <h2 id="group-builder-title">
-        {isEditMode ? 'Edit exposed patch jacks' : 'Group modules'}
+        {isEditMode ? 'Edit exposed patch jacks' : 'Build instrument'}
       </h2>
       <p class="modal-sub">
         {#if isEditMode}
-          Toggle which child ports are exposed on the group's boundary.
+          Toggle which child ports are exposed on the instrument's boundary.
           Un-checking a currently-exposed port will drop any cables
           terminating there.
         {:else}
-          Pick the ports to expose on the group. Cables that would cross the
-          boundary are pre-checked; uncheck to drop them.
+          Pick the ports to expose on the instrument. Cables that would cross
+          the boundary are pre-checked; uncheck to drop them.
         {/if}
       </p>
     </header>
     <div class="modal-body">
       <div class="name-row">
-        <label class="name-label" for="group-builder-name">Group name</label>
+        <label class="name-label" for="group-builder-name">Instrument name</label>
         <input
           id="group-builder-name"
           bind:this={nameInputEl}
           bind:value={groupName}
           type="text"
           class="name-input"
-          placeholder={DEFAULT_GROUP_LABEL}
+          placeholder={NAME_PLACEHOLDER}
           maxlength={NAME_MAX_LENGTH}
           onkeydown={onNameKeydown}
           data-testid="group-builder-name"
@@ -274,7 +277,7 @@
       {/if}
       <button class="btn" onclick={handleCancel} data-testid="group-builder-cancel">Cancel</button>
       <button class="btn primary" onclick={handleCreate} data-testid="group-builder-create">
-        {isEditMode ? 'Update' : 'Create group'}
+        {isEditMode ? 'Update' : 'Create instrument'}
       </button>
     </footer>
   </div>

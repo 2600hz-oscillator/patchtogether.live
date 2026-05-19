@@ -60,6 +60,33 @@ export interface ExposedControl {
 }
 
 /**
+ * Instrument-layout data for the v1 "edit phase". The user freely positions +
+ * resizes each per-child controls box (and any video screen) inside the
+ * instrument card. While `mode === 'edit'` the boxes render with drag/resize
+ * affordances; on Save Instrument the layout flips to 'locked' and the user
+ * sees a frozen layout the way performers see a hardware instrument.
+ *
+ * `controls` is keyed by `${childId}.${controlKey}` — `controlKey` is the
+ * matching ExposedControl's `controlId` for individual exposed controls,
+ * `__module` for the per-child bounding box itself, and `__screen` for the
+ * embedded viz screen (BENTBOX, VIDEOOUT, …). Missing keys fall back to the
+ * default flow layout, so adding a control to an already-saved instrument
+ * doesn't fight the layout — it just lands at the default slot.
+ */
+export interface InstrumentLayoutEntry {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface InstrumentLayout {
+  /** 'edit' = drag/resize affordances visible; 'locked' = frozen render. */
+  mode: 'edit' | 'locked';
+  /** Per-element absolute positions inside the instrument card. */
+  controls: Record<string, InstrumentLayoutEntry>;
+}
+
+/**
  * A group node's `data` shape. `childIds` records membership so a follow-up
  * Ungroup can iterate them; `parentGroupId` on each child node also encodes
  * the inverse pointer for fast canvas-side filtering.
@@ -74,6 +101,16 @@ export interface GroupData {
   /** Phase 4: per-(childId, controlId) opt-ins surfaced on the group bar.
    *  Empty/omitted = nothing surfaced. */
   exposedControls?: ExposedControl[];
+  /** v1 Instruments — see InstrumentLayout. Default behavior when omitted:
+   *  the instrument renders the legacy flow layout (no per-element
+   *  positions). The right-click "Edit Instrument" entry seeds an empty
+   *  layout with mode='edit' on first entry. */
+  instrumentLayout?: InstrumentLayout;
+  /** v1 Instruments — atomic sequence/score exposure. When true and the
+   *  child module is a sequencer/score, the FULL step-grid / score sheet is
+   *  rendered inside the instrument (single decision, no per-step controls).
+   *  Keyed by childId. */
+  exposedSequences?: Record<string, boolean>;
 }
 
 /**
@@ -111,6 +148,34 @@ function asGroupData(data: unknown): GroupData | null {
       const ec = c as Partial<ExposedControl>;
       return typeof ec.childId === 'string' && typeof ec.controlId === 'string';
     });
+  }
+  if (d.instrumentLayout && typeof d.instrumentLayout === 'object') {
+    const il = d.instrumentLayout as Partial<InstrumentLayout>;
+    const controlsRaw = (il.controls ?? {}) as Record<string, unknown>;
+    const controls: Record<string, InstrumentLayoutEntry> = {};
+    for (const [k, v] of Object.entries(controlsRaw)) {
+      if (!v || typeof v !== 'object') continue;
+      const e = v as Partial<InstrumentLayoutEntry>;
+      if (
+        typeof e.x === 'number' &&
+        typeof e.y === 'number' &&
+        typeof e.width === 'number' &&
+        typeof e.height === 'number'
+      ) {
+        controls[k] = { x: e.x, y: e.y, width: e.width, height: e.height };
+      }
+    }
+    out.instrumentLayout = {
+      mode: il.mode === 'edit' ? 'edit' : 'locked',
+      controls,
+    };
+  }
+  if (d.exposedSequences && typeof d.exposedSequences === 'object') {
+    const es: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(d.exposedSequences as Record<string, unknown>)) {
+      if (typeof v === 'boolean') es[k] = v;
+    }
+    out.exposedSequences = es;
   }
   return out;
 }

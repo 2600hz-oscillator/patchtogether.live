@@ -14,6 +14,12 @@
     childId: string;
     label: string;
     controls: readonly ExposableControl[];
+    /** Instruments v1 — true when this child is a sequencer/score whose
+     *  step grid / score sheet is atomically exposable as a single
+     *  "Show step sequence" checkbox. */
+    canExposeSequence?: boolean;
+    /** What kind of surface this is, drives the checkbox label. */
+    sequenceLabel?: string;
   }
 
   interface Props {
@@ -22,8 +28,12 @@
     children: ChildBlock[];
     /** Currently-exposed controls (pre-checks the matching boxes). */
     existing: ExposedControl[];
-    /** Called with the user-confirmed list on Save. */
-    onsave: (picks: ExposedControl[]) => void;
+    /** Instruments v1 — currently-exposed atomic sequences, keyed by childId. */
+    existingSequences?: Record<string, boolean>;
+    /** Called with the user-confirmed list on Save. The second arg is the
+     *  atomic-sequence map (keyed by childId) — only present for sequencer/
+     *  score children that opt in via canExposeSequence. */
+    onsave: (picks: ExposedControl[], sequences: Record<string, boolean>) => void;
     onclose: () => void;
   }
 
@@ -31,6 +41,7 @@
     open = $bindable(false),
     children: childBlocks,
     existing,
+    existingSequences = {},
     onsave,
     onclose,
   }: Props = $props();
@@ -42,6 +53,8 @@
   }
 
   let checked = $state<Record<string, boolean>>({});
+  /** Per-child atomic-sequence checkbox state (Instruments v1). */
+  let sequenceChecked = $state<Record<string, boolean>>({});
   $effect(() => {
     if (!open) return;
     const next: Record<string, boolean> = {};
@@ -54,11 +67,22 @@
       }
     }
     checked = next;
+    const seqNext: Record<string, boolean> = {};
+    for (const block of childBlocks) {
+      if (block.canExposeSequence) {
+        seqNext[block.childId] = existingSequences[block.childId] === true;
+      }
+    }
+    sequenceChecked = seqNext;
   });
 
   function toggle(childId: string, controlId: string) {
     const k = keyOf(childId, controlId);
     checked = { ...checked, [k]: !checked[k] };
+  }
+
+  function toggleSequence(childId: string) {
+    sequenceChecked = { ...sequenceChecked, [childId]: !sequenceChecked[childId] };
   }
 
   function handleSave() {
@@ -70,7 +94,11 @@
         }
       }
     }
-    onsave(picks);
+    const seqs: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(sequenceChecked)) {
+      if (v) seqs[k] = true;
+    }
+    onsave(picks, seqs);
     onclose();
   }
 
@@ -103,13 +131,13 @@
     <header class="modal-header">
       <h2 id="exposed-controls-title">Configure exposed controls</h2>
       <p class="modal-sub">
-        Pick which child-module controls surface on the group's bar so
-        they're operable without unfolding the group.
+        Pick which child-module controls surface on the instrument so
+        they're operable without unfolding it.
       </p>
     </header>
     <div class="modal-body">
       {#if childBlocks.length === 0}
-        <div class="empty">None of this group's modules declare exposable controls yet.</div>
+        <div class="empty">None of this instrument's modules declare exposable controls yet.</div>
       {/if}
       {#each childBlocks as block (block.childId)}
         <div class="mod-block">
@@ -132,6 +160,23 @@
                 </label>
               </li>
             {/each}
+            {#if block.canExposeSequence}
+              <!-- Instruments v1 — atomic sequencer/score exposure. One
+                   checkbox surfaces the WHOLE step grid / score sheet; no
+                   per-step controls (per spec). -->
+              <li class="ctrl-row" data-testid={`ctrl-row-${block.childId}-__sequence`}>
+                <label class="ctrl-label">
+                  <input
+                    type="checkbox"
+                    checked={sequenceChecked[block.childId] === true}
+                    onchange={() => toggleSequence(block.childId)}
+                    data-testid={`ctrl-check-sequence-${block.childId}`}
+                  />
+                  <span class="kind sequence">SURFACE</span>
+                  <span class="ctrl-id">{block.sequenceLabel ?? 'Show step sequence'}</span>
+                </label>
+              </li>
+            {/if}
           </ul>
         </div>
       {/each}
@@ -236,6 +281,10 @@
   .kind.knob {
     background: rgba(192, 132, 252, 0.16);
     color: #d8b4fe;
+  }
+  .kind.sequence {
+    background: rgba(252, 211, 77, 0.18);
+    color: #fcd34d;
   }
   .ctrl-sub {
     font-family: ui-monospace, monospace;

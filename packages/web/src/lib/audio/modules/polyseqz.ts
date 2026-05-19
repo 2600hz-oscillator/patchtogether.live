@@ -171,6 +171,8 @@ export const polyseqzDef: AudioModuleDef = {
   exposableControls: [
     { id: 'playStop', label: 'Play', kind: 'button', paramId: 'isPlaying' },
   ],
+  // Instruments v1 — full step grid is atomically exposable.
+  exposesSequence: true,
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const polyPitch = createPolySender(ctx);

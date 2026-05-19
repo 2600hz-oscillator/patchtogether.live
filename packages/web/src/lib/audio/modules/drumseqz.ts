@@ -227,6 +227,9 @@ export const drumseqzDef: AudioModuleDef = {
   exposableControls: [
     { id: 'playStop', label: 'Play', kind: 'button', paramId: 'isPlaying' },
   ],
+  // Instruments v1 — the full 4×16 step grid is an atomically-exposable
+  // surface (single checkbox in the configure modal).
+  exposesSequence: true,
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;

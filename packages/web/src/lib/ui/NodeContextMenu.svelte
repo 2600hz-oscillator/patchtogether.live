@@ -144,13 +144,17 @@
       <div class="ctx-sep" role="presentation"></div>
     {/if}
     {#if isGroup}
+      <!-- Instruments v1 — "Edit Instrument" toggles the new edit-mode
+           layout engine (free-form drag + resize). The legacy
+           "Edit knob positions" expanded-card mode is kept under the same
+           data-testid so existing tests continue to address the toggle. -->
       <button
         class="ctx-item"
         onclick={pickToggleExpanded}
         role="menuitem"
         data-testid="ctx-toggle-expanded"
       >
-        {groupExpanded ? 'Finish editing knob positions' : 'Edit knob positions'}
+        {groupExpanded ? 'Finish editing instrument' : 'Edit instrument'}
       </button>
       <button
         class="ctx-item"
@@ -183,11 +187,11 @@
           role="menuitem"
           data-testid="ctx-save-group"
         >
-          Save group to library…
+          Save instrument to library…
         </button>
       {/if}
       <button class="ctx-item" onclick={pickUngroup} role="menuitem" data-testid="ctx-ungroup">
-        Ungroup
+        Break apart instrument
       </button>
       <div class="ctx-sep" role="presentation"></div>
     {:else}
@@ -199,7 +203,7 @@
       </button>
     {/if}
     <button class="ctx-item danger" onclick={pickDelete} role="menuitem">
-      {isGroup ? 'Delete group + children' : 'Delete'}
+      {isGroup ? 'Delete instrument + modules' : 'Delete'}
     </button>
   </div>
 {/if}
