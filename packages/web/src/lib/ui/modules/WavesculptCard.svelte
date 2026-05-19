@@ -40,10 +40,10 @@
   const flowStore = useStore();
 
   // ----- Resize plumbing (mirror BentboxCard) -----
-  const DEFAULT_WIDTH = 720;
-  const DEFAULT_HEIGHT = 720;
-  const MIN_WIDTH = 560;
-  const MIN_HEIGHT = 560;
+  const DEFAULT_WIDTH = 1280;
+  const DEFAULT_HEIGHT = 820;
+  const MIN_WIDTH = 960;
+  const MIN_HEIGHT = 680;
   const ENGINE_W = 640;
   const ENGINE_H = 360;
 
