@@ -152,6 +152,10 @@ type StandardModuleType =
   | 'buggles'
   // VDELAY — video delay + feedback echo (ring buffer of FBO textures).
   | 'vdelay'
+  // BENTBOX — CRT display output simulating an NTSC composite signal bent
+  // through an Archer-Video-Enhancer-style "AVEmod" feedback circuit. 12
+  // CV-controllable bending knobs (timing/chroma/feedback/CRT).
+  | 'bentbox'
   // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder + 3D viz.
   // Loads E352 Cloud Terrarium-format WAV wavetables.
   | 'wavecel'

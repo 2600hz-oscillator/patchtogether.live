@@ -92,6 +92,7 @@
   import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
+  import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
   import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
   import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
@@ -289,6 +290,7 @@
     ruttetra: RuttetraCard,
     shapedramps: ShapedrampsCard,
     vdelay: VdelayCard,
+    bentbox: BentboxCard,
     // Video-domain (Phase 1):
     inwards: InwardsCard,
     picturebox: PictureboxCard,
