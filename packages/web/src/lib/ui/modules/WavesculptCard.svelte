@@ -180,6 +180,12 @@
   let quadVao: WebGLVertexArrayObject | null = null;
   let sceneFbo: WebGLFramebuffer | null = null;
   let sceneTex: WebGLTexture | null = null;
+  // Depth renderbuffer for the ribbon (scene) pass — without it, ribbons
+  // drawn later would paint over closer ribbons drawn earlier regardless
+  // of true 3D z-position. With this attached + gl.DEPTH_TEST enabled, a
+  // closer ribbon's fragments occlude further ones per the user's
+  // "in front should occlude behind" feedback.
+  let sceneDepthRb: WebGLRenderbuffer | null = null;
   let prevFbo: WebGLFramebuffer | null = null;
   let prevTex: WebGLTexture | null = null;
   let ribbonSamplesBuf: WebGLBuffer | null = null;
@@ -187,9 +193,13 @@
   let postPingFbo: WebGLFramebuffer | null = null;
   // ALPHA-mask-only FBO: a SECOND ribbon-pass renders ONLY the ALPHA
   // oscillator into this FBO. The bentbox post-pass samples uAlphaMask
-  // from here to decide where to blend uAlphaInTex.
+  // from here to decide where to blend uAlphaInTex. Also gets its own
+  // depth renderbuffer so the mask shape respects the same occlusion
+  // as the visible scene (otherwise the mask could "see through" a
+  // closer ribbon that hides part of the ALPHA ribbon in the scene FBO).
   let alphaMaskFbo: WebGLFramebuffer | null = null;
   let alphaMaskTex: WebGLTexture | null = null;
+  let alphaMaskDepthRb: WebGLRenderbuffer | null = null;
   // GPU texture for the upstream `alpha_in` video source. We upload the
   // video engine's canvas into this texture each frame (via texImage2D);
   // the bentbox FS samples it via uAlphaInTex.
@@ -274,10 +284,15 @@ void main() {
   float wAmt = w * 0.45;
 
   // Ribbon thickness — driven per-osc by uThickness (0..1). At
-  // thickness=0 the ribbon collapses to a thin line; at thickness=1 it
-  // widens to ~0.06 units of the unit box (~2x the v1 baseline).
+  // thickness=0 the ribbon collapses to a thin line (~0.012 units); at
+  // thickness=1 it widens to ~0.6 units of the unit box — large enough
+  // that the ribbons clearly become "very wide" at the extreme, as
+  // requested by the user feedback on the initial dogfood release.
+  // The curve is quadratic so the bottom half stays subtle (gentle knob
+  // feel near defaults) and the top half ramps fast into the wide regime.
   float side = aSide * 2.0 - 1.0; // -1 or +1
-  float thicknessAmt = 0.012 + uThickness[idx] * 0.06;
+  float tParam = clamp(uThickness[idx], 0.0, 1.0);
+  float thicknessAmt = 0.012 + (tParam * tParam) * 0.6;
   vec3 thick = perp * side * thicknessAmt;
 
   // Final position: along + perp displacement (the wave) + thickness.
@@ -493,7 +508,12 @@ void main() {
     return p;
   }
 
-  function createFboTex(g: WebGL2RenderingContext, w: number, h: number): { fbo: WebGLFramebuffer; tex: WebGLTexture } {
+  function createFboTex(
+    g: WebGL2RenderingContext,
+    w: number,
+    h: number,
+    withDepth = false,
+  ): { fbo: WebGLFramebuffer; tex: WebGLTexture; depth: WebGLRenderbuffer | null } {
     const tex = g.createTexture();
     if (!tex) throw new Error('createTexture failed');
     g.bindTexture(g.TEXTURE_2D, tex);
@@ -506,8 +526,21 @@ void main() {
     if (!fbo) { g.deleteTexture(tex); throw new Error('createFramebuffer failed'); }
     g.bindFramebuffer(g.FRAMEBUFFER, fbo);
     g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, tex, 0);
+    let depth: WebGLRenderbuffer | null = null;
+    if (withDepth) {
+      // 24-bit depth renderbuffer — sufficient precision for the unit-box
+      // scene (depth range 0..6 in world units). We don't need the depth
+      // to be sampleable as a texture; a renderbuffer is the cheap path.
+      depth = g.createRenderbuffer();
+      if (depth) {
+        g.bindRenderbuffer(g.RENDERBUFFER, depth);
+        g.renderbufferStorage(g.RENDERBUFFER, g.DEPTH_COMPONENT24, w, h);
+        g.framebufferRenderbuffer(g.FRAMEBUFFER, g.DEPTH_ATTACHMENT, g.RENDERBUFFER, depth);
+        g.bindRenderbuffer(g.RENDERBUFFER, null);
+      }
+    }
     g.bindFramebuffer(g.FRAMEBUFFER, null);
-    return { fbo, tex };
+    return { fbo, tex, depth };
   }
 
   // Build ribbon geometry once.
@@ -747,15 +780,21 @@ void main() {
     }
     gl.bindVertexArray(null);
 
-    const fboA = createFboTex(gl, RES_W, RES_H);
-    sceneFbo = fboA.fbo; sceneTex = fboA.tex;
+    // Scene FBO gets a depth buffer so the ribbon pass can use DEPTH_TEST
+    // for proper front-occludes-back rendering between the 4 ribbons.
+    const fboA = createFboTex(gl, RES_W, RES_H, true);
+    sceneFbo = fboA.fbo; sceneTex = fboA.tex; sceneDepthRb = fboA.depth;
     const fboB = createFboTex(gl, RES_W, RES_H);
     prevFbo = fboB.fbo; prevTex = fboB.tex;
     const fboC = createFboTex(gl, RES_W, RES_H);
     postPingFbo = fboC.fbo; postPingTex = fboC.tex;
     // ALPHA-mask FBO (osc-3-only ribbon render → red channel = mask).
-    const fboD = createFboTex(gl, RES_W, RES_H);
-    alphaMaskFbo = fboD.fbo; alphaMaskTex = fboD.tex;
+    // Also gets a depth buffer so the mask respects the same occlusion
+    // ordering as the scene pass — a closer non-alpha ribbon must hide
+    // the part of the alpha ribbon behind it, otherwise the alpha
+    // composite would bleed through closer geometry.
+    const fboD = createFboTex(gl, RES_W, RES_H, true);
+    alphaMaskFbo = fboD.fbo; alphaMaskTex = fboD.tex; alphaMaskDepthRb = fboD.depth;
     // ALPHA-in texture (uploaded from upstream video each frame). 1x1
     // black placeholder so the sampler isn't dangling before the first
     // upload; texImage2D in tryUploadAlphaIn() replaces with real data.
@@ -784,12 +823,14 @@ void main() {
       if (quadVao) gl.deleteVertexArray(quadVao);
       if (sceneFbo) gl.deleteFramebuffer(sceneFbo);
       if (sceneTex) gl.deleteTexture(sceneTex);
+      if (sceneDepthRb) gl.deleteRenderbuffer(sceneDepthRb);
       if (prevFbo) gl.deleteFramebuffer(prevFbo);
       if (prevTex) gl.deleteTexture(prevTex);
       if (postPingFbo) gl.deleteFramebuffer(postPingFbo);
       if (postPingTex) gl.deleteTexture(postPingTex);
       if (alphaMaskFbo) gl.deleteFramebuffer(alphaMaskFbo);
       if (alphaMaskTex) gl.deleteTexture(alphaMaskTex);
+      if (alphaMaskDepthRb) gl.deleteRenderbuffer(alphaMaskDepthRb);
       if (alphaInTex) gl.deleteTexture(alphaInTex);
       if (ribbonSamplesBuf) gl.deleteBuffer(ribbonSamplesBuf);
     } catch { /* */ }
@@ -806,10 +847,21 @@ void main() {
     tryUploadAlphaIn();
 
     // 1) Render ribbons into sceneFbo.
+    //
+    // Depth test is enabled so a closer ribbon occludes a further one
+    // regardless of which oscillator-index drew first — fixes the
+    // "wave passing in front should occlude the wave behind" user
+    // feedback. LEQUAL lets coincident geometry (e.g. ribbon edges
+    // touching) blend rather than z-fight. Additive blending is kept
+    // so ribbons still feel "glow-y" where they cross.
     g.bindFramebuffer(g.FRAMEBUFFER, sceneFbo);
     g.viewport(0, 0, RES_W, RES_H);
     g.clearColor(0, 0, 0, 1);
-    g.clear(g.COLOR_BUFFER_BIT);
+    g.clearDepth(1.0);
+    g.clear(g.COLOR_BUFFER_BIT | g.DEPTH_BUFFER_BIT);
+    g.enable(g.DEPTH_TEST);
+    g.depthFunc(g.LEQUAL);
+    g.depthMask(true);
     g.enable(g.BLEND);
     g.blendFunc(g.SRC_ALPHA, g.ONE);
 
@@ -926,7 +978,11 @@ void main() {
     g.bindFramebuffer(g.FRAMEBUFFER, alphaMaskFbo);
     g.viewport(0, 0, RES_W, RES_H);
     g.clearColor(0, 0, 0, 1);
-    g.clear(g.COLOR_BUFFER_BIT);
+    g.clearDepth(1.0);
+    g.clear(g.COLOR_BUFFER_BIT | g.DEPTH_BUFFER_BIT);
+    // Depth test still on here — a non-alpha ribbon in front must hide
+    // the part of the alpha ribbon behind it so the alpha_in composite
+    // doesn't bleed through closer geometry.
     const maskColArr = new Float32Array(16);
     // osc 0/1/2 → transparent black; osc 3 → red mask.
     maskColArr[3 * 4 + 0] = 1.0;
@@ -943,6 +999,12 @@ void main() {
     g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
     g.bindVertexArray(null);
     g.disable(g.BLEND);
+    // Disable depth test before the screen-space post-passes — the
+    // bentbox FS reads from the ribbon texture as a 2D image and the
+    // composite/snapshot passes must paint the full quad unconditionally
+    // (depth test would otherwise leave the ping-pong feedback FBO
+    // partly stale frame-to-frame since its depth attachment is fresh).
+    g.disable(g.DEPTH_TEST);
 
     // 2) Bentbox post-pass: sceneTex + prevTex + alphaMaskTex + alphaInTex
     //    → postPingFbo (or default).
