@@ -90,6 +90,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   peaks: { top: 'Audio modules', sub: 'Utility' },
   stages: { top: 'Audio modules', sub: 'Utility' },
   timelorde: { top: 'Audio modules', sub: 'Utility' },
+  // JOYSTICK is a manual XY CV utility — drag pad on the card, four CV
+  // outputs (x / y / nx / ny). No oscillator/sound — purely a control source.
+  joystick: { top: 'Audio modules', sub: 'Utility' },
   sequencer: { top: 'Audio modules', sub: 'Utility' },
   drumseqz: { top: 'Audio modules', sub: 'Utility' },
   polyseqz: { top: 'Audio modules', sub: 'Utility' },
@@ -154,6 +157,11 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // MODTRIS — research-prototype Tetris-clone game module. Gate-in controls
   // + gate-out events. Same bucket as PONG.
   modtris: { top: 'Hybrid', sub: 'Hybrid' },
+  // WAVESCULPT — hybrid 4-oscillator 3D video synth. Audio output is the
+  // distance-attenuated sum of 4 oscillators positioned on the walls of a
+  // virtual unit box; video output is a 3D ribbon scene rendered from a
+  // user-controlled in-box camera, processed through a BENTBOX-style CRT.
+  wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
   // Meta-domain organizational tools live here — they don't fit
   // cleanly under audio or video and the user can re-bucket on dev.
   sticky: { top: 'Hybrid', sub: 'Hybrid' },
