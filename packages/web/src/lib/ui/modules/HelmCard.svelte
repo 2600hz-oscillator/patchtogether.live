@@ -54,13 +54,22 @@
     return (e.read(node, 'card-api') as HelmCardApi | undefined) ?? null;
   }
 
+  // Settings-open is a card-local UI bit (not engine state) so the gear
+  // toggle works even before the AudioContext resumes (e.g. on first
+  // page-load under E2E where ensureEngine() isn't yet called).
+  let settingsOpen = $state(false);
+
   let unsubscribe: (() => void) | null = null;
   $effect(() => {
     const _ = id;
     const api = getApi();
     if (!api) return;
     unsubscribe?.();
-    unsubscribe = api.subscribe((s) => { cardState = s; });
+    unsubscribe = api.subscribe((s) => {
+      // Preserve our local settingsOpen — engine state mirror doesn't
+      // override the card's UI toggle.
+      cardState = { ...s, settingsOpen };
+    });
     return () => {
       unsubscribe?.();
       unsubscribe = null;
@@ -111,8 +120,10 @@
   }
 
   function toggleSettings(): void {
-    const open = !cardState.settingsOpen;
-    getApi()?.setSettingsOpen(open);
+    settingsOpen = !settingsOpen;
+    // Mirror to the engine handle if available (Y.Doc sync may use this in
+    // the future — currently the engine state is read-only for the card).
+    getApi()?.setSettingsOpen(settingsOpen);
   }
 
   function isChannelOn(ch: number): boolean {
@@ -181,7 +192,7 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
 
-      {#if cardState.settingsOpen}
+      {#if settingsOpen}
         <!-- ============ MIDI SETTINGS PANEL ============ -->
         <div class="settings" data-testid="helm-settings">
           <div class="settings-head">
