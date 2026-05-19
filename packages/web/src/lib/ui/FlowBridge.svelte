@@ -8,7 +8,7 @@
   // sits inside `<SvelteFlow>`, calls the hook, and forwards the API via the
   // bound api prop. Renders nothing.
   import { useSvelteFlow, useStore } from '@xyflow/svelte';
-  import type { XYPosition } from '@xyflow/system';
+  import { initialConnection, type XYPosition } from '@xyflow/system';
   import type { Node as FlowNode } from '@xyflow/svelte';
 
   /** xyflow's per-handle bounds entry (relative to the node's top-left
@@ -53,6 +53,14 @@
      *  the user's mid-click-connect and a subsequent click on a handle
      *  would commit instead of starting a fresh pickup. */
     cancelClickConnect: () => void;
+    /** Reset xyflow's in-progress connection state (`store._connection`)
+     *  back to the no-connection sentinel. Used when the PortContextMenu
+     *  opens on a port: xyflow's own pointerdown on the handle would
+     *  otherwise start a drag-connection and render the dashed yellow
+     *  preview line to the cursor — which then sits behind the menu
+     *  for as long as the menu is open. Calling this on menu-open kills
+     *  that preview cleanly. */
+    cancelConnection: () => void;
   }
 
   interface Props {
@@ -74,6 +82,26 @@
       getViewport: () => flow.getViewport(),
       cancelClickConnect: () => {
         store.clickConnectStartHandle = null;
+      },
+      cancelConnection: () => {
+        // Reset both the click-connect handle AND the drag-connection
+        // state so no in-flight gesture is left hanging when the port
+        // context menu takes over. Defensive: xyflow's store shape can
+        // change between minor versions, and this is called from a
+        // pointerdown path where a thrown error would prevent the
+        // port-context menu from opening (and, transitively, break any
+        // downstream render work in the same microtask). Never crash
+        // the caller — the menu must open even if cleanup fails.
+        try {
+          if (store && 'clickConnectStartHandle' in store) {
+            store.clickConnectStartHandle = null;
+          }
+        } catch { /* swallow — defensive */ }
+        try {
+          if (store && '_connection' in store) {
+            store._connection = initialConnection;
+          }
+        } catch { /* swallow — defensive */ }
       },
     };
     return () => {
