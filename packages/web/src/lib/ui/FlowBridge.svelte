@@ -86,9 +86,22 @@
       cancelConnection: () => {
         // Reset both the click-connect handle AND the drag-connection
         // state so no in-flight gesture is left hanging when the port
-        // context menu takes over.
-        store.clickConnectStartHandle = null;
-        store._connection = initialConnection;
+        // context menu takes over. Defensive: xyflow's store shape can
+        // change between minor versions, and this is called from a
+        // pointerdown path where a thrown error would prevent the
+        // port-context menu from opening (and, transitively, break any
+        // downstream render work in the same microtask). Never crash
+        // the caller — the menu must open even if cleanup fails.
+        try {
+          if (store && 'clickConnectStartHandle' in store) {
+            store.clickConnectStartHandle = null;
+          }
+        } catch { /* swallow — defensive */ }
+        try {
+          if (store && '_connection' in store) {
+            store._connection = initialConnection;
+          }
+        } catch { /* swallow — defensive */ }
       },
     };
     return () => {
