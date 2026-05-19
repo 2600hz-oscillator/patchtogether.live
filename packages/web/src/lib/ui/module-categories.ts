@@ -136,6 +136,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // ───────── Video modules → Utilities ─────────
   videoMixer: { top: 'Video modules', sub: 'Utilities' },
   videoOut: { top: 'Video modules', sub: 'Utilities' },
+  // BENTBOX is a CRT-emulation display — sits with the other outputs even
+  // though it also functions as a destructive processor (the bending stage).
+  bentbox: { top: 'Video modules', sub: 'Utilities' },
 
   // ───────── Hybrid (audio + video output, or cross-domain tools) ─────────
   scope: { top: 'Hybrid', sub: 'Hybrid' },
