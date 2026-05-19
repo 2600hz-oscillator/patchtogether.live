@@ -1747,6 +1747,19 @@
     savedGroupsPickerOpen = true;
   }
 
+  // VRT interactions/groups specs drive the saved-groups modal without a
+  // real Clerk session — the production trigger above is currentUserId-
+  // gated, but the modal component itself is mounted unconditionally. This
+  // dev-only hook flips its `open` prop directly so the visual surface can
+  // be captured independently of auth state. Same pattern as the other
+  // `__*` test hooks in this file.
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__openSavedGroupsPicker = () => {
+      savedGroupsPickerOpen = true;
+    };
+  }
+
   function deleteGroupAndChildren(groupId: string) {
     const groupNode = patch.nodes[groupId];
     if (!groupNode || groupNode.type !== 'group') return;
