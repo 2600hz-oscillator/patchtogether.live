@@ -500,13 +500,24 @@ void main() {
   }
 
   // 4×4 matrix helpers — written tight to avoid pulling gl-matrix.
+  //
+  // CONVENTION: matrices are stored COLUMN-MAJOR per OpenGL convention,
+  // i.e. m[col*4 + row]. mat4Perspective and mat4LookAt below produce
+  // column-major matrices, and uniformMatrix4fv is called with
+  // transpose=false — the multiply must therefore also operate
+  // column-major. Previous bug: indices were laid out column-major but
+  // the multiply used row-major math, producing a garbage MVP that
+  // collapsed all geometry off-screen (black screen).
   function mat4Multiply(out: Float32Array, a: Float32Array, b: Float32Array): void {
-    // out = a × b
-    for (let i = 0; i < 4; i++) {
-      for (let j = 0; j < 4; j++) {
+    // out = a × b, all column-major: out[col*4 + row].
+    for (let col = 0; col < 4; col++) {
+      for (let row = 0; row < 4; row++) {
         let s = 0;
-        for (let k = 0; k < 4; k++) s += a[i * 4 + k]! * b[k * 4 + j]!;
-        out[i * 4 + j] = s;
+        for (let k = 0; k < 4; k++) {
+          // A[row, k] = a[k*4 + row]; B[k, col] = b[col*4 + k].
+          s += a[k * 4 + row]! * b[col * 4 + k]!;
+        }
+        out[col * 4 + row] = s;
       }
     }
   }
