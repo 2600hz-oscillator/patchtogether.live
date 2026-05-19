@@ -93,10 +93,6 @@
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
   import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
-  // JOYSTICK + WAVESCULPT: a manual CV utility + a hybrid 4-osc 3D video
-  // synth with embedded CRT post-process.
-  import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
-  import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
   import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
   import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
@@ -156,10 +152,15 @@
   import CloudseedCard from '$lib/ui/modules/CloudseedCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
+  import HelmCard from '$lib/ui/modules/HelmCard.svelte';
   // PONG — interactive game module (research prototype).
   import PongCard from '$lib/ui/modules/PongCard.svelte';
   // MODTRIS — Tetris-clone game module (research prototype).
   import ModtrisCard from '$lib/ui/modules/ModtrisCard.svelte';
+  // JOYSTICK — manual XY pad CV source.
+  import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
+  // WAVESCULPT — hybrid 4-osc synth (audio + 3D ribbon video).
+  import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -329,6 +330,7 @@
     stages: StagesCard,
     cloudseed: CloudseedCard,
     midiCvBuddy: MidiCvBuddyCard,
+    helm: HelmCard,
     pong: PongCard,
     modtris: ModtrisCard,
     joystick: JoystickCard,
@@ -1889,23 +1891,6 @@
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    // Kill any in-flight xyflow connection state BEFORE the menu opens.
-    // The pointerdown that produced this contextmenu/dblclick fires on
-    // an .svelte-flow__handle, and xyflow's own pointerdown handler
-    // starts a connection-drag — which renders a dashed yellow preview
-    // line tracking the cursor. Without resetting that state, the
-    // preview sits behind the PortContextMenu for as long as the menu
-    // is open. cancelConnection clears both the click-connect handle
-    // and the in-progress drag state.
-    try {
-      flowApi?.cancelConnection?.();
-    } catch { /* defensive — never block the menu from opening */ }
-    // Our own pickup-mode state (PickupCable ghost) may also have
-    // briefly engaged on a fast pointerdown→contextmenu sequence; reset
-    // it so we don't render a phantom pickup cable alongside the menu.
-    if (connectDragState.mode === 'pickup') {
-      connectDragState.cancelPickup();
-    }
     portMenuPos = { x: e.clientX, y: e.clientY };
     portMenuSourceNodeId = info.nodeId;
     portMenuSourcePortId = info.portId;

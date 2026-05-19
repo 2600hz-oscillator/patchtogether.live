@@ -254,6 +254,12 @@ type StandardModuleType =
   // outputs. Monophonic with user-selectable voice priority (LAST / LOW /
   // HIGH), retrigger toggle, channel filter, and a device picker.
   | 'midiCvBuddy'
+  // HELM — polyphonic subtractive synth (algorithm port of Matt Tytel's
+  // Helm GPL-3.0). 2 morphing oscillators + sub + noise → SVF filter →
+  // 3 ADSR envelopes → 2 mono LFOs → 16-step step sequencer; polyphonic
+  // MIDI input via gear-icon settings menu (device picker + per-channel
+  // rx multi-select). Stereo output.
+  | 'helm'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.

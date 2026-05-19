@@ -72,6 +72,14 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // textarea chrome (selection rect, scrollbar fade) makes baselines
   // flap. Functional coverage is e2e/tests/livecode.spec.ts.
   livecode: 'textarea caret + native chrome defeats deterministic capture; e2e covers the run-flow',
+  // HELM is a dense polyphonic synth card (~720px wide, multi-row knob
+  // grid + 16-step pattern + gear-icon-toggled settings panel). Baseline
+  // would need to capture both the main panel and the settings panel
+  // separately, and the settings panel state depends on MIDI device list
+  // (which is non-deterministic on a fresh CI runner). ART + unit + E2E
+  // provide functional coverage; promote to MODULES in a follow-up PR
+  // once we have a way to stub the MIDI device list deterministically.
+  helm: 'VRT baseline pending; complex dense card + MIDI-dependent settings panel; ART + unit + E2E provide coverage.',
   // MIDI-CV-BUDDY card body depends on connected MIDI device (which
   // doesn't exist under VRT) — the "Connect MIDI…" empty state would
   // be the only deterministic baseline, and even that paints differently

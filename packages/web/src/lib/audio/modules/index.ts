@@ -53,6 +53,7 @@ import { stagesDef } from './stages';
 import { cloudseedDef } from './cloudseed';
 import { livecodeDef } from './livecode';
 import { midiCvBuddyDef } from './midi-cv-buddy';
+import { helmDef } from './helm';
 import { pongDef } from './pong';
 import { modtrisDef } from './modtris';
 import { joystickDef } from './joystick';
@@ -115,6 +116,7 @@ export function registerAudioModules(): void {
   registerModule(cloudseedDef);
   registerModule(livecodeDef);
   registerModule(midiCvBuddyDef);
+  registerModule(helmDef);
   registerModule(pongDef);
   registerModule(modtrisDef);
   // JOYSTICK — manual XY pad emitting x/y + inverted nx/ny CV outputs.

@@ -23,6 +23,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   wavetableVco: ['wavePos'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
+  // helm.{pitch_cv,gate,midi_in}: pitch_cv = V/oct fallback (audio-rate);
+  // gate = trigger fallback; midi_in = visual-only placeholder (the actual
+  // MIDI flows through the Web MIDI API, not through a cable, so this port
+  // never carries audio data). All three are stuck-without-paramTarget by
+  // design — same shape as dx7's fallback inputs.
+  helm: ['pitch_cv', 'gate', 'midi_in'],
   // illogic in1..in4: passthrough attenuverter inputs (the module IS the attenuverter).
   illogic: ['in1', 'in2', 'in3', 'in4'],
   // unityscalemathematik u_in / a_in / b_in: signal inputs that the module
