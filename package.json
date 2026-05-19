@@ -3,6 +3,7 @@
   "version": "1.0.1",
   "private": true,
   "description": "A multiplayer browser-native modular synthesizer.",
+  "license": "AGPL-3.0-or-later",
   "workspaces": [
     "packages/*",
     "art",
