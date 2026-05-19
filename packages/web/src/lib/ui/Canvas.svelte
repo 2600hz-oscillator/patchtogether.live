@@ -92,7 +92,6 @@
   import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
-  import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
   import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
   import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
@@ -290,7 +289,6 @@
     ruttetra: RuttetraCard,
     shapedramps: ShapedrampsCard,
     vdelay: VdelayCard,
-    bentbox: BentboxCard,
     // Video-domain (Phase 1):
     inwards: InwardsCard,
     picturebox: PictureboxCard,
@@ -1870,6 +1868,21 @@
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
+    // Kill any in-flight xyflow connection state BEFORE the menu opens.
+    // The pointerdown that produced this contextmenu/dblclick fires on
+    // an .svelte-flow__handle, and xyflow's own pointerdown handler
+    // starts a connection-drag — which renders a dashed yellow preview
+    // line tracking the cursor. Without resetting that state, the
+    // preview sits behind the PortContextMenu for as long as the menu
+    // is open. cancelConnection clears both the click-connect handle
+    // and the in-progress drag state.
+    flowApi?.cancelConnection();
+    // Our own pickup-mode state (PickupCable ghost) may also have
+    // briefly engaged on a fast pointerdown→contextmenu sequence; reset
+    // it so we don't render a phantom pickup cable alongside the menu.
+    if (connectDragState.mode === 'pickup') {
+      connectDragState.cancelPickup();
+    }
     portMenuPos = { x: e.clientX, y: e.clientY };
     portMenuSourceNodeId = info.nodeId;
     portMenuSourcePortId = info.portId;
