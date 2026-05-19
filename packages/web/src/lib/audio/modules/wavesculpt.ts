@@ -21,13 +21,28 @@
 //   shader (12 bending knobs). That happens in the video layer; the
 //   audio side just emits voices + lets the card render.
 //
-// v1 simplifications (vs the full spec):
+// v1.1 (post-dogfood) — three user-driven enhancements landed:
+//   1. ALPHA LAYER IN is now wired. When a video source is patched into
+//      `alpha_in`, the card grabs the source's pixels via the video
+//      engine's canvas blit each frame, uploads them into our private GL
+//      context as a texture, and the bentbox-post pass composites that
+//      texture INTO the screen-space region covered by the ALPHA
+//      oscillator's projected ribbon (sampled at vUv, no warping). When
+//      unpatched: alpha-mask region renders black (the v1 behavior).
+//   2. Per-osc thickness knob. Each oscillator gets a `thickness1..4`
+//      param (0..1, default 0.3) that scales the ribbon's perpendicular
+//      extrusion in the vertex shader. Knob lives in the per-osc strip.
+//   3. Pre-ADSR ribbons + blue energy bolts. Ribbons are now always
+//      visible at a fixed dim level (not modulated by ADSR amplitude).
+//      The ADSR drives a per-osc `bolt[0..3]` value (0..1) that, when
+//      non-zero, renders a soft blue pulse traveling along the ribbon
+//      from source toward camera-end. See `boltPos` in the ribbon FS.
+//
+// v1 simplifications kept:
 //   * 4 oscillators × {gate, pitch_cv, morph (saw/tri/sine), ADSR};
 //   * Wall positions + Vector dirs are FIXED (R = +X, G = -X, B = +Y, A = -Y);
 //     each Vector points along its wall's normal into the box. Per-osc
 //     vector_x/vector_y CV inputs are deferred.
-//   * No ALPHA-channel compositing IN port v1 — the ALPHA oscillator
-//     renders as a faint white outline so all 4 voices are visible.
 //   * No rotation slider — camera is always upright.
 //
 // Audio architecture (per oscillator):
@@ -252,20 +267,23 @@ export const wavesculptDef: AudioModuleDef = {
   inputs: [
     // Per-oscillator gate + pitch CV (V/oct).
     { id: 'gate1',     type: 'gate' },
-    { id: 'pitch_cv1', type: 'pitch' },
+    { id: 'pitch_cv1', type: 'cv' },
     { id: 'gate2',     type: 'gate' },
-    { id: 'pitch_cv2', type: 'pitch' },
+    { id: 'pitch_cv2', type: 'cv' },
     { id: 'gate3',     type: 'gate' },
-    { id: 'pitch_cv3', type: 'pitch' },
+    { id: 'pitch_cv3', type: 'cv' },
     { id: 'gate4',     type: 'gate' },
-    { id: 'pitch_cv4', type: 'pitch' },
+    { id: 'pitch_cv4', type: 'cv' },
     // Camera-position CV inputs (joystick X/Y + HEIGHT Z).
     { id: 'pos_x', type: 'cv', paramTarget: 'pos_x', cvScale: { mode: 'linear' } },
     { id: 'pos_y', type: 'cv', paramTarget: 'pos_y', cvScale: { mode: 'linear' } },
     { id: 'pos_z', type: 'cv', paramTarget: 'pos_z', cvScale: { mode: 'linear' } },
     { id: 'zoom',  type: 'cv', paramTarget: 'zoom',  cvScale: { mode: 'linear' } },
-    // ALPHA LAYER IN: deferred to v2. Declared here so the deferred plumbing
-    // doesn't shift port IDs later. Marked as video; v1 ignores it.
+    // ALPHA LAYER IN — when a video source is patched here, the card
+    // composites that source's pixels into the screen-space region
+    // covered by the ALPHA oscillator's projection. When unpatched, the
+    // ALPHA region renders black. See WavesculptCard.svelte's
+    // alphaInTex upload path + bentbox FS uHasAlphaIn handling.
     { id: 'alpha_in', type: 'video' },
   ],
   outputs: [
@@ -305,6 +323,13 @@ export const wavesculptDef: AudioModuleDef = {
     { id: 'pitch2', label: 'P2', defaultValue: 0, min: -36, max: 36, curve: 'linear', units: 'st' },
     { id: 'pitch3', label: 'P3', defaultValue: 0, min: -36, max: 36, curve: 'linear', units: 'st' },
     { id: 'pitch4', label: 'P4', defaultValue: 0, min: -36, max: 36, curve: 'linear', units: 'st' },
+
+    // Per-osc ribbon thickness (0..1 → vertex-shader perpendicular
+    // extrusion scale). Default 0.3 matches the v1 baseline width.
+    { id: 'thickness1', label: 'T1', defaultValue: 0.3, min: 0, max: 1, curve: 'linear' },
+    { id: 'thickness2', label: 'T2', defaultValue: 0.3, min: 0, max: 1, curve: 'linear' },
+    { id: 'thickness3', label: 'T3', defaultValue: 0.3, min: 0, max: 1, curve: 'linear' },
+    { id: 'thickness4', label: 'T4', defaultValue: 0.3, min: 0, max: 1, curve: 'linear' },
 
     // Camera params.
     { id: 'pos_x', label: 'X',     defaultValue: 0, min: -1, max: 1, curve: 'linear' },
