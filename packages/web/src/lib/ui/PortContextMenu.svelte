@@ -48,6 +48,8 @@
     if (!open) activeModuleId = null;
   });
 
+  let menuEl: HTMLDivElement | null = $state(null);
+
   $effect(() => {
     if (!open) return;
     const onWindowKeydown = (e: KeyboardEvent) => {
@@ -56,8 +58,29 @@
         onclose();
       }
     };
+    // Negative-space click closes the menu. "Negative space" = any pointerdown
+    // whose target is NOT inside the menu's DOM subtree. This is the only
+    // dismissal path besides Esc and picking an item — cursor leaving the
+    // menu bounds does NOT close it (the cascade row layout pushes the
+    // submenu past the parent column, and cursor-angle navigation crosses
+    // negative space between them; closing on cursor-leave broke that
+    // traversal). Capture phase so xyflow / Canvas can't swallow the event
+    // before we see it.
+    const onDocPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (menuEl && menuEl.contains(target)) return;
+      // Right-clicks on another port re-open the menu fresh via Canvas's
+      // capture-phase contextmenu handler — let that flow proceed but also
+      // close ours so we don't double-render.
+      onclose();
+    };
     window.addEventListener('keydown', onWindowKeydown);
-    return () => window.removeEventListener('keydown', onWindowKeydown);
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+    return () => {
+      window.removeEventListener('keydown', onWindowKeydown);
+      document.removeEventListener('pointerdown', onDocPointerDown, true);
+    };
   });
 
   let candidates = $derived<CandidatePort[]>(
@@ -86,6 +109,7 @@
     elsewhere on the canvas, which broke the cascade mid-trip.
   -->
   <div
+    bind:this={menuEl}
     class="ctx-menu"
     style:left="{x}px"
     style:top="{y}px"
@@ -135,8 +159,19 @@
                   role="menuitem"
                   data-testid="patch-to-module"
                   data-node-id={entry.nodeId}
-                  onmouseenter={() => pickModule(entry.nodeId)}
-                  onfocus={() => pickModule(entry.nodeId)}
+                  onmouseenter={() => {
+                    // First hover seeds the submenu (no module picked yet).
+                    // Once any module is active, hovering OTHER module rows
+                    // must NOT re-pivot the submenu — that broke cursor-
+                    // angle navigation (diagonal from the active row across
+                    // sibling rows toward the port column kept rewriting
+                    // the port list mid-trip). Subsequent pivots require
+                    // an explicit click on a different module.
+                    if (activeModuleId === null) pickModule(entry.nodeId);
+                  }}
+                  onfocus={() => {
+                    if (activeModuleId === null) pickModule(entry.nodeId);
+                  }}
                   onclick={() => pickModule(entry.nodeId)}
                 >
                   <span class="entry-name">{entry.displayName}</span>
