@@ -53,10 +53,9 @@ import { stagesDef } from './stages';
 import { cloudseedDef } from './cloudseed';
 import { livecodeDef } from './livecode';
 import { midiCvBuddyDef } from './midi-cv-buddy';
+import { helmDef } from './helm';
 import { pongDef } from './pong';
 import { modtrisDef } from './modtris';
-import { joystickDef } from './joystick';
-import { wavesculptDef } from './wavesculpt';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -115,13 +114,9 @@ export function registerAudioModules(): void {
   registerModule(cloudseedDef);
   registerModule(livecodeDef);
   registerModule(midiCvBuddyDef);
+  registerModule(helmDef);
   registerModule(pongDef);
   registerModule(modtrisDef);
-  // JOYSTICK — manual XY pad emitting x/y + inverted nx/ny CV outputs.
-  registerModule(joystickDef);
-  // WAVESCULPT — 4-oscillator hybrid synth: stereo audio output + 3D
-  // ribbon video render with embedded BENTBOX-style CRT post-process.
-  registerModule(wavesculptDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
