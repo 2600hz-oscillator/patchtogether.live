@@ -110,21 +110,23 @@ jobs:
   # -----------------------------------------------------------------------
   # Visual Regression Tests (Playwright `toHaveScreenshot`). Separate job
   # from the main `ci` so a baseline drift on one card doesn't kneecap the
-  # functional E2E run, and so we can flip `continue-on-error` off later
-  # without changing the gate shape.
+  # functional E2E run.
   #
   # Modeled on doomviz's vrt job: lfs-true checkout (baselines are
   # LFS-tracked under e2e/vrt/__screenshots__/**), upload test-results +
-  # generated gallery as artifacts, allow failures while the suite settles.
+  # generated gallery as artifacts.
+  #
+  # Required status check — included in the `main: green PRs only` ruleset
+  # (id 16042163). Drift here blocks merges; missing-baseline edge cases are
+  # gated by `EXEMPT_BASELINE_PAIRS` in the new VRT spec files (with linux
+  # captures pending per-spec). Renaming this job requires an accompanying
+  # ruleset update (`gh api repos/.../rulesets/16042163`) to swap the
+  # `context` in `required_status_checks` — names are matched literally.
   # -----------------------------------------------------------------------
   vrt:
-    name: VRT (visual regression, advisory)
+    name: VRT (visual regression)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Non-blocking initially. Once baselines have stabilised across
-    # 2-3 weeks of merges we'll flip this to false and add to required
-    # checks. Don't quietly remove this without a follow-up PR.
-    continue-on-error: true
 
     services:
       postgres:
