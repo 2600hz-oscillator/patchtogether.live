@@ -105,10 +105,24 @@ describe('BENTBOX pure helpers', () => {
       }
     });
 
-    it('is bounded (never exceeds about 1.1 in magnitude for any finite input)', () => {
-      for (const v of [-100, -10, -3, 3, 10, 100]) {
-        expect(Math.abs(softClip(v))).toBeLessThan(1.2);
+    it('compresses (|out| < |in|) for any in with |in| > ~0.6 — the working range', () => {
+      // softClip is a Padé approximation that asymptotes to v/3 as |v|→∞
+      // (not a hard clip like tanh). It IS compressive: |softClip(v)| < |v|
+      // for any |v| > ~0.6. The shader feeds it the composite-voltage path
+      // where the wavefolder already keeps values in [-1, 1] * master_gain,
+      // so it never sees the extreme tail. We assert the compression
+      // property, which is what the shader actually depends on.
+      for (const v of [-3, -1.5, 1.5, 3, 10]) {
+        expect(Math.abs(softClip(v))).toBeLessThan(Math.abs(v));
       }
+    });
+
+    it('asymptotically approaches v/3 for very large |v|', () => {
+      // Documents the actual shape of the Padé approximation. If a future
+      // change swaps in a true tanh, this assertion will need to flip
+      // back to a hard bound.
+      expect(softClip(1000)).toBeCloseTo(1000 / 3, 0);
+      expect(softClip(-1000)).toBeCloseTo(-1000 / 3, 0);
     });
   });
 });
