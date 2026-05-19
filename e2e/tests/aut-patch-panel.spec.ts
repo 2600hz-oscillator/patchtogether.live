@@ -31,7 +31,7 @@ async function trigger(page: Page, nodeId: string) {
 }
 
 test.describe('@aut PatchPanel acceptance flow', () => {
-  test('ADSR hover-open, drag-from-Sequencer, hover-away closes', async ({ page }) => {
+  test('ADSR click-open, drag-from-Sequencer, outside-click closes', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -43,8 +43,9 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     // 1. ADSR panel is closed by default.
     await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'true');
 
-    // 2. Hover ADSR's top-left affordance — panel opens.
-    await (await trigger(page, 'adsr')).hover();
+    // 2. Click ADSR's top-left affordance — panel opens. (Hover-open
+    //    was removed in the patch-menu-UX streamline, PR-204.)
+    await (await trigger(page, 'adsr')).click();
     await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'false');
 
     // 3. Verbose labels are visible.
@@ -107,13 +108,13 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'true');
   });
 
-  test('RIOTGIRLS spawn → hover-open → 5 sections + verbose labels', async ({ page }) => {
+  test('RIOTGIRLS spawn → click-open → 5 sections + verbose labels', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 200, y: 100 } }]);
 
-    await (await trigger(page, 'rg')).hover();
+    await (await trigger(page, 'rg')).click();
     await expect(await panel(page, 'rg')).toHaveAttribute('aria-hidden', 'false');
 
     // Section headers organized into voices + master. Post-PR(nested-
