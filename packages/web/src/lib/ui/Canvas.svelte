@@ -2109,7 +2109,13 @@
   // be swallowed so it doesn't fall through to any item-click handler on
   // the freshly-rendered menu. We mark the gesture "menu-consumed" and
   // suppress the next click via document-level capture-phase listeners.
-  const HOLD_FIRE_MS = 50;
+  // 200 ms = the standard long-press threshold. Lower thresholds (50 ms
+  // was the original) leave no headroom for pointermove dispatch latency:
+  // on CI runners + Playwright's CDP path, the pointermove that should
+  // cancel the hold can arrive AFTER the timer fires, making the menu
+  // open mid-drag. 200 ms is well above CDP roundtrip + still under the
+  // 300 ms "feels slow" perceptual threshold.
+  const HOLD_FIRE_MS = 200;
   const HOLD_DRAG_TOLERANCE_PX = 4;
   let holdTimer: ReturnType<typeof setTimeout> | null = null;
   let holdStart: { x: number; y: number } | null = null;

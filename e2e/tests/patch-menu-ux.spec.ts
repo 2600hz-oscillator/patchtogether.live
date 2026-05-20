@@ -54,7 +54,7 @@ async function spawnSeqAdsr(page: Page) {
   ]);
 }
 
-test('click-and-hold on a port for >50ms opens the Patch-to menu', async ({ page }) => {
+test('click-and-hold on a port for >200ms opens the Patch-to menu', async ({ page }) => {
   await spawnSeqAdsr(page);
   await openPanel(page, 'seq');
 
@@ -68,16 +68,15 @@ test('click-and-hold on a port for >50ms opens the Patch-to menu', async ({ page
 
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  // Hold for 80ms (well past the 50ms threshold) without moving.
-  await page.waitForTimeout(80);
-  // Menu must already be visible at this point (timer fires at +50ms).
+  // Hold without moving. The toBeVisible assertion below polls up to its
+  // default 5 s, so we don't need a manual sleep matched to HOLD_FIRE_MS.
   await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
   // Release — menu must stay open.
   await page.mouse.up();
   await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
 });
 
-test('click+drag on a port within 50ms does NOT open the menu (drag passes to xyflow)', async ({
+test('click+drag on a port within the hold threshold does NOT open the menu (drag passes to xyflow)', async ({
   page,
 }) => {
   await spawnSeqAdsr(page);
