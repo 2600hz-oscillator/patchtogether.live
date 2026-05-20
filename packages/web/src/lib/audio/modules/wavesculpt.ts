@@ -354,6 +354,21 @@ export const wavesculptDef: AudioModuleDef = {
     const live: Record<string, number> = {};
     for (const p of wavesculptDef.params) live[p.id] = param(p.id, p.defaultValue);
 
+    // Populate the frames registry synchronously so the card has frames
+    // the moment it mounts. resolveAndPostAll() below runs again after
+    // the worklet loads and on every poll — this just closes the gap
+    // where uploadWaveTex() would otherwise see an empty registry and
+    // render a fixed sine fallback that ignores morph.
+    {
+      const data0 = (livePatch.nodes[node.id]?.data ?? {}) as WavesculptData;
+      const initFrames: Float32Array[][] = [];
+      for (let i = 0; i < 4; i++) {
+        const oscData = data0[`osc${i + 1}` as keyof WavesculptData] as WavesculptOscData | undefined;
+        initFrames.push(resolveOscFrames(oscData).frames);
+      }
+      FRAMES_REGISTRY.set(node.id, initFrames);
+    }
+
     // Load the engine worklet once per AudioContext.
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
