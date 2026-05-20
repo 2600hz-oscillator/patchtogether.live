@@ -101,6 +101,16 @@ test.describe('@aut PatchPanel acceptance flow', () => {
       page.locator(`.svelte-flow__edge[data-id*="seq-gate-adsr-gate"]`),
     ).toHaveCount(1);
 
+    // The 50 ms click-and-hold timer in Canvas can race the cable-drag's
+    // first pointermove on slow CI: if the holdTimer fires before the
+    // drag exceeds the 4 px threshold, the patch-to cascade opens at
+    // the source port AND `connectDragState.beginCascade(seq)` engages —
+    // which sticks `cascadeLockEngaged=true` on the seq panel until the
+    // cascade closes. Press Esc first to dismiss any cascade that may
+    // have opened, so the next outside-click is the one that drops the
+    // panels' pinned drivers.
+    await page.keyboard.press('Escape');
+
     // 5. Outside-click closes both pinned panels (an outside pointerdown
     //    drops the pinned + hovered drivers). Click on the svelte-flow
     //    pane (the canvas background) in a region that is unambiguously
