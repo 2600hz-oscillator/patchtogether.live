@@ -57,10 +57,11 @@ test.describe('@aut PatchPanel acceptance flow', () => {
       expect(labelTexts).toContain(expected);
     }
 
-    // 4. Pin both panels open via click (the click toggle locks the panel
-    //    open until another click or an outside tap closes it).
+    // 4. Pin the seq panel open too (adsr was already pinned at step 2 —
+    //    re-clicking its trigger would TOGGLE the pin off, which then
+    //    drops the panel back to hover-only state). Both panels must be
+    //    pinned open so the cable-drag below has stable handle geometry.
     await (await trigger(page, 'seq')).click();
-    await (await trigger(page, 'adsr')).click();
     await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'false');
     await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'false');
 

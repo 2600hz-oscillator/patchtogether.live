@@ -284,7 +284,9 @@ test('both panels stay open while hovering through modules', async ({ page }) =>
   const menu = page.locator('[data-testid="port-context-menu"]');
   await expect(menu).toBeVisible();
 
-  // Hover module A (filter) → ports panel for filter shows up.
+  // Hover module A (filter) — first hover seeds the submenu (cursor-
+  // angle guard in PortContextMenu activates the first hover; subsequent
+  // hovers do nothing). Ports panel shows filter's compatible inputs.
   const filterEntry = page.locator('[data-testid="patch-to-module"][data-node-id="flt1"]');
   await filterEntry.hover();
   const portsPanel = page.locator('[data-testid="patch-to-ports"]');
@@ -294,9 +296,12 @@ test('both panels stay open while hovering through modules', async ({ page }) =>
   );
   expect(portIds).toEqual(['cutoff', 'res']);
 
-  // Hover module B (vca) → ports panel content swaps.
+  // Click module B (vca) — explicit click required to re-pivot the
+  // submenu post PortContextMenu cursor-angle hardening (hover-only
+  // pivots corrupted the submenu when the user crossed sibling rows
+  // diagonally on the way to a port).
   const vcaEntry = page.locator('[data-testid="patch-to-module"][data-node-id="vca1"]');
-  await vcaEntry.hover();
+  await vcaEntry.click();
   await expect(menu, 'modules panel still open').toBeVisible();
   await expect(portsPanel, 'ports panel still open after switching modules').toBeVisible();
   portIds = await portsPanel.locator('[data-testid="patch-to-port"]').evaluateAll((els) =>
@@ -304,8 +309,8 @@ test('both panels stay open while hovering through modules', async ({ page }) =>
   );
   expect(portIds, 'ports panel content reflects new active module').toContain('cv');
 
-  // Hover back to A — both panels still visible, content updates again.
-  await filterEntry.hover();
+  // Click back to A — content updates again.
+  await filterEntry.click();
   await expect(menu).toBeVisible();
   await expect(portsPanel).toBeVisible();
   portIds = await portsPanel.locator('[data-testid="patch-to-port"]').evaluateAll((els) =>
@@ -505,7 +510,12 @@ test('right-click still opens cascade (PR-104 regression)', async ({ page }) => 
   await expect(lfoPanel).toHaveAttribute('aria-hidden', 'false');
 });
 
-test('single-click on a handle does NOT open the cascade', async ({ page }) => {
+test('single-click on a handle opens the cascade (PR-204: fast click is a synonym for click-and-hold)', async ({ page }) => {
+  // Post PR-204, a fast click on a port handle (release before the 50 ms
+  // hold threshold) is treated as an alias for the click-and-hold gesture
+  // — the menu opens the same way it does on right-click / double-click.
+  // This guards the contract that new users hitting fast taps still get
+  // the patch-to cascade.
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
@@ -522,12 +532,9 @@ test('single-click on a handle does NOT open the cascade', async ({ page }) => {
     '.svelte-flow__node[data-id="lfo1"] [data-testid="patch-panel"] .svelte-flow__handle[data-handleid="phase0"]',
   );
   await expect(handle).toBeVisible();
-  await handle.hover();
   await handle.click();
 
-  // No cascade should appear after a single click (single-click is
-  // reserved for normal Svelte Flow drag-source / no-op behavior).
-  await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
 });
 
 test('double-click disabled state: lone module shows "no other modules"', async ({ page }) => {

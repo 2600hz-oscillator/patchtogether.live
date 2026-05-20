@@ -46,15 +46,20 @@ async function openPanel(page: Page, nodeId: string): Promise<Locator> {
   return panel;
 }
 
-/** Click a section's header by its data-section-label attribute, then
- *  pin the panel open so the toggle action doesn't race the
- *  hover-close timer. We pin via clicking the trigger BEFORE the
- *  section toggle, so the panel stays sticky-open while we make
- *  multiple click-test assertions in sequence. */
+/** Ensure the panel is pinned open without TOGGLING off a panel that's
+ *  already pinned. Post-PR-204 `onTriggerClick` toggles `pinned` on
+ *  every click — so a naive "click again to pin" call after openPanel()
+ *  would actually unpin the panel and let the hover-close timer fire.
+ *  This helper checks the current aria-expanded state on the trigger and
+ *  only clicks if the panel isn't already pinned open. */
 async function pinPanelOpen(page: Page, nodeId: string) {
-  await page
-    .locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`)
-    .click();
+  const trigger = page.locator(
+    `.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`,
+  );
+  const expanded = await trigger.getAttribute('aria-expanded');
+  if (expanded !== 'true') {
+    await trigger.click();
+  }
   const panel = page.locator(
     `.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-panel"]`,
   );
