@@ -47,6 +47,19 @@
     void cardVersion;
     return (groupData?.exposedControls?.length ?? 0) > 0;
   });
+  // Instruments v1 — when there are atomic sequence exposures OR any
+  // recorded instrument-layout positions, render the GroupExposedControls
+  // mount too (so the user can interact with the configured surfaces
+  // even on a group with no individual exposed knobs).
+  let hasInstrumentSurfaces = $derived.by(() => {
+    void cardVersion;
+    if (hasExposedControls) return true;
+    const seq = groupData?.exposedSequences ?? {};
+    if (Object.keys(seq).some((k) => seq[k] === true)) return true;
+    const ctrls = groupData?.instrumentLayout?.controls ?? {};
+    return Object.keys(ctrls).length > 0;
+  });
+  let isInstrumentEditMode = $derived(groupData?.instrumentLayout?.mode === 'edit');
 
   function descriptor(ep: ExposedPort): PortDescriptor {
     return {
@@ -272,10 +285,12 @@
   class="mod-card group-card"
   class:expanded
   class:viz={hasViz && !expanded}
+  class:instrument-edit={isInstrumentEditMode && !expanded}
   data-testid="group-card"
   data-node-id={id}
   data-expanded={expanded ? 'true' : 'false'}
   data-viz={hasViz && !expanded ? 'true' : 'false'}
+  data-instrument-mode={groupData?.instrumentLayout?.mode ?? 'locked'}
 >
   <div class="stripe" style="background: var(--accent, #60a5fa);"></div>
   <header class="title">
@@ -338,7 +353,7 @@
             data-child-id={vc.id}
           ></div>
         {/each}
-        {#if hasExposedControls && node}
+        {#if hasInstrumentSurfaces && node}
           <GroupExposedControls group={node} {cardVersion} />
         {/if}
       </div>
@@ -367,7 +382,7 @@
           >{label}</div>
         {/if}
         <div class="group-children-count">{childCount} module{childCount === 1 ? '' : 's'}</div>
-        {#if hasExposedControls && node}
+        {#if hasInstrumentSurfaces && node}
           <GroupExposedControls group={node} {cardVersion} />
         {/if}
       </div>
@@ -402,6 +417,12 @@
   .group-card {
     width: 220px;
     min-height: 180px;
+  }
+  /* Instruments v1 — give the edit-mode card more room so the absolute
+   * layout canvas has space to host the default-tiled controls boxes. */
+  .group-card.instrument-edit {
+    width: 340px;
+    min-height: 320px;
   }
   .group-card.expanded {
     /* Edit-knob-positions mode: the card shrinks to a thin header so the

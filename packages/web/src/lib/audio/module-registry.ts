@@ -87,6 +87,16 @@ export interface AudioModuleDef {
    * v1 coverage: sequencer play/stop + TIMELORDE knobs.
    */
   exposableControls?: readonly ExposableControl[];
+  /**
+   * Instruments v1 — atomic sequencer/score exposure marker. When true the
+   * containing Instrument can show the FULL step-grid / score sheet as one
+   * checkbox in the configure modal ("Show step sequence" / "Show score").
+   * Per the spec: no partial exposure (no "show just step 5"). Other knobs
+   * on the same module remain individually exposable via `exposableControls`.
+   *
+   * Set on: drumseqz, polyseqz, macseq, sequencer, score.
+   */
+  exposesSequence?: boolean;
   factory: AudioModuleFactory;
 }
 

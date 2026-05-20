@@ -126,6 +126,13 @@ export const scoreDef: AudioModuleDef = {
     { id: 'isPlaying', label: 'Play', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
   ],
 
+  // Module-grouping Phase 4 — Play/Stop is the canonical group-exposable.
+  exposableControls: [
+    { id: 'playStop', label: 'Play', kind: 'button', paramId: 'isPlaying' },
+  ],
+  // Instruments v1 — the score sheet is an atomically-exposable surface.
+  exposesSequence: true,
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
 

@@ -209,7 +209,7 @@
         <div class="category">tools</div>
         {#if oncreategroup}
           <button class="item tool" onclick={pickCreateGroup} data-testid="palette-create-group">
-            Create group
+            Create instrument
           </button>
         {/if}
         {#if oninsertsavedgroup}
@@ -218,7 +218,7 @@
             onclick={pickInsertSavedGroup}
             data-testid="palette-insert-saved-group"
           >
-            Insert saved group…
+            Insert saved instrument…
           </button>
         {/if}
         {#if onorganize}

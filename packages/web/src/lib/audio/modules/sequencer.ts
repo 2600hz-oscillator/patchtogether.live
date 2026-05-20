@@ -157,6 +157,8 @@ export const sequencerDef: AudioModuleDef = {
   exposableControls: [
     { id: 'playStop', label: 'Play', kind: 'button', paramId: 'isPlaying' },
   ],
+  // Instruments v1 — full step grid is atomically exposable.
+  exposesSequence: true,
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Stage-1 polyphony: the pitch port is a polyPitchGate cable carrying 5

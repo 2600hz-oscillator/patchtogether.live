@@ -1308,6 +1308,19 @@
 
     ydoc.transact(() => {
       patch.nodes[plan.groupNode.id] = plan.groupNode;
+      // Instruments v1 — auto-enter edit mode after Create. The user is
+      // expected to immediately drop into "arrange the layout" UX rather
+      // than seeing a locked render they then have to right-click to edit.
+      // Default to an empty layout map; per-element positions get written
+      // as the user drags inside GroupExposedControls.
+      const created = patch.nodes[plan.groupNode.id];
+      if (created) {
+        if (!created.data) created.data = {};
+        (created.data as unknown as GroupData).instrumentLayout = {
+          mode: 'edit',
+          controls: {},
+        };
+      }
       for (const { childId, parentGroupId } of plan.childParentSets) {
         const target = patch.nodes[childId];
         if (!target) continue;
@@ -1324,7 +1337,30 @@
         delete patch.edges[id];
       }
     }, LOCAL_ORIGIN);
-    trace(`grouped ${ids.length} modules into ${groupId} (${exposedPorts.length} exposed)`);
+    trace(`grouped ${ids.length} modules into ${groupId} (${exposedPorts.length} exposed, edit mode)`);
+  }
+
+  // Instruments v1 — flip an instrument between 'edit' and 'locked' modes.
+  // Right-click "Edit Instrument" enters edit mode; the floating
+  // "Save instrument" CTA returns to locked. The same toggle is reused by
+  // ctx-toggle-expanded for backward compatibility with phase-2 tests; we
+  // keep the legacy expanded-card branch (data.expanded) alongside the
+  // new layout mode so neither path regresses.
+  function setInstrumentMode(groupId: string, mode: 'edit' | 'locked') {
+    const group = patch.nodes[groupId];
+    if (!group || group.type !== 'group') return;
+    ydoc.transact(() => {
+      const target = patch.nodes[groupId];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      const data = target.data as unknown as GroupData;
+      const existing = data.instrumentLayout;
+      data.instrumentLayout = {
+        mode,
+        controls: existing?.controls ?? {},
+      };
+    }, LOCAL_ORIGIN);
+    trace(`instrument ${groupId} layout-mode → ${mode}`);
   }
 
   function ungroupNode(groupId: string) {
@@ -1364,14 +1400,27 @@
   function toggleGroupExpanded(groupId: string) {
     const group = patch.nodes[groupId];
     if (!group || group.type !== 'group') return;
+    // Instruments v1 — the right-click "Edit instrument" entry now drives
+    // both the legacy expanded-card flag (so the GroupCard's thin-header
+    // chrome flips for the "edit-knob-positions" workflow phase-2 ships)
+    // AND the new instrumentLayout.mode flag so the new layout engine
+    // un-locks. Both flags stay in sync — flipping one without the other
+    // would leave the user with mismatched chrome.
     const current = (group.data as { expanded?: boolean } | undefined)?.expanded === true;
+    const nextExpanded = !current;
     ydoc.transact(() => {
       const target = patch.nodes[groupId];
       if (!target) return;
       if (!target.data) target.data = {};
-      (target.data as { expanded?: boolean }).expanded = !current;
+      (target.data as { expanded?: boolean }).expanded = nextExpanded;
+      const data = target.data as unknown as GroupData;
+      const existing = data.instrumentLayout;
+      data.instrumentLayout = {
+        mode: nextExpanded ? 'edit' : 'locked',
+        controls: existing?.controls ?? {},
+      };
     }, LOCAL_ORIGIN);
-    trace(`group ${groupId} expanded → ${!current}`);
+    trace(`instrument ${groupId} edit → ${nextExpanded}`);
   }
 
   /**
@@ -1443,9 +1492,20 @@
         if (data?.expanded === true) {
           (node.data as { expanded?: boolean }).expanded = false;
         }
+        // Instruments v1 — when the user clicks "Save instrument", also
+        // flip the new instrument layout into 'locked' so the next render
+        // shows the frozen card. We mirror the expanded flip above so
+        // legacy phase-2 tests + the new layout engine stay aligned.
+        const igData = node.data as unknown as GroupData | undefined;
+        if (igData?.instrumentLayout?.mode === 'edit') {
+          (node.data as unknown as GroupData).instrumentLayout = {
+            mode: 'locked',
+            controls: igData.instrumentLayout.controls ?? {},
+          };
+        }
       }
     }, LOCAL_ORIGIN);
-    trace('collapsed every expanded group');
+    trace('saved every editing instrument');
   }
 
   // Snapshot-derived: are there any expanded groups right now? Drives
@@ -1550,9 +1610,13 @@
     childId: string;
     label: string;
     controls: readonly import('$lib/audio/module-registry').ExposableControl[];
+    /** Instruments v1 — child opts in to "Show step sequence" / "Show score". */
+    canExposeSequence?: boolean;
+    sequenceLabel?: string;
   }
   let configureControlsChildren = $state<ExposedControlsChildBlock[]>([]);
   let configureControlsExisting = $state<ExposedControl[]>([]);
+  let configureControlsExistingSequences = $state<Record<string, boolean>>({});
 
   function openConfigureExposedControls(groupId: string) {
     const group = patch.nodes[groupId];
@@ -1564,17 +1628,34 @@
       const child = patch.nodes[cid];
       if (!child) continue;
       const def = defLookup(child.type);
+      // exposesSequence is an Audio-domain flag; defLookup returns the
+      // loose ModuleDef so we read it through the audio def lookup too.
+      const audioDef = getModuleDef(child.type) as { exposesSequence?: boolean } | undefined;
       const controls = listExposableControls(child.type, (t: string) => getModuleDef(t));
-      if (controls.length === 0) continue;
-      blocks.push({ childId: cid, label: def?.label ?? child.type, controls });
+      const canExposeSequence = audioDef?.exposesSequence === true;
+      // Include the child even when it has zero exposable controls, so a
+      // sequencer-with-no-knobs-yet still shows the "Show step sequence"
+      // checkbox as a single-row block.
+      if (controls.length === 0 && !canExposeSequence) continue;
+      // Sequencers/score get a friendlier label than the generic default.
+      const sequenceLabel =
+        child.type === 'score' ? 'Show score' : 'Show step sequence';
+      blocks.push({
+        childId: cid,
+        label: def?.label ?? child.type,
+        controls,
+        canExposeSequence,
+        sequenceLabel,
+      });
     }
     configureControlsChildren = blocks;
     configureControlsExisting = (data.exposedControls ?? []).slice();
+    configureControlsExistingSequences = { ...(data.exposedSequences ?? {}) };
     configureControlsGroupId = groupId;
     configureControlsOpen = true;
   }
 
-  function commitExposedControls(picks: ExposedControl[]) {
+  function commitExposedControls(picks: ExposedControl[], sequences: Record<string, boolean>) {
     const groupId = configureControlsGroupId;
     if (!groupId) return;
     const group = patch.nodes[groupId];
@@ -1586,14 +1667,29 @@
       nodes: patch.nodes as Record<string, ModuleNode | undefined>,
       defLookup: (t: string) => getModuleDef(t),
     });
+    // Drop sequence entries pointing at non-existent children or modules
+    // that don't actually declare exposesSequence (defensive against a
+    // stale/buggy payload — matches validateExposedControls' role).
+    const validSeqs: Record<string, boolean> = {};
+    for (const [cid, on] of Object.entries(sequences)) {
+      if (!on) continue;
+      const child = patch.nodes[cid];
+      if (!child) continue;
+      const def = getModuleDef(child.type) as { exposesSequence?: boolean } | undefined;
+      if (def?.exposesSequence !== true) continue;
+      validSeqs[cid] = true;
+    }
     ydoc.transact(() => {
       const target = patch.nodes[groupId];
       if (!target) return;
       if (!target.data) target.data = {};
       const data = target.data as unknown as GroupData;
       data.exposedControls = validated;
+      data.exposedSequences = validSeqs;
     }, LOCAL_ORIGIN);
-    trace(`group ${groupId} exposed controls updated (${validated.length} entries)`);
+    trace(
+      `instrument ${groupId} exposed controls updated (${validated.length} controls, ${Object.keys(validSeqs).length} sequences)`,
+    );
   }
 
   // ---------------- Module-grouping Phase 2C — duplicate group ----------------
@@ -3049,9 +3145,9 @@
         class="update-group-cta"
         data-testid="update-group-cta"
         onclick={collapseAllExpandedGroups}
-        title="Collapse expanded group(s)"
+        title="Finish editing instrument(s)"
       >
-        Update group
+        Save instrument
       </button>
     {/if}
   </div>
@@ -3162,12 +3258,14 @@
   bind:open={configureControlsOpen}
   children={configureControlsChildren}
   existing={configureControlsExisting}
+  existingSequences={configureControlsExistingSequences}
   onsave={commitExposedControls}
   onclose={() => {
     configureControlsOpen = false;
     configureControlsGroupId = null;
     configureControlsChildren = [];
     configureControlsExisting = [];
+    configureControlsExistingSequences = {};
   }}
 />
 
