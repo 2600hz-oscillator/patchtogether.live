@@ -89,7 +89,7 @@ test('right-click pane → palette shows "Create group" tool entry', async ({ pa
   await expect(page.locator('.module-palette')).toBeVisible();
   const createGroup = page.locator('[data-testid="palette-create-group"]');
   await expect(createGroup).toBeVisible();
-  await expect(createGroup).toHaveText(/Create group/);
+  await expect(createGroup).toHaveText(/Create instrument/);
 });
 
 test('clicking "Create group" closes palette and enters lasso mode', async ({ page }) => {
