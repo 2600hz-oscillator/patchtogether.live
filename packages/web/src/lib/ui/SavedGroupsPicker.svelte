@@ -66,7 +66,7 @@
   async function deleteRow(sg: SavedGroup, e: Event) {
     e.stopPropagation();
     if (deletingId) return;
-    if (!confirm(`Delete "${sg.label}" from your library? This is permanent.`)) return;
+    if (!confirm(`Delete instrument "${sg.label}" from your library? This is permanent.`)) return;
     deletingId = sg.id;
     try {
       const res = await fetch(`/api/saved-groups/${sg.id}`, { method: 'DELETE' });
@@ -100,7 +100,7 @@
     data-testid="saved-groups-picker"
   >
     <header class="modal-header">
-      <h2 id="saved-groups-picker-title">Insert a saved group</h2>
+      <h2 id="saved-groups-picker-title">Insert a saved instrument</h2>
       <p class="modal-sub">Click a row to drop a copy into this rack at the spawn point.</p>
     </header>
     <div class="modal-body">
@@ -110,8 +110,8 @@
         <p class="error" data-testid="picker-error">{error}</p>
       {:else if savedGroups.length === 0}
         <p class="empty" data-testid="picker-empty">
-          Your library is empty. Right-click a group on the canvas and choose
-          "Save group to library…" to add one.
+          Your library is empty. Right-click an instrument on the canvas and
+          choose "Save instrument to library…" to add one.
         </p>
       {:else}
         <ul class="rows">
