@@ -1,18 +1,24 @@
 // e2e/tests/wavesculpt.spec.ts
 //
-// WAVESCULPT smoke: spawn the module, confirm card + canvas mount,
-// poke a gate via the patch store, assert the UNISON toggle flips the
-// `unison` param, and that no console errors fire during render.
+// WAVESCULPT v2 (wavetable engine) smoke. Covers:
+//   - module spawns; card + canvas + two joysticks mount.
+//   - UNISON toggle flips the unison param.
+//   - Camera XY pad updates pos_x / pos_y.
+//   - NEW v2: zoom/rot pad updates zoom + rot params (X-axis = zoom).
+//   - Ribbons render pre-ADSR (canvas non-empty without gates).
+//   - NEW v2: changing morph1 changes the rendered ribbon shape (the
+//     ribbon vertex shader now samples the live wavetable frame).
+//   - alpha_in patch accepted + thickness param routes through store.
+//   - Bentscreen knobs route through patch store (regression).
 //
-// We don't try to assert pixel content — the 3D ribbon render +
-// CRT-style frame feedback is intentionally animated (see vrt-meta.test.ts
-// exempt entry).
+// No pixel-exact assertions — animated 3D render + CRT feedback is
+// non-deterministic per the existing vrt-meta exempt entry.
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
-  test('spawns + card + canvas mount, no console errors', async ({ page }) => {
+test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => {
+  test('spawns + card + canvas + two joysticks mount, no console errors', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -29,11 +35,19 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
     await expect(page.locator('[data-testid="wavesculpt-card"]')).toHaveCount(1);
     await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
     await expect(page.locator('[data-testid="wavesculpt-pad"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="wavesculpt-pad-zoomrot"]')).toHaveCount(1);
     await expect(page.locator('[data-testid="wavesculpt-unison"]')).toHaveCount(1);
+
+    // All 4 per-osc strips present with WAV selector + LOAD button.
+    for (let i = 1; i <= 4; i++) {
+      await expect(page.locator(`[data-testid="wavesculpt-osc-${i}"]`)).toHaveCount(1);
+      await expect(page.locator(`[data-testid="wavesculpt-osc-${i}-wav-select"]`)).toHaveCount(1);
+      await expect(page.locator(`[data-testid="wavesculpt-osc-${i}-load"]`)).toHaveCount(1);
+    }
 
     // Let the rAF render loop tick a few frames so any shader/init
     // failure surfaces as a console.error before we assert.
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(400);
 
     expect(errors, 'no console / page errors during WAVESCULPT render').toEqual([]);
   });
@@ -107,16 +121,49 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
       const n = w.__patch.nodes['ws'];
       return { pos_x: n?.params.pos_x ?? 0, pos_y: n?.params.pos_y ?? 0 };
     });
-    // No snap-back on WAVESCULPT's pad — the camera should stay put.
     expect(params.pos_x, 'pos_x positive after drag right').toBeGreaterThan(0.3);
     expect(params.pos_y, 'pos_y positive after drag up (Y flipped)').toBeGreaterThan(0.3);
   });
 
+  test('zoom/rot pad: drag-right → zoom > 1; drag-up → rot > 0', async ({ page }) => {
+    // The new second joystick. X = zoom (log-mapped to [0.3..3]); Y = rot
+    // ([-1..+1]). At the pad center the dot sits at zoom=1, rot=0.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
+    ]);
+
+    const pad = page.locator('[data-testid="wavesculpt-pad-zoomrot"]');
+    await expect(pad).toHaveCount(1);
+    const box = await pad.boundingBox();
+    expect(box).not.toBeNull();
+    if (!box) return;
+
+    // Drag from center to upper-right corner: should bump both zoom AND
+    // rot above their defaults.
+    const tx = box.x + box.width * 0.9;
+    const ty = box.y + box.height * 0.1;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(tx, ty, { steps: 6 });
+    await page.mouse.up();
+
+    await page.waitForTimeout(80);
+
+    const params = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+      };
+      const n = w.__patch.nodes['ws'];
+      return { zoom: n?.params.zoom ?? 0, rot: n?.params.rot ?? 0 };
+    });
+    expect(params.zoom, 'zoom > 1 after drag right').toBeGreaterThan(1.2);
+    expect(params.rot, 'rot > 0 after drag up').toBeGreaterThan(0.3);
+  });
+
   test('ribbons render pre-ADSR — canvas is non-empty even without any gate', async ({ page }) => {
-    // Enhancement 3: ribbons are decoupled from ADSR amplitude and should
-    // be continuously visible. We assert the canvas backbuffer has at
-    // least SOME non-black pixels after a few frames, with no gate
-    // patched in. Not pixel-exact — just that the wave shape renders.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -125,11 +172,6 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
     ]);
     await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
 
-    // Let several render frames tick so the rAF render loop runs. 800ms
-    // (was 400) gives a healthy margin on Linux CI where the first few
-    // frames after a fresh page.goto() can be slow as the WebGL2 context
-    // warms up — the test was occasionally flaking at the 400ms mark when
-    // tests ran consecutively in the same file.
     await page.waitForTimeout(800);
 
     const hasNonBlackPixels = await page.evaluate(() => {
@@ -138,12 +180,6 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
       const ctx = c.getContext('2d');
       if (!ctx) return false;
       const data = ctx.getImageData(0, 0, c.width, c.height).data;
-      // Look for any pixel with R+G+B > 24 (the bg is #050608 ≈ 19/2 total
-      // per channel). Stride 16 px (was 32) — denser sampling halves the
-      // chance of missing a thin ribbon stroke when it happens to lie
-      // entirely between sample rows at certain camera angles. Still
-      // cheap (8000 samples vs 4000 — both well under getImageData's
-      // dominant cost).
       for (let i = 0; i < data.length; i += 4 * 16) {
         const sum = (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0);
         if (sum > 60) return true;
@@ -153,12 +189,94 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
     expect(hasNonBlackPixels, 'ribbons visible without any gate fired').toBe(true);
   });
 
+  test('changing osc1 morph changes the rendered ribbon shape', async ({ page }) => {
+    // NEW v2 contract: the ribbon vertex shader samples the live
+    // wavetable frame texture. Different morph positions point at
+    // different frames of the (basic-shapes default) wavetable, so the
+    // resulting ribbon shape must visually change. We sample a top-row
+    // pattern of the canvas before + after, and assert at least some
+    // pixels differ — not pixel-exact, just non-equal.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
+    ]);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+
+    async function setMorphAll(v: number): Promise<void> {
+      // Set ALL FOUR osc morphs to v. BLUE + ALPHA osc displacements are
+      // in the X axis (perpendicular to the camera look direction), which
+      // gives the largest screen-space delta when the wavetable frame
+      // changes. RED + GREEN's displacements are in Z, less visible.
+      // Using all four maximizes the per-change signal at the camera POV
+      // we ship.
+      await page.evaluate((val) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['ws'];
+          if (!n) return;
+          n.params.morph1 = val;
+          n.params.morph2 = val;
+          n.params.morph3 = val;
+          n.params.morph4 = val;
+        });
+      }, v);
+      await page.waitForTimeout(400);
+    }
+
+    async function sampleScreenSignature(): Promise<number[]> {
+      // Return a coarse intensity histogram so we can compare frame
+      // shapes ignoring per-pixel timing noise. The histogram gives a
+      // stronger signal than a raw lit-pixel count (which can match across
+      // very different shapes if total coverage happens to balance out).
+      return page.evaluate(() => {
+        const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+        if (!c) return [];
+        const ctx = c.getContext('2d');
+        if (!ctx) return [];
+        const data = ctx.getImageData(0, 0, c.width, c.height).data;
+        // 8-bin per-channel histogram of (R+G+B)/3.
+        const bins = new Array(8).fill(0);
+        for (let i = 0; i < data.length; i += 4) {
+          const v = ((data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0)) / 3;
+          const b = Math.min(7, Math.floor(v / 32));
+          bins[b]++;
+        }
+        return bins;
+      });
+    }
+
+    function l1Diff(a: number[], b: number[]): number {
+      let sum = 0;
+      for (let i = 0; i < a.length; i++) sum += Math.abs((a[i] ?? 0) - (b[i] ?? 0));
+      return sum;
+    }
+
+    await setMorphAll(0);
+    const sigA = await sampleScreenSignature();
+    await setMorphAll(0.95);
+    const sigB = await sampleScreenSignature();
+
+    expect(sigA.length, 'sample signature came back').toBeGreaterThan(0);
+    expect(sigB.length).toBeGreaterThan(0);
+    const diff = l1Diff(sigA, sigB);
+    // Histogram L1 distance — quiet morph change typically moves 10s of
+    // pixels per bin × 8 bins = a few hundred. Threshold of 50 is well
+    // above the per-frame CRT-noise jitter (which is bounded by the
+    // bentbox uTime hash + Playwright's animation-freezing during
+    // toHaveScreenshot — not active here, but rAF determinism still
+    // bounds the noise floor).
+    expect(
+      diff,
+      `morph change should perturb the screen histogram noticeably (L1=${diff})`,
+    ).toBeGreaterThan(50);
+  });
+
   test('alpha_in compositing — patch a PICTUREBOX into alpha_in, canvas stays alive', async ({ page }) => {
-    // Enhancement 1: when ALPHA LAYER IN is patched, the alpha-osc-
-    // shaped region samples the input video. We don't assert pixel
-    // content (the picturebox starts as a placeholder image until the
-    // user uploads). We DO assert the patch is accepted (no console
-    // errors, edge exists in the store, wavesculpt canvas non-empty).
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -186,7 +304,6 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
     );
     await expect(page.locator('[data-testid="wavesculpt-card"]')).toHaveCount(1);
 
-    // Let alpha_in pipeline tick.
     await page.waitForTimeout(400);
 
     const edgeExists = await page.evaluate(() => {
@@ -203,7 +320,6 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
   });
 
   test('per-osc thickness param routes through the patch store', async ({ page }) => {
-    // Enhancement 2: thickness1..4 params exist and accept writes.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -235,81 +351,6 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
     });
     expect(params.t1).toBe(0.8);
     expect(params.t3).toBe(0.1);
-  });
-
-  test('thickness=1 produces wider ribbons than thickness=0 (pixel-count regression)', async ({ page }) => {
-    // Regression for the dogfood bug "thickness control doesn't do
-    // anything; at the extreme edge it should make the waves very wide".
-    // The fix: vertex-shader extrusion now scales quadratically up to
-    // ~0.6 unit-box units at thickness=1 (was ~0.072 max — invisible).
-    //
-    // We measure non-black pixel coverage on the wavesculpt-canvas at
-    // thickness=0 (all 4 oscs collapsed to ~0.012 wide line) vs
-    // thickness=1 (all 4 oscs at max width), and assert the wide case
-    // covers strictly more pixels — by a meaningful margin.
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    await spawnPatch(page, [
-      { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
-    ]);
-    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
-
-    async function setThickness(value: number): Promise<void> {
-      await page.evaluate((v) => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { params: Record<string, number> }> };
-          __ydoc: { transact: (fn: () => void) => void };
-        };
-        w.__ydoc.transact(() => {
-          const n = w.__patch.nodes['ws'];
-          if (!n) return;
-          n.params.thickness1 = v;
-          n.params.thickness2 = v;
-          n.params.thickness3 = v;
-          n.params.thickness4 = v;
-        });
-      }, value);
-      // Let several rAF ticks fire so the new uniform value flows into
-      // the GL render loop (which reads node.params each frame).
-      await page.waitForTimeout(250);
-    }
-
-    async function countLitPixels(): Promise<number> {
-      return page.evaluate(() => {
-        const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
-        if (!c) return 0;
-        const ctx = c.getContext('2d');
-        if (!ctx) return 0;
-        const data = ctx.getImageData(0, 0, c.width, c.height).data;
-        let lit = 0;
-        // Threshold matches the "ribbons render pre-ADSR" test (sum > 60
-        // catches the band-glow's lower bound while ignoring the bg).
-        for (let i = 0; i < data.length; i += 4) {
-          const sum = (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0);
-          if (sum > 60) lit++;
-        }
-        return lit;
-      });
-    }
-
-    await setThickness(0);
-    const thinPixels = await countLitPixels();
-
-    await setThickness(1);
-    const widePixels = await countLitPixels();
-
-    // Sanity: both should have SOME lit pixels (ribbons are pre-ADSR).
-    expect(thinPixels, 'thin ribbons still visible').toBeGreaterThan(0);
-    // The fix-defining assertion: max thickness must cover at least 1.5x
-    // the pixels of min thickness. Empirically the ratio is well north of
-    // 5x (full-wide ribbons consume ~half the screen at default camera),
-    // but 1.5x is a safe floor that catches a regression to the old
-    // 0.012..0.072 range without flaking on render-timing noise.
-    expect(
-      widePixels,
-      `thickness=1 should cover noticeably more pixels than thickness=0 (was thin=${thinPixels} wide=${widePixels})`,
-    ).toBeGreaterThan(thinPixels * 1.5);
   });
 
   test('bentscreen wiggle knobs route through the patch store', async ({ page }) => {

@@ -1,22 +1,33 @@
 <script lang="ts">
-  // WavesculptCard — hybrid 4-oscillator 3D video synth.
+  // WavesculptCard — hybrid 4-oscillator 3D video synth (v2 = wavetable engine).
   //
-  // The card is dense: a small per-osc strip up top, the rendered video
-  // screen + camera controls in the middle, and the "bentscreen wiggles"
-  // (12 BENTBOX knobs) at the bottom. The card is resizeable.
+  // Card layout:
+  //   * Top: per-osc strip × 4. Each strip has WAV selector + LOAD button +
+  //     5 knobs (tune, fine, morph, spread, fold) + ADSR (A/D/S/R) + thickness.
+  //     The per-osc waveform preview was REMOVED in v2 — the ribbon in the
+  //     3D scene IS the waveform feedback now (ribbon vertices displace
+  //     according to the live wavetable frame sampled into a small texture).
+  //   * Middle: rendered video screen + TWO joysticks (camera XY pos +
+  //     zoom/rot) + height (Z) + UNISON + Detune + alpha-brightness.
+  //     The standalone zoom + rot knobs are GONE — the second joystick
+  //     drives both axes (X = zoom, Y = rot). Both stay CV-patchable on
+  //     their existing ports.
+  //   * Bottom: BENTSCREEN WIGGLES — 12 BENTBOX knobs (unchanged from v1).
   //
-  // Rendering: a private WebGL2 context attached to an OffscreenCanvas
-  // (or a hidden HTMLCanvasElement on jsdom). We render the 3D ribbons
-  // (one per oscillator, colored by index) in clip space using a vertex
-  // shader that takes (sample-along-vector, ribbon-side) attributes and
-  // a fragment shader that applies the BENTBOX post-pass. Two passes:
-  //   1. Render ribbons → scene FBO.
-  //   2. Apply BENTBOX shader on scene FBO → display FBO (which is also
-  //      the OffscreenCanvas's default framebuffer).
-  // The OffscreenCanvas pixels are then blitted onto:
-  //   * the visible on-card <canvas> via drawImage() each rAF tick;
-  //   * the engine's video bridge (via the module's drawFrame hook), so
-  //     downstream video modules see the rendered scene as a texture.
+  // Rendering: a private OffscreenCanvas + WebGL2 context. Two-pass:
+  //   1a. Ribbon Z-prepass + color pass into sceneFbo (4 ribbons).
+  //   1b. Alpha-mask pass into alphaMaskFbo (ALPHA osc only, in red).
+  //   2.  BENTBOX post-pass into postPingFbo (also writes the alpha_in
+  //       composite where uAlphaMask > 0).
+  //   3.  Snapshot postPing → prevTex (next-frame feedback source).
+  //   4.  Final blit to default fb.
+  //
+  // New in v2 — uWaveTex: a 256×4 RGBA8 texture, one row per oscillator,
+  // holds the current wavetable frame (snapshot at the per-osc morph
+  // position) packed as 0..255 in R = (sample + 1) * 127.5. The ribbon
+  // vertex shader samples this texture at (aIdx/(RIBBON_SEGMENTS-1), osc/4)
+  // and uses the decoded sample as the wave amplitude. Replaces the v1
+  // synth formula (mix of saw/sine/triangle morph).
 
   import { onMount, onDestroy } from 'svelte';
   import { useStore, type NodeProps } from '@xyflow/svelte';
@@ -29,10 +40,20 @@
   import type { ModuleNode } from '$lib/graph/types';
   import {
     wavesculptDef,
+    eyeFromCamera,
     installWavesculptFrameDrawer,
     uninstallWavesculptFrameDrawer,
+    getWavesculptFrames,
+    type WavesculptData,
+    type WavesculptOscData,
   } from '$lib/audio/modules/wavesculpt';
   import { clampJoy } from '$lib/audio/modules/joystick';
+  import {
+    getFactoryTables,
+    DEFAULT_FACTORY_TABLE_ID,
+    framesToPlain,
+  } from '$lib/audio/wavecel-factory-tables';
+  import { parseE352Wav } from '$lib/audio/wavetable-parser';
   import type { VideoEngine } from '$lib/video/engine';
 
   let { id, data }: NodeProps = $props();
@@ -42,9 +63,9 @@
 
   // ----- Resize plumbing (mirror BentboxCard) -----
   const DEFAULT_WIDTH = 1280;
-  const DEFAULT_HEIGHT = 820;
-  const MIN_WIDTH = 960;
-  const MIN_HEIGHT = 680;
+  const DEFAULT_HEIGHT = 880;
+  const MIN_WIDTH = 1024;
+  const MIN_HEIGHT = 720;
   const ENGINE_W = 640;
   const ENGINE_H = 360;
 
@@ -71,10 +92,7 @@
     return e.readParam(node, k);
   };
 
-  // Per-osc params bundled — we read these via pget() inside the render
-  // loop, so we don't need granular $derived bindings for every one.
-  // But we DO need top-level $derived for the bentscreen knobs (they're
-  // bound directly to the <Knob> components below).
+  // Bentscreen knobs (bound to <Knob> components below).
   let hsync_drift        = $derived(pget('hsync_drift'));
   let hsync_loss         = $derived(pget('hsync_loss'));
   let vsync_drift        = $derived(pget('vsync_drift'));
@@ -93,15 +111,32 @@
   let pos_y = $derived(clampJoy(pget('pos_y')));
   let pos_z = $derived(clampJoy(pget('pos_z')));
   let zoom  = $derived(pget('zoom'));
+  let rot   = $derived(clampJoy(pget('rot')));
   let unison = $derived(pget('unison'));
   let detune = $derived(pget('detune'));
   let alpha_brightness = $derived(pget('alpha_brightness'));
 
-  // Per-osc top-strip values (bind to <Knob> in DOM).
+  // Per-osc params (bound in the strip <Knob>s).
+  let tune1 = $derived(pget('tune1'));
+  let tune2 = $derived(pget('tune2'));
+  let tune3 = $derived(pget('tune3'));
+  let tune4 = $derived(pget('tune4'));
+  let fine1 = $derived(pget('fine1'));
+  let fine2 = $derived(pget('fine2'));
+  let fine3 = $derived(pget('fine3'));
+  let fine4 = $derived(pget('fine4'));
   let morph1 = $derived(pget('morph1'));
   let morph2 = $derived(pget('morph2'));
   let morph3 = $derived(pget('morph3'));
   let morph4 = $derived(pget('morph4'));
+  let spread1 = $derived(pget('spread1'));
+  let spread2 = $derived(pget('spread2'));
+  let spread3 = $derived(pget('spread3'));
+  let spread4 = $derived(pget('spread4'));
+  let fold1 = $derived(pget('fold1'));
+  let fold2 = $derived(pget('fold2'));
+  let fold3 = $derived(pget('fold3'));
+  let fold4 = $derived(pget('fold4'));
   let A1 = $derived(pget('A1'));
   let D1 = $derived(pget('D1'));
   let S1 = $derived(pget('S1'));
@@ -118,60 +153,167 @@
   let D4 = $derived(pget('D4'));
   let S4 = $derived(pget('S4'));
   let R4 = $derived(pget('R4'));
-  // Per-osc thickness (0..1) → vertex-shader perpendicular-extrusion scale.
   let thickness1 = $derived(pget('thickness1'));
   let thickness2 = $derived(pget('thickness2'));
   let thickness3 = $derived(pget('thickness3'));
   let thickness4 = $derived(pget('thickness4'));
 
-  // ---- XY pad (joystick) on the card ----
-  let padEl: HTMLDivElement | null = $state(null);
-  let dragging = $state(false);
-  const PAD_PX = 120;
-  let dotX = $derived(((pos_x + 1) / 2) * PAD_PX);
-  let dotY = $derived(((-pos_y + 1) / 2) * PAD_PX);
+  // Per-osc wavetable source (rides node.data).
+  function oscData(i: number): WavesculptOscData {
+    const d = (node?.data ?? {}) as WavesculptData;
+    return (d[`osc${i + 1}` as keyof WavesculptData] as WavesculptOscData | undefined) ?? {};
+  }
+  function oscSource(i: number): string {
+    return oscData(i).wavetableSource ?? `factory:${DEFAULT_FACTORY_TABLE_ID}`;
+  }
+  function oscLabel(i: number): string {
+    const od = oscData(i);
+    if (od.wavetableSource === 'user' && od.wavetableLabel) return od.wavetableLabel;
+    const id = (od.wavetableSource ?? `factory:${DEFAULT_FACTORY_TABLE_ID}`).slice('factory:'.length);
+    return getFactoryTables().find((t) => t.id === id)?.label ?? getFactoryTables()[0]!.label;
+  }
+  function selectFactory(oscIdx: number, factoryId: string): void {
+    const t = patch.nodes[id]; if (!t) return;
+    if (!t.data) t.data = {};
+    const d = t.data as WavesculptData;
+    const key = `osc${oscIdx + 1}` as keyof WavesculptData;
+    if (!d[key]) (d as Record<string, unknown>)[key as string] = {};
+    const od = d[key] as WavesculptOscData;
+    od.wavetableSource = `factory:${factoryId}`;
+    delete od.wavetableFrames;
+    delete od.wavetableLabel;
+  }
+  let uploadStatus = $state<Record<number, string | null>>({});
+  let uploadError = $state<Record<number, string | null>>({});
+  async function onWavFileChange(oscIdx: number, ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    uploadError[oscIdx] = null;
+    uploadStatus[oscIdx] = 'parsing...';
+    try {
+      const buf = await file.arrayBuffer();
+      const parsed = parseE352Wav(buf);
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      const d = target.data as WavesculptData;
+      const key = `osc${oscIdx + 1}` as keyof WavesculptData;
+      if (!d[key]) (d as Record<string, unknown>)[key as string] = {};
+      const od = d[key] as WavesculptOscData;
+      od.wavetableSource = 'user';
+      od.wavetableFrames = framesToPlain(parsed.frames);
+      od.wavetableLabel = file.name.replace(/\.wav$/i, '').toUpperCase().slice(0, 24);
+      uploadStatus[oscIdx] = `loaded ${parsed.frames.length} frames`;
+    } catch (err) {
+      uploadError[oscIdx] = err instanceof Error ? err.message : String(err);
+      uploadStatus[oscIdx] = null;
+    } finally {
+      try { input.value = ''; } catch { /* */ }
+    }
+  }
 
-  function writeXY(x: number, y: number) {
+  // ---- XY pads (TWO joysticks: camera position + zoom/rot) ----
+  const PAD_PX = 110;
+
+  // Pad 1 — camera position (X = pos_x, Y = pos_y).
+  let padPosEl: HTMLDivElement | null = $state(null);
+  let draggingPos = $state(false);
+  let dotPosX = $derived(((pos_x + 1) / 2) * PAD_PX);
+  let dotPosY = $derived(((-pos_y + 1) / 2) * PAD_PX);
+  function writePos(x: number, y: number): void {
     const t = patch.nodes[id]; if (!t) return;
     t.params.pos_x = clampJoy(x);
     t.params.pos_y = clampJoy(y);
   }
-  function updateFromPointer(ev: PointerEvent) {
-    if (!padEl) return;
-    const rect = padEl.getBoundingClientRect();
-    const px = (ev.clientX - rect.left) / rect.width;
-    const py = (ev.clientY - rect.top) / rect.height;
-    writeXY(px * 2 - 1, -(py * 2 - 1));
-  }
-  function padDown(ev: PointerEvent) {
-    if (!padEl) return;
-    dragging = true;
-    padEl.setPointerCapture(ev.pointerId);
-    updateFromPointer(ev);
+  function posDown(ev: PointerEvent): void {
+    if (!padPosEl) return;
+    draggingPos = true;
+    padPosEl.setPointerCapture(ev.pointerId);
+    updateFromPosPointer(ev);
     ev.preventDefault();
     ev.stopPropagation();
   }
-  function padMove(ev: PointerEvent) {
-    if (!dragging) return;
-    updateFromPointer(ev);
+  function updateFromPosPointer(ev: PointerEvent): void {
+    if (!padPosEl) return;
+    const rect = padPosEl.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) / rect.width;
+    const py = (ev.clientY - rect.top) / rect.height;
+    writePos(px * 2 - 1, -(py * 2 - 1));
   }
-  function padUp(ev: PointerEvent) {
-    if (!dragging) return;
-    dragging = false;
-    try { padEl?.releasePointerCapture(ev.pointerId); } catch { /* */ }
-    // No snap-back on the WAVESCULPT pad — the user expects the camera
-    // to stay where they put it (vs the standalone JOYSTICK module
-    // which DOES snap back). Keeps gestural performance steady.
+  function posMove(ev: PointerEvent): void {
+    if (!draggingPos) return;
+    updateFromPosPointer(ev);
+  }
+  function posUp(ev: PointerEvent): void {
+    if (!draggingPos) return;
+    draggingPos = false;
+    try { padPosEl?.releasePointerCapture(ev.pointerId); } catch { /* */ }
+    // No snap-back: camera stays where you put it (matches v1 behavior +
+    // gestural-performance intent).
+  }
+
+  // Pad 2 — zoom/rot (X = zoom mapped to [0.3..3], Y = rot mapped to [-1..+1]).
+  // X-axis = zoom (right = closer/louder); Y-axis = rot (up = +rot).
+  let padZRel: HTMLDivElement | null = $state(null);
+  let draggingZR = $state(false);
+  // Map zoom param ([0.3..3]) → pad X coord ([0..PAD_PX]). Log-scale because
+  // the underlying knob curve is 'log'; matches the user's perception of
+  // "halfway-right = unity zoom" — at zoom=1 the dot sits at PAD_PX/2.
+  function zoomToPadX(z: number): number {
+    const clamped = Math.max(0.3, Math.min(3, z));
+    const logMin = Math.log(0.3); const logMax = Math.log(3);
+    return ((Math.log(clamped) - logMin) / (logMax - logMin)) * PAD_PX;
+  }
+  function padXToZoom(px: number): number {
+    const t = Math.max(0, Math.min(1, px / PAD_PX));
+    const logMin = Math.log(0.3); const logMax = Math.log(3);
+    return Math.exp(logMin + t * (logMax - logMin));
+  }
+  let dotZRX = $derived(zoomToPadX(zoom));
+  let dotZRY = $derived(((-rot + 1) / 2) * PAD_PX);
+  function writeZR(zoomVal: number, rotVal: number): void {
+    const t = patch.nodes[id]; if (!t) return;
+    t.params.zoom = Math.max(0.3, Math.min(3, zoomVal));
+    t.params.rot = clampJoy(rotVal);
+  }
+  /** Map pad-X fraction [0..1] → zoom in [0.3..3] via log curve. Same
+   *  curve as the underlying `zoom` param (curve: 'log'). */
+  function fracToZoom(frac: number): number {
+    const t = Math.max(0, Math.min(1, frac));
+    const logMin = Math.log(0.3); const logMax = Math.log(3);
+    return Math.exp(logMin + t * (logMax - logMin));
+  }
+  function updateFromZRPointer(ev: PointerEvent): void {
+    if (!padZRel) return;
+    const rect = padZRel.getBoundingClientRect();
+    // Use the pad's actual rect so the mapping survives any CSS scaling
+    // (Playwright sometimes computes box dimensions differently than the
+    // nominal CSS px we authored).
+    const fracX = (ev.clientX - rect.left) / rect.width;
+    const py = (ev.clientY - rect.top) / rect.height;
+    writeZR(fracToZoom(fracX), -(py * 2 - 1));
+  }
+  function zrDown(ev: PointerEvent): void {
+    if (!padZRel) return;
+    draggingZR = true;
+    padZRel.setPointerCapture(ev.pointerId);
+    updateFromZRPointer(ev);
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+  function zrMove(ev: PointerEvent): void {
+    if (!draggingZR) return;
+    updateFromZRPointer(ev);
+  }
+  function zrUp(ev: PointerEvent): void {
+    if (!draggingZR) return;
+    draggingZR = false;
+    try { padZRel?.releasePointerCapture(ev.pointerId); } catch { /* */ }
+    // Same no-snap policy as the camera-pos pad.
   }
 
   // ---- WebGL2 renderer ----
-  //
-  // We build a private OffscreenCanvas + WebGL2 context the moment the
-  // card mounts. The same canvas is the source for:
-  //   (a) the on-card preview <canvas> (drawImage'd each rAF tick), and
-  //   (b) the audio engine's drawFrame video bridge (we register a
-  //       closure on the audio handle so its drawFrame writes our
-  //       OffscreenCanvas pixels onto the bridge canvas).
 
   let renderCanvas: OffscreenCanvas | HTMLCanvasElement | null = null;
   let gl: WebGL2RenderingContext | null = null;
@@ -181,57 +323,39 @@
   let quadVao: WebGLVertexArrayObject | null = null;
   let sceneFbo: WebGLFramebuffer | null = null;
   let sceneTex: WebGLTexture | null = null;
-  // Depth renderbuffer for the ribbon (scene) pass — without it, ribbons
-  // drawn later would paint over closer ribbons drawn earlier regardless
-  // of true 3D z-position. With this attached + gl.DEPTH_TEST enabled, a
-  // closer ribbon's fragments occlude further ones per the user's
-  // "in front should occlude behind" feedback.
   let sceneDepthRb: WebGLRenderbuffer | null = null;
   let prevFbo: WebGLFramebuffer | null = null;
   let prevTex: WebGLTexture | null = null;
   let ribbonSamplesBuf: WebGLBuffer | null = null;
   let postPingTex: WebGLTexture | null = null;
   let postPingFbo: WebGLFramebuffer | null = null;
-  // ALPHA-mask-only FBO: a SECOND ribbon-pass renders ONLY the ALPHA
-  // oscillator into this FBO. The bentbox post-pass samples uAlphaMask
-  // from here to decide where to blend uAlphaInTex. Also gets its own
-  // depth renderbuffer so the mask shape respects the same occlusion
-  // as the visible scene (otherwise the mask could "see through" a
-  // closer ribbon that hides part of the ALPHA ribbon in the scene FBO).
   let alphaMaskFbo: WebGLFramebuffer | null = null;
   let alphaMaskTex: WebGLTexture | null = null;
   let alphaMaskDepthRb: WebGLRenderbuffer | null = null;
-  // GPU texture for the upstream `alpha_in` video source. We upload the
-  // video engine's canvas into this texture each frame (via texImage2D);
-  // the bentbox FS samples it via uAlphaInTex.
   let alphaInTex: WebGLTexture | null = null;
   let hasAlphaInPatched = false;
+  // NEW v2: per-osc wavetable frame texture. 256 wide × 4 tall RGBA8.
+  // R holds the sample value (0..255 = -1..+1 mapped to 0..1 = mid + half-range).
+  // Updated each frame from the audio module's snapshot of the current
+  // wavetable frame per osc (so the ribbon's drawn shape stays in lockstep
+  // with what's audibly being synthesized).
+  let waveTex: WebGLTexture | null = null;
+  const WAVE_TEX_W = 256;
+  const WAVE_TEX_H = 4;
+  // Reusable CPU buffer for the texImage2D upload. Allocate once + reuse
+  // every frame to avoid GC churn (60fps × Float32→Uint8 conversion).
+  const waveTexUploadBuf = new Uint8Array(WAVE_TEX_W * WAVE_TEX_H * 4);
 
-  // Number of segments per ribbon. 32 is plenty for v1 (the visual
-  // language is "wave with thickness", not "high-res 3D model").
-  const RIBBON_SEGMENTS = 32;
+  const RIBBON_SEGMENTS = 64;
   const RES_W = 320;
   const RES_H = 240;
 
   // Vertex + fragment shader for the ribbon pass.
-  // attributes:
-  //   aIdx  — float, sample-along-vector index in [0, RIBBON_SEGMENTS-1]
-  //   aSide — float, ribbon-side flag (0 = "top" of strip, 1 = "bottom")
-  //   aOsc  — float, oscillator index in [0..3] (acts as color picker
-  //           via a uniform array)
-  // uniforms:
-  //   uMVP        — mat4 model-view-projection (the user-camera)
-  //   uOscColor[4] — vec4 per-osc RGBA color (alpha controls visibility)
-  //   uSrc[4]     — vec4 (x,y,z, _) per-osc source position
-  //   uVec[4]     — vec4 (x,y,z, _) per-osc inward direction
-  //   uMorph[4]   — float per-osc morph (0..1; 0=saw, 0.5=sine, 1=tri)
-  //   uThickness[4] — float per-osc ribbon thickness (0..1)
-  //   uBolt[4]    — float per-osc ADSR amplitude (0..1) for blue energy bolt
-  //   uBoltPhase[4] — float per-osc bolt's current position along ribbon (0..1)
-  //   uTime       — seconds since start (for animated phase)
-  //   uPhase[4]   — float per-osc audible Hz / scale factor (we pass a
-  //                low-frequency "visual" phase rate to keep motion
-  //                readable — audio Hz would alias badly at 60fps).
+  //
+  // NEW v2 — uWaveTex sampled at (vT, osc/4) gives the actual current
+  // wavetable sample per ribbon vertex. The vertex shader decodes
+  // R-channel back to [-1, +1] via (r*2 - 1) and uses it as the wave
+  // amplitude (vs v1's analytic saw/sine/tri mix).
   const RIBBON_VS = `#version 300 es
 in float aIdx;
 in float aSide;
@@ -240,14 +364,11 @@ in float aOsc;
 uniform mat4  uMVP;
 uniform vec4  uSrc[4];
 uniform vec4  uVec[4];
-uniform float uMorph[4];
-uniform float uPhase[4];
 uniform float uThickness[4];
+uniform sampler2D uWaveTex;
 
-out float vT;     // 0..1 along ribbon
+out float vT;
 flat out int vOsc;
-
-const float PI = 3.14159265;
 
 void main() {
   int idx = int(aOsc);
@@ -255,48 +376,24 @@ void main() {
   vec3 dir = normalize(uVec[idx].xyz);
   float t = aIdx / float(${RIBBON_SEGMENTS - 1}); // 0..1
 
-  // Position along the inward Vector.
-  vec3 along = src + dir * (t * 2.0);   // walk across the box (length 2)
-
-  // Build a perpendicular axis for the ribbon's "width". We use Y-up
-  // unless dir is parallel to Y, in which case we use Z-up.
+  vec3 along = src + dir * (t * 2.0);
   vec3 up = abs(dir.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0);
   vec3 perp = normalize(cross(dir, up));
 
-  // Wave offset: oscillator-specific phase. The dynamic-index lookup
-  // into uPhase[] is computed inline (some older GLSL ES impls reject
-  // dynamic indexing into uniform arrays; we keep the math inline to
-  // sidestep that).
-  float phi = t * 4.0 * PI + uPhase[idx];
-  float saw = 2.0 * fract(phi / (2.0 * PI)) - 1.0;
-  float sine = sin(phi);
-  float tri = 2.0 * abs(2.0 * fract(phi / (2.0 * PI)) - 1.0) - 1.0;
-  float w;
-  float m = uMorph[idx];
-  if (m < 0.5) {
-    w = mix(saw, sine, m * 2.0);
-  } else {
-    w = mix(sine, tri, (m - 0.5) * 2.0);
-  }
-  // POST-DOGFOOD: ribbons are PRE-ADSR — fixed wave-amplitude so the
-  // wave shape stays visible continuously. ADSR drives the bolt
-  // intensity (see fragment shader's uBolt path) — NOT the ribbon's
-  // visibility. Constant 0.45 matches the v1 baseline at env=1.0.
-  float wAmt = w * 0.45;
+  // Sample the wavetable texture. Row per osc, column per ribbon segment.
+  // u = vT  → walks along the wavetable's 256 samples per osc.
+  // v = (osc + 0.5)/4 → centers the sample at the row's middle.
+  float u = t;
+  float v = (float(idx) + 0.5) / 4.0;
+  float sampleR = texture(uWaveTex, vec2(u, v)).r;
+  // Decode R in [0..1] → sample in [-1..+1].
+  float wAmt = (sampleR * 2.0 - 1.0) * 0.45;
 
-  // Ribbon thickness — driven per-osc by uThickness (0..1). At
-  // thickness=0 the ribbon collapses to a thin line (~0.012 units); at
-  // thickness=1 it widens to ~0.6 units of the unit box — large enough
-  // that the ribbons clearly become "very wide" at the extreme, as
-  // requested by the user feedback on the initial dogfood release.
-  // The curve is quadratic so the bottom half stays subtle (gentle knob
-  // feel near defaults) and the top half ramps fast into the wide regime.
-  float side = aSide * 2.0 - 1.0; // -1 or +1
+  float side = aSide * 2.0 - 1.0;
   float tParam = clamp(uThickness[idx], 0.0, 1.0);
   float thicknessAmt = 0.012 + (tParam * tParam) * 0.6;
   vec3 thick = perp * side * thicknessAmt;
 
-  // Final position: along + perp displacement (the wave) + thickness.
   vec3 p = along + perp * wAmt + thick;
   gl_Position = uMVP * vec4(p, 1.0);
   vT = t;
@@ -310,27 +407,19 @@ flat in int vOsc;
 out vec4 outColor;
 
 uniform vec4  uOscColor[4];
-uniform float uBolt[4];      // 0..1 — ADSR-driven bolt intensity per osc
-uniform float uBoltPhase[4]; // 0..1 — bolt's current position along ribbon
+uniform float uBolt[4];
+uniform float uBoltPhase[4];
 
 void main() {
   vec4 base = uOscColor[vOsc];
   float bolt = uBolt[vOsc];
-  // Pre-ADSR fixed-level ribbon glow: brighter in the middle, dimmer at
-  // ends, no envelope multiplier. The ribbon is always "alive" so the
-  // user sees the wave shape continuously.
   float band = smoothstep(0.0, 0.15, vT) * smoothstep(1.0, 0.85, vT);
   vec3 col = base.rgb * (0.4 + 0.5 * band);
   float alpha = base.a * (0.35 + 0.35 * band);
 
-  // Soft blue energy bolt — a Gaussian pulse traveling from t=0
-  // (source position) toward t=1 (camera-visible end of ribbon). The
-  // pulse position is uBoltPhase (advanced per frame on the JS side);
-  // a Gaussian width of ~0.08 keeps the bolt subtle. Intensity scales
-  // with bolt (which is the ADSR amplitude). Color is soft blue.
   if (bolt > 0.001) {
     float d = vT - uBoltPhase[vOsc];
-    float pulse = exp(-d * d / 0.012); // Gaussian, σ ≈ 0.077
+    float pulse = exp(-d * d / 0.012);
     vec3 boltCol = vec3(0.35, 0.55, 1.0) * pulse * bolt * 0.9;
     col += boltCol;
     alpha = min(1.0, alpha + pulse * bolt * 0.6);
@@ -339,9 +428,6 @@ void main() {
   outColor = vec4(col, alpha);
 }`;
 
-  // BENTBOX post-process. Same algorithmic shape as bentbox.ts. We
-  // inline the shader source rather than import it; the spec asks us to
-  // not refactor bentbox.ts.
   const BENT_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -349,10 +435,10 @@ out vec4 outColor;
 
 uniform sampler2D uIn;
 uniform sampler2D uPrev;
-uniform sampler2D uAlphaMask;  // ALPHA-osc-only ribbon render
-uniform sampler2D uAlphaInTex; // upstream video patched into alpha_in
+uniform sampler2D uAlphaMask;
+uniform sampler2D uAlphaInTex;
 uniform float uHasAlphaIn;
-uniform float uAlphaBrightness; // 0..2 — multiplies the alpha-in RGB
+uniform float uAlphaBrightness;
 uniform float uTime;
 uniform float uFieldParity;
 
@@ -372,12 +458,8 @@ uniform float uMasterGain;
 const float LINES = 240.0;
 const float TWO_PI = 6.2831853;
 
-float hash11(float n) {
-  return fract(sin(n * 78.233) * 43758.5453);
-}
-float hash21(vec2 p) {
-  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-}
+float hash11(float n) { return fract(sin(n * 78.233) * 43758.5453); }
+float hash21(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 vec3 rgb2yiq(vec3 c) {
   return vec3(
     0.299*c.r + 0.587*c.g + 0.114*c.b,
@@ -453,20 +535,8 @@ void main() {
     decoded += vec3(n) * uNoise * 0.18;
   }
 
-  // ALPHA LAYER IN compositing. The ALPHA-osc mask (R = mask strength)
-  // is rendered into uAlphaMask by a dedicated pass before this one.
-  // Where the mask is non-zero AND a video source is patched into
-  // alpha_in, we blend the alpha_in texture sampled at the screen-space
-  // vUv (1:1 mapping per spec) INTO the decoded scene, scaled by mask
-  // strength. The mask covers the ALPHA oscillator's projected ribbon
-  // geometry — that's the gating shape.
   float alphaMaskStrength = texture(uAlphaMask, vUv).r;
   if (uHasAlphaIn > 0.5 && alphaMaskStrength > 0.001) {
-    // User-tunable brightness multiplier — the literal upstream pixels
-    // are often too dark inside the ribbon mask region (dogfood feedback
-    // "the default is pretty dark"). 1.0 = identity / pre-knob behavior;
-    // up to 2.0 doubles brightness (clamped to [0,1] so highlights don't
-    // wrap). 0.0 lets the user fully dim the alpha layer back out.
     vec3 alphaInSample = clamp(texture(uAlphaInTex, vUv).rgb * uAlphaBrightness, 0.0, 1.0);
     decoded = mix(decoded, alphaInSample, clamp(alphaMaskStrength, 0.0, 1.0));
   }
@@ -535,9 +605,6 @@ void main() {
     g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, tex, 0);
     let depth: WebGLRenderbuffer | null = null;
     if (withDepth) {
-      // 24-bit depth renderbuffer — sufficient precision for the unit-box
-      // scene (depth range 0..6 in world units). We don't need the depth
-      // to be sampleable as a texture; a renderbuffer is the cheap path.
       depth = g.createRenderbuffer();
       if (depth) {
         g.bindRenderbuffer(g.RENDERBUFFER, depth);
@@ -550,45 +617,27 @@ void main() {
     return { fbo, tex, depth };
   }
 
-  // Build ribbon geometry once.
-  // Per oscillator, RIBBON_SEGMENTS samples × 2 sides → triangle strip.
-  // Each vertex carries (aIdx, aSide, aOsc). We use a single big strip
-  // of 4 ribbons stitched with degenerate triangles between them.
   function buildRibbonGeometry(): Float32Array {
     const verts: number[] = [];
     for (let osc = 0; osc < 4; osc++) {
       if (osc > 0) {
-        // Degenerate stitch: repeat last vertex of prev ribbon + first
-        // of this one so the strip "skips" between ribbons without
-        // drawing connecting triangles.
         const prevLastIdx = RIBBON_SEGMENTS - 1;
         verts.push(prevLastIdx, 1, osc - 1);
         verts.push(0, 0, osc);
       }
       for (let i = 0; i < RIBBON_SEGMENTS; i++) {
-        verts.push(i, 0, osc); // top of strip
-        verts.push(i, 1, osc); // bottom
+        verts.push(i, 0, osc);
+        verts.push(i, 1, osc);
       }
     }
     return new Float32Array(verts);
   }
 
-  // 4×4 matrix helpers — written tight to avoid pulling gl-matrix.
-  //
-  // CONVENTION: matrices are stored COLUMN-MAJOR per OpenGL convention,
-  // i.e. m[col*4 + row]. mat4Perspective and mat4LookAt below produce
-  // column-major matrices, and uniformMatrix4fv is called with
-  // transpose=false — the multiply must therefore also operate
-  // column-major. Previous bug: indices were laid out column-major but
-  // the multiply used row-major math, producing a garbage MVP that
-  // collapsed all geometry off-screen (black screen).
   function mat4Multiply(out: Float32Array, a: Float32Array, b: Float32Array): void {
-    // out = a × b, all column-major: out[col*4 + row].
     for (let col = 0; col < 4; col++) {
       for (let row = 0; row < 4; row++) {
         let s = 0;
         for (let k = 0; k < 4; k++) {
-          // A[row, k] = a[k*4 + row]; B[k, col] = b[col*4 + k].
           s += a[k * 4 + row]! * b[col * 4 + k]!;
         }
         out[col * 4 + row] = s;
@@ -608,13 +657,11 @@ void main() {
     const zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
     const zl = Math.hypot(zx, zy, zz) || 1;
     const fz = [zx / zl, zy / zl, zz / zl];
-    // right = up × fz
     const rx = up[1] * fz[2]! - up[2] * fz[1]!;
     const ry = up[2] * fz[0]! - up[0] * fz[2]!;
     const rz = up[0] * fz[1]! - up[1] * fz[0]!;
     const rl = Math.hypot(rx, ry, rz) || 1;
     const r = [rx / rl, ry / rl, rz / rl];
-    // upN = fz × right
     const ux = fz[1]! * r[2]! - fz[2]! * r[1]!;
     const uy = fz[2]! * r[0]! - fz[0]! * r[2]!;
     const uz = fz[0]! * r[1]! - fz[1]! * r[0]!;
@@ -631,39 +678,19 @@ void main() {
   let projMat = new Float32Array(16);
   let mvpMat = new Float32Array(16);
 
-  // Oscillator base RGBA colors.
   const OSC_COLORS: Array<[number, number, number, number]> = [
-    [1.0, 0.20, 0.20, 1.0], // RED
-    [0.20, 1.0, 0.30, 1.0], // GREEN
-    [0.30, 0.50, 1.0, 1.0], // BLUE
-    [0.85, 0.85, 0.85, 0.7], // ALPHA → faint white (v1 deferral note: this
-    //                       would otherwise mask the alpha channel; v1
-    //                       just shows it as a soft white outline so the
-    //                       user still sees the fourth voice fire.)
+    [1.0, 0.20, 0.20, 1.0],
+    [0.20, 1.0, 0.30, 1.0],
+    [0.30, 0.50, 1.0, 1.0],
+    [0.85, 0.85, 0.85, 0.7],
   ];
-
-  // Per-osc visual phase rate (rotations per second). Visual phase is
-  // DECOUPLED from audio phase — audio is at ~hundreds-of-Hz which would
-  // alias to noise at 60fps. We use a slow visible rate that responds to
-  // pitch_cv readings via voiceState (read each frame).
-  const VISUAL_PHASE_RATE = 0.8; // rotations / second per osc
 
   let renderStartMs = 0;
   let frameCount = 0;
-  let phaseAcc: number[] = [0, 0, 0, 0];
-  // Per-osc bolt position (0..1 along the ribbon). Each frame the
-  // position advances based on dt; the bolt is rendered only when the
-  // corresponding voice's envelope is non-zero (env drives uBolt
-  // intensity directly, while boltPhase tracks the traveling pulse).
   let boltPhase: number[] = [0, 0, 0, 0];
-  // Travel speed (rotations of the ribbon per second). Tuned for "gentle
-  // pulse" feel — neither too fast (gunshot) nor too slow (no motion).
   const BOLT_SPEED = 0.6;
   let lastFrameMs = 0;
 
-  /** Find the source node ID + port for an alpha_in edge into THIS node,
-   *  or null if unpatched. Edges are scanned each frame; this is cheap
-   *  (4-5 edges typical, <50ns lookup). */
   function findAlphaInSource(): { nodeId: string; portId: string } | null {
     for (const eid of Object.keys(patch.edges)) {
       const e = patch.edges[eid];
@@ -675,21 +702,13 @@ void main() {
     return null;
   }
 
-  /** Ask the VideoEngine to blit the upstream source's FBO to its
-   *  shared canvas, then upload that canvas to our GL context's
-   *  `alphaInTex`. Sets `hasAlphaInPatched` to reflect whether we
-   *  actually got a frame. Robust to missing engine / source not
-   *  materialized — falls back to "no alpha input" silently. */
   function tryUploadAlphaIn(): void {
     if (!gl || !alphaInTex) {
       hasAlphaInPatched = false;
       return;
     }
     const src = findAlphaInSource();
-    if (!src) {
-      hasAlphaInPatched = false;
-      return;
-    }
+    if (!src) { hasAlphaInPatched = false; return; }
     const e = engineCtx.get();
     if (!e) { hasAlphaInPatched = false; return; }
     let videoEngine: VideoEngine | undefined;
@@ -716,9 +735,63 @@ void main() {
     }
   }
 
+  /** Upload the current per-osc wavetable frames into the ribbon's
+   *  wave-shape texture. Reads from the audio module's registry (which
+   *  the factory keeps in sync with node.data on its 200ms poll).
+   *
+   *  Sampling strategy: each osc's row in the texture is filled with a
+   *  resampling of the active frame at WAVE_TEX_W (= 256) bins. The
+   *  active frame index is round(morph * (frameCount-1)) — same as
+   *  WAVECEL's `readActiveFrame()` heuristic. Default (no frames loaded
+   *  yet) writes a faint baseline so the ribbon shows SOMETHING during
+   *  the first ~200ms before the poll loop fires.
+   *
+   *  Cost: 256×4 bytes per upload × 60fps = ~60 KB/s. Cheap. */
+  function uploadWaveTex(): void {
+    if (!gl || !waveTex) return;
+    const allFrames = getWavesculptFrames(id);
+    const buf = waveTexUploadBuf;
+    for (let osc = 0; osc < 4; osc++) {
+      const m = (node?.params?.[`morph${osc + 1}`] as number | undefined) ?? 0;
+      const frames = allFrames?.[osc] ?? [];
+      let activeFrame: Float32Array | null = null;
+      if (frames.length > 0) {
+        const idx = Math.max(
+          0, Math.min(frames.length - 1, Math.round(m * (frames.length - 1))),
+        );
+        activeFrame = frames[idx] ?? null;
+      }
+      const rowOffset = osc * WAVE_TEX_W * 4;
+      if (activeFrame && activeFrame.length === WAVE_TEX_W) {
+        for (let i = 0; i < WAVE_TEX_W; i++) {
+          // Map sample in [-1..+1] → byte in [0..255].
+          const s = activeFrame[i]!;
+          const v = Math.max(0, Math.min(255, Math.round((s + 1) * 127.5)));
+          const o = rowOffset + i * 4;
+          buf[o] = v; buf[o + 1] = v; buf[o + 2] = v; buf[o + 3] = 255;
+        }
+      } else {
+        // Faint sine fallback so the ribbon isn't a dead line during init.
+        for (let i = 0; i < WAVE_TEX_W; i++) {
+          const ph = (i / WAVE_TEX_W) * Math.PI * 2;
+          const s = Math.sin(ph) * 0.3;
+          const v = Math.max(0, Math.min(255, Math.round((s + 1) * 127.5)));
+          const o = rowOffset + i * 4;
+          buf[o] = v; buf[o + 1] = v; buf[o + 2] = v; buf[o + 3] = 255;
+        }
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, waveTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGBA8,
+      WAVE_TEX_W, WAVE_TEX_H, 0,
+      gl.RGBA, gl.UNSIGNED_BYTE,
+      buf,
+    );
+  }
+
   function initGl(): boolean {
-    // Use OffscreenCanvas where available; in tests/jsdom this may be
-    // undefined — fall back to a hidden HTMLCanvasElement.
     if (typeof OffscreenCanvas !== 'undefined') {
       renderCanvas = new OffscreenCanvas(RES_W, RES_H);
     } else if (typeof document !== 'undefined') {
@@ -746,14 +819,13 @@ void main() {
       console.error('[WAVESCULPT] shader setup failed:', err);
       return false;
     }
-    // Ribbon VAO/buffer.
+
     const geom = buildRibbonGeometry();
     ribbonVao = gl.createVertexArray();
     gl.bindVertexArray(ribbonVao);
     ribbonSamplesBuf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, ribbonSamplesBuf);
     gl.bufferData(gl.ARRAY_BUFFER, geom, gl.STATIC_DRAW);
-    // attributes: aIdx (0), aSide (1), aOsc (2) — 3 floats each.
     const aIdxLoc = gl.getAttribLocation(ribbonProgram!, 'aIdx');
     const aSideLoc = gl.getAttribLocation(ribbonProgram!, 'aSide');
     const aOscLoc = gl.getAttribLocation(ribbonProgram!, 'aOsc');
@@ -772,7 +844,6 @@ void main() {
     }
     gl.bindVertexArray(null);
 
-    // Quad VAO/buffer for the bentbox post-pass.
     quadVao = gl.createVertexArray();
     gl.bindVertexArray(quadVao);
     const qbuf = gl.createBuffer();
@@ -787,29 +858,40 @@ void main() {
     }
     gl.bindVertexArray(null);
 
-    // Scene FBO gets a depth buffer so the ribbon pass can use DEPTH_TEST
-    // for proper front-occludes-back rendering between the 4 ribbons.
     const fboA = createFboTex(gl, RES_W, RES_H, true);
     sceneFbo = fboA.fbo; sceneTex = fboA.tex; sceneDepthRb = fboA.depth;
     const fboB = createFboTex(gl, RES_W, RES_H);
     prevFbo = fboB.fbo; prevTex = fboB.tex;
     const fboC = createFboTex(gl, RES_W, RES_H);
     postPingFbo = fboC.fbo; postPingTex = fboC.tex;
-    // ALPHA-mask FBO (osc-3-only ribbon render → red channel = mask).
-    // Also gets a depth buffer so the mask respects the same occlusion
-    // ordering as the scene pass — a closer non-alpha ribbon must hide
-    // the part of the alpha ribbon behind it, otherwise the alpha
-    // composite would bleed through closer geometry.
     const fboD = createFboTex(gl, RES_W, RES_H, true);
     alphaMaskFbo = fboD.fbo; alphaMaskTex = fboD.tex; alphaMaskDepthRb = fboD.depth;
-    // ALPHA-in texture (uploaded from upstream video each frame). 1x1
-    // black placeholder so the sampler isn't dangling before the first
-    // upload; texImage2D in tryUploadAlphaIn() replaces with real data.
+
     alphaInTex = gl.createTexture();
     if (alphaInTex) {
       gl.bindTexture(gl.TEXTURE_2D, alphaInTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
         new Uint8Array([0, 0, 0, 255]));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+
+    // NEW v2: wavetable shape texture (256×4 RGBA8).
+    waveTex = gl.createTexture();
+    if (waveTex) {
+      gl.bindTexture(gl.TEXTURE_2D, waveTex);
+      gl.texImage2D(
+        gl.TEXTURE_2D, 0, gl.RGBA8,
+        WAVE_TEX_W, WAVE_TEX_H, 0,
+        gl.RGBA, gl.UNSIGNED_BYTE,
+        null,
+      );
+      // LINEAR sampling so the ribbon shape stays smooth at low segment
+      // counts. CLAMP_TO_EDGE because we don't want the texture to wrap
+      // (the wavetable IS the wave shape — wrapping a saw would visually
+      // discontinue at the ribbon endpoint).
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -839,6 +921,7 @@ void main() {
       if (alphaMaskTex) gl.deleteTexture(alphaMaskTex);
       if (alphaMaskDepthRb) gl.deleteRenderbuffer(alphaMaskDepthRb);
       if (alphaInTex) gl.deleteTexture(alphaInTex);
+      if (waveTex) gl.deleteTexture(waveTex);
       if (ribbonSamplesBuf) gl.deleteBuffer(ribbonSamplesBuf);
     } catch { /* */ }
     gl = null;
@@ -849,34 +932,9 @@ void main() {
     if (!gl || !ribbonProgram || !bentboxProgram) return;
     const g = gl;
 
-    // 0) Try to refresh the alpha_in texture from the patched upstream
-    //    video source (if any). Cheap when unpatched — early-returns.
     tryUploadAlphaIn();
+    uploadWaveTex();
 
-    // 1) Render ribbons into sceneFbo via a Z-PREPASS + color pass.
-    //
-    // The naive approach — single pass with depth-test + depthMask + ADD
-    // blending — broke the dogfood release because the FIRST ribbon
-    // fragment to land at a pixel wrote its depth, and subsequent ribbons
-    // (additive cross-overs at slightly different z) got LEQUAL-rejected
-    // even when they were the SAME visible feature glowing through. This
-    // produced near-black FBOs in the per-pass measurement tests (the
-    // visible composite still showed ribbons because of the bentbox bloom
-    // pass, but pixel-counting hit the 60-sum floor).
-    //
-    // Fix: split into two passes against the shared depth attachment.
-    //   1a. Z-PREPASS — render ribbons with colorMask(false) + depthMask
-    //       (true) + depthFunc(LESS). Writes only the NEAREST z per pixel.
-    //   1b. COLOR PASS — render ribbons with colorMask(true) + depthMask
-    //       (false) + depthFunc(LEQUAL) + additive blending. Fragments at
-    //       the nearest depth (and only those) pass; back-occluded ribbon
-    //       fragments are LEQUAL-rejected by the prepass's stored depth.
-    //       Additive accumulation works again because depthMask is off —
-    //       multiple fragments at the same z still all pass + add.
-    //
-    // Net behavior: closer ribbons still occlude further ribbons per the
-    // user's "wave in front hides wave behind" feedback, AND ribbons that
-    // cross at the same z still light up brighter where they overlap.
     g.bindFramebuffer(g.FRAMEBUFFER, sceneFbo);
     g.viewport(0, 0, RES_W, RES_H);
     g.clearColor(0, 0, 0, 1);
@@ -885,27 +943,28 @@ void main() {
 
     g.useProgram(ribbonProgram);
 
-    // Camera setup.
+    // Camera setup — use the shared eyeFromCamera helper so zoom/rot
+    // semantics stay paired with the audio side's distGain math.
     const camX = clampJoy(node?.params.pos_x as number ?? 0);
     const camY = clampJoy(node?.params.pos_y as number ?? 0);
     const camZ = clampJoy(node?.params.pos_z as number ?? 0);
     const zoomVal = Math.max(0.3, Math.min(3, node?.params.zoom as number ?? 1));
-    const fovy = 1.2 / zoomVal; // shrink fov as zoom increases
+    const rotVal  = clampJoy(node?.params.rot as number ?? 0);
+    const eye = eyeFromCamera(camX, camY, camZ, zoomVal, rotVal);
+    // FOV stays fixed; zoom now moves the eye instead of changing fov,
+    // so the visual cue tracks the audio cue 1:1.
+    const fovy = 1.0;
     const aspect = RES_W / RES_H;
-    mat4Perspective(projMat, fovy, aspect, 0.05, 6.0);
-    // Eye is the user-camera; we look at the box center (0,0,0).
-    const eye: [number, number, number] = [camX * 1.5, camY * 1.5, camZ * 1.5 + 2.5];
+    mat4Perspective(projMat, fovy, aspect, 0.05, 12.0);
     mat4LookAt(viewMat, eye, [0, 0, 0], [0, 1, 0]);
     mat4Multiply(mvpMat, projMat, viewMat);
 
     const uMVP = g.getUniformLocation(ribbonProgram, 'uMVP');
     g.uniformMatrix4fv(uMVP, false, mvpMat);
 
-    // Per-osc uniforms.
     const e = engineCtx.get();
     let voiceEnv: number[] = [0, 0, 0, 0];
     if (e && node) {
-      // Engine.read(node, 'voiceState') → array of {env, phase}.
       try {
         const vs = e.read(node, 'voiceState') as Array<{ env: number; phase: string }> | undefined;
         if (Array.isArray(vs)) {
@@ -914,35 +973,22 @@ void main() {
       } catch { /* engine may not be ready yet */ }
     }
 
-    // Update visual phase per-osc — slow constant rate so motion stays
-    // readable. Per-osc rate scales mildly with osc index for variation.
-    // Also advance the per-osc bolt position (a 0..1 along-ribbon sweep
-    // driven at BOLT_SPEED). The bolt phase wraps every 1/BOLT_SPEED s.
     const now = performance.now();
     const dt = Math.max(0, Math.min(0.5, (now - lastFrameMs) / 1000));
     lastFrameMs = now;
     for (let i = 0; i < 4; i++) {
-      phaseAcc[i] = (phaseAcc[i]! + VISUAL_PHASE_RATE * (0.8 + 0.4 * i) * dt) % (Math.PI * 2);
-      // Advance bolt position; wrap at 1.0 so it loops along the ribbon.
       boltPhase[i] = (boltPhase[i]! + BOLT_SPEED * dt) % 1.0;
     }
 
-    // Pass per-osc arrays as Float32Array.
     const srcArr = new Float32Array(16);
     const vecArr = new Float32Array(16);
     const colArr = new Float32Array(16);
-    const morphArr = new Float32Array(4);
     const thicknessArr = new Float32Array(4);
     const boltArr = new Float32Array(4);
     const boltPhaseArr = new Float32Array(4);
-    const phaseArr = new Float32Array(4);
     for (let i = 0; i < 4; i++) {
-      const wall = [
-        [ 1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0],
-      ][i]!;
-      const vec = [
-        [-1, 0, 0], [ 1, 0, 0], [0,-1, 0], [0,  1, 0],
-      ][i]!;
+      const wall = [[ 1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]][i]!;
+      const vec = [[-1, 0, 0], [ 1, 0, 0], [0,-1, 0], [0,  1, 0]][i]!;
       srcArr[i * 4 + 0] = wall[0]!;
       srcArr[i * 4 + 1] = wall[1]!;
       srcArr[i * 4 + 2] = wall[2]!;
@@ -956,37 +1002,30 @@ void main() {
       colArr[i * 4 + 1] = col[1]!;
       colArr[i * 4 + 2] = col[2]!;
       colArr[i * 4 + 3] = col[3]!;
-      morphArr[i] = (node?.params?.[`morph${i + 1}`] as number | undefined) ?? 0.5;
       thicknessArr[i] = (node?.params?.[`thickness${i + 1}`] as number | undefined) ?? 0.3;
-      // Bolt intensity = ADSR envelope amplitude (0..1). Pre-ADSR
-      // ribbons render at fixed level; bolts pulse with ADSR.
       boltArr[i] = voiceEnv[i] ?? 0;
       boltPhaseArr[i] = boltPhase[i]!;
-      phaseArr[i] = phaseAcc[i]!;
     }
     const uSrcLoc = g.getUniformLocation(ribbonProgram, 'uSrc[0]');
     const uVecLoc = g.getUniformLocation(ribbonProgram, 'uVec[0]');
     const uColLoc = g.getUniformLocation(ribbonProgram, 'uOscColor[0]');
-    const uMorphLoc = g.getUniformLocation(ribbonProgram, 'uMorph[0]');
     const uThicknessLoc = g.getUniformLocation(ribbonProgram, 'uThickness[0]');
     const uBoltLoc = g.getUniformLocation(ribbonProgram, 'uBolt[0]');
     const uBoltPhaseLoc = g.getUniformLocation(ribbonProgram, 'uBoltPhase[0]');
-    const uPhaseLoc = g.getUniformLocation(ribbonProgram, 'uPhase[0]');
+    const uWaveTexLoc = g.getUniformLocation(ribbonProgram, 'uWaveTex');
     if (uSrcLoc) g.uniform4fv(uSrcLoc, srcArr);
     if (uVecLoc) g.uniform4fv(uVecLoc, vecArr);
     if (uColLoc) g.uniform4fv(uColLoc, colArr);
-    if (uMorphLoc) g.uniform1fv(uMorphLoc, morphArr);
     if (uThicknessLoc) g.uniform1fv(uThicknessLoc, thicknessArr);
     if (uBoltLoc) g.uniform1fv(uBoltLoc, boltArr);
     if (uBoltPhaseLoc) g.uniform1fv(uBoltPhaseLoc, boltPhaseArr);
-    if (uPhaseLoc) g.uniform1fv(uPhaseLoc, phaseArr);
+    // Bind waveTex on TEXTURE0 for the ribbon program.
+    g.activeTexture(g.TEXTURE0);
+    g.bindTexture(g.TEXTURE_2D, waveTex);
+    if (uWaveTexLoc) g.uniform1i(uWaveTexLoc, 0);
 
-    // Total verts: 4 ribbons × 2*RIBBON_SEGMENTS + 3 stitches × 2 (degenerate pairs)
     const ribbonVerts = 4 * (2 * RIBBON_SEGMENTS) + 3 * 2;
 
-    // 1a) Z-PREPASS — depth-only. No color writes, no blending. Writes
-    //     the nearest z per pixel into the depth attachment so the color
-    //     pass can LEQUAL-reject any fragment behind it.
     g.disable(g.BLEND);
     g.colorMask(false, false, false, false);
     g.enable(g.DEPTH_TEST);
@@ -996,10 +1035,6 @@ void main() {
     g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
     g.bindVertexArray(null);
 
-    // 1b) COLOR PASS — additive blending, depth-tested against the
-    //     prepass's nearest-z map. depthMask=false so we don't disturb
-    //     the prepass z (and so multiple fragments at the same z still
-    //     all pass + accumulate).
     g.colorMask(true, true, true, true);
     g.depthFunc(g.LEQUAL);
     g.depthMask(false);
@@ -1009,31 +1044,20 @@ void main() {
     g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
     g.bindVertexArray(null);
 
-    // 1c) ALPHA-mask pass: re-render to alphaMaskFbo with all-OSC colors
-    //     forced to ZERO except for osc 3 (ALPHA), whose color becomes
-    //     pure red (R=1). This produces a binary mask in the red channel
-    //     covering the ALPHA oscillator's projected ribbon — exactly the
-    //     region where uAlphaInTex should be composited in.
+    // 1c) ALPHA-mask pass (osc 3 only → red mask).
     g.bindFramebuffer(g.FRAMEBUFFER, alphaMaskFbo);
     g.viewport(0, 0, RES_W, RES_H);
     g.clearColor(0, 0, 0, 1);
     g.clearDepth(1.0);
     g.clear(g.COLOR_BUFFER_BIT | g.DEPTH_BUFFER_BIT);
     const maskColArr = new Float32Array(16);
-    // osc 0/1/2 → transparent black; osc 3 → red mask.
     maskColArr[3 * 4 + 0] = 1.0;
     maskColArr[3 * 4 + 1] = 0.0;
     maskColArr[3 * 4 + 2] = 0.0;
     maskColArr[3 * 4 + 3] = 1.0;
     if (uColLoc) g.uniform4fv(uColLoc, maskColArr);
-    // Disable bolts on the mask pass so the mask boundary isn't pulsed
-    // by ADSR — the spec says the alpha REGION is determined purely by
-    // the ALPHA osc's waveform projection (pre-ADSR-decoupled).
     const zeros4 = new Float32Array(4);
     if (uBoltLoc) g.uniform1fv(uBoltLoc, zeros4);
-    // Same Z-prepass + color-pass structure as the scene pass — a non-
-    // alpha ribbon in front must hide the part of the alpha ribbon behind
-    // it so the alpha_in composite doesn't bleed through closer geometry.
     g.disable(g.BLEND);
     g.colorMask(false, false, false, false);
     g.enable(g.DEPTH_TEST);
@@ -1051,16 +1075,10 @@ void main() {
     g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
     g.bindVertexArray(null);
     g.disable(g.BLEND);
-    // Disable depth test + restore depthMask before the screen-space
-    // post-passes — the bentbox FS reads from the ribbon texture as a
-    // 2D image and the composite/snapshot passes must paint the full
-    // quad unconditionally. Leave depthMask=true (default) for the next
-    // frame's prepass clear.
     g.disable(g.DEPTH_TEST);
     g.depthMask(true);
 
-    // 2) Bentbox post-pass: sceneTex + prevTex + alphaMaskTex + alphaInTex
-    //    → postPingFbo (or default).
+    // 2) BENTBOX post-pass.
     g.bindFramebuffer(g.FRAMEBUFFER, postPingFbo);
     g.viewport(0, 0, RES_W, RES_H);
     g.useProgram(bentboxProgram);
@@ -1072,7 +1090,6 @@ void main() {
     g.bindTexture(g.TEXTURE_2D, prevTex);
     const uPrev = g.getUniformLocation(bentboxProgram, 'uPrev');
     if (uPrev) g.uniform1i(uPrev, 1);
-    // Bind alpha mask + alpha-in textures on units 2 & 3.
     g.activeTexture(g.TEXTURE2);
     g.bindTexture(g.TEXTURE_2D, alphaMaskTex);
     const uAlphaMask = g.getUniformLocation(bentboxProgram, 'uAlphaMask');
@@ -1109,10 +1126,7 @@ void main() {
     g.drawArrays(g.TRIANGLE_STRIP, 0, 4);
     g.bindVertexArray(null);
 
-    // 3) Snapshot postPing → prevTex (next-frame feedback source). We
-    //    re-use bentboxProgram but turn off the alpha-in composite for
-    //    this passthrough pass (the composite already happened in pass 2
-    //    and was baked into postPingTex; re-applying would double-blend).
+    // 3) Snapshot postPing → prevTex.
     if (uHasAlphaInLoc) g.uniform1f(uHasAlphaInLoc, 0.0);
     g.bindFramebuffer(g.FRAMEBUFFER, prevFbo);
     g.viewport(0, 0, RES_W, RES_H);
@@ -1124,8 +1138,7 @@ void main() {
     g.bindVertexArray(null);
     g.bindFramebuffer(g.FRAMEBUFFER, null);
 
-    // 4) Final blit to default fb so the canvas surface shows the user-
-    //    visible frame. Same passthrough — alpha-in already composited.
+    // 4) Final blit.
     g.viewport(0, 0, RES_W, RES_H);
     g.activeTexture(g.TEXTURE0);
     g.bindTexture(g.TEXTURE_2D, postPingTex);
@@ -1137,17 +1150,9 @@ void main() {
     frameCount++;
   }
 
-  // Install our drawFrame on the audio handle so the video bridge calls
-  // into us. We also drive the on-card preview canvas from the same
-  // render output.
   function installBridgeFrameDrawer(): void {
-    // Install (or re-install) the card's renderer as this node's frame
-    // drawer in the shared registry. The audio module's drawFrame reads
-    // from that registry; the bridge calls drawFrame each video frame.
     installWavesculptFrameDrawer(id, (targetCanvas) => {
       if (!renderCanvas || !gl) return;
-      // The renderer paints into renderCanvas (private OffscreenCanvas);
-      // here we composite that onto the bridge's target canvas.
       const tc2d = targetCanvas.getContext('2d') as
         | OffscreenCanvasRenderingContext2D
         | CanvasRenderingContext2D
@@ -1171,14 +1176,12 @@ void main() {
     });
   }
 
-  // ---- on-card preview canvas ----
   let displayCanvas: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
   function tick() {
     rafId = null;
     if (!gl) {
-      // Lazy GL init in case the parent only just mounted us.
       initGl();
     }
     renderToOffscreen();
@@ -1199,7 +1202,6 @@ void main() {
           w = cw; h = Math.round(w / srcAspect);
           x = 0; y = Math.round((ch - h) / 2);
         }
-        // Y-flip (WebGL bottom-left vs canvas2d top-left).
         dc2.save();
         dc2.translate(x, y + h);
         dc2.scale(1, -1);
@@ -1222,7 +1224,6 @@ void main() {
     if (resizeAbort) resizeAbort.abort();
   });
 
-  // ---- Resize handle ----
   let resizing = $state(false);
   let resizeAbort: AbortController | null = null;
   function onResizeStart(ev: PointerEvent) {
@@ -1244,7 +1245,6 @@ void main() {
     });
   }
 
-  // ---- Ports ----
   const inputs: PortDescriptor[] = [
     { id: 'gate1',     label: 'G1', cable: 'gate' },
     { id: 'pitch_cv1', label: 'P1', cable: 'cv' },
@@ -1258,6 +1258,7 @@ void main() {
     { id: 'pos_y',     label: 'Y',  cable: 'cv' },
     { id: 'pos_z',     label: 'H',  cable: 'cv' },
     { id: 'zoom',      label: 'Z',  cable: 'cv' },
+    { id: 'rot',       label: 'R',  cable: 'cv' },
     { id: 'alpha_in',  label: 'A',  cable: 'video' },
   ];
   const outputs: PortDescriptor[] = [
@@ -1266,7 +1267,6 @@ void main() {
     { id: 'video_out', label: 'OUT', cable: 'mono-video' },
   ];
 
-  // Strip definitions used inside the per-osc grid.
   const OSC_COLOR_LABELS = ['RED', 'GRN', 'BLU', 'ALP'];
 </script>
 
@@ -1282,69 +1282,122 @@ void main() {
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
-      <!-- Per-oscillator strip -->
+      <!-- Per-oscillator strip: WAV / LOAD / tune / fine / morph / spread / fold / ADSR / thickness -->
       <div class="osc-grid">
         {#each [0, 1, 2, 3] as i}
-          <div class="osc-strip osc-{i}">
+          <div class="osc-strip osc-{i}" data-testid={`wavesculpt-osc-${i + 1}`}>
             <div class="osc-label">{OSC_COLOR_LABELS[i]}</div>
+            <div class="wt-row">
+              <select
+                class="wt-select"
+                value={oscSource(i)}
+                onchange={(e) => {
+                  const v = (e.target as HTMLSelectElement).value;
+                  if (v === 'user') return;
+                  const factoryId = v.startsWith('factory:') ? v.slice('factory:'.length) : v;
+                  selectFactory(i, factoryId);
+                }}
+                data-testid={`wavesculpt-osc-${i + 1}-wav-select`}
+              >
+                {#each getFactoryTables() as t (t.id)}
+                  <option value={`factory:${t.id}`}>{t.label}</option>
+                {/each}
+                {#if oscSource(i) === 'user'}
+                  <option value="user">USER · {oscLabel(i)}</option>
+                {/if}
+              </select>
+              <label class="upload-btn" data-testid={`wavesculpt-osc-${i + 1}-load`}>
+                <input
+                  type="file"
+                  accept=".wav,audio/wav"
+                  onchange={(ev) => onWavFileChange(i, ev)}
+                />
+                <span>LOAD</span>
+              </label>
+            </div>
+            {#if uploadStatus[i]}
+              <div class="upload-status">{uploadStatus[i]}</div>
+            {/if}
+            {#if uploadError[i]}
+              <div class="upload-error">{uploadError[i]}</div>
+            {/if}
             <div class="osc-knobs">
-              <Knob
-                value={i === 0 ? morph1 : i === 1 ? morph2 : i === 2 ? morph3 : morph4}
-                min={0} max={1} defaultValue={0.5} label="Morph" curve="linear"
-                onchange={set(`morph${i + 1}`)} readLive={live(`morph${i + 1}`)}
-              />
-              <Knob
-                value={i === 0 ? thickness1 : i === 1 ? thickness2 : i === 2 ? thickness3 : thickness4}
+              <Knob value={i === 0 ? tune1 : i === 1 ? tune2 : i === 2 ? tune3 : tune4}
+                min={-36} max={36} defaultValue={0} label="Tune" units="st" curve="linear"
+                onchange={set(`tune${i + 1}`)} readLive={live(`tune${i + 1}`)} />
+              <Knob value={i === 0 ? fine1 : i === 1 ? fine2 : i === 2 ? fine3 : fine4}
+                min={-100} max={100} defaultValue={0} label="Fine" units="¢" curve="linear"
+                onchange={set(`fine${i + 1}`)} readLive={live(`fine${i + 1}`)} />
+              <Knob value={i === 0 ? morph1 : i === 1 ? morph2 : i === 2 ? morph3 : morph4}
+                min={0} max={1} defaultValue={0} label="Morph" curve="linear"
+                onchange={set(`morph${i + 1}`)} readLive={live(`morph${i + 1}`)} />
+              <Knob value={i === 0 ? spread1 : i === 1 ? spread2 : i === 2 ? spread3 : spread4}
+                min={1} max={5} defaultValue={1} label="Sprd" curve="linear"
+                onchange={set(`spread${i + 1}`)} readLive={live(`spread${i + 1}`)} />
+              <Knob value={i === 0 ? fold1 : i === 1 ? fold2 : i === 2 ? fold3 : fold4}
+                min={0} max={1} defaultValue={0} label="Fold" curve="linear"
+                onchange={set(`fold${i + 1}`)} readLive={live(`fold${i + 1}`)} />
+              <Knob value={i === 0 ? thickness1 : i === 1 ? thickness2 : i === 2 ? thickness3 : thickness4}
                 min={0} max={1} defaultValue={0.3} label="Thick" curve="linear"
-                onchange={set(`thickness${i + 1}`)} readLive={live(`thickness${i + 1}`)}
-              />
-              <Knob
-                value={i === 0 ? A1 : i === 1 ? A2 : i === 2 ? A3 : A4}
+                onchange={set(`thickness${i + 1}`)} readLive={live(`thickness${i + 1}`)} />
+            </div>
+            <div class="osc-knobs">
+              <Knob value={i === 0 ? A1 : i === 1 ? A2 : i === 2 ? A3 : A4}
                 min={0.001} max={5} defaultValue={0.01} label="A" curve="log" units="s"
-                onchange={set(`A${i + 1}`)} readLive={live(`A${i + 1}`)}
-              />
-              <Knob
-                value={i === 0 ? D1 : i === 1 ? D2 : i === 2 ? D3 : D4}
+                onchange={set(`A${i + 1}`)} readLive={live(`A${i + 1}`)} />
+              <Knob value={i === 0 ? D1 : i === 1 ? D2 : i === 2 ? D3 : D4}
                 min={0.001} max={5} defaultValue={0.1} label="D" curve="log" units="s"
-                onchange={set(`D${i + 1}`)} readLive={live(`D${i + 1}`)}
-              />
-              <Knob
-                value={i === 0 ? S1 : i === 1 ? S2 : i === 2 ? S3 : S4}
+                onchange={set(`D${i + 1}`)} readLive={live(`D${i + 1}`)} />
+              <Knob value={i === 0 ? S1 : i === 1 ? S2 : i === 2 ? S3 : S4}
                 min={0} max={1} defaultValue={0.7} label="S" curve="linear"
-                onchange={set(`S${i + 1}`)} readLive={live(`S${i + 1}`)}
-              />
-              <Knob
-                value={i === 0 ? R1 : i === 1 ? R2 : i === 2 ? R3 : R4}
+                onchange={set(`S${i + 1}`)} readLive={live(`S${i + 1}`)} />
+              <Knob value={i === 0 ? R1 : i === 1 ? R2 : i === 2 ? R3 : R4}
                 min={0.001} max={5} defaultValue={0.5} label="R" curve="log" units="s"
-                onchange={set(`R${i + 1}`)} readLive={live(`R${i + 1}`)}
-              />
+                onchange={set(`R${i + 1}`)} readLive={live(`R${i + 1}`)} />
             </div>
           </div>
         {/each}
       </div>
 
-      <!-- Middle: rendered screen + camera controls -->
+      <!-- Middle: rendered screen + TWO joysticks + height + UNISON + Detune + alpha-brightness -->
       <div class="mid-row">
         <div class="cam-controls">
           <div class="cam-section-label">CAMERA</div>
           <div
             class="pad nodrag"
-            bind:this={padEl}
+            bind:this={padPosEl}
             style="width: {PAD_PX}px; height: {PAD_PX}px;"
             role="application"
             aria-label="Wavesculpt camera XY pad"
             data-testid="wavesculpt-pad"
-            onpointerdown={padDown}
-            onpointermove={padMove}
-            onpointerup={padUp}
-            onpointercancel={padUp}
+            onpointerdown={posDown}
+            onpointermove={posMove}
+            onpointerup={posUp}
+            onpointercancel={posUp}
           >
             <div class="cross-h"></div>
             <div class="cross-v"></div>
-            <div class="dot" class:active={dragging} style="left: {dotX}px; top: {dotY}px;"></div>
+            <div class="dot" class:active={draggingPos} style="left: {dotPosX}px; top: {dotPosY}px;"></div>
           </div>
+          <div class="pad-label">pos x/y</div>
           <Knob value={pos_z} min={-1} max={1} defaultValue={0} label="Height" curve="linear" onchange={set('pos_z')} readLive={live('pos_z')} />
-          <Knob value={zoom} min={0.3} max={3} defaultValue={1} label="Zoom" curve="log" onchange={set('zoom')} readLive={live('zoom')} />
+          <div
+            class="pad nodrag pad-zr"
+            bind:this={padZRel}
+            style="width: {PAD_PX}px; height: {PAD_PX}px;"
+            role="application"
+            aria-label="Wavesculpt zoom/rotation pad"
+            data-testid="wavesculpt-pad-zoomrot"
+            onpointerdown={zrDown}
+            onpointermove={zrMove}
+            onpointerup={zrUp}
+            onpointercancel={zrUp}
+          >
+            <div class="cross-h"></div>
+            <div class="cross-v"></div>
+            <div class="dot" class:active={draggingZR} style="left: {dotZRX}px; top: {dotZRY}px;"></div>
+          </div>
+          <div class="pad-label">zoom / rot</div>
         </div>
 
         <div class="screen-wrap" data-testid="wavesculpt-screen-wrap">
@@ -1366,11 +1419,6 @@ void main() {
             onclick={() => set('unison')(unison >= 0.5 ? 0 : 1)}
           >UNISON</button>
           <Knob value={detune} min={-1} max={1} defaultValue={0} label="Detune" curve="linear" onchange={set('detune')} readLive={live('detune')} />
-          <!-- Alpha-channel brightness — multiplies the upstream alpha_in
-               sample inside the ALPHA-osc mask region. Lives in the right
-               controls (alongside UNISON/Detune) because it's a per-osc-3
-               input-routing param; the ALPHA_IN port itself is on the
-               PatchPanel managed by the inputs[] descriptor above. -->
           <Knob
             value={alpha_brightness} min={0} max={2} defaultValue={1}
             label="A Bright" curve="linear"
@@ -1459,6 +1507,9 @@ void main() {
     border-radius: 2px;
     padding: 4px;
     background: rgba(255,255,255,0.02);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
   }
   .osc-strip.osc-0 { border-left: 2px solid rgba(255, 80, 80, 0.7); }
   .osc-strip.osc-1 { border-left: 2px solid rgba(80, 220, 100, 0.7); }
@@ -1468,14 +1519,57 @@ void main() {
     font-size: 0.62rem;
     font-weight: 600;
     letter-spacing: 0.08em;
-    margin-bottom: 2px;
     text-align: center;
     color: var(--text-dim);
+  }
+  .wt-row {
+    display: flex;
+    gap: 4px;
+    align-items: stretch;
+  }
+  .wt-select {
+    flex: 1;
+    background: #1a1f2a;
+    color: var(--text, #d8dde6);
+    border: 1px solid #2a2f3a;
+    border-radius: 2px;
+    padding: 1px 4px;
+    font-size: 0.55rem;
+    font-family: ui-monospace, monospace;
+    min-width: 0;
+  }
+  .upload-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a1f2a;
+    color: var(--text-dim);
+    border: 1px dashed #404652;
+    border-radius: 2px;
+    padding: 1px 6px;
+    font-size: 0.55rem;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+  }
+  .upload-btn input[type='file'] { display: none; }
+  .upload-btn:hover { color: var(--text, #d8dde6); border-color: #6a7282; }
+  .upload-status {
+    font-size: 0.5rem;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    text-align: center;
+  }
+  .upload-error {
+    font-size: 0.5rem;
+    color: #ff6b6b;
+    font-family: ui-monospace, monospace;
+    text-align: center;
   }
   .osc-knobs {
     display: flex;
     gap: 2px;
     justify-content: space-around;
+    flex-wrap: wrap;
   }
   .mid-row {
     display: grid;
@@ -1495,6 +1589,12 @@ void main() {
     letter-spacing: 0.08em;
     color: var(--text-dim);
   }
+  .pad-label {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    margin-top: -2px;
+  }
   .pad {
     position: relative;
     background: #050608;
@@ -1503,6 +1603,9 @@ void main() {
     touch-action: none;
     cursor: grab;
     user-select: none;
+  }
+  .pad-zr {
+    border-color: var(--accent, #d6a);
   }
   .pad:active { cursor: grabbing; }
   .cross-h, .cross-v {
@@ -1522,7 +1625,12 @@ void main() {
     pointer-events: none;
     box-shadow: 0 0 6px rgba(120, 200, 255, 0.4);
   }
+  .pad-zr .dot {
+    background: var(--accent, #d6a);
+    box-shadow: 0 0 6px rgba(210, 110, 200, 0.4);
+  }
   .dot.active { box-shadow: 0 0 12px rgba(120, 200, 255, 0.8); }
+  .pad-zr .dot.active { box-shadow: 0 0 12px rgba(210, 110, 200, 0.9); }
   .screen-wrap {
     background: #000;
     border: 1px solid rgba(255, 255, 255, 0.15);
