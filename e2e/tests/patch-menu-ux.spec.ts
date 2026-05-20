@@ -92,9 +92,14 @@ test('click+drag on a port within 50ms does NOT open the menu (drag passes to xy
 
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  // Drag well past the 4px tolerance immediately (< 50ms).
-  await page.mouse.move(cx + 60, cy + 40, { steps: 5 });
-  await page.mouse.move(cx + 120, cy + 60, { steps: 5 });
+  // Drag well past the 4px tolerance — the first pointermove must
+  // land BEFORE the 50ms hold timer fires. We issue a single
+  // un-stepped jump (no `steps:` argument) so Playwright fires one
+  // pointermove right away rather than batching N over time. On slow
+  // CI runners with multi-step drags, all the pointermoves could land
+  // after the 50ms threshold, leaving the hold-fire menu to open.
+  await page.mouse.move(cx + 60, cy + 40);
+  await page.mouse.move(cx + 120, cy + 60);
   // Menu must NOT have appeared.
   await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
   await page.mouse.up();

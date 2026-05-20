@@ -102,9 +102,15 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     ).toHaveCount(1);
 
     // 5. Outside-click closes both pinned panels (an outside pointerdown
-    //    drops the pinned + hovered drivers).
-    await page.mouse.click(50, 50);
-    await page.waitForTimeout(100);
+    //    drops the pinned + hovered drivers). Click on the svelte-flow
+    //    pane (the canvas background) in a region that is unambiguously
+    //    outside every module card — using the .svelte-flow__pane
+    //    element directly is more robust than a screen coordinate, since
+    //    the topbar and modules can shift between viewport sizes.
+    await page.locator('.svelte-flow__pane').click({ position: { x: 50, y: 50 } });
+    // toHaveAttribute auto-retries up to 5s, which absorbs the brief gap
+    // between the document pointerdown handler clearing the drivers and
+    // Svelte propagating the derived `open` flip into aria-hidden.
     await expect(await panel(page, 'adsr')).toHaveAttribute('aria-hidden', 'true');
     await expect(await panel(page, 'seq')).toHaveAttribute('aria-hidden', 'true');
   });
