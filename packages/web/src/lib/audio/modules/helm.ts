@@ -188,17 +188,26 @@ export interface HelmMidiState {
   /** Settings menu open (card-local UI state — kept on the engine handle so
    *  Y.Doc remote opens don't get confused). */
   settingsOpen: boolean;
+  /** Sequencer on/off — gates ALL sequencer behavior (no advance, no mod
+   *  contribution, no envelope retrigger) when off. Default OFF. */
+  seqOn: boolean;
+  /** Current step pointer (0..15) or -1 when never advanced / just reset.
+   *  Drives the green dot overlay in the step grid. */
+  currentStep: number;
 }
 
 export interface HelmMidiData {
   /** Persisted across reloads via node.data. */
   lastDeviceId: string | null;
   channels: number[] | null;
+  /** Sequencer on/off — persisted so it survives reloads. */
+  seqOn?: boolean;
 }
 
 export const DEFAULT_HELM_MIDI_DATA: HelmMidiData = {
   lastDeviceId: null,
   channels: null,
+  seqOn: false,
 };
 
 export interface HelmCardApi {
@@ -208,6 +217,10 @@ export interface HelmCardApi {
   setSettingsOpen(open: boolean): void;
   /** Send a 16-step sequencer pattern to the worklet. */
   setSteps(steps: number[]): void;
+  /** Toggle the sequencer on/off. */
+  setSeqOn(on: boolean): void;
+  /** Snap the step pointer back to -1 (next gate → step 0). */
+  resetSeq(): void;
   getState(): HelmMidiState;
   subscribe(cb: (s: HelmMidiState) => void): () => void;
 }
@@ -226,6 +239,10 @@ export const helmDef: AudioModuleDef = {
   // ports for filter cutoff / amp env attack etc. are follow-up work). We
   // expose `midi_in` and a `pitch_cv`/`gate` pair for fallback patching
   // when no MIDI device is connected — same pattern as DX7.
+  //
+  // `seq_reset` is a gate input: a rising edge snaps the step pointer back
+  // so the next gate advances to step 0. Used together with the on/off
+  // toggle to drive deterministic patterns from another sequencer / clock.
   inputs: [
     { id: 'pitch_cv', type: 'cv' },
     { id: 'gate',     type: 'gate' },
@@ -234,6 +251,7 @@ export const helmDef: AudioModuleDef = {
     // MIDI flows through the Web MIDI API, not through a cable. Listed in
     // PASSTHROUGH_BY_DESIGN since it has no paramTarget and no cvScale.
     { id: 'midi_in',  type: 'cv' },
+    { id: 'seq_reset',type: 'gate' },
   ],
   outputs: [
     { id: 'out_l', type: 'audio' },
@@ -319,8 +337,8 @@ export const helmDef: AudioModuleDef = {
     }
 
     const workletNode = new AudioWorkletNode(ctx, 'helm', {
-      // 3 inputs: pitch_cv + gate + midi_in (no-op).
-      numberOfInputs: 3,
+      // 4 inputs: pitch_cv + gate + midi_in (no-op) + seq_reset (gate).
+      numberOfInputs: 4,
       numberOfOutputs: 1,
       outputChannelCount: [2],
     } as AudioWorkletNodeOptions);
@@ -347,6 +365,10 @@ export const helmDef: AudioModuleDef = {
     let settingsOpen = false;
     let subscriber: ((s: HelmMidiState) => void) | null = null;
     let channelSet: Set<number> | null = expandChannelSet(channelsSelected);
+    // Sequencer state — seqOn defaults OFF (matches PR #204 perceptual default
+    // since stepDepth was 0 there too).
+    let seqOn = savedData.seqOn === true;
+    let currentStep = -1;
 
     // Initial step pattern from node.data.steps if present.
     {
@@ -355,6 +377,19 @@ export const helmDef: AudioModuleDef = {
         workletNode.port.postMessage({ type: 'set-steps', steps: data.steps.slice(0, 16) });
       }
     }
+    // Push initial seqOn to the worklet (set-seq-on is idempotent; explicit
+    // post here ensures the worklet stays in sync with persisted state).
+    workletNode.port.postMessage({ type: 'set-seq-on', on: seqOn });
+
+    // Listen for step-tick messages from the worklet.
+    workletNode.port.onmessage = (e: MessageEvent<{ type: string; step?: number }>) => {
+      const m = e.data;
+      if (!m || typeof m !== 'object') return;
+      if (m.type === 'step-tick' && typeof m.step === 'number') {
+        currentStep = m.step;
+        notify();
+      }
+    };
 
     function snapshot(): HelmMidiState {
       const devices: HelmMidiState['devices'] = [];
@@ -372,6 +407,8 @@ export const helmDef: AudioModuleDef = {
         lastNote,
         activeNotes: Array.from(activeNotes).sort((a, b) => a - b),
         settingsOpen,
+        seqOn,
+        currentStep,
       };
     }
     function notify(): void { subscriber?.(snapshot()); }
@@ -480,12 +517,26 @@ export const helmDef: AudioModuleDef = {
       workletNode.port.postMessage({ type: 'set-steps', steps: steps.slice(0, 16) });
     }
 
+    function setSeqOn(on: boolean): void {
+      seqOn = !!on;
+      workletNode.port.postMessage({ type: 'set-seq-on', on: seqOn });
+      notify();
+    }
+
+    function resetSeq(): void {
+      currentStep = -1;
+      workletNode.port.postMessage({ type: 'seq-reset' });
+      notify();
+    }
+
     const cardApi: HelmCardApi = {
       connect,
       selectDevice,
       setChannels,
       setSettingsOpen,
       setSteps,
+      setSeqOn,
+      resetSeq,
       getState: snapshot,
       subscribe(cb) {
         subscriber = cb;
@@ -497,9 +548,10 @@ export const helmDef: AudioModuleDef = {
     return {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
-        ['pitch_cv', { node: workletNode, input: 0 }],
-        ['gate',     { node: workletNode, input: 1 }],
-        ['midi_in',  { node: workletNode, input: 2 }],
+        ['pitch_cv',  { node: workletNode, input: 0 }],
+        ['gate',      { node: workletNode, input: 1 }],
+        ['midi_in',   { node: workletNode, input: 2 }],
+        ['seq_reset', { node: workletNode, input: 3 }],
       ]),
       outputs: new Map<string, { node: AudioNode; output: number }>([
         ['out_l', { node: splitter, output: 0 }],
@@ -525,6 +577,7 @@ export const helmDef: AudioModuleDef = {
           access = null;
         }
         subscriber = null;
+        try { workletNode.port.onmessage = null; } catch { /* */ }
         try { workletNode.port.close(); } catch { /* */ }
         try { splitter.disconnect(); } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }
