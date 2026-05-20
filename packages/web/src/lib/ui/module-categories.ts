@@ -75,6 +75,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // a player drives a synth voice from, so it sits in VCOs alongside
   // the other "first thing in the patch" modules.
   midiCvBuddy: { top: 'Audio modules', sub: 'VCOs' },
+  // MIDICLOCK is the transport-only sibling of MIDI-CV-BUDDY — clock/run/
+  // start/stop gates from an external MIDI device. Lives next to TIMELORDE
+  // in Utility since its primary role is to drive TIMELORDE.clock.
+  midiclock: { top: 'Audio modules', sub: 'Utility' },
   // HELM is a complete polyphonic synth voice (osc → filter → env → output)
   // — it lives in the VCOs section alongside DX7 and MACROOSCILLATOR as a
   // "first thing in the patch" sound source.
