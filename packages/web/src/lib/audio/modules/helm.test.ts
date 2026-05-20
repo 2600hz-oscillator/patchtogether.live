@@ -18,10 +18,16 @@ describe('helm module def', () => {
     expect(helmDef.type).toBe('helm');
     expect(helmDef.domain).toBe('audio');
     expect(helmDef.label).toBe('HELM');
-    // 3 inputs: pitch_cv fallback, gate fallback, midi_in marker
-    expect(helmDef.inputs.map((p) => p.id).sort()).toEqual(['gate', 'midi_in', 'pitch_cv']);
+    // 4 inputs: pitch_cv fallback, gate fallback, midi_in marker, seq_reset.
+    expect(helmDef.inputs.map((p) => p.id).sort()).toEqual(['gate', 'midi_in', 'pitch_cv', 'seq_reset']);
     // Stereo audio output
     expect(helmDef.outputs.map((p) => p.id).sort()).toEqual(['out_l', 'out_r']);
+  });
+
+  it('seq_reset input port is typed as gate', () => {
+    const p = helmDef.inputs.find((p) => p.id === 'seq_reset');
+    expect(p).toBeDefined();
+    expect(p!.type).toBe('gate');
   });
 
   it('exposes 2 oscillators + sub + filter + 3 envelopes + 2 LFOs + step seq params', () => {

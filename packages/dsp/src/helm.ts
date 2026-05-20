@@ -324,22 +324,52 @@ class Voice {
 }
 
 // ----------------------------------------------------------------------------
-// Step sequencer — 16 step values latched per step under a rate clock.
+// Step sequencer — gate-clocked note sequencer.
+//
+// v2 (post-PR-#204) sequencer semantics:
+//   - Default OFF. When OFF, the sequencer does nothing — no advance, no
+//     modulation contribution, no envelope retrigger.
+//   - When ON, the sequencer advances exactly one step per rising edge on
+//     the gate input (combined: fallback CV gate + MIDI-derived gate).
+//   - On each advance, all three envelopes (amp/filter/mod) on the most
+//     recent note are retriggered, and the step value is latched into the
+//     osc2 transpose modulation amount.
+//   - The internal `stepRate` clock is **disabled** when ON (knob is left in
+//     the UI for a future free-run mode).
+//   - `seq_reset` (rising edge on the dedicated input port) sets the step
+//     pointer back to -1 so the next gate advance lands on step 0. The UI
+//     reset button posts a {type:'seq-reset'} message with the same effect.
+//
+// `currentStep === -1` is the post-reset / never-advanced state — UI hides
+// the green dot when currentStep < 0.
 // ----------------------------------------------------------------------------
 
 class StepSequencer {
-  phase = 0;
-  currentStep = 0;
+  /** -1 = post-reset / never advanced (no dot drawn yet). */
+  currentStep = -1;
   smoothedValue = 0;
-  tick(rateHz: number, numSteps: number, steps: Float32Array, smoothing: number, sr: number): number {
+  /** Latched step value after the most recent advance. 0 in the never-
+   *  advanced state so the contribution is zero. */
+  latchedValue = 0;
+  /** Move forward one step (or wrap). Latches steps[currentStep] into
+   *  latchedValue. Returns the new currentStep (>=0). */
+  advance(numSteps: number, steps: Float32Array): number {
     const n = Math.max(1, Math.min(NUM_STEPS, Math.round(numSteps)));
-    this.phase += rateHz / sr;
-    if (this.phase >= 1) {
-      this.phase -= 1;
-      this.currentStep = (this.currentStep + 1) % n;
-    }
-    const target = steps[this.currentStep] ?? 0;
-    // Exponential smoothing — smoothing 0..1, 0=hard, 1=very smooth.
+    this.currentStep = (this.currentStep + 1) % n;
+    if (this.currentStep < 0) this.currentStep = 0;
+    this.latchedValue = steps[this.currentStep] ?? 0;
+    return this.currentStep;
+  }
+  /** Reset the step pointer so the next advance lands on step 0. */
+  reset(): void {
+    this.currentStep = -1;
+    this.latchedValue = 0;
+  }
+  /** Exponentially smooth the latched value toward its target. Smoothing
+   *  is unchanged from the free-run version so the `stepSmooth` knob keeps
+   *  its existing musical meaning. */
+  smooth(smoothing: number, sr: number): number {
+    const target = this.latchedValue;
     const tau = Math.max(0.001, smoothing * 0.5);
     const coef = Math.exp(-1 / (sr * tau));
     this.smoothedValue = target + (this.smoothedValue - target) * coef;
@@ -383,7 +413,14 @@ interface SetStepsMsg {
   type: 'set-steps';
   steps: number[]; // length up to NUM_STEPS
 }
-type HostMsg = NoteOnMsg | NoteOffMsg | AllOffMsg | SetStepsMsg;
+interface SetSeqOnMsg {
+  type: 'set-seq-on';
+  on: boolean;
+}
+interface SeqResetMsg {
+  type: 'seq-reset';
+}
+type HostMsg = NoteOnMsg | NoteOffMsg | AllOffMsg | SetStepsMsg | SetSeqOnMsg | SeqResetMsg;
 
 // ----------------------------------------------------------------------------
 // Processor.
@@ -447,9 +484,9 @@ class HelmProcessor extends AudioWorkletProcessor {
       { name: 'lfo2Wave',    defaultValue: 3,     minValue: 0,    maxValue: NUM_WAVES - 1 },
       { name: 'lfo2Freq',    defaultValue: 4.0,   minValue: 0.01, maxValue: 30 },
       { name: 'lfo2Amp',     defaultValue: 0,     minValue: 0,    maxValue: 1 },
-      // Step sequencer → osc2 transpose.
+      // Step sequencer → osc2 transpose (gate-clocked; see StepSequencer comment).
       { name: 'stepNumSteps',defaultValue: 8,     minValue: 1,    maxValue: NUM_STEPS },
-      { name: 'stepRate',    defaultValue: 4.0,   minValue: 0.1,  maxValue: 30 },     // Hz
+      { name: 'stepRate',    defaultValue: 4.0,   minValue: 0.1,  maxValue: 30 },     // Hz — reserved for future free-run mode
       { name: 'stepSmooth',  defaultValue: 0.0,   minValue: 0.0,  maxValue: 1.0 },
       { name: 'stepDepth',   defaultValue: 0,     minValue: -1.0, maxValue: 1.0 },    // → osc2 ±12 semis
       // Stereo spread (unison voices panned out).
@@ -464,6 +501,20 @@ class HelmProcessor extends AudioWorkletProcessor {
   private lfo2 = new Lfo();
   private seq = new StepSequencer();
   private stepValues = new Float32Array(NUM_STEPS);
+  /** Sequencer on/off — default OFF so existing patches don't change
+   *  behavior when this rolls out (PR #204 shipped an internally-clocked
+   *  sequencer with stepDepth=0 default, which sounded like nothing; this
+   *  default preserves that "silent" baseline). */
+  private seqOn = false;
+  /** Edge-detection state for the combined gate (CV fallback + MIDI).
+   *  Held across blocks so we don't double-trigger when a gate straddles
+   *  the block boundary. */
+  private gatePrev = false;
+  /** Edge-detection state for the dedicated seq_reset port. */
+  private resetPrev = false;
+  /** Last currentStep posted to the host (so we only emit step-tick on
+   *  change, not every block). */
+  private lastPostedStep = -2;
   private fallbackGateHigh = false;
   private fallbackPitchVOct = 0;
   /** rng for noise. */
@@ -484,7 +535,55 @@ class HelmProcessor extends AudioWorkletProcessor {
       else if (m.type === 'note-off') this.handleNoteOff(m.note);
       else if (m.type === 'all-off') this.allOff();
       else if (m.type === 'set-steps') this.setSteps(m.steps);
+      else if (m.type === 'set-seq-on') this.setSeqOn(m.on);
+      else if (m.type === 'seq-reset') this.resetSeq();
     };
+  }
+
+  // ---------------- Sequencer host-message handlers ----------------
+
+  private setSeqOn(on: boolean): void {
+    this.seqOn = !!on;
+    // When turning OFF, also reset latched value so the osc2 modulation
+    // contribution snaps back to 0 instead of bleeding the last latched
+    // value through the smoother indefinitely. When turning ON, the next
+    // gate will populate latchedValue from step 0.
+    if (!this.seqOn) {
+      this.seq.latchedValue = 0;
+    }
+    this.postStepTick(true);
+  }
+
+  private resetSeq(): void {
+    this.seq.reset();
+    this.postStepTick(true);
+  }
+
+  /** Trigger all three envelopes on the most recently noted-on voice.
+   *  Used by the sequencer's gate-clocked path so each step advance
+   *  re-attacks the current voice's envelopes. If no voice is active
+   *  (no note held), this is a no-op — the sequencer needs a held note
+   *  to be audible, mirroring how a tracker/seq-driven mono synth feels. */
+  private retriggerActiveEnvelopes(): void {
+    let mostRecent: Voice | null = null;
+    for (const v of this.voices) {
+      if (!v.active) continue;
+      if (!mostRecent || v.startSample > mostRecent.startSample) mostRecent = v;
+    }
+    if (!mostRecent) return;
+    mostRecent.ampEnv.trigger(true);
+    mostRecent.filEnv.trigger(true);
+    mostRecent.modEnv.trigger(true);
+  }
+
+  private postStepTick(force: boolean): void {
+    if (!force && this.lastPostedStep === this.seq.currentStep) return;
+    this.lastPostedStep = this.seq.currentStep;
+    try {
+      this.port.postMessage({ type: 'step-tick', step: this.seq.currentStep });
+    } catch {
+      // Port may have closed during dispose — swallow.
+    }
   }
 
   // ---------------- Voice allocator ----------------
@@ -577,9 +676,11 @@ class HelmProcessor extends AudioWorkletProcessor {
     const outR = outputs[0]?.[1] ?? outL;
     if (!outL) return true;
 
-    // Optional fallback inputs (pitch CV + gate).
+    // Optional fallback inputs (pitch CV + gate + midi marker + seq_reset).
     const pitchIn = inputs[0]?.[0];
     const gateIn = inputs[1]?.[0];
+    // inputs[2] is midi_in (no-op marker port — see helm.ts module def).
+    const seqResetIn = inputs[3]?.[0];
 
     const blockLen = outL.length;
     const sr = sampleRate;
@@ -629,7 +730,10 @@ class HelmProcessor extends AudioWorkletProcessor {
     const lfo2Freq = parameters.lfo2Freq[0]!;
     const lfo2Amp = parameters.lfo2Amp[0]!;
     const stepNumSteps = parameters.stepNumSteps[0]!;
-    const stepRate = parameters.stepRate[0]!;
+    // stepRate is read but unused in v2 (gate-clocked). Knob retained in
+    // the UI for a future free-run mode. Reference the param so the noUnusedLocals
+    // rule + DCE both stay happy.
+    void parameters.stepRate[0];
     const stepSmooth = parameters.stepSmooth[0]!;
     const stepDepth = parameters.stepDepth[0]!;
     const spread = parameters.spread[0]!;
@@ -651,6 +755,49 @@ class HelmProcessor extends AudioWorkletProcessor {
       this.fallbackGateHigh = gateHigh;
     }
 
+    // ---------------- Sequencer gate edge detection ----------------
+    //
+    // Combined gate = CV-fallback gate OR any held MIDI note. This is the
+    // signal that advances the sequencer (when on). Block-rate is fine —
+    // the user-perceptible cost is at most one audio block (~3ms at 48k)
+    // of latency between a gate and the step advance, well below
+    // perceptual threshold for a step sequencer.
+    const cvGateHigh = gateIn ? (gateIn[0] ?? 0) > 0.5 : false;
+    let midiGateHigh = false;
+    for (const v of this.voices) {
+      if (v.active && v.ampEnv.state !== EnvState.Idle && v.ampEnv.state !== EnvState.Release) {
+        midiGateHigh = true;
+        break;
+      }
+    }
+    const combinedGate = cvGateHigh || midiGateHigh;
+    // Reset port: rising edge → snap pointer back to -1 so the NEXT
+    // gate lands on step 0. Honored regardless of seqOn so the user can
+    // park the pointer before turning the sequencer on.
+    if (seqResetIn) {
+      const resetHigh = (seqResetIn[0] ?? 0) > 0.5;
+      if (resetHigh && !this.resetPrev) {
+        this.resetSeq();
+      }
+      this.resetPrev = resetHigh;
+    }
+    if (this.seqOn) {
+      if (combinedGate && !this.gatePrev) {
+        // Advance step pointer, latch its value, then retrigger the
+        // currently-held voice's envelopes. The existing
+        // handleNoteOn / fallback-CV path is what created the voice and
+        // already triggered envelopes on this same edge — calling
+        // trigger(true) here a second time is the explicit re-attack we
+        // want (sequencer behavior is "every gate re-attacks"), and is
+        // idempotent for already-attacking envs (state stays Attack,
+        // value resets to 0).
+        this.seq.advance(Math.round(stepNumSteps), this.stepValues);
+        this.retriggerActiveEnvelopes();
+        this.postStepTick(false);
+      }
+    }
+    this.gatePrev = combinedGate;
+
     // Stop early if no voices active.
     let anyActive = false;
     for (let i = 0; i < voiceCount; i++) if (this.voices[i]!.active) { anyActive = true; break; }
@@ -667,7 +814,12 @@ class HelmProcessor extends AudioWorkletProcessor {
     // first sample of the block — k-rate modulators are fine for v1).
     const lfo1Val = this.lfo1.tick(lfo1Wave, lfo1Freq, sr) * lfo1Amp;
     const lfo2Val = this.lfo2.tick(lfo2Wave, lfo2Freq, sr) * lfo2Amp;
-    const stepVal = this.seq.tick(stepRate, stepNumSteps, this.stepValues, stepSmooth, sr) * stepDepth;
+    // Sequencer modulation amount. When OFF: zero contribution (regardless
+    // of stepDepth). When ON: smoothed latched value × stepDepth. stepRate
+    // is intentionally unused — gate-clocked only in v2.
+    const stepVal = this.seqOn
+      ? this.seq.smooth(stepSmooth, sr) * stepDepth
+      : 0;
 
     // Render each voice and sum into the output.
     for (let i = 0; i < blockLen; i++) {

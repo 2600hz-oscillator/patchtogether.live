@@ -44,6 +44,8 @@
     lastNote: null,
     activeNotes: [],
     settingsOpen: false,
+    seqOn: false,
+    currentStep: -1,
   });
 
   let savedData = $derived(((node?.data ?? {}) as Partial<HelmMidiData>));
@@ -167,6 +169,16 @@
     existing[idx] = Math.max(-1, Math.min(1, val));
     (t.data as Record<string, unknown>).steps = existing;
     getApi()?.setSteps(existing);
+  }
+
+  // ---------------- Sequencer on/off + reset ----------------
+  function toggleSeqOn(): void {
+    const next = !cardState.seqOn;
+    getApi()?.setSeqOn(next);
+    writeData({ seqOn: next });
+  }
+  function onClickReset(): void {
+    getApi()?.resetSeq();
   }
 </script>
 
@@ -371,18 +383,49 @@
               <Knob value={paramVal('stepSmooth', 0)}   min={0} max={1} defaultValue={0}     label="Sm"  curve="linear"   onchange={set('stepSmooth')}   readLive={live('stepSmooth')} />
               <Knob value={paramVal('stepDepth', 0)}    min={-1} max={1} defaultValue={0}    label="Amt" curve="linear"   onchange={set('stepDepth')}    readLive={live('stepDepth')} />
             </div>
+            <!-- Sequencer transport: on/off + reset.
+                 v2 sequencer is gate-clocked — each rising edge on the
+                 GATE input advances one step + retriggers envelopes.
+                 RESET snaps the pointer back so the next gate hits step 0. -->
+            <div class="seq-transport">
+              <button
+                type="button"
+                class="seq-onoff-btn"
+                class:on={cardState.seqOn}
+                onclick={toggleSeqOn}
+                data-testid="helm-seq-onoff"
+                aria-pressed={cardState.seqOn}
+              >SEQ {cardState.seqOn ? 'ON' : 'OFF'}</button>
+              <button
+                type="button"
+                class="seq-reset-btn"
+                onclick={onClickReset}
+                data-testid="helm-seq-reset"
+                aria-label="Reset sequencer"
+              >RST</button>
+            </div>
             <!-- Step pattern -->
             <div class="step-grid" data-testid="helm-step-grid">
               {#each stepValues as v, i (i)}
-                <input
-                  type="range"
-                  class="step-slider"
-                  min={-1} max={1} step={0.01}
-                  value={v}
-                  oninput={(e) => setStep(i, parseFloat((e.currentTarget as HTMLInputElement).value))}
-                  aria-label={`Step ${i + 1}`}
-                  data-testid={`helm-step-${i}`}
-                />
+                <div
+                  class="step-cell"
+                  class:active={cardState.seqOn && cardState.currentStep === i}
+                  data-testid={`helm-step-cell-${i}`}
+                  data-current={cardState.seqOn && cardState.currentStep === i ? 'true' : 'false'}
+                >
+                  <input
+                    type="range"
+                    class="step-slider"
+                    min={-1} max={1} step={0.01}
+                    value={v}
+                    oninput={(e) => setStep(i, parseFloat((e.currentTarget as HTMLInputElement).value))}
+                    aria-label={`Step ${i + 1}`}
+                    data-testid={`helm-step-${i}`}
+                  />
+                  {#if cardState.seqOn && cardState.currentStep === i}
+                    <span class="step-dot" data-testid={`helm-step-dot-${i}`}></span>
+                  {/if}
+                </div>
               {/each}
             </div>
           </div>
@@ -458,11 +501,45 @@
     flex-wrap: wrap;
     justify-content: center;
   }
+  .helm-card .seq-transport {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .helm-card .seq-onoff-btn,
+  .helm-card .seq-reset-btn {
+    background: #0a0c11;
+    color: var(--text-dim, #888);
+    border: 1px solid #2a2f3a;
+    border-radius: 2px;
+    padding: 2px 8px;
+    font-size: 0.6rem;
+    cursor: pointer;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .helm-card .seq-onoff-btn.on {
+    background: var(--cable-audio, #6cc);
+    color: #000;
+    border-color: var(--cable-audio, #6cc);
+  }
+  .helm-card .seq-onoff-btn:hover,
+  .helm-card .seq-reset-btn:hover {
+    color: var(--text, #d8dde6);
+    border-color: #5a6172;
+  }
+  .helm-card .seq-onoff-btn.on:hover { color: #000; }
   .helm-card .step-grid {
     display: grid;
     grid-template-columns: repeat(16, 1fr);
     gap: 1px;
     margin-top: 4px;
+  }
+  .helm-card .step-cell {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
   }
   .helm-card .step-slider {
     -webkit-appearance: slider-vertical;
@@ -471,6 +548,18 @@
     height: 36px;
     width: 12px;
     background: #1a1f2a;
+  }
+  .helm-card .step-dot {
+    position: absolute;
+    top: -3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4ade80; /* green-400 */
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.6);
+    pointer-events: none;
   }
   /* ---------------- Settings panel ---------------- */
   .helm-card .settings {
