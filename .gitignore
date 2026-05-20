@@ -44,7 +44,9 @@ npm-debug.log*
 **/.wrangler/
 
 # Local Claude Code settings (per-machine, don't commit)
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/skills/**
 
 # Local agent / planning notes (treated like a scratchpad — never commit)
 .myrobots/
