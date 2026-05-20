@@ -59,7 +59,10 @@
      *  otherwise start a drag-connection and render the dashed yellow
      *  preview line to the cursor — which then sits behind the menu
      *  for as long as the menu is open. Calling this on menu-open kills
-     *  that preview cleanly. */
+     *  that preview cleanly. Also used by the click-and-hold gesture
+     *  (PR-204) when the 50ms hold timer fires: xyflow's pointerdown
+     *  already started a drag, and we need to abort that drag before
+     *  the menu commits.  */
     cancelConnection: () => void;
   }
 
@@ -99,7 +102,7 @@
         } catch { /* swallow — defensive */ }
         try {
           if (store && '_connection' in store) {
-            store._connection = initialConnection;
+            (store as unknown as { _connection: unknown })._connection = initialConnection;
           }
         } catch { /* swallow — defensive */ }
       },

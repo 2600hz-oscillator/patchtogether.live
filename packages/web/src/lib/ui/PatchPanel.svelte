@@ -500,10 +500,6 @@
     data-testid="patch-trigger"
     aria-label="Open patch panel"
     aria-expanded={open}
-    onmouseenter={() => onTriggerEnter('topLeft')}
-    onmouseleave={scheduleClose}
-    onfocus={() => onTriggerEnter('topLeft')}
-    onblur={scheduleClose}
     onclick={() => onTriggerClick('topLeft')}
   >
     <!-- Plug glyph — two short verticals + a horizontal stem. CSS-only. -->
@@ -519,10 +515,6 @@
     data-testid="patch-trigger-right"
     aria-label="Open patch panel"
     aria-expanded={open}
-    onmouseenter={() => onTriggerEnter('topRight')}
-    onmouseleave={scheduleClose}
-    onfocus={() => onTriggerEnter('topRight')}
-    onblur={scheduleClose}
     onclick={() => onTriggerClick('topRight')}
   >
     <span class="trigger-glyph" aria-hidden="true">
@@ -543,8 +535,6 @@
     data-testid="patch-panel"
     data-anchor-corner={triggerCorner}
     aria-hidden={!open}
-    onmouseenter={openNow}
-    onmouseleave={scheduleClose}
     onpointerdown={onPanelPointerDown}
     role="group"
   >

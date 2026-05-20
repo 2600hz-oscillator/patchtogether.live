@@ -22,7 +22,10 @@ async function openPanel(page: Page, nodeId: string): Promise<void> {
   const trigger = page.locator(
     `.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`,
   );
-  await trigger.hover();
+  // Click (not hover) opens the panel — see PatchPanel.svelte's
+  // .patch-trigger button. Hover-open was removed in the patch-menu-UX
+  // streamline (incidental hovers opened panels mid-pan/drag).
+  await trigger.click();
   // Wait for aria-hidden=false on the panel.
   const panel = page.locator(
     `.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-panel"]`,
@@ -335,11 +338,11 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     expect(closedStyle.opacity, 'closed handle opacity:0').toBe('0');
     expect(closedStyle.pointerEvents, 'closed handle pointer-events:none').toBe('none');
 
-    // Now hover-open the panel and confirm the handle's screen position
+    // Now click-open the panel and confirm the handle's screen position
     // changed (i.e. it moved out of the corner stack into a row position).
     await page
       .locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`)
-      .hover();
+      .click();
     await page.waitForTimeout(200);
     await expect(
       page.locator(`.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`),
@@ -657,9 +660,11 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
   });
 
   test('top-right trigger opens the same panel as top-left', async ({ page }) => {
-    // Per user feedback (PR-69): every module gets a SECOND hover
-    // affordance in the top-right corner that opens the same panel
-    // as the existing top-left one. Both share state.
+    // Per user feedback (PR-69): every module gets a SECOND affordance in
+    // the top-right corner that opens the same panel as the existing
+    // top-left one. Both share state. Triggers are CLICK-to-open (the
+    // hover-open behavior was removed in the patch-menu-UX streamline —
+    // it produced accidental opens during pan / mid-drag motion).
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -680,24 +685,29 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     // Default closed.
     await expect(panel).toHaveAttribute('aria-hidden', 'true');
 
-    // Hover top-right → panel opens.
+    // Hover ALONE must not open (regression guard for the streamline).
     await rightTrigger.hover();
+    await page.waitForTimeout(150);
+    await expect(panel).toHaveAttribute('aria-hidden', 'true');
+
+    // Click top-right → panel opens.
+    await rightTrigger.click();
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
 
-    // Move mouse far away → panel closes (after the 200ms hover-close
-    // timer fires).
-    await page.mouse.move(50, 50);
-    await page.waitForTimeout(350);
+    // Outside click → panel closes (the only auto-dismiss path now).
+    await page.mouse.click(20, 20);
+    await page.waitForTimeout(100);
     await expect(panel).toHaveAttribute('aria-hidden', 'true');
   });
 
-  test('mousing from top-left across the card top to top-right keeps panel open', async ({
+  test('clicking left trigger then mousing across to right trigger keeps panel open', async ({
     page,
   }) => {
-    // Hover-intent guard: the user reaches across the card to switch
-    // affordances, the panel must NOT blink shut mid-trip. Both
-    // triggers share state, and the panel itself is also hoverable
-    // (the cursor crosses through the panel area en route).
+    // After the patch-menu-UX streamline, the panel is click-to-open and
+    // stays open until an outside-click. Cursor motion across the card
+    // top (between left and right triggers, across the panel area) must
+    // never close the panel — there is no hover-close grace anymore;
+    // only an outside-click on negative space dismisses.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -716,29 +726,21 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     );
 
     // Open via left trigger.
-    await leftTrigger.hover();
+    await leftTrigger.click();
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
 
-    // Walk cursor across the panel to the right trigger. Each
-    // intermediate hover keeps the panel open via either the panel's
-    // own onmouseenter or the right trigger's onmouseenter; the
-    // 200ms scheduleClose timer never has a chance to fire as long as
-    // each step lands within the close delay.
     const rightBox = await rightTrigger.boundingBox();
     expect(rightBox, 'right trigger has box').toBeTruthy();
     if (!rightBox) return;
 
-    // Step through the panel area (which is between left and right
-    // triggers vertically); each move is a fresh mouse event the
-    // browser dispatches mouseenter/mouseleave for.
+    // Walk cursor across the panel to the right trigger — no hover-close
+    // race anymore (hover doesn't drive open/close at all now).
     await page.mouse.move(rightBox.x + rightBox.width / 2, rightBox.y + rightBox.height / 2, {
       steps: 10,
     });
-    // The whole walk takes <100ms; the close timer is 200ms; the panel
-    // must still be open.
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
 
-    // Settle on the right trigger — explicit hover for the assertion.
+    // Hover the right trigger — no state change.
     await rightTrigger.hover();
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
   });
@@ -817,19 +819,13 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     ).toBeGreaterThan(panelBoxLeftAnchor.x + 50);
   });
 
-  test('click triggers a 300ms post-click hold; panel survives mouseleave inside the window', async ({
+  test('clicked-open panel stays open until outside click; mouseleave alone does not close it', async ({
     page,
   }) => {
-    // After CLICK (release), the panel must persist for at least 300ms
-    // even if the mouse leaves the trigger and panel — so the user can
-    // navigate from the click target down to a port without the panel
-    // snapping shut. After the 300ms expires, the normal 200ms hover-
-    // close grace resumes.
-    //
-    // The first click pins the panel (pinned=true), which would mask
-    // the 300ms hold's effect. To isolate the post-click hold, we
-    // double-click the trigger: the second click unpins, and the hold
-    // is the ONLY remaining keep-open driver.
+    // Post-streamline (PR-204): the panel is click-to-open and persists
+    // until an outside-click in negative space. The previous 300ms
+    // post-click hold + 200ms hover-close grace machinery is gone —
+    // cursor motion off the panel must NOT dismiss it.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -842,30 +838,20 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
       `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`,
     );
 
-    // Click 1 → pins.
+    // Click → opens (pinned).
     await trigger.click();
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
-    // Click 2 → unpins. Now ONLY the post-click hold (and maybe hover)
-    // can keep it open.
-    await trigger.click();
-    // Mouse off immediately after the click release.
+    // Move cursor off the panel — must stay open.
     await page.mouse.move(20, 20);
-
-    // After 250ms (longer than the 200ms hover-close grace would take
-    // WITHOUT the hold) the panel must STILL be open — proving the
-    // 300ms hold is what's keeping it alive. Without the hold, the
-    // mouseleave-scheduled close at +200ms would have already fired.
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(400);
     await expect(
       panel,
-      'panel still open at +250ms (past the 200ms hover-grace) thanks to the 300ms post-click hold',
+      'panel remains open after mouseleave (no hover-close grace anymore)',
     ).toHaveAttribute('aria-hidden', 'false');
-
-    // After the 300ms hold + 200ms hover-close grace expire, the panel
-    // must close. Total wait from the 2nd click: 300+200 = 500ms; we
-    // already waited 250ms, so wait ~450ms more for safety on slow CI.
-    await page.waitForTimeout(450);
-    await expect(panel, 'panel closes after the 300ms hold + 200ms grace expire').toHaveAttribute(
+    // Outside click (on the canvas) — closes.
+    await page.mouse.click(20, 20);
+    await page.waitForTimeout(100);
+    await expect(panel, 'outside click in negative space closes the panel').toHaveAttribute(
       'aria-hidden',
       'true',
     );
