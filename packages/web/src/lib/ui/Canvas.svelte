@@ -152,6 +152,8 @@
   import CloudseedCard from '$lib/ui/modules/CloudseedCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
+  // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
+  import MidiclockCard from '$lib/ui/modules/MidiclockCard.svelte';
   import HelmCard from '$lib/ui/modules/HelmCard.svelte';
   // PONG — interactive game module (research prototype).
   import PongCard from '$lib/ui/modules/PongCard.svelte';
@@ -330,6 +332,7 @@
     stages: StagesCard,
     cloudseed: CloudseedCard,
     midiCvBuddy: MidiCvBuddyCard,
+    midiclock: MidiclockCard,
     helm: HelmCard,
     pong: PongCard,
     modtris: ModtrisCard,

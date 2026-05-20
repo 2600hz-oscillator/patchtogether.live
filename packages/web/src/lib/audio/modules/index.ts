@@ -53,6 +53,7 @@ import { stagesDef } from './stages';
 import { cloudseedDef } from './cloudseed';
 import { livecodeDef } from './livecode';
 import { midiCvBuddyDef } from './midi-cv-buddy';
+import { midiclockDef } from './midiclock';
 import { helmDef } from './helm';
 import { pongDef } from './pong';
 import { modtrisDef } from './modtris';
@@ -116,6 +117,7 @@ export function registerAudioModules(): void {
   registerModule(cloudseedDef);
   registerModule(livecodeDef);
   registerModule(midiCvBuddyDef);
+  registerModule(midiclockDef);
   registerModule(helmDef);
   registerModule(pongDef);
   registerModule(modtrisDef);

@@ -88,6 +88,11 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // e2e/tests/midi-cv-buddy.spec.ts (asserts the Connect-MIDI button +
   // module mount). Real-device E2E is a known follow-up.
   midiCvBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
+  // MIDICLOCK: same rationale as midiCvBuddy — pre-Connect state shows a
+  // "Connect MIDI…" button (deterministic) but post-connect the device list
+  // depends on hardware that isn't present in CI. Unit + E2E (mock-MIDI smoke)
+  // provide coverage.
+  midiclock: 'card content depends on connected MIDI device; unit + E2E provide coverage',
   // PONG research prototype: animated game state (ball moving) defeats a
   // deterministic single-frame baseline. Unit + ART + E2E provide coverage
   // until either (a) a deterministic-time test harness is added so VRT can
