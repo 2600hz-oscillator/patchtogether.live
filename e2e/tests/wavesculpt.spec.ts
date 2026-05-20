@@ -125,8 +125,12 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
     ]);
     await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
 
-    // Let several render frames tick so the rAF render loop runs.
-    await page.waitForTimeout(400);
+    // Let several render frames tick so the rAF render loop runs. 800ms
+    // (was 400) gives a healthy margin on Linux CI where the first few
+    // frames after a fresh page.goto() can be slow as the WebGL2 context
+    // warms up — the test was occasionally flaking at the 400ms mark when
+    // tests ran consecutively in the same file.
+    await page.waitForTimeout(800);
 
     const hasNonBlackPixels = await page.evaluate(() => {
       const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
@@ -135,8 +139,12 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
       if (!ctx) return false;
       const data = ctx.getImageData(0, 0, c.width, c.height).data;
       // Look for any pixel with R+G+B > 24 (the bg is #050608 ≈ 19/2 total
-      // per channel). Use a small sample stride to keep this fast.
-      for (let i = 0; i < data.length; i += 4 * 32) {
+      // per channel). Stride 16 px (was 32) — denser sampling halves the
+      // chance of missing a thin ribbon stroke when it happens to lie
+      // entirely between sample rows at certain camera angles. Still
+      // cheap (8000 samples vs 4000 — both well under getImageData's
+      // dominant cost).
+      for (let i = 0; i < data.length; i += 4 * 16) {
         const sum = (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0);
         if (sum > 60) return true;
       }

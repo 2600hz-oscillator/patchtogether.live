@@ -341,6 +341,16 @@ export const wavesculptDef: AudioModuleDef = {
     { id: 'unison', label: 'Unison', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
     { id: 'detune', label: 'Detune', defaultValue: 0, min: -1, max: 1, curve: 'linear' },
 
+    // Alpha-channel brightness — multiplies the upstream `alpha_in`
+    // sample's RGB before it's mix()'d into the ALPHA-osc mask region in
+    // the bentbox compositor. Default 1.0 (identity / current behavior),
+    // range 0..2 so the user can both DIM dark inputs back to zero and
+    // BOOST them past their literal values (the dogfood feedback was
+    // "the default is pretty dark"). Linear feels natural for a video
+    // brightness knob; the bentbox post-processing's own clamp(0,1)
+    // catches blown-out highlights at the very top end.
+    { id: 'alpha_brightness', label: 'A.Bright', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+
     // Bentscreen wiggles (mirror BENTBOX's 12 knobs).
     { id: 'hsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Drift' },
     { id: 'hsync_loss',         defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Loss' },
