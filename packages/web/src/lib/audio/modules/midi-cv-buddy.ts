@@ -66,7 +66,7 @@ export interface MidiEventLike {
   timeStamp: number;
 }
 
-interface MidiInputLike {
+export interface MidiInputLike {
   id: string;
   name?: string | null;
   manufacturer?: string | null;
@@ -75,7 +75,7 @@ interface MidiInputLike {
   onmidimessage: ((ev: MidiEventLike) => void) | null;
 }
 
-interface MidiAccessLike {
+export interface MidiAccessLike {
   inputs: Map<string, MidiInputLike>;
   onstatechange: ((ev: { port: MidiInputLike }) => void) | null;
 }
@@ -267,7 +267,7 @@ export interface MidiCvBuddyApi {
 }
 
 // True when running in a browser with Web MIDI available.
-function webMidiAvailable(): boolean {
+export function webMidiAvailable(): boolean {
   return (
     typeof navigator !== 'undefined' &&
     typeof (navigator as { requestMIDIAccess?: unknown }).requestMIDIAccess === 'function'

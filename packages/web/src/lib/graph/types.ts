@@ -254,6 +254,11 @@ type StandardModuleType =
   // outputs. Monophonic with user-selectable voice priority (LAST / LOW /
   // HIGH), retrigger toggle, channel filter, and a device picker.
   | 'midiCvBuddy'
+  // MIDICLOCK — hardware MIDI transport bridge. CLOCK (gate) at user-
+  // selected subdivision (default quarter-note → TIMELORDE-compatible),
+  // RUN (cv, 0/1), MIDISTART + MIDISTOP (one-shot gates). System Real-
+  // Time messages only — channel-voice handling is MIDI-CV-BUDDY's job.
+  | 'midiclock'
   // HELM — polyphonic subtractive synth (algorithm port of Matt Tytel's
   // Helm GPL-3.0). 2 morphing oscillators + sub + noise → SVF filter →
   // 3 ADSR envelopes → 2 mono LFOs → 16-step step sequencer; polyphonic
