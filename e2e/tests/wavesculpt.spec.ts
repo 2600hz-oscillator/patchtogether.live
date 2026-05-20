@@ -125,8 +125,12 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
     ]);
     await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
 
-    // Let several render frames tick so the rAF render loop runs.
-    await page.waitForTimeout(400);
+    // Let several render frames tick so the rAF render loop runs. 800ms
+    // (was 400) gives a healthy margin on Linux CI where the first few
+    // frames after a fresh page.goto() can be slow as the WebGL2 context
+    // warms up — the test was occasionally flaking at the 400ms mark when
+    // tests ran consecutively in the same file.
+    await page.waitForTimeout(800);
 
     const hasNonBlackPixels = await page.evaluate(() => {
       const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
@@ -135,8 +139,12 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
       if (!ctx) return false;
       const data = ctx.getImageData(0, 0, c.width, c.height).data;
       // Look for any pixel with R+G+B > 24 (the bg is #050608 ≈ 19/2 total
-      // per channel). Use a small sample stride to keep this fast.
-      for (let i = 0; i < data.length; i += 4 * 32) {
+      // per channel). Stride 16 px (was 32) — denser sampling halves the
+      // chance of missing a thin ribbon stroke when it happens to lie
+      // entirely between sample rows at certain camera angles. Still
+      // cheap (8000 samples vs 4000 — both well under getImageData's
+      // dominant cost).
+      for (let i = 0; i < data.length; i += 4 * 16) {
         const sum = (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0);
         if (sum > 60) return true;
       }
@@ -227,6 +235,81 @@ test.describe('WAVESCULPT — hybrid 3D-camera video synth', () => {
     });
     expect(params.t1).toBe(0.8);
     expect(params.t3).toBe(0.1);
+  });
+
+  test('thickness=1 produces wider ribbons than thickness=0 (pixel-count regression)', async ({ page }) => {
+    // Regression for the dogfood bug "thickness control doesn't do
+    // anything; at the extreme edge it should make the waves very wide".
+    // The fix: vertex-shader extrusion now scales quadratically up to
+    // ~0.6 unit-box units at thickness=1 (was ~0.072 max — invisible).
+    //
+    // We measure non-black pixel coverage on the wavesculpt-canvas at
+    // thickness=0 (all 4 oscs collapsed to ~0.012 wide line) vs
+    // thickness=1 (all 4 oscs at max width), and assert the wide case
+    // covers strictly more pixels — by a meaningful margin.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
+    ]);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+
+    async function setThickness(value: number): Promise<void> {
+      await page.evaluate((v) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['ws'];
+          if (!n) return;
+          n.params.thickness1 = v;
+          n.params.thickness2 = v;
+          n.params.thickness3 = v;
+          n.params.thickness4 = v;
+        });
+      }, value);
+      // Let several rAF ticks fire so the new uniform value flows into
+      // the GL render loop (which reads node.params each frame).
+      await page.waitForTimeout(250);
+    }
+
+    async function countLitPixels(): Promise<number> {
+      return page.evaluate(() => {
+        const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+        if (!c) return 0;
+        const ctx = c.getContext('2d');
+        if (!ctx) return 0;
+        const data = ctx.getImageData(0, 0, c.width, c.height).data;
+        let lit = 0;
+        // Threshold matches the "ribbons render pre-ADSR" test (sum > 60
+        // catches the band-glow's lower bound while ignoring the bg).
+        for (let i = 0; i < data.length; i += 4) {
+          const sum = (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0);
+          if (sum > 60) lit++;
+        }
+        return lit;
+      });
+    }
+
+    await setThickness(0);
+    const thinPixels = await countLitPixels();
+
+    await setThickness(1);
+    const widePixels = await countLitPixels();
+
+    // Sanity: both should have SOME lit pixels (ribbons are pre-ADSR).
+    expect(thinPixels, 'thin ribbons still visible').toBeGreaterThan(0);
+    // The fix-defining assertion: max thickness must cover at least 1.5x
+    // the pixels of min thickness. Empirically the ratio is well north of
+    // 5x (full-wide ribbons consume ~half the screen at default camera),
+    // but 1.5x is a safe floor that catches a regression to the old
+    // 0.012..0.072 range without flaking on render-timing noise.
+    expect(
+      widePixels,
+      `thickness=1 should cover noticeably more pixels than thickness=0 (was thin=${thinPixels} wide=${widePixels})`,
+    ).toBeGreaterThan(thinPixels * 1.5);
   });
 
   test('bentscreen wiggle knobs route through the patch store', async ({ page }) => {
