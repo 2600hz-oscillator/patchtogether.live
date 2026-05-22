@@ -111,6 +111,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // ───────── Audio modules → Effects ─────────
   filter: { top: 'Audio modules', sub: 'Effects' },
   reverb: { top: 'Audio modules', sub: 'Effects' },
+  delay: { top: 'Audio modules', sub: 'Effects' },
+  // cloudseed → moved to Ports/Ports (PR #226).
   charlottesEchos: { top: 'Audio modules', sub: 'Effects' },
   destroy: { top: 'Audio modules', sub: 'Effects' },
   shimmershine: { top: 'Audio modules', sub: 'Effects' },

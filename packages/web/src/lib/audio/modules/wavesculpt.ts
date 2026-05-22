@@ -402,6 +402,13 @@ export const wavesculptDef: AudioModuleDef = {
       ps.push({ id: `S${i}`,      label: `Su${i}`, defaultValue: 0.7,  min: 0, max: 1, curve: 'linear' });
       ps.push({ id: `R${i}`,      label: `R${i}`,  defaultValue: 0.5,  min: 0.001, max: 5, curve: 'log', units: 's' });
       ps.push({ id: `thickness${i}`, label: `Th${i}`, defaultValue: 0.3, min: 0, max: 1, curve: 'linear' });
+      // Per-osc FX slot. fxType = 0=OFF, 1=REVERB, 2=DELAY (discrete).
+      // fxAmount = single amount knob mapped to the FX's wet/mix internally.
+      // The slot sits PRE-SPATIAL-MIX so the FX shapes the raw osc before
+      // env+dist+pan are applied — closing the loop on the user spec:
+      // "the effect ONLY affects the oscillator … pre-mix".
+      ps.push({ id: `fxType${i}`,   label: `FX${i}`,    defaultValue: 0,   min: 0,    max: 2,   curve: 'discrete' });
+      ps.push({ id: `fxAmount${i}`, label: `FXAmt${i}`, defaultValue: 0.4, min: 0,    max: 1,   curve: 'linear'  });
     }
     ps.push({ id: 'pos_x', label: 'X',     defaultValue: 0, min: -1, max: 1, curve: 'linear' });
     ps.push({ id: 'pos_y', label: 'Y',     defaultValue: 0, min: -1, max: 1, curve: 'linear' });
@@ -418,6 +425,9 @@ export const wavesculptDef: AudioModuleDef = {
     // active; they're restored from node.params when chord mode flips off.
     ps.push({ id: 'chord_mode',    label: 'Chord',    defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
     ps.push({ id: 'chord_quality', label: 'Quality',  defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+    // Video mode: 0 = PROXIMITY (3D ribbons, default — the original render),
+    // 1 = BIRDSEYE (top-down 2D floorplan showing the spatial system).
+    ps.push({ id: 'video_mode',    label: 'View',     defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
     ps.push({ id: 'alpha_brightness', label: 'A.Bright', defaultValue: 1, min: 0, max: 2, curve: 'linear' });
     ps.push({ id: 'hsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Drift' });
     ps.push({ id: 'hsync_loss',         defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Loss' });
@@ -464,31 +474,89 @@ export const wavesculptDef: AudioModuleDef = {
     }
 
     // The worklet has 4 mono CV-input ports (pitch_cv1..4) → input count 4.
-    // Output 0 is stereo (L, R).
+    // Outputs 0..3 are stereo per-osc raw shaped signal (NO env, NO
+    // dist, NO pan). The JS factory applies env+dist+pan+FX-slot
+    // downstream of the worklet, which is what lets each osc have its
+    // own FX slot insertion point.
     const engineNode = new AudioWorkletNode(ctx, 'wavesculpt-engine', {
       numberOfInputs: 4,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
+      numberOfOutputs: 4,
+      outputChannelCount: [2, 2, 2, 2],
     });
     const engineParams = engineNode.parameters as unknown as Map<string, AudioParam>;
 
-    // Mirror initial knob values into worklet params.
+    // Mirror initial knob values into worklet params (tune/fine/morph/
+    // spread/fold; env + distGain are no longer worklet AudioParams).
     for (let i = 1; i <= 4; i++) {
       for (const k of [`tune${i}`, `fine${i}`, `morph${i}`, `spread${i}`, `fold${i}`]) {
         engineParams.get(k)?.setValueAtTime(live[k] ?? 0, ctx.currentTime);
       }
     }
 
-    // Split the worklet's stereo output into two single-channel buses
-    // so the existing L/R port contract holds.
-    const splitter = ctx.createChannelSplitter(2);
-    engineNode.connect(splitter);
+    // ---------------- Per-osc audio chain ----------------
+    //
+    // Per osc:
+    //   engineNode.output(i)         (stereo, raw shaped)
+    //     → preFxBus[i]              (stereo input bus, always live)
+    //     → [active FX node]          (DELAY or REVERB; bypass = direct
+    //        or fxBypass[i]           connection on fxBypass when OFF)
+    //     → envDistGain[i]           (env * dist scalar, JS-side)
+    //     → panner[i]                (per-osc pan — RED right, GREEN left,
+    //                                 BLUE/ALPHA center; replaces the
+    //                                 worklet's panForOsc loop)
+    //     → busL/busR                (master stereo bus)
+    interface OscChain {
+      preFx: GainNode;       // worklet output i lands here
+      fxBypass: GainNode;    // direct-passthrough when fxType=OFF
+      fxActive: AudioNode | null;   // currently-instantiated FX (DelayNode wrapper, ConvolverNode wrapper)
+      fxDispose: (() => void) | null;
+      currentFxType: number; // 0=OFF, 1=REVERB, 2=DELAY
+      envDist: GainNode;     // env * dist gating
+      panner: StereoPannerNode;
+    }
+    const oscChains: OscChain[] = [];
     const busL = ctx.createGain();
     const busR = ctx.createGain();
     busL.gain.value = 1;
     busR.gain.value = 1;
-    splitter.connect(busL, 0);
-    splitter.connect(busR, 1);
+    // Master stereo bus = StereoPanner inputs summed via a ChannelSplitter
+    // (panners are stereo-in stereo-out; busL/busR want mono per side).
+    const masterSplitter = ctx.createChannelSplitter(2);
+    masterSplitter.connect(busL, 0);
+    masterSplitter.connect(busR, 1);
+
+    for (let i = 0; i < NUM_OSC; i++) {
+      const preFx = ctx.createGain();
+      preFx.gain.value = 1;
+      engineNode.connect(preFx, i);
+
+      const fxBypass = ctx.createGain();
+      fxBypass.gain.value = 1; // default OFF = direct path
+      preFx.connect(fxBypass);
+
+      const envDist = ctx.createGain();
+      envDist.gain.value = 0; // env starts at 0
+      fxBypass.connect(envDist);
+
+      const panner = ctx.createStereoPanner();
+      // panForOsc: RED (x=+1) → pan +1 (right), GREEN (-1) → pan -1 (left),
+      // BLUE/ALPHA (x=0) → pan 0 (center). Equal-power; matches the
+      // worklet's prior panForOsc() math.
+      const panX = i === 0 ? 1 : i === 1 ? -1 : 0;
+      panner.pan.value = panX;
+      envDist.connect(panner);
+      panner.connect(masterSplitter);
+
+      oscChains.push({
+        preFx,
+        fxBypass,
+        fxActive: null,
+        fxDispose: null,
+        currentFxType: 0,
+        envDist,
+        panner,
+      });
+    }
 
     // ---------------- Per-osc wavetable resolution + poll loop ----------------
     const resolvedSigs: string[] = ['', '', '', ''];
@@ -566,6 +634,157 @@ export const wavesculptDef: AudioModuleDef = {
     // every 8 ms tick. Same idea as the wavetable-frame signature cache
     // earlier in the file.
     let lastPitchRouteSig = '';
+
+    // ---------------- Per-osc FX slot machinery ----------------
+    //
+    // Each osc's chain sits between the worklet output and the env-dist
+    // gate. The FX node is inlined (not a sub-factory) for two reasons:
+    //   * Cheap: a DelayNode + feedback loop or a ConvolverNode with a
+    //     synthesised IR is much smaller than spinning up a full Faust-
+    //     reverb worklet instance per osc.
+    //   * Audible character matches the standalone DELAY module's
+    //     topology, so swapping the FX slot for a real cable to
+    //     standalone DELAY sounds the same.
+    //
+    // ensureFxSlot(i, fxType) tears down the previous FX (if any) and
+    // builds the new one wired into oscChains[i] (preFx → [fx] → envDist
+    // when active; preFx → fxBypass → envDist when OFF). applyFxAmount
+    // tweaks the wet level; for REVERB it folds distGain into the wet
+    // so closer-to-camera = wetter.
+    interface FxSlotState {
+      input: AudioNode;
+      output: AudioNode;
+      setMix: (mix: number) => void;
+      dispose: () => void;
+    }
+    function makeDelayFx(): FxSlotState {
+      // Mirror of delay.ts topology — sized for a moderate slap-back
+      // that still feels "delay-y" at the default 0.25 s. The user
+      // dials fxAmount for wet level; time + feedback are sensible
+      // defaults the FX slot UI doesn't expose (full control via the
+      // standalone DELAY module if needed).
+      const inG = ctx.createGain();
+      const dry = ctx.createGain();
+      const wet = ctx.createGain();
+      const out = ctx.createGain();
+      const d = ctx.createDelay(2);
+      d.delayTime.value = 0.28;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.45;
+      inG.connect(dry);
+      inG.connect(d);
+      d.connect(fb);
+      fb.connect(d);
+      d.connect(wet);
+      dry.connect(out);
+      wet.connect(out);
+      dry.gain.value = 1;
+      wet.gain.value = 0;
+      return {
+        input: inG,
+        output: out,
+        setMix(m) {
+          const clamp = Math.max(0, Math.min(1, m));
+          // Equal-power crossfade.
+          dry.gain.setTargetAtTime(Math.sqrt(1 - clamp), ctx.currentTime, 0.02);
+          wet.gain.setTargetAtTime(Math.sqrt(clamp),     ctx.currentTime, 0.02);
+        },
+        dispose() {
+          try { inG.disconnect(); } catch { /* */ }
+          try { dry.disconnect(); } catch { /* */ }
+          try { wet.disconnect(); } catch { /* */ }
+          try { d.disconnect();   } catch { /* */ }
+          try { fb.disconnect();  } catch { /* */ }
+          try { out.disconnect(); } catch { /* */ }
+        },
+      };
+    }
+    function makeReverbFx(): FxSlotState {
+      // Simple Schroeder-style reverb via ConvolverNode + synthesized
+      // exponential-decay noise IR. The IR is generated once per FX
+      // instance (cheap); decay time + size are baked in (0.8 s @
+      // sr=ctx.sampleRate). User controls wet level via fxAmount —
+      // additionally modulated by per-osc distance for the spatial
+      // strongest-closest behavior the user asked for.
+      const inG = ctx.createGain();
+      const dry = ctx.createGain();
+      const wet = ctx.createGain();
+      const out = ctx.createGain();
+      const conv = ctx.createConvolver();
+      // Build IR: stereo exponential-decay white noise, 0.8 s long.
+      const irDurSec = 0.8;
+      const irLen = Math.round(ctx.sampleRate * irDurSec);
+      const ir = ctx.createBuffer(2, irLen, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const data = ir.getChannelData(ch);
+        for (let n = 0; n < irLen; n++) {
+          const t = n / irLen;
+          // Exponential decay with `e^-7t` ≈ -60 dB at end of IR.
+          data[n] = (Math.random() * 2 - 1) * Math.exp(-7 * t);
+        }
+      }
+      conv.buffer = ir;
+      inG.connect(dry);
+      inG.connect(conv);
+      conv.connect(wet);
+      dry.connect(out);
+      wet.connect(out);
+      dry.gain.value = 1;
+      wet.gain.value = 0;
+      return {
+        input: inG,
+        output: out,
+        setMix(m) {
+          const clamp = Math.max(0, Math.min(1, m));
+          dry.gain.setTargetAtTime(Math.sqrt(1 - clamp), ctx.currentTime, 0.02);
+          wet.gain.setTargetAtTime(Math.sqrt(clamp),     ctx.currentTime, 0.02);
+        },
+        dispose() {
+          try { inG.disconnect();  } catch { /* */ }
+          try { dry.disconnect();  } catch { /* */ }
+          try { wet.disconnect();  } catch { /* */ }
+          try { conv.disconnect(); } catch { /* */ }
+          try { out.disconnect();  } catch { /* */ }
+        },
+      };
+    }
+
+    const fxSlots: Array<FxSlotState | null> = [null, null, null, null];
+
+    function ensureFxSlot(oscIdx: number, fxType: number): void {
+      const chain = oscChains[oscIdx]!;
+      if (chain.currentFxType === fxType) return;
+      // Tear down previous wiring.
+      try { chain.preFx.disconnect(); } catch { /* */ }
+      const old = fxSlots[oscIdx];
+      if (old) {
+        old.dispose();
+        fxSlots[oscIdx] = null;
+      }
+      if (fxType === 0) {
+        // OFF — direct passthrough via fxBypass.
+        chain.preFx.connect(chain.fxBypass);
+      } else {
+        const fx = fxType === 1 ? makeReverbFx() : makeDelayFx();
+        fxSlots[oscIdx] = fx;
+        chain.preFx.connect(fx.input);
+        fx.output.connect(chain.envDist);
+      }
+      chain.currentFxType = fxType;
+    }
+
+    function applyFxAmount(
+      oscIdx: number, fxType: number, fxAmount: number, distG: number,
+    ): void {
+      const fx = fxSlots[oscIdx];
+      if (!fx) return;
+      // REVERB (fxType=1): wet = fxAmount * distGain. Closer to camera
+      // = wetter; matches the user spec's "reverb params change based
+      // on where we are in space, being strongest closest to the
+      // oscillator." DELAY's wet stays purely fxAmount.
+      const wet = fxType === 1 ? fxAmount * distG : fxAmount;
+      fx.setMix(wet);
+    }
 
     function tick(): void {
       if (!alive) return;
@@ -655,12 +874,29 @@ export const wavesculptDef: AudioModuleDef = {
         const newState = tickEnvelope(v, dtMs, params);
         Object.assign(v, newState);
 
-        // Mirror env + distGain into the worklet's AudioParams.
+        // JS-side env + dist gating. The worklet emits raw shaped
+        // stereo per osc on its own output; we apply env*dist HERE so
+        // the per-osc FX slot (DELAY/REVERB) sits BEFORE the gate —
+        // matches the canonical "FX shapes the oscillator pre-mix"
+        // semantic the user asked for.
         const distG = distanceGain(WALL_LAYOUT[i]!.src, WALL_LAYOUT[i]!.vec, camPos);
+        const envDist = v.env * distG;
         try {
-          engineParams.get(`env${i + 1}`)?.setTargetAtTime(v.env, ctx.currentTime, 0.005);
-          engineParams.get(`distGain${i + 1}`)?.setTargetAtTime(distG, ctx.currentTime, 0.005);
+          oscChains[i]!.envDist.gain.setTargetAtTime(envDist, ctx.currentTime, 0.005);
         } catch { /* defensive */ }
+
+        // FX slot management — rebuild the FX node when fxType changes.
+        // Distance-modulated reverb: when REVERB is active, the
+        // effective wet level is fxAmount * distG (closer to the
+        // emitter = wetter; matches "strongest closest to the
+        // oscillator"). DELAY's mix is just fxAmount (no spatial
+        // modulation — delay-time-of-flight already happens naturally
+        // via the audio path's speed-of-sound metaphor in the
+        // distance gain).
+        const fxType = Math.round(live[`fxType${i + 1}`] ?? 0);
+        const fxAmount = Math.max(0, Math.min(1, live[`fxAmount${i + 1}`] ?? 0.4));
+        ensureFxSlot(i, fxType);
+        applyFxAmount(i, fxType, fxAmount, distG);
 
         // Per-osc tune resolution. Priority:
         //   1. Chord mode: voice i = root + chord-interval[i] semitones,
@@ -878,7 +1114,19 @@ export const wavesculptDef: AudioModuleDef = {
         if (intervalId !== null) clearInterval(intervalId);
         if (pollTimer !== null) clearTimeout(pollTimer);
         try { engineNode.disconnect(); } catch { /* */ }
-        try { splitter.disconnect(); } catch { /* */ }
+        // Per-osc chain + FX slot teardown.
+        for (let i = 0; i < NUM_OSC; i++) {
+          const slot = fxSlots[i];
+          if (slot) slot.dispose();
+          const c = oscChains[i];
+          if (c) {
+            try { c.preFx.disconnect();    } catch { /* */ }
+            try { c.fxBypass.disconnect(); } catch { /* */ }
+            try { c.envDist.disconnect();  } catch { /* */ }
+            try { c.panner.disconnect();   } catch { /* */ }
+          }
+        }
+        try { masterSplitter.disconnect(); } catch { /* */ }
         for (const t of pitchTaps) {
           try { t.sil.stop(); } catch { /* */ }
           t.gain.disconnect();

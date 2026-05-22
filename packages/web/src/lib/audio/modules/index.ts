@@ -10,6 +10,7 @@ import { mixerDef } from './mixer';
 import { adsrDef } from './adsr';
 import { filterDef } from './filter';
 import { reverbDef } from './reverb';
+import { delayDef } from './delay';
 import { scopeDef } from './scope';
 import { sequencerDef } from './sequencer';
 import { wavetableVcoDef } from './wavetable-vco';
@@ -73,6 +74,7 @@ export function registerAudioModules(): void {
   registerModule(adsrDef);
   registerModule(filterDef);
   registerModule(reverbDef);
+  registerModule(delayDef);
   registerModule(scopeDef);
   registerModule(sequencerDef);
   registerModule(wavetableVcoDef);

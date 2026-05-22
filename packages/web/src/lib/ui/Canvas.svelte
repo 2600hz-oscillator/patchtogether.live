@@ -65,6 +65,7 @@
   import AdsrCard from '$lib/ui/modules/AdsrCard.svelte';
   import FilterCard from '$lib/ui/modules/FilterCard.svelte';
   import ReverbCard from '$lib/ui/modules/ReverbCard.svelte';
+  import DelayCard from '$lib/ui/modules/DelayCard.svelte';
   import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
   import SequencerCard from '$lib/ui/modules/SequencerCard.svelte';
   import WavetableVcoCard from '$lib/ui/modules/WavetableVcoCard.svelte';
@@ -269,6 +270,7 @@
     adsr: AdsrCard,
     filter: FilterCard,
     reverb: ReverbCard,
+    delay: DelayCard,
     scope: ScopeCard,
     sequencer: SequencerCard,
     wavetableVco: WavetableVcoCard,

@@ -41,6 +41,8 @@
   import {
     wavesculptDef,
     eyeFromCamera,
+    distanceGain,
+    WALL_LAYOUT,
     installWavesculptFrameDrawer,
     uninstallWavesculptFrameDrawer,
     getWavesculptFrames,
@@ -185,6 +187,22 @@
   let thickness2 = $derived(pget('thickness2'));
   let thickness3 = $derived(pget('thickness3'));
   let thickness4 = $derived(pget('thickness4'));
+
+  // ---- per-osc FX slot helpers ----
+  // fxType: 0=OFF, 1=REVERB, 2=DELAY. Click-cycles OFF→REVERB→DELAY→OFF.
+  function fxTypeFor(i: number): number {
+    return Math.round(pget(`fxType${i + 1}`));
+  }
+  function fxAmountFor(i: number): number {
+    return pget(`fxAmount${i + 1}`);
+  }
+  function cycleFxType(i: number): void {
+    const next = (fxTypeFor(i) + 1) % 3;
+    set(`fxType${i + 1}`)(next);
+  }
+  function fxLabel(t: number): string {
+    return t === 0 ? 'OFF' : t === 1 ? 'REVERB' : 'DELAY';
+  }
 
   // Per-osc wavetable source (rides node.data).
   function oscData(i: number): WavesculptOscData {
@@ -1250,8 +1268,161 @@ void main() {
   let displayCanvas: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
+  // Video mode: 0 = PROXIMITY (3D ribbons inside the unit cube),
+  // 1 = BIRDSEYE (top-down 2D floorplan of the unit cube showing
+  // the 4 emitters + camera + audio-energy ripples). Picked via the
+  // discrete video_mode param; the on-card View toggle button writes
+  // it.
+  let video_mode = $derived(pget('video_mode'));
+
+  /** Draw the BIRDSEYE 2D view directly onto the display canvas. The
+   *  view is a top-down look at the unit cube (XZ plane) — Y axis
+   *  ignored. Each osc emitter is a colored disc at its wall midpoint
+   *  + a per-osc audio ripple sized by the latest env*distGain. Camera
+   *  is a yellow + crosshair. Distance lines connect camera to each
+   *  emitter. */
+  function drawBirdseye(ctx2d: CanvasRenderingContext2D, cw: number, ch: number, time: number): void {
+    // Black background like the 3D mode.
+    ctx2d.fillStyle = '#050608';
+    ctx2d.fillRect(0, 0, cw, ch);
+
+    // The unit cube spans [-1, +1] on each axis. Map XZ → screen
+    // with a margin. Square viewport in the middle.
+    const margin = 12;
+    const viewSize = Math.min(cw, ch) - margin * 2;
+    const left = (cw - viewSize) / 2;
+    const top  = (ch - viewSize) / 2;
+    const x2px = (x: number): number => left + ((x + 1) / 2) * viewSize;
+    const z2py = (z: number): number => top  + ((-z + 1) / 2) * viewSize; // +Z forward (top of screen)
+
+    // Box outline.
+    ctx2d.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx2d.lineWidth = 1;
+    ctx2d.strokeRect(left, top, viewSize, viewSize);
+
+    // Grid (8×8) — faint reference.
+    ctx2d.strokeStyle = 'rgba(255,255,255,0.06)';
+    for (let g = 1; g < 8; g++) {
+      const f = g / 8;
+      ctx2d.beginPath();
+      ctx2d.moveTo(left + f * viewSize, top);
+      ctx2d.lineTo(left + f * viewSize, top + viewSize);
+      ctx2d.stroke();
+      ctx2d.beginPath();
+      ctx2d.moveTo(left,            top + f * viewSize);
+      ctx2d.lineTo(left + viewSize, top + f * viewSize);
+      ctx2d.stroke();
+    }
+
+    // Pull live state for emitters + camera. WALL_LAYOUT[i].src holds
+    // the emitter source position; we project XZ. distanceGain math
+    // is mirrored from the audio engine so the ripple intensity
+    // matches what you hear.
+    const eng = engineCtx.get();
+    const liveSnap = eng && node ? (eng.read(node, 'live') as Record<string, number> | undefined) : undefined;
+    const camX = clampJoy(liveSnap?.pos_x ?? pget('pos_x'));
+    const camZ = clampJoy(liveSnap?.pos_z ?? pget('pos_z'));
+    const camZoom = liveSnap?.zoom ?? pget('zoom') ?? 1;
+    const camRot  = liveSnap?.rot  ?? pget('rot')  ?? 0;
+    const camPos = eyeFromCamera(camX, liveSnap?.pos_y ?? pget('pos_y'), camZ, camZoom, camRot);
+
+    // Voice state — for env ripples. Falls back to zero env when the
+    // engine isn't ready (early frames).
+    const voiceState = eng && node ? (eng.read(node, 'voiceState') as Array<{ env: number; phase: string }> | undefined) : undefined;
+
+    // RED/GREEN/BLUE/ALPHA per-osc colors. Matches the .osc-strip
+    // border accents.
+    const OSC_COLORS = [
+      'rgb(255, 80, 80)',     // RED
+      'rgb(80, 220, 100)',    // GREEN
+      'rgb(100, 130, 255)',   // BLUE
+      'rgb(220, 220, 220)',   // ALPHA (white-ish)
+    ];
+
+    // Draw distance lines from camera to each emitter (subtle).
+    const camPx = x2px(camPos[0]);
+    const camPy = z2py(camPos[2]);
+    for (let i = 0; i < 4; i++) {
+      const src = WALL_LAYOUT[i]!.src;
+      const ex = x2px(src[0]);
+      const ey = z2py(src[2]);
+      ctx2d.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx2d.lineWidth = 1;
+      ctx2d.beginPath();
+      ctx2d.moveTo(camPx, camPy);
+      ctx2d.lineTo(ex, ey);
+      ctx2d.stroke();
+    }
+
+    // Draw per-osc audio-energy ripples behind the emitter disc.
+    // Ripple radius pulses with time + sized by env*distGain so the
+    // user can SEE the spatial gain modulation.
+    for (let i = 0; i < 4; i++) {
+      const src = WALL_LAYOUT[i]!.src;
+      const ex = x2px(src[0]);
+      const ey = z2py(src[2]);
+      const env = voiceState?.[i]?.env ?? 0;
+      const distG = distanceGain(src, WALL_LAYOUT[i]!.vec, camPos);
+      const intensity = env * distG;
+      if (intensity > 0.01) {
+        // Two concentric ripples, time-modulated phase.
+        for (let r = 0; r < 2; r++) {
+          const phase = (time * 0.0015 + r * 0.5 + i * 0.13) % 1;
+          const radius = phase * 26 + 4;
+          const alpha  = (1 - phase) * intensity * 0.6;
+          ctx2d.strokeStyle = OSC_COLORS[i]!.replace('rgb(', 'rgba(').replace(')', `, ${alpha.toFixed(3)})`);
+          ctx2d.lineWidth = 2;
+          ctx2d.beginPath();
+          ctx2d.arc(ex, ey, radius, 0, Math.PI * 2);
+          ctx2d.stroke();
+        }
+      }
+      // Emitter disc.
+      ctx2d.fillStyle = OSC_COLORS[i]!;
+      ctx2d.beginPath();
+      ctx2d.arc(ex, ey, 5, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+
+    // Camera marker — yellow + crosshair, with a small filled dot.
+    ctx2d.strokeStyle = 'rgb(255, 220, 60)';
+    ctx2d.lineWidth = 1.5;
+    ctx2d.beginPath();
+    ctx2d.moveTo(camPx - 7, camPy);
+    ctx2d.lineTo(camPx + 7, camPy);
+    ctx2d.stroke();
+    ctx2d.beginPath();
+    ctx2d.moveTo(camPx, camPy - 7);
+    ctx2d.lineTo(camPx, camPy + 7);
+    ctx2d.stroke();
+    ctx2d.fillStyle = 'rgb(255, 220, 60)';
+    ctx2d.beginPath();
+    ctx2d.arc(camPx, camPy, 2, 0, Math.PI * 2);
+    ctx2d.fill();
+
+    // Mode label, top-left.
+    ctx2d.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx2d.font = '9px ui-monospace, Menlo, monospace';
+    ctx2d.fillText('BIRDSEYE', left + 4, top + 12);
+  }
+
   function tick() {
     rafId = null;
+    const mode = Math.round(video_mode);
+    if (mode === 1) {
+      // BIRDSEYE — pure-2D draw, bypass the WebGL ribbon renderer
+      // (cheaper + a totally different visual aesthetic).
+      if (displayCanvas) {
+        const dc2 = displayCanvas.getContext('2d', { alpha: false });
+        if (dc2) {
+          drawBirdseye(dc2, displayCanvas.width, displayCanvas.height, performance.now());
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+      return;
+    }
+
+    // PROXIMITY (3D) — original path.
     if (!gl) {
       initGl();
     }
@@ -1451,6 +1622,20 @@ void main() {
               <Knob value={i === 0 ? R1 : i === 1 ? R2 : i === 2 ? R3 : R4}
                 min={0.001} max={5} defaultValue={0.5} label="R" curve="log" units="s"
                 onchange={set(`R${i + 1}`)} readLive={live(`R${i + 1}`)} />
+              <!-- Per-osc FX slot. Single click-cycle button + an amount
+                   knob. Button cycles OFF → REVERB → DELAY → OFF.
+                   Reverb wet is auto-modulated by distance to the
+                   camera in the engine; the knob is the BASE amount. -->
+              <button
+                type="button"
+                class="fx-btn fx-btn-{fxTypeFor(i)}"
+                onclick={() => cycleFxType(i)}
+                data-testid={`wavesculpt-fx-btn-${i + 1}`}
+                title="FX slot — click to cycle OFF / REVERB / DELAY"
+              >{fxLabel(fxTypeFor(i))}</button>
+              <Knob value={fxAmountFor(i)} min={0} max={1} defaultValue={0.4}
+                label="FX" curve="linear"
+                onchange={set(`fxAmount${i + 1}`)} readLive={live(`fxAmount${i + 1}`)} />
             </div>
           </div>
         {/each}
@@ -1508,6 +1693,20 @@ void main() {
         </div>
 
         <div class="right-controls">
+          <!-- VIEW toggle: PROXIMITY (3D ribbons, original render) vs
+               BIRDSEYE (top-down 2D floorplan showing the spatial
+               system: 4 emitter dots + camera marker + audio-energy
+               ripples). Click cycles. The 3D mode is the gorgeous
+               default; BIRDSEYE is useful when you're tweaking the
+               camera + want to SEE what the spatial system is doing. -->
+          <button
+            type="button"
+            class="unison-toggle view-toggle"
+            class:on={video_mode >= 0.5}
+            data-testid="wavesculpt-view-toggle"
+            title="View mode: PROXIMITY (3D ribbons) vs BIRDSEYE (top-down floorplan)"
+            onclick={() => set('video_mode')(video_mode >= 0.5 ? 0 : 1)}
+          >{video_mode >= 0.5 ? 'BIRDSEYE' : '3D'}</button>
           <button
             type="button"
             class="unison-toggle"
@@ -1640,6 +1839,32 @@ void main() {
   .osc-strip.osc-1 { border-left: 2px solid rgba(80, 220, 100, 0.7); }
   .osc-strip.osc-2 { border-left: 2px solid rgba(100, 130, 255, 0.7); }
   .osc-strip.osc-3 { border-left: 2px solid rgba(210, 210, 210, 0.7); }
+  /* Per-osc FX slot button — small chip styled to match the other
+     button-toggles on the card. Color shifts with FX type so the user
+     can scan all 4 slots at a glance. */
+  .fx-btn {
+    appearance: none;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border-dim, rgba(255,255,255,0.15));
+    color: var(--text-dim);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 4px 6px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background 80ms ease-out, color 80ms ease-out, border-color 80ms ease-out;
+  }
+  .fx-btn-1 {  /* REVERB */
+    background: var(--cable-cv, #6cf);
+    color: #000;
+    border-color: var(--cable-cv, #6cf);
+  }
+  .fx-btn-2 {  /* DELAY */
+    background: var(--cable-audio, #f80);
+    color: #000;
+    border-color: var(--cable-audio, #f80);
+  }
   .osc-label {
     font-size: 0.62rem;
     font-weight: 600;
