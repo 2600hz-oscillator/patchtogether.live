@@ -16,6 +16,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import {
@@ -25,6 +26,21 @@
     type HydrogenTrack,
   } from '$lib/audio/modules/hydrogen';
   import { TR808_INSTRUMENTS } from '$lib/audio/modules/hydrogen-tr808-kit-data';
+  import {
+    readSlots,
+    readPendingMode,
+    readQueuedSlot,
+    readLastLoadedSlot,
+    setPendingMode,
+    setQueuedSlot,
+    handleSlotClick,
+    type TransportCardDeps,
+  } from '$lib/audio/modules/transport-card';
+  import {
+    type PendingMode,
+    type SlotKey,
+    type Snapshot,
+  } from '$lib/audio/modules/transport-helpers';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
 
@@ -104,6 +120,76 @@
     set('isPlaying')(isPlaying ? 0 : 1);
   }
 
+  // ---------- preset slots (quicksave) ----------
+  // Sequencer-style 4-slot quicksave + play_cv / reset_cv /
+  // queue1..4_cv CV inputs. Snapshot stores the PATTERN (tracks) +
+  // transport-level knobs (bpm/swing/gain). Per-instrument tuning
+  // (vol/pan/pitch/cutoff/Q/A/D/S/R/mute/solo) stays across slot
+  // swaps so the user dials in their kit once and only the pattern
+  // + tempo flip.
+  let cardVersion = $state(0);
+  $effect(() => {
+    const h = () => { cardVersion = cardVersion + 1; };
+    ydoc.on('update', h);
+    return () => ydoc.off('update', h);
+  });
+  let slotsState     = $derived((void cardVersion, readSlots(node)));
+  let pendingMode    = $derived<PendingMode>((void cardVersion, readPendingMode(node)));
+  let queuedSlot     = $derived<SlotKey | null>((void cardVersion, readQueuedSlot(node)));
+  let lastLoadedSlot = $derived<SlotKey | null>((void cardVersion, readLastLoadedSlot(node)));
+
+  const transportDeps: TransportCardDeps = {
+    nodeId: id,
+    patch,
+    transact: (fn) => ydoc.transact(fn),
+    snapshot: (): Snapshot => {
+      const t = patch.nodes[id];
+      if (!t) return {};
+      const data = (t.data as Record<string, unknown> | undefined) ?? {};
+      const tracksRaw = coerceTracks(data.tracks);
+      // Deep-clone tracks so the snapshot is independent of any
+      // future Yjs mutations to the live tracks.
+      const tracksClone = tracksRaw.map((tr) => tr.map((c) => ({ ...c })));
+      return {
+        tracks: tracksClone,
+        bpm:   t.params.bpm   ?? 120,
+        swing: t.params.swing ?? 0,
+        gain:  t.params.gain  ?? 1,
+      };
+    },
+    applySnapshot: (snap: Snapshot) => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      ydoc.transact(() => {
+        if (!t.data) t.data = {};
+        const td = t.data as Record<string, unknown>;
+        if (Array.isArray(snap.tracks)) {
+          td.tracks = (snap.tracks as Array<Array<Record<string, unknown>>>).map((tr) =>
+            (Array.isArray(tr) ? tr : []).map((c) => ({ ...c })),
+          );
+        }
+        for (const k of ['bpm', 'swing', 'gain'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') t.params[k] = v;
+        }
+      });
+    },
+  };
+
+  function onSetMode(m: PendingMode) { setPendingMode(transportDeps, m); }
+  function onSlotClick(k: SlotKey) { handleSlotClick(transportDeps, k); }
+  function onPlayToggle() { togglePlay(); }
+  function onReset() {
+    // Same "reset playhead + clear any pending queue" pattern SCORE
+    // uses. Re-toggle play so the next step is step-0 if the user
+    // was playing — the engine tick resets stepIndex when
+    // shouldRun transitions false → true.
+    const wasPlaying = isPlaying;
+    setQueuedSlot(transportDeps, null);
+    set('isPlaying')(0);
+    if (wasPlaying) requestAnimationFrame(() => set('isPlaying')(1));
+  }
+
   // ---------- per-instrument expansion ----------
   // Clicking an instrument name expands an inline knob row beneath it
   // exposing the 9 per-voice controls (vol / pan / pitch / cutoff /
@@ -128,6 +214,21 @@
       outputs: [
         { id: 'out_l', label: 'OUT L', cable: 'audio' },
         { id: 'out_r', label: 'OUT R', cable: 'audio' },
+      ] as PortDescriptor[],
+    },
+    {
+      // Shared transport CV inputs — same shape as SCORE/DRUMSEQZ/
+      // POLYSEQZ. play_cv toggles transport on rising edge;
+      // reset_cv jumps the playhead to step 0; queue1..4_cv stages
+      // preset-slot N to load at the next pattern wrap.
+      label: 'Transport CV',
+      inputs: [
+        { id: 'play_cv',   label: 'PLAY',   cable: 'gate' },
+        { id: 'reset_cv',  label: 'RESET',  cable: 'gate' },
+        { id: 'queue1_cv', label: 'Q1',     cable: 'gate' },
+        { id: 'queue2_cv', label: 'Q2',     cable: 'gate' },
+        { id: 'queue3_cv', label: 'Q3',     cable: 'gate' },
+        { id: 'queue4_cv', label: 'Q4',     cable: 'gate' },
       ] as PortDescriptor[],
     },
     ...TR808_INSTRUMENTS.map((inst) => ({
@@ -157,6 +258,24 @@
         <Knob value={pget('gain', 1)}    min={0}   max={2}    defaultValue={1} label="Gain" curve="linear" onchange={set('gain')}  readLive={live('gain')} />
         <button type="button" class="clear-btn" onclick={clearAll} data-testid="hydrogen-clear">CLEAR</button>
       </div>
+
+      <!-- Preset slots — SAVE / LOAD / QUEUE mode toggles + 4 slot buttons
+           + PLAY (mirrors the existing PLAY in the transport row) + RESET.
+           Mirrors the same shape SCORE / DRUMSEQZ / POLYSEQZ ship; the
+           audio engine drains play_cv / reset_cv / queue{N}_cv each tick
+           and applies the queued slot at the next pattern wrap. -->
+      <QuicksaveControls
+        nodeId={id}
+        slots={slotsState}
+        {pendingMode}
+        {queuedSlot}
+        {lastLoadedSlot}
+        {isPlaying}
+        {onSetMode}
+        {onSlotClick}
+        {onPlayToggle}
+        {onReset}
+      />
 
       <div class="grid">
         {#each TR808_INSTRUMENTS as inst}
