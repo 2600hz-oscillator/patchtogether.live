@@ -31,6 +31,7 @@ export const timelordeDef: AudioModuleDef = {
   outputs: [
     // Order MUST match dsp/timelorde.ts OUT_* indices.
     { id: '1x',    type: 'gate' },
+    { id: '8x',    type: 'gate' },
     { id: '4x',    type: 'gate' },
     { id: '2x',    type: 'gate' },
     { id: '1/2',   type: 'gate' },
@@ -70,8 +71,8 @@ export const timelordeDef: AudioModuleDef = {
 
     const workletNode = new AudioWorkletNode(ctx, 'timelorde', {
       numberOfInputs: 1,
-      numberOfOutputs: 12,
-      outputChannelCount: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      numberOfOutputs: 13,
+      outputChannelCount: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     });
 
     // The worklet's clock input always exists; tests + the engine plug a
@@ -119,17 +120,18 @@ export const timelordeDef: AudioModuleDef = {
       ]),
       outputs: new Map([
         ['1x',    { node: workletNode, output: 0 }],
-        ['4x',    { node: workletNode, output: 1 }],
-        ['2x',    { node: workletNode, output: 2 }],
-        ['1/2',   { node: workletNode, output: 3 }],
-        ['1/3',   { node: workletNode, output: 4 }],
-        ['1/4',   { node: workletNode, output: 5 }],
-        ['1/8',   { node: workletNode, output: 6 }],
-        ['1/12',  { node: workletNode, output: 7 }],
-        ['1/16',  { node: workletNode, output: 8 }],
-        ['1/32',  { node: workletNode, output: 9 }],
-        ['1/64',  { node: workletNode, output: 10 }],
-        ['swing', { node: workletNode, output: 11 }],
+        ['8x',    { node: workletNode, output: 1 }],
+        ['4x',    { node: workletNode, output: 2 }],
+        ['2x',    { node: workletNode, output: 3 }],
+        ['1/2',   { node: workletNode, output: 4 }],
+        ['1/3',   { node: workletNode, output: 5 }],
+        ['1/4',   { node: workletNode, output: 6 }],
+        ['1/8',   { node: workletNode, output: 7 }],
+        ['1/12',  { node: workletNode, output: 8 }],
+        ['1/16',  { node: workletNode, output: 9 }],
+        ['1/32',  { node: workletNode, output: 10 }],
+        ['1/64',  { node: workletNode, output: 11 }],
+        ['swing', { node: workletNode, output: 12 }],
       ]),
       setParam(paramId, value) {
         params.get(paramId)?.setValueAtTime(value, ctx.currentTime);

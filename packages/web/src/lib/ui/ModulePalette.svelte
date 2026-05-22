@@ -258,10 +258,14 @@
           </button>
           {#if expanded}
             {#each g.subs as sub (g.top + ':' + sub.name)}
-              {@const flat = g.subs.length === 1 && sub.name === g.top}
+              <!-- A sub whose name matches its top renders flat — items
+                   live directly under the top-level row, no sub-category
+                   indirection. Used by Hybrid (one sub named Hybrid) and
+                   by Ports (mixed: Ports/Ports renders flat with helm,
+                   hydrogen, cloudseed; Ports/Mutable renders as a
+                   labelled sub-expander below them). -->
+              {@const flat = sub.name === g.top}
               {#if flat}
-                <!-- Hybrid is flat — items live directly under the
-                     top-level row, no sub-category indirection. -->
                 {#each sub.defs as def (def.type)}
                   <button
                     class="item indented"
