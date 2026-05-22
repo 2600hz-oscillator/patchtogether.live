@@ -178,13 +178,22 @@
   let cascadeLockEngaged = $derived(
     connectDragState.cascadeActiveForPanel === nodeId,
   );
+  // Auto-open when a connect-drag cable hovers over this card. With the
+  // click-to-open trigger model (PR #208), the destination panel would
+  // never unfold during a drag without this driver — the cursor is on
+  // the cable endpoint, not the corner glyph. The hovered card id is
+  // published by connect-drag-state's document-level pointermove tracker.
+  let dragHoverEngaged = $derived(
+    connectDragState.active && connectDragState.hoveredCardNodeId === nodeId,
+  );
   let open = $derived(
     hovered ||
       pinned ||
       stayOpenForDrag ||
       postClickHoldActive ||
       dragLockEngaged ||
-      cascadeLockEngaged,
+      cascadeLockEngaged ||
+      dragHoverEngaged,
   );
 
   // First panel to TRANSITION to open during an active drag claims the

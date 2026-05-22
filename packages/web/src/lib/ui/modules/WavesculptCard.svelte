@@ -44,6 +44,8 @@
     installWavesculptFrameDrawer,
     uninstallWavesculptFrameDrawer,
     getWavesculptFrames,
+    voctToHz,
+    detuneOctaveOffset,
     type WavesculptData,
     type WavesculptOscData,
   } from '$lib/audio/modules/wavesculpt';
@@ -365,6 +367,7 @@ uniform mat4  uMVP;
 uniform vec4  uSrc[4];
 uniform vec4  uVec[4];
 uniform float uThickness[4];
+uniform float uWavePhase[4];
 uniform sampler2D uWaveTex;
 
 out float vT;
@@ -381,9 +384,13 @@ void main() {
   vec3 perp = normalize(cross(dir, up));
 
   // Sample the wavetable texture. Row per osc, column per ribbon segment.
-  // u = vT  → walks along the wavetable's 256 samples per osc.
+  // u walks along the wavetable's 256 samples per osc, shifted by the
+  // per-osc phase so the wave appears to TRAVEL from the source wall
+  // outward through space (oscillators are always running — visual
+  // should reflect that, not show a static snapshot). REPEAT wrap on
+  // the wave texture handles the seam.
   // v = (osc + 0.5)/4 → centers the sample at the row's middle.
-  float u = t;
+  float u = t - uWavePhase[idx];
   float v = (float(idx) + 0.5) / 4.0;
   float sampleR = texture(uWaveTex, vec2(u, v)).r;
   // Decode R in [0..1] → sample in [-1..+1].
@@ -686,6 +693,20 @@ void main() {
   ];
 
   let renderStartMs = 0;
+  // Per-osc wavetable scroll phase (units: wavetable cycles). Advances
+  // each frame by the osc's playback frequency × dt × WAVE_PHASE_GAIN —
+  // visually the wave "travels" from the source wall outward through the
+  // ribbon, never sitting static the way it would if we sampled the
+  // wavetable at a fixed offset. The shader subtracts the phase from
+  // each vertex's t coordinate; REPEAT wrap on the wave texture handles
+  // the seam, and the existing endpoint band-attenuation in the FS masks
+  // the visible discontinuity.
+  let wavePhase: number[] = [0, 0, 0, 0];
+  // sqrt(hz) * gain → cycles/sec. Picked for legible motion across the
+  // audible band: ~0.8 cyc/sec at C4 (calm groove), ~1.6 cyc/sec at A5,
+  // ~7 cyc/sec at the 20kHz nyquist ceiling (fast-scroll blur — the eye
+  // can't track individual cycles up there anyway).
+  const WAVE_PHASE_GAIN = 0.05;
   let frameCount = 0;
   let boltPhase: number[] = [0, 0, 0, 0];
   const BOLT_SPEED = 0.6;
@@ -888,12 +909,15 @@ void main() {
         null,
       );
       // LINEAR sampling so the ribbon shape stays smooth at low segment
-      // counts. CLAMP_TO_EDGE because we don't want the texture to wrap
-      // (the wavetable IS the wave shape — wrapping a saw would visually
-      // discontinue at the ribbon endpoint).
+      // counts. REPEAT on the U axis so the per-osc phase scroll in the
+      // ribbon vertex shader can advance past the wavetable boundary
+      // cleanly (the wave is a periodic signal — sampling the next cycle
+      // is the natural extension). CLAMP_TO_EDGE on V so adjacent osc
+      // rows don't bleed into each other when the texture is sampled at
+      // a row boundary.
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     }
 
@@ -975,8 +999,24 @@ void main() {
     const now = performance.now();
     const dt = Math.max(0, Math.min(0.5, (now - lastFrameMs) / 1000));
     lastFrameMs = now;
+    const unison = (node?.params?.unison as number | undefined) ?? 0;
+    const detune = (node?.params?.detune as number | undefined) ?? 0;
     for (let i = 0; i < 4; i++) {
       boltPhase[i] = (boltPhase[i]! + BOLT_SPEED * dt) % 1.0;
+      // Effective osc frequency from knobs (pitch_cv input is dynamic
+      // and would require an engine-side modulator-tap read — skipped
+      // here; the visual still scrolls correctly when the user drives
+      // with the cv via the audible result, just with a static UI cue).
+      const tune = (node?.params?.[`tune${i + 1}`] as number | undefined) ?? 0;
+      const fine = (node?.params?.[`fine${i + 1}`] as number | undefined) ?? 0;
+      const voct = (tune + fine / 100) / 12
+        + (unison >= 0.5 ? detuneOctaveOffset(i, detune) : 0);
+      const hz = voctToHz(voct);
+      // sqrt(hz) * gain → cycles/sec. Modulo-1 to keep precision; we
+      // only feed the fractional component to the shader so the UV
+      // shift never grows unbounded over long sessions.
+      const cyclesPerSec = Math.sqrt(Math.max(0, hz)) * WAVE_PHASE_GAIN;
+      wavePhase[i] = (wavePhase[i]! + cyclesPerSec * dt) % 1.0;
     }
 
     const srcArr = new Float32Array(16);
@@ -985,6 +1025,7 @@ void main() {
     const thicknessArr = new Float32Array(4);
     const boltArr = new Float32Array(4);
     const boltPhaseArr = new Float32Array(4);
+    const wavePhaseArr = new Float32Array(4);
     for (let i = 0; i < 4; i++) {
       const wall = [[ 1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]][i]!;
       const vec = [[-1, 0, 0], [ 1, 0, 0], [0,-1, 0], [0,  1, 0]][i]!;
@@ -1004,11 +1045,13 @@ void main() {
       thicknessArr[i] = (node?.params?.[`thickness${i + 1}`] as number | undefined) ?? 0.3;
       boltArr[i] = voiceEnv[i] ?? 0;
       boltPhaseArr[i] = boltPhase[i]!;
+      wavePhaseArr[i] = wavePhase[i]!;
     }
     const uSrcLoc = g.getUniformLocation(ribbonProgram, 'uSrc[0]');
     const uVecLoc = g.getUniformLocation(ribbonProgram, 'uVec[0]');
     const uColLoc = g.getUniformLocation(ribbonProgram, 'uOscColor[0]');
     const uThicknessLoc = g.getUniformLocation(ribbonProgram, 'uThickness[0]');
+    const uWavePhaseLoc = g.getUniformLocation(ribbonProgram, 'uWavePhase[0]');
     const uBoltLoc = g.getUniformLocation(ribbonProgram, 'uBolt[0]');
     const uBoltPhaseLoc = g.getUniformLocation(ribbonProgram, 'uBoltPhase[0]');
     const uWaveTexLoc = g.getUniformLocation(ribbonProgram, 'uWaveTex');
@@ -1016,6 +1059,7 @@ void main() {
     if (uVecLoc) g.uniform4fv(uVecLoc, vecArr);
     if (uColLoc) g.uniform4fv(uColLoc, colArr);
     if (uThicknessLoc) g.uniform1fv(uThicknessLoc, thicknessArr);
+    if (uWavePhaseLoc) g.uniform1fv(uWavePhaseLoc, wavePhaseArr);
     if (uBoltLoc) g.uniform1fv(uBoltLoc, boltArr);
     if (uBoltPhaseLoc) g.uniform1fv(uBoltPhaseLoc, boltPhaseArr);
     // Bind waveTex on TEXTURE0 for the ribbon program.
