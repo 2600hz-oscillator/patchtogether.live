@@ -56,6 +56,7 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
+import { isInputPortConnected } from './transport-helpers';
 import workletUrl from '@patchtogether.live/dsp/dist/wavesculpt-engine.js?url';
 import {
   framesToPlain,
@@ -222,6 +223,78 @@ export function unisonRouting(unison: boolean): number[] {
   return [0, 0, 0, 0];
 }
 
+/**
+ * "Walking" voice normalling, applied independently to the gate chain
+ * and the pitch chain. Mirrors classic patch-cable behavior: a signal
+ * patched into voice 1's input normals through to subsequent voices
+ * until the chain is broken by another patched cable downstream.
+ *
+ *   g1 patched, g2 unpatched, g3 patched, g4 unpatched
+ *     → gate route [0, 0, 2, 2]
+ *
+ *   p1 patched, p2 unpatched, p3 unpatched, p4 patched
+ *     → pitch route [0, 0, 0, 3]
+ *
+ * If voice 1 itself is unpatched, the chain stays at voice 1 (sourceIdx
+ * 0) — same convention as analog modules' "no input = silent or
+ * intrinsic". With every voice unpatched, every voice still sources
+ * itself (no cross-voice coupling) so the unison-driven workflow stays
+ * the default behavior.
+ */
+export function normalledChain(patched: readonly boolean[]): number[] {
+  const out: number[] = [];
+  // Determine if ANY voice in the chain is patched. If none are, every
+  // voice sources itself (vanilla independent operation).
+  const anyPatched = patched.some(Boolean);
+  if (!anyPatched) return patched.map((_, i) => i);
+
+  let current = 0; // walk pointer
+  for (let i = 0; i < patched.length; i++) {
+    if (patched[i]) current = i;
+    out.push(current);
+  }
+  return out;
+}
+
+/** Resolve gate + pitch routing for the 4 voices, accounting for
+ *  unison (overrides both chains to voice 1), chord mode (overrides
+ *  pitch chain to voice 1), and normalling on whichever chain is left
+ *  open. Pure so unit tests can pin every combination. */
+export function effectiveVoiceRouting(
+  unison: boolean,
+  chordMode: boolean,
+  gatePatched: readonly boolean[],
+  pitchPatched: readonly boolean[],
+): { gateRoute: number[]; pitchRoute: number[] } {
+  if (unison) {
+    return { gateRoute: [0, 0, 0, 0], pitchRoute: [0, 0, 0, 0] };
+  }
+  const gateRoute = normalledChain(gatePatched);
+  // In chord mode every voice reads voice-1's pitch (then the factory
+  // applies per-voice chord-interval offsets via the tune AudioParam).
+  const pitchRoute = chordMode ? [0, 0, 0, 0] : normalledChain(pitchPatched);
+  return { gateRoute, pitchRoute };
+}
+
+/** Major / minor (and minor-7th / major-7th) chord intervals in
+ *  semitones, root + first three chord tones. Voice 1 plays the root,
+ *  voices 2/3/4 add the listed intervals on top. */
+export const CHORD_INTERVALS_SEMITONES = {
+  // Major triad + octave: 1 - 3 - 5 - 8
+  major: [0, 4, 7, 12],
+  // Minor triad + octave: 1 - ♭3 - 5 - 8
+  minor: [0, 3, 7, 12],
+} as const;
+export type ChordQuality = keyof typeof CHORD_INTERVALS_SEMITONES;
+
+/** Resolve a 0..1 chord-quality knob value to a discrete quality.
+ *  We discretise at 0.5 so a quarter-turn lands in major and the
+ *  other half lands in minor — easy to dial without overshoot, and
+ *  the discrete-curve param avoids fractional in-between states. */
+export function chordQualityFromKnob(v: number): ChordQuality {
+  return v >= 0.5 ? 'minor' : 'major';
+}
+
 // ---------- per-osc wavetable data (rides node.data) ----------
 
 export interface WavesculptOscData {
@@ -294,6 +367,13 @@ export const wavesculptDef: AudioModuleDef = {
     { id: 'pitch_cv3', type: 'cv' },
     { id: 'gate4',     type: 'gate' },
     { id: 'pitch_cv4', type: 'cv' },
+    // Per-osc morph CV. Routed straight to the worklet's morph{N}
+    // a-rate AudioParam, so any CV source (LFO, ENV, SCORE.env, etc.)
+    // sweeps the wavetable frame position per voice independently.
+    { id: 'morph1_cv', type: 'cv', paramTarget: 'morph1', cvScale: { mode: 'linear' } },
+    { id: 'morph2_cv', type: 'cv', paramTarget: 'morph2', cvScale: { mode: 'linear' } },
+    { id: 'morph3_cv', type: 'cv', paramTarget: 'morph3', cvScale: { mode: 'linear' } },
+    { id: 'morph4_cv', type: 'cv', paramTarget: 'morph4', cvScale: { mode: 'linear' } },
     { id: 'pos_x', type: 'cv', paramTarget: 'pos_x', cvScale: { mode: 'linear' } },
     { id: 'pos_y', type: 'cv', paramTarget: 'pos_y', cvScale: { mode: 'linear' } },
     { id: 'pos_z', type: 'cv', paramTarget: 'pos_z', cvScale: { mode: 'linear' } },
@@ -330,6 +410,14 @@ export const wavesculptDef: AudioModuleDef = {
     ps.push({ id: 'rot',   label: 'Rot',   defaultValue: 0, min: -1, max: 1, curve: 'linear' });
     ps.push({ id: 'unison', label: 'Unison', defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
     ps.push({ id: 'detune', label: 'Detune', defaultValue: 0, min: -1, max: 1, curve: 'linear' });
+    // Chord mode: button toggles, knob picks the chord quality (0 = major,
+    // 1 = minor — discretised in chordQualityFromKnob). When on, every
+    // voice's pitch reads from voice 1 (overriding the normal chain) and
+    // voices 2/3/4 get a per-voice semitone offset via the tune param.
+    // Pre-existing tune values are NOT overwritten while chord-mode is
+    // active; they're restored from node.params when chord mode flips off.
+    ps.push({ id: 'chord_mode',    label: 'Chord',    defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+    ps.push({ id: 'chord_quality', label: 'Quality',  defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
     ps.push({ id: 'alpha_brightness', label: 'A.Bright', defaultValue: 1, min: 0, max: 2, curve: 'linear' });
     ps.push({ id: 'hsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Drift' });
     ps.push({ id: 'hsync_loss',         defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Loss' });
@@ -473,6 +561,12 @@ export const wavesculptDef: AudioModuleDef = {
       return buf[buf.length - 1] ?? 0;
     }
 
+    // Cached signatures so we only re-post a routing message to the
+    // worklet when the patched/unpatched state actually changes — not
+    // every 8 ms tick. Same idea as the wavetable-frame signature cache
+    // earlier in the file.
+    let lastPitchRouteSig = '';
+
     function tick(): void {
       if (!alive) return;
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -486,21 +580,61 @@ export const wavesculptDef: AudioModuleDef = {
       }
 
       const unison = (live.unison ?? 0) >= 0.5;
-      const routing = unisonRouting(unison);
+      const chordMode = (live.chord_mode ?? 0) >= 0.5;
+      const chordQuality = chordQualityFromKnob(live.chord_quality ?? 0);
 
-      // Camera position drives BOTH the visual eye AND the audio distGain.
-      // Computing once here is the single source of truth.
+      // Patched-state detection. isInputPortConnected walks edges once
+      // per call — N=4 voices × 2 ports per tick is trivially cheap.
+      const edges = Object.values(livePatch.edges);
+      const gatePatched: boolean[] = [
+        isInputPortConnected(edges, node.id, 'gate1'),
+        isInputPortConnected(edges, node.id, 'gate2'),
+        isInputPortConnected(edges, node.id, 'gate3'),
+        isInputPortConnected(edges, node.id, 'gate4'),
+      ];
+      const pitchPatched: boolean[] = [
+        isInputPortConnected(edges, node.id, 'pitch_cv1'),
+        isInputPortConnected(edges, node.id, 'pitch_cv2'),
+        isInputPortConnected(edges, node.id, 'pitch_cv3'),
+        isInputPortConnected(edges, node.id, 'pitch_cv4'),
+      ];
+      const { gateRoute, pitchRoute } = effectiveVoiceRouting(
+        unison,
+        chordMode,
+        gatePatched,
+        pitchPatched,
+      );
+
+      // Pitch routing happens INSIDE the worklet (each osc selects
+      // which pitch_cv input to sample for its V/oct). Post a message
+      // when the route changes; the worklet defaults to identity
+      // [0,1,2,3] until it receives one.
+      const pitchSig = pitchRoute.join(',');
+      if (pitchSig !== lastPitchRouteSig) {
+        lastPitchRouteSig = pitchSig;
+        try {
+          engineNode.port.postMessage({ type: 'setPitchRoute', route: pitchRoute });
+        } catch { /* worklet not yet ready */ }
+      }
+
+      // Camera position drives BOTH the visual eye AND the audio
+      // distGain. Computing once here from the COMBINED (knob + CV)
+      // values means a patched LFO modulates both consistently —
+      // closer-to-the-wall = louder + visually bigger.
       const camPos = eyeFromCamera(
-        live.pos_x ?? 0,
-        live.pos_y ?? 0,
-        live.pos_z ?? 0,
-        live.zoom ?? 1,
-        live.rot ?? 0,
+        readCamShadow(sPosX, live.pos_x ?? 0),
+        readCamShadow(sPosY, live.pos_y ?? 0),
+        readCamShadow(sPosZ, live.pos_z ?? 0),
+        readCamShadow(sZoom, live.zoom ?? 1),
+        readCamShadow(sRot,  live.rot  ?? 0),
       );
 
       for (let i = 0; i < NUM_OSC; i++) {
-        const sourceIdx = routing[i]!;
-        const gateNow = gateRead[sourceIdx]! >= GATE_HIGH;
+        // Gate sourcing: the JS-side ADSR re-reads the (potentially
+        // normalled) gate so the envelope fires for every voice in the
+        // chain, even those whose own gate input is unpatched.
+        const gateSourceIdx = gateRoute[i]!;
+        const gateNow = gateRead[gateSourceIdx]! >= GATE_HIGH;
         const v = voices[i]!;
         if (gateNow && !v.gateHigh) {
           v.gateHigh = true;
@@ -528,14 +662,39 @@ export const wavesculptDef: AudioModuleDef = {
           engineParams.get(`distGain${i + 1}`)?.setTargetAtTime(distG, ctx.currentTime, 0.005);
         } catch { /* defensive */ }
 
-        // Per-osc UNISON detune → apply to tune param (semitones).
-        if (unison) {
+        // Per-osc tune resolution. Priority:
+        //   1. Chord mode: voice i = root + chord-interval[i] semitones,
+        //      overriding the user's tune knob.
+        //   2. Unison mode: base tune + detune offset.
+        //   3. Default: leave the user's tune knob alone (setParam path
+        //      already wrote it to the worklet AudioParam).
+        if (chordMode) {
+          const interval = CHORD_INTERVALS_SEMITONES[chordQuality][i] ?? 0;
+          // Combine the user's voice-1 tune knob (root offset) with the
+          // chord interval so they can transpose the chord by tweaking
+          // tune1. Voices 2-4 ignore their own tune knobs while chord
+          // mode is on.
+          const root = live.tune1 ?? 0;
+          try {
+            engineParams.get(`tune${i + 1}`)?.setTargetAtTime(root + interval, ctx.currentTime, 0.005);
+          } catch { /* */ }
+        } else if (unison) {
           const detune = live.detune ?? 0;
           const detuneOct = detuneOctaveOffset(i, detune);
-          // Combine base tune + detune offset (in semitones).
           const tuneSt = (live[`tune${i + 1}`] ?? 0) + detuneOct * 12;
           try {
             engineParams.get(`tune${i + 1}`)?.setTargetAtTime(tuneSt, ctx.currentTime, 0.005);
+          } catch { /* */ }
+        } else {
+          // Restore the per-voice tune knob in case chord/unison was
+          // just toggled off — without this the tune param would stay
+          // stuck at the most-recent chord-mode value.
+          try {
+            engineParams.get(`tune${i + 1}`)?.setTargetAtTime(
+              live[`tune${i + 1}`] ?? 0,
+              ctx.currentTime,
+              0.005,
+            );
           } catch { /* */ }
         }
       }
@@ -547,22 +706,69 @@ export const wavesculptDef: AudioModuleDef = {
     }
 
     // ---------------- Camera-CV shadow gains (for engine per-param tap) ----------------
-    function makeShadow(initial: number): GainNode {
+    //
+    // Each camera CV input owns a GainNode whose .gain AudioParam is the
+    // `param:` target the engine writes incoming CV modulation onto
+    // (LFO → pos_x, etc.). To READ the combined value (knob + CV) we
+    // drive the GainNode's input from a `sink` ConstantSource that
+    // outputs 1.0 — so the GainNode's output equals .gain's current
+    // effective value (intrinsic knob + audio-rate modulation summed in
+    // by the engine). An AnalyserNode tap on the GainNode lets the
+    // tick() loop sample that combined value sample-accurately each
+    // tick, then feed it into eyeFromCamera() so audio distGain AND
+    // visual camera both reflect the live modulated value.
+    //
+    // Pre-fix bug: tick() read `live.pos_x` etc — the JS-side cached
+    // knob — so an LFO patched to pos_x updated the AudioParam but
+    // never moved the camera.
+    interface CamShadow {
+      gain: GainNode;
+      analyser: AnalyserNode;
+      buf: Float32Array<ArrayBuffer>;
+      sink: ConstantSourceNode;
+    }
+    const shadowSinks: ConstantSourceNode[] = [];
+    function makeShadow(initial: number): CamShadow {
       const g = ctx.createGain();
       g.gain.setValueAtTime(initial, ctx.currentTime);
       const sink = ctx.createConstantSource();
-      sink.offset.value = 0;
+      // offset=1 so g's output = 1 × g.gain.value = the combined
+      // (knob + CV) value. The output is read via the analyser tap;
+      // no downstream audio path consumes it.
+      sink.offset.value = 1;
       sink.start();
       sink.connect(g);
+      const analyser = ctx.createAnalyser();
+      // fftSize=32 matches the engine's paramTapBuf (engine.ts ~line 162).
+      // We only need the most-recent sample.
+      analyser.fftSize = 32;
+      analyser.smoothingTimeConstant = 0;
+      g.connect(analyser);
+      const buf = new Float32Array(new ArrayBuffer(analyser.fftSize * 4));
       shadowSinks.push(sink);
-      return g;
+      return { gain: g, analyser, buf, sink };
     }
-    const shadowSinks: ConstantSourceNode[] = [];
     const sPosX = makeShadow(live.pos_x ?? 0);
     const sPosY = makeShadow(live.pos_y ?? 0);
     const sPosZ = makeShadow(live.pos_z ?? 0);
     const sZoom = makeShadow(live.zoom ?? 1);
     const sRot  = makeShadow(live.rot  ?? 0);
+
+    /** Read the latest combined (knob + CV) value from a camera shadow.
+     *  Falls back to the knob value when the analyser hasn't yet
+     *  produced any non-zero samples (very early in the lifecycle,
+     *  before the audio thread has rendered the first quantum). */
+    function readCamShadow(s: CamShadow, fallback: number): number {
+      s.analyser.getFloatTimeDomainData(s.buf);
+      const tail = s.buf[s.buf.length - 1] ?? 0;
+      // Tail==0 with no CV patched would still be correct because the
+      // knob set it to 0; but with knob=non-zero and no CV the
+      // analyser DOES read the non-zero value. The fallback is a
+      // belt-and-braces for the first-block-undefined case (rare in
+      // practice since the engine renders the first quantum
+      // synchronously after the worklet connects).
+      return tail !== 0 || s.gain.gain.value === 0 ? tail : fallback;
+    }
 
     // ---------------- Mono-video bridge ----------------
     const videoAnalyser = ctx.createAnalyser();
@@ -583,23 +789,50 @@ export const wavesculptDef: AudioModuleDef = {
       c2d.fillRect(0, 0, canvas.width, canvas.height);
     }
 
+    // Build the inputs map imperatively so the mixed node types
+    // (GainNode for the gate/pitch/camera taps, AudioWorkletNode for
+    // the worklet-AudioParam routes) don't make TS narrow the Map's
+    // value type to a single concrete shape.
+    const inputsMap: Map<
+      string,
+      { node: AudioNode; input: number; param?: AudioParam }
+    > = new Map();
+    inputsMap.set('gate1',     { node: gateTaps[0]!.gain,  input: 0 });
+    inputsMap.set('gate2',     { node: gateTaps[1]!.gain,  input: 0 });
+    inputsMap.set('gate3',     { node: gateTaps[2]!.gain,  input: 0 });
+    inputsMap.set('gate4',     { node: gateTaps[3]!.gain,  input: 0 });
+    inputsMap.set('pitch_cv1', { node: pitchTaps[0]!.gain, input: 0 });
+    inputsMap.set('pitch_cv2', { node: pitchTaps[1]!.gain, input: 0 });
+    inputsMap.set('pitch_cv3', { node: pitchTaps[2]!.gain, input: 0 });
+    inputsMap.set('pitch_cv4', { node: pitchTaps[3]!.gain, input: 0 });
+    inputsMap.set('pos_x', { node: sPosX.gain, input: 0, param: sPosX.gain.gain });
+    inputsMap.set('pos_y', { node: sPosY.gain, input: 0, param: sPosY.gain.gain });
+    inputsMap.set('pos_z', { node: sPosZ.gain, input: 0, param: sPosZ.gain.gain });
+    inputsMap.set('zoom',  { node: sZoom.gain, input: 0, param: sZoom.gain.gain });
+    inputsMap.set('rot',   { node: sRot.gain,  input: 0, param: sRot.gain.gain  });
+    // Per-osc morph CV → worklet a-rate morph{N} AudioParam. The
+    // engine connects the modulator output directly onto the param so
+    // it sums with the JS-side intrinsic knob set in setParam.
+    // `node:` is just the routing destination the engine uses to set
+    // up its paramTap analyser for readParam.
+    for (const m of ['morph1', 'morph2', 'morph3', 'morph4'] as const) {
+      const p = engineParams.get(m);
+      if (p) {
+        inputsMap.set(`${m}_cv`, { node: engineNode, input: 0, param: p });
+      } else {
+        // Defensive: if the worklet hasn't exposed the param (unlikely
+        // — would mean wavesculpt-engine.ts and the def drifted), fall
+        // back to a silent GainNode so the edge connects without
+        // crashing.
+        const fallback = ctx.createGain();
+        fallback.gain.value = 0;
+        inputsMap.set(`${m}_cv`, { node: fallback, input: 0, param: fallback.gain });
+      }
+    }
+
     const handle: AudioDomainNodeHandle = {
       domain: 'audio',
-      inputs: new Map([
-        ['gate1',     { node: gateTaps[0]!.gain,  input: 0 }],
-        ['gate2',     { node: gateTaps[1]!.gain,  input: 0 }],
-        ['gate3',     { node: gateTaps[2]!.gain,  input: 0 }],
-        ['gate4',     { node: gateTaps[3]!.gain,  input: 0 }],
-        ['pitch_cv1', { node: pitchTaps[0]!.gain, input: 0 }],
-        ['pitch_cv2', { node: pitchTaps[1]!.gain, input: 0 }],
-        ['pitch_cv3', { node: pitchTaps[2]!.gain, input: 0 }],
-        ['pitch_cv4', { node: pitchTaps[3]!.gain, input: 0 }],
-        ['pos_x', { node: sPosX, input: 0, param: sPosX.gain }],
-        ['pos_y', { node: sPosY, input: 0, param: sPosY.gain }],
-        ['pos_z', { node: sPosZ, input: 0, param: sPosZ.gain }],
-        ['zoom',  { node: sZoom, input: 0, param: sZoom.gain }],
-        ['rot',   { node: sRot,  input: 0, param: sRot.gain  }],
-      ]),
+      inputs: inputsMap,
       outputs: new Map([
         ['L', { node: busL, output: 0 }],
         ['R', { node: busR, output: 0 }],
@@ -613,11 +846,11 @@ export const wavesculptDef: AudioModuleDef = {
       ]),
       setParam(paramId, value) {
         live[paramId] = value;
-        if (paramId === 'pos_x') sPosX.gain.setValueAtTime(value, ctx.currentTime);
-        if (paramId === 'pos_y') sPosY.gain.setValueAtTime(value, ctx.currentTime);
-        if (paramId === 'pos_z') sPosZ.gain.setValueAtTime(value, ctx.currentTime);
-        if (paramId === 'zoom')  sZoom.gain.setValueAtTime(value, ctx.currentTime);
-        if (paramId === 'rot')   sRot.gain.setValueAtTime(value, ctx.currentTime);
+        if (paramId === 'pos_x') sPosX.gain.gain.setValueAtTime(value, ctx.currentTime);
+        if (paramId === 'pos_y') sPosY.gain.gain.setValueAtTime(value, ctx.currentTime);
+        if (paramId === 'pos_z') sPosZ.gain.gain.setValueAtTime(value, ctx.currentTime);
+        if (paramId === 'zoom')  sZoom.gain.gain.setValueAtTime(value, ctx.currentTime);
+        if (paramId === 'rot')   sRot.gain.gain.setValueAtTime(value, ctx.currentTime);
         // Mirror per-osc tune/fine/morph/spread/fold into worklet AudioParams.
         const m = /^(tune|fine|morph|spread|fold)([1-4])$/.exec(paramId);
         if (m) {
@@ -662,11 +895,10 @@ export const wavesculptDef: AudioModuleDef = {
           try { s.stop(); } catch { /* */ }
           s.disconnect();
         }
-        sPosX.disconnect();
-        sPosY.disconnect();
-        sPosZ.disconnect();
-        sZoom.disconnect();
-        sRot.disconnect();
+        for (const s of [sPosX, sPosY, sPosZ, sZoom, sRot]) {
+          try { s.gain.disconnect(); } catch { /* */ }
+          try { s.analyser.disconnect(); } catch { /* */ }
+        }
         busL.disconnect();
         busR.disconnect();
         videoAnalyser.disconnect();

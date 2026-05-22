@@ -108,14 +108,40 @@
   let noise              = $derived(pget('noise'));
   let master_gain        = $derived(pget('master_gain'));
 
-  // Camera params
-  let pos_x = $derived(clampJoy(pget('pos_x')));
-  let pos_y = $derived(clampJoy(pget('pos_y')));
-  let pos_z = $derived(clampJoy(pget('pos_z')));
-  let zoom  = $derived(pget('zoom'));
-  let rot   = $derived(clampJoy(pget('rot')));
+  // Drag state for the two joystick pads. Declared here (hoisted ahead
+  // of the camera-derived block below) so the derived expressions can
+  // reference them. The pad's onpointerdown/up flips these — while
+  // true, the camera-derived `pos_x` etc. ignore the live-CV poll so
+  // the dot tracks the user's gesture instead of fighting it.
+  let draggingPos = $state(false);
+  let draggingZR  = $state(false);
+
+  // Camera params — knob values plus a live-CV poll so a patched LFO
+  // moves the joystick dot in real time (motorized-fader style). The
+  // poll calls engine.readParam(), which returns intrinsic-knob +
+  // most-recent-CV-sample (see engine.ts:readParam). During an active
+  // drag the polled value is suppressed so the user's gesture owns
+  // the dot — the engine still updates the underlying AudioParam.
+  let livePosX = $state<number | null>(null);
+  let livePosY = $state<number | null>(null);
+  let livePosZ = $state<number | null>(null);
+  let liveZoom = $state<number | null>(null);
+  let liveRot  = $state<number | null>(null);
+  let pos_x = $derived(clampJoy(!draggingPos && livePosX !== null ? livePosX : pget('pos_x')));
+  let pos_y = $derived(clampJoy(!draggingPos && livePosY !== null ? livePosY : pget('pos_y')));
+  let pos_z = $derived(clampJoy(livePosZ !== null ? livePosZ : pget('pos_z')));
+  let zoom  = $derived(!draggingZR && liveZoom !== null ? liveZoom : pget('zoom'));
+  let rot   = $derived(clampJoy(!draggingZR && liveRot !== null ? liveRot : pget('rot')));
   let unison = $derived(pget('unison'));
   let detune = $derived(pget('detune'));
+  // Chord mode: button toggles, knob picks the chord quality (major / minor).
+  // While chord_mode is on every voice plays the same root pitch (voice 1)
+  // plus a per-voice chord-interval offset (factory tick() writes those to
+  // the worklet tune AudioParams). chord_quality is a discrete-curve knob;
+  // we surface it as a clickable major/minor segment toggle in the UI so
+  // the user doesn't have to dial a knob between two values.
+  let chord_mode    = $derived(pget('chord_mode'));
+  let chord_quality = $derived(pget('chord_quality'));
   let alpha_brightness = $derived(pget('alpha_brightness'));
 
   // Per-osc params (bound in the strip <Knob>s).
@@ -220,7 +246,8 @@
 
   // Pad 1 — camera position (X = pos_x, Y = pos_y).
   let padPosEl: HTMLDivElement | null = $state(null);
-  let draggingPos = $state(false);
+  // `draggingPos` is declared at the top of the script so the camera-
+  // derived block above can reference it.
   let dotPosX = $derived(((pos_x + 1) / 2) * PAD_PX);
   let dotPosY = $derived(((-pos_y + 1) / 2) * PAD_PX);
   function writePos(x: number, y: number): void {
@@ -258,7 +285,8 @@
   // Pad 2 — zoom/rot (X = zoom mapped to [0.3..3], Y = rot mapped to [-1..+1]).
   // X-axis = zoom (right = closer/louder); Y-axis = rot (up = +rot).
   let padZRel: HTMLDivElement | null = $state(null);
-  let draggingZR = $state(false);
+  // `draggingZR` is declared at the top of the script (camera derived
+  // references it).
   // Map zoom param ([0.3..3]) → pad X coord ([0..PAD_PX]). Log-scale because
   // the underlying knob curve is 'log'; matches the user's perception of
   // "halfway-right = unity zoom" — at zoom=1 the dot sits at PAD_PX/2.
@@ -1255,13 +1283,39 @@ void main() {
     rafId = requestAnimationFrame(tick);
   }
 
+  // Camera-CV live-poll loop. Reads engine.readParam() every 30 ms for
+  // each of the 5 camera params; the engine returns intrinsic-knob +
+  // most-recent-CV-sample, so a patched LFO moves the joystick dot in
+  // real time. Cheap (5 cross-domain calls × 33 fps = 165 calls/sec).
+  // We only update the corresponding live{Param} when the value
+  // actually changed, so Svelte's reactivity dedupes redundant
+  // re-renders of the dot.
+  const CAM_POLL_MS = 30;
+  let camPollId: ReturnType<typeof setInterval> | null = null;
+  function pollCamLive() {
+    const e = engineCtx.get();
+    if (!e || !node) return;
+    const newX = e.readParam(node, 'pos_x');
+    const newY = e.readParam(node, 'pos_y');
+    const newZ = e.readParam(node, 'pos_z');
+    const newZoom = e.readParam(node, 'zoom');
+    const newRot = e.readParam(node, 'rot');
+    if (typeof newX === 'number' && newX !== livePosX) livePosX = newX;
+    if (typeof newY === 'number' && newY !== livePosY) livePosY = newY;
+    if (typeof newZ === 'number' && newZ !== livePosZ) livePosZ = newZ;
+    if (typeof newZoom === 'number' && newZoom !== liveZoom) liveZoom = newZoom;
+    if (typeof newRot === 'number' && newRot !== liveRot) liveRot = newRot;
+  }
+
   onMount(() => {
     initGl();
     installBridgeFrameDrawer();
     rafId = requestAnimationFrame(tick);
+    camPollId = setInterval(pollCamLive, CAM_POLL_MS);
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
+    if (camPollId !== null) clearInterval(camPollId);
     uninstallWavesculptFrameDrawer(id);
     disposeGl();
     if (resizeAbort) resizeAbort.abort();
@@ -1462,6 +1516,34 @@ void main() {
             onclick={() => set('unison')(unison >= 0.5 ? 0 : 1)}
           >UNISON</button>
           <Knob value={detune} min={-1} max={1} defaultValue={0} label="Detune" curve="linear" onchange={set('detune')} readLive={live('detune')} />
+          <button
+            type="button"
+            class="unison-toggle chord-toggle"
+            class:on={chord_mode >= 0.5}
+            data-testid="wavesculpt-chord-mode"
+            title="Chord mode: voice 1 plays the root, voices 2-4 add chord-tone offsets in semitones"
+            onclick={() => set('chord_mode')(chord_mode >= 0.5 ? 0 : 1)}
+          >CHORD</button>
+          <div class="chord-quality" data-testid="wavesculpt-chord-quality" role="radiogroup" aria-label="Chord quality">
+            <button
+              type="button"
+              class="chord-quality-opt"
+              class:on={chord_quality < 0.5}
+              data-testid="wavesculpt-chord-major"
+              role="radio"
+              aria-checked={chord_quality < 0.5}
+              onclick={() => set('chord_quality')(0)}
+            >MAJ</button>
+            <button
+              type="button"
+              class="chord-quality-opt"
+              class:on={chord_quality >= 0.5}
+              data-testid="wavesculpt-chord-minor"
+              role="radio"
+              aria-checked={chord_quality >= 0.5}
+              onclick={() => set('chord_quality')(1)}
+            >MIN</button>
+          </div>
           <Knob
             value={alpha_brightness} min={0} max={2} defaultValue={1}
             label="A Bright" curve="linear"
@@ -1706,6 +1788,34 @@ void main() {
     background: var(--accent, #6cf);
     color: #000;
     border-color: var(--accent, #6cf);
+  }
+  /* Chord-quality segment: two adjacent buttons, the active one inherits
+     the .unison-toggle.on accent. */
+  .chord-quality {
+    display: inline-flex;
+    gap: 0;
+    border: 1px solid var(--border-dim, rgba(255,255,255,0.15));
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .chord-quality-opt {
+    appearance: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 4px 6px;
+    border: none;
+    cursor: pointer;
+    transition: background 80ms ease-out, color 80ms ease-out;
+  }
+  .chord-quality-opt:not(:last-child) {
+    border-right: 1px solid var(--border-dim, rgba(255,255,255,0.15));
+  }
+  .chord-quality-opt.on {
+    background: var(--accent, #6cf);
+    color: #000;
   }
   .bent-section {
     border-top: 1px solid var(--border-dim, rgba(255,255,255,0.08));
