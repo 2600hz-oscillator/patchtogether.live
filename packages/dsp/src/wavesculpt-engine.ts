@@ -47,6 +47,19 @@ interface LoadMessage {
   frames: number[][];
 }
 
+/** Per-osc pitch-source routing. Each entry is the input index whose
+ *  pitch CV the corresponding osc should sample — defaults to identity
+ *  [0, 1, 2, 3] (osc i reads pitch input i). The factory posts this
+ *  whenever the patched/unpatched state of the four pitch_cv ports
+ *  changes, implementing classic patch-cable normalling: an unpatched
+ *  voice picks up the most-recent patched-upstream voice's pitch. */
+interface PitchRouteMessage {
+  type: 'setPitchRoute';
+  route: number[];
+}
+
+type IncomingMessage = LoadMessage | PitchRouteMessage;
+
 // Per-osc pan: RED (+X) → right-biased, GREEN (-X) → left-biased,
 // BLUE / ALPHA (±Y) → centered. equal-power so the stereo image is
 // musically usable. Mirrors stereoPanForSource() in the audio module.
@@ -87,6 +100,9 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
   private oscs: WavetableOsc[];
   /** Cached pan per osc (computed once). */
   private pans: Array<{ l: number; r: number }>;
+  /** Pitch-input routing per osc. Identity [0,1,2,3] until the factory
+   *  posts a 'setPitchRoute' message. See PitchRouteMessage above. */
+  private pitchRoute: number[];
 
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
@@ -97,8 +113,9 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
       new WavetableOsc(sampleRate),
     ];
     this.pans = [panForOsc(0), panForOsc(1), panForOsc(2), panForOsc(3)];
+    this.pitchRoute = [0, 1, 2, 3];
     this.port.onmessage = (e: MessageEvent) => {
-      const m = e.data as LoadMessage;
+      const m = e.data as IncomingMessage;
       if (!m || typeof m !== 'object') return;
       if (m.type === 'loadWavetable') {
         const i = m.oscIdx;
@@ -120,6 +137,22 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
           next.push(Float32Array.from(src));
         }
         this.oscs[i]!.setFrames(next);
+      } else if (m.type === 'setPitchRoute') {
+        // Validate: every entry must be an integer 0..3. Reject the
+        // message wholesale on any bad entry so we never sample out of
+        // bounds in the process() hot loop.
+        if (!Array.isArray(m.route) || m.route.length !== 4) {
+          console.error('[wavesculpt-engine] setPitchRoute: route must be length 4');
+          return;
+        }
+        for (let i = 0; i < 4; i++) {
+          const r = m.route[i];
+          if (!Number.isInteger(r) || r! < 0 || r! > 3) {
+            console.error('[wavesculpt-engine] setPitchRoute: bad entry', m.route);
+            return;
+          }
+        }
+        this.pitchRoute = [m.route[0]!, m.route[1]!, m.route[2]!, m.route[3]!];
       }
     };
   }
@@ -149,7 +182,12 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
       const osc = this.oscs[o]!;
       if (!osc.framesLoaded()) continue;
 
-      const pIn = pitchIns[o];
+      // Pitch input source — honour the factory's per-osc routing so
+      // an unpatched voice's pitch normals through to whichever
+      // upstream voice IS patched. Bounds check is a no-op for the
+      // identity default + has already been validated when the factory
+      // posted the route.
+      const pIn = pitchIns[this.pitchRoute[o]!];
       const tune = parameters[`tune${o + 1}`]![0]!;
       const fine = parameters[`fine${o + 1}`]![0]!;
       const morphArr = parameters[`morph${o + 1}`]!;

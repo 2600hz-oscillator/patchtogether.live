@@ -22,6 +22,10 @@ import {
   detuneOctaveOffset,
   tickEnvelope,
   unisonRouting,
+  normalledChain,
+  effectiveVoiceRouting,
+  chordQualityFromKnob,
+  CHORD_INTERVALS_SEMITONES,
 } from './wavesculpt';
 
 describe('wavesculpt v2: module-def shape', () => {
@@ -300,6 +304,91 @@ describe('unisonRouting', () => {
   });
   it('unison=true → all voices read source 0', () => {
     expect(unisonRouting(true)).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe('normalledChain — classic patch-cable normalling', () => {
+  it('every voice unpatched → identity (self-sourcing)', () => {
+    expect(normalledChain([false, false, false, false])).toEqual([0, 1, 2, 3]);
+  });
+  it('only voice 1 patched → all voices source voice 1', () => {
+    expect(normalledChain([true, false, false, false])).toEqual([0, 0, 0, 0]);
+  });
+  it('voices 1 + 3 patched → [0, 0, 2, 2]', () => {
+    expect(normalledChain([true, false, true, false])).toEqual([0, 0, 2, 2]);
+  });
+  it('voices 1 + 4 patched → [0, 0, 0, 3]', () => {
+    expect(normalledChain([true, false, false, true])).toEqual([0, 0, 0, 3]);
+  });
+  it('voice 2 patched (1 unpatched) → [0, 1, 1, 1]', () => {
+    // Walks from voice 1 (sourcing itself = 0 by convention until a
+    // patched voice is found). Voice 2 is patched so the chain pivots.
+    expect(normalledChain([false, true, false, false])).toEqual([0, 1, 1, 1]);
+  });
+  it('every voice patched → identity', () => {
+    expect(normalledChain([true, true, true, true])).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe('effectiveVoiceRouting — unison + chord + normalling priority', () => {
+  it('unison wins over chord + normalling — both routes = [0,0,0,0]', () => {
+    const r = effectiveVoiceRouting(true, true, [true, true, true, true], [true, true, true, true]);
+    expect(r.gateRoute).toEqual([0, 0, 0, 0]);
+    expect(r.pitchRoute).toEqual([0, 0, 0, 0]);
+  });
+  it('chord mode forces pitch route to voice 1 but leaves gate normalling alone', () => {
+    const r = effectiveVoiceRouting(false, true, [true, false, true, false], [false, true, false, false]);
+    expect(r.gateRoute).toEqual([0, 0, 2, 2]);
+    expect(r.pitchRoute).toEqual([0, 0, 0, 0]);
+  });
+  it('no special modes → both chains follow patched state', () => {
+    const r = effectiveVoiceRouting(false, false, [true, false, false, true], [true, false, true, false]);
+    expect(r.gateRoute).toEqual([0, 0, 0, 3]);
+    expect(r.pitchRoute).toEqual([0, 0, 2, 2]);
+  });
+  it('canonical user spec: g1 + p1/p3/p4 patched — gates from g1, pitches 0,0,2,3', () => {
+    // From the issue text: "g1 only patched and then p1, p3, p4 -- gates
+    // all fire with g1, p1 and p2 fire p1's value, p3/p4 fire as
+    // expected." (p3 fires p3, p4 fires p4 — p2 picks up p1 by
+    // normalling.)
+    const r = effectiveVoiceRouting(false, false, [true, false, false, false], [true, false, true, true]);
+    expect(r.gateRoute).toEqual([0, 0, 0, 0]);
+    expect(r.pitchRoute).toEqual([0, 0, 2, 3]);
+  });
+});
+
+describe('chordQualityFromKnob + CHORD_INTERVALS_SEMITONES', () => {
+  it('knob ≤ 0.5 → major, knob > 0.5 → minor', () => {
+    expect(chordQualityFromKnob(0)).toBe('major');
+    expect(chordQualityFromKnob(0.49)).toBe('major');
+    expect(chordQualityFromKnob(0.5)).toBe('minor');
+    expect(chordQualityFromKnob(1)).toBe('minor');
+  });
+  it('major intervals = [0, 4, 7, 12] (M3 + P5 + octave)', () => {
+    expect(CHORD_INTERVALS_SEMITONES.major).toEqual([0, 4, 7, 12]);
+  });
+  it('minor intervals = [0, 3, 7, 12] (m3 + P5 + octave)', () => {
+    expect(CHORD_INTERVALS_SEMITONES.minor).toEqual([0, 3, 7, 12]);
+  });
+});
+
+describe('wavesculpt def: new ports + params landed', () => {
+  it('declares morph1_cv..morph4_cv inputs targeting the worklet morph param', () => {
+    const inIds = wavesculptDef.inputs.map((p) => p.id);
+    for (let i = 1; i <= 4; i++) {
+      expect(inIds).toContain(`morph${i}_cv`);
+      const port = wavesculptDef.inputs.find((p) => p.id === `morph${i}_cv`);
+      expect(port?.type).toBe('cv');
+      expect((port as { paramTarget?: string } | undefined)?.paramTarget).toBe(`morph${i}`);
+    }
+  });
+  it('exposes chord_mode + chord_quality params', () => {
+    const ids = wavesculptDef.params.map((p) => p.id);
+    expect(ids).toContain('chord_mode');
+    expect(ids).toContain('chord_quality');
+    const mode = wavesculptDef.params.find((p) => p.id === 'chord_mode')!;
+    expect(mode.defaultValue).toBe(0);
+    expect(mode.curve).toBe('discrete');
   });
 });
 
