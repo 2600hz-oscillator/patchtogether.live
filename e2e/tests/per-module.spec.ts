@@ -70,50 +70,25 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   audioOut: 'terminal; no outputs',
 };
 
-// Modules whose spawn-solo step is skipped (e.g. need data.children
-// before the card renders at all). Mirror of e2e/tests/modules.spec.ts
-// SKIP_RENDER + io-spec-consistency SKIP_DEF_VS_UI for the same
-// reasons.
-const SKIP_SPAWN: Record<string, string> = {
-  group: 'requires data.children; covered by grouping-phase1.spec.ts',
-};
+// Reference list of modules that can't spawn under bare spawnPatch —
+// not consumed here (spawn-solo coverage lives in modules.spec.ts)
+// but kept as a comment so a future per-module test that DOES need
+// the module mounted (CV-input wire-LFO, video-output canvas-pixel
+// check) starts from this same skip seed:
+//
+//   group: 'requires data.children; covered by grouping-phase1.spec.ts'
 
 test.describe.configure({ mode: 'parallel' });
 
-test.describe('per-module: spawn + output-alive smoke', () => {
+test.describe('per-module: output-alive smoke', () => {
   for (const mod of REGISTRY) {
-    // ───── Spawn-solo check ─────
-    const spawnSkip = SKIP_SPAWN[mod.type];
-    if (spawnSkip) {
-      test.fixme(`${mod.type} spawn [SKIPPED: ${spawnSkip}]`, () => {});
-    } else {
-      test(`${mod.type} spawns solo + no console/page errors`, async ({ page }) => {
-        const errors: string[] = [];
-        page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-        page.on('console', (m) => {
-          if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-        });
-
-        await page.goto('/');
-        await page.waitForLoadState('networkidle');
-        await spawnPatch(page, [
-          {
-            id: 'm-1',
-            type: mod.type,
-            position: { x: 100, y: 100 },
-            domain: mod.domain,
-          },
-        ]);
-
-        // Settle one rAF tick so post-mount effects fire.
-        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-
-        expect(
-          errors,
-          `console/page errors during ${mod.type} spawn: ${errors.join(' | ')}`,
-        ).toEqual([]);
-      });
-    }
+    // Spawn-solo check is covered by modules.spec.ts (which also asserts
+    // handle count + label substring) — running spawn-solo a second time
+    // here adds ~2 sec × 74 modules of pure duplication. SKIP_SPAWN was
+    // intentionally kept on this branch as a reference for which modules
+    // can't spawn cleanly under bare spawnPatch (group needs
+    // data.children), but the test is no longer emitted from here. If
+    // modules.spec.ts ever stops covering spawn, restore the loop.
 
     // ───── Output-alive check ─────
     // Only stamp this for modules that declare an audio output AND
