@@ -55,12 +55,24 @@ class ConnectDragState {
    *  while pickup is active. Canvas reads this to render the ghost cable
    *  from the source port to the cursor. */
   pickupCursor = $state<{ x: number; y: number } | null>(null);
+  /** Live cursor-over-card tracking while a connect gesture is in flight.
+   *  The drag tracks the cable's endpoint, not the panel-trigger glyph —
+   *  if we relied solely on the trigger's mouseenter the destination
+   *  panel would never auto-open as the cable approaches a target card.
+   *  Instead the singleton owns a document-level pointermove listener
+   *  (installed in begin/pickup, torn down in end/cancelPickup) that
+   *  publishes whichever svelte-flow node is under the cursor. PatchPanel
+   *  includes this in its `open` derived so the destination card unfolds
+   *  the moment the cable hovers over it. */
+  hoveredCardNodeId = $state<string | null>(null);
+  private hoverPointerListener: ((e: PointerEvent) => void) | null = null;
 
   /** Canvas calls this from svelte-flow's onconnectstart. */
   begin(): void {
     this.mode = 'dragging';
     this.active = true;
     this.lockedPanelNodeId = null;
+    this.installHoverTracker();
   }
 
   /** Canvas calls this from onconnect AND onconnectend. */
@@ -68,6 +80,7 @@ class ConnectDragState {
     this.mode = 'idle';
     this.active = false;
     this.lockedPanelNodeId = null;
+    this.uninstallHoverTracker();
   }
 
   /** Canvas calls this from onclickconnectstart — user clicked a handle
@@ -79,6 +92,7 @@ class ConnectDragState {
     this.lockedPanelNodeId = null;
     this.pickupSource = source;
     this.pickupCursor = null;
+    this.installHoverTracker();
   }
 
   /** Canvas calls this on every mousemove while pickup mode is active —
@@ -98,6 +112,30 @@ class ConnectDragState {
     this.lockedPanelNodeId = null;
     this.pickupSource = null;
     this.pickupCursor = null;
+    this.uninstallHoverTracker();
+  }
+
+  /** Document-level pointermove tracker. While a gesture is active we
+   *  resolve the svelte-flow node under the cursor and publish its id;
+   *  PatchPanel watches that id to auto-open on cable hover. Hit-tests
+   *  via elementFromPoint so xyflow's connection-line overlay is
+   *  transparent to us (it sets `pointer-events: none` by default). */
+  private installHoverTracker(): void {
+    if (this.hoverPointerListener || typeof document === 'undefined') return;
+    this.hoverPointerListener = (e: PointerEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const node = el?.closest('.svelte-flow__node') as HTMLElement | null;
+      const id = node?.dataset.id ?? null;
+      if (id !== this.hoveredCardNodeId) this.hoveredCardNodeId = id;
+    };
+    document.addEventListener('pointermove', this.hoverPointerListener, { passive: true });
+  }
+
+  private uninstallHoverTracker(): void {
+    if (!this.hoverPointerListener || typeof document === 'undefined') return;
+    document.removeEventListener('pointermove', this.hoverPointerListener);
+    this.hoverPointerListener = null;
+    this.hoveredCardNodeId = null;
   }
 
   /** PatchPanel calls this when it opens during an active gesture. First

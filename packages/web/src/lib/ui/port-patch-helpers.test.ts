@@ -225,6 +225,181 @@ describe('compatibleTargetPorts (input → ?)', () => {
   });
 });
 
+// ----------------------------------------------------------------------------
+// CV-family interchange (cv ↔ pitch ↔ gate ↔ polyPitchGate). canConnect
+// permits any cross-family direction at the type level; the patch-to
+// cascade has to surface every compatible candidate. Earlier the cascade
+// only listed type-equal candidates and a SEQUENCER.gate cable couldn't
+// land on an ADSR.attack (cv) target via the menu even though dragging
+// it worked at the engine level.
+// ----------------------------------------------------------------------------
+
+const sequencerDef: AudioModuleDef = {
+  type: 'sequencer',
+  domain: 'audio',
+  label: 'Sequencer',
+  category: 'sources',
+  schemaVersion: 1,
+  inputs: [{ id: 'clock', type: 'gate' }],
+  outputs: [
+    { id: 'clock', type: 'gate' },
+    { id: 'gate', type: 'gate' },
+    { id: 'pitch', type: 'pitch' },
+  ],
+  params: [],
+  factory: (() => undefined) as unknown as AudioModuleDef['factory'],
+};
+
+const adsrDef: AudioModuleDef = {
+  type: 'adsr',
+  domain: 'audio',
+  label: 'ADSR',
+  category: 'modulation',
+  schemaVersion: 1,
+  inputs: [
+    { id: 'gate', type: 'gate' },
+    { id: 'attack', type: 'cv' },
+    { id: 'decay', type: 'cv' },
+    { id: 'sustain', type: 'cv' },
+    { id: 'release', type: 'cv' },
+  ],
+  outputs: [
+    { id: 'env', type: 'cv' },
+    { id: 'env_inv', type: 'cv' },
+  ],
+  params: [],
+  factory: (() => undefined) as unknown as AudioModuleDef['factory'],
+};
+
+const analogVcoDef: AudioModuleDef = {
+  type: 'analogVco',
+  domain: 'audio',
+  label: 'Analog VCO',
+  category: 'sources',
+  schemaVersion: 1,
+  inputs: [
+    { id: 'pitch_cv', type: 'pitch' },
+    { id: 'fm', type: 'audio' },
+    { id: 'tune', type: 'cv' },
+    { id: 'fmAmount', type: 'cv' },
+  ],
+  outputs: [
+    { id: 'saw', type: 'audio' },
+    { id: 'square', type: 'audio' },
+  ],
+  params: [],
+  factory: (() => undefined) as unknown as AudioModuleDef['factory'],
+};
+
+describe('compatibleTargetPorts — cv-family interchange (output → input)', () => {
+  it('SEQUENCER.gate (gate) → ADSR lists gate AND every cv input', () => {
+    // Pre-fix: only ADSR.gate would appear (gate→gate equality).
+    // Post-fix: gate also routes to attack/decay/sustain/release (cv).
+    const nodes = { adsr1: makeNode('adsr1', 'adsr') };
+    const out = compatibleTargetPorts(
+      'gate',
+      'output',
+      adsrDef,
+      'adsr1',
+      {},
+      nodes,
+      defs({ adsr: adsrDef }),
+    );
+    expect(out.map((p) => p.portId).sort()).toEqual(
+      ['attack', 'decay', 'gate', 'release', 'sustain'],
+    );
+  });
+
+  it('SEQUENCER.pitch (pitch) → AnalogVCO lists pitch_cv AND cv params', () => {
+    // pitch → pitch (pitch_cv) + pitch → cv (tune / fmAmount).
+    // 'fm' is audio and stays excluded (audio family is strict).
+    const nodes = { vco1: makeNode('vco1', 'analogVco') };
+    const out = compatibleTargetPorts(
+      'pitch',
+      'output',
+      analogVcoDef,
+      'vco1',
+      {},
+      nodes,
+      defs({ analogVco: analogVcoDef }),
+    );
+    expect(out.map((p) => p.portId).sort()).toEqual(['fmAmount', 'pitch_cv', 'tune']);
+  });
+
+  it('LFO.phase0 (cv) → ADSR lists gate AND every cv input', () => {
+    // cv → gate (drive ADSR.gate as a threshold trigger from LFO) is
+    // a previously-blocked patch.
+    const nodes = { adsr1: makeNode('adsr1', 'adsr') };
+    const out = compatibleTargetPorts(
+      'cv',
+      'output',
+      adsrDef,
+      'adsr1',
+      {},
+      nodes,
+      defs({ adsr: adsrDef }),
+    );
+    expect(out.map((p) => p.portId).sort()).toEqual(
+      ['attack', 'decay', 'gate', 'release', 'sustain'],
+    );
+  });
+});
+
+describe('compatibleTargetPorts — cv-family interchange (input → output)', () => {
+  it('ADSR.attack (cv) input ← SEQUENCER lists every cv-family output', () => {
+    // Right-clicking ADSR.attack and choosing SEQUENCER: every output
+    // whose type lands in cv (gate / pitch / cv) should be listed —
+    // SEQUENCER ships clock + gate (gate) + pitch (pitch).
+    const nodes = { seq1: makeNode('seq1', 'sequencer') };
+    const out = compatibleTargetPorts(
+      'cv', // source = ADSR.attack
+      'input',
+      sequencerDef,
+      'seq1',
+      {},
+      nodes,
+      defs({ sequencer: sequencerDef }),
+    );
+    expect(out.map((p) => p.portId).sort()).toEqual(['clock', 'gate', 'pitch']);
+  });
+
+  it('AnalogVCO.tune (cv) input ← LFO lists every cv-family output', () => {
+    const nodes = { lfo1: makeNode('lfo1', 'lfo') };
+    const out = compatibleTargetPorts(
+      'cv',
+      'input',
+      lfoDef,
+      'lfo1',
+      {},
+      nodes,
+      defs({ lfo: lfoDef }),
+    );
+    // All four LFO phase outputs are cv → already passed; this test
+    // pins the same behaviour as a regression guard.
+    expect(out.map((p) => p.portId).sort()).toEqual(
+      ['phase0', 'phase180', 'phase270', 'phase90'],
+    );
+  });
+
+  it('ADSR.gate (gate) input ← LFO lists every cv-family output', () => {
+    // Pre-fix: empty (cv → gate rejected).
+    // Post-fix: every LFO cv output is a candidate.
+    const nodes = { lfo1: makeNode('lfo1', 'lfo') };
+    const out = compatibleTargetPorts(
+      'gate',
+      'input',
+      lfoDef,
+      'lfo1',
+      {},
+      nodes,
+      defs({ lfo: lfoDef }),
+    );
+    expect(out.map((p) => p.portId).sort()).toEqual(
+      ['phase0', 'phase180', 'phase270', 'phase90'],
+    );
+  });
+});
+
 describe('moduleDisplayName', () => {
   it('returns plain label for singletons', () => {
     const nodes = { lfo1: makeNode('lfo1', 'lfo') };

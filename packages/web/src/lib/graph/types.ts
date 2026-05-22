@@ -43,17 +43,42 @@ export function isVideoCableType(type: CableType): boolean {
   return type === 'keys' || type === 'image' || type === 'mono-video' || type === 'video';
 }
 
+/** The "CV family" — bipolar audio-rate voltages that all flow through the
+ *  same Web Audio routing and are freely interchangeable at the type level.
+ *  `cv` is the canonical bipolar control voltage; `pitch` adds the V/oct
+ *  semantic; `gate` is a 0/+5V style trigger. The engine handles them
+ *  uniformly (CV → AudioParam, with the cv-scale helper applied when the
+ *  destination opts in), and real-world patches routinely cross-patch them
+ *  — a SEQUENCER.gate firing into an ADSR.attack as a modulator, an LFO
+ *  driving AnalogVCO.pitch_cv to wiggle pitch, a Sequencer.pitch into a
+ *  filter cutoff for keytracking. canConnect used to reject these at the
+ *  UI level (the patch-to cascade hid them as "not compatible") even though
+ *  the engine permits them — see canConnect(). */
+const CV_FAMILY = new Set<string>(['cv', 'pitch', 'gate']);
+
 /**
  * Returns true if a cable of `srcType` may legally terminate on a port
- * declaring `dstType`. Equal types always pass; the explicit upcast set
- * (keys→mono-video, image→video, mono-video→video, keys→image) covers the
- * "free" video-domain conversions. Audio CV is allowed to terminate on a
- * video param input — the cross-domain bridge (frame-rate S&H) is wired in
- * Phase 1; for Phase 0 we permit the connection at the type level so the
- * wiring story doesn't change later.
+ * declaring `dstType`. Equal types always pass; explicit upcasts cover:
  *
- * Strictly out: audio/pitch/gate/polyPitchGate → any video port; any video
- * stream → any audio port.
+ *   * Video-domain "free" conversions: keys→mono-video, keys→image,
+ *     image→video, mono-video→video.
+ *   * CV family (cv ↔ pitch ↔ gate): any direction. They're all bipolar
+ *     audio-rate voltages flowing through the same AudioParam plumbing,
+ *     and rejecting cross-family patches at the UI level (while the engine
+ *     happily routes them at runtime) hid legitimate patches from the
+ *     patch-to cascade. See CV_FAMILY above.
+ *   * polyPitchGate ↔ cv-family: the engine interposes a splitter
+ *     (poly→mono picks channel 0) or merger (mono→poly fills channel 0,
+ *     rest silent) via resolveConnection in poly.ts — we mirror that
+ *     permissiveness at the type-check level here.
+ *   * Audio CV → video param input (frame-rate sample-and-hold; the
+ *     bridge is wired in Phase 1, but we permit the connection at the
+ *     type level so the eventual bridge doesn't change call-site type
+ *     checks).
+ *
+ * Strictly out: audio → any non-audio port; video → any audio port; gate
+ * → audio (a 0/5V gate landing on an audio bus is the kind of click track
+ * the limiter shouldn't have to defend against).
  */
 export function canConnect(srcType: CableType, dstType: CableType): boolean {
   if (srcType === dstType) return true;
@@ -65,6 +90,16 @@ export function canConnect(srcType: CableType, dstType: CableType): boolean {
   };
   const ok = upcasts[srcType as string];
   if (ok && ok.includes(dstType as string)) return true;
+
+  // CV family — cv / pitch / gate all interchange at the type level.
+  if (CV_FAMILY.has(srcType as string) && CV_FAMILY.has(dstType as string)) {
+    return true;
+  }
+
+  // polyPitchGate ↔ cv-family. Splitter / merger interposed by the
+  // engine's resolveConnection (poly.ts).
+  if (srcType === 'polyPitchGate' && CV_FAMILY.has(dstType as string)) return true;
+  if (CV_FAMILY.has(srcType as string) && dstType === 'polyPitchGate') return true;
 
   // Audio CV → video param input (frame-rate sample-and-hold; deferred
   // bridge in Phase 1). Permit at the type level so the eventual bridge
