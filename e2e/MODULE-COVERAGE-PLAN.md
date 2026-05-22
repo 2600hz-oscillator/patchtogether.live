@@ -80,7 +80,7 @@ Tests:
 ### Group 2 — Sources (audio VCOs + noise)
 
 Module types: `analogVco`, `wavetableVco`, `noise`, `dx7`,
-`macrooscillator`, `vizvco`, `wavviz`, `swolevco`, `wavecel`.
+`macrooscillator`, `wavviz`, `swolevco`.
 
 Each: drive `pitch` (or `trig`+`pitch`) with a test pitch, read the
 audio output(s) via scope, assert non-silence + verify the declared
@@ -129,9 +129,9 @@ non-uniform pixel buffer when its source chain is wired up.
 
 ### Group 9 — Cross-domain (audio <-> video)
 
-audio-domain modules with mono-video outputs (scope, vizvco, wavviz,
-swolevco, wavecel, warrenspectrum) feed video sinks. LFO cv modulates
-video-module cv inputs.
+audio-domain modules with mono-video outputs (scope, wavviz, swolevco,
+warrenspectrum) feed video sinks. LFO cv modulates video-module cv
+inputs.
 
 ## Test scope: local vs autotest
 

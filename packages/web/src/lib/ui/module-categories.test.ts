@@ -97,6 +97,26 @@ describe('groupDefs()', () => {
     expect(audio!.subs.map((s) => s.name)).toEqual(['VCOs', 'Utility', 'Effects', 'Mixing']);
   });
 
+  it('places MIDI bridge modules under the MIDI top bucket', () => {
+    const defs = [
+      { type: 'midiCvBuddy', label: 'MIDI-CV-BUDDY' },
+      { type: 'midiclock', label: 'MIDICLOCK' },
+      { type: 'analogVco', label: 'Analog VCO' },
+    ];
+    const out = groupDefs(defs);
+    const midi = out.find((g) => g.top === 'MIDI');
+    expect(midi).toBeDefined();
+    expect(midi!.subs.map((s) => s.name)).toEqual(['MIDI']);
+    const ids = midi!.subs[0]!.defs.map((d) => d.type).sort();
+    expect(ids).toEqual(['midiCvBuddy', 'midiclock']);
+    // MIDI sits between Video and Hybrid in TOP_ORDER.
+    expect(out.map((g) => g.top)).toEqual(['Audio modules', 'MIDI']);
+  });
+
+  it('places QBRT under Effects', () => {
+    expect(categorize('qbrt')).toEqual({ top: 'Audio modules', sub: 'Effects' });
+  });
+
   it('surfaces unknown ids under Uncategorized rather than dropping them', () => {
     const defs = [{ type: 'totallyNew', label: 'TOTALLYNEW' }];
     const out = groupDefs(defs);

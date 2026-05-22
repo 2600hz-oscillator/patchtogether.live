@@ -1,9 +1,8 @@
 // packages/dsp/src/wavesculpt-engine.ts
 //
 // WAVESCULPT engine — 4 wavetable oscillators summed into a stereo bus.
-// Each oscillator is the same WavetableOsc class WAVECEL uses (shared lib
-// at packages/dsp/src/lib/wavetable-osc.ts), so the wavetable interpolation
-// path is DRY across both modules.
+// Each oscillator is the shared WavetableOsc class at
+// packages/dsp/src/lib/wavetable-osc.ts.
 //
 // What this worklet owns:
 //   * 4 phase accumulators (one per WavetableOsc instance)

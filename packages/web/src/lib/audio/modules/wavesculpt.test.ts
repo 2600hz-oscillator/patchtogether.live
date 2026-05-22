@@ -4,9 +4,8 @@
 //
 // What changed vs v1:
 //   - Per-osc params are now tune/fine/morph/spread/fold (wavetable
-//     primitives — same names WAVECEL uses) instead of pitch + morph
-//     (saw/sine/tri picker). morphToOscType + per-osc pitch params are
-//     gone.
+//     primitives) instead of pitch + morph (saw/sine/tri picker).
+//     morphToOscType + per-osc pitch params are gone.
 //   - New cam param: rot (rotation around Y, ±1).
 //   - eyeFromCamera helper replaces ad-hoc inline camera math.
 //   - Shared wavetable engine: wavesculpt.ts imports its worklet URL from
@@ -89,7 +88,7 @@ describe('wavesculpt v2: module-def shape', () => {
     }
   });
 
-  it('per-osc wavetable params have wavecel-matching ranges', () => {
+  it('per-osc wavetable params have standard wavetable ranges', () => {
     for (let i = 1; i <= 4; i++) {
       const tune = wavesculptDef.params.find((p) => p.id === `tune${i}`)!;
       expect(tune.min).toBe(-36); expect(tune.max).toBe(36);
@@ -305,25 +304,13 @@ describe('unisonRouting', () => {
 });
 
 describe('shared wavetable engine import (DRY check)', () => {
-  // Smoke-check that the worklet URL the module imports lives in the
-  // shared dist path — this is the "no fork" assertion. If somebody adds
-  // a wavesculpt-only oscillator implementation in the future and forgets
-  // to delete this import, the test still passes; but if they swap the
-  // wavetable-engine for a private worklet of their own, this is the
-  // first signal something diverged. Best-effort: we can't inspect the
-  // worklet URL at runtime (Vite turns it into a hashed string), but we
-  // CAN assert wavesculpt's module def + wavecel's module def share the
-  // same factory-table source. Both consuming wavecel-factory-tables is
-  // a strong proxy for "they share the wavetable code path".
-  it('wavesculpt and wavecel both consume wavecel-factory-tables', async () => {
-    // Just confirms both modules are importable + the registry shape is
-    // consistent — the actual DRY-ness is enforced by:
-    //   * a single wavetable-osc.ts in packages/dsp/src/lib/
-    //   * wavecel.ts + wavesculpt-engine.ts both importing from it
-    // (verified at build time — if the import path were wrong, esbuild
-    // would fail the build).
-    const { wavecelDef } = await import('./wavecel');
-    expect(wavecelDef.type).toBe('wavecel');
+  // Smoke-check that the wavetable factory tables resolve. The shared
+  // wavetable engine (packages/dsp/src/lib/wavetable-osc.ts) is verified
+  // at build time — if the import path were wrong, esbuild would fail
+  // the build.
+  it('wavesculpt consumes wavetable-factory-tables', async () => {
+    const tables = await import('$lib/audio/wavetable-factory-tables');
+    expect(typeof tables.getFactoryTables).toBe('function');
     expect(wavesculptDef.type).toBe('wavesculpt');
   });
 });

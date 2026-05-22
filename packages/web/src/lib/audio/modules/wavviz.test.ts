@@ -1,8 +1,9 @@
 // packages/web/src/lib/audio/modules/wavviz.test.ts
 //
-// Unit tests for WAVVIZ. Like VIZVCO, the factory imports browser-only
-// asset URLs; we test the def shape via dynamic import. The shared
-// buildFoldCurve helper is exercised in vizvco.test.ts.
+// Unit tests for WAVVIZ. The factory imports browser-only asset URLs;
+// we test the def shape via dynamic import. The shared buildFoldCurve
+// helper lives in $lib/audio/fold-curve and is pinned by the wavefolder
+// ART scenario.
 
 import { describe, expect, it } from 'vitest';
 

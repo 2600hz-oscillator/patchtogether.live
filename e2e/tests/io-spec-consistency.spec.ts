@@ -159,8 +159,7 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'score',
     'drumseqz',
     'polyseqz',
-    // Sister VCOs with built-in wavefolders + waveform-video out:
-    'vizvco',
+    // WAVVIZ — wavetable VCO with built-in wavefolder + waveform-video out.
     'wavviz',
     // SWOLEVCO — Buchla 259-style complex VCO (primary + modulator + cross-mod
     // + symmetry morph + wavefolder + scope mono-video out).
@@ -202,8 +201,6 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     'noise',
     // BUGGLES — chaotic random voltage source (wogglebug-style).
     'buggles',
-    // WAVECEL — stereo wavetable VCO (E352 WAV loader, morph + spread + fold).
-    'wavecel',
     // WARRENSPECTRUM — stereo 8-band filterbank + vactrol ping + acidwarp viz.
     'warrenspectrum',
     // STEREOVCA — stereo VCA + ring modulator with independent normalling.

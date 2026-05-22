@@ -1,8 +1,9 @@
 // e2e/tests/waveform-trace-shape.spec.ts
 //
-// Regression for Bug-2 from PR-65: VIZVCO/WAVVIZ/SCOPE video outputs were
-// rendering a single thin horizontal line at canvas center instead of the
-// audio waveform.
+// Regression for Bug-2 from PR-65: WAVVIZ/SCOPE video outputs (and any
+// other module that goes through the shared waveform-video renderer)
+// were rendering a single thin horizontal line at canvas center instead
+// of the audio waveform.
 //
 // Root cause: the shared waveform-video renderer allocated its 1-D R32F
 // sample texture with LINEAR min/mag filters. R32F is core-WebGL2
@@ -13,12 +14,13 @@
 // canvas mid-line. Switching the filter to NEAREST (which is core for
 // every internal format) fixes the read.
 //
-// What this test asserts: with VIZVCO -> OUTPUT, the OUTPUT canvas must
-// contain bright pixels spread across MANY distinct rows (a real
-// waveform), not just one or two adjacent rows (a flat trace at center).
-// The threshold (≥ 20 distinct rows) is well above the flat-trace
-// failure mode (~4 rows: a 2-pixel half-width band) and well below a
-// healthy waveform's row coverage (~100+ rows on a 184-tall canvas).
+// What this test asserts: with WAVVIZ -> OUTPUT (and SCOPE -> OUTPUT),
+// the OUTPUT canvas must contain bright pixels spread across MANY
+// distinct rows (a real waveform), not just one or two adjacent rows
+// (a flat trace at center). The threshold (≥ 20 distinct rows) is well
+// above the flat-trace failure mode (~4 rows: a 2-pixel half-width
+// band) and well below a healthy waveform's row coverage (~100+ rows on
+// a 184-tall canvas).
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -64,11 +66,11 @@ test.describe('waveform video trace shape (Bug-2 regression)', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  test('VIZVCO -> OUTPUT renders waveform across many rows (not a flat line)', async ({ page }) => {
+  test('WAVVIZ -> OUTPUT renders waveform across many rows (not a flat line)', async ({ page }) => {
     await spawnPatch(
       page,
       [
-        { id: 'a-viz',  type: 'vizvco',   position: { x: 60,  y: 60 },  domain: 'audio', params: { foldAmount: 0 } },
+        { id: 'a-viz',  type: 'wavviz',   position: { x: 60,  y: 60 },  domain: 'audio', params: { foldAmount: 0 } },
         { id: 'v-out',  type: 'videoOut', position: { x: 460, y: 60 },  domain: 'video' },
       ],
       [
@@ -92,7 +94,7 @@ test.describe('waveform video trace shape (Bug-2 regression)', () => {
     // ≥ 20 distinct bright rows comfortably catches the regression.
     expect(
       stats.brightRows,
-      `VIZVCO trace should span many rows (got ${stats.brightRows}/${stats.height}); flat trace ≈ 4`,
+      `WAVVIZ trace should span many rows (got ${stats.brightRows}/${stats.height}); flat trace ≈ 4`,
     ).toBeGreaterThanOrEqual(20);
     // Sanity: the trace is also spread across most of the canvas width
     // (one bright column per audio sample column).

@@ -1,8 +1,8 @@
 // art/scenarios/warrenspectrum/warrenspectrum.test.ts
 //
 // Toolchain validation + math-anchored behavior tests for WARRENSPECTRUM.
-// Mirrors the wavecel pattern: build artifact + SHA pin, plus offline
-// reference-model assertions for the bandpass peak + ping-impulse ring.
+// Build-artifact + SHA pin, plus offline reference-model assertions for
+// the bandpass peak + ping-impulse ring.
 //
 // The pure-math assertions (bleed matrix, vactrol envelope) live in
 // packages/web/src/lib/audio/warrenspectrum-math.test.ts. Here we run

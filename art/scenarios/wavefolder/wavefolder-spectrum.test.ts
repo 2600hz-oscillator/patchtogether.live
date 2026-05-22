@@ -1,18 +1,18 @@
 // art/scenarios/wavefolder/wavefolder-spectrum.test.ts
 //
-// ART-tier check on the wavefolder spectrum behaviour shared by VIZVCO
-// and WAVVIZ. Same shape as art/scenarios/video/phase1-defs.test.ts —
+// ART-tier check on the wavefolder spectrum behaviour shared by WAVVIZ
+// and SWOLEVCO. Same shape as art/scenarios/video/phase1-defs.test.ts —
 // math-only assertions that nail down the curve's mathematical
 // behaviour so a regression touching the curve helper is caught here
 // rather than during subjective listening.
 //
 // Why ART rather than unit: this asserts the cross-cutting spectrum
-// property (foldback adds harmonics) shared across VIZVCO + WAVVIZ;
-// when we add headless-gl rendering this file will gain pixel-domain
-// asserts on the rendered scope output.
+// property (foldback adds harmonics) shared across the wavefolder
+// consumers; when we add headless-gl rendering this file will gain
+// pixel-domain asserts on the rendered scope output.
 
 import { describe, expect, it } from 'vitest';
-import { buildFoldCurve } from '../../../packages/web/src/lib/audio/modules/vizvco';
+import { buildFoldCurve } from '../../../packages/web/src/lib/audio/fold-curve';
 
 /**
  * Apply a sample through the curve LUT (linear interp). Mirrors what
