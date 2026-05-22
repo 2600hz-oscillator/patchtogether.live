@@ -157,6 +157,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Hardware MIDI transport bridge. Locks to a MIDI device and surfaces the System Real-Time stream as gate/CV: clock (gate) at a user-selectable subdivision — 24=quarter (default, patch directly into TIMELORDE.clock to slave it to the external transport), 12=eighth, 6=sixteenth, 3=32nd, 1=raw 24 PPQN; run (cv, 0/1) tracks transport state; midistart + midistop fire one-shot gates on MIDI Start (0xFA) and Stop (0xFC). Continue (0xFB) raises run without re-firing midistart, so downstream loops resume in place. Channel-voice messages are ignored — pair with MIDI-CV-BUDDY (or HELM) for note/velocity. Same Web MIDI / ConstantSource / 2 ms lookahead plumbing as MIDI-CV-BUDDY.',
   helm:
     'Polyphonic subtractive synth — algorithm port of Matt Tytel\'s Helm (helm_engine.cpp / helm_voice_handler.cpp / helm_oscillators.cpp / helm_lfo.cpp / state_variable_filter.cpp / envelope.cpp / step_generator.cpp, originally GPL-3.0, ported to AGPL-3.0-or-later per the project\'s license relicense). v1 ships: 4-8 voice polyphony (Voices knob); 2 morphing oscillators (saw/square/triangle/sine continuous morph) with per-osc transpose (±24 st), tune (±100 ¢), unison (1..7 voices, detune ±50 ¢ spread), and volume; 1 sub oscillator (-2 oct, selectable wave); white-noise source; state-variable filter (Andy Simper TPT topology, Cytomic formulation) with 12dB / 24dB pole select, LP↔BP↔HP continuous blend, drive, resonance, key-track; three ADSR envelopes (amplitude, filter, mod) with depth knobs for filter-env → cutoff and mod-env → osc1 pitch; two mono LFOs pre-wired (LFO1 → filter cutoff, LFO2 → osc2 pitch); 16-step step sequencer with smoothing + frequency division pre-wired to osc2 transpose; stereo output with adjustable voice-pan spread. Polyphonic MIDI input via the gear-icon settings panel — pick a connected Web MIDI device + select which of channels 1-16 to receive on (multi-select; ALL is the default). Multiple held notes simultaneously trigger multiple voices via a free-slot / steal-oldest allocator. Optional pitch_cv (V/oct) + gate fallback inputs let the module be driven by SCORE / sequencer cables when no MIDI is connected. DEFERRED to follow-up PRs: effects bus (distortion / delay / reverb / stutter / formant / feedback), arpeggiator, poly LFO, mod sources panel (aftertouch / mod wheel / pitch wheel / random), BPM-locked LFO frequencies, and a freeform modulation matrix (v1 hard-wires mod sources to musically sensible defaults — see the helm.ts worklet header for the routing table).',
+  hydrogen:
+    'Drum machine — first pass of a Hydrogen (https://github.com/hydrogen-music/hydrogen, GPL-2.0+) port. Bundles the stock TR-808 Emulation Kit (ArtemioLabs, GPL) — 16 single-layer instruments (Kick Long/Short, Snare 1/2, Clap, Hat Closed/Open/Pedal, Toms Hi/Mid/Low, Conga, Cymbal, Shaker, Clave, Cowbell) shipped as FLACs under /drumkits/tr808/. Internal 16-step pattern grid drives one-shot sample voices per step; the closed/open/pedal hi-hat triad shares a mute group so a closed-hat triggers chokes the open-hat tail (classic drum-machine behaviour, hard-coded since the source XML doesn\'t model it). Per-instrument vol/pan/A/D/S/R + mute + solo knobs on the PatchPanel section for that instrument; transport row (BPM 30-300, swing 0-0.75, master gain, PLAY) on the card body. Optional clock_in / reset_in gate inputs let TIMELORDE drive the sequencer (rising edges step the pattern; reset zeroes the playhead); per-instrument trig{0..15} gate inputs let other rack modules fire individual drums directly. DEFERRED to follow-up PRs: drumkit picker / .h2drumkit loader (currently the TR-808 kit is the only kit), per-step velocity (v1 cells are binary on/off), pattern pages + song mode, humanize / per-step micro-shift, multi-layer velocity samples, LADSPA-style per-channel FX bus (use SHIMMERSHINE / CHARLOTTES ECHOS / etc. downstream of the stereo out as patch-cable effects instead), polyphonic MIDI input (pair with MIDI-CV-BUDDY → trig{i} per drum until then).',
 };
 
 const PORT_NOTES: Record<string, string> = {
@@ -456,6 +458,15 @@ const PORT_NOTES: Record<string, string> = {
   'helm.midi_in':  'Visual-only port. MIDI flows through the Web MIDI API (gear-icon settings panel), not through a cable. Listed here so the palette/cable visuals show MIDI as a first-class input on the card.',
   'helm.out_l':    'Stereo left audio output. Post-filter, post-amp-env, post-master-volume.',
   'helm.out_r':    'Stereo right audio output. Post-filter, post-amp-env, post-master-volume. Voice-spread alternates which side voices favor.',
+  // HYDROGEN — drum machine. 18 ports: clock_in + reset_in + 16 per-instrument
+  // trigs + stereo out. Per-instrument trig labels follow the kit-row order
+  // (KICK1 / KICK2 / SNR1 / SNR2 / CLAP / HHc / HHo / HHp / TomH / TomM / TomL
+  // / CONGA / CYMB / SHAKE / CLAVE / CWBLL — same id-suffix as in the
+  // hydrogen-tr808-kit data module).
+  'hydrogen.clock_in': 'Optional external clock. When patched, each rising edge advances the pattern by one step (16-step bar at 4/4 → 16 sixteenths per loop). Pairs naturally with TIMELORDE.clock at its 1/16 division.',
+  'hydrogen.reset_in': 'Optional reset gate. Rising edge resets the playhead to step 0 at the next tick. Useful for re-syncing to a song-position trigger from MIDICLOCK or a custom transport.',
+  'hydrogen.out_l':    'Stereo left audio output. Sum of every voice currently sounding, post-instrument-vol / post-pan / post-master-gain. No DC blocking — chain into AUDIOOUT or AUDIO-OUT for the rack\'s master limiter.',
+  'hydrogen.out_r':    'Stereo right audio output. Mirror of out_l on the right channel.',
 };
 
 const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
@@ -745,6 +756,35 @@ function synthesizeFromBuildHelper(
     inputs.push({ id: 'flt_pingDecay', type: 'cv', paramTarget: 'flt_pingDecay' });
     inputs.push({ id: 'returnA', type: 'cv', paramTarget: 'returnA' });
     inputs.push({ id: 'returnB', type: 'cv', paramTarget: 'returnB' });
+    return { inputs, params };
+  }
+  if (type === 'hydrogen') {
+    // HYDROGEN uses `...instrumentInputPorts()` + `...TR808_INSTRUMENTS.flatMap(...)`
+    // to expand its 16-instrument port + param list — the literal-array
+    // extractor sees the spread and returns nothing. Reproduce the same
+    // shape statically so the manifest stays in sync.
+    const N = 16;
+    const params: ManifestParam[] = [
+      { id: 'bpm',       label: 'BPM',  defaultValue: 120, min: 30,  max: 300,  curve: 'linear' },
+      { id: 'swing',     label: 'Sw',   defaultValue: 0,   min: 0,   max: 0.75, curve: 'linear' },
+      { id: 'gain',      label: 'Gain', defaultValue: 1,   min: 0,   max: 2,    curve: 'linear' },
+      { id: 'isPlaying', label: 'Play', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
+    ];
+    for (let i = 0; i < N; i++) {
+      params.push({ id: `vol${i}`,  label: `i${i}V`, defaultValue: 1, min: 0,    max: 2,  curve: 'linear' });
+      params.push({ id: `pan${i}`,  label: `i${i}P`, defaultValue: 0, min: -1,   max: 1,  curve: 'linear' });
+      params.push({ id: `A${i}`,    label: `i${i}A`, defaultValue: 0, min: 0,    max: 2,  curve: 'log' });
+      params.push({ id: `D${i}`,    label: `i${i}D`, defaultValue: 0, min: 0,    max: 2,  curve: 'log' });
+      params.push({ id: `S${i}`,    label: `i${i}S`, defaultValue: 1, min: 0,    max: 1,  curve: 'linear' });
+      params.push({ id: `R${i}`,    label: `i${i}R`, defaultValue: 1, min: 0.01, max: 5,  curve: 'log' });
+      params.push({ id: `mute${i}`, label: `i${i}M`, defaultValue: 0, min: 0,    max: 1,  curve: 'discrete' });
+      params.push({ id: `solo${i}`, label: `i${i}S`, defaultValue: 0, min: 0,    max: 1,  curve: 'discrete' });
+    }
+    const inputs: ManifestPort[] = [
+      { id: 'clock_in', type: 'gate' },
+      { id: 'reset_in', type: 'gate' },
+    ];
+    for (let i = 0; i < N; i++) inputs.push({ id: `trig${i}`, type: 'gate' });
     return { inputs, params };
   }
   return null;

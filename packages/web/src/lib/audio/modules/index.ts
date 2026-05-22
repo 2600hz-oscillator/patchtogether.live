@@ -55,6 +55,7 @@ import { livecodeDef } from './livecode';
 import { midiCvBuddyDef } from './midi-cv-buddy';
 import { midiclockDef } from './midiclock';
 import { helmDef } from './helm';
+import { hydrogenDef } from './hydrogen';
 import { pongDef } from './pong';
 import { modtrisDef } from './modtris';
 import { joystickDef } from './joystick';
@@ -119,6 +120,7 @@ export function registerAudioModules(): void {
   registerModule(midiCvBuddyDef);
   registerModule(midiclockDef);
   registerModule(helmDef);
+  registerModule(hydrogenDef);
   registerModule(pongDef);
   registerModule(modtrisDef);
   // JOYSTICK — manual XY pad emitting x/y + inverted nx/ny CV outputs.
