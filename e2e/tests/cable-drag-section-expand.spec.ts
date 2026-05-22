@@ -237,14 +237,16 @@ test.describe('patch-to cascade — cv-family interchange', () => {
       .evaluateAll((els) =>
         els.map((el) => (el as HTMLElement).getAttribute('data-port-id') ?? ''),
       );
-    // Expect pitch_cv (pitch→pitch equality) + every cv input on the VCO.
-    // 'fm' is type 'audio' and must NOT appear (audio family is strict).
-    expect(portIds).toContain('pitch_cv');
+    // Expect `pitch` (pitch→pitch equality) + every cv input on the VCO.
+    // `fm` and `pm` are type 'audio' and must NOT appear (audio family
+    // is strict).
+    expect(portIds).toContain('pitch');
     expect(portIds).toContain('tune');
     expect(portIds).toContain('fine');
     expect(portIds).toContain('fmAmount');
     expect(portIds).toContain('pmAmount');
     expect(portIds).not.toContain('fm');
+    expect(portIds).not.toContain('pm');
   });
 
   test('reverse: right-click ADSR.gate (input) → LFO lists every cv output', async ({

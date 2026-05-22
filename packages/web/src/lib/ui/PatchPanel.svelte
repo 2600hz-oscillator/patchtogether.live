@@ -14,7 +14,7 @@
   // handleBounds and edges re-route.
   //
   // Approach (a) from .myrobots/plans/ui-patch-panel-refactor.md.
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { Handle, Position, useUpdateNodeInternals } from '@xyflow/svelte';
   import {
     resolveVerboseLabel,
@@ -468,42 +468,51 @@
   }
 
   $effect(() => {
+    // Track ONLY the gesture-edge signals — reading expandedSections
+    // inside the body would self-trigger this effect on every assign
+    // (the spread `{ ...expandedSections }` subscribes; the assignment
+    // re-fires; loop). untrack() walls off the body from the
+    // dependency graph so the effect only fires when dragActive or
+    // isOpen actually changes.
     const dragActive = connectDragState.active;
     const isOpen = open;
-    if (dragActive && isOpen) {
-      // Snapshot the pre-drag state once per drag (first time this
-      // panel opens during the gesture). Subsequent re-opens during
-      // the same drag — typical when the user bounces between cards —
-      // keep the existing snapshot so the eventual restore-on-drag-end
-      // still collapses everything we expanded.
-      if (preDragExpandedSnapshot === null) {
-        preDragExpandedSnapshot = { ...expandedSections };
-      }
-      // Re-fire expand-all on EVERY drag-open transition, not just the
-      // first one. Cheap (one object spread + a recursion through the
-      // section tree). Two cases this fixes:
-      //
-      //   1. Cursor leaves and returns: under the old `=== null` snapshot
-      //      guard, expansion only ran the first time. The clear-on-close
-      //      effect above (now drag-guarded) used to wipe expandedSections,
-      //      so the re-open would render every section collapsed.
-      //   2. Mid-drag manual collapse: if the user clicks a section header
-      //      to collapse it during the drag, we want re-hovering the card
-      //      to re-reveal everything reachable.
-      if (groupingStrategy === 'sectioned' && sections.length > 0) {
-        const next: Record<string, boolean> = { ...expandedSections };
-        for (const s of sections) {
-          expandSectionAndChildren(s, next);
+    untrack(() => {
+      if (dragActive && isOpen) {
+        // Snapshot the pre-drag state once per drag (first time this
+        // panel opens during the gesture). Subsequent re-opens during
+        // the same drag — typical when the user bounces between cards —
+        // keep the existing snapshot so the eventual restore-on-drag-end
+        // still collapses everything we expanded.
+        if (preDragExpandedSnapshot === null) {
+          preDragExpandedSnapshot = { ...expandedSections };
         }
-        expandedSections = next;
+        // Re-fire expand-all on EVERY drag-open transition, not just
+        // the first one. Cheap (one object spread + a recursion
+        // through the section tree). Two cases this fixes:
+        //
+        //   1. Cursor leaves and returns: under the old `=== null`
+        //      snapshot guard, expansion only ran the first time. The
+        //      clear-on-close effect above (now drag-guarded) used to
+        //      wipe expandedSections, so the re-open would render every
+        //      section collapsed.
+        //   2. Mid-drag manual collapse: if the user clicks a section
+        //      header to collapse it during the drag, we want re-
+        //      hovering the card to re-reveal everything reachable.
+        if (groupingStrategy === 'sectioned' && sections.length > 0) {
+          const next: Record<string, boolean> = { ...expandedSections };
+          for (const s of sections) {
+            expandSectionAndChildren(s, next);
+          }
+          expandedSections = next;
+        }
+      } else if (!dragActive && preDragExpandedSnapshot !== null) {
+        const snapshot = preDragExpandedSnapshot;
+        preDragExpandedSnapshot = null;
+        if (isOpen) {
+          expandedSections = { ...snapshot };
+        }
       }
-    } else if (!dragActive && preDragExpandedSnapshot !== null) {
-      const snapshot = preDragExpandedSnapshot;
-      preDragExpandedSnapshot = null;
-      if (isOpen) {
-        expandedSections = { ...snapshot };
-      }
-    }
+    });
   });
 
   // ---------------- Group/sort port lists ----------------
