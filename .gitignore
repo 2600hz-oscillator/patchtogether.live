@@ -31,6 +31,12 @@ e2e/test-results/
 e2e/playwright-report/
 coverage/
 
+# Synthesised test-time artifacts. The registry manifest is emitted by
+# packages/web/src/lib/dev/registry-manifest.test.ts on every `task test`
+# run and consumed by every Playwright spec that iterates the module
+# registry — keep it out of git so PR diffs don't bounce on it.
+e2e/.generated/
+
 # Logs
 npm-debug.log*
 *.log

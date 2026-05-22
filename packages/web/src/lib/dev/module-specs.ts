@@ -26,24 +26,45 @@ export interface ModuleSpecPort {
 
 export interface ModuleSpec {
   type: string;
+  /** Human-friendly label from the def (e.g. "Analog VCO"). Used by
+   *  test reporters + cascade-display assertions. */
+  label: string;
   /** 'audio' for Phase-1 modules, 'video' for the Phase-0 video spike's
-   *  modules. Used by e2e tests to set node.domain correctly when
-   *  spawning a module by type. */
+   *  modules, 'meta' for non-engine cards (sticky, group). Used by
+   *  e2e tests to set node.domain correctly when spawning a module. */
   domain: string;
+  /** Module-registry category (sources / modulation / filters / effects /
+   *  utilities / output / etc.). Whatever the def declares. */
+  category: string;
   inputs: ModuleSpecPort[];
   outputs: ModuleSpecPort[];
+  /** Derived hints used by manifest-driven test generators (per-module
+   *  spec stamper, pair-patch integration, full-system render). Set
+   *  here so every downstream test layer sees the same answer for
+   *  "does this module produce audio? CV? a clock? video?" without
+   *  re-walking the outputs array. */
+  hasAudioOutput: boolean;
+  hasCvOutput: boolean;
+  hasGateOutput: boolean;
+  hasVideoOutput: boolean;
+}
+
+function hasOutputType(outputs: readonly ModuleSpecPort[], wanted: string): boolean {
+  return outputs.some((p) => p.type === wanted);
 }
 
 /**
  * Snapshot every registered module def's I/O surface. Modules whose
  * `inputs` are computed via a builder function (e.g. RIOTGIRLS,
- * MIXMSTRS) work transparently — by the time they're registered, the
- * computed array is already attached to the def.
+ * MIXMSTRS, HYDROGEN) work transparently — by the time they're
+ * registered, the computed array is already attached to the def.
  *
- * Includes both audio-domain and video-domain modules. The Phase-0
- * video spike (.myrobots/plans/video-modules-mvp.md) registers `lines`
- * + `videoOut` here so the existing I/O-spec consistency e2e
- * (e2e/tests/io-spec-consistency.spec.ts) covers them too.
+ * Includes audio-, video-, and meta-domain modules. The per-domain
+ * barrels self-register at import time, so callers that need a
+ * non-empty list must have imported `$lib/audio/modules`,
+ * `$lib/video/modules`, and `$lib/meta/modules` first (Canvas.svelte
+ * does this on the page-load path; the manifest-emitting test imports
+ * them explicitly).
  */
 export function getAllModuleSpecs(): ModuleSpec[] {
   const all = [
@@ -52,12 +73,23 @@ export function getAllModuleSpecs(): ModuleSpec[] {
     ...listMetaModuleDefs(),
   ];
   return all
-    .map((def) => ({
-      type: def.type as string,
-      domain: def.domain as string,
-      inputs: def.inputs.map((p) => ({ id: p.id, type: p.type })),
-      outputs: def.outputs.map((p) => ({ id: p.id, type: p.type })),
-    }))
+    .map((def) => {
+      const inputs = def.inputs.map((p) => ({ id: p.id, type: p.type as string }));
+      const outputs = def.outputs.map((p) => ({ id: p.id, type: p.type as string }));
+      return {
+        type: def.type as string,
+        label: (def.label as string) ?? (def.type as string),
+        domain: def.domain as string,
+        category: (def.category as string) ?? 'uncategorized',
+        inputs,
+        outputs,
+        hasAudioOutput: hasOutputType(outputs, 'audio'),
+        hasCvOutput: hasOutputType(outputs, 'cv'),
+        hasGateOutput: hasOutputType(outputs, 'gate'),
+        hasVideoOutput:
+          hasOutputType(outputs, 'video') || hasOutputType(outputs, 'mono-video'),
+      };
+    })
     .sort((a, b) => a.type.localeCompare(b.type));
 }
 
