@@ -202,7 +202,7 @@ export const mixmstrsDef: AudioModuleDef = {
     // CV → AudioParam tap analyser works (motorized fader feedback). We
     // route to a hidden GainNode whose .gain is the macro's "shadow" param;
     // setParam reads the shadow's `.value` and applies the macro mapping
-    // each time. This mirrors how vizvco handles its foldAmount macro.
+    // each time. This mirrors how wavviz handles its foldAmount macro.
     const compShadow: Record<string, GainNode> = {};
     for (const macroId of ['comp1', 'comp2', 'comp3', 'comp4']) {
       const g = ctx.createGain();

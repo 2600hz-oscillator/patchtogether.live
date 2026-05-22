@@ -194,7 +194,7 @@ export function buildCvCurve(
   depth: number = hint.depth ?? 1.0,
 ): Float32Array<ArrayBuffer> {
   // Allocate on a fresh ArrayBuffer to satisfy WaveShaperNode.curve's strict
-  // typed-array signature (cf. illogic.ts and vizvco.ts).
+  // typed-array signature (cf. illogic.ts and fold-curve.ts).
   const curve = new Float32Array(new ArrayBuffer(CURVE_LEN * 4));
   for (let i = 0; i < CURVE_LEN; i++) {
     // Map index [0, CURVE_LEN-1] → cv ∈ [-1, +1] (the WaveShaperNode's

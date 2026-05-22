@@ -81,7 +81,6 @@
   import ScoreCard from '$lib/ui/modules/ScoreCard.svelte';
   import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
   import PolyseqzCard from '$lib/ui/modules/PolyseqzCard.svelte';
-  import VizvcoCard from '$lib/ui/modules/VizvcoCard.svelte';
   import WavvizCard from '$lib/ui/modules/WavvizCard.svelte';
   // SWOLEVCO — Buchla 259-style complex VCO with built-in scope output.
   import SwolevcoCard from '$lib/ui/modules/SwolevcoCard.svelte';
@@ -118,8 +117,6 @@
   import NoiseCard from '$lib/ui/modules/NoiseCard.svelte';
   // BUGGLES — chaotic random voltage source (wogglebug-style).
   import BugglesCard from '$lib/ui/modules/BugglesCard.svelte';
-  // WAVECEL — stereo wavetable VCO (E352 WAV loader, 3D viz, spread, fold).
-  import WavecelCard from '$lib/ui/modules/WavecelCard.svelte';
   // WARRENSPECTRUM — 8-band filterbank with vactrol ping + acidwarp video viz.
   import WarrenspectrumCard from '$lib/ui/modules/WarrenspectrumCard.svelte';
   // STEREOVCA — stereo VCA + ring modulator.
@@ -288,7 +285,6 @@
     score: ScoreCard,
     drumseqz: DrumseqzCard,
     polyseqz: PolyseqzCard,
-    vizvco: VizvcoCard,
     wavviz: WavvizCard,
     swolevco: SwolevcoCard,
     // Video-domain (Phase 0):
@@ -317,7 +313,6 @@
     dx7: Dx7Card,
     noise: NoiseCard,
     buggles: BugglesCard,
-    wavecel: WavecelCard,
     warrenspectrum: WarrenspectrumCard,
     stereovca: StereovcaCard,
     shimmershine: ShimmershineCard,

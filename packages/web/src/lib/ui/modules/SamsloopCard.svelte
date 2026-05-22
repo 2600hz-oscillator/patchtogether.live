@@ -2,9 +2,8 @@
   // SamsloopCard — loop-based sample player. Upload a small audio file
   // (anything the browser's decodeAudioData can read — wav, mp3, m4a/aac,
   // ogg, flac, opus, weba), set the playback window, scrub varispeed
-  // (forward or reverse), toggle loop / one-shot. Matches the visual
-  // language of WAVECEL (file upload + canvas waveform) and
-  // MACROOSCILLATOR (fader column for the params).
+  // (forward or reverse), toggle loop / one-shot. File-upload + canvas
+  // waveform on top, MACROOSCILLATOR-style fader column below.
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';

@@ -41,7 +41,7 @@ export interface AudioDomainNodeHandle {
    * audio output as a video-domain source (cross-domain handoff).
    *
    * Modules that declare a port whose `type` is `mono-video` / `video`
-   * (e.g. VIZVCO's `scope` port, SCOPE's `out` port) populate this map
+   * (e.g. WAVVIZ's `scope` port, SCOPE's `out` port) populate this map
    * with one entry per such port. The PatchEngine reads the analyser
    * via `getVideoSource(nodeId, portId)` when materializing an
    * audio→video edge; the VideoEngine then drives a waveform-video
@@ -50,7 +50,7 @@ export interface AudioDomainNodeHandle {
    *
    * Two flavors of video source:
    *
-   *  - "simple analyser tap" (VIZVCO/WAVVIZ): a single AnalyserNode is
+   *  - "simple analyser tap" (WAVVIZ/SWOLEVCO): a single AnalyserNode is
    *    handed to the bridge, which drives the shared GL waveform-video
    *    renderer. The audio module has no opinion on per-frame visual
    *    treatment — the renderer just shows the raw signal as a
@@ -102,7 +102,7 @@ export interface DomainEngine {
    *  Only AudioEngine implements this today. Card visualizers call
    *  PatchEngine.readModulatorTap(nodeId, portId) to read CV-side
    *  modulation when the input port id differs from the AudioParam id
-   *  (e.g. WAVECEL: 'morph_cv' → param 'morph'). */
+   *  (e.g. WARPS: 'modulator_cv' → param 'modulator'). */
   readModulatorTap?(nodeId: string, portId: string): number | undefined;
   read(nodeId: string, key: string): unknown;
   dispose(): void;
@@ -551,7 +551,7 @@ export class AudioEngine implements DomainEngine {
   /** Read the most-recent sample from a modulator tap by CV-input portId,
    *  not paramId. Used by PatchEngine.readParam to fold in modulator
    *  samples for modules whose CV port id differs from the AudioParam id
-   *  (e.g. WAVECEL: port 'morph_cv' → param 'morph'). Returns undefined
+   *  (e.g. WARPS: port 'modulator_cv' → param 'modulator'). Returns undefined
    *  when no edge is connected to that port. */
   readModulatorTap(nodeId: string, portId: string): number | undefined {
     const tap = this.paramTaps.get(this.paramTapKey(nodeId, portId));
@@ -875,8 +875,8 @@ export class PatchEngine {
   /** Most-recent sample at a per-port modulator-tap analyser. Returns 0
    *  when no edge is connected to that port (or the domain doesn't
    *  implement taps). Card visualizers use this to read CV signals on
-   *  ports whose id differs from the AudioParam id (e.g. WAVECEL's
-   *  `morph_cv` port targets the `morph` AudioParam). */
+   *  ports whose id differs from the AudioParam id (e.g. WARPS'
+   *  `modulator_cv` port targets the `modulator` AudioParam). */
   readModulatorTap(nodeId: string, portId: string, domain: string = 'audio'): number {
     const dom = this.domains.get(domain);
     return dom?.readModulatorTap?.(nodeId, portId) ?? 0;

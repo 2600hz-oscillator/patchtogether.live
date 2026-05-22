@@ -1,19 +1,20 @@
 // packages/dsp/src/lib/wavetable-osc.ts
 //
-// Shared wavetable oscillator engine. Both WAVECEL (single stereo VCO) and
-// WAVESCULPT (4-osc 3D scene engine) consume this. Lives in `lib/` so the
-// dist build script (packages/dsp/scripts/build.mjs) doesn't try to treat
-// it as a worklet entry — that script reads top-level .ts files only and
-// expects each one to call `registerProcessor(...)`. Files in `lib/` are
-// pulled in transitively by esbuild's `bundle: true` when a top-level
-// worklet imports them, so the shared code ends up inlined in both
-// wavecel.js and wavesculpt-engine.js with no duplication of intent.
+// Shared wavetable oscillator engine. WAVESCULPT (4-osc 3D scene engine)
+// is the live consumer; the engine is kept generic enough that future
+// wavetable modules can adopt it. Lives in `lib/` so the dist build
+// script (packages/dsp/scripts/build.mjs) doesn't try to treat it as a
+// worklet entry — that script reads top-level .ts files only and expects
+// each one to call `registerProcessor(...)`. Files in `lib/` are pulled
+// in transitively by esbuild's `bundle: true` when a top-level worklet
+// imports them, so the shared code ends up inlined in each consumer with
+// no duplication of intent.
 //
 // What's here:
 //   1. Sample/frame interpolation (the single hot loop per output sample).
 //   2. Symmetric wavefolder (drive=1+amt*4, foldback reflection).
-//   3. Spread mixing (stereo equal-power tap blend) — used by WAVECEL only,
-//      but lives here so the math + clamps stay paired with the sampler.
+//   3. Spread mixing (stereo equal-power tap blend) — kept here so the
+//      math + clamps stay paired with the sampler.
 //   4. WavetableOsc class — phase accumulator + per-sample step. Caller
 //      configures pitch/morph/spread/fold per sample; class owns the phase
 //      and the loaded frames.
@@ -22,8 +23,7 @@
 // four of them in one worklet, each with its own frames + phase.
 
 /** Canonical E352 frame size — every consumer agrees on 256 samples per
- *  frame. Keeping it here so callers don't need to import wavecel-math
- *  from the web package. */
+ *  frame. */
 export const WAVETABLE_FRAME_SIZE = 256;
 
 export function clamp01(v: number): number {
@@ -179,7 +179,7 @@ export class WavetableOsc {
   }
 
   /** Reset phase to zero (useful for re-trigger semantics if a host wants
-   *  hard-sync; neither WAVECEL nor WAVESCULPT use it yet). */
+   *  hard-sync; WAVESCULPT doesn't use it yet). */
   resetPhase(): void {
     this.phase = 0;
   }

@@ -99,8 +99,7 @@ type StandardModuleType =
   | 'score'
   | 'drumseqz'
   | 'polyseqz'
-  // Sister modules with built-in wavefolder + waveform-video output:
-  | 'vizvco'
+  // WAVVIZ — wavetable VCO with built-in wavefolder + waveform-video output.
   | 'wavviz'
   // SWOLEVCO — Buchla 259-style complex VCO (primary + modulator + cross-mod
   // + symmetry morph + wavefolder + scope video out).
@@ -156,9 +155,6 @@ type StandardModuleType =
   // through an Archer-Video-Enhancer-style "AVEmod" feedback circuit. 12
   // CV-controllable bending knobs (timing/chroma/feedback/CRT).
   | 'bentbox'
-  // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder + 3D viz.
-  // Loads E352 Cloud Terrarium-format WAV wavetables.
-  | 'wavecel'
   // WARRENSPECTRUM — stereo 8-band filterbank with vactrol-style ping
   // excitation + acidwarp video visualizer. Audio domain with a
   // cross-domain `viz_out` mono-video bridge for the EQ-curve+waveform+

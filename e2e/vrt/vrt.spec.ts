@@ -81,8 +81,7 @@ const MODULES: VrtModule[] = [
   { type: 'score', domain: 'audio' },
   { type: 'drumseqz', domain: 'audio' },
   { type: 'polyseqz', domain: 'audio' },
-  // VIZVCO / WAVVIZ / SWOLEVCO carry a video-out preview canvas — mask it.
-  { type: 'vizvco', domain: 'audio', mask: [{ selector: 'canvas' }] },
+  // WAVVIZ / SWOLEVCO carry a video-out preview canvas — mask it.
   { type: 'wavviz', domain: 'audio', mask: [{ selector: 'canvas' }] },
   { type: 'swolevco', domain: 'audio', mask: [{ selector: 'canvas' }] },
   { type: 'illogic', domain: 'audio' },
@@ -90,8 +89,6 @@ const MODULES: VrtModule[] = [
   { type: 'dx7', domain: 'audio' },
   { type: 'noise', domain: 'audio' },
   { type: 'buggles', domain: 'audio' },
-  // WAVECEL has a 3D wavetable viz canvas.
-  { type: 'wavecel', domain: 'audio', mask: [{ selector: 'canvas' }] },
   // WARRENSPECTRUM has the acidwarp video viz canvas.
   { type: 'warrenspectrum', domain: 'audio', mask: [{ selector: 'canvas' }] },
   { type: 'stereovca', domain: 'audio' },

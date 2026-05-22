@@ -1,6 +1,6 @@
 // packages/web/src/lib/video/waveform-video.ts
 //
-// Audio waveform → mono-video texture renderer. Used by VIZVCO, WAVVIZ,
+// Audio waveform → mono-video texture renderer. Used by WAVVIZ, SWOLEVCO,
 // and SCOPE to expose their audio output as a video-domain stream that
 // can be patched into video-domain inputs (OUTPUT, MIXER, etc.).
 //
