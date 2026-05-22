@@ -30,7 +30,6 @@ import { ChaosCarl } from './lib/personalities/carl';
 import { saveFinding, violationMeta } from './lib/artifact-capture';
 import type { Intent } from './lib/intent';
 
-const SEED = process.env.CHAOS_SEED ? parseInt(process.env.CHAOS_SEED, 10) : defaultSeed();
 const ITERATIONS = parseInt(process.env.CHAOS_ITERATIONS ?? '200', 10);
 const PERSONALITY = process.env.CHAOS_PERSONALITY ?? 'carl';
 const MAX_NODES = parseInt(process.env.CHAOS_MAX_NODES ?? '6', 10);
@@ -42,7 +41,20 @@ const INFINITE = process.env.CHAOS_INFINITE === '1';
 // requested — a single finding shouldn't stop the show.
 const LOG_ONLY_INVARIANTS = Boolean(RACKSPACE_URL) || INFINITE;
 
-test(`chaos run [seed=${SEED}, ${INFINITE ? '∞' : ITERATIONS}× ${PERSONALITY}]`, async ({ page }) => {
+// Title is intentionally stable. Earlier versions embedded the seed in the
+// title, but Playwright discovers tests in the parent process and runs them
+// in a separate worker process — when CHAOS_SEED is unset, defaultSeed()
+// returns a different value in each, the titles diverge, and the worker
+// errors out with "Test not found in the worker process." Seed is logged
+// and surfaced via test annotations below.
+test('chaos run', async ({ page }, testInfo) => {
+  const SEED = process.env.CHAOS_SEED ? parseInt(process.env.CHAOS_SEED, 10) : defaultSeed();
+  testInfo.annotations.push({ type: 'seed', description: String(SEED) });
+  testInfo.annotations.push({ type: 'personality', description: PERSONALITY });
+  testInfo.annotations.push({
+    type: 'iterations',
+    description: INFINITE ? '∞' : String(ITERATIONS),
+  });
   // No upper bound in INFINITE mode — Playwright's 0 disables the timeout.
   test.setTimeout(INFINITE ? 0 : 180_000);
 
