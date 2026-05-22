@@ -26,7 +26,6 @@ import { riotgirlsDef, triggerVoice as riotgirlsTriggerVoice } from './riotgirls
 import { scoreDef } from './score';
 import { drumseqzDef } from './drumseqz';
 import { polyseqzDef } from './polyseqz';
-import { vizvcoDef } from './vizvco';
 import { wavvizDef } from './wavviz';
 import { swolevcoDef } from './swolevco';
 import { illogicDef } from './illogic';
@@ -35,7 +34,6 @@ import { analogLogicMathsDef } from './analog-logic-maths';
 import { dx7Def } from './dx7';
 import { noiseDef } from './noise';
 import { bugglesDef } from './buggles';
-import { wavecelDef } from './wavecel';
 import { warrenspectrumDef } from './warrenspectrum';
 import { stereovcaDef } from './stereovca';
 import { shimmershineDef } from './shimmershine';
@@ -91,7 +89,6 @@ export function registerAudioModules(): void {
   registerModule(scoreDef);
   registerModule(drumseqzDef);
   registerModule(polyseqzDef);
-  registerModule(vizvcoDef);
   registerModule(wavvizDef);
   registerModule(swolevcoDef);
   registerModule(illogicDef);
@@ -100,7 +97,6 @@ export function registerAudioModules(): void {
   registerModule(dx7Def);
   registerModule(noiseDef);
   registerModule(bugglesDef);
-  registerModule(wavecelDef);
   registerModule(warrenspectrumDef);
   registerModule(stereovcaDef);
   registerModule(shimmershineDef);

@@ -1,7 +1,6 @@
 // packages/web/src/lib/audio/modules/wavviz.ts
 //
-// WAVVIZ — wavetable VCO sister of wavetableVco, with two added
-// features (mirroring vizvco.ts):
+// WAVVIZ — wavetable VCO with two added features:
 //   1. Built-in West-Coast wavefolder between the wavetable VCO and
 //      the audio output. Fold amount is knob + cv-controllable.
 //   2. A mono-video output port (`scope`) carrying the post-fold
@@ -13,7 +12,7 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/wavetable-vco.js?url';
-import { buildFoldCurve } from './vizvco';
+import { buildFoldCurve } from '$lib/audio/fold-curve';
 
 const FRAME_SIZE = 2048;
 const FRAME_COUNT = 16;
@@ -146,8 +145,8 @@ export const wavvizDef: AudioModuleDef = {
         ['pitch',      { node: workletNode, input: 0 }],
         ['fm',         { node: workletNode, input: 1 }],
         ['wavePos',    { node: workletNode, input: 2 }],
-        // foldAmount CV: same pragmatic pattern as VIZVCO — route to a
-        // sink AudioParam (outGain.gain) so the engine's CV→AudioParam
+        // foldAmount CV: route to a sink AudioParam (outGain.gain) so
+        // the engine's CV→AudioParam
         // tap analyser still works for motorized fader feedback. The
         // setParam path applies the actual fold curve update.
         ['foldAmount', { node: outGain, input: 0, param: outGain.gain }],

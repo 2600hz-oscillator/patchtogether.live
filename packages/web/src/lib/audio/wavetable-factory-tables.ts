@@ -1,12 +1,12 @@
-// packages/web/src/lib/audio/wavecel-factory-tables.ts
+// packages/web/src/lib/audio/wavetable-factory-tables.ts
 //
-// Bundled factory wavetables for WAVECEL. Synthesized in code so the
-// module is usable out-of-the-box without requiring the user to upload a
-// WAV. The card UI also accepts E352-format WAV files (Synthesis
-// Technology Cloud Terrarium / MakeNoise QPAS / etc.) at runtime via
-// the wavetable-parser.
+// Bundled factory wavetables (E352 format: 64 frames × 256 samples).
+// Synthesized in code so wavetable-based modules are usable
+// out-of-the-box without requiring the user to upload a WAV. Card UIs
+// also accept E352-format WAV files (Synthesis Technology Cloud
+// Terrarium / MakeNoise QPAS / etc.) at runtime via wavetable-parser.
 //
-// Two tables, each 64 frames × 256 samples (the canonical E352 size):
+// Two tables:
 //   1. BASIC SHAPES — saw → square → triangle → sine sweep. The classic
 //      "starter" wavetable; lets users hear the morph param before
 //      loading anything fancier.
@@ -14,7 +14,9 @@
 //      1..f+1 with falling amplitudes. Goes from a pure sine at frame 0
 //      to a bright stack at frame 63.
 
-import { WAVECEL_FRAME_SIZE } from './wavecel-math';
+/** Single-frame sample count. Matches the E352 canonical size and the
+ *  worklet-side wavetable engine in packages/dsp/src/lib/wavetable-osc.ts. */
+const FRAME_SIZE = 256;
 
 const FRAME_COUNT = 64;
 
@@ -29,9 +31,9 @@ function makeBasicShapesTable(): Float32Array[] {
   const frames: Float32Array[] = [];
   for (let f = 0; f < FRAME_COUNT; f++) {
     const t = f / (FRAME_COUNT - 1);
-    const arr = new Float32Array(WAVECEL_FRAME_SIZE);
-    for (let s = 0; s < WAVECEL_FRAME_SIZE; s++) {
-      const ph = s / WAVECEL_FRAME_SIZE;
+    const arr = new Float32Array(FRAME_SIZE);
+    for (let s = 0; s < FRAME_SIZE; s++) {
+      const ph = s / FRAME_SIZE;
       let v: number;
       if (t < 1 / 3) {
         const m = t * 3;
@@ -65,10 +67,10 @@ function makeBasicShapesTable(): Float32Array[] {
 function makeHarmonicSweepTable(): Float32Array[] {
   const frames: Float32Array[] = [];
   for (let f = 0; f < FRAME_COUNT; f++) {
-    const arr = new Float32Array(WAVECEL_FRAME_SIZE);
+    const arr = new Float32Array(FRAME_SIZE);
     const harmonics = f + 1;
-    for (let s = 0; s < WAVECEL_FRAME_SIZE; s++) {
-      const ph = s / WAVECEL_FRAME_SIZE;
+    for (let s = 0; s < FRAME_SIZE; s++) {
+      const ph = s / FRAME_SIZE;
       let v = 0;
       for (let h = 1; h <= harmonics; h++) {
         v += Math.sin(2 * Math.PI * ph * h) / h;
@@ -76,13 +78,13 @@ function makeHarmonicSweepTable(): Float32Array[] {
       arr[s] = v;
     }
     let peak = 0;
-    for (let s = 0; s < WAVECEL_FRAME_SIZE; s++) {
+    for (let s = 0; s < FRAME_SIZE; s++) {
       const a = Math.abs(arr[s]!);
       if (a > peak) peak = a;
     }
     if (peak > 0) {
       const inv = 1 / peak;
-      for (let s = 0; s < WAVECEL_FRAME_SIZE; s++) arr[s]! *= inv;
+      for (let s = 0; s < FRAME_SIZE; s++) arr[s]! *= inv;
     }
     frames.push(arr);
   }

@@ -469,9 +469,9 @@ export const samsloopDef: AudioModuleDef = {
 
     // Send the initial sample (if present in node.data — typically not on
     // first spawn, but rehydrated from a saved patch envelope or multiplayer
-    // join). Same poll-on-data-change pattern as WAVECEL — when the card's
-    // upload handler mutates node.data, the loop picks it up within POLL_MS
-    // and reposts to the worklet.
+    // join). Poll-on-data-change: when the card's upload handler mutates
+    // node.data, the loop picks it up within POLL_MS and reposts to the
+    // worklet.
     let lastSignature: string | null = null;
     function pushSampleIfChanged(): void {
       const live = livePatch.nodes[node.id];

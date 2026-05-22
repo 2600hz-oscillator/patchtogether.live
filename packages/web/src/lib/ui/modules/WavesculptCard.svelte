@@ -52,7 +52,7 @@
     getFactoryTables,
     DEFAULT_FACTORY_TABLE_ID,
     framesToPlain,
-  } from '$lib/audio/wavecel-factory-tables';
+  } from '$lib/audio/wavetable-factory-tables';
   import { parseE352Wav } from '$lib/audio/wavetable-parser';
   import type { VideoEngine } from '$lib/video/engine';
 
@@ -741,10 +741,9 @@ void main() {
    *
    *  Sampling strategy: each osc's row in the texture is filled with a
    *  resampling of the active frame at WAVE_TEX_W (= 256) bins. The
-   *  active frame index is round(morph * (frameCount-1)) — same as
-   *  WAVECEL's `readActiveFrame()` heuristic. Default (no frames loaded
-   *  yet) writes a faint baseline so the ribbon shows SOMETHING during
-   *  the first ~200ms before the poll loop fires.
+   *  active frame index is round(morph * (frameCount-1)). Default (no
+   *  frames loaded yet) writes a faint baseline so the ribbon shows
+   *  SOMETHING during the first ~200ms before the poll loop fires.
    *
    *  Cost: 256×4 bytes per upload × 60fps = ~60 KB/s. Cheap. */
   function uploadWaveTex(): void {

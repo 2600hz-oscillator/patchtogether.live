@@ -3,8 +3,8 @@
 // WAVESCULPT — hybrid 4-oscillator 3D video synth.
 //
 // v2 (post-wavetable-engine refactor):
-//   The per-osc audio source is now a WAVETABLE oscillator (same shared
-//   engine WAVECEL uses — packages/dsp/src/lib/wavetable-osc.ts). All four
+//   The per-osc audio source is now a WAVETABLE oscillator from the shared
+//   engine at packages/dsp/src/lib/wavetable-osc.ts. All four
 //   oscillators live in one AudioWorklet (`wavesculpt-engine`) so the
 //   per-osc summation, distance attenuation, and stereo panning happen in
 //   the worklet block loop rather than on the WebAudio graph. This keeps
@@ -39,7 +39,7 @@
 //                with strictly cleaner UX vs. having pitch AND tune AND
 //                fine all stacked).
 //   - morph{N}   semantics CHANGED: was "0..1 pick between saw/sine/tri",
-//                now "0..1 wavetable frame position" (WAVECEL-style).
+//                now "0..1 wavetable frame position".
 //
 // New camera params:
 //   - zoom (0.3..3) — used as camera distance scalar. Visual: closer = bigger
@@ -49,9 +49,9 @@
 //     scalar). New in v2 — wired through the second "zoom/rot" joystick on
 //     the card.
 //
-// Per-osc wavetable selection rides node.data (same shape as wavecel.data
-// but indexed: wavetableSourceN, wavetableFramesN, wavetableLabelN for
-// N=1..4). The factory polls livePatch.nodes[id].data and reposts on change.
+// Per-osc wavetable selection rides node.data (indexed: wavetableSourceN,
+// wavetableFramesN, wavetableLabelN for N=1..4). The factory polls
+// livePatch.nodes[id].data and reposts on change.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -62,7 +62,7 @@ import {
   framesFromPlain,
   getFactoryTable,
   DEFAULT_FACTORY_TABLE_ID,
-} from '$lib/audio/wavecel-factory-tables';
+} from '$lib/audio/wavetable-factory-tables';
 
 // ---------- card → module frame-drawer registry ----------
 

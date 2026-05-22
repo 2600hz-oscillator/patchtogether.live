@@ -11,7 +11,7 @@
 //
 //   PRIMARY OSC (3 OscillatorNodes — saw, triangle, square, all on the
 //   SAME frequency) → 3-way symmetry crossfade GainNodes → wavefolder
-//   (4x oversampled WaveShaperNode, reusing buildFoldCurve from VIZVCO)
+//   (4x oversampled WaveShaperNode, shared buildFoldCurve helper)
 //   → output bus.
 //
 //   MODULATOR OSC (single OscillatorNode, sine) → modulator output port
@@ -53,12 +53,12 @@
 // Implementation: each shape oscillator feeds its own GainNode whose
 // .gain is computed JS-side from `symmetry` and updated via setParam.
 //
-// Fold = 0..1, identical helper to VIZVCO/WAVVIZ (4x oversample
-// WaveShaperNode with sin foldback curve).
+// Fold = 0..1, shared helper with WAVVIZ (4x oversample WaveShaperNode
+// with sin foldback curve).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import { buildFoldCurve } from './vizvco';
+import { buildFoldCurve } from '$lib/audio/fold-curve';
 
 /** Base Hz at 0V/oct = C4 = 261.626 Hz (matches analog-vco.dsp). */
 const C4_HZ = 261.626;

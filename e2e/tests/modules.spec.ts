@@ -76,8 +76,6 @@ const MODULES: ModuleSpec[] = [
   // reset_cv, queue1..4_cv) + 4 outputs (pitch, gate, env, clock) = 15.
   // Was 9 before PR feat/sequencer-transport-quicksave added transport ports.
   { type: 'score',        cardClass: 'svelte-flow__node-score',        handleCount: 15, containsLabel: 'Score' },
-  // VIZVCO: 3 inputs (pitch, fm, foldAmount cv) + 5 outputs (saw, square, triangle, sine, scope mono-video) = 8.
-  { type: 'vizvco',       cardClass: 'svelte-flow__node-vizvco',       handleCount: 8, containsLabel: 'VIZVCO' },
   // WAVVIZ: 4 inputs (pitch, fm, wavePos cv, foldAmount cv) + 2 outputs (audio, scope mono-video) = 6.
   { type: 'wavviz',       cardClass: 'svelte-flow__node-wavviz',       handleCount: 6, containsLabel: 'WAVVIZ' },
   // SWOLEVCO: 7 inputs (pitch + mod_pitch + fm + 4 cv: timbre, symmetry, fold, ratio)
@@ -153,14 +151,6 @@ const MODULES: ModuleSpec[] = [
   // BUGGLES: 3 inputs (clock_cv + chaos_cv + external_clock) + 5 outputs
   // (smooth + stepped + clock + burst + ring) = 8 handles.
   { type: 'buggles',      cardClass: 'svelte-flow__node-buggles',      handleCount: 8, containsLabel: 'BUGGLES' },
-  // WAVECEL: 5 inputs (pitch + fm + 3 cv: morph_cv, spread_cv, fold_cv)
-  // + 4 outputs (out_l, out_r, scope_out, wave3d_out) = 9 handles.
-  // Stereo wavetable VCO with morph + spread + wavefolder. The two
-  // video outputs (scope_out + wave3d_out) always render their views
-  // regardless of the on-card scope/3D toggle (which controls only the
-  // on-card preview). 3D wavetable visualization + E352-format WAV
-  // upload (Synthesis Technology Cloud Terrarium).
-  { type: 'wavecel',      cardClass: 'svelte-flow__node-wavecel',      handleCount: 9, containsLabel: 'WAVECEL' },
   // WARRENSPECTRUM: 32 inputs (in_l, in_r + 8 level_cv + 8 ping + global_ping
   // + viznoise_cv + root_cv + spread_cv + q_cv + decay_cv + 8 band_in)
   // + 11 outputs (out_l, out_r + viz_out mono-video + 8 band_out) = 43 handles.

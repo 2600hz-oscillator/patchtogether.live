@@ -1,8 +1,8 @@
-// e2e/tests/aut-vizvco-wavviz-scope.spec.ts
+// e2e/tests/aut-wavviz-scope.spec.ts
 //
-// AUT (Acceptance / User-Acceptance Test) — exercises VIZVCO, WAVVIZ,
-// and SCOPE end-to-end through the rackspace UI as a user would: open
-// a fresh rack, spawn modules from the palette via right-click, patch
+// AUT (Acceptance / User-Acceptance Test) — exercises WAVVIZ and SCOPE
+// end-to-end through the rackspace UI as a user would: open a fresh
+// rack, spawn modules from the palette via right-click, patch
 // scope-video into OUTPUT, resize OUTPUT, observe the output panel
 // updating.
 //
@@ -17,69 +17,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test.describe('@aut user-acceptance: VIZVCO/WAVVIZ/SCOPE -> OUTPUT', () => {
-  test('@aut user spawns VIZVCO via palette, patches into OUTPUT, sees scope render', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    // Spawn VIZVCO via the + Add module palette (the user-facing path).
-    await page.getByRole('button', { name: '+ Add module' }).click();
-    await expect(page.locator('.module-palette'), 'palette opens').toBeVisible();
-    await page.keyboard.type('VIZVCO');
-    await page.getByRole('button', { name: 'VIZVCO', exact: true }).click();
-    await expect(page.locator('.svelte-flow__node-vizvco'), 'VIZVCO spawned').toHaveCount(1);
-
-    // Spawn OUTPUT via the same path.
-    await page.getByRole('button', { name: '+ Add module' }).click();
-    await page.keyboard.type('OUTPUT');
-    await page.getByRole('button', { name: 'OUTPUT', exact: true }).click();
-    await expect(page.locator('.svelte-flow__node-videoOut'), 'OUTPUT spawned').toHaveCount(1);
-
-    // Patch VIZVCO.scope -> OUTPUT.in via the dev __patch path (UI cable
-    // dragging is timing-sensitive; the patch-add is what the user
-    // would achieve via drag-and-drop).
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { id: string }>; edges: Record<string, unknown> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      // Find the spawned vizvco + videoOut node ids.
-      const ids = Object.keys(w.__patch.nodes);
-      const vizvcoId = ids.find((i) => i.startsWith('vizvco-'));
-      const outId = ids.find((i) => i.startsWith('videoOut-'));
-      if (!vizvcoId || !outId) throw new Error('spawned ids not found');
-      w.__ydoc.transact(() => {
-        w.__patch.edges['e-aut-viz'] = {
-          id: 'e-aut-viz',
-          source: { nodeId: vizvcoId, portId: 'scope' },
-          target: { nodeId: outId, portId: 'in' },
-          sourceType: 'mono-video',
-          targetType: 'video',
-        };
-      });
-    });
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas).toHaveCount(1);
-    await page.waitForTimeout(900);
-
-    // Scope render should produce non-flat pixels.
-    const variance = await canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return 0;
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      let s = 0, sq = 0, n = 0;
-      for (let i = 0; i < img.data.length; i += 16) {
-        const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-        s += v; sq += v * v; n++;
-      }
-      const mean = s / n;
-      return sq / n - mean * mean;
-    });
-    expect(variance, 'OUTPUT shows scope trace').toBeGreaterThan(5);
-  });
-
+test.describe('@aut user-acceptance: WAVVIZ/SCOPE -> OUTPUT', () => {
   test('@aut user spawns WAVVIZ via palette, sees scope render', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');

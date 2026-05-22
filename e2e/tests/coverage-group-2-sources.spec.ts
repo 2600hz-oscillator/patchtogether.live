@@ -13,8 +13,7 @@
 //   - noise — free-running white/pink/brown
 //   - dx7 — pure-TS FM synth; gate-ping triggers a tone
 //   - macrooscillator — Plaits-style; trig + default params yield a tone
-//   - vizvco, wavviz, swolevco — extra video-out VCOs (audio side only here)
-//   - wavecel — stereo wavetable VCO
+//   - wavviz, swolevco — extra video-out VCOs (audio side only here)
 //
 // We deliberately don't test multiple shape outputs on the analog VCO
 // (saw/square/triangle/sine) — that's covered by ART. Here we just
@@ -51,14 +50,10 @@ const SOURCES: SourceCase[] = [
   { type: 'analogVco',     outputPort: 'sine',  params: { tune: 0, fine: 0, pmAmount: 0, fmAmount: 0 } },
   // Wavetable VCO same — 0V pitch -> default frequency.
   { type: 'wavetableVco',  outputPort: 'audio', params: { tune: 0, fine: 0, wavePos: 0.5, fmAmount: 0, pmAmount: 0 } },
-  // VIZVCO sister of analog VCO with foldAmount; 0V pitch -> C4.
-  { type: 'vizvco',        outputPort: 'sine',  params: { tune: 0, fine: 0, foldAmount: 0 } },
-  // WAVVIZ sister of wavetable VCO; 0V pitch -> default.
+  // WAVVIZ wavetable VCO with built-in wavefolder; 0V pitch -> default.
   { type: 'wavviz',        outputPort: 'audio', params: { tune: 0, fine: 0, wavePos: 0.5, fmAmount: 0, foldAmount: 0 } },
   // SWOLEVCO (Buchla 259-style); `out` is the primary; 0V pitch -> default.
   { type: 'swolevco',      outputPort: 'out',   params: { tune: 0, fine: 0, timbre: 0.3, symmetry: 0.5, fold: 0, ratio: 0 } },
-  // WAVECEL stereo wavetable; out_l is the left channel.
-  { type: 'wavecel',       outputPort: 'out_l', params: { morph: 0, spread: 1, fold: 0 } },
   // DX7 + MACROOSCILLATOR need a gate/trig to sound. Drive with a fast
   // sequencer so we get pings inside the 500ms test window.
   { type: 'dx7',           outputPort: 'out',   params: { algorithm: 5, voiceCount: 1, level: 0.7, transpose: 0 }, withSequencer: true, gatePort: 'gate', pitchPort: 'pitch_cv' },
@@ -135,8 +130,8 @@ for (const src of SOURCES) {
     }
 
     // Give the worklet/DSP a beat to spool up + emit. 800 ms covers
-    // wavetable-load times for wavetableVco/wavecel and is enough for
-    // several gate cycles when a sequencer is wired.
+    // wavetable-load times for wavetableVco and is enough for several
+    // gate cycles when a sequencer is wired.
     await runFor(page, 800);
 
     const snap = await readScopeSnapshot(page, 'scp');

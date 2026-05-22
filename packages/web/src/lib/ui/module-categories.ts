@@ -30,6 +30,7 @@
 export type TopCategory =
   | 'Audio modules'
   | 'Video modules'
+  | 'MIDI'
   | 'Hybrid'
   | 'Uncategorized';
 
@@ -44,6 +45,7 @@ export interface CategoryEntry {
 export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
   'Audio modules': ['VCOs', 'Utility', 'Effects', 'Mixing', 'End of chain'],
   'Video modules': ['Sources', 'Processors', 'Utilities'],
+  MIDI: ['MIDI'],
   Hybrid: ['Hybrid'],
   Uncategorized: ['Uncategorized'],
 };
@@ -52,6 +54,7 @@ export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
 export const TOP_ORDER: readonly TopCategory[] = [
   'Audio modules',
   'Video modules',
+  'MIDI',
   'Hybrid',
   'Uncategorized',
 ];
@@ -70,15 +73,6 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   rings: { top: 'Audio modules', sub: 'VCOs' },
   riotgirls: { top: 'Audio modules', sub: 'VCOs' },
   samsloop: { top: 'Audio modules', sub: 'VCOs' },
-  // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI
-  // controller — it's not an oscillator itself, but it's a SOURCE that
-  // a player drives a synth voice from, so it sits in VCOs alongside
-  // the other "first thing in the patch" modules.
-  midiCvBuddy: { top: 'Audio modules', sub: 'VCOs' },
-  // MIDICLOCK is the transport-only sibling of MIDI-CV-BUDDY — clock/run/
-  // start/stop gates from an external MIDI device. Lives next to TIMELORDE
-  // in Utility since its primary role is to drive TIMELORDE.clock.
-  midiclock: { top: 'Audio modules', sub: 'Utility' },
   // HELM is a complete polyphonic synth voice (osc → filter → env → output)
   // — it lives in the VCOs section alongside DX7 and MACROOSCILLATOR as a
   // "first thing in the patch" sound source.
@@ -94,7 +88,6 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   vca: { top: 'Audio modules', sub: 'Utility' },
   stereovca: { top: 'Audio modules', sub: 'Utility' },
   cartesian: { top: 'Audio modules', sub: 'Utility' },
-  qbrt: { top: 'Audio modules', sub: 'Utility' },
   illogic: { top: 'Audio modules', sub: 'Utility' },
   unityscalemathematik: { top: 'Audio modules', sub: 'Utility' },
   analogLogicMaths: { top: 'Audio modules', sub: 'Utility' },
@@ -119,6 +112,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   warps: { top: 'Audio modules', sub: 'Effects' },
   shimmershine: { top: 'Audio modules', sub: 'Effects' },
   clouds: { top: 'Audio modules', sub: 'Effects' },
+  qbrt: { top: 'Audio modules', sub: 'Effects' },
 
   // ───────── Audio modules → Mixing ─────────
   mixer: { top: 'Audio modules', sub: 'Mixing' },
@@ -127,6 +121,13 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
 
   // ───────── Audio modules → End of chain ─────────
   audioOut: { top: 'Audio modules', sub: 'End of chain' },
+
+  // ───────── MIDI (hardware-bridge modules) ─────────
+  // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI
+  // controller. MIDICLOCK is the transport-only sibling — clock/run/
+  // start/stop gates from an external MIDI device (drives TIMELORDE.clock).
+  midiCvBuddy: { top: 'MIDI', sub: 'MIDI' },
+  midiclock: { top: 'MIDI', sub: 'MIDI' },
 
   // ───────── Video modules → Sources ─────────
   cameraInput: { top: 'Video modules', sub: 'Sources' },
@@ -155,10 +156,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
 
   // ───────── Hybrid (audio + video output, or cross-domain tools) ─────────
   scope: { top: 'Hybrid', sub: 'Hybrid' },
-  vizvco: { top: 'Hybrid', sub: 'Hybrid' },
   wavviz: { top: 'Hybrid', sub: 'Hybrid' },
   swolevco: { top: 'Hybrid', sub: 'Hybrid' },
-  wavecel: { top: 'Hybrid', sub: 'Hybrid' },
   warrenspectrum: { top: 'Hybrid', sub: 'Hybrid' },
   // PONG — research-prototype game module. CV-in paddles + gate-out scores,
   // visual game state on the card. Sits in Hybrid alongside the other
@@ -202,6 +201,7 @@ export function groupDefs<D extends DefLike>(defs: readonly D[]): GroupedTop<D>[
   const byTop: Record<TopCategory, Record<string, D[]>> = {
     'Audio modules': {},
     'Video modules': {},
+    MIDI: {},
     Hybrid: {},
     Uncategorized: {},
   };

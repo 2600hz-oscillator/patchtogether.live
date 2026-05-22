@@ -31,7 +31,7 @@ describe('swolevcoDef: module-def shape', () => {
     expect(ids).toEqual(['mod_out', 'out', 'scope', 'sum_out']);
   });
 
-  it('scope output is mono-video (matches VIZVCO/WAVVIZ pattern)', () => {
+  it('scope output is mono-video (matches the WAVVIZ pattern)', () => {
     const scope = swolevcoDef.outputs.find((p) => p.id === 'scope');
     expect(scope).toBeDefined();
     expect(scope?.type).toBe('mono-video');

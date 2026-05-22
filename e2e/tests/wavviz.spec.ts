@@ -1,6 +1,6 @@
 // e2e/tests/wavviz.spec.ts
 //
-// E2E for WAVVIZ. Same shape as vizvco.spec.ts.
+// E2E for WAVVIZ — wavetable VCO with built-in wavefolder + scope mono-video.
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
