@@ -104,6 +104,16 @@
     set('isPlaying')(isPlaying ? 0 : 1);
   }
 
+  // ---------- per-instrument expansion ----------
+  // Clicking an instrument name expands an inline knob row beneath it
+  // exposing the 9 per-voice controls (vol / pan / pitch / cutoff /
+  // Q / A / D / S / R). One expanded at a time — keeps the card
+  // height bounded.
+  let expandedInst = $state<number | null>(null);
+  function toggleInst(id: number) {
+    expandedInst = expandedInst === id ? null : id;
+  }
+
   // ---------- PatchPanel sections — one per instrument + master ----------
   // Each instrument row gets its own section so the user can find the
   // trig + amp-env knobs by name; the section labels mirror the row
@@ -151,7 +161,15 @@
       <div class="grid">
         {#each TR808_INSTRUMENTS as inst}
           <div class="row" data-instrument-id={inst.id}>
-            <div class="inst-name" title={inst.name}>{inst.label}</div>
+            <button
+              type="button"
+              class="inst-name"
+              class:expanded={expandedInst === inst.id}
+              onclick={() => toggleInst(inst.id)}
+              title={`${inst.name} — click to ${expandedInst === inst.id ? 'collapse' : 'expand'} per-voice controls`}
+              data-testid={`hydrogen-inst-toggle-${inst.id}`}
+              aria-expanded={expandedInst === inst.id}
+            >{inst.label}</button>
             <button
               type="button"
               class="ms-btn"
@@ -183,6 +201,23 @@
               {/each}
             </div>
           </div>
+          {#if expandedInst === inst.id}
+            <!-- Per-voice knob strip — matches Hydrogen's
+                 "Instrument Properties" panel. The first row's knobs
+                 (vol/pan/pitch/cutoff/Q) shape the SOUND; the second
+                 row's (A/D/S/R) shapes the per-trigger envelope. -->
+            <div class="voice-controls" data-testid={`hydrogen-voice-controls-${inst.id}`}>
+              <Knob value={pget(`vol${inst.id}`,    inst.defaultGain)} min={0}     max={2}     defaultValue={inst.defaultGain} label="Vol"  curve="linear" onchange={set(`vol${inst.id}`)}    readLive={live(`vol${inst.id}`)} />
+              <Knob value={pget(`pan${inst.id}`,    inst.defaultPan)}  min={-1}    max={1}     defaultValue={inst.defaultPan}  label="Pan"  curve="linear" onchange={set(`pan${inst.id}`)}    readLive={live(`pan${inst.id}`)} />
+              <Knob value={pget(`pitch${inst.id}`,  0)}                min={-24}   max={24}    defaultValue={0}                label="Pi"   units="st" curve="linear" onchange={set(`pitch${inst.id}`)} readLive={live(`pitch${inst.id}`)} />
+              <Knob value={pget(`cutoff${inst.id}`, 20000)}            min={20}    max={20000} defaultValue={20000}            label="Cf"   units="Hz" curve="log"    onchange={set(`cutoff${inst.id}`)} readLive={live(`cutoff${inst.id}`)} />
+              <Knob value={pget(`q${inst.id}`,      0.7)}              min={0.1}   max={20}    defaultValue={0.7}              label="Q"    curve="log" onchange={set(`q${inst.id}`)}      readLive={live(`q${inst.id}`)} />
+              <Knob value={pget(`A${inst.id}`,      inst.defaultA)}    min={0}     max={2}     defaultValue={inst.defaultA}    label="A"    units="s" curve="log" onchange={set(`A${inst.id}`)}      readLive={live(`A${inst.id}`)} />
+              <Knob value={pget(`D${inst.id}`,      inst.defaultD)}    min={0}     max={2}     defaultValue={inst.defaultD}    label="D"    units="s" curve="log" onchange={set(`D${inst.id}`)}      readLive={live(`D${inst.id}`)} />
+              <Knob value={pget(`S${inst.id}`,      inst.defaultS)}    min={0}     max={1}     defaultValue={inst.defaultS}    label="S"    curve="linear" onchange={set(`S${inst.id}`)}      readLive={live(`S${inst.id}`)} />
+              <Knob value={pget(`R${inst.id}`,      inst.defaultR)}    min={0.01}  max={5}     defaultValue={inst.defaultR}    label="R"    units="s" curve="log" onchange={set(`R${inst.id}`)}      readLive={live(`R${inst.id}`)} />
+            </div>
+          {/if}
         {/each}
       </div>
     </div>
@@ -264,6 +299,12 @@
     align-items: center;
   }
   .inst-name {
+    /* Click-to-expand: the instrument-name cell is now a button.
+       Keeps the same visual treatment + adds a subtle accent when
+       the per-voice strip below is expanded. */
+    appearance: none;
+    border: none;
+    background: transparent;
     font-size: 10px;
     font-weight: 700;
     text-align: right;
@@ -271,6 +312,28 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    cursor: pointer;
+    padding: 0;
+    border-radius: 2px;
+    transition: color 80ms ease-out, background 80ms ease-out;
+  }
+  .inst-name:hover {
+    color: var(--text, #e6e8ec);
+  }
+  .inst-name.expanded {
+    color: var(--accent, #00f0ff);
+  }
+
+  .voice-controls {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 8px;
+    margin: 2px 0 4px;
+    background: var(--module-bg-deep, rgba(0,0,0,0.25));
+    border: 1px solid var(--border);
+    border-radius: 2px;
   }
   .ms-btn {
     width: 18px;

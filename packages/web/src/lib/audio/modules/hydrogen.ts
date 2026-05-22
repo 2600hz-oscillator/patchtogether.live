@@ -140,17 +140,22 @@ export const hydrogenDef: AudioModuleDef = {
     { id: 'swing',     label: 'Sw',   defaultValue: 0,   min: 0,   max: 0.75, curve: 'linear' },
     { id: 'gain',      label: 'Gain', defaultValue: 1,   min: 0,   max: 2,   curve: 'linear' },
     { id: 'isPlaying', label: 'Play', defaultValue: 0,   min: 0,   max: 1,   curve: 'discrete' },
-    // Per-instrument params (vol/pan/A/D/S/R/mute/solo × 16). Defaults
-    // come from the kit's drumkit.xml — see hydrogen-tr808-kit-data.ts.
+    // Per-instrument params (vol/pan/pitch/cutoff/Q/A/D/S/R/mute/solo
+    // × 16). Defaults come from the kit's drumkit.xml — see
+    // hydrogen-tr808-kit-data.ts. pitch/cutoff/Q match Hydrogen's
+    // "Instrument Properties" panel — semitones, lowpass cutoff, Q.
     ...TR808_INSTRUMENTS.flatMap((inst) => [
-      { id: `vol${inst.id}`,  label: `${inst.label}V`, defaultValue: inst.defaultGain, min: 0,    max: 2,   curve: 'linear' as const },
-      { id: `pan${inst.id}`,  label: `${inst.label}P`, defaultValue: inst.defaultPan,  min: -1,   max: 1,   curve: 'linear' as const },
-      { id: `A${inst.id}`,    label: `${inst.label}A`, defaultValue: inst.defaultA,    min: 0,    max: 2,   curve: 'log'    as const },
-      { id: `D${inst.id}`,    label: `${inst.label}D`, defaultValue: inst.defaultD,    min: 0,    max: 2,   curve: 'log'    as const },
-      { id: `S${inst.id}`,    label: `${inst.label}S`, defaultValue: inst.defaultS,    min: 0,    max: 1,   curve: 'linear' as const },
-      { id: `R${inst.id}`,    label: `${inst.label}R`, defaultValue: inst.defaultR,    min: 0.01, max: 5,   curve: 'log'    as const },
-      { id: `mute${inst.id}`, label: `${inst.label}M`, defaultValue: 0,                min: 0,    max: 1,   curve: 'discrete' as const },
-      { id: `solo${inst.id}`, label: `${inst.label}S`, defaultValue: 0,                min: 0,    max: 1,   curve: 'discrete' as const },
+      { id: `vol${inst.id}`,    label: `${inst.label}V`,  defaultValue: inst.defaultGain, min: 0,    max: 2,     curve: 'linear' as const },
+      { id: `pan${inst.id}`,    label: `${inst.label}P`,  defaultValue: inst.defaultPan,  min: -1,   max: 1,     curve: 'linear' as const },
+      { id: `pitch${inst.id}`,  label: `${inst.label}Pi`, defaultValue: 0,                min: -24,  max: 24,    curve: 'linear' as const, units: 'st' as const },
+      { id: `cutoff${inst.id}`, label: `${inst.label}Cf`, defaultValue: 20000,            min: 20,   max: 20000, curve: 'log'    as const, units: 'Hz' as const },
+      { id: `q${inst.id}`,      label: `${inst.label}Q`,  defaultValue: 0.7,              min: 0.1,  max: 20,    curve: 'log'    as const },
+      { id: `A${inst.id}`,      label: `${inst.label}A`,  defaultValue: inst.defaultA,    min: 0,    max: 2,     curve: 'log'    as const },
+      { id: `D${inst.id}`,      label: `${inst.label}D`,  defaultValue: inst.defaultD,    min: 0,    max: 2,     curve: 'log'    as const },
+      { id: `S${inst.id}`,      label: `${inst.label}S`,  defaultValue: inst.defaultS,    min: 0,    max: 1,     curve: 'linear' as const },
+      { id: `R${inst.id}`,      label: `${inst.label}R`,  defaultValue: inst.defaultR,    min: 0.01, max: 5,     curve: 'log'    as const },
+      { id: `mute${inst.id}`,   label: `${inst.label}M`,  defaultValue: 0,                min: 0,    max: 1,     curve: 'discrete' as const },
+      { id: `solo${inst.id}`,   label: `${inst.label}S`,  defaultValue: 0,                min: 0,    max: 1,     curve: 'discrete' as const },
     ]),
   ],
 
@@ -247,6 +252,24 @@ export const hydrogenDef: AudioModuleDef = {
 
       const source = ctx.createBufferSource();
       source.buffer = buf;
+      // Per-voice pitch — semitone offset from the recorded sample
+      // pitch, via playbackRate. Same semantics as Hydrogen's
+      // Instrument Properties "Pitch" knob: positive = up, negative =
+      // down. detune is not used (would compound with playbackRate);
+      // the semitone math here is canonical.
+      const pitchSt = readParam(`pitch${idx}`, 0);
+      source.playbackRate.value = Math.pow(2, pitchSt / 12);
+
+      // Per-voice lowpass filter (matches Hydrogen's per-instrument
+      // filter section). Default cutoff 20 kHz + Q 0.7 → effectively
+      // bypass; the user dials the cutoff down or Q up to shape the
+      // voice. Fixed-type lowpass (not switchable) for now — Hydrogen's
+      // hardware also exposes a single LPF on the instrument-properties
+      // panel.
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = readParam(`cutoff${idx}`, 20000);
+      filter.Q.value = readParam(`q${idx}`, 0.7);
 
       const env = ctx.createGain();
       const A = readParam(`A${idx}`, inst.defaultA);
@@ -264,7 +287,8 @@ export const hydrogenDef: AudioModuleDef = {
       env.gain.linearRampToValueAtTime(peak, atTime + Math.max(0.001, A));
       env.gain.linearRampToValueAtTime(sustain, atTime + Math.max(0.001, A) + Math.max(0.001, D));
 
-      source.connect(env);
+      source.connect(filter);
+      filter.connect(env);
       env.connect(instrumentGain[idx]!);
       source.start(atTime);
 
