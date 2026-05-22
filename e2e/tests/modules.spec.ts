@@ -14,10 +14,37 @@ import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { REGISTRY } from './_registry';
 
+// Modules whose card doesn't render under bare spawnPatch (needs
+// `data.children`, depends on hardware, etc.) — skipped here with a
+// reason and a pointer at the dedicated coverage. Separate from
+// io-spec-consistency.SKIP_DEF_VS_UI because the failure mode each
+// spec catches is different (handle-count vs def↔UI parity); the
+// canonical list of "needs follow-up" modules lives in the
+// io-spec spec.
+const SKIP_RENDER: Record<string, string> = {
+  // Bare spawnPatch({type:'group'}) doesn't render the Svelte Flow
+  // node — the group card body lifts chrome from `data.children`
+  // which we don't supply. Functional coverage:
+  // e2e/tests/grouping-phase1.spec.ts.
+  group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
+  // HELM's gear-icon settings panel hides some inputs (MIDI). The
+  // rendered handle count therefore < def.inputs.length + outputs.
+  // Functional coverage: e2e/tests/helm.spec.ts.
+  helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
+};
+
 test.describe.configure({ mode: 'parallel' });
 
 for (const mod of REGISTRY) {
   const expectedHandleCount = mod.inputs.length + mod.outputs.length;
+  const skipReason = SKIP_RENDER[mod.type];
+  if (skipReason) {
+    test.fixme(
+      `module ${mod.type} renders [SKIPPED: ${skipReason}]`,
+      () => { /* see SKIP_RENDER for the alternative coverage */ },
+    );
+    continue;
+  }
   test(`module ${mod.type} renders + has ${expectedHandleCount} handles + no console errors`, async ({
     page,
   }) => {

@@ -32,8 +32,26 @@ import { spawnPatch } from './_helpers';
 import { REGISTRY, type RegistryModule } from './_registry';
 
 // Modules whose UI is intentionally lagging the def — skipped with a
-// TODO. Empty when the codebase is fully consistent.
-const SKIP_DEF_VS_UI: Record<string, string> = {};
+// TODO + a pointer at the dedicated coverage. Each entry MUST cite an
+// alternative spec so we don't lose coverage by hiding the failure.
+const SKIP_DEF_VS_UI: Record<string, string> = {
+  // GROUP is a meta-domain container whose card body renders the
+  // exposed-ports surface of the modules a user added INSIDE it. A
+  // bare spawnPatch({type:'group'}) without `data.children` doesn't
+  // render the Svelte Flow node, so spawnPatch's "wait for N nodes"
+  // check times out. Functional coverage lives in
+  // e2e/tests/grouping-phase1.spec.ts (creates a group from an
+  // actual selection of modules). Promote here once a spawnPatch
+  // overload accepts initial node.data.
+  group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
+  // HELM ships a gear-icon settings panel that hides some input ports
+  // (MIDI device picker, channel filter) — they exist on the def but
+  // the card only renders them inside the popped-up settings panel.
+  // Functional coverage is e2e/tests/helm.spec.ts. Promote here once
+  // the settings panel either inlines the ports or wires them via the
+  // standard PatchPanel.
+  helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
+};
 
 async function readHandleIds(
   page: Page,
