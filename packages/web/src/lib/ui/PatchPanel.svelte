@@ -417,7 +417,18 @@
   }
 
   $effect(() => {
-    if (!open) {
+    // Auto-clear expanded-section state when the panel closes — fresh
+    // hover starts collapsed (the spec's "reduce stale state confusion"
+    // rule). The drag-active guard is critical: during a connect-drag
+    // the cursor bounces between cards, flipping `open` on each card
+    // false → true → false → true. If we cleared mid-drag, the drag-time
+    // expand-all snapshot below would still be non-null on the re-open
+    // (suppressing re-expansion under the old `=== null` guard) and the
+    // sections would collapse without re-opening. Keep the expanded
+    // state cached during a drag so the re-open finds it intact; the
+    // snapshot restore at drag-end collapses anything the user hadn't
+    // manually opened.
+    if (!open && !connectDragState.active) {
       expandedSections = {};
     }
   });
@@ -438,9 +449,12 @@
   let preDragExpandedSnapshot: Record<string, boolean> | null = null;
 
   // Recursively walk a section tree and mark every node + descendant as
-  // expanded. Today's sectioned modules are single-level — every entry
-  // in `sections` is a leaf — but the recursion keeps the contract
-  // intact if a future card opts into nested sub-sections.
+  // expanded. Handles arbitrary nesting (sections can declare
+  // subsections, which can in turn declare further subsections) so the
+  // drag-time expand-all reveals every level of every branch — the user
+  // shouldn't have to click through three levels of section headers
+  // while a cable is in flight to discover a deeply-nested candidate
+  // port.
   function expandSectionAndChildren(s: SectionedGroup, into: Record<string, boolean>): void {
     if ((s.inputs && s.inputs.length > 0) || (s.outputs && s.outputs.length > 0)) {
       into[s.label] = true;
@@ -456,8 +470,26 @@
   $effect(() => {
     const dragActive = connectDragState.active;
     const isOpen = open;
-    if (dragActive && isOpen && preDragExpandedSnapshot === null) {
-      preDragExpandedSnapshot = { ...expandedSections };
+    if (dragActive && isOpen) {
+      // Snapshot the pre-drag state once per drag (first time this
+      // panel opens during the gesture). Subsequent re-opens during
+      // the same drag — typical when the user bounces between cards —
+      // keep the existing snapshot so the eventual restore-on-drag-end
+      // still collapses everything we expanded.
+      if (preDragExpandedSnapshot === null) {
+        preDragExpandedSnapshot = { ...expandedSections };
+      }
+      // Re-fire expand-all on EVERY drag-open transition, not just the
+      // first one. Cheap (one object spread + a recursion through the
+      // section tree). Two cases this fixes:
+      //
+      //   1. Cursor leaves and returns: under the old `=== null` snapshot
+      //      guard, expansion only ran the first time. The clear-on-close
+      //      effect above (now drag-guarded) used to wipe expandedSections,
+      //      so the re-open would render every section collapsed.
+      //   2. Mid-drag manual collapse: if the user clicks a section header
+      //      to collapse it during the drag, we want re-hovering the card
+      //      to re-reveal everything reachable.
       if (groupingStrategy === 'sectioned' && sections.length > 0) {
         const next: Record<string, boolean> = { ...expandedSections };
         for (const s of sections) {
