@@ -44,8 +44,8 @@
     set('isPlaying')(isPlaying ? 0 : 1);
   }
 
-  const OUT_LABELS = ['1x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64', 'swing'];
-  const SRC_LABELS = ['1x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64'];
+  const OUT_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64', 'swing'];
+  const SRC_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64'];
 
   const inputs: PortDescriptor[] = [
     { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
