@@ -155,6 +155,8 @@
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
   import MidiclockCard from '$lib/ui/modules/MidiclockCard.svelte';
   import HelmCard from '$lib/ui/modules/HelmCard.svelte';
+  // HYDROGEN — TR-808 drum-machine module (first pass of the Hydrogen port).
+  import HydrogenCard from '$lib/ui/modules/HydrogenCard.svelte';
   // PONG — interactive game module (research prototype).
   import PongCard from '$lib/ui/modules/PongCard.svelte';
   // MODTRIS — Tetris-clone game module (research prototype).
@@ -334,6 +336,7 @@
     midiCvBuddy: MidiCvBuddyCard,
     midiclock: MidiclockCard,
     helm: HelmCard,
+    hydrogen: HydrogenCard,
     pong: PongCard,
     modtris: ModtrisCard,
     joystick: JoystickCard,

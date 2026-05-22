@@ -265,6 +265,10 @@ type StandardModuleType =
   // MIDI input via gear-icon settings menu (device picker + per-channel
   // rx multi-select). Stereo output.
   | 'helm'
+  // HYDROGEN — port of the Hydrogen drum machine. First pass ships the
+  // bundled TR-808 emulation kit (16 instruments × 16-step pattern grid,
+  // single-layer samples). Sample assets live in /drumkits/tr808/.
+  | 'hydrogen'
   // STICKY — paper-style sticky note (domain 'meta'). No ports, no engine
   // binding; just an editable, resizable, Yjs-synced text card. Lives in
   // the palette's "meta" category.

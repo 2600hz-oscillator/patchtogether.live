@@ -83,6 +83,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // — it lives in the VCOs section alongside DX7 and MACROOSCILLATOR as a
   // "first thing in the patch" sound source.
   helm: { top: 'Audio modules', sub: 'VCOs' },
+  // HYDROGEN — port of the Hydrogen drum machine (TR-808 emulation kit
+  // bundled, single-pattern 16×16 sequencer). It's a "first thing in
+  // the patch" sound source, so VCOs is the right bucket.
+  hydrogen: { top: 'Audio modules', sub: 'VCOs' },
 
   // ───────── Audio modules → Utility ─────────
   adsr: { top: 'Audio modules', sub: 'Utility' },

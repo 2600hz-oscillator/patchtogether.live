@@ -124,6 +124,12 @@ const EXEMPT_FROM_VRT: Record<string, string> = {
   // cover the module-def shape, distance-falloff math, and live audio +
   // canvas mount. Same rationale as BENTBOX/PONG/MODTRIS.
   wavesculpt: 'animated 3D ribbon render + CRT frame-feedback defeats deterministic capture; unit + E2E provide coverage',
+  // HYDROGEN first-slice PR: card is a wide 16-row × 16-step pattern grid +
+  // transport row + per-row mute/solo. No canvas / animation — the chrome
+  // is static once the playhead is parked at step 0 — but the baseline
+  // needs to be captured on both platforms; promote into MODULES in a
+  // follow-up PR. Unit + ART + E2E provide coverage in the meantime.
+  hydrogen: 'VRT baseline pending; unit + ART + E2E provide coverage. Promote into MODULES + capture darwin + linux pngs in a follow-up PR.',
 };
 
 // Modules listed in vrt.spec.ts but missing a baseline on one or more
