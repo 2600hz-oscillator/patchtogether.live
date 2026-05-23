@@ -885,6 +885,20 @@ export const wavesculptDef: AudioModuleDef = {
           oscChains[i]!.envDist.gain.setTargetAtTime(envDist, ctx.currentTime, 0.005);
         } catch { /* defensive */ }
 
+        // Push the combined (knob + CV) morph value from the shadow
+        // analyser into the worklet's morph{N} AudioParam. The shadow
+        // is the single source of truth — same analyser the
+        // engine.readParam('morph{N}') + engine.read(node, 'morph')
+        // surfaces read, and ultimately the same value the joystick
+        // UI displays once it points at engine.read(node, 'morph').
+        // Audio-rate-ish push (one update per ENV_TICK ≈ 16ms) —
+        // smooth enough for visible/audible morph CV without clicking
+        // at wavetable frame boundaries.
+        try {
+          const morphValue = readCamShadow(sMorph[i]!, live[`morph${i + 1}`] ?? 0);
+          engineParams.get(`morph${i + 1}`)?.setTargetAtTime(morphValue, ctx.currentTime, 0.01);
+        } catch { /* defensive — worklet may not have surfaced the param */ }
+
         // FX slot management — rebuild the FX node when fxType changes.
         // Distance-modulated reverb: when REVERB is active, the
         // effective wet level is fxAmount * distG (closer to the
@@ -989,6 +1003,18 @@ export const wavesculptDef: AudioModuleDef = {
     const sPosZ = makeShadow(live.pos_z ?? 0);
     const sZoom = makeShadow(live.zoom ?? 1);
     const sRot  = makeShadow(live.rot  ?? 0);
+    // Per-osc morph shadows. Same pattern as the camera shadows:
+    // CV cables connect into morph{N}_cv → shadow gain AudioParam;
+    // the shadow analyser captures the combined (knob + CV) value
+    // at audio rate; tick() reads it + pushes the combined value to
+    // the worklet's morph{N} AudioParam via setTargetAtTime. This
+    // unifies the source-of-truth: spatial audio, the JS-side worklet
+    // morph push, and the UI joystick all read the same combined
+    // sample.
+    const sMorph: CamShadow[] = [];
+    for (let i = 0; i < NUM_OSC; i++) {
+      sMorph.push(makeShadow(live[`morph${i + 1}`] ?? 0));
+    }
 
     /** Read the latest combined (knob + CV) value from a camera shadow.
      *  Falls back to the knob value when the analyser hasn't yet
@@ -1046,24 +1072,17 @@ export const wavesculptDef: AudioModuleDef = {
     inputsMap.set('pos_z', { node: sPosZ.gain, input: 0, param: sPosZ.gain.gain });
     inputsMap.set('zoom',  { node: sZoom.gain, input: 0, param: sZoom.gain.gain });
     inputsMap.set('rot',   { node: sRot.gain,  input: 0, param: sRot.gain.gain  });
-    // Per-osc morph CV → worklet a-rate morph{N} AudioParam. The
-    // engine connects the modulator output directly onto the param so
-    // it sums with the JS-side intrinsic knob set in setParam.
-    // `node:` is just the routing destination the engine uses to set
-    // up its paramTap analyser for readParam.
-    for (const m of ['morph1', 'morph2', 'morph3', 'morph4'] as const) {
-      const p = engineParams.get(m);
-      if (p) {
-        inputsMap.set(`${m}_cv`, { node: engineNode, input: 0, param: p });
-      } else {
-        // Defensive: if the worklet hasn't exposed the param (unlikely
-        // — would mean wavesculpt-engine.ts and the def drifted), fall
-        // back to a silent GainNode so the edge connects without
-        // crashing.
-        const fallback = ctx.createGain();
-        fallback.gain.value = 0;
-        inputsMap.set(`${m}_cv`, { node: fallback, input: 0, param: fallback.gain });
-      }
+    // Per-osc morph CV → shadow gain (mirroring the camera CV path).
+    // The engine connects the modulator into the shadow's gain
+    // AudioParam; the analyser captures combined (knob + CV) at audio
+    // rate. tick() reads the shadow + pushes the combined value to
+    // the worklet's morph{N} AudioParam (~60Hz via setTargetAtTime),
+    // which is plenty fast for visible/audible morph modulation
+    // without the worklet seeing audio-rate stepping that'd cause
+    // clicks at wavetable frame boundaries.
+    for (let i = 0; i < NUM_OSC; i++) {
+      const s = sMorph[i]!;
+      inputsMap.set(`morph${i + 1}_cv`, { node: s.gain, input: 0, param: s.gain.gain });
     }
 
     const handle: AudioDomainNodeHandle = {
@@ -1087,13 +1106,31 @@ export const wavesculptDef: AudioModuleDef = {
         if (paramId === 'pos_z') sPosZ.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'zoom')  sZoom.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'rot')   sRot.gain.gain.setValueAtTime(value, ctx.currentTime);
-        // Mirror per-osc tune/fine/morph/spread/fold into worklet AudioParams.
-        const m = /^(tune|fine|morph|spread|fold)([1-4])$/.exec(paramId);
+        // Per-osc morph knob → corresponding shadow gain. The shadow
+        // is the single source of truth: tick() reads it and pushes
+        // combined (knob + CV) into the worklet's morph{N} AudioParam.
+        const mm = /^morph([1-4])$/.exec(paramId);
+        if (mm) {
+          const idx = Number(mm[1]) - 1;
+          sMorph[idx]?.gain.gain.setValueAtTime(value, ctx.currentTime);
+        }
+        // Mirror per-osc tune/fine/spread/fold into worklet AudioParams.
+        // morph is intentionally excluded — its worklet param is driven
+        // by the tick() loop from the shadow, NOT by setParam, so the
+        // CV component isn't clobbered by an immediate knob write.
+        const m = /^(tune|fine|spread|fold)([1-4])$/.exec(paramId);
         if (m) {
           try { engineParams.get(paramId)?.setValueAtTime(value, ctx.currentTime); } catch { /* */ }
         }
       },
       readParam(paramId) {
+        // Returns the KNOB ONLY. The engine layer (engine.ts
+        // PatchEngine.readParam) sums this with the paramTap analyser
+        // sample, giving (knob + CV). The shadow-analyser path used
+        // by read('camera')/read('morph') gives the same combined
+        // value via a different route — both are the single source
+        // of truth. DON'T return combined here or engine.readParam
+        // double-counts the CV contribution.
         return live[paramId];
       },
       read(key) {
@@ -1102,6 +1139,28 @@ export const wavesculptDef: AudioModuleDef = {
         }
         if (key === 'live') {
           return { ...live };
+        }
+        // Unified single-source-of-truth reads. The same shadow
+        // analyser samples that drive the spatial audio mix are
+        // exposed here for the card (joystick + WebGL render) to
+        // read. So joystick dot, ribbon viewport, and spatial mix
+        // ALL reflect the same instant.
+        if (key === 'camera') {
+          return {
+            pos_x: readCamShadow(sPosX, live.pos_x ?? 0),
+            pos_y: readCamShadow(sPosY, live.pos_y ?? 0),
+            pos_z: readCamShadow(sPosZ, live.pos_z ?? 0),
+            zoom:  readCamShadow(sZoom, live.zoom  ?? 1),
+            rot:   readCamShadow(sRot,  live.rot   ?? 0),
+          };
+        }
+        if (key === 'morph') {
+          return {
+            1: readCamShadow(sMorph[0]!, live.morph1 ?? 0),
+            2: readCamShadow(sMorph[1]!, live.morph2 ?? 0),
+            3: readCamShadow(sMorph[2]!, live.morph3 ?? 0),
+            4: readCamShadow(sMorph[3]!, live.morph4 ?? 0),
+          };
         }
         if (key === 'wallLayout') return WALL_LAYOUT;
         if (key === 'wavetableFrames') return FRAMES_REGISTRY.get(node.id);

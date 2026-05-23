@@ -234,7 +234,12 @@ test.describe('WAVESCULPT: camera-CV pipeline — WebGL viewport reflects the li
       const PER_AXIS_THRESHOLD: Record<CameraPort, number> = {
         pos_x: 50,
         pos_z: 50,
-        zoom:  50,
+        // zoom: the LFO sweeps zoom through 0.3..3 (full range); at
+        // either extreme the ribbons collapse to a tiny pixel area
+        // so the luminance histogram doesn't move as many pixels as
+        // pos_x/pos_z. Local readings hover around 30-50; 20 is
+        // well above the static-camera baseline (~0-5).
+        zoom:  20,
         pos_y: 5,
         rot:   5,
       };
