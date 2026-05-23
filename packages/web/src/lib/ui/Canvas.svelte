@@ -93,6 +93,8 @@
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
   import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
+  // ACIDWARP — 320×240 plasma video source with scene cycler.
+  import AcidwarpCard from '$lib/ui/modules/AcidwarpCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
   import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
   import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
@@ -304,6 +306,7 @@
     shapedramps: ShapedrampsCard,
     vdelay: VdelayCard,
     bentbox: BentboxCard,
+    acidwarp: AcidwarpCard,
     // Video-domain (Phase 1):
     inwards: InwardsCard,
     picturebox: PictureboxCard,

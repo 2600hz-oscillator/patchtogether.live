@@ -148,6 +148,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // BENTBOX — CRT-emulation OUTPUT. Frame feedback + per-line sync jitter
   // animated by uTime defeats a deterministic single-frame baseline.
   bentbox: 'animated CRT simulation (feedback + per-line time drift) defeats deterministic capture; unit + E2E provide coverage',
+  // ACIDWARP — 320×240 plasma with rotating palette + auto scene cycler.
+  // Both rotation and scene-advance are time-driven; deterministic capture
+  // is impossible without freezing the engine clock. Pattern/palette unit
+  // coverage in acidwarp-patterns.test.ts; integration coverage via E2E.
+  acidwarp: 'animated palette rotation + auto scene cycler defeats deterministic capture; unit + E2E provide coverage',
   // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
   // ports), VRT baseline pending. Unit + E2E provide coverage.
   joystick: 'VRT baseline pending; unit + E2E provide coverage. UI is small + stable — pinning baselines in a follow-up PR.',
