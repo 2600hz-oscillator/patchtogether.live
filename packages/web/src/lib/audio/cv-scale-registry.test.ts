@@ -105,6 +105,15 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // routed onto an AudioParam, so cvScale doesn't apply. Same shape
   // as cartesian's address-selector inputs.
   numpadPlus: ['layer'],
+  // SLEWSWITCH in1..in4: raw CV signals routed through the worklet's
+  // per-channel one-pole slewer. The module IS the smoother — no
+  // AudioParam fast path / cvScale would apply. The slew*_cv ports
+  // (which DO target the slew{N} AudioParam) carry cvScale.
+  slewSwitch: ['in1', 'in2', 'in3', 'in4'],
+  // ATLANTISCATALYST seed_cv: bias-direction input read directly by the
+  // JS orchestrator each tick (sampled into the next-scene picker).
+  // Same shape as buggles.chaos_cv — no AudioParam fast path.
+  atlantisCatalyst: ['seed_cv'],
 };
 
 describe('cv-scale / registry coverage', () => {
