@@ -26,6 +26,7 @@ uniform sampler2D uTex;
 uniform float uHasInput;
 uniform float uThreshold; // 0..1
 uniform float uSoftness;  // 0..1
+uniform float uInvert;    // 0 or 1
 
 void main() {
   if (uHasInput < 0.5) {
@@ -39,6 +40,7 @@ void main() {
   float lo = max(0.0, uThreshold - uSoftness);
   float hi = min(1.0, uThreshold + uSoftness);
   float mask = smoothstep(lo, hi, luma);
+  if (uInvert > 0.5) mask = 1.0 - mask;
 
   outColor = vec4(mask, mask, mask, 1.0);
 }`;
@@ -46,11 +48,13 @@ void main() {
 interface LumaParams {
   threshold: number;
   softness: number;
+  invert: number;
 }
 
 const DEFAULTS: LumaParams = {
   threshold: 0.5,
   softness: 0.1,
+  invert: 0,
 };
 
 export const lumaDef: VideoModuleDef = {
@@ -64,6 +68,7 @@ export const lumaDef: VideoModuleDef = {
     // paramTarget == port.id keeps docs manifest in sync; bridge uses
     // port id directly so the runtime works either way.
     { id: 'threshold', type: 'cv', paramTarget: 'threshold' },
+    { id: 'softness',  type: 'cv', paramTarget: 'softness' },
   ],
   outputs: [
     { id: 'out', type: 'mono-video' },
@@ -71,6 +76,7 @@ export const lumaDef: VideoModuleDef = {
   params: [
     { id: 'threshold', label: 'Thresh',   defaultValue: DEFAULTS.threshold, min: 0, max: 1, curve: 'linear' },
     { id: 'softness',  label: 'Softness', defaultValue: DEFAULTS.softness,  min: 0, max: 1, curve: 'linear' },
+    { id: 'invert',    label: 'Inv',      defaultValue: DEFAULTS.invert,    min: 0, max: 1, curve: 'discrete' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -81,6 +87,7 @@ export const lumaDef: VideoModuleDef = {
     const uHasInput  = gl.getUniformLocation(program, 'uHasInput');
     const uThreshold = gl.getUniformLocation(program, 'uThreshold');
     const uSoftness  = gl.getUniformLocation(program, 'uSoftness');
+    const uInvert    = gl.getUniformLocation(program, 'uInvert');
 
     const { fbo, texture } = ctx.createFbo();
 
@@ -105,6 +112,7 @@ export const lumaDef: VideoModuleDef = {
 
         g.uniform1f(uThreshold, params.threshold);
         g.uniform1f(uSoftness,  params.softness);
+        g.uniform1f(uInvert,    params.invert);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);

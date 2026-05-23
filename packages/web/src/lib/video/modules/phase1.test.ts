@@ -107,21 +107,22 @@ describe('video Phase-1 — CHROMA', () => {
   it('video in + 5 cv inputs, mono-video keys out', () => {
     const def = getVideoModuleDef('chroma')!;
     const inIds = def.inputs.map((p) => p.id).sort();
-    expect(inIds).toEqual(['in', 'keyB', 'keyG', 'keyR', 'softness', 'tolerance']);
+    // v2 keyer rename: tolerance → threshold (see chroma.ts migrateChroma)
+    expect(inIds).toEqual(['in', 'keyB', 'keyG', 'keyR', 'softness', 'threshold']);
     expect(def.outputs[0]?.id).toBe('out');
     expect(def.outputs[0]?.type).toBe('mono-video');
   });
 });
 
 describe('video Phase-1 — LUMA', () => {
-  it('video in + cv threshold, mono-video out', () => {
+  it('video in + cv threshold + cv softness, mono-video out', () => {
     const def = getVideoModuleDef('luma')!;
-    expect(def.inputs.map((p) => p.id).sort()).toEqual(['in', 'threshold']);
+    expect(def.inputs.map((p) => p.id).sort()).toEqual(['in', 'softness', 'threshold']);
     expect(def.outputs[0]?.type).toBe('mono-video');
   });
-  it('threshold + softness params', () => {
+  it('threshold + softness + invert params', () => {
     const def = getVideoModuleDef('luma')!;
-    expect(def.params.map((p) => p.id).sort()).toEqual(['softness', 'threshold']);
+    expect(def.params.map((p) => p.id).sort()).toEqual(['invert', 'softness', 'threshold']);
   });
 });
 

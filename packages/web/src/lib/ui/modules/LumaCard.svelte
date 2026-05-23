@@ -25,13 +25,26 @@
   <div class="stripe"></div>
   <header class="title">LUMA</header>
 
-  <Handle type="target" position={Position.Left} id="in"        style="top: 56px; --handle-color: var(--cable-video);" />
+  <Handle type="target" position={Position.Left} id="in"        style="top: 56px;  --handle-color: var(--cable-video);" />
   <span class="port-label left" style="top: 50px;">IN</span>
-  <Handle type="target" position={Position.Left} id="threshold" style="top: 92px; --handle-color: var(--cable-cv);" />
+  <Handle type="target" position={Position.Left} id="threshold" style="top: 92px;  --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 86px;">T</span>
+  <Handle type="target" position={Position.Left} id="softness"  style="top: 124px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 118px;">S</span>
 
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-mono-video);" />
   <span class="port-label right" style="top: 50px;">OUT</span>
+
+  <button
+    class="invert-btn"
+    class:on={p('invert') >= 0.5}
+    onclick={() => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      t.params.invert = (t.params.invert ?? 0) >= 0.5 ? 0 : 1;
+    }}
+    data-testid="luma-invert"
+  >INV</button>
 
   <div class="fader-grid">
     <Fader value={p('threshold')} min={0} max={1} defaultValue={lumaDef.params.find((x) => x.id === 'threshold')!.defaultValue} label="Thresh" curve="linear" onchange={setParam('threshold')} />
@@ -64,11 +77,32 @@
   .port-label.left { left: 14px; }
   .port-label.right { right: 14px; }
   .fader-grid {
-    margin-top: 50px;
+    margin-top: 8px;
     padding: 0 12px;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px 16px;
     justify-items: center;
   }
+  .invert-btn {
+    margin-top: 40px;
+    margin-left: 50%;
+    transform: translateX(-50%);
+    display: block;
+    background: var(--module-bg);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-family: ui-monospace, monospace;
+  }
+  .invert-btn.on {
+    background: var(--accent-dim, #46506b);
+    color: var(--text);
+    border-color: var(--accent, #6884d7);
+  }
+  .invert-btn:hover { border-color: var(--accent-dim); }
 </style>

@@ -237,12 +237,12 @@ test.describe('video controls drive output', () => {
     ).toBe(true);
   });
 
-  test('CHROMA tolerance knob changes pixel pattern', async ({ page }) => {
+  test('CHROMA threshold knob changes pixel pattern', async ({ page }) => {
     await spawnPatch(
       page,
       [
         { id: 'v-lines',  type: 'lines',    position: { x: 40, y: 60 },   domain: 'video' },
-        { id: 'v-chroma', type: 'chroma',   position: { x: 320, y: 60 },  domain: 'video', params: { keyR: 1.0, keyG: 1.0, keyB: 1.0, tolerance: 0.0, softness: 0.05 } },
+        { id: 'v-chroma', type: 'chroma',   position: { x: 320, y: 60 },  domain: 'video', params: { keyR: 1.0, keyG: 1.0, keyB: 1.0, threshold: 0.0, softness: 0.05 } },
         { id: 'v-out',    type: 'videoOut', position: { x: 700, y: 60 },  domain: 'video' },
       ],
       [
@@ -254,13 +254,13 @@ test.describe('video controls drive output', () => {
     await page.waitForTimeout(500);
     const before = (await readCanvasStats(canvas))!;
 
-    await setNodeParam(page, 'v-chroma', 'tolerance', 1.0);
+    await setNodeParam(page, 'v-chroma', 'threshold', 1.0);
     await page.waitForTimeout(500);
     const after = (await readCanvasStats(canvas))!;
 
     expect(
       statsDiffer(before, after),
-      `CHROMA tolerance 0→1: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `CHROMA threshold 0→1: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
     ).toBe(true);
   });
 
