@@ -107,6 +107,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   macseq: { top: 'Audio modules', sub: 'Utility' },
   score: { top: 'Audio modules', sub: 'Utility' },
   joystick: { top: 'Audio modules', sub: 'Utility' },
+  gamepad:  { top: 'Audio modules', sub: 'Utility' },
 
   // ───────── Audio modules → Effects ─────────
   filter: { top: 'Audio modules', sub: 'Effects' },

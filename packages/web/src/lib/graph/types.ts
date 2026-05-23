@@ -333,6 +333,10 @@ type StandardModuleType =
   // No inputs in v1 (future: MIDI-mappable). Mirrors how an LFO emits
   // multiple inverted/quadrature outputs from a single source of motion.
   | 'joystick'
+  // GAMEPAD — connected USB/Bluetooth HID controller (Xbox / PS /
+  // generic) as CV (stick axes + triggers) and gate (face / bumper /
+  // dpad / menu buttons). Polls navigator.getGamepads() at rAF rate.
+  | 'gamepad'
   // WAVESCULPT — hybrid 4-oscillator video synth. Four "wall-mounted"
   // virtual oscillators emit 3D wave ribbons inside a unit box; a user-
   // controlled camera (XY joystick + height + zoom) renders a view of

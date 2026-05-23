@@ -161,6 +161,8 @@
   import ModtrisCard from '$lib/ui/modules/ModtrisCard.svelte';
   // JOYSTICK — manual XY pad CV source.
   import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
+  // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
+  import GamepadCard from '$lib/ui/modules/GamepadCard.svelte';
   // WAVESCULPT — hybrid 4-osc synth (audio + 3D ribbon video).
   import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
@@ -339,6 +341,7 @@
     pong: PongCard,
     modtris: ModtrisCard,
     joystick: JoystickCard,
+    gamepad: GamepadCard,
     wavesculpt: WavesculptCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,

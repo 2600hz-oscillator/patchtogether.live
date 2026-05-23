@@ -59,6 +59,7 @@ import { hydrogenDef } from './hydrogen';
 import { pongDef } from './pong';
 import { modtrisDef } from './modtris';
 import { joystickDef } from './joystick';
+import { gamepadDef } from './gamepad';
 import { wavesculptDef } from './wavesculpt';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
@@ -125,6 +126,9 @@ export function registerAudioModules(): void {
   registerModule(modtrisDef);
   // JOYSTICK — manual XY pad emitting x/y + inverted nx/ny CV outputs.
   registerModule(joystickDef);
+  // GAMEPAD — USB/Bluetooth game controller (Xbox / PS / generic HID)
+  // as CV (sticks + triggers) + gate (buttons + dpad).
+  registerModule(gamepadDef);
   // WAVESCULPT — 4-oscillator hybrid synth: stereo audio output + 3D
   // ribbon video render with embedded BENTBOX-style CRT post-process.
   registerModule(wavesculptDef);
