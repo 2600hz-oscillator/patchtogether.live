@@ -758,6 +758,9 @@ function synthesizeFromBuildHelper(
       { id: 'swing',     label: 'Sw',   defaultValue: 0,   min: 0,   max: 0.75, curve: 'linear' },
       { id: 'gain',      label: 'Gain', defaultValue: 1,   min: 0,   max: 2,    curve: 'linear' },
       { id: 'isPlaying', label: 'Play', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
+      // Phase-3 (multi-kit): 4 kits today (tr808/tr909/fmperc/8bit).
+      // Keep max in sync with KIT_COUNT in hydrogen-kit-registry.ts.
+      { id: 'kit',       label: 'Kit',  defaultValue: 0,   min: 0,   max: 3,    curve: 'discrete' },
     ];
     for (let i = 0; i < N; i++) {
       params.push({ id: `vol${i}`,  label: `i${i}V`, defaultValue: 1, min: 0,    max: 2,  curve: 'linear' });
@@ -931,6 +934,10 @@ export function buildModuleManifest(
       // Shared per-user-view-state page-nav helpers (DRUMSEQZ / POLYSEQZ /
       // MACSEQ / Sequencer). Not a ModuleDef.
       if (file === 'sequencer-pages.ts') return false;
+      // HYDROGEN's supporting files: kit registry, per-kit data tables,
+      // synth-utils. The module def lives in hydrogen.ts; everything
+      // else with the `hydrogen-` prefix is implementation detail.
+      if (file.startsWith('hydrogen-')) return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));
