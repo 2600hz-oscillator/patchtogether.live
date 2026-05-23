@@ -23,6 +23,7 @@ import {
   EXEMPT_BASELINE_PAIRS,
   VRT_MODULE_MASKS,
 } from './vrt-exemptions';
+import { applyVrtScene, VRT_SCENES } from './vrt-scenes';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -55,14 +56,21 @@ test.describe('VRT: every module card matches its baseline', () => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      await spawnPatch(page, [
-        {
-          id: 'vrt-1',
-          type: mod.type,
-          position: { x: 80, y: 80 },
-          domain: mod.domain,
-        },
-      ]);
+      // Use a registered scene if one exists for this module type
+      // (drives the card's canvas with real content so the baseline
+      // is informative + the diff catches rendering regressions).
+      // Otherwise fall back to the default solo-spawn flow.
+      const usedScene = await applyVrtScene(page, mod.type);
+      if (!usedScene) {
+        await spawnPatch(page, [
+          {
+            id: 'vrt-1',
+            type: mod.type,
+            position: { x: 80, y: 80 },
+            domain: mod.domain,
+          },
+        ]);
+      }
 
       const card = page.locator(`.svelte-flow__node-${mod.type}`).first();
       await card.waitFor({ state: 'visible', timeout: 10_000 });
@@ -75,8 +83,12 @@ test.describe('VRT: every module card matches its baseline', () => {
       );
 
       // Resolve the masking rects on the actual rendered card. Masks
-      // come from VRT_MODULE_MASKS keyed by module type.
-      const masks = VRT_MODULE_MASKS[mod.type] ?? [];
+      // come from VRT_MODULE_MASKS keyed by module type. Modules with
+      // a registered scene drop their default canvas mask — the
+      // freeze-after-suspend trick in applyVrtScene() makes the
+      // canvas pixel-stable, so it's safe (and useful) to include the
+      // rendered content in the diff.
+      const masks = mod.type in VRT_SCENES ? [] : (VRT_MODULE_MASKS[mod.type] ?? []);
       const maskLocators = masks.map((m) => card.locator(m.selector));
 
       await expect(card).toHaveScreenshot(`${mod.type}.png`, {

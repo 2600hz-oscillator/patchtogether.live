@@ -23,10 +23,17 @@ export interface MaskRect {
   selector: string;
 }
 
-/** Modules that ship a VRT baseline today and may need region masks. */
+/** Modules that ship a VRT baseline today and may need region masks.
+ *  Modules with an entry in VRT_SCENES (see e2e/vrt/vrt-scenes.ts) get
+ *  their mask SKIPPED at capture time — the scene drives the canvas
+ *  with deterministic content and the post-spawn AudioContext freeze
+ *  keeps the rendered pixels stable across runs, so the canvas is
+ *  included in the diff (catches rendering regressions). */
 export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
-  // SCOPE shows a free-running waveform — mask the canvas. Chrome + ports diff.
-  scope: [{ selector: 'canvas' }],
+  // SCOPE: covered by VRT_SCENES — the scene drives a 261 Hz sine in,
+  // then freezes the audio so the trace is pixel-stable. Mask entry
+  // intentionally absent (vrt.spec.ts ignores the mask map for
+  // scene-driven modules anyway, but keeping the table accurate).
   // WAVVIZ / SWOLEVCO carry a video-out preview canvas.
   wavviz: [{ selector: 'canvas' }],
   swolevco: [{ selector: 'canvas' }],
