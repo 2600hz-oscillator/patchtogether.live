@@ -185,6 +185,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   scope: { top: 'Hybrid', sub: 'Hybrid' },
   wavviz: { top: 'Hybrid', sub: 'Hybrid' },
   swolevco: { top: 'Hybrid', sub: 'Hybrid' },
+  wavecel: { top: 'Hybrid', sub: 'Hybrid' },
   warrenspectrum: { top: 'Hybrid', sub: 'Hybrid' },
   // PONG — research-prototype game module. CV-in paddles + gate-out scores,
   // visual game state on the card. Sits in Hybrid alongside the other
