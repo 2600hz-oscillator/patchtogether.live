@@ -104,9 +104,25 @@ tasks:
     # `npm test --workspaces --if-present` would also invoke `art` (vitest) and
     # `e2e` (playwright), which are heavier suites with their own task targets
     # — and `task ci` would then run them twice. See chore/build-perf PR.
+    #
+    # Side effect: emits e2e/.generated/registry-manifest.json via
+    # packages/web/src/lib/dev/registry-manifest.test.ts. Downstream
+    # `task e2e` + `task vrt` read it via e2e/tests/_registry.ts.
     cmds:
       - npm test -w {{.SERVER}}
       - npm test -w {{.WEB}}
+
+  test:emit-manifest:
+    desc: Refresh e2e/.generated/registry-manifest.json without running the full unit suite
+    # Standalone target for the case where a contributor adds a new module
+    # and wants the manifest fresh before iterating Playwright specs
+    # locally — avoids the 12s cost of the full `task test` run.
+    #
+    # Runs from packages/web so vitest's include glob (`src/**/*.test.ts`
+    # relative to the config) resolves the spec file correctly.
+    dir: '{{.WEB}}'
+    cmds:
+      - npx vitest run src/lib/dev/registry-manifest.test.ts
 
   # ---------------- Audio Regression Tests ----------------
   art:
@@ -133,13 +149,18 @@ tasks:
     # bundled DSP on disk Vite's dev server fails the import with a
     # 500 + an HMR overlay, which Playwright detects as a hung page
     # and the suite times out after 30s on every module.
-    deps: [dsp:build]
+    #
+    # test:emit-manifest is required because vrt.spec.ts iterates the
+    # registry manifest at file-parse time (e2e/tests/_registry.ts).
+    # Without a fresh manifest on disk Playwright throws at test
+    # discovery with an actionable error pointing back at this target.
+    deps: [dsp:build, test:emit-manifest]
     cmds:
       - npm run vrt -w {{.E2E}} -- {{.CLI_ARGS}}
 
   vrt:update:
     desc: Refresh VRT baselines (e2e/vrt/__screenshots__/**). Inspect the diff and commit.
-    deps: [dsp:build]
+    deps: [dsp:build, test:emit-manifest]
     cmds:
       - npm run vrt:update -w {{.E2E}} -- {{.CLI_ARGS}}
 
@@ -154,6 +175,12 @@ tasks:
   # ---------------- E2E (Playwright) ----------------
   e2e:
     desc: 'Run end-to-end tests (headless Chromium). Pass extra Playwright args after `--` (e.g. `task e2e -- tests/foo.spec.ts`).'
+    # io-spec-consistency, modules, and the upcoming per-module spec
+    # iterate the registry manifest at file-parse time
+    # (e2e/tests/_registry.ts). Refresh it before Playwright discovers
+    # specs so a freshly-registered module is auto-enrolled without
+    # the contributor having to remember a side-effect command.
+    deps: [test:emit-manifest]
     cmds:
       - npm test -w {{.E2E}} -- {{.CLI_ARGS}}
 

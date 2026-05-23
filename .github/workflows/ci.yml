@@ -28,7 +28,12 @@ jobs:
   ci:
     name: typecheck + unit + ART + E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Bumped from 25 → 35 in slice 2 of the test-coverage push. The
+    # per-module + integration generators added ~5-7 min of E2E wall-
+    # clock on top of the previous ~16-min baseline; 25 min was tight,
+    # 35 leaves a safety margin until Playwright sharding (slice 7)
+    # cuts the wall-clock back down.
+    timeout-minutes: 35
 
     services:
       # Postgres for the persistence layer (Stage B1+). Both the SvelteKit
