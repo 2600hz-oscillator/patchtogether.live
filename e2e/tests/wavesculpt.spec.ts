@@ -172,21 +172,30 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     ]);
     await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
 
-    await page.waitForTimeout(800);
-
-    const hasNonBlackPixels = await page.evaluate(() => {
-      const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
-      if (!c) return false;
-      const ctx = c.getContext('2d');
-      if (!ctx) return false;
-      const data = ctx.getImageData(0, 0, c.width, c.height).data;
-      for (let i = 0; i < data.length; i += 4 * 16) {
-        const sum = (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0);
-        if (sum > 60) return true;
-      }
-      return false;
-    });
-    expect(hasNonBlackPixels, 'ribbons visible without any gate fired').toBe(true);
+    // Poll for ribbons rather than waitForTimeout(800) — same race the
+    // morph test hit (PR #231). The fill-then-draw rAF loop has a
+    // brief all-bg window; the canvas may be black on a single sample.
+    // Poll up to 3 s for at least one non-bg pixel.
+    await expect
+      .poll(async () => {
+        return page.evaluate(() => {
+          const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+          if (!c) return false;
+          const ctx = c.getContext('2d');
+          if (!ctx) return false;
+          const data = ctx.getImageData(0, 0, c.width, c.height).data;
+          for (let i = 0; i < data.length; i += 4 * 16) {
+            const sum = (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0);
+            if (sum > 60) return true;
+          }
+          return false;
+        });
+      }, {
+        message: 'ribbons never rendered (canvas stayed all-black for 3s)',
+        timeout: 3_000,
+        intervals: [100, 200, 400],
+      })
+      .toBe(true);
   });
 
   test('changing osc1 morph changes the rendered ribbon shape', async ({ page }) => {
