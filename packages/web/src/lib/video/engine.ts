@@ -77,6 +77,25 @@ export interface VideoNodeHandle {
   domain: 'video';
   /** The module's runtime surface — engine reads this every frame. */
   surface: VideoNodeSurface;
+  /**
+   * Optional: per-port AudioNode taps that surface this video module's
+   * audio output as an audio-domain source (cross-domain handoff, video → audio).
+   *
+   * The mirror of AudioDomainNodeHandle.videoSources. A video module
+   * that emits PCM audio (DOOM's `audio_l` / `audio_r`, future video
+   * modules with a soundtrack, etc.) populates this map with one entry
+   * per declared `audio`-typed output port. The PatchEngine reads it via
+   * `VideoEngine.getAudioSource(nodeId, portId)` when materializing a
+   * video→audio edge; it then connects the source AudioNode into the
+   * target audio module's input (via AudioEngine.getInputNode).
+   *
+   * Lifecycle: the module owns the AudioNode and disposes it. The bridge
+   * disconnects on edge removal (its own teardown).
+   *
+   * Modules with no audio output omit the field entirely (the AudioContext
+   * may not even be present if no audio engine is registered).
+   */
+  audioSources?: Map<string, { node: AudioNode; output: number }>;
   /** Apply a param value (fader change). Routes to a uniform or internal
    *  state that `draw()` reads next frame. */
   setParam(paramId: string, value: number): void;
@@ -123,6 +142,23 @@ export interface VideoEngineContext {
   /** Issue the fullscreen quad draw call. Caller has already bound their
    *  framebuffer and program + uniforms. Used by every module's draw(). */
   drawFullscreenQuad(): void;
+  /**
+   * AudioContext for video modules that emit audio (DOOM's audio output,
+   * future video modules with a soundtrack). The PatchEngine threads its
+   * AudioEngine's context here on registration so video modules can
+   * `createConstantSource()` / `createBufferSource()` / etc. and publish
+   * the resulting node via VideoNodeHandle.audioSources for the
+   * video→audio bridge to read.
+   *
+   * Optional because:
+   *   - jsdom tests instantiate VideoEngine without an AudioContext;
+   *   - legacy callers (Phase-0 reconciler tests) didn't thread it through;
+   *   - non-audio-emitting video modules never need it.
+   *
+   * Modules that need audio output MUST guard:
+   *   `if (!ctx.audioCtx) return null;` — and surface an "audio off" badge.
+   */
+  audioCtx?: AudioContext;
 }
 
 // ----------------------------------------------------------------------
@@ -194,6 +230,18 @@ export class VideoEngine implements DomainEngine {
     customCtx2d?: OffscreenCanvasRenderingContext2D;
     customTexture?: WebGLTexture;
   }>();
+
+  /**
+   * AudioContext threaded through from PatchEngine.registerDomain (when
+   * an AudioEngine is also registered). Modules that emit audio (DOOM)
+   * pull this out of `ctx.audioCtx` inside their factory so they can
+   * create the upstream side of a video→audio bridge.
+   *
+   * null when no AudioEngine is registered (jsdom unit-test default).
+   * Modules with audio outputs MUST guard for null + degrade gracefully
+   * (silent operation + a visible badge on the card).
+   */
+  private audioCtx: AudioContext | null = null;
 
   private startTime = performance.now();
   private frameCount = 0;
@@ -796,7 +844,43 @@ void main() {
       compileFragment: (src) => this.compileFragmentImpl(src),
       createFbo: () => this.createFboImpl(),
       drawFullscreenQuad: () => this.drawFullscreenQuadImpl(),
+      audioCtx: this.audioCtx ?? undefined,
     };
+  }
+
+  /**
+   * Inject the AudioContext from the sibling AudioEngine. Called by
+   * PatchEngine.registerDomain when both domains are present so video
+   * modules that emit audio (DOOM) see a live AudioContext in their
+   * factory ctx. Safe to call multiple times — the last value wins.
+   *
+   * Why not pass via the constructor? VideoEngine is sometimes
+   * registered BEFORE the AudioEngine (Canvas.svelte's boot order), and
+   * we want the same VideoEngine instance to pick up the audio side
+   * once it's available rather than forcing a re-register dance.
+   */
+  setAudioContext(ctx: AudioContext | null): void {
+    this.audioCtx = ctx;
+  }
+
+  /**
+   * Cross-domain bridge support (video → audio). Mirror of
+   * AudioEngine.getVideoSource. Returns the AudioNode + output index a
+   * video module has published for the named port (via
+   * VideoNodeHandle.audioSources), or null when the node isn't
+   * materialized or doesn't declare an audio source for the port.
+   *
+   * The PatchEngine reads this when adding a video→audio edge and
+   * connects the source AudioNode to the downstream AudioEngine input.
+   */
+  getAudioSource(
+    nodeId: string,
+    portId: string,
+  ): { node: AudioNode; output: number } | null {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return null;
+    const src = handle.audioSources?.get(portId);
+    return src ?? null;
   }
 
   /** Vertex shader is shared across every module — they're all fullscreen

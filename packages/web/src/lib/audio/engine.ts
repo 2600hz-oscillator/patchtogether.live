@@ -585,6 +585,28 @@ export class AudioEngine implements DomainEngine {
   }
 
   /**
+   * Cross-domain bridge support (video → audio): the mirror of getOutputNode.
+   * Return the AudioNode + input index (or AudioParam, when the target
+   * port is a CV-into-param routing) for a given (nodeId, portId), so
+   * the PatchEngine's video→audio bridge can `.connect()` the upstream
+   * AudioNode (published by the video module via
+   * VideoNodeHandle.audioSources) into the downstream audio module's
+   * input.
+   *
+   * Returns null when the node isn't materialized or has no such port —
+   * caller defers to a later reconcile pass.
+   */
+  getInputNode(
+    nodeId: string,
+    portId: string,
+  ): { node: AudioNode; input: number; param?: AudioParam } | null {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return null;
+    const inp = handle.inputs.get(portId);
+    return inp ?? null;
+  }
+
+  /**
    * Cross-domain bridge support (audio → video texture). Modules that
    * carry a `mono-video`/`video` output port populate
    * AudioDomainNodeHandle.videoSources with an analyser-tap per such
@@ -634,9 +656,28 @@ export class PatchEngine {
    *  Bookkept like cvBridgeEdgeIds so removeEdge can route to the
    *  video engine's removeVideoTextureBridge. */
   private videoTextureBridgeEdgeIds = new Set<string>();
+  /** Edges that became cross-domain video → audio bridges (DOOM's audio
+   *  out, etc.). Bookkept like the other two — neither domain engine
+   *  sees the edge in its own `edges` map; the bridge owns the
+   *  AudioNode connection lifetime. */
+  private audioBridgeEdgeIds = new Set<string>();
+  /** Per-edge teardown for video→audio bridges. */
+  private audioBridgeTeardowns = new Map<string, () => void>();
 
   registerDomain(engine: DomainEngine): void {
     this.domains.set(engine.domain, engine);
+    // When BOTH audio + video are registered, thread the AudioContext
+    // through to VideoEngine so video modules that emit audio (DOOM)
+    // can create AudioNodes inside their factory. Either side can be
+    // registered first — we run this on every registerDomain call and
+    // either party (the new one + the existing one) gets the wiring.
+    const audio = this.domains.get('audio') as AudioEngine | undefined;
+    const video = this.domains.get('video') as
+      | (DomainEngine & { setAudioContext?: (ctx: AudioContext | null) => void })
+      | undefined;
+    if (audio && video && typeof video.setAudioContext === 'function') {
+      video.setAudioContext(audio.ctx);
+    }
   }
 
   getDomain<T extends DomainEngine>(domain: string): T {
@@ -711,6 +752,21 @@ export class PatchEngine {
       this.addCrossDomainVideoTextureBridge(edge);
       return;
     }
+    // Cross-domain video → audio bridge. The video module declares an
+    // AudioNode tap on the named port (via VideoNodeHandle.audioSources);
+    // we look it up + connect into the downstream AudioEngine input.
+    // First slice ships `audio`-typed cables (DOOM's audio_l/audio_r);
+    // future video modules might emit `cv` or `gate` the same way and
+    // we'd extend the type guard then.
+    if (
+      targetDomain !== undefined
+      && sourceDomain === 'video'
+      && targetDomain === 'audio'
+      && edge.sourceType === 'audio'
+    ) {
+      this.addCrossDomainAudioBridge(edge);
+      return;
+    }
     const engine = this.getDomain(sourceDomain);
     engine.addEdge(edge);
   }
@@ -722,6 +778,10 @@ export class PatchEngine {
     }
     if (this.videoTextureBridgeEdgeIds.has(edge.id)) {
       this.removeCrossDomainVideoTextureBridge(edge);
+      return;
+    }
+    if (this.audioBridgeEdgeIds.has(edge.id)) {
+      this.removeCrossDomainAudioBridge(edge);
       return;
     }
     const engine = this.getDomain(sourceDomain);
@@ -863,6 +923,75 @@ export class PatchEngine {
     }
   }
 
+  /**
+   * Establish a video → audio bridge. The video module declares an
+   * AudioNode on `VideoNodeHandle.audioSources` for the named source
+   * port; we look it up via VideoEngine.getAudioSource, then connect
+   * the AudioNode into the downstream audio module's input (looked up
+   * via AudioEngine.getInputNode).
+   *
+   * The bridge owns the connection lifetime — neither domain engine
+   * sees the edge in its own `edges` map. removeEdge fires the
+   * teardown stored in audioBridgeTeardowns.
+   *
+   * Failure modes (mirror addCrossDomainCvBridge):
+   *  - either domain engine missing: bail (the call doesn't silently
+   *    drop — fall back to source-domain dispatch for legacy callers).
+   *  - source video node not yet materialized or doesn't declare an
+   *    audioSource for the port: defer (mark id; teardown is a no-op).
+   *  - target audio input not present: defer.
+   */
+  private addCrossDomainAudioBridge(edge: Edge): void {
+    const videoEngine = this.domains.get('video');
+    const audioEngine = this.domains.get('audio');
+    if (!videoEngine || !audioEngine) {
+      videoEngine?.addEdge(edge);
+      return;
+    }
+    const ve = videoEngine as DomainEngine & {
+      getAudioSource?: (nodeId: string, portId: string) =>
+        | { node: AudioNode; output: number } | null;
+    };
+    const ae = audioEngine as AudioEngine;
+    if (typeof ve.getAudioSource !== 'function' || typeof ae.getInputNode !== 'function') {
+      videoEngine.addEdge(edge);
+      return;
+    }
+    const src = ve.getAudioSource(edge.source.nodeId, edge.source.portId);
+    const dst = ae.getInputNode(edge.target.nodeId, edge.target.portId);
+    if (!src || !dst) {
+      // Defer. Mark the id so removeEdge can clean up the placeholder;
+      // a later reconcile after the missing endpoint materializes will
+      // re-call addEdge with the same id (idempotent set add).
+      this.audioBridgeEdgeIds.add(edge.id);
+      return;
+    }
+    if (dst.param) {
+      // Audio cable terminating on an AudioParam (rare: an audio module
+      // might expose a CV-shaped input that maps to an AudioParam). Connect
+      // the source to the param; teardown disconnects.
+      src.node.connect(dst.param, src.output);
+      this.audioBridgeTeardowns.set(edge.id, () => {
+        try { src.node.disconnect(dst.param!, src.output); } catch { /* */ }
+      });
+    } else {
+      src.node.connect(dst.node, src.output, dst.input);
+      this.audioBridgeTeardowns.set(edge.id, () => {
+        try { src.node.disconnect(dst.node, src.output, dst.input); } catch { /* */ }
+      });
+    }
+    this.audioBridgeEdgeIds.add(edge.id);
+  }
+
+  private removeCrossDomainAudioBridge(edge: Edge): void {
+    this.audioBridgeEdgeIds.delete(edge.id);
+    const teardown = this.audioBridgeTeardowns.get(edge.id);
+    if (teardown) {
+      try { teardown(); } catch { /* */ }
+      this.audioBridgeTeardowns.delete(edge.id);
+    }
+  }
+
   setParam(node: ModuleNode, paramId: string, value: number): void {
     const engine = this.getDomain(node.domain);
     engine.setParam(node.id, paramId, value);
@@ -889,6 +1018,11 @@ export class PatchEngine {
   dispose(): void {
     this.cvBridgeEdgeIds.clear();
     this.videoTextureBridgeEdgeIds.clear();
+    this.audioBridgeEdgeIds.clear();
+    for (const teardown of this.audioBridgeTeardowns.values()) {
+      try { teardown(); } catch { /* */ }
+    }
+    this.audioBridgeTeardowns.clear();
     for (const e of this.domains.values()) e.dispose();
     this.domains.clear();
   }
