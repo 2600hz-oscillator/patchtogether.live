@@ -20,7 +20,7 @@ import {
 import { defaultSteps } from './modules/sequencer';
 import { defaultCells } from './modules/cartesian';
 
-describe('parseNoteName: round-trip across the full a1..f#8 range', () => {
+describe('parseNoteName: round-trip across the full c0..c8 range', () => {
   it('parses every MIDI int from MIN..MAX through its canonical name', () => {
     for (let m = MIN_MIDI; m <= MAX_MIDI; m++) {
       const name = noteNameForMidi(m);
@@ -30,12 +30,15 @@ describe('parseNoteName: round-trip across the full a1..f#8 range', () => {
   });
 
   it('parses critical reference pitches', () => {
+    // Post-rework: c0 / c1 are valid (16.35 / 32.70 Hz). The cap is c8.
+    expect(parseNoteName('c0')).toBe(12);
+    expect(parseNoteName('c1')).toBe(24);
     expect(parseNoteName('a1')).toBe(33);
     expect(parseNoteName('c3')).toBe(48);
     expect(parseNoteName('a4')).toBe(69);
     expect(parseNoteName('e6')).toBe(88);
-    expect(parseNoteName('f#8')).toBe(114);
     expect(parseNoteName('c4')).toBe(60);
+    expect(parseNoteName('c8')).toBe(108);
   });
 });
 
@@ -43,7 +46,7 @@ describe('parseNoteName: case + whitespace tolerance', () => {
   it('lowercases input', () => {
     expect(parseNoteName('A4')).toBe(69);
     expect(parseNoteName('C#3')).toBe(49);
-    expect(parseNoteName('F#8')).toBe(114);
+    expect(parseNoteName('C8')).toBe(108);
   });
 
   it('strips whitespace', () => {
@@ -82,13 +85,15 @@ describe('parseNoteName: invalid input returns null', () => {
     expect(parseNoteName('eb')).toBeNull();
   });
 
-  it('rejects out-of-range octaves (parsed but out of [a1, f#8])', () => {
-    expect(parseNoteName('c1')).toBeNull(); // below a1 (MIDI 24 < 33)
-    expect(parseNoteName('g#0')).toBeNull();
-    expect(parseNoteName('g8')).toBeNull(); // above f#8
+  it('rejects out-of-range octaves (parsed but out of [c0, c8])', () => {
+    // Post-rework: c0 / c1 / g8 etc are NOW IN range. Only octaves
+    // below 0 or above 8 should fail, plus octave 8 above c (c#8..b8).
+    expect(parseNoteName('c#8')).toBeNull(); // 109 — above c8 = 108
+    expect(parseNoteName('a8')).toBeNull();  // 117 — above c8
     expect(parseNoteName('c9')).toBeNull();
     expect(parseNoteName('c15')).toBeNull();
-    expect(parseNoteName('c-1')).toBeNull();
+    expect(parseNoteName('c-1')).toBeNull(); // below c0
+    expect(parseNoteName('b-1')).toBeNull();
   });
 
   it('rejects double-accidentals + non-numeric octave', () => {
@@ -112,20 +117,22 @@ describe('noteNameForMidi: canonical sharp form, lowercase', () => {
   it('returns sharps not flats', () => {
     expect(noteNameForMidi(49)).toBe('c#3');
     expect(noteNameForMidi(70)).toBe('a#4');
-    expect(noteNameForMidi(114)).toBe('f#8');
+    expect(noteNameForMidi(13)).toBe('c#0');
   });
 
   it('returns naturals untouched', () => {
+    expect(noteNameForMidi(12)).toBe('c0');
     expect(noteNameForMidi(33)).toBe('a1');
     expect(noteNameForMidi(48)).toBe('c3');
     expect(noteNameForMidi(60)).toBe('c4');
     expect(noteNameForMidi(69)).toBe('a4');
+    expect(noteNameForMidi(108)).toBe('c8');
   });
 
   it('returns empty string outside the supported range', () => {
     expect(noteNameForMidi(0)).toBe('');
-    expect(noteNameForMidi(32)).toBe('');
-    expect(noteNameForMidi(115)).toBe('');
+    expect(noteNameForMidi(11)).toBe(''); // one below c0
+    expect(noteNameForMidi(109)).toBe(''); // one above c8
     expect(noteNameForMidi(127)).toBe('');
     expect(noteNameForMidi(NaN)).toBe('');
   });
@@ -150,11 +157,12 @@ describe('midiToVOct / vOctToMidi: codebase convention (0V = C4 = MIDI 60)', () 
 
 describe('midiToHz: equal-tempered (A4 = 440Hz)', () => {
   it('matches the spec reference frequencies', () => {
+    expect(midiToHz(12)).toBeCloseTo(16.351, 2);     // c0 (new low end)
     expect(midiToHz(33)).toBeCloseTo(55.0, 3);       // a1
     expect(midiToHz(48)).toBeCloseTo(130.813, 2);    // c3
     expect(midiToHz(69)).toBe(440);                  // a4 (exact)
     expect(midiToHz(88)).toBeCloseTo(1318.510, 2);   // e6
-    expect(midiToHz(114)).toBeCloseTo(5919.911, 2);  // f#8
+    expect(midiToHz(108)).toBeCloseTo(4186.009, 2);  // c8 (new top end)
   });
 
   it('matches the analog-vco DSP convention (0V = C4 = 261.626 Hz)', () => {
@@ -184,10 +192,11 @@ describe('coerceToNoteStep: legacy + new shape interop', () => {
   });
 
   it('clamps legacy pitches that fall outside the new range to null', () => {
-    // pitch -36 from C4 = MIDI 24, below MIN_MIDI=33
-    expect(coerceToNoteStep({ on: true, pitch: -36 })).toEqual({ on: true, midi: null });
-    // pitch +60 from C4 = MIDI 120, above MAX_MIDI=114
-    expect(coerceToNoteStep({ on: true, pitch: 60 })).toEqual({ on: true, midi: null });
+    // Post-rework range is [12, 108]. pitch from C4=60.
+    // pitch -49 from C4 = MIDI 11, below MIN_MIDI=12
+    expect(coerceToNoteStep({ on: true, pitch: -49 })).toEqual({ on: true, midi: null });
+    // pitch +49 from C4 = MIDI 109, above MAX_MIDI=108
+    expect(coerceToNoteStep({ on: true, pitch: 49 })).toEqual({ on: true, midi: null });
   });
 
   it('handles missing fields safely', () => {

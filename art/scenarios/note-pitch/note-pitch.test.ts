@@ -127,11 +127,16 @@ async function renderOscillatorAt(freqHz: number): Promise<Float32Array> {
 }
 
 const REFERENCE_PITCHES: Array<{ name: string; midi: number; hz: number }> = [
+  // c0 and c1 are the bottom-end additions from the c0..c8 range
+  // widening (PR `cv-additive-semantic-and-pitch-c0-c8`); f#8 was
+  // dropped from the cap (MAX_MIDI moved 114 → 108 = c8).
+  { name: 'c0',  midi: 12,  hz: 16.351 },
+  { name: 'c1',  midi: 24,  hz: 32.703 },
   { name: 'a1',  midi: 33,  hz: 55.000 },
   { name: 'c3',  midi: 48,  hz: 130.813 },
   { name: 'a4',  midi: 69,  hz: 440.000 },
   { name: 'e6',  midi: 88,  hz: 1318.510 },
-  { name: 'f#8', midi: 114, hz: 5919.911 },
+  { name: 'c8',  midi: 108, hz: 4186.009 },
 ];
 
 describe('note-pitch ART: note name -> MIDI -> V/oct -> rendered frequency', () => {
