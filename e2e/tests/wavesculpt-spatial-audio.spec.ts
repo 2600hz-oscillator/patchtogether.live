@@ -165,19 +165,24 @@ async function viewportHistogram(page: Page): Promise<number[]> {
   });
 }
 
-/** Sample 5 rAF-spaced histograms + return the busiest. Mirrors the
- *  helper in wavesculpt-camera-cv.spec.ts that dodges the WebGL
- *  fill-but-pre-draw race window. */
+/** Sample 5 rAF-spaced histograms + return the busiest, retrying the
+ *  5-sample sweep up to 3 times if the canvas is all-black (camera
+ *  may be pointed off-scene for portions of an LFO cycle). Mirrors
+ *  the helper in wavesculpt-camera-cv.spec.ts. */
 async function busiestHistogram(page: Page): Promise<number[]> {
-  let best: number[] = [];
-  let bestNonBg = -1;
-  for (let i = 0; i < 5; i++) {
-    const h = await viewportHistogram(page);
-    const nonBg = h.slice(1).reduce((a, b) => a + b, 0);
-    if (nonBg > bestNonBg) { best = h; bestNonBg = nonBg; }
-    if (i < 4) await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+  for (let retry = 0; retry < 3; retry++) {
+    let best: number[] = [];
+    let bestNonBg = -1;
+    for (let i = 0; i < 5; i++) {
+      const h = await viewportHistogram(page);
+      const nonBg = h.slice(1).reduce((a, b) => a + b, 0);
+      if (nonBg > bestNonBg) { best = h; bestNonBg = nonBg; }
+      if (i < 4) await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    }
+    if (bestNonBg > 0) return best;
+    if (retry < 2) await page.waitForTimeout(200);
   }
-  return best;
+  return viewportHistogram(page);
 }
 
 function l1(a: number[], b: number[]): number {
