@@ -113,6 +113,27 @@ async function viewportHistogram(page: Page): Promise<number[]> {
   });
 }
 
+/** Sample 5 consecutive rAF-spaced histograms and return the one with
+ *  the most non-bin-0 content. The card's rAF loop fills the canvas
+ *  with the #050608 background BEFORE drawing ribbons — sampling
+ *  during the brief fill-but-pre-draw window catches an all-bin-0
+ *  frame. Taking the busiest of 5 samples (≥ 3 of which will be
+ *  fully-rendered) sidesteps the race. */
+async function busiestHistogram(page: Page): Promise<number[]> {
+  let best: number[] = [];
+  let bestNonBg = -1;
+  for (let i = 0; i < 5; i++) {
+    const h = await viewportHistogram(page);
+    const nonBg = h.slice(1).reduce((a, b) => a + b, 0);
+    if (nonBg > bestNonBg) {
+      best = h;
+      bestNonBg = nonBg;
+    }
+    if (i < 4) await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+  }
+  return best;
+}
+
 /** L1 distance between two histograms. Bigger = more difference. */
 function histogramDistance(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
@@ -167,13 +188,15 @@ test.describe('WAVESCULPT: camera-CV pipeline — WebGL viewport reflects the li
         })
         .toBeGreaterThan(0);
 
-      const h1 = await viewportHistogram(page);
+      // Use the busiest of 5 rAF-spaced frames to dodge the
+      // fill-but-pre-draw race window (see busiestHistogram comment).
+      const h1 = await busiestHistogram(page);
       expect(h1.length, 'first histogram captured').toBe(8);
       // Wait one full LFO period (~1s at default 1Hz) — the camera
       // should sweep enough that the ribbon positions / colours / sizes
       // shift noticeably.
       await page.waitForTimeout(1000);
-      const h2 = await viewportHistogram(page);
+      const h2 = await busiestHistogram(page);
       expect(h2.length, 'second histogram captured').toBe(8);
       const dist = histogramDistance(h1, h2);
       // Pre-fix: WebGL camera read node.params.pos_x (static knob);
