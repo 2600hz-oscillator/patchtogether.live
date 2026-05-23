@@ -197,6 +197,11 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   sticky: { top: 'Hybrid', sub: 'Hybrid' },
   group: { top: 'Hybrid', sub: 'Hybrid' },
   livecode: { top: 'Hybrid', sub: 'Hybrid' },
+  // Clocked runner — spawned programmatically by LIVECODE's clocked()
+  // call. Listed alongside LIVECODE so users browsing the palette can
+  // also spawn one manually (with an empty body) to be wired up by a
+  // parent script later.
+  clockedRunner: { top: 'Hybrid', sub: 'Hybrid' },
 };
 
 /** Look up a module's category, falling back to Uncategorized. */

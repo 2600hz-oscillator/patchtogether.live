@@ -51,6 +51,7 @@ import { bladesDef } from './blades';
 import { stagesDef } from './stages';
 import { cloudseedDef } from './cloudseed';
 import { livecodeDef } from './livecode';
+import { clockedRunnerDef } from './clocked-runner';
 import { midiCvBuddyDef } from './midi-cv-buddy';
 import { midiclockDef } from './midiclock';
 import { helmDef } from './helm';
@@ -115,6 +116,7 @@ export function registerAudioModules(): void {
   registerModule(stagesDef);
   registerModule(cloudseedDef);
   registerModule(livecodeDef);
+  registerModule(clockedRunnerDef);
   registerModule(midiCvBuddyDef);
   registerModule(midiclockDef);
   registerModule(helmDef);

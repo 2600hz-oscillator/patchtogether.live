@@ -309,10 +309,17 @@ type StandardModuleType =
   // through to the underlying child ports by group-projection.ts so the
   // engine never sees groups. Module-grouping Phase 1 feature.
   | 'group'
-  // LIVECODE — text-DSL module that spawns + patches modules from a script.
-  // No audio I/O; the card body holds a textarea + Run button. The DSL
-  // parser/evaluator live in $lib/livecode. See /docs/modules/livecode.
+  // LIVECODE — JS-runtime live-coding module. CodeMirror editor with
+  // port-aware autocomplete + diagnostics; runtime is a `new Function`
+  // sandbox exposing spawn/patch/set/read/clock.*/clocked(). No audio
+  // I/O — the card mutates the patch graph directly. See
+  // /docs/modules/livecode.
   | 'livecode'
+  // CLOCKED runner — a self-contained mini-LIVECODE spawned by
+  // LIVECODE's clocked(division, fn) call. Owns one subscription; its
+  // body re-fires on every division boundary derived from TIMELORDE
+  // bpm. Deleting the runner cancels the subscription. No audio I/O.
+  | 'clockedRunner'
   // PONG — interactive game module (research prototype). CV paddles in,
   // gate scores out. Single-user in this slice; multi-user wiring
   // documented in docs/design/game-modules.md.

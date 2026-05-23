@@ -90,9 +90,9 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     expect(REGISTRY.length, 'manifest contains modules').toBeGreaterThan(0);
     // Meta-domain modules (sticky, group) intentionally have zero
     // ports — they're pure-UI cards with no signal-routing surface.
-    // LIVECODE is a side-tool that mutates the rack via a text DSL and
-    // also intentionally has no patch I/O.
-    const ZERO_PORT_OK = new Set(['livecode']);
+    // LIVECODE + clockedRunner are side-tools that mutate the rack
+    // via the JS runtime; they intentionally have no patch I/O.
+    const ZERO_PORT_OK = new Set(['livecode', 'clockedRunner']);
     for (const s of REGISTRY) {
       if (s.domain === 'meta') continue;
       if (ZERO_PORT_OK.has(s.type)) continue;
