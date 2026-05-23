@@ -100,6 +100,20 @@ test.describe('per-module: output-alive smoke', () => {
       test.fixme(`${mod.type} audio output alive [SKIPPED: ${aliveSkip}]`, () => {});
       continue;
     }
+    // Auto-skip effect modules — anything with an `audio`-typed INPUT
+    // is a processor (filter, reverb, delay, mixer, …) and needs an
+    // upstream source to emit signal. The bare-spawn output-alive
+    // smoke can't drive them. A future slice with a "wire ANALOG-VCO →
+    // module.audio" upstream driver in _drivers.ts will cover this; for
+    // now, skip with a clear reason in the test name.
+    const hasAudioInput = mod.inputs.some((p) => p.type === 'audio');
+    if (hasAudioInput) {
+      test.fixme(
+        `${mod.type} audio output alive [SKIPPED: effect-shape (audio input) — needs upstream driver]`,
+        () => {},
+      );
+      continue;
+    }
 
     const driver = driverFor(mod);
     const outputPort = driver.outputPort;
