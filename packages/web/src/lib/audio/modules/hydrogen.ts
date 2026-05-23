@@ -1,20 +1,31 @@
 // packages/web/src/lib/audio/modules/hydrogen.ts
 //
-// HYDROGEN — TR-808 drum machine module. First pass of a larger "port
-// Hydrogen drum machine into the rack" effort: bundles the stock
-// TR808EmulationKit from the Hydrogen project (GPL-2.0+, ArtemioLabs)
-// and ships a 16-instrument × 16-step pattern sequencer + sample
-// player. Drumkit picker, song-mode, multi-layer velocity samples, and
-// the .h2drumkit loader are deferred to follow-up modules (see the
-// design notes in the PR discussion).
+// HYDROGEN — multi-kit 16-instrument × 16-step drum machine. Ships
+// four kits today:
+//
+//   * TR-808 (sample, GPL'd Hydrogen-music data)
+//   * TR-909 (synthesized, original-design)
+//   * FM-PERC (synthesized FM percussion)
+//   * 8BIT (synthesized chiptune drums)
+//
+// The KitDef abstraction (hydrogen-kit-types.ts + hydrogen-kit-registry.ts)
+// lets a single factory handle both sample-based and synthesized
+// instruments uniformly. Per-voice user knobs (Vol/Pan/Pitch/Cutoff/Q/
+// A/D/S/R) bite the same way across kit types via the shared VoiceOpts
+// contract.
 //
 // Architecture (pure JS Web Audio — no Faust, no AudioWorklet):
 //
 //   per-instrument bus:    instrumentGain[i] → instrumentPan[i] ─┐
 //                                                                 ↓
-//   per-trigger voice:     BufferSource → voiceGain (vel × env) → instrumentGain[i]
+//   per-trigger voice:     <kit-specific source chain> → instrumentGain[i]
 //                                                                 ↑
 //   master:                       … 16 buses → masterGain[L|R] → out_l/out_r
+//
+// For sample kits the source chain is BufferSource → BiquadFilter → ampEnv;
+// for synth kits it's whatever the kit's synth fn builds (see
+// hydrogen-kit-synth-utils.ts for the primitives). Both paths produce
+// a SynthVoice-shaped handle for the choke + cleanup machinery.
 //
 // Pattern + transport: the shared scheduler-clock (Worker tick, jank-
 // immune) ticks every SCHEDULER_TICK_MS, and the factory schedules a
@@ -22,26 +33,19 @@
 // architecture as DRUMSEQZ / RIOTGIRLS — keeps audio-thread events
 // sample-accurate under main-thread jank.
 //
-// Transport contract (v1):
+// Transport contract:
 //   * isPlaying param drives play/stop (toggle exposed to GROUP! bar).
 //   * Optional external `clock_in` gate input — when patched, each
 //     rising edge advances one step (DRUMSEQZ-parity).
 //   * Optional `reset_in` gate input — rising edge resets the playhead.
-//
-// Deferred (v2+):
-//   - Per-step velocity (v1 is binary on/off, velocity defaults to 1.0)
-//   - Pattern pages / song mode
-//   - Per-step micro-shift (humanize)
-//   - Drumkit picker (load other Hydrogen kits)
-//   - .h2drumkit asset loader
-//   - Multi-layer velocity samples (TR-808 is single-layer per inst)
-//   - LADSPA / per-channel FX bus (use SHIMMERSHINE / CHARLOTTES ECHOS
-//     downstream of the stereo out instead)
+//   * Transport CV: play_cv / reset_cv / queue{1..4}_cv — same shape as
+//     SCORE / DRUMSEQZ / POLYSEQZ. Per-instrument tuning is kept across
+//     slot swaps (matches a hardware drum machine).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
-import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import {
   isInputPortConnected,
   shouldSequencerRun,
@@ -54,14 +58,15 @@ import {
   pickQueuedSlotFromEvents,
 } from './transport-cv';
 import { createPlayheadTracker } from './playhead-tracker';
-import {
-  TR808_INSTRUMENTS,
-  TR808_INSTRUMENT_COUNT,
-  loadTR808Sample,
-  preloadTR808Kit,
-} from './hydrogen-tr808-kit-data';
+import { TR808_INSTRUMENTS, loadTR808Sample } from './hydrogen-tr808-kit-data';
+import { KITS, KIT_COUNT, DEFAULT_KIT_INDEX, kitByIndex } from './hydrogen-kit-registry';
+import type { KitInstrument, VoiceOpts } from './hydrogen-kit-types';
 
 export const STEP_COUNT = 16;
+
+/** All HYDROGEN kits ship exactly 16 instruments — the pattern grid +
+ *  per-instrument params bake this in. New kits must match. */
+export const HYDROGEN_INSTRUMENT_COUNT = 16;
 
 export interface HydrogenCell {
   on: boolean;
@@ -70,7 +75,7 @@ export interface HydrogenCell {
 export type HydrogenTrack = HydrogenCell[]; // length STEP_COUNT
 
 export interface HydrogenData {
-  /** Length TR808_INSTRUMENT_COUNT, each track length STEP_COUNT. */
+  /** Length HYDROGEN_INSTRUMENT_COUNT, each track length STEP_COUNT. */
   tracks: HydrogenTrack[];
 }
 
@@ -83,7 +88,7 @@ export function defaultTrack(): HydrogenTrack {
 }
 
 export function defaultTracks(): HydrogenTrack[] {
-  return Array.from({ length: TR808_INSTRUMENT_COUNT }, defaultTrack);
+  return Array.from({ length: HYDROGEN_INSTRUMENT_COUNT }, defaultTrack);
 }
 
 export function coerceCell(raw: unknown): HydrogenCell {
@@ -94,7 +99,7 @@ export function coerceCell(raw: unknown): HydrogenCell {
 export function coerceTracks(raw: unknown): HydrogenTrack[] {
   if (!Array.isArray(raw)) return defaultTracks();
   const out: HydrogenTrack[] = [];
-  for (let t = 0; t < TR808_INSTRUMENT_COUNT; t++) {
+  for (let t = 0; t < HYDROGEN_INSTRUMENT_COUNT; t++) {
     const tr = raw[t];
     if (Array.isArray(tr)) {
       const cells: HydrogenTrack = [];
@@ -110,9 +115,9 @@ export function coerceTracks(raw: unknown): HydrogenTrack[] {
 /** Per-instrument param ids — derived once so the def + factory + card
  *  all agree on the shape. Pattern: vol{i}, pan{i}, A{i}, D{i}, S{i},
  *  R{i}, mute{i}, solo{i} for i ∈ [0..15]. */
-function instrumentParamIds(): string[] {
+export function instrumentParamIds(): string[] {
   const ids: string[] = [];
-  for (let i = 0; i < TR808_INSTRUMENT_COUNT; i++) {
+  for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
     ids.push(`vol${i}`, `pan${i}`, `A${i}`, `D${i}`, `S${i}`, `R${i}`, `mute${i}`, `solo${i}`);
   }
   return ids;
@@ -140,17 +145,31 @@ function buildHydrogenInputs() {
     { id: 'clock_in', type: 'gate' },
     { id: 'reset_in', type: 'gate' },
   ];
-  // Shared transport ports — same shape as SCORE / SEQUENCER / DRUMSEQZ /
-  // POLYSEQZ. Play toggles isPlaying on rising edge; queue{N} stages
-  // slot N to load at the next pattern-end; reset_cv jumps the playhead
-  // back to step 0 (alias of reset_in).
   for (const p of TRANSPORT_CV_PORT_DEFS) {
     inputs.push({ id: p.id, type: 'gate' });
   }
-  for (const inst of TR808_INSTRUMENTS) {
-    inputs.push({ id: `trig${inst.id}`, type: 'gate' });
+  for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
+    inputs.push({ id: `trig${i}`, type: 'gate' });
   }
   return inputs;
+}
+
+/** Per-instrument default getters — pulled from the TR-808 kit since
+ *  it's the historical first kit + has the most opinion-laden values
+ *  (pans for toms, mute group for hats). Synth kits get their own
+ *  defaults via the KitDef; the param's fallback is the TR-808 value
+ *  so legacy saves keep working. */
+function tr808Default(i: number, key: 'gain' | 'pan' | 'A' | 'D' | 'S' | 'R'): number {
+  const inst = TR808_INSTRUMENTS[i];
+  if (!inst) return key === 'S' ? 1 : 0;
+  switch (key) {
+    case 'gain': return inst.defaultGain;
+    case 'pan':  return inst.defaultPan;
+    case 'A':    return inst.defaultA;
+    case 'D':    return inst.defaultD;
+    case 'S':    return inst.defaultS;
+    case 'R':    return inst.defaultR;
+  }
 }
 
 export const hydrogenDef: AudioModuleDef = {
@@ -169,23 +188,24 @@ export const hydrogenDef: AudioModuleDef = {
     { id: 'swing',     label: 'Sw',   defaultValue: 0,   min: 0,   max: 0.75, curve: 'linear' },
     { id: 'gain',      label: 'Gain', defaultValue: 1,   min: 0,   max: 2,   curve: 'linear' },
     { id: 'isPlaying', label: 'Play', defaultValue: 0,   min: 0,   max: 1,   curve: 'discrete' },
-    // Per-instrument params (vol/pan/pitch/cutoff/Q/A/D/S/R/mute/solo
-    // × 16). Defaults come from the kit's drumkit.xml — see
-    // hydrogen-tr808-kit-data.ts. pitch/cutoff/Q match Hydrogen's
-    // "Instrument Properties" panel — semitones, lowpass cutoff, Q.
-    ...TR808_INSTRUMENTS.flatMap((inst) => [
-      { id: `vol${inst.id}`,    label: `${inst.label}V`,  defaultValue: inst.defaultGain, min: 0,    max: 2,     curve: 'linear' as const },
-      { id: `pan${inst.id}`,    label: `${inst.label}P`,  defaultValue: inst.defaultPan,  min: -1,   max: 1,     curve: 'linear' as const },
-      { id: `pitch${inst.id}`,  label: `${inst.label}Pi`, defaultValue: 0,                min: -24,  max: 24,    curve: 'linear' as const, units: 'st' as const },
-      { id: `cutoff${inst.id}`, label: `${inst.label}Cf`, defaultValue: 20000,            min: 20,   max: 20000, curve: 'log'    as const, units: 'Hz' as const },
-      { id: `q${inst.id}`,      label: `${inst.label}Q`,  defaultValue: 0.7,              min: 0.1,  max: 20,    curve: 'log'    as const },
-      { id: `A${inst.id}`,      label: `${inst.label}A`,  defaultValue: inst.defaultA,    min: 0,    max: 2,     curve: 'log'    as const },
-      { id: `D${inst.id}`,      label: `${inst.label}D`,  defaultValue: inst.defaultD,    min: 0,    max: 2,     curve: 'log'    as const },
-      { id: `S${inst.id}`,      label: `${inst.label}S`,  defaultValue: inst.defaultS,    min: 0,    max: 1,     curve: 'linear' as const },
-      { id: `R${inst.id}`,      label: `${inst.label}R`,  defaultValue: inst.defaultR,    min: 0.01, max: 5,     curve: 'log'    as const },
-      { id: `mute${inst.id}`,   label: `${inst.label}M`,  defaultValue: 0,                min: 0,    max: 1,     curve: 'discrete' as const },
-      { id: `solo${inst.id}`,   label: `${inst.label}S`,  defaultValue: 0,                min: 0,    max: 1,     curve: 'discrete' as const },
-    ]),
+    // Kit selector — discrete 0..KIT_COUNT-1 indexing into KITS.
+    // 0 = TR-808 (matches legacy single-kit behaviour).
+    { id: 'kit',       label: 'Kit',  defaultValue: DEFAULT_KIT_INDEX, min: 0, max: Math.max(0, KIT_COUNT - 1), curve: 'discrete' },
+    // Per-instrument params. Defaults reference the TR-808 table for
+    // backwards compatibility; the active kit may override at runtime.
+    ...Array.from({ length: HYDROGEN_INSTRUMENT_COUNT }, (_, i) => [
+      { id: `vol${i}`,    label: `${i}V`,  defaultValue: tr808Default(i, 'gain'), min: 0,    max: 2,     curve: 'linear' as const },
+      { id: `pan${i}`,    label: `${i}P`,  defaultValue: tr808Default(i, 'pan'),  min: -1,   max: 1,     curve: 'linear' as const },
+      { id: `pitch${i}`,  label: `${i}Pi`, defaultValue: 0,                       min: -24,  max: 24,    curve: 'linear' as const, units: 'st' as const },
+      { id: `cutoff${i}`, label: `${i}Cf`, defaultValue: 20000,                   min: 20,   max: 20000, curve: 'log'    as const, units: 'Hz' as const },
+      { id: `q${i}`,      label: `${i}Q`,  defaultValue: 0.7,                     min: 0.1,  max: 20,    curve: 'log'    as const },
+      { id: `A${i}`,      label: `${i}A`,  defaultValue: tr808Default(i, 'A'),    min: 0,    max: 2,     curve: 'log'    as const },
+      { id: `D${i}`,      label: `${i}D`,  defaultValue: tr808Default(i, 'D'),    min: 0,    max: 2,     curve: 'log'    as const },
+      { id: `S${i}`,      label: `${i}S`,  defaultValue: tr808Default(i, 'S'),    min: 0,    max: 1,     curve: 'linear' as const },
+      { id: `R${i}`,      label: `${i}R`,  defaultValue: tr808Default(i, 'R'),    min: 0.01, max: 5,     curve: 'log'    as const },
+      { id: `mute${i}`,   label: `${i}M`,  defaultValue: 0,                       min: 0,    max: 1,     curve: 'discrete' as const },
+      { id: `solo${i}`,   label: `${i}S`,  defaultValue: 0,                       min: 0,    max: 1,     curve: 'discrete' as const },
+    ]).flat(),
   ],
 
   exposableControls: [
@@ -202,49 +222,52 @@ export const hydrogenDef: AudioModuleDef = {
     const splitter = ctx.createChannelSplitter(2);
     masterGain.connect(splitter);
 
-    // Per-instrument: gain (with mute/solo applied) → stereo panner →
-    // master. The voice path (one BufferSource per trigger) connects to
-    // instrumentGain, so changing vol/pan/mute mid-play affects ALL
-    // future + currently-sustained samples for that instrument.
     const instrumentGain: GainNode[] = [];
     const instrumentPan: StereoPannerNode[] = [];
-    for (let i = 0; i < TR808_INSTRUMENT_COUNT; i++) {
+    for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
       const g = ctx.createGain();
-      g.gain.value = node.params?.[`vol${i}`] as number ?? TR808_INSTRUMENTS[i]!.defaultGain;
+      g.gain.value = node.params?.[`vol${i}`] as number ?? tr808Default(i, 'gain');
       const p = ctx.createStereoPanner();
-      p.pan.value = node.params?.[`pan${i}`] as number ?? TR808_INSTRUMENTS[i]!.defaultPan;
+      p.pan.value = node.params?.[`pan${i}`] as number ?? tr808Default(i, 'pan');
       g.connect(p);
       p.connect(masterGain);
       instrumentGain.push(g);
       instrumentPan.push(p);
     }
 
-    // Pre-decode every sample. The factory function is async — callers
-    // await it (PatchEngine.addNode does), so the first user gesture that
-    // triggers a step finds the buffers already in the cache.
-    const samples: Array<AudioBuffer | null> = new Array(TR808_INSTRUMENT_COUNT).fill(null);
-    try {
-      await preloadTR808Kit(ctx);
-      for (let i = 0; i < TR808_INSTRUMENT_COUNT; i++) {
-        samples[i] = await loadTR808Sample(ctx, TR808_INSTRUMENTS[i]!.sampleUrl);
+    // ---------- Sample preload ----------
+    //
+    // Eagerly fetch every sample-kit instrument's audio so the first
+    // trigger lands on a hot cache. Synth kits don't need a preload —
+    // their voices are built from oscillators / noise at trigger time.
+    const sampleCache = new Map<string, AudioBuffer>();
+    async function preloadAllSamples() {
+      const urls = new Set<string>();
+      for (const kit of KITS) {
+        for (const inst of kit.instruments) {
+          if (inst.kind === 'sample') urls.add(inst.sampleUrl);
+        }
       }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('[hydrogen] sample preload failed; voices will be silent until network recovers', err);
+      try {
+        await Promise.all([...urls].map(async (url) => {
+          const buf = await loadTR808Sample(ctx, url);
+          sampleCache.set(url, buf);
+        }));
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[hydrogen] sample preload failed; sample voices will be silent', err);
+      }
     }
+    await preloadAllSamples();
 
     // ---------- Voice scheduling + mute-group choke ----------
     //
-    // Each fired voice gets a BufferSource + GainNode (amp env). We
-    // keep a per-mute-group set of "currently-sounding" voices so a
-    // new trigger in the same group can choke its predecessors (the
-    // closed-hat → open-hat case). Group 0 == "no group" and never
-    // chokes. Voice records self-cleanup on the BufferSource's `ended`
-    // event so the set stays bounded.
+    // ActiveVoice abstracts over sample (BufferSource + GainNode) and
+    // synth (whatever the kit's voice fn built) — both implement a
+    // common `stop(atTime)` so chokeGroup() works uniformly.
 
     interface ActiveVoice {
-      source: AudioBufferSourceNode;
-      env: GainNode;
+      stop(atTime: number): void;
       muteGroup: number;
     }
     const voicesByMuteGroup = new Map<number, Set<ActiveVoice>>();
@@ -253,86 +276,134 @@ export const hydrogenDef: AudioModuleDef = {
       if (group <= 0) return;
       const set = voicesByMuteGroup.get(group);
       if (!set) return;
-      const FAST_RELEASE = 0.005;
       for (const v of set) {
-        try {
-          v.env.gain.cancelScheduledValues(atTime);
-          v.env.gain.setValueAtTime(v.env.gain.value, atTime);
-          v.env.gain.linearRampToValueAtTime(0, atTime + FAST_RELEASE);
-          v.source.stop(atTime + FAST_RELEASE + 0.01);
-        } catch { /* already stopped */ }
+        try { v.stop(atTime); } catch { /* */ }
       }
       set.clear();
     }
 
-    function fireInstrument(idx: number, atTime: number, velocity = 1) {
-      const inst = TR808_INSTRUMENTS[idx];
-      if (!inst) return;
-      const buf = samples[idx];
-      if (!buf) return;
+    function readActiveKitIndex(): number {
+      const v = livePatch.nodes[nodeId]?.params?.kit;
+      const n = typeof v === 'number' ? v : DEFAULT_KIT_INDEX;
+      return Math.max(0, Math.min(KIT_COUNT - 1, Math.round(n)));
+    }
 
-      // Mute / solo gating — if any instrument is soloed, only soloed
-      // voices fire; otherwise mute keeps the voice silent.
-      if (readParam(`mute${idx}`, 0) >= 0.5) return;
-      const anySolo = TR808_INSTRUMENTS.some((j) => readParam(`solo${j.id}`, 0) >= 0.5);
-      if (anySolo && readParam(`solo${idx}`, 0) < 0.5) return;
+    function activeKitInstruments(): readonly KitInstrument[] {
+      return kitByIndex(readActiveKitIndex()).instruments;
+    }
 
-      chokeGroup(inst.muteGroup, atTime);
+    /** Build the VoiceOpts for instrument idx — pulled from live params
+     *  (knob OR engine CV). The synth path uses these directly; the
+     *  sample path applies them to its biquad + envelope. */
+    function voiceOptsFor(idx: number, velocity: number): VoiceOpts {
+      return {
+        velocity,
+        pitchSt: readParam(`pitch${idx}`, 0),
+        cutoffHz: readParam(`cutoff${idx}`, 20000),
+        q: readParam(`q${idx}`, 0.7),
+        attackS: readParam(`A${idx}`, tr808Default(idx, 'A')),
+        decayS: readParam(`D${idx}`, tr808Default(idx, 'D')),
+        sustain: readParam(`S${idx}`, tr808Default(idx, 'S')),
+        releaseS: readParam(`R${idx}`, tr808Default(idx, 'R')),
+      };
+    }
+
+    function fireSampleInstrument(
+      inst: KitInstrument & { kind: 'sample' },
+      idx: number,
+      atTime: number,
+      opts: VoiceOpts,
+    ): ActiveVoice | null {
+      const buf = sampleCache.get(inst.sampleUrl);
+      if (!buf) return null;
 
       const source = ctx.createBufferSource();
       source.buffer = buf;
-      // Per-voice pitch — semitone offset from the recorded sample
-      // pitch, via playbackRate. Same semantics as Hydrogen's
-      // Instrument Properties "Pitch" knob: positive = up, negative =
-      // down. detune is not used (would compound with playbackRate);
-      // the semitone math here is canonical.
-      const pitchSt = readParam(`pitch${idx}`, 0);
-      source.playbackRate.value = Math.pow(2, pitchSt / 12);
+      source.playbackRate.value = Math.pow(2, opts.pitchSt / 12);
 
-      // Per-voice lowpass filter (matches Hydrogen's per-instrument
-      // filter section). Default cutoff 20 kHz + Q 0.7 → effectively
-      // bypass; the user dials the cutoff down or Q up to shape the
-      // voice. Fixed-type lowpass (not switchable) for now — Hydrogen's
-      // hardware also exposes a single LPF on the instrument-properties
-      // panel.
       const filter = ctx.createBiquadFilter();
       filter.type = 'lowpass';
-      filter.frequency.value = readParam(`cutoff${idx}`, 20000);
-      filter.Q.value = readParam(`q${idx}`, 0.7);
+      filter.frequency.value = opts.cutoffHz;
+      filter.Q.value = opts.q;
 
       const env = ctx.createGain();
-      const A = readParam(`A${idx}`, inst.defaultA);
-      const D = readParam(`D${idx}`, inst.defaultD);
-      const S = readParam(`S${idx}`, inst.defaultS);
-      const R = readParam(`R${idx}`, inst.defaultR);
-
-      // A=D=0 + S=1 (TR-808 default) collapses to "vel for the whole
-      // sample duration, R-second release at the end" — i.e. plays the
-      // sample dry. Non-zero A/D/S/R lets the user shape the natural
-      // tail without re-recording the sample.
-      const peak = velocity;
-      const sustain = S * peak;
+      const peak = opts.velocity;
+      const sustainV = opts.sustain * peak;
       env.gain.setValueAtTime(0, atTime);
-      env.gain.linearRampToValueAtTime(peak, atTime + Math.max(0.001, A));
-      env.gain.linearRampToValueAtTime(sustain, atTime + Math.max(0.001, A) + Math.max(0.001, D));
+      env.gain.linearRampToValueAtTime(peak, atTime + Math.max(0.001, opts.attackS));
+      env.gain.linearRampToValueAtTime(
+        sustainV,
+        atTime + Math.max(0.001, opts.attackS) + Math.max(0.001, opts.decayS),
+      );
 
       source.connect(filter);
       filter.connect(env);
       env.connect(instrumentGain[idx]!);
       source.start(atTime);
 
-      // Schedule the release ramp to start when the sample naturally
-      // ends; if R extends past the buffer's duration we just let the
-      // BufferSource stop on its own (no harm — env keeps ramping but
-      // there's no signal to envelope).
       const dur = buf.duration;
       const releaseStart = atTime + dur;
       try {
-        env.gain.setValueAtTime(sustain, releaseStart);
-        env.gain.linearRampToValueAtTime(0, releaseStart + Math.max(0.005, R));
-      } catch { /* envelope past end-of-sample is harmless */ }
+        env.gain.setValueAtTime(sustainV, releaseStart);
+        env.gain.linearRampToValueAtTime(0, releaseStart + Math.max(0.005, opts.releaseS));
+      } catch { /* */ }
 
-      const voice: ActiveVoice = { source, env, muteGroup: inst.muteGroup };
+      const voice: ActiveVoice = {
+        muteGroup: inst.muteGroup,
+        stop(at: number) {
+          const FAST = 0.005;
+          try {
+            env.gain.cancelScheduledValues(at);
+            env.gain.setValueAtTime(env.gain.value, at);
+            env.gain.linearRampToValueAtTime(0, at + FAST);
+            source.stop(at + FAST + 0.01);
+          } catch { /* */ }
+        },
+      };
+
+      source.onended = () => {
+        if (inst.muteGroup > 0) voicesByMuteGroup.get(inst.muteGroup)?.delete(voice);
+        try { source.disconnect(); filter.disconnect(); env.disconnect(); } catch { /* */ }
+      };
+
+      return voice;
+    }
+
+    function fireSynthInstrument(
+      inst: KitInstrument & { kind: 'synth' },
+      idx: number,
+      atTime: number,
+      opts: VoiceOpts,
+    ): ActiveVoice {
+      const synthVoice = inst.synth(ctx, instrumentGain[idx]!, atTime, opts);
+      const voice: ActiveVoice = {
+        muteGroup: inst.muteGroup,
+        stop(at: number) { synthVoice.stop(at); },
+      };
+      synthVoice.ended.then(() => {
+        if (inst.muteGroup > 0) voicesByMuteGroup.get(inst.muteGroup)?.delete(voice);
+      });
+      return voice;
+    }
+
+    function fireInstrument(idx: number, atTime: number, velocity = 1) {
+      const instruments = activeKitInstruments();
+      const inst = instruments[idx];
+      if (!inst) return;
+
+      // Mute / solo gating.
+      if (readParam(`mute${idx}`, 0) >= 0.5) return;
+      const anySolo = instruments.some((_, j) => readParam(`solo${j}`, 0) >= 0.5);
+      if (anySolo && readParam(`solo${idx}`, 0) < 0.5) return;
+
+      chokeGroup(inst.muteGroup, atTime);
+
+      const opts = voiceOptsFor(idx, velocity);
+      const voice = inst.kind === 'sample'
+        ? fireSampleInstrument(inst, idx, atTime, opts)
+        : fireSynthInstrument(inst, idx, atTime, opts);
+      if (!voice) return;
+
       if (inst.muteGroup > 0) {
         let set = voicesByMuteGroup.get(inst.muteGroup);
         if (!set) {
@@ -341,25 +412,15 @@ export const hydrogenDef: AudioModuleDef = {
         }
         set.add(voice);
       }
-      source.onended = () => {
-        if (inst.muteGroup > 0) voicesByMuteGroup.get(inst.muteGroup)?.delete(voice);
-        try { source.disconnect(); env.disconnect(); } catch { /* already disconnected */ }
-      };
     }
 
     // ---------- Per-instrument trig{i} input handling ----------
-    //
-    // Each `trig{i}` cable lets the rack drive an instrument directly
-    // (DRUMSEQZ → HYDROGEN, or a sequencer's clock_out hand-wired into
-    // one drum). We expose a sink GainNode + AnalyserNode per input so
-    // we can detect rising edges on the audio-rate trig signal.
-
     const trigGains: GainNode[] = [];
     const trigAnalysers: AnalyserNode[] = [];
     const trigAnalyserBuf = new Float32Array(2048);
     const trigSilences: ConstantSourceNode[] = [];
-    const lastTrigSample: number[] = new Array(TR808_INSTRUMENT_COUNT).fill(0);
-    for (let i = 0; i < TR808_INSTRUMENT_COUNT; i++) {
+    const lastTrigSample: number[] = new Array(HYDROGEN_INSTRUMENT_COUNT).fill(0);
+    for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
       const g = ctx.createGain();
       const a = ctx.createAnalyser();
       a.fftSize = 2048;
@@ -399,11 +460,6 @@ export const hydrogenDef: AudioModuleDef = {
     let lastResetSample = 0;
     const CLOCK_THRESHOLD = 0.5;
 
-    // ---------- Shared transport CV inputs (play/queue/reset). ----------
-    // Same machinery the other sequencers (SCORE / DRUMSEQZ / POLYSEQZ)
-    // use. transportCv.drain() returns per-port rising-edge counts each
-    // tick; we toggle isPlaying / reset stepIndex / stage queuedSlot
-    // accordingly.
     const transportCv = createTransportCv(ctx);
     let lastTransportPollTime = ctx.currentTime;
 
@@ -435,18 +491,14 @@ export const hydrogenDef: AudioModuleDef = {
     function emitStep(idx: number, atTime: number) {
       const tracks = readTracks();
       playhead.schedule(idx, atTime);
-      for (let i = 0; i < TR808_INSTRUMENT_COUNT; i++) {
+      for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
         const cell = tracks[i]?.[idx] ?? defaultCell();
         if (cell.on) fireInstrument(i, atTime);
       }
     }
 
     function pollTrigInputs(): void {
-      // Cheap edge detect on every trig{i} input — rising-edge fires the
-      // instrument. Audio-rate trig (e.g. driven from a DRUMSEQZ gate)
-      // arrives via the AnalyserNode tap; we peak across the recent
-      // window for jitter immunity.
-      for (let i = 0; i < TR808_INSTRUMENT_COUNT; i++) {
+      for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
         trigAnalysers[i]!.getFloatTimeDomainData(trigAnalyserBuf);
         let peak = 0;
         for (let s = 0; s < trigAnalyserBuf.length; s++) {
@@ -478,7 +530,6 @@ export const hydrogenDef: AudioModuleDef = {
     }
 
     function pollExternalClockEdges(): number {
-      // Returns the number of rising edges seen since last poll.
       clockInAnalyser.getFloatTimeDomainData(clockInBuffer);
       let edges = 0;
       for (let s = 0; s < clockInBuffer.length; s++) {
@@ -490,9 +541,6 @@ export const hydrogenDef: AudioModuleDef = {
       return edges;
     }
 
-    /** Drain the shared transport-CV inputs once per tick and dispatch
-     *  rising edges. PLAY toggles isPlaying. RESET zeros the playhead.
-     *  QUEUE-N stages slot N to load on the next pattern wrap. */
     function pollTransportCv(): boolean {
       const nowAt = ctx.currentTime;
       const elapsed = nowAt - lastTransportPollTime;
@@ -517,16 +565,6 @@ export const hydrogenDef: AudioModuleDef = {
       return isPlaying;
     }
 
-    /** Apply queued slot's snapshot to node.data + node.params.
-     *
-     *  HYDROGEN snapshot shape:
-     *    { tracks: HydrogenTrack[],         // the pattern grid
-     *      bpm, swing, gain }               // transport-level knobs
-     *
-     *  Per-instrument knobs (vol/pan/pitch/cutoff/Q/A/D/S/R/mute/solo)
-     *  are NOT in the snapshot — users dial in their kit once + want
-     *  preset slots to swap PATTERNS not the kit state. Same posture
-     *  as a hardware drum machine. */
     function maybeApplyQueuedSlot(): boolean {
       const live = livePatch.nodes[nodeId];
       if (!live) return false;
@@ -541,8 +579,6 @@ export const hydrogenDef: AudioModuleDef = {
       }
       if (!live.data) live.data = {};
       const d = live.data as Record<string, unknown>;
-      // Deep-clone the tracks so we don't reassign a Y-tree-resident
-      // object from slots[N] into data.tracks — Yjs throws on that.
       if (Array.isArray(snap.tracks)) {
         d.tracks = (snap.tracks as Array<Array<Record<string, unknown>>>).map((tr) =>
           (Array.isArray(tr) ? tr : []).map((c) => ({ ...c })),
@@ -567,10 +603,9 @@ export const hydrogenDef: AudioModuleDef = {
       try {
         masterGain.gain.value = readParam('gain', 1);
 
-        // Per-instrument mix follow.
-        for (let i = 0; i < TR808_INSTRUMENT_COUNT; i++) {
-          instrumentGain[i]!.gain.value = readParam(`vol${i}`, TR808_INSTRUMENTS[i]!.defaultGain);
-          instrumentPan[i]!.pan.value = readParam(`pan${i}`, TR808_INSTRUMENTS[i]!.defaultPan);
+        for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
+          instrumentGain[i]!.gain.value = readParam(`vol${i}`, tr808Default(i, 'gain'));
+          instrumentPan[i]!.pan.value = readParam(`pan${i}`, tr808Default(i, 'pan'));
         }
 
         const transportIsPlaying = pollTransportCv();
@@ -591,12 +626,8 @@ export const hydrogenDef: AudioModuleDef = {
         if (!shouldRun) return;
 
         if (externalClock) {
-          // One step per rising edge of clock_in. We deliberately don't
-          // pre-schedule any future steps in this mode — TIMELORDE
-          // upstream owns timing.
           const edges = pollExternalClockEdges();
           for (let e = 0; e < edges; e++) {
-            // Apply queued slot at the start of a new pattern (step 0).
             if (stepIndex === 0) maybeApplyQueuedSlot();
             emitStep(stepIndex, ctx.currentTime + 0.005);
             stepIndex = (stepIndex + 1) % STEP_COUNT;
@@ -606,20 +637,10 @@ export const hydrogenDef: AudioModuleDef = {
 
         const bpm = Math.max(30, readParam('bpm', 120));
         const swing = Math.min(0.75, Math.max(0, readParam('swing', 0)));
-        // 16-step = one bar at 4/4 = 16 sixteenths. Step duration in
-        // seconds = (60 / bpm) / 4.
         const baseStepS = (60 / bpm) / 4;
         const horizon = ctx.currentTime + LOOKAHEAD_S;
         while (nextStepTime < horizon) {
-          // Apply queued slot at the start of a new pattern (step 0).
-          // The new tracks + bpm/swing/gain take effect from this step
-          // forward; the lookahead may have already scheduled future
-          // steps from the OLD pattern up to horizon — those stay (no
-          // glitchy mid-bar swap).
           if (stepIndex === 0) maybeApplyQueuedSlot();
-          // Swing: shift every odd 16th later by `swing * baseStepS / 2`.
-          // 0 swing == straight, 0.5 == strong triplet feel, 0.75 ==
-          // very loose.
           const isOddStep = (stepIndex % 2) === 1;
           const swungAt = isOddStep ? nextStepTime + swing * baseStepS * 0.5 : nextStepTime;
           emitStep(stepIndex, swungAt);
@@ -635,21 +656,14 @@ export const hydrogenDef: AudioModuleDef = {
     const clock = getSchedulerClock();
     unsubscribeTick = clock.subscribe(tick);
 
-    // Build the gate-input map: clock + reset + transport CV +
-    // per-instrument trig ports each route to their own Gain sink so
-    // the engine's edge-validation accepts gate cables.
     const inputs = new Map<string, { node: AudioNode; input: number }>([
       ['clock_in', { node: clockInGain, input: 0 }],
       ['reset_in', { node: resetInGain, input: 0 }],
     ]);
-    // Transport CV inputs: play_cv, reset_cv, queue1..4_cv. Each rising
-    // edge gets drained by transportCv.drain() inside tick() and
-    // dispatched (play toggles isPlaying; reset_cv jumps stepIndex
-    // to 0; queue{N} stages slot N to load at the next pattern wrap).
     for (const [portId, entry] of transportCv.inputs.entries()) {
       inputs.set(portId, entry);
     }
-    for (let i = 0; i < TR808_INSTRUMENT_COUNT; i++) {
+    for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
       inputs.set(`trig${i}`, { node: trigGains[i]!, input: 0 });
     }
 
@@ -687,7 +701,7 @@ export const hydrogenDef: AudioModuleDef = {
         try { transportCv.dispose(); } catch { /* */ }
         for (const s of trigSilences) try { s.stop(); } catch { /* */ }
         for (const set of voicesByMuteGroup.values()) {
-          for (const v of set) { try { v.source.stop(); } catch { /* */ } }
+          for (const v of set) { try { v.stop(ctx.currentTime); } catch { /* */ } }
         }
         voicesByMuteGroup.clear();
       },
@@ -695,4 +709,3 @@ export const hydrogenDef: AudioModuleDef = {
   },
 };
 
-export { instrumentParamIds };

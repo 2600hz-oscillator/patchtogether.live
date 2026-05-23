@@ -25,7 +25,7 @@
     STEP_COUNT,
     type HydrogenTrack,
   } from '$lib/audio/modules/hydrogen';
-  import { TR808_INSTRUMENTS } from '$lib/audio/modules/hydrogen-tr808-kit-data';
+  import { KITS, KIT_COUNT, DEFAULT_KIT_INDEX, kitByIndex } from '$lib/audio/modules/hydrogen-kit-registry';
   import {
     readSlots,
     readPendingMode,
@@ -200,11 +200,27 @@
     expandedInst = expandedInst === id ? null : id;
   }
 
+  // ---------- kit selector ----------
+  // `kit` param indexes into the KITS registry. Per-instrument
+  // tuning (vol/pan/pitch/etc) persists across kit swaps — same
+  // posture as a hardware drum machine, where "Channel 5 Volume"
+  // doesn't reset when you load a new kit.
+  let kitIndex = $derived(Math.max(0, Math.min(KIT_COUNT - 1, Math.round(pget('kit', DEFAULT_KIT_INDEX)))));
+  let activeKit = $derived(kitByIndex(kitIndex));
+  function cycleKit() {
+    set('kit')((kitIndex + 1) % KIT_COUNT);
+    // Auto-collapse any expanded inst — different kit can have
+    // different per-slot label semantics; user can re-expand if
+    // they want the new voice's knobs.
+    expandedInst = null;
+  }
+
   // ---------- PatchPanel sections — one per instrument + master ----------
   // Each instrument row gets its own section so the user can find the
   // trig + amp-env knobs by name; the section labels mirror the row
-  // labels on the card body.
-  const sections = [
+  // labels on the card body. The per-instrument section label changes
+  // when the user swaps kits.
+  let sections = $derived([
     {
       label: 'Master',
       inputs: [
@@ -217,10 +233,6 @@
       ] as PortDescriptor[],
     },
     {
-      // Shared transport CV inputs — same shape as SCORE/DRUMSEQZ/
-      // POLYSEQZ. play_cv toggles transport on rising edge;
-      // reset_cv jumps the playhead to step 0; queue1..4_cv stages
-      // preset-slot N to load at the next pattern wrap.
       label: 'Transport CV',
       inputs: [
         { id: 'play_cv',   label: 'PLAY',   cable: 'gate' },
@@ -231,16 +243,26 @@
         { id: 'queue4_cv', label: 'Q4',     cable: 'gate' },
       ] as PortDescriptor[],
     },
-    ...TR808_INSTRUMENTS.map((inst) => ({
+    ...activeKit.instruments.map((inst) => ({
       label: inst.name,
       inputs: [{ id: `trig${inst.id}`, label: 'TRIG', cable: 'gate' }] as PortDescriptor[],
     })),
-  ];
+  ]);
 </script>
 
 <div class="mod-card hydrogen-card" data-testid="hydrogen-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">HYDROGEN <span class="kit-name">TR-808</span></header>
+  <header class="title">
+    HYDROGEN
+    <button
+      type="button"
+      class="kit-btn"
+      onclick={cycleKit}
+      data-testid="hydrogen-kit-toggle"
+      title={`Kit: ${activeKit.name} — click to cycle (${KITS.map((k) => k.name).join(' / ')})`}
+      aria-label={`Kit: ${activeKit.name}. Click to cycle to the next kit.`}
+    >{activeKit.name}</button>
+  </header>
 
   <PatchPanel nodeId={id} {sections} groupingStrategy="sectioned" panelWidth={420}>
     <div class="body">
@@ -278,7 +300,7 @@
       />
 
       <div class="grid">
-        {#each TR808_INSTRUMENTS as inst}
+        {#each activeKit.instruments as inst}
           <div class="row" data-instrument-id={inst.id}>
             <button
               type="button"
@@ -369,11 +391,24 @@
     margin-bottom: 8px;
     text-align: center;
   }
-  .title .kit-name {
+  .title .kit-btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--accent, #00f0ff);
     color: var(--accent, #00f0ff);
-    font-weight: 400;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    padding: 1px 6px;
     margin-left: 6px;
-    font-size: 11px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background 80ms ease-out, color 80ms ease-out;
+  }
+  .title .kit-btn:hover {
+    background: var(--accent, #00f0ff);
+    color: var(--module-bg, #1a1d23);
   }
 
   .body { display: flex; flex-direction: column; gap: 6px; }
