@@ -32,6 +32,7 @@ import {
   EXEMPT_FROM_VRT,
   EXEMPT_BASELINE_PAIRS,
 } from '../../../../../../e2e/vrt/vrt-exemptions';
+import { VRT_SCENES } from '../../../../../../e2e/vrt/vrt-scenes';
 
 function repoRoot(): string {
   // This file lives at packages/web/src/lib/audio/modules/. Six `..`
@@ -127,6 +128,30 @@ describe('VRT coverage self-test', () => {
   it('every exempted module has a non-empty reason', () => {
     for (const [t, reason] of Object.entries(EXEMPT_FROM_VRT)) {
       expect(reason.length, `${t} exemption needs a reason`).toBeGreaterThan(10);
+    }
+  });
+
+  it('every VRT_SCENES key is a registered module type (no drift)', async () => {
+    await import('$lib/audio/modules');
+    await import('$lib/video/modules');
+    await import('$lib/meta/modules');
+    const registered = new Set([
+      ...listModuleDefs().map((d) => d.type as string),
+      ...listVideoModuleDefs().map((d) => d.type as string),
+      ...listMetaModuleDefs().map((d) => d.type as string),
+    ]);
+    for (const sceneType of Object.keys(VRT_SCENES)) {
+      expect(
+        registered.has(sceneType),
+        `${sceneType} has a VRT scene but isn't a registered module`,
+      ).toBe(true);
+    }
+  });
+
+  it('VRT_SCENES module-under-test id is always "vrt-1" (matches vrt.spec.ts selector)', () => {
+    for (const [type, scene] of Object.entries(VRT_SCENES)) {
+      const hasVrt1 = scene.nodes.some((n) => n.id === 'vrt-1' && n.type === type);
+      expect(hasVrt1, `${type}: scene.nodes must include {id:'vrt-1', type:'${type}'}`).toBe(true);
     }
   });
 });

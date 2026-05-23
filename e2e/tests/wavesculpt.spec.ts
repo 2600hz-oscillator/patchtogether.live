@@ -237,7 +237,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       await page.waitForTimeout(400);
     }
 
-    async function sampleScreenSignature(): Promise<number[]> {
+    async function singleHistogramSample(): Promise<number[]> {
       // Return a coarse intensity histogram so we can compare frame
       // shapes ignoring per-pixel timing noise. The histogram gives a
       // stronger signal than a raw lit-pixel count (which can match across
@@ -257,6 +257,29 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
         }
         return bins;
       });
+    }
+
+    /** Sample 5 rAF-spaced histograms and return the one with the
+     *  most non-bin-0 content. The WebGL rAF loop fills the canvas
+     *  with the #050608 background BEFORE drawing ribbons each frame
+     *  — a single-shot capture can land in the brief fill-but-pre-
+     *  draw window and come back all-bin-0. Same pattern as the
+     *  busiestHistogram() helper in wavesculpt-camera-cv.spec.ts (PR
+     *  #232). 5 samples covers 5 rAF ticks; at least 3 will hit
+     *  fully-rendered frames and we pick the strongest signal. */
+    async function sampleScreenSignature(): Promise<number[]> {
+      let best: number[] = [];
+      let bestNonBg = -1;
+      for (let i = 0; i < 5; i++) {
+        const h = await singleHistogramSample();
+        const nonBg = h.slice(1).reduce((a, b) => a + b, 0);
+        if (nonBg > bestNonBg) {
+          best = h;
+          bestNonBg = nonBg;
+        }
+        if (i < 4) await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+      return best;
     }
 
     function l1Diff(a: number[], b: number[]): number {
