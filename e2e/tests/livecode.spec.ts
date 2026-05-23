@@ -172,6 +172,58 @@ test('livecode: clocked() spawns a clockedRunner with the body + division', asyn
   expect(runner.data?.source).toContain("set('TIMELORDE1', 'bpm', 130)");
 });
 
+test('livecode: setData writes sequencer step array → node.data.steps', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
+
+  await typeAndRun(
+    page,
+    'lc',
+    `spawn('sequencer', 'seq');
+setData('seq', 'steps', [
+  { on: true, pitch: 60 },
+  { on: false },
+  { on: true, pitch: 64 },
+]);`,
+  );
+
+  await page.waitForFunction(() => {
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { type: string; data?: { steps?: unknown } }> } };
+    const seq = Object.values(w.__patch.nodes).find((n) => n?.type === 'sequencer');
+    return !!(seq?.data?.steps);
+  }, { timeout: 5000 });
+
+  const steps = await page.evaluate(() => {
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { type: string; data?: { steps?: unknown } }> } };
+    const seq = Object.values(w.__patch.nodes).find((n) => n?.type === 'sequencer');
+    return seq?.data?.steps;
+  });
+  expect(Array.isArray(steps)).toBe(true);
+  if (!Array.isArray(steps)) return;
+  expect(steps.length).toBe(3);
+  expect((steps[0] as { on?: boolean }).on).toBe(true);
+  expect((steps[0] as { pitch?: number }).pitch).toBe(60);
+});
+
+test('livecode: state.set persists on owning livecode card across two runs', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
+
+  // Run 1 — initialize counter to 1.
+  await typeAndRun(page, 'lc', `state.set('beat', (state.get('beat') ?? 0) + 1);`);
+  // Run 2 — increment to 2. Reads from the data.state we just wrote.
+  await typeAndRun(page, 'lc', `state.set('beat', (state.get('beat') ?? 0) + 1);`);
+
+  const beat = await page.evaluate(() => {
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { state?: Record<string, unknown> } }> } };
+    const lc = w.__patch.nodes.lc;
+    return lc?.data?.state?.beat;
+  });
+  expect(beat).toBe(2);
+});
+
 test('livecode: editable name label — rename + reject duplicate', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');

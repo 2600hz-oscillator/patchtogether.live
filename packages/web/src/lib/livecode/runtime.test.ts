@@ -328,3 +328,159 @@ describe('runtime: log', () => {
     expect(last.message).toContain('"a":1');
   });
 });
+
+describe('runtime: setData()', () => {
+  it('setData writes an arbitrary JSON value via a setData mutation', () => {
+    const env = emptyEnv();
+    env.liveNodes.s = makeNode('s', 'sequencer', 'seq1');
+    const res = run({
+      src: `setData('seq1', 'steps', [{ on: true, pitch: 60 }, { on: false }]);`,
+      liveNodes: env.liveNodes,
+      liveEdges: env.liveEdges,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const m = res.mutations.find((mm) => mm.kind === 'setData');
+    expect(m).toBeDefined();
+    if (!m || m.kind !== 'setData') return;
+    expect(m.nodeId).toBe('s');
+    expect(m.key).toBe('steps');
+    expect(Array.isArray(m.value)).toBe(true);
+    expect((m.value as unknown[]).length).toBe(2);
+  });
+
+  it('setData throws on missing module + empty key', () => {
+    const res1 = run({
+      src: `setData('ghost', 'steps', []);`,
+      liveNodes: {},
+      liveEdges: {},
+    });
+    expect(res1.ok).toBe(false);
+    if (res1.ok) return;
+    expect(res1.error.message).toMatch(/not found/);
+
+    const env = emptyEnv();
+    env.liveNodes.s = makeNode('s', 'sequencer', 'seq1');
+    const res2 = run({
+      src: `setData('seq1', '', 0);`,
+      liveNodes: env.liveNodes,
+      liveEdges: env.liveEdges,
+    });
+    expect(res2.ok).toBe(false);
+    if (res2.ok) return;
+    expect(res2.error.message).toMatch(/non-empty string/);
+  });
+});
+
+describe('runtime: state namespace', () => {
+  it('state.set then state.get round-trips a value within one run', () => {
+    const env = emptyEnv();
+    env.liveNodes['livecode-1'] = makeNode('livecode-1', 'livecode', 'LIVECODE1');
+    const res = run({
+      src: `
+        state.set('count', 5);
+        const v = state.get('count');
+        log('got', v);
+      `,
+      liveNodes: env.liveNodes,
+      liveEdges: env.liveEdges,
+      ownerNodeId: 'livecode-1',
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.log.some((l) => l.message.includes('got 5'))).toBe(true);
+  });
+
+  it('state.set emits a setData mutation under data.state', () => {
+    const env = emptyEnv();
+    env.liveNodes['lc'] = makeNode('lc', 'livecode', 'LIVECODE1');
+    const res = run({
+      src: `state.set('beat', 7);`,
+      liveNodes: env.liveNodes,
+      liveEdges: env.liveEdges,
+      ownerNodeId: 'lc',
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const m = res.mutations.find((mm) => mm.kind === 'setData' && (mm as { key: string }).key === 'state');
+    expect(m).toBeDefined();
+    if (!m || m.kind !== 'setData') return;
+    expect((m.value as Record<string, unknown>).beat).toBe(7);
+  });
+
+  it('state survives across two run() invocations on the same owner (idempotent counter)', () => {
+    const env = emptyEnv();
+    env.liveNodes['lc'] = makeNode('lc', 'livecode', 'LIVECODE1');
+    // First run: initialize counter.
+    const r1 = run({
+      src: `state.set('beat', (state.get('beat') ?? 0) + 1);`,
+      liveNodes: env.liveNodes,
+      liveEdges: env.liveEdges,
+      ownerNodeId: 'lc',
+    });
+    expect(r1.ok).toBe(true);
+    if (!r1.ok) return;
+    // Apply the mutations into the env (simulate host's ydoc.transact).
+    for (const m of r1.mutations) {
+      if (m.kind === 'setData') {
+        const target = env.liveNodes[m.nodeId];
+        if (target) {
+          if (!target.data) target.data = {};
+          (target.data as Record<string, unknown>)[m.key] = m.value;
+        }
+      }
+    }
+    // Second run: increment again. state.get should see the value from r1.
+    const r2 = run({
+      src: `state.set('beat', (state.get('beat') ?? 0) + 1);`,
+      liveNodes: env.liveNodes,
+      liveEdges: env.liveEdges,
+      ownerNodeId: 'lc',
+    });
+    expect(r2.ok).toBe(true);
+    if (!r2.ok) return;
+    const m = r2.mutations.find((mm) => mm.kind === 'setData' && (mm as { key: string }).key === 'state');
+    if (!m || m.kind !== 'setData') throw new Error('expected setData state mutation');
+    expect((m.value as Record<string, unknown>).beat).toBe(2);
+  });
+
+  it('state.has differentiates stored-undefined vs never-set', () => {
+    const env = emptyEnv();
+    env.liveNodes['lc'] = makeNode('lc', 'livecode', 'LIVECODE1');
+    const res = run({
+      src: `
+        log('before:', state.has('x'));
+        state.set('x', undefined);
+        log('after:',  state.has('x'));
+      `,
+      liveNodes: env.liveNodes,
+      liveEdges: env.liveEdges,
+      ownerNodeId: 'lc',
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.log.some((l) => l.message.includes('before: false'))).toBe(true);
+    expect(res.log.some((l) => l.message.includes('after: true'))).toBe(true);
+  });
+
+  it('state.keys + state.clear', () => {
+    const env = emptyEnv();
+    env.liveNodes['lc'] = makeNode('lc', 'livecode', 'LIVECODE1');
+    const res = run({
+      src: `
+        state.set('a', 1);
+        state.set('b', 2);
+        log('keys:', state.keys().sort().join(','));
+        state.clear();
+        log('after-clear:', state.keys().length);
+      `,
+      liveNodes: env.liveNodes,
+      liveEdges: env.liveEdges,
+      ownerNodeId: 'lc',
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.log.some((l) => l.message.includes('keys: a,b'))).toBe(true);
+    expect(res.log.some((l) => l.message.includes('after-clear: 0'))).toBe(true);
+  });
+});

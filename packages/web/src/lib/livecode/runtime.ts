@@ -188,11 +188,13 @@ class Runtime {
       patch: (refA: string, refB: string) => self.opPatch(refA, refB),
       unpatch: (refA: string, refB: string) => self.opUnpatch(refA, refB),
       set: (mod: string, paramId: string, value: number) => self.opSet(mod, paramId, value),
+      setData: (mod: string, key: string, value: unknown) => self.opSetData(mod, key, value),
       read: (mod: string, key: string) => self.opRead(mod, key),
       listModules: () => self.opListModules(),
       clock: self.buildClockNamespace(),
       clocked: (division: string, fn: (...args: unknown[]) => unknown) => self.opClocked(division, fn),
       every: (division: string, fn: (...args: unknown[]) => unknown) => self.opClocked(division, fn),
+      state: self.buildStateNamespace(),
       log: (...args: unknown[]) => self.opLog(args),
     };
     // Per-module proxies: every live module becomes a top-level
@@ -208,6 +210,82 @@ class Runtime {
       globals[key] = self.buildModuleProxy(n.id);
     }
     return globals;
+  }
+
+  /** state.get(key) / state.set(key, value) — persistent per-runner
+   *  key/value store. Lives on the OWNING runner's node.data.state
+   *  (livecode card OR clockedRunner), so it:
+   *    * survives reload (yjs-synced);
+   *    * survives across clocked() tick invocations;
+   *    * is visible to remote collaborators;
+   *    * is isolated per-runner (script A's state.set('x', 1) does NOT
+   *      leak into script B).
+   *
+   *  When ownerNodeId is unset (anonymous runner), state.* is a no-op
+   *  read returning undefined + a silent set — callers can probe via
+   *  state.has(). Realistic only in unit tests; the card always passes
+   *  an ownerNodeId. */
+  private buildStateNamespace(): Record<string, unknown> {
+    const self = this;
+    const owner = () => self.input.ownerNodeId ? self.workingNodes[self.input.ownerNodeId] : undefined;
+    const ensureStateBag = (): Record<string, unknown> | null => {
+      const n = owner();
+      if (!n) return null;
+      if (!n.data) n.data = {};
+      const data = n.data as Record<string, unknown>;
+      let bag = data.state;
+      if (!bag || typeof bag !== 'object') {
+        bag = {};
+        data.state = bag;
+      }
+      return bag as Record<string, unknown>;
+    };
+    return {
+      get(key: string): unknown {
+        if (typeof key !== 'string') throw new Error('state.get: key must be a string');
+        const bag = owner()?.data?.state as Record<string, unknown> | undefined;
+        return bag ? bag[key] : undefined;
+      },
+      set(key: string, value: unknown): unknown {
+        if (typeof key !== 'string') throw new Error('state.set: key must be a string');
+        const ownerNode = owner();
+        if (!ownerNode) return value;
+        const bag = ensureStateBag();
+        if (!bag) return value;
+        bag[key] = value;
+        // Emit a setData mutation so the host applies the change
+        // through the same ydoc.transact path; the inline mutation
+        // above is the shadow update that lets later code in the
+        // SAME tick read the new value.
+        const ownerData = (ownerNode.data ?? {}) as Record<string, unknown>;
+        self.mutations.push({
+          kind: 'setData',
+          nodeId: ownerNode.id,
+          key: 'state',
+          value: { ...(ownerData.state as Record<string, unknown> | undefined ?? {}), [key]: value },
+        });
+        return value;
+      },
+      has(key: string): boolean {
+        const bag = owner()?.data?.state as Record<string, unknown> | undefined;
+        return !!bag && key in bag;
+      },
+      keys(): string[] {
+        const bag = owner()?.data?.state as Record<string, unknown> | undefined;
+        return bag ? Object.keys(bag) : [];
+      },
+      clear(): void {
+        const ownerNode = owner();
+        if (!ownerNode) return;
+        if (ownerNode.data) (ownerNode.data as Record<string, unknown>).state = {};
+        self.mutations.push({
+          kind: 'setData',
+          nodeId: ownerNode.id,
+          key: 'state',
+          value: {},
+        });
+      },
+    };
   }
 
   private buildClockNamespace(): Record<string, unknown> {
@@ -361,6 +439,22 @@ class Runtime {
     this.mutations.push({ kind: 'setParam', nodeId: node.id, paramId, value });
     node.params[paramId] = value;
     this.log.push({ message: `set ${readName(node)}.${paramId} = ${value}` });
+  }
+
+  /** setData(module, key, value) — write an arbitrary JSON value to
+   *  node.data.<key>. Distinct from set() because params are numbers +
+   *  go to AudioParams; data is everything else (sequencer step arrays,
+   *  module-specific config, runner state). */
+  private opSetData(modRef: string, key: string, value: unknown): void {
+    const node = this.lookupNode(modRef);
+    if (!node) throw new Error(`setData: module '${modRef}' not found`);
+    if (typeof key !== 'string' || key.length === 0) {
+      throw new Error('setData: key must be a non-empty string');
+    }
+    this.mutations.push({ kind: 'setData', nodeId: node.id, key, value });
+    if (!node.data) node.data = {};
+    (node.data as Record<string, unknown>)[key] = value;
+    this.log.push({ message: `setData ${readName(node)}.${key} = ${shortFormat(value)}` });
   }
 
   private opRead(modRef: string, key: string): unknown {
@@ -540,6 +634,18 @@ export function compileClockedBody(body: string, globalNames: string[]): Compile
 
 function isValidDivision(d: string): d is ClockedDivision {
   return (CLOCKED_DIVISIONS as readonly string[]).includes(d);
+}
+
+/** Short stringification for log lines — keeps long arrays + objects
+ *  from blowing up the output panel. */
+function shortFormat(v: unknown): string {
+  if (typeof v === 'number' || typeof v === 'boolean' || v === null || v === undefined) {
+    return String(v);
+  }
+  if (typeof v === 'string') return v.length > 40 ? `"${v.slice(0, 37)}..."` : `"${v}"`;
+  if (Array.isArray(v)) return `[${v.length} items]`;
+  if (typeof v === 'object') return '{…}';
+  return String(v);
 }
 
 function formatLogArg(v: unknown): string {
