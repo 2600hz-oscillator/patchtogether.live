@@ -1015,27 +1015,27 @@ void main() {
     // Camera setup — use the shared eyeFromCamera helper so zoom/rot
     // semantics stay paired with the audio side's distGain math.
     //
-    // Read the LIVE (knob + CV) values via engine.readParam, NOT
-    // node.params (knob only). Pre-fix bug: WebGL camera read
-    // node.params.pos_x directly, so a patched LFO modulated the
-    // AudioParam (and the audio distGain followed correctly via the
-    // shadow analyser path in wavesculpt.ts:tick()) but the visual
-    // viewport stayed parked on the knob. Now both audio + visual
-    // walk in lockstep off the same combined value.
+    // ONE READ. engine.read(node, 'camera') returns the SAME instant
+    // the spatial audio mix is computing right now (both read the
+    // same shadow-gain analyser samples in the factory). Joystick UI
+    // does the same thing — see pollCamLive. That gives us a single
+    // source of truth: knob, CV, audio mix, ribbon viewport, and
+    // joystick dot all move together.
     const eng = engineCtx.get();
-    const readCam = (k: 'pos_x' | 'pos_y' | 'pos_z' | 'zoom' | 'rot', fallback: number): number => {
-      if (eng && node) {
-        const v = eng.readParam(node, k);
-        if (typeof v === 'number') return v;
-      }
-      const raw = node?.params?.[k];
-      return typeof raw === 'number' ? raw : fallback;
+    const cam = (eng && node ? (eng.read(node, 'camera') as
+      | { pos_x: number; pos_y: number; pos_z: number; zoom: number; rot: number }
+      | undefined) : undefined) ?? {
+      pos_x: (node?.params?.pos_x as number | undefined) ?? 0,
+      pos_y: (node?.params?.pos_y as number | undefined) ?? 0,
+      pos_z: (node?.params?.pos_z as number | undefined) ?? 0,
+      zoom:  (node?.params?.zoom  as number | undefined) ?? 1,
+      rot:   (node?.params?.rot   as number | undefined) ?? 0,
     };
-    const camX = clampJoy(readCam('pos_x', 0));
-    const camY = clampJoy(readCam('pos_y', 0));
-    const camZ = clampJoy(readCam('pos_z', 0));
-    const zoomVal = Math.max(0.3, Math.min(3, readCam('zoom', 1)));
-    const rotVal  = clampJoy(readCam('rot', 0));
+    const camX = clampJoy(cam.pos_x);
+    const camY = clampJoy(cam.pos_y);
+    const camZ = clampJoy(cam.pos_z);
+    const zoomVal = Math.max(0.3, Math.min(3, cam.zoom));
+    const rotVal  = clampJoy(cam.rot);
     const eye = eyeFromCamera(camX, camY, camZ, zoomVal, rotVal);
     // FOV stays fixed; zoom now moves the eye instead of changing fov,
     // so the visual cue tracks the audio cue 1:1.
@@ -1335,13 +1335,21 @@ void main() {
     // the emitter source position; we project XZ. distanceGain math
     // is mirrored from the audio engine so the ripple intensity
     // matches what you hear.
+    //
+    // Same unified read as the WebGL ribbon tick: engine.read(node,
+    // 'camera') returns the LIVE combined (knob + CV) sample from
+    // the factory's shadow analyser — the same instant the audio mix
+    // is reading.
     const eng = engineCtx.get();
-    const liveSnap = eng && node ? (eng.read(node, 'live') as Record<string, number> | undefined) : undefined;
-    const camX = clampJoy(liveSnap?.pos_x ?? pget('pos_x'));
-    const camZ = clampJoy(liveSnap?.pos_z ?? pget('pos_z'));
-    const camZoom = liveSnap?.zoom ?? pget('zoom') ?? 1;
-    const camRot  = liveSnap?.rot  ?? pget('rot')  ?? 0;
-    const camPos = eyeFromCamera(camX, liveSnap?.pos_y ?? pget('pos_y'), camZ, camZoom, camRot);
+    const cam = eng && node ? (eng.read(node, 'camera') as
+      | { pos_x: number; pos_y: number; pos_z: number; zoom: number; rot: number }
+      | undefined) : undefined;
+    const camX = clampJoy(cam?.pos_x ?? pget('pos_x'));
+    const camY = clampJoy(cam?.pos_y ?? pget('pos_y'));
+    const camZ = clampJoy(cam?.pos_z ?? pget('pos_z'));
+    const camZoom = cam?.zoom ?? pget('zoom') ?? 1;
+    const camRot  = cam?.rot  ?? pget('rot')  ?? 0;
+    const camPos = eyeFromCamera(camX, camY, camZ, camZoom, camRot);
 
     // Voice state — for env ripples. Falls back to zero env when the
     // engine isn't ready (early frames).
@@ -1471,28 +1479,26 @@ void main() {
     rafId = requestAnimationFrame(tick);
   }
 
-  // Camera-CV live-poll loop. Reads engine.readParam() every 30 ms for
-  // each of the 5 camera params; the engine returns intrinsic-knob +
-  // most-recent-CV-sample, so a patched LFO moves the joystick dot in
-  // real time. Cheap (5 cross-domain calls × 33 fps = 165 calls/sec).
-  // We only update the corresponding live{Param} when the value
-  // actually changed, so Svelte's reactivity dedupes redundant
-  // re-renders of the dot.
+  // Camera-CV live-poll loop. ONE cross-domain call per tick that
+  // pulls the entire camera snapshot from engine.read(node, 'camera')
+  // — the SAME shadow-analyser samples the spatial audio mix reads.
+  // This is the single-source-of-truth read: joystick dot, ribbon
+  // viewport (see WebGL tick above), and audio distGain all reflect
+  // the same instant. Cheap (1 call × 33 fps).
   const CAM_POLL_MS = 30;
   let camPollId: ReturnType<typeof setInterval> | null = null;
   function pollCamLive() {
     const e = engineCtx.get();
     if (!e || !node) return;
-    const newX = e.readParam(node, 'pos_x');
-    const newY = e.readParam(node, 'pos_y');
-    const newZ = e.readParam(node, 'pos_z');
-    const newZoom = e.readParam(node, 'zoom');
-    const newRot = e.readParam(node, 'rot');
-    if (typeof newX === 'number' && newX !== livePosX) livePosX = newX;
-    if (typeof newY === 'number' && newY !== livePosY) livePosY = newY;
-    if (typeof newZ === 'number' && newZ !== livePosZ) livePosZ = newZ;
-    if (typeof newZoom === 'number' && newZoom !== liveZoom) liveZoom = newZoom;
-    if (typeof newRot === 'number' && newRot !== liveRot) liveRot = newRot;
+    const cam = e.read(node, 'camera') as
+      | { pos_x: number; pos_y: number; pos_z: number; zoom: number; rot: number }
+      | undefined;
+    if (!cam) return;
+    if (cam.pos_x !== livePosX) livePosX = cam.pos_x;
+    if (cam.pos_y !== livePosY) livePosY = cam.pos_y;
+    if (cam.pos_z !== livePosZ) livePosZ = cam.pos_z;
+    if (cam.zoom  !== liveZoom) liveZoom = cam.zoom;
+    if (cam.rot   !== liveRot)  liveRot  = cam.rot;
   }
 
   onMount(() => {
@@ -1530,15 +1536,22 @@ void main() {
     });
   }
 
+  // Per-osc gate/pitch/morph then camera CV then alpha video. The
+  // morph{N}_cv ports were shipped on the engine side in PR #225 but
+  // weren't surfaced as patchable handles until this PR.
   const inputs: PortDescriptor[] = [
     { id: 'gate1',     label: 'G1', cable: 'gate' },
     { id: 'pitch_cv1', label: 'P1', cable: 'cv' },
+    { id: 'morph1_cv', label: 'M1', cable: 'cv' },
     { id: 'gate2',     label: 'G2', cable: 'gate' },
     { id: 'pitch_cv2', label: 'P2', cable: 'cv' },
+    { id: 'morph2_cv', label: 'M2', cable: 'cv' },
     { id: 'gate3',     label: 'G3', cable: 'gate' },
     { id: 'pitch_cv3', label: 'P3', cable: 'cv' },
+    { id: 'morph3_cv', label: 'M3', cable: 'cv' },
     { id: 'gate4',     label: 'G4', cable: 'gate' },
     { id: 'pitch_cv4', label: 'P4', cable: 'cv' },
+    { id: 'morph4_cv', label: 'M4', cable: 'cv' },
     { id: 'pos_x',     label: 'X',  cable: 'cv' },
     { id: 'pos_y',     label: 'Y',  cable: 'cv' },
     { id: 'pos_z',     label: 'H',  cable: 'cv' },
