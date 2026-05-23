@@ -260,7 +260,11 @@
                   <span class="status">
                     {#if c.hasExternalCable}
                       <span class="badge external" title={c.externalSummary ?? ''}>patched: external</span>
-                    {:else}
+                    {/if}
+                    {#if c.hasInternalCable}
+                      <span class="badge internal" title={c.internalSummary ?? ''}>patched: internal</span>
+                    {/if}
+                    {#if !c.hasExternalCable && !c.hasInternalCable}
                       <span class="badge unpatched">unpatched</span>
                     {/if}
                   </span>
@@ -417,6 +421,15 @@
   .badge.external {
     background: rgba(96, 165, 250, 0.15);
     color: #93c5fd;
+  }
+  .badge.internal {
+    background: rgba(168, 247, 142, 0.15);
+    color: #a8f78e;
+  }
+  .status {
+    display: inline-flex;
+    gap: 4px;
+    flex-wrap: wrap;
   }
   .badge.unpatched {
     background: rgba(120, 120, 120, 0.15);
