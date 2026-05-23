@@ -151,6 +151,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
   // ports), VRT baseline pending. Unit + E2E provide coverage.
   joystick: 'VRT baseline pending; unit + E2E provide coverage. UI is small + stable — pinning baselines in a follow-up PR.',
+  // GAMEPAD — card content depends on the connected controller's live
+  // state (stick dot positions, button LEDs, trigger fill bars), all
+  // changing at rAF rate. A deterministic baseline would need to stub
+  // navigator.getGamepads(), out of scope here. Unit + E2E cover the
+  // def shape + helper functions; the live path is per-user.
+  gamepad: 'card content driven by live navigator.getGamepads() poll; defeats deterministic capture. Unit + E2E cover the def + helpers.',
   // WAVESCULPT first-slice PR: animated 3D render + CRT feedback means a
   // single-frame pixel baseline can't match between runs.
   wavesculpt: 'animated 3D ribbon render + CRT frame-feedback defeats deterministic capture; unit + E2E provide coverage',
