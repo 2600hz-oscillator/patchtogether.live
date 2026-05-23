@@ -62,8 +62,9 @@ const MODULES: ModuleSpec[] = [
   { type: 'drummergirl',  cardClass: 'svelte-flow__node-drummergirl',  handleCount: 7, containsLabel: 'DRUMMERGIRL' },
   // MEOWBOX: 5 inputs (gate, pitch [V/oct], morph cv, decay cv, level cv) + 2 outputs (L, R) = 7.
   { type: 'meowbox',      cardClass: 'svelte-flow__node-meowbox',      handleCount: 7, containsLabel: 'MEOWBOX' },
-  // TIMELORDE: 1 input (clock) + 12 outputs (1x, 4x, 2x, 1/2 .. 1/64, swing) = 13.
-  { type: 'timelorde',    cardClass: 'svelte-flow__node-timelorde',    handleCount: 13, containsLabel: 'TIMELORDE' },
+  // TIMELORDE: 1 input (clock) + 13 outputs (1x, 8x, 4x, 2x, 1/2 .. 1/64, swing) = 14.
+  // 8x added in this PR alongside the picker reorg.
+  { type: 'timelorde',    cardClass: 'svelte-flow__node-timelorde',    handleCount: 14, containsLabel: 'TIMELORDE' },
   // CHARLOTTE'S ECHOS: 3 inputs (L, R, delay cv) + 2 outputs (L, R) = 5.
   { type: 'charlottesEchos', cardClass: 'svelte-flow__node-charlottesEchos', handleCount: 5, containsLabel: "CHARLOTTE'S ECHOS" },
   // MIXMSTRS: 12 audio inputs (4 ch stereo + 2 returns stereo) + 41 CV-per-
