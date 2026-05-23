@@ -2,7 +2,7 @@
 //
 // HYDROGEN multi-kit E2E:
 //   1. Module spawns with the default kit (TR-808) shown in the header.
-//   2. Clicking the kit-toggle button cycles through all 4 kits and
+//   2. Clicking the kit-toggle button cycles through all 8 kits and
 //      wraps back to TR-808.
 //   3. Each synth kit produces non-zero audio output when the pattern
 //      grid is triggered — proves the synth voice factories actually
@@ -13,7 +13,16 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-const KIT_NAMES = ['TR-808', 'TR-909', 'FM-PERC', '8BIT'] as const;
+const KIT_NAMES = [
+  'TR-808',
+  'TR-909',
+  'FM-PERC',
+  '8BIT',
+  'CR-78',
+  'LINN',
+  'GLITCH',
+  'HARDCORE',
+] as const;
 
 async function spawnHydrogen(page: Page): Promise<void> {
   await page.goto('/');
@@ -39,8 +48,8 @@ async function clickKitToggle(page: Page): Promise<void> {
   await page.locator('[data-testid="hydrogen-kit-toggle"]').click();
 }
 
-test.describe('HYDROGEN: kit-toggle cycles all 4 kits and wraps', () => {
-  test('default kit is TR-808 and clicking cycles through TR-909 → FM-PERC → 8BIT → back to TR-808', async ({ page }) => {
+test.describe('HYDROGEN: kit-toggle cycles all 8 kits and wraps', () => {
+  test('default kit is TR-808 and clicking cycles through every kit before wrapping back to TR-808', async ({ page }) => {
     await spawnHydrogen(page);
 
     const btn = page.locator('[data-testid="hydrogen-kit-toggle"]');
@@ -81,7 +90,7 @@ test.describe('HYDROGEN: per-instrument tuning persists across kit swap', () => 
 });
 
 test.describe('HYDROGEN: every synth kit produces audio on trigger', () => {
-  for (const kitName of ['TR-909', 'FM-PERC', '8BIT'] as const) {
+  for (const kitName of ['TR-909', 'FM-PERC', '8BIT', 'CR-78', 'LINN', 'GLITCH', 'HARDCORE'] as const) {
     test(`${kitName}: triggering instrument 0 produces non-zero audio at master out`, async ({ page }) => {
       // Spawn HYDROGEN + a SCOPE so we can tap audio_out via the engine.
       await page.goto('/');
