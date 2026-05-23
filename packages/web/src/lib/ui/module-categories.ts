@@ -162,6 +162,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   picturebox: { top: 'Video modules', sub: 'Sources' },
   shapes: { top: 'Video modules', sub: 'Sources' },
   shapedramps: { top: 'Video modules', sub: 'Sources' },
+  acidwarp: { top: 'Video modules', sub: 'Sources' },
 
   // ───────── Video modules → Processors ─────────
   chroma: { top: 'Video modules', sub: 'Processors' },

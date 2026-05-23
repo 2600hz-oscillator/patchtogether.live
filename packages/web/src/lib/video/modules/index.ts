@@ -27,6 +27,7 @@ import { ruttetraDef } from './ruttetra';
 import { shapedrampsDef } from './shapedramps';
 import { vdelayDef } from './vdelay';
 import { bentboxDef } from './bentbox';
+import { acidwarpDef } from './acidwarp';
 
 let registered = false;
 
@@ -67,6 +68,11 @@ export function registerVideoModules(): void {
   // an Archer-Video-Enhancer-style "AVEmod" feedback circuit. 12 CV-controllable
   // bending knobs (timing drift, chroma corruption, wavefolding, recursion).
   registerVideoModule(bentboxDef);
+  // ACIDWARP — 320×240 plasma video source with scene cycler. Algorithm
+  // port of Noah Spurrier's 1992-1993 DOS app (GPL). Visual matches the
+  // original; output is NTSC-aspect 4:3 so BENTBOX downstream sees no
+  // aspect distortion. See acidwarp-patterns.ts for the math.
+  registerVideoModule(acidwarpDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

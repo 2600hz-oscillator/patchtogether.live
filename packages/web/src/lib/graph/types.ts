@@ -190,6 +190,10 @@ type StandardModuleType =
   // through an Archer-Video-Enhancer-style "AVEmod" feedback circuit. 12
   // CV-controllable bending knobs (timing/chroma/feedback/CRT).
   | 'bentbox'
+  // ACIDWARP — 320×240 plasma video source with scene cycler. Algorithm
+  // port of Noah Spurrier's 1992-1993 DOS app (GPL). NTSC 4:3 output —
+  // pairs naturally with BENTBOX downstream.
+  | 'acidwarp'
   // WARRENSPECTRUM — stereo 8-band filterbank with vactrol-style ping
   // excitation + acidwarp video visualizer. Audio domain with a
   // cross-domain `viz_out` mono-video bridge for the EQ-curve+waveform+
