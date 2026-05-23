@@ -90,14 +90,16 @@ test('note-entry: invalid input keeps midi null + the input ring goes red on foc
   await expect(step).toHaveValue('');
 });
 
-test('note-entry: out-of-range note (g8 above f#8) becomes null', async ({ page }) => {
+test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4 } }]);
 
   const step = page.locator('[data-testid="seq-pitch-seq-0"]');
   await step.focus();
-  await step.fill('g8');
+  // The valid range is c0..c8 (MIDI 12..108); c#8 (MIDI 109) is one
+  // semitone above and must round-trip to null.
+  await step.fill('c#8');
   await step.blur();
   const stored = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { steps?: Array<{ on: boolean; midi: number | null }> } }> } };
@@ -122,16 +124,17 @@ test('note-entry: Cartesian cell accepts text-entry note names', async ({ page }
 
   const c5 = page.locator('[data-testid="cart-pitch-cart-5"]');
   await c5.focus();
-  await c5.fill('F#8');
+  // Range upper bound is c8 (MIDI 108) per the C0..C8 spec; pick c8 here.
+  await c5.fill('C8');
   await c5.blur();
-  await expect(c5).toHaveValue('f#8');
+  await expect(c5).toHaveValue('c8');
 
   const cellsData = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
     return w.__patch.nodes['cart']?.data?.cells ?? null;
   });
   expect(cellsData?.[0]?.midi).toBe(69);
-  expect(cellsData?.[5]?.midi).toBe(114);
+  expect(cellsData?.[5]?.midi).toBe(108);
 });
 
 test('note-entry: gate button toggles step.on without touching the pitch input', async ({ page }) => {
