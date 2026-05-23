@@ -148,6 +148,36 @@ describe('wavesculpt v2: module-def shape', () => {
       expect(Math.hypot(vec[0], vec[1], vec[2])).toBeGreaterThan(0);
     }
   });
+
+  it('layout: emitter heights step 0% / 25% / 50% / 75% (R / G / B / α)', () => {
+    // Y range is [-1, +1]. Heights map: 0% = -1, 25% = -0.5, 50% = 0, 75% = +0.5.
+    const expectedY = [-1.0, -0.5, 0.0, 0.5];
+    for (let i = 0; i < 4; i++) {
+      expect(WALL_LAYOUT[i]!.src[1], `osc ${i} (${['RED','GREEN','BLUE','ALPHA'][i]}) Y`)
+        .toBeCloseTo(expectedY[i]!, 5);
+    }
+  });
+
+  it('layout: every emitter vector aims at the origin', () => {
+    // vec should be the -src direction (modulo length — distanceGain
+    // normalises internally). Test that vec is anti-parallel to src.
+    for (const { src, vec } of WALL_LAYOUT) {
+      const sLen = Math.hypot(src[0], src[1], src[2]);
+      const vLen = Math.hypot(vec[0], vec[1], vec[2]);
+      // dot(src/|src|, vec/|vec|) should be -1 (perfectly opposite).
+      const dot = (src[0] * vec[0] + src[1] * vec[1] + src[2] * vec[2]) / (sLen * vLen);
+      expect(dot, `src=${src.join(',')} vec=${vec.join(',')}`).toBeCloseTo(-1, 5);
+    }
+  });
+
+  it('layout: every emitter is horizontally centred on its wall (one of XZ axes is 0)', () => {
+    // RED + GREEN live on ±X walls — Z must be 0.
+    // BLUE + ALPHA live on ±Z walls — X must be 0.
+    expect(WALL_LAYOUT[0]!.src[2], 'RED z').toBe(0);
+    expect(WALL_LAYOUT[1]!.src[2], 'GREEN z').toBe(0);
+    expect(WALL_LAYOUT[2]!.src[0], 'BLUE x').toBe(0);
+    expect(WALL_LAYOUT[3]!.src[0], 'ALPHA x').toBe(0);
+  });
 });
 
 describe('eyeFromCamera (zoom = camera distance, single source of truth for audio + visual)', () => {
