@@ -27,6 +27,11 @@ export interface VideoModuleDef {
    *  Phase 0 modules don't enforce caps; Phase 1's INWARDS will (one
    *  webcam-using module max by default to avoid getUserMedia conflicts). */
   maxInstances?: number;
+  /** Mirror of AudioModuleDef.undeletable — see that comment. No video
+   *  module sets this today; the field is on this type so Canvas's
+   *  union-typed defLookup can read `def.undeletable` without a
+   *  per-domain branch. */
+  undeletable?: boolean;
   /**
    * Module-grouping Phase 3A: see {@link AudioModuleDef#vizPassthrough}.
    * When set, this module renders an on-card visualization that can be

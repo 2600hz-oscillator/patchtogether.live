@@ -19,8 +19,13 @@ export const timelordeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'TIMELORDE',
   category: 'modulation',
-  schemaVersion: 1,
+  schemaVersion: 2,
   maxInstances: 1,
+  // TIMELORDE is the rack's system clock — every sequencer + LIVECODE's
+  // clocked() function ride on it. Can't be deleted; if a rack is opened
+  // without one, the auto-spawn path (see Canvas.svelte init effect) drops
+  // one in at a fixed position so the rack is always musically coherent.
+  undeletable: true,
 
   inputs: [
     // External clock — when patched, snaps 1x to incoming rising edges and
@@ -45,10 +50,20 @@ export const timelordeDef: AudioModuleDef = {
     { id: 'swing', type: 'gate' },
   ],
   params: [
-    { id: 'bpm',         label: 'BPM',   defaultValue: 120, min: 10, max: 300, curve: 'log',      units: 'bpm' },
-    { id: 'swingAmount', label: 'Swing', defaultValue: 0,   min: 0,  max: 90,  curve: 'linear',   units: 'deg' },
-    { id: 'swingSource', label: 'Src',   defaultValue: 0,   min: 0,  max: 10,  curve: 'discrete' },
-    { id: 'isPlaying',   label: 'Play',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
+    { id: 'bpm',          label: 'BPM',   defaultValue: 120, min: 10, max: 300, curve: 'log',      units: 'bpm' },
+    { id: 'swingAmount',  label: 'Swing', defaultValue: 0,   min: 0,  max: 90,  curve: 'linear',   units: 'deg' },
+    { id: 'swingSource',  label: 'Src',   defaultValue: 0,   min: 0,  max: 10,  curve: 'discrete' },
+    // muteOutputs (v2): 0 (default) = running + gates fire normally;
+    // 1 = gates muted but the INTERNAL clock keeps generating so
+    // LIVECODE's clocked() callbacks + any other consumers stay
+    // alive. v1's `isPlaying` was inverted in meaning AND stopped
+    // the internal clock entirely; LIVECODE needs the clock to
+    // outlive the gates, so v2 splits "is the clock running" (always
+    // true) from "are gates audible" (the new muteOutputs param).
+    // Patches saved on v1 carry `params.isPlaying`; the factory
+    // converts inline (see readMuteOutputs() below) so old racks
+    // start MUTED iff the user had explicitly stopped them.
+    { id: 'muteOutputs',  label: 'Mute',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
   ],
 
   // Module-grouping Phase 4 — surface every knob (BPM / Swing / Src) so a
@@ -91,8 +106,22 @@ export const timelordeDef: AudioModuleDef = {
     const bpmParam = params.get('bpm');
     const swAmt = params.get('swingAmount');
     const swSrc = params.get('swingSource');
-    const isPlaying = params.get('isPlaying');
+    const muteOutputsParam = params.get('muteOutputs');
     const hasExt = params.get('hasExternalClock');
+
+    // v1 → v2 inline migration: existing patches saved `isPlaying`
+    // (1=playing/0=stopped). v2 renamed to `muteOutputs` (inverted
+    // semantic). If the loaded params carry the legacy field, copy it
+    // forward at spawn time so the user's intent survives.
+    const legacyIsPlaying = (node.params ?? {})['isPlaying'];
+    if (
+      typeof legacyIsPlaying === 'number' &&
+      (node.params?.['muteOutputs'] === undefined) &&
+      muteOutputsParam
+    ) {
+      const muted = legacyIsPlaying >= 0.5 ? 0 : 1;
+      muteOutputsParam.setValueAtTime(muted, ctx.currentTime);
+    }
 
     const nodeId = node.id;
 

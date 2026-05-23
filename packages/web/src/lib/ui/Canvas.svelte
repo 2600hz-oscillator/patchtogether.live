@@ -2336,6 +2336,19 @@
   }
 
   function deleteNode(nodeId: string) {
+    // Singleton-anchor protection: a def with `undeletable: true` (today
+    // just TIMELORDE, the rack's always-on system clock) MUST persist.
+    // The right-click "Delete" entry hides this for undeletable modules
+    // too; this guard catches the keyboard-delete path + any future
+    // bulk-delete code that forgets to filter.
+    const target = patch.nodes[nodeId];
+    if (target) {
+      const def = defLookup(target.type);
+      if (def?.undeletable) {
+        trace(`delete refused: ${nodeId} (${target.type}) is undeletable`);
+        return;
+      }
+    }
     ydoc.transact(() => {
       // Remove every edge touching this node first so the engine sees a clean
       // disconnect before disposal (avoids dangling-target warnings).
