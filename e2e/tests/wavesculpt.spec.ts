@@ -257,6 +257,22 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     }
 
     await setMorphAll(0);
+    // Wait until the ribbons are actually on-screen. WebGL shader
+    // compile + first FBO render takes a few rAFs after the WAVESCULPT
+    // card mounts; the 400 ms wait inside setMorphAll isn't always
+    // enough. If we sample too early we get all-black sigA and the
+    // L1 distance ties at 0. Poll up to 3s for a frame with non-bin-0
+    // content (any luminance ≥ 32).
+    await expect
+      .poll(async () => {
+        const h = await sampleScreenSignature();
+        return h.slice(1).reduce((a, b) => a + b, 0);
+      }, {
+        message: 'ribbons never rendered (canvas stayed all-black for 3s)',
+        timeout: 3_000,
+        intervals: [100, 200, 400],
+      })
+      .toBeGreaterThan(0);
     const sigA = await sampleScreenSignature();
     await setMorphAll(0.95);
     const sigB = await sampleScreenSignature();
