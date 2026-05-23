@@ -163,6 +163,8 @@
   import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
   // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
   import GamepadCard from '$lib/ui/modules/GamepadCard.svelte';
+  // NUMPAD+ — 4-layer numpad-driven step sequencer + live keyboard.
+  import NumpadPlusCard from '$lib/ui/modules/NumpadPlusCard.svelte';
   // WAVESCULPT — hybrid 4-osc synth (audio + 3D ribbon video).
   import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
@@ -342,6 +344,7 @@
     modtris: ModtrisCard,
     joystick: JoystickCard,
     gamepad: GamepadCard,
+    numpadPlus: NumpadPlusCard,
     wavesculpt: WavesculptCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,

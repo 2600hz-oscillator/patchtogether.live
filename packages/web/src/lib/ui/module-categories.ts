@@ -108,6 +108,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   score: { top: 'Audio modules', sub: 'Utility' },
   joystick: { top: 'Audio modules', sub: 'Utility' },
   gamepad:  { top: 'Audio modules', sub: 'Utility' },
+  numpadPlus: { top: 'Audio modules', sub: 'Utility' },
 
   // ───────── Audio modules → Effects ─────────
   filter: { top: 'Audio modules', sub: 'Effects' },

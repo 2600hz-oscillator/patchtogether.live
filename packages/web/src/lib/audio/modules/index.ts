@@ -60,6 +60,7 @@ import { pongDef } from './pong';
 import { modtrisDef } from './modtris';
 import { joystickDef } from './joystick';
 import { gamepadDef } from './gamepad';
+import { numpadPlusDef } from './numpad-plus';
 import { wavesculptDef } from './wavesculpt';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
@@ -129,6 +130,9 @@ export function registerAudioModules(): void {
   // GAMEPAD — USB/Bluetooth game controller (Xbox / PS / generic HID)
   // as CV (sticks + triggers) + gate (buttons + dpad).
   registerModule(gamepadDef);
+  // NUMPAD+ — numpad-driven 4-layer step sequencer with live play +
+  // REC ARM + OVERDUB. Captures Numpad* keys globally.
+  registerModule(numpadPlusDef);
   // WAVESCULPT — 4-oscillator hybrid synth: stereo audio output + 3D
   // ribbon video render with embedded BENTBOX-style CRT post-process.
   registerModule(wavesculptDef);
