@@ -167,8 +167,10 @@
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
   import GroupCard from '$lib/ui/modules/GroupCard.svelte';
-  // LIVECODE — text-DSL module (no audio I/O); see /docs/modules/livecode.
+  // LIVECODE — JS-runtime live-coding module (no audio I/O); see /docs/modules/livecode.
   import LivecodeCard from '$lib/ui/modules/LivecodeCard.svelte';
+  // CLOCKED runner — per-clocked()-call mini-LIVECODE spawned by the main card.
+  import ClockedRunnerCard from '$lib/ui/modules/ClockedRunnerCard.svelte';
   import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
@@ -342,6 +344,7 @@
     sticky: StickyCard,
     group: GroupCard,
     livecode: LivecodeCard,
+    clockedRunner: ClockedRunnerCard,
   };
 
   let audioCtx: AudioContext | null = $state(null);

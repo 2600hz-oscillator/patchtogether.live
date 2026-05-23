@@ -107,11 +107,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.
   cloudseed: 'VRT baseline pending; complex card; ART + unit + E2E provide coverage.',
-  // LIVECODE is a text-DSL editor card with no ports. Its visual surface
-  // is a <textarea> + Run button — the blinking caret + native textarea
-  // chrome (selection rect, scrollbar fade) makes baselines flap.
-  // Functional coverage is e2e/tests/livecode.spec.ts.
-  livecode: 'textarea caret + native chrome defeats deterministic capture; e2e covers the run-flow',
+  // LIVECODE is a CodeMirror editor card with no ports. Cursor blink +
+  // syntax highlight transitions make baselines flap. Functional
+  // coverage is e2e/tests/livecode.spec.ts + the JS-runtime unit suite.
+  livecode: 'CodeMirror caret + syntax-highlight transitions defeat deterministic capture; e2e + unit tests cover behavior',
+  // CLOCKED runner — same CodeMirror caret issue as LIVECODE.
+  clockedRunner: 'CodeMirror caret + dynamic status (fires-since-mount counter) defeat deterministic capture; e2e + unit tests cover behavior',
   // HELM is a dense polyphonic synth card (~720px wide, multi-row knob
   // grid + 16-step pattern + gear-icon-toggled settings panel). Baseline
   // would need to capture both the main panel and the settings panel
