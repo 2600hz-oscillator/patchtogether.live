@@ -106,7 +106,14 @@ describe('buildModuleManifest', () => {
 // e2e/tests/io-spec-consistency.spec.ts harness.
 // ----------------------------------------------------------------------------
 describe('manifest stays in sync with module defs', () => {
-  for (const spec of getAllModuleSpecs()) {
+  // The manifest emitter walks `../audio/modules/*.ts` only — video +
+  // meta module defs are out of scope. Filter the spec list so we
+  // don't false-fail when a sibling test (or production code) has
+  // already triggered the side-effect import of `$lib/video/modules`
+  // and populated the cross-domain registry. The manifest's
+  // audio-only scope is the design — video gets its own docs surface.
+  const audioSpecs = getAllModuleSpecs().filter((s) => s.domain === 'audio');
+  for (const spec of audioSpecs) {
     test(`${spec.type}: manifest input/output ids match def`, () => {
       const mod = m.modules.find((x) => x.type === spec.type);
       expect(mod, `manifest entry for ${spec.type}`).toBeDefined();

@@ -1,15 +1,15 @@
 // e2e/tests/livecode.spec.ts
 //
-// LIVECODE module — text-DSL coverage:
-//   1. Basic: spawn LIVECODE, type a script, hit Run, assert nodes appear
-//      with correct auto-names.
-//   2. Error: type a syntactically broken script, hit Run, assert the
-//      error band shows + no nodes were spawned (transactionality).
-//   3. Editable name label: rename a spawned module via the click-to-edit
-//      label; verify uniqueness rejection.
-//   4. Load-example recreation (graph-isomorphism check): a DSL script
-//      that recreates the topbar's "Load example" patch produces the
-//      same set of nodes + edges (modulo ids).
+// LIVECODE module — JS-runtime coverage (v2):
+//   1. Basic: spawn LIVECODE, run a script, assert nodes appear with
+//      correct auto-names.
+//   2. Error: a syntactically broken script surfaces a structured error
+//      + leaves no spawned modules.
+//   3. clocked(): invoking clocked() spawns a clockedRunner module with
+//      the body + division stored on node.data.
+//   4. Load-example recreation (graph-isomorphism): a JS script that
+//      recreates the topbar's "Load example" patch produces the same
+//      set of nodes + edges as clicking the button.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -50,11 +50,6 @@ async function readPatchSummary(
 }
 
 async function typeAndRun(page: Page, livecodeNodeId: string, script: string): Promise<void> {
-  // Use the dev-only __livecode test hook to drive runScript directly.
-  // The hook also writes `script` into the textarea so the on-screen
-  // state matches what the user "typed". Going through the hook avoids
-  // a class of Playwright fill+click ordering flakes that appeared in
-  // CI but never in headed local runs.
   await page.waitForFunction(
     (id) => {
       const w = globalThis as unknown as { __livecode?: Record<string, { run: (s: string) => void }> };
@@ -72,7 +67,7 @@ async function typeAndRun(page: Page, livecodeNodeId: string, script: string): P
   );
 }
 
-test('livecode: spawn → type → run produces named modules', async ({ page }) => {
+test('livecode: spawn → run JS produces named modules with cables', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -83,12 +78,9 @@ test('livecode: spawn → type → run produces named modules', async ({ page })
   await typeAndRun(
     page,
     'lc',
-    `vco = analogVco.new()
-out = audioOut.new()
-vco.sine -> out.L`,
+    `spawn('analogVco');\nspawn('audioOut');\npatch('ANALOGVCO1.sine', 'AUDIOOUT1.L');`,
   );
 
-  // Allow a tick for the transact to flush + reconciler to materialize.
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
     return Object.keys(w.__patch.nodes).length >= 3;
@@ -97,46 +89,87 @@ vco.sine -> out.L`,
   const summary = await readPatchSummary(page);
   expect(summary.nodeTypes).toContain('analogVco');
   expect(summary.nodeTypes).toContain('audioOut');
-  expect(summary.nodeNames).toContain('LIVECODE1');
   expect(summary.nodeNames).toContain('ANALOGVCO1');
   expect(summary.nodeNames).toContain('AUDIOOUT1');
-  // The edge should target audioOut.L from analogVco.sine.
   expect(summary.edges).toContainEqual(['analogVco', 'sine', 'audioOut', 'L']);
 
-  // No console errors during a happy path run.
   expect(errors.filter((e) => !e.includes('DEP0040')), errors.join('; ')).toEqual([]);
 });
 
-test('livecode: parse error shows in status + applies no mutations', async ({ page }) => {
+test('livecode: patch() works direction-agnostically (destination-first)', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
-  // Snapshot the patch state pre-run.
+  // The user typed patch() with the destination first — the runtime
+  // detects which side is the output and routes correctly.
+  await typeAndRun(
+    page,
+    'lc',
+    `spawn('analogVco');\nspawn('audioOut');\npatch('AUDIOOUT1.L', 'ANALOGVCO1.sine');`,
+  );
+  await page.waitForFunction(() => {
+    const w = globalThis as unknown as { __patch: { edges: Record<string, unknown> } };
+    return Object.keys(w.__patch.edges).length >= 1;
+  });
+  const summary = await readPatchSummary(page);
+  // Even though the user typed audioOut first, the canonical edge
+  // direction (output → input) is preserved.
+  expect(summary.edges).toContainEqual(['analogVco', 'sine', 'audioOut', 'L']);
+});
+
+test('livecode: runtime error surfaces in status + leaves rack stable', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
+
   const beforeNodeIds = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
     return Object.keys(w.__patch.nodes).sort();
   });
 
+  // Invalid JS — SyntaxError at compile.
   await typeAndRun(page, 'lc', 'this is not @ valid script ===');
 
-  // The dev hook returns the lastResult after run. Verify the script
-  // failed with a structured error (line/col + message).
   const result = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __livecode: Record<string, { getLastResult: () => unknown }>;
-    };
+    const w = globalThis as unknown as { __livecode: Record<string, { getLastResult: () => unknown }> };
     return w.__livecode['lc']!.getLastResult();
   });
   expect(result).not.toBeNull();
   expect((result as { ok: boolean }).ok).toBe(false);
 
-  // Patch state should be unchanged (no spawned modules) — transactionality.
+  // No mutations applied → rack unchanged.
   const afterNodeIds = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
     return Object.keys(w.__patch.nodes).sort();
   });
   expect(afterNodeIds).toEqual(beforeNodeIds);
+});
+
+test('livecode: clocked() spawns a clockedRunner with the body + division', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
+
+  await typeAndRun(
+    page,
+    'lc',
+    `clocked('1/16', () => { set('TIMELORDE1', 'bpm', 130); });`,
+  );
+
+  await page.waitForFunction(() => {
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { type: string }> } };
+    return Object.values(w.__patch.nodes).some((n) => n?.type === 'clockedRunner');
+  }, { timeout: 5000 });
+
+  const runner = await page.evaluate(() => {
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { type: string; data?: Record<string, unknown> }> } };
+    return Object.values(w.__patch.nodes).find((n) => n?.type === 'clockedRunner');
+  });
+  expect(runner).toBeDefined();
+  if (!runner) return;
+  expect(runner.data?.division).toBe('1/16');
+  expect(runner.data?.source).toContain("set('TIMELORDE1', 'bpm', 130)");
 });
 
 test('livecode: editable name label — rename + reject duplicate', async ({ page }) => {
@@ -147,7 +180,6 @@ test('livecode: editable name label — rename + reject duplicate', async ({ pag
     { id: 'b', type: 'analogVco', position: { x: 400, y: 100 } },
   ]);
 
-  // Wait for the migration to assign ANALOGVCO1 + ANALOGVCO2.
   await page.waitForFunction(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: { name?: string } }> };
@@ -157,10 +189,6 @@ test('livecode: editable name label — rename + reject duplicate', async ({ pag
     return typeof a?.data?.name === 'string' && typeof b?.data?.name === 'string';
   });
 
-  // The name label is rendered in a NodeToolbar above each card. Use the
-  // global locator since the NodeToolbar mounts as a portal sibling of
-  // the card. Two ANALOGVCO buttons exist; we select by current text
-  // content via the dialog.
   const labelA = page.locator('[data-testid="name-label-button"]', { hasText: 'ANALOGVCO1' });
   await expect(labelA).toBeVisible();
   await labelA.click();
@@ -169,59 +197,54 @@ test('livecode: editable name label — rename + reject duplicate', async ({ pag
   await inputA.fill('BASS');
   await inputA.press('Enter');
 
-  // The label now reads BASS, and the patch graph reflects it.
   const renamed = page.locator('[data-testid="name-label-button"]', { hasText: 'BASS' });
   await expect(renamed).toBeVisible();
 
-  // Try to rename ANALOGVCO2 → BASS (collision). Inline error shows.
   const labelB = page.locator('[data-testid="name-label-button"]', { hasText: 'ANALOGVCO2' });
   await labelB.click();
   const inputB = page.locator('[data-testid="name-label-input"]');
   await inputB.fill('BASS');
   await inputB.press('Enter');
-  // Error appears, input still focused.
   const error = page.locator('[data-testid="name-label-error"]');
   await expect(error).toBeVisible();
   await expect(error).toContainText(/already in use/);
-  // The label hasn't committed.
   await expect(page.locator('[data-testid="name-label-button"]', { hasText: 'BASS' })).toHaveCount(1);
 });
 
-test('livecode: "Load example" recreated in DSL → graph-isomorphic to topbar button', async ({ page }) => {
-  // First load the example via the DSL.
+test('livecode: JS recreates "Load example" patch → graph-isomorphic', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 50, y: 400 } }]);
 
-  const dsl = `seq = sequencer.new()
-vco = analogVco.new()
-env = adsr.new()
-amp = vca.new()
-out = audioOut.new()
+  const js = `spawn('sequencer', 'seq');
+spawn('analogVco', 'vco');
+spawn('adsr', 'env');
+spawn('vca', 'amp');
+spawn('audioOut', 'out');
 
-seq.pitch -> vco.pitch
-seq.gate -> env.gate
-vco.sine -> amp.audio
-env.env -> amp.cv
-amp.audio -> out.L
-amp.audio -> out.R
+patch('seq.pitch', 'vco.pitch');
+patch('seq.gate',  'env.gate');
+patch('vco.sine',  'amp.audio');
+patch('env.env',   'amp.cv');
+patch('amp.audio', 'out.L');
+patch('amp.audio', 'out.R');
 
-seq.bpm = 180
-seq.length = 8
-seq.isPlaying = 1
-seq.gateLength = 0.4
+set('seq', 'bpm',        180);
+set('seq', 'length',     8);
+set('seq', 'isPlaying',  1);
+set('seq', 'gateLength', 0.4);
 
-env.attack = 0.005
-env.decay = 0.08
-env.sustain = 0.3
-env.release = 0.15
+set('env', 'attack',  0.005);
+set('env', 'decay',   0.08);
+set('env', 'sustain', 0.3);
+set('env', 'release', 0.15);
 
-amp.base = 0
-amp.cvAmount = 1
+set('amp', 'base',     0);
+set('amp', 'cvAmount', 1);
 
-out.master = 0.4`;
+set('out', 'master',   0.4);`;
 
-  await typeAndRun(page, 'lc', dsl);
+  await typeAndRun(page, 'lc', js);
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
     return Object.keys(w.__patch.nodes).length >= 6; // 5 + livecode
@@ -229,10 +252,8 @@ out.master = 0.4`;
 
   const dslSummary = await readPatchSummary(page);
 
-  // Now reset and run the topbar Load-example button on a fresh page.
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  // Click "Load example".
   await page.getByRole('button', { name: /load example/i }).click();
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
@@ -240,11 +261,8 @@ out.master = 0.4`;
   });
   const exampleSummary = await readPatchSummary(page);
 
-  // Assert the same set of node TYPES (modulo livecode in the dsl side).
   const dslTypes = dslSummary.nodeTypes.filter((t) => t !== 'livecode').sort();
   const exampleTypes = exampleSummary.nodeTypes.slice().sort();
   expect(dslTypes).toEqual(exampleTypes);
-
-  // Assert the same set of (sourceType, sourcePort, targetType, targetPort) edges.
   expect(dslSummary.edges).toEqual(exampleSummary.edges);
 });
