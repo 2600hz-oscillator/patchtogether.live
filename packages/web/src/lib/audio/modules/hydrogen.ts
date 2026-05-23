@@ -42,7 +42,17 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
-import { isInputPortConnected, shouldSequencerRun } from './transport-helpers';
+import {
+  isInputPortConnected,
+  shouldSequencerRun,
+  coerceSlotKey,
+  coerceSlots,
+} from './transport-helpers';
+import {
+  createTransportCv,
+  TRANSPORT_CV_PORT_DEFS,
+  pickQueuedSlotFromEvents,
+} from './transport-cv';
 import { createPlayheadTracker } from './playhead-tracker';
 import {
   TR808_INSTRUMENTS,
@@ -108,16 +118,35 @@ function instrumentParamIds(): string[] {
   return ids;
 }
 
-/** Build the full input port list (clock_in + reset_in + per-instrument
- *  trig{i}). The manifest-builder's literal-array extractor can't read
- *  spreads, so we hide the full list behind a builder function and let
- *  the synthesizer in module-manifest.ts produce the equivalent shape —
- *  same pattern as RIOTGIRLS. */
+/** Build the full input port list. Includes:
+ *
+ *    * clock_in + reset_in       — pre-existing gate inputs
+ *    * play_cv + queue1..4_cv    — shared transport CV (sequencer-style
+ *                                  preset-slot switching). reset_cv from
+ *                                  TRANSPORT_CV_PORT_DEFS is folded into
+ *                                  reset_in semantically (both reset the
+ *                                  playhead on rising edge); we keep
+ *                                  reset_in as the primary port name for
+ *                                  backwards compatibility and add
+ *                                  reset_cv as an alias.
+ *    * trig{i} per instrument    — pre-existing per-voice direct trigger
+ *
+ *  The manifest-builder's literal-array extractor can't read spreads, so
+ *  we hide the full list behind this builder + let the synthesizer in
+ *  module-manifest.ts produce the equivalent shape (same RIOTGIRLS
+ *  pattern). */
 function buildHydrogenInputs() {
   const inputs: Array<{ id: string; type: 'gate' }> = [
     { id: 'clock_in', type: 'gate' },
     { id: 'reset_in', type: 'gate' },
   ];
+  // Shared transport ports — same shape as SCORE / SEQUENCER / DRUMSEQZ /
+  // POLYSEQZ. Play toggles isPlaying on rising edge; queue{N} stages
+  // slot N to load at the next pattern-end; reset_cv jumps the playhead
+  // back to step 0 (alias of reset_in).
+  for (const p of TRANSPORT_CV_PORT_DEFS) {
+    inputs.push({ id: p.id, type: 'gate' });
+  }
   for (const inst of TR808_INSTRUMENTS) {
     inputs.push({ id: `trig${inst.id}`, type: 'gate' });
   }
@@ -140,17 +169,22 @@ export const hydrogenDef: AudioModuleDef = {
     { id: 'swing',     label: 'Sw',   defaultValue: 0,   min: 0,   max: 0.75, curve: 'linear' },
     { id: 'gain',      label: 'Gain', defaultValue: 1,   min: 0,   max: 2,   curve: 'linear' },
     { id: 'isPlaying', label: 'Play', defaultValue: 0,   min: 0,   max: 1,   curve: 'discrete' },
-    // Per-instrument params (vol/pan/A/D/S/R/mute/solo × 16). Defaults
-    // come from the kit's drumkit.xml — see hydrogen-tr808-kit-data.ts.
+    // Per-instrument params (vol/pan/pitch/cutoff/Q/A/D/S/R/mute/solo
+    // × 16). Defaults come from the kit's drumkit.xml — see
+    // hydrogen-tr808-kit-data.ts. pitch/cutoff/Q match Hydrogen's
+    // "Instrument Properties" panel — semitones, lowpass cutoff, Q.
     ...TR808_INSTRUMENTS.flatMap((inst) => [
-      { id: `vol${inst.id}`,  label: `${inst.label}V`, defaultValue: inst.defaultGain, min: 0,    max: 2,   curve: 'linear' as const },
-      { id: `pan${inst.id}`,  label: `${inst.label}P`, defaultValue: inst.defaultPan,  min: -1,   max: 1,   curve: 'linear' as const },
-      { id: `A${inst.id}`,    label: `${inst.label}A`, defaultValue: inst.defaultA,    min: 0,    max: 2,   curve: 'log'    as const },
-      { id: `D${inst.id}`,    label: `${inst.label}D`, defaultValue: inst.defaultD,    min: 0,    max: 2,   curve: 'log'    as const },
-      { id: `S${inst.id}`,    label: `${inst.label}S`, defaultValue: inst.defaultS,    min: 0,    max: 1,   curve: 'linear' as const },
-      { id: `R${inst.id}`,    label: `${inst.label}R`, defaultValue: inst.defaultR,    min: 0.01, max: 5,   curve: 'log'    as const },
-      { id: `mute${inst.id}`, label: `${inst.label}M`, defaultValue: 0,                min: 0,    max: 1,   curve: 'discrete' as const },
-      { id: `solo${inst.id}`, label: `${inst.label}S`, defaultValue: 0,                min: 0,    max: 1,   curve: 'discrete' as const },
+      { id: `vol${inst.id}`,    label: `${inst.label}V`,  defaultValue: inst.defaultGain, min: 0,    max: 2,     curve: 'linear' as const },
+      { id: `pan${inst.id}`,    label: `${inst.label}P`,  defaultValue: inst.defaultPan,  min: -1,   max: 1,     curve: 'linear' as const },
+      { id: `pitch${inst.id}`,  label: `${inst.label}Pi`, defaultValue: 0,                min: -24,  max: 24,    curve: 'linear' as const, units: 'st' as const },
+      { id: `cutoff${inst.id}`, label: `${inst.label}Cf`, defaultValue: 20000,            min: 20,   max: 20000, curve: 'log'    as const, units: 'Hz' as const },
+      { id: `q${inst.id}`,      label: `${inst.label}Q`,  defaultValue: 0.7,              min: 0.1,  max: 20,    curve: 'log'    as const },
+      { id: `A${inst.id}`,      label: `${inst.label}A`,  defaultValue: inst.defaultA,    min: 0,    max: 2,     curve: 'log'    as const },
+      { id: `D${inst.id}`,      label: `${inst.label}D`,  defaultValue: inst.defaultD,    min: 0,    max: 2,     curve: 'log'    as const },
+      { id: `S${inst.id}`,      label: `${inst.label}S`,  defaultValue: inst.defaultS,    min: 0,    max: 1,     curve: 'linear' as const },
+      { id: `R${inst.id}`,      label: `${inst.label}R`,  defaultValue: inst.defaultR,    min: 0.01, max: 5,     curve: 'log'    as const },
+      { id: `mute${inst.id}`,   label: `${inst.label}M`,  defaultValue: 0,                min: 0,    max: 1,     curve: 'discrete' as const },
+      { id: `solo${inst.id}`,   label: `${inst.label}S`,  defaultValue: 0,                min: 0,    max: 1,     curve: 'discrete' as const },
     ]),
   ],
 
@@ -247,6 +281,24 @@ export const hydrogenDef: AudioModuleDef = {
 
       const source = ctx.createBufferSource();
       source.buffer = buf;
+      // Per-voice pitch — semitone offset from the recorded sample
+      // pitch, via playbackRate. Same semantics as Hydrogen's
+      // Instrument Properties "Pitch" knob: positive = up, negative =
+      // down. detune is not used (would compound with playbackRate);
+      // the semitone math here is canonical.
+      const pitchSt = readParam(`pitch${idx}`, 0);
+      source.playbackRate.value = Math.pow(2, pitchSt / 12);
+
+      // Per-voice lowpass filter (matches Hydrogen's per-instrument
+      // filter section). Default cutoff 20 kHz + Q 0.7 → effectively
+      // bypass; the user dials the cutoff down or Q up to shape the
+      // voice. Fixed-type lowpass (not switchable) for now — Hydrogen's
+      // hardware also exposes a single LPF on the instrument-properties
+      // panel.
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = readParam(`cutoff${idx}`, 20000);
+      filter.Q.value = readParam(`q${idx}`, 0.7);
 
       const env = ctx.createGain();
       const A = readParam(`A${idx}`, inst.defaultA);
@@ -264,7 +316,8 @@ export const hydrogenDef: AudioModuleDef = {
       env.gain.linearRampToValueAtTime(peak, atTime + Math.max(0.001, A));
       env.gain.linearRampToValueAtTime(sustain, atTime + Math.max(0.001, A) + Math.max(0.001, D));
 
-      source.connect(env);
+      source.connect(filter);
+      filter.connect(env);
       env.connect(instrumentGain[idx]!);
       source.start(atTime);
 
@@ -345,6 +398,14 @@ export const hydrogenDef: AudioModuleDef = {
     let lastClockSample = 0;
     let lastResetSample = 0;
     const CLOCK_THRESHOLD = 0.5;
+
+    // ---------- Shared transport CV inputs (play/queue/reset). ----------
+    // Same machinery the other sequencers (SCORE / DRUMSEQZ / POLYSEQZ)
+    // use. transportCv.drain() returns per-port rising-edge counts each
+    // tick; we toggle isPlaying / reset stepIndex / stage queuedSlot
+    // accordingly.
+    const transportCv = createTransportCv(ctx);
+    let lastTransportPollTime = ctx.currentTime;
 
     // ---------- Step scheduler ----------
     let stepIndex = 0;
@@ -429,6 +490,78 @@ export const hydrogenDef: AudioModuleDef = {
       return edges;
     }
 
+    /** Drain the shared transport-CV inputs once per tick and dispatch
+     *  rising edges. PLAY toggles isPlaying. RESET zeros the playhead.
+     *  QUEUE-N stages slot N to load on the next pattern wrap. */
+    function pollTransportCv(): boolean {
+      const nowAt = ctx.currentTime;
+      const elapsed = nowAt - lastTransportPollTime;
+      lastTransportPollTime = nowAt;
+      const ev = transportCv.drain(elapsed);
+      const live = livePatch.nodes[nodeId];
+      let isPlaying = readParam('isPlaying', 0) >= 0.5;
+      if (ev.play % 2 === 1) {
+        isPlaying = !isPlaying;
+        if (live?.params) live.params.isPlaying = isPlaying ? 1 : 0;
+      }
+      if (ev.reset > 0) {
+        stepIndex = 0;
+        playhead.reset();
+        nextStepTime = ctx.currentTime + 0.05;
+      }
+      const queued = pickQueuedSlotFromEvents(ev);
+      if (queued !== null && live) {
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).queuedSlot = queued;
+      }
+      return isPlaying;
+    }
+
+    /** Apply queued slot's snapshot to node.data + node.params.
+     *
+     *  HYDROGEN snapshot shape:
+     *    { tracks: HydrogenTrack[],         // the pattern grid
+     *      bpm, swing, gain }               // transport-level knobs
+     *
+     *  Per-instrument knobs (vol/pan/pitch/cutoff/Q/A/D/S/R/mute/solo)
+     *  are NOT in the snapshot — users dial in their kit once + want
+     *  preset slots to swap PATTERNS not the kit state. Same posture
+     *  as a hardware drum machine. */
+    function maybeApplyQueuedSlot(): boolean {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return false;
+      const data = live.data as Record<string, unknown> | undefined;
+      const queued = coerceSlotKey(data?.queuedSlot);
+      if (!queued) return false;
+      const slots = coerceSlots(data?.slots);
+      const snap = slots[queued];
+      if (!snap) {
+        if (data) data.queuedSlot = null;
+        return false;
+      }
+      if (!live.data) live.data = {};
+      const d = live.data as Record<string, unknown>;
+      // Deep-clone the tracks so we don't reassign a Y-tree-resident
+      // object from slots[N] into data.tracks — Yjs throws on that.
+      if (Array.isArray(snap.tracks)) {
+        d.tracks = (snap.tracks as Array<Array<Record<string, unknown>>>).map((tr) =>
+          (Array.isArray(tr) ? tr : []).map((c) => ({ ...c })),
+        );
+      }
+      if (live.params) {
+        for (const k of ['bpm', 'swing', 'gain'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') live.params[k] = v;
+        }
+      }
+      d.lastLoadedSlot = queued;
+      d.queuedSlot = null;
+      stepIndex = 0;
+      playhead.reset();
+      nextStepTime = ctx.currentTime + 0.005;
+      return true;
+    }
+
     function tick() {
       if (!alive) return;
       try {
@@ -440,10 +573,11 @@ export const hydrogenDef: AudioModuleDef = {
           instrumentPan[i]!.pan.value = readParam(`pan${i}`, TR808_INSTRUMENTS[i]!.defaultPan);
         }
 
+        const transportIsPlaying = pollTransportCv();
         pollResetInput();
         pollTrigInputs();
 
-        const isPlaying = readParam('isPlaying', 0) >= 0.5;
+        const isPlaying = transportIsPlaying;
         const externalClock = isClockInConnected();
         const shouldRun = shouldSequencerRun(isPlaying, externalClock, false);
 
@@ -462,6 +596,8 @@ export const hydrogenDef: AudioModuleDef = {
           // upstream owns timing.
           const edges = pollExternalClockEdges();
           for (let e = 0; e < edges; e++) {
+            // Apply queued slot at the start of a new pattern (step 0).
+            if (stepIndex === 0) maybeApplyQueuedSlot();
             emitStep(stepIndex, ctx.currentTime + 0.005);
             stepIndex = (stepIndex + 1) % STEP_COUNT;
           }
@@ -475,6 +611,12 @@ export const hydrogenDef: AudioModuleDef = {
         const baseStepS = (60 / bpm) / 4;
         const horizon = ctx.currentTime + LOOKAHEAD_S;
         while (nextStepTime < horizon) {
+          // Apply queued slot at the start of a new pattern (step 0).
+          // The new tracks + bpm/swing/gain take effect from this step
+          // forward; the lookahead may have already scheduled future
+          // steps from the OLD pattern up to horizon — those stay (no
+          // glitchy mid-bar swap).
+          if (stepIndex === 0) maybeApplyQueuedSlot();
           // Swing: shift every odd 16th later by `swing * baseStepS / 2`.
           // 0 swing == straight, 0.5 == strong triplet feel, 0.75 ==
           // very loose.
@@ -493,13 +635,20 @@ export const hydrogenDef: AudioModuleDef = {
     const clock = getSchedulerClock();
     unsubscribeTick = clock.subscribe(tick);
 
-    // Build the gate-input map: clock + reset + per-instrument trig
-    // ports each route to their own Gain sink so the engine's
-    // edge-validation accepts gate cables.
+    // Build the gate-input map: clock + reset + transport CV +
+    // per-instrument trig ports each route to their own Gain sink so
+    // the engine's edge-validation accepts gate cables.
     const inputs = new Map<string, { node: AudioNode; input: number }>([
       ['clock_in', { node: clockInGain, input: 0 }],
       ['reset_in', { node: resetInGain, input: 0 }],
     ]);
+    // Transport CV inputs: play_cv, reset_cv, queue1..4_cv. Each rising
+    // edge gets drained by transportCv.drain() inside tick() and
+    // dispatched (play toggles isPlaying; reset_cv jumps stepIndex
+    // to 0; queue{N} stages slot N to load at the next pattern wrap).
+    for (const [portId, entry] of transportCv.inputs.entries()) {
+      inputs.set(portId, entry);
+    }
     for (let i = 0; i < TR808_INSTRUMENT_COUNT; i++) {
       inputs.set(`trig${i}`, { node: trigGains[i]!, input: 0 });
     }
@@ -535,6 +684,7 @@ export const hydrogenDef: AudioModuleDef = {
         try { resetInGain.disconnect(); } catch { /* */ }
         try { clockInSilence.stop(); } catch { /* */ }
         try { resetInSilence.stop(); } catch { /* */ }
+        try { transportCv.dispose(); } catch { /* */ }
         for (const s of trigSilences) try { s.stop(); } catch { /* */ }
         for (const set of voicesByMuteGroup.values()) {
           for (const v of set) { try { v.source.stop(); } catch { /* */ } }

@@ -769,9 +769,22 @@ function synthesizeFromBuildHelper(
       params.push({ id: `mute${i}`, label: `i${i}M`, defaultValue: 0, min: 0,    max: 1,  curve: 'discrete' });
       params.push({ id: `solo${i}`, label: `i${i}S`, defaultValue: 0, min: 0,    max: 1,  curve: 'discrete' });
     }
+    // Phase-2 (per-voice controls): add pitch/cutoff/Q per instrument.
+    for (let i = 0; i < N; i++) {
+      params.push({ id: `pitch${i}`,  label: `i${i}Pi`, defaultValue: 0,     min: -24,  max: 24,    curve: 'linear' });
+      params.push({ id: `cutoff${i}`, label: `i${i}Cf`, defaultValue: 20000, min: 20,   max: 20000, curve: 'log' });
+      params.push({ id: `q${i}`,      label: `i${i}Q`,  defaultValue: 0.7,   min: 0.1,  max: 20,    curve: 'log' });
+    }
     const inputs: ManifestPort[] = [
       { id: 'clock_in', type: 'gate' },
       { id: 'reset_in', type: 'gate' },
+      // Phase-4 (preset slots): shared transport CV ports.
+      { id: 'play_cv',   type: 'gate' },
+      { id: 'reset_cv',  type: 'gate' },
+      { id: 'queue1_cv', type: 'gate' },
+      { id: 'queue2_cv', type: 'gate' },
+      { id: 'queue3_cv', type: 'gate' },
+      { id: 'queue4_cv', type: 'gate' },
     ];
     for (let i = 0; i < N; i++) inputs.push({ id: `trig${i}`, type: 'gate' });
     return { inputs, params };

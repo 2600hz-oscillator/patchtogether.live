@@ -27,14 +27,22 @@ describe('hydrogen module def shape', () => {
     expect(hydrogenDef.category).toBe('sources');
   });
 
-  it('declares clock_in + reset_in + one trig{i} per instrument', () => {
+  it('declares clock_in + reset_in + transport CV + one trig{i} per instrument', () => {
     const ids = hydrogenDef.inputs.map((p) => p.id);
     expect(ids).toContain('clock_in');
     expect(ids).toContain('reset_in');
+    // Shared transport CV (sequencer-style preset slots, added in
+    // the phase-4 preset-slots PR). reset_cv is an alias of reset_in;
+    // both zero the playhead on a rising edge.
+    expect(ids).toContain('play_cv');
+    expect(ids).toContain('reset_cv');
+    expect(ids).toContain('queue1_cv');
+    expect(ids).toContain('queue4_cv');
     for (const inst of TR808_INSTRUMENTS) {
       expect(ids, `trig${inst.id} missing`).toContain(`trig${inst.id}`);
     }
-    expect(ids.length).toBe(2 + TR808_INSTRUMENT_COUNT);
+    // 2 base (clock_in + reset_in) + 6 transport CV + 16 trigs.
+    expect(ids.length).toBe(2 + 6 + TR808_INSTRUMENT_COUNT);
   });
 
   it('declares stereo audio outputs', () => {
