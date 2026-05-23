@@ -15,9 +15,11 @@ import {
   coerceTracks,
   coerceCell,
   instrumentParamIds,
+  HYDROGEN_INSTRUMENT_COUNT,
   STEP_COUNT,
 } from './hydrogen';
 import { TR808_INSTRUMENTS, TR808_INSTRUMENT_COUNT } from './hydrogen-tr808-kit-data';
+import { KITS, KIT_COUNT, DEFAULT_KIT_INDEX, kitByIndex, kitById, allSampleUrls } from './hydrogen-kit-registry';
 
 describe('hydrogen module def shape', () => {
   it('declares type/label/domain/category', () => {
@@ -42,7 +44,7 @@ describe('hydrogen module def shape', () => {
       expect(ids, `trig${inst.id} missing`).toContain(`trig${inst.id}`);
     }
     // 2 base (clock_in + reset_in) + 6 transport CV + 16 trigs.
-    expect(ids.length).toBe(2 + 6 + TR808_INSTRUMENT_COUNT);
+    expect(ids.length).toBe(2 + 6 + HYDROGEN_INSTRUMENT_COUNT);
   });
 
   it('declares stereo audio outputs', () => {
@@ -52,12 +54,19 @@ describe('hydrogen module def shape', () => {
     expect(hydrogenDef.outputs.find((o) => o.id === 'out_r')?.type).toBe('audio');
   });
 
-  it('exposes transport params (bpm / swing / gain / isPlaying)', () => {
+  it('exposes transport params (bpm / swing / gain / isPlaying / kit)', () => {
     const ids = hydrogenDef.params.map((p) => p.id);
     expect(ids).toContain('bpm');
     expect(ids).toContain('swing');
     expect(ids).toContain('gain');
     expect(ids).toContain('isPlaying');
+    // Phase-3 multi-kit support.
+    expect(ids).toContain('kit');
+    const kit = hydrogenDef.params.find((p) => p.id === 'kit');
+    expect(kit?.defaultValue).toBe(DEFAULT_KIT_INDEX);
+    expect(kit?.min).toBe(0);
+    expect(kit?.max).toBe(Math.max(0, KIT_COUNT - 1));
+    expect(kit?.curve).toBe('discrete');
   });
 
   it('exposes vol/pan/A/D/S/R/mute/solo per instrument', () => {
@@ -191,6 +200,108 @@ describe('TR808 kit data', () => {
       expect(inst.defaultPan).toBeLessThanOrEqual(1);
       expect(inst.defaultS).toBeGreaterThanOrEqual(0);
       expect(inst.defaultS).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe('multi-kit registry', () => {
+  it('ships at least 4 kits (TR-808 + 3 synth)', () => {
+    expect(KIT_COUNT).toBeGreaterThanOrEqual(4);
+    expect(KITS.length).toBe(KIT_COUNT);
+  });
+
+  it('TR-808 is the default kit', () => {
+    expect(KITS[DEFAULT_KIT_INDEX]?.id).toBe('tr808');
+  });
+
+  it('every kit has exactly 16 instruments with ids 0..15', () => {
+    for (const kit of KITS) {
+      expect(kit.instruments.length, `${kit.id} should have 16 instruments`).toBe(HYDROGEN_INSTRUMENT_COUNT);
+      const ids = kit.instruments.map((i) => i.id).sort((a, b) => a - b);
+      expect(ids, `${kit.id} instrument ids`).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    }
+  });
+
+  it('every kit has a unique id', () => {
+    const ids = KITS.map((k) => k.id);
+    expect(new Set(ids).size, 'kit ids must be unique').toBe(ids.length);
+  });
+
+  it('every kit has a non-empty name + attribution', () => {
+    for (const kit of KITS) {
+      expect(kit.name.length).toBeGreaterThan(0);
+      expect(kit.attribution.length).toBeGreaterThan(10);
+    }
+  });
+
+  it('synth instruments declare a synth fn; sample instruments declare a sampleUrl', () => {
+    for (const kit of KITS) {
+      for (const inst of kit.instruments) {
+        if (inst.kind === 'synth') {
+          expect(typeof inst.synth, `${kit.id}.${inst.label} synth`).toBe('function');
+        } else {
+          expect(inst.sampleUrl.length, `${kit.id}.${inst.label} url`).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  it('every instrument has within-range defaults', () => {
+    for (const kit of KITS) {
+      for (const inst of kit.instruments) {
+        expect(inst.defaultGain, `${kit.id}.${inst.label} gain`).toBeGreaterThanOrEqual(0);
+        expect(inst.defaultGain).toBeLessThanOrEqual(2);
+        expect(inst.defaultPan).toBeGreaterThanOrEqual(-1);
+        expect(inst.defaultPan).toBeLessThanOrEqual(1);
+        expect(inst.defaultS).toBeGreaterThanOrEqual(0);
+        expect(inst.defaultS).toBeLessThanOrEqual(1);
+        expect(inst.defaultR).toBeGreaterThanOrEqual(0);
+        expect(inst.defaultA).toBeGreaterThanOrEqual(0);
+        expect(inst.defaultD).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('kitByIndex clamps out-of-range indices', () => {
+    expect(kitByIndex(-1).id).toBe(KITS[0]!.id);
+    expect(kitByIndex(99).id).toBe(KITS[KITS.length - 1]!.id);
+    expect(kitByIndex(0).id).toBe(KITS[0]!.id);
+  });
+
+  it('kitById returns the kit or undefined', () => {
+    expect(kitById('tr808')?.id).toBe('tr808');
+    expect(kitById('tr909')?.id).toBe('tr909');
+    expect(kitById('fmperc')?.id).toBe('fmperc');
+    expect(kitById('8bit')?.id).toBe('8bit');
+    expect(kitById('nope')).toBeUndefined();
+  });
+
+  it('allSampleUrls() returns only sample-kit URLs', () => {
+    const urls = allSampleUrls();
+    // TR-808 contributes 16 unique sample urls.
+    expect(urls.length).toBe(16);
+    for (const u of urls) {
+      expect(u).toMatch(/^\/drumkits\/.+/);
+    }
+  });
+
+  it('TR-909 / FM-PERC / 8BIT are fully synth-based (no sample URLs)', () => {
+    for (const kit of KITS.filter((k) => k.id !== 'tr808')) {
+      for (const inst of kit.instruments) {
+        expect(inst.kind, `${kit.id}.${inst.label} should be synth`).toBe('synth');
+      }
+    }
+  });
+
+  it('synth kits with hihat triads share a mute group', () => {
+    for (const kit of KITS.filter((k) => k.id !== 'tr808')) {
+      const hats = kit.instruments.filter((i) => i.label.startsWith('HH'));
+      // All synth kits in this PR ship HHc/HHo/HHp.
+      if (hats.length >= 2) {
+        const groups = new Set(hats.map((h) => h.muteGroup));
+        expect(groups.size, `${kit.id} hats must share one mute group`).toBe(1);
+        expect([...groups][0]!, `${kit.id} hat group must be > 0`).toBeGreaterThan(0);
+      }
     }
   });
 });
