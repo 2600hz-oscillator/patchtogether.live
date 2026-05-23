@@ -114,19 +114,20 @@ describe('poly: chordVoicing maj triad = root + M3 + P5 + octave', () => {
   });
 
   it('octave doubling drops to gate=0 when out of range', () => {
-    // f#7 = MIDI 102. +12 = 114 = MAX_MIDI (still in range). +12 from 103 = 115 (out).
-    const v103 = chordVoicing(103, 'maj');
-    expect(v103[3]?.gate).toBe(0);
-    expect(v103[3]?.midi).toBeNull();
+    // Post-rework MAX_MIDI=108 (c8). m=100: +4=104, +7=107 (both in),
+    // +12=112 (octave out of range).
+    const v100 = chordVoicing(100, 'maj');
+    expect(v100[3]?.gate).toBe(0);
+    expect(v100[3]?.midi).toBeNull();
     // 3rd / 5th still play.
-    expect(v103[1]?.midi).toBe(107);
-    expect(v103[2]?.midi).toBe(110);
+    expect(v100[1]?.midi).toBe(104);
+    expect(v100[2]?.midi).toBe(107);
   });
 
   it('5th drops when out of range; 3rd still plays', () => {
-    // m=108: +7 = 115 (out), +4 = 112 (in).
-    const v = chordVoicing(108, 'maj');
-    expect(v[1]?.midi).toBe(112);
+    // m=102: +4=106 (in), +7=109 (out), +12=114 (out).
+    const v = chordVoicing(102, 'maj');
+    expect(v[1]?.midi).toBe(106);
     expect(v[2]?.gate).toBe(0);
     expect(v[3]?.gate).toBe(0); // octave also out
   });

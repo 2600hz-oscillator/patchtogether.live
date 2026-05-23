@@ -13,8 +13,15 @@
 // V/oct convention used elsewhere in the codebase: 0V = C4 = MIDI 60. So
 // midiToVOct(m) = (m - 60) / 12.
 
-export const MIN_MIDI = 33;  // a1  = 55.000   Hz
-export const MAX_MIDI = 114; // f#8 = 5919.911 Hz
+// Range covers C0..C8 (the user-requested span — see CV-semantic
+// rework PR `feat/cv-additive-semantic-and-pitch-c0-c8`). C0 (MIDI
+// 12, 16.35 Hz) sits below human pitch perception but is a legitimate
+// modulation source for filter cutoff, LFO rate, etc.; C8 (MIDI 108,
+// 4186 Hz) is the top of an 88-key piano. Pre-rework cap was a1..f#8
+// (MIDI 33..114) which excluded C0/C1 — users could not type "c1"
+// into sequencer steps even though those notes are valid voct sources.
+export const MIN_MIDI = 12;  // c0  = 16.35   Hz
+export const MAX_MIDI = 108; // c8  = 4186.01 Hz
 //
 // Note: the spec text in .myrobots/plans/sequencer-cartesian-note-entry.md
 // lists f#8 as MIDI 102 in the "ART tests" table, but with the standard
