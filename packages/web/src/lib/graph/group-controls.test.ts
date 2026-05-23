@@ -39,7 +39,7 @@ const defs = {
 } as const;
 
 const defLookup: ControlDefLookup = (t) =>
-  (defs as Record<string, { exposableControls?: readonly ExposableControl[] }>)[t];
+  (defs as Record<string, { exposableControls?: readonly ExposableControl[]; params?: readonly import('./types').ParamDef[] }>)[t];
 
 function makeNode(id: string, type: string, data?: Record<string, unknown>): ModuleNode {
   return {
@@ -103,9 +103,50 @@ describe('exposableControls — v1 scope module-def declarations', () => {
 // ---------- listExposableControls -------------------------------------------
 
 describe('listExposableControls', () => {
-  it('returns the def list for a known type', () => {
+  it('includes the explicit exposableControls first', () => {
     const got = listExposableControls('drumseqz', defLookup);
-    expect(got).toEqual(drumseqzDef.exposableControls);
+    const ids = got.map((c) => c.id);
+    // playStop (explicit) comes first; auto-generated entries follow.
+    expect(ids[0]).toBe('playStop');
+    expect(ids.length).toBeGreaterThan(1);
+  });
+
+  it('auto-synthesizes a knob entry for every other param on the def', () => {
+    const got = listExposableControls('timelorde', defLookup);
+    const autoIds = got.filter((c) => c.id.startsWith('param-')).map((c) => c.id);
+    // TIMELORDE's bpm/swingAmount/swingSource are explicit; any OTHER param
+    // is auto-exposed. We just assert the auto-tail is non-empty — the
+    // exact id set drifts as we add params and shouldn't be load-bearing.
+    expect(autoIds.length).toBeGreaterThan(0);
+    for (const c of got) {
+      expect(c.kind === 'knob' || c.kind === 'button').toBe(true);
+    }
+  });
+
+  it('does NOT duplicate a param that is already in the explicit list', () => {
+    const got = listExposableControls('drumseqz', defLookup);
+    // drumseqz's playStop binds to isPlaying; the auto-tail must NOT
+    // also include a `param-isPlaying` entry.
+    const paramIds = got.map((c) => c.paramId);
+    const isPlayingCount = paramIds.filter((p) => p === 'isPlaying').length;
+    expect(isPlayingCount).toBe(1);
+    expect(got.some((c) => c.id === 'param-isPlaying')).toBe(false);
+  });
+
+  it('renders 0/1 discrete params as buttons (toggle UX), not knobs', () => {
+    // hydrogen has 16 instrument 'mute{i}' / 'solo{i}' params, all discrete 0..1.
+    const lookup: ControlDefLookup = () => ({
+      exposableControls: [],
+      params: [
+        { id: 'mute', label: 'Mute', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+        { id: 'gain', label: 'Gain', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
+      ],
+    });
+    const got = listExposableControls('whatever', lookup);
+    const mute = got.find((c) => c.id === 'param-mute');
+    const gain = got.find((c) => c.id === 'param-gain');
+    expect(mute?.kind).toBe('button');
+    expect(gain?.kind).toBe('knob');
   });
 
   it('returns [] for an unknown type', () => {
@@ -113,9 +154,8 @@ describe('listExposableControls', () => {
     expect(got).toEqual([]);
   });
 
-  it('returns [] for a known type whose def has no exposableControls', () => {
-    // synthesize a def without the field
-    const lookup: ControlDefLookup = () => ({ exposableControls: undefined });
+  it('returns [] for a known type whose def has no exposableControls and no params', () => {
+    const lookup: ControlDefLookup = () => ({ exposableControls: undefined, params: [] });
     expect(listExposableControls('whatever', lookup)).toEqual([]);
   });
 });
