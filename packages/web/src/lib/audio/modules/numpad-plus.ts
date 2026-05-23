@@ -410,6 +410,13 @@ export const numpadPlusDef: AudioModuleDef = {
     if (typeof document !== 'undefined') {
       const onDown = (ev: KeyboardEvent) => {
         if (!ev.code.startsWith('Numpad')) return;
+        // Defensive: when a DOOM card has focus, give it first dibs on
+        // Numpad codes. NUMPAD+'s collision surface is the +/- octave
+        // keys (most numpad keys are notes Doom defaults don't use),
+        // but skipping the whole NUMPAD+ handler while a DOOM card is
+        // focused keeps the interaction model simple ("focus the card
+        // = card owns the keyboard"). See docs/design/game-modules.md.
+        if (document.activeElement?.closest('[data-card-type="doom"]')) return;
         if (ev.code === OCTAVE_UP_KEY)   { octaveModifier =  1; ev.preventDefault(); return; }
         if (ev.code === OCTAVE_DOWN_KEY) { octaveModifier = -1; ev.preventDefault(); return; }
         const live = livePatch.nodes[nodeId];
@@ -446,6 +453,9 @@ export const numpadPlusDef: AudioModuleDef = {
       };
       const onUp = (ev: KeyboardEvent) => {
         if (!ev.code.startsWith('Numpad')) return;
+        // Mirror the keydown guard: while a DOOM card has focus,
+        // NUMPAD+'s listener stays out of the way.
+        if (document.activeElement?.closest('[data-card-type="doom"]')) return;
         if (ev.code === OCTAVE_UP_KEY || ev.code === OCTAVE_DOWN_KEY) {
           octaveModifier = 0; ev.preventDefault(); return;
         }

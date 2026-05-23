@@ -363,7 +363,15 @@ type StandardModuleType =
   | 'atlantisCatalyst'
   // AQUATANK — 4-channel Hadamard FDN feedback matrix; the metallic /
   // aquatic resonance engine the demo patch hangs off of.
-  | 'aquaTank';
+  | 'aquaTank'
+  // DOOM — single-instance interactive video module. WASM-backed
+  // doomgeneric (GPLv2, vendored at packages/web/native/doomgeneric)
+  // runs on whichever rack-mate spawned the card; spectators receive
+  // framebuffers via Yjs awareness at ~10 Hz. 7 cv-typed gate inputs
+  // (w/a/s/d/space/ctrl/alt) edge-detect into the engine's key queue;
+  // stereo audio outputs route via the video→audio bridge (silent
+  // until the slice-8 audio path lands). maxInstances: 1.
+  | 'doom';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

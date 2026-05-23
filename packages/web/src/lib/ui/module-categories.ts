@@ -167,6 +167,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   shapes: { top: 'Video modules', sub: 'Sources' },
   shapedramps: { top: 'Video modules', sub: 'Sources' },
   acidwarp: { top: 'Video modules', sub: 'Sources' },
+  // DOOM — single-instance interactive video module. Cards are
+  // keyboard-driven (focus-within ring) + CV-gate-driven; one host
+  // per rack, spectators see the framebuffer over Yjs awareness.
+  doom: { top: 'Video modules', sub: 'Sources' },
 
   // ───────── Video modules → Processors ─────────
   chroma: { top: 'Video modules', sub: 'Processors' },

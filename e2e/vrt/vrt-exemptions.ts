@@ -190,6 +190,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // capture. Unit + E2E cover the module-def shape + the
   // delay-line topology assertions.
   delay: 'VRT baseline pending; unit + E2E provide coverage.',
+  // DOOM — live game-loop framebuffer defeats deterministic capture
+  // by definition; the WASM blob's per-frame contents depend on
+  // wall-clock + input queue history. Unit suites cover the TS shim
+  // (doom-runtime, doom-presence, cv-gate-edge); a multi-tab e2e for
+  // host migration + spectator-frame relay is the follow-up.
+  doom: 'live game-loop framebuffer defeats deterministic capture; unit suites cover TS shim + presence + CV-gate edge detector',
 };
 
 /** Per-(platform, type) baselines intentionally missing while a follow-
