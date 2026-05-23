@@ -157,6 +157,10 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // navigator.getGamepads(), out of scope here. Unit + E2E cover the
   // def shape + helper functions; the live path is per-user.
   gamepad: 'card content driven by live navigator.getGamepads() poll; defeats deterministic capture. Unit + E2E cover the def + helpers.',
+  // NUMPAD+ — card has a current-step highlight box + REC ARM pulse
+  // animation that animates whether the sequence is running or not.
+  // Functional coverage via the e2e spec; pinning baselines pending.
+  numpadPlus: 'live step-highlight box + REC ARM animation defeat deterministic capture; unit + E2E provide coverage',
   // WAVESCULPT first-slice PR: animated 3D render + CRT feedback means a
   // single-frame pixel baseline can't match between runs.
   wavesculpt: 'animated 3D ribbon render + CRT frame-feedback defeats deterministic capture; unit + E2E provide coverage',

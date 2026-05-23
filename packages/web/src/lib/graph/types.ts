@@ -337,6 +337,10 @@ type StandardModuleType =
   // generic) as CV (stick axes + triggers) and gate (face / bumper /
   // dpad / menu buttons). Polls navigator.getGamepads() at rAF rate.
   | 'gamepad'
+  // NUMPAD+ — numpad-driven 4-layer × 16-step sequencer with live
+  // play, REC ARM (one-pass record on next play-from-start) and
+  // OVERDUB (always-recording). Captures Numpad* keys globally.
+  | 'numpadPlus'
   // WAVESCULPT — hybrid 4-oscillator video synth. Four "wall-mounted"
   // virtual oscillators emit 3D wave ribbons inside a unit box; a user-
   // controlled camera (XY joystick + height + zoom) renders a view of

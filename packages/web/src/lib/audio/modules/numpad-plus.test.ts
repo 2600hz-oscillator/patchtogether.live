@@ -1,0 +1,222 @@
+// packages/web/src/lib/audio/modules/numpad-plus.test.ts
+//
+// Pure-function coverage for NUMPAD+ — module def shape, default
+// keymap, the midiForKey + quantizeToNearestStep helpers, and the
+// layer-data coercion machinery. Audio + keyboard interaction is
+// covered by e2e/tests/numpad-plus.spec.ts.
+
+import { describe, expect, it } from 'vitest';
+import {
+  numpadPlusDef,
+  DEFAULT_KEYMAP,
+  OCTAVE_UP_KEY,
+  OCTAVE_DOWN_KEY,
+  midiForKey,
+  quantizeToNearestStep,
+  defaultLayer,
+  defaultLayers,
+  coerceLayers,
+  resolveActiveLayer,
+  NUMPAD_PLUS_LAYERS,
+  NUMPAD_PLUS_STEPS,
+} from './numpad-plus';
+
+describe('numpadPlus: module def shape', () => {
+  it('declares the expected type/label/domain/category', () => {
+    expect(numpadPlusDef.type).toBe('numpadPlus');
+    expect(numpadPlusDef.label).toBe('NUMPAD+');
+    expect(numpadPlusDef.domain).toBe('audio');
+    expect(numpadPlusDef.category).toBe('sources');
+  });
+
+  it('exposes clock + layer CV inputs', () => {
+    const ids = numpadPlusDef.inputs.map((p) => p.id).sort();
+    expect(ids).toEqual(['clock', 'layer']);
+  });
+
+  it('exposes 8 outputs: l{1..4}_pitch + l{1..4}_gate', () => {
+    const ids = numpadPlusDef.outputs.map((p) => p.id).sort();
+    expect(ids).toEqual([
+      'l1_gate', 'l1_pitch',
+      'l2_gate', 'l2_pitch',
+      'l3_gate', 'l3_pitch',
+      'l4_gate', 'l4_pitch',
+    ]);
+    for (let i = 1; i <= 4; i++) {
+      expect(numpadPlusDef.outputs.find((o) => o.id === `l${i}_pitch`)?.type).toBe('pitch');
+      expect(numpadPlusDef.outputs.find((o) => o.id === `l${i}_gate`)?.type).toBe('gate');
+    }
+  });
+
+  it('exposes bpm/isPlaying/activeLayer/recArm/overdub/octave params', () => {
+    const ids = numpadPlusDef.params.map((p) => p.id).sort();
+    expect(ids).toEqual(['activeLayer', 'bpm', 'isPlaying', 'octave', 'overdub', 'recArm']);
+  });
+
+  it('octave param defaults to 4 (clamped 0..8)', () => {
+    const p = numpadPlusDef.params.find((x) => x.id === 'octave');
+    expect(p?.defaultValue).toBe(4);
+    expect(p?.min).toBe(0);
+    expect(p?.max).toBe(8);
+  });
+
+  it('activeLayer param defaults to 0 (clamped 0..3)', () => {
+    const p = numpadPlusDef.params.find((x) => x.id === 'activeLayer');
+    expect(p?.defaultValue).toBe(0);
+    expect(p?.min).toBe(0);
+    expect(p?.max).toBe(3);
+  });
+});
+
+describe('DEFAULT_KEYMAP', () => {
+  it('maps 12 numpad keys to chromatic semitones 0..11', () => {
+    const entries = Object.entries(DEFAULT_KEYMAP);
+    expect(entries.length).toBe(12);
+    const sorted = entries.sort((a, b) => a[1] - b[1]);
+    expect(sorted.map(([_, v]) => v)).toEqual([0,1,2,3,4,5,6,7,8,9,10,11]);
+  });
+
+  it('maps Numpad1 → C and NumpadMultiply → B', () => {
+    expect(DEFAULT_KEYMAP.Numpad1).toBe(0);
+    expect(DEFAULT_KEYMAP.NumpadMultiply).toBe(11);
+  });
+
+  it('exposes the octave-modifier key codes', () => {
+    expect(OCTAVE_UP_KEY).toBe('NumpadAdd');
+    expect(OCTAVE_DOWN_KEY).toBe('NumpadSubtract');
+  });
+});
+
+describe('midiForKey', () => {
+  it('Numpad1 at octave 4, no modifier → C4 (MIDI 60)', () => {
+    expect(midiForKey('Numpad1', 4, 0)).toBe(60);
+  });
+
+  it('NumpadMultiply at octave 4 → B4 (MIDI 71)', () => {
+    expect(midiForKey('NumpadMultiply', 4, 0)).toBe(71);
+  });
+
+  it('Numpad1 with Numpad+ held at octave 4 → C5 (MIDI 72)', () => {
+    expect(midiForKey('Numpad1', 4, 1)).toBe(72);
+  });
+
+  it('Numpad1 with Numpad- held at octave 4 → C3 (MIDI 48)', () => {
+    expect(midiForKey('Numpad1', 4, -1)).toBe(48);
+  });
+
+  it('returns null for keys not in the keymap', () => {
+    expect(midiForKey('KeyA', 4, 0)).toBeNull();
+    expect(midiForKey('NumpadEnter', 4, 0)).toBeNull();
+    expect(midiForKey('NumpadAdd', 4, 0)).toBeNull();  // modifier key, not in keymap
+  });
+
+  it('clamps octave to 0..8', () => {
+    // Octave 0 → C0 = MIDI 12.
+    expect(midiForKey('Numpad1', 0, 0)).toBe(12);
+    // Octave 8 → C8 = MIDI 108.
+    expect(midiForKey('Numpad1', 8, 0)).toBe(108);
+    // Negative octave clamps to 0.
+    expect(midiForKey('Numpad1', -5, 0)).toBe(12);
+    // Octave 99 clamps to 8.
+    expect(midiForKey('Numpad1', 99, 0)).toBe(108);
+  });
+
+  it('honors a custom keymap override', () => {
+    const custom = { Numpad1: 6 }; // map 1 to F#
+    expect(midiForKey('Numpad1', 4, 0, custom)).toBe(66); // F#4
+    expect(midiForKey('Numpad2', 4, 0, custom)).toBeNull(); // not in custom map
+  });
+});
+
+describe('quantizeToNearestStep', () => {
+  it('keystroke before step midpoint records to CURRENT step', () => {
+    // Step 5 starts at t=2.0s, lasts 0.5s. Midpoint = 2.25s.
+    expect(quantizeToNearestStep(2.10, 5, 2.0, 0.5)).toBe(5);
+    expect(quantizeToNearestStep(2.24, 5, 2.0, 0.5)).toBe(5);
+  });
+
+  it('keystroke at or after midpoint records to NEXT step', () => {
+    expect(quantizeToNearestStep(2.25, 5, 2.0, 0.5)).toBe(6);
+    expect(quantizeToNearestStep(2.45, 5, 2.0, 0.5)).toBe(6);
+  });
+
+  it('wraps step 15 → 0', () => {
+    expect(quantizeToNearestStep(0.30, 15, 0, 0.5)).toBe(0);
+  });
+
+  it('returns current step if duration is zero (defensive)', () => {
+    expect(quantizeToNearestStep(0, 7, 0, 0)).toBe(7);
+    expect(quantizeToNearestStep(0, 7, 0, -1)).toBe(7);
+  });
+});
+
+describe('layer data coercion', () => {
+  it('defaultLayer is 16 all-off steps', () => {
+    const l = defaultLayer();
+    expect(l.length).toBe(NUMPAD_PLUS_STEPS);
+    for (const s of l) expect(s).toEqual({ on: false, midi: null });
+  });
+
+  it('defaultLayers is 4 default layers', () => {
+    const ls = defaultLayers();
+    expect(ls.length).toBe(NUMPAD_PLUS_LAYERS);
+    for (const l of ls) expect(l.length).toBe(NUMPAD_PLUS_STEPS);
+  });
+
+  it('coerceLayers fills missing layers with defaults', () => {
+    const raw = [
+      [{ on: true, midi: 60 }, { on: false, midi: null }],
+      // ... only the first layer has data + only 2 steps.
+    ];
+    const out = coerceLayers(raw);
+    expect(out.length).toBe(NUMPAD_PLUS_LAYERS);
+    expect(out[0]!.length).toBe(NUMPAD_PLUS_STEPS);
+    expect(out[0]![0]).toEqual({ on: true, midi: 60 });
+    // Step 1 was {on:false, midi:null} — preserved.
+    expect(out[0]![1]).toEqual({ on: false, midi: null });
+    // Step 2..15 default-filled.
+    for (let s = 2; s < NUMPAD_PLUS_STEPS; s++) {
+      expect(out[0]![s]).toEqual({ on: false, midi: null });
+    }
+    // Layers 1..3 fully default.
+    for (let l = 1; l < NUMPAD_PLUS_LAYERS; l++) {
+      for (const s of out[l]!) expect(s).toEqual({ on: false, midi: null });
+    }
+  });
+
+  it('coerceLayers rejects non-array input', () => {
+    expect(coerceLayers(undefined)).toEqual(defaultLayers());
+    expect(coerceLayers(null)).toEqual(defaultLayers());
+    expect(coerceLayers({})).toEqual(defaultLayers());
+    expect(coerceLayers('nope')).toEqual(defaultLayers());
+  });
+});
+
+describe('resolveActiveLayer', () => {
+  it('CV input wins when patched', () => {
+    // cv=0   → layer 0 (round 0*4)
+    expect(resolveActiveLayer(2, 0)).toBe(0);
+    // cv=0.25 → round(1.0) = 1
+    expect(resolveActiveLayer(2, 0.25)).toBe(1);
+    // cv=0.5 → round(2.0) = 2
+    expect(resolveActiveLayer(2, 0.5)).toBe(2);
+    // cv=0.75 → round(3.0) = 3
+    expect(resolveActiveLayer(2, 0.75)).toBe(3);
+    // cv=1.0 → round(4) = 4 → clamp 3
+    expect(resolveActiveLayer(2, 1.0)).toBe(3);
+  });
+
+  it('param wins when CV input is null', () => {
+    expect(resolveActiveLayer(0, null)).toBe(0);
+    expect(resolveActiveLayer(1, null)).toBe(1);
+    expect(resolveActiveLayer(2, null)).toBe(2);
+    expect(resolveActiveLayer(3, null)).toBe(3);
+  });
+
+  it('clamps to 0..3', () => {
+    expect(resolveActiveLayer(-1, null)).toBe(0);
+    expect(resolveActiveLayer(99, null)).toBe(3);
+    expect(resolveActiveLayer(0, -0.5)).toBe(0);
+    expect(resolveActiveLayer(0, 2)).toBe(3);
+  });
+});

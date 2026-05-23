@@ -100,6 +100,11 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // fast path / WaveShaperNode interposition would apply meaningfully — the
   // V/oct mapping is intrinsic to the module. Same shape as DX7.pitch_cv.
   wavesculpt: ["pitch_cv1", "pitch_cv2", "pitch_cv3", "pitch_cv4"],
+  // NUMPAD+ layer: CV value 0..1 selects the active layer (0..3) via
+  // round(cv*4). Consumed directly in the module's tick() — not
+  // routed onto an AudioParam, so cvScale doesn't apply. Same shape
+  // as cartesian's address-selector inputs.
+  numpadPlus: ['layer'],
 };
 
 describe('cv-scale / registry coverage', () => {
