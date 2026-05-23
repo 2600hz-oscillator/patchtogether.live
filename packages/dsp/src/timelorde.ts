@@ -38,22 +38,23 @@ const EXT_DROPOUT_MULT = 2;
 
 // Output indices — keep in sync with module-registry.ts outputs[] order.
 const OUT_1X    = 0;
-const OUT_4X    = 1;
-const OUT_2X    = 2;
-const OUT_HALF  = 3;
-const OUT_THIRD = 4;
-const OUT_QTR   = 5;
-const OUT_8TH   = 6;
-const OUT_12TH  = 7;
-const OUT_16TH  = 8;
-const OUT_32ND  = 9;
-const OUT_64TH  = 10;
-const OUT_SWING = 11;
+const OUT_8X    = 1;
+const OUT_4X    = 2;
+const OUT_2X    = 3;
+const OUT_HALF  = 4;
+const OUT_THIRD = 5;
+const OUT_QTR   = 6;
+const OUT_8TH   = 7;
+const OUT_12TH  = 8;
+const OUT_16TH  = 9;
+const OUT_32ND  = 10;
+const OUT_64TH  = 11;
+const OUT_SWING = 12;
 
-// Swing source encoding: 0 = 1x, 1 = 4x, 2 = 2x, 3 = 1/2, ..., 10 = 1/64.
+// Swing source encoding: 0 = 1x, 1 = 8x, 2 = 4x, 3 = 2x, 4 = 1/2, ..., 11 = 1/64.
 // Maps to the same order as outputs above (sans swing itself).
 const SWING_SOURCES = [
-  OUT_1X, OUT_4X, OUT_2X, OUT_HALF, OUT_THIRD, OUT_QTR,
+  OUT_1X, OUT_8X, OUT_4X, OUT_2X, OUT_HALF, OUT_THIRD, OUT_QTR,
   OUT_8TH, OUT_12TH, OUT_16TH, OUT_32ND, OUT_64TH,
 ];
 
@@ -70,7 +71,11 @@ const DIVISOR_DEFS: { out: number; ratio: number }[] = [
 ];
 
 // Multiplier outputs and their factors (M-1 sub-pulses scheduled per master).
+// 8x: useful for audio-rate clock effects + driving GRIDS-style finely-
+// divided patterns. At 120 BPM the master is 2 Hz; 8x = 16 Hz, still
+// well under audio rate but fast enough to feel "continuous".
 const MULTIPLIER_DEFS: { out: number; factor: number }[] = [
+  { out: OUT_8X, factor: 8 },
   { out: OUT_4X, factor: 4 },
   { out: OUT_2X, factor: 2 },
 ];

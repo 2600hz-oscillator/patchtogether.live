@@ -30,6 +30,7 @@
 export type TopCategory =
   | 'Audio modules'
   | 'Video modules'
+  | 'Ports'
   | 'MIDI'
   | 'Hybrid'
   | 'Uncategorized';
@@ -37,7 +38,14 @@ export type TopCategory =
 export interface CategoryEntry {
   top: TopCategory;
   /** Sub-category label. For 'Hybrid', sub is unused (flat list); we
-   *  set it to 'Hybrid' for the schema's shape uniformity. */
+   *  set it to 'Hybrid' for the schema's shape uniformity.
+   *
+   *  Special rendering rule (ModulePalette): when a sub's name matches
+   *  the top's name (e.g. Ports/Ports, Hybrid/Hybrid) those items
+   *  render flat directly under the top-level row — no sub-header
+   *  indirection. This lets a top-level group like Ports show
+   *  high-profile entries (helm, hydrogen, cloudseed) at the top
+   *  level alongside a labelled Mutable subfolder for the rest. */
   sub: string;
 }
 
@@ -45,6 +53,11 @@ export interface CategoryEntry {
 export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
   'Audio modules': ['VCOs', 'Utility', 'Effects', 'Mixing', 'End of chain'],
   'Video modules': ['Sources', 'Processors', 'Utilities'],
+  // Ports = "ports of external software / hardware synths". `Ports`
+  // (matching the top name) renders flat at the top level —
+  // hydrogen, helm, cloudseed are headline ports the user wants one
+  // click away. `Mutable` is the MI archetype-port sublist.
+  Ports: ['Ports', 'Mutable'],
   MIDI: ['MIDI'],
   Hybrid: ['Hybrid'],
   Uncategorized: ['Uncategorized'],
@@ -54,6 +67,7 @@ export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
 export const TOP_ORDER: readonly TopCategory[] = [
   'Audio modules',
   'Video modules',
+  'Ports',
   'MIDI',
   'Hybrid',
   'Uncategorized',
@@ -64,23 +78,17 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // ───────── Audio modules → VCOs (oscillators / audio sources) ─────────
   analogVco: { top: 'Audio modules', sub: 'VCOs' },
   wavetableVco: { top: 'Audio modules', sub: 'VCOs' },
-  macrooscillator: { top: 'Audio modules', sub: 'VCOs' },
+  // macrooscillator + rings → moved to Ports/Mutable.
   dx7: { top: 'Audio modules', sub: 'VCOs' },
   meowbox: { top: 'Audio modules', sub: 'VCOs' },
   buggles: { top: 'Audio modules', sub: 'VCOs' },
   noise: { top: 'Audio modules', sub: 'VCOs' },
   drummergirl: { top: 'Audio modules', sub: 'VCOs' },
-  rings: { top: 'Audio modules', sub: 'VCOs' },
   riotgirls: { top: 'Audio modules', sub: 'VCOs' },
   samsloop: { top: 'Audio modules', sub: 'VCOs' },
-  // HELM is a complete polyphonic synth voice (osc → filter → env → output)
-  // — it lives in the VCOs section alongside DX7 and MACROOSCILLATOR as a
-  // "first thing in the patch" sound source.
-  helm: { top: 'Audio modules', sub: 'VCOs' },
-  // HYDROGEN — port of the Hydrogen drum machine (TR-808 emulation kit
-  // bundled, single-pattern 16×16 sequencer). It's a "first thing in
-  // the patch" sound source, so VCOs is the right bucket.
-  hydrogen: { top: 'Audio modules', sub: 'VCOs' },
+  // HELM + HYDROGEN moved to Ports (top-level, flat) — see the Ports
+  // block below. The MI ports (rings, clouds, peaks, stages, blades,
+  // macrooscillator, veils, warps) also moved to Ports/Mutable.
 
   // ───────── Audio modules → Utility ─────────
   adsr: { top: 'Audio modules', sub: 'Utility' },
@@ -91,9 +99,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   illogic: { top: 'Audio modules', sub: 'Utility' },
   unityscalemathematik: { top: 'Audio modules', sub: 'Utility' },
   analogLogicMaths: { top: 'Audio modules', sub: 'Utility' },
-  veils: { top: 'Audio modules', sub: 'Utility' },
-  peaks: { top: 'Audio modules', sub: 'Utility' },
-  stages: { top: 'Audio modules', sub: 'Utility' },
+  // veils, peaks, stages → moved to Ports/Mutable.
   timelorde: { top: 'Audio modules', sub: 'Utility' },
   sequencer: { top: 'Audio modules', sub: 'Utility' },
   drumseqz: { top: 'Audio modules', sub: 'Utility' },
@@ -104,15 +110,13 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
 
   // ───────── Audio modules → Effects ─────────
   filter: { top: 'Audio modules', sub: 'Effects' },
-  blades: { top: 'Audio modules', sub: 'Effects' },
   reverb: { top: 'Audio modules', sub: 'Effects' },
-  cloudseed: { top: 'Audio modules', sub: 'Effects' },
   charlottesEchos: { top: 'Audio modules', sub: 'Effects' },
   destroy: { top: 'Audio modules', sub: 'Effects' },
-  warps: { top: 'Audio modules', sub: 'Effects' },
   shimmershine: { top: 'Audio modules', sub: 'Effects' },
-  clouds: { top: 'Audio modules', sub: 'Effects' },
   qbrt: { top: 'Audio modules', sub: 'Effects' },
+  // blades, warps, clouds → moved to Ports/Mutable.
+  // cloudseed → moved to Ports (top-level).
 
   // ───────── Audio modules → Mixing ─────────
   mixer: { top: 'Audio modules', sub: 'Mixing' },
@@ -121,6 +125,24 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
 
   // ───────── Audio modules → End of chain ─────────
   audioOut: { top: 'Audio modules', sub: 'End of chain' },
+
+  // ───────── Ports → top-level (helm, hydrogen, cloudseed are the
+  //          headline external-software ports — one click in the
+  //          picker. Sub matches top name so the palette renders them
+  //          flat under the Ports header). ─────────
+  helm: { top: 'Ports', sub: 'Ports' },
+  hydrogen: { top: 'Ports', sub: 'Ports' },
+  cloudseed: { top: 'Ports', sub: 'Ports' },
+
+  // ───────── Ports → Mutable (Émilie Gillet / MI archetype ports). ─────────
+  rings: { top: 'Ports', sub: 'Mutable' },
+  clouds: { top: 'Ports', sub: 'Mutable' },
+  peaks: { top: 'Ports', sub: 'Mutable' },
+  stages: { top: 'Ports', sub: 'Mutable' },
+  blades: { top: 'Ports', sub: 'Mutable' },
+  macrooscillator: { top: 'Ports', sub: 'Mutable' },
+  veils: { top: 'Ports', sub: 'Mutable' },
+  warps: { top: 'Ports', sub: 'Mutable' },
 
   // ───────── MIDI (hardware-bridge modules) ─────────
   // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI
@@ -201,6 +223,7 @@ export function groupDefs<D extends DefLike>(defs: readonly D[]): GroupedTop<D>[
   const byTop: Record<TopCategory, Record<string, D[]>> = {
     'Audio modules': {},
     'Video modules': {},
+    Ports: {},
     MIDI: {},
     Hybrid: {},
     Uncategorized: {},
