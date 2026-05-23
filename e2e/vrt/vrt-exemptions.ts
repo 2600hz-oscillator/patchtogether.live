@@ -174,4 +174,9 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/samsloop',
   'linux/blades',
   'linux/stages',
+  // SCOPE: this PR re-captures the darwin baseline with deterministic
+  // audio content (via VRT_SCENES). The linux baseline still shows the
+  // old magenta-masked canvas — a follow-up `task vrt:update` run on
+  // linux will re-capture, then this entry comes out.
+  'linux/scope',
 ]);
