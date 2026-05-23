@@ -93,11 +93,44 @@ export function getWavesculptFrames(nodeId: string): Float32Array[][] | undefine
 
 // ---------- pure helpers (unit-testable) ----------
 
+/** Per-oscillator wall position + inward emission vector.
+ *
+ *  Index → osc colour mapping (matches the OSC_COLOR_LABELS in
+ *  WavesculptCard.svelte): 0=RED, 1=GREEN, 2=BLUE, 3=ALPHA.
+ *
+ *  Layout (post-PR `wavesculpt-wall-layout-and-spectrograph`):
+ *  each oscillator lives on a distinct vertical wall (+X, -X, +Z,
+ *  -Z), is HORIZONTALLY centred on its wall, and at a different
+ *  HEIGHT so the four emission cones converge at the room centre
+ *  rather than all pointing through it head-on. The vectors are the
+ *  raw -src direction (distanceGain normalises internally) so each
+ *  emitter is literally aimed at the origin.
+ *
+ *  Heights (Y axis, room range -1..+1):
+ *    RED   — 0%  up → -1.0   (bottom of wall)
+ *    GREEN — 25% up → -0.5
+ *    BLUE  — 50% up →  0.0   (centre of wall)
+ *    ALPHA — 75% up → +0.5
+ *
+ *  Walls (XZ plane):
+ *    RED   — +X wall (right)
+ *    GREEN — -X wall (left)
+ *    BLUE  — +Z wall (back, behind camera at rot=0)
+ *    ALPHA — -Z wall (front, in front of camera at rot=0)
+ *
+ *  All four vectors point at the origin so the wave cones cross at
+ *  the centre of the room — this is the user-requested behaviour
+ *  that lets the listener stand in the centre and hear/see all four
+ *  voices meet. */
 export const WALL_LAYOUT: ReadonlyArray<{ src: [number, number, number]; vec: [number, number, number] }> = [
-  { src: [ 1, 0, 0], vec: [-1, 0, 0] },
-  { src: [-1, 0, 0], vec: [ 1, 0, 0] },
-  { src: [ 0, 1, 0], vec: [ 0,-1, 0] },
-  { src: [ 0,-1, 0], vec: [ 0, 1, 0] },
+  // RED — +X wall, bottom (0% up, y=-1), aimed at origin.
+  { src: [ 1, -1.0, 0], vec: [-1,  1.0, 0] },
+  // GREEN — -X wall, 25% up (y=-0.5), aimed at origin.
+  { src: [-1, -0.5, 0], vec: [ 1,  0.5, 0] },
+  // BLUE — +Z wall, 50% up (y=0), aimed at origin.
+  { src: [ 0,  0.0, 1], vec: [ 0,  0.0, -1] },
+  // ALPHA — -Z wall, 75% up (y=+0.5), aimed at origin.
+  { src: [ 0,  0.5, -1], vec: [ 0, -0.5, 1] },
 ];
 
 /** Distance-attenuated gain for one oscillator given the user camera
