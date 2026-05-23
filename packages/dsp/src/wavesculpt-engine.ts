@@ -162,12 +162,17 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
     outputs: Float32Array[][],
     parameters: Record<string, Float32Array>
   ): boolean {
-    // Stereo output on output 0, channels [L, R].
-    const outL = outputs[0]?.[0];
-    const outR = outputs[0]?.[1];
-    if (!outL || !outR) return true;
-    outL.fill(0);
-    outR.fill(0);
+    // Per-osc stereo outputs. Outputs 0..3 each carry one osc's RAW
+    // shaped stereo signal (no env gating, no distance attenuation,
+    // no pan). The JS factory applies env/dist/pan/FX-slot per osc
+    // and sums them into the master stereo bus — this lets the
+    // user insert a per-osc FX (DELAY/REVERB) between the shaper
+    // and the spatial mix, which is the headline behavior the
+    // FX-slot UI exposes.
+    //
+    // Prior shape (numberOfOutputs=1, full mix in worklet) is gone;
+    // the JS path can't be replicated inside the worklet without
+    // re-implementing every FX in C++/Rust at the worklet level.
 
     // Per-osc pitch CV inputs. Inputs 0..3 are pitchN — single-channel CV.
     const pitchIns: Array<Float32Array | undefined> = [
@@ -177,39 +182,45 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
       inputs[3]?.[0],
     ];
 
-    const block = outL.length;
+    // Pre-clear all outputs so a wavetable-not-loaded osc emits silence.
+    let block = 128;
+    for (let o = 0; o < 4; o++) {
+      const out = outputs[o];
+      const oL = out?.[0];
+      const oR = out?.[1];
+      if (oL) { oL.fill(0); block = oL.length; }
+      if (oR) oR.fill(0);
+    }
+
     for (let o = 0; o < 4; o++) {
       const osc = this.oscs[o]!;
       if (!osc.framesLoaded()) continue;
+      const out = outputs[o];
+      const outL = out?.[0];
+      const outR = out?.[1];
+      if (!outL || !outR) continue;
 
       // Pitch input source — honour the factory's per-osc routing so
       // an unpatched voice's pitch normals through to whichever
-      // upstream voice IS patched. Bounds check is a no-op for the
-      // identity default + has already been validated when the factory
-      // posted the route.
+      // upstream voice IS patched.
       const pIn = pitchIns[this.pitchRoute[o]!];
       const tune = parameters[`tune${o + 1}`]![0]!;
       const fine = parameters[`fine${o + 1}`]![0]!;
       const morphArr = parameters[`morph${o + 1}`]!;
       const spreadArr = parameters[`spread${o + 1}`]!;
       const foldArr = parameters[`fold${o + 1}`]!;
-      const envArr = parameters[`env${o + 1}`]!;
-      const distArr = parameters[`distGain${o + 1}`]!;
-      const pan = this.pans[o]!;
 
       for (let i = 0; i < block; i++) {
         const pitch = pIn ? pIn[i]! : 0;
         const morph = morphArr.length > 1 ? morphArr[i]! : morphArr[0]!;
         const spread = spreadArr.length > 1 ? spreadArr[i]! : spreadArr[0]!;
         const foldAmt = foldArr.length > 1 ? foldArr[i]! : foldArr[0]!;
-        const env = envArr.length > 1 ? envArr[i]! : envArr[0]!;
-        const dist = distArr.length > 1 ? distArr[i]! : distArr[0]!;
         const voct = pitch + tune / 12 + fine / 1200;
         const { l, r } = osc.step(voct, morph, spread, foldAmt);
-        // Sum per-osc into the master bus, gated by env * dist and panned.
-        const gate = env * dist;
-        outL[i]! += l * pan.l * gate;
-        outR[i]! += r * pan.r * gate;
+        // Emit raw shaped stereo per osc on its own output. The JS
+        // factory applies env+dist+pan+FX-slot AFTER this point.
+        outL[i] = l;
+        outR[i] = r;
       }
     }
 

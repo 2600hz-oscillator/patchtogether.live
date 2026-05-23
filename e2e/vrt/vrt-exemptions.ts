@@ -152,6 +152,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // needs to be captured on both platforms; promote into MODULES in a
   // follow-up PR.
   hydrogen: 'VRT baseline pending; unit + ART + E2E provide coverage. Promote into MODULES + capture darwin + linux pngs in a follow-up PR.',
+  // DELAY first-slice PR (PR #228): simple 3-fader card
+  // (time / feedback / mix); baseline pending platform-specific
+  // capture. Unit + E2E cover the module-def shape + the
+  // delay-line topology assertions.
+  delay: 'VRT baseline pending; unit + E2E provide coverage.',
 };
 
 /** Per-(platform, type) baselines intentionally missing while a follow-

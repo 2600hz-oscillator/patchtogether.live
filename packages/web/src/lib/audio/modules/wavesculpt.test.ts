@@ -390,6 +390,32 @@ describe('wavesculpt def: new ports + params landed', () => {
     expect(mode.defaultValue).toBe(0);
     expect(mode.curve).toBe('discrete');
   });
+
+  it('exposes per-osc fxType{1..4} (discrete 0=OFF, 1=REVERB, 2=DELAY) + fxAmount', () => {
+    for (let i = 1; i <= 4; i++) {
+      const t = wavesculptDef.params.find((p) => p.id === `fxType${i}`)!;
+      expect(t, `fxType${i} exists`).toBeDefined();
+      expect(t.min).toBe(0);
+      expect(t.max).toBe(2);
+      expect(t.curve).toBe('discrete');
+      expect(t.defaultValue).toBe(0); // FX off by default
+
+      const a = wavesculptDef.params.find((p) => p.id === `fxAmount${i}`)!;
+      expect(a, `fxAmount${i} exists`).toBeDefined();
+      expect(a.min).toBe(0);
+      expect(a.max).toBe(1);
+      expect(a.curve).toBe('linear');
+    }
+  });
+
+  it('exposes video_mode (discrete 0=PROXIMITY, 1=BIRDSEYE)', () => {
+    const m = wavesculptDef.params.find((p) => p.id === 'video_mode')!;
+    expect(m, 'video_mode exists').toBeDefined();
+    expect(m.defaultValue).toBe(0);
+    expect(m.min).toBe(0);
+    expect(m.max).toBe(1);
+    expect(m.curve).toBe('discrete');
+  });
 });
 
 describe('shared wavetable engine import (DRY check)', () => {
