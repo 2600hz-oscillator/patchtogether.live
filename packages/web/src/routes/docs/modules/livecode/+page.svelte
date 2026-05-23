@@ -94,6 +94,99 @@ patch('v.sine', 'o.L');
 patch('v.sine', 'o.R');
 set('v', 'tune', 0);`;
 
+  // Full chain: sequencer → ADSR-shaped VCA → VCO into a mixer + audio
+  // out, with a DRUMMERGIRL kick fired on every beat, sidechain-ducking
+  // the melody via a second ADSR's inverted envelope. A clocked()
+  // callback slowly modulates the duck depth using state.* to track
+  // a per-tick beat counter.
+  const COMPLEX_CHAIN_JS = `// ── 9 modules ───────────────────────────────────────────────────
+spawn('sequencer',   'seq');
+spawn('analogVco',   'vco');
+spawn('adsr',        'env');     // pluck envelope for the melody
+spawn('vca',         'amp');     // melody VCA (env-driven)
+spawn('vca',         'duck');    // sidechain VCA — kick ducks this one
+spawn('adsr',        'sideEnv'); // sidechain envelope (kick-triggered)
+spawn('drummergirl', 'kick');
+spawn('mixer',       'mix');
+spawn('audioOut',    'out');
+
+// ── Main melody chain ───────────────────────────────────────────
+patch('seq.pitch', 'vco.pitch');
+patch('seq.gate',  'env.gate');
+patch('vco.sine',  'amp.audio');
+patch('env.env',   'amp.cv');
+
+// ── Sidechain chain ─────────────────────────────────────────────
+patch('amp.audio',       'duck.audio');       // melody through sidechain VCA
+patch('TIMELORDE1.1x',   'kick.gate');         // kick on every beat
+patch('TIMELORDE1.1x',   'sideEnv.gate');      // same trigger envelopes the duck
+patch('sideEnv.env_inv', 'duck.cv');           // inverted ADSR ⇒ duck shape
+
+// ── Mix + out ───────────────────────────────────────────────────
+patch('duck.audio', 'mix.in1');
+patch('kick.audio', 'mix.in2');
+patch('mix.audio',  'out.L');
+patch('mix.audio',  'out.R');
+
+// ── Knobs ───────────────────────────────────────────────────────
+set('env', 'attack',  0.005);
+set('env', 'decay',   0.12);
+set('env', 'sustain', 0.4);
+set('env', 'release', 0.18);
+
+set('amp',  'base', 0);   set('amp',  'cvAmount', 1);  // melody VCA
+set('duck', 'base', 0);   set('duck', 'cvAmount', 1);  // duck idles fully open
+
+set('sideEnv', 'attack',  0.001);
+set('sideEnv', 'decay',   0.22);
+set('sideEnv', 'sustain', 0);
+set('sideEnv', 'release', 0.05);
+
+// DRUMMERGIRL dialed in as a kick.
+set('kick', 'pitch',  -12);
+set('kick', 'tone',   0.18);
+set('kick', 'shape',  0.35);
+set('kick', 'decay',  0.30);
+set('kick', 'volume', 1.5);
+
+set('mix', 'ch1', 0.85); set('mix', 'ch2', 0.95); set('mix', 'master', 0.8);
+set('out', 'master', 0.5);
+
+set('seq', 'bpm',       120);
+set('seq', 'length',    16);
+set('seq', 'isPlaying', 1);
+
+// ── 8-note melody on the sequencer (rest in remaining 8 slots) ─
+setData('seq', 'steps', [
+  { on: true,  pitch: 60 }, // C4
+  { on: false },
+  { on: true,  pitch: 64 }, // E4
+  { on: false },
+  { on: true,  pitch: 67 }, // G4
+  { on: false },
+  { on: true,  pitch: 72 }, // C5
+  { on: false },
+  { on: true,  pitch: 67 }, // G4
+  { on: false },
+  { on: true,  pitch: 64 }, // E4
+  { on: false },
+  { on: true,  pitch: 60 }, // C4
+  { on: false }, { on: false }, { on: false },
+]);
+
+// ── Modulate sidechain depth via clocked() + state ─────────────
+// Every 1/16 beat: bump a beat counter, sweep depth 0.2..1.0
+// over an 8-beat cosine. state.* persists across ticks so we
+// don't reset the counter every fire.
+clocked('1/16', () => {
+  const tick = (state.get('tick') ?? 0) + 1;
+  state.set('tick', tick);
+  // 16 sixteenths per beat → 128 ticks per 8 beats
+  const phase = (tick / 128) * 2 * Math.PI;
+  const depth = 0.6 + 0.4 * Math.cos(phase);  // 0.2 .. 1.0
+  set('duck', 'cvAmount', depth);
+});`;
+
   // Group API entries by category for a clean docs table.
   const apiByCategory = $derived.by(() => {
     const out: Record<string, typeof LIVECODE_API> = {};
@@ -204,7 +297,18 @@ set('v', 'tune', 0);`;
 </p>
 <pre><code>{CLOCKED_JS}</code></pre>
 
-<h3>Sidechain — VCO + VCA + ADSR.env_inv + HYDROGEN kick</h3>
+<h3>Full chain — sequencer + ADSR + VCA + VCO + DRUMMERGIRL + clocked sidechain</h3>
+<p>
+  Real-world script: a melody sequencer drives a VCO through an ADSR + VCA, a
+  DRUMMERGIRL kick fires on every TIMELORDE beat, the kick's <code>1x</code>
+  output drives a second ADSR whose <code>env_inv</code> output ducks a
+  sidechain VCA — and a <code>clocked()</code> callback uses <code>state.*</code>
+  to track a beat counter and breathes the ducking depth between 0.2 and
+  1.0 over an 8-beat cosine.
+</p>
+<pre><code>{COMPLEX_CHAIN_JS}</code></pre>
+
+<h3>Minimal sidechain — VCO + VCA + ADSR.env_inv + HYDROGEN kick</h3>
 <p>
   The classic sidechain ducker, wired from a single script. The
   inverted ADSR envelope (<code>env_inv</code>, available on every ADSR)

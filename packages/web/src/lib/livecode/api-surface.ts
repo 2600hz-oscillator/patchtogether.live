@@ -96,8 +96,17 @@ export const LIVECODE_API: ApiEntry[] = [
     category: 'rack',
     signature: "set('module', 'param', value)",
     summary:
-      'Write a param value. Clamped server-side by the module def.',
+      'Write a numeric param value. Clamped server-side by the module def.',
     example: `set('vco1', 'tune', 12); // up one octave`,
+  },
+  {
+    kind: 'fn',
+    name: 'setData',
+    category: 'rack',
+    signature: "setData('module', 'key', value)",
+    summary:
+      'Write an arbitrary JSON value to node.data[key]. Use for sequencer step arrays, hydrogen drum patterns, and other non-numeric module state — numeric knobs use set() instead.',
+    example: `setData('seq', 'steps', [\n  { on: true, pitch: 60 },\n  { on: true, pitch: 64 },\n  { on: false }, { on: false },\n]);`,
   },
 
   // ─── State reads ──────────────────────────────────────────────────
@@ -185,6 +194,53 @@ export const LIVECODE_API: ApiEntry[] = [
     category: 'schedule',
     signature: "every('division', () => { /* … */ })",
     summary: 'Alias of clocked().',
+  },
+
+  // ─── Persistent runner state ──────────────────────────────────────
+  {
+    kind: 'namespace',
+    name: 'state',
+    category: 'state',
+    summary:
+      'Per-runner key/value store. Survives across clocked() ticks, page reloads, and is visible to remote collaborators (lives on the owning runner\'s node.data.state). Use it for counters, phase accumulators, and other "I need this value next tick" needs.',
+    members: [
+      {
+        kind: 'fn',
+        name: 'get',
+        category: 'state',
+        signature: "state.get('key')",
+        summary: 'Read a stored value (undefined if never set).',
+        example: `const beat = state.get('beat') ?? 0;\nstate.set('beat', beat + 1);`,
+      },
+      {
+        kind: 'fn',
+        name: 'set',
+        category: 'state',
+        signature: "state.set('key', value)",
+        summary: 'Write a value (any JSON-serializable type). Returns the written value.',
+      },
+      {
+        kind: 'fn',
+        name: 'has',
+        category: 'state',
+        signature: "state.has('key')",
+        summary: 'Returns true iff `key` has been set (distinguishes a stored `undefined` from never-set).',
+      },
+      {
+        kind: 'fn',
+        name: 'keys',
+        category: 'state',
+        signature: 'state.keys()',
+        summary: "Returns an array of every key stored on this runner's state bag.",
+      },
+      {
+        kind: 'fn',
+        name: 'clear',
+        category: 'state',
+        signature: 'state.clear()',
+        summary: "Wipe this runner's state bag.",
+      },
+    ],
   },
 
   // ─── Utility ──────────────────────────────────────────────────────
