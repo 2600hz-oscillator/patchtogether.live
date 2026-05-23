@@ -51,13 +51,6 @@ const SKIP_DEF_VS_UI: Record<string, string> = {
   // the settings panel either inlines the ports or wires them via the
   // standard PatchPanel.
   helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
-  // WAVESCULPT — PR #225 added 4 morph_cv inputs (one per osc) to the
-  // def but the card's PatchPanel sections weren't updated to surface
-  // them. The engine routes the cables correctly (factory's inputs
-  // Map includes them); the UI just doesn't render the handles. A
-  // follow-up needs to add the morph_cv ports to the per-osc strip's
-  // section. Functional coverage: e2e/tests/wavesculpt-camera-cv.spec.ts.
-  wavesculpt: 'morph_cv ports from PR #225 not yet surfaced in card sections',
 };
 
 async function readHandleIds(
