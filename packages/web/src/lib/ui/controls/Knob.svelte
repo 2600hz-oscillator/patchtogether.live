@@ -7,8 +7,18 @@
   // angle reflects the LIVE current value (intrinsic + connected CV) so
   // patching an LFO into a knob's CV input visibly rotates the tick.
   import type { KnobCurve } from '$lib/graph/types';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { createDragCommit } from './drag-commit';
+  import ControlContextMenu from './ControlContextMenu.svelte';
+  import {
+    beginLearn,
+    cancelLearn,
+    registerSetter,
+    unregisterSetter,
+    getBinding,
+    clearBinding,
+    learnSpecRune,
+  } from '$lib/midi/midi-learn.svelte';
 
   interface Props {
     value: number;
@@ -24,6 +34,11 @@
      * (when not being dragged) and renders that as the tick angle.
      */
     readLive?: () => number | undefined;
+    /** MIDI Learn — when both moduleId + paramId are set the knob becomes
+     *  right-clickable to bind a MIDI CC. Cards that don't pass these
+     *  silently skip the feature. */
+    moduleId?: string;
+    paramId?: string;
   }
 
   let {
@@ -36,7 +51,50 @@
     curve = 'linear',
     onchange,
     readLive,
+    moduleId,
+    paramId,
   }: Props = $props();
+
+  // ---------------- MIDI Learn integration (mirrors Fader.svelte) ----------------
+  let bindingTick = $state(0);
+  function bumpBindingTick() { bindingTick++; }
+  let binding = $derived.by(() => {
+    void bindingTick; // force re-evaluation on tick bump
+    if (!moduleId || !paramId) return undefined;
+    return getBinding(moduleId, paramId);
+  });
+  let learning = $derived.by(() => {
+    if (!moduleId || !paramId) return false;
+    const ls = learnSpecRune();
+    return !!ls && ls.moduleId === moduleId && ls.paramId === paramId;
+  });
+
+  let ctxOpen = $state(false);
+  let ctxX = $state(0);
+  let ctxY = $state(0);
+
+  function openContextMenu(e: MouseEvent) {
+    if (!moduleId || !paramId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    ctxX = e.clientX;
+    ctxY = e.clientY;
+    ctxOpen = true;
+  }
+  function onLearnPick() {
+    if (!moduleId || !paramId) return;
+    beginLearn({ moduleId, paramId, min, max, onchange });
+    bumpBindingTick();
+  }
+  function onForgetPick() {
+    if (!moduleId || !paramId) return;
+    clearBinding(moduleId, paramId);
+    bumpBindingTick();
+  }
+  onMount(() => {
+    if (!moduleId || !paramId) return;
+    registerSetter(moduleId, paramId, { min, max, onchange });
+  });
 
   let dragging = $state(false);
   let hovering = $state(false);
@@ -78,6 +136,10 @@
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
     dragCommit.dispose();
+    if (moduleId && paramId) {
+      unregisterSetter(moduleId, paramId);
+      if (learning) cancelLearn();
+    }
   });
 
   // Map internal value ↔ normalized [0,1] using the declared curve.
@@ -171,8 +233,11 @@
 <div
   class="knob-wrap"
   class:dragging
+  class:midi-learning={learning}
+  class:midi-bound={!!binding}
   onpointerenter={() => (hovering = true)}
   onpointerleave={() => (hovering = false)}
+  oncontextmenu={openContextMenu}
   role="presentation"
 >
   {#if dragging || hovering}
@@ -195,7 +260,26 @@
     <div class="tick" style:transform="rotate({angle}deg)"></div>
   </div>
   <div class="label">{label}</div>
+  {#if binding}
+    <div class="midi-badge" title="Bound to MIDI Channel {binding.channel + 1}, CC {binding.cc}">
+      CC {binding.cc}
+    </div>
+  {/if}
 </div>
+
+{#if moduleId && paramId}
+  <ControlContextMenu
+    open={ctxOpen}
+    x={ctxX}
+    y={ctxY}
+    title={`${moduleId} · ${label}`}
+    hasBinding={!!binding}
+    bindingLabel={binding ? `CH ${binding.channel + 1} · CC ${binding.cc}` : undefined}
+    onlearn={onLearnPick}
+    onforget={onForgetPick}
+    onclose={() => (ctxOpen = false)}
+  />
+{/if}
 
 <style>
   .knob-wrap {
@@ -243,6 +327,31 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     pointer-events: none;
+  }
+  /* MIDI Learn visual states (mirror Fader.svelte). */
+  .knob-wrap.midi-learning {
+    outline: 2px solid #f5c248;
+    outline-offset: 2px;
+    border-radius: 4px;
+    animation: knob-midi-learn-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes knob-midi-learn-pulse {
+    0%, 100% { outline-color: rgba(245, 194, 72, 1); }
+    50%      { outline-color: rgba(245, 194, 72, 0.3); }
+  }
+  .midi-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    line-height: 1;
+    padding: 2px 4px;
+    background: rgba(96, 165, 250, 0.18);
+    color: #a8d3ff;
+    border-radius: 2px;
+    pointer-events: none;
+    letter-spacing: 0.02em;
   }
   .value {
     position: absolute;

@@ -39,10 +39,10 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={attack}  min={0.001} max={10} defaultValue={0.005} label="Attack"  units="s" curve="log"    onchange={set('attack')}  readLive={live('attack')} />
-      <Fader value={decay}   min={0.001} max={10} defaultValue={0.1}   label="Decay"   units="s" curve="log"    onchange={set('decay')}   readLive={live('decay')} />
-      <Fader value={sustain} min={0}     max={1}  defaultValue={0.7}   label="Sustain"           curve="linear" onchange={set('sustain')} readLive={live('sustain')} />
-      <Fader value={release} min={0.001} max={10} defaultValue={0.3}   label="Release" units="s" curve="log"    onchange={set('release')} readLive={live('release')} />
+      <Fader value={attack}  min={0.001} max={10} defaultValue={0.005} label="Attack"  units="s" curve="log"    onchange={set('attack')}  readLive={live('attack')}  moduleId={id} paramId="attack" />
+      <Fader value={decay}   min={0.001} max={10} defaultValue={0.1}   label="Decay"   units="s" curve="log"    onchange={set('decay')}   readLive={live('decay')}   moduleId={id} paramId="decay" />
+      <Fader value={sustain} min={0}     max={1}  defaultValue={0.7}   label="Sustain"           curve="linear" onchange={set('sustain')} readLive={live('sustain')} moduleId={id} paramId="sustain" />
+      <Fader value={release} min={0.001} max={10} defaultValue={0.3}   label="Release" units="s" curve="log"    onchange={set('release')} readLive={live('release')} moduleId={id} paramId="release" />
     </div>
   </PatchPanel>
 </div>
