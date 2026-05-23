@@ -1014,11 +1014,28 @@ void main() {
 
     // Camera setup — use the shared eyeFromCamera helper so zoom/rot
     // semantics stay paired with the audio side's distGain math.
-    const camX = clampJoy(node?.params.pos_x as number ?? 0);
-    const camY = clampJoy(node?.params.pos_y as number ?? 0);
-    const camZ = clampJoy(node?.params.pos_z as number ?? 0);
-    const zoomVal = Math.max(0.3, Math.min(3, node?.params.zoom as number ?? 1));
-    const rotVal  = clampJoy(node?.params.rot as number ?? 0);
+    //
+    // Read the LIVE (knob + CV) values via engine.readParam, NOT
+    // node.params (knob only). Pre-fix bug: WebGL camera read
+    // node.params.pos_x directly, so a patched LFO modulated the
+    // AudioParam (and the audio distGain followed correctly via the
+    // shadow analyser path in wavesculpt.ts:tick()) but the visual
+    // viewport stayed parked on the knob. Now both audio + visual
+    // walk in lockstep off the same combined value.
+    const eng = engineCtx.get();
+    const readCam = (k: 'pos_x' | 'pos_y' | 'pos_z' | 'zoom' | 'rot', fallback: number): number => {
+      if (eng && node) {
+        const v = eng.readParam(node, k);
+        if (typeof v === 'number') return v;
+      }
+      const raw = node?.params?.[k];
+      return typeof raw === 'number' ? raw : fallback;
+    };
+    const camX = clampJoy(readCam('pos_x', 0));
+    const camY = clampJoy(readCam('pos_y', 0));
+    const camZ = clampJoy(readCam('pos_z', 0));
+    const zoomVal = Math.max(0.3, Math.min(3, readCam('zoom', 1)));
+    const rotVal  = clampJoy(readCam('rot', 0));
     const eye = eyeFromCamera(camX, camY, camZ, zoomVal, rotVal);
     // FOV stays fixed; zoom now moves the eye instead of changing fov,
     // so the visual cue tracks the audio cue 1:1.

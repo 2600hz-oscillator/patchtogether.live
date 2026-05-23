@@ -52,6 +52,16 @@ export interface AudioModuleDef {
    */
   maxInstances?: number;
   /**
+   * When true, the canvas refuses to delete this module — singleton
+   * "anchor" modules (TIMELORDE = the rack's system clock) MUST exist
+   * for the rest of the rack to be coherent. Gate the delete affordance
+   * on this in Canvas.svelte's deleteNode + the right-click "Delete"
+   * entry. Defensive: even if a stray code path calls deleteNode on an
+   * undeletable, the engine continues to function (the module just
+   * comes back on next refresh via the rack-init auto-spawn path).
+   */
+  undeletable?: boolean;
+  /**
    * Optional declaration that two ports form a stereo pair for normaling
    * purposes — when only the L side is patched, the engine virtually
    * duplicates the connection to R. Encoded as [leftPortId, rightPortId]

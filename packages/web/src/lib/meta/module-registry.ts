@@ -26,6 +26,10 @@ export interface MetaModuleDef {
   schemaVersion: number;
   migrate?: (data: unknown, fromVersion: number) => unknown;
   maxInstances?: number;
+  /** Mirror of AudioModuleDef.undeletable — no meta module sets this
+   *  today; field present so Canvas's union-typed defLookup can read
+   *  it uniformly. */
+  undeletable?: boolean;
 }
 
 const registry = new Map<ModuleType, MetaModuleDef>();

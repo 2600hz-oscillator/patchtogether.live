@@ -93,7 +93,11 @@ class TimelordeProcessor extends AudioWorkletProcessor {
       { name: 'bpm',          defaultValue: 120, minValue: 10,  maxValue: 300, automationRate: 'k-rate' as const },
       { name: 'swingAmount',  defaultValue: 0,   minValue: 0,   maxValue: 90,  automationRate: 'k-rate' as const },
       { name: 'swingSource',  defaultValue: 0,   minValue: 0,   maxValue: 10,  automationRate: 'k-rate' as const },
-      { name: 'isPlaying',    defaultValue: 0,   minValue: 0,   maxValue: 1,   automationRate: 'k-rate' as const },
+      // muteOutputs (v2; was isPlaying in v1): 0 = unmuted/audible,
+      // 1 = muted. The internal clock generation ALWAYS runs
+      // regardless — LIVECODE's clocked() callbacks + any other
+      // tick consumers need the clock alive even when gates are off.
+      { name: 'muteOutputs',  defaultValue: 0,   minValue: 0,   maxValue: 1,   automationRate: 'k-rate' as const },
       // hasExternalClock is set to 1 by the engine factory whenever an edge
       // is patched into input 0 (declarative, not measured). Drives whether
       // the play button is honored or always-on.
@@ -127,8 +131,8 @@ class TimelordeProcessor extends AudioWorkletProcessor {
   // pulse-end sample so process() can drop the gate at the right moment.
   private outputPulseEnd = new Int32Array(12);
 
-  // Track previous play state for transition handling.
-  private prevPlaying = false;
+  // (v1) prevPlaying tracked stop-transition resets; v2 doesn't stop
+  // the internal clock, so nothing to track here. Field removed.
 
   process(
     inputs: Float32Array[][],
@@ -146,30 +150,19 @@ class TimelordeProcessor extends AudioWorkletProcessor {
       0,
       Math.min(SWING_SOURCES.length - 1, Math.round(parameters.swingSource[0] ?? 0)),
     );
-    const isPlayingParam = (parameters.isPlaying[0] ?? 0) >= 0.5;
+    const muteOutputs = (parameters.muteOutputs[0] ?? 0) >= 0.5;
     const hasExternalClock = (parameters.hasExternalClock[0] ?? 0) >= 0.5;
-    // When external clock is patched, isPlaying is forced to 1 (the spec's
-    // hidden-and-forced rule). Otherwise honor the play button.
-    const isPlaying = hasExternalClock ? true : isPlayingParam;
 
-    // On stop transition, cancel all pending and force outputs low for the rest
-    // of the block.
-    if (this.prevPlaying && !isPlaying) {
-      this.pending.length = 0;
-      this.outputPulseEnd.fill(0);
-      this.internalPhase = 0;
-    }
-    this.prevPlaying = isPlaying;
-
-    if (!isPlaying) {
-      this.sampleCount += blockLen;
-      // Zero outputs.
-      for (let o = 0; o < 12; o++) {
-        const ch = outputs[o]?.[0];
-        if (ch) ch.fill(0);
-      }
-      return true;
-    }
+    // v2 behavior: the internal clock ALWAYS runs. muteOutputs gates
+    // the OUTPUT WAVEFORMS at the end of the block but doesn't stop
+    // phase / pending-pulse bookkeeping — so LIVECODE's clocked()
+    // subscribers (which subscribe to TIMELORDE-mirrored ticks via
+    // the engine-side TickBus) keep firing whether or not the user
+    // wants audible gates downstream.
+    //
+    // External clock just means "lock 1x to incoming edges". It no
+    // longer overrides mute (the user can mute the rack but still
+    // have LIVECODE see the MIDI-clock pulses).
 
     const internalPeriodSamples = Math.max(1, (60 / Math.max(1, bpm)) * sampleRate);
 
@@ -250,8 +243,12 @@ class TimelordeProcessor extends AudioWorkletProcessor {
       }
 
       // Write samples — high if currently within a pulse window, else 0.
+      // muteOutputs zeros the WRITE; the pulse bookkeeping above still
+      // advances so internal phase + the engine-side tick subscribers
+      // (LIVECODE clocked() etc.) keep firing.
+      const gateLevel = muteOutputs ? 0 : 1;
       for (let o = 0; o < 12; o++) {
-        outBufs[o]![i] = this.outputPulseEnd[o]! > absSample ? 1 : 0;
+        outBufs[o]![i] = this.outputPulseEnd[o]! > absSample ? gateLevel : 0;
       }
     }
 

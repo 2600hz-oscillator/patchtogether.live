@@ -22,7 +22,11 @@
   let bpm         = $derived((void cardVersion, node?.params.bpm         ?? 120));
   let swingAmount = $derived((void cardVersion, node?.params.swingAmount ?? 0));
   let swingSource = $derived((void cardVersion, node?.params.swingSource ?? 0));
-  let isPlaying   = $derived((void cardVersion, (node?.params.isPlaying  ?? 0) >= 0.5));
+  // v2: muteOutputs replaces isPlaying. Default 0 = unmuted/running.
+  // Existing v1 patches save `isPlaying` (1=playing/0=stopped); the
+  // factory's inline migrate-on-spawn flips them to muteOutputs, so
+  // here we only read the new key.
+  let muteOutputs = $derived((void cardVersion, (node?.params.muteOutputs ?? 0) >= 0.5));
 
   let hasExternalClock = $derived.by(() => {
     void cardVersion;
@@ -39,9 +43,11 @@
     return e.readParam(node, k);
   };
 
-  function togglePlay() {
-    if (hasExternalClock) return;
-    set('isPlaying')(isPlaying ? 0 : 1);
+  function toggleMute() {
+    // External clock no longer overrides — the user can mute the rack
+    // even while MIDICLOCK drives TIMELORDE. The internal clock keeps
+    // running for LIVECODE consumers regardless.
+    set('muteOutputs')(muteOutputs ? 0 : 1);
   }
 
   const OUT_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64', 'swing'];
@@ -61,11 +67,12 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
     TIMELORDE
-    {#if !hasExternalClock}
-      <button class="play-btn" class:playing={isPlaying} onclick={togglePlay} title={isPlaying ? 'Stop' : 'Play'}>
-        {isPlaying ? '■' : '▶'}
+    <!-- MUTE always shown (v2 — clock keeps running even when an
+         external clock is patched; the mute only silences the gate
+         outputs, not the internal phase that LIVECODE rides on). -->
+    <button class="play-btn" class:playing={!muteOutputs} onclick={toggleMute} title={muteOutputs ? 'Unmute (gates fire)' : 'Mute (gates go silent; internal clock keeps running for LIVECODE)'}>
+        {muteOutputs ? 'MUTE' : 'ON'}
       </button>
-    {/if}
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
