@@ -97,6 +97,7 @@
     { id: 'freeze',    label: 'FRZ',  cable: 'gate' },
     { id: 'seed_cv',   label: 'SD',   cable: 'cv' },
     { id: 'play_cv',   label: 'PL',   cable: 'gate' },
+    { id: 'reset_cv',  label: 'RST',  cable: 'gate' },
     { id: 'queue1_cv', label: 'S1',   cable: 'gate' },
     { id: 'queue2_cv', label: 'S2',   cable: 'gate' },
     { id: 'queue3_cv', label: 'S3',   cable: 'gate' },
