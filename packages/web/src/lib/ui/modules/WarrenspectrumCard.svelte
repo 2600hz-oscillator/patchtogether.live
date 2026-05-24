@@ -127,7 +127,7 @@
             min={0} max={2} defaultValue={1.0}
             label={`B${b}`}
             curve="linear"
-            onchange={set(`level${b}`)}
+            onchange={set(`level${b}`)} moduleId={id} paramId={`level${b}`}
             readLive={live(`level${b}`)}
           />
           <div class="band-label">{BAND_LABELS[i]}</div>
@@ -136,12 +136,12 @@
     </div>
 
     <div class="side-knobs">
-      <Knob value={param('master', 1.0)}     min={0} max={2} defaultValue={1.0} label="Mas"  curve="linear" onchange={set('master')}     readLive={live('master')} />
-      <Knob value={param('ping_decay', 0.5)} min={0} max={1} defaultValue={0.5} label="Dcy"  curve="linear" onchange={set('ping_decay')} readLive={live('ping_decay')} />
-      <Knob value={param('q', 6)}            min={1} max={40} defaultValue={6}  label="Q"    curve="linear" onchange={set('q')}          readLive={live('q')} />
-      <Knob value={param('spread', 0)}       min={0} max={1} defaultValue={0}   label="Spd"  curve="linear" onchange={set('spread')}     readLive={live('spread')} />
-      <Knob value={param('bleed', 1)}        min={0} max={1} defaultValue={1}   label="Bld"  curve="linear" onchange={set('bleed')}      readLive={live('bleed')} />
-      <Knob value={param('viznoise', 0.3)}   min={0} max={1} defaultValue={0.3} label="Hue"  curve="linear" onchange={set('viznoise')}   readLive={live('viznoise')} />
+      <Knob value={param('master', 1.0)}     min={0} max={2} defaultValue={1.0} label="Mas"  curve="linear" onchange={set('master')} moduleId={id} paramId="master"     readLive={live('master')} />
+      <Knob value={param('ping_decay', 0.5)} min={0} max={1} defaultValue={0.5} label="Dcy"  curve="linear" onchange={set('ping_decay')} moduleId={id} paramId="ping_decay" readLive={live('ping_decay')} />
+      <Knob value={param('q', 6)}            min={1} max={40} defaultValue={6}  label="Q"    curve="linear" onchange={set('q')} moduleId={id} paramId="q"          readLive={live('q')} />
+      <Knob value={param('spread', 0)}       min={0} max={1} defaultValue={0}   label="Spd"  curve="linear" onchange={set('spread')} moduleId={id} paramId="spread"     readLive={live('spread')} />
+      <Knob value={param('bleed', 1)}        min={0} max={1} defaultValue={1}   label="Bld"  curve="linear" onchange={set('bleed')} moduleId={id} paramId="bleed"      readLive={live('bleed')} />
+      <Knob value={param('viznoise', 0.3)}   min={0} max={1} defaultValue={0.3} label="Hue"  curve="linear" onchange={set('viznoise')} moduleId={id} paramId="viznoise"   readLive={live('viznoise')} />
     </div>
 
     <div class="tuning-row">
@@ -158,7 +158,7 @@
         min={24} max={108} defaultValue={60}
         label="Root"
         curve="linear"
-        onchange={set('root')}
+        onchange={set('root')} moduleId={id} paramId="root"
         readLive={live('root')}
       />
     </div>

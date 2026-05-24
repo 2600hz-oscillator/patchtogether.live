@@ -154,12 +154,12 @@
       </div>
 
       <div class="grid">
-        <Fader value={paramVal('driftRate')}  min={0} max={1} defaultValue={defaultFor('driftRate')}  label="Drift"  curve="log"    onchange={set('driftRate')}  readLive={live('driftRate')} />
-        <Fader value={paramVal('chaos')}      min={0} max={1} defaultValue={defaultFor('chaos')}      label="Chaos"  curve="linear" onchange={set('chaos')}      readLive={live('chaos')} />
-        <Fader value={paramVal('coherence')}  min={0} max={1} defaultValue={defaultFor('coherence')}  label="Coh"    curve="linear" onchange={set('coherence')}  readLive={live('coherence')} />
-        <Fader value={paramVal('sceneDepth')} min={0} max={1} defaultValue={defaultFor('sceneDepth')} label="Depth"  curve="linear" onchange={set('sceneDepth')} readLive={live('sceneDepth')} />
-        <Fader value={paramVal('bias')}       min={-1} max={1} defaultValue={defaultFor('bias')}      label="Bias"   curve="linear" onchange={set('bias')}       readLive={live('bias')} />
-        <Fader value={paramVal('level')}      min={0} max={1} defaultValue={defaultFor('level')}      label="Lvl"    curve="linear" onchange={set('level')}      readLive={live('level')} />
+        <Fader value={paramVal('driftRate')}  min={0} max={1} defaultValue={defaultFor('driftRate')}  label="Drift"  curve="log"    onchange={set('driftRate')} moduleId={id} paramId="driftRate"  readLive={live('driftRate')} />
+        <Fader value={paramVal('chaos')}      min={0} max={1} defaultValue={defaultFor('chaos')}      label="Chaos"  curve="linear" onchange={set('chaos')} moduleId={id} paramId="chaos"      readLive={live('chaos')} />
+        <Fader value={paramVal('coherence')}  min={0} max={1} defaultValue={defaultFor('coherence')}  label="Coh"    curve="linear" onchange={set('coherence')} moduleId={id} paramId="coherence"  readLive={live('coherence')} />
+        <Fader value={paramVal('sceneDepth')} min={0} max={1} defaultValue={defaultFor('sceneDepth')} label="Depth"  curve="linear" onchange={set('sceneDepth')} moduleId={id} paramId="sceneDepth" readLive={live('sceneDepth')} />
+        <Fader value={paramVal('bias')}       min={-1} max={1} defaultValue={defaultFor('bias')}      label="Bias"   curve="linear" onchange={set('bias')} moduleId={id} paramId="bias"       readLive={live('bias')} />
+        <Fader value={paramVal('level')}      min={0} max={1} defaultValue={defaultFor('level')}      label="Lvl"    curve="linear" onchange={set('level')} moduleId={id} paramId="level"      readLive={live('level')} />
       </div>
     </div>
   </PatchPanel>

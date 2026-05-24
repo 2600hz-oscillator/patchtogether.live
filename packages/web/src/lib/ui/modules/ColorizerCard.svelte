@@ -41,9 +41,9 @@
   <span class="port-label right" style="top: 50px;">OUT</span>
 
   <div class="fader-grid">
-    <Fader value={p('tintR')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintR')!.defaultValue} label="R" curve="linear" onchange={setParam('tintR')} />
-    <Fader value={p('tintG')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintG')!.defaultValue} label="G" curve="linear" onchange={setParam('tintG')} />
-    <Fader value={p('tintB')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintB')!.defaultValue} label="B" curve="linear" onchange={setParam('tintB')} />
+    <Fader value={p('tintR')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintR')!.defaultValue} label="R" curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
+    <Fader value={p('tintG')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintG')!.defaultValue} label="G" curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
+    <Fader value={p('tintB')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintB')!.defaultValue} label="B" curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
   </div>
 </div>
 

@@ -97,8 +97,8 @@
   </div>
 
   <div class="fader-grid">
-    <Fader value={p('threshold')} min={0} max={1} defaultValue={chromaDef.params.find((x) => x.id === 'threshold')!.defaultValue} label="Thr"  curve="linear" onchange={setParam('threshold')} />
-    <Fader value={p('softness')}  min={0} max={1} defaultValue={chromaDef.params.find((x) => x.id === 'softness')!.defaultValue}  label="Soft" curve="linear" onchange={setParam('softness')} />
+    <Fader value={p('threshold')} min={0} max={1} defaultValue={chromaDef.params.find((x) => x.id === 'threshold')!.defaultValue} label="Thr"  curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
+    <Fader value={p('softness')}  min={0} max={1} defaultValue={chromaDef.params.find((x) => x.id === 'softness')!.defaultValue}  label="Soft" curve="linear" onchange={setParam('softness')} moduleId={id} paramId="softness" />
   </div>
 </div>
 

@@ -36,9 +36,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={time}     min={0.001} max={2}    defaultValue={0.25} label="Time" units="s" curve="log"    onchange={set('time')}     readLive={live('time')} />
-      <Fader value={feedback} min={0}     max={0.95} defaultValue={0.4}  label="Fb"   curve="linear"        onchange={set('feedback')} readLive={live('feedback')} />
-      <Fader value={mix}      min={0}     max={1}    defaultValue={0.35} label="Mix"  curve="linear"        onchange={set('mix')}      readLive={live('mix')} />
+      <Fader value={time}     min={0.001} max={2}    defaultValue={0.25} label="Time" units="s" curve="log"    onchange={set('time')} moduleId={id} paramId="time"     readLive={live('time')} />
+      <Fader value={feedback} min={0}     max={0.95} defaultValue={0.4}  label="Fb"   curve="linear"        onchange={set('feedback')} moduleId={id} paramId="feedback" readLive={live('feedback')} />
+      <Fader value={mix}      min={0}     max={1}    defaultValue={0.35} label="Mix"  curve="linear"        onchange={set('mix')} moduleId={id} paramId="mix"      readLive={live('mix')} />
     </div>
   </PatchPanel>
 </div>

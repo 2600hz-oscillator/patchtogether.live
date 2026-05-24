@@ -210,20 +210,20 @@
     </div>
 
     <div class="knob-grid">
-      <Knob value={hsync_drift}        min={0}  max={1} defaultValue={0}    label="HS Drift"  curve="linear" onchange={set('hsync_drift')}        readLive={live('hsync_drift')} />
-      <Knob value={hsync_loss}         min={0}  max={1} defaultValue={0}    label="HS Loss"   curve="linear" onchange={set('hsync_loss')}         readLive={live('hsync_loss')} />
-      <Knob value={vsync_drift}        min={0}  max={1} defaultValue={0}    label="VS Drift"  curve="linear" onchange={set('vsync_drift')}        readLive={live('vsync_drift')} />
-      <Knob value={scan_wobble}        min={0}  max={1} defaultValue={0}    label="Wobble"    curve="linear" onchange={set('scan_wobble')}        readLive={live('scan_wobble')} />
+      <Knob value={hsync_drift}        min={0}  max={1} defaultValue={0}    label="HS Drift"  curve="linear" onchange={set('hsync_drift')} moduleId={id} paramId="hsync_drift"        readLive={live('hsync_drift')} />
+      <Knob value={hsync_loss}         min={0}  max={1} defaultValue={0}    label="HS Loss"   curve="linear" onchange={set('hsync_loss')} moduleId={id} paramId="hsync_loss"         readLive={live('hsync_loss')} />
+      <Knob value={vsync_drift}        min={0}  max={1} defaultValue={0}    label="VS Drift"  curve="linear" onchange={set('vsync_drift')} moduleId={id} paramId="vsync_drift"        readLive={live('vsync_drift')} />
+      <Knob value={scan_wobble}        min={0}  max={1} defaultValue={0}    label="Wobble"    curve="linear" onchange={set('scan_wobble')} moduleId={id} paramId="scan_wobble"        readLive={live('scan_wobble')} />
 
-      <Knob value={chroma_phase}       min={-1} max={1} defaultValue={0}    label="Hue"       curve="linear" onchange={set('chroma_phase')}       readLive={live('chroma_phase')} />
-      <Knob value={chroma_instability} min={0}  max={1} defaultValue={0}    label="Shimmer"   curve="linear" onchange={set('chroma_instability')} readLive={live('chroma_instability')} />
-      <Knob value={master_gain}        min={0}  max={2} defaultValue={1}    label="Gain"      curve="linear" onchange={set('master_gain')}        readLive={live('master_gain')} />
-      <Knob value={bloom}              min={0}  max={1} defaultValue={0.4}  label="Bloom"     curve="linear" onchange={set('bloom')}              readLive={live('bloom')} />
+      <Knob value={chroma_phase}       min={-1} max={1} defaultValue={0}    label="Hue"       curve="linear" onchange={set('chroma_phase')} moduleId={id} paramId="chroma_phase"       readLive={live('chroma_phase')} />
+      <Knob value={chroma_instability} min={0}  max={1} defaultValue={0}    label="Shimmer"   curve="linear" onchange={set('chroma_instability')} moduleId={id} paramId="chroma_instability" readLive={live('chroma_instability')} />
+      <Knob value={master_gain}        min={0}  max={2} defaultValue={1}    label="Gain"      curve="linear" onchange={set('master_gain')} moduleId={id} paramId="master_gain"        readLive={live('master_gain')} />
+      <Knob value={bloom}              min={0}  max={1} defaultValue={0.4}  label="Bloom"     curve="linear" onchange={set('bloom')} moduleId={id} paramId="bloom"              readLive={live('bloom')} />
 
-      <Knob value={feedback_gain}      min={0}  max={1} defaultValue={0}    label="Feedback"  curve="linear" onchange={set('feedback_gain')}      readLive={live('feedback_gain')} />
-      <Knob value={feedback_delay}     min={0}  max={1} defaultValue={0}    label="Delay"     curve="linear" onchange={set('feedback_delay')}     readLive={live('feedback_delay')} />
-      <Knob value={wavefold}           min={0}  max={1} defaultValue={0}    label="Wavefold"  curve="linear" onchange={set('wavefold')}           readLive={live('wavefold')} />
-      <Knob value={noise}              min={0}  max={1} defaultValue={0.05} label="Noise"     curve="linear" onchange={set('noise')}              readLive={live('noise')} />
+      <Knob value={feedback_gain}      min={0}  max={1} defaultValue={0}    label="Feedback"  curve="linear" onchange={set('feedback_gain')} moduleId={id} paramId="feedback_gain"      readLive={live('feedback_gain')} />
+      <Knob value={feedback_delay}     min={0}  max={1} defaultValue={0}    label="Delay"     curve="linear" onchange={set('feedback_delay')} moduleId={id} paramId="feedback_delay"     readLive={live('feedback_delay')} />
+      <Knob value={wavefold}           min={0}  max={1} defaultValue={0}    label="Wavefold"  curve="linear" onchange={set('wavefold')} moduleId={id} paramId="wavefold"           readLive={live('wavefold')} />
+      <Knob value={noise}              min={0}  max={1} defaultValue={0.05} label="Noise"     curve="linear" onchange={set('noise')} moduleId={id} paramId="noise"              readLive={live('noise')} />
     </div>
   </PatchPanel>
 

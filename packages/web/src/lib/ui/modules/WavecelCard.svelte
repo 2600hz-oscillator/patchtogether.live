@@ -236,11 +236,11 @@
       {/if}
 
       <div class="knob-row">
-        <Knob value={tune}   min={-36} max={36}  defaultValue={0} label="Tune"  units="st" curve="linear" onchange={set('tune')}   readLive={live('tune')} />
-        <Knob value={fine}   min={-100} max={100} defaultValue={0} label="Fine"  units="¢"  curve="linear" onchange={set('fine')}   readLive={live('fine')} />
-        <Knob value={morph}  min={0}   max={1}   defaultValue={0} label="Morph"            curve="linear" onchange={set('morph')}  readLive={live('morph')} />
-        <Knob value={spread} min={1}   max={5}   defaultValue={1} label="Sprd"             curve="linear" onchange={set('spread')} readLive={live('spread')} />
-        <Knob value={fold}   min={0}   max={1}   defaultValue={0} label="Fold"             curve="linear" onchange={set('fold')}   readLive={live('fold')} />
+        <Knob value={tune}   min={-36} max={36}  defaultValue={0} label="Tune"  units="st" curve="linear" onchange={set('tune')} moduleId={id} paramId="tune"   readLive={live('tune')} />
+        <Knob value={fine}   min={-100} max={100} defaultValue={0} label="Fine"  units="¢"  curve="linear" onchange={set('fine')} moduleId={id} paramId="fine"   readLive={live('fine')} />
+        <Knob value={morph}  min={0}   max={1}   defaultValue={0} label="Morph"            curve="linear" onchange={set('morph')} moduleId={id} paramId="morph"  readLive={live('morph')} />
+        <Knob value={spread} min={1}   max={5}   defaultValue={1} label="Sprd"             curve="linear" onchange={set('spread')} moduleId={id} paramId="spread" readLive={live('spread')} />
+        <Knob value={fold}   min={0}   max={1}   defaultValue={0} label="Fold"             curve="linear" onchange={set('fold')} moduleId={id} paramId="fold"   readLive={live('fold')} />
       </div>
     </div>
   </PatchPanel>

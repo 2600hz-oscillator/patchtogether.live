@@ -84,7 +84,7 @@
             min={0} max={2} defaultValue={veilsDef.params[ch - 1]!.defaultValue}
             label={`Ch${ch}`}
             curve="linear"
-            onchange={set(`gain${ch}`)}
+            onchange={set(`gain${ch}`)} moduleId={id} paramId={`gain${ch}`}
             readLive={live(`gain${ch}`)}
           />
           <button

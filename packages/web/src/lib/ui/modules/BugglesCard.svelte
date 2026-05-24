@@ -41,11 +41,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={rate}       min={0} max={1} defaultValue={0.4} label="Rate"   curve="linear" onchange={set('rate')}              readLive={live('rate')} />
-      <Fader value={chaos}      min={0} max={1} defaultValue={0.3} label="Chaos"  curve="linear" onchange={set('chaos')}             readLive={live('chaos')} />
-      <Fader value={smoothness} min={0} max={1} defaultValue={0.5} label="Smooth" curve="linear" onchange={set('smoothness')}        readLive={live('smoothness')} />
-      <Fader value={burstProb}  min={0} max={1} defaultValue={0.2} label="Burst"  curve="linear" onchange={set('burst_probability')} readLive={live('burst_probability')} />
-      <Fader value={level}      min={0} max={1} defaultValue={0.7} label="Level"  curve="linear" onchange={set('level')}             readLive={live('level')} />
+      <Fader value={rate}       min={0} max={1} defaultValue={0.4} label="Rate"   curve="linear" onchange={set('rate')} moduleId={id} paramId="rate"              readLive={live('rate')} />
+      <Fader value={chaos}      min={0} max={1} defaultValue={0.3} label="Chaos"  curve="linear" onchange={set('chaos')} moduleId={id} paramId="chaos"             readLive={live('chaos')} />
+      <Fader value={smoothness} min={0} max={1} defaultValue={0.5} label="Smooth" curve="linear" onchange={set('smoothness')} moduleId={id} paramId="smoothness"        readLive={live('smoothness')} />
+      <Fader value={burstProb}  min={0} max={1} defaultValue={0.2} label="Burst"  curve="linear" onchange={set('burst_probability')} moduleId={id} paramId="burst_probability" readLive={live('burst_probability')} />
+      <Fader value={level}      min={0} max={1} defaultValue={0.7} label="Level"  curve="linear" onchange={set('level')} moduleId={id} paramId="level"             readLive={live('level')} />
     </div>
   </PatchPanel>
 </div>

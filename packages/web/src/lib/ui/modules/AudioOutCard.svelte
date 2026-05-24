@@ -47,7 +47,7 @@
         defaultValue={0.7}
         label="Master"
         curve="linear"
-        onchange={setParam('master')}
+        onchange={setParam('master')} moduleId={id} paramId="master"
         readLive={readLive('master')}
       />
     </div>

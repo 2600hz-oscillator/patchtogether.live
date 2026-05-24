@@ -67,12 +67,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={position} min={0}   max={1}  defaultValue={0.5} label="Position" curve="linear" onchange={set('position')} readLive={live('position')} />
-      <Fader value={size}     min={0}   max={1}  defaultValue={0.5} label="Size"     curve="linear" onchange={set('size')}     readLive={live('size')} />
-      <Fader value={pitch}    min={-24} max={24} defaultValue={0}   label="Pitch" units="st" curve="linear" onchange={set('pitch')}    readLive={live('pitch')} />
-      <Fader value={density}  min={0}   max={1}  defaultValue={0.5} label="Density"  curve="linear" onchange={set('density')}  readLive={live('density')} />
-      <Fader value={texture}  min={0}   max={1}  defaultValue={0.5} label="Texture"  curve="linear" onchange={set('texture')}  readLive={live('texture')} />
-      <Fader value={blend}    min={0}   max={1}  defaultValue={0.5} label="Blend"    curve="linear" onchange={set('blend')}    readLive={live('blend')} />
+      <Fader value={position} min={0}   max={1}  defaultValue={0.5} label="Position" curve="linear" onchange={set('position')} moduleId={id} paramId="position" readLive={live('position')} />
+      <Fader value={size}     min={0}   max={1}  defaultValue={0.5} label="Size"     curve="linear" onchange={set('size')} moduleId={id} paramId="size"     readLive={live('size')} />
+      <Fader value={pitch}    min={-24} max={24} defaultValue={0}   label="Pitch" units="st" curve="linear" onchange={set('pitch')} moduleId={id} paramId="pitch"    readLive={live('pitch')} />
+      <Fader value={density}  min={0}   max={1}  defaultValue={0.5} label="Density"  curve="linear" onchange={set('density')} moduleId={id} paramId="density"  readLive={live('density')} />
+      <Fader value={texture}  min={0}   max={1}  defaultValue={0.5} label="Texture"  curve="linear" onchange={set('texture')} moduleId={id} paramId="texture"  readLive={live('texture')} />
+      <Fader value={blend}    min={0}   max={1}  defaultValue={0.5} label="Blend"    curve="linear" onchange={set('blend')} moduleId={id} paramId="blend"    readLive={live('blend')} />
     </div>
     <div class="freeze-row">
       <button

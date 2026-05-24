@@ -41,11 +41,11 @@
   <span class="port-label right" style="top: 86px;">scope</span>
 
   <div class="fader-row">
-    <Fader value={tune}       min={-36}  max={36}  defaultValue={0} label="Tune" units="st" curve="linear" onchange={set('tune')}       readLive={live('tune')} />
-    <Fader value={fine}       min={-100} max={100} defaultValue={0} label="Fine" units="¢"  curve="linear" onchange={set('fine')}       readLive={live('fine')} />
-    <Fader value={wavePos}    min={0}    max={1}   defaultValue={0} label="Wave"            curve="linear" onchange={set('wavePos')}    readLive={live('wavePos')} />
-    <Fader value={fmAmount}   min={0}    max={1}   defaultValue={0} label="FM"              curve="linear" onchange={set('fmAmount')}   readLive={live('fmAmount')} />
-    <Fader value={foldAmount} min={0}    max={1}   defaultValue={0} label="Fold"            curve="linear" onchange={set('foldAmount')} readLive={live('foldAmount')} />
+    <Fader value={tune}       min={-36}  max={36}  defaultValue={0} label="Tune" units="st" curve="linear" onchange={set('tune')} moduleId={id} paramId="tune"       readLive={live('tune')} />
+    <Fader value={fine}       min={-100} max={100} defaultValue={0} label="Fine" units="¢"  curve="linear" onchange={set('fine')} moduleId={id} paramId="fine"       readLive={live('fine')} />
+    <Fader value={wavePos}    min={0}    max={1}   defaultValue={0} label="Wave"            curve="linear" onchange={set('wavePos')} moduleId={id} paramId="wavePos"    readLive={live('wavePos')} />
+    <Fader value={fmAmount}   min={0}    max={1}   defaultValue={0} label="FM"              curve="linear" onchange={set('fmAmount')} moduleId={id} paramId="fmAmount"   readLive={live('fmAmount')} />
+    <Fader value={foldAmount} min={0}    max={1}   defaultValue={0} label="Fold"            curve="linear" onchange={set('foldAmount')} moduleId={id} paramId="foldAmount" readLive={live('foldAmount')} />
   </div>
 </div>
 

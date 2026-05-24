@@ -182,7 +182,7 @@
           onclick={togglePlay}
           data-testid="numpad-play"
         >{isPlaying ? '■ STOP' : '▶ PLAY'}</button>
-        <Knob value={pget('bpm', 120)} min={30} max={300} defaultValue={120} label="BPM" units="bpm" curve="linear" onchange={set('bpm')} />
+        <Knob value={pget('bpm', 120)} min={30} max={300} defaultValue={120} label="BPM" units="bpm" curve="linear" onchange={set('bpm')} moduleId={id} paramId="bpm" />
         <button
           type="button"
           class="rec-btn nodrag"

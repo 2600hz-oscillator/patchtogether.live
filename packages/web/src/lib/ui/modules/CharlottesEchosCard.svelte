@@ -45,11 +45,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="knob-row">
-      <Knob value={delay}    min={0.001} max={1.5} defaultValue={0.4} label="Delay"    units="s" curve="log"    onchange={set('delay')}    readLive={live('delay')} />
-      <Knob value={feedback} min={0}     max={1}   defaultValue={0.5} label="Feedback"           curve="linear" onchange={set('feedback')} readLive={live('feedback')} />
-      <Knob value={decay}    min={0}     max={1}   defaultValue={0.2} label="Decay"              curve="linear" onchange={set('decay')}    readLive={live('decay')} />
-      <Knob value={pitchUp}  min={0}     max={0.2} defaultValue={0}   label="Pitch"              curve="linear" onchange={set('pitchUp')}  readLive={live('pitchUp')} />
-      <Knob value={mix}      min={0}     max={1}   defaultValue={0.5} label="Mix"                curve="linear" onchange={set('mix')}      readLive={live('mix')} />
+      <Knob value={delay}    min={0.001} max={1.5} defaultValue={0.4} label="Delay"    units="s" curve="log"    onchange={set('delay')} moduleId={id} paramId="delay"    readLive={live('delay')} />
+      <Knob value={feedback} min={0}     max={1}   defaultValue={0.5} label="Feedback"           curve="linear" onchange={set('feedback')} moduleId={id} paramId="feedback" readLive={live('feedback')} />
+      <Knob value={decay}    min={0}     max={1}   defaultValue={0.2} label="Decay"              curve="linear" onchange={set('decay')} moduleId={id} paramId="decay"    readLive={live('decay')} />
+      <Knob value={pitchUp}  min={0}     max={0.2} defaultValue={0}   label="Pitch"              curve="linear" onchange={set('pitchUp')} moduleId={id} paramId="pitchUp"  readLive={live('pitchUp')} />
+      <Knob value={mix}      min={0}     max={1}   defaultValue={0.5} label="Mix"                curve="linear" onchange={set('mix')} moduleId={id} paramId="mix"      readLive={live('mix')} />
     </div>
   </PatchPanel>
 </div>

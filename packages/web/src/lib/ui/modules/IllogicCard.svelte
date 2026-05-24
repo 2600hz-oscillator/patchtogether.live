@@ -46,10 +46,10 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={att1} min={-1} max={1} defaultValue={1} label="Att1" curve="linear" onchange={set('att1_amount')} readLive={live('att1_amount')} />
-      <Fader value={att2} min={-1} max={1} defaultValue={1} label="Att2" curve="linear" onchange={set('att2_amount')} readLive={live('att2_amount')} />
-      <Fader value={att3} min={-1} max={1} defaultValue={1} label="Att3" curve="linear" onchange={set('att3_amount')} readLive={live('att3_amount')} />
-      <Fader value={att4} min={-1} max={1} defaultValue={1} label="Att4" curve="linear" onchange={set('att4_amount')} readLive={live('att4_amount')} />
+      <Fader value={att1} min={-1} max={1} defaultValue={1} label="Att1" curve="linear" onchange={set('att1_amount')} moduleId={id} paramId="att1_amount" readLive={live('att1_amount')} />
+      <Fader value={att2} min={-1} max={1} defaultValue={1} label="Att2" curve="linear" onchange={set('att2_amount')} moduleId={id} paramId="att2_amount" readLive={live('att2_amount')} />
+      <Fader value={att3} min={-1} max={1} defaultValue={1} label="Att3" curve="linear" onchange={set('att3_amount')} moduleId={id} paramId="att3_amount" readLive={live('att3_amount')} />
+      <Fader value={att4} min={-1} max={1} defaultValue={1} label="Att4" curve="linear" onchange={set('att4_amount')} moduleId={id} paramId="att4_amount" readLive={live('att4_amount')} />
     </div>
   </PatchPanel>
 </div>

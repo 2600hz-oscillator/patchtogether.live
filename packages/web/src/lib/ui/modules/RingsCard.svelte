@@ -77,12 +77,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={note}       min={-60} max={60}        defaultValue={0}    label="Note"       units="st" curve="linear" onchange={set('note')}       readLive={live('note')} />
-      <Fader value={structure}  min={0}   max={1}         defaultValue={0.25} label="Structure"  curve="linear" onchange={set('structure')}  readLive={live('structure')} />
-      <Fader value={brightness} min={0}   max={1}         defaultValue={0.5}  label="Brightness" curve="linear" onchange={set('brightness')} readLive={live('brightness')} />
-      <Fader value={damping}    min={0}   max={1}         defaultValue={0.5}  label="Damping"    curve="linear" onchange={set('damping')}    readLive={live('damping')} />
-      <Fader value={position}   min={0}   max={1}         defaultValue={0.5}  label="Position"   curve="linear" onchange={set('position')}   readLive={live('position')} />
-      <Fader value={level}      min={0}   max={1}         defaultValue={0.8}  label="Level"      curve="linear" onchange={set('level')}      readLive={live('level')} />
+      <Fader value={note}       min={-60} max={60}        defaultValue={0}    label="Note"       units="st" curve="linear" onchange={set('note')} moduleId={id} paramId="note"       readLive={live('note')} />
+      <Fader value={structure}  min={0}   max={1}         defaultValue={0.25} label="Structure"  curve="linear" onchange={set('structure')} moduleId={id} paramId="structure"  readLive={live('structure')} />
+      <Fader value={brightness} min={0}   max={1}         defaultValue={0.5}  label="Brightness" curve="linear" onchange={set('brightness')} moduleId={id} paramId="brightness" readLive={live('brightness')} />
+      <Fader value={damping}    min={0}   max={1}         defaultValue={0.5}  label="Damping"    curve="linear" onchange={set('damping')} moduleId={id} paramId="damping"    readLive={live('damping')} />
+      <Fader value={position}   min={0}   max={1}         defaultValue={0.5}  label="Position"   curve="linear" onchange={set('position')} moduleId={id} paramId="position"   readLive={live('position')} />
+      <Fader value={level}      min={0}   max={1}         defaultValue={0.8}  label="Level"      curve="linear" onchange={set('level')} moduleId={id} paramId="level"      readLive={live('level')} />
     </div>
   </PatchPanel>
   <OssAttribution author={ringsDef.ossAttribution?.author} />

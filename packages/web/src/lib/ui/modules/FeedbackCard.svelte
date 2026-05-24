@@ -46,12 +46,12 @@
   <span class="port-label right" style="top: 50px;">OUT</span>
 
   <div class="fader-grid">
-    <Fader value={p('wet')}     min={0}    max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'wet')!.defaultValue}     label="Wet"    curve="linear" onchange={setParam('wet')} />
-    <Fader value={p('decay')}   min={0}    max={2}   defaultValue={feedbackDef.params.find((x) => x.id === 'decay')!.defaultValue}   label="Decay"  curve="linear" onchange={setParam('decay')} />
-    <Fader value={p('zoom')}    min={0.9}  max={1.1} defaultValue={feedbackDef.params.find((x) => x.id === 'zoom')!.defaultValue}    label="Zoom"   curve="linear" onchange={setParam('zoom')} />
-    <Fader value={p('rotate')}  min={-3.14159} max={3.14159} defaultValue={feedbackDef.params.find((x) => x.id === 'rotate')!.defaultValue}  label="Rot"    curve="linear" onchange={setParam('rotate')} />
-    <Fader value={p('offsetX')} min={-1}   max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'offsetX')!.defaultValue} label="OffX"   curve="linear" onchange={setParam('offsetX')} />
-    <Fader value={p('offsetY')} min={-1}   max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'offsetY')!.defaultValue} label="OffY"   curve="linear" onchange={setParam('offsetY')} />
+    <Fader value={p('wet')}     min={0}    max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'wet')!.defaultValue}     label="Wet"    curve="linear" onchange={setParam('wet')} moduleId={id} paramId="wet" />
+    <Fader value={p('decay')}   min={0}    max={2}   defaultValue={feedbackDef.params.find((x) => x.id === 'decay')!.defaultValue}   label="Decay"  curve="linear" onchange={setParam('decay')} moduleId={id} paramId="decay" />
+    <Fader value={p('zoom')}    min={0.9}  max={1.1} defaultValue={feedbackDef.params.find((x) => x.id === 'zoom')!.defaultValue}    label="Zoom"   curve="linear" onchange={setParam('zoom')} moduleId={id} paramId="zoom" />
+    <Fader value={p('rotate')}  min={-3.14159} max={3.14159} defaultValue={feedbackDef.params.find((x) => x.id === 'rotate')!.defaultValue}  label="Rot"    curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" />
+    <Fader value={p('offsetX')} min={-1}   max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'offsetX')!.defaultValue} label="OffX"   curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />
+    <Fader value={p('offsetY')} min={-1}   max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'offsetY')!.defaultValue} label="OffY"   curve="linear" onchange={setParam('offsetY')} moduleId={id} paramId="offsetY" />
   </div>
 </div>
 

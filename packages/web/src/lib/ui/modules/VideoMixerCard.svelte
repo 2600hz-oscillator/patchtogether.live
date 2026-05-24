@@ -54,10 +54,10 @@
   <span class="port-label right" style="top: 50px;">OUT</span>
 
   <div class="fader-grid">
-    <Fader value={p('amount1')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount1')!.defaultValue} label="A1" curve="linear" onchange={setParam('amount1')} />
-    <Fader value={p('amount2')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount2')!.defaultValue} label="A2" curve="linear" onchange={setParam('amount2')} />
-    <Fader value={p('amount3')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount3')!.defaultValue} label="A3" curve="linear" onchange={setParam('amount3')} />
-    <Fader value={p('amount4')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount4')!.defaultValue} label="A4" curve="linear" onchange={setParam('amount4')} />
+    <Fader value={p('amount1')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount1')!.defaultValue} label="A1" curve="linear" onchange={setParam('amount1')} moduleId={id} paramId="amount1" />
+    <Fader value={p('amount2')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount2')!.defaultValue} label="A2" curve="linear" onchange={setParam('amount2')} moduleId={id} paramId="amount2" />
+    <Fader value={p('amount3')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount3')!.defaultValue} label="A3" curve="linear" onchange={setParam('amount3')} moduleId={id} paramId="amount3" />
+    <Fader value={p('amount4')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount4')!.defaultValue} label="A4" curve="linear" onchange={setParam('amount4')} moduleId={id} paramId="amount4" />
   </div>
 </div>
 

@@ -511,7 +511,7 @@
         defaultValue={cameraInputDef.params.find((x) => x.id === 'gain')!.defaultValue}
         label="Gain"
         curve="linear"
-        onchange={setParam('gain')}
+        onchange={setParam('gain')} moduleId={id} paramId="gain"
       />
     </div>
   </div>

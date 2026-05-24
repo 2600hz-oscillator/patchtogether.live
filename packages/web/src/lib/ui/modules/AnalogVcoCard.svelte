@@ -56,11 +56,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={tune}     min={-36} max={36}     defaultValue={0}   label="Tune" units="st" curve="linear" onchange={setParam('tune')}     readLive={readLive('tune')} />
-      <Fader value={fine}     min={-100} max={100}   defaultValue={0}   label="Fine" units="¢"  curve="linear" onchange={setParam('fine')}     readLive={readLive('fine')} />
-      <Fader value={fmAmount} min={0}   max={1}      defaultValue={0}   label="FM"              curve="linear" onchange={setParam('fmAmount')} readLive={readLive('fmAmount')} />
-      <Fader value={pmAmount} min={0}   max={1}      defaultValue={0}   label="PM"              curve="linear" onchange={setParam('pmAmount')} readLive={readLive('pmAmount')} />
-      <Fader value={pw}       min={0.05} max={0.95}  defaultValue={0.5} label="PW"              curve="linear" onchange={setParam('pw')}       readLive={readLive('pw')} />
+      <Fader value={tune}     min={-36} max={36}     defaultValue={0}   label="Tune" units="st" curve="linear" onchange={setParam('tune')} moduleId={id} paramId="tune"     readLive={readLive('tune')} />
+      <Fader value={fine}     min={-100} max={100}   defaultValue={0}   label="Fine" units="¢"  curve="linear" onchange={setParam('fine')} moduleId={id} paramId="fine"     readLive={readLive('fine')} />
+      <Fader value={fmAmount} min={0}   max={1}      defaultValue={0}   label="FM"              curve="linear" onchange={setParam('fmAmount')} moduleId={id} paramId="fmAmount" readLive={readLive('fmAmount')} />
+      <Fader value={pmAmount} min={0}   max={1}      defaultValue={0}   label="PM"              curve="linear" onchange={setParam('pmAmount')} moduleId={id} paramId="pmAmount" readLive={readLive('pmAmount')} />
+      <Fader value={pw}       min={0.05} max={0.95}  defaultValue={0.5} label="PW"              curve="linear" onchange={setParam('pw')} moduleId={id} paramId="pw"       readLive={readLive('pw')} />
     </div>
   </PatchPanel>
 </div>

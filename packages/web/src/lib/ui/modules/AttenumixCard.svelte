@@ -73,7 +73,7 @@
               min={0} max={1} defaultValue={defaultFor(`att${ch}`)}
               label={`Att ${ch}`}
               curve="linear"
-              onchange={set(`att${ch}`)}
+              onchange={set(`att${ch}`)} moduleId={id} paramId={`att${ch}`}
               readLive={live(`att${ch}`)}
             />
           </div>
@@ -84,7 +84,7 @@
             min={0} max={2} defaultValue={defaultFor('master')}
             label="Master"
             curve="linear"
-            onchange={set('master')}
+            onchange={set('master')} moduleId={id} paramId="master"
             readLive={live('master')}
           />
         </div>

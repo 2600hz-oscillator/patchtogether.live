@@ -41,10 +41,10 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={cutoff}    min={20}    max={20000} defaultValue={1000} label="Cutoff"     units="Hz" curve="log"    onchange={set('cutoff')}    readLive={live('cutoff')} />
-      <Fader value={resonance} min={0}     max={0.99}  defaultValue={0.7}  label="Resonance"             curve="linear" onchange={set('resonance')} readLive={live('resonance')} />
-      <Fader value={mode}      min={0}     max={1}     defaultValue={0}    label="Mode"                  curve="linear" onchange={set('mode')}      readLive={live('mode')} />
-      <Fader value={pingDecay} min={0.005} max={0.5}   defaultValue={0.15} label="Ping Decay" units="s"  curve="log"    onchange={set('pingDecay')} readLive={live('pingDecay')} />
+      <Fader value={cutoff}    min={20}    max={20000} defaultValue={1000} label="Cutoff"     units="Hz" curve="log"    onchange={set('cutoff')} moduleId={id} paramId="cutoff"    readLive={live('cutoff')} />
+      <Fader value={resonance} min={0}     max={0.99}  defaultValue={0.7}  label="Resonance"             curve="linear" onchange={set('resonance')} moduleId={id} paramId="resonance" readLive={live('resonance')} />
+      <Fader value={mode}      min={0}     max={1}     defaultValue={0}    label="Mode"                  curve="linear" onchange={set('mode')} moduleId={id} paramId="mode"      readLive={live('mode')} />
+      <Fader value={pingDecay} min={0.005} max={0.5}   defaultValue={0.15} label="Ping Decay" units="s"  curve="log"    onchange={set('pingDecay')} moduleId={id} paramId="pingDecay" readLive={live('pingDecay')} />
     </div>
   </PatchPanel>
 </div>

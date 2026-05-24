@@ -66,17 +66,17 @@
             value={paramVal(`fb${ch}`)}
             min={0} max={0.95} defaultValue={defaultFor(`fb${ch}`)}
             label={`FB ${ch}`} curve="linear"
-            onchange={set(`fb${ch}`)}
+            onchange={set(`fb${ch}`)} moduleId={id} paramId={`fb${ch}`}
             readLive={live(`fb${ch}`)}
           />
         {/each}
       </div>
       <div class="bottom-row">
-        <Fader value={paramVal('tilt')}     min={-1} max={1} defaultValue={defaultFor('tilt')}     label="Tilt"  curve="linear" onchange={set('tilt')}     readLive={live('tilt')} />
-        <Fader value={paramVal('damp')}     min={0}  max={1} defaultValue={defaultFor('damp')}     label="Damp"  curve="linear" onchange={set('damp')}     readLive={live('damp')} />
-        <Fader value={paramVal('crossMix')} min={0}  max={1} defaultValue={defaultFor('crossMix')} label="Cross" curve="linear" onchange={set('crossMix')} readLive={live('crossMix')} />
-        <Fader value={paramVal('spread')}   min={0}  max={1} defaultValue={defaultFor('spread')}   label="Sprd"  curve="linear" onchange={set('spread')}   readLive={live('spread')} />
-        <Fader value={paramVal('outLevel')} min={0}  max={1} defaultValue={defaultFor('outLevel')} label="Out"   curve="linear" onchange={set('outLevel')} readLive={live('outLevel')} />
+        <Fader value={paramVal('tilt')}     min={-1} max={1} defaultValue={defaultFor('tilt')}     label="Tilt"  curve="linear" onchange={set('tilt')} moduleId={id} paramId="tilt"     readLive={live('tilt')} />
+        <Fader value={paramVal('damp')}     min={0}  max={1} defaultValue={defaultFor('damp')}     label="Damp"  curve="linear" onchange={set('damp')} moduleId={id} paramId="damp"     readLive={live('damp')} />
+        <Fader value={paramVal('crossMix')} min={0}  max={1} defaultValue={defaultFor('crossMix')} label="Cross" curve="linear" onchange={set('crossMix')} moduleId={id} paramId="crossMix" readLive={live('crossMix')} />
+        <Fader value={paramVal('spread')}   min={0}  max={1} defaultValue={defaultFor('spread')}   label="Sprd"  curve="linear" onchange={set('spread')} moduleId={id} paramId="spread"   readLive={live('spread')} />
+        <Fader value={paramVal('outLevel')} min={0}  max={1} defaultValue={defaultFor('outLevel')} label="Out"   curve="linear" onchange={set('outLevel')} moduleId={id} paramId="outLevel" readLive={live('outLevel')} />
       </div>
     </div>
   </PatchPanel>

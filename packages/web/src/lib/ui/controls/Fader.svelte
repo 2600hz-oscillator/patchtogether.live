@@ -117,6 +117,11 @@
 
   function openContextMenu(e: MouseEvent) {
     if (!moduleId || !paramId) return; // feature off when not addressable
+    // Require Shift modifier so plain right-click still bubbles to the
+    // node-level menu (Docs / Duplicate / Unpatch all / Delete). Without
+    // this gate every wired fader/knob would steal the right-click on the
+    // bulk of the card surface, breaking node-menu tests + UX.
+    if (!e.shiftKey) return;
     e.preventDefault();
     e.stopPropagation();
     ctxX = e.clientX;

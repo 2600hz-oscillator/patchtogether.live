@@ -218,11 +218,11 @@
     </div>
 
     <div class="fader-row">
-      <Fader value={timeMs}    min={1}    max={200} defaultValue={20} label="Time" units="ms" curve="log"    onchange={setParam('timeMs')} />
-      <Fader value={ch1Scale}  min={0.1}  max={10}  defaultValue={1}  label="1 Sc"            curve="log"    onchange={setParam('ch1Scale')} />
-      <Fader value={ch1Offset} min={-1}   max={1}   defaultValue={0}  label="1 Y"             curve="linear" onchange={setParam('ch1Offset')} />
-      <Fader value={ch2Scale}  min={0.1}  max={10}  defaultValue={1}  label="2 Sc"            curve="log"    onchange={setParam('ch2Scale')} />
-      <Fader value={ch2Offset} min={-1}   max={1}   defaultValue={0}  label="2 Y"             curve="linear" onchange={setParam('ch2Offset')} />
+      <Fader value={timeMs}    min={1}    max={200} defaultValue={20} label="Time" units="ms" curve="log"    onchange={setParam('timeMs')} moduleId={id} paramId="timeMs" />
+      <Fader value={ch1Scale}  min={0.1}  max={10}  defaultValue={1}  label="1 Sc"            curve="log"    onchange={setParam('ch1Scale')} moduleId={id} paramId="ch1Scale" />
+      <Fader value={ch1Offset} min={-1}   max={1}   defaultValue={0}  label="1 Y"             curve="linear" onchange={setParam('ch1Offset')} moduleId={id} paramId="ch1Offset" />
+      <Fader value={ch2Scale}  min={0.1}  max={10}  defaultValue={1}  label="2 Sc"            curve="log"    onchange={setParam('ch2Scale')} moduleId={id} paramId="ch2Scale" />
+      <Fader value={ch2Offset} min={-1}   max={1}   defaultValue={0}  label="2 Y"             curve="linear" onchange={setParam('ch2Offset')} moduleId={id} paramId="ch2Offset" />
     </div>
   </PatchPanel>
 </div>

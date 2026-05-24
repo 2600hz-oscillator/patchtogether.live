@@ -46,21 +46,21 @@
     <div class="section">
       <div class="section-label">UNITY</div>
       <div class="fader-row">
-        <Fader value={unityAtten} min={-1} max={1} defaultValue={1} label="Att" curve="linear" onchange={set('unityAtten')} readLive={live('unityAtten')} />
+        <Fader value={unityAtten} min={-1} max={1} defaultValue={1} label="Att" curve="linear" onchange={set('unityAtten')} moduleId={id} paramId="unityAtten" readLive={live('unityAtten')} />
       </div>
     </div>
     <div class="section">
       <div class="section-label">A</div>
       <div class="fader-row">
-        <Fader value={aAtten} min={-1} max={1} defaultValue={1} label="Att"   curve="linear" onchange={set('aAtten')} readLive={live('aAtten')} />
-        <Fader value={aCurve} min={0}  max={1} defaultValue={0} label="Curve" curve="linear" onchange={set('aCurve')} readLive={live('aCurve')} />
+        <Fader value={aAtten} min={-1} max={1} defaultValue={1} label="Att"   curve="linear" onchange={set('aAtten')} moduleId={id} paramId="aAtten" readLive={live('aAtten')} />
+        <Fader value={aCurve} min={0}  max={1} defaultValue={0} label="Curve" curve="linear" onchange={set('aCurve')} moduleId={id} paramId="aCurve" readLive={live('aCurve')} />
       </div>
     </div>
     <div class="section">
       <div class="section-label">B</div>
       <div class="fader-row">
-        <Fader value={bAtten} min={-1} max={1} defaultValue={1} label="Att"   curve="linear" onchange={set('bAtten')} readLive={live('bAtten')} />
-        <Fader value={bCurve} min={0}  max={1} defaultValue={0} label="Curve" curve="linear" onchange={set('bCurve')} readLive={live('bCurve')} />
+        <Fader value={bAtten} min={-1} max={1} defaultValue={1} label="Att"   curve="linear" onchange={set('bAtten')} moduleId={id} paramId="bAtten" readLive={live('bAtten')} />
+        <Fader value={bCurve} min={0}  max={1} defaultValue={0} label="Curve" curve="linear" onchange={set('bCurve')} moduleId={id} paramId="bCurve" readLive={live('bCurve')} />
       </div>
     </div>
   </PatchPanel>

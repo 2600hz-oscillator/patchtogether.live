@@ -468,11 +468,11 @@
     </div>
 
     <div class="fader-row">
-      <Fader value={bpm}        min={30}  max={300} defaultValue={90}  label="BPM"  curve="linear"   onchange={set('bpm')}        readLive={live('bpm')} />
-      <Fader value={length}     min={1}   max={128} defaultValue={8}   label="Len"  curve="discrete" onchange={set('length')}     readLive={live('length')} />
-      <Fader value={octave}     min={-2}  max={2}   defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}     readLive={live('octave')} />
-      <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.6} label="Gate" curve="linear"  onchange={set('gateLength')} readLive={live('gateLength')} />
-      <Fader value={humanize}   min={0}   max={1}   defaultValue={0}   label="Hum"  curve="linear"   onchange={set('humanize')}   readLive={live('humanize')} />
+      <Fader value={bpm}        min={30}  max={300} defaultValue={90}  label="BPM"  curve="linear"   onchange={set('bpm')} moduleId={id} paramId="bpm"        readLive={live('bpm')} />
+      <Fader value={length}     min={1}   max={128} defaultValue={8}   label="Len"  curve="discrete" onchange={set('length')} moduleId={id} paramId="length"     readLive={live('length')} />
+      <Fader value={octave}     min={-2}  max={2}   defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')} moduleId={id} paramId="octave"     readLive={live('octave')} />
+      <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.6} label="Gate" curve="linear"  onchange={set('gateLength')} moduleId={id} paramId="gateLength" readLive={live('gateLength')} />
+      <Fader value={humanize}   min={0}   max={1}   defaultValue={0}   label="Hum"  curve="linear"   onchange={set('humanize')} moduleId={id} paramId="humanize"   readLive={live('humanize')} />
     </div>
 
     <QuicksaveControls

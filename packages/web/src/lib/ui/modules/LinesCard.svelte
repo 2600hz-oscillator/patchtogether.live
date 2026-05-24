@@ -48,10 +48,10 @@
   <span class="port-label right" style="top: 50px;">OUT</span>
 
   <div class="fader-grid">
-    <Fader value={p('orient')}    min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'orient')!.defaultValue}    label="Orient"    curve="linear" onchange={setParam('orient')} />
-    <Fader value={p('amp')}       min={0.5}  max={50} defaultValue={linesDef.params.find((x) => x.id === 'amp')!.defaultValue}       label="Amp"       curve="linear" onchange={setParam('amp')} />
-    <Fader value={p('thickness')} min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'thickness')!.defaultValue} label="Thickness" curve="linear" onchange={setParam('thickness')} />
-    <Fader value={p('phase')}     min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'phase')!.defaultValue}     label="Phase"     curve="linear" onchange={setParam('phase')} />
+    <Fader value={p('orient')}    min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'orient')!.defaultValue}    label="Orient"    curve="linear" onchange={setParam('orient')} moduleId={id} paramId="orient" />
+    <Fader value={p('amp')}       min={0.5}  max={50} defaultValue={linesDef.params.find((x) => x.id === 'amp')!.defaultValue}       label="Amp"       curve="linear" onchange={setParam('amp')} moduleId={id} paramId="amp" />
+    <Fader value={p('thickness')} min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'thickness')!.defaultValue} label="Thickness" curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
+    <Fader value={p('phase')}     min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'phase')!.defaultValue}     label="Phase"     curve="linear" onchange={setParam('phase')} moduleId={id} paramId="phase" />
   </div>
 </div>
 

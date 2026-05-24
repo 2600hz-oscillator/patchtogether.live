@@ -132,10 +132,10 @@
 
       <!-- Knobs -->
       <div class="knob-row">
-        <Knob value={paramVal('algorithm', 5)}  min={1}   max={32} defaultValue={5}   label="Algo"  curve="discrete" onchange={set('algorithm')}  readLive={live('algorithm')} />
-        <Knob value={paramVal('voiceCount', 5)} min={1}   max={5}  defaultValue={5}   label="Voices" curve="discrete" onchange={set('voiceCount')} readLive={live('voiceCount')} />
-        <Knob value={paramVal('level', 0.7)}    min={0}   max={2}  defaultValue={0.7} label="Level" curve="linear"   onchange={set('level')}      readLive={live('level')} />
-        <Knob value={paramVal('transpose', 0)}  min={-24} max={24} defaultValue={0}   label="Trans" curve="linear"   onchange={set('transpose')}  readLive={live('transpose')} />
+        <Knob value={paramVal('algorithm', 5)}  min={1}   max={32} defaultValue={5}   label="Algo"  curve="discrete" onchange={set('algorithm')} moduleId={id} paramId="algorithm"  readLive={live('algorithm')} />
+        <Knob value={paramVal('voiceCount', 5)} min={1}   max={5}  defaultValue={5}   label="Voices" curve="discrete" onchange={set('voiceCount')} moduleId={id} paramId="voiceCount" readLive={live('voiceCount')} />
+        <Knob value={paramVal('level', 0.7)}    min={0}   max={2}  defaultValue={0.7} label="Level" curve="linear"   onchange={set('level')} moduleId={id} paramId="level"      readLive={live('level')} />
+        <Knob value={paramVal('transpose', 0)}  min={-24} max={24} defaultValue={0}   label="Trans" curve="linear"   onchange={set('transpose')} moduleId={id} paramId="transpose"  readLive={live('transpose')} />
       </div>
 
       <!-- SYX upload -->

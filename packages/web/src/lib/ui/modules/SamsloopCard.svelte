@@ -449,7 +449,7 @@
           defaultValue={0}
           label="Start"
           curve="linear"
-          onchange={set('start')}
+          onchange={set('start')} moduleId={id} paramId="start"
           readLive={live('start')}
         />
         <canvas
@@ -466,7 +466,7 @@
           defaultValue={Math.max(1, sampleLength)}
           label="End"
           curve="linear"
-          onchange={set('end')}
+          onchange={set('end')} moduleId={id} paramId="end"
           readLive={live('end')}
         />
       </div>
@@ -480,7 +480,7 @@
           label="Rate"
           units="×"
           curve="linear"
-          onchange={set('rate')}
+          onchange={set('rate')} moduleId={id} paramId="rate"
           readLive={live('rate')}
           formatValue={(v: number) => v >= 0
             ? `+${v.toFixed(2)}×`
