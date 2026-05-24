@@ -100,23 +100,23 @@
     }
   }
 
-  // ---- Keyboard input — only fires while the card is focused. ----
+  // Keyboard input — attached directly to the card div via onkeydown/onkeyup.
+  // The card is tabindex=0, so kb events only fire when the user has clicked
+  // it (or tabbed to it). No window-level capture, no document.activeElement
+  // sniffing — focus alone is the gate. Click elsewhere, card blurs, DOOM
+  // stops consuming keys.
   function onKeyDown(ev: KeyboardEvent): void {
-    if (!cardEl || !cardEl.contains(document.activeElement)) return;
     const extras = getExtras();
     if (!extras) return;
     if (isHost) {
       const handled = extras.pushKeyboardKey(ev.code, true);
       if (handled) ev.preventDefault();
     } else {
-      // Spectator: relay via awareness; the host's listener pushes the key
-      // into its runtime queue.
       relayKeyToHost(ev.code, true);
       ev.preventDefault();
     }
   }
   function onKeyUp(ev: KeyboardEvent): void {
-    if (!cardEl || !cardEl.contains(document.activeElement)) return;
     const extras = getExtras();
     if (!extras) return;
     if (isHost) {
@@ -367,8 +367,6 @@
 
   // ---- Mount / unmount ----
   onMount(() => {
-    window.addEventListener('keydown', onKeyDown, true);
-    window.addEventListener('keyup', onKeyUp, true);
     startRenderLoop();
     // Auto-attach awareness if a provider is present (multi-user rack);
     // single-user `/` canvas skips quietly.
@@ -376,8 +374,6 @@
   });
 
   onDestroy(() => {
-    window.removeEventListener('keydown', onKeyDown, true);
-    window.removeEventListener('keyup', onKeyUp, true);
     stopRenderLoop();
     detachAwareness();
   });
@@ -415,7 +411,8 @@
   data-card-type="doom"
   data-testid="doom-card"
   onclick={() => cardEl?.focus()}
-  onkeydown={(ev) => { /* listener at window-level; this satisfies the a11y rule */ void ev; }}
+  onkeydown={onKeyDown}
+  onkeyup={onKeyUp}
 >
   <div class="stripe" style="background: var(--cable-video, #c33);"></div>
   <header class="title">
@@ -435,8 +432,6 @@
       style="width: 320px; height: 200px;"
       data-viz-passthrough
       data-testid="doom-canvas"
-      tabindex="-1"
-      onpointerdown={() => cardEl?.focus()}
     ></canvas>
     {#if loadStatus === 'idle' && isHost}
       <button class="overlay" onclick={() => void tryLoad()}>
