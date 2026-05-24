@@ -18,9 +18,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#if defined(FEATURE_SOUND) && !defined(__DJGPP__)
-#include <SDL_mixer.h>
-#endif
+// SDL_mixer.h is included by chocolate-doom's upstream i_sound.c but
+// the include is never USED within this translation unit (it's a
+// legacy carry-over from when InitMusicModule did MIDI bridge init
+// here). patchtogether.live's WASM build doesn't link against SDL, so
+// we omit the include even when FEATURE_SOUND is on. See
+// native/doomgeneric/NOTICE.md "vendor patches" for the full list of
+// upstream-divergent changes.
+//#if defined(FEATURE_SOUND) && !defined(__DJGPP__)
+//#include <SDL_mixer.h>
+//#endif
 
 #include "config.h"
 #include "doomfeatures.h"

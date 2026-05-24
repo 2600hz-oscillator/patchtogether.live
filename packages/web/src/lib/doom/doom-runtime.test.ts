@@ -27,6 +27,9 @@ function makeStubModule(opts: {
   resX?: number;
   resY?: number;
   pcmSampleCount?: number;
+  /** Slice-8 stub: if provided, dg_get_pcm_buffer copies these bytes
+   *  into the destination scratch ptr (int16 little-endian). */
+  pcmStream?: Int16Array;
 } = {}): { mod: DoomModule; calls: CCallRec[]; fs: Map<string, Uint8Array> } {
   const calls: CCallRec[] = [];
   const fs = new Map<string, Uint8Array>();
@@ -36,10 +39,14 @@ function makeStubModule(opts: {
   // Constants don't matter as long as the stub is internally consistent.
   const FB_PTR = 0x100000;
   const PCM_PTR = 0x200000;
+  const SCRATCH_PTR = 0x300000;  // dg_get_pcm_buffer dest target
   const resX = opts.resX ?? 640;
   const resY = opts.resY ?? 400;
   const fbSize = resX * resY * 4;
   const pcmSampleCount = opts.pcmSampleCount ?? 0;
+  const pcmStream = opts.pcmStream ?? new Int16Array(0);
+  let streamCursor = 0;
+  let mallocOffset = SCRATCH_PTR;
 
   // Fill the framebuffer region with a known pattern so tests can verify
   // they're getting a view into the right offset (not just zero-filled).
@@ -59,6 +66,31 @@ function makeStubModule(opts: {
         case 'dgpt_get_pcm_buffer_size': return pcmSampleCount;
         case 'dgpt_get_resx': return resX;
         case 'dgpt_get_resy': return resY;
+        case 'malloc': {
+          const ptr = mallocOffset;
+          mallocOffset += args[0] as number;
+          return ptr;
+        }
+        case 'free': return 0;
+        case 'dg_get_pcm_buffer': {
+          const dest = args[0] as number;
+          const frames = args[1] as number;
+          const view = new Int16Array(heapBuffer, dest, frames);
+          let produced = 0;
+          for (let i = 0; i < frames; i++) {
+            if (streamCursor < pcmStream.length) {
+              view[i] = pcmStream[streamCursor++]!;
+              produced++;
+            } else {
+              view[i] = 0;
+            }
+          }
+          return produced;
+        }
+        case 'dg_get_pcm_buffered_frames':
+          return Math.max(0, pcmStream.length - streamCursor);
+        case 'dg_get_pcm_sample_rate':
+          return 44100;
         default: return 0;
       }
     },
@@ -224,5 +256,104 @@ describe('DoomRuntime — TS shim layer', () => {
     expect(rt.isInitialized()).toBe(true);
     rt.dispose();
     expect(rt.isInitialized()).toBe(false);
+  });
+});
+
+// ---------------- Slice-8 PCM pull ----------------
+
+describe('DoomRuntime — slice 8 PCM pull (getPcmFrames)', () => {
+  it('returns empty Float32Array before init', () => {
+    const { mod } = makeStubModule();
+    const rt = new DoomRuntime(mod);
+    const out = rt.getPcmFrames(128);
+    expect(out).toBeInstanceOf(Float32Array);
+    expect(out.length).toBe(0);
+  });
+
+  it('round-trips s16 samples from the WASM mixer into normalized f32', () => {
+    // Stream: alternating peak positives and negatives so we can
+    // confirm both signs land in the normalized [-1, +1] range.
+    const stream = new Int16Array([
+      32767, -32768, 16384, -16384, 0, 8192, -8192, 100,
+    ]);
+    const { mod } = makeStubModule({ pcmStream: stream });
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const out = rt.getPcmFrames(stream.length);
+    expect(out.length).toBe(stream.length);
+    // The wrapper does /32768 — int16 peak positive (32767) lands at
+    // ~0.99997, peak negative (-32768) lands at exactly -1.
+    expect(out[0]).toBeCloseTo(32767 / 32768, 5);
+    expect(out[1]).toBeCloseTo(-1, 5);
+    expect(out[2]).toBeCloseTo(0.5, 5);
+    expect(out[3]).toBeCloseTo(-0.5, 5);
+    expect(out[4]).toBe(0);
+    expect(out[7]).toBeCloseTo(100 / 32768, 5);
+  });
+
+  it('pads with silence on underrun', () => {
+    const stream = new Int16Array([16384, 16384, 16384]);
+    const { mod } = makeStubModule({ pcmStream: stream });
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const out = rt.getPcmFrames(8);
+    // First 3 from stream, then 5 zeros.
+    expect(out[0]).toBeCloseTo(0.5, 5);
+    expect(out[1]).toBeCloseTo(0.5, 5);
+    expect(out[2]).toBeCloseTo(0.5, 5);
+    expect(out[3]).toBe(0);
+    expect(out[7]).toBe(0);
+  });
+
+  it('allocates a scratch ptr lazily via malloc on first call', () => {
+    const { mod, calls } = makeStubModule({ pcmStream: new Int16Array([1, 2, 3]) });
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const before = calls.filter((c) => c.name === 'malloc').length;
+    rt.getPcmFrames(64);
+    const after = calls.filter((c) => c.name === 'malloc').length;
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('reuses the scratch ptr across same-size calls (no malloc churn)', () => {
+    const { mod, calls } = makeStubModule({ pcmStream: new Int16Array(2048) });
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    rt.getPcmFrames(128);
+    const mallocsAfterFirst = calls.filter((c) => c.name === 'malloc').length;
+    rt.getPcmFrames(128);
+    rt.getPcmFrames(128);
+    rt.getPcmFrames(128);
+    const mallocsAfterFourth = calls.filter((c) => c.name === 'malloc').length;
+    expect(mallocsAfterFourth).toBe(mallocsAfterFirst);
+  });
+
+  it('grows the scratch ptr when callers ask for more frames', () => {
+    const { mod, calls } = makeStubModule({ pcmStream: new Int16Array(4096) });
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    rt.getPcmFrames(128);
+    const before = calls.filter((c) => c.name === 'malloc').length;
+    rt.getPcmFrames(2048);  // bigger — must reallocate
+    const after = calls.filter((c) => c.name === 'malloc').length;
+    expect(after).toBe(before + 1);
+    // And free the old.
+    expect(calls.filter((c) => c.name === 'free').length).toBe(1);
+  });
+
+  it('getPcmSampleRate returns 44100 (mixer constant)', () => {
+    const { mod } = makeStubModule();
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    expect(rt.getPcmSampleRate()).toBe(44100);
+  });
+
+  it('getPcmBufferedFrames returns 0 before init + nonzero after', () => {
+    const stream = new Int16Array(1024);
+    const { mod } = makeStubModule({ pcmStream: stream });
+    const rt = new DoomRuntime(mod);
+    expect(rt.getPcmBufferedFrames()).toBe(0);
+    rt.init(new Uint8Array([0]));
+    expect(rt.getPcmBufferedFrames()).toBe(1024);
   });
 });

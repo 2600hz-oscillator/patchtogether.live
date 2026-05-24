@@ -69,9 +69,10 @@ SRCS=(
   "$VENDOR_DIR/i_joystick.c"
   "$VENDOR_DIR/i_scale.c"
   # i_sdlmusic, i_sdlsound, i_allegro{music,sound} require SDL/Allegro.
-  # We use the bare null-audio i_sound.c (in doomgeneric) — slice-8
-  # audio uses our own implementation when it lands.
+  # We use the bare null-audio i_sound.c (in doomgeneric) PLUS our own
+  # portable mixer i_pcmgen.c (slice 8: SFX path; music is a stub).
   "$VENDOR_DIR/i_sound.c"
+  "$VENDOR_DIR/i_pcmgen.c"
   "$VENDOR_DIR/i_system.c"
   "$VENDOR_DIR/i_timer.c"
   "$VENDOR_DIR/i_video.c"
@@ -144,6 +145,9 @@ EXPORTS='[
   "_dgpt_set_key",
   "_dgpt_get_pcm_buffer",
   "_dgpt_get_pcm_buffer_size",
+  "_dg_get_pcm_buffer",
+  "_dg_get_pcm_buffered_frames",
+  "_dg_get_pcm_sample_rate",
   "_malloc",
   "_free"
 ]'
@@ -158,9 +162,14 @@ RUNTIME_METHODS='["HEAPU32","HEAPU8","HEAPF32","ccall","cwrap","FS"]'
 
 # Suppress doomgeneric's compile warnings (it's a 1993 codebase + we don't
 # own the source — warnings here are noise, not signal).
+#
+# FEATURE_SOUND switches on i_sound.c's sound_module_t dispatch path so
+# our DG_sound_module (from i_pcmgen.c) gets installed. DG_music_module
+# is a no-op stub in the same file — see i_pcmgen.c head comment.
 CFLAGS=(
   -O3
   -DNORMALUNIX
+  -DFEATURE_SOUND
   -Wno-everything
 )
 
