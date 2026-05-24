@@ -32,7 +32,6 @@ import type { VideoNodeHandle, VideoNodeSurface, VideoEngineContext } from '$lib
 import {
   generatePattern,
   buildPalette,
-  rotatePalette,
   SCENE_COUNT,
   PALETTE_COUNT,
   type PaletteType,
@@ -45,9 +44,11 @@ const INTERNAL_H = 240;
  *  the cycler is fully paused. */
 const SCENE_PERIOD_NORMAL_S = 8;
 /** Palette rotation slots per second at speed = 1.0. The original Acidwarp
- *  ran rotation tied to a ~70 Hz refresh; we target a similar visual cadence
- *  at our rAF rate. */
-const PALETTE_ROT_PER_SEC = 10;
+ *  ran rotation tied to a ~70 Hz refresh on a 256-slot palette; one step
+ *  per ~14 ms = ~70 slots/s. We target the same so the visual cadence
+ *  feels right at 1× speed. The card preview polls at 30 Hz, so this gives
+ *  ~2 palette steps per visible frame at 1× — fluid scrolling. */
+const PALETTE_ROT_PER_SEC = 60;
 
 const FRAG_SRC = `#version 300 es
 precision highp float;
@@ -159,29 +160,51 @@ export const acidwarpDef: VideoModuleDef = {
     let paletteAccumSlots = 0;            // fractional palette rotation accumulator
     let basePalette: Uint8Array | null = null;
     let prevSceneTrig = 0;
-    let snapshotImageData: ImageData | null = null;
+
+    // Pre-allocated buffers — avoid per-frame GC churn. The card snapshot
+    // polls at ~30 Hz; each rebuild allocates a 256×3 rotated palette + a
+    // 320×240×4 RGBA ImageData, so without pooling we'd burn ~2 MB / s of
+    // garbage just on the card preview.
+    let patternBuf: Uint8Array | null = null;  // cached pattern indices (320×240)
+    const rotatedPaletteBuf = new Uint8Array(256 * 3);
+    const snapshotPx = new Uint8ClampedArray(INTERNAL_W * INTERNAL_H * 4);
+    const snapshotImage = new ImageData(snapshotPx, INTERNAL_W, INTERNAL_H);
+    // Prefill alpha — it never changes.
+    for (let i = 3; i < snapshotPx.length; i += 4) snapshotPx[i] = 255;
 
     function rebuildPattern() {
       const sceneIdx = Math.max(0, Math.min(SCENE_COUNT - 1, Math.round(params.scene)));
-      const buf = generatePattern({ scene: sceneIdx, width: INTERNAL_W, height: INTERNAL_H });
+      patternBuf = generatePattern({ scene: sceneIdx, width: INTERNAL_W, height: INTERNAL_H });
       gl.bindTexture(gl.TEXTURE_2D, patternTex);
       gl.texImage2D(
         gl.TEXTURE_2D, 0, gl.R8,
         INTERNAL_W, INTERNAL_H, 0,
-        gl.RED, gl.UNSIGNED_BYTE, buf,
+        gl.RED, gl.UNSIGNED_BYTE, patternBuf,
       );
       patternReady = true;
       lastSceneCommitted = sceneIdx;
-      // The card snapshot mirrors the pattern × palette for its on-card
-      // display; rebuild when either changes.
-      snapshotImageData = null;
     }
 
     function rebuildBasePalette() {
       const type = Math.max(0, Math.min(PALETTE_COUNT - 1, Math.round(params.paletteType))) as PaletteType;
       basePalette = buildPalette(type);
       lastPaletteTypeCommitted = type;
-      snapshotImageData = null;
+    }
+
+    /** Fill `rotatedPaletteBuf` in place with `basePalette` shifted by
+     *  `offset` slots. Slot 0 stays black. Avoids the per-frame allocation
+     *  that rotatePalette() would do. */
+    function rotateInPlace(offset: number): void {
+      if (!basePalette) return;
+      const cycle = 255;
+      const o = ((offset % cycle) + cycle) % cycle;
+      rotatedPaletteBuf[0] = 0; rotatedPaletteBuf[1] = 0; rotatedPaletteBuf[2] = 0;
+      for (let i = 1; i < 256; i++) {
+        const src = ((i - 1 + o) % cycle) + 1;
+        rotatedPaletteBuf[i * 3]     = basePalette[src * 3]!;
+        rotatedPaletteBuf[i * 3 + 1] = basePalette[src * 3 + 1]!;
+        rotatedPaletteBuf[i * 3 + 2] = basePalette[src * 3 + 2]!;
+      }
     }
 
     rebuildPattern();
@@ -228,11 +251,11 @@ export const acidwarpDef: VideoModuleDef = {
         paletteAccumSlots += dt * PALETTE_ROT_PER_SEC * speed;
         const rotOffset = Math.floor(paletteAccumSlots);
 
-        // Build the rotated palette and upload. Cheap — 256 × 3 bytes.
+        // Rotate palette in place + upload. Cheap — 256 × 3 bytes; zero alloc.
         if (basePalette) {
-          const rotated = rotatePalette(basePalette, rotOffset);
+          rotateInPlace(rotOffset);
           g.bindTexture(g.TEXTURE_2D, paletteTex);
-          g.texImage2D(g.TEXTURE_2D, 0, g.RGB, 256, 1, 0, g.RGB, g.UNSIGNED_BYTE, rotated);
+          g.texImage2D(g.TEXTURE_2D, 0, g.RGB, 256, 1, 0, g.RGB, g.UNSIGNED_BYTE, rotatedPaletteBuf);
         }
 
         // ----- Render -----
@@ -262,25 +285,25 @@ export const acidwarpDef: VideoModuleDef = {
      *  Combines the cached pattern with the current rotated palette without
      *  hitting GL — avoids the cost of an OffscreenCanvas readback. */
     function buildCardSnapshot(): ImageData | null {
-      if (!basePalette || !patternReady) return null;
-      const rot = rotatePalette(basePalette, Math.floor(paletteAccumSlots));
-      const px = new Uint8ClampedArray(INTERNAL_W * INTERNAL_H * 4);
-      // Re-generate the pattern indices for the snapshot only — we don't
-      // keep them around in JS once they're in the GL R8 texture. Cheap.
-      const pat = generatePattern({
-        scene: Math.max(0, Math.min(SCENE_COUNT - 1, Math.round(params.scene))),
-        width: INTERNAL_W,
-        height: INTERNAL_H,
-      });
-      for (let i = 0; i < pat.length; i++) {
+      if (!basePalette || !patternReady || !patternBuf) return null;
+      // Reuse the cached pattern + pre-allocated rotation + snapshot buffers
+      // — the card polls at 30 Hz so any per-poll allocation churns GC.
+      // Re-rotating in place gives the card live palette animation without
+      // needing to invalidate-then-rebuild the snapshot.
+      rotateInPlace(Math.floor(paletteAccumSlots));
+      const pat = patternBuf;
+      const px = snapshotPx;
+      const rot = rotatedPaletteBuf;
+      const n = pat.length;
+      for (let i = 0; i < n; i++) {
         const idx = pat[i]!;
         const p = i * 4;
         px[p]     = rot[idx * 3]!;
         px[p + 1] = rot[idx * 3 + 1]!;
         px[p + 2] = rot[idx * 3 + 2]!;
-        px[p + 3] = 255;
+        // alpha pre-filled to 255 at module init — never changes
       }
-      return new ImageData(px, INTERNAL_W, INTERNAL_H);
+      return snapshotImage;
     }
 
     return {
@@ -297,12 +320,10 @@ export const acidwarpDef: VideoModuleDef = {
         if (key === 'speed') return params.speed;
         if (key === 'frozen') return params.freeze >= 0.5;
         if (key === 'paletteType') return Math.round(params.paletteType);
-        // Build the snapshot only when the card asks; cache until next
-        // scene/palette change invalidates it.
-        if (key === 'snapshot') {
-          if (!snapshotImageData) snapshotImageData = buildCardSnapshot();
-          return snapshotImageData;
-        }
+        // Rebuild the snapshot on every poll — the card's putImageData
+        // happily consumes our reused buffer, and the pattern is cached
+        // so the per-poll cost is just the palette × pattern map.
+        if (key === 'snapshot') return buildCardSnapshot();
         return undefined;
       },
       dispose() { surface.dispose(); },
