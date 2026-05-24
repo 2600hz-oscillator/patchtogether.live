@@ -275,21 +275,24 @@ test.describe('video controls drive output', () => {
   });
 
   test('CHROMAKEY threshold knob changes pixel pattern (FG + BG composite)', async ({ page }) => {
-    // Build a 2-input compositor patch: SHAPES (geometry — has saturation,
-    // so the hue-distance keying actually finds something to key) into FG,
-    // LINES into BG. Sliding `threshold` moves the smoothstep band on hue
-    // distance — should shift some FG pixels into BG, changing pixel
-    // stats end-to-end. Proves the 2-input plumbing + CV pipeline both
-    // reach the shader.
+    // CHROMAKEY keys on HUE distance — so the FG must carry SATURATED color.
+    // SHAPES outputs grayscale (vec3(band)) which has zero saturation, so the
+    // shader's sat-gate correctly refuses to key it and threshold is a no-op.
+    // Fix: colorize the grayscale shapes to saturated RED via CHROMA's tint
+    // (tintMix=1 → lerp fully to the tint color), then key RED. LINES is BG.
+    // Sliding `threshold` then moves the smoothstep band on hue distance,
+    // shifting FG pixels into BG and changing end-to-end pixel stats.
     await spawnPatch(
       page,
       [
-        { id: 'v-fg',  type: 'shapes',    position: { x: 40,  y: 40 },  domain: 'video', params: { shape: 0.3, rotate: 0.2, zoom: 0.7 } },
+        { id: 'v-shp', type: 'shapes',    position: { x: 40,  y: 40 },  domain: 'video', params: { shape: 0.3, rotate: 0.2, zoom: 0.7 } },
+        { id: 'v-fg',  type: 'chroma',    position: { x: 200, y: 40 },  domain: 'video', params: { hue: 0, saturation: 2, tintR: 1, tintG: 0, tintB: 0, tintMix: 1 } },
         { id: 'v-bg',  type: 'lines',     position: { x: 40,  y: 280 }, domain: 'video', params: { amp: 8 } },
-        { id: 'v-key', type: 'chromakey', position: { x: 320, y: 80 },  domain: 'video', params: { keyR: 1.0, keyG: 1.0, keyB: 1.0, threshold: 0.0, softness: 0.05, spillSuppress: 0 } },
+        { id: 'v-key', type: 'chromakey', position: { x: 320, y: 80 },  domain: 'video', params: { keyR: 1.0, keyG: 0.0, keyB: 0.0, threshold: 0.0, softness: 0.05, spillSuppress: 0 } },
         { id: 'v-out', type: 'videoOut',  position: { x: 700, y: 80 },  domain: 'video' },
       ],
       [
+        { id: 'e-shp-fg',  from: { nodeId: 'v-shp', portId: 'out' }, to: { nodeId: 'v-fg',  portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
         { id: 'e-fg-key',  from: { nodeId: 'v-fg',  portId: 'out' }, to: { nodeId: 'v-key', portId: 'fg' }, sourceType: 'video',      targetType: 'video' },
         { id: 'e-bg-key',  from: { nodeId: 'v-bg',  portId: 'out' }, to: { nodeId: 'v-key', portId: 'bg' }, sourceType: 'mono-video', targetType: 'video' },
         { id: 'e-key-out', from: { nodeId: 'v-key', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video',      targetType: 'video' },
