@@ -93,6 +93,12 @@
         });
       });
       _activeProviderRef = provider;
+      // Also stash on globalThis so Canvas.svelte's provideProviderContext
+      // fallback can hand it to descendant cards (DoomCard's awareness
+      // wiring etc.) on the public `/` canvas, where the parent doesn't
+      // pass a `provider` prop. Dev-only path; prod /r/[id] still owns
+      // the prop-based provider.
+      (window as unknown as { __provider?: unknown }).__provider = provider;
       return provider;
     };
 

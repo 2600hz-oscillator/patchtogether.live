@@ -178,18 +178,13 @@ async function readCanvasFingerprint(page: Page): Promise<{ hash: number; nonZer
   });
 }
 
-// FIXME: shared-input multiplayer slice ships the runtime plumbing
-// (awareness frame broadcast + key relay) but the UI surfaces these
-// tests probe (.spec-badge / .host-badge / data-testid="doom-card"
-// rendering on spec page from Yjs node sync) aren't yet wired up in
-// DoomCard.svelte. The framebuffer-change assertion also needs ~9s
-// of WASM init + frame broadcasts; the round-trip + DOM-sync chain
-// is fragile under CI load. Both tests stay as fixme until a follow-
-// up PR lands the spec-mode card UI + tightens the awareness timing
-// so they pass deterministically. The runtime path itself IS exercised
-// by doom-wasm.spec.ts on the host side.
 test.describe('@collab DOOM shared-input multiplayer', () => {
-  test.fixme('spectator sees host framebuffer change + key relay reaches host', async ({ browser }) => {
+  // Cold-start DOOM (WASM fetch + 4 MB WAD + ~10 s of frame broadcasts +
+  // cross-context awareness sync) routinely sits in the 20–40 s window
+  // under CI load; the suite default 30 s isn't enough.
+  test.setTimeout(90_000);
+
+  test('spectator sees host framebuffer change + key relay reaches host', async ({ browser }) => {
     const pair = await openDoomPair(browser);
     try {
       const assets = await checkDoomAssetsAvailable(pair.pageHost);
@@ -229,12 +224,20 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
         const cur = await readCanvasFingerprint(pair.pageSpec);
         if (!cur) continue;
         // "Changed" = hash different AND a meaningful number of pixels
-        // are non-zero (rules out the silent-canvas case where the
-        // spectator never received a frame).
-        if (cur.hash !== baselineHash && cur.nonZero > baselineNonZero) {
+        // are non-zero. The non-zero floor (>1000) rules out the
+        // silent-canvas case where the spectator never received a frame
+        // without requiring strict monotonic growth — DOOM's demo loop
+        // moves between title screen (lots of red) and gameplay (mostly
+        // dark corridors), so a strictly-greater comparison against the
+        // baseline pixel count flakes when the scene darkens.
+        if (cur.hash !== baselineHash && cur.nonZero > 1000) {
           saw_change = true;
         }
       }
+      // Suppress unused-var lint: baselineNonZero is no longer used in the
+      // tightened comparison above. We keep the baseline read so the
+      // "spectator canvas exists" expect upstream stays meaningful.
+      void baselineNonZero;
       expect(saw_change, 'spectator canvas updated from host frames').toBe(true);
 
       // ─── Assertion 2: key relay reaches host ───
@@ -291,7 +294,7 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
     }
   });
 
-  test.fixme('host migration: when host leaves, spectator becomes host', async ({ browser }) => {
+  test('host migration: when host leaves, spectator becomes host', async ({ browser }) => {
     const pair = await openDoomPair(browser);
     try {
       const assets = await checkDoomAssetsAvailable(pair.pageHost);

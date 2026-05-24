@@ -390,7 +390,17 @@
   // Provide the multiplayer provider too, so cards can write per-module
   // presence into Y.Awareness (e.g., CAMERA publishes "this user has CAMERA
   // active here" without sending pixels — see camera-presence.ts).
-  provideProviderContext(() => provider);
+  //
+  // Fallback to (globalThis as any).__provider lets the public `/` canvas
+  // pick up the dev-only provider that `__attachProvider` installs from
+  // +layout.svelte (used by @collab Playwright tests that drive `/` rather
+  // than `/r/[id]`). In prod the fallback stays null because the global is
+  // only ever set in DEV.
+  provideProviderContext(() => {
+    if (provider) return provider;
+    const g = globalThis as unknown as { __provider?: HocuspocusProvider | null };
+    return g.__provider ?? null;
+  });
 
   // Dev-only (gated on testHooksEnabled): expose patch + ydoc on window so
   // e2e tests + chaos musician-bots can drive arbitrary module-spawning
