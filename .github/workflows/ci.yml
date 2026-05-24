@@ -132,8 +132,14 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout
+      - name: Checkout (LFS required for ART baselines)
         uses: actions/checkout@v4
+        with:
+          # ART baselines (art/baselines/**/*.f32) are LFS-tracked. Without
+          # this the test reads the ~130-byte LFS pointer file instead of
+          # the real float32 buffer and fails with "not a multiple of 4 —
+          # file is truncated or corrupt".
+          lfs: true
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
