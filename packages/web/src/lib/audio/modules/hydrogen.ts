@@ -123,6 +123,35 @@ export function instrumentParamIds(): string[] {
   return ids;
 }
 
+/** Per-voice CV-input slot descriptors. Each voice exposes 9 CV inputs
+ *  (one per param the user can dial on the card's expanded voice strip).
+ *  The port-id naming pattern is `cv_<short>_<voice-index>` to keep id
+ *  strings short — the cable-router uses them verbatim. cvScale matches
+ *  the param's curve so a -1..+1 CV sweeps the param's full natural
+ *  range (cv-range-standard.md). */
+export const PER_VOICE_CV_SLOTS = [
+  { short: 'vol', paramPrefix: 'vol',    cvScale: 'linear' as const },
+  { short: 'pan', paramPrefix: 'pan',    cvScale: 'linear' as const },
+  { short: 'pi',  paramPrefix: 'pitch',  cvScale: 'linear' as const },
+  { short: 'cf',  paramPrefix: 'cutoff', cvScale: 'log'    as const },
+  { short: 'q',   paramPrefix: 'q',      cvScale: 'log'    as const },
+  { short: 'a',   paramPrefix: 'A',      cvScale: 'log'    as const },
+  { short: 'd',   paramPrefix: 'D',      cvScale: 'log'    as const },
+  { short: 's',   paramPrefix: 'S',      cvScale: 'linear' as const },
+  { short: 'r',   paramPrefix: 'R',      cvScale: 'log'    as const },
+] as const;
+
+/** Port id for the CV input wired to voice `idx`'s `slot.paramPrefix`. */
+export function perVoiceCvPortId(slotShort: string, idx: number): string {
+  return `cv_${slotShort}_${idx}`;
+}
+
+/** Param id the CV input drives. Pure helper so the def, factory, and
+ *  card row all agree on the mapping. */
+export function perVoiceCvParamTarget(slotPrefix: string, idx: number): string {
+  return `${slotPrefix}${idx}`;
+}
+
 /** Build the full input port list. Includes:
  *
  *    * clock_in + reset_in       — pre-existing gate inputs
@@ -135,13 +164,25 @@ export function instrumentParamIds(): string[] {
  *                                  backwards compatibility and add
  *                                  reset_cv as an alias.
  *    * trig{i} per instrument    — pre-existing per-voice direct trigger
+ *    * cv_<param>_<i> per voice  — 9 per-voice CV inputs × 16 voices =
+ *                                  144 inputs that drive vol/pan/pitch/
+ *                                  cutoff/Q/A/D/S/R for each instrument.
+ *                                  Each declares paramTarget so the
+ *                                  cv-range-standard scaler runs and a
+ *                                  -1..+1 LFO sweeps the param's full
+ *                                  natural range.
  *
  *  The manifest-builder's literal-array extractor can't read spreads, so
  *  we hide the full list behind this builder + let the synthesizer in
  *  module-manifest.ts produce the equivalent shape (same RIOTGIRLS
  *  pattern). */
 function buildHydrogenInputs() {
-  const inputs: Array<{ id: string; type: 'gate' }> = [
+  const inputs: Array<{
+    id: string;
+    type: 'gate' | 'cv';
+    paramTarget?: string;
+    cvScale?: { mode: 'linear' | 'log' };
+  }> = [
     { id: 'clock_in', type: 'gate' },
     { id: 'reset_in', type: 'gate' },
   ];
@@ -150,6 +191,16 @@ function buildHydrogenInputs() {
   }
   for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
     inputs.push({ id: `trig${i}`, type: 'gate' });
+  }
+  for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
+    for (const slot of PER_VOICE_CV_SLOTS) {
+      inputs.push({
+        id: perVoiceCvPortId(slot.short, i),
+        type: 'cv',
+        paramTarget: perVoiceCvParamTarget(slot.paramPrefix, i),
+        cvScale: { mode: slot.cvScale },
+      });
+    }
   }
   return inputs;
 }
@@ -414,6 +465,56 @@ export const hydrogenDef: AudioModuleDef = {
       }
     }
 
+    // ---------- Per-voice CV inputs (144 = 16 × 9) ----------
+    //
+    // Each per-voice CV input is backed by a ConstantSource whose `offset`
+    // AudioParam acts as the AudioParam the engine sums external CV into
+    // (the engine's CV bridge does cvScale → param routing whenever the
+    // PortDef declares cvScale + paramTarget). We expose the AudioParam
+    // to the engine via the inputs Map's `param` field; we read the
+    // current modulated value back via an AnalyserNode tap each tick and
+    // fold it into readParam(). The constant-source's INITIAL offset is
+    // 0 (CV is additive) — the knob value provides the base in readParam.
+    //
+    // Same pattern as POLYSEQZ.humanizeCV — just scaled to 144 voices
+    // worth of slots. Tap fftSize is 256 (we don't need fine resolution;
+    // a knob is read at tick rate, not audio rate).
+    interface VoiceCvSlot {
+      source: ConstantSourceNode;
+      analyser: AnalyserNode;
+      buf: Float32Array<ArrayBuffer>;
+    }
+    const voiceCvSlots = new Map<string, VoiceCvSlot>();
+    function makeVoiceCv(): VoiceCvSlot {
+      const source = ctx.createConstantSource();
+      source.offset.value = 0;
+      source.start();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      const buf = new Float32Array(new ArrayBuffer(analyser.fftSize * 4));
+      return { source, analyser, buf };
+    }
+    for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
+      for (const slot of PER_VOICE_CV_SLOTS) {
+        voiceCvSlots.set(perVoiceCvParamTarget(slot.paramPrefix, i), makeVoiceCv());
+      }
+    }
+    /** Read the latest modulated CV value for a given paramId. Returns 0
+     *  if no slot exists (i.e. caller asked about a non-voice param like
+     *  bpm/swing/gain). Averages a short tail of the analyser buffer for
+     *  a stable read — the tick polls at ~SCHEDULER_TICK_MS, no need for
+     *  per-sample fidelity. */
+    function readVoiceCv(paramId: string): number {
+      const slot = voiceCvSlots.get(paramId);
+      if (!slot) return 0;
+      slot.analyser.getFloatTimeDomainData(slot.buf);
+      let sum = 0;
+      const N = Math.min(slot.buf.length, 64);
+      for (let i = slot.buf.length - N; i < slot.buf.length; i++) sum += slot.buf[i] ?? 0;
+      return sum / N;
+    }
+
     // ---------- Per-instrument trig{i} input handling ----------
     const trigGains: GainNode[] = [];
     const trigAnalysers: AnalyserNode[] = [];
@@ -475,7 +576,21 @@ export const hydrogenDef: AudioModuleDef = {
     function readParam(id: string, fallback: number): number {
       const live = livePatch.nodes[nodeId];
       const v = live?.params?.[id];
-      return typeof v === 'number' ? v : fallback;
+      const base = typeof v === 'number' ? v : fallback;
+      // Fold in per-voice CV modulation when this param has a CV input
+      // wired to it. The engine already routes a -1..+1 CV through the
+      // cvScale chain so the value we read here is already in the
+      // param's natural range — additive on top of the knob value.
+      // Clamp to the param's min/max so out-of-range modulation doesn't
+      // bake weird negatives into log curves downstream.
+      const cv = readVoiceCv(id);
+      if (cv === 0) return base;
+      const sum = base + cv;
+      const paramDef = hydrogenDef.params.find((p) => p.id === id);
+      if (!paramDef) return sum;
+      const min = (paramDef as { min?: number }).min ?? -Infinity;
+      const max = (paramDef as { max?: number }).max ?? Infinity;
+      return sum < min ? min : sum > max ? max : sum;
     }
 
     function readTracks(): HydrogenTrack[] {
@@ -656,7 +771,7 @@ export const hydrogenDef: AudioModuleDef = {
     const clock = getSchedulerClock();
     unsubscribeTick = clock.subscribe(tick);
 
-    const inputs = new Map<string, { node: AudioNode; input: number }>([
+    const inputs = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
       ['clock_in', { node: clockInGain, input: 0 }],
       ['reset_in', { node: resetInGain, input: 0 }],
     ]);
@@ -665,6 +780,23 @@ export const hydrogenDef: AudioModuleDef = {
     }
     for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
       inputs.set(`trig${i}`, { node: trigGains[i]!, input: 0 });
+    }
+    // 144 per-voice CV inputs — each port id maps to a backing
+    // ConstantSource whose `offset` AudioParam serves as the engine's
+    // sum target. The engine's CV bridge connects external CV through a
+    // cvScale chain (see engine.ts:getCvScaleForTarget) into this
+    // AudioParam, and the tick reads back the modulated value via
+    // readVoiceCv() above.
+    for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
+      for (const slot of PER_VOICE_CV_SLOTS) {
+        const paramId = perVoiceCvParamTarget(slot.paramPrefix, i);
+        const cvSlot = voiceCvSlots.get(paramId)!;
+        inputs.set(perVoiceCvPortId(slot.short, i), {
+          node: cvSlot.source,
+          input: 0,
+          param: cvSlot.source.offset,
+        });
+      }
     }
 
     return {
@@ -700,6 +832,12 @@ export const hydrogenDef: AudioModuleDef = {
         try { resetInSilence.stop(); } catch { /* */ }
         try { transportCv.dispose(); } catch { /* */ }
         for (const s of trigSilences) try { s.stop(); } catch { /* */ }
+        for (const slot of voiceCvSlots.values()) {
+          try { slot.source.stop(); } catch { /* */ }
+          try { slot.source.disconnect(); } catch { /* */ }
+          try { slot.analyser.disconnect(); } catch { /* */ }
+        }
+        voiceCvSlots.clear();
         for (const set of voicesByMuteGroup.values()) {
           for (const v of set) { try { v.stop(ctx.currentTime); } catch { /* */ } }
         }
