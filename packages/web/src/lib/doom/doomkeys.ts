@@ -59,13 +59,20 @@ export const KEY_FOR_KEYBOARD_CODE: Readonly<Record<string, number>> = {
   ArrowDown: KEY_DOWNARROW,
   ArrowLeft: KEY_LEFTARROW,
   ArrowRight: KEY_RIGHTARROW,
-  // Combat + interaction.
-  Space: KEY_FIRE,        // primary fire (default DOOM binding)
-  ControlRight: KEY_RCTRL, // run modifier
-  ControlLeft: KEY_RCTRL,
-  AltRight: KEY_RALT,      // strafe modifier
+  // Combat + interaction. MacBook-friendly bindings:
+  //   Space = USE (open doors / switches) — big reachable key.
+  //   F     = FIRE (primary). Ctrl avoided as PRIMARY fire because macOS
+  //           binds Ctrl+Arrow to Mission Control space-switching, so
+  //           hold-fire-while-turning would be eaten by the OS.
+  //   Ctrl / E kept as secondary fire / use for muscle memory.
+  Space: KEY_USE,         // open doors / switches (standard DOOM use)
+  KeyF: KEY_FIRE,         // primary fire (MacBook-safe)
+  ControlRight: KEY_FIRE, // secondary fire
+  ControlLeft: KEY_FIRE,
+  KeyE: KEY_USE,          // secondary use
+  AltRight: KEY_RALT,     // strafe modifier
   AltLeft: KEY_RALT,
-  ShiftRight: KEY_RSHIFT,
+  ShiftRight: KEY_RSHIFT, // run modifier
   ShiftLeft: KEY_RSHIFT,
   // Menu / system.
   Escape: KEY_ESCAPE,
@@ -75,8 +82,6 @@ export const KEY_FOR_KEYBOARD_CODE: Readonly<Record<string, number>> = {
   // Menu y/n.
   KeyY: KEY_y,
   KeyN: KEY_n,
-  // USE (door / switch) defaults to E.
-  KeyE: KEY_USE,
 };
 
 // ---------------- CV-gate port id → doomkey ----------------
@@ -97,8 +102,8 @@ export const KEY_FOR_CV_GATE: Readonly<Record<string, number>> = {
   down: KEY_DOWNARROW,
   left: KEY_LEFTARROW,
   right: KEY_RIGHTARROW,
-  space: KEY_FIRE,
-  ctrl: KEY_RCTRL,
+  space: KEY_USE,
+  ctrl: KEY_FIRE,
   alt: KEY_RALT,
 };
 
