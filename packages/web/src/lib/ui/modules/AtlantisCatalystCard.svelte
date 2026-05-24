@@ -1,22 +1,31 @@
 <script lang="ts">
-  // AtlantisCatalystCard — the catalyst-controller card.
+  // AtlantisCatalystCard — the SCENECHANGE controller card. (Internal type
+  // id stays `atlantisCatalyst` for back-compat with saved rackspaces.)
   //
-  // Top row: a big circular "NUDGE" button + a small AUTO toggle + freeze
-  // toggle, plus 4 scene buttons (jump to scene N) and a countdown showing
-  // seconds until the next auto scene change.
+  // Top row: a big circular "NUDGE" button + a 1..4 scene-slot row + freeze
+  // toggle.
+  //
+  // Scene-slot click behavior:
+  //   - plain click   → RECALL slot (if saved) / else stochastic transition
+  //   - Shift+click   → SAVE current state into slot
+  // A filled disc under the digit indicates the slot has a snapshot. The
+  // 4 scene CV gate inputs (S1..S4) follow the same recall-if-saved /
+  // re-roll fallback so the Atlantis demo patch keeps sounding right.
   //
   // Bottom row: drift / chaos / coherence / depth / bias / level faders.
-  //
-  // PatchPanel handles the 11-ish IO ports (8 drift outs + 2 special outs,
-  // nudge/freeze/seed + 6 transport-CV inputs). The visual focus is on the
-  // big NUDGE button — clicking it manually transitions the system.
 
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
-  import { atlantisCatalystDef } from '$lib/audio/modules/atlantis-catalyst';
+  import { patch, ydoc } from '$lib/graph/store';
+  import {
+    atlantisCatalystDef,
+    captureScene,
+    coerceScene,
+    type CatalystScene,
+    type CatalystSceneSlot,
+  } from '$lib/audio/modules/atlantis-catalyst';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { onDestroy } from 'svelte';
@@ -44,8 +53,6 @@
   let secsLeft = $state(0);
   let pulsing = $state(false);
   let frozen = $state(false);
-  // Poll the engine for live state at 5 Hz — enough to keep the countdown
-  // visibly ticking down without burning rAF on a card that mostly sits idle.
   const poll = setInterval(() => {
     const e = engineCtx.get(); if (!e || !node) return;
     const s = e.read(node, 'scene'); if (typeof s === 'number') scene = s;
@@ -55,36 +62,79 @@
   }, 200);
   onDestroy(() => clearInterval(poll));
 
-  // Manual nudge: fire a tiny gate into the nudge input via a one-shot
-  // ConstantSource? Simpler: just write a transient on the patch's
-  // engine-readable param. The catalyst's drainInputAndStep polls the
-  // nudge audio buf — we can't trigger that from the UI without an actual
-  // audio source. So instead we directly call the engine's `setParam`
-  // doesn't help either. The cleanest path: expose a 'nudge' read key that
-  // the catalyst checks on every drain. For v1 we just bypass via param:
-  // bump an internal counter the catalyst polls.
-  function manualNudge() {
-    const t = patch.nodes[id]; if (!t) return;
-    // Set autoMode to 1 momentarily if it isn't, then trigger via a
-    // queue1 path — the catalyst uses scene1..4 buttons via patch.nodes
-    // already. Simplest: just cycle scene1 then back to current.
-    // We expose direct scene jumps below — manualNudge advances scene.
-    const cur = scene;
-    fireScene((cur + 1) % 4);
+  // Re-render on Yjs updates so slot indicators reflect remote saves.
+  let cardVersion = $state(0);
+  $effect(() => {
+    const h = () => { cardVersion = cardVersion + 1; };
+    ydoc.on('update', h);
+    return () => ydoc.off('update', h);
+  });
+
+  const SLOTS: CatalystSceneSlot[] = ['1', '2', '3', '4'];
+
+  function readScenes(): Partial<Record<CatalystSceneSlot, CatalystScene | null>> {
+    const raw = (node?.data as Record<string, unknown> | undefined)?.scenes;
+    if (!raw || typeof raw !== 'object') return {};
+    const out: Partial<Record<CatalystSceneSlot, CatalystScene | null>> = {};
+    for (const s of SLOTS) out[s] = coerceScene((raw as Record<string, unknown>)[s]);
+    return out;
+  }
+  let savedSlots = $derived((void cardVersion, readScenes()));
+  function isSaved(slot: CatalystSceneSlot): boolean {
+    return savedSlots[slot] != null;
   }
 
-  function fireScene(target: number) {
-    // The catalyst polls its `queue1_cv..queue4_cv` inputs for rising
-    // edges. We can fake one from the UI by writing the scene index to a
-    // patch-level marker — but the cleanest pure-card path is to call
-    // engine `setParam` with a sentinel. For v1 we just write the target
-    // scene to a special params key and let the catalyst read it.
+  function readLiveSnapshot(): CatalystScene | null {
+    const e = engineCtx.get(); if (!e || !node) return null;
+    const driftValues = e.read(node, 'driftValues');
+    if (!Array.isArray(driftValues)) return null;
+    // Prefer engine-side live params (reflects the smoothed audio-rate
+    // gain / freshly-recalled state) over the patch-graph snapshot.
+    const liveParams = {
+      driftRate: (e.readParam(node, 'driftRate') as number) ?? paramVal('driftRate'),
+      chaos: (e.readParam(node, 'chaos') as number) ?? paramVal('chaos'),
+      coherence: (e.readParam(node, 'coherence') as number) ?? paramVal('coherence'),
+      sceneDepth: (e.readParam(node, 'sceneDepth') as number) ?? paramVal('sceneDepth'),
+      autoMode: (e.readParam(node, 'autoMode') as number) ?? paramVal('autoMode'),
+      bias: (e.readParam(node, 'bias') as number) ?? paramVal('bias'),
+      level: (e.readParam(node, 'level') as number) ?? paramVal('level'),
+    };
+    return captureScene(liveParams, driftValues as number[]);
+  }
+
+  function saveSlot(slot: CatalystSceneSlot) {
+    const snap = readLiveSnapshot();
+    if (!snap) return;
     const t = patch.nodes[id]; if (!t) return;
-    t.params.uiSceneJump = target + 1; // 1-indexed marker the catalyst polls
-    // Also fire a one-shot timer to clear it so a second click re-fires.
+    ydoc.transact(() => {
+      if (!t.data) t.data = {};
+      const d = t.data as Record<string, unknown>;
+      const cur = (d.scenes as Record<string, unknown> | undefined) ?? {};
+      d.scenes = { ...cur, [slot]: snap };
+    });
+  }
+
+  function recallSlot(slot: CatalystSceneSlot) {
+    const t = patch.nodes[id]; if (!t) return;
+    // Same uiSceneJump path the CV gates use — the engine reads it on its
+    // next tick, decides recall-vs-stochastic, and ramps accordingly.
+    t.params.uiSceneJump = Number(slot);
     setTimeout(() => {
-      const tt = patch.nodes[id]; if (tt && tt.params.uiSceneJump === target + 1) tt.params.uiSceneJump = 0;
+      const tt = patch.nodes[id];
+      if (tt && tt.params.uiSceneJump === Number(slot)) tt.params.uiSceneJump = 0;
     }, 100);
+  }
+
+  function handleSlotClick(slot: CatalystSceneSlot, ev: MouseEvent) {
+    if (ev.shiftKey) saveSlot(slot);
+    else recallSlot(slot);
+  }
+
+  function manualNudge() {
+    // Cycle to the next scene index — falls through the same jumpToScene
+    // path so a slot with a snapshot still triggers recall.
+    const target = ((scene + 1) % 4) + 1;
+    recallSlot(String(target) as CatalystSceneSlot);
   }
 
   function toggleFreeze() {
@@ -119,7 +169,7 @@
 
 <div class="mod-card catalyst-card" class:pulsing>
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">CATALYST</header>
+  <header class="title">SCENECHANGE</header>
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={320}>
     <div class="body">
@@ -127,17 +177,23 @@
         <button
           class="nudge-btn"
           onclick={manualNudge}
-          title="Manually advance to the next scene"
+          title="Advance to next scene (recall if saved)"
           data-testid="catalyst-nudge"
         >NUDGE</button>
-        <div class="scenes">
-          {#each [0, 1, 2, 3] as i (i)}
+        <div class="scenes" title="click = recall · shift+click = save">
+          {#each SLOTS as slot (slot)}
             <button
               class="scene"
-              class:active={scene === i}
-              onclick={() => fireScene(i)}
-              data-testid={`catalyst-scene-${i + 1}`}
-            >{i + 1}</button>
+              class:active={scene + 1 === Number(slot)}
+              class:saved={isSaved(slot)}
+              onclick={(ev) => handleSlotClick(slot, ev)}
+              data-testid={`catalyst-scene-${slot}`}
+              data-saved={isSaved(slot) ? '1' : '0'}
+              aria-label={`Scene ${slot} — click to recall, shift+click to save`}
+            >
+              <span class="digit">{slot}</span>
+              <span class="dot" aria-hidden="true"></span>
+            </button>
           {/each}
         </div>
         <button
@@ -151,6 +207,8 @@
         <span class="lbl">SCENE</span> <span class="val">{scene + 1}/4</span>
         <span class="sep">·</span>
         <span class="lbl">NEXT</span> <span class="val">{Math.ceil(secsLeft)}s</span>
+        <span class="sep">·</span>
+        <span class="hint">shift+click = save</span>
       </div>
 
       <div class="grid">
@@ -216,6 +274,10 @@
     flex: 1;
   }
   .scene {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: var(--module-bg);
     color: var(--text-dim);
     border: 1px solid var(--border);
@@ -232,6 +294,20 @@
     border-color: var(--accent);
   }
   .scene:hover { border-color: var(--accent-dim); }
+  .scene .digit { line-height: 1; }
+  .scene .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    border: 1px solid var(--text-dim);
+    background: transparent;
+    margin-left: 5px;
+    box-sizing: border-box;
+  }
+  .scene.saved .dot {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
   .freeze-btn {
     background: var(--module-bg);
     color: var(--text-dim);
@@ -258,6 +334,7 @@
   }
   .readout .val { color: var(--text); }
   .readout .sep { margin: 0 6px; opacity: 0.4; }
+  .readout .hint { opacity: 0.7; }
   .grid {
     margin-top: 12px;
     display: grid;

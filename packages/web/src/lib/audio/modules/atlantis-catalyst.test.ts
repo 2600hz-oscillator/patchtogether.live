@@ -1,8 +1,9 @@
 // packages/web/src/lib/audio/modules/atlantis-catalyst.test.ts
 //
-// Module-def shape + pure-helper tests for ATLANTISCATALYST. The
-// orchestrator's actual audio behavior (setInterval-driven drift +
-// scene transitions) is exercised by the Atlantis-patch E2E.
+// Module-def shape + pure-helper tests for SCENECHANGE (type id remains
+// `atlantisCatalyst`). The orchestrator's actual audio behavior
+// (setInterval-driven drift + scene transitions) is exercised by the
+// Atlantis-patch E2E.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -10,9 +11,18 @@ import {
   driftRateKnobToMeanScenePeriodS,
   pickSceneTarget,
   makePrng,
+  captureScene,
+  applyScene,
+  coerceScene,
+  type CatalystScene,
 } from './atlantis-catalyst';
 
 describe('atlantisCatalystDef shape', () => {
+  it('display label is SCENECHANGE (type id kept atlantisCatalyst for back-compat)', () => {
+    expect(atlantisCatalystDef.label).toBe('SCENECHANGE');
+    expect(atlantisCatalystDef.type).toBe('atlantisCatalyst');
+  });
+
   it('declares 8 drift outputs + scene_pulse + scene_idx', () => {
     const ids = atlantisCatalystDef.outputs.map((p) => p.id).sort();
     expect(ids).toEqual([
@@ -110,5 +120,118 @@ describe('makePrng — determinism', () => {
 
   it('different seeds produce different first values', () => {
     expect(makePrng(1)()).not.toBe(makePrng(2)());
+  });
+});
+
+describe('captureScene / applyScene — round-trip', () => {
+  const live = {
+    driftRate: 0.42, chaos: 0.31, coherence: 0.66, sceneDepth: 0.81,
+    autoMode: 1, bias: -0.25, level: 0.7,
+  };
+  const drift = [0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8];
+
+  it('captureScene records all 8 drift values + the 7 live params', () => {
+    const snap = captureScene(live, drift);
+    expect(snap.drift).toEqual(drift);
+    expect(snap.driftRate).toBe(0.42);
+    expect(snap.chaos).toBe(0.31);
+    expect(snap.coherence).toBe(0.66);
+    expect(snap.sceneDepth).toBe(0.81);
+    expect(snap.autoMode).toBe(1);
+    expect(snap.bias).toBe(-0.25);
+    expect(snap.level).toBe(0.7);
+  });
+
+  it('captureScene pads short drift arrays to length 8 (defensive)', () => {
+    const snap = captureScene(live, [0.1, 0.2]);
+    expect(snap.drift).toHaveLength(8);
+    expect(snap.drift[0]).toBe(0.1);
+    expect(snap.drift[1]).toBe(0.2);
+    expect(snap.drift[7]).toBe(0);
+  });
+
+  it('captureScene returns an own copy — mutating drift later does not bleed', () => {
+    const driftMut = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+    const snap = captureScene(live, driftMut);
+    driftMut[0] = 999;
+    expect(snap.drift[0]).toBe(0.1);
+  });
+
+  it('applyScene restores every live param into the passed-in object (mutates in place)', () => {
+    const snap = captureScene(live, drift);
+    const target = {
+      driftRate: 0, chaos: 0, coherence: 0, sceneDepth: 0,
+      autoMode: 0, bias: 0, level: 0,
+    };
+    const result = applyScene(snap, target);
+    expect(result.live).toBe(target);
+    expect(target.driftRate).toBe(0.42);
+    expect(target.chaos).toBe(0.31);
+    expect(target.coherence).toBe(0.66);
+    expect(target.sceneDepth).toBe(0.81);
+    expect(target.autoMode).toBe(1);
+    expect(target.bias).toBe(-0.25);
+    expect(target.level).toBe(0.7);
+  });
+
+  it('applyScene returns driftTargets in [-1, 1] (clamped)', () => {
+    const wild: CatalystScene = {
+      driftRate: 0, chaos: 0, coherence: 0, sceneDepth: 0,
+      autoMode: 0, bias: 0, level: 0,
+      drift: [99, -99, 0, 0, 0, 0, 0, 0],
+    };
+    const target = {
+      driftRate: 0, chaos: 0, coherence: 0, sceneDepth: 0,
+      autoMode: 0, bias: 0, level: 0,
+    };
+    const { driftTargets } = applyScene(wild, target);
+    expect(driftTargets[0]).toBe(1);
+    expect(driftTargets[1]).toBe(-1);
+  });
+});
+
+describe('coerceScene — defensive parsing', () => {
+  it('returns null for non-object input', () => {
+    expect(coerceScene(null)).toBeNull();
+    expect(coerceScene(undefined)).toBeNull();
+    expect(coerceScene(42)).toBeNull();
+    expect(coerceScene('hello')).toBeNull();
+  });
+
+  it('returns null when drift is not an array', () => {
+    expect(coerceScene({ drift: 'oops' })).toBeNull();
+    expect(coerceScene({ })).toBeNull();
+  });
+
+  it('coerces a valid object round-tripped through JSON', () => {
+    const snap = captureScene(
+      { driftRate: 0.5, chaos: 0.6, coherence: 0.7, sceneDepth: 0.8, autoMode: 1, bias: 0.1, level: 0.9 },
+      [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+    );
+    const jsoned = JSON.parse(JSON.stringify(snap));
+    const back = coerceScene(jsoned);
+    expect(back).not.toBeNull();
+    expect(back!.drift).toEqual(snap.drift);
+    expect(back!.driftRate).toBe(0.5);
+    expect(back!.level).toBe(0.9);
+  });
+
+  it('clamps drift values to [-1, +1] when reading from arbitrary input', () => {
+    const back = coerceScene({
+      drift: [5, -5, 0.5, -0.5, 0, 0, 0, 0],
+      driftRate: 0.5, chaos: 0.5, coherence: 0.5, sceneDepth: 0.5,
+      autoMode: 1, bias: 0, level: 1,
+    });
+    expect(back).not.toBeNull();
+    expect(back!.drift[0]).toBe(1);
+    expect(back!.drift[1]).toBe(-1);
+    expect(back!.drift[2]).toBe(0.5);
+  });
+
+  it('falls back to defaults for missing numeric fields', () => {
+    const back = coerceScene({ drift: [0, 0, 0, 0, 0, 0, 0, 0] });
+    expect(back).not.toBeNull();
+    expect(typeof back!.driftRate).toBe('number');
+    expect(typeof back!.level).toBe('number');
   });
 });

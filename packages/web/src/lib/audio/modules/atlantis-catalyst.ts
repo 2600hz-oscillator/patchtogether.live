@@ -1,12 +1,14 @@
 // packages/web/src/lib/audio/modules/atlantis-catalyst.ts
 //
-// ATLANTISCATALYST — slow-drift macro brain.
+// SCENECHANGE (internal type id stays `atlantisCatalyst` for back-compat
+// with saved rackspaces) — slow-drift macro brain with persistent scene
+// save/recall.
 //
 // 8 correlated band-limited random-walk CV outputs (drift1..drift8) plus a
 // scene_pulse gate that fires when the brain transitions to a new
 // attractor, plus a scene_idx CV for downstream sequencing. Inputs include
 // a manual `nudge` gate, a `freeze` latch, and the HYDROGEN-style transport
-// CV row (play_cv + scene1..4_cv) for explicit scene jumps.
+// CV row (play_cv + scene1..4_cv) for explicit scene jumps / slot recall.
 //
 // "Catalyst-controller" idea per the Atlantis-patch plan: a single
 // scheduler-driven orchestrator that nudges the entire ecosystem of a
@@ -83,6 +85,91 @@ interface AtlantisCatalystParams {
   level: number;
 }
 
+/** Persistent scene snapshot stored under `node.data.scenes['1'..'4']`.
+ *  Captures the user-visible state of the brain so a later recall puts the
+ *  patch back into the same "weather" — independently of the PRNG. */
+export interface CatalystScene {
+  driftRate: number;
+  chaos: number;
+  coherence: number;
+  sceneDepth: number;
+  autoMode: number;
+  bias: number;
+  level: number;
+  /** Current value of each of the 8 drift outputs at capture time. */
+  drift: number[];
+}
+
+export type CatalystSceneSlot = '1' | '2' | '3' | '4';
+export type CatalystSceneMap = Partial<Record<CatalystSceneSlot, CatalystScene | null>>;
+
+/** Pure helper: capture current live params + drift values into a Scene. */
+export function captureScene(
+  live: AtlantisCatalystParams,
+  driftValues: readonly number[],
+): CatalystScene {
+  const drift = new Array<number>(NUM_CHANNELS);
+  for (let i = 0; i < NUM_CHANNELS; i++) drift[i] = driftValues[i] ?? 0;
+  return {
+    driftRate: live.driftRate,
+    chaos: live.chaos,
+    coherence: live.coherence,
+    sceneDepth: live.sceneDepth,
+    autoMode: live.autoMode,
+    bias: live.bias,
+    level: live.level,
+    drift,
+  };
+}
+
+/** Pure helper: validate + coerce arbitrary input into a CatalystScene, or
+ *  null if the shape doesn't match. Used to defensively read snapshots that
+ *  came in over Yjs from a remote collaborator. */
+export function coerceScene(raw: unknown): CatalystScene | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const driftRaw = r.drift;
+  if (!Array.isArray(driftRaw)) return null;
+  const drift = new Array<number>(NUM_CHANNELS);
+  for (let i = 0; i < NUM_CHANNELS; i++) {
+    const v = driftRaw[i];
+    drift[i] = typeof v === 'number' ? Math.max(-1, Math.min(1, v)) : 0;
+  }
+  const num = (k: string, fb: number): number => (typeof r[k] === 'number' ? (r[k] as number) : fb);
+  return {
+    driftRate: num('driftRate', DEFAULTS.driftRate),
+    chaos: num('chaos', DEFAULTS.chaos),
+    coherence: num('coherence', DEFAULTS.coherence),
+    sceneDepth: num('sceneDepth', DEFAULTS.sceneDepth),
+    autoMode: num('autoMode', DEFAULTS.autoMode),
+    bias: num('bias', DEFAULTS.bias),
+    level: num('level', DEFAULTS.level),
+    drift,
+  };
+}
+
+/** Pure helper: apply a snapshot. Returns the mutated `live` object (same
+ *  reference, mutated in place) plus the target drift values; caller decides
+ *  how to ramp the audio-rate ConstantSources. */
+export function applyScene(
+  snap: CatalystScene,
+  live: AtlantisCatalystParams,
+): { live: AtlantisCatalystParams; driftTargets: number[] } {
+  live.driftRate = snap.driftRate;
+  live.chaos = snap.chaos;
+  live.coherence = snap.coherence;
+  live.sceneDepth = snap.sceneDepth;
+  live.autoMode = snap.autoMode;
+  live.bias = snap.bias;
+  live.level = snap.level;
+  const driftTargets = new Array<number>(NUM_CHANNELS);
+  for (let i = 0; i < NUM_CHANNELS; i++) {
+    const v = snap.drift[i];
+    driftTargets[i] = typeof v === 'number' ? Math.max(-1, Math.min(1, v)) : 0;
+  }
+  return { live, driftTargets };
+}
+
 const DEFAULTS: AtlantisCatalystParams = {
   driftRate: 0.18,
   chaos: 0.5,
@@ -94,9 +181,11 @@ const DEFAULTS: AtlantisCatalystParams = {
 };
 
 export const atlantisCatalystDef: AudioModuleDef = {
+  // Type id stays `atlantisCatalyst` for back-compat with saved rackspaces;
+  // only the display label flipped to SCENECHANGE.
   type: 'atlantisCatalyst',
   domain: 'audio',
-  label: 'CATALYST',
+  label: 'SCENECHANGE',
   category: 'modulation',
   schemaVersion: 1,
   inputs: [
@@ -204,42 +293,101 @@ export const atlantisCatalystDef: AudioModuleDef = {
 
     // Scheduler state.
     let scene = 0;                    // current scene index 0..3
-    let lastSceneAt = ctx.currentTime; // seconds
     let nextSceneAt = ctx.currentTime + driftRateKnobToMeanScenePeriodS(live.driftRate);
     let frozen = false;
     let scenePulseUntil = 0;          // ctx.currentTime threshold
 
-    function transitionScene(newScene?: number) {
-      const sc = newScene ?? ((scene + 1) % 4);
-      scene = sc;
-      lastSceneAt = ctx.currentTime;
-      // Stagger the next auto-change with jitter ±30%.
-      const mean = driftRateKnobToMeanScenePeriodS(live.driftRate);
-      const jitter = (prng() - 0.5) * 0.6;
-      nextSceneAt = ctx.currentTime + Math.max(MIN_SCENE_S, mean * (1 + jitter));
-      // Compute shared "weather" voltage for this scene.
-      const shared = prng() * 2 - 1;
-      // Ramp every drift output to a fresh target over 2-8 s.
-      const rampS = 2 + prng() * 6;
+    // Ramp every drift ConstantSource to `targets[i]` over `rampS` seconds,
+    // mutating `current[]` to mirror the new state. Shared core of both
+    // transitionScene (stochastic) and recallScene (deterministic).
+    function rampDriftTo(targets: readonly number[], rampS: number) {
+      const now = ctx.currentTime;
       for (let i = 0; i < NUM_CHANNELS; i++) {
-        const target = pickSceneTarget({
-          prng, bias: live.bias, sceneDepth: live.sceneDepth,
-          coherence: live.coherence, shared, current: current[i]!,
-        });
-        const now = ctx.currentTime;
+        const tgt = Math.max(-1, Math.min(1, targets[i] ?? 0));
         driftSrcs[i]!.offset.cancelScheduledValues(now);
         driftSrcs[i]!.offset.setValueAtTime(current[i]!, now);
-        driftSrcs[i]!.offset.linearRampToValueAtTime(target, now + rampS);
-        current[i] = target;
+        driftSrcs[i]!.offset.linearRampToValueAtTime(tgt, now + rampS);
+        current[i] = tgt;
       }
-      // Scene idx → -1..+1 (4 quantized levels).
+    }
+
+    // Fire scene_pulse + scene_idx for a transition into scene index `sc`.
+    function emitSceneSignals(sc: number) {
+      scene = sc;
       const idx = (scene / 3) * 2 - 1;
       sceneIdxSrc.offset.setValueAtTime(idx, ctx.currentTime);
-      // Fire a scene pulse (50 ms gate).
       scenePulseSrc.offset.cancelScheduledValues(ctx.currentTime);
       scenePulseSrc.offset.setValueAtTime(1, ctx.currentTime);
       scenePulseSrc.offset.setValueAtTime(0, ctx.currentTime + SCENE_PULSE_MS / 1000);
       scenePulseUntil = ctx.currentTime + SCENE_PULSE_MS / 1000;
+    }
+
+    function transitionScene(newScene?: number) {
+      const sc = newScene ?? ((scene + 1) % 4);
+      // Stagger the next auto-change with jitter ±30%.
+      const mean = driftRateKnobToMeanScenePeriodS(live.driftRate);
+      const jitter = (prng() - 0.5) * 0.6;
+      nextSceneAt = ctx.currentTime + Math.max(MIN_SCENE_S, mean * (1 + jitter));
+      // Compute shared "weather" voltage for this scene + roll fresh targets.
+      const shared = prng() * 2 - 1;
+      const targets: number[] = [];
+      for (let i = 0; i < NUM_CHANNELS; i++) {
+        targets.push(pickSceneTarget({
+          prng, bias: live.bias, sceneDepth: live.sceneDepth,
+          coherence: live.coherence, shared, current: current[i]!,
+        }));
+      }
+      rampDriftTo(targets, 2 + prng() * 6);
+      emitSceneSignals(sc);
+    }
+
+    /** Deterministic recall — apply a saved Scene snapshot to live params
+     *  and ramp the 8 drift outputs to the saved values over ~2s. Does NOT
+     *  consult the PRNG, so the same snapshot always produces the same
+     *  brain state. */
+    function recallScene(sc: number, snap: CatalystScene) {
+      const { driftTargets } = applyScene(snap, live);
+      // Update audio-rate gain to match the recalled level.
+      for (const g of driftGains) g.gain.setTargetAtTime(live.level, ctx.currentTime, 0.05);
+      // Mirror live.* back to patch.params so the UI faders snap to the
+      // recalled values (and remote rack-mates see the change).
+      const t = livePatch.nodes[node.id];
+      if (t) {
+        const p = t.params as Record<string, number>;
+        p.driftRate = live.driftRate;
+        p.chaos = live.chaos;
+        p.coherence = live.coherence;
+        p.sceneDepth = live.sceneDepth;
+        p.autoMode = live.autoMode;
+        p.bias = live.bias;
+        p.level = live.level;
+      }
+      rampDriftTo(driftTargets, 2);
+      // Re-arm the auto-mode timer with the (possibly recalled) drift rate.
+      const mean = driftRateKnobToMeanScenePeriodS(live.driftRate);
+      nextSceneAt = ctx.currentTime + mean;
+      emitSceneSignals(sc);
+    }
+
+    /** Read `node.data.scenes[slot]` (1..4) and return a coerced Scene, or
+     *  null if the slot is empty / malformed. */
+    function readSavedScene(slot: number): CatalystScene | null {
+      const t = livePatch.nodes[node.id];
+      if (!t) return null;
+      const scenes = (t.data as { scenes?: Record<string, unknown> } | undefined)?.scenes;
+      if (!scenes) return null;
+      const key = String(slot) as CatalystSceneSlot;
+      return coerceScene(scenes[key]);
+    }
+
+    /** Recall slot N if saved; otherwise fall back to a stochastic
+     *  transition into scene index N (back-compat with the old behavior
+     *  the Atlantis example patch expects). */
+    function jumpToScene(slotOneIndexed: number) {
+      const sc = Math.max(0, Math.min(3, slotOneIndexed - 1));
+      const snap = readSavedScene(slotOneIndexed);
+      if (snap) recallScene(sc, snap);
+      else transitionScene(sc);
     }
 
     let lastUiSceneJump = 0;
@@ -261,7 +409,7 @@ export const atlantisCatalystDef: AudioModuleDef = {
         // here once observed so a re-click re-fires.
         if (typeof np.uiSceneJump === 'number' && np.uiSceneJump !== 0 && np.uiSceneJump !== lastUiSceneJump) {
           lastUiSceneJump = np.uiSceneJump;
-          if (!frozen) transitionScene(Math.max(0, Math.min(3, np.uiSceneJump - 1)));
+          if (!frozen) jumpToScene(np.uiSceneJump);
           // Clear the marker so a future identical value still fires.
           if (livePatch.nodes[node.id]) {
             (livePatch.nodes[node.id]!.params as Record<string, number>).uiSceneJump = 0;
@@ -289,13 +437,15 @@ export const atlantisCatalystDef: AudioModuleDef = {
         return;
       }
 
-      // Scene CV row → explicit scene jumps.
+      // Scene CV row → recall slot N if saved; otherwise stochastic
+      // transition into scene N (back-compat with the Atlantis demo, which
+      // expects gates here to fire scene-changes).
       const ev = transport.drain(TICK_MS / 1000);
       if (!frozen) {
-        if (ev.queue1 > 0) { transitionScene(0); return; }
-        if (ev.queue2 > 0) { transitionScene(1); return; }
-        if (ev.queue3 > 0) { transitionScene(2); return; }
-        if (ev.queue4 > 0) { transitionScene(3); return; }
+        if (ev.queue1 > 0) { jumpToScene(1); return; }
+        if (ev.queue2 > 0) { jumpToScene(2); return; }
+        if (ev.queue3 > 0) { jumpToScene(3); return; }
+        if (ev.queue4 > 0) { jumpToScene(4); return; }
       }
 
       // Auto-mode timer.
