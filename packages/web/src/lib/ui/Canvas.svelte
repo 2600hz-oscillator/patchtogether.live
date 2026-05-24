@@ -745,7 +745,7 @@
   /** Visit Atlantis — load the big generative Schrader-inspired demo
    *  patch from packages/web/src/lib/ui/example-patches/atlantis.ts.
    *  Mirrors loadExample()'s ensureEngine → ydoc.transact → reconcile
-   *  shape; the patch spawns CATALYST in autoMode so the ecosystem
+   *  shape; the patch spawns SCENECHANGE in autoMode so the ecosystem
    *  starts drifting on its own immediately. */
   async function loadAtlantis() {
     error = null;
@@ -784,7 +784,7 @@
       });
       trace('Atlantis patch in store; reconciler instantiating');
       await reconciler?.reconcile();
-      trace('Atlantis live — catalyst drifting');
+      trace('Atlantis live — scenechange drifting');
     } catch (err) {
       console.error(err);
       error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -3164,7 +3164,7 @@
         onclick={loadAtlantis}
         disabled={booting}
         class="primary atlantis"
-        title="Generative demo patch — large self-evolving ecosystem (Schrader-inspired). Catalyst drifts on its own; nudge the brain or jump scenes from its card."
+        title="Generative demo patch — large self-evolving ecosystem (Schrader-inspired). SCENECHANGE drifts on its own; nudge the brain or recall scenes from its card."
         data-testid="visit-atlantis-btn"
       >
         {booting ? 'Loading…' : 'Visit Atlantis'}

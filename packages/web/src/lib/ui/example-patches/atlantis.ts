@@ -6,7 +6,7 @@
 // "Visit Atlantis" button.
 //
 // Architecture (left → right):
-//   1. CLOCK + CATALYST + 2× BUGGLES — the modulation/scene brain
+//   1. CLOCK + SCENECHANGE + 2× BUGGLES — the modulation/scene brain
 //   2. STAGES + UNI + ALM — CV-math fan-out
 //   3. SLEWSWITCH — routes BUGGLES through 4 rotating destinations
 //   4. SWOLEVCO + MACROOSCILLATOR + RINGS×2 + NOISE — voice bank
@@ -15,9 +15,9 @@
 //   7. VEILS + BLADES + CLOUDS + SHIMMERSHINE + CLOUDSEED — texture stack
 //   8. AUDIOOUT
 //
-// Listener experience on load: CATALYST starts auto-drifting immediately
+// Listener experience on load: SCENECHANGE starts auto-drifting immediately
 // (autoMode=1, drift period ~20-30s); BUGGLES bursts hit WARRENSPECTRUM
-// ping ports → AQUATANK matrix sprays metallic resonance; CATALYST scene
+// ping ports → AQUATANK matrix sprays metallic resonance; SCENECHANGE scene
 // changes nudge every voice's character every ~25s; CLOUDS + CLOUDSEED's
 // DARK_PLATE (DIVINE INSPIRATION) preset hold the room sound.
 
@@ -82,7 +82,7 @@ export const ATLANTIS_WIRES: readonly AtlantisWire[] = [
   { src: 'at-clock', srcPort: '1/2',  dst: 'at-stages', dstPort: 'trig',       cable: 'gate' },
   { src: 'at-clock', srcPort: '1/4',  dst: 'at-slew',   dstPort: 'step_clock', cable: 'gate' },
 
-  // ───────── CATALYST drift → ecosystem (slow drift through everything) ─────────
+  // ───────── SCENECHANGE drift → ecosystem (slow drift through everything) ─────────
   { src: 'at-cat',   srcPort: 'drift1', dst: 'at-warren', dstPort: 'root_cv',     cable: 'cv' },
   { src: 'at-cat',   srcPort: 'drift2', dst: 'at-warren', dstPort: 'spread_cv',   cable: 'cv' },
   { src: 'at-cat',   srcPort: 'drift3', dst: 'at-clouds', dstPort: 'position_cv', cable: 'cv' },
