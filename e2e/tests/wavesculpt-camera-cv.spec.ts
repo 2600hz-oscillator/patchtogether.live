@@ -25,7 +25,17 @@ const CAMERA_PORTS = ['pos_x', 'pos_y', 'pos_z', 'zoom', 'rot'] as const;
 type CameraPort = (typeof CAMERA_PORTS)[number];
 
 /** Spawn an LFO patched to WAVESCULPT.<port>. Returns once both
- *  cards are on canvas + the edge is in the graph. */
+ *  cards are on canvas + the edge is in the graph.
+ *
+ *  Critical rate-vs-window-size invariant: the LFO must NOT complete
+ *  exactly N full cycles within the histogram-comparison window or
+ *  the camera returns to the start position and the two snapshots
+ *  alias to the same frame (the original flake — default 1 Hz LFO ×
+ *  1000 ms wait = 1 full cycle = identical-looking histograms even
+ *  though the LFO was definitely modulating). LFO_RATE_HZ + the
+ *  test's per-window timings (see below) are coupled — keep them
+ *  in sync. */
+const LFO_RATE_HZ = 0.5;
 async function spawnLfoIntoCamera(page: Page, port: CameraPort): Promise<void> {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
@@ -45,6 +55,16 @@ async function spawnLfoIntoCamera(page: Page, port: CameraPort): Promise<void> {
       },
     ],
   );
+  // Pin the LFO rate so the histogram-window math is deterministic —
+  // see LFO_RATE_HZ comment. Mutating params.rate flows through the
+  // reconciler → engine.setParam → worklet AudioParam.
+  await page.evaluate((hz) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { params: Record<string, number> }> };
+    };
+    const lfo = w.__patch.nodes.lfo;
+    if (lfo) lfo.params.rate = hz;
+  }, LFO_RATE_HZ);
   // Settle a beat so the LFO starts emitting + the engine's paramTap
   // analyser captures non-zero samples.
   await page.waitForTimeout(400);
@@ -166,9 +186,12 @@ test.describe('WAVESCULPT: camera-CV pipeline — engine sees combined (knob + C
   for (const port of CAMERA_PORTS) {
     test(`LFO → WAVESCULPT.${port}: engine.readParam moves over a 1s LFO sweep`, async ({ page }) => {
       await spawnLfoIntoCamera(page, port);
-      // LFO default rate ≈ 1 Hz → over ~800 ms we should see a
-      // non-trivial sweep of the combined value. Sample every 100 ms
-      // for 8 samples; assert standard deviation > threshold.
+      // LFO is pinned to LFO_RATE_HZ (0.5 Hz) by spawnLfoIntoCamera —
+      // so over ~800 ms we see ~40 % of one sine cycle, plenty of
+      // variance for the stddev check below. (The viewport-histogram
+      // test below also depends on this rate — see the why-half-period
+      // comment there.) Sample every 100 ms for 8 samples; assert
+      // standard deviation > threshold.
       const series = await readEngineParamSeries(page, 'ws', port, 8, 100);
       const mean = series.reduce((a, b) => a + b, 0) / series.length;
       const variance = series.reduce((s, v) => s + (v - mean) * (v - mean), 0) / series.length;
@@ -206,17 +229,70 @@ test.describe('WAVESCULPT: camera-CV pipeline — WebGL viewport reflects the li
         })
         .toBeGreaterThan(0);
 
-      // Use the busiest of 5 rAF-spaced frames to dodge the
-      // fill-but-pre-draw race window (see busiestHistogram comment).
-      const h1 = await busiestHistogram(page);
-      expect(h1.length, 'first histogram captured').toBe(8);
-      // Wait one full LFO period (~1s at default 1Hz) — the camera
-      // should sweep enough that the ribbon positions / colours / sizes
-      // shift noticeably.
-      await page.waitForTimeout(1000);
-      const h2 = await busiestHistogram(page);
-      expect(h2.length, 'second histogram captured').toBe(8);
-      const dist = histogramDistance(h1, h2);
+      // Sample N histograms across a full half-period of the LFO.
+      //
+      // Why a half-period: at LFO_RATE_HZ=0.5Hz, the LFO completes
+      // one full sine cycle every 2000 ms — so over a 1000 ms window
+      // the camera sweeps from one extreme through the center to the
+      // OPPOSITE extreme. Crucially, the start + end of the window
+      // are at distinct LFO phases (0° vs 180°) → distinct camera
+      // positions → distinct visual frames. The original flake was
+      // a 1000 ms window at default 1Hz LFO: that's a FULL cycle, so
+      // camera returns to the start and the two endpoint histograms
+      // alias to the same frame even though modulation was active.
+      //
+      // Why N samples (not just 2 endpoints): WAVESCULPT's render is
+      // animated independent of the camera (boltPhase, wavePhase, the
+      // BENTBOX post-pass feedback chain), so an individual rAF can
+      // land on a frame where ribbons happen to be obscured by the
+      // post-pass cycle. Taking the MAX L1 over all pairs of N samples
+      // means we only need any single pair to show motion — robust to
+      // single-frame coincidence.
+      const SAMPLE_COUNT = 5;
+      const WINDOW_MS = 1000;
+      const GAP_MS = Math.floor(WINDOW_MS / (SAMPLE_COUNT - 1));
+      const hists: number[][] = [];
+      const camValues: number[] = [];
+      for (let i = 0; i < SAMPLE_COUNT; i++) {
+        // Capture engine.readParam side-by-side with histogram so we
+        // can prove the camera *was* actually changing even if the
+        // histogram metric is too coarse to register it.
+        const camVal = await readEngineParam(page, 'ws', port);
+        camValues.push(camVal ?? 0);
+        hists.push(await busiestHistogram(page));
+        if (i < SAMPLE_COUNT - 1) await page.waitForTimeout(GAP_MS);
+      }
+      for (const h of hists) {
+        expect(h.length, 'histogram captured').toBe(8);
+      }
+
+      // Sanity check #1: the LFO *was* reaching the engine during the
+      // window. If camera values are flat, the LFO is broken and the
+      // visual-histogram check below would be testing the wrong thing.
+      const camMean = camValues.reduce((a, b) => a + b, 0) / camValues.length;
+      const camStddev = Math.sqrt(
+        camValues.reduce((s, v) => s + (v - camMean) * (v - camMean), 0) / camValues.length,
+      );
+      expect(
+        camStddev,
+        `${port} engine.readParam stddev across the histogram window = ${camStddev.toFixed(4)} (cam samples: ${camValues.map((v) => v.toFixed(3)).join(', ')}) — LFO must reach the engine for the histogram check to be meaningful`,
+      ).toBeGreaterThan(0.05);
+
+      // Find the max L1 across all pairs of histograms. The two
+      // furthest-apart camera positions in the window define the
+      // pair with the strongest expected histogram delta; we take
+      // the max so single-frame post-pass noise can't suppress it.
+      let maxDist = 0;
+      let bestPair: [number, number] = [0, 0];
+      for (let i = 0; i < hists.length; i++) {
+        for (let j = i + 1; j < hists.length; j++) {
+          const d = histogramDistance(hists[i]!, hists[j]!);
+          if (d > maxDist) {
+            maxDist = d;
+            bestPair = [i, j];
+          }
+        }
+      }
       // Pre-fix: WebGL camera read node.params.pos_x (static knob);
       // ribbons still animated via traveling-wave phase but the
       // L1 luminance-histogram distance was typically < 2 pixels.
@@ -245,8 +321,8 @@ test.describe('WAVESCULPT: camera-CV pipeline — WebGL viewport reflects the li
       };
       const threshold = PER_AXIS_THRESHOLD[port];
       expect(
-        dist,
-        `${port} viewport histogram L1 = ${dist} after 1s of LFO modulation (threshold ${threshold}; h1=[${h1.join(',')}] h2=[${h2.join(',')}])`,
+        maxDist,
+        `${port} viewport max-pair-L1 = ${maxDist} (best pair indices ${bestPair[0]} vs ${bestPair[1]}; threshold ${threshold}; histograms: ${hists.map((h, idx) => `[${idx}]=[${h.join(',')}]`).join(' ')} cam: ${camValues.map((v) => v.toFixed(3)).join(', ')})`,
       ).toBeGreaterThan(threshold);
     });
   }
