@@ -141,6 +141,12 @@ test.describe('per-module: output-alive smoke', () => {
     }
 
     test(`${mod.type} audio output (${outputPort}) emits signal when driven`, async ({ page }) => {
+      // DOOM cold-start (WASM init + 4 MB WAD fetch + emscripten module
+      // instantiate + WAD parse + first SFX path) routinely exceeds the
+      // 30s default per-test budget on CI runners. The default is fine
+      // for every other module — bump only for DOOM.
+      if (mod.type === 'doom') test.setTimeout(90_000);
+
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
       page.on('console', (m) => {
