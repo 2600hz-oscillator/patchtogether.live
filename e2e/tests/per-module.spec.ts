@@ -73,11 +73,10 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // slice-8 work (i_sdlsound.c port + AudioWorklet wiring). Until
   // then audio_l reads 0. The cross-domain bridge itself is verified
   // by engine-video-audio-bridge.test.ts; module def shape by
-  // doom.test.ts; runtime semantics by the multi-tab Playwright e2e
-  // (deferred). Also: the WASM blob requires emcc on the deploy
-  // runner — until that CI step lands, even the video output is the
-  // "DOOM WASM not built" overlay rather than gameplay.
-  doom: 'audio is slice-8 (silent until i_sdlsound port lands); WASM build pending in CI',
+  // doom.test.ts; runtime semantics by doom-wasm.spec.ts (canvas-pixel
+  // variance over time). The WASM blob is built in CI by the "Build
+  // DOOM WASM (emcc)" step — see .github/workflows/ci.yml.
+  doom: 'audio is slice-8 (silent until i_sdlsound port lands); video coverage in doom-wasm.spec.ts',
 };
 
 // Reference list of modules that can't spawn under bare spawnPatch —

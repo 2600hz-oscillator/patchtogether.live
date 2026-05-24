@@ -102,8 +102,21 @@ void DG_DrawFrame() {
 }
 
 void DG_SleepMs(uint32_t ms) {
-  // We don't really sleep — the JS loop drives ticks at video frame rate.
-  (void)ms;
+  // We can't actually block the JS thread — there's no syscall sleep
+  // available from inside WASM. But doomgeneric's TryRunTics() spins
+  // on I_Sleep(1) while waiting for the simulated wall-clock to
+  // advance past the next tic boundary (see d_loop.c:784). With a
+  // strictly-zero clock advance, that loop never exits and dgpt_init
+  // hangs the whole browser tab during the WASM init path.
+  //
+  // The pragmatic fix: bump the virtual clock by `ms` here so that
+  // `I_GetTime()` increases inside the spin loop and the wait exits
+  // naturally. Net effect during init is the same as a real sleep
+  // would have produced — wall-clock advances ~1 ms per spin — minus
+  // the actual real-time delay, which we don't want anyway (we'd
+  // rather complete init promptly and let the JS-driven dgpt_tick
+  // drive subsequent frames at video rate).
+  s_ms_now += ms;
 }
 
 uint32_t DG_GetTicksMs() {

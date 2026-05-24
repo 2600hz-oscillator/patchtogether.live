@@ -24,16 +24,20 @@ your local copy won't accidentally land it in version control.
 The file is freely redistributable under id Software's original shareware
 license. Convenient sources:
 
-- doomgeneric upstream repo ships it as part of test fixtures:
-  <https://github.com/ozkl/doomgeneric/raw/master/doom1.wad>
-- The DOOM Wiki shareware page links to current mirrors:
+- Slitaz package mirror (verified 200 OK + correct SHA-1 2026-05; this is
+  what CI pulls from in `.github/workflows/ci.yml`):
+  <https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad>
+- The DOOM Wiki shareware page links to additional mirrors:
   <https://doomwiki.org/wiki/Shareware>
+
+Note: the doomgeneric upstream raw URL (`github.com/ozkl/doomgeneric/raw/master/doom1.wad`)
+used to host the file but currently 404s.
 
 `curl` one-liner (paste at the repo root):
 
 ```bash
 curl -L -o packages/web/static/doom/DOOM1.WAD \
-  https://github.com/ozkl/doomgeneric/raw/master/doom1.wad
+  https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
 ```
 
 Verify with `shasum -a 1 packages/web/static/doom/DOOM1.WAD` —
