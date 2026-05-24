@@ -353,7 +353,17 @@ type StandardModuleType =
   // controlled camera (XY joystick + height + zoom) renders a view of
   // the scene. Audio output is the distance-attenuated sum of all four
   // voices (stereo). Final video pass: BENTBOX-style CRT.
-  | 'wavesculpt';
+  | 'wavesculpt'
+  // ATLANTIS-PATCH support trio. Each is general-purpose; together they
+  // make Schrader-style self-evolving "ecosystem" patches tractable.
+  // SLEWSWITCH — quad slew limiter + 4→1 sequential CV switch.
+  | 'slewSwitch'
+  // ATLANTISCATALYST — 8 correlated random-walk CV outputs + scene pulse
+  // / scene index, with HYDROGEN-style transport CV for explicit jumps.
+  | 'atlantisCatalyst'
+  // AQUATANK — 4-channel Hadamard FDN feedback matrix; the metallic /
+  // aquatic resonance engine the demo patch hangs off of.
+  | 'aquaTank';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

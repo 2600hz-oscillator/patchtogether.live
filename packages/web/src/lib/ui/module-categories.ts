@@ -109,9 +109,13 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   joystick: { top: 'Audio modules', sub: 'Utility' },
   gamepad:  { top: 'Audio modules', sub: 'Utility' },
   numpadPlus: { top: 'Audio modules', sub: 'Utility' },
+  // ATLANTIS-PATCH support trio — see graph/types.ts for the full notes.
+  slewSwitch: { top: 'Audio modules', sub: 'Utility' },
+  atlantisCatalyst: { top: 'Audio modules', sub: 'Utility' },
 
   // ───────── Audio modules → Effects ─────────
   filter: { top: 'Audio modules', sub: 'Effects' },
+  aquaTank: { top: 'Audio modules', sub: 'Effects' },
   reverb: { top: 'Audio modules', sub: 'Effects' },
   delay: { top: 'Audio modules', sub: 'Effects' },
   // cloudseed → moved to Ports/Ports (PR #226).

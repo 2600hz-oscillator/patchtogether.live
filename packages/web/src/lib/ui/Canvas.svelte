@@ -171,6 +171,11 @@
   import NumpadPlusCard from '$lib/ui/modules/NumpadPlusCard.svelte';
   // WAVESCULPT — hybrid 4-osc synth (audio + 3D ribbon video).
   import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
+  // ATLANTIS-PATCH support trio. Each is general-purpose; together they
+  // power the Visit Atlantis demo (loadAtlantis() below).
+  import SlewSwitchCard from '$lib/ui/modules/SlewSwitchCard.svelte';
+  import AtlantisCatalystCard from '$lib/ui/modules/AtlantisCatalystCard.svelte';
+  import AquaTankCard from '$lib/ui/modules/AquaTankCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -352,6 +357,9 @@
     gamepad: GamepadCard,
     numpadPlus: NumpadPlusCard,
     wavesculpt: WavesculptCard,
+    slewSwitch: SlewSwitchCard,
+    atlantisCatalyst: AtlantisCatalystCard,
+    aquaTank: AquaTankCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
@@ -706,6 +714,57 @@
       trace('voice demo in store; reconciler instantiating');
       await reconciler?.reconcile();
       trace('voice demo live — sequencer playing 8-note motif');
+    } catch (err) {
+      console.error(err);
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    } finally {
+      booting = false;
+    }
+  }
+
+  /** Visit Atlantis — load the big generative Schrader-inspired demo
+   *  patch from packages/web/src/lib/ui/example-patches/atlantis.ts.
+   *  Mirrors loadExample()'s ensureEngine → ydoc.transact → reconcile
+   *  shape; the patch spawns CATALYST in autoMode so the ecosystem
+   *  starts drifting on its own immediately. */
+  async function loadAtlantis() {
+    error = null;
+    booting = true;
+    try {
+      await ensureEngine();
+      const { ATLANTIS_NODES, ATLANTIS_WIRES, atlantisEdgeId } =
+        await import('$lib/ui/example-patches/atlantis');
+      ydoc.transact(() => {
+        for (const [id, n] of Object.entries(ATLANTIS_NODES)) {
+          if (!patch.nodes[id]) {
+            const autoName = nextDefaultName(patch.nodes, n.type);
+            const data = { ...(n.data ?? {}), name: autoName };
+            patch.nodes[id] = {
+              id,
+              type: n.type,
+              domain: 'audio',
+              position: n.position,
+              params: n.params,
+              data,
+            };
+          }
+        }
+        for (const w of ATLANTIS_WIRES) {
+          const id = atlantisEdgeId(w);
+          if (!patch.edges[id]) {
+            patch.edges[id] = {
+              id,
+              source: { nodeId: w.src, portId: w.srcPort },
+              target: { nodeId: w.dst, portId: w.dstPort },
+              sourceType: w.cable,
+              targetType: w.cable,
+            };
+          }
+        }
+      });
+      trace('Atlantis patch in store; reconciler instantiating');
+      await reconciler?.reconcile();
+      trace('Atlantis live — catalyst drifting');
     } catch (err) {
       console.error(err);
       error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -3082,6 +3141,15 @@
         {booting ? 'Loading…' : 'Load example'}
       </button>
       <button
+        onclick={loadAtlantis}
+        disabled={booting}
+        class="primary atlantis"
+        title="Generative demo patch — large self-evolving ecosystem (Schrader-inspired). Catalyst drifts on its own; nudge the brain or jump scenes from its card."
+        data-testid="visit-atlantis-btn"
+      >
+        {booting ? 'Loading…' : 'Visit Atlantis'}
+      </button>
+      <button
         onclick={savePatch}
         disabled={nodeCount === 0}
         title="Download a .imp.json backup of this rack (auto-save to your account already runs while you edit; this button gives you a portable file)."
@@ -3373,6 +3441,18 @@
     background: var(--cable-audio);
     color: #1a1d23;
     border-color: var(--cable-audio);
+  }
+  /* Atlantis = generative demo — distinct deep-aquatic styling so users
+     read it as "this is the big one" vs the simpler Load-example. */
+  .topbar button.primary.atlantis {
+    background: linear-gradient(135deg, #2c5b8f 0%, #1b3252 100%);
+    color: #c5e3ff;
+    border-color: #4a7daa;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  }
+  .topbar button.primary.atlantis:hover:not(:disabled) {
+    background: linear-gradient(135deg, #3a6ea8 0%, #25416a 100%);
+    border-color: #6ba0d4;
   }
   .topbar button:disabled {
     opacity: 0.4;

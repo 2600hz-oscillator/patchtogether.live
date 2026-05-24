@@ -171,6 +171,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // animation that animates whether the sequence is running or not.
   // Functional coverage via the e2e spec; pinning baselines pending.
   numpadPlus: 'live step-highlight box + REC ARM animation defeat deterministic capture; unit + E2E provide coverage',
+  // ATLANTIS-PATCH support trio. VRT baselines pending; the demo
+  // patch itself is the integration test.
+  slewSwitch: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit + Atlantis-patch E2E provide coverage',
+  atlantisCatalyst: 'card has a live scene-countdown + pulsing NUDGE button; capture is non-deterministic. Unit covers the def + pure helpers; Atlantis E2E covers the wired-up patch',
+  aquaTank: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit covers def shape, Atlantis-patch E2E covers the wired-up FDN',
   // WAVESCULPT first-slice PR: animated 3D render + CRT feedback means a
   // single-frame pixel baseline can't match between runs.
   wavesculpt: 'animated 3D ribbon render + CRT frame-feedback defeats deterministic capture; unit + E2E provide coverage',

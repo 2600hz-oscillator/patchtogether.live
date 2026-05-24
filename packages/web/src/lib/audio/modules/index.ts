@@ -63,6 +63,12 @@ import { joystickDef } from './joystick';
 import { gamepadDef } from './gamepad';
 import { numpadPlusDef } from './numpad-plus';
 import { wavesculptDef } from './wavesculpt';
+// ATLANTIS-PATCH support trio (slew limiter / switch, slow-drift macro brain,
+// 4-channel feedback matrix). General-purpose modules — the Atlantis demo
+// patch uses them together but each is useful on its own.
+import { slewSwitchDef } from './slewswitch';
+import { atlantisCatalystDef } from './atlantis-catalyst';
+import { aquaTankDef } from './aquatank';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -138,6 +144,12 @@ export function registerAudioModules(): void {
   // WAVESCULPT — 4-oscillator hybrid synth: stereo audio output + 3D
   // ribbon video render with embedded BENTBOX-style CRT post-process.
   registerModule(wavesculptDef);
+  // SLEWSWITCH — quad slew limiter + 4→1 sequential CV switch.
+  registerModule(slewSwitchDef);
+  // ATLANTISCATALYST — 8-output slow-drift macro brain + scene transport.
+  registerModule(atlantisCatalystDef);
+  // AQUATANK — 4-channel Hadamard FDN feedback matrix (metallic resonance).
+  registerModule(aquaTankDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
