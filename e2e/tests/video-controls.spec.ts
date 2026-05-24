@@ -237,12 +237,18 @@ test.describe('video controls drive output', () => {
     ).toBe(true);
   });
 
-  test('CHROMA threshold knob changes pixel pattern', async ({ page }) => {
+  test('CHROMA invert knob changes pixel pattern', async ({ page }) => {
+    // v2 HSV keyer: LINES outputs grey (white-on-black), saturation ≈ 0
+    // everywhere, so the keyer's sat-gate correctly keeps the mask at 1
+    // regardless of threshold — testing threshold here would give a
+    // false-positive failure. INVERT is a 0/1 toggle that flips the whole
+    // mask uniformly, so it produces a guaranteed visible delta on any
+    // source, proving the CV→uniform pipeline is wired end-to-end.
     await spawnPatch(
       page,
       [
         { id: 'v-lines',  type: 'lines',    position: { x: 40, y: 60 },   domain: 'video' },
-        { id: 'v-chroma', type: 'chroma',   position: { x: 320, y: 60 },  domain: 'video', params: { keyR: 1.0, keyG: 1.0, keyB: 1.0, threshold: 0.0, softness: 0.05 } },
+        { id: 'v-chroma', type: 'chroma',   position: { x: 320, y: 60 },  domain: 'video', params: { keyR: 1.0, keyG: 1.0, keyB: 1.0, threshold: 0.2, softness: 0.05, invert: 0 } },
         { id: 'v-out',    type: 'videoOut', position: { x: 700, y: 60 },  domain: 'video' },
       ],
       [
@@ -254,13 +260,13 @@ test.describe('video controls drive output', () => {
     await page.waitForTimeout(500);
     const before = (await readCanvasStats(canvas))!;
 
-    await setNodeParam(page, 'v-chroma', 'threshold', 1.0);
+    await setNodeParam(page, 'v-chroma', 'invert', 1);
     await page.waitForTimeout(500);
     const after = (await readCanvasStats(canvas))!;
 
     expect(
       statsDiffer(before, after),
-      `CHROMA threshold 0→1: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `CHROMA invert 0→1: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
     ).toBe(true);
   });
 
