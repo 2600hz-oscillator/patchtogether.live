@@ -392,7 +392,6 @@
   data-control-style={useSprite ? 'sprite' : 'css'}
   onpointerenter={() => (hovering = true)}
   onpointerleave={() => (hovering = false)}
-  oncontextmenu={openContextMenu}
   role="presentation"
 >
   {#if dragging || hovering}
@@ -407,6 +406,7 @@
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={liveValue}
+      oncontextmenu={openContextMenu}
       onpointerdown={pointerdown}
       onpointermove={pointermove}
       onpointerup={pointerup}
