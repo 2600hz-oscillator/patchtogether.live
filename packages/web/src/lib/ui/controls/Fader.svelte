@@ -13,10 +13,20 @@
   // patching an LFO to a parameter visibly wiggles the fader. While the user
   // is actively dragging, drag input wins.
   import type { KnobCurve } from '$lib/graph/types';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import WaveformGlyph from './WaveformGlyph.svelte';
   import { skinStore } from '$lib/ui/skins/skin-store.svelte';
   import { createDragCommit } from './drag-commit';
+  import ControlContextMenu from './ControlContextMenu.svelte';
+  import {
+    beginLearn,
+    cancelLearn,
+    registerSetter,
+    unregisterSetter,
+    getBinding,
+    clearBinding,
+    learnSpecRune,
+  } from '$lib/midi/midi-learn.svelte';
 
   /** A single inline glyph anchored at a normalized [0,1] fraction along the
    *  fader track. Used by the LFO-shape sliders to render sine/tri/saw/square
@@ -58,6 +68,11 @@
     /** Optional override for the value-tag text. Useful when the underlying
      *  numeric value is an index into a discrete list (e.g. division ratios). */
     formatValue?: (v: number) => string;
+    /** MIDI Learn — when both moduleId + paramId are set the fader becomes
+     *  right-clickable to bind a MIDI CC. Cards that don't pass these
+     *  silently skip the feature. */
+    moduleId?: string;
+    paramId?: string;
   }
 
   let {
@@ -73,7 +88,65 @@
     glyphs,
     ticks,
     formatValue,
+    moduleId,
+    paramId,
   }: Props = $props();
+
+  // ---------------- MIDI Learn integration ----------------
+  // Track this fader's binding (re-read whenever a learn captures or the
+  // user forgets). A keyed Svelte rune via $derived would be nicest but
+  // midi-learn's bindings map updates via class mutation; we re-poll on
+  // demand and after our own actions.
+  let bindingTick = $state(0);
+  function bumpBindingTick() { bindingTick++; }
+  let binding = $derived.by(() => {
+    void bindingTick; // force re-evaluation on tick bump
+    if (!moduleId || !paramId) return undefined;
+    return getBinding(moduleId, paramId);
+  });
+  let learning = $derived.by(() => {
+    if (!moduleId || !paramId) return false;
+    const ls = learnSpecRune();
+    return !!ls && ls.moduleId === moduleId && ls.paramId === paramId;
+  });
+
+  // Context menu state.
+  let ctxOpen = $state(false);
+  let ctxX = $state(0);
+  let ctxY = $state(0);
+
+  function openContextMenu(e: MouseEvent) {
+    if (!moduleId || !paramId) return; // feature off when not addressable
+    e.preventDefault();
+    e.stopPropagation();
+    ctxX = e.clientX;
+    ctxY = e.clientY;
+    ctxOpen = true;
+  }
+  function onLearnPick() {
+    if (!moduleId || !paramId) return;
+    beginLearn({ moduleId, paramId, min, max, onchange });
+    bumpBindingTick();
+  }
+  function onForgetPick() {
+    if (!moduleId || !paramId) return;
+    clearBinding(moduleId, paramId);
+    bumpBindingTick();
+  }
+
+  // Register / unregister this fader's setter so a binding loaded from
+  // localStorage on cold-start drives the knob as soon as the card mounts.
+  onMount(() => {
+    if (!moduleId || !paramId) return;
+    registerSetter(moduleId, paramId, { min, max, onchange });
+  });
+  onDestroy(() => {
+    if (!moduleId || !paramId) return;
+    unregisterSetter(moduleId, paramId);
+    // If this fader was the in-flight learn target, cancel it so a
+    // re-mount doesn't accidentally capture the next CC.
+    if (learning) cancelLearn();
+  });
 
   // Display value: what the thumb position renders against. Driven by either
   // the user (during drag) or by readLive (when motorized + idle). The
@@ -314,6 +387,8 @@
   class="fader-wrap"
   class:dragging
   class:sprite={useSprite}
+  class:midi-learning={learning}
+  class:midi-bound={!!binding}
   data-control-style={useSprite ? 'sprite' : 'css'}
   onpointerenter={() => (hovering = true)}
   onpointerleave={() => (hovering = false)}
@@ -331,6 +406,7 @@
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={liveValue}
+      oncontextmenu={openContextMenu}
       onpointerdown={pointerdown}
       onpointermove={pointermove}
       onpointerup={pointerup}
@@ -382,7 +458,26 @@
     {/if}
   </div>
   <div class="label">{label}</div>
+  {#if binding}
+    <div class="midi-badge" title="Bound to MIDI Channel {binding.channel + 1}, CC {binding.cc}">
+      CC {binding.cc}
+    </div>
+  {/if}
 </div>
+
+{#if moduleId && paramId}
+  <ControlContextMenu
+    open={ctxOpen}
+    x={ctxX}
+    y={ctxY}
+    title={`${moduleId} · ${label}`}
+    hasBinding={!!binding}
+    bindingLabel={binding ? `CH ${binding.channel + 1} · CC ${binding.cc}` : undefined}
+    onlearn={onLearnPick}
+    onforget={onForgetPick}
+    onclose={() => (ctxOpen = false)}
+  />
+{/if}
 
 <style>
   .fader-wrap {
@@ -492,6 +587,31 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     pointer-events: none;
+  }
+  /* MIDI Learn visual states. */
+  .fader-wrap.midi-learning {
+    outline: 2px solid #f5c248;
+    outline-offset: 2px;
+    border-radius: 4px;
+    animation: midi-learn-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes midi-learn-pulse {
+    0%, 100% { outline-color: rgba(245, 194, 72, 1); }
+    50%      { outline-color: rgba(245, 194, 72, 0.3); }
+  }
+  .midi-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    line-height: 1;
+    padding: 2px 4px;
+    background: rgba(96, 165, 250, 0.18);
+    color: #a8d3ff;
+    border-radius: 2px;
+    pointer-events: none;
+    letter-spacing: 0.02em;
   }
   /* Sprite-mode label — bumps weight + size + applies the skin-supplied
    * silkscreen font (falls back to the inherited stack when unset). */
