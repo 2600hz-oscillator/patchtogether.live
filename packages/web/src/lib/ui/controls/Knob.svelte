@@ -75,6 +75,11 @@
 
   function openContextMenu(e: MouseEvent) {
     if (!moduleId || !paramId) return;
+    // Require Shift modifier — see Fader.svelte for the rationale.
+    // Plain right-click bubbles to the node menu so node-level actions
+    // (Docs / Duplicate / Unpatch all / Delete) still work from any
+    // point on the card.
+    if (!e.shiftKey) return;
     e.preventDefault();
     e.stopPropagation();
     ctxX = e.clientX;
