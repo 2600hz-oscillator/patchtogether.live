@@ -17,6 +17,9 @@ import {
   instrumentParamIds,
   HYDROGEN_INSTRUMENT_COUNT,
   STEP_COUNT,
+  PER_VOICE_CV_SLOTS,
+  perVoiceCvPortId,
+  perVoiceCvParamTarget,
 } from './hydrogen';
 import { TR808_INSTRUMENTS, TR808_INSTRUMENT_COUNT } from './hydrogen-tr808-kit-data';
 import { KITS, KIT_COUNT, DEFAULT_KIT_INDEX, kitByIndex, kitById, allSampleUrls } from './hydrogen-kit-registry';
@@ -43,8 +46,48 @@ describe('hydrogen module def shape', () => {
     for (const inst of TR808_INSTRUMENTS) {
       expect(ids, `trig${inst.id} missing`).toContain(`trig${inst.id}`);
     }
-    // 2 base (clock_in + reset_in) + 6 transport CV + 16 trigs.
-    expect(ids.length).toBe(2 + 6 + HYDROGEN_INSTRUMENT_COUNT);
+    // 2 base (clock_in + reset_in) + 6 transport CV + 16 trigs +
+    // 144 per-voice CV (9 params × 16 voices). See PER_VOICE_CV_SLOTS.
+    expect(ids.length).toBe(
+      2 + 6 + HYDROGEN_INSTRUMENT_COUNT + HYDROGEN_INSTRUMENT_COUNT * PER_VOICE_CV_SLOTS.length,
+    );
+  });
+
+  it('declares 144 per-voice CV inputs (9 params × 16 voices) with matching paramTargets', () => {
+    // Smoke that PER_VOICE_CV_SLOTS itself is the expected shape — if a
+    // refactor adds/removes a slot, this test fails loudly so the
+    // module-manifest synthesizer + the card layout can be updated to
+    // match.
+    expect(PER_VOICE_CV_SLOTS.length).toBe(9);
+    const shorts = PER_VOICE_CV_SLOTS.map((s) => s.short).sort();
+    expect(shorts).toEqual(['a', 'cf', 'd', 'pan', 'pi', 'q', 'r', 's', 'vol']);
+
+    const inputsById = new Map(hydrogenDef.inputs.map((p) => [p.id, p] as const));
+    const paramIds = new Set(hydrogenDef.params.map((p) => p.id));
+
+    for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
+      for (const slot of PER_VOICE_CV_SLOTS) {
+        const portId = perVoiceCvPortId(slot.short, i);
+        const port = inputsById.get(portId);
+        expect(port, `${portId} should exist`).toBeDefined();
+        expect(port?.type, `${portId} should be a cv input`).toBe('cv');
+        const target = perVoiceCvParamTarget(slot.paramPrefix, i);
+        expect(
+          (port as { paramTarget?: string } | undefined)?.paramTarget,
+          `${portId}.paramTarget`,
+        ).toBe(target);
+        expect(paramIds.has(target), `paramTarget ${target} must exist as a param`).toBe(true);
+        const scale = (port as { cvScale?: { mode: string } } | undefined)?.cvScale;
+        expect(scale?.mode, `${portId}.cvScale.mode`).toBe(slot.cvScale);
+      }
+    }
+  });
+
+  it('per-voice CV port ids follow the cv_<short>_<idx> naming convention', () => {
+    expect(perVoiceCvPortId('vol', 0)).toBe('cv_vol_0');
+    expect(perVoiceCvPortId('pi', 15)).toBe('cv_pi_15');
+    expect(perVoiceCvParamTarget('vol', 0)).toBe('vol0');
+    expect(perVoiceCvParamTarget('pitch', 15)).toBe('pitch15');
   });
 
   it('declares stereo audio outputs', () => {

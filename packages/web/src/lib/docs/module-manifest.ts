@@ -797,6 +797,28 @@ function synthesizeFromBuildHelper(
       { id: 'queue4_cv', type: 'gate' },
     ];
     for (let i = 0; i < N; i++) inputs.push({ id: `trig${i}`, type: 'gate' });
+    // Per-voice CV inputs (144 = 9 params × 16 voices). Keep this in
+    // sync with PER_VOICE_CV_SLOTS in hydrogen.ts.
+    const PER_VOICE_CV: ReadonlyArray<{ short: string; paramPrefix: string }> = [
+      { short: 'vol', paramPrefix: 'vol' },
+      { short: 'pan', paramPrefix: 'pan' },
+      { short: 'pi',  paramPrefix: 'pitch' },
+      { short: 'cf',  paramPrefix: 'cutoff' },
+      { short: 'q',   paramPrefix: 'q' },
+      { short: 'a',   paramPrefix: 'A' },
+      { short: 'd',   paramPrefix: 'D' },
+      { short: 's',   paramPrefix: 'S' },
+      { short: 'r',   paramPrefix: 'R' },
+    ];
+    for (let i = 0; i < N; i++) {
+      for (const slot of PER_VOICE_CV) {
+        inputs.push({
+          id: `cv_${slot.short}_${i}`,
+          type: 'cv',
+          paramTarget: `${slot.paramPrefix}${i}`,
+        });
+      }
+    }
     return { inputs, params };
   }
   return null;

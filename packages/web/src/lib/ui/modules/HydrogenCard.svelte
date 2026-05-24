@@ -23,6 +23,8 @@
     defaultTracks,
     coerceTracks,
     STEP_COUNT,
+    PER_VOICE_CV_SLOTS,
+    perVoiceCvPortId,
     type HydrogenTrack,
   } from '$lib/audio/modules/hydrogen';
   import { KITS, KIT_COUNT, DEFAULT_KIT_INDEX, kitByIndex } from '$lib/audio/modules/hydrogen-kit-registry';
@@ -245,7 +247,21 @@
     },
     ...activeKit.instruments.map((inst) => ({
       label: inst.name,
-      inputs: [{ id: `trig${inst.id}`, label: 'TRIG', cable: 'gate' }] as PortDescriptor[],
+      // Each instrument section now hosts its TRIG gate + the 9 per-voice
+      // CV inputs (Vol/Pan/Pi/Cf/Q/A/D/S/R). PatchPanel renders these
+      // collapsed by default and fans them out on click — same pattern
+      // MIXMSTRS uses for its 49-input matrix. With 16 instruments x
+      // 10 inputs each (1 trig + 9 CV), keeping everything in the
+      // sectioned popover is the only layout that doesn't make the
+      // card itself absurdly tall.
+      inputs: [
+        { id: `trig${inst.id}`, label: 'TRIG', cable: 'gate' },
+        ...PER_VOICE_CV_SLOTS.map((slot) => ({
+          id: perVoiceCvPortId(slot.short, inst.id),
+          label: `CV ${slot.short.toUpperCase()}`,
+          cable: 'cv',
+        })),
+      ] as PortDescriptor[],
     })),
   ]);
 </script>
