@@ -3184,7 +3184,9 @@
       >Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
       <SkinSwitcher />
-      <a class="signin-link" href="/dashboard" data-testid="signin-link">Sign in</a>
+      {#if !currentUserId}
+        <a class="signin-link" href="/dashboard" data-testid="signin-link">Sign in</a>
+      {/if}
     </div>
   </header>
 
