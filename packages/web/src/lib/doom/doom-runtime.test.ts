@@ -262,6 +262,47 @@ describe('DoomRuntime — TS shim layer', () => {
     rt.dispose();
     expect(rt.isInitialized()).toBe(false);
   });
+
+  it('hasPlayerMobj returns false before init + reflects the WASM bool after', () => {
+    // Before init.
+    expect(rt.hasPlayerMobj()).toBe(false);
+    // After init: stub returns 0 by default → false.
+    rt.init(new Uint8Array([0]));
+    expect(rt.hasPlayerMobj()).toBe(false);
+    // Switch the stub to return 1 for dgpt_has_player_mobj and re-check.
+    const customStub = makeStubModule();
+    const origCcall = customStub.mod.ccall;
+    customStub.mod.ccall = (name, ret, argTypes, args) => {
+      if (name === 'dgpt_has_player_mobj') return 1;
+      return origCcall.call(customStub.mod, name, ret, argTypes, args);
+    };
+    const r2 = new DoomRuntime(customStub.mod);
+    r2.init(new Uint8Array([0]));
+    expect(r2.hasPlayerMobj()).toBe(true);
+  });
+
+  it('getPlayerState returns null before mobj spawns, struct after', () => {
+    // Before init.
+    expect(rt.getPlayerState()).toBeNull();
+
+    // Custom stub that pretends the mobj exists at (x=1024, y=2048, angle=0xC0000000).
+    const custom = makeStubModule();
+    const orig = custom.mod.ccall;
+    custom.mod.ccall = (name, ret, argTypes, args) => {
+      if (name === 'dgpt_has_player_mobj') return 1;
+      if (name === 'dgpt_get_player_x') return 1024;
+      if (name === 'dgpt_get_player_y') return 2048;
+      if (name === 'dgpt_get_player_angle') return 0xC0000000; // bit 31 set
+      return orig.call(custom.mod, name, ret, argTypes, args);
+    };
+    const r2 = new DoomRuntime(custom.mod);
+    r2.init(new Uint8Array([0]));
+    expect(r2.getPlayerState()).toEqual({
+      x: 1024,
+      y: 2048,
+      angle: 0xC0000000, // verifies unsigned coercion via `>>> 0`
+    });
+  });
 });
 
 // ---------------- Slice-8 PCM pull ----------------

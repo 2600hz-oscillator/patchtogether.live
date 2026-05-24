@@ -1,26 +1,34 @@
 // e2e/tests/doom-keyboard-routing.spec.ts
 //
 // Regression test for the "arrow keys move the DOOM card on the canvas
-// instead of the player in-game" bug. The fix is a window-level capture-
-// phase keydown/keyup listener in DoomCard.svelte that runs BEFORE
-// SvelteFlow's document-level node-keyboard-move handler — when the
-// DOOM card is focused/selected, it preventDefault + stopPropagation +
-// routes the key to the runtime.
+// instead of the player in-game" bug AND the follow-up bug where the
+// arrow keys reached the WASM but were *decoded as KEY_MINUS* (shrinking
+// the in-game viewport) because the patchtogether C shim was masking the
+// doomkey to 7 bits (`& 0x7f`). KEY_UPARROW = 0xad → 0x2d after mask =
+// KEY_MINUS = key_menu_decscreen.
+//
+// The fix lives in two places:
+//   1. DoomCard.svelte — window-level capture-phase keydown/keyup, fires
+//      BEFORE SvelteFlow's document-level node-keyboard-move handler.
+//      This keeps the arrow keys from sliding the card on the canvas.
+//   2. doomgeneric_patchtogether.c — encode the full 8-bit doomkey in
+//      the low byte (not low 7 bits) of the key-queue entry. This keeps
+//      the arrow keys from being mis-decoded as KEY_MINUS inside the
+//      WASM.
 //
 // What this spec asserts (all must hold for a single keypress burst):
 //
-//   1. After spawning DOOM + selecting the card, the card's on-canvas
+//   1. After spawning DOOM + clicking the card, the card's on-canvas
 //      position (the .svelte-flow__node[data-id="v-doom"] CSS transform)
-//      does NOT change when arrow keys are pressed. Before the fix,
-//      SvelteFlow's arrow-key-to-move handler shifted the node by 5px
-//      per press.
-//   2. The visible <canvas data-testid="doom-canvas"> framebuffer DOES
-//      change in the same window — proving the key reached the runtime
-//      and the player actually moved/turned in-game.
-//   3. SvelteFlow's zoom is unchanged (no F11-style viewport shrink).
-//
-// We exercise three arrow keys (Up = move forward, Left/Right = turn)
-// so a single broken mapping doesn't slip through.
+//      does NOT change when arrow keys are pressed.
+//   2. SvelteFlow's viewport zoom/pan is unchanged.
+//   3. **The player's in-game x/y position changes when ArrowUp is held**
+//      (forward movement on E1M1 — verified by reading players[0].mo->y
+//      via dgpt_get_player_y exported from the WASM, NOT by sampling the
+//      framebuffer, which the broken-key bug also changed).
+//   4. **The player's facing angle changes when ArrowLeft / ArrowRight
+//      is held** (left turns increase angle, right turns decrease angle
+//      per DOOM's CCW convention).
 //
 // Cold-start cost: the spec needs the WASM blob + the shareware WAD on
 // the dev server. If either is missing (`/doom/doom.js` 404 or `/doom/
@@ -30,12 +38,20 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-test.describe('DOOM — keyboard routing (arrows reach game, not canvas)', () => {
+interface PlayerState {
+  x: number;
+  y: number;
+  angle: number;
+}
+
+test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', () => {
   // Cold-start WASM init + 4 MB WAD fetch + menu nav + the per-keypress
   // delays add up; bump the per-test budget.
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
 
-  test('arrow keys move the player in-game, not the card on the canvas', async ({ page }) => {
+  test('arrow keys move the player in-game (verified via player.x/y/angle delta)', async ({
+    page,
+  }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
 
     await page.goto('/');
@@ -54,8 +70,7 @@ test.describe('DOOM — keyboard routing (arrows reach game, not canvas)', () =>
     const card = page.locator('[data-testid="doom-card"]');
     await expect(card, 'DOOM card mounts').toHaveCount(1);
 
-    // Boot the runtime via the "Click to load DOOM" overlay button —
-    // same UX path the user takes.
+    // Boot the runtime via the "Click to load DOOM" overlay button.
     const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
     await expect(loadBtn).toBeVisible();
     await loadBtn.click();
@@ -63,124 +78,189 @@ test.describe('DOOM — keyboard routing (arrows reach game, not canvas)', () =>
       timeout: 30_000,
     });
 
-    // Click the card to give it focus + selection. SvelteFlow's
-    // single-click selects the node (adds .selected to the wrapper);
-    // the card's onclick also calls cardEl.focus().
+    // Click to select + focus the card (SF marks it .selected; the card's
+    // onclick handler calls cardEl.focus()).
     await card.click();
     await expect(
       page.locator('.svelte-flow__node[data-id="v-doom"].selected'),
       'card becomes the selected SF node after click',
     ).toHaveCount(1);
 
-    // Navigate the title-screen menu into actual gameplay:
+    // Walk the title-screen menu into actual gameplay:
     //   Enter → exits the demo loop into the main menu
     //   Enter → "New Game"
-    //   Enter → skill picker default ("I'm too young to die" is the
-    //           top entry; the menu highlights it by default)
+    //   Enter → skill picker (default = "I'm too young to die")
     //   Enter → confirms skill, drops us into E1M1
-    //
-    // We sleep a bit between presses so doomgeneric's menu state
-    // machine actually processes the input. The runtime ticks at 35 Hz
-    // (vanilla DOOM PageTic = 1000/35 ms); 250 ms is ~9 tics, plenty.
     for (let i = 0; i < 4; i++) {
       await page.keyboard.press('Enter');
       await page.waitForTimeout(300);
     }
-    // Let the level finish loading + the player view settle.
-    await page.waitForTimeout(1500);
+
+    // Wait for the player mobj to actually spawn into the level (E1M1
+    // loads asynchronously after the skill picker). hasPlayerMobj()
+    // flips true once the player thinker has placed the mobj on the map.
+    await page.waitForFunction(
+      () => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            getDomain?: (d: string) => {
+              read?: (id: string, k: string) => unknown;
+            } | null;
+          } | null;
+        };
+        const ve = w.__engine?.()?.getDomain?.('video');
+        const extras = ve?.read?.('v-doom', 'extras') as {
+          getRuntime?: () => { hasPlayerMobj?: () => boolean } | null;
+        } | undefined;
+        return extras?.getRuntime?.()?.hasPlayerMobj?.() === true;
+      },
+      { timeout: 30_000 },
+    );
+
+    // Helper to snapshot player state from the runtime.
+    async function readPlayerState(): Promise<PlayerState> {
+      const state = await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            getDomain?: (d: string) => {
+              read?: (id: string, k: string) => unknown;
+            } | null;
+          } | null;
+        };
+        const ve = w.__engine?.()?.getDomain?.('video');
+        const extras = ve?.read?.('v-doom', 'extras') as {
+          getRuntime?: () => {
+            getPlayerState?: () => { x: number; y: number; angle: number } | null;
+          } | null;
+        } | undefined;
+        return extras?.getRuntime?.()?.getPlayerState?.() ?? null;
+      });
+      if (!state) throw new Error('runtime.getPlayerState() returned null — no level loaded');
+      return state;
+    }
 
     const nodeWrapper = page.locator('.svelte-flow__node[data-id="v-doom"]');
     const viewport = page.locator('.svelte-flow__viewport');
 
+    // -------- ArrowUp: forward movement --------
+    //
+    // Sample player state before + after holding ArrowUp ~1s. The exact
+    // movement axis (x vs y) depends on the player's spawn-facing angle
+    // on E1M1; the player starts facing east (angle = 0), so forward
+    // movement increments x. We assert |dx| + |dy| > threshold rather
+    // than pinning to a specific axis, so the test isn't fragile to
+    // map-specific spawn angles.
+
     const transformBefore = await readTransform(nodeWrapper);
     const viewportBefore = await readTransform(viewport);
-    const frameBefore = await sampleCanvas(card.locator('[data-testid="doom-canvas"]'));
+    const before = await readPlayerState();
 
-    // Hold ArrowUp for ~1s — move the player forward. Use a hold rather
-    // than discrete presses so the runtime sees a sustained key-down
-    // event (forward movement accumulates per-tic).
     await page.keyboard.down('ArrowUp');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1200);
     await page.keyboard.up('ArrowUp');
-    // Tic out so the framebuffer reflects the up-arrow's last frame.
     await page.waitForTimeout(300);
 
     const transformAfterUp = await readTransform(nodeWrapper);
     const viewportAfterUp = await readTransform(viewport);
-    const frameAfterUp = await sampleCanvas(card.locator('[data-testid="doom-canvas"]'));
+    const afterUp = await readPlayerState();
 
     expect(
       transformAfterUp,
-      `card moved on canvas after ArrowUp — was ${transformBefore}, now ${transformAfterUp}. ` +
-        `SvelteFlow's node-keyboard-move stole the key instead of DOOM consuming it.`,
+      `card moved on canvas after ArrowUp (${transformBefore} → ${transformAfterUp}). ` +
+        `SvelteFlow stole the arrow key instead of DOOM consuming it.`,
     ).toBe(transformBefore);
 
     expect(
       viewportAfterUp,
-      `canvas zoom/pan changed after ArrowUp — was ${viewportBefore}, now ${viewportAfterUp}. ` +
-        `Some part of the canvas chrome (SF pan/zoom shortcut, viewport-shrink, etc.) ` +
-        `received the key instead of DOOM.`,
+      `canvas zoom/pan changed after ArrowUp (${viewportBefore} → ${viewportAfterUp}). ` +
+        `Some part of the canvas chrome received the key.`,
     ).toBe(viewportBefore);
 
-    const upDiff = countDiffBytes(frameBefore, frameAfterUp);
+    const dxUp = Math.abs(afterUp.x - before.x);
+    const dyUp = Math.abs(afterUp.y - before.y);
+    const movedDistance = dxUp + dyUp; // Manhattan distance in fixed-point map units (16.16).
+    // Forward walk speed on Doom's lowest skill is ~25 map units/sec
+    // (the player's forwardmove[0] = 25 with frictionless start). Over
+    // ~1.2 s that's ~30 units → 30 << 16 = ~1.97 M raw fixed-point units.
+    // Threshold of 100,000 fixed-point units (~1.5 map units) is well above
+    // any noise/jitter from the spawn animation but well below real walk.
     expect(
-      upDiff,
-      `ArrowUp produced no framebuffer change (${upDiff} byte diff) — runtime didn't ` +
-        `receive the keypress. Without the capture-phase listener, this is the ` +
-        `failure mode the user reported: card slides on canvas, game never moves.`,
-    ).toBeGreaterThan(500);
+      movedDistance,
+      `ArrowUp produced no player movement (|dx|+|dy| = ${movedDistance} fixed-point units, ` +
+        `before=(${before.x}, ${before.y}), after=(${afterUp.x}, ${afterUp.y})). ` +
+        `The doomkey was either lost en route OR mis-decoded inside the WASM. ` +
+        `Check doomgeneric_patchtogether.c → dgpt_set_key / DG_GetKey: KEY_UPARROW (0xad) ` +
+        `must round-trip the full 8 bits; the original "& 0x7f" mask aliased it to ` +
+        `KEY_MINUS (0x2d) and shrunk the screen instead of moving forward.`,
+    ).toBeGreaterThan(100_000);
 
-    // Now do the same with ArrowLeft + ArrowRight (turn left, turn
-    // right). Same assertions: card on canvas doesn't move, framebuffer
-    // changes (different view direction). The turn-rate threshold is
-    // intentionally lower than the forward-move one: turning rotates the
-    // view a few degrees and only changes a small slice of the visible
-    // framebuffer (the new wall edge that rotated into view + the
-    // status-bar's face direction indicator), whereas forward movement
-    // shifts the entire scene's parallax.
-    //
-    // Sample-pair retry: a single hold-release-sample cycle can race the
-    // rAF blit loop (the card's 2D-canvas mirror updates at 60 Hz; if we
-    // sample right at the end of a key repeat we can catch a frame that
-    // happens to be near-identical to "before"). Retry up to 4× and keep
-    // the largest diff — the goal is "key reached runtime", not exact
-    // pixel-count reproducibility.
-    for (const key of ['ArrowLeft', 'ArrowRight'] as const) {
-      const tBefore = await readTransform(nodeWrapper);
-      const vBefore = await readTransform(viewport);
+    // -------- ArrowLeft: turn left (angle increases per DOOM convention) --------
 
-      let bestDiff = 0;
-      for (let attempt = 0; attempt < 4 && bestDiff < 100; attempt++) {
-        // Re-focus + re-click the card each attempt — if anything stole
-        // focus between iterations (rAF tick repaint, etc.) the selection
-        // class is still on the SF node wrapper but we want to be sure.
-        await card.click();
-        const fBefore = await sampleCanvas(card.locator('[data-testid="doom-canvas"]'));
-        await page.keyboard.down(key);
-        await page.waitForTimeout(1200);
-        await page.keyboard.up(key);
-        await page.waitForTimeout(400);
-        const fAfter = await sampleCanvas(card.locator('[data-testid="doom-canvas"]'));
-        const diff = countDiffBytes(fBefore, fAfter);
-        if (diff > bestDiff) bestDiff = diff;
-      }
+    const beforeL = await readPlayerState();
+    const tBeforeL = await readTransform(nodeWrapper);
+    const vBeforeL = await readTransform(viewport);
+    await page.keyboard.down('ArrowLeft');
+    await page.waitForTimeout(800);
+    await page.keyboard.up('ArrowLeft');
+    await page.waitForTimeout(300);
+    const afterL = await readPlayerState();
+    const tAfterL = await readTransform(nodeWrapper);
+    const vAfterL = await readTransform(viewport);
 
-      const tAfter = await readTransform(nodeWrapper);
-      const vAfter = await readTransform(viewport);
+    expect(tAfterL, `card moved on canvas after ArrowLeft`).toBe(tBeforeL);
+    expect(vAfterL, `canvas zoom changed after ArrowLeft`).toBe(vBeforeL);
 
-      expect(tAfter, `card moved on canvas after ${key}`).toBe(tBefore);
-      expect(vAfter, `canvas zoom changed after ${key}`).toBe(vBefore);
-      // Threshold 100 (vs 500 for ArrowUp): turning produces a tighter
-      // pixel-diff than walking. The point of the assertion is "key
-      // reached runtime" — any non-trivial diff is sufficient signal
-      // (the broken path produces a 0 / single-digit diff because the
-      // framebuffer keeps streaming gameplay but the player neither moves
-      // nor turns).
-      expect(
-        bestDiff,
-        `${key} produced no framebuffer change after 4 attempts (best diff ${bestDiff} bytes) — turn key didn't reach runtime`,
-      ).toBeGreaterThan(100);
-    }
+    // angle is angle_t (uint32 — modular). Use unsigned-mod arithmetic.
+    const angleDeltaL = angleDelta(beforeL.angle, afterL.angle);
+    expect(
+      Math.abs(angleDeltaL),
+      `ArrowLeft produced no facing-angle change (Δangle = ${angleDeltaL}). ` +
+        `before=${beforeL.angle} after=${afterL.angle}`,
+    ).toBeGreaterThan(50_000_000);
+
+    // -------- ArrowRight: turn right (angle decreases) --------
+
+    const beforeR = await readPlayerState();
+    const tBeforeR = await readTransform(nodeWrapper);
+    const vBeforeR = await readTransform(viewport);
+    await page.keyboard.down('ArrowRight');
+    await page.waitForTimeout(800);
+    await page.keyboard.up('ArrowRight');
+    await page.waitForTimeout(300);
+    const afterR = await readPlayerState();
+    const tAfterR = await readTransform(nodeWrapper);
+    const vAfterR = await readTransform(viewport);
+
+    expect(tAfterR, `card moved on canvas after ArrowRight`).toBe(tBeforeR);
+    expect(vAfterR, `canvas zoom changed after ArrowRight`).toBe(vBeforeR);
+
+    const angleDeltaR = angleDelta(beforeR.angle, afterR.angle);
+    expect(
+      Math.abs(angleDeltaR),
+      `ArrowRight produced no facing-angle change (Δangle = ${angleDeltaR}). ` +
+        `before=${beforeR.angle} after=${afterR.angle}`,
+    ).toBeGreaterThan(50_000_000);
+    // Left + right should be opposite directions.
+    expect(
+      Math.sign(angleDeltaL) === -Math.sign(angleDeltaR),
+      `ArrowLeft and ArrowRight should turn in opposite directions ` +
+        `(Δleft=${angleDeltaL} Δright=${angleDeltaR})`,
+    ).toBe(true);
+
+    // -------- ArrowDown: backward movement --------
+
+    const beforeD = await readPlayerState();
+    await page.keyboard.down('ArrowDown');
+    await page.waitForTimeout(800);
+    await page.keyboard.up('ArrowDown');
+    await page.waitForTimeout(300);
+    const afterD = await readPlayerState();
+    const movedDistanceD = Math.abs(afterD.x - beforeD.x) + Math.abs(afterD.y - beforeD.y);
+    expect(
+      movedDistanceD,
+      `ArrowDown produced no player movement (|dx|+|dy| = ${movedDistanceD}). ` +
+        `before=(${beforeD.x}, ${beforeD.y}), after=(${afterD.x}, ${afterD.y}).`,
+    ).toBeGreaterThan(50_000);
   });
 });
 
@@ -211,35 +291,16 @@ async function readTransform(loc: Locator): Promise<string> {
   return await loc.evaluate((el) => (el as HTMLElement).style.transform || '');
 }
 
-interface CanvasFrame {
-  bytes: Uint8Array;
-  width: number;
-  height: number;
-}
-
-async function sampleCanvas(canvasLoc: Locator): Promise<CanvasFrame> {
-  const data = await canvasLoc.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    const img = ctx.getImageData(0, 0, c.width, c.height);
-    return { width: img.width, height: img.height, bytes: Array.from(img.data) };
-  });
-  if (!data) throw new Error('DOOM canvas: getContext("2d") returned null');
-  return {
-    bytes: new Uint8Array(data.bytes),
-    width: data.width,
-    height: data.height,
-  };
-}
-
-function countDiffBytes(a: CanvasFrame, b: CanvasFrame): number {
-  const n = Math.min(a.bytes.length, b.bytes.length);
-  let diff = 0;
-  // Sample every 4th byte (R channel) — skip alpha (always 255 on the
-  // card's 2D blit). This is the same shape doom-wasm.spec.ts uses.
-  for (let i = 0; i < n; i += 4) {
-    if (a.bytes[i] !== b.bytes[i]) diff++;
-  }
-  return diff;
+// DOOM's angle_t is a uint32 representing angle as 2^32 = full rotation.
+// Compute the SHORTEST signed delta (handles wrap-around) so a turn of
+// just-past-zero doesn't show as a near-360° turn.
+function angleDelta(before: number, after: number): number {
+  // Both inputs are in [0, 2^32). JS bitwise ops would force into 32-bit
+  // signed; use plain modular subtraction in floating point and re-center
+  // into (-2^31, 2^31].
+  const TWO32 = 4_294_967_296;
+  let d = after - before;
+  if (d > TWO32 / 2) d -= TWO32;
+  if (d < -TWO32 / 2) d += TWO32;
+  return d;
 }
