@@ -273,7 +273,16 @@ describe('multi-kit registry', () => {
     expect(kitById('tr909')?.id).toBe('tr909');
     expect(kitById('fmperc')?.id).toBe('fmperc');
     expect(kitById('8bit')?.id).toBe('8bit');
+    // Second wave of synth kits (PR: hydrogen-more-kits-and-cv-per-voice).
+    expect(kitById('cr78')?.id).toBe('cr78');
+    expect(kitById('linn')?.id).toBe('linn');
+    expect(kitById('glitch')?.id).toBe('glitch');
+    expect(kitById('hardcore')?.id).toBe('hardcore');
     expect(kitById('nope')).toBeUndefined();
+  });
+
+  it('ships 8 kits total (4 original + 4 new)', () => {
+    expect(KIT_COUNT).toBeGreaterThanOrEqual(8);
   });
 
   it('allSampleUrls() returns only sample-kit URLs', () => {

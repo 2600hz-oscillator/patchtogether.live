@@ -15,6 +15,10 @@ import { TR808_INSTRUMENTS } from './hydrogen-tr808-kit-data';
 import { TR909_KIT } from './hydrogen-tr909-kit';
 import { FMPERC_KIT } from './hydrogen-fmperc-kit';
 import { EIGHT_BIT_KIT } from './hydrogen-8bit-kit';
+import { CR78_KIT } from './hydrogen-cr78-kit';
+import { LINN_KIT } from './hydrogen-linn-kit';
+import { GLITCH_KIT } from './hydrogen-glitch-kit';
+import { HARDCORE_KIT } from './hydrogen-hardcore-kit';
 
 /** TR-808 entry — wraps the legacy sample-table into the new
  *  KitDef shape so the registry is uniform. */
@@ -34,6 +38,10 @@ export const KITS: readonly KitDef[] = [
   TR909_KIT,
   FMPERC_KIT,
   EIGHT_BIT_KIT,
+  CR78_KIT,
+  LINN_KIT,
+  GLITCH_KIT,
+  HARDCORE_KIT,
 ];
 
 export const KIT_COUNT = KITS.length;

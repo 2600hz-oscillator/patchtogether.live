@@ -764,9 +764,10 @@ function synthesizeFromBuildHelper(
       { id: 'swing',     label: 'Sw',   defaultValue: 0,   min: 0,   max: 0.75, curve: 'linear' },
       { id: 'gain',      label: 'Gain', defaultValue: 1,   min: 0,   max: 2,    curve: 'linear' },
       { id: 'isPlaying', label: 'Play', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
-      // Phase-3 (multi-kit): 4 kits today (tr808/tr909/fmperc/8bit).
-      // Keep max in sync with KIT_COUNT in hydrogen-kit-registry.ts.
-      { id: 'kit',       label: 'Kit',  defaultValue: 0,   min: 0,   max: 3,    curve: 'discrete' },
+      // Phase-3 (multi-kit): 8 kits today (tr808/tr909/fmperc/8bit/
+      // cr78/linn/glitch/hardcore). Keep max in sync with KIT_COUNT
+      // in hydrogen-kit-registry.ts.
+      { id: 'kit',       label: 'Kit',  defaultValue: 0,   min: 0,   max: 7,    curve: 'discrete' },
     ];
     for (let i = 0; i < N; i++) {
       params.push({ id: `vol${i}`,  label: `i${i}V`, defaultValue: 1, min: 0,    max: 2,  curve: 'linear' });
