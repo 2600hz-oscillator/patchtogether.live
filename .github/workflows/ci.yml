@@ -4,6 +4,27 @@ name: CI
 # push to main and every PR targeting main. The whole pipeline executes inside
 # the project's Flox environment so the toolchain (Node 22.22.2, Faust 2.85.5,
 # esbuild, go-task, git-lfs, gh) matches what developers run locally.
+#
+# Job shape (as of 2026-05-24, post-MED-1 from .myrobots/plans/ci-build-wall-time-reduction.md):
+#
+#   typecheck       ~30 s  | independent setup
+#   unit            ~90 s  | independent setup (server + web vitest)
+#   art             ~90 s  | independent setup (+ dsp:build)
+#   e2e (× 4)     ~5-6 min | matrix shards 1..4/4, blob reporter, own setup each
+#   merge-reports   ~30 s  | needs: e2e — merges 4 blob-reports → HTML
+#   ci (umbrella)   ~0 s   | needs all above; gates branch protection
+#   vrt             ~3-5 min | unchanged
+#
+# Critical path: max(typecheck, unit, art, slowest-e2e-shard) + merge-reports
+# ≈ 7-8 min, vs the previous ~22 min single-runner pipeline. Setup is repeated
+# per-job (npm cache makes it ~70 s each), which is the deliberate trade-off
+# the plan accepted in exchange for parallelism.
+#
+# Branch ruleset note: the "main: green PRs only" ruleset (id 16042163)
+# requires the status check `typecheck + unit + ART + E2E`. The `ci` umbrella
+# job below preserves that exact name so the ruleset keeps working without a
+# coordinated PUT to /repos/.../rulesets/16042163. Rename it ONLY in a PR
+# that also updates the ruleset.
 
 on:
   push:
@@ -25,15 +46,137 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: typecheck + unit + ART + E2E
+  # -----------------------------------------------------------------------
+  # typecheck — `task typecheck` (npm run typecheck --workspaces). ~18 s of
+  # actual work; ~70 s with setup. Independent of everything else.
+  # -----------------------------------------------------------------------
+  typecheck:
+    name: typecheck
     runs-on: ubuntu-latest
-    # Bumped from 25 → 35 in slice 2 of the test-coverage push. The
-    # per-module + integration generators added ~5-7 min of E2E wall-
-    # clock on top of the previous ~16-min baseline; 25 min was tight,
-    # 35 leaves a safety margin until Playwright sharding (slice 7)
-    # cuts the wall-clock back down.
-    timeout-minutes: 35
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      - name: Run typecheck
+        run: flox activate -- task typecheck
+
+  # -----------------------------------------------------------------------
+  # unit — `task test` (server + web vitest). ~45 s of work; ~120 s with
+  # setup. No DB needed; server tests use an in-memory Hocuspocus harness.
+  # -----------------------------------------------------------------------
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      - name: Run unit tests (server + web)
+        run: flox activate -- task test
+
+  # -----------------------------------------------------------------------
+  # art — Audio Regression Tests. Has a `dsp:build` dep (~4 s, baked into
+  # `task art`). ~57 s of work; ~130 s with setup.
+  # -----------------------------------------------------------------------
+  art:
+    name: art
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      - name: Run ART (Audio Regression Tests; dsp:build runs as task dep)
+        run: flox activate -- task art
+
+  # -----------------------------------------------------------------------
+  # e2e — Playwright E2E suite, sharded 4 ways. Each shard runs ~1/4 of the
+  # 812 specs (file-level distribution) with 4 workers, on its own runner.
+  # Per-shard wall-time ~5-6 min vs the previous ~20 min single-runner.
+  #
+  # Reporter is `blob` so we can merge all 4 shards into a single HTML report
+  # via the `merge-reports` job. Each shard uploads its blob artifact;
+  # merge-reports downloads them all and runs `playwright merge-reports`.
+  #
+  # DB schema + DOOM assets are needed (same as the previous monolithic job).
+  # -----------------------------------------------------------------------
+  e2e:
+    name: e2e (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      # Don't fail-fast: if shard 1 fails on a flake, we still want shards
+      # 2-4 to surface independent failures in the same run rather than
+      # forcing two consecutive CI cycles to triage.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     services:
       # Postgres for the persistence layer (Stage B1+). Both the SvelteKit
@@ -74,10 +217,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deps-
 
-      # Cache .svelte-kit/. svelte-kit sync regenerates this from svelte.config.js
-      # + the routes tree; if those didn't change, the cached output (generated
-      # types + tsconfig) is valid and svelte-check skips work. Stale-cache
-      # failure mode is "type errors at typecheck time", which is loud — safe.
       - name: Cache .svelte-kit
         uses: actions/cache@v4
         with:
@@ -135,27 +274,148 @@ jobs:
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
             | shasum -a 1 -c -
 
-      # Note: dsp:build is no longer a separate step. `task ci` runs `task art`
-      # which already declares `deps: [dsp:build]`, so the WASM bundle is built
-      # exactly once per run instead of twice (saves ~4s).
-      - name: Run full CI suite (typecheck + unit + ART + E2E)
-        run: flox activate -- task ci
+      # Refresh the registry manifest the way `task e2e` does locally — this
+      # is normally a `task test:emit-manifest` dep on `task e2e`, but here we
+      # call playwright directly so the shard flag can be threaded in.
+      # Cheap (~3 s).
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
 
-      - name: Upload Playwright report on failure
+      # Build DSP once before the dev server boots; several module Card.svelte
+      # files import `?url`-suffixed WASM artifacts from packages/dsp/dist/.
+      # Without the bundled DSP on disk Vite's dev server fails the import
+      # with a 500 + an HMR overlay during E2E.
+      - name: Build DSP
+        run: flox activate -- task dsp:build
+
+      - name: Run E2E (shard ${{ matrix.shard }}/4, blob reporter)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --shard=${{ matrix.shard }}/4 \
+            --reporter=blob
+
+      - name: Upload blob report (shard ${{ matrix.shard }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-${{ matrix.shard }}
+          # Default blob-report location is the workspace root for the
+          # playwright invocation; we ran with `--workspace e2e`, which sets
+          # cwd to e2e/, so the output lands at e2e/blob-report/.
+          path: e2e/blob-report
+          retention-days: 7
+
+      - name: Upload Playwright test-results on failure (shard ${{ matrix.shard }})
         if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-shard-${{ matrix.shard }}
+          path: e2e/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
+  # merge-reports — downloads all 4 e2e blob artifacts and merges them into
+  # a single HTML report. Uploaded as `playwright-report` so the artifact
+  # name matches what reviewers expect (and what the previous monolithic
+  # workflow uploaded).
+  #
+  # `if: always()` so we still get a merged report even if one shard failed
+  # — that's the whole point of an aggregated dashboard for triage.
+  # -----------------------------------------------------------------------
+  merge-reports:
+    name: Merge Playwright reports
+    if: always()
+    needs: [e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      - name: Download blob reports
+        uses: actions/download-artifact@v4
+        with:
+          path: all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+
+      - name: Merge into HTML report
+        run: |
+          flox activate -- npx --workspace e2e playwright merge-reports \
+            --reporter html \
+            ./all-blob-reports
+
+      - name: Upload merged HTML report
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
+          # `playwright merge-reports --reporter html` writes to
+          # `playwright-report/` in the cwd. We ran with `--workspace e2e`
+          # so that's `e2e/playwright-report/`.
           path: e2e/playwright-report
           retention-days: 14
 
-      - name: Upload Playwright test-results on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results
-          path: e2e/test-results
-          retention-days: 14
+  # -----------------------------------------------------------------------
+  # ci (umbrella) — gates branch protection. Required status check named
+  # `typecheck + unit + ART + E2E` (see ruleset 16042163). This job exists
+  # ONLY to preserve that name and aggregate the pass/fail of the split
+  # jobs above — no real work is done here.
+  #
+  # `if: always()` makes the job run even when a dependency fails so it can
+  # report a definitive failed status (otherwise GitHub leaves it "skipped"
+  # and the required-status-check stays pending → PR can't merge or be
+  # marked failed). The shell guard below fails the job if any needed job
+  # didn't succeed.
+  # -----------------------------------------------------------------------
+  ci:
+    name: typecheck + unit + ART + E2E
+    if: always()
+    needs: [typecheck, unit, art, e2e, merge-reports]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Aggregate result
+        env:
+          TYPECHECK: ${{ needs.typecheck.result }}
+          UNIT: ${{ needs.unit.result }}
+          ART: ${{ needs.art.result }}
+          E2E: ${{ needs.e2e.result }}
+          MERGE: ${{ needs.merge-reports.result }}
+        run: |
+          echo "typecheck:     $TYPECHECK"
+          echo "unit:          $UNIT"
+          echo "art:           $ART"
+          echo "e2e:           $E2E"
+          echo "merge-reports: $MERGE"
+          # `e2e` is a matrix; its aggregated result is `success` only if all
+          # shards succeeded. We don't gate on `merge-reports` so a flaky
+          # report-merge step can't block an otherwise-green run.
+          if [[ "$TYPECHECK" != "success" \
+             || "$UNIT" != "success" \
+             || "$ART" != "success" \
+             || "$E2E" != "success" ]]; then
+            echo "::error::One or more required CI jobs failed."
+            exit 1
+          fi
+          echo "All required CI jobs passed."
 
   # -----------------------------------------------------------------------
   # Visual Regression Tests (Playwright `toHaveScreenshot`). Separate job
