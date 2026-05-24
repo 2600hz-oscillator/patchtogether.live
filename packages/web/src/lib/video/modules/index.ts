@@ -29,6 +29,7 @@ import { vdelayDef } from './vdelay';
 import { bentboxDef } from './bentbox';
 import { acidwarpDef } from './acidwarp';
 import { doomDef } from './doom';
+import { videoboxDef } from './videobox';
 
 let registered = false;
 
@@ -78,6 +79,12 @@ export function registerVideoModules(): void {
   // edge-detect into the key queue; stereo audio outputs via the
   // PR-A video→audio bridge (silent until slice 8). maxInstances: 1.
   registerVideoModule(doomDef);
+  // VIDEOBOX — local-file video player with multiplayer playhead sync.
+  // User picks a local video file; playhead (isPlaying / lastSyncTime /
+  // lastSyncPosition) syncs across rack-mates via node.data so everyone
+  // sees the same frame. Audio routes through MediaElementSource →
+  // ChannelSplitter → audio_l / audio_r.
+  registerVideoModule(videoboxDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

@@ -196,6 +196,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // continuous macros) — pinning baselines in a follow-up PR after
   // any UI tweaks.
   callsine: 'VRT baseline pending; unit + ART + E2E provide coverage. Standard 6-fader card — pinning baselines in a follow-up PR.',
+  // VIDEOBOX — live <video> element + animated drop-target border + a
+  // playhead readout that ticks at 100ms. Same rationale as CAMERA: the
+  // moving frame defeats single-shot pixel capture. Unit suites cover
+  // the module-def shape (videobox.test.ts) + the playhead-sync drift
+  // math (videobox-sync.test.ts); E2E spawn smoke covers card render.
+  videobox: 'live <video> element + ticking playhead readout defeat deterministic capture; unit + sync-math + per-module spawn smoke provide coverage',
 };
 
 /** Per-(platform, type) baselines intentionally missing while a follow-
