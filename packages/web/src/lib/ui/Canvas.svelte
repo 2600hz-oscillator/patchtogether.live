@@ -176,6 +176,10 @@
   import SlewSwitchCard from '$lib/ui/modules/SlewSwitchCard.svelte';
   import AtlantisCatalystCard from '$lib/ui/modules/AtlantisCatalystCard.svelte';
   import AquaTankCard from '$lib/ui/modules/AquaTankCard.svelte';
+  // DOOM — interactive single-instance video module; maxInstances: 1.
+  // Keyboard input on focus + 7 CV-gate inputs + stereo audio outputs
+  // (silent in v1 — slice 8 wires real PCM).
+  import DoomCard from '$lib/ui/modules/DoomCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -360,6 +364,8 @@
     slewSwitch: SlewSwitchCard,
     atlantisCatalyst: AtlantisCatalystCard,
     aquaTank: AquaTankCard,
+    // DOOM — single-instance interactive video module.
+    doom: DoomCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

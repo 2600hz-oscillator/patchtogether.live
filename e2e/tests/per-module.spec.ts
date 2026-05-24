@@ -68,6 +68,16 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   scope: 'is itself the canonical receiver',
   // AUDIO-OUT — terminal node, no outputs.
   audioOut: 'terminal; no outputs',
+  // DOOM — declares audio_l / audio_r outputs but v1 ships silent.
+  // The doomgeneric vendored sources don't include a mixer; audio is
+  // slice-8 work (i_sdlsound.c port + AudioWorklet wiring). Until
+  // then audio_l reads 0. The cross-domain bridge itself is verified
+  // by engine-video-audio-bridge.test.ts; module def shape by
+  // doom.test.ts; runtime semantics by the multi-tab Playwright e2e
+  // (deferred). Also: the WASM blob requires emcc on the deploy
+  // runner — until that CI step lands, even the video output is the
+  // "DOOM WASM not built" overlay rather than gameplay.
+  doom: 'audio is slice-8 (silent until i_sdlsound port lands); WASM build pending in CI',
 };
 
 // Reference list of modules that can't spawn under bare spawnPatch —
