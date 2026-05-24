@@ -267,15 +267,89 @@ export class DoomRuntime {
   }
 
   /**
-   * Zero-copy stereo PCM view (slice 8). Returns an EMPTY Float32Array
-   * in v1 because i_sound is the null implementation — but callers can
-   * still copy from it without bombing.
+   * Zero-copy stereo PCM view (legacy slice-7 stub buffer — kept for
+   * back-compat with tests that pinned the call shape). The mixer in
+   * slice 8 publishes via `pullPcmFrames` below, not via this view.
    */
   getPcmBuffer(): Float32Array {
     const heap = this.mod.HEAPF32;
     // pcmSampleCount is the per-channel sample count; we store interleaved
     // stereo so the array is 2× that.
     return new Float32Array(heap.buffer, this.pcmPtr, this.pcmSampleCount * 2);
+  }
+
+  // ---------------- Slice 8 PCM pull ----------------
+  //
+  // The i_pcmgen.c mixer accumulates int16 mono samples into an internal
+  // ring; the WASM export `dg_get_pcm_buffer(int16_t* dest, int frames)`
+  // drains the ring. We allocate a scratch buffer in WASM linear memory
+  // (one per runtime), call the export, then convert s16 → f32 in JS.
+  //
+  // Returns a freshly-allocated Float32Array (NOT a heap view — the
+  // caller posts it to an AudioWorklet which transfers ownership; if we
+  // returned a view the worklet would be reading freed wasm memory after
+  // the next ring drain). Allocation cost is ~256 bytes * 60 Hz = trivial.
+
+  /** Lazy scratch ptr (allocated on first pullPcmFrames). */
+  private pcmScratchPtr = 0;
+  private pcmScratchFrames = 0;
+
+  private ensurePcmScratch(frames: number): number {
+    if (this.pcmScratchPtr !== 0 && this.pcmScratchFrames >= frames) {
+      return this.pcmScratchPtr;
+    }
+    // Free the old scratch if we need to grow.
+    if (this.pcmScratchPtr !== 0) {
+      this.mod.ccall('free', null, ['number'], [this.pcmScratchPtr]);
+    }
+    // 2 bytes per int16 frame. Round up to 256-frame multiples to
+    // amortize reallocation as callers occasionally ask for more frames
+    // (worklet-driven pumps may grow buffer size at startup).
+    const grow = Math.max(256, Math.ceil(frames / 256) * 256);
+    const bytes = grow * 2;
+    this.pcmScratchPtr = this.mod.ccall('malloc', 'number', ['number'], [bytes]);
+    this.pcmScratchFrames = grow;
+    return this.pcmScratchPtr;
+  }
+
+  /**
+   * Pull `frames` mono samples from the i_pcmgen ring. Returns a
+   * Float32Array of length `frames` in [-1.0, +1.0]. Underrun pads
+   * with silence. Safe to call from the main thread at video-frame
+   * cadence; the worklet downstream queues + plays at audio rate.
+   */
+  getPcmFrames(frames: number): Float32Array {
+    if (!this.initialized || frames <= 0) return new Float32Array(0);
+    const ptr = this.ensurePcmScratch(frames);
+    this.mod.ccall(
+      'dg_get_pcm_buffer',
+      'number',
+      ['number', 'number'],
+      [ptr, frames],
+    );
+    // Read s16 from WASM heap, convert to f32.
+    const i16View = new Int16Array(this.mod.HEAPU8.buffer, ptr, frames);
+    const out = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) {
+      out[i] = i16View[i]! / 32768;
+    }
+    return out;
+  }
+
+  /** How many mono frames are currently sitting in the WASM ring. JS
+   *  side can use this to throttle the pump (skip a tick if we're
+   *  already buffered far enough ahead). */
+  getPcmBufferedFrames(): number {
+    if (!this.initialized) return 0;
+    return this.mod.ccall('dg_get_pcm_buffered_frames', 'number', [], []);
+  }
+
+  /** Native sample rate the i_pcmgen mixer emits at. The DOOM module
+   *  asserts the AudioContext's sampleRate matches; otherwise we'd be
+   *  pitched up or down. */
+  getPcmSampleRate(): number {
+    if (!this.initialized) return 44100;
+    return this.mod.ccall('dg_get_pcm_sample_rate', 'number', [], []);
   }
 
   /** No teardown beyond dropping references — Emscripten doesn't expose

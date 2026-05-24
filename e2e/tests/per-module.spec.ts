@@ -68,15 +68,13 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   scope: 'is itself the canonical receiver',
   // AUDIO-OUT — terminal node, no outputs.
   audioOut: 'terminal; no outputs',
-  // DOOM — declares audio_l / audio_r outputs but v1 ships silent.
-  // The doomgeneric vendored sources don't include a mixer; audio is
-  // slice-8 work (i_sdlsound.c port + AudioWorklet wiring). Until
-  // then audio_l reads 0. The cross-domain bridge itself is verified
-  // by engine-video-audio-bridge.test.ts; module def shape by
-  // doom.test.ts; runtime semantics by doom-wasm.spec.ts (canvas-pixel
-  // variance over time). The WASM blob is built in CI by the "Build
-  // DOOM WASM (emcc)" step — see .github/workflows/ci.yml.
-  doom: 'audio is slice-8 (silent until i_sdlsound port lands); video coverage in doom-wasm.spec.ts',
+  // DOOM — slice 8 (i_pcmgen.c mixer + AudioWorklet) wires audio_l /
+  // audio_r through the cross-domain bridge. WASM blob is built in CI
+  // by the "Build DOOM WASM (emcc)" step (.github/workflows/ci.yml).
+  // No skip — bare per-module smoke can drive audio_l into SCOPE.
+  // Cross-domain bridge: engine-video-audio-bridge.test.ts.
+  // Module def shape: doom.test.ts.
+  // Video coverage: doom-wasm.spec.ts (canvas-pixel variance over time).
 };
 
 // Reference list of modules that can't spawn under bare spawnPatch —
@@ -140,6 +138,34 @@ test.describe('per-module: output-alive smoke', () => {
 
       await page.goto('/');
       await page.waitForLoadState('networkidle');
+
+      // DOOM-specific: gate on the WASM blob being available. The build
+      // is .gitignored (deterministic from source — contributors + CI
+      // build via packages/web/native/build-doom-wasm.sh); if it hasn't
+      // been built yet, the audio worklet has no PCM source to drain.
+      // Skip with a clear reason rather than fail.
+      if (mod.type === 'doom') {
+        const wasmAvailable = await page.evaluate(async () => {
+          try {
+            const r = await fetch('/doom/doom.js', { method: 'HEAD' });
+            return r.ok;
+          } catch { return false; }
+        });
+        if (!wasmAvailable) {
+          test.skip(true, 'DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`');
+          return;
+        }
+        const wadAvailable = await page.evaluate(async () => {
+          try {
+            const r = await fetch('/doom/DOOM1.WAD', { method: 'HEAD' });
+            return r.ok;
+          } catch { return false; }
+        });
+        if (!wadAvailable) {
+          test.skip(true, 'DOOM1.WAD missing — see static/doom/DOWNLOAD_INSTRUCTIONS.md');
+          return;
+        }
+      }
 
       const nodes: SpawnNode[] = [
         {
@@ -211,8 +237,60 @@ test.describe('per-module: output-alive smoke', () => {
         });
       }
 
+      // DOOM-specific: click the load overlay to kick the WASM + WAD
+      // fetch, then poke a key into the runtime so the title-screen
+      // menu cursor sound plays. Without a key event the title screen
+      // is silent (i_pcmgen mixer idle).
+      if (mod.type === 'doom') {
+        const card = page.locator('[data-testid="doom-card"]');
+        await card.locator('button.overlay', { hasText: /Click to load DOOM/i }).click();
+        // Wait up to 15s for the runtime to load + WAD to fetch. The
+        // first spawn pays the network + emcc-module-instantiate cost.
+        await page.waitForFunction(
+          () => {
+            const w = globalThis as unknown as {
+              __engine?: () => { getDomain?: (d: string) => {
+                read?: (id: string, k: string) => unknown;
+              } | null } | null;
+            };
+            const eng = w.__engine?.();
+            const ve = eng?.getDomain?.('video');
+            if (!ve || !ve.read) return false;
+            return ve.read('sut', 'loaded') === true;
+          },
+          { timeout: 15000 },
+        ).catch(() => { /* fall through — test will skip if not loaded */ });
+        // Fire several keys via the runtime extras — picks a sound the
+        // menu cursor makes (KEY_ENTER triggers DSPISTOL on level start;
+        // KEY_DOWNARROW triggers DSSWTCHN menu blip on title screen).
+        await page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __engine?: () => { getDomain?: (d: string) => {
+              read?: (id: string, k: string) => unknown;
+            } | null } | null;
+          };
+          const ve = w.__engine?.()?.getDomain?.('video');
+          if (!ve || !ve.read) return;
+          const extras = ve.read('sut', 'extras') as {
+            pushDoomKey?: (key: number, pressed: boolean) => void;
+          } | undefined;
+          if (!extras?.pushDoomKey) return;
+          // KEY_DOWNARROW = 0xaf (doomkeys.h) — moves menu cursor +
+          // plays DSSWTCHN. KEY_USE = 0x9d (RCTRL) — also menu-confirm
+          // on the title.
+          const KEY_DOWNARROW = 0xaf;
+          for (let i = 0; i < 5; i++) {
+            extras.pushDoomKey(KEY_DOWNARROW, true);
+            extras.pushDoomKey(KEY_DOWNARROW, false);
+          }
+        });
+      }
+
       // 800 ms covers wavetable-load times + several gate cycles.
-      await runFor(page, 800);
+      // DOOM needs longer: WASM tic at video-rate, audio worklet pump
+      // at 60 Hz, then 50 ms scope window. 2.5 s is the minimum where
+      // the menu blip's tail clears the noise floor reliably.
+      await runFor(page, mod.type === 'doom' ? 2500 : 800);
 
       const snap = await readScopeSnapshot(page, 'scp');
       expect(snap, `${mod.type} scope snapshot`).not.toBeNull();

@@ -43,6 +43,8 @@ We vendor:
 - The verbatim GPL v2 LICENSE file.
 - The upstream README for attribution.
 - Our own platform shim (`doomgeneric_patchtogether.c`).
+- Our own portable PCM mixer (`i_pcmgen.c`) — replaces SDL_mixer-coupled
+  upstream `i_sdlsound.c`; same `sound_module_t` interface. GPLv2.
 
 We **do not** vendor:
 - Upstream platform shims for SDL2 / Allegro / Win32 / Xlib /
@@ -51,6 +53,17 @@ We **do not** vendor:
   that we route through the patchtogether engine instead.
 - IDE project files (`.sln`, `.vcxproj`, `.vcxproj.filters`).
 - Per-platform Makefiles (we have our own `build-doom-wasm.sh`).
+
+## Vendor patches (divergence from upstream doomgeneric)
+
+The vendored `.c` files are mostly verbatim from upstream. Surgical
+patches applied to keep the WASM build small + portable:
+
+- `i_sound.c`: commented out the `#include <SDL_mixer.h>` (legacy
+  carry-over from chocolate-doom; unused within the translation unit
+  itself, and including it would force a hard SDL build dependency
+  even though no `Mix_*` symbol is called from this file). Behaviour
+  is unchanged.
 
 ## The WAD
 

@@ -28,6 +28,24 @@ import { DoomRuntime } from '$lib/doom/doom-runtime';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 import { CV_GATE_PORT_IDS, KEY_FOR_CV_GATE, type CvGatePortId } from '$lib/doom/doomkeys';
 
+// AudioWorkletProcessor URL — served as a static asset under
+// /doom/doom-pcm-worklet.js. Loaded lazily per AudioContext (WeakSet
+// avoids double-add on hot-reload + on a second DOOM module spawn
+// within the same audio context). maxInstances:1 means we only ever
+// hit this once per page-load in practice.
+const DOOM_PCM_WORKLET_URL = '/doom/doom-pcm-worklet.js';
+const WORKLET_LOADED = new WeakSet<BaseAudioContext>();
+
+async function ensureDoomPcmWorklet(ac: BaseAudioContext): Promise<void> {
+  if (WORKLET_LOADED.has(ac)) return;
+  // The processor name 'doom-pcm' is registered inside the worklet
+  // file; calling addModule twice with the same name across two
+  // contexts is fine, but within ONE context it throws — hence the
+  // per-context guard.
+  await ac.audioWorklet.addModule(DOOM_PCM_WORKLET_URL);
+  WORKLET_LOADED.add(ac);
+}
+
 // Fragment shader: sample the 640×400 BGRA framebuffer and letterbox it
 // into the engine's 640×360 FBO. DOOM is 1.6:1 (640:400 = 8:5); the
 // engine's FBO is 16:9 (640:360 = 16:9 ≈ 1.78:1). So we keep height +
@@ -201,26 +219,6 @@ export const doomDef: VideoModuleDef = {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    // Audio output: we want both audio_l + audio_r to surface as
-    // distinct AudioNodes in audioSources. v1 PCM is the null impl so
-    // we publish ConstantSourceNodes pinned at 0 — same connectable
-    // surface as a real audio source, just silent. When slice 8 lands
-    // we'll swap in an AudioWorkletNode pulling from the runtime's PCM
-    // buffer; the audioSources map shape doesn't change.
-    let leftSrc: AudioNode | null = null;
-    let rightSrc: AudioNode | null = null;
-    if (ctx.audioCtx) {
-      const ac = ctx.audioCtx;
-      const l = ac.createConstantSource();
-      l.offset.setValueAtTime(0, ac.currentTime);
-      l.start();
-      leftSrc = l;
-      const r = ac.createConstantSource();
-      r.offset.setValueAtTime(0, ac.currentTime);
-      r.start();
-      rightSrc = r;
-    }
-
     let runtime: DoomRuntime | null = null;
     let loaded = false;
     let loadError: string | null = null;
@@ -239,6 +237,79 @@ export const doomDef: VideoModuleDef = {
       ...DEFAULTS,
       ...(node.params as Partial<DoomParams>),
     };
+
+    // Audio source registration. We publish entries lazily — start
+    // with silent ConstantSourceNodes so the bridge always has a node
+    // to wire (audio is in graph from the start, even before WASM
+    // loads), then SWAP in the worklet once it loads.
+    const audioSources = new Map<string, { node: AudioNode; output: number }>();
+    let leftSrc: AudioNode | null = null;
+    let rightSrc: AudioNode | null = null;
+    let pcmWorklet: AudioWorkletNode | null = null;
+    let pumpInterval: ReturnType<typeof setInterval> | null = null;
+
+    if (ctx.audioCtx) {
+      const ac = ctx.audioCtx;
+      const l = ac.createConstantSource();
+      l.offset.setValueAtTime(0, ac.currentTime);
+      l.start();
+      leftSrc = l;
+      const r = ac.createConstantSource();
+      r.offset.setValueAtTime(0, ac.currentTime);
+      r.start();
+      rightSrc = r;
+      audioSources.set('audio_l', { node: l, output: 0 });
+      audioSources.set('audio_r', { node: r, output: 0 });
+
+      // Slice 8: load the doom-pcm AudioWorkletProcessor + swap the
+      // silent fallback for a real PCM pump. setupPcmWorklet rewrites
+      // the audioSources entries — downstream `getAudioSource` reads
+      // by-port so the bridge picks up the worklet on next reconcile.
+      void setupPcmWorklet(ac);
+    }
+
+    async function setupPcmWorklet(ac: BaseAudioContext): Promise<void> {
+      try {
+        await ensureDoomPcmWorklet(ac);
+        const node = new AudioWorkletNode(ac, 'doom-pcm', {
+          numberOfInputs: 0,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+        });
+        pcmWorklet = node;
+        // Replace the silent-CSN entries with the live worklet. The
+        // audio bridge reads `audioSources` at addEdge time — cables
+        // wired AFTER the worklet loads pick up the worklet; cables
+        // wired in the ~100ms BEFORE it loads stay on the silent CSN
+        // (user can re-wire to refresh). In practice the worklet
+        // resolves well before users finish wiring a cable.
+        audioSources.set('audio_l', { node, output: 0 });
+        audioSources.set('audio_r', { node, output: 0 });
+
+        // Pump the WASM mixer at ~60 Hz. The WASM's I_UpdateSound is
+        // called from dgpt_tick which we drive at runTic from the
+        // surface.draw path, so this pump JUST drains the already-mixed
+        // samples into the worklet's queue.
+        const samplesPerPump = Math.round(44100 / 60);
+        pumpInterval = setInterval(() => {
+          if (!runtime || !runtime.isInitialized()) return;
+          if (!pcmWorklet) return;
+          const frames = runtime.getPcmFrames(samplesPerPump);
+          if (frames.length > 0) {
+            pcmWorklet.port.postMessage({ type: 'pcm', samples: frames });
+          }
+        }, 16);
+        try {
+          pcmWorklet.port.postMessage({ type: 'gain', value: params.audioGain });
+        } catch { /* */ }
+      } catch (e) {
+        // Worklet load failed — keep the silent ConstantSource fallback.
+        // Common cause: CSP blocks the worklet URL, or build-doom-wasm
+        // hasn't been run + the static file isn't shipped.
+        // eslint-disable-next-line no-console
+        console.warn('[DOOM] AudioWorklet load failed; audio_l/r will be silent', e);
+      }
+    }
 
     async function ensureLoaded(): Promise<string | null> {
       if (loaded) return loadError;
@@ -349,16 +420,21 @@ export const doomDef: VideoModuleDef = {
         gl.deleteTexture(texture);
         gl.deleteTexture(sourceTex);
         gl.deleteProgram(program);
+        if (pumpInterval !== null) {
+          clearInterval(pumpInterval);
+          pumpInterval = null;
+        }
+        if (pcmWorklet) {
+          try { pcmWorklet.port.postMessage({ type: 'reset' }); } catch { /* */ }
+          try { pcmWorklet.disconnect(); } catch { /* */ }
+          pcmWorklet = null;
+        }
         if (leftSrc) try { leftSrc.disconnect(); } catch { /* */ }
         if (rightSrc) try { rightSrc.disconnect(); } catch { /* */ }
         if (runtime) runtime.dispose();
         runtime = null;
       },
     };
-
-    const audioSources = new Map<string, { node: AudioNode; output: number }>();
-    if (leftSrc) audioSources.set('audio_l', { node: leftSrc, output: 0 });
-    if (rightSrc) audioSources.set('audio_r', { node: rightSrc, output: 0 });
 
     const extras: DoomHandleExtras = {
       getRuntime() { return runtime; },
@@ -375,6 +451,11 @@ export const doomDef: VideoModuleDef = {
       audioSources,
       setParam(paramId, value) {
         if (paramId in params) (params as Record<string, number>)[paramId] = value;
+        // Forward audioGain straight to the worklet so a knob twist
+        // takes effect without waiting for the next PCM pump.
+        if (paramId === 'audioGain' && pcmWorklet) {
+          try { pcmWorklet.port.postMessage({ type: 'gain', value }); } catch { /* */ }
+        }
         // CV-gate path: edge-detect cv_<port> params + forward to runtime.
         if (paramId.startsWith('cv_')) {
           const portId = paramId.slice(3) as CvGatePortId;
