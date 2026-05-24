@@ -54,9 +54,23 @@
   let loadError = $state<string | null>(null);
   let isHost = $state(true);          // true on first spawn; recomputed from awareness
   let memberIds = $state<string[]>([]); // including self
-  /** Local user id used for awareness disambiguation. Falls back to a
-   *  stable random per-tab id when no provider is attached (single-user). */
-  const localUserId = `local-${Math.random().toString(36).slice(2, 10)}`;
+  /** Last remote framebuffer received via awareness — spectator path. The
+   *  card-side rAF tick prefers this over `extras.snapshotFramebuffer()`
+   *  (which is null on spectator pages because they never load WASM). */
+  let lastRemoteFrame: Uint8Array | null = null;
+  /** Local user id used for host election. Resolved lazily from the
+   *  provider's awareness `user.id` field (set by /r/[id]'s presence
+   *  init OR by tests calling __setAwarenessUser). Falls back to a
+   *  stable random per-tab id when no provider is attached. */
+  const randomLocalId = `local-${Math.random().toString(36).slice(2, 10)}`;
+  function resolveLocalUserId(): string {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return randomLocalId;
+    const state = aw.getLocalState() as { user?: { id?: string } } | null;
+    const uid = state?.user?.id;
+    return typeof uid === 'string' && uid.length > 0 ? uid : randomLocalId;
+  }
 
   // ---- Extras helper ----
   function getExtras(): DoomHandleExtras | null {
@@ -119,6 +133,7 @@
     // broadcast a KeyEnvelope. The host filters on srcUserId !== self.
     const provider = providerCtx.get();
     if (!provider) return;
+    const me = resolveLocalUserId();
     // Reuse the runtime's translation table without instantiating the
     // runtime on the spectator side: we import the keyboard map and
     // map the code to a doomkey directly.
@@ -128,7 +143,7 @@
       const env = encodeKey({
         kind: 'key',
         moduleId: id,
-        srcUserId: localUserId,
+        srcUserId: me,
         doomKey: dk,
         pressed,
         ts: Date.now(),
@@ -147,6 +162,29 @@
   // ---- Awareness wiring ----
   let frameBroadcastInterval: ReturnType<typeof setInterval> | null = null;
   let awarenessOff: (() => void) | null = null;
+  /** Last frame envelope ts we decoded — guards against re-decoding the
+   *  same payload on every rAF tick (the base64 → bytes hop is ~5 ms). */
+  let lastDecodedFrameTs = 0;
+
+  function pollLatestRemoteFrame(): void {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return;
+    let newest: { ts: number; raw: unknown } | null = null;
+    aw.getStates().forEach((s) => {
+      const raw = (s as Record<string, unknown>)[`doom:${id}:frame`];
+      const ts = (raw as { ts?: number } | null)?.ts;
+      if (typeof ts !== 'number') return;
+      if (!newest || ts > newest.ts) newest = { ts, raw };
+    });
+    if (!newest) return;
+    const newestTs = (newest as { ts: number }).ts;
+    if (newestTs <= lastDecodedFrameTs) return;
+    const env = decodeFrame((newest as { raw: unknown }).raw);
+    if (!env || env.moduleId !== id) return;
+    lastRemoteFrame = decodeFrameBuffer(env);
+    lastDecodedFrameTs = newestTs;
+  }
 
   function attachAwareness(): void {
     const provider = providerCtx.get();
@@ -155,6 +193,7 @@
     if (!aw) return;
 
     function recomputeHost(): void {
+      const me = resolveLocalUserId();
       const states = aw!.getStates();
       const ids: string[] = [];
       states.forEach((s) => {
@@ -163,8 +202,8 @@
         const uid = (s as { user?: { id?: string } }).user?.id;
         if (typeof uid === 'string') ids.push(uid);
       });
-      // Self may not have an entry yet — include localUserId defensively.
-      if (!ids.includes(localUserId)) ids.push(localUserId);
+      // Self may not have an entry yet — include defensively.
+      if (!ids.includes(me)) ids.push(me);
       memberIds = ids;
       const myField = `doom:${id}:host`;
       // Read all clients' "I am host for module X" claims; tiebreak via
@@ -176,19 +215,28 @@
       });
       const currentHost = candidates.length > 0 ? candidates.sort()[0]! : null;
       const newHost = pickHost(currentHost, ids);
-      isHost = newHost === localUserId;
-      aw!.setLocalStateField(myField, isHost ? localUserId : null);
+      isHost = newHost === me;
+      // Only write our claim if it actually changed — otherwise every
+      // recomputeHost would emit an awareness update which re-fires
+      // 'update' which re-enters recomputeHost (infinite loop seen in
+      // playwright trace).
+      const localState = aw!.getLocalState() as Record<string, unknown> | null;
+      const desiredClaim = isHost ? me : null;
+      if ((localState?.[myField] ?? null) !== desiredClaim) {
+        aw!.setLocalStateField(myField, desiredClaim);
+      }
     }
 
     function onIncomingKey(): void {
       if (!isHost) return;
+      const me = resolveLocalUserId();
       const states = aw!.getStates();
       states.forEach((s, clientId) => {
         if (clientId === aw!.clientID) return;
         const raw = (s as Record<string, unknown>)[`doom:${id}:key`];
         const env = decodeKey(raw);
         if (!env || env.moduleId !== id) return;
-        if (env.srcUserId === localUserId) return;
+        if (env.srcUserId === me) return;
         const extras = getExtras();
         if (!extras) return;
         extras.pushDoomKey(env.doomKey, env.pressed);
@@ -203,9 +251,13 @@
         const env = decodeFrame(raw);
         if (!env || env.moduleId !== id) return;
         const buf = decodeFrameBuffer(env);
+        // Cache for the card-side render loop (spectator has no runtime,
+        // so extras.snapshotFramebuffer() returns null; we draw from this).
+        lastRemoteFrame = buf;
+        // Also push into the engine for the GL surface path (videoOut
+        // mirror, etc.).
         const extras = getExtras();
-        if (!extras) return;
-        extras.pushRemoteFramebuffer(buf);
+        if (extras) extras.pushRemoteFramebuffer(buf);
       });
     }
 
@@ -230,7 +282,7 @@
       try {
         const env = encodeFrame({
           moduleId: id,
-          hostUserId: localUserId,
+          hostUserId: resolveLocalUserId(),
           width: 640,
           height: 400,
           framebuffer: snap,
@@ -267,11 +319,24 @@
   function startRenderLoop(): void {
     if (raf !== null) return;
     function tick(): void {
-      const extras = getExtras();
-      if (extras && canvasEl) {
+      if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {
-          const fb = extras.snapshotFramebuffer();
+          // Host: pull straight from the live runtime via extras.
+          // Spectator: no runtime — extras.snapshotFramebuffer() is null,
+          // so fall back to the last awareness-delivered frame.
+          const extras = getExtras();
+          let fb: Uint8Array | Uint8ClampedArray | null = null;
+          if (extras) fb = extras.snapshotFramebuffer();
+          if (!fb) {
+            // Belt-and-suspenders: the awareness 'update' listener already
+            // populates lastRemoteFrame, but under load chromium can drop
+            // listener firings between heavy awareness payloads. Re-poll
+            // the latest frame envelope on every rAF tick so the canvas
+            // stays current even if no 'update' callback fired this frame.
+            pollLatestRemoteFrame();
+            fb = lastRemoteFrame;
+          }
           if (fb) {
             // Upload BGRA → RGBA via inline byte swap. 640×400 = 256k
             // pixels = 1 MB; the swap is ~16ms on a slow laptop but
@@ -371,7 +436,7 @@
       data-viz-passthrough
       data-testid="doom-canvas"
     ></canvas>
-    {#if loadStatus === 'idle'}
+    {#if loadStatus === 'idle' && isHost}
       <button class="overlay" onclick={() => void tryLoad()}>
         Click to load DOOM
         <small>(downloads ~4 MB WAD on first spawn)</small>

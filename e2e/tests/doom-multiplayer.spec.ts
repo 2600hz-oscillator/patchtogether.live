@@ -178,17 +178,23 @@ async function readCanvasFingerprint(page: Page): Promise<{ hash: number; nonZer
   });
 }
 
-// FIXME: shared-input multiplayer slice ships the runtime plumbing
-// (awareness frame broadcast + key relay) but the UI surfaces these
-// tests probe (.spec-badge / .host-badge / data-testid="doom-card"
-// rendering on spec page from Yjs node sync) aren't yet wired up in
-// DoomCard.svelte. The framebuffer-change assertion also needs ~9s
-// of WASM init + frame broadcasts; the round-trip + DOM-sync chain
-// is fragile under CI load. Both tests stay as fixme until a follow-
-// up PR lands the spec-mode card UI + tightens the awareness timing
-// so they pass deterministically. The runtime path itself IS exercised
-// by doom-wasm.spec.ts on the host side.
 test.describe('@collab DOOM shared-input multiplayer', () => {
+  // Cold-start DOOM (WASM fetch + 4 MB WAD + ~10 s of frame broadcasts +
+  // cross-context awareness sync) routinely sits in the 20–40 s window
+  // under CI load; the suite default 30 s isn't enough. We also allow
+  // up to 30 s for the first cross-context frame envelope + up to 25 s
+  // for the spectator's <canvas> to render a differing frame, so the
+  // worst-case wall time approaches ~90 s on a cold runner — give the
+  // test plenty of headroom on top of that for the key-relay step.
+  test.setTimeout(180_000);
+
+  // FIXME: passes locally (5/5 with --repeat-each=5) but fails on CI
+  // even with the first-frame-envelope sentinel + 25 s change-detection
+  // window. The host-migration test below proves Yjs awareness sync +
+  // host election + spec/host badges work end-to-end; this one specifically
+  // wedges on the spectator's canvas-blit path under CI's slower runner.
+  // Re-investigate with a local ubuntu container before re-enabling — the
+  // local/CI divergence is the real problem to solve, not a wider timeout.
   test.fixme('spectator sees host framebuffer change + key relay reaches host', async ({ browser }) => {
     const pair = await openDoomPair(browser);
     try {
@@ -212,29 +218,69 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
 
       // ─── Assertion 1: spectator canvas reflects host frames ───
       //
-      // The host broadcasts a frame envelope every ~100 ms (10 Hz).
-      // After ~1.5 s we should see the spectator's <canvas> non-empty
-      // AND its hash differ from a baseline taken before any frames
-      // arrived. We poll for change to avoid a brittle exact match
-      // (animation in the IDDQD demo loop is constantly changing).
-      await pair.pageHost.waitForTimeout(500);  // let frames start
+      // The host broadcasts a frame envelope every ~100 ms (10 Hz) via
+      // Yjs awareness on field `doom:<id>:frame`. We split the proof in
+      // two phases so a slow CI host (cold WASM init, first paint, first
+      // 4 MB awareness update across two contexts) doesn't run out of
+      // budget for the *change-detection* poll:
+      //
+      //   Phase A — bridge alive: wait (up to 30 s) for the spectator's
+      //             awareness map to actually contain a `doom:sut:frame`
+      //             envelope. This proves "host has published at least
+      //             one frame + cross-context awareness sync is alive".
+      //             Fails fast with a useful message if the host never
+      //             broadcasts (vs. a generic "no change" timeout).
+      //
+      //   Phase B — spectator paints: NOW take the baseline (after we
+      //             know at least one envelope has landed) and poll for
+      //             the spectator <canvas> hash to change. Wide window
+      //             (250 × 100 ms = 25 s) so a slow GL/2D blit path
+      //             still has many cycles to render a differing frame.
+      await pair.pageSpec.waitForFunction(
+        (nodeId) => {
+          const w = window as unknown as {
+            __getAwarenessStates?: () => Array<Record<string, unknown>>;
+          };
+          const states = w.__getAwarenessStates?.() ?? [];
+          const key = `doom:${nodeId}:frame`;
+          return states.some((s) => s[key] != null);
+        },
+        'sut',
+        { timeout: 30_000, polling: 250 },
+      ).catch(() => {
+        throw new Error(
+          'spectator never received a doom:sut:frame envelope from host within 30s ' +
+          '— cross-context awareness sync or host frame-broadcast is broken',
+        );
+      });
+
       const baseline = await readCanvasFingerprint(pair.pageSpec);
       expect(baseline, 'spectator canvas exists').not.toBeNull();
-      // Allow up to 8s for at least one cross-context frame to render.
+      // Allow up to 25s for at least one cross-context frame to render to
+      // pixels (the envelope arrival above only proves the bridge — the
+      // 2D blit pipeline still has to decode + draw).
       let saw_change = false;
       const baselineHash = baseline!.hash;
       const baselineNonZero = baseline!.nonZero;
-      for (let i = 0; i < 80 && !saw_change; i++) {
+      for (let i = 0; i < 250 && !saw_change; i++) {
         await pair.pageHost.waitForTimeout(100);
         const cur = await readCanvasFingerprint(pair.pageSpec);
         if (!cur) continue;
         // "Changed" = hash different AND a meaningful number of pixels
-        // are non-zero (rules out the silent-canvas case where the
-        // spectator never received a frame).
-        if (cur.hash !== baselineHash && cur.nonZero > baselineNonZero) {
+        // are non-zero. The non-zero floor (>1000) rules out the
+        // silent-canvas case where the spectator never received a frame
+        // without requiring strict monotonic growth — DOOM's demo loop
+        // moves between title screen (lots of red) and gameplay (mostly
+        // dark corridors), so a strictly-greater comparison against the
+        // baseline pixel count flakes when the scene darkens.
+        if (cur.hash !== baselineHash && cur.nonZero > 1000) {
           saw_change = true;
         }
       }
+      // Suppress unused-var lint: baselineNonZero is no longer used in the
+      // tightened comparison above. We keep the baseline read so the
+      // "spectator canvas exists" expect upstream stays meaningful.
+      void baselineNonZero;
       expect(saw_change, 'spectator canvas updated from host frames').toBe(true);
 
       // ─── Assertion 2: key relay reaches host ───
@@ -291,7 +337,7 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
     }
   });
 
-  test.fixme('host migration: when host leaves, spectator becomes host', async ({ browser }) => {
+  test('host migration: when host leaves, spectator becomes host', async ({ browser }) => {
     const pair = await openDoomPair(browser);
     try {
       const assets = await checkDoomAssetsAvailable(pair.pageHost);
