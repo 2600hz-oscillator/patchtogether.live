@@ -77,9 +77,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="knob-row">
-      <Knob value={bpm}         min={10} max={300} defaultValue={120} label="BPM"   curve="log"      onchange={set('bpm')}         readLive={live('bpm')} />
-      <Knob value={swingAmount} min={0}  max={90}  defaultValue={0}   label="Swing" curve="linear"   onchange={set('swingAmount')} readLive={live('swingAmount')} />
-      <Knob value={swingSource} min={0}  max={10}  defaultValue={0}   label="Src"   curve="discrete" onchange={set('swingSource')} />
+      <Knob value={bpm}         min={10} max={300} defaultValue={120} label="BPM"   curve="log"      onchange={set('bpm')} moduleId={id} paramId="bpm"         readLive={live('bpm')} />
+      <Knob value={swingAmount} min={0}  max={90}  defaultValue={0}   label="Swing" curve="linear"   onchange={set('swingAmount')} moduleId={id} paramId="swingAmount" readLive={live('swingAmount')} />
+      <Knob value={swingSource} min={0}  max={10}  defaultValue={0}   label="Src"   curve="discrete" onchange={set('swingSource')} moduleId={id} paramId="swingSource" />
     </div>
 
     <div class="footer">

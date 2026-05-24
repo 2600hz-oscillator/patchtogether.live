@@ -250,8 +250,8 @@
   </div>
 
   <div class="fader-row">
-    <Fader value={octave}     min={-2}  max={2}    defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')}     readLive={live('octave')} />
-    <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} readLive={live('gateLength')} />
+    <Fader value={octave}     min={-2}  max={2}    defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')} moduleId={id} paramId="octave"     readLive={live('octave')} />
+    <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} moduleId={id} paramId="gateLength" readLive={live('gateLength')} />
   </div>
 
   <div class="lfo-row" data-testid={`cart-lfo-${id}`}>
@@ -263,7 +263,7 @@
       defaultValue={3}
       label="Div"
       curve="discrete"
-      onchange={set('lfoDiv')}
+      onchange={set('lfoDiv')} moduleId={id} paramId="lfoDiv"
       readLive={live('lfoDiv')}
       ticks={LFO_DIV_TICKS}
       formatValue={formatLfoDiv}
@@ -275,7 +275,7 @@
       defaultValue={0}
       label="Wave"
       curve="linear"
-      onchange={set('lfoShape')}
+      onchange={set('lfoShape')} moduleId={id} paramId="lfoShape"
       readLive={live('lfoShape')}
       glyphs={LFO_SHAPE_GLYPHS}
     />

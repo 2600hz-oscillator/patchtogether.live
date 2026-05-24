@@ -32,7 +32,7 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={level} min={0} max={1} defaultValue={0.5} label="Level" curve="linear" onchange={set('level')} readLive={live('level')} />
+      <Fader value={level} min={0} max={1} defaultValue={0.5} label="Level" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
     </div>
   </PatchPanel>
 </div>

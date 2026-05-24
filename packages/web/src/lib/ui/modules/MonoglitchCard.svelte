@@ -241,14 +241,14 @@
     </div>
 
     <div class="fader-grid" data-testid="monoglitch-controls">
-      <Fader value={p('hRamp')}     min={-1} max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'hRamp')!.defaultValue}     label="H"     curve="linear" onchange={setParam('hRamp')} />
-      <Fader value={p('vRamp')}     min={-1} max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'vRamp')!.defaultValue}     label="V"     curve="linear" onchange={setParam('vRamp')} />
-      <Fader value={p('intensity')} min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'intensity')!.defaultValue} label="Z"     curve="linear" onchange={setParam('intensity')} />
-      <Fader value={p('lines')}     min={8}  max={240} defaultValue={monoglitchDef.params.find((x) => x.id === 'lines')!.defaultValue}     label="Lines" curve="linear" onchange={setParam('lines')} />
-      <Fader value={p('spacing')}   min={0}  max={0.95} defaultValue={monoglitchDef.params.find((x) => x.id === 'spacing')!.defaultValue}  label="Gap"   curve="linear" onchange={setParam('spacing')} />
-      <Fader value={p('tintR')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintR')!.defaultValue}     label="R"     curve="linear" onchange={setParam('tintR')} />
-      <Fader value={p('tintG')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintG')!.defaultValue}     label="G"     curve="linear" onchange={setParam('tintG')} />
-      <Fader value={p('tintB')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"     curve="linear" onchange={setParam('tintB')} />
+      <Fader value={p('hRamp')}     min={-1} max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'hRamp')!.defaultValue}     label="H"     curve="linear" onchange={setParam('hRamp')} moduleId={id} paramId="hRamp" />
+      <Fader value={p('vRamp')}     min={-1} max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'vRamp')!.defaultValue}     label="V"     curve="linear" onchange={setParam('vRamp')} moduleId={id} paramId="vRamp" />
+      <Fader value={p('intensity')} min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'intensity')!.defaultValue} label="Z"     curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
+      <Fader value={p('lines')}     min={8}  max={240} defaultValue={monoglitchDef.params.find((x) => x.id === 'lines')!.defaultValue}     label="Lines" curve="linear" onchange={setParam('lines')} moduleId={id} paramId="lines" />
+      <Fader value={p('spacing')}   min={0}  max={0.95} defaultValue={monoglitchDef.params.find((x) => x.id === 'spacing')!.defaultValue}  label="Gap"   curve="linear" onchange={setParam('spacing')} moduleId={id} paramId="spacing" />
+      <Fader value={p('tintR')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintR')!.defaultValue}     label="R"     curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
+      <Fader value={p('tintG')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintG')!.defaultValue}     label="G"     curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
+      <Fader value={p('tintB')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"     curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
     </div>
   {/if}
 </div>

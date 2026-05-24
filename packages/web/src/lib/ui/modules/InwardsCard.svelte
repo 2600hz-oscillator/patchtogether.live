@@ -40,9 +40,9 @@
   <span class="port-label right" style="top: 50px;">OUT</span>
 
   <div class="fader-grid">
-    <Fader value={p('speed')}     min={-2}  max={2}  defaultValue={inwardsDef.params.find((x) => x.id === 'speed')!.defaultValue}     label="Speed"     curve="linear" onchange={setParam('speed')} />
-    <Fader value={p('density')}   min={1}   max={50} defaultValue={inwardsDef.params.find((x) => x.id === 'density')!.defaultValue}   label="Density"   curve="linear" onchange={setParam('density')} />
-    <Fader value={p('thickness')} min={0}   max={1}  defaultValue={inwardsDef.params.find((x) => x.id === 'thickness')!.defaultValue} label="Thick"     curve="linear" onchange={setParam('thickness')} />
+    <Fader value={p('speed')}     min={-2}  max={2}  defaultValue={inwardsDef.params.find((x) => x.id === 'speed')!.defaultValue}     label="Speed"     curve="linear" onchange={setParam('speed')} moduleId={id} paramId="speed" />
+    <Fader value={p('density')}   min={1}   max={50} defaultValue={inwardsDef.params.find((x) => x.id === 'density')!.defaultValue}   label="Density"   curve="linear" onchange={setParam('density')} moduleId={id} paramId="density" />
+    <Fader value={p('thickness')} min={0}   max={1}  defaultValue={inwardsDef.params.find((x) => x.id === 'thickness')!.defaultValue} label="Thick"     curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
   </div>
 </div>
 

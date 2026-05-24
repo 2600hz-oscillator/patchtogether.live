@@ -104,15 +104,15 @@
       {#each [1, 2, 3] as v (v)}
         <div class="voice-col">
           <div class="col-label">V{v} (DG)</div>
-          <Knob value={paramVal(`v${v}_pitch`,  0)}    min={-36}   max={36}  defaultValue={0}    label="PIT" curve="linear" onchange={set(`v${v}_pitch`)}  readLive={live(`v${v}_pitch`)} />
-          <Knob value={paramVal(`v${v}_tone`,   0.3)}  min={0}     max={1}   defaultValue={0.3}  label="TON" curve="linear" onchange={set(`v${v}_tone`)}   readLive={live(`v${v}_tone`)} />
-          <Knob value={paramVal(`v${v}_shape`,  0.3)}  min={0}     max={1}   defaultValue={0.3}  label="SHP" curve="linear" onchange={set(`v${v}_shape`)}  readLive={live(`v${v}_shape`)} />
-          <Knob value={paramVal(`v${v}_decay`,  0.15)} min={0.001} max={0.5} defaultValue={0.15} label="DCY" curve="log"    onchange={set(`v${v}_decay`)}  readLive={live(`v${v}_decay`)} />
-          <Knob value={paramVal(`v${v}_volume`, 1.0)}  min={0}     max={2.0} defaultValue={1.0}  label="VOL" curve="linear" onchange={set(`v${v}_volume`)} readLive={live(`v${v}_volume`)} />
-          <Knob value={paramVal(`v${v}_pan`,    0)}    min={-1}    max={1}   defaultValue={0}    label="PAN" curve="linear" onchange={set(`v${v}_pan`)}    readLive={live(`v${v}_pan`)} />
+          <Knob value={paramVal(`v${v}_pitch`,  0)}    min={-36}   max={36}  defaultValue={0}    label="PIT" curve="linear" onchange={set(`v${v}_pitch`)} moduleId={id} paramId={`v${v}_pitch`}  readLive={live(`v${v}_pitch`)} />
+          <Knob value={paramVal(`v${v}_tone`,   0.3)}  min={0}     max={1}   defaultValue={0.3}  label="TON" curve="linear" onchange={set(`v${v}_tone`)} moduleId={id} paramId={`v${v}_tone`}   readLive={live(`v${v}_tone`)} />
+          <Knob value={paramVal(`v${v}_shape`,  0.3)}  min={0}     max={1}   defaultValue={0.3}  label="SHP" curve="linear" onchange={set(`v${v}_shape`)} moduleId={id} paramId={`v${v}_shape`}  readLive={live(`v${v}_shape`)} />
+          <Knob value={paramVal(`v${v}_decay`,  0.15)} min={0.001} max={0.5} defaultValue={0.15} label="DCY" curve="log"    onchange={set(`v${v}_decay`)} moduleId={id} paramId={`v${v}_decay`}  readLive={live(`v${v}_decay`)} />
+          <Knob value={paramVal(`v${v}_volume`, 1.0)}  min={0}     max={2.0} defaultValue={1.0}  label="VOL" curve="linear" onchange={set(`v${v}_volume`)} moduleId={id} paramId={`v${v}_volume`} readLive={live(`v${v}_volume`)} />
+          <Knob value={paramVal(`v${v}_pan`,    0)}    min={-1}    max={1}   defaultValue={0}    label="PAN" curve="linear" onchange={set(`v${v}_pan`)} moduleId={id} paramId={`v${v}_pan`}    readLive={live(`v${v}_pan`)} />
           <div class="send-row">
-            <Knob value={paramVal(`v${v}_sendA`, 0)} min={0} max={1} defaultValue={0} label="SDA" curve="linear" onchange={set(`v${v}_sendA`)} readLive={live(`v${v}_sendA`)} />
-            <Knob value={paramVal(`v${v}_sendB`, 0)} min={0} max={1} defaultValue={0} label="SDB" curve="linear" onchange={set(`v${v}_sendB`)} readLive={live(`v${v}_sendB`)} />
+            <Knob value={paramVal(`v${v}_sendA`, 0)} min={0} max={1} defaultValue={0} label="SDA" curve="linear" onchange={set(`v${v}_sendA`)} moduleId={id} paramId={`v${v}_sendA`} readLive={live(`v${v}_sendA`)} />
+            <Knob value={paramVal(`v${v}_sendB`, 0)} min={0} max={1} defaultValue={0} label="SDB" curve="linear" onchange={set(`v${v}_sendB`)} moduleId={id} paramId={`v${v}_sendB`} readLive={live(`v${v}_sendB`)} />
           </div>
         </div>
       {/each}
@@ -120,17 +120,17 @@
       <!-- Voice 4: WT + ADSR + VCA -->
       <div class="voice-col">
         <div class="col-label">V4 (WT)</div>
-        <Knob value={paramVal('v4_tune',     0)}     min={-36}   max={36}  defaultValue={0}     label="TUN" curve="linear" onchange={set('v4_tune')}     readLive={live('v4_tune')} />
-        <Knob value={paramVal('v4_wavePos',  0)}     min={0}     max={1}   defaultValue={0}     label="WAV" curve="linear" onchange={set('v4_wavePos')}  readLive={live('v4_wavePos')} />
-        <Knob value={paramVal('v4_attack',   0.005)} min={0.001} max={2.0} defaultValue={0.005} label="ATK" curve="log"    onchange={set('v4_attack')}   readLive={live('v4_attack')} />
-        <Knob value={paramVal('v4_decay',    0.1)}   min={0.001} max={4.0} defaultValue={0.1}   label="DCY" curve="log"    onchange={set('v4_decay')}    readLive={live('v4_decay')} />
-        <Knob value={paramVal('v4_sustain',  0.7)}   min={0}     max={1}   defaultValue={0.7}   label="SUS" curve="linear" onchange={set('v4_sustain')}  readLive={live('v4_sustain')} />
-        <Knob value={paramVal('v4_release',  0.3)}   min={0.001} max={8.0} defaultValue={0.3}   label="REL" curve="log"    onchange={set('v4_release')}  readLive={live('v4_release')} />
-        <Knob value={paramVal('v4_volume',   0.8)}   min={0}     max={2.0} defaultValue={0.8}   label="VOL" curve="linear" onchange={set('v4_volume')}   readLive={live('v4_volume')} />
-        <Knob value={paramVal('v4_pan',      0)}     min={-1}    max={1}   defaultValue={0}     label="PAN" curve="linear" onchange={set('v4_pan')}      readLive={live('v4_pan')} />
+        <Knob value={paramVal('v4_tune',     0)}     min={-36}   max={36}  defaultValue={0}     label="TUN" curve="linear" onchange={set('v4_tune')} moduleId={id} paramId="v4_tune"     readLive={live('v4_tune')} />
+        <Knob value={paramVal('v4_wavePos',  0)}     min={0}     max={1}   defaultValue={0}     label="WAV" curve="linear" onchange={set('v4_wavePos')} moduleId={id} paramId="v4_wavePos"  readLive={live('v4_wavePos')} />
+        <Knob value={paramVal('v4_attack',   0.005)} min={0.001} max={2.0} defaultValue={0.005} label="ATK" curve="log"    onchange={set('v4_attack')} moduleId={id} paramId="v4_attack"   readLive={live('v4_attack')} />
+        <Knob value={paramVal('v4_decay',    0.1)}   min={0.001} max={4.0} defaultValue={0.1}   label="DCY" curve="log"    onchange={set('v4_decay')} moduleId={id} paramId="v4_decay"    readLive={live('v4_decay')} />
+        <Knob value={paramVal('v4_sustain',  0.7)}   min={0}     max={1}   defaultValue={0.7}   label="SUS" curve="linear" onchange={set('v4_sustain')} moduleId={id} paramId="v4_sustain"  readLive={live('v4_sustain')} />
+        <Knob value={paramVal('v4_release',  0.3)}   min={0.001} max={8.0} defaultValue={0.3}   label="REL" curve="log"    onchange={set('v4_release')} moduleId={id} paramId="v4_release"  readLive={live('v4_release')} />
+        <Knob value={paramVal('v4_volume',   0.8)}   min={0}     max={2.0} defaultValue={0.8}   label="VOL" curve="linear" onchange={set('v4_volume')} moduleId={id} paramId="v4_volume"   readLive={live('v4_volume')} />
+        <Knob value={paramVal('v4_pan',      0)}     min={-1}    max={1}   defaultValue={0}     label="PAN" curve="linear" onchange={set('v4_pan')} moduleId={id} paramId="v4_pan"      readLive={live('v4_pan')} />
         <div class="send-row">
-          <Knob value={paramVal('v4_sendA', 0)} min={0} max={1} defaultValue={0} label="SDA" curve="linear" onchange={set('v4_sendA')} readLive={live('v4_sendA')} />
-          <Knob value={paramVal('v4_sendB', 0)} min={0} max={1} defaultValue={0} label="SDB" curve="linear" onchange={set('v4_sendB')} readLive={live('v4_sendB')} />
+          <Knob value={paramVal('v4_sendA', 0)} min={0} max={1} defaultValue={0} label="SDA" curve="linear" onchange={set('v4_sendA')} moduleId={id} paramId="v4_sendA" readLive={live('v4_sendA')} />
+          <Knob value={paramVal('v4_sendB', 0)} min={0} max={1} defaultValue={0} label="SDB" curve="linear" onchange={set('v4_sendB')} moduleId={id} paramId="v4_sendB" readLive={live('v4_sendB')} />
         </div>
       </div>
 
@@ -139,27 +139,27 @@
         <div class="col-label">FX <span class="wip">(WIP)</span></div>
         <div class="fx-section">
           <div class="fx-section-label">DESTROY</div>
-          <Knob value={paramVal('bc_decimate', 1)}  min={1} max={64} defaultValue={1}  label="Dec"  curve="linear" onchange={set('bc_decimate')} readLive={live('bc_decimate')} />
-          <Knob value={paramVal('bc_bits',     16)} min={1} max={16} defaultValue={16} label="Bits" curve="linear" onchange={set('bc_bits')}     readLive={live('bc_bits')} />
-          <Knob value={paramVal('bc_wet',      1)}  min={0} max={1}  defaultValue={1}  label="Wet"  curve="linear" onchange={set('bc_wet')}      readLive={live('bc_wet')} />
+          <Knob value={paramVal('bc_decimate', 1)}  min={1} max={64} defaultValue={1}  label="Dec"  curve="linear" onchange={set('bc_decimate')} moduleId={id} paramId="bc_decimate" readLive={live('bc_decimate')} />
+          <Knob value={paramVal('bc_bits',     16)} min={1} max={16} defaultValue={16} label="Bits" curve="linear" onchange={set('bc_bits')} moduleId={id} paramId="bc_bits"     readLive={live('bc_bits')} />
+          <Knob value={paramVal('bc_wet',      1)}  min={0} max={1}  defaultValue={1}  label="Wet"  curve="linear" onchange={set('bc_wet')} moduleId={id} paramId="bc_wet"      readLive={live('bc_wet')} />
         </div>
         <div class="fx-section">
           <div class="fx-section-label">REVERB</div>
-          <Knob value={paramVal('rv_size', 0.5)} min={0} max={1} defaultValue={0.5} label="Size" curve="linear" onchange={set('rv_size')} readLive={live('rv_size')} />
-          <Knob value={paramVal('rv_damp', 0.3)} min={0} max={1} defaultValue={0.3} label="Damp" curve="linear" onchange={set('rv_damp')} readLive={live('rv_damp')} />
-          <Knob value={paramVal('rv_mix',  0.3)} min={0} max={1} defaultValue={0.3} label="Mix"  curve="linear" onchange={set('rv_mix')}  readLive={live('rv_mix')} />
+          <Knob value={paramVal('rv_size', 0.5)} min={0} max={1} defaultValue={0.5} label="Size" curve="linear" onchange={set('rv_size')} moduleId={id} paramId="rv_size" readLive={live('rv_size')} />
+          <Knob value={paramVal('rv_damp', 0.3)} min={0} max={1} defaultValue={0.3} label="Damp" curve="linear" onchange={set('rv_damp')} moduleId={id} paramId="rv_damp" readLive={live('rv_damp')} />
+          <Knob value={paramVal('rv_mix',  0.3)} min={0} max={1} defaultValue={0.3} label="Mix"  curve="linear" onchange={set('rv_mix')} moduleId={id} paramId="rv_mix"  readLive={live('rv_mix')} />
         </div>
         <div class="fx-section">
           <div class="fx-section-label">RETURNS</div>
-          <Knob value={paramVal('returnA', 0.5)} min={0} max={1} defaultValue={0.5} label="retA" curve="linear" onchange={set('returnA')} readLive={live('returnA')} />
-          <Knob value={paramVal('returnB', 0.5)} min={0} max={1} defaultValue={0.5} label="retB" curve="linear" onchange={set('returnB')} readLive={live('returnB')} />
+          <Knob value={paramVal('returnA', 0.5)} min={0} max={1} defaultValue={0.5} label="retA" curve="linear" onchange={set('returnA')} moduleId={id} paramId="returnA" readLive={live('returnA')} />
+          <Knob value={paramVal('returnB', 0.5)} min={0} max={1} defaultValue={0.5} label="retB" curve="linear" onchange={set('returnB')} moduleId={id} paramId="returnB" readLive={live('returnB')} />
         </div>
         <div class="fx-section master-section">
           <div class="fx-section-label">QBRT (MASTER)</div>
-          <Knob value={paramVal('flt_cutoff',    18000)} min={20}    max={20000} defaultValue={18000} label="Cut"  curve="log"    onchange={set('flt_cutoff')}    readLive={live('flt_cutoff')} />
-          <Knob value={paramVal('flt_resonance', 0.4)}   min={0}     max={0.99}  defaultValue={0.4}   label="Res"  curve="linear" onchange={set('flt_resonance')} readLive={live('flt_resonance')} />
-          <Knob value={paramVal('flt_mode',      0)}     min={0}     max={1}     defaultValue={0}     label="Mode" curve="linear" onchange={set('flt_mode')}      readLive={live('flt_mode')} />
-          <Knob value={paramVal('flt_pingDecay', 0.15)}  min={0.005} max={0.5}   defaultValue={0.15}  label="Ping" curve="log"    onchange={set('flt_pingDecay')} readLive={live('flt_pingDecay')} />
+          <Knob value={paramVal('flt_cutoff',    18000)} min={20}    max={20000} defaultValue={18000} label="Cut"  curve="log"    onchange={set('flt_cutoff')} moduleId={id} paramId="flt_cutoff"    readLive={live('flt_cutoff')} />
+          <Knob value={paramVal('flt_resonance', 0.4)}   min={0}     max={0.99}  defaultValue={0.4}   label="Res"  curve="linear" onchange={set('flt_resonance')} moduleId={id} paramId="flt_resonance" readLive={live('flt_resonance')} />
+          <Knob value={paramVal('flt_mode',      0)}     min={0}     max={1}     defaultValue={0}     label="Mode" curve="linear" onchange={set('flt_mode')} moduleId={id} paramId="flt_mode"      readLive={live('flt_mode')} />
+          <Knob value={paramVal('flt_pingDecay', 0.15)}  min={0.005} max={0.5}   defaultValue={0.15}  label="Ping" curve="log"    onchange={set('flt_pingDecay')} moduleId={id} paramId="flt_pingDecay" readLive={live('flt_pingDecay')} />
         </div>
       </div>
     </div>

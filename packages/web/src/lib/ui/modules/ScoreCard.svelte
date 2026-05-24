@@ -1002,11 +1002,11 @@
 
   <!-- ADSR + BPM faders -->
   <div class="fader-row">
-    <Fader value={bpm}     min={30}    max={300} defaultValue={120}   label="BPM" curve="linear" onchange={set('bpm')}     readLive={live('bpm')} />
-    <Fader value={attack}  min={0.001} max={10}  defaultValue={0.005} label="A"   curve="log"    onchange={set('attack')}  readLive={live('attack')} />
-    <Fader value={decay}   min={0.001} max={10}  defaultValue={0.1}   label="D"   curve="log"    onchange={set('decay')}   readLive={live('decay')} />
-    <Fader value={sustain} min={0}     max={1}   defaultValue={0.7}   label="S"   curve="linear" onchange={set('sustain')} readLive={live('sustain')} />
-    <Fader value={release} min={0.001} max={10}  defaultValue={0.3}   label="R"   curve="log"    onchange={set('release')} readLive={live('release')} />
+    <Fader value={bpm}     min={30}    max={300} defaultValue={120}   label="BPM" curve="linear" onchange={set('bpm')} moduleId={id} paramId="bpm"     readLive={live('bpm')} />
+    <Fader value={attack}  min={0.001} max={10}  defaultValue={0.005} label="A"   curve="log"    onchange={set('attack')} moduleId={id} paramId="attack"  readLive={live('attack')} />
+    <Fader value={decay}   min={0.001} max={10}  defaultValue={0.1}   label="D"   curve="log"    onchange={set('decay')} moduleId={id} paramId="decay"   readLive={live('decay')} />
+    <Fader value={sustain} min={0}     max={1}   defaultValue={0.7}   label="S"   curve="linear" onchange={set('sustain')} moduleId={id} paramId="sustain" readLive={live('sustain')} />
+    <Fader value={release} min={0.001} max={10}  defaultValue={0.3}   label="R"   curve="log"    onchange={set('release')} moduleId={id} paramId="release" readLive={live('release')} />
   </div>
 
   <QuicksaveControls

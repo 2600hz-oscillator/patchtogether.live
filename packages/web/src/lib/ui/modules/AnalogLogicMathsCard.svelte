@@ -42,8 +42,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={attA} min={-1} max={1} defaultValue={1} label="Att A" curve="linear" onchange={set('attA')} readLive={live('attA')} />
-      <Fader value={attB} min={-1} max={1} defaultValue={1} label="Att B" curve="linear" onchange={set('attB')} readLive={live('attB')} />
+      <Fader value={attA} min={-1} max={1} defaultValue={1} label="Att A" curve="linear" onchange={set('attA')} moduleId={id} paramId="attA" readLive={live('attA')} />
+      <Fader value={attB} min={-1} max={1} defaultValue={1} label="Att B" curve="linear" onchange={set('attB')} moduleId={id} paramId="attB" readLive={live('attB')} />
     </div>
   </PatchPanel>
 </div>

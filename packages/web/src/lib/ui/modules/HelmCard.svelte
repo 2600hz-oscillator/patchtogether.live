@@ -270,12 +270,12 @@
           <div class="section osc">
             <div class="section-title">OSC 1</div>
             <div class="knob-grid">
-              <Knob value={paramVal('osc1Wave', 0)}   min={0} max={3} defaultValue={0}   label="Wav"  curve="discrete" onchange={set('osc1Wave')}   readLive={live('osc1Wave')} />
-              <Knob value={paramVal('osc1Trans', 0)}  min={-24} max={24} defaultValue={0} label="Tr"   curve="linear"   onchange={set('osc1Trans')}  readLive={live('osc1Trans')} />
-              <Knob value={paramVal('osc1Tune', 0)}   min={-100} max={100} defaultValue={0} label="Tu" curve="linear"   onchange={set('osc1Tune')}   readLive={live('osc1Tune')} />
-              <Knob value={paramVal('osc1Unison', 1)} min={1} max={7} defaultValue={1}    label="Uni"  curve="discrete" onchange={set('osc1Unison')} readLive={live('osc1Unison')} />
-              <Knob value={paramVal('osc1Detune', 10)} min={0} max={50} defaultValue={10} label="Det"  curve="linear"   onchange={set('osc1Detune')} readLive={live('osc1Detune')} />
-              <Knob value={paramVal('osc1Vol', 0.8)}  min={0} max={1} defaultValue={0.8}  label="Vol"  curve="linear"   onchange={set('osc1Vol')}    readLive={live('osc1Vol')} />
+              <Knob value={paramVal('osc1Wave', 0)}   min={0} max={3} defaultValue={0}   label="Wav"  curve="discrete" onchange={set('osc1Wave')} moduleId={id} paramId="osc1Wave"   readLive={live('osc1Wave')} />
+              <Knob value={paramVal('osc1Trans', 0)}  min={-24} max={24} defaultValue={0} label="Tr"   curve="linear"   onchange={set('osc1Trans')} moduleId={id} paramId="osc1Trans"  readLive={live('osc1Trans')} />
+              <Knob value={paramVal('osc1Tune', 0)}   min={-100} max={100} defaultValue={0} label="Tu" curve="linear"   onchange={set('osc1Tune')} moduleId={id} paramId="osc1Tune"   readLive={live('osc1Tune')} />
+              <Knob value={paramVal('osc1Unison', 1)} min={1} max={7} defaultValue={1}    label="Uni"  curve="discrete" onchange={set('osc1Unison')} moduleId={id} paramId="osc1Unison" readLive={live('osc1Unison')} />
+              <Knob value={paramVal('osc1Detune', 10)} min={0} max={50} defaultValue={10} label="Det"  curve="linear"   onchange={set('osc1Detune')} moduleId={id} paramId="osc1Detune" readLive={live('osc1Detune')} />
+              <Knob value={paramVal('osc1Vol', 0.8)}  min={0} max={1} defaultValue={0.8}  label="Vol"  curve="linear"   onchange={set('osc1Vol')} moduleId={id} paramId="osc1Vol"    readLive={live('osc1Vol')} />
             </div>
           </div>
 
@@ -283,12 +283,12 @@
           <div class="section osc">
             <div class="section-title">OSC 2</div>
             <div class="knob-grid">
-              <Knob value={paramVal('osc2Wave', 1)}    min={0} max={3} defaultValue={1}   label="Wav"  curve="discrete" onchange={set('osc2Wave')}   readLive={live('osc2Wave')} />
-              <Knob value={paramVal('osc2Trans', 0)}   min={-24} max={24} defaultValue={0} label="Tr"  curve="linear"   onchange={set('osc2Trans')}  readLive={live('osc2Trans')} />
-              <Knob value={paramVal('osc2Tune', 7)}    min={-100} max={100} defaultValue={7} label="Tu" curve="linear"  onchange={set('osc2Tune')}   readLive={live('osc2Tune')} />
-              <Knob value={paramVal('osc2Unison', 1)}  min={1} max={7} defaultValue={1}    label="Uni" curve="discrete" onchange={set('osc2Unison')} readLive={live('osc2Unison')} />
-              <Knob value={paramVal('osc2Detune', 10)} min={0} max={50} defaultValue={10}  label="Det" curve="linear"   onchange={set('osc2Detune')} readLive={live('osc2Detune')} />
-              <Knob value={paramVal('osc2Vol', 0.6)}   min={0} max={1} defaultValue={0.6}  label="Vol" curve="linear"   onchange={set('osc2Vol')}    readLive={live('osc2Vol')} />
+              <Knob value={paramVal('osc2Wave', 1)}    min={0} max={3} defaultValue={1}   label="Wav"  curve="discrete" onchange={set('osc2Wave')} moduleId={id} paramId="osc2Wave"   readLive={live('osc2Wave')} />
+              <Knob value={paramVal('osc2Trans', 0)}   min={-24} max={24} defaultValue={0} label="Tr"  curve="linear"   onchange={set('osc2Trans')} moduleId={id} paramId="osc2Trans"  readLive={live('osc2Trans')} />
+              <Knob value={paramVal('osc2Tune', 7)}    min={-100} max={100} defaultValue={7} label="Tu" curve="linear"  onchange={set('osc2Tune')} moduleId={id} paramId="osc2Tune"   readLive={live('osc2Tune')} />
+              <Knob value={paramVal('osc2Unison', 1)}  min={1} max={7} defaultValue={1}    label="Uni" curve="discrete" onchange={set('osc2Unison')} moduleId={id} paramId="osc2Unison" readLive={live('osc2Unison')} />
+              <Knob value={paramVal('osc2Detune', 10)} min={0} max={50} defaultValue={10}  label="Det" curve="linear"   onchange={set('osc2Detune')} moduleId={id} paramId="osc2Detune" readLive={live('osc2Detune')} />
+              <Knob value={paramVal('osc2Vol', 0.6)}   min={0} max={1} defaultValue={0.6}  label="Vol" curve="linear"   onchange={set('osc2Vol')} moduleId={id} paramId="osc2Vol"    readLive={live('osc2Vol')} />
             </div>
           </div>
 
@@ -296,12 +296,12 @@
           <div class="section subnoise">
             <div class="section-title">SUB / NOISE</div>
             <div class="knob-grid">
-              <Knob value={paramVal('subWave', 3)}  min={0} max={3} defaultValue={3}  label="Sub W" curve="discrete" onchange={set('subWave')}  readLive={live('subWave')} />
-              <Knob value={paramVal('subVol', 0.4)} min={0} max={1} defaultValue={0.4} label="Sub"  curve="linear"   onchange={set('subVol')}   readLive={live('subVol')} />
-              <Knob value={paramVal('noiseVol', 0)} min={0} max={1} defaultValue={0}  label="Noise" curve="linear"  onchange={set('noiseVol')} readLive={live('noiseVol')} />
-              <Knob value={paramVal('volume', 0.7)} min={0} max={2} defaultValue={0.7} label="VOL"  curve="linear"   onchange={set('volume')}   readLive={live('volume')} />
-              <Knob value={paramVal('voiceCount', 6)} min={1} max={8} defaultValue={6} label="Vcs"  curve="discrete" onchange={set('voiceCount')} readLive={live('voiceCount')} />
-              <Knob value={paramVal('spread', 0.3)} min={0} max={1} defaultValue={0.3} label="Spr"   curve="linear"   onchange={set('spread')}   readLive={live('spread')} />
+              <Knob value={paramVal('subWave', 3)}  min={0} max={3} defaultValue={3}  label="Sub W" curve="discrete" onchange={set('subWave')} moduleId={id} paramId="subWave"  readLive={live('subWave')} />
+              <Knob value={paramVal('subVol', 0.4)} min={0} max={1} defaultValue={0.4} label="Sub"  curve="linear"   onchange={set('subVol')} moduleId={id} paramId="subVol"   readLive={live('subVol')} />
+              <Knob value={paramVal('noiseVol', 0)} min={0} max={1} defaultValue={0}  label="Noise" curve="linear"  onchange={set('noiseVol')} moduleId={id} paramId="noiseVol" readLive={live('noiseVol')} />
+              <Knob value={paramVal('volume', 0.7)} min={0} max={2} defaultValue={0.7} label="VOL"  curve="linear"   onchange={set('volume')} moduleId={id} paramId="volume"   readLive={live('volume')} />
+              <Knob value={paramVal('voiceCount', 6)} min={1} max={8} defaultValue={6} label="Vcs"  curve="discrete" onchange={set('voiceCount')} moduleId={id} paramId="voiceCount" readLive={live('voiceCount')} />
+              <Knob value={paramVal('spread', 0.3)} min={0} max={1} defaultValue={0.3} label="Spr"   curve="linear"   onchange={set('spread')} moduleId={id} paramId="spread"   readLive={live('spread')} />
             </div>
           </div>
         </div>
@@ -312,12 +312,12 @@
           <div class="section filter">
             <div class="section-title">FILTER</div>
             <div class="knob-grid">
-              <Knob value={paramVal('filterCutoff', 4000)}  min={20} max={20000} defaultValue={4000} label="Cut"  curve="log"      onchange={set('filterCutoff')}  readLive={live('filterCutoff')} />
-              <Knob value={paramVal('filterRes', 1)}        min={0.5} max={16} defaultValue={1}      label="Res"  curve="linear"   onchange={set('filterRes')}     readLive={live('filterRes')} />
-              <Knob value={paramVal('filterBlend', 0)}      min={0} max={2} defaultValue={0}         label="Mode" curve="linear"   onchange={set('filterBlend')}   readLive={live('filterBlend')} />
-              <Knob value={paramVal('filterStyle', 0)}      min={0} max={1} defaultValue={0}         label="Pole" curve="discrete" onchange={set('filterStyle')}   readLive={live('filterStyle')} />
-              <Knob value={paramVal('filterDrive', 1)}      min={0.5} max={6} defaultValue={1}       label="Drv"  curve="linear"   onchange={set('filterDrive')}   readLive={live('filterDrive')} />
-              <Knob value={paramVal('filterKeyTrack', 0)}   min={-1} max={1} defaultValue={0}        label="Key"  curve="linear"   onchange={set('filterKeyTrack')} readLive={live('filterKeyTrack')} />
+              <Knob value={paramVal('filterCutoff', 4000)}  min={20} max={20000} defaultValue={4000} label="Cut"  curve="log"      onchange={set('filterCutoff')} moduleId={id} paramId="filterCutoff"  readLive={live('filterCutoff')} />
+              <Knob value={paramVal('filterRes', 1)}        min={0.5} max={16} defaultValue={1}      label="Res"  curve="linear"   onchange={set('filterRes')} moduleId={id} paramId="filterRes"     readLive={live('filterRes')} />
+              <Knob value={paramVal('filterBlend', 0)}      min={0} max={2} defaultValue={0}         label="Mode" curve="linear"   onchange={set('filterBlend')} moduleId={id} paramId="filterBlend"   readLive={live('filterBlend')} />
+              <Knob value={paramVal('filterStyle', 0)}      min={0} max={1} defaultValue={0}         label="Pole" curve="discrete" onchange={set('filterStyle')} moduleId={id} paramId="filterStyle"   readLive={live('filterStyle')} />
+              <Knob value={paramVal('filterDrive', 1)}      min={0.5} max={6} defaultValue={1}       label="Drv"  curve="linear"   onchange={set('filterDrive')} moduleId={id} paramId="filterDrive"   readLive={live('filterDrive')} />
+              <Knob value={paramVal('filterKeyTrack', 0)}   min={-1} max={1} defaultValue={0}        label="Key"  curve="linear"   onchange={set('filterKeyTrack')} moduleId={id} paramId="filterKeyTrack" readLive={live('filterKeyTrack')} />
             </div>
           </div>
 
@@ -325,10 +325,10 @@
           <div class="section env">
             <div class="section-title">AMP ENV</div>
             <div class="knob-grid">
-              <Knob value={paramVal('ampAttack', 0.005)} min={0} max={8} defaultValue={0.005} label="A" curve="linear" onchange={set('ampAttack')}  readLive={live('ampAttack')} />
-              <Knob value={paramVal('ampDecay', 0.2)}    min={0} max={8} defaultValue={0.2}   label="D" curve="linear" onchange={set('ampDecay')}   readLive={live('ampDecay')} />
-              <Knob value={paramVal('ampSustain', 0.6)}  min={0} max={1} defaultValue={0.6}   label="S" curve="linear" onchange={set('ampSustain')} readLive={live('ampSustain')} />
-              <Knob value={paramVal('ampRelease', 0.3)}  min={0} max={8} defaultValue={0.3}   label="R" curve="linear" onchange={set('ampRelease')} readLive={live('ampRelease')} />
+              <Knob value={paramVal('ampAttack', 0.005)} min={0} max={8} defaultValue={0.005} label="A" curve="linear" onchange={set('ampAttack')} moduleId={id} paramId="ampAttack"  readLive={live('ampAttack')} />
+              <Knob value={paramVal('ampDecay', 0.2)}    min={0} max={8} defaultValue={0.2}   label="D" curve="linear" onchange={set('ampDecay')} moduleId={id} paramId="ampDecay"   readLive={live('ampDecay')} />
+              <Knob value={paramVal('ampSustain', 0.6)}  min={0} max={1} defaultValue={0.6}   label="S" curve="linear" onchange={set('ampSustain')} moduleId={id} paramId="ampSustain" readLive={live('ampSustain')} />
+              <Knob value={paramVal('ampRelease', 0.3)}  min={0} max={8} defaultValue={0.3}   label="R" curve="linear" onchange={set('ampRelease')} moduleId={id} paramId="ampRelease" readLive={live('ampRelease')} />
             </div>
           </div>
 
@@ -336,11 +336,11 @@
           <div class="section env">
             <div class="section-title">FILT ENV</div>
             <div class="knob-grid">
-              <Knob value={paramVal('filAttack', 0.005)} min={0} max={8} defaultValue={0.005} label="A"   curve="linear" onchange={set('filAttack')}   readLive={live('filAttack')} />
-              <Knob value={paramVal('filDecay', 0.5)}    min={0} max={8} defaultValue={0.5}   label="D"   curve="linear" onchange={set('filDecay')}    readLive={live('filDecay')} />
-              <Knob value={paramVal('filSustain', 0)}    min={0} max={1} defaultValue={0}     label="S"   curve="linear" onchange={set('filSustain')}  readLive={live('filSustain')} />
-              <Knob value={paramVal('filRelease', 0.3)}  min={0} max={8} defaultValue={0.3}   label="R"   curve="linear" onchange={set('filRelease')}  readLive={live('filRelease')} />
-              <Knob value={paramVal('filEnvDepth', 0)}   min={-1} max={1} defaultValue={0}    label="Amt" curve="linear" onchange={set('filEnvDepth')} readLive={live('filEnvDepth')} />
+              <Knob value={paramVal('filAttack', 0.005)} min={0} max={8} defaultValue={0.005} label="A"   curve="linear" onchange={set('filAttack')} moduleId={id} paramId="filAttack"   readLive={live('filAttack')} />
+              <Knob value={paramVal('filDecay', 0.5)}    min={0} max={8} defaultValue={0.5}   label="D"   curve="linear" onchange={set('filDecay')} moduleId={id} paramId="filDecay"    readLive={live('filDecay')} />
+              <Knob value={paramVal('filSustain', 0)}    min={0} max={1} defaultValue={0}     label="S"   curve="linear" onchange={set('filSustain')} moduleId={id} paramId="filSustain"  readLive={live('filSustain')} />
+              <Knob value={paramVal('filRelease', 0.3)}  min={0} max={8} defaultValue={0.3}   label="R"   curve="linear" onchange={set('filRelease')} moduleId={id} paramId="filRelease"  readLive={live('filRelease')} />
+              <Knob value={paramVal('filEnvDepth', 0)}   min={-1} max={1} defaultValue={0}    label="Amt" curve="linear" onchange={set('filEnvDepth')} moduleId={id} paramId="filEnvDepth" readLive={live('filEnvDepth')} />
             </div>
           </div>
 
@@ -348,11 +348,11 @@
           <div class="section env">
             <div class="section-title">MOD ENV</div>
             <div class="knob-grid">
-              <Knob value={paramVal('modAttack', 0.005)} min={0} max={8} defaultValue={0.005} label="A"   curve="linear" onchange={set('modAttack')}   readLive={live('modAttack')} />
-              <Knob value={paramVal('modDecay', 0.5)}    min={0} max={8} defaultValue={0.5}   label="D"   curve="linear" onchange={set('modDecay')}    readLive={live('modDecay')} />
-              <Knob value={paramVal('modSustain', 0)}    min={0} max={1} defaultValue={0}     label="S"   curve="linear" onchange={set('modSustain')}  readLive={live('modSustain')} />
-              <Knob value={paramVal('modRelease', 0.3)}  min={0} max={8} defaultValue={0.3}   label="R"   curve="linear" onchange={set('modRelease')}  readLive={live('modRelease')} />
-              <Knob value={paramVal('modEnvDepth', 0)}   min={-1} max={1} defaultValue={0}    label="Amt" curve="linear" onchange={set('modEnvDepth')} readLive={live('modEnvDepth')} />
+              <Knob value={paramVal('modAttack', 0.005)} min={0} max={8} defaultValue={0.005} label="A"   curve="linear" onchange={set('modAttack')} moduleId={id} paramId="modAttack"   readLive={live('modAttack')} />
+              <Knob value={paramVal('modDecay', 0.5)}    min={0} max={8} defaultValue={0.5}   label="D"   curve="linear" onchange={set('modDecay')} moduleId={id} paramId="modDecay"    readLive={live('modDecay')} />
+              <Knob value={paramVal('modSustain', 0)}    min={0} max={1} defaultValue={0}     label="S"   curve="linear" onchange={set('modSustain')} moduleId={id} paramId="modSustain"  readLive={live('modSustain')} />
+              <Knob value={paramVal('modRelease', 0.3)}  min={0} max={8} defaultValue={0.3}   label="R"   curve="linear" onchange={set('modRelease')} moduleId={id} paramId="modRelease"  readLive={live('modRelease')} />
+              <Knob value={paramVal('modEnvDepth', 0)}   min={-1} max={1} defaultValue={0}    label="Amt" curve="linear" onchange={set('modEnvDepth')} moduleId={id} paramId="modEnvDepth" readLive={live('modEnvDepth')} />
             </div>
           </div>
         </div>
@@ -362,26 +362,26 @@
           <div class="section lfo">
             <div class="section-title">LFO 1 → CUT</div>
             <div class="knob-grid">
-              <Knob value={paramVal('lfo1Wave', 3)} min={0} max={3} defaultValue={3}      label="Wav" curve="discrete" onchange={set('lfo1Wave')} readLive={live('lfo1Wave')} />
-              <Knob value={paramVal('lfo1Freq', 1)} min={0.01} max={30} defaultValue={1}  label="Hz"  curve="log"      onchange={set('lfo1Freq')} readLive={live('lfo1Freq')} />
-              <Knob value={paramVal('lfo1Amp', 0)}  min={0} max={1} defaultValue={0}      label="Amt" curve="linear"   onchange={set('lfo1Amp')}  readLive={live('lfo1Amp')} />
+              <Knob value={paramVal('lfo1Wave', 3)} min={0} max={3} defaultValue={3}      label="Wav" curve="discrete" onchange={set('lfo1Wave')} moduleId={id} paramId="lfo1Wave" readLive={live('lfo1Wave')} />
+              <Knob value={paramVal('lfo1Freq', 1)} min={0.01} max={30} defaultValue={1}  label="Hz"  curve="log"      onchange={set('lfo1Freq')} moduleId={id} paramId="lfo1Freq" readLive={live('lfo1Freq')} />
+              <Knob value={paramVal('lfo1Amp', 0)}  min={0} max={1} defaultValue={0}      label="Amt" curve="linear"   onchange={set('lfo1Amp')} moduleId={id} paramId="lfo1Amp"  readLive={live('lfo1Amp')} />
             </div>
           </div>
           <div class="section lfo">
             <div class="section-title">LFO 2 → O2 P</div>
             <div class="knob-grid">
-              <Knob value={paramVal('lfo2Wave', 3)} min={0} max={3} defaultValue={3}      label="Wav" curve="discrete" onchange={set('lfo2Wave')} readLive={live('lfo2Wave')} />
-              <Knob value={paramVal('lfo2Freq', 4)} min={0.01} max={30} defaultValue={4}  label="Hz"  curve="log"      onchange={set('lfo2Freq')} readLive={live('lfo2Freq')} />
-              <Knob value={paramVal('lfo2Amp', 0)}  min={0} max={1} defaultValue={0}      label="Amt" curve="linear"   onchange={set('lfo2Amp')}  readLive={live('lfo2Amp')} />
+              <Knob value={paramVal('lfo2Wave', 3)} min={0} max={3} defaultValue={3}      label="Wav" curve="discrete" onchange={set('lfo2Wave')} moduleId={id} paramId="lfo2Wave" readLive={live('lfo2Wave')} />
+              <Knob value={paramVal('lfo2Freq', 4)} min={0.01} max={30} defaultValue={4}  label="Hz"  curve="log"      onchange={set('lfo2Freq')} moduleId={id} paramId="lfo2Freq" readLive={live('lfo2Freq')} />
+              <Knob value={paramVal('lfo2Amp', 0)}  min={0} max={1} defaultValue={0}      label="Amt" curve="linear"   onchange={set('lfo2Amp')} moduleId={id} paramId="lfo2Amp"  readLive={live('lfo2Amp')} />
             </div>
           </div>
           <div class="section step">
             <div class="section-title">STEP SEQ → O2 T</div>
             <div class="knob-grid">
-              <Knob value={paramVal('stepNumSteps', 8)} min={1} max={16} defaultValue={8}    label="N"   curve="discrete" onchange={set('stepNumSteps')} readLive={live('stepNumSteps')} />
-              <Knob value={paramVal('stepRate', 4)}     min={0.1} max={30} defaultValue={4}  label="Hz"  curve="log"      onchange={set('stepRate')}     readLive={live('stepRate')} />
-              <Knob value={paramVal('stepSmooth', 0)}   min={0} max={1} defaultValue={0}     label="Sm"  curve="linear"   onchange={set('stepSmooth')}   readLive={live('stepSmooth')} />
-              <Knob value={paramVal('stepDepth', 0)}    min={-1} max={1} defaultValue={0}    label="Amt" curve="linear"   onchange={set('stepDepth')}    readLive={live('stepDepth')} />
+              <Knob value={paramVal('stepNumSteps', 8)} min={1} max={16} defaultValue={8}    label="N"   curve="discrete" onchange={set('stepNumSteps')} moduleId={id} paramId="stepNumSteps" readLive={live('stepNumSteps')} />
+              <Knob value={paramVal('stepRate', 4)}     min={0.1} max={30} defaultValue={4}  label="Hz"  curve="log"      onchange={set('stepRate')} moduleId={id} paramId="stepRate"     readLive={live('stepRate')} />
+              <Knob value={paramVal('stepSmooth', 0)}   min={0} max={1} defaultValue={0}     label="Sm"  curve="linear"   onchange={set('stepSmooth')} moduleId={id} paramId="stepSmooth"   readLive={live('stepSmooth')} />
+              <Knob value={paramVal('stepDepth', 0)}    min={-1} max={1} defaultValue={0}    label="Amt" curve="linear"   onchange={set('stepDepth')} moduleId={id} paramId="stepDepth"    readLive={live('stepDepth')} />
             </div>
             <!-- Sequencer transport: on/off + reset.
                  v2 sequencer is gate-clocked — each rising edge on the

@@ -29,9 +29,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={size} min={0} max={1} defaultValue={0.5} label="Size" curve="linear" onchange={set('size')} readLive={live('size')} />
-      <Fader value={damp} min={0} max={1} defaultValue={0.3} label="Damp" curve="linear" onchange={set('damp')} readLive={live('damp')} />
-      <Fader value={mix}  min={0} max={1} defaultValue={0.3} label="Mix"  curve="linear" onchange={set('mix')}  readLive={live('mix')} />
+      <Fader value={size} min={0} max={1} defaultValue={0.5} label="Size" curve="linear" onchange={set('size')} moduleId={id} paramId="size" readLive={live('size')} />
+      <Fader value={damp} min={0} max={1} defaultValue={0.3} label="Damp" curve="linear" onchange={set('damp')} moduleId={id} paramId="damp" readLive={live('damp')} />
+      <Fader value={mix}  min={0} max={1} defaultValue={0.3} label="Mix"  curve="linear" onchange={set('mix')} moduleId={id} paramId="mix"  readLive={live('mix')} />
     </div>
   </PatchPanel>
 </div>

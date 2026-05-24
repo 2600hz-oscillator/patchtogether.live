@@ -185,10 +185,10 @@
           <button type="button" class="pill" class:on={tapOn} data-testid="cs-tap-enabled" onclick={() => toggle('tap_enabled')}>{tapOn ? 'ON' : 'OFF'}</button>
         </header>
         <div class="knob-grid">
-          <Knob value={paramVal('tap_count')}    min={0} max={1} defaultValue={0.2}  label="Count"     curve="linear" onchange={set('tap_count')}    readLive={live('tap_count')} />
-          <Knob value={paramVal('tap_decay')}    min={0} max={1} defaultValue={1}    label="Decay"     curve="linear" onchange={set('tap_decay')}    readLive={live('tap_decay')} />
-          <Knob value={paramVal('tap_predelay')} min={0} max={1} defaultValue={0}    label="Pre-Delay" curve="linear" onchange={set('tap_predelay')} readLive={live('tap_predelay')} />
-          <Knob value={paramVal('tap_length')}   min={0} max={1} defaultValue={0.98} label="Length"    curve="linear" onchange={set('tap_length')}   readLive={live('tap_length')} />
+          <Knob value={paramVal('tap_count')}    min={0} max={1} defaultValue={0.2}  label="Count"     curve="linear" onchange={set('tap_count')} moduleId={id} paramId="tap_count"    readLive={live('tap_count')} />
+          <Knob value={paramVal('tap_decay')}    min={0} max={1} defaultValue={1}    label="Decay"     curve="linear" onchange={set('tap_decay')} moduleId={id} paramId="tap_decay"    readLive={live('tap_decay')} />
+          <Knob value={paramVal('tap_predelay')} min={0} max={1} defaultValue={0}    label="Pre-Delay" curve="linear" onchange={set('tap_predelay')} moduleId={id} paramId="tap_predelay" readLive={live('tap_predelay')} />
+          <Knob value={paramVal('tap_length')}   min={0} max={1} defaultValue={0.98} label="Length"    curve="linear" onchange={set('tap_length')} moduleId={id} paramId="tap_length"   readLive={live('tap_length')} />
         </div>
       </section>
 
@@ -200,11 +200,11 @@
           <button type="button" class="pill" class:on={earlyDiffOn} data-testid="cs-diff-enabled" onclick={() => toggle('early_diffuse_enabled')}>{earlyDiffOn ? 'ON' : 'OFF'}</button>
         </header>
         <div class="knob-grid">
-          <Knob value={paramVal('early_diffuse_delay')}    min={0} max={1} defaultValue={0.3}  label="Delay"    curve="linear" onchange={set('early_diffuse_delay')}    readLive={live('early_diffuse_delay')} />
-          <Knob value={paramVal('early_diffuse_mod_amt')}  min={0} max={1} defaultValue={0.14} label="Mod Amt"  curve="linear" onchange={set('early_diffuse_mod_amt')}  readLive={live('early_diffuse_mod_amt')} />
-          <Knob value={paramVal('early_diffuse_feedback')} min={0} max={1} defaultValue={0.77} label="Feedback" curve="linear" onchange={set('early_diffuse_feedback')} readLive={live('early_diffuse_feedback')} />
-          <Knob value={paramVal('early_diffuse_mod_rate')} min={0} max={1} defaultValue={0.25} label="Mod Rate" curve="linear" onchange={set('early_diffuse_mod_rate')} readLive={live('early_diffuse_mod_rate')} />
-          <Knob value={paramVal('early_diffuse_count')}    min={0} max={1} defaultValue={0.3}  label="Stages"   curve="linear" onchange={set('early_diffuse_count')}    readLive={live('early_diffuse_count')} />
+          <Knob value={paramVal('early_diffuse_delay')}    min={0} max={1} defaultValue={0.3}  label="Delay"    curve="linear" onchange={set('early_diffuse_delay')} moduleId={id} paramId="early_diffuse_delay"    readLive={live('early_diffuse_delay')} />
+          <Knob value={paramVal('early_diffuse_mod_amt')}  min={0} max={1} defaultValue={0.14} label="Mod Amt"  curve="linear" onchange={set('early_diffuse_mod_amt')} moduleId={id} paramId="early_diffuse_mod_amt"  readLive={live('early_diffuse_mod_amt')} />
+          <Knob value={paramVal('early_diffuse_feedback')} min={0} max={1} defaultValue={0.77} label="Feedback" curve="linear" onchange={set('early_diffuse_feedback')} moduleId={id} paramId="early_diffuse_feedback" readLive={live('early_diffuse_feedback')} />
+          <Knob value={paramVal('early_diffuse_mod_rate')} min={0} max={1} defaultValue={0.25} label="Mod Rate" curve="linear" onchange={set('early_diffuse_mod_rate')} moduleId={id} paramId="early_diffuse_mod_rate" readLive={live('early_diffuse_mod_rate')} />
+          <Knob value={paramVal('early_diffuse_count')}    min={0} max={1} defaultValue={0.3}  label="Stages"   curve="linear" onchange={set('early_diffuse_count')} moduleId={id} paramId="early_diffuse_count"    readLive={live('early_diffuse_count')} />
         </div>
       </section>
 
@@ -218,14 +218,14 @@
           <span class="num-readout" data-testid="cs-late-diff-count">{lateDiffCountLabel}</span>
         </header>
         <div class="knob-grid wide">
-          <Knob value={paramVal('late_line_size')}        min={0} max={1} defaultValue={0.47} label="Size"      curve="linear" onchange={set('late_line_size')}        readLive={live('late_line_size')} />
-          <Knob value={paramVal('late_line_mod_amt')}     min={0} max={1} defaultValue={0.27} label="Mod Amt"   curve="linear" onchange={set('late_line_mod_amt')}     readLive={live('late_line_mod_amt')} />
-          <Knob value={paramVal('late_line_mod_rate')}    min={0} max={1} defaultValue={0.23} label="Mod Rate"  curve="linear" onchange={set('late_line_mod_rate')}    readLive={live('late_line_mod_rate')} />
-          <Knob value={paramVal('late_line_decay')}       min={0} max={1} defaultValue={0.63} label="Decay"     curve="linear" onchange={set('late_line_decay')}       readLive={live('late_line_decay')} />
-          <Knob value={paramVal('late_diffuse_delay')}    min={0} max={1} defaultValue={0.24} label="Diff Dly"  curve="linear" onchange={set('late_diffuse_delay')}    readLive={live('late_diffuse_delay')} />
-          <Knob value={paramVal('late_diffuse_mod_amt')}  min={0} max={1} defaultValue={0.15} label="DMod Amt"  curve="linear" onchange={set('late_diffuse_mod_amt')}  readLive={live('late_diffuse_mod_amt')} />
-          <Knob value={paramVal('late_diffuse_feedback')} min={0} max={1} defaultValue={0.85} label="DFeedback" curve="linear" onchange={set('late_diffuse_feedback')} readLive={live('late_diffuse_feedback')} />
-          <Knob value={paramVal('late_diffuse_mod_rate')} min={0} max={1} defaultValue={0.17} label="DMod Rate" curve="linear" onchange={set('late_diffuse_mod_rate')} readLive={live('late_diffuse_mod_rate')} />
+          <Knob value={paramVal('late_line_size')}        min={0} max={1} defaultValue={0.47} label="Size"      curve="linear" onchange={set('late_line_size')} moduleId={id} paramId="late_line_size"        readLive={live('late_line_size')} />
+          <Knob value={paramVal('late_line_mod_amt')}     min={0} max={1} defaultValue={0.27} label="Mod Amt"   curve="linear" onchange={set('late_line_mod_amt')} moduleId={id} paramId="late_line_mod_amt"     readLive={live('late_line_mod_amt')} />
+          <Knob value={paramVal('late_line_mod_rate')}    min={0} max={1} defaultValue={0.23} label="Mod Rate"  curve="linear" onchange={set('late_line_mod_rate')} moduleId={id} paramId="late_line_mod_rate"    readLive={live('late_line_mod_rate')} />
+          <Knob value={paramVal('late_line_decay')}       min={0} max={1} defaultValue={0.63} label="Decay"     curve="linear" onchange={set('late_line_decay')} moduleId={id} paramId="late_line_decay"       readLive={live('late_line_decay')} />
+          <Knob value={paramVal('late_diffuse_delay')}    min={0} max={1} defaultValue={0.24} label="Diff Dly"  curve="linear" onchange={set('late_diffuse_delay')} moduleId={id} paramId="late_diffuse_delay"    readLive={live('late_diffuse_delay')} />
+          <Knob value={paramVal('late_diffuse_mod_amt')}  min={0} max={1} defaultValue={0.15} label="DMod Amt"  curve="linear" onchange={set('late_diffuse_mod_amt')} moduleId={id} paramId="late_diffuse_mod_amt"  readLive={live('late_diffuse_mod_amt')} />
+          <Knob value={paramVal('late_diffuse_feedback')} min={0} max={1} defaultValue={0.85} label="DFeedback" curve="linear" onchange={set('late_diffuse_feedback')} moduleId={id} paramId="late_diffuse_feedback" readLive={live('late_diffuse_feedback')} />
+          <Knob value={paramVal('late_diffuse_mod_rate')} min={0} max={1} defaultValue={0.17} label="DMod Rate" curve="linear" onchange={set('late_diffuse_mod_rate')} moduleId={id} paramId="late_diffuse_mod_rate" readLive={live('late_diffuse_mod_rate')} />
         </div>
       </section>
 
@@ -238,11 +238,11 @@
           <button type="button" class="pill" class:on={eqLp}   data-testid="cs-eq-lp"   onclick={() => toggle('eq_lowpass_enabled')}>{eqLp ? 'LP' : 'OFF'}</button>
         </header>
         <div class="knob-grid">
-          <Knob value={paramVal('eq_low_freq')}  min={0} max={1} defaultValue={0.39} label="Lo Freq" curve="linear" onchange={set('eq_low_freq')}  readLive={live('eq_low_freq')} />
-          <Knob value={paramVal('eq_high_freq')} min={0} max={1} defaultValue={0.51} label="Hi Freq" curve="linear" onchange={set('eq_high_freq')} readLive={live('eq_high_freq')} />
-          <Knob value={paramVal('eq_cutoff')}    min={0} max={1} defaultValue={0.97} label="Cutoff"  curve="linear" onchange={set('eq_cutoff')}    readLive={live('eq_cutoff')} />
-          <Knob value={paramVal('eq_low_gain')}  min={0} max={1} defaultValue={0.56} label="Lo Gain" curve="linear" onchange={set('eq_low_gain')}  readLive={live('eq_low_gain')} />
-          <Knob value={paramVal('eq_high_gain')} min={0} max={1} defaultValue={0.77} label="Hi Gain" curve="linear" onchange={set('eq_high_gain')} readLive={live('eq_high_gain')} />
+          <Knob value={paramVal('eq_low_freq')}  min={0} max={1} defaultValue={0.39} label="Lo Freq" curve="linear" onchange={set('eq_low_freq')} moduleId={id} paramId="eq_low_freq"  readLive={live('eq_low_freq')} />
+          <Knob value={paramVal('eq_high_freq')} min={0} max={1} defaultValue={0.51} label="Hi Freq" curve="linear" onchange={set('eq_high_freq')} moduleId={id} paramId="eq_high_freq" readLive={live('eq_high_freq')} />
+          <Knob value={paramVal('eq_cutoff')}    min={0} max={1} defaultValue={0.97} label="Cutoff"  curve="linear" onchange={set('eq_cutoff')} moduleId={id} paramId="eq_cutoff"    readLive={live('eq_cutoff')} />
+          <Knob value={paramVal('eq_low_gain')}  min={0} max={1} defaultValue={0.56} label="Lo Gain" curve="linear" onchange={set('eq_low_gain')} moduleId={id} paramId="eq_low_gain"  readLive={live('eq_low_gain')} />
+          <Knob value={paramVal('eq_high_gain')} min={0} max={1} defaultValue={0.77} label="Hi Gain" curve="linear" onchange={set('eq_high_gain')} moduleId={id} paramId="eq_high_gain" readLive={live('eq_high_gain')} />
         </div>
       </section>
 
@@ -250,9 +250,9 @@
       <section class="panel bottom" data-testid="cs-panel-out">
         <div class="bottom-grid">
           <div class="bottom-faders">
-            <Fader value={paramVal('dry_out')}   min={0} max={1} defaultValue={0.87} label="Dry"   curve="linear" onchange={set('dry_out')}   readLive={live('dry_out')} />
-            <Fader value={paramVal('early_out')} min={0} max={1} defaultValue={0}    label="Early" curve="linear" onchange={set('early_out')} readLive={live('early_out')} />
-            <Fader value={paramVal('late_out')}  min={0} max={1} defaultValue={0.66} label="Late"  curve="linear" onchange={set('late_out')}  readLive={live('late_out')} />
+            <Fader value={paramVal('dry_out')}   min={0} max={1} defaultValue={0.87} label="Dry"   curve="linear" onchange={set('dry_out')} moduleId={id} paramId="dry_out"   readLive={live('dry_out')} />
+            <Fader value={paramVal('early_out')} min={0} max={1} defaultValue={0}    label="Early" curve="linear" onchange={set('early_out')} moduleId={id} paramId="early_out" readLive={live('early_out')} />
+            <Fader value={paramVal('late_out')}  min={0} max={1} defaultValue={0.66} label="Late"  curve="linear" onchange={set('late_out')} moduleId={id} paramId="late_out"  readLive={live('late_out')} />
           </div>
           <div class="bottom-utility">
             <div class="util-toggles">
@@ -260,10 +260,10 @@
               <button type="button" class="pill" class:on={highCutOn} data-testid="cs-hic-enabled" onclick={() => toggle('high_cut_enabled')}>{highCutOn ? 'ON' : 'OFF'}</button>
             </div>
             <div class="util-knobs">
-              <Knob value={paramVal('input_mix')}  min={0} max={1} defaultValue={0.23} label="In Mix"   curve="linear" onchange={set('input_mix')}  readLive={live('input_mix')} />
-              <Knob value={paramVal('high_cut')}   min={0} max={1} defaultValue={0.29} label="Hi Cut"   curve="linear" onchange={set('high_cut')}   readLive={live('high_cut')} />
-              <Knob value={paramVal('low_cut')}    min={0} max={1} defaultValue={0.64} label="Lo Cut"   curve="linear" onchange={set('low_cut')}    readLive={live('low_cut')} />
-              <Knob value={paramVal('cross_seed')} min={0} max={1} defaultValue={0}    label="X-Seed"   curve="linear" onchange={set('cross_seed')} readLive={live('cross_seed')} />
+              <Knob value={paramVal('input_mix')}  min={0} max={1} defaultValue={0.23} label="In Mix"   curve="linear" onchange={set('input_mix')} moduleId={id} paramId="input_mix"  readLive={live('input_mix')} />
+              <Knob value={paramVal('high_cut')}   min={0} max={1} defaultValue={0.29} label="Hi Cut"   curve="linear" onchange={set('high_cut')} moduleId={id} paramId="high_cut"   readLive={live('high_cut')} />
+              <Knob value={paramVal('low_cut')}    min={0} max={1} defaultValue={0.64} label="Lo Cut"   curve="linear" onchange={set('low_cut')} moduleId={id} paramId="low_cut"    readLive={live('low_cut')} />
+              <Knob value={paramVal('cross_seed')} min={0} max={1} defaultValue={0}    label="X-Seed"   curve="linear" onchange={set('cross_seed')} moduleId={id} paramId="cross_seed" readLive={live('cross_seed')} />
             </div>
           </div>
         </div>

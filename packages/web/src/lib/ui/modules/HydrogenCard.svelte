@@ -275,9 +275,9 @@
           data-testid="hydrogen-play"
           aria-pressed={isPlaying}
         >{isPlaying ? '■ STOP' : '▶ PLAY'}</button>
-        <Knob value={pget('bpm', 120)}   min={30}  max={300} defaultValue={120} label="BPM" units="bpm" curve="linear" onchange={set('bpm')}   readLive={live('bpm')} />
-        <Knob value={pget('swing', 0)}   min={0}   max={0.75} defaultValue={0} label="Sw"   curve="linear" onchange={set('swing')} readLive={live('swing')} />
-        <Knob value={pget('gain', 1)}    min={0}   max={2}    defaultValue={1} label="Gain" curve="linear" onchange={set('gain')}  readLive={live('gain')} />
+        <Knob value={pget('bpm', 120)}   min={30}  max={300} defaultValue={120} label="BPM" units="bpm" curve="linear" onchange={set('bpm')} moduleId={id} paramId="bpm"   readLive={live('bpm')} />
+        <Knob value={pget('swing', 0)}   min={0}   max={0.75} defaultValue={0} label="Sw"   curve="linear" onchange={set('swing')} moduleId={id} paramId="swing" readLive={live('swing')} />
+        <Knob value={pget('gain', 1)}    min={0}   max={2}    defaultValue={1} label="Gain" curve="linear" onchange={set('gain')} moduleId={id} paramId="gain"  readLive={live('gain')} />
         <button type="button" class="clear-btn" onclick={clearAll} data-testid="hydrogen-clear">CLEAR</button>
       </div>
 
@@ -348,15 +348,15 @@
                  (vol/pan/pitch/cutoff/Q) shape the SOUND; the second
                  row's (A/D/S/R) shapes the per-trigger envelope. -->
             <div class="voice-controls" data-testid={`hydrogen-voice-controls-${inst.id}`}>
-              <Knob value={pget(`vol${inst.id}`,    inst.defaultGain)} min={0}     max={2}     defaultValue={inst.defaultGain} label="Vol"  curve="linear" onchange={set(`vol${inst.id}`)}    readLive={live(`vol${inst.id}`)} />
-              <Knob value={pget(`pan${inst.id}`,    inst.defaultPan)}  min={-1}    max={1}     defaultValue={inst.defaultPan}  label="Pan"  curve="linear" onchange={set(`pan${inst.id}`)}    readLive={live(`pan${inst.id}`)} />
-              <Knob value={pget(`pitch${inst.id}`,  0)}                min={-24}   max={24}    defaultValue={0}                label="Pi"   units="st" curve="linear" onchange={set(`pitch${inst.id}`)} readLive={live(`pitch${inst.id}`)} />
-              <Knob value={pget(`cutoff${inst.id}`, 20000)}            min={20}    max={20000} defaultValue={20000}            label="Cf"   units="Hz" curve="log"    onchange={set(`cutoff${inst.id}`)} readLive={live(`cutoff${inst.id}`)} />
-              <Knob value={pget(`q${inst.id}`,      0.7)}              min={0.1}   max={20}    defaultValue={0.7}              label="Q"    curve="log" onchange={set(`q${inst.id}`)}      readLive={live(`q${inst.id}`)} />
-              <Knob value={pget(`A${inst.id}`,      inst.defaultA)}    min={0}     max={2}     defaultValue={inst.defaultA}    label="A"    units="s" curve="log" onchange={set(`A${inst.id}`)}      readLive={live(`A${inst.id}`)} />
-              <Knob value={pget(`D${inst.id}`,      inst.defaultD)}    min={0}     max={2}     defaultValue={inst.defaultD}    label="D"    units="s" curve="log" onchange={set(`D${inst.id}`)}      readLive={live(`D${inst.id}`)} />
-              <Knob value={pget(`S${inst.id}`,      inst.defaultS)}    min={0}     max={1}     defaultValue={inst.defaultS}    label="S"    curve="linear" onchange={set(`S${inst.id}`)}      readLive={live(`S${inst.id}`)} />
-              <Knob value={pget(`R${inst.id}`,      inst.defaultR)}    min={0.01}  max={5}     defaultValue={inst.defaultR}    label="R"    units="s" curve="log" onchange={set(`R${inst.id}`)}      readLive={live(`R${inst.id}`)} />
+              <Knob value={pget(`vol${inst.id}`,    inst.defaultGain)} min={0}     max={2}     defaultValue={inst.defaultGain} label="Vol"  curve="linear" onchange={set(`vol${inst.id}`)} moduleId={id} paramId={`vol${inst.id}`}    readLive={live(`vol${inst.id}`)} />
+              <Knob value={pget(`pan${inst.id}`,    inst.defaultPan)}  min={-1}    max={1}     defaultValue={inst.defaultPan}  label="Pan"  curve="linear" onchange={set(`pan${inst.id}`)} moduleId={id} paramId={`pan${inst.id}`}    readLive={live(`pan${inst.id}`)} />
+              <Knob value={pget(`pitch${inst.id}`,  0)}                min={-24}   max={24}    defaultValue={0}                label="Pi"   units="st" curve="linear" onchange={set(`pitch${inst.id}`)} moduleId={id} paramId={`pitch${inst.id}`} readLive={live(`pitch${inst.id}`)} />
+              <Knob value={pget(`cutoff${inst.id}`, 20000)}            min={20}    max={20000} defaultValue={20000}            label="Cf"   units="Hz" curve="log"    onchange={set(`cutoff${inst.id}`)} moduleId={id} paramId={`cutoff${inst.id}`} readLive={live(`cutoff${inst.id}`)} />
+              <Knob value={pget(`q${inst.id}`,      0.7)}              min={0.1}   max={20}    defaultValue={0.7}              label="Q"    curve="log" onchange={set(`q${inst.id}`)} moduleId={id} paramId={`q${inst.id}`}      readLive={live(`q${inst.id}`)} />
+              <Knob value={pget(`A${inst.id}`,      inst.defaultA)}    min={0}     max={2}     defaultValue={inst.defaultA}    label="A"    units="s" curve="log" onchange={set(`A${inst.id}`)} moduleId={id} paramId={`A${inst.id}`}      readLive={live(`A${inst.id}`)} />
+              <Knob value={pget(`D${inst.id}`,      inst.defaultD)}    min={0}     max={2}     defaultValue={inst.defaultD}    label="D"    units="s" curve="log" onchange={set(`D${inst.id}`)} moduleId={id} paramId={`D${inst.id}`}      readLive={live(`D${inst.id}`)} />
+              <Knob value={pget(`S${inst.id}`,      inst.defaultS)}    min={0}     max={1}     defaultValue={inst.defaultS}    label="S"    curve="linear" onchange={set(`S${inst.id}`)} moduleId={id} paramId={`S${inst.id}`}      readLive={live(`S${inst.id}`)} />
+              <Knob value={pget(`R${inst.id}`,      inst.defaultR)}    min={0.01}  max={5}     defaultValue={inst.defaultR}    label="R"    units="s" curve="log" onchange={set(`R${inst.id}`)} moduleId={id} paramId={`R${inst.id}`}      readLive={live(`R${inst.id}`)} />
             </div>
           {/if}
         {/each}

@@ -66,9 +66,9 @@
   </div>
 
   <div class="fader-grid">
-    <Fader value={p('tileN')}  min={1}        max={16}      defaultValue={shapesDef.params.find((x) => x.id === 'tileN')!.defaultValue}  label="Grid"   curve="linear" onchange={setParam('tileN')} />
-    <Fader value={p('rotate')} min={-3.14159} max={3.14159} defaultValue={shapesDef.params.find((x) => x.id === 'rotate')!.defaultValue} label="Rotate" curve="linear" onchange={setParam('rotate')} />
-    <Fader value={p('zoom')}   min={0.05}     max={10}      defaultValue={shapesDef.params.find((x) => x.id === 'zoom')!.defaultValue}   label="Zoom"   curve="log"    onchange={setParam('zoom')} />
+    <Fader value={p('tileN')}  min={1}        max={16}      defaultValue={shapesDef.params.find((x) => x.id === 'tileN')!.defaultValue}  label="Grid"   curve="linear" onchange={setParam('tileN')} moduleId={id} paramId="tileN" />
+    <Fader value={p('rotate')} min={-3.14159} max={3.14159} defaultValue={shapesDef.params.find((x) => x.id === 'rotate')!.defaultValue} label="Rotate" curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" />
+    <Fader value={p('zoom')}   min={0.05}     max={10}      defaultValue={shapesDef.params.find((x) => x.id === 'zoom')!.defaultValue}   label="Zoom"   curve="log"    onchange={setParam('zoom')} moduleId={id} paramId="zoom" />
   </div>
 </div>
 

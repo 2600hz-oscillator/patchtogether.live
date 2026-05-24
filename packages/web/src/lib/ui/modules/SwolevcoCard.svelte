@@ -56,16 +56,16 @@
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={280}>
     <div class="grid">
       <div class="row">
-        <Fader value={paramVal('tune', 0)}      min={-36}  max={36}   defaultValue={0}   label="Tune"  units="st" curve="linear" onchange={set('tune')}     readLive={live('tune')} />
-        <Fader value={paramVal('fine', 0)}      min={-100} max={100}  defaultValue={0}   label="Fine"  units="¢"  curve="linear" onchange={set('fine')}     readLive={live('fine')} />
-        <Fader value={paramVal('mod_tune', 0)}  min={-36}  max={36}   defaultValue={0}   label="M.Tn"  units="st" curve="linear" onchange={set('mod_tune')} readLive={live('mod_tune')} />
-        <Fader value={paramVal('mod_fine', 0)}  min={-100} max={100}  defaultValue={0}   label="M.Fn"  units="¢"  curve="linear" onchange={set('mod_fine')} readLive={live('mod_fine')} />
+        <Fader value={paramVal('tune', 0)}      min={-36}  max={36}   defaultValue={0}   label="Tune"  units="st" curve="linear" onchange={set('tune')} moduleId={id} paramId="tune"     readLive={live('tune')} />
+        <Fader value={paramVal('fine', 0)}      min={-100} max={100}  defaultValue={0}   label="Fine"  units="¢"  curve="linear" onchange={set('fine')} moduleId={id} paramId="fine"     readLive={live('fine')} />
+        <Fader value={paramVal('mod_tune', 0)}  min={-36}  max={36}   defaultValue={0}   label="M.Tn"  units="st" curve="linear" onchange={set('mod_tune')} moduleId={id} paramId="mod_tune" readLive={live('mod_tune')} />
+        <Fader value={paramVal('mod_fine', 0)}  min={-100} max={100}  defaultValue={0}   label="M.Fn"  units="¢"  curve="linear" onchange={set('mod_fine')} moduleId={id} paramId="mod_fine" readLive={live('mod_fine')} />
       </div>
       <div class="row">
-        <Fader value={paramVal('ratio', 1.0)}    min={0}    max={8}    defaultValue={1.0} label="Ratio"            curve="linear" onchange={set('ratio')}    readLive={live('ratio')} />
-        <Fader value={paramVal('timbre', 0)}     min={0}    max={1}    defaultValue={0}   label="Timbr"            curve="linear" onchange={set('timbre')}   readLive={live('timbre')} />
-        <Fader value={paramVal('symmetry', 0.5)} min={0}    max={1}    defaultValue={0.5} label="Sym"              curve="linear" onchange={set('symmetry')} readLive={live('symmetry')} />
-        <Fader value={paramVal('fold', 0)}       min={0}    max={1}    defaultValue={0}   label="Fold"             curve="linear" onchange={set('fold')}     readLive={live('fold')} />
+        <Fader value={paramVal('ratio', 1.0)}    min={0}    max={8}    defaultValue={1.0} label="Ratio"            curve="linear" onchange={set('ratio')} moduleId={id} paramId="ratio"    readLive={live('ratio')} />
+        <Fader value={paramVal('timbre', 0)}     min={0}    max={1}    defaultValue={0}   label="Timbr"            curve="linear" onchange={set('timbre')} moduleId={id} paramId="timbre"   readLive={live('timbre')} />
+        <Fader value={paramVal('symmetry', 0.5)} min={0}    max={1}    defaultValue={0.5} label="Sym"              curve="linear" onchange={set('symmetry')} moduleId={id} paramId="symmetry" readLive={live('symmetry')} />
+        <Fader value={paramVal('fold', 0)}       min={0}    max={1}    defaultValue={0}   label="Fold"             curve="linear" onchange={set('fold')} moduleId={id} paramId="fold"     readLive={live('fold')} />
       </div>
     </div>
   </PatchPanel>

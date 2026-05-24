@@ -80,21 +80,21 @@
   <span class="port-label right" style="top: 458px;">M2_OUT</span>
 
   <div class="fader-grid">
-    <Fader value={p('h_shape')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'h_shape')!.defaultValue} label="HS" curve="linear" onchange={setParam('h_shape')} />
-    <Fader value={p('v_shape')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'v_shape')!.defaultValue} label="VS" curve="linear" onchange={setParam('v_shape')} />
-    <Fader value={p('h_phase')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'h_phase')!.defaultValue} label="HP" curve="linear" onchange={setParam('h_phase')} />
-    <Fader value={p('v_phase')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'v_phase')!.defaultValue} label="VP" curve="linear" onchange={setParam('v_phase')} />
-    <Fader value={p('h_freq')}  min={0.5} max={8} defaultValue={shapedrampsDef.params.find((x) => x.id === 'h_freq')!.defaultValue}  label="HF" curve="linear" onchange={setParam('h_freq')} />
-    <Fader value={p('v_freq')}  min={0.5} max={8} defaultValue={shapedrampsDef.params.find((x) => x.id === 'v_freq')!.defaultValue}  label="VF" curve="linear" onchange={setParam('v_freq')} />
+    <Fader value={p('h_shape')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'h_shape')!.defaultValue} label="HS" curve="linear" onchange={setParam('h_shape')} moduleId={id} paramId="h_shape" />
+    <Fader value={p('v_shape')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'v_shape')!.defaultValue} label="VS" curve="linear" onchange={setParam('v_shape')} moduleId={id} paramId="v_shape" />
+    <Fader value={p('h_phase')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'h_phase')!.defaultValue} label="HP" curve="linear" onchange={setParam('h_phase')} moduleId={id} paramId="h_phase" />
+    <Fader value={p('v_phase')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'v_phase')!.defaultValue} label="VP" curve="linear" onchange={setParam('v_phase')} moduleId={id} paramId="v_phase" />
+    <Fader value={p('h_freq')}  min={0.5} max={8} defaultValue={shapedrampsDef.params.find((x) => x.id === 'h_freq')!.defaultValue}  label="HF" curve="linear" onchange={setParam('h_freq')} moduleId={id} paramId="h_freq" />
+    <Fader value={p('v_freq')}  min={0.5} max={8} defaultValue={shapedrampsDef.params.find((x) => x.id === 'v_freq')!.defaultValue}  label="VF" curve="linear" onchange={setParam('v_freq')} moduleId={id} paramId="v_freq" />
   </div>
 
   <div class="mixer-section" data-section="mix1">
     <div class="section-label">MIX 1</div>
-    <Fader value={p('mix1')} min={0} max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'mix1')!.defaultValue} label="M1" curve="linear" onchange={setParam('mix1')} />
+    <Fader value={p('mix1')} min={0} max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'mix1')!.defaultValue} label="M1" curve="linear" onchange={setParam('mix1')} moduleId={id} paramId="mix1" />
   </div>
   <div class="mixer-section" data-section="mix2">
     <div class="section-label">MIX 2</div>
-    <Fader value={p('mix2')} min={0} max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'mix2')!.defaultValue} label="M2" curve="linear" onchange={setParam('mix2')} />
+    <Fader value={p('mix2')} min={0} max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'mix2')!.defaultValue} label="M2" curve="linear" onchange={setParam('mix2')} moduleId={id} paramId="mix2" />
   </div>
 </div>
 

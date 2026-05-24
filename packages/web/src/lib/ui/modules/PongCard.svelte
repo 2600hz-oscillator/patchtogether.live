@@ -91,9 +91,9 @@
       ></canvas>
     </div>
     <div class="fader-row">
-      <Fader value={speed}      min={0.25} max={4}  defaultValue={1.0} label="Speed"  curve="log"    onchange={setParam('speed')}      readLive={readLive('speed')} />
-      <Fader value={paddleH}    min={0.05} max={0.5} defaultValue={0.2} label="Paddle" curve="linear" onchange={setParam('paddleH')}    readLive={readLive('paddleH')} />
-      <Fader value={serveAngle} min={0}    max={1}   defaultValue={0.3} label="Serve"  curve="linear" onchange={setParam('serveAngle')} readLive={readLive('serveAngle')} />
+      <Fader value={speed}      min={0.25} max={4}  defaultValue={1.0} label="Speed"  curve="log"    onchange={setParam('speed')} moduleId={id} paramId="speed"      readLive={readLive('speed')} />
+      <Fader value={paddleH}    min={0.05} max={0.5} defaultValue={0.2} label="Paddle" curve="linear" onchange={setParam('paddleH')} moduleId={id} paramId="paddleH"    readLive={readLive('paddleH')} />
+      <Fader value={serveAngle} min={0}    max={1}   defaultValue={0.3} label="Serve"  curve="linear" onchange={setParam('serveAngle')} moduleId={id} paramId="serveAngle" readLive={readLive('serveAngle')} />
     </div>
   </PatchPanel>
 </div>

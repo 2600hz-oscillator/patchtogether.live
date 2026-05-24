@@ -97,7 +97,7 @@
         value={paramVal('speed')}
         min={0} max={1} defaultValue={defaultFor('speed')}
         label="SPEED" curve="linear"
-        onchange={set('speed')}
+        onchange={set('speed')} moduleId={id} paramId="speed"
       />
       <div class="speed-readout">{speedLabel}</div>
     </div>

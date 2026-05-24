@@ -100,7 +100,7 @@
             defaultValue={defaultFor(`primary${seg}`)}
             label={stagesMath.knobLabels(clampType(paramVal(`type${seg}`))).primary}
             curve="linear"
-            onchange={set(`primary${seg}`)}
+            onchange={set(`primary${seg}`)} moduleId={id} paramId={`primary${seg}`}
             readLive={live(`primary${seg}`)}
           />
           <Fader
@@ -109,7 +109,7 @@
             defaultValue={defaultFor(`shape${seg}`)}
             label={stagesMath.knobLabels(clampType(paramVal(`type${seg}`))).shape}
             curve="linear"
-            onchange={set(`shape${seg}`)}
+            onchange={set(`shape${seg}`)} moduleId={id} paramId={`shape${seg}`}
             readLive={live(`shape${seg}`)}
           />
         </div>

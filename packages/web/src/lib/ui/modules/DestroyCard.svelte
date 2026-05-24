@@ -34,9 +34,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={decimate} min={1}  max={64} defaultValue={1}  label="Decimate" curve="linear" onchange={set('decimate')} readLive={live('decimate')} />
-      <Fader value={bits}     min={1}  max={16} defaultValue={16} label="Bits"     curve="linear" onchange={set('bits')}     readLive={live('bits')} />
-      <Fader value={wet}      min={0}  max={1}  defaultValue={1}  label="Wet"      curve="linear" onchange={set('wet')}      readLive={live('wet')} />
+      <Fader value={decimate} min={1}  max={64} defaultValue={1}  label="Decimate" curve="linear" onchange={set('decimate')} moduleId={id} paramId="decimate" readLive={live('decimate')} />
+      <Fader value={bits}     min={1}  max={16} defaultValue={16} label="Bits"     curve="linear" onchange={set('bits')} moduleId={id} paramId="bits"     readLive={live('bits')} />
+      <Fader value={wet}      min={0}  max={1}  defaultValue={1}  label="Wet"      curve="linear" onchange={set('wet')} moduleId={id} paramId="wet"      readLive={live('wet')} />
     </div>
   </PatchPanel>
 </div>

@@ -63,12 +63,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={algorithm}    min={0}   max={WARPS_MAX_ALGORITHM} defaultValue={0}   label="Algo"   curve="discrete" onchange={set('algorithm')}     readLive={live('algorithm')} />
-      <Fader value={carrierShape} min={0}   max={1}  defaultValue={0}   label="Shape"  curve="linear" onchange={set('carrier_shape')} readLive={live('carrier_shape')} />
-      <Fader value={timbre}       min={0}   max={1}  defaultValue={0.5} label="Timbre" curve="linear" onchange={set('timbre')}        readLive={live('timbre')} />
-      <Fader value={level1}       min={0}   max={1}  defaultValue={1.0} label="Lvl 1"  curve="linear" onchange={set('level_1')}       readLive={live('level_1')} />
-      <Fader value={level2}       min={0}   max={1}  defaultValue={1.0} label="Lvl 2"  curve="linear" onchange={set('level_2')}       readLive={live('level_2')} />
-      <Fader value={note}         min={-60} max={60} defaultValue={0}   label="Note"   units="st" curve="linear" onchange={set('note')} readLive={live('note')} />
+      <Fader value={algorithm}    min={0}   max={WARPS_MAX_ALGORITHM} defaultValue={0}   label="Algo"   curve="discrete" onchange={set('algorithm')} moduleId={id} paramId="algorithm"     readLive={live('algorithm')} />
+      <Fader value={carrierShape} min={0}   max={1}  defaultValue={0}   label="Shape"  curve="linear" onchange={set('carrier_shape')} moduleId={id} paramId="carrier_shape" readLive={live('carrier_shape')} />
+      <Fader value={timbre}       min={0}   max={1}  defaultValue={0.5} label="Timbre" curve="linear" onchange={set('timbre')} moduleId={id} paramId="timbre"        readLive={live('timbre')} />
+      <Fader value={level1}       min={0}   max={1}  defaultValue={1.0} label="Lvl 1"  curve="linear" onchange={set('level_1')} moduleId={id} paramId="level_1"       readLive={live('level_1')} />
+      <Fader value={level2}       min={0}   max={1}  defaultValue={1.0} label="Lvl 2"  curve="linear" onchange={set('level_2')} moduleId={id} paramId="level_2"       readLive={live('level_2')} />
+      <Fader value={note}         min={-60} max={60} defaultValue={0}   label="Note"   units="st" curve="linear" onchange={set('note')} moduleId={id} paramId="note" readLive={live('note')} />
     </div>
   </PatchPanel>
   <OssAttribution author={warpsDef.ossAttribution?.author} />

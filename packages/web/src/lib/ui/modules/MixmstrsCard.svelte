@@ -124,26 +124,26 @@
       {#each CH as ch (ch)}
         <div class="ch-col">
           <div class="ch-label">CH {ch}</div>
-          <Knob value={paramVal(`ch${ch}_volume`, 0.8)} min={0}    max={1}   defaultValue={0.8} label="Vol" curve="linear"   onchange={set(`ch${ch}_volume`)}     readLive={live(`ch${ch}_volume`)} />
+          <Knob value={paramVal(`ch${ch}_volume`, 0.8)} min={0}    max={1}   defaultValue={0.8} label="Vol" curve="linear"   onchange={set(`ch${ch}_volume`)} moduleId={id} paramId={`ch${ch}_volume`}     readLive={live(`ch${ch}_volume`)} />
           {#if !compact}
-            <Knob value={paramVal(`ch${ch}_low`, 0)}    min={-12}  max={12}  defaultValue={0}   label="LOW" curve="linear"   onchange={set(`ch${ch}_low`)}        readLive={live(`ch${ch}_low`)} />
-            <Knob value={paramVal(`ch${ch}_mid`, 0)}    min={-12}  max={12}  defaultValue={0}   label="MID" curve="linear"   onchange={set(`ch${ch}_mid`)}        readLive={live(`ch${ch}_mid`)} />
-            <Knob value={paramVal(`ch${ch}_high`, 0)}   min={-12}  max={12}  defaultValue={0}   label="HGH" curve="linear"   onchange={set(`ch${ch}_high`)}       readLive={live(`ch${ch}_high`)} />
-            <Knob value={paramVal(`ch${ch}_thresh`, -12)}  min={-36} max={0}   defaultValue={-12} label="THR" curve="linear"   onchange={set(`ch${ch}_thresh`)}     readLive={live(`ch${ch}_thresh`)} />
-            <Knob value={paramVal(`ch${ch}_ratio`, 2)}     min={1}   max={10}  defaultValue={2}   label="RAT" curve="linear"   onchange={set(`ch${ch}_ratio`)}      readLive={live(`ch${ch}_ratio`)} />
-            <Knob value={paramVal(`ch${ch}_compEnable`, 0)} min={0}  max={1}   defaultValue={0}   label="CMP" curve="discrete" onchange={set(`ch${ch}_compEnable`)} readLive={live(`ch${ch}_compEnable`)} />
+            <Knob value={paramVal(`ch${ch}_low`, 0)}    min={-12}  max={12}  defaultValue={0}   label="LOW" curve="linear"   onchange={set(`ch${ch}_low`)} moduleId={id} paramId={`ch${ch}_low`}        readLive={live(`ch${ch}_low`)} />
+            <Knob value={paramVal(`ch${ch}_mid`, 0)}    min={-12}  max={12}  defaultValue={0}   label="MID" curve="linear"   onchange={set(`ch${ch}_mid`)} moduleId={id} paramId={`ch${ch}_mid`}        readLive={live(`ch${ch}_mid`)} />
+            <Knob value={paramVal(`ch${ch}_high`, 0)}   min={-12}  max={12}  defaultValue={0}   label="HGH" curve="linear"   onchange={set(`ch${ch}_high`)} moduleId={id} paramId={`ch${ch}_high`}       readLive={live(`ch${ch}_high`)} />
+            <Knob value={paramVal(`ch${ch}_thresh`, -12)}  min={-36} max={0}   defaultValue={-12} label="THR" curve="linear"   onchange={set(`ch${ch}_thresh`)} moduleId={id} paramId={`ch${ch}_thresh`}     readLive={live(`ch${ch}_thresh`)} />
+            <Knob value={paramVal(`ch${ch}_ratio`, 2)}     min={1}   max={10}  defaultValue={2}   label="RAT" curve="linear"   onchange={set(`ch${ch}_ratio`)} moduleId={id} paramId={`ch${ch}_ratio`}      readLive={live(`ch${ch}_ratio`)} />
+            <Knob value={paramVal(`ch${ch}_compEnable`, 0)} min={0}  max={1}   defaultValue={0}   label="CMP" curve="discrete" onchange={set(`ch${ch}_compEnable`)} moduleId={id} paramId={`ch${ch}_compEnable`} readLive={live(`ch${ch}_compEnable`)} />
           {/if}
           <!-- Per-channel comp macro knob (always visible — even in compact
                mode — because it's the user-friendly path; the THR/RAT/CMP
                triple above is for power users in expanded mode). -->
-          <Knob value={paramVal(`comp${ch}`, 0)}         min={0}   max={1}   defaultValue={0}   label="Comp" curve="linear"   onchange={set(`comp${ch}`)}          readLive={live(`comp${ch}`)} />
-          <Knob value={paramVal(`ch${ch}_send1`, 0)}  min={0}  max={1}   defaultValue={0}   label="S1"  curve="linear"   onchange={set(`ch${ch}_send1`)}      readLive={live(`ch${ch}_send1`)} />
-          <Knob value={paramVal(`ch${ch}_send2`, 0)}  min={0}  max={1}   defaultValue={0}   label="S2"  curve="linear"   onchange={set(`ch${ch}_send2`)}      readLive={live(`ch${ch}_send2`)} />
+          <Knob value={paramVal(`comp${ch}`, 0)}         min={0}   max={1}   defaultValue={0}   label="Comp" curve="linear"   onchange={set(`comp${ch}`)} moduleId={id} paramId={`comp${ch}`}          readLive={live(`comp${ch}`)} />
+          <Knob value={paramVal(`ch${ch}_send1`, 0)}  min={0}  max={1}   defaultValue={0}   label="S1"  curve="linear"   onchange={set(`ch${ch}_send1`)} moduleId={id} paramId={`ch${ch}_send1`}      readLive={live(`ch${ch}_send1`)} />
+          <Knob value={paramVal(`ch${ch}_send2`, 0)}  min={0}  max={1}   defaultValue={0}   label="S2"  curve="linear"   onchange={set(`ch${ch}_send2`)} moduleId={id} paramId={`ch${ch}_send2`}      readLive={live(`ch${ch}_send2`)} />
         </div>
       {/each}
       <div class="ch-col master-col">
         <div class="ch-label">MASTER</div>
-        <Knob value={paramVal('master_volume', 0.8)} min={0} max={1} defaultValue={0.8} label="Vol" curve="linear" onchange={set('master_volume')} readLive={live('master_volume')} />
+        <Knob value={paramVal('master_volume', 0.8)} min={0} max={1} defaultValue={0.8} label="Vol" curve="linear" onchange={set('master_volume')} moduleId={id} paramId="master_volume" readLive={live('master_volume')} />
       </div>
     </div>
   </PatchPanel>

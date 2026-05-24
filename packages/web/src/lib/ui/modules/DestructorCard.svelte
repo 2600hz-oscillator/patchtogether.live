@@ -34,10 +34,10 @@
   <span class="port-label right" style="top: 50px;">OUT</span>
 
   <div class="fader-grid">
-    <Fader value={p('shift')}     min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'shift')!.defaultValue}     label="Shift"  curve="linear" onchange={setParam('shift')} />
-    <Fader value={p('scanline')}  min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'scanline')!.defaultValue}  label="Scan"   curve="linear" onchange={setParam('scanline')} />
-    <Fader value={p('posterize')} min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'posterize')!.defaultValue} label="Post"   curve="linear" onchange={setParam('posterize')} />
-    <Fader value={p('mangle')}    min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'mangle')!.defaultValue}    label="Mangle" curve="linear" onchange={setParam('mangle')} />
+    <Fader value={p('shift')}     min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'shift')!.defaultValue}     label="Shift"  curve="linear" onchange={setParam('shift')} moduleId={id} paramId="shift" />
+    <Fader value={p('scanline')}  min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'scanline')!.defaultValue}  label="Scan"   curve="linear" onchange={setParam('scanline')} moduleId={id} paramId="scanline" />
+    <Fader value={p('posterize')} min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'posterize')!.defaultValue} label="Post"   curve="linear" onchange={setParam('posterize')} moduleId={id} paramId="posterize" />
+    <Fader value={p('mangle')}    min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'mangle')!.defaultValue}    label="Mangle" curve="linear" onchange={setParam('mangle')} moduleId={id} paramId="mangle" />
   </div>
 </div>
 

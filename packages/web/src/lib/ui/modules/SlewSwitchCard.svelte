@@ -84,7 +84,7 @@
               min={0.001} max={5} defaultValue={defaultFor(`slew${ch}`)}
               label={`Slew ${ch}`}
               curve="log"
-              onchange={set(`slew${ch}`)}
+              onchange={set(`slew${ch}`)} moduleId={id} paramId={`slew${ch}`}
               readLive={live(`slew${ch}`)}
             />
           </div>
@@ -99,7 +99,7 @@
             min={0.001} max={2} defaultValue={defaultFor('xfadeTime')}
             label="Xfd"
             curve="log"
-            onchange={set('xfadeTime')}
+            onchange={set('xfadeTime')} moduleId={id} paramId="xfadeTime"
             readLive={live('xfadeTime')}
           />
         </div>
