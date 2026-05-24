@@ -25,11 +25,14 @@ export default defineConfig({
   // run serially. Each worker gets its own browser context (separate
   // AudioContexts), so audio-related tests don't interfere across files.
   fullyParallel: true,
-  // ubuntu-latest runners have 4 vCPU. Bumped CI workers 2 → 3 to use more
-  // cores while leaving one for the dev server + Hocuspocus. Each test gets
-  // its own browser context (own AudioContext), so cross-test interference is
-  // bounded; if flake regresses, drop back to 2.
-  workers: process.env.CI ? 3 : undefined, // undefined = Playwright default (≈ half cores)
+  // ubuntu-latest runners have 4 vCPU. Bumped CI workers 3 → 4 alongside
+  // E2E sharding (4 parallel CI jobs × 4 workers each). Each test gets its
+  // own browser context (own AudioContext), so cross-test interference is
+  // bounded; if flake regresses under the shard fan-out, drop back to 3.
+  // Note: the SvelteKit dev server + Hocuspocus still share the runner, but
+  // most worker time is spent waiting on network / waitFor selectors /
+  // animation frames where the OS schedules cooperatively.
+  workers: process.env.CI ? 4 : undefined, // undefined = Playwright default (≈ half cores)
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI
