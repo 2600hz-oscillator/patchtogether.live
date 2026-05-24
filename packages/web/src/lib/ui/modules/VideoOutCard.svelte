@@ -29,14 +29,14 @@
   //     that into the resized canvas-wrap, leaving black bars on the
   //     short axis.
   //
-  // Y-flip: WebGL framebuffers use a bottom-left origin; the 2D canvas
-  // 2d-context uses top-left. drawImage of an OffscreenCanvas backed by
-  // a WebGL2 context reads the framebuffer bytes as-is (origin at
-  // bottom-left of the WebGL surface), then writes them top-down on
-  // the 2D destination — which renders the image upside-down.
-  // Procedural sources happen to be Y-symmetric so the bug went
-  // unnoticed at Phase-0; PICTUREBOX (real photos) made it visible.
-  // Flip here so every module renders right-side-up downstream.
+  // Orientation: drawImage() from a WebGL canvas already presents the GL
+  // drawing buffer in top-left CSS orientation — the browser accounts
+  // for GL's bottom-left origin. So a straight blit (no manual Y-flip)
+  // is upright for every source: procedural modules author against vUv,
+  // and DOM/buffer sources (DOOM/CAMERA/PICTUREBOX) upload so their FBO
+  // matches that same convention. An earlier scale(1,-1) here flipped
+  // every source upside down; removing it is what makes OUTPUT (and the
+  // other preview cards, which shared the same blit) render right-side-up.
 
   import { onMount, onDestroy } from 'svelte';
   import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
@@ -145,14 +145,14 @@
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
       const r = fitRect(cw, ch);
-      ctx2d.save();
-      // Y-flip the engine canvas. Translate to dst.y + dst.h then
-      // scale(1, -1) so a top-left drawImage at (dst.x, 0) produces a
-      // visually-upright image inside the letterbox.
-      ctx2d.translate(r.x, r.y + r.h);
-      ctx2d.scale(1, -1);
-      ctx2d.drawImage(src, 0, 0, r.w, r.h);
-      ctx2d.restore();
+      // drawImage() from a WebGL canvas already presents the GL drawing
+      // buffer in top-left CSS orientation (the browser accounts for GL's
+      // bottom-left origin). Procedural sources author against vUv and
+      // DOOM/CAMERA upload with UNPACK_FLIP_Y so their FBOs are upright in
+      // that same convention — so a straight blit is upright. (A manual
+      // scale(1,-1) used to live here and flipped every source upside
+      // down.)
+      ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
     }
     rafId = requestAnimationFrame(draw);
   }

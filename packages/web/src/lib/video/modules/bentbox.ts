@@ -213,12 +213,15 @@ void main() {
   // ---- Vsync drift: vertical scroll over time ----
   float vOff = sin(uTime * 0.7) * uVsyncDrift * 0.4
              + (uTime * uVsyncDrift * 0.05);
-  // Y-flip the input-texture sample so the CRT renders upstream video
-  // right-side up. WebGL FBOs have a bottom-left origin and BentboxCard's
-  // 2D-canvas blit applies a Y-flip; sampling the input at (1 - lineY)
-  // keeps that final blit upright. Internal FBO state (uPrev / scanline
-  // mask) is unaffected because it's all expressed in vUv space.
-  vec2 sampleUv = vec2(fract(vUv.x + hOffset), fract(1.0 - lineY - vOff));
+  // Sample the input straight through in vUv space so upstream video
+  // passes through upright. (A 1.0-minus-lineY term used to live here to
+  // cancel the BentboxCard 2D-blit Y-flip; that card flip has been
+  // removed -- drawImage from a WebGL canvas is already upright -- so the
+  // CRT must NOT flip its input or it would render upside down. The
+  // vsync-drift vertical scroll effect is preserved via vOff.) Internal
+  // FBO state (uPrev / scanline mask) is unaffected -- it is all in vUv
+  // space.
+  vec2 sampleUv = vec2(fract(vUv.x + hOffset), fract(lineY - vOff));
 
   // ---- Sample input ----
   vec3 srcRgb = texture(uIn, sampleUv).rgb;
