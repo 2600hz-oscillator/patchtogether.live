@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DoomRuntime, type DoomModule } from './doom-runtime';
-import { KEY_FIRE, KEY_RCTRL, KEY_w } from './doomkeys';
+import { KEY_FIRE, KEY_RCTRL, KEY_UPARROW, KEY_w } from './doomkeys';
 
 // ---------------- Stub DoomModule ----------------
 
@@ -199,12 +199,17 @@ describe('DoomRuntime — TS shim layer', () => {
   it('setKeyForCvGate translates via the KEY_FOR_CV_GATE table', () => {
     rt.init(new Uint8Array([0]));
     const before = stub.calls.length;
-    expect(rt.setKeyForCvGate('w', true)).toBe(true);
+    expect(rt.setKeyForCvGate('up', true)).toBe(true);
     expect(rt.setKeyForCvGate('space', false)).toBe(true);
     expect(rt.setKeyForCvGate('ctrl', true)).toBe(true);
     const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+    // KEY_UPARROW = 0xae, but dgpt_set_key masks to 0xff (no change here);
+    // KEY_FIRE = 0xa3; KEY_RCTRL = 0x9d. The reference to KEY_w stays in
+    // the imports for KEY_FOR_KEYBOARD_CODE tests above — runtime still
+    // honors KeyW.
+    void KEY_w;
     expect(calls).toEqual([
-      { name: 'dgpt_set_key', args: [KEY_w, 1] },
+      { name: 'dgpt_set_key', args: [KEY_UPARROW, 1] },
       { name: 'dgpt_set_key', args: [KEY_FIRE, 0] },
       { name: 'dgpt_set_key', args: [KEY_RCTRL, 1] },
     ]);
