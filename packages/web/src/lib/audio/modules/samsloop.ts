@@ -140,20 +140,127 @@ export function samsloopDownsample(input: Float32Array, factor: number): Float32
   return out;
 }
 
+/** Manually parse a RIFF/WAVE file → mono Float32Array + sample rate.
+ *  Handles 8-bit unsigned PCM, 16-bit signed PCM, 24-bit signed PCM,
+ *  32-bit signed PCM, and 32-bit IEEE float — the bit depths Chrome's
+ *  decodeAudioData has spotty support for (notably 8-bit unsigned PCM,
+ *  which silently rejects on some Chrome builds). Returns null if the
+ *  bytes are not a valid uncompressed WAV; caller falls back to
+ *  decodeAudioData for mp3/ogg/flac/etc.
+ *
+ *  Exported for tests. */
+export function parseWavManually(
+  ab: ArrayBuffer,
+): { samples: Float32Array; sampleRate: number } | null {
+  if (ab.byteLength < 44) return null;
+  const view = new DataView(ab);
+  // RIFF / WAVE header
+  if (view.getUint32(0, false) !== 0x52494646) return null; // "RIFF"
+  if (view.getUint32(8, false) !== 0x57415645) return null; // "WAVE"
+
+  // Walk chunks to find fmt + data (LIST/INFO etc. can come before data).
+  let cursor = 12;
+  let fmtFound = false;
+  let dataOffset = -1;
+  let dataSize = 0;
+  let audioFormat = 0;
+  let channels = 0;
+  let sampleRate = 0;
+  let bitsPerSample = 0;
+  while (cursor + 8 <= view.byteLength) {
+    const chunkId = view.getUint32(cursor, false);
+    const chunkSize = view.getUint32(cursor + 4, true);
+    if (chunkId === 0x666d7420) { // "fmt "
+      audioFormat   = view.getUint16(cursor + 8, true);
+      channels      = view.getUint16(cursor + 10, true);
+      sampleRate    = view.getUint32(cursor + 12, true);
+      bitsPerSample = view.getUint16(cursor + 22, true);
+      fmtFound = true;
+    } else if (chunkId === 0x64617461) { // "data"
+      dataOffset = cursor + 8;
+      dataSize = chunkSize;
+      break;
+    }
+    cursor += 8 + chunkSize + (chunkSize & 1); // chunks are word-aligned
+  }
+  if (!fmtFound || dataOffset < 0 || channels < 1) return null;
+
+  // Decode samples by format. 1 = PCM int, 3 = IEEE float.
+  const bytesPerSample = bitsPerSample >> 3;
+  const frameBytes = bytesPerSample * channels;
+  if (frameBytes === 0) return null;
+  const frameCount = Math.floor(dataSize / frameBytes);
+  const mono = new Float32Array(frameCount);
+
+  if (audioFormat === 1 && bitsPerSample === 8) {
+    // 8-bit PCM is UNSIGNED, centered on 128.
+    const u8 = new Uint8Array(ab, dataOffset, frameCount * channels);
+    for (let i = 0; i < frameCount; i++) {
+      let acc = 0;
+      for (let c = 0; c < channels; c++) {
+        acc += (u8[i * channels + c]! - 128) / 128;
+      }
+      mono[i] = acc / channels;
+    }
+  } else if (audioFormat === 1 && bitsPerSample === 16) {
+    for (let i = 0; i < frameCount; i++) {
+      let acc = 0;
+      for (let c = 0; c < channels; c++) {
+        acc += view.getInt16(dataOffset + (i * channels + c) * 2, true) / 32768;
+      }
+      mono[i] = acc / channels;
+    }
+  } else if (audioFormat === 1 && bitsPerSample === 24) {
+    for (let i = 0; i < frameCount; i++) {
+      let acc = 0;
+      for (let c = 0; c < channels; c++) {
+        const o = dataOffset + (i * channels + c) * 3;
+        const b0 = view.getUint8(o), b1 = view.getUint8(o + 1), b2 = view.getInt8(o + 2);
+        acc += ((b2 << 16) | (b1 << 8) | b0) / 8388608;
+      }
+      mono[i] = acc / channels;
+    }
+  } else if (audioFormat === 1 && bitsPerSample === 32) {
+    for (let i = 0; i < frameCount; i++) {
+      let acc = 0;
+      for (let c = 0; c < channels; c++) {
+        acc += view.getInt32(dataOffset + (i * channels + c) * 4, true) / 2147483648;
+      }
+      mono[i] = acc / channels;
+    }
+  } else if (audioFormat === 3 && bitsPerSample === 32) {
+    for (let i = 0; i < frameCount; i++) {
+      let acc = 0;
+      for (let c = 0; c < channels; c++) {
+        acc += view.getFloat32(dataOffset + (i * channels + c) * 4, true);
+      }
+      mono[i] = acc / channels;
+    }
+  } else {
+    // Unsupported PCM variant (e.g. extensible WAVEFORMATEX, A-law,
+    // µ-law). Bail so the caller falls back to decodeAudioData.
+    return null;
+  }
+
+  return { samples: mono, sampleRate };
+}
+
 /** Validate + decode an uploaded audio file (any format the browser's
  *  decodeAudioData accepts — wav, mp3, m4a/aac, ogg, flac, opus, weba).
- *  Decoupled from the card so unit tests can exercise the rejection path
- *  without a DOM. Pass an AudioContext that supports decodeAudioData (a
- *  real one or an OfflineAudioContext) — the function signs the contract;
- *  we don't mock the decoder.
+ *  WAV files go through a manual parser first because Chrome's
+ *  decodeAudioData silently rejects 8-bit unsigned PCM on some builds;
+ *  we cover the full uncompressed-WAV matrix (8/16/24/32-bit int +
+ *  32-bit float) ourselves and fall back to decodeAudioData for
+ *  compressed formats (mp3, ogg, flac, opus, m4a) + the rare WAV
+ *  variants we don't parse (extensible WAVEFORMATEX, A-law, µ-law).
+ *
+ *  Decoupled from the card so unit tests can exercise the rejection
+ *  path without a DOM. Pass an AudioContext that supports
+ *  decodeAudioData (a real one or an OfflineAudioContext) — the
+ *  function signs the contract; we don't mock the decoder.
  *
  *  After decode this function downsamples to SAMSLOOP_TARGET_SAMPLE_RATE
- *  (24 kHz) if the decoder's native rate is higher. Reason: AudioContext
- *  decode ALWAYS upsamples to the context rate (48 kHz on modern hardware),
- *  which inflates the in-memory buffer 2-3×. Since each Float32 sample
- *  becomes a YArray CRDT record on write into node.data, that inflation
- *  is the difference between a snappy load and a 10+ second main-thread
- *  freeze on a 43 KB 16 kHz WAV (the bug-report fixture). */
+ *  (24 kHz) if the decoder's native rate is higher. */
 export async function loadSamsloopWav(
   file: { size: number; arrayBuffer(): Promise<ArrayBuffer> },
   ctx: BaseAudioContext,
@@ -166,9 +273,18 @@ export async function loadSamsloopWav(
       } KB limit.`,
     };
   }
+  const ab = await file.arrayBuffer();
+
+  // Try the manual WAV parser first — it handles 8-bit PCM that Chrome
+  // sometimes rejects. parseWavManually returns null for non-WAV bytes
+  // or unsupported WAV variants; we fall through to decodeAudioData.
+  const manual = parseWavManually(ab);
+  if (manual) {
+    return finalizeSamsloopBuffer(manual.samples, manual.sampleRate);
+  }
+
   let buf: AudioBuffer;
   try {
-    const ab = await file.arrayBuffer();
     buf = await ctx.decodeAudioData(ab.slice(0));
   } catch (err) {
     return {
@@ -185,27 +301,25 @@ export async function loadSamsloopWav(
     const ch = buf.getChannelData(c);
     for (let i = 0; i < len; i++) mono[i]! += ch[i]! / channels;
   }
-  // Downsample to SAMSLOOP_TARGET_SAMPLE_RATE if the decoder gave us a
-  // higher rate. Use the largest integer factor that keeps the output
-  // rate >= target — preserves fidelity better than a non-integer ratio
-  // and avoids the cost of a proper resampler for a v1 sample looper.
-  let outSamples: Float32Array<ArrayBuffer> = mono;
-  let outRate = buf.sampleRate;
-  if (buf.sampleRate > SAMSLOOP_TARGET_SAMPLE_RATE) {
-    const factor = Math.floor(buf.sampleRate / SAMSLOOP_TARGET_SAMPLE_RATE);
+  return finalizeSamsloopBuffer(mono, buf.sampleRate);
+}
+
+/** Apply the integer-factor downsample to SAMSLOOP_TARGET_SAMPLE_RATE +
+ *  the decoded-buffer cap. Shared by both the manual WAV path and the
+ *  decodeAudioData path. */
+function finalizeSamsloopBuffer(
+  mono: Float32Array,
+  sampleRate: number,
+): SamsloopLoadResult {
+  let outSamples: Float32Array<ArrayBuffer> = mono as Float32Array<ArrayBuffer>;
+  let outRate = sampleRate;
+  if (sampleRate > SAMSLOOP_TARGET_SAMPLE_RATE) {
+    const factor = Math.floor(sampleRate / SAMSLOOP_TARGET_SAMPLE_RATE);
     if (factor >= 2) {
-      // samsloopDownsample's return type widens to Float32Array<ArrayBufferLike>
-      // under TS 5.7+ generic-typed-arrays. Its implementation always
-      // constructs via `new Float32Array(outLen)` so the runtime buffer IS
-      // a plain ArrayBuffer — the cast just pins the static type to match
-      // `outSamples` and the downstream consumers.
       outSamples = samsloopDownsample(mono, factor) as Float32Array<ArrayBuffer>;
-      outRate = buf.sampleRate / factor;
+      outRate = sampleRate / factor;
     }
   }
-  // Decoded-buffer cap. Fires AFTER downsample so a small upload that
-  // decodes to a huge buffer is rejected with a clear message rather
-  // than blocking the main thread on the syncedstore write.
   if (outSamples.length > SAMSLOOP_MAX_DECODED_SAMPLES) {
     return {
       ok: false,
