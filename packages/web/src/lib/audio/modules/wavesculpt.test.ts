@@ -438,12 +438,14 @@ describe('wavesculpt def: new ports + params landed', () => {
     }
   });
 
-  it('exposes video_mode (discrete 0=PROXIMITY, 1=BIRDSEYE)', () => {
+  it('exposes video_mode (discrete 0=PROXIMITY, 1=BIRDSEYE, 2=SPECTROGRAPH)', () => {
     const m = wavesculptDef.params.find((p) => p.id === 'video_mode')!;
     expect(m, 'video_mode exists').toBeDefined();
     expect(m.defaultValue).toBe(0);
     expect(m.min).toBe(0);
-    expect(m.max).toBe(1);
+    // Max bumped from 1 → 2 in the spectrograph PR so the discrete
+    // cycle covers PROXIMITY → BIRDSEYE → SPECTROGRAPH.
+    expect(m.max).toBe(2);
     expect(m.curve).toBe('discrete');
   });
 });

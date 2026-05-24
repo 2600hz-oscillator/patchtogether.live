@@ -459,8 +459,10 @@ export const wavesculptDef: AudioModuleDef = {
     ps.push({ id: 'chord_mode',    label: 'Chord',    defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
     ps.push({ id: 'chord_quality', label: 'Quality',  defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
     // Video mode: 0 = PROXIMITY (3D ribbons, default — the original render),
-    // 1 = BIRDSEYE (top-down 2D floorplan showing the spatial system).
-    ps.push({ id: 'video_mode',    label: 'View',     defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+    // 1 = BIRDSEYE (top-down 2D floorplan showing the spatial system),
+    // 2 = SPECTROGRAPH (scrolling-column STFT of the combined audio output:
+    //                   log-Hz vertical axis, time scrolling left).
+    ps.push({ id: 'video_mode',    label: 'View',     defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
     ps.push({ id: 'alpha_brightness', label: 'A.Bright', defaultValue: 1, min: 0, max: 2, curve: 'linear' });
     ps.push({ id: 'hsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Drift' });
     ps.push({ id: 'hsync_loss',         defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Loss' });
@@ -1070,6 +1072,24 @@ export const wavesculptDef: AudioModuleDef = {
     videoAnalyser.fftSize = 256;
     busL.connect(videoAnalyser);
 
+    // ---------------- Spectrograph analyser (lazy) ----------------
+    // Used only by video_mode=2 (SPECTROGRAPH). Larger FFT than the
+    // mono-video bridge so the log-Hz columns have enough low-end
+    // resolution to discriminate sub-bass bins. Lazy because mode 0/1
+    // users shouldn't pay the FFT cost.
+    let spectrumAnalyser: AnalyserNode | null = null;
+    let spectrumBuf: Float32Array<ArrayBuffer> | null = null;
+    function ensureSpectrumAnalyser(): AnalyserNode {
+      if (spectrumAnalyser) return spectrumAnalyser;
+      const a = ctx.createAnalyser();
+      a.fftSize = 1024;
+      a.smoothingTimeConstant = 0.4;
+      busL.connect(a);
+      spectrumAnalyser = a;
+      spectrumBuf = new Float32Array(new ArrayBuffer(a.frequencyBinCount * 4));
+      return a;
+    }
+
     function drawFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
       const fn = FRAME_DRAWERS.get(node.id);
       if (fn) {
@@ -1197,6 +1217,16 @@ export const wavesculptDef: AudioModuleDef = {
         }
         if (key === 'wallLayout') return WALL_LAYOUT;
         if (key === 'wavetableFrames') return FRAMES_REGISTRY.get(node.id);
+        if (key === 'spectrum') {
+          // Lazy-init on first access so mode 0/1 users don't pay the
+          // larger FFT cost. Returns { bins, sampleRate } so the consumer
+          // can map bin index → Hz (Hz = binIdx * sampleRate / fftSize).
+          // bins are dBFS-style (Web Audio's getFloatFrequencyData
+          // convention: roughly -100..0 dB).
+          const a = ensureSpectrumAnalyser();
+          a.getFloatFrequencyData(spectrumBuf!);
+          return { bins: spectrumBuf!, sampleRate: ctx.sampleRate, fftSize: a.fftSize };
+        }
         return undefined;
       },
       dispose() {
@@ -1242,6 +1272,11 @@ export const wavesculptDef: AudioModuleDef = {
         busL.disconnect();
         busR.disconnect();
         videoAnalyser.disconnect();
+        if (spectrumAnalyser) {
+          try { spectrumAnalyser.disconnect(); } catch { /* */ }
+          spectrumAnalyser = null;
+          spectrumBuf = null;
+        }
       },
     };
 
