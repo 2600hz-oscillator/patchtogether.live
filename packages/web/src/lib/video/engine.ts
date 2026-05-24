@@ -506,18 +506,23 @@ void main() {
     edgeId: string,
     analyser: AnalyserNode,
     targetNodeId: string,
-    targetParamId: string,
+    targetPortId: string,
     teardown: () => void,
   ): void {
     const existing = this.cvBridges.get(edgeId);
     if (existing) {
       try { existing.teardown(); } catch { /* */ }
     }
-    // 32-sample buffer matches the audio-side per-param tap (engine.ts
-    // line 88). Tail-sample is the "current" value at the read instant.
-    // Allocate from a fresh ArrayBuffer (not ArrayBufferLike) so TS's
-    // strict template-typed Float32Array signature is satisfied for
-    // analyser.getFloatTimeDomainData (which requires ArrayBuffer-backed).
+    // Resolve the input port id → paramTarget. Caller passes us the PORT
+    // id from the edge target (e.g. "speed_cv"); the module def maps that
+    // to the actual param (e.g. "speed"). Without this resolution, modules
+    // like ACIDWARP / BENTBOX whose port id differs from the param id silently
+    // dropped every CV write because setParam("speed_cv") finds no matching
+    // key in their params object.
+    const meta = this.nodeMeta.get(targetNodeId);
+    const def = meta ? getVideoModuleDef(meta.type) : undefined;
+    const input = def?.inputs?.find((p) => p.id === targetPortId);
+    const targetParamId = input?.paramTarget ?? targetPortId;
     const bufLen = Math.max(32, analyser.fftSize);
     const buf = new Float32Array(new ArrayBuffer(bufLen * 4));
     this.cvBridges.set(edgeId, {
