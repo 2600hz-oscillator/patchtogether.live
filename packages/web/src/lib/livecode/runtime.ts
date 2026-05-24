@@ -161,7 +161,7 @@ class Runtime {
     const globalVals = Object.values(globals);
     // `'use strict'` so e.g. assigning to an undeclared global throws
     // instead of silently leaking onto the host's window.
-    const body = `'use strict';\n${this.input.src}`;
+    const body = `'use strict';\n${autobindSpawnNames(this.input.src)}`;
     // Wrap in new Function. The function param list is every global
     // name; we invoke with the matching values. This keeps user code
     // from polluting the host globalThis.
@@ -608,6 +608,26 @@ export function extractFunctionBody(fn: (...args: unknown[]) => unknown): string
 export type CompiledClockedFn =
   | { ok: true; call: (globals: Record<string, unknown>) => void }
   | { ok: false; error: string };
+
+/**
+ * Pre-pass: when the user writes `const NAME = spawn('type')` without
+ * passing the canonical second-arg name, auto-rewrite to
+ * `const NAME = spawn('type', 'NAME')` so the variable they bound on
+ * the LHS matches the spawned module's identifier on the canvas. Without
+ * this, `const vco1 = spawn('analogVco')` would create a module named
+ * "Analogvco1" (auto-numbered), and a subsequent `patch('vco1.sine', …)`
+ * would fail to resolve because no module is named 'vco1'.
+ *
+ * Only rewrites the canonical 1-arg form. spawn('type', 'name') and
+ * spawn(...) with non-string args are left alone.
+ */
+export function autobindSpawnNames(src: string): string {
+  return src.replace(
+    /\b(const|let|var)\s+([A-Za-z_][\w]*)\s*=\s*spawn\s*\(\s*(['"`])([A-Za-z_][\w]*)\3\s*\)/g,
+    (_, kw, name, quote, type) =>
+      `${kw} ${name} = spawn(${quote}${type}${quote}, ${quote}${name}${quote})`,
+  );
+}
 
 export function compileClockedBody(body: string, globalNames: string[]): CompiledClockedFn {
   try {
