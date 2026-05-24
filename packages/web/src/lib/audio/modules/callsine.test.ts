@@ -367,16 +367,20 @@ describe('callsineMath.render — model selection', () => {
     // above the partial freq), so the output spectrum at e.g. 1320 Hz
     // (3 × 440) should be much higher for SAW than SINES given a pure
     // 440 Hz input.
-    const N = SR;
+    // 0.5s @ 48kHz = 24000 samples — enough hops (~46) for the partial
+    // tracker to lock + enough post-warmup samples (12000) for the
+    // harmonic-energy comparison. Cuts test runtime ~2x vs the original
+    // 1s buffer that was hitting vitest's 5s timeout in CI.
+    const N = Math.floor(0.5 * SR);
     const audio = new Float32Array(N);
     for (let i = 0; i < N; i++) audio[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / SR);
     const baseParams: CallsineParams = {
       model: 0, note: 0, harmonics: 0.5, timbre: 0.05, morph: 0, level: 1.0, pitchV: 0,
     };
-    const sineOut = callsineMath.render(audio, SR, { ...baseParams, model: 0 }).slice(Math.floor(0.5 * SR));
-    const sawOut = callsineMath.render(audio, SR, { ...baseParams, model: 1 }).slice(Math.floor(0.5 * SR));
+    const sineOut = callsineMath.render(audio, SR, { ...baseParams, model: 0 }).slice(Math.floor(0.25 * SR));
+    const sawOut = callsineMath.render(audio, SR, { ...baseParams, model: 1 }).slice(Math.floor(0.25 * SR));
     const sineH3 = powerAt(sineOut, 1320, SR);
     const sawH3 = powerAt(sawOut, 1320, SR);
     expect(sawH3, `SAW H3 ${sawH3} should exceed SINES H3 ${sineH3}`).toBeGreaterThan(sineH3 * 2);
-  });
+  }, 30_000);
 });
