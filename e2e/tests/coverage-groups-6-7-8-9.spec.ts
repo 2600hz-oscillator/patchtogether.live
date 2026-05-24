@@ -375,12 +375,21 @@ const VIDEO_SOURCES: VideoSourceCase[] = [
     params: { shift: 0.5 },
     upstream:      [{ id: 'src', type: 'lines', domain: 'video', params: { orient: 0.4, amp: 10, thickness: 0.5 } }],
     upstreamEdges: [{ id: 'us', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'mod', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }] },
-  { type: 'chroma',     outputPort: 'out', outputType: 'mono-video',
+  // CHROMA + LUMA reshaped to 1-input color processors (was confused
+  // mask extractors); both now emit full video. The new keyer compositors
+  // are CHROMAKEY + LUMAKEY (2-input fg/bg → video).
+  { type: 'chroma',     outputPort: 'out', outputType: 'video',
     upstream:      [{ id: 'src', type: 'shapes', domain: 'video', params: { shape: 0.3 } }],
     upstreamEdges: [{ id: 'us', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'mod', portId: 'in' }, sourceType: 'video', targetType: 'video' }] },
-  { type: 'luma',       outputPort: 'out', outputType: 'mono-video',
+  { type: 'luma',       outputPort: 'out', outputType: 'video',
     upstream:      [{ id: 'src', type: 'shapes', domain: 'video', params: { shape: 0.3 } }],
     upstreamEdges: [{ id: 'us', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'mod', portId: 'in' }, sourceType: 'video', targetType: 'video' }] },
+  { type: 'chromakey',  outputPort: 'out', outputType: 'video',
+    upstream:      [{ id: 'src', type: 'shapes', domain: 'video', params: { shape: 0.3 } }],
+    upstreamEdges: [{ id: 'us', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'mod', portId: 'fg' }, sourceType: 'video', targetType: 'video' }] },
+  { type: 'lumakey',    outputPort: 'out', outputType: 'video',
+    upstream:      [{ id: 'src', type: 'shapes', domain: 'video', params: { shape: 0.3 } }],
+    upstreamEdges: [{ id: 'us', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'mod', portId: 'fg' }, sourceType: 'video', targetType: 'video' }] },
   { type: 'colorizer',  outputPort: 'out', outputType: 'video',
     params: { tintR: 1, tintG: 0.5, tintB: 0.5 },
     upstream:      [{ id: 'src', type: 'lines', domain: 'video', params: { orient: 0.4, amp: 10, thickness: 0.5 } }],
@@ -518,7 +527,9 @@ test('integration (Group 8): shapes → destructor → chroma → videoOut rende
     [
       { id: 'e1', from: { nodeId: 's', portId: 'out' }, to: { nodeId: 'd', portId: 'in' }, sourceType: 'video', targetType: 'video' },
       { id: 'e2', from: { nodeId: 'd', portId: 'out' }, to: { nodeId: 'c', portId: 'in' }, sourceType: 'video', targetType: 'video' },
-      { id: 'e3', from: { nodeId: 'c', portId: 'out' }, to: { nodeId: 'o', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
+      // CHROMA reshaped to a 1-input video color processor; output is
+      // 'video' now (was 'mono-video' / mask in the legacy keyer shape).
+      { id: 'e3', from: { nodeId: 'c', portId: 'out' }, to: { nodeId: 'o', portId: 'in' }, sourceType: 'video', targetType: 'video' },
     ],
   );
 

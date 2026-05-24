@@ -181,6 +181,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // ───────── Video modules → Processors ─────────
   chroma: { top: 'Video modules', sub: 'Processors' },
   luma: { top: 'Video modules', sub: 'Processors' },
+  // CHROMAKEY / LUMAKEY — proper 2-input compositors. Sit with the other
+  // processors since they sit between sources and OUTPUT in a chain.
+  chromakey: { top: 'Video modules', sub: 'Processors' },
+  lumakey: { top: 'Video modules', sub: 'Processors' },
   colorizer: { top: 'Video modules', sub: 'Processors' },
   destructor: { top: 'Video modules', sub: 'Processors' },
   feedback: { top: 'Video modules', sub: 'Processors' },

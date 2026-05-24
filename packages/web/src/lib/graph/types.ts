@@ -163,6 +163,14 @@ type StandardModuleType =
   | 'destructor'
   | 'chroma'
   | 'luma'
+  // CHROMAKEY — proper 2-input chroma-key compositor (fg + bg + key
+  // color). Replaces the old single-input CHROMA which conflated
+  // "key-mask extraction" with the user-facing concept of a keyer.
+  | 'chromakey'
+  // LUMAKEY — 2-input luma-key compositor (fg + bg + luma threshold).
+  // Sibling to CHROMAKEY; replaces the old single-input LUMA's
+  // mask-extraction shape.
+  | 'lumakey'
   | 'colorizer'
   | 'feedback'
   | 'videoMixer'

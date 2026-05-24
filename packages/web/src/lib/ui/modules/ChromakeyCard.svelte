@@ -1,18 +1,18 @@
 <script lang="ts">
-  // ChromaCard — single-input HUE-SHIFTER / COLORIZER. Use CHROMAKEY for
-  // the proper 2-input chroma-key compositor (this card's old role
-  // before the v3 rework — see chroma.ts header).
+  // ChromakeyCard — proper 2-input chroma-key compositor (FG + BG +
+  // configurable key color). Replaces the old CHROMA's single-input
+  // "mask only" semantics with a full keyer that composites.
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { patch } from '$lib/graph/store';
-  import { chromaDef } from '$lib/video/modules/chroma';
+  import { chromakeyDef } from '$lib/video/modules/chromakey';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
 
   function p(name: string): number {
-    const def = chromaDef.params.find((d) => d.id === name);
+    const def = chromakeyDef.params.find((d) => d.id === name);
     return node?.params[name] ?? def?.defaultValue ?? 0;
   }
   function setParam(paramId: string) {
@@ -22,12 +22,11 @@
     };
   }
 
-  // Tint color is exposed as a hex swatch + native color picker (the same
-  // pattern the legacy keyer card used). The R/G/B params stay live for
-  // CV modulation; the picker writes all three in one shot.
+  // Key color picker — same swatch + native input pattern as the legacy
+  // CHROMA card. The R/G/B params stay live for CV modulation.
   function clamp01(v: number): number { return Math.max(0, Math.min(1, v)); }
   function ch(v: number): string { return Math.round(clamp01(v) * 255).toString(16).padStart(2, '0'); }
-  let tintHex = $derived(`#${ch(p('tintR'))}${ch(p('tintG'))}${ch(p('tintB'))}`);
+  let keyHex = $derived(`#${ch(p('keyR'))}${ch(p('keyG'))}${ch(p('keyB'))}`);
 
   function onColorChange(e: Event) {
     const hex = (e.target as HTMLInputElement).value;
@@ -36,59 +35,61 @@
     const b = parseInt(hex.slice(5, 7), 16) / 255;
     const target = patch.nodes[id];
     if (!target) return;
-    target.params.tintR = r;
-    target.params.tintG = g;
-    target.params.tintB = b;
+    target.params.keyR = r;
+    target.params.keyG = g;
+    target.params.keyB = b;
   }
 </script>
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">CHROMA</header>
+  <header class="title">CHROMAKEY</header>
 
-  <Handle type="target" position={Position.Left} id="in"         style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">IN</span>
-  <Handle type="target" position={Position.Left} id="hue"        style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 86px;">H</span>
-  <Handle type="target" position={Position.Left} id="saturation" style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">S</span>
-  <Handle type="target" position={Position.Left} id="tintR"      style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">R</span>
-  <Handle type="target" position={Position.Left} id="tintG"      style="top: 188px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 182px;">G</span>
-  <Handle type="target" position={Position.Left} id="tintB"      style="top: 220px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 214px;">B</span>
-  <Handle type="target" position={Position.Left} id="tintMix"    style="top: 252px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 246px;">M</span>
+  <Handle type="target" position={Position.Left} id="fg"            style="top: 56px;  --handle-color: var(--cable-video);" />
+  <span class="port-label left" style="top: 50px;">FG</span>
+  <Handle type="target" position={Position.Left} id="bg"            style="top: 88px;  --handle-color: var(--cable-video);" />
+  <span class="port-label left" style="top: 82px;">BG</span>
+  <Handle type="target" position={Position.Left} id="keyR"          style="top: 124px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 118px;">R</span>
+  <Handle type="target" position={Position.Left} id="keyG"          style="top: 156px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 150px;">G</span>
+  <Handle type="target" position={Position.Left} id="keyB"          style="top: 188px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 182px;">B</span>
+  <Handle type="target" position={Position.Left} id="threshold"     style="top: 220px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 214px;">T</span>
+  <Handle type="target" position={Position.Left} id="softness"      style="top: 252px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 246px;">S</span>
+  <Handle type="target" position={Position.Left} id="spillSuppress" style="top: 284px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 278px;">Sp</span>
 
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
   <span class="port-label right" style="top: 50px;">OUT</span>
 
   <div class="picker-row">
-    <label class="swatch-wrap" title="Click to pick tint color">
-      <span class="swatch" style="background: {tintHex};"></span>
+    <label class="swatch-wrap" title="Click to pick key color">
+      <span class="swatch" style="background: {keyHex};"></span>
       <input
         type="color"
         class="color-input"
-        value={tintHex}
+        value={keyHex}
         oninput={onColorChange}
-        data-testid="chroma-tint-picker"
+        data-testid="chromakey-color-picker"
       />
-      <span class="hex">{tintHex}</span>
+      <span class="hex">{keyHex}</span>
     </label>
   </div>
 
   <div class="fader-grid">
-    <Fader value={p('hue')}        min={-180} max={180} defaultValue={chromaDef.params.find((x) => x.id === 'hue')!.defaultValue}        label="Hue"  curve="linear" onchange={setParam('hue')}        moduleId={id} paramId="hue" />
-    <Fader value={p('saturation')} min={0}    max={2}   defaultValue={chromaDef.params.find((x) => x.id === 'saturation')!.defaultValue} label="Sat"  curve="linear" onchange={setParam('saturation')} moduleId={id} paramId="saturation" />
-    <Fader value={p('tintMix')}    min={0}    max={1}   defaultValue={chromaDef.params.find((x) => x.id === 'tintMix')!.defaultValue}    label="Mix"  curve="linear" onchange={setParam('tintMix')}    moduleId={id} paramId="tintMix" />
+    <Fader value={p('threshold')}     min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'threshold')!.defaultValue}     label="Thr"   curve="linear" onchange={setParam('threshold')}     moduleId={id} paramId="threshold" />
+    <Fader value={p('softness')}      min={0} max={0.5} defaultValue={chromakeyDef.params.find((x) => x.id === 'softness')!.defaultValue}      label="Soft"  curve="linear" onchange={setParam('softness')}      moduleId={id} paramId="softness" />
+    <Fader value={p('spillSuppress')} min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'spillSuppress')!.defaultValue} label="Spill" curve="linear" onchange={setParam('spillSuppress')} moduleId={id} paramId="spillSuppress" />
   </div>
 </div>
 
 <style>
   .card {
     width: 260px;
-    min-height: 360px;
+    min-height: 380px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -110,7 +111,7 @@
   .port-label.left { left: 14px; }
   .port-label.right { right: 14px; }
   .picker-row {
-    margin: 165px 12px 12px;
+    margin: 200px 12px 12px;
     display: flex;
     align-items: center;
     gap: 12px;

@@ -17,6 +17,8 @@ import { pictureboxDef } from './picturebox';
 import { destructorDef } from './destructor';
 import { chromaDef } from './chroma';
 import { lumaDef } from './luma';
+import { chromakeyDef } from './chromakey';
+import { lumakeyDef } from './lumakey';
 import { colorizerDef } from './colorizer';
 import { feedbackDef } from './feedback';
 import { mixerVideoDef } from './mixer';
@@ -43,8 +45,16 @@ export function registerVideoModules(): void {
   registerVideoModule(inwardsDef);
   registerVideoModule(pictureboxDef);
   registerVideoModule(destructorDef);
+  // CHROMA — single-input HUE-SHIFTER / COLORIZER (v3 — was a confused
+  // mask-extractor in v1/v2; see chroma.ts header for the migration).
   registerVideoModule(chromaDef);
+  // LUMA — single-input POSTERIZE / CONTRAST / GAMMA processor (v2 — was
+  // a mask-extractor in v1).
   registerVideoModule(lumaDef);
+  // CHROMAKEY — proper 2-input chroma-key compositor (fg + bg + key color).
+  registerVideoModule(chromakeyDef);
+  // LUMAKEY — proper 2-input luma-key compositor (fg + bg + threshold).
+  registerVideoModule(lumakeyDef);
   registerVideoModule(colorizerDef);
   registerVideoModule(feedbackDef);
   registerVideoModule(mixerVideoDef);

@@ -1,17 +1,18 @@
 // packages/web/src/lib/video/modules/luma.ts
 //
-// LUMA — luminance key. Outputs a `keys` mask derived from a single video
-// (or image) input by thresholding luminance.
+// LUMA — single-input POSTERIZE / CONTRAST / GAMMA / BIAS processor.
 //
-// Phase-1 reading of §3.5: this is the simpler, single-knob luma-key
-// (mask = smoothstep(threshold-softness, threshold+softness, luma)).
-// The 5-blend-mode mixer interpretation in the spec is deferred to
-// MIXER's blend modes — keeping LUMA narrow to "make a key from a
-// video" matches how it's used downstream by CHROMA / MIXER.
+// History: prior versions of this module conflated "luma-mask extraction"
+// with the user-facing concept of a "luma keyer." A real keyer takes
+// foreground + background and composites — see LUMAKEY for that. LUMA is
+// now a luminance-domain color processor: gamma, contrast, posterize,
+// bias. The math preserves chroma by computing a single luma factor and
+// applying the same ratio to all three channels.
 //
-// Output type is `keys` (mono no-time-axis is overstated for an
-// animated input — but we follow the spec's mask-output convention;
-// downstream that wants animated-mono can treat keys as mono-video).
+// Schema v2 migration: prior v1 stored mask-extraction params (threshold,
+// softness, invert). Those were never the right shape for this module's
+// real job; on load we drop them and reset to processor defaults. Users
+// who actually wanted a luma key should swap in LUMAKEY.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -24,9 +25,10 @@ out vec4 outColor;
 
 uniform sampler2D uTex;
 uniform float uHasInput;
-uniform float uThreshold; // 0..1
-uniform float uSoftness;  // 0..1
-uniform float uInvert;    // 0 or 1
+uniform float uGamma;            // 0.1..3.0
+uniform float uContrast;         // 0..2
+uniform float uPosterizeLevels;  // 2..16
+uniform float uBias;             // -0.5..+0.5
 
 void main() {
   if (uHasInput < 0.5) {
@@ -34,64 +36,115 @@ void main() {
     return;
   }
   vec3 src = texture(uTex, vUv).rgb;
-  // Rec. 601 luma — cheap and visually correct enough for keying.
+  // Rec. 601 luma — same weights as the prior LUMA module.
   float luma = dot(src, vec3(0.299, 0.587, 0.114));
+  // Avoid division-by-zero / NaN propagation when the source is fully
+  // black. Pick an epsilon small enough that the resulting hue is the
+  // same in practice (still black post-process).
+  float lumaSafe = max(luma, 1e-5);
 
-  float lo = max(0.0, uThreshold - uSoftness);
-  float hi = min(1.0, uThreshold + uSoftness);
-  float mask = smoothstep(lo, hi, luma);
-  if (uInvert > 0.5) mask = 1.0 - mask;
+  // Gamma: pow(luma, 1/gamma). Clamp gamma to its declared range so a
+  // CV signal can't push us into pow(x, 0) territory.
+  float g = clamp(uGamma, 0.1, 3.0);
+  float gammaLuma = pow(clamp(luma, 0.0, 1.0), 1.0 / g);
 
-  outColor = vec4(mask, mask, mask, 1.0);
+  // Contrast around 0.5.
+  float contrastLuma = (gammaLuma - 0.5) * uContrast + 0.5;
+
+  // Posterize: quantize to N levels. Clamp + round so a sub-2 CV value
+  // doesn't divide by < 1.
+  float levels = max(2.0, floor(uPosterizeLevels + 0.5));
+  float posterLuma = floor(contrastLuma * levels) / max(levels - 1.0, 1.0);
+
+  // Bias is a final additive brightness offset.
+  float finalLuma = clamp(posterLuma + uBias, 0.0, 1.0);
+
+  // Apply the same luma ratio to all three channels so we preserve hue.
+  float ratio = finalLuma / lumaSafe;
+  vec3 out_rgb = clamp(src * ratio, 0.0, 1.0);
+  outColor = vec4(out_rgb, 1.0);
 }`;
 
 interface LumaParams {
-  threshold: number;
-  softness: number;
-  invert: number;
+  gamma: number;
+  contrast: number;
+  posterizeLevels: number;
+  bias: number;
 }
 
 const DEFAULTS: LumaParams = {
-  threshold: 0.5,
-  softness: 0.1,
-  invert: 0,
+  gamma: 1.0,
+  contrast: 1.0,
+  posterizeLevels: 16, // max = effectively off (no visible banding)
+  bias: 0.0,
 };
+
+const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(DEFAULTS));
+const LEGACY_PARAM_IDS = new Set(['threshold', 'softness', 'invert']);
+
+/**
+ * Migrate older LUMA params. v1 stored mask-extraction shape; v2 stores
+ * processor shape. Since the OLD semantics were broken (a single-input
+ * "luma keyer" makes no sense — there's no background to composite into),
+ * we drop the legacy mask params on load. Already-present v2 keys are
+ * preserved.
+ */
+export function migrateLuma(data: unknown, fromVersion: number): unknown {
+  if (!data || typeof data !== 'object') return data;
+  if (fromVersion >= 2) return data;
+  const obj = data as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (LEGACY_PARAM_IDS.has(k)) continue;
+    out[k] = v;
+  }
+  return out;
+}
 
 export const lumaDef: VideoModuleDef = {
   type: 'luma',
   domain: 'video',
   label: 'LUMA',
   category: 'effects',
-  schemaVersion: 1,
+  schemaVersion: 2,
+  migrate: migrateLuma,
   inputs: [
-    { id: 'in',        type: 'video' },
-    // paramTarget == port.id keeps docs manifest in sync; bridge uses
-    // port id directly so the runtime works either way.
-    { id: 'threshold', type: 'cv', paramTarget: 'threshold' },
-    { id: 'softness',  type: 'cv', paramTarget: 'softness' },
+    { id: 'in',              type: 'video' },
+    { id: 'gamma',           type: 'cv', paramTarget: 'gamma' },
+    { id: 'contrast',        type: 'cv', paramTarget: 'contrast' },
+    { id: 'posterizeLevels', type: 'cv', paramTarget: 'posterizeLevels' },
+    { id: 'bias',            type: 'cv', paramTarget: 'bias' },
   ],
   outputs: [
-    { id: 'out', type: 'mono-video' },
+    { id: 'out', type: 'video' },
   ],
   params: [
-    { id: 'threshold', label: 'Thresh',   defaultValue: DEFAULTS.threshold, min: 0, max: 1, curve: 'linear' },
-    { id: 'softness',  label: 'Softness', defaultValue: DEFAULTS.softness,  min: 0, max: 1, curve: 'linear' },
-    { id: 'invert',    label: 'Inv',      defaultValue: DEFAULTS.invert,    min: 0, max: 1, curve: 'discrete' },
+    { id: 'gamma',           label: 'Gamma',  defaultValue: DEFAULTS.gamma,           min: 0.1,  max: 3.0,  curve: 'linear' },
+    { id: 'contrast',        label: 'Cntr',   defaultValue: DEFAULTS.contrast,        min: 0,    max: 2,    curve: 'linear' },
+    { id: 'posterizeLevels', label: 'Post',   defaultValue: DEFAULTS.posterizeLevels, min: 2,    max: 16,   curve: 'discrete' },
+    { id: 'bias',            label: 'Bias',   defaultValue: DEFAULTS.bias,            min: -0.5, max: 0.5,  curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
 
-    const uTex       = gl.getUniformLocation(program, 'uTex');
-    const uHasInput  = gl.getUniformLocation(program, 'uHasInput');
-    const uThreshold = gl.getUniformLocation(program, 'uThreshold');
-    const uSoftness  = gl.getUniformLocation(program, 'uSoftness');
-    const uInvert    = gl.getUniformLocation(program, 'uInvert');
+    const uTex             = gl.getUniformLocation(program, 'uTex');
+    const uHasInput        = gl.getUniformLocation(program, 'uHasInput');
+    const uGamma           = gl.getUniformLocation(program, 'uGamma');
+    const uContrast        = gl.getUniformLocation(program, 'uContrast');
+    const uPosterizeLevels = gl.getUniformLocation(program, 'uPosterizeLevels');
+    const uBias            = gl.getUniformLocation(program, 'uBias');
 
     const { fbo, texture } = ctx.createFbo();
 
-    const params: LumaParams = { ...DEFAULTS, ...(node.params as Partial<LumaParams>) };
+    // Strip any stray legacy keys so they can't bleed into the params object.
+    const rawParams = node.params as Record<string, unknown>;
+    const filteredParams: Record<string, number> = {};
+    for (const [k, v] of Object.entries(rawParams)) {
+      if (PARAM_IDS.has(k) && typeof v === 'number') filteredParams[k] = v;
+    }
+    const params: LumaParams = { ...DEFAULTS, ...filteredParams as Partial<LumaParams> };
 
     const surface: VideoNodeSurface = {
       fbo,
@@ -110,9 +163,10 @@ export const lumaDef: VideoModuleDef = {
           g.uniform1i(uTex, 0);
         }
 
-        g.uniform1f(uThreshold, params.threshold);
-        g.uniform1f(uSoftness,  params.softness);
-        g.uniform1f(uInvert,    params.invert);
+        g.uniform1f(uGamma,           params.gamma);
+        g.uniform1f(uContrast,        params.contrast);
+        g.uniform1f(uPosterizeLevels, params.posterizeLevels);
+        g.uniform1f(uBias,            params.bias);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);

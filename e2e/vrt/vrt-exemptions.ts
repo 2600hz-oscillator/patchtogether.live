@@ -202,6 +202,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // the module-def shape (videobox.test.ts) + the playhead-sync drift
   // math (videobox-sync.test.ts); E2E spawn smoke covers card render.
   videobox: 'live <video> element + ticking playhead readout defeat deterministic capture; unit + sync-math + per-module spawn smoke provide coverage',
+  // CHROMAKEY — new 2-input compositor; card chrome is static but baseline
+  // capture pending. Unit + E2E (video-controls.spec.ts) provide coverage.
+  // Promote into MODULES + capture darwin/linux baselines in a follow-up PR.
+  chromakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
+  // LUMAKEY — new 2-input compositor; same rationale as CHROMAKEY.
+  lumakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
+  // CHROMA — v3 reshape (this PR) changed the card layout + stripe colour
+  // entirely (was a 5-fader mask-extractor; now a 3-fader hue-shifter +
+  // tint swatch). Old baselines were deleted; regenerate via
+  // `task vrt:update` on each platform in a follow-up PR.
+  chroma: 'VRT baseline pending — v3 reshape (PR feat/keyers-and-restore-chroma-luma) deleted obsolete baselines; regenerate via `task vrt:update` on each platform.',
+  // LUMA — v2 reshape (this PR) same rationale as CHROMA above.
+  luma: 'VRT baseline pending — v2 reshape (PR feat/keyers-and-restore-chroma-luma) deleted obsolete baselines; regenerate via `task vrt:update` on each platform.',
 };
 
 /** Per-(platform, type) baselines intentionally missing while a follow-
