@@ -105,8 +105,13 @@ describe('callsineDef shape', () => {
 // ---------------------------------------------------------------------------
 
 describe('callsine model registry', () => {
-  it('v1 ships SINES + SAW', () => {
-    expect(CALLSINE_MODEL_NAMES).toEqual(['SINES', 'SAW']);
+  it('v1.1 ships 14 models 0..13 (SINES..METAL)', () => {
+    expect(CALLSINE_MODEL_NAMES).toEqual([
+      'SINES', 'SAW', 'SQR', 'PULSE25', 'TRI', 'RAMP',
+      'CHEBY3', 'CHEBY5', 'HARDSYNC', 'FOLD', 'NOISE',
+      'FORMANT', 'SUBOSC', 'METAL',
+    ]);
+    expect(CALLSINE_MAX_MODEL).toBe(13);
   });
   it('CALLSINE_PLANNED_MODELS has >=10 entries documented as follow-up', () => {
     expect(CALLSINE_PLANNED_MODELS.length).toBeGreaterThanOrEqual(10);
@@ -382,5 +387,51 @@ describe('callsineMath.render — model selection', () => {
     const sineH3 = powerAt(sineOut, 1320, SR);
     const sawH3 = powerAt(sawOut, 1320, SR);
     expect(sawH3, `SAW H3 ${sawH3} should exceed SINES H3 ${sineH3}`).toBeGreaterThan(sineH3 * 2);
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// Per-model "is audible" coverage. Each new model (#2..#13) must render
+// non-silent at a C4-ish (261.6 Hz) input with harmonics≈8/64 (≈0.125) and
+// produce a peak amplitude above the silence floor in the steady-state tail.
+//
+// We use a slightly fast slew (timbre≈0.02 → ~10 ms) so steady state arrives
+// inside the 0.5 s window, and pre-render a single 440 Hz input shared by
+// all sub-tests in this block to keep runtime bounded — vitest's default
+// 5 s per-test timeout was the bottleneck on the SAW-vs-SINES test above,
+// so we render at 0.5 s and parallelize via it.each rather than per-it.
+// ---------------------------------------------------------------------------
+
+describe('callsineMath.render — per-model audibility', () => {
+  const SR = 48000;
+  const N = Math.floor(0.5 * SR);
+  const C4 = 261.625565;
+  const audio = new Float32Array(N);
+  for (let i = 0; i < N; i++) audio[i] = 0.5 * Math.sin((2 * Math.PI * C4 * i) / SR);
+
+  const baseParams: CallsineParams = {
+    model: 0,
+    note: 0,
+    harmonics: 0.125, // ≈ 8 partials of 64 — task spec
+    timbre: 0.02,     // ~10 ms slew — settles inside the 0.5 s window
+    morph: 0,
+    level: 1.0,
+    pitchV: 0,
+  };
+
+  // Skip 0 + 1 (SINES + SAW were covered by the older tests); cover the
+  // 12 new models. The assertion is loose-but-strict: tail peak > 0.05
+  // (the silence floor at level=1.0 with 8 partials).
+  const NEW_MODELS = CALLSINE_MODEL_NAMES.slice(2).map((name, i) => [i + 2, name] as const);
+  it.each(NEW_MODELS)('model %i (%s) — peak above silence floor at C4', (model, _name) => {
+    const out = callsineMath.render(audio, SR, { ...baseParams, model });
+    const tail = out.slice(Math.floor(0.25 * SR));
+    let peak = 0;
+    for (let i = 0; i < tail.length; i++) {
+      const a = Math.abs(tail[i]!);
+      if (a > peak) peak = a;
+      expect(Number.isFinite(tail[i]!)).toBe(true);
+    }
+    expect(peak).toBeGreaterThan(0.05);
   }, 30_000);
 });
