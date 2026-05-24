@@ -148,6 +148,10 @@ EXPORTS='[
   "_dg_get_pcm_buffer",
   "_dg_get_pcm_buffered_frames",
   "_dg_get_pcm_sample_rate",
+  "_dgpt_get_player_x",
+  "_dgpt_get_player_y",
+  "_dgpt_get_player_angle",
+  "_dgpt_has_player_mobj",
   "_malloc",
   "_free"
 ]'

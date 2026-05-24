@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DoomRuntime, type DoomModule } from './doom-runtime';
-import { KEY_FIRE, KEY_RCTRL, KEY_w } from './doomkeys';
+import { KEY_FIRE, KEY_RCTRL, KEY_UPARROW, KEY_w } from './doomkeys';
 
 // ---------------- Stub DoomModule ----------------
 
@@ -199,12 +199,17 @@ describe('DoomRuntime — TS shim layer', () => {
   it('setKeyForCvGate translates via the KEY_FOR_CV_GATE table', () => {
     rt.init(new Uint8Array([0]));
     const before = stub.calls.length;
-    expect(rt.setKeyForCvGate('w', true)).toBe(true);
+    expect(rt.setKeyForCvGate('up', true)).toBe(true);
     expect(rt.setKeyForCvGate('space', false)).toBe(true);
     expect(rt.setKeyForCvGate('ctrl', true)).toBe(true);
     const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+    // KEY_UPARROW = 0xae, but dgpt_set_key masks to 0xff (no change here);
+    // KEY_FIRE = 0xa3; KEY_RCTRL = 0x9d. The reference to KEY_w stays in
+    // the imports for KEY_FOR_KEYBOARD_CODE tests above — runtime still
+    // honors KeyW.
+    void KEY_w;
     expect(calls).toEqual([
-      { name: 'dgpt_set_key', args: [KEY_w, 1] },
+      { name: 'dgpt_set_key', args: [KEY_UPARROW, 1] },
       { name: 'dgpt_set_key', args: [KEY_FIRE, 0] },
       { name: 'dgpt_set_key', args: [KEY_RCTRL, 1] },
     ]);
@@ -256,6 +261,47 @@ describe('DoomRuntime — TS shim layer', () => {
     expect(rt.isInitialized()).toBe(true);
     rt.dispose();
     expect(rt.isInitialized()).toBe(false);
+  });
+
+  it('hasPlayerMobj returns false before init + reflects the WASM bool after', () => {
+    // Before init.
+    expect(rt.hasPlayerMobj()).toBe(false);
+    // After init: stub returns 0 by default → false.
+    rt.init(new Uint8Array([0]));
+    expect(rt.hasPlayerMobj()).toBe(false);
+    // Switch the stub to return 1 for dgpt_has_player_mobj and re-check.
+    const customStub = makeStubModule();
+    const origCcall = customStub.mod.ccall;
+    customStub.mod.ccall = (name, ret, argTypes, args) => {
+      if (name === 'dgpt_has_player_mobj') return 1;
+      return origCcall.call(customStub.mod, name, ret, argTypes, args);
+    };
+    const r2 = new DoomRuntime(customStub.mod);
+    r2.init(new Uint8Array([0]));
+    expect(r2.hasPlayerMobj()).toBe(true);
+  });
+
+  it('getPlayerState returns null before mobj spawns, struct after', () => {
+    // Before init.
+    expect(rt.getPlayerState()).toBeNull();
+
+    // Custom stub that pretends the mobj exists at (x=1024, y=2048, angle=0xC0000000).
+    const custom = makeStubModule();
+    const orig = custom.mod.ccall;
+    custom.mod.ccall = (name, ret, argTypes, args) => {
+      if (name === 'dgpt_has_player_mobj') return 1;
+      if (name === 'dgpt_get_player_x') return 1024;
+      if (name === 'dgpt_get_player_y') return 2048;
+      if (name === 'dgpt_get_player_angle') return 0xC0000000; // bit 31 set
+      return orig.call(custom.mod, name, ret, argTypes, args);
+    };
+    const r2 = new DoomRuntime(custom.mod);
+    r2.init(new Uint8Array([0]));
+    expect(r2.getPlayerState()).toEqual({
+      x: 1024,
+      y: 2048,
+      angle: 0xC0000000, // verifies unsigned coercion via `>>> 0`
+    });
   });
 });
 

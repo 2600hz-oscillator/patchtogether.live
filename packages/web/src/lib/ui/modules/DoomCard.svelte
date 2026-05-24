@@ -1,11 +1,26 @@
 <script lang="ts">
   // DoomCard — UI for the single-instance interactive DOOM video module.
   //
-  // The card is keyboard-driven (tabindex=0 + :focus-within ring) — when
-  // focused, document-level keydown/keyup listeners route via the runtime;
-  // unfocused, no keys are stolen. NUMPAD+'s document listener defensively
-  // skips keys whose document.activeElement is inside a DOOM card so the
-  // two modules can coexist when both are on the rack.
+  // KEYBOARD ROUTING (the load-bearing special case):
+  //
+  // DOOM needs to consume ALL keypresses while its card is the focused/
+  // selected SvelteFlow node — otherwise SF's arrow-key node-keyboard-move
+  // intercepts arrow keys (and so do canvas pan/zoom shortcuts), so the
+  // player can't move in-game and the card visibly slides across the
+  // canvas instead. The fix is intentionally module-specific: a window-
+  // level keydown/keyup listener at the CAPTURE phase that fires BEFORE
+  // SvelteFlow's document-level handlers + before any bubble-phase
+  // listeners on the canvas. When a DOOM card is focused/selected, we
+  // preventDefault + stopPropagation BEFORE SF can see the event, then
+  // route the key to the runtime (host) or relay it via awareness
+  // (spectator).
+  //
+  // We deliberately DO NOT introduce a generalized "keyboard owner"
+  // registry — DOOM is the only module today that needs full keyboard
+  // capture (every other module is happy with the SF default of arrow-
+  // keys-move-the-card). If/when a second module wants the same
+  // treatment, refactor into a shared registry then; until then the
+  // special case is clearer than the abstraction.
   //
   // Multiplayer (Yjs awareness): the user who spawned the module is the
   // "host" (lex-smallest current rack-member id on host departure;
@@ -100,32 +115,75 @@
     }
   }
 
-  // Keyboard input — attached directly to the card div via onkeydown/onkeyup.
-  // The card is tabindex=0, so kb events only fire when the user has clicked
-  // it (or tabbed to it). No window-level capture, no document.activeElement
-  // sniffing — focus alone is the gate. Click elsewhere, card blurs, DOOM
-  // stops consuming keys.
-  function onKeyDown(ev: KeyboardEvent): void {
+  // Keyboard input — see file header for the full story.
+  //
+  // Two-step routing decision:
+  //   1. shouldClaimKey() — is the card the focused/selected SF node?
+  //      (focus alone is not enough — SF's keyboard-move handler fires on
+  //      any node that's `.selected` regardless of focus, so we have to
+  //      claim the key whenever EITHER condition holds).
+  //   2. routeKey() — push to runtime (host) or relay over awareness
+  //      (spectator).
+  function shouldClaimKey(): boolean {
+    if (!cardEl) return false;
+    // a) Focus-within: any descendant (incl. the card itself) is
+    //    document.activeElement.
+    if (cardEl.contains(document.activeElement)) return true;
+    // b) SvelteFlow marks the selected node wrapper with .selected. The
+    //    card mounts INSIDE that wrapper, so we walk up + check.
+    const sfNode = cardEl.closest('.svelte-flow__node');
+    if (sfNode?.classList.contains('selected')) return true;
+    return false;
+  }
+
+  function routeKey(code: string, pressed: boolean): void {
     const extras = getExtras();
     if (!extras) return;
     if (isHost) {
-      const handled = extras.pushKeyboardKey(ev.code, true);
-      if (handled) ev.preventDefault();
+      extras.pushKeyboardKey(code, pressed);
     } else {
-      relayKeyToHost(ev.code, true);
-      ev.preventDefault();
+      relayKeyToHost(code, pressed);
     }
   }
-  function onKeyUp(ev: KeyboardEvent): void {
-    const extras = getExtras();
-    if (!extras) return;
-    if (isHost) {
-      const handled = extras.pushKeyboardKey(ev.code, false);
-      if (handled) ev.preventDefault();
-    } else {
-      relayKeyToHost(ev.code, false);
-      ev.preventDefault();
+
+  // Window-level capture-phase listener. Capture phase runs BEFORE bubble
+  // (and before any document-level bubble listener xyflow installs for
+  // arrow-key node-move + delete-on-Backspace). preventDefault +
+  // stopPropagation here is what keeps the arrow keys from reaching SF's
+  // node-move handler and the canvas's pan/zoom shortcuts.
+  function onWindowKeyDownCapture(ev: KeyboardEvent): void {
+    if (!shouldClaimKey()) return;
+    // Don't claim modifier-bearing system shortcuts (cmd-R, ctrl-F, etc.) —
+    // the user might want to reload or open devtools while DOOM is focused.
+    // The exception is the bare ControlLeft / ControlRight (DOOM's "run"
+    // modifier) which carries no other key.
+    if ((ev.metaKey || ev.ctrlKey || ev.altKey) && !isModifierOnlyKey(ev.code)) {
+      return;
     }
+    ev.preventDefault();
+    ev.stopPropagation();
+    routeKey(ev.code, true);
+  }
+  function onWindowKeyUpCapture(ev: KeyboardEvent): void {
+    if (!shouldClaimKey()) return;
+    if ((ev.metaKey || ev.ctrlKey || ev.altKey) && !isModifierOnlyKey(ev.code)) {
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    routeKey(ev.code, false);
+  }
+  function isModifierOnlyKey(code: string): boolean {
+    return (
+      code === 'ControlLeft' ||
+      code === 'ControlRight' ||
+      code === 'AltLeft' ||
+      code === 'AltRight' ||
+      code === 'ShiftLeft' ||
+      code === 'ShiftRight' ||
+      code === 'MetaLeft' ||
+      code === 'MetaRight'
+    );
   }
 
   function relayKeyToHost(code: string, pressed: boolean): void {
@@ -371,11 +429,20 @@
     // Auto-attach awareness if a provider is present (multi-user rack);
     // single-user `/` canvas skips quietly.
     attachAwareness();
+    // Capture-phase window listeners (see header). Per-card instance,
+    // not module-global — if there were ever >1 DOOM card on the rack
+    // (maxInstances:1 prevents that today, but defensively…) each card
+    // checks shouldClaimKey() on its own cardEl + the SF node it sits
+    // inside, so only the focused/selected one actually claims keys.
+    window.addEventListener('keydown', onWindowKeyDownCapture, true);
+    window.addEventListener('keyup', onWindowKeyUpCapture, true);
   });
 
   onDestroy(() => {
     stopRenderLoop();
     detachAwareness();
+    window.removeEventListener('keydown', onWindowKeyDownCapture, true);
+    window.removeEventListener('keyup', onWindowKeyUpCapture, true);
   });
 
   // ---- Param row ----
@@ -398,7 +465,11 @@
      ScoreCard. The svelte-check rule wants an interactive handler on
      focusable elements; we register a click-to-focus to satisfy it
      (which is also good UX — click anywhere on the card to grab the
-     keyboard). -->
+     keyboard). Key handling is window-level capture (see <script>
+     header) — NOT card-level — because xyflow's own keydown listeners
+     fire on the document and we need to preventDefault BEFORE they do
+     to keep arrow keys from moving the card on the canvas instead of
+     reaching the in-game player. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -411,8 +482,6 @@
   data-card-type="doom"
   data-testid="doom-card"
   onclick={() => cardEl?.focus()}
-  onkeydown={onKeyDown}
-  onkeyup={onKeyUp}
 >
   <div class="stripe" style="background: var(--cable-video, #c33);"></div>
   <header class="title">
@@ -459,13 +528,18 @@
 
   {#each CV_GATE_PORT_IDS as port, idx (port)}
     {@const top = 56 + idx * 28}
+    {@const label = port === 'up' ? '↑'
+                  : port === 'down' ? '↓'
+                  : port === 'left' ? '←'
+                  : port === 'right' ? '→'
+                  : port.toUpperCase()}
     <Handle
       type="target"
       position={Position.Left}
       id={port}
       style="top: {top}px; --handle-color: var(--cable-cv);"
     />
-    <span class="port-label left" style="top: {top - 6}px;">{port.toUpperCase()}</span>
+    <span class="port-label left" style="top: {top - 6}px;">{label}</span>
   {/each}
 
   <Handle

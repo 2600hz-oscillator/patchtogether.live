@@ -61,13 +61,38 @@
 
 #include "doomgeneric.h"
 #include "doomkeys.h"
+#include "doomdef.h"
+#include "d_player.h"
+#include "p_mobj.h"
+
+// Forward decl — defined in g_game.c. Lets the JS-side e2e read the
+// player's actual in-game x/y/angle for regression checks on the
+// "arrow keys move the player" code path (the framebuffer-diff test
+// from PR #275 was insufficient — it passed for the broken-key bug
+// too, where ArrowUp shrunk the screen instead of moving forward).
+extern player_t players[MAXPLAYERS];
 
 // ---- Key event queue ----
 //
-// Bounded ring buffer. Each event is two bytes: high bit = pressed,
-// low 7 bits = doomkey. Lossy on overflow (oldest wins) — under normal
-// human typing the queue never fills; under stress (held-key autorepeat
-// + frame-rate stall) we'd rather drop than block.
+// Bounded ring buffer. Each event packs the full 8-bit doomkey value
+// in the low byte and the pressed flag in the high byte of a uint16:
+//   bits  0..7  = doomkey (full unsigned char — KEY_UPARROW=0xad etc.)
+//   bits  8..15 = pressed (0 or 1)
+//
+// HISTORICAL BUG (pre-#276): the encoding used `(doomkey & 0x7f) | (pressed << 7)`
+// which truncated the high bit of doomkey. doomkeys.h KEY_* constants for the
+// arrow keys + RCTRL/RALT/RSHIFT all have bit 0x80 set:
+//   KEY_UPARROW    = 0xad → 0x2d after mask = KEY_MINUS  (shrinks screen!)
+//   KEY_LEFTARROW  = 0xac → 0x2c after mask = ','        (unmapped)
+//   KEY_RIGHTARROW = 0xae → 0x2e after mask = '.'        (unmapped)
+//   KEY_DOWNARROW  = 0xaf → 0x2f after mask = '/'        (unmapped)
+//   KEY_RCTRL      = 0x9d → 0x1d after mask                (not KEY_FIRE)
+//   KEY_RALT       = 0xb8 → 0x38 after mask                (not strafe)
+// The arrow keys hilariously decoded as KEY_MINUS = key_menu_decscreen,
+// so ArrowUp shrunk the in-game viewport instead of moving the player.
+// Lossy on overflow (oldest wins) — under normal human typing the queue
+// never fills; under stress (held-key autorepeat + frame-rate stall)
+// we'd rather drop than block.
 
 #define DGPT_KEY_QUEUE_SIZE 256
 
@@ -79,7 +104,8 @@ static uint32_t s_ms_at_start = 0;  // wall-clock-equivalent base
 static uint32_t s_ms_now = 0;       // bumped by DG_GetTicksMs via JS
 
 void dgpt_set_key(int doomkey, int pressed) {
-  uint16_t entry = (uint16_t)((doomkey & 0x7f) | ((pressed ? 1 : 0) << 7));
+  // Pack: low byte = full 8-bit doomkey, high byte = pressed flag (0/1).
+  uint16_t entry = (uint16_t)((doomkey & 0xff) | ((pressed ? 1 : 0) << 8));
   int next_tail = (s_key_q_tail + 1) % DGPT_KEY_QUEUE_SIZE;
   if (next_tail == s_key_q_head) {
     // Full — drop oldest.
@@ -127,8 +153,8 @@ int DG_GetKey(int *pressed, unsigned char *doomKey) {
   if (s_key_q_head == s_key_q_tail) return 0;
   uint16_t entry = s_key_queue[s_key_q_head];
   s_key_q_head = (s_key_q_head + 1) % DGPT_KEY_QUEUE_SIZE;
-  *pressed = (entry >> 7) & 0x1;
-  *doomKey = (unsigned char)(entry & 0x7f);
+  *pressed = (entry >> 8) & 0x1;
+  *doomKey = (unsigned char)(entry & 0xff);
   return 1;
 }
 
@@ -205,4 +231,35 @@ uint8_t *dgpt_get_pcm_buffer() {
 
 int dgpt_get_pcm_buffer_size() {
   return DGPT_PCM_BUFFER_SAMPLES;
+}
+
+// ---- Player-state introspection (regression-test hook) ----
+//
+// The e2e test for "ArrowUp moves the player forward" needs to read the
+// player's actual in-game position — the framebuffer-diff signal alone is
+// insufficient (the screen-shrink bug also changed pixels). These exports
+// surface player 0's mobj x/y/angle so JS can sample, hold a key, sample
+// again, and assert position actually changed.
+//
+// Coordinates are DOOM's native fixed-point (16.16). JS-side conversion to
+// integer map units = (raw >> 16). Returns 0 when the player has no mobj
+// yet (start screen / menu / level not loaded).
+
+int dgpt_get_player_x(void) {
+  if (!players[0].mo) return 0;
+  return (int)players[0].mo->x;
+}
+
+int dgpt_get_player_y(void) {
+  if (!players[0].mo) return 0;
+  return (int)players[0].mo->y;
+}
+
+unsigned int dgpt_get_player_angle(void) {
+  if (!players[0].mo) return 0;
+  return (unsigned int)players[0].mo->angle;
+}
+
+int dgpt_has_player_mobj(void) {
+  return players[0].mo != NULL ? 1 : 0;
 }

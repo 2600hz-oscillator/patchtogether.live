@@ -352,6 +352,37 @@ export class DoomRuntime {
     return this.mod.ccall('dg_get_pcm_sample_rate', 'number', [], []);
   }
 
+  // ---------------- Player-state introspection ----------------
+  //
+  // Returns the active player's in-game mobj state. Used by the e2e
+  // suite to verify that arrow keys actually move the player (vs the
+  // framebuffer-diff signal, which is fooled by the screen-shrink bug
+  // where ArrowUp was decoding as KEY_MINUS — see doomgeneric_patchtogether.c
+  // header).
+  //
+  // Returns null when the player has no mobj yet (intro / menu / level
+  // still loading). All values are DOOM's native fixed-point 16.16
+  // coordinates; convert to integer map units via `>> 16` in callers
+  // that just want a "did it change" signal.
+
+  /** True once the player has spawned into a level (mobj is non-null). */
+  hasPlayerMobj(): boolean {
+    if (!this.initialized) return false;
+    return this.mod.ccall('dgpt_has_player_mobj', 'number', [], []) !== 0;
+  }
+
+  /** Player position + facing angle in DOOM's native fixed-point coords,
+   *  or null if no level is loaded. */
+  getPlayerState(): { x: number; y: number; angle: number } | null {
+    if (!this.initialized) return null;
+    if (!this.hasPlayerMobj()) return null;
+    return {
+      x: this.mod.ccall('dgpt_get_player_x', 'number', [], []),
+      y: this.mod.ccall('dgpt_get_player_y', 'number', [], []),
+      angle: this.mod.ccall('dgpt_get_player_angle', 'number', [], []) >>> 0,
+    };
+  }
+
   /** No teardown beyond dropping references — Emscripten doesn't expose
    *  a clean "close module" verb. The browser's GC reclaims the wasm
    *  memory when the JS-side references go away (module instance,

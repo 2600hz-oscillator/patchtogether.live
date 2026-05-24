@@ -81,14 +81,22 @@ export const KEY_FOR_KEYBOARD_CODE: Readonly<Record<string, number>> = {
 
 // ---------------- CV-gate port id → doomkey ----------------
 //
-// 7 cv-typed gate ports per the plan. The first letter / 'space' / 'ctrl' /
-// 'alt' port ids map to the same KEY_* constants the keyboard listener uses
-// so a patch driving CV gates feels identical to typing on the keyboard.
+// 7 cv-typed gate ports per the plan. The first four (up/down/left/right)
+// map to DOOM's default movement (arrow keys); space = fire, ctrl = run,
+// alt = strafe. Port ids match the keyboard the user expects to be playing
+// the game with — driving a CV gate at `up` feels identical to holding
+// ArrowUp on the keyboard.
+//
+// NOTE: prior to 2026-05-24 these ports were w/a/s/d (the WASD letters).
+// Renamed to up/down/left/right because DOOM's defaults map ArrowKeys, not
+// WASD, to movement — patches built against the old w/a/s/d ids will
+// silently lose their CV connections on load (acceptable: DOOM had only
+// been live for hours).
 export const KEY_FOR_CV_GATE: Readonly<Record<string, number>> = {
-  w: KEY_w,
-  a: KEY_a,
-  s: KEY_s,
-  d: KEY_d,
+  up: KEY_UPARROW,
+  down: KEY_DOWNARROW,
+  left: KEY_LEFTARROW,
+  right: KEY_RIGHTARROW,
   space: KEY_FIRE,
   ctrl: KEY_RCTRL,
   alt: KEY_RALT,
@@ -96,5 +104,5 @@ export const KEY_FOR_CV_GATE: Readonly<Record<string, number>> = {
 
 /** All cv-gate port ids the DOOM module declares (drives both the
  *  ModuleDef.inputs schema AND the CV→key mapping table). */
-export const CV_GATE_PORT_IDS = ['w', 'a', 's', 'd', 'space', 'ctrl', 'alt'] as const;
+export const CV_GATE_PORT_IDS = ['up', 'down', 'left', 'right', 'space', 'ctrl', 'alt'] as const;
 export type CvGatePortId = (typeof CV_GATE_PORT_IDS)[number];
