@@ -181,8 +181,12 @@ async function readCanvasFingerprint(page: Page): Promise<{ hash: number; nonZer
 test.describe('@collab DOOM shared-input multiplayer', () => {
   // Cold-start DOOM (WASM fetch + 4 MB WAD + ~10 s of frame broadcasts +
   // cross-context awareness sync) routinely sits in the 20–40 s window
-  // under CI load; the suite default 30 s isn't enough.
-  test.setTimeout(90_000);
+  // under CI load; the suite default 30 s isn't enough. We also allow
+  // up to 30 s for the first cross-context frame envelope + up to 25 s
+  // for the spectator's <canvas> to render a differing frame, so the
+  // worst-case wall time approaches ~90 s on a cold runner — give the
+  // test plenty of headroom on top of that for the key-relay step.
+  test.setTimeout(180_000);
 
   test('spectator sees host framebuffer change + key relay reaches host', async ({ browser }) => {
     const pair = await openDoomPair(browser);
@@ -207,19 +211,51 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
 
       // ─── Assertion 1: spectator canvas reflects host frames ───
       //
-      // The host broadcasts a frame envelope every ~100 ms (10 Hz).
-      // After ~1.5 s we should see the spectator's <canvas> non-empty
-      // AND its hash differ from a baseline taken before any frames
-      // arrived. We poll for change to avoid a brittle exact match
-      // (animation in the IDDQD demo loop is constantly changing).
-      await pair.pageHost.waitForTimeout(500);  // let frames start
+      // The host broadcasts a frame envelope every ~100 ms (10 Hz) via
+      // Yjs awareness on field `doom:<id>:frame`. We split the proof in
+      // two phases so a slow CI host (cold WASM init, first paint, first
+      // 4 MB awareness update across two contexts) doesn't run out of
+      // budget for the *change-detection* poll:
+      //
+      //   Phase A — bridge alive: wait (up to 30 s) for the spectator's
+      //             awareness map to actually contain a `doom:sut:frame`
+      //             envelope. This proves "host has published at least
+      //             one frame + cross-context awareness sync is alive".
+      //             Fails fast with a useful message if the host never
+      //             broadcasts (vs. a generic "no change" timeout).
+      //
+      //   Phase B — spectator paints: NOW take the baseline (after we
+      //             know at least one envelope has landed) and poll for
+      //             the spectator <canvas> hash to change. Wide window
+      //             (250 × 100 ms = 25 s) so a slow GL/2D blit path
+      //             still has many cycles to render a differing frame.
+      await pair.pageSpec.waitForFunction(
+        (nodeId) => {
+          const w = window as unknown as {
+            __getAwarenessStates?: () => Array<Record<string, unknown>>;
+          };
+          const states = w.__getAwarenessStates?.() ?? [];
+          const key = `doom:${nodeId}:frame`;
+          return states.some((s) => s[key] != null);
+        },
+        'sut',
+        { timeout: 30_000, polling: 250 },
+      ).catch(() => {
+        throw new Error(
+          'spectator never received a doom:sut:frame envelope from host within 30s ' +
+          '— cross-context awareness sync or host frame-broadcast is broken',
+        );
+      });
+
       const baseline = await readCanvasFingerprint(pair.pageSpec);
       expect(baseline, 'spectator canvas exists').not.toBeNull();
-      // Allow up to 8s for at least one cross-context frame to render.
+      // Allow up to 25s for at least one cross-context frame to render to
+      // pixels (the envelope arrival above only proves the bridge — the
+      // 2D blit pipeline still has to decode + draw).
       let saw_change = false;
       const baselineHash = baseline!.hash;
       const baselineNonZero = baseline!.nonZero;
-      for (let i = 0; i < 80 && !saw_change; i++) {
+      for (let i = 0; i < 250 && !saw_change; i++) {
         await pair.pageHost.waitForTimeout(100);
         const cur = await readCanvasFingerprint(pair.pageSpec);
         if (!cur) continue;
