@@ -286,9 +286,15 @@ test.describe('video controls drive output', () => {
       page,
       [
         { id: 'v-shp', type: 'shapes',    position: { x: 40,  y: 40 },  domain: 'video', params: { shape: 0.3, rotate: 0.2, zoom: 0.7 } },
+        // CHROMA tintMix=1 → entire FG becomes uniform pure RED (hue 0deg),
+        // frame-filling regardless of the grayscale shapes underneath.
         { id: 'v-fg',  type: 'chroma',    position: { x: 200, y: 40 },  domain: 'video', params: { hue: 0, saturation: 2, tintR: 1, tintG: 0, tintB: 0, tintMix: 1 } },
         { id: 'v-bg',  type: 'lines',     position: { x: 40,  y: 280 }, domain: 'video', params: { amp: 8 } },
-        { id: 'v-key', type: 'chromakey', position: { x: 320, y: 80 },  domain: 'video', params: { keyR: 1.0, keyG: 0.0, keyB: 0.0, threshold: 0.0, softness: 0.05, spillSuppress: 0 } },
+        // Key a hue NEAR red (orange) so the red FG sits at a small-but-nonzero
+        // hue distance. threshold 0 → red is outside the key band → whole frame
+        // shows FG. threshold 0.9 → red falls inside the band → whole frame keys
+        // to BG. The full-frame flip gives a large, deterministic stat delta.
+        { id: 'v-key', type: 'chromakey', position: { x: 320, y: 80 },  domain: 'video', params: { keyR: 1.0, keyG: 0.5, keyB: 0.0, threshold: 0.0, softness: 0.05, spillSuppress: 0 } },
         { id: 'v-out', type: 'videoOut',  position: { x: 700, y: 80 },  domain: 'video' },
       ],
       [
