@@ -175,6 +175,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // keyboard-driven (focus-within ring) + CV-gate-driven; one host
   // per rack, spectators see the framebuffer over Yjs awareness.
   doom: { top: 'Video modules', sub: 'Sources' },
+  // VIDEOBOX — local-file video player with multiplayer playhead sync.
+  videobox: { top: 'Video modules', sub: 'Sources' },
 
   // ───────── Video modules → Processors ─────────
   chroma: { top: 'Video modules', sub: 'Processors' },

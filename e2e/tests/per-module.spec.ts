@@ -78,6 +78,14 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   //   - module def shape:    doom.test.ts
   //   - video runtime:       doom-wasm.spec.ts (canvas pixel variance)
   doom: 'WASM load + game init + first sound effect exceeds 800ms smoke window; covered by doom-wasm.spec.ts',
+  // VIDEOBOX — file-input source. Until the user picks a local video
+  // file the audio outputs emit silent ConstantSourceNodes (so the
+  // graph stays patchable), which by definition can't clear the
+  // peak-floor in the alive smoke. Dedicated coverage lives in
+  // videobox.test.ts (def shape) + videobox-sync.test.ts (drift math);
+  // a file-fixture-driven E2E would be the right place to assert
+  // real audio output, deferred until we ship a tiny test asset.
+  videobox: 'needs uploaded video file to emit non-silence; covered by videobox.test.ts + videobox-sync.test.ts',
 };
 
 // Reference list of modules that can't spawn under bare spawnPatch —

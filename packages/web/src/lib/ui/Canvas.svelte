@@ -182,6 +182,8 @@
   // Keyboard input on focus + 7 CV-gate inputs + stereo audio outputs
   // (silent in v1 — slice 8 wires real PCM).
   import DoomCard from '$lib/ui/modules/DoomCard.svelte';
+  // VIDEOBOX — local-file video player with multiplayer playhead sync.
+  import VideoboxCard from '$lib/ui/modules/VideoboxCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -370,6 +372,8 @@
     callsine: CallsineCard,
     // DOOM — single-instance interactive video module.
     doom: DoomCard,
+    // VIDEOBOX — local-file video player with multiplayer playhead sync.
+    videobox: VideoboxCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
