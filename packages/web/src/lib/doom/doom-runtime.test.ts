@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DoomRuntime, type DoomModule } from './doom-runtime';
-import { KEY_FIRE, KEY_RCTRL, KEY_UPARROW, KEY_w } from './doomkeys';
+import { KEY_FIRE, KEY_RCTRL, KEY_USE, KEY_UPARROW, KEY_w } from './doomkeys';
 
 // ---------------- Stub DoomModule ----------------
 
@@ -192,7 +192,8 @@ describe('DoomRuntime — TS shim layer', () => {
     const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
     expect(calls).toEqual([
       { name: 'dgpt_set_key', args: [KEY_w, 1] },
-      { name: 'dgpt_set_key', args: [KEY_FIRE, 0] },
+      // Space is now USE (open doors) — MacBook-friendly default.
+      { name: 'dgpt_set_key', args: [KEY_USE, 0] },
     ]);
   });
 
@@ -210,8 +211,9 @@ describe('DoomRuntime — TS shim layer', () => {
     void KEY_w;
     expect(calls).toEqual([
       { name: 'dgpt_set_key', args: [KEY_UPARROW, 1] },
-      { name: 'dgpt_set_key', args: [KEY_FIRE, 0] },
-      { name: 'dgpt_set_key', args: [KEY_RCTRL, 1] },
+      // space gate = USE (doors), ctrl gate = FIRE (mirrors keyboard map).
+      { name: 'dgpt_set_key', args: [KEY_USE, 0] },
+      { name: 'dgpt_set_key', args: [KEY_FIRE, 1] },
     ]);
   });
 
