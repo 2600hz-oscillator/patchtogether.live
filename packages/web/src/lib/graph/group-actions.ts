@@ -25,6 +25,13 @@ export interface PortCandidate {
   /** Description of where the external cable goes (for the modal
    *  tooltip + the "Patched: external" indicator). */
   externalSummary?: string;
+  /** True iff this port currently has at least one cable to a node
+   *  INSIDE the selection — i.e. a wholly-internal patch that the
+   *  group will preserve as-is (no exposure needed). */
+  hasInternalCable: boolean;
+  /** Description of the internal cable(s) (modal tooltip + the
+   *  "Patched: internal" indicator). */
+  internalSummary?: string;
 }
 
 export interface PortLookupModule {
@@ -97,8 +104,14 @@ export function buildPortCandidates(args: BuildCandidatesArgs): PortCandidate[] 
       const key = `${childId}::${port.id}`;
       const rows = endpointMap.get(key) ?? [];
       const externalRows = rows.filter((r) => !selection.has(r.otherNodeId));
+      const internalRows = rows.filter((r) => selection.has(r.otherNodeId));
       const hasExternal = externalRows.length > 0;
+      const hasInternal = internalRows.length > 0;
       const externalSummary = externalRows
+        .slice(0, 3)
+        .map((r) => `${r.otherNodeId}.${r.otherPortId}`)
+        .join(', ');
+      const internalSummary = internalRows
         .slice(0, 3)
         .map((r) => `${r.otherNodeId}.${r.otherPortId}`)
         .join(', ');
@@ -109,6 +122,8 @@ export function buildPortCandidates(args: BuildCandidatesArgs): PortCandidate[] 
         cableType: port.type,
         hasExternalCable: hasExternal,
         externalSummary: hasExternal ? externalSummary : undefined,
+        hasInternalCable: hasInternal,
+        internalSummary: hasInternal ? internalSummary : undefined,
       });
     };
     for (const port of mod.inputs) collect(port, 'input');

@@ -68,10 +68,35 @@ describe('buildPortCandidates', () => {
     });
     const fltOut = candidates.find((c) => c.childId === 'flt-1' && c.childPortId === 'out');
     expect(fltOut?.hasExternalCable).toBe(true);
+    expect(fltOut?.hasInternalCable).toBe(false);
     const lfoPhase = candidates.find((c) => c.childId === 'lfo-1' && c.childPortId === 'phase0');
     expect(lfoPhase?.hasExternalCable).toBe(false); // only patched to flt-1 (inside)
+    expect(lfoPhase?.hasInternalCable).toBe(true); // wired to flt-1 cutoff (inside)
     const fltCutoff = candidates.find((c) => c.childId === 'flt-1' && c.childPortId === 'cutoff');
     expect(fltCutoff?.hasExternalCable).toBe(false);
+    expect(fltCutoff?.hasInternalCable).toBe(true); // wired from lfo-1 phase0 (inside)
+  });
+
+  it('marks ports patched to BOTH inside + outside as hasInternal && hasExternal', () => {
+    const candidates = buildPortCandidates({
+      selectionIds: ['lfo-1', 'flt-1'],
+      nodes: [node('lfo-1', 'lfo'), node('flt-1', 'filter'), node('out-1', 'audioOut')],
+      edges: [
+        // internal: lfo phase -> flt cutoff
+        edge('e1', { n: 'lfo-1', p: 'phase0' }, { n: 'flt-1', p: 'cutoff' }),
+        // external: out-1 -> flt cutoff (cv multi-patched)
+        edge('e2', { n: 'out-1', p: 'L' }, { n: 'flt-1', p: 'cutoff' }),
+      ],
+      modulesById: new Map([
+        ['lfo-1', lfoMod],
+        ['flt-1', filterMod],
+      ]),
+    });
+    const fltCutoff = candidates.find((c) => c.childId === 'flt-1' && c.childPortId === 'cutoff');
+    expect(fltCutoff?.hasInternalCable).toBe(true);
+    expect(fltCutoff?.hasExternalCable).toBe(true);
+    expect(fltCutoff?.internalSummary).toContain('lfo-1.phase0');
+    expect(fltCutoff?.externalSummary).toContain('out-1.L');
   });
 
   it('includes every port on every selected module', () => {
@@ -93,9 +118,9 @@ describe('buildExposedPorts', () => {
   it('maps user-selected candidates → ExposedPort with stable ids; inputs first, outputs second', () => {
     const ports = buildExposedPorts({
       selectedCandidates: [
-        { childId: 'flt-1', childPortId: 'cutoff', direction: 'input', cableType: 'cv', hasExternalCable: false },
-        { childId: 'flt-1', childPortId: 'out', direction: 'output', cableType: 'audio', hasExternalCable: true },
-        { childId: 'lfo-1', childPortId: 'rate', direction: 'input', cableType: 'cv', hasExternalCable: false },
+        { childId: 'flt-1', childPortId: 'cutoff', direction: 'input', cableType: 'cv', hasExternalCable: false, hasInternalCable: false },
+        { childId: 'flt-1', childPortId: 'out', direction: 'output', cableType: 'audio', hasExternalCable: true, hasInternalCable: false },
+        { childId: 'lfo-1', childPortId: 'rate', direction: 'input', cableType: 'cv', hasExternalCable: false, hasInternalCable: false },
       ],
     });
     // Inputs first (flt-1 cutoff, lfo-1 rate), then outputs (flt-1 out)
