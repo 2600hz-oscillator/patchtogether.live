@@ -133,6 +133,33 @@ SRCS=(
   "$VENDOR_DIR/z_zone.c"
 )
 
+# Multiplayer (netplay) sources — chocolate-doom 2.1.0 net_*.c, vendored
+# verbatim, plus our net_pt_stub.c which satisfies the two SDL/curses deps
+# they reference (net_sdl_module + NET_WaitForLaunch) with no-op
+# placeholders until net_pt.c (slice 1).
+#
+# These are ONLY compiled when DOOM_MP=1. In the default single-player
+# build they are not passed to emcc at all, so:
+#   - the output WASM is byte-for-byte the current single-player binary;
+#   - dummy.c keeps providing the net_client_connected / drone globals
+#     (its #ifndef FEATURE_MULTIPLAYER stubs), which d_loop.c / d_main.c /
+#     d_net.c reference even in single-player.
+# When DOOM_MP=1, net_client.c owns those globals and FEATURE_MULTIPLAYER
+# switches dummy.c's stubs off, avoiding a duplicate-symbol link error.
+if [ "${DOOM_MP:-}" = "1" ]; then
+  SRCS+=(
+    "$VENDOR_DIR/net_client.c"
+    "$VENDOR_DIR/net_common.c"
+    "$VENDOR_DIR/net_io.c"
+    "$VENDOR_DIR/net_loop.c"
+    "$VENDOR_DIR/net_packet.c"
+    "$VENDOR_DIR/net_pt_stub.c"
+    "$VENDOR_DIR/net_query.c"
+    "$VENDOR_DIR/net_server.c"
+    "$VENDOR_DIR/net_structrw.c"
+  )
+fi
+
 # Functions we expose to JS. Underscore prefix is the emcc convention.
 EXPORTS='[
   "_dgpt_init",
@@ -156,6 +183,31 @@ EXPORTS='[
   "_free"
 ]'
 
+# When building the multiplayer variant, also force-export the top-level
+# netcode entry points. Two reasons:
+#   1. It proves (via wasm-objdump -x) that the vendored net_*.c actually
+#      linked into the binary and FEATURE_MULTIPLAYER took effect.
+#   2. The slice-1 net_pt.c transport + slice-2 JS netcode will need to
+#      drive these from JS (NET_CL_Connect / NET_SV_Init / ...).
+# These are NOT added to the default single-player build, so its export
+# table — and therefore the emitted WASM — is unchanged.
+if [ "${DOOM_MP:-}" = "1" ]; then
+  EXPORTS="$(printf '%s' "$EXPORTS" | sed 's/\][[:space:]]*$//')"
+  EXPORTS="$EXPORTS,
+  \"_NET_CL_Init\",
+  \"_NET_CL_Connect\",
+  \"_NET_CL_Disconnect\",
+  \"_NET_CL_Run\",
+  \"_NET_CL_LaunchGame\",
+  \"_NET_CL_StartGame\",
+  \"_NET_SV_Init\",
+  \"_NET_SV_Run\",
+  \"_NET_SV_Shutdown\",
+  \"_NET_SV_AddModule\",
+  \"_NET_SV_RegisterWithMaster\"
+]"
+fi
+
 # Runtime methods we need from the emcc-generated JS shim.
 # FS is the MEMFS handle — we write DOOM1.WAD into it from JS before
 # calling dgpt_init. emscripten ≥4 no longer exports it by default
@@ -176,6 +228,20 @@ CFLAGS=(
   -DFEATURE_SOUND
   -Wno-everything
 )
+
+# FEATURE_MULTIPLAYER switches on the netplay state machine in d_loop.c /
+# d_net.c (the #ifdef FEATURE_MULTIPLAYER branches) so the vendored
+# chocolate-doom net_*.c gets wired into the game-start / lockstep path.
+# GATED behind DOOM_MP so the default build is byte-for-byte the current
+# single-player WASM: prod stays untouched until the netcode is wired up
+# end-to-end (slice 3). Build the MP variant with:
+#
+#   DOOM_MP=1 bash packages/web/native/build-doom-wasm.sh
+#
+if [ "${DOOM_MP:-}" = "1" ]; then
+  echo "[build-doom-wasm] DOOM_MP=1 -> enabling FEATURE_MULTIPLAYER"
+  CFLAGS+=(-DFEATURE_MULTIPLAYER)
+fi
 
 LDFLAGS=(
   -sMODULARIZE=1
