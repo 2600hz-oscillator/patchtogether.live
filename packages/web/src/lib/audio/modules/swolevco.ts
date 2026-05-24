@@ -287,6 +287,19 @@ export const swolevcoDef: AudioModuleDef = {
     // is irrelevant.
     const pitchVoctShaper = ctx.createWaveShaper();
     pitchVoctShaper.curve = buildVoctCurve(baseHz);
+    // WaveShaperNode reads input as [-1, +1] and maps proportionally to the
+    // curve's index range. Our curve maps a V/oct input ∈ [-VOCT_RANGE,
+    // +VOCT_RANGE] to a Hz delta, so the incoming V/oct CV has to be scaled
+    // down by 1/VOCT_RANGE first or every input above ±1V saturates to the
+    // curve's endpoint (= ±VOCT_RANGE octaves), giving the oscillator a
+    // usable range of only ~2 semitones around C4. The fix: pitchScaler =
+    // GainNode(gain = 1/VOCT_RANGE) interposed between input + shaper, so a
+    // +1V input lands at the +1V point on the curve (= baseHz delta = one
+    // octave up). The `pitch` input port now terminates on pitchScaler so
+    // CV connections feed the scaled chain.
+    const pitchScaler = ctx.createGain();
+    pitchScaler.gain.value = 1 / VOCT_RANGE;
+    pitchScaler.connect(pitchVoctShaper);
     pitchVoctShaper.connect(oscSaw.frequency);
     pitchVoctShaper.connect(oscTri.frequency);
     pitchVoctShaper.connect(oscSqr.frequency);
@@ -296,6 +309,9 @@ export const swolevcoDef: AudioModuleDef = {
     let modBaseHz = initialModHz;
     const modPitchVoctShaper = ctx.createWaveShaper();
     modPitchVoctShaper.curve = buildVoctCurve(modBaseHz);
+    const modPitchScaler = ctx.createGain();
+    modPitchScaler.gain.value = 1 / VOCT_RANGE;
+    modPitchScaler.connect(modPitchVoctShaper);
     // Always connect; when ratio>0 the modulator's frequency is overridden
     // (we'll set modOsc.frequency directly and the V/oct contribution adds
     // on top, which is correct: pitch CV always tracks).
@@ -374,8 +390,8 @@ export const swolevcoDef: AudioModuleDef = {
     return {
       domain: 'audio',
       inputs: new Map([
-        ['pitch',     { node: pitchVoctShaper,    input: 0 }],
-        ['mod_pitch', { node: modPitchVoctShaper, input: 0 }],
+        ['pitch',     { node: pitchScaler,    input: 0 }],
+        ['mod_pitch', { node: modPitchScaler, input: 0 }],
         ['fm',        { node: fmIn,               input: 0 }],
         // CV-modulated params: route to the shadow GainNode whose .gain
         // is the AudioParam the engine sees. setParam pulls these into
@@ -468,7 +484,9 @@ export const swolevcoDef: AudioModuleDef = {
         modBus.disconnect();
         timbreGain.disconnect();
         fmIn.disconnect();
+        pitchScaler.disconnect();
         pitchVoctShaper.disconnect();
+        modPitchScaler.disconnect();
         modPitchVoctShaper.disconnect();
         sumBus.disconnect();
         scopeAnalyser.disconnect();

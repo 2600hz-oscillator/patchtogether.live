@@ -116,6 +116,46 @@ function findPeakHz(buf: Float32Array, sr: number, startSample = 1000): number {
   return (bestK * sr) / N;
 }
 
+describe('SWOLEVCO ART: V/oct pitch tracking across the keyboard range', () => {
+  // Regression for the WaveShaperNode input-range bug. The V/oct → Hz LUT
+  // was being indexed without first scaling the audio-rate pitch input
+  // into the WaveShaper's expected [-1, +1] range, so any input over ±1V
+  // saturated to ±VOCT_RANGE octaves (= ±5 octaves) on the curve. The fix
+  // interposes a GainNode(gain = 1/VOCT_RANGE) so a true V/oct CV maps
+  // through the LUT correctly. User report: "1-2 octave range" was the
+  // visible symptom of full-range saturation.
+  const REFS: Array<{ note: string; volts: number; hz: number }> = [
+    { note: 'C2', volts: -2,   hz: 65.4064  },
+    { note: 'C3', volts: -1,   hz: 130.8128 },
+    { note: 'C4', volts:  0,   hz: 261.6256 },
+    { note: 'C5', volts:  1,   hz: 523.2511 },
+    { note: 'C6', volts:  2,   hz: 1046.5023 },
+  ];
+
+  for (const ref of REFS) {
+    it(`pitch CV ${ref.volts >= 0 ? '+' : ''}${ref.volts}V → ${ref.note} (~${ref.hz} Hz)`, async () => {
+      // Render primary `out` (a saw at symmetry=0) with a constant DC
+      // pitch CV. Longer at low frequencies for FFT bin resolution.
+      const durationS = Math.abs(ref.volts) >= 1 && ref.volts < 0 ? 0.3 : 0.15;
+      const { out } = await renderSwolevco({
+        durationS,
+        params: { symmetry: 0, fold: 0, timbre: 0, fmIndex: 0, ratio: 1 },
+        pitchVolts: ref.volts,
+      });
+      const fHz = findPeakHz(out, SAMPLE_RATE);
+      // ±10% slack — well within the FFT bin granularity (sr/N ≈ 12-24
+      // Hz) at the upper end, and within an octave's worth of error at
+      // the low end. The pre-fix saturation produced ~32× errors so a
+      // 10% gate would have failed on every input ≠ 0V.
+      const lo = ref.hz * 0.90;
+      const hi = ref.hz * 1.10;
+      expect(fHz, `${ref.note}: peak ${fHz.toFixed(2)} Hz vs expected ${ref.hz}`)
+        .toBeGreaterThan(lo);
+      expect(fHz).toBeLessThan(hi);
+    });
+  }
+});
+
 describe('SWOLEVCO ART: modulator output', () => {
   it('mod_out at default params runs at C4 ≈ 261.626 Hz', async () => {
     // Default ratio = 1.0 → mod tracks primary. Default tune+fine = 0 → C4.
