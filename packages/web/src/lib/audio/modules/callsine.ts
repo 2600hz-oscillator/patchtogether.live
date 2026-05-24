@@ -15,11 +15,10 @@
 //   morph     → harmonic LOCK strength (F0 snap)
 //   level     → output gain
 //
-// v1 ships two voice models — see VOICE_MODELS / CALLSINE_MODEL_NAMES.
-// Scaffolded for >12 more (NOISE-RESIDUAL, RESCATTER, OCT-UP, OCT-DOWN,
-// CHORDIFY, WAVETABLE-PARTIALS, DISPERSE, FREEZEBANK, GLITCHHOLD,
-// TIMESPRAY, AMP-MORPH, FX-BUS, MULTIBUS) — each is a new branch in
-// renderVoice() in the worklet + a new entry in CALLSINE_MODEL_NAMES.
+// v1.1 ships 14 voice models — see CALLSINE_MODEL_NAMES. Each is a
+// branch of renderVoice() in the worklet (packages/dsp/src/callsine.ts).
+// Further follow-up models can be added by appending to MODEL_NAMES +
+// extending the switch + bumping the worklet's `model` AudioParam max.
 //
 // I/O:
 //   audio_in (mono)   — signal to resynthesize
@@ -49,33 +48,44 @@ export const CALLSINE_N_TRACKS = 64;
 // is how follow-up PRs add models. Keep MAX_MODEL = length - 1.
 // ---------------------------------------------------------------------------
 export const CALLSINE_MODEL_NAMES = [
-  'SINES',
-  'SAW',
+  /*  0 */ 'SINES',     // pure sinusoidal additive (canonical resynth)
+  /*  1 */ 'SAW',       // polyBLEP saw (upward ramp)
+  /*  2 */ 'SQR',       // polyBLEP square, 50% duty
+  /*  3 */ 'PULSE25',   // polyBLEP pulse, 25% duty (nasal)
+  /*  4 */ 'TRI',       // naive triangle (gentle high-freq rolloff)
+  /*  5 */ 'RAMP',      // polyBLEP saw, downward (inverted SAW)
+  /*  6 */ 'CHEBY3',    // cos(3·phase) — hollow odd-harmonic shaper
+  /*  7 */ 'CHEBY5',    // cos(5·phase) — sharper odd-harmonic shaper
+  /*  8 */ 'HARDSYNC',  // saw at 2× phase with cycle-sync — fixed-pitch sync
+  /*  9 */ 'FOLD',      // tanh-folded sine — analog-folder character
+  /* 10 */ 'NOISE',     // phase-keyed pseudo-random — pitched-noise voice
+  /* 11 */ 'FORMANT',   // FM-ish vocal stack (cos(p)·cos(3p + 0.5·sin(p)))
+  /* 12 */ 'SUBOSC',    // partial + half-freq sine — thick low end
+  /* 13 */ 'METAL',     // ringmod sin(p) × sin(2.41p) — bell-like inharmonic
 ] as const;
 export type CallsineModelName = (typeof CALLSINE_MODEL_NAMES)[number];
 export const CALLSINE_MAX_MODEL = CALLSINE_MODEL_NAMES.length - 1;
 
 /**
- * Follow-up models scaffolded but NOT implemented in v1. Each is a
- * docs-only entry in CallSine's lineage that maps cleanly onto a new
- * branch in renderVoice() / a new analyzer pass. Picked so the diversity
- * is real (different DSP families): adding noise back, retuning,
- * regrouping, freezing, etc.
+ * Planned follow-up models that would require analyzer-side changes (extra
+ * partial generation, freezing, multi-bus, etc.) rather than just a new
+ * branch in renderVoice(). Kept as a roadmap; not part of the 0..13
+ * per-sample dispatch.
  */
 export const CALLSINE_PLANNED_MODELS = [
-  /* 2 */ 'NOISE-RES',     // SMS-style filtered-noise residual layered onto sines
-  /* 3 */ 'CHORDIFY',      // each surviving peak gets +3rd/+5th sine voices
-  /* 4 */ 'OCT-UP',        // double the partial bank an octave up
-  /* 5 */ 'OCT-DOWN',      // halve every partial freq (sub-octave resynth)
-  /* 6 */ 'WAVETABLE',     // per-voice wavetable lookup instead of sine
-  /* 7 */ 'DISPERSE',      // inharmonic stretch (n * f * (1 + k*(n-1)))
-  /* 8 */ 'FREEZEBANK',    // continuous slow-evolving frozen-spectrum drone
-  /* 9 */ 'GLITCHHOLD',    // randomly hold N hops, then resume
-  /*10 */ 'TIMESPRAY',     // granular re-attack of held tracks on gate
-  /*11 */ 'FX-BUS',        // multi-bus split by frequency band (4 outs)
-  /*12 */ 'WHISPER',       // amplitude × noise mod (removes pitched character)
-  /*13 */ 'RING-RESYNTH',  // RM each partial against a user-CV-driven sine
-  /*14 */ 'COMB',          // re-comb-filter the partial bank
+  'NOISE-RES',     // SMS-style filtered-noise residual layered onto sines
+  'CHORDIFY',      // each surviving peak gets +3rd/+5th sine voices
+  'OCT-UP',        // double the partial bank an octave up
+  'OCT-DOWN',      // halve every partial freq (sub-octave resynth)
+  'WAVETABLE',     // per-voice wavetable lookup instead of sine
+  'DISPERSE',      // inharmonic stretch (n * f * (1 + k*(n-1)))
+  'FREEZEBANK',    // continuous slow-evolving frozen-spectrum drone
+  'GLITCHHOLD',    // randomly hold N hops, then resume
+  'TIMESPRAY',     // granular re-attack of held tracks on gate
+  'FX-BUS',        // multi-bus split by frequency band (4 outs)
+  'WHISPER',       // amplitude × noise mod (removes pitched character)
+  'RING-RESYNTH',  // RM each partial against a user-CV-driven sine
+  'COMB',          // re-comb-filter the partial bank
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -105,10 +115,74 @@ function _polyBlep(t: number, dt: number): number {
   return 0;
 }
 
+function _hashNoise(k: number): number {
+  let x = (k | 0) ^ 0x9e3779b9;
+  x = (x ^ (x << 13)) | 0;
+  x = (x ^ (x >>> 17)) | 0;
+  x = (x ^ (x << 5)) | 0;
+  return x / 0x80000000;
+}
+
+// Mirror of renderVoice() in packages/dsp/src/callsine.ts. Keep in sync.
 function _renderVoice(phase01: number, dt: number, model: number): number {
-  if (model === 0) return Math.sin(2 * Math.PI * phase01);
-  const naive = 2 * phase01 - 1;
-  return naive - _polyBlep(phase01, dt);
+  switch (model) {
+    case 0:
+      return Math.sin(2 * Math.PI * phase01);
+    case 1: {
+      const naive = 2 * phase01 - 1;
+      return naive - _polyBlep(phase01, dt);
+    }
+    case 2: {
+      const naive = phase01 < 0.5 ? 1 : -1;
+      let p2 = phase01 + 0.5;
+      if (p2 >= 1) p2 -= 1;
+      return naive + _polyBlep(phase01, dt) - _polyBlep(p2, dt);
+    }
+    case 3: {
+      const duty = 0.25;
+      const naive = phase01 < duty ? 1 : -1;
+      let pd = phase01 + (1 - duty);
+      if (pd >= 1) pd -= 1;
+      return naive + _polyBlep(phase01, dt) - _polyBlep(pd, dt);
+    }
+    case 4:
+      return phase01 < 0.5 ? 4 * phase01 - 1 : 3 - 4 * phase01;
+    case 5: {
+      const naive = 1 - 2 * phase01;
+      return naive + _polyBlep(phase01, dt);
+    }
+    case 6:
+      return Math.cos(6 * Math.PI * phase01);
+    case 7:
+      return Math.cos(10 * Math.PI * phase01);
+    case 8: {
+      const slave = (2 * phase01) % 1;
+      const naive = 2 * slave - 1;
+      return naive - _polyBlep(slave, dt * 2);
+    }
+    case 9: {
+      const x = 3 * Math.sin(2 * Math.PI * phase01);
+      return x / (1 + Math.abs(x));
+    }
+    case 10: {
+      const key = (phase01 * 256) | 0;
+      return _hashNoise(key);
+    }
+    case 11: {
+      const p = 2 * Math.PI * phase01;
+      return Math.cos(p) * Math.cos(3 * p + 0.5 * Math.sin(p));
+    }
+    case 12: {
+      const p = 2 * Math.PI * phase01;
+      return 0.5 * (Math.sin(p) + Math.sin(Math.PI * phase01));
+    }
+    case 13: {
+      const p = 2 * Math.PI * phase01;
+      return Math.sin(p) * Math.sin(2.41 * p);
+    }
+    default:
+      return Math.sin(2 * Math.PI * phase01);
+  }
 }
 
 function _hannWindow(N: number): Float32Array {
@@ -379,7 +453,7 @@ function _renderMirror(
 }
 
 export interface CallsineParams {
-  /** 0=SINES, 1=SAW. Rounded to integer in render. */
+  /** 0..CALLSINE_MAX_MODEL (CALLSINE_MODEL_NAMES). Rounded to int in render. */
   model: number;
   /** Semitones offset on top of pitchV. */
   note: number;

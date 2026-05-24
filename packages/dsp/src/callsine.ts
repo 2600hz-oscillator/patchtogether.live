@@ -154,7 +154,7 @@ function inPlaceFFT(re: Float32Array, im: Float32Array): void {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers for the SAW model.
+// Helpers for the polyBLEP-corrected waveforms (SAW / SQR / PULSE25 / RAMP).
 // ---------------------------------------------------------------------------
 function polyBlep(t: number, dt: number): number {
   if (t < dt) {
@@ -168,19 +168,145 @@ function polyBlep(t: number, dt: number): number {
   return 0;
 }
 
+// Deterministic pseudo-random in [-1, 1) from a phase-derived integer key.
+// Used by NOISE so each partial gets a stable noise-like character that
+// doesn't allocate or read per-voice state — same key → same value, so the
+// "noise" is actually a periodic function of phase (band-limited by the
+// per-partial alias-gain ramp + the partial's own freq).
+function hashNoise(k: number): number {
+  // xorshift-style integer hash → float in [-1, 1).
+  let x = (k | 0) ^ 0x9e3779b9;
+  x = (x ^ (x << 13)) | 0;
+  x = (x ^ (x >>> 17)) | 0;
+  x = (x ^ (x << 5)) | 0;
+  return (x / 0x80000000);
+}
+
 // Voice render — `model` picks the waveform of each tracked partial. SINES
 // is the canonical CallSine output; SAW makes the bank crunchier (each
 // partial becomes a band-limited saw at its tracked frequency). Designed
-// as a single function so adding more models (model #2..#13) means
-// extending this switch — no per-voice state changes required.
+// as a single function so adding more models means extending this switch —
+// no per-voice state changes required.
+//
+// Model index → name (mirrored in CALLSINE_MODEL_NAMES on the web side):
+//   0  SINES     pure sinusoid
+//   1  SAW       polyBLEP saw (upward ramp)
+//   2  SQR       polyBLEP square (50% duty)
+//   3  PULSE25   polyBLEP pulse (25% duty, nasal)
+//   4  TRI       naive triangle (gentle high-freq rolloff, light aliasing)
+//   5  RAMP      polyBLEP saw (downward ramp; saw inverted)
+//   6  CHEBY3    cos(3·phase) — sharp odd-harmonic shaper
+//   7  CHEBY5    cos(5·phase) — sharper odd-harmonic shaper
+//   8  HARDSYNC  saw at 2× phase, sync-reset each cycle — fixed sync timbre
+//   9  FOLD      tanh-folded sine — analog-folder character
+//  10  NOISE     deterministic noise (phase-keyed hash) — pitched-noise voice
+//  11  FORMANT   FM-ish vocal-formant stack via cos(p) × cos(3p + 0.5 sin(p))
+//  12  SUBOSC    sine + half-freq sine, 50/50 mix — thick low end
+//  13  METAL     ringmod of two inharmonic sines — bell-like
 function renderVoice(phase01: number, dt: number, model: number): number {
-  if (model === 0) {
-    // SINES — the canonical resynth voice.
-    return Math.sin(2 * Math.PI * phase01);
+  switch (model) {
+    case 0: {
+      // SINES — the canonical resynth voice.
+      return Math.sin(2 * Math.PI * phase01);
+    }
+    case 1: {
+      // SAW — naive saw with polyBLEP correction.
+      const naive = 2 * phase01 - 1;
+      return naive - polyBlep(phase01, dt);
+    }
+    case 2: {
+      // SQR — polyBLEP square, 50% duty. Naive value is +1 below 0.5,
+      // -1 above; polyBLEP corrects the two discontinuities (rising at 0,
+      // falling at 0.5).
+      const naive = phase01 < 0.5 ? 1 : -1;
+      let p2 = phase01 + 0.5;
+      if (p2 >= 1) p2 -= 1;
+      return naive + polyBlep(phase01, dt) - polyBlep(p2, dt);
+    }
+    case 3: {
+      // PULSE25 — polyBLEP pulse, 25% duty. Same correction pattern as
+      // SQR but the falling edge sits at 0.25, not 0.5.
+      const duty = 0.25;
+      const naive = phase01 < duty ? 1 : -1;
+      let pd = phase01 + (1 - duty);
+      if (pd >= 1) pd -= 1;
+      return naive + polyBlep(phase01, dt) - polyBlep(pd, dt);
+    }
+    case 4: {
+      // TRI — naive triangle. Continuous (no jumps in value) so alias
+      // amplitude rolls off as 1/k², much gentler than SAW/SQR; we accept
+      // the residual aliasing in exchange for one branch + no polyBLEP cost.
+      return phase01 < 0.5 ? 4 * phase01 - 1 : 3 - 4 * phase01;
+    }
+    case 5: {
+      // RAMP — polyBLEP saw, downward (inverse of SAW). Same spectrum as
+      // SAW but inverted phase, so additive interactions with other
+      // models in the bank differ.
+      const naive = 1 - 2 * phase01;
+      return naive + polyBlep(phase01, dt);
+    }
+    case 6: {
+      // CHEBY3 — cos(3·phase). Cheap odd-harmonic shaper that emphasizes
+      // the 3rd harmonic of the partial freq; sounds like a hollowed sine.
+      return Math.cos(6 * Math.PI * phase01);
+    }
+    case 7: {
+      // CHEBY5 — cos(5·phase). Sharper, brighter version of CHEBY3.
+      return Math.cos(10 * Math.PI * phase01);
+    }
+    case 8: {
+      // HARDSYNC — slave saw running at 2× the partial freq, reset on the
+      // master cycle. Master phase ramps once per partial period; slave
+      // phase wraps twice within that window. Classic fixed-pitch sync
+      // timbre (the per-partial freq IS the master here).
+      const slave = (2 * phase01) % 1;
+      const naive = 2 * slave - 1;
+      const slaveDt = dt * 2;
+      return naive - polyBlep(slave, slaveDt);
+    }
+    case 9: {
+      // FOLD — tanh wavefolder on a sine, k≈3. Generates added odd
+      // harmonics as the fold "knees" appear, very analog-feeling.
+      const x = 3 * Math.sin(2 * Math.PI * phase01);
+      // Cheap tanh approx: x / (1 + |x|) stays bounded in [-1, 1] and
+      // matches tanh shape qualitatively (no Math.tanh call → hot-path).
+      return x / (1 + Math.abs(x));
+    }
+    case 10: {
+      // NOISE — phase-keyed pseudo-random. Per-sample call hashes
+      // floor(phase × 256) so the function is piecewise-constant within a
+      // partial period; combined with the partial-rate freq, each track
+      // sounds like a band-limited noise burst. No per-voice state.
+      const key = (phase01 * 256) | 0;
+      return hashNoise(key);
+    }
+    case 11: {
+      // FORMANT — FM-ish vocal stack. cos(p) carries the fundamental
+      // partial; cos(3p + 0.5·sin(p)) introduces a 3rd-harmonic resonant
+      // peak whose phase is jittered by the carrier → vocal-formant feel.
+      const p = 2 * Math.PI * phase01;
+      return Math.cos(p) * Math.cos(3 * p + 0.5 * Math.sin(p));
+    }
+    case 12: {
+      // SUBOSC — partial + half-octave sub, 50/50 mix. The sub is half
+      // the partial freq (one octave down) realised by sin(π·phase) —
+      // i.e. the partial's own phase walked at half rate.
+      const p = 2 * Math.PI * phase01;
+      const sub = Math.sin(Math.PI * phase01);
+      return 0.5 * (Math.sin(p) + sub);
+    }
+    case 13: {
+      // METAL — ringmod of partial × inharmonic 2.41× partial (close to
+      // the first overtone ratio of a circular plate). Generates two
+      // detuned sidebands at (1 ± 2.41) × f, producing bell-like
+      // inharmonic clang per partial.
+      const p = 2 * Math.PI * phase01;
+      return Math.sin(p) * Math.sin(2.41 * p);
+    }
+    default: {
+      return Math.sin(2 * Math.PI * phase01);
+    }
   }
-  // SAW — naive saw with PolyBLEP correction.
-  const naive = 2 * phase01 - 1;
-  return naive - polyBlep(phase01, dt);
 }
 
 // ---------------------------------------------------------------------------
@@ -198,9 +324,9 @@ interface Track {
 class CallsineProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      // model: 0=SINES, 1=SAW. maxValue grows as engines land; keep equal
-      // to (MODEL_NAMES.length - 1) on the card side.
-      { name: 'model',     defaultValue: 0,    minValue: 0,    maxValue: 1,  automationRate: 'a-rate' as const },
+      // model: 0=SINES..13=METAL. maxValue MUST equal
+      // (CALLSINE_MODEL_NAMES.length - 1) on the web side.
+      { name: 'model',     defaultValue: 0,    minValue: 0,    maxValue: 13, automationRate: 'a-rate' as const },
       // harmonics: continuous 0..1 maps to partial count 1..N_TRACKS.
       { name: 'harmonics', defaultValue: 0.6,  minValue: 0,    maxValue: 1,  automationRate: 'a-rate' as const },
       // timbre: 0..1 maps to SLEW seconds via log curve (5 ms..2 s).
@@ -551,7 +677,7 @@ class CallsineProcessor extends AudioWorkletProcessor {
 
       // 4) Pick model. a-rate so live model switching is sample-accurate.
       const modelF = modelArr.length > 1 ? modelArr[i]! : modelArr[0]!;
-      const modelIdx = Math.max(0, Math.min(1, Math.round(modelF)));
+      const modelIdx = Math.max(0, Math.min(13, Math.round(modelF)));
 
       // 5) Render the bank.
       let sample = 0;
