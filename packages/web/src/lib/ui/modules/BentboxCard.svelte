@@ -105,12 +105,11 @@
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
       const r = fitRect(cw, ch);
-      ctx2d.save();
-      // Y-flip (WebGL bottom-left origin vs 2D top-left)
-      ctx2d.translate(r.x, r.y + r.h);
-      ctx2d.scale(1, -1);
-      ctx2d.drawImage(src, 0, 0, r.w, r.h);
-      ctx2d.restore();
+      // drawImage() from a WebGL canvas already presents upright (the
+      // browser accounts for GL's bottom-left origin). A straight blit is
+      // correct — the manual scale(1,-1) that used to be here flipped the
+      // image upside down. See VideoOutCard for the full rationale.
+      ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
     }
     rafId = requestAnimationFrame(draw);
   }
