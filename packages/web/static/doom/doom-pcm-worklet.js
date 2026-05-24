@@ -75,9 +75,12 @@ class DoomPcmProcessor extends AudioWorkletProcessor {
   process(_inputs, outputs) {
     const out = outputs[0];
     if (!out || out.length === 0) return true;
-    // Mono output → fill channel 0 with our drain; duplicate into
-    // channel 1 if stereo so a direct connection to a stereo sink
-    // doesn't go half-silent.
+    // Mono mix gets duplicated into every output channel — the DOOM
+    // module routes the workletNode through a ChannelSplitter so
+    // audio_l + audio_r can be patched to different downstream sinks
+    // without one going silent. (i_pcmgen mixes mono today; if/when we
+    // upgrade to real stereo we'd write distinct ring buffers per
+    // channel here.)
     const ch0 = out[0];
     for (let i = 0; i < ch0.length; i++) {
       if (this._read === this._write) {
@@ -87,8 +90,8 @@ class DoomPcmProcessor extends AudioWorkletProcessor {
         this._read = (this._read + 1) % this._ringSize;
       }
     }
-    if (out.length > 1) {
-      out[1].set(ch0);
+    for (let c = 1; c < out.length; c++) {
+      out[c].set(ch0);
     }
     return true;
   }

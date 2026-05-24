@@ -149,6 +149,7 @@ export const doomDef: VideoModuleDef = {
     paramTarget: `cv_${id}`,
   })),
   outputs: [
+    { id: 'out', type: 'video' },
     { id: 'audio_l', type: 'audio' },
     { id: 'audio_r', type: 'audio' },
   ],
@@ -238,58 +239,54 @@ export const doomDef: VideoModuleDef = {
       ...(node.params as Partial<DoomParams>),
     };
 
-    // Audio source registration. We publish entries lazily — start
-    // with silent ConstantSourceNodes so the bridge always has a node
-    // to wire (audio is in graph from the start, even before WASM
-    // loads), then SWAP in the worklet once it loads.
+    // Audio source registration. The bridge captures whatever AudioNode
+    // is in audioSources at addEdge time + holds the reference until the
+    // edge is torn down — mutating the Map after the fact would NOT
+    // re-wire an already-connected cable. So we publish persistent
+    // GainNodes (one per side of a stereo split) up front and connect
+    // the worklet INTO them once it loads. Cables wired before WASM
+    // init still light up retroactively.
     const audioSources = new Map<string, { node: AudioNode; output: number }>();
-    let leftSrc: AudioNode | null = null;
-    let rightSrc: AudioNode | null = null;
+    let leftGain: GainNode | null = null;
+    let rightGain: GainNode | null = null;
     let pcmWorklet: AudioWorkletNode | null = null;
     let pumpInterval: ReturnType<typeof setInterval> | null = null;
 
     if (ctx.audioCtx) {
       const ac = ctx.audioCtx;
-      const l = ac.createConstantSource();
-      l.offset.setValueAtTime(0, ac.currentTime);
-      l.start();
-      leftSrc = l;
-      const r = ac.createConstantSource();
-      r.offset.setValueAtTime(0, ac.currentTime);
-      r.start();
-      rightSrc = r;
-      audioSources.set('audio_l', { node: l, output: 0 });
-      audioSources.set('audio_r', { node: r, output: 0 });
+      leftGain = ac.createGain();
+      leftGain.gain.value = 1;
+      rightGain = ac.createGain();
+      rightGain.gain.value = 1;
+      audioSources.set('audio_l', { node: leftGain, output: 0 });
+      audioSources.set('audio_r', { node: rightGain, output: 0 });
 
-      // Slice 8: load the doom-pcm AudioWorkletProcessor + swap the
-      // silent fallback for a real PCM pump. setupPcmWorklet rewrites
-      // the audioSources entries — downstream `getAudioSource` reads
-      // by-port so the bridge picks up the worklet on next reconcile.
       void setupPcmWorklet(ac);
     }
 
     async function setupPcmWorklet(ac: BaseAudioContext): Promise<void> {
       try {
         await ensureDoomPcmWorklet(ac);
+        // Stereo output: the i_pcmgen mixer is mono internally, but
+        // emitting two identical channels here lets a ChannelSplitter
+        // give us distinct audio_l / audio_r outputs that downstream
+        // patches can route independently.
         const node = new AudioWorkletNode(ac, 'doom-pcm', {
           numberOfInputs: 0,
           numberOfOutputs: 1,
-          outputChannelCount: [1],
+          outputChannelCount: [2],
         });
         pcmWorklet = node;
-        // Replace the silent-CSN entries with the live worklet. The
-        // audio bridge reads `audioSources` at addEdge time — cables
-        // wired AFTER the worklet loads pick up the worklet; cables
-        // wired in the ~100ms BEFORE it loads stay on the silent CSN
-        // (user can re-wire to refresh). In practice the worklet
-        // resolves well before users finish wiring a cable.
-        audioSources.set('audio_l', { node, output: 0 });
-        audioSources.set('audio_r', { node, output: 0 });
+        const splitter = ac.createChannelSplitter(2);
+        node.connect(splitter);
+        if (leftGain) splitter.connect(leftGain, 0);
+        if (rightGain) splitter.connect(rightGain, 1);
 
-        // Pump the WASM mixer at ~60 Hz. The WASM's I_UpdateSound is
-        // called from dgpt_tick which we drive at runTic from the
-        // surface.draw path, so this pump JUST drains the already-mixed
-        // samples into the worklet's queue.
+        // Pump the WASM mixer at ~60 Hz. dgpt_tick (called from the
+        // video surface.draw path) drives DOOM's main loop which calls
+        // S_UpdateSounds → I_UpdateSound → I_PcmGen_UpdateSound; the
+        // mixer accumulates samples into the WASM ring + this pump
+        // drains them into the worklet's queue.
         const samplesPerPump = Math.round(44100 / 60);
         pumpInterval = setInterval(() => {
           if (!runtime || !runtime.isInitialized()) return;
@@ -303,7 +300,7 @@ export const doomDef: VideoModuleDef = {
           pcmWorklet.port.postMessage({ type: 'gain', value: params.audioGain });
         } catch { /* */ }
       } catch (e) {
-        // Worklet load failed — keep the silent ConstantSource fallback.
+        // Worklet load failed — gains stay at unity passing silence.
         // Common cause: CSP blocks the worklet URL, or build-doom-wasm
         // hasn't been run + the static file isn't shipped.
         // eslint-disable-next-line no-console
@@ -429,8 +426,8 @@ export const doomDef: VideoModuleDef = {
           try { pcmWorklet.disconnect(); } catch { /* */ }
           pcmWorklet = null;
         }
-        if (leftSrc) try { leftSrc.disconnect(); } catch { /* */ }
-        if (rightSrc) try { rightSrc.disconnect(); } catch { /* */ }
+        if (leftGain) try { leftGain.disconnect(); } catch { /* */ }
+        if (rightGain) try { rightGain.disconnect(); } catch { /* */ }
         if (runtime) runtime.dispose();
         runtime = null;
       },

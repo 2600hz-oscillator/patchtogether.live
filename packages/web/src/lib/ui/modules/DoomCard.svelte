@@ -435,6 +435,8 @@
       style="width: 320px; height: 200px;"
       data-viz-passthrough
       data-testid="doom-canvas"
+      tabindex="-1"
+      onpointerdown={() => cardEl?.focus()}
     ></canvas>
     {#if loadStatus === 'idle' && isHost}
       <button class="overlay" onclick={() => void tryLoad()}>
@@ -460,6 +462,39 @@
     {/if}
   </div>
 
+  {#each CV_GATE_PORT_IDS as port, idx (port)}
+    {@const top = 56 + idx * 28}
+    <Handle
+      type="target"
+      position={Position.Left}
+      id={port}
+      style="top: {top}px; --handle-color: var(--cable-cv);"
+    />
+    <span class="port-label left" style="top: {top - 6}px;">{port.toUpperCase()}</span>
+  {/each}
+
+  <Handle
+    type="source"
+    position={Position.Right}
+    id="out"
+    style="top: 56px; --handle-color: var(--cable-video, #c33);"
+  />
+  <span class="port-label right" style="top: 50px;">OUT</span>
+  <Handle
+    type="source"
+    position={Position.Right}
+    id="audio_l"
+    style="top: 96px; --handle-color: var(--cable-audio);"
+  />
+  <span class="port-label right" style="top: 90px;">A-L</span>
+  <Handle
+    type="source"
+    position={Position.Right}
+    id="audio_r"
+    style="top: 124px; --handle-color: var(--cable-audio);"
+  />
+  <span class="port-label right" style="top: 118px;">A-R</span>
+
   <div class="controls-row">
     <button
       class="run-btn"
@@ -468,19 +503,6 @@
     >
       {running > 0.5 ? 'Pause' : 'Run'}
     </button>
-    <div class="port-list">
-      {#each CV_GATE_PORT_IDS as port (port)}
-        <div class="cv-port">
-          <Handle type="target" position={Position.Left} id={port} />
-          <span class="port-label">{port.toUpperCase()}</span>
-        </div>
-      {/each}
-    </div>
-    <div class="audio-out">
-      <Handle type="source" position={Position.Right} id="audio_l" />
-      <Handle type="source" position={Position.Right} id="audio_r" />
-      <span class="port-label">AUDIO L+R</span>
-    </div>
   </div>
 
   <footer class="hint">
@@ -590,23 +612,16 @@
     border: none;
     cursor: pointer;
   }
-  .doom-card .port-list {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-  .doom-card .cv-port,
-  .doom-card .audio-out {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-  }
   .doom-card .port-label {
+    position: absolute;
     font-size: 9px;
     letter-spacing: 0.05em;
     opacity: 0.85;
+    font-family: ui-monospace, monospace;
+    pointer-events: none;
   }
+  .doom-card .port-label.left  { left: 14px; }
+  .doom-card .port-label.right { right: 14px; }
   .doom-card .hint {
     padding: 0 10px 8px;
     color: color-mix(in oklab, var(--cable-video, #c33) 70%, transparent);
