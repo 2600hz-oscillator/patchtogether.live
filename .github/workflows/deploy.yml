@@ -144,6 +144,41 @@ jobs:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
+      # DOOM WASM blob — needed at build-time so SvelteKit's static-asset
+      # pipeline copies it into the deployed bundle. Same cache key as the
+      # CI workflow's `ci` + `vrt` jobs, so the first job to populate the
+      # cache on a given source-tree hash benefits every other workflow
+      # within the cache TTL.
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      # DOOM1.WAD — shareware game data, fetched from a stable mirror and
+      # cached forever (~4 MB, never changes; key is bumped if we ever
+      # swap source). Without this the deployed bundle 404s on
+      # /doom/DOOM1.WAD and the card shows "WAD missing — see
+      # DOWNLOAD_INSTRUCTIONS.md".
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
       - run: flox activate -- task install
       - run: flox activate -- task build
         env:
@@ -178,6 +213,37 @@ jobs:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
+      # DOOM WASM blob (see deploy-prod for the cache rationale).
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      # DOOM1.WAD — shareware game data, fetched from a stable mirror and
+      # cached forever (~4 MB, never changes; key is bumped if we ever
+      # swap source). Without this the deployed bundle 404s on
+      # /doom/DOOM1.WAD and the card shows "WAD missing — see
+      # DOWNLOAD_INSTRUCTIONS.md".
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
       - run: flox activate -- task install
       - run: flox activate -- task build
         env:
@@ -225,6 +291,37 @@ jobs:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
+      # DOOM WASM blob (see deploy-prod for the cache rationale).
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      # DOOM1.WAD — shareware game data, fetched from a stable mirror and
+      # cached forever (~4 MB, never changes; key is bumped if we ever
+      # swap source). Without this the deployed bundle 404s on
+      # /doom/DOOM1.WAD and the card shows "WAD missing — see
+      # DOWNLOAD_INSTRUCTIONS.md".
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
       - run: flox activate -- task install
       - run: flox activate -- task build
         env:
@@ -261,6 +358,37 @@ jobs:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
+      # DOOM WASM blob (see deploy-prod for the cache rationale).
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      # DOOM1.WAD — shareware game data, fetched from a stable mirror and
+      # cached forever (~4 MB, never changes; key is bumped if we ever
+      # swap source). Without this the deployed bundle 404s on
+      # /doom/DOOM1.WAD and the card shows "WAD missing — see
+      # DOWNLOAD_INSTRUCTIONS.md".
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
       - run: flox activate -- task install
       - run: flox activate -- task build
         env:

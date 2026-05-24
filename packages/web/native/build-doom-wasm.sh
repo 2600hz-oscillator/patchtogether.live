@@ -149,7 +149,12 @@ EXPORTS='[
 ]'
 
 # Runtime methods we need from the emcc-generated JS shim.
-RUNTIME_METHODS='["HEAPU32","HEAPU8","HEAPF32","ccall","cwrap"]'
+# FS is the MEMFS handle — we write DOOM1.WAD into it from JS before
+# calling dgpt_init. emscripten ≥4 no longer exports it by default
+# even with -sFORCE_FILESYSTEM=1, so we have to list it explicitly
+# (else the runtime ships and `Module.FS` is undefined → "Cannot read
+# properties of undefined (reading 'writeFile')").
+RUNTIME_METHODS='["HEAPU32","HEAPU8","HEAPF32","ccall","cwrap","FS"]'
 
 # Suppress doomgeneric's compile warnings (it's a 1993 codebase + we don't
 # own the source — warnings here are noise, not signal).

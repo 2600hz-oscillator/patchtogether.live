@@ -27,6 +27,14 @@ postgresql.pkg-path = "postgresql"
 alsa-lib.pkg-path = "alsa-lib"
 alsa-lib.systems = ["x86_64-linux", "aarch64-linux"]
 
+# Emscripten — emcc toolchain for the DOOM module's WASM build
+# (packages/web/native/build-doom-wasm.sh). Same toolchain is invoked
+# from the CI + deploy workflows so the deployed bundle ships the real
+# `static/doom/doom.{js,wasm}` instead of the "DOOM WASM not built"
+# overlay. Available on all 4 systems in nixpkgs (verified via
+# `flox show emscripten` 2026-05).
+emscripten.pkg-path = "emscripten"
+
 
 [vars]
 # Project name surfaces in dev shell prompts and scripts
