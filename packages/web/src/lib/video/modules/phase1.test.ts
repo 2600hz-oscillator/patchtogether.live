@@ -103,26 +103,68 @@ describe('video Phase-1 — DESTRUCTOR', () => {
   });
 });
 
-describe('video Phase-1 — CHROMA', () => {
-  it('video in + 5 cv inputs, mono-video keys out', () => {
+describe('video Phase-1 — CHROMA (v3 hue-shifter / colorizer)', () => {
+  // v3 reshape: CHROMA used to be a confused single-input "mask" module
+  // (CHROMAKEY now owns that role properly). v3 makes CHROMA a true
+  // 1-input hue-shifter / colorizer.
+  it('video in + 6 cv inputs (hue / saturation / tintR/G/B / tintMix), video out', () => {
     const def = getVideoModuleDef('chroma')!;
     const inIds = def.inputs.map((p) => p.id).sort();
-    // v2 keyer rename: tolerance → threshold (see chroma.ts migrateChroma)
-    expect(inIds).toEqual(['in', 'keyB', 'keyG', 'keyR', 'softness', 'threshold']);
+    expect(inIds).toEqual(['hue', 'in', 'saturation', 'tintB', 'tintG', 'tintMix', 'tintR']);
+    // Note: alphabetic ordering puts 'tintMix' before 'tintR' (case-
+    // insensitive sort would put R first; default JS sort is codepoint
+    // and lowercase 'M' (77) precedes 'R' (82)).
     expect(def.outputs[0]?.id).toBe('out');
-    expect(def.outputs[0]?.type).toBe('mono-video');
+    expect(def.outputs[0]?.type).toBe('video');
   });
 });
 
-describe('video Phase-1 — LUMA', () => {
-  it('video in + cv threshold + cv softness, mono-video out', () => {
+describe('video Phase-1 — LUMA (v2 posterize / contrast / gamma processor)', () => {
+  // v2 reshape: LUMA used to be a confused single-input "mask" module
+  // (LUMAKEY now owns that role properly). v2 makes LUMA a true
+  // 1-input luminance-domain processor.
+  it('video in + 4 cv inputs (gamma / contrast / posterizeLevels / bias), video out', () => {
     const def = getVideoModuleDef('luma')!;
-    expect(def.inputs.map((p) => p.id).sort()).toEqual(['in', 'softness', 'threshold']);
-    expect(def.outputs[0]?.type).toBe('mono-video');
+    expect(def.inputs.map((p) => p.id).sort()).toEqual([
+      'bias', 'contrast', 'gamma', 'in', 'posterizeLevels',
+    ]);
+    expect(def.outputs[0]?.type).toBe('video');
   });
-  it('threshold + softness + invert params', () => {
+  it('gamma / contrast / posterizeLevels / bias params', () => {
     const def = getVideoModuleDef('luma')!;
-    expect(def.params.map((p) => p.id).sort()).toEqual(['invert', 'softness', 'threshold']);
+    expect(def.params.map((p) => p.id).sort()).toEqual([
+      'bias', 'contrast', 'gamma', 'posterizeLevels',
+    ]);
+  });
+});
+
+describe('video — CHROMAKEY (proper 2-input chroma-key compositor)', () => {
+  it('is registered with 2 video inputs (fg + bg)', () => {
+    const def = getVideoModuleDef('chromakey')!;
+    expect(def).toBeDefined();
+    expect(def.label).toBe('CHROMAKEY');
+    const videoInputs = def.inputs.filter((p) => p.type === 'video');
+    expect(videoInputs.map((p) => p.id).sort()).toEqual(['bg', 'fg']);
+  });
+  it('output is a full video stream (composited result)', () => {
+    const def = getVideoModuleDef('chromakey')!;
+    expect(def.outputs[0]?.id).toBe('out');
+    expect(def.outputs[0]?.type).toBe('video');
+  });
+});
+
+describe('video — LUMAKEY (proper 2-input luma-key compositor)', () => {
+  it('is registered with 2 video inputs (fg + bg)', () => {
+    const def = getVideoModuleDef('lumakey')!;
+    expect(def).toBeDefined();
+    expect(def.label).toBe('LUMAKEY');
+    const videoInputs = def.inputs.filter((p) => p.type === 'video');
+    expect(videoInputs.map((p) => p.id).sort()).toEqual(['bg', 'fg']);
+  });
+  it('output is a full video stream (composited result)', () => {
+    const def = getVideoModuleDef('lumakey')!;
+    expect(def.outputs[0]?.id).toBe('out');
+    expect(def.outputs[0]?.type).toBe('video');
   });
 });
 

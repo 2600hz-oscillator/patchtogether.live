@@ -1,76 +1,96 @@
 // packages/web/src/lib/video/modules/chroma.test.ts
 //
-// CHROMA module-def + v1→v2 migration tests. Pure (no GL).
+// CHROMA module-def + migration tests. Pure (no GL).
+//
+// CHROMA was historically a confused single-input "key-mask" module
+// (CHROMAKEY now owns that role properly with FG + BG). v3 restores
+// CHROMA to its name's actual meaning: a 1-input hue-shifter / colorizer
+// with saturation + RGB tint mix.
 
 import { describe, it, expect } from 'vitest';
 import { chromaDef, migrateChroma } from './chroma';
 
 describe('chromaDef shape', () => {
-  it('declares the v2 param set (key R/G/B + threshold + softness + invert)', () => {
+  it('declares the v3 processor param set (hue/saturation/tintR/G/B/tintMix)', () => {
     const ids = chromaDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['invert', 'keyB', 'keyG', 'keyR', 'softness', 'threshold']);
+    expect(ids).toEqual(['hue', 'saturation', 'tintB', 'tintG', 'tintMix', 'tintR']);
+  });
+
+  it('has exactly one video input (single-input processor)', () => {
+    const videoInputs = chromaDef.inputs.filter((p) => p.type === 'video');
+    expect(videoInputs.map((p) => p.id)).toEqual(['in']);
   });
 
   it('declares CV inputs that mirror every modulatable param', () => {
     const inputIds = chromaDef.inputs.map((p) => p.id);
     expect(inputIds).toContain('in');
-    for (const p of ['keyR', 'keyG', 'keyB', 'threshold', 'softness'] as const) {
+    for (const p of ['hue', 'saturation', 'tintR', 'tintG', 'tintB', 'tintMix'] as const) {
       expect(inputIds, `missing cv input for ${p}`).toContain(p);
     }
   });
 
-  it('invert is a discrete 0/1 toggle', () => {
-    const invert = chromaDef.params.find((p) => p.id === 'invert');
-    expect(invert).toBeDefined();
-    expect(invert?.min).toBe(0);
-    expect(invert?.max).toBe(1);
-    expect(invert?.curve).toBe('discrete');
+  it('every CV input declares paramTarget == its own id', () => {
+    for (const port of chromaDef.inputs.filter((i) => i.type === 'cv')) {
+      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
+    }
   });
 
-  it('default key color is green-screen (R=0, G=1, B=0)', () => {
-    const r = chromaDef.params.find((p) => p.id === 'keyR')?.defaultValue;
-    const g = chromaDef.params.find((p) => p.id === 'keyG')?.defaultValue;
-    const b = chromaDef.params.find((p) => p.id === 'keyB')?.defaultValue;
-    expect(r).toBe(0);
-    expect(g).toBe(1);
-    expect(b).toBe(0);
+  it('hue spans -180..+180 degrees', () => {
+    const hue = chromaDef.params.find((p) => p.id === 'hue');
+    expect(hue?.min).toBe(-180);
+    expect(hue?.max).toBe(180);
+    expect(hue?.defaultValue).toBe(0);
   });
 
-  it('schemaVersion is 2 (post-rename)', () => {
-    expect(chromaDef.schemaVersion).toBe(2);
+  it('saturation spans 0..2 (default 1 = unchanged)', () => {
+    const sat = chromaDef.params.find((p) => p.id === 'saturation');
+    expect(sat?.min).toBe(0);
+    expect(sat?.max).toBe(2);
+    expect(sat?.defaultValue).toBe(1);
   });
 
-  it('output is a single mono-video keys mask', () => {
+  it('tintMix defaults to 0 (no tint applied unless asked)', () => {
+    const mix = chromaDef.params.find((p) => p.id === 'tintMix');
+    expect(mix?.defaultValue).toBe(0);
+  });
+
+  it('schemaVersion is 3 (post-rework)', () => {
+    expect(chromaDef.schemaVersion).toBe(3);
+  });
+
+  it('output is a single full video stream (not a mask)', () => {
     expect(chromaDef.outputs.map((o) => o.id)).toEqual(['out']);
-    expect(chromaDef.outputs[0]!.type).toBe('mono-video');
+    expect(chromaDef.outputs[0]!.type).toBe('video');
   });
 });
 
-describe('migrateChroma (v1 → v2 rename tolerance → threshold)', () => {
-  it('renames tolerance to threshold when missing', () => {
-    const v1 = { keyR: 0, keyG: 1, keyB: 0, tolerance: 0.4, softness: 0.15 };
-    const v2 = migrateChroma(v1, 1) as Record<string, unknown>;
-    expect(v2.threshold).toBe(0.4);
-    expect('tolerance' in v2).toBe(false);
+describe('migrateChroma (v1/v2 mask -> v3 processor reset)', () => {
+  it('drops legacy keyR/keyG/keyB/threshold/softness/invert from v1', () => {
+    const v1 = { keyR: 0, keyG: 1, keyB: 0, tolerance: 0.4, softness: 0.15, invert: 1 };
+    const out = migrateChroma(v1, 1) as Record<string, unknown>;
+    for (const legacy of ['keyR', 'keyG', 'keyB', 'tolerance', 'softness', 'invert']) {
+      expect(legacy in out, `legacy ${legacy} dropped`).toBe(false);
+    }
   });
 
-  it('preserves threshold when both fields exist (defensive)', () => {
-    const v1 = { tolerance: 0.4, threshold: 0.6 };
-    const v2 = migrateChroma(v1, 1) as Record<string, unknown>;
-    // Both keys present means already-migrated data leaked in; don't
-    // overwrite the explicit threshold.
-    expect(v2.threshold).toBe(0.6);
+  it('drops legacy threshold from v2', () => {
+    const v2 = { keyR: 0, keyG: 1, keyB: 0, threshold: 0.4, softness: 0.15, invert: 0 };
+    const out = migrateChroma(v2, 2) as Record<string, unknown>;
+    expect('threshold' in out).toBe(false);
+    expect('keyR' in out).toBe(false);
   });
 
-  it('no-op when fromVersion >= 2', () => {
-    const data = { threshold: 0.5 };
-    const out = migrateChroma(data, 2);
-    expect(out).toBe(data);
+  it('preserves unrelated forward-compat keys', () => {
+    const v1 = { keyR: 0, future_field: 'preserved' };
+    const out = migrateChroma(v1, 1) as Record<string, unknown>;
+    expect(out.future_field).toBe('preserved');
+    expect('keyR' in out).toBe(false);
   });
 
-  it('no-op when data has neither field', () => {
-    const data = { unrelated: 7 };
-    expect(migrateChroma(data, 1)).toBe(data);
+  it('passes through v3 data unchanged (idempotent)', () => {
+    const v3 = { hue: 90, saturation: 1.2, tintR: 0.3, tintG: 0.7, tintB: 0.1, tintMix: 0.4 };
+    const out = migrateChroma(v3, 3);
+    expect(out).toBe(v3);
   });
 
   it('returns input unchanged for null / non-object', () => {

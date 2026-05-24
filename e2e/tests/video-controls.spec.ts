@@ -210,63 +210,144 @@ test.describe('video controls drive output', () => {
     ).toBe(true);
   });
 
-  test('LUMA threshold knob changes pixel pattern', async ({ page }) => {
+  test('LUMA gamma knob changes pixel pattern', async ({ page }) => {
+    // LUMA is now a single-input luminance processor (gamma / contrast /
+    // posterize / bias). Use gamma=2 (darken mids) to assert the CV→uniform
+    // pipeline is wired end-to-end on a LINES source whose pixels are
+    // mostly mid-luma.
     await spawnPatch(
       page,
       [
         { id: 'v-lines', type: 'lines',    position: { x: 40, y: 60 },   domain: 'video' },
-        { id: 'v-luma',  type: 'luma',     position: { x: 320, y: 60 },  domain: 'video', params: { threshold: 0.1, softness: 0.1 } },
+        { id: 'v-luma',  type: 'luma',     position: { x: 320, y: 60 },  domain: 'video', params: { gamma: 1.0 } },
         { id: 'v-out',   type: 'videoOut', position: { x: 700, y: 60 },  domain: 'video' },
       ],
       [
         { id: 'e-lines-luma', from: { nodeId: 'v-lines', portId: 'out' }, to: { nodeId: 'v-luma', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
-        { id: 'e-luma-out',   from: { nodeId: 'v-luma',  portId: 'out' }, to: { nodeId: 'v-out',  portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-luma-out',   from: { nodeId: 'v-luma',  portId: 'out' }, to: { nodeId: 'v-out',  portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
     const canvas = page.locator(VIDEO_OUT_CANVAS);
     await page.waitForTimeout(500);
     const before = (await readCanvasStats(canvas))!;
 
-    await setNodeParam(page, 'v-luma', 'threshold', 0.9);
+    await setNodeParam(page, 'v-luma', 'gamma', 2.5);
     await page.waitForTimeout(500);
     const after = (await readCanvasStats(canvas))!;
 
     expect(
       statsDiffer(before, after),
-      `LUMA threshold 0.1→0.9: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `LUMA gamma 1.0→2.5: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
     ).toBe(true);
   });
 
-  test('CHROMA invert knob changes pixel pattern', async ({ page }) => {
-    // v2 HSV keyer: LINES outputs grey (white-on-black), saturation ≈ 0
-    // everywhere, so the keyer's sat-gate correctly keeps the mask at 1
-    // regardless of threshold — testing threshold here would give a
-    // false-positive failure. INVERT is a 0/1 toggle that flips the whole
-    // mask uniformly, so it produces a guaranteed visible delta on any
-    // source, proving the CV→uniform pipeline is wired end-to-end.
+  test('CHROMA hue knob changes pixel pattern', async ({ page }) => {
+    // CHROMA is now a single-input hue-shifter / colorizer. Hue rotation
+    // is the canonical knob; on a LINES source (greyscale), tintMix needs
+    // a non-zero pre-saturation tint to read visibly. Easier: lerp the
+    // output toward green using tintMix + tintR/G/B from defaults; CV
+    // pipeline is proven the moment the output mean shifts when we slide
+    // tintMix from 0 → 1.
     await spawnPatch(
       page,
       [
         { id: 'v-lines',  type: 'lines',    position: { x: 40, y: 60 },   domain: 'video' },
-        { id: 'v-chroma', type: 'chroma',   position: { x: 320, y: 60 },  domain: 'video', params: { keyR: 1.0, keyG: 1.0, keyB: 1.0, threshold: 0.2, softness: 0.05, invert: 0 } },
+        { id: 'v-chroma', type: 'chroma',   position: { x: 320, y: 60 },  domain: 'video', params: { hue: 0, saturation: 1, tintR: 0, tintG: 1, tintB: 0, tintMix: 0 } },
         { id: 'v-out',    type: 'videoOut', position: { x: 700, y: 60 },  domain: 'video' },
       ],
       [
         { id: 'e-lines-chroma', from: { nodeId: 'v-lines',  portId: 'out' }, to: { nodeId: 'v-chroma', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
-        { id: 'e-chroma-out',   from: { nodeId: 'v-chroma', portId: 'out' }, to: { nodeId: 'v-out',    portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-chroma-out',   from: { nodeId: 'v-chroma', portId: 'out' }, to: { nodeId: 'v-out',    portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
     const canvas = page.locator(VIDEO_OUT_CANVAS);
     await page.waitForTimeout(500);
     const before = (await readCanvasStats(canvas))!;
 
-    await setNodeParam(page, 'v-chroma', 'invert', 1);
+    await setNodeParam(page, 'v-chroma', 'tintMix', 1.0);
     await page.waitForTimeout(500);
     const after = (await readCanvasStats(canvas))!;
 
     expect(
       statsDiffer(before, after),
-      `CHROMA invert 0→1: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `CHROMA tintMix 0→1: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+    ).toBe(true);
+  });
+
+  test('CHROMAKEY threshold knob changes pixel pattern (FG + BG composite)', async ({ page }) => {
+    // CHROMAKEY keys on HUE distance — so the FG must carry SATURATED color.
+    // SHAPES outputs grayscale (vec3(band)) which has zero saturation, so the
+    // shader's sat-gate correctly refuses to key it and threshold is a no-op.
+    // Fix: colorize the grayscale shapes to saturated RED via CHROMA's tint
+    // (tintMix=1 → lerp fully to the tint color), then key RED. LINES is BG.
+    // Sliding `threshold` then moves the smoothstep band on hue distance,
+    // shifting FG pixels into BG and changing end-to-end pixel stats.
+    await spawnPatch(
+      page,
+      [
+        { id: 'v-shp', type: 'shapes',    position: { x: 40,  y: 40 },  domain: 'video', params: { shape: 0.3, rotate: 0.2, zoom: 0.7 } },
+        // CHROMA tintMix=1 → entire FG becomes uniform pure RED (hue 0deg),
+        // frame-filling regardless of the grayscale shapes underneath.
+        { id: 'v-fg',  type: 'chroma',    position: { x: 200, y: 40 },  domain: 'video', params: { hue: 0, saturation: 2, tintR: 1, tintG: 0, tintB: 0, tintMix: 1 } },
+        { id: 'v-bg',  type: 'lines',     position: { x: 40,  y: 280 }, domain: 'video', params: { amp: 8 } },
+        // Key a hue NEAR red (orange) so the red FG sits at a small-but-nonzero
+        // hue distance. threshold 0 → red is outside the key band → whole frame
+        // shows FG. threshold 0.9 → red falls inside the band → whole frame keys
+        // to BG. The full-frame flip gives a large, deterministic stat delta.
+        { id: 'v-key', type: 'chromakey', position: { x: 320, y: 80 },  domain: 'video', params: { keyR: 1.0, keyG: 0.5, keyB: 0.0, threshold: 0.0, softness: 0.05, spillSuppress: 0 } },
+        { id: 'v-out', type: 'videoOut',  position: { x: 700, y: 80 },  domain: 'video' },
+      ],
+      [
+        { id: 'e-shp-fg',  from: { nodeId: 'v-shp', portId: 'out' }, to: { nodeId: 'v-fg',  portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-fg-key',  from: { nodeId: 'v-fg',  portId: 'out' }, to: { nodeId: 'v-key', portId: 'fg' }, sourceType: 'video',      targetType: 'video' },
+        { id: 'e-bg-key',  from: { nodeId: 'v-bg',  portId: 'out' }, to: { nodeId: 'v-key', portId: 'bg' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-key-out', from: { nodeId: 'v-key', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video',      targetType: 'video' },
+      ],
+    );
+    const canvas = page.locator(VIDEO_OUT_CANVAS);
+    await page.waitForTimeout(500);
+    const before = (await readCanvasStats(canvas))!;
+
+    await setNodeParam(page, 'v-key', 'threshold', 0.9);
+    await page.waitForTimeout(500);
+    const after = (await readCanvasStats(canvas))!;
+
+    expect(
+      statsDiffer(before, after),
+      `CHROMAKEY threshold 0→0.9: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+    ).toBe(true);
+  });
+
+  test('LUMAKEY threshold knob changes pixel pattern (FG + BG composite)', async ({ page }) => {
+    // INWARDS is a denser-pixel source; we use it as FG so the luma key
+    // has a varied luma distribution to threshold across. LINES is BG.
+    // Sliding threshold from 0 (all FG) to 0.9 (mostly BG) should shift
+    // pixel stats. Proves both FG/BG inputs + CV path land end-to-end.
+    await spawnPatch(
+      page,
+      [
+        { id: 'v-fg',  type: 'inwards',  position: { x: 40,  y: 40 },  domain: 'video', params: { density: 25, speed: 0.05 } },
+        { id: 'v-bg',  type: 'lines',    position: { x: 40,  y: 280 }, domain: 'video', params: { amp: 8 } },
+        { id: 'v-key', type: 'lumakey',  position: { x: 320, y: 80 },  domain: 'video', params: { threshold: 0.0, softness: 0.05, invert: 0 } },
+        { id: 'v-out', type: 'videoOut', position: { x: 700, y: 80 },  domain: 'video' },
+      ],
+      [
+        { id: 'e-fg-key',  from: { nodeId: 'v-fg',  portId: 'out' }, to: { nodeId: 'v-key', portId: 'fg' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-bg-key',  from: { nodeId: 'v-bg',  portId: 'out' }, to: { nodeId: 'v-key', portId: 'bg' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-key-out', from: { nodeId: 'v-key', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video',      targetType: 'video' },
+      ],
+    );
+    const canvas = page.locator(VIDEO_OUT_CANVAS);
+    await page.waitForTimeout(500);
+    const before = (await readCanvasStats(canvas))!;
+
+    await setNodeParam(page, 'v-key', 'threshold', 0.9);
+    await page.waitForTimeout(500);
+    const after = (await readCanvasStats(canvas))!;
+
+    expect(
+      statsDiffer(before, after),
+      `LUMAKEY threshold 0→0.9: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
     ).toBe(true);
   });
 

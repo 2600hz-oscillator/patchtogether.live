@@ -1,35 +1,35 @@
 // packages/web/src/lib/video/modules/chroma.ts
 //
-// CHROMA — chroma-key. Output a `keys` mask wherever the input pixel's
-// HUE is close to a chosen key color's hue.
+// CHROMA — single-input HUE-SHIFTER / COLORIZER.
 //
-// v2 upgrade (matches p10entrancer/Shaders/Keyer.metal):
-//   * HSV hue distance instead of RGB distance — luma-invariant (a dark
-//     green and a bright green key the same), eliminates the RGB-distance
-//     bug where shadowed green-screen pixels missed the key.
-//   * Saturation gate — gray pixels stay non-key regardless of where their
-//     hue happens to compute (since hue of a gray pixel is undefined).
-//   * `spill` desaturates edge pixels so the key color doesn't tint the
-//     comped subject (green halo around a person on a green screen).
-//   * `invert` flips the mask (useful for "keep the keyed area" workflows).
-//   * `tolerance` param renamed → `threshold` for consistency with LUMA
-//     and the v2 spec; schema-migrate handles the rename in saved data.
+// History: prior versions of this module conflated "key-mask extraction"
+// with the user-facing concept of a "chroma keyer." A real keyer takes
+// foreground + background and composites — see CHROMAKEY for that. CHROMA
+// is now what its name actually suggests: a single-input color processor
+// that shifts hue, scales saturation, and lerps toward a tint color.
 //
-// CV inputs for the key color still expose R/G/B (additive on top of the
-// user-picked color via the card's color wheel) so audio-rate signals can
-// sweep the key. The card UI is a native HSV color picker that writes
-// keyR/keyG/keyB in one shot.
+// Schema v3 migration: prior v1/v2 stored key-mask params (keyR/keyG/keyB,
+// threshold, softness, invert). Those were never correct for this module's
+// real job, so on load we drop them and reset to the new processor
+// defaults. Existing rackspaces using the old CHROMA as a mask source
+// silently render the input colorized; users who actually wanted a key
+// should swap in CHROMAKEY.
 //
-// Outputs `keys` (single-channel mask). To composite the result over
-// other video, route CHROMA → MIXER (key channel) downstream.
+// GLSL pipeline (per pixel):
+//   RGB -> HSV -> shift hue by `hue` (degrees), scale saturation by
+//   `saturation` -> HSV -> RGB -> lerp toward (tintR, tintG, tintB) by
+//   `tintMix`.
+//
+// CV inputs are linear-scaled per param and use the project convention of
+// `paramTarget == port.id` so the cross-domain CV bridge can target them
+// directly (see PR #264).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 
-// GLSL helper: RGB → HSV. Hue ∈ [0, 1) (0 = red, 1/3 = green, 2/3 = blue),
-// saturation + value ∈ [0, 1]. Lifted from the p10entrancer Metal shader
-// + transliterated to GLSL.
-const RGB_TO_HSV_GLSL = `
+// Shared HSV helpers — lifted from the p10entrancer reference shader and
+// transliterated to GLSL. Hue is [0, 1) (0 = red, 1/3 = green, 2/3 = blue).
+const HSV_GLSL = `
 vec3 rgbToHsv(vec3 c) {
   float mx = max(c.r, max(c.g, c.b));
   float mn = min(c.r, min(c.g, c.b));
@@ -50,6 +50,24 @@ vec3 rgbToHsv(vec3 c) {
   }
   return vec3(h, s, v);
 }
+
+vec3 hsvToRgb(vec3 hsv) {
+  float h = hsv.x;
+  float s = clamp(hsv.y, 0.0, 1.0);
+  float v = clamp(hsv.z, 0.0, 1.0);
+  float h6 = h * 6.0;
+  float c = v * s;
+  float x = c * (1.0 - abs(mod(h6, 2.0) - 1.0));
+  vec3 rgb;
+  if      (h6 < 1.0) rgb = vec3(c, x, 0.0);
+  else if (h6 < 2.0) rgb = vec3(x, c, 0.0);
+  else if (h6 < 3.0) rgb = vec3(0.0, c, x);
+  else if (h6 < 4.0) rgb = vec3(0.0, x, c);
+  else if (h6 < 5.0) rgb = vec3(x, 0.0, c);
+  else               rgb = vec3(c, 0.0, x);
+  float m = v - c;
+  return rgb + m;
+}
 `;
 
 const FRAG_SRC = `#version 300 es
@@ -60,21 +78,14 @@ out vec4 outColor;
 
 uniform sampler2D uTex;
 uniform float uHasInput;
-uniform float uKeyR;
-uniform float uKeyG;
-uniform float uKeyB;
-uniform float uThreshold; // 0..1 — inner hue-band that's fully keyed out
-uniform float uSoftness;  // 0..1 — width of the ramp band past threshold
-uniform float uInvert;    // 0 or 1
+uniform float uHue;        // -180..+180 degrees
+uniform float uSaturation; // 0..2 multiplier
+uniform float uTintR;
+uniform float uTintG;
+uniform float uTintB;
+uniform float uTintMix;    // 0..1
 
-${RGB_TO_HSV_GLSL}
-
-// Shortest hue distance with wrap-around. Output ∈ [0, 0.5]
-// (0 = identical hue, 0.5 = exactly complementary).
-float hueDistance(float a, float b) {
-  float d = abs(a - b);
-  return min(d, 1.0 - d);
-}
+${HSV_GLSL}
 
 void main() {
   if (uHasInput < 0.5) {
@@ -82,61 +93,63 @@ void main() {
     return;
   }
   vec3 src = texture(uTex, vUv).rgb;
-  vec3 srcHSV = rgbToHsv(src);
-  vec3 keyHSV = rgbToHsv(vec3(uKeyR, uKeyG, uKeyB));
-
-  float hd = hueDistance(srcHSV.x, keyHSV.x);
-  // Saturation gate — unsaturated (gray) pixels are never "this color".
-  // Pulls their alpha back toward 1 (keep) so we don't accidentally
-  // key out shadows / highlights that have unstable computed hues.
-  float satGate = smoothstep(0.04, 0.18, srcHSV.y);
-
-  // Map threshold/softness (slider 0..1) onto the hue-distance range
-  // [0, 0.5]. threshold defines the inner radius that's fully keyed
-  // (mask = 0); softness extends the ramp to a soft edge (mask → 1).
-  float th  = uThreshold * 0.5;
-  float sft = max(uSoftness * 0.5, 0.001);
-  float hueAlpha = smoothstep(th, th + sft, hd);
-
-  // Bias unsaturated pixels toward "keep" so a near-gray pixel doesn't
-  // accidentally get keyed by a noisy hue value.
-  float mask = mix(1.0, hueAlpha, satGate);
-  if (uInvert > 0.5) mask = 1.0 - mask;
-
-  outColor = vec4(mask, mask, mask, 1.0);
+  vec3 hsv = rgbToHsv(src);
+  // Hue in HSV space is [0, 1); convert the degree offset to a fraction
+  // and wrap with fract() so negative wraps cleanly.
+  hsv.x = fract(hsv.x + uHue / 360.0 + 1.0);
+  hsv.y = clamp(hsv.y * uSaturation, 0.0, 1.0);
+  vec3 shifted = hsvToRgb(hsv);
+  vec3 tint = vec3(uTintR, uTintG, uTintB);
+  vec3 out_rgb = mix(shifted, tint, clamp(uTintMix, 0.0, 1.0));
+  outColor = vec4(out_rgb, 1.0);
 }`;
 
 interface ChromaParams {
-  keyR: number;
-  keyG: number;
-  keyB: number;
-  threshold: number;
-  softness: number;
-  invert: number;
+  hue: number;
+  saturation: number;
+  tintR: number;
+  tintG: number;
+  tintB: number;
+  tintMix: number;
 }
 
 const DEFAULTS: ChromaParams = {
-  keyR: 0.0,
-  keyG: 1.0,
-  keyB: 0.0,  // green-screen default
-  threshold: 0.2,
-  softness: 0.15,
-  invert: 0,
+  hue: 0,
+  saturation: 1,
+  tintR: 1,
+  tintG: 1,
+  tintB: 1,
+  tintMix: 0,
 };
 
-/** v1 stored `tolerance`; v2 renamed it to `threshold`. Migration copies
- *  the value verbatim (range + semantic unchanged). Pure helper so the
- *  unit test can pin the rename without instantiating the GL context. */
+const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(DEFAULTS));
+const LEGACY_PARAM_IDS = new Set([
+  'keyR', 'keyG', 'keyB', 'threshold', 'softness', 'invert', 'tolerance',
+]);
+
+/**
+ * Migrate older CHROMA params. v1/v2 stored key-mask shape; v3 stores
+ * hue-shift / colorize shape. Since the OLD semantics were broken (a
+ * single-input "keyer" makes no sense — there's no background to
+ * composite into), we accept a behavior reset on load: drop the legacy
+ * key-mask params, keep the empty object so DEFAULTS spread fills in. Any
+ * already-present v3 param values are preserved.
+ *
+ * Pure helper so unit tests can pin behavior without instantiating GL.
+ */
 export function migrateChroma(data: unknown, fromVersion: number): unknown {
   if (!data || typeof data !== 'object') return data;
-  if (fromVersion >= 2) return data;
+  if (fromVersion >= 3) return data;
   const obj = data as Record<string, unknown>;
-  if ('tolerance' in obj && !('threshold' in obj)) {
-    const out: Record<string, unknown> = { ...obj, threshold: obj.tolerance };
-    delete out.tolerance;
-    return out;
+  const out: Record<string, unknown> = {};
+  // Keep any keys that aren't legacy mask params and aren't recognized
+  // (forward-compat for unknown extras). Strip legacy mask params; the
+  // factory's DEFAULTS spread fills in v3 defaults for anything missing.
+  for (const [k, v] of Object.entries(obj)) {
+    if (LEGACY_PARAM_IDS.has(k)) continue;
+    out[k] = v;
   }
-  return data;
+  return out;
 }
 
 export const chromaDef: VideoModuleDef = {
@@ -144,46 +157,52 @@ export const chromaDef: VideoModuleDef = {
   domain: 'video',
   label: 'CHROMA',
   category: 'effects',
-  schemaVersion: 2,
+  schemaVersion: 3,
   migrate: migrateChroma,
   inputs: [
-    { id: 'in',        type: 'video' },
-    // paramTarget == port.id keeps the docs manifest in sync with the
-    // LINES/INWARDS convention; runtime bridge uses port id directly.
-    { id: 'keyR',      type: 'cv', paramTarget: 'keyR' },
-    { id: 'keyG',      type: 'cv', paramTarget: 'keyG' },
-    { id: 'keyB',      type: 'cv', paramTarget: 'keyB' },
-    { id: 'threshold', type: 'cv', paramTarget: 'threshold' },
-    { id: 'softness',  type: 'cv', paramTarget: 'softness' },
+    { id: 'in',         type: 'video' },
+    { id: 'hue',        type: 'cv', paramTarget: 'hue' },
+    { id: 'saturation', type: 'cv', paramTarget: 'saturation' },
+    { id: 'tintR',      type: 'cv', paramTarget: 'tintR' },
+    { id: 'tintG',      type: 'cv', paramTarget: 'tintG' },
+    { id: 'tintB',      type: 'cv', paramTarget: 'tintB' },
+    { id: 'tintMix',    type: 'cv', paramTarget: 'tintMix' },
   ],
   outputs: [
-    { id: 'out', type: 'mono-video' },
+    { id: 'out', type: 'video' },
   ],
   params: [
-    { id: 'keyR',      label: 'R',    defaultValue: DEFAULTS.keyR,      min: 0, max: 1, curve: 'linear' },
-    { id: 'keyG',      label: 'G',    defaultValue: DEFAULTS.keyG,      min: 0, max: 1, curve: 'linear' },
-    { id: 'keyB',      label: 'B',    defaultValue: DEFAULTS.keyB,      min: 0, max: 1, curve: 'linear' },
-    { id: 'threshold', label: 'Thr',  defaultValue: DEFAULTS.threshold, min: 0, max: 1, curve: 'linear' },
-    { id: 'softness',  label: 'Soft', defaultValue: DEFAULTS.softness,  min: 0, max: 1, curve: 'linear' },
-    { id: 'invert',    label: 'Inv',  defaultValue: DEFAULTS.invert,    min: 0, max: 1, curve: 'discrete' },
+    { id: 'hue',        label: 'Hue',  defaultValue: DEFAULTS.hue,        min: -180, max: 180, curve: 'linear' },
+    { id: 'saturation', label: 'Sat',  defaultValue: DEFAULTS.saturation, min: 0,    max: 2,   curve: 'linear' },
+    { id: 'tintR',      label: 'R',    defaultValue: DEFAULTS.tintR,      min: 0,    max: 1,   curve: 'linear' },
+    { id: 'tintG',      label: 'G',    defaultValue: DEFAULTS.tintG,      min: 0,    max: 1,   curve: 'linear' },
+    { id: 'tintB',      label: 'B',    defaultValue: DEFAULTS.tintB,      min: 0,    max: 1,   curve: 'linear' },
+    { id: 'tintMix',    label: 'Mix',  defaultValue: DEFAULTS.tintMix,    min: 0,    max: 1,   curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
 
-    const uTex       = gl.getUniformLocation(program, 'uTex');
-    const uHasInput  = gl.getUniformLocation(program, 'uHasInput');
-    const uKeyR      = gl.getUniformLocation(program, 'uKeyR');
-    const uKeyG      = gl.getUniformLocation(program, 'uKeyG');
-    const uKeyB      = gl.getUniformLocation(program, 'uKeyB');
-    const uThreshold = gl.getUniformLocation(program, 'uThreshold');
-    const uSoftness  = gl.getUniformLocation(program, 'uSoftness');
-    const uInvert    = gl.getUniformLocation(program, 'uInvert');
+    const uTex        = gl.getUniformLocation(program, 'uTex');
+    const uHasInput   = gl.getUniformLocation(program, 'uHasInput');
+    const uHue        = gl.getUniformLocation(program, 'uHue');
+    const uSaturation = gl.getUniformLocation(program, 'uSaturation');
+    const uTintR      = gl.getUniformLocation(program, 'uTintR');
+    const uTintG      = gl.getUniformLocation(program, 'uTintG');
+    const uTintB      = gl.getUniformLocation(program, 'uTintB');
+    const uTintMix    = gl.getUniformLocation(program, 'uTintMix');
 
     const { fbo, texture } = ctx.createFbo();
 
-    const params: ChromaParams = { ...DEFAULTS, ...(node.params as Partial<ChromaParams>) };
+    // Strip any stray legacy keys (e.g. saved v1/v2 node that bypassed
+    // migration somehow) so they can't bleed into the params object.
+    const rawParams = node.params as Record<string, unknown>;
+    const filteredParams: Record<string, number> = {};
+    for (const [k, v] of Object.entries(rawParams)) {
+      if (PARAM_IDS.has(k) && typeof v === 'number') filteredParams[k] = v;
+    }
+    const params: ChromaParams = { ...DEFAULTS, ...filteredParams as Partial<ChromaParams> };
 
     const surface: VideoNodeSurface = {
       fbo,
@@ -202,12 +221,12 @@ export const chromaDef: VideoModuleDef = {
           g.uniform1i(uTex, 0);
         }
 
-        g.uniform1f(uKeyR,      params.keyR);
-        g.uniform1f(uKeyG,      params.keyG);
-        g.uniform1f(uKeyB,      params.keyB);
-        g.uniform1f(uThreshold, params.threshold);
-        g.uniform1f(uSoftness,  params.softness);
-        g.uniform1f(uInvert,    params.invert);
+        g.uniform1f(uHue,        params.hue);
+        g.uniform1f(uSaturation, params.saturation);
+        g.uniform1f(uTintR,      params.tintR);
+        g.uniform1f(uTintG,      params.tintG);
+        g.uniform1f(uTintB,      params.tintB);
+        g.uniform1f(uTintMix,    params.tintMix);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);

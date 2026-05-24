@@ -101,6 +101,10 @@
   import DestructorCard from '$lib/ui/modules/DestructorCard.svelte';
   import ChromaCard from '$lib/ui/modules/ChromaCard.svelte';
   import LumaCard from '$lib/ui/modules/LumaCard.svelte';
+  // CHROMAKEY / LUMAKEY — proper 2-input compositors (fg + bg). CHROMA
+  // and LUMA are now their original-spec single-input color processors.
+  import ChromakeyCard from '$lib/ui/modules/ChromakeyCard.svelte';
+  import LumakeyCard from '$lib/ui/modules/LumakeyCard.svelte';
   import ColorizerCard from '$lib/ui/modules/ColorizerCard.svelte';
   import FeedbackCard from '$lib/ui/modules/FeedbackCard.svelte';
   import VideoMixerCard from '$lib/ui/modules/VideoMixerCard.svelte';
@@ -328,6 +332,8 @@
     destructor: DestructorCard,
     chroma: ChromaCard,
     luma: LumaCard,
+    chromakey: ChromakeyCard,
+    lumakey: LumakeyCard,
     colorizer: ColorizerCard,
     feedback: FeedbackCard,
     videoMixer: VideoMixerCard,

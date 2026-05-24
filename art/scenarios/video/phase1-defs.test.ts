@@ -64,12 +64,34 @@ describe('ART video Phase-1 — module def stability', () => {
     expect(orient?.max).toBe(1);
   });
 
-  it('CHROMA threshold default stable: 0.2 (green-screen tuning, v2 HSV keyer)', () => {
-    // v2 schema renamed `tolerance` → `threshold`. The default was
-    // re-tuned from 0.4 (RGB-distance era) to 0.2 (HSV-hue-distance) so
-    // a fresh CHROMA still keys a green-screen cleanly on default knobs.
+  it('CHROMA hue default stable: 0 (no shift on a fresh module)', () => {
+    // v3 reshape: CHROMA is now a 1-input hue-shifter / colorizer (the
+    // proper 2-input keyer moved to CHROMAKEY). A fresh CHROMA should
+    // be visually a pass-through.
     const def = getVideoModuleDef('chroma')!;
-    const th = def.params.find((p) => p.id === 'threshold');
-    expect(th?.defaultValue).toBe(0.2);
+    const hue = def.params.find((p) => p.id === 'hue');
+    expect(hue?.defaultValue).toBe(0);
+    const sat = def.params.find((p) => p.id === 'saturation');
+    expect(sat?.defaultValue).toBe(1);
+    const mix = def.params.find((p) => p.id === 'tintMix');
+    expect(mix?.defaultValue).toBe(0);
+  });
+
+  it('LUMA gamma default stable: 1.0 (no transform on a fresh module)', () => {
+    // v2 reshape: LUMA is now a 1-input luminance processor.
+    const def = getVideoModuleDef('luma')!;
+    const g = def.params.find((p) => p.id === 'gamma');
+    expect(g?.defaultValue).toBe(1);
+    const c = def.params.find((p) => p.id === 'contrast');
+    expect(c?.defaultValue).toBe(1);
+  });
+
+  it('CHROMAKEY + LUMAKEY are registered (proper 2-input keyer compositors)', () => {
+    const ck = getVideoModuleDef('chromakey');
+    expect(ck, 'chromakey registered').toBeDefined();
+    expect(ck!.inputs.filter((p) => p.type === 'video').map((p) => p.id).sort()).toEqual(['bg', 'fg']);
+    const lk = getVideoModuleDef('lumakey');
+    expect(lk, 'lumakey registered').toBeDefined();
+    expect(lk!.inputs.filter((p) => p.type === 'video').map((p) => p.id).sort()).toEqual(['bg', 'fg']);
   });
 });
