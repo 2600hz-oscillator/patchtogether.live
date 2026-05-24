@@ -14,6 +14,7 @@ which is itself a faithful reimplementation of id Software's **Doom**
 | `doom` engine (modernizations)       | GPLv2                         | © 2005–2014 Simon Howard (Chocolate Doom)            |
 | `doomgeneric` platform abstraction   | GPLv2 (matches engine)        | © Wojciech Graj / ozkl                               |
 | `doomgeneric_patchtogether.c` shim   | GPLv2 (matches engine)        | © 2026 patchtogether.live contributors               |
+| `net_pt.c` / `net_pt.h` transport     | GPLv2 (matches engine)        | © 2026 patchtogether.live contributors               |
 
 Full license text: see `LICENSE` in this directory (verbatim copy of the
 GPL v2 from upstream doomgeneric).
@@ -89,28 +90,39 @@ Vendored verbatim from cd-2.1.0 (each keeps its GPLv2 header):
   NOT vendored).
 
 We **do not** vendor (each pulls in deps we don't ship):
-- `net_sdl.c` — SDL_net UDP transport. Our own transport (`net_pt.c`)
-  arrives in a later slice; until then the only reference to its
-  `net_sdl_module` symbol (from `net_query.c`'s unused master-server
-  browser) is satisfied by a no-op stub (see below).
+- `net_sdl.c` — SDL_net UDP transport. Replaced by our own transport
+  `net_pt.c` (slice 1; see below). `net_query.c`'s lone `net_sdl_module`
+  reference (the unused master-server browser) is aliased to our
+  `net_pt_module` via a one-line `#define` in `net_sdl.h`, so that
+  vendored source stays byte-identical and still links.
 - `net_dedicated.c` — headless dedicated-server `main()`; not used.
 - `net_gui.c` — textscreen/curses lobby UI. Its one referenced symbol
   (`NET_WaitForLaunch`, called from `d_loop.c`) is stubbed (see below).
 - `net_petname.c` — random player-name generator; not referenced.
 
+### Our transport (`net_pt.c` / `net_pt.h`) — slice 1
+
+`net_pt.c` is **our** code (GPLv2, patchtogether copyright), not
+vendored. It implements `net_pt_module` (a real `net_module_t`) as the
+WASM<->JS packet bridge that replaces `net_sdl.c`: it marshals
+`net_packet_t` bytes to JS (`Module.PTNet.send`) and drains an inbound
+queue JS fills via the exported `dgpt_net_inject_packet()`. The actual
+WebRTC / WS-relay transport lives in the slice-2 TS layer; net_pt.c does
+no real networking. `d_loop.c` (a doomgeneric-patched, non-verbatim file)
+references `net_pt_module` directly at its `-server` / `-connect` call
+sites. See the head of `net_pt.c` for the full `Module.PTNet` contract.
+
 ### Dependency stubs (`net_pt_stub.c`)
 
 `net_pt_stub.c` is **our** code (GPLv2, patchtogether copyright), not
-vendored. It exists solely so the vendored `net_*.c` + doomgeneric's
-`d_loop.c` link in the multiplayer build without dragging in SDL2 or
-the curses textscreen lib. It provides exactly two no-op placeholders:
-- `net_sdl_module` — an inert `net_module_t` (InitClient/InitServer
-  return false, RecvPacket returns "no packet", etc.). Referenced only
-  by `net_query.c`'s master-server browser, which patchtogether.live
-  does not use (peer discovery is via Yjs awareness).
+vendored. It exists solely so doomgeneric's `d_loop.c` links in the
+multiplayer build without dragging in the curses textscreen lib. It now
+provides exactly one no-op placeholder:
 - `NET_WaitForLaunch()` — empty; the DoomCard UI owns the lobby.
 
-The vendored `net_*.c` themselves are **unmodified**.
+The vendored `net_*.c` themselves are **unmodified**. (`net_sdl.h` gets a
+one-line `#define net_sdl_module net_pt_module` alias — it is a stub
+header whose `.c` we never vendored.)
 
 ### Build gating — `DOOM_MP=1` / `FEATURE_MULTIPLAYER`
 

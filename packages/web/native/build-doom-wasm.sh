@@ -30,6 +30,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENDOR_DIR="$SCRIPT_DIR/doomgeneric/doomgeneric"
 OUT_DIR="$SCRIPT_DIR/../static/doom"
+
+# Output basename + emcc -sENVIRONMENT. Both default to the production
+# single-player target; the slice-1 Node acceptance harness overrides them
+# (DOOM_OUT=doom-mp-node, DOOM_ENVIRONMENT=web,worker,node) to emit a
+# separate, Node-loadable MP artifact without touching the prod build.
+OUT_NAME="${DOOM_OUT:-doom}"
+DOOM_ENVIRONMENT="${DOOM_ENVIRONMENT:-web}"
 mkdir -p "$OUT_DIR"
 
 if ! command -v emcc >/dev/null 2>&1; then
@@ -134,9 +141,10 @@ SRCS=(
 )
 
 # Multiplayer (netplay) sources — chocolate-doom 2.1.0 net_*.c, vendored
-# verbatim, plus our net_pt_stub.c which satisfies the two SDL/curses deps
-# they reference (net_sdl_module + NET_WaitForLaunch) with no-op
-# placeholders until net_pt.c (slice 1).
+# verbatim, plus our own net_pt.c (the real WASM<->JS transport, slice 1)
+# and net_pt_stub.c (a no-op NET_WaitForLaunch — the curses lobby loop we
+# replace with the DoomCard UI). net_pt.c provides net_pt_module, the
+# net_module_t the netcode registers as its active transport.
 #
 # These are ONLY compiled when DOOM_MP=1. In the default single-player
 # build they are not passed to emcc at all, so:
@@ -153,6 +161,7 @@ if [ "${DOOM_MP:-}" = "1" ]; then
     "$VENDOR_DIR/net_io.c"
     "$VENDOR_DIR/net_loop.c"
     "$VENDOR_DIR/net_packet.c"
+    "$VENDOR_DIR/net_pt.c"
     "$VENDOR_DIR/net_pt_stub.c"
     "$VENDOR_DIR/net_query.c"
     "$VENDOR_DIR/net_server.c"
@@ -204,7 +213,19 @@ if [ "${DOOM_MP:-}" = "1" ]; then
   \"_NET_SV_Run\",
   \"_NET_SV_Shutdown\",
   \"_NET_SV_AddModule\",
-  \"_NET_SV_RegisterWithMaster\"
+  \"_NET_SV_RegisterWithMaster\",
+  \"_dgpt_net_register\",
+  \"_dgpt_net_inject_packet\",
+  \"_dgpt_net_peer_id_for_addr\",
+  \"_dgpt_net_reset\",
+  \"_dgpt_net_sent_type_mask\",
+  \"_dgpt_net_recv_type_mask\",
+  \"_dgpt_net_sent_count\",
+  \"_dgpt_net_recv_count\",
+  \"_dgpt_net_test_init\",
+  \"_dgpt_net_test_drain_one\",
+  \"_dgpt_net_sv_add_pt_module\",
+  \"_dgpt_net_cl_connect\"
 ]"
 fi
 
@@ -251,19 +272,19 @@ LDFLAGS=(
   -sINITIAL_MEMORY=33554432       # 32 MB — enough for shareware WAD + game state
   -sFORCE_FILESYSTEM=1            # we write DOOM1.WAD into MEMFS at runtime
   -sFILESYSTEM=1
-  -sENVIRONMENT=web
+  -sENVIRONMENT="$DOOM_ENVIRONMENT"
   -sSTRICT=0                      # doomgeneric uses non-strict CRT bits
   -sEXIT_RUNTIME=0
   -sEXPORTED_FUNCTIONS="$EXPORTS"
   -sEXPORTED_RUNTIME_METHODS="$RUNTIME_METHODS"
 )
 
-echo "[build-doom-wasm] compiling ${#SRCS[@]} sources..."
+echo "[build-doom-wasm] compiling ${#SRCS[@]} sources -> ${OUT_NAME}.{js,wasm} (env=$DOOM_ENVIRONMENT)..."
 emcc \
   "${CFLAGS[@]}" \
   "${LDFLAGS[@]}" \
   "${SRCS[@]}" \
-  -o "$OUT_DIR/doom.js"
+  -o "$OUT_DIR/$OUT_NAME.js"
 
 echo "[build-doom-wasm] wrote:"
-ls -lh "$OUT_DIR/doom.js" "$OUT_DIR/doom.wasm"
+ls -lh "$OUT_DIR/$OUT_NAME.js" "$OUT_DIR/$OUT_NAME.wasm"

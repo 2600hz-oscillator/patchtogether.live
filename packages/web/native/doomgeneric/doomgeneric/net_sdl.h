@@ -20,7 +20,13 @@
 
 #include "net_defs.h"
 
-extern net_module_t net_sdl_module;
+// patchtogether.live: the SDL_net UDP transport (net_sdl.c) is not vendored.
+// The verbatim chocolate-doom net_query.c references net_sdl_module for the
+// (unused) master-server browser path; alias it to our net_pt transport so
+// that vendored source stays byte-identical and still links. d_loop.c
+// references net_pt_module directly. See net_pt.c / net_pt.h.
+#include "net_pt.h"
+#define net_sdl_module net_pt_module
 
 #endif /* #ifndef NET_SDL_H */
 
