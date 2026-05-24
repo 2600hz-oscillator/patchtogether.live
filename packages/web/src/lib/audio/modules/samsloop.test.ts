@@ -17,6 +17,7 @@ import {
   samsloopMath,
   loadSamsloopWav,
   samsloopDownsample,
+  parseWavManually,
   SAMSLOOP_MAX_FILE_BYTES,
   SAMSLOOP_MAX_SAMPLES,
   SAMSLOOP_MAX_DECODED_SAMPLES,
@@ -209,6 +210,138 @@ describe('loadSamsloopWav accepts any browser-decodable audio', () => {
 // the rackspace. The fix downsamples to a target rate (24 kHz) before
 // returning + adds a decoded-buffer cap that fires AFTER decode so a
 // small upload that decodes to a huge buffer is rejected cleanly.
+
+describe('parseWavManually — bit-depth matrix the browser may reject', () => {
+  function makeWav(opts: {
+    audioFormat: number;
+    channels: number;
+    sampleRate: number;
+    bitsPerSample: number;
+    frames: number;
+    fill: (frameIdx: number, channel: number) => number;
+  }): ArrayBuffer {
+    const { audioFormat, channels, sampleRate, bitsPerSample, frames, fill } = opts;
+    const bytesPerSample = bitsPerSample >> 3;
+    const dataSize = frames * channels * bytesPerSample;
+    const ab = new ArrayBuffer(44 + dataSize);
+    const v = new DataView(ab);
+    v.setUint32(0, 0x52494646, false); // "RIFF"
+    v.setUint32(4, 36 + dataSize, true);
+    v.setUint32(8, 0x57415645, false); // "WAVE"
+    v.setUint32(12, 0x666d7420, false); // "fmt "
+    v.setUint32(16, 16, true);
+    v.setUint16(20, audioFormat, true);
+    v.setUint16(22, channels, true);
+    v.setUint32(24, sampleRate, true);
+    v.setUint32(28, sampleRate * channels * bytesPerSample, true);
+    v.setUint16(32, channels * bytesPerSample, true);
+    v.setUint16(34, bitsPerSample, true);
+    v.setUint32(36, 0x64617461, false); // "data"
+    v.setUint32(40, dataSize, true);
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < channels; c++) {
+        const o = 44 + (i * channels + c) * bytesPerSample;
+        const val = fill(i, c);
+        if (audioFormat === 1 && bitsPerSample === 8) v.setUint8(o, val);
+        else if (audioFormat === 1 && bitsPerSample === 16) v.setInt16(o, val, true);
+        else if (audioFormat === 1 && bitsPerSample === 32) v.setInt32(o, val, true);
+        else if (audioFormat === 3 && bitsPerSample === 32) v.setFloat32(o, val, true);
+      }
+    }
+    return ab;
+  }
+
+  it('parses 8-bit unsigned PCM mono 16 kHz — the "875 County Rd 13" fixture format', () => {
+    // 8-bit PCM is unsigned, centered on 128 (the silence pattern that
+    // dominates the bug-report file). Send a small ramp so the parser's
+    // (val-128)/128 normalization is verifiable.
+    const ab = makeWav({
+      audioFormat: 1, channels: 1, sampleRate: 16000, bitsPerSample: 8,
+      frames: 8, fill: (i) => 128 + i * 16, // 128, 144, 160, ..., 240
+    });
+    const r = parseWavManually(ab);
+    expect(r).not.toBeNull();
+    expect(r!.sampleRate).toBe(16000);
+    expect(r!.samples.length).toBe(8);
+    expect(r!.samples[0]).toBeCloseTo(0,    5); // 128 → 0
+    expect(r!.samples[1]).toBeCloseTo(16/128, 5);
+    expect(r!.samples[7]).toBeCloseTo(112/128, 5);
+  });
+
+  it('parses 16-bit signed PCM stereo and mono-mixes', () => {
+    const ab = makeWav({
+      audioFormat: 1, channels: 2, sampleRate: 44100, bitsPerSample: 16,
+      frames: 4, fill: (i, c) => (c === 0 ? 16384 : -16384), // L=+0.5, R=-0.5 → mono 0
+    });
+    const r = parseWavManually(ab);
+    expect(r).not.toBeNull();
+    expect(r!.sampleRate).toBe(44100);
+    for (let i = 0; i < 4; i++) expect(r!.samples[i]).toBeCloseTo(0, 5);
+  });
+
+  it('parses 32-bit float PCM', () => {
+    const ab = makeWav({
+      audioFormat: 3, channels: 1, sampleRate: 48000, bitsPerSample: 32,
+      frames: 3, fill: (i) => [0.0, 0.5, -0.75][i]!,
+    });
+    const r = parseWavManually(ab);
+    expect(r).not.toBeNull();
+    expect(r!.samples[0]).toBeCloseTo(0,     5);
+    expect(r!.samples[1]).toBeCloseTo(0.5,   5);
+    expect(r!.samples[2]).toBeCloseTo(-0.75, 5);
+  });
+
+  it('returns null for non-RIFF bytes (mp3 / ogg / random)', () => {
+    const ab = new ArrayBuffer(64);
+    new DataView(ab).setUint32(0, 0xdeadbeef, false);
+    expect(parseWavManually(ab)).toBeNull();
+  });
+
+  it('returns null for unsupported PCM variants so caller falls back to decodeAudioData', () => {
+    // Audio format 6 = A-law (not handled by our parser; valid WAV variant).
+    const ab = makeWav({
+      audioFormat: 6, channels: 1, sampleRate: 8000, bitsPerSample: 8,
+      frames: 4, fill: () => 0,
+    });
+    expect(parseWavManually(ab)).toBeNull();
+  });
+
+  it('tolerates LIST/INFO chunks between fmt and data (Lavf-encoded WAVs)', () => {
+    // The user's "875 County Rd 13" file has a LIST chunk after fmt
+    // before data. Construct that layout and verify we still find data.
+    const frames = 4;
+    const dataSize = frames; // 1 channel × 1 byte/sample
+    const listChunkSize = 26; // matches the file: "ISFT\0\0\0\0\rLavf61.1.100\0\0"
+    const ab = new ArrayBuffer(44 + 8 + listChunkSize + dataSize);
+    const v = new DataView(ab);
+    v.setUint32(0, 0x52494646, false);
+    v.setUint32(4, ab.byteLength - 8, true);
+    v.setUint32(8, 0x57415645, false);
+    // fmt
+    v.setUint32(12, 0x666d7420, false);
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true);
+    v.setUint32(24, 16000, true);
+    v.setUint32(28, 16000, true);
+    v.setUint16(32, 1, true);
+    v.setUint16(34, 8, true);
+    // LIST chunk
+    v.setUint32(36, 0x4c495354, false); // "LIST"
+    v.setUint32(40, listChunkSize, true);
+    // (chunk body left as zeros — content doesn't matter to the parser)
+    // data
+    const dataOff = 44 + 8 + listChunkSize;
+    v.setUint32(dataOff - 8, 0x64617461, false);
+    v.setUint32(dataOff - 4, dataSize, true);
+    for (let i = 0; i < frames; i++) v.setUint8(dataOff + i, 128); // silence
+    const r = parseWavManually(ab);
+    expect(r).not.toBeNull();
+    expect(r!.sampleRate).toBe(16000);
+    expect(r!.samples.length).toBe(frames);
+    for (let i = 0; i < frames; i++) expect(r!.samples[i]).toBe(0);
+  });
+});
 
 describe('samsloopDownsample', () => {
   it('returns the input unchanged when factor <= 1', () => {
