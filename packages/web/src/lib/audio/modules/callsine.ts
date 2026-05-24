@@ -1,0 +1,509 @@
+// packages/web/src/lib/audio/modules/callsine.ts
+//
+// CALLSINE — spectral-analysis additive resynthesizer.
+//
+// Algorithmic port of Warren's Spectrum (a.k.a. CallSine), MIT-licensed.
+//   Upstream:   https://github.com/2600hz-oscillator/callsine
+//   Copyright (c) 2026 callsine contributors  (MIT — compatible with our AGPL one-way)
+//
+// CallSine reads incoming audio, runs an FFT-based partial tracker
+// (Hann window → peak detection → McAulay-Quatieri-lite tracking →
+// optional F0 harmonic lock), and resynthesizes the signal as an
+// additive bank of up to N_TRACKS=64 oscillators. Macros (Plaits-style):
+//   harmonics → partials count
+//   timbre    → smoothing time (slew)
+//   morph     → harmonic LOCK strength (F0 snap)
+//   level     → output gain
+//
+// v1 ships two voice models — see VOICE_MODELS / CALLSINE_MODEL_NAMES.
+// Scaffolded for >12 more (NOISE-RESIDUAL, RESCATTER, OCT-UP, OCT-DOWN,
+// CHORDIFY, WAVETABLE-PARTIALS, DISPERSE, FREEZEBANK, GLITCHHOLD,
+// TIMESPRAY, AMP-MORPH, FX-BUS, MULTIBUS) — each is a new branch in
+// renderVoice() in the worklet + a new entry in CALLSINE_MODEL_NAMES.
+//
+// I/O:
+//   audio_in (mono)   — signal to resynthesize
+//   pitch    (V/oct)  — transpose the entire resynth output
+//   gate              — rising edge TOGGLES freeze (latches the bank's
+//                       current set of partials at their current freqs/amps)
+//   *_cv              — CV → AudioParam fast paths on every macro
+//   out      (mono)   — resynth output
+
+import type { AudioDomainNodeHandle } from '$lib/audio/engine';
+import type { AudioModuleDef } from '$lib/audio/module-registry';
+import workletUrl from '@patchtogether.live/dsp/dist/callsine.js?url';
+
+const loadedContexts = new WeakSet<BaseAudioContext>();
+
+// ---------------------------------------------------------------------------
+// Algorithm constants. MUST stay in sync with packages/dsp/src/callsine.ts.
+// ---------------------------------------------------------------------------
+export const CALLSINE_FFT_SIZE = 1024;
+export const CALLSINE_HOP_SIZE = CALLSINE_FFT_SIZE / 4;
+export const CALLSINE_NUM_BINS = CALLSINE_FFT_SIZE / 2;
+export const CALLSINE_N_TRACKS = 64;
+
+// ---------------------------------------------------------------------------
+// Voice model registry. The model knob is discrete; growing this list +
+// the worklet's renderVoice() + the worklet `model` AudioParam maxValue
+// is how follow-up PRs add models. Keep MAX_MODEL = length - 1.
+// ---------------------------------------------------------------------------
+export const CALLSINE_MODEL_NAMES = [
+  'SINES',
+  'SAW',
+] as const;
+export type CallsineModelName = (typeof CALLSINE_MODEL_NAMES)[number];
+export const CALLSINE_MAX_MODEL = CALLSINE_MODEL_NAMES.length - 1;
+
+/**
+ * Follow-up models scaffolded but NOT implemented in v1. Each is a
+ * docs-only entry in CallSine's lineage that maps cleanly onto a new
+ * branch in renderVoice() / a new analyzer pass. Picked so the diversity
+ * is real (different DSP families): adding noise back, retuning,
+ * regrouping, freezing, etc.
+ */
+export const CALLSINE_PLANNED_MODELS = [
+  /* 2 */ 'NOISE-RES',     // SMS-style filtered-noise residual layered onto sines
+  /* 3 */ 'CHORDIFY',      // each surviving peak gets +3rd/+5th sine voices
+  /* 4 */ 'OCT-UP',        // double the partial bank an octave up
+  /* 5 */ 'OCT-DOWN',      // halve every partial freq (sub-octave resynth)
+  /* 6 */ 'WAVETABLE',     // per-voice wavetable lookup instead of sine
+  /* 7 */ 'DISPERSE',      // inharmonic stretch (n * f * (1 + k*(n-1)))
+  /* 8 */ 'FREEZEBANK',    // continuous slow-evolving frozen-spectrum drone
+  /* 9 */ 'GLITCHHOLD',    // randomly hold N hops, then resume
+  /*10 */ 'TIMESPRAY',     // granular re-attack of held tracks on gate
+  /*11 */ 'FX-BUS',        // multi-bus split by frequency band (4 outs)
+  /*12 */ 'WHISPER',       // amplitude × noise mod (removes pitched character)
+  /*13 */ 'RING-RESYNTH',  // RM each partial against a user-CV-driven sine
+  /*14 */ 'COMB',          // re-comb-filter the partial bank
+] as const;
+
+// ---------------------------------------------------------------------------
+// Pure-math mirror — reflected from packages/dsp/src/callsine.ts so unit
+// tests + ART scenarios can drive the algorithm from node (the worklet
+// itself can't be imported under vitest). Any algorithmic change in the
+// worklet MUST be mirrored here.
+// ---------------------------------------------------------------------------
+
+interface _Track {
+  alive: boolean;
+  phase: number;
+  freq: number;
+  amp: number;
+  ampTarget: number;
+}
+
+function _polyBlep(t: number, dt: number): number {
+  if (t < dt) {
+    const x = t / dt;
+    return x + x - x * x - 1;
+  }
+  if (t > 1 - dt) {
+    const x = (t - 1) / dt;
+    return x * x + x + x + 1;
+  }
+  return 0;
+}
+
+function _renderVoice(phase01: number, dt: number, model: number): number {
+  if (model === 0) return Math.sin(2 * Math.PI * phase01);
+  const naive = 2 * phase01 - 1;
+  return naive - _polyBlep(phase01, dt);
+}
+
+function _hannWindow(N: number): Float32Array {
+  const w = new Float32Array(N);
+  for (let n = 0; n < N; n++) w[n] = 0.5 * (1 - Math.cos((2 * Math.PI * n) / (N - 1)));
+  return w;
+}
+
+// Naive O(N²) DFT — fine for unit tests at N=1024 (~2 ms in node). The
+// worklet uses an in-place radix-2 FFT for performance; this mirror only
+// needs to produce the same magnitudes per bin, not run at audio rate.
+function _dftMagnitudes(input: Float32Array): Float32Array {
+  const N = input.length;
+  const out = new Float32Array(N / 2);
+  for (let k = 0; k < N / 2; k++) {
+    let re = 0;
+    let im = 0;
+    for (let n = 0; n < N; n++) {
+      const ang = (-2 * Math.PI * k * n) / N;
+      re += input[n]! * Math.cos(ang);
+      im += input[n]! * Math.sin(ang);
+    }
+    out[k] = Math.sqrt(re * re + im * im);
+  }
+  return out;
+}
+
+/**
+ * Run one analysis frame on `frame` (length CALLSINE_FFT_SIZE) and return
+ * the detected peak list (in descending amplitude order). Used by tests
+ * to verify the peak detector finds the expected sinusoid frequencies in
+ * a synthetic input.
+ */
+function _analyzeFrameForTest(
+  frame: Float32Array,
+  sr: number,
+  maxPartials = CALLSINE_N_TRACKS,
+): { peaksHz: number[]; peaksAmp: number[]; f0Hz: number } {
+  if (frame.length !== CALLSINE_FFT_SIZE) {
+    throw new Error(`expected ${CALLSINE_FFT_SIZE} samples, got ${frame.length}`);
+  }
+  const win = _hannWindow(CALLSINE_FFT_SIZE);
+  const windowed = new Float32Array(CALLSINE_FFT_SIZE);
+  for (let n = 0; n < CALLSINE_FFT_SIZE; n++) windowed[n] = frame[n]! * win[n]!;
+  const mag = _dftMagnitudes(windowed);
+
+  const binHz = sr / CALLSINE_FFT_SIZE;
+  let maxMag = 0;
+  for (let b = 0; b < mag.length; b++) if (mag[b]! > maxMag) maxMag = mag[b]!;
+  const thr = maxMag * 0.001;
+
+  // Parabolic-refined peak detection.
+  const peaksHz: number[] = [];
+  const peaksAmp: number[] = [];
+  const ampScale = 4 / CALLSINE_FFT_SIZE;
+  for (let b = 1; b < mag.length - 1; b++) {
+    const m = mag[b]!;
+    if (m < thr) continue;
+    if (m < mag[b - 1]!) continue;
+    if (m < mag[b + 1]!) continue;
+    const lm = Math.log(m + 1e-20);
+    const lm1 = Math.log(mag[b - 1]! + 1e-20);
+    const lm2 = Math.log(mag[b + 1]! + 1e-20);
+    const denom = lm1 - 2 * lm + lm2;
+    let delta = 0;
+    if (Math.abs(denom) > 1e-12) delta = 0.5 * (lm1 - lm2) / denom;
+    delta = Math.max(-0.5, Math.min(0.5, delta));
+    const vertexLm = lm - 0.25 * (lm1 - lm2) * delta;
+    const refinedMag = Math.exp(vertexLm);
+    peaksHz.push((b + delta) * binHz);
+    peaksAmp.push(refinedMag * ampScale);
+  }
+
+  // Sort by amplitude descending, keep top maxPartials.
+  const idxs = peaksHz.map((_, i) => i).sort((a, b) => peaksAmp[b]! - peaksAmp[a]!);
+  const culled = idxs.slice(0, maxPartials);
+  const outHz = culled.map((i) => peaksHz[i]!);
+  const outAmp = culled.map((i) => peaksAmp[i]!);
+
+  // F0 via HSS.
+  const F0_LO = 60;
+  const F0_HI = 800;
+  const F0_KMAX = 8;
+  const binLo = Math.max(2, Math.ceil(F0_LO / binHz));
+  const binHi = Math.min(
+    Math.floor(mag.length / F0_KMAX),
+    Math.floor(F0_HI / binHz),
+  );
+  let bestScore = 0;
+  let bestBin = -1;
+  for (let b = binLo; b <= binHi; b++) {
+    let score = 0;
+    for (let k = 1; k <= F0_KMAX; k++) {
+      const hb = b * k;
+      if (hb >= mag.length) break;
+      score += mag[hb]! / Math.sqrt(k);
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestBin = b;
+    }
+  }
+  const f0Hz = bestBin > 0 ? bestBin * binHz : 0;
+
+  return { peaksHz: outHz, peaksAmp: outAmp, f0Hz };
+}
+
+/**
+ * End-to-end render: drive `n` samples of a test input through the math
+ * mirror and return the resynth output. The mirror replicates the
+ * worklet's circular-buffer-+-hop-analysis cadence exactly so tests can
+ * pin the integrated behavior (does feeding a 440 Hz sine produce a
+ * ~440 Hz output? does FREEZE actually freeze?).
+ */
+function _renderMirror(
+  audio: Float32Array,
+  sr: number,
+  params: CallsineParams,
+): Float32Array {
+  const n = audio.length;
+  const out = new Float32Array(n);
+
+  const harmonics = Math.max(0, Math.min(1, params.harmonics));
+  const timbre = Math.max(0, Math.min(1, params.timbre));
+  const morph = Math.max(0, Math.min(1, params.morph));
+  const level = Math.max(0, Math.min(1, params.level));
+  const model = Math.max(0, Math.min(CALLSINE_MAX_MODEL, Math.round(params.model)));
+
+  const slewSec = 0.005 * Math.pow(400, timbre);
+  const ampCoef = 1 - Math.exp(-1 / Math.max(1, sr * slewSec));
+  const freqCoefPerHop = 1 - Math.exp(-1 / Math.max(1, (sr * slewSec) / CALLSINE_HOP_SIZE));
+  const activePartials = Math.max(1, Math.min(CALLSINE_N_TRACKS, Math.round(harmonics * CALLSINE_N_TRACKS)));
+
+  const transposeRatio = Math.pow(2, (params.pitchV * 12 + params.note) / 12);
+
+  // Track bank.
+  const tracks: _Track[] = [];
+  for (let i = 0; i < CALLSINE_N_TRACKS; i++) {
+    tracks.push({ alive: false, phase: 0, freq: 0, amp: 0, ampTarget: 0 });
+  }
+
+  // Circular write buffer.
+  const circular = new Float32Array(CALLSINE_FFT_SIZE);
+  let circularWrite = 0;
+  let samplesSinceHop = 0;
+  const win = _hannWindow(CALLSINE_FFT_SIZE);
+
+  const invSr = 1 / sr;
+  const nyquist = 0.5 * sr;
+  const aliasCutoff = nyquist * 0.85;
+  const aliasRampStart = nyquist * 0.75;
+  const aliasRampSpan = aliasCutoff - aliasRampStart;
+
+  for (let i = 0; i < n; i++) {
+    circular[circularWrite] = audio[i]!;
+    circularWrite = (circularWrite + 1) % CALLSINE_FFT_SIZE;
+    samplesSinceHop++;
+    if (samplesSinceHop >= CALLSINE_HOP_SIZE) {
+      // Run one analysis frame, update track bank.
+      const frame = new Float32Array(CALLSINE_FFT_SIZE);
+      for (let m = 0; m < CALLSINE_FFT_SIZE; m++) {
+        frame[m] = circular[(circularWrite + m) % CALLSINE_FFT_SIZE]! * win[m]!;
+      }
+      const mag = _dftMagnitudes(frame);
+      const binHz = sr / CALLSINE_FFT_SIZE;
+      let maxMag = 0;
+      for (let b = 0; b < mag.length; b++) if (mag[b]! > maxMag) maxMag = mag[b]!;
+      const thr = maxMag * 0.001;
+      const ampScale = 4 / CALLSINE_FFT_SIZE;
+      // Detect peaks.
+      const peakHz: number[] = [];
+      const peakAmp: number[] = [];
+      for (let b = 1; b < mag.length - 1; b++) {
+        const m = mag[b]!;
+        if (m < thr) continue;
+        if (m < mag[b - 1]!) continue;
+        if (m < mag[b + 1]!) continue;
+        const lm = Math.log(m + 1e-20);
+        const lm1 = Math.log(mag[b - 1]! + 1e-20);
+        const lm2 = Math.log(mag[b + 1]! + 1e-20);
+        const denom = lm1 - 2 * lm + lm2;
+        let delta = 0;
+        if (Math.abs(denom) > 1e-12) delta = 0.5 * (lm1 - lm2) / denom;
+        delta = Math.max(-0.5, Math.min(0.5, delta));
+        const vertexLm = lm - 0.25 * (lm1 - lm2) * delta;
+        peakHz.push((b + delta) * binHz);
+        peakAmp.push(Math.exp(vertexLm) * ampScale);
+      }
+      // Cull to activePartials.
+      const idxs = peakHz.map((_, k) => k).sort((a, b) => peakAmp[b]! - peakAmp[a]!).slice(0, activePartials);
+      const culledHz = idxs.map((k) => peakHz[k]!);
+      const culledAmp = idxs.map((k) => peakAmp[k]!);
+
+      // (Skip F0 + lock in the mirror — covered by separate tests via
+      // _analyzeFrameForTest. The track-matching step below is what
+      // matters for the round-trip render assertions.)
+
+      // Match peaks → tracks.
+      const matched = new Array<boolean>(CALLSINE_N_TRACKS).fill(false);
+      for (let p = 0; p < culledHz.length; p++) {
+        const hz = culledHz[p]!;
+        const amp = culledAmp[p]!;
+        let bestIdx = -1;
+        let bestDist = 0.05;
+        for (let ti = 0; ti < CALLSINE_N_TRACKS; ti++) {
+          const t = tracks[ti]!;
+          if (!t.alive || matched[ti] || t.freq <= 0) continue;
+          const rel = Math.abs(t.freq - hz) / Math.max(t.freq, hz);
+          if (rel < bestDist) {
+            bestDist = rel;
+            bestIdx = ti;
+          }
+        }
+        if (bestIdx >= 0) {
+          const t = tracks[bestIdx]!;
+          t.freq += freqCoefPerHop * (hz - t.freq);
+          t.ampTarget = amp;
+          matched[bestIdx] = true;
+          continue;
+        }
+        let birthIdx = -1;
+        for (let ti = 0; ti < CALLSINE_N_TRACKS; ti++) {
+          if (!tracks[ti]!.alive) {
+            birthIdx = ti;
+            break;
+          }
+        }
+        if (birthIdx < 0) continue;
+        const t = tracks[birthIdx]!;
+        t.freq = hz;
+        t.ampTarget = amp;
+        t.alive = true;
+        matched[birthIdx] = true;
+      }
+      for (let ti = 0; ti < CALLSINE_N_TRACKS; ti++) {
+        const t = tracks[ti]!;
+        if (t.alive && !matched[ti]) {
+          t.ampTarget = 0;
+          t.alive = false;
+        }
+      }
+      samplesSinceHop = 0;
+    }
+
+    // Render.
+    let sample = 0;
+    for (let ti = 0; ti < CALLSINE_N_TRACKS; ti++) {
+      const t = tracks[ti]!;
+      if (!t.alive && t.amp < 1e-7 && t.ampTarget < 1e-9) continue;
+      t.amp += ampCoef * (t.ampTarget - t.amp);
+      const effFreq = t.freq * transposeRatio;
+      if (effFreq > 0) {
+        let p = t.phase + effFreq * invSr;
+        if (p >= 1) p -= Math.floor(p);
+        t.phase = p;
+      }
+      let aliasGain = 1;
+      if (effFreq <= 0 || effFreq >= aliasCutoff) aliasGain = 0;
+      else if (effFreq > aliasRampStart) aliasGain = (aliasCutoff - effFreq) / aliasRampSpan;
+      if (aliasGain <= 0 || t.amp <= 1e-6) continue;
+      const dt = effFreq * invSr;
+      sample += t.amp * aliasGain * _renderVoice(t.phase, dt, model);
+    }
+    out[i] = sample * level;
+  }
+
+  return out;
+}
+
+export interface CallsineParams {
+  /** 0=SINES, 1=SAW. Rounded to integer in render. */
+  model: number;
+  /** Semitones offset on top of pitchV. */
+  note: number;
+  /** 0..1 → partials count (1..N_TRACKS). */
+  harmonics: number;
+  /** 0..1 → slew time (5 ms..2 s, log curve). */
+  timbre: number;
+  /** 0..1 → harmonic-lock strength. */
+  morph: number;
+  /** 0..1 → output gain. */
+  level: number;
+  /** V/oct pitch shift (1 unit = 1 octave). */
+  pitchV: number;
+}
+
+/** Pure-math helpers exported for unit tests + ART. */
+export const callsineMath = {
+  /** Hann window of length N. */
+  hannWindow: _hannWindow,
+  /** O(N²) DFT magnitudes for testing — same bins as the worklet's FFT. */
+  dftMagnitudes: _dftMagnitudes,
+  /** Run one analysis frame; returns sorted peak list + F0. */
+  analyzeFrame: _analyzeFrameForTest,
+  /** Full end-to-end render (analysis + bank + transpose + level). */
+  render: _renderMirror,
+  /** Map a timbre macro 0..1 to slew seconds (5 ms..2 s log curve). */
+  timbreToSlewSec(t: number): number {
+    const v = Math.max(0, Math.min(1, t));
+    return 0.005 * Math.pow(400, v);
+  },
+  /** Map a harmonics macro 0..1 to partial count 1..N_TRACKS. */
+  harmonicsToPartials(h: number): number {
+    const v = Math.max(0, Math.min(1, h));
+    return Math.max(1, Math.min(CALLSINE_N_TRACKS, Math.round(v * CALLSINE_N_TRACKS)));
+  },
+};
+
+export const callsineDef: AudioModuleDef = {
+  type: 'callsine',
+  domain: 'audio',
+  label: 'CALLSINE',
+  // CallSine is fundamentally audio-in → audio-out (a resynth, not a
+  // synth), so the category is 'effects' for sub-classification under
+  // module-categories.ts (we put it in Hybrid → Hybrid because it also
+  // exposes a freeze-gated audio source. See module-categories.ts.).
+  category: 'effects',
+  schemaVersion: 1,
+  ossAttribution: { author: 'callsine contributors (Warren\'s Spectrum)' },
+
+  inputs: [
+    // Audio under analysis. Mono.
+    { id: 'audio_in', type: 'audio' },
+    // V/oct → transposes the entire resynth output post-analysis.
+    { id: 'pitch',    type: 'pitch' },
+    // Rising edge TOGGLES the FREEZE latch (mirrors CallSine's FREEZE
+    // button). Hold to glitch-stutter; tap to freeze the current bank.
+    { id: 'gate',     type: 'gate' },
+    // CV → AudioParam fast paths.
+    { id: 'model_cv', type: 'cv', paramTarget: 'model',     cvScale: { mode: 'discrete' } },
+    { id: 'note_cv',  type: 'cv', paramTarget: 'note',      cvScale: { mode: 'linear' } },
+    { id: 'harm_cv',  type: 'cv', paramTarget: 'harmonics', cvScale: { mode: 'linear' } },
+    { id: 'timb_cv',  type: 'cv', paramTarget: 'timbre',    cvScale: { mode: 'linear' } },
+    { id: 'morph_cv', type: 'cv', paramTarget: 'morph',     cvScale: { mode: 'linear' } },
+    { id: 'level_cv', type: 'cv', paramTarget: 'level',     cvScale: { mode: 'linear' } },
+  ],
+  outputs: [
+    { id: 'out', type: 'audio' },
+  ],
+  params: [
+    { id: 'model',     label: 'Model',     defaultValue: 0,   min: 0,   max: CALLSINE_MAX_MODEL, curve: 'discrete' },
+    { id: 'note',      label: 'Note',      defaultValue: 0,   min: -60, max: 60, curve: 'linear', units: 'st' },
+    { id: 'harmonics', label: 'Harmonics', defaultValue: 0.6, min: 0,   max: 1,  curve: 'linear' },
+    { id: 'timbre',    label: 'Timbre',    defaultValue: 0.4, min: 0,   max: 1,  curve: 'linear' },
+    { id: 'morph',     label: 'Morph',     defaultValue: 0.0, min: 0,   max: 1,  curve: 'linear' },
+    { id: 'level',     label: 'Level',     defaultValue: 0.8, min: 0,   max: 1,  curve: 'linear' },
+  ],
+
+  async factory(ctx, node): Promise<AudioDomainNodeHandle> {
+    if (!loadedContexts.has(ctx)) {
+      await ctx.audioWorklet.addModule(workletUrl);
+      loadedContexts.add(ctx);
+    }
+
+    // Three audio-rate inputs: audio (0), pitch (1), gate (2). Single mono
+    // output. The CV → AudioParam routings ride into input 0 (the engine
+    // attaches them to the AudioParam directly via the `param:` field on
+    // the input map below; the node reference is just bookkeeping).
+    const workletNode = new AudioWorkletNode(ctx, 'callsine', {
+      numberOfInputs: 3,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+
+    const params = workletNode.parameters as unknown as Map<string, AudioParam>;
+    for (const def of callsineDef.params) {
+      const v = (node.params ?? {})[def.id] ?? def.defaultValue;
+      params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
+    }
+
+    return {
+      domain: 'audio',
+      inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
+        ['audio_in', { node: workletNode, input: 0 }],
+        ['pitch',    { node: workletNode, input: 1 }],
+        ['gate',     { node: workletNode, input: 2 }],
+        ['model_cv', { node: workletNode, input: 0, param: params.get('model')! }],
+        ['note_cv',  { node: workletNode, input: 0, param: params.get('note')! }],
+        ['harm_cv',  { node: workletNode, input: 0, param: params.get('harmonics')! }],
+        ['timb_cv',  { node: workletNode, input: 0, param: params.get('timbre')! }],
+        ['morph_cv', { node: workletNode, input: 0, param: params.get('morph')! }],
+        ['level_cv', { node: workletNode, input: 0, param: params.get('level')! }],
+      ]),
+      outputs: new Map([
+        ['out', { node: workletNode, output: 0 }],
+      ]),
+      setParam(paramId, value) {
+        params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
+      },
+      readParam(paramId) {
+        return params.get(paramId)?.value;
+      },
+      dispose() {
+        try { workletNode.disconnect(); } catch { /* */ }
+      },
+    };
+  },
+};

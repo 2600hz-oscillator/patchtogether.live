@@ -371,7 +371,13 @@ type StandardModuleType =
   // (w/a/s/d/space/ctrl/alt) edge-detect into the engine's key queue;
   // stereo audio outputs route via the video→audio bridge (silent
   // until the slice-8 audio path lands). maxInstances: 1.
-  | 'doom';
+  | 'doom'
+  // CALLSINE — spectral-analysis additive resynthesizer (algorithm port of
+  // Warren's Spectrum / CallSine, MIT-licensed). audio in → STFT → tracked
+  // sinusoidal peaks → additive bank (up to 64 oscillators). v1 ships two
+  // voice models (SINES, SAW); scaffolded for 12+ follow-up models. Gate
+  // input toggles FREEZE (latches the current spectrum).
+  | 'callsine';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

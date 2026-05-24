@@ -123,6 +123,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   destroy: { top: 'Audio modules', sub: 'Effects' },
   shimmershine: { top: 'Audio modules', sub: 'Effects' },
   qbrt: { top: 'Audio modules', sub: 'Effects' },
+  // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
+  // Audio-in → audio-out → fundamentally an effect, even though it can
+  // also act as a freeze-gated source when patched into its own feedback.
+  callsine: { top: 'Audio modules', sub: 'Effects' },
   // blades, warps, clouds → moved to Ports/Mutable.
   // cloudseed → moved to Ports (top-level).
 

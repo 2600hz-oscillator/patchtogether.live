@@ -69,6 +69,8 @@ import { wavesculptDef } from './wavesculpt';
 import { slewSwitchDef } from './slewswitch';
 import { atlantisCatalystDef } from './atlantis-catalyst';
 import { aquaTankDef } from './aquatank';
+// CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
+import { callsineDef } from './callsine';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -150,6 +152,9 @@ export function registerAudioModules(): void {
   registerModule(atlantisCatalystDef);
   // AQUATANK — 4-channel Hadamard FDN feedback matrix (metallic resonance).
   registerModule(aquaTankDef);
+  // CALLSINE — spectral-analysis additive resynth. audio in → STFT →
+  // tracked partials → additive bank. MIT (Warren's Spectrum port).
+  registerModule(callsineDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
