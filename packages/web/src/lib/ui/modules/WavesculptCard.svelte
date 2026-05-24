@@ -1287,10 +1287,29 @@ void main() {
 
   // Video mode: 0 = PROXIMITY (3D ribbons inside the unit cube),
   // 1 = BIRDSEYE (top-down 2D floorplan of the unit cube showing
-  // the 4 emitters + camera + audio-energy ripples). Picked via the
-  // discrete video_mode param; the on-card View toggle button writes
-  // it.
+  // the 4 emitters + camera + audio-energy ripples),
+  // 2 = SPECTROGRAPH (scrolling STFT of the combined audio output —
+  // log-Hz vertical axis, time scrolling right-to-left). Picked via
+  // the discrete video_mode param; the on-card View toggle button
+  // cycles through all three options.
   let video_mode = $derived(pget('video_mode'));
+
+  // ---- SPECTROGRAPH state ----
+  // Circular column buffer of dB magnitude values. SPEC_W columns of
+  // SPEC_H log-binned rows. The newest column is written each tick at
+  // `specWriteCol`; the canvas blit shifts columns left visually. Kept
+  // here (not inside drawSpectrograph) so the buffer persists between
+  // frames — the whole point of a spectrograph is the scrolling history.
+  const SPEC_W = 256;
+  const SPEC_H = 128;
+  // Init to a low-floor value so the texture starts as "silence" black,
+  // not garbage memory. Web Audio's getFloatFrequencyData uses dBFS
+  // (~-100..0); we clamp display to [-90 .. -10].
+  const specBuf = new Float32Array(SPEC_W * SPEC_H).fill(-100);
+  let specWriteCol = 0;
+  // Pre-allocate the ImageData buffer reused every frame for the column
+  // write — avoids per-frame GC.
+  let specImageData: ImageData | null = null;
 
   /** Draw the BIRDSEYE 2D view directly onto the display canvas. The
    *  view is a top-down look at the unit cube (XZ plane) — Y axis
@@ -1431,6 +1450,134 @@ void main() {
     ctx2d.fillText('BIRDSEYE', left + 4, top + 12);
   }
 
+  /** Map a normalised magnitude m in [0..1] to an RGB heatmap (dark
+   *  blue → cyan → yellow → red). Inlined arithmetic so it stays fast
+   *  inside the per-pixel column-write loop. */
+  function heatmapRgb(m: number): [number, number, number] {
+    const v = Math.max(0, Math.min(1, m));
+    if (v < 0.25) {
+      // Black → dark blue
+      const t = v / 0.25;
+      return [0, 0, Math.round(80 + t * 100)];
+    }
+    if (v < 0.5) {
+      // Blue → cyan
+      const t = (v - 0.25) / 0.25;
+      return [0, Math.round(t * 200), Math.round(180 + t * 75)];
+    }
+    if (v < 0.75) {
+      // Cyan → yellow
+      const t = (v - 0.5) / 0.25;
+      return [Math.round(t * 255), Math.round(200 + t * 55), Math.round(255 - t * 255)];
+    }
+    // Yellow → red
+    const t = (v - 0.75) / 0.25;
+    return [255, Math.round(255 - t * 255), 0];
+  }
+
+  /** Draw the SPECTROGRAPH view. Pulls the latest FFT bin magnitudes
+   *  from the audio module (engine.read(node, 'spectrum') returns
+   *  Float32Array of dBFS values + sampleRate + fftSize), log-bins them
+   *  into SPEC_H perceptual rows (20Hz..20kHz), writes the new column at
+   *  specWriteCol, then blits the circular buffer to the canvas with the
+   *  newest column on the right.
+   *
+   *  Performance: O(SPEC_H + SPEC_W * SPEC_H) per frame. SPEC_W=256,
+   *  SPEC_H=128 — single-frame ImageData of 256×128 = 128 KB pixels;
+   *  ~2-3 ms on a current laptop. Cheap. */
+  function drawSpectrograph(ctx2d: CanvasRenderingContext2D, cw: number, ch: number): void {
+    const eng = engineCtx.get();
+    const spec = eng && node ? (eng.read(node, 'spectrum') as
+      | { bins: Float32Array; sampleRate: number; fftSize: number }
+      | undefined) : undefined;
+
+    if (spec) {
+      // Log-bin the FFT into SPEC_H rows spanning [20 Hz .. 20 kHz].
+      // The audio source is busL after master gain — its sample rate is
+      // ctx.sampleRate. Bin k of an fftSize-length FFT covers
+      // (k * sampleRate / fftSize) Hz. We map row r → target Hz, then
+      // pick the FFT bin nearest to that Hz; for rows whose Hz < bin0
+      // resolution, this gracefully clamps to bin 1 (DC is skipped).
+      const F_LO = 20;
+      const F_HI = Math.min(20000, spec.sampleRate * 0.5);
+      const logLo = Math.log(F_LO);
+      const logHi = Math.log(F_HI);
+      const binCount = spec.bins.length;
+      const hzPerBin = spec.sampleRate / spec.fftSize;
+      // Write into the circular column. Row 0 = top of canvas = high
+      // Hz, row SPEC_H-1 = bottom = low Hz (matches the "vertical axis
+      // = frequency, log scale" spec, low at the bottom).
+      for (let r = 0; r < SPEC_H; r++) {
+        const t = 1 - r / (SPEC_H - 1); // 0 at bottom, 1 at top
+        const hz = Math.exp(logLo + t * (logHi - logLo));
+        const binIdx = Math.max(1, Math.min(binCount - 1, Math.round(hz / hzPerBin)));
+        specBuf[specWriteCol * SPEC_H + r] = spec.bins[binIdx] ?? -100;
+      }
+      specWriteCol = (specWriteCol + 1) % SPEC_W;
+    }
+
+    // Blit the circular buffer into an ImageData. Newest column lives
+    // at specWriteCol-1; we walk SPEC_W columns leftward from there so
+    // the rightmost screen column is the freshest data.
+    if (!specImageData) {
+      // Fall back to manual buffer if createImageData fails on this
+      // canvas (shouldn't happen for a 2D context, but defensive).
+      try { specImageData = ctx2d.createImageData(SPEC_W, SPEC_H); }
+      catch { return; }
+    }
+    const img = specImageData;
+    const data = img.data;
+    // Display range: -90 dBFS (very quiet) → -10 dBFS (loud). Normalize
+    // to [0..1] for the heatmap. Linear-in-dB feels more natural than
+    // mapping the raw amplitude (which would crush quiet content).
+    const DB_LO = -90;
+    const DB_HI = -10;
+    const dbRange = DB_HI - DB_LO;
+    for (let x = 0; x < SPEC_W; x++) {
+      // Source column = (specWriteCol - SPEC_W + x) mod SPEC_W; the
+      // oldest column lives at specWriteCol, the newest at
+      // specWriteCol-1 mod SPEC_W.
+      const srcCol = (specWriteCol + x) % SPEC_W;
+      for (let y = 0; y < SPEC_H; y++) {
+        const db = specBuf[srcCol * SPEC_H + y] ?? -100;
+        const norm = (db - DB_LO) / dbRange;
+        const [rr, gg, bb] = heatmapRgb(norm);
+        const o = (y * SPEC_W + x) * 4;
+        data[o]     = rr;
+        data[o + 1] = gg;
+        data[o + 2] = bb;
+        data[o + 3] = 255;
+      }
+    }
+
+    // Black background outside the spectrograph blit region.
+    ctx2d.fillStyle = '#050608';
+    ctx2d.fillRect(0, 0, cw, ch);
+    // Scale the ImageData to fill the canvas via an offscreen step
+    // (putImageData ignores transforms — so paint into a 1:1 buffer on
+    // a private detached canvas, then drawImage that with scaling).
+    if (!spectrographScratch) {
+      spectrographScratch = document.createElement('canvas');
+      spectrographScratch.width = SPEC_W;
+      spectrographScratch.height = SPEC_H;
+    }
+    const scratchCtx = spectrographScratch.getContext('2d');
+    if (!scratchCtx) return;
+    scratchCtx.putImageData(img, 0, 0);
+    // Stretch to fill the display canvas.
+    ctx2d.imageSmoothingEnabled = true;
+    ctx2d.drawImage(spectrographScratch, 0, 0, SPEC_W, SPEC_H, 0, 0, cw, ch);
+
+    // Mode label, top-left.
+    ctx2d.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx2d.font = '9px ui-monospace, Menlo, monospace';
+    ctx2d.fillText('SPECTROGRAPH', 6, 14);
+  }
+  // Detached scratch canvas for the spectrograph ImageData→scaled-blit
+  // path. Lives at module scope (well, instance scope via let) so it's
+  // built once and reused every frame.
+  let spectrographScratch: HTMLCanvasElement | null = null;
+
   function tick() {
     rafId = null;
     const mode = Math.round(video_mode);
@@ -1441,6 +1588,18 @@ void main() {
         const dc2 = displayCanvas.getContext('2d', { alpha: false });
         if (dc2) {
           drawBirdseye(dc2, displayCanvas.width, displayCanvas.height, performance.now());
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+      return;
+    }
+    if (mode === 2) {
+      // SPECTROGRAPH — pure-2D draw, taps the audio module's
+      // dedicated AnalyserNode via engine.read(node, 'spectrum').
+      if (displayCanvas) {
+        const dc2 = displayCanvas.getContext('2d', { alpha: false });
+        if (dc2) {
+          drawSpectrograph(dc2, displayCanvas.width, displayCanvas.height);
         }
       }
       rafId = requestAnimationFrame(tick);
@@ -1723,20 +1882,24 @@ void main() {
         </div>
 
         <div class="right-controls">
-          <!-- VIEW toggle: PROXIMITY (3D ribbons, original render) vs
-               BIRDSEYE (top-down 2D floorplan showing the spatial
-               system: 4 emitter dots + camera marker + audio-energy
-               ripples). Click cycles. The 3D mode is the gorgeous
-               default; BIRDSEYE is useful when you're tweaking the
-               camera + want to SEE what the spatial system is doing. -->
+          <!-- VIEW toggle cycles through three render modes:
+               0 = PROXIMITY (3D ribbons, original render),
+               1 = BIRDSEYE (top-down 2D floorplan showing the spatial
+                   system: 4 emitter dots + camera marker + audio-energy
+                   ripples),
+               2 = SPECTROGRAPH (scrolling STFT of the combined audio
+                   output — log-Hz vertical axis, time scrolling
+                   right-to-left). 3D is the gorgeous default; BIRDSEYE
+                   is useful when tweaking the camera; SPECTROGRAPH is
+                   the dogfood audio-analysis view. -->
           <button
             type="button"
             class="unison-toggle view-toggle"
-            class:on={video_mode >= 0.5}
+            class:on={Math.round(video_mode) !== 0}
             data-testid="wavesculpt-view-toggle"
-            title="View mode: PROXIMITY (3D ribbons) vs BIRDSEYE (top-down floorplan)"
-            onclick={() => set('video_mode')(video_mode >= 0.5 ? 0 : 1)}
-          >{video_mode >= 0.5 ? 'BIRDSEYE' : '3D'}</button>
+            title="View mode: PROXIMITY (3D ribbons) / BIRDSEYE (top-down floorplan) / SPECTROGRAPH (scrolling STFT)"
+            onclick={() => set('video_mode')((Math.round(video_mode) + 1) % 3)}
+          >{Math.round(video_mode) === 0 ? '3D' : Math.round(video_mode) === 1 ? 'BIRDSEYE' : 'SPECTRO'}</button>
           <button
             type="button"
             class="unison-toggle"

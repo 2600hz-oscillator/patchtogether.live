@@ -401,6 +401,107 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     expect(params.t3).toBe(0.1);
   });
 
+  test('video_mode=2 SPECTROGRAPH renders non-zero pixels (scrolling STFT)', async ({ page }) => {
+    // Switching the discrete video_mode param to 2 should activate the
+    // SPECTROGRAPH render path: a circular column buffer of FFT
+    // magnitudes blitted to the canvas. We assert the canvas contains
+    // non-bg pixels after a few rAF frames — the heatmap renders even
+    // for silence (the -100dB floor lands in the bottom of the
+    // [-90..-10] dB display range = dark blue, not pure black).
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
+    ]);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+
+    // Flip video_mode to 2 (SPECTROGRAPH) via the patch store directly
+    // — cheaper than driving the view-toggle button through two clicks.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['ws'];
+        if (n) n.params.video_mode = 2;
+      });
+    });
+
+    // Poll for non-bg pixels (heatmap minimum is dark blue, well above
+    // pure black). Same polling shape as the ribbons-render test.
+    await expect
+      .poll(async () => {
+        return page.evaluate(() => {
+          const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+          if (!c) return false;
+          const ctx = c.getContext('2d');
+          if (!ctx) return false;
+          const data = ctx.getImageData(0, 0, c.width, c.height).data;
+          // Look for any pixel with B > 50 (the heatmap's silence floor
+          // is dark blue, ~rgb(0,0,80..180)). Pure-bg pixels are
+          // rgb(5,6,8) — B value of 8 — so the threshold cleanly
+          // separates spectrograph paint from background fill.
+          for (let i = 0; i < data.length; i += 4 * 16) {
+            const b = data[i + 2] ?? 0;
+            if (b > 50) return true;
+          }
+          return false;
+        });
+      }, {
+        message: 'SPECTROGRAPH never rendered (canvas stayed bg-only for 3s)',
+        timeout: 3_000,
+        intervals: [100, 200, 400],
+      })
+      .toBe(true);
+
+    // Sanity: the view-toggle button cycles into SPECTRO label when
+    // video_mode = 2 (verifies the UI stays in sync with the param).
+    const label = await page.locator('[data-testid="wavesculpt-view-toggle"]').textContent();
+    expect(label?.trim()).toBe('SPECTRO');
+  });
+
+  test('view-toggle cycles 3D → BIRDSEYE → SPECTRO → 3D', async ({ page }) => {
+    // The single VIEW button click-cycles through all three video
+    // modes. Verify each click bumps the video_mode param and the
+    // label updates accordingly.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
+    ]);
+
+    const btn = page.locator('[data-testid="wavesculpt-view-toggle"]');
+    await expect(btn).toHaveCount(1);
+
+    const readMode = (): Promise<number> => page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+      };
+      return w.__patch.nodes['ws']?.params.video_mode ?? 0;
+    });
+
+    expect(await readMode(), 'starts at PROXIMITY').toBe(0);
+    expect((await btn.textContent())?.trim()).toBe('3D');
+
+    await btn.click();
+    await page.waitForTimeout(60);
+    expect(await readMode(), 'after 1st click → BIRDSEYE').toBe(1);
+    expect((await btn.textContent())?.trim()).toBe('BIRDSEYE');
+
+    await btn.click();
+    await page.waitForTimeout(60);
+    expect(await readMode(), 'after 2nd click → SPECTROGRAPH').toBe(2);
+    expect((await btn.textContent())?.trim()).toBe('SPECTRO');
+
+    await btn.click();
+    await page.waitForTimeout(60);
+    expect(await readMode(), 'after 3rd click wraps back to PROXIMITY').toBe(0);
+    expect((await btn.textContent())?.trim()).toBe('3D');
+  });
+
   test('bentscreen wiggle knobs route through the patch store', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
