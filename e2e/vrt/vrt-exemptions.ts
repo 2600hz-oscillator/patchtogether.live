@@ -103,11 +103,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // surface beyond what VEILS already exercises; baseline can be promoted
   // in a follow-up. Same rationale as VEILS.
   attenumix: 'VRT baseline pending; ART + unit + E2E provide coverage',
-  // WAVECEL restored in PR #246 after deletion in #220. The pre-deletion
-  // baseline pngs were checked back in, but the card now imports from
-  // wavetable-factory-tables (renamed) and renders slightly differently
-  // — re-capture the baseline in a follow-up PR.
-  wavecel: 'VRT baseline re-capture pending after #246 restore; unit + ART + E2E cover behavior',
   // CLOUDSEED first-slice PR: VRT baseline pending; complex card (4 panels
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.
