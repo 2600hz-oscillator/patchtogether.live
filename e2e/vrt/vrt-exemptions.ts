@@ -196,6 +196,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (doom-runtime, doom-presence, cv-gate-edge); a multi-tab e2e for
   // host migration + spectator-frame relay is the follow-up.
   doom: 'live game-loop framebuffer defeats deterministic capture; unit suites cover TS shim + presence + CV-gate edge detector',
+  // CALLSINE first-slice PR: VRT baseline pending; unit + ART + E2E
+  // provide coverage. Card is a standard 6-fader layout (model + 5
+  // continuous macros) — pinning baselines in a follow-up PR after
+  // any UI tweaks.
+  callsine: 'VRT baseline pending; unit + ART + E2E provide coverage. Standard 6-fader card — pinning baselines in a follow-up PR.',
 };
 
 /** Per-(platform, type) baselines intentionally missing while a follow-
