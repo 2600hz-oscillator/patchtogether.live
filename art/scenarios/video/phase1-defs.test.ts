@@ -64,9 +64,12 @@ describe('ART video Phase-1 — module def stability', () => {
     expect(orient?.max).toBe(1);
   });
 
-  it('CHROMA tolerance default stable: 0.4 (green-screen tuning)', () => {
+  it('CHROMA threshold default stable: 0.2 (green-screen tuning, v2 HSV keyer)', () => {
+    // v2 schema renamed `tolerance` → `threshold`. The default was
+    // re-tuned from 0.4 (RGB-distance era) to 0.2 (HSV-hue-distance) so
+    // a fresh CHROMA still keys a green-screen cleanly on default knobs.
     const def = getVideoModuleDef('chroma')!;
-    const tol = def.params.find((p) => p.id === 'tolerance');
-    expect(tol?.defaultValue).toBe(0.4);
+    const th = def.params.find((p) => p.id === 'threshold');
+    expect(th?.defaultValue).toBe(0.2);
   });
 });
