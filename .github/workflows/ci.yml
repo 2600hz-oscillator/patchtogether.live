@@ -10,15 +10,17 @@ name: CI
 #   typecheck       ~30 s  | independent setup
 #   unit            ~90 s  | independent setup (server + web vitest)
 #   art             ~90 s  | independent setup (+ dsp:build)
-#   e2e (× 4)     ~5-6 min | matrix shards 1..4/4, blob reporter, own setup each
-#   merge-reports   ~30 s  | needs: e2e — merges 4 blob-reports → HTML
+#   e2e (× 8)     ~3-4 min | matrix shards 1..8/8, blob reporter, own setup each
+#   merge-reports   ~30 s  | needs: e2e — merges 8 blob-reports → HTML
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
 #   vrt             ~3-5 min | unchanged
 #
 # Critical path: max(typecheck, unit, art, slowest-e2e-shard) + merge-reports
-# ≈ 7-8 min, vs the previous ~22 min single-runner pipeline. Setup is repeated
+# ≈ 4-5 min, vs the previous ~22 min single-runner pipeline. Setup is repeated
 # per-job (npm cache makes it ~70 s each), which is the deliberate trade-off
-# the plan accepted in exchange for parallelism.
+# the plan accepted in exchange for parallelism. Free-tier concurrency cap
+# is 20 concurrent jobs; the full pipeline tops out at ~14 (8 e2e + typecheck
+# + unit + art + vrt + merge-reports + ci), still under cap.
 #
 # Branch ruleset note: the "main: green PRs only" ruleset (id 16042163)
 # requires the status check `typecheck + unit + ART + E2E`. The `ci` umbrella
@@ -161,28 +163,28 @@ jobs:
         run: flox activate -- task art
 
   # -----------------------------------------------------------------------
-  # e2e — Playwright E2E suite, sharded 4 ways. Each shard runs ~1/4 of the
+  # e2e — Playwright E2E suite, sharded 8 ways. Each shard runs ~1/8 of the
   # 812 specs (file-level distribution) with 4 workers, on its own runner.
-  # Per-shard wall-time ~5-6 min vs the previous ~20 min single-runner.
+  # Per-shard wall-time ~3-4 min vs the previous ~5-6 min at 4 shards.
   #
-  # Reporter is `blob` so we can merge all 4 shards into a single HTML report
+  # Reporter is `blob` so we can merge all 8 shards into a single HTML report
   # via the `merge-reports` job. Each shard uploads its blob artifact;
   # merge-reports downloads them all and runs `playwright merge-reports`.
   #
   # DB schema + DOOM assets are needed (same as the previous monolithic job).
   # -----------------------------------------------------------------------
   e2e:
-    name: e2e (shard ${{ matrix.shard }}/4)
+    name: e2e (shard ${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     strategy:
       # Don't fail-fast: if shard 1 fails on a flake, we still want shards
-      # 2-4 to surface independent failures in the same run rather than
+      # 2-8 to surface independent failures in the same run rather than
       # forcing two consecutive CI cycles to triage.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
 
     services:
       # Postgres for the persistence layer (Stage B1+). Both the SvelteKit
@@ -294,10 +296,10 @@ jobs:
       - name: Build DSP
         run: flox activate -- task dsp:build
 
-      - name: Run E2E (shard ${{ matrix.shard }}/4, blob reporter)
+      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter)
         run: |
           flox activate -- npx --workspace e2e playwright test \
-            --shard=${{ matrix.shard }}/4 \
+            --shard=${{ matrix.shard }}/8 \
             --reporter=blob
 
       - name: Upload blob report (shard ${{ matrix.shard }})
@@ -320,13 +322,21 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
-  # merge-reports — downloads all 4 e2e blob artifacts and merges them into
+  # merge-reports — downloads all 8 e2e blob artifacts and merges them into
   # a single HTML report. Uploaded as `playwright-report` so the artifact
   # name matches what reviewers expect (and what the previous monolithic
   # workflow uploaded).
   #
   # `if: always()` so we still get a merged report even if one shard failed
   # — that's the whole point of an aggregated dashboard for triage.
+  #
+  # Path note (bug fixed 2026-05-24): `npx --workspace e2e playwright ...`
+  # runs Playwright with cwd = e2e/, so any relative path passed on the CLI
+  # resolves relative to e2e/, not the repo root. We therefore download the
+  # blob artifacts INTO e2e/all-blob-reports/ and pass `./all-blob-reports`
+  # (which Playwright resolves to e2e/all-blob-reports). The previous version
+  # downloaded to repo-root ./all-blob-reports and failed with
+  # `Error: Directory does not exist: .../e2e/all-blob-reports`.
   # -----------------------------------------------------------------------
   merge-reports:
     name: Merge Playwright reports
@@ -358,7 +368,10 @@ jobs:
       - name: Download blob reports
         uses: actions/download-artifact@v4
         with:
-          path: all-blob-reports
+          # Download into e2e/all-blob-reports so the merge-reports step
+          # below (which runs with cwd=e2e/ via --workspace e2e) finds
+          # them at the relative path `./all-blob-reports`.
+          path: e2e/all-blob-reports
           pattern: blob-report-*
           merge-multiple: true
 
