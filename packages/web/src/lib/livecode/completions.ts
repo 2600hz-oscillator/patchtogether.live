@@ -32,6 +32,8 @@ import {
   listNamespaceMembers,
   listModuleProxyFields,
 } from './api-surface';
+import { listModuleDefs as listAudioModuleDefs } from '$lib/audio/module-registry';
+import { listVideoModuleDefs } from '$lib/video/module-registry';
 
 export interface CompletionEnvironment {
   liveNodes: Record<string, ModuleNode | undefined>;
@@ -45,7 +47,11 @@ export function makeCompletionSource(envFn: () => CompletionEnvironment) {
   return (ctx: CompletionContext): CompletionResult | null => {
     const env = envFn();
 
-    // 1) Inside a string argument of patch()/unpatch()? Filter by type.
+    // 1) Inside the first string arg of spawn()? Suggest module types.
+    const spawnArgHint = detectSpawnArgContext(ctx);
+    if (spawnArgHint) return spawnArgHint;
+
+    // 2) Inside a string argument of patch()/unpatch()? Filter by type.
     const patchArgHint = detectPatchArgContext(ctx, env);
     if (patchArgHint) return patchArgHint;
 
@@ -169,6 +175,45 @@ function detectPatchArgContext(
     return { from, options: [{ label: partial || '— no compatible ports —', type: 'text', boost: -10 }], validFor: /^[A-Za-z0-9_.]*$/ };
   }
   return { from, options, validFor: /^[A-Za-z0-9_.]*$/ };
+}
+
+/** Returns a completion result when cursor sits inside the first string
+ *  argument of spawn(): `spawn('|` or `spawn('foo|`. Suggests every
+ *  registered module type (audio + video) with its label + category as
+ *  detail. Unlike port-ref completions, this list is static per session. */
+function detectSpawnArgContext(ctx: CompletionContext): CompletionResult | null {
+  const before = ctx.state.sliceDoc(Math.max(0, ctx.pos - 60), ctx.pos);
+  const m = /\bspawn\s*\(\s*(?:'|"|`)([A-Za-z0-9_]*)$/.exec(before);
+  if (!m) return null;
+  const partial = m[1] ?? '';
+  const from = ctx.pos - partial.length;
+  const partLow = partial.toLowerCase();
+
+  const options: Completion[] = [];
+  for (const def of listAudioModuleDefs()) {
+    if (!def.type.toLowerCase().includes(partLow)) continue;
+    options.push({
+      label: def.type,
+      type: 'class',
+      detail: def.category,
+      info: `${def.label} (audio · ${def.category})`,
+      boost: 5,
+    });
+  }
+  for (const def of listVideoModuleDefs()) {
+    if (!def.type.toLowerCase().includes(partLow)) continue;
+    options.push({
+      label: def.type,
+      type: 'class',
+      detail: def.category,
+      info: `${def.label} (video · ${def.category})`,
+      boost: 5,
+    });
+  }
+  if (options.length === 0) {
+    return { from, options: [{ label: partial || '— no module types —', type: 'text', boost: -10 }], validFor: /^[A-Za-z0-9_]*$/ };
+  }
+  return { from, options, validFor: /^[A-Za-z0-9_]*$/ };
 }
 
 /** Returns a completion result for `someName.|` — namespace members,
