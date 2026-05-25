@@ -158,8 +158,15 @@ test.describe('video orientation — SHAPES triangle reference', () => {
       };
       const eng = w.__engine?.();
       const ve = eng?.getDomain('video');
-      const extras = ve?.read('doom', 'extras') as { pushRemoteFramebuffer: (b: Uint8Array) => void } | undefined;
+      const extras = ve?.read('doom', 'extras') as {
+        pushRemoteFramebuffer: (b: Uint8Array) => void;
+        setSpectating: (s: boolean) => void;
+      } | undefined;
       if (!extras) throw new Error('no DOOM extras');
+      // This test exercises the spectator render path (inject a host frame +
+      // verify it uploads). Mark the module spectating so pushRemoteFramebuffer
+      // is honoured (an active player ignores remote frames + ticks its own sim).
+      extras.setSpectating(true);
       const W = 640, H = 400;
       const buf = new Uint8Array(W * H * 4);
       for (let y = 0; y < H; y++) {

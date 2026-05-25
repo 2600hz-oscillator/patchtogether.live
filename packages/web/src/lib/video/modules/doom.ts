@@ -127,8 +127,19 @@ export interface DoomHandleExtras {
   snapshotFramebuffer(): Uint8ClampedArray | null;
   /** Spectator path: overwrite the displayed framebuffer with a remote
    *  one (received via Yjs awareness). Buffer must be BGRA8 at the
-   *  engine's expected DOOM resolution. */
+   *  engine's expected DOOM resolution. No-op (ignored) once this peer is
+   *  an active player (setSpectating(false)) so a late host-frame broadcast
+   *  can't freeze a joined player's own POV onto the host mirror. */
   pushRemoteFramebuffer(buf: Uint8Array): void;
+  /** Whether THIS peer is currently a spectator (no active slot). The card
+   *  drives this off its roster status. When false (an active player), the
+   *  module ticks + renders its OWN WASM and ignores any cached remote
+   *  framebuffer; when true, it renders the host's mirror. Defaults to false
+   *  (single-player / lone host runs its own sim). This is the fix for the
+   *  "joined player stuck on the slow host mirror" bug: a peer that received
+   *  host frames while spectating, then joined, must drop the mirror + run
+   *  its own real-time sim. */
+  setSpectating(spectating: boolean): void;
   /** Slice 4: launch a netgame on this peer's runtime with the agreed
    *  settings + this peer's slot. No-op if the runtime isn't loaded. */
   startNetGame(
@@ -266,9 +277,19 @@ export const doomDef: VideoModuleDef = {
     let loadError: string | null = null;
     let loadPending: Promise<string | null> | null = null;
     let hasFrame = false;
-    // Last-pushed remote framebuffer (spectator path). When non-null,
-    // we upload this every frame instead of polling the runtime.
+    // Last-pushed remote framebuffer (spectator path). When non-null AND
+    // this peer is spectating, we upload this every frame instead of polling
+    // the runtime.
     let remoteFramebuffer: Uint8Array | null = null;
+    // Whether this peer is a spectator (no active player slot). Defaults to
+    // false: a lone host / single-player runs its own sim. The card flips it
+    // true while spectating and back to false the moment this peer becomes an
+    // active player — at which point we drop any cached host-mirror frame so
+    // draw() resumes ticking + rendering this peer's OWN real-time sim. Without
+    // this, a peer that saw even one host frame while spectating would be
+    // pinned to the ~10 Hz host mirror forever (the "staggeringly slow,
+    // player-1's view" bug).
+    let isSpectator = false;
     let lastTicMs = performance.now();
 
     // Edge-detector state, one per CV gate port.
@@ -401,7 +422,18 @@ export const doomDef: VideoModuleDef = {
     }
 
     function pushRemoteFramebuffer(buf: Uint8Array): void {
+      // Only a spectator renders the host mirror. An active player ignores
+      // late host-frame broadcasts so it can never get pinned to the slow
+      // mirror after joining.
+      if (!isSpectator) return;
       remoteFramebuffer = buf;
+    }
+
+    function setSpectating(spectating: boolean): void {
+      isSpectator = spectating;
+      // Becoming an active player: drop the cached host mirror so draw()
+      // resumes ticking + rendering this peer's own real-time sim.
+      if (!spectating) remoteFramebuffer = null;
     }
 
     function uploadFramebufferToTexture(buf: Uint8Array | Uint8ClampedArray): void {
@@ -427,17 +459,20 @@ export const doomDef: VideoModuleDef = {
       fbo,
       texture,
       draw(frame) {
-        // 1. Run a tic on the host (if running, runtime loaded, no
-        //    remote-framebuffer override).
-        if (params.running > 0.5 && runtime && runtime.isInitialized() && !remoteFramebuffer) {
+        // 1. A spectator (no active slot) renders the host's mirror frame.
+        //    Everyone else — an active player OR a lone single-player host —
+        //    ticks + renders its OWN WASM in real time. The isSpectator gate
+        //    (not "did a remote frame ever arrive") is what guarantees a peer
+        //    that briefly spectated before joining resumes its own sim.
+        if (isSpectator && remoteFramebuffer) {
+          uploadFramebufferToTexture(remoteFramebuffer);
+        } else if (params.running > 0.5 && runtime && runtime.isInitialized()) {
           const now = performance.now();
           const msDelta = Math.max(1, Math.min(50, now - lastTicMs));
           lastTicMs = now;
           try { runtime.runTic(msDelta); } catch { /* */ }
           const fb = runtime.getFramebuffer();
           uploadFramebufferToTexture(fb);
-        } else if (remoteFramebuffer) {
-          uploadFramebufferToTexture(remoteFramebuffer);
         }
 
         // 2. Draw FBO.
@@ -481,6 +516,7 @@ export const doomDef: VideoModuleDef = {
       pushDoomKey,
       snapshotFramebuffer,
       pushRemoteFramebuffer,
+      setSpectating,
       startNetGame(settings, consolePlayer) {
         if (!runtime || !runtime.isInitialized()) return;
         runtime.startNetGame(settings, consolePlayer);
