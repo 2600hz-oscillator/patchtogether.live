@@ -43,6 +43,8 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
+  import { createFullscreen } from './use-fullscreen.svelte';
+  import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
 
@@ -87,6 +89,33 @@
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
+
+  // ---------- True fullscreen ----------
+  // The canvas-wrap is the element we fullscreen; it contains the live
+  // <canvas>. While fullscreen, CSS scales the canvas to fill the viewport
+  // (aspect-fit, black letterbox); the rAF blit keeps feeding it so the
+  // fullscreen view stays live.
+  const fs = createFullscreen();
+  let wrapEl: HTMLDivElement | null = $state(null);
+  $effect(() => {
+    fs.setTarget(wrapEl);
+  });
+  $effect(() => fs.attach());
+
+  // Right-click-on-canvas context menu (Fullscreen).
+  let ctxOpen = $state(false);
+  let ctxX = $state(0);
+  let ctxY = $state(0);
+  function onCanvasContextMenu(e: MouseEvent) {
+    // Claim the right-click on the video surface so it doesn't bubble to
+    // the SvelteFlow node menu (Docs / Duplicate / Delete). The canvas
+    // isn't a control surface, so there's nothing to steal.
+    e.preventDefault();
+    e.stopPropagation();
+    ctxX = e.clientX;
+    ctxY = e.clientY;
+    ctxOpen = true;
+  }
 
   /** Compute the aspect-fit destination rect for an engine-resolution
    *  source drawn into a (cw, ch) canvas. Returns top-left (x, y) and
@@ -210,11 +239,20 @@
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
   <span class="port-label right" style="top: 50px;">OUT</span>
 
-  <div class="canvas-wrap" style="width: {innerWidth}px; height: {innerHeight}px;">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    bind:this={wrapEl}
+    class="canvas-wrap"
+    class:fullscreen={fs.isFullscreen}
+    style="width: {fs.isFullscreen ? '100%' : innerWidth + 'px'}; height: {fs.isFullscreen ? '100%' : innerHeight + 'px'};"
+    data-testid="video-out-fs-wrap"
+    oncontextmenu={onCanvasContextMenu}
+  >
     <canvas
       bind:this={canvasEl}
       width={innerWidth}
       height={innerHeight}
+      style="aspect-ratio: {innerWidth} / {innerHeight};"
       data-testid="video-out-canvas"
       data-node-id={id}
     ></canvas>
@@ -231,6 +269,15 @@
     onpointerdown={onResizeStart}
   ></div>
 </div>
+
+<VideoCanvasContextMenu
+  bind:open={ctxOpen}
+  x={ctxX}
+  y={ctxY}
+  title="OUTPUT"
+  onfullscreen={() => void fs.enter()}
+  onclose={() => { ctxOpen = false; }}
+/>
 
 <style>
   .card {
@@ -298,6 +345,26 @@
     width: 100%;
     height: 100%;
     display: block;
+  }
+  /* TRUE fullscreen: the wrap IS the fullscreen element (filling the
+   * physical screen). Center the live canvas + scale it to fit with
+   * aspect preserved (object-fit:contain semantics for a <canvas>:
+   * max-width/height 100% + the inline aspect-ratio), black bars on the
+   * short axis. The rAF blit keeps feeding the same canvas. */
+  .canvas-wrap.fullscreen {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+  }
+  .canvas-wrap.fullscreen canvas {
+    border: none;
+    border-radius: 0;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    cursor: pointer;
   }
   .resize-handle {
     position: absolute;

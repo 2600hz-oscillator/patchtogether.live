@@ -18,6 +18,8 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
+  import { createFullscreen } from './use-fullscreen.svelte';
+  import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -65,6 +67,30 @@
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
+
+  // ---------- True fullscreen (mirrors VideoOutCard) ----------
+  // The screen-wrap is the fullscreen element; it holds the live <canvas>.
+  // CSS scales the canvas to fill the viewport aspect-fit while fullscreen;
+  // the rAF blit keeps running so the CRT view stays live.
+  const fs = createFullscreen();
+  let wrapEl: HTMLDivElement | null = $state(null);
+  $effect(() => {
+    fs.setTarget(wrapEl);
+  });
+  $effect(() => fs.attach());
+
+  let ctxOpen = $state(false);
+  let ctxX = $state(0);
+  let ctxY = $state(0);
+  function onCanvasContextMenu(e: MouseEvent) {
+    // Claim right-click on the CRT surface so the SvelteFlow node menu
+    // doesn't also fire; right-click on the knob area still falls through.
+    e.preventDefault();
+    e.stopPropagation();
+    ctxX = e.clientX;
+    ctxY = e.clientY;
+    ctxOpen = true;
+  }
 
   /** 4:3 letterbox inside the (cw, ch) container — BENTBOX is always
    *  shown in 4:3 to keep the CRT pixel aspect honest no matter what
@@ -198,11 +224,20 @@
   <header class="title">BENTBOX</header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <div class="screen-wrap" style="width: {innerWidth}px; height: {screenAreaH}px;">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      bind:this={wrapEl}
+      class="screen-wrap"
+      class:fullscreen={fs.isFullscreen}
+      style="width: {fs.isFullscreen ? '100%' : innerWidth + 'px'}; height: {fs.isFullscreen ? '100%' : screenAreaH + 'px'};"
+      data-testid="bentbox-fs-wrap"
+      oncontextmenu={onCanvasContextMenu}
+    >
       <canvas
         bind:this={canvasEl}
         width={innerWidth}
         height={screenAreaH}
+        style="aspect-ratio: {innerWidth} / {screenAreaH};"
         data-testid="bentbox-canvas"
         data-node-id={id}
       ></canvas>
@@ -234,6 +269,15 @@
     onpointerdown={onResizeStart}
   ></div>
 </div>
+
+<VideoCanvasContextMenu
+  bind:open={ctxOpen}
+  x={ctxX}
+  y={ctxY}
+  title="BENTBOX"
+  onfullscreen={() => void fs.enter()}
+  onclose={() => { ctxOpen = false; }}
+/>
 
 <style>
   .card.bentbox {
@@ -286,6 +330,24 @@
     width: 100%;
     height: 100%;
     display: block;
+  }
+  /* TRUE fullscreen: the screen-wrap fills the physical screen; center +
+   * aspect-fit the live canvas (object-fit:contain semantics), black bars
+   * on the short axis. rAF blit keeps feeding the canvas. */
+  .screen-wrap.fullscreen {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+  }
+  .screen-wrap.fullscreen canvas {
+    border: none;
+    border-radius: 0;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    cursor: pointer;
   }
   .knob-grid {
     display: grid;
