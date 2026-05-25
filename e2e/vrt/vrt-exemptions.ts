@@ -230,4 +230,11 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // old magenta-masked canvas — a follow-up `task vrt:update` run on
   // linux will re-capture, then this entry comes out.
   'linux/scope',
+  // VIDEO-OUT: this PR re-captures the darwin baseline with a real,
+  // frozen VIDEOBOX frame driven through the output (via VRT_SCENES) to
+  // prove the VIDEOBOX -> VIDEO-OUT path renders video content. VP9
+  // decode isn't bit-identical across platforms, so the linux baseline
+  // is pending a `task vrt:update` run on linux CI; the hard non-black +
+  // moving gate is e2e/tests/videobox-output.spec.ts.
+  'linux/videoOut',
 ]);

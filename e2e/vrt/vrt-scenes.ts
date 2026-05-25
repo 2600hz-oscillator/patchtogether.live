@@ -22,6 +22,7 @@
 // catch a real diff instead of being silently masked).
 
 import type { Page } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from '../tests/_helpers';
 
 export interface VrtScene {
@@ -38,7 +39,16 @@ export interface VrtScene {
   /** When true, freeze the AudioContext after settleMs so the trace
    *  stays pixel-stable across runs. Defaults to true. */
   freezeAudio?: boolean;
+  /** Optional extra setup AFTER spawnPatch (e.g. load a file into a
+   *  card, seek a <video> to a fixed frame + pause). Runs before the
+   *  settle pause. Used by the videoOut/VIDEOBOX scene to drive a
+   *  deterministic decoded frame into the output canvas. */
+  afterSpawn?: (page: Page) => Promise<void>;
 }
+
+/** Absolute path to the trimmed lobby clip used to drive a real decoded
+ *  <video> frame through VIDEOBOX -> VIDEO-OUT for the videoOut baseline. */
+const LOBBY_CLIP = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.meta.url));
 
 /** Registry. Keyed by the module-under-test's type. Modules NOT in
  *  this map fall back to the default vrt.spec.ts behaviour (spawn
@@ -66,6 +76,57 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     settleMs: 300,
     freezeAudio: true,
   },
+
+  // VIDEO-OUT: drive a real, frozen VIDEOBOX frame into the output so the
+  // baseline proves the VIDEOBOX -> VIDEO-OUT path renders video content
+  // (the regression this PR fixes — output used to be black). We load the
+  // trimmed lobby clip into a VIDEOBOX, seek to a FIXED timestamp, and
+  // pause, so the decoded frame is the same one every run. Codec frame-
+  // timing isn't bit-identical across platforms, so the darwin baseline is
+  // captured here and linux is marked pending (EXEMPT_BASELINE_PAIRS); the
+  // hard non-black + moving gate lives in tests/videobox-output.spec.ts.
+  videoOut: {
+    nodes: [
+      { id: 'vb',    type: 'videobox', position: { x: 60,  y: 60 }, domain: 'video' },
+      { id: 'vrt-1', type: 'videoOut', position: { x: 520, y: 60 }, domain: 'video' },
+    ],
+    edges: [
+      {
+        id: 'e_vb_out',
+        from: { nodeId: 'vb',    portId: 'video' },
+        to:   { nodeId: 'vrt-1', portId: 'in' },
+        sourceType: 'video',
+        targetType: 'video',
+      },
+    ],
+    // Don't freeze the AudioContext — there's no analyser-driven trace
+    // here; the <video> itself is paused on a fixed frame for stability.
+    freezeAudio: false,
+    settleMs: 400,
+    async afterSpawn(page) {
+      await page.setInputFiles('[data-testid="videobox-file-input"]', LOBBY_CLIP);
+      await page.locator('[data-testid="videobox-card"][data-has-local-file="true"]')
+        .waitFor({ state: 'attached', timeout: 8000 });
+      // Seek to a fixed frame + pause so the decoded frame is the same
+      // every run (no wall-clock playback advance during capture).
+      await page.evaluate(async () => {
+        const v = document.querySelector('[data-testid="videobox-video"]') as HTMLVideoElement | null;
+        if (!v) return;
+        v.pause();
+        await new Promise<void>((resolve) => {
+          const onSeeked = (): void => { v.removeEventListener('seeked', onSeeked); resolve(); };
+          v.addEventListener('seeked', onSeeked, { once: true });
+          v.currentTime = 1.5; // mid-clip — past the title card, in moving footage
+          // Guard: if the seek is a no-op (already there), resolve anyway.
+          if (Math.abs(v.currentTime - 1.5) < 0.01 && v.readyState >= 2) {
+            v.removeEventListener('seeked', onSeeked); resolve();
+          }
+        });
+      });
+      // Let a few engine frames upload the frozen frame into the output FBO.
+      await page.waitForTimeout(250);
+    },
+  },
 };
 
 /** Set up the rack for `type`. Returns true if a scene was applied
@@ -74,6 +135,7 @@ export async function applyVrtScene(page: Page, type: string): Promise<boolean> 
   const scene = VRT_SCENES[type];
   if (!scene) return false;
   await spawnPatch(page, scene.nodes, scene.edges);
+  if (scene.afterSpawn) await scene.afterSpawn(page);
   await page.waitForTimeout(scene.settleMs ?? 300);
   if (scene.freezeAudio !== false) {
     // Suspend the AudioContext so the analyser-fed canvases freeze on
