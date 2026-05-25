@@ -43,7 +43,7 @@
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { useProvider } from '$lib/multiplayer/provider-context';
-  import { patch } from '$lib/graph/store';
+  import { patch, ydoc } from '$lib/graph/store';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import { doomDef, type DoomHandleExtras } from '$lib/video/modules/doom';
@@ -57,6 +57,15 @@
     pickHost,
     type RelayCursor,
   } from '$lib/doom/doom-presence';
+  import {
+    readRoster,
+    claimSlot,
+    pruneRoster,
+    slotForUser,
+    isFull,
+    type DoomRoster,
+  } from '$lib/doom/doom-roster';
+  import { DoomNetcode } from '$lib/doom/doom-netcode';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -70,6 +79,22 @@
   let loadError = $state<string | null>(null);
   let isHost = $state(true);          // true on first spawn; recomputed from awareness
   let memberIds = $state<string[]>([]); // including self
+  // ---- Slice 3: per-peer instance model + roster ----
+  //
+  // ONE shared DOOM node lives on the canvas (the host spawned it; every
+  // other peer sees it via Yjs node sync and does NOT spawn its own). The
+  // node is shared state; the WASM is per-peer. A peer becomes a "player"
+  // by claiming a slot in `node.data.players` (the roster) — at which point
+  // it loads its OWN runtime + starts its OWN DoomNetcode bound to this one
+  // node, giving that player their own POV. Unjoined peers are spectators.
+  //
+  // Single-player is the lone-peer case: memberIds.length <= 1 means no
+  // netcode is ever started; the host runs the WASM exactly as before.
+  let roster = $state<DoomRoster>({});      // node.data.players, mirrored
+  let mySlot = $state<number | null>(null); // this peer's slot, or null
+  let netStarted = $state(false);           // our DoomNetcode is running
+  let isNetArbiter = $state(false);         // lex-min player == arbiter
+  let netcode: DoomNetcode | null = null;
   /** Last remote framebuffer received via awareness — spectator path. The
    *  card-side rAF tick prefers this over `extras.snapshotFramebuffer()`
    *  (which is null on spectator pages because they never load WASM). */
@@ -113,6 +138,118 @@
     } else {
       loadStatus = 'ready';
       loadError = null;
+    }
+  }
+
+  // ---- Slice 3: roster + per-peer netcode wiring ----
+  //
+  // Read the live roster off the shared node. `node.data.players` is the
+  // only multiplayer state on the node; it rides the existing Yjs node
+  // sync, so every peer converges on the same map.
+  function readNodeRoster(): DoomRoster {
+    const target = patch.nodes[id];
+    return readRoster(target?.data);
+  }
+
+  // Write the roster back onto the shared node inside a Yjs transaction so
+  // it syncs to peers. Deliberately NOT LOCAL_ORIGIN — roster join/leave is
+  // session state, not a user edit, so Cmd-Z must never un-join a player.
+  // (Matches DrumseqzCard's bare-transact node.data writes.) We create
+  // node.data lazily — most nodes carry none.
+  function writeNodeRoster(next: DoomRoster): void {
+    ydoc.transact(() => {
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as Record<string, unknown>).players = next;
+    });
+  }
+
+  // Join: claim the first empty slot for this user, then bring up our own
+  // runtime + netcode. Idempotent — re-joining when already in the roster
+  // just (re)ensures the local instance is running.
+  async function joinGame(): Promise<void> {
+    const me = resolveLocalUserId();
+    const cur = readNodeRoster();
+    const { roster: next, changed, slot } = claimSlot(cur, me);
+    if (slot === null) return; // roster full — no-op (DOOM is full)
+    if (changed) writeNodeRoster(next);
+    // Reflect locally immediately (the awareness/sync round-trip lags).
+    roster = next;
+    mySlot = slot;
+    // A joined player ALWAYS runs its own WASM (host or not) — that is the
+    // per-peer POV. Load it if we haven't.
+    if (loadStatus !== 'ready') {
+      await tryLoad();
+    }
+    startNetcodeIfNeeded();
+  }
+
+  // Bring up this peer's DoomNetcode once it is (a) a joined player and
+  // (b) there is more than one member in the rack. A lone player needs no
+  // netcode — that is the single-player path, untouched. Idempotent.
+  function startNetcodeIfNeeded(): void {
+    if (netStarted) return;
+    if (mySlot === null) return;             // spectators don't run netcode
+    if (memberIds.length <= 1) return;       // single-player — no transport
+    const provider = providerCtx.get();
+    if (!provider) return;
+    const extras = getExtras();
+    const runtime = extras?.getRuntime();
+    if (!runtime) return;                    // wait until our WASM is loaded
+    netcode = new DoomNetcode({
+      provider,
+      moduleId: id,
+      localUserId: resolveLocalUserId(),
+      runtime,
+      onArbiter: (isArb) => { isNetArbiter = isArb; },
+    });
+    netcode.start();
+    netStarted = true;
+    isNetArbiter = netcode.isArbiter();
+  }
+
+  function stopNetcode(): void {
+    if (netcode) {
+      try { netcode.stop(); } catch { /* provider may be gone */ }
+      netcode = null;
+    }
+    netStarted = false;
+    isNetArbiter = false;
+  }
+
+  // Arbiter-side roster cleanup: when a player closes their tab they drop
+  // out of awareness; the surviving arbiter (lex-min current player, or the
+  // host if no players yet) prunes their stale roster entry so the slot is
+  // freed for the next joiner. Pure pruneRoster() + a single Yjs write when
+  // something actually changed (avoids an awareness/sync feedback loop).
+  function reconcileRosterAsArbiter(): void {
+    // Only the rack host drives pruning (single writer = no write storms).
+    if (!isHost) return;
+    const cur = readNodeRoster();
+    const { roster: next, changed } = pruneRoster(cur, memberIds);
+    if (changed) {
+      writeNodeRoster(next);
+      roster = next;
+    }
+  }
+
+  // Keep local roster mirror + mySlot in sync with the shared node, and
+  // tear down / spin up our netcode as our player status changes.
+  function syncRosterState(): void {
+    const cur = readNodeRoster();
+    roster = cur;
+    const me = resolveLocalUserId();
+    mySlot = slotForUser(cur, me);
+    if (mySlot === null) {
+      // We left / were pruned: drop netcode.
+      stopNetcode();
+    } else {
+      // We're a player. Ensure our own WASM is loading (a returning player
+      // whose slot is already in the synced roster never clicked Join), then
+      // bring up netcode once the runtime exists.
+      if (loadStatus === 'idle') void tryLoad();
+      startNetcodeIfNeeded();
     }
   }
 
@@ -315,6 +452,10 @@
 
     function onIncomingFrame(): void {
       if (isHost) return;
+      // Slice 3: a JOINED player runs its own WASM + renders its own POV,
+      // so it must NOT overwrite its framebuffer with the host's mirror.
+      // Only unjoined spectators consume the remote-frame path.
+      if (mySlot !== null) return;
       const states = aw!.getStates();
       states.forEach((s) => {
         const raw = (s as Record<string, unknown>)[`doom:${id}:frame`];
@@ -335,12 +476,19 @@
       recomputeHost();
       onIncomingKey();
       onIncomingFrame();
+      // Slice 3: the host prunes roster entries for departed members
+      // (leave-by-disconnect), then everyone re-reads their own status.
+      reconcileRosterAsArbiter();
+      syncRosterState();
     };
     aw.on('update', update);
     awarenessOff = () => aw.off('update', update);
 
     // Initial host election.
     recomputeHost();
+    // Slice 3: pick up any roster already present on the synced node + spin
+    // up our netcode if we're a returning player.
+    syncRosterState();
 
     // Host: broadcast a framebuffer ~10 Hz.
     frameBroadcastInterval = setInterval(() => {
@@ -435,12 +583,31 @@
     raf = null;
   }
 
+  // Slice 3: observe the shared nodes map so a roster change that arrives
+  // purely via Yjs NODE sync (a remote peer joined / the arbiter pruned a
+  // slot) re-runs our status check — awareness 'update' does NOT fire for
+  // node-data edits, only for presence-field edits.
+  let nodesObserver: (() => void) | null = null;
+  function attachNodesObserver(): void {
+    const nodesMap = ydoc.getMap('nodes');
+    const handler = (): void => { syncRosterState(); };
+    nodesMap.observeDeep(handler);
+    nodesObserver = () => nodesMap.unobserveDeep(handler);
+  }
+  function detachNodesObserver(): void {
+    if (nodesObserver) {
+      try { nodesObserver(); } catch { /* */ }
+      nodesObserver = null;
+    }
+  }
+
   // ---- Mount / unmount ----
   onMount(() => {
     startRenderLoop();
     // Auto-attach awareness if a provider is present (multi-user rack);
     // single-user `/` canvas skips quietly.
     attachAwareness();
+    attachNodesObserver();
     // Capture-phase window listeners (see header). Per-card instance,
     // not module-global — if there were ever >1 DOOM card on the rack
     // (maxInstances:1 prevents that today, but defensively…) each card
@@ -448,11 +615,37 @@
     // inside, so only the focused/selected one actually claims keys.
     window.addEventListener('keydown', onWindowKeyDownCapture, true);
     window.addEventListener('keyup', onWindowKeyUpCapture, true);
+
+    // Slice 3 e2e hook: expose this card's multiplayer state + the join
+    // entry point keyed by node id, so the 2-context Playwright test can
+    // assert the per-peer instance model (roster, netcode-started, arbiter)
+    // without scraping the DOM. Mirrors the dev-only window globals Canvas
+    // installs; stripped in prod (the registry import is dev-gated there).
+    const g = globalThis as unknown as {
+      __doomCards?: Record<string, unknown>;
+    };
+    if (!g.__doomCards) g.__doomCards = {};
+    g.__doomCards[id] = {
+      join: () => joinGame(),
+      getState: () => ({
+        roster: { ...roster },
+        mySlot,
+        netStarted,
+        isNetArbiter,
+        isHost,
+        memberIds: [...memberIds],
+        netcodePeers: netcode ? netcode.debugStats().peers : [],
+      }),
+    };
   });
 
   onDestroy(() => {
+    const g = globalThis as unknown as { __doomCards?: Record<string, unknown> };
+    if (g.__doomCards) delete g.__doomCards[id];
     stopRenderLoop();
     detachAwareness();
+    detachNodesObserver();
+    stopNetcode();
     window.removeEventListener('keydown', onWindowKeyDownCapture, true);
     window.removeEventListener('keyup', onWindowKeyUpCapture, true);
   });
@@ -498,6 +691,13 @@
   <div class="stripe" style="background: var(--cable-video, #c33);"></div>
   <header class="title">
     DOOM
+    {#if mySlot !== null}
+      <span
+        class="player-badge"
+        data-testid="doom-player-badge"
+        title="You are a player in this DOOM netgame"
+      >P{mySlot + 1}</span>
+    {/if}
     {#if isHost}
       <span class="host-badge" title="You are running the DOOM instance for this rack">HOST</span>
     {:else}
@@ -584,11 +784,27 @@
     >
       {running > 0.5 ? 'Pause' : 'Run'}
     </button>
+    {#if memberIds.length > 1 && mySlot === null}
+      <button
+        class="join-btn"
+        data-testid="doom-join-btn"
+        disabled={isFull(roster)}
+        onclick={() => void joinGame()}
+        title={isFull(roster) ? 'DOOM is full (4 players)' : 'Join this DOOM netgame as a player'}
+      >
+        {isFull(roster) ? 'Full' : 'Join'}
+      </button>
+    {/if}
   </div>
 
   <footer class="hint">
     {#if memberIds.length > 1}
-      <small>{memberIds.length} rack-mates · host: {isHost ? 'you' : 'remote'}</small>
+      <small>
+        {memberIds.length} rack-mates · host: {isHost ? 'you' : 'remote'}
+        {#if mySlot !== null}
+          · player {mySlot + 1}{netStarted ? (isNetArbiter ? ' · arbiter' : ' · client') : ''}
+        {/if}
+      </small>
     {:else}
       <small>Single-user rack — you're the host.</small>
     {/if}
@@ -608,16 +824,42 @@
   .doom-card .title {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
   }
+  /* Push the host/spec status badge to the far right; the optional
+     player-badge sits inline right after the DOOM title. */
   .doom-card .host-badge,
   .doom-card .spec-badge {
+    margin-left: auto;
+  }
+  .doom-card .player-badge + .host-badge,
+  .doom-card .player-badge + .spec-badge {
+    margin-left: 0;
+  }
+  .doom-card .host-badge,
+  .doom-card .spec-badge,
+  .doom-card .player-badge {
     font-size: 9px;
     font-weight: 700;
     padding: 2px 5px;
     border-radius: 2px;
     letter-spacing: 0.05em;
+  }
+  .doom-card .player-badge {
+    background: color-mix(in oklab, var(--cable-cv, #4a9) 80%, black);
+    color: white;
+  }
+  .doom-card .join-btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    background: color-mix(in oklab, var(--cable-cv, #4a9) 70%, black);
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+  .doom-card .join-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .doom-card .host-badge {
     background: var(--cable-video, #c33);

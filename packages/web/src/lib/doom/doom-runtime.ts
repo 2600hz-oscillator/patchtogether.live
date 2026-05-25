@@ -383,6 +383,67 @@ export class DoomRuntime {
     };
   }
 
+  // ---------------- Slice 3: netcode bridge (Module.PTNet) ----------------
+  //
+  // The DOOM multiplayer netcode (doom-netcode.ts) needs two things from a
+  // runtime: a handle to the emcc Module (so it can install the
+  // `Module.PTNet` table the C EM_JS hooks read at send/poll time) and a
+  // way to deliver inbound packets into the C-side recv queue
+  // (`dgpt_net_inject_packet`). These two methods make DoomRuntime satisfy
+  // the netcode's `NetcodeRuntime` structural interface for real (slice 2
+  // unit-tested it against a hand-rolled mock).
+
+  /** The raw emcc Module — the netcode installs `Module.PTNet` on it. The
+   *  shape DoomRuntime keeps internally (DoomModule) is a superset of the
+   *  netcode's NetcodeModule, so it satisfies that interface structurally.
+   *  Returns null only if the runtime was disposed (mod reference dropped). */
+  getModule(): DoomModule | null {
+    return this.mod ?? null;
+  }
+
+  /**
+   * Inbound packet path (JS → C). Copy `bytes` into a WASM heap buffer,
+   * call `dgpt_net_inject_packet(ptr, len, srcPeerId)`, then free the
+   * buffer. Returns true if the C recv queue accepted the packet (1) and
+   * false if it was full (0) or the runtime isn't ready.
+   *
+   * We malloc/free per packet rather than keeping a persistent scratch
+   * buffer because packets vary in size (handshake vs. per-tic gamedata)
+   * and the call frequency (≤ a few per tic) makes the allocator churn
+   * negligible. The C side memcpy's the bytes into its own NET_NewPacket
+   * buffer synchronously, so freeing immediately after the call is safe.
+   */
+  injectNetPacket(bytes: Uint8Array, srcPeerId: number): boolean {
+    if (!this.initialized) return false;
+    const len = bytes.length;
+    // Zero-length packets are degenerate but valid (the C side tolerates
+    // len 0 / NULL); skip the malloc and pass a 0 ptr.
+    if (len === 0) {
+      const r0 = this.mod.ccall(
+        'dgpt_net_inject_packet',
+        'number',
+        ['number', 'number', 'number'],
+        [0, 0, srcPeerId],
+      );
+      return r0 !== 0;
+    }
+    const ptr = this.mod.ccall('malloc', 'number', ['number'], [len]);
+    if (!ptr) return false;
+    try {
+      // Copy into the heap. HEAPU8 is re-read each call in case memory grew.
+      this.mod.HEAPU8.set(bytes, ptr);
+      const r = this.mod.ccall(
+        'dgpt_net_inject_packet',
+        'number',
+        ['number', 'number', 'number'],
+        [ptr, len, srcPeerId],
+      );
+      return r !== 0;
+    } finally {
+      this.mod.ccall('free', null, ['number'], [ptr]);
+    }
+  }
+
   /** No teardown beyond dropping references — Emscripten doesn't expose
    *  a clean "close module" verb. The browser's GC reclaims the wasm
    *  memory when the JS-side references go away (module instance,

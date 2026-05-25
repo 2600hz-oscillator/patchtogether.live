@@ -30,9 +30,17 @@ function makeStubModule(opts: {
   /** Slice-8 stub: if provided, dg_get_pcm_buffer copies these bytes
    *  into the destination scratch ptr (int16 little-endian). */
   pcmStream?: Int16Array;
-} = {}): { mod: DoomModule; calls: CCallRec[]; fs: Map<string, Uint8Array> } {
+  /** Slice-3 stub: make dgpt_net_inject_packet return 0 (full recv queue). */
+  injectFull?: boolean;
+} = {}): {
+  mod: DoomModule;
+  calls: CCallRec[];
+  fs: Map<string, Uint8Array>;
+  injected: Array<{ bytes: Uint8Array; srcPeerId: number }>;
+} {
   const calls: CCallRec[] = [];
   const fs = new Map<string, Uint8Array>();
+  const injected: Array<{ bytes: Uint8Array; srcPeerId: number }> = [];
   const heapBuffer = new ArrayBuffer(64 * 1024 * 1024); // 64 MB stub heap
 
   // We pretend the framebuffer starts at offset 0x100000 and PCM at 0x200000.
@@ -91,6 +99,19 @@ function makeStubModule(opts: {
           return Math.max(0, pcmStream.length - streamCursor);
         case 'dg_get_pcm_sample_rate':
           return 44100;
+        case 'dgpt_net_inject_packet': {
+          // Slice 3: record the heap bytes the runtime copied in so the
+          // inject test can assert the copy + the src-peer-id. Returns 1
+          // (accepted) unless opts.injectFull simulates a full recv queue.
+          const ptr = args[0] as number;
+          const len = args[1] as number;
+          const src = args[2] as number;
+          const copied = len > 0
+            ? new Uint8Array(heapBuffer.slice(ptr, ptr + len))
+            : new Uint8Array(0);
+          injected.push({ bytes: copied, srcPeerId: src });
+          return opts.injectFull ? 0 : 1;
+        }
         default: return 0;
       }
     },
@@ -100,7 +121,7 @@ function makeStubModule(opts: {
     },
   };
 
-  return { mod, calls, fs };
+  return { mod, calls, fs, injected };
 }
 
 describe('DoomRuntime — TS shim layer', () => {
@@ -403,5 +424,68 @@ describe('DoomRuntime — slice 8 PCM pull (getPcmFrames)', () => {
     expect(rt.getPcmBufferedFrames()).toBe(0);
     rt.init(new Uint8Array([0]));
     expect(rt.getPcmBufferedFrames()).toBe(1024);
+  });
+});
+
+// ---------------- Slice-3 netcode bridge (getModule + injectNetPacket) ----
+
+describe('DoomRuntime — slice 3 netcode bridge', () => {
+  it('getModule returns the emcc module (so netcode can install PTNet)', () => {
+    const { mod } = makeStubModule();
+    const rt = new DoomRuntime(mod);
+    expect(rt.getModule()).toBe(mod);
+    // The netcode installs Module.PTNet on it — confirm the handle is the
+    // live object, not a copy.
+    const m = rt.getModule()!;
+    (m as unknown as { PTNet?: unknown }).PTNet = { marker: true };
+    expect((mod as unknown as { PTNet?: { marker?: boolean } }).PTNet?.marker).toBe(true);
+  });
+
+  it('injectNetPacket is a no-op (false) before init', () => {
+    const { mod, injected } = makeStubModule();
+    const rt = new DoomRuntime(mod);
+    expect(rt.injectNetPacket(new Uint8Array([1, 2, 3]), 0)).toBe(false);
+    expect(injected.length).toBe(0);
+  });
+
+  it('copies bytes into the heap + calls dgpt_net_inject_packet with src peer id', () => {
+    const { mod, injected, calls } = makeStubModule();
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const payload = new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x42]);
+    const ok = rt.injectNetPacket(payload, 3);
+    expect(ok).toBe(true);
+    expect(injected.length).toBe(1);
+    // The bytes the C side saw at `ptr` must equal what we passed in.
+    expect(Array.from(injected[0]!.bytes)).toEqual(Array.from(payload));
+    expect(injected[0]!.srcPeerId).toBe(3);
+    // malloc + free bracket the inject call (no heap leak).
+    const order = calls.map((c) => c.name).filter(
+      (n) => n === 'malloc' || n === 'dgpt_net_inject_packet' || n === 'free',
+    );
+    const injectIdx = order.indexOf('dgpt_net_inject_packet');
+    expect(order.lastIndexOf('malloc')).toBeLessThan(injectIdx);
+    expect(order.indexOf('free', injectIdx)).toBeGreaterThan(injectIdx);
+  });
+
+  it('returns false when the C recv queue is full (inject returns 0)', () => {
+    const { mod } = makeStubModule({ injectFull: true });
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    expect(rt.injectNetPacket(new Uint8Array([1, 2, 3]), 1)).toBe(false);
+  });
+
+  it('handles a zero-length packet without mallocing', () => {
+    const { mod, injected, calls } = makeStubModule();
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const mallocsBefore = calls.filter((c) => c.name === 'malloc').length;
+    const ok = rt.injectNetPacket(new Uint8Array(0), 2);
+    expect(ok).toBe(true);
+    expect(injected.length).toBe(1);
+    expect(injected[0]!.bytes.length).toBe(0);
+    expect(injected[0]!.srcPeerId).toBe(2);
+    // No malloc for the empty case.
+    expect(calls.filter((c) => c.name === 'malloc').length).toBe(mallocsBefore);
   });
 });
