@@ -48,6 +48,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import { doomDef, type DoomHandleExtras } from '$lib/video/modules/doom';
   import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
+  import { HeldKeyTracker } from '$lib/doom/held-keys';
   import {
     encodeKey,
     collectIncomingKeyPushes,
@@ -420,15 +421,22 @@
     return false;
   }
 
-  function routeKey(code: string, pressed: boolean): void {
+  function routeKey(code: string, pressed: boolean): boolean {
     const extras = getExtras();
-    if (!extras) return;
+    if (!extras) return false;
     if (isHost) {
-      extras.pushKeyboardKey(code, pressed);
-    } else {
-      relayKeyToHost(code, pressed);
+      return extras.pushKeyboardKey(code, pressed);
     }
+    relayKeyToHost(code, pressed);
+    return true;
   }
+
+  // Tracks keys held on THIS card so we can release them when the card
+  // stops owning the keyboard — see held-keys.ts. Without this, holding a
+  // movement key and then deselecting the card (the keyup is dropped by
+  // the claim gate) or alt-tabbing (no keyup fires at all) leaves the key
+  // stuck down in the WASM input queue.
+  const heldKeys = new HeldKeyTracker(routeKey);
 
   // Window-level capture-phase listener. Capture phase runs BEFORE bubble
   // (and before any document-level bubble listener xyflow installs for
@@ -446,16 +454,24 @@
     }
     ev.preventDefault();
     ev.stopPropagation();
-    routeKey(ev.code, true);
+    heldKeys.down(ev.code, ev.repeat);
   }
   function onWindowKeyUpCapture(ev: KeyboardEvent): void {
-    if (!shouldClaimKey()) return;
-    if ((ev.metaKey || ev.ctrlKey || ev.altKey) && !isModifierOnlyKey(ev.code)) {
+    // Route the release if we currently CLAIM the keyboard OR we were
+    // holding this key — the latter covers a keyup that lands after the
+    // card was deselected (clicked another node), which the claim gate
+    // would otherwise drop, leaving the key stuck down.
+    if (!shouldClaimKey() && !heldKeys.has(ev.code)) return;
+    if (
+      (ev.metaKey || ev.ctrlKey || ev.altKey) &&
+      !isModifierOnlyKey(ev.code) &&
+      !heldKeys.has(ev.code)
+    ) {
       return;
     }
     ev.preventDefault();
     ev.stopPropagation();
-    routeKey(ev.code, false);
+    heldKeys.up(ev.code);
   }
   function isModifierOnlyKey(code: string): boolean {
     return (
@@ -468,6 +484,13 @@
       code === 'MetaLeft' ||
       code === 'MetaRight'
     );
+  }
+
+  function releaseHeldKeys(): void {
+    heldKeys.releaseAll();
+  }
+  function onVisibilityChange(): void {
+    if (document.hidden) releaseHeldKeys();
   }
 
   function relayKeyToHost(code: string, pressed: boolean): void {
@@ -777,6 +800,10 @@
     // inside, so only the focused/selected one actually claims keys.
     window.addEventListener('keydown', onWindowKeyDownCapture, true);
     window.addEventListener('keyup', onWindowKeyUpCapture, true);
+    // Switching apps/tabs (alt-tab, cmd-tab) often delivers no keyup, so
+    // release everything still held on window blur + tab-hide.
+    window.addEventListener('blur', releaseHeldKeys);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Slice 3 e2e hook: expose this card's multiplayer state + the join
     // entry point keyed by node id, so the 2-context Playwright test can
@@ -823,8 +850,11 @@
     detachAwareness();
     detachNodesObserver();
     stopNetcode();
+    releaseHeldKeys();
     window.removeEventListener('keydown', onWindowKeyDownCapture, true);
     window.removeEventListener('keyup', onWindowKeyUpCapture, true);
+    window.removeEventListener('blur', releaseHeldKeys);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
   });
 
   // ---- Param row ----
