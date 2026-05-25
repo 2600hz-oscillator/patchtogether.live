@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/mixmstrs.ts
 //
 // MIXMSTRS — 4-channel stereo mixer with EQ, compressor, two stereo aux sends,
-// two stereo returns. Singleton per rackspace (`maxInstances: 1`).
+// two stereo returns. Multiple instances allowed (submixes / parallel master
+// buses); each sums its inputs to the destination additively.
 //
 // 12 audio inputs (4 ch × stereo + 2 returns × stereo) + 6 audio outputs
 // (master L/R + send1 L/R + send2 L/R). 41 AudioParams (37 original + 4
@@ -127,7 +128,6 @@ export const mixmstrsDef: AudioModuleDef = {
   label: 'MIXMSTRS',
   category: 'utilities',
   schemaVersion: 1,
-  maxInstances: 1,
   stereoPairs: [
     ['ch1L', 'ch1R'],
     ['ch2L', 'ch2R'],
