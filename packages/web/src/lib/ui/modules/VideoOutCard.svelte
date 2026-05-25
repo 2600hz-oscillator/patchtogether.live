@@ -385,13 +385,17 @@
     height: 100%;
     background: #000;
   }
+  /* Zoom-fit: scale the live canvas UP to fill the fullscreen viewport as
+   * large as possible while preserving aspect. The canvas drawing buffer is
+   * small (card-sized px) so width/height:auto kept it tiny + un-scaled —
+   * fill the wrap (100% × 100%) + object-fit:contain so it scales up,
+   * centered, with black bars on the off-axis. */
   .canvas-wrap.fullscreen canvas {
     border: none;
     border-radius: 0;
-    width: auto;
-    height: auto;
-    max-width: 100%;
-    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
     cursor: pointer;
   }
   /* FULL FRAME (in-app): the canvas consumes the whole card border — hide

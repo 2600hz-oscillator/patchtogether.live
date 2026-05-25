@@ -763,11 +763,13 @@
     background: #000;
     aspect-ratio: auto;
   }
+  /* Zoom-fit: fill the fullscreen viewport (100% × 100%) + object-fit:contain
+   * so the video scales UP as large as possible while preserving aspect,
+   * centered, with black bars on the off-axis. width/height:auto could leave
+   * a small-intrinsic clip un-scaled in the center of the screen. */
   .preview-wrap.fullscreen video {
-    max-width: 100%;
-    max-height: 100%;
-    width: auto;
-    height: auto;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     cursor: pointer;
   }

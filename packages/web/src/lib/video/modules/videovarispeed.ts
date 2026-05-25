@@ -55,6 +55,11 @@ out vec4 outColor;
 
 uniform sampler2D uTex;
 uniform float uHasInput;
+// (sx, sy) — UV scale that fits the SOURCE aspect into the 16:9 FBO without
+// stretching. (1,1) = source already matches FBO aspect. A 4:3 clip gets
+// sx<1 (pillarbox bars left/right); a 21:9 clip gets sy<1 (letterbox bars
+// top/bottom). Computed per-frame from the <video> element dimensions.
+uniform vec2 uLetterbox;
 
 void main() {
   if (uHasInput < 0.5) {
@@ -62,7 +67,14 @@ void main() {
     outColor = vec4(0.05, 0.05, 0.08 + v, 1.0);
     return;
   }
-  outColor = vec4(texture(uTex, vUv).rgb, 1.0);
+  // Centre + scale the active region so the source keeps its native aspect
+  // inside the 16:9 FBO; outside the active region renders pure black bars.
+  vec2 centered = (vUv - 0.5) / uLetterbox + 0.5;
+  if (centered.x < 0.0 || centered.x > 1.0 || centered.y < 0.0 || centered.y > 1.0) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+  outColor = vec4(texture(uTex, centered).rgb, 1.0);
 }`;
 
 /** Persisted shape on node.data. The card is the only writer. */
@@ -181,8 +193,9 @@ export const videoVarispeedDef: VideoModuleDef = {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
 
-    const uTex      = gl.getUniformLocation(program, 'uTex');
-    const uHasInput = gl.getUniformLocation(program, 'uHasInput');
+    const uTex       = gl.getUniformLocation(program, 'uTex');
+    const uHasInput  = gl.getUniformLocation(program, 'uHasInput');
+    const uLetterbox = gl.getUniformLocation(program, 'uLetterbox');
 
     const { fbo, texture: outTexture } = ctx.createFbo();
 
@@ -343,6 +356,22 @@ export const videoVarispeedDef: VideoModuleDef = {
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
         g.uniform1f(uHasInput, uploaded ? 1.0 : 0.0);
+
+        // Aspect-preserving letterbox: fit the source's native aspect into
+        // the 16:9 FBO so a non-16:9 clip isn't stretched. sx/sy <= 1; the
+        // shorter axis gets bars. Defaults to (1,1) when dimensions are
+        // unknown (idle / pre-metadata) so nothing shrinks unnecessarily.
+        let lbX = 1.0;
+        let lbY = 1.0;
+        if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+          const fboAspect = ctx.res.width / ctx.res.height;
+          const srcAspect = videoEl.videoWidth / videoEl.videoHeight;
+          // Wider source than FBO -> shrink height (letterbox top/bottom).
+          // Narrower source -> shrink width (pillarbox left/right).
+          lbX = Math.min(1.0, srcAspect / fboAspect);
+          lbY = Math.min(1.0, fboAspect / srcAspect);
+        }
+        g.uniform2f(uLetterbox, lbX, lbY);
 
         if (uploaded && sourceTexture) {
           g.activeTexture(g.TEXTURE0);
