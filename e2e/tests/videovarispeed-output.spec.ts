@@ -115,13 +115,28 @@ async function loadAndPlay(page: import('@playwright/test').Page) {
   );
 }
 
-/** Assert the downstream VIDEO-OUT canvas shows MOVING video right now. */
+/** Assert the downstream VIDEO-OUT canvas shows MOVING video right now.
+ *
+ *  The brightness check is POLLED rather than read once: immediately after a
+ *  speed change the rVFC-driven upload may not yet have presented a fresh
+ *  decoded frame (the element re-arms its decode cadence at the new rate /
+ *  after a reverse-scrub seek), so a single eager read can momentarily catch
+ *  the idle pattern (max ~20) before the next frame flows through
+ *  rVFC -> upload -> VIDEO-OUT. This was the slow-CI-runner flake on shard
+ *  8/8 (max=19.67 at 2x / reverse). Polling lets a fresh frame settle while
+ *  still asserting REAL video brightness (max > 40, well above the idle
+ *  pattern's ceiling); the frame-change check below is the actual
+ *  streams-at-all-speeds regression guard. */
 async function assertDownstreamMoving(
   page: import('@playwright/test').Page,
   label: string,
 ) {
-  const stats = await canvasStats(page, 'video-out-canvas');
-  expect(stats.max, `${label}: VIDEO-OUT has bright pixels (mean=${stats.mean.toFixed(1)} max=${stats.max})`).toBeGreaterThan(40);
+  await expect
+    .poll(async () => (await canvasStats(page, 'video-out-canvas')).max, {
+      timeout: 5000,
+      message: `${label}: VIDEO-OUT has bright pixels (real frame, not idle)`,
+    })
+    .toBeGreaterThan(40);
   // Two reads ~400ms apart must differ -> the downstream texture is updating.
   const a = await canvasSignature(page, 'video-out-canvas');
   await page.waitForTimeout(450);

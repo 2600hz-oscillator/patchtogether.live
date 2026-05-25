@@ -202,6 +202,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // the module-def shape (videobox.test.ts) + the playhead-sync drift
   // math (videobox-sync.test.ts); E2E spawn smoke covers card render.
   videobox: 'live <video> element + ticking playhead readout defeat deterministic capture; unit + sync-math + per-module spawn smoke provide coverage',
+  // VIDEOVARISPEED — sibling of VIDEOBOX: a live <video> element streamed
+  // via rVFC at a varying (varispeed) cadence, plus a ticking playhead
+  // readout. Both defeat deterministic single-frame capture, same as
+  // VIDEOBOX / CAMERA. Unit suites cover the module-def shape
+  // (videovarispeed.test.ts) + the varispeed transport math
+  // (videovarispeed-transport.test.ts); e2e (videovarispeed-output.spec.ts)
+  // covers the wired-up output path + spawn smoke covers card render.
+  videovarispeed: 'live <video> element streamed at varispeed + ticking playhead readout defeat deterministic capture; unit + transport-math + e2e output spec + per-module spawn smoke provide coverage',
   // CHROMAKEY — new 2-input compositor; card chrome is static but baseline
   // capture pending. Unit + E2E (video-controls.spec.ts) provide coverage.
   // Promote into MODULES + capture darwin/linux baselines in a follow-up PR.
