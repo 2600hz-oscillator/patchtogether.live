@@ -32,6 +32,7 @@ import { bentboxDef } from './bentbox';
 import { acidwarpDef } from './acidwarp';
 import { doomDef } from './doom';
 import { videoboxDef } from './videobox';
+import { videoVarispeedDef } from './videovarispeed';
 
 let registered = false;
 
@@ -95,6 +96,12 @@ export function registerVideoModules(): void {
   // sees the same frame. Audio routes through MediaElementSource →
   // ChannelSplitter → audio_l / audio_r.
   registerVideoModule(videoboxDef);
+  // VIDEOVARISPEED — local-file video player with a PERFORMANT varispeed
+  // transport (speed knob / START-END window / loop-vs-one-shot / CV gates).
+  // The performant redo of the rolled-back VIDEOBOX #291: rVFC-driven output
+  // (streams downstream at ANY speed, decoupled from playbackRate) +
+  // throttled reverse scrub (no per-frame currentTime seek).
+  registerVideoModule(videoVarispeedDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e
