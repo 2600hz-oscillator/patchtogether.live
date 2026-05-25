@@ -190,7 +190,7 @@ export const videoVarispeedDef: VideoModuleDef = {
     { id: 'cv_loop_toggle',  label: 'Loop gate',  defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
-  factory(ctx, _node): VideoNodeHandle {
+  factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
 
@@ -341,6 +341,12 @@ export const videoVarispeedDef: VideoModuleDef = {
         audioSources.set('audio_l', { node: split, output: 0 });
         audioSources.set('audio_r', { node: split, output: 1 });
         audioWired = true;
+        // The audio_l / audio_r nodes just changed identity (silent
+        // ConstantSource -> live splitter). Any cross-domain audio bridge that
+        // was connected to the placeholder before this swap (e.g. a saved patch
+        // where audio_l -> AUDIO OUT predates the file load) is now stale; ask
+        // the engine to re-resolve it so the splitter reaches the destination.
+        ctx.notifyAudioSourcesChanged?.(node.id);
       } catch (err) {
         // InvalidStateError: the element already has a MediaElementSource (card
         // hot-reload). Stay on the silent CSN fallback so downstream audio
@@ -356,11 +362,16 @@ export const videoVarispeedDef: VideoModuleDef = {
       keepAlive = null;
       mediaElSrc = null;
       splitter = null;
+      const wasWired = audioWired;
       audioWired = false;
       if (silentLeft && silentRight) {
         audioSources.set('audio_l', { node: silentLeft, output: 0 });
         audioSources.set('audio_r', { node: silentRight, output: 0 });
       }
+      // Reverted audio_l / audio_r back to the silent placeholders; re-resolve
+      // any bridge so it tracks the placeholder rather than the now-disconnected
+      // splitter (keeps downstream from popping on a dangling node).
+      if (wasWired) ctx.notifyAudioSourcesChanged?.(node.id);
     }
 
     const surface: VideoNodeSurface = {

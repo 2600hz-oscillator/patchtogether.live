@@ -663,6 +663,13 @@ export class PatchEngine {
   private audioBridgeEdgeIds = new Set<string>();
   /** Per-edge teardown for video→audio bridges. */
   private audioBridgeTeardowns = new Map<string, () => void>();
+  /** The Edge objects for video→audio bridges, kept so we can RE-RESOLVE a
+   *  bridge when its video source swaps the AudioNode published for a port
+   *  (e.g. VIDEOBOX/VIDEOVARISPEED's wireAudio replaces the silent placeholder
+   *  with the live MediaElementSource splitter AFTER the edge was connected).
+   *  Without re-resolution the bridge stays wired to the dead placeholder and
+   *  the operator hears silence. Keyed by edge id. */
+  private audioBridgeEdges = new Map<string, Edge>();
 
   registerDomain(engine: DomainEngine): void {
     this.domains.set(engine.domain, engine);
@@ -673,10 +680,43 @@ export class PatchEngine {
     // either party (the new one + the existing one) gets the wiring.
     const audio = this.domains.get('audio') as AudioEngine | undefined;
     const video = this.domains.get('video') as
-      | (DomainEngine & { setAudioContext?: (ctx: AudioContext | null) => void })
+      | (DomainEngine & {
+          setAudioContext?: (ctx: AudioContext | null) => void;
+          onAudioSourcesChanged?: (cb: ((nodeId: string) => void) | null) => void;
+        })
       | undefined;
     if (audio && video && typeof video.setAudioContext === 'function') {
       video.setAudioContext(audio.ctx);
+    }
+    // Re-resolve video→audio bridges when a video source swaps the AudioNode
+    // identity on one of its audio ports (wireAudio/unwireAudio). A bridge that
+    // was connected to the silent placeholder before the swap would otherwise
+    // stay wired to the dead node and the operator's downstream patch is silent.
+    if (video && typeof video.onAudioSourcesChanged === 'function') {
+      video.onAudioSourcesChanged((nodeId) => this.reapplyAudioBridgesForSource(nodeId));
+    }
+  }
+
+  /**
+   * Re-resolve + re-connect every video→audio bridge whose SOURCE is `nodeId`.
+   * Called when that node swaps the AudioNode published for an audio port
+   * (e.g. wireAudio replaces the silent placeholder with the live splitter).
+   * Tears the old connection down (it points at the stale node) and re-runs
+   * addCrossDomainAudioBridge, which re-reads the now-current audioSources node
+   * and re-connects. Idempotent + safe if nothing changed (re-connecting the
+   * same node is harmless; the teardown then re-make is a no-op net change).
+   */
+  private reapplyAudioBridgesForSource(nodeId: string): void {
+    for (const [edgeId, edge] of this.audioBridgeEdges) {
+      if (edge.source.nodeId !== nodeId) continue;
+      // Tear down the existing (possibly stale) connection, then re-resolve.
+      const teardown = this.audioBridgeTeardowns.get(edgeId);
+      if (teardown) {
+        try { teardown(); } catch { /* */ }
+        this.audioBridgeTeardowns.delete(edgeId);
+      }
+      this.audioBridgeEdgeIds.delete(edgeId);
+      this.addCrossDomainAudioBridge(edge);
     }
   }
 
@@ -942,6 +982,9 @@ export class PatchEngine {
    *  - target audio input not present: defer.
    */
   private addCrossDomainAudioBridge(edge: Edge): void {
+    // Remember the edge so reapplyAudioBridgesForSource can re-resolve it when
+    // the source node later swaps its published AudioNode (wireAudio).
+    this.audioBridgeEdges.set(edge.id, edge);
     const videoEngine = this.domains.get('video');
     const audioEngine = this.domains.get('audio');
     if (!videoEngine || !audioEngine) {
@@ -985,6 +1028,7 @@ export class PatchEngine {
 
   private removeCrossDomainAudioBridge(edge: Edge): void {
     this.audioBridgeEdgeIds.delete(edge.id);
+    this.audioBridgeEdges.delete(edge.id);
     const teardown = this.audioBridgeTeardowns.get(edge.id);
     if (teardown) {
       try { teardown(); } catch { /* */ }
@@ -1023,6 +1067,7 @@ export class PatchEngine {
       try { teardown(); } catch { /* */ }
     }
     this.audioBridgeTeardowns.clear();
+    this.audioBridgeEdges.clear();
     for (const e of this.domains.values()) e.dispose();
     this.domains.clear();
   }

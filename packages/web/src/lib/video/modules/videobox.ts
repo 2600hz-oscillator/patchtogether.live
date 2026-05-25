@@ -128,7 +128,7 @@ export const videoboxDef: VideoModuleDef = {
     { id: 'cv_play_trigger', label: 'Play trigger', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
-  factory(ctx, _node): VideoNodeHandle {
+  factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
 
@@ -219,6 +219,12 @@ export const videoboxDef: VideoModuleDef = {
         audioSources.set('audio_r', { node: split, output: 1 });
 
         audioWired = true;
+        // audio_l / audio_r just changed identity (silent ConstantSource ->
+        // live splitter). Re-resolve any cross-domain audio bridge that was
+        // connected to the placeholder before this swap (saved-patch order:
+        // audio_l -> AUDIO OUT predates the file load) so the splitter actually
+        // reaches the destination instead of the dead placeholder.
+        ctx.notifyAudioSourcesChanged?.(node.id);
       } catch (err) {
         // InvalidStateError: this video element already has a MediaElement
         // source attached (happens if the card hot-reloads). Stay on the
@@ -234,6 +240,7 @@ export const videoboxDef: VideoModuleDef = {
       keepAlive = null;
       mediaElSrc = null;
       splitter = null;
+      const wasWired = audioWired;
       audioWired = false;
       // Reinstate the silent fallback so audio_l / audio_r still resolve
       // to a live node for any cables wired after the unwire.
@@ -241,6 +248,9 @@ export const videoboxDef: VideoModuleDef = {
         audioSources.set('audio_l', { node: silentLeft, output: 0 });
         audioSources.set('audio_r', { node: silentRight, output: 0 });
       }
+      // Re-resolve any bridge so it tracks the placeholder rather than the
+      // now-disconnected splitter.
+      if (wasWired) ctx.notifyAudioSourcesChanged?.(node.id);
     }
 
     const surface: VideoNodeSurface = {

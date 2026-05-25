@@ -45,6 +45,32 @@ import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
+/** Read AUDIO OUT's terminal tap (the limiter feeding ctx.destination) and
+ *  summarize its energy. Unlike a SCOPE's ch1 analyser — which buffers samples
+ *  whether or not the signal reaches the speakers — this proves the audio is
+ *  AUDIBLE (it reached the terminal output stage). See audio-out.ts
+ *  read('outputSnapshot'). */
+async function readOutputStats(
+  page: Page,
+  outNodeId: string,
+): Promise<{ peak: number; rms: number; nonzeroSamples: number; totalSamples: number }> {
+  const samples = await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+    };
+    const eng = w.__engine?.();
+    if (!eng) return null;
+    const node = w.__patch.nodes[id];
+    if (!node) return null;
+    const snap = eng.read(node, 'outputSnapshot') as { samples: Float32Array; sampleRate: number } | undefined;
+    if (!snap) return null;
+    return Array.from(snap.samples) as unknown as Float32Array;
+  }, outNodeId);
+  if (!samples) return { peak: 0, rms: 0, nonzeroSamples: 0, totalSamples: 0 };
+  return summarize(samples);
+}
+
 const AV_FIXTURE = fileURLToPath(new URL('../fixtures/av-clip.webm', import.meta.url));
 
 async function setup(page: Page): Promise<string[]> {
@@ -214,8 +240,15 @@ function buildTopology(n: number) {
   nodes.push({ id: 'mixout', type: 'videoOut', position: { x: 1500, y: 40 }, domain: 'video' });
   edges.push({ id: 'e-mixout', from: { nodeId: 'mix', portId: 'out' }, to: { nodeId: 'mixout', portId: 'in' }, sourceType: 'video', targetType: 'video' });
 
-  // Scope for audio assertion.
+  // Scope for a visual audio read AND an AUDIO OUT for the real audibility
+  // assertion. The scope's ch1 analyser buffers samples regardless of whether
+  // they reach the speakers, so a scope-only check can't tell "signal reached
+  // an analyser" apart from "signal reached the destination" — that gap is
+  // exactly how a video-source-audio regression hid. AUDIO OUT's terminal tap
+  // (read('outputSnapshot')) proves audibility: it samples the limiter that
+  // feeds ctx.destination.
   nodes.push({ id: 'scope', type: 'scope', position: { x: 1080, y: 560 }, params: { timeMs: 50 } });
+  nodes.push({ id: 'aout', type: 'audioOut', position: { x: 1500, y: 560 }, params: { master: 0.9 } });
 
   for (let i = 0; i < n; i++) {
     const vv = `vv${i}`;
@@ -226,9 +259,13 @@ function buildTopology(n: number) {
     if (i < mixInputs) {
       edges.push({ id: `e-mix-${i}`, from: { nodeId: vv, portId: 'video' }, to: { nodeId: 'mix', portId: `in${i + 1}` }, sourceType: 'video', targetType: 'video' });
     }
-    // Audio: each source's audio_l -> scope ch1 (they sum). Proves audio is
-    // produced through the cross-domain bridge when the user patches it.
+    // Audio: each source's audio_l -> scope ch1 AND -> AUDIO OUT L (they sum).
+    // The AUDIO OUT edge is the one that proves AUDIBILITY (signal reaches
+    // ctx.destination through the user's patch); the scope edge is kept as the
+    // visual read. Both are added AFTER each file loads (see addEdges) so the
+    // bridge captures the live splitter, mirroring the real session order.
     audioEdges.push({ id: `e-aud-${i}`, from: { nodeId: vv, portId: 'audio_l' }, to: { nodeId: 'scope', portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' });
+    audioEdges.push({ id: `e-aout-${i}`, from: { nodeId: vv, portId: 'audio_l' }, to: { nodeId: 'aout', portId: 'L' }, sourceType: 'audio', targetType: 'audio' });
   }
   return { nodes, edges, audioEdges };
 }
@@ -278,9 +315,10 @@ test.describe('multi-video playback — N sources all decode at once', () => {
       `all 4 sources advance while unpatched — stalled: ${JSON.stringify(stalled)} (full: ${JSON.stringify(results)})`,
     ).toBe(0);
 
-    // Now patch each source's audio_l -> scope. The video→audio bridge captures
-    // the live splitter at this point (vs. the silent placeholder if we'd
-    // patched pre-load), mirroring the real session order: load, then patch.
+    // Now patch each source's audio_l -> scope AND -> AUDIO OUT. The video→audio
+    // bridge captures the live splitter at this point (vs. the silent
+    // placeholder if we'd patched pre-load), mirroring the real session order:
+    // load, then patch.
     await addEdges(page, audioEdges);
 
     // MIXER OUTPUT: the combined output must also show moving video.
@@ -290,23 +328,30 @@ test.describe('multi-video playback — N sources all decode at once', () => {
       `mixer output moving (maxBright=${mix.maxBright} distinct=${mix.distinct})`,
     ).toBe(true);
 
-    // AUDIO: with all four sources' audio_l patched into the scope, the scope
-    // must see real audio energy (the av-clip carries a 220 Hz tone). Poll a
-    // short window so the analyser fills.
-    let audio = { peak: 0, rms: 0, nonzeroSamples: 0, totalSamples: 0 };
-    const audioDeadline = Date.now() + 4000;
+    // AUDIO — AUDIBILITY: with all four sources' audio_l patched into AUDIO OUT,
+    // the terminal output (the limiter feeding ctx.destination) must see real
+    // energy (the av-clip carries a 220 Hz tone). This is the assertion that
+    // matters: it proves the operator HEARS the audio. The scope read is kept
+    // alongside purely as context — previously the test asserted ONLY the scope,
+    // which buffers samples whether or not anything reaches the destination, so
+    // it passed even while real output was silent (the regression we're guarding).
+    let out = { peak: 0, rms: 0, nonzeroSamples: 0, totalSamples: 0 };
+    let scope = { peak: 0, rms: 0, nonzeroSamples: 0, totalSamples: 0 };
+    const audioDeadline = Date.now() + 6000;
     while (Date.now() < audioDeadline) {
+      const o = await readOutputStats(page, 'aout');
+      if (o.peak > out.peak) out = o;
       const snap = await readScopeSnapshot(page, 'scope');
       if (snap) {
         const s = summarize(snap.ch1);
-        if (s.peak > audio.peak) audio = s;
-        if (audio.peak > 0.01) break;
+        if (s.peak > scope.peak) scope = s;
       }
+      if (out.peak > 0.01) break;
       await page.waitForTimeout(150);
     }
     expect(
-      audio.peak,
-      `audio produced when patched (peak=${audio.peak.toFixed(4)} rms=${audio.rms.toFixed(4)} nonzero=${audio.nonzeroSamples})`,
+      out.peak,
+      `audio AUDIBLE at AUDIO OUT (terminal peak=${out.peak.toFixed(4)} rms=${out.rms.toFixed(4)} nonzero=${out.nonzeroSamples}); scope peak=${scope.peak.toFixed(4)} — scope>0 with out==0 means signal stalled before the destination`,
     ).toBeGreaterThan(0.01);
 
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);

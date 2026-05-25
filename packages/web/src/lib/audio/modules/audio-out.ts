@@ -115,6 +115,19 @@ export const audioOutDef: AudioModuleDef = {
     merger.connect(limiter);
     limiter.connect(ctx.destination);
 
+    // Terminal-output tap. An AnalyserNode hung off the SAME limiter node that
+    // feeds ctx.destination, so a read of its buffer proves signal actually
+    // reached the audible terminal stage — not merely some upstream analyser
+    // (e.g. a SCOPE's ch1 sink, which buffers samples whether or not anything
+    // downstream reaches the speakers). E2E audibility assertions read this via
+    // read('outputSnapshot'); it is a passive sink (never connected onward) so
+    // it costs nothing audible and can't alter the signal path.
+    const outTap = ctx.createAnalyser();
+    outTap.fftSize = 2048;
+    outTap.smoothingTimeConstant = 0;
+    limiter.connect(outTap);
+    const outBuf = new Float32Array(outTap.fftSize);
+
     // Keep both gain nodes in the active graph even if nothing is patched
     // to either input. (Same trick as the Faust modules' channel mergers —
     // a silent ConstantSource per side ensures the node processes.)
@@ -144,6 +157,16 @@ export const audioOutDef: AudioModuleDef = {
         if (paramId === 'master') return gainL.gain.value;
         return undefined;
       },
+      read(key) {
+        // Terminal-output samples — what the limiter is feeding to
+        // ctx.destination this frame. Used by e2e to assert end-to-end
+        // audibility (signal reached the speakers through the user's patch).
+        if (key === 'outputSnapshot') {
+          outTap.getFloatTimeDomainData(outBuf);
+          return { samples: outBuf, sampleRate: ctx.sampleRate };
+        }
+        return undefined;
+      },
       dispose() {
         try { silenceL.stop(); } catch { /* */ }
         try { silenceR.stop(); } catch { /* */ }
@@ -155,6 +178,7 @@ export const audioOutDef: AudioModuleDef = {
         dcR.disconnect();
         merger.disconnect();
         limiter.disconnect();
+        try { outTap.disconnect(); } catch { /* */ }
       },
     };
   },

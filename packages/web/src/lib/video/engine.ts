@@ -159,6 +159,24 @@ export interface VideoEngineContext {
    *   `if (!ctx.audioCtx) return null;` — and surface an "audio off" badge.
    */
   audioCtx?: AudioContext;
+
+  /**
+   * Notify the engine that this node's `audioSources` map has changed
+   * identity for one or more ports — i.e. the AudioNode published for an
+   * `audio_l` / `audio_r` (etc.) port is now a DIFFERENT node than before.
+   *
+   * Video sources publish a silent placeholder on their audio ports at
+   * construction and SWAP it for the real node later (e.g. VIDEOBOX /
+   * VIDEOVARISPEED's wireAudio() replaces a ConstantSource with the
+   * MediaElementSource splitter once a file is loaded). A cross-domain
+   * video→audio bridge that was connected BEFORE that swap captured the
+   * stale placeholder and would otherwise stay wired to it forever (silent
+   * downstream). Calling this after a swap lets the PatchEngine re-resolve
+   * + re-connect any existing audio bridges from this node so the live node
+   * reaches the destination. No-op if no listener is registered (jsdom / the
+   * video engine running standalone).
+   */
+  notifyAudioSourcesChanged?(nodeId: string): void;
 }
 
 // ----------------------------------------------------------------------
@@ -242,6 +260,12 @@ export class VideoEngine implements DomainEngine {
    * (silent operation + a visible badge on the card).
    */
   private audioCtx: AudioContext | null = null;
+
+  /** Listener invoked when a node swaps the AudioNode identity on one of its
+   *  audioSources ports (see VideoEngineContext.notifyAudioSourcesChanged).
+   *  The PatchEngine registers this to re-resolve cross-domain audio bridges
+   *  that captured a now-stale placeholder node. Null when running standalone. */
+  private audioSourcesChangedListener: ((nodeId: string) => void) | null = null;
 
   private startTime = performance.now();
   private frameCount = 0;
@@ -850,7 +874,17 @@ void main() {
       createFbo: () => this.createFboImpl(),
       drawFullscreenQuad: () => this.drawFullscreenQuadImpl(),
       audioCtx: this.audioCtx ?? undefined,
+      notifyAudioSourcesChanged: (nodeId) => this.audioSourcesChangedListener?.(nodeId),
     };
+  }
+
+  /**
+   * Register the listener invoked when a materialized node swaps the AudioNode
+   * identity on one of its audioSources ports. The PatchEngine wires this to
+   * re-resolve cross-domain video→audio bridges. Last registration wins.
+   */
+  onAudioSourcesChanged(cb: ((nodeId: string) => void) | null): void {
+    this.audioSourcesChangedListener = cb;
   }
 
   /**

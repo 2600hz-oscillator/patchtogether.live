@@ -194,8 +194,31 @@
     // before play (rVFC fires on the first decoded frame).
     try { videoEl.currentTime = 0; } catch { /* */ }
 
+    ensureAudioWired();
+  }
+
+  // Wire the element's audio into the engine, RETRYING until it sticks.
+  //
+  // wireAudio() can no-op for two reasons that are both transient at file-load
+  // time: (a) getExtras() returns null because the engine hasn't materialized
+  // this card's video node yet (the reconciler runs async to the card, and is
+  // slower to settle when a cross-domain audio edge is already present), and
+  // (b) the factory's own <video> reference isn't set yet because
+  // attachExternalSource (driven by the onMount poll) hasn't run. Calling
+  // wireAudio exactly once (the old behaviour) lost this race and left audio_l /
+  // audio_r stuck on the silent placeholder forever -> the operator's downstream
+  // AUDIO-OUT patch was silent. wireAudio() is idempotent (guards on its own
+  // audioWired flag), so retrying until isAudioWired() reports true is safe and
+  // converges as soon as both the handle and the element are ready.
+  let audioWireTimer: ReturnType<typeof setTimeout> | null = null;
+  function ensureAudioWired(attempt = 0): void {
+    if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
+    if (!hasLocalFile) return; // file was cleared; nothing to wire
     const extras = getExtras();
     extras?.wireAudio();
+    if (extras?.isAudioWired()) return;
+    if (attempt >= 50) return; // ~5s of 100ms retries; give up quietly
+    audioWireTimer = setTimeout(() => ensureAudioWired(attempt + 1), 100);
   }
 
   function onFileInputChange(ev: Event): void {
@@ -392,6 +415,7 @@
   onDestroy(() => {
     stopGateLoop();
     stopTransportLoop();
+    if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
     const ve = videoEngine();
     try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
     const extras = getExtras();
