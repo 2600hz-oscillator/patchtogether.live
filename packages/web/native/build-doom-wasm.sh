@@ -204,6 +204,8 @@ EXPORTS='[
   "_dgpt_local_ticcmd_angleturn",
   "_dgpt_local_ticcmd_buttons",
   "_dgpt_inject_remote_ticcmd",
+  "_dgpt_set_scripted",
+  "_dgpt_state_checksum",
   "_malloc",
   "_free"
 ]'

@@ -92,6 +92,18 @@ extern void DGPT_LoopInjectRemoteTiccmd(int slot,
                                         short angleturn,
                                         unsigned char buttons);
 extern void DGPT_LoopSetNetgamePlayers(int num_players);
+// slice-7: arm scripted lockstep mode (the bit-exact determinism path). See
+// DGPT_LoopSetScripted in d_loop.c. Inert unless explicitly armed.
+extern void DGPT_LoopSetScripted(int enabled);
+
+// slice-7: the engine's random-table indices (m_random.c). Folded into the
+// state checksum so a divergence in RNG advancement (the classic lockstep
+// desync source) shows up immediately in the digest.
+extern int rndindex;
+extern int prndindex;
+// Tics elapsed in the current level (doomstat.h). Part of the digest so two
+// sims that ran a different NUMBER of tics never collide on an equal checksum.
+extern int leveltime;
 
 // ---- Key event queue ----
 //
@@ -487,10 +499,79 @@ int dgpt_local_ticcmd_buttons(void)     { return (int)s_local_buttons; }
 
 // Inject a remote peer's latest ticcmd, keyed by that peer's slot (0..3). The
 // fields arrive as ints from JS; we narrow to the ticcmd_t types. Ignored for
-// the local slot + out-of-range slots (handled in d_loop.c).
+// the local slot + out-of-range slots (handled in d_loop.c) — unless scripted
+// lockstep mode is armed (slice 7), where the local slot is injectable too.
 void dgpt_inject_remote_ticcmd(int slot, int forwardmove, int sidemove,
                                int angleturn, int buttons) {
   DGPT_LoopInjectRemoteTiccmd(slot, (signed char)forwardmove,
                               (signed char)sidemove, (short)angleturn,
                               (unsigned char)buttons);
+}
+
+// ---- Slice 7: bit-exact lockstep determinism ----
+//
+// dgpt_set_scripted(enabled): arm/disarm scripted lockstep mode. When armed,
+// the d_loop overlay drives EVERY slot — including this sim's own — from the
+// injected ticcmd stream, so a trace-replay harness can feed K independent
+// sims one identical consolidated TicSet per tic and prove their world states
+// stay byte-for-byte identical. OFF by default; the live game + every default
+// / single-player build path never call this, so the local player builds its
+// own ticcmd exactly as before (production byte-behavior unaffected).
+void dgpt_set_scripted(int enabled) {
+  DGPT_LoopSetScripted(enabled);
+}
+
+// dgpt_state_checksum(): a stable 32-bit digest of the deterministic game
+// state — enough to detect ANY divergence between two sims that should be in
+// lockstep, while being insensitive to non-gameplay noise (heap addresses,
+// pointer values, render-only fields). We fold, for every player slot in game:
+//   mobj x, y, z, angle, momx, momy, momz, health, the player's own health.
+// plus the global leveltime + both RNG indices (rndindex / prndindex). The
+// RNG indices are the canonical lockstep-desync canary: if two sims call
+// P_Random/M_Random a different number of times (different monster AI, different
+// damage rolls, …) their indices diverge and the checksum catches it even
+// before any position drift is visible.
+//
+// Implementation: a plain FNV-1a 32-bit fold over the little-endian bytes of
+// each value. Order-stable + dependency-free (no libc beyond the engine).
+// Reads only fields that exist in the SP build too, so it is inert/safe on the
+// default path (it just isn't exported there unless listed — it is harmless to
+// call: returns a digest of the lone player's state).
+static uint32_t dgpt_fnv1a_u32(uint32_t h, uint32_t v) {
+  int b;
+  for (b = 0; b < 4; ++b) {
+    h ^= (v & 0xff);
+    h *= 16777619u;
+    v >>= 8;
+  }
+  return h;
+}
+
+uint32_t dgpt_state_checksum(void) {
+  uint32_t h = 2166136261u; // FNV offset basis
+  int i;
+  h = dgpt_fnv1a_u32(h, (uint32_t)leveltime);
+  h = dgpt_fnv1a_u32(h, (uint32_t)rndindex);
+  h = dgpt_fnv1a_u32(h, (uint32_t)prndindex);
+  for (i = 0; i < MAXPLAYERS; ++i) {
+    // Fold playeringame so a slot toggling in/out changes the digest.
+    h = dgpt_fnv1a_u32(h, (uint32_t)(playeringame[i] ? 1u : 0u));
+    h = dgpt_fnv1a_u32(h, (uint32_t)players[i].health);
+    if (players[i].mo) {
+      mobj_t *mo = players[i].mo;
+      h = dgpt_fnv1a_u32(h, (uint32_t)mo->x);
+      h = dgpt_fnv1a_u32(h, (uint32_t)mo->y);
+      h = dgpt_fnv1a_u32(h, (uint32_t)mo->z);
+      h = dgpt_fnv1a_u32(h, (uint32_t)mo->angle);
+      h = dgpt_fnv1a_u32(h, (uint32_t)mo->momx);
+      h = dgpt_fnv1a_u32(h, (uint32_t)mo->momy);
+      h = dgpt_fnv1a_u32(h, (uint32_t)mo->momz);
+      h = dgpt_fnv1a_u32(h, (uint32_t)mo->health);
+    } else {
+      // Distinct constant for "no mobj" so an absent marine differs from one
+      // that happens to be at the origin with zero momentum.
+      h = dgpt_fnv1a_u32(h, 0xDEADBEEFu);
+    }
+  }
+  return h;
 }

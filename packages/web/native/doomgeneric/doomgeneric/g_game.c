@@ -594,8 +594,27 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
 
         carry = desired_angleturn - cmd->angleturn;
     }
-} 
- 
+}
+
+// patchtogether.live slice-7: read the consistancy byte the engine EXPECTS for
+// a given player slot at a given backup-tics buffer index. Used by the scripted
+// lockstep overlay (d_loop.c) to stamp each injected slot's ticcmd with the
+// locally-correct consistancy value, so G_Ticker's desync check (which compares
+// cmd->consistancy against consistancy[i][buf]) passes. In normal play the
+// local player's consistancy is set in G_BuildTiccmd from this same table and
+// the remote players' come over the wire pre-validated; scripted mode synthesizes
+// ticcmds with no consistancy, so we reconstruct the locally-expected value
+// here. Since every scripted-lockstep sim holds byte-identical state, this
+// value is identical across sims — the determinism the harness then verifies
+// independently via dgpt_state_checksum. Inert on the SP/default path (never
+// called there).
+int G_ConsistancyForSlot(int slot, int buf)
+{
+    if (slot < 0 || slot >= MAXPLAYERS) return 0;
+    if (buf < 0 || buf >= BACKUPTICS) return 0;
+    return consistancy[slot][buf];
+}
+
 
 //
 // G_DoLoadLevel 
