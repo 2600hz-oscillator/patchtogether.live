@@ -15,6 +15,31 @@ const { Pool } = pg;
 
 let pool: pg.Pool | null = null;
 
+// ── In-memory fallback (no DATABASE_URL) ────────────────────────────────────
+//
+// When DATABASE_URL is unset we run the collab server fully in memory: no
+// Postgres connection, snapshots live in a process-local Map, and membership
+// checks treat every rack as joinable. This is the LOCAL DEV + E2E mode — the
+// @collab Playwright suite (2-/4-context DOOM netgame, host-migration, etc.)
+// can then actually connect + sync without standing up Postgres, which is why
+// those tests historically could only "skip-clean" locally and were never
+// validated for real. Prod + dev deploys always set DATABASE_URL (Fly secret),
+// so this branch is never taken there and persistence/membership are unchanged.
+//
+// NOTE: snapshots in this mode do not survive a server restart — fine for
+// ephemeral test racks (Playwright uses a fresh rack id per run) and a dev
+// loop where durability isn't the point.
+const USE_MEMORY = !process.env.DATABASE_URL;
+const memSnapshots = new Map<string, Uint8Array>();
+
+if (USE_MEMORY) {
+  // eslint-disable-next-line no-console
+  console.log(
+    '[hocuspocus] DATABASE_URL unset — running with in-memory snapshot store ' +
+      '(local dev / e2e only; set DATABASE_URL for a persistent deploy).',
+  );
+}
+
 function getPool(): pg.Pool {
   if (pool) return pool;
   const connectionString = process.env.DATABASE_URL;
@@ -40,6 +65,10 @@ function getPool(): pg.Pool {
  *  Returns false if the rack doesn't exist (caller's gate is identical
  *  for "no such rack" and "not a member"). */
 export async function isRackspaceMember(rackId: string, userId: string): Promise<boolean> {
+  // In-memory mode (local dev / e2e): no membership table — treat every
+  // authenticated member as allowed so two real browser contexts can join the
+  // same rack. Prod always has DATABASE_URL set and runs the real query.
+  if (USE_MEMORY) return true;
   const result = await getPool().query<{ ok: boolean }>(
     'SELECT 1 AS ok FROM rack_members WHERE rack_id = $1 AND user_id = $2 LIMIT 1',
     [rackId, userId],
@@ -52,6 +81,8 @@ export async function isRackspaceMember(rackId: string, userId: string): Promise
  *  fake rackspace id passes auth + creates an empty Hocuspocus doc that
  *  never persists). */
 export async function rackspaceExists(rackId: string): Promise<boolean> {
+  // In-memory mode: every rack id is considered to exist (anon test racks).
+  if (USE_MEMORY) return true;
   const result = await getPool().query(
     'SELECT 1 FROM racks WHERE id = $1 LIMIT 1',
     [rackId],
@@ -62,6 +93,7 @@ export async function rackspaceExists(rackId: string): Promise<boolean> {
 /** Load the persisted Yjs state for a rackspace. Returns null if no
  *  snapshot exists yet (fresh rack). */
 export async function loadSnapshot(rackId: string): Promise<Uint8Array | null> {
+  if (USE_MEMORY) return memSnapshots.get(rackId) ?? null;
   const result = await getPool().query<{ yjs_state: Buffer }>(
     'SELECT yjs_state FROM rack_snapshots WHERE rack_id = $1',
     [rackId],
@@ -78,6 +110,10 @@ export async function loadSnapshot(rackId: string): Promise<Uint8Array | null> {
  *  Logging + swallowing keeps the test ergonomics clean and is safe in
  *  prod (the FK still enforces integrity if it ever did get triggered). */
 export async function storeSnapshot(rackId: string, state: Uint8Array): Promise<void> {
+  if (USE_MEMORY) {
+    memSnapshots.set(rackId, state);
+    return;
+  }
   try {
     await getPool().query(
       `INSERT INTO rack_snapshots (rack_id, yjs_state, updated_at)

@@ -342,6 +342,19 @@
   // running game instead). Only an active, launched player renders its own POV.
   let isSpectating = $derived<boolean>(mySlot === null && memberIds.length > 1);
 
+  // Push the spectator/player status down to the video module so it knows
+  // whether to render the host mirror (spectator) or tick + render its OWN
+  // real-time sim (active player). Critically, this runs on EVERY transition:
+  // a peer that spectated (received host frames) and then JOINED must flip
+  // back to its own sim — otherwise the module stays pinned to the slow
+  // ~10 Hz host mirror (the "player 2 only sees player 1's view, staggeringly
+  // slow" bug). $effect re-runs whenever isSpectating changes.
+  $effect(() => {
+    const spectating = isSpectating;
+    const extras = getExtras();
+    extras?.setSpectating(spectating);
+  });
+
   function syncIdentity(): void {
     myUsername = resolveUsername(resolveLocalUserId());
   }
