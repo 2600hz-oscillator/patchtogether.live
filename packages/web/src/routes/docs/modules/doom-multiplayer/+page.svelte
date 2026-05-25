@@ -128,7 +128,7 @@ deterministically so two simultaneous joins can't collide.</p>
 </ul>
 
 <nav class="prev-next">
-  <a href="/docs/modules/doom" class="prev">← DOOM module reference</a>
+  <span></span>
   <a href="/docs/modules" class="all">all modules</a>
   <span></span>
 </nav>
