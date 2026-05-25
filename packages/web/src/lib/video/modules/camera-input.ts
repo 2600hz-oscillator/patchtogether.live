@@ -19,6 +19,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
 
 const FRAG_SRC = `#version 300 es
 precision highp float;
@@ -115,6 +116,34 @@ export const cameraInputDef: VideoModuleDef = {
     let frameDirty = false;
     let rvfcId: number | null = null;
     let rvfcSupported = false;
+
+    // Silent audio keep-alive (src -> gain(0) -> destination) so the
+    // AudioContext pulls this element in real time. A <video> bound to a
+    // capture MediaStream is throttled by Chromium just like a file element
+    // when it's offscreen and its audio isn't pulled — so when several video
+    // sources coexist, all but one decode at ~1 fps. The keep-alive keeps this
+    // element demanded. Shared with VIDEOBOX / VIDEOVARISPEED via
+    // video-audio-keepalive.ts. CAMERA has no audio OUTPUT ports — the
+    // keep-alive is internal-only (gain 0 = inaudible) and never patched.
+    let keepAlive: VideoAudioKeepAlive | null = null;
+
+    function wireKeepAlive(): void {
+      if (keepAlive) return;
+      if (!ctx.audioCtx || !videoEl) return;
+      try {
+        keepAlive = createVideoAudioKeepAlive(ctx.audioCtx, videoEl);
+      } catch (err) {
+        // InvalidStateError: element already has a MediaElementSource (the card
+        // re-attached the same element). Decode keep-alive is best-effort — a
+        // failure just means CAMERA falls back to the pre-existing behaviour.
+        console.warn('[cameraInput] keep-alive wire failed:', err);
+      }
+    }
+
+    function unwireKeepAlive(): void {
+      if (keepAlive) keepAlive.disconnect();
+      keepAlive = null;
+    }
 
     const params: CameraParams = { ...DEFAULTS };
 
@@ -242,6 +271,7 @@ export const cameraInputDef: VideoModuleDef = {
       },
       dispose() {
         detachRvfc();
+        unwireKeepAlive();
         gl.deleteFramebuffer(fbo);
         gl.deleteTexture(outTexture);
         if (sourceTexture) gl.deleteTexture(sourceTexture);
@@ -265,14 +295,21 @@ export const cameraInputDef: VideoModuleDef = {
       },
       attachExternalSource(kind, el) {
         if (kind !== 'video') return;
-        // Clean up any previous element's rVFC subscription.
+        // Clean up any previous element's rVFC subscription + keep-alive.
         detachRvfc();
+        unwireKeepAlive();
         sourceTexAllocated = false; // re-alloc against the new dimensions
         videoEl = (el as HTMLVideoElement) ?? null;
-        if (videoEl) attachRvfc();
+        if (videoEl) {
+          attachRvfc();
+          // Keep the new element pulled so its decode runs at full rate even
+          // when other video sources coexist on the rack.
+          wireKeepAlive();
+        }
       },
       read(key) {
         if (key === 'hasVideoElement') return videoEl !== null;
+        if (key === 'hasKeepAlive') return keepAlive !== null;
         if (key === 'rvfcSupported') return rvfcSupported;
         return undefined;
       },

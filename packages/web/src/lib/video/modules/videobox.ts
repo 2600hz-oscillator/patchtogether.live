@@ -26,6 +26,7 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
+import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
 import type { VideoboxFileMeta, VideoboxSyncState } from './videobox-sync';
 
 // Shader: passthrough sample of the source texture, with a mute-time
@@ -168,16 +169,12 @@ export const videoboxDef: VideoModuleDef = {
     let silentRight: ConstantSourceNode | null = null;
     let mediaElSrc: MediaElementAudioSourceNode | null = null;
     let splitter: ChannelSplitterNode | null = null;
-    // Permanent silent keep-alive: a gain(0) node bridging the
-    // MediaElementSource to audioCtx.destination. Without a path to the
-    // context's destination, a MediaElementAudioSourceNode is NOT pulled in
-    // real-time, so Chromium throttles the <video>'s decode to ~1 fps when
-    // the user hasn't patched audio out. Connecting through gain 0 keeps the
-    // element demanded every render quantum (decode stays at full rate ->
-    // rVFC fires -> smooth video) while emitting NO audible output. The
-    // user's own audio_l/audio_r patches connect in parallel + are
-    // unaffected. See video-frame-upload.ts for the rVFC cadence.
-    let keepAlive: GainNode | null = null;
+    // Silent keep-alive (src -> gain(0) -> destination) so the AudioContext
+    // pulls this element in real time and Chromium doesn't throttle its decode
+    // to ~1 fps when no audio is patched — and so multiple video sources all
+    // decode at once instead of only one. Shared with VIDEOVARISPEED / CAMERA
+    // via video-audio-keepalive.ts (factored out of #301's inline version).
+    let keepAlive: VideoAudioKeepAlive | null = null;
     let audioWired = false;
 
     if (ctx.audioCtx) {
@@ -205,32 +202,21 @@ export const videoboxDef: VideoModuleDef = {
         // graph + does NOT play through the element's own native output.
         // That's what we want: the file's audio flows ONLY through our
         // audio_l / audio_r → downstream patching.
-        const src = ac.createMediaElementSource(videoEl);
+        //
+        // createVideoAudioKeepAlive builds src -> gain(0) -> destination (the
+        // silent keep-alive that stops the decode throttling to ~1 fps when no
+        // audio is patched) + resumes a suspended context, then hands back the
+        // MediaElementSource we fan into our splitter. Shared with
+        // VIDEOVARISPEED / CAMERA. The user's audio patches run in parallel off
+        // the splitter and are audible as before.
+        const ka = createVideoAudioKeepAlive(ac, videoEl);
         const split = ac.createChannelSplitter(2);
-        src.connect(split);
-        mediaElSrc = src;
+        ka.source.connect(split);
+        keepAlive = ka;
+        mediaElSrc = ka.source;
         splitter = split;
         audioSources.set('audio_l', { node: split, output: 0 });
         audioSources.set('audio_r', { node: split, output: 1 });
-
-        // Silent keep-alive: src -> gain(0) -> destination. This is what
-        // makes the AudioContext pull the element in real-time so its decode
-        // doesn't throttle to ~1 fps when no audio is patched. Gain 0 means
-        // zero audible output; the user's audio patches run in parallel off
-        // the splitter and are audible as before.
-        const ka = ac.createGain();
-        ka.gain.value = 0;
-        src.connect(ka);
-        ka.connect(ac.destination);
-        keepAlive = ka;
-
-        // A suspended context won't pull the element (decode stays throttled),
-        // so resume it. Loading a file is a user gesture, so this should
-        // succeed; guard the suspended case + swallow the rejection (older
-        // engines may not expose state/resume).
-        if (ac.state === 'suspended') {
-          void ac.resume().catch(() => { /* */ });
-        }
 
         audioWired = true;
       } catch (err) {
@@ -242,7 +228,7 @@ export const videoboxDef: VideoModuleDef = {
     }
 
     function unwireAudio(): void {
-      if (keepAlive) try { keepAlive.disconnect(); } catch { /* */ }
+      if (keepAlive) keepAlive.disconnect();
       if (splitter) try { splitter.disconnect(); } catch { /* */ }
       if (mediaElSrc) try { mediaElSrc.disconnect(); } catch { /* */ }
       keepAlive = null;
