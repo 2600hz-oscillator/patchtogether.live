@@ -6,6 +6,14 @@
 # Cheaper than prod: machines auto-stop when idle since rackspaces here
 # are short-lived test scenarios, not user sessions. First connection to
 # an idle app eats a ~3s cold-start.
+#
+# SINGLE-MACHINE INVARIANT (do not break): the relay holds live Yjs doc
+# state in process memory, so two simultaneously-running machines would
+# split-brain a shared rack (see packages/server/src/index.ts + the note
+# in fly.prod.toml). Scaling to zero is fine (state is disposable between
+# test runs), but the app MUST have exactly ONE machine total so Fly never
+# autostarts a second alongside the first. After deploy verify with
+# `flyctl machines list -a patchtogether-server-autotest` and destroy extras.
 
 app = "patchtogether-server-autotest"
 primary_region = "iad"

@@ -5,6 +5,13 @@
 #
 # Each tier has its own Fly app + secrets so a buggy server change in
 # autotest can't hose prod. App names match the Cloudflare project naming.
+#
+# SINGLE-MACHINE INVARIANT (do not break): the relay holds live Yjs doc
+# state + the per-rack connection-slot tracker in process memory (see
+# packages/server/src/index.ts). Two machines = two users in one rack can
+# split-brain onto separate in-memory docs and never sync. min 1 + no
+# autostop/start keeps one warm canonical host; after deploy verify exactly
+# one machine exists (`flyctl machines list -a patchtogether-server`).
 
 app = "patchtogether-server"
 primary_region = "iad"

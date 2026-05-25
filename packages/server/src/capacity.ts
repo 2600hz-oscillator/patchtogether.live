@@ -26,6 +26,19 @@ export interface SlotTracker {
   size(documentName: string): number;
   /** All known docs that have at least one held slot. Useful for tests. */
   docs(): string[];
+  /**
+   * Drop every held slot whose socketId is NOT in `liveSocketIds`. Returns
+   * the number of slots reaped. This is the leak-recovery valve: slots are
+   * acquired in onAuthenticate and released in onDisconnect, but a socket
+   * that dies without a clean WS close (crashed tab, network partition, a
+   * Fly machine killed mid-connection on autostop) never fires onDisconnect
+   * — its slot lingers forever and eventually pins a rack at 4/4, so new
+   * joiners get reject(full) and the rack is permanently "stuck". A periodic
+   * sweep reconciles the tracker against Hocuspocus's own live-connection
+   * source of truth (Document.getConnectionsCount via server.documents) so
+   * any leaked slot self-heals within one sweep interval.
+   */
+  reconcile(documentName: string, liveSocketIds: Iterable<string>): number;
 }
 
 export function createSlotTracker(limit = RACKSPACE_MAX_CONNECTIONS): SlotTracker {
@@ -56,6 +69,20 @@ export function createSlotTracker(limit = RACKSPACE_MAX_CONNECTIONS): SlotTracke
     },
     docs() {
       return Array.from(slots.keys());
+    },
+    reconcile(documentName, liveSocketIds) {
+      const held = slots.get(documentName);
+      if (!held) return 0;
+      const live = liveSocketIds instanceof Set ? liveSocketIds : new Set(liveSocketIds);
+      let reaped = 0;
+      for (const socketId of held) {
+        if (!live.has(socketId)) {
+          held.delete(socketId);
+          reaped += 1;
+        }
+      }
+      if (held.size === 0) slots.delete(documentName);
+      return reaped;
     },
   };
 }
