@@ -68,6 +68,40 @@ describe('SlotTracker', () => {
     expect(t.docs()).toEqual(['r2']);
   });
 
+  it('reconcile drops held slots not in the live set and reports the count', () => {
+    const t = createSlotTracker(4);
+    t.acquire('r1', 's1');
+    t.acquire('r1', 's2');
+    t.acquire('r1', 's3');
+    // s2 died without firing release; reconcile against the surviving set.
+    const reaped = t.reconcile('r1', ['s1', 's3']);
+    expect(reaped).toBe(1);
+    expect(t.size('r1')).toBe(2);
+  });
+
+  it('reconcile against an empty set frees the whole doc', () => {
+    const t = createSlotTracker(4);
+    t.acquire('r1', 's1');
+    t.acquire('r1', 's2');
+    const reaped = t.reconcile('r1', []);
+    expect(reaped).toBe(2);
+    expect(t.size('r1')).toBe(0);
+    expect(t.docs()).toEqual([]); // empty doc entry is GC'd
+  });
+
+  it('reconcile is a no-op when every slot is still live', () => {
+    const t = createSlotTracker(4);
+    t.acquire('r1', 's1');
+    t.acquire('r1', 's2');
+    expect(t.reconcile('r1', ['s1', 's2'])).toBe(0);
+    expect(t.size('r1')).toBe(2);
+  });
+
+  it('reconcile on an unknown doc is a no-op', () => {
+    const t = createSlotTracker(4);
+    expect(t.reconcile('never-seen', ['x'])).toBe(0);
+  });
+
   it('default limit matches RACKSPACE_MAX_CONNECTIONS', () => {
     expect(RACKSPACE_MAX_CONNECTIONS).toBe(4);
     const t = createSlotTracker();

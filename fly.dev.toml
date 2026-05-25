@@ -3,9 +3,25 @@
 # Deploy with (from workspace root):
 #   flyctl deploy --config fly.dev.toml
 #
-# Same shape as autotest (auto-stop, scale to zero). Distinct from
-# autotest so dogfooding sessions on dev.patchtogether.live don't
-# share Yjs state with whatever Playwright happens to be running.
+# Distinct app from autotest so dogfooding sessions on dev.patchtogether.live
+# don't share Yjs state with whatever Playwright happens to be running.
+#
+# SINGLE-MACHINE INVARIANT (do not break): the relay keeps live Yjs doc
+# state AND the per-rack connection-slot tracker in process memory — the
+# architecture explicitly assumes "one process serves all rackspaces"
+# (see packages/server/src/index.ts + capacity.ts). If Fly runs two
+# machines, two users in the same rack can land on DIFFERENT machines,
+# attach to DIFFERENT in-memory docs, and never see each other's modules
+# — the exact intermittent "works sometimes" sync failure on dev. So:
+#   - min_machines_running = 1 (stay warm; one canonical doc host)
+#   - auto_stop_machines = "off" + auto_start_machines = false (no fan-out)
+#   - the app MUST have exactly ONE machine. After deploy, verify with
+#     `flyctl machines list -a patchtogether-server-dev` and destroy any
+#     extras (`flyctl machine destroy <id>`). Dev historically had two
+#     stopped machines from an earlier scale-up; that split-brain is the
+#     root cause this config closes.
+# Same single-machine shape as prod (fly.prod.toml) for this reason; dev
+# trades the cents of a warm 256MB shared VM for reliable dogfooding sync.
 
 app = "patchtogether-server-dev"
 primary_region = "iad"
@@ -20,9 +36,13 @@ primary_region = "iad"
 [[services]]
   protocol = "tcp"
   internal_port = 8080
-  auto_stop_machines = "stop"
-  auto_start_machines = true
-  min_machines_running = 0
+  # Stay warm on a SINGLE machine — see the single-machine invariant note
+  # at the top of this file. auto_stop/start off + min 1 keeps exactly one
+  # canonical in-memory doc host so two users in a rack can't split-brain
+  # onto separate machines.
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
   processes = ["app"]
 
   [[services.ports]]

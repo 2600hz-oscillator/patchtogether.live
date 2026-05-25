@@ -16,6 +16,7 @@ import { CAPACITY_REJECTION, createSlotTracker } from './capacity.js';
 import { isRackspaceMember, loadSnapshot, storeSnapshot } from './db.js';
 import { SNAPSHOT_PERSISTENCE_CONFIG } from './snapshot-config.js';
 import { createHeartbeatExtension } from './heartbeat.js';
+import { startReaper, type LiveConnectionSource } from './reaper.js';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
 // because BitwigStudio (and likely other DAWs) reserve 1234 for OSC.
@@ -28,7 +29,7 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 // this becomes a Durable Object or Redis-backed counter.
 const slots = createSlotTracker();
 
-Server.configure({
+const hocuspocus = Server.configure({
   port: PORT,
   address: HOST,
 
@@ -142,6 +143,16 @@ Server.configure({
   },
 });
 
+// Periodic slot-leak reaper: reconciles the in-memory slot tracker against
+// Hocuspocus's live connections so a socket that died without a clean close
+// (crashed tab, network drop, machine killed mid-connection) can't leave a
+// ghost slot that eventually pins a rack at 4/4 → reject(full). See
+// ./reaper.ts. `hocuspocus.documents` is the live Map<name, Document>.
+const reaper = startReaper(slots, hocuspocus as unknown as LiveConnectionSource, {
+  // eslint-disable-next-line no-console
+  log: (msg) => console.log(msg),
+});
+
 Server.listen().then(() => {
   // eslint-disable-next-line no-console
   console.log(`[hocuspocus] listening ws://${HOST}:${PORT}`);
@@ -152,6 +163,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, async () => {
     // eslint-disable-next-line no-console
     console.log(`[hocuspocus] received ${sig}, draining…`);
+    reaper.stop();
     await Server.destroy();
     process.exit(0);
   });
