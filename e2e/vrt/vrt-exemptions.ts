@@ -68,11 +68,26 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   ruttetra: [{ selector: 'canvas' }],
   shapedramps: [{ selector: 'canvas' }],
   vdelay: [{ selector: 'canvas' }],
+  // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the
+  // deterministic chrome (4 selector knobs + handle rows) diffs while the
+  // live render is excluded. (Kept here for the follow-up baseline; the
+  // module is currently in EXEMPT_FROM_VRT below — promote it into MODULES
+  // when the darwin/linux PNGs are captured.)
+  '4plexvid': [{ selector: 'canvas' }],
 };
 
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
  *  ≥10-char reason — the vrt-meta self-test enforces this. */
 export const EXEMPT_FROM_VRT: Record<string, string> = {
+  // 4PLEXVID — 4-in/4-out video router. Card carries a live OUT-1 preview
+  // canvas; the rest is static chrome (4 discrete selector knobs + handle
+  // rows). VRT baseline pending platform-specific capture. Functional
+  // coverage: e2e/tests/4plexvid.spec.ts (proves each output shows its
+  // SELECTED input, gate rising-edge advances + wraps, outputs are
+  // independent) + the plex-select unit suite (selector-advance + gate
+  // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
+  // canvas mask above masks the live preview) in a follow-up PR.
+  '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
   // CAMERA renders a live MediaStream into a canvas. Even with the
   // fake-camera flag the synthetic frame is non-deterministic enough
   // (frame-time clock) that the baseline would flap. Functional coverage

@@ -223,6 +223,7 @@
   import VideoboxCard from '$lib/ui/modules/VideoboxCard.svelte';
   // VIDEOVARISPEED — local-file player with performant varispeed transport.
   import VideoVarispeedCard from '$lib/ui/modules/VideoVarispeedCard.svelte';
+  import FourPlexVidCard from '$lib/ui/modules/FourPlexVidCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -457,6 +458,8 @@
     videobox: VideoboxCard,
     // VIDEOVARISPEED — local-file player with performant varispeed transport.
     videovarispeed: VideoVarispeedCard,
+    // 4PLEXVID — 4-in / 4-out video router with per-output gate-advanced selector.
+    '4plexvid': FourPlexVidCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
