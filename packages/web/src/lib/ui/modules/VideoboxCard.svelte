@@ -25,10 +25,14 @@
   // their <video> stays in the "drop a file to play locally" state.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import { startCornerResize } from './card-resize';
+  import { createFullscreen } from './use-fullscreen.svelte';
+  import { createFullFrame } from './use-full-frame.svelte';
+  import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import {
@@ -53,6 +57,18 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+  const flowStore = useStore();
+
+  // ---- Resize (mirror VideoOutCard / BentboxCard) ----
+  // VIDEOBOX is now drag-resizable so several can be tiled into a grid
+  // (a "wall of TVs" alongside VIDEO OUT / BENTBOX). Width/height persist
+  // on node.data so they sync via Y.Doc.
+  const DEFAULT_WIDTH = 320;
+  const DEFAULT_HEIGHT = 360;
+  const MIN_WIDTH = 240;
+  const MIN_HEIGHT = 300;
+  let cardWidth = $derived<number>((node?.data?.width as number | undefined) ?? DEFAULT_WIDTH);
+  let cardHeight = $derived<number>((node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT);
 
   // ---- DOM refs + local state ----
   let videoEl: HTMLVideoElement | null = $state(null);
@@ -602,15 +618,81 @@
   let windowValid = $derived(
     resolveWindow(durationSec || 1, paramVal('start'), paramVal('end')).hasWindow,
   );
+
+  // ---------- True fullscreen (Fullscreen API) ----------
+  // The preview-wrap is the fullscreen element; it holds the live <video>.
+  const fs = createFullscreen();
+  let wrapEl: HTMLDivElement | null = $state(null);
+  $effect(() => { fs.setTarget(wrapEl); });
+  $effect(() => fs.attach());
+
+  // ---------- Full Frame (in-app, NOT browser fullscreen) ----------
+  // Expands the <video> preview to consume the card border, hiding the file
+  // picker / transport / seekbar / port labels + jacks; the card stays in
+  // the rack + remains resizable. Persisted in node.data.fullFrame (Y.Doc-
+  // synced) so a wall-of-TVs layout survives reload + is shareable.
+  let fullFrame = $derived<boolean>((node?.data?.fullFrame as boolean | undefined) ?? false);
+  const ff = createFullFrame({
+    setFullFrame: (on) => {
+      const target = patch.nodes[id];
+      if (target) {
+        if (!target.data) target.data = {};
+        (target.data as Record<string, unknown>).fullFrame = on;
+      }
+    },
+    exitFullscreen: () => void fs.exit(),
+  });
+  let cardEl: HTMLDivElement | null = $state(null);
+  $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Right-click-on-preview context menu (Fullscreen / Full Frame).
+  let ctxOpen = $state(false);
+  let ctxX = $state(0);
+  let ctxY = $state(0);
+  function onPreviewContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    ctxX = e.clientX;
+    ctxY = e.clientY;
+    ctxOpen = true;
+  }
+
+  // ---------- Corner-drag resize ----------
+  let resizing = $state(false);
+  let resizeAbort: AbortController | null = null;
+  function onResizeStart(ev: PointerEvent) {
+    resizeAbort = startCornerResize(ev, {
+      flowStore,
+      minWidth: MIN_WIDTH,
+      minHeight: MIN_HEIGHT,
+      getStartSize: () => ({ width: cardWidth, height: cardHeight }),
+      apply: (w, h) => {
+        const target = patch.nodes[id];
+        if (target) {
+          if (!target.data) target.data = {};
+          (target.data as Record<string, unknown>).width = w;
+          (target.data as Record<string, unknown>).height = h;
+        }
+      },
+      onStart: () => { resizing = true; },
+      onEnd: () => { resizing = false; resizeAbort = null; },
+    });
+  }
+  onDestroy(() => { if (resizeAbort) resizeAbort.abort(); });
 </script>
 
 <div
+  bind:this={cardEl}
   class="card video videobox-card"
   class:drag-over={isDragOver}
+  class:resizing
+  class:full-frame={fullFrame}
+  style="width: {cardWidth}px; height: {cardHeight}px;"
   data-testid="videobox-card"
   data-has-local-file={hasLocalFile}
   data-is-playing={isPlaying}
   data-loop={loop}
+  data-full-frame={fullFrame}
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
@@ -645,7 +727,15 @@
   <span class="port-label right" style="top: 106px;">A-R</span>
 
   <div class="body">
-    <div class="preview-wrap">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      bind:this={wrapEl}
+      class="preview-wrap"
+      class:fullscreen={fs.isFullscreen}
+      class:full-frame={fullFrame}
+      data-testid="videobox-fs-wrap"
+      oncontextmenu={onPreviewContextMenu}
+    >
       <!-- svelte-ignore a11y_media_has_caption -->
       <video
         bind:this={videoEl}
@@ -762,12 +852,31 @@
       </div>
     {/if}
   </div>
+
+  <!-- Bottom-right corner-drag resize handle (nodrag so xyflow's node-drag
+       doesn't hijack the pointerdown). -->
+  <div
+    class="resize-handle nodrag"
+    role="separator"
+    aria-label="Resize VIDEOBOX"
+    data-testid="videobox-resize-handle"
+    onpointerdown={onResizeStart}
+  ></div>
 </div>
+
+<VideoCanvasContextMenu
+  bind:open={ctxOpen}
+  x={ctxX}
+  y={ctxY}
+  title="VIDEOBOX"
+  onfullscreen={() => { ff.exit(); void fs.enter(); }}
+  onfullframe={() => ff.toggle(fullFrame)}
+  isFullFrame={fullFrame}
+  onclose={() => { ctxOpen = false; }}
+/>
 
 <style>
   .card {
-    width: 320px;
-    min-height: 420px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -777,7 +886,13 @@
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
+    overflow: hidden;
+    /* The body fills the card below the header so the preview-wrap can
+     * grow as the card is resized (and to 100% in full-frame). */
+    display: flex;
+    flex-direction: column;
   }
+  .card.resizing { transition: none; }
   :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
   :global(.svelte-flow__node.selected) .card {
     border-color: var(--accent);
@@ -817,6 +932,8 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    flex: 1;
+    min-height: 0;
   }
 
   .preview-wrap {
@@ -830,6 +947,9 @@
     min-height: 160px;
     aspect-ratio: 16 / 9;
     overflow: hidden;
+    /* Grow to consume the card space above the transport controls so a
+     * resized card shows a bigger preview. */
+    flex: 1;
   }
   video {
     display: block;
@@ -984,4 +1104,96 @@
     color: #ffb347;
     font-family: ui-monospace, monospace;
   }
+
+  /* ---------- True fullscreen (Fullscreen API) ---------- */
+  .preview-wrap.fullscreen {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    aspect-ratio: auto;
+  }
+  .preview-wrap.fullscreen video {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    cursor: pointer;
+  }
+
+  /* ---------- FULL FRAME (in-app, NOT browser fullscreen) ---------- */
+  /* The <video> preview consumes the whole card border; hide the title,
+   * stripe, port labels, file picker, transport + seekbar so the card shows
+   * only video. Stays in the rack + resizable; double-click exits. */
+  .card.full-frame {
+    padding: 0;
+  }
+  .card.full-frame .title,
+  .card.full-frame .stripe,
+  .card.full-frame .port-label,
+  .card.full-frame .pick-btn,
+  .card.full-frame .transport,
+  .card.full-frame .seek,
+  .card.full-frame .speed-row,
+  .card.full-frame .window-row,
+  .card.full-frame .warn,
+  .card.full-frame .filename,
+  .card.full-frame .error {
+    display: none;
+  }
+  /* Hide the card's OWN Svelte Flow jacks while full-frame — keep them in
+   * the DOM (opacity/pointer-events, not display:none) so existing cables
+   * stay connected; we hide, not remove. */
+  .card.full-frame :global(.svelte-flow__handle) {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .card.full-frame .body {
+    margin-top: 0;
+    padding: 0;
+    gap: 0;
+  }
+  .preview-wrap.full-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    background: #000;
+    aspect-ratio: auto;
+    cursor: pointer;
+  }
+  .preview-wrap.full-frame video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  /* Keep the peer-hint overlay legible if a peer loaded a file we can't
+   * play locally — but the drop-hint should vanish so full-frame is clean. */
+  .card.full-frame .drop-hint {
+    display: none;
+  }
+
+  /* ---------- Corner-drag resize handle ---------- */
+  .resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    background: linear-gradient(
+      135deg,
+      transparent 50%,
+      var(--cable-video) 50%,
+      var(--cable-video) 60%,
+      transparent 60%,
+      transparent 70%,
+      var(--cable-video) 70%,
+      var(--cable-video) 80%,
+      transparent 80%
+    );
+    opacity: 0.7;
+    z-index: 5;
+  }
+  .resize-handle:hover { opacity: 1; }
 </style>

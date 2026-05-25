@@ -19,6 +19,14 @@
     /** Title at the top — usually the module name. */
     title: string;
     onfullscreen: () => void;
+    /** Optional in-app "Full Frame" toggle: expand the card's video surface
+     *  to consume the card border (hide knobs/jacks/labels), staying in the
+     *  rack. Distinct from `onfullscreen` (true browser fullscreen). When
+     *  omitted, the Full Frame item is not shown. */
+    onfullframe?: () => void;
+    /** Whether the card is currently in full-frame, so the item can read
+     *  "Full Frame" vs "Exit Full Frame". */
+    isFullFrame?: boolean;
     onclose: () => void;
   }
 
@@ -28,6 +36,8 @@
     y,
     title,
     onfullscreen,
+    onfullframe,
+    isFullFrame = false,
     onclose,
   }: Props = $props();
 
@@ -89,6 +99,11 @@
     onclose();
   }
 
+  function pickFullFrame() {
+    onfullframe?.();
+    onclose();
+  }
+
   // Render the menu + overlay at <body> so they escape SvelteFlow's pane
   // `transform` (zoom/pan). A `position: fixed` element nested inside a
   // transformed ancestor anchors to that ANCESTOR's box, not the viewport —
@@ -136,6 +151,16 @@
       >
         Fullscreen
       </button>
+      {#if onfullframe}
+        <button
+          class="ctx-item"
+          onclick={pickFullFrame}
+          role="menuitem"
+          data-testid="ctx-full-frame"
+        >
+          {isFullFrame ? 'Exit Full Frame' : 'Full Frame'}
+        </button>
+      {/if}
     </div>
   </div>
 {/if}
