@@ -222,7 +222,7 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
   // CI shard load, killing the test mid-click ("locator.click: Test ended").
   // Skip on CI until the 2-context harness is hardened; still runs locally.
   // MP instance model + roster + netcode are covered by the C-harness + unit suites.
-  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab 2-context flake under CI shard load — task #97');
+  test.skip(!!process.env.CI, '@collab 2-context flake under CI shard load — task #97');
   // Cold WASM fetch + 4 MB WAD on TWO contexts + cross-context Yjs sync +
   // netcode start sits in the same 20-60 s window as the other doom specs.
   test.setTimeout(180_000);
