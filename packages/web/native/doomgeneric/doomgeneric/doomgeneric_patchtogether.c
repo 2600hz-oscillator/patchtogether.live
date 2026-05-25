@@ -78,6 +78,21 @@ extern player_t players[MAXPLAYERS];
 // the tic counters. See DGPT_LoopSetLocalPlayer there for why we need it.
 extern void DGPT_LoopSetLocalPlayer(int player);
 
+// Defined in d_loop.c (slice-5): the cross-peer ticcmd feed. JS reads this
+// peer's local ticcmd each tic + broadcasts it, and injects every remote
+// peer's ticcmd keyed by slot so all players' marines move in every peer's
+// world. See the rationale block at the top of d_loop.c.
+extern int  DGPT_LoopReadLocalTiccmd(signed char *forwardmove,
+                                     signed char *sidemove,
+                                     short *angleturn,
+                                     unsigned char *buttons);
+extern void DGPT_LoopInjectRemoteTiccmd(int slot,
+                                        signed char forwardmove,
+                                        signed char sidemove,
+                                        short angleturn,
+                                        unsigned char buttons);
+extern void DGPT_LoopSetNetgamePlayers(int num_players);
+
 // ---- Key event queue ----
 //
 // Bounded ring buffer. Each event packs the full 8-bit doomkey value
@@ -353,6 +368,10 @@ void dgpt_start_netgame(int deathmatch_mode,
   consoleplayer = console_player;
   displayplayer = console_player;
   DGPT_LoopSetLocalPlayer(console_player);
+  // slice-5: arm the cross-peer ticcmd feed for `num_players` live slots so
+  // each peer applies every other peer's input (cross-peer marine visibility).
+  // num_players==1 leaves it disabled (single-player unaffected).
+  DGPT_LoopSetNetgamePlayers(num_players);
 
   // 4. Load the level. G_InitNew honours the globals we set above.
   G_InitNew(startskill, startepisode, startmap);
@@ -389,4 +408,69 @@ int dgpt_get_console_player(void) {
 
 int dgpt_has_console_player_mobj(void) {
   return players[consoleplayer].mo != NULL ? 1 : 0;
+}
+
+// Position of an ARBITRARY player slot's mobj (0..MAXPLAYERS-1), in DOOM
+// fixed-point. Used by the cross-peer-visibility test: on peer B, read the
+// position of players[A's slot] (the REMOTE marine) before + after A moves
+// and assert it changed — i.e. B saw A walk. Returns 0 for an out-of-range
+// slot or a slot with no live mobj (dgpt_has_player_slot_mobj gates it).
+int dgpt_get_player_slot_x(int slot) {
+  if (slot < 0 || slot >= MAXPLAYERS || !players[slot].mo) return 0;
+  return (int)players[slot].mo->x;
+}
+
+int dgpt_get_player_slot_y(int slot) {
+  if (slot < 0 || slot >= MAXPLAYERS || !players[slot].mo) return 0;
+  return (int)players[slot].mo->y;
+}
+
+int dgpt_has_player_slot_mobj(int slot) {
+  if (slot < 0 || slot >= MAXPLAYERS) return 0;
+  return players[slot].mo != NULL ? 1 : 0;
+}
+
+// ---- Slice 5: cross-peer ticcmd feed ----
+//
+// JS reads THIS peer's freshly-built local ticcmd each tic via the four
+// getters below + broadcasts {slot, forwardmove, sidemove, angleturn,
+// buttons} over the netcode; on the receiving peer JS calls
+// dgpt_inject_remote_ticcmd(slot, ...) which overlays that peer's input onto
+// the next tic so its marine moves in this peer's world. See d_loop.c's
+// DGPT_LoopReadLocalTiccmd / DGPT_LoopInjectRemoteTiccmd for the mechanism.
+//
+// We expose the local ticcmd as four scalar getters (rather than a struct out
+// param) so the JS ccall surface stays trivial — each is a single 'number'
+// return, no heap marshalling. dgpt_has_local_ticcmd gates them (false before
+// the first tic is built). The values are DOOM's native ticcmd_t field types;
+// JS sign-extends the i8/i16 fields itself.
+
+static signed char  s_local_fwd;
+static signed char  s_local_side;
+static short        s_local_angle;
+static unsigned char s_local_buttons;
+static int          s_local_have;
+
+// Refresh the cached local ticcmd from d_loop. Called by dgpt_has_local_ticcmd
+// (the JS read path always calls it first), so the four getters return a
+// coherent snapshot of one tic.
+int dgpt_has_local_ticcmd(void) {
+  s_local_have = DGPT_LoopReadLocalTiccmd(&s_local_fwd, &s_local_side,
+                                          &s_local_angle, &s_local_buttons);
+  return s_local_have;
+}
+
+int dgpt_local_ticcmd_forwardmove(void) { return (int)s_local_fwd; }
+int dgpt_local_ticcmd_sidemove(void)    { return (int)s_local_side; }
+int dgpt_local_ticcmd_angleturn(void)   { return (int)s_local_angle; }
+int dgpt_local_ticcmd_buttons(void)     { return (int)s_local_buttons; }
+
+// Inject a remote peer's latest ticcmd, keyed by that peer's slot (0..3). The
+// fields arrive as ints from JS; we narrow to the ticcmd_t types. Ignored for
+// the local slot + out-of-range slots (handled in d_loop.c).
+void dgpt_inject_remote_ticcmd(int slot, int forwardmove, int sidemove,
+                               int angleturn, int buttons) {
+  DGPT_LoopInjectRemoteTiccmd(slot, (signed char)forwardmove,
+                              (signed char)sidemove, (short)angleturn,
+                              (unsigned char)buttons);
 }

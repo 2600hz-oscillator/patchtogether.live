@@ -73,7 +73,13 @@
     type DoomGameSettings,
     type DoomGameMode,
     type GameStartEnvelope,
+    type TiccmdEnvelope,
   } from '$lib/doom/doom-netcode';
+  import {
+    slotColorCss,
+    slotLabel,
+    slotBadge,
+  } from '$lib/doom/doom-player-identity';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -176,6 +182,36 @@
     episode = env.settings.episode;
     skill = env.settings.skill;
   }
+  /** Slice 5: inject a remote peer's ticcmd into our runtime so its marine
+   *  moves in our world. Ignores our own slot (the netcode already filters
+   *  self, but guard defensively) + spectators (no runtime). */
+  function applyRemoteTiccmd(env: TiccmdEnvelope): void {
+    if (mySlot !== null && env.slot === mySlot) return;
+    const extras = getExtras();
+    if (!extras) return;
+    extras.injectRemoteTiccmd(env.slot, {
+      forwardmove: env.forwardmove,
+      sidemove: env.sidemove,
+      angleturn: env.angleturn,
+      buttons: env.buttons,
+    });
+  }
+
+  /** Slice 5: broadcast THIS peer's freshly-built local ticcmd over the
+   *  netcode each tic so the other joined peers move our marine in their
+   *  worlds. Only meaningful for a joined player running a launched netgame
+   *  with active peers. */
+  function broadcastLocalTiccmd(): void {
+    if (!netcode) return;
+    if (mySlot === null) return;
+    if (!launched) return;
+    const extras = getExtras();
+    if (!extras) return;
+    const cmd = extras.readLocalTiccmd();
+    if (!cmd) return;
+    netcode.broadcastLocalTiccmd(mySlot, cmd);
+  }
+
   /** Last remote framebuffer received via awareness — spectator path. The
    *  card-side rAF tick prefers this over `extras.snapshotFramebuffer()`
    *  (which is null on spectator pages because they never load WASM). */
@@ -192,6 +228,36 @@
     const state = aw.getLocalState() as { user?: { id?: string } } | null;
     const uid = state?.user?.id;
     return typeof uid === 'string' && uid.length > 0 ? uid : randomLocalId;
+  }
+
+  /** Resolve a rack user's display name from awareness presence (the `user`
+   *  field set by multiplayer/presence.ts carries id + displayName). Returns
+   *  null when no presence entry / no provider — the identity label then
+   *  shows just "Player N". Mirrored into `myUsername` reactively so the
+   *  header re-renders when presence arrives. */
+  function resolveUsername(userId: string | null): string | null {
+    if (!userId) return null;
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return null;
+    for (const [, state] of aw.getStates()) {
+      const u = (state as { user?: { id?: string; displayName?: string } }).user;
+      if (u?.id === userId && typeof u.displayName === 'string') return u.displayName;
+    }
+    return null;
+  }
+
+  // Slice 5: this peer's identity (color tint + label). Recomputed on
+  // awareness churn (syncIdentity) so the username + slot color stay current.
+  let myUsername = $state<string | null>(null);
+  // The card header / stripe / badge tint by the local player's slot color;
+  // a spectator (mySlot === null) keeps the default video-cable red.
+  let slotTint = $derived<string>(mySlot !== null ? slotColorCss(mySlot) : 'var(--cable-video, #c33)');
+  let identityLabel = $derived<string>(slotLabel(mySlot, myUsername, true));
+  let badgeText = $derived<string>(slotBadge(mySlot));
+
+  function syncIdentity(): void {
+    myUsername = resolveUsername(resolveLocalUserId());
   }
 
   // ---- Extras helper ----
@@ -350,6 +416,9 @@
       // Slice 4: the arbiter's Launch broadcast lands here on EVERY joined
       // peer (arbiter included) → start our WASM netgame at our own slot.
       onGameStart: (env) => { applyGameStart(env); },
+      // Slice 5: a remote peer's latest ticcmd → inject it into our sim so
+      // that peer's marine moves in OUR world (cross-peer visibility).
+      onRemoteTiccmd: (env: TiccmdEnvelope) => { applyRemoteTiccmd(env); },
     });
     netcode.start();
     netStarted = true;
@@ -653,6 +722,9 @@
       assignSlotsAsArbiter();
       // Everyone re-reads their own status off the (arbiter-written) roster.
       syncRosterState();
+      // Slice 5: refresh identity (username + slot color tint) on presence
+      // churn — a peer's displayName may arrive after the roster slot.
+      syncIdentity();
     };
     aw.on('update', update);
     awarenessOff = () => aw.off('update', update);
@@ -666,6 +738,8 @@
     // Slice 3: pick up any roster already present on the synced node + spin
     // up our netcode if we're a returning player.
     syncRosterState();
+    // Slice 5: initial identity (username + slot color).
+    syncIdentity();
 
     // Host: broadcast a framebuffer ~10 Hz.
     frameBroadcastInterval = setInterval(() => {
@@ -721,6 +795,10 @@
       if (launched) {
         const ex = getExtras();
         if (ex) gamestate = ex.getGameState();
+        // Slice 5: broadcast our latest local ticcmd so peers move our marine
+        // in their worlds (cross-peer visibility). Cheap (4 small ints over a
+        // sticky awareness field, deduped by seq on receive).
+        broadcastLocalTiccmd();
       }
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
@@ -829,6 +907,12 @@
         const ex = getExtras();
         return ex ? ex.getConsolePlayerState() : null;
       },
+      // Slice 5 e2e hook: read an arbitrary slot's marine position in THIS
+      // peer's world (cross-peer-visibility assertion reads the REMOTE slot).
+      getSlotState: (slot: number) => {
+        const ex = getExtras();
+        return ex ? ex.getPlayerSlotState(slot) : null;
+      },
       getState: () => ({
         roster: { ...roster },
         mySlot,
@@ -839,6 +923,11 @@
         netcodePeers: netcode ? netcode.debugStats().peers : [],
         launched,
         gamestate,
+        // Slice 5 identity (badge + color + label) for e2e assertions.
+        slotColor: slotTint,
+        badgeText,
+        identityLabel,
+        username: myUsername,
       }),
     };
   });
@@ -895,15 +984,22 @@
   data-testid="doom-card"
   onclick={() => cardEl?.focus()}
 >
-  <div class="stripe" style="background: var(--cable-video, #c33);"></div>
+  <!-- Slice 5: the stripe is tinted by the local player's slot color (vanilla
+       DOOM player colors — green/indigo/brown/red) so a wall of 4 DOOM cards
+       is instantly readable; a spectator keeps the default video-cable red. -->
+  <div class="stripe" style="background: {slotTint};"></div>
   <header class="title">
-    DOOM
     {#if mySlot !== null}
+      <!-- "Player N — <username> (you)" + a slot-colored badge. -->
       <span
         class="player-badge"
         data-testid="doom-player-badge"
-        title="You are a player in this DOOM netgame"
-      >P{mySlot + 1}</span>
+        style="background: {slotTint};"
+        title={identityLabel}
+      >{badgeText}</span>
+      <span class="player-label" data-testid="doom-player-label">{identityLabel}</span>
+    {:else}
+      DOOM
     {/if}
     {#if isHost}
       <span class="host-badge" title="You are running the DOOM instance for this rack">HOST</span>
@@ -1101,14 +1197,11 @@
     gap: 8px;
   }
   /* Push the host/spec status badge to the far right; the optional
-     player-badge sits inline right after the DOOM title. */
+     player-badge + identity label sit inline right after the title. The
+     label grows to fill the gap so the status badge stays right-aligned. */
   .doom-card .host-badge,
   .doom-card .spec-badge {
     margin-left: auto;
-  }
-  .doom-card .player-badge + .host-badge,
-  .doom-card .player-badge + .spec-badge {
-    margin-left: 0;
   }
   .doom-card .host-badge,
   .doom-card .spec-badge,
@@ -1120,8 +1213,18 @@
     letter-spacing: 0.05em;
   }
   .doom-card .player-badge {
-    background: color-mix(in oklab, var(--cable-cv, #4a9) 80%, black);
+    /* background is set inline by slot color (slice 5) */
     color: white;
+  }
+  .doom-card .player-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* grow to fill the header so the host/spec badge stays right-aligned */
+    margin-right: auto;
   }
   .doom-card .join-btn {
     font-size: 11px;

@@ -31,6 +31,7 @@ import {
   type NetcodeModule,
   type DoomGameSettings,
   type GameStartEnvelope,
+  type TiccmdEnvelope,
 } from './doom-netcode';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 
@@ -690,5 +691,71 @@ describe('DoomNetcode — GAMESTART broadcast (Launch)', () => {
     expect(startsB[0]!.launchId).toBe(1);
     expect(startsB[1]!.launchId).toBe(2);
     expect(startsB[1]!.settings.map).toBe(2);
+  });
+});
+
+describe('DoomNetcode — cross-peer ticcmd feed (slice 5)', () => {
+  function twoPeers() {
+    const bus = new FakeAwarenessBus();
+    const awA = bus.create();
+    const awB = bus.create();
+    joinAs(awA, 'aaa'); // slot 0 (lex-min)
+    joinAs(awB, 'bbb'); // slot 1
+    const ticsAonB: TiccmdEnvelope[] = []; // ticcmds A produced, seen by B
+    const ticsBonA: TiccmdEnvelope[] = []; // ticcmds B produced, seen by A
+    const { runtime: rtA } = makeRuntime();
+    const { runtime: rtB } = makeRuntime();
+    const ncA = new DoomNetcode({
+      provider: makeProvider(awA), moduleId: 'm', localUserId: 'aaa',
+      runtime: rtA, onRemoteTiccmd: (e) => ticsBonA.push(e),
+    });
+    const ncB = new DoomNetcode({
+      provider: makeProvider(awB), moduleId: 'm', localUserId: 'bbb',
+      runtime: rtB, onRemoteTiccmd: (e) => ticsAonB.push(e),
+    });
+    ncA.start();
+    ncB.start();
+    return { ncA, ncB, ticsAonB, ticsBonA };
+  }
+
+  it("delivers peer A's ticcmd to peer B (cross-peer visibility)", () => {
+    const { ncA, ticsAonB } = twoPeers();
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    expect(ticsAonB).toHaveLength(1);
+    expect(ticsAonB[0]!.slot).toBe(0);
+    expect(ticsAonB[0]!.forwardmove).toBe(50);
+  });
+
+  it('does not echo a peer its own ticcmd', () => {
+    const { ncA, ticsBonA } = twoPeers();
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 25, sidemove: 0, angleturn: 0, buttons: 0 });
+    // A broadcast its own ticcmd; A's onRemoteTiccmd must NOT fire for it.
+    expect(ticsBonA).toHaveLength(0);
+  });
+
+  it('both directions flow independently', () => {
+    const { ncA, ncB, ticsAonB, ticsBonA } = twoPeers();
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 10, sidemove: 0, angleturn: 0, buttons: 0 });
+    ncB.broadcastLocalTiccmd(1, { forwardmove: 0, sidemove: 20, angleturn: 0, buttons: 1 });
+    expect(ticsAonB).toHaveLength(1);
+    expect(ticsAonB[0]!.forwardmove).toBe(10);
+    expect(ticsBonA).toHaveLength(1);
+    expect(ticsBonA[0]!.slot).toBe(1);
+    expect(ticsBonA[0]!.sidemove).toBe(20);
+    expect(ticsBonA[0]!.buttons).toBe(1);
+  });
+
+  it('dedupes a sticky re-broadcast on unrelated awareness churn (seq)', () => {
+    const { ncA, ticsAonB } = twoPeers();
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    expect(ticsAonB).toHaveLength(1);
+    // Unrelated awareness update re-runs B's drain; the sticky ticcmd field is
+    // still present but must NOT re-fire (same seq).
+    joinAs((ncA as unknown as { provider: { awareness: FakeAwareness } }).provider.awareness, 'aaa');
+    expect(ticsAonB).toHaveLength(1);
+    // A NEW ticcmd (bumped seq) fires again.
+    ncA.broadcastLocalTiccmd(0, { forwardmove: -50, sidemove: 0, angleturn: 0, buttons: 0 });
+    expect(ticsAonB).toHaveLength(2);
+    expect(ticsAonB[1]!.forwardmove).toBe(-50);
   });
 });
