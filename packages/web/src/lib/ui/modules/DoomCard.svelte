@@ -137,6 +137,54 @@
   let mapNum = $state(1);    // 1..9
   let launched = $state(false);           // a netgame has been launched
   let gamestate = $state<number>(-1);     // polled DOOM gamestate_t (GS_LEVEL=0)
+  // ---- Explicit multiplayer-session mode (the operator's "Host Multiplayer"
+  //      vs "Single Player" choice) ----
+  //
+  // The session mode is a HOST decision, stored on the shared node
+  // (node.data.mpMode) so every peer agrees on whether a multiplayer game is
+  // being run. It replaces the fragile implicit "a 2nd member appeared, so
+  // auto-seat the host + show the dialog" detection that left both cards in
+  // single-player limbo when presence raced (the "single-user rack" +
+  // demo-plays-itself cascade). Values:
+  //   undefined → no choice yet (host sees Single Player / Host Multiplayer).
+  //   'single'  → single-player: host runs its own WASM, no roster / netcode.
+  //   'multi'   → multiplayer lobby open: host seated as player 0, guests get
+  //               a Join affordance, an explicit Launch starts the netgame.
+  // Mirrored into $state (NOT $derived) and refreshed from the shared node in
+  // syncRosterState() — same pattern as `roster`/`pending`, because a node-
+  // data edit arrives via the Yjs nodes observer, not Svelte's reactive proxy.
+  let mpMode = $state<'single' | 'multi' | undefined>(undefined);
+  function readNodeMpMode(): 'single' | 'multi' | undefined {
+    const target = patch.nodes[id];
+    const m = (target?.data as { mpMode?: unknown } | undefined)?.mpMode;
+    return m === 'single' || m === 'multi' ? m : undefined;
+  }
+  /** Host-only: persist the session mode on the shared node so guests see the
+   *  lobby (or single-player) state. Non-LOCAL_ORIGIN session state (not a
+   *  Cmd-Z-able edit), same rationale as the roster leaves. */
+  function writeNodeMpMode(next: 'single' | 'multi'): void {
+    ydoc.transact(() => {
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as Record<string, unknown>).mpMode = next;
+    });
+  }
+  /** Host action: open the multiplayer lobby. Seats the host as player 0 +
+   *  starts everyone's roster/netcode path; guests then see Join. */
+  async function hostMultiplayer(): Promise<void> {
+    if (!isHost) return;
+    mpMode = 'multi'; // set locally first so the synchronous assignSlots pass sees it
+    writeNodeMpMode('multi');
+    await joinGame(); // host auto-seats at slot 0 (owner-first assignment)
+  }
+  /** Host action: play single-player (no netcode, no roster). */
+  async function playSinglePlayer(): Promise<void> {
+    if (!isHost) return;
+    mpMode = 'single';
+    writeNodeMpMode('single');
+    if (loadStatus !== 'ready') await tryLoad();
+  }
   // DOOM gamestate_t ordinals (doomdef.h): the level is "in progress" while
   // GS_LEVEL is the live state; GS_INTERMISSION is the between-maps tally
   // screen where the arbiter picks + launches the next map (seating pending
@@ -290,6 +338,26 @@
     const state = aw.getLocalState() as { user?: { id?: string } } | null;
     const uid = state?.user?.id;
     return typeof uid === 'string' && uid.length > 0 ? uid : randomLocalId;
+  }
+
+  /** The set of rack-member user ids that OWN the rackspace, read from the
+   *  awareness `user.isRackOwner` flag (published by r/[id]'s presence init).
+   *  Used to make the rack owner the DOOM host + player 0 regardless of where
+   *  its id sorts (the lex-min election otherwise let a guest hijack host /
+   *  P1). Usually 0 or 1 entry; anon racks have none, so the election cleanly
+   *  falls back to lex-min there. */
+  function resolveOwnerIds(): string[] {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return [];
+    const out: string[] = [];
+    for (const [, state] of aw.getStates()) {
+      const u = (state as { user?: { id?: string; isRackOwner?: boolean } }).user;
+      if (u?.isRackOwner === true && typeof u.id === 'string' && u.id.length > 0) {
+        out.push(u.id);
+      }
+    }
+    return out;
   }
 
   /** Resolve a rack user's display name from awareness presence (the `user`
@@ -457,6 +525,15 @@
   // itself short-circuits straight to the assignment pass (it IS the writer).
   async function joinGame(): Promise<void> {
     const me = resolveLocalUserId();
+    // The HOST clicking Join (or hostMultiplayer) IS the decision to run a
+    // multiplayer session — open the lobby so the assignment pass proceeds +
+    // guests see Join. (hostMultiplayer also sets this; doing it here too keeps
+    // a bare join() self-sufficient — the existing doom e2e specs call join()
+    // directly without a separate host-MP step.)
+    if (isHost && mpMode !== 'multi') {
+      mpMode = 'multi';
+      writeNodeMpMode('multi');
+    }
     // Already seated (active OR pending)? Just ensure our local instance is up.
     // A pending late joiner still loads its WASM now so it can spawn the moment
     // it's promoted at the next map, but it does NOT drive a marine yet (its
@@ -488,18 +565,22 @@
   function assignSlotsAsArbiter(): void {
     if (!isSessionArbiter()) return;
     const cur = readNodeRosterState();
-    // Single-user rack: leave the roster empty + don't auto-join. A lone
-    // host just plays single-player via the existing no-netcode path
-    // (clicking load boots DOOM's normal loop); no New Game / Launch is
-    // engaged. This keeps single-player byte-identical to pre-slice-4.
-    if (memberIds.length <= 1 && rosterSize(combinedRoster(cur)) === 0) return;
+    // Multiplayer must be EXPLICITLY started by the host (mpMode === 'multi').
+    // Until then the roster stays empty — a lone host (or a host that hasn't
+    // picked yet) just plays single-player via the no-netcode path, and a 2nd
+    // member arriving does NOT auto-seat anyone. This replaces the fragile
+    // implicit "2nd member ⇒ auto-join" detection that left both cards stuck
+    // in single-player limbo when presence raced. Idempotent: once seated, the
+    // roster persists even if mpMode were toggled.
+    if (mpMode !== 'multi' && rosterSize(combinedRoster(cur)) === 0) return;
     const provider = providerCtx.get();
     const aw = provider?.awareness;
     const me = resolveLocalUserId();
 
     // Gather requesters: every member with a raised join-request flag, plus
-    // the arbiter itself (the host is always player 0 — it auto-joins so the
-    // New Game dialog has a player to launch as, once there's >1 member).
+    // the arbiter itself (the host is always player 0 in a multiplayer
+    // session — it is seated when the host opens the lobby via Host
+    // Multiplayer; owner-first slot assignment puts it at slot 0).
     const requesters = new Set<string>([me]);
     if (aw) {
       for (const [, state] of aw.getStates()) {
@@ -518,7 +599,12 @@
     // the dialog is open at intermission) it goes straight to ACTIVE. Only the
     // arbiter computes isGameInProgress, and it is the single writer, so the
     // pending/active split is authoritative.
-    const { state: next, changed } = assignSlots(cur, filtered, isGameInProgress());
+    const { state: next, changed } = assignSlots(
+      cur,
+      filtered,
+      isGameInProgress(),
+      resolveOwnerIds(),
+    );
     if (changed) {
       writeNodeRosterState(next);
       roster = next.active;
@@ -592,6 +678,9 @@
     const cur = readNodeRosterState();
     roster = cur.active;
     pending = cur.pending;
+    // Refresh the host-chosen session mode (single / multi) from the node so
+    // guests' lobby UI tracks the host's explicit choice.
+    mpMode = readNodeMpMode();
     const me = resolveLocalUserId();
     mySlot = slotForUser(cur.active, me);
     myPendingSlot = slotForUser(cur.pending, me);
@@ -795,7 +884,8 @@
         if (typeof host === 'string') candidates.push(host);
       });
       const currentHost = candidates.length > 0 ? candidates.sort()[0]! : null;
-      const newHost = pickHost(currentHost, ids);
+      // The rack owner (if present) is always the host; otherwise lex-min.
+      const newHost = pickHost(currentHost, ids, resolveOwnerIds());
       isHost = newHost === me;
       // Only write our claim if it actually changed — otherwise every
       // recomputeHost would emit an awareness update which re-fires
@@ -1036,6 +1126,10 @@
     if (!g.__doomCards) g.__doomCards = {};
     g.__doomCards[id] = {
       join: () => joinGame(),
+      // Explicit host-MP start hooks (the operator's Host Multiplayer / Single
+      // Player choice) so the real 2-user e2e drives the documented flow.
+      hostMultiplayer: () => hostMultiplayer(),
+      playSinglePlayer: () => playSinglePlayer(),
       // Slice 4 e2e hooks: pick options + launch from the arbiter, and read
       // the running game's own-player position to prove per-peer instances.
       setOptions: (opts: { mode?: DoomGameMode; skill?: number; episode?: number; map?: number }) => {
@@ -1076,6 +1170,11 @@
         isNetArbiter,
         isHost,
         memberIds: [...memberIds],
+        // Explicit session mode + the owner-id set used for host/P0 election,
+        // so the real 2-user e2e can assert the lobby state + that the rack
+        // owner (not a lex-min guest) is host/player 0.
+        mpMode,
+        ownerIds: resolveOwnerIds(),
         netcodePeers: netcode ? netcode.debugStats().peers : [],
         launched,
         gamestate,
@@ -1254,6 +1353,31 @@
   />
   <span class="port-label right" style="top: 118px;">A-R</span>
 
+  {#if isHost && mpMode === undefined}
+    <!-- Explicit host start choice (replaces the implicit "2nd member ⇒
+         auto-start" detection). The host decides whether this DOOM session is
+         single-player or a multiplayer lobby; the choice is stored on the node
+         so guests see the lobby state. -->
+    <div class="start-choice" data-testid="doom-start-choice">
+      <button
+        class="start-btn"
+        data-testid="doom-start-single"
+        onclick={() => void playSinglePlayer()}
+        title="Play DOOM solo (no netgame)"
+      >
+        Single Player
+      </button>
+      <button
+        class="start-btn primary"
+        data-testid="doom-start-multi"
+        onclick={() => void hostMultiplayer()}
+        title="Open a multiplayer lobby — you are player 1; rack-mates can Join"
+      >
+        Host Multiplayer
+      </button>
+    </div>
+  {/if}
+
   <div class="controls-row">
     <button
       class="run-btn"
@@ -1262,8 +1386,9 @@
     >
       {running > 0.5 ? 'Pause' : 'Run'}
     </button>
-    {#if memberIds.length > 1 && mySlot === null && myPendingSlot === null}
-      <!-- Join is offered to a pure spectator only — a pending late joiner has
+    {#if mpMode === 'multi' && mySlot === null && myPendingSlot === null}
+      <!-- Join is offered to an unjoined peer once the HOST has opened a
+           multiplayer lobby (mpMode === 'multi'). A pending late joiner has
            already claimed a (pending) slot. Fullness is the COMBINED active +
            pending occupancy so a reserved late-join slot counts. While a level
            is running, the join label hints it'll seat at the next map. -->
@@ -1284,7 +1409,7 @@
     {/if}
   </div>
 
-  {#if memberIds.length > 1 && mySlot !== null}
+  {#if mpMode === 'multi' && mySlot !== null}
     {@const inLevel = launched && gamestate === GS_LEVEL}
     {@const atIntermission = launched && gamestate === GS_INTERMISSION}
     {@const pendingCount = rosterSize(pending)}
@@ -1359,7 +1484,7 @@
         </div>
       {/if}
     </div>
-  {:else if memberIds.length > 1 && myPendingSlot !== null}
+  {:else if mpMode === 'multi' && myPendingSlot !== null}
     <!-- Slice 6: a pending late joiner spectates the running game + shows when
          it'll be seated. It has no New Game controls (only active players do).
          The header already carries the "joining as Player N next map" label;
@@ -1373,14 +1498,22 @@
 
   <footer class="hint">
     {#if memberIds.length > 1}
-      <small>
+      <small data-testid="doom-member-hint">
         {memberIds.length} rack-mates · host: {isHost ? 'you' : 'remote'}
-        {#if mySlot !== null}
-          · player {mySlot + 1}{netStarted ? (isNetArbiter ? ' · arbiter' : ' · client') : ''}
+        {#if mpMode === 'multi'}
+          {#if mySlot !== null}
+            · player {mySlot + 1}{netStarted ? (isNetArbiter ? ' · arbiter' : ' · client') : ''}
+          {:else if myPendingSlot !== null}
+            · joining P{myPendingSlot + 1} next map
+          {:else}
+            · spectating
+          {/if}
+        {:else if !isHost}
+          · waiting for host to start multiplayer
         {/if}
       </small>
     {:else}
-      <small>Single-user rack — you're the host.</small>
+      <small data-testid="doom-member-hint">Single-user rack — you're the host.</small>
     {/if}
   </footer>
 </div>

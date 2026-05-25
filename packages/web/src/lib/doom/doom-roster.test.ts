@@ -325,6 +325,27 @@ describe('doom-roster: assignRequestedSlots (slice 4 — arbiter-authoritative)'
     expect(roster).toEqual({ '0': 'a', '1': 'e', '2': 'f', '3': 'd' });
     expect(rejected).toEqual(['g']);
   });
+
+  // ── owner-first seating (the guest-as-P1 fix) ─────────────────────────────
+  it('seats the rack OWNER at slot 0 even when its id is NOT lex-smallest', () => {
+    // owner sorts lex-LARGE; guest sorts lex-small. Pre-fix the guest grabbed
+    // slot 0 (Player 1) — the operator-reported bug. Owner-first ordering puts
+    // the owner at slot 0.
+    const { roster, assigned } = assignRequestedSlots(
+      {},
+      ['aaa-guest', 'zzz-owner'],
+      ['zzz-owner'],
+    );
+    expect(roster).toEqual({ '0': 'zzz-owner', '1': 'aaa-guest' });
+    expect(assigned).toEqual({ 'zzz-owner': 0, 'aaa-guest': 1 });
+  });
+
+  it('owner-first is order-independent', () => {
+    const a = assignRequestedSlots({}, ['g1', 'zzz-owner', 'g2'], ['zzz-owner']);
+    const b = assignRequestedSlots({}, ['g2', 'g1', 'zzz-owner'], ['zzz-owner']);
+    expect(a.roster).toEqual(b.roster);
+    expect(a.assigned).toEqual({ 'zzz-owner': 0, g1: 1, g2: 2 });
+  });
 });
 
 describe('doom-roster slice 6: pending (late-join) vs active state', () => {
@@ -428,6 +449,21 @@ describe('doom-roster slice 6: pending (late-join) vs active state', () => {
       const start = { active: { '0': 'alice' }, pending: {} };
       assignSlots(start, ['bob'], true);
       expect(start).toEqual({ active: { '0': 'alice' }, pending: {} });
+    });
+
+    it('seats the rack OWNER as active player 0 even with a lex-smaller guest', () => {
+      // owner sorts lex-LARGE; guest lex-small. No game in progress → both go
+      // active, owner first (slot 0). This is the host-MP-start path.
+      const empty2 = { active: {}, pending: {} };
+      const { state, assigned } = assignSlots(
+        empty2,
+        ['aaa-guest', 'zzz-owner'],
+        false,
+        ['zzz-owner'],
+      );
+      expect(state.active).toEqual({ '0': 'zzz-owner', '1': 'aaa-guest' });
+      expect(assigned['zzz-owner']).toEqual({ slot: 0, pending: false });
+      expect(assigned['aaa-guest']).toEqual({ slot: 1, pending: false });
     });
   });
 

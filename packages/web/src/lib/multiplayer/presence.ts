@@ -18,6 +18,11 @@ export interface PresenceUser {
   id: string;
   displayName: string;
   color: string;
+  /** True when this user OWNS the rackspace. Published in awareness so
+   *  per-module logic that needs an authoritative arbiter (e.g. the DOOM
+   *  host / player-0 election in DoomCard) can prefer the rack owner over a
+   *  lex-min tiebreak. Absent / false for guests + anon members. */
+  isRackOwner?: boolean;
 }
 
 export interface CursorPos {
@@ -68,6 +73,10 @@ export interface ResolvePresenceInput {
   userId: string | null | undefined;
   displayName?: string | null;
   isAnon: boolean;
+  /** True when this user owns the rackspace (authed owner only — anon
+   *  members can never be the owner). Threaded into the published presence
+   *  `user.isRackOwner` flag. */
+  isRackOwner?: boolean;
 }
 
 export function resolvePresenceUser(input: ResolvePresenceInput): PresenceUser {
@@ -84,6 +93,7 @@ export function resolvePresenceUser(input: ResolvePresenceInput): PresenceUser {
     id: input.userId,
     displayName: trimmed.length > 0 ? trimmed : input.userId.slice(0, 8),
     color: colorForUserId(input.userId),
+    isRackOwner: input.isRackOwner === true,
   };
 }
 

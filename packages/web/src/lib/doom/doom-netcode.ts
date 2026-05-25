@@ -492,10 +492,16 @@ export class DoomNetcode {
     this.peerIdByUser = nextByUser;
     this.userByPeerId = nextByPeerId;
 
-    // Arbiter election (reuse pickHost: keep current if still present, else
-    // lex-min). Fire onArbiter on transition.
+    // Arbiter election (reuse pickHost: the RACK OWNER if present, else keep
+    // the current arbiter if still live, else lex-min). Threading owner ids
+    // here keeps the NET arbiter == the rack host == the session arbiter
+    // (DoomCard.isHost) — they must coincide so the host's Launch
+    // (broadcastGameStart, arbiter-only) actually fires. Pre-fix the net
+    // arbiter was pure lex-min, so when the owner wasn't lex-smallest the
+    // host's Launch was a no-op (game never started → attract demo). Fire
+    // onArbiter on transition.
     const prevArbiter = this.arbiterUserId;
-    const nextArbiter = pickHost(this.arbiterUserId, members);
+    const nextArbiter = pickHost(this.arbiterUserId, members, this.readOwnerIds());
     this.arbiterUserId = nextArbiter;
     if (prevArbiter !== nextArbiter) {
       this.onArbiter?.(this.isArbiter());
@@ -557,6 +563,20 @@ export class DoomNetcode {
       }
     }
     return [...ids];
+  }
+
+  /** Rack-member ids that OWN the rackspace (the `user.isRackOwner` flag set
+   *  by presence init). Used to bias arbiter election toward the rack owner so
+   *  the net arbiter == the host. Usually 0 or 1 entry; anon racks have none. */
+  private readOwnerIds(): string[] {
+    const aw = this.provider.awareness;
+    if (!aw) return [];
+    const out: string[] = [];
+    for (const [, state] of aw.getStates()) {
+      const u = (state as { user?: { id?: string; isRackOwner?: boolean } } | undefined)?.user;
+      if (u?.isRackOwner === true && typeof u.id === 'string') out.push(u.id);
+    }
+    return out;
   }
 
   // ── PTNet install + send/poll ────────────────────────────────────────────

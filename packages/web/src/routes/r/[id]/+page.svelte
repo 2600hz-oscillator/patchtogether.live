@@ -75,6 +75,12 @@
       userId: data.currentUserId ?? null,
       displayName,
       isAnon: false,
+      // Publish rack ownership so per-module arbiter election (DOOM host /
+      // player-0) prefers the owner over a lex-min tiebreak.
+      isRackOwner:
+        !!data.rackspace.ownerUserId &&
+        !!data.currentUserId &&
+        data.rackspace.ownerUserId === data.currentUserId,
     });
   });
 

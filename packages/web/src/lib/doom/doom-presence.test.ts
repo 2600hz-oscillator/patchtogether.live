@@ -215,4 +215,29 @@ describe('pickHost — deterministic host migration', () => {
     expect(pickHost(null, [...set].reverse())).toBe('a-user');
     expect(pickHost(null, ['m-user', 'z-user', 'a-user'])).toBe('a-user');
   });
+
+  // ── owner-aware election (the guest-as-host fix) ──────────────────────────
+  it('elects the rack OWNER even when their id is NOT lex-smallest', () => {
+    // owner sorts LEX-LARGE; a guest sorts lex-small. Pre-fix lex-min picked
+    // the guest as host (the "guest seated as P1" bug).
+    expect(pickHost(null, ['aaa-guest', 'zzz-owner'], ['zzz-owner'])).toBe('zzz-owner');
+  });
+
+  it('reclaims host for the owner even if a guest is the current host', () => {
+    // A guest temporarily held the host seat (e.g. joined first); the owner
+    // arriving must take it back.
+    expect(pickHost('aaa-guest', ['aaa-guest', 'zzz-owner'], ['zzz-owner'])).toBe('zzz-owner');
+  });
+
+  it('falls back to lex-min when the owner is absent', () => {
+    expect(pickHost(null, ['aaa-guest', 'mmm-guest'], ['zzz-owner'])).toBe('aaa-guest');
+  });
+
+  it('keeps the current host when no owner is present (no churn)', () => {
+    expect(pickHost('mmm-guest', ['aaa-guest', 'mmm-guest'], [])).toBe('mmm-guest');
+  });
+
+  it('picks the lex-smallest owner when more than one claims ownership', () => {
+    expect(pickHost(null, ['o-zzz', 'o-aaa', 'guest'], ['o-zzz', 'o-aaa'])).toBe('o-aaa');
+  });
 });
