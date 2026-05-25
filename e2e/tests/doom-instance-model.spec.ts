@@ -191,14 +191,30 @@ async function readCardState(page: Page, nodeId: string): Promise<{
   }, nodeId);
 }
 
+/** Decode the roster the card stores at node.data.players (a JSON STRING
+ *  leaf — see DoomCard.writeNodeRoster). Tolerates the legacy object form. */
+function decodePlayers(raw: unknown): Record<string, string> {
+  let players: unknown = raw;
+  if (typeof players === 'string') {
+    try { players = JSON.parse(players); } catch { return {}; }
+  }
+  if (!players || typeof players !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(players as Record<string, unknown>)) {
+    if (typeof v === 'string') out[k] = v;
+  }
+  return out;
+}
+
 /** Read the shared roster straight off the node in the patch graph. */
 async function readNodeRoster(page: Page, nodeId: string): Promise<Record<string, string>> {
-  return await page.evaluate((id) => {
+  const raw = await page.evaluate((id) => {
     const w = globalThis as unknown as {
-      __patch?: { nodes: Record<string, { data?: { players?: Record<string, string> } }> };
+      __patch?: { nodes: Record<string, { data?: { players?: unknown } }> };
     };
-    return w.__patch?.nodes?.[id]?.data?.players ?? {};
+    return w.__patch?.nodes?.[id]?.data?.players ?? null;
   }, nodeId);
+  return decodePlayers(raw);
 }
 
 test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
@@ -252,10 +268,12 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
       await pair.pageB.waitForFunction(
         (id) => {
           const w = globalThis as unknown as {
-            __patch?: { nodes: Record<string, { data?: { players?: Record<string, string> } }> };
+            __patch?: { nodes: Record<string, { data?: { players?: unknown } }> };
           };
-          const players = w.__patch?.nodes?.[id]?.data?.players ?? {};
-          return Object.values(players).includes('aaa-userA');
+          let raw: unknown = w.__patch?.nodes?.[id]?.data?.players;
+          if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { return false; } }
+          if (!raw || typeof raw !== 'object') return false;
+          return Object.values(raw as Record<string, unknown>).includes('aaa-userA');
         },
         NODE,
         { timeout: 30000 },
@@ -285,10 +303,12 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
         await p.waitForFunction(
           (id) => {
             const w = globalThis as unknown as {
-              __patch?: { nodes: Record<string, { data?: { players?: Record<string, string> } }> };
+              __patch?: { nodes: Record<string, { data?: { players?: unknown } }> };
             };
-            const players = w.__patch?.nodes?.[id]?.data?.players ?? {};
-            return Object.keys(players).length === 2;
+            let raw: unknown = w.__patch?.nodes?.[id]?.data?.players;
+            if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { return false; } }
+            if (!raw || typeof raw !== 'object') return false;
+            return Object.keys(raw as Record<string, unknown>).length === 2;
           },
           NODE,
           { timeout: 15000 },

@@ -47,11 +47,26 @@ export type DoomRoster = Record<string, string>;
 
 /** Read a roster off a node's `data` blob, defensively. Returns a fresh
  *  normalized copy (string-keyed, only valid string userIds kept) so callers
- *  never alias the live Yjs object. Unknown / malformed input → empty. */
+ *  never alias the live Yjs object. Unknown / malformed input → empty.
+ *
+ *  `data.players` may be EITHER a nested object map ({"0":"alice"}) OR a JSON
+ *  STRING of that map. The card stores it as a primitive-string leaf
+ *  (node.data.players = JSON.stringify(roster)) because primitive-leaf writes
+ *  on node.data sync reliably cross-context (cf. module-naming's
+ *  node.data.name), whereas a freshly-added nested Y.Map does not always
+ *  reach an already-synced remote peer. We accept both shapes so older
+ *  object-form data + tests both decode. */
 export function readRoster(data: unknown): DoomRoster {
   const out: DoomRoster = {};
   if (!data || typeof data !== 'object') return out;
-  const players = (data as { players?: unknown }).players;
+  let players = (data as { players?: unknown }).players;
+  if (typeof players === 'string') {
+    try {
+      players = JSON.parse(players) as unknown;
+    } catch {
+      return out;
+    }
+  }
   if (!players || typeof players !== 'object') return out;
   for (const [slot, uid] of Object.entries(players as Record<string, unknown>)) {
     const n = Number(slot);
@@ -60,6 +75,15 @@ export function readRoster(data: unknown): DoomRoster {
     out[String(n)] = uid;
   }
   return out;
+}
+
+/** Serialize a roster to the primitive-string leaf form stored at
+ *  node.data.players. Sorted keys → deterministic string (so identical
+ *  rosters produce identical leaves, avoiding redundant Yjs writes). */
+export function serializeRoster(roster: DoomRoster): string {
+  const sorted: DoomRoster = {};
+  for (const k of Object.keys(roster).sort()) sorted[k] = roster[k]!;
+  return JSON.stringify(sorted);
 }
 
 /** The slot index a user currently holds in `roster`, or null if unjoined. */

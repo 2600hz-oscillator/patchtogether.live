@@ -18,6 +18,7 @@ import {
   claimSlot,
   releaseSlot,
   pruneRoster,
+  serializeRoster,
 } from './doom-roster';
 
 describe('doom-roster: readRoster', () => {
@@ -50,6 +51,34 @@ describe('doom-roster: readRoster', () => {
     const r = readRoster(src);
     r['1'] = 'mutant';
     expect(src.players).toEqual({ '0': 'alice' });
+  });
+
+  it('decodes the JSON-STRING leaf form (the cross-context-safe shape)', () => {
+    // DoomCard stores node.data.players as a JSON string (primitive leaf
+    // syncs reliably; a nested Y.Map does not always reach a synced peer).
+    expect(readRoster({ players: '{"0":"alice","1":"bob"}' })).toEqual({
+      '0': 'alice',
+      '1': 'bob',
+    });
+    // Malformed JSON string → empty, no throw.
+    expect(readRoster({ players: '{bad json' })).toEqual({});
+    // String form is normalized the same as the object form.
+    expect(readRoster({ players: '{"0":"alice","4":"over-cap","x":"y"}' })).toEqual({
+      '0': 'alice',
+    });
+  });
+
+  it('serializeRoster ↔ readRoster round-trips (sorted keys, deterministic)', () => {
+    const roster = { '2': 'carol', '0': 'alice', '1': 'bob' };
+    const s = serializeRoster(roster);
+    // Sorted keys → stable string regardless of insertion order.
+    expect(s).toBe('{"0":"alice","1":"bob","2":"carol"}');
+    expect(serializeRoster({ '0': 'alice', '1': 'bob', '2': 'carol' })).toBe(s);
+    expect(readRoster({ players: s })).toEqual({
+      '0': 'alice',
+      '1': 'bob',
+      '2': 'carol',
+    });
   });
 });
 
