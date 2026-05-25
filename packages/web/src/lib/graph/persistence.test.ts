@@ -399,6 +399,118 @@ describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
     expect(loadedData.creatorId).toBe('user_123');
   });
 
+  it('preserves VIDEOBOX fileMeta (name/size/duration/handleId) through save → JSON → load', () => {
+    // VIDEOBOX persists the loaded-video metadata on node.data.fileMeta so a
+    // reopened patch can reload the file: name/size/duration drive the
+    // cross-browser re-link prompt; handleId is the IndexedDB key for the
+    // one-click remembered-handle reload (the handle itself is per-browser +
+    // NOT in the patch — only the id travels). This pins that the new fields
+    // survive the Yjs + JSON encode unchanged.
+    registerVideoModule({
+      type: 'videobox',
+      domain: 'video',
+      label: 'VIDEOBOX',
+      category: 'sources',
+      schemaVersion: 1,
+      inputs: [],
+      outputs: [],
+      params: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      factory: throwingFactory as any,
+    } satisfies VideoModuleDef);
+
+    const fileMeta = {
+      name: 'clip with spaces.mp4',
+      duration: 123.456,
+      size: 13_001_000,
+      handleId: '6f9619ff-8b86-d011-b42d-00cf4fc964ff',
+      contentHash: 'sha256-abc',
+      loaderUserId: 'user_42',
+    };
+
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['vb'] = {
+        id: 'vb',
+        type: 'videobox',
+        domain: 'video',
+        position: { x: 10, y: 20 },
+        params: {},
+        data: {
+          isPlaying: true,
+          lastSyncTime: 1_700_000_000_000,
+          lastSyncPosition: 42.5,
+          fileMeta,
+        },
+      };
+    });
+
+    const reparsed = parseEnvelope(serializeEnvelope(makeEnvelope(src.ydoc)));
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(reparsed, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+
+    const loaded = dest.store.nodes['vb'];
+    expect(loaded).toBeDefined();
+    const data = loaded!.data as {
+      isPlaying: boolean;
+      lastSyncPosition: number;
+      fileMeta: typeof fileMeta;
+    };
+    expect(data.isPlaying).toBe(true);
+    expect(data.lastSyncPosition).toBe(42.5);
+    // The whole fileMeta — including the new size/handleId/contentHash —
+    // round-trips byte-for-byte.
+    expect(data.fileMeta).toEqual(fileMeta);
+  });
+
+  it('round-trips a VIDEOBOX fileMeta WITHOUT a handleId (re-link-only / pre-persistence patches)', () => {
+    // A patch saved from Firefox/Safari (no File System Access) — or any
+    // pre-persistence VIDEOBOX patch — carries fileMeta with no handleId.
+    // It must still load cleanly; on reload the card shows the re-link
+    // prompt (driven by name/size/duration alone).
+    registerVideoModule({
+      type: 'videobox',
+      domain: 'video',
+      label: 'VIDEOBOX',
+      category: 'sources',
+      schemaVersion: 1,
+      inputs: [],
+      outputs: [],
+      params: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      factory: throwingFactory as any,
+    } satisfies VideoModuleDef);
+
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['vb2'] = {
+        id: 'vb2',
+        type: 'videobox',
+        domain: 'video',
+        position: { x: 0, y: 0 },
+        params: {},
+        data: {
+          isPlaying: false,
+          lastSyncTime: 0,
+          lastSyncPosition: 0,
+          fileMeta: { name: 'legacy.webm', duration: 60 },
+        },
+      };
+    });
+
+    const reparsed = parseEnvelope(serializeEnvelope(makeEnvelope(src.ydoc)));
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(reparsed, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    const fm = (dest.store.nodes['vb2']!.data as { fileMeta: Record<string, unknown> }).fileMeta;
+    expect(fm.name).toBe('legacy.webm');
+    expect(fm.duration).toBe(60);
+    expect(fm.handleId).toBeUndefined();
+    expect(fm.size).toBeUndefined();
+  });
+
   it('preserves DX7 SYX userPatches arrays through save → JSON → load', () => {
     // DX7 stores user-uploaded SYX banks as an array of DX7Voice objects
     // under node.data.userPatches (see lib/audio/modules/dx7.ts). Each voice

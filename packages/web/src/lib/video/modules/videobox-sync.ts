@@ -23,13 +23,38 @@ export interface VideoboxSyncState {
 
 /** Persisted file metadata. Carries enough that peers can render an
  *  informative "you need a local copy" message + a stable seekbar even
- *  before they pick the file. */
+ *  before they pick the file.
+ *
+ *  Persistence story (see VideoboxCard + video-file-store.ts):
+ *    * `name` / `size` / `duration` are ALWAYS saved into the patch JSON.
+ *      They drive the cross-browser, cross-machine "Re-link: drop
+ *      <name> (<size>, <m:ss>)" prompt — every browser can show that.
+ *    * `handleId`, when present, is the IndexedDB key under which THIS
+ *      peer's browser stored the picked `FileSystemFileHandle`. On a
+ *      reload of the same patch in the same Chromium browser, the card
+ *      looks the handle up by this id and (after a one-click permission
+ *      re-grant when needed) reloads the file automatically. The handle
+ *      itself is NOT in the patch (it can't be serialized + is
+ *      per-browser); only the id travels in the patch JSON. A peer
+ *      without that id in its own IDB falls back to the re-link prompt.
+ *    * `contentHash` is optional + reserved for a future "is this the
+ *      same file?" verification on re-link; not required for the flow. */
 export interface VideoboxFileMeta {
-  /** Source filename (display only). */
+  /** Source filename (display only + re-link prompt label). */
   name: string;
   /** File duration in seconds (so peer seekbars have a max even before
    *  they load the file). */
   duration: number;
+  /** File size in bytes. Always saved; shown in the re-link prompt
+   *  ("12.4 MB") so the user can recognise the right copy. Optional for
+   *  backward compatibility with pre-persistence saved patches. */
+  size?: number;
+  /** IndexedDB key for the persisted `FileSystemFileHandle` (Chromium
+   *  one-click reload). Per-browser: present in the patch JSON, but the
+   *  actual handle only lives in the picking peer's IndexedDB. */
+  handleId?: string;
+  /** Optional content hash (reserved for future re-link verification). */
+  contentHash?: string;
   /** Optional: the loader's userId, so peer UIs can attribute. */
   loaderUserId?: string;
 }

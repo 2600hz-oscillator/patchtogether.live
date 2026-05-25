@@ -44,6 +44,17 @@
     decideDriftCorrection,
     type VideoboxFileMeta,
   } from '$lib/video/modules/videobox-sync';
+  import {
+    canPersistVideoHandles,
+    newVideoFileId,
+    putVideoFileHandle,
+    getVideoFileHandle,
+    deleteVideoFileHandle,
+    queryHandleReadPermission,
+    requestHandleReadPermission,
+    formatFileSize,
+    type StoredFileHandle,
+  } from '$lib/video/video-file-store';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -67,6 +78,23 @@
   let localFileName = $state<string | null>(null);
   let isDragOver = $state(false);
   let loadError = $state<string | null>(null);
+
+  // ---- Persistence: remembered file handle (Chromium) ----
+  // When the user picks a file via showOpenFilePicker() (or drops one and
+  // the browser exposes getAsFileSystemHandle()), we keep the returned
+  // FileSystemFileHandle in IndexedDB keyed by an id, and stamp that id +
+  // file size into the synced fileMeta. On a later patch load this lets us
+  // reload the same file automatically (or in one click after a permission
+  // re-grant). Firefox / Safari never produce a handle and use the re-link
+  // prompt path only.
+  const canRememberHandle = canPersistVideoHandles();
+  // A handle we resolved from IDB on load but whose read permission is in
+  // the 'prompt' state — the card shows a one-click "re-allow" affordance
+  // (requestPermission must run inside a user gesture).
+  let pendingHandle = $state<StoredFileHandle | null>(null);
+  // True once we've attempted the auto/handle reload for the loaded patch
+  // so we don't re-run it on every reactive tick.
+  let handleReloadAttempted = false;
 
   // ---- Reactive reads from data (Yjs-backed) ----
   let fileMeta = $derived<VideoboxFileMeta | null>(
@@ -128,6 +156,13 @@
   }
 
   function writeFileMeta(meta: VideoboxFileMeta): void {
+    // If we're replacing a file that had a DIFFERENT remembered handle in
+    // THIS browser's IDB, drop the stale handle so it doesn't leak. (Only
+    // when the id actually changes — a reload reuses the same id.)
+    const prevId = fileMeta?.handleId;
+    if (prevId && prevId !== meta.handleId) {
+      void deleteVideoFileHandle(prevId);
+    }
     ydoc.transact(() => {
       const t = patch.nodes[id];
       if (!t) return;
@@ -143,8 +178,18 @@
   }
 
   // ---- File-picker handling ----
-  async function loadFile(file: File): Promise<void> {
+  //
+  // `opts.handle` — a FileSystemFileHandle to persist for one-click reload
+  //   (from showOpenFilePicker / a drop that exposed getAsFileSystemHandle).
+  // `opts.reuseHandleId` — when reloading from an existing remembered
+  //   handle, keep the patch's existing handleId rather than minting a new
+  //   one (the handle is already stored under it).
+  async function loadFile(
+    file: File,
+    opts?: { handle?: StoredFileHandle | null; reuseHandleId?: string },
+  ): Promise<void> {
     loadError = null;
+    pendingHandle = null;
     if (!file.type.startsWith('video/')) {
       loadError = `Not a video file: ${file.type || file.name}`;
       return;
@@ -177,9 +222,22 @@
     });
     if (!videoEl) return;
 
+    // Persist the handle (if we have one + the browser supports it) so a
+    // later patch load can reload this exact file in one click. We do this
+    // BEFORE writing fileMeta so the handleId we stamp is the one the
+    // handle is stored under. If anything fails we just omit handleId and
+    // the re-link prompt remains the fallback.
+    let handleId: string | undefined = opts?.reuseHandleId;
+    if (opts?.handle && canRememberHandle) {
+      if (!handleId) handleId = newVideoFileId();
+      await putVideoFileHandle(handleId, opts.handle);
+    }
+
     writeFileMeta({
       name: file.name,
       duration: Number.isFinite(videoEl.duration) ? videoEl.duration : 0,
+      size: Number.isFinite(file.size) ? file.size : undefined,
+      handleId,
     });
 
     // Now that the element has src + metadata, wire its audio into the
@@ -193,8 +251,51 @@
   function onFileInputChange(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
+    // The native <input type=file> can't hand us a FileSystemFileHandle, so
+    // a pick through this path gets no remembered-handle persistence (only
+    // fileMeta is saved → re-link prompt next time). The picker-button path
+    // below uses showOpenFilePicker when available to also persist a handle.
     if (file) void loadFile(file);
     try { input.value = ''; } catch { /* */ }
+  }
+
+  // Picker button: prefer showOpenFilePicker (Chromium) so we get a
+  // FileSystemFileHandle to remember; fall back to the native <input>
+  // (Firefox / Safari) by letting the click bubble to its <label>. Returns
+  // true if it handled the pick itself (so the label's default is
+  // suppressed), false to let the native input fire.
+  async function pickViaPicker(): Promise<boolean> {
+    if (!canRememberHandle) return false;
+    const picker = (globalThis as {
+      showOpenFilePicker?: (opts?: unknown) => Promise<StoredFileHandle[]>;
+    }).showOpenFilePicker;
+    if (typeof picker !== 'function') return false;
+    try {
+      const handles = await picker({
+        multiple: false,
+        types: [
+          { description: 'Video', accept: { 'video/*': ['.mp4', '.webm', '.mov', '.m4v', '.ogv'] } },
+        ],
+      });
+      const handle = handles?.[0];
+      if (!handle) return true; // user cancelled — still "handled"
+      const file = await handle.getFile();
+      await loadFile(file, { handle });
+    } catch (e) {
+      // AbortError = user cancelled the picker; ignore. Anything else:
+      // surface it but still count as handled (don't double-open inputs).
+      if ((e as { name?: string })?.name !== 'AbortError') {
+        loadError = `Could not open file: ${(e as Error)?.message ?? 'unknown error'}`;
+      }
+    }
+    return true;
+  }
+
+  function onPickClick(ev: MouseEvent): void {
+    if (!canRememberHandle) return; // let the native <input> handle it
+    // We have the File System Access picker — use it instead of the input.
+    ev.preventDefault();
+    void pickViaPicker();
   }
 
   function onDragOver(ev: DragEvent): void {
@@ -202,12 +303,100 @@
     isDragOver = true;
   }
   function onDragLeave(): void { isDragOver = false; }
-  function onDrop(ev: DragEvent): void {
+  async function onDrop(ev: DragEvent): Promise<void> {
     ev.preventDefault();
     isDragOver = false;
-    const file = ev.dataTransfer?.files?.[0];
-    if (file) void loadFile(file);
+    // Try to grab a FileSystemFileHandle from the drop (Chromium) so a
+    // dropped file is also remembered for one-click reload. getAsFileSystemHandle
+    // returns a Promise<FileSystemHandle | null>; absent on Firefox / Safari.
+    const item = ev.dataTransfer?.items?.[0];
+    let handle: StoredFileHandle | null = null;
+    const getHandle = (item as unknown as {
+      getAsFileSystemHandle?: () => Promise<StoredFileHandle | null>;
+    })?.getAsFileSystemHandle;
+    if (canRememberHandle && typeof getHandle === 'function') {
+      try {
+        const h = await getHandle.call(item);
+        if (h && h.kind === 'file') handle = h;
+      } catch { /* fall back to the plain File below */ }
+    }
+    const file = handle ? await handle.getFile().catch(() => null) : ev.dataTransfer?.files?.[0];
+    if (file) void loadFile(file, { handle });
   }
+
+  // ---- Persistence: reload from a remembered handle on patch load ----
+  //
+  // After the patch loads, fileMeta may carry a handleId pointing at a
+  // handle THIS browser persisted. We:
+  //   1. look the handle up in IDB by id;
+  //   2. if not found (different machine/browser, or never stored) → leave
+  //      it; the re-link prompt shows;
+  //   3. if found + read permission is 'granted' → reload immediately;
+  //   4. if found + permission is 'prompt' → stash it in pendingHandle so
+  //      the card shows a one-click "re-allow <name>" button (the actual
+  //      requestPermission() must run inside that click's user gesture);
+  //   5. if 'denied' → leave it; re-link prompt shows.
+  async function tryReloadFromHandle(): Promise<void> {
+    const id = fileMeta?.handleId;
+    if (!id || hasLocalFile) return;
+    const handle = await getVideoFileHandle(id);
+    if (!handle) return; // not in this browser → re-link prompt path
+    const perm = await queryHandleReadPermission(handle);
+    if (perm === 'granted') {
+      try {
+        const file = await handle.getFile();
+        await loadFile(file, { handle, reuseHandleId: id });
+      } catch {
+        // File moved/deleted on disk since the handle was stored — fall
+        // through to the re-link prompt.
+      }
+      return;
+    }
+    if (perm === 'prompt') {
+      pendingHandle = handle;
+    }
+    // 'denied' → nothing; the re-link prompt covers it.
+  }
+
+  // One-click "re-allow <name>": request read permission inside this click
+  // gesture, then reload. Bound to the re-allow button.
+  async function onReAllow(): Promise<void> {
+    const handle = pendingHandle;
+    const id = fileMeta?.handleId;
+    if (!handle) return;
+    const perm = await requestHandleReadPermission(handle);
+    if (perm === 'granted') {
+      pendingHandle = null;
+      try {
+        const file = await handle.getFile();
+        await loadFile(file, { handle, reuseHandleId: id ?? undefined });
+        return;
+      } catch { /* fall through to re-link */ }
+    }
+    // Denied or file gone — drop the pending handle so the re-link prompt
+    // takes over.
+    pendingHandle = null;
+  }
+
+  // Re-link prompt visibility: we have saved fileMeta (a file was loaded
+  // when the patch was saved) but THIS browser has no local copy AND we
+  // can't auto-reload from a remembered handle (none, denied, or a
+  // different machine/browser). The pendingHandle case shows the one-click
+  // re-allow affordance instead.
+  let showRelinkPrompt = $derived<boolean>(
+    !hasLocalFile && fileMeta !== null && pendingHandle === null,
+  );
+
+  // Run the handle-reload attempt once fileMeta becomes available (covers
+  // both an initial patch load and a load that swaps fileMeta in later).
+  $effect(() => {
+    void fileMeta?.handleId;
+    if (handleReloadAttempted) return;
+    if (!fileMeta?.handleId) return;
+    if (hasLocalFile) return;
+    handleReloadAttempted = true;
+    void tryReloadFromHandle();
+  });
 
   // ---- Play / pause / seek ----
   function togglePlay(): void {
@@ -510,15 +699,48 @@
           <div>Drop a video file</div>
           <div class="sub">or click to select</div>
         </div>
-      {:else if !hasLocalFile && fileMeta}
-        <div class="overlay peer-hint" data-testid="videobox-peer-hint">
-          <div><strong>{fileMeta.name}</strong></div>
-          <div class="sub">loaded by a peer — pick your own copy to play locally</div>
+      {:else if !hasLocalFile && pendingHandle}
+        <!-- One-click re-allow: a remembered handle exists in THIS browser
+             but its read permission lapsed (patch reopened). Re-grant +
+             reload in a single user gesture. -->
+        <div class="overlay reallow-hint" data-testid="videobox-reallow-hint">
+          <div><strong>{fileMeta?.name}</strong></div>
+          <button
+            type="button"
+            class="reallow-btn"
+            onclick={onReAllow}
+            data-testid="videobox-reallow-btn"
+          >Click to re-allow {fileMeta?.name}</button>
         </div>
+      {:else if showRelinkPrompt}
+        <!-- Re-link fallback (all browsers / cross-machine): no usable
+             handle, so prompt the user to re-pick (or drop) their own copy.
+             Picking reloads it + (if supported) stores a fresh handle for
+             next time. The <label> drives the native <input> on Firefox /
+             Safari; onPickClick intercepts to use showOpenFilePicker on
+             Chromium so the re-picked file gets a fresh remembered handle. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+        <label
+          class="overlay relink-hint"
+          data-testid="videobox-relink-hint"
+          onclick={onPickClick}
+        >
+          <input
+            type="file"
+            accept="video/*"
+            onchange={onFileInputChange}
+            data-testid="videobox-relink-input"
+          />
+          <div class="relink-label">Re-link: drop "{fileMeta?.name}"</div>
+          <div class="sub">
+            {formatFileSize(fileMeta?.size)} · {formatTime(durationSec)}
+          </div>
+        </label>
       {/if}
     </div>
 
-    <label class="pick-btn" data-testid="videobox-pick-label">
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+    <label class="pick-btn" data-testid="videobox-pick-label" onclick={onPickClick}>
       <input
         type="file"
         accept="video/*"
@@ -692,6 +914,41 @@
   }
   .drop-hint { border: 1px dashed color-mix(in oklab, var(--cable-video) 50%, transparent); }
 
+  /* Re-allow affordance (remembered handle, lapsed permission). */
+  .reallow-hint { gap: 8px; }
+  .reallow-btn {
+    background: var(--cable-video);
+    color: #000;
+    border: none;
+    border-radius: 2px;
+    padding: 5px 12px;
+    font-size: 0.65rem;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .reallow-btn:hover { filter: brightness(1.1); }
+
+  /* Re-link prompt (no usable handle — re-pick your own copy). */
+  .relink-hint {
+    cursor: pointer;
+    border: 1px dashed color-mix(in oklab, var(--cable-video) 50%, transparent);
+    gap: 6px;
+  }
+  .relink-hint input { display: none; }
+  .relink-label {
+    color: var(--text);
+    font-size: 0.7rem;
+    max-width: 92%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .relink-hint:hover .relink-label { text-decoration: underline; }
+
   .pick-btn {
     display: inline-flex;
     align-items: center;
@@ -815,8 +1072,9 @@
     height: 100%;
     object-fit: contain;
   }
-  /* Keep the peer-hint overlay legible if a peer loaded a file we can't
-   * play locally — but the drop-hint should vanish so full-frame is clean. */
+  /* Keep the re-allow / re-link affordances legible if a peer loaded a file
+   * we can't play locally — but the drop-hint should vanish so full-frame
+   * is clean. */
   .card.full-frame .drop-hint {
     display: none;
   }
