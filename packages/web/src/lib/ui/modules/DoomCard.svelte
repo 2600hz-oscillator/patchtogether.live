@@ -50,11 +50,12 @@
   import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
   import {
     encodeKey,
-    decodeKey,
+    collectIncomingKeyPushes,
     encodeFrame,
     decodeFrame,
     decodeFrameBuffer,
     pickHost,
+    type RelayCursor,
   } from '$lib/doom/doom-presence';
 
   let { id, data }: NodeProps = $props();
@@ -220,6 +221,13 @@
   // ---- Awareness wiring ----
   let frameBroadcastInterval: ReturnType<typeof setInterval> | null = null;
   let awarenessOff: (() => void) | null = null;
+  // Edge-trigger cursor for the host-side key relay: last key-envelope ts
+  // relayed per source clientID. Without this, the host re-pushes a remote
+  // client's still-present key field on every awareness update (incl. its
+  // own 10 Hz frame broadcast) — a held/stale DOWNARROW then reads as the
+  // player being shoved backward continuously with no key pressed. See
+  // doom-presence.ts → collectIncomingKeyPushes.
+  const keyRelayCursor: RelayCursor = new Map();
   /** Last frame envelope ts we decoded — guards against re-decoding the
    *  same payload on every rAF tick (the base64 → bytes hop is ~5 ms). */
   let lastDecodedFrameTs = 0;
@@ -288,17 +296,21 @@
     function onIncomingKey(): void {
       if (!isHost) return;
       const me = resolveLocalUserId();
-      const states = aw!.getStates();
-      states.forEach((s, clientId) => {
-        if (clientId === aw!.clientID) return;
-        const raw = (s as Record<string, unknown>)[`doom:${id}:key`];
-        const env = decodeKey(raw);
-        if (!env || env.moduleId !== id) return;
-        if (env.srcUserId === me) return;
-        const extras = getExtras();
-        if (!extras) return;
-        extras.pushDoomKey(env.doomKey, env.pressed);
+      // Edge-triggered: only push key envelopes that are NEW since the last
+      // awareness update. A still-present (sticky) remote key field is NOT
+      // re-injected on unrelated updates (frame broadcasts, host election,
+      // cursor churn) — that re-injection was the phantom-movement bug.
+      const pushes = collectIncomingKeyPushes({
+        states: aw!.getStates() as Map<number, Record<string, unknown>>,
+        moduleId: id,
+        selfClientId: aw!.clientID,
+        selfUserId: me,
+        cursor: keyRelayCursor,
       });
+      if (pushes.length === 0) return;
+      const extras = getExtras();
+      if (!extras) return;
+      for (const p of pushes) extras.pushDoomKey(p.doomKey, p.pressed);
     }
 
     function onIncomingFrame(): void {
