@@ -145,3 +145,143 @@ test.describe('VIDEOBOX video output reaches downstream', () => {
     expect(stats.mean, `VIDEO-OUT (via BENTBOX) not near-black (mean=${stats.mean.toFixed(1)})`).toBeGreaterThan(6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Transport: varispeed knob, START/END window, loop/one-shot.
+// ---------------------------------------------------------------------------
+
+/** Set a param on a node via the dev-mode window globals (deterministic — no
+ *  knob dragging). Matches spawnPatch's direct-mutation approach. */
+async function setNodeParam(
+  page: import('@playwright/test').Page,
+  nodeId: string,
+  key: string,
+  value: number,
+): Promise<void> {
+  await page.evaluate(
+    ({ nodeId, key, value }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[nodeId];
+        if (n) n.params[key] = value;
+      });
+    },
+    { nodeId, key, value },
+  );
+}
+
+/** Read the card-owned <video> element's playbackRate + currentTime. */
+async function videoState(
+  page: import('@playwright/test').Page,
+): Promise<{ rate: number; time: number; paused: boolean }> {
+  const v = page.locator('[data-testid="videobox-video"]');
+  return await v.evaluate((el) => {
+    const ve = el as HTMLVideoElement;
+    return { rate: ve.playbackRate, time: ve.currentTime, paused: ve.paused };
+  });
+}
+
+test.describe('VIDEOBOX transport', () => {
+  test('SPEED knob param drives <video>.playbackRate (forward varispeed)', async ({ page }) => {
+    await setup(page);
+    await spawnPatch(page,
+      [{ id: 'vb', type: 'videobox', position: { x: 40, y: 40 }, domain: 'video' }],
+      [],
+    );
+    await loadAndPlay(page);
+    await page.waitForTimeout(400);
+
+    // Knob 1.0 → +4× per the piecewise map. The transport rAF loop sets
+    // playbackRate to the effective speed.
+    await setNodeParam(page, 'vb', 'speed', 1.0);
+    await expect.poll(async () => (await videoState(page)).rate, {
+      timeout: 4000,
+    }).toBeCloseTo(4, 1);
+
+    // Knob 0.5 (centre) → +1× normal.
+    await setNodeParam(page, 'vb', 'speed', 0.5);
+    await expect.poll(async () => (await videoState(page)).rate, {
+      timeout: 4000,
+    }).toBeCloseTo(1, 1);
+  });
+
+  test('START/END window: playback stays inside [start, end] and loops', async ({ page }) => {
+    await setup(page);
+    await spawnPatch(page,
+      [{ id: 'vb', type: 'videobox', position: { x: 40, y: 40 }, domain: 'video' }],
+      [],
+    );
+    // Wait for metadata (duration) before setting the window.
+    await page.setInputFiles('[data-testid="videobox-file-input"]', FIXTURE);
+    await expect(page.locator('[data-testid="videobox-card"]')).toHaveAttribute(
+      'data-has-local-file', 'true', { timeout: 8000 },
+    );
+
+    // Tight window near the start so we exercise the loop quickly. The fixture
+    // is short; use a small fraction so END comes around fast at 1×.
+    await setNodeParam(page, 'vb', 'start', 0.0);
+    await setNodeParam(page, 'vb', 'end', 0.15);
+    // Ensure LOOP is on (default true) and play.
+    await expect(page.locator('[data-testid="videobox-card"]')).toHaveAttribute('data-loop', 'true');
+    await page.click('[data-testid="videobox-play-btn"]');
+
+    // Sample currentTime over time; it must never exceed the END point by
+    // more than a frame's worth (the loop jumps back to START at END).
+    const samples: number[] = [];
+    for (let i = 0; i < 12; i++) {
+      await page.waitForTimeout(120);
+      samples.push((await videoState(page)).time);
+    }
+    const dur = await page.locator('[data-testid="videobox-video"]').evaluate(
+      (el) => (el as HTMLVideoElement).duration,
+    );
+    const endSec = dur * 0.15;
+    for (const t of samples) {
+      expect(t, `currentTime ${t.toFixed(2)} within window end ${endSec.toFixed(2)}`)
+        .toBeLessThanOrEqual(endSec + 0.3);
+    }
+    // And it actually moved (played) somewhere in the window.
+    expect(Math.max(...samples)).toBeGreaterThan(0);
+  });
+
+  test('LOOP button toggles to ONE-SHOT and back', async ({ page }) => {
+    await setup(page);
+    await spawnPatch(page,
+      [{ id: 'vb', type: 'videobox', position: { x: 40, y: 40 }, domain: 'video' }],
+      [],
+    );
+    const card = page.locator('[data-testid="videobox-card"]');
+    await expect(card).toHaveAttribute('data-loop', 'true'); // default LOOP
+    await page.click('[data-testid="videobox-loop-btn"]');
+    await expect(card).toHaveAttribute('data-loop', 'false'); // → ONE-SHOT
+    await expect(page.locator('[data-testid="videobox-loop-btn"]')).toHaveText('1-SHOT');
+    await page.click('[data-testid="videobox-loop-btn"]');
+    await expect(card).toHaveAttribute('data-loop', 'true');
+  });
+
+  test('one-shot stops at END', async ({ page }) => {
+    await setup(page);
+    await spawnPatch(page,
+      [{ id: 'vb', type: 'videobox', position: { x: 40, y: 40 }, domain: 'video' }],
+      [],
+    );
+    await page.setInputFiles('[data-testid="videobox-file-input"]', FIXTURE);
+    await expect(page.locator('[data-testid="videobox-card"]')).toHaveAttribute(
+      'data-has-local-file', 'true', { timeout: 8000 },
+    );
+    // ONE-SHOT + a tight window so END arrives quickly.
+    await page.click('[data-testid="videobox-loop-btn"]');
+    await expect(page.locator('[data-testid="videobox-card"]')).toHaveAttribute('data-loop', 'false');
+    await setNodeParam(page, 'vb', 'start', 0.0);
+    await setNodeParam(page, 'vb', 'end', 0.1);
+    await page.click('[data-testid="videobox-play-btn"]');
+
+    // After enough time to reach END once, playback must have stopped.
+    await expect.poll(async () => (await videoState(page)).paused, {
+      timeout: 6000,
+    }).toBe(true);
+  });
+});

@@ -28,6 +28,7 @@
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+  import Knob from '$lib/ui/controls/Knob.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import {
@@ -40,6 +41,14 @@
     decideDriftCorrection,
     type VideoboxFileMeta,
   } from '$lib/video/modules/videobox-sync';
+  import {
+    speedKnobToMultiplier,
+    effectiveSpeedKnob,
+    effectiveStartFraction,
+    effectiveEndFraction,
+    resolveWindow,
+    decideEdgeAction,
+  } from '$lib/video/modules/videobox-transport';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -66,9 +75,51 @@
     (node?.data as Partial<VideoboxData> | undefined)?.lastSyncPosition ?? 0,
   );
   let durationSec = $derived<number>(fileMeta?.duration ?? 0);
+  let loop = $derived<boolean>(
+    (node?.data as Partial<VideoboxData> | undefined)?.loop ?? true,
+  );
 
   /** Track whether THIS browser has loaded a local copy of the file. */
   let hasLocalFile = $derived<boolean>(localFileName !== null);
+
+  // ---- Transport param accessors (knob + sliders live on node.params) ----
+  function defaultFor(k: string): number {
+    return videoboxDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
+  }
+  function paramVal(k: string): number {
+    const v = node?.params?.[k];
+    return typeof v === 'number' ? v : defaultFor(k);
+  }
+  const setParamFn = (k: string) => (v: number): void => {
+    const t = patch.nodes[id]; if (t) t.params[k] = v;
+  };
+
+  // ---- CV-connection detection ----
+  //
+  // The END CV normals to +1 (unpatched END = full duration); START CV
+  // normals to 0. We only sum a CV offset into a slider when its port has
+  // an incoming edge, so an UNPATCHED endCv leaves END at the slider's
+  // default 1. Derived from the live patch edges.
+  function portConnected(portId: string): boolean {
+    for (const e of Object.values(patch.edges)) {
+      if (e && e.target.nodeId === id && e.target.portId === portId) return true;
+    }
+    return false;
+  }
+  let startCvConnected = $derived<boolean>(
+    (void Object.keys(patch.edges).length, portConnected('startCv')),
+  );
+  let endCvConnected = $derived<boolean>(
+    (void Object.keys(patch.edges).length, portConnected('endCv')),
+  );
+
+  // ---- Live CV reads from the engine (raw bipolar -1..+1 samples) ----
+  function readCv(paramId: string): number {
+    const e = engineCtx.get();
+    if (!e || !node) return 0;
+    const v = e.readParam(node, paramId);
+    return typeof v === 'number' ? v : 0;
+  }
 
   // ---- Extras helper ----
   function getExtras(): VideoboxHandleExtras | null {
@@ -125,6 +176,16 @@
       d.lastSyncPosition = 0;
     }, LOCAL_ORIGIN);
   }
+
+  function writeLoop(next: boolean): void {
+    ydoc.transact(() => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      if (!t.data) t.data = {};
+      (t.data as Partial<VideoboxData>).loop = next;
+    }, LOCAL_ORIGIN);
+  }
+  function toggleLoop(): void { writeLoop(!loop); }
 
   // ---- File-picker handling ----
   async function loadFile(file: File): Promise<void> {
@@ -217,6 +278,42 @@
     writeSync({ isPlaying, currentPositionSec: target });
   }
 
+  // ---- Transport window + speed helpers (live, CV-summed) ----
+  function effectiveSpeed(): number {
+    return speedKnobToMultiplier(
+      effectiveSpeedKnob(paramVal('speed'), readCv('speedCv')),
+    );
+  }
+  function currentWindow() {
+    const startFrac = effectiveStartFraction(paramVal('start'), readCv('startCv'), startCvConnected);
+    const endFrac = effectiveEndFraction(paramVal('end'), readCv('endCv'), endCvConnected);
+    return resolveWindow(durationSec, startFrac, endFrac);
+  }
+
+  // ---- Gate actions (start / pause / reset) ----
+  //
+  // start  — (re)start playback from the START point.
+  // pause  — toggle pause / unpause (in place).
+  // reset  — seek back to the START point (= "back to the beginning"); we
+  //          keep the current play state (reset while playing keeps playing
+  //          from START; reset while paused stays paused at START).
+  function gateStart(): void {
+    const w = currentWindow();
+    const pos = w.hasWindow ? w.startSec : (videoEl?.currentTime ?? 0);
+    if (videoEl && hasLocalFile) { try { videoEl.currentTime = pos; } catch { /* */ } }
+    writeSync({ isPlaying: w.hasWindow, currentPositionSec: pos });
+  }
+  function gatePause(): void {
+    const cur = videoEl?.currentTime ?? lastSyncPosition;
+    writeSync({ isPlaying: !isPlaying, currentPositionSec: cur });
+  }
+  function gateReset(): void {
+    const w = currentWindow();
+    const pos = w.hasWindow ? w.startSec : 0;
+    if (videoEl && hasLocalFile) { try { videoEl.currentTime = pos; } catch { /* */ } }
+    writeSync({ isPlaying, currentPositionSec: pos });
+  }
+
   // ---- Sync-driven local element control ----
   //
   // Whenever any of (isPlaying / lastSyncTime / lastSyncPosition) change,
@@ -237,6 +334,12 @@
     } else if (!playState && !videoEl.paused) {
       try { videoEl.pause(); } catch { /* */ }
     }
+    // Multiplayer drift correction extrapolates expected position at +1×
+    // forward (the sync model is "play position advances at wallclock").
+    // Varispeed / reverse playback breaks that assumption, so we only run
+    // drift correction at unity forward speed — varispeed is a local
+    // transport mode (play/pause STATE still syncs; position relaxes).
+    if (!isUnityForward()) return;
     const decision = decideDriftCorrection(
       { isPlaying: playState, lastSyncTime, lastSyncPosition },
       videoEl.currentTime,
@@ -247,6 +350,13 @@
       try { videoEl.currentTime = decision.to; } catch { /* */ }
     }
   });
+
+  /** True when the effective speed is +1× forward (within a tolerance), i.e.
+   *  the multiplayer drift model applies. The default knob (0.5) with no
+   *  speed CV yields exactly +1×. */
+  function isUnityForward(): boolean {
+    return Math.abs(effectiveSpeed() - 1) < 0.02;
+  }
 
   // While playing, the local element advances on its own; we ALSO need
   // a periodic drift check (separate from the sync-state change above)
@@ -259,6 +369,7 @@
     driftTimer = setInterval(() => {
       if (!videoEl || !hasLocalFile) return;
       if (!isPlaying) return;
+      if (!isUnityForward()) return;
       const dec = decideDriftCorrection(
         { isPlaying: true, lastSyncTime, lastSyncPosition },
         videoEl.currentTime,
@@ -274,34 +385,131 @@
     if (driftTimer !== null) { clearInterval(driftTimer); driftTimer = null; }
   }
 
-  // ---- play_trigger gate input edge detection ----
+  // ---- Gate input edge detection (rising-edge) ----
   //
-  // When a gate fires into play_trigger, the engine writes the rising-
-  // edge value into the synthetic cv_play_trigger param. We poll the
-  // engine's readParam for that synthetic param + detect a rising edge,
-  // then toggle play state. Polling rather than reaching into the
-  // factory keeps this single-direction (card observes engine; engine
-  // never reaches into the card).
-  let lastGateValue = 0;
+  // Each gate routes (via the cross-domain CV bridge) into a synthetic
+  // cv_<x> param on the engine module. We poll readParam + detect a rising
+  // edge across 0.5, then fire the matching transport action. Polling keeps
+  // this single-direction (card observes engine; engine never reaches into
+  // the card). Mirrors DOOM's CV-gate plumbing.
+  //
+  //   play_trigger    → toggle play/pause (legacy; preserved)
+  //   cv_start        → (re)start from START
+  //   cv_pause        → toggle pause/unpause
+  //   cv_reset        → seek to START (back to the beginning)
+  //   cv_loop_toggle  → flip LOOP <-> ONE-SHOT
+  const lastGate: Record<string, number> = {
+    cv_play_trigger: 0,
+    cv_start: 0,
+    cv_pause: 0,
+    cv_reset: 0,
+    cv_loop_toggle: 0,
+  };
+  function risingEdge(paramId: string): boolean {
+    const v = readCv(paramId);
+    const prev = lastGate[paramId] ?? 0;
+    lastGate[paramId] = v;
+    return prev < 0.5 && v >= 0.5;
+  }
   let gateTimer: ReturnType<typeof setInterval> | null = null;
   function startGateLoop(): void {
     if (gateTimer !== null) return;
     gateTimer = setInterval(() => {
       const e = engineCtx.get();
       if (!e || !node) return;
-      const v = e.readParam(node, 'cv_play_trigger');
-      if (typeof v !== 'number') return;
-      // Rising edge across 0.5: pulse → toggle.
-      if (lastGateValue < 0.5 && v >= 0.5) {
-        // Compose toggle as if the user clicked play/pause locally.
-        const cur = videoEl?.currentTime ?? lastSyncPosition;
-        writeSync({ isPlaying: !isPlaying, currentPositionSec: cur });
-      }
-      lastGateValue = v;
+      if (risingEdge('cv_play_trigger')) gatePause();
+      if (risingEdge('cv_start')) gateStart();
+      if (risingEdge('cv_pause')) gatePause();
+      if (risingEdge('cv_reset')) gateReset();
+      if (risingEdge('cv_loop_toggle')) toggleLoop();
     }, 33);
   }
   function stopGateLoop(): void {
     if (gateTimer !== null) { clearInterval(gateTimer); gateTimer = null; }
+  }
+
+  // ---- Transport loop (rAF-driven): varispeed + window + loop/oneshot ----
+  //
+  // Forward varispeed: set <video>.playbackRate to the effective speed; the
+  // element advances itself + carries its audio through the MediaElementSource
+  // (so audio is pitch+tempo shifted = the varispeed distortion the user
+  // wants). HTMLVideoElement clamps playbackRate to ~[0.0625, 16]; ±4 is
+  // well inside that + inside the ~[0.25, 4] audible window, so forward
+  // audio varispeed is audible/distorted.
+  //
+  // Reverse (negative speed): HTMLVideoElement can't play backward natively,
+  // so we PAUSE the element + scrub currentTime backward each frame by
+  // |speed| * dt (rAF-driven). Reverse audio is hard (no native reverse), so
+  // we MUTE audio during reverse (documented). On returning to forward we
+  // unmute + resume.
+  //
+  // Window: at the END edge → loop (jump to START) or one-shot (stop). In
+  // reverse, the START edge is the wrap point. If START >= END the window is
+  // empty → no playback (element paused, holds its last frame).
+  let raf: number | null = null;
+  let lastRafMs = 0;
+  let reverseActive = false;
+  function transportTick(nowMs: number): void {
+    raf = requestAnimationFrame(transportTick);
+    if (!videoEl || !hasLocalFile) { lastRafMs = nowMs; return; }
+    const dt = lastRafMs === 0 ? 0 : Math.max(0, (nowMs - lastRafMs) / 1000);
+    lastRafMs = nowMs;
+
+    const speed = effectiveSpeed();
+    const w = currentWindow();
+
+    // Empty window (START past END) → no playback: hold the element paused.
+    if (!w.hasWindow) {
+      if (!videoEl.paused) { try { videoEl.pause(); } catch { /* */ } }
+      return;
+    }
+
+    const forward = speed >= 0;
+
+    // ----- Reverse mode bookkeeping (mute audio while reversing) -----
+    if (!forward && !reverseActive) {
+      reverseActive = true;
+      videoEl.muted = true;                 // no native reverse audio
+      try { videoEl.pause(); } catch { /* */ } // we scrub manually
+    } else if (forward && reverseActive) {
+      reverseActive = false;
+      videoEl.muted = false;
+    }
+
+    if (!isPlaying) return; // only drive transport while logically playing
+
+    if (forward) {
+      // Drive native forward playback at the varispeed rate.
+      const rate = Math.max(0.0625, Math.min(16, speed));
+      if (Math.abs(videoEl.playbackRate - rate) > 0.001) {
+        try { videoEl.playbackRate = rate; } catch { /* */ }
+      }
+      if (videoEl.paused) void videoEl.play().catch(() => { /* autoplay */ });
+    } else {
+      // Reverse: scrub currentTime backward by |speed| * dt.
+      const back = Math.abs(speed) * dt;
+      try { videoEl.currentTime = Math.max(w.startSec, videoEl.currentTime - back); } catch { /* */ }
+    }
+
+    // ----- Window edge: loop vs one-shot -----
+    const action = decideEdgeAction(videoEl.currentTime, w, forward, loop);
+    if (action.kind === 'loop') {
+      try { videoEl.currentTime = action.seekTo; } catch { /* */ }
+      if (forward && videoEl.paused) void videoEl.play().catch(() => { /* */ });
+      writeSync({ isPlaying: true, currentPositionSec: action.seekTo });
+    } else if (action.kind === 'stop') {
+      try { videoEl.currentTime = action.clampTo; } catch { /* */ }
+      try { videoEl.pause(); } catch { /* */ }
+      writeSync({ isPlaying: false, currentPositionSec: action.clampTo });
+    }
+  }
+  function startTransportLoop(): void {
+    if (raf !== null) return;
+    lastRafMs = 0;
+    raf = requestAnimationFrame(transportTick);
+  }
+  function stopTransportLoop(): void {
+    if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
   }
 
   // ---- Attach the <video> element to the engine module ----
@@ -333,11 +541,13 @@
 
     startDriftLoop();
     startGateLoop();
+    startTransportLoop();
   });
 
   onDestroy(() => {
     stopDriftLoop();
     stopGateLoop();
+    stopTransportLoop();
     const ve = videoEngine();
     try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
     const extras = getExtras();
@@ -380,6 +590,18 @@
     const ss = Math.floor(s % 60).toString().padStart(2, '0');
     return `${mm}:${ss}`;
   }
+
+  // ---- Reactive transport readouts ----
+  let speedMult = $derived(
+    speedKnobToMultiplier(effectiveSpeedKnob(paramVal('speed'), readCv('speedCv'))),
+  );
+  let speedLabel = $derived(`${speedMult >= 0 ? '+' : ''}${speedMult.toFixed(1)}×`);
+  // Window validity (START < END). Re-evaluates when the start/end params
+  // change. Uses the slider values directly (CV is live + not reactive here;
+  // the warning reflects the user's slider intent).
+  let windowValid = $derived(
+    resolveWindow(durationSec || 1, paramVal('start'), paramVal('end')).hasWindow,
+  );
 </script>
 
 <div
@@ -388,6 +610,7 @@
   data-testid="videobox-card"
   data-has-local-file={hasLocalFile}
   data-is-playing={isPlaying}
+  data-loop={loop}
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
@@ -399,6 +622,20 @@
 
   <Handle type="target" position={Position.Left}  id="play_trigger" style="top: 56px; --handle-color: var(--cable-gate);" />
   <span class="port-label left" style="top: 50px;">TRIG</span>
+  <Handle type="target" position={Position.Left}  id="cv_start" style="top: 84px; --handle-color: var(--cable-gate);" />
+  <span class="port-label left" style="top: 78px;">STRT</span>
+  <Handle type="target" position={Position.Left}  id="cv_pause" style="top: 112px; --handle-color: var(--cable-gate);" />
+  <span class="port-label left" style="top: 106px;">PAUS</span>
+  <Handle type="target" position={Position.Left}  id="cv_reset" style="top: 140px; --handle-color: var(--cable-gate);" />
+  <span class="port-label left" style="top: 134px;">RST</span>
+  <Handle type="target" position={Position.Left}  id="cv_loop_toggle" style="top: 168px; --handle-color: var(--cable-gate);" />
+  <span class="port-label left" style="top: 162px;">LOOP</span>
+  <Handle type="target" position={Position.Left}  id="speedCv" style="top: 196px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 190px;">SPD</span>
+  <Handle type="target" position={Position.Left}  id="startCv" style="top: 224px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 218px;">S-CV</span>
+  <Handle type="target" position={Position.Left}  id="endCv" style="top: 252px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 246px;">E-CV</span>
 
   <Handle type="source" position={Position.Right} id="video"   style="top: 56px; --handle-color: var(--cable-video);" />
   <span class="port-label right" style="top: 50px;">VID</span>
@@ -468,6 +705,57 @@
       aria-label="Video playhead"
     />
 
+    <div class="speed-row">
+      <div class="knob-box">
+        <Knob
+          value={paramVal('speed')}
+          min={0} max={1} defaultValue={defaultFor('speed')}
+          label="SPEED" curve="linear"
+          onchange={setParamFn('speed')} moduleId={id} paramId="speed"
+        />
+        <div class="speed-readout" data-testid="videobox-speed-readout">{speedLabel}</div>
+      </div>
+      <button
+        type="button"
+        class="loop-btn"
+        class:on={loop}
+        onclick={toggleLoop}
+        data-testid="videobox-loop-btn"
+        aria-pressed={loop}
+        title="Toggle LOOP (jump to START at END) vs ONE-SHOT (stop at END)"
+      >{loop ? 'LOOP' : '1-SHOT'}</button>
+    </div>
+
+    <div class="window-row">
+      <label class="slider-label" for="vb-start-{id}">START</label>
+      <input
+        id="vb-start-{id}"
+        class="window-slider"
+        type="range"
+        min="0" max="1" step="0.001"
+        value={paramVal('start')}
+        oninput={(e) => setParamFn('start')(Number((e.target as HTMLInputElement).value))}
+        data-testid="videobox-start"
+        aria-label="Playback window start"
+      />
+    </div>
+    <div class="window-row">
+      <label class="slider-label" for="vb-end-{id}">END</label>
+      <input
+        id="vb-end-{id}"
+        class="window-slider"
+        type="range"
+        min="0" max="1" step="0.001"
+        value={paramVal('end')}
+        oninput={(e) => setParamFn('end')(Number((e.target as HTMLInputElement).value))}
+        data-testid="videobox-end"
+        aria-label="Playback window end"
+      />
+    </div>
+    {#if !windowValid}
+      <div class="warn" data-testid="videobox-window-warn">START past END — no playback</div>
+    {/if}
+
     {#if fileMeta}
       <div class="filename" title={fileMeta.name} data-testid="videobox-filename">
         {fileMeta.name}
@@ -479,7 +767,7 @@
 <style>
   .card {
     width: 320px;
-    min-height: 320px;
+    min-height: 420px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -634,5 +922,66 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .speed-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
+  }
+  .knob-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .speed-readout {
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    min-width: 52px;
+    text-align: center;
+  }
+  .loop-btn {
+    background: var(--module-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 0.65rem;
+    letter-spacing: 0.06em;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-family: ui-monospace, monospace;
+    min-width: 56px;
+  }
+  .loop-btn:hover { border-color: var(--accent-dim); }
+  .loop-btn.on {
+    background: rgba(135, 200, 255, 0.2);
+    color: #87c8ff;
+    border-color: #87c8ff;
+  }
+  .window-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .slider-label {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    width: 36px;
+    flex: none;
+  }
+  .window-slider {
+    flex: 1;
+    accent-color: var(--cable-cv);
+  }
+  .warn {
+    font-size: 0.6rem;
+    color: #ffb347;
+    font-family: ui-monospace, monospace;
   }
 </style>
