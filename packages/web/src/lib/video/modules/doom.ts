@@ -137,8 +137,14 @@ export const doomDef: VideoModuleDef = {
   label: 'DOOM',
   category: 'sources',
   schemaVersion: 1,
-  // ONE per rack — heavy WASM module + we don't want every rack-mate
-  // running their own. Plan §"maxInstances: 1".
+  // ONE DOOM NODE per rack — and it stays 1. The committed slice-3 model
+  // is "one shared node, N per-peer runtimes": the host spawns the single
+  // node; every other peer sees it via Yjs sync and JOINS it (claims a slot
+  // in node.data.players + binds its OWN DoomRuntime), rather than spawning
+  // a second node. So the cap is NOT bumped to 4 — that would let 4 separate
+  // DOOM nodes appear on the canvas, which is explicitly not the model. The
+  // 4-player cap lives in the roster (MAX_DOOM_PLAYERS in doom-roster.ts),
+  // not in maxInstances.
   maxInstances: 1,
   // 7 cv-typed gate inputs per the plan. paramTarget maps each to a
   // synthetic param so the engine's setParam path drives our edge
