@@ -16,6 +16,37 @@ threat model in §3. **RESEARCH + PLAN ONLY — no implementation in this PR.**
 
 ---
 
+## 0. Locked decisions (user, 2026-05-24 — SUPERSEDE the analysis below)
+
+These override any contradicting detail in §1–§7. Where the body discusses a
+WS-relay-of-ciphertext fallback, treat it as REJECTED per (1).
+
+1. **P2P-ONLY transfer. No WS-relay fallback, no TURN, for the file bytes.**
+   The operator's infra (Hocuspocus, Cloudflare) must NEVER carry the content —
+   not plaintext, not ciphertext, not transiently. Only the *signaling* (SDP/ICE)
+   and the *key-exchange public keys* may transit the relay. If WebRTC cannot
+   establish a direct peer connection (symmetric NAT, ~10–15% of users), the
+   transfer **fails gracefully** with "couldn't connect directly to peer" — it
+   does NOT relay. Rationale: operator-liability posture — the strongest
+   "I never host/transit content" position is that content provably never touches
+   operator infrastructure in any form. (Removes the §2/§3 relay path entirely:
+   PATH B is deleted; the operator never sees ciphertext, only public keys.)
+
+2. **Downloading requires login.** Anonymous / invite-link participants can SEE
+   the VIDEOBOX and the share state, but the "Download to local" action is
+   auth-gated — show "Sign in to download" to anon users. Every completed
+   download is attributable to a real account (accountability + abuse control).
+   OPEN: must the *sharer* also be logged in to enable "Allow downloads"? (added
+   to §4 questions — recommend yes for symmetry/accountability.)
+
+3. **Operator liability posture** (see new §3a): because of (1)+(2) and the
+   existing client-side-only file handling (VIDEOBOX loads from local disk, never
+   uploads to operator storage), nothing content-related is ever attributable to
+   operator infrastructure. Counsel review (DMCA agent, ToS prohibiting infringing
+   use, takedown/abuse path) is recommended before launch but is out of code scope.
+
+---
+
 ## 1. Executive summary
 
 We already have, from DOOM multiplayer slice 2, a complete peer-to-peer transport:
