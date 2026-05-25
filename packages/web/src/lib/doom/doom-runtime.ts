@@ -68,6 +68,18 @@ export interface DoomModule {
  *  -sEXPORT_ES6=1 -sEXPORT_NAME=loadDoom. */
 export type DoomModuleLoader = () => Promise<DoomModule>;
 
+/** A DOOM per-tic input command (the subset that affects movement +
+ *  buttons). Mirrors d_ticcmd.h's ticcmd_t: forwardmove/sidemove are
+ *  signed bytes, angleturn a signed short, buttons a byte. This is the unit
+ *  the slice-5 cross-peer feed broadcasts so every peer applies every
+ *  player's input. */
+export interface DoomTiccmd {
+  forwardmove: number;
+  sidemove: number;
+  angleturn: number;
+  buttons: number;
+}
+
 /** Result of loadDoomModule: the fully-initialized emcc Module instance.
  *  Lazy because the .wasm fetch is async + we want to surface "not built
  *  yet" cleanly (no exception, just `null` so the card can render a
@@ -470,6 +482,61 @@ export class DoomRuntime {
       y: this.mod.ccall('dgpt_get_console_player_y', 'number', [], []),
       slot: this.getConsolePlayer(),
     };
+  }
+
+  /** Position of an arbitrary player slot's mobj (0..3) in DOOM fixed-point,
+   *  or null if that slot has no live mobj. Used by the slice-5 cross-peer
+   *  visibility test: read players[remoteSlot] on this peer before + after the
+   *  remote peer moves + assert it changed (this peer SAW the remote marine
+   *  move). */
+  getPlayerSlotState(slot: number): { x: number; y: number; slot: number } | null {
+    if (!this.initialized) return null;
+    if (this.mod.ccall('dgpt_has_player_slot_mobj', 'number', ['number'], [slot]) === 0) {
+      return null;
+    }
+    return {
+      x: this.mod.ccall('dgpt_get_player_slot_x', 'number', ['number'], [slot]),
+      y: this.mod.ccall('dgpt_get_player_slot_y', 'number', ['number'], [slot]),
+      slot,
+    };
+  }
+
+  // ---------------- Slice 5: cross-peer ticcmd feed ----------------
+  //
+  // Each tic the card reads THIS peer's freshly-built local ticcmd
+  // (readLocalTiccmd) + broadcasts it over the netcode; on the receiving
+  // peer the card calls injectRemoteTiccmd(slot, cmd) so that peer's marine
+  // moves in this peer's world (cross-peer visibility). See d_loop.c's
+  // DGPT_Loop{Read,Inject}*Ticcmd + the dgpt_*_ticcmd exports.
+
+  /** This peer's most-recently-built local ticcmd, or null if none is built
+   *  yet (no level running / first tic not produced). DOOM ticcmd fields:
+   *  forwardmove/sidemove are i8, angleturn is i16, buttons is u8. */
+  readLocalTiccmd(): DoomTiccmd | null {
+    if (!this.initialized) return null;
+    // dgpt_has_local_ticcmd refreshes the C-side cache + returns 0/1.
+    if (this.mod.ccall('dgpt_has_local_ticcmd', 'number', [], []) === 0) {
+      return null;
+    }
+    return {
+      forwardmove: this.mod.ccall('dgpt_local_ticcmd_forwardmove', 'number', [], []),
+      sidemove: this.mod.ccall('dgpt_local_ticcmd_sidemove', 'number', [], []),
+      angleturn: this.mod.ccall('dgpt_local_ticcmd_angleturn', 'number', [], []),
+      buttons: this.mod.ccall('dgpt_local_ticcmd_buttons', 'number', [], []),
+    };
+  }
+
+  /** Overlay a remote peer's latest ticcmd onto our sim, keyed by that peer's
+   *  slot. Applied on the next tic; ignored for our own slot / out-of-range
+   *  slots (the C side guards). */
+  injectRemoteTiccmd(slot: number, cmd: DoomTiccmd): void {
+    if (!this.initialized) return;
+    this.mod.ccall(
+      'dgpt_inject_remote_ticcmd',
+      null,
+      ['number', 'number', 'number', 'number', 'number'],
+      [slot, cmd.forwardmove, cmd.sidemove, cmd.angleturn, cmd.buttons],
+    );
   }
 
   // ---------------- Slice 3: netcode bridge (Module.PTNet) ----------------

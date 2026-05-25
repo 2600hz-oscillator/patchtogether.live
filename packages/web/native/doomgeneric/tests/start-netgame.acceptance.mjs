@@ -118,6 +118,40 @@ function setKey(M, key, pressed) {
   M.ccall('dgpt_set_key', null, ['number', 'number'], [key & 0xff, pressed ? 1 : 0]);
 }
 
+// Slice 5: read THIS peer's freshly-built local ticcmd (sign-extend the i8/i16
+// fields), or null if none built yet.
+function readLocalTiccmd(M) {
+  if (M.ccall('dgpt_has_local_ticcmd', 'number', [], []) === 0) return null;
+  const i8 = (v) => (v << 24) >> 24;
+  const i16 = (v) => (v << 16) >> 16;
+  return {
+    forwardmove: i8(M.ccall('dgpt_local_ticcmd_forwardmove', 'number', [], [])),
+    sidemove: i8(M.ccall('dgpt_local_ticcmd_sidemove', 'number', [], [])),
+    angleturn: i16(M.ccall('dgpt_local_ticcmd_angleturn', 'number', [], [])),
+    buttons: M.ccall('dgpt_local_ticcmd_buttons', 'number', [], []) & 0xff,
+  };
+}
+
+// Slice 5: inject a remote peer's ticcmd at its slot.
+function injectRemoteTiccmd(M, slot, cmd) {
+  M.ccall(
+    'dgpt_inject_remote_ticcmd',
+    null,
+    ['number', 'number', 'number', 'number', 'number'],
+    [slot, cmd.forwardmove, cmd.sidemove, cmd.angleturn, cmd.buttons],
+  );
+}
+
+// Slice 5: position of an arbitrary player slot's mobj in THIS instance's
+// world, or null if not spawned.
+function slotPos(M, slot) {
+  if (M.ccall('dgpt_has_player_slot_mobj', 'number', ['number'], [slot]) === 0) return null;
+  return {
+    x: M.ccall('dgpt_get_player_slot_x', 'number', ['number'], [slot]),
+    y: M.ccall('dgpt_get_player_slot_y', 'number', ['number'], [slot]),
+  };
+}
+
 async function testEntersLevel(wad) {
   console.log('[test] dgpt_start_netgame enters the level + spawns console player');
   const M = bootGame(await loadInstance(), wad, { consolePlayer: 0, numPlayers: 2 });
@@ -166,6 +200,75 @@ async function testPerPeerIndependentMovement(wad) {
   check(distinct, 'the two peers are at DIFFERENT positions (separate instances)');
 }
 
+async function testCrossPeerVisibility(wad) {
+  console.log('[test] cross-peer visibility: B sees A move (slice 5 ticcmd cross-feed)');
+  // Peer A = slot 0, Peer B = slot 1, same E1M1 coop config.
+  const A = bootGame(await loadInstance(), wad, { consolePlayer: 0, numPlayers: 2 });
+  const B = bootGame(await loadInstance(), wad, { consolePlayer: 1, numPlayers: 2 });
+
+  // Lockstep both instances, cross-feeding each peer's local ticcmd into the
+  // OTHER's sim at the producer's slot (this is exactly what the JS netcode
+  // does over awareness — here we wire it deterministically in-process).
+  function lockstep(n) {
+    for (let i = 0; i < n; i++) {
+      // Advance the virtual clock first so a tic is actually built/run.
+      A.ccall('dgpt_advance_clock', null, ['number'], [29]);
+      B.ccall('dgpt_advance_clock', null, ['number'], [29]);
+      // Read each peer's latest local ticcmd + feed it to the other.
+      const aCmd = readLocalTiccmd(A);
+      const bCmd = readLocalTiccmd(B);
+      if (aCmd) injectRemoteTiccmd(B, 0, aCmd); // A is slot 0 in B's world
+      if (bCmd) injectRemoteTiccmd(A, 1, bCmd); // B is slot 1 in A's world
+      A.ccall('dgpt_tick', null, [], []);
+      B.ccall('dgpt_tick', null, [], []);
+    }
+  }
+
+  // Settle both into the level.
+  lockstep(60);
+  check(
+    consolePos(A).hasMobj && consolePos(B).hasMobj,
+    'both peers spawned their console player',
+  );
+  // B's view of A's marine (players[0] in B's world) must exist.
+  const aSeenByBStart = slotPos(B, 0);
+  check(aSeenByBStart !== null, "B has a live mobj for A's slot (players[0] spawned in B)");
+  // A's own marine start position (in A's world) for the displacement compare.
+  const aOwnStart = consolePos(A);
+
+  // A holds forward; B presses nothing. With the cross-feed, A's forward
+  // ticcmd reaches B → players[0] (A's marine) moves in B's world.
+  setKey(A, KEY_UPARROW, true);
+  lockstep(40);
+  setKey(A, KEY_UPARROW, false);
+  lockstep(10);
+
+  const aSeenByBEnd = slotPos(B, 0);
+  check(aSeenByBEnd !== null, "B still has A's marine after the move");
+  const bSawAMove =
+    aSeenByBEnd && aSeenByBStart &&
+    (aSeenByBEnd.x !== aSeenByBStart.x || aSeenByBEnd.y !== aSeenByBStart.y);
+  check(bSawAMove, "B's view of A's marine MOVED (cross-peer visibility)");
+
+  // Sanity: A's marine moved a meaningful distance in BOTH A's own world and
+  // B's view of it (the cross-feed transported A's real forward motion). We
+  // compare displacement magnitude rather than exact equality — the in-process
+  // harness reads-then-injects with a one-tic lag, so the two sims sample A's
+  // motion a tic apart (sub-pixel difference). The deterministic-equality
+  // guarantee is a slice-7 trace-replay concern; here we prove the marine
+  // visibly traveled on B's screen.
+  const aSelf = consolePos(A);
+  const aOwnDist = Math.hypot(aSelf.x - aOwnStart.x, aSelf.y - aOwnStart.y);
+  const bViewDist = aSeenByBEnd && aSeenByBStart
+    ? Math.hypot(aSeenByBEnd.x - aSeenByBStart.x, aSeenByBEnd.y - aSeenByBStart.y)
+    : 0;
+  check(aOwnDist > (8 << 16), "A's own marine traveled a meaningful distance (> 8 map units)");
+  check(
+    bViewDist > 0 && Math.abs(bViewDist - aOwnDist) < aOwnDist * 0.25,
+    "B's view of A's travel distance ~matches A's own (within 25% — same motion, one-tic lag)",
+  );
+}
+
 async function testSinglePlayerUnaffected(wad) {
   console.log('[test] single-player launch (num_players=1) does not promote to netgame');
   const M = bootGame(await loadInstance(), wad, { consolePlayer: 0, numPlayers: 1 });
@@ -193,6 +296,7 @@ async function main() {
 
   await testEntersLevel(wad);
   await testPerPeerIndependentMovement(wad);
+  await testCrossPeerVisibility(wad);
   await testSinglePlayerUnaffected(wad);
 
   console.log('');

@@ -81,6 +81,79 @@ boolean singletics = false;
 
 static int localplayer;
 
+// ---------------------------------------------------------------------------
+// patchtogether.live slice-5 cross-peer ticcmd feed.
+//
+// WHY THIS EXISTS (the netcode gap slice 5 fills):
+//   Slice 4's dgpt_start_netgame() brings up a netgame (netgame=true,
+//   playeringame[0..n)=true) WITHOUT going through chocolate-doom's full
+//   net_client connection handshake (NET_CL_Connect → SYN/ACK → GAMESTART →
+//   BlockUntilStart). That handshake is a multi-RTT, spin-loop-blocking state
+//   machine that cannot run inside our cooperatively-scheduled WASM tick (no
+//   I_Sleep in the browser), which is exactly why slice 4 bypassed it. The
+//   side effect: `net_client_connected` stays FALSE, so d_loop.c never calls
+//   NET_CL_SendTiccmd (BuildNewTic) and never receives a consolidated TicSet
+//   (D_ReceiveTic). Each peer therefore only ever ran its OWN ticcmd into
+//   players[localplayer] — the other slots got SinglePlayerClear'd to
+//   ingame=false, so NO peer saw any OTHER peer's marine move. Cross-peer
+//   visibility (peer A sees peer B walk past) was absent.
+//
+//   Rather than light up the entire chocolate-doom connection machine (wrong
+//   shape for our JS-driven lockstep), slice 5 adds a thin DIRECT ticcmd
+//   cross-feed at exactly the abstraction level d_loop already operates on:
+//     - JS reads THIS peer's just-built local ticcmd each tic
+//       (DGPT_LoopReadLocalTiccmd) and broadcasts it over the existing
+//       netcode transport, tagged with this peer's slot;
+//     - JS injects every REMOTE peer's latest ticcmd
+//       (DGPT_LoopInjectRemoteTiccmd) keyed by that peer's slot;
+//     - right before RunTic, TryRunTics overlays the stored remote ticcmds
+//       onto the tic set + forces those slots ingame=true, so the SAME
+//       deterministic G_Ticker on every peer applies all players' inputs and
+//       every marine moves in every peer's world.
+//
+//   This is the lockstep TicSet aggregation, expressed for our transport. It
+//   is intentionally last-value (no per-tic sequencing / resend): browser
+//   peers run at ~35 tics/s and the awareness/data-channel feed delivers the
+//   newest ticcmd; a dropped intermediate ticcmd just means a marine's motion
+//   is sampled slightly coarsely, never a hard desync of the local player
+//   (whose own input is always exact). Sequenced, diffed ticcmds are a
+//   slice-7 fidelity follow-up.
+//
+//   Compiled unconditionally (touches no FEATURE_MULTIPLAYER-only symbols).
+//   In single-player (no remote slots ever injected) the overlay is a no-op
+//   and behaviour is byte-identical to slice 4.
+
+static ticcmd_t dgpt_remote_cmds[NET_MAXPLAYERS];
+static boolean  dgpt_remote_present[NET_MAXPLAYERS];
+// How many slots are live in the current netgame (0 = single-player, no
+// cross-feed). Set by DGPT_LoopSetNetgamePlayers from dgpt_start_netgame.
+static int      dgpt_netgame_players;
+
+// Overlay the remote slots onto a tic set about to run, forcing those slots
+// in-game so RunTic applies them + (crucially) so RunTic's quit-detection
+// never flips playeringame[i] off for a remote player whose first ticcmd
+// hasn't arrived yet (it would otherwise see playeringame[i] && !ingame[i] and
+// call PlayerQuitGame, permanently removing that marine). Every remote slot in
+// [0, dgpt_netgame_players) is kept in-game with a zeroed ticcmd until a real
+// one is injected. The local player's own slot is never touched — its exact,
+// freshly-built ticcmd already sits in the set. No-op in single-player
+// (dgpt_netgame_players <= 1).
+static void DGPT_OverlayRemoteCmds(ticcmd_set_t *set)
+{
+    int i;
+    if (dgpt_netgame_players <= 1) return;
+    for (i = 0; i < NET_MAXPLAYERS; ++i)
+    {
+        if (i == localplayer) continue;
+        if (i >= dgpt_netgame_players) continue;
+        // Keep the remote slot in-game from the very first tic so RunTic never
+        // quits it; apply the injected ticcmd if one has arrived, else a
+        // zeroed (idle) command.
+        set->cmds[i] = dgpt_remote_cmds[i];
+        set->ingame[i] = true;
+    }
+}
+
 // Used for original sync code.
 
 static int      skiptics = 0;
@@ -802,6 +875,11 @@ void TryRunTics (void)
             SinglePlayerClear(set);
         }
 
+        // slice-5: overlay injected remote ticcmds AFTER SinglePlayerClear so
+        // other peers' marines move in this peer's world (cross-peer
+        // visibility). No-op in single-player (no slots ever injected).
+        DGPT_OverlayRemoteCmds(set);
+
 	for (i=0 ; i<ticdup ; i++)
 	{
             if (gametic/ticdup > lowtic)
@@ -840,8 +918,71 @@ void D_RegisterLoopCallbacks(loop_interface_t *i)
 // single-player build dgpt_start_netgame simply doesn't call it.
 void DGPT_LoopSetLocalPlayer(int player)
 {
+    int i;
     localplayer = player;
     recvtic = 0;
     maketic = 0;
     gametic = 0;
+    // A fresh game starts with no remote ticcmds; clear the cross-feed table
+    // so a stale ticcmd from a previous map/launch can't leak into the new
+    // world before the first real injection arrives.
+    for (i = 0; i < NET_MAXPLAYERS; ++i)
+    {
+        memset(&dgpt_remote_cmds[i], 0, sizeof(ticcmd_t));
+        dgpt_remote_present[i] = false;
+    }
+}
+
+// slice-5: tell the cross-feed how many slots are live this netgame, so the
+// overlay keeps every remote slot in-game from tic 0 (preventing RunTic's
+// quit-detection from removing a remote marine before its first ticcmd
+// arrives). 1 (or 0) = single-player → cross-feed disabled.
+void DGPT_LoopSetNetgamePlayers(int num_players)
+{
+    dgpt_netgame_players = num_players;
+}
+
+// ---------------------------------------------------------------------------
+// slice-5 cross-peer ticcmd feed: public C entry points (driven from JS via
+// the dgpt_* exports in doomgeneric_patchtogether.c). See the table + rationale
+// near the top of this file.
+
+// Read THIS peer's most-recently-built local ticcmd (the input it produced for
+// the latest maketic). JS broadcasts this to the other peers each tic so they
+// can move this peer's marine in their own worlds. Returns 1 if a ticcmd was
+// available (a level is running + at least one tic has been built), else 0
+// (out args left untouched).
+int DGPT_LoopReadLocalTiccmd(signed char *forwardmove,
+                             signed char *sidemove,
+                             short *angleturn,
+                             unsigned char *buttons)
+{
+    ticcmd_t *cmd;
+    if (maketic <= 0) return 0;
+    // The latest built tic is maketic-1 (BuildNewTic increments after store).
+    cmd = &ticdata[(maketic - 1) % BACKUPTICS].cmds[localplayer];
+    if (forwardmove) *forwardmove = cmd->forwardmove;
+    if (sidemove)    *sidemove = cmd->sidemove;
+    if (angleturn)   *angleturn = cmd->angleturn;
+    if (buttons)     *buttons = cmd->buttons;
+    return 1;
+}
+
+// Inject a REMOTE peer's latest ticcmd, keyed by that peer's slot. Stored in
+// the cross-feed side table + overlaid onto the tic set right before RunTic.
+// Ignores the local slot (a peer never feeds itself) + out-of-range slots.
+void DGPT_LoopInjectRemoteTiccmd(int slot,
+                                 signed char forwardmove,
+                                 signed char sidemove,
+                                 short angleturn,
+                                 unsigned char buttons)
+{
+    if (slot < 0 || slot >= NET_MAXPLAYERS) return;
+    if (slot == localplayer) return;
+    dgpt_remote_cmds[slot].forwardmove = forwardmove;
+    dgpt_remote_cmds[slot].sidemove = sidemove;
+    dgpt_remote_cmds[slot].angleturn = angleturn;
+    dgpt_remote_cmds[slot].buttons = buttons;
+    dgpt_remote_cmds[slot].chatchar = 0;
+    dgpt_remote_present[slot] = true;
 }

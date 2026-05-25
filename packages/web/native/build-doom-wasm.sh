@@ -194,6 +194,15 @@ EXPORTS='[
   "_dgpt_get_console_player_x",
   "_dgpt_get_console_player_y",
   "_dgpt_has_console_player_mobj",
+  "_dgpt_get_player_slot_x",
+  "_dgpt_get_player_slot_y",
+  "_dgpt_has_player_slot_mobj",
+  "_dgpt_has_local_ticcmd",
+  "_dgpt_local_ticcmd_forwardmove",
+  "_dgpt_local_ticcmd_sidemove",
+  "_dgpt_local_ticcmd_angleturn",
+  "_dgpt_local_ticcmd_buttons",
+  "_dgpt_inject_remote_ticcmd",
   "_malloc",
   "_free"
 ]'

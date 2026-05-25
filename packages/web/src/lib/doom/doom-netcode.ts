@@ -88,6 +88,15 @@ export function gameStartFieldFor(moduleId: string): string {
   return `doom-net:${moduleId}:gamestart`;
 }
 
+/** Awareness field name carrying a peer's per-tic ticcmd (slice 5 cross-peer
+ *  feed) for module `mid`. Each joined peer writes its own latest ticcmd here
+ *  every tic; every OTHER joined peer reads it + injects it into its sim so
+ *  all players' marines move in every peer's world. A single sticky field
+ *  overwritten each tic (last-value wins) — see DoomNetcode.broadcastLocalTiccmd. */
+export function ticcmdFieldFor(moduleId: string): string {
+  return `doom-net:${moduleId}:ticcmd`;
+}
+
 // ────────────────────────────────────────────────────────────────────────
 //  net_gamesettings_t (the launch payload)
 // ────────────────────────────────────────────────────────────────────────
@@ -129,6 +138,22 @@ export interface GameStartEnvelope {
    *  it so peers re-run dgpt_start_netgame for the next map. */
   launchId: number;
   settings: DoomGameSettings;
+}
+
+/** A peer's per-tic ticcmd as it rides on awareness (slice 5). Carries the
+ *  sender's slot so the receiver injects it at the right player index, plus a
+ *  monotonic `seq` so a sticky re-broadcast of an unchanged ticcmd is applied
+ *  at most once per new value (and stale re-fires on unrelated awareness
+ *  updates are ignored). Fields mirror DoomTiccmd. */
+export interface TiccmdEnvelope {
+  /** The sender's player slot (0..3). */
+  slot: number;
+  forwardmove: number;
+  sidemove: number;
+  angleturn: number;
+  buttons: number;
+  /** Monotonic per-sender; receiver dedupes on it. */
+  seq: number;
 }
 
 /** Stable field order for serialization (the round-trip unit test pins it).
@@ -293,6 +318,11 @@ export interface DoomNetcodeOpts {
    *  runtime.startNetGame(settings) with its own slot as consoleplayer.
    *  Deduped on launchId so a sticky re-broadcast fires the callback once. */
   onGameStart?: (env: GameStartEnvelope) => void;
+  /** Slice 5: fired for each REMOTE peer's latest ticcmd (deduped on the
+   *  sender's seq). The card injects it into its runtime so that peer's
+   *  marine moves in this peer's world. Never fired for the local peer's own
+   *  ticcmd. */
+  onRemoteTiccmd?: (env: TiccmdEnvelope) => void;
 }
 
 export class DoomNetcode {
@@ -302,6 +332,13 @@ export class DoomNetcode {
   private readonly runtime: NetcodeRuntime;
   private readonly onArbiter?: (isArbiter: boolean) => void;
   private readonly onGameStart?: (env: GameStartEnvelope) => void;
+  private readonly onRemoteTiccmd?: (env: TiccmdEnvelope) => void;
+
+  /** Monotonic per-tic seq the local peer stamps on each broadcast ticcmd. */
+  private ticcmdTxSeq = 0;
+  /** Highest ticcmd seq we've already delivered to onRemoteTiccmd, keyed by
+   *  sender user id (dedupe the sticky awareness re-broadcast). */
+  private ticcmdRxSeq = new Map<string, number>();
 
   /** Monotonic launch id the arbiter stamps on each GAMESTART broadcast. */
   private launchTxId = 0;
@@ -332,6 +369,7 @@ export class DoomNetcode {
     this.runtime = opts.runtime;
     this.onArbiter = opts.onArbiter;
     this.onGameStart = opts.onGameStart;
+    this.onRemoteTiccmd = opts.onRemoteTiccmd;
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────────
@@ -350,6 +388,7 @@ export class DoomNetcode {
         this.drainInboundSignals();
         this.drainInboundRelay();
         this.drainInboundGameStart();
+        this.drainInboundTiccmds();
       };
       aw.on('update', handler);
       this.awarenessUpdateHandler = () => aw.off('update', handler);
@@ -890,6 +929,71 @@ export class DoomNetcode {
       if (env.launchId <= this.launchRxId) continue;
       this.launchRxId = env.launchId;
       this.onGameStart?.({ launchId: env.launchId, settings });
+    }
+  }
+
+  // ── Slice 5: cross-peer ticcmd feed ──────────────────────────────────────
+  //
+  // The per-tic ticcmd is tiny (4 small ints) + must reach every other joined
+  // peer, so it rides a single sticky awareness field per peer, overwritten
+  // each tic (last-value-wins). A monotonic seq lets receivers apply each new
+  // value once + ignore the sticky re-broadcast on unrelated awareness
+  // updates. This is the practical lockstep cross-feed for our transport (see
+  // the rationale block in d_loop.c) — NOT routed through the chocolate-doom
+  // net_client packet path, which never connects in our JS-driven start flow.
+
+  /** Broadcast THIS peer's latest local ticcmd, tagged with its slot. Called
+   *  by the card each tic after reading runtime.readLocalTiccmd(). Skips the
+   *  write when nothing changed since the last broadcast (same field bytes →
+   *  no redundant awareness churn) by always bumping seq but letting the
+   *  receiver dedupe; we still avoid a write if there is no awareness. */
+  broadcastLocalTiccmd(slot: number, cmd: {
+    forwardmove: number;
+    sidemove: number;
+    angleturn: number;
+    buttons: number;
+  }): void {
+    const aw = this.provider.awareness;
+    if (!aw) return;
+    const env: TiccmdEnvelope = {
+      slot,
+      forwardmove: cmd.forwardmove,
+      sidemove: cmd.sidemove,
+      angleturn: cmd.angleturn,
+      buttons: cmd.buttons,
+      seq: this.ticcmdTxSeq++,
+    };
+    aw.setLocalStateField(ticcmdFieldFor(this.moduleId), env);
+  }
+
+  /** Scan awareness for OTHER joined peers' ticcmd envelopes + fire
+   *  onRemoteTiccmd for each new (per-sender seq) value. Deduped so a sticky
+   *  re-broadcast injects once; we read by sender user id so two peers'
+   *  fields never collide. */
+  private drainInboundTiccmds(): void {
+    const aw = this.provider.awareness;
+    if (!aw) return;
+    const field = ticcmdFieldFor(this.moduleId);
+    for (const [, state] of aw.getStates()) {
+      const s = state as Record<string, unknown> | undefined;
+      if (!s) continue;
+      const fromUid = (s as { user?: { id?: string } }).user?.id;
+      if (typeof fromUid !== 'string' || fromUid === this.localUserId) continue;
+      const env = s[field] as TiccmdEnvelope | undefined;
+      if (!env || typeof env.seq !== 'number' || typeof env.slot !== 'number') {
+        continue;
+      }
+      const last = this.ticcmdRxSeq.get(fromUid) ?? -1;
+      if (env.seq <= last) continue;
+      this.ticcmdRxSeq.set(fromUid, env.seq);
+      this.onRemoteTiccmd?.({
+        slot: env.slot,
+        forwardmove: env.forwardmove,
+        sidemove: env.sidemove,
+        angleturn: env.angleturn,
+        buttons: env.buttons,
+        seq: env.seq,
+      });
     }
   }
 

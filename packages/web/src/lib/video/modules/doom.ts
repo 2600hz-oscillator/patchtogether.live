@@ -24,7 +24,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
-import { DoomRuntime } from '$lib/doom/doom-runtime';
+import { DoomRuntime, type DoomTiccmd } from '$lib/doom/doom-runtime';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 import { CV_GATE_PORT_IDS, KEY_FOR_CV_GATE, type CvGatePortId } from '$lib/doom/doomkeys';
 
@@ -150,6 +150,16 @@ export interface DoomHandleExtras {
   /** Slice 4: this peer's own console player position (fixed-point) or
    *  null if not spawned. Used by the e2e per-peer-POV assertion. */
   getConsolePlayerState(): { x: number; y: number; slot: number } | null;
+  /** Slice 5: this peer's freshly-built local ticcmd (the card broadcasts it
+   *  each tic for cross-peer visibility), or null if none built yet. */
+  readLocalTiccmd(): DoomTiccmd | null;
+  /** Slice 5: inject a remote peer's latest ticcmd at its slot so its marine
+   *  moves in this peer's world. No-op if the runtime isn't loaded. */
+  injectRemoteTiccmd(slot: number, cmd: DoomTiccmd): void;
+  /** Slice 5: position of an arbitrary player slot in THIS peer's world, or
+   *  null if not spawned. The cross-peer-visibility e2e reads the REMOTE
+   *  peer's slot here to assert this peer saw it move. */
+  getPlayerSlotState(slot: number): { x: number; y: number; slot: number } | null;
 }
 
 export const doomDef: VideoModuleDef = {
@@ -476,6 +486,16 @@ export const doomDef: VideoModuleDef = {
       },
       getConsolePlayerState() {
         return runtime ? runtime.getConsolePlayerState() : null;
+      },
+      readLocalTiccmd() {
+        return runtime ? runtime.readLocalTiccmd() : null;
+      },
+      injectRemoteTiccmd(slot, cmd) {
+        if (!runtime || !runtime.isInitialized()) return;
+        runtime.injectRemoteTiccmd(slot, cmd);
+      },
+      getPlayerSlotState(slot) {
+        return runtime ? runtime.getPlayerSlotState(slot) : null;
       },
     };
 
