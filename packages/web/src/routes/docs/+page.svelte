@@ -106,6 +106,10 @@
 <ul>
   <li><a href="/docs/modules">Module catalog</a> — every module, its I/O, params, source link.</li>
   <li>
+    <a href="/docs/modules/doom-multiplayer">DOOM multiplayer</a> —
+    4-player co-op: starting a game, joining, late-join, player colors, controls.
+  </li>
+  <li>
     <a href="/docs/rackspace-persistence">Rackspace persistence</a> —
     where patches + assets live, what Save/Load do, what auto-saves.
   </li>
