@@ -386,6 +386,26 @@ int dgpt_get_gamestate(void) {
   return (int)gamestate;
 }
 
+// ---- Slice 6: drive a level to its end (intermission) ----
+//
+// Exit the current level — equivalent to walking into a normal level exit.
+// G_ExitLevel sets gameaction = ga_completed; the next dgpt_tick() runs
+// G_DoCompleted, which transitions gamestate → GS_INTERMISSION (the between-
+// maps tally screen). The card polls dgpt_get_gamestate() and, at GS_INTERMISSION,
+// re-opens the New Game dialog so the arbiter can seat any pending late joiners
+// + launch the next map. This export lets the C acceptance harness reach that
+// state deterministically (without scripting an in-game exit-line touch), so
+// it can prove a late joiner — seated via a fresh dgpt_start_netgame at a
+// larger num_players — actually spawns into the NEXT map.
+//
+// No-op outside a netgame level is harmless (G_ExitLevel just queues the
+// action); single-player byte-behavior is unaffected because nothing calls
+// this on the default build path (it is only invoked by the MP harness + the
+// MP card's next-map flow, both gated on num_players>1 upstream).
+void dgpt_exit_level(void) {
+  G_ExitLevel();
+}
+
 // Position of the player THIS peer controls (players[consoleplayer]), in
 // DOOM fixed-point. dgpt_get_player_x/y above always read slot 0 (the
 // single-player + pre-slice-4 regression hook); these read the local

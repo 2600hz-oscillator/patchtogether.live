@@ -20,6 +20,16 @@ import {
   pruneRoster,
   serializeRoster,
   assignRequestedSlots,
+  readPending,
+  readRosterState,
+  serializePending,
+  combinedRoster,
+  slotForUserInState,
+  isActivePlayer,
+  isPendingPlayer,
+  assignSlots,
+  promotePending,
+  pruneRosterState,
 } from './doom-roster';
 
 describe('doom-roster: readRoster', () => {
@@ -314,5 +324,168 @@ describe('doom-roster: assignRequestedSlots (slice 4 — arbiter-authoritative)'
     // free slots were 1 + 2 → e, f (lex-first) take them; g rejected.
     expect(roster).toEqual({ '0': 'a', '1': 'e', '2': 'f', '3': 'd' });
     expect(rejected).toEqual(['g']);
+  });
+});
+
+describe('doom-roster slice 6: pending (late-join) vs active state', () => {
+  describe('read / serialize', () => {
+    it('readPending decodes the `pending` leaf (object + JSON-string forms)', () => {
+      expect(readPending({ pending: { '1': 'bob' } })).toEqual({ '1': 'bob' });
+      expect(readPending({ pending: '{"2":"carol"}' })).toEqual({ '2': 'carol' });
+      expect(readPending({})).toEqual({});
+      expect(readPending(undefined)).toEqual({});
+      // Same normalization as readRoster (over-cap / malformed dropped).
+      expect(readPending({ pending: { '4': 'x', '0': 'a' } })).toEqual({ '0': 'a' });
+    });
+
+    it('readRosterState reads both leaves at once', () => {
+      const data = { players: '{"0":"alice"}', pending: '{"1":"bob"}' };
+      expect(readRosterState(data)).toEqual({
+        active: { '0': 'alice' },
+        pending: { '1': 'bob' },
+      });
+    });
+
+    it('serializePending round-trips through readPending', () => {
+      const s = serializePending({ '2': 'carol', '1': 'bob' });
+      expect(s).toBe('{"1":"bob","2":"carol"}');
+      expect(readPending({ pending: s })).toEqual({ '1': 'bob', '2': 'carol' });
+    });
+  });
+
+  describe('combined queries', () => {
+    const state = { active: { '0': 'alice' }, pending: { '2': 'bob' } };
+
+    it('combinedRoster unions both maps (one occupancy space)', () => {
+      expect(combinedRoster(state)).toEqual({ '0': 'alice', '2': 'bob' });
+    });
+
+    it('slotForUserInState finds a user in either map', () => {
+      expect(slotForUserInState(state, 'alice')).toBe(0);
+      expect(slotForUserInState(state, 'bob')).toBe(2);
+      expect(slotForUserInState(state, 'nobody')).toBeNull();
+    });
+
+    it('isActivePlayer / isPendingPlayer distinguish the two', () => {
+      expect(isActivePlayer(state, 'alice')).toBe(true);
+      expect(isActivePlayer(state, 'bob')).toBe(false);
+      expect(isPendingPlayer(state, 'bob')).toBe(true);
+      expect(isPendingPlayer(state, 'alice')).toBe(false);
+    });
+  });
+
+  describe('assignSlots (game-in-progress routing)', () => {
+    const empty = { active: {}, pending: {} };
+
+    it('routes new requesters to ACTIVE when no game is in progress', () => {
+      const { state, assigned, changed } = assignSlots(empty, ['alice', 'bob'], false);
+      expect(changed).toBe(true);
+      expect(state.active).toEqual({ '0': 'alice', '1': 'bob' });
+      expect(state.pending).toEqual({});
+      expect(assigned).toEqual({
+        alice: { slot: 0, pending: false },
+        bob: { slot: 1, pending: false },
+      });
+    });
+
+    it('routes a late joiner to PENDING when a game IS in progress', () => {
+      // alice is the active player mid-level; bob joins late → pending.
+      const start = { active: { '0': 'alice' }, pending: {} };
+      const { state, assigned } = assignSlots(start, ['alice', 'bob'], true);
+      expect(state.active).toEqual({ '0': 'alice' }); // unchanged
+      expect(state.pending).toEqual({ '1': 'bob' }); // reserved, not live
+      expect(assigned.bob).toEqual({ slot: 1, pending: true });
+      // alice stays active.
+      expect(assigned.alice).toEqual({ slot: 0, pending: false });
+    });
+
+    it('pending + active share one slot space (no double-claim)', () => {
+      // bob pending at slot 1; a NEW active requester must NOT also get slot 1.
+      const start = { active: { '0': 'alice' }, pending: { '1': 'bob' } };
+      // Game ended (gameInProgress=false): carol joins → next free slot is 2,
+      // NOT 1 (bob's pending reservation is respected).
+      const { state } = assignSlots(start, ['carol'], false);
+      expect(state.active).toEqual({ '0': 'alice', '2': 'carol' });
+      expect(state.pending).toEqual({ '1': 'bob' });
+    });
+
+    it('caps the COMBINED size at MAX_DOOM_PLAYERS', () => {
+      const start = { active: { '0': 'a', '1': 'b' }, pending: { '2': 'c' } };
+      const { state, rejected } = assignSlots(start, ['d', 'e'], true);
+      // Only slot 3 free → d (lex-first) pending; e rejected.
+      expect(state.pending).toEqual({ '2': 'c', '3': 'd' });
+      expect(rejected).toEqual(['e']);
+      expect(rosterSize(combinedRoster(state))).toBe(MAX_DOOM_PLAYERS);
+    });
+
+    it('is idempotent for already-seated users (active or pending)', () => {
+      const start = { active: { '0': 'alice' }, pending: { '1': 'bob' } };
+      const { changed } = assignSlots(start, ['alice', 'bob'], true);
+      expect(changed).toBe(false);
+    });
+
+    it('does not mutate the input state', () => {
+      const start = { active: { '0': 'alice' }, pending: {} };
+      assignSlots(start, ['bob'], true);
+      expect(start).toEqual({ active: { '0': 'alice' }, pending: {} });
+    });
+  });
+
+  describe('promotePending (next-map seating)', () => {
+    it('promotes every pending slot to active at the SAME index', () => {
+      const start = { active: { '0': 'alice' }, pending: { '1': 'bob', '2': 'carol' } };
+      const { state, changed, promoted } = promotePending(start);
+      expect(changed).toBe(true);
+      expect(state.active).toEqual({ '0': 'alice', '1': 'bob', '2': 'carol' });
+      expect(state.pending).toEqual({});
+      expect(promoted.sort()).toEqual(['bob', 'carol']);
+    });
+
+    it('is a no-op (same reference) when there is nothing pending', () => {
+      const start = { active: { '0': 'alice' }, pending: {} };
+      const { state, changed, promoted } = promotePending(start);
+      expect(changed).toBe(false);
+      expect(state).toBe(start);
+      expect(promoted).toEqual([]);
+    });
+
+    it('never evicts a live active player on an (impossible) slot collision', () => {
+      // Defensive: a pending entry whose slot already holds a DIFFERENT active
+      // user is dropped, not promoted over the active occupant.
+      const start = { active: { '1': 'alice' }, pending: { '1': 'bob' } };
+      const { state, promoted } = promotePending(start);
+      expect(state.active['1']).toBe('alice'); // alice kept
+      expect(promoted).toEqual([]); // bob NOT promoted over her
+    });
+
+    it('does not mutate the input state', () => {
+      const start = { active: {}, pending: { '0': 'bob' } };
+      promotePending(start);
+      expect(start).toEqual({ active: {}, pending: { '0': 'bob' } });
+    });
+  });
+
+  describe('pruneRosterState (disconnect cleanup across both maps)', () => {
+    it('drops disconnected users from active AND pending', () => {
+      const start = { active: { '0': 'alice', '1': 'bob' }, pending: { '2': 'carol' } };
+      const { state, changed } = pruneRosterState(start, ['alice']);
+      expect(changed).toBe(true);
+      expect(state.active).toEqual({ '0': 'alice' });
+      expect(state.pending).toEqual({});
+    });
+
+    it('is a no-op (same reference) when everyone is live', () => {
+      const start = { active: { '0': 'alice' }, pending: { '1': 'bob' } };
+      const { state, changed } = pruneRosterState(start, ['alice', 'bob', 'late']);
+      expect(changed).toBe(false);
+      expect(state).toBe(start);
+    });
+
+    it('a late joiner who leaves before the next map vacates only pending', () => {
+      const start = { active: { '0': 'alice' }, pending: { '1': 'bob' } };
+      const { state } = pruneRosterState(start, ['alice']);
+      expect(state.active).toEqual({ '0': 'alice' });
+      expect(state.pending).toEqual({});
+    });
   });
 });

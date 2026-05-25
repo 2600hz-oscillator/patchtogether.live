@@ -59,14 +59,18 @@
     type RelayCursor,
   } from '$lib/doom/doom-presence';
   import {
-    readRoster,
     serializeRoster,
-    pruneRoster,
+    serializePending,
     slotForUser,
     isFull,
-    assignRequestedSlots,
     rosterSize,
+    readRosterState,
+    combinedRoster,
+    assignSlots,
+    promotePending,
+    pruneRosterState,
     type DoomRoster,
+    type DoomRosterState,
   } from '$lib/doom/doom-roster';
   import {
     DoomNetcode,
@@ -79,6 +83,9 @@
     slotColorCss,
     slotLabel,
     slotBadge,
+    spectatorLabel,
+    spectatorBadge,
+    type DoomViewerStatus,
   } from '$lib/doom/doom-player-identity';
 
   let { id, data }: NodeProps = $props();
@@ -104,8 +111,14 @@
   //
   // Single-player is the lone-peer case: memberIds.length <= 1 means no
   // netcode is ever started; the host runs the WASM exactly as before.
-  let roster = $state<DoomRoster>({});      // node.data.players, mirrored
-  let mySlot = $state<number | null>(null); // this peer's slot, or null
+  // Slice 6: the roster is split into ACTIVE (live players this game) and
+  // PENDING (late joiners who reserved a slot mid-level + will spawn at the
+  // NEXT map). `roster` here is the ACTIVE map (drives numPlayers + the live
+  // marines, same as slices 3-5); `pending` is the reservation map.
+  let roster = $state<DoomRoster>({});       // node.data.players (active)
+  let pending = $state<DoomRoster>({});      // node.data.pending (late joiners)
+  let mySlot = $state<number | null>(null);  // this peer's ACTIVE slot, or null
+  let myPendingSlot = $state<number | null>(null); // reserved-but-not-live slot
   let netStarted = $state(false);           // our DoomNetcode is running
   let isNetArbiter = $state(false);         // lex-min player == arbiter
   let netcode: DoomNetcode | null = null;
@@ -124,6 +137,12 @@
   let mapNum = $state(1);    // 1..9
   let launched = $state(false);           // a netgame has been launched
   let gamestate = $state<number>(-1);     // polled DOOM gamestate_t (GS_LEVEL=0)
+  // DOOM gamestate_t ordinals (doomdef.h): the level is "in progress" while
+  // GS_LEVEL is the live state; GS_INTERMISSION is the between-maps tally
+  // screen where the arbiter picks + launches the next map (seating pending
+  // late joiners). See dgpt_get_gamestate.
+  const GS_LEVEL = 0;
+  const GS_INTERMISSION = 1;
   // The labels mirror DOOM's difficulty names; index = skill_t value.
   const SKILL_LABELS = ["I'm Too Young To Die", 'Hey, Not Too Rough', 'Hurt Me Plenty', 'Ultra-Violence', 'Nightmare!'];
   const MODE_OPTIONS: DoomGameMode[] = ['coop', 'deathmatch', 'deathmatch-2.0', 'survival'];
@@ -135,7 +154,16 @@
    *  authoritative single-writer signal for roster + launch.) */
   function isSessionArbiter(): boolean { return isHost; }
 
-  /** Build the net_gamesettings_t-equivalent from the dialog selections. */
+  /** True while a level is actively running (so a join goes to PENDING + the
+   *  New Game dialog is locked). Drives the late-join routing + dialog lock. */
+  function isGameInProgress(): boolean {
+    return launched && gamestate === GS_LEVEL;
+  }
+
+  /** Build the net_gamesettings_t-equivalent from the dialog selections.
+   *  numPlayers is the ACTIVE roster size (pending late joiners are NOT live
+   *  yet) — but at a next-map launch the arbiter has already promoted pending
+   *  → active (see launchGame), so this counts the newly-seated players too. */
   function buildSettings(): DoomGameSettings {
     // survival = coop + respawning monsters (no distinct DOOM global).
     const deathmatch = mode === 'deathmatch' ? 1 : mode === 'deathmatch-2.0' ? 2 : 0;
@@ -152,13 +180,22 @@
     };
   }
 
-  /** Launch (arbiter only): broadcast the chosen settings to all joined
-   *  peers. Each peer (incl. the arbiter) starts its own WASM netgame via
-   *  the onGameStart callback. */
+  /** Launch (arbiter only): SEAT any pending late joiners (promote pending →
+   *  active so they spawn into THIS map), then broadcast the chosen settings
+   *  to all joined peers. Each peer (incl. the arbiter + the just-promoted
+   *  late joiners) starts its own WASM netgame via the onGameStart callback.
+   *
+   *  This is the intermission re-seating path: at the end of a level the
+   *  arbiter's New Game dialog re-opens (gamestate left GS_LEVEL); when it hits
+   *  Launch for the next map, promotePending makes every reserved late joiner a
+   *  live player at the same slot it reserved, and the new launch broadcast
+   *  carries the larger numPlayers so every peer loads the next map with all of
+   *  them spawned. */
   function launchGame(): void {
     if (!isSessionArbiter()) return;
     if (mySlot === null) return;          // arbiter must be a player
-    const settings = buildSettings();
+    seatPendingAsArbiter();               // promote late joiners into this map
+    const settings = buildSettings();     // numPlayers now includes them
     if (netcode) {
       // Multiplayer: broadcast → every joined peer (incl. arbiter) starts.
       netcode.broadcastGameStart(settings);
@@ -168,10 +205,35 @@
     }
   }
 
-  /** Apply a launch on THIS peer: start the WASM netgame at our own slot. */
+  /** Arbiter-only: promote every pending late joiner to an active slot (next-
+   *  map seating) + write the updated rosters to the shared node so all peers
+   *  converge before the launch broadcast lands. Single-writer (host) so no
+   *  clobber. No-op when nothing is pending. */
+  function seatPendingAsArbiter(): void {
+    if (!isSessionArbiter()) return;
+    const state = readNodeRosterState();
+    const { state: next, changed } = promotePending(state);
+    if (changed) {
+      writeNodeRosterState(next);
+      roster = next.active;
+      pending = next.pending;
+    }
+  }
+
+  /** Apply a launch on THIS peer: start the WASM netgame at our own slot.
+   *
+   *  Slice 6: at a next-map launch the arbiter PROMOTES pending → active +
+   *  writes the roster, THEN broadcasts the launch. The two updates arrive on
+   *  different channels (node-sync vs awareness) and can race, so we re-read
+   *  the LIVE active slot off the node here (not just the reactive mirror) to
+   *  catch a just-promoted late joiner whose syncRosterState may not have run
+   *  yet. A peer still pending (no active slot) keeps spectating — it does NOT
+   *  start a game until a launch carries it as active. */
   function applyGameStart(env: GameStartEnvelope): void {
-    const slot = mySlot;
-    if (slot === null) return;            // spectators don't start a game
+    const me = resolveLocalUserId();
+    const slot = slotForUser(readNodeRoster(), me);
+    if (slot !== null) mySlot = slot;     // adopt the promoted slot immediately
+    if (slot === null) return;            // spectators / still-pending: no game
     const extras = getExtras();
     if (!extras) return;
     extras.startNetGame(env.settings, slot);
@@ -250,11 +312,35 @@
   // Slice 5: this peer's identity (color tint + label). Recomputed on
   // awareness churn (syncIdentity) so the username + slot color stay current.
   let myUsername = $state<string | null>(null);
-  // The card header / stripe / badge tint by the local player's slot color;
-  // a spectator (mySlot === null) keeps the default video-cable red.
-  let slotTint = $derived<string>(mySlot !== null ? slotColorCss(mySlot) : 'var(--cable-video, #c33)');
+  // Slice 6: the viewer's multiplayer status drives the spectator/pending
+  //   affordance. 'player' = active slot now; 'pending' = reserved a slot
+  //   mid-level, spectating until the next map; 'spectator' = no slot at all.
+  let viewerStatus = $derived<DoomViewerStatus>(
+    mySlot !== null ? 'player' : myPendingSlot !== null ? 'pending' : 'spectator',
+  );
+  // The card header / stripe / badge tint by the local player's slot color.
+  // An active player tints by its live slot; a pending late joiner tints by
+  // the slot it WILL take (so its identity is already visible); a pure
+  // spectator keeps the default video-cable red.
+  let slotTint = $derived<string>(
+    mySlot !== null
+      ? slotColorCss(mySlot)
+      : myPendingSlot !== null
+        ? slotColorCss(myPendingSlot)
+        : 'var(--cable-video, #c33)',
+  );
   let identityLabel = $derived<string>(slotLabel(mySlot, myUsername, true));
   let badgeText = $derived<string>(slotBadge(mySlot));
+  // Spectator/pending label + badge (empty for an active player).
+  let specLabel = $derived<string>(spectatorLabel(viewerStatus, myPendingSlot));
+  let specBadge = $derived<string>(spectatorBadge(viewerStatus, myPendingSlot));
+  // Slice 6: a peer that has no ACTIVE slot is spectating — it renders the
+  // host's framebuffer mirror rather than its own WASM. This covers BOTH the
+  // pure spectator (no slot, no loaded WASM) AND the pending late joiner (WASM
+  // loaded but its launched netgame hasn't started yet, so its own
+  // snapshotFramebuffer would show an idle demo screen — we must show the
+  // running game instead). Only an active, launched player renders its own POV.
+  let isSpectating = $derived<boolean>(mySlot === null && memberIds.length > 1);
 
   function syncIdentity(): void {
     myUsername = resolveUsername(resolveLocalUserId());
@@ -295,7 +381,13 @@
   // sync, so every peer converges on the same map.
   function readNodeRoster(): DoomRoster {
     const target = patch.nodes[id];
-    return readRoster(target?.data);
+    return readRosterState(target?.data).active;
+  }
+
+  /** Slice 6: read BOTH the active + pending rosters off the shared node. */
+  function readNodeRosterState(): DoomRosterState {
+    const target = patch.nodes[id];
+    return readRosterState(target?.data);
   }
 
   // Write the roster to the shared node as a primitive JSON-STRING leaf at
@@ -314,6 +406,22 @@
       if (!target) return;
       if (!target.data) target.data = {};
       (target.data as Record<string, unknown>).players = encoded;
+    });
+  }
+
+  /** Slice 6: write BOTH the active (`players`) + pending (`pending`) leaves
+   *  in one transaction. Same primitive-JSON-string-leaf rationale + non-
+   *  LOCAL_ORIGIN (session state, not a Cmd-Z-able edit) as writeNodeRoster.
+   *  Only the arbiter (single writer) ever calls this. */
+  function writeNodeRosterState(next: DoomRosterState): void {
+    const players = serializeRoster(next.active);
+    const pend = serializePending(next.pending);
+    ydoc.transact(() => {
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as Record<string, unknown>).players = players;
+      (target.data as Record<string, unknown>).pending = pend;
     });
   }
 
@@ -336,13 +444,17 @@
   // itself short-circuits straight to the assignment pass (it IS the writer).
   async function joinGame(): Promise<void> {
     const me = resolveLocalUserId();
-    // Already a player? Just ensure our local instance is up.
-    if (slotForUser(readNodeRoster(), me) !== null) {
+    // Already seated (active OR pending)? Just ensure our local instance is up.
+    // A pending late joiner still loads its WASM now so it can spawn the moment
+    // it's promoted at the next map, but it does NOT drive a marine yet (its
+    // active slot stays null until promotion — applyGameStart no-ops for it).
+    const combined = combinedRoster(readNodeRosterState());
+    if (slotForUser(combined, me) !== null) {
       if (loadStatus !== 'ready') await tryLoad();
       startNetcodeIfNeeded();
       return;
     }
-    if (isFull(readNodeRoster())) return; // game full — no-op
+    if (isFull(combined)) return; // game full (active + pending) — no-op
     // Raise the request flag so the arbiter assigns us a slot.
     const provider = providerCtx.get();
     provider?.awareness?.setLocalStateField(joinReqField(), me);
@@ -362,15 +474,15 @@
    *  that arrive after the arbiter's first pass still get served. */
   function assignSlotsAsArbiter(): void {
     if (!isSessionArbiter()) return;
+    const cur = readNodeRosterState();
     // Single-user rack: leave the roster empty + don't auto-join. A lone
     // host just plays single-player via the existing no-netcode path
     // (clicking load boots DOOM's normal loop); no New Game / Launch is
     // engaged. This keeps single-player byte-identical to pre-slice-4.
-    if (memberIds.length <= 1 && rosterSize(readNodeRoster()) === 0) return;
+    if (memberIds.length <= 1 && rosterSize(combinedRoster(cur)) === 0) return;
     const provider = providerCtx.get();
     const aw = provider?.awareness;
     const me = resolveLocalUserId();
-    const cur = readNodeRoster();
 
     // Gather requesters: every member with a raised join-request flag, plus
     // the arbiter itself (the host is always player 0 — it auto-joins so the
@@ -388,10 +500,16 @@
     const live = new Set(memberIds);
     const filtered = [...requesters].filter((uid) => live.has(uid) || uid === me);
 
-    const { roster: next, changed } = assignRequestedSlots(cur, filtered);
+    // Slice 6: while a level is running, a NEW requester is seated as PENDING
+    // (it spectates + spawns at the next map); before a game starts (or while
+    // the dialog is open at intermission) it goes straight to ACTIVE. Only the
+    // arbiter computes isGameInProgress, and it is the single writer, so the
+    // pending/active split is authoritative.
+    const { state: next, changed } = assignSlots(cur, filtered, isGameInProgress());
     if (changed) {
-      writeNodeRoster(next);
-      roster = next;
+      writeNodeRosterState(next);
+      roster = next.active;
+      pending = next.pending;
     }
   }
 
@@ -400,7 +518,11 @@
   // netcode — that is the single-player path, untouched. Idempotent.
   function startNetcodeIfNeeded(): void {
     if (netStarted) return;
-    if (mySlot === null) return;             // spectators don't run netcode
+    // Active players run netcode (play); pending late joiners run it too so
+    // they receive the arbiter's next-map GAMESTART broadcast + are ready to
+    // spawn the instant they're promoted. Pure spectators (no slot at all)
+    // never run netcode — they consume the host's framebuffer mirror.
+    if (mySlot === null && myPendingSlot === null) return;
     if (memberIds.length <= 1) return;       // single-player — no transport
     const provider = providerCtx.get();
     if (!provider) return;
@@ -442,28 +564,33 @@
   function reconcileRosterAsArbiter(): void {
     // Only the rack host drives pruning (single writer = no write storms).
     if (!isHost) return;
-    const cur = readNodeRoster();
-    const { roster: next, changed } = pruneRoster(cur, memberIds);
+    const cur = readNodeRosterState();
+    const { state: next, changed } = pruneRosterState(cur, memberIds);
     if (changed) {
-      writeNodeRoster(next);
-      roster = next;
+      writeNodeRosterState(next);
+      roster = next.active;
+      pending = next.pending;
     }
   }
 
   // Keep local roster mirror + mySlot in sync with the shared node, and
   // tear down / spin up our netcode as our player status changes.
   function syncRosterState(): void {
-    const cur = readNodeRoster();
-    roster = cur;
+    const cur = readNodeRosterState();
+    roster = cur.active;
+    pending = cur.pending;
     const me = resolveLocalUserId();
-    mySlot = slotForUser(cur, me);
-    if (mySlot === null) {
-      // We left / were pruned: drop netcode.
+    mySlot = slotForUser(cur.active, me);
+    myPendingSlot = slotForUser(cur.pending, me);
+    if (mySlot === null && myPendingSlot === null) {
+      // We left / were pruned / are a pure spectator: drop netcode.
       stopNetcode();
     } else {
-      // We're a player. Ensure our own WASM is loading (a returning player
-      // whose slot is already in the synced roster never clicked Join), then
-      // bring up netcode once the runtime exists.
+      // We're a player (active) OR a pending late joiner. Ensure our own WASM
+      // is loading (a returning/late player whose slot is already in the
+      // synced roster never clicked Join), then bring up netcode once the
+      // runtime exists. A pending peer runs netcode to catch the next-map
+      // launch but does NOT drive a marine until promoted (mySlot stays null).
       if (loadStatus === 'idle') void tryLoad();
       startNetcodeIfNeeded();
     }
@@ -803,12 +930,14 @@
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {
-          // Host: pull straight from the live runtime via extras.
-          // Spectator: no runtime — extras.snapshotFramebuffer() is null,
-          // so fall back to the last awareness-delivered frame.
+          // Active player: pull straight from its own live runtime.
+          // Spectator / pending late joiner (isSpectating): render the host's
+          // framebuffer mirror — a pure spectator has no runtime, and a pending
+          // joiner's runtime is idle (not launched), so in BOTH cases we prefer
+          // the remote frame over the local WASM snapshot.
           const extras = getExtras();
           let fb: Uint8Array | Uint8ClampedArray | null = null;
-          if (extras) fb = extras.snapshotFramebuffer();
+          if (extras && !isSpectating) fb = extras.snapshotFramebuffer();
           if (!fb) {
             // Belt-and-suspenders: the awareness 'update' listener already
             // populates lastRemoteFrame, but under load chromium can drop
@@ -903,6 +1032,14 @@
         if (typeof opts.map === 'number') mapNum = opts.map;
       },
       launch: () => launchGame(),
+      // Slice 6 e2e hook: drive the running level to its end so the polled
+      // gamestate transitions to GS_INTERMISSION (the card re-opens the dialog
+      // there). Lets the 2-context late-join test reach the next-map seating
+      // without scripting an in-game exit-line touch.
+      exitLevel: () => {
+        const ex = getExtras();
+        ex?.exitLevel();
+      },
       getPlayerState: () => {
         const ex = getExtras();
         return ex ? ex.getConsolePlayerState() : null;
@@ -915,7 +1052,13 @@
       },
       getState: () => ({
         roster: { ...roster },
+        // Slice 6: the pending (late-join) map + this peer's pending slot +
+        // viewer status, so the 2-context late-join e2e can assert a joiner
+        // reserves a pending slot mid-level then is promoted at the next map.
+        pending: { ...pending },
         mySlot,
+        myPendingSlot,
+        viewerStatus,
         netStarted,
         isNetArbiter,
         isHost,
@@ -928,6 +1071,9 @@
         badgeText,
         identityLabel,
         username: myUsername,
+        // Slice 6 spectator/pending affordance text.
+        specLabel,
+        specBadge,
       }),
     };
   });
@@ -990,7 +1136,7 @@
   <div class="stripe" style="background: {slotTint};"></div>
   <header class="title">
     {#if mySlot !== null}
-      <!-- "Player N — <username> (you)" + a slot-colored badge. -->
+      <!-- Active player: "Player N — <username> (you)" + a slot-colored badge. -->
       <span
         class="player-badge"
         data-testid="doom-player-badge"
@@ -998,6 +1144,22 @@
         title={identityLabel}
       >{badgeText}</span>
       <span class="player-label" data-testid="doom-player-label">{identityLabel}</span>
+    {:else if myPendingSlot !== null}
+      <!-- Slice 6: pending late joiner — tinted by the slot it WILL take, with
+           a "P(N)?" badge + "Spectating — joining as Player N next map" label. -->
+      <span
+        class="player-badge pending"
+        data-testid="doom-spectator-badge"
+        style="background: {slotTint};"
+        title={specLabel}
+      >{specBadge}</span>
+      <span class="player-label spectating" data-testid="doom-spectator-label">{specLabel}</span>
+    {:else if memberIds.length > 1}
+      <!-- Pure spectator (no slot, multi-user rack): clear "Spectating"
+           affordance. A lone host in a single-user rack is NOT a spectator —
+           it plays single-player — so we keep the plain "DOOM" title there. -->
+      <span class="player-badge spectator" data-testid="doom-spectator-badge" title={specLabel}>{specBadge}</span>
+      <span class="player-label spectating" data-testid="doom-spectator-label">{specLabel}</span>
     {:else}
       DOOM
     {/if}
@@ -1087,21 +1249,32 @@
     >
       {running > 0.5 ? 'Pause' : 'Run'}
     </button>
-    {#if memberIds.length > 1 && mySlot === null}
+    {#if memberIds.length > 1 && mySlot === null && myPendingSlot === null}
+      <!-- Join is offered to a pure spectator only — a pending late joiner has
+           already claimed a (pending) slot. Fullness is the COMBINED active +
+           pending occupancy so a reserved late-join slot counts. While a level
+           is running, the join label hints it'll seat at the next map. -->
+      {@const full = isFull(combinedRoster({ active: roster, pending }))}
       <button
         class="join-btn"
         data-testid="doom-join-btn"
-        disabled={isFull(roster)}
+        disabled={full}
         onclick={() => void joinGame()}
-        title={isFull(roster) ? 'DOOM is full (4 players)' : 'Join this DOOM netgame as a player'}
+        title={full
+          ? 'DOOM is full (4 players)'
+          : isGameInProgress()
+            ? 'Join — you will spectate, then spawn at the next map'
+            : 'Join this DOOM netgame as a player'}
       >
-        {isFull(roster) ? 'Full' : 'Join'}
+        {full ? 'Full' : isGameInProgress() ? 'Join (next map)' : 'Join'}
       </button>
     {/if}
   </div>
 
   {#if memberIds.length > 1 && mySlot !== null}
-    {@const inLevel = launched && gamestate === 0}
+    {@const inLevel = launched && gamestate === GS_LEVEL}
+    {@const atIntermission = launched && gamestate === GS_INTERMISSION}
+    {@const pendingCount = rosterSize(pending)}
     <div class="newgame" data-testid="doom-newgame">
       {#if isSessionArbiter()}
         <!-- Arbiter (host = player 0): pick mode/skill/episode/map + Launch.
@@ -1154,16 +1327,34 @@
             {launched ? (inLevel ? 'In Level' : 'Next Map') : 'Launch'}
           </button>
         </div>
+        {#if pendingCount > 0}
+          <!-- Slice 6: tell the arbiter how many late joiners are waiting to be
+               seated at the next map (Launch / Next Map promotes them). -->
+          <div class="ng-pending" data-testid="doom-pending-note">
+            {pendingCount} player{pendingCount > 1 ? 's' : ''} joining
+            {atIntermission || !inLevel ? 'this map on launch' : 'next map'}
+          </div>
+        {/if}
       {:else}
         <!-- Non-arbiter joined players: wait for the host to start. -->
         <div class="ng-waiting" data-testid="doom-waiting">
-          {#if launched && gamestate === 0}
+          {#if inLevel}
             In level — playing as P{mySlot + 1}
           {:else}
             Waiting for host to start…
           {/if}
         </div>
       {/if}
+    </div>
+  {:else if memberIds.length > 1 && myPendingSlot !== null}
+    <!-- Slice 6: a pending late joiner spectates the running game + shows when
+         it'll be seated. It has no New Game controls (only active players do).
+         The header already carries the "joining as Player N next map" label;
+         this is the in-body status echo. -->
+    <div class="newgame" data-testid="doom-newgame">
+      <div class="ng-waiting" data-testid="doom-pending-waiting">
+        {specLabel}
+      </div>
     </div>
   {/if}
 
@@ -1363,6 +1554,28 @@
     opacity: 0.8;
     color: color-mix(in oklab, var(--cable-video, #c33) 70%, white);
     padding: 2px 0;
+  }
+  /* Slice 6: arbiter's "N players joining next map" note. */
+  .doom-card .ng-pending {
+    font-size: 10px;
+    font-style: italic;
+    opacity: 0.85;
+    color: color-mix(in oklab, var(--cable-cv, #4a9) 80%, white);
+    padding: 2px 0;
+  }
+  /* Slice 6: pending late joiner badge — dashed to read as "reserved, not
+     live yet"; pure-spectator badge uses the muted video-cable tint. */
+  .doom-card .player-badge.pending {
+    border: 1px dashed rgba(255, 255, 255, 0.6);
+    color: white;
+  }
+  .doom-card .player-badge.spectator {
+    background: color-mix(in oklab, var(--cable-video, #c33) 30%, transparent);
+    color: var(--cable-video, #c33);
+  }
+  .doom-card .player-label.spectating {
+    font-style: italic;
+    opacity: 0.85;
   }
   .doom-card .port-label {
     position: absolute;

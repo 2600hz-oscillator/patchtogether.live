@@ -10,6 +10,9 @@ import {
   slotColorCss,
   slotLabel,
   slotBadge,
+  spectatorBadge,
+  spectatorLabel,
+  type DoomViewerStatus,
 } from './doom-player-identity';
 
 describe('DOOM player slot colors (vanilla MT_PLAYER order)', () => {
@@ -82,5 +85,56 @@ describe('slotBadge', () => {
   it('returns empty for a spectator', () => {
     expect(slotBadge(null)).toBe('');
     expect(slotBadge(-1)).toBe('');
+  });
+});
+
+describe('slice 6: spectator / pending label states', () => {
+  const SPECTATOR: DoomViewerStatus = 'spectator';
+  const PENDING: DoomViewerStatus = 'pending';
+  const PLAYER: DoomViewerStatus = 'player';
+
+  describe('spectatorLabel', () => {
+    it('plain "Spectating" for an unjoined spectator', () => {
+      expect(spectatorLabel(SPECTATOR, null)).toBe('Spectating');
+      // A spectator never has a slot, but a stray slot is ignored.
+      expect(spectatorLabel(SPECTATOR, 2)).toBe('Spectating');
+    });
+
+    it('announces the reserved next-map slot for a pending late joiner', () => {
+      expect(spectatorLabel(PENDING, 1)).toBe(
+        'Spectating — joining as Player 2 next map',
+      );
+      expect(spectatorLabel(PENDING, 3)).toBe(
+        'Spectating — joining as Player 4 next map',
+      );
+    });
+
+    it('falls back to plain "Spectating" if pending has no valid slot', () => {
+      expect(spectatorLabel(PENDING, null)).toBe('Spectating');
+      expect(spectatorLabel(PENDING, -1)).toBe('Spectating');
+    });
+
+    it('returns empty for an active player (uses slotLabel instead)', () => {
+      expect(spectatorLabel(PLAYER, 0)).toBe('');
+    });
+  });
+
+  describe('spectatorBadge', () => {
+    it('SPEC for a plain spectator', () => {
+      expect(spectatorBadge(SPECTATOR, null)).toBe('SPEC');
+    });
+
+    it('shows the parenthesized future slot for a pending joiner', () => {
+      expect(spectatorBadge(PENDING, 1)).toBe('P2?');
+      expect(spectatorBadge(PENDING, 3)).toBe('P4?');
+    });
+
+    it('pending with no valid slot falls back to SPEC', () => {
+      expect(spectatorBadge(PENDING, null)).toBe('SPEC');
+    });
+
+    it('empty for an active player', () => {
+      expect(spectatorBadge(PLAYER, 0)).toBe('');
+    });
   });
 });

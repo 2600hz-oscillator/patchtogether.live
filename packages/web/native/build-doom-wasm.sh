@@ -190,6 +190,7 @@ EXPORTS='[
   "_dgpt_has_player_mobj",
   "_dgpt_start_netgame",
   "_dgpt_get_gamestate",
+  "_dgpt_exit_level",
   "_dgpt_get_console_player",
   "_dgpt_get_console_player_x",
   "_dgpt_get_console_player_y",
