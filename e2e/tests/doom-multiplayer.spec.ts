@@ -181,7 +181,7 @@ async function readCanvasFingerprint(page: Page): Promise<{ hash: number; nonZer
 test.describe('@collab DOOM shared-input multiplayer', () => {
   // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
   // shard load → "locator.click: Test ended". Skip on CI; runs locally.
-  test.skip(!!process.env.CI, '@collab 2-context flake under CI shard load — task #97');
+  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab 2-context flake under CI shard load — task #97');
   // Cold-start DOOM (WASM fetch + 4 MB WAD + ~10 s of frame broadcasts +
   // cross-context awareness sync) routinely sits in the 20–40 s window
   // under CI load; the suite default 30 s isn't enough. We also allow

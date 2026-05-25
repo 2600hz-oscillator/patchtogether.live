@@ -196,7 +196,7 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
   // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
   // shard load. Skip on CI; runs locally. Identity mapping + ticcmd cross-feed
   // are proven by unit suites + start-netgame.acceptance.mjs (C-harness).
-  test.skip(!!process.env.CI, '@collab 2-context flake under CI shard load — task #97');
+  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab 2-context flake under CI shard load — task #97');
   test.setTimeout(180_000);
 
   test('peers show slot badge + DOOM color; A moving changes B\'s POV (cross-peer)', async ({ browser }) => {

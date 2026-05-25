@@ -42,6 +42,12 @@ import { test, expect, type Page, type Browser, type BrowserContext } from '@pla
 import { spawnPatch, type SpawnNode } from './_helpers';
 
 const GS_LEVEL = 0;
+// DOOM gamestate_t ordinals (doomdef.h): GS_LEVEL=0, GS_INTERMISSION=1,
+// GS_FINALE=2, GS_DEMOSCREEN=3. The attract/title menu the operator saw the
+// host stuck on is GS_DEMOSCREEN — so a strengthened test must assert the host
+// is on GS_LEVEL, NOT GS_DEMOSCREEN (the old test's launched===true gate could
+// pass on stale state while the WASM still ran the demo loop).
+const GS_DEMOSCREEN = 3;
 const NODE_ID = 'doom-mp';
 
 // Vanilla DOOM player colors (matches $lib/doom/doom-player-identity).
@@ -57,6 +63,8 @@ interface Peer {
 
 interface CardState {
   mySlot: number | null;
+  myPendingSlot: number | null;
+  viewerStatus: 'player' | 'pending' | 'spectator';
   isHost: boolean;
   isNetArbiter: boolean;
   memberIds: string[];
@@ -66,6 +74,8 @@ interface CardState {
   slotColor: string;
   launched: boolean;
   gamestate: number;
+  skill: number;
+  mode: string;
 }
 
 // Distinct contexts. Crucially the rack OWNER's id sorts LEX-LARGE and the
@@ -341,6 +351,12 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         expect(g.slotColor).toBe(SLOT_COLOR[1]);
         expect(g.isHost).toBe(false);
         expect(g.isNetArbiter).toBe(false);
+        // Bug #2: the guest is an ACTIVE PLAYER, NOT a spectator. Pre-fix the
+        // guest stayed a spectator rendering the host's mirror (badged SPEC,
+        // showing the host's "Player 1" HUD). Assert it is seated as P2 with
+        // viewerStatus 'player' (no pending reservation).
+        expect(g.viewerStatus, 'guest is an ACTIVE player, not a spectator').toBe('player');
+        expect(g.myPendingSlot, 'guest is active now, not a pending late joiner').toBeNull();
         // The roster is consistent: both peers agree the guest is at slot 1.
         expect(g.memberIds.length).toBe(2);
       }
@@ -358,11 +374,23 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       );
       const ownerInLevel = await waitForLevel(owner.page, NODE_ID);
       const guestInLevel = await waitForLevel(guest.page, NODE_ID);
-      expect(ownerInLevel, 'owner enters the level on Launch').toBe(true);
+      // Bug #1: the HOST itself must enter GS_LEVEL — pre-fix the host's own
+      // WASM stayed on the attract/title menu (GS_DEMOSCREEN) because its
+      // startNetGame no-op'd (runtime not ready when Launch self-fired) and
+      // nothing re-applied it. This is the assertion that would FAIL on main.
+      expect(ownerInLevel, 'HOST enters the level on Launch (NOT stuck on the title menu)').toBe(true);
       expect(
         guestInLevel,
         'guest enters the level too (no attract demo — netgame really started)',
       ).toBe(true);
+      {
+        const o = await getState(owner.page, NODE_ID);
+        const g = await getState(guest.page, NODE_ID);
+        expect(o.gamestate, 'host gamestate is GS_LEVEL').toBe(GS_LEVEL);
+        expect(o.gamestate, 'host is NOT on the DOOM title/attract menu').not.toBe(GS_DEMOSCREEN);
+        expect(g.gamestate, 'guest gamestate is GS_LEVEL').toBe(GS_LEVEL);
+        expect(g.gamestate, 'guest is NOT on the DOOM title/attract menu').not.toBe(GS_DEMOSCREEN);
+      }
 
       // ── Each peer drives its OWN marine, spawned at its own slot ─────────
       const oStart = await playerPos(owner.page, NODE_ID);
@@ -421,6 +449,62 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         .then(() => true)
         .catch(() => false);
       expect(ownerMoved, "owner's marine moved after holding ArrowUp").toBe(true);
+      await owner.page.evaluate(() =>
+        window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true })),
+      );
+
+      // Bug #3: the GUEST's OWN keyboard drives the GUEST's OWN marine. Pre-fix
+      // a joined non-host peer relayed its keys to the host instead of pushing
+      // them into its own runtime, so the guest's marine never moved from the
+      // guest's keyboard. Focus the guest card, hold ArrowUp, assert the
+      // guest's console-player position changes in the GUEST's own sim.
+      const gMoveStart = await playerPos(guest.page, NODE_ID);
+      expect(gMoveStart, 'guest console player present before its own move').not.toBeNull();
+      await guest.page.evaluate(() => {
+        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
+        c?.focus();
+      });
+      await guest.page.evaluate(() =>
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
+      );
+      const guestMoved = await guest.page
+        .waitForFunction(
+          (args) => {
+            const [nid, sx, sy] = args as [string, number, number];
+            const w = globalThis as unknown as {
+              __doomCards?: Record<string, { getPlayerState: () => { x: number; y: number } | null }>;
+            };
+            const p = w.__doomCards?.[nid]?.getPlayerState();
+            return !!p && (p.x !== sx || p.y !== sy);
+          },
+          [NODE_ID, gMoveStart!.x, gMoveStart!.y],
+          { timeout: 10000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      await guest.page.evaluate(() =>
+        window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true })),
+      );
+      expect(guestMoved, "guest's OWN marine moved from the guest's OWN keyboard").toBe(true);
+
+      // Re-capture the owner's slot-0 position IN THE GUEST'S world as a fresh
+      // baseline (the owner already moved during its own-marine burst above),
+      // then re-hold ArrowUp so the cross-peer feed has new motion to carry.
+      const ownerInGuestBaseline = await guest.page.evaluate((nid) => {
+        const w = globalThis as unknown as {
+          __doomCards?: Record<string, { getSlotState: (s: number) => { x: number; y: number } | null }>;
+        };
+        return w.__doomCards?.[nid]?.getSlotState(0) ?? null;
+      }, NODE_ID);
+      expect(ownerInGuestBaseline, "owner's marine still present in the guest's world").not.toBeNull();
+      void ownerInGuestBefore;
+      await owner.page.evaluate(() => {
+        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
+        c?.focus();
+      });
+      await owner.page.evaluate(() =>
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
+      );
 
       // The owner's marine moves in the GUEST's world too (slice-5 cross-peer
       // ticcmd feed). Poll the guest's view of slot 0 until it advances — the
@@ -435,7 +519,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
             const s = w.__doomCards?.[nid]?.getSlotState(0);
             return !!s && (s.x !== bx || s.y !== by);
           },
-          [NODE_ID, ownerInGuestBefore!.x, ownerInGuestBefore!.y],
+          [NODE_ID, ownerInGuestBaseline!.x, ownerInGuestBaseline!.y],
           { timeout: 15000 },
         )
         .then(() => true)
@@ -455,14 +539,15 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
     }
   });
 
-  // ── Bug #1/#3: the New Game dialog must be fully MOUSE-operable ──────────
+  // ── Bug #4: the New Game dialog must be fully MOUSE-operable ─────────────
   // The selectors/buttons sit inside a SvelteFlow node, which treats a
   // mousedown anywhere as a node-drag + swallows the click unless the element
-  // carries the noDragClassName ('nodrag'). Pre-fix the difficulty/mode/map
-  // selectors + Launch never received the click (the operator had to launch
-  // the default co-op). This drives the controls with REAL mouse interactions
-  // (selectOption fills the native <select>; .click() is a real pointer click)
-  // and asserts the picked difficulty actually took + the level launched.
+  // carries the noDragClassName ('nodrag'). The native <select> popup ALSO
+  // wouldn't open by mouse (SF's pointer capture fights the OS popup), so the
+  // mode/skill/episode/map pickers are now CUSTOM dropdowns (a nodrag trigger
+  // button + a nodrag option list). This drives them with REAL pointer clicks
+  // (click trigger → click option) and asserts the picked difficulty actually
+  // took + the host launched into the level.
   test('host opens the New Game dialog + picks a non-default difficulty by MOUSE', async ({
     browser,
   }) => {
@@ -489,38 +574,41 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       expect(seated, 'owner seated as P0 after clicking Host Multiplayer').toBe(true);
 
       // The New Game dialog is visible; pick a NON-default difficulty
-      // (Ultra-Violence = skill index 3; default is index 1) via the native
-      // <select>. selectOption dispatches the real change events bind:value
-      // listens for — pre-fix the surrounding node-drag ate the interaction.
-      const skillSel = owner.page.locator('[data-testid="doom-skill"]');
-      await expect(skillSel).toBeVisible({ timeout: 10000 });
-      await skillSel.selectOption('3'); // value = skill index (option value={i})
-      await owner.page.locator('[data-testid="doom-mode"]').selectOption('deathmatch');
+      // (Ultra-Violence = skill index 3; default is index 1). The selectors are
+      // CUSTOM dropdowns (not native <select>) because the native popup won't
+      // reliably open inside a SvelteFlow node. Drive them with REAL pointer
+      // clicks: click the trigger to open, click the option to pick. Pre-fix
+      // the surrounding node-drag ate the interaction entirely.
+      const skillTrigger = owner.page.locator('[data-testid="doom-skill-trigger"]');
+      await expect(skillTrigger, 'skill dropdown trigger is visible + clickable').toBeVisible({
+        timeout: 10000,
+      });
+      await skillTrigger.click(); // open the skill list
+      await owner.page.locator('[data-testid="doom-skill-opt-3"]').click(); // Ultra-Violence
 
-      // The card state reflects the MOUSE-picked options (the bind:value
-      // round-tripped — the dialog received the interaction).
+      const modeTrigger = owner.page.locator('[data-testid="doom-mode-trigger"]');
+      await modeTrigger.click(); // open the mode list
+      await owner.page.locator('[data-testid="doom-mode-opt-deathmatch"]').click();
+
+      // The card state reflects the MOUSE-picked options (the click round-trip
+      // wrote back to the card's reactive state — the dialog received the
+      // interaction). mode/skill are now surfaced in getState().
       await expect
-        .poll(async () => (await getState(owner.page, NODE_ID)) as unknown as { skill?: number })
-        .toBeTruthy();
-      const picked = await owner.page.evaluate((nid) => {
-        const w = globalThis as unknown as {
-          __doomCards: Record<string, { getState: () => Record<string, unknown> }>;
-        };
-        // mode/skill aren't in getState(); read them off the live <select> DOM
-        // (the source of truth the bind wrote back to) to prove the click took.
-        const sk = (document.querySelector('[data-testid="doom-skill"]') as HTMLSelectElement)?.value;
-        const md = (document.querySelector('[data-testid="doom-mode"]') as HTMLSelectElement)?.value;
-        void w; void nid;
-        return { sk, md };
-      }, NODE_ID);
-      expect(picked.sk, 'skill select shows the mouse-picked Ultra-Violence (idx 3)').toBe('3');
-      expect(picked.md, 'mode select shows the mouse-picked deathmatch').toBe('deathmatch');
+        .poll(async () => (await getState(owner.page, NODE_ID)).skill, { timeout: 5000 })
+        .toBe(3);
+      const picked = await getState(owner.page, NODE_ID);
+      expect(picked.skill, 'skill shows the mouse-picked Ultra-Violence (idx 3)').toBe(3);
+      expect(picked.mode, 'mode shows the mouse-picked deathmatch').toBe('deathmatch');
 
       // Launch by clicking the real Launch button → the level starts on the
-      // chosen difficulty (the whole dialog round-trip worked by mouse).
+      // chosen difficulty (the whole dialog round-trip worked by mouse) and the
+      // HOST itself reaches GS_LEVEL (not the title menu).
       await owner.page.locator('[data-testid="doom-launch-btn"]').click();
       const inLevel = await waitForLevel(owner.page, NODE_ID);
       expect(inLevel, 'mouse-launched game reaches GS_LEVEL').toBe(true);
+      const launchedState = await getState(owner.page, NODE_ID);
+      expect(launchedState.gamestate, 'host is in-level, NOT on the title menu').toBe(GS_LEVEL);
+      expect(launchedState.gamestate).not.toBe(GS_DEMOSCREEN);
     } finally {
       await Promise.all(peers.map((p) => p.ctx.close().catch(() => {})));
     }

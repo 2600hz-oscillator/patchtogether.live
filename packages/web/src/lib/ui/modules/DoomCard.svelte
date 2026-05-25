@@ -195,6 +195,24 @@
   const SKILL_LABELS = ["I'm Too Young To Die", 'Hey, Not Too Rough', 'Hurt Me Plenty', 'Ultra-Violence', 'Nightmare!'];
   const MODE_OPTIONS: DoomGameMode[] = ['coop', 'deathmatch', 'deathmatch-2.0', 'survival'];
 
+  // ---- Custom dropdowns for the New Game dialog ----
+  //
+  // The native <select> popup is NOT reliably mouse-operable inside a
+  // SvelteFlow node: SF captures the pointer on mousedown to start a node-drag,
+  // and even with `nodrag` the browser's OS-rendered option list fights SF's
+  // pointer capture (the operator's "MODE/SKILL selects won't open by mouse"
+  // bug). We replace them with a small purpose-built dropdown — a `nodrag`
+  // button that toggles a `nodrag` option list rendered in normal DOM, so a
+  // plain click selects an option with no native popup + no SF interference.
+  // Only one dropdown is open at a time (openDropdown holds its id, or null).
+  let openDropdown = $state<string | null>(null);
+  function toggleDropdown(which: string): void {
+    openDropdown = openDropdown === which ? null : which;
+  }
+  function closeDropdowns(): void {
+    openDropdown = null;
+  }
+
   /** The arbiter for SESSION lifecycle (New Game / Launch / slot assignment)
    *  is the rack host — the single writer. (The netcode arbiter, isNetArbiter,
    *  is the lex-min JOINED PLAYER; host is the lex-min MEMBER. They coincide
@@ -268,6 +286,18 @@
     }
   }
 
+  /** A launch envelope we received but could not start yet because our OWN
+   *  WASM runtime wasn't loaded/initialized at the time (the load is async +
+   *  can lag the GAMESTART broadcast — on the ARBITER it fires synchronously
+   *  inside broadcastGameStart, possibly before init resolves; on a guest the
+   *  roster slot can sync a beat after the broadcast). We stash the latest
+   *  pending launch + retry it from the render loop until the runtime is ready
+   *  AND the C side actually entered GS_LEVEL. This is the fix for the
+   *  "host stuck on the title/attract menu after Launch" bug: previously
+   *  startNetGame silently no-op'd when the runtime wasn't ready and nothing
+   *  ever re-applied it, so the host's WASM kept running the demo loop. */
+  let pendingLaunch: GameStartEnvelope | null = null;
+
   /** Apply a launch on THIS peer: start the WASM netgame at our own slot.
    *
    *  Slice 6: at a next-map launch the arbiter PROMOTES pending → active +
@@ -276,21 +306,67 @@
    *  the LIVE active slot off the node here (not just the reactive mirror) to
    *  catch a just-promoted late joiner whose syncRosterState may not have run
    *  yet. A peer still pending (no active slot) keeps spectating — it does NOT
-   *  start a game until a launch carries it as active. */
+   *  start a game until a launch carries it as active.
+   *
+   *  Robustness (host-stuck-on-menu fix): the WASM runtime may not be loaded
+   *  yet when this fires (the arbiter self-fires synchronously inside Launch;
+   *  loads are async). If we can't drive the level NOW we stash `env` in
+   *  pendingLaunch + ensure our WASM is loading; the render loop retries until
+   *  the C side reports GS_LEVEL. We also verify the C side actually entered
+   *  the level (G_InitNew is synchronous, so getGameState() === GS_LEVEL right
+   *  after a successful startNetGame) before clearing the retry. */
   function applyGameStart(env: GameStartEnvelope): void {
     const me = resolveLocalUserId();
     const slot = slotForUser(readNodeRoster(), me);
     if (slot !== null) mySlot = slot;     // adopt the promoted slot immediately
-    if (slot === null) return;            // spectators / still-pending: no game
-    const extras = getExtras();
-    if (!extras) return;
-    extras.startNetGame(env.settings, slot);
-    launched = true;
+    if (slot === null) {
+      // No ACTIVE slot yet. This is EITHER a pure spectator OR a peer whose
+      // roster slot simply hasn't synced from the arbiter yet (the GAMESTART
+      // broadcast + the roster node-sync race; the broadcast can win). We
+      // can't tell the two apart here, so we STASH the launch and let
+      // syncRosterState re-apply it the moment a slot arrives — that's the fix
+      // for "guest renders a spectator mirror instead of becoming active P2".
+      // A genuine spectator never gains a slot, so the stash simply never
+      // fires for them. pruneRoster clears the stash if we're dropped.
+      pendingLaunch = env;
+      if (loadStatus === 'idle') void tryLoad();
+      return;
+    }
     // Mirror the chosen settings into the dialog so the arbiter's controls
-    // reflect what's running (and the next-map pick starts from here).
+    // reflect what's running (and the next-map pick starts from here). Do this
+    // even if the runtime isn't ready yet so the UI is correct while we retry.
     mapNum = env.settings.map;
     episode = env.settings.episode;
     skill = env.settings.skill;
+    launched = true;
+
+    const extras = getExtras();
+    const runtime = extras?.getRuntime();
+    if (!extras || !runtime || !runtime.isInitialized()) {
+      // Runtime not ready — stash + retry from the render loop. Make sure the
+      // WASM is actually loading (a peer whose slot synced before it clicked
+      // anything may not have started a load yet).
+      pendingLaunch = env;
+      if (loadStatus === 'idle') void tryLoad();
+      return;
+    }
+    extras.startNetGame(env.settings, slot);
+    // G_InitNew runs synchronously inside dgpt_start_netgame, so the level is
+    // loaded immediately. If for any reason it didn't take (gamestate still on
+    // the demo screen), keep the pending launch so the render loop re-applies.
+    if (extras.getGameState() === GS_LEVEL) {
+      pendingLaunch = null;
+    } else {
+      pendingLaunch = env;
+    }
+  }
+
+  /** Render-loop hook: if a launch is pending (runtime wasn't ready when the
+   *  GAMESTART arrived), re-attempt it now. Cleared by applyGameStart once the
+   *  C side reports GS_LEVEL. Idempotent + cheap (a couple of ccalls). */
+  function retryPendingLaunchIfNeeded(): void {
+    if (!pendingLaunch) return;
+    applyGameStart(pendingLaunch);
   }
   /** Slice 5: inject a remote peer's ticcmd into our runtime so its marine
    *  moves in our world. Ignores our own slot (the netcode already filters
@@ -735,10 +811,14 @@
     // guests' lobby UI tracks the host's explicit choice.
     mpMode = readNodeMpMode();
     const me = resolveLocalUserId();
+    const prevSlot = mySlot;
     mySlot = slotForUser(cur.active, me);
     myPendingSlot = slotForUser(cur.pending, me);
     if (mySlot === null && myPendingSlot === null) {
-      // We left / were pruned / are a pure spectator: drop netcode.
+      // We left / were pruned / are a pure spectator: drop netcode + any
+      // stashed launch (we'll never become active, so there's nothing to
+      // re-apply).
+      pendingLaunch = null;
       stopNetcode();
     } else {
       // We're a player (active) OR a pending late joiner. Ensure our own WASM
@@ -748,6 +828,12 @@
       // launch but does NOT drive a marine until promoted (mySlot stays null).
       if (loadStatus === 'idle') void tryLoad();
       startNetcodeIfNeeded();
+      // We just gained (or changed) an ACTIVE slot and a launch is stashed
+      // (the GAMESTART beat the roster sync) → apply it now so this peer
+      // actually enters the level as its own player instead of spectating.
+      if (mySlot !== null && mySlot !== prevSlot && pendingLaunch) {
+        applyGameStart(pendingLaunch);
+      }
     }
   }
 
@@ -775,7 +861,14 @@
   function routeKey(code: string, pressed: boolean): boolean {
     const extras = getExtras();
     if (!extras) return false;
-    if (isHost) {
+    // An ACTIVE player (host OR a joined guest at its own slot) drives its OWN
+    // runtime — every player runs their own WASM + POV in the per-peer instance
+    // model, so the key must reach the local sim, NOT be relayed to the host.
+    // Pre-fix only `isHost` pushed locally and EVERY non-host (incl. a joined
+    // P2) relayed to the host instead, so a guest player's marine never moved
+    // from its own keyboard (the operator's "neither player can move" bug, for
+    // the guest). Only a pure spectator (no slot) relays its keys.
+    if (isHost || mySlot !== null) {
       return extras.pushKeyboardKey(code, pressed);
     }
     relayKeyToHost(code, pressed);
@@ -1076,6 +1169,10 @@
       // arbiter to pick the next map. Only meaningful once a netgame launched
       // + our own WASM is running (a spectator has no runtime).
       if (launched) {
+        // Host-stuck-on-menu fix: if a launch arrived before our WASM was
+        // ready (the arbiter self-fires synchronously inside Launch), keep
+        // retrying until the C side enters GS_LEVEL.
+        retryPendingLaunchIfNeeded();
         const ex = getExtras();
         if (ex) gamestate = ex.getGameState();
         // Slice 5: broadcast our latest local ticcmd so peers move our marine
@@ -1231,6 +1328,14 @@
         netcodePeers: netcode ? netcode.debugStats().peers : [],
         launched,
         gamestate,
+        // New Game dialog selections (the custom dropdowns write these). The
+        // mouse-pick e2e asserts a non-default MODE/SKILL took effect by
+        // reading them here (the native <select> DOM the old test scraped is
+        // gone — replaced by the SF-friendly custom dropdown).
+        mode,
+        skill,
+        episode,
+        mapNum,
         // Slice 5 identity (badge + color + label) for e2e assertions.
         slotColor: slotTint,
         badgeText,
@@ -1330,6 +1435,16 @@
     {/if}
     {#if isHost}
       <span class="host-badge" title="You are running the DOOM instance for this rack">HOST</span>
+    {:else if mySlot !== null}
+      <!-- An ACTIVE joined player that is NOT the rack host is a PLAYER, not a
+           spectator. Pre-fix this branch unconditionally rendered SPEC for any
+           non-host, so a joined guest (P2) was mis-badged SPEC while in-level.
+           Show a slot-tinted PLAYER badge instead. -->
+      <span
+        class="player-status-badge"
+        style="background: {slotTint};"
+        title="You are playing as {identityLabel}"
+      >PLAYER</span>
     {:else}
       <span class="spec-badge" title="Spectating — host is running the game">SPEC</span>
     {/if}
@@ -1474,59 +1589,142 @@
     {@const atIntermission = launched && gamestate === GS_INTERMISSION}
     {@const pendingCount = rosterSize(pending)}
     <!-- nodrag on the whole dialog: SvelteFlow treats a node as draggable, so a
-         mousedown anywhere inside (incl. on a <select> or <button>) starts a
-         node-drag + swallows the click unless the target carries the
-         noDragClassName ('nodrag'). Without it the difficulty/mode/episode/map
-         selectors + Launch never receive the click (the operator's "New Game
-         dialog isn't mouse-clickable" bug). nowheel on the selects keeps the
-         option-list scroll from zooming the canvas. -->
+         mousedown anywhere inside starts a node-drag + swallows the click
+         unless the target carries the noDragClassName ('nodrag'). The
+         mode/skill/episode/map pickers are CUSTOM dropdowns (a nodrag button +
+         a nodrag option list in normal DOM) rather than native <select>s,
+         because the OS-rendered native popup is not reliably openable inside a
+         SvelteFlow node — SF's pointer capture on mousedown fights the popup
+         even with `nodrag` (the operator's "MODE/SKILL selects won't open by
+         mouse" bug). A plain click on a custom-dropdown option selects it with
+         no native popup + no SF interference. -->
     <div class="newgame nodrag" data-testid="doom-newgame">
       {#if isSessionArbiter()}
         <!-- Arbiter (host = player 0): pick mode/skill/episode/map + Launch.
              Locked while a level is actively running; re-opens at the end of
              the level (intermission / finale) to pick the next map. -->
         <div class="ng-row">
-          <label>
-            Mode
-            <select class="nodrag nowheel" bind:value={mode} disabled={inLevel} data-testid="doom-mode">
-              {#each MODE_OPTIONS as m (m)}
-                <option value={m}>{m}</option>
-              {/each}
-            </select>
-          </label>
-          <label>
-            Skill
-            <select class="nodrag nowheel" bind:value={skill} disabled={inLevel} data-testid="doom-skill">
-              {#each SKILL_LABELS as label, i (i)}
-                <option value={i}>{i + 1} — {label}</option>
-              {/each}
-            </select>
-          </label>
+          <div class="ng-field">
+            <span class="ng-label">Mode</span>
+            <div class="dropdown nodrag" data-testid="doom-mode" data-value={mode}>
+              <button
+                type="button"
+                class="dd-trigger nodrag"
+                data-testid="doom-mode-trigger"
+                disabled={inLevel}
+                onclick={() => toggleDropdown('mode')}
+                title="Game mode"
+              >
+                <span>{mode}</span><span class="dd-caret">▾</span>
+              </button>
+              {#if openDropdown === 'mode'}
+                <div class="dd-list nodrag" role="listbox">
+                  {#each MODE_OPTIONS as m (m)}
+                    <button
+                      type="button"
+                      class="dd-option nodrag"
+                      class:selected={mode === m}
+                      data-testid="doom-mode-opt-{m}"
+                      onclick={() => { mode = m; closeDropdowns(); }}
+                    >{m}</button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
+          <div class="ng-field">
+            <span class="ng-label">Skill</span>
+            <div class="dropdown nodrag" data-testid="doom-skill" data-value={skill}>
+              <button
+                type="button"
+                class="dd-trigger nodrag"
+                data-testid="doom-skill-trigger"
+                disabled={inLevel}
+                onclick={() => toggleDropdown('skill')}
+                title="Difficulty"
+              >
+                <span>{skill + 1} — {SKILL_LABELS[skill]}</span><span class="dd-caret">▾</span>
+              </button>
+              {#if openDropdown === 'skill'}
+                <div class="dd-list nodrag" role="listbox">
+                  {#each SKILL_LABELS as label, i (i)}
+                    <button
+                      type="button"
+                      class="dd-option nodrag"
+                      class:selected={skill === i}
+                      data-testid="doom-skill-opt-{i}"
+                      onclick={() => { skill = i; closeDropdowns(); }}
+                    >{i + 1} — {label}</button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
         </div>
         <div class="ng-row">
-          <label>
-            Ep
+          <div class="ng-field">
+            <span class="ng-label">Ep</span>
             <!-- DOOM1 shareware ships episode 1 only; the picker offers 1-3
-                 for full-WAD parity but defaults to + clamps sensibly. -->
-            <select class="nodrag nowheel" bind:value={episode} disabled={inLevel} data-testid="doom-episode">
-              {#each [1, 2, 3] as e (e)}
-                <option value={e}>{e}</option>
-              {/each}
-            </select>
-          </label>
-          <label>
-            Map
-            <select class="nodrag nowheel" bind:value={mapNum} disabled={inLevel} data-testid="doom-map">
-              {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as mp (mp)}
-                <option value={mp}>{mp}</option>
-              {/each}
-            </select>
-          </label>
+                 for full-WAD parity but clamps sensibly. -->
+            <div class="dropdown nodrag" data-testid="doom-episode" data-value={episode}>
+              <button
+                type="button"
+                class="dd-trigger nodrag"
+                data-testid="doom-episode-trigger"
+                disabled={inLevel}
+                onclick={() => toggleDropdown('episode')}
+                title="Episode"
+              >
+                <span>{episode}</span><span class="dd-caret">▾</span>
+              </button>
+              {#if openDropdown === 'episode'}
+                <div class="dd-list nodrag" role="listbox">
+                  {#each [1, 2, 3] as e (e)}
+                    <button
+                      type="button"
+                      class="dd-option nodrag"
+                      class:selected={episode === e}
+                      data-testid="doom-episode-opt-{e}"
+                      onclick={() => { episode = e; closeDropdowns(); }}
+                    >{e}</button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
+          <div class="ng-field">
+            <span class="ng-label">Map</span>
+            <div class="dropdown nodrag" data-testid="doom-map" data-value={mapNum}>
+              <button
+                type="button"
+                class="dd-trigger nodrag"
+                data-testid="doom-map-trigger"
+                disabled={inLevel}
+                onclick={() => toggleDropdown('map')}
+                title="Map"
+              >
+                <span>{mapNum}</span><span class="dd-caret">▾</span>
+              </button>
+              {#if openDropdown === 'map'}
+                <div class="dd-list nodrag" role="listbox">
+                  {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as mp (mp)}
+                    <button
+                      type="button"
+                      class="dd-option nodrag"
+                      class:selected={mapNum === mp}
+                      data-testid="doom-map-opt-{mp}"
+                      onclick={() => { mapNum = mp; closeDropdowns(); }}
+                    >{mp}</button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
           <button
             class="launch-btn nodrag"
             data-testid="doom-launch-btn"
             disabled={inLevel}
-            onclick={launchGame}
+            onclick={() => { closeDropdowns(); launchGame(); }}
             title={inLevel ? 'Level in progress — pick the next map at the end' : 'Start the game on all joined players'}
           >
             {launched ? (inLevel ? 'In Level' : 'Next Map') : 'Launch'}
@@ -1604,17 +1802,23 @@
      player-badge + identity label sit inline right after the title. The
      label grows to fill the gap so the status badge stays right-aligned. */
   .doom-card .host-badge,
-  .doom-card .spec-badge {
+  .doom-card .spec-badge,
+  .doom-card .player-status-badge {
     margin-left: auto;
   }
   .doom-card .host-badge,
   .doom-card .spec-badge,
+  .doom-card .player-status-badge,
   .doom-card .player-badge {
     font-size: 9px;
     font-weight: 700;
     padding: 2px 5px;
     border-radius: 2px;
     letter-spacing: 0.05em;
+  }
+  .doom-card .player-status-badge {
+    /* background tinted inline by slot color */
+    color: white;
   }
   .doom-card .player-badge {
     /* background is set inline by slot color (slice 5) */
@@ -1755,24 +1959,75 @@
     gap: 8px;
     flex-wrap: wrap;
   }
-  .doom-card .ng-row label {
+  .doom-card .ng-field {
     display: flex;
     flex-direction: column;
+    gap: 2px;
+  }
+  .doom-card .ng-label {
     font-size: 9px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     opacity: 0.8;
-    gap: 2px;
   }
-  .doom-card .ng-row select {
+  /* Custom dropdown (replaces the native <select> that SvelteFlow's pointer
+     capture wouldn't let open by mouse). */
+  .doom-card .dropdown {
+    position: relative;
+  }
+  .doom-card .dd-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 70px;
     font-size: 11px;
-    padding: 2px 4px;
+    padding: 3px 6px;
     background: #181014;
     color: #eee;
     border: 1px solid color-mix(in oklab, var(--cable-video, #c33) 40%, transparent);
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
   }
-  .doom-card .ng-row select:disabled {
+  .doom-card .dd-trigger:disabled {
     opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .doom-card .dd-caret {
+    font-size: 8px;
+    opacity: 0.7;
+  }
+  .doom-card .dd-list {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    min-width: 100%;
+    max-height: 180px;
+    overflow-y: auto;
+    background: #181014;
+    border: 1px solid color-mix(in oklab, var(--cable-video, #c33) 50%, transparent);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  }
+  .doom-card .dd-option {
+    font-size: 11px;
+    padding: 4px 8px;
+    background: transparent;
+    color: #eee;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .doom-card .dd-option:hover {
+    background: color-mix(in oklab, var(--cable-video, #c33) 35%, #181014);
+  }
+  .doom-card .dd-option.selected {
+    background: color-mix(in oklab, var(--cable-video, #c33) 55%, #181014);
+    font-weight: 700;
   }
   .doom-card .launch-btn {
     font-size: 11px;
