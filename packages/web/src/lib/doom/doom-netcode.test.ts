@@ -25,8 +25,12 @@ import {
   PT_BROADCAST_PEER,
   RTC_CONNECT_TIMEOUT_MS,
   relayFieldFor,
+  serializeGameSettings,
+  parseGameSettings,
   type NetcodeRuntime,
   type NetcodeModule,
+  type DoomGameSettings,
+  type GameStartEnvelope,
 } from './doom-netcode';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 
@@ -557,5 +561,134 @@ describe('DoomNetcode — PTNet install', () => {
     );
     nc.stop();
     expect(module.PTNet).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Slice 4: net_gamesettings serialization round-trip + GAMESTART broadcast
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('DoomNetcode — game settings serialization', () => {
+  const sample: DoomGameSettings = {
+    deathmatch: 1,
+    episode: 1,
+    map: 5,
+    skill: 3,
+    nomonsters: 0,
+    fastMonsters: 1,
+    respawnMonsters: 0,
+    numPlayers: 3,
+  };
+
+  it('round-trips a settings struct losslessly', () => {
+    const wire = serializeGameSettings(sample);
+    const back = parseGameSettings(wire);
+    expect(back).toEqual(sample);
+  });
+
+  it('produces a deterministic string for identical settings (field order pinned)', () => {
+    // Two structs with the SAME values but different key insertion order must
+    // serialize to byte-identical strings (so a re-stamp doesn't churn Yjs).
+    const reordered: DoomGameSettings = {
+      numPlayers: 3,
+      respawnMonsters: 0,
+      fastMonsters: 1,
+      nomonsters: 0,
+      skill: 3,
+      map: 5,
+      episode: 1,
+      deathmatch: 1,
+    };
+    expect(serializeGameSettings(reordered)).toBe(serializeGameSettings(sample));
+  });
+
+  it('parses the object form too (not just the string leaf)', () => {
+    expect(parseGameSettings(sample)).toEqual(sample);
+  });
+
+  it('rejects malformed / incomplete payloads (returns null)', () => {
+    expect(parseGameSettings(null)).toBeNull();
+    expect(parseGameSettings('not json')).toBeNull();
+    expect(parseGameSettings({ deathmatch: 0 })).toBeNull(); // missing fields
+    expect(parseGameSettings({ ...sample, map: 'x' })).toBeNull(); // wrong type
+  });
+});
+
+describe('DoomNetcode — GAMESTART broadcast (Launch)', () => {
+  const settings: DoomGameSettings = {
+    deathmatch: 0,
+    episode: 1,
+    map: 1,
+    skill: 0,
+    nomonsters: 0,
+    fastMonsters: 0,
+    respawnMonsters: 0,
+    numPlayers: 2,
+  };
+
+  function twoPeers() {
+    const bus = new FakeAwarenessBus();
+    const awA = bus.create();
+    const awB = bus.create();
+    joinAs(awA, 'aaa');
+    joinAs(awB, 'bbb');
+    const startsA: GameStartEnvelope[] = [];
+    const startsB: GameStartEnvelope[] = [];
+    const { runtime: rtA } = makeRuntime();
+    const { runtime: rtB } = makeRuntime();
+    const ncA = new DoomNetcode({
+      provider: makeProvider(awA), moduleId: 'm', localUserId: 'aaa',
+      runtime: rtA, onGameStart: (e) => startsA.push(e),
+    });
+    const ncB = new DoomNetcode({
+      provider: makeProvider(awB), moduleId: 'm', localUserId: 'bbb',
+      runtime: rtB, onGameStart: (e) => startsB.push(e),
+    });
+    ncA.start();
+    ncB.start();
+    return { ncA, ncB, startsA, startsB };
+  }
+
+  it('arbiter broadcast fires onGameStart on the arbiter AND the peer', () => {
+    const { ncA, startsA, startsB } = twoPeers();
+    expect(ncA.isArbiter()).toBe(true); // aaa is lex-min
+    const launchId = ncA.broadcastGameStart(settings);
+    expect(launchId).toBe(1);
+    // Arbiter fired locally (synchronous, no round-trip).
+    expect(startsA).toHaveLength(1);
+    expect(startsA[0]!.settings).toEqual(settings);
+    // Peer B received it via the awareness bus.
+    expect(startsB).toHaveLength(1);
+    expect(startsB[0]!.settings).toEqual(settings);
+    expect(startsB[0]!.launchId).toBe(1);
+  });
+
+  it('a non-arbiter cannot broadcast (returns false, no start)', () => {
+    const { ncB, startsA, startsB } = twoPeers();
+    expect(ncB.isArbiter()).toBe(false);
+    const r = ncB.broadcastGameStart(settings);
+    expect(r).toBe(false);
+    expect(startsA).toHaveLength(0);
+    expect(startsB).toHaveLength(0);
+  });
+
+  it('dedupes a re-broadcast of the same launchId (sticky awareness)', () => {
+    const { ncA, startsB } = twoPeers();
+    ncA.broadcastGameStart(settings);
+    expect(startsB).toHaveLength(1);
+    // An unrelated awareness churn re-runs the drain; the sticky GAMESTART
+    // field is still present but must NOT re-fire (same launchId).
+    joinAs((ncA as unknown as { provider: { awareness: FakeAwareness } }).provider.awareness, 'aaa');
+    expect(startsB).toHaveLength(1);
+  });
+
+  it('a NEW launch (next map) bumps launchId + fires again', () => {
+    const { ncA, startsB } = twoPeers();
+    ncA.broadcastGameStart({ ...settings, map: 1 });
+    ncA.broadcastGameStart({ ...settings, map: 2 });
+    expect(startsB).toHaveLength(2);
+    expect(startsB[0]!.launchId).toBe(1);
+    expect(startsB[1]!.launchId).toBe(2);
+    expect(startsB[1]!.settings.map).toBe(2);
   });
 });

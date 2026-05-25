@@ -80,6 +80,102 @@ export function relayFieldFor(moduleId: string, peerId: number): string {
   return `doom-net:${moduleId}:to:${peerId}`;
 }
 
+/** Awareness field name carrying the arbiter's GAMESTART broadcast (the
+ *  agreed net_gamesettings_t the arbiter picked in the New Game dialog) for
+ *  module `mid`. Only the arbiter ever writes it; every joined peer reads it
+ *  and calls dgpt_start_netgame with these settings + its own slot. */
+export function gameStartFieldFor(moduleId: string): string {
+  return `doom-net:${moduleId}:gamestart`;
+}
+
+// ────────────────────────────────────────────────────────────────────────
+//  net_gamesettings_t (the launch payload)
+// ────────────────────────────────────────────────────────────────────────
+
+/** Game modes the New Game dialog offers. The numeric `deathmatch` value
+ *  matches DOOM's global: 0 = coop, 1 = deathmatch, 2 = deathmatch-2.0.
+ *  "survival" is coop with respawning monsters + no item respawn — there is
+ *  no distinct DOOM global for it, so it maps to deathmatch=0 + a flag the
+ *  card sets (respawn_monsters), kept here for the UI label only. */
+export type DoomGameMode = 'coop' | 'deathmatch' | 'deathmatch-2.0' | 'survival';
+
+/** The settings the arbiter picks + broadcasts; mirrors the subset of
+ *  chocolate-doom's net_gamesettings_t that dgpt_start_netgame consumes.
+ *  Fields are the C-call argument order so serialization is mechanical. */
+export interface DoomGameSettings {
+  /** 0 = coop, 1 = deathmatch, 2 = deathmatch-2.0. */
+  deathmatch: number;
+  /** 1..3 (shareware DOOM1 = episode 1 only). */
+  episode: number;
+  /** 1..9. */
+  map: number;
+  /** DOOM skill_t, 0-based: 0 = ITYTD .. 4 = Nightmare. */
+  skill: number;
+  /** 0/1 — no monsters. */
+  nomonsters: number;
+  /** 0/1 — fast monsters (-fast). */
+  fastMonsters: number;
+  /** 0/1 — respawning monsters (-respawn; survival mode sets this). */
+  respawnMonsters: number;
+  /** How many player slots are live this game (= roster size at Launch). */
+  numPlayers: number;
+}
+
+/** The launch envelope as it rides on awareness. Carries the settings +
+ *  a monotonic launch id so peers ignore a re-broadcast of a launch they
+ *  already started, and detect a NEW launch (next-map at intermission). */
+export interface GameStartEnvelope {
+  /** Monotonically increasing per arbiter; the start of a NEW level bumps
+   *  it so peers re-run dgpt_start_netgame for the next map. */
+  launchId: number;
+  settings: DoomGameSettings;
+}
+
+/** Stable field order for serialization (the round-trip unit test pins it).
+ *  We serialize to a compact JSON string leaf (same primitive-leaf-syncs-
+ *  reliably rationale as the roster). */
+const GAME_SETTINGS_FIELDS = [
+  'deathmatch',
+  'episode',
+  'map',
+  'skill',
+  'nomonsters',
+  'fastMonsters',
+  'respawnMonsters',
+  'numPlayers',
+] as const satisfies readonly (keyof DoomGameSettings)[];
+
+/** Serialize settings to a deterministic JSON string (sorted-by-known-order
+ *  so identical settings yield identical strings — no redundant Yjs writes). */
+export function serializeGameSettings(s: DoomGameSettings): string {
+  const ordered: Record<string, number> = {};
+  for (const k of GAME_SETTINGS_FIELDS) ordered[k] = s[k];
+  return JSON.stringify(ordered);
+}
+
+/** Parse settings from the string (or object) form, defensively. Returns
+ *  null if any field is missing / non-numeric (a malformed broadcast must
+ *  not start a half-configured game). */
+export function parseGameSettings(raw: unknown): DoomGameSettings | null {
+  let obj: unknown = raw;
+  if (typeof obj === 'string') {
+    try {
+      obj = JSON.parse(obj);
+    } catch {
+      return null;
+    }
+  }
+  if (!obj || typeof obj !== 'object') return null;
+  const rec = obj as Record<string, unknown>;
+  const out: Partial<DoomGameSettings> = {};
+  for (const k of GAME_SETTINGS_FIELDS) {
+    const v = rec[k];
+    if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+    out[k] = v;
+  }
+  return out as DoomGameSettings;
+}
+
 // ────────────────────────────────────────────────────────────────────────
 //  Runtime contract (subset of DoomRuntime this layer needs)
 // ────────────────────────────────────────────────────────────────────────
@@ -191,6 +287,12 @@ export interface DoomNetcodeOpts {
   localUserId: string;
   runtime: NetcodeRuntime;
   onArbiter?: (isArbiter: boolean) => void;
+  /** Fired (on every peer, arbiter included) when a NEW launch envelope
+   *  arrives from the arbiter — i.e. the arbiter hit Launch (or picked the
+   *  next map at intermission). The card responds by calling
+   *  runtime.startNetGame(settings) with its own slot as consoleplayer.
+   *  Deduped on launchId so a sticky re-broadcast fires the callback once. */
+  onGameStart?: (env: GameStartEnvelope) => void;
 }
 
 export class DoomNetcode {
@@ -199,6 +301,13 @@ export class DoomNetcode {
   private readonly localUserId: string;
   private readonly runtime: NetcodeRuntime;
   private readonly onArbiter?: (isArbiter: boolean) => void;
+  private readonly onGameStart?: (env: GameStartEnvelope) => void;
+
+  /** Monotonic launch id the arbiter stamps on each GAMESTART broadcast. */
+  private launchTxId = 0;
+  /** Highest launchId we've already delivered to onGameStart (dedupe the
+   *  sticky awareness re-broadcast). */
+  private launchRxId = -1;
 
   /** lex-sorted member user ids → index = peerId. Rebuilt on membership
    *  change; identical on every peer. */
@@ -222,6 +331,7 @@ export class DoomNetcode {
     this.localUserId = opts.localUserId;
     this.runtime = opts.runtime;
     this.onArbiter = opts.onArbiter;
+    this.onGameStart = opts.onGameStart;
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────────
@@ -239,6 +349,7 @@ export class DoomNetcode {
         this.recomputeMembership();
         this.drainInboundSignals();
         this.drainInboundRelay();
+        this.drainInboundGameStart();
       };
       aw.on('update', handler);
       this.awarenessUpdateHandler = () => aw.off('update', handler);
@@ -723,6 +834,62 @@ export class DoomNetcode {
       } catch {
         /* late / duplicate candidate — ignore */
       }
+    }
+  }
+
+  // ── GAMESTART broadcast (the Launch payload) ─────────────────────────────
+  //
+  // The settings blob is small + must reach every joined peer reliably, so
+  // it rides on awareness (a sticky per-arbiter field) rather than the
+  // unreliable-ordered tic data channel. Only the arbiter ever calls
+  // broadcastGameStart; every peer (arbiter included) picks it up in
+  // drainInboundGameStart and fires onGameStart. This is the "arbiter
+  // broadcasts net_gamesettings_t → all peers call D_StartNetGame" wiring.
+
+  /** Arbiter-only: broadcast a launch. No-op (returns false) on a non-
+   *  arbiter — the dialog is arbiter-gated in the card, but we guard here
+   *  too so a stray call can't desync the rack. Bumps the launchId each
+   *  call so a re-launch (next map at intermission) is seen as new. Returns
+   *  the launchId on success. */
+  broadcastGameStart(settings: DoomGameSettings): number | false {
+    if (!this.isArbiter()) return false;
+    const aw = this.provider.awareness;
+    if (!aw) return false;
+    const launchId = ++this.launchTxId;
+    const env: GameStartEnvelope = { launchId, settings };
+    aw.setLocalStateField(gameStartFieldFor(this.moduleId), env);
+    // The arbiter also runs the launch locally (it is a player too): fire
+    // our own onGameStart synchronously so the arbiter's WASM starts without
+    // waiting on an awareness round-trip back to itself.
+    if (launchId > this.launchRxId) {
+      this.launchRxId = launchId;
+      this.onGameStart?.(env);
+    }
+    return launchId;
+  }
+
+  /** Scan awareness for the arbiter's GAMESTART envelope + fire onGameStart
+   *  for a launchId we haven't delivered yet. We only honour a launch from
+   *  the CURRENT arbiter (ignoring a stale field left by a former arbiter
+   *  who has since lost the role). */
+  private drainInboundGameStart(): void {
+    const aw = this.provider.awareness;
+    if (!aw) return;
+    const field = gameStartFieldFor(this.moduleId);
+    for (const [, state] of aw.getStates()) {
+      const s = state as Record<string, unknown> | undefined;
+      if (!s) continue;
+      const fromUid = (s as { user?: { id?: string } }).user?.id;
+      if (typeof fromUid !== 'string') continue;
+      // Only the arbiter's broadcast counts.
+      if (fromUid !== this.arbiterUserId) continue;
+      const env = s[field] as GameStartEnvelope | undefined;
+      if (!env || typeof env.launchId !== 'number') continue;
+      const settings = parseGameSettings(env.settings);
+      if (!settings) continue;
+      if (env.launchId <= this.launchRxId) continue;
+      this.launchRxId = env.launchId;
+      this.onGameStart?.({ launchId: env.launchId, settings });
     }
   }
 

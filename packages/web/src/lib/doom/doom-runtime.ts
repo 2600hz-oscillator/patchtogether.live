@@ -383,6 +383,95 @@ export class DoomRuntime {
     };
   }
 
+  // ---------------- Slice 4: netgame launch + state ----------------
+  //
+  // startNetGame(settings, consolePlayer) drives the C dgpt_start_netgame
+  // export: it sets DOOM's game settings, marks the game a netgame with
+  // `numPlayers` live slots, sets THIS peer's slot as consoleplayer, and
+  // loads the level (G_InitNew). After it returns, runTic() advances the
+  // level; getConsolePlayerState() reads THIS peer's own marine.
+
+  /** GS_LEVEL / GS_INTERMISSION / GS_FINALE / GS_DEMOSCREEN — DOOM's
+   *  gamestate_t as an int (doomdef.h ordering: LEVEL=0, INTERMISSION=1,
+   *  FINALE=2, DEMOSCREEN=3). The card uses this to (a) confirm the level
+   *  loaded after Launch and (b) lock the New Game dialog until intermission. */
+  getGameState(): number {
+    if (!this.initialized) return -1;
+    return this.mod.ccall('dgpt_get_gamestate', 'number', [], []);
+  }
+
+  /** True once the level is loaded + actively running (gamestate==GS_LEVEL).
+   *  GS_LEVEL is 0 in DOOM's enum. */
+  isInLevel(): boolean {
+    return this.getGameState() === 0;
+  }
+
+  /** Launch (or re-launch at the next map) a netgame on this peer.
+   *
+   *  All peers must call this with the SAME settings; only `consolePlayer`
+   *  (this peer's slot) differs. Deterministic level load on identical
+   *  (skill, episode, map) + numPlayers gives every peer the same world with
+   *  marines at the per-slot coop starts; this peer drives its own
+   *  players[consolePlayer]. */
+  startNetGame(
+    settings: {
+      deathmatch: number;
+      episode: number;
+      map: number;
+      skill: number;
+      nomonsters: number;
+      fastMonsters: number;
+      respawnMonsters: number;
+      numPlayers: number;
+    },
+    consolePlayer: number,
+  ): void {
+    if (!this.initialized) return;
+    this.mod.ccall(
+      'dgpt_start_netgame',
+      null,
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [
+        settings.deathmatch,
+        settings.episode,
+        settings.map,
+        settings.skill,
+        settings.nomonsters,
+        settings.fastMonsters,
+        settings.respawnMonsters,
+        settings.numPlayers,
+        consolePlayer,
+      ],
+    );
+  }
+
+  /** This peer's slot (consoleplayer) per the C side, or 0 if not in a
+   *  netgame (single-player default). */
+  getConsolePlayer(): number {
+    if (!this.initialized) return 0;
+    return this.mod.ccall('dgpt_get_console_player', 'number', [], []);
+  }
+
+  /** True once THIS peer's console player has spawned into the level. */
+  hasConsolePlayerMobj(): boolean {
+    if (!this.initialized) return false;
+    return this.mod.ccall('dgpt_has_console_player_mobj', 'number', [], []) !== 0;
+  }
+
+  /** Position of the player THIS peer controls (players[consoleplayer]) in
+   *  DOOM fixed-point, or null if no level / not spawned. The e2e asserts
+   *  two peers' console players occupy DIFFERENT positions after independent
+   *  movement — the per-peer-instance proof. */
+  getConsolePlayerState(): { x: number; y: number; slot: number } | null {
+    if (!this.initialized) return null;
+    if (!this.hasConsolePlayerMobj()) return null;
+    return {
+      x: this.mod.ccall('dgpt_get_console_player_x', 'number', [], []),
+      y: this.mod.ccall('dgpt_get_console_player_y', 'number', [], []),
+      slot: this.getConsolePlayer(),
+    };
+  }
+
   // ---------------- Slice 3: netcode bridge (Module.PTNet) ----------------
   //
   // The DOOM multiplayer netcode (doom-netcode.ts) needs two things from a
