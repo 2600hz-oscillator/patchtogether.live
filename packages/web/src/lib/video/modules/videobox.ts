@@ -25,6 +25,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
 import type { VideoboxFileMeta, VideoboxSyncState } from './videobox-sync';
 
 // Shader: passthrough sample of the source texture, with a mute-time
@@ -135,7 +136,14 @@ export const videoboxDef: VideoModuleDef = {
 
     const { fbo, texture: outTexture } = ctx.createFbo();
 
-    let sourceTexture: WebGLTexture | null = null;
+    // rVFC-driven, engine-resolution-downscaled frame pump. Replaces the
+    // per-engine-tick full-res texImage2D(<video>) path that caused the
+    // few-FPS output regression (see video-frame-upload.ts for the why).
+    const uploader = createVideoFrameUploader({
+      gl,
+      width: ctx.res.width,
+      height: ctx.res.height,
+    });
     let videoEl: HTMLVideoElement | null = null;
 
     const params: VideoboxParams = { ...DEFAULTS };
@@ -174,53 +182,6 @@ export const videoboxDef: VideoModuleDef = {
       silentRight = r;
       audioSources.set('audio_l', { node: l, output: 0 });
       audioSources.set('audio_r', { node: r, output: 0 });
-    }
-
-    function ensureSourceTexture(): WebGLTexture {
-      if (sourceTexture) return sourceTexture;
-      const tex = gl.createTexture();
-      if (!tex) throw new Error('VIDEOBOX: createTexture failed');
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      sourceTexture = tex;
-      return tex;
-    }
-
-    function uploadIfReady(): boolean {
-      if (!videoEl) return false;
-      if (videoEl.readyState < 2) return false; // HAVE_CURRENT_DATA
-      if (videoEl.videoWidth === 0 || videoEl.videoHeight === 0) return false;
-
-      const tex = ensureSourceTexture();
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-      try {
-        // Full texImage2D (re-spec) every frame rather than allocate-once
-        // + texSubImage2D. The sub-image path raised GL_INVALID_OPERATION
-        // on every update here (Chromium + this WebGL2 context), so the
-        // texture stayed frozen at its first — black — upload and the
-        // output read as black downstream even while the card's own
-        // <video> kept playing. A `<video>` frame is the same size each
-        // tick, so the driver treats a same-dimension re-spec as a cheap
-        // in-place update; correctness wins over the marginal sub-image
-        // saving for a file player. (CAMERA's webcam stream happens to
-        // tolerate texSubImage2D; the file path does not — we don't rely
-        // on that quirk.)
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoEl);
-      } catch (err) {
-        // texImage2D on a same-origin object-URL video shouldn't tripwire
-        // CORS, but log + skip if something else fails (mid-stream pause
-        // can briefly null out the source).
-        console.warn('[videobox] texImage2D failed:', err);
-        return false;
-      } finally {
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      }
-      return true;
     }
 
     function wireAudio(): void {
@@ -269,7 +230,11 @@ export const videoboxDef: VideoModuleDef = {
       texture: outTexture,
       draw(frame) {
         const g = frame.gl;
-        const uploaded = uploadIfReady();
+        // The actual GPU upload only happens here when rVFC reports a new
+        // decoded frame (or, on the fallback path, currentTime advanced).
+        // On the other ~60-fps ticks this just rebinds the existing texture.
+        const uploaded = uploader.uploadIfReady();
+        const sourceTexture = uploader.texture;
 
         g.bindFramebuffer(g.FRAMEBUFFER, fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
@@ -291,9 +256,8 @@ export const videoboxDef: VideoModuleDef = {
         if (silentRight) try { silentRight.disconnect(); } catch { /* */ }
         gl.deleteFramebuffer(fbo);
         gl.deleteTexture(outTexture);
-        if (sourceTexture) gl.deleteTexture(sourceTexture);
+        uploader.dispose();
         gl.deleteProgram(program);
-        sourceTexture = null;
         videoEl = null;
       },
     };
@@ -324,16 +288,23 @@ export const videoboxDef: VideoModuleDef = {
       attachExternalSource(kind, el) {
         if (kind !== 'video') return;
         // New element → tear down the audio graph so the old element's
-        // MediaElementSource doesn't linger. The per-frame texImage2D
-        // re-specs the texture against the live element's dimensions, so
-        // there's no allocation flag to reset.
+        // MediaElementSource doesn't linger, and re-point the frame pump at
+        // the new element (which re-subscribes rVFC + forces a first upload
+        // against the new dimensions).
         if (videoEl !== el) unwireAudio();
         videoEl = (el as HTMLVideoElement) ?? null;
+        if (videoEl) uploader.attach(videoEl);
+        else uploader.detach();
       },
       read(key) {
         if (key === 'extras') return extras;
         if (key === 'hasVideoElement') return videoEl !== null;
         if (key === 'audioWired') return audioWired;
+        // Instrumentation hooks for the perf e2e: uploads/sec is derived by
+        // sampling uploadCount over a window; rvfcSupported confirms the
+        // decode-cadence path (vs the Firefox currentTime fallback) is live.
+        if (key === 'uploadCount') return uploader.uploadCount;
+        if (key === 'rvfcSupported') return uploader.rvfcSupported;
         return undefined;
       },
       dispose() { surface.dispose(); },
