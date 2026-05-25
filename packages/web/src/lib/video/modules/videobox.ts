@@ -168,6 +168,16 @@ export const videoboxDef: VideoModuleDef = {
     let silentRight: ConstantSourceNode | null = null;
     let mediaElSrc: MediaElementAudioSourceNode | null = null;
     let splitter: ChannelSplitterNode | null = null;
+    // Permanent silent keep-alive: a gain(0) node bridging the
+    // MediaElementSource to audioCtx.destination. Without a path to the
+    // context's destination, a MediaElementAudioSourceNode is NOT pulled in
+    // real-time, so Chromium throttles the <video>'s decode to ~1 fps when
+    // the user hasn't patched audio out. Connecting through gain 0 keeps the
+    // element demanded every render quantum (decode stays at full rate ->
+    // rVFC fires -> smooth video) while emitting NO audible output. The
+    // user's own audio_l/audio_r patches connect in parallel + are
+    // unaffected. See video-frame-upload.ts for the rVFC cadence.
+    let keepAlive: GainNode | null = null;
     let audioWired = false;
 
     if (ctx.audioCtx) {
@@ -202,6 +212,26 @@ export const videoboxDef: VideoModuleDef = {
         splitter = split;
         audioSources.set('audio_l', { node: split, output: 0 });
         audioSources.set('audio_r', { node: split, output: 1 });
+
+        // Silent keep-alive: src -> gain(0) -> destination. This is what
+        // makes the AudioContext pull the element in real-time so its decode
+        // doesn't throttle to ~1 fps when no audio is patched. Gain 0 means
+        // zero audible output; the user's audio patches run in parallel off
+        // the splitter and are audible as before.
+        const ka = ac.createGain();
+        ka.gain.value = 0;
+        src.connect(ka);
+        ka.connect(ac.destination);
+        keepAlive = ka;
+
+        // A suspended context won't pull the element (decode stays throttled),
+        // so resume it. Loading a file is a user gesture, so this should
+        // succeed; guard the suspended case + swallow the rejection (older
+        // engines may not expose state/resume).
+        if (ac.state === 'suspended') {
+          void ac.resume().catch(() => { /* */ });
+        }
+
         audioWired = true;
       } catch (err) {
         // InvalidStateError: this video element already has a MediaElement
@@ -212,8 +242,10 @@ export const videoboxDef: VideoModuleDef = {
     }
 
     function unwireAudio(): void {
+      if (keepAlive) try { keepAlive.disconnect(); } catch { /* */ }
       if (splitter) try { splitter.disconnect(); } catch { /* */ }
       if (mediaElSrc) try { mediaElSrc.disconnect(); } catch { /* */ }
+      keepAlive = null;
       mediaElSrc = null;
       splitter = null;
       audioWired = false;
@@ -300,6 +332,10 @@ export const videoboxDef: VideoModuleDef = {
         if (key === 'extras') return extras;
         if (key === 'hasVideoElement') return videoEl !== null;
         if (key === 'audioWired') return audioWired;
+        // Keep-alive instrumentation: lets tests/e2e assert the silent
+        // gain(0)->destination bridge is live (the thing that stops the
+        // <video> decode from throttling to ~1 fps when unpatched).
+        if (key === 'hasKeepAlive') return keepAlive !== null;
         // Instrumentation hooks for the perf e2e: uploads/sec is derived by
         // sampling uploadCount over a window; rvfcSupported confirms the
         // decode-cadence path (vs the Firefox currentTime fallback) is live.
