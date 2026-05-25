@@ -152,6 +152,58 @@ export async function deleteRackspace(
 
 export const RACKSPACE_MAX_OWNED = MAX_OWNED_PER_USER;
 
+// 'is-owner' is distinct from 'forbidden' so the endpoint can return a
+// clear "owners must delete, not leave" message rather than a generic 403.
+export type LeaveResult = 'ok' | 'not-found' | 'not-member' | 'is-owner';
+
+export async function leaveRackspace(
+  id: string,
+  requesterUserId: string,
+): Promise<LeaveResult> {
+  // Single CTE so the existence + ownership checks travel with the DELETE
+  // (the Neon HTTP API has no cross-round-trip transaction). We compute
+  // every distinguishing flag up front, then conditionally delete the
+  // requester's membership row only when they are a non-owner member.
+  // Owners must not leave — their slot is structural (the rack would be
+  // ownerless); they delete the rackspace instead.
+  const rows = (await sql()`
+    WITH rack AS (
+      SELECT id, owner_user_id
+        FROM racks
+       WHERE id = ${id}
+    ),
+    membership AS (
+      SELECT 1 AS one
+        FROM rack_members
+       WHERE rack_id = ${id} AND user_id = ${requesterUserId}
+       LIMIT 1
+    ),
+    del AS (
+      DELETE FROM rack_members
+       WHERE rack_id = ${id}
+         AND user_id = ${requesterUserId}
+         AND EXISTS (SELECT 1 FROM rack)
+         AND (SELECT owner_user_id FROM rack) <> ${requesterUserId}
+      RETURNING user_id
+    )
+    SELECT
+      EXISTS (SELECT 1 FROM rack)                                   AS rack_exists,
+      ((SELECT owner_user_id FROM rack) = ${requesterUserId})       AS is_owner,
+      EXISTS (SELECT 1 FROM membership)                             AS is_member,
+      EXISTS (SELECT 1 FROM del)                                    AS deleted
+  `) as Array<{
+    rack_exists: boolean;
+    is_owner: boolean;
+    is_member: boolean;
+    deleted: boolean;
+  }>;
+  const row = rows[0];
+  if (!row.rack_exists) return 'not-found';
+  if (row.is_owner) return 'is-owner';
+  if (!row.is_member) return 'not-member';
+  return 'ok';
+}
+
 export async function getRackspace(id: string): Promise<Rackspace | null> {
   const rows = (await sql()`
     SELECT r.id, r.owner_user_id, r.name, r.created_at,

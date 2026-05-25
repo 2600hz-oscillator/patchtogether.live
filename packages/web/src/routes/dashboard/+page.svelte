@@ -9,12 +9,14 @@
   let creating = $state(false);
   let error: string | null = $state(null);
   let deletingId: string | null = $state(null);
+  let leavingId: string | null = $state(null);
+  let rackspaces = $state(data.rackspaces);
   let savedGroups = $state(data.savedGroups);
   let deletingSavedGroupId: string | null = $state(null);
   let savedGroupsError: string | null = $state(null);
 
   let ownedCount = $derived(
-    data.rackspaces.filter((r) => r.ownerUserId === data.userId).length,
+    rackspaces.filter((r) => r.ownerUserId === data.userId).length,
   );
   let atCap = $derived(ownedCount >= RACK_CAP);
 
@@ -82,6 +84,28 @@
       deletingId = null;
     }
   }
+
+  async function leaveRack(id: string, name: string) {
+    if (leavingId) return;
+    if (!confirm(`Leave "${name || 'this rackspace'}"? You can rejoin from the share link.`))
+      return;
+    leavingId = id;
+    error = null;
+    try {
+      const res = await fetch(`/api/rackspaces/${id}/leave`, { method: 'POST' });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string };
+        error = body.message ?? `Leave failed: ${res.status}`;
+        return;
+      }
+      // Drop the card locally so the freed slot is reflected immediately.
+      rackspaces = rackspaces.filter((r) => r.id !== id);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      leavingId = null;
+    }
+  }
 </script>
 
 <svelte:head><title>Dashboard — patchtogether.live</title></svelte:head>
@@ -120,14 +144,14 @@
       <pre class="error">{error}</pre>
     {/if}
 
-    {#if data.rackspaces.length === 0}
+    {#if rackspaces.length === 0}
       <p class="empty">
         No rackspaces yet. Create one and you'll get a share URL you can send
         to up to 3 friends.
       </p>
     {:else}
       <ul class="rackspace-list">
-        {#each data.rackspaces as r (r.id)}
+        {#each rackspaces as r (r.id)}
           <li class="rack-row">
             <a class="rack-link" href={`/r/${r.id}`}>
               <span class="name">{r.name || 'Untitled rackspace'}</span>
@@ -144,6 +168,15 @@
                 title="Delete this rackspace (permanent)"
               >
                 {deletingId === r.id ? 'Deleting…' : 'Delete'}
+              </button>
+            {:else}
+              <button
+                class="delete"
+                onclick={() => leaveRack(r.id, r.name)}
+                disabled={leavingId === r.id}
+                title="Leave this rackspace (frees a slot; you can rejoin from the share link)"
+              >
+                {leavingId === r.id ? 'Leaving…' : 'Leave'}
               </button>
             {/if}
           </li>
