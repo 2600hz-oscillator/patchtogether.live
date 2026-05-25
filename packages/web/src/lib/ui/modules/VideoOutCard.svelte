@@ -44,6 +44,7 @@
   import { patch } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
+  import { createFullFrame } from './use-full-frame.svelte';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -102,7 +103,28 @@
   });
   $effect(() => fs.attach());
 
-  // Right-click-on-canvas context menu (Fullscreen).
+  // ---------- Full Frame (in-app, NOT browser fullscreen) ----------
+  // Expands the canvas to consume the card border, hiding chrome (port
+  // labels + the card's own Handle jacks). The card stays in the rack and
+  // remains resizable. Persisted in node.data.fullFrame so it survives
+  // reload + syncs to rack-mates (wall-of-TVs layouts are shareable).
+  let fullFrame = $derived<boolean>((node?.data?.fullFrame as boolean | undefined) ?? false);
+  const ff = createFullFrame({
+    setFullFrame: (on) => {
+      const target = patch.nodes[id];
+      if (target) {
+        if (!target.data) target.data = {};
+        target.data.fullFrame = on;
+      }
+    },
+    // Mutual exclusion: entering full-frame drops any active true-fullscreen.
+    exitFullscreen: () => void fs.exit(),
+  });
+  let cardEl: HTMLDivElement | null = $state(null);
+  // Double-click a full-frame card exits back to normal chrome.
+  $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Right-click-on-canvas context menu (Fullscreen / Full Frame).
   let ctxOpen = $state(false);
   let ctxX = $state(0);
   let ctxY = $state(0);
@@ -224,11 +246,14 @@
 </script>
 
 <div
+  bind:this={cardEl}
   class="card video"
   class:resizing
+  class:full-frame={fullFrame}
   style="width: {cardWidth}px; height: {cardHeight}px;"
   data-testid="video-out-card"
   data-node-id={id}
+  data-full-frame={fullFrame}
 >
   <div class="stripe"></div>
   <header class="title">OUTPUT</header>
@@ -244,7 +269,8 @@
     bind:this={wrapEl}
     class="canvas-wrap"
     class:fullscreen={fs.isFullscreen}
-    style="width: {fs.isFullscreen ? '100%' : innerWidth + 'px'}; height: {fs.isFullscreen ? '100%' : innerHeight + 'px'};"
+    class:full-frame={fullFrame}
+    style="width: {fs.isFullscreen || fullFrame ? '100%' : innerWidth + 'px'}; height: {fs.isFullscreen || fullFrame ? '100%' : innerHeight + 'px'};"
     data-testid="video-out-fs-wrap"
     oncontextmenu={onCanvasContextMenu}
   >
@@ -275,7 +301,9 @@
   x={ctxX}
   y={ctxY}
   title="OUTPUT"
-  onfullscreen={() => void fs.enter()}
+  onfullscreen={() => { ff.exit(); void fs.enter(); }}
+  onfullframe={() => ff.toggle(fullFrame)}
+  isFullFrame={fullFrame}
   onclose={() => { ctxOpen = false; }}
 />
 
@@ -365,6 +393,42 @@
     max-width: 100%;
     max-height: 100%;
     cursor: pointer;
+  }
+  /* FULL FRAME (in-app): the canvas consumes the whole card border — hide
+   * the chrome (title, port labels, stripe) + drop the card padding so the
+   * video fills edge-to-edge. The card stays in the rack + remains
+   * resizable; double-click exits. Distinct from .fullscreen above, which
+   * escapes the rack to the physical screen via the Fullscreen API. */
+  .card.full-frame {
+    padding: 0;
+  }
+  .card.full-frame .title,
+  .card.full-frame .port-label,
+  .card.full-frame .stripe {
+    display: none;
+  }
+  /* Hide the card's OWN Svelte Flow jacks while full-frame — keep them in
+   * the DOM (opacity/pointer-events, not display:none) so existing cables
+   * stay connected; we're hiding the jacks visually, not disconnecting. */
+  .card.full-frame :global(.svelte-flow__handle) {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .canvas-wrap.full-frame {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    cursor: pointer;
+  }
+  .canvas-wrap.full-frame canvas {
+    border: none;
+    border-radius: 0;
+    width: 100%;
+    height: 100%;
+    /* contain so the 16:9 source is never cropped; black letterbox bars
+     * on the short axis. */
+    object-fit: contain;
   }
   .resize-handle {
     position: absolute;

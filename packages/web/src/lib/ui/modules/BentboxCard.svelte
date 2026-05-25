@@ -19,6 +19,7 @@
   import { patch } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
+  import { createFullFrame } from './use-full-frame.svelte';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -78,6 +79,25 @@
     fs.setTarget(wrapEl);
   });
   $effect(() => fs.attach());
+
+  // ---------- Full Frame (in-app, NOT browser fullscreen) ----------
+  // Expands the CRT surface to consume the card border, hiding the knob
+  // grid + port labels + jacks; the card stays in the rack + remains
+  // resizable. Persisted in node.data.fullFrame (Y.Doc-synced) so a
+  // wall-of-TVs layout survives reload + is shareable. See use-full-frame.
+  let fullFrame = $derived<boolean>((node?.data?.fullFrame as boolean | undefined) ?? false);
+  const ff = createFullFrame({
+    setFullFrame: (on) => {
+      const target = patch.nodes[id];
+      if (target) {
+        if (!target.data) target.data = {};
+        target.data.fullFrame = on;
+      }
+    },
+    exitFullscreen: () => void fs.exit(),
+  });
+  let cardEl: HTMLDivElement | null = $state(null);
+  $effect(() => ff.attach(cardEl, () => fullFrame));
 
   let ctxOpen = $state(false);
   let ctxX = $state(0);
@@ -214,11 +234,14 @@
 </script>
 
 <div
+  bind:this={cardEl}
   class="card bentbox"
   class:resizing
+  class:full-frame={fullFrame}
   style="width: {cardWidth}px; height: {cardHeight}px;"
   data-testid="bentbox-card"
   data-node-id={id}
+  data-full-frame={fullFrame}
 >
   <div class="stripe"></div>
   <header class="title">BENTBOX</header>
@@ -229,7 +252,8 @@
       bind:this={wrapEl}
       class="screen-wrap"
       class:fullscreen={fs.isFullscreen}
-      style="width: {fs.isFullscreen ? '100%' : innerWidth + 'px'}; height: {fs.isFullscreen ? '100%' : screenAreaH + 'px'};"
+      class:full-frame={fullFrame}
+      style="width: {fs.isFullscreen || fullFrame ? '100%' : innerWidth + 'px'}; height: {fs.isFullscreen || fullFrame ? '100%' : screenAreaH + 'px'};"
       data-testid="bentbox-fs-wrap"
       oncontextmenu={onCanvasContextMenu}
     >
@@ -275,7 +299,9 @@
   x={ctxX}
   y={ctxY}
   title="BENTBOX"
-  onfullscreen={() => void fs.enter()}
+  onfullscreen={() => { ff.exit(); void fs.enter(); }}
+  onfullframe={() => ff.toggle(fullFrame)}
+  isFullFrame={fullFrame}
   onclose={() => { ctxOpen = false; }}
 />
 
@@ -348,6 +374,49 @@
     max-width: 100%;
     max-height: 100%;
     cursor: pointer;
+  }
+  /* FULL FRAME (in-app): the CRT surface consumes the whole card border —
+   * hide the title, knob grid, stripe + the PatchPanel jack affordances so
+   * the card shows only video. Stays in the rack + resizable; double-click
+   * exits. Distinct from .fullscreen (browser Fullscreen API) above. */
+  .card.bentbox.full-frame {
+    padding: 0;
+  }
+  .card.bentbox.full-frame .title,
+  .card.bentbox.full-frame .stripe,
+  .card.bentbox.full-frame .knob-grid {
+    display: none;
+  }
+  /* Hide the card's OWN jack affordances + Svelte Flow handles while full-
+   * frame. Keep handles in the DOM (opacity/pointer-events, not
+   * display:none) so existing cables stay connected — we hide, not remove. */
+  .card.bentbox.full-frame :global(.patch-trigger) {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .card.bentbox.full-frame :global(.svelte-flow__handle) {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .screen-wrap.full-frame {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    cursor: pointer;
+  }
+  .screen-wrap.full-frame canvas {
+    border: none;
+    border-radius: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  /* When full-frame, the PatchPanel host (display:contents) must let the
+   * screen-wrap fill the card. The card is a flex/normal-flow box; the
+   * screen-wrap grows to fill the freed space once title + knobs are gone. */
+  .card.bentbox.full-frame :global(.patch-panel-host) {
+    display: contents;
   }
   .knob-grid {
     display: grid;
