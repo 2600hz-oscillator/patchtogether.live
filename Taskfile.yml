@@ -184,6 +184,18 @@ tasks:
     cmds:
       - npm test -w {{.E2E}} -- {{.CLI_ARGS}}
 
+  e2e:no-collab:
+    desc: 'E2E EXCLUDING the @collab multi-context specs (they run in their own non-sharded CI job — the in-memory Hocuspocus relay flakes under shard contention). Used by the sharded CI matrix.'
+    deps: [test:emit-manifest]
+    cmds:
+      - npm exec -w {{.E2E}} -- playwright test --grep-invert @collab {{.CLI_ARGS}}
+
+  collab:
+    desc: 'Run ONLY the @collab multi-context specs (single non-sharded worker). The Hocuspocus relay is in-memory so this is cheap; isolating it off the 8-shard matrix makes the DOOM 2-user gate reliable.'
+    deps: [test:emit-manifest]
+    cmds:
+      - npm exec -w {{.E2E}} -- playwright test --grep @collab --workers=1 {{.CLI_ARGS}}
+
   audio-drift:
     desc: |
       Phase-C decision research harness. Drives two browser contexts on the same

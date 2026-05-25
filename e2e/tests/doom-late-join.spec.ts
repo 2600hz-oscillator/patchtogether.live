@@ -187,7 +187,7 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
   // is unit-proven (doom-roster.test.ts), the spectator/pending labels are
   // unit-proven (doom-player-identity.test.ts), and the late-joiner-spawns-at-
   // next-map path is deterministically proven by start-netgame.acceptance.mjs.
-  test.skip(!!process.env.CI, '@collab 2-context flake under CI shard load — task #97');
+  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab 2-context flake under CI shard load — task #97');
   // Cold WASM + 4 MB WAD on TWO contexts + cross-context sync + a launch + an
   // intermission round-trip + a second launch → a long window. Generous ceiling.
   test.setTimeout(180_000);

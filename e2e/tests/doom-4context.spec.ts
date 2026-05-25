@@ -222,7 +222,7 @@ test.describe('@collab DOOM 4-context coop (slice 7)', () => {
   // QUARANTINE (task #97): 4 contexts is the worst case for the Hocuspocus
   // relay dropping peers under CI shard load. Runs locally; CI relies on the
   // unit suites + C acceptance harnesses for the deterministic guarantees.
-  test.skip(!!process.env.CI, '@collab 4-context — runs locally; CI relay flake per #97');
+  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab 4-context — runs locally; CI relay flake per #97');
   // Cold WASM + 4 MB WAD on FOUR contexts + cross-context sync + launch +
   // movement burst → generous ceiling.
   test.setTimeout(300_000);
