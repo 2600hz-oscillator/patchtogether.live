@@ -213,6 +213,7 @@
   // ATLANTIS-PATCH support trio. Each is general-purpose; together they
   // power the Visit Atlantis demo (loadAtlantis() below).
   import SlewSwitchCard from '$lib/ui/modules/SlewSwitchCard.svelte';
+  import FourPlexerCard from '$lib/ui/modules/FourPlexerCard.svelte';
   import AtlantisCatalystCard from '$lib/ui/modules/AtlantisCatalystCard.svelte';
   import AquaTankCard from '$lib/ui/modules/AquaTankCard.svelte';
   // DOOM — interactive single-instance video module; maxInstances: 1.
@@ -446,6 +447,8 @@
     numpadPlus: NumpadPlusCard,
     wavesculpt: WavesculptCard,
     slewSwitch: SlewSwitchCard,
+    // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
+    fourplexer: FourPlexerCard,
     atlantisCatalyst: AtlantisCatalystCard,
     aquaTank: AquaTankCard,
     // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).

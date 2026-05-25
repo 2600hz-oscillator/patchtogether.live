@@ -132,6 +132,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // routed through a WaveShaperNode. Same shape as cartesian's x_cv/y_cv
   // address selectors + buggles.chaos_cv.
   grids: ['mapX_cv', 'mapY_cv', 'bdDensity_cv', 'sdDensity_cv', 'hhDensity_cv', 'chaos_cv', 'swing_cv'],
+  // 4PLEXER in1..in4: raw signal inputs (audio OR cv) routed straight to
+  // the selected output by the worklet's per-output select — they are the
+  // signal being switched, NOT a knob modulator, so there is no AudioParam
+  // fast path and cvScale doesn't apply. Same shape as SLEWSWITCH.in1..in4.
+  // The gate1..gate4 advance inputs are `gate`-typed and so aren't checked.
+  fourplexer: ['in1', 'in2', 'in3', 'in4'],
 };
 
 describe('cv-scale / registry coverage', () => {
