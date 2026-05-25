@@ -24,6 +24,25 @@ import { startReaper, type LiveConnectionSource } from './reaper.js';
 const PORT = Number(process.env.PORT ?? 1235);
 const HOST = process.env.HOST ?? '0.0.0.0';
 
+// Last-resort guard: the relay serves EVERY rack from one long-lived process,
+// so a single unhandled promise rejection bringing the process down (node's
+// default since v15) takes every connected rack with it — that's the
+// tab-switch 500 the operator hit (a transient pg auth timeout in the
+// debounced onStoreDocument went unhandled, node exited 1, the Fly machine
+// rebooted, in-flight WS/HTTP got connection-reset). The specific path is
+// fixed at the source (db.ts swallows transient persist errors + a pool
+// 'error' listener), but a long-running collab server must never crash on a
+// background async failure. Log loudly + stay up; Fly health checks + the
+// reaper keep the process honest.
+process.on('unhandledRejection', (reason) => {
+  // eslint-disable-next-line no-console
+  console.error('[hocuspocus] unhandledRejection (relay stays up):', reason);
+});
+process.on('uncaughtException', (err) => {
+  // eslint-disable-next-line no-console
+  console.error('[hocuspocus] uncaughtException (relay stays up):', err);
+});
+
 // In-memory slot tracker; one process serves all rackspaces, so a single
 // tracker is correct. When the server scales horizontally (post-Stage-B),
 // this becomes a Durable Object or Redis-backed counter.
