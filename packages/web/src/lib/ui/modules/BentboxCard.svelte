@@ -112,11 +112,15 @@
     ctxOpen = true;
   }
 
-  /** 4:3 letterbox inside the (cw, ch) container — BENTBOX is always
-   *  shown in 4:3 to keep the CRT pixel aspect honest no matter what
-   *  the user does with the resize. */
+  /** Letterbox the engine frame inside the (cw, ch) container at the
+   *  PIPELINE aspect (16:9 = ENGINE_W/ENGINE_H), NOT 4:3. The whole video
+   *  pipeline (sources → mixer → bentbox) renders a 16:9 FBO; re-imposing a
+   *  4:3 blit here squished the image horizontally. The CRT/retro look
+   *  (scanlines, phosphor mask, NTSC bend) lives in the BENTBOX shader and
+   *  is unaffected — we only fix the display-rect aspect so a 16:9 input
+   *  isn't distorted on the way to the visible canvas. */
   function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
-    const SRC = 4 / 3;
+    const SRC = ENGINE_W / ENGINE_H;
     const dstAspect = cw / ch;
     if (dstAspect > SRC) {
       const h = ch;
@@ -366,13 +370,17 @@
     height: 100%;
     background: #000;
   }
+  /* Zoom-fit: scale the live canvas UP to fill the fullscreen viewport as
+   * large as possible while preserving aspect. The canvas drawing buffer is
+   * small (card-sized px) so width/height:auto kept it tiny + un-scaled —
+   * fill the wrap (100% × 100%) + object-fit:contain so it scales up,
+   * centered, with black bars on the off-axis. */
   .screen-wrap.fullscreen canvas {
     border: none;
     border-radius: 0;
-    width: auto;
-    height: auto;
-    max-width: 100%;
-    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
     cursor: pointer;
   }
   /* FULL FRAME (in-app): the CRT surface consumes the whole card border —

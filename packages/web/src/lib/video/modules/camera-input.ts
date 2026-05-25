@@ -31,6 +31,9 @@ uniform sampler2D uTex;
 uniform float uHasInput;     // 0 = idle pattern, 1 = sample texture
 uniform float uGain;         // post-multiplier on RGB
 uniform float uMirror;       // 0 = passthrough, 1 = horizontal flip
+// (sx, sy) — UV scale that fits the camera's native aspect into the 16:9
+// FBO without stretching. A 4:3 webcam gets sx<1 (pillarbox left/right).
+uniform vec2 uLetterbox;
 
 void main() {
   if (uHasInput < 0.5) {
@@ -41,11 +44,18 @@ void main() {
     outColor = vec4(0.04, 0.06, 0.10 + v, 1.0);
     return;
   }
+  // Centre + scale the active region so the camera frame keeps its native
+  // aspect inside the 16:9 FBO; outside the active region renders black bars.
+  vec2 centered = (vUv - 0.5) / uLetterbox + 0.5;
+  if (centered.x < 0.0 || centered.x > 1.0 || centered.y < 0.0 || centered.y > 1.0) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
   // Sample with optional horizontal mirror. The webcam frame comes in
   // upside-down relative to GL clip space, but we use UNPACK_FLIP_Y_WEBGL
   // at upload time to fix that — so vUv here is already top-left-origin
   // for the camera frame.
-  vec2 uv = vUv;
+  vec2 uv = centered;
   if (uMirror > 0.5) uv.x = 1.0 - uv.x;
   // 'sample' is a reserved word in GLSL ES 3.00 — use 'src' instead.
   vec4 src = texture(uTex, uv);
@@ -94,10 +104,11 @@ export const cameraInputDef: VideoModuleDef = {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
 
-    const uTex      = gl.getUniformLocation(program, 'uTex');
-    const uHasInput = gl.getUniformLocation(program, 'uHasInput');
-    const uGain     = gl.getUniformLocation(program, 'uGain');
-    const uMirror   = gl.getUniformLocation(program, 'uMirror');
+    const uTex       = gl.getUniformLocation(program, 'uTex');
+    const uHasInput  = gl.getUniformLocation(program, 'uHasInput');
+    const uGain      = gl.getUniformLocation(program, 'uGain');
+    const uMirror    = gl.getUniformLocation(program, 'uMirror');
+    const uLetterbox = gl.getUniformLocation(program, 'uLetterbox');
 
     const { fbo, texture: outTexture } = ctx.createFbo();
 
@@ -259,6 +270,19 @@ export const cameraInputDef: VideoModuleDef = {
         g.uniform1f(uHasInput, hasInput ? 1.0 : 0.0);
         g.uniform1f(uGain,     params.gain);
         g.uniform1f(uMirror,   params.mirror);
+
+        // Aspect-preserving letterbox: fit the camera's native aspect into
+        // the 16:9 FBO so a 4:3 webcam isn't stretched. Defaults to (1,1)
+        // when dimensions are unknown (idle / pre-stream).
+        let lbX = 1.0;
+        let lbY = 1.0;
+        if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+          const fboAspect = ctx.res.width / ctx.res.height;
+          const srcAspect = videoEl.videoWidth / videoEl.videoHeight;
+          lbX = Math.min(1.0, srcAspect / fboAspect);
+          lbY = Math.min(1.0, fboAspect / srcAspect);
+        }
+        g.uniform2f(uLetterbox, lbX, lbY);
 
         if (hasInput && sourceTexture) {
           g.activeTexture(g.TEXTURE0);
