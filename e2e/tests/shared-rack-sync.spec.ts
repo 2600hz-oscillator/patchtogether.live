@@ -113,13 +113,24 @@ async function hasNode(page: Page, id: string): Promise<boolean> {
   );
 }
 
+// Cross-context Yjs round-trips go relay → peer; on a loaded CI runner the
+// first sync after attach can lag well past a few seconds. These are pure
+// condition polls (no fixed sleeps), so a generous ceiling only costs time on
+// genuine failure, never on the happy path.
+const SYNC_TIMEOUT = 30_000;
+
 async function expectSeesNode(page: Page, id: string): Promise<void> {
   await expect
-    .poll(async () => await hasNode(page, id), { timeout: 5000 })
+    .poll(async () => await hasNode(page, id), { timeout: SYNC_TIMEOUT })
     .toBe(true);
 }
 
 test.describe('@collab shared-rack-sync', () => {
+  // Two browser contexts + repeated cross-context sync round-trips. The work
+  // is light vs the DOOM specs, but the relay can lag under a loaded runner, so
+  // give the whole flow a generous ceiling rather than fixed per-step budgets.
+  test.setTimeout(120_000);
+
   test('full flow: create → add → join → see → add → see → patch → see (bidirectional)', async ({
     browser,
   }) => {
@@ -177,7 +188,7 @@ test.describe('@collab shared-rack-sync', () => {
               if (!e) return null;
               return `${e.source?.nodeId}->${e.target?.nodeId}`;
             }, edgeId),
-          { timeout: 5000 },
+          { timeout: SYNC_TIMEOUT },
         )
         .toBe('a-vco->b-vca');
 
@@ -209,7 +220,7 @@ test.describe('@collab shared-rack-sync', () => {
                 ).includes(eid),
               edgeId2,
             ),
-          { timeout: 5000 },
+          { timeout: SYNC_TIMEOUT },
         )
         .toBe(true);
     } finally {

@@ -119,7 +119,7 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
         return w.__engine?.()?.getDomain?.('video')?.read?.(id, 'loaded') === true;
       },
       nodeId,
-      { timeout: 25000 },
+      { timeout: 45000 },
     );
     const err = await page.evaluate((id) => {
       const w = globalThis as unknown as {
@@ -133,7 +133,7 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
   }
 }
 
-async function waitForCardHook(page: Page, nodeId: string, timeout = 10000): Promise<void> {
+async function waitForCardHook(page: Page, nodeId: string, timeout = 30000): Promise<void> {
   await page.waitForFunction(
     (id) => {
       const w = globalThis as unknown as { __doomCards?: Record<string, unknown> };
@@ -193,11 +193,11 @@ async function canvasHash(page: Page): Promise<number> {
 }
 
 test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
-  // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
-  // shard load. Skip on CI; runs locally. Identity mapping + ticcmd cross-feed
-  // are proven by unit suites + start-netgame.acceptance.mjs (C-harness).
-  test.skip(!!process.env.CI, '@collab 2-context flake under CI shard load — task #97');
-  test.setTimeout(180_000);
+  // Re-enabled on CI (task #97): runs in the dedicated non-sharded `collab`
+  // job (serial, one relay, no competing shards), so the contention drops that
+  // quarantined this are gone. Identity mapping + ticcmd cross-feed remain
+  // proven by unit suites + start-netgame.acceptance.mjs (C-harness).
+  test.setTimeout(240_000);
 
   test('peers show slot badge + DOOM color; A moving changes B\'s POV (cross-peer)', async ({ browser }) => {
     const pair = await openPair(browser);
@@ -209,10 +209,10 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
 
       // ─── A (arbiter/host) spawns + loads DOOM ───
       const aLoaded = await spawnAndLoadDoom(pair.pageA, NODE);
-      if (!aLoaded) { test.skip(true, 'DOOM runtime failed to load on A within 25s'); return; }
+      if (!aLoaded) { test.skip(true, 'DOOM runtime failed to load on A within 45s'); return; }
 
       // ─── B sees the SAME node via Yjs sync; load its hook + WASM ───
-      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 10000 });
+      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 30000 });
       await waitForCardHook(pair.pageB, NODE);
 
       // ─── A joins (auto player 0) ───
@@ -223,7 +223,7 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
           return w.__doomCards?.[id]?.getState().mySlot === 0;
         },
         NODE,
-        { timeout: 15000 },
+        { timeout: 30000 },
       );
 
       // ─── B requests to join → arbiter assigns slot 1 ───
@@ -293,34 +293,50 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
         );
       }
 
-      // Let both render a few frames so B's canvas holds a stable POV.
-      await pair.pageB.waitForTimeout(800);
-
-      // ─── Cross-peer visibility: snapshot B's POV, move A, snapshot again ───
+      // Snapshot B's POV (it has pixels), then move A and POLL B's canvas until
+      // it actually changes — a condition wait, not a fixed sleep that could
+      // sample before B's sim has rendered A's marine.
       const bHashBefore = await canvasHash(pair.pageB);
+      expect(bHashBefore, 'B canvas had pixels before').not.toBe(-1);
 
       await pair.pageA.evaluate(() => {
         const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
         c?.focus();
       });
+      // Hold ArrowUp for the whole poll window: A walks forward, its per-tic
+      // ticcmd broadcasts to B, whose sim moves A's marine → B's framebuffer
+      // changes. Keep the key DOWN until the poll confirms the change so a slow
+      // runner can't miss the motion between a fixed keydown/keyup pair.
       await pair.pageA.evaluate(() => {
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
       });
-      // A walks forward for ~2 s; its per-tic ticcmd broadcasts to B, whose
-      // sim moves A's marine → B's framebuffer changes.
-      await pair.pageA.waitForTimeout(2000);
+      const bCanvasChanged = await pair.pageB
+        .waitForFunction(
+          (prev) => {
+            const cv = document.querySelector('[data-testid="doom-canvas"]') as HTMLCanvasElement | null;
+            if (!cv) return false;
+            const ctx = cv.getContext('2d');
+            if (!ctx) return false;
+            const { data } = ctx.getImageData(0, 0, cv.width, cv.height);
+            let h = 2166136261;
+            for (let i = 0; i < data.length; i += 64) {
+              h ^= data[i]!;
+              h = Math.imul(h, 16777619);
+            }
+            return (h >>> 0) !== prev;
+          },
+          bHashBefore >>> 0,
+          { timeout: 20000 },
+        )
+        .then(() => true)
+        .catch(() => false);
       await pair.pageA.evaluate(() => {
         window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true }));
       });
-      await pair.pageB.waitForTimeout(600);
-
-      const bHashAfter = await canvasHash(pair.pageB);
-      expect(bHashBefore, 'B canvas had pixels before').not.toBe(-1);
-      expect(bHashAfter, 'B canvas had pixels after').not.toBe(-1);
       expect(
-        bHashAfter,
+        bCanvasChanged,
         "B's own-POV framebuffer changed after A moved (cross-peer marine visibility)",
-      ).not.toBe(bHashBefore);
+      ).toBe(true);
     } finally {
       await pair.close();
     }

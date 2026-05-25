@@ -133,7 +133,7 @@ async function spawnAndLoadDoom(page: Page, nodeId = 'sut'): Promise<boolean> {
         return ve?.read?.(id, 'loaded') === true;
       },
       nodeId,
-      { timeout: 20000 },
+      { timeout: 45000 },
     );
     // Confirm no load error.
     const err = await page.evaluate((id) => {
@@ -179,9 +179,12 @@ async function readCanvasFingerprint(page: Page): Promise<{ hash: number; nonZer
 }
 
 test.describe('@collab DOOM shared-input multiplayer', () => {
-  // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
-  // shard load → "locator.click: Test ended". Skip on CI; runs locally.
-  test.skip(!!process.env.CI, '@collab 2-context flake under CI shard load — task #97');
+  // Re-enabled on CI (task #97): runs in the dedicated non-sharded `collab`
+  // job (serial, one relay, no competing shards). NOTE the first test below
+  // stays `test.fixme` — it has a SEPARATE, documented local/CI divergence in
+  // the spectator canvas-blit path that is NOT the relay-contention flake (see
+  // its FIXME). The `host migration` test (lightweight awareness-only) now runs
+  // on CI here.
   // Cold-start DOOM (WASM fetch + 4 MB WAD + ~10 s of frame broadcasts +
   // cross-context awareness sync) routinely sits in the 20–40 s window
   // under CI load; the suite default 30 s isn't enough. We also allow
@@ -350,15 +353,15 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
       }
       const hostLoaded = await spawnAndLoadDoom(pair.pageHost, 'sut');
       if (!hostLoaded) {
-        test.skip(true, 'DOOM runtime failed to load on host within 20s');
+        test.skip(true, 'DOOM runtime failed to load on host within 45s');
         return;
       }
-      await pair.pageSpec.locator('[data-testid="doom-card"]').waitFor({ timeout: 5000 });
+      await pair.pageSpec.locator('[data-testid="doom-card"]').waitFor({ timeout: 30000 });
       // Spec page initially shows SPEC badge.
       await expect(
         pair.pageSpec.locator('[data-testid="doom-card"] .spec-badge'),
         'spectator should show SPEC badge',
-      ).toBeVisible({ timeout: 3000 });
+      ).toBeVisible({ timeout: 15000 });
 
       // Close the host's context. After ~1s the spec's pickHost will
       // re-elect: with only spec left, it becomes host.
@@ -367,7 +370,7 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
       await expect(
         pair.pageSpec.locator('[data-testid="doom-card"] .host-badge'),
         'spec should be promoted to HOST after original host departs',
-      ).toBeVisible({ timeout: 5000 });
+      ).toBeVisible({ timeout: 20000 });
     } finally {
       await pair.close();
     }

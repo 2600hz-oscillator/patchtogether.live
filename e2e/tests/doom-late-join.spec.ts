@@ -18,13 +18,15 @@
 //      pending) and the arbiter hot-drop-relaunches the current map, so B
 //      reaches GS_LEVEL with a live marine at slot 1 within seconds.
 //
-// QUARANTINE (task #97): the @collab 2-context Hocuspocus relay drops peer B
-// under CI shard load → flaky. Skip on CI; runs locally. The pending↔active
-// roster model + promotion is unit-proven (doom-roster.test.ts); the
-// spectator/pending label states are unit-proven (doom-player-identity.test.ts);
-// and the C-side start-netgame.acceptance.mjs harness deterministically proves
-// a late joiner spawns at the NEXT map (and NOT during the running one). This
-// spec is the browser-level integration check, run locally.
+// CI (task #97): this @collab 2-context spec previously flaked because the
+// single Hocuspocus relay dropped peer B under the 8-shard e2e fan-out. It now
+// runs in the dedicated, NON-SHARDED `collab` CI job (serial, workers=1, one
+// relay with no competing shards), so the contention that dropped peers is
+// gone and the spec runs on CI with condition-based waits (below). The
+// pending↔active roster model + promotion remains unit-proven
+// (doom-roster.test.ts), the spectator/pending labels are unit-proven
+// (doom-player-identity.test.ts), and the C reload path is proven by
+// start-netgame.acceptance.mjs — this is the browser-level integration gate.
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
@@ -115,7 +117,7 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
         return w.__engine?.()?.getDomain?.('video')?.read?.(id, 'loaded') === true;
       },
       nodeId,
-      { timeout: 25000 },
+      { timeout: 45000 },
     );
     return true;
   } catch {
@@ -123,7 +125,7 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
   }
 }
 
-async function waitForCardHook(page: Page, nodeId: string, timeout = 10000): Promise<void> {
+async function waitForCardHook(page: Page, nodeId: string, timeout = 30000): Promise<void> {
   await page.waitForFunction(
     (id) => {
       const w = globalThis as unknown as { __doomCards?: Record<string, unknown> };
@@ -182,15 +184,13 @@ async function slotPos(
 }
 
 test.describe('@collab DOOM late-join — hot-drop into the running map', () => {
-  // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
-  // shard load. Skip on CI; runs locally. The pending↔active model + promotion
-  // is unit-proven (doom-roster.test.ts), the spectator/pending labels are
-  // unit-proven (doom-player-identity.test.ts), and the late-joiner-spawns-at-
-  // next-map path is deterministically proven by start-netgame.acceptance.mjs.
-  test.skip(!!process.env.CI, '@collab 2-context flake under CI shard load — task #97');
+  // Re-enabled on CI (task #97): runs in the dedicated non-sharded `collab`
+  // job, so the relay-contention drops that quarantined it are gone. The
+  // hot-drop sync still has a defensive `test.skip` fallback inside the test
+  // body for the rare genuine relay miss (rather than a hard fail).
   // Cold WASM + 4 MB WAD on TWO contexts + cross-context sync + a launch + an
   // intermission round-trip + a second launch → a long window. Generous ceiling.
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
 
   test('B joins mid-level → hot-drops into the current map as active player 1', async ({ browser }) => {
     const pair = await openPair(browser);
@@ -202,8 +202,8 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
 
       // ─── A (arbiter / host) spawns + loads DOOM, joins as player 0 ───
       const aLoaded = await spawnAndLoadDoom(pair.pageA, NODE);
-      if (!aLoaded) { test.skip(true, 'DOOM runtime failed to load on A within 25s'); return; }
-      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 10000 });
+      if (!aLoaded) { test.skip(true, 'DOOM runtime failed to load on A within 45s'); return; }
+      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 30000 });
       await waitForCardHook(pair.pageB, NODE);
 
       await join(pair.pageA, NODE);
@@ -213,7 +213,7 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
           return w.__doomCards?.[id]?.getState().mySlot === 0;
         },
         NODE,
-        { timeout: 15000 },
+        { timeout: 30000 },
       );
 
       // ─── A launches coop E1M1 — A is now in a RUNNING level ───
@@ -235,7 +235,7 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
           return !!st && st.launched === true && st.gamestate === level;
         },
         [NODE, GS_LEVEL],
-        { timeout: 30000 },
+        { timeout: 45000 },
       );
 
       // ─── B joins WHILE A's level is running → HOT-DROP into the CURRENT map ─

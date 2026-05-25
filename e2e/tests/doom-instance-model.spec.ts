@@ -128,7 +128,7 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
         return ve?.read?.(id, 'loaded') === true;
       },
       nodeId,
-      { timeout: 25000 },
+      { timeout: 45000 },
     );
     const err = await page.evaluate((id) => {
       const w = globalThis as unknown as {
@@ -163,7 +163,7 @@ async function join(page: Page, nodeId: string): Promise<void> {
       return !!w.__doomCards && !!w.__doomCards[id];
     },
     nodeId,
-    { timeout: 10000 },
+    { timeout: 30000 },
   );
   await page.evaluate(async (id) => {
     const w = globalThis as unknown as {
@@ -218,14 +218,13 @@ async function readNodeRoster(page: Page, nodeId: string): Promise<Record<string
 }
 
 test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
-  // QUARANTINE (task #97): the 2-context Hocuspocus relay drops peer B under
-  // CI shard load, killing the test mid-click ("locator.click: Test ended").
-  // Skip on CI until the 2-context harness is hardened; still runs locally.
-  // MP instance model + roster + netcode are covered by the C-harness + unit suites.
-  test.skip(!!process.env.CI, '@collab 2-context flake under CI shard load — task #97');
+  // Re-enabled on CI (task #97): runs in the dedicated non-sharded `collab`
+  // job (serial, one relay, no competing shards), so the contention that
+  // dropped peer B mid-click is gone. MP instance model + roster + netcode
+  // remain covered by the C-harness + unit suites.
   // Cold WASM fetch + 4 MB WAD on TWO contexts + cross-context Yjs sync +
   // netcode start sits in the same 20-60 s window as the other doom specs.
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
 
   test('one shared node; both peers join distinct slots + start their own netcode', async ({ browser }) => {
     const pair = await openPair(browser);
@@ -241,12 +240,12 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
       // ─── A spawns the single DOOM node + loads its runtime ───
       const aLoaded = await spawnAndLoadDoom(pair.pageA, NODE);
       if (!aLoaded) {
-        test.skip(true, 'DOOM runtime failed to load on A within 25s');
+        test.skip(true, 'DOOM runtime failed to load on A within 45s');
         return;
       }
 
       // ─── B sees the SAME node via Yjs sync (does NOT spawn its own) ───
-      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 10000 });
+      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 30000 });
       // Both pages have exactly ONE doom node — the model is one node, not
       // one-node-per-peer.
       expect(await doomNodeCount(pair.pageA), 'A: one doom node').toBe(1);
@@ -260,7 +259,7 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
           return !!w.__doomCards && !!w.__doomCards[id];
         },
         NODE,
-        { timeout: 10000 },
+        { timeout: 30000 },
       );
 
       // ─── A joins first → slot 0 ───
@@ -277,7 +276,7 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
           return (raw as Record<string, unknown>)['0'] === 'aaa-userA';
         },
         NODE,
-        { timeout: 10000 },
+        { timeout: 30000 },
       );
 
       // Wait for A's claim to sync to B's node before B claims, so the slot
@@ -340,7 +339,7 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
             return Object.keys(raw as Record<string, unknown>).length === 2;
           },
           NODE,
-          { timeout: 15000 },
+          { timeout: 30000 },
         );
       }
 

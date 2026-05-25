@@ -114,7 +114,7 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
         return w.__engine?.()?.getDomain?.('video')?.read?.(id, 'loaded') === true;
       },
       nodeId,
-      { timeout: 25000 },
+      { timeout: 45000 },
     );
     const err = await page.evaluate((id) => {
       const w = globalThis as unknown as {
@@ -128,7 +128,7 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
   }
 }
 
-async function waitForCardHook(page: Page, nodeId: string, timeout = 10000): Promise<void> {
+async function waitForCardHook(page: Page, nodeId: string, timeout = 30000): Promise<void> {
   await page.waitForFunction(
     (id) => {
       const w = globalThis as unknown as { __doomCards?: Record<string, unknown> };
@@ -174,15 +174,14 @@ async function playerPos(page: Page, nodeId: string): Promise<{ x: number; y: nu
 }
 
 test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
-  // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
-  // shard load → "locator.click: Test ended". Skip on CI; runs locally. The
-  // Launch + per-peer-marine-movement path is proven by start-netgame.acceptance.mjs
-  // (C-harness) + unit suites.
-  test.skip(!!process.env.CI, '@collab 2-context flake under CI shard load — task #97');
+  // Re-enabled on CI (task #97): runs in the dedicated non-sharded `collab`
+  // job (serial, one relay, no competing shards), so the contention that ended
+  // the test mid-click is gone. The Launch + per-peer-marine-movement path
+  // remains proven by start-netgame.acceptance.mjs (C-harness) + unit suites.
   // Cold WASM + 4 MB WAD on TWO contexts + cross-context sync + netgame
   // launch + several seconds of ticks → the same 20-90 s window as the other
   // doom @collab specs. Generous ceiling.
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
 
   test('arbiter launches coop E1M1; both peers enter the level + move their own marine', async ({ browser }) => {
     const pair = await openPair(browser);
@@ -194,10 +193,10 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
 
       // ─── A (arbiter / host) spawns + loads DOOM ───
       const aLoaded = await spawnAndLoadDoom(pair.pageA, NODE);
-      if (!aLoaded) { test.skip(true, 'DOOM runtime failed to load on A within 25s'); return; }
+      if (!aLoaded) { test.skip(true, 'DOOM runtime failed to load on A within 45s'); return; }
 
       // ─── B sees the SAME node via Yjs sync; load its hook ───
-      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 10000 });
+      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 30000 });
       await waitForCardHook(pair.pageB, NODE);
 
       // ─── A joins (auto player 0 as host) ───
@@ -208,7 +207,7 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
           return w.__doomCards?.[id]?.getState().mySlot === 0;
         },
         NODE,
-        { timeout: 15000 },
+        { timeout: 30000 },
       );
 
       // ─── B requests to join → arbiter assigns slot 1 (no clobber) ───
@@ -273,7 +272,7 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
             return !!st && st.launched === true && st.gamestate === level;
           },
           [NODE, GS_LEVEL],
-          { timeout: 30000 },
+          { timeout: 45000 },
         );
       }
 
@@ -293,21 +292,33 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
       await pair.pageA.evaluate(() => {
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
       });
-      // Let A run ~1.5 s of forward motion.
-      await pair.pageA.waitForTimeout(1500);
+      // Hold ArrowUp and POLL A's marine until it actually advances from its
+      // spawn — a condition wait, not a fixed 1.5 s sleep that could undersample
+      // the motion on a slow runner.
+      const aMoved = await pair.pageA
+        .waitForFunction(
+          (args) => {
+            const [id, sx, sy] = args as [string, number, number];
+            const w = globalThis as unknown as {
+              __doomCards?: Record<string, { getPlayerState: () => { x: number; y: number } | null }>;
+            };
+            const p = w.__doomCards?.[id]?.getPlayerState();
+            return !!p && (p.x !== sx || p.y !== sy);
+          },
+          [NODE, aStart!.x, aStart!.y],
+          { timeout: 20000 },
+        )
+        .then(() => true)
+        .catch(() => false);
       await pair.pageA.evaluate(() => {
         window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true }));
       });
-      await pair.pageA.waitForTimeout(300);
+      expect(aMoved, "A's marine moved after holding ArrowUp on A").toBe(true);
 
       const aEnd = await playerPos(pair.pageA, NODE);
       const bEnd = await playerPos(pair.pageB, NODE);
       expect(aEnd, 'A pos after move').not.toBeNull();
       expect(bEnd, 'B pos after move').not.toBeNull();
-
-      // A's OWN marine moved (arrows on A move players[consoleplayer] on A).
-      const aMoved = aEnd!.x !== aStart!.x || aEnd!.y !== aStart!.y;
-      expect(aMoved, "A's marine moved after holding ArrowUp on A").toBe(true);
 
       // The two peers see DIFFERENT positions for their own marine — proves
       // separate per-peer game instances in one netgame (not a shared view):

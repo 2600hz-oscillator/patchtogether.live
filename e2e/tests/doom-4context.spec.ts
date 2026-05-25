@@ -129,7 +129,7 @@ async function spawnAndLoadDoom(page: Page, nodeId: string, x: number, y: number
         return w.__engine?.()?.getDomain?.('video')?.read?.(id, 'loaded') === true;
       },
       nodeId,
-      { timeout: 25000 },
+      { timeout: 45000 },
     );
     const err = await page.evaluate((id) => {
       const w = globalThis as unknown as {
@@ -143,7 +143,7 @@ async function spawnAndLoadDoom(page: Page, nodeId: string, x: number, y: number
   }
 }
 
-async function waitForCardHook(page: Page, nodeId: string, timeout = 12000): Promise<void> {
+async function waitForCardHook(page: Page, nodeId: string, timeout = 30000): Promise<void> {
   await page.waitForFunction(
     (id) => {
       const w = globalThis as unknown as { __doomCards?: Record<string, unknown> };
@@ -219,13 +219,16 @@ async function canvasHash(page: Page): Promise<number> {
 }
 
 test.describe('@collab DOOM 4-context coop (slice 7)', () => {
-  // QUARANTINE (task #97): 4 contexts is the worst case for the Hocuspocus
-  // relay dropping peers under CI shard load. Runs locally; CI relies on the
-  // unit suites + C acceptance harnesses for the deterministic guarantees.
-  test.skip(!!process.env.CI, '@collab 4-context — runs locally; CI relay flake per #97');
+  // Re-enabled on CI (task #97): runs in the dedicated non-sharded `collab`
+  // job (serial, one relay, no competing shards). 4 contexts is the worst case
+  // for relay contention, which is exactly why it could not survive the 8-shard
+  // fan-out — but with the relay to itself it has the headroom it needs. Every
+  // cross-context sync point below still carries a defensive `test.skip`
+  // fallback for a genuine relay miss (rather than a hard fail), and the
+  // deterministic guarantees remain proven by the unit suites + C harnesses.
   // Cold WASM + 4 MB WAD on FOUR contexts + cross-context sync + launch +
   // movement burst → generous ceiling.
-  test.setTimeout(300_000);
+  test.setTimeout(360_000);
 
   test('four peers join one coop game, each drives its own marine, all see four marines', async ({ browser }) => {
     const squad = await openSquad(browser, 4);
@@ -238,7 +241,7 @@ test.describe('@collab DOOM 4-context coop (slice 7)', () => {
       // ─── Each peer spawns + loads its OWN DOOM card ───
       for (let i = 0; i < 4; i++) {
         const ok = await spawnAndLoadDoom(squad.peers[i]!.page, NODES[i]!, 60 + i * 40, 60 + i * 40);
-        if (!ok) { test.skip(true, `DOOM runtime failed to load on peer ${i} within 25s`); return; }
+        if (!ok) { test.skip(true, `DOOM runtime failed to load on peer ${i} within 45s`); return; }
       }
 
       // ─── Every peer should eventually see all FOUR cards via Yjs sync ───
@@ -260,7 +263,7 @@ test.describe('@collab DOOM 4-context coop (slice 7)', () => {
 
       // ─── A joins (auto slot 0) ───
       await join(squad.peers[0]!.page, NODES[0]!);
-      const aGot = await waitForSlot(squad.peers[0]!.page, NODES[0]!, 0, 15000);
+      const aGot = await waitForSlot(squad.peers[0]!.page, NODES[0]!, 0, 30000);
       if (!aGot) { test.skip(true, 'host A never took slot 0 (relay flake — #97)'); return; }
 
       // ─── B/C/D request join → arbiter assigns slots 1/2/3 (no clobber) ───
@@ -334,20 +337,37 @@ test.describe('@collab DOOM 4-context coop (slice 7)', () => {
           window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
         });
       }
-      await squad.peers[0]!.page.waitForTimeout(1800);
+      // Hold ArrowUp and POLL each peer's marine until it actually advances from
+      // its spawn — a condition wait, not a fixed sleep that could undersample
+      // the motion on a loaded runner running four WASM sims at once.
+      const moved: boolean[] = [];
+      for (let i = 0; i < 4; i++) {
+        const didMove = await squad.peers[i]!.page
+          .waitForFunction(
+            (args) => {
+              const [id, sx, sy] = args as [string, number, number];
+              const w = globalThis as unknown as {
+                __doomCards?: Record<string, { getPlayerState: () => { x: number; y: number } | null }>;
+              };
+              const p = w.__doomCards?.[id]?.getPlayerState();
+              return !!p && (p.x !== sx || p.y !== sy);
+            },
+            [NODES[i]!, starts[i]!.x, starts[i]!.y],
+            { timeout: 25000 },
+          )
+          .then(() => true)
+          .catch(() => false);
+        moved.push(didMove);
+      }
       for (const p of squad.peers) {
         await p.page.evaluate(() => {
           window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true }));
         });
       }
-      await squad.peers[0]!.page.waitForTimeout(400);
 
       // ─── Each peer's OWN marine moved ───
       for (let i = 0; i < 4; i++) {
-        const end = await playerPos(squad.peers[i]!.page, NODES[i]!);
-        expect(end, `peer ${i} pos after move`).not.toBeNull();
-        const moved = end!.x !== starts[i]!.x || end!.y !== starts[i]!.y;
-        expect(moved, `peer ${i}'s marine moved after holding ArrowUp`).toBe(true);
+        expect(moved[i], `peer ${i}'s marine moved after holding ArrowUp`).toBe(true);
       }
 
       // ─── Every peer's POV changed (its own view + the cross-fed marines) ───

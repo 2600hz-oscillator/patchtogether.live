@@ -126,7 +126,7 @@ async function assetsPresent(page: Page): Promise<boolean> {
   });
 }
 
-async function cardHookReady(page: Page, id: string, timeout = 15000): Promise<void> {
+async function cardHookReady(page: Page, id: string, timeout = 30000): Promise<void> {
   await page.waitForFunction(
     (nid) => !!(globalThis as unknown as { __doomCards?: Record<string, unknown> }).__doomCards?.[nid],
     id,
@@ -161,7 +161,7 @@ async function waitForSlot(page: Page, id: string, slot: number | null, timeout 
     .catch(() => false);
 }
 
-async function waitForLevel(page: Page, id: string, timeout = 45000): Promise<boolean> {
+async function waitForLevel(page: Page, id: string, timeout = 60000): Promise<boolean> {
   return page
     .waitForFunction(
       (args) => {
@@ -210,8 +210,11 @@ async function playerPos(
 
 test.describe('@collab DOOM multiplayer — real 2-user', () => {
   // Cold WASM + 4 MB WAD on two contexts + cross-context sync + launch +
-  // movement burst → generous ceiling.
-  test.setTimeout(180_000);
+  // movement burst → generous ceiling. Bumped 180s → 240s: on a loaded CI
+  // runner the two cold WASM boots + WAD fetches + cross-context roster sync
+  // can each consume a chunk of the budget; the per-step waits below are all
+  // condition-based, so the ceiling only bites on a genuine hang.
+  test.setTimeout(240_000);
 
   test('owner hosts MP as P1, guest joins as P2, both render their own real POV', async ({
     browser,
@@ -247,7 +250,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
               (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
             ).includes(nid),
           NODE_ID,
-          { timeout: 15000 },
+          { timeout: 30000 },
         )
         .then(() => true)
         .catch(() => false);
@@ -259,10 +262,10 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       await cardHookReady(guest.page, NODE_ID);
       // Let awareness presence converge so both cards see 2 members + the owner flag.
       await expect
-        .poll(async () => (await getState(owner.page, NODE_ID)).memberIds.length, { timeout: 10000 })
+        .poll(async () => (await getState(owner.page, NODE_ID)).memberIds.length, { timeout: 30000 })
         .toBe(2);
       await expect
-        .poll(async () => (await getState(guest.page, NODE_ID)).memberIds.length, { timeout: 10000 })
+        .poll(async () => (await getState(guest.page, NODE_ID)).memberIds.length, { timeout: 30000 })
         .toBe(2);
 
       // ── Before any start: NOT single-user, NOT auto-seated ───────────────
@@ -306,7 +309,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
               }
             ).__doomCards[nid]!.getState().mpMode === 'multi',
           NODE_ID,
-          { timeout: 15000 },
+          { timeout: 30000 },
         )
         .then(() => true)
         .catch(() => false);
@@ -373,12 +376,32 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       expect(gStart!.slot, 'guest controls slot 1 (P2, distinct)').toBe(1);
 
       // The guest renders its OWN advancing framebuffer (not a frozen mirror /
-      // demo). Capture two hashes a moment apart while the sim ticks.
+      // demo). Capture an initial hash, then POLL until the framebuffer hash
+      // changes — a condition wait (the sim must tick + repaint), not a fixed
+      // sleep that could undersample on a slow runner.
       const gHashA = await canvasHash(guest.page);
-      await guest.page.waitForTimeout(1200);
-      const gHashB = await canvasHash(guest.page);
       expect(gHashA, 'guest canvas is rendering').not.toBe(-1);
-      expect(gHashB, "guest's own framebuffer advances frame-to-frame").not.toBe(gHashA);
+      const gFrameAdvanced = await guest.page
+        .waitForFunction(
+          (prev) => {
+            const cv = document.querySelector('[data-testid="doom-canvas"]') as HTMLCanvasElement | null;
+            if (!cv) return false;
+            const ctx = cv.getContext('2d');
+            if (!ctx) return false;
+            const { data } = ctx.getImageData(0, 0, cv.width, cv.height);
+            let h = 2166136261;
+            for (let i = 0; i < data.length; i += 64) {
+              h ^= data[i]!;
+              h = Math.imul(h, 16777619);
+            }
+            return (h >>> 0) !== prev;
+          },
+          gHashA,
+          { timeout: 15000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      expect(gFrameAdvanced, "guest's own framebuffer advances frame-to-frame").toBe(true);
 
       // ── A moving changes B's view (cross-peer ticcmd feed) ───────────────
       // Owner holds ArrowUp; its marine must advance in the GUEST's world (the
@@ -416,7 +439,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
             return !!p && (p.x !== sx || p.y !== sy);
           },
           [NODE_ID, oStart!.x, oStart!.y],
-          { timeout: 10000 },
+          { timeout: 20000 },
         )
         .then(() => true)
         .catch(() => false);
@@ -436,7 +459,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
             return !!s && (s.x !== bx || s.y !== by);
           },
           [NODE_ID, ownerInGuestBefore!.x, ownerInGuestBefore!.y],
-          { timeout: 15000 },
+          { timeout: 25000 },
         )
         .then(() => true)
         .catch(() => false);
@@ -493,7 +516,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       // <select>. selectOption dispatches the real change events bind:value
       // listens for — pre-fix the surrounding node-drag ate the interaction.
       const skillSel = owner.page.locator('[data-testid="doom-skill"]');
-      await expect(skillSel).toBeVisible({ timeout: 10000 });
+      await expect(skillSel).toBeVisible({ timeout: 20000 });
       await skillSel.selectOption('3'); // value = skill index (option value={i})
       await owner.page.locator('[data-testid="doom-mode"]').selectOption('deathmatch');
 
@@ -560,7 +583,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
               (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
             ).includes(nid),
           NODE_ID,
-          { timeout: 15000 },
+          { timeout: 30000 },
         )
         .then(() => true)
         .catch(() => false);
@@ -571,7 +594,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       await cardHookReady(owner.page, NODE_ID);
       await cardHookReady(anon.page, NODE_ID);
       await expect
-        .poll(async () => (await getState(owner.page, NODE_ID)).memberIds.length, { timeout: 10000 })
+        .poll(async () => (await getState(owner.page, NODE_ID)).memberIds.length, { timeout: 30000 })
         .toBe(2);
 
       // Owner hosts MP, joins as P0, launches a coop level → game is RUNNING.

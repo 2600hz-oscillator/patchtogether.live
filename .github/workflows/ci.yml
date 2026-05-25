@@ -11,12 +11,20 @@ name: CI
 #   unit            ~90 s  | independent setup (server + web vitest)
 #   art             ~90 s  | independent setup (+ dsp:build)
 #   e2e (× 8)     ~3-4 min | matrix shards 1..8/8, blob reporter, own setup each
+#                          | EXCLUDES @collab specs (--grep-invert=@collab)
+#   collab          ~4 min | dedicated NON-SHARDED job; runs the @collab
+#                          | multi-context specs serially (workers=1) against a
+#                          | single in-memory Hocuspocus relay (no DATABASE_URL).
+#                          | Serial + dedicated removes the parallel-contention
+#                          | relay drops that made these flake under the 8-shard
+#                          | fan-out (task #97).
 #   merge-reports   ~30 s  | needs: e2e — merges 8 blob-reports → HTML
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
 #   vrt             ~3-5 min | unchanged
 #
-# Critical path: max(typecheck, unit, art, slowest-e2e-shard) + merge-reports
-# ≈ 4-5 min, vs the previous ~22 min single-runner pipeline. Setup is repeated
+# Critical path: max(typecheck, unit, art, slowest-e2e-shard, collab) +
+# merge-reports ≈ 4-5 min, vs the previous ~22 min single-runner pipeline. Setup
+# is repeated
 # per-job (npm cache makes it ~70 s each), which is the deliberate trade-off
 # the plan accepted in exchange for parallelism. Free-tier concurrency cap
 # is 20 concurrent jobs; the full pipeline tops out at ~14 (8 e2e + typecheck
@@ -164,8 +172,13 @@ jobs:
 
   # -----------------------------------------------------------------------
   # e2e — Playwright E2E suite, sharded 8 ways. Each shard runs ~1/8 of the
-  # 812 specs (file-level distribution) with 4 workers, on its own runner.
+  # specs (file-level distribution) with 4 workers, on its own runner.
   # Per-shard wall-time ~3-4 min vs the previous ~5-6 min at 4 shards.
+  #
+  # EXCLUDES the @collab multi-context specs (--grep-invert=@collab): those
+  # run in the dedicated, non-sharded `collab` job below. Running them across
+  # 8 parallel shards hammered the single Hocuspocus relay and dropped peers
+  # under contention — the original reason they were quarantined (task #97).
   #
   # Reporter is `blob` so we can merge all 8 shards into a single HTML report
   # via the `merge-reports` job. Each shard uploads its blob artifact;
@@ -296,9 +309,10 @@ jobs:
       - name: Build DSP
         run: flox activate -- task dsp:build
 
-      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter)
+      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter; excludes @collab)
         run: |
           flox activate -- npx --workspace e2e playwright test \
+            --grep-invert=@collab \
             --shard=${{ matrix.shard }}/8 \
             --reporter=blob
 
@@ -322,6 +336,124 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
+  # collab — the multi-context (@collab) E2E specs, run in their OWN
+  # dedicated, NON-SHARDED job, SERIALLY (workers=1) against a single
+  # in-memory Hocuspocus relay.
+  #
+  # Why a separate job (task #97): these specs open 2-4 independent browser
+  # contexts that all connect to the one local Hocuspocus relay and depend on
+  # cross-context Yjs sync. Under the 8-shard e2e fan-out, many shards hammered
+  # the relay in parallel and it dropped peers under contention → intermittent
+  # failures that needed CI re-runs to merge. Isolating them here (one runner,
+  # one relay, one worker, no competing shards) gives the relay headroom and
+  # makes these the reliable DOOM-multiplayer + shared-rack gates they're meant
+  # to be.
+  #
+  # No Postgres service: the collab specs attach via the anon-HMAC handshake and
+  # the server boots in in-memory mode when DATABASE_URL is unset (see
+  # packages/server/src/db.ts USE_MEMORY), so this job is cheap. DOOM WASM + WAD
+  # are still needed (most @collab specs drive the DOOM card).
+  #
+  # workers=1: the specs are serialized so two heavy 2-context WASM tests never
+  # contend for the relay (or the runner's 4 vCPU) simultaneously. The suite is
+  # small enough that serial wall-time stays ~4 min.
+  # -----------------------------------------------------------------------
+  collab:
+    name: collab (multi-context, serial)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      # NO DB schema step: the collab specs run the relay in in-memory mode
+      # (DATABASE_URL unset → USE_MEMORY), which is what the cross-context sync
+      # path uses. Postgres would only add startup cost with no behavioural gain.
+
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      - name: Build DSP
+        run: flox activate -- task dsp:build
+
+      - name: Run @collab E2E (dedicated, serial — workers=1, in-memory relay)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --grep=@collab \
+            --workers=1 \
+            --reporter=blob
+
+      - name: Upload blob report (collab)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-collab
+          path: e2e/blob-report
+          retention-days: 7
+
+      - name: Upload Playwright test-results on failure (collab)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-collab
+          path: e2e/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
   # merge-reports — downloads all 8 e2e blob artifacts and merges them into
   # a single HTML report. Uploaded as `playwright-report` so the artifact
   # name matches what reviewers expect (and what the previous monolithic
@@ -341,7 +473,7 @@ jobs:
   merge-reports:
     name: Merge Playwright reports
     if: always()
-    needs: [e2e]
+    needs: [e2e, collab]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -406,7 +538,7 @@ jobs:
   ci:
     name: typecheck + unit + ART + E2E
     if: always()
-    needs: [typecheck, unit, art, e2e, merge-reports]
+    needs: [typecheck, unit, art, e2e, collab, merge-reports]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -417,20 +549,24 @@ jobs:
           UNIT: ${{ needs.unit.result }}
           ART: ${{ needs.art.result }}
           E2E: ${{ needs.e2e.result }}
+          COLLAB: ${{ needs.collab.result }}
           MERGE: ${{ needs.merge-reports.result }}
         run: |
           echo "typecheck:     $TYPECHECK"
           echo "unit:          $UNIT"
           echo "art:           $ART"
           echo "e2e:           $E2E"
+          echo "collab:        $COLLAB"
           echo "merge-reports: $MERGE"
           # `e2e` is a matrix; its aggregated result is `success` only if all
-          # shards succeeded. We don't gate on `merge-reports` so a flaky
-          # report-merge step can't block an otherwise-green run.
+          # shards succeeded. `collab` is the dedicated non-sharded @collab job.
+          # We don't gate on `merge-reports` so a flaky report-merge step can't
+          # block an otherwise-green run.
           if [[ "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
              || "$ART" != "success" \
-             || "$E2E" != "success" ]]; then
+             || "$E2E" != "success" \
+             || "$COLLAB" != "success" ]]; then
             echo "::error::One or more required CI jobs failed."
             exit 1
           fi
