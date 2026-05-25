@@ -246,7 +246,9 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
       // A joins first → slot 0; B joins → slot 1 (first empty slot).
       await join(pair.pageA, NODE);
       // Wait for A's claim to sync to B's node before B claims, so the
-      // slot assignment is deterministic (A=0, B=1).
+      // slot assignment is deterministic (A=0, B=1). The first cross-context
+      // node-data hop competes with the cold WASM/awareness traffic, so give
+      // it generous headroom.
       await pair.pageB.waitForFunction(
         (id) => {
           const w = globalThis as unknown as {
@@ -256,8 +258,13 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
           return Object.values(players).includes('aaa-userA');
         },
         NODE,
-        { timeout: 15000 },
-      );
+        { timeout: 30000 },
+      ).catch(() => {
+        throw new Error(
+          "B never saw A's roster claim (node.data.players) sync within 30s — " +
+          'cross-context node-data sync or the roster write is broken',
+        );
+      });
       await join(pair.pageB, NODE);
 
       // B's WASM has to finish loading before its netcode starts; wait for

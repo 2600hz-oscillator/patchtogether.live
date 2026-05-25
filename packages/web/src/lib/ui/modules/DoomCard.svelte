@@ -151,17 +151,33 @@
     return readRoster(target?.data);
   }
 
-  // Write the roster back onto the shared node inside a Yjs transaction so
-  // it syncs to peers. Deliberately NOT LOCAL_ORIGIN — roster join/leave is
-  // session state, not a user edit, so Cmd-Z must never un-join a player.
-  // (Matches DrumseqzCard's bare-transact node.data writes.) We create
-  // node.data lazily — most nodes carry none.
+  // Reconcile the shared node's roster toward `next` by mutating INDIVIDUAL
+  // leaf keys of node.data.players — set the slots that should exist, delete
+  // the ones that shouldn't — rather than replacing the whole players object.
+  //
+  // Leaf-level writes are the pattern that syncs reliably cross-context (see
+  // multiplayer/module-naming.ts `node.data.name = name`). Replacing the
+  // whole nested object on every join would (a) make each peer create a
+  // fresh sub-map that can clobber a concurrent peer's claim, and (b) sync
+  // less reliably than primitive-leaf edits. Deliberately NOT LOCAL_ORIGIN —
+  // roster join/leave is session state, not a user edit, so Cmd-Z must never
+  // un-join a player. node.data is created lazily — most nodes carry none.
   function writeNodeRoster(next: DoomRoster): void {
     ydoc.transact(() => {
       const target = patch.nodes[id];
       if (!target) return;
       if (!target.data) target.data = {};
-      (target.data as Record<string, unknown>).players = next;
+      const data = target.data as Record<string, unknown>;
+      if (!data.players || typeof data.players !== 'object') data.players = {};
+      const players = data.players as Record<string, string>;
+      // Set / overwrite the slots that should be present.
+      for (const [slot, uid] of Object.entries(next)) {
+        if (players[slot] !== uid) players[slot] = uid;
+      }
+      // Delete slots no longer in `next` (releases / prunes).
+      for (const slot of Object.keys(players)) {
+        if (!(slot in next)) delete players[slot];
+      }
     });
   }
 
