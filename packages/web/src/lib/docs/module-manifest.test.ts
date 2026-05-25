@@ -53,11 +53,14 @@ describe('buildModuleManifest', () => {
     expect(vco.inputs.map((p) => p.id)).toEqual(expect.arrayContaining(['pitch', 'fm']));
   });
 
-  it('singleton modules (mixmstrs, timelorde) carry maxInstances === 1', () => {
-    const mix = m.modules.find((x) => x.type === 'mixmstrs');
+  it('singleton modules (timelorde) carry maxInstances === 1', () => {
     const tl = m.modules.find((x) => x.type === 'timelorde');
-    expect(mix?.maxInstances).toBe(1);
     expect(tl?.maxInstances).toBe(1);
+  });
+
+  it('mixmstrs is NOT capped to a single instance (multiple master buses allowed)', () => {
+    const mix = m.modules.find((x) => x.type === 'mixmstrs');
+    expect(mix?.maxInstances ?? Infinity).not.toBe(1);
   });
 
   it('mixmstrs synthesizes ports/params via the build-helper fallback', () => {

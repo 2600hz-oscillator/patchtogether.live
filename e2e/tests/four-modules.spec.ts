@@ -243,7 +243,7 @@ test('MIXMSTRS: passes channel 1 through to master out', async ({ page }) => {
   expect(errors, `MIXMSTRS errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('MIXMSTRS: singleton enforced — only one instance materializes in engine', async ({ page }) => {
+test('MIXMSTRS: multiple instances allowed — both materialize in engine', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
@@ -271,5 +271,5 @@ test('MIXMSTRS: singleton enforced — only one instance materializes in engine'
     }
     return n;
   });
-  expect(count, 'only one MIXMSTRS instance allowed').toBe(1);
+  expect(count, 'both MIXMSTRS instances materialize (no singleton cap)').toBe(2);
 });
