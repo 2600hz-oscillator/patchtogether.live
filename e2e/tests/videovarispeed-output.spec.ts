@@ -115,34 +115,54 @@ async function loadAndPlay(page: import('@playwright/test').Page) {
   );
 }
 
-/** Assert the downstream VIDEO-OUT canvas shows MOVING video right now.
+/** Assert the downstream VIDEO-OUT canvas shows MOVING, real (non-idle) video.
  *
- *  The brightness check is POLLED rather than read once: immediately after a
- *  speed change the rVFC-driven upload may not yet have presented a fresh
- *  decoded frame (the element re-arms its decode cadence at the new rate /
- *  after a reverse-scrub seek), so a single eager read can momentarily catch
- *  the idle pattern (max ~20) before the next frame flows through
- *  rVFC -> upload -> VIDEO-OUT. This was the slow-CI-runner flake on shard
- *  8/8 (max=19.67 at 2x / reverse). Polling lets a fresh frame settle while
- *  still asserting REAL video brightness (max > 40, well above the idle
- *  pattern's ceiling); the frame-change check below is the actual
- *  streams-at-all-speeds regression guard. */
+ *  Both checks SAMPLE OVER A WINDOW rather than reading a single instant —
+ *  this is the fix for the slow-CI-runner shard-8/8 flake. Two cadence facts
+ *  make instantaneous reads fragile, especially in reverse:
+ *
+ *   - Brightness: right after a speed change the rVFC-driven upload may not
+ *     yet have presented a fresh decoded frame (the <video> re-arms its decode
+ *     cadence at the new rate / after a reverse-scrub seek), so a single eager
+ *     read can momentarily catch the idle pattern (max ~20) before the next
+ *     frame flows through rVFC -> upload -> VIDEO-OUT.
+ *   - Frame-change: reverse playback is INTENTIONALLY a throttled ~10 Hz
+ *     currentTime scrub (see videovarispeed-transport.ts), so the same frame
+ *     legitimately persists for ~100ms. Two fixed reads 450ms apart can land
+ *     on the same scrub step on a slow runner (the CI flake: a==b, rel=0).
+ *
+ *  So we POLL: collect signature samples across a multi-second window and
+ *  require (a) at least one sample at real-video brightness (max > 40, well
+ *  above the idle pattern's ceiling) and (b) at least two DISTINCT signatures
+ *  (the texture demonstrably updates). This still hard-fails the #291
+ *  regression — a frozen / black / idle downstream texture yields neither a
+ *  bright sample nor a changing signature — while tolerating the coarse,
+ *  by-design reverse cadence. */
 async function assertDownstreamMoving(
   page: import('@playwright/test').Page,
   label: string,
 ) {
-  await expect
-    .poll(async () => (await canvasStats(page, 'video-out-canvas')).max, {
-      timeout: 5000,
-      message: `${label}: VIDEO-OUT has bright pixels (real frame, not idle)`,
-    })
-    .toBeGreaterThan(40);
-  // Two reads ~400ms apart must differ -> the downstream texture is updating.
-  const a = await canvasSignature(page, 'video-out-canvas');
-  await page.waitForTimeout(450);
-  const b = await canvasSignature(page, 'video-out-canvas');
-  const rel = Math.abs(a - b) / Math.max(1, Math.abs(a));
-  expect(rel, `${label}: VIDEO-OUT frame changed (a=${a} b=${b} rel=${rel.toFixed(5)})`).toBeGreaterThan(0.0005);
+  const sigs = new Set<number>();
+  let maxBrightness = 0;
+  const deadline = Date.now() + 8000;
+  // Sample ~every 200ms. The throttled reverse scrub is ~10 Hz, so an 8s
+  // window captures dozens of scrub steps even on a slow runner.
+  while (Date.now() < deadline) {
+    const stats = await canvasStats(page, 'video-out-canvas');
+    if (stats.max > maxBrightness) maxBrightness = stats.max;
+    sigs.add(await canvasSignature(page, 'video-out-canvas'));
+    // Early-out once both invariants hold so the happy path stays fast.
+    if (maxBrightness > 40 && sigs.size >= 2) break;
+    await page.waitForTimeout(200);
+  }
+  expect(
+    maxBrightness,
+    `${label}: VIDEO-OUT shows a real (non-idle) frame — brightest sample over the window (max=${maxBrightness})`,
+  ).toBeGreaterThan(40);
+  expect(
+    sigs.size,
+    `${label}: VIDEO-OUT texture updates — distinct frame signatures over the window (${sigs.size})`,
+  ).toBeGreaterThanOrEqual(2);
 }
 
 test.describe('VIDEOVARISPEED output streams downstream at ALL speeds', () => {
