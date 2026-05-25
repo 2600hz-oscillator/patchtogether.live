@@ -212,6 +212,16 @@ export function releaseSlot(roster: DoomRoster, userId: string): RosterMutation 
  * the per-user assignment result (so the arbiter / tests can see who got
  * what, and who was rejected as full).
  */
+/** Order a set of requesters deterministically for slot assignment: rack
+ *  owner(s) first (lex-sorted among themselves), then everyone else lex-
+ *  sorted. Pure; shared by both assignment passes so owner-first seating is
+ *  consistent. */
+function orderRequesters(uids: readonly string[], ownerIds: readonly string[]): string[] {
+  const owners = uids.filter((u) => ownerIds.includes(u)).sort();
+  const rest = uids.filter((u) => !ownerIds.includes(u)).sort();
+  return [...owners, ...rest];
+}
+
 export interface SlotAssignment {
   roster: DoomRoster;
   changed: boolean;
@@ -225,17 +235,24 @@ export interface SlotAssignment {
 export function assignRequestedSlots(
   roster: DoomRoster,
   requesters: readonly string[],
+  ownerIds: readonly string[] = [],
 ): SlotAssignment {
   const next: DoomRoster = { ...roster };
   let changed = false;
   const rejected: string[] = [];
 
-  // Deduplicate + lex-sort so the assignment order is deterministic across
-  // peers and stable across repeated passes.
-  const sortedNew = [...new Set(requesters)]
-    .filter((uid) => typeof uid === 'string' && uid.length > 0)
-    .filter((uid) => slotForUser(next, uid) === null) // skip already-joined
-    .sort();
+  // Deduplicate + order so the assignment is deterministic across peers and
+  // stable across repeated passes. The RACK OWNER (if requesting) is ordered
+  // FIRST so it takes the lowest free slot — slot 0 / player 0 on a fresh
+  // roster — matching "the rack host is player 0". Everyone else follows in
+  // lex order. (Pre-fix this was pure lex order, so a guest whose id sorted
+  // before the owner's grabbed slot 0 — the "guest seated as P1" bug.)
+  const sortedNew = orderRequesters(
+    [...new Set(requesters)]
+      .filter((uid) => typeof uid === 'string' && uid.length > 0)
+      .filter((uid) => slotForUser(next, uid) === null), // skip already-joined
+    ownerIds,
+  );
 
   for (const uid of sortedNew) {
     const slot = firstEmptySlot(next);
@@ -398,6 +415,7 @@ export function assignSlots(
   state: DoomRosterState,
   requesters: readonly string[],
   gameInProgress: boolean,
+  ownerIds: readonly string[] = [],
 ): RosterStateAssignment {
   const active: DoomRoster = { ...state.active };
   const pending: DoomRoster = { ...state.pending };
@@ -408,11 +426,16 @@ export function assignSlots(
   // never hands out a slot already held in the other map.
   const occupancy: DoomRoster = { ...pending, ...active };
 
-  const sortedNew = [...new Set(requesters)]
-    .filter((uid) => typeof uid === 'string' && uid.length > 0)
-    // Skip anyone already seated in either map (idempotent).
-    .filter((uid) => slotForUser(occupancy, uid) === null)
-    .sort();
+  // Owner-first ordering (see assignRequestedSlots): the rack owner takes the
+  // lowest free slot — slot 0 / player 0 on a fresh roster — so the rack host
+  // is player 0 regardless of where its user id sorts.
+  const sortedNew = orderRequesters(
+    [...new Set(requesters)]
+      .filter((uid) => typeof uid === 'string' && uid.length > 0)
+      // Skip anyone already seated in either map (idempotent).
+      .filter((uid) => slotForUser(occupancy, uid) === null),
+    ownerIds,
+  );
 
   for (const uid of sortedNew) {
     const slot = firstEmptySlot(occupancy);

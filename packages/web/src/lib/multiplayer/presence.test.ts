@@ -86,5 +86,27 @@ describe('presence', () => {
       // these specific seeds we expect different hues.
       expect(a.color).not.toBe(b.color);
     });
+
+    it('publishes isRackOwner for the rack owner', () => {
+      const owner = resolvePresenceUser({
+        userId: 'user_owner',
+        displayName: 'Owner',
+        isAnon: false,
+        isRackOwner: true,
+      });
+      expect(owner.isRackOwner).toBe(true);
+    });
+
+    it('defaults isRackOwner to false for authed non-owners', () => {
+      const guest = resolvePresenceUser({ userId: 'user_guest', displayName: 'G', isAnon: false });
+      expect(guest.isRackOwner).toBe(false);
+    });
+
+    it('never marks an anon member as the rack owner', () => {
+      // Anon members can never own a rack; even a stray isRackOwner input is
+      // dropped on the anon branch.
+      const anon = resolvePresenceUser({ userId: 'anon-x', isAnon: true, isRackOwner: true });
+      expect(anon.isRackOwner).toBeUndefined();
+    });
   });
 });

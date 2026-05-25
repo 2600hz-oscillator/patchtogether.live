@@ -215,22 +215,48 @@ export function decodeFrameBuffer(env: FrameEnvelope): Uint8Array {
   return b64ToBytes(env.framebufferB64);
 }
 
-// ---------------- Host migration tie-break ----------------
+// ---------------- Host election + migration tie-break ----------------
 //
-// Spec: when the host leaves the rack the next user takes over from
-// current state. "Next" = the surviving rack-member whose user id sorts
-// lexicographically first. Deterministic + symmetric across clients →
-// no quorum needed.
+// Election order (deterministic + symmetric across clients → no quorum):
+//   1. The RACK OWNER, if they are present. The DOOM host runs the
+//      authoritative instance + is seated at player 0; the operator's
+//      requirement is "the rack host should be the arbiter/player 0", so
+//      whoever owns the rackspace is the DOOM host whenever they're online —
+//      regardless of where their user id sorts. (Pre-fix this used pure
+//      lex-min, so a guest whose id sorted before the owner's hijacked
+//      host + player 0 — the "guest seated as P1" bug.)
+//   2. Otherwise (anon rack with no resolvable owner, or owner offline) the
+//      lex-smallest live member, preserving the old deterministic fallback +
+//      giving a clean migration target when the owner leaves.
+//
+// `currentHost` stickiness is preserved EXCEPT when the rack owner is present
+// and isn't already the host — the owner reclaims the seat (so an owner who
+// joins after a guest took the temporary host seat takes it back). When the
+// owner is absent, a current host that is still live is kept (no needless
+// churn / migration storms).
 
-/** Pure: given the current host (or null on first spawn) and the live
- *  set of rack-member user ids, return who should be host this tick. */
-export function pickHost(currentHost: string | null, members: readonly string[]): string | null {
+/** Pure: given the current host (or null on first spawn), the live set of
+ *  rack-member user ids, and the set of member ids known to OWN the rack
+ *  (usually 0 or 1 — anon racks have none), return who should be host this
+ *  tick.
+ *
+ *  `ownerIds` defaults to empty so existing 2-arg callers (and the lex-min
+ *  fallback tests) keep their old behavior. */
+export function pickHost(
+  currentHost: string | null,
+  members: readonly string[],
+  ownerIds: readonly string[] = [],
+): string | null {
   if (members.length === 0) return null;
+  // 1. The rack owner, when present, is always the host. If more than one
+  //    member somehow claims ownership, the lex-smallest owner wins (stable).
+  const ownersPresent = members.filter((m) => ownerIds.includes(m)).sort();
+  if (ownersPresent.length > 0) return ownersPresent[0]!;
+  // 2. No owner present — keep a still-live current host (avoid churn)…
   if (currentHost !== null && members.includes(currentHost)) {
     return currentHost;
   }
-  // Stable: lex-sorted first id wins. Sort a copy to avoid mutating the
-  // caller's array.
+  // …else elect the lex-smallest live member (deterministic fallback).
   const sorted = [...members].sort();
   return sorted[0] ?? null;
 }
