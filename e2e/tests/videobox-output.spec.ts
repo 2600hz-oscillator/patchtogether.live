@@ -112,12 +112,22 @@ test.describe('VIDEOBOX video output reaches downstream', () => {
     expect(stats.max, `VIDEO-OUT has bright pixels (mean=${stats.mean.toFixed(1)} max=${stats.max})`).toBeGreaterThan(40);
     expect(stats.mean, `VIDEO-OUT not near-black (mean=${stats.mean.toFixed(1)})`).toBeGreaterThan(6);
 
-    // (b) Moving: two reads ~300ms apart must differ (the clip plays).
-    const a = await canvasSignature(page, 'video-out-canvas');
-    await page.waitForTimeout(350);
-    const b = await canvasSignature(page, 'video-out-canvas');
-    const rel = Math.abs(a - b) / Math.max(1, Math.abs(a));
-    expect(rel, `VIDEO-OUT frame changed (a=${a} b=${b} rel=${rel.toFixed(4)})`).toBeGreaterThan(0.001);
+    // (b) Moving: the clip plays, so the output frame must change. Poll a
+    //     window rather than comparing two fixed reads — under CI load the
+    //     rVFC-driven (~30fps as of #297) decode can stall, landing two close
+    //     reads on the same decoded frame and falsely failing. Sample until a
+    //     change beyond threshold is seen (early-out) or the deadline passes; a
+    //     genuinely frozen/black output never changes and still fails (the #288
+    //     regression guard is preserved).
+    const first = await canvasSignature(page, 'video-out-canvas');
+    let last = first, moved = false;
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      await page.waitForTimeout(150);
+      last = await canvasSignature(page, 'video-out-canvas');
+      if (Math.abs(first - last) / Math.max(1, Math.abs(first)) > 0.001) { moved = true; break; }
+    }
+    expect(moved, `VIDEO-OUT frame changed within 5s (first=${first} last=${last})`).toBe(true);
 
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
