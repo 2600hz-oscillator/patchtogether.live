@@ -56,20 +56,16 @@ export interface VideoboxData extends VideoboxSyncState {
   /** Metadata about the file the loader picked. Null until a peer picks
    *  a file. Peers without a local copy still display this. */
   fileMeta: VideoboxFileMeta | null;
-  /** Transport mode: true = LOOP (jump to START at END), false = ONE-SHOT
-   *  (stop at END). Shared across peers so the loop button + loop_toggle
-   *  gate flip the same multiplayer-visible state. v2 schema field. */
-  loop: boolean;
 }
 
 /** Default state stamped onto a freshly spawned VIDEOBOX. The schema
- *  migrate fills these in for any pre-migration (v1) nodes. */
+ *  migrate fills these in for any pre-migration nodes (none exist yet —
+ *  this is the v1 schema). */
 export const VIDEOBOX_DATA_DEFAULTS: VideoboxData = {
   isPlaying: false,
   lastSyncTime: 0,
   lastSyncPosition: 0,
   fileMeta: null,
-  loop: true,
 };
 
 /** Handle extras — the card calls these to drive the audio wiring once
@@ -92,91 +88,30 @@ export interface VideoboxHandleExtras {
 interface VideoboxParams {
   /** Reserved for future CV control; not consumed in v1. */
   gain: number;
-  // ---- Transport (driven by the card; the factory only stores them so
-  //      the engine setParam path + readParam round-trip works). ----
-  /** Varispeed knob, normalized 0..1. 0=-4×, 0.5=+1×, 1=+4×. Default 0.5. */
-  speed: number;
-  /** START slider, fraction of duration 0..1. Default 0 = beginning. */
-  start: number;
-  /** END slider, fraction of duration 0..1. Default 1 = end of video. */
-  end: number;
-  // ---- CV inputs (bipolar -1..+1), kept SEPARATE from the knob/slider
-  //      params so the cross-domain CV bridge (which writes the raw sample
-  //      into setParam(paramTarget)) does not clobber the user's knob.
-  //      The card reads both + combines them. ----
-  speedCv: number;
-  startCv: number;
-  endCv: number;
-  // ---- Gate edge-detector params (synthetic; the bridge writes the gate
-  //      level here, the card edge-detects). ----
+  /** Edge-detector param for the play_trigger gate (synthetic; the bridge
+   *  writes the gate level here, the card edge-detects). */
   cv_play_trigger: number;
-  cv_start: number;
-  cv_pause: number;
-  cv_reset: number;
-  cv_loop_toggle: number;
 }
 
 const DEFAULTS: VideoboxParams = {
   gain: 1.0,
-  speed: 0.5,
-  start: 0,
-  end: 1,
-  speedCv: 0,
-  startCv: 0,
-  endCv: 0,
   cv_play_trigger: 0,
-  cv_start: 0,
-  cv_pause: 0,
-  cv_reset: 0,
-  cv_loop_toggle: 0,
 };
-
-/** Schema migrate. v1 → v2 adds the transport fields. Old node.data lacked
- *  `loop`; default it to true (loop on) so legacy patches keep looping —
- *  the prior behavior let the element run to its native end + stop, but
- *  loop=true is the friendlier default for the new window. We only touch
- *  data we own; unknown keys pass through. Param values themselves are
- *  filled by the factory's DEFAULTS spread, so no param migration is
- *  needed (play_trigger is unchanged — existing patches keep working). */
-export function migrateVideobox(data: unknown, fromVersion: number): unknown {
-  if (fromVersion >= 2) return data;
-  if (!data || typeof data !== 'object') return data;
-  const obj = data as Record<string, unknown>;
-  if (typeof obj.loop !== 'boolean') obj.loop = true;
-  return obj;
-}
 
 export const videoboxDef: VideoModuleDef = {
   type: 'videobox',
   domain: 'video',
   label: 'VIDEOBOX',
   category: 'sources',
-  schemaVersion: 2,
-  migrate: migrateVideobox,
+  schemaVersion: 1,
   // No cap — files are user-supplied + sized; multiple cards on one rack
   // are a legitimate "switcher" use case.
   inputs: [
-    // --- Gate inputs (rising-edge). Each routes through the standard CV
-    //     bridge into a synthetic cv_<x> param; the card polls + edge-
-    //     detects (mirrors DOOM's cv-gate plumbing). port id == paramTarget
-    //     per the PR #264 convention. ---
-    // play_trigger: legacy toggle-play gate (kept so existing patches keep
-    // working — DON'T rename).
-    { id: 'play_trigger',  type: 'gate', paramTarget: 'cv_play_trigger' },
-    // start: (re)start playback from the START point.
-    { id: 'cv_start',       type: 'gate', paramTarget: 'cv_start' },
-    // pause: toggle pause / unpause.
-    { id: 'cv_pause',       type: 'gate', paramTarget: 'cv_pause' },
-    // reset: seek to the START point (= the reset-to position).
-    { id: 'cv_reset',       type: 'gate', paramTarget: 'cv_reset' },
-    // loop_toggle: flip LOOP <-> ONE-SHOT on rising edge.
-    { id: 'cv_loop_toggle', type: 'gate', paramTarget: 'cv_loop_toggle' },
-    // --- CV inputs (bipolar -1..+1). Separate paramTargets from the
-    //     knob/slider params so the bridge's raw-sample write doesn't
-    //     clobber the user's setting; the card sums them. ---
-    { id: 'speedCv', type: 'cv', paramTarget: 'speedCv', cvScale: { mode: 'linear' } },
-    { id: 'startCv', type: 'cv', paramTarget: 'startCv', cvScale: { mode: 'linear' } },
-    { id: 'endCv',   type: 'cv', paramTarget: 'endCv',   cvScale: { mode: 'linear' } },
+    // play_trigger: gate input — pulse to toggle play/pause. Routed
+    // through the standard CV bridge as a synthetic param so the
+    // engine setParam path catches edges (mirrors DOOM's cv-gate
+    // plumbing).
+    { id: 'play_trigger', type: 'gate', paramTarget: 'cv_play_trigger' },
   ],
   outputs: [
     { id: 'video',   type: 'video' },
@@ -185,22 +120,10 @@ export const videoboxDef: VideoModuleDef = {
   ],
   params: [
     { id: 'gain', label: 'Gain', defaultValue: DEFAULTS.gain, min: 0, max: 2, curve: 'linear' },
-    // Transport user params. speed: 0..1 normalized knob (0.5 = +1×).
-    // start/end: fraction of duration 0..1 (start default 0, end default 1).
-    { id: 'speed', label: 'Speed', defaultValue: DEFAULTS.speed, min: 0, max: 1, curve: 'linear' },
-    { id: 'start', label: 'Start', defaultValue: DEFAULTS.start, min: 0, max: 1, curve: 'linear' },
-    { id: 'end',   label: 'End',   defaultValue: DEFAULTS.end,   min: 0, max: 1, curve: 'linear' },
-    // CV target params (bipolar). curve:linear so setParam values arrive raw.
-    { id: 'speedCv', label: 'Speed CV', defaultValue: 0, min: -1, max: 1, curve: 'linear' },
-    { id: 'startCv', label: 'Start CV', defaultValue: 0, min: -1, max: 1, curve: 'linear' },
-    { id: 'endCv',   label: 'End CV',   defaultValue: 0, min: -1, max: 1, curve: 'linear' },
-    // Edge-detector params for the gate inputs. Hidden from the card UI
-    // (the ports render as gate handles). curve:linear so values arrive raw.
+    // Edge-detector param for the play_trigger gate. Hidden from the
+    // card UI (the port renders as a gate handle via the standard port
+    // row). curve:linear so setParam values arrive raw.
     { id: 'cv_play_trigger', label: 'Play trigger', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
-    { id: 'cv_start',        label: 'Start gate',   defaultValue: 0, min: 0, max: 1, curve: 'linear' },
-    { id: 'cv_pause',        label: 'Pause gate',   defaultValue: 0, min: 0, max: 1, curve: 'linear' },
-    { id: 'cv_reset',        label: 'Reset gate',   defaultValue: 0, min: 0, max: 1, curve: 'linear' },
-    { id: 'cv_loop_toggle',  label: 'Loop gate',    defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
   factory(ctx, _node): VideoNodeHandle {
