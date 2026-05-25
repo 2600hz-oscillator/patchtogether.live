@@ -240,12 +240,27 @@
       handleId,
     });
 
-    // Now that the element has src + metadata, wire its audio into the
-    // graph. Must happen exactly once per <video> element instance —
-    // creating a second MediaElementSource on the same element throws
-    // InvalidStateError.
+    // Now that the element has src + metadata, wire its audio into the graph.
+    // RETRY until it sticks: wireAudio() no-ops when getExtras() is still null
+    // (engine hasn't materialized this card's video node yet — slower to settle
+    // when a cross-domain audio edge is already present) or the factory's own
+    // <video> ref isn't set yet (attachExternalSource, driven by the onMount
+    // poll, hasn't run). Calling it once lost that race and left audio_l /
+    // audio_r stuck on the silent placeholder -> downstream AUDIO-OUT silent.
+    // wireAudio() is idempotent, so retrying until isAudioWired() converges as
+    // soon as both the handle and the element are ready.
+    ensureAudioWired();
+  }
+
+  let audioWireTimer: ReturnType<typeof setTimeout> | null = null;
+  function ensureAudioWired(attempt = 0): void {
+    if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
+    if (!hasLocalFile) return; // file was cleared; nothing to wire
     const extras = getExtras();
     extras?.wireAudio();
+    if (extras?.isAudioWired()) return;
+    if (attempt >= 50) return; // ~5s of 100ms retries; give up quietly
+    audioWireTimer = setTimeout(() => ensureAudioWired(attempt + 1), 100);
   }
 
   function onFileInputChange(ev: Event): void {
@@ -543,6 +558,7 @@
   onDestroy(() => {
     stopDriftLoop();
     stopGateLoop();
+    if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
     const ve = videoEngine();
     try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
     const extras = getExtras();
