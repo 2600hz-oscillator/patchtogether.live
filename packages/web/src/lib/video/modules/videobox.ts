@@ -132,7 +132,6 @@ export const videoboxDef: VideoModuleDef = {
     const { fbo, texture: outTexture } = ctx.createFbo();
 
     let sourceTexture: WebGLTexture | null = null;
-    let sourceTexAllocated = false;
     let videoEl: HTMLVideoElement | null = null;
 
     const params: VideoboxParams = { ...DEFAULTS };
@@ -196,12 +195,18 @@ export const videoboxDef: VideoModuleDef = {
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
       try {
-        if (!sourceTexAllocated) {
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoEl);
-          sourceTexAllocated = true;
-        } else {
-          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, videoEl);
-        }
+        // Full texImage2D (re-spec) every frame rather than allocate-once
+        // + texSubImage2D. The sub-image path raised GL_INVALID_OPERATION
+        // on every update here (Chromium + this WebGL2 context), so the
+        // texture stayed frozen at its first — black — upload and the
+        // output read as black downstream even while the card's own
+        // <video> kept playing. A `<video>` frame is the same size each
+        // tick, so the driver treats a same-dimension re-spec as a cheap
+        // in-place update; correctness wins over the marginal sub-image
+        // saving for a file player. (CAMERA's webcam stream happens to
+        // tolerate texSubImage2D; the file path does not — we don't rely
+        // on that quirk.)
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoEl);
       } catch (err) {
         // texImage2D on a same-origin object-URL video shouldn't tripwire
         // CORS, but log + skip if something else fails (mid-stream pause
@@ -285,7 +290,6 @@ export const videoboxDef: VideoModuleDef = {
         if (sourceTexture) gl.deleteTexture(sourceTexture);
         gl.deleteProgram(program);
         sourceTexture = null;
-        sourceTexAllocated = false;
         videoEl = null;
       },
     };
@@ -315,11 +319,10 @@ export const videoboxDef: VideoModuleDef = {
       },
       attachExternalSource(kind, el) {
         if (kind !== 'video') return;
-        // New element → reset the source-texture allocation so the next
-        // upload re-allocs against the new dimensions; tear down the
-        // audio graph so the old element's MediaElementSource doesn't
-        // linger.
-        sourceTexAllocated = false;
+        // New element → tear down the audio graph so the old element's
+        // MediaElementSource doesn't linger. The per-frame texImage2D
+        // re-specs the texture against the live element's dimensions, so
+        // there's no allocation flag to reset.
         if (videoEl !== el) unwireAudio();
         videoEl = (el as HTMLVideoElement) ?? null;
       },
