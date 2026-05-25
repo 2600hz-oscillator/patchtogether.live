@@ -86,6 +86,15 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // a file-fixture-driven E2E would be the right place to assert
   // real audio output, deferred until we ship a tiny test asset.
   videobox: 'needs uploaded video file to emit non-silence; covered by videobox.test.ts + videobox-sync.test.ts',
+  // VIDEOVARISPEED — sibling of VIDEOBOX. Same file-input source pattern:
+  // audio_l / audio_r emit silent ConstantSourceNodes (so the graph stays
+  // patchable) until the user picks a local video file, at which point
+  // wireAudio() swaps in a MediaElementAudioSourceNode -> ChannelSplitter
+  // (identical to VIDEOBOX). The bare smoke can't supply a file fixture, so
+  // it can't clear the peak-floor. Dedicated coverage: videovarispeed.test.ts
+  // (def shape) + videovarispeed-transport.test.ts (varispeed math) +
+  // videovarispeed-output.spec.ts (wired-up output path).
+  videovarispeed: 'needs uploaded video file to emit non-silence; covered by videovarispeed.test.ts + videovarispeed-transport.test.ts + videovarispeed-output.spec.ts',
 };
 
 // Reference list of modules that can't spawn under bare spawnPatch —

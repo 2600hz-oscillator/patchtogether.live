@@ -188,6 +188,8 @@
   import DoomCard from '$lib/ui/modules/DoomCard.svelte';
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   import VideoboxCard from '$lib/ui/modules/VideoboxCard.svelte';
+  // VIDEOVARISPEED — local-file player with performant varispeed transport.
+  import VideoVarispeedCard from '$lib/ui/modules/VideoVarispeedCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -380,6 +382,8 @@
     doom: DoomCard,
     // VIDEOBOX — local-file video player with multiplayer playhead sync.
     videobox: VideoboxCard,
+    // VIDEOVARISPEED — local-file player with performant varispeed transport.
+    videovarispeed: VideoVarispeedCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

@@ -177,6 +177,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   doom: { top: 'Video modules', sub: 'Sources' },
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   videobox: { top: 'Video modules', sub: 'Sources' },
+  // VIDEOVARISPEED — local-file player with performant varispeed transport.
+  videovarispeed: { top: 'Video modules', sub: 'Sources' },
 
   // ───────── Video modules → Processors ─────────
   chroma: { top: 'Video modules', sub: 'Processors' },
