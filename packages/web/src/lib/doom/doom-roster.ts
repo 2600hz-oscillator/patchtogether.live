@@ -281,3 +281,218 @@ export function pruneRoster(
   }
   return { roster: changed ? next : roster, changed, slot: null };
 }
+
+// ────────────────────────────────────────────────────────────────────────
+//  Slice 6: pending (late-join) vs active slots
+// ────────────────────────────────────────────────────────────────────────
+//
+//   A peer that joins while a game is already in progress does NOT spawn into
+//   the running map (DOOM has no mid-level join). It RESERVES a slot — so the
+//   UI can show "joining as Player N next map" and the slot can't be
+//   double-claimed — but that slot is PENDING: it does not count toward the
+//   running game's numPlayers / live marines until the arbiter launches the
+//   next map at intermission, at which point pending slots are PROMOTED to
+//   active.
+//
+//   We model this as TWO sparse slot→userId maps on the node:
+//     - `node.data.players` — the ACTIVE roster (drives numPlayers + the
+//        playeringame[] live marines; same field + semantics as slices 3-5).
+//     - `node.data.pending` — the PENDING roster (late joiners awaiting the
+//        next map). Same DoomRoster shape, same string-leaf encoding.
+//
+//   The two maps share one slot-index space: a pending entry occupies a slot
+//   index so a new active joiner (rare — joins during a level all go pending)
+//   never lands on a slot a late joiner already reserved, and so the late
+//   joiner keeps the SAME slot when promoted. `combinedRoster` is the union
+//   used for slot-occupancy queries (firstEmptySlot / isFull); `assignSlots`
+//   below routes a requester to the active OR pending map based on whether a
+//   game is currently in progress.
+
+/** A roster split into the slots that are live in the running game (active)
+ *  and the slots reserved for late joiners who will spawn at the next map
+ *  (pending). Both are the same sparse slot→userId shape; they never share a
+ *  slot index (the assignment pass keeps them disjoint). */
+export interface DoomRosterState {
+  active: DoomRoster;
+  pending: DoomRoster;
+}
+
+/** Read the pending roster off a node's `data` blob (the `pending` leaf).
+ *  Same decoding rules as readRoster (string-or-object, normalized). */
+export function readPending(data: unknown): DoomRoster {
+  if (!data || typeof data !== 'object') return {};
+  // Reuse readRoster's normalization by aliasing the `pending` field to the
+  // `players` field it expects.
+  const pending = (data as { pending?: unknown }).pending;
+  return readRoster({ players: pending });
+}
+
+/** Read both rosters off a node's `data` blob in one call. */
+export function readRosterState(data: unknown): DoomRosterState {
+  return { active: readRoster(data), pending: readPending(data) };
+}
+
+/** Serialize the pending roster to the same primitive-string leaf form as
+ *  serializeRoster (sorted keys → deterministic). */
+export function serializePending(pending: DoomRoster): string {
+  return serializeRoster(pending);
+}
+
+/** The union of active + pending as one occupancy map (active wins on the
+ *  rare overlap, which the assignment pass prevents). Used for slot-occupancy
+ *  queries so neither map double-assigns a slot the other already holds. */
+export function combinedRoster(state: DoomRosterState): DoomRoster {
+  return { ...state.pending, ...state.active };
+}
+
+/** The slot a user holds in EITHER map (active first), or null. */
+export function slotForUserInState(
+  state: DoomRosterState,
+  userId: string,
+): number | null {
+  return slotForUser(combinedRoster(state), userId);
+}
+
+/** True if the user holds an ACTIVE slot (is a live player this game). */
+export function isActivePlayer(state: DoomRosterState, userId: string): boolean {
+  return slotForUser(state.active, userId) !== null;
+}
+
+/** True if the user holds a PENDING slot (a late joiner awaiting the next
+ *  map). */
+export function isPendingPlayer(state: DoomRosterState, userId: string): boolean {
+  return slotForUser(state.pending, userId) !== null;
+}
+
+/** Result of a combined-state assignment pass: a NEW state (inputs never
+ *  mutated) + whether each map changed + the per-user assignment (slot +
+ *  whether it landed active or pending) + requesters rejected as full. */
+export interface RosterStateAssignment {
+  state: DoomRosterState;
+  /** active or pending changed. */
+  changed: boolean;
+  /** userId → { slot, pending } for every user that holds a slot after the
+   *  pass (active + pending). */
+  assigned: Record<string, { slot: number; pending: boolean }>;
+  rejected: string[];
+}
+
+/**
+ * Slice 6 arbiter-authoritative assignment over the SPLIT (active + pending)
+ * roster. Same single-writer / lex-sorted / cap-at-4 / idempotent contract as
+ * assignRequestedSlots, extended with a `gameInProgress` flag that decides
+ * which map a NEW requester lands in:
+ *
+ *   - gameInProgress === false  → new requesters go ACTIVE (they'll spawn at
+ *     the next launch — pre-game lobby, or the next-map seating after
+ *     promotion). This is the slices-3-5 behavior.
+ *   - gameInProgress === true   → new requesters go PENDING (a level is
+ *     running; they spectate until the arbiter launches the next map).
+ *
+ * Both maps share one slot space (combinedRoster occupancy), so a pending
+ * late joiner reserves a distinct slot that no active joiner can take, and
+ * keeps that same slot when promoted. Already-seated users (in either map)
+ * are left in place (idempotent re-request). The cap is the COMBINED size.
+ */
+export function assignSlots(
+  state: DoomRosterState,
+  requesters: readonly string[],
+  gameInProgress: boolean,
+): RosterStateAssignment {
+  const active: DoomRoster = { ...state.active };
+  const pending: DoomRoster = { ...state.pending };
+  let changed = false;
+  const rejected: string[] = [];
+
+  // A combined occupancy view kept in sync as we assign, so firstEmptySlot
+  // never hands out a slot already held in the other map.
+  const occupancy: DoomRoster = { ...pending, ...active };
+
+  const sortedNew = [...new Set(requesters)]
+    .filter((uid) => typeof uid === 'string' && uid.length > 0)
+    // Skip anyone already seated in either map (idempotent).
+    .filter((uid) => slotForUser(occupancy, uid) === null)
+    .sort();
+
+  for (const uid of sortedNew) {
+    const slot = firstEmptySlot(occupancy);
+    if (slot === null) {
+      rejected.push(uid);
+      continue;
+    }
+    occupancy[String(slot)] = uid;
+    if (gameInProgress) {
+      pending[String(slot)] = uid;
+    } else {
+      active[String(slot)] = uid;
+    }
+    changed = true;
+  }
+
+  const assigned: Record<string, { slot: number; pending: boolean }> = {};
+  for (const [slot, uid] of Object.entries(active)) {
+    assigned[uid] = { slot: Number(slot), pending: false };
+  }
+  for (const [slot, uid] of Object.entries(pending)) {
+    assigned[uid] = { slot: Number(slot), pending: true };
+  }
+
+  return {
+    state: changed ? { active, pending } : state,
+    changed,
+    assigned,
+    rejected,
+  };
+}
+
+/**
+ * Promote ALL pending slots to active. Called by the arbiter when it launches
+ * the next map at intermission: every late joiner who reserved a pending slot
+ * becomes a live player at the SAME slot index for the new level. Returns a
+ * new state (inputs never mutated) + whether anything was promoted + the set
+ * of promoted user ids (so the arbiter / tests can see who got seated).
+ *
+ * A pending slot whose index somehow collides with an existing active slot
+ * (should never happen — assignSlots keeps them disjoint) is dropped rather
+ * than clobbering the active occupant, so promotion can never evict a live
+ * player.
+ */
+export interface RosterPromotion {
+  state: DoomRosterState;
+  changed: boolean;
+  /** userIds moved from pending → active by this promotion. */
+  promoted: string[];
+}
+
+export function promotePending(state: DoomRosterState): RosterPromotion {
+  if (rosterSize(state.pending) === 0) {
+    return { state, changed: false, promoted: [] };
+  }
+  const active: DoomRoster = { ...state.active };
+  const promoted: string[] = [];
+  for (const [slot, uid] of Object.entries(state.pending)) {
+    if (active[slot] !== undefined && active[slot] !== uid) continue; // never evict
+    if (active[slot] === uid) continue; // already active (defensive)
+    active[slot] = uid;
+    promoted.push(uid);
+  }
+  if (promoted.length === 0) {
+    return { state, changed: false, promoted: [] };
+  }
+  return { state: { active, pending: {} }, changed: true, promoted };
+}
+
+/**
+ * Prune BOTH maps against the live member set (disconnect cleanup), extending
+ * pruneRoster to the split state. A late joiner who closes their tab before
+ * the next map vacates their pending reservation too.
+ */
+export function pruneRosterState(
+  state: DoomRosterState,
+  liveUserIds: readonly string[],
+): { state: DoomRosterState; changed: boolean } {
+  const a = pruneRoster(state.active, liveUserIds);
+  const p = pruneRoster(state.pending, liveUserIds);
+  if (!a.changed && !p.changed) return { state, changed: false };
+  return { state: { active: a.roster, pending: p.roster }, changed: true };
+}

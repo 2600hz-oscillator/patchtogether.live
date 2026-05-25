@@ -44,6 +44,7 @@ const WAD_PATH = resolve(WEB_DIR, 'static', 'doom', 'DOOM1.WAD');
 
 // gamestate_t enum (doomdef.h ordering).
 const GS_LEVEL = 0;
+const GS_INTERMISSION = 1;
 
 // DOOM key constants (doomkeys.h). KEY_UPARROW = forward.
 const KEY_UPARROW = 0xad;
@@ -101,6 +102,24 @@ function tick(M, n = 1) {
     M.ccall('dgpt_advance_clock', null, ['number'], [29]); // ~1 tic @ 35Hz
     M.ccall('dgpt_tick', null, [], []);
   }
+}
+
+// Launch (or RE-launch, e.g. the next map at intermission) a netgame on an
+// already-initialized instance, at the given coop config + slot + player count.
+function startNetGame(M, { map, numPlayers, consolePlayer }) {
+  M.ccall(
+    'dgpt_start_netgame',
+    null,
+    ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+    [0, 1, map, 1, 0, 0, 0, numPlayers, consolePlayer],
+  );
+}
+
+// Slice 6: drive the current level to its end → the next tick enters
+// GS_INTERMISSION (the between-maps tally screen the card detects to re-seat
+// pending late joiners + launch the next map).
+function exitLevel(M) {
+  M.ccall('dgpt_exit_level', null, [], []);
 }
 
 function gamestate(M) {
@@ -269,6 +288,56 @@ async function testCrossPeerVisibility(wad) {
   );
 }
 
+async function testLateJoinSeatsAtNextMap(wad) {
+  console.log('[test] slice 6: a late joiner spectates map 1, then spawns at the NEXT map');
+
+  // Arbiter A boots into map 1 as the only ACTIVE player (num_players=1 — the
+  // late joiner is still PENDING/spectating in the JS roster, so it is NOT in
+  // this map's playeringame[]). B is the late joiner: it has its WASM up but
+  // has NOT been launched into map 1 — it is spectating (renders A's frame in
+  // the real card; here it simply never entered a level).
+  const A = bootGame(await loadInstance(), wad, { consolePlayer: 0, numPlayers: 1 });
+  const B = await loadInstance();
+  B.FS.writeFile('/doom1.wad', wad);
+  B.ccall('dgpt_init', null, ['number'], [wad.length]);
+
+  tick(A, 60);
+  check(gamestate(A) === GS_LEVEL, 'arbiter A is in the level (map 1)');
+  check(consolePos(A).hasMobj, 'arbiter A spawned its own marine in map 1');
+
+  // The late joiner has NOT entered the level — it has no live player mobj for
+  // its slot (it is spectating, not playing). This is the "does NOT spawn into
+  // the running map mid-level" guarantee.
+  check(slotPos(B, 1) === null, 'late joiner B has NO marine during map 1 (spectating, not playing)');
+
+  // ── Reach intermission deterministically ──
+  exitLevel(A);
+  // A few ticks for G_DoCompleted to run + transition to GS_INTERMISSION.
+  tick(A, 5);
+  check(gamestate(A) === GS_INTERMISSION,
+    'A reaches GS_INTERMISSION after exiting the level (the card re-opens the dialog here)');
+
+  // ── Arbiter launches the NEXT map, now seating the late joiner ──
+  // This mirrors launchGame() after promotePending: numPlayers bumps to 2 and
+  // EVERY peer (A + the just-promoted B) calls dgpt_start_netgame for map 2 at
+  // its own slot. B spawns into the next map as a real player in slot 1.
+  startNetGame(A, { map: 2, numPlayers: 2, consolePlayer: 0 });
+  startNetGame(B, { map: 2, numPlayers: 2, consolePlayer: 1 });
+  tick(A, 60);
+  tick(B, 60);
+
+  check(gamestate(A) === GS_LEVEL && gamestate(B) === GS_LEVEL,
+    'both peers are in the next level (map 2) after the re-launch');
+  check(consolePos(A).hasMobj, 'arbiter A spawned into map 2');
+  // THE PROOF: the late joiner now has a live marine in its slot in the next
+  // map — it was seated at the next map, exactly as the design requires.
+  const bPos = consolePos(B);
+  check(bPos.hasMobj, 'late joiner B spawned into the NEXT map as a real player');
+  check(bPos.slot === 1, 'late joiner B holds slot 1 (its reserved pending slot)');
+  // And A sees B's marine (cross-peer): players[1] is live in A's world.
+  check(slotPos(A, 1) !== null, "A's world has a live marine for the seated late joiner (slot 1)");
+}
+
 async function testSinglePlayerUnaffected(wad) {
   console.log('[test] single-player launch (num_players=1) does not promote to netgame');
   const M = bootGame(await loadInstance(), wad, { consolePlayer: 0, numPlayers: 1 });
@@ -297,6 +366,7 @@ async function main() {
   await testEntersLevel(wad);
   await testPerPeerIndependentMovement(wad);
   await testCrossPeerVisibility(wad);
+  await testLateJoinSeatsAtNextMap(wad);
   await testSinglePlayerUnaffected(wad);
 
   console.log('');

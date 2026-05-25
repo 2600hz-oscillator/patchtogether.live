@@ -147,6 +147,10 @@ export interface DoomHandleExtras {
   /** Slice 4: current DOOM gamestate_t as an int (GS_LEVEL=0,
    *  GS_INTERMISSION=1, ...). -1 if no runtime. */
   getGameState(): number;
+  /** Slice 6: end the running level so the next tick enters GS_INTERMISSION
+   *  (where the arbiter re-opens the New Game dialog + seats pending late
+   *  joiners for the next map). No-op if the runtime isn't loaded. */
+  exitLevel(): void;
   /** Slice 4: this peer's own console player position (fixed-point) or
    *  null if not spawned. Used by the e2e per-peer-POV assertion. */
   getConsolePlayerState(): { x: number; y: number; slot: number } | null;
@@ -483,6 +487,10 @@ export const doomDef: VideoModuleDef = {
       },
       getGameState() {
         return runtime ? runtime.getGameState() : -1;
+      },
+      exitLevel() {
+        if (!runtime || !runtime.isInitialized()) return;
+        runtime.exitLevel();
       },
       getConsolePlayerState() {
         return runtime ? runtime.getConsolePlayerState() : null;

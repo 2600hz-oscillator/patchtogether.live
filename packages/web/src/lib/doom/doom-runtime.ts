@@ -418,6 +418,15 @@ export class DoomRuntime {
     return this.getGameState() === 0;
   }
 
+  /** Slice 6: end the running level. G_ExitLevel queues ga_completed; the next
+   *  tick runs G_DoCompleted → gamestate becomes GS_INTERMISSION (the between-
+   *  maps tally screen where the arbiter seats pending late joiners + launches
+   *  the next map). No-op if not initialized. */
+  exitLevel(): void {
+    if (!this.initialized) return;
+    this.mod.ccall('dgpt_exit_level', null, [], []);
+  }
+
   /** Launch (or re-launch at the next map) a netgame on this peer.
    *
    *  All peers must call this with the SAME settings; only `consolePlayer`
