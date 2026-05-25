@@ -110,33 +110,32 @@ test.describe('VIDEOBOX upload perf (rVFC-driven)', () => {
     // meaningless under parallel workers). The "achievable engine fps" we get
     // is a faithful proxy for downstream smoothness: every step() runs the
     // full topo draw incl. the VIDEOBOX upload + VIDEO-OUT pass.
-    const r = await page.evaluate(async () => {
+    // Decoupling guard (CI-safe): step() as fast as JS allows in a TIGHT
+    // SYNC loop with NO gl.finish. The tight loop starves the event loop so
+    // rVFC decode callbacks can't fire mid-loop — post-fix the upload is
+    // never marked dirty, so uploadsPerStep ~= 0. Pre-fix, step() re-uploaded
+    // the full frame UNCONDITIONALLY on every call, so uploadsPerStep was
+    // exactly 1.0. That contrast is the regression guard. We deliberately do
+    // NOT gl.finish() here: hammering it per-step crashes headless CI's
+    // software-GL renderer process (the page closes mid-evaluate).
+    const r = await page.evaluate((windowMs) => {
       const w = globalThis as unknown as {
         __engine: () => { getDomain: (d: string) => {
-          gl: WebGL2RenderingContext;
           step: () => void;
           read: (id: string, k: string) => unknown;
         } };
       };
       const vid = w.__engine().getDomain('video');
-      const gl = vid.gl;
       const u0 = vid.read('vb', 'uploadCount') as number;
       let steps = 0;
       const t0 = performance.now();
-      while (performance.now() - t0 < 1500) {
+      while (performance.now() - t0 < windowMs) {
         vid.step();
-        gl.finish(); // block until the GPU has drained this step's uploads
         steps++;
       }
-      const elapsed = (performance.now() - t0) / 1000;
       const u1 = vid.read('vb', 'uploadCount') as number;
-      return {
-        achievableFps: steps / elapsed,
-        msPerStep: (elapsed * 1000) / steps,
-        uploads: u1 - u0,
-        uploadsPerStep: (u1 - u0) / steps,
-      };
-    });
+      return { steps, uploads: u1 - u0, uploadsPerStep: (u1 - u0) / steps };
+    }, 600);
 
     // Separately: confirm uploads DO still happen as the clip plays (the
     // texture isn't frozen). We step() with a macrotask gap so the event loop
@@ -165,28 +164,61 @@ test.describe('VIDEOBOX upload perf (rVFC-driven)', () => {
       return { uploadsDelta: u1 - u0, uploadsPerSec: (u1 - u0) / elapsed };
     });
 
+    // Timing probe — LOCAL ONLY. A realistic per-step GPU cost needs a
+    // gl.finish() after each step to put the upload+draw on the clock, but
+    // hammering gl.finish() in a tight loop crashes headless CI's software-GL
+    // renderer (the page closes mid-evaluate). So we assert the FPS floor
+    // only off-CI, where a real GPU + a foreground tab exist; CI still
+    // enforces the decoupling + liveness guards above, which are what
+    // actually prove the fix. The before/after numbers in the PR body come
+    // from this probe on a dev machine.
+    let timing: { achievableFps: number; msPerStep: number } | null = null;
+    if (!process.env.CI) {
+      timing = await page.evaluate((windowMs) => {
+        const w = globalThis as unknown as {
+          __engine: () => { getDomain: (d: string) => {
+            gl: WebGL2RenderingContext;
+            step: () => void;
+          } };
+        };
+        const vid = w.__engine().getDomain('video');
+        const gl = vid.gl;
+        let steps = 0;
+        const t0 = performance.now();
+        while (performance.now() - t0 < 1000) {
+          vid.step();
+          gl.finish(); // block until the GPU has drained this step's uploads
+          steps++;
+        }
+        const elapsed = (performance.now() - t0) / 1000;
+        return { achievableFps: steps / elapsed, msPerStep: (elapsed * 1000) / steps };
+      }, 1000);
+    }
+
     // eslint-disable-next-line no-console
     console.log(
       `[videobox-perf] clip=${clipDims.w}x${clipDims.h} rvfc=${rvfcSupported} ` +
-      `achievableFps=${r.achievableFps.toFixed(0)} msPerStep=${r.msPerStep.toFixed(3)} ` +
-      `uploadsPerStep=${r.uploadsPerStep.toFixed(3)} decodeUploadsPerSec=${decode.uploadsPerSec.toFixed(1)}`,
+      `uploadsPerStep=${r.uploadsPerStep.toFixed(3)} decodeUploadsPerSec=${decode.uploadsPerSec.toFixed(1)} ` +
+      (timing
+        ? `achievableFps=${timing.achievableFps.toFixed(0)} msPerStep=${timing.msPerStep.toFixed(3)}`
+        : 'timing=skipped(CI)'),
     );
 
     // The whole point of the fix: the engine does NOT pay a full-res
-    // texImage2D(<video>) on every step. Because we drive step() far faster
-    // than the clip's ~30fps decode (and rVFC only marks a frame dirty at
-    // decode rate), the steady-state uploads-per-step must be well under 1.
-    // (Pre-fix this was exactly 1.0 — every step re-uploaded the full frame.)
+    // texImage2D(<video>) on every step. In the tight sync loop above rVFC
+    // can't fire, so post-fix uploadsPerStep ~= 0; pre-fix it was exactly 1.0
+    // (every step re-uploaded the full frame). Well under 0.5 either way.
     expect(r.uploadsPerStep, `uploadsPerStep ${r.uploadsPerStep.toFixed(3)} << 1 (not every step)`).toBeLessThan(0.5);
 
     // Uploads still HAPPEN as the clip plays (texture refreshes, not frozen).
     expect(decode.uploadsDelta, `uploads advanced (${decode.uploadsDelta}) — texture live`).toBeGreaterThan(0);
 
-    // And the per-step budget must leave plenty of headroom for >=24fps: each
-    // engine step (incl. upload + downstream pass) must complete in well under
-    // the 41.6ms a 24fps frame budget allows. Generous ceiling for slow CI
-    // GPUs while still catching a regression back to the ~480MB/s firehose.
-    expect(r.msPerStep, `msPerStep ${r.msPerStep.toFixed(2)} within 24fps budget`).toBeLessThan(20);
-    expect(r.achievableFps, `achievableFps ${r.achievableFps.toFixed(0)} >= 24`).toBeGreaterThanOrEqual(24);
+    // Per-step budget must leave headroom for >=24fps (local GPU only — see
+    // above for why this is skipped on CI). Generous ceiling for slow dev
+    // GPUs while still catching a regression to the ~480MB/s firehose.
+    if (timing) {
+      expect(timing.msPerStep, `msPerStep ${timing.msPerStep.toFixed(2)} within 24fps budget`).toBeLessThan(20);
+      expect(timing.achievableFps, `achievableFps ${timing.achievableFps.toFixed(0)} >= 24`).toBeGreaterThanOrEqual(24);
+    }
   });
 });
