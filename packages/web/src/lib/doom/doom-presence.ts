@@ -72,6 +72,73 @@ export function decodeKey(raw: unknown): KeyEnvelope | null {
   };
 }
 
+// ---------------- Host-side relay receiver (edge-triggered) ----------------
+//
+// PHANTOM-INPUT BUG (fixed here): the host's awareness 'update' listener
+// fires on EVERY awareness change in the rack — not just on a remote
+// keystroke. The host's own ~10 Hz framebuffer broadcast
+// (setLocalStateField('doom:<id>:frame', …)) alone emits ~10 updates/sec,
+// and host-election / cursor / presence churn add more. The original
+// receiver re-read each remote client's CURRENT `doom:<id>:key` field on
+// every such update and re-pushed it into the runtime unconditionally.
+//
+// Result: a single still-held (or not-yet-cleared) remote key envelope —
+// e.g. a second browser tab the user forgot about, which counts as a
+// distinct awareness client — got re-injected as a fresh key event ~10×/sec.
+// For KEY_DOWNARROW that reads in-game as the marine being shoved backward
+// continuously with no key pressed ("random CV on the movement pot").
+//
+// Fix: edge-trigger. Track the last key-envelope `ts` we relayed per
+// source client and only push when a STRICTLY NEWER envelope arrives.
+// Repeated observations of the same (sticky) envelope across unrelated
+// awareness updates are ignored. This is a pure reducer so it's unit-
+// testable without a live Yjs provider.
+
+/** Per-source-client cursor of the last relayed key-envelope timestamp.
+ *  Keyed by awareness clientID. Callers own one map per DOOM card. */
+export type RelayCursor = Map<number, number>;
+
+/** One key event the host should push into its runtime this update. */
+export interface RelayPush {
+  doomKey: number;
+  pressed: boolean;
+}
+
+/**
+ * Given the current awareness states + the cursor of already-relayed
+ * timestamps, return ONLY the key events that are new since last call and
+ * advance the cursor in place. Pure aside from the cursor mutation:
+ * calling it twice with the same states + cursor yields an empty list the
+ * second time (the dedup that kills the phantom re-injection).
+ *
+ *  - skips the host's own client (selfClientId)
+ *  - skips envelopes the host itself authored (selfUserId) — defends
+ *    against a host that is ALSO relaying (shouldn't happen, but cheap)
+ *  - skips envelopes for a different module id
+ *  - skips null / malformed `doom:<id>:key` fields (cleared envelopes)
+ */
+export function collectIncomingKeyPushes(args: {
+  states: Map<number, Record<string, unknown>>;
+  moduleId: string;
+  selfClientId: number;
+  selfUserId: string;
+  cursor: RelayCursor;
+}): RelayPush[] {
+  const { states, moduleId, selfClientId, selfUserId, cursor } = args;
+  const pushes: RelayPush[] = [];
+  states.forEach((state, clientId) => {
+    if (clientId === selfClientId) return;
+    const env = decodeKey((state as Record<string, unknown>)[`doom:${moduleId}:key`]);
+    if (!env || env.moduleId !== moduleId) return;
+    if (env.srcUserId === selfUserId) return;
+    const last = cursor.get(clientId);
+    if (last !== undefined && env.ts <= last) return; // already relayed — skip the sticky re-read.
+    cursor.set(clientId, env.ts);
+    pushes.push({ doomKey: env.doomKey, pressed: env.pressed });
+  });
+  return pushes;
+}
+
 // ---------------- Frame envelopes ----------------
 
 export interface FrameEnvelope {

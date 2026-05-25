@@ -12,7 +12,9 @@ import {
   decodeFrame,
   decodeFrameBuffer,
   pickHost,
+  collectIncomingKeyPushes,
   type KeyEnvelope,
+  type RelayCursor,
 } from './doom-presence';
 
 describe('encodeKey / decodeKey — key envelope round-trip', () => {
@@ -57,6 +59,89 @@ describe('encodeKey / decodeKey — key envelope round-trip', () => {
     expect(decodeKey({ kind: 'key', moduleId: 1 })).toBeNull();
     expect(decodeKey({ kind: 'key', moduleId: 'x', srcUserId: 'y', doomKey: 'not a number', pressed: true, ts: 0 })).toBeNull();
     expect(decodeKey({ kind: 'key', moduleId: 'x', srcUserId: 'y', doomKey: 0, pressed: 'truthy', ts: 0 })).toBeNull();
+  });
+});
+
+describe('collectIncomingKeyPushes — edge-triggered host relay (phantom-input regression)', () => {
+  const MODULE = 'doom-1';
+  const HOST_CLIENT = 1;
+  const HOST_USER = 'aaa-host';
+  const SPEC_CLIENT = 2;
+  const SPEC_USER = 'bbb-spec';
+
+  function specStateWithKey(env: KeyEnvelope | null): Map<number, Record<string, unknown>> {
+    return new Map<number, Record<string, unknown>>([
+      [HOST_CLIENT, { user: { id: HOST_USER }, [`doom:${MODULE}:frame`]: { ts: 999 } }],
+      [SPEC_CLIENT, { user: { id: SPEC_USER }, [`doom:${MODULE}:key`]: env }],
+    ]);
+  }
+
+  function key(doomKey: number, pressed: boolean, ts: number): KeyEnvelope {
+    return encodeKey({ kind: 'key', moduleId: MODULE, srcUserId: SPEC_USER, doomKey, pressed, ts });
+  }
+
+  function collect(states: Map<number, Record<string, unknown>>, cursor: RelayCursor) {
+    return collectIncomingKeyPushes({
+      states, moduleId: MODULE, selfClientId: HOST_CLIENT, selfUserId: HOST_USER, cursor,
+    });
+  }
+
+  it('relays a remote key envelope exactly once, NOT on every awareness update', () => {
+    const cursor: RelayCursor = new Map();
+    // DOWNARROW keydown from the spectator (ts=100).
+    const down = key(0xaf, true, 100);
+    const states = specStateWithKey(down);
+
+    // First observation: push the keydown.
+    expect(collect(states, cursor)).toEqual([{ doomKey: 0xaf, pressed: true }]);
+
+    // The host's 10 Hz frame broadcast (and any other awareness churn) fires
+    // many more 'update' events while the SAME key field is still present.
+    // The pre-fix code re-pushed DOWNARROW each time → continuous backward
+    // drift. Edge-triggering must yield ZERO further pushes.
+    for (let i = 0; i < 20; i++) {
+      expect(collect(states, cursor)).toEqual([]);
+    }
+  });
+
+  it('relays a strictly-newer envelope (keyup) once, then stays quiet', () => {
+    const cursor: RelayCursor = new Map();
+    expect(collect(specStateWithKey(key(0xaf, true, 100)), cursor))
+      .toEqual([{ doomKey: 0xaf, pressed: true }]);
+    // keyup arrives with a newer ts.
+    expect(collect(specStateWithKey(key(0xaf, false, 200)), cursor))
+      .toEqual([{ doomKey: 0xaf, pressed: false }]);
+    // Re-observing the keyup envelope (sticky field) does nothing.
+    expect(collect(specStateWithKey(key(0xaf, false, 200)), cursor)).toEqual([]);
+  });
+
+  it('ignores a cleared (null) key field', () => {
+    const cursor: RelayCursor = new Map();
+    expect(collect(specStateWithKey(null), cursor)).toEqual([]);
+  });
+
+  it('never relays the host its own client / own-authored envelopes', () => {
+    const cursor: RelayCursor = new Map();
+    // Host client carries a key field authored by the host itself.
+    const states = new Map<number, Record<string, unknown>>([
+      [HOST_CLIENT, {
+        user: { id: HOST_USER },
+        [`doom:${MODULE}:key`]: encodeKey({ kind: 'key', moduleId: MODULE, srcUserId: HOST_USER, doomKey: 0xaf, pressed: true, ts: 100 }),
+      }],
+    ]);
+    expect(collect(states, cursor)).toEqual([]);
+  });
+
+  it('ignores envelopes for a different module id', () => {
+    const cursor: RelayCursor = new Map();
+    const states = new Map<number, Record<string, unknown>>([
+      [SPEC_CLIENT, {
+        user: { id: SPEC_USER },
+        [`doom:${MODULE}:key`]: encodeKey({ kind: 'key', moduleId: 'OTHER', srcUserId: SPEC_USER, doomKey: 0xaf, pressed: true, ts: 100 }),
+      }],
+    ]);
+    // The field key resolves but the decoded moduleId mismatches → skipped.
+    expect(collect(states, cursor)).toEqual([]);
   });
 });
 
