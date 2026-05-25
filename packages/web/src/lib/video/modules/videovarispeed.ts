@@ -42,6 +42,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
 import type { VideoboxFileMeta } from './videobox-sync';
 
 // Passthrough sample of the source texture, with an idle pattern so an empty
@@ -207,6 +208,12 @@ export const videoVarispeedDef: VideoModuleDef = {
     let silentRight: ConstantSourceNode | null = null;
     let mediaElSrc: MediaElementAudioSourceNode | null = null;
     let splitter: ChannelSplitterNode | null = null;
+    // Silent keep-alive (src -> gain(0) -> destination) so the AudioContext
+    // pulls this element in real time and Chromium doesn't throttle its decode
+    // to ~1 fps when no audio is patched. WITHOUT this, multiple VIDEOVARISPEED
+    // sources all throttle except one -> "only one video plays at a time".
+    // Shared with VIDEOBOX / CAMERA via video-audio-keepalive.ts.
+    let keepAlive: VideoAudioKeepAlive | null = null;
     let audioWired = false;
 
     if (ctx.audioCtx) {
@@ -307,22 +314,33 @@ export const videoVarispeedDef: VideoModuleDef = {
       if (!videoEl) return;
       const ac = ctx.audioCtx;
       try {
-        const src = ac.createMediaElementSource(videoEl);
+        // Build the silent keep-alive (src -> gain(0) -> destination + resume
+        // a suspended context). It also hands back the MediaElementSource so we
+        // fan it into our splitter for audio_l / audio_r. The keep-alive is THE
+        // fix for the multi-video throttle: without a path to the destination
+        // the element is never pulled and Chromium drops its decode to ~1 fps.
+        const ka = createVideoAudioKeepAlive(ac, videoEl);
         const split = ac.createChannelSplitter(2);
-        src.connect(split);
-        mediaElSrc = src;
+        ka.source.connect(split);
+        keepAlive = ka;
+        mediaElSrc = ka.source;
         splitter = split;
         audioSources.set('audio_l', { node: split, output: 0 });
         audioSources.set('audio_r', { node: split, output: 1 });
         audioWired = true;
       } catch (err) {
+        // InvalidStateError: the element already has a MediaElementSource (card
+        // hot-reload). Stay on the silent CSN fallback so downstream audio
+        // patches don't pop.
         console.warn('[videovarispeed] createMediaElementSource failed:', err);
       }
     }
 
     function unwireAudio(): void {
+      if (keepAlive) keepAlive.disconnect();
       if (splitter) try { splitter.disconnect(); } catch { /* */ }
       if (mediaElSrc) try { mediaElSrc.disconnect(); } catch { /* */ }
+      keepAlive = null;
       mediaElSrc = null;
       splitter = null;
       audioWired = false;
@@ -401,6 +419,10 @@ export const videoVarispeedDef: VideoModuleDef = {
         if (key === 'extras') return extras;
         if (key === 'hasVideoElement') return videoEl !== null;
         if (key === 'audioWired') return audioWired;
+        // Keep-alive instrumentation: lets the e2e assert the silent
+        // gain(0)->destination bridge is live (the thing that stops the
+        // <video> decode from throttling when N sources are unpatched).
+        if (key === 'hasKeepAlive') return keepAlive !== null;
         if (key === 'rvfcSupported') return rvfcSupported;
         return undefined;
       },
