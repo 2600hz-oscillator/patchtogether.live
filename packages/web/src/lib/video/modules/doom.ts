@@ -129,6 +129,27 @@ export interface DoomHandleExtras {
    *  one (received via Yjs awareness). Buffer must be BGRA8 at the
    *  engine's expected DOOM resolution. */
   pushRemoteFramebuffer(buf: Uint8Array): void;
+  /** Slice 4: launch a netgame on this peer's runtime with the agreed
+   *  settings + this peer's slot. No-op if the runtime isn't loaded. */
+  startNetGame(
+    settings: {
+      deathmatch: number;
+      episode: number;
+      map: number;
+      skill: number;
+      nomonsters: number;
+      fastMonsters: number;
+      respawnMonsters: number;
+      numPlayers: number;
+    },
+    consolePlayer: number,
+  ): void;
+  /** Slice 4: current DOOM gamestate_t as an int (GS_LEVEL=0,
+   *  GS_INTERMISSION=1, ...). -1 if no runtime. */
+  getGameState(): number;
+  /** Slice 4: this peer's own console player position (fixed-point) or
+   *  null if not spawned. Used by the e2e per-peer-POV assertion. */
+  getConsolePlayerState(): { x: number; y: number; slot: number } | null;
 }
 
 export const doomDef: VideoModuleDef = {
@@ -446,6 +467,16 @@ export const doomDef: VideoModuleDef = {
       pushDoomKey,
       snapshotFramebuffer,
       pushRemoteFramebuffer,
+      startNetGame(settings, consolePlayer) {
+        if (!runtime || !runtime.isInitialized()) return;
+        runtime.startNetGame(settings, consolePlayer);
+      },
+      getGameState() {
+        return runtime ? runtime.getGameState() : -1;
+      },
+      getConsolePlayerState() {
+        return runtime ? runtime.getConsolePlayerState() : null;
+      },
     };
 
     return {

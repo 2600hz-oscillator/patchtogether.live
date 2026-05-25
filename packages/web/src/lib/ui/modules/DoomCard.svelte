@@ -60,13 +60,19 @@
   import {
     readRoster,
     serializeRoster,
-    claimSlot,
     pruneRoster,
     slotForUser,
     isFull,
+    assignRequestedSlots,
+    rosterSize,
     type DoomRoster,
   } from '$lib/doom/doom-roster';
-  import { DoomNetcode } from '$lib/doom/doom-netcode';
+  import {
+    DoomNetcode,
+    type DoomGameSettings,
+    type DoomGameMode,
+    type GameStartEnvelope,
+  } from '$lib/doom/doom-netcode';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -96,6 +102,79 @@
   let netStarted = $state(false);           // our DoomNetcode is running
   let isNetArbiter = $state(false);         // lex-min player == arbiter
   let netcode: DoomNetcode | null = null;
+  // ---- Slice 4: New Game dialog + Launch state ----
+  //
+  // The arbiter (rack host = lex-min member = player 0) picks mode/skill/
+  // episode/map + hits Launch. Launch broadcasts the settings via the
+  // netcode; every joined peer's onGameStart fires + calls
+  // extras.startNetGame(settings, mySlot). Non-arbiter peers see "waiting
+  // for host to start…". After Launch, the dialog is locked until the level
+  // ends (gamestate == GS_INTERMISSION), where the arbiter can pick the next
+  // map.
+  let mode = $state<DoomGameMode>('coop');
+  let skill = $state(1);     // 0..4 (ITYTD..Nightmare); default skill 2 = idx 1
+  let episode = $state(1);   // 1..3 (shareware = episode 1 only)
+  let mapNum = $state(1);    // 1..9
+  let launched = $state(false);           // a netgame has been launched
+  let gamestate = $state<number>(-1);     // polled DOOM gamestate_t (GS_LEVEL=0)
+  // The labels mirror DOOM's difficulty names; index = skill_t value.
+  const SKILL_LABELS = ["I'm Too Young To Die", 'Hey, Not Too Rough', 'Hurt Me Plenty', 'Ultra-Violence', 'Nightmare!'];
+  const MODE_OPTIONS: DoomGameMode[] = ['coop', 'deathmatch', 'deathmatch-2.0', 'survival'];
+
+  /** The arbiter for SESSION lifecycle (New Game / Launch / slot assignment)
+   *  is the rack host — the single writer. (The netcode arbiter, isNetArbiter,
+   *  is the lex-min JOINED PLAYER; host is the lex-min MEMBER. They coincide
+   *  because the host always auto-joins as player 0, but isHost is the
+   *  authoritative single-writer signal for roster + launch.) */
+  function isSessionArbiter(): boolean { return isHost; }
+
+  /** Build the net_gamesettings_t-equivalent from the dialog selections. */
+  function buildSettings(): DoomGameSettings {
+    // survival = coop + respawning monsters (no distinct DOOM global).
+    const deathmatch = mode === 'deathmatch' ? 1 : mode === 'deathmatch-2.0' ? 2 : 0;
+    const respawnMonsters = mode === 'survival' ? 1 : 0;
+    return {
+      deathmatch,
+      episode,
+      map: mapNum,
+      skill,
+      nomonsters: 0,
+      fastMonsters: 0,
+      respawnMonsters,
+      numPlayers: Math.max(1, rosterSize(roster)),
+    };
+  }
+
+  /** Launch (arbiter only): broadcast the chosen settings to all joined
+   *  peers. Each peer (incl. the arbiter) starts its own WASM netgame via
+   *  the onGameStart callback. */
+  function launchGame(): void {
+    if (!isSessionArbiter()) return;
+    if (mySlot === null) return;          // arbiter must be a player
+    const settings = buildSettings();
+    if (netcode) {
+      // Multiplayer: broadcast → every joined peer (incl. arbiter) starts.
+      netcode.broadcastGameStart(settings);
+    } else {
+      // Lone peer (single-player, no netcode): start directly.
+      applyGameStart({ launchId: 1, settings });
+    }
+  }
+
+  /** Apply a launch on THIS peer: start the WASM netgame at our own slot. */
+  function applyGameStart(env: GameStartEnvelope): void {
+    const slot = mySlot;
+    if (slot === null) return;            // spectators don't start a game
+    const extras = getExtras();
+    if (!extras) return;
+    extras.startNetGame(env.settings, slot);
+    launched = true;
+    // Mirror the chosen settings into the dialog so the arbiter's controls
+    // reflect what's running (and the next-map pick starts from here).
+    mapNum = env.settings.map;
+    episode = env.settings.episode;
+    skill = env.settings.skill;
+  }
   /** Last remote framebuffer received via awareness — spectator path. The
    *  card-side rAF tick prefers this over `extras.snapshotFramebuffer()`
    *  (which is null on spectator pages because they never load WASM). */
@@ -171,24 +250,82 @@
     });
   }
 
-  // Join: claim the first empty slot for this user, then bring up our own
-  // runtime + netcode. Idempotent — re-joining when already in the roster
-  // just (re)ensures the local instance is running.
+  // ---- Slice 4: arbiter-authoritative slot assignment ----
+  //
+  // The slice-3 join was last-write-wins on a JSON string leaf: two peers
+  // joining at once both read {} → both compute slot 0 → the second write
+  // clobbers the first with no Yjs conflict. The fix makes the roster
+  // SINGLE-WRITER: a peer wanting to play sets an awareness "join-request"
+  // field (its own userId); only the ARBITER (rack host) writes the roster,
+  // assigning slots from the batch of outstanding requests in one pass
+  // (assignRequestedSlots). Concurrent requests therefore get DISTINCT slots
+  // — the arbiter sees both and never clobbers.
+  function joinReqField(): string { return `doom:${id}:join-req`; }
+
+  // Join: a peer REQUESTS to play by raising its join-request flag, then
+  // brings up its own runtime (a player always runs its own WASM for its
+  // POV). The arbiter assigns the actual slot; this peer reads it back from
+  // the synced roster (syncRosterState). Idempotent. The arbiter joining
+  // itself short-circuits straight to the assignment pass (it IS the writer).
   async function joinGame(): Promise<void> {
     const me = resolveLocalUserId();
-    const cur = readNodeRoster();
-    const { roster: next, changed, slot } = claimSlot(cur, me);
-    if (slot === null) return; // roster full — no-op (DOOM is full)
-    if (changed) writeNodeRoster(next);
-    // Reflect locally immediately (the awareness/sync round-trip lags).
-    roster = next;
-    mySlot = slot;
-    // A joined player ALWAYS runs its own WASM (host or not) — that is the
-    // per-peer POV. Load it if we haven't.
-    if (loadStatus !== 'ready') {
-      await tryLoad();
+    // Already a player? Just ensure our local instance is up.
+    if (slotForUser(readNodeRoster(), me) !== null) {
+      if (loadStatus !== 'ready') await tryLoad();
+      startNetcodeIfNeeded();
+      return;
     }
+    if (isFull(readNodeRoster())) return; // game full — no-op
+    // Raise the request flag so the arbiter assigns us a slot.
+    const provider = providerCtx.get();
+    provider?.awareness?.setLocalStateField(joinReqField(), me);
+    // Start loading our WASM now (the assignment + sync round-trip lags;
+    // having the runtime ready means netcode can start the moment our slot
+    // arrives).
+    if (loadStatus !== 'ready') await tryLoad();
+    // If we ARE the arbiter, run the assignment pass immediately (single
+    // writer = no round-trip needed for our own slot).
+    if (isSessionArbiter()) assignSlotsAsArbiter();
     startNetcodeIfNeeded();
+  }
+
+  /** Arbiter-only: collect outstanding join-requests from awareness + the
+   *  arbiter's own auto-join, assign slots authoritatively, and write the
+   *  roster (single writer). Runs on every awareness update so requests
+   *  that arrive after the arbiter's first pass still get served. */
+  function assignSlotsAsArbiter(): void {
+    if (!isSessionArbiter()) return;
+    // Single-user rack: leave the roster empty + don't auto-join. A lone
+    // host just plays single-player via the existing no-netcode path
+    // (clicking load boots DOOM's normal loop); no New Game / Launch is
+    // engaged. This keeps single-player byte-identical to pre-slice-4.
+    if (memberIds.length <= 1 && rosterSize(readNodeRoster()) === 0) return;
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    const me = resolveLocalUserId();
+    const cur = readNodeRoster();
+
+    // Gather requesters: every member with a raised join-request flag, plus
+    // the arbiter itself (the host is always player 0 — it auto-joins so the
+    // New Game dialog has a player to launch as, once there's >1 member).
+    const requesters = new Set<string>([me]);
+    if (aw) {
+      for (const [, state] of aw.getStates()) {
+        const s = state as Record<string, unknown> | undefined;
+        const req = s?.[joinReqField()];
+        if (typeof req === 'string' && req.length > 0) requesters.add(req);
+      }
+    }
+    // Only honour requests from live members (a stale flag from a departed
+    // peer must not consume a slot).
+    const live = new Set(memberIds);
+    const filtered = [...requesters].filter((uid) => live.has(uid) || uid === me);
+
+    const { roster: next, changed } = assignRequestedSlots(cur, filtered);
+    if (changed) {
+      writeNodeRoster(next);
+      roster = next;
+    }
   }
 
   // Bring up this peer's DoomNetcode once it is (a) a joined player and
@@ -209,6 +346,9 @@
       localUserId: resolveLocalUserId(),
       runtime,
       onArbiter: (isArb) => { isNetArbiter = isArb; },
+      // Slice 4: the arbiter's Launch broadcast lands here on EVERY joined
+      // peer (arbiter included) → start our WASM netgame at our own slot.
+      onGameStart: (env) => { applyGameStart(env); },
     });
     netcode.start();
     netStarted = true;
@@ -483,8 +623,12 @@
       onIncomingKey();
       onIncomingFrame();
       // Slice 3: the host prunes roster entries for departed members
-      // (leave-by-disconnect), then everyone re-reads their own status.
+      // (leave-by-disconnect).
       reconcileRosterAsArbiter();
+      // Slice 4: the arbiter (host) assigns slots from outstanding
+      // join-requests (single writer — fixes the slice-3 clobber).
+      assignSlotsAsArbiter();
+      // Everyone re-reads their own status off the (arbiter-written) roster.
       syncRosterState();
     };
     aw.on('update', update);
@@ -492,6 +636,10 @@
 
     // Initial host election.
     recomputeHost();
+    // Slice 4: if we came up as the host, assign slots straight away so the
+    // host auto-occupies player 0 (so its New Game dialog always has a
+    // player to launch as).
+    assignSlotsAsArbiter();
     // Slice 3: pick up any roster already present on the synced node + spin
     // up our netcode if we're a returning player.
     syncRosterState();
@@ -543,6 +691,14 @@
   function startRenderLoop(): void {
     if (raf !== null) return;
     function tick(): void {
+      // Slice 4: poll the live DOOM gamestate so the New Game dialog can
+      // lock during play + re-open at intermission (GS_INTERMISSION) for the
+      // arbiter to pick the next map. Only meaningful once a netgame launched
+      // + our own WASM is running (a spectator has no runtime).
+      if (launched) {
+        const ex = getExtras();
+        if (ex) gamestate = ex.getGameState();
+      }
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {
@@ -633,6 +789,19 @@
     if (!g.__doomCards) g.__doomCards = {};
     g.__doomCards[id] = {
       join: () => joinGame(),
+      // Slice 4 e2e hooks: pick options + launch from the arbiter, and read
+      // the running game's own-player position to prove per-peer instances.
+      setOptions: (opts: { mode?: DoomGameMode; skill?: number; episode?: number; map?: number }) => {
+        if (opts.mode) mode = opts.mode;
+        if (typeof opts.skill === 'number') skill = opts.skill;
+        if (typeof opts.episode === 'number') episode = opts.episode;
+        if (typeof opts.map === 'number') mapNum = opts.map;
+      },
+      launch: () => launchGame(),
+      getPlayerState: () => {
+        const ex = getExtras();
+        return ex ? ex.getConsolePlayerState() : null;
+      },
       getState: () => ({
         roster: { ...roster },
         mySlot,
@@ -641,6 +810,8 @@
         isHost,
         memberIds: [...memberIds],
         netcodePeers: netcode ? netcode.debugStats().peers : [],
+        launched,
+        gamestate,
       }),
     };
   });
@@ -803,6 +974,73 @@
     {/if}
   </div>
 
+  {#if memberIds.length > 1 && mySlot !== null}
+    {@const inLevel = launched && gamestate === 0}
+    <div class="newgame" data-testid="doom-newgame">
+      {#if isSessionArbiter()}
+        <!-- Arbiter (host = player 0): pick mode/skill/episode/map + Launch.
+             Locked while a level is actively running; re-opens at the end of
+             the level (intermission / finale) to pick the next map. -->
+        <div class="ng-row">
+          <label>
+            Mode
+            <select bind:value={mode} disabled={inLevel} data-testid="doom-mode">
+              {#each MODE_OPTIONS as m (m)}
+                <option value={m}>{m}</option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            Skill
+            <select bind:value={skill} disabled={inLevel} data-testid="doom-skill">
+              {#each SKILL_LABELS as label, i (i)}
+                <option value={i}>{i + 1} — {label}</option>
+              {/each}
+            </select>
+          </label>
+        </div>
+        <div class="ng-row">
+          <label>
+            Ep
+            <!-- DOOM1 shareware ships episode 1 only; the picker offers 1-3
+                 for full-WAD parity but defaults to + clamps sensibly. -->
+            <select bind:value={episode} disabled={inLevel} data-testid="doom-episode">
+              {#each [1, 2, 3] as e (e)}
+                <option value={e}>{e}</option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            Map
+            <select bind:value={mapNum} disabled={inLevel} data-testid="doom-map">
+              {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as mp (mp)}
+                <option value={mp}>{mp}</option>
+              {/each}
+            </select>
+          </label>
+          <button
+            class="launch-btn"
+            data-testid="doom-launch-btn"
+            disabled={inLevel}
+            onclick={launchGame}
+            title={inLevel ? 'Level in progress — pick the next map at the end' : 'Start the game on all joined players'}
+          >
+            {launched ? (inLevel ? 'In Level' : 'Next Map') : 'Launch'}
+          </button>
+        </div>
+      {:else}
+        <!-- Non-arbiter joined players: wait for the host to start. -->
+        <div class="ng-waiting" data-testid="doom-waiting">
+          {#if launched && gamestate === 0}
+            In level — playing as P{mySlot + 1}
+          {:else}
+            Waiting for host to start…
+          {/if}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   <footer class="hint">
     {#if memberIds.length > 1}
       <small>
@@ -940,6 +1178,58 @@
     color: white;
     border: none;
     cursor: pointer;
+  }
+  .doom-card .newgame {
+    padding: 0 10px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .doom-card .ng-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .doom-card .ng-row label {
+    display: flex;
+    flex-direction: column;
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.8;
+    gap: 2px;
+  }
+  .doom-card .ng-row select {
+    font-size: 11px;
+    padding: 2px 4px;
+    background: #181014;
+    color: #eee;
+    border: 1px solid color-mix(in oklab, var(--cable-video, #c33) 40%, transparent);
+  }
+  .doom-card .ng-row select:disabled {
+    opacity: 0.5;
+  }
+  .doom-card .launch-btn {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 12px;
+    margin-left: auto;
+    background: var(--cable-video, #c33);
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+  .doom-card .launch-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .doom-card .ng-waiting {
+    font-size: 11px;
+    font-style: italic;
+    opacity: 0.8;
+    color: color-mix(in oklab, var(--cable-video, #c33) 70%, white);
+    padding: 2px 0;
   }
   .doom-card .port-label {
     position: absolute;

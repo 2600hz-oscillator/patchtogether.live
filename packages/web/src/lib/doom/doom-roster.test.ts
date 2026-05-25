@@ -19,6 +19,7 @@ import {
   releaseSlot,
   pruneRoster,
   serializeRoster,
+  assignRequestedSlots,
 } from './doom-roster';
 
 describe('doom-roster: readRoster', () => {
@@ -228,5 +229,90 @@ describe('doom-roster: pruneRoster (disconnect cleanup)', () => {
     const { roster: next, changed } = pruneRoster({ '0': 'alice' }, []);
     expect(changed).toBe(true);
     expect(next).toEqual({});
+  });
+});
+
+describe('doom-roster: assignRequestedSlots (slice 4 — arbiter-authoritative)', () => {
+  // This is the fix for the slice-3 clobber: instead of each peer writing the
+  // roster (last-write-wins on a JSON string leaf → concurrent joins collide),
+  // ONLY the arbiter writes, assigning slots from the batch of outstanding
+  // join-requests in one deterministic pass. These tests pin that no two
+  // concurrent requesters ever land in the same slot, the cap holds, and the
+  // assignment is order-independent.
+
+  it('two concurrent requesters get DISTINCT slots (no clobber)', () => {
+    // The exact slice-3 race: both alice + bob request against an empty
+    // roster at the same time. The single-pass arbiter assignment must give
+    // them different slots — NOT both slot 0.
+    const { roster, assigned, changed } = assignRequestedSlots({}, ['alice', 'bob']);
+    expect(changed).toBe(true);
+    // Lex order → alice slot 0, bob slot 1.
+    expect(roster).toEqual({ '0': 'alice', '1': 'bob' });
+    expect(assigned).toEqual({ alice: 0, bob: 1 });
+    // No two users share a slot.
+    const slots = Object.values(assigned);
+    expect(new Set(slots).size).toBe(slots.length);
+  });
+
+  it('is order-independent (same assignment regardless of request order)', () => {
+    const a = assignRequestedSlots({}, ['bob', 'alice', 'carol']);
+    const b = assignRequestedSlots({}, ['carol', 'alice', 'bob']);
+    expect(a.roster).toEqual(b.roster);
+    expect(a.assigned).toEqual({ alice: 0, bob: 1, carol: 2 });
+  });
+
+  it('caps at MAX_DOOM_PLAYERS; the 5th requester is rejected', () => {
+    const five = ['u1', 'u2', 'u3', 'u4', 'u5'];
+    const { roster, assigned, rejected } = assignRequestedSlots({}, five);
+    expect(rosterSize(roster)).toBe(MAX_DOOM_PLAYERS);
+    expect(Object.keys(assigned).length).toBe(MAX_DOOM_PLAYERS);
+    // u1..u4 (lex-first 4) get slots; u5 is rejected as full.
+    expect(rejected).toEqual(['u5']);
+    expect(assigned.u5).toBeUndefined();
+    // Distinct slots for all four.
+    expect(new Set(Object.values(assigned)).size).toBe(MAX_DOOM_PLAYERS);
+  });
+
+  it('keeps already-joined users in place (idempotent re-request)', () => {
+    // alice already holds slot 0; she + a new requester bob both "request".
+    // alice keeps slot 0, bob gets the next free slot — no reshuffle.
+    const { roster, assigned } = assignRequestedSlots({ '0': 'alice' }, ['alice', 'bob']);
+    expect(roster).toEqual({ '0': 'alice', '1': 'bob' });
+    expect(assigned).toEqual({ alice: 0, bob: 1 });
+  });
+
+  it('fills the lowest free slot when an earlier slot is vacant', () => {
+    // bob holds slot 1 (alice left slot 0). A new requester takes slot 0.
+    const { roster } = assignRequestedSlots({ '1': 'bob' }, ['carol']);
+    expect(roster).toEqual({ '0': 'carol', '1': 'bob' });
+  });
+
+  it('no-op (same reference, changed=false) when all requesters already joined', () => {
+    const start = { '0': 'alice', '1': 'bob' };
+    const { roster, changed } = assignRequestedSlots(start, ['alice', 'bob']);
+    expect(changed).toBe(false);
+    expect(roster).toBe(start);
+  });
+
+  it('does not mutate the input roster', () => {
+    const start = { '0': 'alice' };
+    assignRequestedSlots(start, ['bob', 'carol']);
+    expect(start).toEqual({ '0': 'alice' });
+  });
+
+  it('ignores empty / non-string requesters defensively', () => {
+    const { roster } = assignRequestedSlots({}, ['', 'alice', '']);
+    expect(roster).toEqual({ '0': 'alice' });
+  });
+
+  it('a batch that exceeds the cap against a partially-full roster', () => {
+    // Two slots taken; three new requesters → only two more fit, third
+    // rejected.
+    const start = { '0': 'a', '3': 'd' };
+    const { roster, rejected } = assignRequestedSlots(start, ['e', 'f', 'g']);
+    expect(rosterSize(roster)).toBe(MAX_DOOM_PLAYERS);
+    // free slots were 1 + 2 → e, f (lex-first) take them; g rejected.
+    expect(roster).toEqual({ '0': 'a', '1': 'e', '2': 'f', '3': 'd' });
+    expect(rejected).toEqual(['g']);
   });
 });

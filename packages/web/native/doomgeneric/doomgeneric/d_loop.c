@@ -825,3 +825,23 @@ void D_RegisterLoopCallbacks(loop_interface_t *i)
 {
     loop_interface = i;
 }
+
+// ---------------------------------------------------------------------------
+// patchtogether.live slice-4 hook (dgpt_start_netgame, in
+// doomgeneric_patchtogether.c) needs to set this translation unit's static
+// `localplayer` + reset the lockstep tic counters when it brings up a
+// netgame, because the vendored D_StartNetGame's non-ORIGCODE path hardcodes
+// single-player (consoleplayer=0, num_players=1) and never runs for our
+// JS-driven start path. Exposing a tiny setter keeps the lockstep state
+// (localplayer / recvtic / maketic / gametic) in d_loop.c where it belongs
+// rather than reaching across translation units with a header-leaked global.
+//
+// Always compiled (it touches no FEATURE_MULTIPLAYER-only symbols); in the
+// single-player build dgpt_start_netgame simply doesn't call it.
+void DGPT_LoopSetLocalPlayer(int player)
+{
+    localplayer = player;
+    recvtic = 0;
+    maketic = 0;
+    gametic = 0;
+}

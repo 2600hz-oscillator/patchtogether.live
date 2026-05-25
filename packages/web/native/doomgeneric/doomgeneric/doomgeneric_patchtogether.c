@@ -62,7 +62,9 @@
 #include "doomgeneric.h"
 #include "doomkeys.h"
 #include "doomdef.h"
+#include "doomstat.h"
 #include "d_player.h"
+#include "g_game.h"
 #include "p_mobj.h"
 
 // Forward decl — defined in g_game.c. Lets the JS-side e2e read the
@@ -71,6 +73,10 @@
 // from PR #275 was insufficient — it passed for the broken-key bug
 // too, where ArrowUp shrunk the screen instead of moving forward).
 extern player_t players[MAXPLAYERS];
+
+// Defined in d_loop.c (slice-4): sets the lockstep `localplayer` + resets
+// the tic counters. See DGPT_LoopSetLocalPlayer there for why we need it.
+extern void DGPT_LoopSetLocalPlayer(int player);
 
 // ---- Key event queue ----
 //
@@ -262,4 +268,125 @@ unsigned int dgpt_get_player_angle(void) {
 
 int dgpt_has_player_mobj(void) {
   return players[0].mo != NULL ? 1 : 0;
+}
+
+// ---- Slice 4: New Game / Launch (start a multiplayer game) ----
+//
+// The vendored chocolate-doom D_StartNetGame has two code paths:
+//   - ORIGCODE (undef in our config.h): the real handshake — connect to the
+//     server, send our settings, BLOCK in a spin loop until the server's
+//     GAMESTART arrives, then read back the consolidated settings.
+//   - #else (the path we actually compile): hardcodes single-player
+//     (consoleplayer=0, num_players=1) and never touches the netcode.
+// Neither fits our model: the blocking spin loop can't run inside a
+// cooperatively-scheduled WASM tick (there is no I_Sleep in the browser),
+// and the #else path is single-player only.
+//
+// Slice 4's launch path therefore drives the start from JS instead: the
+// arbiter peer broadcasts a settings blob over the netcode; every joined
+// peer (arbiter included) calls dgpt_start_netgame() with the SAME settings
+// + its OWN slot as consoleplayer. We:
+//
+//   1. write the agreed game settings into DOOM's start globals,
+//   2. mark this a netgame with `num_players` slots live (playeringame[]),
+//   3. set THIS peer's consoleplayer/displayplayer to its slot + push that
+//      into d_loop.c's lockstep `localplayer`, and
+//   4. G_InitNew() to load the level immediately (G_InitNew reads the
+//      console/display/playeringame globals we just set — it does NOT reset
+//      them, unlike G_DoNewGame).
+//
+// Because all peers feed G_InitNew the identical (skill, episode, map) +
+// identical num_players, every peer deterministically loads the same level
+// with marines spawned at the per-slot co-op starts; each peer's own
+// G_BuildTiccmd drives players[consoleplayer], so arrow keys on peer N move
+// peer N's marine and only that one — which is exactly the per-peer-POV
+// proof slice 4's acceptance bar wants. The cross-peer ticcmd exchange that
+// makes peers see each OTHER's marines moving rides the existing net_pt
+// transport + d_loop lockstep once net_client_connected (slice 5 polishes
+// the shared-view fidelity; slice 4 establishes that each peer is its own
+// game instance in one configured netgame).
+//
+// Args mirror the net_gamesettings_t fields the JS netcode serializes:
+//   deathmatch     0=coop, 1=deathmatch, 2=deathmatch-2.0
+//   episode        1..3 (shareware DOOM1 = episode 1 only)
+//   map            1..9
+//   skill          0..4 (ITYTD..Nightmare; DOOM's skill_t is 0-based)
+//   nomonsters     0/1
+//   fast_monsters  0/1
+//   respawn        0/1
+//   num_players    1..4 — how many slots are live this game
+//   consoleplayer  0..3 — THIS peer's slot
+void dgpt_start_netgame(int deathmatch_mode,
+                        int episode,
+                        int map,
+                        int skill,
+                        int nomonsters_flag,
+                        int fast_monsters,
+                        int respawn,
+                        int num_players,
+                        int console_player) {
+  int i;
+
+  if (num_players < 1) num_players = 1;
+  if (num_players > MAXPLAYERS) num_players = MAXPLAYERS;
+  if (console_player < 0) console_player = 0;
+  if (console_player >= MAXPLAYERS) console_player = MAXPLAYERS - 1;
+
+  // 1. Game settings into DOOM's start globals.
+  deathmatch = deathmatch_mode;
+  startepisode = episode;
+  startmap = map;
+  startskill = (skill_t)skill;
+  nomonsters = nomonsters_flag ? true : false;
+  fastparm = fast_monsters ? true : false;
+  respawnparm = respawn ? true : false;
+
+  // 2. Netgame with `num_players` slots live. A lone player (num_players==1)
+  //    is still a perfectly valid single-slot game — this same export drives
+  //    single-player launch when only one peer is in the rack.
+  netgame = (num_players > 1);
+  for (i = 0; i < MAXPLAYERS; ++i) {
+    playeringame[i] = (i < num_players) ? true : false;
+  }
+
+  // 3. This peer's view + lockstep slot.
+  consoleplayer = console_player;
+  displayplayer = console_player;
+  DGPT_LoopSetLocalPlayer(console_player);
+
+  // 4. Load the level. G_InitNew honours the globals we set above.
+  G_InitNew(startskill, startepisode, startmap);
+}
+
+// Current high-level game state (GS_LEVEL / GS_INTERMISSION / GS_FINALE /
+// GS_DEMOSCREEN — see doomdef.h gamestate_t). The card uses this to (a)
+// assert the level actually loaded after Launch (gamestate == GS_LEVEL) and
+// (b) lock the New Game dialog until intermission, where the arbiter can
+// pick the next map.
+int dgpt_get_gamestate(void) {
+  return (int)gamestate;
+}
+
+// Position of the player THIS peer controls (players[consoleplayer]), in
+// DOOM fixed-point. dgpt_get_player_x/y above always read slot 0 (the
+// single-player + pre-slice-4 regression hook); these read the local
+// console player, which in a netgame is this peer's own marine. The e2e
+// asserts two peers' console players occupy DIFFERENT positions after
+// independent movement — proving separate per-peer instances.
+int dgpt_get_console_player_x(void) {
+  if (!players[consoleplayer].mo) return 0;
+  return (int)players[consoleplayer].mo->x;
+}
+
+int dgpt_get_console_player_y(void) {
+  if (!players[consoleplayer].mo) return 0;
+  return (int)players[consoleplayer].mo->y;
+}
+
+int dgpt_get_console_player(void) {
+  return consoleplayer;
+}
+
+int dgpt_has_console_player_mobj(void) {
+  return players[consoleplayer].mo != NULL ? 1 : 0;
 }
