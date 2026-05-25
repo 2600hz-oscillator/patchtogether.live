@@ -188,6 +188,12 @@ EXPORTS='[
   "_dgpt_get_player_y",
   "_dgpt_get_player_angle",
   "_dgpt_has_player_mobj",
+  "_dgpt_start_netgame",
+  "_dgpt_get_gamestate",
+  "_dgpt_get_console_player",
+  "_dgpt_get_console_player_x",
+  "_dgpt_get_console_player_y",
+  "_dgpt_has_console_player_mobj",
   "_malloc",
   "_free"
 ]'

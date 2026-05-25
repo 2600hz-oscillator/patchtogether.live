@@ -172,6 +172,91 @@ export function releaseSlot(roster: DoomRoster, userId: string): RosterMutation 
 }
 
 /**
+ * Arbiter-authoritative slot assignment (slice 4 — fixes the slice-3
+ * clobber).
+ *
+ * ─ The slice-3 bug ─
+ *   In slice 3 each peer claimed its own slot by READING node.data.players,
+ *   running claimSlot() locally, and WRITING the result back. node.data is a
+ *   last-write-wins primitive-string leaf, so two peers that join at the same
+ *   time both read the same starting roster (say {}), both compute slot 0,
+ *   and both write {"0": <self>} — the second write CLOBBERS the first with
+ *   no Yjs conflict (it's a single string leaf, not a CRDT map). One joiner
+ *   silently loses their slot.
+ *
+ * ─ The slice-4 fix ─
+ *   Make the roster SINGLE-WRITER. A peer no longer writes the roster to
+ *   join; it only sets an awareness "join-request" field. The ARBITER (the
+ *   lex-min member — there is exactly one) observes the set of outstanding
+ *   requests and assigns slots, writing the roster itself. Since only the
+ *   arbiter ever writes node.data.players, concurrent requests can't clobber:
+ *   the arbiter sees both requests and gives them DISTINCT slots in one
+ *   deterministic pass.
+ *
+ *   `assignRequestedSlots` is that pass, expressed as a pure function so the
+ *   unit suite can hammer it with concurrent-request batches. Given the
+ *   current roster + the set of user ids requesting to join, it:
+ *     - keeps everyone who already holds a slot (idempotent — a re-request
+ *       from a joined player is a no-op),
+ *     - assigns each NOT-yet-joined requester the lowest free slot, in
+ *       lex-sorted requester order (deterministic across peers + stable),
+ *     - stops at MAX_DOOM_PLAYERS (the 5th+ requester gets no slot — the
+ *       card surfaces "game full" to them).
+ *
+ *   Lex-sorting the requesters means the assignment is identical regardless
+ *   of the order awareness delivered the requests, so even if the arbiter
+ *   runs this pass multiple times as requests trickle in, a given user always
+ *   lands in the same slot.
+ *
+ * Returns a NEW roster (input never mutated) + whether anything changed +
+ * the per-user assignment result (so the arbiter / tests can see who got
+ * what, and who was rejected as full).
+ */
+export interface SlotAssignment {
+  roster: DoomRoster;
+  changed: boolean;
+  /** userId → assigned slot, for users that hold a slot after this pass
+   *  (includes already-joined users + newly-assigned ones). */
+  assigned: Record<string, number>;
+  /** Requesters that could NOT be given a slot because the roster is full. */
+  rejected: string[];
+}
+
+export function assignRequestedSlots(
+  roster: DoomRoster,
+  requesters: readonly string[],
+): SlotAssignment {
+  const next: DoomRoster = { ...roster };
+  let changed = false;
+  const rejected: string[] = [];
+
+  // Deduplicate + lex-sort so the assignment order is deterministic across
+  // peers and stable across repeated passes.
+  const sortedNew = [...new Set(requesters)]
+    .filter((uid) => typeof uid === 'string' && uid.length > 0)
+    .filter((uid) => slotForUser(next, uid) === null) // skip already-joined
+    .sort();
+
+  for (const uid of sortedNew) {
+    const slot = firstEmptySlot(next);
+    if (slot === null) {
+      rejected.push(uid);
+      continue;
+    }
+    next[String(slot)] = uid;
+    changed = true;
+  }
+
+  // Build the assignment map from the resulting roster.
+  const assigned: Record<string, number> = {};
+  for (const [slot, uid] of Object.entries(next)) {
+    assigned[uid] = Number(slot);
+  }
+
+  return { roster: changed ? next : roster, changed, assigned, rejected };
+}
+
+/**
  * Arbiter-side roster reconciliation. Given the current roster and the set
  * of user ids that are still live in the rack (from awareness), drop any
  * roster entries whose user has disconnected. Used by the arbiter on
