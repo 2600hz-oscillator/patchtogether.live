@@ -235,6 +235,9 @@ function buildTopology(n: number) {
 
 test.describe('multi-video playback — N sources all decode at once', () => {
   test('4x VIDEOVARISPEED -> MIXER: every source advances + mixer shows moving video + audio is produced', async ({ page }) => {
+    // 4 sequential video loads (each waits up to 12s) + per-source windowed
+    // polling + audio polling blows the 30s default on a loaded CI runner.
+    test.setTimeout(120_000);
     const errors = await setup(page);
     const { nodes, edges, audioEdges } = buildTopology(4);
     await spawnPatch(page, nodes, edges);
@@ -315,6 +318,7 @@ test.describe('multi-video playback — N sources all decode at once', () => {
   // simultaneous-decode ceiling if fewer than N advance.
   test('scale: 10x VIDEOVARISPEED all advance (local only)', async ({ page }) => {
     test.skip(!!process.env.CI, 'scale run is heavy for CI software-GL runners; 4-source case is the CI guard');
+    test.setTimeout(180_000);
     const N = 10;
     const errors = await setup(page);
     const { nodes, edges, audioEdges } = buildTopology(N);
