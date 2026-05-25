@@ -110,15 +110,16 @@ test.describe('VIDEOBOX upload perf (rVFC-driven)', () => {
     // meaningless under parallel workers). The "achievable engine fps" we get
     // is a faithful proxy for downstream smoothness: every step() runs the
     // full topo draw incl. the VIDEOBOX upload + VIDEO-OUT pass.
-    // Decoupling guard (CI-safe): step() as fast as JS allows in a TIGHT
-    // SYNC loop with NO gl.finish. The tight loop starves the event loop so
-    // rVFC decode callbacks can't fire mid-loop — post-fix the upload is
-    // never marked dirty, so uploadsPerStep ~= 0. Pre-fix, step() re-uploaded
-    // the full frame UNCONDITIONALLY on every call, so uploadsPerStep was
-    // exactly 1.0. That contrast is the regression guard. We deliberately do
-    // NOT gl.finish() here: hammering it per-step crashes headless CI's
-    // software-GL renderer process (the page closes mid-evaluate).
-    const r = await page.evaluate((windowMs) => {
+    // Decoupling guard (CI-safe): step() a small FIXED number of times in a
+    // tight sync loop. No wall-clock busy loop and no gl.finish — a tight
+    // 600ms busy loop issues thousands of GL draws on CI's software-GL
+    // renderer and trips the GPU watchdog (page closes mid-evaluate). A
+    // bounded count keeps GL traffic trivial. The sync loop also starves the
+    // event loop so rVFC decode callbacks can't fire mid-loop: post-fix the
+    // upload is never marked dirty, so uploadsPerStep ~= 0. Pre-fix, step()
+    // re-uploaded the full frame UNCONDITIONALLY every call, so uploadsPerStep
+    // was exactly 1.0. That contrast is the regression guard.
+    const r = await page.evaluate((nSteps) => {
       const w = globalThis as unknown as {
         __engine: () => { getDomain: (d: string) => {
           step: () => void;
@@ -127,15 +128,10 @@ test.describe('VIDEOBOX upload perf (rVFC-driven)', () => {
       };
       const vid = w.__engine().getDomain('video');
       const u0 = vid.read('vb', 'uploadCount') as number;
-      let steps = 0;
-      const t0 = performance.now();
-      while (performance.now() - t0 < windowMs) {
-        vid.step();
-        steps++;
-      }
+      for (let i = 0; i < nSteps; i++) vid.step();
       const u1 = vid.read('vb', 'uploadCount') as number;
-      return { steps, uploads: u1 - u0, uploadsPerStep: (u1 - u0) / steps };
-    }, 600);
+      return { steps: nSteps, uploads: u1 - u0, uploadsPerStep: (u1 - u0) / nSteps };
+    }, 90);
 
     // Separately: confirm uploads DO still happen as the clip plays (the
     // texture isn't frozen). We step() with a macrotask gap so the event loop
