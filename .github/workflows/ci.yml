@@ -407,14 +407,19 @@ jobs:
   # out they flaked badly (the shared dev server + relay get hammered and
   # cross-context Yjs sync drops — task #97), so they were quarantined behind
   # `test.skip(!!process.env.CI)`. This dedicated job removes the shard
-  # contention (one runner, one worker, serial) so the DOOM 2-user test +
-  # the rest of the @collab suite are a RELIABLE gate. The relay is in-memory
-  # so a single runner is cheap. Same DB + DOOM-asset + DSP setup as e2e.
+  # contention (its OWN runner + dev server + relay, modest 2-worker
+  # parallelism vs the 8-shard × 4-worker fan-out that caused the flake) so the
+  # DOOM 2-user test + the rest of the @collab suite are a RELIABLE gate. The
+  # relay is in-memory so a single runner is cheap. Same DB + DOOM-asset + DSP
+  # setup as e2e.
   # -----------------------------------------------------------------------
   collab:
     name: collab (@collab multi-context)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # 40 min ceiling: the full @collab suite (~41 specs incl. cold DOOM WASM +
+    # several 2-context boots) at 2 workers finishes well under this; a single
+    # serial worker overran the previous 25 min cap (the run was killed at 25m).
+    timeout-minutes: 40
 
     services:
       postgres:

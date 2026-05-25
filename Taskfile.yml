@@ -191,10 +191,10 @@ tasks:
       - npm exec -w {{.E2E}} -- playwright test --grep-invert @collab {{.CLI_ARGS}}
 
   collab:
-    desc: 'Run ONLY the @collab multi-context specs (single non-sharded worker). The Hocuspocus relay is in-memory so this is cheap; isolating it off the 8-shard matrix makes the DOOM 2-user gate reliable.'
+    desc: 'Run ONLY the @collab multi-context specs on a DEDICATED runner (off the 8-shard matrix). Modest 2-worker parallelism — far below the 8-shard × 4-worker fan-out that hammered the shared relay (the #97 flake) — keeps the DOOM 2-user gate reliable while finishing within the CI time budget (a single serial worker overran 25 min on 41 specs). The Hocuspocus relay is in-memory so this is cheap.'
     deps: [test:emit-manifest]
     cmds:
-      - npm exec -w {{.E2E}} -- playwright test --grep @collab --workers=1 {{.CLI_ARGS}}
+      - npm exec -w {{.E2E}} -- playwright test --grep @collab --workers=2 {{.CLI_ARGS}}
 
   audio-drift:
     desc: |
