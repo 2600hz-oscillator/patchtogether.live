@@ -58,6 +58,27 @@ function getPool(): pg.Pool {
     // doc; idle connections settle back into the pool.
     idleTimeoutMillis: 30_000,
   });
+  // CRITICAL: pg's Pool emits 'error' on a backend connection that dies
+  // while IDLE in the pool (TCP reset, Fly Postgres failover, an auth
+  // timeout on a connection that was mid-acquire). With NO listener, node
+  // treats that emit as an unhandled 'error' event and CRASHES the whole
+  // relay process — which is exactly the tab-switch 500 the operator hit:
+  // rapid connect/disconnect churn (unloadImmediately fires onStoreDocument
+  // on the last disconnect) triggered a transient pg 'Authentication timed
+  // out' (code 08P01) on the pool, the rejection went unhandled, node exited
+  // 1, the Fly machine rebooted, and in-flight WS + HTTP requests got
+  // connection-reset (the user-visible server error). A logging listener
+  // demotes these to recoverable noise; the next query re-establishes a
+  // healthy connection. See packages/web/src/routes/r/[id]/+page.server.ts +
+  // the relay crash trace in the PR.
+  pool.on('error', (err) => {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[hocuspocus] pg pool idle-client error (recovered, relay stays up): ${
+        (err as { code?: string }).code ?? ''
+      } ${err.message}`,
+    );
+  });
   return pool;
 }
 
@@ -127,6 +148,20 @@ export async function storeSnapshot(rackId: string, state: Uint8Array): Promise<
       console.log(`[hocuspocus] persist skipped (no such rack): doc=${rackId}`);
       return;
     }
-    throw err;
+    // A persist failure must NEVER crash the relay. onStoreDocument has no
+    // catch of its own, so a re-throw here becomes an unhandled rejection
+    // that kills the whole process (every connected rack drops) — the
+    // tab-switch 500 root cause: a transient pg 'Authentication timed out'
+    // (08P01) on the unloadImmediately store fired on disconnect churn.
+    // A dropped snapshot is recoverable: Hocuspocus re-fires the debounced
+    // onStoreDocument on the next edit (and again on the next disconnect),
+    // so the latest doc state lands as soon as the DB is reachable again.
+    // Log + swallow so one bad write costs at most `debounce` ms of
+    // durability, not the entire relay.
+    // eslint-disable-next-line no-console
+    console.error(
+      `[hocuspocus] persist FAILED (transient — relay stays up, will retry): doc=${rackId} ` +
+        `code=${(err as { code?: string }).code ?? ''} ${(err as Error).message}`,
+    );
   }
 }

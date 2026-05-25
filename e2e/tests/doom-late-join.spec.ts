@@ -1,24 +1,22 @@
 // e2e/tests/doom-late-join.spec.ts
 //
-// Slice 6 acceptance: late-join + spectator + intermission rejoin.
+// Late-join acceptance: HOT-DROP into the running map.
 //
-// The committed late-join design (locked by the user, see the plan §3 Q2):
-//   - A peer that joins an IN-PROGRESS game does NOT spawn into the running
-//     map mid-level. It reserves a PENDING roster slot + spectates the running
-//     game (rendering the host/arbiter framebuffer), and spawns in at the NEXT
-//     map (the arbiter's next dgpt_start_netgame at intermission).
+// The late-join design (operator-revised — supersedes the slice-6 "seat at the
+// next map" reservation): a peer that joins an IN-PROGRESS game spawns into the
+// CURRENT map within seconds, not at the next map. DOOM has no true mid-level
+// join (the player set is fixed at G_InitNew + the lockstep tic stream assumes a
+// constant playeringame[]), so the pragmatic mechanism is: the arbiter seats the
+// joiner as an ACTIVE player and immediately RE-LAUNCHES the current map (same
+// skill/episode/map, larger numPlayers). Every peer reloads the level via
+// G_InitNew and the joiner spawns at its coop start — a fast ~1-2s reload.
 //
 // This 2-context test proves the path end-to-end in the browser:
 //   1. A (arbiter / host = player 0) spawns + loads DOOM, joins, launches coop
 //      E1M1. A is in the level (gamestate == GS_LEVEL).
-//   2. B joins WHILE A's level is running → B gets a PENDING slot (not active):
-//      B.mySlot stays null, B.myPendingSlot === 1, B.viewerStatus === 'pending',
-//      and B's card shows the "joining as Player N next map" spectator label.
-//      B does NOT spawn a marine into the running map.
-//   3. A ends the level (exitLevel hook) → A reaches GS_INTERMISSION (the New
-//      Game dialog re-opens). A launches the NEXT map.
-//   4. B is PROMOTED to active (mySlot === 1) and spawns into the next map as a
-//      real player.
+//   2. B joins WHILE A's level is running → B is seated ACTIVE at slot 1 (NOT
+//      pending) and the arbiter hot-drop-relaunches the current map, so B
+//      reaches GS_LEVEL with a live marine at slot 1 within seconds.
 //
 // QUARANTINE (task #97): the @collab 2-context Hocuspocus relay drops peer B
 // under CI shard load → flaky. Skip on CI; runs locally. The pending↔active
@@ -32,7 +30,6 @@ import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
 
 const GS_LEVEL = 0;
-const GS_INTERMISSION = 1;
 
 interface DoomPair {
   pageA: Page;
@@ -184,7 +181,7 @@ async function slotPos(
   );
 }
 
-test.describe('@collab DOOM late-join + spectator + intermission rejoin (slice 6)', () => {
+test.describe('@collab DOOM late-join — hot-drop into the running map', () => {
   // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
   // shard load. Skip on CI; runs locally. The pending↔active model + promotion
   // is unit-proven (doom-roster.test.ts), the spectator/pending labels are
@@ -195,7 +192,7 @@ test.describe('@collab DOOM late-join + spectator + intermission rejoin (slice 6
   // intermission round-trip + a second launch → a long window. Generous ceiling.
   test.setTimeout(180_000);
 
-  test('B joins mid-level as a pending spectator, then is seated at the next map', async ({ browser }) => {
+  test('B joins mid-level → hot-drops into the current map as active player 1', async ({ browser }) => {
     const pair = await openPair(browser);
     try {
       const assets = await checkAssets(pair.pageA);
@@ -241,111 +238,55 @@ test.describe('@collab DOOM late-join + spectator + intermission rejoin (slice 6
         { timeout: 30000 },
       );
 
-      // ─── B joins WHILE A's level is running → PENDING (late join) ───
+      // ─── B joins WHILE A's level is running → HOT-DROP into the CURRENT map ─
       await join(pair.pageB, NODE);
 
-      // Best-effort: wait for B to become a PENDING joiner (cross-context sync).
-      // If it never lands (known CI @collab flake — skipped on CI), SKIP — the
-      // pending model + the late-joiner-seats-at-next-map path are proven by
-      // doom-roster.test.ts + start-netgame.acceptance.mjs.
-      const bWentPending = await pair.pageB
-        .waitForFunction(
-          (id) => {
-            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { myPendingSlot: number | null } }> };
-            return w.__doomCards?.[id]?.getState().myPendingSlot === 1;
-          },
-          NODE,
-          { timeout: 30000 },
-        )
-        .then(() => true)
-        .catch(() => false);
-
-      if (!bWentPending) {
-        test.skip(
-          true,
-          "cross-context roster sync didn't make B a pending joiner within 30s " +
-            '(known CI @collab two-context flake; the pending model + next-map ' +
-            'seating are proven by doom-roster.test.ts + start-netgame.acceptance.mjs)',
-        );
-        return;
-      }
-
-      // ─── B is a PENDING spectator: no active slot, reserved slot 1, the
-      //     "joining as Player N next map" affordance, and NO marine yet. ───
-      const bPending = await cardState(pair.pageB, NODE);
-      expect(bPending!.mySlot, 'B has no active slot mid-level').toBeNull();
-      expect(bPending!.myPendingSlot, 'B reserved pending slot 1').toBe(1);
-      expect(bPending!.viewerStatus, "B's viewer status is pending").toBe('pending');
-      expect(bPending!.specLabel, 'B shows the next-map join affordance').toBe(
-        'Spectating — joining as Player 2 next map',
-      );
-      // The arbiter's roster keeps B in PENDING, not active.
-      const aMid = await cardState(pair.pageA, NODE);
-      expect(aMid!.roster, 'A active roster has only player 0').toMatchObject({ '0': 'aaa-userA' });
-      expect(aMid!.pending, 'A pending roster reserves B at slot 1').toMatchObject({ '1': 'bbb-userB' });
-      // B has not spawned a marine into the running map (slot 1 not live on A).
-      const bMarineMid = await slotPos(pair.pageA, NODE, 1);
-      expect(bMarineMid, 'B has NO live marine during the running map').toBeNull();
-
-      // ─── A ends the level → GS_INTERMISSION, then launches the NEXT map ───
-      await pair.pageA.evaluate((id) => {
-        const w = globalThis as unknown as { __doomCards: Record<string, { exitLevel: () => void }> };
-        w.__doomCards[id]!.exitLevel();
-      }, NODE);
-      await pair.pageA.waitForFunction(
-        (args) => {
-          const [id, inter] = args as [string, number];
-          const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { gamestate: number } }> };
-          return w.__doomCards?.[id]?.getState().gamestate === inter;
-        },
-        [NODE, GS_INTERMISSION],
-        { timeout: 30000 },
-      );
-
-      // A picks the next map + launches (this seats the pending late joiner).
-      await pair.pageA.evaluate((id) => {
-        const w = globalThis as unknown as {
-          __doomCards: Record<string, {
-            setOptions: (o: { map?: number }) => void;
-            launch: () => void;
-          }>;
-        };
-        w.__doomCards[id]!.setOptions({ map: 2 });
-        w.__doomCards[id]!.launch();
-      }, NODE);
-
-      // ─── B is PROMOTED to an active player + spawns into the next map ───
-      const bSeated = await pair.pageB
+      // B is seated ACTIVE at slot 1 (NOT pending) and the arbiter hot-drop-
+      // relaunches the current map, so B reaches GS_LEVEL with a live marine.
+      // If cross-context sync never lands (known CI @collab flake — skipped on
+      // CI), SKIP — the active-seating + relaunch logic is unit-proven
+      // (doom-roster.test.ts) + the C reload path by start-netgame.acceptance.mjs.
+      const bHotDropped = await pair.pageB
         .waitForFunction(
           (args) => {
             const [id, level] = args as [string, number];
-            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mySlot: number | null; launched: boolean; gamestate: number } }> };
+            const w = globalThis as unknown as {
+              __doomCards?: Record<string, { getState: () => { mySlot: number | null; launched: boolean; gamestate: number } }>;
+            };
             const st = w.__doomCards?.[id]?.getState();
             return !!st && st.mySlot === 1 && st.launched === true && st.gamestate === level;
           },
           [NODE, GS_LEVEL],
-          { timeout: 30000 },
+          { timeout: 45000 },
         )
         .then(() => true)
         .catch(() => false);
 
-      if (!bSeated) {
+      if (!bHotDropped) {
         test.skip(
           true,
-          "B wasn't seated into the next map within 30s (known CI @collab " +
-            'two-context flake; the seating path is proven by ' +
-            'start-netgame.acceptance.mjs)',
+          "cross-context roster sync didn't hot-drop B into the running map within 45s " +
+            '(known CI @collab two-context flake; the active-seat + relaunch logic ' +
+            'is proven by doom-roster.test.ts + start-netgame.acceptance.mjs)',
         );
         return;
       }
 
+      // ─── B is an ACTIVE player at slot 1 in the SAME map (not pending) ───
       const bFinal = await cardState(pair.pageB, NODE);
-      expect(bFinal!.mySlot, 'B is now active player 1 in the next map').toBe(1);
-      expect(bFinal!.myPendingSlot, "B's pending reservation was promoted").toBeNull();
-      expect(bFinal!.viewerStatus, 'B is now a player').toBe('player');
-      // B's marine spawned into the next map (its own console player is live).
-      const bMarineNext = await slotPos(pair.pageB, NODE, 1);
-      expect(bMarineNext, 'B spawned a live marine into the NEXT map').not.toBeNull();
+      expect(bFinal!.mySlot, 'B hot-dropped as active player 1').toBe(1);
+      expect(bFinal!.myPendingSlot, 'B has NO pending reservation (active hot-drop)').toBeNull();
+      expect(bFinal!.viewerStatus, 'B is a player, not a pending spectator').toBe('player');
+      // The arbiter's ACTIVE roster now holds both players; pending stays empty.
+      const aMid = await cardState(pair.pageA, NODE);
+      expect(aMid!.roster, 'A active roster holds both players after hot-drop').toMatchObject({
+        '0': 'aaa-userA',
+        '1': 'bbb-userB',
+      });
+      expect(Object.keys(aMid!.pending), 'no pending reservations — hot-drop is immediate').toHaveLength(0);
+      // B has a LIVE marine in the current map (slot 1 spawned via the relaunch).
+      const bMarine = await slotPos(pair.pageB, NODE, 1);
+      expect(bMarine, 'B spawned a live marine into the current map (hot-drop)').not.toBeNull();
     } finally {
       await pair.close();
     }

@@ -565,50 +565,103 @@
   function assignSlotsAsArbiter(): void {
     if (!isSessionArbiter()) return;
     const cur = readNodeRosterState();
-    // Multiplayer must be EXPLICITLY started by the host (mpMode === 'multi').
-    // Until then the roster stays empty — a lone host (or a host that hasn't
-    // picked yet) just plays single-player via the no-netcode path, and a 2nd
-    // member arriving does NOT auto-seat anyone. This replaces the fragile
-    // implicit "2nd member ⇒ auto-join" detection that left both cards stuck
-    // in single-player limbo when presence raced. Idempotent: once seated, the
-    // roster persists even if mpMode were toggled.
-    if (mpMode !== 'multi' && rosterSize(combinedRoster(cur)) === 0) return;
     const provider = providerCtx.get();
     const aw = provider?.awareness;
     const me = resolveLocalUserId();
 
-    // Gather requesters: every member with a raised join-request flag, plus
-    // the arbiter itself (the host is always player 0 in a multiplayer
-    // session — it is seated when the host opens the lobby via Host
-    // Multiplayer; owner-first slot assignment puts it at slot 0).
-    const requesters = new Set<string>([me]);
+    // Collect outstanding join-requests up front: a guest (incl. an anon/invite
+    // viewer) signals intent to play by raising this flag. The arbiter — which
+    // is the rack owner if present, else the lex-min member (so there is ALWAYS
+    // an arbiter among the connected peers, even an all-anon rack) — seats them.
+    const outstandingRequests: string[] = [];
     if (aw) {
       for (const [, state] of aw.getStates()) {
         const s = state as Record<string, unknown> | undefined;
         const req = s?.[joinReqField()];
-        if (typeof req === 'string' && req.length > 0) requesters.add(req);
+        if (typeof req === 'string' && req.length > 0) outstandingRequests.push(req);
       }
     }
+
+    // Multiplayer is opened EXPLICITLY (host clicks Host Multiplayer →
+    // mpMode='multi') OR IMPLICITLY by any peer requesting to Join — the latter
+    // is what lets an anon/invite guest actually join when the host hasn't (or
+    // can't) press Host Multiplayer first (the operator's "anon sees the widget
+    // but no working Join" bug: mpMode stayed undefined, so the roster never
+    // opened). A request to play IS the decision to run MP. Only `mpMode==='single'`
+    // (the host explicitly chose solo) suppresses it. So: open MP when a level
+    // is already going OR someone wants in, unless the host locked single-player.
+    const wantsMp = mpMode === 'multi' || outstandingRequests.length > 0 || rosterSize(combinedRoster(cur)) > 0;
+    if (mpMode === 'single') return;            // host chose single-player — no roster
+    if (!wantsMp) return;                        // nobody wants MP yet — stay idle
+    // Persist mpMode='multi' (once) so EVERY peer's Join affordance + lobby UI
+    // converges, including the requester that triggered this.
+    if (mpMode !== 'multi') {
+      mpMode = 'multi';
+      writeNodeMpMode('multi');
+    }
+
+    // Gather requesters: every member with a raised join-request flag, plus
+    // the arbiter itself (the arbiter is always player 0 in a multiplayer
+    // session; owner-first slot assignment puts the rack owner — or, in an
+    // all-anon rack, the lex-min arbiter — at slot 0).
+    const requesters = new Set<string>([me, ...outstandingRequests]);
     // Only honour requests from live members (a stale flag from a departed
     // peer must not consume a slot).
     const live = new Set(memberIds);
     const filtered = [...requesters].filter((uid) => live.has(uid) || uid === me);
 
-    // Slice 6: while a level is running, a NEW requester is seated as PENDING
-    // (it spectates + spawns at the next map); before a game starts (or while
-    // the dialog is open at intermission) it goes straight to ACTIVE. Only the
-    // arbiter computes isGameInProgress, and it is the single writer, so the
-    // pending/active split is authoritative.
+    // HOT-DROP (operator request): a peer joining mid-level should be playing
+    // the CURRENT map within seconds — NOT seated as a next-map reservation
+    // (the old slice-6 PENDING behaviour). DOOM has no true mid-level join
+    // (the player set is fixed at G_InitNew and the demo/lockstep tic stream
+    // assumes a constant playeringame[]), so we take the pragmatic route the
+    // brief calls for: seat the joiner as an ACTIVE player and have the arbiter
+    // immediately RE-LAUNCH the current map (same skill/episode/map) with the
+    // larger numPlayers. Every peer's onGameStart reloads the level via
+    // G_InitNew, so the new player spawns at its coop start in the current map
+    // (a fast ~1-2s reload) instead of waiting for the next map.
+    //
+    // So we ALWAYS assign new joiners ACTIVE (gameInProgress=false), and detect
+    // below whether a brand-new active player appeared while a level was
+    // running → trigger the hot-drop relaunch. (PENDING is still produced by
+    // assignSlots for callers that ask for it, but the live game path no longer
+    // routes there.)
+    const wasInProgress = isGameInProgress();
+    const beforeActiveIds = new Set(Object.values(cur.active));
     const { state: next, changed } = assignSlots(
       cur,
       filtered,
-      isGameInProgress(),
+      false, // seat ACTIVE even mid-level — hot-drop, not next-map reservation
       resolveOwnerIds(),
     );
     if (changed) {
       writeNodeRosterState(next);
       roster = next.active;
       pending = next.pending;
+      // A new ACTIVE player was added while a level is running → hot-drop:
+      // re-launch the current map so the joiner spawns into it now.
+      const addedActive = Object.values(next.active).some(
+        (uid) => !beforeActiveIds.has(uid),
+      );
+      if (wasInProgress && addedActive) hotDropRelaunchCurrentMap();
+    }
+  }
+
+  /** Hot-drop relaunch: re-broadcast the CURRENT map's settings with the new
+   *  (larger) active roster so every peer — including the just-seated joiner —
+   *  reloads the level via G_InitNew and the joiner spawns into the map within
+   *  ~1-2s. Arbiter-only (single writer / single broadcaster). The settings are
+   *  rebuilt from the dialog state, which applyGameStart keeps mirrored to
+   *  whatever is currently running, so the map/skill/episode are unchanged —
+   *  only numPlayers grows. */
+  function hotDropRelaunchCurrentMap(): void {
+    if (!isSessionArbiter()) return;
+    if (mySlot === null) return;
+    const settings = buildSettings(); // numPlayers now includes the joiner
+    if (netcode) {
+      netcode.broadcastGameStart(settings);
+    } else {
+      applyGameStart({ launchId: Date.now(), settings });
     }
   }
 
@@ -1292,7 +1345,7 @@
       data-testid="doom-canvas"
     ></canvas>
     {#if loadStatus === 'idle' && isHost}
-      <button class="overlay" onclick={() => void tryLoad()}>
+      <button class="overlay nodrag" onclick={() => void tryLoad()}>
         Click to load DOOM
         <small>(downloads ~4 MB WAD on first spawn)</small>
       </button>
@@ -1307,7 +1360,7 @@
     {#if loadStatus === 'ready' && cardEl && document.activeElement !== cardEl}
       <button
         type="button"
-        class="focus-hint"
+        class="focus-hint nodrag"
         onclick={() => cardEl?.focus()}
       >
         Click to capture keyboard
@@ -1358,9 +1411,9 @@
          auto-start" detection). The host decides whether this DOOM session is
          single-player or a multiplayer lobby; the choice is stored on the node
          so guests see the lobby state. -->
-    <div class="start-choice" data-testid="doom-start-choice">
+    <div class="start-choice nodrag" data-testid="doom-start-choice">
       <button
-        class="start-btn"
+        class="start-btn nodrag"
         data-testid="doom-start-single"
         onclick={() => void playSinglePlayer()}
         title="Play DOOM solo (no netgame)"
@@ -1368,7 +1421,7 @@
         Single Player
       </button>
       <button
-        class="start-btn primary"
+        class="start-btn primary nodrag"
         data-testid="doom-start-multi"
         onclick={() => void hostMultiplayer()}
         title="Open a multiplayer lobby — you are player 1; rack-mates can Join"
@@ -1380,31 +1433,38 @@
 
   <div class="controls-row">
     <button
-      class="run-btn"
+      class="run-btn nodrag"
       onclick={toggleRunning}
       title="Pause / resume the game loop"
     >
       {running > 0.5 ? 'Pause' : 'Run'}
     </button>
-    {#if mpMode === 'multi' && mySlot === null && myPendingSlot === null}
-      <!-- Join is offered to an unjoined peer once the HOST has opened a
-           multiplayer lobby (mpMode === 'multi'). A pending late joiner has
-           already claimed a (pending) slot. Fullness is the COMBINED active +
-           pending occupancy so a reserved late-join slot counts. While a level
-           is running, the join label hints it'll seat at the next map. -->
+    {#if mpMode !== 'single' && !isHost && mySlot === null && myPendingSlot === null}
+      <!-- Join is offered to ANY unjoined non-host peer (including an anon/invite
+           guest — it carries a stable awareness user.id, so it shows + can claim
+           a slot like any member). Critically it shows even when mpMode is still
+           UNDEFINED (host hasn't pressed Host Multiplayer): the guest's Join IS
+           the signal to open multiplayer — the arbiter sees the join-request +
+           opens the lobby + seats the guest. This is the fix for the operator's
+           "anon sees the widget but there's no working Join" bug, where mpMode
+           stayed undefined so the guest had zero affordance. Only mpMode==='single'
+           (host explicitly chose solo) hides it. Fullness is the COMBINED active +
+           pending occupancy. While a level is running, joining HOT-DROPS the
+           joiner into the CURRENT map (the arbiter re-launches it with the new
+           player), so the label reflects an immediate join, not a next-map wait. -->
       {@const full = isFull(combinedRoster({ active: roster, pending }))}
       <button
-        class="join-btn"
+        class="join-btn nodrag"
         data-testid="doom-join-btn"
         disabled={full}
         onclick={() => void joinGame()}
         title={full
           ? 'DOOM is full (4 players)'
           : isGameInProgress()
-            ? 'Join — you will spectate, then spawn at the next map'
+            ? 'Join — hot-drop into the current map (it reloads with you in it)'
             : 'Join this DOOM netgame as a player'}
       >
-        {full ? 'Full' : isGameInProgress() ? 'Join (next map)' : 'Join'}
+        {full ? 'Full' : isGameInProgress() ? 'Join (hot-drop)' : 'Join'}
       </button>
     {/if}
   </div>
@@ -1413,7 +1473,14 @@
     {@const inLevel = launched && gamestate === GS_LEVEL}
     {@const atIntermission = launched && gamestate === GS_INTERMISSION}
     {@const pendingCount = rosterSize(pending)}
-    <div class="newgame" data-testid="doom-newgame">
+    <!-- nodrag on the whole dialog: SvelteFlow treats a node as draggable, so a
+         mousedown anywhere inside (incl. on a <select> or <button>) starts a
+         node-drag + swallows the click unless the target carries the
+         noDragClassName ('nodrag'). Without it the difficulty/mode/episode/map
+         selectors + Launch never receive the click (the operator's "New Game
+         dialog isn't mouse-clickable" bug). nowheel on the selects keeps the
+         option-list scroll from zooming the canvas. -->
+    <div class="newgame nodrag" data-testid="doom-newgame">
       {#if isSessionArbiter()}
         <!-- Arbiter (host = player 0): pick mode/skill/episode/map + Launch.
              Locked while a level is actively running; re-opens at the end of
@@ -1421,7 +1488,7 @@
         <div class="ng-row">
           <label>
             Mode
-            <select bind:value={mode} disabled={inLevel} data-testid="doom-mode">
+            <select class="nodrag nowheel" bind:value={mode} disabled={inLevel} data-testid="doom-mode">
               {#each MODE_OPTIONS as m (m)}
                 <option value={m}>{m}</option>
               {/each}
@@ -1429,7 +1496,7 @@
           </label>
           <label>
             Skill
-            <select bind:value={skill} disabled={inLevel} data-testid="doom-skill">
+            <select class="nodrag nowheel" bind:value={skill} disabled={inLevel} data-testid="doom-skill">
               {#each SKILL_LABELS as label, i (i)}
                 <option value={i}>{i + 1} — {label}</option>
               {/each}
@@ -1441,7 +1508,7 @@
             Ep
             <!-- DOOM1 shareware ships episode 1 only; the picker offers 1-3
                  for full-WAD parity but defaults to + clamps sensibly. -->
-            <select bind:value={episode} disabled={inLevel} data-testid="doom-episode">
+            <select class="nodrag nowheel" bind:value={episode} disabled={inLevel} data-testid="doom-episode">
               {#each [1, 2, 3] as e (e)}
                 <option value={e}>{e}</option>
               {/each}
@@ -1449,14 +1516,14 @@
           </label>
           <label>
             Map
-            <select bind:value={mapNum} disabled={inLevel} data-testid="doom-map">
+            <select class="nodrag nowheel" bind:value={mapNum} disabled={inLevel} data-testid="doom-map">
               {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as mp (mp)}
                 <option value={mp}>{mp}</option>
               {/each}
             </select>
           </label>
           <button
-            class="launch-btn"
+            class="launch-btn nodrag"
             data-testid="doom-launch-btn"
             disabled={inLevel}
             onclick={launchGame}
@@ -1588,6 +1655,33 @@
     justify-content: center;
     padding: 6px 0 8px;
     position: relative;
+  }
+  /* Host's Single Player / Host Multiplayer choice (added in #314 but never
+     styled). Sits below the canvas; pointer-events explicit so SvelteFlow's
+     drag never beats the click (nodrag on the elements does the heavy lifting,
+     this is belt-and-suspenders for the future ABUSE mouse module). */
+  .doom-card .start-choice {
+    display: flex;
+    gap: 8px;
+    padding: 0 10px 6px;
+    pointer-events: auto;
+  }
+  .doom-card .start-btn {
+    flex: 1;
+    font-size: 11px;
+    padding: 5px 8px;
+    background: color-mix(in oklab, var(--cable-video, #c33) 25%, #181014);
+    color: #eee;
+    border: 1px solid color-mix(in oklab, var(--cable-video, #c33) 40%, transparent);
+    cursor: pointer;
+  }
+  .doom-card .start-btn.primary {
+    background: var(--cable-video, #c33);
+    color: white;
+    font-weight: 700;
+  }
+  .doom-card .start-btn:hover {
+    filter: brightness(1.15);
   }
   .doom-card canvas {
     display: block;

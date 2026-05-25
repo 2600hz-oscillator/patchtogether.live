@@ -65,14 +65,23 @@ drives the game start:</p>
 (Player 1 → 4, in order). You don't pick a slot — the arbiter assigns it
 deterministically so two simultaneous joins can't collide.</p>
 
-<h2>Late join</h2>
+<h2>Late join (hot-drop)</h2>
 <p>
-  DOOM has no mid-level join in the original protocol, so a peer who joins
-  while a level is already running becomes a <strong>spectator</strong>: it
-  shows the host's view and a "Spectating — joining as Player N next map" badge.
-  At the next intermission (when the current level ends), the arbiter seats the
-  pending player and everyone launches the next map together — the late joiner
-  now spawns into that map as a real player at its reserved slot.
+  DOOM has no <em>true</em> mid-level join: the original netgame fixes the
+  player set when the level starts (<code>G_InitNew</code> spawns one marine per
+  active slot, and the lockstep tic stream assumes a constant
+  <code>playeringame[]</code>). So spawning a new marine into an
+  already-running level mid-tic isn't possible.
+</p>
+<p>
+  We get the same outcome the pragmatic way: when you <strong>Join</strong> a
+  game that's already running, the arbiter seats you as an active player and
+  immediately <strong>re-launches the current map</strong> (same skill, episode,
+  and map — only the player count grows). Every peer reloads the level via
+  <code>G_InitNew</code>, so you drop into the <em>current</em> map at your coop
+  start within a second or two — a fast reload, not a wait for the next map.
+  This works for anon invite-link guests too: clicking Join is itself what opens
+  multiplayer, so a guest never needs the host to flip a switch first.
 </p>
 
 <h2>Player colors</h2>
@@ -121,7 +130,7 @@ deterministically so two simultaneous joins can't collide.</p>
 <ul>
   <li>One DOOM card per peer — you can't spawn two.</li>
   <li>A player who closes their tab or leaves mid-level vanishes from the game
-    (vanilla DOOM behavior); their slot stays reserved until the next map.</li>
+    (vanilla DOOM behavior); the arbiter frees their slot for the next joiner.</li>
   <li>Single player still works: a lone peer in a rack plays a normal
     single-player game with no netcode involved.</li>
   <li>No save/load in multiplayer, matching the original game.</li>
