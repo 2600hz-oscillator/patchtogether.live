@@ -877,6 +877,14 @@
   // app/tab switch (document.hidden). Transient re-render blur no longer drops
   // capture or releases held keys.
   let kbLatched = $state(false);
+  // Mirror image of the latch: an EXPLICIT release (Escape / click-away /
+  // tab-hide) sets this and it OVERRIDES the focus / `.selected` fallback
+  // below. Without it, Escape only dropped `kbLatched` but the node is still
+  // SvelteFlow-selected (Esc doesn't deselect), so shouldClaimKey() kept
+  // claiming via (c) and keys still reached DOOM — i.e. Escape wasn't a clean
+  // hand-back and you stayed stuck capturing. Cleared on the next click
+  // (latchKeyboard), which is the natural re-engage gesture.
+  let kbReleased = $state(false);
 
   function shouldClaimKey(): boolean {
     if (!cardEl) return false;
@@ -884,6 +892,10 @@
     //    explicitly released it. This is the sticky path — it does NOT depend
     //    on the transient focus / `.selected` state that sync churn toggles.
     if (kbLatched) return true;
+    // a') Explicitly released (Escape / click-away / tab-hide): hand the
+    //     keyboard back even though the node may still be focused/selected.
+    //     Re-engage requires a fresh click (which clears this).
+    if (kbReleased) return false;
     // b) Focus-within: any descendant (incl. the card itself) is
     //    document.activeElement.
     if (cardEl.contains(document.activeElement)) return true;
@@ -897,13 +909,16 @@
   /** Take keyboard control (sticky). Called on a click anywhere on the card. */
   function latchKeyboard(): void {
     kbLatched = true;
+    kbReleased = false;
   }
   /** Release keyboard control + drop any held keys. Called on an EXPLICIT
    *  release only: Escape, a real click-away, or a genuine app/tab switch —
-   *  never on a transient re-render blur. */
+   *  never on a transient re-render blur. Always sets the released flag (even
+   *  when we were claiming via focus/`.selected` rather than the latch) so the
+   *  gesture is a clean hand-back regardless of how control was held. */
   function unlatchKeyboard(): void {
-    if (!kbLatched && heldKeys.size === 0) return;
     kbLatched = false;
+    kbReleased = true;
     releaseHeldKeys();
   }
   /** A genuine pointer-down OUTSIDE this card releases the latch (click-away).
