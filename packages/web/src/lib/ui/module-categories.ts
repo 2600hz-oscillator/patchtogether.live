@@ -151,6 +151,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   clouds: { top: 'Ports', sub: 'Mutable' },
   peaks: { top: 'Ports', sub: 'Mutable' },
   stages: { top: 'Ports', sub: 'Mutable' },
+  tides2: { top: 'Ports', sub: 'Mutable' },
   blades: { top: 'Ports', sub: 'Mutable' },
   macrooscillator: { top: 'Ports', sub: 'Mutable' },
   veils: { top: 'Ports', sub: 'Mutable' },
