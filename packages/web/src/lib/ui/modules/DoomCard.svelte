@@ -83,6 +83,7 @@
   import {
     shouldOpenMultiplayer,
     guestWaitingState,
+    isJoinDisabled,
   } from '$lib/doom/doom-session';
   import {
     slotColorCss,
@@ -1835,29 +1836,31 @@
     {#if mpMode !== 'single' && !isHost && mySlot === null && myPendingSlot === null}
       <!-- Join is offered to ANY unjoined non-host peer (including an anon/invite
            guest — it carries a stable awareness user.id, so it shows + can claim
-           a slot like any member). Critically it shows even when mpMode is still
-           UNDEFINED (host hasn't pressed Host Multiplayer): the guest's Join IS
-           the signal to open multiplayer — the arbiter sees the join-request +
-           opens the lobby + seats the guest. The DEADLOCK FIX: Join is NEVER
-           gated on mpLive (the join-request is what opens MP), so it is enabled
-           whenever there is room — disabled only when the game is FULL. Only
-           mpMode==='single' (host explicitly chose solo on a SOLO rack) hides
-           it. Fullness is the COMBINED active + pending occupancy. While a level
-           is running, joining HOT-DROPS the joiner into the CURRENT map (the
-           arbiter re-launches it with the new player), so the label reflects an
-           immediate join, not a next-map wait. The host never sees a Join button
-           (it's already P1); already-seated peers don't either. -->
+           a slot like any member). Per the owner's spec the Join button is SHOWN
+           but DISABLED ("Waiting for host…") until the host is actually running a
+           live multiplayer game (mpLive); once the host is in a live MP level it
+           ENABLES and one click hot-drops the joiner into the CURRENT map (the
+           arbiter re-launches it with the new player). This is NOT a deadlock:
+           the host flips mpLive itself when it launches with other members
+           present (shouldOpenMultiplayer), independent of any guest Join. Only
+           mpMode==='single' (host explicitly chose solo on a SOLO rack) hides it.
+           Fullness is the COMBINED active + pending occupancy. The host never
+           sees a Join button (it's already P1); already-seated peers don't
+           either. -->
       {@const full = isFull(combinedRoster({ active: roster, pending }))}
+      {@const joinDisabled = isJoinDisabled(full, mpLive)}
       <button
         class="join-btn nodrag"
         data-testid="doom-join-btn"
-        disabled={full}
+        disabled={joinDisabled}
         onclick={() => void joinGame()}
         title={full
           ? 'DOOM is full (4 players)'
-          : isGameInProgress()
-            ? 'Join — hot-drop into the current map (it reloads with you in it)'
-            : 'Join this DOOM netgame as a player'}
+          : !mpLive
+            ? 'Waiting for the host to start a multiplayer game'
+            : isGameInProgress()
+              ? 'Join — hot-drop into the current map (it reloads with you in it)'
+              : 'Join this DOOM netgame as a player'}
       >
         {full ? 'Full' : isGameInProgress() ? 'Join (hot-drop)' : 'Join'}
       </button>

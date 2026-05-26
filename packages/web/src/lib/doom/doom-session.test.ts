@@ -161,9 +161,12 @@ describe('isJoinAvailable / isJoinDisabled (no Join deadlock)', () => {
     );
   });
 
-  it('disables (but still shows) Join only when full', () => {
-    expect(isJoinDisabled(true)).toBe(true);
-    expect(isJoinDisabled(false)).toBe(false);
+  it('shows Join but DISABLES it until the host is running a live MP game', () => {
+    // Per the owner's spec: Join is disabled unless the host is running MP.
+    expect(isJoinDisabled(false, false), 'not full, host not live → disabled').toBe(true);
+    expect(isJoinDisabled(false, true), 'not full, host MP live → enabled').toBe(false);
+    expect(isJoinDisabled(true, true), 'full → disabled even when live').toBe(true);
+    expect(isJoinDisabled(true, false), 'full + not live → disabled').toBe(true);
   });
 });
 
@@ -187,7 +190,8 @@ describe('end-to-end deadlock scenario', () => {
     expect(isJoinAvailable({ isHost: false, seated: false, full: false, mpMode: 'multi' })).toBe(
       true,
     );
-    expect(isJoinDisabled(false)).toBe(false);
+    // host is live (mpLive true) → Join is ENABLED for the unjoined guest.
+    expect(isJoinDisabled(false, hostMpLive)).toBe(false);
     expect(guestWaitingState({ ownInLevel: false, hostMpLive })).not.toBe('waiting');
   });
 

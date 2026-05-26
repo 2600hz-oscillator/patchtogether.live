@@ -110,13 +110,15 @@ export interface JoinEnabledInput {
   mpMode: DoomSessionMode;
 }
 
-/** Is the Join affordance available to this peer?
+/** Is the Join affordance OFFERED (rendered) to this peer?
  *
- *  Join must be offered to any unjoined, non-host peer whenever multiplayer is
- *  not explicitly locked single — and critically it is NOT gated on the host's
- *  mpLive (the join-request IS what opens MP), so there is no deadlock where
- *  Join is the only thing that flips mpLive yet is disabled until mpLive. It is
- *  only disabled when the game is full. */
+ *  Offered to any unjoined, non-host peer unless the host explicitly locked
+ *  single-player. Whether the offered button is ENABLED is a separate concern
+ *  (isJoinDisabled) — per the owner's spec the button is shown but DISABLED
+ *  until the host is actually running a multiplayer game (mpLive). There is no
+ *  deadlock from gating on mpLive: the host flips mpLive itself when it launches
+ *  with other members present (shouldOpenMultiplayer), independent of any guest
+ *  Join. */
 export function isJoinAvailable(input: JoinEnabledInput): boolean {
   if (input.isHost) return false;
   if (input.seated) return false;
@@ -124,7 +126,10 @@ export function isJoinAvailable(input: JoinEnabledInput): boolean {
   return true;
 }
 
-/** Whether the (offered) Join button should be rendered disabled. */
-export function isJoinDisabled(full: boolean): boolean {
-  return full;
+/** Whether the (offered) Join button should be rendered DISABLED. Per the
+ *  owner's spec, Join is disabled until the host is running a live multiplayer
+ *  game (mpLive) — or when the game is full. The host-side shouldOpenMultiplayer
+ *  flips mpLive on launch-with-others, so this gate never deadlocks. */
+export function isJoinDisabled(full: boolean, mpLive: boolean): boolean {
+  return full || !mpLive;
 }

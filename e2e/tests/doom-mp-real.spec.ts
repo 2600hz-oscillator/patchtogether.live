@@ -331,16 +331,18 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         expect(g.mpLive, 'no MP game running yet → not live').toBe(false);
         expect(g.mySlot, 'guest is not seated before joining').toBeNull();
       }
-      // The Join button exists AND is enabled even before the host launches —
-      // Join is never gated on mpLive (no deadlock). The game is not full.
+      // Per the owner's spec: the Join button is SHOWN but DISABLED before the
+      // host is running a live MP game (mpLive false). It enables only once the
+      // host is in a live MP level. (No deadlock: the host flips mpLive itself
+      // on launch-with-others via shouldOpenMultiplayer, not via a guest Join.)
       const joinBtnPreLaunch = guest.page.locator('[data-testid="doom-join-btn"]');
       await expect(joinBtnPreLaunch, 'Join button is present pre-launch').toBeVisible({
         timeout: 10000,
       });
       await expect(
         joinBtnPreLaunch,
-        'Join is ENABLED pre-launch (NOT deadlocked on mpLive) — the join-request opens MP',
-      ).toBeEnabled();
+        'Join is DISABLED pre-launch (host not running a multiplayer game yet)',
+      ).toBeDisabled();
 
       // ── Owner (arbiter) LAUNCHES coop E1M1 → host reaches GS_LEVEL ───────
       await owner.page.evaluate(
@@ -370,11 +372,11 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         expect(o.badgeText).toBe('P1');
       }
 
-      // ── With the game live, the guest's Join (already enabled) → one click ──
-      // hot-joins straight into the running level (no second host action). The
-      // host published mpLive=true; the guest mirrors it (used for the waiting/
-      // joining copy), and Join stays ENABLED throughout (it is never deadlocked
-      // on mpLive — the round-6 fix).
+      // ── The host is now live (mpLive=true): the guest's Join ENABLES, and ──
+      // one click hot-joins straight into the running level (no second host
+      // action). The host published mpLive=true; the guest mirrors it (drives
+      // the waiting→joining copy + the Join enabled state). No deadlock: the
+      // host flipped mpLive on launch-with-others, not via the guest's Join.
       const guestSawLive = await guest.page
         .waitForFunction(
           (nid) =>
