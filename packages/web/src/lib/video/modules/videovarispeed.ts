@@ -212,6 +212,11 @@ export const videoVarispeedDef: VideoModuleDef = {
     let frameDirty = false;
     let rvfcId: number | null = null;
     let rvfcSupported = false;
+    // Count of actual texImage2D uploads. Engine-internal liveness signal so
+    // e2e can prove this source's decode->upload path is live WITHOUT sampling
+    // rendered pixels on software-GL (which flakes under CI rAF throttling).
+    // Mirrors VIDEOBOX's uploader.uploadCount.
+    let uploadCount = 0;
 
     const params: VideoVarispeedParams = { ...DEFAULTS };
 
@@ -312,6 +317,7 @@ export const videoVarispeedDef: VideoModuleDef = {
         // cheap in-place driver update; correctness wins for a file player.
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoEl);
         sourceTexAllocated = true;
+        uploadCount++;
       } catch (err) {
         console.warn('[videovarispeed] texImage2D failed:', err);
         return false;
@@ -464,6 +470,11 @@ export const videoVarispeedDef: VideoModuleDef = {
         // <video> decode from throttling when N sources are unpatched).
         if (key === 'hasKeepAlive') return keepAlive !== null;
         if (key === 'rvfcSupported') return rvfcSupported;
+        // Engine-internal liveness for e2e: how many real frame uploads this
+        // source has done. Sampling this over a step()-driven window proves the
+        // decode->upload path is alive deterministically, without reading
+        // software-GL framebuffer pixels.
+        if (key === 'uploadCount') return uploadCount;
         return undefined;
       },
       dispose() { surface.dispose(); },
