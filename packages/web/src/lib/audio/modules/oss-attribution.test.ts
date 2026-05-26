@@ -17,6 +17,8 @@ import { cloudsDef } from './clouds';
 import { ringsDef } from './rings';
 import { elementsDef } from './elements';
 import { peaksDef } from './peaks';
+import { marblesDef } from './marbles';
+import { symbioteDef } from './symbiote';
 import { macrooscillatorDef } from './macrooscillator';
 import { cloudseedDef } from './cloudseed';
 import { stagesDef } from './stages';
@@ -42,6 +44,8 @@ const EXPECTED_PORTS: PortExpectation[] = [
   { type: 'rings',           def: ringsDef,           author: 'Émilie Gillet' },
   { type: 'elements',        def: elementsDef,        author: 'Émilie Gillet' },
   { type: 'peaks',           def: peaksDef,           author: 'Émilie Gillet' },
+  { type: 'marbles',         def: marblesDef,         author: 'Émilie Gillet' },
+  { type: 'symbiote',        def: symbioteDef,        author: 'Émilie Gillet' },
   { type: 'macrooscillator', def: macrooscillatorDef, author: 'Émilie Gillet' },
   { type: 'stages',          def: stagesDef,          author: 'Émilie Gillet' },
   { type: 'warps',           def: warpsDef,           author: 'Émilie Gillet' },

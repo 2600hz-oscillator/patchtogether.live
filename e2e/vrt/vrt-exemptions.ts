@@ -98,6 +98,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // pins the four-output DSP math. Capture a baseline only if a future PR
   // adds a slope-preview scope to the card.
   tides2: 'Card has no custom visualization (knobs + mode buttons); unit tests pin the DSP. No VRT scene needed.',
+  // MARBLES / SYMBIOTE first-slice PR: plain fader cards (no custom canvas
+  // viz), so VRT adds little; unit tests cover the DSP cores. Promote +
+  // capture baselines in a follow-up PR.
+  marbles: 'VRT baseline pending; standard fader card; unit tests cover the DSP core.',
+  symbiote: 'VRT baseline pending; standard fader card; unit tests cover the DSP core.',
   // WARPS first-slice PR: VRT baseline pending; ART + unit + E2E provide
   // coverage. Promote into MODULES + capture baselines on both platforms
   // in a follow-up PR.

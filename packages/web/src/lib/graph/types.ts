@@ -261,6 +261,20 @@ type StandardModuleType =
   // dependent knobs, a gate input, and CV-routed knob inputs. v1 ships
   // five modes; multistage envelope / tap-LFO / BPF mode deferred.
   | 'peaks'
+  // MARBLES — random sampler / Bernoulli-gate + quantized-CV generator
+  // (Mutable Instruments archetype, Émilie Gillet, MIT-licensed). T-section
+  // (t1/t2) runs COIN/CLUSTERS/DRUMS/INDEP/3-STATE/MARKOV gate models with
+  // déjà-vu Markov locking + jitter; X-section (x1/x2/x3) draws random
+  // voltages shaped by SPREAD/BIAS/STEPS through a weighted-scale quantizer
+  // with its own déjà-vu loop. clk is the master clock.
+  | 'marbles'
+  // SYMBIOTE — Marbles core running the always-on "Symbiote" alt-firmware:
+  // T-section = Grids drum engine (BD/SD/HH on t1/t2/t3, Drums 2D-map or
+  // Euclidean sub-mode), X-section = TB-3PO acid sequencer (x1 clock, x2
+  // 1V/oct pitch, x3 gate, y accent). Grids PatternGenerator + drum-maps are
+  // GPLv3 (Émilie Gillet); TB-3PO from the O&C Hemisphere applet. No hardware
+  // T-MODEL long-press / déjà-vu sub-mode toggle — all controls are params.
+  | 'symbiote'
   // WARPS — meta-modulator / signal masher (Mutable Instruments Warps
   // archetype, Émilie Gillet, 2014, MIT-licensed). Clean-room TypeScript
   // port. v1 ships 4 Xmod algorithms (XFADE / RING-MOD / XOR / COMPARE)

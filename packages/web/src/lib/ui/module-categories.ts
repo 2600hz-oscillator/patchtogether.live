@@ -151,6 +151,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   elements: { top: 'Ports', sub: 'Mutable' },
   clouds: { top: 'Ports', sub: 'Mutable' },
   peaks: { top: 'Ports', sub: 'Mutable' },
+  marbles: { top: 'Ports', sub: 'Mutable' },
+  symbiote: { top: 'Ports', sub: 'Mutable' },
   stages: { top: 'Ports', sub: 'Mutable' },
   tides2: { top: 'Ports', sub: 'Mutable' },
   blades: { top: 'Ports', sub: 'Mutable' },
