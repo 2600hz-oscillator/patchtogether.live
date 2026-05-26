@@ -196,6 +196,14 @@ tasks:
     cmds:
       - npm exec -w {{.E2E}} -- playwright test --grep @collab --workers=2 {{.CLI_ARGS}}
 
+  soak:
+    desc: 'Run ONLY the DOOM MP soak/stress spec (doom-mp-soak.spec.ts). Parameterized via env: SOAK_BOTS (default 2, 2..4), SOAK_DURATION_MS (default 30000), SOAK_TICK_MS (default 250). Sets SOAK=1 so the @soak spec opts in. Single worker — the soak spins up N contexts in ONE test, so worker fan-out would multiply chrome processes. LOCAL = short smoke only (2 bots / ~30-60s) then `pkill -9 -f chrome-headless-shell`; the long 4-bot/10-min soak runs in the informational CI `doom-soak` job, NOT locally.'
+    deps: [test:emit-manifest]
+    env:
+      SOAK: '1'
+    cmds:
+      - npm exec -w {{.E2E}} -- playwright test --grep @soak --workers=1 {{.CLI_ARGS}}
+
   audio-drift:
     desc: |
       Phase-C decision research harness. Drives two browser contexts on the same

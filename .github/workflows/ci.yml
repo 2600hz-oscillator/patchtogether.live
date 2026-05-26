@@ -525,6 +525,148 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
+  # doom-soak — INFORMATIONAL DOOM-multiplayer soak/stress. N independent
+  # browser contexts ("bots") join ONE shared rackspace, host + launch a
+  # deathmatch, then continuously wander + shoot. The ONLY metric is SURVIVAL
+  # TIME (how long all N contexts stay alive with no crash / WASM abort / relay
+  # death / module loss / fall-out-of-level). Validates DOOM MP stability after
+  # the round-4 fix (PR #318: gated the 1.37 MB framebuffer broadcast that
+  # OOM-killed the relay, sticky-key latch, clean Esc release).
+  #
+  # NOT on the blocking path — like `collab`, this job runs + reports but is
+  # NOT in the `ci` umbrella's `needs`, so a soak crash never blocks a PR merge.
+  # It is an early-warning canary for MP stability regressions, owner-reviewed.
+  #
+  # Matrix: a fast 2-bot smoke (proves the harness boots end-to-end) + the real
+  # 4-bot / 10-min soak. Both run the SAME spec (doom-mp-soak.spec.ts) — only
+  # SOAK_BOTS / SOAK_DURATION_MS differ. `fail-fast: false` so the 4-bot result
+  # is reported even if the 2-bot variant trips. The harness uses the in-memory
+  # Hocuspocus relay (no DATABASE_URL needed for the relay; the DB is set up
+  # only to match the other jobs' env). Single worker (`task soak`) — the soak
+  # opens N contexts inside ONE test, so worker fan-out would multiply chrome.
+  # -----------------------------------------------------------------------
+  doom-soak:
+    name: doom-soak (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    # Per-variant ceiling: STAGGERED cold-WASM N-context bring-up (the PR #319
+    # run showed 2-context cold WASM alone takes ~6 min on the runner; 4 bots
+    # staggered budgets ~14 min) + the soak window (up to 10 min) + teardown /
+    # report headroom. Matches the per-test setTimeout cap (40 min).
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: '2bot-smoke'
+            bots: 2
+            duration_ms: 60000
+          - label: '4bot-10min'
+            bots: 4
+            duration_ms: 600000
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      # Opt the @soak spec in (it test.skip()s itself unless SOAK is set).
+      SOAK: '1'
+      SOAK_BOTS: ${{ matrix.bots }}
+      SOAK_DURATION_MS: ${{ matrix.duration_ms }}
+
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      - name: Build DSP
+        run: flox activate -- task dsp:build
+
+      # `task soak` = playwright --grep @soak --workers=1, with SOAK=1 +
+      # SOAK_BOTS / SOAK_DURATION_MS from the matrix. Logs the survival metric
+      # line `[doom-soak] bots=N target=Ns survived=Ns crash=...`.
+      - name: Run DOOM MP soak (${{ matrix.label }})
+        run: flox activate -- task soak
+
+      - name: Upload Playwright test-results on failure (doom-soak)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-doom-soak-${{ matrix.label }}
+          path: e2e/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
   # ci (umbrella) — gates branch protection. Required status check named
   # `typecheck + unit + ART + E2E` (see ruleset 16042163). This job exists
   # ONLY to preserve that name and aggregate the pass/fail of the split
