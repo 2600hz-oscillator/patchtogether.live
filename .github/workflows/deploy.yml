@@ -192,7 +192,13 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/web
-          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live --branch=main
+          # Pass an explicit ASCII commit message: wrangler otherwise auto-attaches
+          # the git commit message as CF deployment metadata, and CF rejects any
+          # message that isn't valid UTF-8 ([code: 8000111]) — which silently fails
+          # the whole deploy when a merge-commit body contains mangled em-dashes/
+          # ellipses (agent-authored messages routinely do). Sending a fixed SHA
+          # string sidesteps it entirely.
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live --branch=main --commit-message=deploy-${{ github.sha }}
 
   # ---------------- PR previews: auto on PR events ----------------
 
@@ -263,7 +269,7 @@ jobs:
           # PR previews deploy to the AUTOTEST project (not prod), so they
           # inherit the test-instance Clerk env vars and full auth flow
           # works. URL becomes `pr-N.patchtogether-live-autotest.pages.dev`.
-          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=pr-${{ github.event.pull_request.number }}
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=pr-${{ github.event.pull_request.number }} --commit-message=deploy-${{ github.sha }}
 
   # ---------------- Autotest + dev: auto on merge to main ----------------
 
@@ -334,7 +340,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/web
-          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=main
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=main --commit-message=deploy-${{ github.sha }}
 
   deploy-dev:
     name: Deploy → dev.patchtogether.live (dev)
@@ -400,7 +406,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/web
-          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-dev --branch=dev
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-dev --branch=dev --commit-message=deploy-${{ github.sha }}
 
   # ---------------- Live smoke ----------------
   # Runs after a successful autotest deploy. Hits the live URL with the
