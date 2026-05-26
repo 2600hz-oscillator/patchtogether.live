@@ -87,6 +87,11 @@
     spectatorBadge,
     type DoomViewerStatus,
   } from '$lib/doom/doom-player-identity';
+  import {
+    computeMpLive,
+    joinAffordance,
+    shouldHotJoinRelaunch,
+  } from '$lib/doom/doom-gating';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -169,6 +174,43 @@
       if (!target.data) target.data = {};
       (target.data as Record<string, unknown>).mpMode = next;
     });
+  }
+  // ---- Round 5: host-authoritative "MP is live" signal ----
+  //
+  // A guest's Join button is enabled IFF the host is currently running a
+  // multiplayer game (in an active MP session, in-level). Rather than have the
+  // guest INFER that from racy awareness churn, the HOST writes a single Yjs-
+  // synced boolean leaf (node.data.mpLive) each tick; the guest reads it.
+  // mpLive == (mpMode==='multi' AND launched AND gamestate===GS_LEVEL). It is
+  // false at the lobby (no game yet), at intermission (between maps), and in
+  // single-player. Mirrored into $state like roster/mpMode (refreshed in
+  // syncRosterState) because a node-data edit arrives via the Yjs nodes
+  // observer, not Svelte's reactive proxy.
+  let mpLive = $state(false);
+  function readNodeMpLive(): boolean {
+    const target = patch.nodes[id];
+    return (target?.data as { mpLive?: unknown } | undefined)?.mpLive === true;
+  }
+  /** Host-only: persist the MP-live flag on the shared node. Only written when
+   *  it actually flips (avoids a per-tick Yjs write storm). Non-LOCAL_ORIGIN
+   *  session state, same rationale as mpMode / the roster leaves. */
+  function writeNodeMpLive(next: boolean): void {
+    if (readNodeMpLive() === next) return; // no-op when unchanged
+    ydoc.transact(() => {
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as Record<string, unknown>).mpLive = next;
+    });
+  }
+  /** Host-only: recompute mpLive from our own session state + publish it if it
+   *  changed. Called from the render loop (gamestate is polled there) + on the
+   *  explicit session-mode transitions. */
+  function refreshMpLiveAsHost(): void {
+    if (!isHost) return;
+    const next = computeMpLive({ mpMode, launched, gamestate });
+    mpLive = next;
+    writeNodeMpLive(next);
   }
   /** Host action: open the multiplayer lobby. Seats the host as player 0 +
    *  starts everyone's roster/netcode path; guests then see Join. */
@@ -610,6 +652,18 @@
       mpMode = 'multi';
       writeNodeMpMode('multi');
     }
+    // Round 5: a GUEST can only join when the host is currently running a
+    // multiplayer game (mpLive). The Join button is already disabled otherwise,
+    // but join() is also reachable via the dev/e2e hook — so guard here too.
+    // A guest never implicitly opens MP anymore: the host's "start a
+    // multiplayer game" is the single gate; after that, any guest Join is a
+    // valid one-click hot-join. (Already-seated guests fall through to the
+    // idempotent re-ensure below regardless.)
+    if (!isHost) {
+      const combinedNow = combinedRoster(readNodeRosterState());
+      const seated = slotForUser(combinedNow, me) !== null;
+      if (!seated && !mpLive) return; // no live game to hot-join — no-op
+    }
     // Already seated (active OR pending)? Just ensure our local instance is up.
     // A pending late joiner still loads its WASM now so it can spawn the moment
     // it's promoted at the next map, but it does NOT drive a marine yet (its
@@ -714,12 +768,23 @@
       writeNodeRosterState(next);
       roster = next.active;
       pending = next.pending;
-      // A new ACTIVE player was added while a level is running → hot-drop:
-      // re-launch the current map so the joiner spawns into it now.
+      // Round 5: a new ACTIVE player was added while a level is running →
+      // AUTOMATIC hot-drop. The arbiter re-launches the current map so the
+      // joiner spawns into it now (no manual host Launch step). This is the
+      // one-click hot-join: the guest's Join raised a request, the arbiter
+      // seated it active here, and this relaunch admits it within ~1-2s.
       const addedActive = Object.values(next.active).some(
         (uid) => !beforeActiveIds.has(uid),
       );
-      if (wasInProgress && addedActive) hotDropRelaunchCurrentMap();
+      if (
+        shouldHotJoinRelaunch({
+          isArbiter: isSessionArbiter(),
+          gameInProgress: wasInProgress,
+          addedActivePlayer: addedActive,
+        })
+      ) {
+        hotDropRelaunchCurrentMap();
+      }
     }
   }
 
@@ -810,6 +875,10 @@
     // Refresh the host-chosen session mode (single / multi) from the node so
     // guests' lobby UI tracks the host's explicit choice.
     mpMode = readNodeMpMode();
+    // Round 5: refresh the host-authoritative "MP is live" flag. The host is
+    // the writer (refreshMpLiveAsHost), so it keeps its own computed value;
+    // guests adopt whatever the host published.
+    if (!isHost) mpLive = readNodeMpLive();
     const me = resolveLocalUserId();
     const prevSlot = mySlot;
     mySlot = slotForUser(cur.active, me);
@@ -1180,6 +1249,11 @@
         // sticky awareness field, deduped by seq on receive).
         broadcastLocalTiccmd();
       }
+      // Round 5: the host publishes the "MP is live" flag every frame (the
+      // write is a no-op unless it actually flipped) so a guest's Join button
+      // enables the instant the host enters GS_LEVEL and disables at
+      // intermission / game end. Cheap: one node read + an early-out.
+      refreshMpLiveAsHost();
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {
@@ -1324,6 +1398,10 @@
         // so the real 2-user e2e can assert the lobby state + that the rack
         // owner (not a lex-min guest) is host/player 0.
         mpMode,
+        // Round 5: the host-authoritative "MP is live" flag a guest reads to
+        // enable/disable Join (host in a multi session, in-level). The real
+        // 2-user e2e asserts a guest's Join is disabled until this is true.
+        mpLive,
         ownerIds: resolveOwnerIds(),
         netcodePeers: netcode ? netcode.debugStats().peers : [],
         launched,
@@ -1554,33 +1632,37 @@
     >
       {running > 0.5 ? 'Pause' : 'Run'}
     </button>
-    {#if mpMode !== 'single' && !isHost && mySlot === null && myPendingSlot === null}
-      <!-- Join is offered to ANY unjoined non-host peer (including an anon/invite
-           guest — it carries a stable awareness user.id, so it shows + can claim
-           a slot like any member). Critically it shows even when mpMode is still
-           UNDEFINED (host hasn't pressed Host Multiplayer): the guest's Join IS
-           the signal to open multiplayer — the arbiter sees the join-request +
-           opens the lobby + seats the guest. This is the fix for the operator's
-           "anon sees the widget but there's no working Join" bug, where mpMode
-           stayed undefined so the guest had zero affordance. Only mpMode==='single'
-           (host explicitly chose solo) hides it. Fullness is the COMBINED active +
-           pending occupancy. While a level is running, joining HOT-DROPS the
-           joiner into the CURRENT map (the arbiter re-launches it with the new
-           player), so the label reflects an immediate join, not a next-map wait. -->
+    {#if !isHost}
+      <!-- Round 5: a non-host guest ALWAYS sees the Join button, but it is
+           DISABLED unless the host is currently running a multiplayer game
+           (mpLive — a host-authoritative Yjs-synced flag, not inferred from
+           racy awareness). The disabled state reads "Waiting for host to start
+           a multiplayer game…". When MP is live, Join is enabled and a click
+           is a ONE-CLICK HOT-JOIN: the arbiter seats the guest active +
+           auto-relaunches the current map so the guest drops in within ~1-2s.
+           The host never sees a Join button (it's already P1). Already-seated
+           peers don't either (joinAffordance returns show:false). -->
       {@const full = isFull(combinedRoster({ active: roster, pending }))}
-      <button
-        class="join-btn nodrag"
-        data-testid="doom-join-btn"
-        disabled={full}
-        onclick={() => void joinGame()}
-        title={full
-          ? 'DOOM is full (4 players)'
-          : isGameInProgress()
-            ? 'Join — hot-drop into the current map (it reloads with you in it)'
-            : 'Join this DOOM netgame as a player'}
-      >
-        {full ? 'Full' : isGameInProgress() ? 'Join (hot-drop)' : 'Join'}
-      </button>
+      {@const join = joinAffordance({
+        isHost,
+        alreadySeated: mySlot !== null || myPendingSlot !== null,
+        full,
+        mpLive,
+      })}
+      {#if join.show}
+        <button
+          class="join-btn nodrag"
+          data-testid="doom-join-btn"
+          disabled={!join.enabled}
+          onclick={() => void joinGame()}
+          title={join.reason}
+        >
+          {join.label}
+        </button>
+        {#if !join.enabled && !full}
+          <span class="join-waiting" data-testid="doom-join-waiting">{join.reason}</span>
+        {/if}
+      {/if}
     {/if}
   </div>
 
@@ -1845,6 +1927,14 @@
   .doom-card .join-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  /* Round 5: "Waiting for host to start a multiplayer game…" copy shown
+     beside the disabled Join button so the guest knows why it can't join. */
+  .doom-card .join-waiting {
+    font-size: 10px;
+    font-style: italic;
+    opacity: 0.8;
+    color: color-mix(in oklab, var(--cable-video, #c33) 70%, white);
   }
   .doom-card .host-badge {
     background: var(--cable-video, #c33);

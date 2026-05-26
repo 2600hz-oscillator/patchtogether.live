@@ -200,6 +200,7 @@
   import ClockedRunnerCard from '$lib/ui/modules/ClockedRunnerCard.svelte';
   import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
+  import { canAddModule } from '$lib/doom/doom-gating';
   import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
@@ -290,6 +291,16 @@
     presenceUser = null,
     audioGate,
   }: Props = $props();
+
+  // Whether the LOCAL user owns the rackspace. `presenceUser.isRackOwner` is
+  // published by r/[id]/+page.svelte (authed owner only; anon members never).
+  // `undefined` (the public `/` canvas / no presence) = single-user / no-
+  // provider rack with a sole de-facto owner — owner-only modules stay addable
+  // there (canAddModule treats undefined as allowed). Used to gate the
+  // owner-only DOOM widget in the palette + spawn path.
+  let localIsRackOwner = $derived<boolean | undefined>(
+    presenceUser ? presenceUser.isRackOwner === true : undefined,
+  );
 
   const nodeTypes = {
     analogVco: AnalogVcoCard,
@@ -2644,6 +2655,15 @@
       : videoDef
         ? 'video'
         : 'meta';
+    // Owner-only gate (round 5: DOOM is a host-only widget). The palette
+    // already hides owner-only modules from non-owners, but the drag-drop /
+    // keyboard / dev-hook spawn paths bypass it — so this is the defensive
+    // last line. A non-owner attempting to add DOOM is refused quietly (a
+    // trace, not an error band) rather than erroring ugly.
+    if (!canAddModule(type, localIsRackOwner)) {
+      trace(`refused spawn ${type}: owner-only module (local user is not the rack owner)`);
+      return;
+    }
     if (def?.maxInstances !== undefined) {
       let existing = 0;
       for (const node of Object.values(patch.nodes)) {
@@ -3328,6 +3348,7 @@
   bind:open={paletteOpen}
   x={palettePos.x}
   y={palettePos.y}
+  isRackOwner={localIsRackOwner}
   onselect={spawnFromPalette}
   onorganize={organizeModules}
   oncreategroup={() => enterLassoMode(palettePos.x, palettePos.y)}
