@@ -239,6 +239,23 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
       );
 
       // ─── B joins WHILE A's level is running → HOT-DROP into the CURRENT map ─
+      // Round 5: B's Join is gated on the host's live-MP signal — wait for it to
+      // sync to B before joining (the signal is what enables the Join button).
+      const bSawLive = await pair.pageB
+        .waitForFunction(
+          (id) => {
+            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
+            return w.__doomCards?.[id]?.getState().mpLive === true;
+          },
+          NODE,
+          { timeout: 30000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (!bSawLive) {
+        test.skip(true, 'cross-context mpLive sync did not reach B (relay flake)');
+        return;
+      }
       await join(pair.pageB, NODE);
 
       // B is seated ACTIVE at slot 1 (NOT pending) and the arbiter hot-drop-

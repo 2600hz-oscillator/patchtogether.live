@@ -192,6 +192,13 @@ export const doomDef: VideoModuleDef = {
   // 4-player cap lives in the roster (MAX_DOOM_PLAYERS in doom-roster.ts),
   // not in maxInstances.
   maxInstances: 1,
+  // Round 5: host-only widget. Only the rack OWNER may ADD the DOOM module —
+  // the palette hides it for non-owners + the spawn path refuses. The MP flow
+  // is "owner adds DOOM → starts a game → guests one-click hot-join" against
+  // that single shared node, so a non-owner spawning their own DOOM node never
+  // makes sense. (Single-user / no-provider racks have a sole de-facto owner,
+  // so the gate only blocks an explicit non-owner; see doom-gating.canAddModule.)
+  ownerOnly: true,
   // 7 cv-typed gate inputs per the plan. paramTarget maps each to a
   // synthetic param so the engine's setParam path drives our edge
   // detector (the same way other modules handle CV-into-param).

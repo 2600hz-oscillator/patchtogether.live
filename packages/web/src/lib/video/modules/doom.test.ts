@@ -19,6 +19,10 @@ describe('doomDef — module def shape', () => {
     expect(doomDef.label).toBe('DOOM');
   });
 
+  it('is owner-only (round 5: host-only widget — only the rack owner may add it)', () => {
+    expect(doomDef.ownerOnly).toBe(true);
+  });
+
   it('declares exactly the 7 CV-gate input ports the plan calls for', () => {
     const ids = doomDef.inputs.map((p) => p.id);
     expect(ids).toEqual([...CV_GATE_PORT_IDS]);

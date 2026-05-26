@@ -18,12 +18,18 @@
   import { listMetaModuleDefs } from '$lib/meta/module-registry';
   import { patch } from '$lib/graph/store';
   import { groupDefs, TOP_ORDER, type TopCategory } from '$lib/ui/module-categories';
+  import { canAddModule } from '$lib/doom/doom-gating';
 
   interface Props {
     open: boolean;
     /** Screen-space position to anchor the palette popup. */
     x: number;
     y: number;
+    /** Whether the LOCAL user owns the rackspace. Owner-only modules (DOOM)
+     *  are hidden from the palette for explicit non-owners. `undefined` =
+     *  single-user / no-provider rack (sole de-facto owner — owner-only
+     *  modules stay addable). */
+    isRackOwner?: boolean;
     /** Called with the chosen module type when the user picks one. */
     onselect: (type: string) => void;
     /** Called when the palette wants to dismiss itself (Esc, click outside). */
@@ -45,6 +51,7 @@
     open = $bindable(false),
     x,
     y,
+    isRackOwner,
     onselect,
     onclose,
     onorganize,
@@ -99,6 +106,9 @@
         ].filter(
           (d) => d.maxInstances === undefined || instanceCount(d.type) < d.maxInstances,
         )
+        // Owner-only modules (DOOM, round 5) are hidden from the palette for
+        // explicit non-owners — they can't instantiate the widget.
+        .filter((d) => canAddModule(d.type, isRackOwner))
       : [],
   );
 

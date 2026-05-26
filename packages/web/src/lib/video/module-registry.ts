@@ -27,6 +27,15 @@ export interface VideoModuleDef {
    *  Phase 0 modules don't enforce caps; Phase 1's INWARDS will (one
    *  webcam-using module max by default to avoid getUserMedia conflicts). */
   maxInstances?: number;
+  /** Owner-only instantiation: when set, only the rack OWNER may ADD this
+   *  module to the rack (the palette hides it for non-owners + the spawn path
+   *  refuses). DOOM sets this (round 5: host-only widget) — its multiplayer
+   *  flow is "owner adds DOOM → starts a game → guests one-click hot-join", so
+   *  a non-owner spawning their own DOOM node makes no sense in the one-shared-
+   *  node model. Single-user / no-provider racks have a sole de-facto owner, so
+   *  the gate only blocks an EXPLICIT non-owner (see canAddModule in
+   *  $lib/doom/doom-gating). */
+  ownerOnly?: boolean;
   /** Mirror of AudioModuleDef.undeletable — see that comment. No video
    *  module sets this today; the field is on this type so Canvas's
    *  union-typed defLookup can read `def.undeletable` without a

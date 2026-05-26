@@ -35,37 +35,55 @@
 
 <p>
   The DOOM module runs the shareware game in WebAssembly, one independent
-  instance per peer. When two or more people in the same rackspace each spawn a
-  DOOM card, they play a single co-op netgame together — each peer renders its
-  own first-person view, and every player's marine appears in every other
-  peer's world. Up to <strong>4 players</strong> (one DOOM card per peer).
+  instance per peer. Only the <strong>rack owner</strong> can add the DOOM
+  widget — it's a host-driven module. The owner starts a multiplayer game; every
+  other person in the rackspace then sees the same card and can join it with one
+  click. Each peer renders its own first-person view, and every player's marine
+  appears in every other peer's world. Up to <strong>4 players</strong> (one
+  shared DOOM card, one runtime per peer).
 </p>
 
-<h2>Start a multiplayer game</h2>
-<p>The first peer to spawn DOOM is the <strong>arbiter</strong> (the rack host,
-chosen by lex-smallest user id — same tiebreak as everything else). The arbiter
-drives the game start:</p>
+<h2>Owner-only widget</h2>
+<p>
+  DOOM can only be <strong>added by the rack owner</strong>. Guests won't find it
+  in the add-module palette — there is exactly one shared DOOM card per rack, and
+  the owner is its host (Player 1). This keeps the flow simple: the owner sets up
+  the game, everyone else joins it.
+</p>
+
+<h2>Start a multiplayer game (owner)</h2>
+<p>The owner is the host / <strong>arbiter</strong> (Player 1) and drives the
+game start:</p>
 <ol class="steps">
-  <li>Spawn a <code>DOOM</code> module on the canvas and click the card to load
+  <li>Add a <code>DOOM</code> module to the canvas and click the card to load
     the game (the shareware WAD downloads once, then caches locally).</li>
-  <li>Open <strong>New Game</strong> on the card and pick mode (co-op),
-    skill, episode, and map.</li>
-  <li>Hit <strong>Launch</strong>. Every joined peer enters the same level at
-    its own co-op start position, and lockstep play begins.</li>
+  <li>Click <strong>Host Multiplayer</strong>, then open <strong>New Game</strong>
+    and pick mode (co-op), skill, episode, and map.</li>
+  <li>Hit <strong>Launch</strong>. You enter the level, and the game is now
+    <strong>live</strong> — that's the single gate. From this point, any guest's
+    Join is always valid.</li>
 </ol>
 <p>
-  Only the arbiter sees the New Game dialog; other players see "waiting for the
-  host to start" until Launch. Mode, WAD, and skill are locked for the session —
-  changing them means ending the current game.
+  Only the owner sees the New Game dialog and the start choice (Single Player /
+  Host Multiplayer). Single-player is owner-only too: a lone owner plays a normal
+  single-player game with no netcode. Mode, WAD, and skill are locked while a
+  level runs — changing them means ending the current game.
 </p>
 
-<h2>Join an in-progress rack</h2>
-<p>When you spawn a DOOM card in a rack that already has one, click
-<strong>Join</strong>. The arbiter assigns you the next free player slot
-(Player 1 → 4, in order). You don't pick a slot — the arbiter assigns it
-deterministically so two simultaneous joins can't collide.</p>
+<h2>Join (one-click hot-join)</h2>
+<p>
+  Guests see the DOOM card with a <strong>Join</strong> button. It stays
+  <strong>disabled</strong> — reading "Waiting for host to start a multiplayer
+  game…" — until the owner is actually running a live multiplayer game. The
+  moment the owner is in-level, your Join button enables and a
+  <strong>single click drops you straight into the running level</strong> with
+  your own first-person view. No second host action is needed.
+</p>
+<p>The arbiter assigns you the next free player slot (Player 1 → 4, in order).
+You don't pick a slot — the arbiter assigns it deterministically so two
+simultaneous joins can't collide.</p>
 
-<h2>Late join (hot-drop)</h2>
+<h2>How the hot-join works</h2>
 <p>
   DOOM has no <em>true</em> mid-level join: the original netgame fixes the
   player set when the level starts (<code>G_InitNew</code> spawns one marine per
@@ -74,14 +92,14 @@ deterministically so two simultaneous joins can't collide.</p>
   already-running level mid-tic isn't possible.
 </p>
 <p>
-  We get the same outcome the pragmatic way: when you <strong>Join</strong> a
-  game that's already running, the arbiter seats you as an active player and
-  immediately <strong>re-launches the current map</strong> (same skill, episode,
-  and map — only the player count grows). Every peer reloads the level via
-  <code>G_InitNew</code>, so you drop into the <em>current</em> map at your coop
-  start within a second or two — a fast reload, not a wait for the next map.
-  This works for anon invite-link guests too: clicking Join is itself what opens
-  multiplayer, so a guest never needs the host to flip a switch first.
+  We get the same outcome the pragmatic way: when you click the enabled
+  <strong>Join</strong>, the arbiter seats you as an active player and
+  <strong>automatically re-launches the current map</strong> (same skill,
+  episode, and map — only the player count grows). Every peer reloads the level
+  via <code>G_InitNew</code>, so you drop into the <em>current</em> map at your
+  coop start within a second or two — a brief reload blip, not a wait for the
+  next map, and not a separate host step. This works for anon invite-link guests
+  too: once the owner's game is live, any guest's one click is a hot-join.
 </p>
 
 <h2>Player colors</h2>
@@ -128,11 +146,13 @@ deterministically so two simultaneous joins can't collide.</p>
 
 <h2>Notes</h2>
 <ul>
-  <li>One DOOM card per peer — you can't spawn two.</li>
+  <li>Only the rack owner can add DOOM — one shared card per rack.</li>
+  <li>A guest's Join is disabled until the owner is running a live multiplayer
+    game; then it's a one-click hot-join into the running level.</li>
   <li>A player who closes their tab or leaves mid-level vanishes from the game
     (vanilla DOOM behavior); the arbiter frees their slot for the next joiner.</li>
-  <li>Single player still works: a lone peer in a rack plays a normal
-    single-player game with no netcode involved.</li>
+  <li>Single player is owner-only: a lone owner plays a normal single-player game
+    with no netcode involved. Guests never get a single-player path.</li>
   <li>No save/load in multiplayer, matching the original game.</li>
 </ul>
 
