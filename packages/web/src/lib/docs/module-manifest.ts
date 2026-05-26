@@ -135,6 +135,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Granular texture processor (Mutable Instruments Clouds archetype, Émilie Gillet, 2014, MIT-licensed) — 2-second stereo ring buffer + overlap-added grain cloud (up to 24 grains) + latched FREEZE. Six macros (Position / Size / Pitch / Density / Texture / Blend) with V/oct grain-pitch tracking on the pitch input. v1 ships GRANULAR mode only; STRETCH / LOOPING-DELAY / SPECTRAL modes deferred to follow-up.',
   rings:
     'Modal / sympathetic-string resonator (Mutable Instruments Rings archetype). Faithful TypeScript port of the eurorack/rings/ DSP (MIT-licensed). v1 ships two resonator models: (0) MODAL — bank of 24 parallel stiffness-stretched RBJ bandpasses with cosine-weighted Odd/Even pickup taps; (1) SYMPATHETIC — 2 parallel Karplus-Strong delay lines with one-pole damping. STRUCTURE/BRIGHTNESS/DAMPING/POSITION are the canonical Rings knobs; LEVEL is a soft-limited output gain. EXCITER in drives both engines; STRUM rising edge re-ignites a ~10ms noise burst (KS) or impulse (modal). Outputs odd / even — patch both for stereo. Polyphony 1; STRING+REVERB deferred.',
+  elements:
+    'Modal / physical-modeling voice (Mutable Instruments Elements archetype, Émilie Gillet, 2014, MIT-licensed). Faithful TypeScript port of the eurorack/elements/ DSP. An EXCITER section feeds a modal RESONATOR: BOW (FLOW noise + bow-table friction band-waveguide), BLOW (filtered noise through a waveguide TUBE when pushed past unity) and STRIKE (mallet impulse / particle cloud / plectrum, meta-morphed by MALLET) each have level + timbre. The RESONATOR is a bank of up to 64 parallel state-variable bandpasses: GEOMETRY stretches the partials (harmonic→inharmonic/bell), DAMPING sets Q/decay, BRIGHTNESS biases high-mode energy, POSITION drives a cosine-oscillator pickup comb with a slow-LFO second tap for the stereo aux channel. SPACE blends raw exciter → dry → reverb and widens the stereo spread. PITCH is V/oct, NOTE a ±60-semitone offset, STRENGTH an accent. Outputs main / aux (stereo). FAITHFUL: exciters, modal resonator, tube, envelope, stereo mixdown + soft-limit. SIMPLIFIED: SPACE reverb tail is a compact FDN-lite (not MI reverb.h); sample-ROM exciters use synthetic equivalents; STRING resonator model deferred.',
   peaks:
     'Dual-channel multi-mode utility (Mutable Instruments Peaks archetype, Émilie Gillet, 2013, MIT-licensed). Each channel selects one of five modes — KICK (sine carrier + pitch envelope + amp envelope), SNARE (body sine + filtered noise + decay), HIHAT (six-square metallic cluster + bandpass + decay), ENV (attack-decay envelope, CV-output 0..1, re-attacks on gate), LFO (sine/triangle/square, CV-output ±1, phase resets on gate). Two mode-dependent knobs per channel: knob1 = pitch/mix/brightness/attack/rate; knob2 = decay or waveshape. Gate input retriggers the active engine on rising edges. v1 ships five modes; multistage envelope / tap-LFO / BPF mode deferred to follow-up.',
   warps:
@@ -389,6 +391,29 @@ const PORT_NOTES: Record<string, string> = {
   'rings.level_cv':  'CV → LEVEL (0..1) — soft-limited output gain.',
   'rings.odd':       'Primary output — odd-indexed mode sum (MODAL) or odd-tap string mix (SYMPATHETIC).',
   'rings.even':      'Secondary output — even-indexed mode sum / even-tap mix.',
+  // ELEMENTS
+  'elements.in':           'External excitation / audio in — summed into the BLOW path before the resonator.',
+  'elements.strike_in':    'External strike excitation — summed into the raw exciter bus (bypasses BLOW filtering).',
+  'elements.pitch':        'V/oct pitch input (A4 = 0 V).',
+  'elements.gate':         'Gate — rising edge triggers the exciter envelope; release lets it decay.',
+  'elements.note_cv':      'CV → NOTE (±60-semitone offset on top of pitch).',
+  'elements.env_cv':       'CV → ENV shape (0..1: percussive→sustained).',
+  'elements.bowlvl_cv':    'CV → BOW level (0..1).',
+  'elements.bowtim_cv':    'CV → BOW timbre (0..1).',
+  'elements.blowlvl_cv':   'CV → BLOW level (0..1); past unity engages the TUBE.',
+  'elements.blowmeta_cv':  'CV → FLOW / blow-meta (0..1).',
+  'elements.blowtim_cv':   'CV → BLOW timbre (0..1).',
+  'elements.strklvl_cv':   'CV → STRIKE level (0..1); past unity bleeds raw mallet into the output.',
+  'elements.strkmeta_cv':  'CV → MALLET / strike-meta (0..1: mallet→particles).',
+  'elements.strktim_cv':   'CV → STRIKE timbre (0..1).',
+  'elements.geom_cv':      'CV → GEOMETRY (0..1: harmonic→inharmonic/bell).',
+  'elements.bright_cv':    'CV → BRIGHTNESS (0..1).',
+  'elements.damp_cv':      'CV → DAMPING (0..1). Low = long ring; high = fast decay.',
+  'elements.pos_cv':       'CV → POSITION (0..1) — pickup comb position.',
+  'elements.space_cv':     'CV → SPACE (0..2) — raw/dry/reverb blend + stereo spread; ≥1.75 freezes.',
+  'elements.strength_cv':  'CV → STRENGTH (0..1) — exciter accent.',
+  'elements.main':         'Main (right) audio output.',
+  'elements.aux':          'Auxiliary (left) audio output — patch with main for stereo.',
   // BLADES — dual SVF + COLOR + mix bus.
   'blades.in1':         'Filter 1 audio input. Routed through the COLOR pre-stage tanh before filter 1.',
   'blades.in2':         'Filter 2 audio input. Routed through the COLOR pre-stage tanh before filter 2. In SERIAL mix mode, in2 still drives out2 — only the mix bus ignores it.',

@@ -88,6 +88,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // provide coverage. Linux baseline is darwin-only for v1; a
   // follow-up PR will capture both platforms and promote into MODULES.
   rings: 'VRT baseline pending; ART + unit + E2E provide coverage. Linux baseline is darwin-only for v1.',
+  elements: 'No custom visualization — card is standard Fader controls (like rings). ART + unit tests provide DSP coverage.',
   // PEAKS first-slice PR: VRT baseline pending; ART + unit + E2E provide
   // coverage. Promote into MODULES + capture baselines on both platforms
   // in a follow-up PR.

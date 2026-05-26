@@ -44,6 +44,7 @@ import { samsloopDef } from './samsloop';
 import { cloudsDef } from './clouds';
 import { macseqDef } from './macseq';
 import { ringsDef } from './rings';
+import { elementsDef } from './elements';
 import { peaksDef } from './peaks';
 import { warpsDef } from './warps';
 import { veilsDef } from './veils';
@@ -120,6 +121,7 @@ export function registerAudioModules(): void {
   registerModule(cloudsDef);
   registerModule(macseqDef);
   registerModule(ringsDef);
+  registerModule(elementsDef);
   registerModule(peaksDef);
   registerModule(warpsDef);
   registerModule(veilsDef);

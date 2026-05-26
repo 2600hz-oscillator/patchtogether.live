@@ -241,6 +241,11 @@ type StandardModuleType =
   // (1) SYMPATHETIC — 2 parallel Karplus-Strong delay lines.
   // Polyphony 1 only; STRING + REVERB deferred to follow-up PRs.
   | 'rings'
+  // ELEMENTS — modal / physical-modeling voice (Mutable Instruments Elements
+  // archetype, Émilie Gillet, 2014, MIT-licensed). EXCITER (BOW/BLOW/STRIKE) →
+  // modal SVF resonator + tube + stereo pickup. Stereo main/aux out. SPACE
+  // reverb tail is a simplified FDN-lite; STRING resonator model deferred.
+  | 'elements'
   // PEAKS — dual-channel multi-mode utility (Mutable Instruments Peaks
   // archetype, Émilie Gillet, 2013, MIT-licensed). Each channel runs one
   // of five modes (KICK / SNARE / HIHAT / ENV / LFO) with two mode-

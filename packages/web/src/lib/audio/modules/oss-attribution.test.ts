@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest';
 import { cloudsDef } from './clouds';
 import { ringsDef } from './rings';
+import { elementsDef } from './elements';
 import { peaksDef } from './peaks';
 import { macrooscillatorDef } from './macrooscillator';
 import { cloudseedDef } from './cloudseed';
@@ -39,6 +40,7 @@ interface PortExpectation {
 const EXPECTED_PORTS: PortExpectation[] = [
   { type: 'clouds',          def: cloudsDef,          author: 'Émilie Gillet' },
   { type: 'rings',           def: ringsDef,           author: 'Émilie Gillet' },
+  { type: 'elements',        def: elementsDef,        author: 'Émilie Gillet' },
   { type: 'peaks',           def: peaksDef,           author: 'Émilie Gillet' },
   { type: 'macrooscillator', def: macrooscillatorDef, author: 'Émilie Gillet' },
   { type: 'stages',          def: stagesDef,          author: 'Émilie Gillet' },
