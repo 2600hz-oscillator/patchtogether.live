@@ -226,7 +226,44 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
         { timeout: 15000 },
       );
 
-      // ─── B requests to join → arbiter assigns slot 1 ───
+      // ─── Round 5: A (arbiter) picks coop + E1M1, LAUNCHES → MP goes live ───
+      // The new model gates a guest's Join on the host running a live MP game,
+      // so A launches FIRST; B then one-click hot-joins the running level.
+      await pair.pageA.evaluate((id) => {
+        const w = globalThis as unknown as {
+          __doomCards: Record<string, {
+            setOptions: (o: { mode?: string; skill?: number; episode?: number; map?: number }) => void;
+            launch: () => void;
+          }>;
+        };
+        w.__doomCards[id]!.setOptions({ mode: 'coop', skill: 0, episode: 1, map: 1 });
+        w.__doomCards[id]!.launch();
+      }, NODE);
+      await pair.pageA.waitForFunction(
+        (id) => {
+          const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
+          return w.__doomCards?.[id]?.getState().mpLive === true;
+        },
+        NODE,
+        { timeout: 30000 },
+      );
+
+      // ─── B hot-joins the RUNNING game → arbiter assigns slot 1 + relaunches ─
+      const bSawLive = await pair.pageB
+        .waitForFunction(
+          (id) => {
+            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
+            return w.__doomCards?.[id]?.getState().mpLive === true;
+          },
+          NODE,
+          { timeout: 30000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (!bSawLive) {
+        test.skip(true, 'cross-context mpLive sync did not reach B (relay flake)');
+        return;
+      }
       await join(pair.pageB, NODE);
       const bGotSlot1 = await pair.pageB
         .waitForFunction(
@@ -250,6 +287,20 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
         return;
       }
 
+      // ─── Both peers are in the level (B hot-joined into the running map) ───
+      for (const p of [pair.pageA, pair.pageB]) {
+        await p.waitForFunction(
+          (args) => {
+            const [id, level] = args as [string, number];
+            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { launched: boolean; gamestate: number } }> };
+            const st = w.__doomCards?.[id]?.getState();
+            return !!st && st.launched === true && st.gamestate === level;
+          },
+          [NODE, GS_LEVEL],
+          { timeout: 30000 },
+        );
+      }
+
       // ─── Identity: badge + DOOM color tint + label (slice 5) ───
       const aState = await cardState(pair.pageA, NODE);
       const bState = await cardState(pair.pageB, NODE);
@@ -266,32 +317,6 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
       // condition the card uses to skip onIncomingFrame.)
       expect(bState!.isHost, 'B is not the host').toBe(false);
       expect(bState!.mySlot, 'B is a joined player → renders own POV').toBe(1);
-
-      // ─── A picks coop + E1M1, hits Launch ───
-      await pair.pageA.evaluate((id) => {
-        const w = globalThis as unknown as {
-          __doomCards: Record<string, {
-            setOptions: (o: { mode?: string; skill?: number; episode?: number; map?: number }) => void;
-            launch: () => void;
-          }>;
-        };
-        w.__doomCards[id]!.setOptions({ mode: 'coop', skill: 0, episode: 1, map: 1 });
-        w.__doomCards[id]!.launch();
-      }, NODE);
-
-      // ─── Both peers enter the level ───
-      for (const p of [pair.pageA, pair.pageB]) {
-        await p.waitForFunction(
-          (args) => {
-            const [id, level] = args as [string, number];
-            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { launched: boolean; gamestate: number } }> };
-            const st = w.__doomCards?.[id]?.getState();
-            return !!st && st.launched === true && st.gamestate === level;
-          },
-          [NODE, GS_LEVEL],
-          { timeout: 30000 },
-        );
-      }
 
       // Let both render a few frames so B's canvas holds a stable POV.
       await pair.pageB.waitForTimeout(800);

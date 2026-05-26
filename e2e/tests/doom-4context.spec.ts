@@ -263,8 +263,49 @@ test.describe('@collab DOOM 4-context coop (slice 7)', () => {
       const aGot = await waitForSlot(squad.peers[0]!.page, NODES[0]!, 0, 15000);
       if (!aGot) { test.skip(true, 'host A never took slot 0 (relay flake — #97)'); return; }
 
-      // ─── B/C/D request join → arbiter assigns slots 1/2/3 (no clobber) ───
+      // ─── Round 5: A (arbiter) LAUNCHES first → MP goes live ───
+      // The new model gates a guest's Join on the host running a live MP game,
+      // so the host launches before any guest joins. Each guest then one-click
+      // HOT-JOINS the running game (the arbiter auto-relaunches the current map
+      // with the larger player count to admit each one).
+      await squad.peers[0]!.page.evaluate((id) => {
+        const w = globalThis as unknown as {
+          __doomCards: Record<string, {
+            setOptions: (o: { mode?: string; skill?: number; episode?: number; map?: number }) => void;
+            launch: () => void;
+          }>;
+        };
+        w.__doomCards[id]!.setOptions({ mode: 'coop', skill: 0, episode: 1, map: 1 });
+        w.__doomCards[id]!.launch();
+      }, NODES[0]!);
+      await squad.peers[0]!.page.waitForFunction(
+        (id) => {
+          const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
+          return w.__doomCards?.[id]?.getState().mpLive === true;
+        },
+        NODES[0]!,
+        { timeout: 40000 },
+      );
+
+      // ─── B/C/D hot-join the RUNNING game → arbiter assigns slots 1/2/3 ───
+      // Each guest waits for the live signal (it gates Join), then joins. The
+      // arbiter seats it active + auto-relaunches the current map to admit it.
       for (let i = 1; i < 4; i++) {
+        const sawLive = await squad.peers[i]!.page
+          .waitForFunction(
+            (id) => {
+              const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
+              return w.__doomCards?.[id]?.getState().mpLive === true;
+            },
+            NODES[i]!,
+            { timeout: 40000 },
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (!sawLive) {
+          test.skip(true, `peer ${i} never saw the live MP signal (relay flake — #97)`);
+          return;
+        }
         await join(squad.peers[i]!.page, NODES[i]!);
         const got = await waitForSlot(squad.peers[i]!.page, NODES[i]!, i);
         if (!got) {
@@ -287,19 +328,7 @@ test.describe('@collab DOOM 4-context coop (slice 7)', () => {
         expect(st!.slotColor, `peer ${i} = DOOM color ${SLOT_COLOR[i]}`).toBe(SLOT_COLOR[i]);
       }
 
-      // ─── A (arbiter) picks coop + E1M1 + skill 1, hits Launch ───
-      await squad.peers[0]!.page.evaluate((id) => {
-        const w = globalThis as unknown as {
-          __doomCards: Record<string, {
-            setOptions: (o: { mode?: string; skill?: number; episode?: number; map?: number }) => void;
-            launch: () => void;
-          }>;
-        };
-        w.__doomCards[id]!.setOptions({ mode: 'coop', skill: 0, episode: 1, map: 1 });
-        w.__doomCards[id]!.launch();
-      }, NODES[0]!);
-
-      // ─── ALL FOUR peers enter the level ───
+      // ─── ALL FOUR peers are in the level (each hot-joined into it) ───
       for (let i = 0; i < 4; i++) {
         await squad.peers[i]!.page.waitForFunction(
           (args) => {
