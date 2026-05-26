@@ -59,8 +59,7 @@
     type RelayCursor,
   } from '$lib/doom/doom-presence';
   import {
-    serializeRoster,
-    serializePending,
+    applyRosterMap,
     slotForUser,
     isFull,
     rosterSize,
@@ -547,38 +546,40 @@
     return readRosterState(target?.data);
   }
 
-  // Write the roster to the shared node as a primitive JSON-STRING leaf at
-  // node.data.players. A string leaf is the pattern that syncs reliably
-  // cross-context (cf. multiplayer/module-naming.ts `node.data.name = name`);
-  // a freshly-added nested Y.Map does NOT always reach an already-synced
-  // remote peer (CI 2-context repro: peer B never saw A's nested-object
-  // claim, but sees a string leaf). readRoster() decodes the string.
+  // Write the roster to the shared node as a PER-SLOT-CRDT nested map at
+  // node.data.players (applyRosterMap). Each slot is its own Y.Map key, so
+  // independent slot writes merge cleanly instead of replacing one opaque
+  // string leaf (the slice-3 last-writer-wins-on-the-whole-object bug: under a
+  // 4-player join storm the arbiter rewrites the whole-object leaf several
+  // times and the relay can deliver an earlier, smaller snapshot after the
+  // final one — dropping the highest slot, deterministically slot 3 at 4
+  // players). readRoster() still decodes the legacy string-leaf form, and
+  // applyRosterMap migrates it to a nested map on first write.
   // Deliberately NOT LOCAL_ORIGIN — roster join/leave is session state, not a
   // user edit, so Cmd-Z must never un-join a player. node.data is created
   // lazily — most nodes carry none.
   function writeNodeRoster(next: DoomRoster): void {
-    const encoded = serializeRoster(next);
     ydoc.transact(() => {
       const target = patch.nodes[id];
       if (!target) return;
       if (!target.data) target.data = {};
-      (target.data as Record<string, unknown>).players = encoded;
+      applyRosterMap(target.data as Record<string, unknown>, 'players', next);
     });
   }
 
-  /** Slice 6: write BOTH the active (`players`) + pending (`pending`) leaves
-   *  in one transaction. Same primitive-JSON-string-leaf rationale + non-
-   *  LOCAL_ORIGIN (session state, not a Cmd-Z-able edit) as writeNodeRoster.
-   *  Only the arbiter (single writer) ever calls this. */
+  /** Slice 6: write BOTH the active (`players`) + pending (`pending`) maps in
+   *  one Yjs transaction, each as a PER-SLOT-CRDT nested map (applyRosterMap)
+   *  rather than an opaque string leaf — so concurrent/rapid claims of
+   *  different slots merge per-key. Non-LOCAL_ORIGIN (session state, not a
+   *  Cmd-Z-able edit). Only the arbiter (single writer) ever calls this. */
   function writeNodeRosterState(next: DoomRosterState): void {
-    const players = serializeRoster(next.active);
-    const pend = serializePending(next.pending);
     ydoc.transact(() => {
       const target = patch.nodes[id];
       if (!target) return;
       if (!target.data) target.data = {};
-      (target.data as Record<string, unknown>).players = players;
-      (target.data as Record<string, unknown>).pending = pend;
+      const data = target.data as Record<string, unknown>;
+      applyRosterMap(data, 'players', next.active);
+      applyRosterMap(data, 'pending', next.pending);
     });
   }
 

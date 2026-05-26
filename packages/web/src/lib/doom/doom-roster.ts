@@ -79,11 +79,76 @@ export function readRoster(data: unknown): DoomRoster {
 
 /** Serialize a roster to the primitive-string leaf form stored at
  *  node.data.players. Sorted keys → deterministic string (so identical
- *  rosters produce identical leaves, avoiding redundant Yjs writes). */
+ *  rosters produce identical leaves, avoiding redundant Yjs writes).
+ *
+ *  RETAINED for back-compat / tests only. The live write path no longer
+ *  serializes the roster to a single string leaf (that was last-writer-wins
+ *  on the whole object — see applyRosterMap). readRoster still decodes the
+ *  string form so older snapshots keep loading. */
 export function serializeRoster(roster: DoomRoster): string {
   const sorted: DoomRoster = {};
   for (const k of Object.keys(roster).sort()) sorted[k] = roster[k]!;
   return JSON.stringify(sorted);
+}
+
+/**
+ * The PER-SLOT-CRDT write seam (the slice-3/soak fix).
+ *
+ * ─ Why this exists ─
+ *   Earlier slices stored the roster at `node.data.players` as a single
+ *   primitive-JSON-STRING leaf (`serializeRoster`). A string leaf is one
+ *   opaque Yjs value: every write REPLACES it wholesale, so it is
+ *   last-writer-WINS on the WHOLE object. The arbiter rewrites that leaf once
+ *   per join; under a 4-player awareness storm the leaf is rewritten several
+ *   times in quick succession and the relay can deliver an EARLIER, smaller
+ *   snapshot of the string AFTER the final one, dropping the highest slot.
+ *   The 4-bot soak surfaces this deterministically (slot 3 never seats); at 2
+ *   players the window is too small to bite.
+ *
+ *   The fix is to store the roster as a NESTED object — which SyncedStore
+ *   backs with a Y.Map — so each slot is its OWN CRDT key. Per-key writes of
+ *   DIFFERENT slots merge cleanly (no whole-object replace), and a per-key
+ *   update for slot 3 converges independently of the others.
+ *
+ * ─ What this does ─
+ *   `applyRosterMap` reconciles a live `node.data` field (`players` or
+ *   `pending`) to `desired`, mutating the nested map IN PLACE, one key at a
+ *   time:
+ *     - if the field is currently a STRING (legacy leaf) or missing/non-object,
+ *       it is first REPLACED with a fresh plain object (the migration write —
+ *       SyncedStore turns this into a nested Y.Map);
+ *     - then every slot in `desired` is set per-key (`map[slot] = uid`) and any
+ *       slot no longer in `desired` is `delete`d per-key.
+ *   Only keys that actually differ are touched, so identical reconciliations
+ *   produce no Yjs ops (no sync feedback loop).
+ *
+ *   MUST be called inside a `ydoc.transact(...)` by the caller so a multi-key
+ *   update (e.g. migrate + seat several slots) lands as one Yjs transaction.
+ *
+ *   `data` is the live SyncedStore proxy node.data (NOT a detached copy). The
+ *   per-key sets go through the proxy so they become Y.Map ops.
+ */
+export function applyRosterMap(
+  data: Record<string, unknown>,
+  field: 'players' | 'pending',
+  desired: DoomRoster,
+): void {
+  const cur = data[field];
+  // Migrate any non-nested-object shape (legacy string leaf, missing, or
+  // malformed) to a fresh nested object. This is the one whole-field write;
+  // from here on every change is per-key.
+  if (!cur || typeof cur !== 'object') {
+    data[field] = {};
+  }
+  const map = data[field] as Record<string, unknown>;
+  // Set / overwrite the desired slots per key.
+  for (const [slot, uid] of Object.entries(desired)) {
+    if (map[slot] !== uid) map[slot] = uid;
+  }
+  // Delete any slot the live map holds that desired no longer has, per key.
+  for (const slot of Object.keys(map)) {
+    if (!(slot in desired)) delete map[slot];
+  }
 }
 
 /** The slot index a user currently holds in `roster`, or null if unjoined. */

@@ -6,6 +6,8 @@
 // assignment, the 4-player cap, idempotency, and disconnect pruning exactly.
 
 import { describe, it, expect } from 'vitest';
+import { syncedStore, getYjsDoc } from '@syncedstore/core';
+import * as Y from 'yjs';
 import {
   MAX_DOOM_PLAYERS,
   readRoster,
@@ -19,6 +21,7 @@ import {
   releaseSlot,
   pruneRoster,
   serializeRoster,
+  applyRosterMap,
   assignRequestedSlots,
   readPending,
   readRosterState,
@@ -522,6 +525,153 @@ describe('doom-roster slice 6: pending (late-join) vs active state', () => {
       const { state } = pruneRosterState(start, ['alice']);
       expect(state.active).toEqual({ '0': 'alice' });
       expect(state.pending).toEqual({});
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  //  applyRosterMap — the per-slot-CRDT write seam (the soak fix)
+  // ────────────────────────────────────────────────────────────────────────
+  //
+  //  These exercise the REAL Yjs merge, not the pure helpers: two synced docs
+  //  each apply a roster to node.data via applyRosterMap, exchange updates, and
+  //  we assert both slots survive the CRDT merge. This is the regression guard
+  //  for the 4-bot soak bug (the highest slot getting clobbered). We use plain
+  //  SyncedStore docs (no Svelte / WASM / DOM) so it runs in the unit suite.
+  describe('applyRosterMap: per-slot CRDT merge (soak regression)', () => {
+    type Store = { nodes: Record<string, { data?: Record<string, unknown> }> };
+    const makeDoc = () => {
+      const store = syncedStore<Store>({ nodes: {} });
+      const doc = getYjsDoc(store);
+      return { store, doc };
+    };
+    type Peer = ReturnType<typeof makeDoc>;
+    const sync = (a: Y.Doc, b: Y.Doc) => {
+      Y.applyUpdate(b, Y.encodeStateAsUpdate(a, Y.encodeStateVector(b)));
+      Y.applyUpdate(a, Y.encodeStateAsUpdate(b, Y.encodeStateVector(a)));
+    };
+    /** Create the shared DOOM node on ONE doc (the host), the way the real app
+     *  does — the host spawns the node, then peers receive it via sync. Both
+     *  docs then share the SAME nested `data` Y.Map, so per-key roster writes
+     *  on either side merge. (Creating the node independently on both docs
+     *  would make two divergent `data` Y.Maps that collapse to one on merge —
+     *  that is a node-creation race, not the roster bug under test.) */
+    const seedSharedNode = (host: Peer, peers: Peer[]) => {
+      host.store.nodes['doom'] = { data: {} };
+      for (const p of peers) sync(host.doc, p.doc);
+    };
+
+    it('writes a roster as a nested per-key map (not a string leaf)', () => {
+      const host = makeDoc();
+      seedSharedNode(host, []);
+      const { store, doc } = host;
+      doc.transact(() => {
+        applyRosterMap(store.nodes['doom']!.data!, 'players', {
+          '0': 'alice',
+          '1': 'bob',
+        });
+      });
+      const players = store.nodes['doom']!.data!.players;
+      // Nested object/map, NOT a JSON string leaf.
+      expect(typeof players).toBe('object');
+      expect(readRoster(store.nodes['doom']!.data)).toEqual({ '0': 'alice', '1': 'bob' });
+    });
+
+    it('CONCURRENT claims of different slots both survive the merge', () => {
+      // Two synced docs that share an empty roster, then EACH claims a
+      // different slot offline and they reconcile — the slice-3 string-leaf
+      // bug would have one whole-object write clobber the other; per-key Y.Map
+      // writes merge cleanly.
+      const A = makeDoc();
+      const B = makeDoc();
+      // Host (A) spawns the shared node; B receives it via sync. Now both share
+      // the SAME nested data Y.Map.
+      seedSharedNode(A, [B]);
+      // Establish the `players` nested Y.Map ONCE (migration write) and sync it
+      // so both peers reference the SAME map — the per-key writes below are then
+      // genuine per-key Y.Map ops that CRDT-merge. (Only the arbiter migrates in
+      // the real app; this just sets up the shared map for the merge assertion.)
+      A.doc.transact(() => {
+        applyRosterMap(A.store.nodes['doom']!.data!, 'players', {});
+      });
+      sync(A.doc, B.doc);
+
+      // CONCURRENT per-key claims of DIFFERENT slots on the shared players map.
+      A.doc.transact(() => {
+        applyRosterMap(A.store.nodes['doom']!.data!, 'players', { '0': 'alice' });
+      });
+      B.doc.transact(() => {
+        applyRosterMap(B.store.nodes['doom']!.data!, 'players', { '3': 'dave' });
+      });
+
+      sync(A.doc, B.doc);
+
+      // BOTH slots present on BOTH peers after the merge — the highest slot
+      // (3, the one the soak lost) is not clobbered. With the old single
+      // string-leaf this was last-writer-wins and one slot vanished.
+      expect(readRoster(A.store.nodes['doom']!.data)).toEqual({ '0': 'alice', '3': 'dave' });
+      expect(readRoster(B.store.nodes['doom']!.data)).toEqual({ '0': 'alice', '3': 'dave' });
+    });
+
+    it('a 4-way arbiter seating sequence converges with all four slots', () => {
+      // Simulate the arbiter seating four players in rapid successive writes
+      // (the soak bring-up), each write reconciling the full desired roster.
+      // The 4th (slot 3) must survive on a freshly-synced late peer.
+      const arb = makeDoc();
+      const late = makeDoc();
+      // Arbiter spawns the shared node; the late peer syncs it first (it joins
+      // after the node exists, like a guest in the soak).
+      seedSharedNode(arb, [late]);
+      const desired: Record<string, string> = {};
+      for (let i = 0; i < MAX_DOOM_PLAYERS; i++) {
+        desired[String(i)] = `bot${i}`;
+        arb.doc.transact(() => {
+          applyRosterMap(arb.store.nodes['doom']!.data!, 'players', { ...desired });
+        });
+      }
+      sync(arb.doc, late.doc);
+      expect(readRoster(late.store.nodes['doom']!.data)).toEqual({
+        '0': 'bot0',
+        '1': 'bot1',
+        '2': 'bot2',
+        '3': 'bot3',
+      });
+    });
+
+    it('migrates a legacy string-leaf roster to a nested map on first write', () => {
+      const host = makeDoc();
+      seedSharedNode(host, []);
+      const { store, doc } = host;
+      // Seed the legacy primitive-string-leaf shape (older snapshots).
+      doc.transact(() => {
+        store.nodes['doom']!.data!.players = serializeRoster({ '0': 'alice' });
+      });
+      expect(typeof store.nodes['doom']!.data!.players).toBe('string');
+      // readRoster decodes the legacy string form (back-compat).
+      expect(readRoster(store.nodes['doom']!.data)).toEqual({ '0': 'alice' });
+      // First write migrates it to a nested map, preserving the existing slot
+      // and adding the new one per-key.
+      doc.transact(() => {
+        applyRosterMap(store.nodes['doom']!.data!, 'players', { '0': 'alice', '1': 'bob' });
+      });
+      expect(typeof store.nodes['doom']!.data!.players).toBe('object');
+      expect(readRoster(store.nodes['doom']!.data)).toEqual({ '0': 'alice', '1': 'bob' });
+    });
+
+    it('releasing a slot deletes only that key (per-key delete)', () => {
+      const host = makeDoc();
+      seedSharedNode(host, []);
+      const { store, doc } = host;
+      doc.transact(() => {
+        applyRosterMap(store.nodes['doom']!.data!, 'players', {
+          '0': 'alice',
+          '1': 'bob',
+          '2': 'carol',
+        });
+      });
+      doc.transact(() => {
+        applyRosterMap(store.nodes['doom']!.data!, 'players', { '0': 'alice', '2': 'carol' });
+      });
+      expect(readRoster(store.nodes['doom']!.data)).toEqual({ '0': 'alice', '2': 'carol' });
     });
   });
 });
