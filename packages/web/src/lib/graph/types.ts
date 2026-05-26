@@ -121,6 +121,12 @@ type StandardModuleType =
   | 'sequencer'
   | 'reverb'
   | 'scope'
+  // RASTERIZE — explicit audio→video raster mapper (crossing-the-streams
+  // slice 1). audio in → mono-video out; each frame paints a fixed run of
+  // audio samples as voltage-per-pixel in raster order, scan cursor drifts
+  // + wraps through the 640×360 frame. Faithful raster (NOT a scope trace)
+  // — a steady tone paints drifting horizontal bands. Fully untamed.
+  | 'rasterize'
   | 'lfo'
   | 'cartesian'
   | 'destroy'

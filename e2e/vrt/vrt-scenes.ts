@@ -77,6 +77,39 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     freezeAudio: true,
   },
 
+  // RASTERIZE: drive the audio input with a 261 Hz sine (analogVco default
+  // sine out, pitch 0 V/oct ≈ C4). RASTERIZE paints the audio samples as
+  // voltage-per-pixel into its 640×360 frame in raster order; a steady tone
+  // builds drifting horizontal bands. We bump samplesPerFrame to 6000 for
+  // the scene (vs the 800 default) so the cursor sweeps the whole frame
+  // within the settle window (~38 frames) and the baseline shows a filled,
+  // banded frame rather than a couple of painted scanlines. After settle we
+  // suspend the AudioContext; RASTERIZE freezes its painting on suspend
+  // (ctx.state === 'suspended'), so the on-card canvas is pixel-stable.
+  rasterize: {
+    nodes: [
+      { id: 'src',   type: 'analogVco', position: { x: 60,  y: 60 }, domain: 'audio' },
+      {
+        id: 'vrt-1',
+        type: 'rasterize',
+        position: { x: 520, y: 60 },
+        domain: 'audio',
+        params: { samplesPerFrame: 6000, gain: 1, cursor: 0, wrap: 0 },
+      },
+    ],
+    edges: [
+      {
+        id: 'e_src_rasterize',
+        from: { nodeId: 'src',   portId: 'sine' },
+        to:   { nodeId: 'vrt-1', portId: 'in' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      },
+    ],
+    settleMs: 900,
+    freezeAudio: true,
+  },
+
   // VIDEO-OUT: drive a real, frozen VIDEOBOX frame into the output so the
   // baseline proves the VIDEOBOX -> VIDEO-OUT path renders video content
   // (the regression this PR fixes — output used to be black). We load the

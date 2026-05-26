@@ -50,6 +50,16 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // needs an architectural fix (separate PR — see
   // .myrobots/plans/cv-range-standard.md "Deferred" section).
   scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode'],
+  // RASTERIZE: same architecture as SCOPE — CV inputs route through the
+  // cross-domain CV bridge's setParam(portId), which writes into a JS-side
+  // params record (read live by the per-frame painter). The `param`
+  // (inGain.gain) on each input is only a stub sink so the engine's
+  // per-param tap analyser fires for motorized faders; the module never
+  // reads it. Interposing a cvScale WaveShaper would scale the wrong
+  // AudioParam and do nothing to the value reaching setParam. The raster
+  // params (cursor px, samples/frame, gain, wrap) are consumed raw by the
+  // mapping math, which is the intended "untamed" behaviour for this module.
+  rasterize: ['cursor', 'samplesPerFrame', 'gain', 'wrap'],
   // BUGGLES: clock_cv / chaos_cv have NO paramTarget — they're sampled into
   // a JS shadow on each woggle event (setTimeout-driven), not routed onto
   // an AudioParam. The CV's -1..+1 range is summed onto the rate/chaos

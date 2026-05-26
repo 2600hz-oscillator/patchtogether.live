@@ -12,6 +12,8 @@ import { filterDef } from './filter';
 import { reverbDef } from './reverb';
 import { delayDef } from './delay';
 import { scopeDef } from './scope';
+// RASTERIZE — audio → video raster mapper (crossing-the-streams slice 1).
+import { rasterizeDef } from './rasterize';
 import { sequencerDef } from './sequencer';
 import { wavetableVcoDef } from './wavetable-vco';
 import { lfoDef } from './lfo';
@@ -88,6 +90,10 @@ export function registerAudioModules(): void {
   registerModule(reverbDef);
   registerModule(delayDef);
   registerModule(scopeDef);
+  // RASTERIZE — explicit audio→video raster mapper. Faithful per-frame
+  // raster (NOT a scope trace); a steady tone paints drifting horizontal
+  // bands. See .myrobots/plans/audio-video-crossing.md.
+  registerModule(rasterizeDef);
   registerModule(sequencerDef);
   registerModule(wavetableVcoDef);
   registerModule(lfoDef);

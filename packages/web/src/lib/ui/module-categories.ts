@@ -203,6 +203,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
 
   // ───────── Hybrid (audio + video output, or cross-domain tools) ─────────
   scope: { top: 'Hybrid', sub: 'Hybrid' },
+  // RASTERIZE — the explicit audio→video raster mapper (crossing-the-streams
+  // slice 1). Audio in, mono-video out; a cross-domain bridge module.
+  rasterize: { top: 'Hybrid', sub: 'Hybrid' },
   wavviz: { top: 'Hybrid', sub: 'Hybrid' },
   swolevco: { top: 'Hybrid', sub: 'Hybrid' },
   wavecel: { top: 'Hybrid', sub: 'Hybrid' },
