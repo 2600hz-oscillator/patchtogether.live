@@ -143,6 +143,10 @@ const DESCRIPTIONS: Record<string, string> = {
     'Modal / physical-modeling voice (Mutable Instruments Elements archetype, Émilie Gillet, 2014, MIT-licensed). Faithful TypeScript port of the eurorack/elements/ DSP. An EXCITER section feeds a modal RESONATOR: BOW (FLOW noise + bow-table friction band-waveguide), BLOW (filtered noise through a waveguide TUBE when pushed past unity) and STRIKE (mallet impulse / particle cloud / plectrum, meta-morphed by MALLET) each have level + timbre. The RESONATOR is a bank of up to 64 parallel state-variable bandpasses: GEOMETRY stretches the partials (harmonic→inharmonic/bell), DAMPING sets Q/decay, BRIGHTNESS biases high-mode energy, POSITION drives a cosine-oscillator pickup comb with a slow-LFO second tap for the stereo aux channel. SPACE blends raw exciter → dry → reverb and widens the stereo spread. PITCH is V/oct, NOTE a ±60-semitone offset, STRENGTH an accent. Outputs main / aux (stereo). FAITHFUL: exciters, modal resonator, tube, envelope, stereo mixdown + soft-limit. SIMPLIFIED: SPACE reverb tail is a compact FDN-lite (not MI reverb.h); sample-ROM exciters use synthetic equivalents; STRING resonator model deferred.',
   peaks:
     'Dual-channel multi-mode utility (Mutable Instruments Peaks archetype, Émilie Gillet, 2013, MIT-licensed). Each channel selects one of five modes — KICK (sine carrier + pitch envelope + amp envelope), SNARE (body sine + filtered noise + decay), HIHAT (six-square metallic cluster + bandpass + decay), ENV (attack-decay envelope, CV-output 0..1, re-attacks on gate), LFO (sine/triangle/square, CV-output ±1, phase resets on gate). Two mode-dependent knobs per channel: knob1 = pitch/mix/brightness/attack/rate; knob2 = decay or waveshape. Gate input retriggers the active engine on rising edges. v1 ships five modes; multistage envelope / tap-LFO / BPF mode deferred to follow-up.',
+  marbles:
+    'Random sampler / clock generator (Mutable Instruments Marbles archetype, Émilie Gillet, MIT-licensed). Clean-room TypeScript port of the eurorack/marbles/ DSP. The T-section (t1 / t2 gates) generates clocked random gates via one of six models — COIN (complementary Bernoulli), CLUSTERS, DRUMS (18 built-in 8-step patterns), INDEP (independent Bernoulli), 3-STATE, MARKOV — with a déjà-vu loop that locks the random stream into a repeating pattern (RATE / T BIAS / T JITTER / DÉJÀ VU / LENGTH). The X-section (x1 / x2 / x3 CV) draws random voltages shaped by SPREAD (variance), X BIAS (mean), and STEPS (quantization amount + STEPS-knob portamento), snapped through a weight-aware variable-resolution quantizer onto one of six scales (C major / C minor / Pentatonic / Pelog / Raag Bhairav / Raag Shri), with its own déjà-vu loop shared across the three X channels via pseudo-random hash shifts. clk is the master clock. CV outs are ±1 (= ±5V). Beta-distribution sampling is approximated analytically vs the firmware\'s precomputed table; the déjà-vu / Markov / quantizer / lag logic is ported line-for-line.',
+  symbiote:
+    'Self-contained drum + bassline machine — Marbles core running the always-on "Symbiote" alt-firmware (Grids T-section + TB-3PO X-section). The T-section runs the Grids drum engine: BD / SD / HH on t1 / t2 / t3, with a DRUMS sub-mode (Émilie Gillet\'s 2D drum-map with bilinear node interpolation + perturbation, driven by MAP X / MAP Y / per-voice BD/SD/HH density) and a EUCLIDEAN sub-mode (shared step length, with a bipolar CHAOS knob: CCW adds probabilistic SD fills, CW rotates the pattern). The X-section runs a TB-3PO generative acid sequencer: ACID DENSITY morphs gate/slide/accent + pitch-change density, TRANSPOSE is ±18 semitones (1V/oct), ACID LEN is 1..32 steps, SCALE picks the in-scale degree set, SEED LOCK commits/reseeds the pattern. Outputs: t1/t2/t3 drum gates, x1 step clock, x2 1V/oct pitch (slewed on slides), x3 acid gate, y accent. ALWAYS in Symbiote mode — the hardware T-MODEL long-press and déjà-vu-button sub-mode toggle are dropped; sub-mode + all TB-3PO controls are normal params. Grids drum-maps are GPLv3 (AGPL-compatible); TB-3PO from the O&C Hemisphere applet.',
   warps:
     'Meta-modulator / signal masher (Mutable Instruments Warps archetype, Émilie Gillet, 2014, MIT-licensed). Clean-room pure-TypeScript port — four cross-modulation algorithms (0=XFADE equal-power crossfade, 1=RING-MOD digital ring modulation with TIMBRE drive, 2=XOR 16-bit bit-mash crossfaded against a 0.7-sum, 3=COMPARE Warps\' direct/threshold/window comparator suite). An internal carrier oscillator (sine / triangle / saw / square selectable via the SHAPE knob) drives the carrier path when carrier_in is unpatched, so the module is usable as a one-input ring modulator or with no inputs at all. PITCH is V/oct on the internal carrier; NOTE is a ±60-semitone offset. LEVEL 1 / LEVEL 2 scale the carrier and modulator inputs. Output is mono softclipped through x/(1+|x|). FOLD / ANALOG-RING / FREQUENCY-SHIFTER / DOPPLER / VOCODER algorithms deferred to a follow-up PR.',
   veils:
@@ -443,6 +447,44 @@ const PORT_NOTES: Record<string, string> = {
   'elements.strength_cv':  'CV → STRENGTH (0..1) — exciter accent.',
   'elements.main':         'Main (right) audio output.',
   'elements.aux':          'Auxiliary (left) audio output — patch with main for stereo.',
+
+  // MARBLES
+  'marbles.rate_cv':    'CV → RATE (internal clock, semitone-scaled).',
+  'marbles.tmodel_cv':  'CV → T MODEL (discrete: 0=COIN, 1=CLUSTERS, 2=DRUMS, 3=INDEP, 4=3-STATE, 5=MARKOV).',
+  'marbles.tbias_cv':   'CV → T BIAS (0..1) — gate-model coin bias.',
+  'marbles.tjitter_cv': 'CV → T JITTER (0..1) — clock timing jitter.',
+  'marbles.dejavu_cv':  'CV → DÉJÀ VU (0..1) — T-section random-loop lock amount.',
+  'marbles.length_cv':  'CV → LENGTH (1..16) — déjà-vu loop length.',
+  'marbles.spread_cv':  'CV → SPREAD (0..1) — X random-voltage variance.',
+  'marbles.xbias_cv':   'CV → X BIAS (0..1) — X random-voltage mean.',
+  'marbles.steps_cv':   'CV → STEPS (0..1) — X quantization amount / portamento.',
+  'marbles.xdejavu_cv': 'CV → X DÉJÀ VU (0..1) — X-section random-loop lock.',
+  'marbles.scale_cv':   'CV → SCALE (discrete 0..5).',
+  'marbles.t1':         'T1 gate — first Bernoulli/coin/drum gate stream.',
+  'marbles.t2':         'T2 gate — complementary/second gate stream.',
+  'marbles.x1':         'X1 CV — quantized random voltage (±1 = ±5V).',
+  'marbles.x2':         'X2 CV — déjà-vu-shifted random voltage.',
+  'marbles.x3':         'X3 CV — déjà-vu-shifted random voltage.',
+  'marbles.clk':        'Master clock gate (master ramp < 0.5).',
+
+  // SYMBIOTE
+  'symbiote.rate_cv':        'CV → RATE (tempo, semitone-scaled).',
+  'symbiote.submode_cv':     'CV → sub-mode (discrete: 0=DRUMS 2D-map, 1=EUCLIDEAN).',
+  'symbiote.bd_cv':          'CV → BD density (0..1).',
+  'symbiote.sd_cv':          'CV → SD density (0..1).',
+  'symbiote.hh_cv':          'CV → HH density (0..1).',
+  'symbiote.chaos_cv':       'CV → CHAOS (bipolar) — DRUMS randomness or EUCLIDEAN SD-fill (CCW) / rotation (CW).',
+  'symbiote.aciddensity_cv': 'CV → TB-3PO acid density (0..1).',
+  'symbiote.transpose_cv':   'CV → TB-3PO transpose (±18 st, 1V/oct on hardware).',
+  'symbiote.acidlength_cv':  'CV → TB-3PO step length (1..32).',
+  'symbiote.scale_cv':       'CV → SCALE (discrete 0..5).',
+  'symbiote.t1':             'T1 gate — Grids BD (bass drum).',
+  'symbiote.t2':             'T2 gate — Grids SD (snare).',
+  'symbiote.t3':             'T3 gate — Grids HH (hi-hat).',
+  'symbiote.x1':             'X1 — TB-3PO step clock (8th-note square).',
+  'symbiote.x2':             'X2 — TB-3PO pitch CV (1V/oct, slewed on slides).',
+  'symbiote.x3':             'X3 — TB-3PO acid gate (held through slides).',
+  'symbiote.y':              'Y — TB-3PO accent gate (high only when accent ∧ gate).',
   // BLADES — dual SVF + COLOR + mix bus.
   'blades.in1':         'Filter 1 audio input. Routed through the COLOR pre-stage tanh before filter 1.',
   'blades.in2':         'Filter 2 audio input. Routed through the COLOR pre-stage tanh before filter 2. In SERIAL mix mode, in2 still drives out2 — only the mix bus ignores it.',
@@ -1022,6 +1064,10 @@ export function buildModuleManifest(
       // Not a ModuleDef — exported only for the parallel module file's
       // import + the tests / ART scenarios.
       if (file.endsWith('-engine.ts')) return false;
+      // -resources.ts: generated lookup-table data (e.g. grids-resources.ts —
+      // the Grids drum-map node tables + Euclidean LUT used by SYMBIOTE).
+      // Not a ModuleDef.
+      if (file.endsWith('-resources.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.

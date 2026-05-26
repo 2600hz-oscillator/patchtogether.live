@@ -49,6 +49,8 @@ import { macseqDef } from './macseq';
 import { ringsDef } from './rings';
 import { elementsDef } from './elements';
 import { peaksDef } from './peaks';
+import { marblesDef } from './marbles';
+import { symbioteDef } from './symbiote';
 import { warpsDef } from './warps';
 import { veilsDef } from './veils';
 import { attenumixDef } from './attenumix';
@@ -131,6 +133,8 @@ export function registerAudioModules(): void {
   registerModule(ringsDef);
   registerModule(elementsDef);
   registerModule(peaksDef);
+  registerModule(marblesDef);
+  registerModule(symbioteDef);
   registerModule(warpsDef);
   registerModule(veilsDef);
   registerModule(attenumixDef);

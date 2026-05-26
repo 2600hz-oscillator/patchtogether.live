@@ -147,6 +147,10 @@
   import ElementsCard from '$lib/ui/modules/ElementsCard.svelte';
   // PEAKS — dual-channel multi-mode utility (Peaks archetype, kick/snare/hihat/env/lfo).
   import PeaksCard from '$lib/ui/modules/PeaksCard.svelte';
+  // MARBLES — random sampler / clock generator (Mutable Instruments Marbles port).
+  import MarblesCard from '$lib/ui/modules/MarblesCard.svelte';
+  // SYMBIOTE — Marbles core + Grids drums + TB-3PO acid (always-on Symbiote firmware).
+  import SymbioteCard from '$lib/ui/modules/SymbioteCard.svelte';
   // WARPS — meta-modulator / signal masher (Mutable Instruments Warps archetype).
   import WarpsCard from '$lib/ui/modules/WarpsCard.svelte';
   // VEILS — quad VCA + soft-clip summing mix (Mutable Instruments archetype).
@@ -375,6 +379,8 @@
     rings: RingsCard,
     elements: ElementsCard,
     peaks: PeaksCard,
+    marbles: MarblesCard,
+    symbiote: SymbioteCard,
     warps: WarpsCard,
     veils: VeilsCard,
     grids: GridsCard,
