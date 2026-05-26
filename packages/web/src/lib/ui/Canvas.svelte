@@ -83,6 +83,7 @@
   import ScoreCard from '$lib/ui/modules/ScoreCard.svelte';
   import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
   import PolyseqzCard from '$lib/ui/modules/PolyseqzCard.svelte';
+  import GridsCard from '$lib/ui/modules/GridsCard.svelte';
   import WavvizCard from '$lib/ui/modules/WavvizCard.svelte';
   // SWOLEVCO — Buchla 259-style complex VCO with built-in scope output.
   import SwolevcoCard from '$lib/ui/modules/SwolevcoCard.svelte';
@@ -361,6 +362,7 @@
     peaks: PeaksCard,
     warps: WarpsCard,
     veils: VeilsCard,
+    grids: GridsCard,
     attenumix: AttenumixCard,
     blades: BladesCard,
     stages: StagesCard,

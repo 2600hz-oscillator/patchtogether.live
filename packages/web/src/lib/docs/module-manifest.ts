@@ -107,6 +107,8 @@ const DESCRIPTIONS: Record<string, string> = {
   score: 'Sheet-music sequencer. 8-bar treble-clef staff, click to place notes. Outputs pitch / gate / env (ADSR x dynamic) / clock.',
   drumseqz:
     '4-channel x 16-step drum sequencer with per-track Euclidean fills + quantized CV. Sister module to RIOTGIRLS.',
+  grids:
+    'Topographic drum pattern generator (Mutable Instruments Grids port). Walks a 32-step pattern reading a 5x5 "drum map": the (X, Y) coordinate bilinearly interpolates BD/SD/HH step densities between the four surrounding map nodes. Per-channel DENSITY sets each instrument fill, CHAOS adds per-pattern randomness, SWING shifts off-steps, and steps with level > 192 fire an ACCENT. Outputs BD/SD/HH triggers + a combined accent gate + a chained clock. Runs off its internal tempo or an external clock (rising edges advance one step). Alternate EUCLIDEAN mode swaps the drum map for a 32x32 length-vs-density euclidean LUT.',
   polyseqz:
     'Polyphonic chord sequencer. 32-step grid; each step holds a root note + chord quality (maj/min/maj7/min7/dom7/sus2/sus4/dim/aug) + inversion (0/1/2) + voicing (closed/open/spread). Outputs the full 5-voice chord on a polyPitchGate cable. HUMANIZE knob adds per-voice timing offsets (linear/uniform at low values, chaotic clusters at high values) for a human-pianist feel. Tested as the chord source for DX7-style polyphonic synth voices.',
   wavviz:
@@ -292,6 +294,20 @@ const PORT_NOTES: Record<string, string> = {
   'drumseqz.pitch2': 'Track 2 V/oct pitch out.',
   'drumseqz.pitch3': 'Track 3 V/oct pitch out.',
   'drumseqz.pitch4': 'Track 4 V/oct pitch out.',
+  // GRIDS — topographic drum pattern generator (MI Grids port).
+  'grids.clock':        'CLOCK port. Input direction: external clock — rising edges advance one pattern step (overrides the internal tempo while patched). Output direction: chained clock pulse on every pattern-step advance.',
+  'grids.reset':        'Rising edge restarts the 32-step pattern at step 0.',
+  'grids.mapX_cv':      'CV → MAP-X (sums on top of the X knob). Selects the drum-map column; in EUCLIDEAN mode sets BD/HH euclidean length.',
+  'grids.mapY_cv':      'CV → MAP-Y (sums on top of the Y knob). Selects the drum-map row; in EUCLIDEAN mode sets SD euclidean length.',
+  'grids.bdDensity_cv': 'CV → BD density / fill (sums on top of the BD knob).',
+  'grids.sdDensity_cv': 'CV → SD density / fill.',
+  'grids.hhDensity_cv': 'CV → HH density / fill.',
+  'grids.chaos_cv':     'CV → CHAOS amount (per-pattern random perturbation of step levels).',
+  'grids.swing_cv':     'CV → SWING amount (shifts off-steps later/earlier).',
+  'grids.bd':           'Bass-drum trigger out (gate pulse on each BD hit).',
+  'grids.sd':           'Snare-drum trigger out.',
+  'grids.hh':           'Hi-hat trigger out.',
+  'grids.accent':       'Accent gate — high on any step where an instrument level exceeds the accent threshold (>192).',
   // POLYSEQZ — polyphonic chord sequencer (5-voice polyPitchGate output).
   'polyseqz.clock':       'CLOCK port. Input direction: external clock (rising edges advance the step pointer). Output direction: per-step clock pulse on every advance.',
   'polyseqz.reset_cv':    'Rising edge on this gate resets stepIndex to 0 next tick.',

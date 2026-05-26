@@ -29,6 +29,7 @@ import { riotgirlsDef, triggerVoice as riotgirlsTriggerVoice } from './riotgirls
 import { scoreDef } from './score';
 import { drumseqzDef } from './drumseqz';
 import { polyseqzDef } from './polyseqz';
+import { gridsDef } from './grids';
 import { wavvizDef } from './wavviz';
 import { swolevcoDef } from './swolevco';
 import { illogicDef } from './illogic';
@@ -161,6 +162,9 @@ export function registerAudioModules(): void {
   // CALLSINE — spectral-analysis additive resynth. audio in → STFT →
   // tracked partials → additive bank. MIT (Warren's Spectrum port).
   registerModule(callsineDef);
+  // GRIDS — Mutable Instruments topographic drum pattern generator.
+  // BD/SD/HH triggers + accent from a 5x5 interpolated drum map; euclidean mode.
+  registerModule(gridsDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
