@@ -88,6 +88,8 @@ const DESCRIPTIONS: Record<string, string> = {
   reverb: 'Algorithmic reverb. Size / damp / mix.',
   scope:
     '2-channel passthrough oscilloscope. Inputs flow unchanged to outputs while an AnalyserNode samples for display.',
+  rasterize:
+    'Audio -> video raster mapper. Each video frame paints a fixed run of audio samples (samples/frame, ~800 at 48k/60fps) as voltage-per-pixel into the 640x360 frame in raster order; a scan cursor drifts + wraps through the frame. Faithful raster mapping (NOT an oscilloscope trace) - a steady tone paints drifting horizontal bands whose spacing tracks the audio frequency vs the line/frame rate. Fully untamed: no limiter, no anti-alias.',
   sequencer: '32-step sequencer with internal BPM clock or external clock input.',
   lfo: 'Clockable LFO with four phase outputs (0deg / 90deg / 180deg / 270deg).',
   cartesian: '4x4 grid sequencer. Steps via clock; X/Y CV inputs scrub freely across the grid.',
@@ -211,6 +213,15 @@ const PORT_NOTES: Record<string, string> = {
   'scope.ch2Range': 'CV -> ch2 range (≥0.5 = CV ±5, <0.5 = audio ±1).',
   'scope.mode':
     'CV -> XY mode toggle. Any signal ≥ 0.5 flips to XY (ch1 horizontal, ch2 vertical); below 0.5 = split (two stacked traces).',
+  'rasterize.in': 'Audio in - the signal rasterized into pixels.',
+  'rasterize.thru': 'Audio passthrough (unmodified) so RASTERIZE can sit inline on a chain.',
+  'rasterize.out':
+    'Mono-video output: the accumulated raster frame as a GL texture. Each video frame paints a run of audio samples (samples/frame) as voltage-per-pixel in raster order; the scan cursor drifts + wraps through the 640x360 frame. A steady tone paints drifting horizontal bands. Driven by the cross-domain video bridge calling RASTERIZE.drawFrame() each frame.',
+  'rasterize.cursor': 'CV -> scan-cursor start offset (pixels). Scrubs where the run begins.',
+  'rasterize.samplesPerFrame': 'CV -> samples painted per frame (1 pixel per sample).',
+  'rasterize.gain': 'CV -> linear gain applied to each sample before the luminance map.',
+  'rasterize.wrap':
+    'CV -> wrap mode. >=0.5 = clamp (top-to-bottom repaint sweep); <0.5 = wrap (toroidal drift).',
   'wavviz.pitch': 'V/oct pitch input.',
   'wavviz.fm': 'Audio-rate FM input.',
   'wavviz.wavePos': 'CV -> wavetable scan position.',
@@ -947,6 +958,10 @@ export function buildModuleManifest(
       // both ScopeCard.svelte and the cross-domain video bridge use).
       // Not a ModuleDef.
       if (file.endsWith('-draw.ts')) return false;
+      // -map.ts: pure raster/coordinate-mapping math helpers (e.g.
+      // rasterize-map.ts that both the module factory + its tests use).
+      // Not a ModuleDef.
+      if (file.endsWith('-map.ts')) return false;
       // -engine.ts: pure-math worklet-engine mirror (e.g. stages-engine.ts).
       // Not a ModuleDef — exported only for the parallel module file's
       // import + the tests / ART scenarios.

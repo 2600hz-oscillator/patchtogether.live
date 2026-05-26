@@ -67,6 +67,7 @@
   import ReverbCard from '$lib/ui/modules/ReverbCard.svelte';
   import DelayCard from '$lib/ui/modules/DelayCard.svelte';
   import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
+  import RasterizeCard from '$lib/ui/modules/RasterizeCard.svelte';
   import SequencerCard from '$lib/ui/modules/SequencerCard.svelte';
   import WavetableVcoCard from '$lib/ui/modules/WavetableVcoCard.svelte';
   import LfoCard from '$lib/ui/modules/LfoCard.svelte';
@@ -301,6 +302,7 @@
     reverb: ReverbCard,
     delay: DelayCard,
     scope: ScopeCard,
+    rasterize: RasterizeCard,
     sequencer: SequencerCard,
     wavetableVco: WavetableVcoCard,
     lfo: LfoCard,

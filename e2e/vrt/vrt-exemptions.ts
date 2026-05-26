@@ -245,4 +245,11 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // is pending a `task vrt:update` run on linux CI; the hard non-black +
   // moving gate is e2e/tests/videobox-output.spec.ts.
   'linux/videoOut',
+  // RASTERIZE (crossing-the-streams slice 1): the darwin baseline is
+  // captured on this machine via VRT_SCENES (261 Hz sine → raster banding,
+  // frozen on AudioContext suspend). The linux baseline is pending a
+  // `task vrt:update` run on linux CI — raster pixel values can differ
+  // sub-thresholdly across the AudioContext sine-table + analyser refill
+  // timing per platform, so we capture darwin here and defer linux.
+  'linux/rasterize',
 ]);
