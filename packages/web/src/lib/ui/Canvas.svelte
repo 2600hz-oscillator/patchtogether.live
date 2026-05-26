@@ -2956,8 +2956,40 @@
     if (!p || !user) return;
     const awareness = p.awareness;
     if (!awareness) return;
+    // Publish our presence identity now…
     awareness.setLocalStateField('user', user);
+    // …and RE-PUBLISH it on every (re)connect / sync. This is the presence-
+    // reliability fix for the relay-restart class: the Fly relay holds
+    // awareness in PROCESS MEMORY (no persistence), so when it restarts (or a
+    // client reconnects to a fresh machine) the server's awareness set is
+    // EMPTY — every peer momentarily "alone in its own view" (the live
+    // "1/4 members" / DOOM split-brain symptom). The HocuspocusProvider already
+    // re-sends local awareness inside startSync() on reconnect, but only when
+    // getLocalState() !== null; re-asserting the `user` field on the provider's
+    // own connect/sync events guarantees it is re-broadcast even if our local
+    // awareness was cleared in between, so presence reconverges within one
+    // reconnect cycle instead of waiting for an unrelated future awareness
+    // write. Cheap + idempotent (y-protocols dedupes an identical state).
+    const republish = () => {
+      try {
+        awareness.setLocalStateField('user', user);
+      } catch {
+        /* provider mid-teardown — the next event will re-assert */
+      }
+    };
+    // 'synced' fires on the initial handshake AND every reconnect handshake;
+    // 'status' → connected covers the websocket-level reconnect. Subscribe to
+    // both so neither a fresh relay machine nor an in-memory wipe leaves us
+    // unseen. HocuspocusProvider's emitter tolerates unknown events as no-ops.
+    p.on('synced', republish);
+    p.on('status', republish);
     return () => {
+      try {
+        p.off('synced', republish);
+        p.off('status', republish);
+      } catch {
+        /* emitter may be gone */
+      }
       try {
         awareness.setLocalState(null);
       } catch {
