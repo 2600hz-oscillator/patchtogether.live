@@ -53,6 +53,7 @@ import { veilsDef } from './veils';
 import { attenumixDef } from './attenumix';
 import { bladesDef } from './blades';
 import { stagesDef } from './stages';
+import { tides2Def } from './tides2';
 import { cloudseedDef } from './cloudseed';
 import { livecodeDef } from './livecode';
 import { clockedRunnerDef } from './clocked-runner';
@@ -133,6 +134,7 @@ export function registerAudioModules(): void {
   registerModule(attenumixDef);
   registerModule(bladesDef);
   registerModule(stagesDef);
+  registerModule(tides2Def);
   registerModule(cloudseedDef);
   registerModule(livecodeDef);
   registerModule(clockedRunnerDef);

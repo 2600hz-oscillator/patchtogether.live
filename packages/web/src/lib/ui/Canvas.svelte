@@ -156,6 +156,8 @@
   import BladesCard from '$lib/ui/modules/BladesCard.svelte';
   // STAGES — 6-segment cascadable function generator (Mutable Instruments Stages archetype).
   import StagesCard from '$lib/ui/modules/StagesCard.svelte';
+  // TIDES2 — tidal modulator / poly-slope generator (Mutable Instruments Tides 2018 archetype).
+  import Tides2Card from '$lib/ui/modules/Tides2Card.svelte';
   // CLOUDSEED — exact port of Ghost Note Audio CloudSeed reverb (MIT).
   import CloudseedCard from '$lib/ui/modules/CloudseedCard.svelte';
   // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port, MIT).
@@ -366,6 +368,7 @@
     attenumix: AttenumixCard,
     blades: BladesCard,
     stages: StagesCard,
+    tides2: Tides2Card,
     cloudseed: CloudseedCard,
     midiCvBuddy: MidiCvBuddyCard,
     midiclock: MidiclockCard,

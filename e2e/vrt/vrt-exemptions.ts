@@ -92,6 +92,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // coverage. Promote into MODULES + capture baselines on both platforms
   // in a follow-up PR.
   peaks: 'VRT baseline pending; ART + unit + E2E provide coverage.',
+  // TIDES2: the card is plain knobs + mode buttons (no custom canvas
+  // visualization), so a VRT scene adds no signal over the unit pass that
+  // pins the four-output DSP math. Capture a baseline only if a future PR
+  // adds a slope-preview scope to the card.
+  tides2: 'Card has no custom visualization (knobs + mode buttons); unit tests pin the DSP. No VRT scene needed.',
   // WARPS first-slice PR: VRT baseline pending; ART + unit + E2E provide
   // coverage. Promote into MODULES + capture baselines on both platforms
   // in a follow-up PR.
