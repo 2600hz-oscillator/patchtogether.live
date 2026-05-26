@@ -140,6 +140,9 @@ type StandardModuleType =
   | 'score'
   | 'drumseqz'
   | 'polyseqz'
+  // GRIDS — Mutable Instruments topographic drum pattern generator
+  // (BD/SD/HH triggers + accent from a 5x5 interpolated drum map; euclidean mode).
+  | 'grids'
   // WAVVIZ — wavetable VCO with built-in wavefolder + waveform-video output.
   | 'wavviz'
   // SWOLEVCO — Buchla 259-style complex VCO (primary + modulator + cross-mod

@@ -223,6 +223,10 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   chroma: 'VRT baseline pending — v3 reshape (PR feat/keyers-and-restore-chroma-luma) deleted obsolete baselines; regenerate via `task vrt:update` on each platform.',
   // LUMA — v2 reshape (this PR) same rationale as CHROMA above.
   luma: 'VRT baseline pending — v2 reshape (PR feat/keyers-and-restore-chroma-luma) deleted obsolete baselines; regenerate via `task vrt:update` on each platform.',
+  // GRIDS — fader + button card (no custom visualization), so VRT adds
+  // little over the unit + spawn-smoke coverage. Baseline pending; promote
+  // into MODULES + capture darwin/linux baselines in a follow-up PR.
+  grids: 'VRT baseline pending; standard fader/button card (no custom viz). Unit tests (grids.test.ts) + per-module spawn smoke provide coverage. Capture darwin/linux baselines via `task vrt:update` in a follow-up PR.',
 };
 
 /** Per-(platform, type) baselines intentionally missing while a follow-

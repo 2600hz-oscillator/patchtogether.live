@@ -155,6 +155,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   macrooscillator: { top: 'Ports', sub: 'Mutable' },
   veils: { top: 'Ports', sub: 'Mutable' },
   warps: { top: 'Ports', sub: 'Mutable' },
+  grids: { top: 'Ports', sub: 'Mutable' },
 
   // ───────── MIDI (hardware-bridge modules) ─────────
   // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI

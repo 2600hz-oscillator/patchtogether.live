@@ -124,6 +124,14 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // JS orchestrator each tick (sampled into the next-scene picker).
   // Same shape as buggles.chaos_cv — no AudioParam fast path.
   atlantisCatalyst: ['seed_cv'],
+  // GRIDS map/density/chaos/swing CV: sampled into a JS shadow each
+  // scheduler tick (most-recent analyser sample → unitToByte → 0..255
+  // pattern parameter), then summed onto the corresponding knob inside
+  // the pattern engine. There's no AudioParam fast path — the CV value IS
+  // a pattern coordinate / fill / randomness amount, not a knob modulator
+  // routed through a WaveShaperNode. Same shape as cartesian's x_cv/y_cv
+  // address selectors + buggles.chaos_cv.
+  grids: ['mapX_cv', 'mapY_cv', 'bdDensity_cv', 'sdDensity_cv', 'hhDensity_cv', 'chaos_cv', 'swing_cv'],
 };
 
 describe('cv-scale / registry coverage', () => {
