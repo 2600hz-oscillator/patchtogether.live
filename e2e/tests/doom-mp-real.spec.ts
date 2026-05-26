@@ -307,10 +307,11 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       const ownerSeated = await waitForSlot(owner.page, NODE_ID, 0, 25000);
       expect(ownerSeated, 'owner takes slot 0 (player 1) on Host Multiplayer').toBe(true);
 
-      // ── Round 5: guest's Join is DISABLED until the host runs an MP game ──
-      // Before the host launches, mpLive is false → the guest's Join button is
-      // present but disabled ("Waiting for host to start a multiplayer game…").
-      // This is the single gate of the new flow.
+      // ── Round 6 (deadlock fix): the guest's Join is NOT gated on mpLive ──
+      // Before the host launches, mpLive is still false, but Join must NOT be
+      // deadlocked: the join-REQUEST is what opens MP, so the button is present
+      // AND ENABLED (there is room) the moment the lobby is open. (Round 5
+      // wrongly disabled it until mpLive — the bug this PR fixes.)
       const guestSawLobby = await guest.page
         .waitForFunction(
           (nid) =>
@@ -330,16 +331,18 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         expect(g.mpLive, 'no MP game running yet → not live').toBe(false);
         expect(g.mySlot, 'guest is not seated before joining').toBeNull();
       }
-      // The Join button exists but is DISABLED with the waiting copy.
+      // Per the owner's spec: the Join button is SHOWN but DISABLED before the
+      // host is running a live MP game (mpLive false). It enables only once the
+      // host is in a live MP level. (No deadlock: the host flips mpLive itself
+      // on launch-with-others via shouldOpenMultiplayer, not via a guest Join.)
       const joinBtnPreLaunch = guest.page.locator('[data-testid="doom-join-btn"]');
       await expect(joinBtnPreLaunch, 'Join button is present pre-launch').toBeVisible({
         timeout: 10000,
       });
-      await expect(joinBtnPreLaunch, 'Join is DISABLED until the host starts a game').toBeDisabled();
       await expect(
-        guest.page.locator('[data-testid="doom-join-waiting"]'),
-        'guest sees the "waiting for host" copy',
-      ).toBeVisible();
+        joinBtnPreLaunch,
+        'Join is DISABLED pre-launch (host not running a multiplayer game yet)',
+      ).toBeDisabled();
 
       // ── Owner (arbiter) LAUNCHES coop E1M1 → host reaches GS_LEVEL ───────
       await owner.page.evaluate(
@@ -369,9 +372,11 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         expect(o.badgeText).toBe('P1');
       }
 
-      // ── Round 5: with the game live, the guest's Join ENABLES → one click ──
-      // hot-joins straight into the running level (no second host action). The
-      // mpLive flag the host published flips the guest's button to enabled.
+      // ── The host is now live (mpLive=true): the guest's Join ENABLES, and ──
+      // one click hot-joins straight into the running level (no second host
+      // action). The host published mpLive=true; the guest mirrors it (drives
+      // the waiting→joining copy + the Join enabled state). No deadlock: the
+      // host flipped mpLive on launch-with-others, not via the guest's Join.
       const guestSawLive = await guest.page
         .waitForFunction(
           (nid) =>
@@ -429,6 +434,37 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         expect(g.gamestate, 'guest gamestate is GS_LEVEL').toBe(GS_LEVEL);
         expect(g.gamestate, 'guest is NOT on the DOOM title/attract menu').not.toBe(GS_DEMOSCREEN);
         expect(g.memberIds.length).toBe(2);
+      }
+
+      // ── Round-6 Bug A: mpLive is published by the host + mirrored by the
+      //    guest, so a guest is NEVER stuck "Waiting for host to start…" while
+      //    the host is in a live MP level. Both peers must read mpLive===true.
+      {
+        const liveBoth = await guest.page
+          .waitForFunction(
+            (nid) =>
+              (
+                globalThis as unknown as {
+                  __doomCards: Record<string, { getState: () => { mpLive?: boolean } }>;
+                }
+              ).__doomCards[nid]!.getState().mpLive === true,
+            NODE_ID,
+            { timeout: 10000 },
+          )
+          .then(() => true)
+          .catch(() => false);
+        expect(liveBoth, 'guest mirrors host mpLive=true (no false "Waiting…" deadlock)').toBe(true);
+        const o = await getState(owner.page, NODE_ID);
+        expect(o.mpLive, 'host publishes mpLive=true while in a live MP level').toBe(true);
+        // The guest's waiting copy must not be the false "Waiting for host to
+        // start…" — its own level is live anyway, so the dialog shows its slot.
+        const waitText = await guest.page
+          .locator('[data-testid="doom-waiting"]')
+          .textContent()
+          .catch(() => '');
+        expect(waitText ?? '', 'guest never shows the false "Waiting for host to start" copy').not.toContain(
+          'Waiting for host to start',
+        );
       }
 
       // ── Each peer drives its OWN marine, spawned at its own slot ─────────
