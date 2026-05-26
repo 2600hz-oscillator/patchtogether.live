@@ -755,11 +755,13 @@ export class PatchEngine {
    * own `edges` map.
    *
    * Detection rule: cross-domain (sourceDomain != targetDomain) AND
-   * sourceType is 'cv'. The targetType being 'cv' is the canonical case
-   * (video modules declare CV-modulatable params as type='cv' inputs);
-   * we also accept video cable targets in case someone routes audio CV
-   * directly to a video stream port (the type system permits it via
-   * canConnect).
+   * sourceType is 'cv' OR 'gate'. The targetType being 'cv' is the
+   * canonical case (video modules declare CV-modulatable params as
+   * type='cv' inputs); we also accept video cable targets in case someone
+   * routes audio CV directly to a video stream port (the type system
+   * permits it via canConnect). `gate` sources (gamepad buttons/dpad,
+   * sequencer gates) bridge identically — the analyser reads the 0/1
+   * value each frame and the target module's edge detector fires.
    *
    * If `targetDomain` is omitted (legacy callers), we fall back to
    * single-domain dispatch — preserves Phase-0 semantics for tests that
@@ -769,8 +771,15 @@ export class PatchEngine {
     if (
       targetDomain !== undefined
       && sourceDomain !== targetDomain
-      && edge.sourceType === 'cv'
+      && (edge.sourceType === 'cv' || edge.sourceType === 'gate')
     ) {
+      // `cv` (LFO, gamepad sticks ±1) AND `gate` (gamepad buttons/dpad,
+      // sequencer gates) both bridge audio → video the same way: the
+      // analyser samples the ConstantSource/AudioParam value each frame.
+      // A gate source carries 0/1 which still crosses a gate detector's
+      // rise/fall thresholds. Without accepting `gate` here, patching a
+      // gamepad D-pad (gate output) into DOOM's movement inputs fell
+      // through to single-domain audio dispatch and silently no-op'd.
       this.addCrossDomainCvBridge(edge, sourceDomain, targetDomain);
       return;
     }

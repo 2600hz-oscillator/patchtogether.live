@@ -48,6 +48,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import { doomDef, type DoomHandleExtras } from '$lib/video/modules/doom';
   import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
+  import { isCvGatePatched } from '$lib/doom/doom-input-mode';
   import { HeldKeyTracker } from '$lib/doom/held-keys';
   import {
     encodeKey,
@@ -989,8 +990,40 @@
   // (latchKeyboard), which is the natural re-engage gesture.
   let kbReleased = $state(false);
 
+  // INPUT-MODE SWITCH (owner-approved): a DOOM node is driven by EITHER
+  // CV-gate jacks OR the keyboard, never both. If ANY of this node's
+  // CV-gate inputs (up/down/left/right/space/ctrl/alt) has an incoming
+  // edge, the node is "patched" → CV owns movement and the keyboard
+  // capture is inert (we never claim keys, so the sticky-latch / focus /
+  // `.selected` complexity below is short-circuited). Only when NO
+  // CV-gate input is patched does the keyboard path run.
+  //
+  // Derived off patch.edges so it recomputes when cables are added/removed.
+  // The `void Object.keys(...).length` touch makes the $derived track the
+  // edge-set identity (mirrors VideoVarispeedCard's portConnected cache).
+  // The actual predicate is the pure `isCvGatePatched` (unit-tested).
+  let cvGatePatched = $derived<boolean>(
+    (void Object.keys(patch.edges).length, isCvGatePatched(Object.values(patch.edges), id)),
+  );
+
+  // When a CV-gate cable is plugged WHILE keyboard keys are held, the
+  // keyboard path goes inert mid-hold and would never deliver the keyup —
+  // leaving the key stuck down in the WASM queue. Release everything held
+  // the instant we flip into CV-only mode (and drop the sticky latch so a
+  // later unpatch re-engages cleanly via a fresh click).
+  $effect(() => {
+    if (cvGatePatched) {
+      kbLatched = false;
+      releaseHeldKeys();
+    }
+  });
+
   function shouldClaimKey(): boolean {
     if (!cardEl) return false;
+    // Patched ⇒ CV-only. A CV-gate cable owns movement; the keyboard is
+    // inert (so we don't fight the CV edge-detector or double-drive the
+    // game). Unpatched ⇒ the keyboard path below runs as before.
+    if (cvGatePatched) return false;
     // a) Latched: the user clicked the card to take keyboard control + has not
     //    explicitly released it. This is the sticky path — it does NOT depend
     //    on the transient focus / `.selected` state that sync churn toggles.

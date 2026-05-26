@@ -32,6 +32,7 @@ import type { Edge, ModuleNode } from '$lib/graph/types';
 import type { DomainEngine } from '$lib/audio/engine';
 import { getVideoModuleDef, type VideoModuleDef } from './module-registry';
 import { createWaveformRenderer, type WaveformRenderer } from './waveform-video';
+import { buildCvBridgeMapping, mapCvBridgeValue, type CvBridgeMapping } from './cv-bridge-map';
 
 /** Resolution of every per-module FBO. Phase-0 keeps this small for
  *  fastest startup on the demo path; Phase 1 bumps it to 1280×720. */
@@ -212,7 +213,10 @@ export class VideoEngine implements DomainEngine {
      *  strict typed-array signature for getFloatTimeDomainData is met. */
     buf: Float32Array<ArrayBuffer>;
     targetNodeId: string;
-    targetParamId: string;
+    /** Precomputed gate-vs-param mapping: gate targets pass the raw cv
+     *  through (the module edge-detects); continuous targets (with a
+     *  `cvScale` hint) sweep their full param range. See cv-bridge-map.ts. */
+    mapping: CvBridgeMapping;
     /** Disconnect the upstream AudioNode tap into our analyser. */
     teardown: () => void;
   }>();
@@ -546,14 +550,19 @@ void main() {
     const meta = this.nodeMeta.get(targetNodeId);
     const def = meta ? getVideoModuleDef(meta.type) : undefined;
     const input = def?.inputs?.find((p) => p.id === targetPortId);
-    const targetParamId = input?.paramTarget ?? targetPortId;
+    // Branch gate-vs-param up front (see cv-bridge-map.ts): gate-style cv
+    // inputs (DOOM cv_<port>) get the RAW value so their edge detector
+    // fires; continuous params with a `cvScale` hint get the incoming ±1
+    // mapped across the param's full natural range (otherwise a bipolar
+    // source only exercises a sub-range + clamps → "one quadrant").
+    const mapping = buildCvBridgeMapping(input, targetPortId, def?.params, meta?.params);
     const bufLen = Math.max(32, analyser.fftSize);
     const buf = new Float32Array(new ArrayBuffer(bufLen * 4));
     this.cvBridges.set(edgeId, {
       analyser,
       buf,
       targetNodeId,
-      targetParamId,
+      mapping,
       teardown,
     });
   }
@@ -572,8 +581,11 @@ void main() {
       if (!handle) continue;
       bridge.analyser.getFloatTimeDomainData(bridge.buf);
       // Tail sample is "newest" in the rolling window analyser semantics.
-      const v = bridge.buf[bridge.buf.length - 1] ?? 0;
-      handle.setParam(bridge.targetParamId, v);
+      const raw = bridge.buf[bridge.buf.length - 1] ?? 0;
+      // Gate target: raw value through (module edge-detects). Continuous
+      // target: map ±1 across the param's full range (mirrors audio path).
+      const v = mapCvBridgeValue(bridge.mapping, raw);
+      handle.setParam(bridge.mapping.targetParamId, v);
     }
   }
 
