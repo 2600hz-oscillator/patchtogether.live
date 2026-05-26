@@ -47,7 +47,7 @@
 // in vitest (that's slice 7's Playwright job).
 
 import type { HocuspocusProvider } from '@hocuspocus/provider';
-import { pickHost } from './doom-presence';
+import { decideHostRole } from './doom-host-authority';
 
 // ────────────────────────────────────────────────────────────────────────
 //  Constants
@@ -336,6 +336,15 @@ export class DoomNetcode {
 
   /** Monotonic per-tic seq the local peer stamps on each broadcast ticcmd. */
   private ticcmdTxSeq = 0;
+  /** Last ticcmd we actually broadcast (slot + fields). Used to suppress the
+   *  per-frame write when nothing changed (idle player → no awareness churn). */
+  private lastSentTiccmd: {
+    slot: number;
+    forwardmove: number;
+    sidemove: number;
+    angleturn: number;
+    buttons: number;
+  } | null = null;
   /** Highest ticcmd seq we've already delivered to onRemoteTiccmd, keyed by
    *  sender user id (dedupe the sticky awareness re-broadcast). */
   private ticcmdRxSeq = new Map<string, number>();
@@ -492,16 +501,28 @@ export class DoomNetcode {
     this.peerIdByUser = nextByUser;
     this.userByPeerId = nextByPeerId;
 
-    // Arbiter election (reuse pickHost: the RACK OWNER if present, else keep
-    // the current arbiter if still live, else lex-min). Threading owner ids
-    // here keeps the NET arbiter == the rack host == the session arbiter
-    // (DoomCard.isHost) — they must coincide so the host's Launch
-    // (broadcastGameStart, arbiter-only) actually fires. Pre-fix the net
-    // arbiter was pure lex-min, so when the owner wasn't lex-smallest the
-    // host's Launch was a no-op (game never started → attract demo). Fire
-    // onArbiter on transition.
+    // Arbiter election — SPLIT-BRAIN-PROOF, identical authority to
+    // DoomCard.recomputeHost (decideHostRole). The arbiter MUST equal the rack
+    // host so the host's Launch (broadcastGameStart, arbiter-only) actually
+    // fires; routing both through the same pure helper guarantees they can
+    // never disagree. The decisive input is this client's RELIABLE local
+    // ownership (readLocalOwnership) — NOT a count of awareness — so a guest
+    // whose awareness shows only itself never elects itself arbiter (the split-
+    // brain / two-P1s bug). An anon rack falls back to deterministic lex-min.
     const prevArbiter = this.arbiterUserId;
-    const nextArbiter = pickHost(this.arbiterUserId, members, this.readOwnerIds());
+    const decision = decideHostRole({
+      localUserId: this.localUserId,
+      localIsOwner: this.readLocalOwnership(),
+      currentHost: this.arbiterUserId,
+      members,
+      ownerIds: this.readOwnerIds(),
+    });
+    // hostUserId is null only for a confirmed guest that hasn't seen the owner
+    // yet; keep the last-known arbiter in that gap so transient awareness loss
+    // doesn't churn the (still-correct) arbiter to null.
+    const nextArbiter = decision.role === 'host'
+      ? this.localUserId
+      : decision.hostUserId ?? this.arbiterUserId;
     this.arbiterUserId = nextArbiter;
     if (prevArbiter !== nextArbiter) {
       this.onArbiter?.(this.isArbiter());
@@ -563,6 +584,20 @@ export class DoomNetcode {
       }
     }
     return [...ids];
+  }
+
+  /** This client's OWN rack ownership from RELIABLE local identity (the
+   *  provider's LOCAL awareness `user.isRackOwner`, set by the page from server
+   *  data — not received over the network). Tri-state, matching DoomCard's
+   *  resolveLocalOwnership: true = confirmed owner, false = confirmed authed
+   *  non-owner, null = anon member / no provider (anon-rack lex-min fallback).
+   *  This is what makes arbiter election split-brain-proof. */
+  private readLocalOwnership(): boolean | null {
+    const aw = this.provider.awareness;
+    if (!aw) return null;
+    const state = aw.getLocalState() as { user?: { isRackOwner?: boolean } } | null;
+    const flag = state?.user?.isRackOwner;
+    return flag === true ? true : flag === false ? false : null;
   }
 
   /** Rack-member ids that OWN the rackspace (the `user.isRackOwner` flag set
@@ -963,10 +998,16 @@ export class DoomNetcode {
   // net_client packet path, which never connects in our JS-driven start flow.
 
   /** Broadcast THIS peer's latest local ticcmd, tagged with its slot. Called
-   *  by the card each tic after reading runtime.readLocalTiccmd(). Skips the
-   *  write when nothing changed since the last broadcast (same field bytes →
-   *  no redundant awareness churn) by always bumping seq but letting the
-   *  receiver dedupe; we still avoid a write if there is no awareness. */
+   *  by the card each rAF tic after reading runtime.readLocalTiccmd().
+   *
+   *  WRITE CAP (storm prevention): the card calls this every frame (~60 Hz),
+   *  but a standing-still player produces the SAME ticcmd frame after frame. We
+   *  only write awareness when the ticcmd ACTUALLY CHANGED since the last
+   *  broadcast — an idle player therefore emits ZERO awareness churn instead of
+   *  60 redundant writes/sec per player, fanned to every peer through the one
+   *  relay process. (The receiver still dedupes on seq for ordering; this gate
+   *  removes the write itself, which is the real cost.) Skipped entirely when
+   *  there is no awareness. */
   broadcastLocalTiccmd(slot: number, cmd: {
     forwardmove: number;
     sidemove: number;
@@ -975,6 +1016,17 @@ export class DoomNetcode {
   }): void {
     const aw = this.provider.awareness;
     if (!aw) return;
+    // Only-on-change: identical ticcmd to the last one we sent → no write.
+    if (
+      this.lastSentTiccmd !== null &&
+      this.lastSentTiccmd.slot === slot &&
+      this.lastSentTiccmd.forwardmove === cmd.forwardmove &&
+      this.lastSentTiccmd.sidemove === cmd.sidemove &&
+      this.lastSentTiccmd.angleturn === cmd.angleturn &&
+      this.lastSentTiccmd.buttons === cmd.buttons
+    ) {
+      return;
+    }
     const env: TiccmdEnvelope = {
       slot,
       forwardmove: cmd.forwardmove,
@@ -983,6 +1035,7 @@ export class DoomNetcode {
       buttons: cmd.buttons,
       seq: this.ticcmdTxSeq++,
     };
+    this.lastSentTiccmd = { slot, ...cmd };
     aw.setLocalStateField(ticcmdFieldFor(this.moduleId), env);
   }
 

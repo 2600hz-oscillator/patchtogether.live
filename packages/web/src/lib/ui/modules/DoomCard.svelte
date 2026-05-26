@@ -55,9 +55,9 @@
     encodeFrame,
     decodeFrame,
     decodeFrameBuffer,
-    pickHost,
     type RelayCursor,
   } from '$lib/doom/doom-presence';
+  import { decideHostRole } from '$lib/doom/doom-host-authority';
   import {
     serializeRoster,
     serializePending,
@@ -93,6 +93,7 @@
     joinAffordance,
     shouldHotJoinRelaunch,
   } from '$lib/doom/doom-gating';
+  import { shouldOpenMultiplayer, guestWaitingState } from '$lib/doom/doom-session';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -479,6 +480,29 @@
     return out;
   }
 
+  /** This client's OWN rack ownership, resolved from RELIABLE local identity
+   *  (the provider's LOCAL awareness `user.isRackOwner`, which the page set
+   *  from server data — NOT received over the network). This is the input that
+   *  makes host election split-brain-proof: a client trusts what IT knows about
+   *  itself, never a count of (possibly-empty) remote awareness.
+   *
+   *    true  → confirmed owner (data.rackspace.ownerUserId === currentUserId).
+   *    false → confirmed authed NON-owner (the rack has an owner; it's not me).
+   *    null  → anon member (no `isRackOwner` field published) OR no provider —
+   *            a rack with no owner concept, so the deterministic lex-min
+   *            fallback in decideHostRole applies.
+   *
+   *  multiplayer/presence.ts publishes `isRackOwner: true|false` for authed
+   *  users and OMITS the field for anon users, giving exactly this tri-state. */
+  function resolveLocalOwnership(): boolean | null {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return null;
+    const state = aw.getLocalState() as { user?: { isRackOwner?: boolean } } | null;
+    const flag = state?.user?.isRackOwner;
+    return flag === true ? true : flag === false ? false : null;
+  }
+
   /** Resolve a rack user's display name from awareness presence (the `user`
    *  field set by multiplayer/presence.ts carries id + displayName). Returns
    *  null when no presence entry / no provider — the identity label then
@@ -718,12 +742,22 @@
     // is what lets an anon/invite guest actually join when the host hasn't (or
     // can't) press Host Multiplayer first (the operator's "anon sees the widget
     // but no working Join" bug: mpMode stayed undefined, so the roster never
-    // opened). A request to play IS the decision to run MP. Only `mpMode==='single'`
-    // (the host explicitly chose solo) suppresses it. So: open MP when a level
-    // is already going OR someone wants in, unless the host locked single-player.
-    const wantsMp = mpMode === 'multi' || outstandingRequests.length > 0 || rosterSize(combinedRoster(cur)) > 0;
-    if (mpMode === 'single') return;            // host chose single-player — no roster
-    if (!wantsMp) return;                        // nobody wants MP yet — stay idle
+    // opened). A request to play IS the decision to run MP. A host's "Single
+    // Player" choice is only honoured on a genuinely SOLO rack. The moment
+    // OTHER members are present, a launched game must be JOINABLE (the owner's
+    // model: "others can Join IF a multiplayer game is running") — otherwise a
+    // host who clicked Single Player (or whose game launched before anyone
+    // joined) leaves every guest stuck on "Waiting…" with no working Join,
+    // forever (the round-6 deadlock fix). So with members present we always
+    // default to multiplayer.
+    const wantsMp = shouldOpenMultiplayer({
+      mpMode,
+      memberCount: memberIds.length,
+      outstandingRequests: outstandingRequests.length,
+      rosterSize: rosterSize(combinedRoster(cur)),
+      hostLaunched: launched,
+    });
+    if (!wantsMp) return; // solo rack with host on single, or nobody wants MP yet
     // Persist mpMode='multi' (once) so EVERY peer's Join affordance + lobby UI
     // converges, including the requester that triggered this.
     if (mpMode !== 'multi') {
@@ -1028,7 +1062,24 @@
   // arrow-key node-move + delete-on-Backspace). preventDefault +
   // stopPropagation here is what keeps the arrow keys from reaching SF's
   // node-move handler and the canvas's pan/zoom shortcuts.
+  /** Modifier-state reconciliation: on every keyboard event, if our tracker
+   *  thinks a modifier is held but the event reports it UP, release it (route
+   *  the keyup into the game). Catches the swallowed-keyup case (macOS
+   *  screenshot shortcut holds Ctrl, fires no blur/visibility, and eats the
+   *  keyup → the gun fires forever). Only ever releases MODIFIERS, never
+   *  movement keys, so it does not reintroduce the round-4 movement-dump bug.
+   *  Run BEFORE the down/up bookkeeping so a release for THIS event's own key
+   *  (e.g. an actual Ctrl keyup) is handled normally afterward. */
+  function reconcileHeldModifiers(ev: KeyboardEvent): void {
+    heldKeys.reconcileModifiers({
+      ctrl: ev.ctrlKey,
+      alt: ev.altKey,
+      shift: ev.shiftKey,
+      meta: ev.metaKey,
+    });
+  }
   function onWindowKeyDownCapture(ev: KeyboardEvent): void {
+    reconcileHeldModifiers(ev);
     if (!shouldClaimKey()) return;
     // Escape is the explicit "give back the keyboard" gesture for the sticky
     // latch — release control + drop held keys, and let the event through (do
@@ -1049,6 +1100,10 @@
     heldKeys.down(ev.code, ev.repeat);
   }
   function onWindowKeyUpCapture(ev: KeyboardEvent): void {
+    // Reconcile first: a keyup whose own modifier the OS already dropped (or a
+    // keyup for some OTHER key that reveals a previously-swallowed modifier
+    // release) frees any stuck modifier here too.
+    reconcileHeldModifiers(ev);
     // Route the release if we currently CLAIM the keyboard OR we were
     // holding this key — the latter covers a keyup that lands after the
     // card was deselected (clicked another node), which the claim gate
@@ -1185,17 +1240,30 @@
       if (!ids.includes(me)) ids.push(me);
       memberIds = ids;
       const myField = `doom:${id}:host`;
-      // Read all clients' "I am host for module X" claims; tiebreak via
-      // pickHost (lex-smallest).
+      // Read all clients' "I am host for module X" claims; used ONLY as the
+      // sticky current-host hint for the anon-rack fallback inside
+      // decideHostRole. It is NEVER what decides an OWNED rack — that comes
+      // from reliable LOCAL ownership, so a guest can't elect itself off a
+      // stale/empty claim set (the split-brain root).
       const candidates: string[] = [];
       states.forEach((s) => {
         const host = (s as Record<string, unknown>)[myField];
         if (typeof host === 'string') candidates.push(host);
       });
       const currentHost = candidates.length > 0 ? candidates.sort()[0]! : null;
-      // The rack owner (if present) is always the host; otherwise lex-min.
-      const newHost = pickHost(currentHost, ids, resolveOwnerIds());
-      isHost = newHost === me;
+      // SPLIT-BRAIN-PROOF host authority: trust what THIS client knows about
+      // ITSELF (resolveLocalOwnership) over any awareness count. A confirmed
+      // owner is host unconditionally; a confirmed guest is NEVER host (it
+      // waits for the owner even if its own awareness shows only itself); only
+      // a genuinely anon rack falls back to the deterministic lex-min election.
+      const decision = decideHostRole({
+        localUserId: me,
+        localIsOwner: resolveLocalOwnership(),
+        currentHost,
+        members: ids,
+        ownerIds: resolveOwnerIds(),
+      });
+      isHost = decision.role === 'host';
       // Only write our claim if it actually changed — otherwise every
       // recomputeHost would emit an awareness update which re-fires
       // 'update' which re-enters recomputeHost (infinite loop seen in
@@ -1737,14 +1805,20 @@
          single-player or a multiplayer lobby; the choice is stored on the node
          so guests see the lobby state. -->
     <div class="start-choice nodrag" data-testid="doom-start-choice">
-      <button
-        class="start-btn nodrag"
-        data-testid="doom-start-single"
-        onclick={() => void playSinglePlayer()}
-        title="Play DOOM solo (no netgame)"
-      >
-        Single Player
-      </button>
+      {#if memberIds.length <= 1}
+        <!-- Single Player is offered ONLY on a solo rack. With other members
+             present a launched game must be joinable (the owner's model), so we
+             don't offer a choice that would strand them on "Waiting…" — the
+             host starts a multiplayer session instead (deadlock fix). -->
+        <button
+          class="start-btn nodrag"
+          data-testid="doom-start-single"
+          onclick={() => void playSinglePlayer()}
+          title="Play DOOM solo (no netgame)"
+        >
+          Single Player
+        </button>
+      {/if}
       <button
         class="start-btn primary nodrag"
         data-testid="doom-start-multi"
@@ -1953,10 +2027,15 @@
           </div>
         {/if}
       {:else}
-        <!-- Non-arbiter joined players: wait for the host to start. -->
+        <!-- Non-arbiter joined players: reflect the host-authoritative mpLive
+             so we NEVER say "Waiting for host to start…" while the host is in
+             fact in a live level (round-6 deadlock-copy fix). -->
+        {@const waiting = guestWaitingState({ ownInLevel: inLevel, hostMpLive: mpLive })}
         <div class="ng-waiting" data-testid="doom-waiting">
-          {#if inLevel}
+          {#if waiting === 'in-level'}
             In level — playing as P{mySlot + 1}
+          {:else if waiting === 'host-live-joining'}
+            Host is in a game — joining…
           {:else}
             Waiting for host to start…
           {/if}
