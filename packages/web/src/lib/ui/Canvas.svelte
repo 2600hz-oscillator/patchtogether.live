@@ -144,6 +144,7 @@
   import MacseqCard from '$lib/ui/modules/MacseqCard.svelte';
   // RINGS — modal / sympathetic-string resonator (Mutable Instruments Rings port).
   import RingsCard from '$lib/ui/modules/RingsCard.svelte';
+  import ElementsCard from '$lib/ui/modules/ElementsCard.svelte';
   // PEAKS — dual-channel multi-mode utility (Peaks archetype, kick/snare/hihat/env/lfo).
   import PeaksCard from '$lib/ui/modules/PeaksCard.svelte';
   // WARPS — meta-modulator / signal masher (Mutable Instruments Warps archetype).
@@ -372,6 +373,7 @@
     clouds: CloudsCard,
     macseq: MacseqCard,
     rings: RingsCard,
+    elements: ElementsCard,
     peaks: PeaksCard,
     warps: WarpsCard,
     veils: VeilsCard,

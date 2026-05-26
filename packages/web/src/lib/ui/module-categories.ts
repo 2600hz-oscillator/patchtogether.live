@@ -148,6 +148,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
 
   // ───────── Ports → Mutable (Émilie Gillet / MI archetype ports). ─────────
   rings: { top: 'Ports', sub: 'Mutable' },
+  elements: { top: 'Ports', sub: 'Mutable' },
   clouds: { top: 'Ports', sub: 'Mutable' },
   peaks: { top: 'Ports', sub: 'Mutable' },
   stages: { top: 'Ports', sub: 'Mutable' },
