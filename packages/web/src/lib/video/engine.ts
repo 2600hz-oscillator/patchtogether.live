@@ -371,6 +371,40 @@ export class VideoEngine implements DomainEngine {
     return h?.read ? h.read(key) : undefined;
   }
 
+  /** Resolve which UPSTREAM source node currently feeds `(thisNodeId,
+   *  inputId)`, by the same edge-ordering rule lookupInput() uses to pick the
+   *  texture. Returns the source node id, or null if nothing is wired.
+   *
+   *  This is the engine-state hook the multi-OUTPUT e2e asserts on: each
+   *  OUTPUT card must be driven by its OWN distinct source. Proving that via
+   *  resolved routing is deterministic on software GL, unlike diffing the two
+   *  cards' rendered framebuffer pixels (which flakes under CI rAF throttling
+   *  and can't distinguish "shared render path" from "two sources that happen
+   *  to look similar this frame"). */
+  resolveInputSourceId(thisNodeId: string, inputId: string): string | null {
+    if (this.videoTextureBridges.size > 0) {
+      const hits: Array<{ edgeId: string; srcId: string }> = [];
+      for (const [edgeId, b] of this.videoTextureBridges) {
+        if (b.edge.target.nodeId === thisNodeId && b.edge.target.portId === inputId) {
+          hits.push({ edgeId, srcId: b.edge.source.nodeId });
+        }
+      }
+      if (hits.length > 0) {
+        hits.sort((a, b) => a.edgeId.localeCompare(b.edgeId));
+        return hits[0]!.srcId;
+      }
+    }
+    const edges: Edge[] = [];
+    for (const e of this.edges.values()) {
+      if (e.target.nodeId === thisNodeId && e.target.portId === inputId) edges.push(e);
+    }
+    edges.sort((a, b) => a.id.localeCompare(b.id));
+    for (const e of edges) {
+      if (this.nodes.get(e.source.nodeId)) return e.source.nodeId;
+    }
+    return null;
+  }
+
   /**
    * Forward a card-owned external DOM source (a `<video>` for CAMERA, a
    * future `<img>` for PICTUREBOX) to the named node's handle. No-op if
