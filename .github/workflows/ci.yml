@@ -548,9 +548,11 @@ jobs:
   doom-soak:
     name: doom-soak (${{ matrix.label }})
     runs-on: ubuntu-latest
-    # Per-variant ceiling: setup (cold WASM + N-context boot + launch ≈ 3-4 min)
-    # + the soak window (up to 10 min) + teardown/report headroom.
-    timeout-minutes: 30
+    # Per-variant ceiling: STAGGERED cold-WASM N-context bring-up (the PR #319
+    # run showed 2-context cold WASM alone takes ~6 min on the runner; 4 bots
+    # staggered budgets ~14 min) + the soak window (up to 10 min) + teardown /
+    # report headroom. Matches the per-test setTimeout cap (40 min).
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:

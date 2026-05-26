@@ -115,6 +115,13 @@ async function assetsPresent(page: Page): Promise<boolean> {
 // Boot N contexts on ONE shared rack. The OWNER's id sorts LEX-LARGE (the
 // pre-fix break ordering — a lex-min guest used to hijack host/P0); the rack
 // owner publishes isRackOwner:true so it is host / arbiter / P1 regardless.
+//
+// STAGGERED: 4 DOOM WASM instances cold-booting across 4 browser contexts on
+// ONE CI runner is heavy (CPU/memory). The all-at-once boot starves contexts
+// and a bot fails to seat / reach GS_LEVEL. We create contexts, navigate, and
+// attach the provider SEQUENTIALLY (one bot fully through attach before the
+// next starts) with a small settle gap, so each WASM/engine bring-up gets the
+// runner to itself rather than contending with N-1 siblings.
 async function boot(browser: Browser, rackId: string, n: number): Promise<Bot[]> {
   const bots: Bot[] = [];
   for (let i = 0; i < n; i++) {
@@ -137,18 +144,16 @@ async function boot(browser: Browser, rackId: string, n: number): Promise<Bot[]>
       if (!bot.pageError) bot.pageError = e.message || String(e);
     });
     bots.push(bot);
-  }
-  for (const b of bots) {
-    await b.page.goto('/');
-    await b.page.waitForLoadState('networkidle');
-    await b.page.waitForFunction(
+    // Navigate + attach provider for THIS bot before starting the next, so the
+    // engine/WASM bring-up doesn't contend with siblings booting in parallel.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForFunction(
       () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
     );
-  }
-  for (const b of bots) {
-    await b.page.evaluate(
+    await page.evaluate(
       async (args) => {
-        const [id, userId, name, isOwner] = args as [string, string, string, boolean];
+        const [id, uid, name, owner] = args as [string, string, string, boolean];
         const w = window as unknown as {
           __attachProvider: (id: string) => Promise<unknown>;
           __ensureEngine: () => Promise<unknown>;
@@ -161,10 +166,12 @@ async function boot(browser: Browser, rackId: string, n: number): Promise<Bot[]>
         };
         await w.__ensureEngine();
         await w.__attachProvider(id);
-        w.__setAwarenessUser({ id: userId, displayName: name, color: '#0f0', isRackOwner: isOwner });
+        w.__setAwarenessUser({ id: uid, displayName: name, color: '#0f0', isRackOwner: owner });
       },
-      [rackId, b.userId, b.name, b.isOwner],
+      [rackId, bot.userId, bot.name, bot.isOwner],
     );
+    // Settle gap between context bring-ups (relay sync + CPU breathing room).
+    await page.waitForTimeout(500).catch(() => {});
   }
   return bots;
 }
@@ -305,25 +312,60 @@ test.describe('@collab @soak DOOM multiplayer soak', () => {
 
   // Ceiling = setup budget + the soak window + teardown headroom. SETUP scales
   // with bot count: each context cold-loads its own 395 KB WASM + 4 MB WAD and
-  // waits to reach GS_LEVEL, which is the dominant cost (observed ~2-4 min for
-  // 2 contexts on a slow runner). Budget 90 s base + 90 s/bot so a 4-bot boot
-  // has ~7.5 min before the soak even starts; cap at 30 min (job ceiling).
-  const SETUP_BUDGET_MS = 90_000 + BOTS * 90_000;
-  test.setTimeout(Math.min(SETUP_BUDGET_MS + DURATION_MS + 90_000, 30 * 60_000));
+  // waits to reach GS_LEVEL, which is the dominant cost. The PR #319 CI run
+  // proved a 2-context cold-WASM bring-up alone took ~370 s on the runner — so
+  // the prior 90 s base + 90 s/bot budget (270 s for 2 bots) UNDER-budgeted and
+  // the 2-bot smoke timed out at 420 s before the soak window opened. Bring-up
+  // is now STAGGERED (sequential per bot), so it's ~linear in bot count: budget
+  // a generous 60 s base + 200 s/bot (≈ 460 s for 2 bots, ≈ 860 s ≈ 14 min for
+  // 4 bots) so even a slow 4-bot boot has real headroom before the soak starts.
+  // Total ceiling = setup + the soak window + 120 s teardown/report headroom,
+  // capped at 40 min (the CI `doom-soak` job is timeout-minutes:40).
+  const SETUP_BUDGET_MS = 60_000 + BOTS * 200_000;
+  test.setTimeout(Math.min(SETUP_BUDGET_MS + DURATION_MS + 120_000, 40 * 60_000));
 
   test(`${BOTS} bots deathmatch survival soak (${Math.round(DURATION_MS / 1000)}s)`, async ({
     browser,
   }) => {
-    const t0 = Date.now();
+    // Two clocks: setup (boot → all bots in GS_LEVEL) is the bring-up cost; the
+    // GAMEPLAY clock starts only once the soak loop begins. Survival = gameplay
+    // seconds, the headline number; setup is logged separately so a fat setup
+    // can never inflate the reported survival again (the PR #319 bug).
+    const setupStart = Date.now();
+    let gameplayStart = 0; // set at soak-loop start
+    let setupEndMs = 0; // frozen when the soak loop begins (= bring-up done)
+    let gameplayEndMs = 0; // frozen at soak-loop EXIT, before teardown can hang
+    const targetS = Math.round(DURATION_MS / 1000);
+    // setup = bring-up cost (test start → soak-loop start). Frozen once the loop
+    // begins so post-soak teardown can't inflate it; for a setup-stage FAIL
+    // (loop never reached) it falls back to live elapsed time.
+    const setupS = () =>
+      Math.round(((setupEndMs || Date.now()) - setupStart) / 1000);
+    // gameplay = the headline survival number (soak-loop start → loop exit).
+    // Frozen at loop exit so a hung botRelease/teardown can never inflate it.
+    const gameplayS = () =>
+      gameplayStart ? Math.round(((gameplayEndMs || Date.now()) - gameplayStart) / 1000) : 0;
+
     const rackId = `doom-soak-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const bots = await boot(browser, rackId, BOTS);
     const owner = bots[0]!;
     const guests = bots.slice(1);
     let crash: string | null = null;
-    const survivedS = () => Math.round((Date.now() - t0) / 1000);
+
+    // Emit the one survival/diagnostic line CI greps for. `crash` carries the
+    // outcome: 'none' (clean soak) or a reason — gameplay crash OR a setup-stage
+    // failure (which bot, which stage). ALWAYS logged before we assert.
+    const logSurvival = () => {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[doom-soak] bots=${BOTS} setup=${setupS()}s gameplay=${gameplayS()}s/${targetS}s ` +
+          `crash=${crash ?? 'none'}`,
+      );
+    };
 
     try {
       if (!(await assetsPresent(owner.page))) {
+        // The ONLY legitimate skip: environment precondition (assets absent).
         test.skip(true, 'DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD');
         return;
       }
@@ -335,7 +377,10 @@ test.describe('@collab @soak DOOM multiplayer soak', () => {
       await spawnPatch(owner.page, nodes, []);
 
       // ── Every guest sees the SAME node via Yjs sync ─────────────────────
-      for (const g of guests) {
+      // A guest that never sees the node is a REAL bring-up failure (relay /
+      // sync instability) — REPORT + FAIL, do NOT skip-to-green.
+      for (let gi = 0; gi < guests.length; gi++) {
+        const g = guests[gi]!;
         const saw = await g.page
           .waitForFunction(
             (nid) =>
@@ -343,12 +388,14 @@ test.describe('@collab @soak DOOM multiplayer soak', () => {
                 (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
               ).includes(nid),
             NODE_ID,
-            { timeout: 30000 },
+            { timeout: 45000 },
           )
           .then(() => true)
           .catch(() => false);
         if (!saw) {
-          test.skip(true, 'cross-context node sync did not deliver the DOOM node (relay flake)');
+          crash = `setup: cross-context node sync did not deliver the DOOM node [guest ${gi + 1} "${g.name}"]`;
+          logSurvival();
+          expect(crash, `DOOM MP soak bring-up failed: ${crash}`).toBeNull();
           return;
         }
       }
@@ -390,7 +437,9 @@ test.describe('@collab @soak DOOM multiplayer soak', () => {
           .then(() => true)
           .catch(() => false);
         if (!sawLobby) {
-          test.skip(true, `guest ${i + 1} never saw the lobby (relay flake)`);
+          crash = `setup: guest never saw the host-opened lobby (mpMode!=multi) [guest ${i + 1} "${g.name}"]`;
+          logSurvival();
+          expect(crash, `DOOM MP soak bring-up failed: ${crash}`).toBeNull();
           return;
         }
         await g.page.evaluate(
@@ -399,11 +448,16 @@ test.describe('@collab @soak DOOM multiplayer soak', () => {
               .__doomCards[nid]!.join(),
           NODE_ID,
         );
-        const seated = await waitForSlot(g.page, NODE_ID, i + 1, 40000);
+        const seated = await waitForSlot(g.page, NODE_ID, i + 1, 45000);
         if (!seated) {
-          test.skip(true, `cross-context roster sync didn't seat guest ${i + 1} at slot ${i + 1} (relay flake)`);
+          crash = `setup: roster sync didn't seat guest at slot ${i + 1} [guest ${i + 1} "${g.name}"]`;
+          logSurvival();
+          expect(crash, `DOOM MP soak bring-up failed: ${crash}`).toBeNull();
           return;
         }
+        // Stagger guest joins: let each seat settle in the roster before the
+        // next guest joins, so 4 concurrent join()s don't race the arbiter.
+        await g.page.waitForTimeout(500).catch(() => {});
       }
 
       // ── Owner (arbiter) launches a DEATHMATCH → all bots reach GS_LEVEL ──
@@ -417,10 +471,15 @@ test.describe('@collab @soak DOOM multiplayer soak', () => {
         },
         NODE_ID,
       );
-      for (const b of bots) {
-        const inLevel = await waitForLevel(b.page, NODE_ID, 60000);
+      // A bot that never reaches GS_LEVEL is the central bring-up failure the
+      // soak must SURFACE (cold-WASM contention / netgame init) — REPORT + FAIL,
+      // never skip-to-green. Wait per bot (staggered launch confirmation).
+      for (let i = 0; i < bots.length; i++) {
+        const inLevel = await waitForLevel(bots[i]!.page, NODE_ID, 90000);
         if (!inLevel) {
-          test.skip(true, `a bot never reached GS_LEVEL on launch (relay flake / cold WASM)`);
+          crash = `setup: bot never reached GS_LEVEL on launch (cold WASM / netgame init) [context #${i} "${bots[i]!.name}"]`;
+          logSurvival();
+          expect(crash, `DOOM MP soak bring-up failed: ${crash}`).toBeNull();
           return;
         }
       }
@@ -434,41 +493,92 @@ test.describe('@collab @soak DOOM multiplayer soak', () => {
 
       // ── THE SOAK: every bot wanders + shoots until DURATION_MS elapses ──
       // Probe liveness every tick; bail the instant any bot crashes so the
-      // survival time is the true time-to-first-instability.
+      // survival time is the true time-to-first-instability. START the GAMEPLAY
+      // clock NOW — all bots are confirmed seated + in GS_LEVEL — so survival
+      // measures gameplay only, excluding the (separately-logged) setup cost.
+      gameplayStart = Date.now();
+      setupEndMs = gameplayStart; // freeze the setup (bring-up) duration here
       const heldMove: (string | null)[] = bots.map(() => null);
-      const soakEnd = Date.now() + DURATION_MS;
+      const soakEnd = gameplayStart + DURATION_MS;
+      // Each per-bot page.evaluate (botTick / probe) round-trips through a
+      // browser pinned by the DOOM render loop. Under N saturated WASM contexts
+      // that latency is UNBOUNDED — a single slow evaluate can stall a tick for
+      // many seconds, so a naive `while (now<end)` loop overruns its window by
+      // orders of magnitude (a 15 s smoke ran 600 s, hitting the test timeout).
+      // Defend with a HARD wall-clock deadline: every awaited op races a budget
+      // computed from the time LEFT in the soak window, so the loop can never
+      // run past soakEnd regardless of how slow/hung an individual evaluate is.
+      const withDeadline = async <T>(p: Promise<T>, fallback: T): Promise<T> => {
+        const budget = soakEnd - Date.now();
+        if (budget <= 0) return fallback;
+        let timer: ReturnType<typeof setTimeout>;
+        const cap = new Promise<T>((res) => {
+          timer = setTimeout(() => res(fallback), budget);
+        });
+        try {
+          return await Promise.race([p, cap]);
+        } finally {
+          clearTimeout(timer!);
+        }
+      };
       while (Date.now() < soakEnd) {
-        // Drive every bot one tick (parallel).
-        await Promise.all(
-          bots.map(async (b, i) => {
-            try {
-              heldMove[i] = await botTick(b, heldMove[i]!);
-            } catch {
-              // a throw here is caught by the probe below as a crash.
-            }
-          }),
+        // Drive every bot one tick (parallel), each capped at the remaining
+        // window so a stalled evaluate cannot push us past soakEnd.
+        await withDeadline(
+          Promise.all(
+            bots.map(async (b, i) => {
+              try {
+                heldMove[i] = await botTick(b, heldMove[i]!);
+              } catch {
+                // a throw here is caught by the probe below as a crash.
+              }
+            }),
+          ),
+          undefined,
         );
-        // Probe every bot for crash/instability.
+        if (Date.now() >= soakEnd) break;
+        // Probe every bot for crash/instability (also deadline-capped — a probe
+        // that NEVER returns is itself a crash signal, surfaced via the timeout
+        // sentinel rather than hanging the loop into the test timeout).
         for (let i = 0; i < bots.length; i++) {
-          const reason = await probe(bots[i]!);
+          const reason = await withDeadline(probe(bots[i]!), 'PROBE_TIMEOUT' as const);
+          if (reason === 'PROBE_TIMEOUT') {
+            // Only treat as a crash if the window is NOT already over — a probe
+            // cut short by the end-of-soak deadline is benign.
+            if (Date.now() < soakEnd) {
+              crash = `probe-unresponsive (relay/context stalled > remaining window) [context #${i} "${bots[i]!.name}"]`;
+            }
+            break;
+          }
           if (reason) {
             crash = `${reason} [context #${i} "${bots[i]!.name}"]`;
             break;
           }
         }
         if (crash) break;
-        await owner.page.waitForTimeout(TICK_MS).catch(() => {});
+        if (Date.now() >= soakEnd) break;
+        await withDeadline(owner.page.waitForTimeout(TICK_MS).then(() => undefined), undefined);
       }
+      // FREEZE the gameplay survival number HERE — at the loop exit — before any
+      // teardown. A best-effort botRelease() evaluate can HANG on a browser
+      // pinned by the DOOM render loop (observed: it stalled ~575 s into the
+      // per-test timeout); capturing now means a hung release can never inflate
+      // the reported gameplay survival, and logSurvival() below uses the frozen
+      // value rather than re-reading the (post-stall) clock.
+      gameplayEndMs = Date.now();
 
-      // Release held keys (best-effort) before teardown.
-      await Promise.all(bots.map((b, i) => botRelease(b, heldMove[i]!)));
+      // Release held keys (best-effort) before teardown — but HARD-CAP it: a
+      // pinned browser can make this evaluate never resolve, which previously
+      // hung the whole test into its 595 s timeout. 5 s is plenty to flush keys.
+      await Promise.race([
+        Promise.all(bots.map((b, i) => botRelease(b, heldMove[i]!))),
+        new Promise<void>((res) => setTimeout(res, 5_000)),
+      ]);
 
       // ── SURVIVAL METRIC — the one line the CI log greps for ─────────────
-      // eslint-disable-next-line no-console
-      console.log(
-        `[doom-soak] bots=${BOTS} target=${Math.round(DURATION_MS / 1000)}s ` +
-          `survived=${survivedS()}s crash=${crash ?? 'none'}`,
-      );
+      // setup=Xs (bring-up cost) and gameplay=Ys/targetS (the headline survival
+      // number) are reported SEPARATELY so setup can never inflate survival.
+      logSurvival();
 
       // FAIL only on a real crash — NOT on "didn't play well".
       expect(crash, `DOOM MP soak crashed: ${crash}`).toBeNull();
