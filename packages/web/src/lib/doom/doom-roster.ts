@@ -50,12 +50,12 @@ export type DoomRoster = Record<string, string>;
  *  never alias the live Yjs object. Unknown / malformed input → empty.
  *
  *  `data.players` may be EITHER a nested object map ({"0":"alice"}) OR a JSON
- *  STRING of that map. The card stores it as a primitive-string leaf
- *  (node.data.players = JSON.stringify(roster)) because primitive-leaf writes
- *  on node.data sync reliably cross-context (cf. module-naming's
- *  node.data.name), whereas a freshly-added nested Y.Map does not always
- *  reach an already-synced remote peer. We accept both shapes so older
- *  object-form data + tests both decode. */
+ *  STRING of that map. The CURRENT write path stores the nested-object form
+ *  (a per-slot Y.Map — see applyRosterMap), which is what lets concurrent
+ *  per-slot claims merge instead of clobbering one opaque string leaf. Earlier
+ *  slices stored a primitive JSON-STRING leaf (node.data.players =
+ *  JSON.stringify(roster)); we still decode that legacy form so older snapshots
+ *  + tests both load, and applyRosterMap migrates it on the first write. */
 export function readRoster(data: unknown): DoomRoster {
   const out: DoomRoster = {};
   if (!data || typeof data !== 'object') return out;
