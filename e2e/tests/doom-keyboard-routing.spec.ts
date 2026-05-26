@@ -262,6 +262,152 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
         `before=(${beforeD.x}, ${beforeD.y}), after=(${afterD.x}, ${afterD.y}).`,
     ).toBeGreaterThan(50_000);
   });
+
+  // Regression for the multiplayer "keyboard capture keeps dropping — have to
+  // keep clicking the DOOM window" symptom. Sync churn (frame broadcasts,
+  // roster writes, host election) re-renders the SvelteFlow node ~10×/s, which
+  // momentarily drops the `.selected` class and/or steals focus. Pre-fix,
+  // shouldClaimKey() read that transient state live, so capture flickered off
+  // and arrow keys stopped reaching the game until the user re-clicked. The fix
+  // is a STICKY LATCH set on click + held until an explicit release (Esc /
+  // click-away / tab-hide). This test simulates the churn by forcibly blurring
+  // the card AND stripping the `.selected` class, then asserts keys STILL move
+  // the player — and that Escape (explicit release) stops capture.
+  test('keyboard capture survives a re-render churn (sticky latch) + Esc releases it', async ({
+    page,
+  }) => {
+    page.on('pageerror', (e) => console.error('pageerror:', e.message));
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const skip = await assetsMissing(page);
+    if (skip) {
+      test.skip(true, skip);
+      return;
+    }
+
+    await spawnPatch(page, [
+      { id: 'v-doom', type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
+    ]);
+    const card = page.locator('[data-testid="doom-card"]');
+    await expect(card, 'DOOM card mounts').toHaveCount(1);
+
+    const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
+    await expect(loadBtn).toBeVisible();
+    await loadBtn.click();
+    await expect(card.locator('.overlay'), 'load overlay clears').toHaveCount(0, {
+      timeout: 30_000,
+    });
+
+    // Click latches keyboard control.
+    await card.click();
+    // Walk into E1M1.
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(300);
+    }
+    await page.waitForFunction(
+      () => {
+        const w = globalThis as unknown as {
+          __engine?: () => { getDomain?: (d: string) => { read?: (id: string, k: string) => unknown } | null } | null;
+        };
+        const ve = w.__engine?.()?.getDomain?.('video');
+        const extras = ve?.read?.('v-doom', 'extras') as {
+          getRuntime?: () => { hasPlayerMobj?: () => boolean } | null;
+        } | undefined;
+        return extras?.getRuntime?.()?.hasPlayerMobj?.() === true;
+      },
+      { timeout: 30_000 },
+    );
+
+    async function readState(): Promise<PlayerState> {
+      const s = await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __engine?: () => { getDomain?: (d: string) => { read?: (id: string, k: string) => unknown } | null } | null;
+        };
+        const ve = w.__engine?.()?.getDomain?.('video');
+        const extras = ve?.read?.('v-doom', 'extras') as {
+          getRuntime?: () => { getPlayerState?: () => { x: number; y: number; angle: number } | null } | null;
+        } | undefined;
+        return extras?.getRuntime?.()?.getPlayerState?.() ?? null;
+      });
+      if (!s) throw new Error('no player state');
+      return s;
+    }
+
+    // SIMULATE SYNC CHURN: blur the focused card + strip the SF `.selected`
+    // class, exactly what a multiplayer re-render does. Pre-fix this killed
+    // capture; the latch must keep it alive.
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+      document
+        .querySelector('.svelte-flow__node[data-id="v-doom"]')
+        ?.classList.remove('selected');
+    });
+    await page.waitForTimeout(100);
+
+    const before = await readState();
+    await page.keyboard.down('ArrowUp');
+    await page.waitForTimeout(1000);
+    await page.keyboard.up('ArrowUp');
+    await page.waitForTimeout(200);
+    const after = await readState();
+    const moved = Math.abs(after.x - before.x) + Math.abs(after.y - before.y);
+    expect(
+      moved,
+      `player did NOT move after a re-render churn (|dx|+|dy|=${moved}). The sticky ` +
+        `keyboard latch should keep DOOM capturing keys even when focus / .selected drop.`,
+    ).toBeGreaterThan(100_000);
+
+    // Escape = explicit release. After it, a fresh key press must NOT move the
+    // player (capture handed back).
+    await page.keyboard.press('Escape');
+
+    // Let residual momentum from the forward burst fully decay BEFORE we
+    // measure the post-release press. The latched ArrowUp built up player
+    // momentum; DOOM friction decays it over ~1s of *game tics*, but the
+    // runtime advances tics on the rAF clock — which CI throttles into bursts,
+    // so the decay lurches forward well after the key is up. Measuring a fixed
+    // 800ms window right after Esc therefore catches leftover slide (~0.5–1M
+    // units), not key routing, and flakes. Instead poll until the marine is
+    // STATIONARY (two consecutive ~stable samples), which isolates "does a new
+    // key after Esc move the player" from momentum. If forward were genuinely
+    // STUCK (a real release bug) the marine would never settle and this loop
+    // times out — so this can't mask a real bug, only the momentum confound.
+    const STILL = 8_000; // < 0.13 map units between samples == settled
+    let prev = await readState();
+    const settleDeadline = Date.now() + 8_000;
+    let settled = false;
+    while (Date.now() < settleDeadline) {
+      await page.waitForTimeout(150);
+      const cur = await readState();
+      const delta = Math.abs(cur.x - prev.x) + Math.abs(cur.y - prev.y);
+      prev = cur;
+      if (delta < STILL) {
+        settled = true;
+        break;
+      }
+    }
+    expect(
+      settled,
+      `player never stopped moving after Escape — forward momentum should decay ` +
+        `and DOOM should stop consuming keys once the latch is released.`,
+    ).toBe(true);
+
+    const beforeRelease = await readState();
+    await page.keyboard.down('ArrowUp');
+    await page.waitForTimeout(800);
+    await page.keyboard.up('ArrowUp');
+    await page.waitForTimeout(200);
+    const afterRelease = await readState();
+    const movedAfterEsc =
+      Math.abs(afterRelease.x - beforeRelease.x) + Math.abs(afterRelease.y - beforeRelease.y);
+    expect(
+      movedAfterEsc,
+      `player moved after Escape released the latch (|dx|+|dy|=${movedAfterEsc}). ` +
+        `Escape should hand the keyboard back so DOOM stops consuming keys.`,
+    ).toBeLessThan(100_000);
+  });
 });
 
 // ---------------- helpers ----------------

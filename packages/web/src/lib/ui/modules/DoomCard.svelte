@@ -69,6 +69,7 @@
     assignSlots,
     promotePending,
     pruneRosterState,
+    hasUnjoinedSpectator as rosterHasUnjoinedSpectator,
     type DoomRoster,
     type DoomRosterState,
   } from '$lib/doom/doom-roster';
@@ -801,6 +802,18 @@
     }
   }
 
+  /** Does any CURRENT rack member need the host's framebuffer mirror? A member
+   *  needs it iff it is an UNJOINED spectator — it has neither an active slot
+   *  (it plays its own WASM) nor a pending slot (a pending late joiner also
+   *  runs its own WASM, idling until promoted). Self (the host) is always a
+   *  player, so it never counts. This gates the ~10 Hz framebuffer broadcast so
+   *  a fully-seated game (e.g. 2-player coop) sends none — the relay-OOM /
+   *  freeze fix. Reads the combined roster off the shared node so it reflects
+   *  the latest assignment, not a possibly-stale reactive mirror. */
+  function hasUnjoinedSpectator(): boolean {
+    return rosterHasUnjoinedSpectator(readNodeRosterState(), memberIds, resolveLocalUserId());
+  }
+
   // Keep local roster mirror + mySlot in sync with the shared node, and
   // tear down / spin up our netcode as our player status changes.
   function syncRosterState(): void {
@@ -846,16 +859,75 @@
   //      claim the key whenever EITHER condition holds).
   //   2. routeKey() — push to runtime (host) or relay over awareness
   //      (spectator).
+  // STICKY KEYBOARD LATCH (the kb-capture-keeps-dropping fix).
+  //
+  // Pre-fix shouldClaimKey() was computed live off the transient focus /
+  // `.selected` state. Multiplayer awareness churn (frame broadcasts, roster
+  // writes, host election, ticcmd feed) re-renders this node ~10×/s; each
+  // re-render can momentarily drop the SvelteFlow `.selected` class and/or
+  // steal focus, so shouldClaimKey() flickered false and keys stopped reaching
+  // the game until the user re-clicked the card. It was WORST FOR THE HOST,
+  // which churns the most (it broadcasts + does arbiter roster writes + relays
+  // keys). And the window-blur releaseHeldKeys() then dumped held movement keys
+  // on every such churn.
+  //
+  // Fix: an explicit latch. Clicking the card LATCHES keyboard control to DOOM;
+  // it stays latched (independent of focus / `.selected`) until an EXPLICIT
+  // release — Escape, a real click-away (mousedown outside the card), or a true
+  // app/tab switch (document.hidden). Transient re-render blur no longer drops
+  // capture or releases held keys.
+  let kbLatched = $state(false);
+  // Mirror image of the latch: an EXPLICIT release (Escape / click-away /
+  // tab-hide) sets this and it OVERRIDES the focus / `.selected` fallback
+  // below. Without it, Escape only dropped `kbLatched` but the node is still
+  // SvelteFlow-selected (Esc doesn't deselect), so shouldClaimKey() kept
+  // claiming via (c) and keys still reached DOOM — i.e. Escape wasn't a clean
+  // hand-back and you stayed stuck capturing. Cleared on the next click
+  // (latchKeyboard), which is the natural re-engage gesture.
+  let kbReleased = $state(false);
+
   function shouldClaimKey(): boolean {
     if (!cardEl) return false;
-    // a) Focus-within: any descendant (incl. the card itself) is
+    // a) Latched: the user clicked the card to take keyboard control + has not
+    //    explicitly released it. This is the sticky path — it does NOT depend
+    //    on the transient focus / `.selected` state that sync churn toggles.
+    if (kbLatched) return true;
+    // a') Explicitly released (Escape / click-away / tab-hide): hand the
+    //     keyboard back even though the node may still be focused/selected.
+    //     Re-engage requires a fresh click (which clears this).
+    if (kbReleased) return false;
+    // b) Focus-within: any descendant (incl. the card itself) is
     //    document.activeElement.
     if (cardEl.contains(document.activeElement)) return true;
-    // b) SvelteFlow marks the selected node wrapper with .selected. The
+    // c) SvelteFlow marks the selected node wrapper with .selected. The
     //    card mounts INSIDE that wrapper, so we walk up + check.
     const sfNode = cardEl.closest('.svelte-flow__node');
     if (sfNode?.classList.contains('selected')) return true;
     return false;
+  }
+
+  /** Take keyboard control (sticky). Called on a click anywhere on the card. */
+  function latchKeyboard(): void {
+    kbLatched = true;
+    kbReleased = false;
+  }
+  /** Release keyboard control + drop any held keys. Called on an EXPLICIT
+   *  release only: Escape, a real click-away, or a genuine app/tab switch —
+   *  never on a transient re-render blur. Always sets the released flag (even
+   *  when we were claiming via focus/`.selected` rather than the latch) so the
+   *  gesture is a clean hand-back regardless of how control was held. */
+  function unlatchKeyboard(): void {
+    kbLatched = false;
+    kbReleased = true;
+    releaseHeldKeys();
+  }
+  /** A genuine pointer-down OUTSIDE this card releases the latch (click-away).
+   *  A pointer-down INSIDE keeps it (and latchKeyboard re-asserts it anyway). */
+  function onPointerDownCapture(ev: PointerEvent): void {
+    if (!kbLatched) return;
+    const t = ev.target as Node | null;
+    if (cardEl && t && cardEl.contains(t)) return; // click inside — stay latched
+    unlatchKeyboard();
   }
 
   function routeKey(code: string, pressed: boolean): boolean {
@@ -889,6 +961,13 @@
   // node-move handler and the canvas's pan/zoom shortcuts.
   function onWindowKeyDownCapture(ev: KeyboardEvent): void {
     if (!shouldClaimKey()) return;
+    // Escape is the explicit "give back the keyboard" gesture for the sticky
+    // latch — release control + drop held keys, and let the event through (do
+    // NOT preventDefault) so normal Esc behaviour still works.
+    if (ev.code === 'Escape') {
+      unlatchKeyboard();
+      return;
+    }
     // Don't claim modifier-bearing system shortcuts (cmd-R, ctrl-F, etc.) —
     // the user might want to reload or open devtools while DOOM is focused.
     // The exception is the bare ControlLeft / ControlRight (DOOM's "run"
@@ -933,8 +1012,13 @@
   function releaseHeldKeys(): void {
     heldKeys.releaseAll();
   }
+  // A genuine app/tab switch (the page is actually hidden) releases the latch +
+  // drops held keys — an alt-tab away delivers no keyup, so anything held would
+  // otherwise stick down. We use visibilitychange (real hide) rather than the
+  // raw window 'blur' event, which also fires on transient re-render focus
+  // churn + would spuriously dump held movement keys during multiplayer sync.
   function onVisibilityChange(): void {
-    if (document.hidden) releaseHeldKeys();
+    if (document.hidden) unlatchKeyboard();
   }
 
   function relayKeyToHost(code: string, pressed: boolean): void {
@@ -981,6 +1065,16 @@
   /** Last frame envelope ts we decoded — guards against re-decoding the
    *  same payload on every rAF tick (the base64 → bytes hop is ~5 ms). */
   let lastDecodedFrameTs = 0;
+  /** Whether our awareness state currently carries a frame field. Lets us
+   *  clear it exactly once when we stop broadcasting (no spectators), instead
+   *  of writing null every 100 ms (which is itself awareness churn). */
+  let frameFieldSet = false;
+  function clearFrameFieldIfSet(): void {
+    if (!frameFieldSet) return;
+    frameFieldSet = false;
+    const provider = providerCtx.get();
+    provider?.awareness?.setLocalStateField(`doom:${id}:frame`, null);
+  }
 
   function pollLatestRemoteFrame(): void {
     const provider = providerCtx.get();
@@ -1117,9 +1211,40 @@
     // Slice 5: initial identity (username + slot color).
     syncIdentity();
 
-    // Host: broadcast a framebuffer ~10 Hz.
+    // Host: broadcast a framebuffer ~10 Hz — but ONLY when an actual unjoined
+    // spectator needs it.
+    //
+    // FREEZE / RELAY-OOM FIX: the framebuffer is ~1 MB raw → ~1.37 MB base64,
+    // and at 10 Hz that is ~13.7 MB/s pushed into a single sticky awareness
+    // field. Awareness state is fanned to every connected peer through the one
+    // long-lived Hocuspocus relay process, so an unconditional host broadcast
+    // hammers the relay at >13 MB/s → it gets OOM-killed (confirmed in
+    // `fly logs -a patchtogether-server-dev`: repeated
+    // "Out of memory: Killed process … (node) total-vm:11.8 GB"). When the
+    // relay reboots, every peer's Yjs sync stalls → the gamestate AND the whole
+    // rack freeze, and any unflushed doc edit (e.g. the just-spawned DOOM node)
+    // is lost when the in-memory doc resets to the last persisted snapshot →
+    // the "DOOM module gone after re-enter" symptom.
+    //
+    // In the per-peer-WASM model EVERY joined player renders its OWN DOOM, so
+    // the mirror is only needed for a peer that is NOT a player (a pure unjoined
+    // spectator with no active AND no pending slot — a pending late joiner runs
+    // its own WASM too). So we broadcast only when such a spectator exists.
+    // 2-player coop (host + 1 joined guest) therefore sends ZERO framebuffer
+    // traffic — relieving the relay AND the awareness-churn that was dropping
+    // keyboard capture.
     frameBroadcastInterval = setInterval(() => {
-      if (!isHost) return;
+      if (!isHost) {
+        clearFrameFieldIfSet();
+        return;
+      }
+      if (!hasUnjoinedSpectator()) {
+        // No spectator needs the mirror. Clear any frame we previously
+        // broadcast so the ~1.37 MB base64 payload doesn't linger in our
+        // awareness state (buffered on the relay), then stop sending.
+        clearFrameFieldIfSet();
+        return;
+      }
       const extras = getExtras();
       if (!extras) return;
       const snap = extras.snapshotFramebuffer();
@@ -1134,6 +1259,7 @@
           ts: Date.now(),
         });
         aw.setLocalStateField(`doom:${id}:frame`, env);
+        frameFieldSet = true;
       } catch {
         // Encoding can throw on buffer mismatch — non-fatal, skip frame.
       }
@@ -1260,9 +1386,15 @@
     // inside, so only the focused/selected one actually claims keys.
     window.addEventListener('keydown', onWindowKeyDownCapture, true);
     window.addEventListener('keyup', onWindowKeyUpCapture, true);
-    // Switching apps/tabs (alt-tab, cmd-tab) often delivers no keyup, so
-    // release everything still held on window blur + tab-hide.
-    window.addEventListener('blur', releaseHeldKeys);
+    // Click-away releases the sticky keyboard latch (capture phase so we see it
+    // before SvelteFlow's own pointer handling). A pointer-down INSIDE the card
+    // keeps the latch.
+    window.addEventListener('pointerdown', onPointerDownCapture, true);
+    // A real app/tab switch (page actually hidden) releases the latch + held
+    // keys. We deliberately do NOT listen to the raw window 'blur' event: it
+    // also fires on transient re-render focus churn during multiplayer sync,
+    // which would spuriously drop held movement keys (the operator's
+    // "controls keep dropping" symptom).
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Slice 3 e2e hook: expose this card's multiplayer state + the join
@@ -1358,7 +1490,7 @@
     releaseHeldKeys();
     window.removeEventListener('keydown', onWindowKeyDownCapture, true);
     window.removeEventListener('keyup', onWindowKeyUpCapture, true);
-    window.removeEventListener('blur', releaseHeldKeys);
+    window.removeEventListener('pointerdown', onPointerDownCapture, true);
     document.removeEventListener('visibilitychange', onVisibilityChange);
   });
 
@@ -1398,7 +1530,7 @@
   tabindex="0"
   data-card-type="doom"
   data-testid="doom-card"
-  onclick={() => cardEl?.focus()}
+  onclick={() => { cardEl?.focus(); latchKeyboard(); }}
 >
   <!-- Slice 5: the stripe is tinted by the local player's slot color (vanilla
        DOOM player colors — green/indigo/brown/red) so a wall of 4 DOOM cards
@@ -1472,11 +1604,11 @@
         <code>{loadError}</code>
       </div>
     {/if}
-    {#if loadStatus === 'ready' && cardEl && document.activeElement !== cardEl}
+    {#if loadStatus === 'ready' && !kbLatched}
       <button
         type="button"
         class="focus-hint nodrag"
-        onclick={() => cardEl?.focus()}
+        onclick={() => { cardEl?.focus(); latchKeyboard(); }}
       >
         Click to capture keyboard
       </button>
