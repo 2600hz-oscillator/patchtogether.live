@@ -359,10 +359,41 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
         `keyboard latch should keep DOOM capturing keys even when focus / .selected drop.`,
     ).toBeGreaterThan(100_000);
 
-    // Escape = explicit release. After it, the same key must NOT move the
+    // Escape = explicit release. After it, a fresh key press must NOT move the
     // player (capture handed back).
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(100);
+
+    // Let residual momentum from the forward burst fully decay BEFORE we
+    // measure the post-release press. The latched ArrowUp built up player
+    // momentum; DOOM friction decays it over ~1s of *game tics*, but the
+    // runtime advances tics on the rAF clock — which CI throttles into bursts,
+    // so the decay lurches forward well after the key is up. Measuring a fixed
+    // 800ms window right after Esc therefore catches leftover slide (~0.5–1M
+    // units), not key routing, and flakes. Instead poll until the marine is
+    // STATIONARY (two consecutive ~stable samples), which isolates "does a new
+    // key after Esc move the player" from momentum. If forward were genuinely
+    // STUCK (a real release bug) the marine would never settle and this loop
+    // times out — so this can't mask a real bug, only the momentum confound.
+    const STILL = 8_000; // < 0.13 map units between samples == settled
+    let prev = await readState();
+    const settleDeadline = Date.now() + 8_000;
+    let settled = false;
+    while (Date.now() < settleDeadline) {
+      await page.waitForTimeout(150);
+      const cur = await readState();
+      const delta = Math.abs(cur.x - prev.x) + Math.abs(cur.y - prev.y);
+      prev = cur;
+      if (delta < STILL) {
+        settled = true;
+        break;
+      }
+    }
+    expect(
+      settled,
+      `player never stopped moving after Escape — forward momentum should decay ` +
+        `and DOOM should stop consuming keys once the latch is released.`,
+    ).toBe(true);
+
     const beforeRelease = await readState();
     await page.keyboard.down('ArrowUp');
     await page.waitForTimeout(800);
