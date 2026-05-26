@@ -320,6 +320,50 @@ describe('DoomNetcode — arbiter election', () => {
 
     ncB.stop();
   });
+
+  // ── split-brain-proof owner authority ───────────────────────────────────
+  // The net arbiter must equal the rack host: the RACK OWNER, derived from
+  // reliable local ownership (user.isRackOwner), NOT a lex-min count. A guest
+  // — even one whose id sorts lex-smallest — must NEVER elect itself arbiter.
+  it('seats the OWNER as arbiter even when its id is NOT lex-smallest', () => {
+    const bus = new FakeAwarenessBus();
+    const awOwner = bus.create();
+    const awGuest = bus.create();
+    // owner id sorts lex-LARGE; guest id sorts lex-small.
+    awOwner.setLocalStateField('user', { id: 'zzz-owner', displayName: 'O', color: '#fff', isRackOwner: true });
+    awGuest.setLocalStateField('user', { id: 'aaa-guest', displayName: 'G', color: '#fff', isRackOwner: false });
+
+    const { runtime: rtO } = makeRuntime();
+    const { runtime: rtG } = makeRuntime();
+    const ncOwner = new DoomNetcode({ provider: makeProvider(awOwner), moduleId: 'm', localUserId: 'zzz-owner', runtime: rtO });
+    const ncGuest = new DoomNetcode({ provider: makeProvider(awGuest), moduleId: 'm', localUserId: 'aaa-guest', runtime: rtG });
+    ncOwner.start();
+    ncGuest.start();
+
+    // EXACTLY one arbiter, and it's the owner — never the lex-min guest.
+    expect(ncOwner.isArbiter()).toBe(true);
+    expect(ncGuest.isArbiter()).toBe(false);
+
+    ncOwner.stop();
+    ncGuest.stop();
+  });
+
+  it('a confirmed guest never elects itself arbiter even with only ITSELF visible', () => {
+    // Simulate the live split-brain: the guest is the ONLY state its awareness
+    // has (the owner hasn't propagated yet). A lex-min count over [guest] would
+    // pick the guest — the bug. With reliable local ownership it stays a guest.
+    const bus = new FakeAwarenessBus();
+    const awGuest = bus.create();
+    awGuest.setLocalStateField('user', { id: 'lonely-guest', displayName: 'G', color: '#fff', isRackOwner: false });
+
+    const { runtime } = makeRuntime();
+    const ncGuest = new DoomNetcode({ provider: makeProvider(awGuest), moduleId: 'm', localUserId: 'lonely-guest', runtime });
+    ncGuest.start();
+
+    expect(ncGuest.isArbiter()).toBe(false);
+
+    ncGuest.stop();
+  });
 });
 
 describe('DoomNetcode — peer-id mapping', () => {
@@ -757,5 +801,36 @@ describe('DoomNetcode — cross-peer ticcmd feed (slice 5)', () => {
     ncA.broadcastLocalTiccmd(0, { forwardmove: -50, sidemove: 0, angleturn: 0, buttons: 0 });
     expect(ticsAonB).toHaveLength(2);
     expect(ticsAonB[1]!.forwardmove).toBe(-50);
+  });
+
+  // ── write cap: bounded awareness writes (no per-frame storm) ─────────────
+  it('does NOT write awareness when the ticcmd is unchanged frame-to-frame (idle player)', () => {
+    const bus = new FakeAwarenessBus();
+    const aw = bus.create();
+    joinAs(aw, 'aaa');
+    const { runtime } = makeRuntime();
+    const nc = new DoomNetcode({ provider: makeProvider(aw), moduleId: 'm', localUserId: 'aaa', runtime });
+    nc.start();
+
+    // Count awareness writes to the ticcmd field via the FakeAwareness spy.
+    const fakeAw = (nc as unknown as { provider: { awareness: FakeAwareness } }).provider.awareness;
+    let ticcmdWrites = 0;
+    const realSet = fakeAw.setLocalStateField.bind(fakeAw);
+    fakeAw.setLocalStateField = (field: string, value: unknown) => {
+      if (field.includes(':ticcmd')) ticcmdWrites += 1;
+      realSet(field, value);
+    };
+
+    const idle = { forwardmove: 0, sidemove: 0, angleturn: 0, buttons: 0 };
+    // Simulate 60 rAF frames of a standing-still player.
+    for (let i = 0; i < 60; i++) nc.broadcastLocalTiccmd(0, { ...idle });
+
+    // Exactly ONE write for the initial state — NOT 60. The remaining 59
+    // identical frames are suppressed (the storm-prevention cap).
+    expect(ticcmdWrites).toBe(1);
+
+    // A real input change writes again (movement is never starved).
+    nc.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    expect(ticcmdWrites).toBe(2);
   });
 });

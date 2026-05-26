@@ -587,6 +587,76 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
   // button + a nodrag option list). This drives them with REAL pointer clicks
   // (click trigger → click option) and asserts the picked difficulty actually
   // took + the host launched into the level.
+  // ── SPLIT-BRAIN-PROOF host election (no WASM — pure election assertions) ──
+  // The live bug: two browsers each saw "1/4 members" and EACH elected itself
+  // host (two P1s). This drives the deterministic-owner authority directly via
+  // the card-state hook (no game launch / WASM) so it stays light + reliable:
+  //   - exactly ONE peer is host, and it is the OWNER — never the lex-min guest.
+  //   - a guest NEVER seats itself as host even when it loaded FIRST / before
+  //     the owner's presence arrived (the empty-awareness split-brain root).
+  test('exactly one host = the owner, never split-brain (lex-min guest never seats itself)', async ({
+    browser,
+  }) => {
+    const rackId = `doom-sb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Owner id sorts LEX-LARGE, guest LEX-SMALL — the pre-fix ordering where the
+    // lex-min guest hijacked host. boot() attaches + publishes presence for both
+    // (owner with isRackOwner:true, guest false) the way r/[id]/+page.svelte does.
+    const peers = await boot(browser, rackId, [
+      { userId: 'zzz-rack-owner', name: 'Owner', isOwner: true },
+      { userId: 'aaa-guest-lexmin', name: 'Guest', isOwner: false },
+    ]);
+    const owner = peers[0]!;
+    const guest = peers[1]!;
+    try {
+      // Owner (rack host) adds the single shared DOOM node; guest sees it via Yjs.
+      const nodes: SpawnNode[] = [
+        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
+      ];
+      await spawnPatch(owner.page, nodes, []);
+      const guestSawNode = await guest.page
+        .waitForFunction(
+          (nid) =>
+            Object.keys(
+              (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
+            ).includes(nid),
+          NODE_ID,
+          { timeout: 15000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (!guestSawNode) {
+        test.skip(true, 'cross-context node sync did not deliver the DOOM node (relay flake)');
+        return;
+      }
+      await cardHookReady(owner.page, NODE_ID);
+      await cardHookReady(guest.page, NODE_ID);
+
+      // Converge: BOTH see 2 members (presence sync) — no game launch / WASM.
+      await expect
+        .poll(async () => (await getState(owner.page, NODE_ID)).memberIds.length, { timeout: 10000 })
+        .toBe(2);
+      await expect
+        .poll(async () => (await getState(guest.page, NODE_ID)).memberIds.length, { timeout: 10000 })
+        .toBe(2);
+
+      // THE INVARIANT: exactly one host across the two peers, and it's the OWNER
+      // — never the lex-min guest, never both (the deterministic-owner authority).
+      await expect
+        .poll(async () => (await getState(owner.page, NODE_ID)).isHost, { timeout: 10000 })
+        .toBe(true);
+      const o = await getState(owner.page, NODE_ID);
+      const g = await getState(guest.page, NODE_ID);
+      expect(o.isHost, 'owner is host (even though its id sorts lex-LAST)').toBe(true);
+      expect(g.isHost, 'lex-min guest is NOT host — never seats itself').toBe(false);
+      // Count of hosts across all peers is exactly 1 (no split-brain).
+      expect([o.isHost, g.isHost].filter(Boolean), 'exactly one host').toHaveLength(1);
+      expect(o.ownerIds, 'owner published as rack owner').toContain('zzz-rack-owner');
+      expect(g.mySlot, 'guest never auto-seated as P1 before any host action').toBeNull();
+    } finally {
+      await Promise.all(peers.map((p) => p.ctx.close().catch(() => {})));
+    }
+  });
+
   test('host opens the New Game dialog + picks a non-default difficulty by MOUSE', async ({
     browser,
   }) => {
