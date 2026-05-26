@@ -291,6 +291,34 @@ tasks:
       - task: art
       - task: e2e
 
+  # ---------------- Secret-sync ops ----------------
+  sync-secrets:
+    desc: |
+      Push per-tier secrets to BOTH the Fly relay AND the CF Pages web project
+      so INVITE_SECRET (+ Clerk + DATABASE_URL) can never drift out of lockstep
+      — drift silently rejects every anonymous invite guest at the WS handshake.
+      Reads ~/.config/patchtogether/cf.env. DEFAULTS TO DRY-RUN (names only,
+      never echoes values). Pass `--apply` to actually push; prod additionally
+      requires `--yes-prod`. Examples:
+        task sync-secrets -- dev                 # dry-run
+        task sync-secrets -- dev --apply         # push dev to Fly + CF
+        task sync-secrets -- prod --apply --yes-prod
+    cmds:
+      - bash scripts/sync-secrets.sh {{.CLI_ARGS}}
+
+  smoke:anon-handshake:
+    desc: |
+      Deploy-time guard: mint a REAL anon invite + open a REAL WS handshake to
+      the deployed relay (wss://patchtogether-server-<tier>.fly.dev) and assert
+      onAuthenticate ACCEPTS — catches INVITE_SECRET drift between the deployed
+      web app and relay (the silent "every anon guest rejected" bug). Needs the
+      canonical INVITE_SECRET in env (same value sync-secrets pushes to both
+      targets); SKIPS cleanly if unset. Tier via TIER env (default autotest).
+      Example:
+        INVITE_SECRET=$SECRET TIER=dev task smoke:anon-handshake
+    cmds:
+      - node scripts/anon-handshake-smoke.mjs "${TIER:-autotest}"
+
   # ---------------- Housekeeping ----------------
   clean:
     desc: Remove all build artifacts
