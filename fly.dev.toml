@@ -36,12 +36,24 @@ primary_region = "iad"
 [[services]]
   protocol = "tcp"
   internal_port = 8080
+<<<<<<< Updated upstream
   # Stay warm on a SINGLE machine — see the single-machine invariant note
   # at the top of this file. auto_stop/start off + min 1 keeps exactly one
   # canonical in-memory doc host so two users in a rack can't split-brain
   # onto separate machines.
   auto_stop_machines = "off"
   auto_start_machines = false
+=======
+  # The relay holds all Yjs doc + awareness/presence state in PROCESS MEMORY
+  # (no persistence). Auto-stopping on idle wipes presence — peers reconnect to
+  # a fresh machine and each see only themselves ("1/4 members" / split sessions
+  # / "works sometimes"). Pin exactly ONE always-on machine so presence survives
+  # idle gaps and every peer lands on the same instance. (Costs one small 24/7
+  # machine on dev — the correct trade for reliable multi-user.) See task #114:
+  # wire CD so this config can't silently drift back.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+>>>>>>> Stashed changes
   min_machines_running = 1
   processes = ["app"]
 
