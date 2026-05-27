@@ -29,7 +29,7 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { DoomRuntime, type DoomTiccmd } from '$lib/doom/doom-runtime';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
-import { CV_GATE_PORT_IDS, KEY_FOR_CV_GATE, type CvGatePortId } from '$lib/doom/doomkeys';
+import { CV_GATE_PORT_IDS, type CvGatePortId } from '$lib/doom/doomkeys';
 
 // AudioWorkletProcessor URL — served as a static asset under
 // /doom/doom-pcm-worklet.js. Loaded lazily per AudioContext (WeakSet
@@ -574,14 +574,18 @@ export const doomDef: VideoModuleDef = {
           try { pcmWorklet.port.postMessage({ type: 'gain', value }); } catch { /* */ }
         }
         // CV-gate path: edge-detect cv_<port> params + forward to runtime.
+        // Routed through setKeyForCvGate (NOT setKey directly) so the runtime's
+        // lockstep gate (#353 Phase 0) drops CV input in a >1-player netgame:
+        // the shared CV edge fans out to every peer + samples non-deterministically,
+        // which would diverge the deterministic TicSets → checksum mismatch →
+        // permanent freeze. Single-player (lockstep off) is untouched.
         if (paramId.startsWith('cv_')) {
           const portId = paramId.slice(3) as CvGatePortId;
           const state = edgeStates.get(portId);
           if (!state) return;
           const ev = detectEdge(state, value);
           if (ev && runtime) {
-            const dk = KEY_FOR_CV_GATE[portId];
-            if (dk !== undefined) runtime.setKey(dk, ev.pressed);
+            runtime.setKeyForCvGate(portId, ev.pressed);
           }
         }
       },
