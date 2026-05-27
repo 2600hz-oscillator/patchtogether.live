@@ -181,6 +181,35 @@ export function eyeFromCamera(
   return [posX * 1.5 + dx, posY * 1.5, posZ * 1.5 + dz];
 }
 
+/** Vertex range (start, count) of one oscillator's ribbon inside the
+ *  single TRIANGLE_STRIP built by the card's buildRibbonGeometry().
+ *
+ *  Geometry layout (must stay in lockstep with WavesculptCard.svelte:
+ *  buildRibbonGeometry): osc 0 emits `2·segments` verts with no lead-in;
+ *  each subsequent osc is preceded by 2 degenerate "join" verts so the
+ *  whole thing is one continuous strip. To draw ONLY osc N's ribbon we
+ *  skip those join verts and return the range covering just its real
+ *  vertices.
+ *
+ *  This is the single source of truth for the per-osc sub-strip offsets.
+ *  The card uses it for the ALPHA-mask pass (which MUST draw only the
+ *  ALPHA ribbon, osc 3 — see the alpha-rotate bugfix: drawing all four
+ *  ribbons let RGB ribbons write depth that occluded the ALPHA mask under
+ *  camera rotation). Exported so a unit test can lock the arithmetic. */
+export function ribbonStripRange(oscIdx: number, segments: number): { start: number; count: number } {
+  const block = 2 * segments;     // real verts per osc ribbon
+  const join = 2;                 // degenerate verts before each osc>0
+  // buildRibbonGeometry emits, per osc>0: `join` degenerate verts then
+  // `block` real verts (osc 0 has no join). So osc N's FIRST REAL vertex
+  // sits at N·(join + block) — the join verts for osc N are the two verts
+  // immediately before that, already counted in the running sum for the
+  // prior iterations. Drawing [start, start+block) covers exactly osc N's
+  // real ribbon with no degenerate triangles.
+  let start = 0;
+  for (let i = 1; i <= oscIdx; i++) start += join + block;
+  return { start, count: block };
+}
+
 const C4_HZ = 261.626;
 export function voctToHz(voct: number): number {
   return C4_HZ * Math.pow(2, voct);

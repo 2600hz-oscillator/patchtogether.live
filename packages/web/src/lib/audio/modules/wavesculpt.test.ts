@@ -18,6 +18,7 @@ import {
   WALL_LAYOUT,
   distanceGain,
   eyeFromCamera,
+  ribbonStripRange,
   voctToHz,
   detuneOctaveOffset,
   tickEnvelope,
@@ -459,5 +460,38 @@ describe('shared wavetable engine import (DRY check)', () => {
     const tables = await import('$lib/audio/wavetable-factory-tables');
     expect(typeof tables.getFactoryTables).toBe('function');
     expect(wavesculptDef.type).toBe('wavesculpt');
+  });
+});
+
+describe('ribbonStripRange (alpha-rotate bugfix: per-osc sub-strip)', () => {
+  // The ALPHA-mask pass MUST draw only the ALPHA ribbon (osc 3). Drawing
+  // all four ribbons let the RGB ribbons write depth that occluded the
+  // ALPHA mask under camera rotation, so the alpha-image composite
+  // vanished as soon as the view rotated off axis. ribbonStripRange is
+  // the single source of truth for the per-osc vertex offsets the card's
+  // drawArrays() uses; lock the arithmetic here.
+  const SEG = 64; // RIBBON_SEGMENTS in the card
+
+  it('osc 0 starts at 0 with no join lead-in', () => {
+    expect(ribbonStripRange(0, SEG)).toEqual({ start: 0, count: 2 * SEG });
+  });
+
+  it('each subsequent osc is offset by one (join + block) and skips its own joins', () => {
+    const block = 2 * SEG;
+    expect(ribbonStripRange(1, SEG)).toEqual({ start: block + 2, count: block });
+    expect(ribbonStripRange(2, SEG)).toEqual({ start: 2 * (block + 2), count: block });
+    // ALPHA = osc 3 — the layer the bugfix targets.
+    expect(ribbonStripRange(3, SEG)).toEqual({ start: 3 * (block + 2), count: block });
+  });
+
+  it('alpha (osc 3) sub-strip stays inside the full geometry vertex count', () => {
+    const block = 2 * SEG;
+    const totalVerts = 4 * block + 3 * 2; // matches card: 4·(2·SEG)+3·2
+    const { start, count } = ribbonStripRange(3, SEG);
+    expect(start + count).toBeLessThanOrEqual(totalVerts);
+    // And the alpha strip's real verts must NOT overlap osc 0-2's depth
+    // region's tail (i.e. it begins strictly after osc 2's block).
+    const osc2 = ribbonStripRange(2, SEG);
+    expect(start).toBeGreaterThan(osc2.start + osc2.count - 1);
   });
 });

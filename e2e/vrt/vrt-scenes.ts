@@ -161,15 +161,8 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     },
   },
 
-  // RUTTETRA (authentic forward-scatter scope): drive the Z input with a
-  // SHAPES source (default = a centered white circle on black). RUTTETRA
-  // walks a 320×180 grid of the source, reads luma at each point, and bows
-  // each horizontal scanline outward by luma with additive blending — so
-  // the bright circle pushes its scanlines into a 3D heightmap while the
-  // dark surround stays flat. SHAPES is fully procedural + time-independent
-  // (rotate 0), so the source frame is identical every run; RUTTETRA's
-  // geometry is a pure function of it → pixel-stable baseline. No audio is
-  // involved, so we don't freeze the AudioContext.
+  // RUTTETRA (authentic forward-scatter scope): SHAPES → RUTTETRA; pure
+  // function of a procedural, time-independent source → pixel-stable.
   ruttetra: {
     nodes: [
       { id: 'src',   type: 'shapes',   position: { x: 60,  y: 60 }, domain: 'video' },
@@ -186,6 +179,44 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     ],
     freezeAudio: false,
     settleMs: 400,
+  },
+
+  // WAVESCULPT (alpha-rotate regression lock): pins the ALPHA layer VISIBLE
+  // at a non-zero rotation; render-freeze hook makes the time-driven render
+  // deterministic. Was VRT-exempt; de-exempted via the freeze.
+  wavesculpt: {
+    nodes: [
+      { id: 'src',   type: 'shapes',     position: { x: 60,  y: 60 }, domain: 'video' },
+      {
+        id: 'vrt-1',
+        type: 'wavesculpt',
+        position: { x: 520, y: 60 },
+        domain: 'audio',
+        params: {
+          rot: 0.3, pos_z: 0.35, zoom: 1.3,
+          thickness4: 0.9, alpha_brightness: 1.6, noise: 0, bloom: 0.45,
+        },
+      },
+    ],
+    edges: [
+      {
+        id: 'e_src_alpha',
+        from: { nodeId: 'src',   portId: 'out' },
+        to:   { nodeId: 'vrt-1', portId: 'alpha_in' },
+        sourceType: 'video',
+        targetType: 'video',
+      },
+    ],
+    freezeAudio: true,
+    settleMs: 500,
+    async afterSpawn(page) {
+      await page.evaluate(() => {
+        (globalThis as unknown as { __wavesculptVrtFreeze?: boolean }).__wavesculptVrtFreeze = true;
+      });
+      await page.evaluate(
+        () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+      );
+    },
   },
 };
 

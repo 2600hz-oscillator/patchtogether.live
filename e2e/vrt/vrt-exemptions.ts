@@ -190,9 +190,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   slewSwitch: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit + Atlantis-patch E2E provide coverage',
   atlantisCatalyst: 'card has a live scene-countdown + pulsing NUDGE button; capture is non-deterministic. Unit covers the def + pure helpers; Atlantis E2E covers the wired-up patch',
   aquaTank: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit covers def shape, Atlantis-patch E2E covers the wired-up FDN',
-  // WAVESCULPT first-slice PR: animated 3D render + CRT feedback means a
-  // single-frame pixel baseline can't match between runs.
-  wavesculpt: 'animated 3D ribbon render + CRT frame-feedback defeats deterministic capture; unit + E2E provide coverage',
+  // WAVESCULPT: previously VRT-exempt (animated 3D render + CRT feedback
+  // defeated single-frame capture). The alpha-rotate bugfix PR adds a
+  // deterministic render-freeze hook (globalThis.__wavesculptVrtFreeze →
+  // card pins time/wave-phase/field-parity) so it now has a real VRT
+  // scene (see vrt-scenes.ts: wavesculpt) capturing the ALPHA layer at a
+  // non-zero rotation. No longer exempt.
   // HYDROGEN first-slice PR: card is a wide 16-row × 16-step pattern grid +
   // transport row + per-row mute/solo. No canvas / animation — the chrome
   // is static once the playhead is parked at step 0 — but the baseline
@@ -285,4 +288,10 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // platforms, so the linux baseline is pending a `task vrt:update` run on
   // linux CI.
   'linux/ruttetra',
+  // WAVESCULPT (alpha-rotate bugfix): darwin baseline captured on this
+  // machine via VRT_SCENES (ALPHA layer at rot=0.45, deterministic
+  // render-freeze hook). The linux baseline is pending a `task vrt:update`
+  // run on linux CI — WebGL ribbon AA + CRT post differs sub-thresholdly
+  // across GPU drivers, so we capture darwin here and defer linux.
+  'linux/wavesculpt',
 ]);
