@@ -18,6 +18,7 @@
     getBinding,
     clearBinding,
     learnSpecRune,
+    bindingsRune,
   } from '$lib/midi/midi-learn.svelte';
 
   interface Props {
@@ -59,7 +60,9 @@
   let bindingTick = $state(0);
   function bumpBindingTick() { bindingTick++; }
   let binding = $derived.by(() => {
-    void bindingTick; // force re-evaluation on tick bump
+    void bindingTick;      // legacy local-action bump
+    void bindingsRune();   // reactive: re-eval when ANY binding add/remove
+                           // happens (e.g. an incoming CC completes a learn)
     if (!moduleId || !paramId) return undefined;
     return getBinding(moduleId, paramId);
   });
@@ -75,11 +78,11 @@
 
   function openContextMenu(e: MouseEvent) {
     if (!moduleId || !paramId) return;
-    // Require Shift modifier — see Fader.svelte for the rationale.
-    // Plain right-click bubbles to the node menu so node-level actions
-    // (Docs / Duplicate / Unpatch all / Delete) still work from any
-    // point on the card.
-    if (!e.shiftKey) return;
+    // Plain right-click on a wired knob opens the control menu (MIDI Learn /
+    // Forget). We stopPropagation so the event does NOT bubble to the node
+    // menu — right-clicking the card *background* still gets the node menu
+    // (Docs / Duplicate / Unpatch / Delete) because only the knob surface
+    // is covered by this handler.
     e.preventDefault();
     e.stopPropagation();
     ctxX = e.clientX;

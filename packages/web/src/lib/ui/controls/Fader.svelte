@@ -5,7 +5,8 @@
   //   - Vertical drag: up = +, down = −. Shift = ×0.1 fine, Cmd/Ctrl = ×0.01.
   //   - Scroll wheel: small ticks (Shift / Cmd modifiers same as drag).
   //   - Double-click: reset to defaultValue.
-  //   - Right-click: TODO menu (reset / type value / MIDI learn) — Day 8+.
+  //   - Right-click (when moduleId+paramId set): control menu (MIDI Learn /
+  //     Forget). Plain right-click — no modifier required.
   //
   // Motorized convention: when not being dragged AND a `readLive()` callback
   // is provided, the fader thumb position reflects the LIVE current value
@@ -26,6 +27,7 @@
     getBinding,
     clearBinding,
     learnSpecRune,
+    bindingsRune,
   } from '$lib/midi/midi-learn.svelte';
 
   /** A single inline glyph anchored at a normalized [0,1] fraction along the
@@ -100,7 +102,9 @@
   let bindingTick = $state(0);
   function bumpBindingTick() { bindingTick++; }
   let binding = $derived.by(() => {
-    void bindingTick; // force re-evaluation on tick bump
+    void bindingTick;      // legacy local-action bump
+    void bindingsRune();   // reactive: re-eval when ANY binding add/remove
+                           // happens (e.g. an incoming CC completes a learn)
     if (!moduleId || !paramId) return undefined;
     return getBinding(moduleId, paramId);
   });
@@ -117,11 +121,10 @@
 
   function openContextMenu(e: MouseEvent) {
     if (!moduleId || !paramId) return; // feature off when not addressable
-    // Require Shift modifier so plain right-click still bubbles to the
-    // node-level menu (Docs / Duplicate / Unpatch all / Delete). Without
-    // this gate every wired fader/knob would steal the right-click on the
-    // bulk of the card surface, breaking node-menu tests + UX.
-    if (!e.shiftKey) return;
+    // Plain right-click on a wired fader opens the control menu (MIDI Learn /
+    // Forget). stopPropagation keeps the event off the node menu; the node
+    // menu (Docs / Duplicate / Unpatch all / Delete) is still reachable by
+    // right-clicking the card *background* away from any control.
     e.preventDefault();
     e.stopPropagation();
     ctxX = e.clientX;

@@ -180,7 +180,9 @@ test('right-click → Duplicate does not copy edges of the source', async ({ pag
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
 
   const vco = page.locator('.svelte-flow__node-analogVco').first();
-  await vco.click({ button: 'right' });
+  // Right-click the card background (title bar) — a knob/fader right-click now
+  // opens the per-control MIDI menu instead of the module menu.
+  await vco.locator('.title').click({ button: 'right' });
   await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
   await expect(page.locator('.svelte-flow__node-analogVco')).toHaveCount(2);
 

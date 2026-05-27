@@ -295,6 +295,7 @@
   } from '$lib/multiplayer/module-naming';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
+  import { installSimulatedMidiDevice } from '$lib/midi/midi-learn.svelte';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
@@ -3278,6 +3279,23 @@
           out.push({ clientId, user: s.user, cursor: s.cursor });
         }
         return out;
+      };
+      // Simulated-MIDI injection hook for e2e: lazily installs an in-memory
+      // fake MIDIAccess and pushes a Control-Change message through the same
+      // dispatch path real hardware uses. DEV-only — stripped in prod builds.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiTestInject = (channel: number, cc: number, value: number) => {
+        const send = installSimulatedMidiDevice();
+        send(channel, cc, value);
+        return true;
+      };
+      // Install the fake device WITHOUT sending — so a subsequent beginLearn()
+      // resolves connect() against the sim device instead of the real
+      // navigator.requestMIDIAccess() (which prompts / can hang in headless).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiTestInstall = () => {
+        installSimulatedMidiDevice();
+        return true;
       };
     });
   }

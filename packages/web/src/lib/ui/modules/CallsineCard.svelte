@@ -75,12 +75,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={model}     min={0}   max={CALLSINE_MAX_MODEL} defaultValue={0}   label="Model"     curve="discrete" formatValue={(v) => CALLSINE_MODEL_NAMES[Math.max(0, Math.min(CALLSINE_MODEL_NAMES.length - 1, Math.round(v)))] ?? ''} onchange={set('model')}     readLive={live('model')} />
-      <Fader value={note}      min={-60} max={60} defaultValue={0}   label="Note"      units="st" curve="linear" onchange={set('note')}      readLive={live('note')} />
-      <Fader value={harmonics} min={0}   max={1}  defaultValue={0.6} label="Harmonics" curve="linear" onchange={set('harmonics')} readLive={live('harmonics')} />
-      <Fader value={timbre}    min={0}   max={1}  defaultValue={0.4} label="Timbre"    curve="linear" onchange={set('timbre')}    readLive={live('timbre')} />
-      <Fader value={morph}     min={0}   max={1}  defaultValue={0.0} label="Morph"     curve="linear" onchange={set('morph')}     readLive={live('morph')} />
-      <Fader value={level}     min={0}   max={1}  defaultValue={0.8} label="Level"     curve="linear" onchange={set('level')}     readLive={live('level')} />
+      <Fader value={model}     min={0}   max={CALLSINE_MAX_MODEL} defaultValue={0}   label="Model"     curve="discrete" formatValue={(v) => CALLSINE_MODEL_NAMES[Math.max(0, Math.min(CALLSINE_MODEL_NAMES.length - 1, Math.round(v)))] ?? ''} onchange={set('model')}     moduleId={id} paramId="model"     readLive={live('model')} />
+      <Fader value={note}      min={-60} max={60} defaultValue={0}   label="Note"      units="st" curve="linear" onchange={set('note')}      moduleId={id} paramId="note"      readLive={live('note')} />
+      <Fader value={harmonics} min={0}   max={1}  defaultValue={0.6} label="Harmonics" curve="linear" onchange={set('harmonics')} moduleId={id} paramId="harmonics" readLive={live('harmonics')} />
+      <Fader value={timbre}    min={0}   max={1}  defaultValue={0.4} label="Timbre"    curve="linear" onchange={set('timbre')}    moduleId={id} paramId="timbre"    readLive={live('timbre')} />
+      <Fader value={morph}     min={0}   max={1}  defaultValue={0.0} label="Morph"     curve="linear" onchange={set('morph')}     moduleId={id} paramId="morph"     readLive={live('morph')} />
+      <Fader value={level}     min={0}   max={1}  defaultValue={0.8} label="Level"     curve="linear" onchange={set('level')}     moduleId={id} paramId="level"     readLive={live('level')} />
     </div>
   </PatchPanel>
   <OssAttribution author={callsineDef.ossAttribution?.author} />

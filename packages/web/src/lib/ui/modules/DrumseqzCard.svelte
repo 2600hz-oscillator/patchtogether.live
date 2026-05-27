@@ -403,7 +403,7 @@
             defaultValue={0}
             label={`E${t + 1}`}
             curve="discrete"
-            onchange={(v) => applyEuclidean(t, Math.round(v))}
+            onchange={(v) => applyEuclidean(t, Math.round(v))} moduleId={id} paramId={`trk${t + 1}_euclid`}
           />
           <input
             class="root-input"

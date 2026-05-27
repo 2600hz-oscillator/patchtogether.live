@@ -100,10 +100,10 @@
       <div class="filter-col">
         <Fader value={cutoff1} min={paramSpec('cutoff1').min} max={paramSpec('cutoff1').max}
                defaultValue={defaultFor('cutoff1')} label="Cut 1" curve="log"
-               onchange={set('cutoff1')} readLive={live('cutoff1')} />
+               onchange={set('cutoff1')} moduleId={id} paramId="cutoff1" readLive={live('cutoff1')} />
         <Fader value={res1} min={0} max={1}
                defaultValue={defaultFor('res1')} label="Res 1" curve="linear"
-               onchange={set('res1')} readLive={live('res1')} />
+               onchange={set('res1')} moduleId={id} paramId="res1" readLive={live('res1')} />
         <button
           type="button"
           class="mode-btn"
@@ -115,10 +115,10 @@
       <div class="filter-col">
         <Fader value={cutoff2} min={paramSpec('cutoff2').min} max={paramSpec('cutoff2').max}
                defaultValue={defaultFor('cutoff2')} label="Cut 2" curve="log"
-               onchange={set('cutoff2')} readLive={live('cutoff2')} />
+               onchange={set('cutoff2')} moduleId={id} paramId="cutoff2" readLive={live('cutoff2')} />
         <Fader value={res2} min={0} max={1}
                defaultValue={defaultFor('res2')} label="Res 2" curve="linear"
-               onchange={set('res2')} readLive={live('res2')} />
+               onchange={set('res2')} moduleId={id} paramId="res2" readLive={live('res2')} />
         <button
           type="button"
           class="mode-btn"
@@ -132,7 +132,7 @@
     <div class="globals">
       <Fader value={color} min={0} max={1}
              defaultValue={defaultFor('color')} label="COLOR" curve="linear"
-             onchange={set('color')} readLive={live('color')} />
+             onchange={set('color')} moduleId={id} paramId="color" readLive={live('color')} />
       <button
         type="button"
         class="mix-btn"
