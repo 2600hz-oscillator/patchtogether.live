@@ -40,7 +40,7 @@
 // Run only this:  flox activate -- task collab -- doom-mp-lockstep-sharedstate.spec.ts
 
 import { test, expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
-import { spawnPatch, type SpawnNode } from './_helpers';
+import { spawnPatch, claimKeyboard, type SpawnNode } from './_helpers';
 
 const GS_LEVEL = 0;
 const NODE_ID = 'doom-ls';
@@ -199,10 +199,10 @@ async function checksumAt(page: Page, id: string): Promise<{ tic: number; sum: n
 }
 
 async function holdKey(page: Page, code: string): Promise<void> {
-  await page.evaluate(() => {
-    const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-    c?.focus();
-  });
+  // Deterministic, focus-independent keyboard claim (NOT a racy `.focus()`):
+  // either peer can be the backgrounded context, so we latch the claim via the
+  // forceClaimKeyboard() hook + poll shouldClaimKey before dispatching keys.
+  await claimKeyboard(page, NODE_ID);
   await page.evaluate((k) => window.dispatchEvent(new KeyboardEvent('keydown', { code: k, bubbles: true })), code);
 }
 async function releaseKey(page: Page, code: string): Promise<void> {
