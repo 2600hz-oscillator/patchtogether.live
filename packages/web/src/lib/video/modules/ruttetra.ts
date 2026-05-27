@@ -127,7 +127,17 @@ void main() {
 
   // Sample source at raw (h0, v0). Luma drives displacement; color
   // comes out as-is.
-  vec4 src = texture(uZ, vec2(h0, v0));
+  //
+  // IMPORTANT: use textureLod(..., 0.0), NOT texture(). In GLSL ES 3.00 a
+  // VERTEX-stage texture() has no implicit LOD (no fragment-quad
+  // derivatives exist), so the LOD it samples is implementation-defined.
+  // SwiftShader/ANGLE-Vulkan happens to pick LOD 0, but the macOS
+  // ANGLE-Metal backend can return a constant value for every vertex —
+  // which collapses lum to a constant and turns the per-vertex luma
+  // RELIEF into a UNIFORM raster translation (the owner-reported X/Y Disp
+  // bug). textureLod with an explicit LOD of 0.0 forces the base mip on
+  // every driver, restoring the per-vertex heightmap.
+  vec4 src = textureLod(uZ, vec2(h0, v0), 0.0);
   float lum = dot(src.rgb, vec3(0.299, 0.587, 0.114));
 
   // Shaped ramps → base H/V position. morph 0 = linear, so the unshaped
