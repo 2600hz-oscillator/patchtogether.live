@@ -440,6 +440,14 @@ jobs:
             ~/.cache/ms-playwright
           key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
       - run: flox activate -- task setup
+      # The @smoke specs call loadManifest() (e2e/tests/_registry.ts), which
+      # reads the gitignored/generated e2e/.generated/registry-manifest.json.
+      # That file is normally produced by `task test` (which this deploy-time
+      # smoke job skips), so emit it explicitly before running the specs —
+      # otherwise loadManifest() throws and the smoke gate goes red even when
+      # the deploy itself succeeded. Self-contained; only needs deps that
+      # `task setup` already installed. (Fixes #101.)
+      - run: flox activate -- task test:emit-manifest
       - run: flox activate -- task ci:smoke:live
       - if: failure()
         uses: actions/upload-artifact@v4
