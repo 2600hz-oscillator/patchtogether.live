@@ -220,31 +220,47 @@ async function playerPos(
 }
 
 // Take a STICKY, focus-independent keyboard claim on the DOOM card, then VERIFY
-// the runtime actually claims keys before we dispatch any. A bare
-// `element.focus()` is unreliable across two headless contexts: only the
-// foreground page reliably moves document.activeElement onto the card, so
-// shouldClaimKey()'s focus-within branch flickers false on the background page
-// and the keydown is silently dropped (the marine never moves). Clicking the
-// card fires its onclick → latchKeyboard(), which the card honours regardless of
-// focus; we then poll getState().shouldClaimKey to confirm the claim landed.
+// the runtime actually claims keys before we dispatch any.
+//
+// DETERMINISTIC CLAIM (the @collab marine-move de-flake): we do NOT rely on a
+// DOM click/focus. In a 2-context Playwright test only ONE page holds
+// focus/activeElement; the backgrounded page's document.activeElement stays on
+// <body>, so a click+focus-based capture leaves shouldClaimKey()'s focus-within
+// branch false, the dispatched keydown is silently dropped, and the marine never
+// moves (the CI failure: the OWNER page showed the "Click to capture keyboard"
+// overlay still up — capture never landed). Instead we invoke the card's
+// `forceClaimKeyboard()` dev hook, which calls the SAME latchKeyboard() the
+// "Click to capture keyboard" onclick fires — flipping kbLatched=true, which
+// shouldClaimKey() honours REGARDLESS of focus/foreground. We then poll
+// getState().shouldClaimKey === true to confirm the claim actually landed
+// before dispatching any keys. Works identically on the foreground and the
+// background page. (Real users still click to capture; that path is unchanged.)
 async function claimKeyboard(page: Page, id: string): Promise<void> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    await page.locator('[data-testid="doom-card"]').click({ timeout: 5000 }).catch(() => {});
-    const claimed = await page
-      .waitForFunction(
-        (nid) =>
-          (globalThis as unknown as {
+  await page.evaluate(
+    (nid) =>
+      (
+        globalThis as unknown as {
+          __doomCards?: Record<string, { forceClaimKeyboard?: () => void }>;
+        }
+      ).__doomCards?.[nid]?.forceClaimKeyboard?.(),
+    id,
+  );
+  // Poll until the runtime confirms the claim landed (focus-independent).
+  await page
+    .waitForFunction(
+      (nid) =>
+        (
+          globalThis as unknown as {
             __doomCards?: Record<string, { getState: () => { shouldClaimKey: boolean } }>;
-          }).__doomCards?.[nid]?.getState().shouldClaimKey === true,
-        id,
-        { timeout: 2000 },
-      )
-      .then(() => true)
-      .catch(() => false);
-    if (claimed) return;
-  }
-  // Fall through: dispatch will still run; the assertion that follows surfaces
-  // the failure with a clear signal rather than a silent no-op.
+          }
+        ).__doomCards?.[nid]?.getState().shouldClaimKey === true,
+      id,
+      { timeout: 5000 },
+    )
+    .catch(() => {
+      // Fall through: dispatch will still run; the assertion that follows
+      // surfaces the failure with a clear signal rather than a silent no-op.
+    });
 }
 
 test.describe('@collab DOOM multiplayer — real 2-user', () => {
@@ -489,12 +505,13 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         return w.__doomCards?.[nid]?.getSlotState(0) ?? null;
       }, NODE_ID);
       expect(ownerInGuestBefore, "owner's marine exists in the guest's world").not.toBeNull();
-      // Hold ArrowUp on the owner for a sustained burst. CLICK the card (not a
-      // bare focus()) so the card's onclick fires latchKeyboard() — a STICKY,
-      // focus-independent keyboard claim. A bare element.focus() is racy across
-      // two headless contexts: document.activeElement intermittently stays on
-      // <body> (the page isn't the foreground tab), so shouldClaimKey()'s
-      // focus-within branch is false and the keydown is never claimed.
+      // Hold ArrowUp on the owner for a sustained burst. Take a STICKY,
+      // focus-independent keyboard claim via the forceClaimKeyboard() hook (see
+      // claimKeyboard) — NOT a DOM click/focus, which is racy across two
+      // headless contexts: document.activeElement intermittently stays on <body>
+      // for the backgrounded page, so shouldClaimKey()'s focus-within branch is
+      // false and the keydown is never claimed. claimKeyboard polls until
+      // shouldClaimKey flips true before we dispatch.
       await claimKeyboard(owner.page, NODE_ID);
       await owner.page.evaluate(() =>
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
