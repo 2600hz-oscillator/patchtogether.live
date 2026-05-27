@@ -38,6 +38,7 @@
   import {
     resolvePresenceUser,
     getOrCreateAnonTabId,
+    distinctPresentUsers,
     type PresenceUser,
     type RemotePresence,
   } from '$lib/multiplayer/presence';
@@ -383,6 +384,22 @@
     };
   });
 
+  // SINGLE SOURCE OF TRUTH for both the presence dots AND the "N/4 members"
+  // count: distinct present users, de-duped by user.id from live awareness.
+  // Previously the count read the server DB `memberCount`
+  // (`rackspace.memberUserIds.length`) — authed-members-only + stale + missing
+  // anon-via-invite participants — while the dots read raw awareness states
+  // (one per tab). That divergence produced the "1/4 members, 2 dots" bug.
+  // Deriving both from one de-duped list guarantees count === dots.length.
+  // Multi-tab users collapse to one entry; anon-via-invite users are included.
+  let presentUsers = $derived(distinctPresentUsers(allPresences));
+  // Cap the displayed count at the rackspace member cap so we never show e.g.
+  // "5/4" if more tabs than the cap momentarily race in; the "/N" cap display
+  // is preserved.
+  let presentCount = $derived(
+    Math.min(presentUsers.length, data.rackspace.maxMembers),
+  );
+
   onDestroy(() => {
     provider?.destroy();
   });
@@ -441,17 +458,17 @@
       {/if}
       <span class="rackspace-name">{data.rackspace.name || 'Untitled'}</span>
       <span class="rackspace-id">{data.rackspace.id}</span>
-      <span class="member-count">
-        {data.rackspace.memberCount}/{data.rackspace.maxMembers} members
+      <span class="member-count" data-testid="member-count">
+        {presentCount}/{data.rackspace.maxMembers} members
       </span>
       <span class="presence-dots" data-testid="presence-dots" aria-label="Active users">
-        {#each allPresences as p (p.clientId)}
+        {#each presentUsers as u (u.id)}
           <span
             class="presence-dot"
             data-testid="presence-dot"
-            data-user-id={p.user.id}
-            style:background={p.user.color}
-            title={p.user.displayName}
+            data-user-id={u.id}
+            style:background={u.color}
+            title={u.displayName}
           ></span>
         {/each}
       </span>
