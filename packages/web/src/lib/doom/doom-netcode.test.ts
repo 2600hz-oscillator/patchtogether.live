@@ -844,10 +844,12 @@ describe('DoomNetcode — lockstep gap-fill (steady/idle remote stays fed)', () 
     joinAs(awA, 'aaa'); // slot 0 (lex-min)
     joinAs(awB, 'bbb'); // slot 1
     const ticsAonB: TiccmdEnvelope[] = [];
+    const ticsBonA: TiccmdEnvelope[] = [];
     const { runtime: rtA } = makeRuntime();
     const { runtime: rtB } = makeRuntime();
     const ncA = new DoomNetcode({
       provider: makeProvider(awA), moduleId: 'm', localUserId: 'aaa', runtime: rtA,
+      onRemoteTiccmd: (e) => ticsBonA.push(e),
     });
     const ncB = new DoomNetcode({
       provider: makeProvider(awB), moduleId: 'm', localUserId: 'bbb',
@@ -855,7 +857,7 @@ describe('DoomNetcode — lockstep gap-fill (steady/idle remote stays fed)', () 
     });
     ncA.start();
     ncB.start();
-    return { ncA, ncB, ticsAonB, awA };
+    return { ncA, ncB, ticsAonB, ticsBonA, awA };
   }
 
   it('re-injects a held key every tic even though the sender stopped writing (no starvation)', () => {
@@ -913,5 +915,32 @@ describe('DoomNetcode — lockstep gap-fill (steady/idle remote stays fed)', () 
     ncB.reinjectKnownTiccmds();
     ncB.reinjectKnownTiccmds();
     expect(ticsAonB).toHaveLength(0);
+  });
+
+  // ── host-freeze guard: gap-fill NEVER re-feeds the local peer its own input ──
+  //
+  // The reported live bug: the instant a remote peer joins, the HOST stops
+  // moving its own marine. The per-rAF gap-fill (reinjectKnownTiccmds, #339) re-
+  // delivers every PRESENT remote peer's last-known ticcmd each tic. If the local
+  // peer's OWN ticcmd ever leaked into the lastKnownTiccmd table it would be re-
+  // fed onto the local console-player slot every tic — fighting/overwriting the
+  // marine's own freshly-built input → the host appears frozen. These pin that
+  // the table only ever holds OTHER peers' input, so gap-fill can never drive the
+  // local slot, no matter how many remote peers are present + being re-fed.
+  it('a peer who broadcasts every tic still never re-injects its OWN ticcmd (host-freeze guard)', () => {
+    const { ncA, ncB, ticsBonA, ticsAonB } = twoPeers();
+    // Both A (slot 0 — the "host") and B (slot 1) play continuously.
+    for (let i = 0; i < 5; i++) {
+      ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: i, buttons: 0 });
+      ncB.broadcastLocalTiccmd(1, { forwardmove: 50, sidemove: 0, angleturn: i, buttons: 0 });
+    }
+    // A's render loop re-injects known REMOTE ticcmds every tic. None of them may
+    // ever carry A's OWN slot (0) — they are all B's (slot 1).
+    for (let i = 0; i < 10; i++) ncA.reinjectKnownTiccmds();
+    expect(ticsBonA.length).toBeGreaterThan(0); // B's input IS re-fed on A …
+    for (const e of ticsBonA) expect(e.slot).toBe(1); // … and ONLY at B's slot.
+    // Symmetrically B never re-injects its own slot-1 input.
+    for (let i = 0; i < 10; i++) ncB.reinjectKnownTiccmds();
+    for (const e of ticsAonB) expect(e.slot).toBe(0); // only A's (the host's) input.
   });
 });

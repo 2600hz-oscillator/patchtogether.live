@@ -701,6 +701,81 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
         ownerFbSig: o4.fbSig,
         guestFbSig: g4.fbSig,
       };
+
+      // ── PHASE 05: HOST KEEPS MOVING for several seconds AFTER the guest ──────
+      //              joined (the "host freezes on join" regression).
+      //
+      // THE BUG: the instant the guest joins, the host (owner) stops being able
+      // to move its OWN marine AND its consoleplayer slot sometimes flips 0→1
+      // (P1 becomes P2). Phase 04 only checked ONE post-join move, so it could
+      // not catch a host that moves once then freezes, nor a slot flip. Here we
+      // hold ArrowUp on the OWNER for a BOUNDED window and require its marine to
+      // keep ADVANCING across MULTIPLE samples while its slot stays 0 and it stays
+      // in-level. Pre-fix the host's displacement stalls (and/or playerSlot reads
+      // 1) within the first second; post-fix it climbs every sample.
+      //
+      // WHAT TO LOOK FOR when re-running the probe (state.json):
+      //   observations.hostPostJoinSlotStable === true     (host stayed P1/slot 0)
+      //   observations.hostPostJoinKeptMoving === true      (advanced past floor)
+      //   observations.hostPostJoinAdvanceUnits  >> 64       (real sustained walk)
+      //   observations.hostPostJoinSamples[]  monotonically increasing advance
+      //   observations.hostPostJoinStayedInLevel === true
+      const HOST_WINDOW_MS = 6_000;
+      const HOST_SAMPLE_MS = 750;
+      const HOST_MAX_ITERS = Math.ceil(HOST_WINDOW_MS / HOST_SAMPLE_MS) * 4;
+      const HOST_MIN_ADVANCE_UNITS = 64;
+      const hostStart = await playerPos(owner.page, NODE_ID);
+      // Hold forward on the OWNER for the whole window (no keyup until the end).
+      await owner.page.evaluate(() => {
+        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
+        c?.focus();
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
+      });
+      const hostSamples: Array<{ tSec: number; advance: number | null; slot: number | null; gs: number | null }> = [];
+      let hostMaxAdvance = 0;
+      let hostSlotEverFlipped = false;
+      let hostEverLeftLevel = false;
+      const hT0 = Date.now();
+      // Bounded: terminate on EITHER the wall-clock window OR the hard iteration
+      // cap — never on a game-state condition — so the loop ALWAYS exits.
+      for (let iter = 0; Date.now() - hT0 < HOST_WINDOW_MS && iter < HOST_MAX_ITERS; iter++) {
+        const pos = await playerPos(owner.page, NODE_ID);
+        const st = await getState(owner.page, NODE_ID);
+        let advance: number | null = null;
+        if (hostStart && pos) {
+          const dx = pos.x - hostStart.x;
+          const dy = pos.y - hostStart.y;
+          advance = Math.sqrt(dx * dx + dy * dy);
+          hostMaxAdvance = Math.max(hostMaxAdvance, advance);
+        }
+        // playerSlot (from getPlayerState) is the host's authoritative
+        // consoleplayer; mySlot is the reactive roster mirror — assert BOTH = 0.
+        if ((pos && pos.slot !== 0) || (st && st.mySlot !== null && st.mySlot !== 0)) {
+          hostSlotEverFlipped = true;
+        }
+        if (st && st.gamestate !== null && st.gamestate !== GS_LEVEL) hostEverLeftLevel = true;
+        hostSamples.push({ tSec: Math.round((Date.now() - hT0) / 1000), advance, slot: pos?.slot ?? null, gs: st?.gamestate ?? null });
+        const elapsed = Date.now() - hT0;
+        const nextTick = Math.ceil(elapsed / HOST_SAMPLE_MS) * HOST_SAMPLE_MS;
+        await owner.page.waitForTimeout(Math.min(HOST_SAMPLE_MS, Math.max(0, nextTick - elapsed)));
+      }
+      await owner.page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true }))).catch(() => {});
+      const hostKeptMoving = hostMaxAdvance > HOST_MIN_ADVANCE_UNITS;
+      summary.observations = {
+        ...(summary.observations as object),
+        hostPostJoinAdvanceUnits: hostMaxAdvance,
+        hostPostJoinKeptMoving: hostKeptMoving,
+        hostPostJoinSlotStable: !hostSlotEverFlipped,
+        hostPostJoinStayedInLevel: !hostEverLeftLevel,
+        hostPostJoinSamples: hostSamples,
+      };
+      await capture(owner, 'host-keeps-moving', '05', 'owner held ArrowUp for ~6s AFTER guest joined');
+      // eslint-disable-next-line no-console
+      console.log(`[probe] host-keeps-moving: advance=${hostMaxAdvance.toFixed(1)} kept=${hostKeptMoving} slotStable=${!hostSlotEverFlipped} inLevel=${!hostEverLeftLevel}`);
+      // Hard assertions — these FAIL on the "host freezes on join" bug.
+      expect(hostSlotEverFlipped, 'the HOST consoleplayer slot must stay 0 (P1) after a guest joins — it must NOT flip to 1 (P2)').toBe(false);
+      expect(hostKeptMoving, `the HOST must keep moving its OWN marine for several seconds AFTER the guest joined (advanced ${hostMaxAdvance.toFixed(1)} units; pre-fix it freezes ON join)`).toBe(true);
+      expect(hostEverLeftLevel, 'the HOST must stay in-level the whole post-join window (no hang/desync kicking it out)').toBe(false);
     } finally {
       writeFileSync(`${OUT_DIR}/state.json`, JSON.stringify({ summary, rows }, null, 2));
       // eslint-disable-next-line no-console
