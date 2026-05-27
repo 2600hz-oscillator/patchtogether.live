@@ -455,6 +455,18 @@
     netcode.broadcastLocalTiccmd(mySlot, cmd);
   }
 
+  /** Approach A — lockstep gap-fill. Each tic, re-apply every present remote
+   *  peer's last-known ticcmd (via the netcode) so a steady/idle remote peer's
+   *  marine stays driven in our world. The netcode fires onRemoteTiccmd →
+   *  applyRemoteTiccmd → injectRemoteTiccmd, refreshing the C overlay table.
+   *  Only meaningful for a joined player running a launched netgame. */
+  function reinjectRemoteTiccmds(): void {
+    if (!netcode) return;
+    if (mySlot === null) return;
+    if (!launched) return;
+    netcode.reinjectKnownTiccmds();
+  }
+
   /** Local user id used for host election. Resolved lazily from the
    *  provider's awareness `user.id` field (set by /r/[id]'s presence
    *  init OR by tests calling __setAwarenessUser). Falls back to a
@@ -1393,6 +1405,14 @@
         // in their worlds (cross-peer visibility). Cheap (4 small ints over a
         // sticky awareness field, deduped by seq on receive).
         broadcastLocalTiccmd();
+        // Approach A — lockstep gap-fill: re-feed every present remote peer's
+        // last-known ticcmd into our sim each tic. This keeps the C cross-feed
+        // overlay fresh for a peer who is HOLDING a key / standing still / whose
+        // sticky awareness writes coalesced (the only-on-change cap drops a
+        // steady peer's write rate to ~0), so a quiet remote marine never
+        // appears frozen here. Safe re: #287 — the netcode only re-injects
+        // PRESENT senders' CURRENT input and forgets a departed peer.
+        reinjectRemoteTiccmds();
       }
       // Round 5: the host publishes the "MP is live" flag every frame (the
       // write is a no-op unless it actually flipped) so a guest's Join button

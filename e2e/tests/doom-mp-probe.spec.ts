@@ -47,6 +47,15 @@ const OUT_DIR = process.env.DOOM_PROBE_DIR ?? '/tmp/doom-mp-probe';
 const NODE_ID = 'doom-mp';
 const GS_LEVEL = 0;
 
+// Bug-4 keyboard-movement measurement (control-vs-keyed differential). We
+// sample world displacement over a fixed window with no input (control) and an
+// equal window holding ArrowUp (keyed); the keyboard "moved" the marine iff the
+// keyed walk exceeds idle drift by at least KEY_MOVE_MIN_UNITS. A real DOOM walk
+// covers hundreds of map units/sec; in-level idle drift is ~0, so the threshold
+// is comfortably between them and immune to demo-playback / momentum noise.
+const KEY_WINDOW_MS = 1_200;
+const KEY_MOVE_MIN_UNITS = 8;
+
 interface Peer {
   ctx: BrowserContext;
   page: Page;
@@ -188,6 +197,39 @@ async function playerPos(
     .catch(() => null);
 }
 
+// Measure the marine's planar displacement over `windowMs`, optionally HOLDING
+// `holdCode` (a KeyboardEvent.code) for the whole window. Returns Euclidean
+// distance between the start + end positions in DOOM map units. With holdCode
+// null this is the idle/drift control; with a movement key it is the keyed
+// walk. Used by the Bug-4 control-vs-keyed differential so demo playback /
+// residual momentum (present in BOTH windows) cancels out.
+async function displacementOverWindow(
+  page: Page,
+  id: string,
+  holdCode: string | null,
+  windowMs: number,
+): Promise<number> {
+  const start = await playerPos(page, id);
+  if (holdCode) {
+    await page.evaluate((code) => {
+      const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
+      c?.focus();
+      window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
+    }, holdCode);
+  }
+  await page.waitForTimeout(windowMs);
+  const end = await playerPos(page, id);
+  if (holdCode) {
+    await page.evaluate((code) => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }));
+    }, holdCode);
+  }
+  if (!start || !end) return 0;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 // FNV-1a over a sub-sampled canvas — a cheap fingerprint of the rendered POV so
 // distinct player views are detectable. -1 = no canvas yet.
 async function fbSig(page: Page): Promise<number> {
@@ -312,6 +354,67 @@ async function capture(peer: Peer, phase: string, idx: string, note?: string): P
     `[probe] ${idx} ${phase} ${peer.tag}: slot=${row.mySlot} gs=${row.gamestate} host=${row.isHost} badge=${row.badgeText} mpMode=${row.mpMode} mpLive=${row.mpLive} members=${row.memberCount} pos=(${row.playerX},${row.playerY}) fbSig=${row.fbSig}`,
   );
   return row;
+}
+
+// Drive the real host→launch→join flow until BOTH peers report GS_LEVEL.
+// Returns whether each reached the level (the caller asserts). Shared by the
+// sustained-responsiveness + steady/idle-liveness scenarios.
+async function bringBothInLevel(
+  owner: Peer,
+  guest: Peer,
+): Promise<{ ownerInLevel: boolean; guestInLevel: boolean }> {
+  await spawnPatch(owner.page, [{ id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' }], []);
+  await cardHookReady(owner.page, NODE_ID);
+  await guest.page
+    .waitForFunction(
+      (nid) => Object.keys((window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes).includes(nid),
+      NODE_ID,
+      { timeout: 15000 },
+    )
+    .catch(() => {});
+  await cardHookReady(guest.page, NODE_ID).catch(() => {});
+
+  const hostBtn = owner.page.locator('[data-testid="doom-start-multi"]');
+  if (await hostBtn.isVisible().catch(() => false)) await hostBtn.click();
+  await owner.page
+    .waitForFunction((nid) => (globalThis as unknown as { __doomCards: Record<string, { getState: () => { mySlot: number | null } }> }).__doomCards[nid]?.getState().mySlot === 0, NODE_ID, { timeout: 25000 })
+    .catch(() => {});
+  const launchBtn = owner.page.locator('[data-testid="doom-launch-btn"]');
+  if (await launchBtn.isVisible({ timeout: 10000 }).catch(() => false)) await launchBtn.click();
+  const ownerInLevel = await owner.page
+    .waitForFunction((args) => { const [nid, lvl] = args as [string, number]; const st = (globalThis as unknown as { __doomCards: Record<string, { getState: () => { launched: boolean; gamestate: number } }> }).__doomCards[nid]?.getState(); return !!st && st.launched && st.gamestate === lvl; }, [NODE_ID, GS_LEVEL], { timeout: 60000 })
+    .then(() => true).catch(() => false);
+  await guest.page
+    .waitForFunction((nid) => (globalThis as unknown as { __doomCards: Record<string, { getState: () => { mpLive: boolean } }> }).__doomCards[nid]?.getState().mpLive === true, NODE_ID, { timeout: 25000 })
+    .catch(() => {});
+  const joinBtn = guest.page.locator('[data-testid="doom-join-btn"]');
+  if (await joinBtn.isVisible({ timeout: 10000 }).catch(() => false) && await joinBtn.isEnabled().catch(() => false)) await joinBtn.click();
+  const guestInLevel = await guest.page
+    .waitForFunction((args) => { const [nid, lvl] = args as [string, number]; const st = (globalThis as unknown as { __doomCards: Record<string, { getState: () => { launched: boolean; gamestate: number } }> }).__doomCards[nid]?.getState(); return !!st && st.launched && st.gamestate === lvl; }, [NODE_ID, GS_LEVEL], { timeout: 60000 })
+    .then(() => true).catch(() => false);
+  return { ownerInLevel, guestInLevel };
+}
+
+// Read an arbitrary player SLOT's marine position in THIS peer's world (the
+// __doomCards getSlotState hook). Used by the steady/idle liveness test to
+// watch a remote peer's marine keep advancing on the OTHER peer's screen while
+// that peer holds a movement key — the exact thing Approach A's gap-fill keeps
+// alive when the only-on-change cap suppresses the sender's writes.
+async function slotPos(
+  page: Page,
+  id: string,
+  slot: number,
+): Promise<{ x: number; y: number } | null> {
+  return await page
+    .evaluate((args) => {
+      const [nid, s] = args as [string, number];
+      const w = globalThis as unknown as {
+        __doomCards?: Record<string, { getSlotState?: (slot: number) => { x: number; y: number } | null }>;
+      };
+      const c = w.__doomCards?.[nid];
+      return c && typeof c.getSlotState === 'function' ? c.getSlotState(s) ?? null : null;
+    }, [id, slot])
+    .catch(() => null);
 }
 
 test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => {
@@ -630,36 +733,7 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       }
 
       // Bring both into a running level (owner hosts+launches, guest joins).
-      await spawnPatch(owner.page, [{ id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' }], []);
-      await cardHookReady(owner.page, NODE_ID);
-      await guest.page
-        .waitForFunction(
-          (nid) => Object.keys((window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes).includes(nid),
-          NODE_ID,
-          { timeout: 15000 },
-        )
-        .catch(() => {});
-      await cardHookReady(guest.page, NODE_ID).catch(() => {});
-
-      const hostBtn = owner.page.locator('[data-testid="doom-start-multi"]');
-      if (await hostBtn.isVisible().catch(() => false)) await hostBtn.click();
-      await owner.page
-        .waitForFunction((nid) => (globalThis as unknown as { __doomCards: Record<string, { getState: () => { mySlot: number | null } }> }).__doomCards[nid]?.getState().mySlot === 0, NODE_ID, { timeout: 25000 })
-        .catch(() => {});
-      const launchBtn = owner.page.locator('[data-testid="doom-launch-btn"]');
-      if (await launchBtn.isVisible({ timeout: 10000 }).catch(() => false)) await launchBtn.click();
-      const ownerInLevel = await owner.page
-        .waitForFunction((args) => { const [nid, lvl] = args as [string, number]; const st = (globalThis as unknown as { __doomCards: Record<string, { getState: () => { launched: boolean; gamestate: number } }> }).__doomCards[nid]?.getState(); return !!st && st.launched && st.gamestate === lvl; }, [NODE_ID, GS_LEVEL], { timeout: 60000 })
-        .then(() => true).catch(() => false);
-      // Guest joins once MP is live.
-      await guest.page
-        .waitForFunction((nid) => (globalThis as unknown as { __doomCards: Record<string, { getState: () => { mpLive: boolean } }> }).__doomCards[nid]?.getState().mpLive === true, NODE_ID, { timeout: 25000 })
-        .catch(() => {});
-      const joinBtn = guest.page.locator('[data-testid="doom-join-btn"]');
-      if (await joinBtn.isVisible({ timeout: 10000 }).catch(() => false) && await joinBtn.isEnabled().catch(() => false)) await joinBtn.click();
-      const guestInLevel = await guest.page
-        .waitForFunction((args) => { const [nid, lvl] = args as [string, number]; const st = (globalThis as unknown as { __doomCards: Record<string, { getState: () => { launched: boolean; gamestate: number } }> }).__doomCards[nid]?.getState(); return !!st && st.launched && st.gamestate === lvl; }, [NODE_ID, GS_LEVEL], { timeout: 60000 })
-        .then(() => true).catch(() => false);
+      const { ownerInLevel, guestInLevel } = await bringBothInLevel(owner, guest);
       summary.ownerInLevel = ownerInLevel;
       summary.guestInLevel = guestInLevel;
       expect(ownerInLevel, 'owner must reach the level before the sustained-play measurement').toBe(true);
@@ -801,6 +875,131 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
     }
   });
 
+  // ── STEADY/IDLE-input LIVENESS guard (the lockstep-starvation regression) ──
+  //
+  // Reproduces the ACTUAL reported hang: after both peers are in-level, ONE
+  // peer (the owner) HOLDS a single movement key STEADY for the whole window —
+  // no turning, no toggling. A steady hold produces the SAME ticcmd frame after
+  // frame, so the only-on-change write cap drops that peer's awareness write
+  // rate to ~0 (verified by ticcmdWrites/sec ≈ 0). The guest therefore sees NO
+  // new ticcmd seq for the held peer for the whole window.
+  //
+  // PRE-FIX: the guest only injected the owner's ticcmd on a NEW seq, so once
+  // the writes stop the owner's marine STARVES on the guest's screen — it stops
+  // advancing (the cross-peer freeze / "hang" the players reported).
+  // POST-FIX (Approach A): the guest re-injects the owner's last-known ticcmd
+  // every tic (reinjectKnownTiccmds), so the held-forward owner's marine KEEPS
+  // ADVANCING on the guest's screen even though zero new ticcmds arrive — and
+  // the page stays responsive + in-level the whole time.
+  //
+  // This FAILS pre-fix (the remote marine's displacement on the guest is ~0
+  // while the owner holds forward) and PASSES post-fix (it advances steadily).
+  test('STEADY-input liveness: a held key keeps the remote marine moving (no lockstep starvation)', async ({
+    browser,
+  }) => {
+    test.skip(!ENABLED, 'manual probe — set DOOM_PROBE=1 (or run `task doom-probe`)');
+    mkdirSync(OUT_DIR, { recursive: true });
+
+    const rackId = `doom-probe-steady-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const peers = await boot(browser, rackId, [
+      { userId: 'zzz-rack-owner', name: 'Owner', isOwner: true, tag: 'A' },
+      { userId: 'anon-guest-7095', name: 'guest 7095', isOwner: false, tag: 'B' },
+    ]);
+    const owner = peers[0]!;
+    const guest = peers[1]!;
+    const summary: Record<string, unknown> = { generatedAt: new Date().toISOString(), rackId, phase: 'steady-idle-liveness' };
+
+    try {
+      if (!(await assetsPresent(owner.page))) {
+        summary.skippedReason = 'DOOM WASM / WAD missing';
+        writeFileSync(`${OUT_DIR}/steady-state.json`, JSON.stringify({ summary }, null, 2));
+        test.skip(true, summary.skippedReason as string);
+        return;
+      }
+
+      const { ownerInLevel, guestInLevel } = await bringBothInLevel(owner, guest);
+      summary.ownerInLevel = ownerInLevel;
+      summary.guestInLevel = guestInLevel;
+      expect(ownerInLevel, 'owner must reach the level before the steady-input measurement').toBe(true);
+      expect(guestInLevel, 'guest must reach the level before the steady-input measurement').toBe(true);
+
+      const OWNER_SLOT = 0; // owner hosts → slot 0; the guest watches this slot.
+      const WINDOW_MS = 12_000;
+      const SAMPLE_MS = 1_000;
+      const ROUND_TRIP_BUDGET_MS = 750;
+      // A real DOOM forward walk covers hundreds of units over 12s; we require a
+      // generous floor that idle drift / a single coalesced injection cannot
+      // reach but a continuously-fed marine clears easily.
+      const MIN_REMOTE_ADVANCE_UNITS = 64;
+
+      // Owner HOLDS forward STEADY for the entire window — no turning, so the
+      // ticcmd never changes and the only-on-change cap suppresses writes.
+      await owner.page.evaluate(() => {
+        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
+        c?.focus();
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
+      });
+
+      const guestStartPos = await slotPos(guest.page, NODE_ID, OWNER_SLOT);
+      const ownerStartCounters = await counters(owner.page, NODE_ID);
+      let worstRoundTrip = 0;
+      let remoteMarineMaxAdvance = 0;
+      let everLeftLevelOwner = false;
+      let everLeftLevelGuest = false;
+      const samples: Array<Record<string, number | null>> = [];
+      const t0 = Date.now();
+      while (Date.now() - t0 < WINDOW_MS) {
+        const oRt = await evalRoundTripMs(owner.page);
+        const gRt = await evalRoundTripMs(guest.page);
+        worstRoundTrip = Math.max(worstRoundTrip, oRt, gRt);
+        const nowPos = await slotPos(guest.page, NODE_ID, OWNER_SLOT);
+        let advance: number | null = null;
+        if (guestStartPos && nowPos) {
+          const dx = nowPos.x - guestStartPos.x;
+          const dy = nowPos.y - guestStartPos.y;
+          advance = Math.sqrt(dx * dx + dy * dy);
+          remoteMarineMaxAdvance = Math.max(remoteMarineMaxAdvance, advance);
+        }
+        const oGs = (await getState(owner.page, NODE_ID))?.gamestate ?? null;
+        const gGs = (await getState(guest.page, NODE_ID))?.gamestate ?? null;
+        if (oGs !== null && oGs !== GS_LEVEL) everLeftLevelOwner = true;
+        if (gGs !== null && gGs !== GS_LEVEL) everLeftLevelGuest = true;
+        samples.push({ tSec: Math.round((Date.now() - t0) / 1000), oRt, gRt, remoteAdvance: advance, oGs, gGs });
+        const elapsed = Date.now() - t0;
+        const nextTick = Math.ceil(elapsed / SAMPLE_MS) * SAMPLE_MS;
+        await owner.page.waitForTimeout(Math.max(0, nextTick - elapsed));
+      }
+      await owner.page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true }))).catch(() => {});
+
+      const ownerEndCounters = await counters(owner.page, NODE_ID);
+      const ownerTwDuringHold = Math.max(0, ownerEndCounters.ticcmdWrites - ownerStartCounters.ticcmdWrites);
+
+      summary.samples = samples;
+      summary.remoteMarineMaxAdvance = remoteMarineMaxAdvance;
+      summary.worstRoundTripMs = worstRoundTrip;
+      summary.ownerTiccmdWritesDuringHold = ownerTwDuringHold;
+      summary.ownerStayedInLevel = !everLeftLevelOwner;
+      summary.guestStayedInLevel = !everLeftLevelGuest;
+      // eslint-disable-next-line no-console
+      console.log(`[probe] steady-input: remoteMarineMaxAdvance=${remoteMarineMaxAdvance.toFixed(1)} worstRoundTrip=${worstRoundTrip}ms ownerTiccmdWritesDuringHold=${ownerTwDuringHold} ownerInLevel=${summary.ownerStayedInLevel} guestInLevel=${summary.guestStayedInLevel}`);
+
+      // The scenario must ACTUALLY exercise the starvation path: a steady hold
+      // means the owner's awareness writes are (near-)suppressed. If the owner
+      // wrote a ticcmd every tic we wouldn't be testing the gap-fill at all.
+      expect(ownerTwDuringHold, 'a STEADY hold must suppress the owner ticcmd writes (the starvation precondition)').toBeLessThan(20);
+      // LIVENESS: post-fix the guest keeps the owner's marine advancing despite
+      // zero new ticcmds (gap-fill re-injection). Pre-fix this is ~0 → FAILS.
+      expect(remoteMarineMaxAdvance, 'the held-forward owner marine must keep ADVANCING on the guest screen (Approach A gap-fill; pre-fix it starves)').toBeGreaterThan(MIN_REMOTE_ADVANCE_UNITS);
+      // The game must stay alive (responsive + still in-level) the whole window.
+      expect(worstRoundTrip, 'main thread must stay responsive under steady/idle input').toBeLessThan(ROUND_TRIP_BUDGET_MS);
+      expect(everLeftLevelOwner, 'owner must stay in-level (no hang/desync kicking it out)').toBe(false);
+      expect(everLeftLevelGuest, 'guest must stay in-level (no hang/desync kicking it out)').toBe(false);
+    } finally {
+      writeFileSync(`${OUT_DIR}/steady-state.json`, JSON.stringify({ summary }, null, 2));
+      await Promise.all(peers.map((p) => p.ctx.close().catch(() => {})));
+    }
+  });
+
   // ── CV-PATCHED keyboard-inert guard (Bug 4) ───────────────────────────────
   //
   // A single-context functional check (no MP needed): spawn a CV source + DOOM,
@@ -854,6 +1053,12 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
         .waitForFunction((args) => { const [nid, lvl] = args as [string, number]; const st = (globalThis as unknown as { __doomCards: Record<string, { getState: () => { launched: boolean; gamestate: number } }> }).__doomCards[nid]?.getState(); return !!st && st.launched && st.gamestate === lvl; }, [NODE_ID, GS_LEVEL], { timeout: 60000 })
         .then(() => true).catch(() => false);
       summary.inLevel = inLevel;
+      // The marine position only means "keyboard moved it" if we are ACTUALLY
+      // in a running level. At the title/menu DOOM runs attract-mode DEMO
+      // playback, which moves the player autonomously — measuring keyboard
+      // movement there is a false positive (the old Bug-4 flake). Gate the whole
+      // measurement on GS_LEVEL.
+      expect(inLevel, 'must be IN-LEVEL (GS_LEVEL) before measuring keyboard movement — at the menu, demo playback moves the marine autonomously (false positive)').toBe(true);
 
       // Click the card to LATCH keyboard control (the normal engage gesture).
       await owner.page.locator('[data-testid="doom-card"]').first().click().catch(() => {});
@@ -864,17 +1069,25 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       summary.unpatched_shouldClaimKey = unpatchedState?.shouldClaimKey ?? null;
       expect(unpatchedState?.cvGatePatched, 'no edge yet → not patched').toBe(false);
 
-      const before = await playerPos(owner.page, NODE_ID);
-      await owner.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
-        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
-      });
-      const movedUnpatched = await owner.page
-        .waitForFunction((args) => { const [nid, sx, sy] = args as [string, number | null, number | null]; const p = (globalThis as unknown as { __doomCards?: Record<string, { getPlayerState: () => { x: number; y: number } | null }> }).__doomCards?.[nid]?.getPlayerState(); return !!p && (p.x !== sx || p.y !== sy); }, [NODE_ID, before?.x ?? null, before?.y ?? null], { timeout: 12000 })
-        .then(() => true).catch(() => false);
-      await owner.page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true })));
-      summary.unpatched_keyboardMovedMarine = movedUnpatched;
+      // Keyboard-movement is measured SPECIFICALLY as the displacement during a
+      // held-key window MINUS the displacement during an equal NO-INPUT control
+      // window. The control window captures any background drift (residual
+      // velocity, a lingering demo tick, in-level idle sway) so the metric
+      // isolates the marine's response to the KEY itself. A genuine keyboard
+      // walk is many world units; in-level idle drift is ~0.
+      const keyMoveDelta = async (): Promise<{ control: number; keyed: number; moved: boolean }> => {
+        const control = await displacementOverWindow(owner.page, NODE_ID, null, KEY_WINDOW_MS);
+        const keyed = await displacementOverWindow(owner.page, NODE_ID, 'ArrowUp', KEY_WINDOW_MS);
+        // "moved by the keyboard" = the keyed walk clearly exceeds idle drift.
+        const moved = keyed > control + KEY_MOVE_MIN_UNITS;
+        return { control, keyed, moved };
+      };
+
+      const unpatched = await keyMoveDelta();
+      summary.unpatched_controlDisplacement = unpatched.control;
+      summary.unpatched_keyedDisplacement = unpatched.keyed;
+      summary.unpatched_keyboardMovedMarine = unpatched.moved;
+      expect(unpatched.moved, 'unpatched ⇒ a held key MUST drive the marine (control-vs-keyed differential proves the keyboard is live)').toBe(true);
 
       // ── PATCH a CV gate into the DOOM 'up' movement port ─────────────────
       await setEdge(owner.page, {
@@ -897,19 +1110,18 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       expect(patchedState?.shouldClaimKey, 'patched ⇒ keyboard inert (shouldClaimKey false)').toBe(false);
 
       // ── PATCHED: a keypress must NOT move the marine ─────────────────────
-      const patchedBefore = await playerPos(owner.page, NODE_ID);
       // Re-latch attempt (a click) must NOT re-enable the keyboard while patched.
       await owner.page.locator('[data-testid="doom-card"]').first().click().catch(() => {});
-      await owner.page.evaluate(() => {
-        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
-      });
-      // Give it the same window the unpatched move had; assert it did NOT move.
-      const movedWhilePatched = await owner.page
-        .waitForFunction((args) => { const [nid, sx, sy] = args as [string, number | null, number | null]; const p = (globalThis as unknown as { __doomCards?: Record<string, { getPlayerState: () => { x: number; y: number } | null }> }).__doomCards?.[nid]?.getPlayerState(); return !!p && (p.x !== sx || p.y !== sy); }, [NODE_ID, patchedBefore?.x ?? null, patchedBefore?.y ?? null], { timeout: 4000 })
-        .then(() => true).catch(() => false);
-      await owner.page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true })));
-      summary.patched_keyboardMovedMarine = movedWhilePatched;
-      expect(movedWhilePatched, 'patched ⇒ keyboard keypress must NOT move the marine').toBe(false);
+      // Same control-vs-keyed measurement: while inert, the held key must add NO
+      // displacement beyond idle drift (keyed ≈ control). Using the differential
+      // (not "position changed at all") is what kills the old false positive —
+      // any in-level idle sway / residual momentum shows up in BOTH windows and
+      // cancels out, so only a real keyboard-driven walk trips the assertion.
+      const patched = await keyMoveDelta();
+      summary.patched_controlDisplacement = patched.control;
+      summary.patched_keyedDisplacement = patched.keyed;
+      summary.patched_keyboardMovedMarine = patched.moved;
+      expect(patched.moved, 'patched ⇒ a held key must NOT move the marine beyond idle drift (keyed ≈ control)').toBe(false);
 
       // ── UNPLUG: keyboard re-enables ──────────────────────────────────────
       await setEdge(owner.page, { remove: 'cv-edge' });
