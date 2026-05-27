@@ -294,4 +294,11 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // run on linux CI — WebGL ribbon AA + CRT post differs sub-thresholdly
   // across GPU drivers, so we capture darwin here and defer linux.
   'linux/wavesculpt',
+  // BACKDRAFT (video feedback generator): darwin baseline captured on this
+  // machine via VRT_SCENES (SHAPES sources → frozen feedback tunnel/spiral,
+  // params.freeze=1 holds the accumulator). The spatial-transform feedback
+  // loop + WebGL bilinear sampling differs sub-thresholdly across GPU
+  // drivers, so the linux baseline is pending a `task vrt:update` run on
+  // linux CI; the deterministic darwin capture is the regression gate here.
+  'linux/backdraft',
 ]);

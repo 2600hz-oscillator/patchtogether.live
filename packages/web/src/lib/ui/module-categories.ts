@@ -196,6 +196,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   destructor: { top: 'Video modules', sub: 'Processors' },
   feedback: { top: 'Video modules', sub: 'Processors' },
   vdelay: { top: 'Video modules', sub: 'Processors' },
+  // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
+  // + LIGHTEN/DARKEN key masks). Sits with the other feedback processors.
+  backdraft: { top: 'Video modules', sub: 'Processors' },
   monoglitch: { top: 'Video modules', sub: 'Processors' },
   reshaper: { top: 'Video modules', sub: 'Processors' },
   ruttetra: { top: 'Video modules', sub: 'Processors' },
