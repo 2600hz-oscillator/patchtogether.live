@@ -23,7 +23,14 @@ vi.mock('svelte-clerk/server', () => ({
   buildClerkProps: (auth: { userId: string | null }) => ({ __clerk: { userId: auth.userId } }),
 }));
 
-const { load, sessionCookieLooksAuthed } = await import('./+layout.server');
+const mod = await import('./+layout.server');
+const { sessionCookieLooksAuthed } = mod;
+// The load's inferred return type is a `MaybePromise<void | {...}>` union;
+// our load always returns an object synchronously, so narrow it for the test.
+const load = mod.load as (event: Parameters<typeof mod.load>[0]) => {
+  isAuthed: boolean;
+  __clerk: { userId: string | null };
+};
 
 interface FakeAuth {
   userId: string | null;
@@ -72,7 +79,7 @@ describe('root layout load — isAuthed surfaced for the landing page', () => {
   });
 
   it('still forwards Clerk props for the auth-route ClerkProvider', () => {
-    const data = load(makeEvent({ auth: { userId: 'user_abc' } })) as { __clerk: { userId: string } };
+    const data = load(makeEvent({ auth: { userId: 'user_abc' } }));
     expect(data.__clerk.userId).toBe('user_abc');
   });
 });
