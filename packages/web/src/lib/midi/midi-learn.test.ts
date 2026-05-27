@@ -5,6 +5,7 @@
 // can drive incoming CC messages without a real Web MIDI device.
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import type {
   MidiAccessLike,
   MidiInputLike,
@@ -23,6 +24,10 @@ import {
   __test_setAccess,
   __test_clearBindings,
 } from './midi-learn.svelte';
+import { PatchEngine, type DomainEngine } from '$lib/audio/engine';
+import { attachReconciler } from '$lib/audio/reconciler';
+import { createSnapshotBus } from '$lib/graph/snapshot';
+import type { ModuleNode, Edge } from '$lib/graph/types';
 
 // ---------------- Tiny fake MIDIAccess ----------------
 
@@ -214,5 +219,148 @@ describe('setter lifecycle', () => {
     sendCc(0, 7, 127);
     expect(captured).toBe(-999); // setter was never invoked
     expect(getBinding('m', 'k')).toBeUndefined();
+  });
+
+  it('a remount with a NEW onchange closure dispatches subsequent CCs to the NEW setter', async () => {
+    // Guards the "stale closure" failure mode: after a card remounts, the
+    // setter MUST point at the fresh onchange (bound to the new component
+    // instance's patch-store mutation), not the closure captured during the
+    // original learn. If midi-learn kept the learn-time closure, CCs would
+    // drive a dead/orphaned onchange and the audio + knob would not move.
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+
+    const original: number[] = [];
+    await beginLearn({ moduleId: 'mix', paramId: 'ch1_volume', min: 0, max: 1, onchange: (v) => original.push(v) });
+    sendCc(15, 13, 64); // learn-capture pulse → original closure
+    const afterLearn = original.length;
+
+    // Unmount (onDestroy → unregisterSetter), then remount (onMount →
+    // registerSetter) with a brand-new closure.
+    unregisterSetter('mix', 'ch1_volume');
+    const remounted: number[] = [];
+    registerSetter('mix', 'ch1_volume', { min: 0, max: 1, onchange: (v) => remounted.push(v) });
+
+    sendCc(15, 13, 127);
+    // New closure drives; original stays frozen at its learn-capture count.
+    expect(remounted).toEqual([1]);
+    expect(original.length).toBe(afterLearn);
+  });
+});
+
+// ---------------- Full live-dispatch chain: MIDI CC → set() → reconciler →
+// engine.setParam → engine.readParam (= the card's live()/readLive) ----------
+//
+// The piece the unit tests above can't prove: the MixmstrsCard wires a knob's
+// `onchange` to `set(k)` (writes patch.nodes[id].params[k]) and its `readLive`
+// to `live(k)` (reads engine.readParam(node, k)). These are DIFFERENT stores —
+// patch graph vs. live engine. If a MIDI CC writes the patch store but the
+// engine value never follows, the audio (and the motorized knob, which polls
+// readLive each rAF) would NOT move even though dispatch "fired". This test
+// drives a real reconciler so the patch→engine propagation is exercised, then
+// asserts the engine value the knob reads back equals what the CC wrote.
+
+type PatchStore = { nodes: Record<string, ModuleNode>; edges: Record<string, Edge> };
+
+/** Engine that actually STORES param values (unlike reconciler.test's
+ *  write-only RecordingEngine) so readParam reflects the most recent setParam
+ *  — modelling PatchEngine.readParam → node intrinsic value. */
+class StatefulEngine implements DomainEngine {
+  domain = 'audio' as const;
+  params = new Map<string, number>();
+  setParamCalls: Array<{ id: string; p: string; v: number }> = [];
+  private key(id: string, p: string) { return `${id}:${p}`; }
+  async addNode(n: ModuleNode): Promise<void> {
+    for (const [p, v] of Object.entries(n.params)) {
+      if (typeof v === 'number') this.params.set(this.key(n.id, p), v);
+    }
+  }
+  removeNode(): void { /* no-op */ }
+  addEdge(): void { /* no-op */ }
+  removeEdge(): void { /* no-op */ }
+  setParam(id: string, p: string, v: number): void {
+    this.setParamCalls.push({ id, p, v });
+    this.params.set(this.key(id, p), v);
+  }
+  readParam(id: string, p: string): number | undefined {
+    return this.params.get(this.key(id, p));
+  }
+  read(): unknown { return undefined; }
+  dispose(): void { /* no-op */ }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+describe('MIDI CC → set() → reconciler → live() readback (set/live consistency)', () => {
+  it('a learned CC drives the param AND the engine value the knob reads back', async () => {
+    const NODE_ID = 'mixmstrs-abc';
+    const PARAM = 'ch1_volume';
+
+    // --- Real patch store + reconciler + engine, exactly as the app wires it.
+    const patch = syncedStore<PatchStore>({ nodes: {}, edges: {} });
+    const ydoc = getYjsDoc(patch);
+    ydoc.transact(() => {
+      patch.nodes[NODE_ID] = {
+        id: NODE_ID, type: 'mixmstrs', domain: 'audio',
+        position: { x: 0, y: 0 }, params: { [PARAM]: 0.8 },
+      };
+    });
+    const bus = createSnapshotBus({ patch: patch as never, ydoc });
+    const pe = new PatchEngine();
+    const engine = new StatefulEngine();
+    pe.registerDomain(engine);
+    const handle = attachReconciler(pe, { bus });
+    await flushMicrotasks();
+    await handle.reconcile(); // materialize the node (engine learns params)
+
+    // --- MixmstrsCard helper pattern (set writes patch store; live reads engine).
+    const node = () => patch.nodes[NODE_ID] as unknown as ModuleNode;
+    const set = (k: string) => (v: number) => { const t = patch.nodes[NODE_ID]; if (t) t.params[k] = v; };
+    const live = (k: string) => () => pe.readParam(node(), k);
+    const paramVal = (k: string, fallback: number) => {
+      const v = patch.nodes[NODE_ID]?.params?.[k];
+      return typeof v === 'number' ? v : fallback;
+    };
+
+    // Sanity: before any CC, set/live/paramVal all agree on the seeded value.
+    expect(paramVal(PARAM, -1)).toBe(0.8);
+    expect(live(PARAM)()).toBe(0.8);
+
+    // --- Learn + drive via MIDI, using the card's real onchange (= set()).
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    await beginLearn({ moduleId: NODE_ID, paramId: PARAM, min: 0, max: 1, onchange: set(PARAM) });
+
+    // Learn-capture CC: full value → writes patch store.
+    sendCc(15, 13, 127);
+    expect(getBinding(NODE_ID, PARAM)).toMatchObject({ channel: 15, cc: 13 });
+    // set() wrote the patch store immediately.
+    expect(paramVal(PARAM, -1)).toBe(1);
+    // Propagate patch → engine and confirm live()/readLive sees the SAME value.
+    await flushMicrotasks();
+    await handle.reconcile();
+    expect(live(PARAM)()).toBe(1);
+
+    // --- Subsequent live CC (post-capture) moves param AND engine readback.
+    sendCc(15, 13, 64);
+    const expected64 = ccValueToParamValue(64, 0, 1);
+    expect(paramVal(PARAM, -1)).toBeCloseTo(expected64, 6); // patch store
+    await flushMicrotasks();
+    await handle.reconcile();
+    expect(live(PARAM)()).toBeCloseTo(expected64, 6);        // engine readback (knob)
+    expect(engine.setParamCalls.some((c) => c.id === NODE_ID && c.p === PARAM)).toBe(true);
+
+    // --- One more CC for good measure — chain stays consistent.
+    sendCc(15, 13, 0);
+    expect(paramVal(PARAM, -1)).toBe(0);
+    await flushMicrotasks();
+    await handle.reconcile();
+    expect(live(PARAM)()).toBe(0);
+
+    handle.dispose();
   });
 });
