@@ -48,10 +48,14 @@ describe('doomDef — module def shape', () => {
     }
   });
 
-  it('exposes the run / audioGain user-facing params (no surprises)', () => {
+  it('exposes the audioGain user-facing param (no surprises)', () => {
     const paramIds = doomDef.params.map((p) => p.id);
-    expect(paramIds).toContain('running');
     expect(paramIds).toContain('audioGain');
+  });
+
+  it('has no "running"/pause param (true-lockstep netgame — a local pause would desync)', () => {
+    const paramIds = doomDef.params.map((p) => p.id);
+    expect(paramIds).not.toContain('running');
   });
 
   it('schemaVersion is 1 (first slice)', () => {
