@@ -107,6 +107,18 @@ const MODULES: ModuleSpec[] = [
 for (const m of MODULES) {
   test.describe(`${m.type.toUpperCase()} - hide-controls + free resize`, () => {
     test('hide -> resize -> dblclick restore', async ({ page }) => {
+      // RUTTETRA renders a 320×180 LINE grid (~57k grid points) into its
+      // on-card preview every animation frame — by far the heaviest
+      // per-frame GL work in the suite. On a loaded CI runner that draw loop
+      // starves the main thread, so the multi-step corner-resize drag
+      // (page.mouse.move with {steps:5}, twice) can take several seconds per
+      // move (~3.5s each was observed on shard 8/8), pushing the whole test
+      // past the default 30s budget even though every assertion ultimately
+      // passes. Give the heavy-WebGL cards the same headroom the video/DOOM
+      // specs already grant (picturebox-limits, multi-video, etc.). Cheap
+      // fullscreen-quad cards (MONOGLITCH) finish well under this.
+      test.setTimeout(60_000);
+
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (msg) => {
