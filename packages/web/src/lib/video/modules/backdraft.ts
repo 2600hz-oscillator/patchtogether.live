@@ -5,7 +5,7 @@
 // A "source" image is crossfaded between two video inputs (in_a / in_b)
 // by MIX, then composited with a PROCESSED copy of BACKDRAFT's OWN
 // previous output. The fed-back frame is delayed by a frame-ring tap
-// (DELAY, 0..100ms), colour-processed (LUMA / CHROMA / per-channel R/G/B
+// (DELAY, 0..500ms), colour-processed (LUMA / CHROMA / per-channel R/G/B
 // gain, each -100%..+200%), and scaled per-pixel by two key masks
 // (LIGHTEN boosts the feedback effect where bright, DARKEN reduces it).
 //
@@ -15,12 +15,12 @@
 // past frames — never sampling the texture it's writing this frame (no
 // GL feedback loop). The published surface.texture is the just-written
 // output, so downstream modules see frame N while BACKDRAFT's feedback
-// tap reads frame N-1..N-7. This is the same 1-frame-lag cycle the
+// tap reads frame N-1..N-30. This is the same 1-frame-lag cycle the
 // engine's topo fallback tolerates (id-order on cycles).
 //
 // ── DELAY as a frame ring ─────────────────────────────────────────────
-// We keep a small ring of recent OUTPUT frames (BUFFER_FRAMES). DELAY is
-// a knob in milliseconds (0..100). At ~60fps, 100ms ≈ 6 frames; we size
+// We keep a ring of recent OUTPUT frames (BUFFER_FRAMES). DELAY is
+// a knob in milliseconds (0..500). At ~60fps, 500ms ≈ 30 frames; we size
 // the ring to MAX_DELAY_FRAMES+slop. The tap is NEAREST-frame:
 // frames = round(delayMs / 1000 * 60), clamped to [1, ring-1] (always at
 // least 1 so feedback genuinely lags and we never read the slot we're
@@ -97,11 +97,15 @@ import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
  *  drives one step per rAF (~60fps); we document nearest-frame semantics. */
 export const BACKDRAFT_FPS = 60;
 /** Max DELAY knob value in milliseconds. */
-export const BACKDRAFT_MAX_DELAY_MS = 100;
+export const BACKDRAFT_MAX_DELAY_MS = 500;
 /** Ring depth: enough frames to cover MAX_DELAY_MS at FPS, plus headroom
- *  so the tap (>=1 behind head) never aliases the slot we overwrite. */
+ *  so the tap (>=1 behind head) never aliases the slot we overwrite.
+ *  At 60fps, 500ms = 30 frames; +1 slot so the deepest tap (30) is still
+ *  < ringSize and never aliases the head we're writing. = 31. Each slot is
+ *  a full-res FBO+texture, so this is the VRAM cap: exactly what 500ms
+ *  needs at 60fps, no more (we do not over-allocate beyond 500ms). */
 export const BACKDRAFT_BUFFER_FRAMES =
-  Math.ceil((BACKDRAFT_MAX_DELAY_MS / 1000) * BACKDRAFT_FPS) + 2; // = 8
+  Math.ceil((BACKDRAFT_MAX_DELAY_MS / 1000) * BACKDRAFT_FPS) + 1; // = 31
 /** Upper bound on the per-pixel feedback effect scale after mask combine. */
 export const BACKDRAFT_MAX_EFFECT_SCALE = 4;
 /** FEEDBACK knob ceiling (>1 = runaway trails). */
@@ -211,7 +215,7 @@ void main() {
 export interface BackdraftParams {
   mix: number;       // 0..1
   feedback: number;  // 0..BACKDRAFT_MAX_FEEDBACK
-  delay: number;     // 0..BACKDRAFT_MAX_DELAY_MS (ms)
+  delay: number;     // 0..BACKDRAFT_MAX_DELAY_MS (ms, default 500)
   luma: number;      // -1..+2
   chroma: number;    // -1..+2
   r: number;         // -1..+2

@@ -40,9 +40,17 @@ describe('backdraftDelayFrames — DELAY knob (ms) → nearest ring frame', () =
   });
 
   it('100ms maps to ~6 frames at 60fps and fits the ring', () => {
-    const f = backdraftDelayFrames(BACKDRAFT_MAX_DELAY_MS, BACKDRAFT_BUFFER_FRAMES);
+    const f = backdraftDelayFrames(100, BACKDRAFT_BUFFER_FRAMES);
     expect(f).toBe(6); // round(100/1000*60) = 6
     expect(f).toBeLessThan(BACKDRAFT_BUFFER_FRAMES); // never aliases the head
+  });
+
+  it('max DELAY (500ms) maps to ~30 frames at 60fps and fits the ring', () => {
+    const f = backdraftDelayFrames(BACKDRAFT_MAX_DELAY_MS, BACKDRAFT_BUFFER_FRAMES);
+    expect(f).toBe(30); // round(500/1000*60) = 30
+    // taps the DEEPEST available frame yet stays < ring size (never the head).
+    expect(f).toBe(BACKDRAFT_BUFFER_FRAMES - 1);
+    expect(f).toBeLessThan(BACKDRAFT_BUFFER_FRAMES);
   });
 
   it('clamps to [1, ringSize-1]', () => {
