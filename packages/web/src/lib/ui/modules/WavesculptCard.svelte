@@ -2222,6 +2222,11 @@ void main() {
     { id: 'pos_z',     label: 'H',  cable: 'cv' },
     { id: 'zoom',      label: 'Z',  cable: 'cv' },
     { id: 'rot',       label: 'R',  cable: 'cv' },
+    // BLINK scope-render controls — CV-modulatable like the camera params
+    // (owner intent). Must render a handle so def<->UI parity holds and
+    // patches anchor; see e2e/tests/io-spec-consistency.spec.ts.
+    { id: 'scale',     label: 'Sc', cable: 'cv' },
+    { id: 'wiggle',    label: 'Wg', cable: 'cv' },
     { id: 'alpha_in',  label: 'A',  cable: 'video' },
   ];
   const outputs: PortDescriptor[] = [
