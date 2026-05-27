@@ -94,17 +94,17 @@ void main() {
   outColor = vec4(src.b, src.g, src.r, 1.0);
 }`;
 
-// Parameters: just a master "running" toggle — the card has its own
-// controls (focus / spawn-runtime / host-indicator), and there are no
-// audio-rate knobs to expose. Keep the schema small to keep the
-// module-spec snapshot deterministic.
+// Parameters: an audio-gain knob plus the synthetic CV-gate params. There is
+// no user-facing "pause" — DOOM is a true-lockstep netgame, so a local pause
+// would only desync the shared simulation. The runtime always ticks while it
+// is initialized. The card has its own controls (focus / spawn-runtime /
+// host-indicator). Keep the schema small to keep the module-spec snapshot
+// deterministic.
 interface DoomParams {
-  running: number;     // 0 = paused (don't tick), 1 = run
   audioGain: number;   // 0..2, multiplier applied at the audio bridge (PCM zero-clipped under stereo PCM stub)
 }
 
 const DEFAULTS: DoomParams = {
-  running: 1.0,
   audioGain: 1.0,
 };
 
@@ -227,7 +227,6 @@ export const doomDef: VideoModuleDef = {
     { id: 'audio_r', type: 'audio' },
   ],
   params: [
-    { id: 'running', label: 'Run', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
     { id: 'audioGain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
     // Synthetic params for the CV edge detector — one per gate port.
     // Hidden from the card (the gate inputs render as cv-jacks via the
@@ -470,7 +469,7 @@ export const doomDef: VideoModuleDef = {
         // black screen) until it JOINS and brings up its own runtime. The
         // framebuffer-over-awareness host mirror was REMOVED (relay-OOM driver):
         // we no longer blit a remote peer's frame here.
-        if (params.running > 0.5 && runtime && runtime.isInitialized()) {
+        if (runtime && runtime.isInitialized()) {
           const now = performance.now();
           const msDelta = Math.max(1, Math.min(50, now - lastTicMs));
           lastTicMs = now;

@@ -48,7 +48,7 @@
   import { patch, ydoc } from '$lib/graph/store';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
-  import { doomDef, type DoomHandleExtras } from '$lib/video/modules/doom';
+  import { type DoomHandleExtras } from '$lib/video/modules/doom';
   import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
   import { isCvGatePatched } from '$lib/doom/doom-input-mode';
   import {
@@ -1792,19 +1792,6 @@
     document.removeEventListener('visibilitychange', onVisibilityChange);
   });
 
-  // ---- Param row ----
-  function setParam(paramId: string) {
-    return (v: number): void => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
-  }
-  let running = $derived<number>(
-    node?.params['running'] ?? doomDef.params.find((p) => p.id === 'running')?.defaultValue ?? 1,
-  );
-  function toggleRunning(): void {
-    setParam('running')(running > 0.5 ? 0 : 1);
-  }
 </script>
 
 <!-- role="application" + tabindex="0" + onclick: the card IS an
@@ -1983,13 +1970,6 @@
   {/if}
 
   <div class="controls-row">
-    <button
-      class="run-btn nodrag"
-      onclick={toggleRunning}
-      title="Pause / resume the game loop"
-    >
-      {running > 0.5 ? 'Pause' : 'Run'}
-    </button>
     {#if !isHost}
       <!-- Round 5: a non-host guest ALWAYS sees the Join button, but it is
            DISABLED unless the host is currently running a multiplayer game
@@ -2391,14 +2371,6 @@
     gap: 10px;
     padding: 0 10px 6px;
     flex-wrap: wrap;
-  }
-  .doom-card .run-btn {
-    font-size: 11px;
-    padding: 3px 8px;
-    background: var(--cable-video, #c33);
-    color: white;
-    border: none;
-    cursor: pointer;
   }
   .doom-card .newgame {
     padding: 0 10px 6px;

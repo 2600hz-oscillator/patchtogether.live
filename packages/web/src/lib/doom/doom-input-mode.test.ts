@@ -35,7 +35,7 @@ describe('isCvGatePatched — keyboard inert iff a cv-gate jack is patched', () 
   });
 
   it('an edge into a non-cv-gate port (e.g. the audio/video ports) does NOT patch', () => {
-    const edges = [edge('doom-1', 'out'), edge('doom-1', 'audio_l'), edge('doom-1', 'running')];
+    const edges = [edge('doom-1', 'out'), edge('doom-1', 'audio_l'), edge('doom-1', 'audio_r')];
     expect(isCvGatePatched(edges, 'doom-1')).toBe(false);
   });
 
