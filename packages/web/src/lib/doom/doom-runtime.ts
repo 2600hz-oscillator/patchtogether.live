@@ -183,6 +183,26 @@ export class DoomRuntime {
   private resX = 640;
   private resY = 400;
 
+  /**
+   * Hard keyboard enforcement gate (Bug 4). The card-level `shouldClaimKey()`
+   * predicate already short-circuits the window keydown/keyup LISTENER, but
+   * that gate lives one layer up and a future caller (or an already-in-flight
+   * keypress, an OS-swallowed keyup, an autorepeat that beat the patch) can
+   * still reach `setKeyForKeyboardCode`. When a CV gate is patched the keyboard
+   * must be FULLY inert at the runtime boundary — so we gate keyboard-origin
+   * keys HERE too, and the moment we go inert we release every keyboard-origin
+   * key we have asserted (otherwise a held movement key stays down in
+   * DG_GetKey's gamekeydown[] and the marine keeps walking with no key pressed).
+   *
+   * CV-gate input (setKey / setKeyForCvGate) is NOT gated — patched ⇒ CV owns
+   * movement, so its key writes must always reach the engine.
+   */
+  private keyboardInert = false;
+  /** Doomkeys currently asserted via the KEYBOARD path (setKeyForKeyboardCode).
+   *  Tracked separately from CV-origin keys so going inert releases ONLY the
+   *  keyboard's keys, never a live CV gate's. */
+  private heldKeyboardKeys = new Set<number>();
+
   constructor(module: DoomModule) {
     this.mod = module;
   }
@@ -248,10 +268,43 @@ export class DoomRuntime {
     );
   }
 
-  /** Convenience: translate a KeyboardEvent.code into a doomkey + push. */
+  /**
+   * Set / clear the hard keyboard-inert gate. Called by the card whenever its
+   * CV-gate-patched state changes: patched ⇒ inert(true), unpatched ⇒
+   * inert(false). Going inert RELEASES every keyboard-origin key still held so
+   * no movement/fire stays latched in the engine; the CV path is untouched.
+   * Idempotent.
+   */
+  setKeyboardInert(inert: boolean): void {
+    if (this.keyboardInert === inert) return;
+    this.keyboardInert = inert;
+    if (inert) this.releaseHeldKeyboardKeys();
+  }
+
+  /** Whether keyboard-origin input is currently gated off. */
+  isKeyboardInert(): boolean {
+    return this.keyboardInert;
+  }
+
+  /** Synthesise key-up for every keyboard-origin key still asserted. Used when
+   *  the keyboard goes inert (CV-patch) so nothing sticks down in gamekeydown[]. */
+  releaseHeldKeyboardKeys(): void {
+    if (this.heldKeyboardKeys.size === 0) return;
+    for (const key of this.heldKeyboardKeys) this.setKey(key, false);
+    this.heldKeyboardKeys.clear();
+  }
+
+  /** Convenience: translate a KeyboardEvent.code into a doomkey + push.
+   *  Hard-gated: while keyboard-inert (a CV gate is patched) keyboard input is
+   *  dropped at the runtime boundary so it can never reach the engine, even if
+   *  the upper-layer claim gate is bypassed. Returns false (unhandled) when
+   *  inert so callers don't track a key that was never asserted. */
   setKeyForKeyboardCode(code: string, pressed: boolean): boolean {
     const key = KEY_FOR_KEYBOARD_CODE[code];
     if (key === undefined) return false;
+    if (this.keyboardInert) return false;
+    if (pressed) this.heldKeyboardKeys.add(key);
+    else this.heldKeyboardKeys.delete(key);
     this.setKey(key, pressed);
     return true;
   }

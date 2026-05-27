@@ -49,6 +49,7 @@
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import { decideHostRole } from './doom-host-authority';
 import { electionAwarenessSignature } from './doom-awareness-signature';
+import { bumpTiccmdWrite } from './doom-instrumentation';
 
 // ────────────────────────────────────────────────────────────────────────
 //  Constants
@@ -1061,6 +1062,11 @@ export class DoomNetcode {
     };
     this.lastSentTiccmd = { slot, ...cmd };
     aw.setLocalStateField(ticcmdFieldFor(this.moduleId), env);
+    // Instrument the REAL awareness-write rate (post-suppression). The probe
+    // samples this to establish whether per-tic ticcmds actually flood at the
+    // tic rate or whether the only-on-change suppression keeps the write rate
+    // far below it.
+    bumpTiccmdWrite(this.moduleId);
   }
 
   /** Scan awareness for OTHER joined peers' ticcmd envelopes + fire

@@ -51,6 +51,11 @@
   import { doomDef, type DoomHandleExtras } from '$lib/video/modules/doom';
   import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
   import { isCvGatePatched } from '$lib/doom/doom-input-mode';
+  import {
+    bumpAwarenessUpdate,
+    bumpElectionRecompute,
+    readCounters,
+  } from '$lib/doom/doom-instrumentation';
   import { HeldKeyTracker } from '$lib/doom/held-keys';
   import {
     encodeKey,
@@ -110,9 +115,11 @@
   // Storm-throttle instrumentation (the multiplayer-hang guard). The probe
   // reads these via the debug hook to assert that the EXPENSIVE election/roster
   // recompute stays bounded per-second even while awareness updates flood in at
-  // the per-tic rate. Plain (non-$state) counters — they're never rendered.
-  let awarenessUpdateCount = 0;   // total awareness `update` events seen
-  let electionRecomputeCount = 0; // times the heavy election/roster pass ran
+  // the per-tic rate. Kept in MODULE scope (doom-instrumentation, keyed by node
+  // id) rather than as per-instance closure vars so they're MONOTONIC across a
+  // card remount — a hot-join relaunch (or SvelteFlow node remount) used to
+  // reset closure counters to 0 mid-run, which made the probe's
+  // (end - baseline) aggregate go NEGATIVE.
   // ---- Slice 3: per-peer instance model + roster ----
   //
   // ONE shared DOOM node lives on the canvas (the host spawned it; every
@@ -996,6 +1003,15 @@
       kbLatched = false;
       releaseHeldKeys();
     }
+    // Bug 4 HARD enforcement: gate the keyboard at the RUNTIME boundary, not
+    // just the window listener. `shouldClaimKey()` short-circuits the JS
+    // keydown/keyup capture, but the runtime is shared with the CV-gate path
+    // and an in-flight / OS-swallowed / autorepeat keypress (or any future
+    // caller) could still reach `setKeyForKeyboardCode`. Driving the runtime's
+    // keyboard-inert flag makes the keyboard truly inert while patched (and
+    // releases any keyboard-origin key still asserted in DOOM's gamekeydown[]
+    // so the marine can't keep walking), while the CV path stays live.
+    getExtras()?.setKeyboardInert(cvGatePatched);
   });
 
   function shouldClaimKey(): boolean {
@@ -1302,7 +1318,7 @@
       // Slice 5: refresh identity (username + slot color tint) on presence
       // churn — a peer's displayName may arrive after the roster slot.
       syncIdentity();
-      electionRecomputeCount++;
+      bumpElectionRecompute(id);
     };
     const update = (): void => {
       // Always run the cheap edge-triggered spectator-key relay.
@@ -1313,7 +1329,7 @@
         aw!.getStates() as Map<number, Record<string, unknown> | undefined>,
         id,
       );
-      awarenessUpdateCount++;
+      bumpAwarenessUpdate(id);
       if (sig === lastElectionSig) return;
       lastElectionSig = sig;
       runElectionRecompute();
@@ -1575,8 +1591,11 @@
         // updates vs. how many actually triggered the expensive election/roster
         // recompute. The probe samples these per-second to prove the heavy work
         // stays bounded under the per-tic ticcmd flood.
-        awarenessUpdateCount,
-        electionRecomputeCount,
+        awarenessUpdateCount: readCounters(id).awarenessUpdateCount,
+        electionRecomputeCount: readCounters(id).electionRecomputeCount,
+        // Real awareness-write rate driver (post-suppression). The probe
+        // samples this to measure the genuine per-tic ticcmd write rate.
+        ticcmdWriteCount: readCounters(id).ticcmdWriteCount,
         // CV-gate input mode (Bug 4 guard): true => keyboard is inert (CV owns
         // movement). The probe asserts this flips when a CV gate is patched.
         cvGatePatched,

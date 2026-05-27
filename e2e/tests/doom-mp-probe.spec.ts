@@ -155,6 +155,8 @@ interface CardState {
   // Storm-throttle counters (multiplayer-hang guard).
   awarenessUpdateCount?: number;
   electionRecomputeCount?: number;
+  // The REAL awareness-write rate driver (post only-on-change suppression).
+  ticcmdWriteCount?: number;
   // CV-gate input mode (Bug 4 guard).
   cvGatePatched?: boolean;
   shouldClaimKey?: boolean;
@@ -215,11 +217,12 @@ async function fbSig(page: Page): Promise<number> {
 async function counters(
   page: Page,
   id: string,
-): Promise<{ awareness: number; election: number }> {
+): Promise<{ awareness: number; election: number; ticcmdWrites: number }> {
   const st = await getState(page, id);
   return {
     awareness: st?.awarenessUpdateCount ?? 0,
     election: st?.electionRecomputeCount ?? 0,
+    ticcmdWrites: st?.ticcmdWriteCount ?? 0,
   };
 }
 
@@ -674,46 +677,79 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       // identity convergence); the storm produced dozens-to-70/sec.
       const MAX_ELECTION_PER_SEC = 15;
 
-      const drive = async (page: Page, turn: number) => {
-        await page.evaluate((t) => {
+      // CONTINUOUS input (not bursts). A real player HOLDS movement + fire and
+      // keeps TURNING for the whole window. We press movement + fire ONCE
+      // (keydown, no keyup until the very end) so the keys stay HELD, then
+      // every iteration we toggle the turn direction (Left/Right) so the
+      // ticcmd's angleturn keeps CHANGING — that is what actually defeats the
+      // netcode's only-on-change suppression and drives the per-tic awareness
+      // WRITE. (A perfectly steady hold produces a CONSTANT ticcmd → suppressed
+      // → near-zero writes; see ticcmdWriteCount instrumentation + the REPORT.)
+      const beginHold = async (page: Page) => {
+        await page.evaluate(() => {
           const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
           c?.focus();
-          // Alternate movement + fire so the ticcmd ACTUALLY changes each
-          // sample (a constant ticcmd is suppressed at the source) — this is
-          // what generates the awareness storm we're guarding against.
-          const fwd = t % 2 === 0 ? 'ArrowUp' : 'ArrowDown';
-          window.dispatchEvent(new KeyboardEvent('keydown', { code: fwd, bubbles: true }));
+          // Hold forward + fire for the entire window.
+          window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
           window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ControlLeft', bubbles: true }));
-          window.dispatchEvent(new KeyboardEvent('keyup', { code: t % 2 === 0 ? 'ArrowDown' : 'ArrowUp', bubbles: true }));
+        });
+      };
+      // Per-iteration: keep the marine TURNING so angleturn changes every tic
+      // (release the previous turn key, press the opposite) — held movement +
+      // fire continue underneath.
+      const driveTurn = async (page: Page, turn: number) => {
+        await page.evaluate((t) => {
+          const prev = t % 2 === 0 ? 'ArrowRight' : 'ArrowLeft';
+          const next = t % 2 === 0 ? 'ArrowLeft' : 'ArrowRight';
+          window.dispatchEvent(new KeyboardEvent('keyup', { code: prev, bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent('keydown', { code: next, bubbles: true }));
         }, turn);
       };
+
+      await beginHold(owner.page);
+      await beginHold(guest.page);
 
       const ownerStart = await counters(owner.page, NODE_ID);
       const guestStart = await counters(guest.page, NODE_ID);
       let worstRoundTrip = 0;
       let worstElectionPerSec = 0;
+      // Aggregate the flood by SUMMING per-second deltas, each clamped to ≥0.
+      // This is immune to a mid-run counter reset (a card remount): the
+      // pre-fix (end - baseline) aggregate went NEGATIVE when the counter reset
+      // below the baseline. The underlying counters are now also monotonic
+      // (module-scoped in doom-instrumentation), so the two agree — but the
+      // clamped-delta sum is the robust, non-negative measure either way.
+      let ownerAwSum = 0, guestAwSum = 0, ownerElecSum = 0, guestElecSum = 0;
+      let ownerTwSum = 0, guestTwSum = 0;
       const samples: Array<Record<string, number>> = [];
       const t0 = Date.now();
       let turn = 0;
       let prevOwner = ownerStart;
       let prevGuest = guestStart;
       while (Date.now() - t0 < DURATION_MS) {
-        await drive(owner.page, turn);
-        await drive(guest.page, turn);
+        await driveTurn(owner.page, turn);
+        await driveTurn(guest.page, turn);
         turn++;
         // Round-trip latency on BOTH pages (the responsiveness signal).
         const oRt = await evalRoundTripMs(owner.page);
         const gRt = await evalRoundTripMs(guest.page);
         worstRoundTrip = Math.max(worstRoundTrip, oRt, gRt);
-        // Per-second election-recompute delta on both pages (the bound signal).
+        // Per-second deltas on both pages. Clamp to ≥0 so a counter reset
+        // (remount) contributes 0 for that second rather than a negative.
         const oNow = await counters(owner.page, NODE_ID);
         const gNow = await counters(guest.page, NODE_ID);
-        const oElecPerSec = oNow.election - prevOwner.election;
-        const gElecPerSec = gNow.election - prevGuest.election;
-        const oAwPerSec = oNow.awareness - prevOwner.awareness;
-        const gAwPerSec = gNow.awareness - prevGuest.awareness;
+        const d = (now: number, prev: number) => Math.max(0, now - prev);
+        const oElecPerSec = d(oNow.election, prevOwner.election);
+        const gElecPerSec = d(gNow.election, prevGuest.election);
+        const oAwPerSec = d(oNow.awareness, prevOwner.awareness);
+        const gAwPerSec = d(gNow.awareness, prevGuest.awareness);
+        const oTwPerSec = d(oNow.ticcmdWrites, prevOwner.ticcmdWrites);
+        const gTwPerSec = d(gNow.ticcmdWrites, prevGuest.ticcmdWrites);
+        ownerAwSum += oAwPerSec; guestAwSum += gAwPerSec;
+        ownerElecSum += oElecPerSec; guestElecSum += gElecPerSec;
+        ownerTwSum += oTwPerSec; guestTwSum += gTwPerSec;
         worstElectionPerSec = Math.max(worstElectionPerSec, oElecPerSec, gElecPerSec);
-        samples.push({ tSec: Math.round((Date.now() - t0) / 1000), oRt, gRt, oElecPerSec, gElecPerSec, oAwPerSec, gAwPerSec });
+        samples.push({ tSec: Math.round((Date.now() - t0) / 1000), oRt, gRt, oElecPerSec, gElecPerSec, oAwPerSec, gAwPerSec, oTwPerSec, gTwPerSec });
         prevOwner = oNow;
         prevGuest = gNow;
         // Hold the sample cadence (each iteration drives ~1s of play).
@@ -721,32 +757,40 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
         const nextTick = Math.ceil(elapsed / SAMPLE_MS) * SAMPLE_MS;
         await owner.page.waitForTimeout(Math.max(0, nextTick - elapsed));
       }
-      // Release keys.
+      // Release everything held.
       for (const p of [owner.page, guest.page]) {
         await p.evaluate(() => {
-          for (const code of ['ArrowUp', 'ArrowDown', 'ControlLeft']) {
+          for (const code of ['ArrowUp', 'ArrowLeft', 'ArrowRight', 'ControlLeft']) {
             window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }));
           }
         }).catch(() => {});
       }
 
-      const ownerEnd = await counters(owner.page, NODE_ID);
-      const guestEnd = await counters(guest.page, NODE_ID);
       summary.samples = samples;
-      summary.ownerAwarenessUpdates = ownerEnd.awareness - ownerStart.awareness;
-      summary.ownerElectionRecomputes = ownerEnd.election - ownerStart.election;
-      summary.guestAwarenessUpdates = guestEnd.awareness - guestStart.awareness;
-      summary.guestElectionRecomputes = guestEnd.election - guestStart.election;
+      // Aggregates from the clamped per-second sums (non-negative, monotonic).
+      summary.ownerAwarenessUpdates = ownerAwSum;
+      summary.ownerElectionRecomputes = ownerElecSum;
+      summary.guestAwarenessUpdates = guestAwSum;
+      summary.guestElectionRecomputes = guestElecSum;
+      // The REAL awareness-write rate (post only-on-change suppression).
+      summary.ownerTiccmdWrites = ownerTwSum;
+      summary.guestTiccmdWrites = guestTwSum;
+      const totalTw = ownerTwSum + guestTwSum;
+      const elapsedSec = (Date.now() - t0) / 1000;
+      summary.measuredTiccmdWritesPerSec = elapsedSec > 0 ? totalTw / elapsedSec : 0;
       summary.worstRoundTripMs = worstRoundTrip;
       summary.worstElectionPerSec = worstElectionPerSec;
       // eslint-disable-next-line no-console
-      console.log(`[probe] sustained-play: worstRoundTrip=${worstRoundTrip}ms worstElectionPerSec=${worstElectionPerSec} ownerAw=${summary.ownerAwarenessUpdates} ownerElec=${summary.ownerElectionRecomputes} guestAw=${summary.guestAwarenessUpdates} guestElec=${summary.guestElectionRecomputes}`);
+      console.log(`[probe] sustained-play: worstRoundTrip=${worstRoundTrip}ms worstElectionPerSec=${worstElectionPerSec} ownerAw=${summary.ownerAwarenessUpdates} ownerElec=${summary.ownerElectionRecomputes} guestAw=${summary.guestAwarenessUpdates} guestElec=${summary.guestElectionRecomputes} ticcmdWrites/sec=${(summary.measuredTiccmdWritesPerSec as number).toFixed(1)} (owner=${ownerTwSum} guest=${guestTwSum})`);
 
       // PROOF the storm is throttled: there WAS a real awareness flood (so the
       // scenario actually exercises the storm path) yet the heavy election work
       // stayed a small fraction of it, and the page stayed responsive.
       const totalAw = (summary.ownerAwarenessUpdates as number) + (summary.guestAwarenessUpdates as number);
       const totalElec = (summary.ownerElectionRecomputes as number) + (summary.guestElectionRecomputes as number);
+      // The aggregates must be non-negative now (the reset/baseline bug fix).
+      expect(totalAw, 'aggregate awareness updates must be non-negative').toBeGreaterThanOrEqual(0);
+      expect(totalElec, 'aggregate election recomputes must be non-negative').toBeGreaterThanOrEqual(0);
       expect(totalAw, 'the scenario must actually generate an awareness flood').toBeGreaterThan(50);
       expect(worstRoundTrip, 'main thread must stay responsive under sustained play').toBeLessThan(ROUND_TRIP_BUDGET_MS);
       expect(worstElectionPerSec, 'election/roster recompute per second must stay bounded under the ticcmd flood').toBeLessThanOrEqual(MAX_ELECTION_PER_SEC);

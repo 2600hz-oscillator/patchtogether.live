@@ -181,4 +181,23 @@ describe('doomDef.factory — audio bridge contract', () => {
     expect(splitter.connect).toHaveBeenNthCalledWith(1, lBefore!.node, 0);
     expect(splitter.connect).toHaveBeenNthCalledWith(2, rBefore!.node, 1);
   });
+
+  it('exposes setKeyboardInert (Bug 4 hard gate) — callable before WASM loads', () => {
+    const gl = makeFakeGl();
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: undefined,
+    };
+    const handle = doomDef.factory(ctx, { id: 'doom-kb', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never);
+    const extras = handle.read?.('extras') as { setKeyboardInert?: (v: boolean) => void } | undefined;
+    expect(typeof extras?.setKeyboardInert).toBe('function');
+    // No runtime yet (WASM not built/loaded) — caching the inert state must
+    // NOT throw; it is re-applied to the runtime once it comes up.
+    expect(() => extras!.setKeyboardInert!(true)).not.toThrow();
+    expect(() => extras!.setKeyboardInert!(false)).not.toThrow();
+  });
 });
