@@ -74,7 +74,7 @@ export function canAddModule(type: string, isRackOwner: boolean | undefined): bo
 /** The host's DOOM session state that a guest reads to enable/disable Join.
  *  Surfaced as ONE Yjs-synced node field (node.data.mpLive) the host writes
  *  authoritatively, so guests never have to infer liveness from racy
- *  awareness churn (frame broadcasts, host election, etc). */
+ *  awareness churn (host election, ticcmd feed, etc). */
 export interface MpLiveInputs {
   /** Host's explicit session mode (node.data.mpMode). */
   mpMode: 'single' | 'multi' | undefined;

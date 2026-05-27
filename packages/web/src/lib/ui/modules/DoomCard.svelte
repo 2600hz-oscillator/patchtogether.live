@@ -24,15 +24,17 @@
   //
   // Multiplayer (Yjs awareness): the user who spawned the module is the
   // "host" (lex-smallest current rack-member id on host departure;
-  // see doom-presence.ts → pickHost). The host runs the WASM, broadcasts
-  // a framebuffer envelope at ~10 Hz, and listens for non-self key
-  // envelopes (relayed from spectators) → pushes them into the runtime's
-  // key queue. Spectators don't load the WASM — they just decode + render
-  // the host's framebuffer + relay their own keystrokes back.
+  // see doom-presence.ts → pickHost). Each JOINED player runs its OWN WASM
+  // and renders its own POV. An unjoined spectator runs no WASM — its surface
+  // stays black (the DOOM attract screen) until it JOINS — and relays its own
+  // keystrokes to the host over a tiny key envelope.
   //
-  // The runtime + framebuffer broadcast layer is intentionally a thin
-  // wrapper around the doom-presence.ts encode/decode helpers — those
-  // helpers are exhaustively unit-tested and the card just plumbs them.
+  // NO FRAMEBUFFER MIRROR (relay-OOM fix): the host used to base64 its ~1.4 MB
+  // framebuffer into a Yjs awareness field at ~10 Hz so spectators could watch
+  // the host's screen. The Hocuspocus relay holds + rebroadcasts awareness in
+  // process memory, so that firehose OOM-killed it (exit 137), wiping shared
+  // state. The whole framebuffer-over-awareness path was removed; awareness now
+  // carries only tiny fields (key envelopes, host claim, join-request).
   //
   // Sound: stereo audio outputs (audio_l / audio_r) are wired through the
   // new video → audio cross-domain bridge (PR-A) but stay silent in v1
@@ -53,9 +55,6 @@
   import {
     encodeKey,
     collectIncomingKeyPushes,
-    encodeFrame,
-    decodeFrame,
-    decodeFrameBuffer,
     type RelayCursor,
   } from '$lib/doom/doom-presence';
   import { decideHostRole } from '$lib/doom/doom-host-authority';
@@ -70,7 +69,6 @@
     assignSlots,
     promotePending,
     pruneRosterState,
-    hasUnjoinedSpectator as rosterHasUnjoinedSpectator,
     type DoomRoster,
     type DoomRosterState,
   } from '$lib/doom/doom-roster';
@@ -443,10 +441,6 @@
     netcode.broadcastLocalTiccmd(mySlot, cmd);
   }
 
-  /** Last remote framebuffer received via awareness — spectator path. The
-   *  card-side rAF tick prefers this over `extras.snapshotFramebuffer()`
-   *  (which is null on spectator pages because they never load WASM). */
-  let lastRemoteFrame: Uint8Array | null = null;
   /** Local user id used for host election. Resolved lazily from the
    *  provider's awareness `user.id` field (set by /r/[id]'s presence
    *  init OR by tests calling __setAwarenessUser). Falls back to a
@@ -546,26 +540,10 @@
   // Spectator/pending label + badge (empty for an active player).
   let specLabel = $derived<string>(spectatorLabel(viewerStatus, myPendingSlot));
   let specBadge = $derived<string>(spectatorBadge(viewerStatus, myPendingSlot));
-  // Slice 6: a peer that has no ACTIVE slot is spectating — it renders the
-  // host's framebuffer mirror rather than its own WASM. This covers BOTH the
-  // pure spectator (no slot, no loaded WASM) AND the pending late joiner (WASM
-  // loaded but its launched netgame hasn't started yet, so its own
-  // snapshotFramebuffer would show an idle demo screen — we must show the
-  // running game instead). Only an active, launched player renders its own POV.
-  let isSpectating = $derived<boolean>(mySlot === null && memberIds.length > 1);
-
-  // Push the spectator/player status down to the video module so it knows
-  // whether to render the host mirror (spectator) or tick + render its OWN
-  // real-time sim (active player). Critically, this runs on EVERY transition:
-  // a peer that spectated (received host frames) and then JOINED must flip
-  // back to its own sim — otherwise the module stays pinned to the slow
-  // ~10 Hz host mirror (the "player 2 only sees player 1's view, staggeringly
-  // slow" bug). $effect re-runs whenever isSpectating changes.
-  $effect(() => {
-    const spectating = isSpectating;
-    const extras = getExtras();
-    extras?.setSpectating(spectating);
-  });
+  // A peer with no ACTIVE slot is an unjoined spectator: it never loaded WASM,
+  // so its preview canvas stays black (the DOOM attract screen) until it JOINS
+  // and brings up its own runtime + POV. There is no host-framebuffer mirror to
+  // render anymore (relay-OOM fix) — a spectator simply shows nothing.
 
   function syncIdentity(): void {
     myUsername = resolveUsername(resolveLocalUserId());
@@ -902,18 +880,6 @@
     }
   }
 
-  /** Does any CURRENT rack member need the host's framebuffer mirror? A member
-   *  needs it iff it is an UNJOINED spectator — it has neither an active slot
-   *  (it plays its own WASM) nor a pending slot (a pending late joiner also
-   *  runs its own WASM, idling until promoted). Self (the host) is always a
-   *  player, so it never counts. This gates the ~10 Hz framebuffer broadcast so
-   *  a fully-seated game (e.g. 2-player coop) sends none — the relay-OOM /
-   *  freeze fix. Reads the combined roster off the shared node so it reflects
-   *  the latest assignment, not a possibly-stale reactive mirror. */
-  function hasUnjoinedSpectator(): boolean {
-    return rosterHasUnjoinedSpectator(readNodeRosterState(), memberIds, resolveLocalUserId());
-  }
-
   // Keep local roster mirror + mySlot in sync with the shared node, and
   // tear down / spin up our netcode as our player status changes.
   function syncRosterState(): void {
@@ -1210,48 +1176,14 @@
   }
 
   // ---- Awareness wiring ----
-  let frameBroadcastInterval: ReturnType<typeof setInterval> | null = null;
   let awarenessOff: (() => void) | null = null;
   // Edge-trigger cursor for the host-side key relay: last key-envelope ts
   // relayed per source clientID. Without this, the host re-pushes a remote
-  // client's still-present key field on every awareness update (incl. its
-  // own 10 Hz frame broadcast) — a held/stale DOWNARROW then reads as the
-  // player being shoved backward continuously with no key pressed. See
+  // client's still-present key field on every awareness update (host election /
+  // cursor / presence churn) — a held/stale DOWNARROW then reads as the player
+  // being shoved backward continuously with no key pressed. See
   // doom-presence.ts → collectIncomingKeyPushes.
   const keyRelayCursor: RelayCursor = new Map();
-  /** Last frame envelope ts we decoded — guards against re-decoding the
-   *  same payload on every rAF tick (the base64 → bytes hop is ~5 ms). */
-  let lastDecodedFrameTs = 0;
-  /** Whether our awareness state currently carries a frame field. Lets us
-   *  clear it exactly once when we stop broadcasting (no spectators), instead
-   *  of writing null every 100 ms (which is itself awareness churn). */
-  let frameFieldSet = false;
-  function clearFrameFieldIfSet(): void {
-    if (!frameFieldSet) return;
-    frameFieldSet = false;
-    const provider = providerCtx.get();
-    provider?.awareness?.setLocalStateField(`doom:${id}:frame`, null);
-  }
-
-  function pollLatestRemoteFrame(): void {
-    const provider = providerCtx.get();
-    const aw = provider?.awareness;
-    if (!aw) return;
-    let newest: { ts: number; raw: unknown } | null = null;
-    aw.getStates().forEach((s) => {
-      const raw = (s as Record<string, unknown>)[`doom:${id}:frame`];
-      const ts = (raw as { ts?: number } | null)?.ts;
-      if (typeof ts !== 'number') return;
-      if (!newest || ts > newest.ts) newest = { ts, raw };
-    });
-    if (!newest) return;
-    const newestTs = (newest as { ts: number }).ts;
-    if (newestTs <= lastDecodedFrameTs) return;
-    const env = decodeFrame((newest as { raw: unknown }).raw);
-    if (!env || env.moduleId !== id) return;
-    lastRemoteFrame = decodeFrameBuffer(env);
-    lastDecodedFrameTs = newestTs;
-  }
 
   function attachAwareness(): void {
     const provider = providerCtx.get();
@@ -1328,32 +1260,9 @@
       for (const p of pushes) extras.pushDoomKey(p.doomKey, p.pressed);
     }
 
-    function onIncomingFrame(): void {
-      if (isHost) return;
-      // Slice 3: a JOINED player runs its own WASM + renders its own POV,
-      // so it must NOT overwrite its framebuffer with the host's mirror.
-      // Only unjoined spectators consume the remote-frame path.
-      if (mySlot !== null) return;
-      const states = aw!.getStates();
-      states.forEach((s) => {
-        const raw = (s as Record<string, unknown>)[`doom:${id}:frame`];
-        const env = decodeFrame(raw);
-        if (!env || env.moduleId !== id) return;
-        const buf = decodeFrameBuffer(env);
-        // Cache for the card-side render loop (spectator has no runtime,
-        // so extras.snapshotFramebuffer() returns null; we draw from this).
-        lastRemoteFrame = buf;
-        // Also push into the engine for the GL surface path (videoOut
-        // mirror, etc.).
-        const extras = getExtras();
-        if (extras) extras.pushRemoteFramebuffer(buf);
-      });
-    }
-
     const update = (): void => {
       recomputeHost();
       onIncomingKey();
-      onIncomingFrame();
       // Slice 3: the host prunes roster entries for departed members
       // (leave-by-disconnect).
       reconcileRosterAsArbiter();
@@ -1381,69 +1290,19 @@
     // Slice 5: initial identity (username + slot color).
     syncIdentity();
 
-    // Host: broadcast a framebuffer ~10 Hz — but ONLY when an actual unjoined
-    // spectator needs it.
-    //
-    // FREEZE / RELAY-OOM FIX: the framebuffer is ~1 MB raw → ~1.37 MB base64,
-    // and at 10 Hz that is ~13.7 MB/s pushed into a single sticky awareness
-    // field. Awareness state is fanned to every connected peer through the one
-    // long-lived Hocuspocus relay process, so an unconditional host broadcast
-    // hammers the relay at >13 MB/s → it gets OOM-killed (confirmed in
-    // `fly logs -a patchtogether-server-dev`: repeated
-    // "Out of memory: Killed process … (node) total-vm:11.8 GB"). When the
-    // relay reboots, every peer's Yjs sync stalls → the gamestate AND the whole
-    // rack freeze, and any unflushed doc edit (e.g. the just-spawned DOOM node)
-    // is lost when the in-memory doc resets to the last persisted snapshot →
-    // the "DOOM module gone after re-enter" symptom.
-    //
-    // In the per-peer-WASM model EVERY joined player renders its OWN DOOM, so
-    // the mirror is only needed for a peer that is NOT a player (a pure unjoined
-    // spectator with no active AND no pending slot — a pending late joiner runs
-    // its own WASM too). So we broadcast only when such a spectator exists.
-    // 2-player coop (host + 1 joined guest) therefore sends ZERO framebuffer
-    // traffic — relieving the relay AND the awareness-churn that was dropping
-    // keyboard capture.
-    frameBroadcastInterval = setInterval(() => {
-      if (!isHost) {
-        clearFrameFieldIfSet();
-        return;
-      }
-      if (!hasUnjoinedSpectator()) {
-        // No spectator needs the mirror. Clear any frame we previously
-        // broadcast so the ~1.37 MB base64 payload doesn't linger in our
-        // awareness state (buffered on the relay), then stop sending.
-        clearFrameFieldIfSet();
-        return;
-      }
-      const extras = getExtras();
-      if (!extras) return;
-      const snap = extras.snapshotFramebuffer();
-      if (!snap) return;
-      try {
-        const env = encodeFrame({
-          moduleId: id,
-          hostUserId: resolveLocalUserId(),
-          width: 640,
-          height: 400,
-          framebuffer: snap,
-          ts: Date.now(),
-        });
-        aw.setLocalStateField(`doom:${id}:frame`, env);
-        frameFieldSet = true;
-      } catch {
-        // Encoding can throw on buffer mismatch — non-fatal, skip frame.
-      }
-    }, 100);
+    // NO framebuffer broadcast. The host used to push its ~1.4 MB framebuffer
+    // into a `doom:<id>:frame` awareness field at ~10 Hz so unjoined spectators
+    // could mirror its screen; the Hocuspocus relay fans + buffers awareness in
+    // process memory, so that ~13.7 MB/s firehose OOM-killed the relay (exit
+    // 137) → rack freeze + lost-node-on-rejoin. The path is removed: an unjoined
+    // spectator shows the DOOM attract/black screen until it JOINS and runs its
+    // own per-peer WASM. Awareness now carries only tiny fields.
   }
 
   function detachAwareness(): void {
     if (awarenessOff) {
       try { awarenessOff(); } catch { /* */ }
       awarenessOff = null;
-    }
-    if (frameBroadcastInterval !== null) {
-      clearInterval(frameBroadcastInterval);
-      frameBroadcastInterval = null;
     }
   }
 
@@ -1484,23 +1343,15 @@
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {
-          // Active player: pull straight from its own live runtime.
-          // Spectator / pending late joiner (isSpectating): render the host's
-          // framebuffer mirror — a pure spectator has no runtime, and a pending
-          // joiner's runtime is idle (not launched), so in BOTH cases we prefer
-          // the remote frame over the local WASM snapshot.
+          // Pull straight from THIS peer's own live runtime. A joined player
+          // (or lone host) has a runtime → its own POV. A pure unjoined
+          // spectator never loaded WASM → snapshotFramebuffer() is null → the
+          // preview canvas stays black (the DOOM attract screen) until it
+          // JOINS. There is no host-framebuffer mirror to fall back to anymore
+          // (relay-OOM fix).
           const extras = getExtras();
-          let fb: Uint8Array | Uint8ClampedArray | null = null;
-          if (extras && !isSpectating) fb = extras.snapshotFramebuffer();
-          if (!fb) {
-            // Belt-and-suspenders: the awareness 'update' listener already
-            // populates lastRemoteFrame, but under load chromium can drop
-            // listener firings between heavy awareness payloads. Re-poll
-            // the latest frame envelope on every rAF tick so the canvas
-            // stays current even if no 'update' callback fired this frame.
-            pollLatestRemoteFrame();
-            fb = lastRemoteFrame;
-          }
+          const fb: Uint8Array | Uint8ClampedArray | null =
+            extras ? extras.snapshotFramebuffer() : null;
           if (fb) {
             // Upload BGRA → RGBA via inline byte swap. 640×400 = 256k
             // pixels = 1 MB; the swap is ~16ms on a slow laptop but

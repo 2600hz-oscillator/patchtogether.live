@@ -381,41 +381,6 @@ export function isPendingPlayer(state: DoomRosterState, userId: string): boolean
   return slotForUser(state.pending, userId) !== null;
 }
 
-/** Rack members who are UNJOINED SPECTATORS — i.e. present in the rack but
- *  holding NEITHER an active nor a pending slot. `selfId` (the host asking) is
- *  always excluded: the host is a player, never its own spectator.
- *
- *  This is the gate for the host's ~10 Hz framebuffer broadcast. In the
- *  per-peer-WASM model every JOINED player (active OR pending late joiner) runs
- *  its own DOOM, so only a pure unjoined spectator needs the host's mirror.
- *  Broadcasting the ~1.37 MB base64 framebuffer at 10 Hz when NOBODY needs it
- *  pushed ~13.7 MB/s of awareness traffic through the single Hocuspocus relay
- *  process and OOM-killed it (→ rack freeze + lost-node-on-rejoin). Pure +
- *  order-stable so it is unit-testable without a provider. */
-export function unjoinedSpectatorIds(
-  state: DoomRosterState,
-  memberIds: readonly string[],
-  selfId: string,
-): string[] {
-  const seated = new Set(Object.values(combinedRoster(state)));
-  const out: string[] = [];
-  for (const uid of memberIds) {
-    if (uid === selfId) continue;
-    if (!seated.has(uid)) out.push(uid);
-  }
-  return out;
-}
-
-/** Convenience: does ANY current rack member need the host's framebuffer
- *  mirror (is an unjoined spectator)? See unjoinedSpectatorIds. */
-export function hasUnjoinedSpectator(
-  state: DoomRosterState,
-  memberIds: readonly string[],
-  selfId: string,
-): boolean {
-  return unjoinedSpectatorIds(state, memberIds, selfId).length > 0;
-}
-
 /** Result of a combined-state assignment pass: a NEW state (inputs never
  *  mutated) + whether each map changed + the per-user assignment (slot +
  *  whether it landed active or pending) + requesters rejected as full. */

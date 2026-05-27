@@ -83,8 +83,10 @@ export function slotBadge(slot: number | null): string {
 //  Slice 6: spectator / pending-late-joiner label states
 // ────────────────────────────────────────────────────────────────────────
 //
-//   A peer that has NOT claimed an active slot is a spectator: it renders the
-//   host/arbiter framebuffer (slice 3) and shows a clear "Spectating" badge.
+//   A peer that has NOT claimed an active slot is a spectator: it runs no WASM
+//   so its surface is black (the DOOM attract screen) until it JOINS, and shows
+//   a clear "Spectating" badge. (There is no host-framebuffer mirror — that
+//   path was removed as the relay-OOM driver.)
 //   A peer that joined an in-progress game holds a PENDING slot — it is still
 //   a spectator of the running level, but it knows which slot it will spawn
 //   into at the next map, so it shows "Joining as Player N next map". These

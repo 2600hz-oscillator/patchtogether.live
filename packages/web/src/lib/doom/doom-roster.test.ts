@@ -30,8 +30,6 @@ import {
   assignSlots,
   promotePending,
   pruneRosterState,
-  unjoinedSpectatorIds,
-  hasUnjoinedSpectator,
 } from './doom-roster';
 
 describe('doom-roster: readRoster', () => {
@@ -527,47 +525,4 @@ describe('doom-roster slice 6: pending (late-join) vs active state', () => {
     });
   });
 
-  // Regression: the framebuffer-broadcast gate (relay-OOM / rack-freeze fix).
-  // The host's ~10 Hz ~1.37 MB base64 framebuffer must ONLY be broadcast when
-  // an actual unjoined spectator needs it; a fully-seated game sends none.
-  describe('unjoinedSpectatorIds / hasUnjoinedSpectator (framebuffer-broadcast gate)', () => {
-    it('2-player coop (host + 1 joined guest): NO spectator → no broadcast', () => {
-      // Both members hold active slots; the host (self) is never its own spectator.
-      const state = { active: { '0': 'host', '1': 'guest' }, pending: {} };
-      const members = ['host', 'guest'];
-      expect(unjoinedSpectatorIds(state, members, 'host')).toEqual([]);
-      expect(hasUnjoinedSpectator(state, members, 'host')).toBe(false);
-    });
-
-    it('lone host (single-user rack): self is never a spectator → no broadcast', () => {
-      const state = { active: { '0': 'host' }, pending: {} };
-      expect(hasUnjoinedSpectator(state, ['host'], 'host')).toBe(false);
-    });
-
-    it('a pure unjoined member IS a spectator → broadcast needed', () => {
-      const state = { active: { '0': 'host' }, pending: {} };
-      const members = ['host', 'watcher'];
-      expect(unjoinedSpectatorIds(state, members, 'host')).toEqual(['watcher']);
-      expect(hasUnjoinedSpectator(state, members, 'host')).toBe(true);
-    });
-
-    it('a PENDING late joiner runs its own WASM → NOT counted as a spectator', () => {
-      // pending peers load their own runtime to spawn on promotion, so they do
-      // not need the host mirror; only a peer in NEITHER map does.
-      const state = { active: { '0': 'host' }, pending: { '1': 'late' } };
-      const members = ['host', 'late'];
-      expect(hasUnjoinedSpectator(state, members, 'host')).toBe(false);
-    });
-
-    it('mixes seated + unseated members correctly (only the unseated count)', () => {
-      const state = { active: { '0': 'host', '1': 'p2' }, pending: { '2': 'late' } };
-      const members = ['host', 'p2', 'late', 'watcher'];
-      expect(unjoinedSpectatorIds(state, members, 'host')).toEqual(['watcher']);
-    });
-
-    it('ignores a member id equal to self even if unseated (defensive)', () => {
-      const state = { active: {}, pending: {} };
-      expect(unjoinedSpectatorIds(state, ['host'], 'host')).toEqual([]);
-    });
-  });
 });
