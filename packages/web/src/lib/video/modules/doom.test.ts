@@ -7,7 +7,11 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { doomDef } from './doom';
-import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
+import {
+  CV_GATE_PORT_IDS,
+  CV_GATE_PORT_IDS_BY_SLOT,
+  cvGatePortIdForSlot,
+} from '$lib/doom/doomkeys';
 import type { VideoEngineContext } from '$lib/video/engine';
 
 describe('doomDef — module def shape', () => {
@@ -23,15 +27,30 @@ describe('doomDef — module def shape', () => {
     expect(doomDef.ownerOnly).toBe(true);
   });
 
-  it('declares exactly the 7 CV-gate input ports the plan calls for', () => {
+  it('declares 4 per-slot input GROUPS (p1..p4) × 7 gates = 28 cv ports (#353)', () => {
     const ids = doomDef.inputs.map((p) => p.id);
-    expect(ids).toEqual([...CV_GATE_PORT_IDS]);
+    // 4 slots × 7 base gates, in (slot, base) declaration order.
+    expect(ids).toEqual(CV_GATE_PORT_IDS_BY_SLOT.map((e) => e.portId));
+    expect(ids).toHaveLength(4 * CV_GATE_PORT_IDS.length);
     for (const inp of doomDef.inputs) {
       expect(inp.type).toBe('cv');
       // paramTarget routes the CV through engine setParam — the synthetic
-      // cv_<port> param is then edge-detected into key-down/up events.
+      // cv_p{N}_<base> param is then edge-detected into per-slot key events.
       expect(inp.paramTarget).toBe(`cv_${inp.id}`);
     }
+  });
+
+  it('migrates the legacy single CV set → p1 (slot 0): bare `up` → `p1_up`', () => {
+    expect(doomDef.schemaVersion).toBe(2);
+    expect(typeof doomDef.migrateEdgePortId).toBe('function');
+    for (const base of CV_GATE_PORT_IDS) {
+      expect(doomDef.migrateEdgePortId!(base, 1)).toBe(cvGatePortIdForSlot(0, base));
+    }
+    // Non-cv ports (out/audio) are left untouched (null = no rewrite).
+    expect(doomDef.migrateEdgePortId!('out', 1)).toBeNull();
+    expect(doomDef.migrateEdgePortId!('audio_l', 1)).toBeNull();
+    // Already-migrated per-slot ports are not double-rewritten.
+    expect(doomDef.migrateEdgePortId!('p2_left', 1)).toBeNull();
   });
 
   it('declares a video out + stereo audio outputs that ride the video → audio bridge', () => {
@@ -41,10 +60,10 @@ describe('doomDef — module def shape', () => {
     expect(types).toEqual({ out: 'video', audio_l: 'audio', audio_r: 'audio' });
   });
 
-  it('every cv-gate port has a matching synthetic param', () => {
+  it('every per-slot cv-gate port has a matching synthetic param', () => {
     const paramIds = new Set(doomDef.params.map((p) => p.id));
-    for (const port of CV_GATE_PORT_IDS) {
-      expect(paramIds.has(`cv_${port}`), `expected param cv_${port}`).toBe(true);
+    for (const { portId } of CV_GATE_PORT_IDS_BY_SLOT) {
+      expect(paramIds.has(`cv_${portId}`), `expected param cv_${portId}`).toBe(true);
     }
   });
 
@@ -58,8 +77,8 @@ describe('doomDef — module def shape', () => {
     expect(paramIds).not.toContain('running');
   });
 
-  it('schemaVersion is 1 (first slice)', () => {
-    expect(doomDef.schemaVersion).toBe(1);
+  it('schemaVersion is 2 (#353 per-player input groups)', () => {
+    expect(doomDef.schemaVersion).toBe(2);
   });
 });
 

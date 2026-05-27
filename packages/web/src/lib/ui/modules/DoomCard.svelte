@@ -49,8 +49,8 @@
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import { type DoomHandleExtras } from '$lib/video/modules/doom';
-  import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
-  import { isCvGatePatched } from '$lib/doom/doom-input-mode';
+  import { CV_GATE_PORT_IDS, cvGatePortIdForSlot, DOOM_MP_SLOTS, type CvGatePortId } from '$lib/doom/doomkeys';
+  import { isOwnSlotCvGatePatched } from '$lib/doom/doom-input-mode';
   import {
     bumpAwarenessUpdate,
     bumpElectionRecompute,
@@ -437,6 +437,9 @@
       if (loadStatus === 'idle') void tryLoad();
       return;
     }
+    // Own-slot-only CV routing (#353): bind the factory to this peer's slot so
+    // its CV-gate group drives the sim + other slots' CV is ignored locally.
+    extras.setOwnSlot(slot);
     extras.startNetGame(env.settings, slot);
     // P1: arm true lockstep for a >1-player game. Both peers start the level at
     // the same shared tic 0 (recvtic=gametic=0 after dgpt_start_netgame) with
@@ -799,6 +802,10 @@
     } else {
       loadStatus = 'ready';
       loadError = null;
+      // Own-slot-only CV routing (#353): the runtime now exists, so (re)apply
+      // this peer's slot — the $effect that tracks mySlot may have run while
+      // getExtras() was still null (WASM loading), so set it again here.
+      extras.setOwnSlot(mySlot);
     }
   }
 
@@ -1228,8 +1235,13 @@
   // (attachEdgesObserver) and key the $derived on it, so it recomputes on every
   // edge add/remove. The actual predicate is the pure `isCvGatePatched`.
   let edgesVersion = $state(0);
+  // PER-SLOT (#353): the keyboard-vs-CV precedence is now per OWN slot. The card
+  // goes keyboard-inert only when THIS viewer's own slot group (p{mySlot+1}_*)
+  // has a CV edge — another player's CV must not gate your keyboard. A spectator
+  // (mySlot null) is never CV-patched (owns no group), so it keeps its keyboard
+  // relay path. cvGatePatched depends on both the edge set and mySlot.
   let cvGatePatched = $derived<boolean>(
-    (void edgesVersion, isCvGatePatched(Object.values(patch.edges), id)),
+    (void edgesVersion, isOwnSlotCvGatePatched(Object.values(patch.edges), id, mySlot)),
   );
 
   // When a CV-gate cable is plugged WHILE keyboard keys are held, the
@@ -1251,6 +1263,17 @@
     // releases any keyboard-origin key still asserted in DOOM's gamekeydown[]
     // so the marine can't keep walking), while the CV path stays live.
     getExtras()?.setKeyboardInert(cvGatePatched);
+  });
+
+  // OWN-SLOT-ONLY CV routing (#353 Phase 2): tell the factory which slot this
+  // peer drives so the CV-gate path applies ONLY this slot's input group and
+  // ignores every other slot's CV locally (the deterministic, lockstep-safe
+  // rule). A spectator/unseated peer (mySlot null) drives no slot's CV. Re-runs
+  // whenever mySlot changes (join / promotion / drop) — getExtras() is null
+  // until the runtime exists, so we also re-apply on load via ensureLoaded's
+  // render-loop re-evaluation; this effect catches the steady-state changes.
+  $effect(() => {
+    getExtras()?.setOwnSlot(mySlot);
   });
 
   function shouldClaimKey(): boolean {
@@ -2005,20 +2028,41 @@
     {/if}
   </div>
 
-  {#each CV_GATE_PORT_IDS as port, idx (port)}
-    {@const top = 56 + idx * 28}
-    {@const label = port === 'up' ? '↑'
-                  : port === 'down' ? '↓'
-                  : port === 'left' ? '←'
-                  : port === 'right' ? '→'
-                  : port.toUpperCase()}
-    <Handle
-      type="target"
-      position={Position.Left}
-      id={port}
-      style="top: {top}px; --handle-color: var(--cable-cv);"
-    />
-    <span class="port-label left" style="top: {top - 6}px;">{label}</span>
+  <!-- PER-VIEWER UI HIDING (#353 Phase 3): ALL four slot groups' input handles
+       (p1..p4 → 28 jacks) are ALWAYS rendered into the DOM so the rendered
+       handle set matches the def (io-spec / modules invariant) AND a cross-peer
+       cable into e.g. p2_up still resolves to a real handle position and renders
+       as a cable on a peer whose own slot is p1. We only VISUALLY emphasise the
+       LOCAL viewer's own slot group (p{mySlot+1}_*) — the OTHER slots' handles
+       are present-but-hidden (visibility:hidden, pointer-events:none) via the
+       .hidden-slot-port class, so they can't be (dis)connected from this card
+       yet still anchor incoming edges. A spectator / unseated peer (mySlot null)
+       emphasises no group (read-only) but every handle is still in the DOM.
+       This is purely a rendering concern — input DISPATCH is unchanged: the
+       factory's own-slot-only rule (setOwnSlot) means a peer only ever feeds its
+       OWN consoleplayer slot's CV into the sim. -->
+  {#each DOOM_MP_SLOTS as slot (slot)}
+    {@const isLocalSlot = slot === mySlot}
+    {#each CV_GATE_PORT_IDS as base, idx (base)}
+      {@const top = 56 + idx * 28}
+      {@const portId = cvGatePortIdForSlot(slot, base as CvGatePortId)}
+      {@const label = base === 'up' ? '↑'
+                    : base === 'down' ? '↓'
+                    : base === 'left' ? '←'
+                    : base === 'right' ? '→'
+                    : base.toUpperCase()}
+      <Handle
+        type="target"
+        position={Position.Left}
+        id={portId}
+        data-testid="doom-port-{portId}"
+        class={isLocalSlot ? undefined : 'hidden-slot-port'}
+        style="top: {top}px; --handle-color: var(--cable-cv);"
+      />
+      {#if isLocalSlot}
+        <span class="port-label left" style="top: {top - 6}px;">{label}</span>
+      {/if}
+    {/each}
   {/each}
 
   <Handle
@@ -2612,6 +2656,15 @@
   }
   .doom-card .port-label.left  { left: 14px; }
   .doom-card .port-label.right { right: 14px; }
+  /* Non-local slot input handles: present in the DOM (so the rendered handle
+     set matches the def + cross-peer cables into them still anchor + render as
+     edges) but visually hidden and non-interactive on this viewer's card. We
+     use visibility:hidden (not display:none) so the handle keeps a layout box
+     and Svelte Flow can still resolve an edge endpoint position for it. */
+  .doom-card :global(.svelte-flow__handle.hidden-slot-port) {
+    visibility: hidden;
+    pointer-events: none;
+  }
   .doom-card .hint {
     padding: 0 10px 8px;
     color: color-mix(in oklab, var(--cable-video, #c33) 70%, transparent);

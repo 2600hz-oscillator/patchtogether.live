@@ -35,6 +35,10 @@ import type { ModuleNode, Edge } from './types';
 interface AnyDomainDef {
   schemaVersion: number;
   migrate?: (data: unknown, fromVersion: number) => unknown;
+  /** Optional load-time edge-port rename keyed on the saved module version.
+   *  Returns a rewritten portId, or null to leave it unchanged. See
+   *  VideoModuleDef.migrateEdgePortId (DOOM's per-slot port migration, #353). */
+  migrateEdgePortId?: (portId: string, fromVersion: number) => string | null;
 }
 
 function getAnyDomainDef(type: string): AnyDomainDef | undefined {
@@ -207,6 +211,38 @@ export interface LoadResult {
 }
 
 /**
+ * Rewrite an edge's source/target portIds via the endpoint nodes' module-def
+ * `migrateEdgePortId` hook, when the saved version is behind the current def.
+ * Returns the edge unchanged when no endpoint migrates. Pure (returns a new
+ * object only when something actually changed). Exported for unit tests.
+ */
+export function migrateEdgeEndpoints(
+  edge: Edge,
+  nodes: Record<string, ModuleNode>,
+  moduleSchemas: Record<string, number>,
+): Edge {
+  const rewrite = (end: { nodeId: string; portId: string }): string => {
+    const node = nodes[end.nodeId];
+    if (!node) return end.portId;
+    const def = getAnyDomainDef(node.type);
+    if (!def?.migrateEdgePortId) return end.portId;
+    const from = moduleSchemas[node.type] ?? 1;
+    if (from >= def.schemaVersion) return end.portId;
+    return def.migrateEdgePortId(end.portId, from) ?? end.portId;
+  };
+  const newSourcePort = rewrite(edge.source);
+  const newTargetPort = rewrite(edge.target);
+  if (newSourcePort === edge.source.portId && newTargetPort === edge.target.portId) {
+    return edge;
+  }
+  return {
+    ...edge,
+    source: { ...edge.source, portId: newSourcePort },
+    target: { ...edge.target, portId: newTargetPort },
+  };
+}
+
+/**
  * Apply an envelope to the live patch + ydoc, replacing whatever's currently
  * loaded. Atomic: wrapped in a single transact so subscribers see one update.
  *
@@ -305,7 +341,13 @@ export function loadEnvelopeIntoStore(
         });
         continue;
       }
-      livePatch.edges[edge.id] = edge;
+      // EDGE-PORT MIGRATION: when an endpoint's node is a type whose saved
+      // schemaVersion is behind the current def AND that def declares an
+      // edge-port migration, rewrite the portId. This keeps CV cables wired to
+      // DOOM's old bare gate ports (`up`/…) driving the p1 group (`p1_up`/…)
+      // after the single shared input set became four per-slot groups (#353).
+      const migrated = migrateEdgeEndpoints(edge, migratedNodes, envelope.moduleSchemas);
+      livePatch.edges[migrated.id] = migrated;
     }
   });
 

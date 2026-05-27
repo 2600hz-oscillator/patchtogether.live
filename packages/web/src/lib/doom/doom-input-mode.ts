@@ -12,20 +12,18 @@
 // without mounting the (heavy, multiplayer-bound) DoomCard component. The
 // card imports `isCvGatePatched` and gates its keyboard-capture on it.
 
-import { CV_GATE_PORT_IDS } from './doomkeys';
+import { parseSlotPortId } from './doomkeys';
 
 /** Minimal edge shape this predicate needs (subset of graph Edge). */
 export interface IncomingEdgeLike {
   target: { nodeId: string; portId: string };
 }
 
-const CV_GATE_PORT_ID_SET: ReadonlySet<string> = new Set(CV_GATE_PORT_IDS);
-
 /**
- * True iff ANY edge in `edges` targets one of `nodeId`'s CV-gate input
- * ports (up/down/left/right/space/ctrl/alt). When true, the DOOM card
- * MUST ignore the keyboard (CV drives movement); when false, the keyboard
- * path runs.
+ * True iff ANY edge in `edges` targets one of `nodeId`'s per-slot CV-gate input
+ * ports (p1_up … p4_alt). When true SOMEWHERE on the node, CV is in play —
+ * callers that care about a SPECIFIC viewer's slot should use
+ * `isOwnSlotCvGatePatched`. Kept for the node-wide check.
  *
  * `edges` is the graph's edge collection — accepts the live record
  * (Object.values) or any iterable of edge-likes, so callers can pass
@@ -38,7 +36,29 @@ export function isCvGatePatched(
   for (const e of edges) {
     if (!e) continue;
     if (e.target.nodeId !== nodeId) continue;
-    if (CV_GATE_PORT_ID_SET.has(e.target.portId)) return true;
+    if (parseSlotPortId(e.target.portId)) return true;
+  }
+  return false;
+}
+
+/**
+ * Per-slot variant (#353): true iff any edge targets `nodeId`'s OWN-SLOT CV-gate
+ * group (p{slot+1}_*). This is the keyboard-vs-CV precedence rule applied PER
+ * SLOT: if YOUR own slot's group has a CV edge, your keyboard is inert for your
+ * slot; another slot's CV must NOT gate your keyboard. A spectator (slot null)
+ * is never CV-patched (it owns no group).
+ */
+export function isOwnSlotCvGatePatched(
+  edges: Iterable<IncomingEdgeLike | undefined | null>,
+  nodeId: string,
+  slot: number | null,
+): boolean {
+  if (slot === null) return false;
+  for (const e of edges) {
+    if (!e) continue;
+    if (e.target.nodeId !== nodeId) continue;
+    const parsed = parseSlotPortId(e.target.portId);
+    if (parsed && parsed.slot === slot) return true;
   }
   return false;
 }

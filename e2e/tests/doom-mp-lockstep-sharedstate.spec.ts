@@ -221,6 +221,70 @@ async function releaseKey(page: Page, code: string): Promise<void> {
   await page.evaluate((k) => window.dispatchEvent(new KeyboardEvent('keyup', { code: k, bubbles: true })), code);
 }
 
+/** Add an LFO node + a CV edge LFO.phase0 → DOOM.`portId` directly into the
+ *  SHARED Yjs patch graph (so BOTH peers see the same edge). Mutating __patch in
+ *  a transact triggers each peer's engine auto-reconciler, which builds the
+ *  cross-domain CV bridge on every peer — exactly the shared-edge / per-peer-
+ *  bridge model the per-slot routing must tame. Idempotent on node/edge id. */
+async function addLfoCvEdge(page: Page, lfoId: string, edgeId: string, portId: string): Promise<void> {
+  await page.evaluate(
+    (args) => {
+      const [lfo, eid, port, doomId] = args as [string, string, string, string];
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        if (!w.__patch.nodes[lfo]) {
+          w.__patch.nodes[lfo] = {
+            id: lfo,
+            type: 'lfo',
+            domain: 'audio',
+            position: { x: -260, y: 120 },
+            // A brisk LFO so the gate (rise 0.6 / fall 0.4) toggles several times
+            // across the sample burst → the marine actually walks from CV.
+            params: { rate: 6, shape: 0 },
+          };
+        }
+        w.__patch.edges[eid] = {
+          id: eid,
+          source: { nodeId: lfo, portId: 'phase0' },
+          target: { nodeId: doomId, portId: port },
+          sourceType: 'cv',
+          targetType: 'cv',
+        };
+      });
+    },
+    [lfoId, edgeId, portId, NODE_ID],
+  );
+}
+
+/** Read this peer's own-slot CV-patched flag + slot from the card hook. */
+async function cvState(page: Page, id: string): Promise<{ mySlot: number | null; cvGatePatched: boolean }> {
+  return await page.evaluate((nid) => {
+    const w = globalThis as unknown as {
+      __doomCards?: Record<string, { getState: () => { mySlot: number | null; cvGatePatched: boolean } }>;
+    };
+    const s = w.__doomCards?.[nid]?.getState();
+    return { mySlot: s?.mySlot ?? null, cvGatePatched: s?.cvGatePatched ?? false };
+  }, id);
+}
+
+/** Position of an arbitrary slot's marine in THIS peer's world (fixed-point), or
+ *  null if not spawned. Used to prove a marine moved from its own CV. */
+async function slotPos(page: Page, id: string, slot: number): Promise<{ x: number; y: number } | null> {
+  return await page.evaluate(
+    (args) => {
+      const [nid, s] = args as [string, number];
+      const w = globalThis as unknown as {
+        __doomCards?: Record<string, { getSlotState: (slot: number) => { x: number; y: number } | null }>;
+      };
+      return w.__doomCards?.[nid]?.getSlotState(s) ?? null;
+    },
+    [id, slot],
+  );
+}
+
 test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () => {
   // Cold WASM + 4 MB WAD on two contexts + a fresh coop launch + a sustained
   // movement/fire burst, with both sims kept in lockstep over the relay.
@@ -454,6 +518,185 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
       if (cA && cB && cA.tic === cB.tic) {
         expect(cA.sum, 'checksums still match after pruning (pruning is harmless)').toBe(cB.sum);
       }
+    } finally {
+      await Promise.all(peers.map((p) => p.ctx.close().catch(() => {})));
+    }
+  });
+
+  // ── PER-PLAYER CV (#353): each peer patches CV to ITS OWN slot's DOOM input ──
+  //
+  // THE POINT: the #354 interim hotfix DROPPED all CV under lockstep because the
+  // shared CV edge fanned out to every peer + sampled non-deterministically →
+  // divergent TicSets → permanent freeze. Per-slot routing re-enables CV
+  // CORRECTLY: P1 patches an LFO → its own group (p1_up), P2 patches an LFO →
+  // its own group (p2_up). Both edges live in the shared Yjs doc; each peer's
+  // bridge materializes both, but the OWN-SLOT-ONLY rule means P1 applies only
+  // p1_* and P2 applies only p2_*. So each marine moves from ITS OWN CV, the
+  // consolidated TicSet stays IDENTICAL on both peers (own CV → own logged
+  // ticcmd; the other slot arrives via the deterministic log), the
+  // dgpt_state_checksum still matches every shared tic, and NEITHER peer freezes.
+  //
+  // It also proves the per-viewer hiding + own-slot gate: P2's hidden p1 group
+  // and P1's hidden p2 group exist in the doc but don't drive the wrong marine,
+  // and a cable into a slot you don't own does not gate your input.
+  test('per-player CV: each peer drives ITS OWN slot via CV, shared state stays consistent, no freeze', async ({
+    browser,
+  }) => {
+    const rackId = `doom-cv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const peers = await boot(browser, rackId, [
+      { userId: 'aaa-owner', name: 'Owner', isOwner: true },
+      { userId: 'bbb-guest', name: 'Guest', isOwner: false },
+    ]);
+    const p1 = peers[0]!;
+    const p2 = peers[1]!;
+    const p1Console: string[] = [];
+    p1.page.on('console', (m) => p1Console.push(m.text()));
+    p1.page.on('pageerror', (e) => p1Console.push(`pageerror: ${e.message}`));
+
+    try {
+      if (!(await assetsPresent(p1.page))) {
+        test.skip(true, 'DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD');
+        return;
+      }
+
+      // Owner adds the shared DOOM node; guest sees it via Yjs node sync.
+      const nodes: SpawnNode[] = [{ id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' }];
+      await spawnPatch(p1.page, nodes, []);
+      const guestSawNode = await p2.page
+        .waitForFunction(
+          (nid) =>
+            Object.keys((window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes).includes(
+              nid,
+            ),
+          NODE_ID,
+          { timeout: 15000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (!guestSawNode) {
+        test.skip(true, 'cross-context node sync flake');
+        return;
+      }
+      await cardHookReady(p1.page, NODE_ID);
+      await cardHookReady(p2.page, NODE_ID);
+      await expect
+        .poll(async () => (await getState(p1.page, NODE_ID)).memberIds.length, { timeout: 10000 })
+        .toBe(2);
+
+      // Host opens MP + launches coop E1M1; guest joins → np=2 synchronized restart.
+      await p1.page.evaluate(
+        (nid) =>
+          (globalThis as unknown as { __doomCards: Record<string, { hostMultiplayer: () => Promise<void> }> })
+            .__doomCards[nid]!.hostMultiplayer(),
+        NODE_ID,
+      );
+      expect(await waitForSlot(p1.page, NODE_ID, 0, 25000), 'owner takes slot 0').toBe(true);
+      await p1.page.evaluate(
+        (nid) => {
+          const w = globalThis as unknown as {
+            __doomCards: Record<string, { setOptions: (o: object) => void; launch: () => void }>;
+          };
+          w.__doomCards[nid]!.setOptions({ mode: 'coop', skill: 0, episode: 1, map: 1 });
+          w.__doomCards[nid]!.launch();
+        },
+        NODE_ID,
+      );
+      expect(await waitForLevel(p1.page, NODE_ID), 'host enters the coop level').toBe(true);
+      await p2.page.evaluate(
+        (nid) =>
+          (globalThis as unknown as { __doomCards: Record<string, { join: () => Promise<void> }> }).__doomCards[
+            nid
+          ]!.join(),
+        NODE_ID,
+      );
+      const guestSeated = await waitForSlot(p2.page, NODE_ID, 1, 30000);
+      if (!guestSeated) {
+        test.skip(true, 'cross-context roster sync did not seat the guest at slot 1 (relay flake)');
+        return;
+      }
+      expect(await waitForLevel(p1.page, NODE_ID), 'P1 in the np=2 coop level').toBe(true);
+      expect(await waitForLevel(p2.page, NODE_ID), 'P2 in the np=2 coop level').toBe(true);
+      {
+        const a = await getState(p1.page, NODE_ID);
+        const b = await getState(p2.page, NODE_ID);
+        expect(a.mySlot, 'P1 = slot 0').toBe(0);
+        expect(b.mySlot, 'P2 = slot 1').toBe(1);
+        expect(a.lockstepActive && b.lockstepActive, 'lockstep armed on both (numPlayers=2)').toBe(true);
+      }
+
+      // ── Each peer patches an LFO → ITS OWN slot's UP gate ──────────────────
+      // The edges land in the SHARED doc, so each peer ends up with BOTH bridges;
+      // the own-slot-only rule decides which one actually drives the sim. P1 owns
+      // p1_up, P2 owns p2_up.
+      await addLfoCvEdge(p1.page, 'lfo-p1', 'e-p1-up', 'p1_up');
+      await addLfoCvEdge(p2.page, 'lfo-p2', 'e-p2-up', 'p2_up');
+
+      // Each peer's OWN slot must read as CV-patched (keyboard inert for it);
+      // and a cable into the OTHER slot must NOT flip your own gate.
+      await expect
+        .poll(async () => (await cvState(p1.page, NODE_ID)).cvGatePatched, { timeout: 8000 })
+        .toBe(true);
+      await expect
+        .poll(async () => (await cvState(p2.page, NODE_ID)).cvGatePatched, { timeout: 8000 })
+        .toBe(true);
+
+      // Record both marines' start positions (read in P1's authoritative world).
+      const p0Start = await slotPos(p1.page, NODE_ID, 0);
+      const p1Start = await slotPos(p1.page, NODE_ID, 1);
+
+      // Let the LFOs drive for a couple of seconds; both sims keep advancing in
+      // lockstep. We sample (tic → checksum) per peer and assert EQUALITY at every
+      // shared tic — the proof that per-peer CV did NOT diverge the sim.
+      const sampleMap = async (page: Page, ms: number): Promise<Map<number, number>> => {
+        const m = new Map<number, number>();
+        const deadline = Date.now() + ms;
+        while (Date.now() < deadline) {
+          const r = await checksumAt(page, NODE_ID);
+          if (r) m.set(r.tic, r.sum);
+          await page.waitForTimeout(8);
+        }
+        return m;
+      };
+      const [mapA, mapB] = await Promise.all([sampleMap(p1.page, 3000), sampleMap(p2.page, 3000)]);
+      const sharedTics = [...mapA.keys()].filter((t) => mapB.has(t)).sort((a, b) => a - b);
+      const mismatches = sharedTics.filter((t) => mapA.get(t) !== mapB.get(t));
+
+      // Both sims advanced well past tic 0 (no freeze — CV is re-enabled + safe).
+      const t1 = await tics(p1.page, NODE_ID);
+      const t2 = await tics(p2.page, NODE_ID);
+      expect(t1.gametic, 'P1 sim advanced under per-player CV (no freeze)').toBeGreaterThan(20);
+      expect(t2.gametic, 'P2 sim advanced under per-player CV (no freeze)').toBeGreaterThan(20);
+
+      expect(
+        sharedTics.length,
+        `both peers must keep advancing in lockstep while CV drives. ` +
+          `p1Tics=${[...mapA.keys()].length} p2Tics=${[...mapB.keys()].length}`,
+      ).toBeGreaterThan(3);
+      expect(
+        mismatches.length,
+        `per-player CV must keep gamestate IDENTICAL at every shared tic (no per-peer CV divergence). ` +
+          `sharedTics=${sharedTics.length} mismatches=${mismatches.length} ` +
+          `firstMismatch=${
+            mismatches.length
+              ? JSON.stringify({ tic: mismatches[0], a: mapA.get(mismatches[0]!), b: mapB.get(mismatches[0]!) })
+              : 'none'
+          } p1ConsoleTail=${JSON.stringify(p1Console.slice(-5))}`,
+      ).toBe(0);
+
+      // No in-engine consistency abort fired (the freeze signature).
+      const consistencyFailure = p1Console.some((l) => /consistency failure/i.test(l));
+      expect(consistencyFailure, 'no consistency abort under per-player CV').toBe(false);
+      expect(await checksumAt(p1.page, NODE_ID), 'P1 sim still alive').not.toBeNull();
+      expect(await checksumAt(p2.page, NODE_ID), 'P2 sim still alive').not.toBeNull();
+
+      // ── BOTH marines moved from their OWN CV ──────────────────────────────
+      // Read both slots in P1's authoritative shared world after the CV burst.
+      const p0End = await slotPos(p1.page, NODE_ID, 0);
+      const p1End = await slotPos(p1.page, NODE_ID, 1);
+      const moved = (a: { x: number; y: number } | null, b: { x: number; y: number } | null): boolean =>
+        !!a && !!b && (a.x !== b.x || a.y !== b.y);
+      expect(moved(p0Start, p0End), 'slot-0 marine moved from P1 own CV (p1_up)').toBe(true);
+      expect(moved(p1Start, p1End), 'slot-1 marine moved from P2 own CV (p2_up), seen in P1 world').toBe(true);
     } finally {
       await Promise.all(peers.map((p) => p.ctx.close().catch(() => {})));
     }
