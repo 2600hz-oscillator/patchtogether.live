@@ -219,6 +219,50 @@ async function playerPos(
   }, id);
 }
 
+// Take a STICKY, focus-independent keyboard claim on the DOOM card, then VERIFY
+// the runtime actually claims keys before we dispatch any.
+//
+// DETERMINISTIC CLAIM (the @collab marine-move de-flake): we do NOT rely on a
+// DOM click/focus. In a 2-context Playwright test only ONE page holds
+// focus/activeElement; the backgrounded page's document.activeElement stays on
+// <body>, so a click+focus-based capture leaves shouldClaimKey()'s focus-within
+// branch false, the dispatched keydown is silently dropped, and the marine never
+// moves (the CI failure: the OWNER page showed the "Click to capture keyboard"
+// overlay still up — capture never landed). Instead we invoke the card's
+// `forceClaimKeyboard()` dev hook, which calls the SAME latchKeyboard() the
+// "Click to capture keyboard" onclick fires — flipping kbLatched=true, which
+// shouldClaimKey() honours REGARDLESS of focus/foreground. We then poll
+// getState().shouldClaimKey === true to confirm the claim actually landed
+// before dispatching any keys. Works identically on the foreground and the
+// background page. (Real users still click to capture; that path is unchanged.)
+async function claimKeyboard(page: Page, id: string): Promise<void> {
+  await page.evaluate(
+    (nid) =>
+      (
+        globalThis as unknown as {
+          __doomCards?: Record<string, { forceClaimKeyboard?: () => void }>;
+        }
+      ).__doomCards?.[nid]?.forceClaimKeyboard?.(),
+    id,
+  );
+  // Poll until the runtime confirms the claim landed (focus-independent).
+  await page
+    .waitForFunction(
+      (nid) =>
+        (
+          globalThis as unknown as {
+            __doomCards?: Record<string, { getState: () => { shouldClaimKey: boolean } }>;
+          }
+        ).__doomCards?.[nid]?.getState().shouldClaimKey === true,
+      id,
+      { timeout: 5000 },
+    )
+    .catch(() => {
+      // Fall through: dispatch will still run; the assertion that follows
+      // surfaces the failure with a clear signal rather than a silent no-op.
+    });
+}
+
 test.describe('@collab DOOM multiplayer — real 2-user', () => {
   // Cold WASM + 4 MB WAD on two contexts + cross-context sync + launch +
   // movement burst → generous ceiling.
@@ -461,12 +505,14 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         return w.__doomCards?.[nid]?.getSlotState(0) ?? null;
       }, NODE_ID);
       expect(ownerInGuestBefore, "owner's marine exists in the guest's world").not.toBeNull();
-      // Hold ArrowUp on the owner for a sustained burst (focus the card so the
-      // window-capture key handler claims the key + routes it to the runtime).
-      await owner.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
-      });
+      // Hold ArrowUp on the owner for a sustained burst. Take a STICKY,
+      // focus-independent keyboard claim via the forceClaimKeyboard() hook (see
+      // claimKeyboard) — NOT a DOM click/focus, which is racy across two
+      // headless contexts: document.activeElement intermittently stays on <body>
+      // for the backgrounded page, so shouldClaimKey()'s focus-within branch is
+      // false and the keydown is never claimed. claimKeyboard polls until
+      // shouldClaimKey flips true before we dispatch.
+      await claimKeyboard(owner.page, NODE_ID);
       await owner.page.evaluate(() =>
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
       );
@@ -495,14 +541,12 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       // Bug #3: the GUEST's OWN keyboard drives the GUEST's OWN marine. Pre-fix
       // a joined non-host peer relayed its keys to the host instead of pushing
       // them into its own runtime, so the guest's marine never moved from the
-      // guest's keyboard. Focus the guest card, hold ArrowUp, assert the
-      // guest's console-player position changes in the GUEST's own sim.
+      // guest's keyboard. Claim the keyboard on the guest card, hold ArrowUp,
+      // assert the guest's console-player position changes in the GUEST's own
+      // sim.
       const gMoveStart = await playerPos(guest.page, NODE_ID);
       expect(gMoveStart, 'guest console player present before its own move').not.toBeNull();
-      await guest.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
-      });
+      await claimKeyboard(guest.page, NODE_ID);
       await guest.page.evaluate(() =>
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
       );
@@ -537,10 +581,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       }, NODE_ID);
       expect(ownerInGuestBaseline, "owner's marine still present in the guest's world").not.toBeNull();
       void ownerInGuestBefore;
-      await owner.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
-      });
+      await claimKeyboard(owner.page, NODE_ID);
       await owner.page.evaluate(() =>
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
       );

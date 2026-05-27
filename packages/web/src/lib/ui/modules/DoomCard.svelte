@@ -1684,6 +1684,18 @@
         if (typeof opts.map === 'number') mapNum = opts.map;
       },
       launch: () => launchGame(),
+      // e2e keyboard-claim hook: invoke the SAME sticky latch the card's
+      // "Click to capture keyboard" onclick fires (latchKeyboard), WITHOUT a
+      // DOM click/focus. A real user clicks to capture; that path is unchanged.
+      // This exists because in a 2-context Playwright test only one page holds
+      // focus/activeElement — a click+focus-based capture is unreliable for the
+      // backgrounded page (shouldClaimKey()'s focus branch flickers false, the
+      // dispatched keydown is dropped, and the marine never moves). Calling the
+      // latch directly flips kbLatched=true, which shouldClaimKey() honours
+      // regardless of focus/foreground, so input routing is deterministic in
+      // BOTH contexts. Dev-only (this whole __doomCards hook is stripped in
+      // prod); does not change real input/capture behaviour.
+      forceClaimKeyboard: () => latchKeyboard(),
       // Slice 6 e2e hook: drive the running level to its end so the polled
       // gamestate transitions to GS_INTERMISSION (the card re-opens the dialog
       // there). Lets the 2-context late-join test reach the next-map seating
