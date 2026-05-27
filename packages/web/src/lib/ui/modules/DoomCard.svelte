@@ -49,7 +49,7 @@
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import { type DoomHandleExtras } from '$lib/video/modules/doom';
-  import { CV_GATE_PORT_IDS, cvGatePortIdForSlot, type CvGatePortId } from '$lib/doom/doomkeys';
+  import { CV_GATE_PORT_IDS, cvGatePortIdForSlot, DOOM_MP_SLOTS, type CvGatePortId } from '$lib/doom/doomkeys';
   import { isOwnSlotCvGatePatched } from '$lib/doom/doom-input-mode';
   import {
     bumpAwarenessUpdate,
@@ -2028,18 +2028,24 @@
     {/if}
   </div>
 
-  <!-- PER-VIEWER UI HIDING (#353 Phase 3): show ONLY the local viewer's own
-       slot's input group (p{mySlot+1}_*). The OTHER slots' ports still exist in
-       the shared Yjs doc + the engine graph (so the graph stays globally
-       consistent + a far cable into them still renders on the canvas), but this
-       viewer's CARD only exposes its own jacks. A spectator / unseated peer
-       (mySlot null) owns no slot → shows NO input group (read-only), matching
-       that it contributes no ticcmd. The port ids are the per-slot ids
-       (p{mySlot+1}_<base>) so a cable lands on the right group. -->
-  {#if mySlot !== null}
+  <!-- PER-VIEWER UI HIDING (#353 Phase 3): ALL four slot groups' input handles
+       (p1..p4 → 28 jacks) are ALWAYS rendered into the DOM so the rendered
+       handle set matches the def (io-spec / modules invariant) AND a cross-peer
+       cable into e.g. p2_up still resolves to a real handle position and renders
+       as a cable on a peer whose own slot is p1. We only VISUALLY emphasise the
+       LOCAL viewer's own slot group (p{mySlot+1}_*) — the OTHER slots' handles
+       are present-but-hidden (visibility:hidden, pointer-events:none) via the
+       .hidden-slot-port class, so they can't be (dis)connected from this card
+       yet still anchor incoming edges. A spectator / unseated peer (mySlot null)
+       emphasises no group (read-only) but every handle is still in the DOM.
+       This is purely a rendering concern — input DISPATCH is unchanged: the
+       factory's own-slot-only rule (setOwnSlot) means a peer only ever feeds its
+       OWN consoleplayer slot's CV into the sim. -->
+  {#each DOOM_MP_SLOTS as slot (slot)}
+    {@const isLocalSlot = slot === mySlot}
     {#each CV_GATE_PORT_IDS as base, idx (base)}
       {@const top = 56 + idx * 28}
-      {@const portId = cvGatePortIdForSlot(mySlot, base as CvGatePortId)}
+      {@const portId = cvGatePortIdForSlot(slot, base as CvGatePortId)}
       {@const label = base === 'up' ? '↑'
                     : base === 'down' ? '↓'
                     : base === 'left' ? '←'
@@ -2050,11 +2056,14 @@
         position={Position.Left}
         id={portId}
         data-testid="doom-port-{portId}"
+        class={isLocalSlot ? undefined : 'hidden-slot-port'}
         style="top: {top}px; --handle-color: var(--cable-cv);"
       />
-      <span class="port-label left" style="top: {top - 6}px;">{label}</span>
+      {#if isLocalSlot}
+        <span class="port-label left" style="top: {top - 6}px;">{label}</span>
+      {/if}
     {/each}
-  {/if}
+  {/each}
 
   <Handle
     type="source"
@@ -2647,6 +2656,15 @@
   }
   .doom-card .port-label.left  { left: 14px; }
   .doom-card .port-label.right { right: 14px; }
+  /* Non-local slot input handles: present in the DOM (so the rendered handle
+     set matches the def + cross-peer cables into them still anchor + render as
+     edges) but visually hidden and non-interactive on this viewer's card. We
+     use visibility:hidden (not display:none) so the handle keeps a layout box
+     and Svelte Flow can still resolve an edge endpoint position for it. */
+  .doom-card :global(.svelte-flow__handle.hidden-slot-port) {
+    visibility: hidden;
+    pointer-events: none;
+  }
   .doom-card .hint {
     padding: 0 10px 8px;
     color: color-mix(in oklab, var(--cable-video, #c33) 70%, transparent);
