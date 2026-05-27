@@ -198,6 +198,18 @@ async function checksumAt(page: Page, id: string): Promise<{ tic: number; sum: n
   }, id);
 }
 
+/** Issue #348: the arbiter-pruned shared ticcmd-log length (-1 if lockstep
+ *  off). Asserts the log stays BOUNDED over a long run (barrier-floor pruning),
+ *  not growing ~140/sec unbounded → relay OOM. */
+async function logSize(page: Page, id: string): Promise<number> {
+  return await page.evaluate((nid) => {
+    const w = globalThis as unknown as {
+      __doomCards?: Record<string, { getLockstepLogSize: () => number }>;
+    };
+    return w.__doomCards?.[nid]?.getLockstepLogSize() ?? -1;
+  }, id);
+}
+
 async function holdKey(page: Page, code: string): Promise<void> {
   await page.evaluate(() => {
     const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
@@ -397,6 +409,51 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
       await releaseKey(p2.page, 'ArrowUp').catch(() => {});
       const after = (await tics(p1.page, NODE_ID)).gametic;
       expect(after, 'host keeps advancing (no freeze)').toBeGreaterThan(before);
+
+      // ── ISSUE #348: the shared ticcmd-log stays BOUNDED, not linear ──────────
+      // By now both sims have advanced many tics (gametic well past the seed).
+      // Without pruning the Y.Array would hold ~numPlayers entries PER TIC FOR
+      // THE WHOLE GAME (≈ 2 × gametic). With barrier-floor pruning the arbiter
+      // drops every tic both peers have consolidated past, so the log holds only
+      // the small in-flight window (input-delay + prune-interval + slack), a
+      // SMALL CONSTANT independent of how long the game has run. We let the sims
+      // run a bit more, then assert the arbiter's log is far below the
+      // grows-forever size — and bounded by an absolute ceiling. (Only the
+      // arbiter prunes, so we read its log; the guest sees the same shared
+      // array, pruned by the arbiter's deletes.)
+      const arbiterIsP1 = (await getState(p1.page, NODE_ID)).isNetArbiter;
+      const arbiter = arbiterIsP1 ? p1 : p2;
+      const other = arbiterIsP1 ? p2 : p1;
+      // Drive both peers a while longer so the gametic climbs well past the log
+      // size — if the log tracked gametic (unbounded) this is where it'd blow up.
+      for (let i = 0; i < 4; i++) {
+        await holdKey(p1.page, 'ArrowUp').catch(() => {});
+        await holdKey(p2.page, 'ArrowUp').catch(() => {});
+        await arbiter.page.waitForTimeout(500);
+      }
+      await releaseKey(p1.page, 'ArrowUp').catch(() => {});
+      await releaseKey(p2.page, 'ArrowUp').catch(() => {});
+      const gtArb = (await tics(arbiter.page, NODE_ID)).gametic;
+      const arbLog = await logSize(arbiter.page, NODE_ID);
+      // Sanity: lockstep is active so the log is real (not the -1 sentinel).
+      expect(arbLog, 'arbiter shared log is live').toBeGreaterThanOrEqual(0);
+      // BOUNDED: the log holds far fewer entries than a never-pruned log would
+      // (≈ 2 × gametic). 256 covers the input-delay + prune window + jitter for
+      // 2 players with comfortable headroom, and is independent of game length.
+      expect(
+        arbLog,
+        `shared ticcmd-log must stay BOUNDED by barrier-floor pruning, not grow ` +
+          `~2×gametic. gametic=${gtArb} logSize=${arbLog} (unpruned would be ≈${2 * gtArb}).`,
+      ).toBeLessThan(256);
+      // And the game must actually have run long enough that an unpruned log
+      // WOULD have exceeded the bound — otherwise the assertion is vacuous.
+      expect(gtArb, 'sim ran long enough that pruning is load-bearing').toBeGreaterThan(140);
+      // Shared state still holds AFTER pruning: both peers agree at a common tic.
+      const cA = await checksumAt(arbiter.page, NODE_ID);
+      const cB = await checksumAt(other.page, NODE_ID);
+      if (cA && cB && cA.tic === cB.tic) {
+        expect(cA.sum, 'checksums still match after pruning (pruning is harmless)').toBe(cB.sum);
+      }
     } finally {
       await Promise.all(peers.map((p) => p.ctx.close().catch(() => {})));
     }
