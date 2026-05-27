@@ -150,3 +150,47 @@ export async function readStatus(page: Page, field: string): Promise<string> {
   const m = text.match(new RegExp(`${field}\\s*(\\S+)`));
   return m?.[1] ?? '';
 }
+
+/**
+ * Take a STICKY, focus-independent keyboard claim on a DOOM card, then VERIFY
+ * the runtime actually claims keys before any are dispatched.
+ *
+ * DETERMINISTIC CLAIM (the @collab marine-move de-flake — shared by all DOOM-MP
+ * specs): we do NOT rely on a DOM click/`.focus()`. In a 2-context Playwright
+ * test only ONE page holds focus/activeElement; the backgrounded page's
+ * document.activeElement stays on <body>, so a focus-based capture leaves
+ * shouldClaimKey()'s focus-within branch false, the dispatched keydown is
+ * silently dropped, and the marine never moves. Instead we invoke the card's
+ * `forceClaimKeyboard()` dev hook (the SAME latchKeyboard() the "Click to
+ * capture keyboard" onclick fires) which flips kbLatched=true — honoured by
+ * shouldClaimKey() REGARDLESS of focus/foreground — then POLL
+ * getState().shouldClaimKey === true to confirm the claim landed before keys
+ * are dispatched. Works identically on the foreground and the background page.
+ * (Real users still click to capture; that path is unchanged.)
+ */
+export async function claimKeyboard(page: Page, id: string, timeout = 5000): Promise<void> {
+  await page.evaluate(
+    (nid) =>
+      (
+        globalThis as unknown as {
+          __doomCards?: Record<string, { forceClaimKeyboard?: () => void }>;
+        }
+      ).__doomCards?.[nid]?.forceClaimKeyboard?.(),
+    id,
+  );
+  // Poll until the runtime confirms the claim landed (focus-independent). On
+  // failure we fall through: the dispatch still runs so the spec's own
+  // assertion surfaces a clear signal rather than a silent no-op.
+  await page
+    .waitForFunction(
+      (nid) =>
+        (
+          globalThis as unknown as {
+            __doomCards?: Record<string, { getState: () => { shouldClaimKey: boolean } }>;
+          }
+        ).__doomCards?.[nid]?.getState().shouldClaimKey === true,
+      id,
+      { timeout },
+    )
+    .catch(() => {});
+}
