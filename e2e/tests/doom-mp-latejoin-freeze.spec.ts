@@ -35,7 +35,7 @@
 // Run only this:  flox activate -- task e2e -- doom-mp-latejoin-freeze.spec.ts
 
 import { test, expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
-import { spawnPatch, type SpawnNode } from './_helpers';
+import { spawnPatch, claimKeyboard, type SpawnNode } from './_helpers';
 
 const GS_LEVEL = 0;
 const GS_DEMOSCREEN = 3;
@@ -188,10 +188,10 @@ async function playerPos(
 }
 
 async function holdArrowUp(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-    c?.focus();
-  });
+  // Deterministic, focus-independent keyboard claim (NOT a racy `.focus()`):
+  // either page can be backgrounded across the two contexts, so we latch the
+  // claim via the forceClaimKeyboard() hook + poll shouldClaimKey before keys.
+  await claimKeyboard(page, NODE_ID);
   await page.evaluate(() =>
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
   );
