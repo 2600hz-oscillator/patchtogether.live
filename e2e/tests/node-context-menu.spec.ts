@@ -14,9 +14,11 @@ test('node context menu: right-click opens, Escape closes', async ({ page }) => 
   await page.getByRole('button', { name: 'Load example' }).click();
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-  // Right-click on the VCO card.
+  // Right-click on the VCO card BACKGROUND (its title bar). Right-clicking a
+  // knob/fader now opens the per-control MIDI menu instead, so we target a
+  // non-control region to reach the module menu.
   const vco = page.locator('.svelte-flow__node-analogVco').first();
-  await vco.click({ button: 'right' });
+  await vco.locator('.title').click({ button: 'right' });
 
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
 

@@ -90,6 +90,18 @@ interface ActiveBinding extends MidiBinding {
 }
 const bindings = $state<Map<string, ActiveBinding>>(new Map());
 
+/** Monotonic version stamped on every binding add/remove. Components read it
+ *  via `bindingsRune()` inside a `$derived` so a binding captured by the
+ *  engine (e.g. when an injected/real CC completes a learn) reactively
+ *  surfaces the bound-state badge — not just bindings created by a local
+ *  click handler. Bumped by `touchBindings()`. */
+let bindingsVersion = $state(0);
+function touchBindings(): void { bindingsVersion++; }
+
+/** Reactive getter — read this inside a `$derived` to re-evaluate whenever
+ *  any binding is added or removed. */
+export function bindingsRune(): number { return bindingsVersion; }
+
 /** Currently-active learn request (null when not learning). Reactive so
  *  the Fader / Knob with `spec.moduleId/paramId` matching can show a
  *  pulsing border. */
@@ -111,6 +123,7 @@ function loadFromStorage(): void {
         bindings.set(b.key, { ...b });
       }
     }
+    touchBindings();
   } catch {
     // Corrupt storage — ignore. A fresh learn overwrites.
   }
@@ -198,6 +211,7 @@ function handleMidi(ev: MidiEventLike): void {
       setter: { min: spec.min, max: spec.max, onchange: spec.onchange },
     };
     bindings.set(key, newBinding);
+    touchBindings();
     saveToStorage();
     learnSpec = null;
     // Apply the captured value immediately so the user sees the knob jump.
@@ -265,6 +279,7 @@ export function getBinding(moduleId: string, paramId: string): MidiBinding | und
 /** Remove a binding entirely. */
 export function clearBinding(moduleId: string, paramId: string): void {
   bindings.delete(bindingKey(moduleId, paramId));
+  touchBindings();
   saveToStorage();
 }
 
@@ -316,6 +331,7 @@ export function importBindings(incoming: MidiBinding[]): void {
       setter: prev?.setter,
     });
   }
+  touchBindings();
   saveToStorage();
 }
 
@@ -333,5 +349,48 @@ export function __test_setAccess(fake: MidiAccessLike | null): void {
 /** Wipe in-memory bindings (does not touch localStorage). */
 export function __test_clearBindings(): void {
   bindings.clear();
+  touchBindings();
   learnSpec = null;
+}
+
+// ---------------- Dev-only simulated-MIDI device ----------------
+//
+// Installs an in-memory fake MIDIAccess so an e2e (or manual dev poke) can
+// drive MIDI Learn + CC dispatch without real hardware or the Web MIDI
+// permission prompt. Returns a `sendCc` that pushes a Control-Change message
+// through exactly the same `handleMidi` path a real device uses, so learn
+// capture + binding dispatch are exercised end-to-end.
+//
+// Guarded behind `import.meta.env.DEV` at the call site (Canvas.svelte) so
+// the window hook is stripped from production bundles.
+let simSender: ((channel: number, cc: number, value: number) => void) | null = null;
+
+export function installSimulatedMidiDevice(): (channel: number, cc: number, value: number) => void {
+  if (simSender) return simSender;
+  let handler: ((ev: MidiEventLike) => void) | null = null;
+  const input: MidiInputLike = {
+    id: 'pt-sim-midi-0',
+    name: 'PatchTogether Simulated MIDI',
+    manufacturer: 'patchtogether',
+    state: 'connected',
+    get onmidimessage() { return handler; },
+    set onmidimessage(h) { handler = h; },
+  };
+  const inputs = new Map<string, MidiInputLike>();
+  inputs.set(input.id, input);
+  const fake: MidiAccessLike = { inputs, onstatechange: null };
+  // Short-circuit connect() so beginLearn() resolves immediately against the
+  // fake device instead of waiting on navigator.requestMIDIAccess().
+  access = fake;
+  connectStarted = true;
+  connectFailed = false;
+  attachAllInputs();
+  simSender = (channel: number, cc: number, value: number) => {
+    if (!handler) return;
+    handler({
+      data: new Uint8Array([0xb0 | (channel & 0x0f), cc & 0x7f, value & 0x7f]),
+      timeStamp: 0,
+    });
+  };
+  return simSender;
 }
