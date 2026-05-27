@@ -280,6 +280,45 @@ export function allBindings(): ReadonlyMap<string, MidiBinding> {
   return bindings;
 }
 
+// ---------------- Performance bundle export / import ----------------
+//
+// The Save/Load Local Performance feature bundles these device-agnostic CC
+// maps so a "complete track" re-binds its MIDI Learn knobs on reload. Bindings
+// are keyed by `moduleId:paramId` (not device), so importing them re-arms the
+// CCs for this performance's modules across whatever controller is connected.
+
+/** Snapshot the current bindings as plain export records (no live setters). */
+export function exportBindings(): MidiBinding[] {
+  const arr: MidiBinding[] = [];
+  for (const b of bindings.values()) {
+    arr.push({ key: b.key, channel: b.channel, cc: b.cc, learnedAt: b.learnedAt });
+  }
+  return arr;
+}
+
+/**
+ * Merge imported bindings into the live set + persist. Bundle wins per `key`
+ * (this performance's modules); other-patch bindings are preserved (design
+ * risk #6 — don't clobber the user's unrelated mappings). Existing live
+ * setters are kept where the key already had one so a mounted card keeps
+ * driving without a remount. */
+export function importBindings(incoming: MidiBinding[]): void {
+  for (const b of incoming) {
+    if (typeof b?.key !== 'string' || !Number.isFinite(b.channel) || !Number.isFinite(b.cc)) {
+      continue;
+    }
+    const prev = bindings.get(b.key);
+    bindings.set(b.key, {
+      key: b.key,
+      channel: b.channel,
+      cc: b.cc,
+      learnedAt: b.learnedAt,
+      setter: prev?.setter,
+    });
+  }
+  saveToStorage();
+}
+
 // ---------------- Test-only hooks ----------------
 
 /** Replace the singleton's MIDIAccess with a fake. Bindings + learn state

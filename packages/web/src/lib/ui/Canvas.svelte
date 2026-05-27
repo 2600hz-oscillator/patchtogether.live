@@ -30,6 +30,22 @@
     EnvelopeParseError,
     type PatchEnvelope,
   } from '$lib/graph/persistence';
+  import {
+    makePerformanceBundle,
+    validateBundle,
+    BundleParseError,
+    mergeMidiBindings,
+  } from '$lib/graph/performance-bundle';
+  import {
+    canPersistPerformances,
+    savePerformanceSlot,
+    loadPerformanceSlot,
+    listPerformanceSlots,
+  } from '$lib/graph/performance-store';
+  import {
+    exportBindings as exportMidiBindings,
+    importBindings as importMidiBindings,
+  } from '$lib/midi/midi-learn.svelte';
 
   function persistenceLoad(env: unknown, ydocArg: typeof ydoc, patchArg: typeof patch) {
     // Validate via parseEnvelope when a raw object is passed; if already typed,
@@ -907,6 +923,182 @@
       const msg = e instanceof EnvelopeParseError ? e.message : String(e);
       error = `Load failed: ${msg}`;
       trace(`load failed: ${msg}`);
+    }
+  }
+
+  // ---------------- Save / Load Local Performance ----------------
+  //
+  // A "performance slot" is a named snapshot of the WHOLE track stored in this
+  // browser's IndexedDB. The bundle is a superset of the patch envelope:
+  //   * patch graph + edges + params + module positions + INLINE PICTUREBOX
+  //     images + INLINE SAMSLOOP samples — all already in the envelope (free).
+  //   * VIDEOBOX video files — NOT inlined. Their FileSystemFileHandles already
+  //     persist in the existing video-handle IDB store (PR #102), keyed by the
+  //     `fileMeta.handleId` that's saved in the envelope. So on the SAME browser
+  //     profile, reloading the bundle re-applies the envelope, each VideoboxCard
+  //     re-acquires its handle by handleId and shows the one-click "re-allow"
+  //     (Chromium) — the video comes back. We record asset refs in the bundle
+  //     for the picker summary + future cross-profile guided re-pick.
+  //   * MIDI Learn CC maps (device-agnostic) + MIDI-CV-BUDDY device-by-NAME +
+  //     gamepad-by-id metadata — see performance-bundle.ts.
+  //
+  // Browser support: IndexedDB-gated. Degrades gracefully — the buttons show a
+  // notice (not a hard fail) where File System Access is absent (Firefox/Safari):
+  // the patch + inline assets still restore; only the video files need a manual
+  // re-pick via the existing VIDEOBOX re-link prompt.
+
+  let perfSupported = $derived(canPersistPerformances());
+
+  /** Resolve a MIDIInput.id → {name, manufacturer} from the live MIDIAccess,
+   *  if one has been granted. Best-effort: returns null when Web MIDI isn't
+   *  available / not yet granted (device metadata is then simply omitted). */
+  async function resolveMidiDevices(): Promise<(id: string) => { name: string; manufacturer?: string } | null> {
+    try {
+      const nav = navigator as unknown as { requestMIDIAccess?: (o?: unknown) => Promise<{ inputs: Map<string, { name?: string | null; manufacturer?: string | null }> }> };
+      if (typeof nav.requestMIDIAccess !== 'function') return () => null;
+      const access = await nav.requestMIDIAccess({ sysex: false });
+      return (id: string) => {
+        const inp = access.inputs.get(id);
+        if (!inp || !inp.name) return null;
+        return { name: inp.name, manufacturer: inp.manufacturer ?? undefined };
+      };
+    } catch {
+      return () => null;
+    }
+  }
+
+  /** Resolve a gamepad slot index → connected gamepad.id, or null. */
+  function resolveGamepad(slot: number): string | null {
+    try {
+      const pads = typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function'
+        ? navigator.getGamepads()
+        : [];
+      return pads?.[slot]?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function savePerformance() {
+    error = null;
+    if (!perfSupported) {
+      error = 'Save Local Performance needs IndexedDB (not available in this browser).';
+      return;
+    }
+    const input = window.prompt('Save Local Performance as…', 'My Performance');
+    if (input === null) {
+      trace('save performance cancelled');
+      return;
+    }
+    const name = input.trim();
+    if (!name) {
+      error = 'Performance name cannot be empty.';
+      return;
+    }
+    try {
+      const envelope = makeEnvelope(ydoc);
+      // Build the live node map (plain objects) for asset/device extraction.
+      const nodes: Record<string, { id: string; type: string; data?: Record<string, unknown> | null; params?: Record<string, unknown> | null }> = {};
+      for (const [id, n] of Object.entries(patch.nodes)) {
+        if (n) nodes[id] = { id, type: n.type, data: n.data as Record<string, unknown> | null, params: n.params as Record<string, unknown> | null };
+      }
+      const resolveMidi = await resolveMidiDevices();
+      const bundle = makePerformanceBundle({
+        envelope,
+        nodes,
+        midiBindings: exportMidiBindings(),
+        resolveMidiDevice: resolveMidi,
+        resolveGamepad,
+      });
+      const ok = await savePerformanceSlot(name, bundle);
+      if (!ok) {
+        error = 'Could not save the performance (storage unavailable or full).';
+        return;
+      }
+      const videoCount = bundle.assets.length;
+      trace(`saved performance "${name}" (${Object.keys(nodes).length} nodes, ${videoCount} video assets)`);
+      if (videoCount > 0) {
+        error = `Saved "${name}". On reload, click each VIDEOBOX's "re-allow" to bring the ${videoCount} video file${videoCount === 1 ? '' : 's'} back (same browser profile).`;
+      }
+    } catch (e) {
+      error = `Save Performance failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`save performance failed: ${String(e)}`);
+    }
+  }
+
+  async function loadPerformance() {
+    error = null;
+    if (!perfSupported) {
+      error = 'Load Local Performance needs IndexedDB (not available in this browser).';
+      return;
+    }
+    try {
+      const slots = await listPerformanceSlots();
+      if (slots.length === 0) {
+        error = 'No saved performances found in this browser.';
+        return;
+      }
+      // Minimal picker: numbered prompt (no new modal component to keep the
+      // MVP small + testable). Newest-first.
+      const menu = slots
+        .map((s, i) => `${i + 1}. ${s.name}${s.assetCount ? ` (${s.assetCount} video${s.assetCount === 1 ? '' : 's'})` : ''}`)
+        .join('\n');
+      const pick = window.prompt(`Load which performance?\n\n${menu}\n\nEnter a number:`, '1');
+      if (pick === null) {
+        trace('load performance cancelled');
+        return;
+      }
+      const idx = Number.parseInt(pick.trim(), 10) - 1;
+      const chosen = slots[idx];
+      if (!chosen) {
+        error = `No performance #${pick.trim()}.`;
+        return;
+      }
+
+      const rec = await loadPerformanceSlot(chosen.name);
+      if (!rec) {
+        error = `Performance "${chosen.name}" could not be read.`;
+        return;
+      }
+      const bundle = validateBundle(rec.bundle);
+
+      // Bootstrap engine + reconciler inside this gesture (same reason as
+      // loadPatch): resume AudioContext + have a reconciler observe the update.
+      await ensureEngine();
+
+      // Restore MIDI Learn CC maps (device-agnostic; merge so other patches'
+      // bindings aren't clobbered). Done BEFORE applying the envelope so cards
+      // re-register their setters against the restored bindings on mount.
+      if (bundle.midiBindings.length > 0) {
+        const merged = mergeMidiBindings(exportMidiBindings(), bundle.midiBindings);
+        importMidiBindings(merged);
+      }
+
+      // Apply the patch envelope — restores nodes/edges/params/positions +
+      // inline images/samples. Each VIDEOBOX card then re-acquires its video
+      // handle by handleId (same-profile) on mount and offers the re-allow /
+      // re-link prompt automatically (PR #102 path).
+      const result = persistenceLoad(bundle.patch, ydoc, patch);
+      await reconciler?.reconcile();
+
+      trace(`loaded performance "${chosen.name}" (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
+
+      // Surface device re-bind status as a notice (not an error).
+      const notes: string[] = [];
+      if (bundle.assets.length > 0) {
+        notes.push(`${bundle.assets.length} video file${bundle.assets.length === 1 ? '' : 's'}: click each VIDEOBOX "re-allow" to relink.`);
+      }
+      if (bundle.midiDevices.length > 0) {
+        notes.push(`${bundle.midiDevices.length} MIDI device${bundle.midiDevices.length === 1 ? '' : 's'} recorded by name — open each MIDI-CV-BUDDY and pick the controller if not auto-selected.`);
+      }
+      if (result.diagnostics.length > 0) {
+        for (const d of result.diagnostics) console.warn(`[load-perf] ${d.nodeId} (${d.type}): ${d.reason}`);
+      }
+      if (notes.length > 0) error = `Loaded "${chosen.name}". ${notes.join(' ')}`;
+    } catch (e) {
+      const msg = e instanceof BundleParseError || e instanceof EnvelopeParseError ? e.message : String(e);
+      error = `Load Performance failed: ${msg}`;
+      trace(`load performance failed: ${msg}`);
     }
   }
 
@@ -3280,6 +3472,22 @@
         title="Replace the current rack with a .imp.json file from disk."
       >Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
+      <button
+        onclick={savePerformance}
+        disabled={nodeCount === 0 || !perfSupported}
+        data-testid="save-perf-btn"
+        title={perfSupported
+          ? 'Save the WHOLE track (patch + positions + images + samples + video handles + MIDI/gamepad maps) into a named slot in THIS browser. Reload + Load Perf brings it all back on the same profile.'
+          : 'Unavailable: needs IndexedDB (not in this browser).'}
+      >Save Perf</button>
+      <button
+        onclick={loadPerformance}
+        disabled={!perfSupported}
+        data-testid="load-perf-btn"
+        title={perfSupported
+          ? 'Restore a saved local performance. Reloads the patch + inline assets; re-acquires video files (one click to re-allow on Chromium) + re-binds MIDI/gamepad.'
+          : 'Unavailable: needs IndexedDB (not in this browser).'}
+      >Load Perf</button>
       <SkinSwitcher />
       {#if headerSignedIn}
         <a
