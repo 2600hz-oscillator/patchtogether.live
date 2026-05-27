@@ -171,6 +171,20 @@ export interface DoomHandleExtras {
    *  null if not spawned. The cross-peer-visibility e2e reads the REMOTE
    *  peer's slot here to assert this peer saw it move. */
   getPlayerSlotState(slot: number): { x: number; y: number; slot: number } | null;
+  // ---- P1: true-lockstep barrier ----
+  /** Arm/disarm the engine barrier. Armed for a >1-player netgame; SP off. */
+  setLockstep(enabled: boolean): void;
+  /** Deliver one consolidated TicSet (one ticcmd per slot, null = absent).
+   *  Must be called in ascending tic order; the C side ignores out-of-order. */
+  receiveTicSet(tic: number, numPlayers: number, slots: (DoomTiccmd | null)[]): void;
+  /** Engine tic counters for the JS lockstep driver. */
+  getMaketic(): number;
+  getGametic(): number;
+  getRecvtic(): number;
+  /** This peer's local ticcmd for a specific built tic (for the append-log). */
+  readLocalTiccmdAt(tic: number): DoomTiccmd | null;
+  /** 32-bit deterministic state digest — the cross-peer lockstep oracle. */
+  stateChecksum(): number;
 }
 
 export const doomDef: VideoModuleDef = {
@@ -526,6 +540,19 @@ export const doomDef: VideoModuleDef = {
       getPlayerSlotState(slot) {
         return runtime ? runtime.getPlayerSlotState(slot) : null;
       },
+      setLockstep(enabled) {
+        if (!runtime || !runtime.isInitialized()) return;
+        runtime.setLockstep(enabled);
+      },
+      receiveTicSet(tic, numPlayers, slots) {
+        if (!runtime || !runtime.isInitialized()) return;
+        runtime.receiveTicSet(tic, numPlayers, slots);
+      },
+      getMaketic() { return runtime ? runtime.getMaketic() : 0; },
+      getGametic() { return runtime ? runtime.getGametic() : 0; },
+      getRecvtic() { return runtime ? runtime.getRecvtic() : 0; },
+      readLocalTiccmdAt(tic) { return runtime ? runtime.readLocalTiccmdAt(tic) : null; },
+      stateChecksum() { return runtime ? runtime.stateChecksum() : 0; },
     };
 
     return {

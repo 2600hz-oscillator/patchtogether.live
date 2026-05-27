@@ -510,6 +510,15 @@ jobs:
       - name: Build DSP
         run: flox activate -- task dsp:build
 
+      # P1 true-lockstep: prove the LIVE barrier path (dgpt_set_lockstep +
+      # dgpt_receive_ticset) is BIT-EXACT across N sims on a FRESH WASM build,
+      # before the relay-flaky @collab e2e. This is the deterministic C-side
+      # oracle (no relay, no browser) — it builds the DOOM_MP node artifact and
+      # asserts two & four sims stay byte-identical for 200 tics through the
+      # real barrier + that a withheld TicSet PAUSES (never spins) and resumes.
+      - name: DOOM true-lockstep barrier acceptance (bit-exact, fresh build)
+        run: flox activate -- node packages/web/native/doomgeneric/tests/lockstep-barrier.acceptance.mjs
+
       # Single worker, serial — no shard contention. `task collab` is
       # `playwright test --grep @collab --workers=1`. Generous per-job timeout
       # (25 min) absorbs the cold DOOM WASM + 2-context boot.

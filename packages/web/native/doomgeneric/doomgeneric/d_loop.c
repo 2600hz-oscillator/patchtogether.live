@@ -157,6 +157,48 @@ static int      dgpt_netgame_players;
 //   before. Inert on the single-player + production paths.
 static boolean  dgpt_scripted = false;
 
+// patchtogether.live P1 TRUE LOCKSTEP mode (doom-mp-true-lockstep.md).
+//
+// WHY THIS EXISTS (the real fix for "both players run independent gamestates"):
+//   The slice-5 cross-feed (above) only OVERLAYS remote inputs onto a peer that
+//   free-runs its own gametic clock — it shares inputs, not authoritative state,
+//   and intermediate tics coalesce. The #345 consistancy stamp keeps that
+//   free-run model from crashing, but the worlds genuinely diverge (monsters,
+//   barrels, health, RNG). P1 replaces that with a real barrier: every peer
+//   feeds the SAME ordered, consolidated per-tic TicSet into ticdata[] via
+//   DGPT_LoopReceiveTicSet (driven from JS over a Yjs Y.Array append-log), and a
+//   peer may only advance gametic up to dgpt_recvtic. No peer ever runs a tic
+//   for which it has not received the consolidated TicSet → every sim consumes
+//   the identical input stream at the identical tic → byte-identical world state
+//   (proven bit-exact by slice 7 + the barrier spike).
+//
+//   CRITICAL CONSTRAINT — the browser build does NOT define FEATURE_MULTIPLAYER
+//   (only the DOOM_MP=1 node test artifact does). So the vendored barrier in
+//   GetLowTic (the recvtic clamp) is #ifdef'd OUT of the live game. We therefore
+//   express the barrier in UNCONDITIONALLY-compiled code gated on
+//   `dgpt_lockstep`, mirroring how the slice-5 cross-feed is always compiled.
+//   When lockstep is armed:
+//     - GetLowTic clamps lowtic to dgpt_recvtic (the engine never advances past
+//       the last consolidated TicSet);
+//     - TryRunTics, when starved (lowtic < gametic/ticdup + counts), RETURNS
+//       immediately instead of entering the I_Sleep spin — "advance ≤ available
+//       tics, then return", the anti-freeze invariant. A peer missing a remote
+//       tic simply PAUSES (renders the last frame, input still queued) and
+//       resumes the moment the TicSet arrives; it never busy-spins or wedges
+//       the tab;
+//     - the consolidated ticdata[] TicSet is the SOLE authority (the local slot
+//       is NOT rebuilt by the overlay and NOT SinglePlayerClear'd), carrying
+//       each slot's real consistancy byte so g_game.c's stock divergence check
+//       runs for real (the live oracle — no per-slot stamp-to-pass band-aid).
+//   OFF by default → the SP + slice-5 free-run paths are byte-identical.
+static boolean  dgpt_lockstep = false;
+// recvtic for the lockstep barrier, owned here (the vendored `recvtic` static is
+// only advanced inside D_ReceiveTic, which the live path never calls, and is
+// behind FEATURE_MULTIPLAYER in GetLowTic anyway). When lockstep is armed JS
+// calls DGPT_LoopReceiveTicSet once per consolidated tic, which fills
+// ticdata[tic % BACKUPTICS] + bumps this to tic+1.
+static int      dgpt_recvtic = 0;
+
 // Overlay the remote slots onto a tic set about to run, forcing those slots
 // in-game so RunTic applies them + (crucially) so RunTic's quit-detection
 // never flips playeringame[i] off for a remote player whose first ticcmd
@@ -721,6 +763,15 @@ static int GetLowTic(void)
     }
 #endif
 
+    // P1 true lockstep: clamp to the last consolidated TicSet we have RECEIVED
+    // (dgpt_recvtic), so the engine never advances past a tic for which the
+    // shared TicSet has not arrived. Unconditionally compiled (the browser
+    // build has no FEATURE_MULTIPLAYER); inert unless lockstep is armed.
+    if (dgpt_lockstep && dgpt_recvtic < lowtic)
+    {
+        lowtic = dgpt_recvtic;
+    }
+
     return lowtic;
 }
 
@@ -902,6 +953,23 @@ void TryRunTics (void)
     if (counts < 1)
 	counts = 1;
 
+    // P1 true lockstep — anti-freeze invariant ("advance ≤ available, return").
+    //
+    // The wait loop below spins on I_Sleep(1) until lowtic catches up. In a
+    // cooperatively-scheduled WASM tick there is no real sleep, so under a
+    // barrier stall it would busy-bump the virtual clock every frame (the class
+    // of bug that froze the tab). In lockstep mode we instead do exactly what
+    // the engine's own "don't stay in this loop forever" early-out does — RETURN
+    // to update the screen — but BEFORE entering the spin: if we do not yet have
+    // enough consolidated tics (lowtic, clamped to dgpt_recvtic in GetLowTic),
+    // run NONE this frame and let rendering proceed on the last frame. The peer
+    // pauses; it never blocks. It resumes the instant the next TicSet lands (a
+    // later dgpt_tick sees a higher dgpt_recvtic).
+    if (dgpt_lockstep && (!PlayersInGame() || lowtic < gametic/ticdup + counts))
+    {
+        return;
+    }
+
     // wait for new tics if needed
 
     while (!PlayersInGame() || lowtic < gametic/ticdup + counts)
@@ -936,15 +1004,30 @@ void TryRunTics (void)
 
         set = &ticdata[(gametic / ticdup) % BACKUPTICS];
 
-        if (!net_client_connected)
+        if (dgpt_lockstep)
         {
-            SinglePlayerClear(set);
+            // P1 true lockstep: ticdata[] already holds the consolidated,
+            // authoritative TicSet for EVERY slot (written by
+            // DGPT_LoopReceiveTicSet from the shared ordered log) — including
+            // this peer's own slot and each slot's REAL consistancy byte. We do
+            // NOT SinglePlayerClear (it would wipe the remote marines) and do
+            // NOT run the slice-5 overlay (the free-run band-aid that re-stamps
+            // every remote slot's consistancy to defuse the desync check). The
+            // stock g_game.c consistency check therefore runs against the
+            // genuine cross-peer state — our live divergence oracle.
         }
+        else
+        {
+            if (!net_client_connected)
+            {
+                SinglePlayerClear(set);
+            }
 
-        // slice-5: overlay injected remote ticcmds AFTER SinglePlayerClear so
-        // other peers' marines move in this peer's world (cross-peer
-        // visibility). No-op in single-player (no slots ever injected).
-        DGPT_OverlayRemoteCmds(set);
+            // slice-5: overlay injected remote ticcmds AFTER SinglePlayerClear
+            // so other peers' marines move in this peer's world (cross-peer
+            // visibility). No-op in single-player (no slots ever injected).
+            DGPT_OverlayRemoteCmds(set);
+        }
 
 	for (i=0 ; i<ticdup ; i++)
 	{
@@ -989,6 +1072,10 @@ void DGPT_LoopSetLocalPlayer(int player)
     recvtic = 0;
     maketic = 0;
     gametic = 0;
+    // P1 true lockstep: a fresh game (or a synchronized restart) starts at the
+    // shared tic 0 with no TicSets received yet — nobody advances until JS
+    // delivers the consolidated TicSet 0.
+    dgpt_recvtic = 0;
     // A fresh game starts with no remote ticcmds; clear the cross-feed table
     // so a stale ticcmd from a previous map/launch can't leak into the new
     // world before the first real injection arrives.
@@ -1019,6 +1106,83 @@ void DGPT_LoopSetScripted(int enabled)
 }
 
 // ---------------------------------------------------------------------------
+// P1 true-lockstep barrier: public C entry points (driven from JS via the
+// dgpt_* exports in doomgeneric_patchtogether.c). See the rationale block near
+// dgpt_lockstep at the top of this file.
+
+// Arm/disarm the true-lockstep barrier. When armed (enabled != 0):
+//   - GetLowTic clamps advancement to dgpt_recvtic;
+//   - TryRunTics returns (never spins) when starved;
+//   - the consolidated ticdata[] TicSet is the sole authority (no overlay /
+//     SinglePlayerClear), so the stock consistency check runs for real.
+// OFF by default; the SP + slice-5 free-run paths are byte-identical when off.
+// The live game arms this only for a >1-player netgame (see DoomCard).
+void DGPT_LoopSetLockstep(int enabled)
+{
+    dgpt_lockstep = (enabled != 0);
+}
+
+// Deliver the consolidated, ordered TicSet for tic `tic` (one ticcmd per slot
+// in [0, num_players); each present-mask bit says whether that slot is in-game
+// for this tic — a dropped peer arrives with its bit cleared). This is the
+// legit recvtic advance the live path never performs: it writes
+// ticdata[tic % BACKUPTICS] for ALL slots (including the local one — the TicSet
+// is authoritative for every peer) and bumps dgpt_recvtic so GetLowTic releases
+// the tic. JS assembles this from the shared ordered append-log (Y.Array),
+// strictly in tic order, calling this once per tic. Out-of-order / duplicate
+// tics are ignored (tic must equal dgpt_recvtic) so a re-delivered log entry
+// can't double-advance.
+//
+// CONSISTANCY: we stamp each slot's locally-expected consistancy byte
+// (G_ConsistancyForSlot) — the standard way DOOM fills consistancy for a slot
+// whose wire packet didn't carry one (our transport ships inputs, not
+// consistancy). This is NOT the free-run "stamp-to-pass" band-aid: under true
+// lockstep every peer holds byte-identical state, so this value is identical on
+// every peer, and the stock g_game.c check compares the SAME input stream's
+// result — it stays a real divergence oracle (the e2e's dgpt_state_checksum
+// equality is the primary cross-peer oracle).
+void DGPT_LoopReceiveTicSet(int tic,
+                            int num_players,
+                            const signed char *forwardmove,
+                            const signed char *sidemove,
+                            const short *angleturn,
+                            const unsigned char *buttons,
+                            const unsigned char *present)
+{
+    int i;
+    ticcmd_set_t *set;
+
+    // Strictly in-order delivery: only accept the next expected tic. A stale or
+    // future tic is dropped (JS consolidates + delivers in order).
+    if (tic != dgpt_recvtic) return;
+    if (num_players < 1) num_players = 1;
+    if (num_players > NET_MAXPLAYERS) num_players = NET_MAXPLAYERS;
+
+    set = &ticdata[tic % BACKUPTICS];
+    for (i = 0; i < NET_MAXPLAYERS; ++i)
+    {
+        if (i < num_players)
+        {
+            memset(&set->cmds[i], 0, sizeof(ticcmd_t));
+            set->cmds[i].forwardmove = forwardmove[i];
+            set->cmds[i].sidemove = sidemove[i];
+            set->cmds[i].angleturn = angleturn[i];
+            set->cmds[i].buttons = buttons[i];
+            set->cmds[i].chatchar = 0;
+            set->cmds[i].consistancy =
+                (unsigned char) G_ConsistancyForSlot(i, tic % BACKUPTICS);
+            set->ingame[i] = (present[i] != 0);
+        }
+        else
+        {
+            set->ingame[i] = false;
+        }
+    }
+
+    dgpt_recvtic = tic + 1;
+}
+
+// ---------------------------------------------------------------------------
 // slice-5 cross-peer ticcmd feed: public C entry points (driven from JS via
 // the dgpt_* exports in doomgeneric_patchtogether.c). See the table + rationale
 // near the top of this file.
@@ -1037,6 +1201,38 @@ int DGPT_LoopReadLocalTiccmd(signed char *forwardmove,
     if (maketic <= 0) return 0;
     // The latest built tic is maketic-1 (BuildNewTic increments after store).
     cmd = &ticdata[(maketic - 1) % BACKUPTICS].cmds[localplayer];
+    if (forwardmove) *forwardmove = cmd->forwardmove;
+    if (sidemove)    *sidemove = cmd->sidemove;
+    if (angleturn)   *angleturn = cmd->angleturn;
+    if (buttons)     *buttons = cmd->buttons;
+    return 1;
+}
+
+// P1 true lockstep: expose the engine's own tic counters so JS can use the
+// engine as the authoritative tic clock. JS appends its local ticcmd for tic
+// (maketic-1) to the shared log under THIS number, and gates build-ahead /
+// barrier delivery against gametic + dgpt_recvtic. Keeping the numbering in the
+// engine avoids JS and the C sim disagreeing about "which tic is this input."
+int DGPT_LoopGetMaketic(void) { return maketic; }
+int DGPT_LoopGetGametic(void) { return gametic; }
+int DGPT_LoopGetRecvtic(void) { return dgpt_recvtic; }
+
+// Read THIS peer's local ticcmd built for a SPECIFIC tic (0 <= tic < maketic),
+// from the ticdata ring. The lockstep JS pump appends EVERY built-but-unlogged
+// tic to the shared ordered log (not just the latest), so a frame in which the
+// engine built several tics ahead doesn't leave a gap in the per-tic stream.
+// Returns 1 if the tic is in range + the ring still holds it (tic > maketic -
+// BACKUPTICS), else 0 (out args untouched).
+int DGPT_LoopReadLocalTiccmdAt(int tic,
+                               signed char *forwardmove,
+                               signed char *sidemove,
+                               short *angleturn,
+                               unsigned char *buttons)
+{
+    ticcmd_t *cmd;
+    if (tic < 0 || tic >= maketic) return 0;
+    if (tic <= maketic - BACKUPTICS) return 0; // fell out of the ring
+    cmd = &ticdata[tic % BACKUPTICS].cmds[localplayer];
     if (forwardmove) *forwardmove = cmd->forwardmove;
     if (sidemove)    *sidemove = cmd->sidemove;
     if (angleturn)   *angleturn = cmd->angleturn;

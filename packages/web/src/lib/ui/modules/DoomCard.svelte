@@ -85,6 +85,7 @@
     type GameStartEnvelope,
     type TiccmdEnvelope,
   } from '$lib/doom/doom-netcode';
+  import { LockstepTransport } from '$lib/doom/doom-lockstep';
   import {
     slotColorCss,
     slotLabel,
@@ -142,6 +143,22 @@
   let netStarted = $state(false);           // our DoomNetcode is running
   let isNetArbiter = $state(false);         // lex-min player == arbiter
   let netcode: DoomNetcode | null = null;
+  // ---- P1: true deterministic lockstep ----
+  //
+  // When a >1-player netgame launches, every peer runs a TRUE shared simulation:
+  // each appends its per-tic ticcmd to a Yjs Y.Array append-log, reads the log,
+  // consolidates an ordered per-tic TicSet, and feeds it into the WASM barrier
+  // (extras.receiveTicSet). The sim advances only over complete TicSets and
+  // PAUSES (never spins) when starved. This replaces the slice-5 last-value
+  // awareness overlay + the #339 reinject band-aid on the lockstep path, so
+  // monsters/barrels/health/positions are byte-identical across peers. A lone
+  // (numPlayers==1) game leaves lockstep OFF → single-player is byte-identical.
+  let lockstep: LockstepTransport | null = null;
+  let lockstepActive = $state(false);
+  // The next consolidated tic we still need to deliver (== engine recvtic).
+  let lockstepNextTic = 0;
+  // Highest local tic we've appended to the shared log (gap-free append cursor).
+  let lockstepAppendedThru = -1;
   // ---- Slice 4: New Game dialog + Launch state ----
   //
   // The arbiter (rack host = lex-min member = player 0) picks mode/skill/
@@ -408,6 +425,13 @@
       return;
     }
     extras.startNetGame(env.settings, slot);
+    // P1: arm true lockstep for a >1-player game. Both peers start the level at
+    // the same shared tic 0 (recvtic=gametic=0 after dgpt_start_netgame) with
+    // the same seed/settings (identical skill/episode/map/numPlayers → identical
+    // G_InitNew + RNG LUT), so the first consolidated TicSet (tic 0) is the
+    // shared start. The launchId is the log GENERATION so a (re)launch uses a
+    // fresh shared log. A lone game leaves lockstep OFF (single-player byte-exact).
+    setupLockstep(env.settings.numPlayers, slot, env.launchId);
     // G_InitNew runs synchronously inside dgpt_start_netgame, so the level is
     // loaded immediately. If for any reason it didn't take (gamestate still on
     // the demo screen), keep the pending launch so the render loop re-applies.
@@ -416,6 +440,26 @@
     } else {
       pendingLaunch = env;
     }
+  }
+
+  /** P1: (re)arm the lockstep barrier + transport for this launch. For a lone
+   *  game (numPlayers <= 1) it disarms lockstep entirely (single-player path).
+   *  Idempotent — a relaunch (next map / P2 restart) rebuilds the transport at
+   *  the new roster size and resets the shared tic clock to 0. */
+  function setupLockstep(numPlayers: number, slot: number, generation: number): void {
+    const extras = getExtras();
+    if (!extras) return;
+    if (numPlayers <= 1) {
+      extras.setLockstep(false);
+      lockstep = null;
+      lockstepActive = false;
+      return;
+    }
+    extras.setLockstep(true);
+    lockstep = new LockstepTransport({ doc: ydoc, moduleId: id, slot, numPlayers, generation });
+    lockstepActive = true;
+    lockstepNextTic = 0;
+    lockstepAppendedThru = -1;
   }
 
   /** Render-loop hook: if a launch is pending (runtime wasn't ready when the
@@ -479,6 +523,49 @@
     if (mySlot === null) return;
     if (!launched) return;
     netcode.reinjectKnownTiccmds();
+  }
+
+  /** P1 true-lockstep pump (replaces broadcast + reinject on the lockstep path).
+   *  Each frame: (1) APPEND this peer's freshly-built local ticcmd(s) for the
+   *  tics the engine has built (maketic-1) to the shared ordered log; (2) DRAIN
+   *  every now-complete consolidated TicSet from the log, IN ORDER, into the
+   *  WASM barrier (extras.receiveTicSet). The engine then advances gametic up to
+   *  recvtic on its own runTic and PAUSES (never spins) when a TicSet is
+   *  missing. (3) The arbiter prunes consumed log entries. The sim never
+   *  free-runs and never busy-waits. */
+  function pumpLockstep(): void {
+    if (!lockstepActive || !lockstep) return;
+    if (mySlot === null || !launched) return;
+    const extras = getExtras();
+    if (!extras) return;
+
+    // (1) Append our local input for EVERY built-but-not-yet-logged tic (not
+    // just the latest): the engine can build several tics in one frame, so we
+    // walk from the last-appended tic up to maketic-1 and append each, reading
+    // that tic's exact ticcmd from the ring. This keeps the per-tic stream
+    // GAP-FREE — a gap would stall the barrier forever (the missing tic never
+    // consolidates). Each entry is tagged with its engine tic so every peer
+    // agrees which input belongs to which tic.
+    const maketic = extras.getMaketic();
+    for (let t = lockstepAppendedThru + 1; t <= maketic - 1; t++) {
+      const c = extras.readLocalTiccmdAt(t);
+      if (!c) break; // fell out of the ring (shouldn't happen at our cadence)
+      lockstep.appendLocal(t, c);
+      lockstepAppendedThru = t;
+    }
+
+    // (2) Drain ready TicSets in order, starting at the engine's recvtic. Each
+    // delivered set bumps recvtic in the WASM, releasing one more tic for the
+    // next runTic to advance.
+    lockstepNextTic = extras.getRecvtic();
+    lockstepNextTic = lockstep.drainReady(lockstepNextTic, (tic, numPlayers, set) => {
+      extras.receiveTicSet(tic, numPlayers, set);
+    });
+
+    // (3) Arbiter prunes consumed entries so the log never grows unbounded.
+    if (isNetArbiter) {
+      lockstep.pruneBelow(extras.getGametic());
+    }
   }
 
   /** Local user id used for host election. Resolved lazily from the
@@ -918,6 +1005,14 @@
     }
     netStarted = false;
     isNetArbiter = false;
+    // P1: tear down the lockstep transport + disarm the engine barrier so a
+    // dropped/spectating peer doesn't keep a stale barrier armed.
+    const ex = getExtras();
+    try { ex?.setLockstep(false); } catch { /* runtime may be gone */ }
+    lockstep = null;
+    lockstepActive = false;
+    lockstepNextTic = 0;
+    lockstepAppendedThru = -1;
   }
 
   // Arbiter-side roster cleanup: when a player closes their tab they drop
@@ -1432,18 +1527,20 @@
         retryPendingLaunchIfNeeded();
         const ex = getExtras();
         if (ex) gamestate = ex.getGameState();
-        // Slice 5: broadcast our latest local ticcmd so peers move our marine
-        // in their worlds (cross-peer visibility). Cheap (4 small ints over a
-        // sticky awareness field, deduped by seq on receive).
-        broadcastLocalTiccmd();
-        // Approach A — lockstep gap-fill: re-feed every present remote peer's
-        // last-known ticcmd into our sim each tic. This keeps the C cross-feed
-        // overlay fresh for a peer who is HOLDING a key / standing still / whose
-        // sticky awareness writes coalesced (the only-on-change cap drops a
-        // steady peer's write rate to ~0), so a quiet remote marine never
-        // appears frozen here. Safe re: #287 — the netcode only re-injects
-        // PRESENT senders' CURRENT input and forgets a departed peer.
-        reinjectRemoteTiccmds();
+        if (lockstepActive) {
+          // P1 TRUE LOCKSTEP path: append our per-tic ticcmd to the shared
+          // ordered log + drain complete consolidated TicSets into the WASM
+          // barrier. The sim advances only over complete TicSets and pauses
+          // (never spins) when starved — shared state, not an input overlay.
+          // Replaces the slice-5 broadcast + #339 reinject band-aid here.
+          pumpLockstep();
+        } else {
+          // Non-lockstep (lone player / legacy free-run): slice-5 last-value
+          // awareness overlay + #339 gap-fill. Kept so single-player + any
+          // non-lockstep usage is unchanged.
+          broadcastLocalTiccmd();
+          reinjectRemoteTiccmds();
+        }
       }
       // Round 5: the host publishes the "MP is live" flag every frame (the
       // write is a no-op unless it actually flipped) so a guest's Join button
@@ -1597,6 +1694,22 @@
         const ex = getExtras();
         return ex ? ex.getPlayerSlotState(slot) : null;
       },
+      // P1 e2e hooks: the deterministic state digest (the SHARED-STATE oracle —
+      // two lockstepped peers MUST agree) + the engine tic counters so a test
+      // can wait for both sims to reach the same tic before comparing.
+      stateChecksum: () => {
+        const ex = getExtras();
+        return ex ? ex.stateChecksum() : 0;
+      },
+      getTics: () => {
+        const ex = getExtras();
+        return ex
+          ? { maketic: ex.getMaketic(), gametic: ex.getGametic(), recvtic: ex.getRecvtic() }
+          : { maketic: 0, gametic: 0, recvtic: 0 };
+      },
+      // P1 diagnostic: shared-log size (so a test can see whether both peers'
+      // appends are landing in the SAME ordered log).
+      getLockstepLogSize: () => (lockstep ? lockstep.size() : -1),
       getState: () => ({
         roster: { ...roster },
         // Slice 6: the pending (late-join) map + this peer's pending slot +
@@ -1621,6 +1734,7 @@
         ownerIds: resolveOwnerIds(),
         netcodePeers: netcode ? netcode.debugStats().peers : [],
         launched,
+        lockstepActive,
         gamestate,
         // New Game dialog selections (the custom dropdowns write these). The
         // mouse-pick e2e asserts a non-default MODE/SKILL took effect by
