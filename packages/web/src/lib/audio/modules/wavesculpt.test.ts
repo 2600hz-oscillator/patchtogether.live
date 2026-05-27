@@ -33,6 +33,9 @@ import {
   WIGGLE_MAX_HZ,
   WIGGLE_MAX_RATE,
   WIGGLE_MAX_MAGNITUDE,
+  packColor01,
+  unpackColor01,
+  DEFAULT_OSC_COLOR_PACKED,
 } from './wavesculpt';
 
 describe('wavesculpt v2: module-def shape', () => {
@@ -486,6 +489,46 @@ describe('wavesculpt def: new ports + params landed', () => {
     expect(w.curve).toBe('linear');
   });
 
+  it('exposes per-osc CHROMA colour params (red/grn/blu) defaulting to r/g/b', () => {
+    const r = wavesculptDef.params.find((p) => p.id === 'red_color')!;
+    const g = wavesculptDef.params.find((p) => p.id === 'grn_color')!;
+    const b = wavesculptDef.params.find((p) => p.id === 'blu_color')!;
+    expect(r, 'red_color exists').toBeDefined();
+    expect(g, 'grn_color exists').toBeDefined();
+    expect(b, 'blu_color exists').toBeDefined();
+    // Defaults = the historical red / green / blue packed RGB, so existing
+    // patches render exactly as before.
+    expect(r.defaultValue).toBe(DEFAULT_OSC_COLOR_PACKED.red);
+    expect(g.defaultValue).toBe(DEFAULT_OSC_COLOR_PACKED.grn);
+    expect(b.defaultValue).toBe(DEFAULT_OSC_COLOR_PACKED.blu);
+    // Packed-integer range over the full 24-bit RGB space, discrete curve
+    // (chosen via a colour wheel, not a continuous CV-able knob).
+    for (const p of [r, g, b]) {
+      expect(p.min).toBe(0);
+      expect(p.max).toBe(0xffffff);
+      expect(p.curve).toBe('discrete');
+    }
+  });
+
+  it('default colour params decode to the historical r/g/b hues', () => {
+    // RED dominant in red_color, GRN dominant in grn_color, etc.
+    const [rr, rg, rb] = unpackColor01(DEFAULT_OSC_COLOR_PACKED.red);
+    expect(rr).toBeGreaterThan(rg);
+    expect(rr).toBeGreaterThan(rb);
+    const [gr, gg, gb] = unpackColor01(DEFAULT_OSC_COLOR_PACKED.grn);
+    expect(gg).toBeGreaterThan(gr);
+    expect(gg).toBeGreaterThan(gb);
+    const [br, bg, bb] = unpackColor01(DEFAULT_OSC_COLOR_PACKED.blu);
+    expect(bb).toBeGreaterThan(br);
+    expect(bb).toBeGreaterThan(bg);
+  });
+
+  it('ALP oscillator has NO colour param (it is the alpha/mask layer)', () => {
+    const ids = wavesculptDef.params.map((p) => p.id);
+    expect(ids).not.toContain('alp_color');
+    expect(ids).not.toContain('alpha_color');
+  });
+
   it('declares CV inputs for scale + wiggle (so they are CV + MIDI wired)', () => {
     const inIds = wavesculptDef.inputs.map((p) => p.id);
     expect(inIds).toContain('scale');
@@ -496,6 +539,50 @@ describe('wavesculpt def: new ports + params landed', () => {
     expect(wg?.type).toBe('cv');
     expect((sc as { paramTarget?: string } | undefined)?.paramTarget).toBe('scale');
     expect((wg as { paramTarget?: string } | undefined)?.paramTarget).toBe('wiggle');
+  });
+});
+
+describe('CHROMA colour packing / parsing (packed 0xRRGGBB ⇄ 0..1 floats)', () => {
+  it('packColor01 packs three 0..1 channels into 0xRRGGBB', () => {
+    expect(packColor01(1, 0, 0)).toBe(0xff0000);
+    expect(packColor01(0, 1, 0)).toBe(0x00ff00);
+    expect(packColor01(0, 0, 1)).toBe(0x0000ff);
+    expect(packColor01(1, 1, 1)).toBe(0xffffff);
+    expect(packColor01(0, 0, 0)).toBe(0x000000);
+  });
+
+  it('unpackColor01 inverts packColor01 for representable colours', () => {
+    for (const packed of [0xff0000, 0x00ff00, 0x0000ff, 0x4d80ff, 0x123456, 0xffffff, 0]) {
+      const [r, g, b] = unpackColor01(packed);
+      expect(packColor01(r, g, b)).toBe(packed);
+    }
+  });
+
+  it('packColor01 clamps + rounds out-of-range / fractional channels', () => {
+    // > 1 clamps to 255, < 0 clamps to 0, mid rounds to nearest 8-bit.
+    expect(packColor01(2, -1, 0.5)).toBe((255 << 16) | (0 << 8) | 128);
+  });
+
+  it('unpackColor01 is defensive against NaN / out-of-range packed values', () => {
+    expect(unpackColor01(Number.NaN)).toEqual([0, 0, 0]);
+    // Above 24-bit clamps to white; negative clamps to black.
+    expect(unpackColor01(0xffffff + 1000)).toEqual([1, 1, 1]);
+    expect(unpackColor01(-5)).toEqual([0, 0, 0]);
+  });
+
+  it('round-trips a hex string through pack/unpack (UI write→render read path)', () => {
+    // Mirrors onColorPick: parse "#4d80ff" → 0..1 → pack → param value,
+    // then unpack for the render uniform.
+    const hex = '#4d80ff';
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const packed = packColor01(r, g, b);
+    expect(packed).toBe(0x4d80ff);
+    const [ur, ug, ub] = unpackColor01(packed);
+    expect(Math.round(ur * 255)).toBe(0x4d);
+    expect(Math.round(ug * 255)).toBe(0x80);
+    expect(Math.round(ub * 255)).toBe(0xff);
   });
 });
 

@@ -50,6 +50,9 @@
     voctToHz,
     detuneOctaveOffset,
     pitchToWiggle,
+    packColor01,
+    unpackColor01,
+    DEFAULT_OSC_COLOR_PACKED,
     type WavesculptData,
     type WavesculptOscData,
   } from '$lib/audio/modules/wavesculpt';
@@ -150,6 +153,34 @@
   // BLINK scope-render controls.
   let scale  = $derived(pget('scale'));
   let wiggle = $derived(pget('wiggle'));
+
+  // ---- per-osc CHROMA base colour (RED/GRN/BLU only; ALP has none) ----
+  // Each colour osc stores a packed 0xRRGGBB integer param. The native
+  // <input type="color"> writes hex; we pack on write, unpack for display +
+  // for feeding the render uniforms. Defaults = historical r/g/b.
+  const COLOR_PARAM = ['red_color', 'grn_color', 'blu_color'] as const;
+  function colorPacked(oscIdx: number): number {
+    const key = COLOR_PARAM[oscIdx];
+    const def = oscIdx === 0
+      ? DEFAULT_OSC_COLOR_PACKED.red
+      : oscIdx === 1 ? DEFAULT_OSC_COLOR_PACKED.grn : DEFAULT_OSC_COLOR_PACKED.blu;
+    return (node?.params?.[key] as number | undefined) ?? def;
+  }
+  function colorHex(oscIdx: number): string {
+    return '#' + (colorPacked(oscIdx) & 0xffffff).toString(16).padStart(6, '0');
+  }
+  function onColorPick(oscIdx: number, ev: Event): void {
+    const hex = (ev.target as HTMLInputElement).value;
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const t = patch.nodes[id]; if (!t) return;
+    t.params[COLOR_PARAM[oscIdx]!] = packColor01(r, g, b);
+  }
+  // Reactive hexes for the three swatches (re-derive when params change).
+  let redHex = $derived((pget('red_color'), colorHex(0)));
+  let grnHex = $derived((pget('grn_color'), colorHex(1)));
+  let bluHex = $derived((pget('blu_color'), colorHex(2)));
 
   // Per-osc params (bound in the strip <Knob>s).
   let tune1 = $derived(pget('tune1'));
@@ -489,6 +520,8 @@ uniform vec4  uOscColor[4];
 uniform float uBolt[4];
 uniform float uBoltPhase[4];
 
+float hashB(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
+
 void main() {
   vec4 base = uOscColor[vOsc];
   float bolt = uBolt[vOsc];
@@ -496,12 +529,47 @@ void main() {
   vec3 col = base.rgb * (0.4 + 0.5 * band);
   float alpha = base.a * (0.35 + 0.35 * band);
 
+  // GATE ELECTRICITY — when a voice is gated (bolt = its envelope level,
+  // 0 when silent so the effect stays GATED on the audio input) the ribbon
+  // visibly electrifies. Three traveling arc heads sweep the trace (the
+  // primary at uBoltPhase, two more offset around the ribbon so the
+  // crackle covers most of its length), each a sharp bright spike, plus a
+  // fast high-freq crackle riding the whole lit band. Strength scales with
+  // the gate level; capped so a hot gate reads as electricity, not a flash
+  // that washes the image white.
   if (bolt > 0.001) {
-    float d = vT - uBoltPhase[vOsc];
-    float pulse = exp(-d * d / 0.012);
-    vec3 boltCol = vec3(0.35, 0.55, 1.0) * pulse * bolt * 0.9;
-    col += boltCol;
-    alpha = min(1.0, alpha + pulse * bolt * 0.6);
+    float ph = uBoltPhase[vOsc];
+    // Three arc heads at different points along the ribbon (wrap with fract).
+    float d0 = vT - ph;
+    float d1 = vT - fract(ph + 0.37);
+    float d2 = vT - fract(ph + 0.71);
+    // Tighter sigma → sharper, more lightning-like spikes; sum the three.
+    // Narrow Gaussians keep the underlying waveform shape readable BETWEEN
+    // the arcs rather than flooding the whole ribbon to white.
+    float arc = exp(-d0 * d0 / 0.0016)
+              + exp(-d1 * d1 / 0.0022) * 0.8
+              + exp(-d2 * d2 / 0.0030) * 0.65;
+    // High-frequency crackle — SPARSE flickering filaments riding the lit
+    // band (deterministic hash of position + phase so it sparkles, frozen-
+    // stable under the VRT freeze hook since ph is pinned there). A high
+    // threshold + steep power keeps it to occasional bright specks, NOT a
+    // solid fill, so the underlying waveform reads through.
+    float crackleRaw = hashB(floor(vT * 120.0) + floor(ph * 60.0));
+    float crackle = smoothstep(0.86, 1.0, crackleRaw) * band;
+    // Cool electric-blue/white arc colour.
+    vec3 arcCol = vec3(0.55, 0.75, 1.0);
+    vec3 hotCol = vec3(0.85, 0.95, 1.0);
+    float energy = bolt;
+    col += arcCol * arc * energy * 1.9;       // bright traveling arcs
+    col += hotCol * crackle * energy * 1.5;   // crackling filaments (sparse)
+    // Faint electric charge over the band so even between arcs the gated
+    // ribbon reads as energised — kept low to avoid a white flood.
+    col += arcCol * band * energy * 0.12;
+    alpha = min(1.0, alpha + (arc * 0.7 + crackle * 0.6 + band * 0.08) * energy);
+    // Keep colour bounded so a hot gate electrifies without blowing to flat
+    // white — clamp the additive overshoot a touch above 1 then let the
+    // BENTBOX post softClip/bloom handle the highlight roll-off.
+    col = min(col, vec3(1.5));
   }
 
   outColor = vec4(col, alpha);
@@ -946,6 +1014,24 @@ void main() {
     [0.65, 1.0, 0.15, 1.0], // acid green
   ];
 
+  // Resolve the per-osc render colour from the CHROMA picker param. For the
+  // three colour oscillators (RED/GRN/BLU = idx 0/1/2) the picked base colour
+  // REPLACES the hard-coded hue in ALL THREE blink modes (ribbon, scope line,
+  // neon tube). The ALP oscillator (idx 3) has no picker — it keeps its
+  // baseline colour (white-ish mask / acid-green neon) unchanged. We preserve
+  // the per-mode ALPHA channel (ribbon translucency vs neon opacity) by
+  // reading it from the supplied base palette, so brightness/intensity
+  // behaviour is unchanged — only the hue is user-controlled.
+  function oscRenderColor(
+    i: number,
+    base: ReadonlyArray<readonly [number, number, number, number]>,
+  ): [number, number, number, number] {
+    const b = base[i]!;
+    if (i >= 3) return [b[0], b[1], b[2], b[3]];
+    const [r, g, bl] = unpackColor01(colorPacked(i));
+    return [r, g, bl, b[3]];
+  }
+
   // The four FLOOR CORNERS of the unit cube (y=-1), and a unit direction
   // aimed UP and INWARD toward the centre at 45° from each. These seed
   // uOrigin/uAim for the scope tube shader (WIGGLE rotates them per frame).
@@ -999,7 +1085,7 @@ void main() {
     const widthArr = new Float32Array(4);
     const scaleArr = new Float32Array(4);
     for (let i = 0; i < 4; i++) {
-      const c = SCOPE_CORNERS[i]!, a0 = SCOPE_AIMS[i]!, n = NEON_COLORS[i]!;
+      const c = SCOPE_CORNERS[i]!, a0 = SCOPE_AIMS[i]!, n = oscRenderColor(i, NEON_COLORS);
       // WIGGLE: rotate the aim direction (and orbit the origin slightly)
       // around a fixed perpendicular axis by the per-osc tilt angle. The
       // whole trace sweeps through 3D space. At wiggle=0 the angle is 0 →
@@ -1564,7 +1650,7 @@ void main() {
       vecArr[i * 4 + 1] = vec[1]!;
       vecArr[i * 4 + 2] = vec[2]!;
       vecArr[i * 4 + 3] = 0;
-      const col = OSC_COLORS[i]!;
+      const col = oscRenderColor(i, OSC_COLORS);
       colArr[i * 4 + 0] = col[0]!;
       colArr[i * 4 + 1] = col[1]!;
       colArr[i * 4 + 2] = col[2]!;
@@ -2254,7 +2340,33 @@ void main() {
       <div class="osc-grid">
         {#each [0, 1, 2, 3] as i}
           <div class="osc-strip osc-{i}" data-testid={`wavesculpt-osc-${i + 1}`}>
-            <div class="osc-label">{OSC_COLOR_LABELS[i]}</div>
+            <div class="osc-label">
+              <span>{OSC_COLOR_LABELS[i]}</span>
+              {#if i < 3}
+                <!-- CHROMA SELECTOR WHEEL: per-osc custom base colour. A
+                     native colour picker (same component pattern as
+                     CHROMA/LUMA keyer cards). Picked colour tints this osc
+                     in ALL 3 blink modes. Not a single-CC param → uses a
+                     native <input type="color">, NOT a Knob/Fader, so it's
+                     correctly exempt from the MIDI-Learn audit. -->
+                <label
+                  class="chroma-swatch-wrap"
+                  title="Pick this oscillator's base colour"
+                >
+                  <span
+                    class="chroma-swatch"
+                    style="background: {i === 0 ? redHex : i === 1 ? grnHex : bluHex};"
+                  ></span>
+                  <input
+                    type="color"
+                    class="chroma-color-input"
+                    value={i === 0 ? redHex : i === 1 ? grnHex : bluHex}
+                    oninput={(ev) => onColorPick(i, ev)}
+                    data-testid={`wavesculpt-osc-${i + 1}-color`}
+                  />
+                </label>
+              {/if}
+            </div>
             <div class="wt-row">
               <select
                 class="wt-select"
@@ -2606,6 +2718,37 @@ void main() {
     letter-spacing: 0.08em;
     text-align: center;
     color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .chroma-swatch-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .chroma-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid var(--border, #2a2f3a);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+    display: inline-block;
+  }
+  .chroma-swatch-wrap:hover .chroma-swatch {
+    border-color: var(--accent-dim, #6a7a9a);
+  }
+  .chroma-color-input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    border: 0;
+    padding: 0;
   }
   .wt-row {
     display: flex;

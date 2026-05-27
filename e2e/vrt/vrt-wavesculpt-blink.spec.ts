@@ -32,13 +32,35 @@ interface BlinkCase {
   name: string;
   blinkMode: number;
   wiggle: number;
+  // Optional extra param overrides (CHROMA colours, gate-electricity demo).
+  params?: Record<string, number>;
 }
+
+// Custom (non-default) CHROMA colours for the RED/GRN/BLU oscillators —
+// deliberately swapped/odd hues so the baseline visibly differs from the
+// default r/g/b: RED osc → cyan, GRN osc → magenta, BLU osc → amber. Packed
+// 0xRRGGBB integers (the param encoding).
+const CUSTOM_COLORS = {
+  red_color: 0x00e5ff, // cyan
+  grn_color: 0xff2bd1, // magenta
+  blu_color: 0xffb300, // amber
+};
 
 const CASES: BlinkCase[] = [
   { name: 'ribbons', blinkMode: 0, wiggle: 0 },
   { name: 'scopes-trial', blinkMode: 1, wiggle: 0 },
   { name: 'reality-based', blinkMode: 2, wiggle: 0 },
   { name: 'scopes-trial-wiggle', blinkMode: 1, wiggle: 1 },
+  // CHROMA: per-osc custom base colours in the SCOPES-TRIAL mode (neon
+  // lines clearly carry the picked hue). EYEBALL: traces are cyan / magenta
+  // / amber, NOT the default hot-pink / cyan / purple neon.
+  { name: 'custom-colors', blinkMode: 1, wiggle: 0, params: CUSTOM_COLORS },
+  // GATE ELECTRICITY: ribbon mode with the voices gated hard. EYEBALL:
+  // bright travelling electric-blue arcs + crackle visibly electrify the
+  // ribbons (vs the near-invisible bolt before this work). bloom dialled
+  // down here so the discrete arcs read as arcs rather than being smeared
+  // into a bloom haze (the electricity is in the ribbon shader, not bloom).
+  { name: 'gate-electricity', blinkMode: 0, wiggle: 0, params: { bloom: 0.1 } },
 ];
 
 test.describe.configure({ mode: 'default' });
@@ -84,6 +106,7 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
               rot: 0.3, pos_z: 0.35, zoom: 1.3,
               thickness1: 0.5, thickness2: 0.5, thickness3: 0.6, thickness4: 0.9,
               alpha_brightness: 1.6, noise: 0, bloom: 0.45,
+              ...(c.params ?? {}),
             },
           },
           { id: 'jo', type: 'joystick', position: { x: 40, y: 480 }, domain: 'audio' },
