@@ -111,6 +111,9 @@
   import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
+  // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
+  // + LIGHTEN/DARKEN key masks).
+  import BackdraftCard from '$lib/ui/modules/BackdraftCard.svelte';
   import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
   // ACIDWARP — 320×240 plasma video source with scene cycler.
   import AcidwarpCard from '$lib/ui/modules/AcidwarpCard.svelte';
@@ -384,6 +387,7 @@
     ruttetra: RuttetraCard,
     shapedramps: ShapedrampsCard,
     vdelay: VdelayCard,
+    backdraft: BackdraftCard,
     bentbox: BentboxCard,
     acidwarp: AcidwarpCard,
     // Video-domain (Phase 1):

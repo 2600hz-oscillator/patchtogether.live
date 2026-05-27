@@ -209,6 +209,11 @@ type StandardModuleType =
   | 'buggles'
   // VDELAY — video delay + feedback echo (ring buffer of FBO textures).
   | 'vdelay'
+  // BACKDRAFT — video feedback generator. Crossfades two inputs (MIX) and
+  // composites with a delayed + colour-processed copy of its own previous
+  // output (1-frame-lag feedback ring); LIGHTEN/DARKEN key masks modulate
+  // the feedback effect per-pixel.
+  | 'backdraft'
   // BENTBOX — CRT display output simulating an NTSC composite signal bent
   // through an Archer-Video-Enhancer-style "AVEmod" feedback circuit. 12
   // CV-controllable bending knobs (timing/chroma/feedback/CRT).

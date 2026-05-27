@@ -34,6 +34,7 @@ import { acidwarpDef } from './acidwarp';
 import { doomDef } from './doom';
 import { videoboxDef } from './videobox';
 import { videoVarispeedDef } from './videovarispeed';
+import { backdraftDef } from './backdraft';
 
 let registered = false;
 
@@ -109,6 +110,11 @@ export function registerVideoModules(): void {
   // (streams downstream at ANY speed, decoupled from playbackRate) +
   // throttled reverse scrub (no per-frame currentTime seek).
   registerVideoModule(videoVarispeedDef);
+  // BACKDRAFT — video feedback generator. Crossfades two inputs (MIX),
+  // composites with a delayed + colour-processed copy of its OWN previous
+  // output (1-frame-lag feedback ring), with two key masks (LIGHTEN /
+  // DARKEN) modulating the feedback effect per-pixel.
+  registerVideoModule(backdraftDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

@@ -218,6 +218,66 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       );
     },
   },
+  // BACKDRAFT (video feedback generator): drive in_a / in_b + both key
+  // masks from SHAPES sources, let the feedback loop settle, then FREEZE
+  // BACKDRAFT (params.freeze = 1) so the time-evolving accumulator holds
+  // its last output — pixel-stable across runs. We use SHAPES (fully
+  // procedural + time-independent: rotate 0, no uTime) for every input so
+  // the source + masks are identical every run; with BACKDRAFT frozen the
+  // captured frame is deterministic.
+  //
+  //   in_a    <- big centred circle  (the seed image being smeared)
+  //   in_b    <- tiled 5×5 squares    (crossfaded in by MIX=0.5)
+  //   lighten <- tiled triangles      (LIGHTEN boosts feedback where bright)
+  //   darken  <- big centred square   (DARKEN cuts feedback in the middle)
+  //
+  // The baseline should show video-feedback TRAILS/echoes radiating from
+  // the source, with the triangle-mask regions visibly boosted (brighter,
+  // longer trails) and the centre-square darken region visibly reduced.
+  // No audio is involved, so we don't freeze the AudioContext.
+  backdraft: {
+    nodes: [
+      // Sparse sources (mostly black) so feedback ACCUMULATION is visible
+      // rather than a flat source wash. in_a = a small centred circle;
+      // in_b = a few tiled squares. MIX leans toward in_a.
+      { id: 'src_a',  type: 'shapes', position: { x: 40,  y: 40  }, domain: 'video', params: { shape: 0, tile: 0, zoom: 0.6 } },
+      { id: 'src_b',  type: 'shapes', position: { x: 40,  y: 260 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 3, zoom: 0.45 } },
+      // lighten = tiled triangles → BOOST bands (feedback runs hot, → white).
+      { id: 'mask_l', type: 'shapes', position: { x: 40,  y: 480 }, domain: 'video', params: { shape: 2, tile: 1, tileN: 4, zoom: 0.9 } },
+      // darken = big centred square → a dim "hole" punched in the feedback.
+      { id: 'mask_d', type: 'shapes', position: { x: 40,  y: 700 }, domain: 'video', params: { shape: 1, tile: 0, zoom: 2.2 } },
+      { id: 'vrt-1',  type: 'backdraft', position: { x: 520, y: 60 }, domain: 'video',
+        params: { mix: 0.3, feedback: 0.97, delay: 16, luma: 1.0, chroma: 1.4, r: 1.0, g: 1.0, b: 1.0, lighten: 1.0, darken: 1.0 } },
+    ],
+    edges: [
+      { id: 'e_a', from: { nodeId: 'src_a',  portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'in_a'    }, sourceType: 'mono-video', targetType: 'video' },
+      { id: 'e_b', from: { nodeId: 'src_b',  portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'in_b'    }, sourceType: 'mono-video', targetType: 'video' },
+      { id: 'e_l', from: { nodeId: 'mask_l', portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'lighten' }, sourceType: 'mono-video', targetType: 'video' },
+      { id: 'e_d', from: { nodeId: 'mask_d', portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'darken'  }, sourceType: 'mono-video', targetType: 'video' },
+    ],
+    freezeAudio: false,
+    settleMs: 700,
+    async afterSpawn(page) {
+      // Let the feedback loop run + settle (settleMs covers this), then
+      // FREEZE BACKDRAFT so its output stops evolving and the capture is
+      // pixel-stable. We set freeze AFTER the settle window so the trails
+      // have built up before we pin the frame.
+      await page.waitForTimeout(700);
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['vrt-1'];
+          if (n) n.params.freeze = 1;
+        });
+      });
+      // A few rAFs so the freeze param reaches the engine + the last
+      // pre-freeze frame is the one held + blitted.
+      await page.waitForTimeout(150);
+    },
+  },
 };
 
 /** Set up the rack for `type`. Returns true if a scene was applied
