@@ -601,6 +601,97 @@ export class DoomRuntime {
     );
   }
 
+  // ---------------- P1: true-lockstep barrier ----------------
+  //
+  // setLockstep(true) arms the engine barrier (dgpt_set_lockstep): the sim only
+  // advances up to the last consolidated TicSet delivered via receiveTicSet,
+  // and never spins when starved. receiveTicSet(tic, slots) delivers one tic's
+  // consolidated input for every slot — the SOLE authority for that tic (the
+  // local slot included). See d_loop.c DGPT_LoopSetLockstep / ReceiveTicSet.
+
+  /** Arm/disarm the true-lockstep barrier. The card arms it for a >1-player
+   *  netgame; single-player leaves it off (byte-identical behavior). */
+  setLockstep(enabled: boolean): void {
+    if (!this.initialized) return;
+    this.mod.ccall('dgpt_set_lockstep', null, ['number'], [enabled ? 1 : 0]);
+  }
+
+  /** P1 INPUT-DELAY buffer: under lockstep the engine builds maketic this many
+   *  tics AHEAD of gametic, so each peer's ticcmd for tic G is produced +
+   *  appended ~D×28.5ms before the barrier needs it — giving the relay time to
+   *  propagate it so the sim runs at 35Hz instead of stalling every tic. The
+   *  marine responds D tics later (normal netplay latency). Determinism is
+   *  preserved: every peer still appends at TRUE tic numbers + the barrier
+   *  delivers the identical consolidated TicSet per tic. The card sets ~6 for a
+   *  >1-player netgame; 0 = default build-ahead (single-player byte-identical). */
+  setInputDelay(tics: number): void {
+    if (!this.initialized) return;
+    this.mod.ccall('dgpt_set_input_delay', null, ['number'], [Math.max(0, Math.floor(tics))]);
+  }
+
+  /** Deliver the consolidated TicSet for one tic. `slots` is indexed by player
+   *  slot (0..3); a null entry means that slot is NOT in-game this tic (its
+   *  present bit is cleared — e.g. a dropped peer). Must be called strictly in
+   *  ascending tic order; the C side ignores an out-of-order / duplicate tic.
+   *  Returns immediately (no rendering); the next runTic() advances the sim. */
+  receiveTicSet(tic: number, numPlayers: number, slots: (DoomTiccmd | null)[]): void {
+    if (!this.initialized) return;
+    const a = (i: number) => slots[i] ?? null;
+    const f = (c: DoomTiccmd | null, k: keyof DoomTiccmd) => (c ? c[k] : 0);
+    const present = (c: DoomTiccmd | null) => (c ? 1 : 0);
+    const args: number[] = [tic, numPlayers];
+    for (let i = 0; i < 4; i++) {
+      const c = a(i);
+      args.push(f(c, 'forwardmove'), f(c, 'sidemove'), f(c, 'angleturn'), f(c, 'buttons'), present(c));
+    }
+    this.mod.ccall(
+      'dgpt_receive_ticset',
+      null,
+      // tic, numPlayers, then 5 fields × 4 slots
+      Array(22).fill('number') as 'number'[],
+      args,
+    );
+  }
+
+  /** A stable 32-bit FNV-1a digest of the deterministic game state (every
+   *  player's mobj x/y/z/angle/momentum + health, leveltime, both RNG indices).
+   *  The lockstep equality oracle: two peers fed the identical ordered TicSet
+   *  stream MUST produce the identical checksum every tic. */
+  stateChecksum(): number {
+    if (!this.initialized) return 0;
+    return this.mod.ccall('dgpt_state_checksum', 'number', [], []) >>> 0;
+  }
+
+  /** Engine tic counters for the JS lockstep driver. maketic = next tic to
+   *  build input for; gametic = tic about to run; recvtic = last consolidated
+   *  TicSet received. The card appends its local ticcmd for tic (maketic-1) to
+   *  the shared log and gates barrier delivery against these. */
+  getMaketic(): number {
+    if (!this.initialized) return 0;
+    return this.mod.ccall('dgpt_get_maketic', 'number', [], []);
+  }
+  /** This peer's local ticcmd built for a SPECIFIC tic (0..maketic-1), or null
+   *  if out of range / fell out of the BACKUPTICS ring. The lockstep pump reads
+   *  every built-but-unlogged tic this way so the per-tic stream has no gaps. */
+  readLocalTiccmdAt(tic: number): DoomTiccmd | null {
+    if (!this.initialized) return null;
+    if (this.mod.ccall('dgpt_local_ticcmd_at', 'number', ['number'], [tic]) === 0) return null;
+    return {
+      forwardmove: this.mod.ccall('dgpt_local_ticcmd_at_forwardmove', 'number', [], []),
+      sidemove: this.mod.ccall('dgpt_local_ticcmd_at_sidemove', 'number', [], []),
+      angleturn: this.mod.ccall('dgpt_local_ticcmd_at_angleturn', 'number', [], []),
+      buttons: this.mod.ccall('dgpt_local_ticcmd_at_buttons', 'number', [], []),
+    };
+  }
+  getGametic(): number {
+    if (!this.initialized) return 0;
+    return this.mod.ccall('dgpt_get_gametic', 'number', [], []);
+  }
+  getRecvtic(): number {
+    if (!this.initialized) return 0;
+    return this.mod.ccall('dgpt_get_recvtic', 'number', [], []);
+  }
+
   // ---------------- Slice 3: netcode bridge (Module.PTNet) ----------------
   //
   // The DOOM multiplayer netcode (doom-netcode.ts) needs two things from a

@@ -196,6 +196,24 @@ describe('DoomRuntime — TS shim layer', () => {
     ]);
   });
 
+  it('setInputDelay issues dgpt_set_input_delay with a floored, non-negative tic count', () => {
+    rt.init(new Uint8Array([0]));
+    let before = stub.calls.length;
+    rt.setInputDelay(6);
+    let call = stub.calls.slice(before).find((c) => c.name === 'dgpt_set_input_delay')!;
+    expect(call.args).toEqual([6]);
+    // Negative clamps to 0 (single-player / disabled).
+    before = stub.calls.length;
+    rt.setInputDelay(-3);
+    call = stub.calls.slice(before).find((c) => c.name === 'dgpt_set_input_delay')!;
+    expect(call.args).toEqual([0]);
+    // Fractional floors.
+    before = stub.calls.length;
+    rt.setInputDelay(4.9);
+    call = stub.calls.slice(before).find((c) => c.name === 'dgpt_set_input_delay')!;
+    expect(call.args).toEqual([4]);
+  });
+
   it('setKey clamps doomKey to 8 bits defensively', () => {
     rt.init(new Uint8Array([0]));
     const before = stub.calls.length;
