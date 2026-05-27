@@ -216,6 +216,47 @@ export function voctToHz(voct: number): number {
   return C4_HZ * Math.pow(2, voct);
 }
 
+// ---------- per-osc CHROMA color (packed RGB, unit-tested) ----------
+//
+// Each of the three colour oscillators (RED / GRN / BLU) has a custom
+// base-colour param (`red_color` / `grn_color` / `blu_color`). A colour
+// is not a single CV-able scalar, so it's stored as ONE packed-RGB integer
+// param: value = r*65536 + g*256 + b, each channel 0..255. Persisted +
+// multiplayer-synced exactly like every other numeric param (Yjs stores it
+// as a plain number). The ALP oscillator is the alpha/mask layer and has NO
+// colour param — it stays the existing near-white mask.
+//
+// Defaults are the historical hard-coded ribbon colours (so existing
+// patches look identical): RED=#FF3333, GRN=#33FF4D, BLU=#4D80FF. These
+// match the 0..1 OSC_COLORS the card used pre-chroma-wheel, rounded to the
+// nearest 8-bit channel.
+export const DEFAULT_OSC_COLOR_PACKED = {
+  red: 0xff3333,
+  grn: 0x33ff4d,
+  blu: 0x4d80ff,
+} as const;
+
+/** Clamp + round a 0..1 float channel to an 8-bit integer (0..255). */
+function chTo8(v: number): number {
+  return Math.max(0, Math.min(255, Math.round(v * 255)));
+}
+
+/** Pack three 0..1 float channels into a single 0xRRGGBB integer. */
+export function packColor01(r: number, g: number, b: number): number {
+  return (chTo8(r) << 16) | (chTo8(g) << 8) | chTo8(b);
+}
+
+/** Unpack a 0xRRGGBB integer into three 0..1 float channels. Defensive
+ *  against NaN / out-of-range (clamped to the 24-bit RGB space) so a bad
+ *  param value can never crash the render. */
+export function unpackColor01(packed: number): [number, number, number] {
+  const p = Number.isFinite(packed) ? Math.max(0, Math.min(0xffffff, Math.round(packed))) : 0;
+  const r = (p >> 16) & 0xff;
+  const g = (p >> 8) & 0xff;
+  const b = p & 0xff;
+  return [r / 255, g / 255, b / 255];
+}
+
 export function detuneOctaveOffset(oscIdx: number, detune: number): number {
   if (oscIdx === 0) return 0;
   if (oscIdx === 1) return detune;
@@ -568,6 +609,17 @@ export const wavesculptDef: AudioModuleDef = {
     // overall strength. Applies in ALL blink modes (incl. the ribbon mode).
     ps.push({ id: 'wiggle', label: 'Wiggle', defaultValue: 0, min: 0, max: 1, curve: 'linear' });
     ps.push({ id: 'alpha_brightness', label: 'A.Bright', defaultValue: 1, min: 0, max: 2, curve: 'linear' });
+    // Per-oscillator CHROMA base colour (packed 0xRRGGBB). One param per
+    // colour osc — the picked colour tints that osc's ribbon (mode 0), its
+    // SCOPES-TRIAL scope line, and its REALITY-BASED-COMMUNITY neon tube.
+    // discrete curve: this is a packed integer chosen via a colour wheel,
+    // not a continuous CV-able knob (exempt from MIDI-Learn audit — the
+    // picker is a native <input type="color">, not a Knob/Fader). ALP has
+    // no colour param (it's the alpha/mask layer). Defaults = the historical
+    // red/green/blue so existing patches render unchanged.
+    ps.push({ id: 'red_color', label: 'R.Col', defaultValue: DEFAULT_OSC_COLOR_PACKED.red, min: 0, max: 0xffffff, curve: 'discrete' });
+    ps.push({ id: 'grn_color', label: 'G.Col', defaultValue: DEFAULT_OSC_COLOR_PACKED.grn, min: 0, max: 0xffffff, curve: 'discrete' });
+    ps.push({ id: 'blu_color', label: 'B.Col', defaultValue: DEFAULT_OSC_COLOR_PACKED.blu, min: 0, max: 0xffffff, curve: 'discrete' });
     ps.push({ id: 'hsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Drift' });
     ps.push({ id: 'hsync_loss',         defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Loss' });
     ps.push({ id: 'vsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'VS Drift' });
