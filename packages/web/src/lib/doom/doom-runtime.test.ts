@@ -238,6 +238,89 @@ describe('DoomRuntime — TS shim layer', () => {
     ]);
   });
 
+  // ── Bug 4: hard keyboard-inert gate (the runtime-boundary enforcement) ──
+  describe('keyboard-inert gate (CV-patched ⇒ keyboard truly inert)', () => {
+    it('drops keyboard-origin input while inert (no dgpt_set_key fires)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setKeyboardInert(true);
+      const before = stub.calls.length;
+      // Returns false (unhandled) AND emits no native call.
+      expect(rt.setKeyForKeyboardCode('ArrowUp', true)).toBe(false);
+      expect(rt.setKeyForKeyboardCode('ArrowUp', false)).toBe(false);
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([]);
+    });
+
+    it('CV-gate input is NOT gated while inert (CV owns movement when patched)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setKeyboardInert(true);
+      const before = stub.calls.length;
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      rt.setKey(KEY_FIRE, true);
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([
+        { name: 'dgpt_set_key', args: [KEY_UPARROW, 1] },
+        { name: 'dgpt_set_key', args: [KEY_FIRE, 1] },
+      ]);
+    });
+
+    it('going inert RELEASES every keyboard-origin key still held', () => {
+      rt.init(new Uint8Array([0]));
+      // Hold two keyboard keys, then go inert.
+      expect(rt.setKeyForKeyboardCode('ArrowUp', true)).toBe(true);
+      expect(rt.setKeyForKeyboardCode('KeyF', true)).toBe(true); // FIRE
+      const before = stub.calls.length;
+      rt.setKeyboardInert(true);
+      // Exactly one key-up per held key, no leftovers.
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([
+        { name: 'dgpt_set_key', args: [KEY_UPARROW, 0] },
+        { name: 'dgpt_set_key', args: [KEY_FIRE, 0] },
+      ]);
+    });
+
+    it('does NOT release a CV-gate key when the keyboard goes inert', () => {
+      rt.init(new Uint8Array([0]));
+      // A CV gate asserts UP, then a CV gate is patched → keyboard inert.
+      rt.setKeyForCvGate('up', true);
+      const before = stub.calls.length;
+      rt.setKeyboardInert(true);
+      // No release fires — UP was a CV-origin press, untracked by the keyboard set.
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([]);
+    });
+
+    it('re-enabling clears the gate so keyboard input flows again', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setKeyboardInert(true);
+      expect(rt.setKeyForKeyboardCode('ArrowUp', true)).toBe(false);
+      rt.setKeyboardInert(false);
+      const before = stub.calls.length;
+      expect(rt.setKeyForKeyboardCode('ArrowUp', true)).toBe(true);
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([{ name: 'dgpt_set_key', args: [KEY_UPARROW, 1] }]);
+    });
+
+    it('setKeyboardInert is idempotent (no double-release)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setKeyForKeyboardCode('ArrowUp', true);
+      rt.setKeyboardInert(true);
+      const before = stub.calls.length;
+      rt.setKeyboardInert(true); // already inert
+      expect(stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key')).toEqual([]);
+      expect(rt.isKeyboardInert()).toBe(true);
+    });
+
+    it('a released keyboard key is not re-released on going inert', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setKeyForKeyboardCode('ArrowUp', true);
+      rt.setKeyForKeyboardCode('ArrowUp', false); // user let go before patching
+      const before = stub.calls.length;
+      rt.setKeyboardInert(true);
+      expect(stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key')).toEqual([]);
+    });
+  });
+
   it('getFramebuffer returns a Uint8ClampedArray VIEW into HEAPU8 (zero-copy)', () => {
     rt.init(new Uint8Array([0]));
     const fb = rt.getFramebuffer();

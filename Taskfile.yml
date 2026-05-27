@@ -196,6 +196,26 @@ tasks:
     cmds:
       - npm exec -w {{.E2E}} -- playwright test --grep @collab --workers=2 {{.CLI_ARGS}}
 
+  doom-probe:
+    desc: |
+      MANUAL DOOM-multiplayer visual probe — self-verify MP without driving two
+      browsers by hand. Brings up TWO browser contexts on ONE rackspace via the
+      in-memory Hocuspocus relay, drives the REAL host->guest flow through the
+      ACTUAL UI (real Host-Multiplayer / Launch / Join button clicks, NOT dev
+      hooks), and at each phase captures a screenshot of BOTH players' DOOM card
+      + canvas plus a state.json (slot/gamestate/host/badge/members/pos/fbSig).
+      Writes to /tmp/doom-mp-probe/ (persists across worktree teardown; override
+      with DOOM_PROBE_DIR). NOT a pass/fail gate + NOT in the CI / @collab set —
+      gated behind DOOM_PROBE=1 (set here). Requires the DOOM WASM + DOOM1.WAD
+      assets (bash packages/web/native/build-doom-wasm.sh + fetch the WAD, same
+      as ci.yml); skips with a build hint if absent.
+        DOOM_PROBE_DIR=<dir>   artifact output dir (default /tmp/doom-mp-probe)
+    deps: [test:emit-manifest]
+    env:
+      DOOM_PROBE: '1'
+    cmds:
+      - npm exec -w {{.E2E}} -- playwright test tests/doom-mp-probe.spec.ts --workers=1 {{.CLI_ARGS}}
+
   audio-drift:
     desc: |
       Phase-C decision research harness. Drives two browser contexts on the same

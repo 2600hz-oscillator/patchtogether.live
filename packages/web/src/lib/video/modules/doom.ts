@@ -125,6 +125,12 @@ export interface DoomHandleExtras {
   /** Push an already-translated raw doomkey (the Yjs presence relay on the
    *  host side feeds a pure spectator's keystrokes here). */
   pushDoomKey(doomKey: number, pressed: boolean): void;
+  /** Bug 4 hard enforcement: gate keyboard-origin input at the runtime
+   *  boundary. The card calls this whenever its CV-gate-patched state flips —
+   *  patched ⇒ inert(true) (keyboard fully ignored + held keyboard keys
+   *  released), unpatched ⇒ inert(false). The CV-gate path is never gated.
+   *  No-op if the runtime isn't loaded (re-applied on load via ensureLoaded). */
+  setKeyboardInert(inert: boolean): void;
   /** Snapshot the current framebuffer for the card's LOCAL 2D preview blit.
    *  Pure local read of this peer's own runtime — null when no WASM is loaded
    *  (a pure spectator), so its preview canvas stays black. NOT used for any
@@ -275,6 +281,10 @@ export const doomDef: VideoModuleDef = {
     let loadPending: Promise<string | null> | null = null;
     let hasFrame = false;
     let lastTicMs = performance.now();
+    // Bug 4: cached keyboard-inert state. The card may flip this (CV gate
+    // patched) before the WASM finishes loading, so we hold it here and apply
+    // it to the runtime the instant it comes up (and on every later flip).
+    let keyboardInert = false;
 
     // Edge-detector state, one per CV gate port.
     const edgeStates = new Map<CvGatePortId, EdgeState>();
@@ -379,6 +389,9 @@ export const doomDef: VideoModuleDef = {
           return loadError;
         }
         runtime = rt;
+        // Re-apply any keyboard-inert state the card set while WASM was still
+        // loading (a CV gate patched during load must keep the keyboard off).
+        rt.setKeyboardInert(keyboardInert);
         loaded = true;
         loadError = null;
         return null;
@@ -395,6 +408,11 @@ export const doomDef: VideoModuleDef = {
     function pushDoomKey(doomKey: number, pressed: boolean): void {
       if (!runtime) return;
       runtime.setKey(doomKey, pressed);
+    }
+
+    function setKeyboardInert(inert: boolean): void {
+      keyboardInert = inert;
+      if (runtime) runtime.setKeyboardInert(inert);
     }
 
     function snapshotFramebuffer(): Uint8ClampedArray | null {
@@ -482,6 +500,7 @@ export const doomDef: VideoModuleDef = {
       ensureLoaded,
       pushKeyboardKey,
       pushDoomKey,
+      setKeyboardInert,
       snapshotFramebuffer,
       startNetGame(settings, consolePlayer) {
         if (!runtime || !runtime.isInitialized()) return;

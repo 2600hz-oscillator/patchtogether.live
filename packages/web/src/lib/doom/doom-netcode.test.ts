@@ -834,3 +834,84 @@ describe('DoomNetcode — cross-peer ticcmd feed (slice 5)', () => {
     expect(ticcmdWrites).toBe(2);
   });
 });
+
+// ── Approach A: lockstep gap-fill (receiver re-injects last-known ticcmd) ────
+describe('DoomNetcode — lockstep gap-fill (steady/idle remote stays fed)', () => {
+  function twoPeers() {
+    const bus = new FakeAwarenessBus();
+    const awA = bus.create();
+    const awB = bus.create();
+    joinAs(awA, 'aaa'); // slot 0 (lex-min)
+    joinAs(awB, 'bbb'); // slot 1
+    const ticsAonB: TiccmdEnvelope[] = [];
+    const { runtime: rtA } = makeRuntime();
+    const { runtime: rtB } = makeRuntime();
+    const ncA = new DoomNetcode({
+      provider: makeProvider(awA), moduleId: 'm', localUserId: 'aaa', runtime: rtA,
+    });
+    const ncB = new DoomNetcode({
+      provider: makeProvider(awB), moduleId: 'm', localUserId: 'bbb',
+      runtime: rtB, onRemoteTiccmd: (e) => ticsAonB.push(e),
+    });
+    ncA.start();
+    ncB.start();
+    return { ncA, ncB, ticsAonB, awA };
+  }
+
+  it('re-injects a held key every tic even though the sender stopped writing (no starvation)', () => {
+    const { ncA, ncB, ticsAonB } = twoPeers();
+    // A presses + HOLDS forward once. Only-on-change cap → ONE awareness write.
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    expect(ticsAonB).toHaveLength(1); // delivered once via the drain
+    // A keeps holding: subsequent frames produce the SAME ticcmd → suppressed →
+    // B sees no NEW seq. Without gap-fill B would starve of A's input.
+    for (let i = 0; i < 5; i++) {
+      ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    }
+    expect(ticsAonB).toHaveLength(1); // confirm the cap suppressed re-writes
+    // B's render loop calls reinjectKnownTiccmds() each tic → A's CURRENT input
+    // is re-fed every tic so the C overlay never goes stale.
+    for (let i = 0; i < 10; i++) ncB.reinjectKnownTiccmds();
+    expect(ticsAonB).toHaveLength(11);
+    for (const e of ticsAonB) {
+      expect(e.slot).toBe(0);
+      expect(e.forwardmove).toBe(50);
+    }
+  });
+
+  it('re-injected value tracks the latest input (release stops the marine)', () => {
+    const { ncA, ncB, ticsAonB } = twoPeers();
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    ncB.reinjectKnownTiccmds();
+    expect(ticsAonB.at(-1)!.forwardmove).toBe(50);
+    // A releases → a new (idle) ticcmd is a real change → written + delivered.
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 0, sidemove: 0, angleturn: 0, buttons: 0 });
+    expect(ticsAonB.at(-1)!.forwardmove).toBe(0);
+    // Gap-fill now re-feeds the IDLE command, not the stale moving one.
+    ncB.reinjectKnownTiccmds();
+    expect(ticsAonB.at(-1)!.forwardmove).toBe(0);
+  });
+
+  it('stops re-injecting a peer that LEFT the rack (#287 phantom-movement guard)', () => {
+    const { ncA, ncB, ticsAonB, awA } = twoPeers();
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    ncB.reinjectKnownTiccmds();
+    const before = ticsAonB.length;
+    expect(before).toBeGreaterThan(0);
+    // Peer A leaves the rack (its awareness state goes away). B recomputes
+    // membership on the resulting awareness update + must forget A's last input.
+    awA.setLocalState(null);
+    // Drive B's awareness handler so it recomputes membership (A now absent).
+    (ncB as unknown as { recomputeMembership: () => void }).recomputeMembership();
+    ncB.reinjectKnownTiccmds();
+    // No new re-injection of the departed peer's input.
+    expect(ticsAonB).toHaveLength(before);
+  });
+
+  it('does not re-inject anything before any remote ticcmd arrives', () => {
+    const { ncB, ticsAonB } = twoPeers();
+    ncB.reinjectKnownTiccmds();
+    ncB.reinjectKnownTiccmds();
+    expect(ticsAonB).toHaveLength(0);
+  });
+});

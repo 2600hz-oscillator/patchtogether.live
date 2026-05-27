@@ -51,6 +51,11 @@
   import { doomDef, type DoomHandleExtras } from '$lib/video/modules/doom';
   import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
   import { isCvGatePatched } from '$lib/doom/doom-input-mode';
+  import {
+    bumpAwarenessUpdate,
+    bumpElectionRecompute,
+    readCounters,
+  } from '$lib/doom/doom-instrumentation';
   import { HeldKeyTracker } from '$lib/doom/held-keys';
   import {
     encodeKey,
@@ -58,6 +63,7 @@
     type RelayCursor,
   } from '$lib/doom/doom-presence';
   import { decideHostRole } from '$lib/doom/doom-host-authority';
+  import { electionAwarenessSignature } from '$lib/doom/doom-awareness-signature';
   import {
     serializeRoster,
     serializePending,
@@ -106,6 +112,14 @@
   let loadError = $state<string | null>(null);
   let isHost = $state(true);          // true on first spawn; recomputed from awareness
   let memberIds = $state<string[]>([]); // including self
+  // Storm-throttle instrumentation (the multiplayer-hang guard). The probe
+  // reads these via the debug hook to assert that the EXPENSIVE election/roster
+  // recompute stays bounded per-second even while awareness updates flood in at
+  // the per-tic rate. Kept in MODULE scope (doom-instrumentation, keyed by node
+  // id) rather than as per-instance closure vars so they're MONOTONIC across a
+  // card remount — a hot-join relaunch (or SvelteFlow node remount) used to
+  // reset closure counters to 0 mid-run, which made the probe's
+  // (end - baseline) aggregate go NEGATIVE.
   // ---- Slice 3: per-peer instance model + roster ----
   //
   // ONE shared DOOM node lives on the canvas (the host spawned it; every
@@ -439,6 +453,18 @@
     const cmd = extras.readLocalTiccmd();
     if (!cmd) return;
     netcode.broadcastLocalTiccmd(mySlot, cmd);
+  }
+
+  /** Approach A — lockstep gap-fill. Each tic, re-apply every present remote
+   *  peer's last-known ticcmd (via the netcode) so a steady/idle remote peer's
+   *  marine stays driven in our world. The netcode fires onRemoteTiccmd →
+   *  applyRemoteTiccmd → injectRemoteTiccmd, refreshing the C overlay table.
+   *  Only meaningful for a joined player running a launched netgame. */
+  function reinjectRemoteTiccmds(): void {
+    if (!netcode) return;
+    if (mySlot === null) return;
+    if (!launched) return;
+    netcode.reinjectKnownTiccmds();
   }
 
   /** Local user id used for host election. Resolved lazily from the
@@ -964,12 +990,19 @@
   // `.selected` complexity below is short-circuited). Only when NO
   // CV-gate input is patched does the keyboard path run.
   //
-  // Derived off patch.edges so it recomputes when cables are added/removed.
-  // The `void Object.keys(...).length` touch makes the $derived track the
-  // edge-set identity (mirrors VideoVarispeedCard's portConnected cache).
-  // The actual predicate is the pure `isCvGatePatched` (unit-tested).
+  // Recomputes when cables are added/removed. NOTE the edge set lives in a
+  // SyncedStore-over-Yjs proxy (patch.edges), which is NOT a Svelte $state rune
+  // — reading `patch.edges` inside a $derived does NOT register a Svelte
+  // dependency, so the old `void Object.keys(patch.edges).length` touch never
+  // re-ran when a cable was patched (the edge arrives via Yjs, not a Svelte
+  // signal). That was Bug 4: patching a CV gate did not flip cvGatePatched, so
+  // shouldClaimKey() never went inert and the keyboard kept driving DOOM. Fix:
+  // bump a real $state signal (edgesVersion) from a Yjs edges-map observer
+  // (attachEdgesObserver) and key the $derived on it, so it recomputes on every
+  // edge add/remove. The actual predicate is the pure `isCvGatePatched`.
+  let edgesVersion = $state(0);
   let cvGatePatched = $derived<boolean>(
-    (void Object.keys(patch.edges).length, isCvGatePatched(Object.values(patch.edges), id)),
+    (void edgesVersion, isCvGatePatched(Object.values(patch.edges), id)),
   );
 
   // When a CV-gate cable is plugged WHILE keyboard keys are held, the
@@ -982,6 +1015,15 @@
       kbLatched = false;
       releaseHeldKeys();
     }
+    // Bug 4 HARD enforcement: gate the keyboard at the RUNTIME boundary, not
+    // just the window listener. `shouldClaimKey()` short-circuits the JS
+    // keydown/keyup capture, but the runtime is shared with the CV-gate path
+    // and an in-flight / OS-swallowed / autorepeat keypress (or any future
+    // caller) could still reach `setKeyForKeyboardCode`. Driving the runtime's
+    // keyboard-inert flag makes the keyboard truly inert while patched (and
+    // releases any keyboard-origin key still asserted in DOOM's gamekeydown[]
+    // so the marine can't keep walking), while the CV path stays live.
+    getExtras()?.setKeyboardInert(cvGatePatched);
   });
 
   function shouldClaimKey(): boolean {
@@ -1260,9 +1302,23 @@
       for (const p of pushes) extras.pushDoomKey(p.doomKey, p.pressed);
     }
 
-    const update = (): void => {
+    // STORM THROTTLE (the multiplayer-hang fix). DOOM writes each joined peer's
+    // ticcmd to awareness every tic (~35 Hz/player); 2 players ≈ 70 awareness
+    // `update` events/sec. The election/roster/slot/identity machinery below is
+    // EXPENSIVE and depends ONLY on slow-changing fields (membership, ownership,
+    // host-claim, join-request, displayName) — never on the per-tic ticcmd /
+    // relay / signaling / key fields. So we compute a cheap signature of just
+    // those election-relevant fields and run the heavy recompute ONLY when it
+    // actually changed. A pure ticcmd update => signature unchanged => zero
+    // election work. This bounds the observer's per-second cost regardless of
+    // tic rate (was the root cause of both tabs hanging under active play).
+    //
+    // The cheap, already-edge-triggered key relay (onIncomingKey, deduped on
+    // its own cursor) still runs every update — it is what delivers spectator
+    // keypresses and must not be throttled, but it is O(states) + no writes.
+    let lastElectionSig: string | null = null;
+    const runElectionRecompute = (): void => {
       recomputeHost();
-      onIncomingKey();
       // Slice 3: the host prunes roster entries for departed members
       // (leave-by-disconnect).
       reconcileRosterAsArbiter();
@@ -1274,6 +1330,21 @@
       // Slice 5: refresh identity (username + slot color tint) on presence
       // churn — a peer's displayName may arrive after the roster slot.
       syncIdentity();
+      bumpElectionRecompute(id);
+    };
+    const update = (): void => {
+      // Always run the cheap edge-triggered spectator-key relay.
+      onIncomingKey();
+      // Only run the expensive election/roster pass when an election-relevant
+      // awareness field actually changed — NOT for the per-tic ticcmd storm.
+      const sig = electionAwarenessSignature(
+        aw!.getStates() as Map<number, Record<string, unknown> | undefined>,
+        id,
+      );
+      bumpAwarenessUpdate(id);
+      if (sig === lastElectionSig) return;
+      lastElectionSig = sig;
+      runElectionRecompute();
     };
     aw.on('update', update);
     awarenessOff = () => aw.off('update', update);
@@ -1334,6 +1405,14 @@
         // in their worlds (cross-peer visibility). Cheap (4 small ints over a
         // sticky awareness field, deduped by seq on receive).
         broadcastLocalTiccmd();
+        // Approach A — lockstep gap-fill: re-feed every present remote peer's
+        // last-known ticcmd into our sim each tic. This keeps the C cross-feed
+        // overlay fresh for a peer who is HOLDING a key / standing still / whose
+        // sticky awareness writes coalesced (the only-on-change cap drops a
+        // steady peer's write rate to ~0), so a quiet remote marine never
+        // appears frozen here. Safe re: #287 — the netcode only re-injects
+        // PRESENT senders' CURRENT input and forgets a departed peer.
+        reinjectRemoteTiccmds();
       }
       // Round 5: the host publishes the "MP is live" flag every frame (the
       // write is a no-op unless it actually flipped) so a guest's Join button
@@ -1398,6 +1477,27 @@
     }
   }
 
+  // Bug 4 fix: observe the shared EDGES map so a cable add/remove (which
+  // arrives via Yjs, NOT a Svelte signal) bumps a real $state — the only thing
+  // the cvGatePatched $derived can track. Without this, patching a CV-gate jack
+  // never flipped the card into CV-only mode and the keyboard kept driving the
+  // game. observeDeep also catches a far-side patch in a multiplayer rack.
+  let edgesObserver: (() => void) | null = null;
+  function attachEdgesObserver(): void {
+    const edgesMap = ydoc.getMap('edges');
+    const handler = (): void => { edgesVersion++; };
+    edgesMap.observeDeep(handler);
+    edgesObserver = () => edgesMap.unobserveDeep(handler);
+    // Seed once in case edges are already present at mount (loaded patch).
+    edgesVersion++;
+  }
+  function detachEdgesObserver(): void {
+    if (edgesObserver) {
+      try { edgesObserver(); } catch { /* */ }
+      edgesObserver = null;
+    }
+  }
+
   // ---- Mount / unmount ----
   onMount(() => {
     startRenderLoop();
@@ -1405,6 +1505,7 @@
     // single-user `/` canvas skips quietly.
     attachAwareness();
     attachNodesObserver();
+    attachEdgesObserver();
     // Capture-phase window listeners (see header). Per-card instance,
     // not module-global — if there were ever >1 DOOM card on the rack
     // (maxInstances:1 prevents that today, but defensively…) each card
@@ -1506,6 +1607,19 @@
         // Slice 6 spectator/pending affordance text.
         specLabel,
         specBadge,
+        // Storm-throttle counters (multiplayer-hang guard): total awareness
+        // updates vs. how many actually triggered the expensive election/roster
+        // recompute. The probe samples these per-second to prove the heavy work
+        // stays bounded under the per-tic ticcmd flood.
+        awarenessUpdateCount: readCounters(id).awarenessUpdateCount,
+        electionRecomputeCount: readCounters(id).electionRecomputeCount,
+        // Real awareness-write rate driver (post-suppression). The probe
+        // samples this to measure the genuine per-tic ticcmd write rate.
+        ticcmdWriteCount: readCounters(id).ticcmdWriteCount,
+        // CV-gate input mode (Bug 4 guard): true => keyboard is inert (CV owns
+        // movement). The probe asserts this flips when a CV gate is patched.
+        cvGatePatched,
+        shouldClaimKey: shouldClaimKey(),
       }),
     };
   });
@@ -1516,6 +1630,7 @@
     stopRenderLoop();
     detachAwareness();
     detachNodesObserver();
+    detachEdgesObserver();
     stopNetcode();
     releaseHeldKeys();
     window.removeEventListener('keydown', onWindowKeyDownCapture, true);
