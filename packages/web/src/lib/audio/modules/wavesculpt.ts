@@ -64,6 +64,7 @@ import {
   getFactoryTable,
   DEFAULT_FACTORY_TABLE_ID,
 } from '$lib/audio/wavetable-factory-tables';
+import { detectPitch } from '$lib/audio/pitch-detect';
 
 // ---------- card → module frame-drawer registry ----------
 
@@ -220,6 +221,55 @@ export function detuneOctaveOffset(oscIdx: number, detune: number): number {
   if (oscIdx === 1) return detune;
   if (oscIdx === 2) return detune * 0.5;
   return -detune;
+}
+
+// ---------- WIGGLE: pitch → 3D rotation mapping (pure, unit-tested) ----------
+//
+// The BLINK WIGGLE control rotates each oscillator's line/tube/ribbon
+// through 3D space. Owner spec: rotation SPEED and MAGNITUDE are both
+// proportional to that oscillator's detected PITCH (low pitch → slow +
+// small wobble, high pitch → fast + large), and the WIGGLE knob scales the
+// overall strength (0 = OFF = the existing fixed-direction behaviour).
+//
+// We map pitch via a log scale across the musical band so an octave change
+// is a roughly-uniform step in both rate and magnitude (perceptually even).
+// Below WIGGLE_MIN_HZ (or when no pitch is detected) the contribution is 0,
+// so a silent / unpitched voice doesn't wiggle.
+export const WIGGLE_MIN_HZ = 40;     // C1-ish floor
+export const WIGGLE_MAX_HZ = 4000;   // ~B7 ceiling (matches pitch-detect maxHz)
+// Rotation rate at max pitch + full WIGGLE, in radians/sec.
+export const WIGGLE_MAX_RATE = 4.5;
+// Peak rotation magnitude (radians of tilt away from the fixed aim) at max
+// pitch + full WIGGLE. ~0.9 rad ≈ 51° — visibly sweeping but never folding
+// the trace back through its own origin.
+export const WIGGLE_MAX_MAGNITUDE = 0.9;
+
+/** Normalised pitch position in [0..1] across the musical band (log scale).
+ *  Returns 0 for null / sub-floor pitch. */
+export function wigglePitchNorm(hz: number | null): number {
+  if (hz === null || !Number.isFinite(hz) || hz < WIGGLE_MIN_HZ) return 0;
+  const clamped = Math.min(WIGGLE_MAX_HZ, hz);
+  const lo = Math.log(WIGGLE_MIN_HZ);
+  const hi = Math.log(WIGGLE_MAX_HZ);
+  return (Math.log(clamped) - lo) / (hi - lo);
+}
+
+/** Map a detected pitch + the global WIGGLE knob (0..1) to a rotation
+ *  rate (rad/sec) and magnitude (rad). Both scale with pitch (low→small,
+ *  high→large) AND with the WIGGLE strength. wiggle=0 → {rate:0, magnitude:0}
+ *  i.e. OFF (the trace keeps its fixed aim direction). Pure: drives both the
+ *  card render and the unit test. */
+export function pitchToWiggle(
+  hz: number | null,
+  wiggle: number,
+): { rate: number; magnitude: number } {
+  const w = Math.max(0, Math.min(1, wiggle));
+  if (w <= 0) return { rate: 0, magnitude: 0 };
+  const n = wigglePitchNorm(hz);
+  return {
+    rate: n * WIGGLE_MAX_RATE * w,
+    magnitude: n * WIGGLE_MAX_MAGNITUDE * w,
+  };
 }
 
 // ---------- ADSR helper (unchanged from v1; tests still reference it) ----------
@@ -441,6 +491,11 @@ export const wavesculptDef: AudioModuleDef = {
     { id: 'pos_z', type: 'cv', paramTarget: 'pos_z', cvScale: { mode: 'linear' } },
     { id: 'zoom',  type: 'cv', paramTarget: 'zoom',  cvScale: { mode: 'linear' } },
     { id: 'rot',   type: 'cv', paramTarget: 'rot',   cvScale: { mode: 'linear' } },
+    // BLINK scope-render controls (CV-modulatable like the camera params).
+    // scale = amplitude/zoom of the scope waveform (reuses SCOPE's scale
+    // semantics). wiggle = pitch-driven 3D rotation strength (0 = OFF).
+    { id: 'scale',  type: 'cv', paramTarget: 'scale',  cvScale: { mode: 'linear' } },
+    { id: 'wiggle', type: 'cv', paramTarget: 'wiggle', cvScale: { mode: 'linear' } },
     { id: 'alpha_in', type: 'video' },
   ],
   outputs: [
@@ -502,6 +557,16 @@ export const wavesculptDef: AudioModuleDef = {
     //   2 = REALITY BASED COMMUNITY — same scope layout but the traces are
     //       3D neon TUBES; WIDTH sets the tube radius (max ≈ fills the box).
     ps.push({ id: 'blink_mode',    label: 'Blink',    defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+    // SCALE — amplitude/zoom of the BLINK scope waveform. Reuses SCOPE's
+    // scale semantics (multiplicative, log curve, 0.1..10, unity at 1) so
+    // the scope trace SHAPE matches the SCOPE module at equal scale.
+    // Applies in SCOPES TRIAL + REALITY BASED COMMUNITY.
+    ps.push({ id: 'scale',  label: 'Scale',  defaultValue: 1, min: 0.1, max: 10, curve: 'log' });
+    // WIGGLE — pitch-driven 3D rotation of each osc's line/tube/ribbon.
+    // 0 = OFF (fixed-direction; current behaviour). Rotation speed +
+    // magnitude scale with each osc's detected pitch; this knob scales the
+    // overall strength. Applies in ALL blink modes (incl. the ribbon mode).
+    ps.push({ id: 'wiggle', label: 'Wiggle', defaultValue: 0, min: 0, max: 1, curve: 'linear' });
     ps.push({ id: 'alpha_brightness', label: 'A.Bright', defaultValue: 1, min: 0, max: 2, curve: 'linear' });
     ps.push({ id: 'hsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Drift' });
     ps.push({ id: 'hsync_loss',         defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Loss' });
@@ -1077,6 +1142,11 @@ export const wavesculptDef: AudioModuleDef = {
     const sPosZ = makeShadow(live.pos_z ?? 0);
     const sZoom = makeShadow(live.zoom ?? 1);
     const sRot  = makeShadow(live.rot  ?? 0);
+    // BLINK scope-render shadows (same CV-combine pattern as the camera
+    // params): scale + wiggle. The card reads combined (knob + CV) via
+    // read('scopeRender') so a patched LFO can sweep them per frame.
+    const sScale  = makeShadow(live.scale  ?? 1);
+    const sWiggle = makeShadow(live.wiggle ?? 0);
     // Per-osc morph shadows. Same pattern as the camera shadows:
     // CV cables connect into morph{N}_cv → shadow gain AudioParam;
     // the shadow analyser captures the combined (knob + CV) value
@@ -1139,6 +1209,10 @@ export const wavesculptDef: AudioModuleDef = {
     // PROXIMITY/BIRDSEYE/SPECTROGRAPH video modes never pay the cost.
     let scopeAnalysers: AnalyserNode[] | null = null;
     let scopeBufs: Float32Array<ArrayBuffer>[] | null = null;
+    // Per-osc detected pitch (Hz | null), refreshed at ~12 Hz from the
+    // scope buffers; drives the WIGGLE rotation rate + magnitude.
+    const scopePitches: Array<number | null> = [null, null, null, null];
+    let scopePitchLastMs = 0;
     function ensureScopeAnalysers(): AnalyserNode[] {
       if (scopeAnalysers) return scopeAnalysers;
       const ans: AnalyserNode[] = [];
@@ -1194,6 +1268,8 @@ export const wavesculptDef: AudioModuleDef = {
     inputsMap.set('pos_z', { node: sPosZ.gain, input: 0, param: sPosZ.gain.gain });
     inputsMap.set('zoom',  { node: sZoom.gain, input: 0, param: sZoom.gain.gain });
     inputsMap.set('rot',   { node: sRot.gain,  input: 0, param: sRot.gain.gain  });
+    inputsMap.set('scale',  { node: sScale.gain,  input: 0, param: sScale.gain.gain  });
+    inputsMap.set('wiggle', { node: sWiggle.gain, input: 0, param: sWiggle.gain.gain });
     // Per-osc morph CV → shadow gain (mirroring the camera CV path).
     // The engine connects the modulator into the shadow's gain
     // AudioParam; the analyser captures combined (knob + CV) at audio
@@ -1228,6 +1304,8 @@ export const wavesculptDef: AudioModuleDef = {
         if (paramId === 'pos_z') sPosZ.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'zoom')  sZoom.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'rot')   sRot.gain.gain.setValueAtTime(value, ctx.currentTime);
+        if (paramId === 'scale')  sScale.gain.gain.setValueAtTime(value, ctx.currentTime);
+        if (paramId === 'wiggle') sWiggle.gain.gain.setValueAtTime(value, ctx.currentTime);
         // Per-osc morph knob → corresponding shadow gain. The shadow
         // is the single source of truth: tick() reads it and pushes
         // combined (knob + CV) into the worklet's morph{N} AudioParam.
@@ -1297,15 +1375,34 @@ export const wavesculptDef: AudioModuleDef = {
           return { bins: spectrumBuf!, sampleRate: ctx.sampleRate, fftSize: a.fftSize };
         }
         if (key === 'scopes') {
-          // Per-osc time-domain (oscilloscope) traces. Lazy-init the
-          // analysers on first access so only the BLINK scope modes pay
-          // the cost. Returns 4 Float32Arrays of [-1..+1] samples (one per
-          // oscillator), each the latest fftSize-sample window of that
-          // voice's post-env/dist/pan output. The card draws these as
-          // scope traces emitted from the 4 floor corners.
+          // Per-osc oscilloscope traces — the EXACT same data SCOPE reads:
+          // each analyser's getFloatTimeDomainData window (post-env/dist/
+          // pan), so the BLINK SCOPES-TRIAL / REALITY-BASED-COMMUNITY
+          // render draws the same waveform SHAPE the SCOPE module would
+          // draw if patched to the same signal. We additionally return:
+          //   * scale  — combined (knob + CV) SCALE; the card multiplies
+          //     the trace amplitude by it, matching SCOPE's ch1Scale.
+          //   * wiggle — combined (knob + CV) WIGGLE strength (0..1).
+          //   * pitches — per-osc detected fundamental (Hz | null) via the
+          //     SAME YIN detector SCOPE's tuner uses, throttled to ~12 Hz
+          //     (pitch is for the WIGGLE rotation rate/magnitude; frame-
+          //     rate detection would jitter and isn't worth the CPU).
           const ans = ensureScopeAnalysers();
           for (let i = 0; i < NUM_OSC; i++) ans[i]!.getFloatTimeDomainData(scopeBufs![i]!);
-          return { traces: scopeBufs!, length: ans[0]!.fftSize };
+          const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+          if (nowMs - scopePitchLastMs > 80) {
+            scopePitchLastMs = nowMs;
+            for (let i = 0; i < NUM_OSC; i++) {
+              scopePitches[i] = detectPitch(scopeBufs![i]!, ctx.sampleRate).hz;
+            }
+          }
+          return {
+            traces: scopeBufs!,
+            length: ans[0]!.fftSize,
+            scale:  readCamShadow(sScale,  live.scale  ?? 1),
+            wiggle: readCamShadow(sWiggle, live.wiggle ?? 0),
+            pitches: scopePitches.slice(),
+          };
         }
         return undefined;
       },
