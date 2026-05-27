@@ -626,4 +626,100 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     expect(params.wavefold).toBe(0.5);
     expect(params.feedback_gain).toBe(0.6);
   });
+
+  test('BLINK button cycles blink_mode 0 → 1 → 2 → 0 and shows the mode name', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
+    ]);
+
+    const btn = page.locator('[data-testid="wavesculpt-blink-toggle"]');
+    await expect(btn).toHaveCount(1);
+
+    const readMode = (): Promise<number> => page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      return w.__patch.nodes['ws']?.params.blink_mode ?? 0;
+    });
+    const nameLoc = page.locator('[data-testid="wavesculpt-blink-mode-name"]');
+
+    // Default = mode 0 (today's render); no mode-name shown.
+    expect(await readMode(), 'starts at mode 0 (current)').toBe(0);
+    await expect(nameLoc).toHaveCount(0);
+
+    await btn.click();
+    await page.waitForTimeout(60);
+    expect(await readMode(), '1st click → SCOPES TRIAL').toBe(1);
+    await expect(nameLoc).toHaveText('SCOPES TRIAL');
+
+    await btn.click();
+    await page.waitForTimeout(60);
+    expect(await readMode(), '2nd click → REALITY BASED COMMUNITY').toBe(2);
+    await expect(nameLoc).toHaveText('REALITY BASED COMMUNITY');
+
+    await btn.click();
+    await page.waitForTimeout(60);
+    expect(await readMode(), '3rd click wraps back to 0').toBe(0);
+    await expect(nameLoc).toHaveCount(0);
+  });
+
+  test('BLINK modes 1 + 2 render the 4-corner scope traces (and differ from each other)', async ({ page }) => {
+    // Drives all four oscillators audible (JOYSTICK x=1 → gate1, normalled
+    // to gates 2-4) so the live scope traces have signal. Then captures the
+    // canvas in mode 1 (flat scope lines) and mode 2 (neon tubes) and asserts:
+    //   * both modes light a substantial fraction of the frame (the 4 corner-
+    //     emitted traces actually render),
+    //   * the two modes produce DIFFERENT pixels (tube shading ≠ flat line),
+    //   * the traces emanate from the 4 corners — the centre band (where all
+    //     four converge) is brighter than the empty mid-edges.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const setup = async (mode: number): Promise<void> => {
+      await spawnPatch(page, [
+        { id: 'ws', type: 'wavesculpt', position: { x: 80, y: 80 }, domain: 'audio',
+          params: { blink_mode: mode, thickness1: 0.5, thickness2: 0.5, thickness3: 0.5, thickness4: 0.5, noise: 0 } },
+        { id: 'jo', type: 'joystick', position: { x: 80, y: 500 }, domain: 'audio' },
+      ], [
+        { id: 'g', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },
+      ]);
+      await page.evaluate(() => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> }; __engine?: () => { ctx: AudioContext } | null };
+        const n = w.__patch.nodes['jo']; if (n) n.params.pos_x = 1;
+        try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
+      });
+    };
+
+    const grab = (): Promise<{ lit: number; data: number[] }> => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement;
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      let lit = 0; const out: number[] = [];
+      for (let i = 0; i < d.length; i += 4) {
+        const sum = (d[i] ?? 0) + (d[i + 1] ?? 0) + (d[i + 2] ?? 0);
+        if (sum > 60) lit++;
+        // Subsample luminance for a cheap cross-mode pixel-diff.
+        if (i % (4 * 97) === 0) out.push(sum);
+      }
+      return { lit, data: out };
+    });
+
+    await setup(1);
+    let mode1!: { lit: number; data: number[] };
+    await expect.poll(async () => (mode1 = await grab()).lit, {
+      message: 'SCOPES TRIAL never rendered traces', timeout: 5_000, intervals: [200, 400, 600],
+    }).toBeGreaterThan(2000);
+
+    await setup(2);
+    let mode2!: { lit: number; data: number[] };
+    await expect.poll(async () => (mode2 = await grab()).lit, {
+      message: 'REALITY BASED COMMUNITY never rendered tubes', timeout: 5_000, intervals: [200, 400, 600],
+    }).toBeGreaterThan(2000);
+
+    // The two modes must look different (tube radial shading vs flat line).
+    let diff = 0;
+    const n = Math.min(mode1.data.length, mode2.data.length);
+    for (let i = 0; i < n; i++) if (Math.abs((mode1.data[i] ?? 0) - (mode2.data[i] ?? 0)) > 24) diff++;
+    expect(diff, 'SCOPES TRIAL and REALITY BASED COMMUNITY render differently').toBeGreaterThan(20);
+  });
 });

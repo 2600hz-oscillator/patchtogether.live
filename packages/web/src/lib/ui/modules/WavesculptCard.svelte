@@ -49,6 +49,7 @@
     ribbonStripRange,
     voctToHz,
     detuneOctaveOffset,
+    pitchToWiggle,
     type WavesculptData,
     type WavesculptOscData,
   } from '$lib/audio/modules/wavesculpt';
@@ -146,6 +147,9 @@
   let chord_mode    = $derived(pget('chord_mode'));
   let chord_quality = $derived(pget('chord_quality'));
   let alpha_brightness = $derived(pget('alpha_brightness'));
+  // BLINK scope-render controls.
+  let scale  = $derived(pget('scale'));
+  let wiggle = $derived(pget('wiggle'));
 
   // Per-osc params (bound in the strip <Knob>s).
   let tune1 = $derived(pget('tune1'));
@@ -395,6 +399,27 @@
   // every frame to avoid GC churn (60fps × Float32→Uint8 conversion).
   const waveTexUploadBuf = new Uint8Array(WAVE_TEX_W * WAVE_TEX_H * 4);
 
+  // ---- BLINK scope modes (1 = SCOPES TRIAL, 2 = REALITY BASED COMMUNITY) ----
+  // A second strip program draws each oscillator's LIVE oscilloscope trace
+  // as a line/tube emitted from a floor corner up+inward at 45°. The live
+  // per-osc time-domain samples ride a scopeTex (SCOPE_TEX_W × 4 RGBA8,
+  // R = sample mapped [-1..1]→[0..1]), refreshed each frame from the audio
+  // module's read('scopes'). Lazily created on first BLINK-mode frame so
+  // BLINK mode 0 + the non-3D video modes pay nothing.
+  let scopeProgram: WebGLProgram | null = null;
+  let scopeVao: WebGLVertexArrayObject | null = null;
+  let scopeSamplesBuf: WebGLBuffer | null = null;
+  let scopeTex: WebGLTexture | null = null;
+  const SCOPE_TEX_W = 512;   // matches the audio module's scope fftSize
+  const SCOPE_TEX_H = 4;
+  const SCOPE_SEGMENTS = 128; // line resolution along each trace
+  // Ring vertices around the swept tube (REALITY BASED COMMUNITY mode). 8
+  // sides reads as a round neon tube at card resolution without exploding
+  // the vertex count (128 segments × (8+1) ring verts × 4 oscs ≈ 4.6k).
+  const TUBE_SIDES = 8;
+  const scopeTexUploadBuf = new Uint8Array(SCOPE_TEX_W * SCOPE_TEX_H * 4);
+  let scopeInitDone = false;
+
   const RIBBON_SEGMENTS = 64;
   const RES_W = 320;
   const RES_H = 240;
@@ -606,6 +631,124 @@ void main() {
   gl_Position = vec4(aPos, 0.0, 1.0);
 }`;
 
+  // ---- BLINK scope program (modes 1 + 2) ----
+  //
+  // The two non-default BLINK modes draw each oscillator's signal as the
+  // EXACT oscilloscope waveform SHAPE the SCOPE module renders (the card
+  // reads the SAME per-osc time-domain analyser windows the SCOPE tuner
+  // reads — see wavesculpt.ts read('scopes')). The trace runs along a ray
+  // that originates at one of the 4 floor corners and is aimed UP + INWARD
+  // at 45°; the scope sample at parameter t displaces the trace
+  // perpendicular to the ray. SCALE multiplies that displacement (reusing
+  // SCOPE's ch1Scale amplitude semantics), so at equal SCALE the shape
+  // matches a SCOPE patched to the same signal.
+  //
+  //   * SCOPES TRIAL (uMode 1): a THIN scope LINE. WIDTH = line thickness.
+  //   * REALITY BASED COMMUNITY (uMode 2): a REAL swept 3D TUBE — actual
+  //     ring geometry (TUBE_SIDES verts) extruded around the waveform path,
+  //     not a screen-space-thickened strip. WIDTH = tube radius. Lit with a
+  //     view-facing neon rim + hot core so it reads as a glowing solid tube.
+  //
+  // Geometry (buildScopeTube): per segment a ring of TUBE_SIDES vertices.
+  // aRing (0..TUBE_SIDES) selects the angle around the path; the VS places
+  // it using the path's local frame (tangent + two perpendiculars). The
+  // WIGGLE rotation is applied CPU-side to uAim / uOrigin per frame, so the
+  // whole tube sweeps through 3D space at a rate + magnitude set by pitch.
+  const SCOPE_VS = `#version 300 es
+in float aIdx;     // segment index along the path (0..SCOPE_SEGMENTS-1)
+in float aRing;    // ring-vertex index around the tube (0..TUBE_SIDES)
+in float aOsc;
+
+uniform mat4  uMVP;
+uniform vec4  uOrigin[4];  // (possibly wiggle-orbited) ray origin per osc
+uniform vec4  uAim[4];     // (possibly wiggle-rotated) ray direction per osc
+uniform float uWidth[4];   // 0..1 WIDTH control per osc (line thick / radius)
+uniform float uScale[4];   // SCOPE-style amplitude scale per osc
+uniform float uMode;       // 1 = thin line, 2 = tube
+uniform sampler2D uScopeTex;
+
+out float vT;
+out float vRimDot;   // |normal · view-ish| for tube shading (0 edge, 1 face)
+flat out int vOsc;
+
+const float TUBE_SIDES = ${TUBE_SIDES}.0;
+
+void main() {
+  int osc = int(aOsc);
+  vec3 origin = uOrigin[osc].xyz;
+  vec3 aim = normalize(uAim[osc].xyz);
+  float t = aIdx / float(${SCOPE_SEGMENTS - 1}); // 0..1 along the ray
+
+  // Path point: walk most of the cube diagonal from the corner inward.
+  vec3 base = origin + aim * (t * 2.6);
+
+  // Orthonormal frame around the ray. pDisp = displacement plane (the
+  // waveform bends in this plane), pWide = the third axis.
+  vec3 ref = abs(aim.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+  vec3 pDisp = normalize(cross(aim, ref));
+  vec3 pWide = normalize(cross(aim, pDisp));
+
+  // Live scope sample → [-1..+1] (the SAME shape SCOPE draws), * SCALE.
+  float u = t;
+  float v = (float(osc) + 0.5) / 4.0;
+  float s = (texture(uScopeTex, vec2(u, v)).r * 2.0 - 1.0) * clamp(uScale[osc], 0.0, 10.0);
+  // Endpoint taper so the trace fades in/out instead of ending in a spike.
+  float taper = smoothstep(0.0, 0.06, t) * smoothstep(1.0, 0.9, t);
+
+  // The waveform-displaced centreline.
+  vec3 centre = base + pDisp * (s * 0.9 * taper);
+
+  float w = clamp(uWidth[osc], 0.0, 1.0);
+  // Mode 1 = thin line: a small radius that grows modestly with WIDTH.
+  // Mode 2 = tube: WIDTH = real tube radius (max ≈ fills the box).
+  float radius = (uMode > 1.5) ? (0.02 + w * 0.32) : (0.006 + w * 0.05);
+
+  // Place the ring vertex around the centreline using the frame. The ring
+  // angle sweeps a full circle in the (pDisp, pWide) plane.
+  float ang = (aRing / TUBE_SIDES) * 6.2831853;
+  vec3 nrm = normalize(pDisp * cos(ang) + pWide * sin(ang));
+  vec3 p = centre + nrm * radius;
+
+  gl_Position = uMVP * vec4(p, 1.0);
+  vT = t;
+  // Cheap face/rim term: the ring normal's alignment with the aim's
+  // perpendicular toward +Z (a stand-in for the view dir) — gives the tube
+  // a lit face and darker silhouette without needing the real eye vector.
+  vRimDot = clamp(abs(nrm.z) * 0.6 + 0.4, 0.0, 1.0);
+  vOsc = osc;
+}`;
+
+  const SCOPE_FS = `#version 300 es
+precision highp float;
+in float vT;
+in float vRimDot;
+flat in int vOsc;
+out vec4 outColor;
+
+uniform vec4  uNeon[4];  // per-osc neon colour
+uniform float uMode;     // 1 = thin scope line, 2 = real neon tube
+
+void main() {
+  vec3 base = uNeon[vOsc].rgb;
+  float edge = smoothstep(0.0, 0.12, vT) * smoothstep(1.0, 0.88, vT);
+
+  if (uMode > 1.5) {
+    // REAL TUBE: shade the ring geometry with a hot core toward the lit
+    // face + saturated neon body + soft rim, so the swept tube reads as a
+    // glowing solid. vRimDot is high on the face, low on the silhouette.
+    float face = vRimDot;
+    float core = pow(face, 2.0);
+    vec3 col = vec3(1.0) * core * 0.7 + base * (0.7 + 1.6 * face);
+    float alpha = (0.55 + 0.45 * face) * (0.5 + 0.5 * edge);
+    outColor = vec4(col, alpha);
+  } else {
+    // THIN SCOPE LINE: bright, near-uniform neon trace.
+    vec3 col = base * 1.4;
+    float alpha = (0.6 + 0.4 * vRimDot) * (0.45 + 0.55 * edge);
+    outColor = vec4(col, alpha);
+  }
+}`;
+
   function compileShader(g: WebGL2RenderingContext, type: number, src: string): WebGLShader {
     const s = g.createShader(type);
     if (!s) throw new Error('createShader failed');
@@ -687,6 +830,38 @@ void main() {
     return new Float32Array(verts);
   }
 
+  // Real swept-TUBE geometry for the BLINK scope modes. For each osc we
+  // emit a tube: at every segment along the path there's a ring of
+  // TUBE_SIDES vertices; between adjacent segments we stitch a quad (two
+  // triangles) per ring side. The VS positions each ring vertex around the
+  // waveform-displaced centreline using the path's local frame (so this is
+  // genuine 3D geometry, NOT a screen-space-thickened strip). Drawn as a
+  // gl.TRIANGLES list — all 4 oscs in one buffer / one draw call.
+  // Attributes per vertex: aIdx (segment), aRing (ring angle index), aOsc.
+  //
+  // SCOPES TRIAL (mode 1) reuses the SAME geometry with a tiny radius, so
+  // it reads as a thin line; REALITY BASED COMMUNITY (mode 2) uses the full
+  // radius → a fat glowing tube.
+  function buildScopeTube(): Float32Array {
+    const verts: number[] = [];
+    const push = (i: number, ring: number, osc: number) => {
+      verts.push(i, ring, osc);
+    };
+    for (let osc = 0; osc < 4; osc++) {
+      for (let i = 0; i < SCOPE_SEGMENTS - 1; i++) {
+        for (let j = 0; j < TUBE_SIDES; j++) {
+          const j1 = j + 1; // ring wraps; aRing=TUBE_SIDES maps to angle 2π
+          // Quad (i,j)-(i+1,j)-(i+1,j1)-(i,j1) → 2 triangles.
+          push(i, j, osc);     push(i + 1, j, osc);  push(i + 1, j1, osc);
+          push(i, j, osc);     push(i + 1, j1, osc); push(i, j1, osc);
+        }
+      }
+    }
+    return new Float32Array(verts);
+  }
+  // Vertices per osc tube = (SCOPE_SEGMENTS-1) rings × TUBE_SIDES quads × 6.
+  const SCOPE_TUBE_VERTS = 4 * (SCOPE_SEGMENTS - 1) * TUBE_SIDES * 6;
+
   function mat4Multiply(out: Float32Array, a: Float32Array, b: Float32Array): void {
     for (let col = 0; col < 4; col++) {
       for (let row = 0; row < 4; row++) {
@@ -728,6 +903,28 @@ void main() {
     out[15] = 1;
   }
 
+  /** Rotate vector v around unit axis k by angle θ (Rodrigues' formula).
+   *  Used by WIGGLE to swing each osc's aim direction through 3D space. */
+  function rotateAroundAxis(
+    v: [number, number, number],
+    k: [number, number, number],
+    theta: number,
+  ): [number, number, number] {
+    const c = Math.cos(theta), s = Math.sin(theta);
+    const kl = Math.hypot(k[0], k[1], k[2]) || 1;
+    const kx = k[0] / kl, ky = k[1] / kl, kz = k[2] / kl;
+    const dot = kx * v[0] + ky * v[1] + kz * v[2];
+    // crossKV = k × v
+    const cx = ky * v[2] - kz * v[1];
+    const cy = kz * v[0] - kx * v[2];
+    const cz = kx * v[1] - ky * v[0];
+    return [
+      v[0] * c + cx * s + kx * dot * (1 - c),
+      v[1] * c + cy * s + ky * dot * (1 - c),
+      v[2] * c + cz * s + kz * dot * (1 - c),
+    ];
+  }
+
   let viewMat = new Float32Array(16);
   let projMat = new Float32Array(16);
   let mvpMat = new Float32Array(16);
@@ -738,6 +935,114 @@ void main() {
     [0.30, 0.50, 1.0, 1.0],
     [0.85, 0.85, 0.85, 0.7],
   ];
+
+  // Neon palette for the BLINK scope modes — hot, saturated, additive-
+  // friendly colours that read as "neon" against black (hot pink, cyan,
+  // electric purple, acid green). Per-osc, RED/GRN/BLU/ALP order.
+  const NEON_COLORS: Array<[number, number, number, number]> = [
+    [1.0, 0.15, 0.55, 1.0], // hot pink
+    [0.15, 1.0, 0.85, 1.0], // cyan
+    [0.55, 0.25, 1.0, 1.0], // electric purple
+    [0.65, 1.0, 0.15, 1.0], // acid green
+  ];
+
+  // The four FLOOR CORNERS of the unit cube (y=-1), and a unit direction
+  // aimed UP and INWARD toward the centre at 45° from each. These seed
+  // uOrigin/uAim for the scope tube shader (WIGGLE rotates them per frame).
+  // Inward = toward the XZ origin; up = +Y; normalized so "45°" means equal
+  // up + inward components.
+  //
+  // Corner→osc mapping (owner kept the ribbon corner mapping):
+  //   RED=−X−Z, GRN=+X−Z, BLU=+X+Z, ALP=−X+Z.
+  const SCOPE_CORNERS: Array<[number, number, number]> = [
+    [-1, -1, -1],
+    [ 1, -1, -1],
+    [ 1, -1,  1],
+    [-1, -1,  1],
+  ];
+  const SCOPE_AIMS: Array<[number, number, number]> = SCOPE_CORNERS.map(([x, y, z]) => {
+    // Horizontal inward = toward origin in XZ; vertical = up (+Y). Mix
+    // 50/50 then normalize → 45° between the floor plane and straight up.
+    const inwardX = -x, inwardZ = -z;
+    const ih = Math.hypot(inwardX, inwardZ) || 1;
+    const hx = inwardX / ih, hz = inwardZ / ih;
+    // up component = 1, horizontal magnitude = 1 → 45°.
+    const v: [number, number, number] = [hx, 1, hz];
+    const len = Math.hypot(v[0], v[1], v[2]) || 1;
+    return [v[0] / len, v[1] / len, v[2] / len];
+  });
+
+  /** Draw the BLINK scope traces (mode 1 = thin scope lines, mode 2 = real
+   *  swept neon tubes) into the bound scene FBO. The trace is the exact
+   *  oscilloscope waveform SHAPE SCOPE renders; SCALE multiplies the
+   *  amplitude; WIGGLE swings each osc's aim + origin through 3D space at a
+   *  rate + magnitude proportional to that osc's pitch. Reuses mvpMat (set
+   *  for this frame). Additive + depth-disabled (order-independent glow). */
+  function drawScopes(g: WebGL2RenderingContext, mode: number): void {
+    if (!scopeProgram || !scopeVao) return;
+    const meta = uploadScopeTex();
+    g.useProgram(scopeProgram);
+
+    // Per-osc WIGGLE tilt. The phase is advanced once per frame in the main
+    // render loop (single advancer); here we just read it and scale by the
+    // magnitude from the DETECTED pitch (meta.pitches) — the actual audible
+    // pitch of each voice — and the WIGGLE strength. wiggle=0 → tilt 0.
+    const wiggleMag: number[] = [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      const { magnitude } = pitchToWiggle(meta.pitches[i] ?? null, meta.wiggle);
+      wiggleMag[i] = Math.sin(scopeWigglePhase[i]!) * magnitude;
+    }
+
+    const originArr = new Float32Array(16);
+    const aimArr = new Float32Array(16);
+    const neonArr = new Float32Array(16);
+    const widthArr = new Float32Array(4);
+    const scaleArr = new Float32Array(4);
+    for (let i = 0; i < 4; i++) {
+      const c = SCOPE_CORNERS[i]!, a0 = SCOPE_AIMS[i]!, n = NEON_COLORS[i]!;
+      // WIGGLE: rotate the aim direction (and orbit the origin slightly)
+      // around a fixed perpendicular axis by the per-osc tilt angle. The
+      // whole trace sweeps through 3D space. At wiggle=0 the angle is 0 →
+      // the aim/origin are unchanged (the existing fixed-direction look).
+      const theta = wiggleMag[i]!;
+      // Axis: a horizontal axis perpendicular to the corner's inward XZ
+      // direction, so the trace swings up/down + sideways rather than just
+      // spinning about its own length.
+      const axis: [number, number, number] = [-c[2], 0, c[0]];
+      const aim = theta !== 0 ? rotateAroundAxis(a0, axis, theta) : a0;
+      // Orbit the origin a touch so the base of the trace also moves.
+      const orbited = theta !== 0 ? rotateAroundAxis(c, [0, 1, 0], theta * 0.4) : c;
+      originArr[i * 4] = orbited[0]; originArr[i * 4 + 1] = orbited[1]; originArr[i * 4 + 2] = orbited[2];
+      aimArr[i * 4] = aim[0]; aimArr[i * 4 + 1] = aim[1]; aimArr[i * 4 + 2] = aim[2];
+      neonArr[i * 4] = n[0]; neonArr[i * 4 + 1] = n[1]; neonArr[i * 4 + 2] = n[2]; neonArr[i * 4 + 3] = n[3];
+      // WIDTH = the per-osc THICK control. Scope-line thickness (mode 1) /
+      // tube radius (mode 2). Max → trace nearly fills the box.
+      widthArr[i] = (node?.params?.[`thickness${i + 1}`] as number | undefined) ?? 0.3;
+      scaleArr[i] = meta.scale[i] ?? 1;
+    }
+    g.uniformMatrix4fv(g.getUniformLocation(scopeProgram, 'uMVP'), false, mvpMat);
+    g.uniform4fv(g.getUniformLocation(scopeProgram, 'uOrigin[0]'), originArr);
+    g.uniform4fv(g.getUniformLocation(scopeProgram, 'uAim[0]'), aimArr);
+    g.uniform4fv(g.getUniformLocation(scopeProgram, 'uNeon[0]'), neonArr);
+    g.uniform1fv(g.getUniformLocation(scopeProgram, 'uWidth[0]'), widthArr);
+    g.uniform1fv(g.getUniformLocation(scopeProgram, 'uScale[0]'), scaleArr);
+    g.uniform1f(g.getUniformLocation(scopeProgram, 'uMode'), mode);
+    g.activeTexture(g.TEXTURE0);
+    g.bindTexture(g.TEXTURE_2D, scopeTex);
+    g.uniform1i(g.getUniformLocation(scopeProgram, 'uScopeTex'), 0);
+
+    // Additive, depth-disabled: the four neon traces are translucent glow
+    // and must show through one another regardless of camera angle.
+    g.disable(g.DEPTH_TEST);
+    g.depthMask(false);
+    g.colorMask(true, true, true, true);
+    g.enable(g.BLEND);
+    g.blendFunc(g.SRC_ALPHA, g.ONE);
+    g.bindVertexArray(scopeVao);
+    g.drawArrays(g.TRIANGLES, 0, SCOPE_TUBE_VERTS);
+    g.bindVertexArray(null);
+    g.disable(g.BLEND);
+  }
 
   let renderStartMs = 0;
 
@@ -774,6 +1079,13 @@ void main() {
   let boltPhase: number[] = [0, 0, 0, 0];
   const BOLT_SPEED = 0.6;
   let lastFrameMs = 0;
+
+  // WIGGLE rotation phase per osc (radians). Advanced once per frame in the
+  // main render loop by pitchToWiggle(pitch, wiggle).rate * dt; the tilt
+  // applied to the ribbon vec / scope aim+origin is sin(phase) * magnitude.
+  // Pinned (no advance) under the VRT freeze hook so the baseline is stable
+  // at a fixed non-zero phase.
+  let scopeWigglePhase: number[] = [0, 0, 0, 0];
 
   function findAlphaInSource(): { nodeId: string; portId: string } | null {
     for (const eid of Object.keys(patch.edges)) {
@@ -872,6 +1184,102 @@ void main() {
       gl.RGBA, gl.UNSIGNED_BYTE,
       buf,
     );
+  }
+
+  // Lazily build the BLINK scope program + geometry + texture the first
+  // time a BLINK scope mode renders. Keeps BLINK mode 0 (default) + the
+  // non-3D video modes free of the extra GL objects. Returns false if the
+  // program can't be built (then the caller falls back to the ribbon).
+  function ensureScopeGl(): boolean {
+    if (!gl) return false;
+    if (scopeInitDone) return scopeProgram !== null;
+    scopeInitDone = true;
+    try {
+      scopeProgram = linkProgram(gl, SCOPE_VS, SCOPE_FS);
+    } catch (err) {
+      console.error('[WAVESCULPT] scope shader setup failed:', err);
+      scopeProgram = null;
+      return false;
+    }
+    const geom = buildScopeTube();
+    scopeVao = gl.createVertexArray();
+    gl.bindVertexArray(scopeVao);
+    scopeSamplesBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, scopeSamplesBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, geom, gl.STATIC_DRAW);
+    const aIdxLoc = gl.getAttribLocation(scopeProgram, 'aIdx');
+    const aRingLoc = gl.getAttribLocation(scopeProgram, 'aRing');
+    const aOscLoc = gl.getAttribLocation(scopeProgram, 'aOsc');
+    const stride = 3 * 4;
+    if (aIdxLoc >= 0) { gl.enableVertexAttribArray(aIdxLoc); gl.vertexAttribPointer(aIdxLoc, 1, gl.FLOAT, false, stride, 0); }
+    if (aRingLoc >= 0) { gl.enableVertexAttribArray(aRingLoc); gl.vertexAttribPointer(aRingLoc, 1, gl.FLOAT, false, stride, 4); }
+    if (aOscLoc >= 0) { gl.enableVertexAttribArray(aOscLoc); gl.vertexAttribPointer(aOscLoc, 1, gl.FLOAT, false, stride, 8); }
+    gl.bindVertexArray(null);
+
+    scopeTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, scopeTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, SCOPE_TEX_W, SCOPE_TEX_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return true;
+  }
+
+  interface ScopeMeta {
+    scale: number[];          // per-osc SCALE (uniform knob+CV; same value × 4)
+    wiggle: number;           // global WIGGLE strength (knob + CV)
+    pitches: Array<number | null>; // per-osc detected pitch
+  }
+
+  // Refresh scopeTex from the audio module's live per-osc time-domain
+  // traces — the SAME analyser windows the SCOPE module reads, so the
+  // rendered trace is the exact oscilloscope waveform SHAPE SCOPE draws.
+  // R channel holds the sample mapped [-1..1]→[0..255]; the scope VS
+  // decodes it back and multiplies by SCALE (matching SCOPE's ch1Scale).
+  // Returns the per-osc SCALE + global WIGGLE + per-osc pitch so drawScopes
+  // can apply SCALE in the shader and drive the WIGGLE rotation. Falls back
+  // to silence (flat mid-line) + defaults when the engine isn't ready.
+  function uploadScopeTex(): ScopeMeta {
+    const meta: ScopeMeta = { scale: [1, 1, 1, 1], wiggle: 0, pitches: [null, null, null, null] };
+    if (!gl || !scopeTex) return meta;
+    const buf = scopeTexUploadBuf;
+    const e = engineCtx.get();
+    let traces: Float32Array[] | undefined;
+    let traceLen = 0;
+    if (e && node) {
+      try {
+        const s = e.read(node, 'scopes') as
+          | { traces: Float32Array[]; length: number; scale?: number; wiggle?: number; pitches?: Array<number | null> }
+          | undefined;
+        if (s) {
+          traces = s.traces; traceLen = s.length;
+          const sc = s.scale ?? 1;
+          meta.scale = [sc, sc, sc, sc];
+          meta.wiggle = s.wiggle ?? 0;
+          if (Array.isArray(s.pitches)) meta.pitches = s.pitches.slice(0, 4);
+        }
+      } catch { /* engine not ready */ }
+    }
+    for (let osc = 0; osc < 4; osc++) {
+      const tr = traces?.[osc];
+      const rowOffset = osc * SCOPE_TEX_W * 4;
+      for (let i = 0; i < SCOPE_TEX_W; i++) {
+        let s = 0;
+        if (tr && traceLen > 0) {
+          // Map the texture column to the trace window.
+          const srcIdx = Math.min(traceLen - 1, Math.round((i / (SCOPE_TEX_W - 1)) * (traceLen - 1)));
+          s = tr[srcIdx] ?? 0;
+        }
+        const v = Math.max(0, Math.min(255, Math.round((s + 1) * 127.5)));
+        const o = rowOffset + i * 4;
+        buf[o] = v; buf[o + 1] = v; buf[o + 2] = v; buf[o + 3] = 255;
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, scopeTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, SCOPE_TEX_W, SCOPE_TEX_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    return meta;
   }
 
   function initGl(): boolean {
@@ -1009,7 +1417,16 @@ void main() {
       if (alphaInTex) gl.deleteTexture(alphaInTex);
       if (waveTex) gl.deleteTexture(waveTex);
       if (ribbonSamplesBuf) gl.deleteBuffer(ribbonSamplesBuf);
+      if (scopeProgram) gl.deleteProgram(scopeProgram);
+      if (scopeVao) gl.deleteVertexArray(scopeVao);
+      if (scopeSamplesBuf) gl.deleteBuffer(scopeSamplesBuf);
+      if (scopeTex) gl.deleteTexture(scopeTex);
     } catch { /* */ }
+    scopeProgram = null;
+    scopeVao = null;
+    scopeSamplesBuf = null;
+    scopeTex = null;
+    scopeInitDone = false;
     gl = null;
     renderCanvas = null;
   }
@@ -1081,6 +1498,19 @@ void main() {
     lastFrameMs = now;
     const unison = (node?.params?.unison as number | undefined) ?? 0;
     const detune = (node?.params?.detune as number | undefined) ?? 0;
+    // WIGGLE strength: combined knob+CV (engine.readParam sums them), else
+    // the raw knob. Drives the per-osc 3D rotation in ALL blink modes.
+    let wiggleStrength = (node?.params?.wiggle as number | undefined) ?? 0;
+    if (e && node) {
+      try {
+        const wv = e.readParam(node, 'wiggle');
+        if (typeof wv === 'number') wiggleStrength = wv;
+      } catch { /* engine not ready */ }
+    }
+    // Per-osc WIGGLE tilt (radians), advanced HERE (single advancer for the
+    // wiggle phase) so both the ribbon vec rotation and the scope-tube
+    // drawScopes() read the same phase. rate + magnitude ∝ pitch.
+    const wiggleTilt: number[] = [0, 0, 0, 0];
     for (let i = 0; i < 4; i++) {
       boltPhase[i] = (boltPhase[i]! + BOLT_SPEED * dt) % 1.0;
       // Effective osc frequency from knobs (pitch_cv input is dynamic
@@ -1099,6 +1529,15 @@ void main() {
       wavePhase[i] = vrtFrozen()
         ? VRT_FIXED_WAVE_PHASE
         : (wavePhase[i]! + cyclesPerSec * dt) % 1.0;
+      // WIGGLE: derive rate + magnitude from this osc's pitch (the knob hz
+      // mirrors the audible voice). Advance the phase; tilt = sin(phase)·mag.
+      const { rate, magnitude } = pitchToWiggle(hz, wiggleStrength);
+      if (vrtFrozen()) {
+        scopeWigglePhase[i] = 0.6; // fixed non-zero phase for a stable VRT
+      } else {
+        scopeWigglePhase[i] = (scopeWigglePhase[i]! + rate * dt) % (Math.PI * 2);
+      }
+      wiggleTilt[i] = Math.sin(scopeWigglePhase[i]!) * magnitude;
     }
 
     const srcArr = new Float32Array(16);
@@ -1110,7 +1549,13 @@ void main() {
     const wavePhaseArr = new Float32Array(4);
     for (let i = 0; i < 4; i++) {
       const wall = [[ 1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]][i]!;
-      const vec = [[-1, 0, 0], [ 1, 0, 0], [0,-1, 0], [0,  1, 0]][i]!;
+      const vec0 = [[-1, 0, 0], [ 1, 0, 0], [0,-1, 0], [0,  1, 0]][i]! as [number, number, number];
+      // Apply WIGGLE: rotate the ribbon emit direction around the +Y axis
+      // (and a touch of Z) by the per-osc tilt. wiggle=0 → tilt 0 → the
+      // original fixed direction (no behaviour change).
+      const vec = wiggleTilt[i] !== 0
+        ? rotateAroundAxis(vec0, [0, 1, 0.35], wiggleTilt[i]!)
+        : vec0;
       srcArr[i * 4 + 0] = wall[0]!;
       srcArr[i * 4 + 1] = wall[1]!;
       srcArr[i * 4 + 2] = wall[2]!;
@@ -1151,46 +1596,65 @@ void main() {
 
     const ribbonVerts = 4 * (2 * RIBBON_SEGMENTS) + 3 * 2;
 
-    // Scene pass — additive translucent ribbons.
-    //
-    // BUGFIX (alpha-rotate): previously this pass primed the depth buffer
-    // with an opaque DEPTH-ONLY pre-pass over ALL four ribbons (LESS,
-    // depthMask on), then drew the additive colour pass with LEQUAL. That
-    // made the ribbons MUTUALLY OCCLUDE: whichever ribbon was nearest the
-    // camera wrote depth that depth-rejected the ribbons behind it. At
-    // rot=0 the ALPHA emitter (-Z wall) sits nearest the camera so it
-    // survived — but ANY rotation brought an RGB ribbon in front, whose
-    // primed depth then culled the ALPHA ribbon's fragments → the ALPHA
-    // layer vanished the instant the view rotated.
-    //
-    // Additive blending (SRC_ALPHA, ONE) is order-independent and the
-    // ribbons are translucent energy traces that are MEANT to show
-    // through one another — so there should be no inter-ribbon depth
-    // occlusion at all. Drop the depth pre-pass and draw the additive
-    // ribbons with the depth test disabled. Every ribbon now composites
-    // regardless of camera angle, matching the RGB layers' behaviour.
-    g.disable(g.DEPTH_TEST);
-    g.depthMask(false);
-    g.colorMask(true, true, true, true);
-    g.enable(g.BLEND);
-    g.blendFunc(g.SRC_ALPHA, g.ONE);
-    g.bindVertexArray(ribbonVao);
-    g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
-    g.bindVertexArray(null);
+    // BLINK mode: 0 = wavetable ribbons, 1 = SCOPES TRIAL (thin scope
+    // lines), 2 = REALITY BASED COMMUNITY (real 3D neon tubes). Modes 1/2
+    // replace the ribbon visual with the per-osc oscilloscope traces; the
+    // BENT post + alpha-mask passes are shared.
+    const blinkMode = Math.round((node?.params?.blink_mode as number | undefined) ?? 0);
 
-    // 1c) ALPHA-mask pass (osc 3 only → red mask).
+    if (blinkMode > 0 && ensureScopeGl() && scopeProgram) {
+      drawScopes(g, blinkMode);
+    } else {
+      // Scene pass — additive translucent ribbons.
+      //
+      // BUGFIX (alpha-rotate, #361): this pass previously primed the depth
+      // buffer with an opaque DEPTH-ONLY pre-pass over ALL four ribbons
+      // (LESS, depthMask on), then drew the additive colour pass with
+      // LEQUAL. That made the ribbons MUTUALLY OCCLUDE: whichever ribbon
+      // was nearest the camera wrote depth that depth-rejected the ribbons
+      // behind it. At rot=0 the ALPHA emitter (-Z wall) sits nearest the
+      // camera so it survived — but ANY rotation brought an RGB ribbon in
+      // front, whose primed depth then culled the ALPHA ribbon → the ALPHA
+      // layer vanished the instant the view rotated.
+      //
+      // Additive blending (SRC_ALPHA, ONE) is order-independent and the
+      // ribbons are translucent energy traces MEANT to show through one
+      // another — so there should be no inter-ribbon depth occlusion.
+      // Drop the depth pre-pass and draw the additive ribbons with the
+      // depth test disabled. Every ribbon composites regardless of camera
+      // angle.
+      g.disable(g.DEPTH_TEST);
+      g.depthMask(false);
+      g.colorMask(true, true, true, true);
+      g.enable(g.BLEND);
+      g.blendFunc(g.SRC_ALPHA, g.ONE);
+      g.bindVertexArray(ribbonVao);
+      g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
+      g.bindVertexArray(null);
+    }
+
+    // 1c) ALPHA-mask pass (osc 3 only → red mask). Re-bind the ribbon
+    // program + its waveTex on TEXTURE0 (drawScopes may have switched the
+    // active program + texture when a BLINK scope mode is active).
     //
-    // BUGFIX (alpha-rotate): this pass must draw ONLY the ALPHA ribbon
-    // (osc 3) AND it must not be depth-occluded by anything. Previously it
-    // drew all four ribbons (drawArrays 0..ribbonVerts) with a depth
-    // pre-pass, so under camera rotation an RGB ribbon in front wrote
-    // depth that culled the ALPHA fragments → the red mask was never
-    // written → the composited alpha_in image vanished off-axis (it only
-    // survived at rot=0 where the ALPHA emitter on the -Z wall is
-    // unoccluded). We now draw ONLY osc 3's sub-strip with the depth test
-    // disabled, so the mask is written at any camera angle. ribbonStripRange
-    // (exported from wavesculpt.ts — single source of truth) returns the
-    // {start,count} covering osc 3's real verts within the strip.
+    // BUGFIX (alpha-rotate, #361): this pass must draw ONLY the ALPHA
+    // ribbon (osc 3) AND must not be depth-occluded. Previously it drew all
+    // four ribbons with a depth pre-pass, so under rotation an RGB ribbon
+    // in front culled the ALPHA fragments → the red mask was never written
+    // → the composited alpha_in image vanished off-axis. We now draw ONLY
+    // osc 3's sub-strip with the depth test disabled, so the mask is
+    // written at any camera angle. ribbonStripRange (exported from
+    // wavesculpt.ts — single source of truth) returns the {start,count}
+    // covering osc 3's real verts within the strip.
+    //
+    // NOTE the ALPHA mask always uses the RIBBON geometry (not the scope
+    // geometry), so the alpha_in composite stays consistent across all
+    // BLINK modes — the BLINK render is purely cosmetic for the visible
+    // RGB layers; the ALPHA mask region is driven by osc 3's ribbon.
+    g.useProgram(ribbonProgram);
+    g.activeTexture(g.TEXTURE0);
+    g.bindTexture(g.TEXTURE_2D, waveTex);
+    if (uWaveTexLoc) g.uniform1i(uWaveTexLoc, 0);
     g.bindFramebuffer(g.FRAMEBUFFER, alphaMaskFbo);
     g.viewport(0, 0, RES_W, RES_H);
     g.clearColor(0, 0, 0, 1);
@@ -1326,6 +1790,15 @@ void main() {
   // the discrete video_mode param; the on-card View toggle button
   // cycles through all three options.
   let video_mode = $derived(pget('video_mode'));
+
+  // BLINK render mode (within the 3D PROXIMITY view): 0 = (current)
+  // wavetable ribbons, 1 = SCOPES TRIAL (live oscilloscope traces from
+  // the 4 floor corners), 2 = REALITY BASED COMMUNITY (neon 3D tubes).
+  // Persisted + multiplayer-synced via the discrete blink_mode param; the
+  // on-card BLINK button cycles 0→1→2→0.
+  let blink_mode = $derived(Math.round(pget('blink_mode')));
+  const BLINK_MODE_NAMES = ['', 'SCOPES TRIAL', 'REALITY BASED COMMUNITY'];
+  let blinkModeName = $derived(BLINK_MODE_NAMES[blink_mode] ?? '');
 
   // ---- SPECTROGRAPH state ----
   // Circular column buffer of dB magnitude values. SPEC_W columns of
@@ -1749,6 +2222,11 @@ void main() {
     { id: 'pos_z',     label: 'H',  cable: 'cv' },
     { id: 'zoom',      label: 'Z',  cable: 'cv' },
     { id: 'rot',       label: 'R',  cable: 'cv' },
+    // BLINK scope-render controls — CV-modulatable like the camera params
+    // (owner intent). Must render a handle so def<->UI parity holds and
+    // patches anchor; see e2e/tests/io-spec-consistency.spec.ts.
+    { id: 'scale',     label: 'Sc', cable: 'cv' },
+    { id: 'wiggle',    label: 'Wg', cable: 'cv' },
     { id: 'alpha_in',  label: 'A',  cable: 'video' },
   ];
   const outputs: PortDescriptor[] = [
@@ -1933,6 +2411,37 @@ void main() {
             title="View mode: PROXIMITY (3D ribbons) / BIRDSEYE (top-down floorplan) / SPECTROGRAPH (scrolling STFT)"
             onclick={() => set('video_mode')((Math.round(video_mode) + 1) % 3)}
           >{Math.round(video_mode) === 0 ? '3D' : Math.round(video_mode) === 1 ? 'BIRDSEYE' : 'SPECTRO'}</button>
+          <!-- BLINK cycles three render modes inside the 3D view:
+               0 = (current) wavetable ribbons,
+               1 = SCOPES TRIAL — live oscilloscope traces from the 4
+                   floor corners aimed up+inward at 45°; WIDTH thickens
+                   the scope line,
+               2 = REALITY BASED COMMUNITY — same, as 3D neon tubes;
+                   WIDTH sets the tube radius. -->
+          <button
+            type="button"
+            class="unison-toggle blink-toggle"
+            class:on={blink_mode !== 0}
+            data-testid="wavesculpt-blink-toggle"
+            title="BLINK render mode: current ribbons / SCOPES TRIAL / REALITY BASED COMMUNITY"
+            onclick={() => set('blink_mode')((blink_mode + 1) % 3)}
+          >BLINK</button>
+          {#if blink_mode !== 0}
+            <div class="blink-mode-name" data-testid="wavesculpt-blink-mode-name">{blinkModeName}</div>
+          {/if}
+          <!-- SCALE — amplitude/zoom of the BLINK scope waveform (reuses
+               SCOPE's ch1Scale semantics: log 0.1..10, unity at 1). Applies
+               in SCOPES TRIAL + REALITY BASED COMMUNITY. -->
+          <Knob value={scale} min={0.1} max={10} defaultValue={1}
+            label="Scale" curve="log"
+            onchange={set('scale')} moduleId={id} paramId="scale" readLive={live('scale')} />
+          <!-- WIGGLE — pitch-driven 3D rotation of each osc's line/tube/
+               ribbon. 0 = OFF (fixed direction). Rotation speed + magnitude
+               scale with each osc's pitch; this knob scales overall strength.
+               Standard knob dial: min (OFF) lower-left, max lower-right. -->
+          <Knob value={wiggle} min={0} max={1} defaultValue={0}
+            label="Wiggle" curve="linear"
+            onchange={set('wiggle')} moduleId={id} paramId="wiggle" readLive={live('wiggle')} />
           <button
             type="button"
             class="unison-toggle"
@@ -2239,6 +2748,17 @@ void main() {
     background: var(--accent, #6cf);
     color: #000;
     border-color: var(--accent, #6cf);
+  }
+  /* Active BLINK render-mode name, shown under the BLINK button. */
+  .blink-mode-name {
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.1;
+    color: var(--accent, #6cf);
+    text-align: center;
+    max-width: 80px;
+    word-break: break-word;
   }
   /* Chord-quality segment: two adjacent buttons, the active one inherits
      the .unison-toggle.on accent. */

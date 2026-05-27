@@ -27,6 +27,12 @@ import {
   effectiveVoiceRouting,
   chordQualityFromKnob,
   CHORD_INTERVALS_SEMITONES,
+  pitchToWiggle,
+  wigglePitchNorm,
+  WIGGLE_MIN_HZ,
+  WIGGLE_MAX_HZ,
+  WIGGLE_MAX_RATE,
+  WIGGLE_MAX_MAGNITUDE,
 } from './wavesculpt';
 
 describe('wavesculpt v2: module-def shape', () => {
@@ -448,6 +454,108 @@ describe('wavesculpt def: new ports + params landed', () => {
     // cycle covers PROXIMITY → BIRDSEYE → SPECTROGRAPH.
     expect(m.max).toBe(2);
     expect(m.curve).toBe('discrete');
+  });
+
+  it('exposes blink_mode (discrete 0=current, 1=SCOPES TRIAL, 2=REALITY BASED COMMUNITY)', () => {
+    const m = wavesculptDef.params.find((p) => p.id === 'blink_mode')!;
+    expect(m, 'blink_mode exists').toBeDefined();
+    // Default = mode 0 (today's render), so existing patches are unchanged.
+    expect(m.defaultValue).toBe(0);
+    expect(m.min).toBe(0);
+    expect(m.max).toBe(2);
+    // Discrete so the BLINK button cycles cleanly through the 3 modes and
+    // the value persists/syncs like every other param.
+    expect(m.curve).toBe('discrete');
+  });
+
+  it('exposes SCALE param reusing SCOPE ch1Scale semantics (log 0.1..10, unity default)', () => {
+    const s = wavesculptDef.params.find((p) => p.id === 'scale')!;
+    expect(s, 'scale param exists').toBeDefined();
+    expect(s.defaultValue).toBe(1);   // unity = scope shape at SCOPE's default
+    expect(s.min).toBe(0.1);
+    expect(s.max).toBe(10);
+    expect(s.curve).toBe('log');
+  });
+
+  it('exposes WIGGLE param defaulting OFF (linear 0..1)', () => {
+    const w = wavesculptDef.params.find((p) => p.id === 'wiggle')!;
+    expect(w, 'wiggle param exists').toBeDefined();
+    expect(w.defaultValue).toBe(0);   // OFF by default = current fixed dir
+    expect(w.min).toBe(0);
+    expect(w.max).toBe(1);
+    expect(w.curve).toBe('linear');
+  });
+
+  it('declares CV inputs for scale + wiggle (so they are CV + MIDI wired)', () => {
+    const inIds = wavesculptDef.inputs.map((p) => p.id);
+    expect(inIds).toContain('scale');
+    expect(inIds).toContain('wiggle');
+    const sc = wavesculptDef.inputs.find((p) => p.id === 'scale');
+    const wg = wavesculptDef.inputs.find((p) => p.id === 'wiggle');
+    expect(sc?.type).toBe('cv');
+    expect(wg?.type).toBe('cv');
+    expect((sc as { paramTarget?: string } | undefined)?.paramTarget).toBe('scale');
+    expect((wg as { paramTarget?: string } | undefined)?.paramTarget).toBe('wiggle');
+  });
+});
+
+describe('WIGGLE: pitch → 3D rotation mapping (pure helper)', () => {
+  it('wigglePitchNorm: null / sub-floor pitch → 0', () => {
+    expect(wigglePitchNorm(null)).toBe(0);
+    expect(wigglePitchNorm(WIGGLE_MIN_HZ - 1)).toBe(0);
+    expect(wigglePitchNorm(0)).toBe(0);
+  });
+
+  it('wigglePitchNorm: rises monotonically with pitch, 0 at floor → 1 at ceiling', () => {
+    expect(wigglePitchNorm(WIGGLE_MIN_HZ)).toBeCloseTo(0, 5);
+    expect(wigglePitchNorm(WIGGLE_MAX_HZ)).toBeCloseTo(1, 5);
+    const lo = wigglePitchNorm(110);
+    const mid = wigglePitchNorm(440);
+    const hi = wigglePitchNorm(1760);
+    expect(lo).toBeLessThan(mid);
+    expect(mid).toBeLessThan(hi);
+  });
+
+  it('wigglePitchNorm: log scale — an octave is a roughly-uniform step', () => {
+    const a = wigglePitchNorm(220) - wigglePitchNorm(110);
+    const b = wigglePitchNorm(880) - wigglePitchNorm(440);
+    expect(Math.abs(a - b)).toBeLessThan(0.02);
+  });
+
+  it('pitchToWiggle: wiggle=0 → OFF (zero rate + magnitude) at any pitch', () => {
+    expect(pitchToWiggle(440, 0)).toEqual({ rate: 0, magnitude: 0 });
+    expect(pitchToWiggle(2000, 0)).toEqual({ rate: 0, magnitude: 0 });
+  });
+
+  it('pitchToWiggle: null pitch → zero rate + magnitude even at full wiggle', () => {
+    expect(pitchToWiggle(null, 1)).toEqual({ rate: 0, magnitude: 0 });
+  });
+
+  it('pitchToWiggle: LOW pitch → slow + small, HIGH pitch → fast + large', () => {
+    const low  = pitchToWiggle(80, 1);
+    const high = pitchToWiggle(2000, 1);
+    expect(high.rate).toBeGreaterThan(low.rate);
+    expect(high.magnitude).toBeGreaterThan(low.magnitude);
+    expect(low.rate).toBeGreaterThan(0);
+  });
+
+  it('pitchToWiggle: the WIGGLE knob scales overall strength linearly', () => {
+    const full = pitchToWiggle(880, 1);
+    const half = pitchToWiggle(880, 0.5);
+    expect(half.rate).toBeCloseTo(full.rate * 0.5, 6);
+    expect(half.magnitude).toBeCloseTo(full.magnitude * 0.5, 6);
+  });
+
+  it('pitchToWiggle: max pitch + full wiggle hits the configured ceilings', () => {
+    const max = pitchToWiggle(WIGGLE_MAX_HZ, 1);
+    expect(max.rate).toBeCloseTo(WIGGLE_MAX_RATE, 5);
+    expect(max.magnitude).toBeCloseTo(WIGGLE_MAX_MAGNITUDE, 5);
+  });
+
+  it('pitchToWiggle: clamps the wiggle strength to [0,1]', () => {
+    const over = pitchToWiggle(880, 5);
+    const one = pitchToWiggle(880, 1);
+    expect(over).toEqual(one);
   });
 });
 

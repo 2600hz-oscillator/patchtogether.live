@@ -33,6 +33,7 @@ export default defineConfig({
   testDir: '.',
   testMatch: [
     'vrt.spec.ts',
+    'vrt-wavesculpt-blink.spec.ts',
     'playhead.spec.ts',
     'interactions.spec.ts',
     'groups.spec.ts',
