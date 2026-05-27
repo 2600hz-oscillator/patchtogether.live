@@ -323,6 +323,115 @@ describe('persistence: round-trip', () => {
   });
 });
 
+// ---------------- ruttetra → reshaper breaking-change remap ----------------
+//
+// The `ruttetra` type id originally belonged to a fragment-shader coordinate
+// REMAP effect (schemaVersion 1). It was renamed to RESHAPER, and a NEW,
+// behaviourally-different module — the authentic forward-scatter Rutt-Etra
+// scope — took over the `ruttetra` id at schemaVersion 2. The loader detects
+// pre-rename saves by their recorded `moduleSchemas.ruttetra < 2` and remaps
+// the node's type to `reshaper` so old patches keep the look they were
+// authored with. These tests pin BOTH directions of that boundary so a future
+// edit can't silently downgrade a legitimately-new RUTTETRA — or fail to
+// preserve a genuinely-old coord-remap patch.
+
+describe('persistence: ruttetra → reshaper breaking-change remap', () => {
+  // Stub video defs mirroring the real registry shape the loader reads:
+  // RUTTETRA at v2, RESHAPER at v1. Only type + schemaVersion + (absent)
+  // migrate are consulted; factory is never called.
+  const reshaperStub: VideoModuleDef = {
+    type: 'reshaper',
+    domain: 'video',
+    label: 'RESHAPER',
+    category: 'output',
+    schemaVersion: 1,
+    inputs: [],
+    outputs: [{ id: 'out', type: 'video' }],
+    params: [],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    factory: throwingFactory as any,
+  };
+  const ruttetraStubV2: VideoModuleDef = {
+    type: 'ruttetra',
+    domain: 'video',
+    label: 'RUTTETRA',
+    category: 'output',
+    schemaVersion: 2,
+    inputs: [],
+    outputs: [{ id: 'out', type: 'video' }],
+    params: [],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    factory: throwingFactory as any,
+  };
+
+  beforeAll(() => {
+    registerVideoModule(reshaperStub);
+    registerVideoModule(ruttetraStubV2);
+  });
+
+  /** Hand-build an envelope carrying a single `ruttetra` node, with the
+   *  recorded ruttetra schemaVersion forced to `recordedVersion` (or omitted
+   *  entirely when `recordedVersion === undefined`). We can't drive this
+   *  through makeEnvelope because it always stamps the *current* registry
+   *  version (2), which is exactly the "new save" case — we need to fabricate
+   *  the *old* save shape. parseEnvelope is bypassed because it validates the
+   *  envelopeVersion, not moduleSchemas contents, and we want a raw object. */
+  function ruttetraEnvelope(recordedVersion: number | undefined) {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['rn'] = {
+        id: 'rn',
+        type: 'ruttetra',
+        domain: 'video',
+        position: { x: 10, y: 20 },
+        params: {},
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+    if (recordedVersion === undefined) {
+      delete env.moduleSchemas['ruttetra'];
+    } else {
+      env.moduleSchemas['ruttetra'] = recordedVersion;
+    }
+    return env;
+  }
+
+  it('keeps a NEW save (ruttetra recorded at schema 2) as ruttetra', () => {
+    // This is the add-module / current-build save path: makeEnvelope stamps
+    // ruttetra: 2, so the node must NOT be remapped.
+    const env = ruttetraEnvelope(2);
+    expect(env.moduleSchemas['ruttetra']).toBe(2);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+    expect(dest.store.nodes['rn']!.type).toBe('ruttetra');
+  });
+
+  it('remaps an OLD save (ruttetra recorded at schema 1) to reshaper', () => {
+    const env = ruttetraEnvelope(1);
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+    expect(dest.store.nodes['rn']!.type).toBe('reshaper');
+  });
+
+  it('remaps a key-less save (no recorded ruttetra schema) to reshaper', () => {
+    // A missing moduleSchemas.ruttetra can only come from an envelope authored
+    // before the new RUTTETRA existed in the registry — i.e. the id still meant
+    // the coord-remap — so the safe default is reshaper. (?? 1 < 2.)
+    const env = ruttetraEnvelope(undefined);
+    expect(env.moduleSchemas['ruttetra']).toBeUndefined();
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+    expect(dest.store.nodes['rn']!.type).toBe('reshaper');
+  });
+});
+
 // ---------------- Asset-bytes round-trip ----------------
 //
 // Regression net for the rackspace-persistence audit (see

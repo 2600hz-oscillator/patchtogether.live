@@ -57,6 +57,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   videoMixer: [{ selector: 'canvas' }],
   shapes: [{ selector: 'canvas' }],
   monoglitch: [{ selector: 'canvas' }],
+  // RESHAPER (formerly RUTTETRA): coord-remap; canvas masked (flat content
+  // when X/Y/Z unpatched).
+  reshaper: [{ selector: 'canvas' }],
+  // RUTTETRA: authentic forward-scatter scope. Its canvas is INCLUDED in
+  // the diff via the VRT scene (SHAPES → RUTTETRA) so the baseline proves
+  // real 3D scanlines, not a flat quad. The scene auto-overrides this mask
+  // (vrt.spec.ts: `mod.type in VRT_SCENES ? [] : masks`), kept here as the
+  // no-scene fallback.
   ruttetra: [{ selector: 'canvas' }],
   shapedramps: [{ selector: 'canvas' }],
   vdelay: [{ selector: 'canvas' }],
@@ -267,4 +275,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // sub-thresholdly across the AudioContext sine-table + analyser refill
   // timing per platform, so we capture darwin here and defer linux.
   'linux/rasterize',
+  // RESHAPER (renamed from RUTTETRA): the darwin baseline is captured on
+  // this machine (canvas masked — coord-remap shows flat content when
+  // unpatched). Linux baseline pending a `task vrt:update` run on linux CI.
+  'linux/reshaper',
+  // RUTTETRA (new authentic forward-scatter scope): darwin baseline
+  // captured here via VRT_SCENES (SHAPES → RUTTETRA), proving real 3D
+  // scanlines. WebGL line-rasterization isn't bit-identical across GPUs/
+  // platforms, so the linux baseline is pending a `task vrt:update` run on
+  // linux CI.
+  'linux/ruttetra',
 ]);

@@ -160,6 +160,33 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       await page.waitForTimeout(250);
     },
   },
+
+  // RUTTETRA (authentic forward-scatter scope): drive the Z input with a
+  // SHAPES source (default = a centered white circle on black). RUTTETRA
+  // walks a 320×180 grid of the source, reads luma at each point, and bows
+  // each horizontal scanline outward by luma with additive blending — so
+  // the bright circle pushes its scanlines into a 3D heightmap while the
+  // dark surround stays flat. SHAPES is fully procedural + time-independent
+  // (rotate 0), so the source frame is identical every run; RUTTETRA's
+  // geometry is a pure function of it → pixel-stable baseline. No audio is
+  // involved, so we don't freeze the AudioContext.
+  ruttetra: {
+    nodes: [
+      { id: 'src',   type: 'shapes',   position: { x: 60,  y: 60 }, domain: 'video' },
+      { id: 'vrt-1', type: 'ruttetra', position: { x: 520, y: 60 }, domain: 'video' },
+    ],
+    edges: [
+      {
+        id: 'e_src_ruttetra',
+        from: { nodeId: 'src',   portId: 'out' },
+        to:   { nodeId: 'vrt-1', portId: 'z'   },
+        sourceType: 'video',
+        targetType: 'video',
+      },
+    ],
+    freezeAudio: false,
+    settleMs: 400,
+  },
 };
 
 /** Set up the rack for `type`. Returns true if a scene was applied

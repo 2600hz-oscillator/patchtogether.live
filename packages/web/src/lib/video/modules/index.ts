@@ -25,6 +25,7 @@ import { mixerVideoDef } from './mixer';
 import { cameraInputDef } from './camera-input';
 import { shapesDef } from './shapes';
 import { monoglitchDef } from './monoglitch';
+import { reshaperDef } from './reshaper';
 import { ruttetraDef } from './ruttetra';
 import { shapedrampsDef } from './shapedramps';
 import { vdelayDef } from './vdelay';
@@ -67,8 +68,14 @@ export function registerVideoModules(): void {
   // original "Rutt-Etra-style" effect from PR-99, renamed when the real
   // raster-coordinate-remap RUTTETRA landed alongside SHAPEDRAMPS).
   registerVideoModule(monoglitchDef);
-  // RUTTETRA — true Rutt/Etra raster-scan-coordinate processor. Inputs
-  // X/Y are mono-video coordinate fields, Z is the source video.
+  // RESHAPER — fragment-shader raster-scan-coordinate REMAP (formerly
+  // RUTTETRA). Inputs X/Y are mono-video coordinate fields, Z is the
+  // source video. Persisted `ruttetra` nodes from before the rename load
+  // as `reshaper` (see graph/persistence.ts).
+  registerVideoModule(reshaperDef);
+  // RUTTETRA — AUTHENTIC forward-scatter Rutt-Etra scope (real line
+  // geometry; port of p10entrancer XYZ). One Z video input; internal
+  // shaped ramps bow each scanline by luma → additive 3D heightmap.
   registerVideoModule(ruttetraDef);
   // SHAPEDRAMPS — sync-locked ramp generator. Stable linear (h_lin/
   // v_lin) outputs for clean raster passthrough, plus shaped (h_out/

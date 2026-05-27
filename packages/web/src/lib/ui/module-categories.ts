@@ -197,6 +197,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   feedback: { top: 'Video modules', sub: 'Processors' },
   vdelay: { top: 'Video modules', sub: 'Processors' },
   monoglitch: { top: 'Video modules', sub: 'Processors' },
+  reshaper: { top: 'Video modules', sub: 'Processors' },
   ruttetra: { top: 'Video modules', sub: 'Processors' },
 
   // ───────── Video modules → Utilities ─────────

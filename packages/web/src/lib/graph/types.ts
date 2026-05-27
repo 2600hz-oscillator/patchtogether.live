@@ -158,13 +158,19 @@ type StandardModuleType =
   // shipped as "RUTTETRA" (PR-99) but renamed once the actual Rutt/Etra
   // raster-coord-remap model landed under that name.
   | 'monoglitch'
-  // RUTTETRA — true Rutt/Etra raster-scan-coordinate processor. X/Y are
-  // mono-video coordinate fields, Z is the source video. Pair with
-  // SHAPEDRAMPS for shaped/folded/radial coordinate remaps.
+  // RESHAPER — fragment-shader raster-scan-coordinate REMAP (formerly
+  // RUTTETRA). X/Y are mono-video coordinate fields, Z is the source
+  // video. Pair with SHAPEDRAMPS for shaped/folded/radial coord remaps.
+  | 'reshaper'
+  // RUTTETRA — AUTHENTIC forward-scatter Rutt-Etra scope (real line
+  // geometry, port of p10entrancer XYZ). One Z video input; internal
+  // shaped ramps bow each scanline by luma → 3D heightmap. (This type id
+  // formerly belonged to the coord-remap, now RESHAPER — see migration in
+  // graph/persistence.ts.)
   | 'ruttetra'
   // SHAPEDRAMPS — sync-locked ramp generator. Stable linear h_lin/v_lin
   // outputs (clean raster passthrough) plus shaped h_out/v_out outputs
-  // (morphable for RUTTETRA's raster-coord remap).
+  // (morphable for RESHAPER's raster-coord remap).
   | 'shapedramps'
   // Video-domain modules (Phase 1 — .myrobots/plans/video-modules-mvp.md):
   | 'inwards'
