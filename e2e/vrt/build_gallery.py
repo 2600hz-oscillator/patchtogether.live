@@ -91,7 +91,8 @@ MODULE_BLURB: dict[str, str] = {
     "videoMixer": "Video mixer.",
     "shapes": "SHAPES — geometry source.",
     "monoglitch": "MONOGLITCH — luma-driven scanline displacement.",
-    "ruttetra": "RUTTETRA — Rutt/Etra raster-coordinate processor.",
+    "reshaper": "RESHAPER — raster-scan coordinate-remap (formerly RUTTETRA).",
+    "ruttetra": "RUTTETRA — authentic forward-scatter Rutt-Etra scope.",
     "shapedramps": "SHAPEDRAMPS — synced ramp generator.",
     "vdelay": "VDELAY — video delay + feedback echo.",
 }

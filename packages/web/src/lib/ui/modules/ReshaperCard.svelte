@@ -1,20 +1,17 @@
 <script lang="ts">
-  // RuttetraCard — UI for the AUTHENTIC forward-scatter Rutt-Etra scope
-  // (port of p10entrancer XYZ). ONE Z video input + CV inputs for the
-  // expressive params. On-card visible canvas pulled from the engine via
-  // drawImage(engine.canvas, ...) (same path as RESHAPER / VIDEO-OUT).
-  //
-  // Layout follows ReshaperCard: X/Y shape sliders show the
-  // linear/triangle/soft/radial label (XYZSettingsSheet.shapeName);
-  // X/Y disp + intensity sliders; tint as small R/G/B sliders; and an
-  // "Advanced" disclosure for xFreq/yFreq/xPhase/yPhase (matches p10).
+  // ReshaperCard — UI for the RESHAPER fragment-shader raster-scan
+  // coordinate REMAP (formerly RUTTETRA). X/Y inputs are mono-video coordinate fields (typically
+  // patched from SHAPEDRAMPS); Z is the source video. Combines
+  // VideoOutCard's on-card visible canvas (pulled from the engine via
+  // drawImage(engine.canvas, ...)) with input handles and faders for
+  // intensity, X/Y luma displacement, and color tint.
 
   import { onMount, onDestroy } from 'svelte';
   import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
-  import { ruttetraDef } from '$lib/video/modules/ruttetra';
+  import { reshaperDef } from '$lib/video/modules/reshaper';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -24,12 +21,9 @@
   const engineCtx = useEngine();
   const flowStore = useStore();
 
-  function pdef(name: string): number {
-    const def = ruttetraDef.params.find((d) => d.id === name);
-    return def?.defaultValue ?? 0;
-  }
   function p(name: string): number {
-    return node?.params[name] ?? pdef(name);
+    const def = reshaperDef.params.find((d) => d.id === name);
+    return node?.params[name] ?? def?.defaultValue ?? 0;
   }
   function setParam(paramId: string) {
     return (v: number) => {
@@ -38,33 +32,25 @@
     };
   }
 
-  // XYZSettingsSheet.shapeName — the morph label shown under each shape slider.
-  function shapeName(v: number): string {
-    const m = Math.max(0, Math.min(1, v));
-    if (m < 0.083) return 'linear';
-    if (m < 0.25) return 'linear↔triangle';
-    if (m < 0.416) return 'triangle';
-    if (m < 0.583) return 'triangle↔soft';
-    if (m < 0.75) return 'soft';
-    if (m < 0.916) return 'soft↔radial';
-    return 'radial';
-  }
-  let xShapeName = $derived(shapeName(p('xShape')));
-  let yShapeName = $derived(shapeName(p('yShape')));
-
   const ENGINE_W = 640;
   const ENGINE_H = 360;
+
   const CANVAS_W = 280;
   const CANVAS_H = 158;
 
+  // Hide-controls (video-only resizable) defaults. Min keeps the canvas
+  // legible at small zoom; default mirrors OUTPUT's 360x240.
   const MIN_WIDTH = 240;
   const MIN_HEIGHT = 160;
   const DEFAULT_WIDTH = 360;
   const DEFAULT_HEIGHT = 240;
+  // Letterbox padding when in hide-controls mode (matches VideoOut).
   const HEADER_PX = 56;
   const PAD_PX = 20;
 
-  let hideControls = $derived<boolean>(Boolean(node?.data?.hideControls));
+  let hideControls = $derived<boolean>(
+    Boolean(node?.data?.hideControls),
+  );
   let resizedWidth = $derived<number>(
     (node?.data?.resizedWidth as number | undefined) ?? DEFAULT_WIDTH,
   );
@@ -122,6 +108,9 @@
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
       const r = fitRect(cw, ch);
+      // drawImage() from a WebGL canvas already presents upright; a
+      // straight blit is correct. The old scale(1,-1) flipped it upside
+      // down. See VideoOutCard for the full rationale.
       ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
     }
     rafId = requestAnimationFrame(draw);
@@ -172,6 +161,10 @@
     });
   }
 
+  // Restore defaults via dblclick on the card body when in hide-controls.
+  // We stop propagation so the document-level patch-to dblclick (which
+  // only fires on .svelte-flow__handle anyway) never triggers; handle
+  // dblclicks bubble past us because the handles sit OUTSIDE this body.
   function onBodyDblClick(ev: MouseEvent) {
     if (!hideControls) return;
     const t = ev.target as HTMLElement | null;
@@ -192,31 +185,27 @@
   class:hide-controls={hideControls}
   class:resizing
   style={hideControls ? `width: ${resizedWidth}px; height: ${resizedHeight}px;` : ''}
-  data-testid="ruttetra-card"
+  data-testid="reshaper-card"
   data-node-id={id}
   data-hide-controls={hideControls ? 'true' : 'false'}
   ondblclick={onBodyDblClick}
 >
   <div class="stripe"></div>
-  <header class="title">RUTTETRA</header>
+  <header class="title">RESHAPER</header>
 
-  <!-- 1 video input (z) + 7 cv inputs -->
-  <Handle type="target" position={Position.Left} id="z"         style="top: 56px;  --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 50px;">Z</span>{/if}
-  <Handle type="target" position={Position.Left} id="xShape"    style="top: 92px;  --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 86px;">XS</span>{/if}
-  <Handle type="target" position={Position.Left} id="yShape"    style="top: 120px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 114px;">YS</span>{/if}
-  <Handle type="target" position={Position.Left} id="xDisp"     style="top: 148px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 142px;">XD</span>{/if}
-  <Handle type="target" position={Position.Left} id="yDisp"     style="top: 176px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 170px;">YD</span>{/if}
-  <Handle type="target" position={Position.Left} id="intensity" style="top: 204px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 198px;">I</span>{/if}
-  <Handle type="target" position={Position.Left} id="xFreq"     style="top: 232px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 226px;">XF</span>{/if}
-  <Handle type="target" position={Position.Left} id="yFreq"     style="top: 260px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 254px;">YF</span>{/if}
+  <!-- 3 video inputs (x, y, z) + 3 cv inputs (intensity, xDisp, yDisp) -->
+  <Handle type="target" position={Position.Left} id="x"         style="top: 56px;  --handle-color: var(--cable-mono-video);" />
+  {#if !hideControls}<span class="port-label left" style="top: 50px;">X</span>{/if}
+  <Handle type="target" position={Position.Left} id="y"         style="top: 88px;  --handle-color: var(--cable-mono-video);" />
+  {#if !hideControls}<span class="port-label left" style="top: 82px;">Y</span>{/if}
+  <Handle type="target" position={Position.Left} id="z"         style="top: 120px; --handle-color: var(--cable-video);" />
+  {#if !hideControls}<span class="port-label left" style="top: 114px;">Z</span>{/if}
+  <Handle type="target" position={Position.Left} id="intensity" style="top: 156px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 150px;">I</span>{/if}
+  <Handle type="target" position={Position.Left} id="xDisp"     style="top: 188px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 182px;">XD</span>{/if}
+  <Handle type="target" position={Position.Left} id="yDisp"     style="top: 220px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 214px;">YD</span>{/if}
 
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
   {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
@@ -224,9 +213,9 @@
   <button
     type="button"
     class="hide-toggle nodrag"
-    aria-label={hideControls ? 'Show RUTTETRA controls' : 'Hide RUTTETRA controls'}
+    aria-label={hideControls ? 'Show RESHAPER controls' : 'Hide RESHAPER controls'}
     title={hideControls ? 'Show controls (or double-click frame)' : 'Hide controls'}
-    data-testid="ruttetra-hide-toggle"
+    data-testid="reshaper-hide-toggle"
     onclick={toggleHideControls}
   >{hideControls ? '+' : '–'}</button>
 
@@ -236,15 +225,15 @@
         bind:this={canvasEl}
         width={innerWidth}
         height={innerHeight}
-        data-testid="ruttetra-canvas"
+        data-testid="reshaper-canvas"
         data-node-id={id}
       ></canvas>
     </div>
     <div
       class="resize-handle nodrag"
       role="separator"
-      aria-label="Resize RUTTETRA"
-      data-testid="ruttetra-resize-handle"
+      aria-label="Resize RESHAPER"
+      data-testid="reshaper-resize-handle"
       onpointerdown={onResizeStart}
     ></div>
   {:else}
@@ -253,44 +242,18 @@
         bind:this={canvasEl}
         width={CANVAS_W}
         height={CANVAS_H}
-        data-testid="ruttetra-canvas"
+        data-testid="reshaper-canvas"
         data-node-id={id}
       ></canvas>
     </div>
 
-    <div class="controls" data-testid="ruttetra-controls">
-      <!-- Shape morph sliders. The current morph name (linear/triangle/
-           soft/radial) is shown above each, matching XYZSettingsSheet. -->
-      <div class="shape-names">
-        <span class="shape-name" data-testid="ruttetra-xshape-name">XS: {xShapeName}</span>
-        <span class="shape-name" data-testid="ruttetra-yshape-name">YS: {yShapeName}</span>
-      </div>
-
-      <div class="fader-grid five">
-        <Fader value={p('xShape')}    min={0}  max={1} defaultValue={pdef('xShape')}    label="XS" curve="linear" onchange={setParam('xShape')}    moduleId={id} paramId="xShape" />
-        <Fader value={p('yShape')}    min={0}  max={1} defaultValue={pdef('yShape')}    label="YS" curve="linear" onchange={setParam('yShape')}    moduleId={id} paramId="yShape" />
-        <Fader value={p('xDisp')}     min={-1} max={1} defaultValue={pdef('xDisp')}     label="XD" curve="linear" onchange={setParam('xDisp')}     moduleId={id} paramId="xDisp" />
-        <Fader value={p('yDisp')}     min={-1} max={1} defaultValue={pdef('yDisp')}     label="YD" curve="linear" onchange={setParam('yDisp')}     moduleId={id} paramId="yDisp" />
-        <Fader value={p('intensity')} min={0}  max={2} defaultValue={pdef('intensity')} label="I"  curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
-      </div>
-
-      <!-- Tint as small R/G/B sliders. -->
-      <div class="fader-grid tint" data-testid="ruttetra-tint">
-        <Fader value={p('tintR')} min={0} max={1} defaultValue={pdef('tintR')} label="R" curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
-        <Fader value={p('tintG')} min={0} max={1} defaultValue={pdef('tintG')} label="G" curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
-        <Fader value={p('tintB')} min={0} max={1} defaultValue={pdef('tintB')} label="B" curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
-      </div>
-
-      <!-- Frequency/phase under an Advanced disclosure (matches p10). -->
-      <details class="advanced" data-testid="ruttetra-advanced">
-        <summary>ADVANCED</summary>
-        <div class="fader-grid">
-          <Fader value={p('xFreq')}  min={0.25} max={8} defaultValue={pdef('xFreq')}  label="XF" curve="linear" onchange={setParam('xFreq')}  moduleId={id} paramId="xFreq" />
-          <Fader value={p('yFreq')}  min={0.25} max={8} defaultValue={pdef('yFreq')}  label="YF" curve="linear" onchange={setParam('yFreq')}  moduleId={id} paramId="yFreq" />
-          <Fader value={p('xPhase')} min={0}    max={1} defaultValue={pdef('xPhase')} label="XP" curve="linear" onchange={setParam('xPhase')} moduleId={id} paramId="xPhase" />
-          <Fader value={p('yPhase')} min={0}    max={1} defaultValue={pdef('yPhase')} label="YP" curve="linear" onchange={setParam('yPhase')} moduleId={id} paramId="yPhase" />
-        </div>
-      </details>
+    <div class="fader-grid" data-testid="reshaper-controls">
+      <Fader value={p('intensity')} min={0}  max={2}  defaultValue={reshaperDef.params.find((x) => x.id === 'intensity')!.defaultValue} label="I"   curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
+      <Fader value={p('xDisp')}     min={-1} max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'xDisp')!.defaultValue}     label="XD"  curve="linear" onchange={setParam('xDisp')} moduleId={id} paramId="xDisp" />
+      <Fader value={p('yDisp')}     min={-1} max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'yDisp')!.defaultValue}     label="YD"  curve="linear" onchange={setParam('yDisp')} moduleId={id} paramId="yDisp" />
+      <Fader value={p('tintR')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintR')!.defaultValue}     label="R"   curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
+      <Fader value={p('tintG')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintG')!.defaultValue}     label="G"   curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
+      <Fader value={p('tintB')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"   curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
     </div>
   {/if}
 </div>
@@ -310,6 +273,7 @@
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
   }
   .card.hide-controls {
+    /* Solid black underlay so cables routed behind don't bleed through. */
     background-color: #000;
     background-image: linear-gradient(var(--module-bg), var(--module-bg));
     min-height: 0;
@@ -373,48 +337,13 @@
   .canvas-wrap:not(.canvas-wrap-resizable) canvas {
     height: auto;
   }
-  .controls {
-    padding: 0 14px;
-  }
-  .shape-names {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 8px;
-    font-family: ui-monospace, monospace;
-  }
-  .shape-name {
-    font-size: 0.58rem;
-    color: var(--text-dim);
-  }
   .fader-grid {
     margin-top: 10px;
+    padding: 0 14px;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 10px 4px;
     justify-items: center;
-  }
-  .fader-grid.five {
-    grid-template-columns: repeat(5, 1fr);
-  }
-  .fader-grid.tint {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  .advanced {
-    margin-top: 12px;
-  }
-  .advanced > summary {
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-family: ui-monospace, monospace;
-    list-style: none;
-  }
-  .advanced > summary::-webkit-details-marker { display: none; }
-  .advanced[open] > summary { color: var(--text); }
-  .advanced .fader-grid {
-    grid-template-columns: repeat(4, 1fr);
   }
   .hide-toggle {
     position: absolute;

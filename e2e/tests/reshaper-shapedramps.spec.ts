@@ -1,17 +1,17 @@
-// e2e/tests/ruttetra-shapedramps.spec.ts
+// e2e/tests/reshaper-shapedramps.spec.ts
 //
-// Integration tests for the real RUTTETRA raster-scan-coordinate
+// Integration tests for the real RESHAPER raster-scan-coordinate
 // processor + SHAPEDRAMPS sync-locked ramp generator.
 //
 // Two scenarios:
-//   1. Shaped wiring   — LINES → RUTTETRA.z, SHAPEDRAMPS.h_out → RUTTETRA.x,
-//                        SHAPEDRAMPS.v_out → RUTTETRA.y. Crank xDisp/yDisp
+//   1. Shaped wiring   — LINES → RESHAPER.z, SHAPEDRAMPS.h_out → RESHAPER.x,
+//                        SHAPEDRAMPS.v_out → RESHAPER.y. Crank xDisp/yDisp
 //                        + shape morphs. Assert the on-card canvas renders
 //                        non-uniform pixels and the patch produces no
 //                        console errors.
-//   2. Linear wiring   — LINES → RUTTETRA.z, SHAPEDRAMPS.h_lin → RUTTETRA.x,
-//                        SHAPEDRAMPS.v_lin → RUTTETRA.y. The linear ramps
-//                        are the identity coordinate field, so RUTTETRA's
+//   2. Linear wiring   — LINES → RESHAPER.z, SHAPEDRAMPS.h_lin → RESHAPER.x,
+//                        SHAPEDRAMPS.v_lin → RESHAPER.y. The linear ramps
+//                        are the identity coordinate field, so RESHAPER's
 //                        output should match a passthrough of LINES (within
 //                        a small per-pixel tolerance — interpolation +
 //                        canvas-side scaling create minor differences).
@@ -51,7 +51,7 @@ async function readCanvasStats(
   });
 }
 
-test.describe('RUTTETRA + SHAPEDRAMPS integration', () => {
+test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
   test('shaped wiring renders a non-uniform deformed coordinate field', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -67,26 +67,26 @@ test.describe('RUTTETRA + SHAPEDRAMPS integration', () => {
       [
         { id: 'v-lines',  type: 'lines',       position: { x: 40,  y: 40  }, domain: 'video', params: { orient: 0.5, amp: 14, thickness: 0.45 } },
         { id: 'v-ramps',  type: 'shapedramps', position: { x: 320, y: 40  }, domain: 'video', params: { h_shape: 0.66, v_shape: 0.66, h_freq: 2, v_freq: 2 } },
-        { id: 'v-rutt',   type: 'ruttetra',    position: { x: 700, y: 40  }, domain: 'video', params: { intensity: 1.2, xDisp: 0.5, yDisp: 0.5 } },
+        { id: 'v-reshaper',   type: 'reshaper',    position: { x: 700, y: 40  }, domain: 'video', params: { intensity: 1.2, xDisp: 0.5, yDisp: 0.5 } },
       ],
       [
-        { id: 'e-lines-rutt-z', from: { nodeId: 'v-lines',  portId: 'out'   }, to: { nodeId: 'v-rutt', portId: 'z' }, sourceType: 'mono-video', targetType: 'video' },
-        { id: 'e-ramps-rutt-x', from: { nodeId: 'v-ramps',  portId: 'h_out' }, to: { nodeId: 'v-rutt', portId: 'x' }, sourceType: 'mono-video', targetType: 'mono-video' },
-        { id: 'e-ramps-rutt-y', from: { nodeId: 'v-ramps',  portId: 'v_out' }, to: { nodeId: 'v-rutt', portId: 'y' }, sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-lines-rutt-z', from: { nodeId: 'v-lines',  portId: 'out'   }, to: { nodeId: 'v-reshaper', portId: 'z' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-ramps-rutt-x', from: { nodeId: 'v-ramps',  portId: 'h_out' }, to: { nodeId: 'v-reshaper', portId: 'x' }, sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-ramps-rutt-y', from: { nodeId: 'v-ramps',  portId: 'v_out' }, to: { nodeId: 'v-reshaper', portId: 'y' }, sourceType: 'mono-video', targetType: 'mono-video' },
       ],
     );
 
     await expect(page.locator('.svelte-flow__node-lines'),       'LINES visible').toBeVisible();
     await expect(page.locator('.svelte-flow__node-shapedramps'), 'SHAPEDRAMPS visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-ruttetra'),    'RUTTETRA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node-reshaper'),    'RESHAPER visible').toBeVisible();
 
     // Allow several rAF ticks before sampling. The shapedramps draw runs
-    // first (no upstream deps) followed by RUTTETRA in topo order, so a
+    // first (no upstream deps) followed by RESHAPER in topo order, so a
     // single frame is enough; we wait longer than that for CI stability.
     await page.waitForTimeout(800);
 
-    const stats = await readCanvasStats('canvas[data-testid="ruttetra-canvas"]', page);
-    expect(stats, 'RUTTETRA canvas stats sample').not.toBeNull();
+    const stats = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
+    expect(stats, 'RESHAPER canvas stats sample').not.toBeNull();
     if (!stats) return;
 
     // Cracked shape morph + Disp = bright pixels in non-trivial places.
@@ -107,7 +107,7 @@ test.describe('RUTTETRA + SHAPEDRAMPS integration', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Two separate cards, same LINES feeding each. Output RUTTETRA wired
+    // Two separate cards, same LINES feeding each. Output RESHAPER wired
     // to h_lin/v_lin (identity coord field). The OUTPUT card displays
     // the same LINES feed directly. Their pixel stats should be very
     // close (within a small tolerance for canvas-side interpolation).
@@ -116,52 +116,52 @@ test.describe('RUTTETRA + SHAPEDRAMPS integration', () => {
       [
         { id: 'v-lines', type: 'lines',       position: { x: 40,  y: 40  }, domain: 'video', params: { orient: 0.0, amp: 12, thickness: 0.4 } },
         { id: 'v-ramps', type: 'shapedramps', position: { x: 320, y: 40  }, domain: 'video' },
-        { id: 'v-rutt',  type: 'ruttetra',    position: { x: 700, y: 40  }, domain: 'video', params: { intensity: 1, xDisp: 0, yDisp: 0, tintR: 1, tintG: 1, tintB: 1 } },
+        { id: 'v-reshaper',  type: 'reshaper',    position: { x: 700, y: 40  }, domain: 'video', params: { intensity: 1, xDisp: 0, yDisp: 0, tintR: 1, tintG: 1, tintB: 1 } },
         { id: 'v-out',   type: 'videoOut',    position: { x: 700, y: 360 }, domain: 'video' },
       ],
       [
-        { id: 'e-lines-rutt-z', from: { nodeId: 'v-lines', portId: 'out'   }, to: { nodeId: 'v-rutt', portId: 'z' }, sourceType: 'mono-video', targetType: 'video' },
-        { id: 'e-ramps-rutt-x', from: { nodeId: 'v-ramps', portId: 'h_lin' }, to: { nodeId: 'v-rutt', portId: 'x' }, sourceType: 'mono-video', targetType: 'mono-video' },
-        { id: 'e-ramps-rutt-y', from: { nodeId: 'v-ramps', portId: 'v_lin' }, to: { nodeId: 'v-rutt', portId: 'y' }, sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-lines-rutt-z', from: { nodeId: 'v-lines', portId: 'out'   }, to: { nodeId: 'v-reshaper', portId: 'z' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-ramps-rutt-x', from: { nodeId: 'v-ramps', portId: 'h_lin' }, to: { nodeId: 'v-reshaper', portId: 'x' }, sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-ramps-rutt-y', from: { nodeId: 'v-ramps', portId: 'v_lin' }, to: { nodeId: 'v-reshaper', portId: 'y' }, sourceType: 'mono-video', targetType: 'mono-video' },
         { id: 'e-lines-out',    from: { nodeId: 'v-lines', portId: 'out'   }, to: { nodeId: 'v-out',  portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
 
     await expect(page.locator('.svelte-flow__node-shapedramps'), 'SHAPEDRAMPS visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-ruttetra'),    'RUTTETRA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node-reshaper'),    'RESHAPER visible').toBeVisible();
     await expect(page.locator('.svelte-flow__node-videoOut'),    'OUTPUT visible').toBeVisible();
 
     await page.waitForTimeout(800);
 
-    const ruttStats = await readCanvasStats('canvas[data-testid="ruttetra-canvas"]', page);
+    const reshaperStats = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
     const outStats  = await readCanvasStats('canvas[data-testid="video-out-canvas"]', page);
 
-    expect(ruttStats, 'RUTTETRA stats').not.toBeNull();
+    expect(reshaperStats, 'RESHAPER stats').not.toBeNull();
     expect(outStats,  'OUTPUT stats').not.toBeNull();
-    if (!ruttStats || !outStats) return;
+    if (!reshaperStats || !outStats) return;
 
-    // RUTTETRA should be rendering — not a black void.
-    expect(ruttStats.variance, `RUTTETRA variance ${ruttStats.variance} > 50`).toBeGreaterThan(50);
-    expect(ruttStats.nonZero / ruttStats.samples, 'RUTTETRA bright fraction > 5%').toBeGreaterThan(0.05);
+    // RESHAPER should be rendering — not a black void.
+    expect(reshaperStats.variance, `RESHAPER variance ${reshaperStats.variance} > 50`).toBeGreaterThan(50);
+    expect(reshaperStats.nonZero / reshaperStats.samples, 'RESHAPER bright fraction > 5%').toBeGreaterThan(0.05);
 
-    // Mean luma between the two paths should be close — RUTTETRA at
+    // Mean luma between the two paths should be close — RESHAPER at
     // identity coord field with intensity=1 is supposed to equal the
     // input. They live in distinct cards rendered at potentially
     // different sizes, so we only compare a stat that survives scaling
     // (mean). Tolerance is generous (±15% of the larger value) to
     // absorb LINES's auto-scrolling phase shift between sample
     // capture moments.
-    const meanScale = Math.max(1, ruttStats.mean, outStats.mean);
-    const meanDelta = Math.abs(ruttStats.mean - outStats.mean);
+    const meanScale = Math.max(1, reshaperStats.mean, outStats.mean);
+    const meanDelta = Math.abs(reshaperStats.mean - outStats.mean);
     expect(
       meanDelta / meanScale,
-      `mean delta ${meanDelta} too large (rutt=${ruttStats.mean}, out=${outStats.mean})`,
+      `mean delta ${meanDelta} too large (reshaper=${reshaperStats.mean}, out=${outStats.mean})`,
     ).toBeLessThan(0.15);
 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('onboard mix1 crossfades two LINES into RUTTETRA.x and reacts to mix1 knob', async ({ page }) => {
+  test('onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -172,8 +172,8 @@ test.describe('RUTTETRA + SHAPEDRAMPS integration', () => {
     await page.waitForLoadState('networkidle');
 
     // Two distinct LINES sources → SHAPEDRAMPS.mix1_a / mix1_b.
-    // SHAPEDRAMPS.mix1_out → RUTTETRA.x. Linear v_lin → RUTTETRA.y so the
-    // vertical axis is well-defined. LINES1 also drives RUTTETRA.z (the
+    // SHAPEDRAMPS.mix1_out → RESHAPER.x. Linear v_lin → RESHAPER.y so the
+    // vertical axis is well-defined. LINES1 also drives RESHAPER.z (the
     // source signal we're scanning).
     await spawnPatch(
       page,
@@ -181,32 +181,32 @@ test.describe('RUTTETRA + SHAPEDRAMPS integration', () => {
         { id: 'v-lines1', type: 'lines',       position: { x: 40,  y: 40  }, domain: 'video', params: { orient: 0.0, amp: 12, thickness: 0.4 } },
         { id: 'v-lines2', type: 'lines',       position: { x: 40,  y: 280 }, domain: 'video', params: { orient: 1.0, amp: 18, thickness: 0.6 } },
         { id: 'v-ramps',  type: 'shapedramps', position: { x: 320, y: 40  }, domain: 'video', params: { mix1: 0.0 } },
-        { id: 'v-rutt',   type: 'ruttetra',    position: { x: 700, y: 40  }, domain: 'video', params: { intensity: 1.2, xDisp: 0.4, yDisp: 0.4 } },
+        { id: 'v-reshaper',   type: 'reshaper',    position: { x: 700, y: 40  }, domain: 'video', params: { intensity: 1.2, xDisp: 0.4, yDisp: 0.4 } },
       ],
       [
         { id: 'e-l1-mix1a',  from: { nodeId: 'v-lines1', portId: 'out'      }, to: { nodeId: 'v-ramps', portId: 'mix1_a' }, sourceType: 'mono-video', targetType: 'mono-video' },
         { id: 'e-l2-mix1b',  from: { nodeId: 'v-lines2', portId: 'out'      }, to: { nodeId: 'v-ramps', portId: 'mix1_b' }, sourceType: 'mono-video', targetType: 'mono-video' },
-        { id: 'e-mix1-x',    from: { nodeId: 'v-ramps',  portId: 'mix1_out' }, to: { nodeId: 'v-rutt',  portId: 'x' },      sourceType: 'mono-video', targetType: 'mono-video' },
-        { id: 'e-vlin-y',    from: { nodeId: 'v-ramps',  portId: 'v_lin'    }, to: { nodeId: 'v-rutt',  portId: 'y' },      sourceType: 'mono-video', targetType: 'mono-video' },
-        { id: 'e-l1-z',      from: { nodeId: 'v-lines1', portId: 'out'      }, to: { nodeId: 'v-rutt',  portId: 'z' },      sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-mix1-x',    from: { nodeId: 'v-ramps',  portId: 'mix1_out' }, to: { nodeId: 'v-reshaper',  portId: 'x' },      sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-vlin-y',    from: { nodeId: 'v-ramps',  portId: 'v_lin'    }, to: { nodeId: 'v-reshaper',  portId: 'y' },      sourceType: 'mono-video', targetType: 'mono-video' },
+        { id: 'e-l1-z',      from: { nodeId: 'v-lines1', portId: 'out'      }, to: { nodeId: 'v-reshaper',  portId: 'z' },      sourceType: 'mono-video', targetType: 'video' },
       ],
     );
 
     await expect(page.locator('.svelte-flow__node-shapedramps'), 'SHAPEDRAMPS visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-ruttetra'),    'RUTTETRA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node-reshaper'),    'RESHAPER visible').toBeVisible();
 
     await page.waitForTimeout(800);
 
-    // RUTTETRA renders something visible (non-flat).
-    const stats0 = await readCanvasStats('canvas[data-testid="ruttetra-canvas"]', page);
-    expect(stats0, 'RUTTETRA stats at mix1=0').not.toBeNull();
+    // RESHAPER renders something visible (non-flat).
+    const stats0 = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
+    expect(stats0, 'RESHAPER stats at mix1=0').not.toBeNull();
     if (!stats0) return;
     expect(stats0.variance, `variance ${stats0.variance} > 50 at mix1=0`).toBeGreaterThan(50);
     expect(stats0.nonZero / stats0.samples, 'bright fraction > 5% at mix1=0').toBeGreaterThan(0.05);
 
     // Sweep mix1 from 0 → 1. The mixer crossfades from LINES1 (oriented
     // horizontal, amp 12) to LINES2 (oriented vertical, amp 18). The
-    // resulting RUTTETRA scan should change visibly as the X coordinate
+    // resulting RESHAPER scan should change visibly as the X coordinate
     // field swings between the two distinct ramp sources.
     await page.evaluate(() => {
       const w = globalThis as unknown as {
@@ -220,8 +220,8 @@ test.describe('RUTTETRA + SHAPEDRAMPS integration', () => {
     });
     await page.waitForTimeout(400);
 
-    const stats1 = await readCanvasStats('canvas[data-testid="ruttetra-canvas"]', page);
-    expect(stats1, 'RUTTETRA stats at mix1=1').not.toBeNull();
+    const stats1 = await readCanvasStats('canvas[data-testid="reshaper-canvas"]', page);
+    expect(stats1, 'RESHAPER stats at mix1=1').not.toBeNull();
     if (!stats1) return;
     expect(stats1.variance, `variance ${stats1.variance} > 50 at mix1=1`).toBeGreaterThan(50);
 
@@ -233,7 +233,7 @@ test.describe('RUTTETRA + SHAPEDRAMPS integration', () => {
     const movement = meanDelta + Math.sqrt(varianceDelta);
     expect(
       movement,
-      `mix1 sweep should change RUTTETRA output (mean ${stats0.mean}→${stats1.mean}, var ${stats0.variance}→${stats1.variance})`,
+      `mix1 sweep should change RESHAPER output (mean ${stats0.mean}→${stats1.mean}, var ${stats0.variance}→${stats1.variance})`,
     ).toBeGreaterThan(2.5);
 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);

@@ -1,5 +1,5 @@
-// Shared corner-drag resize helper for video cards (OUTPUT, RUTTETRA,
-// MONOGLITCH). Pointer deltas are divided by the live svelte-flow
+// Shared corner-drag resize helper for video cards (OUTPUT, RESHAPER,
+// RUTTETRA, MONOGLITCH). Pointer deltas are divided by the live svelte-flow
 // viewport zoom so a 1px screen drag always maps to 1px of card size,
 // regardless of canvas zoom. Width/height are persisted onto the node
 // via the supplied `apply` callback so Y.Doc syncs them to other

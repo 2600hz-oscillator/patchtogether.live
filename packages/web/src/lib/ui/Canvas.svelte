@@ -91,6 +91,7 @@
   import VideoOutCard from '$lib/ui/modules/VideoOutCard.svelte';
   import ShapesCard from '$lib/ui/modules/ShapesCard.svelte';
   import MonoglitchCard from '$lib/ui/modules/MonoglitchCard.svelte';
+  import ReshaperCard from '$lib/ui/modules/ReshaperCard.svelte';
   import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
@@ -344,6 +345,7 @@
     videoOut: VideoOutCard,
     shapes: ShapesCard,
     monoglitch: MonoglitchCard,
+    reshaper: ReshaperCard,
     ruttetra: RuttetraCard,
     shapedramps: ShapedrampsCard,
     vdelay: VdelayCard,

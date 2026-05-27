@@ -5,8 +5,10 @@
 // raster-coordinate-remap model landed in its own module. MONOGLITCH is
 // NOT a true Rutt/Etra raster-scan processor — it's a luma-driven
 // scanline-displacement glitch effect (a useful aesthetic in its own
-// right, just a different abstraction). For the real raster-coord
-// remap, see packages/web/src/lib/video/modules/ruttetra.ts.
+// right, just a different abstraction). For the coord-remap effect see
+// packages/web/src/lib/video/modules/reshaper.ts; for the authentic
+// forward-scatter scan scope see
+// packages/web/src/lib/video/modules/ruttetra.ts.
 //
 // Architecture parity with OUTPUT (videoOut, post-PR-85):
 //   - Renders into its own per-instance FBO. The card driving the visible
