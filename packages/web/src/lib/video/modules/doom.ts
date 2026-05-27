@@ -29,7 +29,12 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { DoomRuntime, type DoomTiccmd } from '$lib/doom/doom-runtime';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
-import { CV_GATE_PORT_IDS, type CvGatePortId } from '$lib/doom/doomkeys';
+import {
+  CV_GATE_PORT_IDS_BY_SLOT,
+  parseSlotPortId,
+  migrateLegacyCvGatePortId,
+  type CvGatePortId,
+} from '$lib/doom/doomkeys';
 
 // AudioWorkletProcessor URL — served as a static asset under
 // /doom/doom-pcm-worklet.js. Loaded lazily per AudioContext (WeakSet
@@ -189,6 +194,11 @@ export interface DoomHandleExtras {
   readLocalTiccmdAt(tic: number): DoomTiccmd | null;
   /** 32-bit deterministic state digest — the cross-peer lockstep oracle. */
   stateChecksum(): number;
+  /** Per-player inputs (#353): set THIS peer's consoleplayer slot so the CV-gate
+   *  path applies ONLY this slot's input group (own-slot-only rule). The card
+   *  calls this when its mySlot changes; null = spectator/unseated (no slot's CV
+   *  drives the local sim). Idempotent; safe before WASM loads. */
+  setOwnSlot(slot: number | null): void;
 }
 
 export const doomDef: VideoModuleDef = {
@@ -196,7 +206,19 @@ export const doomDef: VideoModuleDef = {
   domain: 'video',
   label: 'DOOM',
   category: 'sources',
-  schemaVersion: 1,
+  // schemaVersion 2 (#353): the single shared CV-gate input set became four
+  // per-slot input GROUPS (p1..p4 → slots 0..3). Old (v1) patches wired CV to
+  // the bare port ids (`up`/`down`/…); the load-time migration rewrites those
+  // edges to the p1 group (slot 0) so they keep driving the owner's marine.
+  schemaVersion: 2,
+  // Edge-port migration (v1 → v2): rewrite a legacy bare cv-gate port id to its
+  // p1_<id> equivalent so saved patches keep their CV connections. The
+  // persistence loader calls this per edge target whose nodeId is a DOOM node
+  // saved at a version below this def's schemaVersion. Returns null for ports
+  // that aren't legacy cv-gate ids (out/audio_l/audio_r — left untouched).
+  migrateEdgePortId(portId, _fromVersion) {
+    return migrateLegacyCvGatePortId(portId);
+  },
   // ONE DOOM NODE per rack — and it stays 1. The committed slice-3 model
   // is "one shared node, N per-peer runtimes": the host spawns the single
   // node; every other peer sees it via Yjs sync and JOINS it (claims a slot
@@ -213,13 +235,17 @@ export const doomDef: VideoModuleDef = {
   // makes sense. (Single-user / no-provider racks have a sole de-facto owner,
   // so the gate only blocks an explicit non-owner; see doom-gating.canAddModule.)
   ownerOnly: true,
-  // 7 cv-typed gate inputs per the plan. paramTarget maps each to a
-  // synthetic param so the engine's setParam path drives our edge
-  // detector (the same way other modules handle CV-into-param).
-  inputs: CV_GATE_PORT_IDS.map((id) => ({
-    id,
+  // PER-SLOT cv-typed gate inputs (#353): four groups p1..p4 (slots 0..3), each
+  // the 7 gates. portId = `p{slot+1}_{base}` (e.g. p1_up), paramTarget =
+  // `cv_p{slot+1}_{base}` (e.g. cv_p1_up). The engine's setParam path drives our
+  // per-(slot,port) edge detector; the OWN-SLOT-ONLY rule (below) ensures a peer
+  // only ever feeds its OWN consoleplayer slot's CV into the sim, so the
+  // deterministic lockstep TicSet can never diverge from non-deterministic
+  // per-peer CV sampling (the #353/#354 freeze root cause).
+  inputs: CV_GATE_PORT_IDS_BY_SLOT.map(({ portId }) => ({
+    id: portId,
     type: 'cv' as const,
-    paramTarget: `cv_${id}`,
+    paramTarget: `cv_${portId}`,
   })),
   outputs: [
     { id: 'out', type: 'video' },
@@ -228,12 +254,13 @@ export const doomDef: VideoModuleDef = {
   ],
   params: [
     { id: 'audioGain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
-    // Synthetic params for the CV edge detector — one per gate port.
-    // Hidden from the card (the gate inputs render as cv-jacks via the
-    // standard port-row). curve='linear' so setParam values arrive raw.
-    ...CV_GATE_PORT_IDS.map((id) => ({
-      id: `cv_${id}`,
-      label: id.toUpperCase(),
+    // Synthetic params for the CV edge detector — one per (slot, gate) port.
+    // Hidden from the card (the gate inputs render as cv-jacks via the standard
+    // port-row, and only the local viewer's own group is shown). curve='linear'
+    // so setParam values arrive raw.
+    ...CV_GATE_PORT_IDS_BY_SLOT.map(({ portId, slot, base }) => ({
+      id: `cv_${portId}`,
+      label: `P${slot + 1} ${base.toUpperCase()}`,
       defaultValue: 0,
       min: 0,
       max: 1,
@@ -303,9 +330,22 @@ export const doomDef: VideoModuleDef = {
     // it to the runtime the instant it comes up (and on every later flip).
     let keyboardInert = false;
 
-    // Edge-detector state, one per CV gate port.
-    const edgeStates = new Map<CvGatePortId, EdgeState>();
-    for (const id of CV_GATE_PORT_IDS) edgeStates.set(id, makeEdgeState());
+    // Edge-detector state, one per per-slot CV gate port (keyed by full portId,
+    // e.g. 'p1_up'). 4 groups × 7 gates = 28 detectors; only the local slot's
+    // edges ever reach the runtime (own-slot-only rule), but we keep state for
+    // all so a slot change doesn't drop a mid-flight gate.
+    const edgeStates = new Map<string, EdgeState>();
+    for (const { portId } of CV_GATE_PORT_IDS_BY_SLOT) edgeStates.set(portId, makeEdgeState());
+
+    // OWN-SLOT-ONLY rule (#353 Phase 2): this peer's consoleplayer slot. CV that
+    // targets THIS slot's group is fed into the sim (→ G_BuildTiccmd → the
+    // deterministic ticcmd log); CV that targets ANY OTHER slot's group is
+    // ignored locally — those slots arrive only as the consolidated, byte-
+    // identical log entries every peer replays. This is what makes per-player CV
+    // deterministic + lockstep-safe (no per-peer fan-out, no divergence → no
+    // freeze). The card sets it via extras.setOwnSlot(mySlot); a spectator/
+    // unseated peer leaves it null so NO slot's CV drives the local sim.
+    let ownSlot: number | null = null;
 
     const params: DoomParams & Record<string, number> = {
       ...DEFAULTS,
@@ -560,6 +600,14 @@ export const doomDef: VideoModuleDef = {
       getRecvtic() { return runtime ? runtime.getRecvtic() : 0; },
       readLocalTiccmdAt(tic) { return runtime ? runtime.readLocalTiccmdAt(tic) : null; },
       stateChecksum() { return runtime ? runtime.stateChecksum() : 0; },
+      setOwnSlot(slot) {
+        // When the local slot changes, release any CV-origin key still held so a
+        // gate that was HIGH for the old slot can't stay latched in gamekeydown[]
+        // after we stop applying it. The new slot's gates re-assert on their next
+        // edge. Safe before WASM loads (runtime guards internally).
+        if (slot !== ownSlot && runtime) runtime.releaseHeldCvKeys();
+        ownSlot = slot;
+      },
     };
 
     return {
@@ -573,20 +621,29 @@ export const doomDef: VideoModuleDef = {
         if (paramId === 'audioGain' && pcmWorklet) {
           try { pcmWorklet.port.postMessage({ type: 'gain', value }); } catch { /* */ }
         }
-        // CV-gate path: edge-detect cv_<port> params + forward to runtime.
-        // Routed through setKeyForCvGate (NOT setKey directly) so the runtime's
-        // lockstep gate (#353 Phase 0) drops CV input in a >1-player netgame:
-        // the shared CV edge fans out to every peer + samples non-deterministically,
-        // which would diverge the deterministic TicSets → checksum mismatch →
-        // permanent freeze. Single-player (lockstep off) is untouched.
+        // PER-SLOT CV-gate path (#353): edge-detect cv_p{N}_{base} params + feed
+        // ONLY the local consoleplayer slot's gates into the runtime.
+        //
+        // OWN-SLOT-ONLY: the CV edge for slot S lives once in the shared Yjs doc
+        // and the bridge materializes on EVERY peer, but only the peer whose
+        // consoleplayer == S applies it. Other slots' CV is edge-detected (so the
+        // detector state stays coherent if the slot later becomes ours) but NEVER
+        // written to the runtime here — those slots arrive solely as the
+        // deterministic, consolidated ticcmd log. This removes the wrong-slot
+        // fan-out AND the non-deterministic per-peer sampling that caused the
+        // universal freeze, so CV is now SAFE under lockstep (the #354 blunt
+        // "ignore CV under lockstep" gate is gone — CV is re-enabled per slot).
         if (paramId.startsWith('cv_')) {
-          const portId = paramId.slice(3) as CvGatePortId;
+          const portId = paramId.slice(3); // e.g. 'p1_up'
           const state = edgeStates.get(portId);
           if (!state) return;
+          const parsed = parseSlotPortId(portId);
+          if (!parsed) return;
           const ev = detectEdge(state, value);
-          if (ev && runtime) {
-            runtime.setKeyForCvGate(portId, ev.pressed);
-          }
+          if (!ev || !runtime) return;
+          // Own-slot-only: ignore CV for any slot this peer doesn't drive.
+          if (ownSlot === null || parsed.slot !== ownSlot) return;
+          runtime.setKeyForCvGate(parsed.base, ev.pressed);
         }
       },
       readParam(paramId) {

@@ -1207,11 +1207,13 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       summary.unpatched_keyboardMovedMarine = unpatched.moved;
       expect(unpatched.moved, 'unpatched ⇒ a held key MUST drive the marine (control-vs-keyed differential proves the keyboard is live)').toBe(true);
 
-      // ── PATCH a CV gate into the DOOM 'up' movement port ─────────────────
+      // ── PATCH a CV gate into the DOOM slot-0 'up' movement port (#353) ───
+      // Per-player inputs: the owner is slot 0, so its OWN group is p1_*. The
+      // own-slot keyboard-inert rule only flips on the viewer's OWN slot group.
       await setEdge(owner.page, {
         id: 'cv-edge',
         from: { nodeId: CV_SRC, portId: 'phase0' },
-        to: { nodeId: NODE_ID, portId: 'up' },
+        to: { nodeId: NODE_ID, portId: 'p1_up' },
         sourceType: 'cv',
         targetType: 'cv',
       });

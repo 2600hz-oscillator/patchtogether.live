@@ -22,6 +22,14 @@ export interface VideoModuleDef {
   params: readonly ParamDef[];
   schemaVersion: number;
   migrate?: (data: unknown, fromVersion: number) => unknown;
+  /** Optional load-time EDGE-PORT migration. When a node of this type was saved
+   *  at a version below the current schemaVersion, the persistence loader calls
+   *  this for each edge endpoint (source OR target) that references this node,
+   *  passing the saved portId. Return a rewritten portId, or null to leave the
+   *  port unchanged. DOOM uses this to rewrite legacy bare cv-gate ports
+   *  (`up`/`down`/…) to their p1 group equivalents (`p1_up`/…) when the single
+   *  shared CV input set became four per-slot groups (#353, schemaVersion 1→2). */
+  migrateEdgePortId?: (portId: string, fromVersion: number) => string | null;
   factory: VideoModuleFactory;
   /** Optional hard cap on simultaneous instances (mirrors the audio side).
    *  Phase 0 modules don't enforce caps; Phase 1's INWARDS will (one

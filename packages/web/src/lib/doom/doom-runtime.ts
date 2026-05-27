@@ -204,28 +204,20 @@ export class DoomRuntime {
   private heldKeyboardKeys = new Set<number>();
 
   /**
-   * MULTIPLAYER CV gate (interim hotfix, #353 Phase 0). In a true-lockstep
-   * netgame the CV-gate → DOOM-key path MUST be inert: the shared CV edge in
-   * the Yjs doc fans out to EVERY peer's slot AND is sampled non-deterministically
-   * per-rAF on each peer, so each peer builds a DIFFERENT ticcmd → the
-   * consolidated TicSets diverge → `dgpt_state_checksum` mismatches → the
-   * consistency check (`I_Error`) permanently aborts the WASM → universal freeze.
-   * Keyboard input is per-machine + broadcast deterministically via the tic log,
-   * so it is unaffected and stays fully working.
-   *
-   * Armed iff the lockstep barrier is on (setLockstep(true) — a >1-player
-   * netgame). Single-player leaves it false → CV→DOOM works exactly as today.
-   * The moment we arm it we release every CV-origin key still asserted so a gate
-   * that was HIGH when MP started cannot stay latched in gamekeydown[].
-   *
-   * NOTE (interim): this drops CV entirely under MP. The real fix is per-player
-   * CV routing (#353 phases 1–3) — each peer's CV drives only its own slot via
-   * the deterministic local-ticcmd log instead of a shared fan-out edge.
+   * Lockstep barrier flag (drives only the engine barrier now). The interim
+   * #354 "drop all CV under lockstep" hotfix that this used to gate is GONE:
+   * per-player CV routing (#353 phases 1–3) makes CV deterministic + lockstep-
+   * safe by construction — the factory feeds only the peer's OWN slot's CV into
+   * the sim, via the same gamekeydown[] → G_BuildTiccmd → ordered log →
+   * consolidated TicSet path as the keyboard, so non-deterministic per-peer
+   * sampling can never reach a slot it doesn't own. CV is therefore re-enabled
+   * under lockstep; this flag no longer gates CV at all.
    */
   private lockstepArmed = false;
   /** Doomkeys currently asserted via the CV-gate path (setKeyForCvGate).
-   *  Tracked so arming lockstep releases ONLY CV-origin keys, never the
-   *  keyboard's (which the keyboard-inert path owns). */
+   *  Tracked so a SLOT CHANGE (the local peer's consoleplayer changing) can
+   *  release ONLY CV-origin keys, never the keyboard's (which the keyboard-inert
+   *  path owns). */
   private heldCvKeys = new Set<number>();
 
   constructor(module: DoomModule) {
@@ -334,17 +326,20 @@ export class DoomRuntime {
     return true;
   }
 
-  /** Convenience: CV-gate port id ('up'/'down'/.../'alt') → doomkey + push.
-   *  Hard-gated under lockstep (a >1-player netgame): while armed, CV-gate input
-   *  is dropped at the runtime boundary so the shared CV edge can never drive the
-   *  deterministic sim (which would diverge the per-peer TicSets → checksum
-   *  mismatch → freeze). Returns false (unhandled) when armed so callers don't
-   *  track a key that was never asserted. In single-player (not armed) CV→DOOM
-   *  works exactly as today. */
+  /** Convenience: CV-gate base port id ('up'/'down'/.../'alt') → doomkey + push.
+   *
+   *  PER-PLAYER ROUTING (#353): CV is now SAFE under lockstep and is no longer
+   *  gated here. The blunt "drop all CV while a netgame is active" hotfix (#354)
+   *  is removed because the factory enforces the OWN-SLOT-ONLY rule upstream —
+   *  it only ever calls this for the peer's OWN consoleplayer slot, and that CV
+   *  flows through the SAME gamekeydown[] → G_BuildTiccmd → ordered log →
+   *  consolidated TicSet path the keyboard uses. No other slot's CV reaches the
+   *  sim locally, so there is no per-peer fan-out or non-deterministic sampling
+   *  to diverge the lockstep stream. CV-origin keys are tracked (heldCvKeys) so a
+   *  slot change can release them cleanly. */
   setKeyForCvGate(portId: CvGatePortId, pressed: boolean): boolean {
     const key = KEY_FOR_CV_GATE[portId];
     if (key === undefined) return false;
-    if (this.lockstepArmed) return false;
     if (pressed) this.heldCvKeys.add(key);
     else this.heldCvKeys.delete(key);
     this.setKey(key, pressed);
@@ -352,17 +347,13 @@ export class DoomRuntime {
   }
 
   /** Synthesise key-up for every CV-origin key still asserted. Used when the
-   *  lockstep barrier arms (MP start) so a CV gate that was HIGH cannot stay
-   *  latched in gamekeydown[] after CV input goes inert. */
+   *  local peer's slot CHANGES (own-slot-only routing, #353) so a gate that was
+   *  HIGH for the old slot cannot stay latched in gamekeydown[] after we stop
+   *  applying that slot's CV. */
   releaseHeldCvKeys(): void {
     if (this.heldCvKeys.size === 0) return;
     for (const key of this.heldCvKeys) this.setKey(key, false);
     this.heldCvKeys.clear();
-  }
-
-  /** Whether CV-gate input is currently gated off (lockstep armed). */
-  isCvGateInert(): boolean {
-    return this.lockstepArmed;
   }
 
   /**
@@ -660,15 +651,12 @@ export class DoomRuntime {
   /** Arm/disarm the true-lockstep barrier. The card arms it for a >1-player
    *  netgame; single-player leaves it off (byte-identical behavior).
    *
-   *  Also drives the MP CV-gate gate (#353 Phase 0): arming makes setKeyForCvGate
-   *  inert (the shared CV edge must not drive the deterministic sim) and releases
-   *  any CV key still held so nothing latches. The flag is tracked even if the
-   *  WASM isn't initialized yet, so a CV gate patched while MP is arming can never
-   *  reach the engine once it loads. */
+   *  CV is NO LONGER gated here (#353): per-player own-slot-only routing makes CV
+   *  deterministic under lockstep, so arming the barrier does not touch CV input.
+   *  The flag is tracked even before WASM init so the barrier state is applied
+   *  the instant the runtime comes up. */
   setLockstep(enabled: boolean): void {
-    const wasArmed = this.lockstepArmed;
     this.lockstepArmed = enabled;
-    if (enabled && !wasArmed) this.releaseHeldCvKeys();
     if (!this.initialized) return;
     this.mod.ccall('dgpt_set_lockstep', null, ['number'], [enabled ? 1 : 0]);
   }

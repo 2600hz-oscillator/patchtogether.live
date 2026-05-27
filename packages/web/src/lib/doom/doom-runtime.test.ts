@@ -339,35 +339,38 @@ describe('DoomRuntime — TS shim layer', () => {
     });
   });
 
-  // ── #353 Phase 0: MP CV-gate inert gate (lockstep ⇒ CV→DOOM dropped) ──
+  // ── #353: per-player CV is SAFE under lockstep (no blunt CV gate) ──
   //
-  // In a true-lockstep netgame the shared CV edge fans out to every peer's slot
-  // and is sampled non-deterministically per-rAF, so each peer would build a
-  // different ticcmd → consolidated TicSets diverge → dgpt_state_checksum
-  // mismatches → the consistency check I_Errors → universal freeze. Under
-  // lockstep the runtime must therefore drop CV-gate input entirely. Keyboard
-  // stays live (it's per-machine + broadcast deterministically via the tic log).
-  // Single-player (lockstep off) is byte-identical to today.
-  describe('lockstep CV-gate inert gate (#353 Phase 0)', () => {
-    it('CV-gate input flows in single-player (lockstep OFF) — unchanged behavior', () => {
+  // The interim #354 hotfix dropped ALL CV input while a netgame was active,
+  // because the shared CV edge fanned out to every peer's slot and sampled non-
+  // deterministically → divergent TicSets → freeze. Per-player routing replaces
+  // that: the FACTORY (doom.ts) feeds only the local consoleplayer slot's CV
+  // into the runtime, through the same gamekeydown[] → G_BuildTiccmd → ordered
+  // log → consolidated TicSet path as the keyboard. So the runtime itself no
+  // longer gates CV at all — setKeyForCvGate always forwards. Determinism +
+  // own-slot ownership are enforced one layer up; the freeze class is killed by
+  // construction. CV-origin keys are still tracked so a SLOT CHANGE can release
+  // them cleanly.
+  describe('CV-gate input is no longer gated by lockstep (#353 per-player routing)', () => {
+    it('CV-gate input flows in single-player (lockstep OFF)', () => {
       rt.init(new Uint8Array([0]));
-      expect(rt.isCvGateInert()).toBe(false);
       const before = stub.calls.length;
       expect(rt.setKeyForCvGate('up', true)).toBe(true);
       const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
       expect(calls).toEqual([{ name: 'dgpt_set_key', args: [KEY_UPARROW, 1] }]);
     });
 
-    it('drops CV-gate input while lockstep is armed (no dgpt_set_key fires)', () => {
+    it('CV-gate input STILL flows while lockstep is armed (re-enabled, per-slot upstream)', () => {
       rt.init(new Uint8Array([0]));
       rt.setLockstep(true);
-      expect(rt.isCvGateInert()).toBe(true);
       const before = stub.calls.length;
-      // Returns false (unhandled) AND emits no native key call.
-      expect(rt.setKeyForCvGate('up', true)).toBe(false);
-      expect(rt.setKeyForCvGate('ctrl', true)).toBe(false);
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      expect(rt.setKeyForCvGate('ctrl', true)).toBe(true);
       const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
-      expect(calls).toEqual([]);
+      expect(calls).toEqual([
+        { name: 'dgpt_set_key', args: [KEY_UPARROW, 1] },
+        { name: 'dgpt_set_key', args: [KEY_FIRE, 1] },
+      ]);
     });
 
     it('keyboard input is NOT gated by lockstep (the local marine still moves)', () => {
@@ -383,14 +386,23 @@ describe('DoomRuntime — TS shim layer', () => {
       ]);
     });
 
-    it('arming lockstep RELEASES every CV-gate key still held (no stuck gate)', () => {
+    it('arming lockstep does NOT release held CV keys (CV stays live now)', () => {
       rt.init(new Uint8Array([0]));
-      // A CV gate is HIGH (UP + CTRL/FIRE) when the netgame starts.
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      expect(rt.setKeyForCvGate('ctrl', true)).toBe(true);
+      const before = stub.calls.length;
+      rt.setLockstep(true);
+      // No key-up fires — CV is no longer dropped on lockstep arm.
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([]);
+    });
+
+    it('releaseHeldCvKeys() releases CV-origin keys (used on a slot change)', () => {
+      rt.init(new Uint8Array([0]));
       expect(rt.setKeyForCvGate('up', true)).toBe(true);
       expect(rt.setKeyForCvGate('ctrl', true)).toBe(true); // FIRE
       const before = stub.calls.length;
-      rt.setLockstep(true);
-      // Exactly one key-up per held CV key — nothing latches in gamekeydown[].
+      rt.releaseHeldCvKeys();
       const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
       expect(calls).toEqual([
         { name: 'dgpt_set_key', args: [KEY_UPARROW, 0] },
@@ -398,45 +410,11 @@ describe('DoomRuntime — TS shim layer', () => {
       ]);
     });
 
-    it('does NOT release a keyboard key when lockstep arms (keyboard owns its own set)', () => {
+    it('releaseHeldCvKeys() does NOT release keyboard keys (keyboard owns its own set)', () => {
       rt.init(new Uint8Array([0]));
       rt.setKeyForKeyboardCode('ArrowUp', true);
       const before = stub.calls.length;
-      rt.setLockstep(true);
-      // No release fires — UP was a keyboard-origin press, untracked by the CV set.
-      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
-      expect(calls).toEqual([]);
-    });
-
-    it('disarming lockstep restores CV-gate input (back to single-player)', () => {
-      rt.init(new Uint8Array([0]));
-      rt.setLockstep(true);
-      expect(rt.setKeyForCvGate('up', true)).toBe(false);
-      rt.setLockstep(false);
-      expect(rt.isCvGateInert()).toBe(false);
-      const before = stub.calls.length;
-      expect(rt.setKeyForCvGate('up', true)).toBe(true);
-      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
-      expect(calls).toEqual([{ name: 'dgpt_set_key', args: [KEY_UPARROW, 1] }]);
-    });
-
-    it('arming lockstep is idempotent (no double-release of CV keys)', () => {
-      rt.init(new Uint8Array([0]));
-      rt.setKeyForCvGate('up', true);
-      rt.setLockstep(true); // releases UP
-      const before = stub.calls.length;
-      rt.setLockstep(true); // already armed
-      expect(stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key')).toEqual([]);
-      expect(rt.isCvGateInert()).toBe(true);
-    });
-
-    it('gate is tracked even before init so a pre-load CV patch is dropped on load', () => {
-      // setLockstep(true) BEFORE init (WASM still loading) must still arm the gate.
-      rt.setLockstep(true);
-      rt.init(new Uint8Array([0]));
-      expect(rt.isCvGateInert()).toBe(true);
-      const before = stub.calls.length;
-      expect(rt.setKeyForCvGate('up', true)).toBe(false);
+      rt.releaseHeldCvKeys();
       expect(stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key')).toEqual([]);
     });
   });
