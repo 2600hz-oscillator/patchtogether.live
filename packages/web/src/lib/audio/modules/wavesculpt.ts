@@ -492,6 +492,16 @@ export const wavesculptDef: AudioModuleDef = {
     // 2 = SPECTROGRAPH (scrolling-column STFT of the combined audio output:
     //                   log-Hz vertical axis, time scrolling left).
     ps.push({ id: 'video_mode',    label: 'View',     defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+    // BLINK render mode (within the 3D PROXIMITY view): cycles the way the
+    // four oscillators are visualised. Persisted + multiplayer-synced like
+    // every other param.
+    //   0 = (current) — today's wavetable-ribbon render. Default.
+    //   1 = SCOPES TRIAL — each osc's LIVE oscilloscope trace, emitted from
+    //       the 4 floor corners aimed up+inward at 45°. WIDTH thickens the
+    //       scope line (max ≈ fills the box).
+    //   2 = REALITY BASED COMMUNITY — same scope layout but the traces are
+    //       3D neon TUBES; WIDTH sets the tube radius (max ≈ fills the box).
+    ps.push({ id: 'blink_mode',    label: 'Blink',    defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
     ps.push({ id: 'alpha_brightness', label: 'A.Bright', defaultValue: 1, min: 0, max: 2, curve: 'linear' });
     ps.push({ id: 'hsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Drift' });
     ps.push({ id: 'hsync_loss',         defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Loss' });
@@ -1119,6 +1129,36 @@ export const wavesculptDef: AudioModuleDef = {
       return a;
     }
 
+    // ---------------- Per-osc scope analysers (lazy) ----------------
+    // Used only by the BLINK render modes (SCOPES TRIAL / REALITY BASED
+    // COMMUNITY) which draw each oscillator's live output as an
+    // oscilloscope trace. We tap each osc's panner output (post
+    // env+dist+pan) so the trace reflects exactly what that voice
+    // contributes to the mix — silent voices show a flat line, loud/near
+    // voices show a tall wave. Lazy: BLINK mode 0 (default) + the
+    // PROXIMITY/BIRDSEYE/SPECTROGRAPH video modes never pay the cost.
+    let scopeAnalysers: AnalyserNode[] | null = null;
+    let scopeBufs: Float32Array<ArrayBuffer>[] | null = null;
+    function ensureScopeAnalysers(): AnalyserNode[] {
+      if (scopeAnalysers) return scopeAnalysers;
+      const ans: AnalyserNode[] = [];
+      const bufs: Float32Array<ArrayBuffer>[] = [];
+      for (let i = 0; i < NUM_OSC; i++) {
+        const a = ctx.createAnalyser();
+        // 512-sample window: enough to show a couple of cycles of an
+        // audible-band tone without the trace turning to mush.
+        a.fftSize = 512;
+        a.smoothingTimeConstant = 0;
+        // Tap the per-osc panner (stereo) — env+dist+pan already applied.
+        oscChains[i]!.panner.connect(a);
+        ans.push(a);
+        bufs.push(new Float32Array(new ArrayBuffer(a.fftSize * 4)));
+      }
+      scopeAnalysers = ans;
+      scopeBufs = bufs;
+      return ans;
+    }
+
     function drawFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
       const fn = FRAME_DRAWERS.get(node.id);
       if (fn) {
@@ -1256,6 +1296,17 @@ export const wavesculptDef: AudioModuleDef = {
           a.getFloatFrequencyData(spectrumBuf!);
           return { bins: spectrumBuf!, sampleRate: ctx.sampleRate, fftSize: a.fftSize };
         }
+        if (key === 'scopes') {
+          // Per-osc time-domain (oscilloscope) traces. Lazy-init the
+          // analysers on first access so only the BLINK scope modes pay
+          // the cost. Returns 4 Float32Arrays of [-1..+1] samples (one per
+          // oscillator), each the latest fftSize-sample window of that
+          // voice's post-env/dist/pan output. The card draws these as
+          // scope traces emitted from the 4 floor corners.
+          const ans = ensureScopeAnalysers();
+          for (let i = 0; i < NUM_OSC; i++) ans[i]!.getFloatTimeDomainData(scopeBufs![i]!);
+          return { traces: scopeBufs!, length: ans[0]!.fftSize };
+        }
         return undefined;
       },
       dispose() {
@@ -1305,6 +1356,11 @@ export const wavesculptDef: AudioModuleDef = {
           try { spectrumAnalyser.disconnect(); } catch { /* */ }
           spectrumAnalyser = null;
           spectrumBuf = null;
+        }
+        if (scopeAnalysers) {
+          for (const a of scopeAnalysers) { try { a.disconnect(); } catch { /* */ } }
+          scopeAnalysers = null;
+          scopeBufs = null;
         }
       },
     };

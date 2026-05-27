@@ -449,6 +449,18 @@ describe('wavesculpt def: new ports + params landed', () => {
     expect(m.max).toBe(2);
     expect(m.curve).toBe('discrete');
   });
+
+  it('exposes blink_mode (discrete 0=current, 1=SCOPES TRIAL, 2=REALITY BASED COMMUNITY)', () => {
+    const m = wavesculptDef.params.find((p) => p.id === 'blink_mode')!;
+    expect(m, 'blink_mode exists').toBeDefined();
+    // Default = mode 0 (today's render), so existing patches are unchanged.
+    expect(m.defaultValue).toBe(0);
+    expect(m.min).toBe(0);
+    expect(m.max).toBe(2);
+    // Discrete so the BLINK button cycles cleanly through the 3 modes and
+    // the value persists/syncs like every other param.
+    expect(m.curve).toBe('discrete');
+  });
 });
 
 describe('shared wavetable engine import (DRY check)', () => {

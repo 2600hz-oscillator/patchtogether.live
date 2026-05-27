@@ -395,6 +395,23 @@
   // every frame to avoid GC churn (60fps × Float32→Uint8 conversion).
   const waveTexUploadBuf = new Uint8Array(WAVE_TEX_W * WAVE_TEX_H * 4);
 
+  // ---- BLINK scope modes (1 = SCOPES TRIAL, 2 = REALITY BASED COMMUNITY) ----
+  // A second strip program draws each oscillator's LIVE oscilloscope trace
+  // as a line/tube emitted from a floor corner up+inward at 45°. The live
+  // per-osc time-domain samples ride a scopeTex (SCOPE_TEX_W × 4 RGBA8,
+  // R = sample mapped [-1..1]→[0..1]), refreshed each frame from the audio
+  // module's read('scopes'). Lazily created on first BLINK-mode frame so
+  // BLINK mode 0 + the non-3D video modes pay nothing.
+  let scopeProgram: WebGLProgram | null = null;
+  let scopeVao: WebGLVertexArrayObject | null = null;
+  let scopeSamplesBuf: WebGLBuffer | null = null;
+  let scopeTex: WebGLTexture | null = null;
+  const SCOPE_TEX_W = 512;   // matches the audio module's scope fftSize
+  const SCOPE_TEX_H = 4;
+  const SCOPE_SEGMENTS = 128; // line resolution along each trace
+  const scopeTexUploadBuf = new Uint8Array(SCOPE_TEX_W * SCOPE_TEX_H * 4);
+  let scopeInitDone = false;
+
   const RIBBON_SEGMENTS = 64;
   const RES_W = 320;
   const RES_H = 240;
@@ -606,6 +623,109 @@ void main() {
   gl_Position = vec4(aPos, 0.0, 1.0);
 }`;
 
+  // ---- BLINK scope program (modes 1 + 2) ----
+  //
+  // Each oscillator's source ORIGINATES at one of the 4 floor corners of
+  // the unit cube and is aimed UP and INWARD at 45° (toward the box
+  // centre / ceiling). The live scope trace runs along that ray; the
+  // audio sample at parameter t displaces the trace perpendicular to the
+  // ray (in a horizontal-ish plane), and aSide extrudes the strip width
+  // for line thickness / tube radius. uWidth (the per-osc WIDTH control)
+  // scales BOTH the perpendicular displacement amplitude AND the strip
+  // half-width, so at max WIDTH the trace nearly fills the box.
+  //
+  // uMode: 1 = flat scope line, 2 = tube (the FS shades a radial neon
+  // gradient across aSide so a thickened strip reads as a glowing tube).
+  const SCOPE_VS = `#version 300 es
+in float aIdx;
+in float aSide;
+in float aOsc;
+
+uniform mat4  uMVP;
+uniform vec4  uCorner[4];  // floor-corner origin per osc (xyz)
+uniform vec4  uAim[4];     // up+inward 45° direction per osc (xyz, normalized)
+uniform float uWidth[4];   // 0..1 WIDTH control per osc
+uniform sampler2D uScopeTex;
+
+out float vT;
+out float vSide;
+flat out int vOsc;
+
+void main() {
+  int osc = int(aOsc);
+  vec3 origin = uCorner[osc].xyz;
+  vec3 aim = normalize(uAim[osc].xyz);
+  float t = aIdx / float(${SCOPE_SEGMENTS - 1}); // 0..1 along the ray
+
+  // Length of the ray: span most of the cube diagonal so a corner→centre
+  // ↑ trace reaches up toward the opposite top region.
+  vec3 along = origin + aim * (t * 2.6);
+
+  // Two perpendiculars to the aim direction: pDisp (displacement plane)
+  // and pWide (strip-width extrusion). Build an orthonormal-ish frame.
+  vec3 ref = abs(aim.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+  vec3 pDisp = normalize(cross(aim, ref));
+  vec3 pWide = normalize(cross(aim, pDisp));
+
+  // Live scope sample → [-1..+1]. Endpoint taper so the trace fades in/out
+  // at the corner + far end rather than ending in a hard spike.
+  float u = t;
+  float v = (float(osc) + 0.5) / 4.0;
+  float s = texture(uScopeTex, vec2(u, v)).r * 2.0 - 1.0;
+  float taper = smoothstep(0.0, 0.06, t) * smoothstep(1.0, 0.9, t);
+
+  float w = clamp(uWidth[osc], 0.0, 1.0);
+  // Displacement amplitude: scales with WIDTH so a fat scope sweeps wide.
+  float amp = 0.25 + w * 0.85;
+  // Strip half-width (line thickness / tube radius): grows with WIDTH so
+  // at max it nearly fills the box.
+  float halfW = 0.01 + w * 0.5;
+
+  float side = aSide * 2.0 - 1.0;
+  vec3 p = along + pDisp * (s * amp * taper) + pWide * (side * halfW);
+
+  gl_Position = uMVP * vec4(p, 1.0);
+  vT = t;
+  vSide = side;        // -1..+1 across the strip width
+  vOsc = osc;
+}`;
+
+  const SCOPE_FS = `#version 300 es
+precision highp float;
+in float vT;
+in float vSide;
+flat in int vOsc;
+out vec4 outColor;
+
+uniform vec4  uNeon[4];  // per-osc neon colour
+uniform float uMode;     // 1 = flat scope line, 2 = neon tube
+
+void main() {
+  vec3 base = uNeon[vOsc].rgb;
+  float edge = smoothstep(0.0, 0.12, vT) * smoothstep(1.0, 0.88, vT);
+
+  if (uMode > 1.5) {
+    // TUBE: radial neon gradient across the strip width — a hot white-ish
+    // core that bleeds to the saturated neon hue, falling off toward the
+    // silhouette edges (fakes a lit 3D tube).
+    float r = abs(vSide);              // 0 at centre, 1 at edge
+    float core = pow(1.0 - r, 1.6);    // hot core
+    float glow = (1.0 - r);
+    // White-hot specular core + saturated neon body + soft rim glow.
+    vec3 col = vec3(1.0) * core * core * 0.9 + base * (0.6 + 2.0 * core) + base * glow * 0.6;
+    float alpha = (0.35 + 0.65 * core) * (0.45 + 0.55 * edge);
+    outColor = vec4(col, alpha);
+  } else {
+    // FLAT SCOPE LINE: bright trace, slight cross-width falloff so the
+    // thickened line still reads as a line, not a flat ribbon.
+    float r = abs(vSide);
+    float lit = 1.0 - 0.6 * r;
+    vec3 col = base * (0.7 + 0.8 * lit);
+    float alpha = (0.4 + 0.5 * lit) * (0.4 + 0.6 * edge);
+    outColor = vec4(col, alpha);
+  }
+}`;
+
   function compileShader(g: WebGL2RenderingContext, type: number, src: string): WebGLShader {
     const s = g.createShader(type);
     if (!s) throw new Error('createShader failed');
@@ -687,6 +807,24 @@ void main() {
     return new Float32Array(verts);
   }
 
+  // Same TRIANGLE_STRIP layout as the ribbon geometry but at the scope
+  // line resolution. Each osc is a strip of SCOPE_SEGMENTS pairs joined by
+  // 2 degenerate verts (so the 4 traces stay one draw call).
+  function buildScopeGeometry(): Float32Array {
+    const verts: number[] = [];
+    for (let osc = 0; osc < 4; osc++) {
+      if (osc > 0) {
+        verts.push(SCOPE_SEGMENTS - 1, 1, osc - 1);
+        verts.push(0, 0, osc);
+      }
+      for (let i = 0; i < SCOPE_SEGMENTS; i++) {
+        verts.push(i, 0, osc);
+        verts.push(i, 1, osc);
+      }
+    }
+    return new Float32Array(verts);
+  }
+
   function mat4Multiply(out: Float32Array, a: Float32Array, b: Float32Array): void {
     for (let col = 0; col < 4; col++) {
       for (let row = 0; row < 4; row++) {
@@ -738,6 +876,84 @@ void main() {
     [0.30, 0.50, 1.0, 1.0],
     [0.85, 0.85, 0.85, 0.7],
   ];
+
+  // Neon palette for the BLINK scope modes — hot, saturated, additive-
+  // friendly colours that read as "neon" against black (hot pink, cyan,
+  // electric purple, acid green). Per-osc, RED/GRN/BLU/ALP order.
+  const NEON_COLORS: Array<[number, number, number, number]> = [
+    [1.0, 0.15, 0.55, 1.0], // hot pink
+    [0.15, 1.0, 0.85, 1.0], // cyan
+    [0.55, 0.25, 1.0, 1.0], // electric purple
+    [0.65, 1.0, 0.15, 1.0], // acid green
+  ];
+
+  // The four FLOOR CORNERS of the unit cube (y=-1), and a unit direction
+  // aimed UP and INWARD toward the centre at 45° from each. uCorner/uAim
+  // feed the scope vertex shader. Inward = toward the XZ origin; up = +Y;
+  // normalized so "45°" means equal up + inward components.
+  const SCOPE_CORNERS: Array<[number, number, number]> = [
+    [-1, -1, -1],
+    [ 1, -1, -1],
+    [ 1, -1,  1],
+    [-1, -1,  1],
+  ];
+  const SCOPE_AIMS: Array<[number, number, number]> = SCOPE_CORNERS.map(([x, y, z]) => {
+    // Horizontal inward = toward origin in XZ; vertical = up (+Y). Mix
+    // 50/50 then normalize → 45° between the floor plane and straight up.
+    const inwardX = -x, inwardZ = -z;
+    const ih = Math.hypot(inwardX, inwardZ) || 1;
+    const hx = inwardX / ih, hz = inwardZ / ih;
+    // up component = 1, horizontal magnitude = 1 → 45°.
+    const v: [number, number, number] = [hx, 1, hz];
+    const len = Math.hypot(v[0], v[1], v[2]) || 1;
+    return [v[0] / len, v[1] / len, v[2] / len];
+  });
+
+  /** Draw the BLINK scope traces (mode 1 = flat scope lines, mode 2 =
+   *  neon tubes) into the bound scene FBO. Reuses mvpMat (already set for
+   *  this frame). Additive + depth-disabled (order-independent glow), so
+   *  the four corner-emitted traces composite cleanly at any rotation. */
+  function drawScopes(g: WebGL2RenderingContext, mode: number): void {
+    if (!scopeProgram || !scopeVao) return;
+    uploadScopeTex();
+    g.useProgram(scopeProgram);
+
+    const cornerArr = new Float32Array(16);
+    const aimArr = new Float32Array(16);
+    const neonArr = new Float32Array(16);
+    const widthArr = new Float32Array(4);
+    for (let i = 0; i < 4; i++) {
+      const c = SCOPE_CORNERS[i]!, a = SCOPE_AIMS[i]!, n = NEON_COLORS[i]!;
+      cornerArr[i * 4] = c[0]; cornerArr[i * 4 + 1] = c[1]; cornerArr[i * 4 + 2] = c[2];
+      aimArr[i * 4] = a[0]; aimArr[i * 4 + 1] = a[1]; aimArr[i * 4 + 2] = a[2];
+      neonArr[i * 4] = n[0]; neonArr[i * 4 + 1] = n[1]; neonArr[i * 4 + 2] = n[2]; neonArr[i * 4 + 3] = n[3];
+      // WIDTH = the per-osc THICK control. Scope-line thickness (mode 1) /
+      // tube radius (mode 2). Max → trace nearly fills the box.
+      widthArr[i] = (node?.params?.[`thickness${i + 1}`] as number | undefined) ?? 0.3;
+    }
+    g.uniformMatrix4fv(g.getUniformLocation(scopeProgram, 'uMVP'), false, mvpMat);
+    g.uniform4fv(g.getUniformLocation(scopeProgram, 'uCorner[0]'), cornerArr);
+    g.uniform4fv(g.getUniformLocation(scopeProgram, 'uAim[0]'), aimArr);
+    g.uniform4fv(g.getUniformLocation(scopeProgram, 'uNeon[0]'), neonArr);
+    g.uniform1fv(g.getUniformLocation(scopeProgram, 'uWidth[0]'), widthArr);
+    g.uniform1f(g.getUniformLocation(scopeProgram, 'uMode'), mode);
+    g.activeTexture(g.TEXTURE0);
+    g.bindTexture(g.TEXTURE_2D, scopeTex);
+    g.uniform1i(g.getUniformLocation(scopeProgram, 'uScopeTex'), 0);
+
+    const scopeVerts = 4 * (2 * SCOPE_SEGMENTS) + 3 * 2;
+    // Additive, depth-disabled: the four neon traces are translucent glow
+    // and must show through one another regardless of camera angle.
+    g.disable(g.DEPTH_TEST);
+    g.depthMask(false);
+    g.colorMask(true, true, true, true);
+    g.enable(g.BLEND);
+    g.blendFunc(g.SRC_ALPHA, g.ONE);
+    g.bindVertexArray(scopeVao);
+    g.drawArrays(g.TRIANGLE_STRIP, 0, scopeVerts);
+    g.bindVertexArray(null);
+    g.disable(g.BLEND);
+  }
 
   let renderStartMs = 0;
 
@@ -872,6 +1088,82 @@ void main() {
       gl.RGBA, gl.UNSIGNED_BYTE,
       buf,
     );
+  }
+
+  // Lazily build the BLINK scope program + geometry + texture the first
+  // time a BLINK scope mode renders. Keeps BLINK mode 0 (default) + the
+  // non-3D video modes free of the extra GL objects. Returns false if the
+  // program can't be built (then the caller falls back to the ribbon).
+  function ensureScopeGl(): boolean {
+    if (!gl) return false;
+    if (scopeInitDone) return scopeProgram !== null;
+    scopeInitDone = true;
+    try {
+      scopeProgram = linkProgram(gl, SCOPE_VS, SCOPE_FS);
+    } catch (err) {
+      console.error('[WAVESCULPT] scope shader setup failed:', err);
+      scopeProgram = null;
+      return false;
+    }
+    const geom = buildScopeGeometry();
+    scopeVao = gl.createVertexArray();
+    gl.bindVertexArray(scopeVao);
+    scopeSamplesBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, scopeSamplesBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, geom, gl.STATIC_DRAW);
+    const aIdxLoc = gl.getAttribLocation(scopeProgram, 'aIdx');
+    const aSideLoc = gl.getAttribLocation(scopeProgram, 'aSide');
+    const aOscLoc = gl.getAttribLocation(scopeProgram, 'aOsc');
+    const stride = 3 * 4;
+    if (aIdxLoc >= 0) { gl.enableVertexAttribArray(aIdxLoc); gl.vertexAttribPointer(aIdxLoc, 1, gl.FLOAT, false, stride, 0); }
+    if (aSideLoc >= 0) { gl.enableVertexAttribArray(aSideLoc); gl.vertexAttribPointer(aSideLoc, 1, gl.FLOAT, false, stride, 4); }
+    if (aOscLoc >= 0) { gl.enableVertexAttribArray(aOscLoc); gl.vertexAttribPointer(aOscLoc, 1, gl.FLOAT, false, stride, 8); }
+    gl.bindVertexArray(null);
+
+    scopeTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, scopeTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, SCOPE_TEX_W, SCOPE_TEX_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return true;
+  }
+
+  // Refresh scopeTex from the audio module's live per-osc time-domain
+  // traces (read('scopes')). R channel holds the sample mapped [-1..1]→
+  // [0..255]; the scope VS decodes it back. Falls back to a flat mid-line
+  // (silence) when the engine isn't ready.
+  function uploadScopeTex(): void {
+    if (!gl || !scopeTex) return;
+    const buf = scopeTexUploadBuf;
+    const e = engineCtx.get();
+    let traces: Float32Array[] | undefined;
+    let traceLen = 0;
+    if (e && node) {
+      try {
+        const s = e.read(node, 'scopes') as { traces: Float32Array[]; length: number } | undefined;
+        if (s) { traces = s.traces; traceLen = s.length; }
+      } catch { /* engine not ready */ }
+    }
+    for (let osc = 0; osc < 4; osc++) {
+      const tr = traces?.[osc];
+      const rowOffset = osc * SCOPE_TEX_W * 4;
+      for (let i = 0; i < SCOPE_TEX_W; i++) {
+        let s = 0;
+        if (tr && traceLen > 0) {
+          // Map the texture column to the trace window.
+          const srcIdx = Math.min(traceLen - 1, Math.round((i / (SCOPE_TEX_W - 1)) * (traceLen - 1)));
+          s = tr[srcIdx] ?? 0;
+        }
+        const v = Math.max(0, Math.min(255, Math.round((s + 1) * 127.5)));
+        const o = rowOffset + i * 4;
+        buf[o] = v; buf[o + 1] = v; buf[o + 2] = v; buf[o + 3] = 255;
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, scopeTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, SCOPE_TEX_W, SCOPE_TEX_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, buf);
   }
 
   function initGl(): boolean {
@@ -1009,7 +1301,16 @@ void main() {
       if (alphaInTex) gl.deleteTexture(alphaInTex);
       if (waveTex) gl.deleteTexture(waveTex);
       if (ribbonSamplesBuf) gl.deleteBuffer(ribbonSamplesBuf);
+      if (scopeProgram) gl.deleteProgram(scopeProgram);
+      if (scopeVao) gl.deleteVertexArray(scopeVao);
+      if (scopeSamplesBuf) gl.deleteBuffer(scopeSamplesBuf);
+      if (scopeTex) gl.deleteTexture(scopeTex);
     } catch { /* */ }
+    scopeProgram = null;
+    scopeVao = null;
+    scopeSamplesBuf = null;
+    scopeTex = null;
+    scopeInitDone = false;
     gl = null;
     renderCanvas = null;
   }
@@ -1151,46 +1452,65 @@ void main() {
 
     const ribbonVerts = 4 * (2 * RIBBON_SEGMENTS) + 3 * 2;
 
-    // Scene pass — additive translucent ribbons.
-    //
-    // BUGFIX (alpha-rotate): previously this pass primed the depth buffer
-    // with an opaque DEPTH-ONLY pre-pass over ALL four ribbons (LESS,
-    // depthMask on), then drew the additive colour pass with LEQUAL. That
-    // made the ribbons MUTUALLY OCCLUDE: whichever ribbon was nearest the
-    // camera wrote depth that depth-rejected the ribbons behind it. At
-    // rot=0 the ALPHA emitter (-Z wall) sits nearest the camera so it
-    // survived — but ANY rotation brought an RGB ribbon in front, whose
-    // primed depth then culled the ALPHA ribbon's fragments → the ALPHA
-    // layer vanished the instant the view rotated.
-    //
-    // Additive blending (SRC_ALPHA, ONE) is order-independent and the
-    // ribbons are translucent energy traces that are MEANT to show
-    // through one another — so there should be no inter-ribbon depth
-    // occlusion at all. Drop the depth pre-pass and draw the additive
-    // ribbons with the depth test disabled. Every ribbon now composites
-    // regardless of camera angle, matching the RGB layers' behaviour.
-    g.disable(g.DEPTH_TEST);
-    g.depthMask(false);
-    g.colorMask(true, true, true, true);
-    g.enable(g.BLEND);
-    g.blendFunc(g.SRC_ALPHA, g.ONE);
-    g.bindVertexArray(ribbonVao);
-    g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
-    g.bindVertexArray(null);
+    // BLINK mode: 0 = wavetable ribbons, 1 = SCOPES TRIAL (thin scope
+    // lines), 2 = REALITY BASED COMMUNITY (real 3D neon tubes). Modes 1/2
+    // replace the ribbon visual with the per-osc oscilloscope traces; the
+    // BENT post + alpha-mask passes are shared.
+    const blinkMode = Math.round((node?.params?.blink_mode as number | undefined) ?? 0);
 
-    // 1c) ALPHA-mask pass (osc 3 only → red mask).
+    if (blinkMode > 0 && ensureScopeGl() && scopeProgram) {
+      drawScopes(g, blinkMode);
+    } else {
+      // Scene pass — additive translucent ribbons.
+      //
+      // BUGFIX (alpha-rotate, #361): this pass previously primed the depth
+      // buffer with an opaque DEPTH-ONLY pre-pass over ALL four ribbons
+      // (LESS, depthMask on), then drew the additive colour pass with
+      // LEQUAL. That made the ribbons MUTUALLY OCCLUDE: whichever ribbon
+      // was nearest the camera wrote depth that depth-rejected the ribbons
+      // behind it. At rot=0 the ALPHA emitter (-Z wall) sits nearest the
+      // camera so it survived — but ANY rotation brought an RGB ribbon in
+      // front, whose primed depth then culled the ALPHA ribbon → the ALPHA
+      // layer vanished the instant the view rotated.
+      //
+      // Additive blending (SRC_ALPHA, ONE) is order-independent and the
+      // ribbons are translucent energy traces MEANT to show through one
+      // another — so there should be no inter-ribbon depth occlusion.
+      // Drop the depth pre-pass and draw the additive ribbons with the
+      // depth test disabled. Every ribbon composites regardless of camera
+      // angle.
+      g.disable(g.DEPTH_TEST);
+      g.depthMask(false);
+      g.colorMask(true, true, true, true);
+      g.enable(g.BLEND);
+      g.blendFunc(g.SRC_ALPHA, g.ONE);
+      g.bindVertexArray(ribbonVao);
+      g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
+      g.bindVertexArray(null);
+    }
+
+    // 1c) ALPHA-mask pass (osc 3 only → red mask). Re-bind the ribbon
+    // program + its waveTex on TEXTURE0 (drawScopes may have switched the
+    // active program + texture when a BLINK scope mode is active).
     //
-    // BUGFIX (alpha-rotate): this pass must draw ONLY the ALPHA ribbon
-    // (osc 3) AND it must not be depth-occluded by anything. Previously it
-    // drew all four ribbons (drawArrays 0..ribbonVerts) with a depth
-    // pre-pass, so under camera rotation an RGB ribbon in front wrote
-    // depth that culled the ALPHA fragments → the red mask was never
-    // written → the composited alpha_in image vanished off-axis (it only
-    // survived at rot=0 where the ALPHA emitter on the -Z wall is
-    // unoccluded). We now draw ONLY osc 3's sub-strip with the depth test
-    // disabled, so the mask is written at any camera angle. ribbonStripRange
-    // (exported from wavesculpt.ts — single source of truth) returns the
-    // {start,count} covering osc 3's real verts within the strip.
+    // BUGFIX (alpha-rotate, #361): this pass must draw ONLY the ALPHA
+    // ribbon (osc 3) AND must not be depth-occluded. Previously it drew all
+    // four ribbons with a depth pre-pass, so under rotation an RGB ribbon
+    // in front culled the ALPHA fragments → the red mask was never written
+    // → the composited alpha_in image vanished off-axis. We now draw ONLY
+    // osc 3's sub-strip with the depth test disabled, so the mask is
+    // written at any camera angle. ribbonStripRange (exported from
+    // wavesculpt.ts — single source of truth) returns the {start,count}
+    // covering osc 3's real verts within the strip.
+    //
+    // NOTE the ALPHA mask always uses the RIBBON geometry (not the scope
+    // geometry), so the alpha_in composite stays consistent across all
+    // BLINK modes — the BLINK render is purely cosmetic for the visible
+    // RGB layers; the ALPHA mask region is driven by osc 3's ribbon.
+    g.useProgram(ribbonProgram);
+    g.activeTexture(g.TEXTURE0);
+    g.bindTexture(g.TEXTURE_2D, waveTex);
+    if (uWaveTexLoc) g.uniform1i(uWaveTexLoc, 0);
     g.bindFramebuffer(g.FRAMEBUFFER, alphaMaskFbo);
     g.viewport(0, 0, RES_W, RES_H);
     g.clearColor(0, 0, 0, 1);
@@ -1326,6 +1646,15 @@ void main() {
   // the discrete video_mode param; the on-card View toggle button
   // cycles through all three options.
   let video_mode = $derived(pget('video_mode'));
+
+  // BLINK render mode (within the 3D PROXIMITY view): 0 = (current)
+  // wavetable ribbons, 1 = SCOPES TRIAL (live oscilloscope traces from
+  // the 4 floor corners), 2 = REALITY BASED COMMUNITY (neon 3D tubes).
+  // Persisted + multiplayer-synced via the discrete blink_mode param; the
+  // on-card BLINK button cycles 0→1→2→0.
+  let blink_mode = $derived(Math.round(pget('blink_mode')));
+  const BLINK_MODE_NAMES = ['', 'SCOPES TRIAL', 'REALITY BASED COMMUNITY'];
+  let blinkModeName = $derived(BLINK_MODE_NAMES[blink_mode] ?? '');
 
   // ---- SPECTROGRAPH state ----
   // Circular column buffer of dB magnitude values. SPEC_W columns of
@@ -1933,6 +2262,24 @@ void main() {
             title="View mode: PROXIMITY (3D ribbons) / BIRDSEYE (top-down floorplan) / SPECTROGRAPH (scrolling STFT)"
             onclick={() => set('video_mode')((Math.round(video_mode) + 1) % 3)}
           >{Math.round(video_mode) === 0 ? '3D' : Math.round(video_mode) === 1 ? 'BIRDSEYE' : 'SPECTRO'}</button>
+          <!-- BLINK cycles three render modes inside the 3D view:
+               0 = (current) wavetable ribbons,
+               1 = SCOPES TRIAL — live oscilloscope traces from the 4
+                   floor corners aimed up+inward at 45°; WIDTH thickens
+                   the scope line,
+               2 = REALITY BASED COMMUNITY — same, as 3D neon tubes;
+                   WIDTH sets the tube radius. -->
+          <button
+            type="button"
+            class="unison-toggle blink-toggle"
+            class:on={blink_mode !== 0}
+            data-testid="wavesculpt-blink-toggle"
+            title="BLINK render mode: current ribbons / SCOPES TRIAL / REALITY BASED COMMUNITY"
+            onclick={() => set('blink_mode')((blink_mode + 1) % 3)}
+          >BLINK</button>
+          {#if blink_mode !== 0}
+            <div class="blink-mode-name" data-testid="wavesculpt-blink-mode-name">{blinkModeName}</div>
+          {/if}
           <button
             type="button"
             class="unison-toggle"
@@ -2239,6 +2586,17 @@ void main() {
     background: var(--accent, #6cf);
     color: #000;
     border-color: var(--accent, #6cf);
+  }
+  /* Active BLINK render-mode name, shown under the BLINK button. */
+  .blink-mode-name {
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.1;
+    color: var(--accent, #6cf);
+    text-align: center;
+    max-width: 80px;
+    word-break: break-word;
   }
   /* Chord-quality segment: two adjacent buttons, the active one inherits
      the .unison-toggle.on accent. */
