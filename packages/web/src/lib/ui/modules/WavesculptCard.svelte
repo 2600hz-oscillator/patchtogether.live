@@ -46,6 +46,7 @@
     installWavesculptFrameDrawer,
     uninstallWavesculptFrameDrawer,
     getWavesculptFrames,
+    ribbonStripRange,
     voctToHz,
     detuneOctaveOffset,
     type WavesculptData,
@@ -739,6 +740,22 @@ void main() {
   ];
 
   let renderStartMs = 0;
+
+  // ---- VRT determinism hook ----
+  // The live render is time-driven (wavePhase scroll, uTime noise/scan,
+  // CRT field-parity, bolt phase), which is why WAVESCULPT was VRT-exempt.
+  // When the test harness sets globalThis.__wavesculptVrtFreeze = true we
+  // pin every time-derived input to a FIXED value so a single-frame
+  // screenshot is reproducible across runs/rAFs. No effect in production
+  // (flag is never set). The fixed phase is deliberately non-zero so the
+  // ribbon shows real wave displacement (not a flat line) in the baseline.
+  function vrtFrozen(): boolean {
+    return (globalThis as unknown as { __wavesculptVrtFreeze?: boolean })
+      .__wavesculptVrtFreeze === true;
+  }
+  const VRT_FIXED_TSEC = 2.0;       // pinned uTime
+  const VRT_FIXED_WAVE_PHASE = 0.0; // pinned per-osc wavetable scroll
+
   // Per-osc wavetable scroll phase (units: wavetable cycles). Advances
   // each frame by the osc's playback frequency × dt × WAVE_PHASE_GAIN —
   // visually the wave "travels" from the source wall outward through the
@@ -1079,7 +1096,9 @@ void main() {
       // only feed the fractional component to the shader so the UV
       // shift never grows unbounded over long sessions.
       const cyclesPerSec = Math.sqrt(Math.max(0, hz)) * WAVE_PHASE_GAIN;
-      wavePhase[i] = (wavePhase[i]! + cyclesPerSec * dt) % 1.0;
+      wavePhase[i] = vrtFrozen()
+        ? VRT_FIXED_WAVE_PHASE
+        : (wavePhase[i]! + cyclesPerSec * dt) % 1.0;
     }
 
     const srcArr = new Float32Array(16);
@@ -1132,18 +1151,27 @@ void main() {
 
     const ribbonVerts = 4 * (2 * RIBBON_SEGMENTS) + 3 * 2;
 
-    g.disable(g.BLEND);
-    g.colorMask(false, false, false, false);
-    g.enable(g.DEPTH_TEST);
-    g.depthFunc(g.LESS);
-    g.depthMask(true);
-    g.bindVertexArray(ribbonVao);
-    g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
-    g.bindVertexArray(null);
-
-    g.colorMask(true, true, true, true);
-    g.depthFunc(g.LEQUAL);
+    // Scene pass — additive translucent ribbons.
+    //
+    // BUGFIX (alpha-rotate): previously this pass primed the depth buffer
+    // with an opaque DEPTH-ONLY pre-pass over ALL four ribbons (LESS,
+    // depthMask on), then drew the additive colour pass with LEQUAL. That
+    // made the ribbons MUTUALLY OCCLUDE: whichever ribbon was nearest the
+    // camera wrote depth that depth-rejected the ribbons behind it. At
+    // rot=0 the ALPHA emitter (-Z wall) sits nearest the camera so it
+    // survived — but ANY rotation brought an RGB ribbon in front, whose
+    // primed depth then culled the ALPHA ribbon's fragments → the ALPHA
+    // layer vanished the instant the view rotated.
+    //
+    // Additive blending (SRC_ALPHA, ONE) is order-independent and the
+    // ribbons are translucent energy traces that are MEANT to show
+    // through one another — so there should be no inter-ribbon depth
+    // occlusion at all. Drop the depth pre-pass and draw the additive
+    // ribbons with the depth test disabled. Every ribbon now composites
+    // regardless of camera angle, matching the RGB layers' behaviour.
+    g.disable(g.DEPTH_TEST);
     g.depthMask(false);
+    g.colorMask(true, true, true, true);
     g.enable(g.BLEND);
     g.blendFunc(g.SRC_ALPHA, g.ONE);
     g.bindVertexArray(ribbonVao);
@@ -1151,6 +1179,18 @@ void main() {
     g.bindVertexArray(null);
 
     // 1c) ALPHA-mask pass (osc 3 only → red mask).
+    //
+    // BUGFIX (alpha-rotate): this pass must draw ONLY the ALPHA ribbon
+    // (osc 3) AND it must not be depth-occluded by anything. Previously it
+    // drew all four ribbons (drawArrays 0..ribbonVerts) with a depth
+    // pre-pass, so under camera rotation an RGB ribbon in front wrote
+    // depth that culled the ALPHA fragments → the red mask was never
+    // written → the composited alpha_in image vanished off-axis (it only
+    // survived at rot=0 where the ALPHA emitter on the -Z wall is
+    // unoccluded). We now draw ONLY osc 3's sub-strip with the depth test
+    // disabled, so the mask is written at any camera angle. ribbonStripRange
+    // (exported from wavesculpt.ts — single source of truth) returns the
+    // {start,count} covering osc 3's real verts within the strip.
     g.bindFramebuffer(g.FRAMEBUFFER, alphaMaskFbo);
     g.viewport(0, 0, RES_W, RES_H);
     g.clearColor(0, 0, 0, 1);
@@ -1164,21 +1204,14 @@ void main() {
     if (uColLoc) g.uniform4fv(uColLoc, maskColArr);
     const zeros4 = new Float32Array(4);
     if (uBoltLoc) g.uniform1fv(uBoltLoc, zeros4);
-    g.disable(g.BLEND);
-    g.colorMask(false, false, false, false);
-    g.enable(g.DEPTH_TEST);
-    g.depthFunc(g.LESS);
-    g.depthMask(true);
-    g.bindVertexArray(ribbonVao);
-    g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
-    g.bindVertexArray(null);
-    g.colorMask(true, true, true, true);
-    g.depthFunc(g.LEQUAL);
+    const { start: alphaStripStart, count: alphaStripCount } = ribbonStripRange(3, RIBBON_SEGMENTS);
+    g.disable(g.DEPTH_TEST);
     g.depthMask(false);
+    g.colorMask(true, true, true, true);
     g.enable(g.BLEND);
     g.blendFunc(g.SRC_ALPHA, g.ONE);
     g.bindVertexArray(ribbonVao);
-    g.drawArrays(g.TRIANGLE_STRIP, 0, ribbonVerts);
+    g.drawArrays(g.TRIANGLE_STRIP, alphaStripStart, alphaStripCount);
     g.bindVertexArray(null);
     g.disable(g.BLEND);
     g.disable(g.DEPTH_TEST);
@@ -1211,9 +1244,9 @@ void main() {
       const ab = node?.params?.alpha_brightness as number | undefined;
       g.uniform1f(uAlphaBrightnessLoc, Math.max(0, Math.min(2, ab ?? 1)));
     }
-    const tSec = (performance.now() - renderStartMs) / 1000;
+    const tSec = vrtFrozen() ? VRT_FIXED_TSEC : (performance.now() - renderStartMs) / 1000;
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uTime'), tSec);
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uFieldParity'), (frameCount & 1) ? 1 : 0);
+    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uFieldParity'), vrtFrozen() ? 0 : ((frameCount & 1) ? 1 : 0));
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
     const clampSym = (v: number) => Math.max(-1, Math.min(1, v));
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uHsyncDrift'),        clamp01(node?.params?.hsync_drift as number ?? 0));

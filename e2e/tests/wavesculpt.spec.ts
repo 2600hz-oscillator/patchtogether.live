@@ -198,6 +198,91 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       .toBe(true);
   });
 
+  test('ALPHA layer (osc 3) stays visible under camera rotation — alpha-rotate bugfix', async ({ page }) => {
+    // Regression for the alpha-rotate bug: the ALPHA ribbon (osc 3) used
+    // to vanish the instant the camera rotated off-axis. Root cause: the
+    // scene + alpha-mask passes primed the depth buffer with ALL FOUR
+    // ribbons, so any RGB ribbon in FRONT of the ALPHA ribbon depth-culled
+    // it. At rot=0 the ALPHA emitter (-Z wall) is nearest the camera so it
+    // survived; ANY rotation brought an RGB ribbon forward and the ALPHA
+    // layer disappeared. Fix: additive ribbons are order-independent, so
+    // we dropped the inter-ribbon depth occlusion entirely.
+    //
+    // This test ISOLATES the ALPHA ribbon (thick/wide osc 3, thin RGB)
+    // and rotates the camera to ~72° (rot=0.4). With the bug the ALPHA
+    // region would be black; with the fix it renders. We count non-black
+    // pixels and require a substantial population (not a stray AA pixel).
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // SHAPES → alpha_in supplies the ALPHA composite image (a bright
+    // near-white shape). The BENT post-pass paints that image ONLY where
+    // the ALPHA mask (osc 3) is non-zero. Counting near-WHITE pixels (all
+    // channels bright + balanced) isolates the ALPHA composite — the RGB
+    // ribbons are saturated single-channel colours and never read white.
+    // All four ribbons are fat so the RGB ribbons are genuine depth
+    // OCCLUDERS: pre-fix, the scene + mask passes primed depth with all
+    // four ribbons, so an RGB ribbon in front depth-culled the ALPHA mask
+    // under rotation → the composite collapsed. We keep zoom=1.0 + a small
+    // rotation (rot=0.2) so the ALPHA ribbon stays centred (alpha_in is
+    // sampled in screen space) — isolating the depth-occlusion regression
+    // rather than mere projection. Empirically: fixed ≈25k white pixels at
+    // rot=0.2, the buggy depth-prime ≈9.5k.
+    const spawnAt = async (rot: number): Promise<void> => {
+      await spawnPatch(page, [
+        { id: 'src', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video' },
+        {
+          id: 'ws', type: 'wavesculpt', position: { x: 400, y: 100 }, domain: 'audio',
+          params: {
+            rot, zoom: 1.0,
+            thickness1: 0.8, thickness2: 0.8, thickness3: 0.8, thickness4: 0.9,
+            alpha_brightness: 2, noise: 0,
+          },
+        },
+      ], [
+        { id: 'e_alpha', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: 'alpha_in' }, sourceType: 'video', targetType: 'video' },
+      ]);
+      await page.evaluate(() => { (globalThis as unknown as { __wavesculptVrtFreeze?: boolean }).__wavesculptVrtFreeze = true; });
+    };
+
+    const countAlphaWhite = (): Promise<number> =>
+      page.evaluate(() => {
+        const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+        if (!c) return 0;
+        const ctx = c.getContext('2d');
+        if (!ctx) return 0;
+        const data = ctx.getImageData(0, 0, c.width, c.height).data;
+        let white = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] ?? 0, g = data[i + 1] ?? 0, b = data[i + 2] ?? 0;
+          if (r > 110 && g > 110 && b > 110) white++;
+        }
+        return white;
+      });
+
+    // Baseline: head-on (rot=0) the ALPHA composite is clearly visible
+    // (this worked even pre-fix).
+    await spawnAt(0);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+    let headOnWhite = 0;
+    await expect.poll(async () => (headOnWhite = await countAlphaWhite()), {
+      message: 'ALPHA composite never rendered head-on',
+      timeout: 4_000,
+      intervals: [150, 300, 500],
+    }).toBeGreaterThan(2000);
+
+    // Rotated: pre-fix the ALPHA mask was depth-culled by the (thick) RGB
+    // ribbons in front, collapsing the composite (~38% of head-on). Post-
+    // fix the ALPHA layer composites at any angle (~85% of head-on). The
+    // 0.6 threshold sits cleanly between the two regimes.
+    await spawnAt(0.2);
+    await expect.poll(async () => countAlphaWhite(), {
+      message: 'ALPHA composite collapsed under rotation (alpha-rotate regression)',
+      timeout: 4_000,
+      intervals: [150, 300, 500],
+    }).toBeGreaterThan(headOnWhite * 0.6);
+  });
+
   test('changing osc1 morph changes the rendered ribbon shape', async ({ page }) => {
     // NEW v2 contract: the ribbon vertex shader samples the live
     // wavetable frame texture. Different morph positions point at
