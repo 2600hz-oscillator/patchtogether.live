@@ -85,7 +85,12 @@
     type GameStartEnvelope,
     type TiccmdEnvelope,
   } from '$lib/doom/doom-netcode';
-  import { LockstepTransport, DEFAULT_INPUT_DELAY_TICS } from '$lib/doom/doom-lockstep';
+  import {
+    LockstepTransport,
+    DEFAULT_INPUT_DELAY_TICS,
+    consolidatedTicFieldFor,
+    computeBarrierFloor,
+  } from '$lib/doom/doom-lockstep';
   import {
     slotColorCss,
     slotLabel,
@@ -159,6 +164,14 @@
   let lockstepNextTic = 0;
   // Highest local tic we've appended to the shared log (gap-free append cursor).
   let lockstepAppendedThru = -1;
+  // Launch generation of the active lockstep game (== launchId). Namespaces the
+  // shared log + the per-peer consolidated-tic awareness floor field so a
+  // relaunch starts fresh (issue #348).
+  let lockstepGeneration = 0;
+  // Throttle the barrier-floor prune so we delete a stale prefix ~1–2×/sec, not
+  // every rAF (deleting an empty prefix is a no-op, but recomputing the floor +
+  // scanning the log each frame is wasted work). Wall-clock millis of last prune.
+  let lockstepLastPruneMs = 0;
   // ---- Slice 4: New Game dialog + Launch state ----
   //
   // The arbiter (rack host = lex-min member = player 0) picks mode/skill/
@@ -454,6 +467,7 @@
       extras.setInputDelay(0);
       lockstep = null;
       lockstepActive = false;
+      clearConsolidatedTicAwareness(lockstepGeneration);
       return;
     }
     extras.setLockstep(true);
@@ -464,10 +478,15 @@
     // numbers + identical consolidated TicSet per tic). Trade-off: the marine
     // responds D tics (~171ms) later — normal netplay latency.
     extras.setInputDelay(DEFAULT_INPUT_DELAY_TICS);
+    // A relaunch uses a fresh generation; clear our stale floor field from the
+    // PREVIOUS generation so it can't linger in awareness (issue #348).
+    if (generation !== lockstepGeneration) clearConsolidatedTicAwareness(lockstepGeneration);
     lockstep = new LockstepTransport({ doc: ydoc, moduleId: id, slot, numPlayers, generation });
     lockstepActive = true;
     lockstepNextTic = 0;
     lockstepAppendedThru = -1;
+    lockstepGeneration = generation;
+    lockstepLastPruneMs = 0;
   }
 
   /** Render-loop hook: if a launch is pending (runtime wasn't ready when the
@@ -570,10 +589,81 @@
       extras.receiveTicSet(tic, numPlayers, set);
     });
 
-    // (3) Arbiter prunes consumed entries so the log never grows unbounded.
+    // (3) Publish OUR highest-consolidated tic (engine recvtic) so the arbiter
+    // can compute the barrier floor across all live peers (issue #348). recvtic
+    // is the last tic we have a complete TicSet for + have advanced past, so
+    // everything below it is consumed on our side.
+    publishConsolidatedTic(extras.getRecvtic());
+
+    // (4) Arbiter prunes consumed entries below the BARRIER FLOOR so the log
+    // never grows unbounded → relay OOM. The floor = min(consolidated tic) over
+    // ALL live peers, computed from the published awareness values: it never
+    // drops a tic any live peer still needs (a slow/reconnecting peer holds the
+    // floor back; a hopelessly-wedged peer trips the transport's hard cap +
+    // must resync via synchronized restart). Throttled to ~2/sec — pruning a
+    // consumed prefix doesn't change what any peer simulates (determinism kept).
     if (isNetArbiter) {
-      lockstep.pruneBelow(extras.getGametic());
+      const now = Date.now();
+      if (now - lockstepLastPruneMs >= LOCKSTEP_PRUNE_INTERVAL_MS) {
+        lockstepLastPruneMs = now;
+        const floor = readBarrierFloor();
+        lockstep.pruneBelowFloor(floor);
+      }
     }
+  }
+
+  /** Min interval between barrier-floor prunes (issue #348). ~2/sec keeps the
+   *  log bounded without rescanning it every rAF. */
+  const LOCKSTEP_PRUNE_INTERVAL_MS = 500;
+
+  /** Publish THIS peer's highest-consolidated tic (recvtic) onto its awareness
+   *  state, keyed by module + launch generation. Idempotent-cheap: skips the
+   *  write when the value is unchanged so an idle/paused peer doesn't churn
+   *  awareness. Read by the arbiter via readBarrierFloor (issue #348). */
+  let lastPublishedConsolidatedTic = -1;
+  function publishConsolidatedTic(recvtic: number): void {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return;
+    if (recvtic === lastPublishedConsolidatedTic) return;
+    lastPublishedConsolidatedTic = recvtic;
+    aw.setLocalStateField(consolidatedTicFieldFor(id, lockstepGeneration), { slot: mySlot, t: recvtic });
+  }
+
+  /** Clear our published consolidated-tic field for `generation` (on relaunch /
+   *  disarm) so a stale value can't drag a future floor to 0 (issue #348). */
+  function clearConsolidatedTicAwareness(generation: number): void {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return;
+    aw.setLocalStateField(consolidatedTicFieldFor(id, generation), null);
+    lastPublishedConsolidatedTic = -1;
+  }
+
+  /** Read every live peer's published consolidated tic from awareness and
+   *  compute the BARRIER FLOOR = min across all live slots (issue #348). A live
+   *  roster slot with no published value forces the floor to 0 (no prune) — the
+   *  conservative safety rule (never drop a tic a live peer might still need). */
+  function readBarrierFloor(): number {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return 0;
+    const numPlayers = Math.max(1, rosterSize(roster));
+    const field = consolidatedTicFieldFor(id, lockstepGeneration);
+    const bySlot: (number | undefined)[] = new Array(numPlayers).fill(undefined);
+    for (const [, state] of aw.getStates()) {
+      const v = (state as Record<string, unknown>)?.[field] as
+        | { slot?: number | null; t?: number }
+        | null
+        | undefined;
+      if (!v || typeof v.t !== 'number') continue;
+      const s = v.slot;
+      if (typeof s !== 'number' || s < 0 || s >= numPlayers) continue;
+      // Lowest report wins per slot if a slot somehow reports twice (shouldn't);
+      // conservative for the floor.
+      if (bySlot[s] === undefined || v.t < (bySlot[s] as number)) bySlot[s] = v.t;
+    }
+    return computeBarrierFloor(bySlot, numPlayers);
   }
 
   /** Local user id used for host election. Resolved lazily from the
@@ -1021,6 +1111,9 @@
     lockstepActive = false;
     lockstepNextTic = 0;
     lockstepAppendedThru = -1;
+    // Drop our consolidated-tic floor field so we don't pin a future floor at a
+    // stale value after we've left the game (issue #348).
+    clearConsolidatedTicAwareness(lockstepGeneration);
   }
 
   // Arbiter-side roster cleanup: when a player closes their tab they drop
