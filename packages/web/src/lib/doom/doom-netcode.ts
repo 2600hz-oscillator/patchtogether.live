@@ -48,6 +48,7 @@
 
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import { decideHostRole } from './doom-host-authority';
+import { electionAwarenessSignature } from './doom-awareness-signature';
 
 // ────────────────────────────────────────────────────────────────────────
 //  Constants
@@ -364,6 +365,12 @@ export class DoomNetcode {
   private arbiterUserId: string | null = null;
   private started = false;
 
+  /** Last election-relevant awareness signature we recomputed membership for.
+   *  The per-tic ticcmd storm leaves this UNCHANGED, so recomputeMembership()
+   *  (peer-id map + arbiter election + WebRTC reconcile) is skipped — only the
+   *  cheap inbound drains run per tic. Null forces a recompute on first update. */
+  private lastMembershipSig: string | null = null;
+
   private signalTxSeq = 0;
   /** Per-(from,kind,...) seqs we've already consumed from awareness. Keyed
    *  by `${from}:${seq}` for the signal field. */
@@ -393,7 +400,24 @@ export class DoomNetcode {
     const aw = this.provider.awareness;
     if (aw) {
       const handler = (): void => {
-        this.recomputeMembership();
+        // STORM THROTTLE: recomputeMembership() rebuilds the peer-id map, runs
+        // arbiter election, and reconciles WebRTC peers — EXPENSIVE work that
+        // depends only on slow-changing fields (membership / ownership / host
+        // claim / join request). DOOM floods awareness with per-tic ticcmd
+        // updates (~70/sec for 2 players); running the full membership recompute
+        // on each was a main contributor to the active-play hang. Gate it on a
+        // cheap signature so it runs ONLY when an election-relevant field
+        // actually changed. The inbound drains below still run every update —
+        // they are what CONSUME the per-tic ticcmd / relay / signaling data
+        // (each already deduped on its own seq), so they must not be throttled.
+        const sig = electionAwarenessSignature(
+          aw.getStates() as Map<number, Record<string, unknown> | undefined>,
+          this.moduleId,
+        );
+        if (sig !== this.lastMembershipSig) {
+          this.lastMembershipSig = sig;
+          this.recomputeMembership();
+        }
         this.drainInboundSignals();
         this.drainInboundRelay();
         this.drainInboundGameStart();
