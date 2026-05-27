@@ -85,7 +85,7 @@
     type GameStartEnvelope,
     type TiccmdEnvelope,
   } from '$lib/doom/doom-netcode';
-  import { LockstepTransport } from '$lib/doom/doom-lockstep';
+  import { LockstepTransport, DEFAULT_INPUT_DELAY_TICS } from '$lib/doom/doom-lockstep';
   import {
     slotColorCss,
     slotLabel,
@@ -451,11 +451,19 @@
     if (!extras) return;
     if (numPlayers <= 1) {
       extras.setLockstep(false);
+      extras.setInputDelay(0);
       lockstep = null;
       lockstepActive = false;
       return;
     }
     extras.setLockstep(true);
+    // INPUT-DELAY buffer: build local ticcmds D tics ahead of gametic so each
+    // peer's per-tic entry has ~D×28.5ms to propagate through the relay before
+    // the barrier needs it — the sim runs at 35Hz instead of stalling every tic
+    // waiting on an in-flight remote TicSet. Determinism is preserved (true tic
+    // numbers + identical consolidated TicSet per tic). Trade-off: the marine
+    // responds D tics (~171ms) later — normal netplay latency.
+    extras.setInputDelay(DEFAULT_INPUT_DELAY_TICS);
     lockstep = new LockstepTransport({ doc: ydoc, moduleId: id, slot, numPlayers, generation });
     lockstepActive = true;
     lockstepNextTic = 0;

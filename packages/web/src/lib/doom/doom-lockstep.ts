@@ -91,6 +91,29 @@ export interface LockstepTransportOpts {
 // deletes (avoids CRDT delete races).
 const PRUNE_KEEP_TICS = 256;
 
+/** Default INPUT-DELAY (in tics) for the LIVE relay transport — the standard
+ *  DOOM/lockstep technique, implemented in the ENGINE (d_loop.c BuildNewTic via
+ *  dgpt_set_input_delay), NOT in this transport.
+ *
+ *  The card passes this to extras.setInputDelay(D): the engine then runs maketic
+ *  D tics AHEAD of gametic, so each peer BUILDS + appends its ticcmd for tic G a
+ *  full D tics (~D×28.5ms at 35Hz) before gametic reaches G. That head start lets
+ *  a remote peer's tic-G entry propagate through the single-process Hocuspocus
+ *  relay before the barrier needs it, so the sim advances at 35Hz instead of
+ *  stalling every tic — at the cost of D tics of input latency (the marine
+ *  responds D tics later; normal netplay behaviour).
+ *
+ *  Determinism is preserved for free: every peer still appends its ticcmd at its
+ *  TRUE tic number and the barrier delivers the IDENTICAL consolidated TicSet per
+ *  tic to every peer (the exact transport the C acceptance harness proves
+ *  byte-exact). The delay only changes WHEN inputs are produced, never WHICH
+ *  input runs at which tic.
+ *
+ *  ~6 tics ≈ 171ms of lead — enough headroom for a Yjs-Array round-trip through
+ *  the relay, while staying well within the BACKUPTICS (128) ring. Tuned
+ *  empirically against the @collab repro. */
+export const DEFAULT_INPUT_DELAY_TICS = 6;
+
 /**
  * Ordered append-log + consolidation barrier over a Yjs Y.Array.
  *

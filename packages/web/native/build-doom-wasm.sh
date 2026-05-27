@@ -206,6 +206,7 @@ EXPORTS='[
   "_dgpt_inject_remote_ticcmd",
   "_dgpt_set_scripted",
   "_dgpt_set_lockstep",
+  "_dgpt_set_input_delay",
   "_dgpt_receive_ticset",
   "_dgpt_get_maketic",
   "_dgpt_get_gametic",

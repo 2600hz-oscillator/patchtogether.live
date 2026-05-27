@@ -199,6 +199,25 @@ static boolean  dgpt_lockstep = false;
 // ticdata[tic % BACKUPTICS] + bumps this to tic+1.
 static int      dgpt_recvtic = 0;
 
+// P1 INPUT-DELAY buffer (the standard DOOM/lockstep technique). When lockstep is
+// armed, BuildNewTic lets maketic run this many tics AHEAD of gametic (instead
+// of the single-player 2-tic cap), so each peer BUILDS + appends its ticcmd for
+// tic G a full `dgpt_input_delay` tics (~D×28.5ms at 35Hz) before gametic
+// reaches G. That head start lets a remote peer's tic-G entry propagate through
+// the (laggy, single-process relay) transport BEFORE the barrier needs it, so
+// the sim advances smoothly at 35Hz instead of stalling every tic waiting on an
+// in-flight TicSet — at the cost of D tics of input latency (the marine responds
+// D tics later; normal for netplay).
+//
+// DETERMINISM IS PRESERVED FOR FREE: every peer still appends its ticcmd at its
+// TRUE tic number and the JS barrier delivers the IDENTICAL consolidated TicSet
+// per tic to every peer (the exact transport the C acceptance harness proves
+// byte-exact). The delay only changes WHEN an input is produced, never WHICH
+// input runs at which absolute tic — so the bit-exact lockstep guarantee holds.
+// 0 = no extra lead (falls back to the build-ahead behaviour); the live card
+// sets ~6. Clamped below BACKUPTICS to never overrun the ticdata ring.
+static int      dgpt_input_delay = 0;
+
 // Overlay the remote slots onto a tic set about to run, forcing those slots
 // in-game so RunTic applies them + (crucially) so RunTic's quit-detection
 // never flips playeringame[i] off for a remote player whose first ticcmd
@@ -338,16 +357,35 @@ static boolean BuildNewTic(void)
 
     if (new_sync)
     {
-       // If playing single player, do not allow tics to buffer
-       // up very far
+       // P1 INPUT-DELAY buffer: under the lockstep barrier the local peer must
+       // build its ticcmd for tic G well BEFORE gametic reaches G, so the entry
+       // has time to propagate to the other peers over the laggy relay before
+       // the barrier needs it. We therefore let maketic run up to
+       // dgpt_input_delay tics ahead of gametic (clamped below BACKUPTICS so the
+       // ticdata ring never wraps onto a still-pending tic). gametic itself
+       // stays gated by dgpt_recvtic in GetLowTic, so building ahead never runs
+       // an unconfirmed tic — it only PRODUCES local input early. The remote
+       // wire-up + barrier delivery are unchanged, so determinism is preserved.
+       if (dgpt_lockstep && dgpt_input_delay > 0)
+       {
+           int lead = dgpt_input_delay;
+           if (lead > BACKUPTICS - 4) lead = BACKUPTICS - 4;
+           if (maketic - gameticdiv > lead)
+               return false;
+       }
+       else
+       {
+           // If playing single player, do not allow tics to buffer
+           // up very far
 
-       if (!net_client_connected && maketic - gameticdiv > 2)
-           return false;
+           if (!net_client_connected && maketic - gameticdiv > 2)
+               return false;
 
-       // Never go more than ~200ms ahead
+           // Never go more than ~200ms ahead
 
-       if (maketic - gameticdiv > 8)
-           return false;
+           if (maketic - gameticdiv > 8)
+               return false;
+       }
     }
     else
     {
@@ -1120,6 +1158,15 @@ void DGPT_LoopSetScripted(int enabled)
 void DGPT_LoopSetLockstep(int enabled)
 {
     dgpt_lockstep = (enabled != 0);
+}
+
+// Set the INPUT-DELAY lead (in tics) used by BuildNewTic when lockstep is armed.
+// The live card sets ~6; 0 falls back to the default build-ahead behaviour.
+// Negative is clamped to 0; the upper bound (BACKUPTICS) is enforced at the use
+// site in BuildNewTic. See the dgpt_input_delay rationale block above.
+void DGPT_LoopSetInputDelay(int tics)
+{
+    dgpt_input_delay = tics < 0 ? 0 : tics;
 }
 
 // Deliver the consolidated, ordered TicSet for tic `tic` (one ticcmd per slot

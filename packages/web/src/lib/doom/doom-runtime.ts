@@ -616,6 +616,19 @@ export class DoomRuntime {
     this.mod.ccall('dgpt_set_lockstep', null, ['number'], [enabled ? 1 : 0]);
   }
 
+  /** P1 INPUT-DELAY buffer: under lockstep the engine builds maketic this many
+   *  tics AHEAD of gametic, so each peer's ticcmd for tic G is produced +
+   *  appended ~D×28.5ms before the barrier needs it — giving the relay time to
+   *  propagate it so the sim runs at 35Hz instead of stalling every tic. The
+   *  marine responds D tics later (normal netplay latency). Determinism is
+   *  preserved: every peer still appends at TRUE tic numbers + the barrier
+   *  delivers the identical consolidated TicSet per tic. The card sets ~6 for a
+   *  >1-player netgame; 0 = default build-ahead (single-player byte-identical). */
+  setInputDelay(tics: number): void {
+    if (!this.initialized) return;
+    this.mod.ccall('dgpt_set_input_delay', null, ['number'], [Math.max(0, Math.floor(tics))]);
+  }
+
   /** Deliver the consolidated TicSet for one tic. `slots` is indexed by player
    *  slot (0..3); a null entry means that slot is NOT in-game this tic (its
    *  present bit is cleared — e.g. a dropped peer). Must be called strictly in

@@ -99,6 +99,7 @@ extern void DGPT_LoopSetScripted(int enabled);
 // P1: arm the true-lockstep barrier + deliver a consolidated per-tic TicSet.
 // See DGPT_LoopSetLockstep / DGPT_LoopReceiveTicSet in d_loop.c.
 extern void DGPT_LoopSetLockstep(int enabled);
+extern void DGPT_LoopSetInputDelay(int tics);
 extern void DGPT_LoopReceiveTicSet(int tic,
                                    int num_players,
                                    const signed char *forwardmove,
@@ -549,6 +550,17 @@ void dgpt_set_scripted(int enabled) {
 // (never spins) when starved.
 void dgpt_set_lockstep(int enabled) {
   DGPT_LoopSetLockstep(enabled);
+}
+
+// dgpt_set_input_delay(tics): the P1 INPUT-DELAY buffer. Under lockstep the
+// engine builds maketic this many tics AHEAD of gametic, so each peer's ticcmd
+// for tic G is produced + appended ~tics×28.5ms before the barrier needs it —
+// giving the relay time to propagate it so the sim runs at 35Hz instead of
+// stalling. Determinism is preserved (true tic numbers + identical consolidated
+// TicSet per tic); only WHEN the input is produced changes. The card sets ~6
+// for a >1-player netgame; 0 = default build-ahead. See DGPT_LoopSetInputDelay.
+void dgpt_set_input_delay(int tics) {
+  DGPT_LoopSetInputDelay(tics);
 }
 
 // dgpt_receive_ticset(tic, num_players, <per-slot fields for 4 slots>): deliver
