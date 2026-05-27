@@ -55,6 +55,35 @@
 // source + max feedback can't NaN the accumulator — the shader clamps to
 // [0,1] each frame anyway).
 //
+// ── SPATIAL FEEDBACK TRANSFORM (the tunnel/spiral/trail maker) ─────────
+// The classic video-feedback look (zooming tunnels, spiralling echoes,
+// directional smear) comes from geometrically transforming the fed-back
+// frame a LITTLE each iteration so the transform COMPOUNDS over the
+// feedback loop. We apply a per-iteration affine to the feedback tap's UV
+// (NOT the source): before sampling ring[head - delayFrames], we map the
+// current UV back through the inverse of "zoom about centre, rotate about
+// centre, then translate". Sampling the PREVIOUS output through this map
+// means each surviving echo is re-zoomed/re-rotated/re-shifted again every
+// frame, so after N iterations a pixel has been transformed N times → a
+// deep tunnel / long spiral / long trail.
+//
+//   ZOOM    — scale of the fed-back frame about its centre. Neutral 1.0.
+//             <1 makes the echo SMALLER each pass → it recedes toward the
+//             centre → an OUTWARD/expanding tunnel; >1 makes it LARGER →
+//             it grows past the edges → an INWARD/zooming-in tunnel.
+//   ROTATE  — degrees per iteration about the centre (signed). Combined
+//             with ZOOM≠1 the receding/growing echoes also twist → spiral.
+//   OFFSET X/Y — translation of the fed-back frame (signed, UV units).
+//             A constant shift each pass → a directional trail/smear.
+//
+// All four default to the IDENTITY transform (zoom 1, rotate 0, offset 0),
+// so at defaults the feedback tap samples 1:1 exactly as before and ALL
+// prior BACKDRAFT behaviour is unchanged.
+//
+// We sample with CLAMP_TO_EDGE on the ring textures so UVs pushed past the
+// frame edge by the transform read the edge pixel (the tunnel reads cleanly
+// — no wrap-around tiling, no black seam mid-frame).
+//
 // ── FREEZE (VRT determinism) ──────────────────────────────────────────
 // `freeze` param (0/1): when >=0.5, draw() is a no-op — the ring + output
 // hold their last contents, so the on-card / output pixels are stable
@@ -77,6 +106,17 @@ export const BACKDRAFT_BUFFER_FRAMES =
 export const BACKDRAFT_MAX_EFFECT_SCALE = 4;
 /** FEEDBACK knob ceiling (>1 = runaway trails). */
 export const BACKDRAFT_MAX_FEEDBACK = 1.5;
+
+/** Spatial-transform knob ranges (per feedback iteration). A small
+ *  deviation compounds over the loop into a strong tunnel/spiral/trail. */
+export const BACKDRAFT_ZOOM_MIN = 0.8;
+export const BACKDRAFT_ZOOM_MAX = 1.2;
+/** ROTATE in degrees per iteration (signed). */
+export const BACKDRAFT_ROTATE_MIN = -30;
+export const BACKDRAFT_ROTATE_MAX = 30;
+/** OFFSET X/Y in UV units per iteration (signed). 0.1 = 10% of the frame. */
+export const BACKDRAFT_OFFSET_MIN = -0.1;
+export const BACKDRAFT_OFFSET_MAX = 0.1;
 
 const FRAG_SRC = `#version 300 es
 precision highp float;
@@ -105,10 +145,33 @@ uniform float uBlue;       // -1..+2 blue gain
 uniform float uLightenKnob; // 0..1
 uniform float uDarkenKnob;  // 0..1
 
+// Spatial feedback transform (applied to the feedback tap's UV only).
+uniform float uZoom;        // scale about centre (1 = identity)
+uniform float uCos;         // cos(rotate), precomputed on CPU
+uniform float uSin;         // sin(rotate), precomputed on CPU
+uniform float uOffX;        // UV translation x (per iteration)
+uniform float uOffY;        // UV translation y (per iteration)
+
 const float MAX_EFFECT_SCALE = ${BACKDRAFT_MAX_EFFECT_SCALE.toFixed(1)};
 
 float luma(vec3 c) {
   return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+// Map an output UV to the FEEDBACK-TAP UV. The forward "look" of the
+// transform is: take the previous frame, ZOOM it about centre, ROTATE it
+// about centre, then OFFSET it. To find which source pixel lands at this
+// output pixel we invert that: undo offset, then un-rotate + un-scale about
+// the centre. (zoom>1 => we sample a SMALLER region around centre => the
+// echo appears magnified next frame => zoom-in tunnel.)
+vec2 feedbackUv(vec2 uv) {
+  vec2 p = uv - vec2(0.5);          // centre-relative
+  p -= vec2(uOffX, uOffY);          // undo translation
+  // undo rotation (rotate by -theta): R(-t) = [[cos, sin], [-sin, cos]]
+  vec2 r = vec2(p.x * uCos + p.y * uSin,
+               -p.x * uSin + p.y * uCos);
+  r /= max(uZoom, 1e-4);            // undo zoom about centre
+  return r + vec2(0.5);
 }
 
 void main() {
@@ -117,8 +180,12 @@ void main() {
   vec3 b = uHasB > 0.5 ? texture(uB, vUv).rgb : vec3(0.0);
   vec3 source = mix(a, b, clamp(uMix, 0.0, 1.0));
 
-  // Fed-back frame (delayed previous output). Zero on cold start.
-  vec3 fb = uHasFb > 0.5 ? texture(uFb, vUv).rgb : vec3(0.0);
+  // Fed-back frame (delayed previous output), sampled through the spatial
+  // feedback transform so the geometry COMPOUNDS over iterations (tunnels /
+  // spirals / trails). CLAMP_TO_EDGE on the ring textures keeps UVs pushed
+  // past the edge reading the edge pixel. Zero on cold start.
+  vec2 fbUv = feedbackUv(vUv);
+  vec3 fb = uHasFb > 0.5 ? texture(uFb, fbUv).rgb : vec3(0.0);
 
   // Per-channel gain.
   fb *= vec3(uR, uG, uBlue);
@@ -152,6 +219,11 @@ export interface BackdraftParams {
   b: number;         // -1..+2
   lighten: number;   // 0..1
   darken: number;    // 0..1
+  // Spatial feedback transform (per iteration). Defaults = identity.
+  zoom: number;      // BACKDRAFT_ZOOM_MIN..MAX (1 = no tunnel)
+  rotate: number;    // BACKDRAFT_ROTATE_MIN..MAX degrees (0 = no spiral)
+  offsetX: number;   // BACKDRAFT_OFFSET_MIN..MAX (0 = no trail)
+  offsetY: number;   // BACKDRAFT_OFFSET_MIN..MAX (0 = no trail)
   freeze: number;    // 0/1 (VRT determinism)
 }
 
@@ -166,6 +238,12 @@ const DEFAULTS: BackdraftParams = {
   b: 1.0,
   lighten: 1.0,
   darken: 1.0,
+  // Spatial transform neutral = identity (no tunnel/spiral/trail) so the
+  // out-of-box behaviour matches the original 1:1 feedback tap exactly.
+  zoom: 1.0,
+  rotate: 0,
+  offsetX: 0,
+  offsetY: 0,
   freeze: 0,
 };
 
@@ -213,6 +291,43 @@ export function backdraftEffectScale(
   return Math.max(0, Math.min(maxScale, raw));
 }
 
+/**
+ * Pure spatial feedback-tap UV transform — the exact CPU mirror of the
+ * shader's `feedbackUv()`. Given an output UV in [0,1]² it returns the UV
+ * to sample from the PREVIOUS output, applying the INVERSE of
+ * "zoom about centre → rotate about centre (degrees) → translate (offset)".
+ *
+ * Because we map output→source (inverse), the *visible* transform of the
+ * fed-back image is the forward one: zoom>1 magnifies the echo, a positive
+ * rotate spins it, and a positive offset shifts it. Exported so the unit
+ * tests and the shader share one definition of the geometry.
+ *
+ *   identity (zoom=1, rotate=0, offset=0) → returns uv unchanged.
+ */
+export function backdraftFeedbackUv(
+  u: number,
+  v: number,
+  zoom: number,
+  rotateDeg: number,
+  offsetX: number,
+  offsetY: number,
+): { u: number; v: number } {
+  const theta = (rotateDeg * Math.PI) / 180;
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  // centre-relative, undo translation
+  let px = u - 0.5 - offsetX;
+  let py = v - 0.5 - offsetY;
+  // undo rotation: R(-theta) = [[c, s], [-s, c]]
+  const rx = px * c + py * s;
+  const ry = -px * s + py * c;
+  // undo zoom about centre
+  const z = Math.max(Math.abs(zoom) < 1e-4 ? 1e-4 : zoom, 1e-4);
+  px = rx / z;
+  py = ry / z;
+  return { u: px + 0.5, v: py + 0.5 };
+}
+
 export const backdraftDef: VideoModuleDef = {
   type: 'backdraft',
   domain: 'video',
@@ -237,6 +352,11 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'b',           type: 'cv', paramTarget: 'b',        cvScale: { mode: 'linear' } },
     { id: 'lighten_cv',  type: 'cv', paramTarget: 'lighten',  cvScale: { mode: 'linear' } },
     { id: 'darken_cv',   type: 'cv', paramTarget: 'darken',   cvScale: { mode: 'linear' } },
+    // Spatial feedback transform CV (linear; bipolar where signed).
+    { id: 'zoom',        type: 'cv', paramTarget: 'zoom',     cvScale: { mode: 'linear' } },
+    { id: 'rotate',      type: 'cv', paramTarget: 'rotate',   cvScale: { mode: 'linear' } },
+    { id: 'offsetx',     type: 'cv', paramTarget: 'offsetX',  cvScale: { mode: 'linear' } },
+    { id: 'offsety',     type: 'cv', paramTarget: 'offsetY',  cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },
@@ -252,6 +372,11 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'b',        label: 'B',        defaultValue: DEFAULTS.b,        min: -1, max: 2,                     curve: 'linear' },
     { id: 'lighten',  label: 'Lighten',  defaultValue: DEFAULTS.lighten,  min: 0,  max: 1,                     curve: 'linear' },
     { id: 'darken',   label: 'Darken',   defaultValue: DEFAULTS.darken,   min: 0,  max: 1,                     curve: 'linear' },
+    // Spatial feedback transform — identity defaults (no tunnel/spiral/trail).
+    { id: 'zoom',     label: 'Zoom',     defaultValue: DEFAULTS.zoom,     min: BACKDRAFT_ZOOM_MIN,   max: BACKDRAFT_ZOOM_MAX,   curve: 'linear' },
+    { id: 'rotate',   label: 'Rotate',   defaultValue: DEFAULTS.rotate,   min: BACKDRAFT_ROTATE_MIN, max: BACKDRAFT_ROTATE_MAX, curve: 'linear' },
+    { id: 'offsetX',  label: 'Off X',    defaultValue: DEFAULTS.offsetX,  min: BACKDRAFT_OFFSET_MIN, max: BACKDRAFT_OFFSET_MAX, curve: 'linear' },
+    { id: 'offsetY',  label: 'Off Y',    defaultValue: DEFAULTS.offsetY,  min: BACKDRAFT_OFFSET_MIN, max: BACKDRAFT_OFFSET_MAX, curve: 'linear' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
   ],
@@ -280,6 +405,11 @@ export const backdraftDef: VideoModuleDef = {
     const uBlue = u('uBlue');
     const uLightenKnob = u('uLightenKnob');
     const uDarkenKnob = u('uDarkenKnob');
+    const uZoom = u('uZoom');
+    const uCos = u('uCos');
+    const uSin = u('uSin');
+    const uOffX = u('uOffX');
+    const uOffY = u('uOffY');
 
     // Ring buffer of OUTPUT frames + a dedicated current-output FBO. We
     // render the composite into ring[head] (which IS this frame's output),
@@ -366,6 +496,19 @@ export const backdraftDef: VideoModuleDef = {
         g.uniform1f(uBlue,        params.b);
         g.uniform1f(uLightenKnob, Math.max(0, Math.min(1, params.lighten)));
         g.uniform1f(uDarkenKnob,  Math.max(0, Math.min(1, params.darken)));
+
+        // Spatial feedback transform. Clamp to the documented ranges, then
+        // precompute cos/sin of the rotation so the shader stays branch-free.
+        const zoom = Math.max(BACKDRAFT_ZOOM_MIN, Math.min(BACKDRAFT_ZOOM_MAX, params.zoom));
+        const rot = Math.max(BACKDRAFT_ROTATE_MIN, Math.min(BACKDRAFT_ROTATE_MAX, params.rotate));
+        const theta = (rot * Math.PI) / 180;
+        const offX = Math.max(BACKDRAFT_OFFSET_MIN, Math.min(BACKDRAFT_OFFSET_MAX, params.offsetX));
+        const offY = Math.max(BACKDRAFT_OFFSET_MIN, Math.min(BACKDRAFT_OFFSET_MAX, params.offsetY));
+        g.uniform1f(uZoom, zoom);
+        g.uniform1f(uCos, Math.cos(theta));
+        g.uniform1f(uSin, Math.sin(theta));
+        g.uniform1f(uOffX, offX);
+        g.uniform1f(uOffY, offY);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);

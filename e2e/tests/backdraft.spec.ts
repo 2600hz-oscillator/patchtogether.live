@@ -142,6 +142,76 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     expect(b).toEqual(a);
   });
 
+  test('SPATIAL TRANSFORM (zoom+rotate) changes the feedback geometry vs identity', async ({ page }) => {
+    // Two runs of the SAME feedback scene: one at identity (zoom=1,
+    // rotate=0 → 1:1 tap, the original behaviour) and one with a tunnel
+    // transform (zoom>1 + rotate). The transformed run must produce a
+    // MEANINGFULLY DIFFERENT frame — proving the transform actually moves
+    // where the feedback tap samples (tunnels/spirals), not just brightness.
+    async function captureFrame(transform: { zoom: number; rotate: number }): Promise<number[]> {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [
+          { id: 'src_a', type: 'shapes',    position: { x: 40,  y: 40 }, domain: 'video', params: { shape: 0, tile: 0, zoom: 0.5 } },
+          { id: 'bd',    type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video',
+            params: { mix: 0, feedback: 0.95, delay: 0, chroma: 1.4, zoom: transform.zoom, rotate: transform.rotate } },
+          { id: 'v-out', type: 'videoOut',  position: { x: 980, y: 80 }, domain: 'video' },
+        ],
+        [
+          { id: 'e_a',   from: { nodeId: 'src_a', portId: 'out' }, to: { nodeId: 'bd',    portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
+          { id: 'e_out', from: { nodeId: 'bd',    portId: 'out' }, to: { nodeId: 'v-out', portId: 'in'   }, sourceType: 'video',      targetType: 'video' },
+        ],
+      );
+      const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+      await expect(canvas).toHaveCount(1);
+      // Let the feedback loop compound the transform over many frames.
+      await page.waitForTimeout(1200);
+      // Freeze so the read is stable.
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['bd'];
+          if (n) n.params.freeze = 1;
+        });
+      });
+      await page.waitForTimeout(120);
+      return canvas.evaluate((el) => {
+        const c = el as HTMLCanvasElement;
+        const ctx = c.getContext('2d');
+        if (!ctx) return [];
+        const d = ctx.getImageData(0, 0, c.width, c.height).data;
+        const out: number[] = [];
+        for (let i = 0; i < d.length; i += 4 * 32) out.push(d[i]!);
+        return out;
+      });
+    }
+
+    const identity = await captureFrame({ zoom: 1, rotate: 0 });
+    const tunnel = await captureFrame({ zoom: 1.12, rotate: 14 });
+
+    expect(identity.length).toBeGreaterThan(0);
+    expect(tunnel.length).toBe(identity.length);
+
+    // Mean-absolute pixel difference across the sampled grid. A pure 1:1
+    // tap (identity) holds the source still; the tunnel transform drags
+    // the echoes inward + rotates them → a large fraction of pixels differ.
+    let diff = 0, changed = 0;
+    for (let i = 0; i < identity.length; i++) {
+      const d = Math.abs(tunnel[i]! - identity[i]!);
+      diff += d;
+      if (d > 16) changed++;
+    }
+    const meanDiff = diff / identity.length;
+    const changedFrac = changed / identity.length;
+    expect(meanDiff, 'transform shifts pixel values vs identity').toBeGreaterThan(4);
+    expect(changedFrac, 'a real fraction of pixels move (tunnel geometry)').toBeGreaterThan(0.05);
+  });
+
   test('faders route through the patch store', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');

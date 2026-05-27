@@ -12,9 +12,16 @@ import {
   BACKDRAFT_MAX_DELAY_MS,
   BACKDRAFT_MAX_EFFECT_SCALE,
   BACKDRAFT_MAX_FEEDBACK,
+  BACKDRAFT_ZOOM_MIN,
+  BACKDRAFT_ZOOM_MAX,
+  BACKDRAFT_ROTATE_MIN,
+  BACKDRAFT_ROTATE_MAX,
+  BACKDRAFT_OFFSET_MIN,
+  BACKDRAFT_OFFSET_MAX,
   backdraftDef,
   backdraftDelayFrames,
   backdraftEffectScale,
+  backdraftFeedbackUv,
   backdraftTapIndex,
 } from './backdraft';
 
@@ -110,6 +117,75 @@ describe('backdraftEffectScale — additive, order-independent mask combine', ()
   });
 });
 
+describe('backdraftFeedbackUv — spatial feedback-tap transform', () => {
+  // Helper: round-trip the centre point + a corner for clarity.
+  it('identity (zoom=1, rotate=0, offset=0) returns the UV unchanged', () => {
+    for (const [u, v] of [[0.5, 0.5], [0, 0], [1, 1], [0.25, 0.75]] as const) {
+      const out = backdraftFeedbackUv(u, v, 1, 0, 0, 0);
+      expect(out.u).toBeCloseTo(u, 6);
+      expect(out.v).toBeCloseTo(v, 6);
+    }
+  });
+
+  it('the centre is a FIXED POINT of zoom + rotate (no offset)', () => {
+    // Zoom + rotate are "about centre", so (0.5,0.5) must map to itself.
+    const z = backdraftFeedbackUv(0.5, 0.5, 1.2, 25, 0, 0);
+    expect(z.u).toBeCloseTo(0.5, 6);
+    expect(z.v).toBeCloseTo(0.5, 6);
+  });
+
+  it('zoom>1 samples a SMALLER region around centre (echo appears magnified)', () => {
+    // We map output->source by the INVERSE; zoom>1 => source coord is
+    // pulled toward centre, so the previous frame reads magnified next pass.
+    const out = backdraftFeedbackUv(1, 0.5, 2, 0, 0, 0); // right edge
+    // x offset from centre halves: 0.5 -> 0.25 => u = 0.75
+    expect(out.u).toBeCloseTo(0.75, 6);
+    expect(out.v).toBeCloseTo(0.5, 6);
+  });
+
+  it('zoom<1 samples a LARGER region around centre (echo recedes / expanding tunnel)', () => {
+    const out = backdraftFeedbackUv(0.75, 0.5, 0.5, 0, 0, 0);
+    // offset 0.25 from centre doubles -> 0.5 => u = 1.0
+    expect(out.u).toBeCloseTo(1.0, 6);
+  });
+
+  it('rotate spins the tap about centre (90° maps +x axis to ±y)', () => {
+    // Forward look rotates the image +90°; inverse un-rotates by -90°.
+    // Point on +x from centre (u=1, v=0.5) -> rotates to the v axis.
+    const out = backdraftFeedbackUv(1, 0.5, 1, 90, 0, 0);
+    expect(out.u).toBeCloseTo(0.5, 6); // back on the centre x
+    // moved 0.5 along v (sign depends on convention; magnitude is 0.5)
+    expect(Math.abs(out.v - 0.5)).toBeCloseTo(0.5, 6);
+  });
+
+  it('offset translates the tap (directional trail/smear)', () => {
+    // Pure offset, no zoom/rotate: source = uv - offset.
+    const out = backdraftFeedbackUv(0.5, 0.5, 1, 0, 0.1, -0.05);
+    expect(out.u).toBeCloseTo(0.4, 6);
+    expect(out.v).toBeCloseTo(0.55, 6);
+  });
+
+  it('compounds: applying the transform N times moves the centre-relative point progressively (tunnel depth)', () => {
+    // Track a point's distance-from-centre under repeated zoom<1 (inverse
+    // map grows the offset each pass) — proves the geometry COMPOUNDS.
+    let u = 0.6, v = 0.5; // 0.1 right of centre
+    const dist0 = Math.abs(u - 0.5);
+    for (let i = 0; i < 3; i++) {
+      const r = backdraftFeedbackUv(u, v, 0.8, 0, 0, 0);
+      u = r.u; v = r.v;
+    }
+    const dist3 = Math.abs(u - 0.5);
+    expect(dist3).toBeGreaterThan(dist0); // grew each iteration => deepening tunnel
+    expect(dist3).toBeCloseTo(dist0 / 0.8 ** 3, 6);
+  });
+
+  it('handles a zero zoom without dividing by zero (clamped)', () => {
+    const out = backdraftFeedbackUv(0.6, 0.5, 0, 0, 0, 0);
+    expect(Number.isFinite(out.u)).toBe(true);
+    expect(Number.isFinite(out.v)).toBe(true);
+  });
+});
+
 describe('backdraft module def — params + ports', () => {
   it('declares the expected param ranges + neutral defaults', () => {
     const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
@@ -126,6 +202,13 @@ describe('backdraft module def — params + ports', () => {
     // LIGHTEN / DARKEN knobs are 0..1.
     expect(byId.lighten).toMatchObject({ min: 0, max: 1 });
     expect(byId.darken).toMatchObject({ min: 0, max: 1 });
+
+    // Spatial feedback transform — identity defaults so existing behaviour
+    // is unchanged out of the box (no tunnel/spiral/trail at defaults).
+    expect(byId.zoom).toMatchObject({ min: BACKDRAFT_ZOOM_MIN, max: BACKDRAFT_ZOOM_MAX, defaultValue: 1.0 });
+    expect(byId.rotate).toMatchObject({ min: BACKDRAFT_ROTATE_MIN, max: BACKDRAFT_ROTATE_MAX, defaultValue: 0 });
+    expect(byId.offsetX).toMatchObject({ min: BACKDRAFT_OFFSET_MIN, max: BACKDRAFT_OFFSET_MAX, defaultValue: 0 });
+    expect(byId.offsetY).toMatchObject({ min: BACKDRAFT_OFFSET_MIN, max: BACKDRAFT_OFFSET_MAX, defaultValue: 0 });
   });
 
   it('exposes two video inputs, two key masks, and the out port', () => {
@@ -138,7 +221,11 @@ describe('backdraft module def — params + ports', () => {
     const cvTargets = backdraftDef.inputs
       .filter((p) => p.type === 'cv')
       .map((p) => p.paramTarget);
-    for (const id of ['mix', 'feedback', 'delay', 'luma', 'chroma', 'r', 'g', 'b', 'lighten', 'darken']) {
+    for (const id of [
+      'mix', 'feedback', 'delay', 'luma', 'chroma', 'r', 'g', 'b', 'lighten', 'darken',
+      // spatial feedback transform is CV-wired too
+      'zoom', 'rotate', 'offsetX', 'offsetY',
+    ]) {
       expect(cvTargets, `cv for ${id}`).toContain(id);
     }
   });

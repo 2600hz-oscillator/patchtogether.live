@@ -231,23 +231,32 @@ export const VRT_SCENES: Record<string, VrtScene> = {
   //   lighten <- tiled triangles      (LIGHTEN boosts feedback where bright)
   //   darken  <- big centred square   (DARKEN cuts feedback in the middle)
   //
-  // The baseline should show video-feedback TRAILS/echoes radiating from
-  // the source, with the triangle-mask regions visibly boosted (brighter,
-  // longer trails) and the centre-square darken region visibly reduced.
-  // No audio is involved, so we don't freeze the AudioContext.
+  // The baseline should show a video-feedback TUNNEL/SPIRAL: the spatial
+  // transform (ZOOM 1.06 + ROTATE 6°/iter) re-zooms + re-rotates the
+  // fed-back frame a little each pass, so the echoes spiral inward into a
+  // tunnel — the iconic feedback look, not flat brightness accumulation.
+  // The triangle lighten-mask boosts the trail; the centre-square darken
+  // punches a dim hole. No audio is involved, so we don't freeze the
+  // AudioContext.
   backdraft: {
     nodes: [
-      // Sparse sources (mostly black) so feedback ACCUMULATION is visible
-      // rather than a flat source wash. in_a = a small centred circle;
-      // in_b = a few tiled squares. MIX leans toward in_a.
-      { id: 'src_a',  type: 'shapes', position: { x: 40,  y: 40  }, domain: 'video', params: { shape: 0, tile: 0, zoom: 0.6 } },
+      // Sparse, SMALL sources (mostly black) so the transformed feedback
+      // echoes — not a flat source wash — dominate the frame. in_a = a
+      // tiny centred circle that the tunnel drags inward into a spiral;
+      // in_b = a few tiled squares. MIX leans hard toward in_a.
+      { id: 'src_a',  type: 'shapes', position: { x: 40,  y: 40  }, domain: 'video', params: { shape: 0, tile: 0, zoom: 0.28 } },
       { id: 'src_b',  type: 'shapes', position: { x: 40,  y: 260 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 3, zoom: 0.45 } },
       // lighten = tiled triangles → BOOST bands (feedback runs hot, → white).
       { id: 'mask_l', type: 'shapes', position: { x: 40,  y: 480 }, domain: 'video', params: { shape: 2, tile: 1, tileN: 4, zoom: 0.9 } },
-      // darken = big centred square → a dim "hole" punched in the feedback.
-      { id: 'mask_d', type: 'shapes', position: { x: 40,  y: 700 }, domain: 'video', params: { shape: 1, tile: 0, zoom: 2.2 } },
+      // darken = tiled squares in the CORNERS so it trims the outer trail
+      // but leaves the central tunnel/spiral intact + visible.
+      { id: 'mask_d', type: 'shapes', position: { x: 40,  y: 700 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 5, zoom: 0.5 } },
+      // ZOOM>1 + ROTATE≠0 => an inward-zooming, twisting tunnel (spiral).
+      // delay=0 taps the most-recent frame so the transform compounds every
+      // frame (deepest tunnel); high feedback keeps many echoes alive.
       { id: 'vrt-1',  type: 'backdraft', position: { x: 520, y: 60 }, domain: 'video',
-        params: { mix: 0.3, feedback: 0.97, delay: 16, luma: 1.0, chroma: 1.4, r: 1.0, g: 1.0, b: 1.0, lighten: 1.0, darken: 1.0 } },
+        params: { mix: 0.12, feedback: 0.97, delay: 0, luma: 1.0, chroma: 1.5, r: 1.0, g: 1.0, b: 1.0,
+                  lighten: 1.0, darken: 0.5, zoom: 1.15, rotate: 16, offsetX: 0, offsetY: 0 } },
     ],
     edges: [
       { id: 'e_a', from: { nodeId: 'src_a',  portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'in_a'    }, sourceType: 'mono-video', targetType: 'video' },
@@ -261,8 +270,9 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       // Let the feedback loop run + settle (settleMs covers this), then
       // FREEZE BACKDRAFT so its output stops evolving and the capture is
       // pixel-stable. We set freeze AFTER the settle window so the trails
-      // have built up before we pin the frame.
-      await page.waitForTimeout(700);
+      // have built up + the spatial transform has compounded into a deep
+      // tunnel/spiral before we pin the frame.
+      await page.waitForTimeout(1500);
       await page.evaluate(() => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { params: Record<string, number> }> };

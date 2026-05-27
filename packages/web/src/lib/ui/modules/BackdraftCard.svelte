@@ -11,7 +11,17 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
-  import { backdraftDef, BACKDRAFT_MAX_DELAY_MS, BACKDRAFT_MAX_FEEDBACK } from '$lib/video/modules/backdraft';
+  import {
+    backdraftDef,
+    BACKDRAFT_MAX_DELAY_MS,
+    BACKDRAFT_MAX_FEEDBACK,
+    BACKDRAFT_ZOOM_MIN,
+    BACKDRAFT_ZOOM_MAX,
+    BACKDRAFT_ROTATE_MIN,
+    BACKDRAFT_ROTATE_MAX,
+    BACKDRAFT_OFFSET_MIN,
+    BACKDRAFT_OFFSET_MAX,
+  } from '$lib/video/modules/backdraft';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -210,6 +220,14 @@
   {#if !hideControls}<span class="port-label left" style="top: 398px;">L</span>{/if}
   <Handle type="target" position={Position.Left} id="darken_cv"  style="top: 432px; --handle-color: var(--cable-cv);" />
   {#if !hideControls}<span class="port-label left" style="top: 426px;">D</span>{/if}
+  <Handle type="target" position={Position.Left} id="zoom"       style="top: 460px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 454px;">ZM</span>{/if}
+  <Handle type="target" position={Position.Left} id="rotate"     style="top: 488px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 482px;">RT</span>{/if}
+  <Handle type="target" position={Position.Left} id="offsetx"    style="top: 516px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 510px;">OX</span>{/if}
+  <Handle type="target" position={Position.Left} id="offsety"    style="top: 544px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 538px;">OY</span>{/if}
 
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
   {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
@@ -262,6 +280,10 @@
       <Fader value={p('b')}        min={-1} max={2}                     defaultValue={pdef('b')}        label="B"    curve="linear" onchange={setParam('b')}        moduleId={id} paramId="b" />
       <Fader value={p('lighten')}  min={0}  max={1}                     defaultValue={pdef('lighten')}  label="Lgt"  curve="linear" onchange={setParam('lighten')}  moduleId={id} paramId="lighten" />
       <Fader value={p('darken')}   min={0}  max={1}                     defaultValue={pdef('darken')}   label="Drk"  curve="linear" onchange={setParam('darken')}   moduleId={id} paramId="darken" />
+      <Fader value={p('zoom')}     min={BACKDRAFT_ZOOM_MIN}   max={BACKDRAFT_ZOOM_MAX}   defaultValue={pdef('zoom')}    label="Zoom" curve="linear" onchange={setParam('zoom')}    moduleId={id} paramId="zoom" />
+      <Fader value={p('rotate')}   min={BACKDRAFT_ROTATE_MIN} max={BACKDRAFT_ROTATE_MAX} units="°" defaultValue={pdef('rotate')} label="Rot"  curve="linear" onchange={setParam('rotate')}  moduleId={id} paramId="rotate" />
+      <Fader value={p('offsetX')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetX')} label="OffX" curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />
+      <Fader value={p('offsetY')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetY')} label="OffY" curve="linear" onchange={setParam('offsetY')} moduleId={id} paramId="offsetY" />
     </div>
   {/if}
 </div>
