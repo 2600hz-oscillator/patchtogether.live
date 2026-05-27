@@ -356,6 +356,26 @@ async function capture(peer: Peer, phase: string, idx: string, note?: string): P
   return row;
 }
 
+// Drive the owner's REAL host→launch flow until it reports GS_LEVEL. This is
+// the exact, RELIABLE sequence the passing "owner hosts + launches MP" test
+// (phase 02) uses: click Host Multiplayer (NOT single-player Play), wait to
+// seat as P0, click the real Launch button, then wait for launched && in-level.
+// Shared by bringBothInLevel + the CV-patched scenario so they reach the level
+// the same proven way. The DOOM node must already be spawned + its card hook
+// ready before calling. Returns whether the owner reached the level.
+async function ownerHostAndLaunchInLevel(owner: Peer): Promise<boolean> {
+  const hostBtn = owner.page.locator('[data-testid="doom-start-multi"]');
+  if (await hostBtn.isVisible().catch(() => false)) await hostBtn.click();
+  await owner.page
+    .waitForFunction((nid) => (globalThis as unknown as { __doomCards: Record<string, { getState: () => { mySlot: number | null } }> }).__doomCards[nid]?.getState().mySlot === 0, NODE_ID, { timeout: 25000 })
+    .catch(() => {});
+  const launchBtn = owner.page.locator('[data-testid="doom-launch-btn"]');
+  if (await launchBtn.isVisible({ timeout: 10000 }).catch(() => false)) await launchBtn.click();
+  return await owner.page
+    .waitForFunction((args) => { const [nid, lvl] = args as [string, number]; const st = (globalThis as unknown as { __doomCards: Record<string, { getState: () => { launched: boolean; gamestate: number } }> }).__doomCards[nid]?.getState(); return !!st && st.launched && st.gamestate === lvl; }, [NODE_ID, GS_LEVEL], { timeout: 60000 })
+    .then(() => true).catch(() => false);
+}
+
 // Drive the real host→launch→join flow until BOTH peers report GS_LEVEL.
 // Returns whether each reached the level (the caller asserts). Shared by the
 // sustained-responsiveness + steady/idle-liveness scenarios.
@@ -374,16 +394,7 @@ async function bringBothInLevel(
     .catch(() => {});
   await cardHookReady(guest.page, NODE_ID).catch(() => {});
 
-  const hostBtn = owner.page.locator('[data-testid="doom-start-multi"]');
-  if (await hostBtn.isVisible().catch(() => false)) await hostBtn.click();
-  await owner.page
-    .waitForFunction((nid) => (globalThis as unknown as { __doomCards: Record<string, { getState: () => { mySlot: number | null } }> }).__doomCards[nid]?.getState().mySlot === 0, NODE_ID, { timeout: 25000 })
-    .catch(() => {});
-  const launchBtn = owner.page.locator('[data-testid="doom-launch-btn"]');
-  if (await launchBtn.isVisible({ timeout: 10000 }).catch(() => false)) await launchBtn.click();
-  const ownerInLevel = await owner.page
-    .waitForFunction((args) => { const [nid, lvl] = args as [string, number]; const st = (globalThis as unknown as { __doomCards: Record<string, { getState: () => { launched: boolean; gamestate: number } }> }).__doomCards[nid]?.getState(); return !!st && st.launched && st.gamestate === lvl; }, [NODE_ID, GS_LEVEL], { timeout: 60000 })
-    .then(() => true).catch(() => false);
+  const ownerInLevel = await ownerHostAndLaunchInLevel(owner);
   await guest.page
     .waitForFunction((nid) => (globalThis as unknown as { __doomCards: Record<string, { getState: () => { mpLive: boolean } }> }).__doomCards[nid]?.getState().mpLive === true, NODE_ID, { timeout: 25000 })
     .catch(() => {});
@@ -713,6 +724,9 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
     browser,
   }) => {
     test.skip(!ENABLED, 'manual probe — set DOOM_PROBE=1 (or run `task doom-probe`)');
+    // Cold-WASM boot on two contexts + launch/join + a BOUNDED ~30s sampling
+    // window. A non-terminating loop now fails in ~1-2 min, not the old 4.
+    test.setTimeout(90_000);
     mkdirSync(OUT_DIR, { recursive: true });
 
     const rackId = `doom-probe-hang-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -740,8 +754,17 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       expect(guestInLevel, 'guest must reach the level before the sustained-play measurement').toBe(true);
 
       // ── Drive BOTH moving + shooting continuously, sample responsiveness ──
-      const DURATION_MS = 30_000;
+      // BOUNDED wall-clock window. The loop below is capped by BOTH a Date.now()
+      // elapsed check AND a hard iteration cap so it ALWAYS terminates (even if
+      // a metric never reaches its target or the page slows), then writes the
+      // JSON + runs the assertions. Pre-fix the summary/samples were assigned
+      // only AFTER the loop, so a non-terminating loop wrote a sample-less JSON
+      // and burned the full 240s test timeout.
+      const DURATION_MS = 20_000;
       const SAMPLE_MS = 1_000;
+      // Hard iteration cap: at ~1 sample/sec a 20s window is ~20 iterations.
+      // Allow generous slack for slow seconds but guarantee a finite loop.
+      const MAX_ITERS = Math.ceil(DURATION_MS / SAMPLE_MS) * 4;
       // Budget: a healthy evaluate round-trip is single-digit ms; allow a
       // generous ceiling that a HUNG main thread cannot meet (the pre-fix hang
       // pushes this to seconds or a full timeout).
@@ -800,7 +823,10 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       let turn = 0;
       let prevOwner = ownerStart;
       let prevGuest = guestStart;
-      while (Date.now() - t0 < DURATION_MS) {
+      // Bounded loop: terminate on EITHER the wall-clock window OR the hard
+      // iteration cap, whichever comes first. Both are independent of game
+      // state so the loop cannot run forever.
+      for (let iter = 0; Date.now() - t0 < DURATION_MS && iter < MAX_ITERS; iter++) {
         await driveTurn(owner.page, turn);
         await driveTurn(guest.page, turn);
         turn++;
@@ -824,12 +850,16 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
         ownerTwSum += oTwPerSec; guestTwSum += gTwPerSec;
         worstElectionPerSec = Math.max(worstElectionPerSec, oElecPerSec, gElecPerSec);
         samples.push({ tSec: Math.round((Date.now() - t0) / 1000), oRt, gRt, oElecPerSec, gElecPerSec, oAwPerSec, gAwPerSec, oTwPerSec, gTwPerSec });
+        // Mirror into the summary EACH iteration so the JSON has the samples
+        // even if the test is later interrupted (the finally still writes them).
+        summary.samples = samples;
         prevOwner = oNow;
         prevGuest = gNow;
-        // Hold the sample cadence (each iteration drives ~1s of play).
+        // Hold the sample cadence (each iteration drives ~1s of play). Cap the
+        // sleep at one SAMPLE_MS so a clock skew can never produce a giant wait.
         const elapsed = Date.now() - t0;
         const nextTick = Math.ceil(elapsed / SAMPLE_MS) * SAMPLE_MS;
-        await owner.page.waitForTimeout(Math.max(0, nextTick - elapsed));
+        await owner.page.waitForTimeout(Math.min(SAMPLE_MS, Math.max(0, nextTick - elapsed)));
       }
       // Release everything held.
       for (const p of [owner.page, guest.page]) {
@@ -898,6 +928,9 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
     browser,
   }) => {
     test.skip(!ENABLED, 'manual probe — set DOOM_PROBE=1 (or run `task doom-probe`)');
+    // Cold-WASM boot on two contexts + launch/join + a BOUNDED ~12s steady-hold
+    // window. A non-terminating loop now fails in ~1-2 min, not the old 4.
+    test.setTimeout(90_000);
     mkdirSync(OUT_DIR, { recursive: true });
 
     const rackId = `doom-probe-steady-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -924,8 +957,13 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       expect(guestInLevel, 'guest must reach the level before the steady-input measurement').toBe(true);
 
       const OWNER_SLOT = 0; // owner hosts → slot 0; the guest watches this slot.
+      // BOUNDED wall-clock window. The sampling loop below terminates on EITHER
+      // this elapsed window OR a hard iteration cap — never on a game-state
+      // condition — so it ALWAYS exits, writes the JSON, and runs the
+      // assertions even if the remote marine never advances.
       const WINDOW_MS = 12_000;
       const SAMPLE_MS = 1_000;
+      const MAX_ITERS = Math.ceil(WINDOW_MS / SAMPLE_MS) * 4;
       const ROUND_TRIP_BUDGET_MS = 750;
       // A real DOOM forward walk covers hundreds of units over 12s; we require a
       // generous floor that idle drift / a single coalesced injection cannot
@@ -948,7 +986,9 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       let everLeftLevelGuest = false;
       const samples: Array<Record<string, number | null>> = [];
       const t0 = Date.now();
-      while (Date.now() - t0 < WINDOW_MS) {
+      // Bounded loop: terminate on EITHER the wall-clock window OR the hard
+      // iteration cap, whichever comes first — independent of game state.
+      for (let iter = 0; Date.now() - t0 < WINDOW_MS && iter < MAX_ITERS; iter++) {
         const oRt = await evalRoundTripMs(owner.page);
         const gRt = await evalRoundTripMs(guest.page);
         worstRoundTrip = Math.max(worstRoundTrip, oRt, gRt);
@@ -965,9 +1005,13 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
         if (oGs !== null && oGs !== GS_LEVEL) everLeftLevelOwner = true;
         if (gGs !== null && gGs !== GS_LEVEL) everLeftLevelGuest = true;
         samples.push({ tSec: Math.round((Date.now() - t0) / 1000), oRt, gRt, remoteAdvance: advance, oGs, gGs });
+        // Mirror into the summary EACH iteration so the JSON has the samples
+        // even if the test is later interrupted.
+        summary.samples = samples;
         const elapsed = Date.now() - t0;
         const nextTick = Math.ceil(elapsed / SAMPLE_MS) * SAMPLE_MS;
-        await owner.page.waitForTimeout(Math.max(0, nextTick - elapsed));
+        // Cap the sleep at one SAMPLE_MS so a clock skew can't stall the loop.
+        await owner.page.waitForTimeout(Math.min(SAMPLE_MS, Math.max(0, nextTick - elapsed)));
       }
       await owner.page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true }))).catch(() => {});
 
@@ -1013,6 +1057,9 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
     browser,
   }) => {
     test.skip(!ENABLED, 'manual probe — set DOOM_PROBE=1 (or run `task doom-probe`)');
+    // Cold-WASM boot on one context + host/launch to in-level + the CV
+    // differential measurement (a few short held-key windows). 90s is ample.
+    test.setTimeout(90_000);
     mkdirSync(OUT_DIR, { recursive: true });
 
     const rackId = `doom-probe-cv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1041,17 +1088,13 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
         [],
       );
       await cardHookReady(owner.page, NODE_ID);
-      // Host single-player so the owner's runtime is live + at a level (so a
-      // keypress can actually move the marine). Single-player Play is host-only.
-      const playBtn = owner.page.locator('[data-testid="doom-start-single"]');
-      if (await playBtn.isVisible({ timeout: 8000 }).catch(() => false)) {
-        await playBtn.click();
-      }
-      const launchBtn = owner.page.locator('[data-testid="doom-launch-btn"]');
-      if (await launchBtn.isVisible({ timeout: 10000 }).catch(() => false)) await launchBtn.click();
-      const inLevel = await owner.page
-        .waitForFunction((args) => { const [nid, lvl] = args as [string, number]; const st = (globalThis as unknown as { __doomCards: Record<string, { getState: () => { launched: boolean; gamestate: number } }> }).__doomCards[nid]?.getState(); return !!st && st.launched && st.gamestate === lvl; }, [NODE_ID, GS_LEVEL], { timeout: 60000 })
-        .then(() => true).catch(() => false);
+      // Reach the level via the SAME proven host→seat-P0→launch sequence the
+      // passing "owner hosts + launches MP" test uses (the single-player Play
+      // path never reliably reached GS_LEVEL here). One context only — no guest
+      // needed; the host's own runtime goes live + in-level. With the marine
+      // genuinely in-level a keypress can actually move it, so the CV gate's
+      // keyboard-vs-control differential below is measurable.
+      const inLevel = await ownerHostAndLaunchInLevel(owner);
       summary.inLevel = inLevel;
       // The marine position only means "keyboard moved it" if we are ACTUALLY
       // in a running level. At the title/menu DOOM runs attract-mode DEMO
