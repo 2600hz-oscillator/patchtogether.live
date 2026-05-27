@@ -104,7 +104,9 @@ test('rclick on existing module opens the per-node action menu (NOT the palette)
   await ready(page);
   await spawnPatch(page, [{ id: 'm', type: 'mixer', position: { x: 200, y: 200 } }]);
   const m = page.locator('.svelte-flow__node-mixer').first();
-  await m.click({ button: 'right' });
+  // Right-click the card background (title bar) — a knob/fader right-click now
+  // opens the per-control MIDI menu instead of the module menu.
+  await m.locator('.title').click({ button: 'right' });
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
   await expect(page.locator('.module-palette')).toHaveCount(0);
 });
