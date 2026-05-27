@@ -339,6 +339,108 @@ describe('DoomRuntime — TS shim layer', () => {
     });
   });
 
+  // ── #353 Phase 0: MP CV-gate inert gate (lockstep ⇒ CV→DOOM dropped) ──
+  //
+  // In a true-lockstep netgame the shared CV edge fans out to every peer's slot
+  // and is sampled non-deterministically per-rAF, so each peer would build a
+  // different ticcmd → consolidated TicSets diverge → dgpt_state_checksum
+  // mismatches → the consistency check I_Errors → universal freeze. Under
+  // lockstep the runtime must therefore drop CV-gate input entirely. Keyboard
+  // stays live (it's per-machine + broadcast deterministically via the tic log).
+  // Single-player (lockstep off) is byte-identical to today.
+  describe('lockstep CV-gate inert gate (#353 Phase 0)', () => {
+    it('CV-gate input flows in single-player (lockstep OFF) — unchanged behavior', () => {
+      rt.init(new Uint8Array([0]));
+      expect(rt.isCvGateInert()).toBe(false);
+      const before = stub.calls.length;
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([{ name: 'dgpt_set_key', args: [KEY_UPARROW, 1] }]);
+    });
+
+    it('drops CV-gate input while lockstep is armed (no dgpt_set_key fires)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setLockstep(true);
+      expect(rt.isCvGateInert()).toBe(true);
+      const before = stub.calls.length;
+      // Returns false (unhandled) AND emits no native key call.
+      expect(rt.setKeyForCvGate('up', true)).toBe(false);
+      expect(rt.setKeyForCvGate('ctrl', true)).toBe(false);
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([]);
+    });
+
+    it('keyboard input is NOT gated by lockstep (the local marine still moves)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setLockstep(true);
+      const before = stub.calls.length;
+      expect(rt.setKeyForKeyboardCode('ArrowUp', true)).toBe(true);
+      expect(rt.setKeyForKeyboardCode('KeyF', true)).toBe(true); // FIRE
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([
+        { name: 'dgpt_set_key', args: [KEY_UPARROW, 1] },
+        { name: 'dgpt_set_key', args: [KEY_FIRE, 1] },
+      ]);
+    });
+
+    it('arming lockstep RELEASES every CV-gate key still held (no stuck gate)', () => {
+      rt.init(new Uint8Array([0]));
+      // A CV gate is HIGH (UP + CTRL/FIRE) when the netgame starts.
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      expect(rt.setKeyForCvGate('ctrl', true)).toBe(true); // FIRE
+      const before = stub.calls.length;
+      rt.setLockstep(true);
+      // Exactly one key-up per held CV key — nothing latches in gamekeydown[].
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([
+        { name: 'dgpt_set_key', args: [KEY_UPARROW, 0] },
+        { name: 'dgpt_set_key', args: [KEY_FIRE, 0] },
+      ]);
+    });
+
+    it('does NOT release a keyboard key when lockstep arms (keyboard owns its own set)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setKeyForKeyboardCode('ArrowUp', true);
+      const before = stub.calls.length;
+      rt.setLockstep(true);
+      // No release fires — UP was a keyboard-origin press, untracked by the CV set.
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([]);
+    });
+
+    it('disarming lockstep restores CV-gate input (back to single-player)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setLockstep(true);
+      expect(rt.setKeyForCvGate('up', true)).toBe(false);
+      rt.setLockstep(false);
+      expect(rt.isCvGateInert()).toBe(false);
+      const before = stub.calls.length;
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([{ name: 'dgpt_set_key', args: [KEY_UPARROW, 1] }]);
+    });
+
+    it('arming lockstep is idempotent (no double-release of CV keys)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setKeyForCvGate('up', true);
+      rt.setLockstep(true); // releases UP
+      const before = stub.calls.length;
+      rt.setLockstep(true); // already armed
+      expect(stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key')).toEqual([]);
+      expect(rt.isCvGateInert()).toBe(true);
+    });
+
+    it('gate is tracked even before init so a pre-load CV patch is dropped on load', () => {
+      // setLockstep(true) BEFORE init (WASM still loading) must still arm the gate.
+      rt.setLockstep(true);
+      rt.init(new Uint8Array([0]));
+      expect(rt.isCvGateInert()).toBe(true);
+      const before = stub.calls.length;
+      expect(rt.setKeyForCvGate('up', true)).toBe(false);
+      expect(stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key')).toEqual([]);
+    });
+  });
+
   it('getFramebuffer returns a Uint8ClampedArray VIEW into HEAPU8 (zero-copy)', () => {
     rt.init(new Uint8Array([0]));
     const fb = rt.getFramebuffer();

@@ -203,6 +203,31 @@ export class DoomRuntime {
    *  keyboard's keys, never a live CV gate's. */
   private heldKeyboardKeys = new Set<number>();
 
+  /**
+   * MULTIPLAYER CV gate (interim hotfix, #353 Phase 0). In a true-lockstep
+   * netgame the CV-gate → DOOM-key path MUST be inert: the shared CV edge in
+   * the Yjs doc fans out to EVERY peer's slot AND is sampled non-deterministically
+   * per-rAF on each peer, so each peer builds a DIFFERENT ticcmd → the
+   * consolidated TicSets diverge → `dgpt_state_checksum` mismatches → the
+   * consistency check (`I_Error`) permanently aborts the WASM → universal freeze.
+   * Keyboard input is per-machine + broadcast deterministically via the tic log,
+   * so it is unaffected and stays fully working.
+   *
+   * Armed iff the lockstep barrier is on (setLockstep(true) — a >1-player
+   * netgame). Single-player leaves it false → CV→DOOM works exactly as today.
+   * The moment we arm it we release every CV-origin key still asserted so a gate
+   * that was HIGH when MP started cannot stay latched in gamekeydown[].
+   *
+   * NOTE (interim): this drops CV entirely under MP. The real fix is per-player
+   * CV routing (#353 phases 1–3) — each peer's CV drives only its own slot via
+   * the deterministic local-ticcmd log instead of a shared fan-out edge.
+   */
+  private lockstepArmed = false;
+  /** Doomkeys currently asserted via the CV-gate path (setKeyForCvGate).
+   *  Tracked so arming lockstep releases ONLY CV-origin keys, never the
+   *  keyboard's (which the keyboard-inert path owns). */
+  private heldCvKeys = new Set<number>();
+
   constructor(module: DoomModule) {
     this.mod = module;
   }
@@ -309,12 +334,35 @@ export class DoomRuntime {
     return true;
   }
 
-  /** Convenience: CV-gate port id ('w'/'a'/.../'alt') → doomkey + push. */
+  /** Convenience: CV-gate port id ('up'/'down'/.../'alt') → doomkey + push.
+   *  Hard-gated under lockstep (a >1-player netgame): while armed, CV-gate input
+   *  is dropped at the runtime boundary so the shared CV edge can never drive the
+   *  deterministic sim (which would diverge the per-peer TicSets → checksum
+   *  mismatch → freeze). Returns false (unhandled) when armed so callers don't
+   *  track a key that was never asserted. In single-player (not armed) CV→DOOM
+   *  works exactly as today. */
   setKeyForCvGate(portId: CvGatePortId, pressed: boolean): boolean {
     const key = KEY_FOR_CV_GATE[portId];
     if (key === undefined) return false;
+    if (this.lockstepArmed) return false;
+    if (pressed) this.heldCvKeys.add(key);
+    else this.heldCvKeys.delete(key);
     this.setKey(key, pressed);
     return true;
+  }
+
+  /** Synthesise key-up for every CV-origin key still asserted. Used when the
+   *  lockstep barrier arms (MP start) so a CV gate that was HIGH cannot stay
+   *  latched in gamekeydown[] after CV input goes inert. */
+  releaseHeldCvKeys(): void {
+    if (this.heldCvKeys.size === 0) return;
+    for (const key of this.heldCvKeys) this.setKey(key, false);
+    this.heldCvKeys.clear();
+  }
+
+  /** Whether CV-gate input is currently gated off (lockstep armed). */
+  isCvGateInert(): boolean {
+    return this.lockstepArmed;
   }
 
   /**
@@ -610,8 +658,17 @@ export class DoomRuntime {
   // local slot included). See d_loop.c DGPT_LoopSetLockstep / ReceiveTicSet.
 
   /** Arm/disarm the true-lockstep barrier. The card arms it for a >1-player
-   *  netgame; single-player leaves it off (byte-identical behavior). */
+   *  netgame; single-player leaves it off (byte-identical behavior).
+   *
+   *  Also drives the MP CV-gate gate (#353 Phase 0): arming makes setKeyForCvGate
+   *  inert (the shared CV edge must not drive the deterministic sim) and releases
+   *  any CV key still held so nothing latches. The flag is tracked even if the
+   *  WASM isn't initialized yet, so a CV gate patched while MP is arming can never
+   *  reach the engine once it loads. */
   setLockstep(enabled: boolean): void {
+    const wasArmed = this.lockstepArmed;
+    this.lockstepArmed = enabled;
+    if (enabled && !wasArmed) this.releaseHeldCvKeys();
     if (!this.initialized) return;
     this.mod.ccall('dgpt_set_lockstep', null, ['number'], [enabled ? 1 : 0]);
   }
