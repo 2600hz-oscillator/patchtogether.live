@@ -465,6 +465,59 @@ describe('doom-roster slice 6: pending (late-join) vs active state', () => {
       expect(assigned['zzz-owner']).toEqual({ slot: 0, pending: false });
       expect(assigned['aaa-guest']).toEqual({ slot: 1, pending: false });
     });
+
+    // ── host slot-0 stability under an EMPTY owner signal (the P1→P2 flip) ────
+    //
+    // The live "host becomes P2" race: when a guest's join-request lands at the
+    // exact instant the arbiter's awareness `user.isRackOwner` is not yet
+    // readable, resolveOwnerIds() returns []. With NO owner signal, assignSlots
+    // falls back to pure lex order — and a lex-SMALLER guest steals slot 0,
+    // bumping the host (arbiter) to slot 1. The host's consoleplayer then flips
+    // to 1 and its marine appears to freeze (it is now driving / relaunched as the
+    // wrong slot). These pin the fix: assignSlotsAsArbiter ALWAYS unions the
+    // arbiter's own id into ownerIds, so the arbiter (= the rack host, or the anon
+    // lex-min leader) keeps slot 0 regardless of the awareness read.
+    it('FLIP REPRO: with an EMPTY owner signal a lex-smaller guest steals slot 0 from the host', () => {
+      // This is the BUG state the card-layer fix must avoid — documents WHY the
+      // arbiter must be forced into ownerIds (do NOT pass an empty owner list).
+      const fresh = { active: {}, pending: {} };
+      const { state } = assignSlots(
+        fresh,
+        ['anon-guest-7095', 'zzz-rack-owner'], // host sorts lex-LARGE
+        false,
+        [], // owner signal momentarily empty (awareness backfill gap)
+      );
+      expect(state.active).toEqual({ '0': 'anon-guest-7095', '1': 'zzz-rack-owner' });
+    });
+
+    it('FIX: forcing the arbiter into ownerIds keeps the host at slot 0 despite the empty awareness owner read', () => {
+      // assignSlotsAsArbiter passes ownerIds = [me, ...resolveOwnerIds()]; even
+      // when resolveOwnerIds() is [], `me` (the arbiter/host) is owner-first.
+      const fresh = { active: {}, pending: {} };
+      const host = 'zzz-rack-owner';
+      const guest = 'anon-guest-7095';
+      const ownerIds = [...new Set([host /* me */])]; // resolveOwnerIds() === []
+      const { state, assigned } = assignSlots(fresh, [guest, host], false, ownerIds);
+      expect(state.active).toEqual({ '0': host, '1': guest });
+      expect(assigned[host]).toEqual({ slot: 0, pending: false });
+      expect(assigned[guest]).toEqual({ slot: 1, pending: false });
+    });
+
+    it('FIX: an already-seated host KEEPS slot 0 when a guest hot-joins (idempotent, no reshuffle)', () => {
+      // The common path: host already at slot 0, guest raises a join-request mid-
+      // game. The guest must take the NEXT free slot (1), never bump the host.
+      const seated = { active: { '0': 'zzz-rack-owner' }, pending: {} };
+      const host = 'zzz-rack-owner';
+      const guest = 'anon-guest-7095';
+      const { state, assigned } = assignSlots(
+        seated,
+        [host, guest], // arbiter always re-includes itself in the requester set
+        false,
+        [...new Set([host])],
+      );
+      expect(state.active).toEqual({ '0': host, '1': guest });
+      expect(assigned[host]).toEqual({ slot: 0, pending: false });
+    });
   });
 
   describe('promotePending (next-map seating)', () => {

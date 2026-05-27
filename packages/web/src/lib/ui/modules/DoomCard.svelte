@@ -429,9 +429,23 @@
    *  moves in our world. Ignores our own slot (the netcode already filters
    *  self, but guard defensively) + spectators (no runtime). */
   function applyRemoteTiccmd(env: TiccmdEnvelope): void {
-    if (mySlot !== null && env.slot === mySlot) return;
     const extras = getExtras();
     if (!extras) return;
+    // NEVER let a remote injection drive THIS peer's OWN console-player slot —
+    // its locally-built ticcmd (G_BuildTiccmd) is authoritative. This is the
+    // host-freeze guard: the per-rAF gap-fill (reinjectKnownTiccmds, #339) re-
+    // fires every present peer's last-known envelope each tic; if any of them
+    // carried (or a slot race made them appear to carry) OUR slot, re-injecting
+    // it would fight/overwrite our own marine's input → the host stops responding
+    // to its own keys the instant a remote peer is being re-fed. We compare
+    // against the AUTHORITATIVE C consoleplayer (getConsolePlayerState().slot),
+    // not just the reactive `mySlot` mirror, so a transient mirror lag during a
+    // relaunch can't open a window where a remote drives our own slot. (The C
+    // side also guards slot==localplayer; this is the JS-side belt-and-braces the
+    // regression test pins.) `mySlot` is kept as the cheap pre-check.
+    if (mySlot !== null && env.slot === mySlot) return;
+    const ownSlot = extras.getConsolePlayerState()?.slot;
+    if (ownSlot !== undefined && env.slot === ownSlot) return;
     extras.injectRemoteTiccmd(env.slot, {
       forwardmove: env.forwardmove,
       sidemove: env.sidemove,
@@ -798,11 +812,28 @@
     // routes there.)
     const wasInProgress = isGameInProgress();
     const beforeActiveIds = new Set(Object.values(cur.active));
+    // SLOT-0 STABILITY (the "P1 becomes P2" flip): the arbiter is the rack host
+    // and MUST own slot 0. assignSlots seats owner-first, but its owner signal is
+    // resolveOwnerIds() — an awareness read of `user.isRackOwner` that can be
+    // momentarily EMPTY at the exact instant a guest's join-request lands (a
+    // fresh-connect/relay-backfill gap). If it is empty when BOTH the host and a
+    // lex-SMALLER guest are unseated requesters in the same pass, pure lex order
+    // hands slot 0 to the guest and bumps the host to slot 1 — the host's own
+    // consoleplayer flips to 1 (P1→P2) and its marine appears to "freeze" because
+    // it is now driving (and the relaunch reloads it as) the wrong slot. We know
+    // authoritatively, without any awareness read, that THIS peer is the arbiter
+    // (this function early-returns otherwise) and therefore the session leader →
+    // slot 0. So we always include `me` in the owner set fed to assignSlots. This
+    // is correct for an OWNED rack (the host is the owner) AND an anon rack (the
+    // arbiter is the deterministic lex-min leader, which still rightly takes slot
+    // 0). Union with the awareness owners so a DIFFERENT confirmed owner (should
+    // never happen for the arbiter, but defensive) is still respected.
+    const ownerIds = [...new Set([me, ...resolveOwnerIds()])];
     const { state: next, changed } = assignSlots(
       cur,
       filtered,
       false, // seat ACTIVE even mid-level — hot-drop, not next-map reservation
-      resolveOwnerIds(),
+      ownerIds,
     );
     if (changed) {
       writeNodeRosterState(next);
