@@ -190,16 +190,33 @@ static void DGPT_OverlayRemoteCmds(ticcmd_set_t *set)
         // zeroed (idle) command.
         set->cmds[i] = dgpt_remote_cmds[i];
         set->ingame[i] = true;
-        if (dgpt_scripted)
-        {
-            // Synthetic ticcmds carry no consistancy; stamp the locally-expected
-            // value so G_Ticker's netgame desync check passes. Every scripted
-            // sim holds identical state → identical expected value, so this is
-            // not "cheating" the check — the determinism is verified independently
-            // by dgpt_state_checksum.
-            set->cmds[i].consistancy =
-                (unsigned char) G_ConsistancyForSlot(i, buf);
-        }
+        // HOST-FREEZE FIX (late-join consistency abort): stamp the locally-
+        // expected consistancy byte onto EVERY overlaid remote slot — in normal
+        // live play, not just scripted lockstep.
+        //
+        // Once netgame is true (numPlayers > 1, set by dgpt_start_netgame) and
+        // gametic crosses BACKUPTICS, G_Ticker runs DOOM's per-slot desync check:
+        // it I_Error()s (→ exit(-1) → the whole WASM runtime aborts → the tab's
+        // DOOM sim FREEZES, stops responding even to the local player's own keys)
+        // unless every in-game slot's cmd->consistancy matches the locally-computed
+        // consistancy[i][buf]. The local slot's value is stamped by G_BuildTiccmd.
+        // But our transport is INPUT-ONLY + free-running (net_client_connected ==
+        // false): the cross-peer ticcmd we overlay for a REMOTE slot never carries
+        // a consistancy byte (the TiccmdEnvelope has no such field — see
+        // doom-netcode.ts), so it arrives as 0 and the check explodes a few seconds
+        // after a second player is in-game. This is the owner-reported "P1 freezes
+        // the moment P2 moves" (the freeze actually triggers on the gametic >
+        // BACKUPTICS boundary, ~3.6s after the hot-drop relaunch seats 2 slots).
+        //
+        // The desync check is meaningless in our model — positions are NOT
+        // transferred, each sim free-runs and integrates input, so per-tic state
+        // is EXPECTED to diverge — so we neutralize it for remote slots by stamping
+        // the value the check expects. This is exactly what scripted-lockstep mode
+        // already did; we apply it on the live path too. The LOCAL slot is never
+        // touched here (it keeps G_BuildTiccmd's own consistancy), so the local
+        // player's input remains fully authoritative.
+        set->cmds[i].consistancy =
+            (unsigned char) G_ConsistancyForSlot(i, buf);
     }
 }
 
