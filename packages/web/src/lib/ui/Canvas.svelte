@@ -293,13 +293,31 @@
     provider?: HocuspocusProvider | null;
     presenceUser?: PresenceUser | null;
     audioGate?: import('$lib/audio/audio-gate.svelte').AudioGate;
+    // Server-derived auth state for the header on routes that DON'T mount
+    // the client <ClerkProvider> (the public `/` canvas keeps SAB / cross-
+    // origin isolation, which Clerk's client scripts break). Drives the
+    // header account/avatar vs. "Sign in" WITHOUT flipping the canvas into
+    // multi-user mode — that's `currentUserId`'s job and stays undefined on
+    // `/`. See lib/server/home-auth.ts + routes/+layout.server.ts.
+    headerAuth?: {
+      isSignedIn: boolean;
+      imageUrl: string | null;
+      initials: string | null;
+    } | null;
   }
   let {
     currentUserId,
     provider = null,
     presenceUser = null,
     audioGate,
+    headerAuth = null,
   }: Props = $props();
+
+  // The header shows "Sign in" only when we're confident the user is signed
+  // out. On the public `/` canvas (no client ClerkProvider) that signal is
+  // server-derived via `headerAuth`; on `/r/[id]` (provider mounted) it's
+  // `currentUserId`. Either being signed-in suppresses the link.
+  let headerSignedIn = $derived(Boolean(currentUserId) || headerAuth?.isSignedIn === true);
 
   // Whether the LOCAL user owns the rackspace. `presenceUser.isRackOwner` is
   // published by r/[id]/+page.svelte (authed owner only; anon members never).
@@ -3261,7 +3279,22 @@
       >Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
       <SkinSwitcher />
-      {#if !currentUserId}
+      {#if headerSignedIn}
+        <a
+          class="account-link"
+          href="/dashboard"
+          data-testid="account-link"
+          title="Your dashboard"
+        >
+          {#if headerAuth?.imageUrl}
+            <img class="account-avatar" src={headerAuth.imageUrl} alt="Account" />
+          {:else}
+            <span class="account-avatar account-avatar-fallback">
+              {headerAuth?.initials ?? '\u{1F464}'}
+            </span>
+          {/if}
+        </a>
+      {:else}
         <a class="signin-link" href="/dashboard" data-testid="signin-link">Sign in</a>
       {/if}
     </div>
@@ -3576,6 +3609,32 @@
   }
   .topbar .signin-link:hover {
     background: #353a47;
+  }
+  .topbar .account-link {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.4rem;
+    text-decoration: none;
+  }
+  .topbar .account-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid #404652;
+    object-fit: cover;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .topbar .account-avatar-fallback {
+    background: #2a2f3a;
+    color: var(--text);
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .topbar .account-link:hover .account-avatar {
+    border-color: #6ba0d4;
   }
   .flow {
     position: relative;
