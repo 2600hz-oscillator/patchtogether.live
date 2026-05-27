@@ -146,6 +146,30 @@ export interface RemotePresence {
   cursor?: CursorPos;
 }
 
+/**
+ * Count distinct present users from a list of awareness presences.
+ *
+ * De-dup is by `user.id` (NOT clientId): one human is one "member" even with
+ * multiple tabs / windows open (each tab is a separate awareness clientId and
+ * gets its own presence DOT, but they share a user.id). This is the right
+ * semantics for the "N/4 members" text — the cap (RACKSPACE_MAX_MEMBERS) is a
+ * per-human cap, and a user opening a second tab must not consume a slot.
+ *
+ * Note the dots and the count therefore differ on purpose when one user has
+ * multiple tabs: dots are per-tab (per clientId), the count is per human. In
+ * the common single-tab case they agree exactly.
+ */
+export function countDistinctPresentUsers(
+  presences: ReadonlyArray<{ user?: { id?: string } | null }>,
+): number {
+  const ids = new Set<string>();
+  for (const p of presences) {
+    const id = p?.user?.id;
+    if (typeof id === 'string' && id.length > 0) ids.add(id);
+  }
+  return ids.size;
+}
+
 export function readRemotePresence(
   awareness: import('y-protocols/awareness').Awareness | null | undefined,
   localClientId: number,

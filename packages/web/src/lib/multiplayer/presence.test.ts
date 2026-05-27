@@ -8,6 +8,7 @@ import {
   colorForUserId,
   anonGuestName,
   resolvePresenceUser,
+  countDistinctPresentUsers,
 } from './presence';
 
 describe('presence', () => {
@@ -107,6 +108,55 @@ describe('presence', () => {
       // dropped on the anon branch.
       const anon = resolvePresenceUser({ userId: 'anon-x', isAnon: true, isRackOwner: true });
       expect(anon.isRackOwner).toBeUndefined();
+    });
+  });
+
+  describe('countDistinctPresentUsers', () => {
+    // This is the helper behind the live "N/4 members" count. It MUST count
+    // distinct humans (by user.id), not distinct awareness clientIds (tabs),
+    // so the cap is a per-human cap and a second tab doesn't burn a slot.
+    it('counts one per distinct user.id', () => {
+      const presences = [
+        { user: { id: 'user_a' } },
+        { user: { id: 'user_b' } },
+      ];
+      expect(countDistinctPresentUsers(presences)).toBe(2);
+    });
+
+    it('de-dups multiple tabs of the same user.id to one (NOT per clientId)', () => {
+      // Two tabs for user_a (each a distinct awareness clientId / dot) + one
+      // for user_b → 3 dots but only 2 members.
+      const presences = [
+        { user: { id: 'user_a' } },
+        { user: { id: 'user_a' } },
+        { user: { id: 'user_b' } },
+      ];
+      expect(countDistinctPresentUsers(presences)).toBe(2);
+    });
+
+    it('returns 0 for an empty list', () => {
+      expect(countDistinctPresentUsers([])).toBe(0);
+    });
+
+    it('ignores entries with no user or no id', () => {
+      const presences = [
+        { user: { id: 'user_a' } },
+        { user: undefined },
+        { user: { id: '' } },
+        {},
+      ];
+      expect(countDistinctPresentUsers(presences)).toBe(1);
+    });
+
+    it('matches the dot count in the common single-tab case', () => {
+      // One tab per user → distinct-user count equals the number of dots.
+      const presences = [
+        { user: { id: 'user_a' } },
+        { user: { id: 'user_b' } },
+        { user: { id: 'anon-xyz' } },
+      ];
+      const dotCount = presences.length;
+      expect(countDistinctPresentUsers(presences)).toBe(dotCount);
     });
   });
 });

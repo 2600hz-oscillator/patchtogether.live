@@ -38,6 +38,7 @@
   import {
     resolvePresenceUser,
     getOrCreateAnonTabId,
+    countDistinctPresentUsers,
     type PresenceUser,
     type RemotePresence,
   } from '$lib/multiplayer/presence';
@@ -383,6 +384,17 @@
     };
   });
 
+  // Live "N/4 members" count, derived from the SAME awareness source as the
+  // presence dots so the two never disagree. De-dup by user.id (one human =
+  // one member, even with multiple tabs) — see countDistinctPresentUsers.
+  // Falls back to the SSR memberCount before the provider has connected, so
+  // the initial paint isn't "0/4".
+  let liveMemberCount = $derived(
+    allPresences.length > 0
+      ? countDistinctPresentUsers(allPresences)
+      : data.rackspace.memberCount,
+  );
+
   onDestroy(() => {
     provider?.destroy();
   });
@@ -441,8 +453,8 @@
       {/if}
       <span class="rackspace-name">{data.rackspace.name || 'Untitled'}</span>
       <span class="rackspace-id">{data.rackspace.id}</span>
-      <span class="member-count">
-        {data.rackspace.memberCount}/{data.rackspace.maxMembers} members
+      <span class="member-count" data-testid="member-count">
+        {liveMemberCount}/{data.rackspace.maxMembers} members
       </span>
       <span class="presence-dots" data-testid="presence-dots" aria-label="Active users">
         {#each allPresences as p (p.clientId)}

@@ -293,12 +293,20 @@
     provider?: HocuspocusProvider | null;
     presenceUser?: PresenceUser | null;
     audioGate?: import('$lib/audio/audio-gate.svelte').AudioGate;
+    /** Server-side Clerk auth state, surfaced to the public `/` canvas via
+     *  +layout.server.ts WITHOUT mounting ClerkProvider (preserves SAB /
+     *  cross-origin isolation). When true the header shows a "Dashboard"
+     *  affordance instead of "Sign in". `undefined` = unknown (e.g. the
+     *  /r/[id] canvas, which uses currentUserId instead) → falls back to the
+     *  currentUserId-based logic. */
+    isAuthed?: boolean;
   }
   let {
     currentUserId,
     provider = null,
     presenceUser = null,
     audioGate,
+    isAuthed,
   }: Props = $props();
 
   // Whether the LOCAL user owns the rackspace. `presenceUser.isRackOwner` is
@@ -3261,7 +3269,9 @@
       >Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
       <SkinSwitcher />
-      {#if !currentUserId}
+      {#if isAuthed || currentUserId}
+        <a class="signin-link" href="/dashboard" data-testid="dashboard-link">Dashboard</a>
+      {:else}
         <a class="signin-link" href="/dashboard" data-testid="signin-link">Sign in</a>
       {/if}
     </div>

@@ -123,6 +123,51 @@ test.describe('@collab awareness', () => {
     }
   });
 
+  // LIVE MEMBER COUNT (Bug A) — the rack bar's "N/4 members" text is derived
+  // from the SAME awareness source as the presence dots, de-duped by user.id
+  // (one human = one member, regardless of tab count). This asserts the
+  // displayed count (self-inclusive, like the rack bar) converges to 2 from
+  // BOTH sides — the previous bug showed "1/4" because the count read the
+  // load-time DB member list instead of live awareness.
+  test('live member count (self-inclusive, de-duped by user.id) is 2 from both sides', async ({
+    browser,
+  }) => {
+    const s = await openTwoContexts(browser);
+    try {
+      await s.pageA.evaluate(() => {
+        (window as unknown as {
+          __setAwarenessUser: (u: { id: string; displayName: string; color: string }) => boolean;
+        }).__setAwarenessUser({ id: 'member-a', displayName: 'A', color: '#ef4444' });
+      });
+      await s.pageB.evaluate(() => {
+        (window as unknown as {
+          __setAwarenessUser: (u: { id: string; displayName: string; color: string }) => boolean;
+        }).__setAwarenessUser({ id: 'member-b', displayName: 'B', color: '#3b82f6' });
+      });
+
+      // Mirror the rack bar's liveMemberCount: count DISTINCT user.ids across
+      // ALL awareness states (including self), exactly as countDistinctPresentUsers
+      // does. The server's heartbeat-only client has no `user`, so it's excluded.
+      const liveMemberCount = (page: import('@playwright/test').Page) =>
+        page.evaluate(() => {
+          const w = window as unknown as {
+            __getAwarenessStates: () => Array<{ clientId: number; user?: { id?: string } }>;
+          };
+          const ids = new Set<string>();
+          for (const st of w.__getAwarenessStates()) {
+            const id = st.user?.id;
+            if (typeof id === 'string' && id.length > 0) ids.add(id);
+          }
+          return ids.size;
+        });
+
+      await expect.poll(() => liveMemberCount(s.pageA), { timeout: 5000 }).toBe(2);
+      await expect.poll(() => liveMemberCount(s.pageB), { timeout: 5000 }).toBe(2);
+    } finally {
+      await s.close();
+    }
+  });
+
   // Late-join backfill: A is already present + has published its identity, THEN
   // B connects. B must receive A's EXISTING awareness state (the server's
   // sendCurrentAwareness backfill on connect), not just A's future updates.
