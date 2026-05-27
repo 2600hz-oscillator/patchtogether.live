@@ -133,61 +133,14 @@ test.describe('video orientation — SHAPES triangle reference', () => {
     expect(r.verdict, `SHAPES->BENTBOX->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
 
-  test('5. DOOM(synthetic frame, bright TOP rows) -> OUTPUT shows bright on top', async ({ page }) => {
-    // DOOM's DG_ScreenBuffer is row-major TOP-DOWN (row 0 = top of the
-    // game image: ceiling/sky; the player's gun lives in the high rows =
-    // bottom of the image). We can't run a real game without the WAD, so
-    // we inject a synthetic 640x400 BGRA framebuffer straight into DOOM's
-    // upload path via the handle's pushRemoteFramebuffer extra. We fill
-    // the TOP image rows (low row index) bright white and the bottom dark.
-    // A correctly-oriented pipeline displays bright at the TOP of OUTPUT.
-    await setup(page);
-    await spawnPatch(page,
-      [
-        // running=0 so the draw loop uses the injected remote framebuffer
-        // instead of ticking the (absent) WASM runtime.
-        { id: 'doom', type: 'doom', position: { x: 40, y: 40 }, domain: 'video', params: { running: 0 } },
-        { id: 'out', type: 'videoOut', position: { x: 600, y: 40 }, domain: 'video' },
-      ],
-      [{ id: 'e1', from: { nodeId: 'doom', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' }],
-    );
-    // Inject the synthetic framebuffer once per rAF for a few frames.
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine?: () => { getDomain: (d: string) => { read: (id: string, k: string) => unknown } } | null;
-      };
-      const eng = w.__engine?.();
-      const ve = eng?.getDomain('video');
-      const extras = ve?.read('doom', 'extras') as {
-        pushRemoteFramebuffer: (b: Uint8Array) => void;
-        setSpectating: (s: boolean) => void;
-      } | undefined;
-      if (!extras) throw new Error('no DOOM extras');
-      // This test exercises the spectator render path (inject a host frame +
-      // verify it uploads). Mark the module spectating so pushRemoteFramebuffer
-      // is honoured (an active player ignores remote frames + ticks its own sim).
-      extras.setSpectating(true);
-      const W = 640, H = 400;
-      const buf = new Uint8Array(W * H * 4);
-      for (let y = 0; y < H; y++) {
-        // y is the image row, 0 = top. Bright in the top quarter.
-        const bright = y < H / 4 ? 255 : 20;
-        for (let x = 0; x < W; x++) {
-          const i = (y * W + x) * 4;
-          buf[i] = bright; buf[i + 1] = bright; buf[i + 2] = bright; buf[i + 3] = 255;
-        }
-      }
-      // re-push every frame; the draw loop consumes it each tic.
-      const push = () => { extras.pushRemoteFramebuffer(buf); requestAnimationFrame(push); };
-      push();
-    });
-    await page.waitForTimeout(700);
-    const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
-    await page.screenshot({ path: 'test-results/orient-5-doom-output.png' });
-    // Bright band injected at image TOP must land in the TOP half on screen.
-    expect(r.topBright, `DOOM->OUTPUT bright-top should dominate (top=${r.topBright} bottom=${r.bottomBright})`)
-      .toBeGreaterThan(r.bottomBright * 1.5);
-  });
+  // (Removed) Test 5 injected a synthetic framebuffer through DOOM's
+  // pushRemoteFramebuffer/setSpectating spectator-mirror hooks to assert the
+  // BGRA top-down → texture upload orientation. That host-framebuffer-over-
+  // awareness mirror path was REMOVED (it was the relay-OOM driver), and with
+  // it the only public frame-injection hook. The same uploadFramebufferToTexture
+  // swizzle now runs only for a peer's OWN live WASM frames (needs the WAD), so
+  // DOOM-specific orientation is left to the WASM-gated DOOM e2e specs; the
+  // generic top-down upload orientation is still covered by tests 2/3/6 here.
 
   test('6. CAMERA(injected video, bright TOP) -> OUTPUT shows bright on top', async ({ page }) => {
     // CAMERA uploads a <video> element with UNPACK_FLIP_Y_WEBGL=true.

@@ -1,15 +1,18 @@
 // packages/web/src/lib/video/modules/doom.ts
 //
-// DOOM — single-instance interactive video module. One WASM-backed
-// instance of doomgeneric runs on whichever rack-mate spawned the
-// module ("host"); spectators receive framebuffers via Yjs awareness
-// at ~10 Hz and render those instead of running their own WASM.
+// DOOM — single-instance interactive video module. Each JOINED peer runs
+// its OWN WASM-backed instance of doomgeneric and renders its own POV
+// (the per-peer model). An UNJOINED spectator runs no WASM, so its surface
+// stays black (the DOOM attract screen) until it JOINS. There is NO
+// framebuffer mirror: the host used to base64 its ~1.4 MB framebuffer into a
+// Yjs awareness field at ~10 Hz so spectators could watch — that firehose
+// OOM-killed the in-process Hocuspocus relay (exit 137) and was REMOVED.
 //
 // Multiplayer: see /docs/design/game-modules.md §3 (DOOM rack model)
 // and packages/web/src/lib/doom/doom-presence.ts. This factory is
-// agnostic of the multiplayer wiring — the card decides whether to
-// drive the runtime locally or feed it from incoming awareness
-// frames. The engine here just exposes:
+// agnostic of the multiplayer wiring — the card decides whether this peer
+// drives its own runtime (joined player) or renders nothing (spectator).
+// The engine here just exposes:
 //   - the GL surface that displays the 640×400 BGRA framebuffer (with
 //     aspect-correct letterboxing into the engine's 640×360 FBO);
 //   - the 7 CV-gate inputs (w/a/s/d/space/ctrl/alt) edge-detected into
@@ -119,27 +122,14 @@ export interface DoomHandleExtras {
   /** Push a keyboard event (translated from KeyboardEvent.code by the
    *  card). Returns true if the code is mapped, false otherwise. */
   pushKeyboardKey(code: string, pressed: boolean): boolean;
-  /** Push an already-translated raw doomkey (for the Yjs presence relay
-   *  on the host side; spectators don't call this — they just render
-   *  the host's framebuffer). */
+  /** Push an already-translated raw doomkey (the Yjs presence relay on the
+   *  host side feeds a pure spectator's keystrokes here). */
   pushDoomKey(doomKey: number, pressed: boolean): void;
-  /** Snapshot the current framebuffer for awareness broadcast. */
+  /** Snapshot the current framebuffer for the card's LOCAL 2D preview blit.
+   *  Pure local read of this peer's own runtime — null when no WASM is loaded
+   *  (a pure spectator), so its preview canvas stays black. NOT used for any
+   *  network broadcast (the framebuffer-over-awareness path was removed). */
   snapshotFramebuffer(): Uint8ClampedArray | null;
-  /** Spectator path: overwrite the displayed framebuffer with a remote
-   *  one (received via Yjs awareness). Buffer must be BGRA8 at the
-   *  engine's expected DOOM resolution. No-op (ignored) once this peer is
-   *  an active player (setSpectating(false)) so a late host-frame broadcast
-   *  can't freeze a joined player's own POV onto the host mirror. */
-  pushRemoteFramebuffer(buf: Uint8Array): void;
-  /** Whether THIS peer is currently a spectator (no active slot). The card
-   *  drives this off its roster status. When false (an active player), the
-   *  module ticks + renders its OWN WASM and ignores any cached remote
-   *  framebuffer; when true, it renders the host's mirror. Defaults to false
-   *  (single-player / lone host runs its own sim). This is the fix for the
-   *  "joined player stuck on the slow host mirror" bug: a peer that received
-   *  host frames while spectating, then joined, must drop the mirror + run
-   *  its own real-time sim. */
-  setSpectating(spectating: boolean): void;
   /** Slice 4: launch a netgame on this peer's runtime with the agreed
    *  settings + this peer's slot. No-op if the runtime isn't loaded. */
   startNetGame(
@@ -284,19 +274,6 @@ export const doomDef: VideoModuleDef = {
     let loadError: string | null = null;
     let loadPending: Promise<string | null> | null = null;
     let hasFrame = false;
-    // Last-pushed remote framebuffer (spectator path). When non-null AND
-    // this peer is spectating, we upload this every frame instead of polling
-    // the runtime.
-    let remoteFramebuffer: Uint8Array | null = null;
-    // Whether this peer is a spectator (no active player slot). Defaults to
-    // false: a lone host / single-player runs its own sim. The card flips it
-    // true while spectating and back to false the moment this peer becomes an
-    // active player — at which point we drop any cached host-mirror frame so
-    // draw() resumes ticking + rendering this peer's OWN real-time sim. Without
-    // this, a peer that saw even one host frame while spectating would be
-    // pinned to the ~10 Hz host mirror forever (the "staggeringly slow,
-    // player-1's view" bug).
-    let isSpectator = false;
     let lastTicMs = performance.now();
 
     // Edge-detector state, one per CV gate port.
@@ -422,25 +399,9 @@ export const doomDef: VideoModuleDef = {
 
     function snapshotFramebuffer(): Uint8ClampedArray | null {
       if (!runtime || !runtime.isInitialized()) return null;
-      // Caller MUST consume immediately — the view is into live HEAPU8.
-      // The presence broadcaster does a base64 encode that copies the
-      // bytes, so the snapshot survives the next tic.
+      // Local-only read for the card's 2D preview blit. The view is into live
+      // HEAPU8 — the card swaps the bytes into ImageData synchronously.
       return runtime.getFramebuffer();
-    }
-
-    function pushRemoteFramebuffer(buf: Uint8Array): void {
-      // Only a spectator renders the host mirror. An active player ignores
-      // late host-frame broadcasts so it can never get pinned to the slow
-      // mirror after joining.
-      if (!isSpectator) return;
-      remoteFramebuffer = buf;
-    }
-
-    function setSpectating(spectating: boolean): void {
-      isSpectator = spectating;
-      // Becoming an active player: drop the cached host mirror so draw()
-      // resumes ticking + rendering this peer's own real-time sim.
-      if (!spectating) remoteFramebuffer = null;
     }
 
     function uploadFramebufferToTexture(buf: Uint8Array | Uint8ClampedArray): void {
@@ -466,14 +427,14 @@ export const doomDef: VideoModuleDef = {
       fbo,
       texture,
       draw(frame) {
-        // 1. A spectator (no active slot) renders the host's mirror frame.
-        //    Everyone else — an active player OR a lone single-player host —
-        //    ticks + renders its OWN WASM in real time. The isSpectator gate
-        //    (not "did a remote frame ever arrive") is what guarantees a peer
-        //    that briefly spectated before joining resumes its own sim.
-        if (isSpectator && remoteFramebuffer) {
-          uploadFramebufferToTexture(remoteFramebuffer);
-        } else if (params.running > 0.5 && runtime && runtime.isInitialized()) {
+        // Every peer ticks + renders its OWN WASM in real time. A JOINED player
+        // (active or lone single-player host) has a runtime + draws its own POV.
+        // A pure unjoined spectator never loaded WASM (runtime === null), so it
+        // renders nothing → the shader letterboxes black (the DOOM attract /
+        // black screen) until it JOINS and brings up its own runtime. The
+        // framebuffer-over-awareness host mirror was REMOVED (relay-OOM driver):
+        // we no longer blit a remote peer's frame here.
+        if (params.running > 0.5 && runtime && runtime.isInitialized()) {
           const now = performance.now();
           const msDelta = Math.max(1, Math.min(50, now - lastTicMs));
           lastTicMs = now;
@@ -522,8 +483,6 @@ export const doomDef: VideoModuleDef = {
       pushKeyboardKey,
       pushDoomKey,
       snapshotFramebuffer,
-      pushRemoteFramebuffer,
-      setSpectating,
       startNetGame(settings, consolePlayer) {
         if (!runtime || !runtime.isInitialized()) return;
         runtime.startNetGame(settings, consolePlayer);

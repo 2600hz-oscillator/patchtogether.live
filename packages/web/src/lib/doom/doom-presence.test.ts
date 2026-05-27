@@ -5,12 +5,10 @@
 // that's covered by the multi-tab Playwright spec.
 
 import { describe, it, expect } from 'vitest';
+import * as presence from './doom-presence';
 import {
   encodeKey,
   decodeKey,
-  encodeFrame,
-  decodeFrame,
-  decodeFrameBuffer,
   pickHost,
   collectIncomingKeyPushes,
   type KeyEnvelope,
@@ -71,7 +69,7 @@ describe('collectIncomingKeyPushes — edge-triggered host relay (phantom-input 
 
   function specStateWithKey(env: KeyEnvelope | null): Map<number, Record<string, unknown>> {
     return new Map<number, Record<string, unknown>>([
-      [HOST_CLIENT, { user: { id: HOST_USER }, [`doom:${MODULE}:frame`]: { ts: 999 } }],
+      [HOST_CLIENT, { user: { id: HOST_USER } }],
       [SPEC_CLIENT, { user: { id: SPEC_USER }, [`doom:${MODULE}:key`]: env }],
     ]);
   }
@@ -95,10 +93,10 @@ describe('collectIncomingKeyPushes — edge-triggered host relay (phantom-input 
     // First observation: push the keydown.
     expect(collect(states, cursor)).toEqual([{ doomKey: 0xaf, pressed: true }]);
 
-    // The host's 10 Hz frame broadcast (and any other awareness churn) fires
-    // many more 'update' events while the SAME key field is still present.
-    // The pre-fix code re-pushed DOWNARROW each time → continuous backward
-    // drift. Edge-triggering must yield ZERO further pushes.
+    // Host election / cursor / presence churn fires many more 'update' events
+    // while the SAME key field is still present. The pre-fix code re-pushed
+    // DOWNARROW each time → continuous backward drift. Edge-triggering must
+    // yield ZERO further pushes.
     for (let i = 0; i < 20; i++) {
       expect(collect(states, cursor)).toEqual([]);
     }
@@ -145,49 +143,38 @@ describe('collectIncomingKeyPushes — edge-triggered host relay (phantom-input 
   });
 });
 
-describe('encodeFrame / decodeFrame — framebuffer envelope round-trip', () => {
-  it('round-trips a small synthetic frame', () => {
-    const width = 4;
-    const height = 2;
-    const buf = new Uint8Array(width * height * 4);
-    for (let i = 0; i < buf.length; i++) buf[i] = (i * 7 + 13) & 0xff;
-    const env = encodeFrame({
-      moduleId: 'doom-x', hostUserId: 'host-1',
-      width, height, framebuffer: buf, ts: 1234,
+describe('relay-OOM regression: DOOM never broadcasts a large awareness payload', () => {
+  // The host used to base64 its ~1.4 MB BGRA framebuffer into a 'frame'
+  // awareness envelope at ~10 Hz so unjoined spectators could mirror the host's
+  // screen. That firehose OOM-killed the in-process Hocuspocus relay (exit 137),
+  // wiping shared state. The whole framebuffer-over-awareness path was removed:
+  // these assertions are the guard that it stays gone.
+
+  it('exposes NO framebuffer encode/decode helpers', () => {
+    // The presence module's public surface must not carry any frame helper.
+    expect((presence as Record<string, unknown>).encodeFrame).toBeUndefined();
+    expect((presence as Record<string, unknown>).decodeFrame).toBeUndefined();
+    expect((presence as Record<string, unknown>).decodeFrameBuffer).toBeUndefined();
+  });
+
+  it('the only awareness envelope DOOM encodes is a small, bounded key envelope', () => {
+    // A key envelope is a handful of scalars — serialized it is tiny (well under
+    // 1 KB), never the multi-KB/MB payload a framebuffer mirror was.
+    const env = encodeKey({
+      kind: 'key',
+      moduleId: 'doom-abc',
+      srcUserId: 'user-1',
+      doomKey: 0xaf,
+      pressed: true,
+      ts: 1700000000000,
     });
-    expect(env.kind).toBe('frame');
-    expect(env.width).toBe(width);
-    expect(env.height).toBe(height);
-    const decoded = decodeFrame(env);
-    expect(decoded).toEqual(env);
-    const back = decodeFrameBuffer(decoded!);
-    expect(back).toEqual(buf);
-  });
-
-  it('throws when framebuffer length disagrees with declared dims', () => {
-    expect(() => encodeFrame({
-      moduleId: 'm', hostUserId: 'h', width: 10, height: 10,
-      framebuffer: new Uint8Array(7), ts: 0,
-    })).toThrow();
-  });
-
-  it('returns null on malformed payloads', () => {
-    expect(decodeFrame(null)).toBeNull();
-    expect(decodeFrame({})).toBeNull();
-    expect(decodeFrame({ kind: 'key' })).toBeNull();
-    expect(decodeFrame({ kind: 'frame', moduleId: 1, hostUserId: 'h', width: 1, height: 1, framebufferB64: '', ts: 0 })).toBeNull();
-  });
-
-  it('round-trips a more realistic 64x32 framebuffer (chunked b64 path)', () => {
-    const width = 64, height = 32;
-    const buf = new Uint8Array(width * height * 4);
-    // Fill with a deterministic pattern that exercises every byte value.
-    for (let i = 0; i < buf.length; i++) buf[i] = i & 0xff;
-    const env = encodeFrame({
-      moduleId: 'd', hostUserId: 'h', width, height, framebuffer: buf, ts: 0,
-    });
-    const back = decodeFrameBuffer(decodeFrame(env)!);
-    expect(back).toEqual(buf);
+    const serialized = JSON.stringify(env);
+    expect(serialized.length).toBeLessThan(512);
+    // No framebuffer-bearing field rides on it.
+    const fields = env as unknown as Record<string, unknown>;
+    expect(fields).not.toHaveProperty('framebufferB64');
+    expect(fields).not.toHaveProperty('framebuffer');
+    expect(fields.kind).toBe('key');
   });
 });
 
