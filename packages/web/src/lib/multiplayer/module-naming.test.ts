@@ -23,26 +23,43 @@ function n(id: string, type: string, name?: string): ModuleNode {
 }
 
 describe('module-naming.nextDefaultName', () => {
-  it('returns <TYPE>1 when no instances exist', () => {
-    expect(nextDefaultName({}, 'analogVco')).toBe('ANALOGVCO1');
+  it('returns the BARE <TYPE> when no instances exist (no `1` suffix)', () => {
+    expect(nextDefaultName({}, 'analogVco')).toBe('ANALOGVCO');
   });
 
-  it('continues the sequence for existing instances', () => {
+  it('returns <TYPE>2 when only the bare slot is taken', () => {
+    const nodes = { a: n('a', 'analogVco', 'ANALOGVCO') };
+    expect(nextDefaultName(nodes, 'analogVco')).toBe('ANALOGVCO2');
+  });
+
+  it('continues the sequence past existing numbered instances', () => {
     const nodes = {
-      a: n('a', 'analogVco', 'ANALOGVCO1'),
+      a: n('a', 'analogVco', 'ANALOGVCO'),
       b: n('b', 'analogVco', 'ANALOGVCO2'),
     };
     expect(nextDefaultName(nodes, 'analogVco')).toBe('ANALOGVCO3');
   });
 
-  it('does NOT fill gaps (retired numbers stay retired)', () => {
-    // ANALOGVCO2 was deleted; the new spawn must NOT reuse 2 because a
-    // stale DSL script could silently retarget the wrong instance.
+  it('refills the BARE slot when it is freed (only the bare slot reuses)', () => {
+    // The bare instance was deleted; numbered ones remain. Next spawn
+    // takes BARE (lowest slot) — the bare slot is the sole exception
+    // to the "retired numbers stay retired" rule.
     const nodes = {
-      a: n('a', 'analogVco', 'ANALOGVCO1'),
+      b: n('b', 'analogVco', 'ANALOGVCO2'),
       c: n('c', 'analogVco', 'ANALOGVCO3'),
     };
-    expect(nextDefaultName(nodes, 'analogVco')).toBe('ANALOGVCO4');
+    expect(nextDefaultName(nodes, 'analogVco')).toBe('ANALOGVCO');
+  });
+
+  it('does NOT fill numeric gaps (retired numbers stay retired)', () => {
+    // ANALOGVCO2/3 were deleted; ANALOGVCO4 remains. Next must NOT
+    // reuse 2 or 3 because a stale DSL script could silently retarget
+    // the wrong instance. Bare is taken, so next = max(4)+1 = 5.
+    const nodes = {
+      a: n('a', 'analogVco', 'ANALOGVCO'),
+      d: n('d', 'analogVco', 'ANALOGVCO4'),
+    };
+    expect(nextDefaultName(nodes, 'analogVco')).toBe('ANALOGVCO5');
   });
 
   it('ignores names that do not match the prefix pattern', () => {
@@ -50,12 +67,13 @@ describe('module-naming.nextDefaultName', () => {
       a: n('a', 'analogVco', 'MYBASS'),
       b: n('b', 'analogVco', 'KICKVCO'),
     };
-    expect(nextDefaultName(nodes, 'analogVco')).toBe('ANALOGVCO1');
+    expect(nextDefaultName(nodes, 'analogVco')).toBe('ANALOGVCO');
   });
 
   it('handles types with mixed case correctly', () => {
     const nodes = {
-      a: n('a', 'wavetableVco', 'WAVETABLEVCO5'),
+      a: n('a', 'wavetableVco', 'WAVETABLEVCO'),
+      b: n('b', 'wavetableVco', 'WAVETABLEVCO5'),
     };
     expect(nextDefaultName(nodes, 'wavetableVco')).toBe('WAVETABLEVCO6');
   });
@@ -153,9 +171,9 @@ describe('module-naming.migrateAssignNames', () => {
     };
     const count = migrateAssignNames(nodes);
     expect(count).toBe(3);
-    expect(readName(nodes.a)).toBe('ANALOGVCO1');
+    expect(readName(nodes.a)).toBe('ANALOGVCO');
     expect(readName(nodes.b)).toBe('ANALOGVCO2');
-    expect(readName(nodes.c)).toBe('AUDIOOUT1');
+    expect(readName(nodes.c)).toBe('AUDIOOUT');
   });
 
   it('leaves already-named nodes alone (idempotent)', () => {
@@ -165,7 +183,7 @@ describe('module-naming.migrateAssignNames', () => {
     };
     migrateAssignNames(nodes);
     expect(readName(nodes.a)).toBe('BASS');
-    expect(readName(nodes.b)).toBe('ANALOGVCO1');
+    expect(readName(nodes.b)).toBe('ANALOGVCO');
     // Second pass changes nothing.
     const count2 = migrateAssignNames(nodes);
     expect(count2).toBe(0);
@@ -177,7 +195,7 @@ describe('module-naming.migrateAssignNames', () => {
       'analogVco-aaa': n('analogVco-aaa', 'analogVco'),
     };
     migrateAssignNames(nodes);
-    expect(readName(nodes['analogVco-aaa'])).toBe('ANALOGVCO1');
+    expect(readName(nodes['analogVco-aaa'])).toBe('ANALOGVCO');
     expect(readName(nodes['analogVco-zzz'])).toBe('ANALOGVCO2');
   });
 });
@@ -201,7 +219,7 @@ describe('module-naming.resolveDisplayName', () => {
   it('falls back to the computed default when both name and defaultLabel are missing', () => {
     const node = n('a', 'analogVco');
     const nodes = { a: node };
-    expect(resolveDisplayName(node, nodes)).toBe('ANALOGVCO1');
+    expect(resolveDisplayName(node, nodes)).toBe('ANALOGVCO');
   });
 
   it('preserves a legitimate empty-edit-to-default round-trip', () => {
