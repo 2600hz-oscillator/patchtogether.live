@@ -236,6 +236,11 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // MODTRIS — research-prototype Tetris-clone game module. Gate-in controls
   // + gate-out events. Same bucket as PONG.
   modtris: { top: 'Hybrid', sub: 'Hybrid' },
+  // FROGGER — research-prototype Frogger port. 5 CV-gate inputs (up/down/
+  // left/right + start), 3 gate outputs (home/dead/level). Auto-starts on
+  // module-spawn via a synthesized start_gate pulse. Same bucket as PONG /
+  // MODTRIS.
+  frogger: { top: 'Hybrid', sub: 'Hybrid' },
   // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
   wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
   // Meta-domain organizational tools live here — they don't fit

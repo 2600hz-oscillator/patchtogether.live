@@ -174,6 +174,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   pong: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
   // MODTRIS research prototype: same rationale as PONG.
   modtris: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
+  // FROGGER research prototype: sprite-tick advances every ~10 ms of game-
+  // time + the start_gate auto-fire on first tick produces a moving frame
+  // by the time Playwright snapshots. Same rationale as PONG / MODTRIS;
+  // unit + E2E provide coverage. Promote to a real VRT baseline once a
+  // deterministic-time test hook is added so the scene can freeze the
+  // game at a known tick.
+  frogger: 'animated sprite motion (cars/logs/turtles) + auto-start defeat deterministic single-frame capture; unit + E2E provide coverage',
   // ANALOGLOGICMATHS first-slice PR: VRT baseline pending; ART + unit + E2E
   // provide coverage. Card is small (2 attenuverter knobs + patch panel) and
   // stable; a follow-up PR will capture darwin + linux baselines once the
