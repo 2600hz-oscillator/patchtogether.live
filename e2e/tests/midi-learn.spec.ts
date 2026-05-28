@@ -169,3 +169,63 @@ test('MIDI Learn: a Fader (CALLSINE · Level) learns + tracks via simulated CC',
 
   expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
+
+test('MIDI Learn: the control menu spawns under the cursor (portalled out of the transformed canvas)', async ({ page }) => {
+  // Regression: the menu lives inside a SvelteFlow node, and `.svelte-flow__viewport`
+  // always has a CSS `transform` (pan/zoom) → it is the containing block for the
+  // menu's `position: fixed`. Without portalling the menu to <body>, its
+  // cursor-anchored left/top get interpreted in the transformed/scaled canvas
+  // space, so it lands in the wrong spot (and drifts as you pan/zoom). After the
+  // portal fix the menu must appear AT the click point regardless of viewport
+  // transform.
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
+
+  await spawnPatch(
+    page,
+    [{ id: 'm-wc', type: 'wavecel', position: { x: 160, y: 160 }, domain: 'audio', params: { morph: 0 } }],
+    [],
+  );
+  const card = page.locator('.svelte-flow__node-wavecel');
+  await expect(card).toHaveCount(1);
+
+  const morphKnob = card.locator('[role="slider"][aria-label="Morph"]');
+  await expect(morphKnob).toHaveCount(1);
+
+  // Right-click the knob (Playwright clicks its centre = the cursor anchor).
+  await morphKnob.click({ button: 'right' });
+  const menu = page.locator('[data-testid="control-context-menu"]');
+  await expect(menu).toBeVisible();
+
+  // STRUCTURAL GUARANTEE (the actual fix): the menu must be portalled out to
+  // <body>, NOT left inside the SvelteFlow node. `.svelte-flow__viewport`
+  // always carries a CSS transform (pan/zoom), which would make it the
+  // containing block for the menu's `position: fixed` and throw the
+  // cursor-anchored placement off (the "weird spot" the user saw — worse the
+  // more you pan/zoom). Portalling to <body> removes the transformed ancestor
+  // so fixed-positioning resolves against the real viewport.
+  const parentIsBody = await menu.evaluate(
+    (el) => el.parentElement?.parentElement === document.body,
+  );
+  expect(parentIsBody, 'menu must be portalled to document.body').toBe(true);
+
+  // POSITION: the menu's top-left sits at the cursor (the knob centre). Even
+  // the canvas's resting `translate(...) scale(1)` viewport transform offsets
+  // a non-portalled menu by the flow container's on-screen origin (it lives
+  // below the top toolbar), so this distinguishes the fix from the bug at
+  // rest. Read the knob box AFTER the menu opens (nothing moves on open).
+  const kb = await morphKnob.boundingBox();
+  const mb = await menu.boundingBox();
+  if (!kb || !mb) throw new Error('no box');
+  const cursorX = kb.x + kb.width / 2;
+  const cursorY = kb.y + kb.height / 2;
+  expect(Math.abs(mb.x - cursorX), `menu x ${mb.x} should ≈ knob-centre x ${cursorX}`).toBeLessThanOrEqual(10);
+  expect(Math.abs(mb.y - cursorY), `menu y ${mb.y} should ≈ knob-centre y ${cursorY}`).toBeLessThanOrEqual(10);
+
+  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+});
