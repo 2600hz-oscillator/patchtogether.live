@@ -145,25 +145,33 @@ describe("charlottes-echos / wet-output regression", () => {
     expect(p, `wet peak ${p.toFixed(4)} (must be < 1.0)`).toBeLessThan(1.0);
   });
 
-  it("mix=1.0 output is delayed: silence before t=delay, signal after", () => {
+  it("mix=1.0 output is delayed: silence before the cascade delay, signal after", () => {
+    // CHARLOTTE is now FOUR Cocoa Delay stages in SERIES. At mix=1.0 each
+    // stage is pure-wet, so the dry signal only emerges after passing through
+    // all four delay lines → the first echo lands at ≈ the SUM of the stage
+    // delays (≈ 4 × delay). With delay=0.4 that's ≈1.6 s, so render long
+    // enough to capture it.
+    const delay = 0.4;
+    const cascade = 4 * delay; // ≈ first-echo arrival
     const { output } = renderProcessor({
-      delay: 0.4,
+      delay,
       feedback: 0.5,
       decay: 0.2,
       pitchUp: 0,
       mix: 1.0,
-      durationS: 1.0,
+      durationS: cascade + 0.6,
       inputAmp: 0.5,
       inputHz: 440,
     });
-    const preDelay = peakAbs(output, 0, Math.round(0.39 * SAMPLE_RATE));
+    // Silent until the signal has traversed all four stages.
+    const preDelay = peakAbs(output, 0, Math.round((cascade - 0.05) * SAMPLE_RATE));
     const postDelay = peakAbs(
       output,
-      Math.round(0.41 * SAMPLE_RATE),
-      Math.round(0.6 * SAMPLE_RATE),
+      Math.round((cascade + 0.02) * SAMPLE_RATE),
+      Math.round((cascade + 0.4) * SAMPLE_RATE),
     );
-    expect(preDelay, `pre-delay peak ${preDelay}`).toBeLessThan(0.01);
-    expect(postDelay, `post-delay peak ${postDelay}`).toBeGreaterThan(0.1);
+    expect(preDelay, `pre-cascade peak ${preDelay}`).toBeLessThan(0.01);
+    expect(postDelay, `post-cascade peak ${postDelay}`).toBeGreaterThan(0.1);
   });
 
   it("wet output differs from dry input (delay actually happened)", () => {
