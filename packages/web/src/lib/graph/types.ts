@@ -398,6 +398,14 @@ type StandardModuleType =
   // a containing GroupCard for cross-domain video out. Single-user; multi-
   // user follows the same per-docs/design/game-modules.md path as MODTRIS.
   | 'frogger'
+  // SM64 — Super Mario 64 (sm64js pure-JS port, WTFPL). Single-instance
+  // (maxInstances:1) per rack. CV stick (X/Y bipolar −1..+1 → ±64) +
+  // 9 gates (A/B/Z/R/C-up/C-down/C-left/C-right/Start). On first spawn
+  // without a ROM in IDB the card shows an upload dropzone — once the
+  // user supplies a US .z64, the bundle extracts assets into IDB and
+  // future spawns boot straight to a running game. No outputs;
+  // vizPassthrough on the canvas covers cross-domain video output.
+  | 'sm64'
   // JOYSTICK — manual XY pad. Outputs x, y, nx (= -x), ny (= -y) as CV.
   // No inputs in v1 (future: MIDI-mappable). Mirrors how an LFO emits
   // multiple inverted/quadrature outputs from a single source of motion.

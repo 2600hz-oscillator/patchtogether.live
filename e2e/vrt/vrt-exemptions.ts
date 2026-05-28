@@ -181,6 +181,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // deterministic-time test hook is added so the scene can freeze the
   // game at a known tick.
   frogger: 'animated sprite motion (cars/logs/turtles) + auto-start defeat deterministic single-frame capture; unit + E2E provide coverage',
+  // SM64 — fully animated 3D scene (Mario idle anim + camera bob even
+  // before any user input); no naturally still frame — VRT deferred. Unit
+  // (CV→playerInput map) + E2E (boot-into-running-game with the seeded
+  // IDB fixture, or skip when fixture absent) provide coverage.
+  sm64: 'fully animated 3D scene; no naturally still frame — VRT deferred. Unit + E2E provide coverage',
   // ANALOGLOGICMATHS first-slice PR: VRT baseline pending; ART + unit + E2E
   // provide coverage. Card is small (2 attenuverter knobs + patch panel) and
   // stable; a follow-up PR will capture darwin + linux baselines once the
