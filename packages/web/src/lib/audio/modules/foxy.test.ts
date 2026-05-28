@@ -48,10 +48,17 @@ describe('FOXY module def shape', () => {
     }
   });
 
-  it('adds the mini-SWOLEVCO source controls', () => {
+  it('adds the mini-SWOLEVCO source A controls (raster A — terrain)', () => {
     const ids = foxyDef.params.map((p) => p.id);
     for (const id of ['src_tune', 'src_fine', 'src_timbre', 'src_symmetry', 'src_fold']) {
       expect(ids, `source param ${id}`).toContain(id);
+    }
+  });
+
+  it('adds the SECOND mini-SWOLEVCO source B controls (raster B — Z height)', () => {
+    const ids = foxyDef.params.map((p) => p.id);
+    for (const id of ['src2_tune', 'src2_fine', 'src2_timbre', 'src2_symmetry', 'src2_fold']) {
+      expect(ids, `source-B param ${id}`).toContain(id);
     }
   });
 

@@ -99,6 +99,62 @@ export interface FoxyFieldRow {
   lum: Float32Array;
 }
 
+// ── The "Box" 3D heightfield ──────────────────────────────────────────────
+//
+// FOXY v2 is no longer "flat": instead of ONE raster's own luma driving the
+// height, we now combine TWO rasters. Raster A is the TERRAIN PATTERN (its
+// luma is the surface base value / shading); raster B's per-pixel LUMINOSITY
+// is the VERTICAL HEIGHT (Z displacement) that lifts A's surface into 3D. So
+// for each (x,y): base = lumaA(x,y) is "what the pixel looks like", and
+// height = lumaB(x,y) is "how high that pixel sticks up". The wavetable is
+// then sampled from this displaced surface, so successive frames vary in BOTH
+// pattern (A) and height (B) → a genuinely 3D table, not a single-raster
+// heightmap.
+
+/** A combined Box surface: parallel base + height grids, row-major
+ *  `size × size`. Pure data so the unit tests can pin the combine math. */
+export interface FoxyBox {
+  size: number;
+  /** Raster A luma per cell in [0,1] — the terrain pattern / surface shade. */
+  base: Float32Array;
+  /** Raster B luma per cell in [0,1] — the Z height that lifts A into 3D. */
+  height: Float32Array;
+}
+
+/**
+ * Combine two RGBA rasters into the Box 3D heightfield.
+ *
+ * Raster A supplies the BASE value (its own luma — the terrain pattern that
+ * gets shaded), raster B supplies the HEIGHT (its luma — the Z displacement
+ * that lifts A). Both are sampled on the same `size × size` grid (nearest
+ * read via lumaAt). Pure + deterministic: same buffers → same Box.
+ *
+ * Either buffer may be empty/short; lumaAt clamps + defaults missing channels
+ * to 0, so a cold raster reads as 0 luma (flat / no lift) rather than NaN.
+ */
+export function boxHeightfield(
+  rgbaA: Uint8ClampedArray | readonly number[],
+  rgbaB: Uint8ClampedArray | readonly number[],
+  srcW: number,
+  srcH: number,
+  size = FOXY_FIELD_SIZE,
+): FoxyBox {
+  const base = new Float32Array(size * size);
+  const height = new Float32Array(size * size);
+  for (let r = 0; r < size; r++) {
+    const v0 = size > 1 ? r / (size - 1) : 0;
+    const srcRow = v0 * (srcH - 1);
+    for (let c = 0; c < size; c++) {
+      const h0 = size > 1 ? c / (size - 1) : 0;
+      const srcCol = h0 * (srcW - 1);
+      const o = r * size + c;
+      base[o] = lumaAt(rgbaA, srcW, srcH, srcCol, srcRow);
+      height[o] = lumaAt(rgbaB, srcW, srcH, srcCol, srcRow);
+    }
+  }
+  return { size, base, height };
+}
+
 /**
  * Compute the simplified RUTTETRA "XYZ" field from a downsampled raster.
  *
@@ -142,6 +198,52 @@ export function simplifiedRuttetraField(
       const y = v + (lum - 0.5) * params.yDisp;
       yArr[c] = y;
       lArr[c] = Math.max(0, Math.min(1, lum * (0.6 + 0.4 * hShade)));
+    }
+    out.push({ y: yArr, lum: lArr });
+  }
+  return out;
+}
+
+/**
+ * Convert the Box heightfield into the simplified XYZ scanline field.
+ *
+ * This is the v2 path that feeds the XYZ stage. Unlike simplifiedRuttetraField
+ * (which displaced a single raster by ITS OWN luma), here the displacement is
+ * driven by raster B's HEIGHT while the stroke shading (`lum`) reads raster
+ * A's BASE pattern. So:
+ *
+ *   y   = v + (heightB - 0.5) * yDisp     ← B luma lifts the surface (Z)
+ *   lum = baseA * (0.6 + 0.4*hShade)      ← A is the terrain shown/shaded
+ *
+ * Because B and A are independent images, the height variation no longer
+ * tracks the pattern — the surface gets REAL 3D relief (bright B → tall, dark
+ * B → low) over A's terrain. Pure + deterministic.
+ */
+export function boxToField(
+  box: FoxyBox,
+  params: FoxyXyzParams,
+  rows = FOXY_FIELD_SIZE,
+  cols = FOXY_FIELD_SIZE,
+): FoxyFieldRow[] {
+  const out: FoxyFieldRow[] = [];
+  const size = box.size;
+  for (let r = 0; r < rows; r++) {
+    const v0 = rows > 1 ? r / (rows - 1) : 0;
+    const br = size > 1 ? Math.round(v0 * (size - 1)) : 0;
+    const yArr = new Float32Array(cols);
+    const lArr = new Float32Array(cols);
+    for (let c = 0; c < cols; c++) {
+      const h0 = cols > 1 ? c / (cols - 1) : 0;
+      const bc = size > 1 ? Math.round(h0 * (size - 1)) : 0;
+      const o = br * size + bc;
+      const baseA = box.base[o] ?? 0;
+      const heightB = box.height[o] ?? 0;
+      const v = shapedRamp(v0, h0, v0, params.yShape);
+      const hShade = shapedRamp(h0, h0, v0, params.xShape);
+      // B's luminosity drives the vertical height of A's surface.
+      const y = v + (heightB - 0.5) * params.yDisp;
+      yArr[c] = y;
+      lArr[c] = Math.max(0, Math.min(1, baseA * (0.6 + 0.4 * hShade)));
     }
     out.push({ y: yArr, lum: lArr });
   }

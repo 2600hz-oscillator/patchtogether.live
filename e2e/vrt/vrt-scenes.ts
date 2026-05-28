@@ -199,7 +199,21 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       { id: 'vrt-1', type: 'foxy', position: { x: 120, y: 60 }, domain: 'audio' },
     ],
     edges: [],
-    settleMs: 1200,
+    // FOXY v2 has TWO drifting rasters + a Box; the live fill is timing-
+    // dependent, so freeze-on-suspend alone leaves >5% pixel drift between
+    // runs. We set `__foxyVrtSeed` so FOXY paints BOTH rasters once from fixed
+    // synthetic waveforms (no analyser, no wall-clock) → pixel-stable Box +
+    // wavetable. freezeAudio still suspends so nothing re-drifts after.
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        (globalThis as unknown as { __foxyVrtSeed?: boolean }).__foxyVrtSeed = true;
+      });
+      // A few rAFs so the seed paint lands + the wavetable display catches it.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    settleMs: 600,
     freezeAudio: true,
   },
 
