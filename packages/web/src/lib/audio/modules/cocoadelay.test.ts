@@ -7,7 +7,7 @@
 //      mapping, ducking envelope, and drive saturation.
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { cocoaDelayDef } from './cocoadelay';
+import { cocoaDelayDef, readTimelordeBpm, resolveSyncPeriodS } from './cocoadelay';
 
 const SR = 48000;
 
@@ -228,6 +228,71 @@ describe('cocoaDelay DSP behavior', () => {
     expect(echoDelay).toBeLessThan(0.5 * SR * 0.8); // definitely not the fallback
   });
 
+  it('syncPeriod (bridged System/MIDI beat) drives the synced delay when NO clock gate is patched', async () => {
+    const Proc = await loadProcessor();
+    const proc = new Proc();
+    const beatS = 0.15; // seconds-per-beat bridged from the WEB layer
+    const params = makeParams({
+      tempoSync: 6,        // quarter note (SYNC_BEATS[6] === 1 beat)
+      syncPeriod: beatS,
+      feedback: 0, driveGain: 0, lfoAmount: 0, driftAmount: 0,
+      dryVolume: 0, wetVolume: 1, lowCut: 1, highCut: 0.001, duckAmount: 0,
+      delayTime: 0.5,      // free-running fallback DIFFERENT from synced time
+    });
+    const impulseAt = 1; // no clock-gate warm-up needed; period comes from param
+    const { L } = runProcessor(proc, params, 0.6, (n) => (n === impulseAt ? 1 : 0));
+    const pk = peakIndex(L, impulseAt + 1);
+    const echoDelay = pk - impulseAt;
+    const expected = beatS * SR;
+    // Echo lands near the bridged beat period, NOT the 0.5s free-running knob.
+    expect(echoDelay).toBeGreaterThan(expected * 0.5);
+    expect(echoDelay).toBeLessThan(expected * 1.6);
+    expect(echoDelay).toBeLessThan(0.5 * SR * 0.8);
+  });
+
+  it('a PATCHED clock gate OVERRIDES the bridged syncPeriod', async () => {
+    const Proc = await loadProcessor();
+    const proc = new Proc();
+    const periodSamples = Math.round(0.1 * SR); // 100 ms measured pulse period
+    const params = makeParams({
+      tempoSync: 6,
+      syncPeriod: 0.4,     // bridged beat (would be 400 ms) — should LOSE
+      feedback: 0, driveGain: 0, lfoAmount: 0, driftAmount: 0,
+      dryVolume: 0, wetVolume: 1, lowCut: 1, highCut: 0.001, duckAmount: 0,
+      delayTime: 0.5,
+    });
+    const impulseAt = Math.round(0.55 * SR);
+    const { L } = runProcessor(
+      proc, params, 1.0,
+      (n) => (n === impulseAt ? 1 : 0),
+      (n) => (n % periodSamples === 0 ? 1 : 0),
+    );
+    const pk = peakIndex(L, impulseAt + 1);
+    const echoDelay = pk - impulseAt;
+    // Echo tracks the MEASURED 100ms pulse, not the 400ms bridged syncPeriod.
+    expect(echoDelay).toBeGreaterThan(periodSamples * 0.5);
+    expect(echoDelay).toBeLessThan(periodSamples * 1.6);
+    expect(echoDelay).toBeLessThan(0.4 * SR * 0.8); // not the bridged period
+  });
+
+  it('tempoSync = Off ignores syncPeriod and uses the free-running TIME knob', async () => {
+    const Proc = await loadProcessor();
+    const proc = new Proc();
+    const time = 0.1;
+    const params = makeParams({
+      tempoSync: 0,        // OFF
+      syncPeriod: 0.4,     // present but must be ignored
+      delayTime: time,
+      feedback: 0, driveGain: 0, lfoAmount: 0, driftAmount: 0,
+      dryVolume: 0, wetVolume: 1, lowCut: 1, highCut: 0.001, duckAmount: 0,
+    });
+    const { L } = runProcessor(proc, params, 0.3, (n) => (n === 0 ? 1 : 0));
+    const pk = peakIndex(L, 1);
+    const expected = time * SR;
+    expect(pk).toBeGreaterThan(expected * 0.4);
+    expect(pk).toBeLessThan(expected * 1.6);
+  });
+
   it('ducking attenuates the wet while the dry input is loud', async () => {
     const Proc = await loadProcessor();
     const time = 0.05;
@@ -284,5 +349,81 @@ describe('cocoaDelay DSP behavior', () => {
     for (let i = 0; i < L.length; i++) {
       expect(Number.isFinite(L[i]!)).toBe(true);
     }
+  });
+});
+
+describe('clockSource → seconds-per-beat resolution (WEB layer bridge)', () => {
+  type Nodes = Record<string, { type?: string; params?: Record<string, unknown> } | undefined>;
+
+  it('reads TIMELORDE bpm off the live graph; defaults to 120 with no TIMELORDE', () => {
+    expect(readTimelordeBpm({})).toBe(120);
+    const nodes: Nodes = { a: { type: 'timelorde', params: { bpm: 140 } } };
+    expect(readTimelordeBpm(nodes)).toBe(140);
+  });
+
+  it('System source → seconds-per-beat = 60 / TIMELORDE bpm', () => {
+    const nodes: Nodes = { tl: { type: 'timelorde', params: { bpm: 120 } } };
+    // clockSource 0 = System. MIDI period is irrelevant for System.
+    expect(resolveSyncPeriodS(0, nodes, 0.123)).toBeCloseTo(0.5, 6); // 120bpm → 0.5s
+    const nodes2: Nodes = { tl: { type: 'timelorde', params: { bpm: 60 } } };
+    expect(resolveSyncPeriodS(0, nodes2, null)).toBeCloseTo(1.0, 6);
+  });
+
+  it('MIDI source → uses the MIDI-clock-derived beat period (NOT TIMELORDE)', () => {
+    const nodes: Nodes = { tl: { type: 'timelorde', params: { bpm: 120 } } };
+    // clockSource 1 = MIDI. TIMELORDE bpm in the graph must be ignored.
+    expect(resolveSyncPeriodS(1, nodes, 0.4)).toBeCloseTo(0.4, 6); // 150bpm beat
+    expect(resolveSyncPeriodS(1, nodes, 0.4)).not.toBeCloseTo(0.5, 3);
+  });
+
+  it('MIDI source with no live clock → 0 (worklet falls back to free knob)', () => {
+    expect(resolveSyncPeriodS(1, {}, null)).toBe(0);
+    expect(resolveSyncPeriodS(1, {}, 0)).toBe(0);
+  });
+});
+
+describe('MIDI clock source singleton (0xF8 @ 24 PPQN → BPM)', () => {
+  it('derives ~120 BPM from clocks spaced one quarter-note / 24 apart', async () => {
+    const { createMidiClockSource } = await import('../../midi/midi-clock-source');
+    let t = 1000;
+    const src = createMidiClockSource({
+      now: () => t,
+      available: () => false, // skip real navigator.requestMIDIAccess
+      requestAccess: () => Promise.reject(new Error('no midi in test')),
+    });
+    // 120 BPM → quarter = 500 ms → per-pulse = 500/24 ms.
+    const pulseMs = 500 / 24;
+    for (let i = 0; i < 48; i++) {
+      src.ingest(0xf8, t);
+      t += pulseMs;
+    }
+    const bpm = src.getBpm();
+    expect(bpm).not.toBeNull();
+    expect(bpm!).toBeCloseTo(120, 0);
+    expect(src.getBeatPeriodS()!).toBeCloseTo(0.5, 2);
+    src.destroy();
+  });
+
+  it('reports null when stale (no recent 0xF8) and after a Stop', async () => {
+    const { createMidiClockSource } = await import('../../midi/midi-clock-source');
+    let t = 0;
+    const src = createMidiClockSource({
+      now: () => t,
+      available: () => false,
+      requestAccess: () => Promise.reject(new Error('no midi')),
+    });
+    const pulseMs = 500 / 24;
+    for (let i = 0; i < 48; i++) { src.ingest(0xf8, t); t += pulseMs; }
+    expect(src.getBpm()).not.toBeNull();
+    // Advance well past the stale timeout with no new pulses.
+    t += 5000;
+    expect(src.getBpm()).toBeNull();
+    // Fresh pulses again, then a Stop clears the tempo.
+    t += pulseMs;
+    for (let i = 0; i < 48; i++) { src.ingest(0xf8, t); t += pulseMs; }
+    expect(src.getBpm()).not.toBeNull();
+    src.ingest(0xfc, t); // MIDI Stop
+    expect(src.getBpm()).toBeNull();
+    src.destroy();
   });
 });

@@ -3,10 +3,16 @@
 // COCOA DELAY — AudioWorklet wrapper around the shared CocoaDelayCore (see
 // cocoadelay-core.ts for the full per-sample DSP and the port rationale).
 //
-// Tempo sync: the original read the host transport. We have no host, so the
-// time comes from a clock gate input (input[2]) whose pulse period is
-// measured. `clockSource` (System/MIDI) is reflected for labeling — both are
-// pulse streams here. `tempoSync` selects Off (free ms) or a musical division.
+// Tempo sync: the original read the host transport. We have three sources,
+// resolved per-sample in CocoaDelayCore.baseDelayTime (highest precedence
+// first):
+//   1. a PATCHED `clock` gate input (input[2]) whose pulse period is measured;
+//   2. else the WEB-layer-supplied beat period via the `syncPeriod` AudioParam
+//      — the main thread reads the chosen `clockSource` (System=TIMELORDE /
+//      MIDI=MIDICLOCK) BPM and bridges seconds-per-beat here, because the
+//      worklet can't reach those singletons from AudioWorkletGlobalScope;
+//   3. else the free-running TIME knob.
+// `tempoSync` selects Off (free ms) or a musical division of the beat.
 //
 // Original is GPL-3.0 (see ../cocoa-delay/license.md). This port keeps that.
 
@@ -56,6 +62,10 @@ class CocoaDelayProcessor extends AudioWorkletProcessor {
       { name: 'driftSpeed', defaultValue: 1.0, minValue: 0.1, maxValue: 10.0, automationRate: 'k-rate' as const },
       { name: 'tempoSync', defaultValue: 0, minValue: 0, maxValue: 19, automationRate: 'k-rate' as const },
       { name: 'clockSource', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
+      // Seconds-per-beat bridged from the WEB layer (System=TIMELORDE /
+      // MIDI=MIDICLOCK) — the worklet can't read those singletons directly.
+      // 0 = none available; a patched `clock` gate still overrides it.
+      { name: 'syncPeriod', defaultValue: 0, minValue: 0, maxValue: 30, automationRate: 'k-rate' as const },
       { name: 'feedback', defaultValue: 0.5, minValue: -1.0, maxValue: 1.0, automationRate: 'a-rate' as const },
       { name: 'stereoOffset', defaultValue: 0.0, minValue: -0.5, maxValue: 0.5, automationRate: 'k-rate' as const },
       { name: 'panMode', defaultValue: 0, minValue: 0, maxValue: 2, automationRate: 'k-rate' as const },
@@ -111,6 +121,7 @@ class CocoaDelayProcessor extends AudioWorkletProcessor {
 
     // k-rate block constants.
     const tempoSync = this.kval(parameters, 'tempoSync', 0);
+    const syncPeriod = this.kval(parameters, 'syncPeriod', 0);
     const lfoFrequency = this.kval(parameters, 'lfoFrequency', 2.0);
     const driftSpeed = this.kval(parameters, 'driftSpeed', 1.0);
     const stereoOffset = this.kval(parameters, 'stereoOffset', 0.0);
@@ -135,6 +146,7 @@ class CocoaDelayProcessor extends AudioWorkletProcessor {
         {
           delayTime: this.aval(parameters, 'delayTime', s, 0.2),
           tempoSync,
+          syncPeriod,
           lfoAmount: this.aval(parameters, 'lfoAmount', s, 0),
           lfoFrequency,
           driftAmount: this.aval(parameters, 'driftAmount', s, 0),

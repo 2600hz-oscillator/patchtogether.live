@@ -154,6 +154,13 @@ function panR(inL: number, inR: number, angle: number): number {
 export interface CocoaSettings {
   delayTime: number; // free-running seconds (used when tempoSync === 0)
   tempoSync: number; // 0 = off, else SYNC_BEATS index
+  // Seconds per beat (quarter note) supplied by the WEB layer when
+  // tempoSync != 0. The worklet can't reach TIMELORDE / MIDI singletons
+  // (it's in AudioWorkletGlobalScope), so the main thread resolves the
+  // chosen clockSource's BPM → seconds-per-beat and bridges it here. <= 0
+  // means "no external sync period available". A PATCHED clock gate still
+  // overrides this (see baseDelayTime).
+  syncPeriod?: number;
   lfoAmount: number;
   lfoFrequency: number;
   driftAmount: number;
@@ -253,10 +260,23 @@ export class CocoaDelayCore {
 
   private baseDelayTime(p: CocoaSettings): number {
     const sync = Math.round(p.tempoSync);
-    if (sync <= 0 || sync >= SYNC_BEATS.length || this.clockPeriodSamples <= 0) {
+    if (sync <= 0 || sync >= SYNC_BEATS.length) {
+      // tempoSync = Off → free-running ms from the TIME knob.
       return p.delayTime;
     }
-    const beatLengthS = this.clockPeriodSamples * this.dt;
+    // Precedence when synced:
+    //   1. A PATCHED clock gate (measured pulse period) ALWAYS wins.
+    //   2. else the WEB-layer-supplied beat period (System=TIMELORDE /
+    //      MIDI=MIDICLOCK), bridged via syncPeriod.
+    //   3. else fall back to the free-running TIME knob (no clock at all).
+    let beatLengthS: number;
+    if (this.clockPeriodSamples > 0) {
+      beatLengthS = this.clockPeriodSamples * this.dt;
+    } else if (p.syncPeriod !== undefined && p.syncPeriod > 0) {
+      beatLengthS = p.syncPeriod;
+    } else {
+      return p.delayTime;
+    }
     return beatLengthS * (SYNC_BEATS[sync] as number);
   }
 
