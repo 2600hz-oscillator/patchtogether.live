@@ -21,6 +21,7 @@ import {
   bindingKey,
   ccValueToParamValue,
   parseCcMessage,
+  importBindings,
   __test_setAccess,
   __test_clearBindings,
 } from './midi-learn.svelte';
@@ -102,6 +103,61 @@ describe('ccValueToParamValue', () => {
 describe('bindingKey', () => {
   it('composes moduleId:paramId', () => {
     expect(bindingKey('vca-1', 'base')).toBe('vca-1:base');
+  });
+});
+
+// ---------------- Regression: load-order bug ----------------
+//
+// Before the setters-map decoupling, `registerSetter` only attached the
+// setter if a binding already existed for the key. The Save/Load Local
+// Performance flow mounts cards (registerSetter) BEFORE importBindings
+// runs (the bindings arrive from the bundle), so setters were silently
+// dropped → bindings looked persisted but CCs landed silently until the
+// user re-learned (which goes through applyLearn, writing setter +
+// binding together). Both orderings must now dispatch.
+describe('regression: setter ↔ binding ordering on performance load', () => {
+  const MOD = 'vca-1';
+  const PARAM = 'base';
+  const CH = 3;
+  const CC = 42;
+
+  it('dispatches when card mounts BEFORE bindings are imported (the load-order bug)', () => {
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    const received: number[] = [];
+    registerSetter(MOD, PARAM, { min: 0, max: 1, onchange: (v) => received.push(v) });
+    importBindings([{ key: bindingKey(MOD, PARAM), channel: CH, cc: CC, learnedAt: 1 }]);
+    sendCc(CH, CC, 127);
+    expect(received).toEqual([1]);
+  });
+
+  it('also dispatches when bindings are imported BEFORE the card mounts', () => {
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    const received: number[] = [];
+    importBindings([{ key: bindingKey(MOD, PARAM), channel: CH, cc: CC, learnedAt: 1 }]);
+    registerSetter(MOD, PARAM, { min: 0, max: 1, onchange: (v) => received.push(v) });
+    sendCc(CH, CC, 0);
+    expect(received).toEqual([0]);
+  });
+
+  it('unregisterSetter stops dispatch but keeps the binding for re-mount', () => {
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    const received: number[] = [];
+    importBindings([{ key: bindingKey(MOD, PARAM), channel: CH, cc: CC, learnedAt: 1 }]);
+    registerSetter(MOD, PARAM, { min: 0, max: 1, onchange: (v) => received.push(v) });
+    sendCc(CH, CC, 64);
+    expect(received).toHaveLength(1);
+    unregisterSetter(MOD, PARAM);
+    sendCc(CH, CC, 127);
+    expect(received).toHaveLength(1); // no new dispatch
+    expect(getBinding(MOD, PARAM)).toBeDefined(); // binding survives
+    // Re-mount: setter rewires + CCs flow again.
+    registerSetter(MOD, PARAM, { min: 0, max: 1, onchange: (v) => received.push(v) });
+    sendCc(CH, CC, 0);
+    expect(received).toHaveLength(2);
+    expect(received[1]).toBe(0);
   });
 });
 

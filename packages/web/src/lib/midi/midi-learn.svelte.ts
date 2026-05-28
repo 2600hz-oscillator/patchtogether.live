@@ -82,13 +82,27 @@ let access: MidiAccessLike | null = null;
 let connectStarted = false;
 let connectFailed = false;
 
-/** Map of bindingKey → binding metadata + live setter (setter is registered
- *  by the Fader / Knob via `registerSetter`; if no setter is registered
- *  for a binding, CCs land silently). */
+/** Map of bindingKey → binding metadata (channel/cc/learnedAt only). The
+ *  live setter is kept in a SEPARATE map (`setters` below) so the order of
+ *  card-mount vs binding-population doesn't matter — see the comment on
+ *  `setters` for why this decoupling is required for performance load. */
 interface ActiveBinding extends MidiBinding {
+  /** @deprecated kept as `undefined` for back-compat with any external
+   *  reader; the dispatch path reads from `setters` instead. */
   setter?: { min: number; max: number; onchange: (v: number) => void };
 }
 const bindings = $state<Map<string, ActiveBinding>>(new Map());
+
+/** Map of bindingKey → live setter, populated by `registerSetter` on
+ *  Fader / Knob mount and read by the CC dispatch loop. Decoupled from
+ *  `bindings` so a card that mounts BEFORE its binding exists (the
+ *  Save/Load Local Performance order: cards mount as the patch loads,
+ *  THEN `importBindings` runs) still has its setter wired the moment the
+ *  binding is added. Without this split, registerSetter found no binding,
+ *  silently no-op'd, and the binding was created later with a missing
+ *  setter — fixing only via a manual re-learn (which went through the
+ *  applyLearn path that wrote setter + binding together). */
+const setters = new Map<string, { min: number; max: number; onchange: (v: number) => void }>();
 
 /** Monotonic version stamped on every binding add/remove. Components read it
  *  via `bindingsRune()` inside a `$derived` so a binding captured by the
@@ -208,9 +222,9 @@ function handleMidi(ev: MidiEventLike): void {
       channel: parsed.channel,
       cc: parsed.cc,
       learnedAt: Date.now(),
-      setter: { min: spec.min, max: spec.max, onchange: spec.onchange },
     };
     bindings.set(key, newBinding);
+    setters.set(key, { min: spec.min, max: spec.max, onchange: spec.onchange });
     touchBindings();
     saveToStorage();
     learnSpec = null;
@@ -219,10 +233,14 @@ function handleMidi(ev: MidiEventLike): void {
     return;
   }
 
-  // 2. Otherwise dispatch to whichever binding (if any) owns this CC.
+  // 2. Otherwise dispatch to whichever binding (if any) owns this CC. Setter
+  //    lookup goes through the SEPARATE `setters` map — see the comment on
+  //    that map. The intersection of "binding present" + "setter registered"
+  //    is what activates dispatch; either alone is silent.
   for (const b of bindings.values()) {
-    if (b.channel === parsed.channel && b.cc === parsed.cc && b.setter) {
-      b.setter.onchange(ccValueToParamValue(parsed.value, b.setter.min, b.setter.max));
+    if (b.channel === parsed.channel && b.cc === parsed.cc) {
+      const s = setters.get(b.key);
+      if (s) s.onchange(ccValueToParamValue(parsed.value, s.min, s.max));
     }
   }
 }
@@ -250,24 +268,20 @@ export function cancelLearn(): void {
 }
 
 /** Register / refresh the live setter for a knob. Called by Fader / Knob
- *  on mount so a binding that was loaded from localStorage starts driving
- *  the knob as soon as the card mounts. Idempotent. */
+ *  on mount. Stored in the `setters` map UNCONDITIONALLY (no dependence on
+ *  whether a binding for this key exists yet) so a card mounted BEFORE its
+ *  binding is loaded (Save/Load Local Performance flow) gets wired the
+ *  moment the binding arrives. Idempotent. */
 export function registerSetter(moduleId: string, paramId: string, args: {
   min: number; max: number; onchange: (v: number) => void;
 }): void {
-  const key = bindingKey(moduleId, paramId);
-  const b = bindings.get(key);
-  if (b) {
-    b.setter = { ...args };
-  }
+  setters.set(bindingKey(moduleId, paramId), { ...args });
 }
 
 /** Drop the live setter (called on Fader / Knob unmount). The persisted
  *  binding stays — re-mounting the card re-registers its setter. */
 export function unregisterSetter(moduleId: string, paramId: string): void {
-  const key = bindingKey(moduleId, paramId);
-  const b = bindings.get(key);
-  if (b) b.setter = undefined;
+  setters.delete(bindingKey(moduleId, paramId));
 }
 
 /** Look up the persisted binding for a knob (no setter info). */
@@ -322,13 +336,15 @@ export function importBindings(incoming: MidiBinding[]): void {
     if (typeof b?.key !== 'string' || !Number.isFinite(b.channel) || !Number.isFinite(b.cc)) {
       continue;
     }
-    const prev = bindings.get(b.key);
+    // No setter to preserve / restore — the `setters` map is independent of
+    // `bindings`, so a card whose setter is already registered just starts
+    // dispatching the moment this binding lands, and a card that mounts
+    // later finds the binding waiting for it.
     bindings.set(b.key, {
       key: b.key,
       channel: b.channel,
       cc: b.cc,
       learnedAt: b.learnedAt,
-      setter: prev?.setter,
     });
   }
   touchBindings();
