@@ -296,13 +296,21 @@ test.describe('AI smoke check', () => {
     const vco = page.locator('.svelte-flow__node-analogVco');
     const before = await vco.evaluate((el) => (el as HTMLElement).style.transform);
 
-    // Grab the card's title bar (away from handles + faders) and drag right.
-    const title = page.locator('.svelte-flow__node-analogVco header.title');
-    const box = await title.boundingBox();
-    if (!box) throw new Error('VCO title not visible');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    // Grab the card's title bar at a HORIZONTAL offset clearly past both
+    // the patch-trigger (top-left ~22×22 px — see PatchPanel.svelte's
+    // .patch-trigger rules) AND the centered editable-name button
+    // (~70 px wide, centered in the ~210 px title — see ModuleNameLabel
+    // / ModuleTitle). The card is ~212 px wide; the band from card-x
+    // ~30 to ~70 is empty draggable header chrome (left of the centered
+    // button). Aim there, vertically at the title-bar midline.
+    const card = page.locator('.svelte-flow__node-analogVco .card');
+    const cardBox = await card.boundingBox();
+    if (!cardBox) throw new Error('VCO card not visible');
+    const startX = cardBox.x + 50; // past patch-trigger, left of centered name-button
+    const startY = cardBox.y + 24; // inside header.title (padding-top 18 + half text height)
+    await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.move(startX + 80, startY, { steps: 5 });
     await page.mouse.up();
     await page.waitForTimeout(150);
 

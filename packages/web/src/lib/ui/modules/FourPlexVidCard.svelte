@@ -21,6 +21,7 @@
   import { fourPlexVidDef } from '$lib/video/modules/4plexvid';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -104,7 +105,7 @@
 
 <div class="card video" data-testid="fourplexvid-card" data-node-id={id}>
   <div class="stripe"></div>
-  <header class="title">4PLEXVID</header>
+  <ModuleTitle {id} {data} defaultLabel="4PLEXVID" />
 
   {#each VIDEO_IN as h}
     <Handle type="target" position={Position.Left} id={h.id} style={`top: ${h.y}px; --handle-color: var(--cable-video);`} />

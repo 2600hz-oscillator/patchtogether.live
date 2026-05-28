@@ -16,6 +16,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { spreadTaps } from '$lib/audio/wavecel-math';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -183,7 +184,7 @@
 
 <div class="mod-card wavecel-card" data-testid="wavecel-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">WAVECEL</header>
+  <ModuleTitle {id} {data} defaultLabel="WAVECEL" />
   <div class="subtitle">STEREO WAVETABLE · MORPH · SPREAD · FOLD</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>

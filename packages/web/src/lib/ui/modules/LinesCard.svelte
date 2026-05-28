@@ -10,6 +10,7 @@
   import { patch } from '$lib/graph/store';
   import { linesDef } from '$lib/video/modules/lines';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -28,7 +29,7 @@
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">LINES</header>
+  <ModuleTitle {id} {data} defaultLabel="LINES" />
 
   <Handle type="target" position={Position.Left} id="fm"        style="top: 56px;  --handle-color: var(--cable-mono-video);" />
   <span class="port-label left" style="top: 50px;">FM</span>

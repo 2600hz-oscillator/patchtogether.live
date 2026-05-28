@@ -26,6 +26,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { AudioEngine } from '$lib/audio/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -380,7 +381,7 @@
 
 <div class="mod-card samsloop-card" data-testid="samsloop-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">SAMSLOOP</header>
+  <ModuleTitle {id} {data} defaultLabel="SAMSLOOP" />
   <div class="subtitle">SAMPLE LOOPER · VARISPEED · ±2×</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>

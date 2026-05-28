@@ -7,6 +7,7 @@
   import { filterDef } from '$lib/audio/modules/filter';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -34,7 +35,7 @@
 
 <div class="mod-card filter-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">Filter</header>
+  <ModuleTitle {id} {data} defaultLabel="Filter" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">

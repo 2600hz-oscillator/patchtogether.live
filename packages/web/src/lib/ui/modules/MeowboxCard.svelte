@@ -7,6 +7,7 @@
   import { meowboxDef } from '$lib/audio/modules/meowbox';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -42,7 +43,7 @@
   <div class="ear ear-left"></div>
   <div class="ear ear-right"></div>
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">MEOWBOX</header>
+  <ModuleTitle {id} {data} defaultLabel="MEOWBOX" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="knob-row">

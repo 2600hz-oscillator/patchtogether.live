@@ -10,6 +10,7 @@
   import { symbioteDef, SYMBIOTE_SUB_MODE_NAMES, SYMBIOTE_SCALE_NAMES } from '$lib/audio/modules/symbiote';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -70,7 +71,7 @@
 
 <div class="mod-card symbiote-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">SYMBIOTE</header>
+  <ModuleTitle {id} {data} defaultLabel="SYMBIOTE" />
   <div class="btn-row">
     <button type="button" class="sel-btn" data-testid="symbiote-submode-btn" onclick={toggleSubMode}>
       <span class="sel-label">T</span>

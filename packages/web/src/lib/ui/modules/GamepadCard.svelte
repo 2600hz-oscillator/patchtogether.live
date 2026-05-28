@@ -28,6 +28,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { GAMEPAD_OUTPUTS, type GamepadSnapshot } from '$lib/audio/modules/gamepad';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -87,7 +88,8 @@
 <div class="card gamepad" data-testid="gamepad-card">
   <div class="stripe"></div>
   <header class="title">
-    GAMEPAD <span class="status" class:on={snapshot.connected}>
+    <ModuleTitle {id} {data} defaultLabel="GAMEPAD" inline />
+    <span class="status" class:on={snapshot.connected}>
       {#if snapshot.connected}
         {snapshot.id.length > 24 ? snapshot.id.slice(0, 21) + '…' : snapshot.id}
       {:else}

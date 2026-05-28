@@ -16,9 +16,9 @@
 
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import {
-    nextDefaultName,
     validateRename,
     readName,
+    resolveDisplayName,
   } from '$lib/multiplayer/module-naming';
   import type { ModuleNode } from '$lib/graph/types';
 
@@ -29,17 +29,20 @@
      *  card later splits its title into multiple zones). Defaults to
      *  'name-label'. */
     testIdSuffix?: string;
+    /** Optional display fallback when `node.data.name` is empty. Used by
+     *  the in-card title (ModuleTitle.svelte) so an unedited card reads
+     *  as the module-type slug (e.g. "WAVESCULPT") instead of the
+     *  auto-numbered default (e.g. "WAVESCULPT1"). When omitted we fall
+     *  back to `nextDefaultName` — the historical behavior. */
+    defaultLabel?: string;
   }
 
-  let { node, testIdSuffix = 'name-label' }: Props = $props();
+  let { node, testIdSuffix = 'name-label', defaultLabel }: Props = $props();
 
-  // Read the current displayed name. If `node.data.name` is missing
-  // (legacy node loaded before the migration ran), compute a default
-  // for THIS render only — the migration in Canvas.svelte will write
-  // it on the next mount, and a deliberate edit here ALSO writes it.
-  let displayName = $derived(
-    readName(node) ?? nextDefaultName(patch.nodes, node.type),
-  );
+  // Read the current displayed name (see resolveDisplayName for the
+  // precedence rules: node.data.name → defaultLabel → computed default).
+  // Kept in $derived so a remote rename re-evaluates the title in place.
+  let displayName = $derived(resolveDisplayName(node, patch.nodes, defaultLabel));
 
   let editing = $state(false);
   let draft = $state('');
@@ -115,6 +118,13 @@
       <span class="name-error" data-testid="{testIdSuffix}-error">{error}</span>
     {/if}
   {:else}
+    <!-- `.nodrag` keeps SvelteFlow's card-drag from firing on a single
+         click of the name button — otherwise pointerdown on the button
+         would start a drag that gets cancelled by the no-move pointerup,
+         which can fight with the `click → startEdit` handler. The card
+         is still draggable from any other part of its title bar / chrome
+         (the button is a small inline element centered inside the wider
+         `.title` block). -->
     <button
       type="button"
       class="name-button nodrag"

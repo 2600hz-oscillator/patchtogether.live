@@ -7,6 +7,7 @@
   import { timelordeDef } from '$lib/audio/modules/timelorde';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -66,7 +67,7 @@
 <div class="mod-card timelorde-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
-    TIMELORDE
+    <ModuleTitle {id} {data} defaultLabel="TIMELORDE" inline />
     <!-- MUTE always shown (v2 — clock keeps running even when an
          external clock is patched; the mute only silences the gate
          outputs, not the internal phase that LIVECODE rides on). -->

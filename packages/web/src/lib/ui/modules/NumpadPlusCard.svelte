@@ -29,6 +29,7 @@
   } from '$lib/audio/modules/numpad-plus';
   import { noteNameForMidi } from '$lib/audio/note-entry';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -149,7 +150,7 @@
 <div class="card numpad-plus" data-testid="numpad-plus-card" data-node-id={id}>
   <div class="stripe"></div>
   <header class="title">
-    NUMPAD+
+    <ModuleTitle {id} {data} defaultLabel="NUMPAD+" inline />
     <div class="octave-control nodrag">
       <span class="oct-label">Oct</span>
       <button type="button" class="oct-btn" onclick={() => nudgeOctave(-1)} data-testid="numpad-octave-down">▼</button>

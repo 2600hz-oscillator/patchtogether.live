@@ -29,6 +29,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { onDestroy } from 'svelte';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -169,7 +170,7 @@
 
 <div class="mod-card catalyst-card" class:pulsing>
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">SCENECHANGE</header>
+  <ModuleTitle {id} {data} defaultLabel="SCENECHANGE" />
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={320}>
     <div class="body">

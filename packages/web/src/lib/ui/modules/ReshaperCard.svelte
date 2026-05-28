@@ -15,6 +15,7 @@
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -191,7 +192,7 @@
   ondblclick={onBodyDblClick}
 >
   <div class="stripe"></div>
-  <header class="title">RESHAPER</header>
+  <ModuleTitle {id} {data} defaultLabel="RESHAPER" />
 
   <!-- 3 video inputs (x, y, z) + 3 cv inputs (intensity, xDisp, yDisp) -->
   <Handle type="target" position={Position.Left} id="x"         style="top: 56px;  --handle-color: var(--cable-mono-video);" />

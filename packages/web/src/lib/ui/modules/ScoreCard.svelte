@@ -65,6 +65,7 @@
     type Tie,
   } from '$lib/audio/modules/score-data';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -759,7 +760,7 @@
 <div class="mod-card score-card">
   <div class="stripe" style="background: var(--cable-pitch);"></div>
   <header class="title">
-    Score
+    <ModuleTitle {id} {data} defaultLabel="Score" inline />
     <button class="play-btn" class:playing={isPlaying} onclick={togglePlay} title={isPlaying ? 'Stop' : 'Play'}>
       {isPlaying ? '■' : '▶'}
     </button>

@@ -19,6 +19,7 @@
   import type { FoxyBox, FoxyFieldRow } from '$lib/audio/modules/foxy-map';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -124,7 +125,7 @@
 
 <div class="mod-card foxy-card" data-testid="foxy-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">FOXY</header>
+  <ModuleTitle {id} {data} defaultLabel="FOXY" />
   <div class="subtitle">DUAL SWOLEVCO → RASTER A/B → BOX 3D → XYZ → LIVE WAVETABLE</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={320}>

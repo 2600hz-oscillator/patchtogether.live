@@ -105,6 +105,7 @@
     shouldHotJoinRelaunch,
   } from '$lib/doom/doom-gating';
   import { shouldOpenMultiplayer, guestWaitingState } from '$lib/doom/doom-session';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -1976,7 +1977,7 @@
       <span class="player-badge spectator" data-testid="doom-spectator-badge" title={specLabel}>{specBadge}</span>
       <span class="player-label spectating" data-testid="doom-spectator-label">{specLabel}</span>
     {:else}
-      DOOM
+      <ModuleTitle {id} {data} defaultLabel="DOOM" inline />
     {/if}
     {#if isHost}
       <span class="host-badge" title="You are running the DOOM instance for this rack">HOST</span>

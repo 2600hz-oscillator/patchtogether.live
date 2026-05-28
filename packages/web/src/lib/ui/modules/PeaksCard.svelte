@@ -11,6 +11,7 @@
   import { peaksDef, peaksMath, PEAKS_MODE_NAMES, PEAKS_MAX_MODE, type PeaksMode } from '$lib/audio/modules/peaks';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -67,7 +68,7 @@
 
 <div class="mod-card peaks-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">PEAKS</header>
+  <ModuleTitle {id} {data} defaultLabel="PEAKS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="channel-row">

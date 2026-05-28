@@ -43,6 +43,7 @@
     decideEdgeAction,
     reverseScrubStep,
   } from '$lib/video/modules/videovarispeed-transport';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -467,7 +468,7 @@
   aria-label="VIDEOVARISPEED video player"
 >
   <div class="stripe"></div>
-  <header class="title">VIDEOVARISPEED</header>
+  <ModuleTitle {id} {data} defaultLabel="VIDEOVARISPEED" />
 
   <Handle type="target" position={Position.Left}  id="cv_start" style="top: 56px; --handle-color: var(--cable-gate);" />
   <span class="port-label left" style="top: 50px;">STRT</span>

@@ -12,6 +12,7 @@
   import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -72,7 +73,7 @@
 
 <div class="mod-card slewswitch-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">SLEWSWITCH</header>
+  <ModuleTitle {id} {data} defaultLabel="SLEWSWITCH" />
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={300}>
     <div class="body">

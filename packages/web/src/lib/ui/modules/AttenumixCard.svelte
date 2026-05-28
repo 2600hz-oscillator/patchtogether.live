@@ -14,6 +14,7 @@
   import { attenumixDef } from '$lib/audio/modules/attenumix';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -61,7 +62,7 @@
 
 <div class="mod-card attenumix-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">ATTENUMIX</header>
+  <ModuleTitle {id} {data} defaultLabel="ATTENUMIX" />
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={300}>
     <div class="body">

@@ -351,4 +351,20 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // across platforms, so the linux baseline is pending a `task vrt:update`
   // run on linux CI; the deterministic darwin capture is the gate here.
   'linux/foxy',
+  // In-card-title sweep (PR #383): the per-card title chrome was moved
+  // into ModuleTitle.svelte. Cards whose `<header class="title">…` was
+  // previously inlined in the card scope lost their per-card title CSS
+  // (font-family / margin / letter-spacing) once the element moved into
+  // a child component; ModuleTitle publishes a single shared baseline
+  // (font-size: 0.85rem, weight: 500, text-align: center, margin: 0 0 8px,
+  // letter-spacing: 0.05em). Darwin baselines captured here; linux baselines
+  // pending regen after in-card-title sweep — darwin captured here.
+  'linux/feedback',
+  'linux/lines',
+  'linux/monoglitch',
+  'linux/riotgirls',
+  'linux/shapedramps',
+  'linux/unityscalemathematik',
+  'linux/vdelay',
+  'linux/warrenspectrum',
 ]);

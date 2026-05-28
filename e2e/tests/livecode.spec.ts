@@ -78,7 +78,7 @@ test('livecode: spawn → run JS produces named modules with cables', async ({ p
   await typeAndRun(
     page,
     'lc',
-    `spawn('analogVco');\nspawn('audioOut');\npatch('ANALOGVCO1.sine', 'AUDIOOUT1.L');`,
+    `spawn('analogVco');\nspawn('audioOut');\npatch('ANALOGVCO.sine', 'AUDIOOUT.L');`,
   );
 
   await page.waitForFunction(() => {
@@ -89,8 +89,8 @@ test('livecode: spawn → run JS produces named modules with cables', async ({ p
   const summary = await readPatchSummary(page);
   expect(summary.nodeTypes).toContain('analogVco');
   expect(summary.nodeTypes).toContain('audioOut');
-  expect(summary.nodeNames).toContain('ANALOGVCO1');
-  expect(summary.nodeNames).toContain('AUDIOOUT1');
+  expect(summary.nodeNames).toContain('ANALOGVCO');
+  expect(summary.nodeNames).toContain('AUDIOOUT');
   expect(summary.edges).toContainEqual(['analogVco', 'sine', 'audioOut', 'L']);
 
   expect(errors.filter((e) => !e.includes('DEP0040')), errors.join('; ')).toEqual([]);
@@ -106,7 +106,7 @@ test('livecode: patch() works direction-agnostically (destination-first)', async
   await typeAndRun(
     page,
     'lc',
-    `spawn('analogVco');\nspawn('audioOut');\npatch('AUDIOOUT1.L', 'ANALOGVCO1.sine');`,
+    `spawn('analogVco');\nspawn('audioOut');\npatch('AUDIOOUT.L', 'ANALOGVCO.sine');`,
   );
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __patch: { edges: Record<string, unknown> } };
@@ -241,7 +241,10 @@ test('livecode: editable name label — rename + reject duplicate', async ({ pag
     return typeof a?.data?.name === 'string' && typeof b?.data?.name === 'string';
   });
 
-  const labelA = page.locator('[data-testid="name-label-button"]', { hasText: 'ANALOGVCO1' });
+  // hasText with a string does substring match, which would also pick up
+  // 'ANALOGVCO2'. Use a regex with start+end anchors so we land on the
+  // bare-prefix instance only.
+  const labelA = page.locator('[data-testid="name-label-button"]', { hasText: /^ANALOGVCO$/ });
   await expect(labelA).toBeVisible();
   await labelA.click();
   const inputA = page.locator('[data-testid="name-label-input"]');

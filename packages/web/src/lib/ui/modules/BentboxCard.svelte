@@ -27,6 +27,7 @@
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import { bentboxDef } from '$lib/video/modules/bentbox';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -278,7 +279,7 @@
   data-full-frame={fullFrame}
 >
   <div class="stripe"></div>
-  <header class="title">BENTBOX</header>
+  <ModuleTitle {id} {data} defaultLabel="BENTBOX" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->

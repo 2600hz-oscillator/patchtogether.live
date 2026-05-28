@@ -18,6 +18,7 @@
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -198,7 +199,7 @@
   ondblclick={onBodyDblClick}
 >
   <div class="stripe"></div>
-  <header class="title">RUTTETRA</header>
+  <ModuleTitle {id} {data} defaultLabel="RUTTETRA" />
 
   <!-- 1 video input (z) + 7 cv inputs -->
   <Handle type="target" position={Position.Left} id="z"         style="top: 56px;  --handle-color: var(--cable-video);" />

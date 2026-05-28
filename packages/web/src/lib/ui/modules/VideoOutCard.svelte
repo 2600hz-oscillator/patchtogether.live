@@ -48,6 +48,7 @@
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -256,7 +257,7 @@
   data-full-frame={fullFrame}
 >
   <div class="stripe"></div>
-  <header class="title">OUTPUT</header>
+  <ModuleTitle {id} {data} defaultLabel="OUTPUT" />
 
   <Handle type="target" position={Position.Left} id="in" style="top: 56px; --handle-color: var(--cable-video);" />
   <span class="port-label left" style="top: 50px;">IN</span>

@@ -21,6 +21,7 @@
     type MidiclockCardState,
     type MidiclockData,
   } from '$lib/audio/modules/midiclock';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -101,7 +102,7 @@
 
 <div class="mod-card midiclock-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">MIDICLOCK</header>
+  <ModuleTitle {id} {data} defaultLabel="MIDICLOCK" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">

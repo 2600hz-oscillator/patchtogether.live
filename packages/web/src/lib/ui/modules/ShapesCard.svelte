@@ -7,6 +7,7 @@
   import { patch } from '$lib/graph/store';
   import { shapesDef } from '$lib/video/modules/shapes';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -40,7 +41,7 @@
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">SHAPES</header>
+  <ModuleTitle {id} {data} defaultLabel="SHAPES" />
 
   <!-- CV inputs — port id MUST match param id so the cross-domain CV
        bridge in VideoEngine routes audio-side cv onto setParam(portId). -->

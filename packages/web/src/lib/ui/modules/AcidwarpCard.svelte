@@ -15,6 +15,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { onMount, onDestroy } from 'svelte';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -77,7 +78,7 @@
 
 <div class="mod-card acidwarp-card">
   <div class="stripe" style="background: var(--cable-video);"></div>
-  <header class="title">ACIDWARP</header>
+  <ModuleTitle {id} {data} defaultLabel="ACIDWARP" />
 
   <Handle type="target" position={Position.Left}  id="speed_cv" style="top: 56px; --handle-color: var(--cable-cv);" />
   <span class="port-label left"  style="top: 50px;">SPD</span>

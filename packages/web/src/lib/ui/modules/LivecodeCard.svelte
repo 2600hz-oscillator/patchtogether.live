@@ -26,6 +26,7 @@
   import { makeLinter } from '$lib/livecode/diagnostics';
   import { looksLikeLegacy, migrateLegacyText } from '$lib/livecode/migrate';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -221,7 +222,7 @@
   data-node-id={id}
 >
   <div class="stripe"></div>
-  <header class="title">LIVECODE</header>
+  <ModuleTitle {id} {data} defaultLabel="LIVECODE" />
 
   <div class="body" style="height: {bodyHeight}px;">
     <div class="toolbar">

@@ -48,7 +48,7 @@ describe('runtime: spawn', () => {
     expect(m.kind).toBe('spawnNode');
     if (m.kind !== 'spawnNode') return;
     expect(m.node.type).toBe('analogVco');
-    expect(m.node.data?.name).toBe('ANALOGVCO1');
+    expect(m.node.data?.name).toBe('ANALOGVCO');
   });
 
   it('spawn(type, customName) honors the user-given name', () => {

@@ -30,6 +30,7 @@
   import { parseNoteName } from '$lib/audio/note-entry';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -222,7 +223,7 @@
 <div class="mod-card macseq-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
   <header class="title">
-    MACSEQ
+    <ModuleTitle {id} {data} defaultLabel="MACSEQ" inline />
     <button
       class="play-btn"
       class:playing={isPlaying}
