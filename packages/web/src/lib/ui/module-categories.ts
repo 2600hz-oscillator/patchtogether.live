@@ -112,6 +112,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // ATLANTIS-PATCH support trio — see graph/types.ts for the full notes.
   slewSwitch: { top: 'Audio modules', sub: 'Utility' },
   atlantisCatalyst: { top: 'Audio modules', sub: 'Utility' },
+  // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
+  fourplexer: { top: 'Audio modules', sub: 'Utility' },
 
   // ───────── Audio modules → Effects ─────────
   filter: { top: 'Audio modules', sub: 'Effects' },

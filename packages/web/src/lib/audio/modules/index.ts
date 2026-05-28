@@ -81,6 +81,9 @@ import { callsineDef } from './callsine';
 import { cocoaDelayDef } from './cocoadelay';
 // FOXY — hybrid SWOLEVCO→RASTERIZE→RUTTETRA(XYZ)→realtime-wavetable→WAVECEL.
 import { foxyDef } from './foxy';
+// 4PLEXER — 4-in / 4-out discrete signal router with per-output
+// gate-advanced selectors.
+import { fourplexerDef } from './fourplexer';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -186,6 +189,9 @@ export function registerAudioModules(): void {
   // an animated wavetable fed to an internal WAVECEL VCO. Exposes WAVECEL's
   // full param/IO surface plus the source + XYZ controls.
   registerModule(foxyDef);
+  // 4PLEXER — 4-in / 4-out discrete signal router; per-output selector +
+  // per-output gate that advances the selector on each rising edge.
+  registerModule(fourplexerDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

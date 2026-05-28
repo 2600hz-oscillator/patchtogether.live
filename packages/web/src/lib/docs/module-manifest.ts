@@ -205,6 +205,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Interactive Pong game module (single-user research prototype). Two CV inputs (paddle_left / paddle_right) set each paddle\'s Y position; two gate outputs (score_left / score_right) fire one 5 ms pulse per scoring event, sample-accurate on the audio thread. The deterministic state stepper runs at visual cadence on the main thread (no audio worklet). Drive the paddles from LFOs / envelopes / joysticks and use the score gates as triggers — the game becomes a generative modulation source. Multiplayer is a planned additive follow-up (the design doc lays out the SyncedModuleDef path). See docs/design/game-modules.md.',
   slewSwitch:
     'Quad slew limiter combined with a 4→1 sequential CV switch. Four CV inputs each pass through an independent slew limiter (per-channel time constant 1 ms–5 s, CV-controllable) for portamento / smoothing, available on out1–out4. A step_clock gate advances a sequential switch that selects among the (slewed) channels and presents the result on `switched`, with a LENGTH (1–4) and MODE control, a crossfade time between selections, a reset gate, a step_idx CV, and an end-of-cycle (eoc) gate. One of the three ATLANTIS-PATCH support modules; broadly useful as a general CV smoother + router.',
+  fourplexer:
+    '4-in / 4-out discrete signal router for audio AND cv (they share the Web Audio substrate, so either cable type patches in and routes identically). Four signal inputs (in1..in4) and four signal outputs (out1..out4); each output has its own selector knob (sel1..sel4, shown 1..4 on the card) choosing which ONE of the four inputs that output carries — discrete, never a blend or in-between, with a ~4 ms declick crossfade on the switch so audio-rate inputs don\'t click. Each output also has its own GATE input (gate1..gate4): every rising edge advances that output\'s selector to the next input (1→2→3→4→1, wrapping). The four outputs are fully independent — different selections, different gate streams. Knobs are directly settable in the UI (click/drag to a position) and the selection persists in node params (synced + saved); a gate-advance posts the new index back so it persists exactly like a manual click. Defaults are a straight pass-through (out1=in1, out2=in2, out3=in3, out4=in4).',
   hydrogen:
     'Drum machine — first pass of a Hydrogen (https://github.com/hydrogen-music/hydrogen, GPL-2.0+) port. Bundles the stock TR-808 Emulation Kit (ArtemioLabs, GPL) — 16 single-layer instruments (Kick Long/Short, Snare 1/2, Clap, Hat Closed/Open/Pedal, Toms Hi/Mid/Low, Conga, Cymbal, Shaker, Clave, Cowbell) shipped as FLACs under /drumkits/tr808/. Internal 16-step pattern grid drives one-shot sample voices per step; the closed/open/pedal hi-hat triad shares a mute group so a closed-hat triggers chokes the open-hat tail (classic drum-machine behaviour, hard-coded since the source XML doesn\'t model it). Per-instrument vol/pan/A/D/S/R + mute + solo knobs on the PatchPanel section for that instrument; transport row (BPM 30-300, swing 0-0.75, master gain, PLAY) on the card body. Optional clock_in / reset_in gate inputs let TIMELORDE drive the sequencer (rising edges step the pattern; reset zeroes the playhead); per-instrument trig{0..15} gate inputs let other rack modules fire individual drums directly. DEFERRED to follow-up PRs: drumkit picker / .h2drumkit loader (currently the TR-808 kit is the only kit), per-step velocity (v1 cells are binary on/off), pattern pages + song mode, humanize / per-step micro-shift, multi-layer velocity samples, LADSPA-style per-channel FX bus (use SHIMMERSHINE / CHARLOTTES ECHOS / etc. downstream of the stereo out as patch-cable effects instead), polyphonic MIDI input (pair with MIDI-CV-BUDDY → trig{i} per drum until then).',
 };
@@ -226,6 +228,18 @@ const PORT_NOTES: Record<string, string> = {
   'vca.cv': 'Modulation CV (gain control).',
   'vca.audio_inv':
     'Sign-inverted audio output: -out (phase-flipped audio). Useful for stereo widening, side-chain feedback prevention, and mid/side processing. Different operation from ADSR.env_inv (which is 1 - env on a unipolar envelope).',
+  'fourplexer.in1': 'Signal input 1 (audio or cv — routes identically).',
+  'fourplexer.in2': 'Signal input 2 (audio or cv).',
+  'fourplexer.in3': 'Signal input 3 (audio or cv).',
+  'fourplexer.in4': 'Signal input 4 (audio or cv).',
+  'fourplexer.gate1': 'Rising edge advances OUT 1\'s selector (1→2→3→4→1).',
+  'fourplexer.gate2': 'Rising edge advances OUT 2\'s selector.',
+  'fourplexer.gate3': 'Rising edge advances OUT 3\'s selector.',
+  'fourplexer.gate4': 'Rising edge advances OUT 4\'s selector.',
+  'fourplexer.out1': 'Carries the input selected by sel1 (discrete).',
+  'fourplexer.out2': 'Carries the input selected by sel2 (discrete).',
+  'fourplexer.out3': 'Carries the input selected by sel3 (discrete).',
+  'fourplexer.out4': 'Carries the input selected by sel4 (discrete).',
   'mixer.in1': 'Channel 1 input.',
   'mixer.in2': 'Channel 2 input.',
   'mixer.in3': 'Channel 3 input.',

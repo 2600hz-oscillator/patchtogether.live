@@ -436,7 +436,12 @@ type StandardModuleType =
   // DUCKING, in-loop multi-mode FILTER (LP+HP), and stateful DRIVE
   // saturation. Tempo-sync locks the time to a measured clock pulse
   // (TIMELORDE system clock or external MIDI clock) at a musical division.
-  | 'cocoadelay';
+  | 'cocoadelay'
+  // 4PLEXER — 4-in / 4-out discrete signal router. Each output has its own
+  // selector (which of in1..in4 it carries) + its own gate input that
+  // advances that selector on each rising edge (1→2→3→4→1). Audio + cv both
+  // route identically through the shared Web Audio substrate.
+  | 'fourplexer';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

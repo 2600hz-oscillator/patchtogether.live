@@ -264,6 +264,16 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // little over the unit + spawn-smoke coverage. Baseline pending; promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.
   grids: 'VRT baseline pending; standard fader/button card (no custom viz). Unit tests (grids.test.ts) + per-module spawn smoke provide coverage. Capture darwin/linux baselines via `task vrt:update` in a follow-up PR.',
+  // 4PLEXER — first-slice PR. The card is fully deterministic (4 discrete
+  // selector knobs at default positions + static input/output readouts, no
+  // canvas / animation), so it is a good VRT candidate; baselines are
+  // pending a `task vrt:update` run on each platform (the worktree this PR
+  // was authored in lacks the faustwasm toolchain needed to boot the full
+  // dev server for capture). Unit (def shape + pure selector-advance) + E2E
+  // (4plexer.spec.ts: routing + per-output gate advance + wrap + audio/cv
+  // sources) provide functional coverage; promote into MODULES once the
+  // darwin + linux pngs are captured.
+  fourplexer: 'VRT baseline pending — deterministic card (4 selector knobs, no canvas); capture via `task vrt:update` on each platform. Unit + E2E (routing + gate-advance + wrap + audio/cv) provide coverage.',
 };
 
 /** Per-(platform, type) baselines intentionally missing while a follow-
