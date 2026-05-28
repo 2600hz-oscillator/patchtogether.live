@@ -472,10 +472,12 @@
         data-testid="sm64-canvas"
       ></canvas>
 
-      <!-- ROM-upload affordance. The upstream's checkForRom() unhides this
-           if IDB('assets') is null; it stays hidden once extraction
-           succeeds. Visible until the user supplies a US .z64 ROM. -->
-      <div bind:this={romDivEl} id="rom" class="sm64-rom" hidden>
+      <!-- ROM-upload affordance. Visible until the user supplies a US .z64
+           ROM; we drive `hidden` from the engine snapshot's romPresent flag
+           (upstream's romTextureLoader only hides the inner #romSelect form
+           on success, NOT this outer #rom container — we hide the whole
+           container ourselves once IDB has the extracted asset blob). -->
+      <div bind:this={romDivEl} id="rom" class="sm64-rom" hidden={!!snapshot?.romPresent}>
         <form bind:this={romFormEl} id="romSelect">
           <h4 class="sm64-rom-title">Drop your US sm64 (.z64) ROM here</h4>
           <input bind:this={romFileInputEl} id="romFile" type="file" accept=".z64" />
