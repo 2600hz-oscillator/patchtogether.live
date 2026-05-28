@@ -82,13 +82,33 @@
 {/if}
 
 <style>
-  /* The .title selector lives in _module-card.css and is shared by every
-   * card. We deliberately don't restate it here so the existing global
-   * styling (font, size, letter-spacing, margin) keeps applying — the
-   * unedited title renders byte-identically to before, which is what
-   * keeps the VRT baselines stable.
+  /* Title styling lives here, NOT in each card. When the title element
+   * was inlined in each card's `<style>` block, Svelte's component-scoped
+   * CSS applied. Now that ModuleTitle owns the <header.title> element,
+   * those per-card scoped rules can't reach across component boundaries.
+   * Restate the shared baseline here with `:global` so a card-local
+   * scoped rule on `.title` can still override (e.g. cards that bump
+   * font-size for a longer name don't need to change).
    *
-   * The fallback span is only hit on the briefest transient (node
+   * Scoping to `.svelte-flow__node .title` keeps this from leaking out
+   * to non-module surfaces that happen to use a `.title` class
+   * (browser-level title chrome elsewhere). */
+  :global(.svelte-flow__node .title) {
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-align: center;
+    margin: 0 0 8px;
+    /* Letter-spacing: pre-PR each card carried its own .title rule with a
+     * per-card letter-spacing (0.02–0.12em range). Svelte's CSS scoping
+     * removed those rules once `.title` moved into ModuleTitle's child
+     * template, so we publish a SINGLE shared value here. 0.05em is the
+     * mode across the 67 cards that previously declared one. VRT baselines
+     * are regenerated for cards whose pre-PR value differed (legitimate
+     * cosmetic drift; the title is byte-identical for the 41 cards that
+     * already used 0.05em). */
+    letter-spacing: 0.05em;
+  }
+  /* The fallback span is only hit on the briefest transient (node
    * unresolved); style it like the inline name button so the card
    * doesn't visibly snap on first paint. */
   .fallback {

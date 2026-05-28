@@ -29,7 +29,11 @@ test('midi-cv-buddy: drop module → card mounts with no console errors', async 
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');
   await expect(card).toBeVisible();
-  await expect(card).toContainText('MIDI-CV-BUDDY');
+  // Card now shows the bare-prefix auto-name (MIDICVBUDDY) — the def's
+  // `MIDI-CV-BUDDY` label is no longer rendered in the title bar because
+  // the editable name button takes precedence over `defaultLabel` once
+  // `migrateAssignNames` runs at spawn (see $lib/multiplayer/module-naming.ts).
+  await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDICVBUDDY(\d+)?$/);
   expect(errors, errors.join('; ')).toEqual([]);
 });
 
@@ -66,7 +70,11 @@ test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page })
   // The card is still visible and still bears the label — no unhandled
   // exception tore it down.
   await expect(card).toBeVisible();
-  await expect(card).toContainText('MIDI-CV-BUDDY');
+  // Card now shows the bare-prefix auto-name (MIDICVBUDDY) — the def's
+  // `MIDI-CV-BUDDY` label is no longer rendered in the title bar because
+  // the editable name button takes precedence over `defaultLabel` once
+  // `migrateAssignNames` runs at spawn (see $lib/multiplayer/module-naming.ts).
+  await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDICVBUDDY(\d+)?$/);
   // No unhandled pageerror / console.error along the way.
   expect(errors, errors.join('; ')).toEqual([]);
 });
