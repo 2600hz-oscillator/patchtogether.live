@@ -21,7 +21,8 @@ export type SkinId =
   | 'vaporwave'
   | 'vintage'
   | 'matrixcowboy'
-  | 'diner';
+  | 'diner'
+  | 'lcars';
 
 /** Every skin MUST set every key. The keys are the public skin contract;
  *  adding/removing a key is a breaking change for any future custom-skin

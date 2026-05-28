@@ -62,6 +62,7 @@ const { vaporwaveSkin } = await import('./vaporwave');
 const { vintageSkin } = await import('./vintage');
 const { matrixcowboySkin } = await import('./matrixcowboy');
 const { dinerSkin } = await import('./diner');
+const { lcarsSkin } = await import('./lcars');
 
 const STORAGE_KEY = 'pt.skin';
 
@@ -78,8 +79,8 @@ beforeEach(() => {
 });
 
 describe('skin types + registry', () => {
-  it('exposes 7 in-tree skins, default first', () => {
-    expect(SKINS.length).toBe(7);
+  it('exposes 8 in-tree skins, default first', () => {
+    expect(SKINS.length).toBe(8);
     expect(SKINS[0]?.id).toBe('default');
   });
 
@@ -97,19 +98,21 @@ describe('skin types + registry', () => {
     }
   });
 
-  it('only DINER sets the OPTIONAL shape tokens; the six others omit them', () => {
+  it('only the fancy opt-in skins set the OPTIONAL shape tokens; the six legacy skins omit them', () => {
     // The whole point of the optional tokens: `_module-card.css` falls back
     // to the legacy hard-edged values for any skin that doesn't set them, so
     // the six pre-existing skins render byte-identically (VRT baselines hold).
+    // DINER + LCARS are the two opt-in skins; they set the full set.
     const optional = [
       '--module-radius',
       '--module-stripe-radius',
       '--module-glow',
       '--module-border-color',
     ] as const;
+    const optInIds = new Set<string>(['diner', 'lcars']);
     for (const s of SKINS) {
       const setsAny = optional.some((k) => k in s.vars);
-      if (s.id === 'diner') {
+      if (optInIds.has(s.id)) {
         expect(setsAny).toBe(true);
         for (const k of optional) expect(s.vars).toHaveProperty(k);
       } else {
@@ -279,6 +282,40 @@ describe('vintage skin + sprite extension', () => {
     expect(dinerSkin.vars['--module-radius']).toBe('14px');
     expect(dinerSkin.vars['--module-glow']).toMatch(/rgba/);
     expect(dinerSkin.vars['--module-border-color']).toBe('#c46af0');
+  });
+
+  it('lcars is a fancy sprite skin that ships the optional shape tokens (pushed to MAX radius)', () => {
+    expect(lcarsSkin.id).toBe('lcars');
+    expect(lcarsSkin.controlStyle).toBe('sprite');
+    // Sprite hooks (like Vintage/Diner).
+    expect(lcarsSkin.faderHandleSvg).toMatch(/<svg/);
+    expect(lcarsSkin.faderTrackBg).toMatch(/^url\(/);
+    expect(lcarsSkin.panelBg).toMatch(/^url\(/);
+    expect(lcarsSkin.silkscreenFontFamily).toMatch(/Antonio/);
+    expect(lcarsSkin.silkscreenFontStylesheet).toMatch(/^https:.*Antonio/);
+    // Optional shape tokens — pill cards (max radius) + amber neon border.
+    expect(lcarsSkin.vars['--module-radius']).toBe('22px');
+    expect(lcarsSkin.vars['--module-glow']).toMatch(/rgba/);
+    expect(lcarsSkin.vars['--module-border-color']).toBe('#FF9900');
+    // Pure-black void background.
+    expect(lcarsSkin.vars['--bg']).toBe('#000000');
+    expect(lcarsSkin.vars['--accent']).toBe('#FF9900');
+  });
+
+  it('applySkinToRoot applies LCARS shape tokens, then CLEARS them on switch-away', () => {
+    applySkinToRoot(lcarsSkin);
+    expect(styleStub.getPropertyValue('--module-radius')).toBe('22px');
+    expect(styleStub.getPropertyValue('--module-glow')).toMatch(/rgba/);
+    expect(styleStub.getPropertyValue('--module-border-color')).toBe('#FF9900');
+    expect(styleStub.getPropertyValue('--control-style')).toBe('sprite');
+    expect(styleStub.getPropertyValue('--font-silkscreen')).toMatch(/Antonio/);
+
+    applySkinToRoot(defaultSkin);
+    expect(styleStub.getPropertyValue('--module-radius')).toBe('');
+    expect(styleStub.getPropertyValue('--module-stripe-radius')).toBe('');
+    expect(styleStub.getPropertyValue('--module-glow')).toBe('');
+    expect(styleStub.getPropertyValue('--module-border-color')).toBe('');
+    expect(styleStub.getPropertyValue('--font-silkscreen')).toBe('');
   });
 
   it('applySkinToRoot applies DINER shape tokens, then CLEARS them on switch-away', () => {
