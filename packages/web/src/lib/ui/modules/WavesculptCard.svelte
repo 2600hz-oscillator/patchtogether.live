@@ -782,7 +782,9 @@ void main() {
   // Cheap face/rim term: the ring normal's alignment with the aim's
   // perpendicular toward +Z (a stand-in for the view dir) — gives the tube
   // a lit face and darker silhouette without needing the real eye vector.
-  vRimDot = clamp(abs(nrm.z) * 0.6 + 0.4, 0.0, 1.0);
+  // Mapped to a WIDE 0.12..1.0 range so the silhouette goes genuinely dark
+  // and the face↔silhouette gradient reads as real 3D shading.
+  vRimDot = clamp(abs(nrm.z) * 0.88 + 0.12, 0.12, 1.0);
   vOsc = osc;
 }`;
 
@@ -793,26 +795,31 @@ in float vRimDot;
 flat in int vOsc;
 out vec4 outColor;
 
-uniform vec4  uNeon[4];  // per-osc neon colour
-uniform float uMode;     // 1 = thin scope line, 2 = real neon tube
+uniform vec4  uNeon[4];   // per-osc neon colour
+uniform float uMode;      // 1 = thin scope line, 2 = real neon tube
+uniform float uActive[4]; // per-osc activity alpha (0 = silent → draw NOTHING)
 
 void main() {
   vec3 base = uNeon[vOsc].rgb;
   float edge = smoothstep(0.0, 0.12, vT) * smoothstep(1.0, 0.88, vT);
+  float act = uActive[vOsc];
 
   if (uMode > 1.5) {
-    // REAL TUBE: shade the ring geometry with a hot core toward the lit
-    // face + saturated neon body + soft rim, so the swept tube reads as a
-    // glowing solid. vRimDot is high on the face, low on the silhouette.
+    // REAL TUBE: HUE-DOMINANT 3D shading. The osc's neon chroma rides from a
+    // dark silhouette (ambient floor) up to a bright SATURATED colored face,
+    // with only a tiny white specular highlight at the very brightest point —
+    // so it reads as a glowing COLORED neon tube, never a white blob.
+    // vRimDot is high on the lit face, low (dark) on the silhouette.
     float face = vRimDot;
-    float core = pow(face, 2.0);
-    vec3 col = vec3(1.0) * core * 0.7 + base * (0.7 + 1.6 * face);
-    float alpha = (0.55 + 0.45 * face) * (0.5 + 0.5 * edge);
+    vec3 body = base * (0.22 + 0.95 * face); // ambient → diffuse in the osc hue
+    float spec = pow(face, 9.0) * 0.35;       // tiny white hot highlight only at the face
+    vec3 col = body + vec3(spec);
+    float alpha = (0.5 + 0.5 * face) * (0.5 + 0.5 * edge) * act;
     outColor = vec4(col, alpha);
   } else {
     // THIN SCOPE LINE: bright, near-uniform neon trace.
     vec3 col = base * 1.4;
-    float alpha = (0.6 + 0.4 * vRimDot) * (0.45 + 0.55 * edge);
+    float alpha = (0.6 + 0.4 * vRimDot) * (0.45 + 0.55 * edge) * act;
     outColor = vec4(col, alpha);
   }
 }`;
@@ -1084,6 +1091,20 @@ void main() {
     const neonArr = new Float32Array(16);
     const widthArr = new Float32Array(4);
     const scaleArr = new Float32Array(4);
+    // Per-osc ACTIVITY alpha. A silent / OFF / unpatched osc has amp ≈ 0 and
+    // must contribute ZERO coverage (so it draws NOTHING — no static straight
+    // diagonal line). Active voices fade in smoothly with their envelope. The
+    // smoothstep knee (ACT_LO..ACT_HI) suppresses true silence + analyser
+    // noise while still showing a barely-audible voice once above the floor.
+    const ACT_LO = 0.02;   // below this peak amplitude → treated as silence (alpha 0)
+    const ACT_HI = 0.12;   // at/above this → fully visible (alpha 1)
+    const activeArr = new Float32Array(4);
+    for (let i = 0; i < 4; i++) {
+      const amp = meta.amp[i] ?? 0;
+      // smooth ramp: silence/OFF → 0, normal signal → 1, no hard pop.
+      const t = Math.max(0, Math.min(1, (amp - ACT_LO) / (ACT_HI - ACT_LO)));
+      activeArr[i] = t * t * (3 - 2 * t);
+    }
     for (let i = 0; i < 4; i++) {
       const c = SCOPE_CORNERS[i]!, a0 = SCOPE_AIMS[i]!, n = oscRenderColor(i, NEON_COLORS);
       // WIGGLE: rotate the aim direction (and orbit the origin slightly)
@@ -1112,6 +1133,7 @@ void main() {
     g.uniform4fv(g.getUniformLocation(scopeProgram, 'uNeon[0]'), neonArr);
     g.uniform1fv(g.getUniformLocation(scopeProgram, 'uWidth[0]'), widthArr);
     g.uniform1fv(g.getUniformLocation(scopeProgram, 'uScale[0]'), scaleArr);
+    g.uniform1fv(g.getUniformLocation(scopeProgram, 'uActive[0]'), activeArr);
     g.uniform1f(g.getUniformLocation(scopeProgram, 'uMode'), mode);
     g.activeTexture(g.TEXTURE0);
     g.bindTexture(g.TEXTURE_2D, scopeTex);
@@ -1316,6 +1338,7 @@ void main() {
     scale: number[];          // per-osc SCALE (uniform knob+CV; same value × 4)
     wiggle: number;           // global WIGGLE strength (knob + CV)
     pitches: Array<number | null>; // per-osc detected pitch
+    amp: number[];            // per-osc peak |sample| over the window (0 = silent / no trace)
   }
 
   // Refresh scopeTex from the audio module's live per-osc time-domain
@@ -1327,7 +1350,7 @@ void main() {
   // can apply SCALE in the shader and drive the WIGGLE rotation. Falls back
   // to silence (flat mid-line) + defaults when the engine isn't ready.
   function uploadScopeTex(): ScopeMeta {
-    const meta: ScopeMeta = { scale: [1, 1, 1, 1], wiggle: 0, pitches: [null, null, null, null] };
+    const meta: ScopeMeta = { scale: [1, 1, 1, 1], wiggle: 0, pitches: [null, null, null, null], amp: [0, 0, 0, 0] };
     if (!gl || !scopeTex) return meta;
     const buf = scopeTexUploadBuf;
     const e = engineCtx.get();
@@ -1350,6 +1373,10 @@ void main() {
     for (let osc = 0; osc < 4; osc++) {
       const tr = traces?.[osc];
       const rowOffset = osc * SCOPE_TEX_W * 4;
+      // Track peak |sample| of the decoded -1..+1 trace so silent / OFF /
+      // unpatched oscillators (which fill a flat mid-line) can be gated to
+      // ZERO coverage in the shader — no static straight diagonal ray.
+      let peak = 0;
       for (let i = 0; i < SCOPE_TEX_W; i++) {
         let s = 0;
         if (tr && traceLen > 0) {
@@ -1357,10 +1384,15 @@ void main() {
           const srcIdx = Math.min(traceLen - 1, Math.round((i / (SCOPE_TEX_W - 1)) * (traceLen - 1)));
           s = tr[srcIdx] ?? 0;
         }
+        const a = Math.abs(s);
+        if (a > peak) peak = a;
         const v = Math.max(0, Math.min(255, Math.round((s + 1) * 127.5)));
         const o = rowOffset + i * 4;
         buf[o] = v; buf[o + 1] = v; buf[o + 2] = v; buf[o + 3] = 255;
       }
+      // No trace at all → amp 0 (definitely silent). Otherwise the window's
+      // peak abs amplitude (0..~1).
+      meta.amp[osc] = (tr && traceLen > 0) ? peak : 0;
     }
     gl.bindTexture(gl.TEXTURE_2D, scopeTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
