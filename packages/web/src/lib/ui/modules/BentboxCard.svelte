@@ -352,7 +352,9 @@
   x={ctxX}
   y={ctxY}
   title="BENTBOX"
-  onfullscreen={() => { ff.exit(); void fs.enter(); }}
+  availableScreens={fs.availableScreens}
+  onrequestscreens={() => void fs.loadScreens()}
+  onfullscreen={(screenId) => { ff.exit(); void fs.enter(screenId); }}
   onfullframe={() => ff.toggle(fullFrame)}
   isFullFrame={fullFrame}
   onclose={() => { ctxOpen = false; }}
