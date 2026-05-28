@@ -345,3 +345,67 @@ html[data-skin='diner'] .topbar h1 {
     0 0 14px rgba(0, 229, 255, 0.25);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * LCARS skin overlays — scoped to `html[data-skin="lcars"]`.
+ *
+ * The Star Trek: TNG "Okudagram" skin. The fully-rounded pill cards + amber
+ * glow border are tokenized (--module-radius 22px / --module-glow / --module-
+ * border-color in _module-card.css), so they apply via plain CSS-var
+ * inheritance. Here we add the LCARS-signature finishing touches that aren't
+ * worth a token:
+ *   1. UPPERCASE, bold, slightly-tracked card titles pushed to the panel's
+ *      lower-right — the canonical LCARS label placement — with a warm amber
+ *      glow so the Antonio signage reads as a lit Okudagram caption.
+ *   2. A pair of rounded "elbow" corner brackets on body::before — the LCARS
+ *      L-frame motif — drawn with radial-gradient corners + a thin amber edge
+ *      glow. pointer-events:none, z-index 0 (below the topbar at 200 + the
+ *      SkinSwitcher popover) so it never intercepts UI.
+ *
+ * CSS-only, zero-JS, no image fetch — same discipline as MATRIXCOWBOY/DINER.
+ * ────────────────────────────────────────────────────────────────────── */
+
+html[data-skin='lcars'] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  /* Two rounded LCARS "elbow" brackets: a soft amber glow hugging the
+   * top-left + bottom-right corners, evoking the L-frame that wraps every
+   * Okudagram screen. Low-alpha so the canvas + cards stay the focus. */
+  background:
+    radial-gradient(
+      40% 32% at 0% 0%,
+      rgba(255, 153, 0, 0.16) 0%,
+      rgba(255, 153, 102, 0.07) 45%,
+      rgba(0, 0, 0, 0) 72%
+    ),
+    radial-gradient(
+      40% 32% at 100% 100%,
+      rgba(156, 156, 255, 0.12) 0%,
+      rgba(85, 102, 170, 0.06) 45%,
+      rgba(0, 0, 0, 0) 72%
+    );
+}
+
+/* LCARS label treatment — bold UPPERCASE, lower-right aligned, amber-lit. The
+ * silkscreen var already swaps in Antonio; here we drive the case + tracking +
+ * placement + glow so the captions read as authentic Okudagram signage. */
+html[data-skin='lcars'] .mod-card .title {
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: right;
+  color: var(--accent);
+  text-shadow:
+    0 0 2px rgba(255, 204, 153, 0.9),
+    0 0 8px rgba(255, 153, 0, 0.45);
+}
+html[data-skin='lcars'] .topbar h1 {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-shadow:
+    0 0 2px rgba(255, 204, 153, 0.8),
+    0 0 8px rgba(255, 153, 0, 0.4);
+}
+
