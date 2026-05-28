@@ -106,6 +106,9 @@
                   {/each}
                 </select>
               </label>
+              <!-- System = TIMELORDE bpm; MIDI = incoming MIDI clock (0xF8).
+                   Routes to a real tempo reference (see cocoadelay.ts). A
+                   patched CLK cable overrides either source. -->
               <label class="ddl">
                 <span>Clk src</span>
                 <select data-testid="cocoa-clock-source" value={clockSource} onchange={(e) => setDiscrete('clockSource', Number((e.currentTarget as HTMLSelectElement).value))}>

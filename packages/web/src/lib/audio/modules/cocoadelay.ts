@@ -14,17 +14,56 @@
 //                  per-param-CV convention other modules use.
 //
 // Tempo sync (two pieces, faithful to the brief):
-//   • clockSource (dropdown): SYSTEM (TIMELORDE) vs MIDI (MIDICLOCK). Both
-//     arrive as a pulse stream on the `clock` gate input — the DSP measures
-//     the period either way; this param is reflected for labeling + future
-//     per-source behavior.
+//   • clockSource (dropdown): SYSTEM (TIMELORDE) vs MIDI (MIDICLOCK). These
+//     route to GENUINELY different tempo references:
+//       - System → the rack's TIMELORDE `bpm` (read off the live patch graph,
+//         same as CLOCKED RUNNER does).
+//       - MIDI   → the shared MIDI-clock source (0xF8 @ 24 PPQN → derived BPM).
+//     The worklet can't read those singletons (AudioWorkletGlobalScope), so a
+//     main-thread loop resolves the chosen source's seconds-per-beat and
+//     bridges it via the `syncPeriod` AudioParam.
 //   • tempoSync (dropdown): Off → free-running ms (the TIME knob); otherwise
-//     a musical division of the measured clock period (1/4, 1/8, dotted,
-//     triplet …) exactly like the original plugin's host-tempo sync.
+//     a musical division of that beat (1/4, 1/8, dotted, triplet …) exactly
+//     like the original plugin's host-tempo sync.
+//   • A PATCHED `clock` gate input STILL overrides both sources — the DSP
+//     measures the pulse period and uses it directly (existing behavior).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import { patch as livePatch } from '$lib/graph/store';
+import { getMidiClockSource } from '$lib/midi/midi-clock-source';
 import workletUrl from '@patchtogether.live/dsp/dist/cocoadelay.js?url';
+
+/** clockSource dropdown indices (must match COCOA_CLOCK_SOURCE_OPTIONS). */
+const CLOCK_SOURCE_SYSTEM = 0;
+const CLOCK_SOURCE_MIDI = 1;
+
+/** Read the rack's TIMELORDE bpm off the live patch graph (mirrors
+ *  CLOCKED RUNNER). Returns the default 120 when no TIMELORDE is present. */
+export function readTimelordeBpm(nodes: Record<string, { type?: string; params?: Record<string, unknown> } | undefined>): number {
+  for (const n of Object.values(nodes)) {
+    if (n?.type === 'timelorde') {
+      const bpm = n.params?.['bpm'];
+      if (typeof bpm === 'number' && bpm > 0) return bpm;
+    }
+  }
+  return 120;
+}
+
+/** Resolve seconds-per-beat for the chosen clockSource. MIDI returns null
+ *  when no live MIDI clock is being received (caller leaves syncPeriod=0 so
+ *  the worklet falls back to the free-running knob until clock arrives). */
+export function resolveSyncPeriodS(
+  clockSource: number,
+  nodes: Record<string, { type?: string; params?: Record<string, unknown> } | undefined>,
+  midiBeatPeriodS: number | null,
+): number {
+  if (clockSource === CLOCK_SOURCE_MIDI) {
+    return midiBeatPeriodS !== null && midiBeatPeriodS > 0 ? midiBeatPeriodS : 0;
+  }
+  // System (default / index 0): TIMELORDE.
+  return 60 / readTimelordeBpm(nodes);
+}
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -79,6 +118,9 @@ export const cocoaDelayDef: AudioModuleDef = {
     { id: 'delayTime',   label: 'Time',     defaultValue: 0.2,  min: 0.001, max: 2.0,  curve: 'log',      units: 's' },
     { id: 'tempoSync',   label: 'Sync',     defaultValue: 0,    min: 0,     max: 19,   curve: 'discrete' },
     { id: 'clockSource', label: 'Clk Src',  defaultValue: 0,    min: 0,     max: 1,    curve: 'discrete' },
+    // Bridged from the WEB layer each frame (System=TIMELORDE / MIDI=MIDICLOCK
+    // seconds-per-beat). Not user-facing — no card control. 0 = none.
+    { id: 'syncPeriod',  label: 'SyncPer',  defaultValue: 0,    min: 0,     max: 30,   curve: 'linear', units: 's' },
     // LFO
     { id: 'lfoAmount',    label: 'LFO Amt',  defaultValue: 0.0,  min: 0.0,   max: 0.5,  curve: 'linear' },
     { id: 'lfoFrequency', label: 'LFO Freq', defaultValue: 2.0,  min: 0.1,   max: 10.0, curve: 'log',   units: 'hz' },
@@ -140,6 +182,34 @@ export const cocoaDelayDef: AudioModuleDef = {
       params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
     }
 
+    // --- sync-period bridge ---------------------------------------------
+    // The worklet can't read TIMELORDE / the MIDI-clock singleton (it's in
+    // AudioWorkletGlobalScope). Resolve the chosen clockSource's beat period
+    // on the main thread and feed it to the worklet via the `syncPeriod`
+    // AudioParam. ~60 Hz is plenty (tempo changes are gestural); a patched
+    // `clock` gate still overrides this inside the DSP.
+    const syncPeriodParam = params.get('syncPeriod');
+    const nodeId = node.id;
+    const midiClock = getMidiClockSource();
+    let syncTimer: ReturnType<typeof setInterval> | null = null;
+    function pushSyncPeriod(): void {
+      if (!syncPeriodParam) return;
+      const live = livePatch.nodes[nodeId];
+      const clockSource = Math.round(
+        (typeof live?.params?.['clockSource'] === 'number'
+          ? (live.params['clockSource'] as number)
+          : (node.params?.['clockSource'] as number | undefined)) ?? 0,
+      );
+      const period = resolveSyncPeriodS(
+        clockSource,
+        livePatch.nodes,
+        midiClock.getBeatPeriodS(),
+      );
+      syncPeriodParam.setValueAtTime(period, ctx.currentTime);
+    }
+    pushSyncPeriod();
+    syncTimer = setInterval(pushSyncPeriod, 16);
+
     return {
       domain: 'audio',
       inputs: new Map([
@@ -166,6 +236,7 @@ export const cocoaDelayDef: AudioModuleDef = {
         return params.get(paramId)?.value;
       },
       dispose() {
+        if (syncTimer !== null) clearInterval(syncTimer);
         try { silenceL.stop(); } catch { /* */ }
         try { silenceR.stop(); } catch { /* */ }
         try { silenceClk.stop(); } catch { /* */ }
