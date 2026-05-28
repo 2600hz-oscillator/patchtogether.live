@@ -15,9 +15,26 @@ beforeAll(() => {
   (globalThis as unknown as { sampleRate: number }).sampleRate = SR;
 });
 
-async function loadProcessor() {
-  const mod = await import('../../../../../dsp/src/charlottes-echos');
-  return mod.CharlottesEchosProcessor;
+// The worklet entry no longer `export`s its processor class (a top-level
+// export pollutes the bundled dist worklet → breaks the ART classic-script
+// eval). Capture the class via its registerProcessor side-effect instead,
+// mirroring the ART harness. Cached after the first (module-side-effecting)
+// import.
+type ProcCtor = new () => {
+  process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;
+};
+let capturedProc: ProcCtor | null = null;
+async function loadProcessor(): Promise<ProcCtor> {
+  if (capturedProc) return capturedProc;
+  const g = globalThis as unknown as { registerProcessor?: (n: string, c: ProcCtor) => void };
+  const prev = g.registerProcessor;
+  let registered: ProcCtor | null = null;
+  g.registerProcessor = (_n, ctor) => { registered = ctor; };
+  await import('../../../../../dsp/src/charlottes-echos');
+  g.registerProcessor = prev;
+  if (!registered) throw new Error('charlottes-echos processor did not register');
+  capturedProc = registered;
+  return capturedProc;
 }
 
 function makeParams(over: Record<string, number> = {}): Record<string, Float32Array> {

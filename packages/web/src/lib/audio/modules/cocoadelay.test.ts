@@ -17,13 +17,29 @@ beforeAll(() => {
   (globalThis as unknown as { sampleRate: number }).sampleRate = SR;
 });
 
-// Dynamic import AFTER the globals are set so the module's side-effecting
-// registerProcessor() + the class's sampleRate reference resolve cleanly.
-async function loadProcessor() {
+// The worklet entry no longer `export`s its processor class (a top-level
+// export pollutes the bundled dist worklet → breaks the ART classic-script
+// eval). Capture the class via its registerProcessor side-effect, mirroring
+// the ART harness. The dynamic import runs AFTER globals are set so the
+// module's side-effecting registerProcessor() + the class's sampleRate
+// reference resolve cleanly. Cached after the first import.
+type ProcCtor = new () => {
+  process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;
+};
+let capturedProc: ProcCtor | null = null;
+async function loadProcessor(): Promise<ProcCtor> {
+  if (capturedProc) return capturedProc;
+  const g = globalThis as unknown as { registerProcessor?: (n: string, c: ProcCtor) => void };
+  const prev = g.registerProcessor;
+  let registered: ProcCtor | null = null;
+  g.registerProcessor = (_n, ctor) => { registered = ctor; };
   // Relative path into the DSP source — the worktree may not have the
   // workspace package symlinked under node_modules.
-  const mod = await import('../../../../../dsp/src/cocoadelay');
-  return mod.CocoaDelayProcessor;
+  await import('../../../../../dsp/src/cocoadelay');
+  g.registerProcessor = prev;
+  if (!registered) throw new Error('cocoadelay processor did not register');
+  capturedProc = registered;
+  return capturedProc;
 }
 
 /** Build a parameters record. a-rate params get a single-element array (the

@@ -42,7 +42,10 @@ if (typeof G.registerProcessor === 'undefined') {
   G.registerProcessor = () => {};
 }
 
-export class CocoaDelayProcessor extends AudioWorkletProcessor {
+// Not `export`ed — see the note in charlottes-echos.ts: a top-level export
+// pollutes the bundled dist/<name>.js worklet and breaks the ART harness's
+// classic-script eval. Reached via its registerProcessor side-effect.
+class CocoaDelayProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       // a-rate params receive CV — read per-sample for smooth modulation.

@@ -55,7 +55,12 @@ if (typeof G.registerProcessor === 'undefined') {
 const NUM_STAGES = 4;
 const MIN_DELAY_S = 0.001;
 
-export class CharlottesEchosProcessor extends AudioWorkletProcessor {
+// NOTE: not `export`ed — worklet entry files are bundled (esbuild format:esm)
+// and a top-level export survives into dist/<name>.js, which the ART harness
+// evals as a CLASSIC script (`new Function(src)`) → "Unexpected token 'export'".
+// The processor is reached via its registerProcessor side-effect (see the
+// test loaders), exactly like every other worklet (e.g. aquatank).
+class CharlottesEchosProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       { name: 'delay', defaultValue: 0.4, minValue: 0.001, maxValue: 1.5, automationRate: 'a-rate' as const },
