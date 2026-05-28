@@ -2350,6 +2350,16 @@ void main() {
   const outputs: PortDescriptor[] = [
     { id: 'L',         label: 'L',   cable: 'audio' },
     { id: 'R',         label: 'R',   cable: 'audio' },
+    // Per-oscillator audio taps (RED/GRN/BLU/ALP) — each emits that one
+    // oscillator's signal (post env+dist+pan), the same per-osc source
+    // the BLINK oscilloscope reads. Grouped right after L/R so the
+    // per-voice outs sit next to the summed main mix. Every declared
+    // port MUST render a handle — see e2e/tests/io-spec-consistency.spec.ts
+    // (#359/#362 handle/io-spec parity).
+    { id: 'out_red',   label: 'RED', cable: 'audio' },
+    { id: 'out_grn',   label: 'GRN', cable: 'audio' },
+    { id: 'out_blu',   label: 'BLU', cable: 'audio' },
+    { id: 'out_alp',   label: 'ALP', cable: 'audio' },
     { id: 'video_out', label: 'OUT', cable: 'mono-video' },
   ];
 

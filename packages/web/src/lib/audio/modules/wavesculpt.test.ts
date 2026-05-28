@@ -12,7 +12,7 @@
 //     '@patchtogether.live/dsp/dist/wavesculpt-engine.js' instead of
 //     building OscillatorNodes on the WebAudio graph.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   wavesculptDef,
   WALL_LAYOUT,
@@ -78,6 +78,23 @@ describe('wavesculpt v2: module-def shape', () => {
     const v = outs.find((o) => o.id === 'video_out');
     expect(v).toBeDefined();
     expect(['video', 'mono-video']).toContain(v!.type);
+  });
+
+  it('declares 4 per-oscillator AUDIO outputs (RED/GRN/BLU/ALP), additive to L/R', () => {
+    const outs = wavesculptDef.outputs;
+    // The summed main mix is KEPT intact + backward-compatible.
+    expect(outs.find((o) => o.id === 'L')?.type).toBe('audio');
+    expect(outs.find((o) => o.id === 'R')?.type).toBe('audio');
+    expect(outs.find((o) => o.id === 'video_out')).toBeDefined();
+    // Plus one per-osc tap per oscillator, all audio-typed.
+    for (const id of ['out_red', 'out_grn', 'out_blu', 'out_alp']) {
+      const o = outs.find((p) => p.id === id);
+      expect(o, `${id} declared`).toBeDefined();
+      expect(o!.type, `${id} is audio`).toBe('audio');
+    }
+    // No duplicate port ids.
+    const ids = outs.map((o) => o.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('exposes per-osc wavetable params (tune/fine/morph/spread/fold) for all 4 oscs', () => {
@@ -688,5 +705,235 @@ describe('ribbonStripRange (alpha-rotate bugfix: per-osc sub-strip)', () => {
     // region's tail (i.e. it begins strictly after osc 2's block).
     const osc2 = ribbonStripRange(2, SEG);
     expect(start).toBeGreaterThan(osc2.start + osc2.count - 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-oscillator AUDIO outputs (RED/GRN/BLU/ALP) — factory routing.
+//
+// These tests drive wavesculptDef.factory() against a mock Web Audio
+// environment that records every node + every connect() edge (with the
+// source-output index). We can't run a real worklet in vitest, so instead
+// we verify the GRAPH TOPOLOGY: each per-osc output port must point at a
+// distinct StereoPanner, and each of those panners must be fed (by tracing
+// the recorded edges back) from a DISTINCT engine output index 0..3 — i.e.
+// out_red carries osc 0, out_grn osc 1, etc. We also confirm those panners
+// are the SAME nodes the BLINK scope analysers tap, so the per-osc audio out
+// is literally the oscilloscope's per-osc source.
+// ---------------------------------------------------------------------------
+
+import type { ModuleNode } from '$lib/graph/types';
+
+interface MockNode {
+  __type: string;
+  __id: number;
+  // edges OUT of this node: { to, fromOutput, toInput }
+  __out: Array<{ to: MockNode; fromOutput: number; toInput: number }>;
+  connect: (...args: unknown[]) => unknown;
+  disconnect: (...args: unknown[]) => void;
+  [k: string]: unknown;
+}
+
+function makeWavesculptMockEnv() {
+  let idSeq = 0;
+  const nodes: MockNode[] = [];
+
+  function audioParam(initial = 0) {
+    return {
+      value: initial,
+      setValueAtTime: vi.fn(function (this: { value: number }, v: number) { this.value = v; }),
+      setTargetAtTime: vi.fn(),
+      cancelScheduledValues: vi.fn(),
+      linearRampToValueAtTime: vi.fn(),
+    };
+  }
+
+  function makeNode(type: string, extra: Record<string, unknown> = {}): MockNode {
+    const n: MockNode = {
+      __type: type,
+      __id: idSeq++,
+      __out: [],
+      connect: vi.fn(function (this: MockNode, target: unknown, fromOutput = 0, toInput = 0) {
+        // connect(target, output?, input?) — target may be a node or an AudioParam.
+        if (target && typeof target === 'object' && '__type' in (target as object)) {
+          this.__out.push({ to: target as MockNode, fromOutput, toInput });
+        }
+        return target;
+      }),
+      disconnect: vi.fn(),
+      ...extra,
+    };
+    nodes.push(n);
+    return n;
+  }
+
+  const ctx = {
+    currentTime: 0,
+    sampleRate: 48000,
+    audioWorklet: { addModule: vi.fn(async () => {}) },
+    createGain: () => makeNode('gain', { gain: audioParam(1) }),
+    createAnalyser: () =>
+      makeNode('analyser', {
+        fftSize: 256,
+        frequencyBinCount: 128,
+        smoothingTimeConstant: 0,
+        getFloatTimeDomainData: vi.fn(),
+        getFloatFrequencyData: vi.fn(),
+      }),
+    createStereoPanner: () => makeNode('panner', { pan: audioParam(0) }),
+    createChannelSplitter: () => makeNode('splitter'),
+    createConstantSource: () => makeNode('const', { offset: audioParam(0), start: vi.fn(), stop: vi.fn() }),
+    createDelay: () => makeNode('delay', { delayTime: audioParam(0) }),
+    createConvolver: () => makeNode('convolver', { buffer: null }),
+    createBuffer: (_ch: number, len: number) =>
+      ({ getChannelData: () => new Float32Array(len) }),
+  };
+
+  const engineParams = new Map<string, ReturnType<typeof audioParam>>();
+  let engineNode: MockNode | null = null;
+  class FakeAudioWorkletNode {
+    __type = 'engine';
+    __id = -1;
+    __out: MockNode['__out'] = [];
+    port = { postMessage: vi.fn(), onmessage: null, close: vi.fn() };
+    parameters = {
+      get: (k: string) => {
+        let p = engineParams.get(k);
+        if (!p) { p = audioParam(0); engineParams.set(k, p); }
+        return p;
+      },
+    };
+    connect = vi.fn(function (this: MockNode, target: unknown, fromOutput = 0, toInput = 0) {
+      if (target && typeof target === 'object' && '__type' in (target as object)) {
+        this.__out.push({ to: target as MockNode, fromOutput, toInput });
+      }
+      return target;
+    });
+    disconnect = vi.fn();
+    constructor(_ctx: unknown, _name: string, _opts?: unknown) {
+      engineNode = this as unknown as MockNode;
+      nodes.push(this as unknown as MockNode);
+    }
+  }
+  (globalThis as unknown as { AudioWorkletNode: typeof FakeAudioWorkletNode }).AudioWorkletNode =
+    FakeAudioWorkletNode;
+
+  return { ctx, nodes, getEngine: () => engineNode };
+}
+
+function makeWsNode(params?: Record<string, number>): ModuleNode {
+  return {
+    id: 'ws-test',
+    type: 'wavesculpt',
+    domain: 'audio',
+    position: { x: 0, y: 0 },
+    params: params ?? {},
+    data: {},
+  } as unknown as ModuleNode;
+}
+
+/** Walk the recorded edges backward from `target` to find the engine
+ *  output index that ultimately feeds it (depth-first over __out edges).
+ *  Returns the engine's fromOutput index, or null if not reachable. */
+function engineOutputFeeding(
+  nodes: MockNode[],
+  engine: MockNode,
+  target: MockNode,
+): number | null {
+  // Direct: does the engine connect to `target` at some output?
+  for (const e of engine.__out) {
+    if (e.to === target) return e.fromOutput;
+  }
+  // Indirect: BFS from engine, tracking the originating engine output index.
+  const queue: Array<{ node: MockNode; rootOutput: number }> = [];
+  for (const e of engine.__out) queue.push({ node: e.to, rootOutput: e.fromOutput });
+  const seen = new Set<MockNode>();
+  while (queue.length) {
+    const { node, rootOutput } = queue.shift()!;
+    if (seen.has(node)) continue;
+    seen.add(node);
+    if (node === target) return rootOutput;
+    for (const e of node.__out) queue.push({ node: e.to, rootOutput });
+  }
+  return null;
+}
+
+describe('wavesculpt factory: per-osc audio output routing (RED/GRN/BLU/ALP)', () => {
+  afterEach(() => {
+    delete (globalThis as unknown as { AudioWorkletNode?: unknown }).AudioWorkletNode;
+    vi.restoreAllMocks();
+  });
+
+  it('handle.outputs exposes L/R + the 4 per-osc audio taps + nothing missing', async () => {
+    const { ctx } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(ctx as unknown as AudioContext, makeWsNode());
+    const outIds = [...handle.outputs.keys()].sort();
+    expect(outIds).toEqual(['L', 'R', 'out_alp', 'out_blu', 'out_grn', 'out_red']);
+    handle.dispose?.();
+  });
+
+  it('each per-osc output points at a DISTINCT StereoPanner node', async () => {
+    const { ctx } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(ctx as unknown as AudioContext, makeWsNode());
+    const ids = ['out_red', 'out_grn', 'out_blu', 'out_alp'];
+    const panners = ids.map((id) => handle.outputs.get(id)!.node as unknown as MockNode);
+    for (const p of panners) expect(p.__type).toBe('panner');
+    // All four must be distinct node instances (one per oscillator).
+    expect(new Set(panners.map((p) => p.__id)).size).toBe(4);
+    handle.dispose?.();
+  });
+
+  it('routes each per-osc output to its OWN oscillator (engine output 0→RED, 1→GRN, 2→BLU, 3→ALP)', async () => {
+    const { ctx, nodes, getEngine } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(ctx as unknown as AudioContext, makeWsNode());
+    const engine = getEngine()!;
+    expect(engine, 'engine worklet node created').toBeTruthy();
+
+    const expected: Array<[string, number]> = [
+      ['out_red', 0],
+      ['out_grn', 1],
+      ['out_blu', 2],
+      ['out_alp', 3],
+    ];
+    for (const [id, oscIdx] of expected) {
+      const panner = handle.outputs.get(id)!.node as unknown as MockNode;
+      const fedBy = engineOutputFeeding(nodes, engine, panner);
+      expect(fedBy, `${id} is fed by engine output ${oscIdx}`).toBe(oscIdx);
+    }
+    handle.dispose?.();
+  });
+
+  it('per-osc output nodes are the SAME panners the scope analysers tap (single per-osc source)', async () => {
+    const { ctx } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(ctx as unknown as AudioContext, makeWsNode());
+    // ensureScopeAnalysers is lazy — trigger it via the 'scopes' read.
+    handle.read?.('scopes');
+    const ids = ['out_red', 'out_grn', 'out_blu', 'out_alp'];
+    for (const id of ids) {
+      const panner = handle.outputs.get(id)!.node as unknown as MockNode;
+      // The scope analyser connects FROM the panner: panner.__out should
+      // include exactly one edge to an analyser node.
+      const toAnalyser = panner.__out.filter((e) => e.to.__type === 'analyser');
+      expect(toAnalyser.length, `${id} panner taps a scope analyser`).toBeGreaterThanOrEqual(1);
+    }
+    handle.dispose?.();
+  });
+
+  it('still exposes the summed L/R main mix (backward-compatible)', async () => {
+    const { ctx } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(ctx as unknown as AudioContext, makeWsNode());
+    const l = handle.outputs.get('L')!.node as unknown as MockNode;
+    const r = handle.outputs.get('R')!.node as unknown as MockNode;
+    expect(l.__type).toBe('gain');
+    expect(r.__type).toBe('gain');
+    // L/R must be DIFFERENT nodes than any per-osc panner.
+    const pannerIds = new Set(
+      ['out_red', 'out_grn', 'out_blu', 'out_alp'].map(
+        (id) => (handle.outputs.get(id)!.node as unknown as MockNode).__id,
+      ),
+    );
+    expect(pannerIds.has(l.__id)).toBe(false);
+    expect(pannerIds.has(r.__id)).toBe(false);
+    handle.dispose?.();
   });
 });

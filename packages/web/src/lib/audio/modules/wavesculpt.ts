@@ -542,6 +542,18 @@ export const wavesculptDef: AudioModuleDef = {
   outputs: [
     { id: 'L', type: 'audio' },
     { id: 'R', type: 'audio' },
+    // Per-oscillator AUDIO taps — one per osc (RED/GRN/BLU/ALP). Each
+    // carries that single oscillator's post-env/dist/pan signal (the
+    // EXACT node the BLINK oscilloscope/visualizer reads, oscChains[i]
+    // .panner), so you can patch one voice out independently of the
+    // summed L/R main mix. The L/R mix is KEPT intact + backward-
+    // compatible; these four are purely additive. Index→colour mapping
+    // matches WALL_LAYOUT + the card's OSC_COLOR_LABELS: 0=RED, 1=GRN,
+    // 2=BLU, 3=ALP.
+    { id: 'out_red', type: 'audio' },
+    { id: 'out_grn', type: 'audio' },
+    { id: 'out_blu', type: 'audio' },
+    { id: 'out_alp', type: 'audio' },
     { id: 'video_out', type: 'mono-video' },
   ],
   params: (() => {
@@ -1338,9 +1350,18 @@ export const wavesculptDef: AudioModuleDef = {
     const handle: AudioDomainNodeHandle = {
       domain: 'audio',
       inputs: inputsMap,
-      outputs: new Map([
+      outputs: new Map<string, { node: AudioNode; output: number }>([
         ['L', { node: busL, output: 0 }],
         ['R', { node: busR, output: 0 }],
+        // Per-osc audio taps. Each points at that oscillator's panner —
+        // post env+dist+pan, the SAME node the scope analysers tap (see
+        // ensureScopeAnalysers). output 0 = the panner's stereo output,
+        // i.e. that single voice's full contribution. Index→colour:
+        // 0=RED, 1=GRN, 2=BLU, 3=ALP (WALL_LAYOUT order).
+        ['out_red', { node: oscChains[0]!.panner, output: 0 }],
+        ['out_grn', { node: oscChains[1]!.panner, output: 0 }],
+        ['out_blu', { node: oscChains[2]!.panner, output: 0 }],
+        ['out_alp', { node: oscChains[3]!.panner, output: 0 }],
       ]),
       videoSources: new Map([
         ['video_out', {
