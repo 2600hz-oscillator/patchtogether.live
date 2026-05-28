@@ -65,6 +65,9 @@ const baseDef: AudioModuleDef = {
     // shape: linear (0..2 morph axis).
     { id: 'rate',  type: 'cv', paramTarget: 'rate',  cvScale: { mode: 'log' } },
     { id: 'shape', type: 'cv', paramTarget: 'shape', cvScale: { mode: 'linear' } },
+    // depth: linear (0..1 amplitude axis). Sums into the depth param the
+    // same way rate/shape CV inputs do.
+    { id: 'depth_cv', type: 'cv', paramTarget: 'depth', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'phase0',   type: 'cv' },
@@ -73,8 +76,11 @@ const baseDef: AudioModuleDef = {
     { id: 'phase270', type: 'cv' },
   ],
   params: [
-    { id: 'rate',  label: 'Rate',  defaultValue: 1, min: 0.01, max: 100, curve: 'log', units: 'Hz' },
-    { id: 'shape', label: 'Shape', defaultValue: 0, min: 0,    max: 2,   curve: 'linear' },
+    { id: 'rate',  label: 'Rate',  defaultValue: 1,   min: 0.01, max: 100, curve: 'log', units: 'Hz' },
+    { id: 'shape', label: 'Shape', defaultValue: 0,   min: 0,    max: 2,   curve: 'linear' },
+    // depth: 0 = still (flat), 0.5 = unity (legacy), 1 = 2× (out of range).
+    // Default 0.5 so existing patches behave identically.
+    { id: 'depth', label: 'Depth', defaultValue: 0.5, min: 0,    max: 1,   curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -97,6 +103,7 @@ const baseDef: AudioModuleDef = {
 
     const rateParam = params.get('rate');
     const shapeParam = params.get('shape');
+    const depthParam = params.get('depth');
 
     // Wire up shared-clock anchoring. If no clock is active (e.g., the
     // public single-user `/` canvas), the worklet free-runs from phase=0
@@ -141,9 +148,10 @@ const baseDef: AudioModuleDef = {
     const handle: AudioDomainNodeHandle & { read?: (key: string) => unknown } = {
       domain: 'audio',
       inputs: new Map([
-        ['clock', { node: workletNode, input: 0 }],
-        ['rate',  { node: workletNode, input: 0, param: rateParam! }],
-        ['shape', { node: workletNode, input: 0, param: shapeParam! }],
+        ['clock',    { node: workletNode, input: 0 }],
+        ['rate',     { node: workletNode, input: 0, param: rateParam! }],
+        ['shape',    { node: workletNode, input: 0, param: shapeParam! }],
+        ['depth_cv', { node: workletNode, input: 0, param: depthParam! }],
       ]),
       outputs: new Map([
         ['phase0',   { node: workletNode, output: 0 }],

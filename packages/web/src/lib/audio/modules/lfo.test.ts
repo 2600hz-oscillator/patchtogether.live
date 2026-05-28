@@ -7,7 +7,7 @@
 // (the vitest test runner) can't.
 
 import { describe, it, expect } from 'vitest';
-import { computeLfoState } from './lfo-state';
+import { computeLfoState, computeLfoOutput, lfoDepthGain } from './lfo-state';
 
 describe('computeLfoState', () => {
   it('is deterministic for the same (t, params)', () => {
@@ -66,5 +66,67 @@ describe('computeLfoState', () => {
   it('default rate falls back to 1 Hz', () => {
     const s = computeLfoState(500, {});
     expect(s.phase).toBeCloseTo(0.5, 12);
+  });
+});
+
+describe('lfoDepthGain', () => {
+  it('maps depth=0 → gain 0 (still)', () => {
+    expect(lfoDepthGain(0)).toBe(0);
+  });
+  it('maps depth=0.5 → gain 1 (unity / legacy)', () => {
+    expect(lfoDepthGain(0.5)).toBe(1);
+  });
+  it('maps depth=1 → gain 2 (200%, deliberately out of range, not clamped)', () => {
+    expect(lfoDepthGain(1)).toBe(2);
+  });
+});
+
+describe('computeLfoOutput (depth scaling)', () => {
+  // A quarter-cycle into a 1 Hz sine puts the LFO at its peak (+1 at unity).
+  const peakT = 250;
+  const phases = ['phase0', 'phase90', 'phase180', 'phase270'] as const;
+
+  it('depth=0 → output is flat/still at the resting centre value (0) for all phases', () => {
+    for (let t = 0; t < 1000; t += 137) {
+      const out = computeLfoOutput(t, { rate: 1, shape: 0, depth: 0 });
+      // toBeCloseTo treats -0 and +0 as equal — the LFO emits zero swing
+      // (still) regardless of which sign the underlying morph produced.
+      for (const p of phases) expect(out[p]).toBeCloseTo(0, 12);
+    }
+  });
+
+  it('depth=0.5 → exactly the legacy unity output (morph value, gain 1)', () => {
+    const out = computeLfoOutput(peakT, { rate: 1, shape: 0, depth: 0.5 });
+    // sine at phase 0.25 = sin(pi/2) = +1
+    expect(out.phase0).toBeCloseTo(1, 12);
+  });
+
+  it('depth=1 → 2× the unity swing on every phase (out of range, not clamped)', () => {
+    for (let t = 0; t < 1000; t += 91) {
+      const unity = computeLfoOutput(t, { rate: 1.3, shape: 0.7, depth: 0.5 });
+      const full = computeLfoOutput(t, { rate: 1.3, shape: 0.7, depth: 1 });
+      for (const p of phases) {
+        expect(full[p]).toBeCloseTo(unity[p] * 2, 12);
+      }
+    }
+    // Peak deliberately exceeds the normal [-1,1] range.
+    const peak = computeLfoOutput(peakT, { rate: 1, shape: 0, depth: 1 });
+    expect(peak.phase0).toBeCloseTo(2, 12);
+  });
+
+  it('default depth (0.5) preserves legacy unity output', () => {
+    const def = computeLfoOutput(peakT, { rate: 1, shape: 0 });
+    const unity = computeLfoOutput(peakT, { rate: 1, shape: 0, depth: 0.5 });
+    expect(def).toEqual(unity);
+  });
+
+  it('depth is orthogonal to shape — scales swing for saw/square too', () => {
+    for (const shape of [0, 0.5, 1, 1.5, 2]) {
+      const unity = computeLfoOutput(333, { rate: 2, shape, depth: 0.5 });
+      const half = computeLfoOutput(333, { rate: 2, shape, depth: 0.25 });
+      for (const p of phases) {
+        expect(half[p]).toBeCloseTo(unity[p] * 0.5, 12);
+      }
+    }
   });
 });

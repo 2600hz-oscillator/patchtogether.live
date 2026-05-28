@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
@@ -14,6 +15,7 @@
 
   let rate  = $derived(node?.params.rate  ?? lfoDef.params[0]!.defaultValue);
   let shape = $derived(node?.params.shape ?? lfoDef.params[1]!.defaultValue);
+  let depth = $derived(node?.params.depth ?? lfoDef.params[2]!.defaultValue);
 
   const set = (id_: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[id_] = v; };
   const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
@@ -28,6 +30,7 @@
     { id: 'clock', cable: 'gate' },
     { id: 'rate',  cable: 'cv' },
     { id: 'shape', cable: 'cv' },
+    { id: 'depth_cv', label: 'DEPTH', cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'phase0',   label: 'PHASE 0°',   cable: 'cv' },
@@ -46,10 +49,14 @@
       <Fader value={rate}  min={0.01} max={100} defaultValue={1} label="Rate"  units="Hz" curve="log"    onchange={set('rate')}  readLive={live('rate')}  moduleId={id} paramId="rate" />
       <Fader value={shape} min={0}    max={2}   defaultValue={0} label="Shape"            curve="linear" onchange={set('shape')} readLive={live('shape')} glyphs={SHAPE_GLYPHS} moduleId={id} paramId="shape" />
     </div>
+    <div class="knob-row">
+      <Knob value={depth} min={0} max={1} defaultValue={0.5} label="Depth" curve="linear" onchange={set('depth')} readLive={live('depth')} moduleId={id} paramId="depth" />
+    </div>
   </PatchPanel>
 </div>
 
 <style>
   .lfo-card { width: 200px; min-height: 200px; }
   .lfo-card .fader-row { padding: 0 30px; margin-top: 16px; gap: 12px; }
+  .lfo-card .knob-row { display: flex; justify-content: center; margin-top: 16px; }
 </style>

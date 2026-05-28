@@ -301,4 +301,8 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // drivers, so the linux baseline is pending a `task vrt:update` run on
   // linux CI; the deterministic darwin capture is the regression gate here.
   'linux/backdraft',
+  // LFO (DEPTH knob added): the card grew a knob row + DEPTH input port, so
+  // the darwin baseline is re-captured here. The linux baseline is pending a
+  // `task vrt:update` run on linux CI (this dev machine is darwin-only).
+  'linux/lfo',
 ]);
