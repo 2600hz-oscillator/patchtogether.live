@@ -49,43 +49,63 @@
 
   function pickLearn() { onlearn(); onclose(); }
   function pickForget() { onforget(); onclose(); }
+
+  // Portal the menu to <body>. The control menu is rendered inside a
+  // SvelteFlow node, which lives under `.svelte-flow__viewport` — an element
+  // with a CSS `transform` (pan/zoom). A transformed ancestor becomes the
+  // containing block for `position: fixed` descendants, so without this the
+  // menu's `left/top` (cursor clientX/clientY) would be interpreted in the
+  // transformed/scaled canvas space and land in the wrong spot (drifting as
+  // you pan/zoom). Appending to <body> removes the transformed ancestor so
+  // fixed-positioning resolves against the real viewport → menu spawns under
+  // the cursor. Mirrors VideoCanvasContextMenu.svelte.
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
 </script>
 
 {#if open}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div
-    class="ctx-overlay"
-    onclick={onclose}
-    oncontextmenu={(e) => { e.preventDefault(); onclose(); }}
-    role="presentation"
-  ></div>
-  <div
-    class="ctx-menu"
-    style:left="{x}px"
-    style:top="{y}px"
-    role="menu"
-    aria-label="Control actions"
-    data-testid="control-context-menu"
-  >
-    <div class="ctx-header">{title}</div>
-    <button
-      class="ctx-item"
-      onclick={pickLearn}
-      role="menuitem"
-      data-testid="ctx-midi-learn"
+  <div use:portal>
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+    <div
+      class="ctx-overlay"
+      onclick={onclose}
+      oncontextmenu={(e) => { e.preventDefault(); onclose(); }}
+      role="presentation"
+    ></div>
+    <div
+      class="ctx-menu"
+      style:left="{x}px"
+      style:top="{y}px"
+      role="menu"
+      aria-label="Control actions"
+      data-testid="control-context-menu"
     >
-      MIDI Learn…
-    </button>
-    {#if hasBinding}
+      <div class="ctx-header">{title}</div>
       <button
-        class="ctx-item subtle"
-        onclick={pickForget}
+        class="ctx-item"
+        onclick={pickLearn}
         role="menuitem"
-        data-testid="ctx-midi-forget"
+        data-testid="ctx-midi-learn"
       >
-        Forget {bindingLabel ?? 'binding'}
+        MIDI Learn…
       </button>
-    {/if}
+      {#if hasBinding}
+        <button
+          class="ctx-item subtle"
+          onclick={pickForget}
+          role="menuitem"
+          data-testid="ctx-midi-forget"
+        >
+          Forget {bindingLabel ?? 'binding'}
+        </button>
+      {/if}
+    </div>
   </div>
 {/if}
 
