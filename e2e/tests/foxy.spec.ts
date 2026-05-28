@@ -76,10 +76,12 @@ test.describe('FOXY hybrid module', () => {
     const card = page.locator('.svelte-flow__node-foxy');
     await expect(card, 'FOXY card visible').toBeVisible();
 
-    // All preview canvases exist: RASTER A + RASTER B + BOX 3D + XYZ + WAVETABLE.
+    // All preview canvases exist: RASTER A + RASTER B + RASTER C + XYZ + WAVETABLE.
+    // (v3 replaced the BOX 3D preview with a third raster C feeding the new
+    //  3-axis distribution wavetable: A=X, B=Y, C=Z.)
     await expect(card.locator('[data-testid="foxy-raster-a"]'), 'raster A canvas').toHaveCount(1);
     await expect(card.locator('[data-testid="foxy-raster-b"]'), 'raster B canvas').toHaveCount(1);
-    await expect(card.locator('[data-testid="foxy-box"]'), 'box 3D canvas').toHaveCount(1);
+    await expect(card.locator('[data-testid="foxy-raster-c"]'), 'raster C canvas').toHaveCount(1);
     await expect(card.locator('[data-testid="foxy-xyz"]'), 'xyz canvas').toHaveCount(1);
     await expect(card.locator('[data-testid="foxy-wavetable"]'), 'wavetable canvas').toHaveCount(1);
 
@@ -97,12 +99,12 @@ test.describe('FOXY hybrid module', () => {
     // 1. Real content in every preview.
     const rasterASum = await canvasSum(page, 'foxy-raster-a');
     const rasterBSum = await canvasSum(page, 'foxy-raster-b');
-    const boxSum = await canvasSum(page, 'foxy-box');
+    const rasterCSum = await canvasSum(page, 'foxy-raster-c');
     const xyzSum = await canvasSum(page, 'foxy-xyz');
     const wt1 = await canvasSum(page, 'foxy-wavetable');
     expect(rasterASum, 'RASTER A has content').toBeGreaterThan(0);
     expect(rasterBSum, 'RASTER B has content').toBeGreaterThan(0);
-    expect(boxSum, 'BOX 3D has content').toBeGreaterThan(0);
+    expect(rasterCSum, 'RASTER C has content').toBeGreaterThan(0);
     expect(xyzSum, 'XYZ has content').toBeGreaterThan(0);
     expect(wt1, 'WAVETABLE has content').toBeGreaterThan(0);
 
