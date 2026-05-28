@@ -39,6 +39,8 @@
 
 #include "p_inter.h"
 
+#include "dgpt_events.h"
+
 
 #define BONUSADD	6
 
@@ -693,7 +695,13 @@ P_KillMobj
 	// even those caused by other monsters
 	players[0].killcount++;
     }
-    
+
+    // Phase-1 SP event: a counted MONSTER death (not a player frag).
+    // Push once per kill, regardless of who killed it. The JS gate pulse is
+    // outside the netgame consistency digest — MP lockstep is untouched.
+    if ((target->flags & MF_COUNTKILL) && target->player == NULL)
+	dgpt_evt_push(DGPT_EVT_KILL, 0);
+
     if (target->player)
     {
 	// count environment kills against you

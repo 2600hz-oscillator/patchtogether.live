@@ -53,11 +53,33 @@ describe('doomDef — module def shape', () => {
     expect(doomDef.migrateEdgePortId!('p2_left', 1)).toBeNull();
   });
 
-  it('declares a video out + stereo audio outputs that ride the video → audio bridge', () => {
+  it('declares a video out + stereo audio outputs + 6 Phase-1 SP event gates', () => {
     const outs = doomDef.outputs.map((p) => p.id);
-    expect(outs).toEqual(['out', 'audio_l', 'audio_r']);
+    expect(outs).toEqual([
+      'out', 'audio_l', 'audio_r',
+      // Phase-1 event gates — KILL, DOOR, GUN_p1..p4.
+      'evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4',
+    ]);
     const types = Object.fromEntries(doomDef.outputs.map((p) => [p.id, p.type]));
-    expect(types).toEqual({ out: 'video', audio_l: 'audio', audio_r: 'audio' });
+    expect(types).toEqual({
+      out: 'video',
+      audio_l: 'audio',
+      audio_r: 'audio',
+      evt_kill: 'gate',
+      evt_door: 'gate',
+      evt_gun_p1: 'gate',
+      evt_gun_p2: 'gate',
+      evt_gun_p3: 'gate',
+      evt_gun_p4: 'gate',
+    });
+  });
+
+  it('Phase-1 event gates all declare type=gate', () => {
+    const gates = doomDef.outputs.filter((p) => p.id.startsWith('evt_'));
+    expect(gates.map((g) => g.id)).toEqual([
+      'evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4',
+    ]);
+    for (const g of gates) expect(g.type).toBe('gate');
   });
 
   it('every per-slot cv-gate port has a matching synthetic param', () => {
@@ -118,16 +140,19 @@ function makeFakeAudioCtx(): {
   ctx: BaseAudioContext;
   createdSplitters: FakeNode[];
   createdGains: FakeNode[];
+  createdConstants: FakeNode[];
   workletNode: FakeNode | null;
   workletReady: Promise<void>;
 } {
   const createdSplitters: FakeNode[] = [];
   const createdGains: FakeNode[] = [];
+  const createdConstants: FakeNode[] = [];
   let workletNode: FakeNode | null = null;
   let resolveWorklet: () => void = () => {};
   const workletReady = new Promise<void>((r) => { resolveWorklet = r; });
 
   const ctx = {
+    currentTime: 0,
     audioWorklet: {
       addModule: vi.fn().mockResolvedValue(undefined),
     },
@@ -140,6 +165,16 @@ function makeFakeAudioCtx(): {
       const n: FakeNode = { __tag: 'splitter', connect: vi.fn(), disconnect: vi.fn() };
       createdSplitters.push(n);
       return n;
+    },
+    createConstantSource: () => {
+      const n: FakeNode = { __tag: 'constant', connect: vi.fn(), disconnect: vi.fn() };
+      createdConstants.push(n);
+      return {
+        ...n,
+        offset: { setValueAtTime: vi.fn() },
+        start: vi.fn(),
+        stop: vi.fn(),
+      };
     },
   } as unknown as BaseAudioContext;
 
@@ -158,7 +193,14 @@ function makeFakeAudioCtx(): {
   };
   (globalThis as unknown as { AudioWorkletNode: unknown }).AudioWorkletNode = FakeAudioWorkletNode;
 
-  return { ctx, createdSplitters, createdGains, get workletNode() { return workletNode; }, workletReady };
+  return {
+    ctx,
+    createdSplitters,
+    createdGains,
+    createdConstants,
+    get workletNode() { return workletNode; },
+    workletReady,
+  };
 }
 
 describe('doomDef.factory — audio bridge contract', () => {
@@ -203,6 +245,34 @@ describe('doomDef.factory — audio bridge contract', () => {
     expect(splitter.connect).toHaveBeenCalledTimes(2);
     expect(splitter.connect).toHaveBeenNthCalledWith(1, lBefore!.node, 0);
     expect(splitter.connect).toHaveBeenNthCalledWith(2, rBefore!.node, 1);
+  });
+
+  it('publishes 6 Phase-1 SP event-gate ConstantSourceNodes (KILL/DOOR/GUN_p1..p4) in audioSources', () => {
+    const gl = makeFakeGl();
+    const fake = makeFakeAudioCtx();
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: fake.ctx as AudioContext,
+    };
+    const handle = doomDef.factory(ctx, { id: 'doom-evt', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never);
+    // 6 CSNs created (KILL + DOOR + 4 × GUN_pN). Identity-persistent — published
+    // to audioSources from t=0 so a cable wired before WASM init still sees the
+    // pulses.
+    expect(fake.createdConstants).toHaveLength(6);
+    const ids = ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4'];
+    for (const id of ids) {
+      const src = handle.audioSources?.get(id);
+      expect(src?.node, `expected ${id} in audioSources`).toBeDefined();
+    }
+    // All 6 are distinct nodes — each port resolves to its own CSN so a cable
+    // wired to evt_gun_p1 doesn't double-pulse from evt_gun_p2.
+    const nodes = ids.map((id) => handle.audioSources!.get(id)!.node);
+    const unique = new Set(nodes);
+    expect(unique.size).toBe(6);
   });
 
   it('exposes setKeyboardInert (Bug 4 hard gate) — callable before WASM loads', () => {

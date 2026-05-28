@@ -33,6 +33,8 @@
 #include "dstrings.h"
 #include "sounds.h"
 
+#include "dgpt_events.h"
+
 #if 0
 //
 // Sliding door frame information
@@ -326,6 +328,10 @@ EV_DoDoor
 	}
 		
     }
+    // Phase-1 SP event: tagged-line door action accepted at least one sector.
+    // Fires per EV_DoDoor invocation, not per affected sector (the JS pulse is
+    // already a fixed 10ms gate). Out-of-band from the consistency digest.
+    if (rtn) dgpt_evt_push(DGPT_EVT_DOOR, 0);
     return rtn;
 }
 
@@ -476,6 +482,11 @@ EV_VerticalDoor
     door->thinker.function.acp1 = (actionf_p1) T_VerticalDoor;
     door->sector = sec;
     door->direction = 1;
+    // Phase-1 SP event: manual use/bump opened a new door. The reverse-direction
+    // branch above (line 408 "go back up" on an existing closing thinker) is
+    // intentionally NOT instrumented — that's a re-trigger on an already-open
+    // door, not a new open event.
+    dgpt_evt_push(DGPT_EVT_DOOR, 0);
     door->speed = VDOORSPEED;
     door->topwait = VDOORWAIT;
 

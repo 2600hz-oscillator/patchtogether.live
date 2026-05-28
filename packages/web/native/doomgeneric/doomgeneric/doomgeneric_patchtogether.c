@@ -66,6 +66,7 @@
 #include "d_player.h"
 #include "g_game.h"
 #include "p_mobj.h"
+#include "dgpt_events.h"
 
 // Forward decl — defined in g_game.c. Lets the JS-side e2e read the
 // player's actual in-game x/y/angle for regression checks on the
@@ -146,6 +147,47 @@ extern int leveltime;
 // Lossy on overflow (oldest wins) — under normal human typing the queue
 // never fills; under stress (held-key autorepeat + frame-rate stall)
 // we'd rather drop than block.
+
+// ---- Phase-1 SP event ring buffer ----
+//
+// See dgpt_events.h for the encoding + rationale. Producer is whichever engine
+// site fired the event (P_KillMobj / EV_DoDoor / EV_VerticalDoor / P_FireWeapon
+// — all on the deterministic tic path). Consumer is the JS module factory,
+// draining once per surface tick AFTER runtime.runTic returns.
+//
+// IMPORTANT: this ring is intentionally OUTSIDE the netgame consistency
+// digest (dgpt_state_checksum reads RNG + mobj state only). Draining + pulsing
+// AudioParams from JS cannot influence the C-side deterministic state, so MP
+// bit-exact lockstep is preserved.
+
+static uint32_t dgpt_evt_ring[DGPT_EVT_RING_SIZE];
+static volatile int dgpt_evt_head = 0;  // writer-only (producer cursor)
+static volatile int dgpt_evt_tail = 0;  // reader-only (consumer cursor)
+
+void dgpt_evt_push(uint32_t type, int slot) {
+  // Pack: type in low 4 bits, slot in bits 4-5, rest reserved.
+  uint32_t e = (type & 0xFu) | ((((uint32_t)slot) & 0x3u) << 4);
+  int h = dgpt_evt_head;
+  dgpt_evt_ring[h & (DGPT_EVT_RING_SIZE - 1)] = e;
+  int next = (h + 1) & (DGPT_EVT_RING_SIZE - 1);
+  dgpt_evt_head = next;
+  // Overflow: if we lap the reader, advance tail by one (drop-oldest).
+  if (next == dgpt_evt_tail) {
+    dgpt_evt_tail = (dgpt_evt_tail + 1) & (DGPT_EVT_RING_SIZE - 1);
+  }
+}
+
+int dgpt_drain_events(uint32_t *out, int max) {
+  int n = 0;
+  while (n < max && dgpt_evt_tail != dgpt_evt_head) {
+    out[n++] = dgpt_evt_ring[dgpt_evt_tail];
+    dgpt_evt_tail = (dgpt_evt_tail + 1) & (DGPT_EVT_RING_SIZE - 1);
+  }
+  return n;
+}
+
+int dgpt_evt_head_get(void) { return dgpt_evt_head; }
+int dgpt_evt_tail_get(void) { return dgpt_evt_tail; }
 
 #define DGPT_KEY_QUEUE_SIZE 256
 
