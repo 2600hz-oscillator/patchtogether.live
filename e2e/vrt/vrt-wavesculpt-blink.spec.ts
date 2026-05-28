@@ -34,6 +34,12 @@ interface BlinkCase {
   wiggle: number;
   // Optional extra param overrides (CHROMA colours, gate-electricity demo).
   params?: Record<string, number>;
+  // Which wavesculpt gate input the joystick drives. Defaults to 'gate1'
+  // (normals to ALL four voices → all audible). Set to a HIGHER voice (e.g.
+  // 'gate2') to leave the voices BEFORE it SILENT: gate-normalling walks the
+  // signal DOWNWARD, so voice 1 — first in the walk with an unpatched gate —
+  // sources itself = no gate = silent. Used by the silent-osc regression case.
+  gatePort?: string;
 }
 
 // Custom (non-default) CHROMA colours for the RED/GRN/BLU oscillators —
@@ -61,6 +67,14 @@ const CASES: BlinkCase[] = [
   // down here so the discrete arcs read as arcs rather than being smeared
   // into a bloom haze (the electricity is in the ribbon shader, not bloom).
   { name: 'gate-electricity', blinkMode: 0, wiggle: 0, params: { bloom: 0.1 } },
+  // SILENT-OSC regression (BUG 1): REALITY-BASED-COMMUNITY tubes with the
+  // joystick gating gate2 ONLY. Gate-normalling walks DOWN to voices 2/3/4,
+  // leaving voice 1 (RED) SILENT (unpatched, head of the walk → self-source →
+  // no gate). EYEBALL: exactly THREE colored tubes — NO static straight
+  // diagonal ray from the RED (−X−Z) floor corner. Before the fix the silent
+  // RED osc drew a flat mid-line trace = a non-animated straight tube. With
+  // the uActive amp-gate it now contributes ZERO coverage → nothing.
+  { name: 'reality-silent-osc', blinkMode: 2, wiggle: 0, gatePort: 'gate2' },
 ];
 
 test.describe.configure({ mode: 'default' });
@@ -122,7 +136,7 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
           {
             id: 'e_gate',
             from: { nodeId: 'jo', portId: 'x' },
-            to: { nodeId: 'vrt-1', portId: 'gate1' },
+            to: { nodeId: 'vrt-1', portId: c.gatePort ?? 'gate1' },
             sourceType: 'cv',
             targetType: 'gate',
           },
