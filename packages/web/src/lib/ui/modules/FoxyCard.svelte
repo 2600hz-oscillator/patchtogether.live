@@ -15,8 +15,8 @@
   import { patch } from '$lib/graph/store';
   import { foxyDef } from '$lib/audio/modules/foxy';
   import { drawWave3D, drawWaveScope } from '$lib/audio/modules/wavecel-draw';
-  import { drawFoxyXyz } from '$lib/audio/modules/foxy-draw';
-  import type { FoxyFieldRow } from '$lib/audio/modules/foxy-map';
+  import { drawFoxyXyz, drawFoxyBox } from '$lib/audio/modules/foxy-draw';
+  import type { FoxyBox, FoxyFieldRow } from '$lib/audio/modules/foxy-map';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
 
@@ -52,7 +52,9 @@
     { id: 'wave3d_out', label: '3D VIDEO',    cable: 'video' },
   ];
 
-  let rasterEl: HTMLCanvasElement | null = $state(null);
+  let rasterAEl: HTMLCanvasElement | null = $state(null);
+  let rasterBEl: HTMLCanvasElement | null = $state(null);
+  let boxEl: HTMLCanvasElement | null = $state(null);
   let xyzEl: HTMLCanvasElement | null = $state(null);
   let wtEl: HTMLCanvasElement | null = $state(null);
   let vizMode = $state<'scope' | '3d'>('3d');
@@ -60,34 +62,43 @@
 
   function toggleVizMode() { vizMode = vizMode === '3d' ? 'scope' : '3d'; }
 
+  function blitRaster(el: HTMLCanvasElement, img: ImageData): void {
+    const c = el.getContext('2d');
+    if (!c) return;
+    if (typeof OffscreenCanvas !== 'undefined') {
+      const stage = new OffscreenCanvas(img.width, img.height);
+      const sc = stage.getContext('2d');
+      if (sc) {
+        sc.putImageData(img, 0, 0);
+        c.imageSmoothingEnabled = false;
+        c.clearRect(0, 0, el.width, el.height);
+        c.drawImage(stage, 0, 0, el.width, el.height);
+      }
+    } else {
+      c.putImageData(img, 0, 0);
+    }
+  }
+
   $effect(() => {
-    if (!rasterEl && !xyzEl && !wtEl) return;
+    if (!rasterAEl && !rasterBEl && !boxEl && !xyzEl && !wtEl) return;
     function tick() {
       const e = engineCtx.get();
       if (e && node) {
-        // Drive the bridge once, then read the three cached previews.
-        const img = e.read(node, 'rasterImageData') as ImageData | undefined;
+        // Drive the bridge once, then read the cached previews.
+        const imgA = e.read(node, 'rasterImageDataA') as ImageData | undefined;
+        const imgB = e.read(node, 'rasterImageDataB') as ImageData | undefined;
+        const box = e.read(node, 'box') as FoxyBox | null | undefined;
         const field = e.read(node, 'xyzField') as FoxyFieldRow[] | undefined;
         const wt = e.read(node, 'wavetableFrames') as Float32Array[] | undefined;
         const activeFrame = (e.read(node, 'activeFrame') as number | undefined) ?? 0;
 
-        // RASTERIZE preview.
-        if (rasterEl && img) {
-          const c = rasterEl.getContext('2d');
-          if (c) {
-            if (typeof OffscreenCanvas !== 'undefined') {
-              const stage = new OffscreenCanvas(img.width, img.height);
-              const sc = stage.getContext('2d');
-              if (sc) {
-                sc.putImageData(img, 0, 0);
-                c.imageSmoothingEnabled = false;
-                c.clearRect(0, 0, rasterEl.width, rasterEl.height);
-                c.drawImage(stage, 0, 0, rasterEl.width, rasterEl.height);
-              }
-            } else {
-              c.putImageData(img, 0, 0);
-            }
-          }
+        // RASTER A + RASTER B previews.
+        if (rasterAEl && imgA) blitRaster(rasterAEl, imgA);
+        if (rasterBEl && imgB) blitRaster(rasterBEl, imgB);
+        // Box 3D heightfield (A terrain lifted by B luma).
+        if (boxEl) {
+          const c = boxEl.getContext('2d');
+          if (c) drawFoxyBox(c, box ?? null, boxEl.width, boxEl.height);
         }
         // XYZ window.
         if (xyzEl && field) {
@@ -114,31 +125,54 @@
 <div class="mod-card foxy-card" data-testid="foxy-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <header class="title">FOXY</header>
-  <div class="subtitle">SWOLEVCO → RASTERIZE → XYZ → LIVE WAVETABLE</div>
+  <div class="subtitle">DUAL SWOLEVCO → RASTER A/B → BOX 3D → XYZ → LIVE WAVETABLE</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={320}>
     <div class="body">
-      <!-- Internal chain previews -->
-      <div class="preview-row">
-        <div class="preview">
-          <canvas bind:this={rasterEl} width="96" height="96" class="prev-canvas" data-testid="foxy-raster"></canvas>
-          <span class="prev-label">RASTER</span>
-        </div>
-        <div class="arrow">→</div>
-        <div class="preview">
-          <canvas bind:this={xyzEl} width="96" height="96" class="prev-canvas" data-testid="foxy-xyz"></canvas>
-          <span class="prev-label">XYZ</span>
-        </div>
-      </div>
-
-      <!-- mini SWOLEVCO source controls -->
-      <div class="section-label">SOURCE (mini SWOLEVCO)</div>
+      <!-- mini SWOLEVCO source A controls (terrain) -->
+      <div class="section-label">SWOLE A (terrain)</div>
       <div class="knob-row">
         <Knob value={pv('src_tune', defv('src_tune'))}     min={-36} max={36}  defaultValue={0}   label="Tune" units="st" curve="linear" onchange={set('src_tune')}     moduleId={id} paramId="src_tune"     readLive={live('src_tune')} />
         <Knob value={pv('src_fine', defv('src_fine'))}     min={-100} max={100} defaultValue={0}   label="Fine" units="¢"  curve="linear" onchange={set('src_fine')}     moduleId={id} paramId="src_fine"     readLive={live('src_fine')} />
         <Knob value={pv('src_timbre', defv('src_timbre'))} min={0}   max={1}   defaultValue={0.3} label="Tbr"            curve="linear" onchange={set('src_timbre')}   moduleId={id} paramId="src_timbre"   readLive={live('src_timbre')} />
         <Knob value={pv('src_symmetry', defv('src_symmetry'))} min={0} max={1} defaultValue={0.5} label="Sym"           curve="linear" onchange={set('src_symmetry')} moduleId={id} paramId="src_symmetry" readLive={live('src_symmetry')} />
         <Knob value={pv('src_fold', defv('src_fold'))}     min={0}   max={1}   defaultValue={0.2} label="Fold"           curve="linear" onchange={set('src_fold')}     moduleId={id} paramId="src_fold"     readLive={live('src_fold')} />
+      </div>
+
+      <!-- mini SWOLEVCO source B controls (Z height) -->
+      <div class="section-label">SWOLE B (Z height)</div>
+      <div class="knob-row">
+        <Knob value={pv('src2_tune', defv('src2_tune'))}     min={-36} max={36}  defaultValue={defv('src2_tune')} label="Tune" units="st" curve="linear" onchange={set('src2_tune')}     moduleId={id} paramId="src2_tune"     readLive={live('src2_tune')} />
+        <Knob value={pv('src2_fine', defv('src2_fine'))}     min={-100} max={100} defaultValue={0}                 label="Fine" units="¢"  curve="linear" onchange={set('src2_fine')}     moduleId={id} paramId="src2_fine"     readLive={live('src2_fine')} />
+        <Knob value={pv('src2_timbre', defv('src2_timbre'))} min={0}   max={1}   defaultValue={defv('src2_timbre')} label="Tbr"          curve="linear" onchange={set('src2_timbre')}   moduleId={id} paramId="src2_timbre"   readLive={live('src2_timbre')} />
+        <Knob value={pv('src2_symmetry', defv('src2_symmetry'))} min={0} max={1} defaultValue={defv('src2_symmetry')} label="Sym"        curve="linear" onchange={set('src2_symmetry')} moduleId={id} paramId="src2_symmetry" readLive={live('src2_symmetry')} />
+        <Knob value={pv('src2_fold', defv('src2_fold'))}     min={0}   max={1}   defaultValue={defv('src2_fold')}  label="Fold"           curve="linear" onchange={set('src2_fold')}     moduleId={id} paramId="src2_fold"     readLive={live('src2_fold')} />
+      </div>
+
+      <!-- Raster A + Raster B small previews -->
+      <div class="preview-row">
+        <div class="preview">
+          <canvas bind:this={rasterAEl} width="72" height="72" class="prev-canvas" data-testid="foxy-raster-a"></canvas>
+          <span class="prev-label">RASTER A</span>
+        </div>
+        <div class="arrow">+</div>
+        <div class="preview">
+          <canvas bind:this={rasterBEl} width="72" height="72" class="prev-canvas" data-testid="foxy-raster-b"></canvas>
+          <span class="prev-label">RASTER B</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="preview">
+          <canvas bind:this={boxEl} width="96" height="84" class="prev-canvas box-canvas" data-testid="foxy-box"></canvas>
+          <span class="prev-label">BOX (3D)</span>
+        </div>
+      </div>
+
+      <!-- Box → XYZ window -->
+      <div class="preview-row">
+        <div class="preview">
+          <canvas bind:this={xyzEl} width="96" height="84" class="prev-canvas box-canvas" data-testid="foxy-xyz"></canvas>
+          <span class="prev-label">XYZ</span>
+        </div>
       </div>
 
       <!-- XYZ window controls -->
@@ -169,7 +203,12 @@
 <style>
   .foxy-card {
     width: 360px;
-    min-height: 480px;
+    min-height: 620px;
+  }
+  .foxy-card .box-canvas {
+    width: 96px;
+    height: 84px;
+    image-rendering: auto;
   }
   .foxy-card .subtitle {
     font-size: 0.5rem;
