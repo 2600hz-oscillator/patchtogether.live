@@ -10,7 +10,7 @@
   import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { patch } from '$lib/graph/store';
+  import { patch, ydoc } from '$lib/graph/store';
   import {
     backdraftDef,
     BACKDRAFT_MAX_DELAY_MS,
@@ -44,6 +44,24 @@
       if (target) target.params[paramId] = v;
     };
   }
+
+  // ---- DELAY CLOCK override indicator ----
+  // When a cable is patched into the `delay_clock` input, the clock drives
+  // the feedback delay (one pulse = the delay time) and OVERRIDES the DELAY
+  // knob. We show a small "CLK" badge + disable the Delay fader so it reads
+  // as overridden. patch.edges is a SyncedStore/Yjs proxy (not a Svelte
+  // signal), so we bump a real $state from a Yjs observer to stay reactive
+  // on cable add/remove — same pattern as DoomCard's edgesVersion.
+  let edgesVersion = $state(0);
+  let clockPatched = $derived.by<boolean>(() => {
+    void edgesVersion;
+    for (const edge of Object.values(patch.edges)) {
+      if (!edge) continue;
+      if (edge.target.nodeId === id && edge.target.portId === 'delay_clock') return true;
+    }
+    return false;
+  });
+  let edgesUnobserve: (() => void) | null = null;
 
   const ENGINE_W = 640;
   const ENGINE_H = 360;
@@ -118,10 +136,16 @@
 
   onMount(() => {
     rafId = requestAnimationFrame(draw);
+    const edgesMap = ydoc.getMap('edges');
+    const handler = (): void => { edgesVersion++; };
+    edgesMap.observeDeep(handler);
+    edgesUnobserve = () => edgesMap.unobserveDeep(handler);
+    edgesVersion++; // seed for a patch loaded with the cable already present
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     if (resizeAbort) resizeAbort.abort();
+    if (edgesUnobserve) { try { edgesUnobserve(); } catch { /* */ } edgesUnobserve = null; }
   });
 
   // ---------- Hide-controls toggle + corner-drag resize ----------
@@ -228,6 +252,9 @@
   {#if !hideControls}<span class="port-label left" style="top: 510px;">OX</span>{/if}
   <Handle type="target" position={Position.Left} id="offsety"    style="top: 544px; --handle-color: var(--cable-cv);" />
   {#if !hideControls}<span class="port-label left" style="top: 538px;">OY</span>{/if}
+  <!-- DELAY CLOCK gate/clock input — overrides the DELAY knob when patched. -->
+  <Handle type="target" position={Position.Left} id="delay_clock" style="top: 572px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 566px;">CLK</span>{/if}
 
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
   {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
@@ -272,7 +299,10 @@
     <div class="fader-grid" data-testid="backdraft-controls">
       <Fader value={p('mix')}      min={0}  max={1}                     defaultValue={pdef('mix')}      label="Mix"  curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" />
       <Fader value={p('feedback')} min={0}  max={BACKDRAFT_MAX_FEEDBACK} defaultValue={pdef('feedback')} label="FB"   curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
-      <Fader value={p('delay')}    min={0}  max={BACKDRAFT_MAX_DELAY_MS} units="ms" defaultValue={pdef('delay')} label="Delay" curve="linear" onchange={setParam('delay')} moduleId={id} paramId="delay" />
+      <div class="delay-cell" class:clk-driven={clockPatched}>
+        <Fader value={p('delay')}    min={0}  max={BACKDRAFT_MAX_DELAY_MS} units="ms" defaultValue={pdef('delay')} label={clockPatched ? 'Dly·CLK' : 'Delay'} curve="linear" onchange={setParam('delay')} moduleId={id} paramId="delay" />
+        {#if clockPatched}<span class="clk-badge" data-testid="backdraft-clk-badge" title="DELAY CLOCK is driving the feedback delay (knob overridden)">CLK</span>{/if}
+      </div>
       <Fader value={p('luma')}     min={-1} max={2}                     defaultValue={pdef('luma')}     label="Luma" curve="linear" onchange={setParam('luma')}     moduleId={id} paramId="luma" />
       <Fader value={p('chroma')}   min={-1} max={2}                     defaultValue={pdef('chroma')}   label="Chr"  curve="linear" onchange={setParam('chroma')}   moduleId={id} paramId="chroma" />
       <Fader value={p('r')}        min={-1} max={2}                     defaultValue={pdef('r')}        label="R"    curve="linear" onchange={setParam('r')}        moduleId={id} paramId="r" />
@@ -291,7 +321,7 @@
 <style>
   .card {
     width: 340px;
-    min-height: 560px;
+    min-height: 600px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -369,6 +399,31 @@
     grid-template-columns: repeat(5, 1fr);
     gap: 10px 4px;
     justify-items: center;
+  }
+  .delay-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  /* When the DELAY CLOCK drives the delay, dim the track + thumb so the
+     knob reads as overridden (the fader stays interactive + MIDI-learnable;
+     the value-tag + label stay full-opacity so the badge is legible). */
+  .delay-cell.clk-driven :global(.track),
+  .delay-cell.clk-driven :global(.thumb) {
+    opacity: 0.45;
+  }
+  .clk-badge {
+    margin-top: 2px;
+    font-size: 0.5rem;
+    line-height: 1;
+    letter-spacing: 0.05em;
+    color: var(--cable-cv, #6cf);
+    border: 1px solid var(--cable-cv, #6cf);
+    border-radius: 2px;
+    padding: 1px 2px;
+    font-family: ui-monospace, monospace;
+    pointer-events: none;
   }
   .hide-toggle {
     position: absolute;

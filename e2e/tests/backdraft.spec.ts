@@ -212,6 +212,43 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     expect(changedFrac, 'a real fraction of pixels move (tunnel geometry)').toBeGreaterThan(0.05);
   });
 
+  test('DELAY CLOCK input overrides the DELAY knob (CLK badge appears when patched)', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // Drive the DELAY CLOCK gate input with an LFO (its phase0 CV output is a
+    // steady periodic swing). When the delay_clock cable is patched, the card
+    // must flip the Delay knob into the "clock-driven" (overridden) state and
+    // show the CLK badge.
+    await spawnPatch(
+      page,
+      [
+        { id: 'src_a', type: 'shapes',    position: { x: 40,  y: 40 },  domain: 'video', params: { shape: 0, zoom: 1.4 } },
+        { id: 'lfo',   type: 'lfo',       position: { x: 40,  y: 320 }, params: { rate: 4 } },
+        { id: 'bd',    type: 'backdraft', position: { x: 460, y: 80 },  domain: 'video', params: { feedback: 1.0, delay: 16 } },
+        { id: 'v-out', type: 'videoOut',  position: { x: 980, y: 80 },  domain: 'video' },
+      ],
+      [
+        { id: 'e_a',   from: { nodeId: 'src_a', portId: 'out'    }, to: { nodeId: 'bd',    portId: 'in_a'        }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e_out', from: { nodeId: 'bd',    portId: 'out'    }, to: { nodeId: 'v-out', portId: 'in'          }, sourceType: 'video',      targetType: 'video' },
+        { id: 'e_clk', from: { nodeId: 'lfo',   portId: 'phase0' }, to: { nodeId: 'bd',    portId: 'delay_clock' }, sourceType: 'cv',         targetType: 'cv' },
+      ],
+    );
+
+    await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
+    // The CLK override badge appears once the clock cable is patched.
+    await expect(
+      page.locator('[data-testid="backdraft-clk-badge"]'),
+      'CLK badge shows the DELAY knob is clock-overridden',
+    ).toBeVisible();
+
+    expect(errors, 'no console / page errors').toEqual([]);
+  });
+
   test('faders route through the patch store', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
