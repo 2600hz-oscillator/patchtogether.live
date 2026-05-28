@@ -181,6 +181,17 @@ export interface CocoaSettings {
   driveIterations: number;
   dryVolume: number;
   wetVolume: number;
+  /**
+   * Optional varispeed tape-read rate multiplier. DEFAULT / omitted / 1.0 is a
+   * strict no-op (plain COCOA DELAY is unaffected — bit-identical). When > 1.0
+   * the read head sweeps the delay buffer FASTER than it is written, so the
+   * echo is resampled to a HIGHER pitch (classic ascending varispeed tape /
+   * shimmer). The read offset sweeps from one delay-period-behind up toward the
+   * write head, then wraps back one period — a granular pitch loop that stays
+   * bounded inside the finite buffer. CHARLOTTE'S ECHOS drives this per stage to
+   * make each successive echo ascend in pitch. < 1.0 would pitch DOWN.
+   */
+  readRate?: number;
 }
 
 /** One Cocoa Delay engine — holds its own tape buffer + modulation state. */
@@ -193,6 +204,12 @@ export class CocoaDelayCore {
   private readPositionL = 0;
   private readPositionR = 0;
   private warmedUp = false;
+
+  // Varispeed (pitch-shift) read state. Each is the EXTRA sample offset the
+  // read head has crept toward the write head this cycle; 0 when readRate===1
+  // (the no-op path), so plain COCOA DELAY never touches these.
+  private varispeedPhaseL = 0;
+  private varispeedPhaseR = 0;
 
   private currentPanMode = 0;
   private parameterChangeVolume = 1.0;
@@ -343,6 +360,32 @@ export class CocoaDelayCore {
     this.readPositionL += (targL - this.readPositionL) * 10.0 * dt;
     this.readPositionR += (targR - this.readPositionR) * 10.0 * dt;
 
+    // Varispeed pitch-shift: advance the read head FASTER than the write head
+    // by (readRate - 1) samples per sample, so the buffer is resampled to a
+    // higher pitch. The phase sweeps the read from one full delay-period behind
+    // up toward the (almost) write head, then wraps back one period — a bounded
+    // granular pitch loop. readRate === 1 (or omitted) keeps the phase at 0:
+    // an exact no-op, so plain COCOA DELAY stays bit-identical.
+    const readRate = p.readRate ?? 1.0;
+    if (readRate !== 1.0) {
+      const stepL = readRate - 1.0;
+      const stepR = readRate - 1.0;
+      this.varispeedPhaseL += stepL;
+      this.varispeedPhaseR += stepR;
+      // Wrap inside [0, period): the read head never overtakes the write head
+      // (leave a 1-sample guard) and resets a period back when it gets there.
+      const periodL = Math.max(1, this.readPositionL - 1);
+      const periodR = Math.max(1, this.readPositionR - 1);
+      while (this.varispeedPhaseL >= periodL) this.varispeedPhaseL -= periodL;
+      while (this.varispeedPhaseL < 0) this.varispeedPhaseL += periodL;
+      while (this.varispeedPhaseR >= periodR) this.varispeedPhaseR -= periodR;
+      while (this.varispeedPhaseR < 0) this.varispeedPhaseR += periodR;
+    } else if (this.varispeedPhaseL !== 0 || this.varispeedPhaseR !== 0) {
+      // readRate returned to unity — settle back to the plain delay tap.
+      this.varispeedPhaseL = 0;
+      this.varispeedPhaseR = 0;
+    }
+
     // ducking follower (sidechain on dry sum)
     {
       const inputSum = dl + dr;
@@ -357,9 +400,11 @@ export class CocoaDelayCore {
     this.driftVelocity -= this.driftVelocity * 2.0 * Math.sqrt(p.driftSpeed) * dt;
     this.driftPhase += this.driftVelocity * dt;
 
-    // read from tape
-    let oL = this.getSample(this.bufL, this.writePosition - this.readPositionL);
-    let oR = this.getSample(this.bufR, this.writePosition - this.readPositionR);
+    // read from tape. The varispeed phase moves the read head toward the write
+    // head (reducing the effective delay), which is the pitch-up resample;
+    // it is 0 on the no-op path so this is the plain `writePosition - delay`.
+    let oL = this.getSample(this.bufL, this.writePosition - this.readPositionL + this.varispeedPhaseL);
+    let oR = this.getSample(this.bufR, this.writePosition - this.readPositionR + this.varispeedPhaseR);
 
     // circular panning
     {

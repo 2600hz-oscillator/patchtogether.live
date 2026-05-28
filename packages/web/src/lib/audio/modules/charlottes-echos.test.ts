@@ -85,6 +85,27 @@ function firstEchoIndex(buf: Float32Array, threshold: number, from: number): num
   return -1;
 }
 
+// Spectral centroid (Hz) over [start,end) via a naive Goertzel-ish DFT scan.
+// A higher centroid ⇒ energy has shifted UP in frequency (a real pitch rise),
+// which a mere time/LFO wobble would NOT produce.
+function spectralCentroid(buf: Float32Array, start: number, end: number): number {
+  let num = 0;
+  let den = 0;
+  for (let f = 50; f <= 6000; f += 25) {
+    let re = 0;
+    let im = 0;
+    const w = (2 * Math.PI * f) / SR;
+    for (let n = start; n < end; n++) {
+      re += buf[n]! * Math.cos(w * n);
+      im -= buf[n]! * Math.sin(w * n);
+    }
+    const p = re * re + im * im;
+    num += f * p;
+    den += p;
+  }
+  return den > 0 ? num / den : 0;
+}
+
 describe('charlottesEchosDef shape (backward compat)', () => {
   it('keeps the stable module id', () => {
     expect(charlottesEchosDef.type).toBe('charlottesEchos');
@@ -173,6 +194,58 @@ describe('charlottesEchos 4-stage cascade DSP', () => {
     }
     // Output rides the ±2 internal clamp at most; assert it never blows past it.
     expect(maxAbs).toBeLessThanOrEqual(2.0001);
+  });
+
+  it('pitchUp > 0 raises the echo spectral centroid (a REAL pitch rise)', async () => {
+    // Drive a sustained 300 Hz tone through the cascade and measure the
+    // spectral centroid of the wet tail. With pitchUp = 0 the echoes keep the
+    // 300 Hz fundamental; with pitchUp > 0 each successive stage reads its tape
+    // FASTER (varispeed) so the echoes ascend in pitch → the tail's energy
+    // moves UP the spectrum. A mere LFO time-wobble would not shift the
+    // centroid like this.
+    const ProcA = await loadProcessor();
+    const tone = (n: number) => Math.sin((2 * Math.PI * 300 * n) / SR) * 0.5;
+    const opts = { delay: 0.06, feedback: 0.5, decay: 0.1, mix: 1 };
+    const flat = runProcessor(new ProcA(), makeParams({ ...opts, pitchUp: 0 }), 1.2, tone);
+    const risen = runProcessor(new ProcA(), makeParams({ ...opts, pitchUp: 0.2 }), 1.2, tone);
+    const w0 = Math.round(0.5 * SR);
+    const w1 = Math.round(1.1 * SR);
+    const cFlat = spectralCentroid(flat.L, w0, w1);
+    const cRisen = spectralCentroid(risen.L, w0, w1);
+    // pitchUp=0 stays near the 300 Hz input fundamental.
+    expect(cFlat, `flat centroid ${cFlat.toFixed(0)} Hz`).toBeLessThan(450);
+    // pitchUp=0.2 climbs well above it (observed ≈1.5 kHz) — a clear rise.
+    expect(cRisen, `risen centroid ${cRisen.toFixed(0)} Hz`).toBeGreaterThan(cFlat * 1.5);
+    expect(cRisen, `risen centroid ${cRisen.toFixed(0)} Hz`).toBeGreaterThan(800);
+  });
+
+  it('pitchUp rise is monotonic across the knob range', async () => {
+    const ProcA = await loadProcessor();
+    const tone = (n: number) => Math.sin((2 * Math.PI * 300 * n) / SR) * 0.5;
+    const opts = { delay: 0.06, feedback: 0.5, decay: 0.1, mix: 1 };
+    const w0 = Math.round(0.5 * SR);
+    const w1 = Math.round(1.1 * SR);
+    const centroidAt = (pu: number) =>
+      spectralCentroid(runProcessor(new ProcA(), makeParams({ ...opts, pitchUp: pu }), 1.2, tone).L, w0, w1);
+    const c0 = centroidAt(0);
+    const c1 = centroidAt(0.1);
+    const c2 = centroidAt(0.2);
+    expect(c1, `c(0.1)=${c1.toFixed(0)} > c(0)=${c0.toFixed(0)}`).toBeGreaterThan(c0);
+    expect(c2, `c(0.2)=${c2.toFixed(0)} > c(0.1)=${c1.toFixed(0)}`).toBeGreaterThan(c1);
+  });
+
+  it('pitchUp = 0 keeps the echo at the input fundamental (no pitch change)', async () => {
+    // At pitchUp=0 the wet tail must keep the 300 Hz fundamental — proving the
+    // varispeed path is a true no-op for legacy patches (which stored
+    // pitchUp=0 / relied on its default).
+    const ProcA = await loadProcessor();
+    const tone = (n: number) => Math.sin((2 * Math.PI * 300 * n) / SR) * 0.5;
+    const opts = { delay: 0.06, feedback: 0.5, decay: 0.1, mix: 1 };
+    const out = runProcessor(new ProcA(), makeParams({ ...opts, pitchUp: 0 }), 1.2, tone);
+    const c = spectralCentroid(out.L, Math.round(0.5 * SR), Math.round(1.1 * SR));
+    // Stays right at the 300 Hz input — no upward smear.
+    expect(c, `pitchUp=0 centroid ${c.toFixed(0)} Hz (expect ≈300)`).toBeLessThan(450);
+    expect(c, `pitchUp=0 centroid ${c.toFixed(0)} Hz`).toBeGreaterThan(150);
   });
 
   it('mix = 0 is fully dry (output equals input)', async () => {

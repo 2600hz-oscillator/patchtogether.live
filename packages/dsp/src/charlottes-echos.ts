@@ -18,10 +18,15 @@
 //   feedback — feedback amount fed to EVERY stage (compounds across the chain).
 //   decay    — progressively tapers each stage's wet level + adds in-loop
 //              drive, so later stages are darker/quieter (tape-tail feel).
-//   pitchUp  — mapped to a subtle LFO time-wobble on each stage (the Cocoa
-//              engine has no pitch shifter; this preserves a "moving tape"
-//              character in the same knob range). NOTE: this is a CHARACTER
-//              change vs the old pitch-rising heads — flagged in the PR.
+//   pitchUp  — REAL per-stage upward pitch shift (the classic ascending
+//              shimmer echo). Each successive Cocoa stage reads its delay line
+//              at a progressively FASTER varispeed rate (stage k reads at
+//              (1 + pitchUp)^k), so the cascaded echoes climb in pitch as they
+//              repeat — matching the original stacked-read-head behaviour. The
+//              Cocoa core gained an optional `readRate` (varispeed tape read,
+//              same Hermite interpolation it already uses) to do this. pitchUp
+//              = 0 ⇒ readRate = 1 on every stage ⇒ no pitch change at all, so
+//              existing pitchUp=0 patches sound unchanged.
 //   mix      — final global dry/wet.
 
 import { CocoaDelayCore, type CocoaSettings } from './cocoadelay-core';
@@ -111,9 +116,11 @@ class CharlottesEchosProcessor extends AudioWorkletProcessor {
     const pitchUp = Math.max(0, Math.min(0.2, this.kval(parameters, 'pitchUp', 0)));
     const mix = Math.max(0, Math.min(1, this.kval(parameters, 'mix', 0.5)));
 
-    // pitchUp → LFO time-wobble amount. Scaled into the Cocoa LFO's 0..0.5
-    // range (pitchUp maxes at 0.2, so ×1.5 ≈ 0.3 max — a gentle wobble).
-    const lfoAmount = pitchUp * 1.5;
+    // pitchUp → REAL per-stage varispeed read-rate. Stage k reads its delay
+    // line at (1 + pitchUp)^k samples/sample (stage 0 = unity, each later stage
+    // faster), so successive echoes ascend in pitch — the original
+    // ascending-shimmer character. pitchUp = 0 ⇒ rate = 1 on every stage ⇒ a
+    // strict no-op (existing patches unchanged). No LFO wobble is used.
 
     for (let s = 0; s < n; s++) {
       const delay = Math.max(MIN_DELAY_S, this.aval(parameters, 'delay', s, 0.4));
@@ -129,12 +136,18 @@ class CharlottesEchosProcessor extends AudioWorkletProcessor {
         const stageWet = Math.pow(1 - decay * 0.6, k);
         // Drive ramps up with decay + stage index for the destructive tail.
         const stageDrive = decay * (1 + k) * 0.8;
+        // Per-stage varispeed read rate: (1 + pitchUp)^k. Stage 0 stays at
+        // exactly 1.0 (so stage 0 is always pitch-neutral); each later stage
+        // reads faster → its echo is pitched up further. pitchUp = 0 ⇒ 1.0 on
+        // every stage (no-op). Stage 3 maxes at (1.2)^3 ≈ 1.728 (≈ +9.4 st).
+        const stageReadRate = Math.pow(1 + pitchUp, k);
 
         const settings: CocoaSettings = {
           delayTime: delay,
           tempoSync: 0,
-          lfoAmount,
-          // Spread LFO rates per stage so the four wobbles decorrelate.
+          readRate: stageReadRate,
+          // No LFO/drift time-wobble — pitchUp now drives real varispeed pitch.
+          lfoAmount: 0,
           lfoFrequency: 0.7 + k * 0.37,
           driftAmount: 0,
           driftSpeed: 1,

@@ -427,3 +427,29 @@ describe('MIDI clock source singleton (0xF8 @ 24 PPQN → BPM)', () => {
     src.destroy();
   });
 });
+
+// The shared core gained an optional `readRate` varispeed multiplier (used by
+// CHARLOTTE'S ECHOS for its per-stage pitch-rise). It MUST be a strict no-op
+// when omitted or 1.0 so plain COCOA DELAY is bit-identical to before.
+describe('CocoaDelayCore.readRate no-op (COCOA DELAY unaffected)', () => {
+  it('readRate omitted === readRate=1.0, sample-for-sample', async () => {
+    const { CocoaDelayCore } = await import('../../../../../dsp/src/cocoadelay-core');
+    type CocoaSettings = Parameters<InstanceType<typeof CocoaDelayCore>['processSample']>[0];
+    const baseSettings: CocoaSettings = {
+      delayTime: 0.05, tempoSync: 0, lfoAmount: 0, lfoFrequency: 2, driftAmount: 0,
+      driftSpeed: 1, feedback: 0.5, stereoOffset: 0, panMode: 0, pan: 0, duckAmount: 0,
+      duckAttack: 10, duckRelease: 10, filterMode: 0, lowCut: 0.9, highCut: 0.001,
+      driveGain: 0, driveMix: 1, driveCutoff: 1, driveIterations: 1, dryVolume: 0, wetVolume: 1,
+    };
+    const omitted = new CocoaDelayCore(SR, 2.0, 0);
+    const unity = new CocoaDelayCore(SR, 2.0, 0);
+    const N = SR; // 1 second
+    for (let n = 0; n < N; n++) {
+      const v = n < SR * 0.1 ? Math.sin((2 * Math.PI * 200 * n) / SR) * 0.5 : 0;
+      omitted.processSample(baseSettings, v, v, SR);
+      unity.processSample({ ...baseSettings, readRate: 1.0 }, v, v, SR);
+      expect(unity.outL).toBe(omitted.outL);
+      expect(unity.outR).toBe(omitted.outR);
+    }
+  });
+});
