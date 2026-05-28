@@ -120,6 +120,14 @@ export const foxyDef: AudioModuleDef = {
     { id: 'xyz_xshape', label: 'X Shp', defaultValue: FOXY_XYZ_DEFAULTS.xShape, min: 0,  max: 1, curve: 'linear' },
     { id: 'xyz_yshape', label: 'Y Shp', defaultValue: FOXY_XYZ_DEFAULTS.yShape, min: 0,  max: 1, curve: 'linear' },
     { id: 'xyz_ydisp',  label: 'Y Dsp', defaultValue: FOXY_XYZ_DEFAULTS.yDisp,  min: -1, max: 1, curve: 'linear' },
+    // Freeze toggles (0 = live, 1 = frozen). FREEZE RASTER A/B hold each
+    // raster's current frame so the source SWOLEVCOs no longer drive that
+    // half of the BOX. FREEZE TABLE holds the wavetable: stops re-posting
+    // to WAVECEL so the internal oscillator keeps reading the last-pushed
+    // table no matter how the rasters / XYZ field continue to evolve.
+    { id: 'freezeRasterA', label: 'FrA', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    { id: 'freezeRasterB', label: 'FrB', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    { id: 'freezeTable',   label: 'FrT', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -365,13 +373,25 @@ export const foxyDef: AudioModuleDef = {
       if (now - lastBridgeMs < BRIDGE_MS) return;
       lastBridgeMs = now;
 
+      // Read the freeze toggles each tick (cheap; params.get is cached).
+      const freezeA = num('freezeRasterA', 0) >= 0.5;
+      const freezeB = num('freezeRasterB', 0) >= 0.5;
+      const freezeT = num('freezeTable',   0) >= 0.5;
+
       // 1. RASTERIZE ×2: pull each block's newest samples, paint both frames.
-      swoleA.analyser.getFloatTimeDomainData(swoleA.buf);
-      const countA = Math.max(1, Math.min(swoleA.buf.length, Math.floor(rasterParamsA.samplesPerFrame)));
-      painterA.paint(swoleA.buf.subarray(swoleA.buf.length - countA), rasterParamsA);
-      swoleB.analyser.getFloatTimeDomainData(swoleB.buf);
-      const countB = Math.max(1, Math.min(swoleB.buf.length, Math.floor(rasterParamsB.samplesPerFrame)));
-      painterB.paint(swoleB.buf.subarray(swoleB.buf.length - countB), rasterParamsB);
+      //    Skip the paint for a frozen raster — its imageData stays as
+      //    whatever was last drawn, so the Box uses a static terrain (A)
+      //    or static height (B).
+      if (!freezeA) {
+        swoleA.analyser.getFloatTimeDomainData(swoleA.buf);
+        const countA = Math.max(1, Math.min(swoleA.buf.length, Math.floor(rasterParamsA.samplesPerFrame)));
+        painterA.paint(swoleA.buf.subarray(swoleA.buf.length - countA), rasterParamsA);
+      }
+      if (!freezeB) {
+        swoleB.analyser.getFloatTimeDomainData(swoleB.buf);
+        const countB = Math.max(1, Math.min(swoleB.buf.length, Math.floor(rasterParamsB.samplesPerFrame)));
+        painterB.paint(swoleB.buf.subarray(swoleB.buf.length - countB), rasterParamsB);
+      }
 
       // 2. Box 3D heightfield: combine the two rasters (A = terrain base,
       //    B luma = Z height) → then the simplified RUTTETRA field reads the
@@ -382,12 +402,17 @@ export const foxyDef: AudioModuleDef = {
       field = boxToField(box, xyz);
 
       // 3. XYZ → wavetable (64×256), change-detect, post to WAVECEL.
-      const plain = fieldToWavetable(field, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
-      const sig = wavetableSignature(plain);
-      if (sig !== wtSignature) {
-        wtSignature = sig;
-        wtFrames = plain.map((f) => new Float32Array(f));
-        wave.port.postMessage({ type: 'loadWavetable', frames: plain });
+      //    When FREEZE TABLE is on, the field / Box keep evolving (so the
+      //    XYZ display still animates) but we don't push the new table to
+      //    the audio worklet — it keeps reading the last-pushed table.
+      if (!freezeT) {
+        const plain = fieldToWavetable(field, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+        const sig = wavetableSignature(plain);
+        if (sig !== wtSignature) {
+          wtSignature = sig;
+          wtFrames = plain.map((f) => new Float32Array(f));
+          wave.port.postMessage({ type: 'loadWavetable', frames: plain });
+        }
       }
     }
 
