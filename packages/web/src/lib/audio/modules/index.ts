@@ -67,6 +67,9 @@ import { hydrogenDef } from './hydrogen';
 import { pongDef } from './pong';
 import { modtrisDef } from './modtris';
 import { froggerDef } from './frogger';
+// SM64 — black-box wrapper around the upstream sm64js pure-JS port
+// (WTFPL). Bundle committed at static/sm64js/sm64js.bundle.js.
+import { sm64Def } from './sm64';
 import { joystickDef } from './joystick';
 import { gamepadDef } from './gamepad';
 import { numpadPlusDef } from './numpad-plus';
@@ -158,6 +161,9 @@ export function registerAudioModules(): void {
   registerModule(pongDef);
   registerModule(modtrisDef);
   registerModule(froggerDef);
+  // SM64 — single-instance Super Mario 64 game module. CV-stick + 9
+  // gate inputs map 1:1 to the N64 controller (minus L / D-pad / C-stick).
+  registerModule(sm64Def);
   // JOYSTICK — manual XY pad emitting x/y + inverted nx/ny CV outputs.
   registerModule(joystickDef);
   // GAMEPAD — USB/Bluetooth game controller (Xbox / PS / generic HID)

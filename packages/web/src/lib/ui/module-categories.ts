@@ -241,6 +241,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // module-spawn via a synthesized start_gate pulse. Same bucket as PONG /
   // MODTRIS.
   frogger: { top: 'Hybrid', sub: 'Hybrid' },
+  // SM64 — sm64js pure-JS Super Mario 64 port (WTFPL). Single-instance
+  // (maxInstances:1) per rack. Bucket alongside the other game modules.
+  sm64: { top: 'Hybrid', sub: 'Hybrid' },
   // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
   wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
   // Meta-domain organizational tools live here — they don't fit

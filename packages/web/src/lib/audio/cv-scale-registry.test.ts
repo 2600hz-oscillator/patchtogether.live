@@ -98,6 +98,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // AudioParam fast path — the CV doesn't modulate any knob, it IS the
   // paddle position. Same shape as BUGGLES.clock_cv / chaos_cv above.
   pong: ['paddle_left', 'paddle_right'],
+  // SM64 stick_x_cv / stick_y_cv: bipolar CV sampled per scheduler-tick
+  // into a JS-side stepper (cvToStickValue maps -1..+1 → ±64 N64-native).
+  // No AudioParam fast path — the CV doesn't modulate any knob, it IS the
+  // analog stick position handed to the sm64js bundle's playerInput
+  // global. Same shape as PONG's paddle CVs above.
+  sm64: ['stick_x_cv', 'stick_y_cv'],
   // ANALOGLOGICMATHS a / b: raw bipolar signal inputs consumed directly by
   // the worklet's per-sample MIN/MAX/DIFF/SUM/PRODUCT. The module IS the
   // shaper — the user attenuverts via the attA / attB knobs (which DO carry

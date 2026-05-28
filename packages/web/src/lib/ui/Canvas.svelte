@@ -203,6 +203,8 @@
   // FROGGER — clean-room port of Adrian Eyre's Frogger (MIT). CV-gate-only
   // input set with an auto-start-on-spawn semantic on start_gate.
   import FroggerCard from '$lib/ui/modules/FroggerCard.svelte';
+  // SM64 — black-box wrapper around the upstream sm64js (WTFPL).
+  import Sm64Card from '$lib/ui/modules/Sm64Card.svelte';
   // JOYSTICK — manual XY pad CV source.
   import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
   // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
@@ -447,6 +449,7 @@
     pong: PongCard,
     modtris: ModtrisCard,
     frogger: FroggerCard,
+    sm64: Sm64Card,
     joystick: JoystickCard,
     gamepad: GamepadCard,
     numpadPlus: NumpadPlusCard,
