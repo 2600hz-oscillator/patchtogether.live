@@ -209,6 +209,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // ───────── Video modules → Utilities ─────────
   videoMixer: { top: 'Video modules', sub: 'Utilities' },
   videoOut: { top: 'Video modules', sub: 'Utilities' },
+  // 4PLEXVID — 4-in / 4-out discrete video router (the video sibling of the
+  // audio 4Plexer). Per-output selector knob + gate-advanced rotation.
+  '4plexvid': { top: 'Video modules', sub: 'Utilities' },
   // BENTBOX is a CRT-emulation display — sits with the other outputs even
   // though it also functions as a destructive processor (the bending stage).
   bentbox: { top: 'Video modules', sub: 'Utilities' },

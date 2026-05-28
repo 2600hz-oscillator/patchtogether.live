@@ -35,6 +35,7 @@ import { doomDef } from './doom';
 import { videoboxDef } from './videobox';
 import { videoVarispeedDef } from './videovarispeed';
 import { backdraftDef } from './backdraft';
+import { fourPlexVidDef } from './4plexvid';
 
 let registered = false;
 
@@ -115,6 +116,12 @@ export function registerVideoModules(): void {
   // output (1-frame-lag feedback ring), with two key masks (LIGHTEN /
   // DARKEN) modulating the feedback effect per-pixel.
   registerVideoModule(backdraftDef);
+  // 4PLEXVID — 4-in / 4-out video router (video sibling of the audio
+  // 4Plexer). Each output selects one of the 4 inputs via its own
+  // selector knob; a per-output gate CV input advances the selector on
+  // each rising edge (1->2->3->4->1, wrapping). Discrete routing — never
+  // a blend.
+  registerVideoModule(fourPlexVidDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e
