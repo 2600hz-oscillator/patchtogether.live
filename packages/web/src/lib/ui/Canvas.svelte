@@ -202,6 +202,9 @@
   import PongCard from '$lib/ui/modules/PongCard.svelte';
   // MODTRIS — Tetris-clone game module (research prototype).
   import ModtrisCard from '$lib/ui/modules/ModtrisCard.svelte';
+  // FROGGER — clean-room port of Adrian Eyre's Frogger (MIT). CV-gate-only
+  // input set with an auto-start-on-spawn semantic on start_gate.
+  import FroggerCard from '$lib/ui/modules/FroggerCard.svelte';
   // JOYSTICK — manual XY pad CV source.
   import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
   // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
@@ -443,6 +446,7 @@
     hydrogen: HydrogenCard,
     pong: PongCard,
     modtris: ModtrisCard,
+    frogger: FroggerCard,
     joystick: JoystickCard,
     gamepad: GamepadCard,
     numpadPlus: NumpadPlusCard,

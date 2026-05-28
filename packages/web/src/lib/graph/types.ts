@@ -388,6 +388,16 @@ type StandardModuleType =
   // Single-user in this slice; multi-user via 30 Hz awareness snapshot is
   // a follow-up per docs/design/game-modules.md §2.
   | 'modtris'
+  // FROGGER — clean-room port of Adrian Eyre's Frogger (MIT-licensed). All
+  // 5 inputs are CV gates (up/down/left/right + start). The start_gate
+  // auto-fires once on module spawn so the user sees a running game by
+  // default (the upstream React app's pre-game InfoBoard is bypassed via
+  // this synthesized first-tick pulse — "boot" = module spawn). 3 gate
+  // outputs (home_gate, dead_gate, level_gate) fire one 5 ms pulse per
+  // event. vizPassthrough: true — the on-card canvas can be portaled into
+  // a containing GroupCard for cross-domain video out. Single-user; multi-
+  // user follows the same per-docs/design/game-modules.md path as MODTRIS.
+  | 'frogger'
   // JOYSTICK — manual XY pad. Outputs x, y, nx (= -x), ny (= -y) as CV.
   // No inputs in v1 (future: MIDI-mappable). Mirrors how an LFO emits
   // multiple inverted/quadrature outputs from a single source of motion.
