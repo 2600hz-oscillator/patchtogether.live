@@ -38,6 +38,7 @@ export default defineConfig({
     'interactions.spec.ts',
     'groups.spec.ts',
     'dashboard.spec.ts',
+    'skin-diner.spec.ts',
   ],
   // Single-worker by design. VRT screenshots care about exact pixel
   // output; running multiple workers in parallel against the same dev

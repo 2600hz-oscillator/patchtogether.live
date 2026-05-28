@@ -89,10 +89,29 @@ class SkinStore {
  *  rather than left stale when the new skin doesn't define it — that
  *  way switching from Vintage back to Default fully unsets the panel bg
  *  instead of leaving a vestigial overlay. */
+/** OPTIONAL shape tokens (DINER+). Unlike the required SkinVars keys, a
+ *  skin MAY omit these. When the active skin doesn't set one, it must be
+ *  REMOVED from documentElement (not left stale) so switching DINER ->
+ *  Default fully drops the rounded corners + neon glow and `_module-card.css`
+ *  falls back to its legacy hard-edged values. Listed explicitly so the
+ *  clear step is auditable. */
+const OPTIONAL_SHAPE_TOKENS = [
+  '--module-radius',
+  '--module-stripe-radius',
+  '--module-glow',
+  '--module-border-color',
+] as const;
+
 export function applySkinToRoot(skin: Skin): void {
   const root = document.documentElement;
   for (const [k, v] of Object.entries(skin.vars)) {
     root.style.setProperty(k, v);
+  }
+  // Clear any optional shape token the incoming skin doesn't define, so a
+  // previous skin's rounded/glow values don't bleed onto a skin that wants
+  // the legacy hard-edged look.
+  for (const k of OPTIONAL_SHAPE_TOKENS) {
+    if (!(k in skin.vars)) root.style.removeProperty(k);
   }
   // Expose the active skin id as `data-skin` on <html> so skins can opt
   // into scoped CSS overlays (e.g. MATRIXCOWBOY's CRT scanlines + flicker

@@ -20,7 +20,8 @@ export type SkinId =
   | 'brutalist'
   | 'vaporwave'
   | 'vintage'
-  | 'matrixcowboy';
+  | 'matrixcowboy'
+  | 'diner';
 
 /** Every skin MUST set every key. The keys are the public skin contract;
  *  adding/removing a key is a breaking change for any future custom-skin
@@ -62,6 +63,29 @@ export interface SkinVars {
   '--cable-image': string;
   '--cable-mono-video': string;
   '--cable-video': string;
+
+  // ---- OPTIONAL shape tokens (added for the DINER skin) ----
+  //
+  // These are OPTIONAL by design: the six pre-existing skins do NOT set
+  // them, and `_module-card.css` consumes each via `var(--token, <fallback>)`
+  // where <fallback> reproduces the CURRENT hard-edged value byte-for-byte.
+  // That keeps every existing skin's VRT baseline unchanged; only a skin
+  // that opts in (DINER) lights up. See _module-card.css for the consume
+  // sites + their fallbacks.
+
+  /** Outer corner radius for module cards. Fallback in CSS = `2px`
+   *  (the legacy hard-edged value). DINER sets a generous rounded value. */
+  '--module-radius'?: string;
+  /** Corner radius for the card's top accent stripe. Fallback in CSS =
+   *  `2px 2px 0 0` (legacy). Lets the stripe follow a rounded card top. */
+  '--module-stripe-radius'?: string;
+  /** Extra box-shadow layer applied to .mod-card for a neon-tube glow.
+   *  Fallback in CSS = the legacy drop-shadow only (no glow). DINER sets
+   *  a soft purple outer glow so cards read as lit neon signs. */
+  '--module-glow'?: string;
+  /** Border colour override for the neon-tube outline. Fallback = `--border`
+   *  (so non-DINER skins are untouched). DINER sets a thin purple. */
+  '--module-border-color'?: string;
 }
 
 export interface Skin {

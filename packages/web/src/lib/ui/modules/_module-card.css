@@ -13,14 +13,24 @@
   background-image: var(--panel-bg, none);
   background-size: cover;
   /* Skin-aware: --border lifts the literal #2a2f3a so non-default
-   * skins recolour every audio module card consistently. */
-  border: 1px solid var(--border);
-  border-radius: 2px;
+   * skins recolour every audio module card consistently.
+   *
+   * --module-border-color is an OPTIONAL skin token (DINER's thin purple
+   * neon tube). It defaults to --border, so the six pre-existing skins
+   * paint the exact same border colour they did before (byte-identical
+   * VRT baselines). */
+  border: 1px solid var(--module-border-color, var(--border));
+  /* --module-radius is OPTIONAL (DINER's curved corners). Fallback `2px`
+   * reproduces the legacy hard-edged value for every other skin. */
+  border-radius: var(--module-radius, 2px);
   color: var(--text);
   padding-top: 18px;
   padding-bottom: 14px;
   position: relative;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  /* --module-glow is OPTIONAL (DINER's soft purple neon-tube glow). The
+   * fallback is the legacy drop-shadow only, so non-DINER skins get no
+   * extra glow layer and their baselines stay identical. */
+  box-shadow: var(--module-glow, 0 2px 8px rgba(0, 0, 0, 0.3));
   transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
 }
 .svelte-flow__node:hover .mod-card {
@@ -28,13 +38,21 @@
 }
 .svelte-flow__node.selected .mod-card {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
+  /* Selected keeps the accent ring + legacy drop-shadow; when a skin sets
+   * --module-glow (DINER), layer the neon glow underneath so a selected
+   * card still reads as lit. The empty fallback adds nothing for the six
+   * legacy skins, preserving their selected-state baseline. */
+  box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3),
+    var(--module-glow, 0 0 #0000);
 }
 .mod-card .stripe {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 2px;
-  border-radius: 2px 2px 0 0;
+  /* --module-stripe-radius is OPTIONAL; fallback reproduces the legacy
+   * top-only 2px rounding so the stripe follows a rounded card top on
+   * DINER but is unchanged elsewhere. */
+  border-radius: var(--module-stripe-radius, 2px 2px 0 0);
 }
 .mod-card .title {
   /* Sprite-skin extension: --font-silkscreen is set by skin-store when
