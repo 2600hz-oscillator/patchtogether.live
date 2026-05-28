@@ -221,6 +221,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   wavviz: { top: 'Hybrid', sub: 'Hybrid' },
   swolevco: { top: 'Hybrid', sub: 'Hybrid' },
   wavecel: { top: 'Hybrid', sub: 'Hybrid' },
+  // FOXY — hybrid audio-visual: SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL.
+  foxy: { top: 'Hybrid', sub: 'Hybrid' },
   warrenspectrum: { top: 'Hybrid', sub: 'Hybrid' },
   // PONG — research-prototype game module. CV-in paddles + gate-out scores,
   // visual game state on the card. Sits in Hybrid alongside the other

@@ -225,6 +225,11 @@ type StandardModuleType =
   // E352 Cloud Terrarium-format WAV wavetables; Card UI provides a 3D
   // wavetable visualization mode alongside the standard scope view.
   | 'wavecel'
+  // FOXY — hybrid audio-visual module. Internal chain: mini SWOLEVCO →
+  // RASTERIZE → 256×256 downsample → simplified RUTTETRA ("XYZ" window) →
+  // realtime XYZ→wavetable → internal WAVECEL VCO. Exposes WAVECEL's full
+  // param/IO surface plus the source + XYZ window controls.
+  | 'foxy'
   // WARRENSPECTRUM — stereo 8-band filterbank with vactrol-style ping
   // excitation + acidwarp video visualizer. Audio domain with a
   // cross-domain `viz_out` mono-video bridge for the EQ-curve+waveform+

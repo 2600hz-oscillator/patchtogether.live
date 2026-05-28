@@ -185,6 +185,24 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     settleMs: 400,
   },
 
+  // FOXY (hybrid SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL): FOXY is
+  // SELF-DRIVING — its internal mini-SWOLEVCO feeds the raster, so it needs
+  // no upstream patch. We spawn it alone, let the internal chain run long
+  // enough for the raster to fill + the wavetable to build, then FREEZE the
+  // AudioContext. FOXY's bridge halts on suspend (ctx.state === 'suspended'),
+  // so the raster painting, XYZ field, and animated wavetable all stop on a
+  // fixed frame → pixel-stable across runs. The card's three preview
+  // canvases (RASTER / XYZ / live WAVETABLE) are INCLUDED in the diff (no
+  // mask) so the baseline proves the whole chain renders real content.
+  foxy: {
+    nodes: [
+      { id: 'vrt-1', type: 'foxy', position: { x: 120, y: 60 }, domain: 'audio' },
+    ],
+    edges: [],
+    settleMs: 1200,
+    freezeAudio: true,
+  },
+
   // WAVESCULPT (alpha-rotate regression lock): pins the ALPHA layer VISIBLE
   // at a non-zero rotation; render-freeze hook makes the time-driven render
   // deterministic. Was VRT-exempt; de-exempted via the freeze.
