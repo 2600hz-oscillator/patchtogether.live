@@ -20,6 +20,7 @@ import {
   queryDirReadPermission,
   requestDirReadPermission,
   sanitizeSlotName,
+  MAX_PERFORMANCES,
   type StoredDirHandle,
 } from './performance-store';
 import type { PerformanceBundle } from './performance-bundle';
@@ -198,7 +199,7 @@ describe('performance-store: missing-IDB fallbacks never throw', () => {
   beforeEach(() => { delete g.indexedDB; });
 
   it('save returns false, load/list/get return null/[]', async () => {
-    expect(await savePerformanceSlot('s', makeBundle('t'))).toBe(false);
+    expect((await savePerformanceSlot('s', makeBundle('t'))).ok).toBe(false);
     expect(await loadPerformanceSlot('s')).toBeNull();
     expect(await listPerformanceSlots()).toEqual([]);
     await expect(deletePerformanceSlot('s')).resolves.toBeUndefined();
@@ -213,7 +214,7 @@ describe('performance-store: slot CRUD with a fake IndexedDB', () => {
 
   it('save → load round-trips the bundle', async () => {
     const bundle = makeBundle('2026-05-27T01:00:00.000Z', 2);
-    expect(await savePerformanceSlot('My Set', bundle)).toBe(true);
+    expect((await savePerformanceSlot('My Set', bundle)).ok).toBe(true);
     const rec = await loadPerformanceSlot('My Set');
     expect(rec).not.toBeNull();
     expect(rec!.name).toBe('My Set');
@@ -237,6 +238,30 @@ describe('performance-store: slot CRUD with a fake IndexedDB', () => {
     expect(list.map((s) => s.name)).toEqual(['new', 'old']);
     expect(list[0]).toMatchObject({ name: 'new', assetCount: 2, hasDirHandle: true });
     expect(list[1]).toMatchObject({ name: 'old', assetCount: 0, hasDirHandle: false });
+  });
+
+  it('caps new slots at MAX_PERFORMANCES but allows overwriting existing names', async () => {
+    // Fill up to the cap with N distinct names.
+    for (let i = 0; i < MAX_PERFORMANCES; i++) {
+      const r = await savePerformanceSlot(`slot${i}`, makeBundle(`t${i}`));
+      expect(r.ok).toBe(true);
+    }
+    expect((await listPerformanceSlots()).length).toBe(MAX_PERFORMANCES);
+    // A NEW name at the cap is refused with reason:'cap'.
+    const refused = await savePerformanceSlot('overflow', makeBundle('t-over'));
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.reason).toBe('cap');
+      expect(refused.cap).toBe(MAX_PERFORMANCES);
+    }
+    expect((await listPerformanceSlots()).length).toBe(MAX_PERFORMANCES);
+    // Overwriting an EXISTING name is still allowed at the cap.
+    const overwrite = await savePerformanceSlot('slot0', makeBundle('t-overwrite'));
+    expect(overwrite.ok).toBe(true);
+    // Deleting one frees a slot for a new save.
+    await deletePerformanceSlot('slot1');
+    const newSave = await savePerformanceSlot('after-delete', makeBundle('t-new'));
+    expect(newSave.ok).toBe(true);
   });
 
   it('delete removes a slot + its dir handle', async () => {
