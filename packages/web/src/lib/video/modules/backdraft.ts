@@ -92,6 +92,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 
 /** Assumed engine frame rate for the ms→frames delay mapping. The engine
  *  drives one step per rAF (~60fps); we document nearest-frame semantics. */
@@ -106,8 +107,17 @@ export const BACKDRAFT_MAX_DELAY_MS = 500;
  *  needs at 60fps, no more (we do not over-allocate beyond 500ms). */
 export const BACKDRAFT_BUFFER_FRAMES =
   Math.ceil((BACKDRAFT_MAX_DELAY_MS / 1000) * BACKDRAFT_FPS) + 1; // = 31
-/** Upper bound on the per-pixel feedback effect scale after mask combine. */
+/** Upper bound on the per-pixel feedback effect scale after mask combine.
+ *  (Unrelated to the clock; kept where it was.) */
 export const BACKDRAFT_MAX_EFFECT_SCALE = 4;
+
+/** When a DELAY CLOCK is patched, the feedback delay tracks ONE clock-pulse
+ *  duration (the interval between the last two rising edges). The max
+ *  response is BACKDRAFT_MAX_DELAY_MS = 500ms, which is exactly one beat at
+ *  120 BPM (60000/120 = 500). Slower clocks (period > 500ms) cap there;
+ *  faster clocks shorten the delay proportionally. This is the same cap the
+ *  DELAY knob uses, so the ring (sized for 500ms) always holds it. */
+export const BACKDRAFT_CLOCK_BPM_AT_MAX = 120;
 /** FEEDBACK knob ceiling (>1 = runaway trails). */
 export const BACKDRAFT_MAX_FEEDBACK = 1.5;
 
@@ -216,6 +226,9 @@ export interface BackdraftParams {
   mix: number;       // 0..1
   feedback: number;  // 0..BACKDRAFT_MAX_FEEDBACK
   delay: number;     // 0..BACKDRAFT_MAX_DELAY_MS (ms, default 500)
+  delayClock: number; // raw DELAY CLOCK gate sample (0..1). Synthetic param
+                      // the gate-style CV bridge writes; the module
+                      // edge-detects it. Not a user knob (no card control).
   luma: number;      // -1..+2
   chroma: number;    // -1..+2
   r: number;         // -1..+2
@@ -235,6 +248,7 @@ const DEFAULTS: BackdraftParams = {
   mix: 0.5,
   feedback: 0.85,
   delay: 16,    // ~1 frame at 60fps — a tight, lively trail by default
+  delayClock: 0, // gate idles low; only meaningful while DELAY CLOCK patched
   luma: 1.0,
   chroma: 1.0,
   r: 1.0,
@@ -332,6 +346,84 @@ export function backdraftFeedbackUv(
   return { u: px + 0.5, v: py + 0.5 };
 }
 
+/**
+ * Per-instance DELAY-CLOCK tracker state. A rising edge on the (hysteresis)
+ * gate timestamps `time` (wall-clock seconds from the engine frame); the
+ * period is the interval between the last two rising edges. We keep only the
+ * most-recent edge time + the last measured period, so once a steady clock
+ * has fired twice we can PREDICT the next pulse one period ahead and keep
+ * the feedback delay locked to it without waiting for the next edge.
+ */
+export interface BackdraftClockState {
+  edge: EdgeState;
+  /** Wall-clock seconds of the most recent rising edge (-1 = none yet). */
+  lastRiseTime: number;
+  /** Measured pulse period in seconds (interval between the last two rising
+   *  edges). 0 until we've seen two edges. On a steady clock this is the
+   *  one-pulse-ahead prediction window. */
+  periodSec: number;
+}
+
+export function makeBackdraftClockState(): BackdraftClockState {
+  return { edge: makeEdgeState(), lastRiseTime: -1, periodSec: 0 };
+}
+
+/**
+ * Feed one DELAY-CLOCK sample into the tracker. Pure aside from mutating
+ * `state` in place (one state per instance). On a RISING edge we measure the
+ * interval since the previous rising edge and store it as the new period
+ * (the most-recent measured interval — exactly what the spec asks for: a
+ * steady clock predicts the next pulse one period ahead; random/irregular
+ * gates simply use whatever the last interval was, i.e. stochastic).
+ *
+ * Returns true iff this sample produced a rising edge (useful for tests).
+ */
+export function backdraftClockTick(
+  state: BackdraftClockState,
+  sample: number,
+  timeSec: number,
+): boolean {
+  const ev = detectEdge(state.edge, sample);
+  if (ev?.pressed) {
+    if (state.lastRiseTime >= 0) {
+      const dt = timeSec - state.lastRiseTime;
+      if (dt > 0) state.periodSec = dt;
+    }
+    state.lastRiseTime = timeSec;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Resolve the effective feedback delay (ms) for this frame.
+ *
+ *   - clock NOT patched  → the DELAY knob value, unchanged (today's behaviour).
+ *   - clock patched      → ONE clock-pulse duration = the last measured
+ *                          period (sec → ms), clamped to [0, maxMs]. 500ms
+ *                          lines up with one beat at 120 BPM. Until the clock
+ *                          has produced two edges (periodSec == 0) we have no
+ *                          measurement yet, so we fall back to the knob — the
+ *                          delay snaps to the pulse period as soon as the
+ *                          second edge lands and then PREDICTS forward (the
+ *                          period is reused every frame, no re-measure needed).
+ *
+ * Pure; shared by draw() + the unit tests so the mapping has one source of
+ * truth.
+ */
+export function backdraftEffectiveDelayMs(
+  knobDelayMs: number,
+  clockPatched: boolean,
+  periodSec: number,
+  maxMs: number = BACKDRAFT_MAX_DELAY_MS,
+): number {
+  if (!clockPatched || periodSec <= 0) {
+    return Math.max(0, Math.min(maxMs, knobDelayMs));
+  }
+  const pulseMs = periodSec * 1000;
+  return Math.max(0, Math.min(maxMs, pulseMs));
+}
+
 export const backdraftDef: VideoModuleDef = {
   type: 'backdraft',
   domain: 'video',
@@ -349,6 +441,11 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'mix',         type: 'cv', paramTarget: 'mix',      cvScale: { mode: 'linear' } },
     { id: 'feedback',    type: 'cv', paramTarget: 'feedback', cvScale: { mode: 'linear' } },
     { id: 'delay',       type: 'cv', paramTarget: 'delay',    cvScale: { mode: 'linear' } },
+    // DELAY CLOCK — gate/clock input. NO cvScale => the bridge passes the
+    // RAW swing through (gate semantics) and the module edge-detects rising
+    // edges to measure the pulse period. When patched it OVERRIDES the DELAY
+    // knob (feedback delay = one clock-pulse duration, capped at 500ms).
+    { id: 'delay_clock', type: 'cv', paramTarget: 'delayClock' },
     { id: 'luma',        type: 'cv', paramTarget: 'luma',     cvScale: { mode: 'linear' } },
     { id: 'chroma',      type: 'cv', paramTarget: 'chroma',   cvScale: { mode: 'linear' } },
     { id: 'r',           type: 'cv', paramTarget: 'r',        cvScale: { mode: 'linear' } },
@@ -381,6 +478,10 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'rotate',   label: 'Rotate',   defaultValue: DEFAULTS.rotate,   min: BACKDRAFT_ROTATE_MIN, max: BACKDRAFT_ROTATE_MAX, curve: 'linear' },
     { id: 'offsetX',  label: 'Off X',    defaultValue: DEFAULTS.offsetX,  min: BACKDRAFT_OFFSET_MIN, max: BACKDRAFT_OFFSET_MAX, curve: 'linear' },
     { id: 'offsetY',  label: 'Off Y',    defaultValue: DEFAULTS.offsetY,  min: BACKDRAFT_OFFSET_MIN, max: BACKDRAFT_OFFSET_MAX, curve: 'linear' },
+    // delayClock is the synthetic gate param the DELAY CLOCK CV bridge
+    // writes (raw 0..1 swing). Hidden — no card knob; the module edge-detects
+    // it to measure the pulse period that overrides the DELAY knob.
+    { id: 'delayClock', label: 'Delay Clk', defaultValue: DEFAULTS.delayClock, min: 0, max: 1, curve: 'linear' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
   ],
@@ -440,6 +541,18 @@ export const backdraftDef: VideoModuleDef = {
     let head = 0;
     let framesElapsed = 0;
 
+    // ── DELAY CLOCK tracking ──────────────────────────────────────────
+    // The gate-style CV bridge calls setParam('delayClock', raw) EVERY frame
+    // the DELAY CLOCK edge exists (even when the gate is low between pulses);
+    // it stops calling when the edge is removed. So "was delayClock written
+    // since the last draw" is a robust PATCHED signal that doesn't confuse an
+    // idle-low clock with an unpatched input. We bump a write sequence on
+    // every setParam and compare it in draw().
+    const clock = makeBackdraftClockState();
+    let clockWriteSeq = 0;        // ++ on every setParam('delayClock')
+    let clockSeqSeenInDraw = -1;  // last seq observed by draw()
+    let clockPatched = false;
+
     const surface: VideoNodeSurface = {
       fbo: ring[0]!.fbo,
       texture: ring[0]!.texture,
@@ -454,7 +567,24 @@ export const backdraftDef: VideoModuleDef = {
         const lightenTex = frame.getInputTexture(node.id, 'lighten');
         const darkenTex = frame.getInputTexture(node.id, 'darken');
 
-        const delayFrames = backdraftDelayFrames(params.delay, BACKDRAFT_BUFFER_FRAMES);
+        // DELAY CLOCK: detect patched-ness (did the bridge write delayClock
+        // since the previous draw?) then feed the raw gate sample to the
+        // edge detector to measure the pulse period.
+        clockPatched = clockWriteSeq !== clockSeqSeenInDraw;
+        clockSeqSeenInDraw = clockWriteSeq;
+        if (clockPatched) backdraftClockTick(clock, params.delayClock, frame.time);
+
+        // Effective delay (ms): the DELAY knob, OR — when a DELAY CLOCK is
+        // patched and has measured a period — one clock-pulse duration,
+        // capped at 500ms. The measured period is reused every frame (the
+        // one-pulse-ahead prediction on a steady clock), so the feedback
+        // refresh stays locked to the pulses without re-measuring.
+        const effectiveDelayMs = backdraftEffectiveDelayMs(
+          params.delay,
+          clockPatched,
+          clock.periodSec,
+        );
+        const delayFrames = backdraftDelayFrames(effectiveDelayMs, BACKDRAFT_BUFFER_FRAMES);
         const tapIdx = backdraftTapIndex(head, delayFrames, BACKDRAFT_BUFFER_FRAMES);
         // Cold start: until we've written at least `delayFrames` frames the
         // tap slot is still its cleared (black) initial state — read the
@@ -538,12 +668,20 @@ export const backdraftDef: VideoModuleDef = {
       surface,
       setParam(paramId, value) {
         if (paramId in params) (params as unknown as Record<string, number>)[paramId] = value;
+        // The gate-style CV bridge writes delayClock every frame while the
+        // DELAY CLOCK input is patched; bump the seq so draw() can tell the
+        // input is live (vs an unpatched input that never writes).
+        if (paramId === 'delayClock') clockWriteSeq++;
       },
       readParam(paramId) {
         return (params as unknown as Record<string, number>)[paramId];
       },
       read(key) {
         if (key === 'fboTexture') return surface.texture;
+        // UI: is the DELAY CLOCK driving the delay (knob overridden)? True
+        // once the clock is patched AND has measured at least one period.
+        if (key === 'clockDriving') return clockPatched && clock.periodSec > 0;
+        if (key === 'clockPeriodSec') return clock.periodSec;
         return undefined;
       },
       dispose() { surface.dispose(); },

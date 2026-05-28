@@ -21,8 +21,11 @@ import {
   backdraftDef,
   backdraftDelayFrames,
   backdraftEffectScale,
+  backdraftEffectiveDelayMs,
   backdraftFeedbackUv,
+  backdraftClockTick,
   backdraftTapIndex,
+  makeBackdraftClockState,
 } from './backdraft';
 
 describe('backdraftDelayFrames — DELAY knob (ms) → nearest ring frame', () => {
@@ -194,6 +197,70 @@ describe('backdraftFeedbackUv — spatial feedback-tap transform', () => {
   });
 });
 
+describe('backdraftClockTick — rising-edge → pulse-period measurement', () => {
+  it('measures the interval between the last two rising edges', () => {
+    const st = makeBackdraftClockState();
+    // First rising edge at t=1.0s — no period yet (need two edges).
+    expect(backdraftClockTick(st, 1, 1.0)).toBe(true);
+    expect(st.periodSec).toBe(0);
+    // Fall back below threshold (no edge).
+    expect(backdraftClockTick(st, 0, 1.1)).toBe(false);
+    // Second rising edge at t=1.25s → period = 0.25s (a 4 Hz clock).
+    expect(backdraftClockTick(st, 1, 1.25)).toBe(true);
+    expect(st.periodSec).toBeCloseTo(0.25, 6);
+  });
+
+  it('keeps the MOST RECENT interval on an irregular clock (stochastic)', () => {
+    const st = makeBackdraftClockState();
+    backdraftClockTick(st, 1, 0.0);     // edge 1
+    backdraftClockTick(st, 0, 0.05);
+    backdraftClockTick(st, 1, 0.10);    // edge 2 → period 0.10
+    expect(st.periodSec).toBeCloseTo(0.10, 6);
+    backdraftClockTick(st, 0, 0.15);
+    backdraftClockTick(st, 1, 0.50);    // edge 3 → period 0.40 (latest wins)
+    expect(st.periodSec).toBeCloseTo(0.40, 6);
+  });
+
+  it('uses hysteresis — a value in the dead band does not re-trigger', () => {
+    const st = makeBackdraftClockState();
+    backdraftClockTick(st, 1, 0.0);   // pressed
+    expect(backdraftClockTick(st, 0.5, 0.1)).toBe(false); // dead band, sticky
+    expect(backdraftClockTick(st, 0.5, 0.2)).toBe(false);
+    expect(st.periodSec).toBe(0); // never saw a second distinct edge
+  });
+});
+
+describe('backdraftEffectiveDelayMs — DELAY knob vs DELAY CLOCK override', () => {
+  it('unpatched: returns the DELAY knob value (clamped to [0,500])', () => {
+    expect(backdraftEffectiveDelayMs(120, false, 0.25)).toBe(120);
+    expect(backdraftEffectiveDelayMs(9999, false, 0.25)).toBe(BACKDRAFT_MAX_DELAY_MS);
+    expect(backdraftEffectiveDelayMs(-5, false, 0)).toBe(0);
+  });
+
+  it('patched but no measured period yet: falls back to the knob', () => {
+    expect(backdraftEffectiveDelayMs(80, true, 0)).toBe(80);
+  });
+
+  it('patched: delay = one clock-pulse duration (period sec → ms)', () => {
+    // 4 Hz clock → period 0.25s → 250ms feedback delay.
+    expect(backdraftEffectiveDelayMs(80, true, 0.25)).toBeCloseTo(250, 6);
+    // 8 Hz clock → 125ms.
+    expect(backdraftEffectiveDelayMs(80, true, 0.125)).toBeCloseTo(125, 6);
+  });
+
+  it('caps at 500ms — one beat at 120 BPM — for slow clocks', () => {
+    // 1 Hz clock (period 1s = 60 BPM) would be 1000ms; capped to 500.
+    expect(backdraftEffectiveDelayMs(80, true, 1.0)).toBe(BACKDRAFT_MAX_DELAY_MS);
+    // Exactly 120 BPM (period 0.5s) lands right at the cap, uncapped.
+    expect(backdraftEffectiveDelayMs(80, true, 0.5)).toBeCloseTo(500, 6);
+  });
+
+  it('overrides the knob entirely when the clock is driving', () => {
+    // knob at 16ms, but a 2 Hz clock (period 0.5s) drives 500ms.
+    expect(backdraftEffectiveDelayMs(16, true, 0.5)).toBeCloseTo(500, 6);
+  });
+});
+
 describe('backdraft module def — params + ports', () => {
   it('declares the expected param ranges + neutral defaults', () => {
     const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
@@ -236,6 +303,27 @@ describe('backdraft module def — params + ports', () => {
     ]) {
       expect(cvTargets, `cv for ${id}`).toContain(id);
     }
+  });
+
+  it('exposes a DELAY CLOCK gate input (raw passthrough, no cvScale)', () => {
+    const clk = backdraftDef.inputs.find((p) => p.id === 'delay_clock');
+    expect(clk, 'delay_clock port').toBeDefined();
+    expect(clk?.type).toBe('cv');
+    // Gate-style: NO cvScale hint => the bridge passes the raw swing through
+    // so the module edge-detects rising edges (vs scaling across a range).
+    expect(clk?.cvScale).toBeUndefined();
+    expect(clk?.paramTarget).toBe('delayClock');
+    // The synthetic gate param exists (hidden — no card knob).
+    const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
+    expect(byId.delayClock).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+  });
+
+  it('ring buffer holds 500ms — one beat at 120 BPM — the clock cap', () => {
+    // 120 BPM beat = 60000/120 = 500ms = BACKDRAFT_MAX_DELAY_MS, and the
+    // ring already covers that (the clock never asks for more than the knob).
+    expect(BACKDRAFT_MAX_DELAY_MS).toBe(500);
+    const f = backdraftDelayFrames(BACKDRAFT_MAX_DELAY_MS, BACKDRAFT_BUFFER_FRAMES);
+    expect(f).toBe(BACKDRAFT_BUFFER_FRAMES - 1);
   });
 
   it('bipolar CV params use linear cvScale', () => {
