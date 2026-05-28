@@ -15,8 +15,8 @@
   import { patch } from '$lib/graph/store';
   import { foxyDef } from '$lib/audio/modules/foxy';
   import { drawWave3D, drawWaveScope } from '$lib/audio/modules/wavecel-draw';
-  import { drawFoxyXyz, drawFoxyBox } from '$lib/audio/modules/foxy-draw';
-  import type { FoxyBox, FoxyFieldRow } from '$lib/audio/modules/foxy-map';
+  import { drawFoxyXyz } from '$lib/audio/modules/foxy-draw';
+  import type { FoxyFieldRow } from '$lib/audio/modules/foxy-map';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -55,7 +55,7 @@
 
   let rasterAEl: HTMLCanvasElement | null = $state(null);
   let rasterBEl: HTMLCanvasElement | null = $state(null);
-  let boxEl: HTMLCanvasElement | null = $state(null);
+  let rasterCEl: HTMLCanvasElement | null = $state(null);
   let xyzEl: HTMLCanvasElement | null = $state(null);
   let wtEl: HTMLCanvasElement | null = $state(null);
   let vizMode = $state<'scope' | '3d'>('3d');
@@ -81,27 +81,25 @@
   }
 
   $effect(() => {
-    if (!rasterAEl && !rasterBEl && !boxEl && !xyzEl && !wtEl) return;
+    if (!rasterAEl && !rasterBEl && !rasterCEl && !xyzEl && !wtEl) return;
     function tick() {
       const e = engineCtx.get();
       if (e && node) {
         // Drive the bridge once, then read the cached previews.
         const imgA = e.read(node, 'rasterImageDataA') as ImageData | undefined;
         const imgB = e.read(node, 'rasterImageDataB') as ImageData | undefined;
-        const box = e.read(node, 'box') as FoxyBox | null | undefined;
+        const imgC = e.read(node, 'rasterImageDataC') as ImageData | undefined;
         const field = e.read(node, 'xyzField') as FoxyFieldRow[] | undefined;
         const wt = e.read(node, 'wavetableFrames') as Float32Array[] | undefined;
         const activeFrame = (e.read(node, 'activeFrame') as number | undefined) ?? 0;
 
-        // RASTER A + RASTER B previews.
+        // RASTER A/B/C previews.
         if (rasterAEl && imgA) blitRaster(rasterAEl, imgA);
         if (rasterBEl && imgB) blitRaster(rasterBEl, imgB);
-        // Box 3D heightfield (A terrain lifted by B luma).
-        if (boxEl) {
-          const c = boxEl.getContext('2d');
-          if (c) drawFoxyBox(c, box ?? null, boxEl.width, boxEl.height);
-        }
-        // XYZ window.
+        if (rasterCEl && imgC) blitRaster(rasterCEl, imgC);
+        // XYZ scope window — reads the actual wavetable, so the strokes
+        // show the audio the worklet sees on the X (column / sample) +
+        // Y (row / frame) axes, shaded by A's column distribution.
         if (xyzEl && field) {
           const c = xyzEl.getContext('2d');
           if (c) drawFoxyXyz(c, field, xyzEl.width, xyzEl.height);
@@ -126,12 +124,12 @@
 <div class="mod-card foxy-card" data-testid="foxy-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="FOXY" />
-  <div class="subtitle">DUAL SWOLEVCO → RASTER A/B → BOX 3D → XYZ → LIVE WAVETABLE</div>
+  <div class="subtitle">TRIPLE SWOLEVCO → RASTER A/B/C → 3-AXIS DIST (X=A · Y=B · Z=C) → LIVE WAVETABLE</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={320}>
     <div class="body">
-      <!-- mini SWOLEVCO source A controls (terrain) -->
-      <div class="section-label">SWOLE A (terrain)</div>
+      <!-- mini SWOLEVCO source A controls (X axis — column distribution) -->
+      <div class="section-label">SWOLE A (X axis · column dist)</div>
       <div class="knob-row">
         <Knob value={pv('src_tune', defv('src_tune'))}     min={-36} max={36}  defaultValue={0}   label="Tune" units="st" curve="linear" onchange={set('src_tune')}     moduleId={id} paramId="src_tune"     readLive={live('src_tune')} />
         <Knob value={pv('src_fine', defv('src_fine'))}     min={-100} max={100} defaultValue={0}   label="Fine" units="¢"  curve="linear" onchange={set('src_fine')}     moduleId={id} paramId="src_fine"     readLive={live('src_fine')} />
@@ -140,8 +138,8 @@
         <Knob value={pv('src_fold', defv('src_fold'))}     min={0}   max={1}   defaultValue={0.2} label="Fold"           curve="linear" onchange={set('src_fold')}     moduleId={id} paramId="src_fold"     readLive={live('src_fold')} />
       </div>
 
-      <!-- mini SWOLEVCO source B controls (Z height) -->
-      <div class="section-label">SWOLE B (Z height)</div>
+      <!-- mini SWOLEVCO source B controls (Y axis — row distribution) -->
+      <div class="section-label">SWOLE B (Y axis · row dist)</div>
       <div class="knob-row">
         <Knob value={pv('src2_tune', defv('src2_tune'))}     min={-36} max={36}  defaultValue={defv('src2_tune')} label="Tune" units="st" curve="linear" onchange={set('src2_tune')}     moduleId={id} paramId="src2_tune"     readLive={live('src2_tune')} />
         <Knob value={pv('src2_fine', defv('src2_fine'))}     min={-100} max={100} defaultValue={0}                 label="Fine" units="¢"  curve="linear" onchange={set('src2_fine')}     moduleId={id} paramId="src2_fine"     readLive={live('src2_fine')} />
@@ -150,11 +148,21 @@
         <Knob value={pv('src2_fold', defv('src2_fold'))}     min={0}   max={1}   defaultValue={defv('src2_fold')}  label="Fold"           curve="linear" onchange={set('src2_fold')}     moduleId={id} paramId="src2_fold"     readLive={live('src2_fold')} />
       </div>
 
-      <!-- Raster A + Raster B small previews. Each preview carries a FREEZE
+      <!-- mini SWOLEVCO source C controls (Z axis — amplitude LUT) -->
+      <div class="section-label">SWOLE C (Z axis · amplitude LUT)</div>
+      <div class="knob-row">
+        <Knob value={pv('src3_tune', defv('src3_tune'))}     min={-36} max={36}  defaultValue={defv('src3_tune')} label="Tune" units="st" curve="linear" onchange={set('src3_tune')}     moduleId={id} paramId="src3_tune"     readLive={live('src3_tune')} />
+        <Knob value={pv('src3_fine', defv('src3_fine'))}     min={-100} max={100} defaultValue={0}                 label="Fine" units="¢"  curve="linear" onchange={set('src3_fine')}     moduleId={id} paramId="src3_fine"     readLive={live('src3_fine')} />
+        <Knob value={pv('src3_timbre', defv('src3_timbre'))} min={0}   max={1}   defaultValue={defv('src3_timbre')} label="Tbr"          curve="linear" onchange={set('src3_timbre')}   moduleId={id} paramId="src3_timbre"   readLive={live('src3_timbre')} />
+        <Knob value={pv('src3_symmetry', defv('src3_symmetry'))} min={0} max={1} defaultValue={defv('src3_symmetry')} label="Sym"        curve="linear" onchange={set('src3_symmetry')} moduleId={id} paramId="src3_symmetry" readLive={live('src3_symmetry')} />
+        <Knob value={pv('src3_fold', defv('src3_fold'))}     min={0}   max={1}   defaultValue={defv('src3_fold')}  label="Fold"           curve="linear" onchange={set('src3_fold')}     moduleId={id} paramId="src3_fold"     readLive={live('src3_fold')} />
+      </div>
+
+      <!-- Raster A / B / C small previews. Each preview carries a FREEZE
            toggle that holds its current frame so the SWOLEVCOs no longer
-           drive that half of the BOX; the BOX preview carries FREEZE TABLE,
-           which holds the wavetable WAVECEL is currently reading (so the
-           XYZ display can keep evolving while the audio stays put). -->
+           drive that axis of the wavetable; the XYZ preview carries FREEZE
+           TABLE, which holds the wavetable WAVECEL is currently reading (so
+           the XYZ scope can keep evolving while the audio stays put). -->
       <div class="preview-row">
         <div class="preview">
           <canvas bind:this={rasterAEl} width="72" height="72" class="prev-canvas" data-testid="foxy-raster-a"></canvas>
@@ -167,7 +175,6 @@
             onclick={() => set('freezeRasterA')(pv('freezeRasterA', 0) >= 0.5 ? 0 : 1)}
           >{pv('freezeRasterA', 0) >= 0.5 ? 'FROZEN' : 'FREEZE A'}</button>
         </div>
-        <div class="arrow">+</div>
         <div class="preview">
           <canvas bind:this={rasterBEl} width="72" height="72" class="prev-canvas" data-testid="foxy-raster-b"></canvas>
           <span class="prev-label">RASTER B</span>
@@ -179,10 +186,24 @@
             onclick={() => set('freezeRasterB')(pv('freezeRasterB', 0) >= 0.5 ? 0 : 1)}
           >{pv('freezeRasterB', 0) >= 0.5 ? 'FROZEN' : 'FREEZE B'}</button>
         </div>
-        <div class="arrow">→</div>
         <div class="preview">
-          <canvas bind:this={boxEl} width="96" height="84" class="prev-canvas box-canvas" data-testid="foxy-box"></canvas>
-          <span class="prev-label">BOX (3D)</span>
+          <canvas bind:this={rasterCEl} width="72" height="72" class="prev-canvas" data-testid="foxy-raster-c"></canvas>
+          <span class="prev-label">RASTER C</span>
+          <button
+            type="button"
+            class="freeze-btn"
+            data-testid="foxy-freeze-raster-c"
+            aria-pressed={pv('freezeRasterC', 0) >= 0.5}
+            onclick={() => set('freezeRasterC')(pv('freezeRasterC', 0) >= 0.5 ? 0 : 1)}
+          >{pv('freezeRasterC', 0) >= 0.5 ? 'FROZEN' : 'FREEZE C'}</button>
+        </div>
+      </div>
+
+      <!-- XYZ scope window (X=A · Y=B · Z=C) — reads the live wavetable -->
+      <div class="preview-row">
+        <div class="preview">
+          <canvas bind:this={xyzEl} width="160" height="84" class="prev-canvas box-canvas" data-testid="foxy-xyz"></canvas>
+          <span class="prev-label">XYZ (X=A · Y=B · Z=C)</span>
           <button
             type="button"
             class="freeze-btn"
@@ -193,16 +214,8 @@
         </div>
       </div>
 
-      <!-- Box → XYZ window -->
-      <div class="preview-row">
-        <div class="preview">
-          <canvas bind:this={xyzEl} width="96" height="84" class="prev-canvas box-canvas" data-testid="foxy-xyz"></canvas>
-          <span class="prev-label">XYZ</span>
-        </div>
-      </div>
-
-      <!-- XYZ window controls -->
-      <div class="section-label">XYZ (simplified RUTTETRA)</div>
+      <!-- XYZ window controls (legacy scope-shaping knobs) -->
+      <div class="section-label">XYZ scope (legacy shape)</div>
       <div class="knob-row">
         <Knob value={pv('xyz_xshape', defv('xyz_xshape'))} min={0}  max={1} defaultValue={defv('xyz_xshape')} label="X Shp" curve="linear" onchange={set('xyz_xshape')} moduleId={id} paramId="xyz_xshape" readLive={live('xyz_xshape')} />
         <Knob value={pv('xyz_yshape', defv('xyz_yshape'))} min={0}  max={1} defaultValue={defv('xyz_yshape')} label="Y Shp" curve="linear" onchange={set('xyz_yshape')} moduleId={id} paramId="xyz_yshape" readLive={live('xyz_yshape')} />
