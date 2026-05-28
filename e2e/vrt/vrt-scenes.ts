@@ -163,9 +163,13 @@ export const VRT_SCENES: Record<string, VrtScene> = {
 
   // RUTTETRA (authentic forward-scatter scope): SHAPES → RUTTETRA; pure
   // function of a procedural, time-independent source → pixel-stable.
+  // The SHAPES source is a TRIANGLE (vertically asymmetric — apex up) so
+  // the baseline locks RUTTETRA's vertical ORIENTATION too: a Y-flip of
+  // the input sample (the fix in fix/ruttetra-input-vflip) visibly moves
+  // the apex, which a centered circle could not have caught.
   ruttetra: {
     nodes: [
-      { id: 'src',   type: 'shapes',   position: { x: 60,  y: 60 }, domain: 'video' },
+      { id: 'src',   type: 'shapes',   position: { x: 60,  y: 60 }, domain: 'video', params: { shape: 2, zoom: 2.2 } },
       { id: 'vrt-1', type: 'ruttetra', position: { x: 520, y: 60 }, domain: 'video' },
     ],
     edges: [
