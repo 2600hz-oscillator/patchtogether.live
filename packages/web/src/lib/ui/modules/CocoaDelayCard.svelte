@@ -16,6 +16,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
+  import ModuleTitle from './ModuleTitle.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import {
@@ -82,7 +83,7 @@
     <div class="cocoa-body">
       <!-- LEFT RAIL -->
       <aside class="rail">
-        <div class="rail-title">COCOA DELAY</div>
+        <div class="rail-title"><ModuleTitle {id} {data} defaultLabel="COCOA DELAY" inline /></div>
         <div class="rail-faders">
           <Fader value={paramVal('dryVolume')} min={0} max={2} defaultValue={1}   label="Dry" curve="linear" onchange={set('dryVolume')} moduleId={id} paramId="dryVolume" readLive={live('dryVolume')} />
           <Fader value={paramVal('wetVolume')} min={0} max={2} defaultValue={0.5} label="Wet" curve="linear" onchange={set('wetVolume')} moduleId={id} paramId="wetVolume" readLive={live('wetVolume')} />
