@@ -150,21 +150,46 @@
         <Knob value={pv('src2_fold', defv('src2_fold'))}     min={0}   max={1}   defaultValue={defv('src2_fold')}  label="Fold"           curve="linear" onchange={set('src2_fold')}     moduleId={id} paramId="src2_fold"     readLive={live('src2_fold')} />
       </div>
 
-      <!-- Raster A + Raster B small previews -->
+      <!-- Raster A + Raster B small previews. Each preview carries a FREEZE
+           toggle that holds its current frame so the SWOLEVCOs no longer
+           drive that half of the BOX; the BOX preview carries FREEZE TABLE,
+           which holds the wavetable WAVECEL is currently reading (so the
+           XYZ display can keep evolving while the audio stays put). -->
       <div class="preview-row">
         <div class="preview">
           <canvas bind:this={rasterAEl} width="72" height="72" class="prev-canvas" data-testid="foxy-raster-a"></canvas>
           <span class="prev-label">RASTER A</span>
+          <button
+            type="button"
+            class="freeze-btn"
+            data-testid="foxy-freeze-raster-a"
+            aria-pressed={pv('freezeRasterA', 0) >= 0.5}
+            onclick={() => set('freezeRasterA')(pv('freezeRasterA', 0) >= 0.5 ? 0 : 1)}
+          >{pv('freezeRasterA', 0) >= 0.5 ? 'FROZEN' : 'FREEZE A'}</button>
         </div>
         <div class="arrow">+</div>
         <div class="preview">
           <canvas bind:this={rasterBEl} width="72" height="72" class="prev-canvas" data-testid="foxy-raster-b"></canvas>
           <span class="prev-label">RASTER B</span>
+          <button
+            type="button"
+            class="freeze-btn"
+            data-testid="foxy-freeze-raster-b"
+            aria-pressed={pv('freezeRasterB', 0) >= 0.5}
+            onclick={() => set('freezeRasterB')(pv('freezeRasterB', 0) >= 0.5 ? 0 : 1)}
+          >{pv('freezeRasterB', 0) >= 0.5 ? 'FROZEN' : 'FREEZE B'}</button>
         </div>
         <div class="arrow">→</div>
         <div class="preview">
           <canvas bind:this={boxEl} width="96" height="84" class="prev-canvas box-canvas" data-testid="foxy-box"></canvas>
           <span class="prev-label">BOX (3D)</span>
+          <button
+            type="button"
+            class="freeze-btn"
+            data-testid="foxy-freeze-table"
+            aria-pressed={pv('freezeTable', 0) >= 0.5}
+            onclick={() => set('freezeTable')(pv('freezeTable', 0) >= 0.5 ? 0 : 1)}
+          >{pv('freezeTable', 0) >= 0.5 ? 'TABLE FROZEN' : 'FREEZE TABLE'}</button>
         </div>
       </div>
 
@@ -288,6 +313,24 @@
     font-family: ui-monospace, monospace;
   }
   .foxy-card .viz-toggle:hover { border-color: #6a7282; }
+  .foxy-card .freeze-btn {
+    margin-top: 2px;
+    background: rgba(20, 24, 32, 0.85);
+    color: var(--text, #d8dde6);
+    border: 1px solid #404652;
+    border-radius: 2px;
+    padding: 1px 6px;
+    font-size: 0.5rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    font-family: ui-monospace, monospace;
+  }
+  .foxy-card .freeze-btn:hover { border-color: #6a7282; }
+  .foxy-card .freeze-btn[aria-pressed="true"] {
+    background: var(--cable-cv, #6cf);
+    color: #000;
+    border-color: var(--cable-cv, #6cf);
+  }
   .foxy-card .knob-row {
     display: flex;
     justify-content: center;
