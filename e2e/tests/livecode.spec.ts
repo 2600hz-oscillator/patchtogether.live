@@ -89,8 +89,8 @@ test('livecode: spawn → run JS produces named modules with cables', async ({ p
   const summary = await readPatchSummary(page);
   expect(summary.nodeTypes).toContain('analogVco');
   expect(summary.nodeTypes).toContain('audioOut');
-  expect(summary.nodeNames).toContain('ANALOGVCO1');
-  expect(summary.nodeNames).toContain('AUDIOOUT1');
+  expect(summary.nodeNames).toContain('ANALOGVCO');
+  expect(summary.nodeNames).toContain('AUDIOOUT');
   expect(summary.edges).toContainEqual(['analogVco', 'sine', 'audioOut', 'L']);
 
   expect(errors.filter((e) => !e.includes('DEP0040')), errors.join('; ')).toEqual([]);
@@ -241,7 +241,7 @@ test('livecode: editable name label — rename + reject duplicate', async ({ pag
     return typeof a?.data?.name === 'string' && typeof b?.data?.name === 'string';
   });
 
-  const labelA = page.locator('[data-testid="name-label-button"]', { hasText: 'ANALOGVCO1' });
+  const labelA = page.locator('[data-testid="name-label-button"]', { hasText: 'ANALOGVCO' });
   await expect(labelA).toBeVisible();
   await labelA.click();
   const inputA = page.locator('[data-testid="name-label-input"]');
