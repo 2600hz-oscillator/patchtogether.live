@@ -166,6 +166,13 @@ uniform float uSin;         // sin(rotate), precomputed on CPU
 uniform float uOffX;        // UV translation x (per iteration)
 uniform float uOffY;        // UV translation y (per iteration)
 
+// MIRROR X / MIRROR Y — kaleidoscope fold on the FINAL OUTPUT sampling.
+// 1.0 = on, 0.0 = off. Applied to the output UV (vUv) before everything
+// else, so the whole composited frame is folded (the displayed content
+// is mirrored, not just one input).
+uniform float uMirrorX;
+uniform float uMirrorY;
+
 const float MAX_EFFECT_SCALE = ${BACKDRAFT_MAX_EFFECT_SCALE.toFixed(1)};
 
 float luma(vec3 c) {
@@ -188,17 +195,35 @@ vec2 feedbackUv(vec2 uv) {
   return r + vec2(0.5);
 }
 
+// MIRROR fold on the OUTPUT sampling UV. MIRROR X folds the LEFT half over
+// the right (right half becomes a mirror of the left): keep uv.x<0.5, map
+// the right half to (1.0 - uv.x). MIRROR Y folds the visual TOP half into the
+// bottom. With this repo's full backdraft→videoOut→canvas chain, sampling
+// uv.y maps so that the VISUAL TOP corresponds to uv.y>=0.5 (verified by
+// e2e: keeping uv.y<0.5 kept the bottom). So to keep the visual TOP we KEEP
+// uv.y>=0.5 and reflect the low half via (1.0 - uv.y). Both on = a 4-way
+// (quadrant) fold = classic kaleidoscope.
+vec2 mirrorUv(vec2 uv) {
+  if (uMirrorX > 0.5) uv.x = uv.x < 0.5 ? uv.x : (1.0 - uv.x);
+  if (uMirrorY > 0.5) uv.y = uv.y >= 0.5 ? uv.y : (1.0 - uv.y);
+  return uv;
+}
+
 void main() {
+  // Mirror fold applied to the FINAL output sampling UV — folds the whole
+  // composited frame (source + feedback), so the DISPLAYED content mirrors.
+  vec2 uv = mirrorUv(vUv);
+
   // Source = crossfade of the two inputs (zero where unpatched).
-  vec3 a = uHasA > 0.5 ? texture(uA, vUv).rgb : vec3(0.0);
-  vec3 b = uHasB > 0.5 ? texture(uB, vUv).rgb : vec3(0.0);
+  vec3 a = uHasA > 0.5 ? texture(uA, uv).rgb : vec3(0.0);
+  vec3 b = uHasB > 0.5 ? texture(uB, uv).rgb : vec3(0.0);
   vec3 source = mix(a, b, clamp(uMix, 0.0, 1.0));
 
   // Fed-back frame (delayed previous output), sampled through the spatial
   // feedback transform so the geometry COMPOUNDS over iterations (tunnels /
   // spirals / trails). CLAMP_TO_EDGE on the ring textures keeps UVs pushed
   // past the edge reading the edge pixel. Zero on cold start.
-  vec2 fbUv = feedbackUv(vUv);
+  vec2 fbUv = feedbackUv(uv);
   vec3 fb = uHasFb > 0.5 ? texture(uFb, fbUv).rgb : vec3(0.0);
 
   // Per-channel gain.
@@ -211,8 +236,8 @@ void main() {
 
   // Mask combine — additive, order-independent. Masks read as luma so a
   // colour mask still keys on brightness. Unpatched mask => 0 (neutral).
-  float lm = uHasLighten > 0.5 ? luma(texture(uLighten, vUv).rgb) : 0.0;
-  float dm = uHasDarken  > 0.5 ? luma(texture(uDarken,  vUv).rgb) : 0.0;
+  float lm = uHasLighten > 0.5 ? luma(texture(uLighten, uv).rgb) : 0.0;
+  float dm = uHasDarken  > 0.5 ? luma(texture(uDarken,  uv).rgb) : 0.0;
   float effectScale = clamp(
     1.0 + uLightenKnob * lm - uDarkenKnob * dm,
     0.0, MAX_EFFECT_SCALE);
@@ -241,6 +266,15 @@ export interface BackdraftParams {
   rotate: number;    // BACKDRAFT_ROTATE_MIN..MAX degrees (0 = no spiral)
   offsetX: number;   // BACKDRAFT_OFFSET_MIN..MAX (0 = no trail)
   offsetY: number;   // BACKDRAFT_OFFSET_MIN..MAX (0 = no trail)
+  // MIRROR kaleidoscope fold (0/1). Buttons toggle these; a rising edge on
+  // the matching gate input also FLIPS them. Default off (identity).
+  mirrorX: number;   // 0/1 — fold left half over right
+  mirrorY: number;   // 0/1 — fold top half over bottom
+  // Synthetic gate params the mirror_x_gate / mirror_y_gate CV bridge
+  // writes (raw 0..1 swing). Hidden — no card knob; the module edge-detects
+  // a rising edge to FLIP mirrorX / mirrorY.
+  mirrorXGate: number; // 0..1 raw gate sample
+  mirrorYGate: number; // 0..1 raw gate sample
   freeze: number;    // 0/1 (VRT determinism)
 }
 
@@ -262,6 +296,11 @@ const DEFAULTS: BackdraftParams = {
   rotate: 0,
   offsetX: 0,
   offsetY: 0,
+  // Mirror fold OFF by default → identity output (unchanged behaviour).
+  mirrorX: 0,
+  mirrorY: 0,
+  mirrorXGate: 0,
+  mirrorYGate: 0,
   freeze: 0,
 };
 
@@ -344,6 +383,54 @@ export function backdraftFeedbackUv(
   px = rx / z;
   py = ry / z;
   return { u: px + 0.5, v: py + 0.5 };
+}
+
+/**
+ * Pure MIRROR fold of an output UV — the exact CPU mirror of the shader's
+ * `mirrorUv()`. MIRROR X folds the LEFT half over the right (right half =
+ * mirror of left); MIRROR Y folds the TOP half over the bottom. With this
+ * repo's full backdraft→videoOut→canvas chain the VISUAL TOP corresponds to
+ * uv.y>=0.5 (verified by e2e), so MIRROR Y KEEPS uv.y>=0.5 and reflects the
+ * low half via (1-uv.y) — i.e. the visual top is mirrored into the bottom.
+ * Both on = quadrant fold (kaleidoscope). Idempotent on the kept half.
+ * Exported so the unit tests + shader share one definition of the geometry.
+ */
+export function backdraftMirrorUv(
+  u: number,
+  v: number,
+  mirrorX: boolean,
+  mirrorY: boolean,
+): { u: number; v: number } {
+  return {
+    u: mirrorX ? (u < 0.5 ? u : 1 - u) : u,
+    v: mirrorY ? (v >= 0.5 ? v : 1 - v) : v,
+  };
+}
+
+/**
+ * Per-instance MIRROR-GATE tracker. A RISING EDGE on the mirror_x_gate /
+ * mirror_y_gate CV input FLIPS (toggles) that axis's mirror boolean — so a
+ * clock/sequencer can flip the kaleidoscope rhythmically. Hysteresis edge
+ * detection (rise>0.6 / fall<0.4), the same convention as DELAY CLOCK + the
+ * DOOM gates. (Toggle-on-edge, NOT hold-style — see report.)
+ */
+export interface BackdraftMirrorGateState {
+  x: EdgeState;
+  y: EdgeState;
+}
+
+export function makeBackdraftMirrorGateState(): BackdraftMirrorGateState {
+  return { x: makeEdgeState(), y: makeEdgeState() };
+}
+
+/**
+ * Feed one gate sample into the edge detector; return true iff this sample
+ * produced a RISING edge (caller flips the corresponding mirror boolean).
+ * Pure aside from mutating `edge` in place.
+ */
+export function backdraftMirrorGateTick(edge: EdgeState, sample: number): boolean {
+  const ev = detectEdge(edge, sample);
+  return ev?.pressed === true;
 }
 
 /**
@@ -458,6 +545,11 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'rotate',      type: 'cv', paramTarget: 'rotate',   cvScale: { mode: 'linear' } },
     { id: 'offsetx',     type: 'cv', paramTarget: 'offsetX',  cvScale: { mode: 'linear' } },
     { id: 'offsety',     type: 'cv', paramTarget: 'offsetY',  cvScale: { mode: 'linear' } },
+    // MIRROR gate inputs — gate/clock style (NO cvScale => raw passthrough).
+    // A RISING edge FLIPS (toggles) the matching mirror axis, so a clock can
+    // flip the kaleidoscope rhythmically. The module edge-detects them.
+    { id: 'mirror_x_gate', type: 'cv', paramTarget: 'mirrorXGate' },
+    { id: 'mirror_y_gate', type: 'cv', paramTarget: 'mirrorYGate' },
   ],
   outputs: [
     { id: 'out', type: 'video' },
@@ -482,6 +574,14 @@ export const backdraftDef: VideoModuleDef = {
     // writes (raw 0..1 swing). Hidden — no card knob; the module edge-detects
     // it to measure the pulse period that overrides the DELAY knob.
     { id: 'delayClock', label: 'Delay Clk', defaultValue: DEFAULTS.delayClock, min: 0, max: 1, curve: 'linear' },
+    // MIRROR kaleidoscope toggles (0/1). Buttons on the card set these; the
+    // gate inputs flip them on a rising edge. Default off.
+    { id: 'mirrorX',  label: 'Mirror X', defaultValue: DEFAULTS.mirrorX,  min: 0,  max: 1,                     curve: 'linear' },
+    { id: 'mirrorY',  label: 'Mirror Y', defaultValue: DEFAULTS.mirrorY,  min: 0,  max: 1,                     curve: 'linear' },
+    // Synthetic gate params the mirror_x_gate / mirror_y_gate bridge writes —
+    // hidden (no card knob); the module edge-detects a rising edge to FLIP.
+    { id: 'mirrorXGate', label: 'Mir X Gate', defaultValue: DEFAULTS.mirrorXGate, min: 0, max: 1, curve: 'linear' },
+    { id: 'mirrorYGate', label: 'Mir Y Gate', defaultValue: DEFAULTS.mirrorYGate, min: 0, max: 1, curve: 'linear' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
   ],
@@ -515,6 +615,8 @@ export const backdraftDef: VideoModuleDef = {
     const uSin = u('uSin');
     const uOffX = u('uOffX');
     const uOffY = u('uOffY');
+    const uMirrorX = u('uMirrorX');
+    const uMirrorY = u('uMirrorY');
 
     // Ring buffer of OUTPUT frames + a dedicated current-output FBO. We
     // render the composite into ring[head] (which IS this frame's output),
@@ -553,6 +655,13 @@ export const backdraftDef: VideoModuleDef = {
     let clockSeqSeenInDraw = -1;  // last seq observed by draw()
     let clockPatched = false;
 
+    // ── MIRROR gate tracking ──────────────────────────────────────────
+    // A rising edge on mirror_x_gate / mirror_y_gate FLIPS the matching
+    // mirror boolean. We edge-detect the raw gate sample written by the CV
+    // bridge each frame. Like the DELAY CLOCK, the bridge only writes while
+    // patched, so an unpatched gate never spuriously fires.
+    const mirrorGate = makeBackdraftMirrorGateState();
+
     const surface: VideoNodeSurface = {
       fbo: ring[0]!.fbo,
       texture: ring[0]!.texture,
@@ -573,6 +682,16 @@ export const backdraftDef: VideoModuleDef = {
         clockPatched = clockWriteSeq !== clockSeqSeenInDraw;
         clockSeqSeenInDraw = clockWriteSeq;
         if (clockPatched) backdraftClockTick(clock, params.delayClock, frame.time);
+
+        // MIRROR gates: a rising edge on either gate FLIPS the matching
+        // mirror boolean. The button/UI reflects the resulting (possibly
+        // gate-toggled) state because we mutate the shared `params`.
+        if (backdraftMirrorGateTick(mirrorGate.x, params.mirrorXGate)) {
+          params.mirrorX = params.mirrorX >= 0.5 ? 0 : 1;
+        }
+        if (backdraftMirrorGateTick(mirrorGate.y, params.mirrorYGate)) {
+          params.mirrorY = params.mirrorY >= 0.5 ? 0 : 1;
+        }
 
         // Effective delay (ms): the DELAY knob, OR — when a DELAY CLOCK is
         // patched and has measured a period — one clock-pulse duration,
@@ -643,6 +762,10 @@ export const backdraftDef: VideoModuleDef = {
         g.uniform1f(uSin, Math.sin(theta));
         g.uniform1f(uOffX, offX);
         g.uniform1f(uOffY, offY);
+
+        // MIRROR kaleidoscope fold (applied to the FINAL output sampling UV).
+        g.uniform1f(uMirrorX, params.mirrorX >= 0.5 ? 1.0 : 0.0);
+        g.uniform1f(uMirrorY, params.mirrorY >= 0.5 ? 1.0 : 0.0);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);

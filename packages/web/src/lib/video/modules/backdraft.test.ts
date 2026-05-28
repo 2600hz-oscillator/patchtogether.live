@@ -26,6 +26,9 @@ import {
   backdraftClockTick,
   backdraftTapIndex,
   makeBackdraftClockState,
+  backdraftMirrorUv,
+  backdraftMirrorGateTick,
+  makeBackdraftMirrorGateState,
 } from './backdraft';
 
 describe('backdraftDelayFrames — DELAY knob (ms) → nearest ring frame', () => {
@@ -261,6 +264,69 @@ describe('backdraftEffectiveDelayMs — DELAY knob vs DELAY CLOCK override', () 
   });
 });
 
+describe('backdraftMirrorUv — kaleidoscope fold geometry', () => {
+  it('identity (both off) returns the UV unchanged', () => {
+    for (const [u, v] of [[0.1, 0.2], [0.9, 0.8], [0.5, 0.5]] as const) {
+      const out = backdraftMirrorUv(u, v, false, false);
+      expect(out.u).toBeCloseTo(u, 6);
+      expect(out.v).toBeCloseTo(v, 6);
+    }
+  });
+
+  it('MIRROR X: right half becomes a mirror of the left (left unchanged)', () => {
+    expect(backdraftMirrorUv(0.2, 0.3, true, false).u).toBeCloseTo(0.2, 6);
+    expect(backdraftMirrorUv(0.8, 0.3, true, false).u).toBeCloseTo(0.2, 6); // 1-0.8
+    expect(backdraftMirrorUv(0.8, 0.3, true, false).v).toBeCloseTo(0.3, 6); // v untouched
+  });
+
+  it('MIRROR Y: low-uv.y half becomes a mirror of the high half (visual top→bottom)', () => {
+    // The fold KEEPS uv.y>=0.5 (the visual TOP) and reflects the low half via
+    // (1-uv.y). e2e verified this reads as the visual top mirrored downward.
+    expect(backdraftMirrorUv(0.3, 0.8, false, true).v).toBeCloseTo(0.8, 6); // high half kept
+    expect(backdraftMirrorUv(0.3, 0.2, false, true).v).toBeCloseTo(0.8, 6); // low half mirrors → 1-0.2
+    expect(backdraftMirrorUv(0.3, 0.2, false, true).u).toBeCloseTo(0.3, 6);
+  });
+
+  it('both on = 4-way symmetric (all quadrants map to the same source coord)', () => {
+    const ref = backdraftMirrorUv(0.2, 0.8, true, true);
+    for (const [u, v] of [[0.8, 0.8], [0.2, 0.2], [0.8, 0.2]] as const) {
+      const q = backdraftMirrorUv(u, v, true, true);
+      expect(q.u).toBeCloseTo(ref.u, 6);
+      expect(q.v).toBeCloseTo(ref.v, 6);
+    }
+  });
+
+  it('is idempotent on the kept half (re-folding stored output is a no-op)', () => {
+    const once = backdraftMirrorUv(0.8, 0.2, true, true);
+    const twice = backdraftMirrorUv(once.u, once.v, true, true);
+    expect(twice.u).toBeCloseTo(once.u, 6);
+    expect(twice.v).toBeCloseTo(once.v, 6);
+  });
+});
+
+describe('backdraftMirrorGateTick — rising edge flips the axis', () => {
+  it('fires on the rising edge with hysteresis (rise>0.6 / fall<0.4)', () => {
+    const st = makeBackdraftMirrorGateState();
+    expect(backdraftMirrorGateTick(st.x, 0.0)).toBe(false);
+    expect(backdraftMirrorGateTick(st.x, 0.7)).toBe(true);  // rising
+    expect(backdraftMirrorGateTick(st.x, 0.95)).toBe(false); // still high
+    expect(backdraftMirrorGateTick(st.x, 0.5)).toBe(false);  // dead band, sticky
+    expect(backdraftMirrorGateTick(st.x, 0.2)).toBe(false);  // fall
+    expect(backdraftMirrorGateTick(st.x, 0.7)).toBe(true);   // next rising
+  });
+
+  it('a rising edge toggles the mirror boolean (gate-driven kaleidoscope)', () => {
+    const st = makeBackdraftMirrorGateState();
+    let mirrorY = 0;
+    const pulse = (v: number) => {
+      if (backdraftMirrorGateTick(st.y, v)) mirrorY = mirrorY >= 0.5 ? 0 : 1;
+    };
+    pulse(0.8); expect(mirrorY).toBe(1);
+    pulse(0.0);
+    pulse(0.8); expect(mirrorY).toBe(0);
+  });
+});
+
 describe('backdraft module def — params + ports', () => {
   it('declares the expected param ranges + neutral defaults', () => {
     const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
@@ -316,6 +382,22 @@ describe('backdraft module def — params + ports', () => {
     // The synthetic gate param exists (hidden — no card knob).
     const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
     expect(byId.delayClock).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+  });
+
+  it('exposes mirror_x_gate / mirror_y_gate as raw (no cvScale) gate inputs + 0/1 mirror params', () => {
+    for (const [port, target] of [
+      ['mirror_x_gate', 'mirrorXGate'],
+      ['mirror_y_gate', 'mirrorYGate'],
+    ] as const) {
+      const g = backdraftDef.inputs.find((p) => p.id === port);
+      expect(g, port).toBeDefined();
+      expect(g?.type).toBe('cv');
+      expect(g?.cvScale).toBeUndefined(); // gate semantics — raw passthrough
+      expect(g?.paramTarget).toBe(target);
+    }
+    const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
+    expect(byId.mirrorX).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+    expect(byId.mirrorY).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
   });
 
   it('ring buffer holds 500ms — one beat at 120 BPM — the clock cap', () => {
