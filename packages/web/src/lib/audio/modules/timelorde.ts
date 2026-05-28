@@ -142,6 +142,19 @@ export const timelordeDef: AudioModuleDef = {
     syncExternalFlag();
     timer = setInterval(syncExternalFlag, 250);
 
+    // The worklet posts { type: 'measuredBpm', bpm } whenever the locked
+    // external tempo drifts (>0.1 BPM) and posts bpm:0 on dropout. We
+    // cache the latest value here and surface it via read('measuredBpm')
+    // so TimelordeCard can show the tempo TIMELORDE is actually locked
+    // to, not the stale internal knob.
+    let measuredBpm = 0;
+    workletNode.port.onmessage = (e: MessageEvent) => {
+      const m = e.data as { type?: string; bpm?: number } | undefined;
+      if (m && m.type === 'measuredBpm' && typeof m.bpm === 'number') {
+        measuredBpm = m.bpm;
+      }
+    };
+
     return {
       domain: 'audio',
       inputs: new Map([
@@ -171,6 +184,9 @@ export const timelordeDef: AudioModuleDef = {
       read(key) {
         if (key === 'hasExternalClock') {
           return hasExt?.value ?? 0;
+        }
+        if (key === 'measuredBpm') {
+          return measuredBpm;
         }
         return undefined;
       },

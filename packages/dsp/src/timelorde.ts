@@ -119,6 +119,14 @@ class TimelordeProcessor extends AudioWorkletProcessor {
   // Rolling median (4-window) of measured external periods, in samples.
   private periodSamples: number[] = [];
   private lastMeasuredPeriod = 0;
+  // Last BPM value posted to the WEB layer (so the card can display the
+  // tempo we're actually locked to). Re-posted only when the measured
+  // value drifts by >0.1 BPM, so the port traffic stays at most a few
+  // messages per second under a steady external clock.
+  private lastReportedBpm = 0;
+  // Tracks whether the external clock was active last block, so a
+  // transition to "no longer active" can post measuredBpm:0 once.
+  private wasExternalActive = false;
 
   // Master pulse counter — every 1x pulse increments. Drives divisors.
   private masterCount = 0;
@@ -176,6 +184,15 @@ class TimelordeProcessor extends AudioWorkletProcessor {
       this.sampleCount - this.lastExternalEdgeAt <
         EXT_DROPOUT_MULT * this.lastMeasuredPeriod;
 
+    // Transition: external clock stopped (cable removed or pulses dropped
+    // out beyond EXT_DROPOUT_MULT). Tell the card to revert its display
+    // from the measured tempo back to the internal knob.
+    if (this.wasExternalActive && !externalActive && this.lastReportedBpm !== 0) {
+      this.lastReportedBpm = 0;
+      this.port.postMessage({ type: 'measuredBpm', bpm: 0 });
+    }
+    this.wasExternalActive = externalActive;
+
     const periodForPrediction =
       externalActive && this.lastMeasuredPeriod > 0
         ? this.lastMeasuredPeriod
@@ -211,6 +228,16 @@ class TimelordeProcessor extends AudioWorkletProcessor {
               this.periodSamples.push(period);
               if (this.periodSamples.length > 4) this.periodSamples.shift();
               this.lastMeasuredPeriod = median(this.periodSamples);
+              // Surface the measured BPM to the WEB layer so the card
+              // can display the tempo we're actually locked to. Throttle
+              // by change: re-post only when the value drifts >0.1 BPM.
+              if (this.lastMeasuredPeriod > 0) {
+                const measuredBpm = 60 / (this.lastMeasuredPeriod / sampleRate);
+                if (Math.abs(measuredBpm - this.lastReportedBpm) > 0.1) {
+                  this.lastReportedBpm = measuredBpm;
+                  this.port.postMessage({ type: 'measuredBpm', bpm: measuredBpm });
+                }
+              }
             }
           }
           this.lastExternalEdgeAt = absSample;

@@ -20,6 +20,22 @@
     return () => ydoc.off('update', h);
   });
 
+  // Live BPM the engine is currently locked to when an external clock
+  // is patched (the worklet posts a measurement on each rising edge;
+  // 0 means "no external lock right now, fall back to internal").
+  // Polled at ~4 Hz — the worklet emits on edge so this just samples
+  // the latest cached value.
+  let measuredBpm = $state(0);
+  $effect(() => {
+    const e = engineCtx.get();
+    if (!e || !node) return;
+    const id = setInterval(() => {
+      const v = e.read?.(node, 'measuredBpm');
+      measuredBpm = typeof v === 'number' ? v : 0;
+    }, 250);
+    return () => clearInterval(id);
+  });
+
   let bpm         = $derived((void cardVersion, node?.params.bpm         ?? 120));
   let swingAmount = $derived((void cardVersion, node?.params.swingAmount ?? 0));
   let swingSource = $derived((void cardVersion, node?.params.swingSource ?? 0));
@@ -84,7 +100,7 @@
     </div>
 
     <div class="footer">
-      {bpm.toFixed(0)} BPM ({hasExternalClock ? 'external' : 'internal'}) · src={SRC_LABELS[Math.round(swingSource)] ?? '1x'}
+      {(hasExternalClock && measuredBpm > 0 ? measuredBpm : bpm).toFixed(0)} BPM ({hasExternalClock ? 'external' : 'internal'}) · src={SRC_LABELS[Math.round(swingSource)] ?? '1x'}
     </div>
   </PatchPanel>
 </div>
