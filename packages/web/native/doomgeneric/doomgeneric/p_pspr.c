@@ -35,6 +35,8 @@
 
 #include "p_pspr.h"
 
+#include "dgpt_events.h"
+
 #define LOWERSPEED		FRACUNIT*6
 #define RAISESPEED		FRACUNIT*6
 
@@ -237,10 +239,14 @@ boolean P_CheckAmmo (player_t* player)
 void P_FireWeapon (player_t* player)
 {
     statenum_t	newstate;
-	
+
     if (!P_CheckAmmo (player))
 	return;
-	
+
+    // Phase-1 SP event: this player slot fired (ammo check passed). Per-slot
+    // gate fires; JS routes by slot to evt_gun_p1..p4.
+    dgpt_evt_push(DGPT_EVT_GUN, (int)(player - players));
+
     P_SetMobjState (player->mo, S_PLAY_ATK1);
     newstate = weaponinfo[player->readyweapon].atkstate;
     P_SetPsprite (player, ps_weapon, newstate);

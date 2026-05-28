@@ -2088,6 +2088,60 @@
   />
   <span class="port-label right" style="top: 118px;">A-R</span>
 
+  <!-- Phase-1 SP event gates (KILL/DOOR/GUN1..4). Each pulses HIGH for 10ms
+       when the underlying engine event fires (monster kill, door opened, gun
+       fired by slot N). Stacked vertically at 28px intervals under audio_r.
+       MP determinism is untouched — these gates pulse OUT-OF-BAND with the
+       netgame consistency digest. -->
+  <Handle
+    type="source"
+    position={Position.Right}
+    id="evt_kill"
+    data-testid="doom-port-evt_kill"
+    style="top: 152px; --handle-color: var(--cable-gate);"
+  />
+  <span class="port-label right" style="top: 146px;">KILL</span>
+  <Handle
+    type="source"
+    position={Position.Right}
+    id="evt_door"
+    data-testid="doom-port-evt_door"
+    style="top: 180px; --handle-color: var(--cable-gate);"
+  />
+  <span class="port-label right" style="top: 174px;">DOOR</span>
+  <Handle
+    type="source"
+    position={Position.Right}
+    id="evt_gun_p1"
+    data-testid="doom-port-evt_gun_p1"
+    style="top: 208px; --handle-color: var(--cable-gate);"
+  />
+  <span class="port-label right" style="top: 202px;">GUN1</span>
+  <Handle
+    type="source"
+    position={Position.Right}
+    id="evt_gun_p2"
+    data-testid="doom-port-evt_gun_p2"
+    style="top: 236px; --handle-color: var(--cable-gate);"
+  />
+  <span class="port-label right" style="top: 230px;">GUN2</span>
+  <Handle
+    type="source"
+    position={Position.Right}
+    id="evt_gun_p3"
+    data-testid="doom-port-evt_gun_p3"
+    style="top: 264px; --handle-color: var(--cable-gate);"
+  />
+  <span class="port-label right" style="top: 258px;">GUN3</span>
+  <Handle
+    type="source"
+    position={Position.Right}
+    id="evt_gun_p4"
+    data-testid="doom-port-evt_gun_p4"
+    style="top: 292px; --handle-color: var(--cable-gate);"
+  />
+  <span class="port-label right" style="top: 286px;">GUN4</span>
+
   {#if isHost && mpMode === undefined}
     <!-- Explicit host start choice (replaces the implicit "2nd member ⇒
          auto-start" detection). The host decides whether this DOOM session is
