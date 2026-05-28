@@ -311,4 +311,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // linux CI (sub-pixel text AA differs across platforms); darwin is the
   // regression gate here.
   'linux/cocoadelay',
+  // FOXY (hybrid SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL): darwin
+  // baseline captured on this machine via VRT_SCENES (self-driving internal
+  // chain, frozen on AudioContext suspend). The pipeline mixes the
+  // AudioContext sine-table + analyser refill timing (raster) with CPU
+  // float math (XYZ field + wavetable), which can differ sub-thresholdly
+  // across platforms, so the linux baseline is pending a `task vrt:update`
+  // run on linux CI; the deterministic darwin capture is the gate here.
+  'linux/foxy',
 ]);

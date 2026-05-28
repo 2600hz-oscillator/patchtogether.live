@@ -79,6 +79,8 @@ import { aquaTankDef } from './aquatank';
 // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
 import { callsineDef } from './callsine';
 import { cocoaDelayDef } from './cocoadelay';
+// FOXY — hybrid SWOLEVCO→RASTERIZE→RUTTETRA(XYZ)→realtime-wavetable→WAVECEL.
+import { foxyDef } from './foxy';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -178,6 +180,12 @@ export function registerAudioModules(): void {
   // GRIDS — Mutable Instruments topographic drum pattern generator.
   // BD/SD/HH triggers + accent from a 5x5 interpolated drum map; euclidean mode.
   registerModule(gridsDef);
+  // FOXY — hybrid audio-visual module: a mini SWOLEVCO patched into an
+  // internal RASTERIZE, downsampled to 256×256 + run through a simplified
+  // CPU RUTTETRA ("XYZ" window), whose field is converted in realtime into
+  // an animated wavetable fed to an internal WAVECEL VCO. Exposes WAVECEL's
+  // full param/IO surface plus the source + XYZ controls.
+  registerModule(foxyDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
