@@ -51,7 +51,7 @@
 //   feedbackContribution = processedFedBack * FEEDBACK * effectScale
 //   out = clamp(source + feedbackContribution, 0, 1)
 //
-// FEEDBACK max is 1.5 (>1 allowed for runaway trails; bounded so a hot
+// FEEDBACK max is 2.0 (>1 allowed for runaway trails; bounded so a hot
 // source + max feedback can't NaN the accumulator — the shader clamps to
 // [0,1] each frame anyway).
 //
@@ -119,7 +119,7 @@ export const BACKDRAFT_MAX_EFFECT_SCALE = 4;
  *  DELAY knob uses, so the ring (sized for 500ms) always holds it. */
 export const BACKDRAFT_CLOCK_BPM_AT_MAX = 120;
 /** FEEDBACK knob ceiling (>1 = runaway trails). */
-export const BACKDRAFT_MAX_FEEDBACK = 1.5;
+export const BACKDRAFT_MAX_FEEDBACK = 2.0;
 
 /** Spatial-transform knob ranges (per feedback iteration). A small
  *  deviation compounds over the loop into a strong tunnel/spiral/trail. */
@@ -150,7 +150,7 @@ uniform float uHasLighten;
 uniform float uHasDarken;
 
 uniform float uMix;        // 0..1 crossfade in_a -> in_b
-uniform float uFeedback;   // 0..1.5 overall feedback amount
+uniform float uFeedback;   // 0..2.0 overall feedback amount
 uniform float uLuma;       // -1..+2 luma gain   (1 = neutral)
 uniform float uChroma;     // -1..+2 chroma/sat  (1 = neutral)
 uniform float uR;          // -1..+2 red gain
