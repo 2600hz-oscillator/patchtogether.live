@@ -131,6 +131,10 @@ export interface FoxyBox {
  *
  * Either buffer may be empty/short; lumaAt clamps + defaults missing channels
  * to 0, so a cold raster reads as 0 luma (flat / no lift) rather than NaN.
+ *
+ * @deprecated v3 (3-axis distribution wavetable) replaced the Box heightfield
+ *   path. Kept for back-compat + reference; `threeAxisWavetable` is now the
+ *   realtime path FOXY's bridge calls.
  */
 export function boxHeightfield(
   rgbaA: Uint8ClampedArray | readonly number[],
@@ -218,6 +222,9 @@ export function simplifiedRuttetraField(
  * Because B and A are independent images, the height variation no longer
  * tracks the pattern — the surface gets REAL 3D relief (bright B → tall, dark
  * B → low) over A's terrain. Pure + deterministic.
+ *
+ * @deprecated v3 routes the realtime path through `threeAxisWavetable` +
+ *   `threeAxisFieldForDisplay`. Kept for back-compat + the legacy test suite.
  */
 export function boxToField(
   box: FoxyBox,
@@ -270,6 +277,10 @@ export function boxToField(
  * never Float32Array, never Yjs proxies; see wavecel.ts PR-94 note).
  *
  * Pure + deterministic: same field + dims → same frames.
+ *
+ * @deprecated v3 replaced this with `threeAxisWavetable` (X = raster A's
+ *   column distribution, Y = raster B's row distribution, Z = raster C as a
+ *   1-D amplitude LUT). Kept exported for back-compat + the legacy unit tests.
  */
 export function fieldToWavetable(
   field: FoxyFieldRow[],
@@ -306,6 +317,176 @@ export function fieldToWavetable(
       frame[s] = v < -1 ? -1 : v > 1 ? 1 : v;
     }
     out.push(frame);
+  }
+  return out;
+}
+
+// ── v3: 3-axis distribution wavetable ─────────────────────────────────────
+//
+// FOXY v3 replaces the Box heightfield with a 3-axis DISTRIBUTION model. Each
+// of the three rasters projects to a 1-D distribution; the wavetable cell
+// (frame f, sample s) is built by SUMMING the bipolar X and Y projections and
+// then RESHAPING the amplitude through Z. So instead of one raster pattern
+// "lifted" by another, all three rasters jointly redistribute data along the
+// wavetable's three axes:
+//
+//   • X axis (sample s) = raster A's COLUMN-mean luma → xDist[s]
+//   • Y axis (frame  f) = raster B's ROW-mean    luma → yDist[f]
+//   • Z axis (amplitude) = raster C's COLUMN-mean luma → zLut[k] (1-D LUT)
+//
+// raw   (f,s) = (xDist[s] - 0.5) + (yDist[f] - 0.5)        ∈ [-1, 1]
+// shaped(f,s) = applyZLut(raw, zLut)                       ∈ [-1, 1]
+//
+// Why this shape? It keeps each raster's contribution INDEPENDENT (no cross-
+// pixel coupling), so the three sources read as three orthogonal axes the
+// user can dial separately, and the math is O(frames + samples) instead of
+// O(frames × samples × resamples). Z as a LUT means C acts as a waveSHAPER
+// over the amplitude axis: bright C cells push the signal toward ±1, dark C
+// cells compress it toward 0.
+
+/**
+ * Project an RGBA buffer onto a 1-D distribution along either the COLUMN
+ * (mean of each column → length-`len` array indexed by horizontal position)
+ * or the ROW (mean of each row → length-`len` array indexed by vertical
+ * position) axis.
+ *
+ * Pure + deterministic. Empty/short buffer ⇒ all 0.5 so downstream math sees
+ * a "neutral" distribution (xDist 0.5 + yDist 0.5 → raw 0 → silence, not NaN).
+ *
+ * `axis = 'col'` averages each source COLUMN's luma over its rows then maps
+ * the source's `srcW` columns to `len` output bins (nearest). `axis = 'row'`
+ * does the same with rows ↔ columns.
+ */
+export function axisDistribution(
+  rgba: Uint8ClampedArray | readonly number[],
+  srcW: number,
+  srcH: number,
+  len: number,
+  axis: 'col' | 'row',
+): Float32Array {
+  const out = new Float32Array(len);
+  // Empty / undersized buffer: neutral 0.5 distribution.
+  const needed = srcW * srcH * 4;
+  if (!rgba || rgba.length < 4 || srcW <= 0 || srcH <= 0 || len <= 0 || rgba.length < needed) {
+    for (let i = 0; i < len; i++) out[i] = 0.5;
+    return out;
+  }
+  if (axis === 'col') {
+    // Average each source column over rows → 0..srcW-1 distribution, then
+    // resample to `len` bins (nearest).
+    const colMeans = new Float32Array(srcW);
+    for (let x = 0; x < srcW; x++) {
+      let acc = 0;
+      for (let y = 0; y < srcH; y++) acc += lumaAt(rgba, srcW, srcH, x, y);
+      colMeans[x] = acc / srcH;
+    }
+    for (let i = 0; i < len; i++) {
+      const src = len > 1 ? Math.round((i / (len - 1)) * (srcW - 1)) : 0;
+      out[i] = colMeans[src] ?? 0.5;
+    }
+  } else {
+    const rowMeans = new Float32Array(srcH);
+    for (let y = 0; y < srcH; y++) {
+      let acc = 0;
+      for (let x = 0; x < srcW; x++) acc += lumaAt(rgba, srcW, srcH, x, y);
+      rowMeans[y] = acc / srcW;
+    }
+    for (let i = 0; i < len; i++) {
+      const src = len > 1 ? Math.round((i / (len - 1)) * (srcH - 1)) : 0;
+      out[i] = rowMeans[src] ?? 0.5;
+    }
+  }
+  return out;
+}
+
+/**
+ * Reshape a bipolar raw value through the Z LUT (raster C's column
+ * distribution). Maps raw ∈ [-1, 1] → unipolar u = (raw + 1) / 2 → LUT index
+ * (nearest) → bipolar output (lut[idx] - 0.5) * 2.
+ *
+ * Identity LUT (`lut[k] = k / (len - 1)`) → output == raw. Flat LUT
+ * (`lut[k] = 0.5`) → output == 0 always.
+ *
+ * Pure 1-line helper, exported for unit testing.
+ */
+export function applyZLut(raw: number, lut: Float32Array | readonly number[]): number {
+  const n = lut.length;
+  if (n === 0) return 0;
+  const u = (raw + 1) * 0.5;
+  const cu = u < 0 ? 0 : u > 1 ? 1 : u;
+  const idx = n > 1 ? Math.round(cu * (n - 1)) : 0;
+  return ((lut[idx] ?? 0.5) - 0.5) * 2;
+}
+
+/**
+ * Build the v3 wavetable as `frames × samples` from the three axis
+ * distributions.
+ *
+ *   cell(f, s) = clamp(applyZLut((xDist[s] - 0.5) + (yDist[f] - 0.5), zLut), -1, 1)
+ *
+ * Dims are determined by `frames` × `samples`, NOT the input distribution
+ * lengths — distributions are nearest-sampled into the wavetable axes.
+ *
+ * Wire format: plain `number[][]` (matches `loadWavetable`'s shape — never
+ * Float32Array, never Yjs proxies). Pure + deterministic.
+ */
+export function threeAxisWavetable(
+  xDist: Float32Array | readonly number[],
+  yDist: Float32Array | readonly number[],
+  zLut: Float32Array | readonly number[],
+  frames = FOXY_WT_FRAMES,
+  samples = FOXY_WT_SAMPLES,
+): number[][] {
+  const out: number[][] = [];
+  const xn = xDist.length, yn = yDist.length;
+  for (let f = 0; f < frames; f++) {
+    const yi = yn > 1 ? Math.round((f / Math.max(1, frames - 1)) * (yn - 1)) : 0;
+    const yv = (yDist[yi] ?? 0.5) - 0.5;
+    const frame = new Array<number>(samples);
+    for (let s = 0; s < samples; s++) {
+      const xi = xn > 1 ? Math.round((s / Math.max(1, samples - 1)) * (xn - 1)) : 0;
+      const xv = (xDist[xi] ?? 0.5) - 0.5;
+      const raw = xv + yv;
+      const shaped = applyZLut(raw, zLut);
+      frame[s] = shaped < -1 ? -1 : shaped > 1 ? 1 : shaped;
+    }
+    out.push(frame);
+  }
+  return out;
+}
+
+/**
+ * Convert the v3 wavetable back into a FoxyFieldRow[] for the on-card XYZ
+ * scope. Per frame, `y[s] = (wavetable[f][s] + 1) / 2` (re-pack bipolar
+ * audio → [0,1] field space, y-down like the legacy XYZ window) and
+ * `lum[s] = xDist[s]` (so stroke shading reads raster A's column projection).
+ *
+ * This keeps the XYZ display showing the ACTUAL audio data the worklet sees,
+ * not a separate heightfield computation.
+ */
+export function threeAxisFieldForDisplay(
+  wavetable: number[][],
+  xDist: Float32Array | readonly number[],
+): FoxyFieldRow[] {
+  const out: FoxyFieldRow[] = [];
+  if (wavetable.length === 0) return out;
+  const samples = wavetable[0]!.length;
+  const xn = xDist.length;
+  // Pre-sample xDist onto the output sample axis so all rows share the same
+  // lum (it's column-keyed, not frame-keyed — that's the X-axis interp).
+  const lumShared = new Float32Array(samples);
+  for (let s = 0; s < samples; s++) {
+    const xi = xn > 1 ? Math.round((s / Math.max(1, samples - 1)) * (xn - 1)) : 0;
+    lumShared[s] = xDist[xi] ?? 0.5;
+  }
+  for (let f = 0; f < wavetable.length; f++) {
+    const src = wavetable[f]!;
+    const y = new Float32Array(samples);
+    for (let s = 0; s < samples; s++) {
+      const v = (src[s] ?? 0) * 0.5 + 0.5;
+      y[s] = v < 0 ? 0 : v > 1 ? 1 : v;
+    }
+    out.push({ y, lum: lumShared });
   }
   return out;
 }
