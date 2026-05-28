@@ -424,7 +424,14 @@ type StandardModuleType =
   // sinusoidal peaks → additive bank (up to 64 oscillators). v1 ships two
   // voice models (SINES, SAW); scaffolded for 12+ follow-up models. Gate
   // input toggles FREEZE (latches the current spectrum).
-  | 'callsine';
+  | 'callsine'
+  // COCOA DELAY — port of Tilde Murray's Cocoa Delay (GPL-3.0). Stereo
+  // tape-style delay with LFO + DRIFT delay-time modulation, bipolar
+  // feedback + stereo offset + pan (static/ping-pong/circular), dry-env
+  // DUCKING, in-loop multi-mode FILTER (LP+HP), and stateful DRIVE
+  // saturation. Tempo-sync locks the time to a measured clock pulse
+  // (TIMELORDE system clock or external MIDI clock) at a musical division.
+  | 'cocoadelay';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

@@ -78,6 +78,7 @@ import { atlantisCatalystDef } from './atlantis-catalyst';
 import { aquaTankDef } from './aquatank';
 // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
 import { callsineDef } from './callsine';
+import { cocoaDelayDef } from './cocoadelay';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -170,6 +171,10 @@ export function registerAudioModules(): void {
   // CALLSINE — spectral-analysis additive resynth. audio in → STFT →
   // tracked partials → additive bank. MIT (Warren's Spectrum port).
   registerModule(callsineDef);
+  // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0). Tape-style stereo
+  // delay with LFO/DRIFT time modulation, ducking, in-loop filter + drive,
+  // and clock-locked tempo sync. CHARLOTTE'S ECHOS is built from 4 of these.
+  registerModule(cocoaDelayDef);
   // GRIDS — Mutable Instruments topographic drum pattern generator.
   // BD/SD/HH triggers + accent from a 5x5 interpolated drum map; euclidean mode.
   registerModule(gridsDef);

@@ -145,6 +145,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   helm: { top: 'Ports', sub: 'Ports' },
   hydrogen: { top: 'Ports', sub: 'Ports' },
   cloudseed: { top: 'Ports', sub: 'Ports' },
+  // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0). Headline software
+  // delay port — one click in the picker, flat under the Ports header.
+  cocoadelay: { top: 'Ports', sub: 'Ports' },
 
   // ───────── Ports → Mutable (Émilie Gillet / MI archetype ports). ─────────
   rings: { top: 'Ports', sub: 'Mutable' },
