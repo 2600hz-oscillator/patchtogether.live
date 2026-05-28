@@ -20,6 +20,7 @@
   import { parseNoteName } from '$lib/audio/note-entry';
   import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -208,7 +209,7 @@
 <div class="mod-card cartesian-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
-    Cartesian
+    <ModuleTitle {id} {data} defaultLabel="Cartesian" inline />
     <button class="mode-btn" class:cart={mode === 1} onclick={toggleMode} title={mode === 1 ? 'Cartesian (X/Y)' : 'Linear'}>
       {mode === 1 ? 'X/Y' : 'LIN'}
     </button>

@@ -10,8 +10,6 @@
     Background,
     Controls,
     MiniMap,
-    NodeToolbar,
-    Position,
     type Node as FlowNode,
     type Edge as FlowEdge,
     type Connection,
@@ -233,7 +231,9 @@
   import LivecodeCard from '$lib/ui/modules/LivecodeCard.svelte';
   // CLOCKED runner — per-clocked()-call mini-LIVECODE spawned by the main card.
   import ClockedRunnerCard from '$lib/ui/modules/ClockedRunnerCard.svelte';
-  import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
+  // ModuleNameLabel moved INTO every module card's title chrome (see
+  // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
+  // Canvas no longer renders the label directly.
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import { canAddModule } from '$lib/doom/doom-gating';
   import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
@@ -3586,24 +3586,15 @@
         />
       {/if}
       <FlowBridge bind:api={flowApi} />
-      <!-- Per-node editable name labels. Rendered as Svelte Flow
-           NodeToolbar instances anchored at the top of every card so
-           every module — old or new — gets the click-to-rename label
-           without each card having to opt in. The label sits ABOVE the
-           card chrome (Position.Top); a small offset keeps it from
-           overlapping the patch-panel triggers in the corners. -->
-      {#each flowNodes as fn (fn.id)}
-        <NodeToolbar
-          nodeId={fn.id}
-          position={Position.Top}
-          isVisible={true}
-          offset={4}
-        >
-          <div class="node-name-toolbar nodrag">
-            <ModuleNameLabel node={(fn.data as { node: import('$lib/graph/types').ModuleNode }).node} />
-          </div>
-        </NodeToolbar>
-      {/each}
+      <!-- 2026-05-27: the per-node editable name label moved INSIDE every
+           module card's title chrome (see ModuleTitle.svelte). The floating
+           NodeToolbar overhead label was dropped — the spec asks for the
+           user-given instance name to sit "where the module name is", not
+           hovering above the card. Removing this block also cleans up the
+           "WAVESCULPT1" orange badge that used to overlap with the card
+           title. The cards' new in-title name button keeps the same
+           data-testid hooks ('name-label-button' / 'name-label-input' /
+           'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
     <button
       type="button"
@@ -4015,16 +4006,10 @@
   .swatch.gate { background: var(--cable-gate); }
   .swatch.cv { background: var(--cable-cv); }
   .swatch.polyPitchGate { background: var(--cable-polyPitchGate); }
-  /* Per-node editable name label, rendered via NodeToolbar above each
-   * card. Mute background so the label reads as part of the card chrome
-   * without competing with the card's own title text. */
-  :global(.node-name-toolbar) {
-    background: rgba(14, 17, 22, 0.92);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    padding: 2px 4px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  }
+  /* (2026-05-27) `.node-name-toolbar` styles deleted — the per-node
+   * editable name label moved INSIDE each card's title chrome and is no
+   * longer rendered via NodeToolbar. ModuleNameLabel keeps its own
+   * inline styles (see ModuleNameLabel.svelte). */
   /* Video-domain swatches (Phase 0 spike). The CSS-class name shape
    * mirrors the cable-type id exactly so e.g. mono-video lines up
    * with --cable-mono-video without an extra mapping table. */

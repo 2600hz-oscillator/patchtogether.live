@@ -17,6 +17,7 @@
   } from '$lib/audio/modules/tides2';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -79,7 +80,7 @@
 
 <div class="mod-card tides2-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">TIDES2</header>
+  <ModuleTitle {id} {data} defaultLabel="TIDES2" />
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={360}>
     <div class="modes">

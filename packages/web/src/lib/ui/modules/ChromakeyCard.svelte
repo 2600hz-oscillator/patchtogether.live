@@ -7,6 +7,7 @@
   import { patch } from '$lib/graph/store';
   import { chromakeyDef } from '$lib/video/modules/chromakey';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -43,7 +44,7 @@
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">CHROMAKEY</header>
+  <ModuleTitle {id} {data} defaultLabel="CHROMAKEY" />
 
   <Handle type="target" position={Position.Left} id="fg"            style="top: 56px;  --handle-color: var(--cable-video);" />
   <span class="port-label left" style="top: 50px;">FG</span>

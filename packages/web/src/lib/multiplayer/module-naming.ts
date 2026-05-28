@@ -74,6 +74,29 @@ export function readName(node: ModuleNode): string | undefined {
 }
 
 /**
+ * Compute what the in-card title bar should display for a node.
+ *
+ * Precedence:
+ *   1. `node.data.name` if set (user-edited or auto-assigned by migration)
+ *   2. `defaultLabel` if the caller supplied one (in-card title surface —
+ *      shows the module-type slug like "WAVESCULPT" for an unedited card)
+ *   3. `nextDefaultName(...)` computed default (legacy fallback for the
+ *      transient first paint before the migration in Canvas.svelte runs).
+ *
+ * Pure; safe to call from anywhere. The UI component ModuleNameLabel
+ * mirrors this logic in its `$derived` so both stay in lockstep — this
+ * helper exists for unit-testing the precedence rules without mounting
+ * a Svelte component (vitest runs in `node`, no jsdom).
+ */
+export function resolveDisplayName(
+  node: ModuleNode,
+  nodes: Record<string, ModuleNode | undefined>,
+  defaultLabel?: string,
+): string {
+  return readName(node) ?? defaultLabel ?? nextDefaultName(nodes, node.type);
+}
+
+/**
  * Result of a rename attempt. `ok: true` => caller should write
  * `node.data.name = trimmed` inside a Y.Doc transact. `ok: false` =>
  * caller should display `error` (inline, e.g. red text under the input).

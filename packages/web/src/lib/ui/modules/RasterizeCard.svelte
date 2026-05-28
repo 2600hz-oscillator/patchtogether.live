@@ -8,6 +8,7 @@
   import { rasterizeDef } from '$lib/audio/modules/rasterize';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   // Inputs: audio in + 1 CV per param. Port ids match RASTERIZE's def
   // 1:1 (io-spec consistency e2e enforces this); the CV bridge routes
@@ -96,7 +97,7 @@
 <div class="card">
   <div class="stripe"></div>
   <header class="title">
-    Rasterize
+    <ModuleTitle {id} {data} defaultLabel="Rasterize" inline />
     <button
       class="wrap-btn"
       class:clamp={wrap}

@@ -64,6 +64,7 @@
   } from '$lib/audio/wavetable-factory-tables';
   import { parseE352Wav } from '$lib/audio/wavetable-parser';
   import type { VideoEngine } from '$lib/video/engine';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -2374,7 +2375,7 @@ void main() {
   data-node-id={id}
 >
   <div class="stripe"></div>
-  <header class="title">WAVESCULPT</header>
+  <ModuleTitle {id} {data} defaultLabel="WAVESCULPT" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">

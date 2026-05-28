@@ -9,6 +9,7 @@
   import { drawScope } from '$lib/audio/modules/scope-draw';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   // Inputs: 2 audio channels + 1 CV per param. Port ids match SCOPE's
   // module def 1:1 (the io-spec consistency e2e test enforces this);
@@ -159,7 +160,7 @@
 <div class="card">
   <div class="stripe"></div>
   <header class="title">
-    Scope
+    <ModuleTitle {id} {data} defaultLabel="Scope" inline />
     <button
       class="rng-btn"
       class:cv={ch1Range >= 0.5}

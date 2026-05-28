@@ -297,12 +297,18 @@ test.describe('AI smoke check', () => {
     const before = await vco.evaluate((el) => (el as HTMLElement).style.transform);
 
     // Grab the card's title bar (away from handles + faders) and drag right.
+    // We pick a point near the left edge of the title rather than dead-center:
+    // the in-title editable name button (see ModuleNameLabel.svelte) is
+    // centered and marked `.nodrag`, so a dead-center drag would be skipped.
+    // Dragging from a few px in keeps the test exercising the card-drag path.
     const title = page.locator('.svelte-flow__node-analogVco header.title');
     const box = await title.boundingBox();
     if (!box) throw new Error('VCO title not visible');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const startX = box.x + 8;
+    const startY = box.y + box.height / 2;
+    await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.move(startX + 80, startY, { steps: 5 });
     await page.mouse.up();
     await page.waitForTimeout(150);
 

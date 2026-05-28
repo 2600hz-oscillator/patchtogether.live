@@ -8,6 +8,7 @@ import {
   findNodeByName,
   migrateAssignNames,
   readName,
+  resolveDisplayName,
 } from './module-naming';
 
 function n(id: string, type: string, name?: string): ModuleNode {
@@ -178,5 +179,42 @@ describe('module-naming.migrateAssignNames', () => {
     migrateAssignNames(nodes);
     expect(readName(nodes['analogVco-aaa'])).toBe('ANALOGVCO1');
     expect(readName(nodes['analogVco-zzz'])).toBe('ANALOGVCO2');
+  });
+});
+
+// resolveDisplayName backs the in-card title bar (ModuleTitle.svelte /
+// ModuleNameLabel.svelte) — the precedence here is the one the user sees
+// after the per-card floating-overhead label was dropped.
+describe('module-naming.resolveDisplayName', () => {
+  it('returns node.data.name when set', () => {
+    const node = n('a', 'analogVco', 'BASS');
+    const nodes = { a: node };
+    expect(resolveDisplayName(node, nodes, 'Analog VCO')).toBe('BASS');
+  });
+
+  it('falls back to defaultLabel when node.data.name is empty', () => {
+    const node = n('a', 'analogVco'); // no .data.name
+    const nodes = { a: node };
+    expect(resolveDisplayName(node, nodes, 'Analog VCO')).toBe('Analog VCO');
+  });
+
+  it('falls back to the computed default when both name and defaultLabel are missing', () => {
+    const node = n('a', 'analogVco');
+    const nodes = { a: node };
+    expect(resolveDisplayName(node, nodes)).toBe('ANALOGVCO1');
+  });
+
+  it('preserves a legitimate empty-edit-to-default round-trip', () => {
+    // The card spec: "Empty input → clears `data.label`/`data.name` (falls
+    // back to the default)". Once data.name is cleared, resolveDisplayName
+    // returns the defaultLabel string the card supplied.
+    const node = n('a', 'analogVco');
+    delete node.data;
+    expect(resolveDisplayName(node, { a: node }, 'WAVESCULPT')).toBe('WAVESCULPT');
+  });
+
+  it('does not consult defaultLabel when name is set, even if name is unusual', () => {
+    const node = n('a', 'analogVco', 'lowercase_name_ok');
+    expect(resolveDisplayName(node, { a: node }, 'IGNORED')).toBe('lowercase_name_ok');
   });
 });

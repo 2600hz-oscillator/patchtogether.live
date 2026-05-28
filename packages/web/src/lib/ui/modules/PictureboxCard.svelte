@@ -21,6 +21,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -163,7 +164,7 @@
   data-testid="picturebox-card"
 >
   <div class="stripe"></div>
-  <header class="title">PICTUREBOX</header>
+  <ModuleTitle {id} {data} defaultLabel="PICTUREBOX" />
 
   <Handle type="target" position={Position.Left} id="gain" style="top: 56px; --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 50px;">G</span>

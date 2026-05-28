@@ -15,6 +15,7 @@
   import { patch } from '$lib/graph/store';
   import { shapedrampsDef } from '$lib/video/modules/shapedramps';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -33,7 +34,7 @@
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">SHAPEDRAMPS</header>
+  <ModuleTitle {id} {data} defaultLabel="SHAPEDRAMPS" />
 
   <!-- 6 CV inputs left side, upper -->
   <Handle type="target" position={Position.Left} id="h_shape" style="top: 56px;  --handle-color: var(--cable-cv);" />

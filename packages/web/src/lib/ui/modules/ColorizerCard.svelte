@@ -6,6 +6,7 @@
   import { patch } from '$lib/graph/store';
   import { colorizerDef } from '$lib/video/modules/colorizer';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -24,7 +25,7 @@
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">COLORIZER</header>
+  <ModuleTitle {id} {data} defaultLabel="COLORIZER" />
 
   <!-- Inputs: stacked on the left edge. `in` (video) at top, then 3 CV
        inputs for R/G/B tint modulation. -->

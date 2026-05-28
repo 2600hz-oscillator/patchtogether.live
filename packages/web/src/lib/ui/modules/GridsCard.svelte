@@ -13,6 +13,7 @@
   import { GRIDS_MODE_DRUMS } from '$lib/audio/modules/grids-engine';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -74,7 +75,7 @@
 
 <div class="mod-card grids-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">GRIDS</header>
+  <ModuleTitle {id} {data} defaultLabel="GRIDS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="controls">

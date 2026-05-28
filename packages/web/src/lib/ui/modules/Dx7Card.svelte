@@ -9,6 +9,7 @@
   import { DX7_DEFAULT_PRESET } from '$lib/audio/modules/dx7';
   import { DX7_BUILTIN_BANK } from '$lib/audio/dx7-banks';
   import { parseSyxBank, type DX7Voice } from '$lib/audio/dx7-syx';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -101,7 +102,7 @@
 
 <div class="mod-card dx7-card" data-testid="dx7-card">
   <div class="stripe" style="background: var(--cable-polyPitchGate);"></div>
-  <header class="title">DX7</header>
+  <ModuleTitle {id} {data} defaultLabel="DX7" />
   <div class="subtitle">FM SYNTHESIZER · 6-OP · 32 ALGORITHMS</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>

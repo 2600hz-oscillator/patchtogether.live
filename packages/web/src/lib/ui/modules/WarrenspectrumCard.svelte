@@ -9,6 +9,7 @@
   import { drawWarrenspectrum, type WarrenspectrumSnapshot } from '$lib/audio/modules/warrenspectrum-draw';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -112,7 +113,7 @@
 
 <div class="mod-card warren-card" data-testid="warrenspectrum-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">WARRENSPECTRUM</header>
+  <ModuleTitle {id} {data} defaultLabel="WARRENSPECTRUM" />
 
   <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={520}>
     <div class="viz-wrap">

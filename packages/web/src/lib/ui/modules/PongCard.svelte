@@ -8,6 +8,7 @@
   import { pongDef, drawPong, type PongState, type PongParams } from '$lib/audio/modules/pong';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   // Inputs: two paddle CVs. Outputs: two score gates.
   const inputs: PortDescriptor[] = [
@@ -77,7 +78,7 @@
 
 <div class="mod-card pong-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">PONG</header>
+  <ModuleTitle {id} {data} defaultLabel="PONG" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="game-area">

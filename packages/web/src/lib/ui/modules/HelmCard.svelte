@@ -14,6 +14,7 @@
   import { patch } from '$lib/graph/store';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
   import type {
     HelmCardApi,
     HelmMidiState,
@@ -185,7 +186,7 @@
 <div class="mod-card helm-card" data-testid="helm-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <header class="title">
-    <span>HELM</span>
+    <ModuleTitle {id} {data} defaultLabel="HELM" inline />
     <button
       type="button"
       class="gear-btn"

@@ -6,6 +6,7 @@
   import { patch } from '$lib/graph/store';
   import { inwardsDef } from '$lib/video/modules/inwards';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -24,7 +25,7 @@
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">INWARDS</header>
+  <ModuleTitle {id} {data} defaultLabel="INWARDS" />
 
   <!-- CV inputs — one per modulatable param. The cross-domain CV
        bridge in VideoEngine routes audio-side cv onto setParam(portId),
