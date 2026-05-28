@@ -219,4 +219,26 @@ test.describe('video orientation — SHAPES triangle reference', () => {
     await page.screenshot({ path: 'test-results/orient-4-shapes-bb-bb-output.png' });
     expect(r.verdict, `SHAPES->BB->BB->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
+
+  test('7. SHAPES(triangle) -> RUTTETRA is upright (apex on top)', async ({ page }) => {
+    // RUTTETRA samples its input in a custom VERTEX shader and lays the
+    // grid out directly in NDC. With its input sample Y-flipped to match
+    // the engine's UNPACK_FLIP_Y_WEBGL convention (the same convention the
+    // fullscreen-quad modules sample under), an up-pointing triangle must
+    // render with its narrow apex in the TOP half — like every sibling.
+    // Disp params are zeroed so the raster is a clean 1:1 luma map and the
+    // verdict isolates ORIENTATION (not the luma heightmap displacement).
+    await setup(page);
+    await spawnPatch(page,
+      [
+        { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
+        { id: 're', type: 'ruttetra', position: { x: 500, y: 40 }, domain: 'video', params: { xDisp: 0, yDisp: 0, xShape: 0, yShape: 0 } },
+      ],
+      [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 're', portId: 'z' }, sourceType: 'mono-video', targetType: 'video' }],
+    );
+    await page.waitForTimeout(600);
+    const r = await analyzeTriangleOrientation(page, 'ruttetra-canvas');
+    await page.screenshot({ path: 'test-results/orient-7-shapes-ruttetra.png' });
+    expect(r.verdict, `SHAPES->RUTTETRA verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
+  });
 });
