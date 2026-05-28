@@ -32,6 +32,13 @@ const DB_VERSION = 1;
 const SLOTS_STORE = 'slots';
 const DIRS_STORE = 'dirHandles';
 
+/** Hard cap on saved performances per browser profile. The slot record
+ *  itself is small (a few KB of envelope JSON + structural references —
+ *  file-backed videos are handles, not bytes), so 10 keeps the picker
+ *  manageable + the IDB store healthy without ever pressuring quota.
+ *  Overwriting an EXISTING slot name doesn't count against the cap. */
+export const MAX_PERFORMANCES = 10;
+
 /** Structural subset of FileSystemDirectoryHandle we depend on. Declared
  *  locally so this module type-checks under the node unit build (lib.dom may
  *  not expose it). The browser's real handle satisfies it. */
@@ -110,8 +117,21 @@ function openDb(): Promise<IDBDatabase> {
 export async function savePerformanceSlot(
   name: string,
   bundle: PerformanceBundle,
-): Promise<boolean> {
-  if (!hasIndexedDB()) return false;
+): Promise<{ ok: true } | { ok: false; reason: 'storage' | 'cap'; cap?: number }> {
+  if (!hasIndexedDB()) return { ok: false, reason: 'storage' };
+  // Enforce the per-browser cap. Overwriting an existing slot is allowed
+  // regardless of cap — only a NEW name + existing count at the limit
+  // refuses the save. Listing is best-effort; if it fails, we fall through
+  // (the cap is a soft user-experience guard, not a safety invariant).
+  try {
+    const existing = await listPerformanceSlots();
+    const hasName = existing.some((s) => s.name === name);
+    if (!hasName && existing.length >= MAX_PERFORMANCES) {
+      return { ok: false, reason: 'cap', cap: MAX_PERFORMANCES };
+    }
+  } catch {
+    // fall through
+  }
   const record: PerformanceSlotRecord = { name, bundle, savedAt: bundle.savedAt };
   try {
     const db = await openDb();
@@ -123,9 +143,9 @@ export async function savePerformanceSlot(
       tx.onabort = () => resolve(false);
     });
     db.close();
-    return ok;
+    return ok ? { ok: true } : { ok: false, reason: 'storage' };
   } catch {
-    return false;
+    return { ok: false, reason: 'storage' };
   }
 }
 

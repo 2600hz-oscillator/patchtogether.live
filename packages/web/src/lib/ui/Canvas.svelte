@@ -39,6 +39,8 @@
     savePerformanceSlot,
     loadPerformanceSlot,
     listPerformanceSlots,
+    deletePerformanceSlot,
+    MAX_PERFORMANCES,
   } from '$lib/graph/performance-store';
   import {
     exportBindings as exportMidiBindings,
@@ -1009,7 +1011,15 @@
       error = 'Save Local Performance needs IndexedDB (not available in this browser).';
       return;
     }
-    const input = window.prompt('Save Local Performance as…', 'My Performance');
+    // Show how many slots are used so the user knows they're approaching the
+    // per-browser cap before they type a name. Best-effort — listing failures
+    // shouldn't block the save.
+    let usedCount = 0;
+    try { usedCount = (await listPerformanceSlots()).length; } catch { /* */ }
+    const input = window.prompt(
+      `Save Local Performance as…\n(${usedCount}/${MAX_PERFORMANCES} slots used)`,
+      'My Performance',
+    );
     if (input === null) {
       trace('save performance cancelled');
       return;
@@ -1034,9 +1044,13 @@
         resolveMidiDevice: resolveMidi,
         resolveGamepad,
       });
-      const ok = await savePerformanceSlot(name, bundle);
-      if (!ok) {
-        error = 'Could not save the performance (storage unavailable or full).';
+      const res = await savePerformanceSlot(name, bundle);
+      if (!res.ok) {
+        if (res.reason === 'cap') {
+          error = `You have reached the ${res.cap ?? MAX_PERFORMANCES}-performance cap. Delete one from the Load menu first.`;
+        } else {
+          error = 'Could not save the performance (storage unavailable or full).';
+        }
         return;
       }
       const videoCount = bundle.assets.length;
@@ -1063,19 +1077,41 @@
         return;
       }
       // Minimal picker: numbered prompt (no new modal component to keep the
-      // MVP small + testable). Newest-first.
+      // MVP small + testable). Newest-first. Type `N` to load, `dN` to
+      // delete slot N (e.g. `d3`). The slot cap is enforced at save time.
       const menu = slots
         .map((s, i) => `${i + 1}. ${s.name}${s.assetCount ? ` (${s.assetCount} video${s.assetCount === 1 ? '' : 's'})` : ''}`)
         .join('\n');
-      const pick = window.prompt(`Load which performance?\n\n${menu}\n\nEnter a number:`, '1');
+      const pick = window.prompt(
+        `Load which performance? (${slots.length}/${MAX_PERFORMANCES} slots used)\n\n${menu}\n\nEnter a number to LOAD, or "dN" (e.g. d3) to DELETE slot N:`,
+        '1',
+      );
       if (pick === null) {
         trace('load performance cancelled');
         return;
       }
-      const idx = Number.parseInt(pick.trim(), 10) - 1;
+      const raw = pick.trim();
+      const delMatch = /^d\s*(\d+)$/i.exec(raw);
+      if (delMatch) {
+        const dIdx = Number.parseInt(delMatch[1]!, 10) - 1;
+        const target = slots[dIdx];
+        if (!target) {
+          error = `No performance #${delMatch[1]} to delete.`;
+          return;
+        }
+        const confirmed = window.confirm(`Delete performance "${target.name}"? This cannot be undone.`);
+        if (!confirmed) {
+          trace('delete performance cancelled');
+          return;
+        }
+        await deletePerformanceSlot(target.name);
+        trace(`deleted performance "${target.name}"`);
+        return;
+      }
+      const idx = Number.parseInt(raw, 10) - 1;
       const chosen = slots[idx];
       if (!chosen) {
-        error = `No performance #${pick.trim()}.`;
+        error = `No performance #${raw}.`;
         return;
       }
 
