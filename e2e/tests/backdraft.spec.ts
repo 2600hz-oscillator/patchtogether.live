@@ -249,6 +249,225 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     expect(errors, 'no console / page errors').toEqual([]);
   });
 
+  test('MIRROR X / MIRROR Y fold the output (kaleidoscope) + gate toggles the param', async ({ page }) => {
+    // Drive BACKDRAFT with an ASYMMETRIC source (a single small off-centre
+    // shape) and NO feedback, so the output is essentially the folded source.
+    // We then read the video-out canvas and assert the fold symmetries:
+    //   MIRROR X → right half mirrors the left,
+    //   MIRROR Y → bottom half mirrors the top (VISUALLY top→bottom),
+    //   both    → 4-way (quadrant) symmetric.
+    async function setMirror(mx: number, my: number): Promise<void> {
+      await page.evaluate(([mx, my]) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['bd'];
+          if (n) { n.params.mirrorX = mx; n.params.mirrorY = my; n.params.freeze = 0; }
+        });
+      }, [mx, my]);
+      await page.waitForTimeout(120);
+      // Freeze for a stable read.
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) n.params.freeze = 1; });
+      });
+      await page.waitForTimeout(120);
+    }
+
+    // Sample a small grid of luma values + the canvas dims so we can compare
+    // mirrored positions. Returns { w, h, lumaAt(x,y) } as a flat array.
+    function readGrid() {
+      return page.locator('canvas[data-testid="video-out-canvas"]').evaluate((el) => {
+        const c = el as HTMLCanvasElement;
+        const ctx = c.getContext('2d');
+        if (!ctx) return null;
+        const { width, height } = c;
+        const img = ctx.getImageData(0, 0, width, height).data;
+        const luma = (x: number, y: number): number => {
+          const xi = Math.max(0, Math.min(width - 1, Math.round(x)));
+          const yi = Math.max(0, Math.min(height - 1, Math.round(y)));
+          const i = (yi * width + xi) * 4;
+          return (img[i]! + img[i + 1]! + img[i + 2]!) / 3;
+        };
+        // Sample a 9x9 interior grid (avoid exact edges/centre seam).
+        const pts: { x: number; y: number; v: number }[] = [];
+        for (let gy = 1; gy <= 9; gy++) {
+          for (let gx = 1; gx <= 9; gx++) {
+            const x = (gx / 10) * width;
+            const y = (gy / 10) * height;
+            pts.push({ x, y, v: luma(x, y) });
+          }
+        }
+        return { width, height, pts };
+      });
+    }
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [
+        // A rotated triangle (asymmetric on BOTH axes) so each fold has a
+        // visible effect. mix=0 → use only in_a. No feedback (output ≈ folded
+        // source). A triangle points, and rotating it breaks left/right
+        // symmetry too, so MIRROR X and MIRROR Y both change the frame.
+        { id: 'src_a', type: 'shapes',    position: { x: 40,  y: 40 }, domain: 'video',
+          params: { shape: 2, tile: 0, rotate: 0.9, zoom: 0.6 } },
+        { id: 'bd',    type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video',
+          params: { mix: 0, feedback: 0, delay: 16, mirrorX: 0, mirrorY: 0 } },
+        { id: 'v-out', type: 'videoOut',  position: { x: 980, y: 80 }, domain: 'video' },
+      ],
+      [
+        { id: 'e_a',   from: { nodeId: 'src_a', portId: 'out' }, to: { nodeId: 'bd',    portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e_out', from: { nodeId: 'bd',    portId: 'out' }, to: { nodeId: 'v-out', portId: 'in'   }, sourceType: 'video',      targetType: 'video' },
+      ],
+    );
+    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    await page.waitForTimeout(400);
+
+    // Baseline: UNFOLDED frame (both mirrors off). Used to identify which
+    // half each fold KEEPS (the half that equals the unfolded source).
+    await setMirror(0, 0);
+    const gUnfolded = await readGrid();
+    expect(gUnfolded).not.toBeNull();
+
+    // Helper: mean-abs difference between each point and its mirror partner.
+    const lumaMap = (g: NonNullable<Awaited<ReturnType<typeof readGrid>>>) => {
+      const m = new Map<string, number>();
+      for (const p of g.pts) m.set(`${Math.round(p.x)},${Math.round(p.y)}`, p.v);
+      return { g, m };
+    };
+
+    // ---- MIRROR X: right half mirrors left ----
+    await setMirror(1, 0);
+    const gx = await readGrid();
+    expect(gx).not.toBeNull();
+    {
+      const { g, m } = lumaMap(gx!);
+      let diff = 0, n = 0;
+      for (const p of g.pts) {
+        if (p.x > g.width / 2) continue; // compare left → its mirror on the right
+        const partner = m.get(`${Math.round(g.width - p.x)},${Math.round(p.y)}`);
+        if (partner === undefined) continue;
+        diff += Math.abs(p.v - partner); n++;
+      }
+      expect(n).toBeGreaterThan(0);
+      expect(diff / n, 'MIRROR X: right half mirrors the left').toBeLessThan(12);
+    }
+
+    // ---- MIRROR Y: bottom mirrors top ----
+    await setMirror(0, 1);
+    const gy = await readGrid();
+    {
+      const { g, m } = lumaMap(gy!);
+      let diff = 0, n = 0;
+      for (const p of g.pts) {
+        if (p.y > g.height / 2) continue; // compare top → its mirror at the bottom
+        const partner = m.get(`${Math.round(p.x)},${Math.round(g.height - p.y)}`);
+        if (partner === undefined) continue;
+        diff += Math.abs(p.v - partner); n++;
+      }
+      expect(n).toBeGreaterThan(0);
+      expect(diff / n, 'MIRROR Y: bottom half mirrors the top').toBeLessThan(12);
+    }
+
+    // ---- MIRROR Y reads VISUALLY top→bottom (not bottom→top) ----
+    // The KEPT half is the one whose pixels still equal the UNFOLDED frame;
+    // the reflected half differs. For a correct top→bottom fold the TOP half
+    // is kept (≈ unfolded) and the BOTTOM is replaced by the reflection.
+    {
+      const folded = gy!;
+      const base = gUnfolded!;
+      const baseAt = new Map<string, number>();
+      for (const p of base.pts) baseAt.set(`${Math.round(p.x)},${Math.round(p.y)}`, p.v);
+      let topDiff = 0, topN = 0, botDiff = 0, botN = 0;
+      for (const p of folded.pts) {
+        const b = baseAt.get(`${Math.round(p.x)},${Math.round(p.y)}`);
+        if (b === undefined) continue;
+        const d = Math.abs(p.v - b);
+        if (p.y < folded.height / 2) { topDiff += d; topN++; }
+        else { botDiff += d; botN++; }
+      }
+      expect(topN).toBeGreaterThan(0);
+      expect(botN).toBeGreaterThan(0);
+      // Top half ≈ unchanged (kept); bottom half changed (reflection). The
+      // bottom must differ from the unfolded baseline MORE than the top does.
+      expect(botDiff / botN, 'MIRROR Y replaces the BOTTOM half (top is kept)')
+        .toBeGreaterThan(topDiff / topN);
+    }
+
+    // ---- BOTH on: 4-way symmetric (kaleidoscope) ----
+    await setMirror(1, 1);
+    const gb = await readGrid();
+    {
+      const { g, m } = lumaMap(gb!);
+      let diff = 0, n = 0;
+      for (const p of g.pts) {
+        if (p.x > g.width / 2 || p.y > g.height / 2) continue; // top-left quadrant
+        // partner in each of the other three quadrants must match.
+        for (const [px, py] of [
+          [g.width - p.x, p.y],
+          [p.x, g.height - p.y],
+          [g.width - p.x, g.height - p.y],
+        ] as const) {
+          const partner = m.get(`${Math.round(px)},${Math.round(py)}`);
+          if (partner === undefined) continue;
+          diff += Math.abs(p.v - partner); n++;
+        }
+      }
+      expect(n).toBeGreaterThan(0);
+      expect(diff / n, 'BOTH mirrors → 4-way quadrant symmetry (kaleidoscope)').toBeLessThan(12);
+    }
+
+    // ---- Gate input toggles the mirror param on a rising edge ----
+    // Reset mirrorX off + unfreeze. Drive the synthetic gate param
+    // (mirrorXGate — what the mirror_x_gate CV bridge writes) low→high: the
+    // module edge-detects the RISING edge and FLIPS mirrorX. The card mirrors
+    // the engine's live value back into the store, so the assertion (reading
+    // the store) sees the flip — exactly what the button binds to.
+    const setGate = (v: number) =>
+      page.evaluate((v) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) n.params.mirrorXGate = v; });
+      }, v);
+    const readMirrorX = () =>
+      page.evaluate(() => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+        return w.__patch.nodes['bd']?.params.mirrorX;
+      });
+
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) { n.params.mirrorX = 0; n.params.mirrorXGate = 0; n.params.freeze = 0; } });
+    });
+    await page.waitForTimeout(120);
+
+    // First rising edge → mirrorX flips 0 → 1.
+    await setGate(1);
+    await expect
+      .poll(readMirrorX, { timeout: 3000, message: 'rising edge on mirror_x_gate flips mirrorX 0→1' })
+      .toBeGreaterThanOrEqual(0.5);
+
+    // Fall, then a SECOND rising edge → mirrorX flips back 1 → 0 (toggle-on-edge).
+    await setGate(0);
+    await page.waitForTimeout(120);
+    await setGate(1);
+    await expect
+      .poll(readMirrorX, { timeout: 3000, message: 'second rising edge flips mirrorX 1→0' })
+      .toBeLessThan(0.5);
+  });
+
   test('faders route through the patch store', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');

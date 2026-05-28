@@ -161,6 +161,20 @@
       // image upside down. See VideoOutCard for the full rationale.
       ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
     }
+    // Reflect gate-toggled mirror state from the engine back into the store
+    // (so the button updates + the toggle persists/syncs). Only writes on a
+    // real change — user clicks and gate flips converge.
+    try {
+      for (const k of ['mirrorX', 'mirrorY'] as const) {
+        const live = e.readParam(node, k);
+        if (typeof live !== 'number') continue;
+        const stored = patch.nodes[id]?.params[k] ?? 0;
+        if ((live >= 0.5) !== (stored >= 0.5)) {
+          const t = patch.nodes[id];
+          if (t) t.params[k] = live >= 0.5 ? 1 : 0;
+        }
+      }
+    } catch { /* defensive */ }
     rafId = requestAnimationFrame(draw);
   }
 
@@ -217,6 +231,20 @@
   let wavefold           = $derived(node?.params.wavefold           ?? defaultFor('wavefold'));
   let noise              = $derived(node?.params.noise              ?? defaultFor('noise'));
 
+  // ---- MIRROR X / MIRROR Y kaleidoscope toggles ----
+  // Each button flips a boolean param (mirrorX / mirrorY). A rising edge on
+  // the matching gate input also flips it in the engine; the button reflects
+  // the (possibly gate-toggled) param value.
+  let mirrorX = $derived((node?.params.mirrorX ?? defaultFor('mirrorX')) >= 0.5);
+  let mirrorY = $derived((node?.params.mirrorY ?? defaultFor('mirrorY')) >= 0.5);
+  function toggleMirror(paramId: 'mirrorX' | 'mirrorY') {
+    return () => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      t.params[paramId] = (t.params[paramId] ?? 0) >= 0.5 ? 0 : 1;
+    };
+  }
+
   const inputs: PortDescriptor[] = [
     { id: 'in',                    label: 'IN',    cable: 'video' },
     { id: 'hsync_drift_cv',        label: 'HSD',   cable: 'cv' },
@@ -231,6 +259,8 @@
     { id: 'bloom_cv',              label: 'BLM',   cable: 'cv' },
     { id: 'noise_cv',              label: 'NSE',   cable: 'cv' },
     { id: 'master_gain_cv',        label: 'GAIN',  cable: 'cv' },
+    { id: 'mirror_x_gate',         label: 'MIRX',  cable: 'cv' },
+    { id: 'mirror_y_gate',         label: 'MIRY',  cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out', label: 'OUT', cable: 'video' },
@@ -286,6 +316,25 @@
       <Knob value={feedback_delay}     min={0}  max={1} defaultValue={0}    label="Delay"     curve="linear" onchange={set('feedback_delay')} moduleId={id} paramId="feedback_delay"     readLive={live('feedback_delay')} />
       <Knob value={wavefold}           min={0}  max={1} defaultValue={0}    label="Wavefold"  curve="linear" onchange={set('wavefold')} moduleId={id} paramId="wavefold"           readLive={live('wavefold')} />
       <Knob value={noise}              min={0}  max={1} defaultValue={0.05} label="Noise"     curve="linear" onchange={set('noise')} moduleId={id} paramId="noise"              readLive={live('noise')} />
+    </div>
+
+    <div class="mirror-row" data-testid="bentbox-mirror-row">
+      <button
+        type="button"
+        class="mirror-btn nodrag"
+        class:on={mirrorX}
+        data-testid="bentbox-mirror-x"
+        title="MIRROR X — fold the left half over the right (kaleidoscope)"
+        onclick={toggleMirror('mirrorX')}
+      >MIRROR X</button>
+      <button
+        type="button"
+        class="mirror-btn nodrag"
+        class:on={mirrorY}
+        data-testid="bentbox-mirror-y"
+        title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
+        onclick={toggleMirror('mirrorY')}
+      >MIRROR Y</button>
     </div>
   </PatchPanel>
 
@@ -392,7 +441,8 @@
   }
   .card.bentbox.full-frame .title,
   .card.bentbox.full-frame .stripe,
-  .card.bentbox.full-frame .knob-grid {
+  .card.bentbox.full-frame .knob-grid,
+  .card.bentbox.full-frame .mirror-row {
     display: none;
   }
   /* Hide the card's OWN jack affordances + Svelte Flow handles while full-
@@ -432,6 +482,31 @@
     gap: 6px 8px;
     padding: 0 8px;
   }
+  .mirror-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 8px;
+    padding: 0 8px;
+  }
+  .mirror-btn {
+    flex: 1;
+    background: var(--module-bg);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    padding: 4px 6px;
+    cursor: pointer;
+    font-family: ui-monospace, monospace;
+  }
+  .mirror-btn.on {
+    background: var(--accent-dim, #46506b);
+    color: var(--text);
+    border-color: var(--accent, #6884d7);
+  }
+  .mirror-btn:hover { border-color: var(--accent-dim); }
   .resize-handle {
     position: absolute;
     right: 0;

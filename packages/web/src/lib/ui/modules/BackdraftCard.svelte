@@ -45,6 +45,20 @@
     };
   }
 
+  // ---- MIRROR X / MIRROR Y kaleidoscope toggles ----
+  // Each button flips a boolean param (mirrorX / mirrorY). A rising edge on
+  // the matching gate input also flips it in the engine; the button reflects
+  // the (possibly gate-toggled) param value.
+  let mirrorXOn = $derived(p('mirrorX') >= 0.5);
+  let mirrorYOn = $derived(p('mirrorY') >= 0.5);
+  function toggleMirror(paramId: 'mirrorX' | 'mirrorY') {
+    return () => {
+      const target = patch.nodes[id];
+      if (!target) return;
+      target.params[paramId] = (target.params[paramId] ?? 0) >= 0.5 ? 0 : 1;
+    };
+  }
+
   // ---- DELAY CLOCK override indicator ----
   // When a cable is patched into the `delay_clock` input, the clock drives
   // the feedback delay (one pulse = the delay time) and OVERRIDES the DELAY
@@ -131,7 +145,28 @@
       const r = fitRect(cw, ch);
       ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
     }
+    // A rising edge on a mirror gate flips the param INSIDE the engine
+    // instance. Mirror that live value back into the patch store so the
+    // toggle persists + syncs to collaborators + the button reflects it.
+    try { syncMirrorFromEngine(e, node); } catch { /* defensive */ }
     rafId = requestAnimationFrame(draw);
+  }
+
+  // Reconcile the engine's live mirrorX/mirrorY (possibly gate-toggled) into
+  // the patch store. Only writes when the engine value differs from the store,
+  // so user clicks (store → engine via setParam) and gate flips (engine →
+  // store here) converge without fighting.
+  function syncMirrorFromEngine(e: ReturnType<typeof engineCtx.get>, n: ModuleNode | undefined): void {
+    if (!e || !n) return;
+    for (const k of ['mirrorX', 'mirrorY'] as const) {
+      const live = e.readParam(n, k);
+      if (typeof live !== 'number') continue;
+      const stored = (patch.nodes[id]?.params[k] ?? 0);
+      if ((live >= 0.5) !== (stored >= 0.5)) {
+        const target = patch.nodes[id];
+        if (target) target.params[k] = live >= 0.5 ? 1 : 0;
+      }
+    }
   }
 
   onMount(() => {
@@ -255,6 +290,11 @@
   <!-- DELAY CLOCK gate/clock input — overrides the DELAY knob when patched. -->
   <Handle type="target" position={Position.Left} id="delay_clock" style="top: 572px; --handle-color: var(--cable-cv);" />
   {#if !hideControls}<span class="port-label left" style="top: 566px;">CLK</span>{/if}
+  <!-- MIRROR gate inputs — a rising edge FLIPS the matching mirror axis. -->
+  <Handle type="target" position={Position.Left} id="mirror_x_gate" style="top: 600px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 594px;">MX</span>{/if}
+  <Handle type="target" position={Position.Left} id="mirror_y_gate" style="top: 628px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 622px;">MY</span>{/if}
 
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
   {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
@@ -296,6 +336,25 @@
       ></canvas>
     </div>
 
+    <div class="mirror-row" data-testid="backdraft-mirror-row">
+      <button
+        type="button"
+        class="mirror-btn nodrag"
+        class:on={mirrorXOn}
+        data-testid="backdraft-mirror-x"
+        title="MIRROR X — fold the left half over the right (kaleidoscope)"
+        onclick={toggleMirror('mirrorX')}
+      >MIRROR X</button>
+      <button
+        type="button"
+        class="mirror-btn nodrag"
+        class:on={mirrorYOn}
+        data-testid="backdraft-mirror-y"
+        title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
+        onclick={toggleMirror('mirrorY')}
+      >MIRROR Y</button>
+    </div>
+
     <div class="fader-grid" data-testid="backdraft-controls">
       <Fader value={p('mix')}      min={0}  max={1}                     defaultValue={pdef('mix')}      label="Mix"  curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" />
       <Fader value={p('feedback')} min={0}  max={BACKDRAFT_MAX_FEEDBACK} defaultValue={pdef('feedback')} label="FB"   curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
@@ -321,7 +380,7 @@
 <style>
   .card {
     width: 340px;
-    min-height: 600px;
+    min-height: 660px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -400,6 +459,31 @@
     gap: 10px 4px;
     justify-items: center;
   }
+  .mirror-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 10px;
+    padding: 0 14px;
+  }
+  .mirror-btn {
+    flex: 1;
+    background: var(--module-bg);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    padding: 4px 6px;
+    cursor: pointer;
+    font-family: ui-monospace, monospace;
+  }
+  .mirror-btn.on {
+    background: var(--accent-dim, #46506b);
+    color: var(--text);
+    border-color: var(--accent, #6884d7);
+  }
+  .mirror-btn:hover { border-color: var(--accent-dim); }
   .delay-cell {
     position: relative;
     display: flex;
