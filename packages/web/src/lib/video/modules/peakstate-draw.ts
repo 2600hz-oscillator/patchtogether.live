@@ -170,6 +170,78 @@ export interface RenderOpts {
   /** Drawing scale (pixels per unit). Defaults to min(w, h) * 0.45 so
    *  the unit disc fits with padding. */
   scale?: number;
+  /** Canvas-space X coordinate for the mandala's centerpoint. Defaults
+   *  to `width / 2`. The MOVE/OBLONG spirograph feature drives this off
+   *  the canvas centre to orbit the mandala along a parametric path. */
+  centerX?: number;
+  /** Canvas-space Y coordinate for the mandala's centerpoint. Defaults
+   *  to `height / 2`. See `centerX`. */
+  centerY?: number;
+}
+
+/** Maximum orbit radius (as a fraction of `min(width, height)`) that the
+ *  MOVE knob at value 1.0 produces. Keeps the orbit visibly large but
+ *  inside the canvas — combined with the mandala's own draw radius of
+ *  `min(w, h) * 0.45`, a 0.25 orbit means the outer pen samples reach
+ *  ~70% out from canvas centre at peak. */
+export const ORBIT_RADIUS_FRACTION = 0.25;
+
+/** Minimum Y-axis scale when OBLONG is at its maximum (1.0). A value of
+ *  0.05 means the orbit collapses to a near-horizontal tube — 95% of
+ *  vertical motion is removed. The spirograph reads as a "rolling along
+ *  a line" degenerate case at this extreme. */
+export const OBLONG_MIN_Y_SCALE = 0.05;
+
+/** Orbit angular speed multiplier. The macro orbit cycles every
+ *  ~20s at speed=1 (2π / (1 * 0.3) ≈ 21s); this keeps the orbital
+ *  period slow relative to the mandala's own arm rotation so the
+ *  harmonic ratio reads as spirograph rosettes rather than a single-
+ *  ratio Lissajous.
+ *
+ *  Same scalar the 3D output uses for its rotation — both motions
+ *  share a clock so the "wheel within a wheel" reading stays coherent. */
+export const ORBIT_SPEED_SCALAR = 0.3;
+
+/** Pure helper: compute the mandala's centerpoint at engine-time `t`,
+ *  given the MOVE + OBLONG knobs and the canvas dimensions.
+ *
+ *  Math:
+ *    orbitT = t * speed * ORBIT_SPEED_SCALAR
+ *    orbitR = move * ORBIT_RADIUS_FRACTION * min(width, height)
+ *    yScale = 1 - oblong * (1 - OBLONG_MIN_Y_SCALE)
+ *    cx     = baseCx + orbitR * cos(orbitT)
+ *    cy     = baseCy + orbitR * yScale * sin(orbitT)
+ *
+ *  Degeneracies:
+ *    - move = 0      → (cx, cy) === (baseCx, baseCy) exactly.
+ *    - oblong = 0    → orbit is a perfect circle of radius orbitR.
+ *    - oblong = 1    → orbit's Y-extent is OBLONG_MIN_Y_SCALE × X-extent
+ *                      (the "tube" degeneracy the user described).
+ *
+ *  This is the inner "pen wheel" centre of a spirograph: combined with
+ *  the mandala's own arm rotation (a separate clock driven by the
+ *  per-frame draw), the rendered curve is hypotrochoid-like.
+ */
+export function orbitCenter(
+  t: number,
+  baseCx: number,
+  baseCy: number,
+  move: number,
+  oblong: number,
+  speed: number,
+  width: number,
+  height: number,
+): { cx: number; cy: number } {
+  // MOVE = 0 short-circuit so the degeneracy is EXACT (not subject to
+  // sin(0)=0 / cos(0)=1 floating-point drift across float32 storage).
+  if (move <= 0) return { cx: baseCx, cy: baseCy };
+  const orbitT = t * Math.max(0, speed) * ORBIT_SPEED_SCALAR;
+  const orbitR = move * ORBIT_RADIUS_FRACTION * Math.min(width, height);
+  const yScale = 1 - oblong * (1 - OBLONG_MIN_Y_SCALE);
+  return {
+    cx: baseCx + orbitR * Math.cos(orbitT),
+    cy: baseCy + orbitR * yScale * Math.sin(orbitT),
+  };
 }
 
 /** Minimal 2D-context surface — typed against the union of OffscreenCanvas
@@ -229,8 +301,11 @@ export function drawMandalaFrame(
 
   if (ring.length < 2 || !opts.color) return;
 
-  const cx = width / 2;
-  const cy = height / 2;
+  // Centerpoint defaults to canvas centre; the MOVE/OBLONG spirograph
+  // path overrides these per-frame to orbit the mandala along a
+  // parametric path (see orbitCenter()).
+  const cx = opts.centerX ?? width / 2;
+  const cy = opts.centerY ?? height / 2;
   const scale = opts.scale ?? Math.min(width, height) * 0.45;
   const arms = Math.max(1, Math.round(opts.complexity));
   const angleStep = (Math.PI * 2) / arms;
@@ -311,8 +386,10 @@ export function drawMandalaTubeFrame(
 
   if (ring.length < 2 || !opts.color) return;
 
-  const cx = width / 2;
-  const cy = height / 2;
+  // Centerpoint defaults to canvas centre; the 3D output honours the
+  // same MOVE/OBLONG orbit so the rotating sculpture also drifts.
+  const cx = opts.centerX ?? width / 2;
+  const cy = opts.centerY ?? height / 2;
   const scale = opts.scale ?? Math.min(width, height) * 0.4;
   const arms = Math.max(1, Math.round(opts.complexity));
   const angleStep = (Math.PI * 2) / arms;

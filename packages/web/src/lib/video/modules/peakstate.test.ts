@@ -57,4 +57,18 @@ describe('peakstateDef shape', () => {
     const c = peakstateDef.params.find((p) => p.id === 'complexity')!;
     expect(c.curve).toBe('discrete');
   });
+
+  it('declares MOVE + OBLONG knobs for the spirograph orbit (defaults 0 → off)', () => {
+    const byId = Object.fromEntries(peakstateDef.params.map((p) => [p.id, p]));
+    expect(byId.move).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
+    expect(byId.oblong).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
+  });
+
+  it('keeps SPEED / COMPLEXITY / COLOR untouched (regression: the spirograph PR must NOT renumber existing params)', () => {
+    // Saved patches address params by id; renaming or dropping speed /
+    // complexity / color_speed would silently break them. Pin the
+    // exact id list (order-insensitive) so this PR's diff is auditable.
+    const ids = peakstateDef.params.map((p) => p.id).sort();
+    expect(ids).toEqual(['color_speed', 'complexity', 'move', 'oblong', 'speed']);
+  });
 });

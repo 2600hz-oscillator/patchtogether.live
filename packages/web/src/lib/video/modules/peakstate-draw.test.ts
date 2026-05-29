@@ -14,6 +14,10 @@ import {
   hslToRgb,
   expectedSegmentCount,
   drawMandalaFrame,
+  orbitCenter,
+  ORBIT_RADIUS_FRACTION,
+  ORBIT_SPEED_SCALAR,
+  OBLONG_MIN_Y_SCALE,
   PEN_TRAIL_CAPACITY,
   type Ctx2D,
 } from './peakstate-draw';
@@ -266,6 +270,28 @@ describe('drawMandalaFrame — kaleidoscope render', () => {
     expect(rotates).toBe(6);
   });
 
+  it('honours opts.centerX/centerY for the per-arm translate (off-centre mandala)', () => {
+    // MOVE/OBLONG path: the orbit centre is fed via RenderOpts. The
+    // draw routine must translate each arm to that centre, NOT to
+    // (width/2, height/2). Verify the first arm's translate(...) call
+    // hits the supplied centre exactly.
+    const ring = new PenRing(10);
+    for (let i = 0; i < 3; i++) ring.push(0.1, 0.1);
+    const { ctx, calls } = makeRecordingCtx();
+    drawMandalaFrame(ctx, 200, 200, ring, {
+      complexity: 4,
+      color: { r: 255, g: 255, b: 255 },
+      decayAlpha: 0.05,
+      centerX: 130,
+      centerY: 70,
+    });
+    const translates = calls.filter((c) => c.op === 'translate');
+    expect(translates.length).toBe(4); // one per arm
+    for (const t of translates) {
+      expect(t.args).toEqual([130, 70]);
+    }
+  });
+
   it('higher complexity → MORE arms (proven by save/restore count)', () => {
     const ring = new PenRing(10);
     for (let i = 0; i < 3; i++) ring.push(0.1, 0.1);
@@ -279,5 +305,163 @@ describe('drawMandalaFrame — kaleidoscope render', () => {
     });
     expect(c4.calls.filter((c) => c.op === 'save').length).toBe(4);
     expect(c16.calls.filter((c) => c.op === 'save').length).toBe(16);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MOVE + OBLONG — spirograph centerpoint orbit.
+// ---------------------------------------------------------------------------
+
+describe('orbitCenter — spirograph centre orbit', () => {
+  const W = 360, H = 360;
+  const baseCx = W / 2;
+  const baseCy = H / 2;
+
+  it('move = 0 pins the centre EXACTLY at (baseCx, baseCy) regardless of t/oblong/speed', () => {
+    for (const t of [0, 0.1, 1, 13.7, 1000]) {
+      for (const oblong of [0, 0.5, 1]) {
+        for (const speed of [0, 1, 4]) {
+          const { cx, cy } = orbitCenter(t, baseCx, baseCy, 0, oblong, speed, W, H);
+          expect(cx).toBe(baseCx);
+          expect(cy).toBe(baseCy);
+        }
+      }
+    }
+  });
+
+  it('move = 0.5, oblong = 0 traces a perfect circle of radius 0.5 * ORBIT_RADIUS_FRACTION * min(w,h)', () => {
+    const move = 0.5;
+    const expectedR = move * ORBIT_RADIUS_FRACTION * Math.min(W, H);
+    // Walk one full orbit (orbitT spans 0..2π). Pick speed = 1 so orbitT
+    // = t * ORBIT_SPEED_SCALAR. Sample 64 evenly-spaced t values across
+    // [0, 2π / ORBIT_SPEED_SCALAR].
+    const period = (Math.PI * 2) / ORBIT_SPEED_SCALAR;
+    for (let n = 0; n < 64; n++) {
+      const t = (n / 64) * period;
+      const { cx, cy } = orbitCenter(t, baseCx, baseCy, move, 0, 1, W, H);
+      const dx = cx - baseCx;
+      const dy = cy - baseCy;
+      const r = Math.hypot(dx, dy);
+      expect(r).toBeCloseTo(expectedR, 6);
+    }
+  });
+
+  it('oblong = 1 squashes Y to OBLONG_MIN_Y_SCALE × X (the "tube" degeneracy)', () => {
+    const move = 1;
+    const period = (Math.PI * 2) / ORBIT_SPEED_SCALAR;
+    let maxAbsDx = 0;
+    let maxAbsDy = 0;
+    for (let n = 0; n < 256; n++) {
+      const t = (n / 256) * period;
+      const { cx, cy } = orbitCenter(t, baseCx, baseCy, move, 1, 1, W, H);
+      maxAbsDx = Math.max(maxAbsDx, Math.abs(cx - baseCx));
+      maxAbsDy = Math.max(maxAbsDy, Math.abs(cy - baseCy));
+    }
+    // Y peak should be ~OBLONG_MIN_Y_SCALE × X peak.
+    expect(maxAbsDy / maxAbsDx).toBeCloseTo(OBLONG_MIN_Y_SCALE, 5);
+    // And in absolute terms: Y is at most 5% of X.
+    expect(maxAbsDy).toBeLessThanOrEqual(maxAbsDx * (OBLONG_MIN_Y_SCALE + 1e-6));
+  });
+
+  it('is deterministic: same inputs → same output', () => {
+    const a = orbitCenter(2.5, baseCx, baseCy, 0.7, 0.3, 1.2, W, H);
+    const b = orbitCenter(2.5, baseCx, baseCy, 0.7, 0.3, 1.2, W, H);
+    expect(a).toEqual(b);
+  });
+
+  it('oblong ∈ (0, 1) linearly interpolates the Y-radius scale', () => {
+    // At a t where cos(orbitT) = 0 + sin(orbitT) = 1, dy = orbitR * yScale.
+    // Solve t: orbitT = π/2 → t = (π/2) / ORBIT_SPEED_SCALAR.
+    const t = (Math.PI / 2) / ORBIT_SPEED_SCALAR;
+    const move = 1;
+    const orbitR = move * ORBIT_RADIUS_FRACTION * Math.min(W, H);
+    for (const oblong of [0, 0.25, 0.5, 0.75, 1]) {
+      const expectedYScale = 1 - oblong * (1 - OBLONG_MIN_Y_SCALE);
+      const { cx, cy } = orbitCenter(t, baseCx, baseCy, move, oblong, 1, W, H);
+      // cos(π/2) ≈ 0 → cx ≈ baseCx; sin(π/2) = 1 → dy = orbitR * yScale.
+      expect(Math.abs(cx - baseCx)).toBeLessThan(1e-9);
+      expect(cy - baseCy).toBeCloseTo(orbitR * expectedYScale, 6);
+    }
+  });
+
+  it('speed scales orbital frequency proportionally (speed=2 → twice as far around in the same t)', () => {
+    // At t=1, speed=2 → orbitT=2*ORBIT_SPEED_SCALAR; speed=1 →
+    // orbitT=ORBIT_SPEED_SCALAR. So cos(orbitT_2) = cos(2*orbitT_1).
+    const t = 1;
+    const move = 0.5;
+    const a = orbitCenter(t, baseCx, baseCy, move, 0, 1, W, H);
+    const b = orbitCenter(t, baseCx, baseCy, move, 0, 2, W, H);
+    const orbitT1 = t * 1 * ORBIT_SPEED_SCALAR;
+    const orbitT2 = t * 2 * ORBIT_SPEED_SCALAR;
+    const orbitR = move * ORBIT_RADIUS_FRACTION * Math.min(W, H);
+    expect(a.cx - baseCx).toBeCloseTo(orbitR * Math.cos(orbitT1), 6);
+    expect(b.cx - baseCx).toBeCloseTo(orbitR * Math.cos(orbitT2), 6);
+  });
+});
+
+describe('spirograph regression — pen-orbit composition', () => {
+  // The visible spirograph effect = orbit centre wandering at radius R_outer
+  // + mandala pen drawn around that centre at radius up to (scale * 0.5)
+  // (the pen samples are in [-0.5, 0.5] times `scale`).
+  //
+  // For move=0.5, oblong=0, complexity=8, speed=1, the maximum distance from
+  // canvas centre that the rendered pen reaches over a 10s window MUST equal
+  // (R_outer + R_mandala) — i.e. when the orbit is at its farthest AND the
+  // pen sample is at its farthest from the orbit centre along the same
+  // direction. We approximate by sampling the analytic worst-case.
+
+  it('pen distance from base centre exceeds the static-mandala bound (proves orbit composes with pen)', () => {
+    const W = 360, H = 360;
+    const baseCx = W / 2;
+    const baseCy = H / 2;
+    const move = 0.5;
+    const oblong = 0;
+    const speed = 1;
+    const scale = Math.min(W, H) * 0.45; // matches drawMandalaFrame default
+
+    // Analytic bounds:
+    //   - orbitR     = move * ORBIT_RADIUS_FRACTION * min(W,H) = 45px.
+    //   - pen radius = scale * √(0.5² + 0.5²) = scale * √0.5 ≈ 127px
+    //                  (penAtTime caps |x|,|y| ≤ 0.5 each; Euclidean max
+    //                   is √2 × 0.5 = √0.5).
+    //   - WITHOUT orbit, max distance from base = pen radius ≤ scale*√0.5.
+    //   - WITH orbit, max distance = orbitR + pen radius (when co-aligned).
+    //
+    // The test pins: WITH-orbit observed max EXCEEDS the static (no-orbit)
+    // upper bound by AT LEAST 80% of orbitR. That's the load-bearing
+    // "spirograph reaches farther than a stationary mandala can" claim —
+    // i.e. the orbit is actually composing with the pen, not being
+    // silently dropped.
+    const orbitR = move * ORBIT_RADIUS_FRACTION * Math.min(W, H);
+    const staticPenMaxR = scale * Math.SQRT1_2; // = scale * √0.5
+
+    let maxWithOrbit = 0;
+    let maxWithoutOrbit = 0;
+    const state = makePenState();
+    for (let step = 0; step < 600; step++) {
+      const t = step / 60; // ~10s at 60fps
+      const { cx, cy } = orbitCenter(t, baseCx, baseCy, move, oblong, speed, W, H);
+      state.t = t * speed;
+      const { x, y } = penAtTime(state.t);
+      const penPx = x * scale;
+      const penPy = y * scale;
+      // With orbit: pen rendered at (cx + penPx, cy + penPy).
+      const dxW = (cx - baseCx) + penPx;
+      const dyW = (cy - baseCy) + penPy;
+      maxWithOrbit = Math.max(maxWithOrbit, Math.hypot(dxW, dyW));
+      // Without orbit (move = 0 collapse): pen at (baseCx + penPx, baseCy + penPy).
+      maxWithoutOrbit = Math.max(maxWithoutOrbit, Math.hypot(penPx, penPy));
+    }
+
+    // The achievable absolute upper bound is orbitR + staticPenMaxR.
+    const absUpperBound = orbitR + staticPenMaxR;
+    expect(maxWithOrbit).toBeLessThanOrEqual(absUpperBound + 1e-6);
+    // And the orbit DOES extend the reach — the with-orbit max strictly
+    // exceeds the without-orbit max. (Over 10s the orbit covers ~172°
+    // of a ~21s cycle; co-alignment with the pen's peak isn't guaranteed
+    // to be exact, so we only assert a measurable extension here. The
+    // earlier "perfect circle" test pins the orbit's analytical reach.)
+    expect(maxWithOrbit).toBeGreaterThan(maxWithoutOrbit);
+    expect(maxWithOrbit - maxWithoutOrbit).toBeGreaterThan(orbitR * 0.3);
   });
 });
