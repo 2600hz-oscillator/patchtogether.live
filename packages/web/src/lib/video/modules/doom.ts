@@ -215,6 +215,20 @@ export interface DoomHandleExtras {
    *  calls this when its mySlot changes; null = spectator/unseated (no slot's CV
    *  drives the local sim). Idempotent; safe before WASM loads. */
   setOwnSlot(slot: number | null): void;
+  /** Test-only: force-pulse a CV/gate output (evt_kill / evt_door /
+   *  evt_gun_p1..p4) WITHOUT requiring a WASM-side event to fire. Used by the
+   *  video→audio CV/gate e2e + composite VRT coverage so the engine bridge can
+   *  be exercised deterministically without driving the DOOM runtime. Emits the
+   *  same 10ms pulse (the existing local `pulseGate` helper) that
+   *  `drainAndPulseEvents` would emit on a real game event. No-op when the
+   *  AudioContext / gates aren't materialised. */
+  forcePulse(port: 'evt_kill' | 'evt_door' | 'evt_gun_p1' | 'evt_gun_p2' | 'evt_gun_p3' | 'evt_gun_p4'): void;
+  /** Test-only: hold a gate output HIGH (or LOW) indefinitely — no 10 ms
+   *  auto-fall-back. Used by the composite VRT spec so an `audio suspend` +
+   *  snapshot freezes the gate signal in a known state for the diff. Calling
+   *  forcePulse() or forceHold(port, false) cancels the hold. No-op when the
+   *  AudioContext / gates aren't materialised. */
+  forceHold(port: 'evt_kill' | 'evt_door' | 'evt_gun_p1' | 'evt_gun_p2' | 'evt_gun_p3' | 'evt_gun_p4', high: boolean): void;
 }
 
 export const doomDef: VideoModuleDef = {
@@ -705,6 +719,44 @@ export const doomDef: VideoModuleDef = {
         // edge. Safe before WASM loads (runtime guards internally).
         if (slot !== ownSlot && runtime) runtime.releaseHeldCvKeys();
         ownSlot = slot;
+      },
+      forcePulse(port) {
+        // Test-only: drive the same 10ms pulse path `drainAndPulseEvents` uses,
+        // bypassing the WASM event queue. Lets the e2e + composite-VRT
+        // assert that every video.gate output of DOOM survives the
+        // dispatcher → addCrossDomainAudioBridge path → downstream audio
+        // input — INDEPENDENT of whether a real game event fired.
+        if (port === 'evt_kill') {
+          if (killGate) pulseGate(killGate);
+          return;
+        }
+        if (port === 'evt_door') {
+          if (doorGate) pulseGate(doorGate);
+          return;
+        }
+        // evt_gun_p1..p4 → gunGates[0..3]
+        const idx =
+          port === 'evt_gun_p1' ? 0
+          : port === 'evt_gun_p2' ? 1
+          : port === 'evt_gun_p3' ? 2
+          : 3;
+        const g = gunGates[idx];
+        if (g) pulseGate(g);
+      },
+      forceHold(port, high) {
+        const ac = ctx.audioCtx;
+        if (!ac) return;
+        const src =
+          port === 'evt_kill' ? killGate
+          : port === 'evt_door' ? doorGate
+          : port === 'evt_gun_p1' ? gunGates[0]
+          : port === 'evt_gun_p2' ? gunGates[1]
+          : port === 'evt_gun_p3' ? gunGates[2]
+          : gunGates[3];
+        if (!src) return;
+        const t = ac.currentTime;
+        try { src.offset.cancelScheduledValues(t); } catch { /* */ }
+        src.offset.setValueAtTime(high ? 1 : 0, t);
       },
     };
 

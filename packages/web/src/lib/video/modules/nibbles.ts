@@ -131,6 +131,20 @@ export interface NibblesHandleExtras {
   /** Card snapshot — current framebuffer as ImageData (320×200) for the
    *  on-card preview. */
   snapshot(): ImageData | null;
+  /** Test-only: force-pulse a CV/gate output (pellet/death/dir_change/length_cv)
+   *  WITHOUT running a game tick. Used by the video→audio CV/gate e2e + VRT
+   *  coverage so the bridge can be exercised deterministically without depending
+   *  on the bot's stochastic snake-eats-pellet path. For length_cv the value is
+   *  applied verbatim (interpreted as the CV scalar, e.g. 0.5); for the gate
+   *  ports the value is ignored and a standard 10 ms HIGH pulse is emitted.
+   *  No-op when the AudioContext isn't attached. */
+  forcePulse(port: 'pellet' | 'death' | 'dir_change' | 'length_cv', value?: number): void;
+  /** Test-only: hold a gate output HIGH (or LOW) indefinitely — no 10 ms
+   *  auto-fall-back. Used by the composite VRT spec so an `audio suspend`
+   *  + snapshot freezes the gate signal in a known state for the diff.
+   *  Calling forcePulse() or forceHold(port, false) cancels the hold.
+   *  No-op when the AudioContext isn't attached. */
+  forceHold(port: 'pellet' | 'death' | 'dir_change', high: boolean): void;
 }
 
 export const nibblesDef: VideoModuleDef = {
@@ -612,11 +626,52 @@ export const nibblesDef: VideoModuleDef = {
       return fbImage;
     }
 
+    function forcePulse(
+      port: 'pellet' | 'death' | 'dir_change' | 'length_cv',
+      value?: number,
+    ): void {
+      const ac = ctx.audioCtx;
+      if (!ac) return;
+      if (port === 'length_cv') {
+        if (!lengthCv) return;
+        const t = ac.currentTime;
+        const cv = typeof value === 'number'
+          ? Math.max(-1, Math.min(1, value))
+          : 1;
+        try { lengthCv.offset.cancelScheduledValues(t); } catch { /* */ }
+        lengthCv.offset.setValueAtTime(lengthCv.offset.value, t);
+        // Ramp over 20ms (same RAMP as updateLengthCvAndFreq) so the AudioParam
+        // value crosses the threshold an analyser/getValueAtTime would see.
+        lengthCv.offset.linearRampToValueAtTime(cv, t + 0.02);
+        return;
+      }
+      const src =
+        port === 'pellet' ? pelletGate
+        : port === 'death' ? deathGate
+        : dirGate;
+      if (src) pulseGate(src);
+    }
+
+    function forceHold(port: 'pellet' | 'death' | 'dir_change', high: boolean): void {
+      const ac = ctx.audioCtx;
+      if (!ac) return;
+      const src =
+        port === 'pellet' ? pelletGate
+        : port === 'death' ? deathGate
+        : dirGate;
+      if (!src) return;
+      const t = ac.currentTime;
+      try { src.offset.cancelScheduledValues(t); } catch { /* */ }
+      src.offset.setValueAtTime(high ? 1 : 0, t);
+    }
+
     const extras: NibblesHandleExtras = {
       pushDirection,
       getScore: () => state.score,
       reset,
       snapshot,
+      forcePulse,
+      forceHold,
     };
 
     return {
