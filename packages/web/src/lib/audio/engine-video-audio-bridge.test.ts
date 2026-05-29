@@ -464,16 +464,13 @@ function enumerateVideoCvGateOutputs(): VideoCvGatePort[] {
 describe('PatchEngine — class-wide video.cv/gate → audio bridge sweep', () => {
   const ports = enumerateVideoCvGateOutputs();
 
-  it('the registry enumeration found at least the known NIBBLES + DOOM ports', () => {
-    // Lock the floor — if NIBBLES.length_cv or DOOM.evt_kill drop off the
-    // registry the sweep would silently emit zero cases. This guard fails
-    // loudly if the floor erodes.
+  it('the registry enumeration found at least the known NIBBLES ports', () => {
+    // Lock the floor — if NIBBLES.length_cv drops off the registry the sweep
+    // would silently emit zero cases. This guard fails loudly if the floor
+    // erodes. (DOOM evt_* gates removed alongside PR #393 revert.)
     const ids = new Set(ports.map((p) => `${p.moduleType}.${p.portId}`));
     expect(ids.has('nibbles.length_cv')).toBe(true);
     expect(ids.has('nibbles.pellet')).toBe(true);
-    expect(ids.has('doom.evt_kill')).toBe(true);
-    expect(ids.has('doom.evt_door')).toBe(true);
-    expect(ids.has('doom.evt_gun_p1')).toBe(true);
   });
 
   // Per-port sweep. Each row builds the smallest possible fixture: the

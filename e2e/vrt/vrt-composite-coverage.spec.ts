@@ -67,20 +67,8 @@ const COMPOSITE_PAIRS: CompositePair[] = [
     kind: 'gate',
     driverPort: 'pellet',
   },
-  {
-    id: 'doom-evt_kill',
-    source: { type: 'doom', portId: 'evt_kill' },
-    kind: 'gate',
-    driverPort: 'evt_kill',
-    gatedOnDoomWasm: true,
-  },
-  {
-    id: 'doom-evt_door',
-    source: { type: 'doom', portId: 'evt_door' },
-    kind: 'gate',
-    driverPort: 'evt_door',
-    gatedOnDoomWasm: true,
-  },
+  // DOOM evt_* composite VRT scenes removed alongside PR #393 revert. Will
+  // be re-added by the follow-up PR that restores the event-gate outputs.
 ];
 
 async function doomWasmPresent(page: Page): Promise<boolean> {

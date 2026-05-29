@@ -89,30 +89,8 @@ const PAIRS: Pair[] = [
     source: { type: 'nibbles', nodeId: 'src-nibbles-pellet', portId: 'pellet' },
     driverPort: 'pellet',
   },
-  // ---- DOOM: kill + door + gun_p1 GATES. Each uses extras.forcePulse, no
-  // WASM-side changes. evt_gun_p2..p4 hit the same dispatcher path; the
-  // unit sweep proves their per-port wiring. WASM-asset-gated.
-  {
-    id: 'doom-evt_kill',
-    kind: 'gate',
-    source: { type: 'doom', nodeId: 'src-doom-kill', portId: 'evt_kill' },
-    driverPort: 'evt_kill',
-    gatedOnDoomWasm: true,
-  },
-  {
-    id: 'doom-evt_door',
-    kind: 'gate',
-    source: { type: 'doom', nodeId: 'src-doom-door', portId: 'evt_door' },
-    driverPort: 'evt_door',
-    gatedOnDoomWasm: true,
-  },
-  {
-    id: 'doom-evt_gun_p1',
-    kind: 'gate',
-    source: { type: 'doom', nodeId: 'src-doom-gun1', portId: 'evt_gun_p1' },
-    driverPort: 'evt_gun_p1',
-    gatedOnDoomWasm: true,
-  },
+  // ---- DOOM evt_* gate rows removed alongside PR #393 revert. Will be
+  // re-added by the follow-up PR that restores the event-gate outputs.
 ];
 
 // ---------------- Page-side helpers ---------------------------------------
