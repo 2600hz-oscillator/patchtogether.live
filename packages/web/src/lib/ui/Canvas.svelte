@@ -117,6 +117,9 @@
   import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
   // ACIDWARP — 320×240 plasma video source with scene cycler.
   import AcidwarpCard from '$lib/ui/modules/AcidwarpCard.svelte';
+  // SHAPEGEN — standalone 3D-shape generator extracted from FOXY (3 video
+  // rasters in, 1 video out, SIZE + ROT knobs, SOLIDS toggle).
+  import ShapegenCard from '$lib/ui/modules/ShapegenCard.svelte';
   // MANDLEBLOT — Mandelbrot fractal generator (mono + colour outputs,
   // CV-controllable zoom, RGB-cycling hue with log(zoom) coupling).
   import MandleblotCard from '$lib/ui/modules/MandleblotCard.svelte';
@@ -415,6 +418,7 @@
     backdraft: BackdraftCard,
     bentbox: BentboxCard,
     acidwarp: AcidwarpCard,
+    shapegen: ShapegenCard,
     mandleblot: MandleblotCard,
     peakstate: PeakstateCard,
     // Video-domain (Phase 1):

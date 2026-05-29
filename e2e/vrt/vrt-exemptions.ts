@@ -74,6 +74,7 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // module is currently in EXEMPT_FROM_VRT below — promote it into MODULES
   // when the darwin/linux PNGs are captured.)
   '4plexvid': [{ selector: 'canvas' }],
+  shapegen: [{ selector: 'canvas' }],
   // MANDLEBLOT — Mandelbrot fractal with time-driven hue cycle. The
   // shader's colour mode mixes mu + uTime + log(uZoom) into the hue, so
   // every frame is a different colour even at zero motion. Mask the
@@ -102,6 +103,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
   // canvas mask above masks the live preview) in a follow-up PR.
   '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
+  // SHAPEGEN — first-slice PR extracts FOXY's 3dShapeGen path into a
+  // standalone video module (3 raster inputs, SIZE/ROT knobs, SOLIDS
+  // toggle). Unit + e2e coverage; VRT baseline pending. The
+  // window.__shapegenVrtSeed hook is wired in the factory for the
+  // follow-up baseline capture (synthetic deterministic 3-raster scene
+  // + frozen rotation), and the canvas mask above covers the live
+  // preview if the module is promoted into MODULES before the seed
+  // path is finished.
+  shapegen: 'VRT baseline pending; first-slice PR — unit + e2e provide coverage. Capture darwin/linux baselines once the __shapegenVrtSeed deterministic scene path is wired.',
   // SCOREBOARD — first-slice PR ships the module + draw helper + factory
   // gate tests + e2e (gate→counter advance, RESET, wrap-at-10000). The
   // VRT scene path is wired (window.__scoreboardVrtSeed → counter at

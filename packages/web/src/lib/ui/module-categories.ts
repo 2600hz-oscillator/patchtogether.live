@@ -216,6 +216,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   backdraft: { top: 'Video modules', sub: 'Processors' },
   monoglitch: { top: 'Video modules', sub: 'Processors' },
   reshaper: { top: 'Video modules', sub: 'Processors' },
+  // SHAPEGEN — 3 video rasters → 3D-shape scene (extracted from FOXY).
+  // Categorized under Processors because the inputs drive the shape
+  // generation; the output is a rendered scene.
+  shapegen: { top: 'Video modules', sub: 'Processors' },
   ruttetra: { top: 'Video modules', sub: 'Processors' },
 
   // ───────── Video modules → Utilities ─────────
