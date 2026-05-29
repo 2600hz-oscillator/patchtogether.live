@@ -770,7 +770,8 @@ export class PatchEngine {
   addEdge(edge: Edge, sourceDomain: string, targetDomain?: string): void {
     if (
       targetDomain !== undefined
-      && sourceDomain !== targetDomain
+      && sourceDomain === 'audio'
+      && targetDomain !== 'audio'
       && (edge.sourceType === 'cv' || edge.sourceType === 'gate')
     ) {
       // `cv` (LFO, gamepad sticks ±1) AND `gate` (gamepad buttons/dpad,
@@ -780,6 +781,13 @@ export class PatchEngine {
       // rise/fall thresholds. Without accepting `gate` here, patching a
       // gamepad D-pad (gate output) into DOOM's movement inputs fell
       // through to single-domain audio dispatch and silently no-op'd.
+      //
+      // Scoped to sourceDomain === 'audio': the inverse direction
+      // (video CV → audio param, e.g. NIBBLES.length_cv → QBRT.cutoff_cv)
+      // is handled below by addCrossDomainAudioBridge, which reads the
+      // video module's audioSources map directly and .connect()s into
+      // the downstream AudioParam — no AnalyserNode sample-and-hold
+      // needed since both sides already live on the AudioContext graph.
       this.addCrossDomainCvBridge(edge, sourceDomain, targetDomain);
       return;
     }
@@ -804,14 +812,22 @@ export class PatchEngine {
     // Cross-domain video → audio bridge. The video module declares an
     // AudioNode tap on the named port (via VideoNodeHandle.audioSources);
     // we look it up + connect into the downstream AudioEngine input.
-    // First slice ships `audio`-typed cables (DOOM's audio_l/audio_r);
-    // future video modules might emit `cv` or `gate` the same way and
-    // we'd extend the type guard then.
+    //
+    // Accepts `audio`, `cv`, and `gate` source types. All three live as
+    // ordinary AudioNodes on the AudioContext graph (DOOM publishes
+    // audio_l/audio_r oscillator gains; NIBBLES publishes length_cv +
+    // pellet/death/dir_change ConstantSourceNodes), so the same
+    // .connect()-into-AudioEngine-input wiring works for all of them.
+    // CV/gate cables typically terminate on a CV-shaped audio input that
+    // routes to an AudioParam — addCrossDomainAudioBridge handles that
+    // via the `dst.param` branch.
     if (
       targetDomain !== undefined
       && sourceDomain === 'video'
       && targetDomain === 'audio'
-      && edge.sourceType === 'audio'
+      && (edge.sourceType === 'audio'
+        || edge.sourceType === 'cv'
+        || edge.sourceType === 'gate')
     ) {
       this.addCrossDomainAudioBridge(edge);
       return;

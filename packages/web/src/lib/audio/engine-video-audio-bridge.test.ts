@@ -307,12 +307,16 @@ describe('PatchEngine — video → audio cross-domain bridge', () => {
     pe.dispose();
   });
 
-  it('falls back to source-domain dispatch when sourceType is not audio', () => {
-    // The bridge is opt-in by source type. A video→audio edge with
-    // sourceType='cv' (hypothetical: DOOM publishes a CV port someday)
-    // doesn't take the audio bridge — it falls back to source-domain
-    // dispatch. We just prove the bridge isn't engaged (no audioBridge
-    // teardown registered) by asserting the connectionLog stays empty.
+  it('wires video→audio sourceType=cv edges into an AudioParam (NIBBLES.length_cv → QBRT.cutoff_cv)', async () => {
+    // Regression: NIBBLES.length_cv (sourceType=cv, sourceDomain=video)
+    // patched to QBRT.cutoff_cv (sourceType=cv, sourceDomain=audio) used
+    // to fall into addCrossDomainCvBridge, which looks up the source on
+    // the AUDIO engine (it's not there — the source is the video
+    // module's ConstantSourceNode) and silently deferred forever. The
+    // slider never moved. Fix: cv/gate edges sourced from video and
+    // targeting audio go through addCrossDomainAudioBridge, which reads
+    // VideoEngine.getAudioSource and .connect()s into the downstream
+    // AudioParam exposed by getInputNode.
     const ctx = makeFakeAudioContext();
     const ae = new AudioEngine(ctx);
     const ve = new VideoEngineStub();
@@ -320,23 +324,85 @@ describe('PatchEngine — video → audio cross-domain bridge', () => {
     pe.registerDomain(ae);
     pe.registerDomain(ve);
 
-    const oscFake = makeFakeNode('doom-cv-source');
-    ve.sources.set('v-doom::cv_out', {
-      node: oscFake as unknown as AudioNode,
+    // Register a CV-input sink so the audio engine knows about a port
+    // whose input handle exposes `param` (mirrors resofilter's cutoff_cv).
+    const CV_SINK_DEF: AudioModuleDef = {
+      type: 'videoAudioBridgeTestCvSink',
+      domain: 'audio',
+      label: 'CvSink',
+      category: 'output',
+      schemaVersion: 1,
+      inputs: [{ id: 'cutoff_cv', type: 'cv' }],
+      outputs: [],
+      params: [],
+      async factory(_ctx, _node) {
+        const sinkNode = makeFakeNode('cv-sink-node');
+        const cutoffParam = makeFakeParam('cv-sink.cutoff', 0);
+        return {
+          domain: 'audio' as const,
+          inputs: new Map([
+            ['cutoff_cv', {
+              node: sinkNode as unknown as AudioNode,
+              input: 0,
+              param: cutoffParam as unknown as AudioParam,
+            }],
+          ]),
+          outputs: new Map(),
+          setParam(_id, _v) { /* */ },
+          readParam(_id) { return undefined; },
+          dispose() { /* */ },
+        };
+      },
+    };
+    registerModule(CV_SINK_DEF);
+
+    const constFake = makeFakeNode('nibbles-length-cv');
+    ve.sources.set('v-nibbles::length_cv', {
+      node: constFake as unknown as AudioNode,
       output: 0,
     });
 
+    const sinkNode: ModuleNode = {
+      id: 'a-qbrt',
+      type: 'videoAudioBridgeTestCvSink',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: {},
+    };
+    await ae.addNode(sinkNode);
+
     const edge: Edge = {
-      id: 'e1',
-      source: { nodeId: 'v-doom', portId: 'cv_out' },
-      target: { nodeId: 'something', portId: 'in' },
+      id: 'e-cv-bridge',
+      source: { nodeId: 'v-nibbles', portId: 'length_cv' },
+      target: { nodeId: 'a-qbrt',    portId: 'cutoff_cv' },
       sourceType: 'cv',
       targetType: 'cv',
     };
-    // No throw — the bridge branch is bypassed, fallthrough calls
-    // VideoEngineStub.addEdge which is a no-op.
-    expect(() => pe.addEdge(edge, 'video', 'audio')).not.toThrow();
-    expect(connectionLog.filter((c) => c.fromTag === 'doom-cv-source')).toEqual([]);
+    pe.addEdge(edge, 'video', 'audio');
+
+    // The bridge should have connected NIBBLES's ConstantSource directly
+    // into QBRT's `cutoff` AudioParam (NOT the worklet input). The fake
+    // node's connect() records the destination as "audioparam:<paramTag>"
+    // when given an AudioParam.
+    const myConns = connectionLog.filter((c) =>
+      c.fromTag === 'nibbles-length-cv' && c.kind === 'connect',
+    );
+    expect(myConns).toEqual([
+      {
+        fromTag: 'nibbles-length-cv',
+        toTag: 'audioparam:cv-sink.cutoff',
+        output: 0,
+        input: undefined,
+        kind: 'connect',
+      },
+    ]);
+
+    pe.removeEdge(edge, 'video');
+    const myDisc = connectionLog.filter((c) =>
+      c.fromTag === 'nibbles-length-cv' && c.kind === 'disconnect',
+    );
+    expect(myDisc.length).toBe(1);
+    expect(myDisc[0]!.toTag).toBe('audioparam:cv-sink.cutoff');
 
     pe.dispose();
   });
