@@ -84,6 +84,14 @@
 //   out_l / out_r (audio): stereo WAVECEL output.
 //   scope_out (mono-video): scope-style waveform trace.
 //   wave3d_out (video): 3D wavetable surface render (animates as the rasters evolve).
+//   combined_out (video): the active GEN-mode visualization — same content as
+//     the on-card XYZ window. Patchable to any video destination so FOXY's
+//     "internal world" (XYZ field OR 3D Shape Gen scene) can be routed to
+//     VIDEO OUT / BENTBOX / RUTTETRA / etc. Mode-aware:
+//       gen_mode = 0 (XYZ)          → drawFoxyXyz(field)
+//       gen_mode = 1 (3D Shape Gen) → drawFoxyShapes(shapes)
+//     Reuses the EXACT renderers the card uses (foxy-draw.ts /
+//     foxy-shapes-draw.ts), so the patched-out video matches the card view.
 //
 // Params (WAVECEL surface + per-source SWOLEVCO + XYZ window):
 //   tune (linear -36..36 st) / fine (linear -100..100 ¢) / morph (linear 0..1) /
@@ -102,6 +110,8 @@ import { buildFoldCurve } from '$lib/audio/fold-curve';
 import { symmetryGains, tuneFineToHz } from './swolevco';
 import { RasterPainter, type RasterizeDrawParams } from './rasterize-draw';
 import { drawWave3D, drawWaveScope } from './wavecel-draw';
+import { drawFoxyXyz } from './foxy-draw';
+import { drawFoxyShapes } from './foxy-shapes-draw';
 import {
   FOXY_FIELD_SIZE,
   FOXY_WT_FRAMES,
@@ -193,10 +203,13 @@ export const foxyDef: AudioModuleDef = {
   ],
   outputs: [
     // ── WAVECEL IO (verbatim) ──
-    { id: 'out_l',      type: 'audio' },
-    { id: 'out_r',      type: 'audio' },
-    { id: 'scope_out',  type: 'mono-video' },
-    { id: 'wave3d_out', type: 'video' },
+    { id: 'out_l',        type: 'audio' },
+    { id: 'out_r',        type: 'audio' },
+    { id: 'scope_out',    type: 'mono-video' },
+    { id: 'wave3d_out',   type: 'video' },
+    // The active GEN-mode visualization rendered as a patchable video
+    // signal — same content as the on-card XYZ window (mode-aware).
+    { id: 'combined_out', type: 'video' },
   ],
   params: [
     // ── WAVECEL controls (verbatim ids/ranges) ──
@@ -692,6 +705,33 @@ export const foxyDef: AudioModuleDef = {
       if (!c2d || wtFrames.length === 0) return;
       drawWave3D(c2d, wtFrames, canvas.width, canvas.height, { activeFrame: readActiveFrame() });
     }
+    /** combined_out — patchable mirror of the on-card XYZ window. Mode-aware:
+     *
+     *    gen_mode = 0 (XYZ)          → drawFoxyXyz(field, …) — the v4.1
+     *                                  XYZ height-field scanlines.
+     *    gen_mode = 1 (3D Shape Gen) → drawFoxyShapes(shapes, …) — the
+     *                                  vaporwave 3D primitives scene.
+     *
+     * Reuses the existing card renderers verbatim (foxy-draw.ts /
+     * foxy-shapes-draw.ts) so the patched-out video matches the card view
+     * byte-for-byte at the same width/height. The bridgeTick() call mirrors
+     * how the card drives `read('tick')` each rAF — it keeps the field /
+     * shapes fresh even when no card is open. */
+    function drawCombinedFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
+      bridgeTick();
+      const c2d = canvas.getContext('2d') as
+        | CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+      if (!c2d) return;
+      if (genMode >= 0.5) {
+        // 3D Shape Gen — empty list still paints box + floor (see
+        // drawFoxyShapes); no early-return needed.
+        drawFoxyShapes(c2d, shapes, canvas.width, canvas.height);
+      } else {
+        // XYZ — drawFoxyXyz clears + paints the BG even when `field` is
+        // empty, so it's safe to call unconditionally.
+        drawFoxyXyz(c2d, field, canvas.width, canvas.height);
+      }
+    }
 
     return {
       domain: 'audio',
@@ -707,8 +747,9 @@ export const foxyDef: AudioModuleDef = {
         ['out_r', { node: wave, output: 1 }],
       ]),
       videoSources: new Map([
-        ['scope_out',  { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawScopeFrame }],
-        ['wave3d_out', { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawWave3DFrame }],
+        ['scope_out',    { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawScopeFrame }],
+        ['wave3d_out',   { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawWave3DFrame }],
+        ['combined_out', { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawCombinedFrame }],
       ]),
       setParam(paramId, value) {
         switch (paramId) {
