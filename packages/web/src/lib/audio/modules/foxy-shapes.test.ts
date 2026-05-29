@@ -9,7 +9,9 @@ import {
   FOXY_3D_VOXEL_GRID,
   FOXY_3D_FEATURE_GRID,
   FOXY_3D_TARGET_SHAPES,
+  FOXY_3D_MAX_RADIUS,
   FOXY_SHAPE_TYPES,
+  abSizeFactor,
   generateShapes,
   featureGrid,
   variance,
@@ -147,9 +149,11 @@ describe('foxy-shapes — generateShapes()', () => {
       expect(sh.pos.y).toBeLessThanOrEqual(1);
       expect(sh.pos.z).toBeGreaterThanOrEqual(-1);
       expect(sh.pos.z).toBeLessThanOrEqual(1);
-      // Radius ∈ [0.05, 0.3]
-      expect(sh.radius).toBeGreaterThanOrEqual(0.05);
-      expect(sh.radius).toBeLessThanOrEqual(0.31);
+      // Radius ∈ [0.05 * 0.5, FOXY_3D_MAX_RADIUS]: C-baseline (0.05..0.3) is
+      // multiplied by abSizeFactor (0.5..2.0) and clamped to MAX_RADIUS, so
+      // the smallest possible radius is 0.05 * 0.5 = 0.025.
+      expect(sh.radius).toBeGreaterThanOrEqual(0.05 * 0.5);
+      expect(sh.radius).toBeLessThanOrEqual(FOXY_3D_MAX_RADIUS);
       // Hue ∈ [0, 1]
       expect(sh.hue).toBeGreaterThanOrEqual(0);
       expect(sh.hue).toBeLessThanOrEqual(1);
@@ -167,6 +171,157 @@ describe('foxy-shapes — generateShapes()', () => {
     const xys = shapes.slice(0, 3).map((s) => `${Math.round(s.pos.x * 10)},${Math.round(s.pos.y * 10)}`);
     const unique = new Set(xys);
     expect(unique.size).toBe(3);
+  });
+});
+
+// ── abSizeFactor (A × B → per-primitive size multiplier) ─────────────────
+
+describe('foxy-shapes — abSizeFactor()', () => {
+  it('A=0, B=0 → 0.5 (the floor of the [0.5, 2.0] range)', () => {
+    expect(abSizeFactor(0, 0)).toBeCloseTo(0.5, 12);
+  });
+
+  it('A=0, B=1 → 0.5 (product is 0, factor at floor)', () => {
+    expect(abSizeFactor(0, 1)).toBeCloseTo(0.5, 12);
+    // Symmetric: A=1, B=0 also yields 0.5.
+    expect(abSizeFactor(1, 0)).toBeCloseTo(0.5, 12);
+  });
+
+  it('A=1, B=1 → 2.0 (the ceiling of the [0.5, 2.0] range)', () => {
+    expect(abSizeFactor(1, 1)).toBeCloseTo(2.0, 12);
+  });
+
+  it('A=1, B=0.5 → 1.25 (linear in the product)', () => {
+    // 0.5 + 1.5 * (1 * 0.5) = 0.5 + 0.75 = 1.25.
+    expect(abSizeFactor(1, 0.5)).toBeCloseTo(1.25, 12);
+  });
+
+  it('flat-mid A=0.5, B=0.5 → 0.875 (neutral-ish: ~12.5% shrink vs C-only baseline)', () => {
+    // 0.5 + 1.5 * 0.25 = 0.875 — pinned because this is the documented
+    // intended-behavior point. Flat mid A+B = SLIGHT shrink, not unity.
+    expect(abSizeFactor(0.5, 0.5)).toBeCloseTo(0.875, 12);
+  });
+
+  it('is pure / deterministic — same inputs always yield same factor', () => {
+    expect(abSizeFactor(0.37, 0.81)).toBe(abSizeFactor(0.37, 0.81));
+    // Commutative in A and B (multiplication is).
+    expect(abSizeFactor(0.37, 0.81)).toBeCloseTo(abSizeFactor(0.81, 0.37), 12);
+  });
+});
+
+// ── generateShapes radius — A×B modulation at per-primitive peaks ────────
+
+describe('foxy-shapes — generateShapes() A×B radius modulation', () => {
+  /** Build an RGBA buffer with a single bright Gaussian peak at (cx, cy). */
+  function singlePeak(w: number, h: number, cx: number, cy: number): Uint8ClampedArray {
+    return buildRgba(w, h, (x, y) => {
+      const nx = x / (w - 1);
+      const ny = y / (h - 1);
+      const dx = nx - cx;
+      const dy = ny - cy;
+      return Math.exp(-(dx * dx + dy * dy) * 80);
+    });
+  }
+
+  it('bright-A AND bright-B peak → larger radius than bright-A only peak ' +
+     '(same C baseline)', () => {
+    const W = FOXY_FIELD_SIZE;
+    // Two bright A peaks far apart so both survive NMS.
+    const A = buildRgba(W, W, (x, y) => {
+      const nx = x / (W - 1);
+      const ny = y / (W - 1);
+      const dx1 = nx - 0.25, dy1 = ny - 0.5;
+      const dx2 = nx - 0.75, dy2 = ny - 0.5;
+      return Math.max(
+        Math.exp(-(dx1 * dx1 + dy1 * dy1) * 80),
+        Math.exp(-(dx2 * dx2 + dy2 * dy2) * 80),
+      );
+    });
+    // B is bright at the LEFT peak (x=0.25), dark at the RIGHT (x=0.75).
+    const B = buildRgba(W, W, (x) => {
+      const nx = x / (W - 1);
+      // Tight Gaussian at x=0.25 only.
+      const d = nx - 0.25;
+      return Math.exp(-d * d * 200);
+    });
+    // C constant — both peaks share the SAME C-baseline radius.
+    const C = flat(W, W, 0.5);
+
+    const shapes = generateShapes(A, B, C, W, W);
+    // Find the two peaks by approximate x-position.
+    const left = shapes.find((s) => s.pos.x < 0);
+    const right = shapes.find((s) => s.pos.x > 0);
+    expect(left).toBeDefined();
+    expect(right).toBeDefined();
+
+    // Left (bright on both A and B) MUST be larger than right (bright A only).
+    expect(left!.radius).toBeGreaterThan(right!.radius);
+    // Pin the ratio: at the right peak B≈0 → factor = 0.5 (floor). At the
+    // left peak B≈high → factor close to upper end. Note the sample is at
+    // the grid-CELL CENTER (not the true Gaussian peak), so factor isn't
+    // quite 2.0 — but it's well above the 0.5 floor, and the ratio is
+    // bounded below by 3× (left/right) and above by the 4× ceiling.
+    const ratio = left!.radius / right!.radius;
+    expect(ratio).toBeGreaterThan(3.0);
+    expect(ratio).toBeLessThanOrEqual(4.0);
+  });
+
+  it('bright-A + flat-mid B=0.5 + flat-mid C=0.5 (top-1 peak only) → ' +
+     'partial modulation: radius bounded between the 0.5-floor and ' +
+     '1.25-ceiling × C-baseline (B=0.5 caps factor at 1.25)', () => {
+    const W = FOXY_FIELD_SIZE;
+    // A: single Gaussian peak. Limit to TOP-1 shape so we test the peak
+    // (where A is brightest) and avoid the secondary peaks that sit in
+    // dimmer A cells.
+    const A = singlePeak(W, W, 0.5, 0.5);
+    const B = flat(W, W, 0.5);
+    const C = flat(W, W, 0.5);
+
+    const shapes = generateShapes(A, B, C, W, W, 1);
+    expect(shapes.length).toBe(1);
+    // C=0.5 baseline: rBase = 0.05 + 0.5*0.25 = 0.175.
+    // B = 0.5 flat → factor = 0.5 + 1.5 * (aL * 0.5) = 0.5 + 0.75 * aL.
+    // For aL ∈ [0, 1] the factor ∈ [0.5, 1.25] → radius ∈ [0.0875, 0.21875].
+    // The top-1 peak's aL is at the cell-center of A's Gaussian → ≳ 0.5,
+    // so factor ≳ 0.875 → radius ≳ 0.153. Cap is 1.25 → 0.21875.
+    const sh = shapes[0]!;
+    expect(sh.radius).toBeGreaterThan(0.175 * 0.5); // > 0.0875 (well above floor)
+    expect(sh.radius).toBeLessThanOrEqual(0.175 * 1.25); // ≤ 0.21875 (B=0.5 ceiling)
+  });
+
+  it('partial-modulation pin: A=1, B=0.5, C=0.5 → factor exactly 1.25, ' +
+     'radius exactly 0.175 * 1.25 = 0.21875 (verified via abSizeFactor)', () => {
+    // Composition test — verifies the math composes correctly without
+    // relying on Gaussian-sampling noise. Use abSizeFactor directly.
+    const rBase = 0.05 + 0.5 * 0.25;
+    expect(rBase * abSizeFactor(1, 0.5)).toBeCloseTo(0.21875, 12);
+    // And the truly-flat A=B=0.5 case (the v3-degeneracy pin from the spec):
+    expect(rBase * abSizeFactor(0.5, 0.5)).toBeCloseTo(0.175 * 0.875, 12);
+    expect(rBase * abSizeFactor(0.5, 0.5)).toBeCloseTo(0.153125, 12);
+  });
+
+  it('radius is CLAMPED at FOXY_3D_MAX_RADIUS so primitives stay in the box', () => {
+    const W = FOXY_FIELD_SIZE;
+    // Saturate everything: A, B, C all maxed → factor = 2.0, rBase = 0.3,
+    // would produce radius = 0.6 = MAX. The clamp is at the boundary.
+    const A = buildRgba(W, W, (x, y) => {
+      // Multi-peak so we get several shapes.
+      const nx = x / (W - 1);
+      const ny = y / (W - 1);
+      const dx1 = nx - 0.25, dy1 = ny - 0.25;
+      const dx2 = nx - 0.75, dy2 = ny - 0.75;
+      return Math.max(
+        Math.exp(-(dx1 * dx1 + dy1 * dy1) * 60),
+        Math.exp(-(dx2 * dx2 + dy2 * dy2) * 60),
+      );
+    });
+    const B = flat(W, W, 1.0);
+    const C = flat(W, W, 1.0);
+    const shapes = generateShapes(A, B, C, W, W);
+    expect(shapes.length).toBeGreaterThan(0);
+    for (const sh of shapes) {
+      expect(sh.radius).toBeLessThanOrEqual(FOXY_3D_MAX_RADIUS);
+    }
   });
 });
 
