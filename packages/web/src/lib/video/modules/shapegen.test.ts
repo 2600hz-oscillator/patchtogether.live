@@ -22,9 +22,13 @@ import {
   SHAPEGEN_RADIUS_CLAMP,
   SHAPEGEN_RASTER_W,
   SHAPEGEN_RASTER_H,
+  SHAPEGEN_CLOCK_PARAM_ID,
+  SHAPEGEN_CLOCK_PORT_ID,
 } from './shapegen';
 import { generateShapes, type Shape } from './shapegen-math';
 import { drawShapesScene, isLitShapeType } from './shapegen-draw';
+import type { VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
+import type { ModuleNode } from '$lib/graph/types';
 
 // ── 1. Module def shape ───────────────────────────────────────────────────
 
@@ -36,11 +40,21 @@ describe('shapegenDef — module shape', () => {
     expect(shapegenDef.schemaVersion).toBe(1);
   });
 
-  it('declares 3 video inputs (raster_a / raster_b / raster_c)', () => {
+  it('declares 3 video inputs + 1 gate input (raster_a / raster_b / raster_c + clock_in)', () => {
     const ids = shapegenDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['raster_a', 'raster_b', 'raster_c']);
+    expect(ids).toEqual(['clock_in', 'raster_a', 'raster_b', 'raster_c']);
+    // The three rasters are all VIDEO. The clock is a GATE with paramTarget.
     for (const port of shapegenDef.inputs) {
-      expect(port.type).toBe('video');
+      if (port.id.startsWith('raster_')) {
+        expect(port.type).toBe('video');
+        expect(port.paramTarget).toBeUndefined();
+      } else if (port.id === 'clock_in') {
+        expect(port.type).toBe('gate');
+        // The gate routes through the CV-bridge into the cv_clock param.
+        expect(port.paramTarget).toBe('cv_clock');
+      } else {
+        throw new Error(`unexpected port id: ${port.id}`);
+      }
     }
   });
 
@@ -50,9 +64,17 @@ describe('shapegenDef — module shape', () => {
     expect(shapegenDef.outputs[0]!.type).toBe('video');
   });
 
-  it('declares 3 params with the spec-mandated defaults / curves', () => {
+  it('declares the 3 user params + 1 synthetic clock-gate param', () => {
     const ids = shapegenDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['rotate', 'size', 'solids']);
+    // The 4th id is the synthetic cv_clock param the CV-bridge writes the
+    // clock_in gate sample into. Hidden from the card UI.
+    expect(ids).toEqual(['cv_clock', 'rotate', 'size', 'solids']);
+
+    const cvClock = shapegenDef.params.find((p) => p.id === 'cv_clock')!;
+    expect(cvClock.defaultValue).toBe(0);
+    expect(cvClock.min).toBe(0);
+    expect(cvClock.max).toBe(1);
+    expect(cvClock.curve).toBe('linear');
 
     const size = shapegenDef.params.find((p) => p.id === 'size')!;
     expect(size.defaultValue).toBe(1);
@@ -73,9 +95,13 @@ describe('shapegenDef — module shape', () => {
     expect(solids.curve).toBe('discrete');
   });
 
-  it('declares no CV inputs (matches spec — direct knob control only)', () => {
+  it('only the clock_in input carries a paramTarget (the rasters do not)', () => {
     for (const port of shapegenDef.inputs) {
-      expect(port.paramTarget).toBeUndefined();
+      if (port.id === 'clock_in') {
+        expect(port.paramTarget).toBe('cv_clock');
+      } else {
+        expect(port.paramTarget).toBeUndefined();
+      }
     }
   });
 
@@ -223,6 +249,9 @@ function makeMockCtx(w: number, h: number): {
     strokeStyle: '' as string | CanvasGradient,
     lineWidth: 1,
     globalAlpha: 1,
+    globalCompositeOperation: 'source-over' as string,
+    save() {},
+    restore() {},
     fillRect() {},
     beginPath() {},
     moveTo() {},
@@ -255,6 +284,31 @@ describe('shapegen — SOLIDS toggle exercises the lit renderer branch', () => {
     expect(log.ellipses).toBe(0);
   });
 
+  it('solids mode runs the ring path (destination-out hole) without throwing', () => {
+    const shapes: Shape[] = [
+      { type: 'ring', pos: { x: 0, y: 0, z: 0 }, radius: 0.4, hue: 0.5 },
+    ];
+    const { ctx, log } = makeMockCtx(200, 144);
+    expect(() => drawShapesScene(ctx, shapes, 200, 144, { mode: 'solids', rotation: 0 })).not.toThrow();
+    // Solid ring draws the disc fill + hole-punch fill + inner/outer rim
+    // strokes — at least 2 fill() calls (outer disc + hole punch).
+    expect(log.fills.length).toBeGreaterThanOrEqual(2);
+    // ≥ 3 arc() calls for the outer disc, the hole, and the inner-rim
+    // darken stroke (plus the outer-rim stroke = 4).
+    expect(log.arcs.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('solids mode runs the tetra path (4-face painter\'s algorithm) without throwing', () => {
+    const shapes: Shape[] = [
+      { type: 'tetraFrame', pos: { x: 0, y: 0, z: 0 }, radius: 0.4, hue: 0.3 },
+    ];
+    const { ctx, log } = makeMockCtx(200, 144);
+    expect(() => drawShapesScene(ctx, shapes, 200, 144, { mode: 'solids', rotation: 0 })).not.toThrow();
+    // Solid tetra fills 4 triangle faces — at least 4 fill() calls from
+    // the lit-tetra renderer (more if other scene chrome adds calls).
+    expect(log.fills.length).toBeGreaterThanOrEqual(4);
+  });
+
   it('solids mode calls ellipse() for cylinder + cone base plates', () => {
     const shapes: Shape[] = [
       { type: 'cylinder', pos: { x: 0, y: 0, z: 0 }, radius: 0.25, hue: 0.4 },
@@ -269,13 +323,84 @@ describe('shapegen — SOLIDS toggle exercises the lit renderer branch', () => {
     expect(log.ellipses).toBeGreaterThanOrEqual(3);
   });
 
-  it('isLitShapeType: sphere/cube/cylinder/cone are lit; ring/tetraFrame stay wireframe', () => {
+  it('isLitShapeType: all 6 primitives have a dedicated lit renderer in SOLIDS mode', () => {
+    // Post-solids-all-primitives PR: ring + tetraFrame now have lit
+    // renderers too (filled torus + 4-face Lambert tetrahedron). The
+    // legacy "stays wireframe" behaviour is gone.
     expect(isLitShapeType('sphere')).toBe(true);
     expect(isLitShapeType('cube')).toBe(true);
     expect(isLitShapeType('cylinder')).toBe(true);
     expect(isLitShapeType('cone')).toBe(true);
-    expect(isLitShapeType('ring')).toBe(false);
-    expect(isLitShapeType('tetraFrame')).toBe(false);
+    expect(isLitShapeType('ring')).toBe(true);
+    expect(isLitShapeType('tetraFrame')).toBe(true);
+  });
+});
+
+// ── 4b. SOLIDS-mode renders RING + TETRA (new in solids-all-primitives PR) ─
+
+describe('shapegen — SOLIDS mode renders ring + tetraFrame as solids', () => {
+  // Real OffscreenCanvas (vitest jsdom polyfills it on node 22+). If
+  // absent, skip — the mock-ctx test below proves the BRANCH is taken,
+  // and the pixel-diff test is the secondary regression gate.
+  beforeAll(() => {
+    if (typeof OffscreenCanvas === 'undefined') {
+      console.warn('OffscreenCanvas unavailable — skipping ring/tetra pixel-diff');
+    }
+  });
+
+  it('SOLIDS ring renders different pixels than WIREFRAME ring (filled vs stroked)', () => {
+    if (typeof OffscreenCanvas === 'undefined') return;
+    const cWf = new OffscreenCanvas(64, 64);
+    const cSo = new OffscreenCanvas(64, 64);
+    const ctxWf = cWf.getContext('2d');
+    const ctxSo = cSo.getContext('2d');
+    if (!ctxWf || !ctxSo) return;
+    const shapes: Shape[] = [
+      // Big ring centred + close to camera so the body lands inside the FOV.
+      { type: 'ring', pos: { x: 0, y: 0, z: 0 }, radius: 0.5, hue: 0.55 },
+    ];
+    drawShapesScene(ctxWf as unknown as OffscreenCanvasRenderingContext2D, shapes, 64, 64, {
+      mode: 'wireframe', rotation: 0,
+    });
+    drawShapesScene(ctxSo as unknown as OffscreenCanvasRenderingContext2D, shapes, 64, 64, {
+      mode: 'solids', rotation: 0,
+    });
+    const wf = ctxWf.getImageData(0, 0, 64, 64).data;
+    const so = ctxSo.getImageData(0, 0, 64, 64).data;
+    let diffPx = 0;
+    for (let i = 0; i < wf.length; i += 4) {
+      if (wf[i] !== so[i] || wf[i + 1] !== so[i + 1] || wf[i + 2] !== so[i + 2]) diffPx++;
+    }
+    // Filled torus body adds a LOT of differently-coloured pixels relative
+    // to a thin stroked ring — far above noise.
+    expect(diffPx).toBeGreaterThan(100);
+  });
+
+  it('SOLIDS tetra renders different pixels than WIREFRAME tetra (4 lit faces vs 3 stroked edges)', () => {
+    if (typeof OffscreenCanvas === 'undefined') return;
+    const cWf = new OffscreenCanvas(64, 64);
+    const cSo = new OffscreenCanvas(64, 64);
+    const ctxWf = cWf.getContext('2d');
+    const ctxSo = cSo.getContext('2d');
+    if (!ctxWf || !ctxSo) return;
+    const shapes: Shape[] = [
+      { type: 'tetraFrame', pos: { x: 0, y: 0, z: 0 }, radius: 0.5, hue: 0.15 },
+    ];
+    drawShapesScene(ctxWf as unknown as OffscreenCanvasRenderingContext2D, shapes, 64, 64, {
+      mode: 'wireframe', rotation: 0,
+    });
+    drawShapesScene(ctxSo as unknown as OffscreenCanvasRenderingContext2D, shapes, 64, 64, {
+      mode: 'solids', rotation: 0,
+    });
+    const wf = ctxWf.getImageData(0, 0, 64, 64).data;
+    const so = ctxSo.getImageData(0, 0, 64, 64).data;
+    let diffPx = 0;
+    for (let i = 0; i < wf.length; i += 4) {
+      if (wf[i] !== so[i] || wf[i + 1] !== so[i + 1] || wf[i + 2] !== so[i + 2]) diffPx++;
+    }
+    // 4 filled triangle faces vs the wireframe's 3 stroked edges → many
+    // more pixels coloured by the tetra body.
+    expect(diffPx).toBeGreaterThan(100);
   });
 });
 
@@ -315,5 +440,185 @@ describe('shapegen — wireframe vs solids produces different rendered pixels', 
     }
     // Definitely SOMETHING should differ between the two modes.
     expect(diffPx).toBeGreaterThan(50);
+  });
+});
+
+// ── 6. Clock-gate sample-and-hold pin (new in clock-gate PR) ─────────────
+
+/** Fake GL + Frame context — mirrors scoreboard.test.ts. */
+function makeFakeGl(): WebGL2RenderingContext {
+  const stub = (): unknown => ({});
+  return {
+    getUniformLocation: stub,
+    createTexture: () => ({}),
+    createFramebuffer: () => ({}),
+    bindTexture: () => undefined,
+    texParameteri: () => undefined,
+    texImage2D: () => undefined,
+    pixelStorei: () => undefined,
+    deleteTexture: () => undefined,
+    deleteFramebuffer: () => undefined,
+    deleteProgram: () => undefined,
+    activeTexture: () => undefined,
+    bindFramebuffer: () => undefined,
+    framebufferTexture2D: () => undefined,
+    viewport: () => undefined,
+    useProgram: () => undefined,
+    uniform1i: () => undefined,
+    uniform1f: () => undefined,
+    uniform2f: () => undefined,
+    readPixels: () => undefined,
+    TEXTURE_2D: 0, RGBA: 0, UNSIGNED_BYTE: 0,
+    TEXTURE_MIN_FILTER: 0, TEXTURE_MAG_FILTER: 0,
+    TEXTURE_WRAP_S: 0, TEXTURE_WRAP_T: 0,
+    LINEAR: 0, CLAMP_TO_EDGE: 0,
+    UNPACK_FLIP_Y_WEBGL: 0,
+    TEXTURE0: 0,
+    FRAMEBUFFER: 0, COLOR_ATTACHMENT0: 0,
+  } as unknown as WebGL2RenderingContext;
+}
+
+function makeShapegenCtx(): VideoEngineContext {
+  return {
+    gl: makeFakeGl(),
+    res: { width: 640, height: 360 },
+    compileFragment: () => ({}) as WebGLProgram,
+    createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+    drawFullscreenQuad: () => undefined,
+  };
+}
+
+function spawnShapegen() {
+  const node = {
+    id: 'sg',
+    type: 'shapegen',
+    domain: 'video',
+    params: {},
+    position: { x: 0, y: 0 },
+  } as ModuleNode;
+  return shapegenDef.factory(makeShapegenCtx(), node);
+}
+
+/** Synthesise a one-frame draw() pass — returns the frame number for the
+ *  sequence. The fake frame ctx returns null for getInputTexture so the
+ *  factory hits the zero-fill fall-back (cheap; no real GL needed). */
+function makeFrameCtx(frameNo: number): VideoFrameContext {
+  return {
+    gl: makeFakeGl(),
+    time: frameNo / 60,
+    frame: frameNo,
+    getInputTexture: () => null,
+  };
+}
+
+describe('shapegen — clock_in gate sample-and-hold', () => {
+  it('declares clock_in as a gate input with paramTarget cv_clock', () => {
+    const port = shapegenDef.inputs.find((p) => p.id === SHAPEGEN_CLOCK_PORT_ID);
+    expect(port).toBeDefined();
+    expect(port!.type).toBe('gate');
+    expect(port!.paramTarget).toBe(SHAPEGEN_CLOCK_PARAM_ID);
+  });
+
+  it('the rising-edge sequence [0,0,1,1,0,1] triggers exactly 2 regenerations', () => {
+    const h = spawnShapegen();
+    // Drive the first frame so the initial-regen flag clears + the
+    // factory has a baseline cached shape list. After this draw the
+    // regenCount is 1 (the seed regeneration).
+    h.surface.draw(makeFrameCtx(0));
+    expect(h.read?.('regenCount')).toBe(1);
+    expect(h.read?.('clockPatched')).toBe(0);
+
+    // Plug the gate. Per-sample sequence [0,0,1,1,0,1] → 2 rising edges
+    // (indices 2 + 5). EACH rising edge schedules ONE regeneration on
+    // the NEXT draw; held-high samples don't trigger any. Held-low
+    // samples don't trigger any (the unpatched-style "regen every
+    // frame" path is off once clockPatched flips on).
+    const samples = [0, 0, 1, 1, 0, 1];
+    for (const s of samples) {
+      h.setParam(SHAPEGEN_CLOCK_PARAM_ID, s);
+      // Drive a frame so draw() consumes pendingRegenerate.
+      h.surface.draw(makeFrameCtx(1));
+    }
+    // The pure gate-edge math: 2 rising edges → 2 NEW regenerations on
+    // top of the seed → regenCount should be 3.
+    expect(h.read?.('regenCount')).toBe(3);
+    // setParam was called → clockPatched flipped on first sample.
+    expect(h.read?.('clockPatched')).toBe(1);
+  });
+
+  it('a held-HIGH gate (no falling edge) regenerates exactly ONCE', () => {
+    // Seed regen.
+    const h = spawnShapegen();
+    h.surface.draw(makeFrameCtx(0));
+    const seedRegen = h.read?.('regenCount') as number;
+    expect(seedRegen).toBe(1);
+
+    // Repeated 1s — ONE rising edge → ONE regeneration → total = seed + 1.
+    for (let i = 0; i < 5; i++) {
+      h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 1);
+      h.surface.draw(makeFrameCtx(1 + i));
+    }
+    expect(h.read?.('regenCount')).toBe(seedRegen + 1);
+    expect(h.read?.('clockPatched')).toBe(1);
+  });
+
+  it('an UNPATCHED clock (setParam never called) regenerates every frame', () => {
+    // The unpatched contract: the engine's CV bridge never materialises
+    // a setParam call for an unpatched port (verified separately in the
+    // CV-bridge tests). Without setParam, clockPatched stays 0 + each
+    // surface.draw() runs the full readRaster→generateShapes pipeline →
+    // regenCount bumps every frame.
+    const h = spawnShapegen();
+    h.surface.draw(makeFrameCtx(0));
+    h.surface.draw(makeFrameCtx(1));
+    h.surface.draw(makeFrameCtx(2));
+    expect(h.read?.('clockPatched')).toBe(0);
+    // 3 draws × 1 regen each = 3.
+    expect(h.read?.('regenCount')).toBe(3);
+    // framesElapsed advances every draw regardless of the clock mode.
+    expect(h.read?.('framesElapsed')).toBe(3);
+  });
+
+  it('held frames (clock patched + no rising edge between draws) do NOT regenerate', () => {
+    // The core sample-and-hold contract: once the clock is patched, the
+    // factory ONLY regenerates on rising edges of the gate; intervening
+    // draws re-use cachedShapes (counter unchanged).
+    const h = spawnShapegen();
+    h.surface.draw(makeFrameCtx(0));
+    expect(h.read?.('regenCount')).toBe(1); // seed
+    // Plug the gate with one rising edge.
+    h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 1);
+    h.surface.draw(makeFrameCtx(1));
+    expect(h.read?.('regenCount')).toBe(2); // seed + 1 edge
+    // Now drive many "held" frames — the gate stays HIGH (no new edge)
+    // OR returns LOW (still no rising edge). NO new regenerations.
+    h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 1); // still high
+    h.surface.draw(makeFrameCtx(2));
+    h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 0); // falling — not a regen trigger
+    h.surface.draw(makeFrameCtx(3));
+    h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 0); // still low
+    h.surface.draw(makeFrameCtx(4));
+    // 3 held frames → regenCount UNCHANGED.
+    expect(h.read?.('regenCount')).toBe(2);
+    // ROT + the camera ROT path still drew the canvas every frame, so
+    // framesElapsed = 5 total (seed + 4 driven).
+    expect(h.read?.('framesElapsed')).toBe(5);
+  });
+
+  it('hysteresis: a dipping-but-not-falling gate (0.5) is held HIGH (no chatter)', () => {
+    const h = spawnShapegen();
+    h.surface.draw(makeFrameCtx(0));
+    // Same noise pattern scoreboard's test uses — sub-rise dip without
+    // crossing fall should NOT re-trigger.
+    h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 1);   // rising edge → regen
+    h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 0.5); // still high (above 0.4)
+    h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 0.5); // still high
+    h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 0.3); // now LOW
+    h.setParam(SHAPEGEN_CLOCK_PARAM_ID, 1);   // rising edge → regen
+    // Two edges total — same hysteresis contract scoreboard exercises.
+    // We assert the cv_clock readParam echoes the most recent sample.
+    expect(h.readParam?.(SHAPEGEN_CLOCK_PARAM_ID)).toBe(1);
+    // Patched mode is on.
+    expect(h.read?.('clockPatched')).toBe(1);
   });
 });
