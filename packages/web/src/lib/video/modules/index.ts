@@ -37,6 +37,7 @@ import { videoVarispeedDef } from './videovarispeed';
 import { backdraftDef } from './backdraft';
 import { fourPlexVidDef } from './4plexvid';
 import { peakstateDef } from './peakstate';
+import { nibblesDef } from './nibbles';
 
 let registered = false;
 
@@ -129,6 +130,12 @@ export function registerVideoModules(): void {
   // bowl-twin "fake 3D"). 3D rotation rate ties to params.speed so the
   // whole scene feels coupled.
   registerVideoModule(peakstateDef);
+  // NIBBLES — QBasic Nibbles snake game as a patchable video module.
+  // CV gate outputs (pellet/death/dir_change) + length CV + two audio
+  // outputs (continuous SNAKE square wave + envelope-gated GATED). Snake
+  // is driven by arrow keys when the card is focused, or by an internal
+  // best-effort bot when AUTO is on.
+  registerVideoModule(nibblesDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

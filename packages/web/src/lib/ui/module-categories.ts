@@ -188,6 +188,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // keyboard-driven (focus-within ring) + CV-gate-driven; one host
   // per rack, spectators see the framebuffer over Yjs awareness.
   doom: { top: 'Video modules', sub: 'Sources' },
+  // NIBBLES — QBasic Nibbles snake game module. Video source with CV
+  // gate outputs (pellet/death/dir_change), length CV, + dual audio.
+  nibbles: { top: 'Video modules', sub: 'Sources' },
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   videobox: { top: 'Video modules', sub: 'Sources' },
   // VIDEOVARISPEED — local-file player with performant varispeed transport.

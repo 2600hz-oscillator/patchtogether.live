@@ -380,4 +380,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/unityscalemathematik',
   'linux/vdelay',
   'linux/warrenspectrum',
+  // NIBBLES (new snake-game video module): darwin baseline captured on this
+  // machine via VRT_SCENES (__nibblesVrtSeed pins the RNG → deterministic
+  // snake + food placement; freezeAudio suspends the rAF preview poll). The
+  // CPU rasteriser is bit-deterministic, but the captured frame depends on
+  // how many game ticks land in the settle window which can vary sub-
+  // thresholdly across platforms; linux baseline pending a `task vrt:update`
+  // run on linux CI.
+  'linux/nibbles',
 ]);
