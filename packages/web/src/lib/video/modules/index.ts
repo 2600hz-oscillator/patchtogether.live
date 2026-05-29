@@ -38,6 +38,7 @@ import { backdraftDef } from './backdraft';
 import { fourPlexVidDef } from './4plexvid';
 import { peakstateDef } from './peakstate';
 import { mandleblotDef } from './mandleblot';
+import { nibblesDef } from './nibbles';
 
 let registered = false;
 
@@ -134,6 +135,12 @@ export function registerVideoModules(): void {
   // RGB-cycling hue. Two outputs: mono escape-time field + colour palette.
   // Log-mapped zoom 1×..1e6× (single-precision highp-float ceiling).
   registerVideoModule(mandleblotDef);
+  // NIBBLES — QBasic Nibbles snake game as a patchable video module.
+  // CV gate outputs (pellet/death/dir_change) + length CV + two audio
+  // outputs (continuous SNAKE square wave + envelope-gated GATED). Snake
+  // is driven by arrow keys when the card is focused, or by an internal
+  // best-effort bot when AUTO is on.
+  registerVideoModule(nibblesDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e
