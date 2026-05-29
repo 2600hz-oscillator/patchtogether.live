@@ -9,6 +9,22 @@
 //
 // Per-step state lives in node.data.steps as an array of {on, pitch}. Knob
 // params live in node.params.
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance one step. When unpatched the internal BPM drives.
+//
+// Outputs:
+//   pitch (polyPitchGate): per-step pitch (root + chord lanes). A mono pitch sink auto-receives lane 0.
+//   gate (gate): main gate per on-step (gateLength shapes the pulse width).
+//   clock (gate): chained clock-out: rising edge at the start of each step. Useful for driving downstream sequencers.
+//
+// Params:
+//   bpm (linear 30..300, default 120): internal tempo when clock is unpatched.
+//   length (discrete 1..128, default 16): number of active steps.
+//   octave (discrete -2..2, default 0): octave transposition applied to all pitches.
+//   gateLength (linear 0.1..0.95, default 0.5): per-step gate duty cycle.
+//   swing (linear 0..0.75, default 0): off-step time shift.
+//   isPlaying (discrete 0..1, default 0): transport state (1 = running).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

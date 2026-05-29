@@ -27,6 +27,28 @@
 //                       current set of partials at their current freqs/amps)
 //   *_cv              — CV → AudioParam fast paths on every macro
 //   out      (mono)   — resynth output
+//
+// Inputs:
+//   audio_in (audio): the signal to analyse + resynthesize.
+//   pitch (pitch): V/oct global pitch input (transposes the additive bank).
+//   gate (gate): rising edge toggles FREEZE (latch partials at their current snapshot).
+//   model_cv (cv, discrete, paramTarget=model): displaces the voice-model selector.
+//   note_cv (cv, linear, paramTarget=note): displaces note (±60 st).
+//   harm_cv (cv, linear, paramTarget=harmonics): displaces partials count.
+//   timb_cv (cv, linear, paramTarget=timbre): displaces smoothing time.
+//   morph_cv (cv, linear, paramTarget=morph): displaces F0 harmonic-lock strength.
+//   level_cv (cv, linear, paramTarget=level): displaces output level.
+//
+// Outputs:
+//   out (audio): additive-resynth output.
+//
+// Params:
+//   model (discrete 0..CALLSINE_MAX_MODEL, default 0): voice-model picker (14 models in v1.1).
+//   note (linear -60..60 st, default 0): semitone transpose.
+//   harmonics (linear 0..1, default 0.6): partials-count macro.
+//   timbre (linear 0..1, default 0.4): smoothing-time macro.
+//   morph (linear 0..1, default 0.0): F0 harmonic-lock strength.
+//   level (linear 0..1, default 0.8): output level.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

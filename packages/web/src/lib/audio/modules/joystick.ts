@@ -27,6 +27,18 @@
 //     animate values back to 0 over a few hundred ms. Out of scope here.
 //   * MIDI-mappable: standard MIDI learn applies once the global MIDI
 //     CC routing PR lands.
+//
+// Inputs: none.
+//
+// Outputs:
+//   x (cv): X position, -1..+1.
+//   y (cv): Y position, -1..+1.
+//   nx (cv): -x (inverted X for mirrored modulation).
+//   ny (cv): -y (inverted Y for mirrored modulation).
+//
+// Params:
+//   pos_x (linear -1..1, default 0): persisted X position (written by the card on drag).
+//   pos_y (linear -1..1, default 0): persisted Y position.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

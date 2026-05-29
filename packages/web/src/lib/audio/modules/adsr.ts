@@ -1,3 +1,34 @@
+// packages/web/src/lib/audio/modules/adsr.ts
+//
+// ADSR — classic attack/decay/sustain/release envelope generator.
+//
+// Gate-driven unipolar 0..1 envelope. Rising gate opens the attack stage;
+// the envelope decays to the sustain level while the gate is held; the
+// gate falling triggers the release stage back to 0. Faust-compiled DSP
+// (packages/dsp/src/adsr.dsp). All four stage times respond to CV input
+// scaled per the project CV-range standard (see .myrobots/plans/cv-range-
+// standard.md): attack/decay/release use log scaling so a -1..+1 sweep
+// covers two log decades of stage time; sustain uses linear because the
+// param is already 0..1 native. An inverted envelope output (1 - env)
+// makes ducking / sidechain-style modulation a one-cable patch.
+//
+// Inputs:
+//   gate (gate): triggers the envelope. Rising edge = attack; falling edge = release.
+//   attack (cv, log, paramTarget=attack): scales the attack-time param symmetrically.
+//   decay (cv, log, paramTarget=decay): scales the decay-time param symmetrically.
+//   sustain (cv, linear, paramTarget=sustain): displaces the sustain level (0..1).
+//   release (cv, log, paramTarget=release): scales the release-time param symmetrically.
+//
+// Outputs:
+//   env (cv): the envelope, 0..1.
+//   env_inv (cv): 1 - env — the inverted envelope for ducking / sidechain use.
+//
+// Params:
+//   attack (log 0.001..10s, default 0.005): attack time in seconds.
+//   decay (log 0.001..10s, default 0.1): decay time in seconds.
+//   sustain (linear 0..1, default 0.7): held level after decay.
+//   release (log 0.001..10s, default 0.3): release time in seconds.
+
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

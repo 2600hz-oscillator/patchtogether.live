@@ -8,6 +8,20 @@
 // epoch + rate. The factory reads epoch_ms from the active SharedClock
 // (window-global) and sends it to the worklet on `init`. A 5 s/200 ms
 // resync loop keeps the phase aligned despite hardware-clock drift.
+//
+// Inputs:
+//   clock (gate): external clock; when patched, rate is locked to the measured period.
+//   rate (cv, log, paramTarget=rate): scales the LFO rate (log).
+//   shape (cv, linear, paramTarget=shape): displaces the waveform-shape crossfade.
+//   depth_cv (cv, linear, paramTarget=depth): displaces the output depth.
+//
+// Outputs:
+//   phase0 / phase90 / phase180 / phase270 (cv): four phase-quadrature taps of the same LFO.
+//
+// Params:
+//   rate (log 0.01..100 Hz, default 1): LFO frequency.
+//   shape (linear 0..2, default 0): morph across sine ↔ tri ↔ saw.
+//   depth (linear 0..1, default 0.5): output amplitude (0..1 scales the ±1 bipolar swing).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef, SyncedModuleDef } from '$lib/audio/module-registry';

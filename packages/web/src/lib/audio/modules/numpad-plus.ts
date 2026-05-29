@@ -47,6 +47,21 @@
 //   modules that listen for keys never see the events. Listener is
 //   per-instance so multiple NUMPAD+ on the same rack all act on
 //   the same keypress (chord-stack style).
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance the playhead. Unpatched = internal BPM.
+//   layer (cv): bipolar CV selecting the active layer (mapped to L1..L4 buckets).
+//
+// Outputs:
+//   l1_pitch / l1_gate .. l4_pitch / l4_gate: per-layer pitch + gate (4 layers × 2 = 8 outputs).
+//
+// Params:
+//   bpm (linear 30..300, default 120): internal tempo.
+//   isPlaying (discrete 0..1, default 0): transport state.
+//   activeLayer (discrete 0..3, default 0): currently-recorded / played layer.
+//   recArm (discrete 0..1, default 0): RECORD-ARM toggle (numpad presses overwrite the nearest step).
+//   overdub (discrete 0..1, default 0): OVERDUB toggle (numpad presses sum into the nearest step).
+//   octave (discrete 0..8, default 4): numpad-keypad octave (live-play transposition).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

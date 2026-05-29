@@ -23,6 +23,21 @@
 // (or the end of the last allocated page when no marker is set) the engine
 // either (a) stops if `loop` is false, or (b) wraps back to bar 0 if `loop`
 // is true.
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance one 16th. Unpatched = internal BPM drives.
+//   attack / decay / sustain / release (cv, log/linear, paramTarget=…): displaces the internal ADSR stage.
+//
+// Outputs:
+//   pitch (pitch): V/oct of the current note.
+//   gate (gate): held high during note duration (ties hold across notes).
+//   env (cv): the internal ADSR envelope, scaled by the active dynamic marker.
+//   clock (gate): chained 16th-rate clock-out.
+//
+// Params:
+//   bpm (linear 30..300, default 120): internal tempo.
+//   attack / decay / release (log 0.001..10 s) + sustain (linear 0..1): internal ADSR shape.
+//   isPlaying (discrete 0..1, default 0): transport state.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

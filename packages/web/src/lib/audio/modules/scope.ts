@@ -17,6 +17,26 @@
 //     spans many cycles densely-packed across the canvas width, which
 //     looked like noise to the user (vs. the on-card timeMs window
 //     showing one or two clean cycles). drawFrame closes that gap.
+//
+// Inputs:
+//   ch1 (audio): channel-1 signal (passes through to ch1_out + drives the trace).
+//   ch2 (audio): channel-2 signal (passes through to ch2_out + drives the second trace).
+//   timeMs (cv, paramTarget=timeMs): displaces the timebase knob.
+//   ch1Scale / ch1Offset / ch1Range (cv, paramTarget=…): displace channel-1 vertical scale / Y offset / display range mode.
+//   ch2Scale / ch2Offset / ch2Range (cv, paramTarget=…): the same for channel 2.
+//   mode (cv, paramTarget=mode): toggles XY-vs-time display.
+//
+// Outputs:
+//   ch1_out (audio): clean ch1 passthrough (no scope-side processing).
+//   ch2_out (audio): clean ch2 passthrough.
+//   out (mono-video): the same waveform render the on-card canvas shows.
+//
+// Params:
+//   timeMs (log 1..200 ms, default 20): scope time-window per screen width.
+//   ch1Scale / ch2Scale (log 0.1..10, default 1): per-channel vertical scale.
+//   ch1Offset / ch2Offset (linear -1..1, default 0): per-channel Y offset.
+//   ch1Range / ch2Range (discrete 0..1, default 0): per-channel range mode (0 = bipolar ±1, 1 = unipolar 0..1).
+//   mode (discrete 0..1, default 0): 0 = time-domain, 1 = XY (ch1 vs ch2).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

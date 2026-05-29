@@ -22,6 +22,26 @@
 // linearRampToValueAtTime smoothing on scene transitions. Same shape
 // BUGGLES uses (also setInterval-driven). Reuses createTransportCv for
 // the scene-CV input row.
+//
+// Inputs:
+//   nudge (gate): rising edge nudges to a new attractor immediately.
+//   freeze (gate): held high latches the drift outputs at their current values.
+//   seed_cv (cv): per-instance seed CV (latches the random walk's seed).
+//   play_cv / scene1_cv..scene4_cv: standard transport CV row (play + scene-slot recalls).
+//
+// Outputs:
+//   drift1..drift8 (cv): 8 correlated band-limited random-walk CV outputs.
+//   scene_pulse (gate): one-pulse gate when the brain transitions to a new scene.
+//   scene_idx (cv): the current scene index as a CV.
+//
+// Params:
+//   driftRate (log, default DRIFT_DEFAULT): random-walk rate.
+//   chaos (linear 0..1): randomness amount.
+//   coherence (linear 0..1): how much each channel tracks the shared "weather" voltage.
+//   sceneDepth (linear 0..1): scene-transition contrast.
+//   autoMode (discrete 0..1): on = auto-transition on a slow timer, off = manual only.
+//   bias (linear -1..1): DC offset on all 8 drift outputs.
+//   level (linear 0..1): output amplitude.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

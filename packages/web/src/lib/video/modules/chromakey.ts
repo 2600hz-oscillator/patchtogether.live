@@ -23,6 +23,23 @@
 //
 // CV inputs declare paramTarget == port id (PR #264 convention) so the
 // cross-domain bridge writes them correctly.
+//
+// Inputs:
+//   fg (video): foreground (the layer with the key colour).
+//   bg (video): background (composited where the key matches).
+//   keyR / keyG / keyB (cv, paramTarget=…): displaces the key-colour components.
+//   threshold (cv, paramTarget=threshold): displaces the hue-distance threshold.
+//   softness (cv, paramTarget=softness): displaces the smoothstep softness.
+//   spillSuppress (cv, paramTarget=spillSuppress): displaces the chroma-spill removal amount.
+//
+// Outputs:
+//   out (video): composited RGB.
+//
+// Params:
+//   keyR / keyG / keyB (linear 0..1): key colour components.
+//   threshold (linear 0..1): how close to the key counts as "keyed".
+//   softness (linear 0..0.5): edge feathering.
+//   spillSuppress (linear 0..1): how aggressively to remove key-colour spill from FG edges.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

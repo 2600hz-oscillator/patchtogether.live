@@ -15,6 +15,20 @@
 // Output type is `mono-video`; downstream consumers (OUTPUT, future
 // MIXER mono pots, COLORIZER via implicit upcast to video) will route
 // through the engine's input-texture lookup.
+//
+// Inputs:
+//   fm (mono-video): optional FM modulator (Phase-3 hookup; depth uniform plumbed).
+//   orient / amp / thickness / phase (cv, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (mono-video): the rendered procedural line pattern.
+//
+// Params:
+//   orient (linear 0..1): line orientation (0 = horizontal → 1 = vertical).
+//   amp (linear 0.5..50 lpx): line frequency (lines per width).
+//   thickness (linear 0..1): line duty cycle.
+//   phase (linear 0..1): phase offset (scrolls slowly over time).
+//   fmDepth (linear 0..1): depth of the (forward-compatible) FM modulator.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

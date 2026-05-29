@@ -19,6 +19,21 @@
 //     interpretation that turns Stages into a 6-track tap-tempo grid).
 //   - Loop bit for free-running LFO behavior with rate CV.
 //   - Tap-LFO mode.
+//
+// Inputs:
+//   gate0..gate5 (gate): per-segment gate inputs. Rising edge fires that segment (or the chain group's leader).
+//   trig (gate): global trigger — fires every chain group's leader.
+//   primary0..primary5_cv (cv, linear, paramTarget=primary{N}): per-segment primary CV (time-or-level).
+//   shape0..shape5_cv (cv, linear, paramTarget=shape{N}): per-segment shape CV.
+//
+// Outputs:
+//   out0..out5 (cv): per-segment CV output (mirrors the active chain value).
+//
+// Params:
+//   type0..type5 (discrete 0..2, default 0): per-segment type (0 = RAMP, 1 = HOLD, 2 = STEP).
+//   primary0..primary5 (linear -1..1, default 0.3): per-segment primary knob (TIME for RAMP, LEVEL for HOLD/STEP).
+//   shape0..shape5 (linear 0..1, default 0.5): per-segment secondary SHAPE knob.
+//   link0..link4 (discrete 0..1, default 0): 5 boundary "link" bits between the 6 segments (chains formation).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

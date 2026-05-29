@@ -3,7 +3,35 @@
 // CLOUDS — granular texture processor. Audio-domain module + pure-math
 // mirror of the worklet engine. Worklet at packages/dsp/src/clouds.ts.
 // Algorithm after Émilie Gillet's Mutable Instruments Clouds (MIT-licensed);
-// attribution in the worklet header.
+// attribution in the worklet header. Buffers ~2-4 seconds of input audio,
+// spawns overlapping grains within the buffer, and recombines them into
+// a textural / drone / pitch-shifted output. POSITION picks the playhead
+// into the buffer; SIZE sets grain length; DENSITY sets grain overlap;
+// FREEZE latches the buffer at the current snapshot so the texture
+// keeps playing without further input.
+//
+// Inputs:
+//   in_l / in_r (audio): stereo source feeding the granular buffer.
+//   pitch (pitch): V/oct global pitch input (sums with the pitch param).
+//   freeze_gate (gate): toggles the FREEZE state on rising edge.
+//   position_cv (cv, linear, paramTarget=position): displaces buffer position.
+//   size_cv (cv, linear, paramTarget=size): displaces grain size.
+//   pitch_cv (cv, linear, paramTarget=pitch): displaces the pitch knob (semis).
+//   density_cv (cv, linear, paramTarget=density): displaces grain density.
+//   texture_cv (cv, linear, paramTarget=texture): displaces texture / grain-window shape.
+//   blend_cv (cv, linear, paramTarget=blend): displaces dry/wet blend.
+//
+// Outputs:
+//   out_l / out_r (audio): stereo granular output.
+//
+// Params:
+//   position (linear 0..1, default 0.5): playhead position into the buffer.
+//   size (linear 0..1, default 0.5): grain length.
+//   pitch (linear -24..24 st, default 0): per-grain pitch shift.
+//   density (linear 0..1, default 0.5): grain trigger density.
+//   texture (linear 0..1, default 0.5): grain-window shape macro.
+//   blend (linear 0..1, default 0.5): dry/wet balance.
+//   freeze (discrete 0..1, default 0): 1 = freeze the buffer.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

@@ -89,6 +89,37 @@
 // hold their last contents, so the on-card / output pixels are stable
 // across rAF ticks. Feedback is time-evolving by nature; the VRT scene
 // settles the loop, then sets freeze=1 to pin a deterministic frame.
+//
+// Inputs:
+//   in_a / in_b (video): two RGB sources crossfaded by MIX.
+//   lighten / darken (video): per-pixel mask sources for LIGHTEN/DARKEN scaling.
+//   mix (cv, linear, paramTarget=mix): displaces MIX crossfade.
+//   feedback (cv, linear, paramTarget=feedback): displaces feedback ratio.
+//   delay (cv, linear, paramTarget=delay): displaces delay in ms.
+//   delay_clock (cv, paramTarget=delayClock): rising-edge clock-locked delay.
+//   luma / chroma (cv, linear, paramTarget=…): per-channel feedback colour CV.
+//   r / g / b (cv, linear, paramTarget=…): per-channel feedback gain CV (-1..2).
+//   lighten_cv / darken_cv (cv, linear, paramTarget=…): displaces mask amounts.
+//   zoom / rotate / offsetx / offsety (cv, linear, paramTarget=…): affine-warp CV.
+//   mirror_x_gate / mirror_y_gate (cv, paramTarget=…Gate): rising edge toggles mirror.
+//
+// Outputs:
+//   out (video): the feedback-rendered output.
+//
+// Params:
+//   mix (linear 0..1): crossfade between in_a (0) and in_b (1).
+//   feedback (linear 0..BACKDRAFT_MAX_FEEDBACK): per-frame feedback ratio.
+//   delay (linear 0..BACKDRAFT_MAX_DELAY_MS): tap delay in ms.
+//   luma / chroma (linear -1..2): feedback luma / chroma gain (negative inverts).
+//   r / g / b (linear -1..2): per-channel feedback gain.
+//   lighten / darken (linear 0..1): per-pixel scaling-mask amounts.
+//   zoom (linear BACKDRAFT_ZOOM_MIN..MAX): per-pass zoom on the feedback tap.
+//   rotate (linear BACKDRAFT_ROTATE_MIN..MAX): per-pass rotation.
+//   offsetX / offsetY (linear BACKDRAFT_OFFSET_MIN..MAX): per-pass translation.
+//   delayClock (linear 0..1): persisted clock-locked-delay state.
+//   mirrorX / mirrorY (linear 0..1): horizontal / vertical mirror toggles.
+//   mirrorXGate / mirrorYGate (linear 0..1): persisted edge-state for the mirror-gate inputs.
+//   freeze (linear 0..1): ≥0.5 pins the ring + output (for VRT deterministic capture).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

@@ -55,6 +55,31 @@
 //
 // Fold = 0..1, shared helper with WAVVIZ (4x oversample WaveShaperNode
 // with sin foldback curve).
+//
+// Inputs:
+//   pitch (pitch): V/oct pitch input, drives the primary oscillator.
+//   mod_pitch (pitch): V/oct pitch input for the modulator oscillator.
+//   fm (audio): external audio-rate FM modulator routed to the primary.
+//   timbre (cv, linear, paramTarget=timbre): displaces the timbre (FM) amount.
+//   symmetry (cv, linear, paramTarget=symmetry): displaces the saw↔tri↔square crossfade.
+//   fold (cv, linear, paramTarget=fold): displaces the wavefold amount.
+//   ratio (cv, linear, paramTarget=ratio): displaces the modulator-to-primary ratio.
+//
+// Outputs:
+//   out (audio): primary post-fold waveform.
+//   mod_out (audio): the modulator oscillator's sine output (patchable as a clean sine source).
+//   sum_out (audio): primary + modulator summed (mix tap).
+//   scope (mono-video): live oscilloscope trace of `out`.
+//
+// Params:
+//   tune (linear -36..36 st, default 0): primary coarse tune.
+//   fine (linear -100..100 ¢, default 0): primary fine tune.
+//   mod_tune (linear -36..36 st, default 0): modulator coarse tune.
+//   mod_fine (linear -100..100 ¢, default 0): modulator fine tune.
+//   ratio (linear 0..8, default 1.0): modulator-to-primary frequency ratio.
+//   timbre (linear 0..1, default 0): audio-rate FM amount from modulator → primary.
+//   symmetry (linear 0..1, default 0.5): three-way crossfade saw / tri / square.
+//   fold (linear 0..1, default 0): West-Coast wavefolder amount.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

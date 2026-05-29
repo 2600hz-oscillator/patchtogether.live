@@ -72,6 +72,28 @@
 // (xyz_xshape/xyz_yshape/xyz_ydisp — used only by the on-card scope draw).
 // The WAVECEL params keep their original ids so the card + MIDI-learn
 // surface match WAVECEL exactly.
+//
+// Inputs:
+//   pitch (pitch): V/oct pitch input, 0V = C4, drives the internal WAVECEL VCO.
+//   fm (audio): audio-rate FM modulator to the WAVECEL.
+//   morph_cv (cv, linear, paramTarget=morph): displaces the WAVECEL morph position.
+//   spread_cv (cv, linear, paramTarget=spread): displaces the stereo voice spread.
+//   fold_cv (cv, linear, paramTarget=fold): displaces the wavefolder amount.
+//
+// Outputs:
+//   out_l / out_r (audio): stereo WAVECEL output.
+//   scope_out (mono-video): scope-style waveform trace.
+//   wave3d_out (video): 3D wavetable surface render (animates as the rasters evolve).
+//
+// Params (WAVECEL surface + per-source SWOLEVCO + XYZ window):
+//   tune (linear -36..36 st) / fine (linear -100..100 ¢) / morph (linear 0..1) /
+//     spread (linear 1..5) / fold (linear 0..1): WAVECEL surface — match the
+//     standalone WAVECEL module for MIDI-learn compatibility.
+//   src_tune / src_fine / src_timbre / src_symmetry / src_fold: source-A mini-SWOLEVCO.
+//   src2_… / src3_…: source-B / source-C mini-SWOLEVCOs (default tunes per the v3 design).
+//   xyz_xshape / xyz_yshape / xyz_ydisp (linear): legacy on-card XYZ window controls
+//     (only affect the on-card scope draw; the wavetable build now uses the 3-axis path).
+//   freezeRasterA / B / C / Table (discrete 0..1): per-source freeze toggles.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

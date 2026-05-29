@@ -10,6 +10,16 @@
 // this module ships the simpler "tint a mono signal" interpretation.
 // HSV-rotation, contrast, brightness adjustments belong to a future
 // COLORIZE-FX module — see PR notes.
+//
+// Inputs:
+//   in (mono-video): single-channel signal modulating the tint colour.
+//   tintR / tintG / tintB (cv, paramTarget=…): tint colour CV.
+//
+// Outputs:
+//   out (video): RGB output (R = mono * tintR, G = mono * tintG, B = mono * tintB).
+//
+// Params:
+//   tintR / tintG / tintB (linear 0..1): tint colour components.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

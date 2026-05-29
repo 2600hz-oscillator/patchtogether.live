@@ -36,6 +36,19 @@
 //
 // CV scaling: cvScale 'linear' on each input — bridge maps -1..+1 to the
 // target param's full natural range and sums it on top of the knob.
+//
+// Inputs:
+//   in (video): RGB source.
+//   time_cv / feedback_cv / mix_cv (cv, linear, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): wet + dry mix.
+//
+// Params:
+//   delayTime (linear 1..VDELAY_MAX_DELAY frames): delay in frames.
+//   feedback (linear 0..0.95): feedback ratio (capped below 1).
+//   mix (linear 0..1): dry/wet mix.
+//   colorShift (linear 0..1): per-tap colour shift on the feedback path.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

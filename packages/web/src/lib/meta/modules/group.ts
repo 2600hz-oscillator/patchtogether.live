@@ -9,6 +9,12 @@
 //
 // The def's static `inputs`/`outputs` are empty; cards read the dynamic
 // per-instance port list from node.data.exposedPorts.
+//
+// Inputs: none on the def (dynamically projected per-instance from
+//   data.exposedPorts → child module input ports).
+// Outputs: none on the def (same — dynamically projected).
+// Params: none (children's params remain on the children; group exposes
+//   them via exposedControls).
 
 import type { MetaModuleDef } from '$lib/meta/module-registry';
 import type { ModuleNode } from '$lib/graph/types';

@@ -39,6 +39,22 @@
 // VIDEOBOX (that part works); the transport math lives in
 // videovarispeed-transport.ts. The card drives playbackRate / scrub / window;
 // the factory stores params + samples the element into its FBO.
+//
+// Inputs:
+//   cv_start / cv_pause / cv_reset / cv_loop_toggle (gate, paramTarget=…):
+//     rising-edge transport gates.
+//   speedCv / startCv / endCv (cv, linear, paramTarget=…): per-param CV displacement.
+//
+// Outputs:
+//   video (video): decoded frames at the user's transport state.
+//   audio_l / audio_r (audio): stereo bridges from the file's audio track.
+//
+// Params:
+//   speed (linear 0..1): playback rate (0 = stop, mapped to negative…positive multiplier).
+//   start / end (linear 0..1): in-and-out window into the file.
+//   speedCv / startCv / endCv (linear -1..1): cached CV values.
+//   cv_start / cv_pause / cv_reset / cv_loop_toggle (linear 0..1):
+//     cached state from the gate inputs.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

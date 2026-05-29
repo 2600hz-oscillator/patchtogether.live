@@ -24,6 +24,22 @@
 // The card connects to the runtime via the handle's `read('extras')`
 // channel — mirrors how PictureboxCard pulls setImage/setFilename out
 // of PICTUREBOX's factory.
+//
+// Inputs:
+//   The 7 control gates (w/a/s/d/space/ctrl/alt) are declared on the def's
+//   `inputs` array (built dynamically); rising edges enqueue into doomgeneric's
+//   key queue. Plus any unpatched stereo audio CV bridges declared per slice.
+//
+// Outputs:
+//   out (video): the 640×400 BGRA framebuffer (aspect-correct letterboxed into 640×360).
+//   audio_l / audio_r (audio): stereo bridges from the WASM SFX stream.
+//   evt_kill (gate): one-pulse gate on every enemy kill.
+//   evt_door (gate): one-pulse gate when the player opens a door.
+//   evt_gun_p1..p4 (gate): per-weapon-fire one-pulse gates (pistol/shotgun/chaingun/missile).
+//
+// Params:
+//   audioGain (linear 0..2, default 1): WASM SFX → audio_l/r bus gain.
+//   + per-event gate timings + spectator-passthrough toggle (see factory).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

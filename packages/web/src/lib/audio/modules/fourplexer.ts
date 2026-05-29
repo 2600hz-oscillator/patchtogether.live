@@ -18,6 +18,16 @@
 // denominator `cv` and rely on the engine routing audio identically.)
 //
 // DSP lives in packages/dsp/src/fourplexer.ts (custom JS AudioWorklet).
+//
+// Inputs:
+//   in1..in4 (cv): four signal inputs (audio routes identically via the engine).
+//   gate1..gate4 (gate): per-output advance gate (rising edge rotates that output's selector).
+//
+// Outputs:
+//   out1..out4 (cv): per-output discrete tap of in[sel{N}].
+//
+// Params:
+//   sel1..sel4 (discrete 0..3, default 0/1/2/3): per-output selector index.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
