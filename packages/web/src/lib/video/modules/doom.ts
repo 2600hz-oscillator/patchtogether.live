@@ -464,25 +464,45 @@ export const doomDef: VideoModuleDef = {
       void setupPcmWorklet(ac);
     }
 
+    // Discrete pulse subscribers per gate port. The same-domain video → video
+    // CV/gate bridge (PatchEngine.addSameDomainVideoCvBridge) subscribes here
+    // instead of relying on analyser sampling of the CSN — a 10ms pulse can
+    // be missed by 60fps analyser polling, and CI's slower rAF cadence makes
+    // the miss reliable, so SCOREBOARD never sees a setParam(scoreTrig, 1)
+    // call. Subscribing to the discrete pulse event means every `pulseGate`
+    // call fires the downstream setParam pair (1, then 0) EXACTLY once,
+    // regardless of how often the video frame loop ticks.
+    const pulseSubscribers = new Map<string, Set<() => void>>();
+    function notifyPulse(portId: string): void {
+      const subs = pulseSubscribers.get(portId);
+      if (!subs) return;
+      for (const cb of subs) {
+        try { cb(); } catch { /* a buggy subscriber must never break a pulse */ }
+      }
+    }
     // 10ms pulse width — matches polyseqz/score emitClockPulse so downstream
     // gate-edge detectors trigger reliably.
     const EVT_PULSE_S = 0.01;
-    function pulseGate(src: ConstantSourceNode): void {
+    function pulseGate(src: ConstantSourceNode, portId: string): void {
       const ac = ctx.audioCtx;
       if (!ac) return;
       const t = ac.currentTime;
       src.offset.setValueAtTime(1, t);
       src.offset.setValueAtTime(0, t + EVT_PULSE_S);
+      // Fire discrete pulse subscribers in sync with the CSN schedule so the
+      // same-domain bridge can dispatch a frame-independent setParam pair.
+      notifyPulse(portId);
     }
     function drainAndPulseEvents(): void {
       if (!runtime || !ctx.audioCtx) return;
       const evts = runtime.drainEvents();
       for (const e of evts) {
-        if (e.type === 1 && killGate) pulseGate(killGate);
-        else if (e.type === 2 && doorGate) pulseGate(doorGate);
+        if (e.type === 1 && killGate) pulseGate(killGate, 'evt_kill');
+        else if (e.type === 2 && doorGate) pulseGate(doorGate, 'evt_door');
         else if (e.type === 3) {
           const g = gunGates[e.slot] ?? gunGates[0];
-          if (g) pulseGate(g);
+          const portId = `evt_gun_p${(e.slot ?? 0) + 1}`;
+          if (g) pulseGate(g, portId);
         }
       }
     }
@@ -764,11 +784,11 @@ export const doomDef: VideoModuleDef = {
         // dispatcher → addCrossDomainAudioBridge path → downstream audio
         // input — INDEPENDENT of whether a real game event fired.
         if (port === 'evt_kill') {
-          if (killGate) pulseGate(killGate);
+          if (killGate) pulseGate(killGate, 'evt_kill');
           return;
         }
         if (port === 'evt_door') {
-          if (doorGate) pulseGate(doorGate);
+          if (doorGate) pulseGate(doorGate, 'evt_door');
           return;
         }
         // evt_gun_p1..p4 → gunGates[0..3]
@@ -778,7 +798,7 @@ export const doomDef: VideoModuleDef = {
           : port === 'evt_gun_p3' ? 2
           : 3;
         const g = gunGates[idx];
-        if (g) pulseGate(g);
+        if (g) pulseGate(g, port);
       },
       forceHold(port, high) {
         const ac = ctx.audioCtx;
@@ -855,6 +875,25 @@ export const doomDef: VideoModuleDef = {
         if (key === 'loadError') return loadError;
         if (key === 'hasFrame') return hasFrame;
         return undefined;
+      },
+      // Frame-independent pulse subscription for the same-domain video
+      // CV/gate bridge (see VideoNodeHandle.subscribePulse docs). The
+      // returned unsubscribe fn is idempotent. Only the 6 event-gate ports
+      // are supported (the bridge falls back to analyser sampling for
+      // anything else, which is correct for non-pulsed CV sources).
+      subscribePulse(portId, cb) {
+        let set = pulseSubscribers.get(portId);
+        if (!set) {
+          set = new Set();
+          pulseSubscribers.set(portId, set);
+        }
+        set.add(cb);
+        return () => {
+          const s = pulseSubscribers.get(portId);
+          if (!s) return;
+          s.delete(cb);
+          if (s.size === 0) pulseSubscribers.delete(portId);
+        };
       },
       dispose() { surface.dispose(); },
     };

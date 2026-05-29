@@ -127,6 +127,42 @@ interface CvBridgeCall {
   teardown: () => void;
 }
 
+/** Minimal handle shape the bridge looks for via getNodeHandle. Records
+ *  every setParam (for the discrete-pulse dispatch test) and exposes a
+ *  subscribePulse impl the test can drive synchronously. */
+interface FakeVideoHandle {
+  setParamCalls: { paramId: string; value: number }[];
+  setParam: (paramId: string, value: number) => void;
+  /** Active subscribers per portId; the test invokes the cb directly to
+   *  emulate the real `pulseGate` notify path. */
+  pulseSubs: Map<string, Set<() => void>>;
+  subscribePulse?: (portId: string, cb: () => void) => () => void;
+  /** Resolved input port → paramTarget mapping, used by the engine stub's
+   *  resolveTargetParamId. */
+  inputs?: Record<string, string>; // portId → paramTarget
+}
+
+function makeFakeVideoHandle(opts: { withSubscribePulse?: boolean; inputs?: Record<string, string> } = {}): FakeVideoHandle {
+  const h: FakeVideoHandle = {
+    setParamCalls: [],
+    setParam(paramId, value) { this.setParamCalls.push({ paramId, value }); },
+    pulseSubs: new Map(),
+    inputs: opts.inputs,
+  };
+  if (opts.withSubscribePulse) {
+    h.subscribePulse = (portId, cb) => {
+      let set = h.pulseSubs.get(portId);
+      if (!set) {
+        set = new Set();
+        h.pulseSubs.set(portId, set);
+      }
+      set.add(cb);
+      return () => h.pulseSubs.get(portId)?.delete(cb);
+    };
+  }
+  return h;
+}
+
 class VideoEngineStub implements DomainEngine {
   domain = 'video' as const;
   audioCtx: AudioContext | null = null;
@@ -136,11 +172,23 @@ class VideoEngineStub implements DomainEngine {
   /** Track edges the engine sees via plain addEdge (the same-domain fallback
    *  path the bridge replaces — must NOT be hit when the bridge fires). */
   edgesSeen: Edge[] = [];
+  /** Per-node fake handles so the bridge's pulse-subscription path can find
+   *  source `subscribePulse` + target `setParam`. */
+  handles = new Map<string, FakeVideoHandle>();
 
   setAudioContext(ctx: AudioContext | null): void { this.audioCtx = ctx; }
 
   getAudioSource(nodeId: string, portId: string): { node: AudioNode; output: number } | null {
     return this.sources.get(`${nodeId}::${portId}`) ?? null;
+  }
+
+  getNodeHandle(nodeId: string): FakeVideoHandle | null {
+    return this.handles.get(nodeId) ?? null;
+  }
+
+  resolveTargetParamId(nodeId: string, portId: string): string {
+    const h = this.handles.get(nodeId);
+    return h?.inputs?.[portId] ?? portId;
   }
 
   addCvBridge(
@@ -343,5 +391,180 @@ describe('PatchEngine — same-domain video → video CV/gate bridge', () => {
     // Just exercising that dispose() doesn't throw on the new map — the
     // sameDomainVideoCvBridgeEdgeIds.clear() is implicit in the contract.
     expect(true).toBe(true);
+  });
+
+  // ---- Discrete-pulse dispatch (frame-independent gate path) ----------
+  //
+  // Failure-mode pinned: a 10ms `pulseGate` excursion on the source's CSN
+  // can be missed by 60fps analyser sampling (16ms frame; ~40% chance of a
+  // 0-sample under the worst-case phase). On CI's slower scheduling the
+  // miss is reliable → e2e #6 fails with score 0→0. The bridge subscribes
+  // to the source's `subscribePulse` for sourceType='gate' edges and
+  // dispatches the setParam(target, 1) → setParam(target, 0) pair directly,
+  // never going through the analyser.
+
+  it('subscribes to subscribePulse + dispatches a HIGH → LOW setParam pair on every pulse (gate sources)', async () => {
+    const { pe, video } = setupEngines();
+    const srcNode = makeFakeNode('doom-evt-kill');
+    video.sources.set('doom-A::evt_kill', { node: srcNode as unknown as AudioNode, output: 0 });
+    const src = makeFakeVideoHandle({ withSubscribePulse: true });
+    const dst = makeFakeVideoHandle({ inputs: { score: 'scoreTrig' } });
+    video.handles.set('doom-A', src);
+    video.handles.set('scoreboard-B', dst);
+
+    pe.addEdge(
+      {
+        id: 'e-pulse',
+        source: { nodeId: 'doom-A', portId: 'evt_kill' },
+        target: { nodeId: 'scoreboard-B', portId: 'score' },
+        sourceType: 'gate',
+        targetType: 'cv',
+      },
+      'video',
+      'video',
+    );
+
+    // The bridge subscribed.
+    expect(src.pulseSubs.get('evt_kill')?.size).toBe(1);
+    // No setParam fires yet — nothing has pulsed.
+    expect(dst.setParamCalls).toEqual([]);
+
+    // Fire a pulse the way `pulseGate` does (notify all subscribers).
+    for (const cb of src.pulseSubs.get('evt_kill')!) cb();
+
+    // HIGH was dispatched synchronously into the resolved paramTarget
+    // (`score` port → `scoreTrig` param, mirroring SCOREBOARD's def).
+    expect(dst.setParamCalls).toEqual([{ paramId: 'scoreTrig', value: 1 }]);
+
+    // The LOW fall is scheduled via setTimeout(0). Drain the microtask
+    // queue + a macro tick to let it land.
+    await new Promise((r) => setTimeout(r, 5));
+    expect(dst.setParamCalls).toEqual([
+      { paramId: 'scoreTrig', value: 1 },
+      { paramId: 'scoreTrig', value: 0 },
+    ]);
+  });
+
+  it('dispatches a HIGH/LOW pair on EACH of multiple pulses (no event coalescing — every pulse counts)', async () => {
+    const { pe, video } = setupEngines();
+    const srcNode = makeFakeNode('doom-evt-kill');
+    video.sources.set('doom-A::evt_kill', { node: srcNode as unknown as AudioNode, output: 0 });
+    const src = makeFakeVideoHandle({ withSubscribePulse: true });
+    const dst = makeFakeVideoHandle({ inputs: { score: 'scoreTrig' } });
+    video.handles.set('doom-A', src);
+    video.handles.set('scoreboard-B', dst);
+    pe.addEdge(
+      {
+        id: 'e-pulse-x3',
+        source: { nodeId: 'doom-A', portId: 'evt_kill' },
+        target: { nodeId: 'scoreboard-B', portId: 'score' },
+        sourceType: 'gate',
+        targetType: 'cv',
+      },
+      'video',
+      'video',
+    );
+
+    // 3 pulses with a settle-tick between each so the LOW fall lands
+    // before the next HIGH (otherwise the gateEdge can't fire on the next
+    // rise — same hysteresis the real module's GateState enforces).
+    for (let i = 0; i < 3; i++) {
+      for (const cb of src.pulseSubs.get('evt_kill')!) cb();
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    // 3 HIGHs and 3 LOWs, interleaved.
+    const highs = dst.setParamCalls.filter((c) => c.value === 1);
+    const lows = dst.setParamCalls.filter((c) => c.value === 0);
+    expect(highs).toHaveLength(3);
+    expect(lows).toHaveLength(3);
+    for (const c of dst.setParamCalls) expect(c.paramId).toBe('scoreTrig');
+  });
+
+  it('does NOT subscribe to subscribePulse for sourceType=cv (analyser-only path; continuous CV needs sampled values, not edges)', () => {
+    const { pe, video } = setupEngines();
+    const srcNode = makeFakeNode('nibbles-length');
+    video.sources.set('nibbles::length_cv', { node: srcNode as unknown as AudioNode, output: 0 });
+    const src = makeFakeVideoHandle({ withSubscribePulse: true });
+    const dst = makeFakeVideoHandle({ inputs: { score: 'scoreTrig' } });
+    video.handles.set('nibbles', src);
+    video.handles.set('scoreboard', dst);
+
+    pe.addEdge(
+      {
+        id: 'e-cv-only',
+        source: { nodeId: 'nibbles', portId: 'length_cv' },
+        target: { nodeId: 'scoreboard', portId: 'score' },
+        sourceType: 'cv',
+        targetType: 'cv',
+      },
+      'video',
+      'video',
+    );
+
+    // The analyser tap was wired (CV path).
+    expect(video.cvBridgesAdded).toHaveLength(1);
+    // But NO pulse subscription — CV is sampled per frame, not edge-fired.
+    expect(src.pulseSubs.get('length_cv')).toBeUndefined();
+  });
+
+  it('removeEdge unsubscribes the pulse callback (no more setParam writes after teardown)', async () => {
+    const { pe, video } = setupEngines();
+    const srcNode = makeFakeNode('doom-evt-kill');
+    video.sources.set('doom-A::evt_kill', { node: srcNode as unknown as AudioNode, output: 0 });
+    const src = makeFakeVideoHandle({ withSubscribePulse: true });
+    const dst = makeFakeVideoHandle({ inputs: { score: 'scoreTrig' } });
+    video.handles.set('doom-A', src);
+    video.handles.set('scoreboard-B', dst);
+
+    const edge: Edge = {
+      id: 'e-unsub',
+      source: { nodeId: 'doom-A', portId: 'evt_kill' },
+      target: { nodeId: 'scoreboard-B', portId: 'score' },
+      sourceType: 'gate',
+      targetType: 'cv',
+    };
+    pe.addEdge(edge, 'video', 'video');
+    expect(src.pulseSubs.get('evt_kill')?.size).toBe(1);
+
+    pe.removeEdge(edge, 'video');
+    // Subscription gone.
+    expect(src.pulseSubs.get('evt_kill')?.size ?? 0).toBe(0);
+
+    // Even if a "pulse" fires after teardown (it can't really, but
+    // defensive), nothing reaches the target.
+    const before = dst.setParamCalls.length;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(dst.setParamCalls.length).toBe(before);
+  });
+
+  it('falls back to analyser-only (no pulse subscription) when the source handle lacks subscribePulse', () => {
+    const { pe, video } = setupEngines();
+    const srcNode = makeFakeNode('legacy-gate-src');
+    video.sources.set('legacy::evt_kill', { node: srcNode as unknown as AudioNode, output: 0 });
+    // No subscribePulse on this handle (older module shape).
+    const src = makeFakeVideoHandle({ withSubscribePulse: false });
+    const dst = makeFakeVideoHandle({ inputs: { score: 'scoreTrig' } });
+    video.handles.set('legacy', src);
+    video.handles.set('scoreboard', dst);
+
+    pe.addEdge(
+      {
+        id: 'e-legacy',
+        source: { nodeId: 'legacy', portId: 'evt_kill' },
+        target: { nodeId: 'scoreboard', portId: 'score' },
+        sourceType: 'gate',
+        targetType: 'cv',
+      },
+      'video',
+      'video',
+    );
+
+    // Analyser tap still wired (the back-compat path).
+    expect(video.cvBridgesAdded).toHaveLength(1);
+    // No subscription — handle didn't implement it.
+    expect(src.pulseSubs.size).toBe(0);
+    // And no synchronous setParam writes (analyser sampling happens in the
+    // engine's tick path, not under addEdge).
+    expect(dst.setParamCalls).toEqual([]);
   });
 });

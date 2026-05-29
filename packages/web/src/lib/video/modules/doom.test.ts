@@ -589,3 +589,116 @@ describe('doomDef.factory — SP single-player CV fallback', () => {
     expect(src).toContain('if (parsed.slot !== 0) return;');
   });
 });
+
+// ---- subscribePulse — frame-independent gate dispatch ------------------
+//
+// Locks in the discrete pulse-subscription mechanism the same-domain video
+// CV/gate bridge uses to avoid losing 10ms `pulseGate` excursions to 60fps
+// analyser sampling. The DOOM module is the only producer today (its 6 SP
+// event gates KILL/DOOR/GUN_p{1..4}); the bridge subscribes for
+// sourceType='gate' edges and dispatches a setParam(target, 1) → (target, 0)
+// pair on every callback.
+describe('doomDef.factory — subscribePulse (frame-independent gate dispatch)', () => {
+  function spawnWithFakeAudio(): { handle: ReturnType<typeof doomDef.factory>; fake: ReturnType<typeof makeFakeAudioCtx> } {
+    const gl = makeFakeGl();
+    const fake = makeFakeAudioCtx();
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: fake.ctx as AudioContext,
+    };
+    return {
+      handle: doomDef.factory(ctx, { id: 'doom-pulse', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never),
+      fake,
+    };
+  }
+
+  it('exposes subscribePulse on the handle', () => {
+    const { handle } = spawnWithFakeAudio();
+    expect(typeof handle.subscribePulse).toBe('function');
+  });
+
+  it('subscribePulse(evt_kill, cb) fires the cb exactly once per forcePulse(evt_kill)', () => {
+    const { handle } = spawnWithFakeAudio();
+    let fires = 0;
+    const unsub = handle.subscribePulse!('evt_kill', () => { fires++; });
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    extras.forcePulse('evt_kill');
+    extras.forcePulse('evt_kill');
+    extras.forcePulse('evt_kill');
+    expect(fires).toBe(3);
+    unsub();
+    extras.forcePulse('evt_kill');
+    expect(fires).toBe(3); // unsubscribed — no more fires
+  });
+
+  it('per-port routing — subscribing to evt_door does NOT fire on evt_kill pulses', () => {
+    const { handle } = spawnWithFakeAudio();
+    let doorFires = 0;
+    let killFires = 0;
+    handle.subscribePulse!('evt_door', () => { doorFires++; });
+    handle.subscribePulse!('evt_kill', () => { killFires++; });
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    extras.forcePulse('evt_door');
+    expect(doorFires).toBe(1);
+    expect(killFires).toBe(0);
+    extras.forcePulse('evt_kill');
+    expect(doorFires).toBe(1);
+    expect(killFires).toBe(1);
+  });
+
+  it('every event-gate port (kill/door/gun_p1..p4) is subscribable + fires from forcePulse', () => {
+    const { handle } = spawnWithFakeAudio();
+    const ports = ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4'];
+    const fires: Record<string, number> = {};
+    for (const p of ports) {
+      fires[p] = 0;
+      handle.subscribePulse!(p, () => { fires[p] = (fires[p] ?? 0) + 1; });
+    }
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    for (const p of ports) extras.forcePulse(p);
+    for (const p of ports) {
+      expect(fires[p], `expected ${p} subscriber to fire once`).toBe(1);
+    }
+  });
+
+  it('supports MULTIPLE subscribers on the same port (each fires on every pulse)', () => {
+    const { handle } = spawnWithFakeAudio();
+    let a = 0, b = 0;
+    handle.subscribePulse!('evt_kill', () => { a++; });
+    handle.subscribePulse!('evt_kill', () => { b++; });
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    extras.forcePulse('evt_kill');
+    extras.forcePulse('evt_kill');
+    expect(a).toBe(2);
+    expect(b).toBe(2);
+  });
+
+  it('unsubscribe is per-subscriber: removing one does not affect the others', () => {
+    const { handle } = spawnWithFakeAudio();
+    let a = 0, b = 0;
+    const unsubA = handle.subscribePulse!('evt_kill', () => { a++; });
+    handle.subscribePulse!('evt_kill', () => { b++; });
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    extras.forcePulse('evt_kill');
+    expect(a).toBe(1);
+    expect(b).toBe(1);
+    unsubA();
+    extras.forcePulse('evt_kill');
+    expect(a).toBe(1); // unsubscribed
+    expect(b).toBe(2); // still firing
+  });
+
+  it('a throwing subscriber must NOT block other subscribers from firing', () => {
+    const { handle } = spawnWithFakeAudio();
+    let good = 0;
+    handle.subscribePulse!('evt_kill', () => { throw new Error('boom'); });
+    handle.subscribePulse!('evt_kill', () => { good++; });
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    expect(() => extras.forcePulse('evt_kill')).not.toThrow();
+    expect(good).toBe(1);
+  });
+});

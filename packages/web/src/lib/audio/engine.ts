@@ -675,6 +675,13 @@ export class PatchEngine {
    *  bridge — neither end's edges Map sees it. Bookkept so removeEdge can
    *  symmetrically tear down. */
   private sameDomainVideoCvBridgeEdgeIds = new Set<string>();
+  /** Frame-independent pulse-subscription teardowns for same-domain video.gate
+   *  bridges. When the source declares `subscribePulse` we install a discrete
+   *  dispatch path (per-pulse setParam pair) IN ADDITION to the analyser tap,
+   *  so a 10ms pulse can't be missed by 60fps polling. The teardown unsubs +
+   *  cancels any pending settle frame. Keyed by edge id (symmetric with the
+   *  analyser bridge bookkeeping). */
+  private sameDomainPulseSubTeardowns = new Map<string, () => void>();
 
   registerDomain(engine: DomainEngine): void {
     this.domains.set(engine.domain, engine);
@@ -1124,6 +1131,8 @@ export class PatchEngine {
     const ve = videoEngine as DomainEngine & {
       getAudioSource?: (nodeId: string, portId: string) =>
         | { node: AudioNode; output: number } | null;
+      getNodeHandle?: (nodeId: string) => unknown;
+      resolveTargetParamId?: (nodeId: string, portId: string) => string;
       addCvBridge?: (
         edgeId: string,
         analyser: AnalyserNode,
@@ -1158,10 +1167,70 @@ export class PatchEngine {
     };
     ve.addCvBridge!(edge.id, analyser, edge.target.nodeId, edge.target.portId, teardown);
     this.sameDomainVideoCvBridgeEdgeIds.add(edge.id);
+
+    // Frame-independent gate dispatch (the failure-2 fix). The analyser tap
+    // above samples the CSN at the video frame rate — at 60fps that's a
+    // 16ms window per sample, but a `pulseGate` excursion is 10ms wide so
+    // the analyser CAN miss it (and reliably does on CI's slower scheduling
+    // → e2e #6 failure). When the source declares a `subscribePulse` for
+    // this port (DOOM's `evt_*` gates), we ALSO subscribe and dispatch a
+    // discrete setParam(target, 1) → setParam(target, 0) pair into the
+    // destination's gateEdge detector on every pulse. The analyser stays
+    // wired so cv-shaped sources (no `subscribePulse`) still flow through.
+    if (edge.sourceType === 'gate') {
+      const srcHandle = (typeof ve.getNodeHandle === 'function'
+        ? ve.getNodeHandle(edge.source.nodeId)
+        : undefined) as
+        | { subscribePulse?: (portId: string, cb: () => void) => () => void }
+        | undefined;
+      const dstHandle = (typeof ve.getNodeHandle === 'function'
+        ? ve.getNodeHandle(edge.target.nodeId)
+        : undefined) as
+        | { setParam?: (paramId: string, value: number) => void }
+        | undefined;
+      if (
+        srcHandle
+        && typeof srcHandle.subscribePulse === 'function'
+        && dstHandle
+        && typeof dstHandle.setParam === 'function'
+        && typeof ve.resolveTargetParamId === 'function'
+      ) {
+        // Resolve the destination port → paramTarget so this code path
+        // matches what addCvBridge does internally (e.g. SCOREBOARD port
+        // `score` → paramTarget `scoreTrig`).
+        const targetParamId = ve.resolveTargetParamId(edge.target.nodeId, edge.target.portId);
+        let pendingFallTimer: ReturnType<typeof setTimeout> | null = null;
+        const dispatchEdge = (): void => {
+          try { dstHandle.setParam!(targetParamId, 1); } catch { /* */ }
+          // Schedule the fall so the gateEdge detector resets to LOW before
+          // the next pulse. setTimeout(0) is sufficient — the gateEdge check
+          // is purely sample-by-sample (no rate dependency), and we want the
+          // fall to land AFTER any synchronous downstream readers see the 1.
+          if (pendingFallTimer !== null) clearTimeout(pendingFallTimer);
+          pendingFallTimer = setTimeout(() => {
+            pendingFallTimer = null;
+            try { dstHandle.setParam!(targetParamId, 0); } catch { /* */ }
+          }, 0);
+        };
+        const unsub = srcHandle.subscribePulse!(edge.source.portId, dispatchEdge);
+        this.sameDomainPulseSubTeardowns.set(edge.id, () => {
+          try { unsub(); } catch { /* */ }
+          if (pendingFallTimer !== null) {
+            clearTimeout(pendingFallTimer);
+            pendingFallTimer = null;
+          }
+        });
+      }
+    }
   }
 
   private removeSameDomainVideoCvBridge(edge: Edge): void {
     this.sameDomainVideoCvBridgeEdgeIds.delete(edge.id);
+    const sub = this.sameDomainPulseSubTeardowns.get(edge.id);
+    if (sub) {
+      try { sub(); } catch { /* */ }
+      this.sameDomainPulseSubTeardowns.delete(edge.id);
+    }
     const videoEngine = this.domains.get('video');
     if (!videoEngine) return;
     const ve = videoEngine as DomainEngine & { removeCvBridge?: (id: string) => void };
@@ -1201,6 +1270,10 @@ export class PatchEngine {
     }
     this.audioBridgeTeardowns.clear();
     this.audioBridgeEdges.clear();
+    for (const teardown of this.sameDomainPulseSubTeardowns.values()) {
+      try { teardown(); } catch { /* */ }
+    }
+    this.sameDomainPulseSubTeardowns.clear();
     for (const e of this.domains.values()) e.dispose();
     this.domains.clear();
   }

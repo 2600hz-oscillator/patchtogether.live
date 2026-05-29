@@ -1728,6 +1728,18 @@
       // enables the instant the host enters GS_LEVEL and disables at
       // intermission / game end. Cheap: one node read + an early-out.
       refreshMpLiveAsHost();
+      // Bug 3 ROBUSTNESS: re-push the keyboard-inert state into extras every
+      // frame (idempotent — extras/runtime no-op on no-change). The
+      // cvGatePatched $effect (above) fires the moment the derived flips,
+      // but its `getExtras()?.setKeyboardInert(...)` call is a no-op if
+      // extras is null at that instant — and the engine reconciler may
+      // materialize the doom node a beat AFTER the edge syncs (the order is
+      // not guaranteed under CI's slower scheduling). Without this rAF
+      // reapplication, the runtime keeps `keyboardInert=false` despite the
+      // CV gate being patched, and the e2e #3 test fails on the
+      // `isKeyboardInert()` read. Cheap: one map lookup + a boolean compare
+      // when no change (the extras + runtime setters both early-out).
+      getExtras()?.setKeyboardInert(cvGatePatched);
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {
