@@ -4,8 +4,11 @@
   // Layout:
   //   Left side:  3 CV inputs (SPD, CMP, CLR) — one per modulatable param.
   //   Right side: 3 video outputs (MONO, RGB, 3D).
-  //   Body:       3 knobs (SPEED, COMPLEXITY, COLOR) + a small 144×144
-  //               preview canvas wired to the RGB output.
+  //   Body:       5 knobs (SPEED, COMPLEXITY, COLOR, MOVE, OBLONG) +
+  //               a small 144×144 preview canvas wired to the RGB output.
+  //               MOVE drives the spirograph orbit amplitude; OBLONG
+  //               squashes it from circle → tube (see peakstate-draw's
+  //               orbitCenter() for the math).
   //
   // The preview pulls `read('previewCanvas')` (the engine-owned
   // OffscreenCanvas the RGB output draws into) and drawImage()s it into
@@ -106,6 +109,18 @@
       label="COLOR" curve="linear"
       onchange={setP('color_speed')} moduleId={id} paramId="color_speed"
     />
+    <Knob
+      value={paramVal('move')}
+      min={0} max={1} defaultValue={defaultFor('move')}
+      label="MOVE" curve="linear"
+      onchange={setP('move')} moduleId={id} paramId="move"
+    />
+    <Knob
+      value={paramVal('oblong')}
+      min={0} max={1} defaultValue={defaultFor('oblong')}
+      label="OBLONG" curve="linear"
+      onchange={setP('oblong')} moduleId={id} paramId="oblong"
+    />
   </div>
 </div>
 
@@ -163,6 +178,8 @@
     display: flex;
     justify-content: space-around;
     align-items: center;
+    flex-wrap: wrap;
+    row-gap: 8px;
     padding: 0 8px;
     gap: 4px;
   }

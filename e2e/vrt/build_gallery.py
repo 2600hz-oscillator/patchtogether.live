@@ -309,6 +309,12 @@ def render_html(
             font-family: 'Courier New', monospace;
             line-height: 1.5;
         }}
+        /* Banners are full-bleed — they cross the 1400px content gutter
+           on wide screens because the kaleidoscope X-shape reads better
+           edge-to-edge than constrained to the column width. */
+        .banner {{ display: block; width: 100%; height: auto; }}
+        .banner-header {{ margin-bottom: 2rem; }}
+        .banner-footer {{ margin-top: 2rem; }}
         .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
         a {{ color: #66bbff; text-decoration: none; }}
         a:hover {{ text-decoration: underline; }}
@@ -433,6 +439,7 @@ def render_html(
     </script>
 </head>
 <body id="modules">
+    <img class="banner banner-header" src="../assets/header.png" alt="patchtogether.live header banner">
     <div class="container">
         <h1>VRT GALLERY</h1>
         <p class="subtitle">Playwright screenshot baselines for patchtogether.live</p>
@@ -453,6 +460,7 @@ def render_html(
             <p><a href="../">&laquo; back</a> &middot; <a href="https://github.com/2600hz-oscillator/patchtogether.live">repo</a></p>
         </footer>
     </div>
+    <img class="banner banner-footer" src="../assets/footer.png" alt="patchtogether.live footer banner" loading="lazy">
 </body>
 </html>
 """

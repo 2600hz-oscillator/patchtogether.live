@@ -334,20 +334,35 @@
         document.head.appendChild(s);
       });
 
-      // Wire the bridge to the captured on_anim_frame so each scheduler
-      // tick advances one game frame. The bundle's `produce_one_frame` is
-      // called inside on_anim_frame.
+      // Wire the bridge.
+      //
+      // autoStart: equivalent to clicking #startbutton. The bundle binds a
+      // click listener at module-eval that calls startGame() (or
+      // location.reload() if already started). We re-fire startGame via the
+      // button click. Wiring this UNCONDITIONALLY — it does not depend on the
+      // rAF-hijack having captured anything (the hijack uses a stack-string
+      // probe that only matches an UNMINIFIED bundle, so on our prod-minified
+      // bundle `capturedOnAnimFrame` is always null and the produceOneFrame
+      // path is unused; the bundle self-drives frames via its own
+      // requestAnimationFrame chain which falls through our hijack's
+      // non-matching filter to the original rAF — see hijackRaf comments).
+      // Pre-fix this was gated by `capturedOnAnimFrame` → autoStart stayed
+      // undefined → clicking Extract surfaced ROM in IDB but the
+      // scheduler-tick's synthetic start_gate never fired the click → white
+      // screen.
       const w = globalThis as unknown as { __sm64?: Sm64Bridge };
-      if (w.__sm64 && capturedOnAnimFrame) {
-        w.__sm64.produceOneFrame = () => {
-          try { capturedOnAnimFrame!(0); } catch (_e) { /* swallow per-frame engine errors */ }
-        };
-        // autoStart: equivalent to clicking #startbutton. The bundle binds
-        // a click listener that calls startGame() (or location.reload() if
-        // already started). We re-fire startGame via the button click.
+      if (w.__sm64) {
         w.__sm64.autoStart = () => {
-          try { startButtonEl?.click(); } catch (_e) { /* */ }
+          try {
+            startButtonEl?.click();
+            if (w.__sm64) w.__sm64.gameStarted = true;
+          } catch (_e) { /* */ }
         };
+        if (capturedOnAnimFrame) {
+          w.__sm64.produceOneFrame = () => {
+            try { capturedOnAnimFrame!(0); } catch (_e) { /* swallow per-frame engine errors */ }
+          };
+        }
       }
 
       // The bundle's romTextureLoader.js wires its submit handler at

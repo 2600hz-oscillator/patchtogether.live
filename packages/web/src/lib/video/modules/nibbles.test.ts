@@ -408,6 +408,64 @@ describe('nibblesDef.factory — __nibblesForceLength deterministic CV hook', ()
   });
 });
 
+describe('nibblesDef.factory — length_cv', () => {
+  it('starts the ConstantSource at factory mount', () => {
+    const { fixture } = spawn();
+    // 4 CSNs: pellet, death, dir_change, length_cv.
+    // Each has start() called exactly once at construction.
+    for (const c of fixture!.constants) {
+      expect(c.start).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('seeds length_cv.offset at the initial-length CV value (length=4)', () => {
+    const { fixture } = spawn();
+    // length_cv is the 4th ConstantSource (after pellet, death, dir_change).
+    const lengthCv = fixture!.constants[3]!;
+    // setValueAtTime(initialCv, 0) at construction.
+    expect(lengthCv.offset.setValueAtTime).toHaveBeenCalled();
+    const firstCall = lengthCv.offset.setValueAtTime.mock.calls[0]!;
+    // lengthToCv(4) = (4 - 119/2) / (119/2) = -0.9328...
+    expect(firstCall[0]).toBeCloseTo((4 - NIBBLES_MAX_LENGTH / 2) / (NIBBLES_MAX_LENGTH / 2), 3);
+    expect(firstCall[1]).toBe(0);
+  });
+
+  it('updates length_cv.offset when the snake eats a pellet (length grows)', () => {
+    // Regression: NIBBLES.length_cv → QBRT.cutoff_cv didn't move the
+    // cutoff slider because the per-tick handler that updates the
+    // ConstantSourceNode's offset was never reached. Drive the AUTO bot
+    // until at least one pellet event fires + assert the offset is
+    // re-scheduled via linearRampToValueAtTime.
+    const { handle, fixture } = spawn();
+    const lengthCv = fixture!.constants[3]!;
+    // Clear the construction-time setValueAtTime so we count only
+    // post-tick updates.
+    lengthCv.offset.linearRampToValueAtTime.mockClear();
+
+    handle.setParam('auto', 1);
+    const extras = handle.read?.('extras') as { getScore: () => number };
+    const surface = handle.surface;
+    const startScore = extras.getScore();
+
+    // Drive ticks until the snake grows OR we time out.
+    let grew = false;
+    for (let i = 0; i < 600 && !grew; i++) {
+      surface.draw({
+        gl: makeFakeGl(),
+        time: i * 0.1,
+        frame: i,
+        getInputTexture: () => null,
+      });
+      if (extras.getScore() !== startScore) grew = true;
+    }
+    expect(grew).toBe(true);
+    // The per-event handler must have called linearRampToValueAtTime on
+    // length_cv.offset at least once (the proof the wiring fires on
+    // length change).
+    expect(lengthCv.offset.linearRampToValueAtTime).toHaveBeenCalled();
+  });
+});
+
 describe('nibblesDef.factory — AUTO toggle drives direction; OFF halts it', () => {
   it('with AUTO on, ticking moves the snake and may change its direction (via bot)', () => {
     const { handle } = spawn();
