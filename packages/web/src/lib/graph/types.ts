@@ -455,6 +455,11 @@ type StandardModuleType =
   // saturation. Tempo-sync locks the time to a measured clock pulse
   // (TIMELORDE system clock or external MIDI clock) at a musical division.
   | 'cocoadelay'
+  // RESOFILTER — multi-mode filter, port of gabrielsoule/resonarium's
+  // MultiFilter (Source/dsp/MultiFilter.{h,cpp}). 5 modes drawn from the
+  // upstream MultiFilter::Type enum: LP / HP / BP / Notch / Allpass.
+  // Card displays the long-form mode name next to the MODE knob.
+  | 'resofilter'
   // 4PLEXER — 4-in / 4-out discrete signal router. Each output has its own
   // selector (which of in1..in4 it carries) + its own gate input that
   // advances that selector on each rising edge (1→2→3→4→1). Audio + cv both

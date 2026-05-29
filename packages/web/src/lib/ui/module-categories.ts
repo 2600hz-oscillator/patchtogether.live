@@ -150,6 +150,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0). Headline software
   // delay port — one click in the picker, flat under the Ports header.
   cocoadelay: { top: 'Ports', sub: 'Ports' },
+  // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
+  resofilter: { top: 'Ports', sub: 'Ports' },
 
   // ───────── Ports → Mutable (Émilie Gillet / MI archetype ports). ─────────
   rings: { top: 'Ports', sub: 'Mutable' },

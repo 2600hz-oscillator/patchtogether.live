@@ -191,6 +191,8 @@
   import CallsineCard from '$lib/ui/modules/CallsineCard.svelte';
   // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0).
   import CocoaDelayCard from '$lib/ui/modules/CocoaDelayCard.svelte';
+  // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
+  import ResofilterCard from '$lib/ui/modules/ResofilterCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
@@ -464,6 +466,8 @@
     // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
     callsine: CallsineCard,
     cocoadelay: CocoaDelayCard,
+    // RESOFILTER — Resonarium MultiFilter port (5 modes, named-mode label).
+    resofilter: ResofilterCard,
     // DOOM — single-instance interactive video module.
     doom: DoomCard,
     // VIDEOBOX — local-file video player with multiplayer playhead sync.
