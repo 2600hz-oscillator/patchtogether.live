@@ -3,36 +3,44 @@
 // FOXY — HYBRID audio-visual module. A single card that hides a whole
 // signal chain inside one box:
 //
-//   3× mini SWOLEVCO  →  3× internal RASTERIZE  →  3-axis distribution  →
-//   realtime wavetable build  →  internal WAVECEL wavetable VCO  →
+//   3× mini SWOLEVCO  →  3× internal RASTERIZE  →  volumetric Box (A+B+C)
+//   →  realtime wavetable build  →  internal WAVECEL wavetable VCO  →
 //   the module's audio + video outputs.
 //
 // The wavetable is REGENERATED in realtime from the evolving rasters, so
 // WAVECEL's on-card 3D wavetable display visibly ANIMATES.
 //
-// ── v3: 3-axis distribution wavetable ────────────────────────────────────
+// ── v4: volumetric 3-axis (C warps A + adds Z) ───────────────────────────
 //
-// FOXY v3 has THREE source SWOLEVCOs (A/B/C) each driving its own internal
-// RASTERIZE. Instead of building a 3D heightfield from two of them, the
-// three rasters now act as the three AXES of the wavetable:
+// v3's rank-1 separable model (outer-sum of two 1-D distributions, shaped
+// by a Z LUT) collapsed structure to a FLAT profile — no genuine 3D relief
+// could survive the projection. v4 throws that out and builds a real
+// volumetric construction on top of v2's Box heightfield:
 //
-//   • Raster A → COLUMN distribution → wavetable X axis (sample index s)
-//   • Raster B → ROW    distribution → wavetable Y axis (frame  index f)
-//   • Raster C → COLUMN distribution → wavetable Z axis (amplitude LUT)
+//   • Raster A → BASE / terrain pattern (luma)
+//   • Raster B → PRIMARY Z height (luma)
+//   • Raster C → DUAL contributor:
+//       1. Lateral WARP on A's lookup — bright C cells pull the A sample
+//          sideways, twisting the heightfield in the XY plane
+//       2. Secondary Z height — C's luma additively combines with B's to
+//          drive Z displacement
 //
-// The reason this is interesting: instead of one raster "lifting" another
-// (which only gives you 2 independent voices + relief), each raster
-// independently shapes ONE axis of the table. A redistributes data across
-// the phase axis (what the wave LOOKS like within a frame), B redistributes
-// data across the morph axis (how the wave evolves between frames), and C
-// reshapes amplitudes (where C is bright the signal pushes toward ±1,
-// where it's dark the signal compresses toward 0). All three are
-// orthogonal, so the user gets three voices the wavetable cares about.
+// v2-degeneracy: when C is flat gray (luma 0.5), warpAmt = 0 + heightC = 0,
+// so v4 reproduces v2's `boxToField` output EXACTLY. v4 is strictly more
+// expressive than v2 — pinned by test.
 //
-// Math (per cell, see foxy-map.ts):
+// Math (per cell, see foxy-map.ts `boxToField3d` for details):
 //
-//   raw   (f, s) = (xDist[s] - 0.5) + (yDist[f] - 0.5)
-//   cell  (f, s) = clamp(applyZLut(raw, zLut), -1, 1)
+//   warpAmt    = (C - 0.5) * warpAmount
+//   srcCol'    = h0 * (srcW-1) + warpAmt * srcW * 0.15
+//   srcRow'    = v0 * (srcH-1) + warpAmt * srcH * 0.15
+//   baseA      = lumaA at the C-warped (srcCol', srcRow')
+//   heightC_d  = (C - 0.5) * secondaryHeight
+//   y          = v + (heightB - 0.5) * yDisp + heightC_d * yDisp
+//
+// Two new user controls expose the v4 effects directly:
+//   xyz_warp    (0..1, default 0.25) — lateral warp strength
+//   xyz_zheight (0..1, default 0.5)  — secondary height strength
 //
 // ── Why this is built the way it is (design decisions, flagged) ───────────
 //
@@ -77,11 +85,12 @@ import {
   FOXY_WT_FRAMES,
   FOXY_WT_SAMPLES,
   FOXY_XYZ_DEFAULTS,
-  axisDistribution,
-  threeAxisWavetable,
-  threeAxisFieldForDisplay,
+  FOXY_XYZ_3D_DEFAULTS,
+  boxHeightfield3d,
+  boxToField3d,
+  fieldToWavetable,
   wavetableSignature,
-  type FoxyXyzParams,
+  type FoxyXyz3dParams,
   type FoxyFieldRow,
 } from './foxy-map';
 
@@ -149,10 +158,14 @@ export const foxyDef: AudioModuleDef = {
     { id: 'src3_timbre',   label: 'S3.Tbr',  defaultValue: 0.4, min: 0,   max: 1,  curve: 'linear' },
     { id: 'src3_symmetry', label: 'S3.Sym',  defaultValue: 0.7, min: 0,   max: 1,  curve: 'linear' },
     { id: 'src3_fold',     label: 'S3.Fold', defaultValue: 0.3, min: 0,   max: 1,  curve: 'linear' },
-    // ── simplified RUTTETRA "XYZ" controls (legacy scope draw only) ──
-    { id: 'xyz_xshape', label: 'X Shp', defaultValue: FOXY_XYZ_DEFAULTS.xShape, min: 0,  max: 1, curve: 'linear' },
-    { id: 'xyz_yshape', label: 'Y Shp', defaultValue: FOXY_XYZ_DEFAULTS.yShape, min: 0,  max: 1, curve: 'linear' },
-    { id: 'xyz_ydisp',  label: 'Y Dsp', defaultValue: FOXY_XYZ_DEFAULTS.yDisp,  min: -1, max: 1, curve: 'linear' },
+    // ── v4 volumetric 3-axis XYZ controls ────────────────────────────
+    { id: 'xyz_xshape',  label: 'X Shp', defaultValue: FOXY_XYZ_DEFAULTS.xShape, min: 0,  max: 1, curve: 'linear' },
+    { id: 'xyz_yshape',  label: 'Y Shp', defaultValue: FOXY_XYZ_DEFAULTS.yShape, min: 0,  max: 1, curve: 'linear' },
+    { id: 'xyz_ydisp',   label: 'Y Dsp', defaultValue: FOXY_XYZ_DEFAULTS.yDisp,  min: -1, max: 1, curve: 'linear' },
+    // v4: C warps A's lookup laterally → tunnel-like XY twist on the surface.
+    { id: 'xyz_warp',    label: 'Warp', defaultValue: FOXY_XYZ_3D_DEFAULTS.warpAmount,      min: 0, max: 1, curve: 'linear' },
+    // v4: C adds a SECONDARY Z height on top of B's primary heightmap.
+    { id: 'xyz_zheight', label: 'Z Ht', defaultValue: FOXY_XYZ_3D_DEFAULTS.secondaryHeight, min: 0, max: 1, curve: 'linear' },
     // Freeze toggles (0 = live, 1 = frozen). FREEZE RASTER A/B/C hold each
     // raster's current frame so the source SWOLEVCOs no longer drive that
     // axis of the wavetable. FREEZE TABLE holds the wavetable: stops
@@ -319,15 +332,17 @@ export const foxyDef: AudioModuleDef = {
       wrap: 0,
     };
 
-    // ───────────────────────── 3-axis bridge ─────────────────────────
-    // The XYZ params survive on the card as legacy scope-shaping knobs;
-    // they no longer feed the wavetable math (v3 reads the 3 rasters
-    // directly via axisDistribution). Kept so a v2 patch's preset still
-    // loads without warnings.
-    const xyz: FoxyXyzParams = {
-      xShape: num('xyz_xshape', FOXY_XYZ_DEFAULTS.xShape),
-      yShape: num('xyz_yshape', FOXY_XYZ_DEFAULTS.yShape),
-      yDisp:  num('xyz_ydisp',  FOXY_XYZ_DEFAULTS.yDisp),
+    // ───────────────────────── v4 volumetric bridge ──────────────────
+    // The XYZ params now ACTIVELY drive the wavetable math (v4 reads the
+    // 3 rasters into a volumetric Box → boxToField3d → fieldToWavetable).
+    // xyz_warp + xyz_zheight are the two new v4 knobs (see foxy-map.ts
+    // header for the design).
+    const xyz: FoxyXyz3dParams = {
+      xShape:          num('xyz_xshape',  FOXY_XYZ_3D_DEFAULTS.xShape),
+      yShape:          num('xyz_yshape',  FOXY_XYZ_3D_DEFAULTS.yShape),
+      yDisp:           num('xyz_ydisp',   FOXY_XYZ_3D_DEFAULTS.yDisp),
+      warpAmount:      num('xyz_warp',    FOXY_XYZ_3D_DEFAULTS.warpAmount),
+      secondaryHeight: num('xyz_zheight', FOXY_XYZ_3D_DEFAULTS.secondaryHeight),
     };
     // Latest computed field + table, cached so the card can read them back
     // without recomputing (the bridge owns the compute). `field` is now
@@ -411,11 +426,11 @@ export const foxyDef: AudioModuleDef = {
       const imgA = painterA.imageData();
       const imgB = painterB.imageData();
       const imgC = painterC.imageData();
-      const xDist = axisDistribution(imgA.data, RASTER_W, RASTER_H, FOXY_WT_SAMPLES, 'col');
-      const yDist = axisDistribution(imgB.data, RASTER_W, RASTER_H, FOXY_WT_FRAMES, 'row');
-      const zLut  = axisDistribution(imgC.data, RASTER_W, RASTER_H, FOXY_WT_SAMPLES, 'col');
-      const plain = threeAxisWavetable(xDist, yDist, zLut, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
-      field = threeAxisFieldForDisplay(plain, xDist);
+      // v4 volumetric construction: A+B+C → boxHeightfield3d → boxToField3d
+      // (with C warping A's lookup + adding secondary Z) → fieldToWavetable.
+      const box3 = boxHeightfield3d(imgA.data, imgB.data, imgC.data, RASTER_W, RASTER_H);
+      field = boxToField3d(box3, imgA.data, RASTER_W, RASTER_H, xyz);
+      const plain = fieldToWavetable(field, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
       wtSignature = wavetableSignature(plain);
       wtFrames = plain.map((f) => new Float32Array(f));
       wave.port.postMessage({ type: 'loadWavetable', frames: plain });
@@ -468,25 +483,26 @@ export const foxyDef: AudioModuleDef = {
         painterC.paint(swoleC.buf.subarray(swoleC.buf.length - countC), rasterParamsC);
       }
 
-      // 2. 3-axis distributions: project each raster onto its wavetable
-      //    axis. A → COLUMN distribution (X / sample s); B → ROW (Y / frame f);
-      //    C → COLUMN distribution (Z / amplitude LUT).
+      // 2. v4 volumetric construction. Combine A+B+C into the volumetric
+      //    Box (A = base terrain, B = primary Z, C = warps A's lookup AND
+      //    adds secondary Z), then convert into the XYZ scanline field.
       const imgA = painterA.imageData();
       const imgB = painterB.imageData();
       const imgC = painterC.imageData();
-      const xDist = axisDistribution(imgA.data, RASTER_W, RASTER_H, FOXY_WT_SAMPLES, 'col');
-      const yDist = axisDistribution(imgB.data, RASTER_W, RASTER_H, FOXY_WT_FRAMES, 'row');
-      const zLut  = axisDistribution(imgC.data, RASTER_W, RASTER_H, FOXY_WT_SAMPLES, 'col');
+      const box3 = boxHeightfield3d(imgA.data, imgB.data, imgC.data, RASTER_W, RASTER_H);
+      // Re-read the v4 knobs in case they changed since module init
+      // (setParam updates `xyz` in place — see below — but the bridge
+      // also picks up live knob drags via the same field).
+      field = boxToField3d(box3, imgA.data, RASTER_W, RASTER_H, xyz);
 
       // 3. Build the wavetable (64×256), change-detect, post to WAVECEL.
+      //    The field carries volumetric relief (B's height + C's secondary
+      //    height + C-warped A samples) → fieldToWavetable reads the
+      //    displaced Y values, so the audio wavetable HAS 3D shape.
       //    When FREEZE TABLE is on, the field can keep updating (so the
       //    XYZ display still animates) but we don't push the new table to
       //    the audio worklet — it keeps reading the last-pushed table.
-      const plain = threeAxisWavetable(xDist, yDist, zLut, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
-      // The on-card XYZ scope reads the wavetable directly so the display
-      // always shows the EXACT audio data the worklet sees, not a separate
-      // heightfield approximation.
-      field = threeAxisFieldForDisplay(plain, xDist);
+      const plain = fieldToWavetable(field, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
       if (!freezeT) {
         const sig = wavetableSignature(plain);
         if (sig !== wtSignature) {
@@ -555,10 +571,12 @@ export const foxyDef: AudioModuleDef = {
           case 'src3_timbre': swoleC.params.timbre = value; swoleC.setTimbre(value); return;
           case 'src3_symmetry': swoleC.params.symmetry = value; swoleC.setSymmetry(value); return;
           case 'src3_fold': swoleC.params.fold = value; swoleC.setFold(value); return;
-          // XYZ window params (legacy — kept for the on-card scope display).
-          case 'xyz_xshape': xyz.xShape = value; return;
-          case 'xyz_yshape': xyz.yShape = value; return;
-          case 'xyz_ydisp':  xyz.yDisp = value; return;
+          // v4 volumetric XYZ params — actively drive the bridge math.
+          case 'xyz_xshape':  xyz.xShape = value; return;
+          case 'xyz_yshape':  xyz.yShape = value; return;
+          case 'xyz_ydisp':   xyz.yDisp = value; return;
+          case 'xyz_warp':    xyz.warpAmount = value; return;
+          case 'xyz_zheight': xyz.secondaryHeight = value; return;
         }
       },
       readParam(paramId) {
@@ -580,9 +598,11 @@ export const foxyDef: AudioModuleDef = {
           case 'src3_timbre': return swoleC.params.timbre;
           case 'src3_symmetry': return swoleC.params.symmetry;
           case 'src3_fold': return swoleC.params.fold;
-          case 'xyz_xshape': return xyz.xShape;
-          case 'xyz_yshape': return xyz.yShape;
-          case 'xyz_ydisp': return xyz.yDisp;
+          case 'xyz_xshape':  return xyz.xShape;
+          case 'xyz_yshape':  return xyz.yShape;
+          case 'xyz_ydisp':   return xyz.yDisp;
+          case 'xyz_warp':    return xyz.warpAmount;
+          case 'xyz_zheight': return xyz.secondaryHeight;
           default: return undefined;
         }
       },
@@ -593,9 +613,16 @@ export const foxyDef: AudioModuleDef = {
         if (key === 'rasterImageDataA') { bridgeTick(); return painterA.imageData(); }
         if (key === 'rasterImageDataB') { bridgeTick(); return painterB.imageData(); }
         if (key === 'rasterImageDataC') { bridgeTick(); return painterC.imageData(); }
-        // v3 dropped the Box heightfield; keep the key returning null so
-        // a v2 patch-loaded card doesn't crash if it asks for it.
-        if (key === 'box') return null;
+        // v4 keeps the box reading available (the volumetric Box3 with
+        // A/B/C luma per cell). Card uses xyzField for display, this is
+        // for any future diagnostic / introspection callers.
+        if (key === 'box') {
+          bridgeTick();
+          return boxHeightfield3d(
+            painterA.imageData().data, painterB.imageData().data,
+            painterC.imageData().data, RASTER_W, RASTER_H,
+          );
+        }
         if (key === 'xyzField') return field;
         if (key === 'wavetableFrames') return wtFrames;
         if (key === 'activeFrame') return readActiveFrame();

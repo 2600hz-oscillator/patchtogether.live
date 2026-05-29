@@ -10,6 +10,7 @@ import {
   FOXY_WT_FRAMES,
   FOXY_WT_SAMPLES,
   FOXY_XYZ_DEFAULTS,
+  FOXY_XYZ_3D_DEFAULTS,
   lumaAt,
   simplifiedRuttetraField,
   boxHeightfield,
@@ -20,6 +21,8 @@ import {
   applyZLut,
   threeAxisWavetable,
   threeAxisFieldForDisplay,
+  boxHeightfield3d,
+  boxToField3d,
 } from './foxy-map';
 
 /** Variance of all sample values across every frame — our "how 3D / how
@@ -473,6 +476,216 @@ describe('threeAxisFieldForDisplay (v3)', () => {
   it('empty wavetable ⇒ empty field (no rows)', () => {
     const field = threeAxisFieldForDisplay([], new Float32Array(4));
     expect(field).toHaveLength(0);
+  });
+});
+
+// ── v4: volumetric 3-axis (C warps A + adds Z) ────────────────────────────
+
+describe('boxHeightfield3d (v4)', () => {
+  it('returns size × size base + height + cField (all in [0,1])', () => {
+    const a = makeBuffer(8, 8, (x) => x / 7);
+    const b = makeBuffer(8, 8, (_x, y) => y / 7);
+    const c = makeBuffer(8, 8, (x, y) => ((x + y) / 14));
+    const box = boxHeightfield3d(a, b, c, 8, 8, 8);
+    expect(box.size).toBe(8);
+    expect(box.base).toHaveLength(64);
+    expect(box.height).toHaveLength(64);
+    expect(box.cField).toHaveLength(64);
+    for (const v of box.base)   { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
+    for (const v of box.height) { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
+    for (const v of box.cField) { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
+  });
+
+  it('cField tracks raster C, independently of A and B', () => {
+    const a = makeBuffer(8, 8, () => 0.2);
+    const b = makeBuffer(8, 8, () => 0.8);
+    const cBright = makeBuffer(8, 8, () => 1);
+    const cDark   = makeBuffer(8, 8, () => 0);
+    const boxBright = boxHeightfield3d(a, b, cBright, 8, 8, 8);
+    const boxDark   = boxHeightfield3d(a, b, cDark,   8, 8, 8);
+    // base + height identical (A, B unchanged); cField swaps with C only.
+    expect(Array.from(boxBright.base)).toEqual(Array.from(boxDark.base));
+    expect(Array.from(boxBright.height)).toEqual(Array.from(boxDark.height));
+    for (const v of boxBright.cField) expect(v).toBeCloseTo(1, 2);
+    for (const v of boxDark.cField)   expect(v).toBeCloseTo(0, 2);
+  });
+
+  it('is deterministic: same buffers → identical output', () => {
+    const a = makeBuffer(16, 16, (x, y) => ((x * 3 + y * 5) % 16) / 16);
+    const b = makeBuffer(16, 16, (x, y) => ((x * 7 + y * 11) % 16) / 16);
+    const c = makeBuffer(16, 16, (x, y) => ((x * 13 + y * 2) % 16) / 16);
+    const b1 = boxHeightfield3d(a, b, c, 16, 16, 16);
+    const b2 = boxHeightfield3d(a, b, c, 16, 16, 16);
+    expect(Array.from(b1.base)).toEqual(Array.from(b2.base));
+    expect(Array.from(b1.height)).toEqual(Array.from(b2.height));
+    expect(Array.from(b1.cField)).toEqual(Array.from(b2.cField));
+  });
+});
+
+describe('boxToField3d (v4)', () => {
+  /** Mean abs per-cell delta between two FoxyFieldRow[] of equal shape. */
+  function fieldDelta(a: ReturnType<typeof boxToField>, b: ReturnType<typeof boxToField>): number {
+    let n = 0, acc = 0;
+    for (let r = 0; r < a.length; r++) {
+      for (let s = 0; s < a[r]!.y.length; s++) {
+        acc += Math.abs(a[r]!.y[s]! - b[r]!.y[s]!);
+        n++;
+      }
+    }
+    return n > 0 ? acc / n : 0;
+  }
+
+  it('returns rows × cols field with the requested dims', () => {
+    const a = makeBuffer(16, 16, (x) => x / 15);
+    const b = makeBuffer(16, 16, (_x, y) => y / 15);
+    const c = makeBuffer(16, 16, () => 0.5);
+    const box3 = boxHeightfield3d(a, b, c, 16, 16, 16);
+    const field = boxToField3d(box3, a, 16, 16, FOXY_XYZ_3D_DEFAULTS, 16, 16);
+    expect(field).toHaveLength(16);
+    for (const row of field) {
+      expect(row.y).toHaveLength(16);
+      expect(row.lum).toHaveLength(16);
+    }
+  });
+
+  it('v2-degeneracy: flat-gray C (0.5) reproduces v2 boxToField EXACTLY', () => {
+    // The headline property: with C = 0x80 everywhere, warpAmt ≈ 0 and
+    // heightC_disp ≈ 0, so the v4 construction reduces to v2's boxToField.
+    // Pinned with both nonzero warp AND nonzero secondaryHeight — the
+    // contribution still vanishes because C-0.5 ≈ 0. The ~5e-4 residual is
+    // 8-bit pixel quantization (0x80/255 = 0.50196, not 0.5 exactly), which
+    // sub-pixel-shifts the C-warped A lookup; the test asserts that
+    // residual stays below half a pixel (epsilon = 1e-3).
+    const size = 32;
+    const a = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 9)) * (0.5 + 0.5 * Math.cos((y * 6.283) / 11)));
+    const b = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 5 + (y * 6.283) / 7)));
+    const cFlat = makeBuffer(size, size, () => 0.5);
+    const box2 = boxHeightfield(a, b, size, size, size);
+    const box3 = boxHeightfield3d(a, b, cFlat, size, size, size);
+    const v2params = { ...FOXY_XYZ_DEFAULTS };
+    // Nonzero warp + nonzero secondaryHeight — they should still be inert.
+    const v4params = { ...FOXY_XYZ_DEFAULTS, warpAmount: 0.25, secondaryHeight: 0.5 };
+    const fieldV2 = boxToField(box2, v2params, size, size);
+    const fieldV4 = boxToField3d(box3, a, size, size, v4params, size, size);
+    expect(fieldV2).toHaveLength(fieldV4.length);
+    const epsilon = 1e-3; // half a pixel @ 8-bit quantization
+    for (let r = 0; r < fieldV2.length; r++) {
+      for (let s = 0; s < fieldV2[r]!.y.length; s++) {
+        const dy = Math.abs(fieldV4[r]!.y[s]! - fieldV2[r]!.y[s]!);
+        const dl = Math.abs(fieldV4[r]!.lum[s]! - fieldV2[r]!.lum[s]!);
+        expect(dy, `Y delta @ (${r},${s})`).toBeLessThan(epsilon);
+        expect(dl, `lum delta @ (${r},${s})`).toBeLessThan(epsilon);
+      }
+    }
+  });
+
+  it('v2-degeneracy EXACT: with TRULY zero warp/secondaryHeight, v4 equals v2 to 4 decimals', () => {
+    // Same setup but with the v4 knobs at strict zero — eliminates the 8-bit
+    // quantization residual since warpAmt = (cVal-0.5)*0 = 0 exactly.
+    const size = 32;
+    const a = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 9)) * (0.5 + 0.5 * Math.cos((y * 6.283) / 11)));
+    const b = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 5 + (y * 6.283) / 7)));
+    const cAny  = makeBuffer(size, size, (x, y) => (x * 7 + y * 13) % 256 / 255);
+    const box2 = boxHeightfield(a, b, size, size, size);
+    const box3 = boxHeightfield3d(a, b, cAny, size, size, size);
+    const v2params = { ...FOXY_XYZ_DEFAULTS };
+    const v4zero = { ...FOXY_XYZ_DEFAULTS, warpAmount: 0, secondaryHeight: 0 };
+    const fieldV2 = boxToField(box2, v2params, size, size);
+    const fieldV4 = boxToField3d(box3, a, size, size, v4zero, size, size);
+    for (let r = 0; r < fieldV2.length; r++) {
+      for (let s = 0; s < fieldV2[r]!.y.length; s++) {
+        expect(fieldV4[r]!.y[s]!).toBeCloseTo(fieldV2[r]!.y[s]!, 4);
+      }
+    }
+  });
+
+  it('warp + secondaryHeight both zero → matches v2 EVEN with non-flat C', () => {
+    // The knobs can turn off the new effects independently of C content.
+    const size = 32;
+    const a = makeBuffer(size, size, (x, y) => ((x * 3 + y) % 32) / 32);
+    const b = makeBuffer(size, size, (x, y) => ((x + y * 5) % 32) / 32);
+    const c = makeBuffer(size, size, (x, y) => Math.sin((x * 6.283) / 4 + (y * 6.283) / 6) * 0.5 + 0.5);
+    const box2 = boxHeightfield(a, b, size, size, size);
+    const box3 = boxHeightfield3d(a, b, c, size, size, size);
+    const v2params = { ...FOXY_XYZ_DEFAULTS };
+    // Both knobs at zero — v4 should equal v2 regardless of C.
+    const v4params = { ...FOXY_XYZ_DEFAULTS, warpAmount: 0, secondaryHeight: 0 };
+    const fieldV2 = boxToField(box2, v2params, size, size);
+    const fieldV4 = boxToField3d(box3, a, size, size, v4params, size, size);
+    for (let r = 0; r < fieldV2.length; r++) {
+      for (let s = 0; s < fieldV2[r]!.y.length; s++) {
+        expect(fieldV4[r]!.y[s]!).toBeCloseTo(fieldV2[r]!.y[s]!, 4);
+      }
+    }
+  });
+
+  it('non-flat C + nonzero warp/secondaryHeight DIVERGES measurably from v2', () => {
+    // Inverse of the degeneracy: turn the v4 knobs ON with a non-flat C and
+    // we should see real, measurable departure from v2's output at multiple
+    // cells. Picks 3 specific cells + asserts each differs by > 1e-3.
+    const size = 32;
+    const a = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 9)) * (0.5 + 0.5 * Math.cos((y * 6.283) / 11)));
+    const b = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 5 + (y * 6.283) / 7)));
+    const c = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.cos((x * 6.283) / 6 + (y * 6.283) / 4)));
+    const box2 = boxHeightfield(a, b, size, size, size);
+    const box3 = boxHeightfield3d(a, b, c, size, size, size);
+    const v2params = { ...FOXY_XYZ_DEFAULTS };
+    const v4params = { ...FOXY_XYZ_DEFAULTS, warpAmount: 0.5, secondaryHeight: 0.8 };
+    const fieldV2 = boxToField(box2, v2params, size, size);
+    const fieldV4 = boxToField3d(box3, a, size, size, v4params, size, size);
+    // 3 picked interior cells (avoid edges where lumaAt clamps coincide).
+    const probes: Array<[number, number]> = [[8, 12], [16, 7], [22, 20]];
+    for (const [r, s] of probes) {
+      const delta = Math.abs(fieldV4[r]!.y[s]! - fieldV2[r]!.y[s]!);
+      expect(delta, `cell (${r},${s})`).toBeGreaterThan(1e-3);
+    }
+    // Overall divergence is non-trivial too.
+    const overall = fieldDelta(fieldV2, fieldV4);
+    expect(overall, 'mean abs Y delta').toBeGreaterThan(1e-2);
+  });
+
+  it('is deterministic: same inputs → identical field', () => {
+    const a = makeBuffer(16, 16, (x, y) => ((x * 3 + y * 5) % 16) / 16);
+    const b = makeBuffer(16, 16, (x, y) => ((x * 7 + y * 11) % 16) / 16);
+    const c = makeBuffer(16, 16, (x, y) => ((x * 13 + y * 2) % 16) / 16);
+    const box3 = boxHeightfield3d(a, b, c, 16, 16, 16);
+    const params = { ...FOXY_XYZ_3D_DEFAULTS };
+    const f1 = boxToField3d(box3, a, 16, 16, params, 16, 16);
+    const f2 = boxToField3d(box3, a, 16, 16, params, 16, 16);
+    expect(f1.length).toBe(f2.length);
+    for (let r = 0; r < f1.length; r++) {
+      expect(Array.from(f1[r]!.y)).toEqual(Array.from(f2[r]!.y));
+      expect(Array.from(f1[r]!.lum)).toEqual(Array.from(f2[r]!.lum));
+    }
+  });
+
+  it('produces a wavetable with non-trivial frame-to-frame + sample-to-sample variance', () => {
+    // The end-to-end audible regression: the v4 field, run through
+    // fieldToWavetable, must produce a wavetable that BOTH evolves across
+    // frames AND has shape WITHIN a frame. v3 collapsed both axes to flat.
+    // Uses the same synthetic deterministic rasters paintSeeded() uses.
+    const size = FOXY_FIELD_SIZE;
+    const a = makeBuffer(size, size, (x, y) => 0.5 + 0.5 * Math.sin((x * 6.283 * 3) / size) * Math.sin((y * 6.283 * 7) / size));
+    const b = makeBuffer(size, size, (x, y) => 0.5 + 0.5 * Math.sin((x * 6.283 * 5) / size + 1.1) * Math.cos((y * 6.283 * 2) / size));
+    const c = makeBuffer(size, size, (x, y) => 0.5 + 0.5 * Math.sin((x * 6.283 * 4) / size + 0.5) * Math.cos((y * 6.283 * 9) / size));
+    const box3 = boxHeightfield3d(a, b, c, size, size, size);
+    const field = boxToField3d(box3, a, size, size, FOXY_XYZ_3D_DEFAULTS);
+    const wt = fieldToWavetable(field, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+    expect(wt).toHaveLength(FOXY_WT_FRAMES);
+    // Frame-to-frame mean abs delta — should be well above flat.
+    const f2f = frameToFrameDelta(wt);
+    // Sample-to-sample variance WITHIN each frame, averaged across frames.
+    let sumVar = 0;
+    for (const frame of wt) {
+      let mean = 0; for (const v of frame) mean += v; mean /= frame.length;
+      let v = 0; for (const x of frame) v += (x - mean) ** 2;
+      sumVar += v / frame.length;
+    }
+    const intraVar = sumVar / wt.length;
+    // Pin small thresholds — anything above flat passes; a truly flat
+    // (v3-style collapsed) table would be ~0 on both axes.
+    expect(f2f, `frame-to-frame delta ${f2f.toFixed(4)}`).toBeGreaterThan(0.01);
+    expect(intraVar, `intra-frame variance ${intraVar.toFixed(4)}`).toBeGreaterThan(0.001);
   });
 });
 

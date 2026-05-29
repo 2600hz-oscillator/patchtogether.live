@@ -96,6 +96,20 @@ describe('FOXY module def shape', () => {
     }
   });
 
+  it('adds the v4 volumetric XYZ controls (xyz_warp + xyz_zheight)', () => {
+    const byId = new Map(foxyDef.params.map((p) => [p.id, p]));
+    const warp = byId.get('xyz_warp');
+    expect(warp, 'xyz_warp').toBeDefined();
+    expect(warp!.min).toBe(0);
+    expect(warp!.max).toBe(1);
+    expect(warp!.defaultValue).toBeCloseTo(0.25, 4);
+    const zh = byId.get('xyz_zheight');
+    expect(zh, 'xyz_zheight').toBeDefined();
+    expect(zh!.min).toBe(0);
+    expect(zh!.max).toBe(1);
+    expect(zh!.defaultValue).toBeCloseTo(0.5, 4);
+  });
+
   it('routes morph_cv/spread_cv/fold_cv to the right param targets', () => {
     const byId = new Map(foxyDef.inputs.map((p) => [p.id, p]));
     expect(byId.get('morph_cv')?.paramTarget).toBe('morph');
