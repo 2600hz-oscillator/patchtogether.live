@@ -56,13 +56,31 @@ jobs:
             --output-dir   docs/vrt
           # Land an index.html at the docs/ root that just redirects into
           # docs/vrt/ — saves reviewers a click + future-proofs the path.
+          # Banner header + footer match the gallery treatment for a
+          # consistent landing page even though most viewers redirect through.
           cat > docs/index.html <<'HTML'
           <!doctype html>
-          <meta charset="utf-8">
-          <title>patchtogether.live — VRT gallery</title>
-          <meta http-equiv="refresh" content="0; url=vrt/">
-          <link rel="canonical" href="vrt/">
-          <p><a href="vrt/">VRT gallery</a></p>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>patchtogether.live — VRT gallery</title>
+            <meta http-equiv="refresh" content="0; url=vrt/">
+            <link rel="canonical" href="vrt/">
+            <style>
+              body { margin: 0; background: #1a1a1a; color: #e0e0e0; font-family: 'Courier New', monospace; }
+              .banner { display: block; width: 100%; height: auto; }
+              .banner-header { margin-bottom: 2rem; }
+              .banner-footer { margin-top: 2rem; }
+              main { max-width: 1400px; margin: 0 auto; padding: 0 20px; text-align: center; }
+              a { color: #66bbff; }
+            </style>
+          </head>
+          <body>
+            <img class="banner banner-header" src="assets/header.png" alt="patchtogether.live header banner">
+            <main><p><a href="vrt/">VRT gallery</a></p></main>
+            <img class="banner banner-footer" src="assets/footer.png" alt="patchtogether.live footer banner" loading="lazy">
+          </body>
+          </html>
           HTML
 
       - name: Upload artifact
