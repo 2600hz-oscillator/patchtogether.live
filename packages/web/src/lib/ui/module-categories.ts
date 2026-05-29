@@ -214,6 +214,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // 4PLEXVID — 4-in / 4-out discrete video router (the video sibling of the
   // audio 4Plexer). Per-output selector knob + gate-advanced rotation.
   '4plexvid': { top: 'Video modules', sub: 'Utilities' },
+  // SCOREBOARD — 4-digit neon 7-segment counter widget. SCORE + RESET gate
+  // inputs; one COLOR knob; renders the count as a video signal.
+  scoreboard: { top: 'Video modules', sub: 'Utilities' },
   // BENTBOX is a CRT-emulation display — sits with the other outputs even
   // though it also functions as a destructive processor (the bending stage).
   bentbox: { top: 'Video modules', sub: 'Utilities' },

@@ -36,6 +36,7 @@ import { videoboxDef } from './videobox';
 import { videoVarispeedDef } from './videovarispeed';
 import { backdraftDef } from './backdraft';
 import { fourPlexVidDef } from './4plexvid';
+import { scoreboardDef } from './scoreboard';
 
 let registered = false;
 
@@ -122,6 +123,10 @@ export function registerVideoModules(): void {
   // each rising edge (1->2->3->4->1, wrapping). Discrete routing — never
   // a blend.
   registerVideoModule(fourPlexVidDef);
+  // SCOREBOARD — 4-digit neon 7-segment counter widget. Two CV-gate
+  // inputs (SCORE / RESET) and a colour-wheel knob. Counter wraps at
+  // 10000 → 0. No audio output; pure video sink-style display.
+  registerVideoModule(scoreboardDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

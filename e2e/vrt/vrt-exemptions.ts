@@ -74,6 +74,12 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // module is currently in EXEMPT_FROM_VRT below — promote it into MODULES
   // when the darwin/linux PNGs are captured.)
   '4plexvid': [{ selector: 'canvas' }],
+  // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
+  // preview canvas; the counter starts at 0 on factory mount (or 1234 when
+  // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
+  // fallback so the chrome (port handles + COLOR knob) diffs deterministically
+  // when the module is promoted into MODULES without a registered scene.
+  scoreboard: [{ selector: 'canvas' }],
 };
 
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
@@ -88,6 +94,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
   // canvas mask above masks the live preview) in a follow-up PR.
   '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
+  // SCOREBOARD — first-slice PR ships the module + draw helper + factory
+  // gate tests + e2e (gate→counter advance, RESET, wrap-at-10000). The
+  // VRT scene path is wired (window.__scoreboardVrtSeed → counter at
+  // 1234 for a stable, all-segments-touching baseline) — promote into
+  // MODULES + capture darwin/linux PNGs in a follow-up PR. The canvas
+  // mask above covers the live preview if promotion happens without the
+  // scene path being driven yet.
+  scoreboard: 'VRT baseline pending; unit + factory gate tests + e2e provide coverage. Promote + capture darwin/linux baselines (seed counter at 1234 via window.__scoreboardVrtSeed for a stable, all-segments-touching baseline) in a follow-up PR.',
   // CAMERA renders a live MediaStream into a canvas. Even with the
   // fake-camera flag the synthetic frame is non-deterministic enough
   // (frame-time clock) that the baseline would flap. Functional coverage

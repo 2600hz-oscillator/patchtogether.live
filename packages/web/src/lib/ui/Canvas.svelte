@@ -230,6 +230,8 @@
   // VIDEOVARISPEED — local-file player with performant varispeed transport.
   import VideoVarispeedCard from '$lib/ui/modules/VideoVarispeedCard.svelte';
   import FourPlexVidCard from '$lib/ui/modules/FourPlexVidCard.svelte';
+  // SCOREBOARD — 4-digit neon 7-segment counter widget (SCORE + RESET gates).
+  import ScoreboardCard from '$lib/ui/modules/ScoreboardCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -472,6 +474,8 @@
     videovarispeed: VideoVarispeedCard,
     // 4PLEXVID — 4-in / 4-out video router with per-output gate-advanced selector.
     '4plexvid': FourPlexVidCard,
+    // SCOREBOARD — 4-digit neon 7-segment counter widget.
+    scoreboard: ScoreboardCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,
