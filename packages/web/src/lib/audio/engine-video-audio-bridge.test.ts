@@ -575,3 +575,153 @@ describe('PatchEngine — class-wide video.cv/gate → audio bridge sweep', () =
     },
   );
 });
+
+// =========================================================================
+// Class-wide regression sweep: EVERY video module's AUDIO output port
+// =========================================================================
+//
+// Sibling sweep to the cv/gate one above. PR #421's coverage stopped at
+// cv+gate because the original #414 bug only manifested on those types,
+// but `audio`-typed outputs (DOOM.audio_l / DOOM.audio_r, VIDEOBOX,
+// VIDEOVARISPEED, etc.) ride the SAME `addCrossDomainAudioBridge` path
+// and are equally vulnerable to a future dispatcher mis-classification.
+//
+// This sweep enumerates every video module's `audio` output, publishes a
+// fake source AudioNode at (videoNodeId::portId), then asserts addEdge
+// .connect()s it to the downstream audio sink's AudioNode input (not
+// AudioParam — `audio` sources terminate on a node input). removeEdge
+// must disconnect symmetrically.
+//
+// What this catches that the cv/gate sweep does not:
+//   - a regression that re-mis-routes `audio` source-type edges (e.g.
+//     scoping the bridge to cv|gate only) — DOOM's A-L/A-R would go
+//     silent the moment the sweep regresses.
+//   - a new video module with an `audio` output that forgets to publish
+//     it in audioSources — the floor-guard fails the build.
+
+interface VideoAudioPort {
+  moduleType: string;
+  portId: string;
+}
+
+function enumerateVideoAudioOutputs(): VideoAudioPort[] {
+  const out: VideoAudioPort[] = [];
+  for (const def of listVideoModuleDefs()) {
+    for (const port of def.outputs) {
+      if (port.type === 'audio') {
+        out.push({ moduleType: def.type, portId: port.id });
+      }
+    }
+  }
+  return out;
+}
+
+describe('PatchEngine — class-wide video.audio → audio bridge sweep', () => {
+  const ports = enumerateVideoAudioOutputs();
+
+  it('the registry enumeration found at least DOOM.audio_l / DOOM.audio_r', () => {
+    // Floor-guard: pin the DOOM stereo pair so the sweep can't silently go
+    // vacuous if the registry import drops DOOM. The user-reported A-L/A-R
+    // audio regression motivated this guard — pre-this-PR the cv/gate sweep
+    // covered DOOM's event gates but NOT its primary audio outs.
+    const ids = new Set(ports.map((p) => `${p.moduleType}.${p.portId}`));
+    expect(ids.has('doom.audio_l')).toBe(true);
+    expect(ids.has('doom.audio_r')).toBe(true);
+  });
+
+  it.each(ports)(
+    'video($moduleType).$portId (audio) → audio.audio survives the dispatcher (connect on addEdge, disconnect on removeEdge)',
+    async ({ moduleType, portId }) => {
+      // Each row registers its own unique audio-input sink so the
+      // module-registry stays idempotent across .each rows.
+      const sinkType = `videoAudioBridgeAudioSweep_${moduleType}_${portId}_sink`;
+      const SINK_DEF: AudioModuleDef = {
+        type: sinkType,
+        domain: 'audio',
+        label: 'AudioSweepSink',
+        category: 'output',
+        schemaVersion: 1,
+        inputs: [{ id: 'audio_in', type: 'audio' }],
+        outputs: [],
+        params: [],
+        async factory(_ctx, _node) {
+          const sinkNode = makeFakeNode(`${sinkType}-node`);
+          return {
+            domain: 'audio' as const,
+            inputs: new Map([
+              ['audio_in', {
+                node: sinkNode as unknown as AudioNode,
+                input: 0,
+                // NO `param` here — `audio` sources route into the AudioNode
+                // input, not an AudioParam (that's the cv/gate path above).
+              }],
+            ]),
+            outputs: new Map(),
+            setParam(_id, _v) { /* */ },
+            readParam(_id) { return undefined; },
+            dispose() { /* */ },
+          };
+        },
+      };
+      registerModule(SINK_DEF);
+
+      const ctx = makeFakeAudioContext();
+      const ae = new AudioEngine(ctx);
+      const ve = new VideoEngineStub();
+      const pe = new PatchEngine();
+      pe.registerDomain(ae);
+      pe.registerDomain(ve);
+
+      const srcTag = `${moduleType}-${portId}-audsrc`;
+      const srcFake = makeFakeNode(srcTag);
+      const videoNodeId = `v-${moduleType}`;
+      ve.sources.set(`${videoNodeId}::${portId}`, {
+        node: srcFake as unknown as AudioNode,
+        output: 0,
+      });
+
+      const sinkNodeId = `a-aud-sink-${moduleType}-${portId}`;
+      await ae.addNode({
+        id: sinkNodeId,
+        type: sinkType,
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: {},
+      });
+
+      const edge: Edge = {
+        id: `e-aud-sweep-${moduleType}-${portId}`,
+        source: { nodeId: videoNodeId, portId },
+        target: { nodeId: sinkNodeId, portId: 'audio_in' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      };
+
+      pe.addEdge(edge, 'video', 'audio');
+
+      // The bridge must have .connect()ed the upstream audio source into
+      // the downstream sink's AudioNode input (NOT an AudioParam). The
+      // fake's connect() records the AudioNode destination as the sink's
+      // __tag, so we assert the tag matches.
+      const conns = connectionLog.filter((c) => c.fromTag === srcTag && c.kind === 'connect');
+      expect(
+        conns.length,
+        `${moduleType}.${portId}: dispatcher should have invoked audio-bridge .connect()`,
+      ).toBe(1);
+      expect(conns[0]!.toTag).toBe(`${sinkType}-node`);
+      expect(conns[0]!.output).toBe(0);
+      expect(conns[0]!.input).toBe(0);
+
+      // removeEdge must disconnect symmetrically.
+      pe.removeEdge(edge, 'video');
+      const disc = connectionLog.filter((c) => c.fromTag === srcTag && c.kind === 'disconnect');
+      expect(
+        disc.length,
+        `${moduleType}.${portId}: dispatcher should have invoked audio-bridge .disconnect()`,
+      ).toBe(1);
+      expect(disc[0]!.toTag).toBe(`${sinkType}-node`);
+
+      pe.dispose();
+    },
+  );
+});
