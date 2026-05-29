@@ -88,6 +88,11 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   buggles:      { outputPort: 'smooth' },
   // ────────── Wavetable / cluster modules ──────────
   wavesculpt:   { outputPort: 'L', gatePort: 'gate1' },
+  // NIBBLES first output is `pellet` (gate, fires only when the snake
+  // eats food — gameplay-conditional, NOT alive on idle). Pin to `snake`,
+  // the continuous square-wave audio output that's emitting at the
+  // length-derived frequency from cold start (snake length 4 → 110 Hz).
+  nibbles:      { outputPort: 'snake' },
 };
 
 /** Resolve the canonical driver for a module. Returns the override if
