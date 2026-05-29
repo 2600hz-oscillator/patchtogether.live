@@ -13,7 +13,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { foxyDef } from '$lib/audio/modules/foxy';
+  import { foxyDef, FOXY_SYNC_MODE_NAMES, FOXY_SYNC_MODE_MAX } from '$lib/audio/modules/foxy';
   import { drawWave3D, drawWaveScope } from '$lib/audio/modules/wavecel-draw';
   import { drawFoxyXyz } from '$lib/audio/modules/foxy-draw';
   import type { FoxyFieldRow } from '$lib/audio/modules/foxy-map';
@@ -62,6 +62,14 @@
   let raf: number | null = null;
 
   function toggleVizMode() { vizMode = vizMode === '3d' ? 'scope' : '3d'; }
+
+  // Named-mode label next to the SYNC knob (Off / X & Y / XYZ). Mirrors the
+  // pattern used by BLADES / TIDES2 — render the constant indexed by the
+  // current discrete param value.
+  let syncMode = $derived(pv('sync_mode', defv('sync_mode')));
+  let syncModeLabel = $derived(
+    FOXY_SYNC_MODE_NAMES[Math.max(0, Math.min(FOXY_SYNC_MODE_MAX, Math.round(syncMode)))],
+  );
 
   function blitRaster(el: HTMLCanvasElement, img: ImageData): void {
     const c = el.getContext('2d');
@@ -224,6 +232,17 @@
         <Knob value={pv('xyz_zheight', defv('xyz_zheight'))} min={0} max={1} defaultValue={defv('xyz_zheight')} label="Z Ht"  curve="linear" onchange={set('xyz_zheight')} moduleId={id} paramId="xyz_zheight" readLive={live('xyz_zheight')} />
       </div>
 
+      <!-- VCO sync (ratio-lock): swoleB and (mode 2) swoleC snap their base
+           Hz to integer ratios of swoleA. Named-mode label sits next to the
+           knob (Off / X & Y / XYZ) — mirrors RESOFILTER / TIDES2. -->
+      <div class="section-label">VCO SYNC (raster source oscillators)</div>
+      <div class="knob-row sync-row">
+        <Knob value={pv('sync_mode', defv('sync_mode'))} min={0} max={FOXY_SYNC_MODE_MAX} defaultValue={defv('sync_mode')}
+          label="Sync" curve="discrete"
+          onchange={set('sync_mode')} moduleId={id} paramId="sync_mode" readLive={live('sync_mode')} />
+        <div class="sync-mode-name" data-testid="foxy-sync-mode-name">{syncModeLabel}</div>
+      </div>
+
       <!-- Animated WAVECEL wavetable display + full WAVECEL control row -->
       <div class="section-label">LIVE WAVETABLE (WAVECEL)</div>
       <div class="viz-row">
@@ -351,5 +370,18 @@
     justify-content: center;
     gap: 10px;
     flex-wrap: wrap;
+  }
+  .foxy-card .sync-row {
+    align-items: center;
+  }
+  .foxy-card .sync-mode-name {
+    font-size: 0.6rem;
+    color: var(--text, #d8dde6);
+    letter-spacing: 0.1em;
+    font-family: ui-monospace, monospace;
+    padding: 2px 8px;
+    border: 1px solid #404652;
+    border-radius: 2px;
+    background: rgba(20, 24, 32, 0.85);
   }
 </style>

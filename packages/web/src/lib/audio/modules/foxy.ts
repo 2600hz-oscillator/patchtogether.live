@@ -118,6 +118,32 @@ import {
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
+// ── VCO sync (ratio-lock) ─────────────────────────────────────────────
+// User-facing sync_mode values + display names. ORDER matches the param
+// integer:
+//   0 = OFF — VCOs run independently (current behavior).
+//   1 = X & Y synced — swoleB is slaved to swoleA. swoleC runs free.
+//   2 = XYZ synced — both swoleB AND swoleC are slaved to swoleA.
+//
+// Implementation: this is RATIO-LOCK sync, not Web-Audio hard-sync. When a
+// slave is locked, its base frequency is snapped to the nearest integer
+// (≥1) ratio of swoleA's base frequency, so the two oscillators stay
+// phase-stable + their crossfaded saw/tri/sqr produce a consistent timbre
+// (no slow beating drift). It's cheap (~30 LOC, no DSP) and matches the
+// user-facing surface a future hard-sync v2 can implement underneath.
+export const FOXY_SYNC_MODE_NAMES = ['Off', 'X & Y', 'XYZ'] as const;
+export const FOXY_SYNC_MODE_MAX = FOXY_SYNC_MODE_NAMES.length - 1;
+export type FoxySyncMode = 0 | 1 | 2;
+
+/** Quantize `slaveHz` to the nearest integer ratio of `masterHz` (≥1).
+ *  Returns the locked slave frequency. */
+export function foxyRatioLock(masterHz: number, slaveHz: number): number {
+  if (!Number.isFinite(masterHz) || masterHz <= 0) return slaveHz;
+  if (!Number.isFinite(slaveHz) || slaveHz <= 0) return slaveHz;
+  const ratio = Math.max(1, Math.round(slaveHz / masterHz));
+  return masterHz * ratio;
+}
+
 /** Bridge update throttle. ~24 Hz (well under 60fps) keeps the
  *  loadWavetable posts + the field recompute cheap. */
 const BRIDGE_MS = 42;
@@ -188,6 +214,11 @@ export const foxyDef: AudioModuleDef = {
     { id: 'xyz_warp',    label: 'Warp', defaultValue: FOXY_XYZ_3D_DEFAULTS.warpAmount,      min: 0, max: 1, curve: 'linear' },
     // v4: C adds a SECONDARY Z height on top of B's primary heightmap.
     { id: 'xyz_zheight', label: 'Z Ht', defaultValue: FOXY_XYZ_3D_DEFAULTS.secondaryHeight, min: 0, max: 1, curve: 'linear' },
+    // VCO sync (ratio-lock, see FOXY_SYNC_MODE_NAMES). 0 = Off, 1 = X & Y
+    // (B slaved to A), 2 = XYZ (B + C slaved to A). swoleA is always the
+    // master. Each slave's base Hz is snapped to the nearest integer ratio
+    // of A's base Hz so the rasters/audio stay phase-stable.
+    { id: 'sync_mode', label: 'Sync', defaultValue: 0, min: 0, max: FOXY_SYNC_MODE_MAX, curve: 'discrete' },
     // Freeze toggles (0 = live, 1 = frozen). FREEZE RASTER A/B/C hold each
     // raster's current frame so the source SWOLEVCOs no longer drive that
     // axis of the wavetable. FREEZE TABLE holds the wavetable: stops
@@ -220,7 +251,14 @@ export const foxyDef: AudioModuleDef = {
       params: SwoleParams;
       analyser: AnalyserNode;
       buf: Float32Array<ArrayBuffer>;
-      setTune(): void;
+      /** Base Hz this block is currently RUNNING at (post any sync lock). */
+      currentHz: number;
+      /** Set the base Hz directly (used by sync to override the params-derived
+       *  value). Updates all 4 oscillators (saw/tri/sqr + mod). */
+      setHz(hz: number): void;
+      /** Recompute base Hz from params.tune/fine + apply. Returns the
+       *  resulting Hz so the caller can re-run downstream sync. */
+      setTune(): number;
       setTimbre(v: number): void;
       setSymmetry(v: number): void;
       setFold(v: number): void;
@@ -263,16 +301,22 @@ export const foxyDef: AudioModuleDef = {
       analyser.fftSize = 2048;
       analyser.smoothingTimeConstant = 0;
       folder.connect(analyser);
-      return {
+      const block: SwoleBlock = {
         params: p,
         analyser,
         buf: new Float32Array(analyser.fftSize),
-        setTune(): void {
+        currentHz: baseHz,
+        setHz(hz: number): void {
+          this.currentHz = hz;
+          oscSaw.frequency.setValueAtTime(hz, ctx.currentTime);
+          oscTri.frequency.setValueAtTime(hz, ctx.currentTime);
+          oscSqr.frequency.setValueAtTime(hz, ctx.currentTime);
+          modOsc.frequency.setValueAtTime(hz, ctx.currentTime);
+        },
+        setTune(): number {
           const bh = tuneFineToHz(p.tune, p.fine);
-          oscSaw.frequency.setValueAtTime(bh, ctx.currentTime);
-          oscTri.frequency.setValueAtTime(bh, ctx.currentTime);
-          oscSqr.frequency.setValueAtTime(bh, ctx.currentTime);
-          modOsc.frequency.setValueAtTime(bh, ctx.currentTime);
+          this.setHz(bh);
+          return bh;
         },
         setTimbre(v: number): void { timbreGain.gain.setValueAtTime(v * TIMBRE_MAX_HZ, ctx.currentTime); },
         setSymmetry(v: number): void {
@@ -294,6 +338,7 @@ export const foxyDef: AudioModuleDef = {
           analyser.disconnect();
         },
       };
+      return block;
     }
 
     const swoleA = makeSwole({
@@ -320,6 +365,30 @@ export const foxyDef: AudioModuleDef = {
       symmetry: num('src3_symmetry', 0.7),
       fold:     num('src3_fold', 0.3),
     });
+
+    // ───────────────────────── VCO sync (ratio-lock) ─────────────────
+    // Master = swoleA. When syncMode == 1, swoleB is locked to A; when ==
+    // 2, both B and C are locked. Each slave's running Hz is snapped to
+    // the nearest integer ratio of A's base Hz (see foxyRatioLock). We
+    // re-apply after every relevant setParam (A's tune/fine, B/C's
+    // tune/fine, sync_mode itself). The slave's params struct is left
+    // unchanged so unlocking later returns the user-set value.
+    const initialSync = Math.max(0, Math.min(FOXY_SYNC_MODE_MAX, Math.round(num('sync_mode', 0)))) as FoxySyncMode;
+    let syncMode: FoxySyncMode = initialSync;
+    function applySync(): void {
+      // A is always free-running at its params-derived Hz.
+      const aHz = tuneFineToHz(swoleA.params.tune, swoleA.params.fine);
+      swoleA.setHz(aHz);
+      // B is locked when syncMode >= 1; otherwise free.
+      const bHzFree = tuneFineToHz(swoleB.params.tune, swoleB.params.fine);
+      swoleB.setHz(syncMode >= 1 ? foxyRatioLock(aHz, bHzFree) : bHzFree);
+      // C is locked when syncMode >= 2; otherwise free.
+      const cHzFree = tuneFineToHz(swoleC.params.tune, swoleC.params.fine);
+      swoleC.setHz(syncMode >= 2 ? foxyRatioLock(aHz, cHzFree) : cHzFree);
+    }
+    // Apply once at init in case the initial sync_mode came in non-zero
+    // (load-from-patch path).
+    if (initialSync !== 0) applySync();
 
     // ───────────────────────── internal RASTERIZE (×3) ───────────────
     // Three RasterPainters at the 256×256 field resolution — one per
@@ -576,23 +645,33 @@ export const foxyDef: AudioModuleDef = {
             wParams.get(paramId)?.setValueAtTime(value, ctx.currentTime);
             return;
           // mini-SWOLEVCO source A params (raster A — the terrain).
-          case 'src_tune': swoleA.params.tune = value; swoleA.setTune(); return;
-          case 'src_fine': swoleA.params.fine = value; swoleA.setTune(); return;
+          // A is the sync master, so any A-tune change ripples through
+          // applySync() to re-lock B / C's frequencies.
+          case 'src_tune': swoleA.params.tune = value; applySync(); return;
+          case 'src_fine': swoleA.params.fine = value; applySync(); return;
           case 'src_timbre': swoleA.params.timbre = value; swoleA.setTimbre(value); return;
           case 'src_symmetry': swoleA.params.symmetry = value; swoleA.setSymmetry(value); return;
           case 'src_fold': swoleA.params.fold = value; swoleA.setFold(value); return;
           // mini-SWOLEVCO source B params (raster B — Y row distribution).
-          case 'src2_tune': swoleB.params.tune = value; swoleB.setTune(); return;
-          case 'src2_fine': swoleB.params.fine = value; swoleB.setTune(); return;
+          // B's tune/fine go through applySync so the ratio lock is
+          // recomputed even when the user is dialling B directly.
+          case 'src2_tune': swoleB.params.tune = value; applySync(); return;
+          case 'src2_fine': swoleB.params.fine = value; applySync(); return;
           case 'src2_timbre': swoleB.params.timbre = value; swoleB.setTimbre(value); return;
           case 'src2_symmetry': swoleB.params.symmetry = value; swoleB.setSymmetry(value); return;
           case 'src2_fold': swoleB.params.fold = value; swoleB.setFold(value); return;
           // mini-SWOLEVCO source C params (raster C — Z amplitude LUT).
-          case 'src3_tune': swoleC.params.tune = value; swoleC.setTune(); return;
-          case 'src3_fine': swoleC.params.fine = value; swoleC.setTune(); return;
+          case 'src3_tune': swoleC.params.tune = value; applySync(); return;
+          case 'src3_fine': swoleC.params.fine = value; applySync(); return;
           case 'src3_timbre': swoleC.params.timbre = value; swoleC.setTimbre(value); return;
           case 'src3_symmetry': swoleC.params.symmetry = value; swoleC.setSymmetry(value); return;
           case 'src3_fold': swoleC.params.fold = value; swoleC.setFold(value); return;
+          // VCO sync mode (ratio-lock). Setting this re-applies the lock
+          // immediately so the slaves snap to / release from the master.
+          case 'sync_mode':
+            syncMode = Math.max(0, Math.min(FOXY_SYNC_MODE_MAX, Math.round(value))) as FoxySyncMode;
+            applySync();
+            return;
           // v4 volumetric XYZ params — actively drive the bridge math.
           case 'xyz_xshape':  xyz.xShape = value; return;
           case 'xyz_yshape':  xyz.yShape = value; return;
@@ -625,6 +704,7 @@ export const foxyDef: AudioModuleDef = {
           case 'xyz_ydisp':   return xyz.yDisp;
           case 'xyz_warp':    return xyz.warpAmount;
           case 'xyz_zheight': return xyz.secondaryHeight;
+          case 'sync_mode':   return syncMode;
           default: return undefined;
         }
       },
@@ -648,6 +728,13 @@ export const foxyDef: AudioModuleDef = {
         if (key === 'xyzField') return field;
         if (key === 'wavetableFrames') return wtFrames;
         if (key === 'activeFrame') return readActiveFrame();
+        // Live base Hz of each swole block — reflects any active sync lock
+        // (slave Hz = ratio×master Hz when locked). Tests use this to pin
+        // the ratio-lock behavior without poking at the oscillator nodes.
+        if (key === 'swoleAHz') return swoleA.currentHz;
+        if (key === 'swoleBHz') return swoleB.currentHz;
+        if (key === 'swoleCHz') return swoleC.currentHz;
+        if (key === 'syncMode') return syncMode;
         return undefined;
       },
       dispose() {
