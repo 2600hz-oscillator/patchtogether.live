@@ -5,10 +5,13 @@
 // the downstream module into a deterministic state. Iterates the scenes
 // declared in `vrt-composite-scenes.ts`.
 //
-// First composite category: NIBBLES.length_cv → QBRT.cutoff_cv at 5 CV
-// levels (min / 25% / 50% / 75% / max). Each level is a separate scene +
-// baseline, so the 5 PNGs together form a sweep that visually proves the
-// CV-driven cutoff modulation from one screenshot to the next.
+// First composite category: NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels
+// (min / 25% / 50% / 75% / max). Each level is a separate scene + baseline,
+// so the 5 PNGs together form a sweep that visually proves the CV value
+// arriving at SCOPE's ch1 input — the trace's Y position is the CV value.
+// (An earlier draft used QBRT, but QBRT's visible cutoff slider reflects
+// the dialed value not the modulated AudioParam, so the screenshots were
+// identical; SCOPE's trace literally IS the CV, making this a real gate.)
 //
 // The hook used to pin the CV value (`__nibblesForceLength`) is implemented
 // in packages/web/src/lib/video/modules/nibbles.ts and unit-tested in
@@ -55,9 +58,9 @@ test.describe('VRT: composite-state scenes', () => {
 
       // Both cards must be visible before we snap.
       const nibblesCard = page.locator('.svelte-flow__node-nibbles').first();
-      const qbrtCard = page.locator('.svelte-flow__node-qbrt').first();
+      const scopeCard = page.locator('.svelte-flow__node-scope').first();
       await nibblesCard.waitFor({ state: 'visible', timeout: 10_000 });
-      await qbrtCard.waitFor({ state: 'visible', timeout: 10_000 });
+      await scopeCard.waitFor({ state: 'visible', timeout: 10_000 });
 
       // One more rAF after both cards land so any post-mount layout shift
       // settles (Svelte $effects fire async to DOM attach).

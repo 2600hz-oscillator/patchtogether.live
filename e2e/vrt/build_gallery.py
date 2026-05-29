@@ -119,20 +119,20 @@ MODULE_BLURB: dict[str, str] = {
 # the blurb should call out what's wired to what + why the screenshot is
 # the "interesting" state.
 COMPOSITE_BLURB: dict[str, str] = {
-    "nibbles-qbrt-cv-min": (
-        "NIBBLES.length_cv ≈ −0.98 → QBRT.cutoff_cv. CV minimum (snake length=1)."
+    "nibbles-cv-min": (
+        "NIBBLES.length_cv ≈ −0.98 → SCOPE.ch1. CV minimum (snake length=1)."
     ),
-    "nibbles-qbrt-cv-25": (
-        "NIBBLES.length_cv ≈ −0.50 → QBRT.cutoff_cv. CV at 25% of the sweep (length=30)."
+    "nibbles-cv-25": (
+        "NIBBLES.length_cv ≈ −0.50 → SCOPE.ch1. CV at 25% of the sweep (length=30)."
     ),
-    "nibbles-qbrt-cv-50": (
-        "NIBBLES.length_cv ≈ +0.01 → QBRT.cutoff_cv. CV at the midpoint (length=60)."
+    "nibbles-cv-50": (
+        "NIBBLES.length_cv ≈ +0.01 → SCOPE.ch1. CV at the midpoint (length=60)."
     ),
-    "nibbles-qbrt-cv-75": (
-        "NIBBLES.length_cv ≈ +0.50 → QBRT.cutoff_cv. CV at 75% of the sweep (length=89)."
+    "nibbles-cv-75": (
+        "NIBBLES.length_cv ≈ +0.50 → SCOPE.ch1. CV at 75% of the sweep (length=89)."
     ),
-    "nibbles-qbrt-cv-max": (
-        "NIBBLES.length_cv = +1.00 → QBRT.cutoff_cv. CV maximum (snake length=119)."
+    "nibbles-cv-max": (
+        "NIBBLES.length_cv = +1.00 → SCOPE.ch1. CV maximum (snake length=119)."
     ),
 }
 

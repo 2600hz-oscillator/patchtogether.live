@@ -238,6 +238,27 @@ export const scopeDef: AudioModuleDef = {
         if (key === 'pitch') {
           return readPitch();
         }
+        // Per-channel single-sample readback. Returns the most-recent
+        // time-domain sample on the matching analyser — the same value
+        // the trace renders at the right edge of the screen.
+        //
+        // Used by e2e (vrt-composite + nibbles-cv-scope.spec.ts) to read
+        // the LIVE incoming signal at the ch1 / ch2 audio inputs, NOT
+        // the user-dialed slider state — which is what an e2e proving a
+        // CV signal "actually arrives" needs to assert against. (PR
+        // #419 originally tried QBRT.readParam('cutoff') for this; that
+        // returns the slider value, not the modulated AudioParam, so
+        // the assertion was structurally wrong. SCOPE is the right
+        // canonical "visible CV" consumer because its analyser samples
+        // the bridged AudioNode directly.)
+        if (key === 'ch1_last_sample') {
+          analyser1.getFloatTimeDomainData(buf1);
+          return buf1[buf1.length - 1];
+        }
+        if (key === 'ch2_last_sample') {
+          analyser2.getFloatTimeDomainData(buf2);
+          return buf2[buf2.length - 1];
+        }
         return undefined;
       },
       dispose() {

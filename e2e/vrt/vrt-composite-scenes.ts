@@ -10,16 +10,26 @@
 //   * The downstream module's state is the regression-locked observable —
 //     the upstream module's job is to put the downstream into a known state.
 //
-// First composite: NIBBLES.length_cv → QBRT.cutoff_cv, swept across 5 levels
+// First composite: NIBBLES.length_cv → SCOPE.ch1, swept across 5 levels
 // (CV min / 25% / 50% / 75% / max). Uses the deterministic
 // `__nibblesForceLength` hook in nibbles.ts to pin the emitted CV without
-// depending on the live game state. The QBRT card's cutoff knob position
-// shifts visibly between the 5 snapshots; the side-by-side framing makes
-// the cause (NIBBLES + the patch cord) explicit.
+// depending on the live game state. SCOPE's ch1 trace shifts visibly between
+// the 5 snapshots (CV mode draws a horizontal line whose Y position is the
+// DC value of the incoming CV); the side-by-side framing makes the cause
+// (NIBBLES + the patch cord) explicit.
+//
+// History: an earlier draft of this scene used QBRT as the downstream
+// consumer instead of SCOPE — but QBRT's visible state (cutoff slider
+// position) reflects the user-dialed slider, NOT the CV-modulated
+// underlying AudioParam, so the 5 QBRT snapshots looked identical and the
+// VRT was effectively asserting nothing. SCOPE is the right consumer: its
+// trace literally IS the incoming CV (drawn against time), so a sweep of
+// the CV produces a sweep of the trace's Y position — a real visible
+// regression gate.
 //
 // The infra here unlocks any future module pair where a signal-flow change
 // visibly affects a downstream control / display — see PR body Phase-2
-// notes. Scope discipline: this PR adds the NIBBLES→QBRT sweep ONLY; no
+// notes. Scope discipline: this PR adds the NIBBLES→SCOPE sweep ONLY; no
 // other composite scenes are queued here.
 
 import type { Page } from '@playwright/test';
@@ -48,7 +58,7 @@ export interface CompositeVrtScene {
   setup: (page: Page) => Promise<void>;
 }
 
-// ---- NIBBLES → QBRT 5-step CV sweep --------------------------------------
+// ---- NIBBLES → SCOPE 5-step CV sweep -------------------------------------
 //
 // Per-spec: pin lengths that map to (length - 59.5) / 59.5 ≈ -1.0 / -0.5 /
 // 0.0 / +0.5 / +1.0 (mid = NIBBLES_MAX_LENGTH / 2 = 59.5). The lengths
@@ -65,20 +75,23 @@ export interface CompositeVrtScene {
 /** Build a setup function that:
  *  1. Sets `__nibblesForceLength` to a known length BEFORE the modules
  *     spawn (so the CV pins at boot too — no game tick required).
- *  2. Spawns NIBBLES + QBRT side-by-side.
- *  3. Patches NIBBLES.length_cv → QBRT.cutoff (the cutoff CV input).
- *  4. Settles a couple of frames so the CV → cutoff modulator-tap reads
- *     a stable value.
+ *  2. Spawns NIBBLES + SCOPE side-by-side. SCOPE.ch1Range = 1 (CV mode,
+ *     per PR #418) so the trace scales ±5 V correctly.
+ *  3. Patches NIBBLES.length_cv → SCOPE.ch1 (audio input on the audio
+ *     domain; the video→audio audio bridge handles cv → audio).
+ *  4. Settles a couple of frames so the SCOPE analyser reads a stable
+ *     sample of the incoming DC CV.
  */
 function setupAt(length: number): (page: Page) => Promise<void> {
   return async (page) => {
     // Pin the NIBBLES RNG seed + force-length BEFORE spawnPatch so:
     //   1. The on-card game render is BYTE-IDENTICAL across all 5 snapshots
     //      (same seed = same snake spawn + same food placement). The only
-    //      thing that should differ between the 5 baselines is QBRT's
-    //      visible cutoff-slider position (the regression we're locking in).
-    //   2. The forced length pins the length_cv emit value so the CV → QBRT
-    //      modulator-tap delivers a deterministic sample.
+    //      thing that should differ between the 5 baselines is SCOPE's
+    //      ch1 trace Y position (the regression we're locking in — the
+    //      CV value drives where the horizontal line is drawn).
+    //   2. The forced length pins the length_cv emit value so the CV → SCOPE
+    //      ch1 analyser sees a deterministic DC sample.
     // Both hooks are documented in nibbles.ts (`__nibblesVrtSeed` for the
     // game render + `__nibblesForceLength` for the CV path).
     await page.evaluate((len) => {
@@ -95,26 +108,36 @@ function setupAt(length: number): (page: Page) => Promise<void> {
       [
         // NIBBLES (video domain, publishes audio sources for length_cv).
         { id: 'nib', type: 'nibbles', position: { x: 80, y: 80 }, domain: 'video' },
-        // QBRT — placed to the RIGHT of NIBBLES so the screenshot framing
-        // shows the patch direction left → right. Default cutoff = 1000 Hz.
-        { id: 'qb', type: 'qbrt', position: { x: 560, y: 80 }, domain: 'audio' },
+        // SCOPE — placed to the RIGHT of NIBBLES so the screenshot framing
+        // shows the patch direction left → right. ch1Range = 1 (CV display
+        // mode, per PR #418) so the ±1 CV input renders to a clean
+        // horizontal line whose Y position tracks the CV value.
+        {
+          id: 'sc',
+          type: 'scope',
+          position: { x: 560, y: 80 },
+          domain: 'audio',
+          params: { ch1Range: 1 },
+        },
       ],
       [
-        // length_cv → cutoff CV input. NIBBLES emits the CV as a published
-        // AudioNode (ConstantSourceNode); QBRT's `cutoff` is a paramTarget CV
-        // input that the cross-domain bridge wires up.
+        // length_cv (video, type=cv) → ch1 (audio, type=audio). The
+        // cross-domain video→audio audio bridge (engine.ts:
+        // addCrossDomainAudioBridge) handles sourceType=cv → audio targets;
+        // it .connect()s NIBBLES' ConstantSourceNode straight into SCOPE's
+        // ch1 GainNode input + analyser path.
         {
-          id: 'e_len_cut',
+          id: 'e_len_ch1',
           from: { nodeId: 'nib', portId: 'length_cv' },
-          to: { nodeId: 'qb', portId: 'cutoff' },
+          to: { nodeId: 'sc', portId: 'ch1' },
           sourceType: 'cv',
-          targetType: 'cv',
+          targetType: 'audio',
         },
       ],
     );
 
-    // The patch is established. Let a couple of frames land so the param-tap
-    // analyser fills + the modulator sample stabilises before we snap. We
+    // The patch is established. Let a couple of frames land so the SCOPE
+    // analyser fills + the DC sample stabilises before we snap. We
     // also re-pin the hook here as a belt-and-braces — spawnPatch clears the
     // graph then re-creates it, and depending on factory timing the boot-
     // time pickup may have missed (the post-spawn draw covers it but only
@@ -130,9 +153,7 @@ function setupAt(length: number): (page: Page) => Promise<void> {
         () => new Promise<void>((r) => requestAnimationFrame(() => r())),
       );
     }
-    // Plus a short wait so the cross-domain CV bridge analyser samples
-    // catch the new CV — the tap reads at fftSize=32 so a few hundred
-    // samples (~7ms at 44.1k) is enough.
+    // Plus a short wait so the SCOPE analyser samples catch the new CV.
     await page.waitForTimeout(150);
 
     // SUSPEND the AudioContext so the game tick (advanced via
@@ -142,8 +163,8 @@ function setupAt(length: number): (page: Page) => Promise<void> {
     // spawn and screenshot. Mirrors the pattern used by other VRT scenes
     // (RUTTETRA / RASTERIZE / FOXY). The CV value already lives on the
     // ConstantSourceNode's offset; suspending the context doesn't reset
-    // it (web audio holds the last scheduled value), so the modulator tap
-    // sample stays at the pinned target.
+    // it (web audio holds the last scheduled value), so the SCOPE
+    // analyser's most-recent buffered samples stay at the pinned target.
     await page.evaluate(async () => {
       const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
       const eng = w.__engine?.();
@@ -160,33 +181,33 @@ function setupAt(length: number): (page: Page) => Promise<void> {
 /** All composite VRT scenes. Iterated by `vrt-composite.spec.ts`. */
 export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   {
-    id: 'nibbles-qbrt-cv-min',
-    label: 'NIBBLES→QBRT: CV min (length=1)',
-    blurb: 'NIBBLES.length_cv ≈ −0.98 → QBRT cutoff at its log-sweep MIN.',
+    id: 'nibbles-cv-min',
+    label: 'NIBBLES→SCOPE: CV min (length=1)',
+    blurb: 'NIBBLES.length_cv ≈ −0.98 → SCOPE ch1 trace at its lowest Y.',
     setup: setupAt(1),
   },
   {
-    id: 'nibbles-qbrt-cv-25',
-    label: 'NIBBLES→QBRT: CV 25% (length=30)',
-    blurb: 'NIBBLES.length_cv ≈ −0.50 → QBRT cutoff 25% of the log sweep.',
+    id: 'nibbles-cv-25',
+    label: 'NIBBLES→SCOPE: CV 25% (length=30)',
+    blurb: 'NIBBLES.length_cv ≈ −0.50 → SCOPE ch1 trace 25% above the floor.',
     setup: setupAt(30),
   },
   {
-    id: 'nibbles-qbrt-cv-50',
-    label: 'NIBBLES→QBRT: CV 50% (length=60)',
-    blurb: 'NIBBLES.length_cv ≈ +0.01 → QBRT cutoff near the knob value.',
+    id: 'nibbles-cv-50',
+    label: 'NIBBLES→SCOPE: CV 50% (length=60)',
+    blurb: 'NIBBLES.length_cv ≈ +0.01 → SCOPE ch1 trace near zero (centre).',
     setup: setupAt(60),
   },
   {
-    id: 'nibbles-qbrt-cv-75',
-    label: 'NIBBLES→QBRT: CV 75% (length=89)',
-    blurb: 'NIBBLES.length_cv ≈ +0.50 → QBRT cutoff 75% of the log sweep.',
+    id: 'nibbles-cv-75',
+    label: 'NIBBLES→SCOPE: CV 75% (length=89)',
+    blurb: 'NIBBLES.length_cv ≈ +0.50 → SCOPE ch1 trace 75% above the floor.',
     setup: setupAt(89),
   },
   {
-    id: 'nibbles-qbrt-cv-max',
-    label: 'NIBBLES→QBRT: CV max (length=119)',
-    blurb: 'NIBBLES.length_cv = +1.00 → QBRT cutoff at its log-sweep MAX.',
+    id: 'nibbles-cv-max',
+    label: 'NIBBLES→SCOPE: CV max (length=119)',
+    blurb: 'NIBBLES.length_cv = +1.00 → SCOPE ch1 trace at its highest Y.',
     setup: setupAt(119),
   },
 ];
