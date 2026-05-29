@@ -701,17 +701,14 @@ export const foxyDef: AudioModuleDef = {
         painterC.paint(swoleC.buf.subarray(swoleC.buf.length - countC), rasterParamsC);
       }
 
-      // FREEZE TABLE → halt the whole downstream pipeline. With FrT on, the
-      // user expects EVERY visible bridge output to hold its last state:
-      //   • wtFrames (LIVE WAVETABLE display + worklet table)
-      //   • field    (XYZ scope canvas under gen_mode = 0)
-      //   • shapes   (XYZ scope canvas under gen_mode = 1)
-      // Pre-fix, only the worklet post + wtFrames were gated; field/shapes
-      // kept recomputing each tick so the XYZ scope visibly animated even
-      // though the audio was frozen. Early-return AFTER the raster paint
-      // (rasters keep evolving so the user can see what's queued up for
-      // when they unfreeze; per-raster FrA/FrB/FrC still hold their axis).
-      if (freezeT) return;
+      // FREEZE TABLE freezes the WAVETABLE only — rasters + XYZ scope keep
+      // evolving so the user can preview what's queued for when they unfreeze.
+      // The gate is SURGICAL: it wraps only the wtFrames assignment + the
+      // `loadWavetable` postMessage to the WAVECEL worklet (see step 3
+      // below). The mode-aware build (boxToField3d / generateShapes) runs
+      // unconditionally so the XYZ scope canvas keeps animating, and the
+      // EXPORT TABLE button reads the pinned wtFrames just fine.
+      // Per-raster FrA/FrB/FrC still hold their own axis (handled above).
 
       // 2. MODE-AWARE: build the wavetable.
       //    gen_mode = 0 (XYZ, default): v4 volumetric construction.
@@ -746,13 +743,18 @@ export const foxyDef: AudioModuleDef = {
         shapes = [];
       }
 
-      // 3. Change-detect + post to WAVECEL. (freezeT was already handled
-      //    above with an early-return.)
-      const sig = wavetableSignature(plain);
-      if (sig !== wtSignature) {
-        wtSignature = sig;
-        wtFrames = plain.map((f) => new Float32Array(f));
-        wave.port.postMessage({ type: 'loadWavetable', frames: plain });
+      // 3. Change-detect + post to WAVECEL. SURGICAL FREEZE: when FrT is on,
+      //    we keep field/shapes (and the rasters above) evolving for the XYZ
+      //    scope preview, but we DO NOT update wtFrames and DO NOT post a
+      //    fresh table to the WAVECEL worklet — so the LIVE WAVETABLE display
+      //    pins the snapshot and the audio plays the frozen wavetable.
+      if (!freezeT) {
+        const sig = wavetableSignature(plain);
+        if (sig !== wtSignature) {
+          wtSignature = sig;
+          wtFrames = plain.map((f) => new Float32Array(f));
+          wave.port.postMessage({ type: 'loadWavetable', frames: plain });
+        }
       }
     }
 

@@ -408,12 +408,15 @@ describe('FOXY buildWavetableExportFilename', () => {
 
 // ── FREEZE TABLE end-to-end bridge behavior ───────────────────────────
 //
-// Pre-fix: when FrT was on, the bridge still recomputed `field` + `shapes`
-// + the inner wavetable on every tick. wtFrames stayed static (the post +
-// reassignment WAS gated) but the XYZ scope canvas read live field/shapes
-// → visibly animated even though the user expected a hard freeze.
-// Post-fix: bridgeTick early-returns after the raster paint when FrT is
-// on → wtFrames, field, shapes all hold their last snapshot.
+// User-clarified intent: FREEZE TABLE freezes the WAVETABLE ONLY. Rasters
+// AND the XYZ scope keep evolving so the user can preview what's queued
+// for when they unfreeze. The audio worklet plays the pinned snapshot
+// (no fresh loadWavetable posts) and the LIVE WAVETABLE display holds.
+//
+// PR #411 over-corrected (early-return on FrT halted the whole bridge,
+// freezing the XYZ scope too). This test block pins the correct surgical
+// gate: wtFrames REFERENCE + worklet post are gated, field/shapes keep
+// being recomputed each tick.
 //
 // The factory needs a real-enough Web Audio surface to construct. We
 // stub just what the bridge touches (OscillatorNode, GainNode, AnalyserNode,
@@ -531,7 +534,7 @@ function makeFoxyNode(params: Record<string, number> = {}): ModuleNode {
   };
 }
 
-describe('FOXY bridge: FREEZE TABLE halts the whole pipeline', () => {
+describe('FOXY bridge: FREEZE TABLE freezes the wavetable ONLY (XYZ scope keeps moving)', () => {
   // Walk `performance.now` forward in big steps so each bridgeTick clears
   // the BRIDGE_MS=42 throttle.
   let nowMs = 0;
@@ -567,18 +570,22 @@ describe('FOXY bridge: FREEZE TABLE halts the whole pipeline', () => {
       // its patch.store seam). Mirror that here.
       node.params.freezeTable = 1;
       // Second tick: rasters keep getting fresh analyser data, but the
-      // bridge must hold wtFrames + field + shapes.
+      // bridge must hold wtFrames (field/shapes still recompute — see the
+      // dedicated "keeps moving" tests below).
       nowStep();
       handle.read!('tick');
       const wt2 = handle.read!('wavetableFrames') as Float32Array[];
-      // Reference equality: bridge skipped the rebuild.
+      // Reference equality: bridge skipped the wtFrames reassignment.
       expect(wt2).toBe(wt1);
     } finally {
       perf.restore();
     }
   });
 
-  it('freezeTable = 1 → field (XYZ mode) holds across ticks', async () => {
+  it('freezeTable = 1 → field (XYZ mode) KEEPS MOVING across ticks (XYZ scope animates)', async () => {
+    // Opposite of PR #411's pin. The bridge keeps recomputing field on
+    // every tick under FrT, so the XYZ scope canvas keeps animating while
+    // the wavetable + worklet stay frozen.
     nowMs = 0;
     const perf = installPerfNow();
     try {
@@ -587,23 +594,22 @@ describe('FOXY bridge: FREEZE TABLE halts the whole pipeline', () => {
       const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
       nowStep();
       handle.read!('tick');
-      // Snapshot the field reference (NOT the rows — they're the live array)
+      // Snapshot the field reference. Each tick reassigns `field` to a
+      // fresh boxToField3d result, so reference inequality is the cleanest
+      // pin that the XYZ path keeps running.
       const field1 = handle.read!('xyzField') as unknown[];
-      // FrT is a discrete-param read directly from node.params (no setParam
-      // case in the factory — the card flips node.params[freezeTable] via
-      // its patch.store seam). Mirror that here.
       node.params.freezeTable = 1;
       nowStep();
       handle.read!('tick');
       const field2 = handle.read!('xyzField') as unknown[];
-      // Same reference → bridge skipped boxToField3d.
-      expect(field2).toBe(field1);
+      // Different reference → bridge ran boxToField3d again under FrT.
+      expect(field2).not.toBe(field1);
     } finally {
       perf.restore();
     }
   });
 
-  it('freezeTable = 1 in 3D Shape Gen mode → shapes hold across ticks', async () => {
+  it('freezeTable = 1 in 3D Shape Gen mode → shapes KEEP MOVING across ticks', async () => {
     nowMs = 0;
     const perf = installPerfNow();
     try {
@@ -613,14 +619,50 @@ describe('FOXY bridge: FREEZE TABLE halts the whole pipeline', () => {
       nowStep();
       handle.read!('tick');
       const shapes1 = handle.read!('shapes') as unknown[];
-      // FrT is a discrete-param read directly from node.params (no setParam
-      // case in the factory — the card flips node.params[freezeTable] via
-      // its patch.store seam). Mirror that here.
       node.params.freezeTable = 1;
       nowStep();
       handle.read!('tick');
       const shapes2 = handle.read!('shapes') as unknown[];
-      expect(shapes2).toBe(shapes1);
+      // Different reference → bridge ran generateShapes again under FrT.
+      expect(shapes2).not.toBe(shapes1);
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('freezeTable = 1 with non-frozen rasters → wtFrames CONTENTS pinned, field MOVES', async () => {
+    // Sanity test pinning the full contract end-to-end: rasters keep
+    // delivering fresh analyser data each tick, the wavetable display
+    // holds its snapshot (reference + contents both pinned), and the
+    // XYZ field recomputes so the scope animates.
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      // Live tick to build an initial wavetable.
+      nowStep();
+      handle.read!('tick');
+      // Freeze and capture references + a contents fingerprint.
+      node.params.freezeTable = 1;
+      nowStep();
+      handle.read!('tick');
+      const wt1 = handle.read!('wavetableFrames') as Float32Array[];
+      const field1 = handle.read!('xyzField') as unknown[];
+      const wt1Fingerprint = wt1.map((f) => Array.from(f).join(','));
+      // Another tick: rasters get new analyser data (FakeAnalyser bumps
+      // its phase each call), but the wavetable must NOT update.
+      nowStep();
+      handle.read!('tick');
+      const wt2 = handle.read!('wavetableFrames') as Float32Array[];
+      const field2 = handle.read!('xyzField') as unknown[];
+      const wt2Fingerprint = wt2.map((f) => Array.from(f).join(','));
+      // wtFrames pinned both by reference AND by contents.
+      expect(wt2).toBe(wt1);
+      expect(wt2Fingerprint).toEqual(wt1Fingerprint);
+      // field re-built → XYZ scope keeps animating.
+      expect(field2).not.toBe(field1);
     } finally {
       perf.restore();
     }
