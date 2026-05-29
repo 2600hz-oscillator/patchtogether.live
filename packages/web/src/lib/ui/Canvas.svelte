@@ -223,8 +223,11 @@
   import NumpadPlusCard from '$lib/ui/modules/NumpadPlusCard.svelte';
   // WAVESCULPT — hybrid 4-osc synth (audio + 3D ribbon video).
   import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
-  // ATLANTIS-PATCH support trio. Each is general-purpose; together they
-  // power the Visit Atlantis demo (loadAtlantis() below).
+  // ATLANTIS-PATCH support trio. The "Visit Atlantis" demo button +
+  // example-patches/atlantis.ts fixture were retired in favour of the
+  // GLITCHES GET RICHES envelope-driven demo (see loadGlitches() below).
+  // The modules themselves stay registered + spawnable from the palette;
+  // each is general-purpose far beyond the old Atlantis patch.
   import SlewSwitchCard from '$lib/ui/modules/SlewSwitchCard.svelte';
   import FourPlexerCard from '$lib/ui/modules/FourPlexerCard.svelte';
   import AtlantisCatalystCard from '$lib/ui/modules/AtlantisCatalystCard.svelte';
@@ -868,49 +871,25 @@
     }
   }
 
-  /** Visit Atlantis — load the big generative Schrader-inspired demo
-   *  patch from packages/web/src/lib/ui/example-patches/atlantis.ts.
-   *  Mirrors loadExample()'s ensureEngine → ydoc.transact → reconcile
-   *  shape; the patch spawns SCENECHANGE in autoMode so the ecosystem
-   *  starts drifting on its own immediately. */
-  async function loadAtlantis() {
+  /** GLITCHES GET RICHES — load the bundled video+audio demo envelope
+   *  from packages/web/src/lib/ui/example-patches/glitches.imp.json.
+   *  Mirrors loadExample()'s ensureEngine → load → reconcile shape;
+   *  the envelope's PICTUREBOX node carries glitch.jpg as `data.imageBytes`
+   *  so it renders on mount with no extra wiring.
+   *
+   *  Unlike the retired Visit-Atlantis loader (which built nodes + edges
+   *  inline) this loader replays a real Yjs envelope through the
+   *  canonical persistence path — same code as the Load button. */
+  async function loadGlitches() {
     error = null;
     booting = true;
     try {
       await ensureEngine();
-      const { ATLANTIS_NODES, ATLANTIS_WIRES, atlantisEdgeId } =
-        await import('$lib/ui/example-patches/atlantis');
-      ydoc.transact(() => {
-        for (const [id, n] of Object.entries(ATLANTIS_NODES)) {
-          if (!patch.nodes[id]) {
-            const autoName = nextDefaultName(patch.nodes, n.type);
-            const data = { ...(n.data ?? {}), name: autoName };
-            patch.nodes[id] = {
-              id,
-              type: n.type,
-              domain: 'audio',
-              position: n.position,
-              params: n.params,
-              data,
-            };
-          }
-        }
-        for (const w of ATLANTIS_WIRES) {
-          const id = atlantisEdgeId(w);
-          if (!patch.edges[id]) {
-            patch.edges[id] = {
-              id,
-              source: { nodeId: w.src, portId: w.srcPort },
-              target: { nodeId: w.dst, portId: w.dstPort },
-              sourceType: w.cable,
-              targetType: w.cable,
-            };
-          }
-        }
-      });
-      trace('Atlantis patch in store; reconciler instantiating');
+      const { loadGlitches: doLoad } = await import('$lib/ui/example-patches/glitches');
+      const result = doLoad(ydoc, patch);
+      trace(`GLITCHES patch in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
       await reconciler?.reconcile();
-      trace('Atlantis live — scenechange drifting');
+      trace('GLITCHES live — picturebox showing glitch.jpg');
     } catch (err) {
       console.error(err);
       error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -3555,13 +3534,13 @@
         {booting ? 'Loading…' : 'Load example'}
       </button>
       <button
-        onclick={loadAtlantis}
+        onclick={loadGlitches}
         disabled={booting}
-        class="primary atlantis"
-        title="Generative demo patch — large self-evolving ecosystem (Schrader-inspired). SCENECHANGE drifts on its own; nudge the brain or recall scenes from its card."
-        data-testid="visit-atlantis-btn"
+        class="primary glitches"
+        title="Audio+video demo patch — loads a curated rackspace with PICTUREBOX (pre-loaded with glitch.jpg), Rutt-Etra, LFOs, drum machine, and modulation. Streams immediately."
+        data-testid="load-glitches-btn"
       >
-        {booting ? 'Loading…' : 'Visit Atlantis'}
+        {booting ? 'Loading…' : 'GLITCHES GET RICHES'}
       </button>
       <button
         onclick={savePatch}
@@ -3881,15 +3860,17 @@
     color: #1a1d23;
     border-color: var(--cable-audio);
   }
-  /* Atlantis = generative demo — distinct deep-aquatic styling so users
-     read it as "this is the big one" vs the simpler Load-example. */
-  .topbar button.primary.atlantis {
+  /* Glitches = big curated demo — distinct deep-aquatic styling so users
+     read it as "this is the big one" vs the simpler Load-example.
+     Inherited from the retired "Visit Atlantis" button (same slot, same
+     visual weight); only the type-id changed. */
+  .topbar button.primary.glitches {
     background: linear-gradient(135deg, #2c5b8f 0%, #1b3252 100%);
     color: #c5e3ff;
     border-color: #4a7daa;
     text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
   }
-  .topbar button.primary.atlantis:hover:not(:disabled) {
+  .topbar button.primary.glitches:hover:not(:disabled) {
     background: linear-gradient(135deg, #3a6ea8 0%, #25416a 100%);
     border-color: #6ba0d4;
   }
