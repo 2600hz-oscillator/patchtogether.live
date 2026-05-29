@@ -12,6 +12,9 @@ import {
   FOXY_GEN_MODE_NAMES,
   FOXY_GEN_MODE_COUNT,
   FOXY_GEN_MODE_MAX,
+  FOXY_SYNC_MODE_NAMES,
+  FOXY_SYNC_MODE_MAX,
+  foxyRatioLock,
 } from './foxy';
 import { wavecelDef } from './wavecel';
 import {
@@ -235,5 +238,60 @@ describe('FOXY module def shape', () => {
       }
     }
     expect(diff).toBeGreaterThan(1);
+  });
+
+  // ── VCO sync ─────────────────────────────────────────────────────────
+  // sync_mode is a 3-position discrete param (OFF / X & Y / XYZ) that
+  // ratio-locks swoleB (mode 1+) and swoleC (mode 2) to swoleA. The card
+  // renders FOXY_SYNC_MODE_NAMES next to the knob.
+  it('exposes a sync_mode discrete param (0..2, default 0)', () => {
+    const byId = new Map(foxyDef.params.map((p) => [p.id, p]));
+    const sm = byId.get('sync_mode');
+    expect(sm, 'sync_mode').toBeDefined();
+    expect(sm!.min).toBe(0);
+    expect(sm!.max).toBe(2);
+    expect(sm!.defaultValue).toBe(0);
+    expect(sm!.curve).toBe('discrete');
+  });
+
+  it('exports FOXY_SYNC_MODE_NAMES with the 3 user-facing labels', () => {
+    expect(FOXY_SYNC_MODE_NAMES.length).toBe(3);
+    expect(FOXY_SYNC_MODE_NAMES[0]).toBe('Off');
+    expect(FOXY_SYNC_MODE_NAMES[1]).toBe('X & Y');
+    expect(FOXY_SYNC_MODE_NAMES[2]).toBe('XYZ');
+    expect(FOXY_SYNC_MODE_MAX).toBe(2);
+  });
+});
+
+describe('FOXY ratio-lock sync (pure-math helper)', () => {
+  // foxyRatioLock snaps the slave frequency to the nearest integer ratio
+  // (≥1) of the master. With master=110 Hz + slave=220 Hz, the closest
+  // integer ratio is 2 → slave stays at 220 Hz. Bumping master to 120 Hz
+  // preserves the ratio → slave moves to 240 Hz.
+  it('locks slave=220 to ratio 2 of master=110 → 220 Hz', () => {
+    expect(foxyRatioLock(110, 220)).toBeCloseTo(220, 6);
+  });
+
+  it('preserves the locked ratio when master moves (110→120 carries 220→240)', () => {
+    // First lock at 110 → 220 (ratio 2). Now imagine master moved to 120
+    // and slave still wants 220 — round(220/120)=2, so slave → 240.
+    expect(foxyRatioLock(120, 220)).toBeCloseTo(240, 6);
+  });
+
+  it('snaps a near-ratio slave to the exact integer multiple', () => {
+    // Slave at 233 Hz, master at 110: nearest integer ratio is 2 (not 2.118),
+    // so we snap to 220 Hz.
+    expect(foxyRatioLock(110, 233)).toBeCloseTo(220, 6);
+  });
+
+  it('clamps to ratio ≥1 (a sub-master slave gets pulled UP to master)', () => {
+    // Slave at 60 Hz, master at 110: round(0.545)=1, so slave snaps to 110.
+    expect(foxyRatioLock(110, 60)).toBeCloseTo(110, 6);
+  });
+
+  it('returns slave unchanged when master is non-positive / non-finite', () => {
+    expect(foxyRatioLock(0, 220)).toBe(220);
+    expect(foxyRatioLock(-1, 220)).toBe(220);
+    expect(foxyRatioLock(Number.NaN, 220)).toBe(220);
   });
 });

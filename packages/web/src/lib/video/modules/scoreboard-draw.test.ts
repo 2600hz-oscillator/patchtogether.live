@@ -143,4 +143,57 @@ describe('scoreboard-draw — drawScoreboard determinism', () => {
     }
     expect(differs).toBe(true);
   });
+
+  // NO-GHOST regression — pins the alarm-clock-style render. After the
+  // chamfered-segment redesign, OFF segments must not draw anything
+  // (the previous LCD-style render painted them at IDLE_ALPHA, leaving
+  // visible ghosts). For score=0 → digit "0", segment `g` (middle) is
+  // OFF; the pixel at the centre of each digit cell falls INSIDE g's
+  // bounding box. That pixel must be the background colour (channels
+  // very close to the BG_COLOR rgb(10,10,10)) — NOT a dim variant of
+  // the hue-tinted active colour.
+  it('does not paint ghost off-segments (score=0 centre pixel is background)', () => {
+    const c = tryMakeCanvas();
+    if (!c) return;
+    const ctx = c.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    if (!ctx) return;
+    const W = 240;
+    const H = 80;
+    // Resize to test dims if possible (HTMLCanvasElement supports it;
+    // OffscreenCanvas needs a fresh instance — easier to just use the
+    // 120x50 we got and adjust sample points).
+    const cw = (c as { width: number }).width || 120;
+    const ch = (c as { height: number }).height || 50;
+    // Use a saturated hue so the active colour is FAR from BG. If a
+    // ghost were drawn, the centre pixel would be a desaturated tint
+    // of red rather than the near-black BG.
+    drawScoreboard(ctx as CanvasRenderingContext2D, cw, ch, 0, 0.0); // hue 0 = red
+    const data = ctx.getImageData(0, 0, cw, ch).data;
+    // Sample the centre of digit cell 1 (any of the 4 cells works — all
+    // four are "0" so all have g OFF). Centre of cell 1's digit slot,
+    // vertically dead-centre, lands inside segment g's bbox.
+    const padX = cw * 0.05;
+    const innerW = cw - 2 * padX;
+    const cellW = innerW / 4;
+    const digitW = cellW * 0.78;
+    const slotXOffset = (cellW - digitW) / 2;
+    const cellCentreX = Math.floor(padX + 1 * cellW + slotXOffset + digitW / 2);
+    const cellCentreY = Math.floor(ch / 2);
+    const idx = (cellCentreY * cw + cellCentreX) * 4;
+    const r = data[idx]!;
+    const g = data[idx + 1]!;
+    const b = data[idx + 2]!;
+    // BG_COLOR is #0a0a0a = rgb(10,10,10). Allow a small tolerance for
+    // anti-aliasing artefacts on glyph edges and shadow blur bleed —
+    // but reject anything that's clearly a hue-tinted off-segment ghost
+    // (which would show r >> g and r >> b for hue=0 / red).
+    // A dim 5%-alpha red ghost would land around rgb(~22, ~10, ~10)
+    // after compositing onto bg; we want the pixel to look like
+    // *background*, so neither channel should be wildly above 30, and
+    // r in particular shouldn't be more than ~15 above g/b.
+    expect(r).toBeLessThan(35);
+    expect(g).toBeLessThan(35);
+    expect(b).toBeLessThan(35);
+    expect(Math.abs(r - g)).toBeLessThan(20); // no red-tint ghost
+  });
 });

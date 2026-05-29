@@ -20,14 +20,14 @@
 //     ACIDWARP uploads its R8 pattern + RGB palette textures).
 //
 // Render contract:
-//   - Background: BG_COLOR (#0a0a0a — a soft black so the unlit segments
-//     stay distinguishable from a hard background).
-//   - Active segments: filled+stroked in `hsl(hue°, 90%, 55%)` with an
-//     RGBA shadowBlur for the neon halo.
-//   - Inactive segments: same color at IDLE_ALPHA (~5%) so a 0 or "0000"
-//     state still reads as a 7-segment widget (vs. blank cells).
-//   - Optional scanline overlay (every other row, 20% darker) for the CRT
-//     vibe. Kept LIGHT — this is a counter, not BENTBOX.
+//   - Background: BG_COLOR (#0a0a0a — a soft black). Solid, no scanlines —
+//     this is a digital-alarm-clock face, not a CRT.
+//   - Active segments: filled hexagonal blobs in `hsl(hue°, 90%, 55%)`
+//     with an RGBA shadowBlur for the neon halo. The hex shape is the
+//     canonical 7-segment glyph: a long rectangle with 45° chamfered tips
+//     so adjacent segments meet at a point with a small natural gap.
+//   - Inactive segments: NOT DRAWN. Off segments are fully invisible
+//     against the background — the alarm-clock look, not an LCD ghost.
 //
 // All numeric layout is derived from (width, height); identical (score,
 // hue, width, height) inputs produce byte-identical canvases. The wrap
@@ -93,9 +93,7 @@ export const SCOREBOARD_DIGITS = 4;
 export const SCOREBOARD_WRAP_AT = Math.pow(10, SCOREBOARD_DIGITS);
 
 const BG_COLOR = '#0a0a0a';
-const IDLE_ALPHA = 0.05;
 const SHADOW_BLUR_FACTOR = 0.08; // shadowBlur = digitHeight * factor
-const SCANLINE_ALPHA = 0.18;
 
 /** Convert hue (0..1) + saturation + lightness to an `hsl(...)` string. */
 function hslString(hue01: number, sat: number, light: number, alpha = 1): string {
@@ -149,10 +147,67 @@ export function scoreToDigits(score: number): number[] {
 }
 
 /**
- * Draw ONE 7-segment digit into the rect (`dx`, `dy`, `dw`, `dh`) using
- * `colorActive` for lit segments and the same color at IDLE_ALPHA for
- * unlit ones. Shadow blur (set up by the caller before this is called)
- * paints the neon halo.
+ * Draw a horizontal chamfered hex segment at (x, y) with length `len`
+ * and thickness `thick`. The shape is a 6-vertex hexagon — long bar in
+ * the middle with both ends cut at 45° so they taper to a point. The
+ * canonical "alarm clock" segment.
+ *
+ * Vertex order clockwise from top-left chamfer corner:
+ *   (x + thick/2, y           )
+ *   (x + len - thick/2, y           )
+ *   (x + len,           y + thick/2)
+ *   (x + len - thick/2, y + thick   )
+ *   (x + thick/2, y + thick   )
+ *   (x,                 y + thick/2)
+ */
+function pathHorizSegment(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  len: number,
+  thick: number,
+): void {
+  const half = thick / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + half, y);
+  ctx.lineTo(x + len - half, y);
+  ctx.lineTo(x + len, y + half);
+  ctx.lineTo(x + len - half, y + thick);
+  ctx.lineTo(x + half, y + thick);
+  ctx.lineTo(x, y + half);
+  ctx.closePath();
+}
+
+/**
+ * Draw a vertical chamfered hex segment at (x, y) with length `len`
+ * (vertical extent) and thickness `thick` (horizontal extent). Same hex
+ * shape as the horizontal variant, rotated 90°.
+ */
+function pathVertSegment(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  len: number,
+  thick: number,
+): void {
+  const half = thick / 2;
+  ctx.beginPath();
+  ctx.moveTo(x, y + half);
+  ctx.lineTo(x + half, y);
+  ctx.lineTo(x + thick, y + half);
+  ctx.lineTo(x + thick, y + len - half);
+  ctx.lineTo(x + half, y + len);
+  ctx.lineTo(x, y + len - half);
+  ctx.closePath();
+}
+
+/**
+ * Draw ONE 7-segment digit into the rect (`dx`, `dy`, `dw`, `dh`).
+ * Lit segments fill as chamfered hex blobs in the active color. UNLIT
+ * segments draw nothing (no ghost / IDLE_ALPHA pass — that was the
+ * LCD-style render; the alarm-clock look hides off segments entirely).
+ * Shadow blur (set up by the caller) paints the neon halo on each lit
+ * segment.
  */
 function drawDigit(
   ctx: CanvasRenderingContext2D,
@@ -165,65 +220,56 @@ function drawDigit(
 ): void {
   const seg = SCOREBOARD_DIGIT_SEGMENTS[Math.max(0, Math.min(9, digit))]!;
   const colorActive = hslString(hue01, 0.95, 0.55, 1);
-  const colorIdle = hslString(hue01, 0.95, 0.55, IDLE_ALPHA);
 
-  // Segment geometry. We carve the digit cell into 3 horizontal bars
-  // (top/middle/bottom) and 2 vertical bars on each side. Segment
-  // thickness scales with digit width.
+  // Segment geometry. The cell is dw wide × dh tall. Segment thickness
+  // scales with digit width. Each hex segment's tapered tips eat `half`
+  // px on each end — adjacent segments meet at a point with a small
+  // natural gap, which IS the canonical alarm-clock look.
   const thick = Math.max(2, dw * 0.13);
   const half = thick / 2;
-  // Inset segments slightly so the corners don't overlap into a fat
-  // blob. tiny= the "corner notch" on either end of each segment.
-  const tiny = thick * 0.4;
-  // X coords for the vertical segments.
+  // X coords for the vertical segments (b/c on the right, e/f on the
+  // left). The vertical hex shape is `thick` wide, so the left-side
+  // segment hugs x=dx and the right-side hugs x=dx+dw-thick.
   const xLeft = dx;
-  const xRight = dx + dw;
-  // Y coords for the horizontal segments.
+  const xRight = dx + dw - thick;
+  // Y coords for the horizontal segments. Horizontal segs are `thick`
+  // tall; a (top) hugs y=dy, d (bottom) hugs y=dy+dh-thick, g (middle)
+  // is centred on dh/2.
   const yTop = dy;
-  const yMid = dy + dh / 2;
-  const yBot = dy + dh;
+  const yMid = dy + dh / 2 - half;
+  const yBot = dy + dh - thick;
+  // Vertical segments: top half spans y=dy+half..dy+dh/2-half;
+  // bottom half spans y=dy+dh/2+half..dy+dh-half. The +half/-half on
+  // each end is what makes the tips taper toward the horizontal seg
+  // tip without overlapping it.
+  const yTopVert = dy + half;
+  const yBotVert = dy + dh / 2 + half;
+  const halfH = dh / 2 - thick; // length of each vertical seg (with tip allowance)
 
-  type Bar = { x: number; y: number; w: number; h: number };
-  const horiz = (x: number, y: number, w: number): Bar => ({
-    x: x + tiny,
-    y: y - half,
-    w: w - 2 * tiny,
-    h: thick,
-  });
-  const vert = (x: number, y: number, h: number): Bar => ({
-    x: x - half,
-    y: y + tiny,
-    w: thick,
-    h: h - 2 * tiny,
-  });
-
-  // (segment, lit, rect)
-  const segs: Array<{ on: boolean; rect: Bar }> = [
-    { on: seg.a, rect: horiz(xLeft, yTop, dw) },
-    { on: seg.b, rect: vert(xRight, yTop, dh / 2) },
-    { on: seg.c, rect: vert(xRight, yMid, dh / 2) },
-    { on: seg.d, rect: horiz(xLeft, yBot, dw) },
-    { on: seg.e, rect: vert(xLeft, yMid, dh / 2) },
-    { on: seg.f, rect: vert(xLeft, yTop, dh / 2) },
-    { on: seg.g, rect: horiz(xLeft, yMid, dw) },
+  type Seg = { on: boolean; draw: () => void };
+  const segs: Seg[] = [
+    // a — top horizontal. Inset by `half` on each end so its tips reach
+    // toward the b/f corners but don't quite touch them.
+    { on: seg.a, draw: () => pathHorizSegment(ctx, dx + half, yTop, dw - thick, thick) },
+    // b — top-right vertical.
+    { on: seg.b, draw: () => pathVertSegment(ctx, xRight, yTopVert, halfH, thick) },
+    // c — bottom-right vertical.
+    { on: seg.c, draw: () => pathVertSegment(ctx, xRight, yBotVert, halfH, thick) },
+    // d — bottom horizontal.
+    { on: seg.d, draw: () => pathHorizSegment(ctx, dx + half, yBot, dw - thick, thick) },
+    // e — bottom-left vertical.
+    { on: seg.e, draw: () => pathVertSegment(ctx, xLeft, yBotVert, halfH, thick) },
+    // f — top-left vertical.
+    { on: seg.f, draw: () => pathVertSegment(ctx, xLeft, yTopVert, halfH, thick) },
+    // g — middle horizontal.
+    { on: seg.g, draw: () => pathHorizSegment(ctx, dx + half, yMid, dw - thick, thick) },
   ];
 
+  ctx.fillStyle = colorActive;
   for (const s of segs) {
-    ctx.fillStyle = s.on ? colorActive : colorIdle;
-    // Rounded corners — gives the segment the chamfered LCD/LED look.
-    // roundRect is widely supported (Chrome/Safari/Firefox all ship it).
-    const r = Math.min(s.rect.w, s.rect.h) / 2;
-    if (typeof ctx.roundRect === 'function') {
-      ctx.beginPath();
-      ctx.roundRect(s.rect.x, s.rect.y, s.rect.w, s.rect.h, r);
-      ctx.fill();
-    } else {
-      // jsdom doesn't ship roundRect; fall back to a plain fillRect so
-      // the deterministic-pixel test still produces stable output (the
-      // pixel hash compares two SAME-environment runs, not jsdom vs
-      // a real browser).
-      ctx.fillRect(s.rect.x, s.rect.y, s.rect.w, s.rect.h);
-    }
+    if (!s.on) continue; // No ghost / off-segment pass — alarm-clock look.
+    s.draw();
+    ctx.fill();
   }
 }
 
@@ -260,14 +306,7 @@ export function drawScoreboard(
     drawDigit(ctx, r.x, r.y, r.w, r.h, digits[i]!, hue01);
   }
 
-  // Scanlines overlay. Keep this in the BG_COLOR so the lit segments
-  // don't shift hue. Drawn last so it lies over the segments.
-  ctx.shadowBlur = 0;
-  ctx.shadowColor = 'transparent';
-  ctx.fillStyle = `rgba(0, 0, 0, ${SCANLINE_ALPHA})`;
-  for (let y = 0; y < height; y += 2) {
-    ctx.fillRect(0, y, width, 1);
-  }
-
+  // No scanlines overlay — solid black background. The alarm-clock face
+  // is clean; scanlines belong to the CRT module (BENTBOX), not here.
   ctx.restore();
 }
