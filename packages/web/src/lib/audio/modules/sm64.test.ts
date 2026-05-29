@@ -5,6 +5,8 @@
 // at runtime); we only test the pure helpers + the def shape.
 
 import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   sm64Def,
   cvToStickValue,
@@ -163,6 +165,61 @@ describe('shouldAutoDownsample', () => {
   it('stays at full res on a wide viewport with 8+ cores', () => {
     expect(shouldAutoDownsample(8, false)).toBe(false);
     expect(shouldAutoDownsample(16, false)).toBe(false);
+  });
+});
+
+describe('Sm64Card bridge wiring (regression: post-extract white-screen)', () => {
+  // The audio-domain factory in this file calls `bridge.autoStart()` to drive
+  // the bundle's #startbutton click after the ROM lands in IDB. If the card
+  // gates `autoStart` assignment behind a condition that's false at prod
+  // runtime (it once gated it on a rAF-capture probe that only matched an
+  // UNMINIFIED upstream bundle — our prod bundle is minified so the probe
+  // never fired, leaving autoStart undefined and Extract → white-screen), the
+  // factory has nothing to call and the game never starts.
+  //
+  // This test asserts the source-code contract: `__sm64.autoStart` is wired
+  // UNCONDITIONALLY (no surrounding `if (capturedOnAnimFrame)` or
+  // equivalent guard) so the post-Extract auto-start path always works.
+  const CARD_SRC = fs.readFileSync(
+    path.resolve(__dirname, '../../ui/modules/Sm64Card.svelte'),
+    'utf8',
+  );
+
+  it('assigns bridge.autoStart unconditionally (no rAF-capture guard)', () => {
+    // Locate the autoStart assignment.
+    const idx = CARD_SRC.indexOf('w.__sm64.autoStart =');
+    expect(idx, 'card must assign __sm64.autoStart').toBeGreaterThan(0);
+
+    // The 400 chars immediately preceding the assignment must NOT contain a
+    // runtime guard on `capturedOnAnimFrame` (the rAF probe that fails on a
+    // minified bundle). Comments mentioning it are fine; we strip block
+    // comments + line comments before searching.
+    const window = CARD_SRC.slice(Math.max(0, idx - 400), idx);
+    const codeWindow = window
+      .replace(/\/\*[\s\S]*?\*\//g, '')         // strip /* ... */
+      .replace(/(^|\n)\s*\/\/[^\n]*/g, '$1');   // strip // line comments
+    expect(
+      codeWindow.includes('capturedOnAnimFrame'),
+      'autoStart must NOT be inside a capturedOnAnimFrame conditional — that '
+        + 'condition is false on the minified prod bundle, leaving autoStart '
+        + 'undefined and Extract → white-screen.',
+    ).toBe(false);
+  });
+
+  it('flips bridge.gameStarted when autoStart fires', () => {
+    // After clicking #startbutton the bundle is in the "running game" state.
+    // The audio factory's snapshot.read('snapshot') reflects gameStarted from
+    // __sm64.gameStarted — the card must set it true inside autoStart so the
+    // snapshot + e2e contract holds.
+    const startblock = CARD_SRC.indexOf('w.__sm64.autoStart =');
+    expect(startblock).toBeGreaterThan(0);
+    // Look forward ~400 chars from the autoStart assignment.
+    const window = CARD_SRC.slice(startblock, startblock + 400);
+    expect(
+      window.includes('gameStarted = true'),
+      'autoStart must set __sm64.gameStarted = true so the engine snapshot '
+        + 'reports the running-game state.',
+    ).toBe(true);
   });
 });
 
