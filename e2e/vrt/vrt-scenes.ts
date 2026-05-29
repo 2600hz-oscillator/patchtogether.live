@@ -254,6 +254,33 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       );
     },
   },
+  // PEAKSTATE (animated mandala generator): the module is self-driving
+  // (internal pen + ring buffer + 3D rotation, no external signal). The
+  // pen trajectory is wall-clock driven, so two runs freeze at slightly
+  // different points along the trail. We set `__peakstateVrtSeed` so the
+  // module paints ONCE from a deterministic 120-sample ring + frozen
+  // rotation, then HOLDS that frame across subsequent draws → pixel-
+  // stable RGB preview + 3D + mono outputs. No audio is involved, so
+  // freezeAudio is false (the AudioContext suspend isn't what's freezing
+  // the render; the seed flag is).
+  peakstate: {
+    nodes: [
+      { id: 'vrt-1', type: 'peakstate', position: { x: 120, y: 60 }, domain: 'video' },
+    ],
+    edges: [],
+    freezeAudio: false,
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        (globalThis as unknown as { __peakstateVrtSeed?: boolean }).__peakstateVrtSeed = true;
+      });
+      // A few rAFs so the seed paint lands + the preview canvas catches it.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    settleMs: 500,
+  },
+
   // BACKDRAFT (video feedback generator): drive in_a / in_b + both key
   // masks from SHAPES sources, let the feedback loop settle, then FREEZE
   // BACKDRAFT (params.freeze = 1) so the time-evolving accumulator holds
