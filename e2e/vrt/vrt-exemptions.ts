@@ -362,6 +362,11 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // linux CI (sub-pixel text AA differs across platforms); darwin is the
   // regression gate here.
   'linux/cocoadelay',
+  // RESOFILTER (Resonarium MultiFilter port): darwin baseline captured on this
+  // machine (static knob card — no canvas/animation, deterministic). Linux
+  // baseline pending a `task vrt:update` run on linux CI (sub-pixel AA differs
+  // across platforms); darwin is the regression gate here.
+  'linux/resofilter',
   // FOXY (hybrid SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL): darwin
   // baseline captured on this machine via VRT_SCENES (self-driving internal
   // chain, frozen on AudioContext suspend). The pipeline mixes the

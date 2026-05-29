@@ -83,6 +83,10 @@ import { aquaTankDef } from './aquatank';
 // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
 import { callsineDef } from './callsine';
 import { cocoaDelayDef } from './cocoadelay';
+// RESOFILTER — multi-mode filter port from gabrielsoule/resonarium's
+// MultiFilter (5 modes: LP / HP / BP / Notch / Allpass), with a card that
+// displays the live mode name next to the MODE knob.
+import { resofilterDef } from './resofilter';
 // FOXY — hybrid SWOLEVCO→RASTERIZE→RUTTETRA(XYZ)→realtime-wavetable→WAVECEL.
 import { foxyDef } from './foxy';
 // 4PLEXER — 4-in / 4-out discrete signal router with per-output
@@ -188,6 +192,9 @@ export function registerAudioModules(): void {
   // delay with LFO/DRIFT time modulation, ducking, in-loop filter + drive,
   // and clock-locked tempo sync. CHARLOTTE'S ECHOS is built from 4 of these.
   registerModule(cocoaDelayDef);
+  // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium's
+  // MultiFilter; LP / HP / BP / Notch / Allpass with named-mode card label).
+  registerModule(resofilterDef);
   // GRIDS — Mutable Instruments topographic drum pattern generator.
   // BD/SD/HH triggers + accent from a 5x5 interpolated drum map; euclidean mode.
   registerModule(gridsDef);
