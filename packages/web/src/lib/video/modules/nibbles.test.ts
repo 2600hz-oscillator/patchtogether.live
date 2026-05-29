@@ -375,3 +375,110 @@ describe('nibblesDef.factory — AUTO toggle drives direction; OFF halts it', ()
     expect(anyMutation).toBe(true);
   });
 });
+
+// ---- Test hook: extras.forcePulse() -------------------------------------
+//
+// Locks in the deterministic-pulse hook the video→audio CV/gate e2e + composite
+// VRT specs depend on (per `e2e/tests/video-audio-cvgate-coverage.spec.ts` +
+// `e2e/vrt/vrt-composite-coverage.spec.ts`). The hook MUST drive the same
+// ConstantSourceNode the in-engine bridge captures via audioSources —
+// otherwise the spec tests would assert against an output port that no
+// downstream module ever sees.
+describe('nibblesDef.factory — extras.forcePulse() test hook', () => {
+  it('exposes forcePulse on the extras handle', () => {
+    const { handle } = spawn();
+    const extras = handle.read?.('extras') as { forcePulse: (port: string, v?: number) => void };
+    expect(typeof extras.forcePulse).toBe('function');
+  });
+
+  it('forcePulse("pellet") pulses the same ConstantSourceNode exposed via audioSources.pellet', () => {
+    const { handle, fixture } = spawn();
+    // The pellet gate is the 1st CSN constructed.
+    const pelletCsn = fixture!.constants[0]!;
+    const audioSrc = handle.audioSources?.get('pellet');
+    expect(audioSrc?.node).toBe(pelletCsn);
+    // Drop any construction-time setValueAtTime so we count only the
+    // post-force pulse.
+    pelletCsn.offset.setValueAtTime.mockClear();
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    extras.forcePulse('pellet');
+    // pulseGate sets offset=1 at t, then offset=0 at t + 10ms.
+    const calls = pelletCsn.offset.setValueAtTime.mock.calls;
+    expect(calls.length).toBe(2);
+    expect(calls[0]![0]).toBe(1);    // rising edge
+    expect(calls[1]![0]).toBe(0);    // falling edge
+    expect(calls[1]![1]).toBeCloseTo(calls[0]![1] + 0.01, 4);  // 10 ms gap
+  });
+
+  it('forcePulse("death") + ("dir_change") each pulse their own gate CSN', () => {
+    const { handle, fixture } = spawn();
+    const deathCsn = fixture!.constants[1]!;
+    const dirCsn   = fixture!.constants[2]!;
+    deathCsn.offset.setValueAtTime.mockClear();
+    dirCsn.offset.setValueAtTime.mockClear();
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    extras.forcePulse('death');
+    expect(deathCsn.offset.setValueAtTime).toHaveBeenCalledTimes(2);
+    expect(dirCsn.offset.setValueAtTime).toHaveBeenCalledTimes(0);
+    extras.forcePulse('dir_change');
+    expect(dirCsn.offset.setValueAtTime).toHaveBeenCalledTimes(2);
+  });
+
+  it('forcePulse("length_cv", v) linear-ramps length_cv.offset toward v', () => {
+    const { handle, fixture } = spawn();
+    const lengthCsn = fixture!.constants[3]!;
+    lengthCsn.offset.linearRampToValueAtTime.mockClear();
+    const extras = handle.read?.('extras') as { forcePulse: (p: string, v?: number) => void };
+    extras.forcePulse('length_cv', 0.5);
+    const calls = lengthCsn.offset.linearRampToValueAtTime.mock.calls;
+    expect(calls.length).toBe(1);
+    expect(calls[0]![0]).toBeCloseTo(0.5, 4);
+  });
+
+  it('forcePulse("length_cv") with no value defaults to +1 and clamps overshoot', () => {
+    const { handle, fixture } = spawn();
+    const lengthCsn = fixture!.constants[3]!;
+    lengthCsn.offset.linearRampToValueAtTime.mockClear();
+    const extras = handle.read?.('extras') as { forcePulse: (p: string, v?: number) => void };
+    extras.forcePulse('length_cv');
+    expect(lengthCsn.offset.linearRampToValueAtTime.mock.calls[0]![0]).toBeCloseTo(1, 4);
+    extras.forcePulse('length_cv', 5);   // overshoot → +1
+    expect(lengthCsn.offset.linearRampToValueAtTime.mock.calls[1]![0]).toBeCloseTo(1, 4);
+    extras.forcePulse('length_cv', -5);  // undershoot → −1
+    expect(lengthCsn.offset.linearRampToValueAtTime.mock.calls[2]![0]).toBeCloseTo(-1, 4);
+  });
+
+  it('forcePulse is a safe no-op when no AudioContext is attached', () => {
+    const { handle } = spawn(false);
+    const extras = handle.read?.('extras') as { forcePulse: (p: string, v?: number) => void };
+    expect(() => extras.forcePulse('pellet')).not.toThrow();
+    expect(() => extras.forcePulse('length_cv', 0.5)).not.toThrow();
+  });
+
+  it('forceHold(port, true) sets the same gate CSN to offset=1 without auto-fall-back', () => {
+    const { handle, fixture } = spawn();
+    const pelletCsn = fixture!.constants[0]!;
+    pelletCsn.offset.setValueAtTime.mockClear();
+    pelletCsn.offset.cancelScheduledValues.mockClear();
+    const extras = handle.read?.('extras') as {
+      forceHold: (p: 'pellet' | 'death' | 'dir_change', high: boolean) => void;
+    };
+    extras.forceHold('pellet', true);
+    // cancelScheduledValues + setValueAtTime(1, t) — ONE setValueAtTime call,
+    // no falling edge scheduled (that's the point — the value sticks).
+    expect(pelletCsn.offset.cancelScheduledValues).toHaveBeenCalled();
+    expect(pelletCsn.offset.setValueAtTime).toHaveBeenCalledTimes(1);
+    expect(pelletCsn.offset.setValueAtTime.mock.calls[0]![0]).toBe(1);
+  });
+
+  it('forceHold(port, false) clears the hold back to 0', () => {
+    const { handle, fixture } = spawn();
+    const deathCsn = fixture!.constants[1]!;
+    deathCsn.offset.setValueAtTime.mockClear();
+    const extras = handle.read?.('extras') as {
+      forceHold: (p: 'pellet' | 'death' | 'dir_change', high: boolean) => void;
+    };
+    extras.forceHold('death', false);
+    expect(deathCsn.offset.setValueAtTime.mock.calls[0]![0]).toBe(0);
+  });
+});

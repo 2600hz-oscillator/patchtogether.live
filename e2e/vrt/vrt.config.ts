@@ -34,6 +34,7 @@ export default defineConfig({
   testMatch: [
     'vrt.spec.ts',
     'vrt-wavesculpt-blink.spec.ts',
+    'vrt-composite-coverage.spec.ts',
     'playhead.spec.ts',
     'interactions.spec.ts',
     'groups.spec.ts',
