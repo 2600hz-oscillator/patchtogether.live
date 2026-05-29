@@ -181,6 +181,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   shapes: { top: 'Video modules', sub: 'Sources' },
   shapedramps: { top: 'Video modules', sub: 'Sources' },
   acidwarp: { top: 'Video modules', sub: 'Sources' },
+  // MANDLEBLOT — Mandelbrot fractal generator (mono + colour outputs).
+  mandleblot: { top: 'Video modules', sub: 'Sources' },
   // DOOM — single-instance interactive video module. Cards are
   // keyboard-driven (focus-within ring) + CV-gate-driven; one host
   // per rack, spectators see the framebuffer over Yjs awareness.

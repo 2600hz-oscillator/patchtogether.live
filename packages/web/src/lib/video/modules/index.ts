@@ -36,6 +36,7 @@ import { videoboxDef } from './videobox';
 import { videoVarispeedDef } from './videovarispeed';
 import { backdraftDef } from './backdraft';
 import { fourPlexVidDef } from './4plexvid';
+import { mandleblotDef } from './mandleblot';
 
 let registered = false;
 
@@ -122,6 +123,10 @@ export function registerVideoModules(): void {
   // each rising edge (1->2->3->4->1, wrapping). Discrete routing — never
   // a blend.
   registerVideoModule(fourPlexVidDef);
+  // MANDLEBLOT — Mandelbrot fractal generator with zoom + rotation +
+  // RGB-cycling hue. Two outputs: mono escape-time field + colour palette.
+  // Log-mapped zoom 1×..1e6× (single-precision highp-float ceiling).
+  registerVideoModule(mandleblotDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e
