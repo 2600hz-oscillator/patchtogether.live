@@ -188,6 +188,14 @@ export const foxyDef: AudioModuleDef = {
     { id: 'xyz_warp',    label: 'Warp', defaultValue: FOXY_XYZ_3D_DEFAULTS.warpAmount,      min: 0, max: 1, curve: 'linear' },
     // v4: C adds a SECONDARY Z height on top of B's primary heightmap.
     { id: 'xyz_zheight', label: 'Z Ht', defaultValue: FOXY_XYZ_3D_DEFAULTS.secondaryHeight, min: 0, max: 1, curve: 'linear' },
+    // v4.1: ZOOM crops the displayed 256×256 grid to a centered
+    // (size/zoom)×(size/zoom) sub-region of the box → fewer / larger peaks.
+    // Default 4 = the user's "4× zoom-in" headline experience.
+    { id: 'xyz_zoom',    label: 'Zoom', defaultValue: 4,   min: 1, max: 8, curve: 'linear' },
+    // v4.1: SMOOTH pre-blurs base/height/cField (radius = round(smooth*8) px)
+    // + the cell loop uses bilinear A sampling → continuous conical mesh
+    // instead of v4's jaggy spikes. Default 0.5 is the headline value.
+    { id: 'xyz_smooth',  label: 'Smth', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
     // Freeze toggles (0 = live, 1 = frozen). FREEZE RASTER A/B/C hold each
     // raster's current frame so the source SWOLEVCOs no longer drive that
     // axis of the wavetable. FREEZE TABLE holds the wavetable: stops
@@ -365,6 +373,11 @@ export const foxyDef: AudioModuleDef = {
       yDisp:           num('xyz_ydisp',   FOXY_XYZ_3D_DEFAULTS.yDisp),
       warpAmount:      num('xyz_warp',    FOXY_XYZ_3D_DEFAULTS.warpAmount),
       secondaryHeight: num('xyz_zheight', FOXY_XYZ_3D_DEFAULTS.secondaryHeight),
+      // v4.1: zoom + smooth default to the module-level headline values
+      // (4 / 0.5), NOT the pure-degeneracy values that FOXY_XYZ_3D_DEFAULTS
+      // carries (1 / 0). User can drop both to 1 / 0 to recover v4.
+      zoom:            num('xyz_zoom',    4),
+      smooth:          num('xyz_smooth',  0.5),
     };
     // Latest computed field + table, cached so the card can read them back
     // without recomputing (the bridge owns the compute). `field` is now
@@ -599,6 +612,9 @@ export const foxyDef: AudioModuleDef = {
           case 'xyz_ydisp':   xyz.yDisp = value; return;
           case 'xyz_warp':    xyz.warpAmount = value; return;
           case 'xyz_zheight': xyz.secondaryHeight = value; return;
+          // v4.1: zoom + smooth steer the bridge's field math.
+          case 'xyz_zoom':    xyz.zoom = value; return;
+          case 'xyz_smooth':  xyz.smooth = value; return;
         }
       },
       readParam(paramId) {
@@ -625,6 +641,8 @@ export const foxyDef: AudioModuleDef = {
           case 'xyz_ydisp':   return xyz.yDisp;
           case 'xyz_warp':    return xyz.warpAmount;
           case 'xyz_zheight': return xyz.secondaryHeight;
+          case 'xyz_zoom':    return xyz.zoom;
+          case 'xyz_smooth':  return xyz.smooth;
           default: return undefined;
         }
       },

@@ -214,14 +214,17 @@
         </div>
       </div>
 
-      <!-- XYZ volumetric controls (v4: shape + C-driven warp / Z height) -->
-      <div class="section-label">XYZ volumetric (v4)</div>
+      <!-- XYZ volumetric controls (v4: shape + C-driven warp / Z height;
+           v4.1: zoom + smooth → fewer / larger conical peaks) -->
+      <div class="section-label">XYZ volumetric (v4.1)</div>
       <div class="knob-row">
         <Knob value={pv('xyz_xshape', defv('xyz_xshape'))} min={0}  max={1} defaultValue={defv('xyz_xshape')} label="X Shp" curve="linear" onchange={set('xyz_xshape')} moduleId={id} paramId="xyz_xshape" readLive={live('xyz_xshape')} />
         <Knob value={pv('xyz_yshape', defv('xyz_yshape'))} min={0}  max={1} defaultValue={defv('xyz_yshape')} label="Y Shp" curve="linear" onchange={set('xyz_yshape')} moduleId={id} paramId="xyz_yshape" readLive={live('xyz_yshape')} />
         <Knob value={pv('xyz_ydisp', defv('xyz_ydisp'))}   min={-1} max={1} defaultValue={defv('xyz_ydisp')}  label="Y Dsp" curve="linear" onchange={set('xyz_ydisp')}  moduleId={id} paramId="xyz_ydisp"  readLive={live('xyz_ydisp')} />
         <Knob value={pv('xyz_warp', defv('xyz_warp'))}     min={0}  max={1} defaultValue={defv('xyz_warp')}    label="Warp"  curve="linear" onchange={set('xyz_warp')}    moduleId={id} paramId="xyz_warp"    readLive={live('xyz_warp')} />
         <Knob value={pv('xyz_zheight', defv('xyz_zheight'))} min={0} max={1} defaultValue={defv('xyz_zheight')} label="Z Ht"  curve="linear" onchange={set('xyz_zheight')} moduleId={id} paramId="xyz_zheight" readLive={live('xyz_zheight')} />
+        <Knob value={pv('xyz_zoom', defv('xyz_zoom'))}     min={1}  max={8} defaultValue={defv('xyz_zoom')}    label="ZOOM"  curve="linear" onchange={set('xyz_zoom')}    moduleId={id} paramId="xyz_zoom"    readLive={live('xyz_zoom')} />
+        <Knob value={pv('xyz_smooth', defv('xyz_smooth'))} min={0}  max={1} defaultValue={defv('xyz_smooth')}  label="SMOOTH" curve="linear" onchange={set('xyz_smooth')} moduleId={id} paramId="xyz_smooth"  readLive={live('xyz_smooth')} />
       </div>
 
       <!-- Animated WAVECEL wavetable display + full WAVECEL control row -->
