@@ -145,7 +145,7 @@ interface FakeConstantWrapper {
   stop: ReturnType<typeof vi.fn>;
 }
 
-function makeFakeAudioCtx(): {
+function makeFakeAudioCtx(opts: { withDestination?: boolean } = {}): {
   ctx: BaseAudioContext;
   createdSplitters: FakeNode[];
   createdGains: FakeNode[];
@@ -157,6 +157,9 @@ function makeFakeAudioCtx(): {
   constantWrappers: FakeConstantWrapper[];
   workletNode: FakeNode | null;
   workletReady: Promise<void>;
+  /** The fake destination node (when `withDestination: true`) — used to
+   *  assert the silent worklet keep-alive landed on it. */
+  destination: FakeNode | null;
 } {
   const createdSplitters: FakeNode[] = [];
   const createdGains: FakeNode[] = [];
@@ -166,15 +169,23 @@ function makeFakeAudioCtx(): {
   let resolveWorklet: () => void = () => {};
   const workletReady = new Promise<void>((r) => { resolveWorklet = r; });
 
+  const destination: FakeNode | null = opts.withDestination
+    ? { __tag: 'destination', connect: vi.fn(), disconnect: vi.fn() }
+    : null;
+
   const ctx = {
     currentTime: 0,
+    ...(destination ? { destination } : {}),
     audioWorklet: {
       addModule: vi.fn().mockResolvedValue(undefined),
     },
     createGain: () => {
-      const n: FakeNode = { __tag: 'gain', connect: vi.fn(), disconnect: vi.fn() };
-      createdGains.push(n);
-      return { ...n, gain: { value: 1 } };
+      // The wrapper IS what the factory closes over — push the wrapper so
+      // assertions can match `connect`/`disconnect` call targets by identity.
+      const base: FakeNode = { __tag: 'gain', connect: vi.fn(), disconnect: vi.fn() };
+      const wrapper = Object.assign(base, { gain: { value: 1 } });
+      createdGains.push(wrapper);
+      return wrapper;
     },
     createChannelSplitter: () => {
       const n: FakeNode = { __tag: 'splitter', connect: vi.fn(), disconnect: vi.fn() };
@@ -218,6 +229,7 @@ function makeFakeAudioCtx(): {
     constantWrappers,
     get workletNode() { return workletNode; },
     workletReady,
+    destination,
   };
 }
 
@@ -263,6 +275,70 @@ describe('doomDef.factory — audio bridge contract', () => {
     expect(splitter.connect).toHaveBeenCalledTimes(2);
     expect(splitter.connect).toHaveBeenNthCalledWith(1, lBefore!.node, 0);
     expect(splitter.connect).toHaveBeenNthCalledWith(2, rBefore!.node, 1);
+  });
+
+  it('connects the worklet to ctx.destination through a silent gain (keep-alive — without this, Chromium treats the worklet as orphan + process() never runs)', async () => {
+    const gl = makeFakeGl();
+    const fake = makeFakeAudioCtx({ withDestination: true });
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: fake.ctx as AudioContext,
+    };
+    doomDef.factory(ctx, { id: 'doom-keepalive', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never);
+
+    await fake.workletReady;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The keep-alive: worklet -> a NEW gain -> destination. createGain has
+    // been called THREE times by this point: leftGain, rightGain (both
+    // pre-worklet), and the keep-alive gain (post-worklet). The third
+    // gain is the keep-alive node.
+    expect(fake.createdGains.length).toBeGreaterThanOrEqual(3);
+    const keepAliveGain = fake.createdGains[2]!;
+
+    // worklet -> keepAliveGain edge: worklet.connect called twice now
+    // (once to the splitter, once to the keep-alive gain).
+    expect(fake.workletNode!.connect).toHaveBeenCalledTimes(2);
+    expect(fake.workletNode!.connect).toHaveBeenNthCalledWith(2, keepAliveGain);
+
+    // keepAliveGain -> ctx.destination edge: the silent path that keeps
+    // the audio graph rendered. WITHOUT this, no path reaches destination
+    // for a SCOPE-terminated patch (analyser is a sink but doesn't
+    // terminate the graph), Chromium skips the worklet's process() entirely,
+    // and audio_l/audio_r stay silent even though the splitter wiring is
+    // correct.
+    expect(keepAliveGain.connect).toHaveBeenCalledTimes(1);
+    expect(keepAliveGain.connect).toHaveBeenCalledWith(fake.destination);
+  });
+
+  it('skips the keep-alive cleanly when the AudioContext has no destination (test fakes / OfflineAudioContext-like)', async () => {
+    // The fake used by the older tests omits .destination — exercise the
+    // guard so this code path stays test-friendly.
+    const gl = makeFakeGl();
+    const fake = makeFakeAudioCtx();
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: fake.ctx as AudioContext,
+    };
+    doomDef.factory(ctx, { id: 'doom-no-dest', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never);
+
+    await fake.workletReady;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // No destination → no keep-alive gain → only leftGain + rightGain.
+    expect(fake.createdGains).toHaveLength(2);
+    // worklet → splitter only; no second connect.
+    expect(fake.workletNode!.connect).toHaveBeenCalledTimes(1);
   });
 
   it('publishes 6 Phase-1 SP event-gate ConstantSourceNodes (KILL/DOOR/GUN_p1..p4) in audioSources', () => {
