@@ -55,7 +55,7 @@
   // the imports here stay tight to what the script actually consumes.
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { buildDoomPatchPanelSections } from '$lib/doom/doom-patchpanel-ports';
-  import { isOwnSlotCvGatePatched } from '$lib/doom/doom-input-mode';
+  import { isOwnSlotCvGatePatched, isCvGatePatched } from '$lib/doom/doom-input-mode';
   import {
     bumpAwarenessUpdate,
     bumpElectionRecompute,
@@ -1246,8 +1246,19 @@
   // has a CV edge — another player's CV must not gate your keyboard. A spectator
   // (mySlot null) is never CV-patched (owns no group), so it keeps its keyboard
   // relay path. cvGatePatched depends on both the edge set and mySlot.
+  //
+  // SINGLE-PLAYER FALLBACK (2026-05-29): in SP (mpMode!=='multi' / not launched),
+  // mySlot stays null but the host IS the lone player driving slot 0. The
+  // own-slot rule has no meaning then — ANY patched gate on this DOOM node
+  // means CV is in play and the keyboard should go inert (the factory's CV
+  // path applies the p1 group automatically in SP, see doom.ts setParam).
+  // Without this, patching GAMEPAD/LFO in SP still let keyboard double-drive
+  // the marine (bug #3 in SP).
   let cvGatePatched = $derived<boolean>(
-    (void edgesVersion, isOwnSlotCvGatePatched(Object.values(patch.edges), id, mySlot)),
+    (void edgesVersion,
+      mySlot !== null
+        ? isOwnSlotCvGatePatched(Object.values(patch.edges), id, mySlot)
+        : isCvGatePatched(Object.values(patch.edges), id)),
   );
 
   // When a CV-gate cable is plugged WHILE keyboard keys are held, the
@@ -1333,6 +1344,24 @@
   function routeKey(code: string, pressed: boolean): boolean {
     const extras = getExtras();
     if (!extras) return false;
+    // q → KEY_ESCAPE intercept (2026-05-29). The real Escape is the card's
+    // explicit "give back the keyboard" gesture (unlatchKeyboard in the
+    // window listener), so a real Escape never reaches the DOOM engine.
+    // We therefore rebind `q` to send KEY_ESCAPE down so the in-game pause
+    // menu is still reachable from the keyboard while the card has focus.
+    if (code === 'KeyQ') {
+      if (isHost || mySlot !== null) {
+        // Translate ourselves into the underlying doomkey (KEY_ESCAPE = 27)
+        // rather than going through setKeyForKeyboardCode — KeyQ maps to a
+        // gameplay letter by default, and we want the menu, not 'q' typed.
+        extras.pushDoomKey(27, pressed);
+        return true;
+      }
+      // Spectator relay: forward the SAME doomkey envelope so the host's
+      // marine opens its menu on our behalf. Reuse the existing relay path.
+      relayDoomKeyToHost(27, pressed);
+      return true;
+    }
     // An ACTIVE player (host OR a joined guest at its own slot) drives its OWN
     // runtime — every player runs their own WASM + POV in the per-peer instance
     // model, so the key must reach the local sim, NOT be relayed to the host.
@@ -1470,6 +1499,28 @@
       queueMicrotask(() => {
         provider.awareness?.setLocalStateField(`doom:${id}:key`, null);
       });
+    });
+  }
+
+  /** Spectator relay variant that takes a raw doomkey constant rather than a
+   *  KeyboardEvent.code. Used by the q→KEY_ESCAPE intercept so a spectator can
+   *  open the host's pause menu without sending a literal 'q' (which would
+   *  type 'q' into the engine instead of opening the menu). */
+  function relayDoomKeyToHost(doomKey: number, pressed: boolean): void {
+    const provider = providerCtx.get();
+    if (!provider) return;
+    const me = resolveLocalUserId();
+    const env = encodeKey({
+      kind: 'key',
+      moduleId: id,
+      srcUserId: me,
+      doomKey,
+      pressed,
+      ts: Date.now(),
+    });
+    provider.awareness?.setLocalStateField(`doom:${id}:key`, env);
+    queueMicrotask(() => {
+      provider.awareness?.setLocalStateField(`doom:${id}:key`, null);
     });
   }
 
@@ -1677,6 +1728,18 @@
       // enables the instant the host enters GS_LEVEL and disables at
       // intermission / game end. Cheap: one node read + an early-out.
       refreshMpLiveAsHost();
+      // Bug 3 ROBUSTNESS: re-push the keyboard-inert state into extras every
+      // frame (idempotent — extras/runtime no-op on no-change). The
+      // cvGatePatched $effect (above) fires the moment the derived flips,
+      // but its `getExtras()?.setKeyboardInert(...)` call is a no-op if
+      // extras is null at that instant — and the engine reconciler may
+      // materialize the doom node a beat AFTER the edge syncs (the order is
+      // not guaranteed under CI's slower scheduling). Without this rAF
+      // reapplication, the runtime keeps `keyboardInert=false` despite the
+      // CV gate being patched, and the e2e #3 test fails on the
+      // `isKeyboardInert()` read. Cheap: one map lookup + a boolean compare
+      // when no change (the extras + runtime setters both early-out).
+      getExtras()?.setKeyboardInert(cvGatePatched);
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {

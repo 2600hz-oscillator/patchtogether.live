@@ -114,6 +114,25 @@ export interface VideoNodeHandle {
    *  The factory itself stays DOM-free (so it remains testable in
    *  jsdom); the bridge runs through this hook. */
   attachExternalSource?(kind: 'video' | 'image', el: HTMLElement | null): void;
+  /** Optional: subscribe to DISCRETE pulse events on a `gate`-typed
+   *  audioSources port (e.g. DOOM's `evt_kill` / `evt_door` / `evt_gun_pN`).
+   *  The callback fires synchronously when the module pulses the gate (via
+   *  the same `pulseGate(CSN)` helper that schedules the CSN offset 0→1→0).
+   *  Returns an unsubscribe fn. Modules that publish purely-continuous CV
+   *  on the same port set MAY omit this; the bridge then falls back to
+   *  analyser sampling.
+   *
+   *  WHY this exists alongside the analyser tap: a 10ms CSN pulse from a
+   *  `gate` source can be missed by 60fps analyser sampling (≥1 frame in
+   *  ~16ms has no overlap with the high window in the worst-case phase),
+   *  and CI's slower rAF cadence makes the miss reliable. The pulse
+   *  subscription is FRAME-INDEPENDENT — every `pulseGate` call fires the
+   *  callback exactly once, so no pulse is ever dropped regardless of how
+   *  often the video frame loop ticks. See PatchEngine.addSameDomainVideoCvBridge
+   *  for the consumer side (it subscribes for `sourceType==='gate'` edges and
+   *  dispatches a setParam(target, 1) → setParam(target, 0) pair into the
+   *  destination's per-tick edge detector). */
+  subscribePulse?(portId: string, cb: () => void): () => void;
   /** Tear down GL + non-GL resources. Idempotent. */
   dispose(): void;
 }
@@ -966,6 +985,28 @@ void main() {
     if (!handle) return null;
     const src = handle.audioSources?.get(portId);
     return src ?? null;
+  }
+
+  /** Look up the live VideoNodeHandle for a given node id, or null if the
+   *  module hasn't been materialized yet. The PatchEngine's same-domain
+   *  video CV/gate bridge uses this to call `setParam` directly on a target
+   *  handle (frame-independent pulse dispatch) and to call `subscribePulse`
+   *  on a source handle. Lookup-only; the caller MUST NOT mutate the handle. */
+  getNodeHandle(nodeId: string): VideoNodeHandle | null {
+    return this.nodes.get(nodeId) ?? null;
+  }
+
+  /** Resolve a target node's input PORT id to the paramTarget the bridge
+   *  feeds via setParam (e.g. SCOREBOARD's `score` port → `scoreTrig`). The
+   *  same-domain CV/gate bridge needs this when bypassing addCvBridge's
+   *  internal lookup to dispatch discrete pulses straight to the module's
+   *  setParam. Falls back to the port id itself when there's no mapping
+   *  (the convention for modules whose input id == param id). */
+  resolveTargetParamId(targetNodeId: string, targetPortId: string): string {
+    const meta = this.nodeMeta.get(targetNodeId);
+    const def = meta ? getVideoModuleDef(meta.type) : undefined;
+    const input = def?.inputs?.find((p) => p.id === targetPortId);
+    return input?.paramTarget ?? targetPortId;
   }
 
   /** Vertex shader is shared across every module — they're all fullscreen

@@ -86,11 +86,18 @@ export const KEY_FOR_KEYBOARD_CODE: Readonly<Record<string, number>> = {
 
 // ---------------- CV-gate port id → doomkey ----------------
 //
-// 7 cv-typed gate ports per the plan. The first four (up/down/left/right)
+// 9 cv-typed gate ports per the plan. The first four (up/down/left/right)
 // map to DOOM's default movement (arrow keys); space = fire, ctrl = run,
 // alt = strafe. Port ids match the keyboard the user expects to be playing
 // the game with — driving a CV gate at `up` feels identical to holding
 // ArrowUp on the keyboard.
+//
+// esc / enter were added 2026-05-29 so the menu (open / select / confirm)
+// can be driven via CV — the in-game ESCAPE key normally toggles the DOOM
+// pause menu, ENTER selects in it. (Their JS-side equivalent under the
+// card-keyboard mode is the `q`→ESCAPE intercept; see DoomCard's keyboard
+// route — pressing q routes to KEY_ESCAPE so the real Escape can still
+// release the card's keyboard latch.)
 //
 // NOTE: prior to 2026-05-24 these ports were w/a/s/d (the WASD letters).
 // Renamed to up/down/left/right because DOOM's defaults map ArrowKeys, not
@@ -105,12 +112,14 @@ export const KEY_FOR_CV_GATE: Readonly<Record<string, number>> = {
   space: KEY_USE,
   ctrl: KEY_FIRE,
   alt: KEY_RALT,
+  esc: KEY_ESCAPE,
+  enter: KEY_ENTER,
 };
 
-/** The 7 base cv-gate semantic ids (the CV→key mapping keys). Each maps to a
+/** The 9 base cv-gate semantic ids (the CV→key mapping keys). Each maps to a
  *  doomkey via KEY_FOR_CV_GATE. These are NOT the port ids on the module def
  *  anymore — see PER-SLOT PORTS below. */
-export const CV_GATE_PORT_IDS = ['up', 'down', 'left', 'right', 'space', 'ctrl', 'alt'] as const;
+export const CV_GATE_PORT_IDS = ['up', 'down', 'left', 'right', 'space', 'ctrl', 'alt', 'esc', 'enter'] as const;
 export type CvGatePortId = (typeof CV_GATE_PORT_IDS)[number];
 
 // ---------------- PER-SLOT CV-gate ports (per-player inputs, #353) ----------------

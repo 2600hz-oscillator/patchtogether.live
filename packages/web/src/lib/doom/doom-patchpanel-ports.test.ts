@@ -2,7 +2,7 @@
 //
 // Pins the PatchPanel section shape DoomCard hands off to the canonical
 // PatchPanel component after the migration from inline <Handle> markup.
-// The card has 37 handles (28 inputs + 9 outputs) — well past the legible
+// The card has 45 handles (36 inputs + 9 outputs) — well past the legible
 // inline threshold — and now collapses them under the standard corner
 // trigger used by ~75 other cards.
 
@@ -24,15 +24,15 @@ describe('buildDoomPatchPanelSections — shape contract', () => {
     }
   });
 
-  it('renders 28 input ports total (4 slots × 7 gates) with cable=cv', () => {
+  it('renders 36 input ports total (4 slots × 9 gates) with cable=cv', () => {
     const sections = buildDoomPatchPanelSections(0);
     const allInputs = sections.flatMap((s) => s.inputs);
     expect(allInputs).toHaveLength(4 * CV_GATE_PORT_IDS.length);
-    expect(allInputs).toHaveLength(28);
+    expect(allInputs).toHaveLength(36);
     for (const input of allInputs) {
       expect(input.cable).toBe('cv');
-      // Every input id is a real per-slot gate id (p1_up, p2_left, …).
-      expect(input.id).toMatch(/^p[1-4]_(up|down|left|right|space|ctrl|alt)$/);
+      // Every input id is a real per-slot gate id (p1_up, p2_left, …, p4_enter).
+      expect(input.id).toMatch(/^p[1-4]_(up|down|left|right|space|ctrl|alt|esc|enter)$/);
     }
   });
 
@@ -66,11 +66,11 @@ describe('buildDoomPatchPanelSections — shape contract', () => {
     expect(sections[0]!.outputs!.map((o) => o.id)).toEqual(doomDef.outputs.map((o) => o.id));
   });
 
-  it('total handle count is 37 (28 inputs + 9 outputs) — the migration claim', () => {
+  it('total handle count is 45 (36 inputs + 9 outputs) — the migration claim', () => {
     const sections = buildDoomPatchPanelSections(0);
     const inputs = sections.flatMap((s) => s.inputs);
     const outputs = sections.flatMap((s) => s.outputs ?? []);
-    expect(inputs.length + outputs.length).toBe(37);
+    expect(inputs.length + outputs.length).toBe(45);
   });
 
   it('uses the historical inline glyphs (↑↓←→) for cardinal direction labels', () => {
@@ -80,6 +80,9 @@ describe('buildDoomPatchPanelSections — shape contract', () => {
     expect(DOOM_BASE_GATE_LABELS.right).toContain('→');
     expect(DOOM_BASE_GATE_LABELS.space).toContain('USE');
     expect(DOOM_BASE_GATE_LABELS.ctrl).toContain('FIRE');
+    // ESC / ENTER (2026-05-29) — menu controls.
+    expect(DOOM_BASE_GATE_LABELS.esc).toContain('ESC');
+    expect(DOOM_BASE_GATE_LABELS.enter).toContain('ENTER');
   });
 
   it('output ports carry their cable types for PatchPanel color stripes', () => {
