@@ -2,7 +2,7 @@
 //
 // NIBBLES module-def shape + factory contract.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { nibblesDef, NIBBLES_MAX_LENGTH } from './nibbles';
 import type { VideoEngineContext } from '$lib/video/engine';
 
@@ -288,6 +288,123 @@ describe('nibblesDef.factory — GATED envelope fires on pellet event', () => {
     expect(gatedGainNode.gain.linearRampToValueAtTime).toHaveBeenCalled();
     // Decay path scheduled too.
     expect(gatedGainNode.gain.setTargetAtTime).toHaveBeenCalled();
+  });
+});
+
+describe('nibblesDef.factory — __nibblesForceLength deterministic CV hook', () => {
+  // The CV path emits `(length - mid) / mid` with mid = NIBBLES_MAX_LENGTH/2.
+  // Mirrors the FOXY VRT-seed pattern (`__foxyVrtSeed`): set the global,
+  // draw a frame, the CV pins to the value computed from the forced length.
+  // Exercises ONLY the CV path — the audible snake-square-wave freq stays
+  // tied to actual game state by design (we don't fake the audio output).
+  const MID = NIBBLES_MAX_LENGTH / 2;
+  const cvFor = (length: number): number =>
+    Math.max(-1, Math.min(1, (length - MID) / MID));
+
+  afterEach(() => {
+    // Clear the global so each test starts clean; setting a number in one
+    // test would otherwise leak into the next factory's boot value.
+    (globalThis as unknown as { __nibblesForceLength?: number | undefined })
+      .__nibblesForceLength = undefined;
+  });
+
+  function lengthCvNode(fixture: FakeAudioCtxFixture): FakeAudioParam {
+    // Construction order in the factory: pellet, death, dir_change, length_cv.
+    return fixture.constants[3]!.offset;
+  }
+
+  /** Pull the most-recent target value scheduled onto the length_cv
+   *  AudioParam. We honour both the construction-time setValueAtTime AND
+   *  the per-update linearRampToValueAtTime (the latter is how the factory
+   *  smooths a step into the offset). */
+  function latestScheduledValue(p: FakeAudioParam): number {
+    const ramps = p.linearRampToValueAtTime.mock.calls;
+    if (ramps.length > 0) return ramps[ramps.length - 1]![0] as number;
+    const steps = p.setValueAtTime.mock.calls;
+    if (steps.length === 0) throw new Error('no scheduled value on length_cv');
+    return steps[steps.length - 1]![0] as number;
+  }
+
+  function drawOnce(handle: ReturnType<typeof spawn>['handle'], simT: number): void {
+    handle.surface.draw({
+      gl: makeFakeGl(),
+      time: simT,
+      frame: Math.floor(simT * 60),
+      getInputTexture: () => null,
+    });
+  }
+
+  it('with __nibblesForceLength = 89, the per-tick CV emit equals lengthToCv(89) (≈ +0.496)', () => {
+    (globalThis as unknown as { __nibblesForceLength?: number })
+      .__nibblesForceLength = 89;
+    const { handle, fixture } = spawn();
+    expect(fixture).not.toBeNull();
+    // First draw frame applies the forced-length hook.
+    drawOnce(handle, 0.0);
+    const cv = latestScheduledValue(lengthCvNode(fixture!));
+    expect(cv).toBeCloseTo(cvFor(89), 2);
+    // Sanity: the formula yields ≈ +0.4958 at length=89.
+    expect(cv).toBeGreaterThan(0.48);
+    expect(cv).toBeLessThan(0.51);
+  });
+
+  it('pins the 5 spirograph-VRT lengths to their resulting CV values', () => {
+    const SWEEP = [1, 30, 60, 89, 119];
+    // Per-length tolerance ε=0.01 (the hook is integer-clamped, the formula
+    // is closed-form, so tolerance is dominated by float math, not timing).
+    for (const length of SWEEP) {
+      (globalThis as unknown as { __nibblesForceLength?: number })
+        .__nibblesForceLength = length;
+      const { handle, fixture } = spawn();
+      drawOnce(handle, 0.0);
+      const cv = latestScheduledValue(lengthCvNode(fixture!));
+      expect(cv).toBeCloseTo(cvFor(length), 2);
+    }
+    // Pin the exact expected values so the mapping is locked against drift.
+    expect(cvFor(1)).toBeCloseTo(-0.9832, 3);
+    expect(cvFor(30)).toBeCloseTo(-0.4958, 3);
+    expect(cvFor(60)).toBeCloseTo(0.0084, 3);
+    expect(cvFor(89)).toBeCloseTo(0.4958, 3);
+    expect(cvFor(119)).toBeCloseTo(1.0, 3);
+  });
+
+  it('clamps forced length into [1, NIBBLES_MAX_LENGTH] (1000 → CV +1, -5 → CV -0.983)', () => {
+    (globalThis as unknown as { __nibblesForceLength?: number })
+      .__nibblesForceLength = 1000;
+    const a = spawn();
+    drawOnce(a.handle, 0.0);
+    expect(latestScheduledValue(lengthCvNode(a.fixture!))).toBeCloseTo(cvFor(NIBBLES_MAX_LENGTH), 3);
+
+    (globalThis as unknown as { __nibblesForceLength?: number })
+      .__nibblesForceLength = -5;
+    const b = spawn();
+    drawOnce(b.handle, 0.0);
+    expect(latestScheduledValue(lengthCvNode(b.fixture!))).toBeCloseTo(cvFor(1), 3);
+  });
+
+  it('with the hook UNSET, the CV path uses the actual snake length (state.score)', () => {
+    // No __nibblesForceLength set — fresh snake length is 4 → CV ≈ -0.9328.
+    const { handle, fixture } = spawn();
+    drawOnce(handle, 0.0);
+    const cv = latestScheduledValue(lengthCvNode(fixture!));
+    // Construction-time setValueAtTime initialises at length=4 too. Either
+    // way, the value pins to lengthToCv(4).
+    expect(cv).toBeCloseTo(cvFor(4), 3);
+  });
+
+  it('a transition unset → set propagates without requiring a game event', () => {
+    const { handle, fixture } = spawn();
+    // Spawn first (no hook) — baseline at length=4.
+    drawOnce(handle, 0.0);
+    const baseline = latestScheduledValue(lengthCvNode(fixture!));
+    expect(baseline).toBeCloseTo(cvFor(4), 3);
+    // Flip the hook on AFTER spawn — next draw must push the new CV target.
+    (globalThis as unknown as { __nibblesForceLength?: number })
+      .__nibblesForceLength = 60;
+    drawOnce(handle, 0.02);
+    const after = latestScheduledValue(lengthCvNode(fixture!));
+    expect(after).toBeCloseTo(cvFor(60), 3);
+    expect(after).not.toBeCloseTo(baseline, 1);
   });
 });
 
