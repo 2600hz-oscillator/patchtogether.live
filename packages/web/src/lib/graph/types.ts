@@ -459,7 +459,11 @@ type StandardModuleType =
   // selector (which of in1..in4 it carries) + its own gate input that
   // advances that selector on each rising edge (1→2→3→4→1). Audio + cv both
   // route identically through the shared Web Audio substrate.
-  | 'fourplexer';
+  | 'fourplexer'
+  // SCOREBOARD — 4-digit neon 7-segment counter widget (video domain).
+  // SCORE gate input → counter += 1 on rising edge; RESET gate → 0.
+  // Counter wraps at 10000. One colour-wheel knob for the lit-segment hue.
+  | 'scoreboard';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

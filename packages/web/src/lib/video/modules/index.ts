@@ -37,6 +37,7 @@ import { videoVarispeedDef } from './videovarispeed';
 import { backdraftDef } from './backdraft';
 import { fourPlexVidDef } from './4plexvid';
 import { peakstateDef } from './peakstate';
+import { scoreboardDef } from './scoreboard';
 import { nibblesDef } from './nibbles';
 
 let registered = false;
@@ -130,6 +131,10 @@ export function registerVideoModules(): void {
   // bowl-twin "fake 3D"). 3D rotation rate ties to params.speed so the
   // whole scene feels coupled.
   registerVideoModule(peakstateDef);
+  // SCOREBOARD — 4-digit neon 7-segment counter widget. Two CV-gate
+  // inputs (SCORE / RESET) and a colour-wheel knob. Counter wraps at
+  // 10000 → 0. No audio output; pure video sink-style display.
+  registerVideoModule(scoreboardDef);
   // NIBBLES — QBasic Nibbles snake game as a patchable video module.
   // CV gate outputs (pellet/death/dir_change) + length CV + two audio
   // outputs (continuous SNAKE square wave + envelope-gated GATED). Snake
