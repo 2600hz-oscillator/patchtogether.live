@@ -42,14 +42,19 @@
   // real audio.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { useProvider } from '$lib/multiplayer/provider-context';
   import { patch, ydoc } from '$lib/graph/store';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import { type DoomHandleExtras } from '$lib/video/modules/doom';
-  import { CV_GATE_PORT_IDS, cvGatePortIdForSlot, DOOM_MP_SLOTS, type CvGatePortId } from '$lib/doom/doomkeys';
+  // The per-slot CV-gate constants (CV_GATE_PORT_IDS / cvGatePortIdForSlot /
+  // DOOM_MP_SLOTS) used to drive inline <Handle> markup in this card; that
+  // markup now lives inside PatchPanel via buildDoomPatchPanelSections, so
+  // the imports here stay tight to what the script actually consumes.
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import { buildDoomPatchPanelSections } from '$lib/doom/doom-patchpanel-ports';
   import { isOwnSlotCvGatePatched } from '$lib/doom/doom-input-mode';
   import {
     bumpAwarenessUpdate,
@@ -1947,6 +1952,19 @@
     document.removeEventListener('visibilitychange', onVisibilityChange);
   });
 
+  // ---- PatchPanel port descriptors ----
+  //
+  // The card has 37 handles (28 inputs + 9 outputs) — well past the legible
+  // inline threshold. Per the canonical PatchPanel pattern used by Hydrogen,
+  // RIOTGIRLS, MIXMSTRS, Pong et al., we collapse them under a corner
+  // trigger. Inputs are split into FOUR per-player sections (P1..P4 × 7
+  // gates); outputs ride on the first section so PatchPanel's sectioned-
+  // output path picks them up. The local viewer's section is labeled
+  // "Player N (you)" so the operator can see at a glance which gates drive
+  // their own marine — this replaces the inline #353 per-slot CSS
+  // emphasis (.hidden-slot-port). Shape contract lives in
+  // doom-patchpanel-ports.ts so it's unit-testable.
+  let patchPanelSections = $derived(buildDoomPatchPanelSections(mySlot));
 </script>
 
 <!-- role="application" + tabindex="0" + onclick: the card IS an
@@ -2022,6 +2040,22 @@
     {/if}
   </header>
 
+  <!-- All 37 handles (28 inputs + 9 outputs) live under the canonical
+       PatchPanel corner trigger — matches Hydrogen / RIOTGIRLS / MIXMSTRS /
+       Pong / 70-odd other cards. Inputs are split per-player (P1..P4) with
+       the local viewer's section labeled " (you)"; outputs render in the
+       single right column. The previous inline #353 slot-emphasis CSS
+       (.hidden-slot-port) is superseded by the section grouping — every
+       gate is still in the DOM (so cross-peer cables resolve + the
+       io-spec invariant holds), just collapsed under the trigger until
+       hovered/clicked open. -->
+  <PatchPanel
+    nodeId={id}
+    sections={patchPanelSections}
+    groupingStrategy="sectioned"
+    panelWidth={440}
+  >
+
   <div class="game-area">
     <canvas
       bind:this={canvasEl}
@@ -2054,119 +2088,6 @@
       </button>
     {/if}
   </div>
-
-  <!-- PER-VIEWER UI HIDING (#353 Phase 3): ALL four slot groups' input handles
-       (p1..p4 → 28 jacks) are ALWAYS rendered into the DOM so the rendered
-       handle set matches the def (io-spec / modules invariant) AND a cross-peer
-       cable into e.g. p2_up still resolves to a real handle position and renders
-       as a cable on a peer whose own slot is p1. We only VISUALLY emphasise the
-       LOCAL viewer's own slot group (p{mySlot+1}_*) — the OTHER slots' handles
-       are present-but-hidden (visibility:hidden, pointer-events:none) via the
-       .hidden-slot-port class, so they can't be (dis)connected from this card
-       yet still anchor incoming edges. A spectator / unseated peer (mySlot null)
-       emphasises no group (read-only) but every handle is still in the DOM.
-       This is purely a rendering concern — input DISPATCH is unchanged: the
-       factory's own-slot-only rule (setOwnSlot) means a peer only ever feeds its
-       OWN consoleplayer slot's CV into the sim. -->
-  {#each DOOM_MP_SLOTS as slot (slot)}
-    {@const isLocalSlot = slot === mySlot}
-    {#each CV_GATE_PORT_IDS as base, idx (base)}
-      {@const top = 56 + idx * 28}
-      {@const portId = cvGatePortIdForSlot(slot, base as CvGatePortId)}
-      {@const label = base === 'up' ? '↑'
-                    : base === 'down' ? '↓'
-                    : base === 'left' ? '←'
-                    : base === 'right' ? '→'
-                    : base.toUpperCase()}
-      <Handle
-        type="target"
-        position={Position.Left}
-        id={portId}
-        data-testid="doom-port-{portId}"
-        class={isLocalSlot ? undefined : 'hidden-slot-port'}
-        style="top: {top}px; --handle-color: var(--cable-cv);"
-      />
-      {#if isLocalSlot}
-        <span class="port-label left" style="top: {top - 6}px;">{label}</span>
-      {/if}
-    {/each}
-  {/each}
-
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="out"
-    style="top: 56px; --handle-color: var(--cable-video, #c33);"
-  />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="audio_l"
-    style="top: 96px; --handle-color: var(--cable-audio);"
-  />
-  <span class="port-label right" style="top: 90px;">A-L</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="audio_r"
-    style="top: 124px; --handle-color: var(--cable-audio);"
-  />
-  <span class="port-label right" style="top: 118px;">A-R</span>
-
-  <!-- Phase-1 SP event gates (KILL/DOOR/GUN1..4). Each pulses HIGH for 10ms
-       when the underlying engine event fires (monster kill, door opened, gun
-       fired by slot N). Stacked vertically at 28px intervals under audio_r.
-       MP determinism is untouched — these gates pulse OUT-OF-BAND with the
-       netgame consistency digest. -->
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="evt_kill"
-    data-testid="doom-port-evt_kill"
-    style="top: 152px; --handle-color: var(--cable-gate);"
-  />
-  <span class="port-label right" style="top: 146px;">KILL</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="evt_door"
-    data-testid="doom-port-evt_door"
-    style="top: 180px; --handle-color: var(--cable-gate);"
-  />
-  <span class="port-label right" style="top: 174px;">DOOR</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="evt_gun_p1"
-    data-testid="doom-port-evt_gun_p1"
-    style="top: 208px; --handle-color: var(--cable-gate);"
-  />
-  <span class="port-label right" style="top: 202px;">GUN1</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="evt_gun_p2"
-    data-testid="doom-port-evt_gun_p2"
-    style="top: 236px; --handle-color: var(--cable-gate);"
-  />
-  <span class="port-label right" style="top: 230px;">GUN2</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="evt_gun_p3"
-    data-testid="doom-port-evt_gun_p3"
-    style="top: 264px; --handle-color: var(--cable-gate);"
-  />
-  <span class="port-label right" style="top: 258px;">GUN3</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="evt_gun_p4"
-    data-testid="doom-port-evt_gun_p4"
-    style="top: 292px; --handle-color: var(--cable-gate);"
-  />
-  <span class="port-label right" style="top: 286px;">GUN4</span>
 
   {#if isHost && mpMode === undefined}
     <!-- Explicit host start choice (replaces the implicit "2nd member ⇒
@@ -2436,6 +2357,8 @@
       <small data-testid="doom-member-hint">Single-user rack — you're the host.</small>
     {/if}
   </footer>
+
+  </PatchPanel>
 </div>
 
 <style>
@@ -2727,25 +2650,11 @@
     font-style: italic;
     opacity: 0.85;
   }
-  .doom-card .port-label {
-    position: absolute;
-    font-size: 9px;
-    letter-spacing: 0.05em;
-    opacity: 0.85;
-    font-family: ui-monospace, monospace;
-    pointer-events: none;
-  }
-  .doom-card .port-label.left  { left: 14px; }
-  .doom-card .port-label.right { right: 14px; }
-  /* Non-local slot input handles: present in the DOM (so the rendered handle
-     set matches the def + cross-peer cables into them still anchor + render as
-     edges) but visually hidden and non-interactive on this viewer's card. We
-     use visibility:hidden (not display:none) so the handle keeps a layout box
-     and Svelte Flow can still resolve an edge endpoint position for it. */
-  .doom-card :global(.svelte-flow__handle.hidden-slot-port) {
-    visibility: hidden;
-    pointer-events: none;
-  }
+  /* port-label + .hidden-slot-port CSS removed in the PatchPanel migration:
+     handles + their labels now live inside PatchPanel rows, so the inline
+     absolute-positioned labels are gone, and the slot-emphasis hide-rule is
+     replaced by the per-player sectioned grouping (local slot section is
+     labeled " (you)"). */
   .doom-card .hint {
     padding: 0 10px 8px;
     color: color-mix(in oklab, var(--cable-video, #c33) 70%, transparent);

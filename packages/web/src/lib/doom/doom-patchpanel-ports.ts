@@ -1,0 +1,80 @@
+// doom-patchpanel-ports.ts
+//
+// Builds the PortDescriptor section list DoomCard hands to PatchPanel after
+// the migration off inline <Handle> markup (PR feat/doom-card-patchpanel-
+// migration). Extracted from DoomCard.svelte so the shape contract — 28
+// inputs split into 4 per-player sections + 9 outputs on the first section
+// — is unit-testable without rendering Svelte.
+//
+// Each input section is one player (P1..P4); the local viewer's section gets
+// a " (you)" suffix so the operator can read which gates drive THEIR marine
+// at a glance. This replaces the inline #353 per-slot visual emphasis
+// (.hidden-slot-port CSS class) — under PatchPanel every gate is still in
+// the DOM (so cross-peer cables resolve + the io-spec invariant holds),
+// just collapsed under the canonical corner trigger until the user opens
+// the panel.
+//
+// Outputs (video OUT + stereo audio + 6 SP event gates) ride on the first
+// section so PatchPanel's sectioned-output path picks them all up in the
+// single right-column.
+
+import { CV_GATE_PORT_IDS, cvGatePortIdForSlot, DOOM_MP_SLOTS, type CvGatePortId } from '$lib/doom/doomkeys';
+import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
+
+/** Verbose labels for the 7 base gates — mirrors the historical inline glyphs
+ *  (↑↓←→) for the cardinals, full-word for the action keys. */
+export const DOOM_BASE_GATE_LABELS: Record<CvGatePortId, string> = {
+  up: '↑ UP',
+  down: '↓ DOWN',
+  left: '← LEFT',
+  right: '→ RIGHT',
+  space: 'SPACE (USE)',
+  ctrl: 'CTRL (FIRE)',
+  alt: 'ALT (STRAFE)',
+};
+
+/** Output port descriptors — flat list rendered in the panel's right column.
+ *  Order matches doomDef.outputs so a smoke test against the def can pin it. */
+export const DOOM_OUTPUT_PORTS: PortDescriptor[] = [
+  { id: 'out', label: 'OUT (VIDEO)', cable: 'video' },
+  { id: 'audio_l', label: 'A-L', cable: 'audio' },
+  { id: 'audio_r', label: 'A-R', cable: 'audio' },
+  { id: 'evt_kill', label: 'KILL', cable: 'gate' },
+  { id: 'evt_door', label: 'DOOR', cable: 'gate' },
+  { id: 'evt_gun_p1', label: 'GUN1', cable: 'gate' },
+  { id: 'evt_gun_p2', label: 'GUN2', cable: 'gate' },
+  { id: 'evt_gun_p3', label: 'GUN3', cable: 'gate' },
+  { id: 'evt_gun_p4', label: 'GUN4', cable: 'gate' },
+];
+
+export interface DoomPatchPanelSection {
+  label: string;
+  inputs: PortDescriptor[];
+  outputs?: PortDescriptor[];
+}
+
+/** Build the sectioned PortDescriptor list DoomCard hands to PatchPanel.
+ *
+ *  @param mySlot The local viewer's active slot (0..3) or null when
+ *                spectating. The matching section gets a " (you)" label
+ *                suffix; all four sections always render so every gate is
+ *                reachable (and so the io-spec invariant + cross-peer
+ *                cable anchoring still hold).
+ */
+export function buildDoomPatchPanelSections(mySlot: number | null): DoomPatchPanelSection[] {
+  return DOOM_MP_SLOTS.map((slot) => {
+    const isLocal = slot === mySlot;
+    const section: DoomPatchPanelSection = {
+      label: `Player ${slot + 1}${isLocal ? ' (you)' : ''}`,
+      inputs: CV_GATE_PORT_IDS.map((base) => ({
+        id: cvGatePortIdForSlot(slot, base as CvGatePortId),
+        label: DOOM_BASE_GATE_LABELS[base as CvGatePortId],
+        cable: 'cv',
+      })),
+    };
+    // Outputs live on the FIRST section so PatchPanel's sectioned-output
+    // path renders them in the single right column.
+    if (slot === 0) section.outputs = DOOM_OUTPUT_PORTS;
+    return section;
+  });
+}

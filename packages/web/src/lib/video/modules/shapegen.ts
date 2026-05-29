@@ -15,17 +15,27 @@
 //              already; the size knob is the user's global handle.)
 //   • ROT    — camera Y-axis rotation in turns [0..1] → radians [0..2π].
 //              REPLACES FOXY's auto-6-RPM rotation with user control.
-//              A future "auto rotate" toggle could bring back the
-//              automatic motion (deliberately deferred — see PR notes).
+//              ROT takes effect EVERY frame, even when the clock gate is
+//              holding the shape list (smooth camera rotation around the
+//              frozen shapes — useful as a S/H visual effect).
 //   • SOLIDS — discrete 0/1 toggle. 0 = vaporwave wireframe (the FOXY
-//              look). 1 = per-primitive lit canvas2D rendering for
-//              sphere/cube/cylinder/cone; ring + tetraFrame stay
-//              wireframe in v1 (see shapegen-draw.ts header).
+//              look). 1 = per-primitive lit canvas2D rendering for ALL
+//              six primitive types (sphere/cube/cylinder/cone + the new
+//              filled torus + 4-face Lambert tetrahedron — see
+//              shapegen-draw.ts header).
 //
 // Inputs:
 //   raster_a (video): A-raster — drives shape XY positions via feature peaks.
 //   raster_b (video): B-raster — drives shape Z depth.
 //   raster_c (video): C-raster — drives shape type bucket + radius + hue.
+//   clock_in (gate):  optional sample-and-hold gate. UNPATCHED → shapes
+//                     regenerate every frame (legacy behaviour). PATCHED →
+//                     shapes regenerate only on the rising edge of the
+//                     gate; in between, the LAST cached shape list is
+//                     held. SIZE + ROT still apply every frame (camera
+//                     rotation continues while shapes freeze). Useful for
+//                     clocking visual evolution to a sequencer or external
+//                     gate.
 //
 // Output:
 //   out (video): the rendered scene (640×360 by default, matches engine RES).
@@ -52,11 +62,21 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { gateEdge, makeGateState, type GateState } from '$lib/video/plex-select';
 import {
   generateShapes,
   type Shape,
 } from './shapegen-math';
 import { drawShapesScene } from './shapegen-draw';
+
+/** Synthetic param that the engine's CV-bridge writes the gate value into.
+ *  The port id is `clock_in` (human-readable + matches the card label);
+ *  the param id carries the standard `cv_` prefix (mirrors DOOM's
+ *  cv_p1_up etc.). Exported so the test can assert the wiring. */
+export const SHAPEGEN_CLOCK_PARAM_ID = 'cv_clock';
+/** The port id of the clock-gate input. Exported so the test + e2e can
+ *  reference one constant rather than re-typing the string. */
+export const SHAPEGEN_CLOCK_PORT_ID = 'clock_in';
 
 // ----------------- read-fbo source dimensions ----------------------------
 
@@ -88,12 +108,19 @@ interface ShapegenParams {
   size: number;    // 0.1 .. 3.0 — global radius multiplier
   rotate: number;  // 0 .. 1 — fraction of a full turn (radians = rotate * 2π)
   solids: number;  // 0 / 1 — discrete toggle (wireframe vs lit-solid)
+  // Synthetic gate param — written by the engine's CV-bridge when an edge
+  // is patched into the clock_in port. Holds the latest gate sample so the
+  // edge detector (in setParam) can compare against the previous value.
+  // Hidden from the card (rendered as the cv jack via the standard port
+  // row, not as a knob).
+  cv_clock: number;
 }
 
 const DEFAULTS: ShapegenParams = {
   size: 1,
   rotate: 0,
   solids: 0,
+  cv_clock: 0,
 };
 
 // ----------------- fullscreen-quad shader ---------------------------------
@@ -125,6 +152,12 @@ export const shapegenDef: VideoModuleDef = {
     { id: 'raster_a', type: 'video' },
     { id: 'raster_b', type: 'video' },
     { id: 'raster_c', type: 'video' },
+    // Optional clock gate — when patched, shape generation is gated to
+    // rising edges of the gate (sample-and-hold visual evolution). When
+    // unpatched the legacy every-frame regeneration runs. The engine's
+    // CV-bridge routes the gate sample into setParam(cv_clock, value),
+    // where a rising-edge detector triggers a re-extract + redraw.
+    { id: SHAPEGEN_CLOCK_PORT_ID, type: 'gate', paramTarget: SHAPEGEN_CLOCK_PARAM_ID },
   ],
   outputs: [
     { id: 'out', type: 'video' },
@@ -133,6 +166,11 @@ export const shapegenDef: VideoModuleDef = {
     { id: 'size',   label: 'Size',   defaultValue: DEFAULTS.size,   min: 0.1, max: 3, curve: 'linear' },
     { id: 'rotate', label: 'Rot',    defaultValue: DEFAULTS.rotate, min: 0,   max: 1, curve: 'linear' },
     { id: 'solids', label: 'Solids', defaultValue: DEFAULTS.solids, min: 0,   max: 1, curve: 'discrete' },
+    // Synthetic gate param — hidden from the card UI; rendered as the
+    // clock_in cv jack via the standard port-row. curve 'linear' so
+    // setParam values arrive raw for the edge detector. (Mirrors
+    // SCOREBOARD's scoreTrig param, which is also hidden from the card.)
+    { id: SHAPEGEN_CLOCK_PARAM_ID, label: 'CLK', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -145,19 +183,30 @@ export const shapegenDef: VideoModuleDef = {
 
     // ---- The scene canvas2D + GL upload texture ----
     // Canvas dims match the engine FBO so a fullscreen-quad sample is 1:1.
-    const sceneCanvas: OffscreenCanvas | HTMLCanvasElement =
-      typeof OffscreenCanvas !== 'undefined'
-        ? new OffscreenCanvas(ctx.res.width, ctx.res.height)
-        : (() => {
-            const c = document.createElement('canvas');
-            c.width = ctx.res.width;
-            c.height = ctx.res.height;
-            return c;
-          })();
-    const sceneCtx = sceneCanvas.getContext('2d') as
-      | CanvasRenderingContext2D
-      | OffscreenCanvasRenderingContext2D
-      | null;
+    // Both OffscreenCanvas + document.createElement may be absent in headless
+    // node test environments (vitest's node pool) — fall through to null
+    // gracefully so the factory still spawns + the GL upload step is no-op.
+    // The unit suite covers the gate/params contract without ever exercising
+    // the 2D draw; e2e covers the real-browser path.
+    let sceneCanvas: OffscreenCanvas | HTMLCanvasElement | null = null;
+    try {
+      if (typeof OffscreenCanvas !== 'undefined') {
+        sceneCanvas = new OffscreenCanvas(ctx.res.width, ctx.res.height);
+      } else if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+        const c = document.createElement('canvas');
+        c.width = ctx.res.width;
+        c.height = ctx.res.height;
+        sceneCanvas = c;
+      }
+    } catch {
+      sceneCanvas = null;
+    }
+    const sceneCtx = sceneCanvas
+      ? (sceneCanvas.getContext('2d') as
+          | CanvasRenderingContext2D
+          | OffscreenCanvasRenderingContext2D
+          | null)
+      : null;
     if (!sceneCtx) {
       // jsdom / no-canvas environments still let the module instantiate
       // (the FBO exists) but draw() short-circuits with a black fill.
@@ -245,6 +294,37 @@ export const shapegenDef: VideoModuleDef = {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
+    // ---- Sample-and-hold state for the clock_in gate ----
+    //
+    // The clock_in input is OPTIONAL. We detect "patched" implicitly:
+    //   • `clockPatched` flips TRUE the first time the engine's CV-bridge
+    //     calls setParam('cv_clock', ...) with ANY value (including 0 —
+    //     the bridge writes 0 every audio block when the gate output is
+    //     LOW). Unpatched ports never see setParam called for them
+    //     (the bridge only materialises when an edge exists).
+    //   • Once TRUE, we never flip it back — unpatching the cable stops
+    //     the setParam calls, so the last gate state is held; that means
+    //     if the user unpatches while the gate was HIGH, the shapes stay
+    //     held at their last cached set. Re-patching resumes the
+    //     edge-detected regeneration. (This is the natural Eurorack S/H
+    //     behaviour: pull the cable + the held value persists.)
+    //
+    // `cachedShapes` is the last shape list to render. On rising edge we
+    // regenerate it from the current rasters; otherwise we re-use it.
+    // The on-canvas paint runs EVERY frame so the camera ROT knob takes
+    // effect smoothly even when the shape list is held.
+    let cachedShapes: Shape[] = [];
+    let clockPatched = false;
+    const clockGateState: GateState = makeGateState();
+    let pendingRegenerate = true; // first draw always regenerates
+    // Monotonic counter incremented exactly once per regeneration. Exposed
+    // via read('regenCount') so the e2e + unit test can pin the
+    // sample-and-hold contract WITHOUT relying on pixel diffs (which are
+    // sensitive to source-raster timing). Two regenerations across a
+    // rising edge → counter +1; two reads within a hold window → counter
+    // unchanged.
+    let regenCount = 0;
+
     // ---- Per-frame draw ----
     let framesElapsed = 0;
     const surface: VideoNodeSurface = {
@@ -253,45 +333,67 @@ export const shapegenDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
 
-        // 1. Read the three input textures into RGBA buffers.
-        const texA = frame.getInputTexture(node.id, 'raster_a');
-        const texB = frame.getInputTexture(node.id, 'raster_b');
-        const texC = frame.getInputTexture(node.id, 'raster_c');
-        readRasterTexture(texA, bufA);
-        readRasterTexture(texB, bufB);
-        readRasterTexture(texC, bufC);
-        // Uint8 → Uint8Clamped (no copy in practice — same byte layout).
-        clampA.set(bufA);
-        clampB.set(bufB);
-        clampC.set(bufC);
+        // 1. Decide whether to regenerate shapes this frame.
+        //    UNPATCHED clock → regenerate every frame (legacy).
+        //    PATCHED clock → regenerate ONLY on rising edge.
+        //    First draw always regenerates so the FBO carries something
+        //    coherent before the first gate fires.
+        const regenerateNow = pendingRegenerate || !clockPatched;
+        pendingRegenerate = false;
 
-        // 2. Generate the shape list from the three rasters.
-        let shapes: Shape[] = generateShapes(
-          clampA, clampB, clampC,
-          SHAPEGEN_RASTER_W, SHAPEGEN_RASTER_H,
-        );
+        if (regenerateNow) {
+          // 1a. Read the three input textures into RGBA buffers.
+          const texA = frame.getInputTexture(node.id, 'raster_a');
+          const texB = frame.getInputTexture(node.id, 'raster_b');
+          const texC = frame.getInputTexture(node.id, 'raster_c');
+          readRasterTexture(texA, bufA);
+          readRasterTexture(texB, bufB);
+          readRasterTexture(texC, bufC);
+          // Uint8 → Uint8Clamped (no copy in practice — same byte layout).
+          clampA.set(bufA);
+          clampB.set(bufB);
+          clampC.set(bufC);
 
-        // 3. Apply the SIZE knob globally. Final radius is
-        //    `baseline * size`, clamped to SHAPEGEN_RADIUS_CLAMP.
-        //    (The C-luma baseline + the per-shape `abFactor` are already
-        //    folded into shape.radius by generateShapes; SIZE is the
-        //    user's global handle on top.)
-        const sizeKnob = Math.max(0.1, Math.min(3, params.size));
-        if (sizeKnob !== 1 || shapes.some((s) => s.radius > SHAPEGEN_RADIUS_CLAMP)) {
-          shapes = shapes.map((s) => ({
-            ...s,
-            radius: Math.min(SHAPEGEN_RADIUS_CLAMP, s.radius * sizeKnob),
-          }));
+          // 1b. Generate the shape list from the three rasters.
+          let shapes: Shape[] = generateShapes(
+            clampA, clampB, clampC,
+            SHAPEGEN_RASTER_W, SHAPEGEN_RASTER_H,
+          );
+
+          // 1c. Apply the SIZE knob globally. Final radius is
+          //     `baseline * size`, clamped to SHAPEGEN_RADIUS_CLAMP.
+          //     (The C-luma baseline + the per-shape `abFactor` are already
+          //     folded into shape.radius by generateShapes; SIZE is the
+          //     user's global handle on top.)
+          //
+          //     NOTE: SIZE is applied at REGEN time, so a SIZE knob twist
+          //     while the clock is holding shows up on the NEXT rising
+          //     edge. The user expectation is that ROT is the live-camera
+          //     handle + SIZE is part of the shape generation pipeline,
+          //     which matches the held-shapes contract. (If users later
+          //     want SIZE live, we'd cache the unscaled shapes + apply
+          //     SIZE per-frame in the render step.)
+          const sizeKnob = Math.max(0.1, Math.min(3, params.size));
+          if (sizeKnob !== 1 || shapes.some((s) => s.radius > SHAPEGEN_RADIUS_CLAMP)) {
+            shapes = shapes.map((s) => ({
+              ...s,
+              radius: Math.min(SHAPEGEN_RADIUS_CLAMP, s.radius * sizeKnob),
+            }));
+          }
+          cachedShapes = shapes;
+          regenCount++;
         }
 
-        // 4. Render the scene into the OffscreenCanvas.
-        if (sceneCtx) {
-          drawShapesScene(sceneCtx, shapes, ctx.res.width, ctx.res.height, {
+        // 2. Render the (possibly-cached) shape list into the OffscreenCanvas
+        //    EVERY frame — ROT knob + camera rotation must respond live even
+        //    when the shape generation is held by the clock gate.
+        if (sceneCtx && sceneCanvas) {
+          drawShapesScene(sceneCtx, cachedShapes, ctx.res.width, ctx.res.height, {
             mode: params.solids >= 0.5 ? 'solids' : 'wireframe',
             rotation: params.rotate * Math.PI * 2,
             autoRotate: false,
           });
-          // 5. Upload the canvas as the GL texture.
+          // 3. Upload the canvas as the GL texture.
           g.bindTexture(g.TEXTURE_2D, sceneTex);
           g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL, 0);
           // OffscreenCanvas is a valid TexImageSource — single texImage2D upload.
@@ -299,7 +401,7 @@ export const shapegenDef: VideoModuleDef = {
             sceneCanvas as unknown as TexImageSource);
         }
 
-        // 6. Run the fullscreen-quad shader to copy sceneTex into our FBO.
+        // 4. Run the fullscreen-quad shader to copy sceneTex into our FBO.
         g.bindFramebuffer(g.FRAMEBUFFER, fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
@@ -325,6 +427,19 @@ export const shapegenDef: VideoModuleDef = {
       domain: 'video',
       surface,
       setParam(paramId, value) {
+        if (paramId === SHAPEGEN_CLOCK_PARAM_ID) {
+          // The bridge only calls us when an edge is patched — first
+          // arrival flips clockPatched true (sample-and-hold mode).
+          clockPatched = true;
+          params.cv_clock = value;
+          // Rising-edge detector: returns true exactly when the gate
+          // crosses LOW→HIGH (rise > 0.6, fall < 0.4 hysteresis). On the
+          // edge, mark the next frame to regenerate shapes.
+          if (gateEdge(clockGateState, value)) {
+            pendingRegenerate = true;
+          }
+          return;
+        }
         if (paramId in params) (params as unknown as Record<string, number>)[paramId] = value;
       },
       readParam(paramId) {
@@ -335,6 +450,10 @@ export const shapegenDef: VideoModuleDef = {
         // The card snapshot poller pulls the on-canvas scene for its
         // preview thumbnail (same pattern AcidwarpCard uses).
         if (key === 'sceneCanvas') return sceneCanvas;
+        // Test + card hooks for inspecting the clock-gate hold state.
+        if (key === 'clockPatched') return clockPatched ? 1 : 0;
+        if (key === 'cachedShapeCount') return cachedShapes.length;
+        if (key === 'regenCount') return regenCount;
         return undefined;
       },
       dispose() { surface.dispose(); },

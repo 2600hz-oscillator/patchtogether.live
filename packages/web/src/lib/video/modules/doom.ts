@@ -404,6 +404,18 @@ export const doomDef: VideoModuleDef = {
     let rightGain: GainNode | null = null;
     let pcmWorklet: AudioWorkletNode | null = null;
     let pumpInterval: ReturnType<typeof setInterval> | null = null;
+    // Silent keep-alive: worklet -> gain(0) -> ctx.destination. Without
+    // ANY path to ctx.destination, Chromium's audio rendering scheduler
+    // treats the worklet output as orphan + the worklet's process()
+    // never runs — so the pump's posted PCM samples queue up in the
+    // worklet's ring forever + nothing reaches downstream patches even
+    // when leftGain/rightGain are wired into a SCOPE (whose AnalyserNode
+    // is a sink but does NOT itself terminate the graph at destination).
+    // The same pattern lives in video-audio-keepalive.ts for videobox /
+    // videovarispeed / camera. Gain 0 = zero audible contribution; the
+    // user's downstream audio_l/audio_r patches still produce the actual
+    // sound through leftGain/rightGain in parallel.
+    let pcmKeepAlive: GainNode | null = null;
 
     // Phase-1 SP event-gate sources. Six ConstantSourceNodes — KILL, DOOR,
     // GUN_p1..p4 — held at 0 + pulsed to 1 for ~10ms on each event, mirroring
@@ -489,6 +501,24 @@ export const doomDef: VideoModuleDef = {
         node.connect(splitter);
         if (leftGain) splitter.connect(leftGain, 0);
         if (rightGain) splitter.connect(rightGain, 1);
+
+        // Silent keep-alive: connect the worklet directly to ctx.destination
+        // through a gain(0). Without this, when the user's audio_l/audio_r
+        // patches don't terminate on ctx.destination (e.g. DOOM -> SCOPE
+        // with no AUDIO_OUT downstream — SCOPE's AnalyserNode is a sink
+        // but doesn't terminate the graph), Chromium's renderer treats the
+        // worklet as orphan + process() never runs, so the pump's posted
+        // PCM samples never reach downstream patches. Gain 0 = inaudible
+        // contribution to destination; the user's audio_l/audio_r patches
+        // still produce the actual signal in parallel through leftGain /
+        // rightGain. Same pattern as videobox / videovarispeed / camera
+        // (video-audio-keepalive.ts).
+        if ('destination' in ac && ac.destination) {
+          pcmKeepAlive = ac.createGain();
+          pcmKeepAlive.gain.value = 0;
+          node.connect(pcmKeepAlive);
+          pcmKeepAlive.connect(ac.destination);
+        }
 
         // Pump the WASM mixer at ~60 Hz. dgpt_tick (called from the
         // video surface.draw path) drives DOOM's main loop which calls
@@ -643,6 +673,10 @@ export const doomDef: VideoModuleDef = {
           try { pcmWorklet.port.postMessage({ type: 'reset' }); } catch { /* */ }
           try { pcmWorklet.disconnect(); } catch { /* */ }
           pcmWorklet = null;
+        }
+        if (pcmKeepAlive) {
+          try { pcmKeepAlive.disconnect(); } catch { /* */ }
+          pcmKeepAlive = null;
         }
         if (leftGain) try { leftGain.disconnect(); } catch { /* */ }
         if (rightGain) try { rightGain.disconnect(); } catch { /* */ }
