@@ -117,6 +117,9 @@
   import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
   // ACIDWARP — 320×240 plasma video source with scene cycler.
   import AcidwarpCard from '$lib/ui/modules/AcidwarpCard.svelte';
+  // MANDLEBLOT — Mandelbrot fractal generator (mono + colour outputs,
+  // CV-controllable zoom, RGB-cycling hue with log(zoom) coupling).
+  import MandleblotCard from '$lib/ui/modules/MandleblotCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
   import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
   import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
@@ -191,6 +194,8 @@
   import CallsineCard from '$lib/ui/modules/CallsineCard.svelte';
   // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0).
   import CocoaDelayCard from '$lib/ui/modules/CocoaDelayCard.svelte';
+  // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
+  import ResofilterCard from '$lib/ui/modules/ResofilterCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
@@ -410,6 +415,7 @@
     backdraft: BackdraftCard,
     bentbox: BentboxCard,
     acidwarp: AcidwarpCard,
+    mandleblot: MandleblotCard,
     peakstate: PeakstateCard,
     // Video-domain (Phase 1):
     inwards: InwardsCard,
@@ -472,6 +478,8 @@
     // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
     callsine: CallsineCard,
     cocoadelay: CocoaDelayCard,
+    // RESOFILTER — Resonarium MultiFilter port (5 modes, named-mode label).
+    resofilter: ResofilterCard,
     // DOOM — single-instance interactive video module.
     doom: DoomCard,
     // NIBBLES — QBasic Nibbles snake game module.

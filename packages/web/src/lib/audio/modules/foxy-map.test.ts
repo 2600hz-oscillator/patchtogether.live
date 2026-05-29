@@ -23,6 +23,9 @@ import {
   threeAxisFieldForDisplay,
   boxHeightfield3d,
   boxToField3d,
+  boxBlur1dInPlace,
+  boxBlur2d,
+  bilinearLuma,
 } from './foxy-map';
 
 /** Variance of all sample values across every frame — our "how 3D / how
@@ -552,10 +555,12 @@ describe('boxToField3d (v4)', () => {
     // The headline property: with C = 0x80 everywhere, warpAmt ≈ 0 and
     // heightC_disp ≈ 0, so the v4 construction reduces to v2's boxToField.
     // Pinned with both nonzero warp AND nonzero secondaryHeight — the
-    // contribution still vanishes because C-0.5 ≈ 0. The ~5e-4 residual is
+    // contribution still vanishes because C-0.5 ≈ 0. The ~1e-3 residual is
     // 8-bit pixel quantization (0x80/255 = 0.50196, not 0.5 exactly), which
-    // sub-pixel-shifts the C-warped A lookup; the test asserts that
-    // residual stays below half a pixel (epsilon = 1e-3).
+    // sub-pixel-shifts the C-warped A lookup; v4.1's bilinear sampling
+    // makes the lateral interp continuous so the worst-case bilinear blend
+    // sits at ~1.02e-3 — pin at 3e-3 (still well below visual perception
+    // and below a single 8-bit unit's worth at the A luma channel).
     const size = 32;
     const a = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 9)) * (0.5 + 0.5 * Math.cos((y * 6.283) / 11)));
     const b = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 5 + (y * 6.283) / 7)));
@@ -568,7 +573,7 @@ describe('boxToField3d (v4)', () => {
     const fieldV2 = boxToField(box2, v2params, size, size);
     const fieldV4 = boxToField3d(box3, a, size, size, v4params, size, size);
     expect(fieldV2).toHaveLength(fieldV4.length);
-    const epsilon = 1e-3; // half a pixel @ 8-bit quantization
+    const epsilon = 3e-3; // worst-case bilinear blend of the 8-bit C residual
     for (let r = 0; r < fieldV2.length; r++) {
       for (let s = 0; s < fieldV2[r]!.y.length; s++) {
         const dy = Math.abs(fieldV4[r]!.y[s]! - fieldV2[r]!.y[s]!);
@@ -686,6 +691,277 @@ describe('boxToField3d (v4)', () => {
     // (v3-style collapsed) table would be ~0 on both axes.
     expect(f2f, `frame-to-frame delta ${f2f.toFixed(4)}`).toBeGreaterThan(0.01);
     expect(intraVar, `intra-frame variance ${intraVar.toFixed(4)}`).toBeGreaterThan(0.001);
+  });
+});
+
+// ── v4.1: zoom + smooth + bilinear ─────────────────────────────────────────
+
+describe('boxBlur2d (v4.1)', () => {
+  it('radius=0 ⇒ identity copy (no mutation, exact bit-for-bit values)', () => {
+    const arr = new Float32Array([0, 0.25, 0.5, 0.75, 1, 0.5, 0.25, 0.75, 0]);
+    const out = boxBlur2d(arr, 3, 0);
+    expect(out).not.toBe(arr); // fresh array
+    expect(Array.from(out)).toEqual(Array.from(arr));
+  });
+
+  it('radius=1 center pixel of a 3×3 with single bright center ⇒ 1/9', () => {
+    // Simple input: one bright pixel in the middle. After radius=1 box blur
+    // the center pixel is the mean of the 3×3 window (one 1 + eight 0s).
+    const arr = new Float32Array(9);
+    arr[4] = 1; // center
+    const out = boxBlur2d(arr, 3, 1);
+    expect(out[4]).toBeCloseTo(1 / 9, 6);
+  });
+
+  it('radius=1 of a uniform input ⇒ same uniform value (no edge artifacts)', () => {
+    // Clamp-to-edge boundary handling means uniform stays uniform.
+    const arr = new Float32Array(16).fill(0.42);
+    const out = boxBlur2d(arr, 4, 1);
+    for (const v of out) expect(v).toBeCloseTo(0.42, 6);
+  });
+
+  it('is deterministic + does NOT mutate the input', () => {
+    const arr = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]);
+    const snapshot = Array.from(arr);
+    const o1 = boxBlur2d(arr, 3, 1);
+    const o2 = boxBlur2d(arr, 3, 1);
+    expect(Array.from(arr)).toEqual(snapshot);
+    expect(Array.from(o1)).toEqual(Array.from(o2));
+  });
+});
+
+describe('boxBlur1dInPlace (v4.1)', () => {
+  it('axis=x with radius=1 averages the 3-wide horizontal window per row', () => {
+    // 1 row of 4 values; center cells get the mean of 3 neighbors.
+    const arr = new Float32Array([0, 1, 0, 1]);
+    boxBlur1dInPlace(arr, 4, 1, 1, 'x');
+    // x=0: (0,0,1)/3 = 1/3 (left clamps to itself)
+    // x=1: (0,1,0)/3 = 1/3
+    // x=2: (1,0,1)/3 = 2/3
+    // x=3: (0,1,1)/3 = 2/3 (right clamps to itself)
+    expect(arr[0]).toBeCloseTo(1 / 3, 6);
+    expect(arr[1]).toBeCloseTo(1 / 3, 6);
+    expect(arr[2]).toBeCloseTo(2 / 3, 6);
+    expect(arr[3]).toBeCloseTo(2 / 3, 6);
+  });
+
+  it('radius=0 is a no-op', () => {
+    const arr = new Float32Array([1, 2, 3, 4]);
+    const snapshot = Array.from(arr);
+    boxBlur1dInPlace(arr, 4, 1, 0, 'x');
+    expect(Array.from(arr)).toEqual(snapshot);
+  });
+});
+
+describe('bilinearLuma (v4.1)', () => {
+  it('at integer (x, y) it matches lumaAt EXACTLY (nearest reduction)', () => {
+    const buf = makeBuffer(4, 4, (x, y) => (x + 4 * y) / 15);
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 4; x++) {
+        expect(bilinearLuma(buf, 4, 4, x, y)).toBeCloseTo(lumaAt(buf, 4, 4, x, y), 6);
+      }
+    }
+  });
+
+  it('at the half-integer between two pixels, returns their mean', () => {
+    // 2 pixels: left dark, right bright. At x=0.5 (between them) the linear
+    // interp on the top row alone is the mean of the two values.
+    const buf = makeBuffer(2, 1, (x) => (x === 0 ? 0 : 1));
+    expect(bilinearLuma(buf, 2, 1, 0.5, 0)).toBeCloseTo(0.5, 2);
+  });
+
+  it('at the half-integer center of a 2×2 quad, returns the 4-pixel mean', () => {
+    // 2×2 with corners 0, 1, 0.5, 0.25 → mean = 0.4375.
+    const buf = new Uint8ClampedArray(2 * 2 * 4);
+    function setPx(x: number, y: number, l: number): void {
+      const o = (y * 2 + x) * 4;
+      const px = Math.round(l * 255);
+      buf[o] = px; buf[o + 1] = px; buf[o + 2] = px; buf[o + 3] = 255;
+    }
+    setPx(0, 0, 0);    setPx(1, 0, 1);
+    setPx(0, 1, 0.5);  setPx(1, 1, 0.25);
+    // Bilinear at the center (0.5, 0.5) is the average of all four.
+    const expected = (0 + 1 + 0.5 + 0.25) / 4;
+    expect(bilinearLuma(buf, 2, 2, 0.5, 0.5)).toBeCloseTo(expected, 2);
+  });
+
+  it('clamps out-of-range coords without crashing or producing NaN', () => {
+    const buf = makeBuffer(4, 4, () => 0.5);
+    expect(bilinearLuma(buf, 4, 4, -10, 0)).toBeCloseTo(0.5, 2);
+    expect(bilinearLuma(buf, 4, 4, 0, 99)).toBeCloseTo(0.5, 2);
+    expect(Number.isFinite(bilinearLuma(buf, 4, 4, 1e6, 1e6))).toBe(true);
+  });
+});
+
+describe('boxToField3d v4.1 zoom + smooth', () => {
+  /** Same field-delta helper used in the v4 divergence test. */
+  function fieldDelta(a: ReturnType<typeof boxToField3d>, b: ReturnType<typeof boxToField3d>): number {
+    let n = 0, acc = 0;
+    for (let r = 0; r < a.length; r++) {
+      for (let s = 0; s < a[r]!.y.length; s++) {
+        acc += Math.abs(a[r]!.y[s]! - b[r]!.y[s]!);
+        n++;
+      }
+    }
+    return n > 0 ? acc / n : 0;
+  }
+
+  // ── v4-degeneracy: the headline strict-additivity property ──
+  it('zoom=1 + smooth=0 + warp=0 + zheight=0 matches v4 within ε=1e-3', () => {
+    // Same shape as the v4 → v4 fixed-point test, but now exercising the new
+    // v4.1 code paths (bilinear + zoom-window math) at their degenerate
+    // settings. Bilinear at integer-aligned src coords matches nearest, and
+    // zoom=1 + smooth=0 short-circuit through identity copies, so any
+    // residual is sub-pixel 8-bit quantization (< 1e-3 = half a pixel).
+    const size = 32;
+    const a = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 9)) * (0.5 + 0.5 * Math.cos((y * 6.283) / 11)));
+    const b = makeBuffer(size, size, (x, y) => (0.5 + 0.5 * Math.sin((x * 6.283) / 5 + (y * 6.283) / 7)));
+    // Non-flat C — the zero-warp/zero-zheight params must still cancel it.
+    const c = makeBuffer(size, size, (x, y) => Math.sin((x * 6.283) / 4 + (y * 6.283) / 6) * 0.5 + 0.5);
+    const box3 = boxHeightfield3d(a, b, c, size, size, size);
+    // v4 reference: zoom=1 + smooth=0 + warp=0 + zheight=0 (defaults of the
+    // module-level constant but with v4.1 knobs in the additive-identity).
+    const v4ref = { ...FOXY_XYZ_3D_DEFAULTS, warpAmount: 0, secondaryHeight: 0, zoom: 1, smooth: 0 };
+    // v4.1 path with the SAME params → should match (this is the
+    // degeneracy: turning zoom + smooth off must reproduce v4 → as it now
+    // happens to be the same exact code branch since the test only calls
+    // boxToField3d once, this also pins the boxToField3d v4.1 path against
+    // itself, which IS the degeneracy check. Cross-check: also assert the
+    // result equals v4-style boxToField output to 4 decimals).
+    const f41 = boxToField3d(box3, a, size, size, v4ref, size, size);
+    const f2  = boxToField(boxHeightfield(a, b, size, size, size), v4ref, size, size);
+    for (let r = 0; r < f41.length; r++) {
+      for (let s = 0; s < f41[r]!.y.length; s++) {
+        const dy = Math.abs(f41[r]!.y[s]! - f2[r]!.y[s]!);
+        expect(dy, `Y delta @ (${r},${s})`).toBeLessThan(1e-3);
+      }
+    }
+  });
+
+  // ── zoom=4: divergence with a centered bright feature ──
+  it('zoom=4 reads a centered bright feature mostly bright; zoom=1 averages it down', () => {
+    // A has a bright square in the centered 64×64 region only; outer
+    // ~75% of the image is dark. At zoom=4 the displayed 256×256 grid
+    // samples only the center 64×64 → the field's `lum` should read mostly
+    // bright. At zoom=1 the grid covers the full image → mean lum drops
+    // significantly toward dark.
+    const size = 256;
+    const a = makeBuffer(size, size, (x, y) => {
+      // Bright (~1.0) in [96..160) × [96..160), dark (0) elsewhere.
+      return (x >= 96 && x < 160 && y >= 96 && y < 160) ? 1 : 0;
+    });
+    const b = makeBuffer(size, size, () => 0.5);
+    const c = makeBuffer(size, size, () => 0.5);
+    const box3 = boxHeightfield3d(a, b, c, size, size, size);
+    // Strict params except zoom → isolate the zoom effect.
+    const p1 = { ...FOXY_XYZ_3D_DEFAULTS, warpAmount: 0, secondaryHeight: 0, smooth: 0, zoom: 1 };
+    const p4 = { ...FOXY_XYZ_3D_DEFAULTS, warpAmount: 0, secondaryHeight: 0, smooth: 0, zoom: 4 };
+    const f1 = boxToField3d(box3, a, size, size, p1, 32, 32);
+    const f4 = boxToField3d(box3, a, size, size, p4, 32, 32);
+    function meanLum(f: typeof f1): number {
+      let n = 0, acc = 0;
+      for (const row of f) for (const l of row.lum) { acc += l; n++; }
+      return n > 0 ? acc / n : 0;
+    }
+    const meanFull = meanLum(f1);
+    const meanZoom = meanLum(f4);
+    // Bright square is 64*64 = 4096 px of 256*256 = 65536 = ~6.25% of full
+    // image → mean lum at zoom=1 should be small (< 0.2 after the
+    // 0.6+0.4*hShade weighting which centers around ~0.8). At zoom=4 it
+    // should be much closer to the bright value.
+    expect(meanFull, `zoom=1 mean lum ${meanFull.toFixed(3)}`).toBeLessThan(0.25);
+    expect(meanZoom, `zoom=4 mean lum ${meanZoom.toFixed(3)}`).toBeGreaterThan(0.4);
+    // The divergence itself is non-trivial.
+    expect(meanZoom - meanFull).toBeGreaterThan(0.2);
+  });
+
+  // ── smooth=0.5: row-adjacent Y (height) delta drops vs smooth=0 ──
+  it('smooth=0.5 crushes adjacent-cell HEIGHT delta vs smooth=0 by >= 4× on a checkerboard B', () => {
+    // High-frequency checkerboard B drives the Y height field; pre-blurring
+    // box.height collapses its adjacent-cell deltas. A + C flat so the test
+    // isolates the smooth on the height channel. This is the "jaggy peaks"
+    // user-feedback target: the v4 surface has high-frequency Y noise; v4.1's
+    // pre-blur knocks it down.
+    const size = 64;
+    const a = makeBuffer(size, size, () => 0.5);
+    const b = makeBuffer(size, size, (x, y) => ((x + y) & 1) === 0 ? 1 : 0);
+    const c = makeBuffer(size, size, () => 0.5);
+    const box3 = boxHeightfield3d(a, b, c, size, size, size);
+    const p0 = { ...FOXY_XYZ_3D_DEFAULTS, warpAmount: 0, secondaryHeight: 0, zoom: 1, smooth: 0, yDisp: 1 };
+    const p5 = { ...FOXY_XYZ_3D_DEFAULTS, warpAmount: 0, secondaryHeight: 0, zoom: 1, smooth: 0.5, yDisp: 1 };
+    const f0 = boxToField3d(box3, a, size, size, p0, size, size);
+    const f5 = boxToField3d(box3, a, size, size, p5, size, size);
+    function adjYDelta(f: typeof f0): number {
+      // Sum of |row.y[c+1] - row.y[c]| across all rows.
+      let n = 0, acc = 0;
+      for (const row of f) {
+        for (let s = 1; s < row.y.length; s++) {
+          acc += Math.abs(row.y[s]! - row.y[s - 1]!);
+          n++;
+        }
+      }
+      return n > 0 ? acc / n : 0;
+    }
+    const d0 = adjYDelta(f0);
+    const d5 = adjYDelta(f5);
+    // Pre-blur should crush the checkerboard delta substantially (the spec
+    // calls for at least a 4× reduction at smooth=0.5).
+    expect(d0, `smooth=0 height delta ${d0.toFixed(4)}`).toBeGreaterThan(0.1);
+    expect(d5 * 4, `smooth=0.5 (${d5.toFixed(4)}) × 4 < smooth=0 (${d0.toFixed(4)})`).toBeLessThan(d0);
+  });
+
+  // ── headline end-to-end variance regression ──
+  it('with zoom=4 + smooth=0.5 defaults: intra-frame variance DROPS vs v4 defaults, f2f delta stays non-trivial', () => {
+    // The point of v4.1: smoothing eats high-frequency noise inside each
+    // frame (which is what reads as "jaggy" on the mesh), but the surface
+    // still evolves frame-to-frame (the morph sweep still has content).
+    // Pins both as thresholds — note the intra-frame drop is INTENTIONAL.
+    const size = FOXY_FIELD_SIZE;
+    const a = makeBuffer(size, size, (x, y) => 0.5 + 0.5 * Math.sin((x * 6.283 * 3) / size) * Math.sin((y * 6.283 * 7) / size));
+    const b = makeBuffer(size, size, (x, y) => 0.5 + 0.5 * Math.sin((x * 6.283 * 5) / size + 1.1) * Math.cos((y * 6.283 * 2) / size));
+    const c = makeBuffer(size, size, (x, y) => 0.5 + 0.5 * Math.sin((x * 6.283 * 4) / size + 0.5) * Math.cos((y * 6.283 * 9) / size));
+    const box3 = boxHeightfield3d(a, b, c, size, size, size);
+
+    // v4 defaults: zoom=1, smooth=0 (the strict-degeneracy values on the
+    // module-level constant). v4.1 headline: zoom=4, smooth=0.5.
+    const v4p   = { ...FOXY_XYZ_3D_DEFAULTS, zoom: 1, smooth: 0 };
+    const v41p  = { ...FOXY_XYZ_3D_DEFAULTS, zoom: 4, smooth: 0.5 };
+    const f4   = boxToField3d(box3, a, size, size, v4p);
+    const f41  = boxToField3d(box3, a, size, size, v41p);
+    const wt4  = fieldToWavetable(f4, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+    const wt41 = fieldToWavetable(f41, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+
+    function intraFrameVar(frames: number[][]): number {
+      let sum = 0;
+      for (const frame of frames) {
+        let mean = 0; for (const v of frame) mean += v; mean /= frame.length;
+        let v = 0; for (const x of frame) v += (x - mean) ** 2;
+        sum += v / frame.length;
+      }
+      return sum / frames.length;
+    }
+    const iv4 = intraFrameVar(wt4);
+    const iv41 = intraFrameVar(wt41);
+    const f2f41 = frameToFrameDelta(wt41);
+    // Headline intent: intra-frame variance drops with the v4.1 defaults
+    // (the smoothing eats high frequencies — desired).
+    expect(iv41, `intra v4 ${iv4.toFixed(4)} vs v4.1 ${iv41.toFixed(4)}`).toBeLessThan(iv4);
+    // But the morph sweep still has motion (the table is not flat).
+    expect(f2f41, `f2f delta v4.1 ${f2f41.toFixed(4)}`).toBeGreaterThan(0.001);
+  });
+
+  // ── zoom alone diverges meaningfully ──
+  it('zoom=4 diverges measurably from zoom=1 on a non-trivial scene', () => {
+    const size = FOXY_FIELD_SIZE;
+    const a = makeBuffer(size, size, (x, y) => 0.5 + 0.5 * Math.sin((x * 6.283 * 5) / size + (y * 6.283 * 3) / size));
+    const b = makeBuffer(size, size, (x, y) => 0.5 + 0.5 * Math.cos((x * 6.283 * 7) / size));
+    const c = makeBuffer(size, size, (x, y) => 0.5 + 0.5 * Math.sin((y * 6.283 * 4) / size));
+    const box3 = boxHeightfield3d(a, b, c, size, size, size);
+    const p1 = { ...FOXY_XYZ_3D_DEFAULTS, smooth: 0, zoom: 1 };
+    const p4 = { ...FOXY_XYZ_3D_DEFAULTS, smooth: 0, zoom: 4 };
+    const f1 = boxToField3d(box3, a, size, size, p1, 64, 64);
+    const f4 = boxToField3d(box3, a, size, size, p4, 64, 64);
+    expect(fieldDelta(f1, f4)).toBeGreaterThan(1e-2);
   });
 });
 

@@ -150,6 +150,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0). Headline software
   // delay port — one click in the picker, flat under the Ports header.
   cocoadelay: { top: 'Ports', sub: 'Ports' },
+  // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
+  resofilter: { top: 'Ports', sub: 'Ports' },
 
   // ───────── Ports → Mutable (Émilie Gillet / MI archetype ports). ─────────
   rings: { top: 'Ports', sub: 'Mutable' },
@@ -181,6 +183,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   shapes: { top: 'Video modules', sub: 'Sources' },
   shapedramps: { top: 'Video modules', sub: 'Sources' },
   acidwarp: { top: 'Video modules', sub: 'Sources' },
+  // MANDLEBLOT — Mandelbrot fractal generator (mono + colour outputs).
+  mandleblot: { top: 'Video modules', sub: 'Sources' },
   // PEAKSTATE — animated mandala generator (kaleidoscope mirror-arm pen
   // trace + 3D-tube output). Self-driving video source.
   peakstate: { top: 'Video modules', sub: 'Sources' },

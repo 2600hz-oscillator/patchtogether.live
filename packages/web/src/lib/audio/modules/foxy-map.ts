@@ -521,12 +521,24 @@ export interface FoxyBox3 extends FoxyBox {
   cField: Float32Array;
 }
 
-/** Params extending the v2 XYZ scope params with v4's two new knobs. */
+/** Params extending the v2 XYZ scope params with v4's two new knobs +
+ *  v4.1's zoom + smooth knobs. */
 export interface FoxyXyz3dParams extends FoxyXyzParams {
   /** How much C warps the A lookup laterally (0 = no warp; 1 = strong). */
   warpAmount: number;
   /** How much C contributes to Z height relative to B (0 = C ignored on Z). */
   secondaryHeight: number;
+  /** v4.1: zoom factor (1..8). The 256×256 displayed grid samples a centered
+   *  (size/zoom) × (size/zoom) sub-region of the box → fewer / larger peaks
+   *  per displayed unit area. 1 = full box (== v4). Optional so legacy v4
+   *  callers (spreading only FoxyXyzParams + warpAmount/secondaryHeight)
+   *  keep type-checking — defaults to 1 inside `boxToField3d`. */
+  zoom?: number;
+  /** v4.1: pre-blur strength (0..1). Kernel radius = round(smooth * 8) px,
+   *  applied to base/height/cField via a separable box-blur before the cell
+   *  loop. 0 = no blur (== v4). Combined with bilinear sampling, knocks the
+   *  jaggy v4 mesh into smooth conical forms. Optional (defaults to 0). */
+  smooth?: number;
 }
 
 export const FOXY_XYZ_3D_DEFAULTS: FoxyXyz3dParams = {
@@ -535,6 +547,11 @@ export const FOXY_XYZ_3D_DEFAULTS: FoxyXyz3dParams = {
   warpAmount: 0.25,
   // C contributes half the Z swing of B → noticeable but secondary.
   secondaryHeight: 0.5,
+  // v4.1 defaults: strict-v4 equivalence so legacy callers see no behavior
+  // change. The module-level `foxy.ts` overrides these to the user-requested
+  // 4× zoom + 0.5 smooth for the headline experience.
+  zoom: 1,
+  smooth: 0,
 };
 
 /**
@@ -574,6 +591,132 @@ export function boxHeightfield3d(
   return { size, base, height, cField };
 }
 
+// ── v4.1: blur + bilinear helpers (additive) ─────────────────────────────
+//
+// FOXY v4.1 layers two SMOOTHING knobs on top of v4 to satisfy a user
+// request: the v4 mesh reads as a dense field of tiny jaggy peaks, the
+// desired look is fewer + larger + cone-shaped peaks. Three mechanisms
+// combine:
+//
+//   1. ZOOM (xyz_zoom 1..8) — the displayed 256×256 grid samples only a
+//      centered (size/zoom) × (size/zoom) sub-region of the box. At zoom=4
+//      that's the center 64×64 → 4× more sample-cell-area per displayed peak.
+//
+//   2. PRE-BLUR (xyz_smooth 0..1) — base/height/cField are pre-smoothed with
+//      a separable box-blur (radius = round(smooth * 8)) BEFORE the cell
+//      loop. Cuts the high-frequency noise that drives the jagged tops.
+//
+//   3. BILINEAR SAMPLING — replaces nearest-neighbor `lumaAt` with bilinear
+//      interpolation in the cell loop, giving a continuous A-luma surface
+//      between sample cells. Together with pre-blur, this is what produces
+//      the cone-shaped (rather than stair-stepped jagged) read on the mesh.
+//
+// All three are inert at the v4 defaults (zoom=1, smooth=0) → strict-v4
+// degeneracy is pinned by test.
+
+/**
+ * Separable 1-D box blur over a row-major `w × h` Float32Array. Replaces
+ * each pixel with the mean of itself + its `radius` neighbors along `axis`.
+ * Border is handled by clamp-to-edge (no wrap). In-place. radius=0 → no-op.
+ *
+ * The caller runs this twice (once per axis) for a full 2-D blur — exposed
+ * as a separable single-pass helper so the unit tests can pin each axis.
+ */
+export function boxBlur1dInPlace(
+  arr: Float32Array,
+  w: number,
+  h: number,
+  radius: number,
+  axis: 'x' | 'y',
+): void {
+  if (radius <= 0) return;
+  const window = 2 * radius + 1;
+  if (axis === 'x') {
+    const row = new Float32Array(w);
+    for (let y = 0; y < h; y++) {
+      const base = y * w;
+      for (let x = 0; x < w; x++) row[x] = arr[base + x] ?? 0;
+      for (let x = 0; x < w; x++) {
+        let acc = 0;
+        for (let k = -radius; k <= radius; k++) {
+          const xi = x + k < 0 ? 0 : x + k >= w ? w - 1 : x + k;
+          acc += row[xi] ?? 0;
+        }
+        arr[base + x] = acc / window;
+      }
+    }
+  } else {
+    const col = new Float32Array(h);
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) col[y] = arr[y * w + x] ?? 0;
+      for (let y = 0; y < h; y++) {
+        let acc = 0;
+        for (let k = -radius; k <= radius; k++) {
+          const yi = y + k < 0 ? 0 : y + k >= h ? h - 1 : y + k;
+          acc += col[yi] ?? 0;
+        }
+        arr[y * w + x] = acc / window;
+      }
+    }
+  }
+}
+
+/**
+ * 2-D box blur of a square `size × size` Float32Array via two separable
+ * passes. Returns a FRESH array (does NOT mutate the input) so the caller
+ * can preserve the unblurred original. radius=0 → fresh identity copy.
+ */
+export function boxBlur2d(arr: Float32Array, size: number, radius: number): Float32Array {
+  const out = new Float32Array(arr.length);
+  out.set(arr);
+  if (radius <= 0) return out;
+  boxBlur1dInPlace(out, size, size, radius, 'x');
+  boxBlur1dInPlace(out, size, size, radius, 'y');
+  return out;
+}
+
+/**
+ * Bilinear sample of luminance from an RGBA framebuffer at fractional
+ * (x, y). Clamps coordinates to the edge — the integer-coord case matches
+ * `lumaAt`'s nearest read exactly, the (x+0.5, y+0.5) case averages the
+ * four surrounding pixels. Returns luma in [0,1].
+ *
+ * Used inside `boxToField3d` for the C-warped A lookup so the surface reads
+ * as a continuous A-luma field (rather than the stair-stepped one nearest
+ * sampling produces) — which is what makes the smoothed mesh read as cones.
+ */
+export function bilinearLuma(
+  rgba: Uint8ClampedArray | readonly number[],
+  srcW: number,
+  srcH: number,
+  x: number,
+  y: number,
+): number {
+  // Clamp to a valid bilinear quad.
+  const cx = x < 0 ? 0 : x > srcW - 1 ? srcW - 1 : x;
+  const cy = y < 0 ? 0 : y > srcH - 1 ? srcH - 1 : y;
+  const x0 = Math.floor(cx);
+  const y0 = Math.floor(cy);
+  const x1 = x0 + 1 >= srcW ? srcW - 1 : x0 + 1;
+  const y1 = y0 + 1 >= srcH ? srcH - 1 : y0 + 1;
+  const fx = cx - x0;
+  const fy = cy - y0;
+  function pix(px: number, py: number): number {
+    const o = (py * srcW + px) * 4;
+    const r = (rgba[o] ?? 0) / 255;
+    const g = (rgba[o + 1] ?? 0) / 255;
+    const b = (rgba[o + 2] ?? 0) / 255;
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+  const l00 = pix(x0, y0);
+  const l10 = pix(x1, y0);
+  const l01 = pix(x0, y1);
+  const l11 = pix(x1, y1);
+  const lt = l00 * (1 - fx) + l10 * fx;
+  const lb = l01 * (1 - fx) + l11 * fx;
+  return lt * (1 - fy) + lb * fy;
+}
+
 /**
  * Convert the v4 volumetric Box into the XYZ scanline field that the
  * realtime wavetable + on-card scope read.
@@ -611,22 +754,58 @@ export function boxToField3d(
 ): FoxyFieldRow[] {
   const out: FoxyFieldRow[] = [];
   const size = box.size;
+
+  // ── v4.1: pre-blur the box's three layers ──────────────────────────────
+  // Apply a separable box-blur with radius = round(smooth * 8) px to the
+  // base / height / cField grids BEFORE the cell loop. The input box is
+  // never mutated — boxBlur2d returns fresh arrays. At smooth = 0 the
+  // radius is 0 and boxBlur2d returns identity copies, so this collapses
+  // to v4 behavior exactly.
+  const smooth = params.smooth ?? 0;
+  const blurRadius = smooth > 0 ? Math.round(smooth * 8) : 0;
+  const base = blurRadius > 0 ? boxBlur2d(box.base, size, blurRadius) : box.base;
+  const height = blurRadius > 0 ? boxBlur2d(box.height, size, blurRadius) : box.height;
+  const cField = blurRadius > 0 ? boxBlur2d(box.cField, size, blurRadius) : box.cField;
+
+  // ── v4.1: zoom window ──────────────────────────────────────────────────
+  // The 256×256 displayed grid samples a centered (size/zoom)×(size/zoom)
+  // sub-region of the box. zoom=1 → full box (== v4). zoom=4 → center 64×64.
+  // Mapping (per spec):
+  //   srcRow = (size - 1) * 0.5 + (v0 - 0.5) * (windowSize - 1)
+  //   srcCol = (size - 1) * 0.5 + (h0 - 0.5) * (windowSize - 1)
+  // Then clamped to [0, size-1].
+  const zoom = params.zoom ?? 1;
+  const windowSize = size / Math.max(1, zoom);
+  const halfSpan = (windowSize - 1);
+
   for (let r = 0; r < rows; r++) {
     const v0 = rows > 1 ? r / (rows - 1) : 0;
-    const br = size > 1 ? Math.round(v0 * (size - 1)) : 0;
+    // Zoom-windowed source row coordinate (fractional, then clamp).
+    let srcBoxRow = (size - 1) * 0.5 + (v0 - 0.5) * halfSpan;
+    if (srcBoxRow < 0) srcBoxRow = 0;
+    else if (srcBoxRow > size - 1) srcBoxRow = size - 1;
     const yArr = new Float32Array(cols);
     const lArr = new Float32Array(cols);
     for (let c = 0; c < cols; c++) {
       const h0 = cols > 1 ? c / (cols - 1) : 0;
-      const bc = size > 1 ? Math.round(h0 * (size - 1)) : 0;
-      const o = br * size + bc;
-      const cVal = box.cField[o] ?? 0.5;
-      const heightB = box.height[o] ?? 0;
+      let srcBoxCol = (size - 1) * 0.5 + (h0 - 0.5) * halfSpan;
+      if (srcBoxCol < 0) srcBoxCol = 0;
+      else if (srcBoxCol > size - 1) srcBoxCol = size - 1;
+      // Bilinearly sample the (possibly blurred) box layers at the zoom-
+      // windowed coords. This replaces v4's nearest-index `Math.round`
+      // read and is what gives the surface continuous (non-stair-stepped)
+      // luma. At zoom=1 + smooth=0 + integer-aligned src this still
+      // reduces to v4 to within sub-pixel residual.
+      const cVal = bilinearGrid(cField, size, srcBoxCol, srcBoxRow, 0.5);
+      const heightB = bilinearGrid(height, size, srcBoxCol, srcBoxRow, 0);
       const warpAmt = (cVal - 0.5) * params.warpAmount;
-      const srcCol = h0 * (srcW - 1) + warpAmt * srcW * 0.15;
-      const srcRow = v0 * (srcH - 1) + warpAmt * srcH * 0.15;
-      // A is sampled with C-warped coords → genuine 3D twist in XY.
-      const baseA = lumaAt(rgbaA, srcW, srcH, srcCol, srcRow);
+      // Map the box-row/col into raster-pixel coords for the C-warped A
+      // lookup — same affine v4 used, but starting from the zoom-windowed
+      // box coords so the warp axis follows the displayed region.
+      const srcCol = (srcBoxCol / Math.max(1, size - 1)) * (srcW - 1) + warpAmt * srcW * 0.15;
+      const srcRow = (srcBoxRow / Math.max(1, size - 1)) * (srcH - 1) + warpAmt * srcH * 0.15;
+      // A is sampled bilinearly (v4.1) at the C-warped coords.
+      const baseA = bilinearLuma(rgbaA, srcW, srcH, srcCol, srcRow);
       const heightC_disp = (cVal - 0.5) * params.secondaryHeight;
       const v = shapedRamp(v0, h0, v0, params.yShape);
       const hShade = shapedRamp(h0, h0, v0, params.xShape);
@@ -639,6 +818,33 @@ export function boxToField3d(
     out.push({ y: yArr, lum: lArr });
   }
   return out;
+}
+
+/** Bilinearly sample a row-major `size × size` Float32 grid at fractional
+ *  (x, y) with clamp-to-edge. Tiny inline helper for `boxToField3d`. */
+function bilinearGrid(
+  grid: Float32Array,
+  size: number,
+  x: number,
+  y: number,
+  fallback: number,
+): number {
+  if (size <= 0) return fallback;
+  const cx = x < 0 ? 0 : x > size - 1 ? size - 1 : x;
+  const cy = y < 0 ? 0 : y > size - 1 ? size - 1 : y;
+  const x0 = Math.floor(cx);
+  const y0 = Math.floor(cy);
+  const x1 = x0 + 1 >= size ? size - 1 : x0 + 1;
+  const y1 = y0 + 1 >= size ? size - 1 : y0 + 1;
+  const fx = cx - x0;
+  const fy = cy - y0;
+  const g00 = grid[y0 * size + x0] ?? fallback;
+  const g10 = grid[y0 * size + x1] ?? fallback;
+  const g01 = grid[y1 * size + x0] ?? fallback;
+  const g11 = grid[y1 * size + x1] ?? fallback;
+  const gt = g00 * (1 - fx) + g10 * fx;
+  const gb = g01 * (1 - fx) + g11 * fx;
+  return gt * (1 - fy) + gb * fy;
 }
 
 /** Stable cheap signature of a wavetable for change-detection (avoid

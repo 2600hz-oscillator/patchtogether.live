@@ -110,6 +110,25 @@ describe('FOXY module def shape', () => {
     expect(zh!.defaultValue).toBeCloseTo(0.5, 4);
   });
 
+  it('adds the v4.1 XYZ controls (xyz_zoom default 4, xyz_smooth default 0.5)', () => {
+    // The headline v4.1 knobs — defaults match the user-requested "4× zoom +
+    // 0.5 smooth" experience. User can dial them down (1 / 0) to recover
+    // v4 behavior exactly.
+    const byId = new Map(foxyDef.params.map((p) => [p.id, p]));
+    const zoom = byId.get('xyz_zoom');
+    expect(zoom, 'xyz_zoom').toBeDefined();
+    expect(zoom!.min).toBe(1);
+    expect(zoom!.max).toBe(8);
+    expect(zoom!.curve).toBe('linear');
+    expect(zoom!.defaultValue).toBeCloseTo(4, 4);
+    const smooth = byId.get('xyz_smooth');
+    expect(smooth, 'xyz_smooth').toBeDefined();
+    expect(smooth!.min).toBe(0);
+    expect(smooth!.max).toBe(1);
+    expect(smooth!.curve).toBe('linear');
+    expect(smooth!.defaultValue).toBeCloseTo(0.5, 4);
+  });
+
   it('routes morph_cv/spread_cv/fold_cv to the right param targets', () => {
     const byId = new Map(foxyDef.inputs.map((p) => [p.id, p]));
     expect(byId.get('morph_cv')?.paramTarget).toBe('morph');
