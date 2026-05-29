@@ -137,6 +137,11 @@ function differingBytes(a: Buffer, b: Buffer): number {
 }
 
 test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for #411 + #420)', () => {
+  // FOXY mounts 3 SwoleBlocks + 3 RasterPainters + WAVECEL worklet, then
+  // we run 2× 2s waits + 3 canvas screenshots + 3 audio probes. Locally
+  // this finishes in ~9s, but on cold CI Linux runners the heavy mount
+  // routinely overruns the 30s default. 90s gives ample headroom.
+  test.setTimeout(90_000);
   test('frozen wavetable: 2s-apart snapshots equal; unfreeze: snapshot differs', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
