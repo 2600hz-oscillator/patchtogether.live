@@ -16,6 +16,10 @@ import {
   boxToField,
   fieldToWavetable,
   wavetableSignature,
+  axisDistribution,
+  applyZLut,
+  threeAxisWavetable,
+  threeAxisFieldForDisplay,
 } from './foxy-map';
 
 /** Variance of all sample values across every frame — our "how 3D / how
@@ -266,6 +270,209 @@ describe('the Box path is MORE 3D than the single-raster path', () => {
       expect(f).toHaveLength(FOXY_WT_SAMPLES);
       for (const v of f) { expect(v).toBeGreaterThanOrEqual(-1); expect(v).toBeLessThanOrEqual(1); }
     }
+  });
+});
+
+// ── v3: 3-axis distribution wavetable ─────────────────────────────────────
+
+describe('axisDistribution (v3)', () => {
+  it('empty buffer ⇒ all 0.5 (neutral distribution → silence downstream)', () => {
+    const empty = new Uint8ClampedArray(0);
+    const col = axisDistribution(empty, 0, 0, 8, 'col');
+    const row = axisDistribution(empty, 0, 0, 8, 'row');
+    for (const v of col) expect(v).toBe(0.5);
+    for (const v of row) expect(v).toBe(0.5);
+  });
+
+  it('undersized buffer (declared 16×16 but only 1 pixel) ⇒ all 0.5', () => {
+    // Anything below srcW*srcH*4 bytes should fall through to neutral.
+    const tiny = new Uint8ClampedArray(4);
+    const col = axisDistribution(tiny, 16, 16, 8, 'col');
+    for (const v of col) expect(v).toBe(0.5);
+  });
+
+  it('uniform-luma buffer ⇒ the same value on every output bin', () => {
+    const buf = makeBuffer(8, 8, () => 0.7);
+    const col = axisDistribution(buf, 8, 8, 16, 'col');
+    const row = axisDistribution(buf, 8, 8, 16, 'row');
+    // 8-bit quantization: 0.7 → 179/255 ≈ 0.7019.
+    for (const v of col) expect(v).toBeCloseTo(0.7, 2);
+    for (const v of row) expect(v).toBeCloseTo(0.7, 2);
+  });
+
+  it('vertical gradient (dark top → bright bottom) ⇒ uniform COL, monotonic ROW', () => {
+    // Luma depends ONLY on y → every column has the same mean (0.5), every
+    // row is a single luma value (its y-fraction).
+    const vert = makeBuffer(16, 16, (_x, y) => y / 15);
+    const col = axisDistribution(vert, 16, 16, 16, 'col');
+    const row = axisDistribution(vert, 16, 16, 16, 'row');
+    // COL: each column averaged over y → mean of 0..1 ≈ 0.5.
+    for (const v of col) expect(v).toBeCloseTo(0.5, 1);
+    // ROW: monotonically increasing 0 → 1.
+    for (let i = 1; i < row.length; i++) {
+      expect(row[i]).toBeGreaterThanOrEqual((row[i - 1] ?? 0) - 1e-3);
+    }
+    expect(row[0]).toBeLessThan(0.1);
+    expect(row[row.length - 1]).toBeGreaterThan(0.9);
+  });
+
+  it('horizontal gradient (dark left → bright right) ⇒ uniform ROW, monotonic COL', () => {
+    const horiz = makeBuffer(16, 16, (x) => x / 15);
+    const col = axisDistribution(horiz, 16, 16, 16, 'col');
+    const row = axisDistribution(horiz, 16, 16, 16, 'row');
+    for (const v of row) expect(v).toBeCloseTo(0.5, 1);
+    for (let i = 1; i < col.length; i++) {
+      expect(col[i]).toBeGreaterThanOrEqual((col[i - 1] ?? 0) - 1e-3);
+    }
+    expect(col[0]).toBeLessThan(0.1);
+    expect(col[col.length - 1]).toBeGreaterThan(0.9);
+  });
+
+  it('respects the requested output length (resamples to len bins)', () => {
+    const buf = makeBuffer(32, 32, () => 0.5);
+    expect(axisDistribution(buf, 32, 32, 64, 'col')).toHaveLength(64);
+    expect(axisDistribution(buf, 32, 32, 7, 'row')).toHaveLength(7);
+  });
+});
+
+describe('applyZLut (v3)', () => {
+  it('identity LUT ⇒ output equals raw (within rounding)', () => {
+    const len = 256;
+    const id = new Float32Array(len);
+    for (let k = 0; k < len; k++) id[k] = k / (len - 1);
+    for (const raw of [-1, -0.5, 0, 0.25, 0.75, 1]) {
+      expect(applyZLut(raw, id)).toBeCloseTo(raw, 2);
+    }
+  });
+
+  it('flat LUT (0.5) ⇒ output always 0 regardless of raw', () => {
+    const flat = new Float32Array(64).fill(0.5);
+    for (const raw of [-1, -0.3, 0, 0.4, 1]) {
+      expect(applyZLut(raw, flat)).toBe(0);
+    }
+  });
+
+  it('empty LUT ⇒ 0 (degenerate but safe)', () => {
+    expect(applyZLut(0.5, new Float32Array(0))).toBe(0);
+  });
+
+  it('clamps raw into [-1, 1] before indexing', () => {
+    const id = new Float32Array(8);
+    for (let k = 0; k < 8; k++) id[k] = k / 7;
+    // Way-out-of-range raw should clamp to the LUT endpoint, not crash.
+    expect(applyZLut(5, id)).toBeCloseTo(1, 2);
+    expect(applyZLut(-5, id)).toBeCloseTo(-1, 2);
+  });
+});
+
+describe('threeAxisWavetable (v3)', () => {
+  it('dims = frames × samples regardless of input distribution lengths', () => {
+    const x = new Float32Array(7).fill(0.5);   // length 7
+    const y = new Float32Array(13).fill(0.5);  // length 13
+    const z = new Float32Array(5).fill(0.5);   // length 5
+    const wt = threeAxisWavetable(x, y, z, 16, 32);
+    expect(wt).toHaveLength(16);
+    for (const f of wt) expect(f).toHaveLength(32);
+  });
+
+  it('uses the default FOXY_WT dims when omitted', () => {
+    const x = new Float32Array(FOXY_WT_SAMPLES).fill(0.5);
+    const y = new Float32Array(FOXY_WT_FRAMES).fill(0.5);
+    const z = new Float32Array(FOXY_WT_SAMPLES).fill(0.5);
+    const wt = threeAxisWavetable(x, y, z);
+    expect(wt).toHaveLength(FOXY_WT_FRAMES);
+    expect(wt[0]).toHaveLength(FOXY_WT_SAMPLES);
+  });
+
+  it('all-0.5 distributions ⇒ silence (every cell is 0)', () => {
+    const x = new Float32Array(8).fill(0.5);
+    const y = new Float32Array(8).fill(0.5);
+    const z = new Float32Array(8).fill(0.5); // flat → applyZLut returns 0 too
+    const wt = threeAxisWavetable(x, y, z, 4, 8);
+    for (const f of wt) for (const v of f) expect(v).toBe(0);
+  });
+
+  it('bright xDist + dark yDist with identity Z ⇒ positive on bright-x, dark-y cells', () => {
+    // x = mostly 1 (bright), y = mostly 0 (dark): raw = (1-0.5) + (0-0.5) = 0.
+    // To force a positive cell, use bright x AND bright y → raw = +1 → clamp 1.
+    const samples = 8, frames = 4;
+    const x = new Float32Array(samples).fill(1); // bright
+    const y = new Float32Array(frames).fill(1);  // bright
+    const id = new Float32Array(samples);
+    for (let k = 0; k < samples; k++) id[k] = k / (samples - 1);
+    const wt = threeAxisWavetable(x, y, id, frames, samples);
+    for (const f of wt) for (const v of f) {
+      expect(v).toBeGreaterThan(0.9);
+    }
+  });
+
+  it('bright xDist + DARK yDist with identity Z ⇒ ≈ zero (raw cancels)', () => {
+    const samples = 8, frames = 4;
+    const x = new Float32Array(samples).fill(1);
+    const y = new Float32Array(frames).fill(0);
+    // Use a high-resolution identity LUT so the nearest-index quantization
+    // doesn't bias raw=0 toward a non-zero output cell.
+    const id = new Float32Array(256);
+    for (let k = 0; k < 256; k++) id[k] = k / 255;
+    const wt = threeAxisWavetable(x, y, id, frames, samples);
+    // raw = +0.5 + -0.5 = 0 → identity LUT → 0.
+    for (const f of wt) for (const v of f) expect(v).toBeCloseTo(0, 2);
+  });
+
+  it('clamps every cell to [-1, 1]', () => {
+    // Extreme distributions + extreme LUT.
+    const x = new Float32Array(16);
+    for (let i = 0; i < 16; i++) x[i] = i / 15;
+    const y = new Float32Array(8);
+    for (let i = 0; i < 8; i++) y[i] = i / 7;
+    const z = new Float32Array(16);
+    for (let i = 0; i < 16; i++) z[i] = i % 2 === 0 ? 0 : 1; // jagged LUT
+    const wt = threeAxisWavetable(x, y, z, 8, 16);
+    for (const f of wt) for (const v of f) {
+      expect(v).toBeGreaterThanOrEqual(-1);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('is deterministic + signature is stable for identical inputs', () => {
+    const x = new Float32Array(8);
+    for (let i = 0; i < 8; i++) x[i] = (i * 17) % 13 / 13;
+    const y = new Float32Array(4);
+    for (let i = 0; i < 4; i++) y[i] = (i * 7) % 11 / 11;
+    const z = new Float32Array(8);
+    for (let i = 0; i < 8; i++) z[i] = i / 7;
+    const a = threeAxisWavetable(x, y, z, 4, 8);
+    const b = threeAxisWavetable(x, y, z, 4, 8);
+    expect(a).toEqual(b);
+    expect(wavetableSignature(a)).toBe(wavetableSignature(b));
+  });
+});
+
+describe('threeAxisFieldForDisplay (v3)', () => {
+  it('preserves frames × samples + re-packs bipolar audio into [0,1] field', () => {
+    const wt = [
+      [-1, 0, 1, 0.5],
+      [0.2, -0.4, 0.6, -0.8],
+    ];
+    const x = new Float32Array(4);
+    for (let i = 0; i < 4; i++) x[i] = i / 3;
+    const field = threeAxisFieldForDisplay(wt, x);
+    expect(field).toHaveLength(2);
+    expect(field[0]!.y).toHaveLength(4);
+    // (-1 + 1)/2 = 0, (0+1)/2 = 0.5, (1+1)/2 = 1.
+    expect(field[0]!.y[0]).toBeCloseTo(0, 4);
+    expect(field[0]!.y[1]).toBeCloseTo(0.5, 4);
+    expect(field[0]!.y[2]).toBeCloseTo(1, 4);
+    // lum is the x distribution (shared across all rows since x is column-keyed).
+    for (let s = 0; s < 4; s++) {
+      expect(field[0]!.lum[s]).toBeCloseTo(s / 3, 4);
+      expect(field[1]!.lum[s]).toBeCloseTo(s / 3, 4);
+    }
+  });
+
+  it('empty wavetable ⇒ empty field (no rows)', () => {
+    const field = threeAxisFieldForDisplay([], new Float32Array(4));
+    expect(field).toHaveLength(0);
   });
 });
 

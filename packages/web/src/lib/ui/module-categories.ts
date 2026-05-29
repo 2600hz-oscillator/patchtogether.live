@@ -183,6 +183,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   acidwarp: { top: 'Video modules', sub: 'Sources' },
   // MANDLEBLOT — Mandelbrot fractal generator (mono + colour outputs).
   mandleblot: { top: 'Video modules', sub: 'Sources' },
+  // PEAKSTATE — animated mandala generator (kaleidoscope mirror-arm pen
+  // trace + 3D-tube output). Self-driving video source.
+  peakstate: { top: 'Video modules', sub: 'Sources' },
   // DOOM — single-instance interactive video module. Cards are
   // keyboard-driven (focus-within ring) + CV-gate-driven; one host
   // per rack, spectators see the framebuffer over Yjs awareness.

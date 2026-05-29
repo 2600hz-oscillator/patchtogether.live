@@ -55,10 +55,37 @@ describe('FOXY module def shape', () => {
     }
   });
 
-  it('adds the SECOND mini-SWOLEVCO source B controls (raster B — Z height)', () => {
+  it('adds the SECOND mini-SWOLEVCO source B controls (raster B — Y row distribution)', () => {
     const ids = foxyDef.params.map((p) => p.id);
     for (const id of ['src2_tune', 'src2_fine', 'src2_timbre', 'src2_symmetry', 'src2_fold']) {
       expect(ids, `source-B param ${id}`).toContain(id);
+    }
+  });
+
+  it('adds the THIRD mini-SWOLEVCO source C controls (raster C — Z amplitude LUT)', () => {
+    const ids = foxyDef.params.map((p) => p.id);
+    for (const id of ['src3_tune', 'src3_fine', 'src3_timbre', 'src3_symmetry', 'src3_fold']) {
+      expect(ids, `source-C param ${id}`).toContain(id);
+    }
+  });
+
+  it('source C defaults are the spec-mandated contrasting values (-12 st, 0.4/0.7/0.3)', () => {
+    const byId = new Map(foxyDef.params.map((p) => [p.id, p]));
+    expect(byId.get('src3_tune')?.defaultValue).toBe(-12);
+    expect(byId.get('src3_fine')?.defaultValue).toBe(0);
+    expect(byId.get('src3_timbre')?.defaultValue).toBe(0.4);
+    expect(byId.get('src3_symmetry')?.defaultValue).toBe(0.7);
+    expect(byId.get('src3_fold')?.defaultValue).toBe(0.3);
+  });
+
+  it('exposes a FREEZE RASTER C discrete toggle alongside the A/B/Table ones', () => {
+    const byId = new Map(foxyDef.params.map((p) => [p.id, p]));
+    for (const id of ['freezeRasterA', 'freezeRasterB', 'freezeRasterC', 'freezeTable']) {
+      const p = byId.get(id);
+      expect(p, `freeze param ${id}`).toBeDefined();
+      expect(p!.curve).toBe('discrete');
+      expect(p!.min).toBe(0);
+      expect(p!.max).toBe(1);
     }
   });
 

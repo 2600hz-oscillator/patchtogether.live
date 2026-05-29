@@ -36,6 +36,7 @@ import { videoboxDef } from './videobox';
 import { videoVarispeedDef } from './videovarispeed';
 import { backdraftDef } from './backdraft';
 import { fourPlexVidDef } from './4plexvid';
+import { peakstateDef } from './peakstate';
 import { mandleblotDef } from './mandleblot';
 
 let registered = false;
@@ -123,6 +124,12 @@ export function registerVideoModules(): void {
   // each rising edge (1->2->3->4->1, wrapping). Discrete routing — never
   // a blend.
   registerVideoModule(fourPlexVidDef);
+  // PEAKSTATE — animated mandala generator (kaleidoscope mirror-arm pen
+  // trace, inspired by florianjs/Mandala-JS). Three outputs: mono_out
+  // (white pen), rgb_out (HSL hue cycling), out_3d (tilted + rotating
+  // bowl-twin "fake 3D"). 3D rotation rate ties to params.speed so the
+  // whole scene feels coupled.
+  registerVideoModule(peakstateDef);
   // MANDLEBLOT — Mandelbrot fractal generator with zoom + rotation +
   // RGB-cycling hue. Two outputs: mono escape-time field + colour palette.
   // Log-mapped zoom 1×..1e6× (single-precision highp-float ceiling).

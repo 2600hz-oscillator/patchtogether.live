@@ -81,7 +81,10 @@ const OUTPUT_DEFS = [
   { id: 'du',    type: 'gate' as const, label: '⬆'  },
   { id: 'dd',    type: 'gate' as const, label: '⬇'  },
   { id: 'dl',    type: 'gate' as const, label: '⬅'  },
-  { id: 'dr',    type: 'gate' as const, label: '➡'  },
+  // U+2B95 (⮕) matches the U+2B05/06/07 family used for ⬅⬆⬇ —
+  // U+27A1 (➡) is a different glyph family that renders much smaller
+  // in most fonts, making the right-d-pad row look broken/portless.
+  { id: 'dr',    type: 'gate' as const, label: '⮕'  },
   { id: 'start', type: 'gate' as const, label: 'STA' },
   { id: 'back',  type: 'gate' as const, label: 'SEL' },
 ] as const;

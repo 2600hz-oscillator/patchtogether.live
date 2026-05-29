@@ -364,6 +364,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // across platforms, so the linux baseline is pending a `task vrt:update`
   // run on linux CI; the deterministic darwin capture is the gate here.
   'linux/foxy',
+  // PEAKSTATE (animated mandala generator): darwin baseline captured on this
+  // machine via VRT_SCENES (self-driving internal pen + ring, frozen on the
+  // `__peakstateVrtSeed` flag → one deterministic 120-sample paint then no
+  // further advance). The 2D canvas-to-GL upload + bilinear-filtered blit
+  // can differ sub-thresholdly across GPU drivers, so the linux baseline is
+  // pending a `task vrt:update` run on linux CI; the deterministic darwin
+  // capture is the regression gate here.
+  'linux/peakstate',
   // In-card-title sweep (PR #383): the per-card title chrome was moved
   // into ModuleTitle.svelte. Cards whose `<header class="title">…` was
   // previously inlined in the card scope lost their per-card title CSS

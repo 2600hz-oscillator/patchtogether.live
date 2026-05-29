@@ -15,22 +15,45 @@ import type { PageServerLoad } from './$types';
 import { getRackspace, isMember, RACKSPACE_MAX_MEMBERS } from '$lib/server/rackspaces';
 import { getInviteCode, verifyInviteCode } from '$lib/server/invites';
 
-export const load: PageServerLoad = async ({ locals, params, url }) => {
+export const load: PageServerLoad = async ({ locals, params, url, request }) => {
   const { userId } = locals.auth();
   const rackspace = await getRackspace(params.id);
+
+  // Diagnostic — one JSON line per /r/[id] load so we can grep CF Pages tail.
+  // Tracks invite presence + verify outcome + authed-ness. Deliberately NOT
+  // logging the bearer token value (length only) or any Clerk user details.
+  const invite = url.searchParams.get('invite');
+  const hasInvite = !!invite;
+  const inviteLen = invite?.length ?? 0;
+  const ua = (request.headers.get('user-agent') ?? '').slice(0, 80);
+  const logLoad = (verifyOk: boolean | 'skipped', outcome: string) => {
+    console.log(JSON.stringify({
+      tag: 'invite-load',
+      rackspaceId: params.id,
+      host: url.host,
+      hasInvite,
+      inviteLen,
+      verifyOk,
+      authed: !!userId,
+      outcome,
+      ua,
+    }));
+  };
+
   if (!rackspace) {
+    logLoad('skipped', 'not-found');
     throw error(404, 'Rackspace not found');
   }
-
-  const invite = url.searchParams.get('invite');
 
   if (!userId) {
     // Anon access requires a valid invite code. Redirect to /sign-in for
     // both missing and invalid codes — don't leak which it was.
     const ok = await verifyInviteCode(rackspace.id, invite);
     if (!ok) {
+      logLoad(false, 'redirect-sign-in');
       throw redirect(303, `/sign-in?redirect_url=${encodeURIComponent(url.pathname + url.search)}`);
     }
+    logLoad(true, 'anon-allowed');
     return {
       rackspace: {
         id: rackspace.id,
@@ -49,6 +72,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
   }
 
   const member = await isMember(rackspace.id, userId);
+  logLoad('skipped', member ? 'member' : 'non-member');
   // We surface ONLY the current user's own Clerk userId (`currentUserId`),
   // never another user's. The per-user layout system (Stage B PR B-b)
   // needs a stable per-user key to scope layout state in the Yjs doc.
