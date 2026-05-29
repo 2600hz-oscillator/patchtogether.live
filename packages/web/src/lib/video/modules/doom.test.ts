@@ -53,33 +53,11 @@ describe('doomDef — module def shape', () => {
     expect(doomDef.migrateEdgePortId!('p2_left', 1)).toBeNull();
   });
 
-  it('declares a video out + stereo audio outputs + 6 Phase-1 SP event gates', () => {
+  it('declares a video out + stereo audio outputs that ride the video → audio bridge', () => {
     const outs = doomDef.outputs.map((p) => p.id);
-    expect(outs).toEqual([
-      'out', 'audio_l', 'audio_r',
-      // Phase-1 event gates — KILL, DOOR, GUN_p1..p4.
-      'evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4',
-    ]);
+    expect(outs).toEqual(['out', 'audio_l', 'audio_r']);
     const types = Object.fromEntries(doomDef.outputs.map((p) => [p.id, p.type]));
-    expect(types).toEqual({
-      out: 'video',
-      audio_l: 'audio',
-      audio_r: 'audio',
-      evt_kill: 'gate',
-      evt_door: 'gate',
-      evt_gun_p1: 'gate',
-      evt_gun_p2: 'gate',
-      evt_gun_p3: 'gate',
-      evt_gun_p4: 'gate',
-    });
-  });
-
-  it('Phase-1 event gates all declare type=gate', () => {
-    const gates = doomDef.outputs.filter((p) => p.id.startsWith('evt_'));
-    expect(gates.map((g) => g.id)).toEqual([
-      'evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4',
-    ]);
-    for (const g of gates) expect(g.type).toBe('gate');
+    expect(types).toEqual({ out: 'video', audio_l: 'audio', audio_r: 'audio' });
   });
 
   it('every per-slot cv-gate port has a matching synthetic param', () => {
@@ -136,38 +114,20 @@ function makeFakeGl(): WebGL2RenderingContext {
 
 interface FakeNode { __tag: string; connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }
 
-interface FakeConstantWrapper {
-  __tag: string;
-  connect: ReturnType<typeof vi.fn>;
-  disconnect: ReturnType<typeof vi.fn>;
-  offset: { setValueAtTime: ReturnType<typeof vi.fn> };
-  start: ReturnType<typeof vi.fn>;
-  stop: ReturnType<typeof vi.fn>;
-}
-
 function makeFakeAudioCtx(): {
   ctx: BaseAudioContext;
   createdSplitters: FakeNode[];
   createdGains: FakeNode[];
-  createdConstants: FakeNode[];
-  /** Same construction order as createdConstants — but exposes the WRAPPER
-   *  object the factory closed over (with the live `offset.setValueAtTime`
-   *  fake), so forcePulse() tests can assert pulses landed on the same CSN
-   *  identity the published audioSources entry references. */
-  constantWrappers: FakeConstantWrapper[];
   workletNode: FakeNode | null;
   workletReady: Promise<void>;
 } {
   const createdSplitters: FakeNode[] = [];
   const createdGains: FakeNode[] = [];
-  const createdConstants: FakeNode[] = [];
-  const constantWrappers: FakeConstantWrapper[] = [];
   let workletNode: FakeNode | null = null;
   let resolveWorklet: () => void = () => {};
   const workletReady = new Promise<void>((r) => { resolveWorklet = r; });
 
   const ctx = {
-    currentTime: 0,
     audioWorklet: {
       addModule: vi.fn().mockResolvedValue(undefined),
     },
@@ -180,18 +140,6 @@ function makeFakeAudioCtx(): {
       const n: FakeNode = { __tag: 'splitter', connect: vi.fn(), disconnect: vi.fn() };
       createdSplitters.push(n);
       return n;
-    },
-    createConstantSource: () => {
-      const n: FakeNode = { __tag: 'constant', connect: vi.fn(), disconnect: vi.fn() };
-      createdConstants.push(n);
-      const wrapper: FakeConstantWrapper = {
-        ...n,
-        offset: { setValueAtTime: vi.fn() },
-        start: vi.fn(),
-        stop: vi.fn(),
-      };
-      constantWrappers.push(wrapper);
-      return wrapper;
     },
   } as unknown as BaseAudioContext;
 
@@ -210,15 +158,7 @@ function makeFakeAudioCtx(): {
   };
   (globalThis as unknown as { AudioWorkletNode: unknown }).AudioWorkletNode = FakeAudioWorkletNode;
 
-  return {
-    ctx,
-    createdSplitters,
-    createdGains,
-    createdConstants,
-    constantWrappers,
-    get workletNode() { return workletNode; },
-    workletReady,
-  };
+  return { ctx, createdSplitters, createdGains, get workletNode() { return workletNode; }, workletReady };
 }
 
 describe('doomDef.factory — audio bridge contract', () => {
@@ -265,34 +205,6 @@ describe('doomDef.factory — audio bridge contract', () => {
     expect(splitter.connect).toHaveBeenNthCalledWith(2, rBefore!.node, 1);
   });
 
-  it('publishes 6 Phase-1 SP event-gate ConstantSourceNodes (KILL/DOOR/GUN_p1..p4) in audioSources', () => {
-    const gl = makeFakeGl();
-    const fake = makeFakeAudioCtx();
-    const ctx: VideoEngineContext = {
-      gl,
-      res: { width: 640, height: 360 },
-      compileFragment: () => ({}) as WebGLProgram,
-      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
-      drawFullscreenQuad: () => undefined,
-      audioCtx: fake.ctx as AudioContext,
-    };
-    const handle = doomDef.factory(ctx, { id: 'doom-evt', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never);
-    // 6 CSNs created (KILL + DOOR + 4 × GUN_pN). Identity-persistent — published
-    // to audioSources from t=0 so a cable wired before WASM init still sees the
-    // pulses.
-    expect(fake.createdConstants).toHaveLength(6);
-    const ids = ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4'];
-    for (const id of ids) {
-      const src = handle.audioSources?.get(id);
-      expect(src?.node, `expected ${id} in audioSources`).toBeDefined();
-    }
-    // All 6 are distinct nodes — each port resolves to its own CSN so a cable
-    // wired to evt_gun_p1 doesn't double-pulse from evt_gun_p2.
-    const nodes = ids.map((id) => handle.audioSources!.get(id)!.node);
-    const unique = new Set(nodes);
-    expect(unique.size).toBe(6);
-  });
-
   it('exposes setKeyboardInert (Bug 4 hard gate) — callable before WASM loads', () => {
     const gl = makeFakeGl();
     const ctx: VideoEngineContext = {
@@ -310,130 +222,5 @@ describe('doomDef.factory — audio bridge contract', () => {
     // NOT throw; it is re-applied to the runtime once it comes up.
     expect(() => extras!.setKeyboardInert!(true)).not.toThrow();
     expect(() => extras!.setKeyboardInert!(false)).not.toThrow();
-  });
-});
-
-// ---- Test hook: extras.forcePulse() -------------------------------------
-//
-// Locks in the deterministic-pulse hook the video→audio CV/gate e2e + composite
-// VRT specs depend on. DOOM's WASM event queue (kill / door / weapon-fire) is
-// stochastic + slow to spin up, so the spec drives the SAME `pulseGate` helper
-// `drainAndPulseEvents` uses — no WASM-side changes required, no e2e flake from
-// "did the marine kill anything yet?". The CSN identity is the same one
-// exposed via audioSources, so the in-engine bridge captures the right ref.
-describe('doomDef.factory — extras.forcePulse() test hook', () => {
-  function spawnWithFakeAudio() {
-    const gl = makeFakeGl();
-    const fake = makeFakeAudioCtx();
-    const ctx: VideoEngineContext = {
-      gl,
-      res: { width: 640, height: 360 },
-      compileFragment: () => ({}) as WebGLProgram,
-      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
-      drawFullscreenQuad: () => undefined,
-      audioCtx: fake.ctx as AudioContext,
-    };
-    const handle = doomDef.factory(
-      ctx,
-      { id: 'doom-force', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never,
-    );
-    return { handle, fake };
-  }
-
-  it('exposes forcePulse on the extras handle', () => {
-    const { handle } = spawnWithFakeAudio();
-    const extras = handle.read?.('extras') as { forcePulse?: (p: string) => void };
-    expect(typeof extras.forcePulse).toBe('function');
-  });
-
-  it('forcePulse(evt_kill) drives setValueAtTime on the same CSN exposed via audioSources.evt_kill', () => {
-    const { handle, fake } = spawnWithFakeAudio();
-    // 6 CSN wrappers in construction order: kill, door, gun_p1..p4. The
-    // factory closes over THESE wrapper objects + publishes them in
-    // audioSources, so this index is the same node the engine bridge
-    // sees.
-    const killCsn = fake.constantWrappers[0]!;
-    const audioSrc = handle.audioSources?.get('evt_kill');
-    expect(audioSrc?.node).toBe(killCsn as unknown as AudioNode);
-    killCsn.offset.setValueAtTime.mockClear();
-    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
-    extras.forcePulse('evt_kill');
-    // pulseGate fires offset=1 at t, offset=0 at t+10ms — 2 calls.
-    const calls = killCsn.offset.setValueAtTime.mock.calls;
-    expect(calls.length).toBe(2);
-    expect(calls[0]![0]).toBe(1);
-    expect(calls[1]![0]).toBe(0);
-    expect(calls[1]![1]).toBeCloseTo(calls[0]![1] + 0.01, 4);
-  });
-
-  it('forcePulse(evt_door) + (evt_gun_p1..p4) each drive their own CSN', () => {
-    const { handle, fake } = spawnWithFakeAudio();
-    const doorCsn = fake.constantWrappers[1]!;
-    const gun1    = fake.constantWrappers[2]!;
-    const gun4    = fake.constantWrappers[5]!;
-    for (const c of [doorCsn, gun1, gun4]) c.offset.setValueAtTime.mockClear();
-
-    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
-    extras.forcePulse('evt_door');
-    expect(doorCsn.offset.setValueAtTime).toHaveBeenCalledTimes(2);
-    expect(gun1.offset.setValueAtTime).toHaveBeenCalledTimes(0);
-
-    extras.forcePulse('evt_gun_p1');
-    expect(gun1.offset.setValueAtTime).toHaveBeenCalledTimes(2);
-    expect(gun4.offset.setValueAtTime).toHaveBeenCalledTimes(0);
-
-    extras.forcePulse('evt_gun_p4');
-    expect(gun4.offset.setValueAtTime).toHaveBeenCalledTimes(2);
-
-    // Distinct CSNs — each port resolves to its own node, no double-pulse.
-    expect(doorCsn).not.toBe(gun1);
-    expect(gun1).not.toBe(gun4);
-  });
-
-  it('forcePulse is a safe no-op when no AudioContext is attached', () => {
-    const gl = makeFakeGl();
-    const ctx: VideoEngineContext = {
-      gl,
-      res: { width: 640, height: 360 },
-      compileFragment: () => ({}) as WebGLProgram,
-      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
-      drawFullscreenQuad: () => undefined,
-      audioCtx: undefined,
-    };
-    const handle = doomDef.factory(
-      ctx,
-      { id: 'doom-noaudio', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never,
-    );
-    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
-    expect(() => extras.forcePulse('evt_kill')).not.toThrow();
-    expect(() => extras.forcePulse('evt_gun_p2')).not.toThrow();
-  });
-
-  it('forceHold(port, true) sets the same gate CSN to offset=1 without auto-fall-back', () => {
-    const { handle, fake } = spawnWithFakeAudio();
-    const killCsn = fake.constantWrappers[0]!;
-    killCsn.offset.setValueAtTime.mockClear();
-    const extras = handle.read?.('extras') as {
-      forceHold: (p: string, h: boolean) => void;
-    };
-    extras.forceHold('evt_kill', true);
-    // One setValueAtTime call with value=1 — no scheduled fall-back.
-    expect(killCsn.offset.setValueAtTime).toHaveBeenCalledTimes(1);
-    expect(killCsn.offset.setValueAtTime.mock.calls[0]![0]).toBe(1);
-  });
-
-  it('forceHold across all 6 gates lands on the correct CSN (KILL / DOOR / GUN_p1..p4)', () => {
-    const { handle, fake } = spawnWithFakeAudio();
-    const extras = handle.read?.('extras') as {
-      forceHold: (p: string, h: boolean) => void;
-    };
-    const ports = ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4'];
-    for (let i = 0; i < ports.length; i++) {
-      const csn = fake.constantWrappers[i]!;
-      csn.offset.setValueAtTime.mockClear();
-      extras.forceHold(ports[i]!, true);
-      expect(csn.offset.setValueAtTime, `${ports[i]} should hit constantWrappers[${i}]`).toHaveBeenCalledTimes(1);
-      expect(csn.offset.setValueAtTime.mock.calls[0]![0]).toBe(1);
-    }
   });
 });

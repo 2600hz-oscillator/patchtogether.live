@@ -247,9 +247,6 @@ export class DoomRuntime {
     this.pcmSampleCount = this.mod.ccall('dgpt_get_pcm_buffer_size', 'number', [], []);
     this.resX = this.mod.ccall('dgpt_get_resx', 'number', [], []);
     this.resY = this.mod.ccall('dgpt_get_resy', 'number', [], []);
-    // Phase-1 SP event-gate drain buffer (DGPT_EVT_RING_SIZE * sizeof(u32) =
-    // 1 KB). Allocated once + reused per drain to avoid per-tic alloc churn.
-    this.drainBufPtr = this.mod.ccall('malloc', 'number', ['number'], [256 * 4]);
     this.initialized = true;
   }
 
@@ -401,11 +398,6 @@ export class DoomRuntime {
   private pcmScratchPtr = 0;
   private pcmScratchFrames = 0;
 
-  /** Phase-1 SP event-gate drain buffer (256 u32 = 1 KB), preallocated once in
-   *  init() + freed in dispose(). The video factory drains this each surface
-   *  tick AFTER runTic and pulses 6 ConstantSourceNodes for KILL/DOOR/GUN_pN. */
-  private drainBufPtr: number | null = null;
-
   private ensurePcmScratch(frames: number): number {
     if (this.pcmScratchPtr !== 0 && this.pcmScratchFrames >= frames) {
       return this.pcmScratchPtr;
@@ -462,40 +454,6 @@ export class DoomRuntime {
   getPcmSampleRate(): number {
     if (!this.initialized) return 44100;
     return this.mod.ccall('dg_get_pcm_sample_rate', 'number', [], []);
-  }
-
-  // ---------------- Phase-1 SP event-gate drain ----------------
-  //
-  // The engine pushes packed u32 events into a C-side ring (KILL/DOOR/GUN with
-  // a 2-bit slot for GUN). The video factory calls this once per surface tick,
-  // AFTER runTic, and pulses 6 ConstantSourceNodes for the 6 gate output
-  // ports. This is OUT-OF-BAND with the netgame state checksum — pulsing CSNs
-  // from JS can't alter C-side deterministic state, so MP bit-exact lockstep
-  // is preserved.
-
-  /** Drain up to 256 events from the engine event ring. Returns an array of
-   *  {type, slot} decoded entries; empty array if no events or not yet
-   *  initialized. type matches the DGPT_EVT_* constants (KILL=1, DOOR=2,
-   *  GUN=3); slot is meaningful for GUN only (0..3). */
-  drainEvents(): { type: number; slot: number }[] {
-    if (!this.initialized || this.drainBufPtr === null) return [];
-    const count = this.mod.ccall(
-      'dgpt_drain_events',
-      'number',
-      ['number', 'number'],
-      [this.drainBufPtr, 256],
-    );
-    if (count <= 0) return [];
-    // Read u32 directly from HEAPU32 (re-derived per call: ALLOW_MEMORY_GROWTH
-    // means a prior grow may have swapped the backing buffer).
-    const start = this.drainBufPtr >>> 2;
-    const view = this.mod.HEAPU32.subarray(start, start + count);
-    const out: { type: number; slot: number }[] = new Array(count);
-    for (let i = 0; i < count; i++) {
-      const e = view[i]!;
-      out[i] = { type: e & 0xf, slot: (e >>> 4) & 0x3 };
-    }
-    return out;
   }
 
   // ---------------- Player-state introspection ----------------
@@ -845,12 +803,6 @@ export class DoomRuntime {
    *  memory when the JS-side references go away (module instance,
    *  HEAPU8 view, etc.). */
   dispose(): void {
-    // Free the Phase-1 event-drain buffer (1 KB). We hold it for the runtime's
-    // lifetime; release before flipping initialized so re-init re-allocates.
-    if (this.drainBufPtr !== null) {
-      try { this.mod.ccall('free', null, ['number'], [this.drainBufPtr]); } catch { /* */ }
-      this.drainBufPtr = null;
-    }
     this.initialized = false;
   }
 }

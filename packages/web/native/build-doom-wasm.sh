@@ -217,9 +217,6 @@ EXPORTS='[
   "_dgpt_local_ticcmd_at_angleturn",
   "_dgpt_local_ticcmd_at_buttons",
   "_dgpt_state_checksum",
-  "_dgpt_drain_events",
-  "_dgpt_evt_head_get",
-  "_dgpt_evt_tail_get",
   "_malloc",
   "_free"
 ]'

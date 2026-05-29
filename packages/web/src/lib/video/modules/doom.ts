@@ -281,16 +281,6 @@ export const doomDef: VideoModuleDef = {
     { id: 'out', type: 'video' },
     { id: 'audio_l', type: 'audio' },
     { id: 'audio_r', type: 'audio' },
-    // Phase-1 SP event gates. Each pulses HIGH for 10ms when its event
-    // fires inside the C engine (P_KillMobj / EV_DoDoor / EV_VerticalDoor /
-    // P_FireWeapon). Routed through audioSources as ConstantSourceNodes so
-    // the audio domain treats them as standard gate signals (1 = HIGH).
-    { id: 'evt_kill',   type: 'gate' },
-    { id: 'evt_door',   type: 'gate' },
-    { id: 'evt_gun_p1', type: 'gate' },
-    { id: 'evt_gun_p2', type: 'gate' },
-    { id: 'evt_gun_p3', type: 'gate' },
-    { id: 'evt_gun_p4', type: 'gate' },
   ],
   params: [
     { id: 'audioGain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
@@ -405,15 +395,6 @@ export const doomDef: VideoModuleDef = {
     let pcmWorklet: AudioWorkletNode | null = null;
     let pumpInterval: ReturnType<typeof setInterval> | null = null;
 
-    // Phase-1 SP event-gate sources. Six ConstantSourceNodes — KILL, DOOR,
-    // GUN_p1..p4 — held at 0 + pulsed to 1 for ~10ms on each event, mirroring
-    // the polyseqz/score emitClockPulse pattern. Persistent identity (same
-    // pattern as leftGain/rightGain) so the video→audio bridge captures the
-    // refs at addEdge time. Out-of-band with the netgame consistency digest.
-    let killGate: ConstantSourceNode | null = null;
-    let doorGate: ConstantSourceNode | null = null;
-    let gunGates: ConstantSourceNode[] = [];
-
     if (ctx.audioCtx) {
       const ac = ctx.audioCtx;
       leftGain = ac.createGain();
@@ -423,53 +404,7 @@ export const doomDef: VideoModuleDef = {
       audioSources.set('audio_l', { node: leftGain, output: 0 });
       audioSources.set('audio_r', { node: rightGain, output: 0 });
 
-      // Phase-1 event gates (KILL/DOOR/GUN_pN). One CSN per port, pinned at 0
-      // until pulsed. Started immediately so an early-arrival cable hears the
-      // gate the instant an event fires.
-      const t0 = ac.currentTime;
-      killGate = ac.createConstantSource();
-      killGate.offset.setValueAtTime(0, t0);
-      killGate.start();
-      doorGate = ac.createConstantSource();
-      doorGate.offset.setValueAtTime(0, t0);
-      doorGate.start();
-      gunGates = [0, 1, 2, 3].map(() => {
-        const c = ac.createConstantSource();
-        c.offset.setValueAtTime(0, t0);
-        c.start();
-        return c;
-      });
-      audioSources.set('evt_kill',   { node: killGate, output: 0 });
-      audioSources.set('evt_door',   { node: doorGate, output: 0 });
-      audioSources.set('evt_gun_p1', { node: gunGates[0]!, output: 0 });
-      audioSources.set('evt_gun_p2', { node: gunGates[1]!, output: 0 });
-      audioSources.set('evt_gun_p3', { node: gunGates[2]!, output: 0 });
-      audioSources.set('evt_gun_p4', { node: gunGates[3]!, output: 0 });
-
       void setupPcmWorklet(ac);
-    }
-
-    // 10ms pulse width — matches polyseqz/score emitClockPulse so downstream
-    // gate-edge detectors trigger reliably.
-    const EVT_PULSE_S = 0.01;
-    function pulseGate(src: ConstantSourceNode): void {
-      const ac = ctx.audioCtx;
-      if (!ac) return;
-      const t = ac.currentTime;
-      src.offset.setValueAtTime(1, t);
-      src.offset.setValueAtTime(0, t + EVT_PULSE_S);
-    }
-    function drainAndPulseEvents(): void {
-      if (!runtime || !ctx.audioCtx) return;
-      const evts = runtime.drainEvents();
-      for (const e of evts) {
-        if (e.type === 1 && killGate) pulseGate(killGate);
-        else if (e.type === 2 && doorGate) pulseGate(doorGate);
-        else if (e.type === 3) {
-          const g = gunGates[e.slot] ?? gunGates[0];
-          if (g) pulseGate(g);
-        }
-      }
     }
 
     async function setupPcmWorklet(ac: BaseAudioContext): Promise<void> {
@@ -609,10 +544,6 @@ export const doomDef: VideoModuleDef = {
           const msDelta = Math.max(1, Math.min(50, now - lastTicMs));
           lastTicMs = now;
           try { runtime.runTic(msDelta); } catch { /* */ }
-          // Phase-1 SP event gates: drain AFTER runTic so we see this tic's
-          // kills/doors/guns. Wrapped in try/catch — a drain failure must
-          // NEVER break the tick (the engine ran first).
-          try { drainAndPulseEvents(); } catch { /* */ }
           const fb = runtime.getFramebuffer();
           uploadFramebufferToTexture(fb);
         }
@@ -646,19 +577,6 @@ export const doomDef: VideoModuleDef = {
         }
         if (leftGain) try { leftGain.disconnect(); } catch { /* */ }
         if (rightGain) try { rightGain.disconnect(); } catch { /* */ }
-        // Phase-1: stop + disconnect the 6 event gate ConstantSourceNodes.
-        if (killGate) {
-          try { killGate.stop(); } catch { /* */ }
-          try { killGate.disconnect(); } catch { /* */ }
-        }
-        if (doorGate) {
-          try { doorGate.stop(); } catch { /* */ }
-          try { doorGate.disconnect(); } catch { /* */ }
-        }
-        for (const g of gunGates) {
-          try { g.stop(); } catch { /* */ }
-          try { g.disconnect(); } catch { /* */ }
-        }
         if (runtime) runtime.dispose();
         runtime = null;
       },
