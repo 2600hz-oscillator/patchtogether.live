@@ -256,6 +256,23 @@ describe('DoomRuntime — TS shim layer', () => {
     ]);
   });
 
+  // ESC + ENTER per-slot gates (2026-05-29) — menu open / select.
+  it('setKeyForCvGate translates esc → KEY_ESCAPE (27) and enter → KEY_ENTER (13)', () => {
+    rt.init(new Uint8Array([0]));
+    const before = stub.calls.length;
+    expect(rt.setKeyForCvGate('esc', true)).toBe(true);
+    expect(rt.setKeyForCvGate('enter', true)).toBe(true);
+    expect(rt.setKeyForCvGate('esc', false)).toBe(true);
+    expect(rt.setKeyForCvGate('enter', false)).toBe(true);
+    const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+    expect(calls).toEqual([
+      { name: 'dgpt_set_key', args: [27, 1] }, // KEY_ESCAPE
+      { name: 'dgpt_set_key', args: [13, 1] }, // KEY_ENTER
+      { name: 'dgpt_set_key', args: [27, 0] },
+      { name: 'dgpt_set_key', args: [13, 0] },
+    ]);
+  });
+
   // ── Bug 4: hard keyboard-inert gate (the runtime-boundary enforcement) ──
   describe('keyboard-inert gate (CV-patched ⇒ keyboard truly inert)', () => {
     it('drops keyboard-origin input while inert (no dgpt_set_key fires)', () => {

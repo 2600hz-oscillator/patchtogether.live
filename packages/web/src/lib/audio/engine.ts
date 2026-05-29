@@ -670,6 +670,11 @@ export class PatchEngine {
    *  Without re-resolution the bridge stays wired to the dead placeholder and
    *  the operator hears silence. Keyed by edge id. */
   private audioBridgeEdges = new Map<string, Edge>();
+  /** Edges that became SAME-DOMAIN video→video CV/gate bridges (DOOM's evt_kill
+   *  → SCOREBOARD.score, etc.). Like cvBridgeEdgeIds: the edge is owned by the
+   *  bridge — neither end's edges Map sees it. Bookkept so removeEdge can
+   *  symmetrically tear down. */
+  private sameDomainVideoCvBridgeEdgeIds = new Set<string>();
 
   registerDomain(engine: DomainEngine): void {
     this.domains.set(engine.domain, engine);
@@ -832,6 +837,28 @@ export class PatchEngine {
       this.addCrossDomainAudioBridge(edge);
       return;
     }
+    // SAME-DOMAIN video CV/gate bridge (2026-05-29). A video module emitting
+    // a CV/gate via `audioSources` (DOOM's evt_kill / evt_door / evt_gun_*,
+    // NIBBLES's length_cv etc.) wired to ANOTHER video module's CV input
+    // (SCOREBOARD.score, 4PLEXVID.gate1..) used to fall through to plain
+    // single-domain dispatch, which puts it into the VideoEngine's edges
+    // Map — only used for texture lookup. Same-domain CV/gate then never
+    // reached the downstream setParam call, so SCOREBOARD never incremented
+    // when patched off DOOM's KILL gate. We route it through the SAME
+    // cross-domain CV bridge path used by audio→video — both endpoints live
+    // on the AudioContext graph (the source via audioSources, the analyser
+    // owned by the audio context), so the analyser sample-and-hold reading
+    // the AudioNode each frame works regardless of whether the source's
+    // declaring module is "video" or "audio".
+    if (
+      targetDomain !== undefined
+      && sourceDomain === 'video'
+      && targetDomain === 'video'
+      && (edge.sourceType === 'cv' || edge.sourceType === 'gate')
+    ) {
+      this.addSameDomainVideoCvBridge(edge);
+      return;
+    }
     const engine = this.getDomain(sourceDomain);
     engine.addEdge(edge);
   }
@@ -847,6 +874,10 @@ export class PatchEngine {
     }
     if (this.audioBridgeEdgeIds.has(edge.id)) {
       this.removeCrossDomainAudioBridge(edge);
+      return;
+    }
+    if (this.sameDomainVideoCvBridgeEdgeIds.has(edge.id)) {
+      this.removeSameDomainVideoCvBridge(edge);
       return;
     }
     const engine = this.getDomain(sourceDomain);
@@ -1061,6 +1092,82 @@ export class PatchEngine {
     }
   }
 
+  /**
+   * Establish a SAME-DOMAIN video → video CV/gate bridge (DOOM.evt_kill →
+   * SCOREBOARD.score, etc.). The source video module publishes the gate as
+   * an AudioNode via its audioSources map; the target video module declares
+   * the input as a CV port whose paramTarget routes through setParam. We
+   * insert an AnalyserNode between them (audioCtx-owned) and re-use the
+   * VideoEngine's own addCvBridge facility to sample one value per frame
+   * into the target's setParam — the same path audio→video CV uses.
+   *
+   * Why this lives in the cross-domain PatchEngine rather than VideoEngine:
+   * the analyser needs the AudioContext (owned by AudioEngine), and the
+   * source AudioNode resolution goes through the same `getAudioSource`
+   * lookup audio→video uses. Keeping the wiring here means VideoEngine
+   * stays AudioContext-agnostic.
+   *
+   * Failure modes (mirror addCrossDomainCvBridge):
+   *  - source AudioNode not yet materialized: mark id so removeEdge knows
+   *    to skip the placeholder; subsequent reconciles will re-call addEdge.
+   *  - VideoEngine lacks getAudioSource or addCvBridge: fall through to
+   *    standard same-domain dispatch (the edge sits in VideoEngine.edges
+   *    and does nothing for CV — back-compat for older tests).
+   *  - No AudioContext present: skip — without an audio context there's no
+   *    analyser, and the test scenarios that lack one don't exercise CV
+   *    bridges anyway.
+   */
+  private addSameDomainVideoCvBridge(edge: Edge): void {
+    const videoEngine = this.domains.get('video');
+    const audioEngine = this.domains.get('audio') as AudioEngine | undefined;
+    if (!videoEngine) return;
+    const ve = videoEngine as DomainEngine & {
+      getAudioSource?: (nodeId: string, portId: string) =>
+        | { node: AudioNode; output: number } | null;
+      addCvBridge?: (
+        edgeId: string,
+        analyser: AnalyserNode,
+        targetNodeId: string,
+        targetParamId: string,
+        teardown: () => void,
+      ) => void;
+    };
+    if (
+      typeof ve.getAudioSource !== 'function'
+      || typeof ve.addCvBridge !== 'function'
+      || !audioEngine
+    ) {
+      // No bridge facility available — fall back to plain video addEdge.
+      videoEngine.addEdge(edge);
+      return;
+    }
+    const src = ve.getAudioSource(edge.source.nodeId, edge.source.portId);
+    if (!src) {
+      // Source AudioNode not yet materialized. Mark the id so a later
+      // reconcile can clean up if needed; nothing to wire yet.
+      this.sameDomainVideoCvBridgeEdgeIds.add(edge.id);
+      return;
+    }
+    const analyser = audioEngine.ctx.createAnalyser();
+    analyser.fftSize = 32;
+    analyser.smoothingTimeConstant = 0;
+    src.node.connect(analyser, src.output);
+    const teardown = () => {
+      try { src.node.disconnect(analyser, src.output); } catch { /* */ }
+      try { analyser.disconnect(); } catch { /* */ }
+    };
+    ve.addCvBridge!(edge.id, analyser, edge.target.nodeId, edge.target.portId, teardown);
+    this.sameDomainVideoCvBridgeEdgeIds.add(edge.id);
+  }
+
+  private removeSameDomainVideoCvBridge(edge: Edge): void {
+    this.sameDomainVideoCvBridgeEdgeIds.delete(edge.id);
+    const videoEngine = this.domains.get('video');
+    if (!videoEngine) return;
+    const ve = videoEngine as DomainEngine & { removeCvBridge?: (id: string) => void };
+    if (typeof ve.removeCvBridge === 'function') ve.removeCvBridge!(edge.id);
+  }
+
   setParam(node: ModuleNode, paramId: string, value: number): void {
     const engine = this.getDomain(node.domain);
     engine.setParam(node.id, paramId, value);
@@ -1088,6 +1195,7 @@ export class PatchEngine {
     this.cvBridgeEdgeIds.clear();
     this.videoTextureBridgeEdgeIds.clear();
     this.audioBridgeEdgeIds.clear();
+    this.sameDomainVideoCvBridgeEdgeIds.clear();
     for (const teardown of this.audioBridgeTeardowns.values()) {
       try { teardown(); } catch { /* */ }
     }

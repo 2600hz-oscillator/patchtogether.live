@@ -15,8 +15,9 @@
 // The engine here just exposes:
 //   - the GL surface that displays the 640×400 BGRA framebuffer (with
 //     aspect-correct letterboxing into the engine's 640×360 FBO);
-//   - the 7 CV-gate inputs (w/a/s/d/space/ctrl/alt) edge-detected into
-//     dgpt_set_key calls on the runtime;
+//   - the 9 CV-gate inputs (up/down/left/right/space/ctrl/alt/esc/enter)
+//     edge-detected into dgpt_set_key calls on the runtime, replicated
+//     across 4 per-slot groups (p1..p4) — 36 inputs total;
 //   - the stereo audio outputs (audio_l, audio_r) routed through the
 //     new VideoNodeHandle.audioSources cross-domain bridge to feed the
 //     audio graph (silent until slice 8 lands).
@@ -26,9 +27,11 @@
 // of PICTUREBOX's factory.
 //
 // Inputs:
-//   The 7 control gates (w/a/s/d/space/ctrl/alt) are declared on the def's
-//   `inputs` array (built dynamically); rising edges enqueue into doomgeneric's
-//   key queue. Plus any unpatched stereo audio CV bridges declared per slice.
+//   The 9 control gates (up/down/left/right/space/ctrl/alt/esc/enter) are
+//   replicated across 4 per-slot groups (p1..p4 = 36 inputs total), declared
+//   on the def's `inputs` array (built dynamically); rising edges enqueue into
+//   doomgeneric's key queue. Plus any unpatched stereo audio CV bridges
+//   declared per slice.
 //
 // Outputs:
 //   out (video): the 640×400 BGRA framebuffer (aspect-correct letterboxed into 640×360).
@@ -825,8 +828,21 @@ export const doomDef: VideoModuleDef = {
           if (!parsed) return;
           const ev = detectEdge(state, value);
           if (!ev || !runtime) return;
-          // Own-slot-only: ignore CV for any slot this peer doesn't drive.
-          if (ownSlot === null || parsed.slot !== ownSlot) return;
+          // Own-slot-only routing: in MP (own slot known) CV for any OTHER slot
+          // is ignored locally (deterministic lockstep-safe rule, #353).
+          //
+          // SINGLE-PLAYER / UNJOINED (ownSlot === null): there is no MP session,
+          // so there's also no "other slot" concern — the local viewer IS the
+          // game. Accept the P1 group only (the SP marine is consoleplayer 0),
+          // and ignore p2..p4 CV so wiring four LFOs into p1_up..p4_up doesn't
+          // quadruple-drive the same key. This is the SP CV-drives-player fix:
+          // pre-fix the null guard dropped every CV write in SP, so patching
+          // GAMEPAD or an LFO into DOOM did nothing.
+          if (ownSlot === null) {
+            if (parsed.slot !== 0) return;
+          } else if (parsed.slot !== ownSlot) {
+            return;
+          }
           runtime.setKeyForCvGate(parsed.base, ev.pressed);
         }
       },

@@ -76,6 +76,21 @@
   }));
   const inputs: PortDescriptor[] = [];
 
+  // Button-LED indicator labels mirror the PORT labels from GAMEPAD_OUTPUTS
+  // so what you see on the button row (⬆⬇⬅⮕ for d-pad, LB/RB/A/B/X/Y for
+  // face/shoulder, STA/SEL for start/back) matches what you see on the patch
+  // jack labels. Pre-fix the LED row hard-coded uppercase ids (LB RB A B X Y
+  // DU DD DL DR START BACK) while the output ports for d-pad rendered the
+  // U+2B0x chevron family — that mismatch is the bug #1 the user reported.
+  // Ordered to match the original 12-button grid: shoulders + face + d-pad +
+  // start/back. Reading GAMEPAD_OUTPUTS so a future label edit in the engine
+  // def auto-propagates here.
+  const BUTTON_LED_IDS = ['lb','rb','a','b','x','y','du','dd','dl','dr','start','back'] as const;
+  const buttonLeds: { id: string; label: string }[] = BUTTON_LED_IDS.map((bid) => {
+    const out = GAMEPAD_OUTPUTS.find((o) => o.id === bid);
+    return { id: bid, label: out?.label ?? bid.toUpperCase() };
+  });
+
   // Stick-pad rendering: live values → dot position in a 64×64 box.
   const PAD_PX = 64;
   function dotX(v: number): number { return ((v + 1) / 2) * PAD_PX; }
@@ -137,8 +152,8 @@
       </div>
 
       <div class="buttons">
-        {#each ['lb','rb','a','b','x','y','du','dd','dl','dr','start','back'] as btn (btn)}
-          <div class="btn-led" class:on={(snapshot.values[btn] ?? 0) >= 0.5}>{btn.toUpperCase()}</div>
+        {#each buttonLeds as btn (btn.id)}
+          <div class="btn-led" class:on={(snapshot.values[btn.id] ?? 0) >= 0.5}>{btn.label}</div>
         {/each}
       </div>
 

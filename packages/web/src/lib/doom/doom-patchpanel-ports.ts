@@ -21,8 +21,10 @@
 import { CV_GATE_PORT_IDS, cvGatePortIdForSlot, DOOM_MP_SLOTS, type CvGatePortId } from '$lib/doom/doomkeys';
 import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
 
-/** Verbose labels for the 7 base gates — mirrors the historical inline glyphs
- *  (↑↓←→) for the cardinals, full-word for the action keys. */
+/** Verbose labels for the 9 base gates — mirrors the historical inline glyphs
+ *  (↑↓←→) for the cardinals, full-word for the action keys. ESC / ENTER added
+ *  2026-05-29 so the in-game pause menu (ESCAPE) + select (ENTER) can be
+ *  driven via CV. */
 export const DOOM_BASE_GATE_LABELS: Record<CvGatePortId, string> = {
   up: '↑ UP',
   down: '↓ DOWN',
@@ -31,6 +33,8 @@ export const DOOM_BASE_GATE_LABELS: Record<CvGatePortId, string> = {
   space: 'SPACE (USE)',
   ctrl: 'CTRL (FIRE)',
   alt: 'ALT (STRAFE)',
+  esc: 'ESC (MENU)',
+  enter: 'ENTER (SELECT)',
 };
 
 /** Output port descriptors — flat list rendered in the panel's right column.
