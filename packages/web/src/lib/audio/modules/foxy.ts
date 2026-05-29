@@ -84,6 +84,14 @@
 //   out_l / out_r (audio): stereo WAVECEL output.
 //   scope_out (mono-video): scope-style waveform trace.
 //   wave3d_out (video): 3D wavetable surface render (animates as the rasters evolve).
+//   combined_out (video): the active GEN-mode visualization — same content as
+//     the on-card XYZ window. Patchable to any video destination so FOXY's
+//     "internal world" (XYZ field OR 3D Shape Gen scene) can be routed to
+//     VIDEO OUT / BENTBOX / RUTTETRA / etc. Mode-aware:
+//       gen_mode = 0 (XYZ)          → drawFoxyXyz(field)
+//       gen_mode = 1 (3D Shape Gen) → drawFoxyShapes(shapes)
+//     Reuses the EXACT renderers the card uses (foxy-draw.ts /
+//     foxy-shapes-draw.ts), so the patched-out video matches the card view.
 //
 // Params (WAVECEL surface + per-source SWOLEVCO + XYZ window):
 //   tune (linear -36..36 st) / fine (linear -100..100 ¢) / morph (linear 0..1) /
@@ -102,6 +110,8 @@ import { buildFoldCurve } from '$lib/audio/fold-curve';
 import { symmetryGains, tuneFineToHz } from './swolevco';
 import { RasterPainter, type RasterizeDrawParams } from './rasterize-draw';
 import { drawWave3D, drawWaveScope } from './wavecel-draw';
+import { drawFoxyXyz } from './foxy-draw';
+import { drawFoxyShapes } from './foxy-shapes-draw';
 import {
   FOXY_FIELD_SIZE,
   FOXY_WT_FRAMES,
@@ -132,6 +142,66 @@ import {
 export const FOXY_GEN_MODE_NAMES = ['XYZ', '3D Shape Gen'] as const;
 export const FOXY_GEN_MODE_COUNT = FOXY_GEN_MODE_NAMES.length;
 export const FOXY_GEN_MODE_MAX = FOXY_GEN_MODE_COUNT - 1;
+
+/** JSON payload shape emitted by the "EXPORT TABLE" button (visible only
+ *  when FREEZE TABLE is on). A portable snapshot of the frozen wavetable:
+ *  64 frames × 256 samples in [-1, 1], plus the source mode + a generator
+ *  + timestamp tag so a future "load wavetable" path can identify it.
+ *  Values arrive as plain number[][] (not Float32Array) so JSON.stringify
+ *  round-trips without TypedArray serializer plumbing. */
+export interface FoxyWavetableExport {
+  generator: 'FOXY';
+  /** The FOXY generator path that produced this table — 'XYZ' or
+   *  '3D Shape Gen' — read at export time from `read('genMode')`. */
+  mode: (typeof FOXY_GEN_MODE_NAMES)[number];
+  frames: number;
+  samples: number;
+  createdAt: string;
+  data: number[][];
+}
+
+/** Build the JSON-export payload for the LIVE WAVETABLE. Pure helper so the
+ *  card can call it on click without owning the JSON shape, AND so the unit
+ *  test can pin the format without a real DOM. `mode` defaults to 'XYZ' for
+ *  the test path; the card passes the live FOXY_GEN_MODE_NAMES entry. */
+export function buildWavetableExport(
+  wtFrames: ReadonlyArray<Float32Array | number[]>,
+  mode: (typeof FOXY_GEN_MODE_NAMES)[number] = 'XYZ',
+  now: Date = new Date(),
+): FoxyWavetableExport {
+  const data: number[][] = wtFrames.map((f) => {
+    const out = new Array<number>(f.length);
+    for (let i = 0; i < f.length; i++) {
+      // Clamp into [-1, 1] — the audio worklet's safe range. Bridge math
+      // can technically push slightly past 1 in degenerate inputs; this
+      // makes the exported file a guaranteed-valid wavetable file.
+      const v = f[i] ?? 0;
+      out[i] = v > 1 ? 1 : v < -1 ? -1 : v;
+    }
+    return out;
+  });
+  return {
+    generator: 'FOXY',
+    mode,
+    frames: data.length,
+    samples: data[0]?.length ?? 0,
+    createdAt: now.toISOString(),
+    data,
+  };
+}
+
+/** Filename for the EXPORT TABLE download. Pure helper so the card can
+ *  call it without inlining a date-formatter; testable in isolation. */
+export function buildWavetableExportFilename(now: Date = new Date()): string {
+  const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
+  const y = now.getFullYear();
+  const mo = pad(now.getMonth() + 1);
+  const d = pad(now.getDate());
+  const h = pad(now.getHours());
+  const mi = pad(now.getMinutes());
+  const s = pad(now.getSeconds());
+  return `foxy-wavetable-${y}${mo}${d}-${h}${mi}${s}.json`;
+}
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -193,10 +263,13 @@ export const foxyDef: AudioModuleDef = {
   ],
   outputs: [
     // ── WAVECEL IO (verbatim) ──
-    { id: 'out_l',      type: 'audio' },
-    { id: 'out_r',      type: 'audio' },
-    { id: 'scope_out',  type: 'mono-video' },
-    { id: 'wave3d_out', type: 'video' },
+    { id: 'out_l',        type: 'audio' },
+    { id: 'out_r',        type: 'audio' },
+    { id: 'scope_out',    type: 'mono-video' },
+    { id: 'wave3d_out',   type: 'video' },
+    // The active GEN-mode visualization rendered as a patchable video
+    // signal — same content as the on-card XYZ window (mode-aware).
+    { id: 'combined_out', type: 'video' },
   ],
   params: [
     // ── WAVECEL controls (verbatim ids/ranges) ──
@@ -628,6 +701,18 @@ export const foxyDef: AudioModuleDef = {
         painterC.paint(swoleC.buf.subarray(swoleC.buf.length - countC), rasterParamsC);
       }
 
+      // FREEZE TABLE → halt the whole downstream pipeline. With FrT on, the
+      // user expects EVERY visible bridge output to hold its last state:
+      //   • wtFrames (LIVE WAVETABLE display + worklet table)
+      //   • field    (XYZ scope canvas under gen_mode = 0)
+      //   • shapes   (XYZ scope canvas under gen_mode = 1)
+      // Pre-fix, only the worklet post + wtFrames were gated; field/shapes
+      // kept recomputing each tick so the XYZ scope visibly animated even
+      // though the audio was frozen. Early-return AFTER the raster paint
+      // (rasters keep evolving so the user can see what's queued up for
+      // when they unfreeze; per-raster FrA/FrB/FrC still hold their axis).
+      if (freezeT) return;
+
       // 2. MODE-AWARE: build the wavetable.
       //    gen_mode = 0 (XYZ, default): v4 volumetric construction.
       //      A+B+C → Box → xyz-warped scanline field → fieldToWavetable.
@@ -661,18 +746,13 @@ export const foxyDef: AudioModuleDef = {
         shapes = [];
       }
 
-      // 3. Change-detect + post to WAVECEL.
-      //    When FREEZE TABLE is on, the field/shapes can keep updating
-      //    (so the on-card display still animates) but we don't push the
-      //    new table to the audio worklet — it keeps reading the
-      //    last-pushed table.
-      if (!freezeT) {
-        const sig = wavetableSignature(plain);
-        if (sig !== wtSignature) {
-          wtSignature = sig;
-          wtFrames = plain.map((f) => new Float32Array(f));
-          wave.port.postMessage({ type: 'loadWavetable', frames: plain });
-        }
+      // 3. Change-detect + post to WAVECEL. (freezeT was already handled
+      //    above with an early-return.)
+      const sig = wavetableSignature(plain);
+      if (sig !== wtSignature) {
+        wtSignature = sig;
+        wtFrames = plain.map((f) => new Float32Array(f));
+        wave.port.postMessage({ type: 'loadWavetable', frames: plain });
       }
     }
 
@@ -692,6 +772,33 @@ export const foxyDef: AudioModuleDef = {
       if (!c2d || wtFrames.length === 0) return;
       drawWave3D(c2d, wtFrames, canvas.width, canvas.height, { activeFrame: readActiveFrame() });
     }
+    /** combined_out — patchable mirror of the on-card XYZ window. Mode-aware:
+     *
+     *    gen_mode = 0 (XYZ)          → drawFoxyXyz(field, …) — the v4.1
+     *                                  XYZ height-field scanlines.
+     *    gen_mode = 1 (3D Shape Gen) → drawFoxyShapes(shapes, …) — the
+     *                                  vaporwave 3D primitives scene.
+     *
+     * Reuses the existing card renderers verbatim (foxy-draw.ts /
+     * foxy-shapes-draw.ts) so the patched-out video matches the card view
+     * byte-for-byte at the same width/height. The bridgeTick() call mirrors
+     * how the card drives `read('tick')` each rAF — it keeps the field /
+     * shapes fresh even when no card is open. */
+    function drawCombinedFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
+      bridgeTick();
+      const c2d = canvas.getContext('2d') as
+        | CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+      if (!c2d) return;
+      if (genMode >= 0.5) {
+        // 3D Shape Gen — empty list still paints box + floor (see
+        // drawFoxyShapes); no early-return needed.
+        drawFoxyShapes(c2d, shapes, canvas.width, canvas.height);
+      } else {
+        // XYZ — drawFoxyXyz clears + paints the BG even when `field` is
+        // empty, so it's safe to call unconditionally.
+        drawFoxyXyz(c2d, field, canvas.width, canvas.height);
+      }
+    }
 
     return {
       domain: 'audio',
@@ -707,8 +814,9 @@ export const foxyDef: AudioModuleDef = {
         ['out_r', { node: wave, output: 1 }],
       ]),
       videoSources: new Map([
-        ['scope_out',  { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawScopeFrame }],
-        ['wave3d_out', { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawWave3DFrame }],
+        ['scope_out',    { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawScopeFrame }],
+        ['wave3d_out',   { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawWave3DFrame }],
+        ['combined_out', { analyser: vizAnalyser, sampleRate: ctx.sampleRate, drawFrame: drawCombinedFrame }],
       ]),
       setParam(paramId, value) {
         switch (paramId) {

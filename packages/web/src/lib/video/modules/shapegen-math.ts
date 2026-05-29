@@ -63,6 +63,12 @@ export const FOXY_3D_SMIN_K = 8;
 /** Below this raster-A luma variance we treat A as flat and emit NO shapes. */
 export const FOXY_3D_FLAT_VARIANCE_EPS = 1e-6;
 
+/** Upper clamp on the final per-primitive radius after A×B modulation.
+ *  At factor=2.0 the largest C-driven baseline (0.05 + 1*0.25 = 0.3)
+ *  reaches 0.6, which is the max we tolerate inside the unit box before
+ *  primitives start poking outside it. */
+export const FOXY_3D_MAX_RADIUS = 0.6;
+
 // ── Step 1: shape generation ──────────────────────────────────────────────
 
 /** A single feature-grid cell. */
@@ -189,8 +195,12 @@ export function generateShapes(
     const x = xn * 2 - 1;
     const y = -(yn * 2 - 1);
 
+    // Look up A + B + C at the matching raster pixel (cell center). A is
+    // sampled at the per-pixel location (not the grid-cell mean) so the
+    // size factor reflects the EXACT peak's A intensity, matching B/C.
     const sx = Math.max(0, Math.min(srcW - 1, Math.round(xn * (srcW - 1))));
     const sy = Math.max(0, Math.min(srcH - 1, Math.round(yn * (srcH - 1))));
+    const aL = lumaAt(rgbaA, srcW, srcH, sx, sy);
     const bL = lumaAt(rgbaB, srcW, srcH, sx, sy);
     const cL = lumaAt(rgbaC, srcW, srcH, sx, sy);
 
@@ -198,7 +208,14 @@ export function generateShapes(
 
     const tIdx = Math.max(0, Math.min(FOXY_SHAPE_TYPES.length - 1, Math.floor(cL * FOXY_SHAPE_TYPES.length)));
     const type = FOXY_SHAPE_TYPES[tIdx]!;
-    const radius = 0.05 + cL * 0.25;
+    // C → baseline radius in [0.05, 0.3]. A × B → per-primitive size factor
+    // in [0.5, 2.0]. Multiplies the C-baseline so bright-on-both peaks puff
+    // up, dim peaks shrink. Clamp to FOXY_3D_MAX_RADIUS so nothing escapes
+    // the unit bounding box.
+    const rBase = 0.05 + cL * 0.25;
+    const factor = abSizeFactor(aL, bL);
+    let radius = rBase * factor;
+    if (radius > FOXY_3D_MAX_RADIUS) radius = FOXY_3D_MAX_RADIUS;
     const hue = cL;
     out.push({ type, pos: { x, y, z }, radius, hue });
   }
@@ -313,19 +330,22 @@ export function scanShapesToVoxels(
 }
 
 /**
- * abSizeFactor — scalar size multiplier for a shape derived from raster
- * A × B luma at the shape's source-pixel center. SHAPEGEN's size knob is
- * applied AFTER generateShapes() multiplies through (the knob's final
- * radius = baseline * abFactor * size, clamped at 0.6), but generateShapes
- * itself doesn't expose that hook today — it bakes the C-derived radius
- * directly into the returned Shape list. This helper is exported so
- * SHAPEGEN can compute the per-shape `radius *= factor` adjustment
- * without re-running the whole pipeline. Range: [0.5, 1.5] — A×B luma in
- * [0, 1] sweeps a ±50% modulation around unity.
+ * Per-primitive size modulation: `factor = 0.5 + 1.5 * (lumaA * lumaB)`.
+ *
+ * Maps the product `lumaA * lumaB ∈ [0, 1]` to a multiplicative factor in
+ * `[0.5, 2.0]` — applied on TOP of the existing C-derived baseline radius
+ * (`0.05 + c*0.25`). The intent: shapes where BOTH A and B are bright at
+ * the peak get scaled up (toward 2×); shapes where either is dim get
+ * scaled down (toward 0.5×). Per-primitive — each shape uses its OWN A,B
+ * sample at its own peak, no global renormalization.
+ *
+ * Inputs are clamped into [0, 1] so out-of-range values from upstream
+ * (e.g. SHAPEGEN's GL reads) can't push the factor outside [0.5, 2.0].
+ *
+ * Pure + deterministic.
  */
 export function abSizeFactor(aLuma: number, bLuma: number): number {
   const a = Math.max(0, Math.min(1, aLuma));
   const b = Math.max(0, Math.min(1, bLuma));
-  // Centered at 1.0; A * B (in [0,1]) → ±0.5 swing.
-  return 0.5 + a * b;
+  return 0.5 + 1.5 * (a * b);
 }

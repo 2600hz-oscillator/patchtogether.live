@@ -363,6 +363,10 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // run on linux CI — WebGL ribbon AA + CRT post differs sub-thresholdly
   // across GPU drivers, so we capture darwin here and defer linux.
   'linux/wavesculpt',
+  // WAVVIZ (wavetable preset dropdown added): the card grew a PRESET
+  // dropdown so the darwin baseline was regen'd in this PR. Linux baseline
+  // pending a `task vrt:update` run on linux CI.
+  'linux/wavviz',
   // BACKDRAFT (video feedback generator): darwin baseline captured on this
   // machine via VRT_SCENES (SHAPES sources → frozen feedback tunnel/spiral,
   // params.freeze=1 holds the accumulator). The spatial-transform feedback

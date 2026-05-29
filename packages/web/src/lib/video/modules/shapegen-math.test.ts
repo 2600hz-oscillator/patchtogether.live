@@ -59,29 +59,29 @@ describe('shapegen-math — import-pin from new location', () => {
       expect(s.pos.x).toBeGreaterThanOrEqual(-1);
       expect(s.pos.x).toBeLessThanOrEqual(1);
       expect(s.radius).toBeGreaterThan(0);
-      // Baseline radius lives in [0.05, 0.3] per the design header.
-      expect(s.radius).toBeLessThanOrEqual(0.31);
+      // Per the design header: baseline ∈ [0.05, 0.3], A×B factor ∈
+      // [0.5, 2.0], final clamped at FOXY_3D_MAX_RADIUS = 0.6.
+      expect(s.radius).toBeLessThanOrEqual(0.6);
     }
   });
 });
 
 describe('shapegen-math — abSizeFactor', () => {
-  it('centers at 1.0 when A*B = 0.5 (so ±50% modulation around unity)', () => {
-    // a = 0.5, b = 1.0 → factor = 0.5 + 0.5*1.0 = 1.0
-    expect(abSizeFactor(0.5, 1.0)).toBeCloseTo(1.0, 6);
-    // a = 1.0, b = 0.5 → same
-    expect(abSizeFactor(1.0, 0.5)).toBeCloseTo(1.0, 6);
+  it('A×B = 1/3 sits at factor=1.0 (the neutral point of the ±swing)', () => {
+    // a = 1, b = 1/3 → factor = 0.5 + 1.5 * (1 * 1/3) = 1.0
+    expect(abSizeFactor(1.0, 1 / 3)).toBeCloseTo(1.0, 6);
+    expect(abSizeFactor(1 / 3, 1.0)).toBeCloseTo(1.0, 6);
   });
 
-  it('reaches ~0.5 at A=B=0 (minimum) and ~1.5 at A=B=1 (maximum)', () => {
+  it('reaches 0.5 at A=B=0 (minimum) and 2.0 at A=B=1 (maximum)', () => {
     expect(abSizeFactor(0, 0)).toBeCloseTo(0.5, 6);
-    expect(abSizeFactor(1, 1)).toBeCloseTo(1.5, 6);
+    expect(abSizeFactor(1, 1)).toBeCloseTo(2.0, 6);
   });
 
   it('clamps out-of-range inputs to [0, 1]', () => {
     expect(abSizeFactor(-1, 0.5)).toBeCloseTo(0.5, 6);  // a → 0
-    expect(abSizeFactor(0.5, 2)).toBeCloseTo(1.0, 6);   // b → 1
-    expect(abSizeFactor(5, 5)).toBeCloseTo(1.5, 6);     // both → 1
+    expect(abSizeFactor(0.5, 2)).toBeCloseTo(1.25, 6);  // b → 1 → 0.5 + 1.5*0.5 = 1.25
+    expect(abSizeFactor(5, 5)).toBeCloseTo(2.0, 6);     // both → 1
   });
 });
 

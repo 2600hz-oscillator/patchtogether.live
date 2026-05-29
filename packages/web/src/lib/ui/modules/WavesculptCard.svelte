@@ -63,6 +63,10 @@
     framesToPlain,
   } from '$lib/audio/wavetable-factory-tables';
   import { parseE352Wav } from '$lib/audio/wavetable-parser';
+  import {
+    WAVETABLE_PRESETS,
+    loadWavetablePreset,
+  } from '$lib/audio/wavetable-presets';
   import type { VideoEngine } from '$lib/video/engine';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -268,6 +272,45 @@
   }
   let uploadStatus = $state<Record<number, string | null>>({});
   let uploadError = $state<Record<number, string | null>>({});
+
+  // Per-osc baked-in preset loader. Decision: ONE dropdown PER OSC (×4)
+  // rather than a single shared dropdown plus an osc-select. The card's
+  // per-osc strip already groups every per-osc control (wav-select, knob row,
+  // ADSR, thickness), so the preset picker reads cleanly when it lives
+  // alongside its sibling controls — the same hand reaching for an osc-3
+  // upload button now reaches for the osc-3 preset picker right next to it.
+  // Same plumbing as the file-upload path: writes node.data.osc{i}.* so the
+  // wavesculpt factory's poll loop posts loadWavetable (no worklet edits).
+  let presetSelection = $state<Record<number, string>>({});
+  async function onPresetChange(oscIdx: number, ev: Event): Promise<void> {
+    const sel = ev.target as HTMLSelectElement;
+    const presetId = sel.value;
+    if (!presetId) return;
+    const preset = WAVETABLE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    uploadError[oscIdx] = null;
+    uploadStatus[oscIdx] = `loading ${preset.label}...`;
+    try {
+      const parsed = await loadWavetablePreset(preset.url);
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      const d = target.data as WavesculptData;
+      const key = `osc${oscIdx + 1}` as keyof WavesculptData;
+      if (!d[key]) (d as Record<string, unknown>)[key as string] = {};
+      const od = d[key] as WavesculptOscData;
+      od.wavetableSource = 'user';
+      od.wavetableFrames = parsed.frames;
+      od.wavetableLabel = preset.label;
+      uploadStatus[oscIdx] = `loaded ${parsed.frames.length} frames`;
+    } catch (err) {
+      uploadError[oscIdx] = err instanceof Error ? err.message : String(err);
+      uploadStatus[oscIdx] = null;
+    } finally {
+      presetSelection[oscIdx] = '';
+    }
+  }
+
   async function onWavFileChange(oscIdx: number, ev: Event): Promise<void> {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -2409,6 +2452,19 @@ void main() {
                   />
                 </label>
               {/if}
+            </div>
+            <div class="wt-row preset-row">
+              <select
+                class="wt-select preset-select"
+                value={presetSelection[i] ?? ''}
+                onchange={(ev) => onPresetChange(i, ev)}
+                data-testid={`wavesculpt-osc-${i + 1}-preset-select`}
+              >
+                <option value="">— pick a preset —</option>
+                {#each WAVETABLE_PRESETS as p (p.id)}
+                  <option value={p.id}>{p.label}</option>
+                {/each}
+              </select>
             </div>
             <div class="wt-row">
               <select

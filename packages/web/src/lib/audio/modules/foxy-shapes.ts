@@ -35,6 +35,7 @@ export {
   FOXY_3D_VOXEL_GRID,
   FOXY_3D_SMIN_K,
   FOXY_3D_FLAT_VARIANCE_EPS,
+  FOXY_3D_MAX_RADIUS,
   // Pure feature-extraction
   featureGrid,
   variance,
