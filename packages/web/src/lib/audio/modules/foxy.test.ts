@@ -49,6 +49,26 @@ describe('FOXY module def shape', () => {
     expect(fOut.get('wave3d_out')).toBe('video');
   });
 
+  it('exposes combined_out as a video output (patchable mirror of the GEN-mode visualization)', () => {
+    // combined_out is FOXY's "internal world → patch cable" port. The card
+    // already has the local XYZ-window preview; this output is purely about
+    // making that view patchable to any video destination (VIDEO OUT,
+    // BENTBOX, RUTTETRA, etc.). Mode-aware:
+    //   gen_mode = 0 (XYZ)          → drawFoxyXyz(field)
+    //   gen_mode = 1 (3D Shape Gen) → drawFoxyShapes(shapes)
+    const fOut = new Map(foxyDef.outputs.map((p) => [p.id, p.type]));
+    expect(fOut.get('combined_out'), 'combined_out output port').toBe('video');
+  });
+
+  it('does NOT remove the existing video outputs (scope_out + wave3d_out stay)', () => {
+    // Pins additive — combined_out is a NEW output, the existing ones MUST
+    // remain so any prior patch using scope_out / wave3d_out keeps working.
+    const ids = new Set(foxyDef.outputs.map((p) => p.id));
+    expect(ids.has('scope_out')).toBe(true);
+    expect(ids.has('wave3d_out')).toBe(true);
+    expect(ids.has('combined_out')).toBe(true);
+  });
+
   it('keeps the WAVECEL stereo pair metadata', () => {
     expect(foxyDef.stereoPairs).toEqual([['out_l', 'out_r']]);
   });
