@@ -1,3 +1,26 @@
+// packages/web/src/lib/audio/modules/reverb.ts
+//
+// REVERB — simple algorithmic reverb (size / damp / mix).
+//
+// The minimal-knob reverb the basic palette ships. Faust-compiled DSP
+// (packages/dsp/src/reverb.dsp) — a generic small-knob algorithmic tank
+// suitable for "spray a little room on the master bus" use. For longer,
+// richer, or pitch-shifted tails see SHIMMERSHINE; for serious user-
+// tweakable diffusion settings see CLOUDSEED. Mono in / mono out (use
+// two instances or a stereo reverb if you need width). No CV inputs in
+// v1; the three knobs are the entire user surface.
+//
+// Inputs:
+//   audio (audio): dry signal.
+//
+// Outputs:
+//   audio (audio): dry + wet, ratio set by mix.
+//
+// Params:
+//   size (linear 0..1, default 0.5): tank size / decay-time macro.
+//   damp (linear 0..1, default 0.3): high-frequency damping inside the tank.
+//   mix (linear 0..1, default 0.3): dry / wet balance (0 = dry, 1 = wet only).
+
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

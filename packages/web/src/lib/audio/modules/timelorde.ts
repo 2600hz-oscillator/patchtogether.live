@@ -5,7 +5,26 @@
 //
 // Singleton: maxInstances = 1. The whole point is "one canonical clock per
 // patch"; multiple TIMELORDEs would invite ambiguity over which is the
-// master.
+// master. TIMELORDE emits a fanout of gate outputs at standard musical
+// divisions of the master BPM (1x = quarter; 2x/4x/8x = subdivisions;
+// 1/2..1/64 = multiples of the bar) so any module that needs clocking
+// can patch the appropriate division directly without a clock-divider
+// helper in between.
+//
+// Inputs:
+//   clock (gate): external clock-in; when patched, the master BPM is locked to its measured period.
+//
+// Outputs:
+//   1x (gate): quarter-note pulse at the master BPM.
+//   2x / 4x / 8x (gate): faster subdivisions of the quarter (eighth / sixteenth / 32nd).
+//   1/2 / 1/3 / 1/4 / 1/8 / 1/12 / 1/16 / 1/32 / 1/64 (gate): multiples of the quarter (half-note .. 64-bar).
+//   swing (gate): same as 2x but offset by the swingAmount; use as a swung 8th-note clock.
+//
+// Params:
+//   bpm (log 10..300, default 120): master tempo.
+//   swingAmount (linear 0..90°, default 0): swing offset applied to the `swing` output.
+//   swingSource (discrete 0..10, default 0): which division feeds the swing tap.
+//   muteOutputs (discrete 0..1, default 0): 1 = silence every gate output (transport stop).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

@@ -3,7 +3,26 @@
 // SHIMMERSHINE — stereo shimmer reverb. Pure-TS AudioWorklet wraps a
 // Schroeder reverb tank (4 combs + 2 allpasses per channel) with a
 // pitch-shifted feedback loop (+12 semis via granular fade) for the
-// signature crystalline shimmer tail.
+// signature crystalline shimmer tail. Use it as the project's "ambient
+// halo" reverb: bigger and more dreamy than the basic REVERB, with the
+// octave-up shimmer tail that's the module's defining feature.
+//
+// Inputs:
+//   in_l / in_r (audio): stereo input.
+//   decay_cv (cv, linear, paramTarget=decay): displaces tank decay time.
+//   shimmer_cv (cv, linear, paramTarget=shimmer): displaces the octave-up feedback amount.
+//   size_cv (cv, linear, paramTarget=size): displaces the tank size.
+//   mix_cv (cv, linear, paramTarget=mix): displaces dry/wet mix.
+//
+// Outputs:
+//   out_l / out_r (audio): stereo wet+dry output.
+//
+// Params:
+//   decay (linear 0..1, default 0.6): tank decay-time macro.
+//   shimmer (linear 0..1, default 0.4): +1 octave feedback amount (the shimmer tail intensity).
+//   size (linear 0..1, default 0.6): reverb space size.
+//   damp (linear 0..1, default 0.4): HF damping in the tank.
+//   mix (linear 0..1, default 0.4): dry/wet balance.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

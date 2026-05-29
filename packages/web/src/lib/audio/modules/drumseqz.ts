@@ -13,6 +13,25 @@
 // midi === null means the track-root pitch falls through.
 //
 // schemaVersion: 1 — brand-new module, no migration.
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance one step. Unpatched = internal BPM.
+//
+// Outputs:
+//   gate{1..4} (gate): per-track step gate.
+//   pitch{1..4} (pitch): per-track V/oct (per-step midi or track-root fallthrough).
+//   clock (gate): chained step clock-out.
+//
+// Params:
+//   bpm (linear 30..300, default 120): internal tempo.
+//   length (discrete 1..128, default 16): active step count.
+//   octave (discrete -2..2, default 0): global pitch transposition.
+//   gateLength (linear 0.1..0.95, default 0.5): per-step gate duty.
+//   swing (linear 0..0.75, default 0): off-step time shift.
+//   isPlaying (discrete 0..1, default 0): transport state.
+//   trk{N}_euclid (discrete 0..16, default 0): per-track Euclidean fill count (0 = manual pattern).
+//   trk{N}_root (discrete 33..114, default C3): per-track root MIDI note.
+//   trk{N}_octave (discrete -2..2, default 0): per-track octave transposition.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

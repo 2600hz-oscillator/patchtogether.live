@@ -23,6 +23,23 @@
 // `drawFrame(canvas)` each video frame (videoSources entry); we paint via
 // a single RasterPainter so the on-card canvas + the video-out texture
 // share one accumulated framebuffer.
+//
+// Inputs:
+//   in (audio): the audio to rasterize.
+//   cursor (cv, paramTarget=cursor): displaces the scan cursor (pixel offset into the frame).
+//   samplesPerFrame (cv, paramTarget=samplesPerFrame): displaces samples-painted-per-frame.
+//   gain (cv, paramTarget=gain): displaces the input-gain knob before luminance mapping.
+//   wrap (cv, paramTarget=wrap): displaces the wrap-mode toggle.
+//
+// Outputs:
+//   thru (audio): clean audio passthrough (raster path is non-destructive).
+//   out (mono-video): the painted raster frame.
+//
+// Params:
+//   cursor (linear 0..230400 px, default 0): start position of the scan cursor.
+//   samplesPerFrame (log 16..8000, default 800): how many samples paint per frame.
+//   gain (log 0..8, default 1): input gain pre-luminance map.
+//   wrap (discrete 0..1, default 0): 0 = scan wraps + accumulates, 1 = clear-on-wrap.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
