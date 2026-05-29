@@ -324,6 +324,131 @@ describe('persistence: round-trip', () => {
   });
 });
 
+// ---------------- DOOM transient-data stripping ----------------
+//
+// DOOM persists multiplayer lobby state (mpMode / mpLive / players / pending)
+// onto its node.data so every peer in the rack converges on the host's
+// session state via Yjs sync. But that state is SESSION-scoped, not
+// TOPOLOGY: a saved patch is a rack snapshot, not a particular game's live
+// status. If those fields ride a saved envelope into a future load, the
+// host's start-game dialog is gated on `mpMode === undefined` and so it
+// never re-renders — the user lands on a stuck "Single-user rack" splash
+// with no way to launch. The loader strips a per-module whitelist of these
+// transient fields off `node.data` post-migration so the load is a clean
+// topology restore (Bug #1 — the load-from-patch repro).
+describe('persistence: DOOM transient-field stripping', () => {
+  /** Minimal DOOM def — only needed so the loader sees `doom` as a known
+   *  type and runs its migration / strip pass. We register under the audio
+   *  domain because DOOM's real registry slot is video, but persistence
+   *  doesn't care which registry as long as some lookup matches; using audio
+   *  here avoids depending on the real video registry def's evolving shape. */
+  const doomStub: AudioModuleDef = {
+    type: 'doom',
+    domain: 'audio',
+    label: 'DOOM',
+    category: 'sources',
+    schemaVersion: 2,
+    inputs: [],
+    outputs: [],
+    params: [],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    factory: throwingFactory as any,
+  };
+
+  beforeAll(() => {
+    registerModule(doomStub);
+  });
+
+  it('strips mpMode / mpLive / players / pending off a loaded DOOM node', () => {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['d'] = {
+        id: 'd',
+        type: 'doom',
+        domain: 'audio',
+        position: { x: 10, y: 20 },
+        params: {},
+        data: {
+          name: 'DOOM',
+          mpMode: 'multi',
+          mpLive: true,
+          players: { p1: { userId: 'u-1' } },
+          pending: { p2: { userId: 'u-2' } },
+        },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+
+    const loaded = dest.store.nodes['d'];
+    expect(loaded).toBeDefined();
+    const data = loaded!.data as Record<string, unknown>;
+    expect(data.name).toBe('DOOM'); // persistent name preserved
+    expect('mpMode' in data).toBe(false);
+    expect('mpLive' in data).toBe(false);
+    expect('players' in data).toBe(false);
+    expect('pending' in data).toBe(false);
+  });
+
+  it('preserves DOOM persistent fields (position / params / data.name)', () => {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['d'] = {
+        id: 'd',
+        type: 'doom',
+        domain: 'audio',
+        position: { x: 123, y: 456 },
+        params: { volume: 0.42 },
+        data: {
+          name: 'My DOOM',
+          mpMode: 'single', // transient — should disappear
+        },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+
+    const loaded = dest.store.nodes['d'];
+    expect(loaded).toBeDefined();
+    expect(loaded!.position).toEqual({ x: 123, y: 456 });
+    expect(loaded!.params).toEqual({ volume: 0.42 });
+    expect((loaded!.data as Record<string, unknown>).name).toBe('My DOOM');
+    expect('mpMode' in (loaded!.data as object)).toBe(false);
+  });
+
+  it('does NOT strip the same field names off other module types', () => {
+    // Confidence check: the strip is type-keyed, so a hypothetical non-DOOM
+    // module that happens to carry an `mpMode` field on its data keeps it.
+    // Uses the existing testVcoDef (analogVco). This guards against the next
+    // person turning the whitelist into a global field filter.
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['v'] = {
+        id: 'v',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: { tune: 0, fine: 0 },
+        data: { mpMode: 'should-stay' },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    const loaded = dest.store.nodes['v'];
+    expect((loaded!.data as Record<string, unknown>).mpMode).toBe('should-stay');
+  });
+});
+
 // ---------------- ruttetra → reshaper breaking-change remap ----------------
 //
 // The `ruttetra` type id originally belonged to a fragment-shader coordinate

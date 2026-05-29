@@ -1682,24 +1682,50 @@
           // JOINS. There is no host-framebuffer mirror to fall back to anymore
           // (relay-OOM fix).
           const extras = getExtras();
+          const runtimeReady = extras !== null && loadStatus === 'ready';
           const fb: Uint8Array | Uint8ClampedArray | null =
-            extras ? extras.snapshotFramebuffer() : null;
-          if (fb) {
-            // Upload BGRA → RGBA via inline byte swap. 640×400 = 256k
-            // pixels = 1 MB; the swap is ~16ms on a slow laptop but
-            // tolerable at 10 Hz. The GL path inside the engine already
-            // does this swizzle at zero cost; we accept the cost here
-            // for the small CSS-pixel preview, which doesn't need to
-            // match the engine output bit-for-bit.
-            const img = ctx2d.createImageData(640, 400);
-            const out = img.data;
-            for (let i = 0; i < fb.length; i += 4) {
-              out[i]     = fb[i + 2]!; // R ← B
-              out[i + 1] = fb[i + 1]!; // G
-              out[i + 2] = fb[i]!;     // B ← R
-              out[i + 3] = 255;
+            runtimeReady ? extras.snapshotFramebuffer() : null;
+          // Pre-init canvas guard (Bug #2): snapshotFramebuffer() returns a
+          // live view into WASM linear memory at a fixed offset. Between
+          // module mount and the first I_FinishUpdate() that view points at
+          // uninitialized HEAPU8 bytes — whatever garbage happens to live
+          // there — which we used to blit straight to the canvas as the
+          // colorful pre-game corruption stripes. Two safeties:
+          //  1. Only call snapshotFramebuffer() when WASM finished loading
+          //     (loadStatus === 'ready'). Before that, paint #000 (matches
+          //     the CSS canvas background, so this is purely defensive).
+          //  2. Even when 'ready', if a three-point all-zero sample hits the
+          //     framebuffer (the post-malloc / pre-first-draw state) treat
+          //     it as not-yet-drawn and skip the blit.
+          // The three-point check is O(1) — we deliberately do NOT scan the
+          // full 1 MB framebuffer per frame.
+          if (!fb) {
+            ctx2d.fillStyle = '#000';
+            ctx2d.fillRect(0, 0, 640, 400);
+          } else {
+            const last = fb.length - 1;
+            const mid = Math.floor(fb.length / 2);
+            const allZeroSample = fb[0] === 0 && fb[last] === 0 && fb[mid] === 0;
+            if (allZeroSample) {
+              ctx2d.fillStyle = '#000';
+              ctx2d.fillRect(0, 0, 640, 400);
+            } else {
+              // Upload BGRA → RGBA via inline byte swap. 640×400 = 256k
+              // pixels = 1 MB; the swap is ~16ms on a slow laptop but
+              // tolerable at 10 Hz. The GL path inside the engine already
+              // does this swizzle at zero cost; we accept the cost here
+              // for the small CSS-pixel preview, which doesn't need to
+              // match the engine output bit-for-bit.
+              const img = ctx2d.createImageData(640, 400);
+              const out = img.data;
+              for (let i = 0; i < fb.length; i += 4) {
+                out[i]     = fb[i + 2]!; // R ← B
+                out[i + 1] = fb[i + 1]!; // G
+                out[i + 2] = fb[i]!;     // B ← R
+                out[i + 3] = 255;
+              }
+              ctx2d.putImageData(img, 0, 0);
             }
-            ctx2d.putImageData(img, 0, 0);
           }
         }
       }
