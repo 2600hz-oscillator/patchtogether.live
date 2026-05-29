@@ -16,7 +16,7 @@
   import { Handle, Position } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
-  import { shapegenDef } from '$lib/video/modules/shapegen';
+  import { shapegenDef, SHAPEGEN_CLOCK_PORT_ID } from '$lib/video/modules/shapegen';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { onMount, onDestroy } from 'svelte';
@@ -66,25 +66,46 @@
 
   let solidsOn = $derived(paramVal('solids') >= 0.5);
   let solidsLabel = $derived(solidsOn ? 'SOLIDS: ON' : 'SOLIDS: OFF');
+
+  // [CLOCKED] badge: show when the clock_in port is currently the target
+  // of any incoming edge. patch.edges is a SyncedStore proxy (Yjs-backed)
+  // so reading it from a $derived isn't reactive on its own — but the
+  // svelte-flow store updates `data.node` on edge mutation, which retriggers
+  // this derived chain via the `node` $derived above. (DoomCard installs a
+  // dedicated edges-observer for the same reason; SHAPEGEN's badge is a
+  // cosmetic hint, not a runtime-critical signal, so we accept the small
+  // staleness window in exchange for simplicity.)
+  let clockPatched = $derived<boolean>(
+    Object.values(patch.edges ?? {}).some(
+      (e) => e?.target?.nodeId === id && e?.target?.portId === SHAPEGEN_CLOCK_PORT_ID,
+    ),
+  );
 </script>
 
 <div class="mod-card shapegen-card" data-testid="shapegen-card">
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="SHAPEGEN" />
 
-  <!-- Three video inputs on the left. -->
+  <!-- Three video inputs on the left, plus a gate clock input below them. -->
   <Handle type="target" position={Position.Left} id="raster_a" style="top: 56px; --handle-color: var(--cable-video);" />
   <span class="port-label left" style="top: 50px;">A</span>
   <Handle type="target" position={Position.Left} id="raster_b" style="top: 88px; --handle-color: var(--cable-video);" />
   <span class="port-label left" style="top: 82px;">B</span>
   <Handle type="target" position={Position.Left} id="raster_c" style="top: 120px; --handle-color: var(--cable-video);" />
   <span class="port-label left" style="top: 114px;">C</span>
+  <!-- Clock gate input — sample-and-hold shape regeneration. Cable colour
+       follows the standard CV/gate visual; unpatched = identity behaviour. -->
+  <Handle type="target" position={Position.Left} id={SHAPEGEN_CLOCK_PORT_ID} style="top: 152px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 146px;">CLK</span>
 
   <!-- One video output on the right. -->
   <Handle type="source" position={Position.Right} id="out" style="top: 88px; --handle-color: var(--cable-video);" />
   <span class="port-label right" style="top: 82px;">OUT</span>
 
   <div class="screen-wrap">
+    {#if clockPatched}
+      <span class="clocked-badge" data-testid="shapegen-clocked-badge">[CLOCKED]</span>
+    {/if}
     <canvas bind:this={previewEl} class="screen" data-testid="shapegen-screen"></canvas>
   </div>
 
@@ -117,7 +138,7 @@
 <style>
   .mod-card {
     width: 300px;
-    min-height: 280px;
+    min-height: 304px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -145,6 +166,22 @@
     background: #0c0419;
     border-radius: 3px;
     overflow: hidden;
+    position: relative;
+  }
+  .clocked-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    color: #87c8ff;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid #87c8ff;
+    border-radius: 2px;
+    padding: 1px 4px;
+    font-family: ui-monospace, monospace;
+    pointer-events: none;
+    z-index: 2;
   }
   .screen {
     width: 200px;
