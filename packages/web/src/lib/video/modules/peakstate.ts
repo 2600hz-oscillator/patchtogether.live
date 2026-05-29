@@ -35,6 +35,7 @@ import {
   drawMandalaTubeFrame,
   hueAtTime,
   hslToRgb,
+  orbitCenter,
   type PenState,
   type RenderOpts,
 } from './peakstate-draw';
@@ -50,12 +51,20 @@ interface PeakstateParams {
   speed: number;
   complexity: number;
   color_speed: number;
+  /** Orbit amplitude for the spirograph centre — 0 pins the mandala at
+   *  the canvas centre, 1 orbits at ORBIT_RADIUS_FRACTION × min(w,h). */
+  move: number;
+  /** Orbit eccentricity — 0 = perfect circle, 1 = near-horizontal tube
+   *  (Y radius = OBLONG_MIN_Y_SCALE × X radius). */
+  oblong: number;
 }
 
 const DEFAULTS: PeakstateParams = {
   speed: 1,
   complexity: 12,
   color_speed: 1,
+  move: 0,
+  oblong: 0,
 };
 
 // Passthrough copy shader. Used to blit each output's CPU-rendered
@@ -100,6 +109,12 @@ export const peakstateDef: VideoModuleDef = {
     { id: 'speed',       label: 'Speed',      defaultValue: DEFAULTS.speed,       min: 0.1, max: 4,  curve: 'linear' },
     { id: 'complexity',  label: 'Complexity', defaultValue: DEFAULTS.complexity,  min: 4,   max: 32, curve: 'discrete' },
     { id: 'color_speed', label: 'Color',      defaultValue: DEFAULTS.color_speed, min: 0,   max: 4,  curve: 'linear' },
+    // MOVE + OBLONG drive the spirograph centre orbit (PR #__). The
+    // existing speed/complexity knobs supply the harmonic ratio (arm
+    // rotation × orbital period) that makes the curve trace as a
+    // hypotrochoid-style rosette.
+    { id: 'move',        label: 'Move',       defaultValue: DEFAULTS.move,        min: 0,   max: 1,  curve: 'linear' },
+    { id: 'oblong',      label: 'Oblong',     defaultValue: DEFAULTS.oblong,      min: 0,   max: 1,  curve: 'linear' },
   ],
 
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
@@ -225,6 +240,11 @@ export const peakstateDef: VideoModuleDef = {
         const speed = Math.max(0, params.speed);
         const complexity = Math.max(1, Math.round(params.complexity));
         const colorSpeed = Math.max(0, params.color_speed);
+        // MOVE + OBLONG clamp to [0,1]; the spirograph orbit collapses to
+        // a degenerate "no motion" at move=0 (which orbitCenter() honours
+        // exactly — no float drift past baseCx, baseCy).
+        const move = Math.max(0, Math.min(1, params.move));
+        const oblong = Math.max(0, Math.min(1, params.oblong));
 
         // VRT-seed path: paint ONCE from a deterministic ring + frozen
         // rotation, then HOLD that frame across subsequent draws. The
@@ -252,11 +272,25 @@ export const peakstateDef: VideoModuleDef = {
           rotation3d += dt * speed * 0.3;
         }
 
+        // Macro orbit for the spirograph: the same (cx, cy) is shared
+        // across all three outputs so they stay coherent (same pen, same
+        // orbit, different palette/transform). Uses the engine-time
+        // `pen.t` so the orbit clock and the pen clock are bit-equal —
+        // critical for the VRT-seed path (vrtSeeded freezes pen.t at 0,
+        // which orbitCenter() resolves to (baseCx, baseCy) exactly).
+        const baseCx = INTERNAL_DIM / 2;
+        const baseCy = INTERNAL_DIM / 2;
+        const { cx, cy } = orbitCenter(
+          pen.t, baseCx, baseCy, move, oblong, speed, INTERNAL_DIM, INTERNAL_DIM,
+        );
+
         // --- mono_out: white pen on black, no colour cycling. ---
         const monoOpts: RenderOpts = {
           complexity,
           color: { r: 238, g: 238, b: 238 }, // #eee from the spec
           decayAlpha: 0.05,
+          centerX: cx,
+          centerY: cy,
         };
         drawMandalaFrame(cvMono.ctx2d as unknown as Parameters<typeof drawMandalaFrame>[0], INTERNAL_DIM, INTERNAL_DIM, pen.ring, monoOpts);
         uploadAndBlit(cvMono.canvas, texMono, fboMono.fbo);
@@ -268,6 +302,8 @@ export const peakstateDef: VideoModuleDef = {
           complexity,
           color: rgb,
           decayAlpha: 0.05,
+          centerX: cx,
+          centerY: cy,
         };
         drawMandalaFrame(cvRgb.ctx2d as unknown as Parameters<typeof drawMandalaFrame>[0], INTERNAL_DIM, INTERNAL_DIM, pen.ring, rgbOpts);
         uploadAndBlit(cvRgb.canvas, texRgb, fboRgb.fbo);
@@ -281,6 +317,8 @@ export const peakstateDef: VideoModuleDef = {
           color: rgb3d,
           decayAlpha: 0.08, // slightly faster decay so the rotating
                             // sculpture doesn't smear into a blur
+          centerX: cx,
+          centerY: cy,
         };
         drawMandalaTubeFrame(
           cv3d.ctx2d as unknown as Parameters<typeof drawMandalaTubeFrame>[0],
