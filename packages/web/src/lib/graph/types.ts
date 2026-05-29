@@ -221,6 +221,11 @@ type StandardModuleType =
   // ACIDWARP — 320×240 plasma video source with scene cycler. NTSC 4:3
   // output — pairs naturally with BENTBOX downstream.
   | 'acidwarp'
+  // MANDLEBLOT — Mandelbrot fractal generator. WebGL2 fragment shader,
+  // log-mapped zoom 1×..1e6×, rotation, RGB-cycling hue (mu + time +
+  // log(zoom) so colours shift as you zoom). Two outputs: mono escape-
+  // time field + colour palette pass.
+  | 'mandleblot'
   // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder. Loads
   // E352 Cloud Terrarium-format WAV wavetables; Card UI provides a 3D
   // wavetable visualization mode alongside the standard scope view.

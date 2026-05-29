@@ -74,6 +74,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // module is currently in EXEMPT_FROM_VRT below — promote it into MODULES
   // when the darwin/linux PNGs are captured.)
   '4plexvid': [{ selector: 'canvas' }],
+  // MANDLEBLOT — Mandelbrot fractal with time-driven hue cycle. The
+  // shader's colour mode mixes mu + uTime + log(uZoom) into the hue, so
+  // every frame is a different colour even at zero motion. Mask the
+  // canvas so the chrome diff (6 knobs + zoom readout + handles) is
+  // the regression gate; the shader correctness is covered by unit +
+  // E2E. Pinning the canvas as well would need a deterministic-time
+  // hook on the engine clock — deferred to a follow-up.
+  mandleblot: [{ selector: 'canvas' }],
   // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
   // preview canvas; the counter starts at 0 on factory mount (or 1234 when
   // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
@@ -399,6 +407,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/unityscalemathematik',
   'linux/vdelay',
   'linux/warrenspectrum',
+  // MANDLEBLOT (Mandelbrot fractal generator): darwin baseline captured on
+  // this machine (canvas masked — the colour pass cycles hue with uTime, so
+  // the canvas region is non-deterministic; the chrome around it diffs).
+  // The linux baseline is pending a `task vrt:update` run on linux CI; the
+  // shader pipeline is the same across platforms but Playwright's
+  // `<canvas>` masking timing on linux Chromium can shift the chrome PNG
+  // sub-thresholdly — darwin is the regression gate here.
+  'linux/mandleblot',
   // NIBBLES (new snake-game video module): darwin baseline captured on this
   // machine via VRT_SCENES (__nibblesVrtSeed pins the RNG → deterministic
   // snake + food placement; freezeAudio suspends the rAF preview poll). The

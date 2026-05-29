@@ -37,6 +37,7 @@ import { videoVarispeedDef } from './videovarispeed';
 import { backdraftDef } from './backdraft';
 import { fourPlexVidDef } from './4plexvid';
 import { peakstateDef } from './peakstate';
+import { mandleblotDef } from './mandleblot';
 import { scoreboardDef } from './scoreboard';
 import { nibblesDef } from './nibbles';
 
@@ -131,6 +132,10 @@ export function registerVideoModules(): void {
   // bowl-twin "fake 3D"). 3D rotation rate ties to params.speed so the
   // whole scene feels coupled.
   registerVideoModule(peakstateDef);
+  // MANDLEBLOT — Mandelbrot fractal generator with zoom + rotation +
+  // RGB-cycling hue. Two outputs: mono escape-time field + colour palette.
+  // Log-mapped zoom 1×..1e6× (single-precision highp-float ceiling).
+  registerVideoModule(mandleblotDef);
   // SCOREBOARD — 4-digit neon 7-segment counter widget. Two CV-gate
   // inputs (SCORE / RESET) and a colour-wheel knob. Counter wraps at
   // 10000 → 0. No audio output; pure video sink-style display.

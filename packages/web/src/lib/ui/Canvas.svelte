@@ -117,6 +117,9 @@
   import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
   // ACIDWARP — 320×240 plasma video source with scene cycler.
   import AcidwarpCard from '$lib/ui/modules/AcidwarpCard.svelte';
+  // MANDLEBLOT — Mandelbrot fractal generator (mono + colour outputs,
+  // CV-controllable zoom, RGB-cycling hue with log(zoom) coupling).
+  import MandleblotCard from '$lib/ui/modules/MandleblotCard.svelte';
   // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
   import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
   import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
@@ -412,6 +415,7 @@
     backdraft: BackdraftCard,
     bentbox: BentboxCard,
     acidwarp: AcidwarpCard,
+    mandleblot: MandleblotCard,
     peakstate: PeakstateCard,
     // Video-domain (Phase 1):
     inwards: InwardsCard,

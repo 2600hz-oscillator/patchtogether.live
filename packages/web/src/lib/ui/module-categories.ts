@@ -183,6 +183,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   shapes: { top: 'Video modules', sub: 'Sources' },
   shapedramps: { top: 'Video modules', sub: 'Sources' },
   acidwarp: { top: 'Video modules', sub: 'Sources' },
+  // MANDLEBLOT — Mandelbrot fractal generator (mono + colour outputs).
+  mandleblot: { top: 'Video modules', sub: 'Sources' },
   // PEAKSTATE — animated mandala generator (kaleidoscope mirror-arm pen
   // trace + 3D-tube output). Self-driving video source.
   peakstate: { top: 'Video modules', sub: 'Sources' },
