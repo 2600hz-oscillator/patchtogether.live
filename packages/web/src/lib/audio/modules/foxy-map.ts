@@ -491,6 +491,156 @@ export function threeAxisFieldForDisplay(
   return out;
 }
 
+// ── v4: volumetric 3-axis (C warps A + adds Z) ────────────────────────────
+//
+// FOXY v4 ABANDONS the v3 rank-1 separable model (which collapsed structure
+// to a flat profile because an outer-sum of two 1-D distributions can't
+// carry any 3D relief). Instead v4 layers TWO independent 3D contributions
+// from raster C on top of the v2 Box heightfield foundation:
+//
+//   1. SECONDARY HEIGHTFIELD: C's luma additively combines with B's luma to
+//      drive Z displacement. Height becomes a sum of TWO independent
+//      heightmaps rather than one. Centered on C=0.5 so a flat-gray C
+//      degenerates to v2 exactly.
+//
+//   2. LATERAL WARP: C's luma WARPS the (x, y) sample lookup used for A's
+//      terrain pattern. Bright C cells pull the A sample sideways, twisting
+//      the heightfield in the XY plane — tunnel-like distortion that reads
+//      as genuinely 3D.
+//
+// Property: when C is flat gray (luma = 0.5 everywhere), warpAmt and
+// heightC_disp are both 0, so `boxToField3d` reproduces v2's `boxToField`
+// output EXACTLY. v4 is strictly more expressive than v2. Tests pin both
+// the degeneracy AND the non-trivial divergence when C is non-flat.
+
+/** A volumetric Box surface: A's base, B's primary height, C's secondary
+ *  contribution. Pure data, row-major `size × size`. */
+export interface FoxyBox3 extends FoxyBox {
+  /** Raster C luma per cell in [0,1] — drives BOTH lateral warp on A AND
+   *  the secondary heightfield contribution on Z. */
+  cField: Float32Array;
+}
+
+/** Params extending the v2 XYZ scope params with v4's two new knobs. */
+export interface FoxyXyz3dParams extends FoxyXyzParams {
+  /** How much C warps the A lookup laterally (0 = no warp; 1 = strong). */
+  warpAmount: number;
+  /** How much C contributes to Z height relative to B (0 = C ignored on Z). */
+  secondaryHeight: number;
+}
+
+export const FOXY_XYZ_3D_DEFAULTS: FoxyXyz3dParams = {
+  ...FOXY_XYZ_DEFAULTS,
+  // Tuned so the warp is visible but not destructive out of the box.
+  warpAmount: 0.25,
+  // C contributes half the Z swing of B → noticeable but secondary.
+  secondaryHeight: 0.5,
+};
+
+/**
+ * Combine three RGBA rasters into the v4 volumetric Box.
+ *
+ * Raster A: the BASE / terrain pattern (its luma).
+ * Raster B: the PRIMARY Z height (its luma).
+ * Raster C: the SECONDARY contributor — its luma both warps A's lookup AND
+ *   adds an independent Z displacement (see `boxToField3d` for the math).
+ *
+ * All three sampled on the same `size × size` grid (nearest read via lumaAt).
+ * Pure + deterministic.
+ */
+export function boxHeightfield3d(
+  rgbaA: Uint8ClampedArray | readonly number[],
+  rgbaB: Uint8ClampedArray | readonly number[],
+  rgbaC: Uint8ClampedArray | readonly number[],
+  srcW: number,
+  srcH: number,
+  size = FOXY_FIELD_SIZE,
+): FoxyBox3 {
+  const base = new Float32Array(size * size);
+  const height = new Float32Array(size * size);
+  const cField = new Float32Array(size * size);
+  for (let r = 0; r < size; r++) {
+    const v0 = size > 1 ? r / (size - 1) : 0;
+    const srcRow = v0 * (srcH - 1);
+    for (let c = 0; c < size; c++) {
+      const h0 = size > 1 ? c / (size - 1) : 0;
+      const srcCol = h0 * (srcW - 1);
+      const o = r * size + c;
+      base[o] = lumaAt(rgbaA, srcW, srcH, srcCol, srcRow);
+      height[o] = lumaAt(rgbaB, srcW, srcH, srcCol, srcRow);
+      cField[o] = lumaAt(rgbaC, srcW, srcH, srcCol, srcRow);
+    }
+  }
+  return { size, base, height, cField };
+}
+
+/**
+ * Convert the v4 volumetric Box into the XYZ scanline field that the
+ * realtime wavetable + on-card scope read.
+ *
+ * Per cell (r, c) → grid position (v0, h0):
+ *   cVal       = C luma at this cell
+ *   warpAmt    = (cVal - 0.5) * warpAmount     ← bipolar in [-0.5*w, +0.5*w]
+ *   srcCol'    = h0 * (srcW-1) + warpAmt * srcW * 0.15  (lateral A lookup)
+ *   srcRow'    = v0 * (srcH-1) + warpAmt * srcH * 0.15
+ *   baseA      = lumaA at the C-warped (srcCol', srcRow')  ← uses RAW A buffer
+ *   heightB    = B luma at the unwarped (h0, v0)
+ *   heightC_d  = (cVal - 0.5) * secondaryHeight
+ *   v          = shapedRamp(v0, h0, v0, yShape)
+ *   y          = v + (heightB - 0.5) * yDisp + heightC_d * yDisp
+ *   lum        = baseA * (0.6 + 0.4*hShade)
+ *
+ * IMPORTANT: A's lookup uses the RAW raster buffer (rgbaA / srcW × srcH), not
+ * the pre-sampled `box.base` grid — that's how the warp gets sub-cell
+ * precision. So this function takes both the box AND raster A for the warp.
+ *
+ * v2-degeneracy property: if C is flat gray (cVal == 0.5 everywhere), both
+ * warpAmt and heightC_d are 0, and the lateral A lookup reduces to the box's
+ * own base sample → output equals v2's `boxToField` exactly. Pinned by test.
+ *
+ * Pure + deterministic.
+ */
+export function boxToField3d(
+  box: FoxyBox3,
+  rgbaA: Uint8ClampedArray | readonly number[],
+  srcW: number,
+  srcH: number,
+  params: FoxyXyz3dParams,
+  rows = FOXY_FIELD_SIZE,
+  cols = FOXY_FIELD_SIZE,
+): FoxyFieldRow[] {
+  const out: FoxyFieldRow[] = [];
+  const size = box.size;
+  for (let r = 0; r < rows; r++) {
+    const v0 = rows > 1 ? r / (rows - 1) : 0;
+    const br = size > 1 ? Math.round(v0 * (size - 1)) : 0;
+    const yArr = new Float32Array(cols);
+    const lArr = new Float32Array(cols);
+    for (let c = 0; c < cols; c++) {
+      const h0 = cols > 1 ? c / (cols - 1) : 0;
+      const bc = size > 1 ? Math.round(h0 * (size - 1)) : 0;
+      const o = br * size + bc;
+      const cVal = box.cField[o] ?? 0.5;
+      const heightB = box.height[o] ?? 0;
+      const warpAmt = (cVal - 0.5) * params.warpAmount;
+      const srcCol = h0 * (srcW - 1) + warpAmt * srcW * 0.15;
+      const srcRow = v0 * (srcH - 1) + warpAmt * srcH * 0.15;
+      // A is sampled with C-warped coords → genuine 3D twist in XY.
+      const baseA = lumaAt(rgbaA, srcW, srcH, srcCol, srcRow);
+      const heightC_disp = (cVal - 0.5) * params.secondaryHeight;
+      const v = shapedRamp(v0, h0, v0, params.yShape);
+      const hShade = shapedRamp(h0, h0, v0, params.xShape);
+      // B drives primary Z, C adds a secondary Z displacement.
+      const y =
+        v + (heightB - 0.5) * params.yDisp + heightC_disp * params.yDisp;
+      yArr[c] = y;
+      lArr[c] = Math.max(0, Math.min(1, baseA * (0.6 + 0.4 * hShade)));
+    }
+    out.push({ y: yArr, lum: lArr });
+  }
+  return out;
+}
+
 /** Stable cheap signature of a wavetable for change-detection (avoid
  *  re-posting an identical table to the worklet). Samples a sparse set of
  *  cells so it's O(frames) not O(frames×samples). */
