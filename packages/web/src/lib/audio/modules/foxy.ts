@@ -557,6 +557,23 @@ export const foxyDef: AudioModuleDef = {
     let shapes: FoxyShape[] = [];
     let genMode: number = num('gen_mode', 0);
 
+    // ── FREEZE state (closure-mutable, kept in sync via setParam) ────
+    // Historical bug (regression of #411 / #420): the factory snapshotted
+    // node.params at mount time as `p0` and every bridge tick re-read
+    // freezeRasterA/B/C/Table via `num(...)` against THAT SNAPSHOT. The card
+    // writes freezes via the engine's setParam path (reconciler.ts diffs
+    // node.params and calls engine.setParam), which routes to the switch
+    // BELOW. Because the switch had no cases for the freeze* params, the
+    // factory closure NEVER learned about the click — the user toggled the
+    // button but the bridge kept reading the mount-time value (always 0).
+    // We mirror the live state into closure variables here + handle each
+    // freeze* in setParam below. The bridgeTick reads these directly (no
+    // more `num(...)` for freeze flags) so the gate is actually live.
+    let freezeRasterA = num('freezeRasterA', 0) >= 0.5;
+    let freezeRasterB = num('freezeRasterB', 0) >= 0.5;
+    let freezeRasterC = num('freezeRasterC', 0) >= 0.5;
+    let freezeTable   = num('freezeTable',   0) >= 0.5;
+
     // ───────────────────────── internal WAVECEL worklet ──────────────
     const wave = new AudioWorkletNode(ctx, 'wavecel', {
       numberOfInputs: 5,
@@ -675,11 +692,14 @@ export const foxyDef: AudioModuleDef = {
       if (now - lastBridgeMs < BRIDGE_MS) return;
       lastBridgeMs = now;
 
-      // Read the freeze toggles each tick (cheap; params.get is cached).
-      const freezeA = num('freezeRasterA', 0) >= 0.5;
-      const freezeB = num('freezeRasterB', 0) >= 0.5;
-      const freezeC = num('freezeRasterC', 0) >= 0.5;
-      const freezeT = num('freezeTable',   0) >= 0.5;
+      // Live freeze state — kept in sync by setParam (see the cases
+      // below). NB: do NOT read these via `num(...)` here; that helper
+      // reads node.params at MOUNT-TIME (`p0`), so the factory closure
+      // would never see clicks. See the freeze* block above for why.
+      const freezeA = freezeRasterA;
+      const freezeB = freezeRasterB;
+      const freezeC = freezeRasterC;
+      const freezeT = freezeTable;
 
       // 1. RASTERIZE ×3: pull each block's newest samples, paint each frame.
       //    Skip the paint for a frozen raster — its imageData stays as
@@ -865,6 +885,13 @@ export const foxyDef: AudioModuleDef = {
           case 'xyz_smooth':  xyz.smooth = value; return;
           // GEN mode picker — switches the raster→wavetable PATH.
           case 'gen_mode':    genMode = value; return;
+          // Freeze toggles — keep the closure mirror in sync with the
+          // reconciler's setParam path so the bridge tick actually sees
+          // the click. Threshold matches the bridge's `>= 0.5` gate.
+          case 'freezeRasterA': freezeRasterA = value >= 0.5; return;
+          case 'freezeRasterB': freezeRasterB = value >= 0.5; return;
+          case 'freezeRasterC': freezeRasterC = value >= 0.5; return;
+          case 'freezeTable':   freezeTable   = value >= 0.5; return;
         }
       },
       readParam(paramId) {
@@ -895,6 +922,12 @@ export const foxyDef: AudioModuleDef = {
           case 'xyz_smooth':  return xyz.smooth;
           case 'gen_mode':    return genMode;
           case 'sync_mode':   return syncMode;
+          // Freeze toggles — readback round-trips the closure mirror so
+          // a setParam(N) → readParam returns the same N (0 or 1).
+          case 'freezeRasterA': return freezeRasterA ? 1 : 0;
+          case 'freezeRasterB': return freezeRasterB ? 1 : 0;
+          case 'freezeRasterC': return freezeRasterC ? 1 : 0;
+          case 'freezeTable':   return freezeTable   ? 1 : 0;
           default: return undefined;
         }
       },

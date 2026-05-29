@@ -564,11 +564,12 @@ describe('FOXY bridge: FREEZE TABLE freezes the wavetable ONLY (XYZ scope keeps 
       handle.read!('tick');
       const wt1 = handle.read!('wavetableFrames') as Float32Array[];
       expect(wt1.length).toBeGreaterThan(0);
-      // Freeze.
-      // FrT is a discrete-param read directly from node.params (no setParam
-      // case in the factory — the card flips node.params[freezeTable] via
-      // its patch.store seam). Mirror that here.
-      node.params.freezeTable = 1;
+      // Freeze. The card writes node.params[freezeTable] = 1, which the
+      // reconciler diffs and routes through engine.setParam → the factory's
+      // setParam(paramId, value) switch. We mirror that path here (a direct
+      // node.params mutation would NOT exercise the wiring — the snapshot-
+      // vs-live bug that hid this regression for two PRs).
+      handle.setParam!('freezeTable', 1);
       // Second tick: rasters keep getting fresh analyser data, but the
       // bridge must hold wtFrames (field/shapes still recompute — see the
       // dedicated "keeps moving" tests below).
@@ -598,7 +599,7 @@ describe('FOXY bridge: FREEZE TABLE freezes the wavetable ONLY (XYZ scope keeps 
       // fresh boxToField3d result, so reference inequality is the cleanest
       // pin that the XYZ path keeps running.
       const field1 = handle.read!('xyzField') as unknown[];
-      node.params.freezeTable = 1;
+      handle.setParam!('freezeTable', 1);
       nowStep();
       handle.read!('tick');
       const field2 = handle.read!('xyzField') as unknown[];
@@ -619,7 +620,7 @@ describe('FOXY bridge: FREEZE TABLE freezes the wavetable ONLY (XYZ scope keeps 
       nowStep();
       handle.read!('tick');
       const shapes1 = handle.read!('shapes') as unknown[];
-      node.params.freezeTable = 1;
+      handle.setParam!('freezeTable', 1);
       nowStep();
       handle.read!('tick');
       const shapes2 = handle.read!('shapes') as unknown[];
@@ -645,7 +646,7 @@ describe('FOXY bridge: FREEZE TABLE freezes the wavetable ONLY (XYZ scope keeps 
       nowStep();
       handle.read!('tick');
       // Freeze and capture references + a contents fingerprint.
-      node.params.freezeTable = 1;
+      handle.setParam!('freezeTable', 1);
       nowStep();
       handle.read!('tick');
       const wt1 = handle.read!('wavetableFrames') as Float32Array[];
@@ -687,13 +688,13 @@ describe('FOXY bridge: FREEZE TABLE freezes the wavetable ONLY (XYZ scope keeps 
       const postsAfterLive1 = posted.filter((m) => m.type === 'loadWavetable').length;
       expect(postsAfterLive1).toBeGreaterThan(0);
       // Freeze + spin a few ticks — bridge must skip all posts.
-      node.params.freezeTable = 1;
+      handle.setParam!('freezeTable', 1);
       for (let i = 0; i < 3; i++) { nowStep(); handle.read!('tick'); }
       const postsAfterFreeze = posted.filter((m) => m.type === 'loadWavetable').length;
       expect(postsAfterFreeze).toBe(postsAfterLive1);
       // Unfreeze + perturb an XYZ knob so the next build produces a
       // different signature → bridge re-engages the post path.
-      node.params.freezeTable = 0;
+      handle.setParam!('freezeTable', 0);
       handle.setParam!('xyz_warp', 0.9);
       handle.setParam!('xyz_zheight', 0.95);
       nowStep();
@@ -718,17 +719,213 @@ describe('FOXY bridge: FREEZE TABLE freezes the wavetable ONLY (XYZ scope keeps 
       const postsBeforeFreeze = posted.filter((m) => m.type === 'loadWavetable').length;
       expect(postsBeforeFreeze).toBeGreaterThan(0);
       // Freeze, then run a few more ticks. Worklet should see zero new
-      // loadWavetable messages.
-      // FrT is a discrete-param read directly from node.params (no setParam
-      // case in the factory — the card flips node.params[freezeTable] via
-      // its patch.store seam). Mirror that here.
-      node.params.freezeTable = 1;
+      // loadWavetable messages. Route through setParam — the real engine
+      // path the reconciler uses (see the snapshot-vs-live root cause
+      // pinned in the "wires freeze* through setParam" block below).
+      handle.setParam!('freezeTable', 1);
       for (let i = 0; i < 5; i++) {
         nowStep();
         handle.read!('tick');
       }
       const postsAfterFreeze = posted.filter((m) => m.type === 'loadWavetable').length;
       expect(postsAfterFreeze).toBe(postsBeforeFreeze);
+    } finally {
+      perf.restore();
+    }
+  });
+});
+
+// ── FREEZE wiring regression (snapshot-vs-live root cause) ────────────
+//
+// The factory used to read freeze* via the `num(...)` helper inside
+// bridgeTick. `num` reads from `p0 = node.params ?? {}` — a SNAPSHOT
+// taken at factory-mount time. Meanwhile the card writes freezes via
+// the engine's setParam path: reconciler.ts diffs node.params and
+// calls engine.setParam → factory.setParam(paramId, value). Because the
+// setParam switch had NO cases for freezeRasterA / B / C / Table, the
+// factory closure NEVER saw the click. The button visually toggled but
+// the bridge was reading the mount-time value (always 0) forever.
+//
+// This block pins the fix end-to-end: setParam mutates a closure mirror,
+// readParam round-trips it, and the bridge tick observes the live value
+// (so freezeTable=1 actually skips loadWavetable + freezeRasterA=1
+// actually skips painterA.paint).
+
+describe('FOXY freeze* wiring (regression: factory must see setParam writes)', () => {
+  let nowMs = 0;
+  function nowStep(): void { nowMs += 1000; }
+  function installPerfNow(): { restore: () => void } {
+    const orig = globalThis.performance;
+    (globalThis as unknown as { performance: { now: () => number } }).performance = {
+      now: () => nowMs,
+    };
+    return {
+      restore: () => {
+        (globalThis as unknown as { performance: Performance | undefined }).performance = orig;
+      },
+    };
+  }
+
+  it('setParam(freezeTable, 1) → readParam returns 1; setParam(0) → 0 (round-trip)', async () => {
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      // Default — closure starts from node.params snapshot (0).
+      expect(handle.readParam!('freezeTable')).toBe(0);
+      handle.setParam!('freezeTable', 1);
+      expect(handle.readParam!('freezeTable')).toBe(1);
+      handle.setParam!('freezeTable', 0);
+      expect(handle.readParam!('freezeTable')).toBe(0);
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('setParam(freezeRasterA/B/C, 1) → readParam returns 1 for each (round-trip)', async () => {
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      for (const k of ['freezeRasterA', 'freezeRasterB', 'freezeRasterC'] as const) {
+        expect(handle.readParam!(k), `${k} default`).toBe(0);
+        handle.setParam!(k, 1);
+        expect(handle.readParam!(k), `${k} after setParam(1)`).toBe(1);
+        handle.setParam!(k, 0);
+        expect(handle.readParam!(k), `${k} after setParam(0)`).toBe(0);
+      }
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('setParam(freezeTable, 1) actually halts loadWavetable posts (NOT just node.params mutation)', async () => {
+    // The PRE-fix bridge would happily keep posting after this setParam
+    // because the closure mirror didn't exist and the switch dropped the
+    // case. This pins that setParam is the wire — the only path the
+    // reconciler uses. Direct node.params mutation must NOT be required.
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx, posted } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      nowStep();
+      handle.read!('tick');
+      const initialPosts = posted.filter((m) => m.type === 'loadWavetable').length;
+      expect(initialPosts).toBeGreaterThan(0);
+      // ONLY setParam, not node.params. Pre-fix this no-ops; post-fix the
+      // bridge halts.
+      handle.setParam!('freezeTable', 1);
+      for (let i = 0; i < 4; i++) { nowStep(); handle.read!('tick'); }
+      const postsAfter = posted.filter((m) => m.type === 'loadWavetable').length;
+      expect(postsAfter).toBe(initialPosts);
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('setParam(freezeRasterA, 1) holds raster A while B/C keep drifting', async () => {
+    // Per-raster freezes go through the same wiring. Pre-fix none of these
+    // worked; post-fix each gates its own painter. We observe via the
+    // raster ImageData reference: while frozen the painter's data stays
+    // pinned (no new paint call → same pixel buffer), while the live
+    // ones keep drifting.
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      // Initial tick fills + caches all three.
+      nowStep();
+      handle.read!('tick');
+      // Hash of raster A's pixel buffer (sum of bytes) — cheap fingerprint.
+      const hashRaster = (key: string): number => {
+        const img = handle.read!(key) as { data: Uint8ClampedArray };
+        let s = 0;
+        // Sample 256 spaced bytes — enough to detect ANY paint delta from
+        // the next analyser pull without iterating 256 KB per tick.
+        for (let i = 0; i < img.data.length; i += Math.floor(img.data.length / 256)) {
+          s = (s + img.data[i]!) | 0;
+        }
+        return s;
+      };
+      const hA0 = hashRaster('rasterImageDataA');
+      const hB0 = hashRaster('rasterImageDataB');
+      // Freeze A; B + C stay live.
+      handle.setParam!('freezeRasterA', 1);
+      // Drive a few ticks — each tick the FakeAnalyser hands back a fresh
+      // phase, so a live raster's fingerprint shifts while a frozen one's
+      // does NOT.
+      for (let i = 0; i < 4; i++) { nowStep(); handle.read!('tick'); }
+      const hA1 = hashRaster('rasterImageDataA');
+      const hB1 = hashRaster('rasterImageDataB');
+      // Frozen raster A: identical fingerprint (paint skipped).
+      expect(hA1, 'raster A pinned under freezeRasterA=1').toBe(hA0);
+      // Live raster B: fingerprint changed (paint ran on fresh analyser data).
+      expect(hB1, 'raster B kept moving under freezeRasterA=1').not.toBe(hB0);
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('unfreezing a raster via setParam(0) re-engages the paint path', async () => {
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      nowStep();
+      handle.read!('tick');
+      const hashRaster = (key: string): number => {
+        const img = handle.read!(key) as { data: Uint8ClampedArray };
+        let s = 0;
+        for (let i = 0; i < img.data.length; i += Math.floor(img.data.length / 256)) {
+          s = (s + img.data[i]!) | 0;
+        }
+        return s;
+      };
+      handle.setParam!('freezeRasterA', 1);
+      for (let i = 0; i < 3; i++) { nowStep(); handle.read!('tick'); }
+      const hAFrozen = hashRaster('rasterImageDataA');
+      // Unfreeze. Subsequent ticks must repaint A → fingerprint must move.
+      handle.setParam!('freezeRasterA', 0);
+      for (let i = 0; i < 3; i++) { nowStep(); handle.read!('tick'); }
+      const hAUnfrozen = hashRaster('rasterImageDataA');
+      expect(hAUnfrozen, 'raster A repainting after setParam(freezeRasterA, 0)').not.toBe(hAFrozen);
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('honors node.params snapshot at MOUNT (freezeTable=1 in initial params) until setParam flips', async () => {
+    // The closure mirror is initialized from node.params at mount — so a
+    // patch loaded with freezeTable=1 baked in must boot already frozen.
+    // The bridgeTick still runs (computes field for the scope) but does
+    // NOT post loadWavetable. Then setParam(freezeTable, 0) un-freezes.
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx, posted } = makeFoxyMockEnv();
+      const node = makeFoxyNode({ freezeTable: 1 });
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      // The closure reads node.params at mount → freezeTable starts true.
+      expect(handle.readParam!('freezeTable')).toBe(1);
+      // Drive ticks. Because the bridge is frozen, no loadWavetable goes
+      // out — wtFrames stays []
+      for (let i = 0; i < 3; i++) { nowStep(); handle.read!('tick'); }
+      expect(posted.filter((m) => m.type === 'loadWavetable').length).toBe(0);
+      // Unfreeze + tick → at least one loadWavetable lands.
+      handle.setParam!('freezeTable', 0);
+      nowStep();
+      handle.read!('tick');
+      expect(posted.filter((m) => m.type === 'loadWavetable').length).toBeGreaterThan(0);
     } finally {
       perf.restore();
     }
