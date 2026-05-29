@@ -437,4 +437,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // thresholdly across platforms; linux baseline pending a `task vrt:update`
   // run on linux CI.
   'linux/nibbles',
+  // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
+  // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
+  // `__nibblesForceLength` test hook. Darwin baselines captured on this
+  // machine; the linux baselines depend on cross-platform paint timing of
+  // BOTH cards in the same viewport — pending a `task vrt:update` run on
+  // linux CI. The hard regression-coverage gate lives in
+  // `e2e/tests/nibbles-cv-scope.spec.ts` (asserts SCOPE.ch1 sample tracks
+  // lengthToCv(length) — i.e. the CV signal actually arrives at the SCOPE
+  // input — and is monotonic across the 5-step sweep).
+  'linux/nibbles-cv-min',
+  'linux/nibbles-cv-25',
+  'linux/nibbles-cv-50',
+  'linux/nibbles-cv-75',
+  'linux/nibbles-cv-max',
 ]);
