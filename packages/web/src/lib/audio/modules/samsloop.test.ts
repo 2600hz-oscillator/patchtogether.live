@@ -626,6 +626,50 @@ describe('samsloopMath.render — one-shot mode', () => {
   });
 });
 
+describe('samsloopMath.render — rate semantics around the dead-center default', () => {
+  // These tests pin the contract the rate-fader-rework relies on. The
+  // pure-math mirror models the cursor as advancing by `rate` units per
+  // output sample (it intentionally does NOT model the worklet's
+  // bufferRate/contextRate scale — that's a separate layer documented in
+  // the worklet header). What matters here: rate=1 → cursor moves one
+  // buffer-sample per output sample; rate=0 → cursor frozen; rate<0 →
+  // cursor walks backwards.
+
+  it('rate=+1 (the default, dead-center on the knob) advances one buffer sample per output sample', () => {
+    // Pure ramp 0..1 over 256 samples. After N output samples at rate=1
+    // the cursor should be at index N (within fp tolerance), so out[N]
+    // ≈ N/256.
+    const buf = rampBuffer(256);
+    const { out } = samsloopMath.render(buf, 100, 1, 0, 256, 'loop');
+    for (const n of [0, 10, 50, 99]) {
+      expect(out[n]).toBeCloseTo(n / 256, 5);
+    }
+  });
+
+  it('rate=0 freezes playback: cursor never moves, all samples == buf[start]', () => {
+    // A non-trivial window so we can see start-position parking. We seed
+    // start=37 in a 200-sample ramp; the cursor begins at 37 and the
+    // rate=0 path keeps it there for every output sample → out[i] = 0.185.
+    const buf = rampBuffer(200);
+    const { out, active } = samsloopMath.render(buf, 50, 0, 37, 200, 'loop');
+    expect(active).toBe(true);
+    for (let i = 0; i < 50; i++) {
+      expect(out[i]).toBeCloseTo(37 / 200, 6);
+    }
+  });
+
+  it('rate=-1 (reverse unity) walks the cursor backwards from end-1, one sample per output frame', () => {
+    // Window [0..100), rate=-1 → cursor starts at 99 and decrements.
+    // out[0] = 99/100, out[10] = 89/100, etc. (mirrors the existing
+    // reverse-playback test but pins it as the unity-reverse contract.)
+    const buf = rampBuffer(100);
+    const { out } = samsloopMath.render(buf, 50, -1, 0, 100, 'loop');
+    expect(out[0]).toBeCloseTo(99 / 100, 5);
+    expect(out[10]).toBeCloseTo(89 / 100, 5);
+    expect(out[49]).toBeCloseTo(50 / 100, 5);
+  });
+});
+
 describe('samsloopMath.render — empty buffer', () => {
   it('renders silence for an empty buffer with no crashes', () => {
     const empty = new Float32Array(0);

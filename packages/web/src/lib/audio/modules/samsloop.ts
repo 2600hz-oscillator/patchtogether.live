@@ -610,10 +610,12 @@ export const samsloopDef: AudioModuleDef = {
       if (!samples || samples.length === 0) return;
       // Transfer the underlying buffer to the worklet (zero-copy when the
       // browser supports transferables — falls back to structuredClone
-      // otherwise).
+      // otherwise). Pass the buffer's captured sampleRate so the worklet
+      // can scale the cursor — rate=1.0 must play at the sample's natural
+      // pitch even when the AudioContext runs at a different rate.
       const f32 = new Float32Array(samples);
       workletNode.port.postMessage(
-        { type: 'loadSample', samples: f32.buffer },
+        { type: 'loadSample', samples: f32.buffer, sampleRate: d?.sampleRate },
         [f32.buffer],
       );
     }
