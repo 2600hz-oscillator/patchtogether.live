@@ -55,8 +55,47 @@ export interface ScopeDrawParams {
   ch2Color?: string;
 }
 
-const RANGE_MAX_AUDIO = 1;
-const RANGE_MAX_CV = 5;
+// Display-axis range conventions:
+//   AUDIO: ±1.0 — Web Audio float-sample convention. A unity-gain VCO,
+//          sampler, or MIXER sums sit in [-1, +1] under nominal levels.
+//   CV:    ±5.0 — Eurorack canonical bipolar CV range. Pitch CV (V/oct)
+//          travels ±5 octaves around the nominal centre; LFO depth knobs
+//          + audio-rate cutoff modulation in this codebase (e.g. BLADES'
+//          "±5 octaves at full deflection") all settle on this scale.
+//          A 5V pulse fills the channel; a 1V (one-octave) ramp is a
+//          readable 1/5 of the channel height — what you want for a
+//          pitch-CV trace.
+// Exposed for tests + the corner scale-label in drawScope.
+export const RANGE_MAX_AUDIO = 1;
+export const RANGE_MAX_CV = 5;
+
+/**
+ * Map a raw sample value to a vertical pixel offset around mid-line, for
+ * the audio-display or CV-display convention. Extracted as a pure helper
+ * so unit tests can pin the endpoints; the channel draw loop calls this
+ * once per sample.
+ *
+ *   AUDIO mode (isCv=false): a ±1 sample fills the full half-height.
+ *     pixel_y_offset = sample * halfHeight
+ *   CV mode    (isCv=true):  a ±cvRange sample fills the full half-height.
+ *     pixel_y_offset = (sample / cvRange) * halfHeight
+ *
+ * The returned offset is the SIGNED delta from the mid-line (positive =
+ * up in canvas coords because the caller subtracts it from h/2). The
+ * channel-draw loop owns the actual mid-y + scale/offset chain; this
+ * helper is the mode-aware normaliser at the input of that chain.
+ */
+export function pixelFromSample(
+  sample: number,
+  isCv: boolean,
+  halfHeight: number,
+  cvRange: number,
+): number {
+  if (isCv) {
+    return (sample / cvRange) * halfHeight;
+  }
+  return sample * halfHeight;
+}
 
 /** Top-level draw entry. Clears the canvas, fills bg, dispatches to
  *  drawSplit / drawXY based on mode. Idempotent — safe to call every
@@ -97,13 +136,44 @@ function drawSplit(
   ch1RangeMax: number,
   ch2RangeMax: number,
 ): void {
-  // Center line.
+  // Center line (0V reference).
   ctx2d.strokeStyle = '#1f242c';
   ctx2d.lineWidth = 1;
   ctx2d.beginPath();
   ctx2d.moveTo(0, h / 2);
   ctx2d.lineTo(w, h / 2);
   ctx2d.stroke();
+
+  // CV-mode reference rails. For each channel in CV mode, draw faint
+  // dashed lines at ±cvRange so the user has a visual reference for
+  // the trace's voltage corners. The rails sit at the channel's full
+  // half-height (i.e. the pixel positions a ±cvRange sample would hit
+  // before scale/offset). We don't draw rails for AUDIO mode — the ±1
+  // limits are already at the visible top/bottom of the channel, so a
+  // dashed line there is redundant with the canvas edge.
+  const ch1IsCv = (params.ch1Range ?? 0) >= 0.5;
+  const ch2IsCv = (params.ch2Range ?? 0) >= 0.5;
+  if (ch1IsCv || ch2IsCv) {
+    ctx2d.save();
+    ctx2d.setLineDash([3, 3]);
+    ctx2d.strokeStyle = '#1f242c';
+    ctx2d.globalAlpha = 0.7;
+    ctx2d.lineWidth = 1;
+    if (ch1IsCv) {
+      // ch1 rails sit one half-height from the mid-line — same scale as
+      // the sample-to-pixel mapping in drawChannel (pixelFromSample
+      // returns halfHeight for sample=cvRange). Drawing at h/2 ± (h/2)
+      // would land at the canvas edges; we leave a 2px inset so the
+      // dashes are visible without overlapping the border.
+      ctx2d.beginPath();
+      ctx2d.moveTo(0, 2);
+      ctx2d.lineTo(w, 2);
+      ctx2d.moveTo(0, h - 2);
+      ctx2d.lineTo(w, h - 2);
+      ctx2d.stroke();
+    }
+    ctx2d.restore();
+  }
 
   const samplesInWindow = Math.min(
     snap.ch1.length,
@@ -113,6 +183,29 @@ function drawSplit(
 
   drawChannel(ctx2d, snap.ch1, samplesInWindow, step, w, h, ch1Color, 1, params.ch1Scale, params.ch1Offset, ch1RangeMax);
   drawChannel(ctx2d, snap.ch2, samplesInWindow, step, w, h, ch2Color, 0.6, params.ch2Scale, params.ch2Offset, ch2RangeMax);
+
+  // Corner scale labels — one for each channel in its own tint. Tells
+  // the user at a glance which display range the trace is plotted against
+  // ("±1.0" for AUDIO, "±5V" for CV). Drawn last so the trace lines
+  // don't paint over them.
+  drawScaleLabel(ctx2d, ch1RangeMax === RANGE_MAX_CV ? '±5V' : '±1.0', 4, 10, ch1Color);
+  drawScaleLabel(ctx2d, ch2RangeMax === RANGE_MAX_CV ? '±5V' : '±1.0', 4, h - 4, ch2Color);
+}
+
+/** Tiny corner-label drawer. Same font + alpha as the tuner readout. */
+function drawScaleLabel(
+  ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  color: string,
+): void {
+  ctx2d.save();
+  ctx2d.font = '9px ui-monospace, monospace';
+  ctx2d.fillStyle = color;
+  ctx2d.globalAlpha = 0.65;
+  ctx2d.fillText(text, x, y);
+  ctx2d.restore();
 }
 
 /** XY plot — ch1 horizontal, ch2 vertical. Phase relationships visible. */
@@ -180,10 +273,16 @@ function drawChannel(
   ctx2d.lineWidth = 1.5;
   ctx2d.beginPath();
   const start = samples.length - samplesInWindow;
+  const halfH = h / 2;
+  const isCv = rangeMax === RANGE_MAX_CV;
   for (let i = 0; i < samplesInWindow; i += step) {
-    const v = ((samples[start + i] ?? 0) / rangeMax) * scale + offset;
+    // pixelFromSample handles the mode-aware ±1 vs ±cvRange normalisation;
+    // scale + offset apply on top (faders), then we translate around the
+    // mid-line. NB: offset is in NDC y-units (-1..+1) — multiplied by
+    // halfH to land in canvas pixels.
+    const yOffsetPx = pixelFromSample(samples[start + i] ?? 0, isCv, halfH, RANGE_MAX_CV);
+    const y = halfH - (yOffsetPx * scale + offset * halfH);
     const x = (i / samplesInWindow) * w;
-    const y = h / 2 - v * (h / 2);
     if (i === 0) ctx2d.moveTo(x, y);
     else ctx2d.lineTo(x, y);
   }

@@ -161,23 +161,34 @@
   <div class="stripe"></div>
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="Scope" inline />
+    <!-- Per-channel AUDIO↔CV display-mode toggles. Mirrors the FOXY VCO
+         freeze-toggle UX (aria-pressed + named-mode label). Pressed =
+         the CV range is active (the channel-trace scales ±5V to full
+         height); unpressed = AUDIO (±1.0). The toggle ONLY affects
+         display scaling — both inputs accept signal regardless. -->
     <button
-      class="rng-btn"
+      class="mode-btn"
       class:cv={ch1Range >= 0.5}
       style="color: {ch1Color};"
+      aria-pressed={ch1Range >= 0.5}
+      data-testid="scope-ch1-mode"
       onclick={() => toggleRange(1)}
-      title={ch1Range >= 0.5 ? 'Ch1: CV range (±5)' : 'Ch1: audio range (±1)'}
+      title={ch1Range >= 0.5 ? 'Ch1: CV display (±5V) — click for AUDIO' : 'Ch1: AUDIO display (±1.0) — click for CV'}
     >
-      1{ch1Range >= 0.5 ? 'cv' : 'a'}
+      <span class="mode-ch">1</span>
+      <span class="mode-label">{ch1Range >= 0.5 ? 'CV' : 'AUDIO'}</span>
     </button>
     <button
-      class="rng-btn"
+      class="mode-btn"
       class:cv={ch2Range >= 0.5}
       style="color: {ch2Color};"
+      aria-pressed={ch2Range >= 0.5}
+      data-testid="scope-ch2-mode"
       onclick={() => toggleRange(2)}
-      title={ch2Range >= 0.5 ? 'Ch2: CV range (±5)' : 'Ch2: audio range (±1)'}
+      title={ch2Range >= 0.5 ? 'Ch2: CV display (±5V) — click for AUDIO' : 'Ch2: AUDIO display (±1.0) — click for CV'}
     >
-      2{ch2Range >= 0.5 ? 'cv' : 'a'}
+      <span class="mode-ch">2</span>
+      <span class="mode-label">{ch2Range >= 0.5 ? 'CV' : 'AUDIO'}</span>
     </button>
     <button class="xy-btn" class:active={xyMode} onclick={toggleXY} title={xyMode ? 'Split mode' : 'XY mode'}>
       {xyMode ? 'XY' : '⇆'}
@@ -284,10 +295,10 @@
     color: #1a1d23;
     border-color: var(--accent);
   }
-  .rng-btn {
+  .mode-btn {
     height: 18px;
-    min-width: 26px;
-    padding: 0 4px;
+    min-width: 48px;
+    padding: 0 5px;
     background: #14171c;
     border: 1px solid var(--border);
     border-radius: 3px;
@@ -295,10 +306,21 @@
     font-family: ui-monospace, monospace;
     cursor: pointer;
     line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
-  .rng-btn.cv {
+  .mode-btn[aria-pressed='true'] {
     background: #1c2028;
     border-color: currentColor;
+  }
+  .mode-btn .mode-ch {
+    opacity: 0.7;
+    font-weight: 600;
+  }
+  .mode-btn .mode-label {
+    font-variant: small-caps;
+    letter-spacing: 0.04em;
   }
   .screen-wrap {
     margin: 16px 30px 8px;

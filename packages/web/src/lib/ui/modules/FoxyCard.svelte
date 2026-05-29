@@ -199,6 +199,14 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={320}>
     <div class="body">
+      <!-- 2-column layout:
+             LEFT  — sources: SWOLE A/B/C + RASTER A/B/C previews + XYZ scope
+                     (+ FREEZE TABLE toggle).
+             RIGHT — wavetable: GEN mode + XYZ volumetric + VCO SYNC +
+                     LIVE WAVETABLE display + WAVECEL knob row.
+           All controls preserved; only the layout changes. -->
+      <div class="card-grid">
+        <div class="card-col card-col-left">
       <!-- mini SWOLEVCO source A controls (X axis — column distribution) -->
       <div class="section-label">SWOLE A (X axis · column dist)</div>
       <div class="knob-row">
@@ -270,7 +278,9 @@
         </div>
       </div>
 
-      <!-- XYZ scope window (X=A · Y=B · Z=C) — reads the live wavetable -->
+      <!-- XYZ scope window (X=A · Y=B · Z=C) — reads the live wavetable.
+           FREEZE TABLE sits under the XYZ scope on the LEFT column: it
+           freezes the wavetable ONLY (XYZ scope keeps animating). -->
       <div class="preview-row">
         <div class="preview">
           <canvas bind:this={xyzEl} width="160" height="84" class="prev-canvas box-canvas" data-testid="foxy-xyz"></canvas>
@@ -284,7 +294,9 @@
           >{pv('freezeTable', 0) >= 0.5 ? 'TABLE FROZEN' : 'FREEZE TABLE'}</button>
         </div>
       </div>
+        </div>
 
+        <div class="card-col card-col-right">
       <!-- GEN mode picker — switches the WAVETABLE GENERATOR path between
            the XYZ (default) continuous-heightfield + 3D Shape Gen
            (experimental, vaporwave 3D primitives in a box). -->
@@ -349,14 +361,43 @@
         <Knob value={pv('spread', defv('spread'))} min={1} max={5}   defaultValue={1} label="Sprd"             curve="linear" onchange={set('spread')} moduleId={id} paramId="spread" readLive={live('spread')} />
         <Knob value={pv('fold', defv('fold'))}   min={0}   max={1}   defaultValue={0} label="Fold"             curve="linear" onchange={set('fold')}   moduleId={id} paramId="fold"   readLive={live('fold')} />
       </div>
+        </div>
+      </div>
     </div>
   </PatchPanel>
 </div>
 
 <style>
   .foxy-card {
-    width: 360px;
-    min-height: 620px;
+    /* 2-column layout: wider + shorter than the single-column ancestor
+       (was 360 × 620). Left col carries the sources/rasters/XYZ scope,
+       right col carries the wavetable controls + LIVE WAVETABLE. */
+    width: 720px;
+    min-height: 320px;
+  }
+  .foxy-card .card-grid {
+    display: flex;
+    flex-direction: row;
+    gap: 18px;
+    width: 100%;
+  }
+  .foxy-card .card-col {
+    flex: 1 1 50%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .foxy-card .card-col-left {
+    border-right: 1px solid var(--module-bg, #1a1f2a);
+    padding-right: 12px;
+  }
+  /* Narrow-card fallback — collapse to single column to preserve usability
+     when the card is shrunk by the canvas zoom / layout chrome. */
+  @media (max-width: 560px) {
+    .foxy-card { width: 100%; }
+    .foxy-card .card-grid { flex-direction: column; }
+    .foxy-card .card-col-left { border-right: 0; padding-right: 0; }
   }
   .foxy-card .box-canvas {
     width: 96px;
