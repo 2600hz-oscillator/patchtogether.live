@@ -1120,6 +1120,10 @@ export function buildModuleManifest(
       // the Grids drum-map node tables + Euclidean LUT used by SYMBIOTE).
       // Not a ModuleDef.
       if (file.endsWith('-resources.ts')) return false;
+      // -rate.ts: pure helpers for asymmetric / custom rate-param visual
+      // mappings (e.g. samsloop-rate.ts: knob ↔ rate piecewise math).
+      // Not a ModuleDef.
+      if (file.endsWith('-rate.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.

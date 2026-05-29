@@ -23,6 +23,11 @@
     type SamsloopData,
     type SamsloopRecMachine,
   } from '$lib/audio/modules/samsloop';
+  import {
+    knobToRate,
+    rateToKnob,
+    formatRatePercent,
+  } from '$lib/audio/modules/samsloop-rate';
   import { useEngine } from '$lib/audio/engine-context';
   import { AudioEngine } from '$lib/audio/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -382,7 +387,7 @@
 <div class="mod-card samsloop-card" data-testid="samsloop-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="SAMSLOOP" />
-  <div class="subtitle">SAMPLE LOOPER · VARISPEED · ±2×</div>
+  <div class="subtitle">SAMPLE LOOPER · VARISPEED · −200%…+200%</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
@@ -473,19 +478,38 @@
       </div>
 
       <div class="rate-row">
+        <!--
+          Rate fader uses an ASYMMETRIC visual mapping: knob center maps to
+          rate=+1 (100% normal playback), full-left to rate=-2 (reverse 2×),
+          full-right to rate=+2 (forward 2×). The Fader component itself is
+          linear, so we feed it a synthetic `[0, 1]` value computed by
+          rateToKnob() and translate the drag back through knobToRate() at
+          the commit boundary. Tick labels at −200% / −100% / 0% / +100%
+          (center) / +200% telegraph the scale visually.
+        -->
         <Fader
-          value={rate}
-          min={SAMSLOOP_RATE_RANGE.min}
-          max={SAMSLOOP_RATE_RANGE.max}
-          defaultValue={SAMSLOOP_RATE_RANGE.defaultValue}
+          value={rateToKnob(rate)}
+          min={0}
+          max={1}
+          defaultValue={rateToKnob(SAMSLOOP_RATE_RANGE.defaultValue)}
           label="Rate"
-          units="×"
           curve="linear"
-          onchange={set('rate')} moduleId={id} paramId="rate"
-          readLive={live('rate')}
-          formatValue={(v: number) => v >= 0
-            ? `+${v.toFixed(2)}×`
-            : `${v.toFixed(2)}× rev`}
+          ticks={[
+            { frac: 0.0,        label: '-200%' },
+            { frac: 1 / 6,      label: '-100%' },
+            { frac: 1 / 3,      label: '0%' },
+            { frac: 0.5,        label: 'Norm' },
+            { frac: 1.0,        label: '+200%' },
+          ]}
+          onchange={(k: number) => set('rate')(knobToRate(k))}
+          moduleId={id}
+          paramId="rate"
+          readLive={() => {
+            const e = engineCtx.get(); if (!e || !node) return undefined;
+            const r = e.readParam(node, 'rate');
+            return r === undefined ? undefined : rateToKnob(r);
+          }}
+          formatValue={(k: number) => formatRatePercent(knobToRate(k))}
         />
       </div>
     </div>

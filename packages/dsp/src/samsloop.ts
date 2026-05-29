@@ -8,12 +8,24 @@
 // linear-interpolation tap, controlled by:
 //   - rate  (AudioParam, varispeed multiplier; combined slider + CV at the
 //           host side and clamped to [-3, +3]). Negative = reverse playback.
-//           1.0 is unity. The host's mapping convention is:
-//             slider center = 1.0 (forward unity)
-//             full right   = +2.0 (forward 2×)
-//             full left    = -2.0 (reverse 2×)
+//           1.0 is unity = "1× normal playback". The host's mapping
+//           convention is:
+//             slider center = +1.0 (forward unity, dead-center on knob)
+//             full right    = +2.0 (forward 2×)
+//             full left     = −2.0 (reverse 2×)
+//             rate = 0      → playback FROZEN
+//             rate < 0      → cursor walks BACKWARDS
 //             CV ±1 V sums on top, so two ±1 V LFOs at full deflection can
 //             still push the rate as low as ±3.
+//
+// Sample-rate compensation: the cursor advances by
+// `rate * (bufferRate / contextRate)` per output sample, so rate=1.0 plays
+// the sample at its captured pitch regardless of the AudioContext's
+// native rate. (Without this scale, a 24 kHz buffer in a 48 kHz context
+// at rate=1 would play at 2× perceived speed — the bug that prompted
+// this defaultValue/mapping rework.) The host posts `sampleRate` in the
+// loadSample message; bufferRate defaults to the context rate (1.0
+// scale) when not provided so legacy patches still load.
 //   - mode  (AudioParam, 0=one-shot, 1=loop). Discrete; we round inside.
 //   - start (AudioParam, sample-index lower bound; clamped to [0, len-1]).
 //   - end   (AudioParam, sample-index upper bound; clamped to [start+1, len]).
@@ -40,6 +52,12 @@ declare function registerProcessor(name: string, ctor: typeof AudioWorkletProces
 interface LoadSampleMessage {
   type: 'loadSample';
   samples: ArrayBuffer; // Float32 PCM, mono-mixed-down at the host side
+  /** Native sample rate of the loaded buffer. The worklet scales the
+   *  read-cursor by `bufferRate / contextRate` so rate=1.0 plays at the
+   *  sample's captured pitch regardless of the AudioContext's rate.
+   *  Optional for backward compatibility — falls back to the context's
+   *  own sample rate (= 1.0 scale, legacy behavior) if omitted. */
+  sampleRate?: number;
 }
 interface ResetMessage {
   type: 'reset';
@@ -77,6 +95,13 @@ class SamsloopProcessor extends AudioWorkletProcessor {
   private active = true;
   /** Trigger edge detection. */
   private lastTrig = 0;
+  /** Cursor scale = bufferSampleRate / contextSampleRate. At scale=1 the
+   *  cursor advances one buffer-sample per output sample (legacy behavior:
+   *  the buffer plays at the context's rate, NOT its captured rate, which
+   *  is wrong when bufferRate ≠ contextRate). Set on `loadSample`; defaults
+   *  to 1 so a stale buffer from before the host started passing
+   *  sampleRate still plays. */
+  private rateScale = 1;
 
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
@@ -90,6 +115,14 @@ class SamsloopProcessor extends AudioWorkletProcessor {
       this.buffer = new Float32Array(msg.samples);
       this.cursor = 0;
       this.active = true;
+      // Update the cursor scale. If the host omitted sampleRate we default
+      // to the context rate so the cursor advances 1 sample per output
+      // frame (the legacy behavior — keeps old saved patches sounding the
+      // same as they did before the rate-mapping rework).
+      const bufRate = typeof msg.sampleRate === 'number' && msg.sampleRate > 0
+        ? msg.sampleRate
+        : sampleRate;
+      this.rateScale = bufRate / sampleRate;
     } else if (msg.type === 'reset') {
       this.cursor = 0;
       this.active = true;
@@ -169,11 +202,11 @@ class SamsloopProcessor extends AudioWorkletProcessor {
       out[i] = this.read(this.cursor);
 
       // Advance the cursor by the current rate (a-rate so CV reads sample-
-      // accurate). Rate is in playback-rate units (1.0 = original speed
-      // assuming the buffer was decoded at the same sample rate as the
-      // graph; we don't resample on load).
+      // accurate), scaled by bufferRate/contextRate so rate=1.0 plays at
+      // the sample's captured pitch regardless of the AudioContext's
+      // native rate. rate=0 freezes; rate<0 reverses.
       const rate = rateArr.length > 1 ? (rateArr[i] ?? 1) : (rateArr[0] ?? 1);
-      this.cursor += rate;
+      this.cursor += rate * this.rateScale;
 
       // Handle window crossings. The branches below are organised by
       // direction (forward vs reverse) and mode (loop vs one-shot).
