@@ -29,4 +29,17 @@ describe('WAVVIZ module def shape', () => {
     expect(foldParam?.min).toBe(0);
     expect(foldParam?.max).toBe(1);
   });
+
+  it('exports WavvizData (compile-time contract for the preset dropdown)', async () => {
+    const mod = await import('./wavviz');
+    // The WavvizData export is types-only at runtime — synthesize an object
+    // matching the shape to validate WavvizCard's payload still typechecks.
+    const data: import('./wavviz').WavvizData = {
+      wavetableFrames: [[0, 0.5, -0.5]],
+      wavetableLabel: 'TEST',
+    };
+    expect(Array.isArray(data.wavetableFrames)).toBe(true);
+    expect(data.wavetableLabel).toBe('TEST');
+    expect(typeof mod.wavvizDef).toBe('object');
+  });
 });
