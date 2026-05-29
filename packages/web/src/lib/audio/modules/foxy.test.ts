@@ -6,7 +6,7 @@
 // The factory itself needs a real AudioContext + the wavecel worklet —
 // covered by e2e.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   foxyDef,
   FOXY_GEN_MODE_NAMES,
@@ -15,7 +15,10 @@ import {
   FOXY_SYNC_MODE_NAMES,
   FOXY_SYNC_MODE_MAX,
   foxyRatioLock,
+  buildWavetableExport,
+  buildWavetableExportFilename,
 } from './foxy';
+import type { ModuleNode } from '$lib/graph/types';
 import { wavecelDef } from './wavecel';
 import {
   FOXY_FIELD_SIZE,
@@ -313,5 +316,379 @@ describe('FOXY ratio-lock sync (pure-math helper)', () => {
     expect(foxyRatioLock(0, 220)).toBe(220);
     expect(foxyRatioLock(-1, 220)).toBe(220);
     expect(foxyRatioLock(Number.NaN, 220)).toBe(220);
+  });
+});
+
+// ── EXPORT TABLE payload (pure helper) ────────────────────────────────
+//
+// The card's "EXPORT TABLE" button (visible only when FrT is on) calls
+// buildWavetableExport(wtFrames, mode) → FoxyWavetableExport. Pinning the
+// JSON shape here keeps the on-disk file format frozen + portable.
+
+describe('FOXY buildWavetableExport', () => {
+  function mkFrame(seed: number): Float32Array {
+    const f = new Float32Array(256);
+    for (let i = 0; i < 256; i++) f[i] = Math.sin(2 * Math.PI * (i / 256) * seed) * 0.5;
+    return f;
+  }
+
+  it('produces a 64×256 number[][] payload with the FOXY generator tag', () => {
+    const frames = Array.from({ length: 64 }, (_, k) => mkFrame(k + 1));
+    const out = buildWavetableExport(frames, 'XYZ');
+    expect(out.generator).toBe('FOXY');
+    expect(out.mode).toBe('XYZ');
+    expect(out.frames).toBe(64);
+    expect(out.samples).toBe(256);
+    expect(out.data.length).toBe(64);
+    expect(out.data[0]!.length).toBe(256);
+  });
+
+  it('carries the 3D Shape Gen mode tag verbatim when passed', () => {
+    const frames = Array.from({ length: 64 }, (_, k) => mkFrame(k + 1));
+    const out = buildWavetableExport(frames, '3D Shape Gen');
+    expect(out.mode).toBe('3D Shape Gen');
+  });
+
+  it('clamps every sample to [-1, 1]', () => {
+    // Deliberately push values outside [-1, 1] — clamp should rein them in.
+    const dirty = Array.from({ length: 64 }, () => {
+      const f = new Float32Array(256);
+      for (let i = 0; i < 256; i++) f[i] = i % 2 === 0 ? 2.5 : -3.1;
+      return f;
+    });
+    const out = buildWavetableExport(dirty, 'XYZ');
+    for (const row of out.data) {
+      for (const v of row) {
+        expect(v).toBeGreaterThanOrEqual(-1);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it('preserves the original values when already in range', () => {
+    const frames = [new Float32Array([0, 0.5, -0.5, 1, -1])];
+    const out = buildWavetableExport(frames, 'XYZ');
+    expect(out.data[0]).toEqual([0, 0.5, -0.5, 1, -1]);
+  });
+
+  it('emits an ISO timestamp at the passed `now`', () => {
+    const frames = [new Float32Array([0])];
+    const fixed = new Date('2026-05-29T12:34:56.789Z');
+    const out = buildWavetableExport(frames, 'XYZ', fixed);
+    expect(out.createdAt).toBe(fixed.toISOString());
+  });
+
+  it('is JSON-serializable round-trip (Float32Array→number[])', () => {
+    const frames = [new Float32Array([0.1, -0.2, 0.3])];
+    const out = buildWavetableExport(frames, 'XYZ');
+    const round = JSON.parse(JSON.stringify(out));
+    expect(round.data[0]).toEqual([
+      // toFixed-style cast for Float32 precision drift; toEqual with the
+      // raw Float32 values would be brittle.
+      expect.closeTo(0.1, 5),
+      expect.closeTo(-0.2, 5),
+      expect.closeTo(0.3, 5),
+    ]);
+  });
+});
+
+describe('FOXY buildWavetableExportFilename', () => {
+  it('formats as foxy-wavetable-YYYYMMDD-HHMMSS.json', () => {
+    // Use a fixed Date (LOCAL time, since the formatter pulls local parts
+    // so the user's downloaded file matches their wall clock).
+    const fixed = new Date(2026, 4, 29, 7, 8, 9); // 2026-05-29 07:08:09 local
+    expect(buildWavetableExportFilename(fixed)).toBe('foxy-wavetable-20260529-070809.json');
+  });
+
+  it('zero-pads months / days / time-parts', () => {
+    const fixed = new Date(2026, 0, 3, 1, 2, 4); // 2026-01-03 01:02:04
+    expect(buildWavetableExportFilename(fixed)).toBe('foxy-wavetable-20260103-010204.json');
+  });
+});
+
+// ── FREEZE TABLE end-to-end bridge behavior ───────────────────────────
+//
+// Pre-fix: when FrT was on, the bridge still recomputed `field` + `shapes`
+// + the inner wavetable on every tick. wtFrames stayed static (the post +
+// reassignment WAS gated) but the XYZ scope canvas read live field/shapes
+// → visibly animated even though the user expected a hard freeze.
+// Post-fix: bridgeTick early-returns after the raster paint when FrT is
+// on → wtFrames, field, shapes all hold their last snapshot.
+//
+// The factory needs a real-enough Web Audio surface to construct. We
+// stub just what the bridge touches (OscillatorNode, GainNode, AnalyserNode,
+// WaveShaperNode, AudioWorkletNode) + a fake performance.now we advance
+// past the 42-ms throttle between ticks.
+
+interface FakeAudioParam { value: number; setValueAtTime: (v: number, t: number) => void }
+interface PostedMessage { type: string; frames?: number[][] }
+
+function makeFoxyMockEnv() {
+  const posted: PostedMessage[] = [];
+  // Each AnalyserNode hands back a deterministic synthetic waveform when
+  // asked. The bridge feeds these into the three rasters. By default we
+  // hand back the SAME pattern on every call (so any drift in wtFrames
+  // across ticks comes from cursor advance, which we can disable for a
+  // pure freeze test).
+  let analyserSeed = 0;
+
+  function mkParam(): FakeAudioParam {
+    return { value: 0, setValueAtTime(v: number) { this.value = v; } };
+  }
+  class FakeOsc {
+    type = 'sine';
+    frequency = mkParam();
+    start = vi.fn();
+    stop = vi.fn();
+    connect = vi.fn();
+    disconnect = vi.fn();
+  }
+  class FakeGain {
+    gain = mkParam();
+    connect = vi.fn();
+    disconnect = vi.fn();
+  }
+  class FakeWaveShaper {
+    oversample = 'none';
+    curve: Float32Array | null = null;
+    connect = vi.fn();
+    disconnect = vi.fn();
+  }
+  class FakeAnalyser {
+    fftSize = 2048;
+    smoothingTimeConstant = 0;
+    connect = vi.fn();
+    disconnect = vi.fn();
+    getFloatTimeDomainData(out: Float32Array): void {
+      // Distinct deterministic pattern per call so the rasters DO change
+      // tick-over-tick — exactly the condition that previously animated
+      // the XYZ scope while frozen. The phase advance per seed step is
+      // tuned LARGE so the bridge's wavetableSignature sees a different
+      // hash on consecutive ticks (probe-sampling at 8 points).
+      const s = analyserSeed++;
+      const phase = s * 0.5;
+      for (let i = 0; i < out.length; i++) {
+        out[i] = Math.sin(i * 0.05 + phase) * 0.5 + Math.sin(i * 0.013 + phase * 1.3) * 0.4;
+      }
+    }
+  }
+  const portMock = {
+    postMessage: vi.fn((m: PostedMessage) => { posted.push(m); }),
+    onmessage: null as unknown,
+    close: vi.fn(),
+  };
+  const wParamMap = new Map<string, FakeAudioParam>();
+  for (const id of ['tune', 'fine', 'morph', 'spread', 'fold']) {
+    wParamMap.set(id, mkParam());
+  }
+  class FakeAudioWorkletNode {
+    port = portMock;
+    parameters = { get: (k: string) => wParamMap.get(k) };
+    connect = vi.fn();
+    disconnect = vi.fn();
+    constructor(_ctx: unknown, _name: string, _opts?: unknown) {}
+  }
+  const audioWorklet = { addModule: vi.fn(async (_url: string) => {}) };
+  const ctx = {
+    audioWorklet,
+    currentTime: 0,
+    sampleRate: 48000,
+    state: 'running' as AudioContextState,
+    createOscillator: () => new FakeOsc(),
+    createGain: () => new FakeGain(),
+    createWaveShaper: () => new FakeWaveShaper(),
+    createAnalyser: () => new FakeAnalyser(),
+  };
+
+  // Install all the Web Audio globals foxy.ts touches.
+  (globalThis as unknown as { AudioWorkletNode: typeof FakeAudioWorkletNode }).AudioWorkletNode = FakeAudioWorkletNode;
+  // RasterPainter.imageData() constructs `new ImageData(...)` which jsdom
+  // doesn't expose. Install a minimal stand-in (the bridge just needs the
+  // .data + .width + .height read-throughs).
+  class FakeImageData {
+    data: Uint8ClampedArray;
+    width: number;
+    height: number;
+    constructor(data: Uint8ClampedArray, width: number, height: number) {
+      this.data = data;
+      this.width = width;
+      this.height = height;
+    }
+  }
+  (globalThis as unknown as { ImageData: typeof FakeImageData }).ImageData = FakeImageData;
+
+  return { ctx, posted };
+}
+
+function makeFoxyNode(params: Record<string, number> = {}): ModuleNode {
+  return {
+    id: 'foxy-test',
+    type: 'foxy',
+    domain: 'audio',
+    position: { x: 0, y: 0 },
+    params,
+    data: {},
+  };
+}
+
+describe('FOXY bridge: FREEZE TABLE halts the whole pipeline', () => {
+  // Walk `performance.now` forward in big steps so each bridgeTick clears
+  // the BRIDGE_MS=42 throttle.
+  let nowMs = 0;
+  function nowStep(): void { nowMs += 1000; }
+
+  function installPerfNow(): { restore: () => void } {
+    const orig = globalThis.performance;
+    (globalThis as unknown as { performance: { now: () => number } }).performance = {
+      now: () => nowMs,
+    };
+    return {
+      restore: () => {
+        (globalThis as unknown as { performance: Performance | undefined }).performance = orig;
+      },
+    };
+  }
+
+  it('freezeTable = 1 → two consecutive ticks return the SAME wtFrames reference', async () => {
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      // First tick: build the initial wavetable while LIVE.
+      nowStep();
+      handle.read!('tick');
+      const wt1 = handle.read!('wavetableFrames') as Float32Array[];
+      expect(wt1.length).toBeGreaterThan(0);
+      // Freeze.
+      // FrT is a discrete-param read directly from node.params (no setParam
+      // case in the factory — the card flips node.params[freezeTable] via
+      // its patch.store seam). Mirror that here.
+      node.params.freezeTable = 1;
+      // Second tick: rasters keep getting fresh analyser data, but the
+      // bridge must hold wtFrames + field + shapes.
+      nowStep();
+      handle.read!('tick');
+      const wt2 = handle.read!('wavetableFrames') as Float32Array[];
+      // Reference equality: bridge skipped the rebuild.
+      expect(wt2).toBe(wt1);
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('freezeTable = 1 → field (XYZ mode) holds across ticks', async () => {
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      nowStep();
+      handle.read!('tick');
+      // Snapshot the field reference (NOT the rows — they're the live array)
+      const field1 = handle.read!('xyzField') as unknown[];
+      // FrT is a discrete-param read directly from node.params (no setParam
+      // case in the factory — the card flips node.params[freezeTable] via
+      // its patch.store seam). Mirror that here.
+      node.params.freezeTable = 1;
+      nowStep();
+      handle.read!('tick');
+      const field2 = handle.read!('xyzField') as unknown[];
+      // Same reference → bridge skipped boxToField3d.
+      expect(field2).toBe(field1);
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('freezeTable = 1 in 3D Shape Gen mode → shapes hold across ticks', async () => {
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx } = makeFoxyMockEnv();
+      const node = makeFoxyNode({ gen_mode: 1 });
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      nowStep();
+      handle.read!('tick');
+      const shapes1 = handle.read!('shapes') as unknown[];
+      // FrT is a discrete-param read directly from node.params (no setParam
+      // case in the factory — the card flips node.params[freezeTable] via
+      // its patch.store seam). Mirror that here.
+      node.params.freezeTable = 1;
+      nowStep();
+      handle.read!('tick');
+      const shapes2 = handle.read!('shapes') as unknown[];
+      expect(shapes2).toBe(shapes1);
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('freezeTable = 0 → 1 → 0 unfreezes the bridge (re-enables loadWavetable posts)', async () => {
+    // The unfreeze path's user-observable effect is that loadWavetable
+    // posts resume + the change-detect path is no longer skipped. Pinning
+    // that via the worklet port-message log (a behavioural assertion) is
+    // more robust than asserting wtFrames reference inequality — the
+    // signature comparator legitimately dedupes content-equivalent builds,
+    // and that's an OPTIMIZATION orthogonal to the freeze semantics.
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx, posted } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      // Live tick — at least one initial loadWavetable lands.
+      nowStep();
+      handle.read!('tick');
+      const postsAfterLive1 = posted.filter((m) => m.type === 'loadWavetable').length;
+      expect(postsAfterLive1).toBeGreaterThan(0);
+      // Freeze + spin a few ticks — bridge must skip all posts.
+      node.params.freezeTable = 1;
+      for (let i = 0; i < 3; i++) { nowStep(); handle.read!('tick'); }
+      const postsAfterFreeze = posted.filter((m) => m.type === 'loadWavetable').length;
+      expect(postsAfterFreeze).toBe(postsAfterLive1);
+      // Unfreeze + perturb an XYZ knob so the next build produces a
+      // different signature → bridge re-engages the post path.
+      node.params.freezeTable = 0;
+      handle.setParam!('xyz_warp', 0.9);
+      handle.setParam!('xyz_zheight', 0.95);
+      nowStep();
+      handle.read!('tick');
+      const postsAfterUnfreeze = posted.filter((m) => m.type === 'loadWavetable').length;
+      expect(postsAfterUnfreeze).toBeGreaterThan(postsAfterFreeze);
+    } finally {
+      perf.restore();
+    }
+  });
+
+  it('freezeTable = 1 → no further loadWavetable posts are sent', async () => {
+    nowMs = 0;
+    const perf = installPerfNow();
+    try {
+      const { ctx, posted } = makeFoxyMockEnv();
+      const node = makeFoxyNode();
+      const handle = await foxyDef.factory(ctx as unknown as AudioContext, node);
+      // Live tick — at least one initial loadWavetable post.
+      nowStep();
+      handle.read!('tick');
+      const postsBeforeFreeze = posted.filter((m) => m.type === 'loadWavetable').length;
+      expect(postsBeforeFreeze).toBeGreaterThan(0);
+      // Freeze, then run a few more ticks. Worklet should see zero new
+      // loadWavetable messages.
+      // FrT is a discrete-param read directly from node.params (no setParam
+      // case in the factory — the card flips node.params[freezeTable] via
+      // its patch.store seam). Mirror that here.
+      node.params.freezeTable = 1;
+      for (let i = 0; i < 5; i++) {
+        nowStep();
+        handle.read!('tick');
+      }
+      const postsAfterFreeze = posted.filter((m) => m.type === 'loadWavetable').length;
+      expect(postsAfterFreeze).toBe(postsBeforeFreeze);
+    } finally {
+      perf.restore();
+    }
   });
 });

@@ -19,6 +19,8 @@
     FOXY_GEN_MODE_MAX,
     FOXY_SYNC_MODE_NAMES,
     FOXY_SYNC_MODE_MAX,
+    buildWavetableExport,
+    buildWavetableExportFilename,
   } from '$lib/audio/modules/foxy';
   import { drawWave3D, drawWaveScope } from '$lib/audio/modules/wavecel-draw';
   import { drawFoxyXyz } from '$lib/audio/modules/foxy-draw';
@@ -85,6 +87,35 @@
   let genName = $derived(FOXY_GEN_MODE_NAMES[genIdx]);
 
   function toggleVizMode() { vizMode = vizMode === '3d' ? 'scope' : '3d'; }
+
+  // EXPORT TABLE — only meaningful (+ visible) when FREEZE TABLE is on, so
+  // the user is dumping a stable, identifiable snapshot. Reads the live
+  // wavetable frames + the current GEN mode via the same engine seam the
+  // viz uses, builds a portable JSON payload, then triggers a download via
+  // an in-DOM anchor click. No File System Access API → works in every
+  // browser the rest of the app supports.
+  let isFrozen = $derived(pv('freezeTable', 0) >= 0.5);
+  function exportTable(): void {
+    const e = engineCtx.get();
+    if (!e || !node) return;
+    const wt = e.read(node, 'wavetableFrames') as Float32Array[] | undefined;
+    if (!wt || wt.length === 0) return;
+    const modeIdx = clampGen(Number((e.read(node, 'genMode') as number | undefined) ?? 0));
+    const mode = FOXY_GEN_MODE_NAMES[modeIdx];
+    const now = new Date();
+    const payload = buildWavetableExport(wt, mode, now);
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = buildWavetableExportFilename(now);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Defer URL revoke a tick so Safari's late click-handling sees the
+    // blob; matches the VideoboxCard/VideoVarispeedCard export pattern.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 
   // Named-mode label next to the SYNC knob (Off / X & Y / XYZ). Mirrors the
   // pattern used by BLADES / TIDES2 — render the constant indexed by the
@@ -291,8 +322,22 @@
         <div class="sync-mode-name" data-testid="foxy-sync-mode-name">{syncModeLabel}</div>
       </div>
 
-      <!-- Animated WAVECEL wavetable display + full WAVECEL control row -->
-      <div class="section-label">LIVE WAVETABLE (WAVECEL)</div>
+      <!-- Animated WAVECEL wavetable display + full WAVECEL control row.
+           Section header sprouts an EXPORT TABLE button when FREEZE TABLE
+           is on — clicking it downloads the frozen wavetable as a portable
+           JSON file (see buildWavetableExport for the payload shape). -->
+      <div class="section-header">
+        <span class="section-label">LIVE WAVETABLE (WAVECEL)</span>
+        {#if isFrozen}
+          <button
+            type="button"
+            class="export-btn"
+            data-testid="foxy-export-table"
+            title="Export the frozen wavetable as JSON"
+            onclick={exportTable}
+          >↓ EXPORT</button>
+        {/if}
+      </div>
       <div class="viz-row">
         <canvas bind:this={wtEl} width="280" height="110" class="viz" data-testid="foxy-wavetable"></canvas>
         <button type="button" class="viz-toggle" onclick={toggleVizMode} data-testid="foxy-viz-toggle" aria-label="Toggle visualization">{vizMode === '3d' ? '3D' : 'SCOPE'}</button>
@@ -408,6 +453,31 @@
     font-family: ui-monospace, monospace;
   }
   .foxy-card .freeze-btn:hover { border-color: #6a7282; }
+  .foxy-card .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .foxy-card .section-header .section-label {
+    margin-top: 0;
+  }
+  .foxy-card .export-btn {
+    background: rgba(20, 24, 32, 0.85);
+    color: var(--text, #d8dde6);
+    border: 1px solid #404652;
+    border-radius: 2px;
+    padding: 1px 8px;
+    font-size: 0.55rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    font-family: ui-monospace, monospace;
+  }
+  .foxy-card .export-btn:hover {
+    border-color: #6a7282;
+    background: rgba(40, 48, 60, 0.95);
+  }
   .foxy-card .freeze-btn[aria-pressed="true"] {
     background: var(--cable-cv, #6cf);
     color: #000;
