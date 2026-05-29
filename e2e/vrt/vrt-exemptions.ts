@@ -427,4 +427,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // thresholdly across platforms; linux baseline pending a `task vrt:update`
   // run on linux CI.
   'linux/nibbles',
+  // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
+  // NIBBLES.length_cv → QBRT.cutoff_cv at 5 CV levels via the
+  // `__nibblesForceLength` test hook. Darwin baselines captured on this
+  // machine; the linux baselines depend on cross-platform paint timing of
+  // BOTH cards in the same viewport — pending a `task vrt:update` run on
+  // linux CI. The hard regression-coverage gate lives in
+  // `e2e/tests/nibbles-qbrt-cv.spec.ts` (asserts QBRT cutoff actually moves
+  // when length_cv sweeps).
+  'linux/nibbles-qbrt-cv-min',
+  'linux/nibbles-qbrt-cv-25',
+  'linux/nibbles-qbrt-cv-50',
+  'linux/nibbles-qbrt-cv-75',
+  'linux/nibbles-qbrt-cv-max',
 ]);

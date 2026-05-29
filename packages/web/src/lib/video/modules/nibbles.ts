@@ -228,6 +228,27 @@ export const nibblesDef: VideoModuleDef = {
      *  across runs. Re-checked each frame so it works whether the flag is
      *  set before OR after spawn. */
     let vrtSeedApplied = false;
+    /** Last-seen value of `__nibblesForceLength`. We update the length CV
+     *  whenever it CHANGES (including unset → set and set → unset) so the
+     *  forced value lands without requiring a game event to fire. NaN means
+     *  "no override has ever been observed" (sentinel for the first check). */
+    let lastForcedLength = Number.NaN;
+    /** Push the length CV update when the harness's `__nibblesForceLength`
+     *  changes (incl. transitions to/from unset). Cheap: one global read +
+     *  a value compare per draw frame. */
+    function maybeApplyForcedLength(): void {
+      const raw = (globalThis as unknown as { __nibblesForceLength?: number | undefined })
+        .__nibblesForceLength;
+      const current = typeof raw === 'number' && Number.isFinite(raw) ? raw : Number.NaN;
+      // Number.NaN !== Number.NaN, so the first frame always triggers. After
+      // that, the !==-compare correctly fires on any change OR transition
+      // to/from unset.
+      if (Number.isNaN(current) && Number.isNaN(lastForcedLength)) return;
+      if (current === lastForcedLength) return;
+      lastForcedLength = current;
+      updateLengthCvAndFreq();
+    }
+
     function maybeApplyVrtSeed(): void {
       if (vrtSeedApplied) return;
       const vrtSeed = (globalThis as unknown as { __nibblesVrtSeed?: number | boolean })
@@ -268,7 +289,9 @@ export const nibblesDef: VideoModuleDef = {
       dirGate.offset.setValueAtTime(0, t0);
       dirGate.start();
       lengthCv = ac.createConstantSource();
-      lengthCv.offset.setValueAtTime(lengthToCv(state.score), t0);
+      // Use the effective length here too so a pre-spawn `__nibblesForceLength`
+      // hook is honoured at boot (no game tick needed to land the override).
+      lengthCv.offset.setValueAtTime(lengthToCv(effectiveCvLength()), t0);
       lengthCv.start();
 
       // Continuous SNAKE square wave at length-derived freq.
@@ -333,6 +356,21 @@ export const nibblesDef: VideoModuleDef = {
       return Math.max(-1, Math.min(1, raw));
     }
 
+    /** Resolve the length the CV path should emit. When
+     *  `globalThis.__nibblesForceLength` is a number, the CV is computed
+     *  from that value (clamped to [1, NIBBLES_MAX_LENGTH]) — used by VRT
+     *  + e2e harnesses to deterministically pin the length_cv output to
+     *  known sweep points without depending on the live game state.
+     *  Otherwise the actual snake length (state.score) drives the CV. */
+    function effectiveCvLength(): number {
+      const forced = (globalThis as unknown as { __nibblesForceLength?: number | undefined })
+        .__nibblesForceLength;
+      if (typeof forced === 'number' && Number.isFinite(forced)) {
+        return Math.max(1, Math.min(NIBBLES_MAX_LENGTH, forced));
+      }
+      return state.score;
+    }
+
     /** Map length to a frequency: length=4 → 110 Hz (A2), every +12 length
      *  ticks = +1 octave. Per spec. */
     function lengthToFreq(length: number): number {
@@ -343,7 +381,10 @@ export const nibblesDef: VideoModuleDef = {
       const ac = ctx.audioCtx;
       if (!ac) return;
       const t = ac.currentTime;
-      const cv = lengthToCv(state.score);
+      // CV path honours the `__nibblesForceLength` test hook so harnesses
+      // can pin known sweep points; the audible square-wave freq stays
+      // tied to the actual game state (we don't fake the audio output).
+      const cv = lengthToCv(effectiveCvLength());
       const f = lengthToFreq(state.score);
       // Linear-ramp to smooth the step so a fast-grow chain (mid-game pellet
       // chain) doesn't audibly zip the oscillator pitch + length CV.
@@ -504,6 +545,10 @@ export const nibblesDef: VideoModuleDef = {
         // it's set. Cheap (single property read + boolean check after the
         // first apply).
         maybeApplyVrtSeed();
+        // VRT/e2e determinism: react to `__nibblesForceLength` changes so the
+        // length CV pins to known values regardless of the live game state.
+        // Cheap: one property read + a !==-compare.
+        maybeApplyForcedLength();
         const tNow = frame.time;
         const dt = lastDrawTimeS < 0 ? 0 : Math.max(0, tNow - lastDrawTimeS);
         lastDrawTimeS = tNow;
