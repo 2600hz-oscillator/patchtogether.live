@@ -554,6 +554,11 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // DOOM's first-frame WASM load is ~6-12s; only relevant if a DOOM
       // output is NOT exempt (today all are, so this branch is defensive).
       if (mod.type === 'doom') test.setTimeout(90_000);
+      // FOXY mounts a heavy chain (3 SwoleBlocks + 3 RasterPainters +
+      // WAVECEL worklet + 4-page card render). On cold CI Linux this
+      // routinely takes >30s for the waitForLoadState alone.
+      // atlantisCatalyst has a similar heavy-mount profile.
+      if (mod.type === 'foxy' || mod.type === 'atlantisCatalyst') test.setTimeout(90_000);
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
