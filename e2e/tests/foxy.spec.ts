@@ -35,6 +35,11 @@ async function canvasSum(page: import('@playwright/test').Page, testid: string):
 }
 
 test.describe('FOXY hybrid module', () => {
+  // FOXY mounts a lot before the rasters paint: 3 SwoleBlocks (osc graph each),
+  // 3 RasterPainters (256×256 buffers), a WAVECEL worklet, plus the per-tick
+  // box-blur + bilinear-sample pass added in v4.1. On slow Linux CI runners the
+  // 30s default budget runs out before the 'foxy-xyz' canvas appears. Bump.
+  test.setTimeout(90_000);
   test('renders the full internal chain + animates the live wavetable + makes audio', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
