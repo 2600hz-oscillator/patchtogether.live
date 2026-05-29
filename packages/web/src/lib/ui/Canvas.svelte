@@ -230,6 +230,10 @@
   // VIDEOVARISPEED — local-file player with performant varispeed transport.
   import VideoVarispeedCard from '$lib/ui/modules/VideoVarispeedCard.svelte';
   import FourPlexVidCard from '$lib/ui/modules/FourPlexVidCard.svelte';
+  // PEAKSTATE — animated mandala generator (kaleidoscope mirror-arm pen
+  // trace). Three video outputs: mono, RGB (hue-cycling), and a tilted
+  // rotating "fake 3D" bowl-twin.
+  import PeakstateCard from '$lib/ui/modules/PeakstateCard.svelte';
   // SCOREBOARD — 4-digit neon 7-segment counter widget (SCORE + RESET gates).
   import ScoreboardCard from '$lib/ui/modules/ScoreboardCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
@@ -405,6 +409,7 @@
     backdraft: BackdraftCard,
     bentbox: BentboxCard,
     acidwarp: AcidwarpCard,
+    peakstate: PeakstateCard,
     // Video-domain (Phase 1):
     inwards: InwardsCard,
     picturebox: PictureboxCard,
