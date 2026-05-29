@@ -27,6 +27,39 @@
 //     like the original plugin's host-tempo sync.
 //   • A PATCHED `clock` gate input STILL overrides both sources — the DSP
 //     measures the pulse period and uses it directly (existing behavior).
+//
+// Inputs:
+//   inL / inR (audio): stereo input.
+//   clock (gate): external clock; when patched (and tempoSync ≠ Off) the delay locks to the period.
+//   time_cv / feedback_cv / mix_cv / drive_cv / lfo_cv / drift_cv / pan_cv / duck_cv
+//     (cv, paramTarget=…): per-macro CV.
+//
+// Outputs:
+//   outL / outR (audio): wet+dry stereo output.
+//
+// Params:
+//   delayTime (log 0.001..2.0 s, default 0.2): tap time.
+//   tempoSync (discrete 0..19, default 0): 0 = Off (use ms), else musical division.
+//   clockSource (discrete 0..1, default 0): 0 = SYSTEM (TIMELORDE), 1 = MIDI (MIDICLOCK).
+//   syncPeriod (linear 0..30 s, default 0): cached sync period.
+//   lfoAmount (linear 0..0.5, default 0.0): LFO depth on time.
+//   lfoFrequency (log 0.1..10.0 Hz, default 2.0): LFO rate.
+//   driftAmount (linear 0..0.05, default 0.001): random drift on time.
+//   driftSpeed (log 0.1..10.0, default 1.0): drift rate.
+//   feedback (linear -1..1, default 0.5): tape-style feedback (negative inverts).
+//   stereoOffset (linear -0.5..0.5, default 0.0): L/R time offset.
+//   pan (linear -π..π, default 0.0): wet-channel rotation.
+//   panMode (discrete 0..2, default 0): pan-curve mode picker.
+//   duckAmount (linear 0..10.0, default 0.0): input-ducks-wet amount.
+//   duckAttack / duckRelease (log 0.1..100.0, default 10.0): ducker envelope.
+//   filterMode (discrete 0..3, default 0): in-loop filter mode.
+//   lowCut / highCut (linear, default 0.75 / 0.001): in-loop HPF/LPF.
+//   driveGain (linear 0..10.0, default 0.1): in-loop saturation drive.
+//   driveMix (linear 0..1, default 1.0): wet/dry across the saturator.
+//   driveCutoff (linear 0.01..1.0, default 1.0): post-saturator cutoff.
+//   driveIterations (discrete 1..16, default 1): saturator iteration count.
+//   dryVolume (linear 0..2.0, default 1.0): dry-bus level.
+//   wetVolume (linear 0..2.0, default 0.5): wet-bus level.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

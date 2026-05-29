@@ -9,6 +9,26 @@
 // MVP-A scope: voices + master + UI. Per-voice send-A / send-B amounts are
 // exposed as inputs + params but route to silence (no DESTROY / Reverb yet).
 // The FX-rack column on the card UI shows knobs marked WIP.
+//
+// Inputs (built programmatically — see buildInputs() / buildParams()):
+//   trig{1..4} (gate): one-shot trigger per voice (rising-edge fires).
+//   gate{1..4} (gate): held gate per voice (drives voice 4's ADSR; voices 1-3 retrigger on edge).
+//   pitch{1..4} (pitch): V/oct pitch per voice.
+//   v{1..3}_{tone,shape,volume,decay} (cv, paramTarget=…): per-DRUMMERGIRL voice CV.
+//   v4_fm (audio), v4_{wavePos,attack,decay,sustain,release,volume} (cv, paramTarget=…):
+//     voice-4 wavetable + ADSR CV.
+//   v{1..4}_{pan,sendA,sendB} (cv, paramTarget=…): per-voice mix and aux-send CV.
+//   bc_{decimate,bits,wet} (cv, paramTarget=…): master DESTROY CV.
+//   rv_{size,damp,mix} (cv, paramTarget=…): master Reverb CV.
+//   flt_{cutoff,resonance,mode,pingDecay} (cv, paramTarget=…): master QBRT filter CV.
+//   returnA / returnB (cv, paramTarget=…): aux-return level CV.
+//
+// Outputs:
+//   outL (audio): master stereo bus, left.
+//   outR (audio): master stereo bus, right.
+//
+// Params: per-voice voicing knobs, per-voice pan + send-A/B, master DESTROY +
+//   reverb + QBRT filter; built programmatically in buildParams().
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

@@ -18,6 +18,33 @@
 //   SIMPLIFIED — SPACE reverb tail (compact FDN-lite, not MI's reverb.h);
 //               sample-ROM exciters replaced by synthetic equivalents; STRING
 //               resonator model deferred.
+//
+// Inputs:
+//   in (audio): external excitation input (mixed into the exciter signal).
+//   strike_in (audio): per-strike-event external impulse input.
+//   pitch (pitch): V/oct, 0V = C4 (sums with note).
+//   gate (gate): held-gate input (drives BOW/BLOW envelopes + STRIKE retriggers).
+//   note_cv / env_cv / bowlvl_cv / bowtim_cv / blowlvl_cv / blowmeta_cv /
+//     blowtim_cv / strklvl_cv / strkmeta_cv / strktim_cv / geom_cv /
+//     bright_cv / damp_cv / pos_cv / space_cv / strength_cv
+//     (cv, linear, paramTarget=corresponding param): per-param CV displacement.
+//
+// Outputs:
+//   main (audio): main physical-model voice output.
+//   aux (audio): stereo-side / aux output for parallel processing.
+//
+// Params:
+//   note (linear -60..60 st, default 0): semitone offset.
+//   envShape (linear 0..1, default 1): exciter envelope macro.
+//   bowLevel / bowTimbre (linear 0..1): BOW exciter.
+//   blowLevel / blowMeta / blowTimbre (linear 0..1): BLOW (noise+tube) exciter.
+//   strikeLevel / strikeMeta / strikeTimbre (linear 0..1): STRIKE exciter.
+//   geometry (linear 0..1, default 0.2): resonator-geometry macro.
+//   brightness (linear 0..1, default 0.5): resonator high-end.
+//   damping (linear 0..1, default 0.25): partial decay.
+//   position (linear 0..1, default 0.3): pickup position.
+//   space (linear 0..2, default 0.3): SPACE reverb mix amount.
+//   strength (linear 0..1, default 0.5): output strength / drive.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

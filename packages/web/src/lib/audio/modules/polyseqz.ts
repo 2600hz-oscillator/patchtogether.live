@@ -21,6 +21,24 @@
 // Magnitude + distribution shape are functions of the humanize amount —
 // pure math lives in $lib/audio/humanize.ts so the unit tests can exercise
 // the distribution without spinning up an AudioContext.
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance one step. Unpatched = internal BPM.
+//   humanize_cv (cv, linear, paramTarget=humanize): displaces humanize amount.
+//
+// Outputs:
+//   poly (polyPitchGate): 5-lane chord bus (root + 3rd + 5th + 4th-voice + 5th-voice).
+//     Mono pitch sinks auto-receive lane 0.
+//   gate (gate): main gate (mono fallback for non-poly sinks).
+//   clock (gate): chained step clock-out.
+//
+// Params:
+//   bpm (linear 30..300, default 90): internal tempo.
+//   length (discrete 1..128, default 8): step count.
+//   octave (discrete -2..2, default 0): global transposition.
+//   gateLength (linear 0.1..0.95, default 0.6): per-step gate duty.
+//   humanize (linear 0..1, default 0): per-voice gate-on jitter amount.
+//   isPlaying (discrete 0..1, default 0): transport state.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

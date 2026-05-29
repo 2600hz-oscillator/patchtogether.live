@@ -19,6 +19,28 @@
 // advance one pattern step); when unpatched the internal tempo drives.
 //
 // schemaVersion: 1 — brand-new module, no migration.
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance one step. Unpatched = internal tempo.
+//   reset (gate): rising edge resets the pattern step index to 0.
+//   mapX_cv / mapY_cv (cv): pad-coordinate CV (sums into mapX / mapY knobs).
+//   bdDensity_cv / sdDensity_cv / hhDensity_cv (cv): per-channel density CV.
+//   chaos_cv (cv): displaces the chaos knob (per-pattern randomness amount).
+//   swing_cv (cv): displaces the swing offset.
+//
+// Outputs:
+//   bd / sd / hh (gate): per-channel drum trigger gates.
+//   accent (gate): accent gate (fires alongside the louder hits per the map).
+//   clock (gate): chained step clock-out.
+//
+// Params:
+//   tempo (linear 30..300, default 120): internal BPM.
+//   mode (discrete 0..1, default DRUMS): DRUMS (drum-map) vs EUCLIDEAN.
+//   mapX / mapY (linear 0..1, default 0.5): coordinate into the 5×5 drum map.
+//   bdDensity / sdDensity / hhDensity (linear 0..1, default 0.5): per-channel fill.
+//   chaos (linear 0..1, default 0): per-pattern randomness amount.
+//   swing (linear 0..0.75, default 0): off-step time shift.
+//   isPlaying (discrete 0..1, default 1): transport state.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

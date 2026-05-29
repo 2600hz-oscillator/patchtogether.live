@@ -40,6 +40,23 @@
 // sequencer saves.
 //
 // schemaVersion: 1 — brand new module.
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance one step. Unpatched = internal BPM.
+//
+// Outputs:
+//   pitch (pitch): V/oct of the current step's note.
+//   gate (gate): on-step gate.
+//   modelcv (cv): -1..+1 carrier of the current step's selected MACROOSCILLATOR
+//     model index (used with MACROOSCILLATOR's discrete model_cv input).
+//   clock (gate): chained step clock-out.
+//
+// Params:
+//   bpm (linear 30..300, default 120): internal tempo.
+//   length (discrete 1..128, default 16): step count.
+//   octave (discrete -2..2, default 0): global transposition.
+//   gateLength (linear 0.1..0.95, default 0.5): per-step gate duty.
+//   isPlaying (discrete 0..1, default 0): transport state.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

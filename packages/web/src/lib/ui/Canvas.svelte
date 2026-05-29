@@ -194,6 +194,8 @@
   import CallsineCard from '$lib/ui/modules/CallsineCard.svelte';
   // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0).
   import CocoaDelayCard from '$lib/ui/modules/CocoaDelayCard.svelte';
+  // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
+  import ResofilterCard from '$lib/ui/modules/ResofilterCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
@@ -238,6 +240,8 @@
   // trace). Three video outputs: mono, RGB (hue-cycling), and a tilted
   // rotating "fake 3D" bowl-twin.
   import PeakstateCard from '$lib/ui/modules/PeakstateCard.svelte';
+  // SCOREBOARD — 4-digit neon 7-segment counter widget (SCORE + RESET gates).
+  import ScoreboardCard from '$lib/ui/modules/ScoreboardCard.svelte';
   // STICKY — meta-domain paper-style sticky note (no engine binding).
   import StickyCard from '$lib/ui/modules/StickyCard.svelte';
   // GROUP — meta-domain N-modules-as-one card (no engine binding).
@@ -474,6 +478,8 @@
     // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
     callsine: CallsineCard,
     cocoadelay: CocoaDelayCard,
+    // RESOFILTER — Resonarium MultiFilter port (5 modes, named-mode label).
+    resofilter: ResofilterCard,
     // DOOM — single-instance interactive video module.
     doom: DoomCard,
     // NIBBLES — QBasic Nibbles snake game module.
@@ -484,6 +490,8 @@
     videovarispeed: VideoVarispeedCard,
     // 4PLEXVID — 4-in / 4-out video router with per-output gate-advanced selector.
     '4plexvid': FourPlexVidCard,
+    // SCOREBOARD — 4-digit neon 7-segment counter widget.
+    scoreboard: ScoreboardCard,
     // Meta-domain (no engine binding):
     sticky: StickyCard,
     group: GroupCard,

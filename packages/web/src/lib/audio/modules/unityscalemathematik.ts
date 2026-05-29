@@ -25,6 +25,28 @@
 // and lets the engine route audio-rate CV directly into each section's
 // AudioParam via the cvScale linear scaler (project convention; see
 // .myrobots/plans/cv-range-standard.md).
+//
+// Inputs:
+//   u_in (cv): UNITY-section signal input (linear attenuvert).
+//   u_atten_cv (cv, linear, paramTarget=unityAtten): displaces UNITY atten.
+//   a_in (cv): A-section signal input (curve-morphed attenuvert).
+//   a_atten_cv (cv, linear, paramTarget=aAtten): displaces A atten.
+//   a_curve_cv (cv, linear, paramTarget=aCurve): displaces A curve (linear ↔ expo).
+//   b_in (cv): B-section signal input (curve-morphed attenuvert, same shape as A).
+//   b_atten_cv (cv, linear, paramTarget=bAtten): displaces B atten.
+//   b_curve_cv (cv, linear, paramTarget=bCurve): displaces B curve.
+//
+// Outputs:
+//   u_out (cv): UNITY-section output (linear: u_in * atten).
+//   a_out (cv): A-section output (sign(x) * |x|^k * atten).
+//   b_out (cv): B-section output (same shape as A).
+//
+// Params:
+//   unityAtten (linear -1..1, default 1): UNITY attenuvert.
+//   aAtten (linear -1..1, default 1): A attenuvert.
+//   aCurve (linear 0..1, default 0): A curve (0 = linear, 1 = expo).
+//   bAtten (linear -1..1, default 1): B attenuvert.
+//   bCurve (linear 0..1, default 0): B curve (0 = linear, 1 = expo).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

@@ -16,6 +16,17 @@
 // The factory is DOM-free. The card UI handles `getUserMedia`, the
 // device dropdown, and lifecycle of the `<video>` element. That keeps
 // engine code testable without jsdom MediaStream shims.
+//
+// Inputs:
+//   gain (cv, paramTarget=gain): displaces the output-gain knob.
+//
+// Outputs:
+//   out (video): the camera stream as an RGB video source.
+//
+// Params:
+//   gain (linear 0..2): RGB gain multiplier.
+//   enabled (discrete 0..1): on/off toggle (off = silent black).
+//   mirror (discrete 0..1): horizontal flip ("mirror selfie").
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

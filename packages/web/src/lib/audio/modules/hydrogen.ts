@@ -41,6 +41,25 @@
 //   * Transport CV: play_cv / reset_cv / queue{1..4}_cv — same shape as
 //     SCORE / DRUMSEQZ / POLYSEQZ. Per-instrument tuning is kept across
 //     slot swaps (matches a hardware drum machine).
+//
+// Inputs:
+//   clock_in (gate): external clock; rising edges advance one step.
+//   reset_in (gate): rising edge resets the playhead.
+//   play_cv (cv): bipolar transport CV (≥0.5 → play, <0.5 → stop).
+//   reset_cv (cv): bipolar reset CV (≥0.5 → reset).
+//   queue1_cv..queue4_cv (cv): scene-slot recall CVs (≥0.5 → recall that slot).
+//
+// Outputs:
+//   out_l / out_r (audio): stereo master mix.
+//
+// Params (per kit + per-voice):
+//   bpm (linear 30..300, default 120): internal tempo.
+//   swing (linear 0..0.75, default 0): off-step time shift.
+//   gain (linear 0..2, default 1): master gain.
+//   isPlaying (discrete 0..1, default 0): transport state.
+//   kit (discrete 0..N, default DEFAULT_KIT_INDEX): kit picker (TR-808 / TR-909 / FM-PERC / 8BIT).
+//   per-voice × 16 (volume, pan, pitch, cutoff, resonance, attack, decay, sustain, release,
+//     mute, solo) — exposed via the shared VoiceOpts contract; built programmatically.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

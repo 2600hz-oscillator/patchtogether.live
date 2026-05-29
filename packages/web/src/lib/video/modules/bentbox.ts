@@ -45,6 +45,28 @@
 // classic Blargg ntsc filter (MIT, ~2003), but no code copied — both
 // referenced for the chroma demod approach (sin/cos at carrier
 // frequency, then low-pass on Y).
+//
+// Inputs:
+//   in (video): RGB input.
+//   hsync_drift_cv / hsync_loss_cv / vsync_drift_cv (cv, linear, paramTarget=…):
+//     per-axis sync-timing CV.
+//   chroma_phase_cv / chroma_instability_cv (cv, linear, paramTarget=…): chroma CV.
+//   feedback_gain_cv / feedback_delay_cv (cv, linear, paramTarget=…): AVEmod feedback loop CV.
+//   wavefold_cv (cv, linear, paramTarget=wavefold): displaces in-line wavefolder amount.
+//   scan_wobble_cv (cv, linear, paramTarget=scan_wobble): displaces scan-line wobble.
+//   bloom_cv / noise_cv (cv, linear, paramTarget=…): CRT post CV.
+//   master_gain_cv (cv, linear, paramTarget=master_gain): displaces master gain.
+//   mirror_x_gate / mirror_y_gate (cv, paramTarget=mirror{X,Y}Gate): rising edge toggles mirror.
+//
+// Outputs:
+//   out (video): the rendered CRT field.
+//
+// Params:
+//   hsync_drift / hsync_loss / vsync_drift / scan_wobble / chroma_phase / chroma_instability /
+//     feedback_gain / feedback_delay / wavefold / bloom / noise / master_gain / mirrorX / mirrorY /
+//     mirrorXGate / mirrorYGate: 12 bending knobs + 4 mirror controls covering timing /
+//     chroma / wavefolding / recursion / CRT phosphor. Default ranges/values per the
+//     constants below; CV inputs scale around the knob position.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

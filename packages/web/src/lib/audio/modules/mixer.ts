@@ -1,3 +1,24 @@
+// packages/web/src/lib/audio/modules/mixer.ts
+//
+// MIXER — 4-channel mono summing mixer with master gain.
+//
+// Four audio inputs, per-channel level knob, and a master gain on the sum.
+// No EQ, no panning, no aux sends — the simple "stack four signals into
+// one bus" utility. For stereo/EQ/sends use MIXMSTRS; for unity-attenuator
+// summing with direct outs use ATTENUMIX or VEILS. The DSP is Faust-
+// compiled (packages/dsp/src/mixer.dsp) and the four inputs are routed
+// onto distinct channels of the Faust node via a ChannelMerger.
+//
+// Inputs:
+//   in1..in4 (audio): the four channels to sum.
+//
+// Outputs:
+//   audio (audio): the summed bus (in1*ch1 + in2*ch2 + in3*ch3 + in4*ch4) * master.
+//
+// Params:
+//   ch1..ch4 (linear 0..1, default 1): per-channel level.
+//   master (linear 0..1, default 1): bus output gain.
+
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

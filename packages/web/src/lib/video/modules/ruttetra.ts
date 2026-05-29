@@ -35,6 +35,22 @@
 // Z unpatched: bind a mid-grey source so luma≈0.5 → zero displacement →
 // flat scanlines are still drawn (no black void on cold-spawn), matching
 // how RESHAPER avoided a black card.
+//
+// Inputs:
+//   z (video): source video — luma drives per-grid-point displacement.
+//   xShape / yShape / xDisp / yDisp / intensity / xFreq / yFreq
+//     (cv, linear, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): the additive-blend scanline render.
+//
+// Params:
+//   xShape / yShape (linear 0..1): per-axis ramp shape morph.
+//   xDisp / yDisp (linear -1..1): per-axis static displacement.
+//   intensity (linear 0..2): luma-to-displacement scale.
+//   tintR / tintG / tintB (linear 0..1): scanline tint colour.
+//   xFreq / yFreq (linear 0.25..8): per-axis ramp frequency.
+//   xPhase / yPhase (linear 0..1): per-axis phase offset.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

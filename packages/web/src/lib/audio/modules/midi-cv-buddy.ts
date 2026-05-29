@@ -47,6 +47,18 @@
 // License: vanilla Web MIDI API; no third-party library bundled (decision
 // recorded in PR body — webmidi.js / jzz both add ~10-17 KB gz for
 // ergonomics we don't need with one event handler).
+//
+// (Inputs / Outputs / Params block — IO surface restated for the docs manifest)
+//
+// Inputs: none.
+//
+// Outputs:
+//   pitch_cv (cv): V/oct (0V = C4 = MIDI 60). Includes pitch-bend.
+//   gate (gate): HIGH while any key is held; brief retrigger dip when retrigger fires.
+//   velocity_cv (cv): 0..1 (MIDI velocity / 127). Latched between events.
+//
+// Params: none on the engine side. (Device + channel filter + voice priority +
+//   retrigger behavior live in node.data; the card writes them.)
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

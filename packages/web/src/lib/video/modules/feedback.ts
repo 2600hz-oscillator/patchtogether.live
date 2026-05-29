@@ -13,6 +13,20 @@
 // the shader; the other receives this frame's accumulator. The
 // surface.texture pointer flips at the end of draw() so downstream
 // modules sample the just-written frame.
+//
+// Inputs:
+//   in (video): input being fed back.
+//   wet / decay / zoom / rotate / offsetX / offsetY (cv, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): wet+dry feedback render.
+//
+// Params:
+//   wet (linear 0..1): wet/dry balance.
+//   decay (linear 0..2): per-frame multiplier on the previous-frame texture.
+//   zoom (linear 0.9..1.1): per-frame zoom applied to the prev tap.
+//   rotate (linear -π..π): per-frame rotation.
+//   offsetX / offsetY (linear -1..1): per-frame translation.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

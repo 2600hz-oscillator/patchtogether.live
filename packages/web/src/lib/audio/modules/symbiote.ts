@@ -14,6 +14,36 @@
 // packages/dsp/src/symbiote-core.ts.
 //
 // Outputs: t1(BD) t2(SD) t3(HH) | x1(clock) x2(pitch CV 1V/oct) x3(gate) y(accent)
+//
+// Inputs:
+//   rate_cv (cv, linear, paramTarget=rate): displaces the master clock rate.
+//   submode_cv (cv, discrete, paramTarget=sub_mode): displaces the drum sub-mode (DRUMS/EUCLIDEAN).
+//   bd_cv / sd_cv / hh_cv (cv, linear, paramTarget=…_density): per-channel density CV.
+//   chaos_cv (cv, linear, paramTarget=chaos): displaces the drum-chaos amount.
+//   aciddensity_cv (cv, linear, paramTarget=acid_density): displaces TB-3PO note density.
+//   transpose_cv (cv, linear, paramTarget=transpose): displaces TB-3PO transposition.
+//   acidlength_cv (cv, linear, paramTarget=acid_length): displaces TB-3PO loop length.
+//   scale_cv (cv, discrete, paramTarget=scale): displaces TB-3PO scale.
+//
+// Outputs:
+//   t1 / t2 / t3 (gate): Grids BD / SD / HH triggers.
+//   x1 (gate): TB-3PO master clock.
+//   x2 (cv): TB-3PO pitch CV (1V/oct).
+//   x3 (gate): TB-3PO note gate.
+//   y (gate): TB-3PO accent gate.
+//
+// Params:
+//   rate (linear -60..60 st, default 0): master tempo rate macro.
+//   sub_mode (discrete 0..1, default 0): drum sub-mode (DRUMS vs EUCLIDEAN).
+//   map_x / map_y (linear 0..1, default 0.5): Grids drum-map coordinate.
+//   bd_density / sd_density / hh_density (linear 0..1, default 0.5): per-channel fill density.
+//   chaos (linear -1..1, default 0): drum chaos amount.
+//   euclid_length (discrete 1..16, default 16): Euclidean loop length.
+//   acid_density (linear 0..1, default 0.5): TB-3PO note density.
+//   transpose (linear -18..18 st, default 0): TB-3PO transposition.
+//   acid_length (discrete 1..32, default 16): TB-3PO loop length.
+//   scale (discrete 0..SYMBIOTE_SCALE_NAMES.length, default 0): TB-3PO scale.
+//   seed_lock (discrete 0..1, default 0): 1 = freeze the pattern seed (no re-randomize on clock).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

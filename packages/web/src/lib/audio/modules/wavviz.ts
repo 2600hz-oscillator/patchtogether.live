@@ -8,6 +8,23 @@
 //
 // Re-uses the existing wavetable-vco AudioWorklet processor without
 // modification — WAVVIZ is the SAME oscillator with extra post-fx.
+//
+// Inputs:
+//   pitch (pitch): V/oct pitch input, 0V = C4.
+//   fm (audio): audio-rate FM modulator (post-wavetable, pre-fold).
+//   wavePos (cv, paramTarget=wavePos): displaces the wavetable morph position.
+//   foldAmount (cv, linear, paramTarget=foldAmount): displaces the wavefold amount.
+//
+// Outputs:
+//   audio (audio): post-fold waveform output.
+//   scope (mono-video): live oscilloscope trace of the same post-fold signal.
+//
+// Params:
+//   tune (linear -36..36 st, default 0): coarse tune in semitones.
+//   fine (linear -100..100 ¢, default 0): fine tune cents.
+//   wavePos (linear 0..1, default 0): wavetable morph position.
+//   fmAmount (linear -1..1, default 0): FM input depth.
+//   foldAmount (linear 0..1, default 0): West-Coast wavefolder amount.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

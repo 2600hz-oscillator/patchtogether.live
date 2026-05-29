@@ -20,6 +20,16 @@
 // Implementation parallels midi-cv-buddy: one ConstantSourceNode per
 // output, main-thread event handler, setValueAtTime with the shared
 // SCHED_LOOKAHEAD_S so edges land at the start of the next audio block.
+//
+// Inputs: none. MIDI source is the host device, picked from a dropdown on the card.
+//
+// Outputs:
+//   clock (gate): rising edge every N MIDI clock ticks (N set by user; 24 = quarter, 12 = eighth, etc).
+//   run (cv): 0 while transport stopped, 1 while running (latched on MIDI Continue too).
+//   midistart (gate): one-shot pulse on MIDI Start (0xFA).
+//   midistop (gate): one-shot pulse on MIDI Stop (0xFC).
+//
+// Params: none on the audio-side — UI device-picker + division are persisted in node.data.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

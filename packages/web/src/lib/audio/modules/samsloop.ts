@@ -49,6 +49,19 @@
 // Hard limit: 250 KB on the raw upload file. Larger files are rejected.
 // (Compressed formats at 250 KB decode to roughly 5–15 s of audio at
 // typical bitrates, which is the intended scope for a sample looper.)
+//
+// Inputs:
+//   trig (gate): rising edge restarts loop playback from `start`.
+//   rate_cv (cv, linear, paramTarget=rate): displaces the playback rate.
+//
+// Outputs:
+//   out (audio): the loop's audio.
+//
+// Params:
+//   rate (linear, default = 1.0 native rate): playback rate (negative = reverse, 1 = native).
+//   mode (discrete 0..1, default 1): 0 = one-shot, 1 = loop.
+//   start (linear 0..1e6 samples, default 0): in-buffer start sample.
+//   end (linear 0..1e6 samples, default 1e6): in-buffer end sample.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

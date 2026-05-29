@@ -25,6 +25,19 @@
 // SyncedModuleDef wiring (peers compute identical state from shared
 // epoch + params + rngSeed). Adding it is purely additive: expose a
 // computeStateAt() and switch the module def's type to SyncedModuleDef.
+//
+// Inputs:
+//   paddle_left (cv): bipolar Y position for the left paddle.
+//   paddle_right (cv): bipolar Y position for the right paddle.
+//
+// Outputs:
+//   score_left (gate): one 5 ms pulse on each left-side score event.
+//   score_right (gate): one 5 ms pulse on each right-side score event.
+//
+// Params:
+//   speed (log 0.25..4, default 1.0): ball speed multiplier.
+//   paddleH (linear 0.05..0.5, default 0.2): paddle height as a fraction of screen.
+//   serveAngle (linear 0..1, default 0.3): max serve-angle variance.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

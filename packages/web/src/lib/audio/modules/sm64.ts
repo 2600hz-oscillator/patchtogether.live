@@ -53,6 +53,17 @@
 // exposed by a small bootstrap shim baked into the card before the bundle
 // runs; if upstream removes them in a future bump, the shim's first-call
 // detection will throw a clear error pointing at the README.
+//
+// Inputs:
+//   stick_x_cv / stick_y_cv (cv): bipolar -1..+1 stick position (mapped to N64-native ±64).
+//   a_gate / b_gate / z_gate / r_gate (gate): A / B / Z / R button gates (rising = press).
+//   c_up_gate / c_down_gate / c_left_gate / c_right_gate (gate): C-button gates.
+//   start_gate (gate): Start-button gate.
+//
+// Outputs: none (game is the output — render lives in the card).
+//
+// Params: none on the audio side. (Per-instance game state lives in
+//   the loaded sm64js bundle's singletons.)
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
