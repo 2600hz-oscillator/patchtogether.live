@@ -324,20 +324,38 @@ export const sm64Def: AudioModuleDef = {
           setPlayerInput?: (input: Sm64PlayerInput) => void;
           produceOneFrame?: () => void;
           autoStart?: () => void;
+          gameStarted?: boolean;
         };
       };
       const bridge = w.__sm64;
       if (bridge?.setPlayerInput) bridge.setPlayerInput(input);
 
-      // Synthetic start_gate ALSO triggers the bundle's startGame()
-      // affordance — equivalent to clicking #startbutton. This is what
-      // makes the auto-start visible (without it the card would just
-      // hold at the title screen). A manual rising-edge on start_gate
-      // re-fires it too, restarting the game (upstream's startbutton
-      // click handler calls location.reload() when gameStarted; we map
-      // that to "reset the engine instead", same effect minus the page
-      // reload).
-      if (events.get('start_gate') && bridge?.autoStart) {
+      // start_gate rising edge → HTML #startbutton click (the bundle's
+      // "Start Game" button that runs `startGame()` → `main_func()`).
+      //
+      // CRUCIAL: only fire this when the bundle hasn't started yet.
+      // Upstream's click handler is:
+      //   document.getElementById("startbutton").addEventListener('click',
+      //     () => { if (gameStarted) { location.reload() } else { startGame() } })
+      // Once `gameStarted` (the bundle's internal flag, set by startGame())
+      // is true, ANY subsequent click triggers `location.reload()` — which
+      // in our embedded card context reloads the entire patchtogether app,
+      // appearing to the user as an instant crash on the title-screen →
+      // gameplay transition (the user fires START to advance the title,
+      // the synthetic click fires location.reload() instead → page dies).
+      //
+      // The Mario "Press Start" semantic (advance from title, pause, etc.)
+      // is handled by `playerInput.buttonPressedStart` above (composed in
+      // `btn.pressedStart` and written via `bridge.setPlayerInput`). The
+      // bundle's `intro_regular` + every other in-game Start check reads
+      // that flag directly, so the N64-Start path stays fully wired
+      // without us ever needing to re-fire the HTML button after the first
+      // boot.
+      if (
+        events.get('start_gate')
+        && bridge?.autoStart
+        && bridge.gameStarted !== true
+      ) {
         bridge.autoStart();
       }
 

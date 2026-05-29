@@ -223,6 +223,79 @@ describe('Sm64Card bridge wiring (regression: post-extract white-screen)', () =>
   });
 });
 
+describe('sm64 factory: start_gate must NOT re-click #startbutton once gameStarted', () => {
+  // Regression for the title→gameplay "click Start crashes instantly" bug.
+  //
+  // The bundle's `#startbutton` click handler is:
+  //   addEventListener('click', () => gameStarted ? location.reload() : startGame())
+  // Once startGame() has run (first auto-start after ROM extract), the
+  // bundle's internal `gameStarted` flips true. Any subsequent click —
+  // including a synthetic one fired from our factory tick on a START gate
+  // edge — calls `location.reload()`, which in our embedded card context
+  // reloads the entire patchtogether app. The user perceives that as an
+  // instant crash on the title screen → gameplay transition (they fire
+  // START to advance the Mario-head title, our factory clicks #startbutton
+  // again, location.reload() fires, the app dies).
+  //
+  // Fix: only call `bridge.autoStart()` when the bridge reports
+  // `gameStarted === false`. The N64 "Press Start" semantic (advance
+  // title, pause, etc.) still flows through `playerInput.buttonPressedStart`
+  // independent of the HTML button — the bundle's `intro_regular` reads
+  // that flag directly, so the in-game Start path stays fully wired.
+  const FACTORY_SRC = fs.readFileSync(
+    path.resolve(__dirname, './sm64.ts'),
+    'utf8',
+  );
+
+  it("guards the bridge.autoStart() call with `gameStarted !== true`", () => {
+    // Strip comments so a comment containing "autoStart" doesn't match.
+    const code = FACTORY_SRC
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|\n)\s*\/\/[^\n]*/g, '$1');
+
+    // The factory should have EXACTLY one `bridge.autoStart()` call (the
+    // start_gate edge handler). If a future refactor adds a second one,
+    // this test fails loudly and the refactor needs to re-check both for
+    // the gameStarted guard.
+    const calls = code.match(/bridge\.autoStart\(\)/g) ?? [];
+    expect(calls.length, 'expected exactly one bridge.autoStart() call site').toBe(1);
+
+    // Find the call and look at the 250 chars immediately preceding it.
+    // That window must contain a `gameStarted !== true` (or equivalent
+    // `!gameStarted`) guard so the click only fires on the first START
+    // edge, not on every subsequent one.
+    const idx = code.indexOf('bridge.autoStart()');
+    expect(idx).toBeGreaterThan(0);
+    const window = code.slice(Math.max(0, idx - 250), idx);
+    const hasGuard =
+      /gameStarted\s*!==\s*true/.test(window) ||
+      /!\s*bridge[?.]*\.gameStarted/.test(window) ||
+      /!\s*w[?.]*__sm64[?.]*\.gameStarted/.test(window);
+    expect(
+      hasGuard,
+      'bridge.autoStart() MUST be guarded by `gameStarted !== true` (or !gameStarted) — '
+        + 'otherwise the bundle\'s `gameStarted ? location.reload() : startGame()` '
+        + 'handler reloads the page on every post-boot START edge, crashing the app.',
+    ).toBe(true);
+  });
+
+  it('still surfaces buttonPressedStart through playerInput on every START edge', () => {
+    // Sanity: the START → N64 button mapping is independent of the
+    // autoStart guard. composeSm64PlayerInput preserves buttonPressedStart
+    // unconditionally so the bundle's `intro_regular` (window.playerInput.
+    // buttonPressedStart) advances the title even after gameStarted=true.
+    const ALL_OFF = {
+      downA: false, downB: false, downZ: false, downStart: false,
+      downCl: false, downCr: false, downCu: false, downCd: false, downRt: false,
+      pressedA: false, pressedB: false, pressedZ: false, pressedStart: false,
+      pressedCl: false, pressedCr: false, pressedCu: false, pressedCd: false, pressedRt: false,
+    };
+    const pressedStart = composeSm64PlayerInput(0, 0, { ...ALL_OFF, downStart: true, pressedStart: true });
+    expect(pressedStart.buttonPressedStart).toBe(true);
+    expect(pressedStart.buttonDownStart).toBe(true);
+  });
+});
+
 describe('SM64 constants', () => {
   it('matches the upstream IDB key', () => {
     // The upstream's romTextureLoader.js stores ROM-extracted assets at
