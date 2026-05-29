@@ -57,8 +57,12 @@
   const outputs: PortDescriptor[] = [
     { id: 'out_l', label: 'OUT L', cable: 'audio' },
     { id: 'out_r', label: 'OUT R', cable: 'audio' },
-    { id: 'scope_out',  label: 'SCOPE VIDEO', cable: 'mono-video' },
-    { id: 'wave3d_out', label: '3D VIDEO',    cable: 'video' },
+    { id: 'scope_out',    label: 'SCOPE VIDEO',    cable: 'mono-video' },
+    { id: 'wave3d_out',   label: '3D VIDEO',       cable: 'video' },
+    // COMBINED is the mode-aware render of the active GEN visualization —
+    // XYZ field (gen_mode=0) or 3D Shape Gen scene (gen_mode=1) — exposed
+    // as a patchable video signal. Same content as the on-card XYZ window.
+    { id: 'combined_out', label: 'COMBINED VIDEO', cable: 'video' },
   ];
 
   let rasterAEl: HTMLCanvasElement | null = $state(null);
