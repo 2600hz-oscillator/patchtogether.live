@@ -7,8 +7,24 @@
 // covered by e2e.
 
 import { describe, expect, it } from 'vitest';
-import { foxyDef, FOXY_SYNC_MODE_NAMES, FOXY_SYNC_MODE_MAX, foxyRatioLock } from './foxy';
+import {
+  foxyDef,
+  FOXY_GEN_MODE_NAMES,
+  FOXY_GEN_MODE_COUNT,
+  FOXY_GEN_MODE_MAX,
+  FOXY_SYNC_MODE_NAMES,
+  FOXY_SYNC_MODE_MAX,
+  foxyRatioLock,
+} from './foxy';
 import { wavecelDef } from './wavecel';
+import {
+  FOXY_FIELD_SIZE,
+  boxHeightfield3d,
+  boxToField3d,
+  fieldToWavetable,
+  FOXY_XYZ_3D_DEFAULTS,
+} from './foxy-map';
+import { shapesPipeline } from './foxy-shapes';
 
 describe('FOXY module def shape', () => {
   it('is an audio-domain module in the Hybrid bucket category', () => {
@@ -134,6 +150,94 @@ describe('FOXY module def shape', () => {
     expect(byId.get('morph_cv')?.paramTarget).toBe('morph');
     expect(byId.get('spread_cv')?.paramTarget).toBe('spread');
     expect(byId.get('fold_cv')?.paramTarget).toBe('fold');
+  });
+
+  // ── 3dShapeGen mode switch ───────────────────────────────────────────
+  // The new GEN knob selects between the XYZ (default, v4.1) path and the
+  // experimental 3dShapeGen path. Both produce the same 64×256 number[][]
+  // wavetable wire format the WAVECEL worklet expects.
+
+  it('exposes a gen_mode discrete picker (default 0, range 0..1)', () => {
+    const byId = new Map(foxyDef.params.map((p) => [p.id, p]));
+    const p = byId.get('gen_mode');
+    expect(p, 'gen_mode param').toBeDefined();
+    expect(p!.min).toBe(0);
+    expect(p!.max).toBe(FOXY_GEN_MODE_MAX);
+    expect(p!.curve).toBe('discrete');
+    expect(p!.defaultValue).toBe(0);
+  });
+
+  it('FOXY_GEN_MODE_NAMES has length 2 and lists XYZ + 3D Shape Gen', () => {
+    expect(FOXY_GEN_MODE_NAMES.length).toBe(2);
+    expect(FOXY_GEN_MODE_COUNT).toBe(2);
+    expect([...FOXY_GEN_MODE_NAMES]).toEqual(['XYZ', '3D Shape Gen']);
+  });
+
+  it('MODE_NAMES length matches the gen_mode param discrete range', () => {
+    const p = foxyDef.params.find((x) => x.id === 'gen_mode')!;
+    expect(FOXY_GEN_MODE_NAMES.length).toBe(p.max - p.min + 1);
+  });
+
+  // setParam/readParam round-trip is exercised end-to-end via the factory
+  // (which needs a real AudioContext). The pure shape test above is the
+  // module-def assertion; the round-trip + audio behaviour is covered by
+  // the factory branching path — verified directly via the pure pipeline
+  // here, since both modes go through the SAME deterministic helpers.
+
+  it('XYZ vs 3D Shape Gen produce DIFFERENT wavetables for the same rasters', () => {
+    // Build three independent non-flat rasters so both pipelines have
+    // meaningful input.
+    const W = FOXY_FIELD_SIZE;
+    function rgba(fill: (x: number, y: number) => number): Uint8ClampedArray {
+      const out = new Uint8ClampedArray(W * W * 4);
+      for (let y = 0; y < W; y++) {
+        for (let x = 0; x < W; x++) {
+          const v = Math.round(Math.max(0, Math.min(1, fill(x, y))) * 255);
+          const o = (y * W + x) * 4;
+          out[o] = v; out[o + 1] = v; out[o + 2] = v; out[o + 3] = 255;
+        }
+      }
+      return out;
+    }
+    const A = rgba((x, y) => {
+      // Three Gaussian bumps so generateShapes finds peaks.
+      const nx = x / (W - 1), ny = y / (W - 1);
+      let m = 0;
+      for (const [cx, cy] of [[0.25, 0.25], [0.75, 0.25], [0.5, 0.75]]) {
+        const dx = nx - cx!, dy = ny - cy!;
+        m = Math.max(m, Math.exp(-(dx * dx + dy * dy) * 80));
+      }
+      return m;
+    });
+    const B = rgba((x) => x / (W - 1));
+    const C = rgba((_, y) => y / (W - 1));
+
+    // XYZ path
+    const box3 = boxHeightfield3d(A, B, C, W, W);
+    const xyzField = boxToField3d(box3, A, W, W, {
+      ...FOXY_XYZ_3D_DEFAULTS,
+      zoom: 4,
+      smooth: 0.5,
+    });
+    const xyzWt = fieldToWavetable(xyzField);
+
+    // 3D Shape Gen path
+    const { wavetable: shapesWt } = shapesPipeline(A, B, C, W, W);
+
+    // Both share dims.
+    expect(xyzWt.length).toBe(shapesWt.length);
+    expect(xyzWt[0]!.length).toBe(shapesWt[0]!.length);
+
+    // The two paths should produce GENUINELY different tables. Compare via
+    // a coarse signature — sum of |diff| across a sampled grid — and
+    // assert it's well above the floor.
+    let diff = 0;
+    for (let f = 0; f < xyzWt.length; f += 4) {
+      for (let s = 0; s < xyzWt[0]!.length; s += 16) {
+        diff += Math.abs((xyzWt[f]![s] ?? 0) - (shapesWt[f]![s] ?? 0));
+      }
+    }
+    expect(diff).toBeGreaterThan(1);
   });
 
   // ── VCO sync ─────────────────────────────────────────────────────────
