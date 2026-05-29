@@ -286,6 +286,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // sources) provide functional coverage; promote into MODULES once the
   // darwin + linux pngs are captured.
   fourplexer: 'VRT baseline pending — deterministic card (4 selector knobs, no canvas); capture via `task vrt:update` on each platform. Unit + E2E (routing + gate-advance + wrap + audio/cv) provide coverage.',
+  // NIBBLES (new snake-game video module): VRT scene + __nibblesVrtSeed
+  // determinism hooks are in place (see vrt-scenes.ts:nibbles +
+  // packages/web/src/lib/video/modules/nibbles.ts:maybeApplyVrtSeed); the
+  // captured PNG baseline is pending a `task vrt:update -- nibbles` run on
+  // each platform (this worktree's dsp:build dependency requires the
+  // faust2wasm toolchain). Unit tests + e2e/tests/nibbles.spec.ts provide
+  // functional coverage. Promote out of this list once the baselines land.
+  nibbles: 'VRT baseline pending — deterministic seeded RNG via __nibblesVrtSeed; capture via `task vrt:update` on each platform. Unit tests + e2e/tests/nibbles.spec.ts provide coverage.',
 };
 
 /** Per-(platform, type) baselines intentionally missing while a follow-

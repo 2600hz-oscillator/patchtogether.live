@@ -324,6 +324,37 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       await page.waitForTimeout(150);
     },
   },
+
+  // NIBBLES (snake game module): the game state is RNG-seeded and
+  // tick-driven, so the on-card framebuffer evolves frame-to-frame.
+  // We set globalThis.__nibblesVrtSeed BEFORE spawning so the factory
+  // seeds with a fixed value (mirrors FOXY's __foxyVrtSeed). With
+  // freezeAudio suspending the AudioContext the on-card preview poll
+  // stops pulling new ImageData snapshots, so the captured frame is
+  // pixel-stable run-to-run.
+  nibbles: {
+    nodes: [
+      { id: 'vrt-1', type: 'nibbles', position: { x: 80, y: 80 }, domain: 'video' },
+    ],
+    edges: [],
+    afterSpawn: async (page) => {
+      // Pin the RNG seed so the snake position + food placement are
+      // identical across runs. NIBBLES checks globalThis.__nibblesVrtSeed
+      // on each draw frame and one-shot-resets the game once it sees the
+      // flag — so setting it AFTER spawn is fine.
+      await page.evaluate(() => {
+        (globalThis as unknown as { __nibblesVrtSeed?: number }).__nibblesVrtSeed = 0xC0DE;
+      });
+      // A few rAFs so the seeded reset + paint land before we suspend audio.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    // Long enough that a few game ticks run + bake some snake motion + a
+    // pellet eat (per spec at default tick_ms=80ms, ~12 ticks/sec).
+    settleMs: 500,
+    freezeAudio: true,
+  },
 };
 
 /** Set up the rack for `type`. Returns true if a scene was applied
