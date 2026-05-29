@@ -1112,6 +1112,9 @@ export function buildModuleManifest(
       // rasterize-map.ts that both the module factory + its tests use).
       // Not a ModuleDef.
       if (file.endsWith('-map.ts')) return false;
+      // -shapes.ts: FOXY's 3dShapeGen pure shape-generation / SDF / voxel
+      // math helpers (foxy-shapes.ts). Not a ModuleDef.
+      if (file.endsWith('-shapes.ts')) return false;
       // -engine.ts: pure-math worklet-engine mirror (e.g. stages-engine.ts).
       // Not a ModuleDef — exported only for the parallel module file's
       // import + the tests / ART scenarios.

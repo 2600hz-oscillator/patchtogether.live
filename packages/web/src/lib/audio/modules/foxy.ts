@@ -115,6 +115,23 @@ import {
   type FoxyXyz3dParams,
   type FoxyFieldRow,
 } from './foxy-map';
+import {
+  generateShapes,
+  scanShapesToVoxels,
+  voxelsToWavetable,
+  type Shape as FoxyShape,
+} from './foxy-shapes';
+
+/** Names of the two raster→wavetable generators FOXY can switch between.
+ *  Indexed by the discrete `gen_mode` param: 0 = the original XYZ
+ *  continuous-heightfield path; 1 = the experimental 3dShapeGen path
+ *  (discrete primitives in a box, voxelized + scanned).
+ *
+ *  The card displays `FOXY_GEN_MODE_NAMES[gen_mode]` next to the GEN
+ *  knob, mirroring the RESOFILTER mode-name pattern. */
+export const FOXY_GEN_MODE_NAMES = ['XYZ', '3D Shape Gen'] as const;
+export const FOXY_GEN_MODE_COUNT = FOXY_GEN_MODE_NAMES.length;
+export const FOXY_GEN_MODE_MAX = FOXY_GEN_MODE_COUNT - 1;
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -205,6 +222,13 @@ export const foxyDef: AudioModuleDef = {
     { id: 'freezeRasterB', label: 'FrB', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
     { id: 'freezeRasterC', label: 'FrC', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
     { id: 'freezeTable',   label: 'FrT', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    // GEN mode — picks the raster→wavetable PATH:
+    //   0 = XYZ            (default; the continuous-heightfield v4.1 path)
+    //   1 = 3D Shape Gen   (experimental; primitives in a box, see
+    //                       foxy-shapes.ts)
+    // Discrete picker — the card displays FOXY_GEN_MODE_NAMES[gen_mode]
+    // next to the knob, mirroring the RESOFILTER mode-name pattern.
+    { id: 'gen_mode', label: 'GEN', defaultValue: 0, min: 0, max: FOXY_GEN_MODE_MAX, curve: 'discrete' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -386,6 +410,10 @@ export const foxyDef: AudioModuleDef = {
     let field: FoxyFieldRow[] = [];
     let wtFrames: Float32Array[] = [];
     let wtSignature = '';
+    // 3dShapeGen state — only populated when gen_mode = 1. The card reads
+    // `shapes` to drive the on-card vaporwave renderer.
+    let shapes: FoxyShape[] = [];
+    let genMode: number = num('gen_mode', 0);
 
     // ───────────────────────── internal WAVECEL worklet ──────────────
     const wave = new AudioWorkletNode(ctx, 'wavecel', {
@@ -461,11 +489,24 @@ export const foxyDef: AudioModuleDef = {
       const imgA = painterA.imageData();
       const imgB = painterB.imageData();
       const imgC = painterC.imageData();
-      // v4 volumetric construction: A+B+C → boxHeightfield3d → boxToField3d
-      // (with C warping A's lookup + adding secondary Z) → fieldToWavetable.
-      const box3 = boxHeightfield3d(imgA.data, imgB.data, imgC.data, RASTER_W, RASTER_H);
-      field = boxToField3d(box3, imgA.data, RASTER_W, RASTER_H, xyz);
-      const plain = fieldToWavetable(field, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+      // Mode-aware: XYZ (0) uses the v4 volumetric pipeline; 3dShapeGen (1)
+      // uses the foxy-shapes path. Both produce a 64×256 number[][] table.
+      let plain: number[][];
+      if (genMode >= 0.5) {
+        // 3dShapeGen: discrete primitives in a unit box → SDF voxels → scan.
+        shapes = generateShapes(imgA.data, imgB.data, imgC.data, RASTER_W, RASTER_H);
+        const voxels = scanShapesToVoxels(shapes);
+        plain = voxelsToWavetable(voxels);
+        // Field is irrelevant for the 3dShapeGen card view, but populate it
+        // empty so any legacy consumer (xyzField reader) sees a valid value.
+        field = [];
+      } else {
+        // XYZ (default): v4 volumetric construction.
+        const box3 = boxHeightfield3d(imgA.data, imgB.data, imgC.data, RASTER_W, RASTER_H);
+        field = boxToField3d(box3, imgA.data, RASTER_W, RASTER_H, xyz);
+        plain = fieldToWavetable(field, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+        shapes = [];
+      }
       wtSignature = wavetableSignature(plain);
       wtFrames = plain.map((f) => new Float32Array(f));
       wave.port.postMessage({ type: 'loadWavetable', frames: plain });
@@ -518,26 +559,44 @@ export const foxyDef: AudioModuleDef = {
         painterC.paint(swoleC.buf.subarray(swoleC.buf.length - countC), rasterParamsC);
       }
 
-      // 2. v4 volumetric construction. Combine A+B+C into the volumetric
-      //    Box (A = base terrain, B = primary Z, C = warps A's lookup AND
-      //    adds secondary Z), then convert into the XYZ scanline field.
+      // 2. MODE-AWARE: build the wavetable.
+      //    gen_mode = 0 (XYZ, default): v4 volumetric construction.
+      //      A+B+C → Box → xyz-warped scanline field → fieldToWavetable.
+      //    gen_mode = 1 (3D Shape Gen): discrete primitives in a box.
+      //      A's peaks → Shape[] positions, B → Z position, C → type/size →
+      //      SDF voxel grid → diagonal Z-slice scan → wavetable.
+      //
+      //    Both paths produce the SAME 64×256 number[][] wire format the
+      //    WAVECEL worklet reads via `loadWavetable`. The user-facing knob
+      //    `gen_mode` switches between them.
       const imgA = painterA.imageData();
       const imgB = painterB.imageData();
       const imgC = painterC.imageData();
-      const box3 = boxHeightfield3d(imgA.data, imgB.data, imgC.data, RASTER_W, RASTER_H);
-      // Re-read the v4 knobs in case they changed since module init
-      // (setParam updates `xyz` in place — see below — but the bridge
-      // also picks up live knob drags via the same field).
-      field = boxToField3d(box3, imgA.data, RASTER_W, RASTER_H, xyz);
+      let plain: number[][];
+      if (genMode >= 0.5) {
+        // 3D Shape Gen path. NB: the on-card xyz/box previews keep their
+        // existing data flow (xyzField goes empty; the card switches to
+        // the shapes-renderer when gen_mode = 1).
+        shapes = generateShapes(imgA.data, imgB.data, imgC.data, RASTER_W, RASTER_H);
+        const voxels = scanShapesToVoxels(shapes);
+        plain = voxelsToWavetable(voxels);
+        field = [];
+      } else {
+        // XYZ path (existing v4.1 behavior — untouched).
+        const box3 = boxHeightfield3d(imgA.data, imgB.data, imgC.data, RASTER_W, RASTER_H);
+        // Re-read the v4 knobs in case they changed since module init
+        // (setParam updates `xyz` in place — see below — but the bridge
+        // also picks up live knob drags via the same field).
+        field = boxToField3d(box3, imgA.data, RASTER_W, RASTER_H, xyz);
+        plain = fieldToWavetable(field, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+        shapes = [];
+      }
 
-      // 3. Build the wavetable (64×256), change-detect, post to WAVECEL.
-      //    The field carries volumetric relief (B's height + C's secondary
-      //    height + C-warped A samples) → fieldToWavetable reads the
-      //    displaced Y values, so the audio wavetable HAS 3D shape.
-      //    When FREEZE TABLE is on, the field can keep updating (so the
-      //    XYZ display still animates) but we don't push the new table to
-      //    the audio worklet — it keeps reading the last-pushed table.
-      const plain = fieldToWavetable(field, FOXY_WT_FRAMES, FOXY_WT_SAMPLES);
+      // 3. Change-detect + post to WAVECEL.
+      //    When FREEZE TABLE is on, the field/shapes can keep updating
+      //    (so the on-card display still animates) but we don't push the
+      //    new table to the audio worklet — it keeps reading the
+      //    last-pushed table.
       if (!freezeT) {
         const sig = wavetableSignature(plain);
         if (sig !== wtSignature) {
@@ -615,6 +674,8 @@ export const foxyDef: AudioModuleDef = {
           // v4.1: zoom + smooth steer the bridge's field math.
           case 'xyz_zoom':    xyz.zoom = value; return;
           case 'xyz_smooth':  xyz.smooth = value; return;
+          // GEN mode picker — switches the raster→wavetable PATH.
+          case 'gen_mode':    genMode = value; return;
         }
       },
       readParam(paramId) {
@@ -643,6 +704,7 @@ export const foxyDef: AudioModuleDef = {
           case 'xyz_zheight': return xyz.secondaryHeight;
           case 'xyz_zoom':    return xyz.zoom;
           case 'xyz_smooth':  return xyz.smooth;
+          case 'gen_mode':    return genMode;
           default: return undefined;
         }
       },
@@ -666,6 +728,9 @@ export const foxyDef: AudioModuleDef = {
         if (key === 'xyzField') return field;
         if (key === 'wavetableFrames') return wtFrames;
         if (key === 'activeFrame') return readActiveFrame();
+        // 3dShapeGen surface for the card renderer + introspection.
+        if (key === 'shapes') { bridgeTick(); return shapes; }
+        if (key === 'genMode') return genMode;
         return undefined;
       },
       dispose() {

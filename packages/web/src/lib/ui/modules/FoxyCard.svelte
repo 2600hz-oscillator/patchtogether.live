@@ -13,9 +13,11 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { foxyDef } from '$lib/audio/modules/foxy';
+  import { foxyDef, FOXY_GEN_MODE_NAMES, FOXY_GEN_MODE_MAX } from '$lib/audio/modules/foxy';
   import { drawWave3D, drawWaveScope } from '$lib/audio/modules/wavecel-draw';
   import { drawFoxyXyz } from '$lib/audio/modules/foxy-draw';
+  import { drawFoxyShapes } from '$lib/audio/modules/foxy-shapes-draw';
+  import type { Shape as FoxyShape } from '$lib/audio/modules/foxy-shapes';
   import type { FoxyFieldRow } from '$lib/audio/modules/foxy-map';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -61,6 +63,17 @@
   let vizMode = $state<'scope' | '3d'>('3d');
   let raf: number | null = null;
 
+  // GEN mode (0 = XYZ, 1 = 3D Shape Gen). Tracks the param so the on-card
+  // XYZ window can swap renderers + the mode-name label can update live.
+  function clampGen(v: number): number {
+    const r = Math.round(v);
+    if (r < 0) return 0;
+    if (r > FOXY_GEN_MODE_MAX) return FOXY_GEN_MODE_MAX;
+    return r;
+  }
+  let genIdx = $derived(clampGen(pv('gen_mode', 0)));
+  let genName = $derived(FOXY_GEN_MODE_NAMES[genIdx]);
+
   function toggleVizMode() { vizMode = vizMode === '3d' ? 'scope' : '3d'; }
 
   function blitRaster(el: HTMLCanvasElement, img: ImageData): void {
@@ -97,12 +110,21 @@
         if (rasterAEl && imgA) blitRaster(rasterAEl, imgA);
         if (rasterBEl && imgB) blitRaster(rasterBEl, imgB);
         if (rasterCEl && imgC) blitRaster(rasterCEl, imgC);
-        // XYZ scope window — reads the actual wavetable, so the strokes
-        // show the audio the worklet sees on the X (column / sample) +
-        // Y (row / frame) axes, shaded by A's column distribution.
-        if (xyzEl && field) {
+        // XYZ window — switches renderer based on gen_mode:
+        //   0 (XYZ):          drawFoxyXyz reads `field`, the v4.1 height
+        //                     scanlines.
+        //   1 (3D Shape Gen): drawFoxyShapes reads `shapes`, the
+        //                     vaporwave-styled 3D primitives in a box.
+        if (xyzEl) {
           const c = xyzEl.getContext('2d');
-          if (c) drawFoxyXyz(c, field, xyzEl.width, xyzEl.height);
+          if (c) {
+            if (genIdx >= 1) {
+              const shapes = (e.read(node, 'shapes') as FoxyShape[] | undefined) ?? [];
+              drawFoxyShapes(c, shapes, xyzEl.width, xyzEl.height);
+            } else if (field) {
+              drawFoxyXyz(c, field, xyzEl.width, xyzEl.height);
+            }
+          }
         }
         // Animated wavetable display.
         if (wtEl) {
@@ -214,8 +236,21 @@
         </div>
       </div>
 
+      <!-- GEN mode picker — switches the WAVETABLE GENERATOR path between
+           the XYZ (default) continuous-heightfield + 3D Shape Gen
+           (experimental, vaporwave 3D primitives in a box). -->
+      <div class="section-label">WAVETABLE GENERATOR</div>
+      <div class="knob-row">
+        <div class="mode-group" data-testid="foxy-gen-group">
+          <Knob value={pv('gen_mode', defv('gen_mode'))} min={0} max={FOXY_GEN_MODE_MAX} defaultValue={defv('gen_mode')} label="GEN" curve="linear" onchange={set('gen_mode')} moduleId={id} paramId="gen_mode" readLive={live('gen_mode')} />
+          <div class="mode-name" data-testid="foxy-gen-mode-name">{genName}</div>
+        </div>
+      </div>
+
       <!-- XYZ volumetric controls (v4: shape + C-driven warp / Z height;
-           v4.1: zoom + smooth → fewer / larger conical peaks) -->
+           v4.1: zoom + smooth → fewer / larger conical peaks).
+           Only meaningful when gen_mode = 0 (XYZ); harmless when set to 1
+           (3D Shape Gen) since the shapes path doesn't read them. -->
       <div class="section-label">XYZ volumetric (v4.1)</div>
       <div class="knob-row">
         <Knob value={pv('xyz_xshape', defv('xyz_xshape'))} min={0}  max={1} defaultValue={defv('xyz_xshape')} label="X Shp" curve="linear" onchange={set('xyz_xshape')} moduleId={id} paramId="xyz_xshape" readLive={live('xyz_xshape')} />
@@ -354,5 +389,24 @@
     justify-content: center;
     gap: 10px;
     flex-wrap: wrap;
+  }
+  .foxy-card .mode-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    /* Wide enough for "3D Shape Gen". */
+    min-width: 96px;
+  }
+  .foxy-card .mode-name {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.62rem;
+    letter-spacing: 0.02em;
+    color: #ffce6e;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 </style>
