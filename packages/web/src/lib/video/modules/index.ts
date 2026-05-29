@@ -40,6 +40,7 @@ import { peakstateDef } from './peakstate';
 import { mandleblotDef } from './mandleblot';
 import { scoreboardDef } from './scoreboard';
 import { nibblesDef } from './nibbles';
+import { shapegenDef } from './shapegen';
 
 let registered = false;
 
@@ -146,6 +147,12 @@ export function registerVideoModules(): void {
   // is driven by arrow keys when the card is focused, or by an internal
   // best-effort bot when AUTO is on.
   registerVideoModule(nibblesDef);
+  // SHAPEGEN — standalone 3D-shape generator extracted from FOXY's 3dShapeGen
+  // path. 3 video inputs (raster A/B/C), 1 video output, SIZE + ROT knobs,
+  // SOLIDS toggle that switches between vaporwave wireframe and lit
+  // canvas2D primitives. Shares the shape math + renderer with FOXY via
+  // shapegen-math.ts + shapegen-draw.ts.
+  registerVideoModule(shapegenDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e
