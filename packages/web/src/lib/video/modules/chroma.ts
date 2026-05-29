@@ -23,6 +23,19 @@
 // CV inputs are linear-scaled per param and use the project convention of
 // `paramTarget == port.id` so the cross-domain CV bridge can target them
 // directly (see PR #264).
+//
+// Inputs:
+//   in (video): RGB video to colorize.
+//   hue / saturation / tintR / tintG / tintB / tintMix (cv, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): hue-shifted / tinted RGB output.
+//
+// Params:
+//   hue (linear -180..180): hue rotation in degrees.
+//   saturation (linear 0..2): saturation scale (0 = grayscale, 1 = pristine, 2 = vivid).
+//   tintR / tintG / tintB (linear 0..1): tint colour.
+//   tintMix (linear 0..1): tint blend amount (0 = bypass tint, 1 = pure tint).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

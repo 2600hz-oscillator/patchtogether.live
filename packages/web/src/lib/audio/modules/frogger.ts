@@ -32,6 +32,18 @@
 // intentionally NOT exposed here — Frogger is audio-domain like its game-
 // module siblings, and the cross-domain bridge already covers "make the
 // canvas visible downstream" without inventing a one-off port type.
+//
+// Inputs:
+//   up_gate / down_gate / left_gate / right_gate (gate): rising-edge frog movement.
+//   start_gate (gate): rising edge starts a new game (auto-fires once on factory init).
+//
+// Outputs:
+//   home_gate (gate): one 5 ms pulse when the frog reaches a home pad.
+//   dead_gate (gate): one 5 ms pulse when the frog dies.
+//   level_gate (gate): one 5 ms pulse when the player completes a level.
+//
+// Params:
+//   initialTime (linear 10..120, default DEFAULT_TIME): seconds-per-life timer ceiling.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

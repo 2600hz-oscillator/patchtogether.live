@@ -52,6 +52,26 @@
 // Per-osc wavetable selection rides node.data (indexed: wavetableSourceN,
 // wavetableFramesN, wavetableLabelN for N=1..4). The factory polls
 // livePatch.nodes[id].data and reposts on change.
+//
+// Inputs (per-oscillator × 4, plus camera + alpha + global):
+//   gate{1..4} (gate): per-oscillator gate.
+//   pitch_cv{1..4} (cv): per-oscillator V/oct pitch input.
+//   morph{1..4}_cv (cv, linear, paramTarget=morph{N}): per-osc wavetable morph CV.
+//   pos_x / pos_y / pos_z (cv, linear, paramTarget=…): camera position CV.
+//   zoom (cv, linear, paramTarget=zoom): camera zoom CV.
+//   rot (cv, linear, paramTarget=rot): camera rotation CV.
+//   scale (cv, linear, paramTarget=scale): ribbon scale CV.
+//   wiggle (cv, linear, paramTarget=wiggle): per-osc wiggle/wobble CV.
+//   alpha_in (video): optional video stream blended as alpha mask over the render.
+//
+// Outputs:
+//   L / R (audio): stereo audio mix (per-osc summed in the worklet).
+//   out_red / out_grn / out_blu / out_alp (audio): per-channel render-mix taps for cross-domain
+//     audio analysis of the displayed image (audio-domain RGBA scopes).
+//   video_out (mono-video): the 3D ribbon render (BENTBOX-style CRT post-process baked in).
+//
+// Params: per-osc wave selectors + morph (4×), global camera (pos/zoom/rot), ribbon
+//   scale, per-osc wiggle, alpha-blend mix; built programmatically — see wavesculpt-engine.ts.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

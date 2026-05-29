@@ -15,6 +15,19 @@
 //   k1_cv[ch]   CV → knob1 AudioParam (linear cvScale)
 //   k2_cv[ch]   CV → knob2 AudioParam (linear cvScale)
 //   out[ch]     mono — audio for drum modes, CV for env/lfo
+//
+// Inputs:
+//   gate0 / gate1 (gate): per-channel trigger.
+//   mode0_cv / mode1_cv (cv, discrete, paramTarget=mode{N}): displaces the per-channel mode selector.
+//   k1_0_cv / k2_0_cv / k1_1_cv / k2_1_cv (cv, linear, paramTarget=…): per-channel knob CV.
+//
+// Outputs:
+//   out0 / out1 (audio): per-channel output (audio for KICK/SNARE/HIHAT, CV for ENV/LFO).
+//
+// Params:
+//   mode0 / mode1 (discrete 0..PEAKS_MAX_MODE, default 4): per-channel mode picker.
+//   k1_0 / k1_1 (linear 0.001..200, default 1): per-channel "knob 1" (semantic depends on mode).
+//   k2_0 / k2_1 (linear 0.001..5, default 0.3): per-channel "knob 2".
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

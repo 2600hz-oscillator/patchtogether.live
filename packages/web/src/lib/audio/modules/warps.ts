@@ -11,6 +11,27 @@
 // v1 algorithm slice (mandatory): XFADE / RING-MOD / XOR / COMPARATOR.
 // Stretch (deferred): FOLD, ANALOG-RING, FREQUENCY-SHIFTER, DOPPLER,
 // VOCODER — see PR body for the deferral note.
+//
+// Inputs:
+//   carrier_in (audio): external carrier audio (replaces the internal oscillator when patched).
+//   modulator_in (audio): modulator audio.
+//   pitch (pitch): V/oct for the internal carrier (sums with note).
+//   algorithm_cv (cv, discrete, paramTarget=algorithm): displaces the algorithm selector.
+//   carrier_shape_cv (cv, linear, paramTarget=carrier_shape): displaces internal-carrier shape morph.
+//   timbre_cv (cv, linear, paramTarget=timbre): displaces TIMBRE.
+//   level_1_cv (cv, linear, paramTarget=level_1): displaces carrier amount.
+//   level_2_cv (cv, linear, paramTarget=level_2): displaces modulator amount.
+//
+// Outputs:
+//   out (audio): the meta-modulated mix.
+//
+// Params:
+//   algorithm (discrete 0..WARPS_MAX_ALGORITHM, default 0): meta-modulator algorithm.
+//   carrier_shape (linear 0..1, default 0): internal carrier waveform morph.
+//   timbre (linear 0..1, default 0.5): algorithm-specific modulation depth macro.
+//   level_1 (linear 0..1, default 1.0): carrier signal level.
+//   level_2 (linear 0..1, default 1.0): modulator signal level.
+//   note (linear -60..60 st, default 0): internal carrier pitch offset.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

@@ -29,6 +29,17 @@
 //     via the cross-domain CV bridge as setParam('gate1'..) calls; a pure
 //     rising-edge detector (plex-select.gateEdge) advances the matching
 //     selector param on each rising edge.
+//
+// Inputs:
+//   in1..in4 (video): four video inputs.
+//   gate1..gate4 (cv, paramTarget=gate{N}): per-output advance gate.
+//
+// Outputs:
+//   out1..out4 (video): per-output discrete tap of in[sel{N}].
+//
+// Params:
+//   sel1..sel4 (discrete 0..PLEX_INPUTS): per-output selector index (0..3).
+//   gate1..gate4 (linear 0..1): cached gate-edge state for advance detection.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
