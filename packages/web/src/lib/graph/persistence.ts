@@ -59,6 +59,37 @@ export type LivePatch = {
 /** Bumped when the envelope format itself changes (not when modules change). */
 export const ENVELOPE_VERSION = 1 as const;
 
+/** Transient runtime / lobby fields that live on a module's `node.data` ONLY
+ * so they ride the Yjs sync (every peer agrees on the host's lobby state), but
+ * which DO NOT belong in a saved patch — a patch captures the rack TOPOLOGY
+ * (which modules exist, where they sit, how they're wired, their persistent
+ * params), not a particular session's live STATE.
+ *
+ * The canonical example is DOOM: `mpMode` ('single' | 'multi') is what gates
+ * the host's start-game dialog. If a patch is saved mid-session and reloaded
+ * later, the persisted `mpMode` would suppress the start dialog forever — the
+ * host would land on "Single-user rack — you're the host." with no way to
+ * launch (Bug #1, the load-from-patch repro). Same goes for `mpLive` (a
+ * host-published "game is running right now" flag), `players` (the live
+ * per-slot roster), and `pending` (in-flight join requests). None of those
+ * have any meaning across sessions.
+ *
+ * Whitelisted by module type — adding a new module's transient fields here is
+ * a deliberate, narrow opt-in, not a global filter. */
+const TRANSIENT_DATA_FIELDS_BY_TYPE: Readonly<Record<string, readonly string[]>> = {
+  doom: ['mpMode', 'mpLive', 'players', 'pending'],
+};
+
+/** Strip transient fields from `data` for the given module type (no-op when the
+ * type has no entry). Mutates in place; only call on plain objects you own,
+ * which the loader does after `tempYdoc.getMap('nodes').toJSON()`. */
+function stripTransientDataFields(type: string, data: unknown): void {
+  const fields = TRANSIENT_DATA_FIELDS_BY_TYPE[type];
+  if (!fields || !data || typeof data !== 'object') return;
+  const obj = data as Record<string, unknown>;
+  for (const field of fields) delete obj[field];
+}
+
 export interface PatchEnvelope {
   envelopeVersion: typeof ENVELOPE_VERSION;
   savedAt: string; // ISO 8601
@@ -321,6 +352,12 @@ export function loadEnvelopeIntoStore(
         continue;
       }
     }
+    // Strip transient / session-state fields that persisted into the envelope
+    // (e.g. DOOM's mpMode lobby gate — see TRANSIENT_DATA_FIELDS_BY_TYPE). The
+    // toJSON() above severed Yjs proxies, so `migratedData` is a plain object
+    // we own and can safely mutate. Run AFTER migration so a per-module
+    // migrate() that touches transient fields still sees them in the input.
+    stripTransientDataFields(node.type, migratedData);
     migratedNodes[id] = { ...node, data: migratedData };
   }
 
