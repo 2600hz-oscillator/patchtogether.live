@@ -64,7 +64,9 @@
     { id: 'c_right_gate', label: 'C-R (GATE)',  cable: 'gate' },
     { id: 'start_gate',   label: 'START (GATE)',cable: 'gate' },
   ];
-  const outputs: PortDescriptor[] = [];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT (VIDEO)', cable: 'video' },
+  ];
 
   // ---- Canvas sizing -------------------------------------------------------
   // Internal canvas resolution. Auto-downsample on mobile / low-core devices
@@ -171,6 +173,18 @@
     const bridge: Sm64Bridge = {
       romPresent: false,
       gameStarted: false,
+      // One-shot guard: the factory fires `bridge.autoStart()` (which
+      // clicks #startbutton → calls the bundle's `startGame()`) EXACTLY
+      // ONCE — for the boot transition out of "Drop ROM" into the title
+      // screen. Subsequent START gate edges flow through
+      // `playerInput.buttonPressedStart` for the in-game title-advance.
+      // `gameStarted` is a UI-snapshot mirror only — flipped true by the
+      // card the moment we click #startbutton, NEVER guards a re-click.
+      autoStartedOnce: false,
+      // Filled in onMount once the canvas refs are bound — see
+      // `wireBridgeCanvases` below. The sm64.ts factory's drawFrame()
+      // reads from this for the cross-domain video output.
+      gameCanvas: null,
       setPlayerInput(input) {
         // Mirror into the bundle's expected global. The bundle reads
         // window.playerInput directly inside its frame step (e.g. Mario
@@ -355,9 +369,32 @@
         w.__sm64.autoStart = () => {
           try {
             startButtonEl?.click();
-            if (w.__sm64) w.__sm64.gameStarted = true;
+            // ONE-SHOT guard for the factory: `autoStartedOnce=true`
+            // prevents the factory from ever re-firing this click on a
+            // subsequent START gate edge (the bundle's #startbutton
+            // handler is `gameStarted ? location.reload() : startGame()`,
+            // so a second click would reload the entire app). The
+            // user's in-game START presses flow through
+            // `playerInput.buttonPressedStart` instead — that's the
+            // path the bundle's `intro_regular` and pause logic reads,
+            // independent of the HTML button.
+            //
+            // `gameStarted` is set true here too (engine-snapshot
+            // mirror) but the factory NO LONGER consults it as a
+            // re-click guard — see sm64.ts comment block above the
+            // `bridge.autoStart()` call site.
+            if (w.__sm64) {
+              w.__sm64.autoStartedOnce = true;
+              w.__sm64.gameStarted = true;
+            }
           } catch (_e) { /* */ }
         };
+        // Wire the gameCanvas ref so the audio factory's drawFrame()
+        // can blit each frame into the cross-domain video bridge for
+        // the SM64 `out` (video) port. The card's <canvas
+        // bind:this={gameCanvasEl}> is bound before onMount fires, so
+        // the ref is populated by the time loadBundle resolves.
+        w.__sm64.gameCanvas = gameCanvasEl;
         if (capturedOnAnimFrame) {
           w.__sm64.produceOneFrame = () => {
             try { capturedOnAnimFrame!(0); } catch (_e) { /* swallow per-frame engine errors */ }
@@ -454,6 +491,16 @@
   interface Sm64Bridge {
     romPresent: boolean;
     gameStarted: boolean;
+    /** One-shot guard set true inside autoStart() — see autoStart for the
+     *  rationale (prevents the factory from re-clicking #startbutton on
+     *  any subsequent START gate edge, which would call
+     *  location.reload()). */
+    autoStartedOnce: boolean;
+    /** The bundle's #gameCanvas reference — used by the audio factory's
+     *  videoSources `drawFrame` to blit each SM64 frame into the
+     *  cross-domain video bridge for the `out` port. Wired in
+     *  loadBundle() once the canvas binding is live. */
+    gameCanvas: HTMLCanvasElement | null;
     setPlayerInput: (input: unknown) => void;
     produceOneFrame: (() => void) | undefined;
     autoStart: (() => void) | undefined;

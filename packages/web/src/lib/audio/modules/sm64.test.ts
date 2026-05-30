@@ -23,7 +23,13 @@ describe('sm64 module def', () => {
     expect(sm64Def.label).toBe('SM64');
     expect(sm64Def.maxInstances).toBe(1);
     expect(sm64Def.vizPassthrough).toBe(true);
-    expect(sm64Def.outputs.length).toBe(0);
+    // One video output port (`out`) — the bundle's #gameCanvas mirrored
+    // each video frame via the cross-domain audio→video bridge so users
+    // can patch SM64 → VIDEO OUT / BENTBOX / chain modules.
+    expect(sm64Def.outputs.length).toBe(1);
+    const outPort = sm64Def.outputs.find((p) => p.id === 'out');
+    expect(outPort, 'sm64 must expose an `out` video output port').toBeDefined();
+    expect(outPort!.type).toBe('video');
     expect(sm64Def.params.length).toBe(0);
 
     const inputIds = sm64Def.inputs.map((p) => p.id).sort();
@@ -213,41 +219,84 @@ describe('Sm64Card bridge wiring (regression: post-extract white-screen)', () =>
     // snapshot + e2e contract holds.
     const startblock = CARD_SRC.indexOf('w.__sm64.autoStart =');
     expect(startblock).toBeGreaterThan(0);
-    // Look forward ~400 chars from the autoStart assignment.
-    const window = CARD_SRC.slice(startblock, startblock + 400);
+    // Look forward through the autoStart block (well past the docstring
+    // that landed with the autoStartedOnce mirror). Strip comments first
+    // so a comment mentioning the assignment can't mask a missing one.
+    const tail = CARD_SRC.slice(startblock, startblock + 2000)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|\n)\s*\/\/[^\n]*/g, '$1');
     expect(
-      window.includes('gameStarted = true'),
+      /__sm64\.gameStarted\s*=\s*true/.test(tail),
       'autoStart must set __sm64.gameStarted = true so the engine snapshot '
         + 'reports the running-game state.',
     ).toBe(true);
   });
+
+  it('flips bridge.autoStartedOnce when autoStart fires (one-shot boot guard)', () => {
+    // The factory now consults `autoStartedOnce` (NOT `gameStarted`) as
+    // the re-click guard. The card must set it true inside autoStart so
+    // the very first synthetic-boot START edge clicks #startbutton and
+    // every subsequent edge skips the click + flows through
+    // playerInput.buttonPressedStart for the in-game title-advance path.
+    const startblock = CARD_SRC.indexOf('w.__sm64.autoStart =');
+    expect(startblock).toBeGreaterThan(0);
+    const tail = CARD_SRC.slice(startblock, startblock + 2000)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|\n)\s*\/\/[^\n]*/g, '$1');
+    expect(
+      /__sm64\.autoStartedOnce\s*=\s*true/.test(tail),
+      'autoStart must set __sm64.autoStartedOnce = true so the factory\'s '
+        + 'one-shot guard prevents location.reload() on every post-boot '
+        + 'START gate edge.',
+    ).toBe(true);
+  });
+
+  it('wires bridge.gameCanvas so the audio factory can plumb video out', () => {
+    // The sm64 factory's drawFrame() (videoSources `out` entry) reads
+    // from `window.__sm64.gameCanvas` each video frame. The card must
+    // assign the gameCanvasEl ref into the bridge after the bundle loads
+    // (the canvas binding fires before onMount, so the ref is live by
+    // the time loadBundle finishes).
+    expect(
+      CARD_SRC.includes('__sm64.gameCanvas = gameCanvasEl')
+        || CARD_SRC.includes('w.__sm64.gameCanvas = gameCanvasEl'),
+      'card must wire __sm64.gameCanvas = gameCanvasEl so the sm64 factory '
+        + 'drawFrame() can blit each frame into the cross-domain video '
+        + 'bridge for the `out` (video) output port.',
+    ).toBe(true);
+  });
 });
 
-describe('sm64 factory: start_gate must NOT re-click #startbutton once gameStarted', () => {
-  // Regression for the title→gameplay "click Start crashes instantly" bug.
+describe('sm64 factory: start_gate fires #startbutton EXACTLY ONCE (autoStartedOnce guard)', () => {
+  // Regression for the title→gameplay "Start doesn't advance Mario" bug.
   //
   // The bundle's `#startbutton` click handler is:
   //   addEventListener('click', () => gameStarted ? location.reload() : startGame())
-  // Once startGame() has run (first auto-start after ROM extract), the
+  // Once startGame() has run (the boot auto-start after ROM extract), the
   // bundle's internal `gameStarted` flips true. Any subsequent click —
   // including a synthetic one fired from our factory tick on a START gate
   // edge — calls `location.reload()`, which in our embedded card context
-  // reloads the entire patchtogether app. The user perceives that as an
-  // instant crash on the title screen → gameplay transition (they fire
-  // START to advance the Mario-head title, our factory clicks #startbutton
-  // again, location.reload() fires, the app dies).
+  // reloads the entire patchtogether app.
   //
-  // Fix: only call `bridge.autoStart()` when the bridge reports
-  // `gameStarted === false`. The N64 "Press Start" semantic (advance
-  // title, pause, etc.) still flows through `playerInput.buttonPressedStart`
-  // independent of the HTML button — the bundle's `intro_regular` reads
-  // that flag directly, so the in-game Start path stays fully wired.
+  // PR #424 guarded `bridge.autoStart()` behind `bridge.gameStarted !== true`,
+  // which fixed the reload-crash but ALSO broke the user's title→gameplay
+  // transition: the boot autoStart set `gameStarted = true`, so the user's
+  // first manual START edge was blocked entirely → Mario's title head
+  // stayed, no level loaded.
+  //
+  // Fix: separate `autoStartedOnce` flag for the ONE-SHOT boot click;
+  // `gameStarted` is now a pure UI-snapshot mirror that does NOT gate
+  // re-clicks. The bundle's title-advance / pause logic reads
+  // `playerInput.buttonPressedStart` directly (independent of the HTML
+  // button), so the user's manual START edges flow through
+  // `bridge.setPlayerInput` and reach the in-game Start path without
+  // any #startbutton re-click.
   const FACTORY_SRC = fs.readFileSync(
     path.resolve(__dirname, './sm64.ts'),
     'utf8',
   );
 
-  it("guards the bridge.autoStart() call with `gameStarted !== true`", () => {
+  it('guards the bridge.autoStart() call with `autoStartedOnce !== true`', () => {
     // Strip comments so a comment containing "autoStart" doesn't match.
     const code = FACTORY_SRC
       .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -256,27 +305,48 @@ describe('sm64 factory: start_gate must NOT re-click #startbutton once gameStart
     // The factory should have EXACTLY one `bridge.autoStart()` call (the
     // start_gate edge handler). If a future refactor adds a second one,
     // this test fails loudly and the refactor needs to re-check both for
-    // the gameStarted guard.
+    // the autoStartedOnce guard.
     const calls = code.match(/bridge\.autoStart\(\)/g) ?? [];
     expect(calls.length, 'expected exactly one bridge.autoStart() call site').toBe(1);
 
-    // Find the call and look at the 250 chars immediately preceding it.
-    // That window must contain a `gameStarted !== true` (or equivalent
-    // `!gameStarted`) guard so the click only fires on the first START
-    // edge, not on every subsequent one.
+    // Find the call and look at the 350 chars immediately preceding it.
+    // That window must contain an `autoStartedOnce !== true` (or
+    // equivalent `!autoStartedOnce`) guard so the click fires exactly
+    // once — on boot — and never again on post-boot START edges.
     const idx = code.indexOf('bridge.autoStart()');
     expect(idx).toBeGreaterThan(0);
-    const window = code.slice(Math.max(0, idx - 250), idx);
+    const window = code.slice(Math.max(0, idx - 350), idx);
     const hasGuard =
-      /gameStarted\s*!==\s*true/.test(window) ||
-      /!\s*bridge[?.]*\.gameStarted/.test(window) ||
-      /!\s*w[?.]*__sm64[?.]*\.gameStarted/.test(window);
+      /autoStartedOnce\s*!==\s*true/.test(window) ||
+      /!\s*bridge[?.]*\.autoStartedOnce/.test(window) ||
+      /!\s*w[?.]*__sm64[?.]*\.autoStartedOnce/.test(window);
     expect(
       hasGuard,
-      'bridge.autoStart() MUST be guarded by `gameStarted !== true` (or !gameStarted) — '
-        + 'otherwise the bundle\'s `gameStarted ? location.reload() : startGame()` '
-        + 'handler reloads the page on every post-boot START edge, crashing the app.',
+      'bridge.autoStart() MUST be guarded by `autoStartedOnce !== true` (or !autoStartedOnce) — '
+        + 'one-shot boot click only. The user\'s manual START gate edges advance '
+        + 'the title via playerInput.buttonPressedStart (in-game logic), NOT '
+        + 'via a #startbutton re-click (which would location.reload()).',
     ).toBe(true);
+  });
+
+  it('does NOT consult `gameStarted` as a re-click guard (post-#424 regression)', () => {
+    const code = FACTORY_SRC
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|\n)\s*\/\/[^\n]*/g, '$1');
+    const idx = code.indexOf('bridge.autoStart()');
+    expect(idx).toBeGreaterThan(0);
+    const window = code.slice(Math.max(0, idx - 350), idx);
+    // The previous (PR #424) guard `bridge.gameStarted !== true` ended up
+    // blocking every post-boot START gate edge because the boot autoStart
+    // also flipped `gameStarted = true`. Forbid that exact text shape from
+    // returning to the call site.
+    expect(
+      /bridge\??\.gameStarted\s*!==\s*true/.test(window),
+      'bridge.gameStarted must NOT gate the autoStart() call (PR #424 '
+        + 'regression: boot autoStart flipped gameStarted=true → user\'s '
+        + 'first manual START edge was incorrectly blocked → Mario title '
+        + 'never advanced). Use autoStartedOnce instead.',
+    ).toBe(false);
   });
 
   it('still surfaces buttonPressedStart through playerInput on every START edge', () => {
@@ -293,6 +363,35 @@ describe('sm64 factory: start_gate must NOT re-click #startbutton once gameStart
     const pressedStart = composeSm64PlayerInput(0, 0, { ...ALL_OFF, downStart: true, pressedStart: true });
     expect(pressedStart.buttonPressedStart).toBe(true);
     expect(pressedStart.buttonDownStart).toBe(true);
+  });
+});
+
+describe('sm64 factory: video output (videoSources `out`)', () => {
+  // The factory's `out` (video) port flows through the cross-domain
+  // audio→video bridge as a `videoSources` entry with a `drawFrame`
+  // callback that blits the bundle's #gameCanvas onto the bridge canvas
+  // each video frame. The bridge then uploads the painted canvas to a GL
+  // texture for downstream video consumers (VIDEO OUT, BENTBOX, ...).
+  it('source-level: factory wires videoSources `out` with a drawFrame', () => {
+    const FACTORY_SRC = fs.readFileSync(
+      path.resolve(__dirname, './sm64.ts'),
+      'utf8',
+    );
+    // The factory must build a videoSources Map keyed by 'out'.
+    expect(
+      /videoSources:\s*new\s+Map\([\s\S]*?\['out'/.test(FACTORY_SRC),
+      'factory must populate videoSources.out so the cross-domain bridge '
+        + 'picks up the SM64 frame as a patchable video source.',
+    ).toBe(true);
+    // And it must pass a drawFrame callback (not just an analyser-only
+    // entry — the bundle's framebuffer is a DOM canvas, not an audio
+    // analyser).
+    expect(
+      /\['out',\s*\{[^}]*drawFrame/.test(FACTORY_SRC),
+      'videoSources.out must include a drawFrame callback so the bridge '
+        + 'reads SM64\'s painted #gameCanvas instead of running the GL '
+        + 'waveform renderer (which would only show silence).',
+    ).toBe(true);
   });
 });
 

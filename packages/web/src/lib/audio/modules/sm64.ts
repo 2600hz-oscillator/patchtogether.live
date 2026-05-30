@@ -30,11 +30,18 @@
 // surfaces the upstream's ROM-extract upload UI and the auto-start is a
 // no-op until extraction completes.
 //
-// No outputs. The card canvas is `data-viz-passthrough` so a containing
-// GROUP can portal it across-domain — the standard FROGGER/MODTRIS/PONG/
-// SCOPE mechanism. No dedicated video_out port; no audio port (upstream's
-// audio is stub-only — TODO in src/index.js → "Audio TODO"; matches
-// FROGGER's no-audio profile).
+// Outputs:
+//   out (video): the bundle's #gameCanvas mirrored each video frame into the
+//     cross-domain bridge canvas (drawFrame readback — see factory). This
+//     lets the user patch SM64 → VIDEO OUT / BENTBOX / any downstream video
+//     module and see the same Mario render that the card displays. Mirrors
+//     DOOM's `out` video port pattern (.../video/modules/doom.ts) at the
+//     audio-domain `videoSources` layer.
+//
+//   The card canvas itself is also `data-viz-passthrough` so a containing
+//   GROUP can portal it across-domain — the standard FROGGER/MODTRIS/PONG/
+//   SCOPE mechanism. No audio port (upstream's audio is stub-only — TODO
+//   in src/index.js → "Audio TODO"; matches FROGGER's no-audio profile).
 //
 // Singletons: per the previous viability assessment, sm64js carries module-
 // level singletons (WebGLInstance, GameInstance, n64GfxProcessorInstance)
@@ -60,7 +67,7 @@
 //   c_up_gate / c_down_gate / c_left_gate / c_right_gate (gate): C-button gates.
 //   start_gate (gate): Start-button gate.
 //
-// Outputs: none (game is the output — render lives in the card).
+// Outputs: out (video) — see header. Game is also visible on the card.
 //
 // Params: none on the audio side. (Per-instance game state lives in
 //   the loaded sm64js bundle's singletons.)
@@ -200,9 +207,14 @@ export const sm64Def: AudioModuleDef = {
     { id: 'c_right_gate', type: 'gate' },
     { id: 'start_gate',   type: 'gate' },
   ],
-  // No outputs — see the file-header rationale (vizPassthrough handles the
-  // cross-domain video bridge for the card canvas; no audio in v1).
-  outputs: [],
+  // One video output: the bundle's #gameCanvas mirrored each video frame
+  // into the cross-domain bridge canvas (drawFrame readback — see factory).
+  // The card's gameCanvasEl is ALSO `data-viz-passthrough` so spatial
+  // GROUPs portal the same content cross-domain; the `out` port adds a
+  // first-class patchable handle for VIDEO OUT / BENTBOX / chain modules.
+  outputs: [
+    { id: 'out', type: 'video' },
+  ],
   params: [],
 
   async factory(_ctx, _node): Promise<AudioDomainNodeHandle> {
@@ -262,6 +274,72 @@ export const sm64Def: AudioModuleDef = {
       pressedCl: false, pressedCr: false, pressedCu: false, pressedCd: false,
       pressedRt: false,
     });
+
+    // ---- Video-out drawFrame (cross-domain audio→video bridge) ---------
+    // The card exposes the bundle's #gameCanvas as
+    // `window.__sm64.gameCanvas`. Each video frame the cross-domain
+    // bridge invokes `drawFrame(target)` with its own canvas (sized to
+    // the engine's video resolution); we paint the latest SM64 frame
+    // into it via drawImage. This is a pure DOM-canvas → canvas blit —
+    // no readback through CPU pixel buffers, so it's cheap.
+    //
+    // If the SM64 bundle hasn't loaded yet (bridge.gameCanvas is null),
+    // the target stays whatever the bridge had — typically transparent
+    // black, the same idle look as an unpatched VIDEO IN. We don't
+    // proactively clear because clearing-each-frame would force the bridge
+    // to upload an empty texture even when SM64 hasn't started, wasting
+    // GPU bandwidth.
+    //
+    // We also re-use a dummy AnalyserNode to satisfy the videoSources
+    // contract's `analyser` field (legacy GL-renderer path; not actually
+    // read when drawFrame is set — see engine.ts AudioDomainNodeHandle
+    // docs).
+    const vidAnalyser = _ctx.createAnalyser();
+    vidAnalyser.fftSize = 32;
+    function drawFrame(target: OffscreenCanvas | HTMLCanvasElement): void {
+      const w = globalThis as unknown as {
+        __sm64?: { gameCanvas?: HTMLCanvasElement | null };
+      };
+      const src = w.__sm64?.gameCanvas;
+      if (!src) return;
+      const c2d = target.getContext('2d') as
+        | CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+      if (!c2d) return;
+      // Aspect-preserve: SM64 renders at the card's backing resolution
+      // (typically 640×480 = 4:3). Letterbox into the target FBO so
+      // patching SM64 → VIDEO OUT keeps Mario at the right aspect.
+      const tw = target.width;
+      const th = target.height;
+      const sw = src.width;
+      const sh = src.height;
+      if (sw <= 0 || sh <= 0 || tw <= 0 || th <= 0) return;
+      // Black-fill the letterbox bars first so a previous frame's content
+      // (or the idle attract) doesn't bleed through.
+      c2d.fillStyle = '#000';
+      c2d.fillRect(0, 0, tw, th);
+      const srcAspect = sw / sh;
+      const dstAspect = tw / th;
+      let drawW: number;
+      let drawH: number;
+      if (srcAspect > dstAspect) {
+        // Source wider than target → fit width, letterbox top/bottom.
+        drawW = tw;
+        drawH = Math.round(tw / srcAspect);
+      } else {
+        // Source taller than target → fit height, letterbox left/right.
+        drawH = th;
+        drawW = Math.round(th * srcAspect);
+      }
+      const dx = Math.floor((tw - drawW) / 2);
+      const dy = Math.floor((th - drawH) / 2);
+      try {
+        (c2d as CanvasRenderingContext2D).drawImage(src, 0, 0, sw, sh, dx, dy, drawW, drawH);
+      } catch (_e) {
+        // SecurityError / InvalidStateError if the source canvas is
+        // tainted or detached. Swallow per-frame; the next paint will
+        // either succeed or stay black.
+      }
+    }
 
     // ---- Scheduler tick subscription -----------------------------------
     const tick = () => {
@@ -325,6 +403,7 @@ export const sm64Def: AudioModuleDef = {
           produceOneFrame?: () => void;
           autoStart?: () => void;
           gameStarted?: boolean;
+          autoStartedOnce?: boolean;
         };
       };
       const bridge = w.__sm64;
@@ -333,28 +412,31 @@ export const sm64Def: AudioModuleDef = {
       // start_gate rising edge → HTML #startbutton click (the bundle's
       // "Start Game" button that runs `startGame()` → `main_func()`).
       //
-      // CRUCIAL: only fire this when the bundle hasn't started yet.
-      // Upstream's click handler is:
-      //   document.getElementById("startbutton").addEventListener('click',
-      //     () => { if (gameStarted) { location.reload() } else { startGame() } })
-      // Once `gameStarted` (the bundle's internal flag, set by startGame())
-      // is true, ANY subsequent click triggers `location.reload()` — which
-      // in our embedded card context reloads the entire patchtogether app,
-      // appearing to the user as an instant crash on the title-screen →
-      // gameplay transition (the user fires START to advance the title,
-      // the synthetic click fires location.reload() instead → page dies).
+      // CRUCIAL: only fire the click EXACTLY ONCE — for the boot transition
+      // out of "Drop ROM" / loading state into the title screen. After that
+      // the bundle's `gameStarted` is true and ANY subsequent #startbutton
+      // click triggers `location.reload()` (the bundle's hard-coded handler).
       //
-      // The Mario "Press Start" semantic (advance from title, pause, etc.)
-      // is handled by `playerInput.buttonPressedStart` above (composed in
-      // `btn.pressedStart` and written via `bridge.setPlayerInput`). The
-      // bundle's `intro_regular` + every other in-game Start check reads
-      // that flag directly, so the N64-Start path stays fully wired
-      // without us ever needing to re-fire the HTML button after the first
-      // boot.
+      // The Mario "Press Start" semantic (advance title-demo → file-select,
+      // pause, etc.) is handled by `playerInput.buttonPressedStart` above
+      // (composed in `btn.pressedStart` and written via
+      // `bridge.setPlayerInput`). The bundle's `intro_regular` + every
+      // other in-game Start check reads that flag directly, so a user's
+      // patched START gate edge advances the title via the player-input
+      // pipeline — we MUST NOT re-fire the click for it (that would
+      // location.reload() the entire app).
+      //
+      // The previous PR-#424 guard was `bridge.gameStarted !== true`, which
+      // ALSO ended up gating off post-boot START edges entirely (PR #413's
+      // synthetic boot autoStart set `gameStarted = true`, so a user's
+      // first manual Start edge passed the guard incorrectly → click →
+      // reload). The fix is a separate one-shot flag `autoStartedOnce`
+      // that ONLY the boot autoStart toggles. `gameStarted` is now purely
+      // a status mirror for the UI snapshot.
       if (
         events.get('start_gate')
         && bridge?.autoStart
-        && bridge.gameStarted !== true
+        && bridge.autoStartedOnce !== true
       ) {
         bridge.autoStart();
       }
@@ -377,6 +459,14 @@ export const sm64Def: AudioModuleDef = {
         ] as [string, { node: AudioNode; input: number }]),
       ]),
       outputs: new Map(),
+      // Cross-domain audio→video bridge entry for the `out` port. The
+      // video engine calls drawFrame(canvas) each video frame; we paint
+      // the bundle's #gameCanvas into it (see drawFrame above). The
+      // analyser field is the legacy GL-renderer requirement (ignored
+      // when drawFrame is set, per AudioDomainNodeHandle.videoSources docs).
+      videoSources: new Map([
+        ['out', { analyser: vidAnalyser, sampleRate: _ctx.sampleRate, drawFrame }],
+      ]),
       setParam(_paramId, _value) { /* no params */ },
       readParam(_paramId) { return undefined; },
       read(key) {
@@ -399,6 +489,7 @@ export const sm64Def: AudioModuleDef = {
         stickXTap.node.disconnect();
         stickYTap.node.disconnect();
         for (const t of gateTaps.values()) t.node.disconnect();
+        try { vidAnalyser.disconnect(); } catch { /* */ }
       },
     };
   },
