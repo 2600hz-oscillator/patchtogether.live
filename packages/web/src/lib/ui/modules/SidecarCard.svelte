@@ -1,10 +1,14 @@
 <script lang="ts">
-  // SidecarCard — stereo sidechain compressor card. Standard fader card
-  // pattern (mirrors ResofilterCard / CocoaDelayCard). 8 knobs in two
+  // SidecarCard — stereo sidechain ducker card. Standard fader card
+  // pattern (mirrors ResofilterCard / CocoaDelayCard). 9 knobs in two
   // rows: threshold/ratio/knee/makeup on the top row, attack/release/
-  // envMag/sc_hpf on the bottom row. PatchPanel surfaces the 6 inputs
-  // (audio L/R, sc L/R, threshold_cv, env_mag_cv) + 4 outputs (audio
-  // L/R, env_out, env_inv_out).
+  // envMag/inputLevel/sc_hpf on the bottom row. PatchPanel surfaces the 7
+  // inputs (audio L/R, sc L/R, threshold_cv, env_mag_cv, input_level_cv) +
+  // 4 outputs (audio L/R, env_out, env_inv_out).
+  //
+  // Input Lvl is the sidechain input volume: 0–200% (0.0–2.0 gain, default
+  // 100%). Applied to the SC signal before ducking so a quiet pad can be
+  // boosted into the mix.
   //
   // env_out + env_inv_out are typed `cv` so they connect to any
   // CV-family sink (STEREOVCA.strength, ADSR-style consumers).
@@ -38,9 +42,10 @@
   let attack    = $derived(node?.params.attack    ?? defaults.attack);
   let release   = $derived(node?.params.release   ?? defaults.release);
   let knee      = $derived(node?.params.knee      ?? defaults.knee);
-  let envMag    = $derived(node?.params.envMag    ?? defaults.envMag);
-  let makeup    = $derived(node?.params.makeup    ?? defaults.makeup);
-  let scHpf     = $derived(node?.params.sc_hpf    ?? defaults.sc_hpf);
+  let envMag    = $derived(node?.params.envMag     ?? defaults.envMag);
+  let inputLvl  = $derived(node?.params.inputLevel ?? defaults.inputLevel);
+  let makeup    = $derived(node?.params.makeup     ?? defaults.makeup);
+  let scHpf     = $derived(node?.params.sc_hpf     ?? defaults.sc_hpf);
 
   const set = (id_: string) => (v: number) => {
     const t = patch.nodes[id]; if (t) t.params[id_] = v;
@@ -55,8 +60,9 @@
     { id: 'audio_r_in',   label: 'AUD R',  cable: 'audio' },
     { id: 'sc_l_in',      label: 'SC L',   cable: 'audio' },
     { id: 'sc_r_in',      label: 'SC R',   cable: 'audio' },
-    { id: 'threshold_cv', label: 'THR CV', cable: 'cv' },
-    { id: 'env_mag_cv',   label: 'MAG CV', cable: 'cv' },
+    { id: 'threshold_cv',   label: 'THR CV', cable: 'cv' },
+    { id: 'env_mag_cv',     label: 'MAG CV', cable: 'cv' },
+    { id: 'input_level_cv', label: 'LVL CV', cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'audio_l_out', label: 'OUT L',   cable: 'audio' },
@@ -80,8 +86,9 @@
     <div class="fader-row">
       <Fader value={attack}    min={0.1} max={200}  defaultValue={defaults.attack}    label="Att"    curve="log"    onchange={set('attack')}    moduleId={id} paramId="attack"    readLive={live('attack')} />
       <Fader value={release}   min={1}   max={2000} defaultValue={defaults.release}   label="Rel"    curve="log"    onchange={set('release')}   moduleId={id} paramId="release"   readLive={live('release')} />
-      <Fader value={envMag}    min={0}   max={2}    defaultValue={defaults.envMag}    label="EnvMag" curve="linear" onchange={set('envMag')}    moduleId={id} paramId="envMag"    readLive={live('envMag')} />
-      <Fader value={scHpf}     min={20}  max={1000} defaultValue={defaults.sc_hpf}    label="SC HPF" curve="log"    onchange={set('sc_hpf')}    moduleId={id} paramId="sc_hpf"    readLive={live('sc_hpf')} />
+      <Fader value={envMag}    min={0}   max={2}    defaultValue={defaults.envMag}     label="EnvMag" curve="linear" onchange={set('envMag')}     moduleId={id} paramId="envMag"     readLive={live('envMag')} />
+      <Fader value={inputLvl}  min={0}   max={2}    defaultValue={defaults.inputLevel} label="In Lvl" curve="linear" onchange={set('inputLevel')} moduleId={id} paramId="inputLevel" readLive={live('inputLevel')} />
+      <Fader value={scHpf}     min={20}  max={1000} defaultValue={defaults.sc_hpf}     label="SC HPF" curve="log"    onchange={set('sc_hpf')}     moduleId={id} paramId="sc_hpf"     readLive={live('sc_hpf')} />
     </div>
   </PatchPanel>
 
@@ -89,6 +96,6 @@
 </div>
 
 <style>
-  .sidecar-card { width: 320px; min-height: 240px; }
+  .sidecar-card { width: 380px; min-height: 240px; }
   .sidecar-card .fader-row { padding: 0 14px; display: flex; gap: 10px; margin-bottom: 6px; }
 </style>

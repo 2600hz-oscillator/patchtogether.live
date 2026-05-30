@@ -1,12 +1,18 @@
 // packages/dsp/src/sidecar.ts
 //
-// SIDECAR — stereo sidechain compressor worklet processor.
+// SIDECAR — stereo sidechain ducker worklet processor.
 //
 // Topology + DSP rationale live in ./lib/compressor-dsp.ts (Giannoulis-
 // Massberg-Reiss 2012; Faust co.compressor_stereo as cross-check). This
 // file is the AudioWorkletProcessor wrapper: it owns the worklet IO
 // surface (4 audio inputs, 2 CV-into-AudioParam inputs, 4 outputs) and
 // delegates per-sample math to the helpers in lib/.
+//
+// DUCKER topology: the MAIN pair is the trigger (drives the detector AND
+// passes through to the output); the SIDECHAIN pair is gained by
+// `inputLevel`, ducked by the gain reduction the main triggers, then summed
+// into the output. So the sidechain signal is ALWAYS present at the output
+// except when the main has signal (e.g. a kick) and ducks it down.
 //
 // IMPORTANT: this file does NOT `export` anything at the top level —
 // top-level exports leak into the bundled dist/<name>.js + break the ART
@@ -15,24 +21,25 @@
 // registerProcessor shim before importing this module.
 //
 // Inputs (4 audio-rate node connections):
-//   inputs[0] = audio_l_in
-//   inputs[1] = audio_r_in
-//   inputs[2] = sc_l_in   — falls back to audio_l_in if BOTH SC inputs unpatched
-//   inputs[3] = sc_r_in   — falls back to audio_r_in if BOTH SC inputs unpatched
+//   inputs[0] = audio_l_in   — MAIN/trigger L (detector + passthrough)
+//   inputs[1] = audio_r_in   — MAIN/trigger R (falls back to audio_l_in)
+//   inputs[2] = sc_l_in       — SIDECHAIN L (ducked + summed to output)
+//   inputs[3] = sc_r_in       — SIDECHAIN R (falls back to sc_l_in)
 //
 // AudioParams (CV is summed in by the web factory):
-//   threshold (a-rate)   — dB, -60..0, default -18
-//   envMag    (a-rate)   — 0..2, default 1
-//   ratio     (k-rate)   — 1..20, default 4
-//   attack    (k-rate)   — 0.1..200 ms, default 10
-//   release   (k-rate)   — 1..2000 ms, default 100
-//   knee      (k-rate)   — 0..24 dB, default 6
-//   makeup    (k-rate)   — 0..24 dB, default 0
-//   sc_hpf    (k-rate)   — 20..1000 Hz, default 20
+//   threshold  (a-rate)   — dB, -60..0, default -18
+//   envMag     (a-rate)   — 0..2, default 1
+//   inputLevel (a-rate)   — 0..2 (0%..200%), default 1
+//   ratio      (k-rate)   — 1..20, default 4
+//   attack     (k-rate)   — 0.1..200 ms, default 10
+//   release    (k-rate)   — 1..2000 ms, default 100
+//   knee       (k-rate)   — 0..24 dB, default 6
+//   makeup     (k-rate)   — 0..24 dB, default 0
+//   sc_hpf     (k-rate)   — 20..1000 Hz, default 20 (detector HPF on MAIN)
 //
 // Outputs (4 audio-rate, 1 channel each):
-//   outputs[0] = audio_l_out
-//   outputs[1] = audio_r_out
+//   outputs[0] = audio_l_out   — main_l + ducked(inputLevel·sc_l)
+//   outputs[1] = audio_r_out   — main_r + ducked(inputLevel·sc_r)
 //   outputs[2] = env_out       — (-gainDb/24) * envMag, NO CLAMP (overshoot OK)
 //   outputs[3] = env_inv_out   — 1 - env_out, also un-clamped
 
@@ -80,15 +87,16 @@ class SidecarProcessor extends AudioWorkletProcessor {
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
     this.sr = sampleRate;
-    this.state = makeSidecarState(this.sr, -18, 1);
+    this.state = makeSidecarState(this.sr, -18, 1, 1);
   }
 
   static get parameterDescriptors() {
     return [
       // CV-targeted params are a-rate so per-sample CV reaches the gain
       // computer / envelope without a k-rate stair-step.
-      { name: 'threshold', defaultValue: -18,  minValue: -60,  maxValue: 0,    automationRate: 'a-rate' as const },
-      { name: 'envMag',    defaultValue: 1,    minValue: 0,    maxValue: 2,    automationRate: 'a-rate' as const },
+      { name: 'threshold',  defaultValue: -18,  minValue: -60,  maxValue: 0,    automationRate: 'a-rate' as const },
+      { name: 'envMag',     defaultValue: 1,    minValue: 0,    maxValue: 2,    automationRate: 'a-rate' as const },
+      { name: 'inputLevel', defaultValue: 1,    minValue: 0,    maxValue: 2,    automationRate: 'a-rate' as const },
       // Knob-only params are k-rate; they don't need per-sample updates and
       // the worklet's internal param-smoother handles user-driven jumps.
       { name: 'ratio',     defaultValue: 4,    minValue: 1,    maxValue: 20,   automationRate: 'k-rate' as const },
@@ -115,18 +123,16 @@ class SidecarProcessor extends AudioWorkletProcessor {
     outputs: Float32Array[][],
     parameters: Record<string, Float32Array>,
   ): boolean {
+    // MAIN/trigger pair (detector + passthrough). audio_r falls back to
+    // audio_l so a mono main still drives a stereo duck.
     const inAL = inputs[0]?.[0];
     const inAR = inputs[1]?.[0] ?? inputs[0]?.[0]; // audio_r → audio_l fallback
 
-    // SC fallback: if BOTH SC inputs are unpatched, fall back to the audio
-    // pair. If only one SC side is patched, the other side falls back to
-    // the same-side audio (matches the "feed-forward" default of a typical
-    // compressor where unpatched SC == self-detect).
-    const inSLRaw = inputs[2]?.[0];
-    const inSRRaw = inputs[3]?.[0];
-    const bothScUnpatched = inSLRaw === undefined && inSRRaw === undefined;
-    const inSL = bothScUnpatched ? inAL : (inSLRaw ?? inAL);
-    const inSR = bothScUnpatched ? inAR : (inSRRaw ?? inAR);
+    // SIDECHAIN pair (the ducked signal). sc_r falls back to sc_l so a mono
+    // SC still fills both output channels. If the SC is unpatched it's just
+    // 0 (nothing to duck) — the main still passes through to the output.
+    const inSL = inputs[2]?.[0];
+    const inSR = inputs[3]?.[0] ?? inputs[2]?.[0]; // sc_r → sc_l fallback
 
     const outAL = outputs[0]?.[0];
     const outAR = outputs[1]?.[0];
@@ -151,6 +157,7 @@ class SidecarProcessor extends AudioWorkletProcessor {
     for (let s = 0; s < n; s++) {
       const threshold = this.aval(parameters, 'threshold', s, -18);
       const envMag = this.aval(parameters, 'envMag', s, 1);
+      const inputLevel = this.aval(parameters, 'inputLevel', s, 1);
 
       const aL = inAL ? (inAL[s] ?? 0) : 0;
       const aR = inAR ? (inAR[s] ?? 0) : 0;
@@ -159,7 +166,7 @@ class SidecarProcessor extends AudioWorkletProcessor {
 
       const r = sidecarStep(
         aL, aR, sL, sR,
-        { threshold, ratio, knee, envMag, makeup, aAtt, aRel, hpfA },
+        { threshold, ratio, knee, envMag, inputLevel, makeup, aAtt, aRel, hpfA },
         this.state,
       );
 
