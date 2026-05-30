@@ -80,7 +80,7 @@ export const VRT_SCENES: Record<string, VrtScene> = {
   // RASTERIZE: drive the audio input with a 261 Hz sine (analogVco default
   // sine out, pitch 0 V/oct ≈ C4). RASTERIZE paints the audio samples as
   // voltage-per-pixel into its 640×480 frame in raster order; a steady tone
-  // builds horizontal bands.
+  // builds horizontal bands (now 640×480 / 4:3 per pipeline flip).
   //
   // VRT determinism (task #198): freeze-on-AudioContext-suspend alone leaves
   // the cursor at a wall-clock-dependent position (how many rAF ticks land
@@ -103,7 +103,7 @@ export const VRT_SCENES: Record<string, VrtScene> = {
         type: 'rasterize',
         position: { x: 520, y: 60 },
         domain: 'audio',
-        params: { samplesPerFrame: 6000, gain: 1, cursor: 0, wrap: 0 },
+        params: { samplesPerFrame: 8000, gain: 1, cursor: 0, wrap: 0 },
       },
     ],
     edges: [
