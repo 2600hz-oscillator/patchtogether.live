@@ -838,13 +838,14 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
     }
 
     test(title, async ({ page }) => {
-      // Per-iteration: spawnPatch (~1s) + 300ms wait + edge-read (~50ms).
-      // For modules with many inputs (HYDROGEN has 168; DOOM has 28) the
-      // 30s default test timeout is too tight. Scale up to ensure ~1.5s
-      // per iteration with margin.
-      if (mod.inputs.length > 20) {
-        test.setTimeout(Math.max(30_000, mod.inputs.length * 1500 + 30_000));
-      }
+      // Per-iteration: spawnPatch (~1s under-load) + 100ms wait + edge-read
+      // (~50ms). The default 30s test budget is ALWAYS too tight under shard
+      // CPU contention — even at the previous "> 20 inputs" gate, modules
+      // like BENTBOX (16 inputs) sat at ~24s of pure per-iter work with
+      // zero headroom, and flaked on a heavier-than-usual runner. Scale
+      // unconditionally to (n * 1.5s + 30s) baseline so any module finishes
+      // with ~1× margin on top of the iteration cost.
+      test.setTimeout(Math.max(30_000, mod.inputs.length * 1500 + 30_000));
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));

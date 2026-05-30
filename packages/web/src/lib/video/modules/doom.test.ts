@@ -1171,3 +1171,165 @@ describe('doomDef.factory — IDDQD / IDKFA cheat-gate inputs', () => {
     expect(extras.lastCheatInjected()).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Aspect / letterbox math
+// ---------------------------------------------------------------------------
+//
+// DOOM is natively 640×400 (1.6:1). The engine FBO is 640×480 (4:3, ~1.333:1)
+// per PR #472. The factory uploads the DOOM framebuffer into a 640×400 texture
+// and the fragment shader letterboxes it into the FBO by sampling
+// `centered = (vUv - 0.5) / uLetterbox + 0.5` and writing black for any
+// out-of-[0,1] result.
+//
+// The math (`Math.min(1.0, doomAspect / fboAspect)`, etc.) is res-adaptive — it
+// auto-swaps axes between the old 16:9 pipeline (side bars) and the new 4:3
+// pipeline (top/bottom bars). These tests pin the uniform values for several
+// engine resolutions so a future regression to the letterbox formula trips here
+// instead of in a flaky composite VRT diff.
+//
+// We capture `uniform2f` calls on a recording fake-gl and exercise the
+// per-frame draw path via `handle.surface.draw(frame)` — same code the engine
+// loop runs.
+describe('doomDef.factory — aspect-rendering / letterbox math', () => {
+  // Recording fake-gl that mirrors makeFakeGl() but tracks uniform writes by
+  // name (resolved via getUniformLocation symbol identity). Returns the same
+  // sentinel object for each (program, name) pair so the factory's
+  // saved-location captures resolve to a stable string we can look up.
+  function makeRecordingGl(): {
+    gl: WebGL2RenderingContext;
+    uniform2fCalls: Array<{ name: string; x: number; y: number }>;
+  } {
+    const nameByLoc = new Map<object, string>();
+    const locByName = new Map<string, object>();
+    const uniform2fCalls: Array<{ name: string; x: number; y: number }> = [];
+    const gl = {
+      getUniformLocation: (_prog: unknown, name: string) => {
+        let loc = locByName.get(name);
+        if (!loc) {
+          loc = { __uniform: name };
+          locByName.set(name, loc);
+          nameByLoc.set(loc, name);
+        }
+        return loc;
+      },
+      createTexture: () => ({}),
+      bindTexture: () => undefined,
+      texImage2D: () => undefined,
+      texSubImage2D: () => undefined,
+      texParameteri: () => undefined,
+      pixelStorei: () => undefined,
+      deleteTexture: () => undefined,
+      deleteFramebuffer: () => undefined,
+      deleteProgram: () => undefined,
+      bindFramebuffer: () => undefined,
+      viewport: () => undefined,
+      useProgram: () => undefined,
+      activeTexture: () => undefined,
+      uniform1i: () => undefined,
+      uniform1f: () => undefined,
+      uniform2f: (loc: object, x: number, y: number) => {
+        const name = nameByLoc.get(loc) ?? '?';
+        uniform2fCalls.push({ name, x, y });
+      },
+      TEXTURE_2D: 0, RGBA: 0, UNSIGNED_BYTE: 0,
+      TEXTURE_MIN_FILTER: 0, TEXTURE_MAG_FILTER: 0,
+      TEXTURE_WRAP_S: 0, TEXTURE_WRAP_T: 0,
+      LINEAR: 0, CLAMP_TO_EDGE: 0, UNPACK_FLIP_Y_WEBGL: 0,
+      FRAMEBUFFER: 0, TEXTURE0: 0,
+    } as unknown as WebGL2RenderingContext;
+    return { gl, uniform2fCalls };
+  }
+
+  function spawnDoomAt(res: { width: number; height: number }): {
+    handle: ReturnType<typeof doomDef.factory>;
+    uniform2fCalls: Array<{ name: string; x: number; y: number }>;
+  } {
+    const { gl, uniform2fCalls } = makeRecordingGl();
+    const ctx: VideoEngineContext = {
+      gl,
+      res,
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: undefined,
+    };
+    const handle = doomDef.factory(
+      ctx,
+      { id: 'doom-aspect', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never,
+    );
+    // Drive one frame through the same draw path the engine uses.
+    const frame = {
+      gl,
+      time: 0,
+      frame: 0,
+      getInputTexture: () => null,
+    };
+    handle.surface.draw(frame as never);
+    return { handle, uniform2fCalls };
+  }
+
+  it('4:3 (640×480) FBO: full WIDTH, V shrinks to fboAspect/doomAspect → bars top + bottom', () => {
+    const { uniform2fCalls } = spawnDoomAt({ width: 640, height: 480 });
+    const letterbox = uniform2fCalls.find((c) => c.name === 'uLetterbox');
+    expect(letterbox, 'shader received uLetterbox uniform write').toBeDefined();
+    // doomAspect=1.6, fboAspect=4/3≈1.333. doomAspect/fboAspect=1.2 → clamped
+    // to 1.0; fboAspect/doomAspect=0.8333... → V shrinks → top+bottom bars.
+    expect(letterbox!.x).toBeCloseTo(1.0, 4);
+    expect(letterbox!.y).toBeCloseTo(640 / 480 / (640 / 400), 4); // = 5/6
+    expect(letterbox!.y).toBeCloseTo(0.8333, 3);
+    // Letterbox bar fraction (vertical, per side) = (1 - V)/2 ≈ 0.0833 → ~8.3%
+    // of FBO height (≈40px each top + bottom in a 480px frame).
+    const barFracPerSide = (1 - letterbox!.y) / 2;
+    expect(barFracPerSide).toBeGreaterThan(0.08);
+    expect(barFracPerSide).toBeLessThan(0.09);
+  });
+
+  it('16:9 (640×360) FBO: full HEIGHT, U shrinks to doomAspect/fboAspect → bars left + right', () => {
+    const { uniform2fCalls } = spawnDoomAt({ width: 640, height: 360 });
+    const letterbox = uniform2fCalls.find((c) => c.name === 'uLetterbox');
+    expect(letterbox).toBeDefined();
+    // doomAspect=1.6, fboAspect=16/9≈1.778. doomAspect/fboAspect=0.9 → U
+    // shrinks; fboAspect/doomAspect=1.111 → clamped to 1.0 → side bars only.
+    expect(letterbox!.x).toBeCloseTo(0.9, 4);
+    expect(letterbox!.y).toBeCloseTo(1.0, 4);
+  });
+
+  it('1:1 square FBO: full WIDTH, V shrinks (DOOM is always wider than square) → bars top + bottom', () => {
+    const { uniform2fCalls } = spawnDoomAt({ width: 480, height: 480 });
+    const letterbox = uniform2fCalls.find((c) => c.name === 'uLetterbox');
+    expect(letterbox).toBeDefined();
+    // doomAspect=1.6, fboAspect=1. doomAspect/fboAspect=1.6 → clamped to 1.0;
+    // fboAspect/doomAspect=0.625 → V shrinks.
+    expect(letterbox!.x).toBeCloseTo(1.0, 4);
+    expect(letterbox!.y).toBeCloseTo(0.625, 4);
+  });
+
+  it('exact-match 1.6:1 FBO (640×400): no letterbox — U=1, V=1', () => {
+    const { uniform2fCalls } = spawnDoomAt({ width: 640, height: 400 });
+    const letterbox = uniform2fCalls.find((c) => c.name === 'uLetterbox');
+    expect(letterbox).toBeDefined();
+    expect(letterbox!.x).toBeCloseTo(1.0, 4);
+    expect(letterbox!.y).toBeCloseTo(1.0, 4);
+  });
+
+  it('letterbox uniform is res-adaptive — math axis swaps between 16:9 and 4:3', () => {
+    // Regression guard: PR #472 changed the engine FBO from 16:9 (side bars)
+    // to 4:3 (top/bottom bars). The math must auto-swap so we never lose
+    // gameplay pixels off the edges. Lock in: 4:3 has V < 1 (vertical bars),
+    // 16:9 has U < 1 (horizontal bars), neither both nor neither.
+    const fourThree = spawnDoomAt({ width: 640, height: 480 }).uniform2fCalls
+      .find((c) => c.name === 'uLetterbox')!;
+    const sixteenNine = spawnDoomAt({ width: 640, height: 360 }).uniform2fCalls
+      .find((c) => c.name === 'uLetterbox')!;
+    // 4:3 → V is the constrained axis.
+    expect(fourThree.x).toBeCloseTo(1.0, 4);
+    expect(fourThree.y).toBeLessThan(1.0);
+    // 16:9 → U is the constrained axis.
+    expect(sixteenNine.x).toBeLessThan(1.0);
+    expect(sixteenNine.y).toBeCloseTo(1.0, 4);
+    // Both never simultaneously constrained (else we'd be cropping DOOM).
+    expect(fourThree.x === 1.0 && fourThree.y === 1.0).toBe(false);
+    expect(sixteenNine.x === 1.0 && sixteenNine.y === 1.0).toBe(false);
+  });
+});
