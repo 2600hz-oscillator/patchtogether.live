@@ -131,6 +131,18 @@ export function bindRackspace(rackspaceId: string): {
   ydoc = _bundle.ydoc;
   undoManager = _bundle.undoManager;
   _boundRackspaceId = rackspaceId;
+  // Refresh the dev-only test hooks (window.__patch / __ydoc are captured
+  // by Canvas.svelte's $effect on FIRST mount; Svelte 5 reactivity doesn't
+  // re-run that effect on a module-scope `let` reassignment, so the e2e
+  // harness would otherwise hold a stale reference to the pre-bind doc).
+  // Cheap unconditional refresh — production strips this branch via the
+  // testHooksEnabled gate inside Canvas, so the globals only exist there.
+  if (typeof globalThis !== 'undefined') {
+    type DevHooks = { __patch?: unknown; __ydoc?: unknown };
+    const g = globalThis as unknown as DevHooks;
+    if ('__patch' in g) g.__patch = patch;
+    if ('__ydoc' in g) g.__ydoc = ydoc;
+  }
   return { patch, ydoc, undoManager };
 }
 
