@@ -201,6 +201,8 @@
   import ResofilterCard from '$lib/ui/modules/ResofilterCard.svelte';
   // SIDECAR — stereo sidechain compressor (GMR 2012 topology).
   import SidecarCard from '$lib/ui/modules/SidecarCard.svelte';
+  // TREE.oh.VOX — TB-303 voice slice (Open303 port).
+  import TreeohvoxCard from '$lib/ui/modules/TreeohvoxCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
@@ -492,6 +494,8 @@
     resofilter: ResofilterCard,
     // SIDECAR — stereo sidechain compressor (GMR 2012; Faust co.compressor_stereo).
     sidecar: SidecarCard,
+    // TREE.oh.VOX — TB-303 voice slice (Open303 port).
+    treeohvox: TreeohvoxCard,
     // DOOM — single-instance interactive video module.
     doom: DoomCard,
     // NIBBLES — QBasic Nibbles snake game module.

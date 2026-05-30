@@ -156,6 +156,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   cocoadelay: { top: 'Ports', sub: 'Ports' },
   // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
   resofilter: { top: 'Ports', sub: 'Ports' },
+  // TREE.oh.VOX — TB-303 voice slice (port of Robin Schmidt's Open303).
+  // Sits under Ports next to the other software-port voices; the full 404
+  // module (sequencer + TD-3 UI) is queued as a follow-up.
+  treeohvox: { top: 'Ports', sub: 'Ports' },
 
   // ───────── Ports → Mutable (Émilie Gillet / MI archetype ports). ─────────
   rings: { top: 'Ports', sub: 'Mutable' },
