@@ -225,6 +225,13 @@ After enablement the gallery is live at <https://2600hz-oscillator.github.io/pat
 
 Until then, the gallery is uploaded as a `vrt-gallery` artifact on every CI run and can be downloaded from the run page.
 
+## Decisions
+
+Architectural decisions with non-obvious tradeoffs live as ADRs (MADR
+format) under [`docs/adr/`](./docs/adr/README.md). Start there for the
+*why* behind the patch-graph layer, multiplayer lifecycle, cross-domain
+bridges, CV ranges, persistence formats, and rackspace join semantics.
+
 ## Conventions
 
 - Comments explain **why**, not what. If the code is self-evident, no comment.
