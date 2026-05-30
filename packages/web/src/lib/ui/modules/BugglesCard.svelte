@@ -52,6 +52,6 @@
 </div>
 
 <style>
-  .buggles-card { width: 280px; min-height: 220px; }
+  .buggles-card { width: 280px; }
   .buggles-card .fader-row { padding: 0 14px; margin-top: 18px; gap: 4px; }
 </style>

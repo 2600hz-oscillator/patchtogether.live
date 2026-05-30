@@ -68,7 +68,7 @@
 </div>
 
 <style>
-  .unity-card { width: 240px; min-height: 360px; }
+  .unity-card { width: 240px; }
   .unity-card .section { margin-top: 10px; }
   .unity-card .section-label {
     font-size: 10px;

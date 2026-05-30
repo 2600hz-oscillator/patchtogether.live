@@ -115,7 +115,7 @@
 </div>
 
 <style>
-  .tides2-card { width: 380px; min-height: 240px; }
+  .tides2-card { width: 380px; }
   .tides2-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

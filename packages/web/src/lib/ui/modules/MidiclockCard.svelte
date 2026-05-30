@@ -153,7 +153,7 @@
 </div>
 
 <style>
-  .midiclock-card { width: 200px; min-height: 200px; }
+  .midiclock-card { width: 200px; }
   .midiclock-card .body {
     padding: 10px 14px 8px;
     display: flex;

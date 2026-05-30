@@ -126,7 +126,6 @@
 <style>
   .joystick-card {
     width: 220px;
-    min-height: 240px;
   }
   .stripe {
     position: absolute;

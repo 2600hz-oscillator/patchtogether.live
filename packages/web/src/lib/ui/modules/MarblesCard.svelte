@@ -95,7 +95,7 @@
 </div>
 
 <style>
-  .marbles-card { width: 420px; min-height: 260px; }
+  .marbles-card { width: 420px; }
   .marbles-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

@@ -56,6 +56,6 @@
 </div>
 
 <style>
-  .illogic-card { width: 240px; min-height: 220px; }
+  .illogic-card { width: 240px; }
   .illogic-card .fader-row { padding: 0 14px; margin-top: 16px; }
 </style>

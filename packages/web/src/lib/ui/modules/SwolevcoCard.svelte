@@ -75,7 +75,6 @@
 <style>
   .swolevco-card {
     width: 360px;
-    min-height: 280px;
   }
   .swolevco-card .grid {
     margin-top: 16px;

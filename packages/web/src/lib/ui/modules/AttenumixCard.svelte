@@ -95,7 +95,7 @@
 </div>
 
 <style>
-  .attenumix-card { width: 300px; min-height: 240px; }
+  .attenumix-card { width: 300px; }
   .attenumix-card .body { padding: 12px 14px 0; }
   .attenumix-card .strips {
     display: flex;

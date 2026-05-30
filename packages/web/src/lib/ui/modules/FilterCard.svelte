@@ -52,7 +52,7 @@
 </div>
 
 <style>
-  .filter-card { width: 200px; min-height: 220px; }
+  .filter-card { width: 200px; }
   .filter-card .fader-row { margin-top: 14px; padding: 0 24px; }
   .mode-row {
     display: flex;

@@ -49,6 +49,6 @@
 </div>
 
 <style>
-  .adsr-card { width: 240px; min-height: 220px; }
+  .adsr-card { width: 240px; }
   .adsr-card .fader-row { padding: 0 18px; margin-top: 16px; }
 </style>

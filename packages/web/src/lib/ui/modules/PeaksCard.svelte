@@ -119,7 +119,7 @@
 </div>
 
 <style>
-  .peaks-card { width: 320px; min-height: 240px; }
+  .peaks-card { width: 320px; }
   .peaks-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

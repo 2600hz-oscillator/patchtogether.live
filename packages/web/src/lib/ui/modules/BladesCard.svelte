@@ -147,7 +147,7 @@
 </div>
 
 <style>
-  .blades-card { width: 300px; min-height: 280px; }
+  .blades-card { width: 300px; }
   .blades-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

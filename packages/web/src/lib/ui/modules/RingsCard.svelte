@@ -90,7 +90,7 @@
 </div>
 
 <style>
-  .rings-card { width: 360px; min-height: 240px; }
+  .rings-card { width: 360px; }
   .rings-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

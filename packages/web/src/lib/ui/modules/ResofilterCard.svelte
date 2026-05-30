@@ -142,7 +142,6 @@
 <style>
   .resofilter-card {
     width: 340px;
-    min-height: 200px;
     background: var(--resofilter-bg, #16181f);
     color: #ece8e2;
   }

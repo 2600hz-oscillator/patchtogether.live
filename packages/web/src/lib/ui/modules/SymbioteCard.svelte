@@ -109,7 +109,7 @@
 </div>
 
 <style>
-  .symbiote-card { width: 440px; min-height: 270px; }
+  .symbiote-card { width: 440px; }
   .symbiote-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

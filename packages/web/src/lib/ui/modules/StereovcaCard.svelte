@@ -58,6 +58,6 @@
 </div>
 
 <style>
-  .stereovca-card { width: 180px; min-height: 200px; }
+  .stereovca-card { width: 180px; }
   .stereovca-card .fader-row { padding: 0 14px; display: flex; gap: 12px; }
 </style>

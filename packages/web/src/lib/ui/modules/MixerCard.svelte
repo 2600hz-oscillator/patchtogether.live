@@ -49,6 +49,6 @@
 </div>
 
 <style>
-  .mixer-card { width: 260px; min-height: 200px; }
+  .mixer-card { width: 260px; }
   .mixer-card .fader-row { padding: 0 12px; gap: 4px; margin-top: 12px; }
 </style>

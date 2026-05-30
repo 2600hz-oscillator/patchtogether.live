@@ -460,7 +460,6 @@
 <style>
   .drumseqz-card {
     width: 820px;
-    min-height: 360px;
     padding-right: 0;
     padding-left: 0;
   }
