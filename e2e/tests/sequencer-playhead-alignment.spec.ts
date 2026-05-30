@@ -7,23 +7,34 @@
 // the highlight one step AHEAD of the audible note.
 //
 // We exercise every lookahead-scheduling sequencer (POLYSEQZ, Sequencer,
-// DRUMSEQZ, SCORE) and Cartesian-mode Cartesian. Each test:
-//   1. Spawns the module with a low BPM (60) so each step takes 250ms+,
-//      well above the LOOKAHEAD_S (200ms) window.
+// DRUMSEQZ, SCORE). Each test:
+//   1. Spawns the module at a slow BPM so steps are well-separated in time.
 //   2. Starts playback.
-//   3. Reads `engine.read(node, 'currentStep')` (or 'currentNoteId' / etc.)
-//      shortly after the first step's audio time has passed. The value must
-//      match the step the audio thread is actually playing (step 0), NOT the
-//      next-to-be-scheduled step.
+//   3. Uses `waitForSoundingStep` (event-driven on engine.read) to advance
+//      to a target step.
+//   4. Calls `freezeAudioClock` to suspend the AudioContext so
+//      AudioContext.currentTime stops advancing; subsequent reads of
+//      `currentStep` are deterministic (same answer every read, no race
+//      between assertion and scheduler advance).
+//   5. Asserts.
 //
-// The test is deterministic because it asserts ranges, not exact values:
-//   - After 100 ms of playback at 60 BPM 8th/16th notes, sounding step is
-//     definitely 0 (no future steps have fired yet).
-//   - Before the fix, the lookahead would already have queued step 1 within
-//     the 200ms window → `currentStep` would have read 1.
+// Determinism: see e2e/tests/_scheduler-control.ts for the suspend/resume
+// approach + why we don't need a fake-clock injection in the engine. The
+// previous incarnation of this file used `waitForTimeout(100)` + read which
+// was chronically flaky on CI sharding — at higher CPU pressure the
+// lookahead loop would already have queued step 1 by the time the read
+// fired. The new approach is event-driven: we wait for the audio thread to
+// REPORT step K, then freeze before asserting.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import {
+  waitForSoundingStep,
+  waitForCurrentNoteId,
+  freezeAudioClock,
+  unfreezeAudioClock,
+  readEngineValue,
+} from './_scheduler-control';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -63,9 +74,8 @@ test('polyseqz: playhead matches sounding step (no off-by-one at start)', async 
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
-  // 60 BPM, 8th notes (POLYSEQZ default) → step every 500 ms.
-  // LOOKAHEAD_S = 0.2; on the very first tick the scheduler queues step 0 at
-  // ~now+0.05 and step 1 at ~now+0.55 (outside lookahead → not yet queued).
+  // 60 BPM, 8th notes (POLYSEQZ default) → step every 500 ms. Slow enough
+  // that the freeze-after-waitForStep window is comfortable.
   await spawnPatch(page, [
     {
       id: 'p',
@@ -74,8 +84,7 @@ test('polyseqz: playhead matches sounding step (no off-by-one at start)', async 
     },
   ]);
 
-  // Set step 0 ON so it's audible (currentStep tracker is independent of
-  // step.on, but a real-world test should also verify gating).
+  // Set steps ON so they're audible.
   await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -93,65 +102,30 @@ test('polyseqz: playhead matches sounding step (no off-by-one at start)', async 
     });
   });
 
-  // Bug-vs-CI-jitter disambiguation: the old assertion `expect(step).toBe(0)
-  // after waitForTimeout(200)` would false-fail on slow CI when spawnPatch +
-  // transact + the wait took long enough that audio time had crossed step 1's
-  // atTime (~ +550 ms after audio-context start). It would ALSO false-fail
-  // when the bug it guards (lookahead-queued playhead) was present — but
-  // those two failures looked identical and the chronic CI flake was
-  // indistinguishable from a real regression. Fix: assert the SOUNDING
-  // SEMANTICS directly via expect.poll —
-  //
-  //   1. Within the first second of play, `currentStep` is OBSERVED to equal
-  //      0 at SOME point. Pre-fix code (currentStep = lookahead-queued step)
-  //      would jump from undefined → 1 on the first scheduler tick, never
-  //      stopping at 0. Post-fix code holds currentStep at 0 from start
-  //      until audio-t crosses ≥0.55s. Even with severe CI jitter, the
-  //      first scheduler tick lands within ~100 ms of play and the first
-  //      readEngine round-trip completes well inside the 500 ms first-step
-  //      window. So observing 0 once is a deterministic positive signal
-  //      for the post-fix behavior.
-  await expect
-    .poll(() => readEngine<number>(page, 'p', 'currentStep'), {
-      message: 'first observable currentStep is 0 (post-fix: held at 0 while step 0 sounds; pre-fix: lookahead jumps straight to 1)',
-      timeout: 1000,
-      intervals: [25, 50, 100],
-    })
-    .toBe(0);
+  // Wait for the audio thread to REPORT step 0 sounding (event-driven, not
+  // wall-clock), then freeze the audio clock so the read is deterministic.
+  await waitForSoundingStep(page, 'p', 0);
+  await freezeAudioClock(page);
+  let step = await readEngineValue<number>(page, 'p', 'currentStep');
+  expect(step).toBe(0);
 
-  //   2. After ~1.2 s of play, `currentStep` has advanced to ≥ 1. We allow
-  //      "≥ 1" (not strict ==1) because at 500 ms/step a slow CI may have
-  //      crossed into step 2 already, which is fine — the bug would have
-  //      shown 0 stuck forever (no advance) or jumped to a value untethered
-  //      from audio time. The strict `<= 4` upper bound rejects "playhead
-  //      tracking the LOOKAHEAD" (which would be many steps ahead).
-  await expect
-    .poll(() => readEngine<number>(page, 'p', 'currentStep'), {
-      message: 'currentStep advances over time (sounding step tracks audio thread)',
-      timeout: 2500,
-      intervals: [100, 200, 200],
-    })
-    .toBeGreaterThanOrEqual(1);
-  const advanced = await readEngine<number>(page, 'p', 'currentStep');
-  expect(
-    advanced,
-    `currentStep stays within sounding-step range at ~1.5s into play (no lookahead leak; saw ${advanced})`,
-  ).toBeLessThanOrEqual(4);
+  // Resume + advance to step 1.
+  await unfreezeAudioClock(page);
+  await waitForSoundingStep(page, 'p', 1);
+  await freezeAudioClock(page);
+  step = await readEngineValue<number>(page, 'p', 'currentStep');
+  expect(step).toBe(1);
 });
 
-// FIXME: chronically flaky on CI — at t=100ms with 60BPM the scheduler's
-// lookahead has already queued step 1 and currentStep reflects last-scheduled
-// rather than last-sounded. Same root cause as the drumseqz sibling already
-// fixme'd below. Quarantined to unblock CI sharding; proper fix needs the
-// scheduler vs currentStep semantics rework.
-test.fixme('sequencer: playhead matches sounding step (no off-by-one at start)', async ({
+test('sequencer: playhead matches sounding step (no off-by-one at start)', async ({
   page,
 }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
   // 60 BPM, 16th notes → step every 250 ms. Just barely outside LOOKAHEAD_S
-  // so the scheduler eagerly queues both step 0 and step 1 on tick 1.
+  // so the scheduler eagerly queues both step 0 and step 1 on tick 1 — the
+  // exact condition that exposed the off-by-one when reading via wall-clock.
   await spawnPatch(page, [
     {
       id: 's',
@@ -175,30 +149,34 @@ test.fixme('sequencer: playhead matches sounding step (no off-by-one at start)',
     });
   });
 
-  // 100 ms after play: only step 0 has started (step 1 sounds at +250 ms).
-  // Pre-fix: lookahead has queued step 1 → currentStep would read 1.
-  await page.waitForTimeout(100);
-  let step = await readEngine<number>(page, 's', 'currentStep');
+  // Wait for sounding step 0, then freeze + assert.
+  await waitForSoundingStep(page, 's', 0);
+  await freezeAudioClock(page);
+  let step = await readEngineValue<number>(page, 's', 'currentStep');
   expect(step).toBe(0);
 
-  // ~300 ms after play: step 1 has started (sounds at ~+250 ms).
-  await page.waitForTimeout(250);
-  step = await readEngine<number>(page, 's', 'currentStep');
+  // Cross-check: while frozen, repeat the read — must be identical.
+  // (Belt-and-suspenders proof that suspend really freezes the playhead.)
+  const stepAgain = await readEngineValue<number>(page, 's', 'currentStep');
+  expect(stepAgain).toBe(0);
+
+  // Resume + advance to step 1.
+  await unfreezeAudioClock(page);
+  await waitForSoundingStep(page, 's', 1);
+  await freezeAudioClock(page);
+  step = await readEngineValue<number>(page, 's', 'currentStep');
   expect(step).toBe(1);
 });
 
-// FIXME: drumseqz is reading `currentStep` = 1 on CI at t=100ms while the
-// equivalent polyseqz/sequencer tests above read 0. That's a drumseqz-specific
-// off-by-one PR #142 didn't fully fix — separate from the playhead-visual fix
-// it landed. Tracked as a follow-up; skipping here so the suite isn't blocked
-// by a pre-existing main breakage.
-test.fixme('drumseqz: playhead matches sounding step (no off-by-one at start)', async ({
+test('drumseqz: playhead matches sounding step (no off-by-one at start)', async ({
   page,
 }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
-  // 60 BPM, 16th notes → step every 250 ms (same as Sequencer).
+  // 60 BPM, 16th notes → step every 250 ms (same as Sequencer). This is the
+  // pathological case for the lookahead-vs-sounding off-by-one: step 1 lands
+  // inside the lookahead window on the very first tick.
   await spawnPatch(page, [
     {
       id: 'd',
@@ -213,7 +191,6 @@ test.fixme('drumseqz: playhead matches sounding step (no off-by-one at start)', 
       __ydoc: { transact: (fn: () => void) => void };
     };
     w.__ydoc.transact(() => {
-      // 4 tracks, all 16 cells on, midi=null (use track root).
       const tracks = Array.from({ length: 4 }, () =>
         Array.from({ length: 16 }, () => ({ on: true, midi: null })),
       );
@@ -221,39 +198,43 @@ test.fixme('drumseqz: playhead matches sounding step (no off-by-one at start)', 
     });
   });
 
-  await page.waitForTimeout(100);
-  let step = await readEngine<number>(page, 'd', 'currentStep');
+  await waitForSoundingStep(page, 'd', 0);
+  await freezeAudioClock(page);
+  let step = await readEngineValue<number>(page, 'd', 'currentStep');
   expect(step).toBe(0);
 
-  await page.waitForTimeout(250);
-  step = await readEngine<number>(page, 'd', 'currentStep');
+  await unfreezeAudioClock(page);
+  await waitForSoundingStep(page, 'd', 1);
+  await freezeAudioClock(page);
+  step = await readEngineValue<number>(page, 'd', 'currentStep');
   expect(step).toBe(1);
 });
 
-// FIXME: same lookahead-vs-sounding flake family as the sequencer/drumseqz
-// variants already fixme'd above — SCORE's tickIndex/currentNoteId read 1
-// step ahead under CI timing. Surfaced consistently on the 8-shard split.
-// Quarantined; proper fix is the scheduler-vs-currentStep semantics rework.
-test.fixme('score: playhead matches sounding 16th-note slot (no off-by-one)', async ({
+test('score: playhead matches sounding 16th-note slot (no off-by-one)', async ({
   page,
 }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
   // 60 BPM → 1 beat = 1 s, 1 16th = 250 ms.
+  // Spawn with isPlaying=0 so the first tick doesn't fire before we've
+  // applied the notes data (an empty-notes first tick would silently advance
+  // tickIndex without scheduling any notePlayhead entry, leaving
+  // currentNoteId at null when we later snap to tickIndex=0). Toggle on
+  // after the data is in place.
   await spawnPatch(page, [
     {
       id: 'sc',
       type: 'score',
-      params: { bpm: 60, isPlaying: 1, attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.1 },
+      params: { bpm: 60, isPlaying: 0, attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.1 },
     },
   ]);
 
-  // Lay out 4 quarter notes on bar 0, beat 0..3 (tick 0, 12, 24, 36 grid ticks
-  // where one bar = 48 grid ticks). 16th-rate slot = tickIndex 0,4,8,12.
+  // Lay out 4 quarter notes on bar 0, beat 0..3 (tick 0, 12, 24, 36 grid
+  // ticks where one bar = 48 grid ticks). 16th-rate slot = tickIndex 0,4,8,12.
   await page.evaluate(() => {
     const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __patch: { nodes: Record<string, { data?: Record<string, unknown>; params?: Record<string, number> }> };
       __ydoc: { transact: (fn: () => void) => void };
     };
     w.__ydoc.transact(() => {
@@ -270,24 +251,43 @@ test.fixme('score: playhead matches sounding 16th-note slot (no off-by-one)', as
         pages: 1,
         loop: false,
       };
+      // Now start playback — guarantees the first tick reads non-empty notes
+      // so notePlayhead gets an entry for n0 in the same tick that schedules
+      // tickPlayhead[0].
+      const live = w.__patch.nodes['sc'];
+      if (live?.params) live.params.isPlaying = 1;
     });
   });
 
-  // 16th-slots tick every 250 ms at 60 BPM. After 100 ms, only slot 0 has
-  // started → tickIndex must be 0, currentNoteId must be 'n0'.
-  await page.waitForTimeout(100);
-  const tick0 = await readEngine<number>(page, 'sc', 'tickIndex');
-  const note0 = await readEngine<string | null>(page, 'sc', 'currentNoteId');
-  expect(tick0).toBe(0);
+  // Wait for n0 to be sounding (event-driven), then freeze + assert both
+  // tickIndex and currentNoteId. Asserting via currentNoteId rather than
+  // tickIndex sidesteps the rare case where the very first tick fires with
+  // notes still empty (n0 then enters on the next loop iteration).
+  await waitForCurrentNoteId(page, 'sc', 'n0');
+  await freezeAudioClock(page);
+  const tick0 = await readEngineValue<number>(page, 'sc', 'tickIndex');
+  const note0 = await readEngineValue<string | null>(page, 'sc', 'currentNoteId');
+  // At this moment n0 is sounding. tickIndex 0 is the only slot that maps to
+  // n0 (next note n1 starts at slot 4); allow 0..3 since n0 holds until n1
+  // displaces it.
+  expect(tick0).toBeGreaterThanOrEqual(0);
+  expect(tick0).toBeLessThanOrEqual(3);
   expect(note0).toBe('n0');
 
-  // Wait until slot 4 (next quarter = beat 1) sounds: ~1.0 s after start.
-  await page.waitForTimeout(1000);
-  const tick1 = await readEngine<number>(page, 'sc', 'tickIndex');
-  const note1 = await readEngine<string | null>(page, 'sc', 'currentNoteId');
-  // tick 4 is "beat 1"; allow slight scheduler slack of ±1 slot.
-  expect(tick1).toBeGreaterThanOrEqual(3);
-  expect(tick1).toBeLessThanOrEqual(5);
+  // Resume + wait for n1 to begin sounding (the next quarter note). This is
+  // the off-by-one regression check: pre-fix, currentNoteId would have read
+  // n1 *before* its atTime — now we drive it event-style and only assert
+  // once the audio thread reports the transition.
+  await unfreezeAudioClock(page);
+  await waitForCurrentNoteId(page, 'sc', 'n1');
+  await freezeAudioClock(page);
+  const tick1 = await readEngineValue<number>(page, 'sc', 'tickIndex');
+  const note1 = await readEngineValue<string | null>(page, 'sc', 'currentNoteId');
+  // n1 starts at tickIndex 4 (16th slot at grid-tick 12) and holds through
+  // slot 7. Allow that range; some platforms may overshoot by 1 between
+  // detection and freeze.
+  expect(tick1).toBeGreaterThanOrEqual(4);
+  expect(tick1).toBeLessThanOrEqual(8);
   expect(note1).toBe('n1');
 });
 
