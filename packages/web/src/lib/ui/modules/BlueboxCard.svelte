@@ -26,6 +26,7 @@
   import {
     blueboxDef,
     BLUEBOX_BUTTON_NAMES,
+    BLUEBOX_DIGIT_LETTERS,
     buttonGateId,
     buttonParamId,
     type BlueboxButtonName,
@@ -127,7 +128,10 @@
               onpointerup={onUp(digit)}
               onpointerleave={onUp(digit)}
               onpointercancel={onCancel(digit)}
-            >{digit}</button>
+            >
+              <span class="digit-num">{digit}</span>
+              <span class="digit-letters" data-testid={`bluebox-letters-${digit}`}>{BLUEBOX_DIGIT_LETTERS[digit] ?? ''}</span>
+            </button>
           {/each}
         </div>
       {/each}
@@ -142,7 +146,10 @@
           onpointerup={onUp('0')}
           onpointerleave={onUp('0')}
           onpointercancel={onCancel('0')}
-        >0</button>
+        >
+          <span class="digit-num">0</span>
+          <span class="digit-letters" data-testid="bluebox-letters-0">{BLUEBOX_DIGIT_LETTERS['0'] ?? ''}</span>
+        </button>
         <span class="key-spacer"></span>
       </div>
       <div class="row phreaker-row">
@@ -208,7 +215,7 @@
     color: var(--text, #ddd);
     border: 1px solid var(--border, #444);
     border-radius: 4px;
-    padding: 12px 0;
+    padding: 8px 0 6px;
     font-family: var(--font-display, inherit);
     font-size: 1.1rem;
     letter-spacing: 0.04em;
@@ -217,6 +224,32 @@
     -webkit-user-select: none;
     touch-action: none; /* keep pointerdown gestures from being eaten by scroll */
     transition: background 30ms ease, transform 30ms ease;
+  }
+  /* Digit buttons stack a large number over a small phone-letters strip
+     (ABC under "2", DEF under "3", …). 1 + 0 keep an empty letters span
+     so every key has the same height + the row grid stays aligned. */
+  .key.digit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    line-height: 1;
+  }
+  .key.digit .digit-num {
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+  .key.digit .digit-letters {
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    opacity: 0.7;
+    /* Reserve the line-height even when empty (1, 0) so digit keys all
+       share a single height regardless of letter content. */
+    min-height: 0.7rem;
+  }
+  .key.digit.held .digit-letters {
+    opacity: 0.85;
   }
   .key:hover {
     background: var(--bg-elev-hover, #333);

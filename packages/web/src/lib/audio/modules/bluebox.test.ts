@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import {
   BLUEBOX_BUTTON_NAMES,
+  BLUEBOX_DIGIT_LETTERS,
   BLUEBOX_TONES,
   DTMF_TABLE,
   REDBOX_TONES,
@@ -91,6 +92,47 @@ describe('bluebox-dsp — button id naming convention', () => {
     expect([...BLUEBOX_BUTTON_NAMES]).toEqual([
       '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'bluebox', 'redbox',
     ]);
+  });
+});
+
+describe('bluebox-card — phone-keypad letters under each digit', () => {
+  // Bell-System standard. Source-of-truth for the BlueboxCard render —
+  // if the card's data-testid="bluebox-letters-N" content drifts from
+  // this table the visual contract for the dialer is broken.
+  const EXPECTED: Record<string, string> = {
+    '1': '',
+    '2': 'ABC',
+    '3': 'DEF',
+    '4': 'GHI',
+    '5': 'JKL',
+    '6': 'MNO',
+    '7': 'PQRS',
+    '8': 'TUV',
+    '9': 'WXYZ',
+    '0': '',
+  };
+
+  for (const digit of Object.keys(EXPECTED)) {
+    it(`digit ${digit} → "${EXPECTED[digit]}"`, () => {
+      expect(BLUEBOX_DIGIT_LETTERS[digit]).toBe(EXPECTED[digit]);
+    });
+  }
+
+  it('"ABC" is the visible label for the 2-button', () => {
+    // The card renders <span data-testid="bluebox-letters-2">{BLUEBOX_DIGIT_LETTERS['2']}</span>;
+    // this is the unit-level guarantee that text matches Bell.
+    expect(BLUEBOX_DIGIT_LETTERS['2']).toBe('ABC');
+  });
+
+  it('1 + 0 carry no letters (real phone-keypad convention)', () => {
+    expect(BLUEBOX_DIGIT_LETTERS['1']).toBe('');
+    expect(BLUEBOX_DIGIT_LETTERS['0']).toBe('');
+  });
+
+  it('covers all 10 digits', () => {
+    for (let d = 0; d <= 9; d++) {
+      expect(BLUEBOX_DIGIT_LETTERS[String(d)]).toBeDefined();
+    }
   });
 });
 

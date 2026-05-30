@@ -69,6 +69,29 @@ export {
   type BlueboxButtonName,
 };
 
+// Standard Bell-System phone-keypad letters under each digit. Lives here
+// (UI side) rather than in dsp/ because it's purely a visual affordance for
+// the card — no DTMF math depends on it. Digits 1 and 0 carry no letters
+// on a real phone keypad; we expose them as empty strings so the card can
+// uniformly render every cell without conditional logic.
+//
+//   1: ''      2: 'ABC'   3: 'DEF'
+//   4: 'GHI'   5: 'JKL'   6: 'MNO'
+//   7: 'PQRS'  8: 'TUV'   9: 'WXYZ'
+//              0: ''
+export const BLUEBOX_DIGIT_LETTERS: Readonly<Record<string, string>> = Object.freeze({
+  '1': '',
+  '2': 'ABC',
+  '3': 'DEF',
+  '4': 'GHI',
+  '5': 'JKL',
+  '6': 'MNO',
+  '7': 'PQRS',
+  '8': 'TUV',
+  '9': 'WXYZ',
+  '0': '',
+});
+
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const blueboxDef: AudioModuleDef = {
