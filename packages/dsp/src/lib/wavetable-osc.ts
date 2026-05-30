@@ -26,6 +26,49 @@
  *  frame. */
 export const WAVETABLE_FRAME_SIZE = 256;
 
+/** One-pole low-pass smoother for per-sample shape-param de-zippering.
+ *  Drives morph / spread / fold inside the wavecel worklet so abrupt
+ *  AudioParam jumps (knob drag, MIDI CC, sequencer step) don't translate
+ *  into hard sample-level discontinuities at block boundaries.
+ *
+ *  Why this exists (regression of the "clicks even with FREEZE TABLE"
+ *  bug — PR #422 confirmed the table is genuinely static when frozen,
+ *  so the clicks weren't table swaps. Per-sample sample-frame lookup at
+ *  the same phase but a DIFFERENT morph / spread / fold is a different
+ *  output value; if morph steps 0 → 1 in one sample the output snaps to
+ *  a new frame's value → click. AudioParam k/a-rate values within ONE
+ *  block are constant, so the discontinuity lands at block boundaries
+ *  (every 128 samples = ~2.7 ms at 48 kHz — well in the click band).
+ *
+ *  Corner: 80 Hz (≈2 ms time constant). Long enough to mask the step,
+ *  short enough that a knob drag still feels instant. NB we deliberately
+ *  do NOT smooth pitch / tune / fine — sequencer step transitions need
+ *  to be sample-instant or the timing wobbles.
+ *
+ *  Mirrors RfSmoother (packages/dsp/src/lib/resofilter-dsp.ts) so the two
+ *  worklets share an idiom; kept here rather than in a shared `smoother`
+ *  module to avoid wavecel ⟷ resofilter-dsp coupling. */
+export class WtParamSmoother {
+  private y = 0;
+  private alpha: number;
+
+  constructor(sr: number, cornerHz = 80) {
+    // 1-pole LP: y += α (x - y); α = 1 - exp(-2π fc / sr).
+    this.alpha = 1 - Math.exp((-2 * Math.PI * cornerHz) / sr);
+  }
+
+  /** Reset to a target value (use on construction so the first sample
+   *  starts at the user's chosen default — no ramp from 0). */
+  prime(v: number): void {
+    this.y = v;
+  }
+
+  step(x: number): number {
+    this.y += this.alpha * (x - this.y);
+    return this.y;
+  }
+}
+
 export function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }

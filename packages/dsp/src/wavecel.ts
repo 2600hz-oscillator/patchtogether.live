@@ -13,7 +13,7 @@
 // number[][] } via port.postMessage; plain arrays (no Yjs proxies — recall
 // the DX7 SYX bug from PR-94 where structuredClone choked on proxies).
 
-import { WavetableOsc, WAVETABLE_FRAME_SIZE } from './lib/wavetable-osc';
+import { WavetableOsc, WAVETABLE_FRAME_SIZE, WtParamSmoother } from './lib/wavetable-osc';
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor {
@@ -47,10 +47,28 @@ class WavecelProcessor extends AudioWorkletProcessor {
   }
 
   private osc: WavetableOsc;
+  // De-zipper smoothers for the three perceptually-sensitive shape params.
+  // morph + spread + fold all change WHICH-or-HOW frame samples are
+  // combined — a hard step on any of them at a non-zero-crossing phase
+  // produces an audible click even with a frozen wavetable (the bug this
+  // PR fixes; see WtParamSmoother docstring). Pitch deliberately stays
+  // un-smoothed so sequencer step transitions remain sample-instant.
+  private smMorph: WtParamSmoother;
+  private smSpread: WtParamSmoother;
+  private smFold: WtParamSmoother;
 
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
     this.osc = new WavetableOsc(sampleRate);
+    this.smMorph = new WtParamSmoother(sampleRate);
+    this.smSpread = new WtParamSmoother(sampleRate);
+    this.smFold = new WtParamSmoother(sampleRate);
+    // Prime each smoother at the param's documented default so the very
+    // first sample doesn't ramp from 0 (which would itself be a swept
+    // morph / spread / fold across the first ~10 ms after node creation).
+    this.smMorph.prime(0);
+    this.smSpread.prime(1);
+    this.smFold.prime(0);
     this.port.onmessage = (e: MessageEvent) => {
       const m = e.data as LoadMessage;
       if (!m || typeof m !== 'object') return;
@@ -111,10 +129,24 @@ class WavecelProcessor extends AudioWorkletProcessor {
       const sCv = spreadCv ? spreadCv[i] : 0;
       const fCv = foldCv ? foldCv[i] : 0;
 
-      const morph = morphKnob + mCv;
+      const morphRaw = morphKnob + mCv;
       // spread: linear CV blends across the 1..5 range (±1 = ±2 frames).
-      const spread = spreadKnob + sCv * 2;
-      const foldAmt = foldKnob + fCv;
+      const spreadRaw = spreadKnob + sCv * 2;
+      const foldRaw = foldKnob + fCv;
+
+      // ── Per-sample 1-pole LP de-zipper on morph / spread / fold ──
+      // AudioParam values are constant within a 128-sample block, so an
+      // unsmoothed setValueAtTime jump translates into a hard step at
+      // the next block boundary — that's the click the user reported on
+      // FOXY's out_l / out_r even with FREEZE TABLE on. Smoothing here
+      // (~2 ms time constant at 48 kHz) masks both knob-drag step trains
+      // AND any audio-rate jump on the morph_cv / spread_cv / fold_cv
+      // inputs (LFO step, sequencer transitions, etc.). Pitch / tune /
+      // fine intentionally bypass smoothing — see WtParamSmoother
+      // docstring + the regression notes in fix/foxy-click-pop PR body.
+      const morph = this.smMorph.step(morphRaw);
+      const spread = this.smSpread.step(spreadRaw);
+      const foldAmt = this.smFold.step(foldRaw);
 
       // Convert pitch + tune + fine + FM → V/oct for the shared engine.
       const voct = pitch + tune / 12 + fine / 1200 + fm;
