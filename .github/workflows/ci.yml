@@ -154,8 +154,47 @@ jobs:
       - name: Apply DB schema (for capacity-race test)
         run: flox activate -- psql "$PG_TEST_URL" -f db/schema/001_init.sql
 
-      - name: Run unit tests (server + web)
-        run: flox activate -- task test
+      # `task coverage` runs the same vitest suites as `task test` but with the
+      # V8 coverage provider + enforces the minimums baked into each
+      # vitest.config.ts. Adds ~3-5 s of instrumentation per package; thresholds
+      # were set 5-10% BELOW the realized coverage at wire-time so a normal PR
+      # doesn't break the build (see README §Coverage). The unit-job step name
+      # stays "unit" so branch-protection rule names don't shift.
+      - name: Run unit tests with coverage (server + web)
+        run: flox activate -- task coverage
+
+      # Print the per-package JSON summary into the Actions log so reviewers can
+      # eyeball the deltas without unzipping the HTML artifact. `coverage-summary.json`
+      # is the standard `json-summary` reporter output (Istanbul-compatible shape).
+      - name: Print coverage summary
+        if: always()
+        run: |
+          for pkg in server web; do
+            f="packages/$pkg/coverage/coverage-summary.json"
+            if [ -f "$f" ]; then
+              echo "::group::coverage summary — $pkg"
+              flox activate -- node -e "
+                const s = require('./$f').total;
+                for (const k of ['lines','branches','functions','statements']) {
+                  console.log(k.padEnd(11), s[k].pct.toFixed(2)+'%', '(' + s[k].covered + '/' + s[k].total + ')');
+                }
+              "
+              echo "::endgroup::"
+            fi
+          done
+
+      # Upload BOTH packages' coverage/ directories as one artifact. Reviewers
+      # download `coverage-html`, open `*/coverage/index.html` to browse.
+      # Retention is short (7 d) — these reports are dev-aid only, not audit.
+      - name: Upload coverage HTML reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: |
+            packages/server/coverage
+            packages/web/coverage
+          retention-days: 7
 
   # -----------------------------------------------------------------------
   # art — Audio Regression Tests. Has a `dsp:build` dep (~4 s, baked into
