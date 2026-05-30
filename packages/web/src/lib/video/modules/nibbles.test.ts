@@ -169,7 +169,7 @@ function spawn(handleAudio = true) {
   const fixture = handleAudio ? makeFakeAudioCtx() : null;
   const ctx: VideoEngineContext = {
     gl,
-    res: { width: 640, height: 360 },
+    res: { width: 640, height: 480 },
     compileFragment: () => ({}) as WebGLProgram,
     createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
     drawFullscreenQuad: () => undefined,

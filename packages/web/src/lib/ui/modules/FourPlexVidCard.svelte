@@ -68,7 +68,7 @@
   // VideoOutCard blit: ask the engine to render this node's surface FBO
   // into its drawing buffer, then drawImage it into our small canvas. ---
   const ENGINE_W = 640;
-  const ENGINE_H = 360;
+  const ENGINE_H = 480;
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
@@ -88,7 +88,7 @@
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
-      // Aspect-fit the 16:9 engine surface into the small preview.
+      // Aspect-fit the engine surface (4:3) into the small preview.
       const srcAspect = ENGINE_W / ENGINE_H;
       const dstAspect = cw / ch;
       let w = cw, h = ch, x = 0, y = 0;

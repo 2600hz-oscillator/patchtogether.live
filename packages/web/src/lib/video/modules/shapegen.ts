@@ -38,7 +38,7 @@
 //                     gate.
 //
 // Output:
-//   out (video): the rendered scene (640×360 by default, matches engine RES).
+//   out (video): the rendered scene (640×480 by default, matches engine RES).
 //
 // Implementation:
 //   • We allocate ONE FBO + texture (the module's video-out surface) and
@@ -83,11 +83,11 @@ export const SHAPEGEN_CLOCK_PORT_ID = 'clock_in';
 /** Each input video texture is read back to an RGBA buffer for
  *  `generateShapes` to chew on. We read at a SCALED-DOWN size of the
  *  full frame (engine-res / 8) — keeps per-raster readback at
- *  80×45 = 3600 px × 4 = 14.4 KB (×3 rasters = 43 KB / video frame),
+ *  80×60 = 4800 px × 4 = 19.2 KB (×3 rasters = 58 KB / video frame),
  *  while still SPANNING THE WHOLE FRAME so the 16×16 feature-grid
  *  downsample inside generateShapes sees real content even when the
  *  upstream's interesting pixels live anywhere on the canvas. The
- *  earlier 64×64 corner-read of a 640×360 texture often returned a
+ *  earlier 64×64 corner-read of a 640×480 texture often returned a
  *  dark void (the source's interesting content was off-corner), which
  *  starved generateShapes of feature variance.
  *
@@ -96,7 +96,7 @@ export const SHAPEGEN_CLOCK_PORT_ID = 'clock_in';
  *  GL's linear filter doing the box-blur), then readPixels off THAT.
  *  Still cheap; the intermediate render is a single textured triangle. */
 export const SHAPEGEN_RASTER_W = 80;
-export const SHAPEGEN_RASTER_H = 45;
+export const SHAPEGEN_RASTER_H = 60;
 
 /** Final-radius clamp applied AFTER size × baseline × abFactor.
  *  Keeps a maxed-out SIZE knob from filling the whole box. */
@@ -236,7 +236,7 @@ export const shapegenDef: VideoModuleDef = {
     // canvas the interesting pixels live.
     //
     // (Earlier v1 did `readPixels(0, 0, 64, 64)` directly off the input
-    // texture's FBO — a TOP-LEFT-CORNER read of a 640×360 canvas, which
+    // texture's FBO — a TOP-LEFT-CORNER read of a 640×480 canvas, which
     // returned a dark void any time the upstream's content wasn't in the
     // corner. That starved generateShapes of feature variance and the
     // SHAPEGEN preview rendered nothing but the wireframe box.)
