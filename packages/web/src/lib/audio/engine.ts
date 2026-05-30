@@ -682,6 +682,59 @@ export class PatchEngine {
    *  cancels any pending settle frame. Keyed by edge id (symmetric with the
    *  analyser bridge bookkeeping). */
   private sameDomainPulseSubTeardowns = new Map<string, () => void>();
+  /**
+   * Cross-domain (and same-domain video-CV) bridges that couldn't be wired
+   * at addEdge time because the source or target node wasn't materialized
+   * yet, or its port handle hadn't surfaced (e.g. video module published
+   * its `audioSources` entry late, after the edge was first applied).
+   *
+   * Without this Map, those bridges were marked in the per-kind `xxxEdgeIds`
+   * set (so removeEdge knew about them) BUT the reconciler then saw the
+   * edge id in `appliedEdges` and never re-tried — silent permanent failure.
+   * User-visible symptom: "I patched the cable but no signal." Codex
+   * audit pinpointed engine.ts:893-902 + :962-967 as the offending paths.
+   *
+   * The fix: any failed-to-wire cross-domain bridge gets parked here
+   * (instead of marked as owned). Drained on:
+   *  - addNode completion (the awaited node's id matches either endpoint)
+   *  - VideoEngine.onAudioSourcesChanged (port handle surfaces post-spawn)
+   *  - removeNode (evict pending bridges touching the removed node)
+   *  - removeEdge (evict from both pending + applied)
+   *
+   * Successful retries move out of pendingBridges and into the relevant
+   * per-kind tracking (cvBridgeEdgeIds + audioBridgeEdges, etc.) — i.e.
+   * the SAME bookkeeping the happy path uses. Failed retries (still
+   * missing the endpoint) stay parked.
+   *
+   * The `kind` tag tells the drainer which add-method to re-call.
+   */
+  private pendingBridges = new Map<
+    string,
+    { edge: Edge; kind: 'cv' | 'video-texture' | 'audio' | 'same-domain-video-cv'; sourceDomain?: string; targetDomain?: string }
+  >();
+
+  /**
+   * Debug/observability surface: how many cross-domain bridges are currently
+   * parked waiting for materialization? Useful for property tests + future
+   * dev-mode HUD. Reads internal state — does not mutate.
+   */
+  getPendingBridgeCount(): number {
+    return this.pendingBridges.size;
+  }
+
+  /**
+   * Debug/observability surface: how many cross-domain bridges are currently
+   * wired? Sum of all four per-kind sets. Property tests use this paired
+   * with getPendingBridgeCount to assert the no-leak invariant.
+   */
+  getAppliedBridgeCount(): number {
+    return (
+      this.cvBridgeEdgeIds.size
+      + this.videoTextureBridgeEdgeIds.size
+      + this.audioBridgeEdgeIds.size
+      + this.sameDomainVideoCvBridgeEdgeIds.size
+    );
+  }
 
   registerDomain(engine: DomainEngine): void {
     this.domains.set(engine.domain, engine);
@@ -730,6 +783,11 @@ export class PatchEngine {
       this.audioBridgeEdgeIds.delete(edgeId);
       this.addCrossDomainAudioBridge(edge);
     }
+    // The port-handle on `nodeId` just surfaced (or swapped). Drain ANY
+    // pending cross-domain bridge that was waiting on this node — not
+    // just video→audio ones. Covers cv-bridge, video-texture, and
+    // same-domain-video-cv whose video source publishes lazily.
+    this.drainPendingForNode(nodeId);
   }
 
   getDomain<T extends DomainEngine>(domain: string): T {
@@ -747,11 +805,73 @@ export class PatchEngine {
   async addNode(node: ModuleNode): Promise<void> {
     const engine = this.getDomain(node.domain);
     await engine.addNode(node);
+    // Drain any pending cross-domain bridges that were waiting for this
+    // node's endpoint(s) to materialize. Without this, edges patched into
+    // not-yet-materialized targets stayed silently dead (Codex audit fix).
+    this.drainPendingForNode(node.id);
   }
 
   removeNode(node: ModuleNode): void {
     const engine = this.getDomain(node.domain);
     engine.removeNode(node.id);
+    // Evict any pending bridges that referenced this node — they have
+    // no chance of resolving until the user re-spawns + re-cables.
+    for (const [edgeId, entry] of this.pendingBridges) {
+      if (
+        entry.edge.source.nodeId === node.id
+        || entry.edge.target.nodeId === node.id
+      ) {
+        this.pendingBridges.delete(edgeId);
+      }
+    }
+  }
+
+  /**
+   * Retry every pending cross-domain bridge whose source or target is
+   * `nodeId`. Successful retries land in the relevant xxxBridgeEdgeIds
+   * set and self-remove from pendingBridges (each addCrossDomainXxxBridge
+   * happy-path calls pendingBridges.delete on success). Failed retries
+   * stay parked — they re-park themselves on the next defer branch.
+   *
+   * Called from PatchEngine.addNode (post-await — handle is materialized,
+   * port handles are surfaced) and from onAudioSourcesChanged (a video
+   * module swapped its published AudioNode for a port — wireAudio
+   * surfaces a new handle).
+   *
+   * Snapshot the entries before iterating: each retry may mutate
+   * pendingBridges (either via .delete on success or via .set re-park
+   * on continued failure), which makes for-of over the live Map unsafe.
+   */
+  private drainPendingForNode(nodeId: string): void {
+    const entries: Array<{ edge: Edge; kind: 'cv' | 'video-texture' | 'audio' | 'same-domain-video-cv'; sourceDomain?: string; targetDomain?: string }> = [];
+    for (const entry of this.pendingBridges.values()) {
+      if (
+        entry.edge.source.nodeId === nodeId
+        || entry.edge.target.nodeId === nodeId
+      ) {
+        entries.push(entry);
+      }
+    }
+    for (const entry of entries) {
+      switch (entry.kind) {
+        case 'cv':
+          this.addCrossDomainCvBridge(
+            entry.edge,
+            entry.sourceDomain ?? 'audio',
+            entry.targetDomain ?? 'video',
+          );
+          break;
+        case 'video-texture':
+          this.addCrossDomainVideoTextureBridge(entry.edge);
+          break;
+        case 'audio':
+          this.addCrossDomainAudioBridge(entry.edge);
+          break;
+        case 'same-domain-video-cv':
+          this.addSameDomainVideoCvBridge(entry.edge);
+          break;
+      }
+    }
   }
 
   /**
@@ -871,6 +991,16 @@ export class PatchEngine {
   }
 
   removeEdge(edge: Edge, sourceDomain: string): void {
+    // Evict from pendingBridges FIRST — if the user un-cables before the
+    // bridge ever got to wire, we don't want a stale entry leaking. The
+    // teardown methods below all guard against missing state.
+    const wasPending = this.pendingBridges.has(edge.id);
+    this.pendingBridges.delete(edge.id);
+    // Also clean up audioBridgeEdges if it was a deferred audio bridge —
+    // we set it eagerly in addCrossDomainAudioBridge before the defer
+    // check, so removeEdge must clear it even if the bridge never
+    // succeeded.
+    this.audioBridgeEdges.delete(edge.id);
     if (this.cvBridgeEdgeIds.has(edge.id)) {
       this.removeCrossDomainCvBridge(edge);
       return;
@@ -885,6 +1015,13 @@ export class PatchEngine {
     }
     if (this.sameDomainVideoCvBridgeEdgeIds.has(edge.id)) {
       this.removeSameDomainVideoCvBridge(edge);
+      return;
+    }
+    if (wasPending) {
+      // The edge was a deferred cross-domain bridge that never
+      // materialized. We've already evicted it from pendingBridges +
+      // audioBridgeEdges above — no domain engine ever saw the edge so
+      // there's nothing further to do.
       return;
     }
     const engine = this.getDomain(sourceDomain);
@@ -927,16 +1064,11 @@ export class PatchEngine {
     }
     const src = ae.getOutputNode(edge.source.nodeId, edge.source.portId);
     if (!src) {
-      // Source not yet materialized. Defer — caller (reconciler) will
-      // see the edge in its appliedEdges map but the bridge isn't
-      // active. Subsequent reconciles re-call addEdge with the same id;
-      // we use the cvBridgeEdgeIds set to be idempotent above. For now,
-      // mark it as "owed" and the next reconcile-pass after the source
-      // materializes will succeed. We achieve that by NOT marking it as
-      // applied here — but the reconciler doesn't re-attempt until the
-      // edge changes... so instead, we record it in cvBridgeEdgeIds as
-      // a sentinel so removeEdge knows to clean up if needed.
-      this.cvBridgeEdgeIds.add(edge.id);
+      // Source not yet materialized. Park in pendingBridges so a later
+      // node/port-handle materialization can drive a retry. NOT marking
+      // the edge as cvBridgeEdgeIds — that would let the reconciler
+      // see the id as "owned" + silently never retry (the old bug).
+      this.pendingBridges.set(edge.id, { edge, kind: 'cv', sourceDomain, targetDomain });
       return;
     }
     const analyser = ae.ctx.createAnalyser();
@@ -949,6 +1081,8 @@ export class PatchEngine {
     };
     ve.addCvBridge!(edge.id, analyser, edge.target.nodeId, edge.target.portId, teardown);
     this.cvBridgeEdgeIds.add(edge.id);
+    // Success on retry → clear any pending entry for this edge id.
+    this.pendingBridges.delete(edge.id);
   }
 
   private removeCrossDomainCvBridge(edge: Edge): void {
@@ -999,9 +1133,11 @@ export class PatchEngine {
     const src = ae.getVideoSource(edge.source.nodeId, edge.source.portId);
     if (!src) {
       // Source not materialized yet (or doesn't declare a video port).
-      // Mark the edge id so a later removeEdge knows we own it; the
-      // reconciler will not retry until edges change.
-      this.videoTextureBridgeEdgeIds.add(edge.id);
+      // Park in pendingBridges; a later addNode / port-handle change
+      // drains. Do NOT mark videoTextureBridgeEdgeIds — that's the
+      // happy-path "owned + wired" set; pre-fix, marking it here let
+      // the reconciler silently abandon the edge (Codex audit:962-967).
+      this.pendingBridges.set(edge.id, { edge, kind: 'video-texture' });
       return;
     }
     ve.addVideoTextureBridge!(
@@ -1014,6 +1150,7 @@ export class PatchEngine {
       src.drawFrame,
     );
     this.videoTextureBridgeEdgeIds.add(edge.id);
+    this.pendingBridges.delete(edge.id);
   }
 
   private removeCrossDomainVideoTextureBridge(edge: Edge): void {
@@ -1066,10 +1203,17 @@ export class PatchEngine {
     const src = ve.getAudioSource(edge.source.nodeId, edge.source.portId);
     const dst = ae.getInputNode(edge.target.nodeId, edge.target.portId);
     if (!src || !dst) {
-      // Defer. Mark the id so removeEdge can clean up the placeholder;
-      // a later reconcile after the missing endpoint materializes will
-      // re-call addEdge with the same id (idempotent set add).
-      this.audioBridgeEdgeIds.add(edge.id);
+      // Defer — park in pendingBridges. A later addNode (audio sink
+      // materializes) or onAudioSourcesChanged (video module wireAudio
+      // surfaces its AudioNode) drains and retries. Do NOT mark
+      // audioBridgeEdgeIds here — pre-fix that's exactly what stranded
+      // the bridge dead-wired-to-nothing forever.
+      //
+      // Note: audioBridgeEdges still holds the Edge so
+      // reapplyAudioBridgesForSource can re-resolve on swap; we keep it
+      // in there (no change) — drainPending below will re-run addCross-
+      // DomainAudioBridge which puts it right back in the map.
+      this.pendingBridges.set(edge.id, { edge, kind: 'audio' });
       return;
     }
     if (dst.param) {
@@ -1087,6 +1231,7 @@ export class PatchEngine {
       });
     }
     this.audioBridgeEdgeIds.add(edge.id);
+    this.pendingBridges.delete(edge.id);
   }
 
   private removeCrossDomainAudioBridge(edge: Edge): void {
@@ -1152,9 +1297,11 @@ export class PatchEngine {
     }
     const src = ve.getAudioSource(edge.source.nodeId, edge.source.portId);
     if (!src) {
-      // Source AudioNode not yet materialized. Mark the id so a later
-      // reconcile can clean up if needed; nothing to wire yet.
-      this.sameDomainVideoCvBridgeEdgeIds.add(edge.id);
+      // Source AudioNode not yet materialized. Park in pendingBridges; a
+      // later addNode / onAudioSourcesChanged drains. Do NOT mark
+      // sameDomainVideoCvBridgeEdgeIds — that's the happy-path "owned"
+      // set; pre-fix, the reconciler saw it as applied + never retried.
+      this.pendingBridges.set(edge.id, { edge, kind: 'same-domain-video-cv' });
       return;
     }
     const analyser = audioEngine.ctx.createAnalyser();
@@ -1167,6 +1314,7 @@ export class PatchEngine {
     };
     ve.addCvBridge!(edge.id, analyser, edge.target.nodeId, edge.target.portId, teardown);
     this.sameDomainVideoCvBridgeEdgeIds.add(edge.id);
+    this.pendingBridges.delete(edge.id);
 
     // Frame-independent gate dispatch (the failure-2 fix). The analyser tap
     // above samples the CSN at the video frame rate — at 60fps that's a
@@ -1261,6 +1409,7 @@ export class PatchEngine {
   }
 
   dispose(): void {
+    this.pendingBridges.clear();
     this.cvBridgeEdgeIds.clear();
     this.videoTextureBridgeEdgeIds.clear();
     this.audioBridgeEdgeIds.clear();
