@@ -363,11 +363,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // moving gate is e2e/tests/videobox-output.spec.ts.
   'linux/videoOut',
   // RASTERIZE (crossing-the-streams slice 1): the darwin baseline is
-  // captured on this machine via VRT_SCENES (261 Hz sine → raster banding,
-  // frozen on AudioContext suspend). The linux baseline is pending a
-  // `task vrt:update` run on linux CI — raster pixel values can differ
-  // sub-thresholdly across the AudioContext sine-table + analyser refill
-  // timing per platform, so we capture darwin here and defer linux.
+  // captured on this machine via VRT_SCENES with the deterministic
+  // `__rasterizeVrtSeed` seed (fix for task #198 — see rasterize.ts +
+  // vrt-scenes.ts). The seed makes the painted frame bit-deterministic
+  // (synthetic 261 Hz sine, no analyser / no wall clock), so both
+  // platforms render identical CANVAS pixels — only the surrounding
+  // chrome AA differs across platforms. Linux baseline pending a
+  // `task vrt:update` run on linux CI to capture that chrome.
   'linux/rasterize',
   // RESHAPER (renamed from RUTTETRA): the darwin baseline is captured on
   // this machine (canvas masked — coord-remap shows flat content when

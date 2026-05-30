@@ -79,13 +79,22 @@ export const VRT_SCENES: Record<string, VrtScene> = {
 
   // RASTERIZE: drive the audio input with a 261 Hz sine (analogVco default
   // sine out, pitch 0 V/oct ≈ C4). RASTERIZE paints the audio samples as
-  // voltage-per-pixel into its 640×360 frame in raster order; a steady tone
-  // builds drifting horizontal bands. We bump samplesPerFrame to 6000 for
-  // the scene (vs the 800 default) so the cursor sweeps the whole frame
-  // within the settle window (~38 frames) and the baseline shows a filled,
-  // banded frame rather than a couple of painted scanlines. After settle we
-  // suspend the AudioContext; RASTERIZE freezes its painting on suspend
-  // (ctx.state === 'suspended'), so the on-card canvas is pixel-stable.
+  // voltage-per-pixel into its 640×480 frame in raster order; a steady tone
+  // builds horizontal bands.
+  //
+  // VRT determinism (task #198): freeze-on-AudioContext-suspend alone leaves
+  // the cursor at a wall-clock-dependent position (how many rAF ticks land
+  // before suspend resolves varies run-to-run by ±a few frames; at default
+  // samplesPerFrame each frame advances the cursor ~1.25 scanlines, so over
+  // a settle window the cursor wanders by tens of rows → same band pattern
+  // shifted vertically → 16%-pixel diffs busting the tolerance budget).
+  //
+  // We set `__rasterizeVrtSeed` BEFORE spawn so the factory's first paint
+  // is one deterministic full-frame fill from a fixed 261 Hz synthetic
+  // sine — no analyser, no wall clock, identical pixels every run. The
+  // analogVco source is still wired (the audio domain is exercised) but
+  // its samples never reach the painter while seed mode is active.
+  // Mirrors FOXY's `__foxyVrtSeed` + PEAKSTATE's `__peakstateVrtSeed`.
   rasterize: {
     nodes: [
       { id: 'src',   type: 'analogVco', position: { x: 60,  y: 60 }, domain: 'audio' },
@@ -106,7 +115,22 @@ export const VRT_SCENES: Record<string, VrtScene> = {
         targetType: 'audio',
       },
     ],
-    settleMs: 900,
+    afterSpawn: async (page) => {
+      // Pin the seed BEFORE settle so the first paint is the
+      // deterministic one. The factory's advanceOncePerFrame checks the
+      // flag on every call and paints once-then-holds.
+      await page.evaluate(() => {
+        (globalThis as unknown as { __rasterizeVrtSeed?: boolean })
+          .__rasterizeVrtSeed = true;
+      });
+      // A couple of rAFs so the seed paint lands + the card's blit catches it.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(
+          () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+        );
+      }
+    },
+    settleMs: 300,
     freezeAudio: true,
   },
 
