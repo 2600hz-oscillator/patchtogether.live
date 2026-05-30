@@ -12,7 +12,11 @@
 // helper in between.
 //
 // Inputs:
-//   clock (gate): external clock-in; when patched, the master BPM is locked to its measured period.
+//   clock (gate):    external clock-in; when patched, the master BPM is locked to its measured period.
+//   start_in (gate): rising edge unmutes the gate outputs (mirrors the card's ON button).
+//                    Wire MIDICLOCK.midistart → TIMELORDE.start_in to slave transport to a hardware MIDI device.
+//   stop_in (gate):  rising edge mutes the gate outputs (mirrors the card's MUTE button).
+//                    Wire MIDICLOCK.midistop → TIMELORDE.stop_in for the matching stop side.
 //
 // Outputs:
 //   1x (gate): quarter-note pulse at the master BPM.
@@ -30,8 +34,33 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/timelorde.js?url';
+import { getSchedulerClock } from '$lib/audio/scheduler-clock';
+import { createRisingEdgeDetector } from './transport-helpers';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
+
+// ---------------- Pure transport-event helper ----------------
+//
+// Given how many start_in / stop_in rising edges fired in the most recent
+// poll window and the CURRENT muteOutputs value, decide the next
+// muteOutputs value. Mirrors the card's ON/MUTE button: start_in unmutes
+// (running ← true → muteOutputs ← 0), stop_in mutes. Pure + sync — runs
+// in vitest without an AudioContext.
+//
+// Ordering: if both edges fired inside the same poll window (unusual
+// but possible at high tick periods), stop wins — matches the
+// conservative "if a stop happened, honor it" interpretation. The
+// pulse-per-call shape means a redundant start while already running
+// is a no-op (idempotent), and likewise a stop while already muted.
+export function transportEventsToMute(args: {
+  startEdges: number;
+  stopEdges: number;
+  prevMute: 0 | 1;
+}): 0 | 1 {
+  if (args.stopEdges > 0) return 1;
+  if (args.startEdges > 0) return 0;
+  return args.prevMute;
+}
 
 export const timelordeDef: AudioModuleDef = {
   type: 'timelorde',
@@ -51,6 +80,15 @@ export const timelordeDef: AudioModuleDef = {
     // measures period for multiplier prediction. Disconnect → falls back
     // to internal BPM after ~2 master periods.
     { id: 'clock', type: 'gate' },
+    // start_in / stop_in: transport gates that mirror the card's
+    // ON / MUTE button. Designed for MIDICLOCK.midistart →
+    // TIMELORDE.start_in + MIDICLOCK.midistop → TIMELORDE.stop_in so a
+    // hardware MIDI device can drive the rack's transport. Rising-edge
+    // detection runs on a scheduler-clock poll (same TICK_MS the rest
+    // of the sequencer transport uses); idempotent — a start while
+    // already running is a no-op, same for stop while already muted.
+    { id: 'start_in', type: 'gate' },
+    { id: 'stop_in',  type: 'gate' },
   ],
   outputs: [
     // Order MUST match dsp/timelorde.ts OUT_* indices.
@@ -174,10 +212,76 @@ export const timelordeDef: AudioModuleDef = {
       }
     };
 
+    // -------- start_in / stop_in: transport gate inputs --------
+    //
+    // Each input is a Gain → Analyser tap (same shape transport-cv uses
+    // for play_cv / reset_cv on sequencer-style modules). A silence
+    // ConstantSource keeps the node graph-alive even when no cable is
+    // patched, so the analyser doesn't see ghost edges from a torn-down
+    // connection. A scheduler-clock subscription drains them every tick
+    // and routes rising-edge counts through transportEventsToMute(),
+    // mirroring the result back to BOTH the engine-side AudioParam
+    // (so the worklet sees the change immediately) AND the patch store
+    // (so the card's ON/MUTE button label tracks).
+    const startGain = ctx.createGain();
+    const startAna = ctx.createAnalyser();
+    startAna.fftSize = 2048;
+    startAna.smoothingTimeConstant = 0;
+    startGain.connect(startAna);
+    const startSilence = ctx.createConstantSource();
+    startSilence.offset.value = 0;
+    startSilence.start();
+    startSilence.connect(startGain);
+    const startBuf = new Float32Array(2048);
+    const startDet = createRisingEdgeDetector(0.5);
+
+    const stopGain = ctx.createGain();
+    const stopAna = ctx.createAnalyser();
+    stopAna.fftSize = 2048;
+    stopAna.smoothingTimeConstant = 0;
+    stopGain.connect(stopAna);
+    const stopSilence = ctx.createConstantSource();
+    stopSilence.offset.value = 0;
+    stopSilence.start();
+    stopSilence.connect(stopGain);
+    const stopBuf = new Float32Array(2048);
+    const stopDet = createRisingEdgeDetector(0.5);
+
+    let lastTransportPollTime = ctx.currentTime;
+    function pollTransportGates(): void {
+      const nowAt = ctx.currentTime;
+      const elapsed = Math.max(0, nowAt - lastTransportPollTime);
+      lastTransportPollTime = nowAt;
+      startAna.getFloatTimeDomainData(startBuf);
+      stopAna.getFloatTimeDomainData(stopBuf);
+      const newSamples = Math.min(
+        startBuf.length,
+        Math.max(1, Math.ceil(elapsed * ctx.sampleRate)),
+      );
+      const start = startBuf.length - newSamples;
+      const startEdges = startDet.scan(startBuf, start, startBuf.length);
+      const stopEdges  = stopDet.scan(stopBuf,  start, stopBuf.length);
+      if (startEdges === 0 && stopEdges === 0) return;
+
+      const live = livePatch.nodes[nodeId];
+      const prevRaw = live?.params?.muteOutputs;
+      const prevMute: 0 | 1 = typeof prevRaw === 'number' && prevRaw >= 0.5 ? 1 : 0;
+      const nextMute = transportEventsToMute({ startEdges, stopEdges, prevMute });
+      if (nextMute === prevMute) return;
+      // Write through both layers: AudioParam so the worklet sees it
+      // on the next process() block; livePatch.params so the card +
+      // any remote rack-mates pick up the new state via Y.Doc sync.
+      muteOutputsParam?.setValueAtTime(nextMute, ctx.currentTime);
+      if (live?.params) live.params.muteOutputs = nextMute;
+    }
+    const transportUnsub = getSchedulerClock().subscribe(pollTransportGates);
+
     return {
       domain: 'audio',
-      inputs: new Map([
-        ['clock', { node: workletNode, input: 0 }],
+      inputs: new Map<string, { node: AudioNode; input: number }>([
+        ['clock',    { node: workletNode, input: 0 }],
+        ['start_in', { node: startGain,   input: 0 }],
+        ['stop_in',  { node: stopGain,    input: 0 }],
       ]),
       outputs: new Map([
         ['1x',    { node: workletNode, output: 0 }],
@@ -207,12 +311,27 @@ export const timelordeDef: AudioModuleDef = {
         if (key === 'measuredBpm') {
           return measuredBpm;
         }
+        if (key === 'running') {
+          // Derived from muteOutputs so tests + downstream UI both
+          // agree on the meaning of "is the transport on right now".
+          const v = muteOutputsParam?.value ?? 0;
+          return v >= 0.5 ? 0 : 1;
+        }
         return undefined;
       },
       dispose() {
         if (timer !== null) clearInterval(timer);
+        try { transportUnsub(); } catch { /* */ }
         try { silence.stop(); } catch { /* */ }
+        try { startSilence.stop(); } catch { /* */ }
+        try { stopSilence.stop(); } catch { /* */ }
         silence.disconnect();
+        startSilence.disconnect();
+        stopSilence.disconnect();
+        startGain.disconnect();
+        stopGain.disconnect();
+        startAna.disconnect();
+        stopAna.disconnect();
         workletNode.disconnect();
       },
     };
