@@ -6,7 +6,7 @@
 //
 // An explicit, draggable module: audio in → mono-video out. Each video
 // frame it takes a fixed run of audio samples (samplesPerFrame, ~800 at
-// 48k/60fps) and writes them as voltage-per-pixel into the 640×360 video
+// 48k/60fps) and writes them as voltage-per-pixel into the 640×480 video
 // frame in raster order; a scan cursor advances + WRAPS through the
 // frame across frames (~1.25 scanlines/frame at the default). Audio
 // sample value (~-1..+1 after gain) → pixel luminance. This is the
@@ -36,7 +36,7 @@
 //   out (mono-video): the painted raster frame.
 //
 // Params:
-//   cursor (linear 0..230400 px, default 0): start position of the scan cursor.
+//   cursor (linear 0..307200 px, default 0): start position of the scan cursor.
 //   samplesPerFrame (log 16..8000, default 800): how many samples paint per frame.
 //   gain (log 0..8, default 1): input gain pre-luminance map.
 //   wrap (discrete 0..1, default 0): 0 = scan wraps + accumulates, 1 = clear-on-wrap.
@@ -70,10 +70,10 @@ export const rasterizeDef: AudioModuleDef = {
     { id: 'out', type: 'mono-video' },
   ],
   params: [
-    // Scan cursor start offset, in pixels into the 640×360 = 230400-pixel
+    // Scan cursor start offset, in pixels into the 640×480 = 307200-pixel
     // frame. Moving it scrubs the running cursor; otherwise the cursor
     // drifts on its own.
-    { id: 'cursor',          label: 'Scan',   defaultValue: 0,   min: 0,   max: 230400, curve: 'linear', units: 'px' },
+    { id: 'cursor',          label: 'Scan',   defaultValue: 0,   min: 0,   max: 307200, curve: 'linear', units: 'px' },
     // Samples painted per frame. Default 800 ≈ 48k/60fps ≈ 1.25 scanlines.
     { id: 'samplesPerFrame', label: 'Samp/F', defaultValue: 800, min: 16,  max: 8000,   curve: 'log' },
     // Linear gain applied to each sample before the luminance map.
@@ -205,7 +205,7 @@ export const rasterizeDef: AudioModuleDef = {
     }
 
     // The cross-domain bridge calls this each video frame with its own
-    // 640×360 canvas. Advance (deduped) then blit onto the bridge's canvas.
+    // 640×480 canvas. Advance (deduped) then blit onto the bridge's canvas.
     function drawFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
       advanceOncePerFrame();
       painter.blitTo(canvas);

@@ -207,7 +207,17 @@ Three port-surface consistency gates run inside the unit + e2e layers:
 - `cv-range-uniformity.spec.ts` — every `cv` input declares a `cvScale` hint; LFO at ±1 sweeps the slider edge-to-edge.
 - `io-spec-consistency.spec.ts` — every UI `<Handle>`'s `data-handleid` matches the module def's port ids.
 
-The PR gate (`flox activate -- task ci`) runs typecheck + unit + ART + E2E inside Flox so the toolchain matches local. Postgres 17 is a CI service container.
+The PR gate (`flox activate -- task ci`) runs typecheck + unit (with coverage) + ART + E2E inside Flox so the toolchain matches local. Postgres 17 is a CI service container.
+
+### Coverage
+
+Unit-test coverage is wired through Vitest's V8 provider (`@vitest/coverage-v8` — faster than Istanbul, no Babel-instrument step, AGPL-clean).
+
+- **Run locally** — `flox activate -- task coverage` (or `task ci`, which includes it). Per-package HTML reports land at `packages/{server,web}/coverage/index.html`; JSON summary at `packages/{server,web}/coverage/coverage-summary.json`.
+- **Gate** — each `vitest.config.ts` declares per-metric `thresholds`. CI fails if any metric drops below them.
+- **Reading CI output** — the `unit` job prints both packages' summaries to the action log (line/branch/function/statement %) and uploads the HTML reports as the `coverage-html` artifact (7-day retention). Download + open `*/coverage/index.html` to browse uncovered lines.
+- **Threshold policy** — thresholds are set 5-10% BELOW the realized coverage at wire-time so a small uncovered addition in a normal PR doesn't break a green build. Ratchet upward over time; never tighten beyond `realized - 5%` in one PR (per `feedback_no_flake_tolerance`).
+- **What's excluded** — `*.test.ts`, `*.d.ts`, `node_modules/`, build output, `.svelte-kit/` codegen, generated/vendored native blobs (DOOM WASM, doomgeneric C, compiled Faust), and `packages/dsp/src/**` worklets (those run in the AudioWorklet context and are exercised by ART instead, not the main-thread unit harness).
 
 - **VRT** — Visual Regression Tests. Playwright `toHaveScreenshot` against every registered module card; baselines under `e2e/vrt/__screenshots__/vrt.spec.ts/{platform}/` (LFS-tracked) where `{platform}` is `linux` / `darwin` / `win32` (matches `process.platform`). The per-platform layout lets devs on macOS pass against `darwin/*.png` while CI on Linux passes against `linux/*.png` — same suite, no cross-platform AA flake. `flox activate -- task vrt` to run; `task vrt:update` to refresh the baselines for whichever platform you're on (commit both subdirs when you ship); `task vrt:gallery` to rebuild the side-by-side HTML report under `docs/vrt/`. CI publishes the latest gallery to GitHub Pages on push to `main` (see "VRT gallery on GitHub Pages" below for the one-time admin enablement). Modeled on the doomviz VRT pattern; non-blocking initially while baselines settle. When CI VRT fails: download the `vrt-test-results` + `vrt-gallery` artifacts from the run, eyeball the diff PNGs, and either re-run `task vrt:update` (intentional UI change) or fix the regression.
 

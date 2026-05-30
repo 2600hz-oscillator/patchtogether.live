@@ -81,7 +81,7 @@
   const MIN_WIDTH = 1024;
   const MIN_HEIGHT = 720;
   const ENGINE_W = 640;
-  const ENGINE_H = 360;
+  const ENGINE_H = 480;
 
   let cardWidth = $derived<number>(
     (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,

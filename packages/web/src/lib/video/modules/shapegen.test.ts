@@ -108,11 +108,11 @@ describe('shapegenDef — module shape', () => {
   it('exports the read-FBO raster dims that the factory uses', () => {
     expect(SHAPEGEN_RASTER_W).toBeGreaterThan(0);
     expect(SHAPEGEN_RASTER_H).toBeGreaterThan(0);
-    // 80×45 matches the engine's 16:9 RES at 1/8 — pin so a change is
+    // 80×60 matches the engine's 4:3 RES at 1/8 — pin so a change is
     // intentional. Spans the FULL upstream frame via a fullscreen-quad
     // downsample (NOT a corner read).
     expect(SHAPEGEN_RASTER_W).toBe(80);
-    expect(SHAPEGEN_RASTER_H).toBe(45);
+    expect(SHAPEGEN_RASTER_H).toBe(60);
   });
 });
 
@@ -481,7 +481,7 @@ function makeFakeGl(): WebGL2RenderingContext {
 function makeShapegenCtx(): VideoEngineContext {
   return {
     gl: makeFakeGl(),
-    res: { width: 640, height: 360 },
+    res: { width: 640, height: 480 },
     compileFragment: () => ({}) as WebGLProgram,
     createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
     drawFullscreenQuad: () => undefined,
