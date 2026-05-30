@@ -100,6 +100,8 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   score:     'requires play_cv high + steps; covered by score.spec.ts',
   drumseqz:  'requires toggled steps; covered by drumseqz specs',
   polyseqz:  'requires toggled steps; covered by polyseqz specs',
+  // ── Button-press-driven instruments (silent until a key is pressed) ──
+  bluebox:   'silent until a button is pressed; covered by bluebox.spec.ts which clicks the keys',
   // ── File-input modules ──
   samsloop:      'needs uploaded sample; covered by samsloop.spec.ts',
   videobox:      'needs uploaded video file; covered by videobox.test.ts',
