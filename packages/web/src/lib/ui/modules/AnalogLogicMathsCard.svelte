@@ -50,6 +50,6 @@
 </div>
 
 <style>
-  .alm-card { width: 220px; min-height: 240px; }
+  .alm-card { width: 220px; }
   .alm-card .fader-row { padding: 0 14px; margin-top: 16px; }
 </style>

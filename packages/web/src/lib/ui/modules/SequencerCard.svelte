@@ -389,7 +389,6 @@
 <style>
   .seq-card {
     width: 540px;
-    min-height: 280px;
     padding-right: 0;
     padding-left: 0;
   }

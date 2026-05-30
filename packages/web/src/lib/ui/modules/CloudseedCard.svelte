@@ -297,7 +297,6 @@
 <style>
   .cloudseed-card {
     width: 680px;
-    min-height: 380px;
     background: var(--cloudseed-bg, var(--surface-2, #1a2530));
     color: var(--text, #e0e8f0);
   }

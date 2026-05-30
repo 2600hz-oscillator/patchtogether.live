@@ -285,7 +285,7 @@
 </div>
 
 <style>
-  .cartesian-card { width: 360px; min-height: 460px; padding-right: 0; padding-left: 0; }
+  .cartesian-card { width: 360px; padding-right: 0; padding-left: 0; }
   .lfo-row {
     margin-top: 8px;
     padding: 0 22px 12px;

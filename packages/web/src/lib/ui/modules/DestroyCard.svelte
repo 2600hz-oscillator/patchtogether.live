@@ -43,6 +43,6 @@
 </div>
 
 <style>
-  .destroy-card { width: 220px; min-height: 200px; }
+  .destroy-card { width: 220px; }
   .destroy-card .fader-row { padding: 0 18px; margin-top: 14px; }
 </style>

@@ -51,6 +51,6 @@
 </div>
 
 <style>
-  .wt-card { width: 240px; min-height: 200px; }
+  .wt-card { width: 240px; }
   .wt-card .fader-row { padding: 0 18px; margin-top: 14px; }
 </style>

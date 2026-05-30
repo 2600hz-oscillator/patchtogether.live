@@ -132,7 +132,7 @@
 </div>
 
 <style>
-  .stages-card { width: 460px; min-height: 280px; }
+  .stages-card { width: 460px; }
   .stages-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

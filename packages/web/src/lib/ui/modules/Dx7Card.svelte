@@ -159,7 +159,6 @@
 <style>
   .dx7-card {
     width: 320px;
-    min-height: 320px;
   }
   .subtitle {
     font-size: 0.55rem;

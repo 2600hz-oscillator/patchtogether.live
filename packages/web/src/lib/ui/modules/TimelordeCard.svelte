@@ -112,7 +112,6 @@
 <style>
   .timelorde-card {
     width: 280px;
-    min-height: 180px;
     padding-bottom: 26px;
   }
   .timelorde-card > .title {
