@@ -92,6 +92,41 @@ export let ydoc = _bundle.ydoc;
 /** Current UndoManager (tracks the current ydoc). */
 export let undoManager = _bundle.undoManager;
 
+// --- Bind event ----------------------------------------------------------
+//
+// Modules that capture (patch, ydoc) at construction time — most notably
+// the snapshot-bus singleton in `./snapshot.ts` — need to know when the
+// singleton trio has been swapped so they can re-point their internal
+// Yjs listeners at the new doc. A bare `export let` reassignment cannot
+// fire any callback, so we expose a tiny pub-sub here. Subscribers are
+// invoked synchronously after the new bundle is in place (so they see
+// fresh `patch` / `ydoc` reads via the import bindings) but BEFORE the
+// dev-only test-hook refresh below.
+//
+// Inversion-of-control: snapshot.ts is the consumer; store.ts has no
+// reference to snapshot.ts (would be circular).
+
+type BindListener = (patch: PatchProxy, ydoc: Y.Doc) => void;
+// Reuse the same shape the live exports do, without referencing them
+// (would create a self-circular type). The bound `patch` is a SyncedStore
+// proxy; the bound `ydoc` is a Y.Doc.
+type PatchProxy = ReturnType<typeof createPatch>['patch'];
+
+const _bindListeners = new Set<BindListener>();
+
+/**
+ * Subscribe to rackspace bind events. The callback fires every time
+ * `bindRackspace()` swaps in a new bundle (including the idempotent same-
+ * id path — no, actually idempotent calls do NOT fire; see bindRackspace
+ * for the early return). Returns an unsubscribe function.
+ */
+export function onBindRackspace(listener: BindListener): () => void {
+  _bindListeners.add(listener);
+  return () => {
+    _bindListeners.delete(listener);
+  };
+}
+
 /**
  * Bind the singleton to a fresh store for `rackspaceId`. Idempotent for
  * the same id — repeated calls are a no-op. Calling with a different id
@@ -131,6 +166,19 @@ export function bindRackspace(rackspaceId: string): {
   ydoc = _bundle.ydoc;
   undoManager = _bundle.undoManager;
   _boundRackspaceId = rackspaceId;
+  // Notify modules that captured the previous (patch, ydoc) by closure —
+  // most importantly the snapshot-bus singleton — so they re-point their
+  // Yjs `update` listeners at the new doc. Without this the bus stays
+  // attached to the now-destroyed previous doc and the reconciler + UI
+  // never observe further updates (the second-order bug behind the
+  // @collab clear-load regression after PR #432).
+  for (const fn of [..._bindListeners]) {
+    try {
+      fn(patch, ydoc);
+    } catch (err) {
+      console.error('[store] bind listener threw:', err);
+    }
+  }
   // Refresh the dev-only test hooks (window.__patch / __ydoc are captured
   // by Canvas.svelte's $effect on FIRST mount; Svelte 5 reactivity doesn't
   // re-run that effect on a module-scope `let` reassignment, so the e2e
@@ -177,4 +225,13 @@ export function unbindRackspace(): void {
   ydoc = _bundle.ydoc;
   undoManager = _bundle.undoManager;
   _boundRackspaceId = null;
+  // Re-point closure-captured consumers at the fresh empty bundle, same
+  // contract as bindRackspace().
+  for (const fn of [..._bindListeners]) {
+    try {
+      fn(patch, ydoc);
+    } catch (err) {
+      console.error('[store] bind listener threw:', err);
+    }
+  }
 }

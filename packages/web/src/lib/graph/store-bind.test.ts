@@ -19,7 +19,16 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as storeModule from './store';
-import { bindRackspace, unbindRackspace, getBoundRackspaceId } from './store';
+import {
+  bindRackspace,
+  unbindRackspace,
+  getBoundRackspaceId,
+  onBindRackspace,
+} from './store';
+import {
+  getDefaultSnapshotBus,
+  __resetDefaultSnapshotBusForTest,
+} from './snapshot';
 import type { ModuleNode } from './types';
 
 function addVcoNode(patch: typeof storeModule.patch, id: string) {
@@ -124,5 +133,121 @@ describe('bindRackspace — isolation across rackspaces', () => {
     const b = bindRackspace('rack-B');
     // A NEW UndoManager comes back — not the same instance as A's.
     expect(b.undoManager).not.toBe(a.undoManager);
+  });
+});
+
+describe('onBindRackspace — pub-sub for closure-captured consumers', () => {
+  beforeEach(() => {
+    unbindRackspace();
+  });
+
+  it('fires after the singleton trio is swapped, with the new (patch, ydoc)', () => {
+    const calls: Array<{ patch: unknown; ydoc: unknown }> = [];
+    const off = onBindRackspace((p, y) => calls.push({ patch: p, ydoc: y }));
+    try {
+      const a = bindRackspace('rack-A');
+      expect(calls).toHaveLength(1);
+      expect(calls[0].patch).toBe(a.patch);
+      expect(calls[0].ydoc).toBe(a.ydoc);
+
+      const b = bindRackspace('rack-B');
+      expect(calls).toHaveLength(2);
+      expect(calls[1].patch).toBe(b.patch);
+      expect(calls[1].ydoc).toBe(b.ydoc);
+    } finally {
+      off();
+    }
+  });
+
+  it('does NOT fire on an idempotent same-id bind', () => {
+    bindRackspace('rack-A');
+    let count = 0;
+    const off = onBindRackspace(() => count++);
+    try {
+      bindRackspace('rack-A'); // same id → no-op → no event
+      expect(count).toBe(0);
+    } finally {
+      off();
+    }
+  });
+
+  it('also fires on unbindRackspace()', () => {
+    bindRackspace('rack-A');
+    let count = 0;
+    const off = onBindRackspace(() => count++);
+    try {
+      unbindRackspace();
+      expect(count).toBe(1);
+    } finally {
+      off();
+    }
+  });
+
+  it('unsubscribe stops further notifications', () => {
+    let count = 0;
+    const off = onBindRackspace(() => count++);
+    bindRackspace('rack-A');
+    expect(count).toBe(1);
+    off();
+    bindRackspace('rack-B');
+    expect(count).toBe(1);
+  });
+});
+
+describe('bindRackspace → default snapshot bus follows the new doc', () => {
+  // This was the SECOND-order bug behind the @collab clear-load-multiwindow
+  // failure after PR #432: the snapshot-bus singleton captured the FIRST
+  // rackspace's (patch, ydoc) at construction time, then bindRackspace()
+  // destroyed that doc + replaced it. The bus stayed wired to the dead doc
+  // forever, so the reconciler + Canvas UI never saw any subsequent Yjs
+  // update. Pinning the contract here so a future refactor can't quietly
+  // re-introduce it.
+
+  beforeEach(() => {
+    __resetDefaultSnapshotBusForTest();
+    unbindRackspace();
+  });
+
+  it('emits updates from the post-bind doc, not the pre-bind one', () => {
+    // Set up the singleton bus + a subscriber BEFORE any bindRackspace
+    // call — mirrors the production order where attachReconciler() runs
+    // on engine boot, then attachProvider() runs bindRackspace().
+    const received: string[][] = [];
+    const bus = getDefaultSnapshotBus();
+    const unsub = bus.subscribe((s) => {
+      received.push(s.nodes.map((n) => n.id));
+    });
+
+    try {
+      // Initial push: empty.
+      expect(received[received.length - 1]).toEqual([]);
+
+      // Bind a rackspace; the bus must rebind to the new doc.
+      const a = bindRackspace('rack-A');
+      // Rebind emits the (still empty) new snapshot.
+      const beforeWrite = received.length;
+      addVcoNode(a.patch, 'a-node');
+      // A write to the NEW doc must reach our subscriber.
+      expect(received.length).toBeGreaterThan(beforeWrite);
+      expect(received[received.length - 1]).toEqual(['a-node']);
+
+      // Now swap to a second rackspace. The bus must follow.
+      const b = bindRackspace('rack-B');
+      const beforeBWrite = received.length;
+      addVcoNode(b.patch, 'b-node');
+      expect(received.length).toBeGreaterThan(beforeBWrite);
+      // Listener sees ONLY rack-B's data (rack-A is gone).
+      expect(received[received.length - 1]).toEqual(['b-node']);
+
+      // And critically: writes to the OLD (now-destroyed) doc do NOT
+      // reach the bus. We can't actually write to a destroyed Y.Doc,
+      // so we instead assert that the listener's last snapshot reflects
+      // rack-B's content, not rack-A's.
+      expect(
+        received[received.length - 1].includes('a-node'),
+      ).toBe(false);
+    } finally {
+      unsub();
+    }
   });
 });
