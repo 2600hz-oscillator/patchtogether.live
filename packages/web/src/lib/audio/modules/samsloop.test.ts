@@ -16,6 +16,7 @@ import {
   samsloopDef,
   samsloopMath,
   loadSamsloopWav,
+  samsloopDecodeBytesB64,
   samsloopDownsample,
   parseWavManually,
   SAMSLOOP_MAX_FILE_BYTES,
@@ -39,12 +40,20 @@ describe('samsloopDef shape', () => {
     expect(samsloopDef.category).toBe('sources');
   });
 
-  it('exposes the expected I/O surface (trig + rate_cv in, mono out)', () => {
+  it('exposes the expected I/O surface (trig + rate_cv + audio_l_in + audio_r_in, mono out)', () => {
     const inIds = samsloopDef.inputs.map((p) => p.id);
-    expect(inIds).toEqual(['trig', 'rate_cv']);
+    // Audio-record inputs added for the recording feature (see
+    // samsloop-record.ts + SamsloopCard.svelte's REC button). The two
+    // audio inputs follow the stereovca normalling convention — R
+    // normalizes to L when unpatched, handled inside the samsloop-tap
+    // worklet.
+    expect(inIds).toEqual(['trig', 'rate_cv', 'audio_l_in', 'audio_r_in']);
     const outIds = samsloopDef.outputs.map((p) => p.id);
     expect(outIds).toEqual(['out']);
     expect(samsloopDef.outputs[0]!.type).toBe('audio');
+    // The record-input ports both carry audio.
+    expect(samsloopDef.inputs.find((p) => p.id === 'audio_l_in')?.type).toBe('audio');
+    expect(samsloopDef.inputs.find((p) => p.id === 'audio_r_in')?.type).toBe('audio');
   });
 
   it('exposes the expected params: rate / mode / start / end', () => {
@@ -423,6 +432,30 @@ describe('loadSamsloopWav decoded-buffer cap', () => {
     } as unknown as BaseAudioContext;
   }
 
+  // Constant pin: a regression here is the user-visible "small MP3
+  // rejected" bug coming back. Anyone tempted to lower this should read
+  // the SAMSLOOP_MAX_DECODED_SAMPLES comment block first — the cap is
+  // load-bearing for "typical short-MP3 fits" + decode-time main-thread
+  // budget. 1.5M samples ≈ 62 s @ 24 kHz mono.
+  it('SAMSLOOP_MAX_DECODED_SAMPLES is pinned to 1_500_000', () => {
+    expect(SAMSLOOP_MAX_DECODED_SAMPLES).toBe(1_500_000);
+  });
+
+  // The user-reported bug fixture: a small MP3 (~50 KB at 128 kbps) is
+  // about 3 seconds = ~144_000 samples at 48 kHz mono, but Chrome decodes
+  // to 48 kHz which is then downsampled to 24 kHz. A 250 KB MP3 at typical
+  // bitrate decodes to roughly 15–60 s of audio. Pre-fix, any clip past
+  // the old 144_000 cap was rejected: a 50 KB MP3 of a 12 s loop produced
+  // ~288_000 samples @ 24 kHz → rejection. Post-fix, anything up to
+  // 1_500_000 samples passes — covers the realistic short-MP3 range.
+  it('accepts a buffer at 396_000 samples (the user-reported failing size)', async () => {
+    const ctx = makeCtx(396_000);
+    const file = { size: 50 * 1024, arrayBuffer: async () => new ArrayBuffer(50 * 1024) };
+    const result = await loadSamsloopWav(file, ctx);
+    expect(result.ok).toBe(true);
+    expect(result.samples!.length).toBe(396_000);
+  });
+
   it('rejects buffers exceeding SAMSLOOP_MAX_DECODED_SAMPLES with a clear error', async () => {
     // Source rate 22050 (below target → no downsample applied) so we can
     // construct a buffer larger than the cap directly. The raw-file gate
@@ -463,6 +496,163 @@ describe('loadSamsloopWav decoded-buffer cap', () => {
     // Length should be the downsampled count, well under the cap.
     expect(result.samples!.length).toBeLessThanOrEqual(SAMSLOOP_MAX_DECODED_SAMPLES);
     expect(result.sampleRate).toBe(24000);
+  });
+});
+
+// ---------- file-bytes persistence pass-through ----------
+//
+// On a successful upload, loadSamsloopWav must thread the ORIGINAL file
+// bytes (the unmodified Uint8Array as read from the file) through to
+// the result so the card can persist them via base64. This replaces the
+// old "stuff decoded PCM into a YArray" path, which doesn't survive the
+// new 1.5M-sample cap.
+
+describe('loadSamsloopWav returns original file bytes for persistence', () => {
+  function makeDecodingCtx(decodedLen = 1000): BaseAudioContext {
+    return {
+      decodeAudioData: async (_ab: ArrayBuffer): Promise<AudioBuffer> => ({
+        length: decodedLen,
+        numberOfChannels: 1,
+        sampleRate: 22050,
+        getChannelData: () => new Float32Array(decodedLen),
+      } as unknown as AudioBuffer),
+    } as unknown as BaseAudioContext;
+  }
+
+  it('exposes fileBytes + fileSize + fileMime on success (mp3 path)', async () => {
+    // Simulate a 50 KB "mp3" — the decoder is stubbed so the actual
+    // codec doesn't matter; we just need the size gate to pass and the
+    // bytes to round-trip into the result.
+    const SIZE = 50 * 1024;
+    const ab = new ArrayBuffer(SIZE);
+    const dv = new DataView(ab);
+    // Watermark the buffer so we can verify it survived.
+    for (let i = 0; i < 16; i++) dv.setUint8(i, (i * 7) & 0xff);
+    const file = {
+      size: SIZE,
+      type: 'audio/mpeg',
+      arrayBuffer: async () => ab,
+    };
+    const result = await loadSamsloopWav(file, makeDecodingCtx());
+    expect(result.ok).toBe(true);
+    expect(result.fileBytes).toBeDefined();
+    expect(result.fileBytes!.byteLength).toBe(SIZE);
+    // Watermark survived (we copy via ab.slice(0) before decode).
+    for (let i = 0; i < 16; i++) {
+      expect(result.fileBytes![i]).toBe((i * 7) & 0xff);
+    }
+    expect(result.fileSize).toBe(SIZE);
+    expect(result.fileMime).toBe('audio/mpeg');
+  });
+
+  it('exposes fileBytes for the manual-WAV parser path too', async () => {
+    // Synthesize a tiny valid WAV so parseWavManually succeeds without
+    // touching the stubbed decoder.
+    const frames = 4;
+    const dataSize = frames * 2; // 16-bit mono
+    const ab = new ArrayBuffer(44 + dataSize);
+    const v = new DataView(ab);
+    v.setUint32(0, 0x52494646, false);
+    v.setUint32(4, 36 + dataSize, true);
+    v.setUint32(8, 0x57415645, false);
+    v.setUint32(12, 0x666d7420, false);
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true);
+    v.setUint32(24, 22050, true);
+    v.setUint32(28, 22050 * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    v.setUint32(36, 0x64617461, false);
+    v.setUint32(40, dataSize, true);
+    v.setInt16(44, 1234, true);
+    const file = {
+      size: ab.byteLength,
+      type: 'audio/wav',
+      arrayBuffer: async () => ab,
+    };
+    const result = await loadSamsloopWav(file, makeDecodingCtx());
+    expect(result.ok).toBe(true);
+    expect(result.fileBytes).toBeDefined();
+    expect(result.fileBytes!.byteLength).toBe(ab.byteLength);
+    expect(result.fileMime).toBe('audio/wav');
+  });
+
+  it('does NOT expose fileBytes on rejection (size-gate failure path)', async () => {
+    const file = {
+      size: SAMSLOOP_MAX_FILE_BYTES + 1,
+      arrayBuffer: async () => new ArrayBuffer(SAMSLOOP_MAX_FILE_BYTES + 1),
+    };
+    const result = await loadSamsloopWav(file, makeDecodingCtx());
+    expect(result.ok).toBe(false);
+    expect(result.fileBytes).toBeUndefined();
+  });
+});
+
+describe('samsloopDecodeBytesB64 — engine-factory hydrate helper', () => {
+  function makeCtx(decodedLen = 100): BaseAudioContext {
+    return {
+      decodeAudioData: async (_ab: ArrayBuffer): Promise<AudioBuffer> => ({
+        length: decodedLen,
+        numberOfChannels: 1,
+        sampleRate: 22050,
+        getChannelData: () => new Float32Array(decodedLen),
+      } as unknown as AudioBuffer),
+    } as unknown as BaseAudioContext;
+  }
+
+  // bytes-source for these tests: a tiny valid WAV (manual parser path)
+  // so the decoder doesn't even need to fire.
+  function makeWavB64(frames = 4): string {
+    const dataSize = frames * 2;
+    const ab = new ArrayBuffer(44 + dataSize);
+    const v = new DataView(ab);
+    v.setUint32(0, 0x52494646, false);
+    v.setUint32(4, 36 + dataSize, true);
+    v.setUint32(8, 0x57415645, false);
+    v.setUint32(12, 0x666d7420, false);
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true);
+    v.setUint32(24, 22050, true);
+    v.setUint32(28, 22050 * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    v.setUint32(36, 0x64617461, false);
+    v.setUint32(40, dataSize, true);
+    const bytes = new Uint8Array(ab);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+    return btoa(binary);
+  }
+
+  it('returns null for an empty bytes string', async () => {
+    const result = await samsloopDecodeBytesB64('', makeCtx());
+    expect(result).toBeNull();
+  });
+
+  it('returns null for garbage base64', async () => {
+    const result = await samsloopDecodeBytesB64('!!!not-base64!!!', makeCtx());
+    expect(result).toBeNull();
+  });
+
+  it('decodes a real WAV via the manual-parse path (no AudioContext touch)', async () => {
+    const b64 = makeWavB64(8);
+    // Probe: assert decodeAudioData is NOT called (manual parser handles
+    // valid WAV bytes without bothering the browser decoder).
+    let decoderCalls = 0;
+    const ctx = {
+      decodeAudioData: async (_ab: ArrayBuffer): Promise<AudioBuffer> => {
+        decoderCalls++;
+        return { length: 0, numberOfChannels: 1, sampleRate: 0, getChannelData: () => new Float32Array(0) } as unknown as AudioBuffer;
+      },
+    } as unknown as BaseAudioContext;
+    const result = await samsloopDecodeBytesB64(b64, ctx);
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(true);
+    expect(result!.samples).toBeDefined();
+    expect(result!.samples!.length).toBe(8);
+    expect(decoderCalls).toBe(0);
   });
 });
 

@@ -199,6 +199,8 @@
   import CocoaDelayCard from '$lib/ui/modules/CocoaDelayCard.svelte';
   // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
   import ResofilterCard from '$lib/ui/modules/ResofilterCard.svelte';
+  // SIDECAR — stereo sidechain compressor (GMR 2012 topology).
+  import SidecarCard from '$lib/ui/modules/SidecarCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
@@ -237,6 +239,7 @@
   // (silent in v1 — slice 8 wires real PCM).
   import DoomCard from '$lib/ui/modules/DoomCard.svelte';
   import NibblesCard from '$lib/ui/modules/NibblesCard.svelte';
+  import QbertCard from '$lib/ui/modules/QbertCard.svelte';
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   import VideoboxCard from '$lib/ui/modules/VideoboxCard.svelte';
   // VIDEOVARISPEED — local-file player with performant varispeed transport.
@@ -279,6 +282,7 @@
     type PortLookupModule,
   } from '$lib/graph/group-actions';
   import type { ExposedPort, ExposedControl, GroupData } from '$lib/graph/group-projection';
+  import { resolveExposedPort } from '$lib/graph/group-projection';
   import { listExposableControls, validateExposedControls } from '$lib/graph/group-controls';
   import {
     nextGroupNameForNewGroup,
@@ -308,6 +312,7 @@
   } from '$lib/multiplayer/group-building-presence';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
+  import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
@@ -487,10 +492,14 @@
     cocoadelay: CocoaDelayCard,
     // RESOFILTER — Resonarium MultiFilter port (5 modes, named-mode label).
     resofilter: ResofilterCard,
+    // SIDECAR — stereo sidechain compressor (GMR 2012; Faust co.compressor_stereo).
+    sidecar: SidecarCard,
     // DOOM — single-instance interactive video module.
     doom: DoomCard,
     // NIBBLES — QBasic Nibbles snake game module.
     nibbles: NibblesCard,
+    // QBERT — Q*Bert (Gottlieb 1982) arcade emulator.
+    qbert: QbertCard,
     // VIDEOBOX — local-file video player with multiplayer playhead sync.
     videobox: VideoboxCard,
     // VIDEOVARISPEED — local-file player with performant varispeed transport.
@@ -563,6 +572,15 @@
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__connectDragState = connectDragState;
+      // Lets E2E tests exercise the connect-commit path directly — the
+      // same xyflow `Connection` envelope a real pointer drag would
+      // synthesize. Used by the instrument-exposed-port-patching spec
+      // to assert that dragging onto a group's exposed handle creates
+      // an edge in the patch (the bug it was added to regress against:
+      // pre-fix, group endpoints bailed before the edge was added
+      // because the def lookup returned no group def).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__handleConnect = (c: Connection) => handleConnect(c);
       // Stage-B Playwright @collab tests use these to drive the
       // multi-user provider attach + per-user layout reads without
       // routing through Clerk auth. See e2e/tests/collab.spec.ts.
@@ -735,6 +753,10 @@
       // children when data.expanded === true on the parent group.
       const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
       if (parentGroupId && collapsed.has(parentGroupId)) continue;
+      // CADILLAC renders as a roaming overlay sprite (CadillacOverlay),
+      // not as a SvelteFlow card. Filter it out of the node array so
+      // xyflow doesn't draw a fallback white box at the spawn point.
+      if (n.type === 'cadillac') continue;
       const remoteUser = remoteByNode[n.id];
       const node: FlowNode = {
         id: n.id,
@@ -1179,17 +1201,32 @@
     const srcNode = patch.nodes[connection.source];
     const dstNode = patch.nodes[connection.target];
     if (!srcNode || !dstNode) return;
+
+    // Group endpoints — exposed-port handles stand in for a child {nodeId,
+    // portId}. The Yjs edge is stored with the group node + exposed handle
+    // (so the canvas keeps rendering the cable at the group's boundary);
+    // projectGroups() rewrites the endpoints to the child before the
+    // reconciler runs. For cable-type resolution we read the exposed
+    // port's declared cableType so the engine's resolveConnection picks
+    // the correct splitter/merger/bridge plan when the underlying child
+    // is e.g. video while the cable started life as audio.
+    const srcExposed = resolveExposedPort(srcNode, connection.sourceHandle);
+    const dstExposed = resolveExposedPort(dstNode, connection.targetHandle);
+
     // Phase 0 video spike: a node may belong to either domain registry.
-    // Try audio first (the common case), fall back to video so a video
-    // module's port types resolve correctly.
+    // Try audio first (the common case), fall back to video. Meta (group)
+    // is handled above via resolveExposedPort, so a missing def here only
+    // disqualifies a non-meta non-group node — those genuinely can't host
+    // a connection.
     const srcDef = getModuleDef(srcNode.type) ?? getVideoModuleDef(srcNode.type);
     const dstDef = getModuleDef(dstNode.type) ?? getVideoModuleDef(dstNode.type);
-    if (!srcDef || !dstDef) return;
+    if (!srcExposed && !srcDef) return;
+    if (!dstExposed && !dstDef) return;
 
-    const srcPort = srcDef.outputs.find((p) => p.id === connection.sourceHandle);
-    const dstPort = dstDef.inputs.find((p) => p.id === connection.targetHandle);
-    const sourceType: CableType = srcPort?.type ?? 'audio';
-    const targetType: CableType = dstPort?.type ?? sourceType;
+    const srcPort = srcDef?.outputs.find((p) => p.id === connection.sourceHandle);
+    const dstPort = dstDef?.inputs.find((p) => p.id === connection.targetHandle);
+    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
+    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
     const id = `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`;
     if (patch.edges[id]) return;
@@ -2713,10 +2750,16 @@
     const srcDef = defLookup(srcNode.type);
     const dstDef = defLookup(dstNode.type);
     if (!srcDef || !dstDef) return;
+    // Group endpoints — chase the exposed-port → child handoff for the
+    // cable-type fallback; see handleConnect's matching block for the
+    // why. The edge stays addressed to the group endpoint itself; the
+    // snapshot projection rewrites it before the engine sees it.
+    const srcExposed = resolveExposedPort(srcNode, from.portId);
+    const dstExposed = resolveExposedPort(dstNode, to.portId);
     const srcPort = srcDef.outputs.find((p) => p.id === from.portId);
     const dstPort = dstDef.inputs.find((p) => p.id === to.portId);
-    const sourceType: CableType = srcPort?.type ?? 'audio';
-    const targetType: CableType = dstPort?.type ?? sourceType;
+    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
+    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
     const id = `e-${from.nodeId}-${from.portId}-${to.nodeId}-${to.portId}`;
     if (patch.edges[id]) {
@@ -3034,6 +3077,35 @@
     const initialData: Record<string, unknown> = { name: autoName };
     if ((type === PICTUREBOX_TYPE || type === SAMSLOOP_TYPE) && currentUserId) {
       initialData.creatorId = currentUserId;
+    }
+    // CADILLAC — overrides the cursor-anchored pos with a viewport-relative
+    // launch point. x = right edge + ~80px so the car drives onstage from
+    // offscreen-right. y = mid-viewport-y so the car cuts through the
+    // user's current view. The overlay reads spawnedAtMs/spawnerClientId
+    // from data and computes the constant-velocity x deterministically;
+    // no awareness traffic for the car.
+    if (type === 'cadillac' && flowApi) {
+      const vp = flowApi.getViewport();
+      const containerEl: HTMLElement = flowEl ?? document.documentElement;
+      const rect = containerEl.getBoundingClientRect();
+      const rightFlow = flowApi.screenToFlowPosition({
+        x: rect.right,
+        y: rect.top,
+      });
+      const midFlow = flowApi.screenToFlowPosition({
+        x: (rect.left + rect.right) / 2,
+        y: (rect.top + rect.bottom) / 2,
+      });
+      pos.x = rightFlow.x + 80;
+      pos.y = midFlow.y;
+      initialData.spawnedAtMs = Date.now();
+      const clientId = provider?.awareness?.clientID;
+      if (typeof clientId === 'number') {
+        initialData.spawnerClientId = clientId;
+      }
+      // Reference vp to keep its read in scope (telemetry hook in the
+      // future). Suppresses a no-unused warning.
+      void vp;
     }
 
     // Insert-on-cable (Proposal B2): if the cursor is close to an
@@ -3632,6 +3704,7 @@
         />
       {/if}
       <FlowBridge bind:api={flowApi} />
+      <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every
            module card's title chrome (see ModuleTitle.svelte). The floating
            NodeToolbar overhead label was dropped — the spec asks for the

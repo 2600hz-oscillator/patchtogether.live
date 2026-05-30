@@ -31,6 +31,20 @@ const SKIP_RENDER: Record<string, string> = {
   // rendered handle count therefore < def.inputs.length + outputs.
   // Functional coverage: e2e/tests/helm.spec.ts.
   helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
+  // CADILLAC renders as a roaming overlay sprite, NOT as a SvelteFlow
+  // card — Canvas.svelte filters the type out of flowNodes so xyflow
+  // doesn't paint a fallback box at the spawn point. There is no
+  // `.svelte-flow__node-cadillac` to assert against. Functional coverage:
+  // e2e/tests/cadillac.spec.ts (drive + delete + self-destruct).
+  cadillac: 'overlay sprite, not a flow card; covered by e2e/tests/cadillac.spec.ts',
+  // QBERT fetches a user-provided ROM zip from /roms/qbert/qbert.zip at
+  // spawn time. On a clean checkout (no ROM installed) this 404s by
+  // design — the card surfaces the "ROM MISSING" overlay. The 404
+  // surfaces as a Chromium console error which this strict spec rejects.
+  // Dedicated coverage: e2e/tests/qbert-rom-missing.spec.ts (asserts
+  // overlay + handle count, filtering the expected 404). The handle
+  // count + CV path are also covered by per-module-per-port specs.
+  qbert: 'fetches user-provided ROM (404s on clean checkout); covered by e2e/tests/qbert-rom-missing.spec.ts',
 };
 
 test.describe.configure({ mode: 'parallel' });

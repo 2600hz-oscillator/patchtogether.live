@@ -31,6 +31,8 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import {
   EXEMPT_FROM_VRT,
   EXEMPT_BASELINE_PAIRS,
+  STRICT_VRT_MODULES,
+  VRT_MODULE_MASKS,
 } from '../../../../../../e2e/vrt/vrt-exemptions';
 import { VRT_SCENES } from '../../../../../../e2e/vrt/vrt-scenes';
 
@@ -153,5 +155,91 @@ describe('VRT coverage self-test', () => {
       const hasVrt1 = scene.nodes.some((n) => n.id === 'vrt-1' && n.type === type);
       expect(hasVrt1, `${type}: scene.nodes must include {id:'vrt-1', type:'${type}'}`).toBe(true);
     }
+  });
+
+  // -------------------------------------------------------------------
+  // STRICT_VRT_MODULES coverage — the deterministic subset is the gate
+  // inside `task ci`. These invariants keep the gate honest:
+  //   * a strict module MUST ship baselines on BOTH platforms (no
+  //     EXEMPT_BASELINE_PAIRS entry on either side — promote-via-
+  //     update-snapshots flow must capture both).
+  //   * a strict module MUST NOT be in VRT_MODULE_MASKS (a mask means
+  //     the canvas is non-deterministic; if we mask it the diff is no
+  //     longer end-to-end semantic — covered by the full lane instead).
+  //   * a strict module MUST NOT be in EXEMPT_FROM_VRT (can't both
+  //     skip + gate).
+  //   * a strict module MUST be a registered module (no drift).
+  // -------------------------------------------------------------------
+  it('every STRICT_VRT_MODULES entry has baselines on BOTH platforms', () => {
+    const missing: string[] = [];
+    for (const t of STRICT_VRT_MODULES) {
+      for (const platform of VRT_PLATFORMS) {
+        if (!existsSync(baselinePath(t, platform))) missing.push(`${platform}/${t}`);
+      }
+    }
+    expect(
+      missing,
+      `STRICT_VRT_MODULES entries must have committed baselines on darwin + linux ` +
+        `(strict lane runs cross-platform). Capture via \`task vrt:update\` on each platform: ${missing.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('no STRICT_VRT_MODULES entry has a canvas mask (defeats the diff)', () => {
+    const masked: string[] = [];
+    for (const t of STRICT_VRT_MODULES) {
+      if (t in VRT_MODULE_MASKS) masked.push(t);
+    }
+    expect(
+      masked,
+      `STRICT_VRT_MODULES entries with a VRT_MODULE_MASKS entry have a masked canvas region — ` +
+        `the strict-lane diff would skip semantic content. Either remove the mask (the card is ` +
+        `actually deterministic) or remove the module from STRICT_VRT_MODULES: ${masked.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('no STRICT_VRT_MODULES entry has a pending EXEMPT_BASELINE_PAIRS regen', () => {
+    const pending: string[] = [];
+    for (const t of STRICT_VRT_MODULES) {
+      for (const platform of VRT_PLATFORMS) {
+        const key = `${platform}/${t}`;
+        if (EXEMPT_BASELINE_PAIRS.has(key)) pending.push(key);
+      }
+    }
+    expect(
+      pending,
+      `STRICT_VRT_MODULES entries can't have a pending EXEMPT_BASELINE_PAIRS regen — ` +
+        `the strict lane needs both baselines current. Capture the baseline + remove the pair, ` +
+        `or remove the module from STRICT_VRT_MODULES: ${pending.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('no STRICT_VRT_MODULES entry is also in EXEMPT_FROM_VRT', () => {
+    const conflict: string[] = [];
+    for (const t of STRICT_VRT_MODULES) {
+      if (EXEMPT_FROM_VRT[t]) conflict.push(t);
+    }
+    expect(
+      conflict,
+      `STRICT_VRT_MODULES + EXEMPT_FROM_VRT conflict (can't both skip + gate): ${conflict.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('every STRICT_VRT_MODULES entry is a registered module type', async () => {
+    await import('$lib/audio/modules');
+    await import('$lib/video/modules');
+    await import('$lib/meta/modules');
+    const registered = new Set([
+      ...listModuleDefs().map((d) => d.type as string),
+      ...listVideoModuleDefs().map((d) => d.type as string),
+      ...listMetaModuleDefs().map((d) => d.type as string),
+    ]);
+    const ghosts: string[] = [];
+    for (const t of STRICT_VRT_MODULES) {
+      if (!registered.has(t)) ghosts.push(t);
+    }
+    expect(
+      ghosts,
+      `STRICT_VRT_MODULES entries not in the module registry (typo or unregistered module): ${ghosts.join(', ')}`,
+    ).toEqual([]);
   });
 });
