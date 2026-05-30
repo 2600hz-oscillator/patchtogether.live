@@ -333,6 +333,40 @@
       const state = lfoDef.computeStateAt(sharedTimeMs - epoch, node.params ?? { rate: 1 }, () => 0);
       return state.phase;
     };
+
+    // Rackspace seed hook — wraps POST /api/test/seed-rackspace so e2e specs
+    // can spin up a fresh /r/[id] route without a Clerk session. Returns
+    // { id, inviteCode } the spec then uses to build /r/<id>?invite=<code>.
+    // The server endpoint is gated on RACKSPACE_SEED_ENABLED='1' OR
+    // NODE_ENV='development' — neither is set on prod, so this hook can be
+    // present even on the public bundle without risk.
+    //
+    // Optional `envelope` is a PatchEnvelope object (see lib/graph/persistence)
+    // whose base64 `update` field is stored verbatim into rack_snapshots so
+    // the Hocuspocus relay serves it on first connect. Pass `undefined` for
+    // a fresh empty rackspace.
+    interface SeedEnvelope { envelopeVersion: number; update: string }
+    interface SeedResp { id: string; inviteCode: string }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__seedRackspace = async (
+      envelope?: SeedEnvelope,
+      opts?: { name?: string; ownerUserId?: string },
+    ): Promise<SeedResp> => {
+      const body: Record<string, unknown> = {};
+      if (envelope !== undefined) body.envelope = envelope;
+      if (opts?.name) body.name = opts.name;
+      if (opts?.ownerUserId) body.ownerUserId = opts.ownerUserId;
+      const r = await fetch('/api/test/seed-rackspace', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const text = await r.text().catch(() => '<no body>');
+        throw new Error(`__seedRackspace failed: ${r.status} ${text.slice(0, 200)}`);
+      }
+      return (await r.json()) as SeedResp;
+    };
   }
 
   // Clerk's JS bundle is loaded cross-origin from clerk.accounts.dev. With
