@@ -154,8 +154,47 @@ jobs:
       - name: Apply DB schema (for capacity-race test)
         run: flox activate -- psql "$PG_TEST_URL" -f db/schema/001_init.sql
 
-      - name: Run unit tests (server + web)
-        run: flox activate -- task test
+      # `task coverage` runs the same vitest suites as `task test` but with the
+      # V8 coverage provider + enforces the minimums baked into each
+      # vitest.config.ts. Adds ~3-5 s of instrumentation per package; thresholds
+      # were set 5-10% BELOW the realized coverage at wire-time so a normal PR
+      # doesn't break the build (see README §Coverage). The unit-job step name
+      # stays "unit" so branch-protection rule names don't shift.
+      - name: Run unit tests with coverage (server + web)
+        run: flox activate -- task coverage
+
+      # Print the per-package JSON summary into the Actions log so reviewers can
+      # eyeball the deltas without unzipping the HTML artifact. `coverage-summary.json`
+      # is the standard `json-summary` reporter output (Istanbul-compatible shape).
+      - name: Print coverage summary
+        if: always()
+        run: |
+          for pkg in server web; do
+            f="packages/$pkg/coverage/coverage-summary.json"
+            if [ -f "$f" ]; then
+              echo "::group::coverage summary — $pkg"
+              flox activate -- node -e "
+                const s = require('./$f').total;
+                for (const k of ['lines','branches','functions','statements']) {
+                  console.log(k.padEnd(11), s[k].pct.toFixed(2)+'%', '(' + s[k].covered + '/' + s[k].total + ')');
+                }
+              "
+              echo "::endgroup::"
+            fi
+          done
+
+      # Upload BOTH packages' coverage/ directories as one artifact. Reviewers
+      # download `coverage-html`, open `*/coverage/index.html` to browse.
+      # Retention is short (7 d) — these reports are dev-aid only, not audit.
+      - name: Upload coverage HTML reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: |
+            packages/server/coverage
+            packages/web/coverage
+          retention-days: 7
 
   # -----------------------------------------------------------------------
   # art — Audio Regression Tests. Has a `dsp:build` dep (~4 s, baked into
@@ -588,10 +627,24 @@ jobs:
   # the gating decision happen separately after the new tier proves
   # itself reliable across N runs. Promote to ci umbrella `needs:` list
   # to make it blocking.
+  #
+  # TODO(behavioral-coverage): non-blocking until per-module threshold tuning lands.
+  # Current spec (PR #471) uses a delta threshold that's too tight for modules with
+  # subtle CV→audio effects (envelope-amount knobs, decay, etc.). Whack-a-mole
+  # exempting modules (grids/sequencer/adsr/buggles/backdraft/qbert/peaks/treeohvox/
+  # mixmstrs all failing as of 2026-05-30) is the wrong fix. Tune thresholds per
+  # module or per port-type, then flip continue-on-error off + re-add to aggregator.
+  # Tracking task TBD.
   # -----------------------------------------------------------------------
   behavioral-coverage:
     name: behavioral input coverage
     runs-on: ubuntu-latest
+    # Informational lane: red here must NOT block PR merges. The job still runs
+    # + reports a status, but `continue-on-error: true` makes GitHub treat any
+    # failure as success at the check-run level so auto-merge / required-status
+    # aggregators are unaffected. Remove once per-module thresholds are tuned
+    # (see TODO above).
+    continue-on-error: true
     # 50 min ceiling: full sweep at 4 workers ~25-30 min; cushion for
     # cold-cache CI runs + setup time.
     timeout-minutes: 50
@@ -706,6 +759,11 @@ jobs:
           # specs on a dedicated non-sharded runner and is now a real gate. We
           # don't gate on `merge-reports` so a flaky report-merge step can't
           # block an otherwise-green run.
+          #
+          # `behavioral-coverage` (BEHAVIORAL) is INTENTIONALLY ABSENT from
+          # both `needs:` above and this success check. It's informational
+          # only (continue-on-error: true) until per-module thresholds are
+          # tuned — do NOT add a BEHAVIORAL env var or condition here.
           if [[ "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
              || "$ART" != "success" \

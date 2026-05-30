@@ -10,7 +10,7 @@
 //
 // Fix: the upload is driven off requestVideoFrameCallback (the <video>'s own
 // decode cadence, ~24-30 fps) and the frame is downscaled to engine
-// resolution (640x360) before upload. See video-frame-upload.ts.
+// resolution (640x480) before upload. See video-frame-upload.ts.
 //
 // What we measure here (after-fix, asserted). We drive the engine's render
 // step() OURSELVES in a fixed wall-clock window with gl.finish() after each

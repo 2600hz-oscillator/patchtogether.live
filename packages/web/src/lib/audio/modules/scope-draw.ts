@@ -27,7 +27,7 @@
 //     it as a fragment shader would be 3× the LoC for no perf win at
 //     ~280×120 sizes.
 // The bridge does pay a per-frame canvas→texture upload (texSubImage2D
-// from a Uint8ClampedArray), but at 60fps and 640×360 px that's well
+// from a Uint8ClampedArray), but at 60fps and 640×480 px that's well
 // under 1ms on any modern machine.
 
 export interface ScopeSnapshot {

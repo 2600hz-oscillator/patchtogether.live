@@ -133,7 +133,7 @@ export class RasterPainter {
    * Blit the persistent framebuffer to a canvas. If the canvas size
    * matches the painter, `putImageData` is used directly; otherwise we
    * stage the buffer in a temp canvas + `drawImage`-scale into the target
-   * (the on-card canvas is smaller than the 640×360 video resolution).
+   * (the on-card canvas is smaller than the 640×480 video resolution).
    */
   blitTo(canvas: OffscreenCanvas | HTMLCanvasElement): void {
     const ctx2d = canvas.getContext('2d') as
