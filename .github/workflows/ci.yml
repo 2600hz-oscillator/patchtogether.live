@@ -303,10 +303,18 @@ jobs:
       # contention (4 workers each across 8 runners hammering the same dev
       # server + relay → cross-context Yjs sync drops). Isolating them makes
       # the DOOM 2-user test a reliable gate instead of a re-run-and-hope.
-      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter, no @collab)
+      # `per-module-per-port-behavioral.spec.ts` is the heavy behavioral
+      # input-coverage sweep — ~100 module-level tests, each iterating
+      # internal inputs with 2-spawn control-vs-patched comparisons.
+      # Wall-time ~25-30 min for the full sweep. Excluded from the main
+      # 8-way shard matrix (would balloon shard wall-time from 3-4 min
+      # to 8-10 min) and runs in its own dedicated `behavioral-coverage`
+      # job below. The test titles are matched via the
+      # "BEHAVIORAL input coverage" describe block name.
+      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter, no @collab, no behavioral)
         run: |
           flox activate -- npx --workspace e2e playwright test \
-            --grep-invert @collab \
+            --grep-invert "@collab|BEHAVIORAL input coverage" \
             --shard=${{ matrix.shard }}/8 \
             --reporter=blob
 
@@ -530,6 +538,98 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-test-results-collab
+          path: e2e/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
+  # behavioral-coverage — the heavy behavioral input-coverage sweep
+  # (per-module-per-port-behavioral.spec.ts). ~100 module-level tests,
+  # each iterating its module's inputs with 2-spawn control-vs-patched
+  # comparisons. Wall-time ~25-30 min total at 4 workers — too heavy to
+  # roll into the main 8-way shard matrix (would balloon each shard from
+  # ~3-4 min to ~8-10 min). Runs on its own dedicated runner with full
+  # DB + DOOM-asset + DSP setup so the @collab-style isolation pattern
+  # carries through.
+  #
+  # NOT a required status check yet — landing it as informational lets
+  # the gating decision happen separately after the new tier proves
+  # itself reliable across N runs. Promote to ci umbrella `needs:` list
+  # to make it blocking.
+  # -----------------------------------------------------------------------
+  behavioral-coverage:
+    name: behavioral input coverage
+    runs-on: ubuntu-latest
+    # 50 min ceiling: full sweep at 4 workers ~25-30 min; cushion for
+    # cold-cache CI runs + setup time.
+    timeout-minutes: 50
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      - name: Build DSP
+        run: flox activate -- task dsp:build
+
+      - name: Run E2E (behavioral input coverage only, 4 workers, list reporter)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            per-module-per-port-behavioral.spec.ts \
+            --workers=4 \
+            --reporter=list
+
+      - name: Upload Playwright test-results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-behavioral
           path: e2e/test-results
           retention-days: 14
 
