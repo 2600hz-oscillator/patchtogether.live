@@ -9,6 +9,7 @@
     "ai:check": "playwright test --reporter=list ai-smoke.spec.ts",
     "ai:debug": "playwright test --reporter=list ai-debug.spec.ts",
     "vrt": "playwright test --config=vrt/vrt.config.ts",
+    "vrt:strict": "VRT_STRICT=1 playwright test --config=vrt/vrt.config.ts",
     "vrt:update": "playwright test --config=vrt/vrt.config.ts --update-snapshots"
   },
   "devDependencies": {

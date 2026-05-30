@@ -35,6 +35,17 @@
 //     multi-user constraint that a rack supports up to 4 collaborators
 //     ([[multiuser-constraints]]).
 //
+// NOTE (post-cap-bump PR): the 4.4 MB per-instance figure above came
+// from the OLD persistence path that stored decoded PCM as a YArray
+// (one CRDT record per sample) — that path was retired when the decoded
+// cap was raised from 144_000 to 1_500_000 samples. Uploads now persist
+// the ORIGINAL file bytes via a base64 string (single opaque Yjs value,
+// bounded by SAMSLOOP_MAX_FILE_BYTES = 250 KB). Per-instance Yjs cost
+// dropped roughly an order of magnitude; the decoded buffer lives in
+// the worklet's private memory (~6 MB worst case at the new cap, off
+// the main-thread heap). The 20/5 caps still hold with comfortable
+// headroom — no need to re-tune until we hit a different bottleneck.
+//
 // Creator attribution lives at `node.data.creatorId` (set by Canvas's
 // spawnFromPalette — same pattern as PICTUREBOX). Pre-existing SAMSLOOP
 // nodes from before this PR have no creatorId — they count toward the
