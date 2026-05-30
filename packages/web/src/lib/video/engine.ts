@@ -19,9 +19,11 @@
 //     without retrofits.
 //
 // Design notes:
-//   - VIDEO_RES is fixed at instantiate time. For the spike we keep it
-//     small (640×360) — cheap on every laptop, plenty for a demo render.
-//     Phase 1 bumps to 1280×720 once we've measured perf headroom.
+//   - VIDEO_RES is fixed at instantiate time. We render at 640×480 (4:3,
+//     NTSC/PAL CRT aesthetic) — matches the LZX analog-video heritage,
+//     PICTUREBOX's 640×480 encoder, and gives SM64 an integer 2× scale
+//     (320×240 → 640×480). 4:3 is also DOOM's native viewport ratio
+//     above the status bar; widescreen sources letterbox left/right.
 //   - We share ONE WebGL2 context + OffscreenCanvas across all video
 //     nodes. Each node has its own FBO + texture. OUTPUT modules
 //     subscribe to a downstream visible <canvas> by exposing a
@@ -34,9 +36,10 @@ import { getVideoModuleDef, type VideoModuleDef } from './module-registry';
 import { createWaveformRenderer, type WaveformRenderer } from './waveform-video';
 import { buildCvBridgeMapping, mapCvBridgeValue, type CvBridgeMapping } from './cv-bridge-map';
 
-/** Resolution of every per-module FBO. Phase-0 keeps this small for
- *  fastest startup on the demo path; Phase 1 bumps it to 1280×720. */
-export const VIDEO_RES = { width: 640, height: 360 } as const;
+/** Resolution of every per-module FBO. 640×480 (4:3) matches the LZX
+ *  analog-video heritage, aligns with PICTUREBOX's encoder, and gives
+ *  SM64's 320×240 native an integer 2× scale. */
+export const VIDEO_RES = { width: 640, height: 480 } as const;
 
 /** Per-module surface — FBO + texture. Output modules can leave `fbo` null
  *  and consume their input textures directly. */

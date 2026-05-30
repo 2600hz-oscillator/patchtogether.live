@@ -9,7 +9,7 @@
 //
 //   Each video frame, take a fixed run of audio samples (samplesPerFrame,
 //   ~800 at 48k/60fps) and write them as voltage-per-pixel into the
-//   640×360 video frame in raster order (left→right, top→bottom). A scan
+//   640×480 video frame in raster order (left→right, top→bottom). A scan
 //   cursor names the pixel index where this frame's run starts; it
 //   advances by samplesPerFrame each frame and WRAPS through the frame
 //   across successive frames (~1.25 scanlines painted per frame at the

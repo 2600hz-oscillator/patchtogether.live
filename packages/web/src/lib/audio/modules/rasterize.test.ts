@@ -47,8 +47,8 @@ describe('RASTERIZE module def shape', () => {
     expect(Object.keys(byId).sort()).toEqual(['cursor', 'gain', 'samplesPerFrame', 'wrap']);
     // Default samples/frame ≈ 48k/60fps so ~1.25 scanlines/frame at 640px.
     expect(byId.samplesPerFrame!.defaultValue).toBe(800);
-    // Scan cursor spans the whole 640×360 frame.
-    expect(byId.cursor!.max).toBe(640 * 360);
+    // Scan cursor spans the whole 640×480 frame.
+    expect(byId.cursor!.max).toBe(640 * 480);
     // Wrap is the discrete 0/1 mode knob.
     expect(byId.wrap!.curve).toBe('discrete');
     expect(byId.wrap!.min).toBe(0);

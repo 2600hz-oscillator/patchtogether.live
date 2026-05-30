@@ -169,7 +169,7 @@ function makeFakeAudioCtx(initialState: AudioContextState = 'suspended'): {
 function makeCtx(fake: ReturnType<typeof makeFakeAudioCtx>): VideoEngineContext {
   return {
     gl: makeFakeGl(),
-    res: { width: 640, height: 360 },
+    res: { width: 640, height: 480 },
     compileFragment: () => ({}) as WebGLProgram,
     createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
     drawFullscreenQuad: () => undefined,

@@ -72,10 +72,11 @@ out vec4 outColor;
 
 uniform sampler2D uTex;
 uniform float uHasInput;
-// (sx, sy) — UV scale that fits the SOURCE aspect into the 16:9 FBO without
-// stretching. (1,1) = source already matches FBO aspect. A 4:3 clip gets
-// sx<1 (pillarbox bars left/right); a 21:9 clip gets sy<1 (letterbox bars
-// top/bottom). Computed per-frame from the <video> element dimensions.
+// (sx, sy) — UV scale that fits the SOURCE aspect into the engine FBO
+// without stretching. (1,1) = source already matches FBO aspect. The
+// FBO is currently 4:3, so a 16:9 clip gets sy<1 (letterbox bars
+// top/bottom); a square source gets sx<1 (pillarbox bars left/right).
+// Computed adaptively per ctx.res from the <video> element dimensions.
 uniform vec2 uLetterbox;
 
 void main() {
@@ -85,7 +86,7 @@ void main() {
     return;
   }
   // Centre + scale the active region so the source keeps its native aspect
-  // inside the 16:9 FBO; outside the active region renders pure black bars.
+  // inside the engine FBO; outside the active region renders pure black bars.
   vec2 centered = (vUv - 0.5) / uLetterbox + 0.5;
   if (centered.x < 0.0 || centered.x > 1.0 || centered.y < 0.0 || centered.y > 1.0) {
     outColor = vec4(0.0, 0.0, 0.0, 1.0);
@@ -409,9 +410,9 @@ export const videoVarispeedDef: VideoModuleDef = {
         g.uniform1f(uHasInput, uploaded ? 1.0 : 0.0);
 
         // Aspect-preserving letterbox: fit the source's native aspect into
-        // the 16:9 FBO so a non-16:9 clip isn't stretched. sx/sy <= 1; the
-        // shorter axis gets bars. Defaults to (1,1) when dimensions are
-        // unknown (idle / pre-metadata) so nothing shrinks unnecessarily.
+        // the engine FBO (currently 4:3) so a non-matching clip isn't
+        // stretched. sx/sy <= 1; the shorter axis gets bars. Defaults to
+        // (1,1) when dimensions are unknown (idle / pre-metadata).
         let lbX = 1.0;
         let lbY = 1.0;
         if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
