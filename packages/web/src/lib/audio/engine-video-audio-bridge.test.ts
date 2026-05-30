@@ -474,6 +474,15 @@ describe('PatchEngine — class-wide video.cv/gate → audio bridge sweep', () =
     expect(ids.has('doom.evt_kill')).toBe(true);
     expect(ids.has('doom.evt_door')).toBe(true);
     expect(ids.has('doom.evt_gun_p1')).toBe(true);
+    // feat/doom-per-type-death-gates floor: per-monster + per-player
+    // gates must enumerate. A few samples for the floor-guard — the full
+    // per-port .each row sweep below covers every gate individually.
+    expect(ids.has('doom.evt_kill_imp')).toBe(true);
+    expect(ids.has('doom.evt_kill_demon')).toBe(true);
+    expect(ids.has('doom.evt_kill_caco')).toBe(true);
+    expect(ids.has('doom.evt_kill_baron')).toBe(true);
+    expect(ids.has('doom.evt_p1_dies')).toBe(true);
+    expect(ids.has('doom.evt_p4_dies')).toBe(true);
   });
 
   // Per-port sweep. Each row builds the smallest possible fixture: the

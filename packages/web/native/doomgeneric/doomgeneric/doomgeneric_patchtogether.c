@@ -177,6 +177,19 @@ void dgpt_evt_push(uint32_t type, int slot) {
   }
 }
 
+void dgpt_evt_push_typed(uint32_t type, uint32_t payload) {
+  // Pack: type in low 4 bits, 12-bit payload in bits 4..15. Used for
+  // KILL_TYPED to encode the mobjtype_t id alongside the kill event.
+  uint32_t e = (type & 0xFu) | ((payload & 0xFFFu) << 4);
+  int h = dgpt_evt_head;
+  dgpt_evt_ring[h & (DGPT_EVT_RING_SIZE - 1)] = e;
+  int next = (h + 1) & (DGPT_EVT_RING_SIZE - 1);
+  dgpt_evt_head = next;
+  if (next == dgpt_evt_tail) {
+    dgpt_evt_tail = (dgpt_evt_tail + 1) & (DGPT_EVT_RING_SIZE - 1);
+  }
+}
+
 int dgpt_drain_events(uint32_t *out, int max) {
   int n = 0;
   while (n < max && dgpt_evt_tail != dgpt_evt_head) {

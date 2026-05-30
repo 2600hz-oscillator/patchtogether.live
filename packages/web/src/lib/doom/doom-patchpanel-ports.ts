@@ -19,6 +19,7 @@
 // single right-column.
 
 import { CV_GATE_PORT_IDS, cvGatePortIdForSlot, DOOM_MP_SLOTS, type CvGatePortId } from '$lib/doom/doomkeys';
+import { MONSTER_KILL_PORTS, PLAYER_DEATH_PORTS } from '$lib/doom/doom-death-ports';
 import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
 
 /** Verbose labels for the 9 base gates — mirrors the historical inline glyphs
@@ -38,7 +39,9 @@ export const DOOM_BASE_GATE_LABELS: Record<CvGatePortId, string> = {
 };
 
 /** Output port descriptors — flat list rendered in the panel's right column.
- *  Order matches doomDef.outputs so a smoke test against the def can pin it. */
+ *  Order matches doomDef.outputs so a smoke test against the def can pin it.
+ *  feat/doom-per-type-death-gates: per-monster-type kill rows + per-player
+ *  death rows append after the legacy event gates. */
 export const DOOM_OUTPUT_PORTS: PortDescriptor[] = [
   { id: 'out', label: 'OUT (VIDEO)', cable: 'video' },
   { id: 'audio_l', label: 'A-L', cable: 'audio' },
@@ -49,6 +52,10 @@ export const DOOM_OUTPUT_PORTS: PortDescriptor[] = [
   { id: 'evt_gun_p2', label: 'GUN2', cable: 'gate' },
   { id: 'evt_gun_p3', label: 'GUN3', cable: 'gate' },
   { id: 'evt_gun_p4', label: 'GUN4', cable: 'gate' },
+  // Per-monster-type kill gates (typed alongside the any-monster KILL row).
+  ...MONSTER_KILL_PORTS.map((p) => ({ id: p.portId, label: p.label, cable: 'gate' as const })),
+  // Per-player death gates (P1..P4 die).
+  ...PLAYER_DEATH_PORTS.map((p) => ({ id: p.portId, label: p.label, cable: 'gate' as const })),
 ];
 
 export interface DoomPatchPanelSection {
