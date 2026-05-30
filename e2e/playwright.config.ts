@@ -16,8 +16,12 @@ const DEFAULT_LOCAL = USE_PREVIEW ? 'http://localhost:4173' : 'http://localhost:
 const BASE_URL = process.env.E2E_BASE_URL ?? DEFAULT_LOCAL;
 // Skip the local webServer when targeting a deployed URL (live smoke). Detected
 // by E2E_BASE_URL being set to anything non-localhost.
+// E2E_SKIP_WEBSERVER=1 also skips it — used by local dev workflows that
+// already have a dev server running on a non-default port (multi-worktree
+// agent runs that need a per-worktree dev server).
 const IS_LOCAL_TARGET =
-  BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
+  (BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1'))
+  && process.env.E2E_SKIP_WEBSERVER !== '1';
 
 export default defineConfig({
   testDir: './tests',

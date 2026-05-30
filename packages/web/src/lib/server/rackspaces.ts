@@ -252,49 +252,59 @@ interface JoinRow {
 }
 
 export async function joinRackspace(rackspaceId: string, userId: string): Promise<JoinResult> {
-  // Single CTE: load rack metadata, list existing members, conditionally
-  // insert the new member (only if rack exists, user is not already a
-  // member, and capacity isn't exceeded). The boolean `inserted` tells
-  // us which case we hit.
+  // Atomicity: a single CTE handles existence + capacity + insert in one
+  // statement (the Neon HTTP API has no cross-round-trip transactions
+  // outside `sql.transaction([...])`). But the CTE alone doesn't lock —
+  // two concurrent joins on the last slot can both read `counts.n=3`,
+  // both pass `n < MAX_MEMBERS`, and both INSERT, busting the 4-user cap.
   //
-  // Race window: the capacity check (`counts.n < MAX_MEMBERS`) and
-  // the INSERT are not row-locked, so two simultaneous joins on the
-  // last slot can both succeed. Acceptable for beta (4-user max,
-  // very low concurrency); upgrade to advisory_xact_lock if it bites.
-  const rows = (await sql()`
-    WITH rack AS (
-      SELECT id, owner_user_id, name, created_at
-        FROM racks
-       WHERE id = ${rackspaceId}
-    ),
-    existing AS (
-      SELECT user_id, joined_at
-        FROM rack_members
-       WHERE rack_id = ${rackspaceId}
-    ),
-    counts AS (
-      SELECT COUNT(*)::int AS n FROM existing
-    ),
-    ins AS (
-      INSERT INTO rack_members (rack_id, user_id, role)
-      SELECT ${rackspaceId}, ${userId}, 'member'
-        FROM rack, counts
-       WHERE NOT EXISTS (SELECT 1 FROM existing WHERE user_id = ${userId})
-         AND counts.n < ${MAX_MEMBERS}
-      ON CONFLICT (rack_id, user_id) DO NOTHING
-      RETURNING user_id
-    )
-    SELECT
-      (SELECT id              FROM rack) AS id,
-      (SELECT owner_user_id   FROM rack) AS owner_user_id,
-      (SELECT name            FROM rack) AS name,
-      (SELECT created_at      FROM rack) AS created_at,
-      COALESCE(
-        (SELECT array_agg(user_id ORDER BY joined_at) FROM existing),
-        ARRAY[]::text[]
-      ) AS existing_members,
-      EXISTS (SELECT 1 FROM ins) AS inserted
-  `) as JoinRow[];
+  // Fix: wrap the CTE in `sql.transaction([advisory_lock, CTE])` and take
+  // a per-rack `pg_advisory_xact_lock` first. The lock is held for the
+  // lifetime of the transaction and released on COMMIT (the "xact" suffix
+  // — no explicit unlock needed, no leak on error). Hashing the rack id
+  // into bigint keys the lock per-rack so concurrent joins to DIFFERENT
+  // racks don't serialize.
+  //
+  // hashtext() is Postgres-internal but deterministic and 32-bit; we cast
+  // to bigint to match pg_advisory_xact_lock(bigint)'s preferred overload.
+  const txResults = (await sql().transaction([
+    sql()`SELECT pg_advisory_xact_lock(hashtext(${rackspaceId})::bigint)`,
+    sql()`
+      WITH rack AS (
+        SELECT id, owner_user_id, name, created_at
+          FROM racks
+         WHERE id = ${rackspaceId}
+      ),
+      existing AS (
+        SELECT user_id, joined_at
+          FROM rack_members
+         WHERE rack_id = ${rackspaceId}
+      ),
+      counts AS (
+        SELECT COUNT(*)::int AS n FROM existing
+      ),
+      ins AS (
+        INSERT INTO rack_members (rack_id, user_id, role)
+        SELECT ${rackspaceId}, ${userId}, 'member'
+          FROM rack, counts
+         WHERE NOT EXISTS (SELECT 1 FROM existing WHERE user_id = ${userId})
+           AND counts.n < ${MAX_MEMBERS}
+        ON CONFLICT (rack_id, user_id) DO NOTHING
+        RETURNING user_id
+      )
+      SELECT
+        (SELECT id              FROM rack) AS id,
+        (SELECT owner_user_id   FROM rack) AS owner_user_id,
+        (SELECT name            FROM rack) AS name,
+        (SELECT created_at      FROM rack) AS created_at,
+        COALESCE(
+          (SELECT array_agg(user_id ORDER BY joined_at) FROM existing),
+          ARRAY[]::text[]
+        ) AS existing_members,
+        EXISTS (SELECT 1 FROM ins) AS inserted
+    `,
+  ])) as [unknown, JoinRow[]];
+  const rows = txResults[1];
 
   const row = rows[0];
   if (row.id === null) return { status: 'not-found' };
