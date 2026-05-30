@@ -125,6 +125,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (frame-time clock) that the baseline would flap. Functional coverage
   // is e2e/tests/camera-input.spec.ts.
   cameraInput: 'live MediaStream defeats deterministic capture',
+  // AUDIO IN — system mic / line-in source. Card state depends on
+  // getUserMedia permission + presence of audio inputs (both non-
+  // deterministic across CI runners); the LED + status text would
+  // differ between idle/streaming/no-inputs states. Functional coverage
+  // is e2e/tests/audio-in.spec.ts (chromium-audio-in project, fake-mic
+  // injected); unit tests cover the def shape + device-picker helpers.
+  audioIn: 'card state depends on getUserMedia permission + audioinput presence (varies across CI runners); e2e/tests/audio-in.spec.ts + devices.test.ts + audioin.test.ts provide coverage',
   // GROUP is a Phase-1 collapse-N-modules container with no engine
   // binding. A bare GROUP! has no exposed ports → its visual surface
   // is just the card chrome + label, which carries no module-specific

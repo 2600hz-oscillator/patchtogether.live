@@ -86,6 +86,11 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   drummergirl: { top: 'Audio modules', sub: 'VCOs' },
   riotgirls: { top: 'Audio modules', sub: 'VCOs' },
   samsloop: { top: 'Audio modules', sub: 'VCOs' },
+  // AUDIO IN — system mic / line-in / interface input as a source. Sits
+  // alongside the other audio sources in the VCOs bucket (it's a source,
+  // not a generator; the bucket name is historical — VCO = first audio
+  // sources we shipped).
+  audioIn: { top: 'Audio modules', sub: 'VCOs' },
   // HELM + HYDROGEN moved to Ports (top-level, flat) — see the Ports
   // block below. The MI ports (rings, clouds, peaks, stages, blades,
   // macrooscillator, veils, warps) also moved to Ports/Mutable.
