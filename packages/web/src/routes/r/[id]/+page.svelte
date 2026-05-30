@@ -6,7 +6,7 @@
   import AudioGate from '$lib/ui/AudioGate.svelte';
   import FeedbackBox from '$lib/ui/FeedbackBox.svelte';
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
-  import { ydoc, patch } from '$lib/graph/store';
+  import { ydoc, patch, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { makeEnvelope } from '$lib/graph/persistence';
   import { attachProvider } from '$lib/multiplayer/provider';
   import { createCarlController, type CarlController } from '$lib/carl/controller';
@@ -57,6 +57,18 @@
   let { data } = $props();
   let joining = $state(false);
   let joinError: string | null = $state(null);
+
+  // Rackspace isolation: bind the singleton patch/ydoc/undoManager to a
+  // fresh Y.Doc for THIS rackspace BEFORE anything else in the page
+  // touches the store. Without this, navigating /r/A → /r/B in the same
+  // JS context re-attached the provider for B to the doc that still
+  // held A's data, and A's nodes got uploaded into B's Hocuspocus room
+  // (the "edits leak across all 4 rackspaces" report). Idempotent for
+  // the same id; safe to call eagerly. The route also wraps the canvas
+  // in `{#key data.rackspace.id}` so every Svelte subscription tears
+  // down + reattaches when the bound rackspace changes — without that
+  // the proxies seen by `$derived`/`$effect` blocks would dangle.
+  if (data.isMember) bindRackspace(data.rackspace.id);
 
   // Stage B PR B-c (awareness): resolve a stable presence identity for this
   // session. Authed users pull displayName from Clerk's reactive context;
@@ -402,6 +414,12 @@
 
   onDestroy(() => {
     provider?.destroy();
+    // Release this rackspace's Y.Doc + UndoManager so the next mount
+    // (e.g. user navigates to a different rackspace from the dashboard)
+    // starts from a clean slate. If the user re-enters the same
+    // rackspace, the +page.svelte top-level bindRackspace() above re-
+    // creates a fresh doc and the provider re-syncs from the server.
+    unbindRackspace();
   });
 
   async function join() {
@@ -588,12 +606,19 @@
         <UserButton />
       {/if}
     </div>
-    <Canvas
-      currentUserId={data.currentUserId ?? undefined}
-      {provider}
-      {presenceUser}
-      {audioGate}
-    />
+    <!-- {#key data.rackspace.id} forces a full Canvas remount when the
+         user navigates between rackspaces in the same JS context, so
+         every $derived/$effect inside Canvas tears down and reattaches
+         to the freshly-bound `patch`/`ydoc` proxies. Without this the
+         old proxies would dangle and updates wouldn't render. -->
+    {#key data.rackspace.id}
+      <Canvas
+        currentUserId={data.currentUserId ?? undefined}
+        {provider}
+        {presenceUser}
+        {audioGate}
+      />
+    {/key}
     <AudioGate gate={audioGate} />
   </div>
 {:else}
