@@ -159,8 +159,15 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     //         audio-context warm-up delay, CI runner load, and the
     //         60-BPM-but-actually-250-ms-period gotcha that originally
     //         flaked this test (see header comment).
+    // Anchor budget: 5 s = 10× the 500 ms clock period. The prior 1.5 s
+    // budget (3× period) flaked on CI when the audio context warm-up + a
+    // Yjs-transact + main-thread render stall consumed enough of the
+    // first one-or-two windows that the regen counter didn't advance
+    // within the poll. 10× safety is large enough that ONLY a real
+    // "regen stopped advancing" regression would fail. Cadence stays
+    // tight (15 ms) so we anchor within ~one frame of the edge.
     const anchorStart = await readRegenCount(page, 'sg');
-    const anchorDeadline = Date.now() + 1500;
+    const anchorDeadline = Date.now() + 5000;
     let anchored = anchorStart;
     while (Date.now() < anchorDeadline) {
       await page.waitForTimeout(15);
@@ -169,7 +176,7 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     }
     expect(
       anchored,
-      `observed a fresh regen edge to anchor the hold window (start=${anchorStart}, after-poll=${anchored})`,
+      `observed a fresh regen edge to anchor the hold window (start=${anchorStart}, after-poll=${anchored}, budget=5s, period=500ms)`,
     ).toBeGreaterThan(anchorStart);
 
     const hold1a = await readRegenCount(page, 'sg');
