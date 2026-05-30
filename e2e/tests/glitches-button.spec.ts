@@ -16,6 +16,12 @@ import { test, expect, type Page } from '@playwright/test';
 
 test.describe('GLITCHES GET RICHES demo button', () => {
   test('button renders + click loads the patch + picturebox shows glitch.jpg', async ({ page }) => {
+    // The envelope has 5 videoOut nodes + a PICTUREBOX + cross-domain
+    // bridges. Initial engine boot on a contended CI shard now takes
+    // visibly more wall-clock since each FBO is 33% larger (4:3 pipeline).
+    // 30s default is too tight even at the previous 16:9 size; bump to
+    // 60s with safety margin on the nodeCount poll + canvas variance scan.
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(`console.error: ${m.text()}`); });

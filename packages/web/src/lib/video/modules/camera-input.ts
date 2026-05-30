@@ -42,8 +42,9 @@ uniform sampler2D uTex;
 uniform float uHasInput;     // 0 = idle pattern, 1 = sample texture
 uniform float uGain;         // post-multiplier on RGB
 uniform float uMirror;       // 0 = passthrough, 1 = horizontal flip
-// (sx, sy) — UV scale that fits the camera's native aspect into the 16:9
-// FBO without stretching. A 4:3 webcam gets sx<1 (pillarbox left/right).
+// (sx, sy) — UV scale that fits the camera's native aspect into the
+// engine's 4:3 FBO without stretching. Computed adaptively per ctx.res
+// so a 16:9 webcam gets sy<1 (letterbox top/bottom).
 uniform vec2 uLetterbox;
 
 void main() {
@@ -56,7 +57,7 @@ void main() {
     return;
   }
   // Centre + scale the active region so the camera frame keeps its native
-  // aspect inside the 16:9 FBO; outside the active region renders black bars.
+  // aspect inside the FBO; outside the active region renders black bars.
   vec2 centered = (vUv - 0.5) / uLetterbox + 0.5;
   if (centered.x < 0.0 || centered.x > 1.0 || centered.y < 0.0 || centered.y > 1.0) {
     outColor = vec4(0.0, 0.0, 0.0, 1.0);
@@ -283,8 +284,9 @@ export const cameraInputDef: VideoModuleDef = {
         g.uniform1f(uMirror,   params.mirror);
 
         // Aspect-preserving letterbox: fit the camera's native aspect into
-        // the 16:9 FBO so a 4:3 webcam isn't stretched. Defaults to (1,1)
-        // when dimensions are unknown (idle / pre-stream).
+        // the engine FBO (currently 4:3) so a non-4:3 webcam isn't stretched.
+        // Math adapts to ctx.res. Defaults to (1,1) when dimensions are
+        // unknown (idle / pre-stream).
         let lbX = 1.0;
         let lbY = 1.0;
         if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {

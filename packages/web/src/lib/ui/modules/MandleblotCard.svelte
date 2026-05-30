@@ -38,13 +38,13 @@
   };
 
   // Engine render resolution (VIDEO_RES). Used to letterbox the preview
-  // so a 16:9 fractal render fits the card's preview rect without skew.
+  // so a 4:3 fractal render fits the card's preview rect without skew.
   const ENGINE_W = 640;
-  const ENGINE_H = 360;
+  const ENGINE_H = 480;
 
   // Preview canvas — small, fixed. The card stays compact per spec.
   const CANVAS_W = 200;
-  const CANVAS_H = Math.round(CANVAS_W * (ENGINE_H / ENGINE_W)); // 16:9 → 112
+  const CANVAS_H = Math.round(CANVAS_W * (ENGINE_H / ENGINE_W)); // 4:3 → 150
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;

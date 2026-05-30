@@ -46,7 +46,7 @@ test.describe('BENTBOX — CRT-emulation output', () => {
     await expect(canvas, 'BENTBOX canvas mounted').toHaveCount(1);
 
     // Confirm the canvas has a positive size (it's been laid out, not
-    // collapsed). 16:9 letterbox math means width should at least exceed
+    // collapsed). 4:3 letterbox math means width should at least exceed
     // the minimum card-width minus padding.
     const dims = await canvas.evaluate((el) => {
       const c = el as HTMLCanvasElement;
