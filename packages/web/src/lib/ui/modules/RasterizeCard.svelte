@@ -113,7 +113,7 @@
       <canvas
         bind:this={canvasEl}
         width="280"
-        height="158"
+        height="210"
         data-testid="rasterize-canvas"
       ></canvas>
     </div>
