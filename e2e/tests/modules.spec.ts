@@ -31,6 +31,12 @@ const SKIP_RENDER: Record<string, string> = {
   // rendered handle count therefore < def.inputs.length + outputs.
   // Functional coverage: e2e/tests/helm.spec.ts.
   helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
+  // CADILLAC renders as a roaming overlay sprite, NOT as a SvelteFlow
+  // card — Canvas.svelte filters the type out of flowNodes so xyflow
+  // doesn't paint a fallback box at the spawn point. There is no
+  // `.svelte-flow__node-cadillac` to assert against. Functional coverage:
+  // e2e/tests/cadillac.spec.ts (drive + delete + self-destruct).
+  cadillac: 'overlay sprite, not a flow card; covered by e2e/tests/cadillac.spec.ts',
 };
 
 test.describe.configure({ mode: 'parallel' });
