@@ -25,7 +25,7 @@
   //     applied to the card's intrinsic size, so a 1px screen-drag
   //     always == 1px of card growth regardless of zoom.
   //   - The video content scales aspect-fit (letterbox) inside the
-  //     resized card. VideoEngine renders to 640×360 (16:9); we fit
+  //     resized card. VideoEngine renders to 640×480 (4:3); we fit
   //     that into the resized canvas-wrap, leaving black bars on the
   //     short axis.
   //
@@ -59,8 +59,8 @@
   // rendered inside it, so the call always succeeds.
   const flowStore = useStore();
 
-  // Defaults: keep 16:9 aspect, plenty of room to read at the default
-  // zoom level. Stored in node.data so they sync via Y.Doc.
+  // Defaults: card-size defaults (engine 4:3 output aspect-fits inside).
+  // Stored in node.data so they sync via Y.Doc.
   const DEFAULT_WIDTH = 360;
   const DEFAULT_HEIGHT = 240;
   const MIN_WIDTH = 240;
@@ -70,7 +70,7 @@
   // need to import the engine module just for this constant (it
   // pulls in WebGL boot code).
   const ENGINE_W = 640;
-  const ENGINE_H = 360;
+  const ENGINE_H = 480;
 
   let cardWidth = $derived<number>(
     (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,
@@ -433,7 +433,7 @@
     border-radius: 0;
     width: 100%;
     height: 100%;
-    /* contain so the 16:9 source is never cropped; black letterbox bars
+    /* contain so the engine source is never cropped; black letterbox bars
      * on the short axis. */
     object-fit: contain;
   }

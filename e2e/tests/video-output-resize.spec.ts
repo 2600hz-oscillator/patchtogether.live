@@ -75,7 +75,7 @@ test.describe('OUTPUT card — corner-drag resize', () => {
     expect(errors).toEqual([]);
   });
 
-  test('inner canvas keeps aspect-fit after resize (16:9)', async ({ page }) => {
+  test('inner canvas keeps aspect-fit after resize (engine 4:3)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -104,7 +104,7 @@ test.describe('OUTPUT card — corner-drag resize', () => {
     const inner = await page.evaluate(() => {
       const c = document.querySelector('canvas[data-testid="video-out-canvas"]') as HTMLCanvasElement | null;
       if (!c) return null;
-      // The aspect inside the card should be 16:9 (engine resolution),
+      // The aspect inside the card should be 4:3 (engine resolution),
       // but the canvas-wrap simply takes (width - PAD, height - HEADER).
       // We check it's CLOSE to that size and not collapsed to 0.
       return { width: c.width, height: c.height };
