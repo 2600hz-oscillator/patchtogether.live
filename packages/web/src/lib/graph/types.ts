@@ -470,6 +470,12 @@ type StandardModuleType =
   // advances that selector on each rising edge (1→2→3→4→1). Audio + cv both
   // route identically through the shared Web Audio substrate.
   | 'fourplexer'
+  // SIDECAR — stereo sidechain compressor. Stereo audio in, dedicated SC
+  // pair (HPF-filterable on the detector path only), CV-modulatable
+  // threshold + envMag, and two CV-shaped env outs (env_out + env_inv_out)
+  // for cross-patch ducking. env_out has NO hard clamp — at envMag>1 the
+  // output overshoots 1.0 (documented contract for downstream modules).
+  | 'sidecar'
   // SCOREBOARD — 4-digit neon 7-segment counter widget (video domain).
   // SCORE gate input → counter += 1 on rising edge; RESET gate → 0.
   // Counter wraps at 10000. One colour-wheel knob for the lit-segment hue.

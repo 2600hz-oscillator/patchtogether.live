@@ -199,6 +199,8 @@
   import CocoaDelayCard from '$lib/ui/modules/CocoaDelayCard.svelte';
   // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
   import ResofilterCard from '$lib/ui/modules/ResofilterCard.svelte';
+  // SIDECAR — stereo sidechain compressor (GMR 2012 topology).
+  import SidecarCard from '$lib/ui/modules/SidecarCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
@@ -487,6 +489,8 @@
     cocoadelay: CocoaDelayCard,
     // RESOFILTER — Resonarium MultiFilter port (5 modes, named-mode label).
     resofilter: ResofilterCard,
+    // SIDECAR — stereo sidechain compressor (GMR 2012; Faust co.compressor_stereo).
+    sidecar: SidecarCard,
     // DOOM — single-instance interactive video module.
     doom: DoomCard,
     // NIBBLES — QBasic Nibbles snake game module.
