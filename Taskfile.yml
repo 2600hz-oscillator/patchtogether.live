@@ -140,6 +140,19 @@ tasks:
     cmds:
       - npm test -w {{.SERVER}}
       - npm test -w {{.WEB}}
+      - task: test:scripts
+
+  test:scripts:
+    desc: Run repo-root scripts/ tests (scaffolder + future repo-wide tooling)
+    # Uses vitest.scripts.config.ts (include: scripts/**/*.test.ts). The
+    # scaffolder mutates real registry files + then undoes — single-fork
+    # so tests don't race.
+    #
+    # NOTE: config file is NOT named vitest.config.ts on purpose — per-package
+    # `vitest run` would auto-discover it and shadow the package's own config,
+    # breaking `npm test -w packages/server`. See vitest.scripts.config.ts.
+    cmds:
+      - npx vitest run --config vitest.scripts.config.ts
 
   test:emit-manifest:
     desc: Refresh e2e/.generated/registry-manifest.json without running the full unit suite
