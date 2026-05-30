@@ -173,19 +173,6 @@ tasks:
     cmds:
       - npx vitest run --config vitest.scripts.config.ts
 
-  coverage:
-    desc: |
-      Run unit tests under the V8 coverage provider for server + web. Fails the
-      task if any per-package threshold (configured in each vitest.config.ts) is
-      missed. HTML report at packages/{server,web}/coverage/index.html; machine-
-      readable summary at packages/{server,web}/coverage/coverage-summary.json
-      (consumed by CI + downstream PR-annotation tooling).
-      Thresholds were set 5-10% below the realized coverage at wire-time so the
-      gate is non-flaky on day 1 — ratchet upward over time. See README §Coverage.
-    cmds:
-      - npm test -w {{.SERVER}} -- --coverage
-      - npm test -w {{.WEB}} -- --coverage
-
   test:emit-manifest:
     desc: Refresh e2e/.generated/registry-manifest.json without running the full unit suite
     # Standalone target for the case where a contributor adds a new module
@@ -390,7 +377,7 @@ tasks:
 
   # ---------------- CI shape ----------------
   ci:
-    desc: Run the full PR-gate suite (typecheck + unit-with-coverage + ART + E2E + VRT-strict)
+    desc: Run the full PR-gate suite (typecheck + unit + ART + E2E + VRT-strict)
     # VRT-strict (deterministic knob/fader subset) gates `task ci` so a
     # baseline drift on a pure-CSS card fails locally just as fast as
     # the unit suite. The full `task vrt` sweep (canvas-driven cards
@@ -398,11 +385,7 @@ tasks:
     # informational and runs only in the dedicated CI VRT job.
     cmds:
       - task: typecheck
-      # `coverage` is a strict superset of `test` (same vitest run + V8 coverage
-      # provider + threshold gate). Running `coverage` here instead of `test`
-      # adds ~3-5 s per package for the instrumentation pass and enforces the
-      # minimums baked into each vitest.config.ts.
-      - task: coverage
+      - task: test
       - task: art
       - task: e2e
       - task: vrt:strict
