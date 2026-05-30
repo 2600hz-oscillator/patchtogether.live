@@ -26,6 +26,99 @@ flox activate -- task server:dev   # ws://localhost:1235  (1234 = BitwigStudio O
 
 If you stay inside one `flox activate` shell, drop the `flox activate --` prefix.
 
+## Run locally as a standalone demo (no network)
+
+The public canvas at `/` is architected so it boots with no network
+dependency: SvelteKit serves it from your localhost dev server, all 30
+audio + 15 video modules render in-process (Web Audio + WebGL2), and the
+runtime-fetched assets (wavetable WAVs, TR-808 samples, glitch image,
+SM64 bundle) ship inside the repo under `packages/web/static/`. Use it as
+a fallback demo path when you're offline.
+
+### One-time prep (while you're still online)
+
+You'll need Flox and `npm` installed before you go offline:
+
+```bash
+# Flox — https://flox.dev/docs/install-flox/
+curl -L https://downloads.flox.dev/by-env/stable/osx/flox.pkg -o /tmp/flox.pkg && sudo installer -pkg /tmp/flox.pkg -target /
+# npm comes with the Node 22 that Flox activates; nothing extra to install here.
+```
+
+Then clone + warm the toolchain + pre-build the DSP + fetch the optional
+DOOM shareware WAD in one shot:
+
+```bash
+git clone https://github.com/2600hz-oscillator/patchtogether.live.git
+cd patchtogether.live
+flox activate -- task setup:standalone
+```
+
+`setup:standalone` runs `npm install` (lockfile-pinned, so subsequent runs
+are offline-safe), builds the Faust + TS DSP worklets to
+`packages/dsp/dist/`, and best-effort downloads `DOOM1.WAD` to
+`packages/web/static/doom/`. Optional: while still online, run
+`bash packages/web/native/build-doom-wasm.sh` to compile the DOOM WASM
+runtime (requires `emcc` on PATH — see the script header for the
+Emscripten install link).
+
+### Going offline
+
+Disconnect the network, then:
+
+```bash
+flox activate -- task dev
+```
+
+Open <http://localhost:5173/> in any modern browser. The canvas loads,
+the module palette lists every registered module, audio + video engines
+spin up, and patches make sound.
+
+### What you can + can't do offline
+
+Works offline (single-machine, single-user):
+
+- Spawning any of the 30 audio / 15 video modules from the palette
+- Patching cables, including the cross-domain CV bridge
+- Saving + loading patches via "Save Perf" / "Load Perf" (browser local storage)
+- Loading any of the bundled example patches
+- Switching to most skins (the default skin uses local fonts)
+- SM64 + DOOM modules — once their assets are present (see prep above);
+  DOOM also needs a ROM-less but local `DOOM1.WAD`.
+
+Doesn't work offline (visible but harmlessly inert):
+
+- The "Sign in" link routes to `/dashboard`, which returns 503 with a
+  clear "Auth not configured" message. Same for `/sign-in`, `/sign-up`,
+  `/r/[id]` (multiplayer rooms), and `/api/saved-groups`. Clicking
+  these does nothing destructive — you stay on the public canvas.
+- Multiplayer (Yjs sync over Hocuspocus) — the public canvas at `/`
+  never attaches a network provider, so this is silently absent rather
+  than retry-spamming the console.
+- A handful of optional skins (LCARS, MATRIXCOWBOY, DINER, VINTAGE)
+  pull their display font from `fonts.googleapis.com`. Offline they
+  fall back to the system monospace; the rest of the skin still
+  applies. Default skin uses only locally-bundled fonts.
+
+### Troubleshooting
+
+- **Browser shows a blank page**: confirm the dev server printed
+  `Local: http://localhost:5173/` and that you haven't pointed at a
+  different port. SvelteKit's client runtime is served by the dev
+  server itself; if vite isn't up, the page is blank.
+- **A module spawns but shows a "asset not found" overlay**: the
+  underlying asset is missing from `packages/web/static/`. For DOOM:
+  run `setup:standalone` while online, or follow
+  `packages/web/static/doom/DOWNLOAD_INSTRUCTIONS.md` manually. For
+  SM64: the bundle is LFS-tracked at
+  `packages/web/static/sm64js/sm64js.bundle.js`; re-run `git lfs pull`
+  while online if it's still a pointer.
+- **Console warns about a failed WebSocket / `wss://...`**: only
+  happens on `/r/[id]`, which you can't reach offline anyway. The
+  public canvas at `/` doesn't open a WebSocket at all.
+- **"Cross-origin-isolated" appears `false`**: a third-party browser
+  extension is stripping COOP/COEP headers. Try an Incognito window.
+
 ## Stack
 
 - **Web** — SvelteKit 2 / Svelte 5 on Cloudflare Pages (Workers runtime). Canvas built on `@xyflow/svelte`.

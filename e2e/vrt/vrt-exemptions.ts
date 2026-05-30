@@ -176,6 +176,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // surface beyond what VEILS already exercises; baseline can be promoted
   // in a follow-up. Same rationale as VEILS.
   attenumix: 'VRT baseline pending; ART + unit + E2E provide coverage',
+  // SIDECAR stereo sidechain compressor: VRT baseline pending; standard
+  // 8-knob fader card + standard PatchPanel — no unique visual surface
+  // beyond what RESOFILTER / ATTENUMIX already exercise. ART + unit +
+  // E2E provide full DSP + behavior coverage. Promote into MODULES +
+  // capture darwin/linux baselines in a follow-up PR.
+  sidecar: 'VRT baseline pending; standard 8-knob card; ART + unit + E2E provide coverage',
   // CLOUDSEED first-slice PR: VRT baseline pending; complex card (4 panels
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.

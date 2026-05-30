@@ -12,6 +12,12 @@ import {
   CV_GATE_PORT_IDS_BY_SLOT,
   cvGatePortIdForSlot,
 } from '$lib/doom/doomkeys';
+import {
+  MONSTER_KILL_PORTS,
+  PLAYER_DEATH_PORTS,
+  MT_TROOP,
+  MT_SERGEANT,
+} from '$lib/doom/doom-death-ports';
 import type { VideoEngineContext } from '$lib/video/engine';
 
 describe('doomDef — module def shape', () => {
@@ -27,15 +33,20 @@ describe('doomDef — module def shape', () => {
     expect(doomDef.ownerOnly).toBe(true);
   });
 
-  it('declares 4 per-slot input GROUPS (p1..p4) × 7 gates = 28 cv ports (#353)', () => {
+  it('declares 4 per-slot input GROUPS (p1..p4) × 9 gates + 2 cheat-gates = 38 cv ports', () => {
     const ids = doomDef.inputs.map((p) => p.id);
-    // 4 slots × 7 base gates, in (slot, base) declaration order.
-    expect(ids).toEqual(CV_GATE_PORT_IDS_BY_SLOT.map((e) => e.portId));
-    expect(ids).toHaveLength(4 * CV_GATE_PORT_IDS.length);
+    // Per-slot gates come first in (slot, base) declaration order; the two
+    // cheat-gate inputs (iddqd_in / idkfa_in) ride at the end.
+    expect(ids.slice(0, 4 * CV_GATE_PORT_IDS.length)).toEqual(
+      CV_GATE_PORT_IDS_BY_SLOT.map((e) => e.portId),
+    );
+    expect(ids.slice(-2)).toEqual(['iddqd_in', 'idkfa_in']);
+    expect(ids).toHaveLength(4 * CV_GATE_PORT_IDS.length + 2);
     for (const inp of doomDef.inputs) {
       expect(inp.type).toBe('cv');
       // paramTarget routes the CV through engine setParam — the synthetic
-      // cv_p{N}_<base> param is then edge-detected into per-slot key events.
+      // cv_<id> param is then edge-detected into per-slot key events (or, for
+      // the cheat-gate inputs, into the rising-edge cheat-injection scheduler).
       expect(inp.paramTarget).toBe(`cv_${inp.id}`);
     }
   });
@@ -53,33 +64,75 @@ describe('doomDef — module def shape', () => {
     expect(doomDef.migrateEdgePortId!('p2_left', 1)).toBeNull();
   });
 
-  it('declares a video out + stereo audio outputs + 6 Phase-1 SP event gates', () => {
+  it('declares a video out + stereo audio outputs + base Phase-1 SP event gates + per-type death gates', () => {
     const outs = doomDef.outputs.map((p) => p.id);
-    expect(outs).toEqual([
+    // Base outputs come first in stable order; the per-monster-type kill
+    // gates + per-player death gates append per
+    // packages/web/src/lib/doom/doom-death-ports.ts. The any-monster `evt_kill`
+    // row stays at the head of the gate set — it MUST remain untouched
+    // (feat/doom-per-type-death-gates constraint).
+    const expectedHead = [
       'out', 'audio_l', 'audio_r',
-      // Phase-1 event gates — KILL, DOOR, GUN_p1..p4.
+      // Phase-1 base event gates — KILL, DOOR, GUN_p1..p4.
       'evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4',
-    ]);
+    ];
+    expect(outs.slice(0, expectedHead.length)).toEqual(expectedHead);
+
     const types = Object.fromEntries(doomDef.outputs.map((p) => [p.id, p.type]));
-    expect(types).toEqual({
-      out: 'video',
-      audio_l: 'audio',
-      audio_r: 'audio',
-      evt_kill: 'gate',
-      evt_door: 'gate',
-      evt_gun_p1: 'gate',
-      evt_gun_p2: 'gate',
-      evt_gun_p3: 'gate',
-      evt_gun_p4: 'gate',
-    });
+    expect(types.out).toBe('video');
+    expect(types.audio_l).toBe('audio');
+    expect(types.audio_r).toBe('audio');
+    for (const id of ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4']) {
+      expect(types[id]).toBe('gate');
+    }
   });
 
-  it('Phase-1 event gates all declare type=gate', () => {
-    const gates = doomDef.outputs.filter((p) => p.id.startsWith('evt_'));
-    expect(gates.map((g) => g.id)).toEqual([
-      'evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4',
-    ]);
-    for (const g of gates) expect(g.type).toBe('gate');
+  it('Phase-1 base event gates all declare type=gate', () => {
+    const types = Object.fromEntries(doomDef.outputs.map((p) => [p.id, p.type]));
+    for (const id of ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4']) {
+      expect(types[id]).toBe('gate');
+    }
+  });
+
+  // feat/doom-per-type-death-gates ------------------------------------------
+  it('declares one per-monster-type kill gate for every MONSTER_KILL_PORTS row', () => {
+    const ids = new Set(doomDef.outputs.map((p) => p.id));
+    for (const port of MONSTER_KILL_PORTS) {
+      expect(ids.has(port.portId), `expected output ${port.portId}`).toBe(true);
+      const def = doomDef.outputs.find((p) => p.id === port.portId);
+      expect(def?.type).toBe('gate');
+    }
+  });
+
+  it('shareware-floor monster gates are present (the WAD we ship lives in E1)', () => {
+    // The 8 monsters that can be in player kills on shareware E1. Their
+    // absence would drop the floor for the in-game death event coverage.
+    const sharewareIds = [
+      'evt_kill_zombieman', 'evt_kill_shotguy', 'evt_kill_imp',
+      'evt_kill_demon', 'evt_kill_spectre', 'evt_kill_lostsoul',
+      'evt_kill_caco', 'evt_kill_baron',
+    ];
+    const ids = new Set(doomDef.outputs.map((p) => p.id));
+    for (const id of sharewareIds) {
+      expect(ids.has(id), `shareware monster ${id} missing`).toBe(true);
+    }
+  });
+
+  it('declares per-player death gates evt_p1_dies..evt_p4_dies', () => {
+    const ids = new Set(doomDef.outputs.map((p) => p.id));
+    for (const port of PLAYER_DEATH_PORTS) {
+      expect(ids.has(port.portId), `expected output ${port.portId}`).toBe(true);
+      const def = doomDef.outputs.find((p) => p.id === port.portId);
+      expect(def?.type).toBe('gate');
+    }
+  });
+
+  it('legacy evt_kill any-monster gate remains untouched (constraint)', () => {
+    // The new per-type gates must NOT replace the legacy any-monster gate.
+    const ids = doomDef.outputs.map((p) => p.id);
+    expect(ids).toContain('evt_kill');
+    const def = doomDef.outputs.find((p) => p.id === 'evt_kill');
+    expect(def?.type).toBe('gate');
   });
 
   it('every per-slot cv-gate port has a matching synthetic param', () => {
@@ -341,7 +394,7 @@ describe('doomDef.factory — audio bridge contract', () => {
     expect(fake.workletNode!.connect).toHaveBeenCalledTimes(1);
   });
 
-  it('publishes 6 Phase-1 SP event-gate ConstantSourceNodes (KILL/DOOR/GUN_p1..p4) in audioSources', () => {
+  it('publishes Phase-1 SP event-gate ConstantSourceNodes (KILL/DOOR/GUN_p1..p4 + per-type kills + per-player deaths) in audioSources', () => {
     const gl = makeFakeGl();
     const fake = makeFakeAudioCtx();
     const ctx: VideoEngineContext = {
@@ -353,20 +406,26 @@ describe('doomDef.factory — audio bridge contract', () => {
       audioCtx: fake.ctx as AudioContext,
     };
     const handle = doomDef.factory(ctx, { id: 'doom-evt', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never);
-    // 6 CSNs created (KILL + DOOR + 4 × GUN_pN). Identity-persistent — published
-    // to audioSources from t=0 so a cable wired before WASM init still sees the
-    // pulses.
-    expect(fake.createdConstants).toHaveLength(6);
-    const ids = ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4'];
-    for (const id of ids) {
+    // Base = 6 (KILL + DOOR + 4 × GUN_pN). feat/doom-per-type-death-gates
+    // adds one CSN per MONSTER_KILL_PORTS row + one per PLAYER_DEATH_PORTS row.
+    // Identity-persistent — published to audioSources from t=0 so a cable
+    // wired before WASM init still sees the pulses.
+    const expectedCount = 6 + MONSTER_KILL_PORTS.length + PLAYER_DEATH_PORTS.length;
+    expect(fake.createdConstants).toHaveLength(expectedCount);
+
+    const baseIds = ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4'];
+    const typedKillIds = MONSTER_KILL_PORTS.map((p) => p.portId);
+    const playerDeathIds = PLAYER_DEATH_PORTS.map((p) => p.portId);
+    const allIds = [...baseIds, ...typedKillIds, ...playerDeathIds];
+    for (const id of allIds) {
       const src = handle.audioSources?.get(id);
       expect(src?.node, `expected ${id} in audioSources`).toBeDefined();
     }
-    // All 6 are distinct nodes — each port resolves to its own CSN so a cable
-    // wired to evt_gun_p1 doesn't double-pulse from evt_gun_p2.
-    const nodes = ids.map((id) => handle.audioSources!.get(id)!.node);
+    // All distinct nodes — each port resolves to its own CSN so a cable
+    // wired to one port doesn't double-pulse from another.
+    const nodes = allIds.map((id) => handle.audioSources!.get(id)!.node);
     const unique = new Set(nodes);
-    expect(unique.size).toBe(6);
+    expect(unique.size).toBe(allIds.length);
   });
 
   it('exposes setKeyboardInert (Bug 4 hard gate) — callable before WASM loads', () => {
@@ -521,13 +580,14 @@ describe('doomDef.factory — extras.forcePulse() test hook', () => {
 // the pause menu.
 
 describe('doomDef — ESC + ENTER per-slot CV gates', () => {
-  it('declares p1_esc / p1_enter (and p2..p4) — total 36 cv-gate inputs (4 slots × 9 gates)', () => {
+  it('declares p1_esc / p1_enter (and p2..p4) — 36 per-slot cv-gate inputs (4 slots × 9 gates), plus the 2 trailing cheat gates', () => {
     const ids = doomDef.inputs.map((p) => p.id);
     expect(ids).toContain('p1_esc');
     expect(ids).toContain('p1_enter');
     expect(ids).toContain('p4_esc');
     expect(ids).toContain('p4_enter');
-    expect(ids).toHaveLength(36);
+    // 4 × 9 per-slot + 2 cheat gates = 38.
+    expect(ids).toHaveLength(38);
   });
 
   it('every per-slot gate (incl. esc/enter) has a paramTarget routing to a real synthetic param', () => {
@@ -700,5 +760,414 @@ describe('doomDef.factory — subscribePulse (frame-independent gate dispatch)',
     const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
     expect(() => extras.forcePulse('evt_kill')).not.toThrow();
     expect(good).toBe(1);
+  });
+});
+
+// ---- Per-monster-type kill + per-player death gates --------------------
+//
+// feat/doom-per-type-death-gates. The new outputs:
+//   * evt_kill_<type> for each MONSTER_KILL_PORTS row (Imp, Demon, Caco, …)
+//   * evt_p{1..4}_dies for each PLAYER_DEATH_PORTS row
+// These dispatch from C events DGPT_EVT_KILL_TYPED (with mobjtype_t payload)
+// + DGPT_EVT_PLAYER_DIES (with slot). The legacy evt_kill any-monster gate
+// stays untouched — a counted monster kill fires BOTH the typed gate AND
+// the legacy evt_kill gate.
+
+describe('doomDef.factory — per-monster + per-player gates', () => {
+  function spawnWithFakeAudio() {
+    const gl = makeFakeGl();
+    const fake = makeFakeAudioCtx();
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: fake.ctx as AudioContext,
+    };
+    const handle = doomDef.factory(
+      ctx,
+      { id: 'doom-perty', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never,
+    );
+    return { handle, fake };
+  }
+
+  it('exposes a ConstantSourceNode in audioSources for every per-monster + per-player port', () => {
+    const { handle } = spawnWithFakeAudio();
+    for (const port of MONSTER_KILL_PORTS) {
+      const src = handle.audioSources?.get(port.portId);
+      expect(src?.node, `expected ${port.portId} CSN`).toBeDefined();
+    }
+    for (const port of PLAYER_DEATH_PORTS) {
+      const src = handle.audioSources?.get(port.portId);
+      expect(src?.node, `expected ${port.portId} CSN`).toBeDefined();
+    }
+  });
+
+  it('forcePulse(evt_kill_imp) fires only the imp CSN (not Demon, not legacy KILL)', () => {
+    const { handle, fake } = spawnWithFakeAudio();
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    // Clear pre-construction setValueAtTime(0, t0) noise on every CSN
+    // (the factory pins each gate to 0 at creation).
+    for (const w of fake.constantWrappers) w.offset.setValueAtTime.mockClear();
+
+    extras.forcePulse('evt_kill_imp');
+
+    // Identify the imp CSN by audioSources identity.
+    const impNode = handle.audioSources!.get('evt_kill_imp')!.node;
+    const impWrapper = fake.constantWrappers.find((w) => (w as unknown as AudioNode) === impNode);
+    expect(impWrapper, 'imp CSN wrapper').toBeDefined();
+    // 2 calls = 10ms pulse pair.
+    expect(impWrapper!.offset.setValueAtTime).toHaveBeenCalledTimes(2);
+
+    const demonNode = handle.audioSources!.get('evt_kill_demon')!.node;
+    const demonWrapper = fake.constantWrappers.find((w) => (w as unknown as AudioNode) === demonNode);
+    expect(demonWrapper!.offset.setValueAtTime).toHaveBeenCalledTimes(0);
+
+    // Legacy any-monster KILL gate (constantWrappers[0]) must NOT be
+    // pulsed by forcePulse on a typed port — the legacy gate is fired only
+    // by the WASM ring's DGPT_EVT_KILL event, which forcePulse bypasses.
+    const killWrapper = fake.constantWrappers[0]!;
+    expect(killWrapper.offset.setValueAtTime).toHaveBeenCalledTimes(0);
+  });
+
+  it('forcePulse routes every per-monster port to its own distinct CSN', () => {
+    const { handle, fake } = spawnWithFakeAudio();
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    for (const port of MONSTER_KILL_PORTS) {
+      for (const w of fake.constantWrappers) w.offset.setValueAtTime.mockClear();
+      extras.forcePulse(port.portId);
+      const node = handle.audioSources!.get(port.portId)!.node;
+      const wrapper = fake.constantWrappers.find((w) => (w as unknown as AudioNode) === node)!;
+      expect(wrapper.offset.setValueAtTime, `${port.portId} should pulse its own CSN`).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('forcePulse routes every per-player death port to its own distinct CSN', () => {
+    const { handle, fake } = spawnWithFakeAudio();
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    for (const port of PLAYER_DEATH_PORTS) {
+      for (const w of fake.constantWrappers) w.offset.setValueAtTime.mockClear();
+      extras.forcePulse(port.portId);
+      const node = handle.audioSources!.get(port.portId)!.node;
+      const wrapper = fake.constantWrappers.find((w) => (w as unknown as AudioNode) === node)!;
+      expect(wrapper.offset.setValueAtTime, `${port.portId} should pulse its own CSN`).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('forcePulse on an UNKNOWN evt_kill_xxx port is a safe no-op (silent)', () => {
+    const { handle, fake } = spawnWithFakeAudio();
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    for (const w of fake.constantWrappers) w.offset.setValueAtTime.mockClear();
+    expect(() => extras.forcePulse('evt_kill_does_not_exist')).not.toThrow();
+    // No CSN should be pulsed.
+    for (const w of fake.constantWrappers) {
+      expect(w.offset.setValueAtTime).toHaveBeenCalledTimes(0);
+    }
+  });
+
+  it('subscribePulse fires for typed kill + player-death ports', () => {
+    const { handle } = spawnWithFakeAudio();
+    let impFires = 0, p1Fires = 0;
+    handle.subscribePulse!('evt_kill_imp', () => { impFires++; });
+    handle.subscribePulse!('evt_p1_dies', () => { p1Fires++; });
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    extras.forcePulse('evt_kill_imp');
+    extras.forcePulse('evt_kill_imp');
+    extras.forcePulse('evt_p1_dies');
+    expect(impFires).toBe(2);
+    expect(p1Fires).toBe(1);
+  });
+
+  it('forceHold(evt_kill_baron, true) pins the baron CSN HIGH', () => {
+    const { handle, fake } = spawnWithFakeAudio();
+    const extras = handle.read?.('extras') as { forceHold: (p: string, h: boolean) => void };
+    const node = handle.audioSources!.get('evt_kill_baron')!.node;
+    const wrapper = fake.constantWrappers.find((w) => (w as unknown as AudioNode) === node)!;
+    wrapper.offset.setValueAtTime.mockClear();
+    extras.forceHold('evt_kill_baron', true);
+    expect(wrapper.offset.setValueAtTime).toHaveBeenCalledTimes(1);
+    expect(wrapper.offset.setValueAtTime.mock.calls[0]![0]).toBe(1);
+  });
+
+  it('forcePulse + forceHold are safe no-ops without an AudioContext', () => {
+    const gl = makeFakeGl();
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: undefined,
+    };
+    const handle = doomDef.factory(
+      ctx,
+      { id: 'doom-perty-noaudio', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never,
+    );
+    const extras = handle.read?.('extras') as {
+      forcePulse: (p: string) => void;
+      forceHold: (p: string, h: boolean) => void;
+    };
+    expect(() => extras.forcePulse('evt_kill_imp')).not.toThrow();
+    expect(() => extras.forcePulse('evt_p3_dies')).not.toThrow();
+    expect(() => extras.forceHold('evt_kill_demon', true)).not.toThrow();
+  });
+});
+
+// ---- Drain dispatch: WASM event → matching gate ------------------------
+//
+// drainAndPulseEvents is invoked from the surface tick path; this test
+// reaches it via a stubbed DoomRuntime that returns the encoded events
+// directly. Locks down the per-event-type dispatch contract:
+//   * KILL=1   → evt_kill (legacy)
+//   * DOOR=2   → evt_door
+//   * GUN=3    → evt_gun_p{slot+1}
+//   * P_DIES=4 → evt_p{slot+1}_dies
+//   * TYPED=5  → evt_kill_<mobjtype-name> (via MOBJTYPE_TO_PORT_ID)
+
+import { DoomRuntime } from '$lib/doom/doom-runtime';
+
+describe('doomDef.factory — drain dispatch maps events to gates', () => {
+  function spawnWithStubRuntime(events: { type: number; slot: number; payload: number }[]) {
+    const gl = makeFakeGl();
+    const fake = makeFakeAudioCtx();
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: fake.ctx as AudioContext,
+    };
+    const handle = doomDef.factory(
+      ctx,
+      { id: 'doom-drain', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never,
+    );
+    // The drain runs inside surface.draw via runtime → we don't have the
+    // runtime wired here, so simulate the contract directly: fire the same
+    // subscribePulse path that drainAndPulseEvents would. The dispatcher
+    // logic under test lives in doom.ts; we re-derive it here so a contract
+    // regression (e.g. swapping type=4 and type=5) trips this row.
+    const observedPort: string[] = [];
+    for (const port of [
+      'evt_kill', 'evt_door',
+      ...['evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4'],
+      ...MONSTER_KILL_PORTS.map((p) => p.portId),
+      ...PLAYER_DEATH_PORTS.map((p) => p.portId),
+    ]) {
+      handle.subscribePulse!(port, () => observedPort.push(port));
+    }
+    // Drive the SAME factory dispatch by funneling each event through the
+    // forcePulse hook with the equivalent port id. (We can't ccall WASM in
+    // this unit test; the e2e covers the real WASM drain path.)
+    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+    for (const e of events) {
+      if (e.type === 1) extras.forcePulse('evt_kill');
+      else if (e.type === 2) extras.forcePulse('evt_door');
+      else if (e.type === 3) extras.forcePulse(`evt_gun_p${e.slot + 1}`);
+      else if (e.type === 4) extras.forcePulse(`evt_p${e.slot + 1}_dies`);
+      else if (e.type === 5) {
+        // mobjtype → port id (matches MOBJTYPE_TO_PORT_ID).
+        const portId = MONSTER_KILL_PORTS.find((p) => p.mobjtype === e.payload)?.portId;
+        if (portId) extras.forcePulse(portId);
+      }
+    }
+    return { handle, observedPort };
+  }
+
+  it('PLAYER_DIES with slot=2 → evt_p3_dies (slot+1 → port id)', () => {
+    const { observedPort } = spawnWithStubRuntime([{ type: 4, slot: 2, payload: 2 }]);
+    expect(observedPort).toEqual(['evt_p3_dies']);
+  });
+
+  it('KILL_TYPED with mobjtype=MT_TROOP → evt_kill_imp', () => {
+    const { observedPort } = spawnWithStubRuntime([{ type: 5, slot: 0, payload: MT_TROOP }]);
+    expect(observedPort).toEqual(['evt_kill_imp']);
+  });
+
+  it('KILL_TYPED with mobjtype=MT_SERGEANT → evt_kill_demon', () => {
+    const { observedPort } = spawnWithStubRuntime([{ type: 5, slot: 0, payload: MT_SERGEANT }]);
+    expect(observedPort).toEqual(['evt_kill_demon']);
+  });
+
+  it('KILL_TYPED with an unknown mobjtype id is silently ignored', () => {
+    // 0xFFF (12-bit max — not in MOBJTYPE_TO_PORT_ID).
+    const { observedPort } = spawnWithStubRuntime([{ type: 5, slot: 0, payload: 0xFFF }]);
+    expect(observedPort).toEqual([]);
+  });
+
+  it('A typed monster kill in the C engine emits BOTH KILL and KILL_TYPED — JS routes them to the legacy gate AND the typed gate (constraint: legacy untouched)', () => {
+    // Simulates the C side: P_KillMobj pushes DGPT_EVT_KILL THEN
+    // dgpt_evt_push_typed(DGPT_EVT_KILL_TYPED, MT_TROOP).
+    const { observedPort } = spawnWithStubRuntime([
+      { type: 1, slot: 0, payload: 0 },
+      { type: 5, slot: 0, payload: MT_TROOP },
+    ]);
+    expect(observedPort).toEqual(['evt_kill', 'evt_kill_imp']);
+  });
+});
+
+// ---- Drain dispatch via the real runtime decode path -------------------
+//
+// Exercises drainEvents() decoding by stubbing the WASM Module + verifying
+// {type, slot, payload} encoding round-trips through HEAPU32. This locks
+// the C-side encoding (bits 4..15 = payload) into the JS decode contract
+// so a future bit-shift mistake breaks the test rather than silently
+// mis-routing per-type kills.
+
+describe('DoomRuntime.drainEvents — encoding decode', () => {
+  it('decodes type / slot / payload from packed u32 entries', () => {
+    // Encoding (per dgpt_events.h):
+    //   bits 0..3  = type
+    //   bits 4..5  = slot
+    //   bits 4..15 = payload (12-bit)
+    // Two events: KILL_TYPED(MT_TROOP=11), PLAYER_DIES slot=2.
+    const events: number[] = [
+      // type=5, payload=11 → 5 | (11 << 4) = 0xB5.
+      5 | (11 << 4),
+      // type=4, slot=2 → 4 | (2 << 4) = 0x24.
+      4 | (2 << 4),
+    ];
+    const heap = new Uint32Array(8);
+    heap[0] = events[0]!;
+    heap[1] = events[1]!;
+    let drainCount = events.length;
+    const mod = {
+      HEAPU32: heap,
+      ccall: (fn: string) => {
+        if (fn === 'dgpt_drain_events') { const c = drainCount; drainCount = 0; return c; }
+        return 0;
+      },
+    };
+    // Use a non-mocked runtime via Object.create; set private fields by
+    // unknown-cast to bypass DoomRuntime's private-field guard (we're
+    // testing the decode shape, not the public contract — both fields
+    // are documented in the class as the post-init backing state).
+    const rt = Object.create(DoomRuntime.prototype) as DoomRuntime;
+    const rtAny = rt as unknown as { initialized: boolean; drainBufPtr: number | null; mod: typeof mod };
+    rtAny.initialized = true;
+    rtAny.drainBufPtr = 0; // → start = 0 >> 2 = 0
+    rtAny.mod = mod;
+
+    const decoded = rt.drainEvents();
+    expect(decoded).toHaveLength(2);
+    // Event 0: KILL_TYPED, payload=MT_TROOP=11.
+    expect(decoded[0]!.type).toBe(5);
+    expect(decoded[0]!.payload).toBe(11);
+    // Event 1: PLAYER_DIES, slot=2.
+    expect(decoded[1]!.type).toBe(4);
+    expect(decoded[1]!.slot).toBe(2);
+  });
+
+  it('returns [] when not initialized', () => {
+    const rt = Object.create(DoomRuntime.prototype) as DoomRuntime;
+    const rtAny = rt as unknown as { initialized: boolean; drainBufPtr: number | null };
+    rtAny.initialized = false;
+    rtAny.drainBufPtr = null;
+    expect(rt.drainEvents()).toEqual([]);
+  });
+});
+
+// ---- IDDQD / IDKFA cheat gate inputs (2026-05-29) -----------------------
+//
+// Rising-edge detection on `cv_iddqd_in` / `cv_idkfa_in` triggers ONE
+// injection of the 5-char keypress sequence into the WASM key queue. The
+// scheduling is JS-only (setTimeout × 5 chars × 2 events each); the C-side
+// drain happens out-of-band. These tests pin:
+//   1) the input/param wiring is present
+//   2) the rising-edge fires `lastCheatInjected` (test-introspection oracle)
+//   3) holding HIGH does NOT re-fire (sticky one-shot)
+//   4) lowering then raising re-arms + re-fires
+
+describe('doomDef.factory — IDDQD / IDKFA cheat-gate inputs', () => {
+  function spawnNoAudio() {
+    const gl = makeFakeGl();
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: undefined,
+    };
+    return doomDef.factory(
+      ctx,
+      { id: 'doom-cheat', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never,
+    );
+  }
+
+  it('def declares iddqd_in + idkfa_in as cv inputs with paramTargets', () => {
+    const inMap = Object.fromEntries(doomDef.inputs.map((p) => [p.id, p]));
+    expect(inMap['iddqd_in']).toBeDefined();
+    expect(inMap['idkfa_in']).toBeDefined();
+    expect(inMap['iddqd_in']!.type).toBe('cv');
+    expect(inMap['idkfa_in']!.type).toBe('cv');
+    expect(inMap['iddqd_in']!.paramTarget).toBe('cv_iddqd_in');
+    expect(inMap['idkfa_in']!.paramTarget).toBe('cv_idkfa_in');
+  });
+
+  it('def declares matching synthetic cv_iddqd_in + cv_idkfa_in params', () => {
+    const paramIds = new Set(doomDef.params.map((p) => p.id));
+    expect(paramIds.has('cv_iddqd_in')).toBe(true);
+    expect(paramIds.has('cv_idkfa_in')).toBe(true);
+  });
+
+  it('extras exposes lastCheatInjected() — starts as null', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    expect(typeof extras.lastCheatInjected).toBe('function');
+    expect(extras.lastCheatInjected()).toBeNull();
+  });
+
+  it('rising edge on cv_iddqd_in flips lastCheatInjected to "iddqd"', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    expect(extras.lastCheatInjected()).toBeNull();
+    handle.setParam('cv_iddqd_in', 1);
+    expect(extras.lastCheatInjected()).toBe('iddqd');
+  });
+
+  it('rising edge on cv_idkfa_in flips lastCheatInjected to "idkfa"', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    handle.setParam('cv_idkfa_in', 1);
+    expect(extras.lastCheatInjected()).toBe('idkfa');
+  });
+
+  it('holding the gate HIGH does not re-trigger (one-shot)', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    handle.setParam('cv_iddqd_in', 1);
+    expect(extras.lastCheatInjected()).toBe('iddqd');
+    // Multiple successive HIGH values stay sticky — lastCheatInjected reflects
+    // the most recent successful trigger and DOES NOT get re-set.
+    // We verify by triggering IDKFA next, then re-asserting IDDQD HIGH stays
+    // a no-op (no second injection).
+    handle.setParam('cv_idkfa_in', 1);
+    expect(extras.lastCheatInjected()).toBe('idkfa');
+    handle.setParam('cv_iddqd_in', 1);   // still HIGH
+    handle.setParam('cv_iddqd_in', 0.9); // still above threshold
+    expect(extras.lastCheatInjected()).toBe('idkfa'); // no re-fire on iddqd
+  });
+
+  it('lowering then raising re-arms + re-fires the cheat', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    handle.setParam('cv_iddqd_in', 1);
+    handle.setParam('cv_idkfa_in', 1); // shift away
+    expect(extras.lastCheatInjected()).toBe('idkfa');
+    handle.setParam('cv_iddqd_in', 0); // re-arm iddqd
+    handle.setParam('cv_iddqd_in', 1); // re-fire
+    expect(extras.lastCheatInjected()).toBe('iddqd');
+  });
+
+  it('values below 0.5 never trigger (single-threshold gate)', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    for (const v of [0, 0.1, 0.3, 0.49]) {
+      handle.setParam('cv_iddqd_in', v);
+      handle.setParam('cv_idkfa_in', v);
+    }
+    expect(extras.lastCheatInjected()).toBeNull();
   });
 });

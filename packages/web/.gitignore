@@ -16,4 +16,7 @@ static/doom/DOOM1.WAD
 # harness; same gitignore rationale as the prod build above).
 static/doom/doom-mp-node.js
 static/doom/doom-mp-node.wasm
+# DOOM_MP=1 web build artefact (built on demand; same rationale).
+static/doom/doom-mp.js
+static/doom/doom-mp.wasm
 native/doomgeneric/build/

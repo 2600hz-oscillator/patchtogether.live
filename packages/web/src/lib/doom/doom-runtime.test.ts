@@ -760,10 +760,14 @@ describe('DoomRuntime — Phase-1 SP event-gate drain', () => {
     const { mod } = makeDrainStubModule(events);
     const rt = new DoomRuntime(mod);
     rt.init(new Uint8Array([0]));
+    // feat/doom-per-type-death-gates: decode now includes the 12-bit payload
+    // field (bits 4..15). For events that only use the 2-bit slot field,
+    // `payload` repeats the slot bits — consumers dispatch on `type` so the
+    // extra reads are harmless.
     expect(rt.drainEvents()).toEqual([
-      { type: 1, slot: 0 },
-      { type: 3, slot: 1 },
-      { type: 2, slot: 0 },
+      { type: 1, slot: 0, payload: 0 },
+      { type: 3, slot: 1, payload: 1 },
+      { type: 2, slot: 0, payload: 0 },
     ]);
   });
 
@@ -784,7 +788,43 @@ describe('DoomRuntime — Phase-1 SP event-gate drain', () => {
     const { mod } = makeDrainStubModule([encodeEvt(3, 3)]);
     const rt = new DoomRuntime(mod);
     rt.init(new Uint8Array([0]));
-    expect(rt.drainEvents()).toEqual([{ type: 3, slot: 3 }]);
+    expect(rt.drainEvents()).toEqual([{ type: 3, slot: 3, payload: 3 }]);
+  });
+
+  it('decodes KILL_TYPED with a 12-bit mobjtype payload (bits 4..15)', () => {
+    // type=5, payload=11 (MT_TROOP = imp). Encoding: 5 | (11 << 4) = 0xB5.
+    const word = 5 | (11 << 4);
+    const { mod } = makeDrainStubModule([word]);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const drained = rt.drainEvents();
+    expect(drained).toHaveLength(1);
+    expect(drained[0]!.type).toBe(5);
+    expect(drained[0]!.payload).toBe(11);
+  });
+
+  it('decodes PLAYER_DIES with slot=3 (the boundary 2-bit slot value)', () => {
+    // type=4, slot=3. Encoding: 4 | (3 << 4) = 0x34.
+    const word = 4 | (3 << 4);
+    const { mod } = makeDrainStubModule([word]);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const drained = rt.drainEvents();
+    expect(drained).toHaveLength(1);
+    expect(drained[0]!.type).toBe(4);
+    expect(drained[0]!.slot).toBe(3);
+  });
+
+  it('decodes KILL_TYPED with a high mobjtype value (full 12-bit range)', () => {
+    // Max 12-bit payload = 0xFFF. type=5, payload=0xFFF.
+    const word = 5 | (0xFFF << 4);
+    const { mod } = makeDrainStubModule([word]);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const drained = rt.drainEvents();
+    expect(drained).toHaveLength(1);
+    expect(drained[0]!.type).toBe(5);
+    expect(drained[0]!.payload).toBe(0xFFF);
   });
 
   it('init() allocates a 1 KB drain buffer; dispose() frees it', () => {

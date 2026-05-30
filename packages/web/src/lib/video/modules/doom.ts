@@ -54,6 +54,22 @@ import {
   migrateLegacyCvGatePortId,
   type CvGatePortId,
 } from '$lib/doom/doomkeys';
+import {
+  MONSTER_KILL_PORTS,
+  PLAYER_DEATH_PORTS,
+  MOBJTYPE_TO_PORT_ID,
+  PLAYER_SLOT_TO_DEATH_PORT_ID,
+  ALL_NEW_EVT_PORT_IDS,
+} from '$lib/doom/doom-death-ports';
+import {
+  CHEAT_CHAR_INTERVAL_MS,
+  CHEAT_KEY_DOWN_MS,
+  cheatCodeSequence,
+  detectRisingEdge,
+  makeRisingEdgeState,
+  type DoomCheatName,
+  type RisingEdgeState,
+} from '$lib/doom/cheat-sequence';
 
 // AudioWorkletProcessor URL — served as a static asset under
 // /doom/doom-pcm-worklet.js. Loaded lazily per AudioContext (WeakSet
@@ -218,20 +234,35 @@ export interface DoomHandleExtras {
    *  calls this when its mySlot changes; null = spectator/unseated (no slot's CV
    *  drives the local sim). Idempotent; safe before WASM loads. */
   setOwnSlot(slot: number | null): void;
-  /** Test-only: force-pulse a CV/gate output (evt_kill / evt_door /
-   *  evt_gun_p1..p4) WITHOUT requiring a WASM-side event to fire. Used by the
-   *  video→audio CV/gate e2e + composite VRT coverage so the engine bridge can
-   *  be exercised deterministically without driving the DOOM runtime. Emits the
-   *  same 10ms pulse (the existing local `pulseGate` helper) that
-   *  `drainAndPulseEvents` would emit on a real game event. No-op when the
-   *  AudioContext / gates aren't materialised. */
-  forcePulse(port: 'evt_kill' | 'evt_door' | 'evt_gun_p1' | 'evt_gun_p2' | 'evt_gun_p3' | 'evt_gun_p4'): void;
+  /** Test-only: force-pulse any of DOOM's event-gate outputs WITHOUT requiring
+   *  a WASM-side event to fire. Used by the video→audio CV/gate e2e + composite
+   *  VRT coverage so the engine bridge can be exercised deterministically
+   *  without driving the DOOM runtime. Emits the same 10ms pulse (the existing
+   *  local `pulseGate` helper) that `drainAndPulseEvents` would emit on a real
+   *  game event. No-op when the AudioContext / gates aren't materialised, or
+   *  when `port` isn't a known event-gate id (unknown → silent no-op so the
+   *  hook is safe to call with port strings sourced from the runtime list).
+   *
+   *  Recognised ports:
+   *    evt_kill, evt_door, evt_gun_p1..p4    (base event gates)
+   *    evt_kill_<type>                       (one per MONSTER_KILL_PORTS row)
+   *    evt_p1_dies..evt_p4_dies              (one per PLAYER_DEATH_PORTS row)
+   */
+  forcePulse(port: string): void;
   /** Test-only: hold a gate output HIGH (or LOW) indefinitely — no 10 ms
    *  auto-fall-back. Used by the composite VRT spec so an `audio suspend` +
    *  snapshot freezes the gate signal in a known state for the diff. Calling
    *  forcePulse() or forceHold(port, false) cancels the hold. No-op when the
-   *  AudioContext / gates aren't materialised. */
-  forceHold(port: 'evt_kill' | 'evt_door' | 'evt_gun_p1' | 'evt_gun_p2' | 'evt_gun_p3' | 'evt_gun_p4', high: boolean): void;
+   *  AudioContext / gates aren't materialised, or when `port` isn't a known
+   *  event-gate id (same string-port surface as forcePulse). */
+  forceHold(port: string, high: boolean): void;
+  /** Name of the most-recently-INJECTED cheat code (the rising edge on
+   *  iddqd_in / idkfa_in triggers the injection — see CHEAT GATE INPUTS in the
+   *  factory) or null if none has fired yet. Test-introspection only; the
+   *  WASM-side effect (player[].cheats flag) is the production signal and the
+   *  e2e asserts it via SFX / no-damage observation rather than reading C-side
+   *  state here (no C source changes per the task constraint). */
+  lastCheatInjected(): DoomCheatName | null;
 }
 
 export const doomDef: VideoModuleDef = {
@@ -275,11 +306,24 @@ export const doomDef: VideoModuleDef = {
   // only ever feeds its OWN consoleplayer slot's CV into the sim, so the
   // deterministic lockstep TicSet can never diverge from non-deterministic
   // per-peer CV sampling (the #353/#354 freeze root cause).
-  inputs: CV_GATE_PORT_IDS_BY_SLOT.map(({ portId }) => ({
-    id: portId,
-    type: 'cv' as const,
-    paramTarget: `cv_${portId}`,
-  })),
+  inputs: [
+    ...CV_GATE_PORT_IDS_BY_SLOT.map(({ portId }) => ({
+      id: portId,
+      type: 'cv' as const,
+      paramTarget: `cv_${portId}`,
+    })),
+    // CHEAT GATE INPUTS: rising-edge triggers inject the 5-character lowercase
+    // ASCII sequence into the WASM key queue (each char as a key-down +
+    // key-up scheduled CHEAT_CHAR_INTERVAL_MS apart). The engine's i_input.c
+    // copies the ASCII byte into event_t.data2 and m_cheat.c's
+    // `cht_CheckCheat` matches the running stream against the sequence
+    // strings ("iddqd" / "idkfa"). The cheats apply to THIS peer's local
+    // `players[consoleplayer]` (god mode / all keys+weapons+full ammo) and
+    // are NOT replicated across peers — same scope as a player who would
+    // have typed the cheat themselves into a keyboard-focused card.
+    { id: 'iddqd_in', type: 'cv' as const, paramTarget: 'cv_iddqd_in' },
+    { id: 'idkfa_in', type: 'cv' as const, paramTarget: 'cv_idkfa_in' },
+  ],
   outputs: [
     { id: 'out', type: 'video' },
     { id: 'audio_l', type: 'audio' },
@@ -294,6 +338,15 @@ export const doomDef: VideoModuleDef = {
     { id: 'evt_gun_p2', type: 'gate' },
     { id: 'evt_gun_p3', type: 'gate' },
     { id: 'evt_gun_p4', type: 'gate' },
+    // feat/doom-per-type-death-gates: per-monster-type kill gates
+    // (evt_kill_imp / evt_kill_demon / …) + per-player death gates
+    // (evt_p1_dies..p4_dies). One CSN per port, pulsed on the matching
+    // DGPT_EVT_KILL_TYPED / DGPT_EVT_PLAYER_DIES drained from the C ring.
+    // The legacy `evt_kill` any-monster gate stays untouched — a counted
+    // monster death fires BOTH that and its matching typed gate. See
+    // packages/web/src/lib/doom/doom-death-ports.ts for the stable order.
+    ...MONSTER_KILL_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const })),
+    ...PLAYER_DEATH_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const })),
   ],
   params: [
     { id: 'audioGain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
@@ -309,6 +362,12 @@ export const doomDef: VideoModuleDef = {
       max: 1,
       curve: 'linear' as const,
     })),
+    // Cheat-gate synthetic params (one per cheat input). Edge-detected in
+    // setParam below; on the LOW→HIGH transition we schedule the 5-character
+    // injection. Hidden from the card UI (no param-row); the gate input
+    // appears in the PatchPanel like the other CV inputs.
+    { id: 'cv_iddqd_in', label: 'IDDQD', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
+    { id: 'cv_idkfa_in', label: 'IDKFA', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -380,6 +439,54 @@ export const doomDef: VideoModuleDef = {
     const edgeStates = new Map<string, EdgeState>();
     for (const { portId } of CV_GATE_PORT_IDS_BY_SLOT) edgeStates.set(portId, makeEdgeState());
 
+    // CHEAT GATE rising-edge detectors. Single-threshold (0.5) one-shot: a HIGH
+    // input fires ONE injection; holding HIGH does NOT re-trigger; the gate
+    // must return LOW before it can fire again. Separate from the cv-gate-edge
+    // hysteresis detectors above because cheats don't model "key down for the
+    // duration of the gate" — they synthesize a 5-char keypress sequence on
+    // each rising edge, regardless of how long the gate stays HIGH.
+    const cheatEdgeStates: Record<DoomCheatName, RisingEdgeState> = {
+      iddqd: makeRisingEdgeState(),
+      idkfa: makeRisingEdgeState(),
+    };
+
+    // Test-introspection: name of the most-recently-INJECTED cheat. Read by the
+    // e2e to confirm a rising edge on iddqd_in / idkfa_in actually drove the
+    // injection path. NOT a substitute for the C-side `players[].cheats`
+    // observation — that's the real production signal — but the C side has no
+    // exposed accessor here and we don't touch the WASM source.
+    let lastCheat: DoomCheatName | null = null;
+
+    /** Inject one cheat code into the WASM key queue. Schedules a key-down +
+     *  delayed key-up for each char in the sequence, spaced
+     *  CHEAT_CHAR_INTERVAL_MS apart. Uses `runtime.setKey` directly (NOT
+     *  `setKeyForKeyboardCode`) so the injection bypasses the keyboard-inert
+     *  gate — a CV-patched card has its keyboard inert, but a CV-triggered
+     *  cheat is still expected to take effect. Idempotent against a missing
+     *  runtime (no-op until WASM loads). */
+    function injectCheat(name: DoomCheatName): void {
+      lastCheat = name;
+      const seq = cheatCodeSequence(name);
+      for (let i = 0; i < seq.length; i++) {
+        const ch = seq[i]!;
+        const code = ch.charCodeAt(0);
+        const startMs = i * CHEAT_CHAR_INTERVAL_MS;
+        setTimeout(() => {
+          // Re-check runtime each scheduled tick: it may load (or be disposed)
+          // mid-sequence. A drop just truncates the injection; the next rising
+          // edge re-fires the whole sequence cleanly.
+          if (runtime && runtime.isInitialized()) {
+            try { runtime.setKey(code, true); } catch { /* */ }
+          }
+        }, startMs);
+        setTimeout(() => {
+          if (runtime && runtime.isInitialized()) {
+            try { runtime.setKey(code, false); } catch { /* */ }
+          }
+        }, startMs + CHEAT_KEY_DOWN_MS);
+      }
+    }
+
     // OWN-SLOT-ONLY rule (#353 Phase 2): this peer's consoleplayer slot. CV that
     // targets THIS slot's group is fed into the sim (→ G_BuildTiccmd → the
     // deterministic ticcmd log); CV that targets ANY OTHER slot's group is
@@ -428,6 +535,12 @@ export const doomDef: VideoModuleDef = {
     let killGate: ConstantSourceNode | null = null;
     let doorGate: ConstantSourceNode | null = null;
     let gunGates: ConstantSourceNode[] = [];
+    // feat/doom-per-type-death-gates: one CSN per per-monster-type kill port
+    // (evt_kill_imp / evt_kill_demon / …) + one per per-player death port
+    // (evt_p1_dies..evt_p4_dies). Indexed by portId for O(1) lookup on the
+    // event-drain path + the forcePulse / forceHold extras. Same identity
+    // contract as killGate/doorGate above.
+    const evtGatesByPort = new Map<string, ConstantSourceNode>();
 
     if (ctx.audioCtx) {
       const ac = ctx.audioCtx;
@@ -460,6 +573,15 @@ export const doomDef: VideoModuleDef = {
       audioSources.set('evt_gun_p2', { node: gunGates[1]!, output: 0 });
       audioSources.set('evt_gun_p3', { node: gunGates[2]!, output: 0 });
       audioSources.set('evt_gun_p4', { node: gunGates[3]!, output: 0 });
+
+      // Per-monster-type kill gates + per-player death gates.
+      for (const portId of ALL_NEW_EVT_PORT_IDS) {
+        const c = ac.createConstantSource();
+        c.offset.setValueAtTime(0, t0);
+        c.start();
+        evtGatesByPort.set(portId, c);
+        audioSources.set(portId, { node: c, output: 0 });
+      }
 
       void setupPcmWorklet(ac);
     }
@@ -497,12 +619,34 @@ export const doomDef: VideoModuleDef = {
       if (!runtime || !ctx.audioCtx) return;
       const evts = runtime.drainEvents();
       for (const e of evts) {
+        // DGPT_EVT_KILL=1 — legacy any-monster gate (untouched, still fires
+        // exactly once per counted monster kill alongside the typed event).
         if (e.type === 1 && killGate) pulseGate(killGate, 'evt_kill');
+        // DGPT_EVT_DOOR=2 — door opens.
         else if (e.type === 2 && doorGate) pulseGate(doorGate, 'evt_door');
+        // DGPT_EVT_GUN=3 — per-slot weapon-fire (slot in bits 4..5).
         else if (e.type === 3) {
           const g = gunGates[e.slot] ?? gunGates[0];
           const portId = `evt_gun_p${(e.slot ?? 0) + 1}`;
           if (g) pulseGate(g, portId);
+        }
+        // DGPT_EVT_PLAYER_DIES=4 — per-player death (slot in bits 4..5).
+        else if (e.type === 4) {
+          const portId = PLAYER_SLOT_TO_DEATH_PORT_ID.get(e.slot);
+          if (portId) {
+            const g = evtGatesByPort.get(portId);
+            if (g) pulseGate(g, portId);
+          }
+        }
+        // DGPT_EVT_KILL_TYPED=5 — per-monster-type kill, mobjtype_t in
+        // bits 4..15 (the 12-bit payload field). Untyped or unknown types
+        // are silently ignored — the legacy KILL gate still pulsed above.
+        else if (e.type === 5) {
+          const portId = MOBJTYPE_TO_PORT_ID.get(e.payload);
+          if (portId) {
+            const g = evtGatesByPort.get(portId);
+            if (g) pulseGate(g, portId);
+          }
         }
       }
     }
@@ -792,28 +936,39 @@ export const doomDef: VideoModuleDef = {
           return;
         }
         // evt_gun_p1..p4 → gunGates[0..3]
-        const idx =
-          port === 'evt_gun_p1' ? 0
-          : port === 'evt_gun_p2' ? 1
-          : port === 'evt_gun_p3' ? 2
-          : 3;
-        const g = gunGates[idx];
+        if (port === 'evt_gun_p1' || port === 'evt_gun_p2' || port === 'evt_gun_p3' || port === 'evt_gun_p4') {
+          const idx =
+            port === 'evt_gun_p1' ? 0
+            : port === 'evt_gun_p2' ? 1
+            : port === 'evt_gun_p3' ? 2
+            : 3;
+          const g = gunGates[idx];
+          if (g) pulseGate(g, port);
+          return;
+        }
+        // Per-monster-type kill gates (evt_kill_<type>) + per-player death
+        // gates (evt_p1_dies..p4_dies). All routed through evtGatesByPort.
+        const g = evtGatesByPort.get(port);
         if (g) pulseGate(g, port);
       },
       forceHold(port, high) {
         const ac = ctx.audioCtx;
         if (!ac) return;
-        const src =
-          port === 'evt_kill' ? killGate
-          : port === 'evt_door' ? doorGate
-          : port === 'evt_gun_p1' ? gunGates[0]
-          : port === 'evt_gun_p2' ? gunGates[1]
-          : port === 'evt_gun_p3' ? gunGates[2]
-          : gunGates[3];
+        let src: ConstantSourceNode | null | undefined;
+        if (port === 'evt_kill') src = killGate;
+        else if (port === 'evt_door') src = doorGate;
+        else if (port === 'evt_gun_p1') src = gunGates[0];
+        else if (port === 'evt_gun_p2') src = gunGates[1];
+        else if (port === 'evt_gun_p3') src = gunGates[2];
+        else if (port === 'evt_gun_p4') src = gunGates[3];
+        else src = evtGatesByPort.get(port);
         if (!src) return;
         const t = ac.currentTime;
         try { src.offset.cancelScheduledValues(t); } catch { /* */ }
         src.offset.setValueAtTime(high ? 1 : 0, t);
+      },
+      lastCheatInjected() {
+        return lastCheat;
       },
     };
 
@@ -827,6 +982,20 @@ export const doomDef: VideoModuleDef = {
         // takes effect without waiting for the next PCM pump.
         if (paramId === 'audioGain' && pcmWorklet) {
           try { pcmWorklet.port.postMessage({ type: 'gain', value }); } catch { /* */ }
+        }
+        // CHEAT-GATE rising-edge → injection. Detect on the synthetic
+        // `cv_iddqd_in` / `cv_idkfa_in` params (the input ports' paramTargets).
+        // Falling edges / held HIGH are no-ops — the detector only fires on the
+        // LOW→HIGH crossing. Independent of the per-slot CV-gate path: cheats
+        // act on `players[consoleplayer]`, not a specific slot, so they bypass
+        // the own-slot-only rule.
+        if (paramId === 'cv_iddqd_in') {
+          if (detectRisingEdge(cheatEdgeStates.iddqd, value)) injectCheat('iddqd');
+          return;
+        }
+        if (paramId === 'cv_idkfa_in') {
+          if (detectRisingEdge(cheatEdgeStates.idkfa, value)) injectCheat('idkfa');
+          return;
         }
         // PER-SLOT CV-gate path (#353): edge-detect cv_p{N}_{base} params + feed
         // ONLY the local consoleplayer slot's gates into the runtime.
