@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createVideoFrameUploader } from './video-frame-upload';
 
 const W = 640;
-const H = 360;
+const H = 480;
 
 // --- Fakes ---------------------------------------------------------------
 
@@ -126,7 +126,7 @@ describe('createVideoFrameUploader — rVFC path', () => {
     const { v } = makeVideo(true);
     up.attach(v);
     up.uploadIfReady();
-    // Drew the 1920x1080 source into the 640x360 canvas (9x less pixel data).
+    // Drew the 1920x1080 source into the 640x480 canvas (~6.75x less pixel data).
     expect(drawSizes[0]).toEqual([W, H]);
   });
 

@@ -53,7 +53,7 @@
       if (!scene) return;
       const c2d = previewEl.getContext('2d');
       if (!c2d) return;
-      // Scale the engine-res scene (640×360 by default) into the preview.
+      // Scale the engine-res scene (640×480 by default) into the preview.
       c2d.drawImage(scene as CanvasImageSource, 0, 0, previewEl.width, previewEl.height);
     }, 33); // ~30 Hz
   });

@@ -73,7 +73,7 @@
     if (raf !== null) cancelAnimationFrame(raf);
   });
 
-  // Stage the native 640×360 ImageData, then drawImage-scale into the
+  // Stage the native 640×480 ImageData, then drawImage-scale into the
   // smaller on-card canvas (nearest-neighbour so the raster pixels stay
   // crisp — anti-alias would soften the bands, and "untamed" is the look).
   let stage: HTMLCanvasElement | null = null;
@@ -119,7 +119,7 @@
     </div>
 
     <div class="fader-row">
-      <Fader value={cursor}          min={0}  max={230400} defaultValue={0}   label="Scan"   curve="linear" onchange={setParam('cursor')}          moduleId={id} paramId="cursor" />
+      <Fader value={cursor}          min={0}  max={307200} defaultValue={0}   label="Scan"   curve="linear" onchange={setParam('cursor')}          moduleId={id} paramId="cursor" />
       <Fader value={samplesPerFrame} min={16} max={8000}   defaultValue={800} label="Samp/F" curve="log"    onchange={setParam('samplesPerFrame')} moduleId={id} paramId="samplesPerFrame" />
       <Fader value={gain}            min={0}  max={8}       defaultValue={1}   label="Gain"   curve="log"    onchange={setParam('gain')}            moduleId={id} paramId="gain" />
     </div>

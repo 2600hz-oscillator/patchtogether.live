@@ -14,7 +14,7 @@
 // drives its own runtime (joined player) or renders nothing (spectator).
 // The engine here just exposes:
 //   - the GL surface that displays the 640×400 BGRA framebuffer (with
-//     aspect-correct letterboxing into the engine's 640×360 FBO);
+//     aspect-correct letterboxing into the engine's 640×480 FBO);
 //   - the 9 CV-gate inputs (up/down/left/right/space/ctrl/alt/esc/enter)
 //     edge-detected into dgpt_set_key calls on the runtime, replicated
 //     across 4 per-slot groups (p1..p4) — 36 inputs total;
@@ -34,7 +34,7 @@
 //   declared per slice.
 //
 // Outputs:
-//   out (video): the 640×400 BGRA framebuffer (aspect-correct letterboxed into 640×360).
+//   out (video): the 640×400 BGRA framebuffer (aspect-correct letterboxed into 640×480).
 //   audio_l / audio_r (audio): stereo bridges from the WASM SFX stream.
 //   evt_kill (gate): one-pulse gate on every enemy kill.
 //   evt_door (gate): one-pulse gate when the player opens a door.
@@ -90,10 +90,12 @@ async function ensureDoomPcmWorklet(ac: BaseAudioContext): Promise<void> {
 }
 
 // Fragment shader: sample the 640×400 BGRA framebuffer and letterbox it
-// into the engine's 640×360 FBO. DOOM is 1.6:1 (640:400 = 8:5); the
-// engine's FBO is 16:9 (640:360 = 16:9 ≈ 1.78:1). So we keep height +
-// letterbox horizontally — a slight black bar on either side at the
-// engine's aspect.
+// into the engine's 640×480 FBO. DOOM is 1.6:1 (640:400 = 8:5); the
+// engine's FBO is 4:3 (640:480 ≈ 1.33:1). DOOM is wider than the FBO,
+// so we keep WIDTH + letterbox vertically — thin black bars top + bottom
+// (active V ≈ 0.833). Was 16:9 (active U ≈ 0.9, side bars) prior to the
+// 4:3 pipeline switch — the letterbox math is res-adaptive (uses
+// `ctx.res`) so the axis swaps automatically.
 //
 // vUv is (0..1, 0..1) over the FBO with origin bottom-left (GL default,
 // vUv = aPos * 0.5 + 0.5 in the shared vertex shader). DOOM's
@@ -379,24 +381,17 @@ export const doomDef: VideoModuleDef = {
 
     // FBO at engine resolution + a "source texture" sized for the
     // DOOM framebuffer (640×400 BGRA8). Two textures because the FBO is
-    // 640×360 (engine.res) — we don't want to resize FBOs per-module.
+    // 640×480 (engine.res) — we don't want to resize FBOs per-module.
     const { fbo, texture } = ctx.createFbo();
 
     // Letterbox math: engine FBO is res.width×res.height, DOOM is
-    // 640×400 (1.6:1). We keep DOOM upright at FBO height, so the
-    // x-direction shrinks by (fboAspect / doomAspect).
+    // 640×400 (1.6:1). Math is adaptive — uLetterbox is the active-region
+    // size in UV (both dims clamped to 1). For a 4:3 FBO (fboAspect=1.33)
+    // fitting 1.6:1 DOOM content: width fills (U=1.0), height shrinks to
+    // fboAspect/doomAspect ≈ 0.833 (thin black bars top + bottom). For a
+    // 16:9 FBO (fboAspect=1.78) the axes swap — U≈0.9, V=1.0 (side bars).
     const fboAspect = ctx.res.width / ctx.res.height;
     const doomAspect = 640 / 400;
-    // Active region: in U direction we scale by 1, V direction by 1.
-    // To put a 1.6:1 source inside a wider FBO, the active region width
-    // (in UV) is fboAspect / doomAspect → wait, actually:
-    // We have a 1.78:1 canvas, fitting 1.6:1 content height-locked.
-    // Content fills full height (V scale 1). Content width is
-    // (height * doomAspect) / fboWidth = (1 * 1.6) / 1.78 = 0.9.
-    // So we want active V = 1.0, active U = doomAspect/fboAspect = 0.9.
-    // In the shader's `centered = (vUv - 0.5) / uLetterbox + 0.5`,
-    // uLetterbox is the "size of active region in UV space" — values
-    // less than 1 shrink the active region. So uLetterbox = (0.9, 1.0).
     const letterboxU = Math.min(1.0, doomAspect / fboAspect);
     const letterboxV = Math.min(1.0, fboAspect / doomAspect);
 

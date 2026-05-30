@@ -292,7 +292,7 @@ describe('doomDef.factory — audio bridge contract', () => {
     const fake = makeFakeAudioCtx();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -335,7 +335,7 @@ describe('doomDef.factory — audio bridge contract', () => {
     const fake = makeFakeAudioCtx({ withDestination: true });
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -376,7 +376,7 @@ describe('doomDef.factory — audio bridge contract', () => {
     const fake = makeFakeAudioCtx();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -399,7 +399,7 @@ describe('doomDef.factory — audio bridge contract', () => {
     const fake = makeFakeAudioCtx();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -432,7 +432,7 @@ describe('doomDef.factory — audio bridge contract', () => {
     const gl = makeFakeGl();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -462,7 +462,7 @@ describe('doomDef.factory — extras.forcePulse() test hook', () => {
     const fake = makeFakeAudioCtx();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -529,7 +529,7 @@ describe('doomDef.factory — extras.forcePulse() test hook', () => {
     const gl = makeFakeGl();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -664,7 +664,7 @@ describe('doomDef.factory — subscribePulse (frame-independent gate dispatch)',
     const fake = makeFakeAudioCtx();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -779,7 +779,7 @@ describe('doomDef.factory — per-monster + per-player gates', () => {
     const fake = makeFakeAudioCtx();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -894,7 +894,7 @@ describe('doomDef.factory — per-monster + per-player gates', () => {
     const gl = makeFakeGl();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -933,7 +933,7 @@ describe('doomDef.factory — drain dispatch maps events to gates', () => {
     const fake = makeFakeAudioCtx();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
@@ -1084,7 +1084,7 @@ describe('doomDef.factory — IDDQD / IDKFA cheat-gate inputs', () => {
     const gl = makeFakeGl();
     const ctx: VideoEngineContext = {
       gl,
-      res: { width: 640, height: 360 },
+      res: { width: 640, height: 480 },
       compileFragment: () => ({}) as WebGLProgram,
       createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
       drawFullscreenQuad: () => undefined,
