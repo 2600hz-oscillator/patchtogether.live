@@ -97,7 +97,19 @@ class TimelordeProcessor extends AudioWorkletProcessor {
       // 1 = muted. The internal clock generation ALWAYS runs
       // regardless — LIVECODE's clocked() callbacks + any other
       // tick consumers need the clock alive even when gates are off.
+      // This is the card's MUTE button (not the external stop gate).
       { name: 'muteOutputs',  defaultValue: 0,   minValue: 0,   maxValue: 1,   automationRate: 'k-rate' as const },
+      // running: 1 = clock advances, 0 = clock HALTED (phase
+      // accumulator + sample-counter + pending pulses all freeze).
+      // Driven by start_in / stop_in transport gates (mirrors a DAW's
+      // transport start/stop button). Distinct from muteOutputs:
+      // - muteOutputs zeroes the audible gate level but the internal
+      //   clock keeps running so LIVECODE's clocked() callbacks fire.
+      // - running=0 actually PAUSES the clock; on resume, the
+      //   internal phase / counters pick up from where they stopped
+      //   (musical position preserved across a stop, matching DAW
+      //   transport semantics).
+      { name: 'running',      defaultValue: 1,   minValue: 0,   maxValue: 1,   automationRate: 'k-rate' as const },
       // hasExternalClock is set to 1 by the engine factory whenever an edge
       // is patched into input 0 (declarative, not measured). Drives whether
       // the play button is honored or always-on.
@@ -159,18 +171,41 @@ class TimelordeProcessor extends AudioWorkletProcessor {
       Math.min(SWING_SOURCES.length - 1, Math.round(parameters.swingSource[0] ?? 0)),
     );
     const muteOutputs = (parameters.muteOutputs[0] ?? 0) >= 0.5;
+    const running = (parameters.running[0] ?? 1) >= 0.5;
     const hasExternalClock = (parameters.hasExternalClock[0] ?? 0) >= 0.5;
 
-    // v2 behavior: the internal clock ALWAYS runs. muteOutputs gates
-    // the OUTPUT WAVEFORMS at the end of the block but doesn't stop
-    // phase / pending-pulse bookkeeping — so LIVECODE's clocked()
-    // subscribers (which subscribe to TIMELORDE-mirrored ticks via
-    // the engine-side TickBus) keep firing whether or not the user
-    // wants audible gates downstream.
+    // v2 behavior: muteOutputs gates the OUTPUT WAVEFORMS at the end of
+    // the block but doesn't stop phase / pending-pulse bookkeeping — so
+    // LIVECODE's clocked() subscribers (which subscribe to TIMELORDE-
+    // mirrored ticks via the engine-side TickBus) keep firing whether
+    // or not the user wants audible gates downstream.
+    //
+    // running (v3, transport-gate-driven): when 0, the internal clock
+    // HALTS. Phase accumulator + sampleCount + pending-pulse processing
+    // all freeze. Outputs hold their last-written state (whatever pulse
+    // was mid-flight when stop fired keeps its level until process()
+    // resumes). On resume the counters pick up from the frozen value —
+    // musical position is preserved across a stop, matching DAW
+    // transport semantics. Distinct from mute: a stopped clock has no
+    // ticks to mute.
     //
     // External clock just means "lock 1x to incoming edges". It no
     // longer overrides mute (the user can mute the rack but still
     // have LIVECODE see the MIDI-clock pulses).
+    if (!running) {
+      // Hold every output low while halted; the gate state from the
+      // last running block (a possibly-still-firing pulse) shouldn't
+      // leak through as a stuck-high — the transport is STOPPED.
+      // We do NOT advance sampleCount / internalPhase / pending, so on
+      // resume the next process() block continues exactly where the
+      // halted block would have, modulo this missing block of samples.
+      for (let o = 0; o < 12; o++) {
+        const ch = outputs[o]?.[0];
+        if (!ch) continue;
+        for (let i = 0; i < blockLen; i++) ch[i] = 0;
+      }
+      return true;
+    }
 
     const internalPeriodSamples = Math.max(1, (60 / Math.max(1, bpm)) * sampleRate);
 
