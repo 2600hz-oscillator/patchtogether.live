@@ -113,6 +113,15 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // ── Game modules with score-event outputs only ──
   modtris: 'gameplay-conditional outputs; covered by modtris-related specs',
   pong:    'gameplay-conditional outputs; covered by pong-related specs',
+  // QBERT — audio_out + evt_die/move/level all fire from the synthesized
+  // event stream which only triggers after coin + start + held joystick.
+  // The bare per-port sweep can't drive those + ROM is gitignored by
+  // design (404s in CI). Card render is covered by qbert-rom-missing.spec.ts
+  // and the CV-joystick path by qbert-cv-joystick.spec.ts (skipped without
+  // ROM). The video `out` port DOES render a test pattern even with no
+  // ROM, but whole-module skip is simpler bookkeeping per the SM64
+  // precedent above.
+  qbert: 'audio + event outputs fire only after coin+start+joystick; ROM is gitignored (404 on clean checkout); covered by qbert-rom-missing.spec.ts + qbert-cv-joystick.spec.ts',
   // ── SM64: only output is `out` (video). The upstream sm64js bundle needs
   // a US sm64.z64 ROM extracted into IDB before it renders ANYTHING — until
   // then the #gameCanvas is a blank cleared surface, so the sweep would

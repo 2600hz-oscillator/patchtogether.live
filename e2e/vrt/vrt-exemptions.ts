@@ -292,6 +292,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (doom-runtime, doom-presence, cv-gate-edge); a multi-tab e2e for
   // host migration + spectator-frame relay is the follow-up.
   doom: 'live game-loop framebuffer defeats deterministic capture; unit suites cover TS shim + presence + CV-gate edge detector',
+  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator. Same rationale as
+  // DOOM: the canvas is a live game framebuffer (test pattern when no
+  // ROM is loaded, ROM-driven once present) that defeats deterministic
+  // capture. ROM is also user-provided + gitignored, so a CI-side VRT
+  // baseline can't be reproduced without a license-encumbered ROM in
+  // the runner. Unit suites cover joy-cv translation, ROM zip parsing,
+  // and the Z80 + runtime wire-up; e2e covers the ROM-missing card
+  // render + the CV-joystick → evt_move gate path.
+  qbert: 'live game-loop framebuffer + ROM is user-provided (gitignored); unit suites cover joy-cv translation + ROM zip parser + Z80 wire-up + runtime; e2e covers ROM-missing card + CV-joystick → evt_move path',
   // CALLSINE first-slice PR: VRT baseline pending; unit + ART + E2E
   // provide coverage. Card is a standard 6-fader layout (model + 5
   // continuous macros) — pinning baselines in a follow-up PR after
