@@ -35,11 +35,8 @@
     "@sveltejs/adapter-cloudflare": "^7.2.8",
     "@sveltejs/kit": "^2.0.0",
     "@sveltejs/vite-plugin-svelte": "^6.0.0",
-<<<<<<< HEAD
-    "fast-check": "^4.8.0",
-=======
     "@vitest/coverage-v8": "^3.2.4",
->>>>>>> origin/chore/coverage-gate-v8
+    "fast-check": "^4.8.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "terser": "^5.46.2",
