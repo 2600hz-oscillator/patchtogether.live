@@ -32,7 +32,45 @@ async function openContexts(browser: Browser, n: number): Promise<CapacitySessio
   return {
     contexts,
     pages,
-    close: () => Promise.all(contexts.map((c) => c.close())).then(() => {}),
+    // Teardown is best-effort: by the time finally{} runs, some contexts
+    // may already have been closed explicitly inside the test body (see
+    // the "frees a slot on disconnect" case at line ~86) OR torn down by
+    // Playwright after a worker timeout. Promise.all rejects-fast on the
+    // first close() that lands on an already-disposed context with
+    // "Target page, context or browser has been closed" / "Failed to
+    // find context with id ..." — which then crashes the test from
+    // inside finally{}, masking any earlier real failure and showing up
+    // as the chronic shard-1 flake. Switch to allSettled + swallow the
+    // expected "already closed" errors so teardown is idempotent.
+    close: async () => {
+      const results = await Promise.allSettled(
+        // Snapshot `contexts` here so the session.close() seen by the
+        // test reflects the contexts owned at close-time (the test may
+        // splice this array — see s.contexts.splice(0, 1) in the
+        // disconnect test).
+        contexts.slice().map(async (c) => {
+          try {
+            await c.close();
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            // Already-closed sentinels — safe to ignore in teardown.
+            if (
+              /Target (?:page|context|browser) (?:has been |is )closed/i.test(msg) ||
+              /Failed to find context with id/i.test(msg) ||
+              /Browser has been closed/i.test(msg)
+            ) {
+              return;
+            }
+            throw e;
+          }
+        }),
+      );
+      // If any non-tolerated error came through (re-thrown above and
+      // turned into a rejection), surface the first one so a real
+      // teardown bug is still visible.
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failed) throw failed.reason;
+    },
   };
 }
 
