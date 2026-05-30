@@ -21,16 +21,27 @@ import { REGISTRY } from '../tests/_registry';
 import {
   EXEMPT_FROM_VRT,
   EXEMPT_BASELINE_PAIRS,
+  STRICT_VRT_MODULES,
   VRT_MODULE_MASKS,
 } from './vrt-exemptions';
 import { applyVrtScene, VRT_SCENES } from './vrt-scenes';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
+// `VRT_STRICT=1` filters the suite down to the deterministic, pure-DOM
+// knob/fader cards listed in STRICT_VRT_MODULES. Used by `task vrt:strict`
+// (the gate inside `task ci`) so a fast deterministic VRT pass can block
+// the local PR-gate without dragging in the canvas-driven/animated cards
+// that legitimately flake. The full sweep (`task vrt`) still runs all
+// covered modules in CI as the informational lane.
+const STRICT = process.env.VRT_STRICT === '1';
+
 // Every registered module that isn't in the exempt list. Order matches
 // the manifest (alphabetical by type) for stable Playwright report
-// grouping.
-const COVERED_MODULES = REGISTRY.filter((m) => !(m.type in EXEMPT_FROM_VRT));
+// grouping. Under VRT_STRICT we further restrict to the strict subset.
+const COVERED_MODULES = REGISTRY
+  .filter((m) => !(m.type in EXEMPT_FROM_VRT))
+  .filter((m) => !STRICT || STRICT_VRT_MODULES.has(m.type));
 
 // 'default' mode = independent tests; one failing doesn't skip the
 // rest. We keep workers: 1 in vrt.config.ts so paint-timing variability
