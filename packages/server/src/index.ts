@@ -16,6 +16,7 @@ import { CAPACITY_REJECTION, createSlotTracker } from './capacity.js';
 import { isRackspaceMember, loadSnapshot, storeSnapshot } from './db.js';
 import { SNAPSHOT_PERSISTENCE_CONFIG } from './snapshot-config.js';
 import { createHeartbeatExtension } from './heartbeat.js';
+import { createIntrospectionExtension } from './http-introspection.js';
 import { startReaper, type LiveConnectionSource } from './reaper.js';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
@@ -48,6 +49,18 @@ process.on('uncaughtException', (err) => {
 // this becomes a Durable Object or Redis-backed counter.
 const slots = createSlotTracker();
 
+// HTTP introspection (/health + /metrics + memory-alarm log lines) needs
+// to read live conn/room counts from the Hocuspocus instance, but the
+// instance isn't constructed until after `Server.configure(…)` runs. We
+// build the extension with a lazy proxy that resolves to the real instance
+// the moment `extensions:` is evaluated (after the Server singleton is
+// already set up). The Hocuspocus `Server` export IS the singleton; it
+// has the count methods we need.
+const introspection = createIntrospectionExtension({
+  getConnectionsCount: () => Server.getConnectionsCount(),
+  getDocumentsCount: () => Server.getDocumentsCount(),
+});
+
 const hocuspocus = Server.configure({
   port: PORT,
   address: HOST,
@@ -55,7 +68,10 @@ const hocuspocus = Server.configure({
   // Heartbeat extension: per-doc Awareness broadcast at 1 Hz steady-state /
   // 8 Hz burst on connect. Clients use these for clock-sync (Phase 0 of the
   // shared-state-sync plan).
-  extensions: [createHeartbeatExtension()],
+  // HTTP introspection: /health + /metrics + 30-s memory alarm log lines.
+  // See ./http-introspection.ts for the rationale (relay OOM that went
+  // unalerted is the urgency; this slice surfaces the warning early).
+  extensions: [createHeartbeatExtension(), introspection],
 
   // Snapshot persistence — see ./snapshot-config.ts for the rationale.
   ...SNAPSHOT_PERSISTENCE_CONFIG,
