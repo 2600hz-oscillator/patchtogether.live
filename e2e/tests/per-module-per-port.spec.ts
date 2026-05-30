@@ -110,6 +110,8 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // ── ADSR: modulator that needs an upstream gate (no audio input,
   // so it falls outside the effect-shape heuristic) ──
   adsr: 'modulator: requires upstream gate; covered by adsr-vca-invert.spec.ts',
+  // ── TREE.oh.VOX: 303 voice — silent until gate_in triggers envelope ──
+  treeohvox: 'treeohvox: silent until gate_in triggers envelope; covered by treeohvox-specific tests + ART scenarios',
   // ── Game modules with score-event outputs only ──
   modtris: 'gameplay-conditional outputs; covered by modtris-related specs',
   pong:    'gameplay-conditional outputs; covered by pong-related specs',

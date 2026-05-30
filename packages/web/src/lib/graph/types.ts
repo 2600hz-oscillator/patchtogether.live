@@ -465,6 +465,11 @@ type StandardModuleType =
   // upstream MultiFilter::Type enum: LP / HP / BP / Notch / Allpass.
   // Card displays the long-form mode name next to the MODE knob.
   | 'resofilter'
+  // TREE.oh.VOX — TB-303-style bassline voice (Open303 voice slice port,
+  // MIT → AGPL). 6 knobs (TUNE / CUTOFF / RESONANCE / ENVELOPE / DECAY /
+  // ACCENT) + pitch / gate / accent_in inputs + per-knob CV. The full
+  // 404 module (sequencer + TD-3 UI) is queued as a follow-up.
+  | 'treeohvox'
   // 4PLEXER — 4-in / 4-out discrete signal router. Each output has its own
   // selector (which of in1..in4 it carries) + its own gate input that
   // advances that selector on each rising edge (1→2→3→4→1). Audio + cv both
