@@ -140,6 +140,15 @@ tasks:
     cmds:
       - npm test -w {{.SERVER}}
       - npm test -w {{.WEB}}
+      - task: test:scripts
+
+  test:scripts:
+    desc: Run repo-root scripts/ tests (scaffolder + future repo-wide tooling)
+    # Uses the root vitest.config.ts (include: scripts/**/*.test.ts). The
+    # scaffolder mutates real registry files + then undoes — single-fork
+    # so tests don't race.
+    cmds:
+      - npx vitest run --config vitest.config.ts
 
   test:emit-manifest:
     desc: Refresh e2e/.generated/registry-manifest.json without running the full unit suite
