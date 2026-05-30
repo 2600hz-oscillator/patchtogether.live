@@ -82,6 +82,20 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   meowbox:      { outputPort: 'L',     gatePort: 'gate', pitchPort: 'pitch' },
   // RIOTGIRLS drives the 4-voice DRUMMERGIRL + WT-VCO bank; trig1 fires voice 1.
   riotgirls:    { outputPort: 'outL',  gatePort: 'trig1' },
+  // TREE.oh.VOX — TB-303 voice. pitch/gate ride on dedicated audio-rate
+  // node ports (pitch_in / gate_in), NOT AudioParams, so the sequencer
+  // gate must be wired to gate_in for the amp envelope to open. Without
+  // it the voice is silent (peak=0) even though the DSP is sound — the
+  // ART baseline drives the voice offline via renderVoiceSequence(),
+  // bypassing the live gate path, which is why it passed while this smoke
+  // failed. Open the cutoff + lengthen decay so a gated note clears the
+  // 0.005 peak floor inside the 800 ms drive window.
+  treeohvox:    {
+    outputPort: 'audio_out',
+    gatePort: 'gate_in',
+    pitchPort: 'pitch_in',
+    params: { cutoff: 2500, resonance: 0.5, envelope: 0.7, decay: 800, accent: 0.5 },
+  },
   // ────────── Modulators that need a clock ──────────
   // BUGGLES self-runs (internal RNG). LFO self-runs at default rate.
   // BUGGLES outputs cv on 'smooth'.
