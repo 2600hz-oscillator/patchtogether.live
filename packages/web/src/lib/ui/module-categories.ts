@@ -86,6 +86,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   drummergirl: { top: 'Audio modules', sub: 'VCOs' },
   riotgirls: { top: 'Audio modules', sub: 'VCOs' },
   samsloop: { top: 'Audio modules', sub: 'VCOs' },
+  // BLUEBOX — DTMF dialer + phreaker buttons. Gate-triggered sound source
+  // (12 buttons → mono out), sits alongside the other gate-triggered
+  // voices in the VCOs row.
+  bluebox: { top: 'Audio modules', sub: 'VCOs' },
   // HELM + HYDROGEN moved to Ports (top-level, flat) — see the Ports
   // block below. The MI ports (rings, clouds, peaks, stages, blades,
   // macrooscillator, veils, warps) also moved to Ports/Mutable.

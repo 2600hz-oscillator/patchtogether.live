@@ -488,6 +488,12 @@ type StandardModuleType =
   // saturation) + tone LPF + level. 17 CV-able knobs/toggles + 1V/oct
   // pitch CV.
   | 'chowkick'
+  // BLUEBOX — 12-key DTMF dialer with phreaker buttons. Digits 0-9 emit
+  // the Bell-System dual-tone pair; BLUEBOX emits a single 2600 Hz
+  // supervisory sine; REDBOX emits 1700+2200 Hz simultaneously. 12 audio-
+  // rate gate inputs (one per button) + 12 momentary AudioParams (one per
+  // button) — either source ≥0.5 holds the key down.
+  | 'bluebox'
   // SCOREBOARD — 4-digit neon 7-segment counter widget (video domain).
   // SCORE gate input → counter += 1 on rising edge; RESET gate → 0.
   // Counter wraps at 10000. One colour-wheel knob for the lit-segment hue.

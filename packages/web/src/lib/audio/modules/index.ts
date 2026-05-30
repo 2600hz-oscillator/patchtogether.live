@@ -103,6 +103,10 @@ import { sidecarDef } from './sidecar';
 // CHOWKICK — synth-kick voice. Hand-port of ChowKick by Jatin Chowdhury /
 // chowdsp (BSD-3-Clause). Gate + pitch_cv + 15 knob CVs → mono kick out.
 import { chowkickDef } from './chowkick';
+// BLUEBOX — 12-key DTMF dialer with two phreaker buttons (2600 Hz +
+// 1700/2200 Hz). Each key = one momentary AudioParam + one audio-rate
+// gate input.
+import { blueboxDef } from './bluebox';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -231,6 +235,8 @@ export function registerAudioModules(): void {
   // tanh saturation → tone LPF → level. Gate-triggered + 1V/oct + CV per
   // knob (17 controls).
   registerModule(chowkickDef);
+  // BLUEBOX — DTMF dialer + phreaker buttons (2600 Hz / 1700+2200 Hz).
+  registerModule(blueboxDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

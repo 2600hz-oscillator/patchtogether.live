@@ -195,6 +195,8 @@
   import CloudseedCard from '$lib/ui/modules/CloudseedCard.svelte';
   // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port, MIT).
   import CallsineCard from '$lib/ui/modules/CallsineCard.svelte';
+  // BLUEBOX — DTMF dialer with phreaker buttons (2600 Hz / 1700+2200 Hz).
+  import BlueboxCard from '$lib/ui/modules/BlueboxCard.svelte';
   // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0).
   import CocoaDelayCard from '$lib/ui/modules/CocoaDelayCard.svelte';
   // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
@@ -501,6 +503,8 @@
     aquaTank: AquaTankCard,
     // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
     callsine: CallsineCard,
+    // BLUEBOX — DTMF dialer with two phreaker buttons.
+    bluebox: BlueboxCard,
     cocoadelay: CocoaDelayCard,
     // RESOFILTER — Resonarium MultiFilter port (5 modes, named-mode label).
     resofilter: ResofilterCard,

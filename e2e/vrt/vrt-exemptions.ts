@@ -353,6 +353,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // including coefficient stability + envelope shape + accent contrast)
   // and ART (canonical 303 pattern baseline-pinned) provide coverage.
   treeohvox: 'VRT baseline pending — deterministic card (6 knobs, no canvas); capture via `task vrt:update` on each platform. Unit + ART (canonical 303 pattern baseline-pinned + cutoff sweep + accent) + parity (structural Open303 properties) provide coverage. Promote out once both platform PNGs land.',
+  // BLUEBOX — first-slice PR. Static keypad UI (12 buttons in standard phone
+  // layout + two phreaker buttons, no canvas / animation), so deterministic
+  // capture is straightforward; pending a `task vrt:update` run on each
+  // platform (this worktree doesn't have a captured display). Unit (DTMF
+  // table pinned + processor smoke FFT + manifest sync) + E2E (per-button
+  // peaks at the SCOPE analyser) provide coverage.
+  bluebox: 'VRT baseline pending — deterministic keypad card (12 static buttons, no canvas/animation); capture via `task vrt:update` on each platform. Unit + E2E provide coverage.',
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
