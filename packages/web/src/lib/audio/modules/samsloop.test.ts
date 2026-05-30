@@ -39,12 +39,20 @@ describe('samsloopDef shape', () => {
     expect(samsloopDef.category).toBe('sources');
   });
 
-  it('exposes the expected I/O surface (trig + rate_cv in, mono out)', () => {
+  it('exposes the expected I/O surface (trig + rate_cv + audio_l_in + audio_r_in, mono out)', () => {
     const inIds = samsloopDef.inputs.map((p) => p.id);
-    expect(inIds).toEqual(['trig', 'rate_cv']);
+    // Audio-record inputs added for the recording feature (see
+    // samsloop-record.ts + SamsloopCard.svelte's REC button). The two
+    // audio inputs follow the stereovca normalling convention — R
+    // normalizes to L when unpatched, handled inside the samsloop-tap
+    // worklet.
+    expect(inIds).toEqual(['trig', 'rate_cv', 'audio_l_in', 'audio_r_in']);
     const outIds = samsloopDef.outputs.map((p) => p.id);
     expect(outIds).toEqual(['out']);
     expect(samsloopDef.outputs[0]!.type).toBe('audio');
+    // The record-input ports both carry audio.
+    expect(samsloopDef.inputs.find((p) => p.id === 'audio_l_in')?.type).toBe('audio');
+    expect(samsloopDef.inputs.find((p) => p.id === 'audio_r_in')?.type).toBe('audio');
   });
 
   it('exposes the expected params: rate / mode / start / end', () => {

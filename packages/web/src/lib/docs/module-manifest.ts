@@ -1127,6 +1127,10 @@ export function buildModuleManifest(
       // mappings (e.g. samsloop-rate.ts: knob ↔ rate piecewise math).
       // Not a ModuleDef.
       if (file.endsWith('-rate.ts')) return false;
+      // -record.ts: pure helpers for the SAMSLOOP recording feature
+      // (samsloop-record.ts: quantize / downsample / WAV header /
+      // maxSeconds-budget math). Not a ModuleDef.
+      if (file.endsWith('-record.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.

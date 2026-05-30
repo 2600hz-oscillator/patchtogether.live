@@ -167,24 +167,25 @@ test.describe('SAMSLOOP module', () => {
   });
 
   test('REC button is present and clicking it does not crash the card', async ({ page }) => {
-    // Mic capture itself is exercised in samsloop-mic.spec.ts (fake-mic
-    // project). Here we just assert the button mounts + clicking it in
-    // the default (no fake-mic flag) project doesn't throw — a missing
-    // permission rejects to an inline error string, not a page error.
+    // The audio-input record path is exercised end-to-end in
+    // samsloop-record.spec.ts (where a VCO is patched into audio_l_in).
+    // Here we just assert the button mounts + clicking it without an
+    // attached audio source flips the label to STOP and back to REC
+    // without throwing. No mic permission needed any more — recording
+    // is from patched audio cables, not the microphone.
     const errors = await setupPage(page);
     await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
     const rec = page.locator('[data-testid="samsloop-rec-button"]');
     await expect(rec).toBeVisible();
     await expect(rec).toContainText('REC');
-    // Click + give the (eventual) getUserMedia rejection a beat to settle.
+    // Click → label flips to STOP (recording started, no audio in,
+    // tap worklet just stays silent). Click again → STOP back to REC.
     await rec.click();
-    await page.waitForTimeout(500);
-    // The card should NOT have thrown. Filter known mic-permission noise
-    // (we EXPECT getUserMedia to reject under the default Chromium project
-    // since no permission was granted) — that surfaces inline, not as a
-    // page error.
-    const noisy = (e: string) => /Permission denied|NotAllowed|getUserMedia|permission|microphone/i.test(e);
-    expect(errors.filter((e) => !noisy(e)), errors.join('; ')).toEqual([]);
+    await expect(rec).toContainText('STOP', { timeout: 3000 });
+    await page.waitForTimeout(150);
+    await rec.click();
+    await expect(rec).toContainText('REC');
+    expect(errors, errors.join('; ')).toEqual([]);
   });
 
   test('per-rackspace cap: adding samsloop #21 surfaces "sorry, SAMSLOOP limit exceeded"', async ({ page }) => {

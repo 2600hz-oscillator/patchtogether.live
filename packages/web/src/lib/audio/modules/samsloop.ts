@@ -67,6 +67,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
+import tapWorkletUrl from '@patchtogether.live/dsp/dist/samsloop-tap.js?url';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -117,6 +118,41 @@ export interface SamsloopData {
    *  legacy nodes count toward the rackspace cap only. See
    *  lib/multiplayer/samsloop-limits.ts. */
   creatorId?: string;
+
+  /** Recording settings — three discrete toggles on the card (CHAN /
+   *  BITS / RATE). Defaults from SAMSLOOP_REC_DEFAULTS. Persisted with
+   *  the rest of node.data so a loaded patch remembers the user's
+   *  encoding preferences. */
+  recRate?: 22050 | 44100;
+  recBits?: 8 | 16;
+  recChannels?: 1 | 2;
+
+  /** Most-recently-recorded sample (the recording feature, separate from
+   *  the file-upload `samples`/`sampleRate` fields above). Same persistence
+   *  trick PICTUREBOX uses for `imageBytes`: raw bytes are base64-encoded
+   *  and stored as a string so Yjs treats them as one opaque value (NO
+   *  per-byte YArray recursion — a 144 kB Array.from(uint8Array) into a
+   *  YArray slot blows the stack at insert time, and re-broadcasts a
+   *  per-byte update to every peer). Strings are flat values; one Yjs
+   *  update per recording, deserialized on every peer via atob().
+   *
+   *  The byte payload is header-less PCM — interleaved if channels === 2,
+   *  little-endian for 16-bit. The WAV header is synthesized only when
+   *  the user clicks DOWNLOAD (via makeWavBlob in samsloop-record.ts). */
+  sample?: {
+    /** base64-encoded raw PCM bytes. Length is bounded by
+     *  SAMSLOOP_RECORD_BUDGET_BYTES = 250 000 (raw bytes pre-encode;
+     *  the base64 string is ~4/3 of that). */
+    bytesB64: string;
+    rate: 22050 | 44100;
+    bits: 8 | 16;
+    channels: 1 | 2;
+    /** Raw byte length pre-base64 (useful so the card can show "8 kB"
+     *  without decoding to count). */
+    byteLength: number;
+    /** durationSec = byteLength / (channels * bytesPerSample * rate). */
+    durationSec: number;
+  };
 }
 
 /** Result of attempting to decode + size-check an audio upload. The card
@@ -551,8 +587,16 @@ export const samsloopDef: AudioModuleDef = {
   schemaVersion: 1,
 
   inputs: [
-    { id: 'trig',    type: 'gate' },
-    { id: 'rate_cv', type: 'cv', paramTarget: 'rate', cvScale: { mode: 'linear' } },
+    { id: 'trig',       type: 'gate' },
+    { id: 'rate_cv',    type: 'cv', paramTarget: 'rate', cvScale: { mode: 'linear' } },
+    // Stereo record inputs — patched audio is captured + quantized +
+    // downsampled into node.data.sample on STOP. `audio_r_in` normalizes
+    // to `audio_l_in` when unpatched (same rule as stereovca / cocoadelay
+    // — see the per-input `inputs[i]?.[0] === undefined` test in the
+    // tap worklet processor). Mono → stereo record without a second
+    // cable.
+    { id: 'audio_l_in', type: 'audio' },
+    { id: 'audio_r_in', type: 'audio' },
   ],
   outputs: [
     { id: 'out', type: 'audio' },
@@ -577,6 +621,10 @@ export const samsloopDef: AudioModuleDef = {
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
+      // The tap worklet is loaded once per context too. Two separate
+      // worklet modules so the playback worklet's `samsloop` registration
+      // doesn't drift each time we touch the recorder.
+      await ctx.audioWorklet.addModule(tapWorkletUrl);
       loadedContexts.add(ctx);
     }
 
@@ -587,6 +635,23 @@ export const samsloopDef: AudioModuleDef = {
       numberOfOutputs: 1,
       outputChannelCount: [1],
     });
+
+    // Recording tap. Two audio inputs (L + R), 1 silent output (Web Audio
+    // requires at least one output to keep the node alive in the graph;
+    // the tap doesn't drive anything downstream — record-only). Owned by
+    // the factory so it can be cleanly disposed; enable/disable is via
+    // port message from the card.
+    const tapNode = new AudioWorkletNode(ctx, 'samsloop-tap', {
+      numberOfInputs: 2,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+    // Connect the tap to a muted gain → destination so Web Audio keeps
+    // calling process() (a node with no downstream is permitted to be
+    // GC'd / paused by some implementations).
+    const tapSink = ctx.createGain();
+    tapSink.gain.value = 0;
+    try { tapNode.connect(tapSink); tapSink.connect(ctx.destination); } catch { /* */ }
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
     for (const def of samsloopDef.params) {
@@ -633,8 +698,15 @@ export const samsloopDef: AudioModuleDef = {
     return {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
-        ['trig',    { node: workletNode, input: 0 }],
-        ['rate_cv', { node: workletNode, input: 0, param: params.get('rate')! }],
+        ['trig',       { node: workletNode, input: 0 }],
+        ['rate_cv',    { node: workletNode, input: 0, param: params.get('rate')! }],
+        // Record-tap audio inputs. These wire user-patched audio into the
+        // samsloop-tap worklet, which forwards captured L/R blocks to the
+        // card via the tap port (subscribed via the handle's read('recTap')
+        // surface). Independent of the playback worklet — recording one
+        // sample and playing another back is fine.
+        ['audio_l_in', { node: tapNode, input: 0 }],
+        ['audio_r_in', { node: tapNode, input: 1 }],
       ]),
       outputs: new Map([
         ['out', { node: workletNode, output: 0 }],
@@ -650,12 +722,33 @@ export const samsloopDef: AudioModuleDef = {
           const live = livePatch.nodes[node.id];
           return (live?.data as SamsloopData | undefined)?.sampleLength ?? 0;
         }
+        // Expose the tap's MessagePort + a helper to enable/disable it.
+        // The card subscribes to the port's onmessage to receive captured
+        // L/R chunks during a recording. The two are surfaced together
+        // under one key so the card grabs them atomically (no race
+        // between "I subscribed" and "I enabled" — the card enables
+        // AFTER attaching its onmessage).
+        if (key === 'recTap') {
+          return {
+            port: tapNode.port,
+            setEnabled: (enabled: boolean) => {
+              try { tapNode.port.postMessage({ type: 'enable', enabled }); } catch { /* */ }
+            },
+            /** The AudioContext's native sample rate — the rate at which
+             *  the tap captures. The card uses this as `srcRate` when it
+             *  calls `encodeRecordingBytes` on STOP. */
+            sampleRate: ctx.sampleRate,
+          };
+        }
         return undefined;
       },
       dispose() {
         alive = false;
         if (pollTimer !== null) clearTimeout(pollTimer);
         try { workletNode.disconnect(); } catch { /* */ }
+        try { tapNode.port.postMessage({ type: 'enable', enabled: false }); } catch { /* */ }
+        try { tapNode.disconnect(); } catch { /* */ }
+        try { tapSink.disconnect(); } catch { /* */ }
       },
     };
   },
