@@ -340,6 +340,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // sources) provide functional coverage; promote into MODULES once the
   // darwin + linux pngs are captured.
   fourplexer: 'VRT baseline pending — deterministic card (4 selector knobs, no canvas); capture via `task vrt:update` on each platform. Unit + E2E (routing + gate-advance + wrap + audio/cv) provide coverage.',
+  // TREE.oh.VOX — TB-303 voice slice (Open303 port). Deterministic card:
+  // 6 knobs in 2 rows + 9 patch inputs + 1 output, no canvas. Capture via
+  // `task vrt:update` on each platform when this lands; unit (43 tests
+  // including coefficient stability + envelope shape + accent contrast)
+  // and ART (canonical 303 pattern baseline-pinned) provide coverage.
+  treeohvox: 'VRT baseline pending — deterministic card (6 knobs, no canvas); capture via `task vrt:update` on each platform. Unit + ART (canonical 303 pattern baseline-pinned + cutoff sweep + accent) + parity (structural Open303 properties) provide coverage. Promote out once both platform PNGs land.',
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards

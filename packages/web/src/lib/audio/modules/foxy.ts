@@ -239,7 +239,7 @@ const BRIDGE_MS = 42;
 const TIMBRE_MAX_HZ = 200;
 
 /** Internal raster resolution. We paint at the 256×256 the spec mandates
- *  (RASTERIZE's own 640×360 default is downsampled to this), so the painter
+ *  (RASTERIZE's own 640×480 default is downsampled to this), so the painter
  *  buffer IS the 256×256 field source — no extra downsample pass needed. */
 const RASTER_W = FOXY_FIELD_SIZE;
 const RASTER_H = FOXY_FIELD_SIZE;

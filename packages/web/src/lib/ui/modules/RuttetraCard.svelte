@@ -54,7 +54,7 @@
   let yShapeName = $derived(shapeName(p('yShape')));
 
   const ENGINE_W = 640;
-  const ENGINE_H = 360;
+  const ENGINE_H = 480;
   const CANVAS_W = 280;
   const CANVAS_H = 158;
 

@@ -48,7 +48,7 @@
   // We always letterbox 4:3 inside the canvas so the CRT aspect ratio
   // is preserved even as the user resizes.
   const ENGINE_W = 640;
-  const ENGINE_H = 360;
+  const ENGINE_H = 480;
 
   let cardWidth = $derived<number>(
     (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,
@@ -114,12 +114,12 @@
   }
 
   /** Letterbox the engine frame inside the (cw, ch) container at the
-   *  PIPELINE aspect (16:9 = ENGINE_W/ENGINE_H), NOT 4:3. The whole video
-   *  pipeline (sources → mixer → bentbox) renders a 16:9 FBO; re-imposing a
-   *  4:3 blit here squished the image horizontally. The CRT/retro look
-   *  (scanlines, phosphor mask, NTSC bend) lives in the BENTBOX shader and
-   *  is unaffected — we only fix the display-rect aspect so a 16:9 input
-   *  isn't distorted on the way to the visible canvas. */
+   *  PIPELINE aspect (currently 4:3 = ENGINE_W/ENGINE_H). The whole video
+   *  pipeline (sources → mixer → bentbox) renders an ENGINE_W×ENGINE_H FBO;
+   *  re-imposing any other aspect here would skew the image. The CRT/retro
+   *  look (scanlines, phosphor mask, NTSC bend) lives in the BENTBOX shader
+   *  and is unaffected — we only fix the display-rect aspect so the engine
+   *  frame isn't distorted on the way to the visible canvas. */
   function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
     const SRC = ENGINE_W / ENGINE_H;
     const dstAspect = cw / ch;

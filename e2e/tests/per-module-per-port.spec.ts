@@ -109,6 +109,8 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // ── ADSR: modulator that needs an upstream gate (no audio input,
   // so it falls outside the effect-shape heuristic) ──
   adsr: 'modulator: requires upstream gate; covered by adsr-vca-invert.spec.ts',
+  // ── TREE.oh.VOX: 303 voice — silent until gate_in triggers envelope ──
+  treeohvox: 'treeohvox: silent until gate_in triggers envelope; covered by treeohvox-specific tests + ART scenarios',
   // ── Game modules with score-event outputs only ──
   modtris: 'gameplay-conditional outputs; covered by modtris-related specs',
   pong:    'gameplay-conditional outputs; covered by pong-related specs',
@@ -606,6 +608,25 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // atlantisCatalyst has a similar heavy-mount profile.
       if (mod.type === 'foxy' || mod.type === 'atlantisCatalyst') test.setTimeout(90_000);
 
+      // Per-iteration budget: each non-exempt output drives a FULL fresh
+      // page navigation (goto + networkidle) + spawnPatch + driver wait +
+      // sink-readout. On a quiet machine that's ~6s per iteration; under
+      // CI shard contention (4 workers + cold CPU + WebGL shader compile
+      // on video sinks) it climbs to 12-15s. The default 30s test
+      // timeout is fine for a 1-output module but blows up at 2 outputs
+      // — chronic shard-6 flake on MANDLEBLOT.color_out (PRs #439/#446/
+      // #449/#450), where iter 1 (mono_out) consumed enough budget that
+      // iter 2's 5s `toHaveCount` got cancelled by the overall test
+      // timeout. Scale linearly with the count of NON-exempt outputs so
+      // every iteration gets ~15s of headroom. Floored at 30s so
+      // single-output modules keep the existing budget.
+      const nonExemptOutputs = mod.outputs.filter(
+        (p) => !EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`],
+      ).length;
+      if (nonExemptOutputs >= 2) {
+        test.setTimeout(Math.max(30_000, nonExemptOutputs * 15_000 + 10_000));
+      }
+
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
       page.on('console', (m) => {
@@ -838,13 +859,14 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
     }
 
     test(title, async ({ page }) => {
-      // Per-iteration: spawnPatch (~1s) + 300ms wait + edge-read (~50ms).
-      // For modules with many inputs (HYDROGEN has 168; DOOM has 28) the
-      // 30s default test timeout is too tight. Scale up to ensure ~1.5s
-      // per iteration with margin.
-      if (mod.inputs.length > 20) {
-        test.setTimeout(Math.max(30_000, mod.inputs.length * 1500 + 30_000));
-      }
+      // Per-iteration: spawnPatch (~1s under-load) + 100ms wait + edge-read
+      // (~50ms). The default 30s test budget is ALWAYS too tight under shard
+      // CPU contention — even at the previous "> 20 inputs" gate, modules
+      // like BENTBOX (16 inputs) sat at ~24s of pure per-iter work with
+      // zero headroom, and flaked on a heavier-than-usual runner. Scale
+      // unconditionally to (n * 1.5s + 30s) baseline so any module finishes
+      // with ~1× margin on top of the iteration cost.
+      test.setTimeout(Math.max(30_000, mod.inputs.length * 1500 + 30_000));
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
