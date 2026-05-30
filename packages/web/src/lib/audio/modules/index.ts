@@ -87,6 +87,10 @@ import { cocoaDelayDef } from './cocoadelay';
 // MultiFilter (5 modes: LP / HP / BP / Notch / Allpass), with a card that
 // displays the live mode name next to the MODE knob.
 import { resofilterDef } from './resofilter';
+// TREE.oh.VOX — TB-303 voice slice ported from Robin Schmidt's Open303
+// (MIT). The 6 canonical 303 knobs + CV; the full 404 module
+// (sequencer + TD-3 UI) is a follow-up task.
+import { treeohvoxDef } from './treeohvox';
 // FOXY — hybrid SWOLEVCO→RASTERIZE→RUTTETRA(XYZ)→realtime-wavetable→WAVECEL.
 import { foxyDef } from './foxy';
 // 4PLEXER — 4-in / 4-out discrete signal router with per-output
@@ -199,6 +203,10 @@ export function registerAudioModules(): void {
   // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium's
   // MultiFilter; LP / HP / BP / Notch / Allpass with named-mode card label).
   registerModule(resofilterDef);
+  // TREE.oh.VOX — TB-303 voice slice (Open303 port). 6 knobs: TUNE,
+  // CUTOFF, RESONANCE, ENVELOPE, DECAY, ACCENT + pitch/gate/accent_in
+  // + per-knob CV. Full 404 module (sequencer + TD-3 UI) is queued.
+  registerModule(treeohvoxDef);
   // GRIDS — Mutable Instruments topographic drum pattern generator.
   // BD/SD/HH triggers + accent from a 5x5 interpolated drum map; euclidean mode.
   registerModule(gridsDef);
