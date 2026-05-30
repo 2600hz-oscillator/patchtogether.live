@@ -123,6 +123,56 @@ export const rasterizeDef: AudioModuleDef = {
       return buf.subarray(buf.length - count);
     }
 
+    // ── DETERMINISTIC VRT SEED ───────────────────────────────────────
+    // The live raster fill drifts with wall-clock timing: how many rAF
+    // ticks land before the VRT freeze (AudioContext.suspend) varies
+    // run-to-run by ±a few frames, and at default samplesPerFrame=800
+    // each frame advances the cursor ~1.25 scanlines. Over a 900ms
+    // settle that's ~50 lines of cursor wander → the band pattern
+    // visually matches across runs (same input frequency) but is
+    // shifted vertically by tens of rows, which busts the VRT pixel
+    // tolerance even with the freeze-on-suspend guard below. Same class
+    // of flake as FOXY's `__foxyVrtSeed` and PEAKSTATE's
+    // `__peakstateVrtSeed` (see those modules).
+    //
+    // When the harness sets `__rasterizeVrtSeed`, we RESET the painter
+    // then paint one deterministic full-frame fill from a fixed
+    // synthetic waveform (independent of the analyser + wall clock), and
+    // subsequent advance calls short-circuit — so every read('imageData')
+    // and bridge drawFrame returns the SAME pixels run-to-run. Fix for
+    // task #198.
+    let vrtSeeded = false;
+    function vrtSeedActive(): boolean {
+      return !!(globalThis as unknown as { __rasterizeVrtSeed?: boolean })
+        .__rasterizeVrtSeed;
+    }
+    function paintSeeded(): void {
+      painter.reset();
+      // Fixed synthetic sine — independent of any wall-clock / analyser
+      // refill. 261 Hz over the engine's video resolution at 48 kHz
+      // (matches the VRT scene's 261 Hz analogVco source so the BAND
+      // SPACING in the seeded baseline still looks like the live one).
+      const total = VIDEO_RES.width * VIDEO_RES.height;
+      const sr = 48000;
+      const freq = 261;
+      const buf = new Float32Array(total);
+      for (let i = 0; i < total; i++) {
+        buf[i] = Math.sin((2 * Math.PI * freq * i) / sr) * 0.9;
+      }
+      // Paint ONE full-frame fill. samplesPerFrame=total so the cursor
+      // sweeps the WHOLE frame in this one paint (no run-to-run cursor
+      // wander), and wrap=0 + cursor=0 means the next call (if any) would
+      // re-fill identically — but the early-return below means the
+      // painter is touched exactly once.
+      const seededParams: RasterizeDrawParams = {
+        cursor: 0,
+        samplesPerFrame: total,
+        gain: 1,
+        wrap: 0,
+      };
+      painter.paint(buf, seededParams);
+    }
+
     // Frame-advance dedup: both the cross-domain bridge's drawFrame() AND
     // the on-card canvas's read('imageData') want a fresh frame, and when
     // both fire in the same animation frame we must advance the painter
@@ -131,6 +181,12 @@ export const rasterizeDef: AudioModuleDef = {
     // calls within the same ~16ms slice paint at most once.
     let lastPaintMs = -1;
     function advanceOncePerFrame(): void {
+      // VRT seed mode: paint one deterministic frame, then HOLD it across
+      // subsequent calls so the snapshot is pixel-stable run-to-run.
+      if (vrtSeedActive()) {
+        if (!vrtSeeded) { vrtSeeded = true; paintSeeded(); }
+        return;
+      }
       // Freeze the painting when the AudioContext is suspended: there's no
       // fresh audio arriving, so advancing the drifting cursor would just
       // smear stale samples across the frame. Mirrors SCOPE's analyser-

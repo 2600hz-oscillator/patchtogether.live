@@ -159,6 +159,19 @@ tasks:
     cmds:
       - npm test -w {{.SERVER}}
       - npm test -w {{.WEB}}
+      - task: test:scripts
+
+  test:scripts:
+    desc: Run repo-root scripts/ tests (scaffolder + future repo-wide tooling)
+    # Uses vitest.scripts.config.ts (include: scripts/**/*.test.ts). The
+    # scaffolder mutates real registry files + then undoes — single-fork
+    # so tests don't race.
+    #
+    # NOTE: config file is NOT named vitest.config.ts on purpose — per-package
+    # `vitest run` would auto-discover it and shadow the package's own config,
+    # breaking `npm test -w packages/server`. See vitest.scripts.config.ts.
+    cmds:
+      - npx vitest run --config vitest.scripts.config.ts
 
   test:emit-manifest:
     desc: Refresh e2e/.generated/registry-manifest.json without running the full unit suite
@@ -190,7 +203,7 @@ tasks:
   # .gitattributes). Modeled on the doomviz VRT pattern — same gallery shape,
   # adapted to Playwright + TS. Initially non-blocking in CI (continue-on-error).
   vrt:
-    desc: Run the VRT suite (Playwright; compares card screenshots against e2e/vrt/__screenshots__/)
+    desc: Run the VRT suite (Playwright; compares card screenshots against e2e/vrt/__screenshots__/). Full sweep — INFORMATIONAL lane (includes canvas-driven cards that may flake).
     # dsp:build is required because several module Card.svelte files
     # import `?url`-suffixed WASM artifacts from packages/dsp/dist/
     # (e.g. riotgirls.ts imports drummergirl.wasm?url). Without the
@@ -205,6 +218,18 @@ tasks:
     deps: [dsp:build, test:emit-manifest]
     cmds:
       - npm run vrt -w {{.E2E}} -- {{.CLI_ARGS}}
+
+  vrt:strict:
+    desc: Run the deterministic VRT subset (STRICT_VRT_MODULES) — pure knob/fader cards on both platforms, no canvas masks. BLOCKING lane in `task ci`. A flake here is a real flake to fix, not tolerate (per memory `feedback_no_flake_tolerance`).
+    # Same deps as `task vrt` — DSP bundle + registry manifest. The
+    # filter to STRICT_VRT_MODULES happens inside vrt.spec.ts when
+    # VRT_STRICT=1 is set (also narrows testMatch in vrt.config.ts so
+    # the auxiliary composite/interactions/skin specs don't run).
+    deps: [dsp:build, test:emit-manifest]
+    env:
+      VRT_STRICT: '1'
+    cmds:
+      - npm run vrt:strict -w {{.E2E}} -- {{.CLI_ARGS}}
 
   vrt:update:
     desc: Refresh VRT baselines (e2e/vrt/__screenshots__/**). Inspect the diff and commit.
@@ -352,12 +377,18 @@ tasks:
 
   # ---------------- CI shape ----------------
   ci:
-    desc: Run the full PR-gate suite (typecheck + unit + ART + E2E)
+    desc: Run the full PR-gate suite (typecheck + unit + ART + E2E + VRT-strict)
+    # VRT-strict (deterministic knob/fader subset) gates `task ci` so a
+    # baseline drift on a pure-CSS card fails locally just as fast as
+    # the unit suite. The full `task vrt` sweep (canvas-driven cards
+    # that legitimately flake — masked previews, animated chrome) stays
+    # informational and runs only in the dedicated CI VRT job.
     cmds:
       - task: typecheck
       - task: test
       - task: art
       - task: e2e
+      - task: vrt:strict
 
   # ---------------- Housekeeping ----------------
   clean:
