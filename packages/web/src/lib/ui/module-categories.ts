@@ -267,6 +267,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // cleanly under audio or video and the user can re-bucket on dev.
   sticky: { top: 'Hybrid', sub: 'Hybrid' },
   group: { top: 'Hybrid', sub: 'Hybrid' },
+  cadillac: { top: 'Hybrid', sub: 'Hybrid' },
   livecode: { top: 'Hybrid', sub: 'Hybrid' },
   // Clocked runner — spawned programmatically by LIVECODE's clocked()
   // call. Listed alongside LIVECODE so users browsing the palette can
