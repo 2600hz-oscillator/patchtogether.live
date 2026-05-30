@@ -571,7 +571,23 @@ test.describe('per-module per-port: outputs emit signal', () => {
     const hasUpstreamMediaInput = mod.inputs.some(
       (p) => p.type === 'audio' || p.type === 'video' || p.type === 'mono-video' || p.type === 'image',
     );
-    if (hasUpstreamMediaInput && !NOT_EFFECT_DESPITE_AUDIO_INPUT.has(mod.type)) {
+    // If a per-port driver registers extra setup for this module
+    // (upstream graph, seeded params, seeded data, page init, post-spawn
+    // event dispatch), it's SUPPLYING what the effect needs — bypass the
+    // effect-shape skip. (Example: VIDEOOUT has a video input but the
+    // VIDEOOUT driver wires ACIDWARP.out into it, so the .out passthrough
+    // becomes assertable. POLYSEQZ has cv inputs but the driver seeds
+    // isPlaying=1 + steps so it self-runs.)
+    const ppDriverModule = perPortDriverFor(mod.type);
+    const hasDriverSetup = !!(
+      ppDriverModule
+      && (ppDriverModule.upstream || ppDriverModule.params || ppDriverModule.data || ppDriverModule.pageSetup || ppDriverModule.postSpawn)
+    );
+    if (
+      hasUpstreamMediaInput
+      && !NOT_EFFECT_DESPITE_AUDIO_INPUT.has(mod.type)
+      && !hasDriverSetup
+    ) {
       test.fixme(`${title} [SKIPPED: effect-shape (audio/video input — needs upstream source); covered by dedicated specs]`, () => {});
       continue;
     }
@@ -590,7 +606,8 @@ test.describe('per-module per-port: outputs emit signal', () => {
       'analogLogicMaths', 'fourplexer', 'unityscalemathematik',
       'cartesian', 'polyseqz', 'frogger',
     ]);
-    if (PURE_CV_GATE_UTILITY.has(mod.type)) {
+    // Same driver-setup bypass as the media-input shape.
+    if (PURE_CV_GATE_UTILITY.has(mod.type) && !hasDriverSetup) {
       test.fixme(`${title} [SKIPPED: pure CV/gate utility (output = f(inputs); needs upstream CV/gate); covered by dedicated specs]`, () => {});
       continue;
     }

@@ -277,21 +277,28 @@ const DRIVERS: Record<string, PerPortDriver> = {
   // Driving with BUGGLES.smooth into in1/in2 makes sum/diff/att1/att2
   // emit signal; AND/NAND/OR/NOT need binary inputs (use SEQUENCER.gate).
   illogic: {
+    // Drive all 4 inputs so att1/att2/att3/att4 + sum/diff + and/nand/or/not
+    // all evaluate against non-zero signals. Two BUGGLES (smooth + stepped)
+    // cover in1+in3; two SEQUENCER ports (gate + pitch lane-0) cover in2+in4.
     upstream: () => ({
       nodes: [bugglesCv('drv-bug'), sequencerGate('drv-seq').node],
       edges: [
-        {
-          id: 'e-drv-in1',
+        { id: 'e-drv-in1',
           from: { nodeId: 'drv-bug', portId: 'smooth' },
           to:   { nodeId: 'sut',     portId: 'in1' },
-          sourceType: 'cv', targetType: 'cv',
-        },
-        {
-          id: 'e-drv-in2',
+          sourceType: 'cv', targetType: 'cv' },
+        { id: 'e-drv-in2',
           from: { nodeId: 'drv-seq', portId: 'gate' },
           to:   { nodeId: 'sut',     portId: 'in2' },
-          sourceType: 'gate', targetType: 'cv',
-        },
+          sourceType: 'gate', targetType: 'cv' },
+        { id: 'e-drv-in3',
+          from: { nodeId: 'drv-bug', portId: 'stepped' },
+          to:   { nodeId: 'sut',     portId: 'in3' },
+          sourceType: 'cv', targetType: 'cv' },
+        { id: 'e-drv-in4',
+          from: { nodeId: 'drv-seq', portId: 'pitch' },
+          to:   { nodeId: 'sut',     portId: 'in4' },
+          sourceType: 'pitch', targetType: 'cv' },
       ],
     }),
     postSpawn: async (page) => {
@@ -309,30 +316,34 @@ const DRIVERS: Record<string, PerPortDriver> = {
         });
       }, seed.data);
     },
-    note: 'ILLOGIC: drive in1 with BUGGLES.smooth + in2 with SEQUENCER.gate; outs are f(inputs)',
+    note: 'ILLOGIC: drive all 4 inputs (BUGGLES smooth+stepped, SEQ gate+pitch); outs are f(inputs)',
   },
   slewSwitch: {
+    // Drive all 4 inputs + step_clock so out1/out2/out3/out4 all flow,
+    // switched cycles the 4 sources, step_idx counts up, eoc fires.
     upstream: () => ({
       nodes: [bugglesCv('drv-bug'), sequencerGate('drv-seq').node],
       edges: [
-        {
-          id: 'e-drv-in1',
+        { id: 'e-drv-in1',
           from: { nodeId: 'drv-bug', portId: 'smooth' },
           to:   { nodeId: 'sut',     portId: 'in1' },
-          sourceType: 'cv', targetType: 'cv',
-        },
-        {
-          id: 'e-drv-in2',
+          sourceType: 'cv', targetType: 'cv' },
+        { id: 'e-drv-in2',
           from: { nodeId: 'drv-bug', portId: 'stepped' },
           to:   { nodeId: 'sut',     portId: 'in2' },
-          sourceType: 'cv', targetType: 'cv',
-        },
-        {
-          id: 'e-drv-clk',
+          sourceType: 'cv', targetType: 'cv' },
+        { id: 'e-drv-in3',
+          from: { nodeId: 'drv-bug', portId: 'smooth' },
+          to:   { nodeId: 'sut',     portId: 'in3' },
+          sourceType: 'cv', targetType: 'cv' },
+        { id: 'e-drv-in4',
+          from: { nodeId: 'drv-bug', portId: 'stepped' },
+          to:   { nodeId: 'sut',     portId: 'in4' },
+          sourceType: 'cv', targetType: 'cv' },
+        { id: 'e-drv-clk',
           from: { nodeId: 'drv-seq', portId: 'gate' },
           to:   { nodeId: 'sut',     portId: 'step_clock' },
-          sourceType: 'gate', targetType: 'gate',
-        },
+          sourceType: 'gate', targetType: 'gate' },
       ],
     }),
     postSpawn: async (page) => {
