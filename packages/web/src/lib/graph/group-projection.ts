@@ -208,6 +208,36 @@ export function buildExposedPortMap(snap: PatchSnapshot): Map<string, { childId:
 }
 
 /**
+ * Resolve one exposed-port handle to its underlying child {nodeId, portId}.
+ *
+ * Used by the canvas's connect-drag commit path to translate a cable that
+ * terminates on a group's exposed handle (`OUT--LUMAKEY-FD8329B3--OUT` etc.)
+ * into the real child port the engine will route. Returns null when the
+ * group has no entry for that handle id (defensive — caller may then fall
+ * back to treating the connection as targeting the group node itself, or
+ * abort if no fallback is sensible).
+ *
+ * Group-membership lookup is a direct read of the node's data; it does NOT
+ * walk the whole snapshot. O(exposedPorts) per call. Cheap.
+ */
+export function resolveExposedPort(
+  groupNode: ModuleNode,
+  portId: string,
+): { childId: string; childPortId: string; cableType: CableType; direction: 'input' | 'output' } | null {
+  if (groupNode.type !== 'group') return null;
+  const data = asGroupData(groupNode.data);
+  if (!data) return null;
+  const ep = data.exposedPorts.find((p) => p.id === portId);
+  if (!ep) return null;
+  return {
+    childId: ep.childId,
+    childPortId: ep.childPortId,
+    cableType: ep.cableType,
+    direction: ep.direction,
+  };
+}
+
+/**
  * Project a snapshot through any GROUP! nodes:
  * - Each edge endpoint that names a group's exposed port is rewritten
  *   to point at the underlying child {nodeId, portId}.

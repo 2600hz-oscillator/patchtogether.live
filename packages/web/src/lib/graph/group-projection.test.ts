@@ -5,7 +5,7 @@
 // (which must only see real child ports).
 
 import { describe, it, expect } from 'vitest';
-import { projectGroups, buildExposedPortMap, type GroupData } from './group-projection';
+import { projectGroups, buildExposedPortMap, resolveExposedPort, type GroupData } from './group-projection';
 import type { PatchSnapshot } from './snapshot';
 import type { ModuleNode, Edge } from './types';
 
@@ -152,6 +152,58 @@ describe('projectGroups', () => {
     const out = projectGroups(input);
     expect(out.nodes).toBe(input.nodes);
     expect(out.nodes.map((node) => node.id)).toEqual(['lfo-1', 'c-1', 'g-1']);
+  });
+});
+
+describe('resolveExposedPort', () => {
+  // Regression: this is the helper Canvas.svelte's handleConnect calls when
+  // a cable terminates on a group's exposed handle. Before the fix the
+  // connect path bailed because `getModuleDef('group') ?? getVideoModuleDef`
+  // returned nothing — so dragging onto the LUMAKEY exposed OUT in an
+  // instrument silently failed (no edge added to patch.edges, cable never
+  // rendered).
+  it('returns childId + childPortId + cableType for a known exposed handle', () => {
+    const groupData: GroupData = {
+      childIds: ['lumakey-1'],
+      exposedPorts: [
+        {
+          id: 'OUT--LUMAKEY-FD8329B3--OUT',
+          childId: 'lumakey-1',
+          childPortId: 'out',
+          direction: 'output',
+          cableType: 'mono-video',
+        },
+      ],
+    };
+    const groupNode = n('dmt-warp', 'group', groupData as unknown as Record<string, unknown>);
+    const got = resolveExposedPort(groupNode, 'OUT--LUMAKEY-FD8329B3--OUT');
+    expect(got).toEqual({
+      childId: 'lumakey-1',
+      childPortId: 'out',
+      cableType: 'mono-video',
+      direction: 'output',
+    });
+  });
+
+  it('returns null for unknown exposed handle ids on a group node', () => {
+    const groupData: GroupData = {
+      childIds: ['c-1'],
+      exposedPorts: [
+        { id: 'in-x', childId: 'c-1', childPortId: 'cv', direction: 'input', cableType: 'cv' },
+      ],
+    };
+    const groupNode = n('g-1', 'group', groupData as unknown as Record<string, unknown>);
+    expect(resolveExposedPort(groupNode, 'in-missing')).toBeNull();
+  });
+
+  it('returns null for non-group nodes (caller must fall back to def lookup)', () => {
+    const audioNode = n('vco-1', 'analogVco');
+    expect(resolveExposedPort(audioNode, 'out')).toBeNull();
+  });
+
+  it('returns null when the group has malformed data', () => {
+    const groupNode = n('g-1', 'group', { childIds: ['c-1'] } as Record<string, unknown>);
+    expect(resolveExposedPort(groupNode, 'whatever')).toBeNull();
   });
 });
 
