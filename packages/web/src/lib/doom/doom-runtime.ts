@@ -474,10 +474,16 @@ export class DoomRuntime {
   // is preserved.
 
   /** Drain up to 256 events from the engine event ring. Returns an array of
-   *  {type, slot} decoded entries; empty array if no events or not yet
-   *  initialized. type matches the DGPT_EVT_* constants (KILL=1, DOOR=2,
-   *  GUN=3); slot is meaningful for GUN only (0..3). */
-  drainEvents(): { type: number; slot: number }[] {
+   *  decoded entries; empty array if no events or not yet initialized.
+   *
+   *  `type` matches the DGPT_EVT_* constants:
+   *    KILL=1, DOOR=2, GUN=3, PLAYER_DIES=4, KILL_TYPED=5.
+   *  `slot` is meaningful for GUN (0..3) and PLAYER_DIES (0..3) — 2 bits.
+   *  `payload` carries the 12-bit value used by KILL_TYPED to encode the
+   *  C-side mobjtype_t id; zero for non-typed events. Keeping both fields
+   *  on every entry lets the JS consumer dispatch with a single switch on
+   *  `type` without re-decoding the raw word. */
+  drainEvents(): { type: number; slot: number; payload: number }[] {
     if (!this.initialized || this.drainBufPtr === null) return [];
     const count = this.mod.ccall(
       'dgpt_drain_events',
@@ -490,10 +496,18 @@ export class DoomRuntime {
     // means a prior grow may have swapped the backing buffer).
     const start = this.drainBufPtr >>> 2;
     const view = this.mod.HEAPU32.subarray(start, start + count);
-    const out: { type: number; slot: number }[] = new Array(count);
+    const out: { type: number; slot: number; payload: number }[] = new Array(count);
     for (let i = 0; i < count; i++) {
       const e = view[i]!;
-      out[i] = { type: e & 0xf, slot: (e >>> 4) & 0x3 };
+      out[i] = {
+        type: e & 0xf,
+        slot: (e >>> 4) & 0x3,
+        // 12-bit payload (bits 4..15) — KILL_TYPED packs mobjtype_t here.
+        // For event types that use the slot field instead, this just
+        // includes the 2 slot bits as the low part; consumers dispatched
+        // on `type` won't read it.
+        payload: (e >>> 4) & 0xfff,
+      };
     }
     return out;
   }

@@ -53,10 +53,12 @@ describe('buildDoomPatchPanelSections — shape contract', () => {
     }
   });
 
-  it('renders 9 output ports on section 0 in def declaration order', () => {
+  it('renders the full output set on section 0 in def declaration order', () => {
     const sections = buildDoomPatchPanelSections(0);
     expect(sections[0]!.outputs).toBeDefined();
-    expect(sections[0]!.outputs).toHaveLength(9);
+    // Output count == doomDef.outputs length (includes per-monster +
+    // per-player death gates added in feat/doom-per-type-death-gates).
+    expect(sections[0]!.outputs).toHaveLength(doomDef.outputs.length);
     // Subsequent sections carry no outputs (single right-column path).
     expect(sections[1]!.outputs).toBeUndefined();
     expect(sections[2]!.outputs).toBeUndefined();
@@ -66,11 +68,12 @@ describe('buildDoomPatchPanelSections — shape contract', () => {
     expect(sections[0]!.outputs!.map((o) => o.id)).toEqual(doomDef.outputs.map((o) => o.id));
   });
 
-  it('total handle count is 45 (36 inputs + 9 outputs) — the migration claim', () => {
+  it('total handle count = 36 inputs + N outputs (one per doomDef output)', () => {
     const sections = buildDoomPatchPanelSections(0);
     const inputs = sections.flatMap((s) => s.inputs);
     const outputs = sections.flatMap((s) => s.outputs ?? []);
-    expect(inputs.length + outputs.length).toBe(45);
+    expect(inputs.length).toBe(36);
+    expect(outputs.length).toBe(doomDef.outputs.length);
   });
 
   it('uses the historical inline glyphs (↑↓←→) for cardinal direction labels', () => {

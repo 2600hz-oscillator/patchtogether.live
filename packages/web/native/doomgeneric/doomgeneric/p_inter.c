@@ -699,8 +699,25 @@ P_KillMobj
     // Phase-1 SP event: a counted MONSTER death (not a player frag).
     // Push once per kill, regardless of who killed it. The JS gate pulse is
     // outside the netgame consistency digest — MP lockstep is untouched.
-    if ((target->flags & MF_COUNTKILL) && target->player == NULL)
+    //
+    // ALSO emit a KILL_TYPED event carrying target->type so JS can fan out
+    // to per-monster-type gate outputs (evt_kill_imp, evt_kill_demon, …).
+    // Two events per kill keeps the legacy any-monster `evt_kill` gate
+    // semantics untouched while adding the typed channel.
+    if ((target->flags & MF_COUNTKILL) && target->player == NULL) {
 	dgpt_evt_push(DGPT_EVT_KILL, 0);
+	dgpt_evt_push_typed(DGPT_EVT_KILL_TYPED, (uint32_t)target->type);
+    }
+
+    // Per-player death gate (evt_p1_dies..evt_p4_dies). Fires when a player's
+    // mobj dies — environment kills, frags from another player, monster
+    // damage, suicide all route here. Slot = players[] index, capped at 0..3
+    // by the 2-bit encoding (DOOM's MAXPLAYERS is 4 anyway).
+    if (target->player) {
+	int slot = (int)(target->player - players);
+	if (slot >= 0 && slot < 4)
+	    dgpt_evt_push(DGPT_EVT_PLAYER_DIES, slot);
+    }
 
     if (target->player)
     {

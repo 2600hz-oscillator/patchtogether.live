@@ -146,6 +146,34 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   'doom.evt_gun_p2': 'requires in-game weapon fire P2; covered by engine-bridge unit sweep',
   'doom.evt_gun_p3': 'requires in-game weapon fire P3; covered by engine-bridge unit sweep',
   'doom.evt_gun_p4': 'requires in-game weapon fire P4; covered by engine-bridge unit sweep',
+  // feat/doom-per-type-death-gates: per-monster-type kill + per-player
+  // death gates fire only on real game events (or forcePulse). The
+  // engine-video-audio-bridge .each sweep proves every gate wires through
+  // the dispatcher; doom-per-type-death-gates.spec.ts covers forcePulse
+  // → SCOPE for a representative sample.
+  'doom.evt_kill_zombieman':   'requires in-game zombieman kill; covered by engine-bridge unit sweep',
+  'doom.evt_kill_shotguy':     'requires in-game shotgunner kill; covered by engine-bridge unit sweep',
+  'doom.evt_kill_imp':         'requires in-game imp kill; covered by doom-per-type-death-gates (forcePulse)',
+  'doom.evt_kill_demon':       'requires in-game demon kill; covered by doom-per-type-death-gates (forcePulse)',
+  'doom.evt_kill_spectre':     'requires in-game spectre kill; covered by engine-bridge unit sweep',
+  'doom.evt_kill_lostsoul':    'requires in-game lost-soul kill; covered by engine-bridge unit sweep',
+  'doom.evt_kill_caco':        'requires in-game caco kill; covered by engine-bridge unit sweep',
+  'doom.evt_kill_baron':       'requires in-game baron kill; covered by engine-bridge unit sweep',
+  'doom.evt_kill_chainguy':    'requires in-game chaingunner kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_revenant':    'requires in-game revenant kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_mancubus':    'requires in-game mancubus kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_vile':        'requires in-game arch-vile kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_knight':      'requires in-game hell knight kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_pain':        'requires in-game pain elemental kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_arachnotron': 'requires in-game arachnotron kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_spidermind':  'requires in-game spider mastermind kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_cyber':       'requires in-game cyberdemon kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_wolfss':      'requires in-game wolf SS kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_kill_keen':        'requires in-game commander keen kill (DOOM II only); covered by engine-bridge unit sweep',
+  'doom.evt_p1_dies':          'requires in-game P1 death; covered by doom-per-type-death-gates (forcePulse)',
+  'doom.evt_p2_dies':          'requires in-game P2 death; covered by engine-bridge unit sweep',
+  'doom.evt_p3_dies':          'requires in-game P3 death; covered by engine-bridge unit sweep',
+  'doom.evt_p4_dies':          'requires in-game P4 death; covered by engine-bridge unit sweep',
   'doom.out':       'WASM render loop > sweep budget; covered by doom-wasm.spec.ts',
   // (file-input + MIDI-driven + hardware-input modules with ALL outputs
   // exempt are listed in EXEMPT_OUTPUT_EMIT_MODULES above — fewer entries
