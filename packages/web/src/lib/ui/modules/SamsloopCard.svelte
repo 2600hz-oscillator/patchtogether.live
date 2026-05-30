@@ -37,6 +37,7 @@
   import {
     samsloopDef,
     loadSamsloopWav,
+    samsloopDecodeBytesB64,
     SAMSLOOP_MAX_FILE_BYTES,
     SAMSLOOP_RATE_RANGE,
     createSamsloopRecMachine,
@@ -95,6 +96,15 @@
     return d?.fileName ?? null;
   });
 
+  // Local decoded buffer for the waveform preview when the upload
+  // persists via the new `fileBytesB64` path (decoded PCM is intentionally
+  // NOT in node.data — see samsloop.ts SamsloopData header comment). We
+  // decode once per (fileSize, fileName) signature + cache. The legacy
+  // `samples` path still draws directly from node.data.samples (no
+  // decode needed) so old patches don't pay this cost.
+  let displaySamples = $state<Float32Array | null>(null);
+  let displaySamplesSig = $state<string | null>(null);
+
   // Recording settings live on node.data so they ride the Yjs envelope.
   // Defaults come from SAMSLOOP_REC_DEFAULTS — match the brief's spec
   // (CHAN=Stereo, BITS=16, RATE=44 kHz).
@@ -112,6 +122,16 @@
   let hasRecorded = $derived.by(() => {
     const d = node?.data as SamsloopData | undefined;
     return !!d?.sample && d.sample.byteLength > 0;
+  });
+
+  // Whether there's an uploaded file we could download (new fileBytesB64
+  // path). Legacy `samples`-only patches can't download — they don't have
+  // the original bytes, and re-encoding the decoded PCM back to WAV would
+  // be one more code path to maintain. The DOWNLOAD button just stays
+  // disabled in that legacy case (the patch still plays fine).
+  let hasUploaded = $derived.by(() => {
+    const d = node?.data as SamsloopData | undefined;
+    return !!d?.fileBytesB64 && d.fileBytesB64.length > 0;
   });
 
   const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
@@ -400,20 +420,49 @@
 
   function onDownloadClick() {
     const d = node?.data as SamsloopData | undefined;
+    // Two download paths, with the recording sample taking precedence if
+    // both exist (recording is the more recent user intent — they hit REC
+    // after loading a file):
+    //   1. Recording (`d.sample.bytesB64`) → WAV via makeWavBlob.
+    //   2. Upload (`d.fileBytesB64`) → ORIGINAL file bytes verbatim with
+    //      the original filename. No re-encoding: an mp3 stays an mp3, a
+    //      wav stays a wav. Lossless + tiny code path; the user's
+    //      already-encoded source is the best download artifact.
     const sample = d?.sample;
-    if (!sample || sample.byteLength === 0) return;
-    // Decode base64 back to a Uint8Array. The bytes ARE the on-disk PCM
-    // body — makeWavBlob just prepends the 44-byte RIFF/WAVE header.
-    const u8 = base64ToBytes(sample.bytesB64);
-    const blob = makeWavBlob(u8, sample.rate, sample.bits, sample.channels);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = samsloopDownloadFilename();
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    if (sample && sample.byteLength > 0) {
+      const u8 = base64ToBytes(sample.bytesB64);
+      const blob = makeWavBlob(u8, sample.rate, sample.bits, sample.channels);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = samsloopDownloadFilename();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return;
+    }
+    if (d?.fileBytesB64 && d.fileBytesB64.length > 0) {
+      const u8 = base64ToBytes(d.fileBytesB64);
+      // Buffer-typed Uint8Array → Blob with the recorded mime (or
+      // octet-stream as a safe default if the browser didn't supply one).
+      const mime = d.fileMime && d.fileMime.length > 0 ? d.fileMime : 'application/octet-stream';
+      // Use the explicit BlobPart array form (Uint8Array is BufferSource).
+      const blob = new Blob([u8 as BlobPart], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Preserve the original filename when we have it; fall back to a
+      // generic timestamped name like the recording path does.
+      a.download = d.fileName && d.fileName.length > 0
+        ? d.fileName
+        : samsloopDownloadFilename();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return;
+    }
   }
 
   // Tear down the tap subscription on unmount so we don't leave the
@@ -466,12 +515,33 @@
       }
       if (!target.data) target.data = {};
       const d = target.data as SamsloopData;
-      d.samples = Array.from(samples);
+      // NEW persistence path: store the ORIGINAL file bytes (base64)
+      // as the single opaque Yjs value — NOT the decoded PCM. At the
+      // 1.5M-sample cap a number[] of decoded samples would be ~12 MB
+      // and would explode the syncedstore CRDT (one YArray entry per
+      // sample). The factory hydrates fileBytesB64 → decoded buffer via
+      // samsloopDecodeBytesB64 + reposts to the worklet on patch load.
+      // See samsloop.ts SamsloopData header comment for the full design.
+      if (result.fileBytes) {
+        d.fileBytesB64 = bytesToBase64(result.fileBytes);
+        d.fileSize = result.fileSize ?? result.fileBytes.byteLength;
+        d.fileMime = result.fileMime ?? '';
+      }
+      // Drop the legacy decoded-PCM array on re-upload. Old patches that
+      // hydrated with `samples` set should NOT carry a stale buffer
+      // alongside fresh fileBytesB64; the factory prefers fileBytesB64
+      // but cleaning up keeps the patch envelope sane.
+      if (d.samples) delete d.samples;
       d.sampleRate = result.sampleRate;
       d.sampleLength = samples.length;
       d.fileName = file.name;
       target.params.start = 0;
       target.params.end = samples.length;
+      // The engine factory polls node.data every POLL_MS (200ms) and
+      // picks up the new fileBytesB64 signature → decodes + pushes to
+      // the worklet. Sub-quarter-second audible delay; the alternative
+      // (wiring a push channel through the engine handle) wasn't worth
+      // the extra surface area.
       successStatus = `loaded ${samples.length} samples @ ${result.sampleRate} Hz`;
     } finally {
       uploadStatus = successStatus;
@@ -484,6 +554,46 @@
     if (!t) return;
     t.params.mode = Math.round(mode) === 1 ? 0 : 1;
   }
+
+  // Decode `fileBytesB64` lazily for the waveform preview. Runs on
+  // signature change (new upload OR initial hydrate from a persisted
+  // patch). Errors during decode here are silent — the playback path
+  // (engine factory) is what surfaces decode failures to the user; this
+  // is purely a draw assist. If the decode fails the waveform shows
+  // "NO SAMPLE LOADED" but playback still works (or fails) on its own.
+  $effect(() => {
+    const d = node?.data as SamsloopData | undefined;
+    if (!d?.fileBytesB64 || d.fileBytesB64.length === 0) {
+      if (displaySamples !== null) {
+        displaySamples = null;
+        displaySamplesSig = null;
+      }
+      return;
+    }
+    const sig = `${d.fileSize ?? d.fileBytesB64.length}:${d.fileName ?? ''}`;
+    if (sig === displaySamplesSig) return;
+    const eng = engineCtx.get();
+    let ctx: BaseAudioContext | undefined;
+    try {
+      if (eng?.hasDomain('audio')) {
+        ctx = eng.getDomain<AudioEngine>('audio').ctx;
+      }
+    } catch {
+      ctx = undefined;
+    }
+    if (!ctx) return; // Try again once the engine boots — $effect re-runs.
+    let cancelled = false;
+    const b64 = d.fileBytesB64;
+    (async () => {
+      const r = await samsloopDecodeBytesB64(b64, ctx);
+      if (cancelled) return;
+      if (r && r.ok && r.samples) {
+        displaySamples = r.samples;
+        displaySamplesSig = sig;
+      }
+    })();
+    return () => { cancelled = true; };
+  });
 
   // Peak-per-pixel waveform draw. Two modes:
   //   - While recording: draw the live-peak buffer (`recRunningPeaks`)
@@ -535,12 +645,17 @@
       return;
     }
 
-    // Idle / playback view. Prefer the loaded `samples` (file upload)
-    // since that's what the playback worklet plays. If only a recorded
-    // sample exists (no upload), draw its peaks decoded from the bytes.
+    // Idle / playback view. Source priority:
+    //   1. `displaySamples` — locally-decoded buffer from the NEW
+    //      fileBytesB64 path (current uploads use this).
+    //   2. `d.samples` — legacy YArray PCM from pre-PR-#XXX patches.
+    //   3. `d.sample.bytesB64` — the recording-path bytes (separate
+    //      feature from uploads; the card draws L-channel peaks).
     const d = node?.data as SamsloopData | undefined;
     let samplesForDraw: Float32Array | null = null;
-    if (d?.samples && d.samples.length > 0) {
+    if (displaySamples && displaySamples.length > 0) {
+      samplesForDraw = displaySamples;
+    } else if (d?.samples && d.samples.length > 0) {
       samplesForDraw = new Float32Array(d.samples);
     } else if (d?.sample && d.sample.byteLength > 0) {
       // Decode the persisted PCM bytes back to Float32 for the waveform
@@ -577,8 +692,12 @@
     const samples = samplesForDraw;
     // For file-upload samples we keep the start/end highlight band; for
     // recorded-only samples the start/end params haven't been touched
-    // yet, so skip the band.
-    if (d?.samples && d.samples.length > 0) {
+    // yet, so skip the band. "File-upload" is now detected by EITHER
+    // the new fileBytesB64 path OR the legacy samples field.
+    const isFileUpload =
+      (d?.fileBytesB64 && d.fileBytesB64.length > 0) ||
+      (d?.samples && d.samples.length > 0);
+    if (isFileUpload) {
       const wStartFrac = Math.max(0, Math.min(1, start / samples.length));
       const wEndFrac = Math.max(wStartFrac, Math.min(1, end / samples.length));
       ctx2d.fillStyle = 'rgba(80, 160, 220, 0.18)';
@@ -721,10 +840,10 @@
         <button
           type="button"
           class="download-btn"
-          disabled={!hasRecorded || isRecording}
+          disabled={(!hasRecorded && !hasUploaded) || isRecording}
           onclick={onDownloadClick}
           data-testid="samsloop-download-button"
-          aria-label="Download recorded sample as WAV"
+          aria-label="Download sample"
         >DOWNLOAD</button>
       </div>
 
