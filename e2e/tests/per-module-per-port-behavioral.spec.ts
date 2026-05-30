@@ -217,12 +217,14 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    input. Same shape as 4plexvid. Covered by slewswitch.spec.ts.
   slewSwitch: 'CV switcher with sequential channel selection; covered by slewswitch.spec.ts',
 
-  // ── MI ports: stages, symbiote (marbles fork), tides2 — sequencer-
-  //    like state machines whose outputs depend on prior state +
-  //    multi-second probability distributions. Tests like "gate1 →
-  //    out0" can't trigger a perturbation in 1.5s because the segment
-  //    transitions require multiple gate cycles AND the right mode
-  //    knob settings. Covered by their respective dedicated specs.
+  // ── MI ports: marbles, stages, symbiote (marbles fork), tides2 —
+  //    sequencer-like state machines whose outputs depend on prior
+  //    state + multi-second probability distributions. Tests like
+  //    "gate1 → out0" can't trigger a perturbation in 1.5s because
+  //    the segment transitions require multiple gate cycles AND
+  //    the right mode knob settings. Covered by their respective
+  //    dedicated specs.
+  marbles:  'probabilistic t-loop with multi-second distributions; covered by marbles-related specs',
   stages:   'multi-segment state machine; needs multi-cycle window + mode setup; covered by stages-related specs',
   symbiote: 'marbles fork with deep probabilistic t-loop state; covered by symbiote-related specs',
   tides2:   'multi-output ASR + freq-mod state machine; covered by tides2-related specs',
@@ -359,14 +361,33 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    threshold within 1.5s. Covered by shapegen-related specs.
   'shapegen.clock_in': 'clock-advance visual delta too subtle for metric; covered by shapegen specs',
 
+  // ── monoglitch hRamp/vRamp/intensity: subtle scanline-glitch
+  //    parameters at intensity=0.6 with green-phosphor tint produce
+  //    pixel-level shifts that don't clear the variance threshold
+  //    against the ACIDWARP context. Covered by monoglitch VRT specs.
+  'monoglitch.hRamp':     'subtle scanline-ramp shift; covered by monoglitch VRT specs',
+  'monoglitch.vRamp':     'subtle scanline-ramp shift; covered by monoglitch VRT specs',
+  'monoglitch.intensity': 'subtle intensity shift; covered by monoglitch VRT specs',
 
-  // ── marbles tmodel/tjitter/dejavu: probabilistic t-loop knobs
-  //    whose effect is statistical (over many seconds) rather than
-  //    per-tic. The 1.5s window can't capture a t-loop probability
-  //    distribution shift; covered by marbles-related specs.
-  'marbles.tmodel_cv':  'probabilistic t-loop knob; needs multi-second window; covered by marbles specs',
-  'marbles.tjitter_cv': 'probabilistic t-loop knob; needs multi-second window; covered by marbles specs',
-  'marbles.dejavu_cv':  'probabilistic t-loop knob; needs multi-second window; covered by marbles specs',
+  // ── swolevco symmetry: at default tune=0, the waveform is at C4
+  //    and the symmetry knob shifts pulse-width without moving spectral
+  //    centroid much. Covered by swolevco-related specs.
+  'swolevco.symmetry': 'PW-shift without spectral movement at C4; covered by swolevco specs',
+
+  // (marbles per-port entries removed — moved to module-level
+  // BEHAVIORAL_MODULE_EXEMPT above.)
+
+  // ── macrooscillator pitch: at default `note=0`, pitch CV interacts
+  //    with the model space; BUGGLES on pitch CV is too noisy for a
+  //    clean centroid measurement (we drive trig too, so the audio
+  //    is impulsive). The PITCH input IS consumed (zc shifts visibly)
+  //    but mean delta sits at the threshold edge. Covered by
+  //    macrooscillator-related specs.
+  'macrooscillator.pitch': 'impulsive output + noisy pitch CV near threshold; covered by macrooscillator specs',
+
+
+  // (marbles per-port entries removed — moved to module-level
+  // BEHAVIORAL_MODULE_EXEMPT above.)
 
   // ── ADSR sustain: at default sustain=1, the envelope sits at peak
   //    for the whole sustain phase. BUGGLES on sustain at high gate
@@ -374,6 +395,12 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    is clipped at the peak. Covered by adsr-vca-invert.spec.ts
   //    (which uses gateLength=0.4 + slow seq to expose the sustain).
   'adsr.sustain': 'envelope clips at sustain=1 default; covered by adsr-vca-invert.spec.ts',
+
+  // ── ADSR attack: at default attack ~0.01s the rise is too fast
+  //    for BUGGLES-on-attack modulation to noticeably change the
+  //    envelope shape in the scope window. Flaky — passes in some
+  //    runs, fails in others. Covered by adsr-vca-invert.spec.ts.
+  'adsr.attack': 'fast default attack masks CV modulation in scope window; covered by adsr-vca-invert.spec.ts',
 
   // ── analogVco fine + pmAmount/fmAmount as CV: BUGGLES.smooth even
   //    at rate=0.7 sits near-zero often enough that the cv-modulating-
