@@ -88,12 +88,39 @@ jobs:
 
   # -----------------------------------------------------------------------
   # unit — `task test` (server + web vitest). ~45 s of work; ~120 s with
-  # setup. No DB needed; server tests use an in-memory Hocuspocus harness.
+  # setup. Most server tests use an in-memory Hocuspocus harness and don't
+  # need a DB, BUT the joinRackspace capacity-race test
+  # (packages/web/src/lib/server/rackspaces-capacity.test.ts) speaks REAL
+  # Postgres via a pg-pool shim to prove pg_advisory_xact_lock actually
+  # holds. Per memory `feedback_collab_tests_vacuous_without_db` that test
+  # intentionally refuses to skip-pass when PG is unreachable — so the
+  # `unit` job needs a Postgres service. The test reads PG_TEST_URL and
+  # falls back to localhost:54320 / patchtogether_test; we map the
+  # container's 5432 → host 54320 to satisfy both paths + set PG_TEST_URL
+  # explicitly.
   # -----------------------------------------------------------------------
   unit:
     name: unit
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 54320:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PG_TEST_URL: postgres://postgres:postgres@localhost:54320/patchtogether_test
 
     steps:
       - name: Checkout
@@ -120,6 +147,12 @@ jobs:
 
       - name: Install workspace deps
         run: flox activate -- task install
+
+      # Apply the rack schema the capacity-race test depends on (racks +
+      # rack_members). The test probe hard-fails if these tables are
+      # missing rather than silently skip-passing.
+      - name: Apply DB schema (for capacity-race test)
+        run: flox activate -- psql "$PG_TEST_URL" -f db/schema/001_init.sql
 
       - name: Run unit tests (server + web)
         run: flox activate -- task test
