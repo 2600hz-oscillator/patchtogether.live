@@ -82,6 +82,10 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   meowbox:      { outputPort: 'L',     gatePort: 'gate', pitchPort: 'pitch' },
   // RIOTGIRLS drives the 4-voice DRUMMERGIRL + WT-VCO bank; trig1 fires voice 1.
   riotgirls:    { outputPort: 'outL',  gatePort: 'trig1' },
+  // CHOWKICK — ChowKick (chowdsp) kick drum; gate_in rising edge fires the
+  // pulse-shaper → resonator. Gate-only (no pitch). Bump amplitude + a
+  // longer decay so the kick clears the 0.005 alive-floor within the window.
+  chowkick:     { outputPort: 'audio_out', gatePort: 'gate_in', params: { amplitude: 1, decay: 0.6, sustain: 0.5, bounce: 0.4 } },
   // TREE.oh.VOX — TB-303 voice. pitch/gate ride on dedicated audio-rate
   // node ports (pitch_in / gate_in), NOT AudioParams, so the sequencer
   // gate must be wired to gate_in for the amp envelope to open. Without
