@@ -69,8 +69,14 @@
     return (ev: PointerEvent) => {
       // Capture the pointer so we still receive pointerup even if the
       // user drags off the button before releasing — otherwise a
-      // dragged release leaves the tone on indefinitely.
-      (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+      // dragged release leaves the tone on indefinitely. The try/catch
+      // mirrors releasePointerCapture: synthetic pointerdown events
+      // (Playwright's dispatchEvent, headless Chromium with a
+      // not-currently-active pointerId) throw "No active pointer with
+      // the given id is found" — we must still press the button.
+      try {
+        (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+      } catch { /* synthetic event or already captured — fine */ }
       pressBtn(name);
     };
   }
