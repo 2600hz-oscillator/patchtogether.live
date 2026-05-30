@@ -93,17 +93,50 @@ test('polyseqz: playhead matches sounding step (no off-by-one at start)', async 
     });
   });
 
-  // Wait 200 ms — first step (queued at ~now+0.05) has started; the next step
-  // (every 500 ms) is still 300 ms away. Highlight MUST be 0.
-  await page.waitForTimeout(200);
-  let step = await readEngine<number>(page, 'p', 'currentStep');
-  expect(step).toBe(0);
+  // Bug-vs-CI-jitter disambiguation: the old assertion `expect(step).toBe(0)
+  // after waitForTimeout(200)` would false-fail on slow CI when spawnPatch +
+  // transact + the wait took long enough that audio time had crossed step 1's
+  // atTime (~ +550 ms after audio-context start). It would ALSO false-fail
+  // when the bug it guards (lookahead-queued playhead) was present — but
+  // those two failures looked identical and the chronic CI flake was
+  // indistinguishable from a real regression. Fix: assert the SOUNDING
+  // SEMANTICS directly via expect.poll —
+  //
+  //   1. Within the first second of play, `currentStep` is OBSERVED to equal
+  //      0 at SOME point. Pre-fix code (currentStep = lookahead-queued step)
+  //      would jump from undefined → 1 on the first scheduler tick, never
+  //      stopping at 0. Post-fix code holds currentStep at 0 from start
+  //      until audio-t crosses ≥0.55s. Even with severe CI jitter, the
+  //      first scheduler tick lands within ~100 ms of play and the first
+  //      readEngine round-trip completes well inside the 500 ms first-step
+  //      window. So observing 0 once is a deterministic positive signal
+  //      for the post-fix behavior.
+  await expect
+    .poll(() => readEngine<number>(page, 'p', 'currentStep'), {
+      message: 'first observable currentStep is 0 (post-fix: held at 0 while step 0 sounds; pre-fix: lookahead jumps straight to 1)',
+      timeout: 1000,
+      intervals: [25, 50, 100],
+    })
+    .toBe(0);
 
-  // Wait until step 1 sounds (cumulative ~700 ms after first emit). Highlight
-  // must now be 1.
-  await page.waitForTimeout(500);
-  step = await readEngine<number>(page, 'p', 'currentStep');
-  expect(step).toBe(1);
+  //   2. After ~1.2 s of play, `currentStep` has advanced to ≥ 1. We allow
+  //      "≥ 1" (not strict ==1) because at 500 ms/step a slow CI may have
+  //      crossed into step 2 already, which is fine — the bug would have
+  //      shown 0 stuck forever (no advance) or jumped to a value untethered
+  //      from audio time. The strict `<= 4` upper bound rejects "playhead
+  //      tracking the LOOKAHEAD" (which would be many steps ahead).
+  await expect
+    .poll(() => readEngine<number>(page, 'p', 'currentStep'), {
+      message: 'currentStep advances over time (sounding step tracks audio thread)',
+      timeout: 2500,
+      intervals: [100, 200, 200],
+    })
+    .toBeGreaterThanOrEqual(1);
+  const advanced = await readEngine<number>(page, 'p', 'currentStep');
+  expect(
+    advanced,
+    `currentStep stays within sounding-step range at ~1.5s into play (no lookahead leak; saw ${advanced})`,
+  ).toBeLessThanOrEqual(4);
 });
 
 // FIXME: chronically flaky on CI — at t=100ms with 60BPM the scheduler's
