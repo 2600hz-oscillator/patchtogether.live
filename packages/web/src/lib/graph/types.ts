@@ -479,7 +479,12 @@ type StandardModuleType =
   // SCOREBOARD — 4-digit neon 7-segment counter widget (video domain).
   // SCORE gate input → counter += 1 on rising edge; RESET gate → 0.
   // Counter wraps at 10000. One colour-wheel knob for the lit-segment hue.
-  | 'scoreboard';
+  | 'scoreboard'
+  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator (video domain). User
+  // provides qbert.zip via `task setup:qbert`; gitignored. CV-only control
+  // (coin / start gates + bipolar joystick CV → 4-way diagonal); per-event
+  // gate outputs (move / die / level); mono audio output.
+  | 'qbert';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

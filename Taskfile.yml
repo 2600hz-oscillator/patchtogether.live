@@ -69,6 +69,25 @@ tasks:
             rm -f "$WAD"
           fi
         fi
+  setup:qbert:
+    desc: 'Install qbert.zip into packages/web/static/roms/qbert/. Required by the QBERT arcade module (see static/roms/qbert/README.md). Usage: `task setup:qbert ROM=/path/to/qbert.zip` — defaults to ~/Downloads/qbert.zip.'
+    vars:
+      ROM: '{{.ROM | default "~/Downloads/qbert.zip"}}'
+    cmds:
+      - mkdir -p packages/web/static/roms/qbert
+      - |
+        # Expand ~ manually — Taskfile's shell doesn't always do it.
+        SRC="{{.ROM}}"
+        SRC="${SRC/#\~/$HOME}"
+        if [ ! -f "$SRC" ]; then
+          echo "QBERT: ROM not found at $SRC"
+          echo "       Pass ROM=/path/to/qbert.zip explicitly, or drop the zip at"
+          echo "       ~/Downloads/qbert.zip and re-run \`task setup:qbert\`."
+          exit 1
+        fi
+        cp "$SRC" packages/web/static/roms/qbert/qbert.zip
+        echo "QBERT: installed $SRC → packages/web/static/roms/qbert/qbert.zip"
+        echo "QBERT: the zip is .gitignored — your local copy will not enter git history."
 
   # ---------------- Dev loop ----------------
   dev:

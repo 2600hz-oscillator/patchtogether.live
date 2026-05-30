@@ -199,6 +199,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // NIBBLES — QBasic Nibbles snake game module. Video source with CV
   // gate outputs (pellet/death/dir_change), length CV, + dual audio.
   nibbles: { top: 'Video modules', sub: 'Sources' },
+  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator. CV-only control
+  // (coin/start gates + joy_x/joy_y CV) + event-gate outputs
+  // (move/die/level) alongside the video + mono audio.
+  qbert: { top: 'Video modules', sub: 'Sources' },
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   videobox: { top: 'Video modules', sub: 'Sources' },
   // VIDEOVARISPEED — local-file player with performant varispeed transport.

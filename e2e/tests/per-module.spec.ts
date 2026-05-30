@@ -78,6 +78,14 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   //   - module def shape:    doom.test.ts
   //   - video runtime:       doom-wasm.spec.ts (canvas pixel variance)
   doom: 'WASM load + game init + first sound effect exceeds 800ms smoke window; covered by doom-wasm.spec.ts',
+  // QBERT — audio_out is fed by the synthesized SFX stream which only
+  // fires when the runtime ticks a `move` event. The bare 800 ms smoke
+  // can't drive coin + start + held joystick within the window, so
+  // audio_out stays at zero. The PCM-fill path is covered by the
+  // qbert-runtime vitest (`getPcmFrames` returns non-zero after a move),
+  // and the cross-domain audio bridge is covered by the DOOM evt_kill
+  // suite — same bridge.
+  qbert: 'audio_out fires only on synthesized move events; covered by qbert-runtime.test.ts (PCM fill) + qbert-cv-joystick.spec.ts (gated by ROM presence)',
   // VIDEOBOX — file-input source. Until the user picks a local video
   // file the audio outputs emit silent ConstantSourceNodes (so the
   // graph stays patchable), which by definition can't clear the

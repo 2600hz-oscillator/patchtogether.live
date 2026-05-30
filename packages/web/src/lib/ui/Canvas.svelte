@@ -239,6 +239,7 @@
   // (silent in v1 — slice 8 wires real PCM).
   import DoomCard from '$lib/ui/modules/DoomCard.svelte';
   import NibblesCard from '$lib/ui/modules/NibblesCard.svelte';
+  import QbertCard from '$lib/ui/modules/QbertCard.svelte';
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   import VideoboxCard from '$lib/ui/modules/VideoboxCard.svelte';
   // VIDEOVARISPEED — local-file player with performant varispeed transport.
@@ -496,6 +497,8 @@
     doom: DoomCard,
     // NIBBLES — QBasic Nibbles snake game module.
     nibbles: NibblesCard,
+    // QBERT — Q*Bert (Gottlieb 1982) arcade emulator.
+    qbert: QbertCard,
     // VIDEOBOX — local-file video player with multiplayer playhead sync.
     videobox: VideoboxCard,
     // VIDEOVARISPEED — local-file player with performant varispeed transport.
