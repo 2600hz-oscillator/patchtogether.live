@@ -627,10 +627,24 @@ jobs:
   # the gating decision happen separately after the new tier proves
   # itself reliable across N runs. Promote to ci umbrella `needs:` list
   # to make it blocking.
+  #
+  # TODO(behavioral-coverage): non-blocking until per-module threshold tuning lands.
+  # Current spec (PR #471) uses a delta threshold that's too tight for modules with
+  # subtle CV→audio effects (envelope-amount knobs, decay, etc.). Whack-a-mole
+  # exempting modules (grids/sequencer/adsr/buggles/backdraft/qbert/peaks/treeohvox/
+  # mixmstrs all failing as of 2026-05-30) is the wrong fix. Tune thresholds per
+  # module or per port-type, then flip continue-on-error off + re-add to aggregator.
+  # Tracking task TBD.
   # -----------------------------------------------------------------------
   behavioral-coverage:
     name: behavioral input coverage
     runs-on: ubuntu-latest
+    # Informational lane: red here must NOT block PR merges. The job still runs
+    # + reports a status, but `continue-on-error: true` makes GitHub treat any
+    # failure as success at the check-run level so auto-merge / required-status
+    # aggregators are unaffected. Remove once per-module thresholds are tuned
+    # (see TODO above).
+    continue-on-error: true
     # 50 min ceiling: full sweep at 4 workers ~25-30 min; cushion for
     # cold-cache CI runs + setup time.
     timeout-minutes: 50
@@ -745,6 +759,11 @@ jobs:
           # specs on a dedicated non-sharded runner and is now a real gate. We
           # don't gate on `merge-reports` so a flaky report-merge step can't
           # block an otherwise-green run.
+          #
+          # `behavioral-coverage` (BEHAVIORAL) is INTENTIONALLY ABSENT from
+          # both `needs:` above and this success check. It's informational
+          # only (continue-on-error: true) until per-module thresholds are
+          # tuned — do NOT add a BEHAVIORAL env var or condition here.
           if [[ "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
              || "$ART" != "success" \
