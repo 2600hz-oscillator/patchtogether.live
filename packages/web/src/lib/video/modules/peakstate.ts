@@ -40,7 +40,7 @@ import {
   type RenderOpts,
 } from './peakstate-draw';
 
-/** Internal canvas resolution. Smaller than the engine FBO (640×360) so
+/** Internal canvas resolution. Smaller than the engine FBO (640×480) so
  *  per-frame 2D draw + upload stays cheap; the GL copy bilinear-filters
  *  it back up. Matches ACIDWARP's "render small, upscale via GL filter"
  *  cadence. Square because the mandala is radially symmetric — a 4:3 or

@@ -89,7 +89,7 @@ const DESCRIPTIONS: Record<string, string> = {
   scope:
     '2-channel passthrough oscilloscope. Inputs flow unchanged to outputs while an AnalyserNode samples for display.',
   rasterize:
-    'Audio -> video raster mapper. Each video frame paints a fixed run of audio samples (samples/frame, ~800 at 48k/60fps) as voltage-per-pixel into the 640x360 frame in raster order; a scan cursor drifts + wraps through the frame. Faithful raster mapping (NOT an oscilloscope trace) - a steady tone paints drifting horizontal bands whose spacing tracks the audio frequency vs the line/frame rate. Fully untamed: no limiter, no anti-alias.',
+    'Audio -> video raster mapper. Each video frame paints a fixed run of audio samples (samples/frame, ~800 at 48k/60fps) as voltage-per-pixel into the 640x480 frame in raster order; a scan cursor drifts + wraps through the frame. Faithful raster mapping (NOT an oscilloscope trace) - a steady tone paints drifting horizontal bands whose spacing tracks the audio frequency vs the line/frame rate. Fully untamed: no limiter, no anti-alias.',
   sequencer: '32-step sequencer with internal BPM clock or external clock input.',
   lfo: 'Clockable LFO with four phase outputs (0deg / 90deg / 180deg / 270deg).',
   cartesian: '4x4 grid sequencer. Steps via clock; X/Y CV inputs scrub freely across the grid.',
@@ -282,7 +282,7 @@ const PORT_NOTES: Record<string, string> = {
   'rasterize.in': 'Audio in - the signal rasterized into pixels.',
   'rasterize.thru': 'Audio passthrough (unmodified) so RASTERIZE can sit inline on a chain.',
   'rasterize.out':
-    'Mono-video output: the accumulated raster frame as a GL texture. Each video frame paints a run of audio samples (samples/frame) as voltage-per-pixel in raster order; the scan cursor drifts + wraps through the 640x360 frame. A steady tone paints drifting horizontal bands. Driven by the cross-domain video bridge calling RASTERIZE.drawFrame() each frame.',
+    'Mono-video output: the accumulated raster frame as a GL texture. Each video frame paints a run of audio samples (samples/frame) as voltage-per-pixel in raster order; the scan cursor drifts + wraps through the 640x480 frame. A steady tone paints drifting horizontal bands. Driven by the cross-domain video bridge calling RASTERIZE.drawFrame() each frame.',
   'rasterize.cursor': 'CV -> scan-cursor start offset (pixels). Scrubs where the run begins.',
   'rasterize.samplesPerFrame': 'CV -> samples painted per frame (1 pixel per sample).',
   'rasterize.gain': 'CV -> linear gain applied to each sample before the luminance map.',

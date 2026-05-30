@@ -28,9 +28,10 @@
 // Render: we draw the digits into a 640×240 OffscreenCanvas via the pure
 // `drawScoreboard` helper, then upload that as an RGBA8 texture every
 // frame the score or hue changed. A trivial fragment shader letterboxes
-// the texture into the engine's 640×360 FBO (SCOREBOARD is 8:3, narrower
-// than 16:9 — we keep WIDTH-locked and centre vertically). The same
-// helper is invoked from the card's preview canvas at a smaller size.
+// the texture into the engine's 640×480 FBO (SCOREBOARD is 8:3, much
+// wider than the engine's 4:3 — we keep WIDTH-locked and centre
+// vertically, leaving a wide band top + bottom). The same helper is
+// invoked from the card's preview canvas at a smaller size.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface, VideoEngineContext } from '$lib/video/engine';
@@ -40,7 +41,7 @@ import {
   drawScoreboard,
 } from './scoreboard-draw';
 
-/** Source-texture resolution. Wider-than-engine height (240 vs 360) so the
+/** Source-texture resolution. Shorter-than-engine height (240 vs 480) so the
  *  digits sit on a band; the shader letterboxes onto the FBO. 8:3 is the
  *  natural shape of a 4-digit numeric display. */
 const SOURCE_W = 640;
@@ -162,8 +163,9 @@ export const scoreboardDef: VideoModuleDef = {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
     // Letterbox: keep WIDTH locked, shrink height by the aspect ratio.
-    // Engine FBO is 16:9 = 1.78:1; source is 8:3 ≈ 2.67:1. The active
-    // region in V is (fboAspect / sourceAspect) → ~0.667.
+    // Engine FBO is 4:3 = 1.33:1; source is 8:3 ≈ 2.67:1. The active
+    // region in V is (fboAspect / sourceAspect) = 0.5 (a tight band
+    // top + bottom; the rest is black). Was 0.667 on a 16:9 FBO.
     const fboAspect = ctx.res.width / ctx.res.height;
     const sourceAspect = SOURCE_W / SOURCE_H;
     const letterboxU = Math.min(1.0, sourceAspect / fboAspect);
