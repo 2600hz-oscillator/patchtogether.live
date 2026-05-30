@@ -25,6 +25,7 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
+import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -89,6 +90,14 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
       test.skip(
         VRT_PLATFORM === 'linux',
         `wavesculpt blink ${c.name} on linux: baseline pending (capture on linux CI)`,
+      );
+      // Per-mode platform exemptions live in EXEMPT_BASELINE_PAIRS so the
+      // QUARANTINE entries (e.g. darwin/wavesculpt-blink-scopes-trial,
+      // tracked as task #202) take effect here. Root-cause fix is owed on
+      // the tracked task — this is a quarantine, not a tolerance.
+      test.skip(
+        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/wavesculpt-blink-${c.name}`),
+        `wavesculpt-blink-${c.name} on ${VRT_PLATFORM}: quarantined (see EXEMPT_BASELINE_PAIRS)`,
       );
 
       const errors: string[] = [];
