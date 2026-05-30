@@ -41,6 +41,7 @@ import { mandleblotDef } from './mandleblot';
 import { scoreboardDef } from './scoreboard';
 import { nibblesDef } from './nibbles';
 import { shapegenDef } from './shapegen';
+import { qbertDef } from './qbert';
 
 let registered = false;
 
@@ -153,6 +154,10 @@ export function registerVideoModules(): void {
   // canvas2D primitives. Shares the shape math + renderer with FOXY via
   // shapegen-math.ts + shapegen-draw.ts.
   registerVideoModule(shapegenDef);
+  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator. User-provided
+  // qbert.zip (gitignored, DOOM pattern). 4 CV inputs (coin/start gates +
+  // joy_x/joy_y), 4 outputs (out + audio_out + evt_die/evt_move/evt_level).
+  registerVideoModule(qbertDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

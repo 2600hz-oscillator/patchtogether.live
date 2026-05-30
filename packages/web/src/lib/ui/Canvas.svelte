@@ -239,6 +239,7 @@
   // (silent in v1 — slice 8 wires real PCM).
   import DoomCard from '$lib/ui/modules/DoomCard.svelte';
   import NibblesCard from '$lib/ui/modules/NibblesCard.svelte';
+  import QbertCard from '$lib/ui/modules/QbertCard.svelte';
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   import VideoboxCard from '$lib/ui/modules/VideoboxCard.svelte';
   // VIDEOVARISPEED — local-file player with performant varispeed transport.
@@ -281,6 +282,7 @@
     type PortLookupModule,
   } from '$lib/graph/group-actions';
   import type { ExposedPort, ExposedControl, GroupData } from '$lib/graph/group-projection';
+  import { resolveExposedPort } from '$lib/graph/group-projection';
   import { listExposableControls, validateExposedControls } from '$lib/graph/group-controls';
   import {
     nextGroupNameForNewGroup,
@@ -496,6 +498,8 @@
     doom: DoomCard,
     // NIBBLES — QBasic Nibbles snake game module.
     nibbles: NibblesCard,
+    // QBERT — Q*Bert (Gottlieb 1982) arcade emulator.
+    qbert: QbertCard,
     // VIDEOBOX — local-file video player with multiplayer playhead sync.
     videobox: VideoboxCard,
     // VIDEOVARISPEED — local-file player with performant varispeed transport.
@@ -568,6 +572,15 @@
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__connectDragState = connectDragState;
+      // Lets E2E tests exercise the connect-commit path directly — the
+      // same xyflow `Connection` envelope a real pointer drag would
+      // synthesize. Used by the instrument-exposed-port-patching spec
+      // to assert that dragging onto a group's exposed handle creates
+      // an edge in the patch (the bug it was added to regress against:
+      // pre-fix, group endpoints bailed before the edge was added
+      // because the def lookup returned no group def).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__handleConnect = (c: Connection) => handleConnect(c);
       // Stage-B Playwright @collab tests use these to drive the
       // multi-user provider attach + per-user layout reads without
       // routing through Clerk auth. See e2e/tests/collab.spec.ts.
@@ -1188,17 +1201,32 @@
     const srcNode = patch.nodes[connection.source];
     const dstNode = patch.nodes[connection.target];
     if (!srcNode || !dstNode) return;
+
+    // Group endpoints — exposed-port handles stand in for a child {nodeId,
+    // portId}. The Yjs edge is stored with the group node + exposed handle
+    // (so the canvas keeps rendering the cable at the group's boundary);
+    // projectGroups() rewrites the endpoints to the child before the
+    // reconciler runs. For cable-type resolution we read the exposed
+    // port's declared cableType so the engine's resolveConnection picks
+    // the correct splitter/merger/bridge plan when the underlying child
+    // is e.g. video while the cable started life as audio.
+    const srcExposed = resolveExposedPort(srcNode, connection.sourceHandle);
+    const dstExposed = resolveExposedPort(dstNode, connection.targetHandle);
+
     // Phase 0 video spike: a node may belong to either domain registry.
-    // Try audio first (the common case), fall back to video so a video
-    // module's port types resolve correctly.
+    // Try audio first (the common case), fall back to video. Meta (group)
+    // is handled above via resolveExposedPort, so a missing def here only
+    // disqualifies a non-meta non-group node — those genuinely can't host
+    // a connection.
     const srcDef = getModuleDef(srcNode.type) ?? getVideoModuleDef(srcNode.type);
     const dstDef = getModuleDef(dstNode.type) ?? getVideoModuleDef(dstNode.type);
-    if (!srcDef || !dstDef) return;
+    if (!srcExposed && !srcDef) return;
+    if (!dstExposed && !dstDef) return;
 
-    const srcPort = srcDef.outputs.find((p) => p.id === connection.sourceHandle);
-    const dstPort = dstDef.inputs.find((p) => p.id === connection.targetHandle);
-    const sourceType: CableType = srcPort?.type ?? 'audio';
-    const targetType: CableType = dstPort?.type ?? sourceType;
+    const srcPort = srcDef?.outputs.find((p) => p.id === connection.sourceHandle);
+    const dstPort = dstDef?.inputs.find((p) => p.id === connection.targetHandle);
+    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
+    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
     const id = `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`;
     if (patch.edges[id]) return;
@@ -2722,10 +2750,16 @@
     const srcDef = defLookup(srcNode.type);
     const dstDef = defLookup(dstNode.type);
     if (!srcDef || !dstDef) return;
+    // Group endpoints — chase the exposed-port → child handoff for the
+    // cable-type fallback; see handleConnect's matching block for the
+    // why. The edge stays addressed to the group endpoint itself; the
+    // snapshot projection rewrites it before the engine sees it.
+    const srcExposed = resolveExposedPort(srcNode, from.portId);
+    const dstExposed = resolveExposedPort(dstNode, to.portId);
     const srcPort = srcDef.outputs.find((p) => p.id === from.portId);
     const dstPort = dstDef.inputs.find((p) => p.id === to.portId);
-    const sourceType: CableType = srcPort?.type ?? 'audio';
-    const targetType: CableType = dstPort?.type ?? sourceType;
+    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
+    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
     const id = `e-${from.nodeId}-${from.portId}-${to.nodeId}-${to.portId}`;
     if (patch.edges[id]) {
