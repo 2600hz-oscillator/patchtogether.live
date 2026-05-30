@@ -71,7 +71,11 @@
   const SRC_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64'];
 
   const inputs: PortDescriptor[] = [
-    { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
+    { id: 'clock',    label: 'CLOCK IN', cable: 'gate' },
+    // Transport gates — rising edge mirrors the ON / MUTE button.
+    // Intended pairing: MIDICLOCK.midistart → START, MIDICLOCK.midistop → STOP.
+    { id: 'start_in', label: 'START',    cable: 'gate' },
+    { id: 'stop_in',  label: 'STOP',     cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = OUT_LABELS.map((label) => ({
     id: label,
