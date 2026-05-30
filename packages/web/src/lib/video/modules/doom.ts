@@ -61,6 +61,15 @@ import {
   PLAYER_SLOT_TO_DEATH_PORT_ID,
   ALL_NEW_EVT_PORT_IDS,
 } from '$lib/doom/doom-death-ports';
+import {
+  CHEAT_CHAR_INTERVAL_MS,
+  CHEAT_KEY_DOWN_MS,
+  cheatCodeSequence,
+  detectRisingEdge,
+  makeRisingEdgeState,
+  type DoomCheatName,
+  type RisingEdgeState,
+} from '$lib/doom/cheat-sequence';
 
 // AudioWorkletProcessor URL — served as a static asset under
 // /doom/doom-pcm-worklet.js. Loaded lazily per AudioContext (WeakSet
@@ -247,6 +256,13 @@ export interface DoomHandleExtras {
    *  AudioContext / gates aren't materialised, or when `port` isn't a known
    *  event-gate id (same string-port surface as forcePulse). */
   forceHold(port: string, high: boolean): void;
+  /** Name of the most-recently-INJECTED cheat code (the rising edge on
+   *  iddqd_in / idkfa_in triggers the injection — see CHEAT GATE INPUTS in the
+   *  factory) or null if none has fired yet. Test-introspection only; the
+   *  WASM-side effect (player[].cheats flag) is the production signal and the
+   *  e2e asserts it via SFX / no-damage observation rather than reading C-side
+   *  state here (no C source changes per the task constraint). */
+  lastCheatInjected(): DoomCheatName | null;
 }
 
 export const doomDef: VideoModuleDef = {
@@ -290,11 +306,24 @@ export const doomDef: VideoModuleDef = {
   // only ever feeds its OWN consoleplayer slot's CV into the sim, so the
   // deterministic lockstep TicSet can never diverge from non-deterministic
   // per-peer CV sampling (the #353/#354 freeze root cause).
-  inputs: CV_GATE_PORT_IDS_BY_SLOT.map(({ portId }) => ({
-    id: portId,
-    type: 'cv' as const,
-    paramTarget: `cv_${portId}`,
-  })),
+  inputs: [
+    ...CV_GATE_PORT_IDS_BY_SLOT.map(({ portId }) => ({
+      id: portId,
+      type: 'cv' as const,
+      paramTarget: `cv_${portId}`,
+    })),
+    // CHEAT GATE INPUTS: rising-edge triggers inject the 5-character lowercase
+    // ASCII sequence into the WASM key queue (each char as a key-down +
+    // key-up scheduled CHEAT_CHAR_INTERVAL_MS apart). The engine's i_input.c
+    // copies the ASCII byte into event_t.data2 and m_cheat.c's
+    // `cht_CheckCheat` matches the running stream against the sequence
+    // strings ("iddqd" / "idkfa"). The cheats apply to THIS peer's local
+    // `players[consoleplayer]` (god mode / all keys+weapons+full ammo) and
+    // are NOT replicated across peers — same scope as a player who would
+    // have typed the cheat themselves into a keyboard-focused card.
+    { id: 'iddqd_in', type: 'cv' as const, paramTarget: 'cv_iddqd_in' },
+    { id: 'idkfa_in', type: 'cv' as const, paramTarget: 'cv_idkfa_in' },
+  ],
   outputs: [
     { id: 'out', type: 'video' },
     { id: 'audio_l', type: 'audio' },
@@ -333,6 +362,12 @@ export const doomDef: VideoModuleDef = {
       max: 1,
       curve: 'linear' as const,
     })),
+    // Cheat-gate synthetic params (one per cheat input). Edge-detected in
+    // setParam below; on the LOW→HIGH transition we schedule the 5-character
+    // injection. Hidden from the card UI (no param-row); the gate input
+    // appears in the PatchPanel like the other CV inputs.
+    { id: 'cv_iddqd_in', label: 'IDDQD', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
+    { id: 'cv_idkfa_in', label: 'IDKFA', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -403,6 +438,54 @@ export const doomDef: VideoModuleDef = {
     // all so a slot change doesn't drop a mid-flight gate.
     const edgeStates = new Map<string, EdgeState>();
     for (const { portId } of CV_GATE_PORT_IDS_BY_SLOT) edgeStates.set(portId, makeEdgeState());
+
+    // CHEAT GATE rising-edge detectors. Single-threshold (0.5) one-shot: a HIGH
+    // input fires ONE injection; holding HIGH does NOT re-trigger; the gate
+    // must return LOW before it can fire again. Separate from the cv-gate-edge
+    // hysteresis detectors above because cheats don't model "key down for the
+    // duration of the gate" — they synthesize a 5-char keypress sequence on
+    // each rising edge, regardless of how long the gate stays HIGH.
+    const cheatEdgeStates: Record<DoomCheatName, RisingEdgeState> = {
+      iddqd: makeRisingEdgeState(),
+      idkfa: makeRisingEdgeState(),
+    };
+
+    // Test-introspection: name of the most-recently-INJECTED cheat. Read by the
+    // e2e to confirm a rising edge on iddqd_in / idkfa_in actually drove the
+    // injection path. NOT a substitute for the C-side `players[].cheats`
+    // observation — that's the real production signal — but the C side has no
+    // exposed accessor here and we don't touch the WASM source.
+    let lastCheat: DoomCheatName | null = null;
+
+    /** Inject one cheat code into the WASM key queue. Schedules a key-down +
+     *  delayed key-up for each char in the sequence, spaced
+     *  CHEAT_CHAR_INTERVAL_MS apart. Uses `runtime.setKey` directly (NOT
+     *  `setKeyForKeyboardCode`) so the injection bypasses the keyboard-inert
+     *  gate — a CV-patched card has its keyboard inert, but a CV-triggered
+     *  cheat is still expected to take effect. Idempotent against a missing
+     *  runtime (no-op until WASM loads). */
+    function injectCheat(name: DoomCheatName): void {
+      lastCheat = name;
+      const seq = cheatCodeSequence(name);
+      for (let i = 0; i < seq.length; i++) {
+        const ch = seq[i]!;
+        const code = ch.charCodeAt(0);
+        const startMs = i * CHEAT_CHAR_INTERVAL_MS;
+        setTimeout(() => {
+          // Re-check runtime each scheduled tick: it may load (or be disposed)
+          // mid-sequence. A drop just truncates the injection; the next rising
+          // edge re-fires the whole sequence cleanly.
+          if (runtime && runtime.isInitialized()) {
+            try { runtime.setKey(code, true); } catch { /* */ }
+          }
+        }, startMs);
+        setTimeout(() => {
+          if (runtime && runtime.isInitialized()) {
+            try { runtime.setKey(code, false); } catch { /* */ }
+          }
+        }, startMs + CHEAT_KEY_DOWN_MS);
+      }
+    }
 
     // OWN-SLOT-ONLY rule (#353 Phase 2): this peer's consoleplayer slot. CV that
     // targets THIS slot's group is fed into the sim (→ G_BuildTiccmd → the
@@ -884,6 +967,9 @@ export const doomDef: VideoModuleDef = {
         try { src.offset.cancelScheduledValues(t); } catch { /* */ }
         src.offset.setValueAtTime(high ? 1 : 0, t);
       },
+      lastCheatInjected() {
+        return lastCheat;
+      },
     };
 
     return {
@@ -896,6 +982,20 @@ export const doomDef: VideoModuleDef = {
         // takes effect without waiting for the next PCM pump.
         if (paramId === 'audioGain' && pcmWorklet) {
           try { pcmWorklet.port.postMessage({ type: 'gain', value }); } catch { /* */ }
+        }
+        // CHEAT-GATE rising-edge → injection. Detect on the synthetic
+        // `cv_iddqd_in` / `cv_idkfa_in` params (the input ports' paramTargets).
+        // Falling edges / held HIGH are no-ops — the detector only fires on the
+        // LOW→HIGH crossing. Independent of the per-slot CV-gate path: cheats
+        // act on `players[consoleplayer]`, not a specific slot, so they bypass
+        // the own-slot-only rule.
+        if (paramId === 'cv_iddqd_in') {
+          if (detectRisingEdge(cheatEdgeStates.iddqd, value)) injectCheat('iddqd');
+          return;
+        }
+        if (paramId === 'cv_idkfa_in') {
+          if (detectRisingEdge(cheatEdgeStates.idkfa, value)) injectCheat('idkfa');
+          return;
         }
         // PER-SLOT CV-gate path (#353): edge-detect cv_p{N}_{base} params + feed
         // ONLY the local consoleplayer slot's gates into the runtime.

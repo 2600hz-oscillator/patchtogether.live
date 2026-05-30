@@ -33,15 +33,20 @@ describe('doomDef — module def shape', () => {
     expect(doomDef.ownerOnly).toBe(true);
   });
 
-  it('declares 4 per-slot input GROUPS (p1..p4) × 7 gates = 28 cv ports (#353)', () => {
+  it('declares 4 per-slot input GROUPS (p1..p4) × 9 gates + 2 cheat-gates = 38 cv ports', () => {
     const ids = doomDef.inputs.map((p) => p.id);
-    // 4 slots × 7 base gates, in (slot, base) declaration order.
-    expect(ids).toEqual(CV_GATE_PORT_IDS_BY_SLOT.map((e) => e.portId));
-    expect(ids).toHaveLength(4 * CV_GATE_PORT_IDS.length);
+    // Per-slot gates come first in (slot, base) declaration order; the two
+    // cheat-gate inputs (iddqd_in / idkfa_in) ride at the end.
+    expect(ids.slice(0, 4 * CV_GATE_PORT_IDS.length)).toEqual(
+      CV_GATE_PORT_IDS_BY_SLOT.map((e) => e.portId),
+    );
+    expect(ids.slice(-2)).toEqual(['iddqd_in', 'idkfa_in']);
+    expect(ids).toHaveLength(4 * CV_GATE_PORT_IDS.length + 2);
     for (const inp of doomDef.inputs) {
       expect(inp.type).toBe('cv');
       // paramTarget routes the CV through engine setParam — the synthetic
-      // cv_p{N}_<base> param is then edge-detected into per-slot key events.
+      // cv_<id> param is then edge-detected into per-slot key events (or, for
+      // the cheat-gate inputs, into the rising-edge cheat-injection scheduler).
       expect(inp.paramTarget).toBe(`cv_${inp.id}`);
     }
   });
@@ -575,13 +580,14 @@ describe('doomDef.factory — extras.forcePulse() test hook', () => {
 // the pause menu.
 
 describe('doomDef — ESC + ENTER per-slot CV gates', () => {
-  it('declares p1_esc / p1_enter (and p2..p4) — total 36 cv-gate inputs (4 slots × 9 gates)', () => {
+  it('declares p1_esc / p1_enter (and p2..p4) — 36 per-slot cv-gate inputs (4 slots × 9 gates), plus the 2 trailing cheat gates', () => {
     const ids = doomDef.inputs.map((p) => p.id);
     expect(ids).toContain('p1_esc');
     expect(ids).toContain('p1_enter');
     expect(ids).toContain('p4_esc');
     expect(ids).toContain('p4_enter');
-    expect(ids).toHaveLength(36);
+    // 4 × 9 per-slot + 2 cheat gates = 38.
+    expect(ids).toHaveLength(38);
   });
 
   it('every per-slot gate (incl. esc/enter) has a paramTarget routing to a real synthetic param', () => {
@@ -1059,5 +1065,109 @@ describe('DoomRuntime.drainEvents — encoding decode', () => {
     rtAny.initialized = false;
     rtAny.drainBufPtr = null;
     expect(rt.drainEvents()).toEqual([]);
+  });
+});
+
+// ---- IDDQD / IDKFA cheat gate inputs (2026-05-29) -----------------------
+//
+// Rising-edge detection on `cv_iddqd_in` / `cv_idkfa_in` triggers ONE
+// injection of the 5-char keypress sequence into the WASM key queue. The
+// scheduling is JS-only (setTimeout × 5 chars × 2 events each); the C-side
+// drain happens out-of-band. These tests pin:
+//   1) the input/param wiring is present
+//   2) the rising-edge fires `lastCheatInjected` (test-introspection oracle)
+//   3) holding HIGH does NOT re-fire (sticky one-shot)
+//   4) lowering then raising re-arms + re-fires
+
+describe('doomDef.factory — IDDQD / IDKFA cheat-gate inputs', () => {
+  function spawnNoAudio() {
+    const gl = makeFakeGl();
+    const ctx: VideoEngineContext = {
+      gl,
+      res: { width: 640, height: 360 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      drawFullscreenQuad: () => undefined,
+      audioCtx: undefined,
+    };
+    return doomDef.factory(
+      ctx,
+      { id: 'doom-cheat', type: 'doom', params: {}, position: { x: 0, y: 0 } } as never,
+    );
+  }
+
+  it('def declares iddqd_in + idkfa_in as cv inputs with paramTargets', () => {
+    const inMap = Object.fromEntries(doomDef.inputs.map((p) => [p.id, p]));
+    expect(inMap['iddqd_in']).toBeDefined();
+    expect(inMap['idkfa_in']).toBeDefined();
+    expect(inMap['iddqd_in']!.type).toBe('cv');
+    expect(inMap['idkfa_in']!.type).toBe('cv');
+    expect(inMap['iddqd_in']!.paramTarget).toBe('cv_iddqd_in');
+    expect(inMap['idkfa_in']!.paramTarget).toBe('cv_idkfa_in');
+  });
+
+  it('def declares matching synthetic cv_iddqd_in + cv_idkfa_in params', () => {
+    const paramIds = new Set(doomDef.params.map((p) => p.id));
+    expect(paramIds.has('cv_iddqd_in')).toBe(true);
+    expect(paramIds.has('cv_idkfa_in')).toBe(true);
+  });
+
+  it('extras exposes lastCheatInjected() — starts as null', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    expect(typeof extras.lastCheatInjected).toBe('function');
+    expect(extras.lastCheatInjected()).toBeNull();
+  });
+
+  it('rising edge on cv_iddqd_in flips lastCheatInjected to "iddqd"', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    expect(extras.lastCheatInjected()).toBeNull();
+    handle.setParam('cv_iddqd_in', 1);
+    expect(extras.lastCheatInjected()).toBe('iddqd');
+  });
+
+  it('rising edge on cv_idkfa_in flips lastCheatInjected to "idkfa"', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    handle.setParam('cv_idkfa_in', 1);
+    expect(extras.lastCheatInjected()).toBe('idkfa');
+  });
+
+  it('holding the gate HIGH does not re-trigger (one-shot)', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    handle.setParam('cv_iddqd_in', 1);
+    expect(extras.lastCheatInjected()).toBe('iddqd');
+    // Multiple successive HIGH values stay sticky — lastCheatInjected reflects
+    // the most recent successful trigger and DOES NOT get re-set.
+    // We verify by triggering IDKFA next, then re-asserting IDDQD HIGH stays
+    // a no-op (no second injection).
+    handle.setParam('cv_idkfa_in', 1);
+    expect(extras.lastCheatInjected()).toBe('idkfa');
+    handle.setParam('cv_iddqd_in', 1);   // still HIGH
+    handle.setParam('cv_iddqd_in', 0.9); // still above threshold
+    expect(extras.lastCheatInjected()).toBe('idkfa'); // no re-fire on iddqd
+  });
+
+  it('lowering then raising re-arms + re-fires the cheat', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    handle.setParam('cv_iddqd_in', 1);
+    handle.setParam('cv_idkfa_in', 1); // shift away
+    expect(extras.lastCheatInjected()).toBe('idkfa');
+    handle.setParam('cv_iddqd_in', 0); // re-arm iddqd
+    handle.setParam('cv_iddqd_in', 1); // re-fire
+    expect(extras.lastCheatInjected()).toBe('iddqd');
+  });
+
+  it('values below 0.5 never trigger (single-threshold gate)', () => {
+    const handle = spawnNoAudio();
+    const extras = handle.read?.('extras') as { lastCheatInjected: () => string | null };
+    for (const v of [0, 0.1, 0.3, 0.49]) {
+      handle.setParam('cv_iddqd_in', v);
+      handle.setParam('cv_idkfa_in', v);
+    }
+    expect(extras.lastCheatInjected()).toBeNull();
   });
 });
