@@ -92,6 +92,10 @@ import { foxyDef } from './foxy';
 // 4PLEXER — 4-in / 4-out discrete signal router with per-output
 // gate-advanced selectors.
 import { fourplexerDef } from './fourplexer';
+// SIDECAR — stereo sidechain compressor (GMR 2012 topology). Stereo audio
+// in, dedicated SC pair (HPF-filterable on the detector only),
+// CV-modulatable threshold + envMag, env_out + env_inv_out for ducking.
+import { sidecarDef } from './sidecar';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -207,6 +211,10 @@ export function registerAudioModules(): void {
   // 4PLEXER — 4-in / 4-out discrete signal router; per-output selector +
   // per-output gate that advances the selector on each rising edge.
   registerModule(fourplexerDef);
+  // SIDECAR — stereo sidechain compressor (Giannoulis-Massberg-Reiss 2012).
+  // env_out + env_inv_out expose the reduction envelope for cross-patch
+  // ducking; env_out has NO hard clamp (envMag>1 → overshoot allowed).
+  registerModule(sidecarDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
