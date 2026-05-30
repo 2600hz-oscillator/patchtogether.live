@@ -332,6 +332,14 @@
     nextDefaultName,
     migrateAssignNames,
   } from '$lib/multiplayer/module-naming';
+  // TIMELORDE auto-spawn — the rack always needs a system clock, so when the
+  // patch loads (or boots empty) without one, drop a TIMELORDE in. Pure
+  // helpers; the $effect that wires them lives further down with the other
+  // snapshot-bus subscribers.
+  import {
+    shouldAutoSpawnTimelorde,
+    pickTimelordeDefaultPosition,
+  } from '$lib/audio/modules/timelorde-autospawn';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { installSimulatedMidiDevice } from '$lib/midi/midi-learn.svelte';
@@ -692,6 +700,180 @@
       }
       if (needsMigration) maybeMigrateGroupNames();
     });
+  });
+
+  // ---------------- TIMELORDE auto-spawn ----------------
+  //
+  // The module-def header in timelorde.ts promises: "if a rack is opened
+  // without a TIMELORDE, the auto-spawn path drops one in at a fixed
+  // position so the rack is always musically coherent." This is that
+  // path.
+  //
+  // SCOPE: only fires on RACKSPACE mounts (i.e. when a Hocuspocus
+  // provider is bound — `/r/[id]` routes + the `/`+`__attachProvider`
+  // collab-test pattern). The public `/` demo canvas (no provider) stays
+  // empty until the user clicks Load example — auto-spawning there would
+  // surprise the "demo a fresh engine" workflow and break a lot of e2e
+  // tests that depend on a literally-empty canvas at `goto('/')`.
+  // Real patching happens on `/r/[id]`, which is where the user
+  // experienced the missing-TIMELORDE pain.
+  //
+  // When the effect fires:
+  //   - After the Hocuspocus provider has fired 'synced' at least once.
+  //     Otherwise the local snapshot is the empty pre-sync state and
+  //     we'd race the server's actual state (which may already contain
+  //     a TIMELORDE), ending up with two TIMELORDE nodes that
+  //     maxInstances would then have to reconcile.
+  //
+  // Guards:
+  //   - didAutoSpawnTimelorde latches once per Canvas mount, so a
+  //     subsequent user-driven delete (impossible — undeletable: true —
+  //     but defensive) followed by snapshot churn doesn't re-spawn.
+  //   - shouldAutoSpawnTimelorde is the per-snapshot predicate.
+  //   - Inside the Yjs transact, a final scan of `patch.nodes` catches
+  //     any TIMELORDE written by a rack-mate between our snapshot read
+  //     and the transact entering (minimizes the multiplayer race
+  //     window).
+  //
+  // Multiplayer race: two clients hitting this $effect in the same
+  // moment both observe the same TIMELORDE-less snapshot. The
+  // transact-time re-check usually catches one of them; in the worst
+  // case both write distinct ids and Yjs merges both, leaving the rack
+  // momentarily with two TIMELORDE nodes. The engine's maxInstances=1
+  // refuses to materialize the second one and the orphan node is
+  // visually present but not audible — undeletable+singleton means the
+  // user can't easily clean it up, so future work: a dedupe pass in
+  // the reconciler that removes the loser by id-order. Acceptable for
+  // now since the race is narrow (one tick).
+  let didAutoSpawnTimelorde = $state(false);
+  let providerHasSynced = $state(false);
+  $effect(() => {
+    // Read the prop reactively. On `/r/[id]` this is the real provider
+    // and the $effect re-runs when it binds (which is BEFORE the user
+    // sees any patch data).
+    const fromProp = provider;
+    if (fromProp) {
+      if (fromProp.isSynced) providerHasSynced = true;
+      const onSynced = () => {
+        providerHasSynced = true;
+      };
+      fromProp.on('synced', onSynced);
+      return () => {
+        try { fromProp.off('synced', onSynced); } catch { /* */ }
+      };
+    }
+    // No prop provider — @collab tests use `/` + __attachProvider,
+    // which stashes the provider on window AFTER awaiting sync. The
+    // global isn't reactive, so we poll briefly post-mount to pick it
+    // up. 50 ms cadence × ~40 attempts = 2 s budget; after that we
+    // give up (the public `/` demo canvas legitimately has no provider).
+    let attempts = 0;
+    const POLL_MS = 50;
+    const POLL_MAX = 40;
+    const timer = setInterval(() => {
+      attempts++;
+      const g = (globalThis as unknown as {
+        __provider?: HocuspocusProvider | null;
+      }).__provider ?? null;
+      if (g) {
+        clearInterval(timer);
+        if (g.isSynced) providerHasSynced = true;
+        const onSynced = () => {
+          providerHasSynced = true;
+        };
+        g.on('synced', onSynced);
+        // No teardown beyond clearInterval — the global provider
+        // outlives the Canvas mount on `/` (tests keep it for the
+        // duration of the test run).
+        return;
+      }
+      if (attempts >= POLL_MAX) clearInterval(timer);
+    }, POLL_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  });
+
+  // Pre-effect marker: written once at module-script eval time. The
+  // e2e auto-spawn spec polls for this object as the "Canvas script
+  // actually ran" signal — under parallel-worker stress an HMR
+  // reload can drop the script reload, and waiting on the marker is
+  // the cleanest way to detect it.
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__timelordeAutospawnDebug = {
+      runs: 0,
+      mountedAt: Date.now(),
+      didAutoSpawnTimelorde: false,
+      providerHasSynced: false,
+      snapshotNodeCount: -1,
+      hasTimelordeInSnap: false,
+    };
+  }
+  $effect(() => {
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const g = globalThis as any;
+      g.__timelordeAutospawnDebug = {
+        runs: (g.__timelordeAutospawnDebug?.runs ?? 0) + 1,
+        didAutoSpawnTimelorde,
+        providerHasSynced,
+        snapshotNodeCount: snapshot.nodes.length,
+        hasTimelordeInSnap: snapshot.nodes.some((n) => n.type === 'timelorde'),
+      };
+    }
+    if (didAutoSpawnTimelorde) return;
+    if (!providerHasSynced) return;
+    if (!shouldAutoSpawnTimelorde(snapshot.nodes)) {
+      // Existing TIMELORDE present (loaded patch, or a rack-mate spawned
+      // one first). Latch so subsequent snapshot churn (e.g. cable
+      // additions) doesn't re-trigger this check pointlessly.
+      didAutoSpawnTimelorde = true;
+      return;
+    }
+    // Pick a viewport-anchored top-left position so the new card lands
+    // inside whatever the user is currently looking at (rather than at
+    // a flow-space origin that might be panned off-screen).
+    let viewportRect: { originX: number; originY: number; width: number; height: number } | undefined;
+    if (flowApi && flowEl) {
+      const rect = flowEl.getBoundingClientRect();
+      const vp = flowApi.getViewport?.();
+      const zoom = vp?.zoom && vp.zoom > 0 ? vp.zoom : 1;
+      viewportRect = {
+        originX: vp ? -vp.x / zoom : 0,
+        originY: vp ? -vp.y / zoom : 0,
+        width: rect.width / zoom,
+        height: rect.height / zoom,
+      };
+    }
+    const pos = pickTimelordeDefaultPosition(viewportRect);
+    const id = `timelorde-${crypto.randomUUID().slice(0, 8)}`;
+    // Transactional re-check inside the same Yjs op: the snapshot we
+    // read might be stale by a few ticks; a concurrent rack-mate could
+    // have spawned a TIMELORDE in the meantime. Re-check inside the
+    // transact closure to minimize the race window. (Yjs doesn't expose
+    // a true conditional-insert primitive, so this is best-effort + the
+    // engine's maxInstances=1 is the ultimate safety net.)
+    ydoc.transact(() => {
+      let alreadyHasTimelorde = false;
+      for (const node of Object.values(patch.nodes)) {
+        if (node && node.type === 'timelorde') {
+          alreadyHasTimelorde = true;
+          break;
+        }
+      }
+      if (alreadyHasTimelorde) return;
+      patch.nodes[id] = {
+        id,
+        type: 'timelorde',
+        domain: 'audio',
+        position: pos,
+        params: {},
+        data: { name: nextDefaultName(patch.nodes, 'timelorde') },
+      };
+    }, LOCAL_ORIGIN);
+    didAutoSpawnTimelorde = true;
+    trace(`auto-spawned TIMELORDE at (${pos.x}, ${pos.y}) — rack had none`);
   });
 
   // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /

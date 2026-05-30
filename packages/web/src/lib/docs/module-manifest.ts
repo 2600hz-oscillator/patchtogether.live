@@ -1145,6 +1145,9 @@ export function buildModuleManifest(
       // Shared per-user-view-state page-nav helpers (DRUMSEQZ / POLYSEQZ /
       // MACSEQ / Sequencer). Not a ModuleDef.
       if (file === 'sequencer-pages.ts') return false;
+      // TIMELORDE auto-spawn predicate + position helper consumed by
+      // Canvas.svelte's snapshot effect. Not a ModuleDef.
+      if (file === 'timelorde-autospawn.ts') return false;
       // HYDROGEN's supporting files: kit registry, per-kit data tables,
       // synth-utils. The module def lives in hydrogen.ts; everything
       // else with the `hydrogen-` prefix is implementation detail.
