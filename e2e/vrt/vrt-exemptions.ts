@@ -333,6 +333,63 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   fourplexer: 'VRT baseline pending — deterministic card (4 selector knobs, no canvas); capture via `task vrt:update` on each platform. Unit + E2E (routing + gate-advance + wrap + audio/cv) provide coverage.',
 };
 
+/** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
+ *  that ship a baseline on BOTH platforms (darwin + linux), aren't masked
+ *  for canvas non-determinism, and aren't in EXEMPT_BASELINE_PAIRS pending a
+ *  fresh capture. These are the ones safe to promote into `task ci` as a
+ *  required gate — a diff here is virtually guaranteed to be a real UI
+ *  regression, not platform/GPU/timing flake.
+ *
+ *  Driven by `VRT_STRICT=1` (see e2e/vrt/vrt.spec.ts + `task vrt:strict` in
+ *  the root Taskfile). The full `task vrt` sweep continues to cover the
+ *  canvas-driven + darwin-only + linux-pending cards as the informational
+ *  lane.
+ *
+ *  Promotion rules (add to this set when ALL conditions hold):
+ *    1. Module has a baseline PNG on BOTH platforms.
+ *    2. Module is NOT in VRT_MODULE_MASKS (no canvas mask → diff is
+ *       semantically meaningful end-to-end).
+ *    3. Module is NOT in EXEMPT_BASELINE_PAIRS for either platform (no
+ *       pending re-capture; both baselines reflect current UI).
+ *    4. Card has no animated chrome (LED pulse, blinking cursor, time-
+ *       driven readouts). Pure CSS-styled knobs/faders/ports only.
+ *
+ *  Demotion rule: if a strict card flakes ONCE in CI, demote it back to
+ *  the full lane and root-cause. Per memory `feedback_no_flake_tolerance`:
+ *  a strict subset that flakes IS a flake to fix; the whole point of the
+ *  lane is signal. */
+export const STRICT_VRT_MODULES = new Set<string>([
+  // Audio domain — pure knob/fader cards, no canvas
+  'adsr',                 // 4-knob envelope card
+  'analogVco',            // 4-knob VCO card (waveform selector + tuning)
+  'audioOut',             // master out: meter + level + mute
+  'buggles',              // bug-themed audio card
+  'cartesian',            // 2D selector grid card (static)
+  'charlottesEchos',      // delay/echo knob card
+  'destroy',              // destruction/distortion knob card
+  'drummergirl',          // drum-sample card (chrome only — sample preview is static post-load)
+  'drumseqz',             // 16-step drum sequencer (static at step 0 with no playhead)
+  'dx7',                  // DX7 FM synth card (operator grid)
+  'filter',               // filter knob card
+  'illogic',              // logic-gate knob card
+  'meowbox',              // meow-themed card
+  'mixer',                // 4-channel mixer fader card
+  'mixmstrs',             // master mixer fader card
+  'noise',                // noise-source knob card
+  'polyseqz',             // polyphonic sequencer step grid (static at step 0)
+  'qbrt',                 // q-bit/quantizer knob card
+  'reverb',               // reverb knob card
+  'score',                // score/note display card
+  'sequencer',            // step sequencer grid (static at step 0)
+  'shimmershine',         // shimmer-reverb knob card
+  'stereovca',            // stereo VCA fader card
+  'sticky',               // sticky-note widget (static)
+  'timelorde',            // master clock card (BPM/play/stop, no animated tick at default)
+  'vca',                  // mono VCA card
+  'wavecel',              // wave-cell knob card
+  'wavetableVco',         // wavetable VCO card
+]);
+
 /** Per-(platform, type) baselines intentionally missing while a follow-
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */

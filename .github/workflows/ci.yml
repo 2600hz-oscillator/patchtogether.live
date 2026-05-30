@@ -706,3 +706,79 @@ jobs:
           name: vrt-test-results
           path: e2e/vrt/test-results
           retention-days: 14
+
+  # -----------------------------------------------------------------------
+  # VRT (strict subset) — fast, deterministic gate. Runs ONLY the pure-DOM
+  # knob/fader cards listed in STRICT_VRT_MODULES (see
+  # e2e/vrt/vrt-exemptions.ts). These cards have baselines on BOTH platforms,
+  # no canvas masks, and no animated chrome — a diff here is a real UI
+  # regression, not platform/GPU/timing flake.
+  #
+  # Intended to become the required status check for VRT (replacing the
+  # `VRT (visual regression)` job above as the gate). The full-sweep `vrt`
+  # job above stays as the informational lane for canvas-driven + animated
+  # cards (covers more surface, may flake — never blocks merge).
+  #
+  # Migration: until the `main: green PRs only` ruleset (16042163) is
+  # updated to require this job's `name` as a status check, the full `vrt`
+  # job above remains the technically-required gate (its name was the
+  # original ruleset entry). A follow-up ops PR should run
+  #   gh api -X PUT repos/:owner/:repo/rulesets/16042163 \
+  #     -F rules='...required_status_checks: contexts: ["vrt-strict (visual regression — strict subset)"]'
+  # to flip the required check, and the full `vrt` job above can then be
+  # marked `continue-on-error: true` (informational lane).
+  # -----------------------------------------------------------------------
+  vrt-strict:
+    name: vrt-strict (visual regression — strict subset)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout (LFS required for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      # No DB needed for the strict subset (it's pure card-render baselines).
+      # No DOOM WASM needed either — DOOM is in EXEMPT_FROM_VRT.
+
+      - name: Run VRT (strict subset)
+        run: flox activate -- task vrt:strict
+
+      - name: Upload Playwright VRT-strict test-results (actual + diff PNGs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-strict-test-results
+          path: e2e/vrt/test-results
+          retention-days: 14
+
+      - name: Upload Playwright VRT-strict report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-strict-playwright-report
+          path: e2e/vrt/report
+          retention-days: 14
