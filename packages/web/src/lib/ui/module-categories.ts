@@ -129,6 +129,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // Audio-in → audio-out → fundamentally an effect, even though it can
   // also act as a freeze-gated source when patched into its own feedback.
   callsine: { top: 'Audio modules', sub: 'Effects' },
+  // SIDECAR — stereo sidechain compressor (GMR 2012; Faust co.compressor_stereo
+  // as reference). Effects category — fundamentally a dynamics processor
+  // sitting in the audio chain.
+  sidecar: { top: 'Audio modules', sub: 'Effects' },
   // blades, warps, clouds → moved to Ports/Mutable.
   // cloudseed → moved to Ports (top-level).
 
@@ -267,6 +271,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // cleanly under audio or video and the user can re-bucket on dev.
   sticky: { top: 'Hybrid', sub: 'Hybrid' },
   group: { top: 'Hybrid', sub: 'Hybrid' },
+  cadillac: { top: 'Hybrid', sub: 'Hybrid' },
   livecode: { top: 'Hybrid', sub: 'Hybrid' },
   // Clocked runner — spawned programmatically by LIVECODE's clocked()
   // call. Listed alongside LIVECODE so users browsing the palette can

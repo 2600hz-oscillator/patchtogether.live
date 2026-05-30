@@ -51,6 +51,12 @@ const SKIP_DEF_VS_UI: Record<string, string> = {
   // the settings panel either inlines the ports or wires them via the
   // standard PatchPanel.
   helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
+  // CADILLAC renders as a roaming overlay sprite (CadillacOverlay), not
+  // as a SvelteFlow card — Canvas.svelte filters it out of flowNodes so
+  // xyflow doesn't paint a fallback box. spawnPatch's "wait for N cards"
+  // would hang. The def has zero ports anyway (it's meta-domain).
+  // Functional coverage: e2e/tests/cadillac.spec.ts.
+  cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
 };
 
 async function readHandleIds(

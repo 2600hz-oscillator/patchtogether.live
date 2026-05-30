@@ -131,6 +131,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // pixels worth fingerprinting. Functional coverage is
   // e2e/tests/grouping-phase1.spec.ts.
   group: 'no-op render until exposed-ports are set by Create-Group; e2e covers the full flow',
+  // CADILLAC — singleton meta module with NO card render at all (the
+  // module is a roaming overlay sprite rendered by CadillacOverlay, not
+  // a SvelteFlow node body). The reconciler skips meta-domain nodes, so
+  // there is no per-card visual surface to baseline. Unit tests cover
+  // the pure collision math; E2E covers the deletion + self-destruct +
+  // TIMELORDE-survives flows.
+  cadillac: 'no card render — roaming overlay sprite, not a SvelteFlow node body. Unit (collision math) + E2E (deletion, self-destruct, timelorde-survives) provide coverage.',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.
@@ -169,6 +176,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // surface beyond what VEILS already exercises; baseline can be promoted
   // in a follow-up. Same rationale as VEILS.
   attenumix: 'VRT baseline pending; ART + unit + E2E provide coverage',
+  // SIDECAR stereo sidechain compressor: VRT baseline pending; standard
+  // 8-knob fader card + standard PatchPanel — no unique visual surface
+  // beyond what RESOFILTER / ATTENUMIX already exercise. ART + unit +
+  // E2E provide full DSP + behavior coverage. Promote into MODULES +
+  // capture darwin/linux baselines in a follow-up PR.
+  sidecar: 'VRT baseline pending; standard 8-knob card; ART + unit + E2E provide coverage',
   // CLOUDSEED first-slice PR: VRT baseline pending; complex card (4 panels
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.

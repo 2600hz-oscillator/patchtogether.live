@@ -1,9 +1,34 @@
 <script lang="ts">
-  // SamsloopCard — loop-based sample player. Upload a small audio file
-  // (anything the browser's decodeAudioData can read — wav, mp3, m4a/aac,
-  // ogg, flac, opus, weba), set the playback window, scrub varispeed
-  // (forward or reverse), toggle loop / one-shot. File-upload + canvas
-  // waveform on top, MACROOSCILLATOR-style fader column below.
+  // SamsloopCard — loop-based sample player WITH a built-in stereo input
+  // recorder. Patch any audio source(s) into audio_l_in / audio_r_in,
+  // pick CHAN / BITS / RATE, hit REC, and the captured PCM lands in
+  // node.data.sample so it persists with the rest of the patch envelope
+  // (same persistence pattern PICTUREBOX uses for imageBytes — see PR
+  // #441 / GGR demo). DOWNLOAD button synthesizes a standard WAV on the
+  // fly for export.
+  //
+  // What lives where:
+  //   - All recording math (max-seconds budget, quantize, downsample, WAV
+  //     header) is in $lib/audio/modules/samsloop-record.ts so it's unit-
+  //     testable without a DOM (samsloop-record.test.ts).
+  //   - The mic-record state machine in $lib/audio/modules/samsloop.ts
+  //     (samsloopRec*) is REUSED as the in-progress accumulator — same
+  //     start/append/stop/fail/cap-stop transitions, just driven by the
+  //     samsloop-tap worklet's MessagePort instead of a ScriptProcessor.
+  //   - The samsloop-tap worklet (packages/dsp/src/samsloop-tap.ts)
+  //     captures patched audio and posts L+R Float32 chunks to the main
+  //     thread when enabled.
+  //
+  // Drawing strategy for the live waveform:
+  //   - The bar's horizontal axis = `maxSeconds` at the current settings.
+  //     One pixel = one slice of that timeline. As samples accumulate we
+  //     fill from the left, drawing peak-per-pixel just like the static
+  //     waveform after a recording finishes.
+  //   - Local-only state (recRunningPeaks) — never written to Yjs. The
+  //     only Yjs write is the single `setData` on STOP (one update per
+  //     recording, not per frame — see relay-single-process-and-drift
+  //     memory).
+
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -13,7 +38,6 @@
     samsloopDef,
     loadSamsloopWav,
     SAMSLOOP_MAX_FILE_BYTES,
-    SAMSLOOP_MAX_SAMPLES,
     SAMSLOOP_RATE_RANGE,
     createSamsloopRecMachine,
     samsloopRecStart,
@@ -28,6 +52,20 @@
     rateToKnob,
     formatRatePercent,
   } from '$lib/audio/modules/samsloop-rate';
+  import {
+    samsloopMaxSeconds,
+    samsloopMaxSecondsExact,
+    encodeRecordingBytes,
+    makeWavBlob,
+    samsloopDownloadFilename,
+    bytesToBase64,
+    base64ToBytes,
+    SAMSLOOP_REC_DEFAULTS,
+    SAMSLOOP_RECORD_BUDGET_BYTES,
+    type SamsloopRecRate,
+    type SamsloopRecBits,
+    type SamsloopRecChannels,
+  } from '$lib/audio/modules/samsloop-record';
   import { useEngine } from '$lib/audio/engine-context';
   import { AudioEngine } from '$lib/audio/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -57,6 +95,25 @@
     return d?.fileName ?? null;
   });
 
+  // Recording settings live on node.data so they ride the Yjs envelope.
+  // Defaults come from SAMSLOOP_REC_DEFAULTS — match the brief's spec
+  // (CHAN=Stereo, BITS=16, RATE=44 kHz).
+  let recChannels: SamsloopRecChannels = $derived(
+    ((node?.data as SamsloopData | undefined)?.recChannels ?? SAMSLOOP_REC_DEFAULTS.channels) as SamsloopRecChannels,
+  );
+  let recBits: SamsloopRecBits = $derived(
+    ((node?.data as SamsloopData | undefined)?.recBits ?? SAMSLOOP_REC_DEFAULTS.bits) as SamsloopRecBits,
+  );
+  let recRate: SamsloopRecRate = $derived(
+    ((node?.data as SamsloopData | undefined)?.recRate ?? SAMSLOOP_REC_DEFAULTS.rate) as SamsloopRecRate,
+  );
+
+  // Whether there's a finished recorded sample on node.data.
+  let hasRecorded = $derived.by(() => {
+    const d = node?.data as SamsloopData | undefined;
+    return !!d?.sample && d.sample.byteLength > 0;
+  });
+
   const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
@@ -64,8 +121,10 @@
   };
 
   const inputs: PortDescriptor[] = [
-    { id: 'trig',    cable: 'gate' },
-    { id: 'rate_cv', label: 'RATE (CV)', cable: 'cv' },
+    { id: 'trig',       cable: 'gate' },
+    { id: 'rate_cv',    label: 'RATE (CV)', cable: 'cv' },
+    { id: 'audio_l_in', label: 'L IN',      cable: 'audio' },
+    { id: 'audio_r_in', label: 'R IN',      cable: 'audio' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out', cable: 'audio' },
@@ -76,190 +135,300 @@
   let uploadError = $state<string | null>(null);
   let isLoop = $derived(Math.round(mode) === 1);
 
-  // ---------- mic-record state ----------
+  // ---------- recording state ----------
   //
-  // The state machine in `recMachine` is the source of truth for what's
-  // currently happening (idle / recording / stopped). The MediaStream +
-  // AudioContext nodes that drive it are held in plain locals — we tear
-  // them down on stop / on failure / on component destroy. SAMSLOOP holds
-  // ONE sample at a time (see header on samsloop.ts) so finishing a
-  // recording REPLACES whatever sample was previously loaded.
-  let recMachine = $state<SamsloopRecMachine>(createSamsloopRecMachine(22050));
-  let micStream: MediaStream | null = null;
-  let micSource: MediaStreamAudioSourceNode | null = null;
-  let micTap: ScriptProcessorNode | null = null;
+  // The state machine is the source of truth for the recording lifecycle
+  // (idle → recording → stopped/idle). The tap-worklet port is acquired
+  // lazily from the engine handle via the 'recTap' read key. We retry
+  // briefly because the handle isn't always present immediately after
+  // spawn — the engine factory finishes asynchronously.
+
+  let recMachine = $state<SamsloopRecMachine>(createSamsloopRecMachine(48000));
   let recStartTimeMs = $state<number>(0);
-  // Tick state for the ms counter so the readout updates while
-  // recording. setInterval rather than rAF — we display milliseconds at
-  // 100ms granularity, not 60fps.
   let recCounterTicker: ReturnType<typeof setInterval> | null = null;
-  let recCounterMs = $state<number>(0);
+  let recElapsedSec = $state<number>(0);
+
+  // Live peak-per-pixel buffer. One entry per "time slot" along the bar's
+  // horizontal axis (the bar maps `maxSeconds` to its width). When a
+  // recording starts we allocate a buffer sized to the current bar pixel
+  // width; the chunk handler folds incoming samples into the slot they
+  // belong to. State is local — never written to Yjs.
+  let recBarWidth = $state<number>(200);
+  let recRunningPeaks = $state<Float32Array>(new Float32Array(0));
+
+  // Tap port subscription bookkeeping. We attach the listener for the
+  // lifetime of an active recording and detach on stop/teardown so
+  // chunks don't fire after we've committed.
+  let attachedTap: { port: MessagePort; setEnabled: (e: boolean) => void; sampleRate: number } | null = null;
+  let tapHandler: ((e: MessageEvent) => void) | null = null;
+  // rAF throttle: chunks arrive every ~3 ms at 48 kHz; without throttle
+  // the waveform $effect would redraw 300+ times per second. We coalesce
+  // redraw requests to one per animation frame.
+  let pendingPeakRaf: number | null = null;
+
+  // L/R accumulators for the current recording. We keep raw Float32 so
+  // the quantize + downsample step on STOP works on the full-precision
+  // capture (not on the visual peak slots, which are lossy by design).
+  let accL: Float32Array = new Float32Array(0);
+  let accR: Float32Array = new Float32Array(0);
 
   let isRecording = $derived(recMachine.state === 'recording');
   let isCapStopped = $derived(
     recMachine.state === 'stopped' && recMachine.stopReason === 'cap',
   );
-  // REC and file-upload are mutually exclusive: while one is in-flight
-  // the other is disabled. uploadStatus is set transiently during
-  // decode; recording state covers the live-capture window.
   let uploadInFlight = $derived(uploadStatus !== null);
   let recButtonDisabled = $derived(uploadInFlight);
   let fileInputDisabled = $derived(isRecording);
 
-  function tearDownMicGraph() {
-    if (micTap) {
-      try { micTap.disconnect(); } catch { /* */ }
-      // The processor's onaudioprocess holds a closure over recMachine —
-      // null it explicitly so a residual fire after disconnect is a no-op.
-      micTap.onaudioprocess = null;
-      micTap = null;
-    }
-    if (micSource) {
-      try { micSource.disconnect(); } catch { /* */ }
-      micSource = null;
-    }
-    if (micStream) {
-      for (const track of micStream.getTracks()) {
-        try { track.stop(); } catch { /* */ }
-      }
-      micStream = null;
-    }
-    if (recCounterTicker !== null) {
-      clearInterval(recCounterTicker);
-      recCounterTicker = null;
-    }
-  }
+  // maxSeconds at the current settings — drives the bar's x-axis AND
+  // the auto-stop trigger.
+  let maxSeconds = $derived(samsloopMaxSeconds(recRate, recBits, recChannels));
+  let maxSecondsExact = $derived(samsloopMaxSecondsExact(recRate, recBits, recChannels));
 
-  /** Write a finished recording into node.data, replacing any previous
-   *  sample (one-sample invariant). Mirrors the file-upload commit path
-   *  so playback wiring stays identical. */
-  function commitRecordingToNode(samples: Float32Array, sampleRate: number) {
-    const target = patch.nodes[id];
-    if (!target) return;
-    if (!target.data) target.data = {};
-    const d = target.data as SamsloopData;
-    d.samples = Array.from(samples);
-    d.sampleRate = sampleRate;
-    d.sampleLength = samples.length;
-    // Use a stable filename so the card displays "mic recording" instead
-    // of nothing — visually distinguishable from an uploaded WAV.
-    d.fileName = `mic ${(samples.length / sampleRate).toFixed(2)}s`;
-    target.params.start = 0;
-    target.params.end = samples.length;
-  }
-
-  async function toggleRecord() {
+  function pushRecSetting<K extends 'recChannels' | 'recBits' | 'recRate'>(
+    key: K,
+    value: SamsloopData[K],
+  ) {
+    const t = patch.nodes[id];
+    if (!t) return;
+    if (!t.data) t.data = {};
+    const d = t.data as SamsloopData;
+    d[key] = value as never;
+    // If the user changes a setting mid-recording: stop the recording
+    // cleanly. Whatever was captured up to that point is committed.
     if (isRecording) {
-      // User-driven stop. tearDown + commit the captured samples.
-      const finished = samsloopRecStop(recMachine);
-      const samples = finished.samples;
-      const sr = finished.sampleRate;
-      recMachine = finished;
-      tearDownMicGraph();
-      if (samples.length > 0) commitRecordingToNode(samples, sr);
-      return;
+      stopRecording('user');
     }
-    // Begin a fresh recording. Clear any prior upload status so the
-    // status row only shows live state.
-    uploadStatus = null;
-    uploadError = null;
+  }
 
-    // Grab the AudioContext from the engine. We tap the mic through it
-    // rather than spawning a separate context so the captured samples
-    // are at the graph's native rate (no resampling later).
+  function pickRecChannels(v: SamsloopRecChannels) {
+    pushRecSetting('recChannels', v);
+  }
+  function pickRecBits(v: SamsloopRecBits) {
+    pushRecSetting('recBits', v);
+  }
+  function pickRecRate(v: SamsloopRecRate) {
+    pushRecSetting('recRate', v);
+  }
+
+  /** Acquire the tap from the engine handle. Returns null until the engine
+   *  has finished mounting this node's handle — the card retries via the
+   *  REC click handler (no-op spam protection). */
+  function getTap(): { port: MessagePort; setEnabled: (e: boolean) => void; sampleRate: number } | null {
     const eng = engineCtx.get();
-    let ctx: BaseAudioContext | undefined;
+    if (!eng || !node) return null;
     try {
-      if (eng?.hasDomain('audio')) {
-        const audioEngine = eng.getDomain<AudioEngine>('audio');
-        ctx = audioEngine.ctx;
-      }
+      const r = eng.read(node, 'recTap');
+      if (!r) return null;
+      return r as { port: MessagePort; setEnabled: (e: boolean) => void; sampleRate: number };
     } catch {
-      ctx = undefined;
+      return null;
     }
-    if (!ctx || typeof (ctx as AudioContext).createMediaStreamSource !== 'function') {
+  }
+
+  function startRecording() {
+    const tap = getTap();
+    if (!tap) {
       recMachine = samsloopRecFail(
         recMachine,
         'Audio engine not ready yet — start audio first.',
       );
       return;
     }
-    const audioCtx = ctx as AudioContext;
+    uploadStatus = null;
+    uploadError = null;
 
-    // Permission + device acquisition. getUserMedia rejects on denial /
-    // no-device / SecureContext violations; we route those into the
-    // state machine as inline errors rather than letting them throw.
-    if (!navigator.mediaDevices?.getUserMedia) {
-      recMachine = samsloopRecFail(
-        recMachine,
-        'Microphone capture not supported in this browser.',
-      );
-      return;
-    }
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-      const name = (err as { name?: string } | null)?.name;
-      const msg =
-        name === 'NotAllowedError' || name === 'PermissionDeniedError'
-          ? 'Microphone permission denied.'
-          : name === 'NotFoundError' || name === 'DevicesNotFoundError'
-            ? 'No microphone found.'
-            : `Mic capture failed: ${err instanceof Error ? err.message : String(err)}`;
-      recMachine = samsloopRecFail(recMachine, msg);
-      return;
-    }
+    // Allocate the visual peak slot buffer at the current bar pixel
+    // width. Reading the canvas width lazily so the bar is real (it can
+    // change if the user resizes the window between recordings).
+    const w = canvasEl?.width ?? 200;
+    recBarWidth = w;
+    recRunningPeaks = new Float32Array(w);
+    accL = new Float32Array(0);
+    accR = new Float32Array(0);
 
-    micStream = stream;
-    // ScriptProcessorNode is deprecated but universally available and
-    // doesn't require a separate worklet bundle for capture — fine for
-    // a short (max ~2.84s) mono recording. The cap auto-stop bounds the
-    // total CPU exposure to the processor's lifetime.
-    micSource = audioCtx.createMediaStreamSource(stream);
-    const tap = audioCtx.createScriptProcessor(2048, 1, 1);
-    micTap = tap;
-    recMachine = samsloopRecStart(recMachine, audioCtx.sampleRate);
-    recStartTimeMs = performance.now();
-    recCounterMs = 0;
-    recCounterTicker = setInterval(() => {
-      recCounterMs = Math.floor(performance.now() - recStartTimeMs);
-    }, 100);
+    recMachine = samsloopRecStart(recMachine, tap.sampleRate);
 
-    tap.onaudioprocess = (ev) => {
-      // input[0] is mono (we asked for 1 input channel). Copy out — the
-      // event's buffer is reused.
-      const ch = ev.inputBuffer.getChannelData(0);
-      const chunk = new Float32Array(ch.length);
-      chunk.set(ch);
-      const updated = samsloopRecAppend(recMachine, chunk);
-      // If the helper auto-stopped on cap, tear down the mic graph here
-      // and commit the captured samples. Mirrors the user-stop path.
-      if (recMachine.state === 'recording' && updated.state === 'stopped') {
-        recMachine = updated;
-        const samples = updated.samples;
-        const sr = updated.sampleRate;
-        tearDownMicGraph();
-        commitRecordingToNode(samples, sr);
-      } else {
-        recMachine = updated;
-      }
+    attachedTap = tap;
+    tapHandler = (ev: MessageEvent) => {
+      const msg = ev.data as { type?: string; l?: Float32Array; r?: Float32Array; channels?: number } | null;
+      if (!msg || msg.type !== 'chunk' || !msg.l || !msg.r) return;
+      onTapChunk(msg.l, msg.r);
     };
-    micSource.connect(tap);
-    // ScriptProcessorNode requires connection to a destination to fire
-    // onaudioprocess. Connect to a muted GainNode so we don't echo back
-    // into the user's speakers (which would cause feedback).
-    const sink = audioCtx.createGain();
-    sink.gain.value = 0;
-    tap.connect(sink);
-    sink.connect(audioCtx.destination);
+    tap.port.addEventListener('message', tapHandler);
+    // start() on the port — addEventListener requires the port to be
+    // started; onmessage = ... auto-starts it but addEventListener does NOT.
+    try { tap.port.start(); } catch { /* */ }
+    tap.setEnabled(true);
+
+    recStartTimeMs = performance.now();
+    recElapsedSec = 0;
+    recCounterTicker = setInterval(() => {
+      recElapsedSec = (performance.now() - recStartTimeMs) / 1000;
+    }, 50);
+
   }
 
-  // Tear down the mic graph on unmount so we don't leave the mic LED on
-  // and don't leak the ScriptProcessorNode. Recording-state machine is
-  // pure so it doesn't need explicit cleanup.
+  function onTapChunk(l: Float32Array, r: Float32Array) {
+    if (recMachine.state !== 'recording') return;
+
+    // Append to the float accumulators (the real recording — full
+    // AudioContext-rate Float32 source for the quantize/downsample step).
+    const lNext = new Float32Array(accL.length + l.length);
+    lNext.set(accL, 0);
+    lNext.set(l, accL.length);
+    accL = lNext;
+    const rNext = new Float32Array(accR.length + r.length);
+    rNext.set(accR, 0);
+    rNext.set(r, accR.length);
+    accR = rNext;
+
+    // Update the visual peak buffer. We compute the |max| sample of the
+    // new chunk and fold it into the slot(s) it maps to on the bar.
+    const sr = attachedTap?.sampleRate ?? 48000;
+    // The bar's x-axis is `maxSeconds` long. Each slot's time width is
+    // `maxSecondsExact / barWidth` seconds.
+    const slotSec = maxSecondsExact / recBarWidth;
+    const samplesPerSlot = Math.max(1, Math.floor(sr * slotSec));
+    // Walk the entire accumulator and refresh slots — cheap (linear in
+    // chunk length, not buffer length) since we only need to update
+    // slots covered by the new samples. Compute the slot range the new
+    // samples belong to.
+    const startSlot = Math.floor((accL.length - l.length) / samplesPerSlot);
+    const endSlot   = Math.min(recBarWidth - 1, Math.floor((accL.length - 1) / samplesPerSlot));
+    for (let s = startSlot; s <= endSlot && s >= 0; s++) {
+      const lo = s * samplesPerSlot;
+      const hi = Math.min(accL.length, lo + samplesPerSlot);
+      let peak = 0;
+      for (let i = lo; i < hi; i++) {
+        const v = Math.abs(accL[i] ?? 0);
+        if (v > peak) peak = v;
+      }
+      // Mirror into the visual buffer (mono mix of L for display — keeps
+      // the bar shape stable regardless of CHAN setting).
+      recRunningPeaks[s] = peak;
+    }
+
+    // Force the waveform $effect to re-run by reassigning the reactive
+    // ref — coalesced to one per animation frame so we don't redraw
+    // 300+ times per second.
+    if (pendingPeakRaf === null) {
+      pendingPeakRaf = requestAnimationFrame(() => {
+        pendingPeakRaf = null;
+        recRunningPeaks = recRunningPeaks;
+      });
+    }
+
+    // Auto-stop on cap. The trigger is the exact-byte budget, not the
+    // rounded display value. We compute it from the current settings'
+    // bytes-per-second × elapsed seconds.
+    const elapsedSec = accL.length / sr;
+    if (elapsedSec >= maxSecondsExact) {
+      stopRecording('cap');
+    }
+  }
+
+  function stopRecording(reason: 'user' | 'cap') {
+    if (recMachine.state !== 'recording') return;
+    // Detach the tap first so no chunks land after we've committed.
+    if (attachedTap) {
+      try { attachedTap.setEnabled(false); } catch { /* */ }
+      if (tapHandler) {
+        try { attachedTap.port.removeEventListener('message', tapHandler); } catch { /* */ }
+      }
+    }
+    attachedTap = null;
+    tapHandler = null;
+    if (pendingPeakRaf !== null) {
+      cancelAnimationFrame(pendingPeakRaf);
+      pendingPeakRaf = null;
+    }
+    if (recCounterTicker !== null) {
+      clearInterval(recCounterTicker);
+      recCounterTicker = null;
+    }
+    recMachine = reason === 'cap'
+      ? { ...recMachine, state: 'stopped', stopReason: 'cap' }
+      : samsloopRecStop(recMachine);
+
+    // Encode + commit. ONE Yjs setData per recording — never per chunk.
+    // The byte payload is a base64 string (opaque to Yjs); broadcast is
+    // one update. (A 144 kB number[] would recurse syncedstore's YArray
+    // wrapper and blow the stack at insert.)
+    if (accL.length === 0) return;
+    const bytes = encodeRecordingBytes(
+      accL,
+      accR,
+      recMachine.sampleRate,
+      recRate,
+      recBits,
+      recChannels,
+    );
+    // Hard-cap defense — the encoder shouldn't exceed the budget at this
+    // point (the auto-stop fires when elapsed seconds reach the exact
+    // budget) but slice as a safety net so we never overshoot.
+    const trimmed = bytes.byteLength > SAMSLOOP_RECORD_BUDGET_BYTES
+      ? bytes.subarray(0, SAMSLOOP_RECORD_BUDGET_BYTES)
+      : bytes;
+    const t = patch.nodes[id];
+    if (!t) return;
+    if (!t.data) t.data = {};
+    const d = t.data as SamsloopData;
+    // Base64 the bytes for Yjs storage — see SamsloopData.sample comment.
+    // A 144 kB number[] would recurse syncedstore's YArray wrapper and
+    // blow the stack; a base64 string is one opaque value, one Yjs update.
+    const bytesB64 = bytesToBase64(trimmed);
+    const bytesPerSample = Math.ceil(recBits / 8);
+    const totalSamples = trimmed.byteLength / (bytesPerSample * recChannels);
+    d.sample = {
+      bytesB64,
+      rate: recRate,
+      bits: recBits,
+      channels: recChannels,
+      byteLength: trimmed.byteLength,
+      durationSec: totalSamples / recRate,
+    };
+  }
+
+  function toggleRecord() {
+    if (isRecording) {
+      stopRecording('user');
+    } else {
+      startRecording();
+    }
+  }
+
+  function onDownloadClick() {
+    const d = node?.data as SamsloopData | undefined;
+    const sample = d?.sample;
+    if (!sample || sample.byteLength === 0) return;
+    // Decode base64 back to a Uint8Array. The bytes ARE the on-disk PCM
+    // body — makeWavBlob just prepends the 44-byte RIFF/WAVE header.
+    const u8 = base64ToBytes(sample.bytesB64);
+    const blob = makeWavBlob(u8, sample.rate, sample.bits, sample.channels);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = samsloopDownloadFilename();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  // Tear down the tap subscription on unmount so we don't leave the
+  // tap enabled if the user destroys the card mid-recording.
   $effect(() => {
-    return () => tearDownMicGraph();
+    return () => {
+      if (attachedTap) {
+        try { attachedTap.setEnabled(false); } catch { /* */ }
+        if (tapHandler) {
+          try { attachedTap.port.removeEventListener('message', tapHandler); } catch { /* */ }
+        }
+      }
+      if (pendingPeakRaf !== null) cancelAnimationFrame(pendingPeakRaf);
+      if (recCounterTicker !== null) clearInterval(recCounterTicker);
+    };
   });
 
   async function onAudioFileChange(ev: Event) {
@@ -268,17 +437,9 @@
     if (!file) return;
     uploadError = null;
     uploadStatus = 'parsing...';
-    // Track whether we set a success status inside the try block so the
-    // finally clause knows whether to clear it (failure paths) or leave
-    // the success message in place. Every exit path resets the file
-    // input + clears the spinner — this fixes the regression where
-    // `if (!target) return;` left the spinner forever.
     let successStatus: string | null = null;
     try {
       const eng = engineCtx.get();
-      // The PatchEngine wraps per-domain engines; the audio engine holds
-      // the live AudioContext we need for decodeAudioData. hasDomain()
-      // guards so we don't throw if the engine isn't booted yet.
       let ctx: BaseAudioContext | undefined;
       try {
         if (eng?.hasDomain('audio')) {
@@ -300,23 +461,15 @@
       const samples = result.samples!;
       const target = patch.nodes[id];
       if (!target) {
-        // Node was deleted between picking the file and the decode
-        // returning. Surface a clear error rather than leaving the
-        // spinner forever (the prior bug at this line).
         uploadError = 'Module was removed during upload.';
         return;
       }
       if (!target.data) target.data = {};
       const d = target.data as SamsloopData;
-      // Storing the samples into node.data writes them into the
-      // syncedstore CRDT — that's where most of the load-time cost lives
-      // (one YArray record per sample, plus broadcast to peers). The
-      // decoded-buffer cap inside loadSamsloopWav keeps this bounded.
       d.samples = Array.from(samples);
       d.sampleRate = result.sampleRate;
       d.sampleLength = samples.length;
       d.fileName = file.name;
-      // Reset playback window to the full sample.
       target.params.start = 0;
       target.params.end = samples.length;
       successStatus = `loaded ${samples.length} samples @ ${result.sampleRate} Hz`;
@@ -332,12 +485,17 @@
     t.params.mode = Math.round(mode) === 1 ? 0 : 1;
   }
 
-  // Peak-per-pixel waveform draw. Runs once whenever sampleLength changes
-  // (avoids per-frame redraws — waveform is static once loaded). Also
-  // redraws when the start/end sliders move, to update the highlight band.
+  // Peak-per-pixel waveform draw. Two modes:
+  //   - While recording: draw the live-peak buffer (`recRunningPeaks`)
+  //     with the bar's x-axis = maxSeconds. Slots that haven't been
+  //     filled yet stay blank.
+  //   - Idle / after recording: draw the loaded `samples` (file upload)
+  //     OR the static peaks of the persisted node.data.sample.bytes
+  //     (recorded). When neither exists, "NO SAMPLE LOADED" placeholder.
   $effect(() => {
-    // Track reactivity dependencies explicitly: sampleLength, start, end.
+    // Track reactivity dependencies explicitly.
     void sampleLength; void start; void end;
+    void isRecording; void recRunningPeaks; void maxSeconds; void hasRecorded;
     if (!canvasEl) return;
     const ctx2d = canvasEl.getContext('2d');
     if (!ctx2d) return;
@@ -346,21 +504,86 @@
     ctx2d.clearRect(0, 0, w, h);
     ctx2d.fillStyle = '#0a0c11';
     ctx2d.fillRect(0, 0, w, h);
+
+    if (isRecording) {
+      // Live-record view: bar's x-axis = maxSeconds.
+      // Draw the running peaks. Each slot maps to one column.
+      const peaks = recRunningPeaks;
+      const cols = Math.min(w, peaks.length);
+      ctx2d.fillStyle = 'rgba(255, 60, 60, 0.18)';
+      // Highlight already-filled region.
+      const filledFrac = Math.min(1, recElapsedSec / Math.max(maxSecondsExact, 0.001));
+      ctx2d.fillRect(0, 0, filledFrac * w, h);
+      ctx2d.strokeStyle = 'rgb(255, 80, 60)';
+      ctx2d.lineWidth = 1;
+      ctx2d.beginPath();
+      for (let x = 0; x < cols; x++) {
+        const peak = peaks[x] ?? 0;
+        if (peak === 0) continue;
+        const y0 = (1 - peak * 0.5 - 0.5) * h;
+        const y1 = (1 - (-peak) * 0.5 - 0.5) * h;
+        ctx2d.moveTo(x + 0.5, y0);
+        ctx2d.lineTo(x + 0.5, y1);
+      }
+      ctx2d.stroke();
+      // Right edge: thin vertical to show the cap.
+      ctx2d.strokeStyle = 'rgba(255, 200, 60, 0.5)';
+      ctx2d.beginPath();
+      ctx2d.moveTo(w - 0.5, 0);
+      ctx2d.lineTo(w - 0.5, h);
+      ctx2d.stroke();
+      return;
+    }
+
+    // Idle / playback view. Prefer the loaded `samples` (file upload)
+    // since that's what the playback worklet plays. If only a recorded
+    // sample exists (no upload), draw its peaks decoded from the bytes.
     const d = node?.data as SamsloopData | undefined;
-    const samples = d?.samples;
-    if (!samples || samples.length === 0) {
+    let samplesForDraw: Float32Array | null = null;
+    if (d?.samples && d.samples.length > 0) {
+      samplesForDraw = new Float32Array(d.samples);
+    } else if (d?.sample && d.sample.byteLength > 0) {
+      // Decode the persisted PCM bytes back to Float32 for the waveform
+      // preview. Only L channel for the visual (stereo files draw the
+      // left channel's peaks).
+      const s = d.sample;
+      const bytesPerSample = Math.ceil(s.bits / 8);
+      const bytes = base64ToBytes(s.bytesB64);
+      const frames = Math.floor(bytes.byteLength / (bytesPerSample * s.channels));
+      samplesForDraw = new Float32Array(frames);
+      const view = new DataView(bytes.buffer);
+      if (s.bits === 16) {
+        for (let i = 0; i < frames; i++) {
+          samplesForDraw[i] = view.getInt16(i * bytesPerSample * s.channels, true) / 0x7fff;
+        }
+      } else {
+        // 8-bit signed (as stored — we used Int8 in our quantizer; bytes
+        // in node.data are the SIGNED int8 values cast to uint8 = the
+        // raw two's-complement byte).
+        for (let i = 0; i < frames; i++) {
+          const u = view.getUint8(i * bytesPerSample * s.channels);
+          const signed = (u << 24) >> 24;
+          samplesForDraw[i] = signed / 0x7f;
+        }
+      }
+    }
+    if (!samplesForDraw || samplesForDraw.length === 0) {
       ctx2d.fillStyle = '#5a6275';
       ctx2d.font = '10px ui-monospace, monospace';
       ctx2d.textAlign = 'center';
       ctx2d.fillText('NO SAMPLE LOADED', w / 2, h / 2);
       return;
     }
-    // Highlight the active playback window first (behind the waveform).
-    const wStartFrac = Math.max(0, Math.min(1, start / samples.length));
-    const wEndFrac = Math.max(wStartFrac, Math.min(1, end / samples.length));
-    ctx2d.fillStyle = 'rgba(80, 160, 220, 0.18)';
-    ctx2d.fillRect(wStartFrac * w, 0, (wEndFrac - wStartFrac) * w, h);
-    // Peak-per-pixel waveform trace.
+    const samples = samplesForDraw;
+    // For file-upload samples we keep the start/end highlight band; for
+    // recorded-only samples the start/end params haven't been touched
+    // yet, so skip the band.
+    if (d?.samples && d.samples.length > 0) {
+      const wStartFrac = Math.max(0, Math.min(1, start / samples.length));
+      const wEndFrac = Math.max(wStartFrac, Math.min(1, end / samples.length));
+      ctx2d.fillStyle = 'rgba(80, 160, 220, 0.18)';
+      ctx2d.fillRect(wStartFrac * w, 0, (wEndFrac - wStartFrac) * w, h);
+    }
     const samplesPerPx = Math.max(1, Math.floor(samples.length / w));
     ctx2d.strokeStyle = 'rgb(255, 150, 40)';
     ctx2d.lineWidth = 1;
@@ -387,7 +610,7 @@
 <div class="mod-card samsloop-card" data-testid="samsloop-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="SAMSLOOP" />
-  <div class="subtitle">SAMPLE LOOPER · VARISPEED · −200%…+200%</div>
+  <div class="subtitle">SAMPLE LOOPER · STEREO REC · −200%…+200%</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
@@ -408,22 +631,6 @@
         </label>
         <button
           type="button"
-          class="rec-btn"
-          class:active={isRecording}
-          disabled={recButtonDisabled}
-          onclick={toggleRecord}
-          data-testid="samsloop-rec-button"
-          aria-label={isRecording ? 'Stop recording' : 'Start recording from microphone'}
-        >
-          {#if isRecording}
-            <span class="rec-dot"></span>
-            REC <span class="rec-counter" data-testid="samsloop-rec-counter">{recCounterMs} ms</span>
-          {:else}
-            REC
-          {/if}
-        </button>
-        <button
-          type="button"
           class="mode-btn"
           class:loop={isLoop}
           onclick={toggleMode}
@@ -431,6 +638,96 @@
           aria-label="Toggle loop / one-shot"
         >{isLoop ? 'LOOP' : '1-SHOT'}</button>
       </div>
+
+      <!-- Record settings row: three discrete toggle switches matching
+           the brief (CHAN / BITS / RATE). Each switch is a paired button:
+           the active option is highlighted. -->
+      <div class="rec-settings-row" data-testid="samsloop-rec-settings">
+        <div class="rec-setting">
+          <span class="rec-setting-label">CHAN</span>
+          <button
+            type="button"
+            class="rec-setting-opt"
+            class:active={recChannels === 1}
+            disabled={isRecording}
+            onclick={() => pickRecChannels(1)}
+            data-testid="samsloop-chan-mono"
+          >MONO</button>
+          <button
+            type="button"
+            class="rec-setting-opt"
+            class:active={recChannels === 2}
+            disabled={isRecording}
+            onclick={() => pickRecChannels(2)}
+            data-testid="samsloop-chan-stereo"
+          >STEREO</button>
+        </div>
+        <div class="rec-setting">
+          <span class="rec-setting-label">BITS</span>
+          <button
+            type="button"
+            class="rec-setting-opt"
+            class:active={recBits === 8}
+            disabled={isRecording}
+            onclick={() => pickRecBits(8)}
+            data-testid="samsloop-bits-8"
+          >8</button>
+          <button
+            type="button"
+            class="rec-setting-opt"
+            class:active={recBits === 16}
+            disabled={isRecording}
+            onclick={() => pickRecBits(16)}
+            data-testid="samsloop-bits-16"
+          >16</button>
+        </div>
+        <div class="rec-setting">
+          <span class="rec-setting-label">RATE</span>
+          <button
+            type="button"
+            class="rec-setting-opt"
+            class:active={recRate === 22050}
+            disabled={isRecording}
+            onclick={() => pickRecRate(22050)}
+            data-testid="samsloop-rate-22k"
+          >22k</button>
+          <button
+            type="button"
+            class="rec-setting-opt"
+            class:active={recRate === 44100}
+            disabled={isRecording}
+            onclick={() => pickRecRate(44100)}
+            data-testid="samsloop-rate-44k"
+          >44k</button>
+        </div>
+      </div>
+
+      <div class="rec-bar-row">
+        <button
+          type="button"
+          class="rec-btn-big"
+          class:active={isRecording}
+          disabled={recButtonDisabled}
+          onclick={toggleRecord}
+          data-testid="samsloop-rec-button"
+          aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+        >
+          <span class="rec-dot"></span>
+          <span class="rec-label">{isRecording ? 'STOP' : 'REC'}</span>
+        </button>
+        <span class="rec-budget" data-testid="samsloop-max-seconds">
+          {maxSeconds.toFixed(2)}s max
+        </span>
+        <button
+          type="button"
+          class="download-btn"
+          disabled={!hasRecorded || isRecording}
+          onclick={onDownloadClick}
+          data-testid="samsloop-download-button"
+          aria-label="Download recorded sample as WAV"
+        >DOWNLOAD</button>
+      </div>
+
       {#if fileName}
         <div class="filename" data-testid="samsloop-filename">{fileName}</div>
       {/if}
@@ -478,15 +775,6 @@
       </div>
 
       <div class="rate-row">
-        <!--
-          Rate fader uses an ASYMMETRIC visual mapping: knob center maps to
-          rate=+1 (100% normal playback), full-left to rate=-2 (reverse 2×),
-          full-right to rate=+2 (forward 2×). The Fader component itself is
-          linear, so we feed it a synthetic `[0, 1]` value computed by
-          rateToKnob() and translate the drag back through knobToRate() at
-          the commit boundary. Tick labels at −200% / −100% / 0% / +100%
-          (center) / +200% telegraph the scale visually.
-        -->
         <Fader
           value={rateToKnob(rate)}
           min={0}
@@ -519,7 +807,7 @@
 <style>
   .samsloop-card {
     width: 360px;
-    min-height: 360px;
+    min-height: 420px;
   }
   .samsloop-card .title {
     font-family: var(--font-display, inherit);
@@ -590,48 +878,120 @@
   .samsloop-card .mode-btn:hover {
     border-color: #6a7282;
   }
-  .samsloop-card .rec-btn {
+
+  .samsloop-card .rec-settings-row {
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+  }
+  .samsloop-card .rec-setting {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .samsloop-card .rec-setting-label {
+    font-size: 0.5rem;
+    color: var(--text-dim, #8b94a5);
+    letter-spacing: 0.08em;
+    margin-right: 4px;
+    font-family: ui-monospace, monospace;
+  }
+  .samsloop-card .rec-setting-opt {
     background: #1a1f2a;
     color: var(--text-dim, #8b94a5);
     border: 1px solid #404652;
     border-radius: 2px;
-    padding: 4px 8px;
-    font-size: 0.6rem;
+    padding: 2px 6px;
+    font-size: 0.55rem;
     cursor: pointer;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.05em;
     font-family: ui-monospace, monospace;
-    min-width: 64px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
   }
-  .samsloop-card .rec-btn:hover {
+  .samsloop-card .rec-setting-opt:hover:not(:disabled) {
     border-color: #6a7282;
   }
-  .samsloop-card .rec-btn:disabled {
+  .samsloop-card .rec-setting-opt.active {
+    color: rgb(255, 200, 60);
+    border-color: rgb(220, 180, 60);
+    background: #2a2515;
+  }
+  .samsloop-card .rec-setting-opt:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .samsloop-card .rec-bar-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .samsloop-card .rec-btn-big {
+    background: #1a1f2a;
+    color: var(--text-dim, #8b94a5);
+    border: 1px solid #404652;
+    border-radius: 2px;
+    padding: 6px 12px;
+    font-size: 0.65rem;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    font-family: ui-monospace, monospace;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .samsloop-card .rec-btn-big:hover:not(:disabled) {
+    border-color: #6a7282;
+  }
+  .samsloop-card .rec-btn-big:disabled {
     opacity: 0.4;
     cursor: not-allowed;
   }
-  .samsloop-card .rec-btn.active {
+  .samsloop-card .rec-btn-big.active {
     color: #ffffff;
     background: #c0282e;
     border-color: #ff6b6b;
   }
-  .samsloop-card .rec-btn .rec-dot {
-    width: 6px;
-    height: 6px;
+  .samsloop-card .rec-btn-big .rec-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: #ffffff;
+    background: #ff5050;
     display: inline-block;
-    /* Pulse only while recording (parent .active) so non-recording
-     * REC buttons don't blink. */
+  }
+  .samsloop-card .rec-btn-big.active .rec-dot {
+    background: #ffffff;
     animation: samsloop-rec-pulse 1s ease-in-out infinite;
   }
-  .samsloop-card .rec-btn .rec-counter {
-    font-size: 0.55rem;
-    opacity: 0.9;
+  .samsloop-card .rec-btn-big .rec-label {
+    font-weight: 600;
   }
+  .samsloop-card .rec-budget {
+    flex: 1;
+    text-align: center;
+    font-size: 0.55rem;
+    color: var(--text-dim, #8b94a5);
+    font-family: ui-monospace, monospace;
+  }
+  .samsloop-card .download-btn {
+    background: #1a1f2a;
+    color: var(--text-dim, #8b94a5);
+    border: 1px solid #404652;
+    border-radius: 2px;
+    padding: 6px 10px;
+    font-size: 0.6rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    font-family: ui-monospace, monospace;
+  }
+  .samsloop-card .download-btn:hover:not(:disabled) {
+    color: rgb(80, 200, 220);
+    border-color: rgb(80, 160, 220);
+  }
+  .samsloop-card .download-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
   @keyframes samsloop-rec-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }

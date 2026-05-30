@@ -199,6 +199,8 @@
   import CocoaDelayCard from '$lib/ui/modules/CocoaDelayCard.svelte';
   // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
   import ResofilterCard from '$lib/ui/modules/ResofilterCard.svelte';
+  // SIDECAR — stereo sidechain compressor (GMR 2012 topology).
+  import SidecarCard from '$lib/ui/modules/SidecarCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
@@ -308,6 +310,7 @@
   } from '$lib/multiplayer/group-building-presence';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
+  import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
@@ -487,6 +490,8 @@
     cocoadelay: CocoaDelayCard,
     // RESOFILTER — Resonarium MultiFilter port (5 modes, named-mode label).
     resofilter: ResofilterCard,
+    // SIDECAR — stereo sidechain compressor (GMR 2012; Faust co.compressor_stereo).
+    sidecar: SidecarCard,
     // DOOM — single-instance interactive video module.
     doom: DoomCard,
     // NIBBLES — QBasic Nibbles snake game module.
@@ -735,6 +740,10 @@
       // children when data.expanded === true on the parent group.
       const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
       if (parentGroupId && collapsed.has(parentGroupId)) continue;
+      // CADILLAC renders as a roaming overlay sprite (CadillacOverlay),
+      // not as a SvelteFlow card. Filter it out of the node array so
+      // xyflow doesn't draw a fallback white box at the spawn point.
+      if (n.type === 'cadillac') continue;
       const remoteUser = remoteByNode[n.id];
       const node: FlowNode = {
         id: n.id,
@@ -3035,6 +3044,35 @@
     if ((type === PICTUREBOX_TYPE || type === SAMSLOOP_TYPE) && currentUserId) {
       initialData.creatorId = currentUserId;
     }
+    // CADILLAC — overrides the cursor-anchored pos with a viewport-relative
+    // launch point. x = right edge + ~80px so the car drives onstage from
+    // offscreen-right. y = mid-viewport-y so the car cuts through the
+    // user's current view. The overlay reads spawnedAtMs/spawnerClientId
+    // from data and computes the constant-velocity x deterministically;
+    // no awareness traffic for the car.
+    if (type === 'cadillac' && flowApi) {
+      const vp = flowApi.getViewport();
+      const containerEl: HTMLElement = flowEl ?? document.documentElement;
+      const rect = containerEl.getBoundingClientRect();
+      const rightFlow = flowApi.screenToFlowPosition({
+        x: rect.right,
+        y: rect.top,
+      });
+      const midFlow = flowApi.screenToFlowPosition({
+        x: (rect.left + rect.right) / 2,
+        y: (rect.top + rect.bottom) / 2,
+      });
+      pos.x = rightFlow.x + 80;
+      pos.y = midFlow.y;
+      initialData.spawnedAtMs = Date.now();
+      const clientId = provider?.awareness?.clientID;
+      if (typeof clientId === 'number') {
+        initialData.spawnerClientId = clientId;
+      }
+      // Reference vp to keep its read in scope (telemetry hook in the
+      // future). Suppresses a no-unused warning.
+      void vp;
+    }
 
     // Insert-on-cable (Proposal B2): if the cursor is close to an
     // existing cable's midpoint AND the new module has a compatible
@@ -3632,6 +3670,7 @@
         />
       {/if}
       <FlowBridge bind:api={flowApi} />
+      <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every
            module card's title chrome (see ModuleTitle.svelte). The floating
            NodeToolbar overhead label was dropped — the spec asks for the
