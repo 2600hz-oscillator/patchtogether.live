@@ -88,12 +88,39 @@ jobs:
 
   # -----------------------------------------------------------------------
   # unit — `task test` (server + web vitest). ~45 s of work; ~120 s with
-  # setup. No DB needed; server tests use an in-memory Hocuspocus harness.
+  # setup. Most server tests use an in-memory Hocuspocus harness and don't
+  # need a DB, BUT the joinRackspace capacity-race test
+  # (packages/web/src/lib/server/rackspaces-capacity.test.ts) speaks REAL
+  # Postgres via a pg-pool shim to prove pg_advisory_xact_lock actually
+  # holds. Per memory `feedback_collab_tests_vacuous_without_db` that test
+  # intentionally refuses to skip-pass when PG is unreachable — so the
+  # `unit` job needs a Postgres service. The test reads PG_TEST_URL and
+  # falls back to localhost:54320 / patchtogether_test; we map the
+  # container's 5432 → host 54320 to satisfy both paths + set PG_TEST_URL
+  # explicitly.
   # -----------------------------------------------------------------------
   unit:
     name: unit
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 54320:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PG_TEST_URL: postgres://postgres:postgres@localhost:54320/patchtogether_test
 
     steps:
       - name: Checkout
@@ -120,6 +147,12 @@ jobs:
 
       - name: Install workspace deps
         run: flox activate -- task install
+
+      # Apply the rack schema the capacity-race test depends on (racks +
+      # rack_members). The test probe hard-fails if these tables are
+      # missing rather than silently skip-passing.
+      - name: Apply DB schema (for capacity-race test)
+        run: flox activate -- psql "$PG_TEST_URL" -f db/schema/001_init.sql
 
       - name: Run unit tests (server + web)
         run: flox activate -- task test
@@ -303,10 +336,18 @@ jobs:
       # contention (4 workers each across 8 runners hammering the same dev
       # server + relay → cross-context Yjs sync drops). Isolating them makes
       # the DOOM 2-user test a reliable gate instead of a re-run-and-hope.
-      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter, no @collab)
+      # `per-module-per-port-behavioral.spec.ts` is the heavy behavioral
+      # input-coverage sweep — ~100 module-level tests, each iterating
+      # internal inputs with 2-spawn control-vs-patched comparisons.
+      # Wall-time ~25-30 min for the full sweep. Excluded from the main
+      # 8-way shard matrix (would balloon shard wall-time from 3-4 min
+      # to 8-10 min) and runs in its own dedicated `behavioral-coverage`
+      # job below. The test titles are matched via the
+      # "BEHAVIORAL input coverage" describe block name.
+      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter, no @collab, no behavioral)
         run: |
           flox activate -- npx --workspace e2e playwright test \
-            --grep-invert @collab \
+            --grep-invert "@collab|BEHAVIORAL input coverage" \
             --shard=${{ matrix.shard }}/8 \
             --reporter=blob
 
@@ -534,6 +575,98 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
+  # behavioral-coverage — the heavy behavioral input-coverage sweep
+  # (per-module-per-port-behavioral.spec.ts). ~100 module-level tests,
+  # each iterating its module's inputs with 2-spawn control-vs-patched
+  # comparisons. Wall-time ~25-30 min total at 4 workers — too heavy to
+  # roll into the main 8-way shard matrix (would balloon each shard from
+  # ~3-4 min to ~8-10 min). Runs on its own dedicated runner with full
+  # DB + DOOM-asset + DSP setup so the @collab-style isolation pattern
+  # carries through.
+  #
+  # NOT a required status check yet — landing it as informational lets
+  # the gating decision happen separately after the new tier proves
+  # itself reliable across N runs. Promote to ci umbrella `needs:` list
+  # to make it blocking.
+  # -----------------------------------------------------------------------
+  behavioral-coverage:
+    name: behavioral input coverage
+    runs-on: ubuntu-latest
+    # 50 min ceiling: full sweep at 4 workers ~25-30 min; cushion for
+    # cold-cache CI runs + setup time.
+    timeout-minutes: 50
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      - name: Build DSP
+        run: flox activate -- task dsp:build
+
+      - name: Run E2E (behavioral input coverage only, 4 workers, list reporter)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            per-module-per-port-behavioral.spec.ts \
+            --workers=4 \
+            --reporter=list
+
+      - name: Upload Playwright test-results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-behavioral
+          path: e2e/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
   # ci (umbrella) — gates branch protection. Required status check named
   # `typecheck + unit + ART + E2E` (see ruleset 16042163). This job exists
   # ONLY to preserve that name and aggregate the pass/fail of the split
@@ -705,4 +838,80 @@ jobs:
         with:
           name: vrt-test-results
           path: e2e/vrt/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
+  # VRT (strict subset) — fast, deterministic gate. Runs ONLY the pure-DOM
+  # knob/fader cards listed in STRICT_VRT_MODULES (see
+  # e2e/vrt/vrt-exemptions.ts). These cards have baselines on BOTH platforms,
+  # no canvas masks, and no animated chrome — a diff here is a real UI
+  # regression, not platform/GPU/timing flake.
+  #
+  # Intended to become the required status check for VRT (replacing the
+  # `VRT (visual regression)` job above as the gate). The full-sweep `vrt`
+  # job above stays as the informational lane for canvas-driven + animated
+  # cards (covers more surface, may flake — never blocks merge).
+  #
+  # Migration: until the `main: green PRs only` ruleset (16042163) is
+  # updated to require this job's `name` as a status check, the full `vrt`
+  # job above remains the technically-required gate (its name was the
+  # original ruleset entry). A follow-up ops PR should run
+  #   gh api -X PUT repos/:owner/:repo/rulesets/16042163 \
+  #     -F rules='...required_status_checks: contexts: ["vrt-strict (visual regression — strict subset)"]'
+  # to flip the required check, and the full `vrt` job above can then be
+  # marked `continue-on-error: true` (informational lane).
+  # -----------------------------------------------------------------------
+  vrt-strict:
+    name: vrt-strict (visual regression — strict subset)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout (LFS required for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      # No DB needed for the strict subset (it's pure card-render baselines).
+      # No DOOM WASM needed either — DOOM is in EXEMPT_FROM_VRT.
+
+      - name: Run VRT (strict subset)
+        run: flox activate -- task vrt:strict
+
+      - name: Upload Playwright VRT-strict test-results (actual + diff PNGs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-strict-test-results
+          path: e2e/vrt/test-results
+          retention-days: 14
+
+      - name: Upload Playwright VRT-strict report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-strict-playwright-report
+          path: e2e/vrt/report
           retention-days: 14
