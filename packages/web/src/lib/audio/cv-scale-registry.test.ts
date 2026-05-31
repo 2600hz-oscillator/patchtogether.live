@@ -144,6 +144,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // fast path and cvScale doesn't apply. Same shape as SLEWSWITCH.in1..in4.
   // The gate1..gate4 advance inputs are `gate`-typed and so aren't checked.
   fourplexer: ['in1', 'in2', 'in3', 'in4'],
+  // CHOWKICK pitch_cv: 1V/oct pitch CV consumed directly by the worklet —
+  // freq *= 2^pitch_cv applied per-sample. Same shape as dx7.pitch_cv and
+  // helm.pitch_cv: a V/oct fallback input with no paramTarget (a freq
+  // AudioParam additive cvScale would NOT be 1V/oct, so we route the
+  // pitch CV as its own audio-rate node input + apply the octave map
+  // inside the per-sample DSP).
+  chowkick: ['pitch_cv'],
 };
 
 describe('cv-scale / registry coverage', () => {
