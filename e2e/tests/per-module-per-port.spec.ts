@@ -51,6 +51,7 @@ import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
 import { REGISTRY, type RegistryModule, type RegistryPort } from './_registry';
 import { driverFor } from './_drivers';
+import { perPortDriverFor } from './_per-port-drivers';
 
 // ────────── Module-level skips ──────────
 // Modules whose card body can't be rendered under bare spawnPatch (mirrors
@@ -65,45 +66,42 @@ const SKIP_SPAWN: Record<string, string> = {
 // ────────── Module-level output-emit exemptions ──────────
 //
 // Whole-module skips for cases where EVERY output port shares the same
-// blocker (the module is gameplay-only, MIDI-only, hardware-only, needs
-// a clock source we don't supply, etc.). Handle-presence is STILL
-// asserted for these — only the signal-flow check is skipped. Documented
-// per-module so each exemption is auditable as a small list.
+// blocker AND no category-appropriate test driver can synthesize the
+// trigger from inside Playwright (no real file decoder, no ROM in IDB,
+// no in-game event reachable within the sweep budget). Handle-presence
+// is STILL asserted for these — only the signal-flow check is skipped.
 //
-// The PURE_EFFECT and PURE_CV_GATE_UTILITY skips (in the test body) are
-// SHAPE-based: any module with audio/video input gets effect-shape skip.
-// THIS list is for modules whose shape would let them emit, but whose
-// outputs are all gameplay/hardware/clock-conditional.
+// MOST modules previously listed here have moved to active driver-backed
+// coverage via `_per-port-drivers.ts` (test/driver-backed-per-port-sweep):
+//   * Hardware sources (GAMEPAD, JOYSTICK, NUMPAD+) → addInitScript shims
+//     + synthetic input events.
+//   * MIDI-driven (MIDICLOCK, MIDICVBUDDY) → navigator.requestMIDIAccess
+//     mock + synthetic 0xFA / 0xF8 / note-on messages routed via the
+//     module's cardApi.connect() hook.
+//   * Self-running clock modules (TIMELORDE, MARBLES, SYMBIOTE, GRIDS,
+//     TIDES2) → just removed (the old "needs upstream clock" comment was
+//     wrong; defaults already self-run).
+//   * Step sequencers (SEQUENCER, SCORE, DRUMSEQZ, POLYSEQZ, MACSEQ,
+//     HYDROGEN) → driver seeds isPlaying=1 + node.data.steps so the
+//     internal scheduler fires.
+//   * CV/gate utilities (ILLOGIC, SLEWSWITCH) → driver wires BUGGLES +
+//     SEQUENCER upstream.
+//   * STAGES → SEQUENCER.gate → STAGES.trig.
+//   * ADSR → SEQUENCER.gate → ADSR.gate (already supported via driverFor).
+//   * VIDEOOUT → ACIDWARP.out → VIDEOOUT.in (passthrough sweep).
 //
-// Keep this list tight: ~25 entries upper bound (per the PR spec).
+// What stays exempt: only the irreducibly-asset-or-ROM-bound modules
+// (~5-7 entries). Each has a one-line citation of the dedicated spec
+// that exercises the full path with the real asset present.
 const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
-  // ── Hardware-input sources ──
-  gamepad:    'no gamepad attached in test browser; covered by gamepad.spec.ts',
-  joystick:   'no joystick movement in test browser; covered by joystick.spec.ts',
-  numpadPlus: 'requires keypresses on numpad; covered by numpad-related specs',
-  // ── MIDI-driven ──
-  midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
-  midiclock:   'requires MIDI device; covered by midiclock.spec.ts',
-  // ── Clock / divider / sequencer-like modules that need an upstream clock ──
-  timelorde: 'clock divider; needs upstream clock; covered by timelorde-related specs',
-  grids:     'requires upstream clock to step; covered by grids-related specs',
-  marbles:   'requires UI-enabled internal clock; covered by marbles-related specs',
-  symbiote:  'requires UI-enabled internal clock; covered by symbiote-related specs',
-  stages:    'requires upstream segment gate; covered by stages-related specs',
-  tides2:    'requires upstream gate/pitch; covered by tides2-related specs',
-  macseq:    'requires toggled steps; covered by macseq-related specs',
-  // ── CV/gate utility modules with no self-running source ──
-  illogic:    'boolean logic on inputs; no upstream → no output; covered by illogic.spec.ts',
-  slewSwitch: 'CV switcher; needs upstream CV/gate; covered by slewswitch.spec.ts',
-  // ── User-toggled sequencer-like sources ──
-  sequencer: 'requires user-toggled step.on=true; covered by dedicated sequencer specs',
-  score:     'requires play_cv high + steps; covered by score.spec.ts',
-  drumseqz:  'requires toggled steps; covered by drumseqz specs',
-  polyseqz:  'requires toggled steps; covered by polyseqz specs',
   // ── File-input modules ──
-  samsloop:      'needs uploaded sample; covered by samsloop.spec.ts',
-  videobox:      'needs uploaded video file; covered by videobox.test.ts',
-  videovarispeed: 'needs uploaded video file; covered by videovarispeed-output.spec.ts',
+  // Each needs a real decoder pipeline (Web Codecs for video, AudioBuffer
+  // decode for samples) that we don't bring up inside the sweep. The
+  // dedicated specs build a small fixture file + seed via the card's
+  // upload handler; signal-flow assertion lives there.
+  samsloop:       'needs decoded sample buffer (AudioBufferSourceNode); covered by samsloop.spec.ts',
+  videobox:       'needs decoded video file (Web Codecs pipeline); covered by videobox.test.ts',
+  videovarispeed: 'needs decoded video file + varispeed scrubber; covered by videovarispeed-output.spec.ts',
   // ── HYDROGEN: pattern grid + sample-pack loading ──
   hydrogen: 'pattern grid needs cells toggled; covered by hydrogen-related specs',
   // ── ADSR: modulator that needs an upstream gate (no audio input,
@@ -111,9 +109,13 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   adsr: 'modulator: requires upstream gate; covered by adsr-vca-invert.spec.ts',
   // ── TREE.oh.VOX: 303 voice — silent until gate_in triggers envelope ──
   treeohvox: 'treeohvox: silent until gate_in triggers envelope; covered by treeohvox-specific tests + ART scenarios',
-  // ── Game modules with score-event outputs only ──
-  modtris: 'gameplay-conditional outputs; covered by modtris-related specs',
-  pong:    'gameplay-conditional outputs; covered by pong-related specs',
+  // ── Game modules whose outputs ONLY fire on rare in-game events ──
+  // MODTRIS line clears require ~10 piece drops + a full row filled;
+  // PONG scores require a ball-miss after several bounces. Both exceed
+  // the sweep's 2-second window, even at max gravity. The dedicated
+  // specs simulate full games + drive scoring deterministically.
+  modtris: 'line_cleared/overfill only fire after ~10 piece drops; covered by modtris-related specs (simulated)',
+  pong:    'score_left/score_right only fire on ball-miss after bounces; covered by pong-related specs',
   // QBERT — audio_out + evt_die/move/level all fire from the synthesized
   // event stream which only triggers after coin + start + held joystick.
   // The bare per-port sweep can't drive those + ROM is gitignored by
@@ -121,18 +123,17 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // and the CV-joystick path by qbert-cv-joystick.spec.ts (skipped without
   // ROM). The video `out` port DOES render a test pattern even with no
   // ROM, but whole-module skip is simpler bookkeeping per the SM64
-  // precedent above.
+  // precedent below.
   qbert: 'audio + event outputs fire only after coin+start+joystick; ROM is gitignored (404 on clean checkout); covered by qbert-rom-missing.spec.ts + qbert-cv-joystick.spec.ts',
-  // ── SM64: only output is `out` (video). The upstream sm64js bundle needs
-  // a US sm64.z64 ROM extracted into IDB before it renders ANYTHING — until
-  // then the #gameCanvas is a blank cleared surface, so the sweep would
-  // assert "no signal" on a module whose IO is wired correctly. The
-  // dedicated sm64.spec.ts (when added — currently the test-fixtures don't
-  // seed a ROM) covers post-extract render. Handle presence IS still
-  // asserted by the spec's first dim.
+  // ── SM64: the upstream sm64js bundle needs a US sm64.z64 ROM
+  // extracted into IDB before it renders ANYTHING — until then the
+  // #gameCanvas is a blank cleared surface, so the sweep would assert
+  // "no signal" on a module whose IO is wired correctly. (Note: SM64
+  // is also currently absent from the auto-generated registry-manifest
+  // because its outputs declaration is read by a regex that the SM64
+  // def doesn't match — sm64 is invisible to this sweep regardless.
+  // Kept here for documentation of the underlying blocker.)
   sm64: 'video out blank until US ROM is extracted into IDB; covered by sm64-related specs (post-extract render)',
-  // ── VIDEOOUT: pure passthrough; out = in ──
-  videoOut: 'passthrough sink: no upstream video; covered by video-out-related specs',
 };
 
 // ────────── Per-port output-emit exemptions ──────────
@@ -212,10 +213,36 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // module-level test pass.
   'buggles.clock': 'gate fires at burst-rate (~0.5 Hz); test window can miss; covered by buggles-related specs',
   'buggles.burst': 'gate fires at burst-rate (~0.5 Hz); test window can miss; covered by buggles-related specs',
+  // ── TIMELORDE partial: the slow per-bar dividers (1/8, 1/12, 1/16,
+  // 1/32, 1/64) have periods of 1.6 s, 2.4 s, 3.2 s, 6.4 s, 12.8 s
+  // respectively at our test BPM of 300. Even with a wide poll budget
+  // that's too long to wait per-port for a sweep that already iterates
+  // 13 outputs serially. The faster outputs (1x..1/4, swing) ARE
+  // driven + asserted from the same TIMELORDE test, so the worklet's
+  // output dispatch is covered + the per-divider math is unit-tested
+  // in timelorde.test.ts.
+  'timelorde.1/8':  'period 1.6 s @ test BPM 300; sweep budget 1.2 s; covered by timelorde-related specs',
+  'timelorde.1/12': 'period 2.4 s @ test BPM 300; sweep budget 1.2 s; covered by timelorde-related specs',
+  'timelorde.1/16': 'period 3.2 s @ test BPM 300; sweep budget 1.2 s; covered by timelorde-related specs',
+  'timelorde.1/32': 'period 6.4 s @ test BPM 300; sweep budget 1.2 s; covered by timelorde-related specs',
+  'timelorde.1/64': 'period 12.8 s @ test BPM 300; sweep budget 1.2 s; covered by timelorde-related specs',
   // ── atlantisCatalyst partial: scene_pulse + scene_idx wait for a
   // scene change (several seconds). Drift outputs are continuous CV.
   'atlantisCatalyst.scene_pulse': 'scene-transition gate fires every several seconds; outside test window; covered by atlantis-catalyst.spec.ts',
   'atlantisCatalyst.scene_idx':   'CV stays at 0 until first scene transition; covered by atlantis-catalyst.spec.ts',
+  // ── ILLOGIC partial: the LOGIC outputs (and/nand/or/not) only fire
+  // when their inputs cross specific threshold combinations. With
+  // BUGGLES.smooth as a slow ±1V random walk on in1 and SEQUENCER.gate
+  // as a 50%-duty gate on in2, the AND output requires BOTH > 0.5
+  // simultaneously — a probabilistic alignment that can miss the test
+  // window. The 6 NON-logic outputs (att1/2/3/4 + sum + diff) ARE
+  // driven + asserted; the math half of the module is covered. The
+  // logic half is unit-tested in illogic.test.ts with deterministic
+  // input patterns.
+  'illogic.and':  'AND fires only when in1 AND in2 both > 0.5; probabilistic alignment; covered by illogic.spec.ts',
+  'illogic.nand': 'NAND inverse of AND; same probabilistic alignment; covered by illogic.spec.ts',
+  'illogic.or':   'OR fires often but its complement NOT may miss; same shape; covered by illogic.spec.ts',
+  'illogic.not':  'NOT inverse of in1>0.5; depends on bipolar BUGGLES range; covered by illogic.spec.ts',
 };
 
 // ────────── Per-port input-drive exemptions ──────────
@@ -557,7 +584,23 @@ test.describe('per-module per-port: outputs emit signal', () => {
     const hasUpstreamMediaInput = mod.inputs.some(
       (p) => p.type === 'audio' || p.type === 'video' || p.type === 'mono-video' || p.type === 'image',
     );
-    if (hasUpstreamMediaInput && !NOT_EFFECT_DESPITE_AUDIO_INPUT.has(mod.type)) {
+    // If a per-port driver registers extra setup for this module
+    // (upstream graph, seeded params, seeded data, page init, post-spawn
+    // event dispatch), it's SUPPLYING what the effect needs — bypass the
+    // effect-shape skip. (Example: VIDEOOUT has a video input but the
+    // VIDEOOUT driver wires ACIDWARP.out into it, so the .out passthrough
+    // becomes assertable. POLYSEQZ has cv inputs but the driver seeds
+    // isPlaying=1 + steps so it self-runs.)
+    const ppDriverModule = perPortDriverFor(mod.type);
+    const hasDriverSetup = !!(
+      ppDriverModule
+      && (ppDriverModule.upstream || ppDriverModule.params || ppDriverModule.data || ppDriverModule.pageSetup || ppDriverModule.postSpawn)
+    );
+    if (
+      hasUpstreamMediaInput
+      && !NOT_EFFECT_DESPITE_AUDIO_INPUT.has(mod.type)
+      && !hasDriverSetup
+    ) {
       test.fixme(`${title} [SKIPPED: effect-shape (audio/video input — needs upstream source); covered by dedicated specs]`, () => {});
       continue;
     }
@@ -576,7 +619,8 @@ test.describe('per-module per-port: outputs emit signal', () => {
       'analogLogicMaths', 'fourplexer', 'unityscalemathematik',
       'cartesian', 'polyseqz', 'frogger',
     ]);
-    if (PURE_CV_GATE_UTILITY.has(mod.type)) {
+    // Same driver-setup bypass as the media-input shape.
+    if (PURE_CV_GATE_UTILITY.has(mod.type) && !hasDriverSetup) {
       test.fixme(`${title} [SKIPPED: pure CV/gate utility (output = f(inputs); needs upstream CV/gate); covered by dedicated specs]`, () => {});
       continue;
     }
@@ -607,6 +651,13 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // routinely takes >30s for the waitForLoadState alone.
       // atlantisCatalyst has a similar heavy-mount profile.
       if (mod.type === 'foxy' || mod.type === 'atlantisCatalyst') test.setTimeout(90_000);
+      // Per-output iteration costs ~3-4 s (goto + spawn + wait + read).
+      // Modules with many outputs (GAMEPAD has 18, TIMELORDE has 13,
+      // DRUMSEQZ has 9) need a scaled timeout. The default 30 s only
+      // covers ~8 outputs. Scale to 5s per output + 30s baseline.
+      if (mod.outputs.length > 8) {
+        test.setTimeout(Math.max(30_000, mod.outputs.length * 5_000 + 30_000));
+      }
 
       // Per-iteration budget: each non-exempt output drives a FULL fresh
       // page navigation (goto + networkidle) + spawnPatch + driver wait +
@@ -634,6 +685,21 @@ test.describe('per-module per-port: outputs emit signal', () => {
       });
 
       const driver = driverFor(mod);
+      // Per-port driver: category-appropriate setup (page-init shim,
+      // pre-seeded params/data, additional upstream graph, post-spawn
+      // event dispatch). Null when the module needs no extra work
+      // beyond the default driver path. See _per-port-drivers.ts for
+      // the full registry + rationale.
+      const ppDriver = perPortDriverFor(mod.type);
+
+      // pageSetup MUST run before every navigation (the init script
+      // is bound to the page, not the document, so addInitScript
+      // re-installs the shim on each goto). Install once here AND on
+      // each per-output iteration below — `addInitScript` is idempotent
+      // (Playwright tracks it per-context, second call appends a second
+      // script but the shims are written defensively to no-op on
+      // re-install).
+      if (ppDriver?.pageSetup) await ppDriver.pageSetup(page);
 
       // Loop over outputs serially within the test — each iteration
       // re-navigates to '/' to get a fresh AudioContext + fresh engine.
@@ -668,15 +734,16 @@ test.describe('per-module per-port: outputs emit signal', () => {
           continue;
         }
 
-        // SUT + optional upstream gate/pitch driver from _drivers.ts +
-        // type-appropriate sink. Reuses the per-module.spec.ts gate/pitch
-        // driver-wiring pattern.
+        // SUT params: merge the per-port driver's seed params with the
+        // legacy _drivers.ts params (per-port wins on conflict so the
+        // category-aware driver controls e.g. isPlaying for sequencer).
+        const sutParams = { ...(driver.params ?? {}), ...(ppDriver?.params ?? {}) };
         const sutNode: SpawnNode = {
           id: 'sut',
           type: mod.type,
           position: { x: 400, y: 60 },
           domain: mod.domain,
-          params: driver.params,
+          params: sutParams,
         };
         const nodes: SpawnNode[] = [sutNode, sink.node];
         const edges: SpawnEdge[] = [
@@ -688,6 +755,13 @@ test.describe('per-module per-port: outputs emit signal', () => {
             targetType: sink.targetType,
           },
         ];
+        // Per-port driver upstream graph (BUGGLES → ILLOGIC.in1,
+        // SEQUENCER → STAGES.trig, ACIDWARP → VIDEOOUT.in, etc.).
+        if (ppDriver?.upstream) {
+          const extra = ppDriver.upstream('sut');
+          nodes.push(...extra.nodes);
+          edges.push(...extra.edges);
+        }
         if (driver.gatePort || driver.pitchPort) {
           nodes.unshift({
             id: 'driver-seq',
@@ -716,6 +790,28 @@ test.describe('per-module per-port: outputs emit signal', () => {
         }
 
         await spawnPatch(page, nodes, edges);
+
+        // Seed SUT-side node.data BEFORE the engine reads it on the
+        // next tick. Sequencer-family modules read data.steps each
+        // tick from livePatch, so writing here is picked up within ~25ms.
+        if (ppDriver?.data) {
+          await page.evaluate(({ id, data }) => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+              __ydoc: { transact: (fn: () => void) => void };
+            };
+            w.__ydoc.transact(() => {
+              const n = w.__patch.nodes[id];
+              if (!n) return;
+              if (!n.data) n.data = {};
+              for (const [k, v] of Object.entries(data)) n.data[k] = v;
+            });
+          }, { id: 'sut', data: ppDriver.data });
+        }
+
+        // Post-spawn dispatch (synthetic keypresses, MIDI sends,
+        // sequencer-step seeding for driver-seq under the upstream graph).
+        if (ppDriver?.postSpawn) await ppDriver.postSpawn(page, 'sut');
 
         if (driver.gatePort || driver.pitchPort) {
           await page.evaluate(() => {
@@ -752,18 +848,47 @@ test.describe('per-module per-port: outputs emit signal', () => {
         const crossDomain = mod.domain !== sink.node.domain;
         const waitMs = sink.node.type !== 'scope' ? 1500
           : crossDomain ? 2000 : 800;
-        await runFor(page, waitMs);
 
         // Read the sink. Audio-domain sink (SCOPE) → analyser snapshot.
         // Video-domain sink (VIDEOOUT) → canvas-pixel statistics.
         if (sink.node.type === 'scope') {
-          const snap = await readScopeSnapshot(page, sink.node.id);
-          expect(snap, `${mod.type}.${port.id}: scope read succeeded`).not.toBeNull();
-          if (!snap) continue;
-          const sum = summarize(snap.ch1);
+          // For gate-typed outputs (pulses every 200..500 ms at typical
+          // clock rates), the scope analyser only holds the most-recent
+          // ~43 ms (fftSize=2048 / 48 kHz). A single read at the end of
+          // the wait window will miss most pulses. POLL the analyser at
+          // < analyser-window intervals (30 ms here, fits ~10 polls into
+          // 300 ms of contiguous coverage) AND extend the total poll
+          // budget enough to catch >=1 pulse from a 2 Hz source — that's
+          // a worst-case slow-clock module like TIMELORDE.1x. This is
+          // the same "fire-N-times + poll-many-times" pattern that
+          // video-audio-cvgate-coverage.spec.ts uses for gate pulses
+          // (analyser fftSize=2048 → 43ms refresh; close-packed polls
+          // build a sliding peak-hold across the test window).
+          // CV / audio outputs are continuous so the first poll wins;
+          // gate outputs may need the full budget.
+          const pollMs = 30;
+          // Gates can be as slow as TIMELORDE.1x (2 Hz @ 120 BPM, so ~500
+          // ms period). Budget 1.2 s of poll window for gate ports; the
+          // 800 ms `waitMs` baseline isn't enough on the 1x port.
+          const isGate = port.type === 'gate';
+          const totalMs = isGate ? Math.max(waitMs, 1200) : waitMs;
+          const polls = Math.max(1, Math.ceil(totalMs / pollMs));
+          let maxPeak = 0;
+          let lastRms = 0;
+          for (let i = 0; i < polls; i++) {
+            await runFor(page, pollMs);
+            const snap = await readScopeSnapshot(page, sink.node.id);
+            if (!snap) continue;
+            const sum = summarize(snap.ch1);
+            if (sum.peak > maxPeak) maxPeak = sum.peak;
+            lastRms = sum.rms;
+            // Early-out once we cross the floor — avoids the full poll
+            // budget on the easy cases (continuous audio / CV).
+            if (maxPeak > 0.005) break;
+          }
           expect(
-            sum.peak,
-            `${mod.type}.${port.id} (type=${port.type}): scope.ch1 peak above floor (peak=${sum.peak.toFixed(4)}, rms=${sum.rms.toFixed(4)})`,
+            maxPeak,
+            `${mod.type}.${port.id} (type=${port.type}): scope.ch1 peak above floor (maxPeak=${maxPeak.toFixed(4)}, lastRms=${lastRms.toFixed(4)})`,
           ).toBeGreaterThan(0.005);
         } else {
           // Video output → VIDEOOUT canvas stats. We assert TWO floors:
@@ -776,8 +901,16 @@ test.describe('per-module per-port: outputs emit signal', () => {
           //     waveform-scope renders (a thin trace on a near-black
           //     canvas) where variance is intrinsically low; >0.5 is
           //     the floor where a SINGLE-PIXEL trace clears noise.
-          const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-          await expect(canvas, `${mod.type}.${port.id}: video-out canvas present`).toHaveCount(1);
+          // When the SUT is itself a videoOut module, BOTH the SUT and
+          // the sink render `data-testid="video-out-canvas"` so the
+          // locator matches 2 elements. Use `.last()` to target the
+          // sink (added to the patch AFTER the SUT, so its canvas is
+          // mounted last and represents what came OUT of the SUT's
+          // passthrough). For non-videoOut SUTs, count is 1 and last()
+          // == only().
+          const canvases = page.locator('canvas[data-testid="video-out-canvas"]');
+          await expect(canvases, `${mod.type}.${port.id}: video-out canvas present`).not.toHaveCount(0);
+          const canvas = canvases.last();
           const stats = await canvas.evaluate((el) => {
             const c = el as HTMLCanvasElement;
             const ctx = c.getContext('2d');
