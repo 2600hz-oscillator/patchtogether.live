@@ -449,6 +449,25 @@ jobs:
       # `task setup` already installed. (Fixes #101.)
       - run: flox activate -- task test:emit-manifest
       - run: flox activate -- task ci:smoke:live
+      # Anon-invite handshake guard: opens a REAL WS to the deployed autotest
+      # relay with a freshly-minted anon invite and asserts onAuthenticate
+      # ACCEPTS. Catches INVITE_SECRET drift between the deployed web app and
+      # relay — the failure mode where every anonymous invite guest is silently
+      # rejected (red dot, `nodes 0`) while Clerk users are unaffected. SKIPS
+      # cleanly if AUTOTEST_INVITE_SECRET isn't set (e.g. before the secret is
+      # wired), so it never blocks a deploy spuriously; once set, drift fails
+      # the deploy loudly. Set AUTOTEST_INVITE_SECRET to the canonical
+      # INVITE_SECRET_AUTOTEST value (the same one `task sync-secrets -- autotest`
+      # pushes to both Fly + CF Pages).
+      - name: Anon-invite handshake smoke (autotest relay)
+        env:
+          TIER: autotest
+          INVITE_SECRET: ${{ secrets.AUTOTEST_INVITE_SECRET }}
+          # /api/health is beta-gate-exempt, but pass creds anyway so the
+          # web-fingerprint cross-check works even if that carve-out changes.
+          BETA_GATE_USER: beta
+          BETA_GATE_PASS: ${{ secrets.AUTOTEST_BETA_GATE_PASS }}
+        run: flox activate -- task smoke:anon-handshake
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
