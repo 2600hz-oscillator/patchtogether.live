@@ -203,6 +203,8 @@
   import SidecarCard from '$lib/ui/modules/SidecarCard.svelte';
   // TREE.oh.VOX — TB-303 voice slice (Open303 port).
   import TreeohvoxCard from '$lib/ui/modules/TreeohvoxCard.svelte';
+  // CHOWKICK — synth-kick voice (ChowKick port by Jatin Chowdhury / chowdsp).
+  import ChowkickCard from '$lib/ui/modules/ChowkickCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
@@ -506,6 +508,8 @@
     sidecar: SidecarCard,
     // TREE.oh.VOX — TB-303 voice slice (Open303 port).
     treeohvox: TreeohvoxCard,
+    // CHOWKICK — synth-kick voice (ChowKick by Jatin Chowdhury / chowdsp, BSD-3-Clause).
+    chowkick: ChowkickCard,
     // DOOM — single-instance interactive video module.
     doom: DoomCard,
     // NIBBLES — QBasic Nibbles snake game module.
@@ -1098,6 +1102,33 @@
       trace(`GLITCHES patch in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
       await reconciler?.reconcile();
       trace('GLITCHES live — picturebox showing glitch.jpg');
+    } catch (err) {
+      console.error(err);
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    } finally {
+      booting = false;
+    }
+  }
+
+  /** MEDIA BURN — homage to Ant Farm's 1975 piece. Loads 15 PICTUREBOX
+   *  tiles reassembling the iconic Cadillac-into-TVs photo, plus a
+   *  CADILLAC positioned to demolish the rightmost column ~1s after
+   *  load. Same shape as loadGlitches: envelope → loadEnvelopeIntoStore.
+   *
+   *  Determinism: the envelope's CADILLAC node has NO spawnedAtMs, so
+   *  the overlay's `?? Date.now()` fallback makes load-time === spawn-
+   *  time. The 1-second-to-first-hit math (see media-burn-math.ts) holds
+   *  every load, in single-user AND multiplayer modes. */
+  async function loadMediaBurn() {
+    error = null;
+    booting = true;
+    try {
+      await ensureEngine();
+      const { loadMediaBurn: doLoad } = await import('$lib/ui/example-patches/media-burn');
+      const result = doLoad(ydoc, patch);
+      trace(`MEDIA BURN patch in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
+      await reconciler?.reconcile();
+      trace('MEDIA BURN live — 15 PICTUREBOX tiles + CADILLAC armed');
     } catch (err) {
       console.error(err);
       error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -3799,6 +3830,15 @@
         data-testid="load-glitches-btn"
       >
         {booting ? 'Loading…' : 'GLITCHES GET RICHES'}
+      </button>
+      <button
+        onclick={loadMediaBurn}
+        disabled={booting}
+        class="primary glitches"
+        title="Homage to Ant Farm's 1975 Media Burn — 15 PICTUREBOX tiles reassemble the photo, then a CADILLAC drives R→L and demolishes them ~1s after load."
+        data-testid="load-media-burn-btn"
+      >
+        {booting ? 'Loading…' : 'Media Burn'}
       </button>
       <button
         onclick={savePatch}
