@@ -125,6 +125,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (frame-time clock) that the baseline would flap. Functional coverage
   // is e2e/tests/camera-input.spec.ts.
   cameraInput: 'live MediaStream defeats deterministic capture',
+  // AUDIO IN — system mic / line-in source. Card state depends on
+  // getUserMedia permission + presence of audio inputs (both non-
+  // deterministic across CI runners); the LED + status text would
+  // differ between idle/streaming/no-inputs states. Functional coverage
+  // is e2e/tests/audio-in.spec.ts (chromium-audio-in project, fake-mic
+  // injected); unit tests cover the def shape + device-picker helpers.
+  audioIn: 'card state depends on getUserMedia permission + audioinput presence (varies across CI runners); e2e/tests/audio-in.spec.ts + devices.test.ts + audioin.test.ts provide coverage',
   // GROUP is a Phase-1 collapse-N-modules container with no engine
   // binding. A bare GROUP! has no exposed ports → its visual surface
   // is just the card chrome + label, which carries no module-specific
@@ -461,6 +468,10 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // dropdown so the darwin baseline was regen'd in this PR. Linux baseline
   // pending a `task vrt:update` run on linux CI.
   'linux/wavviz',
+  // AUDIO OUT (device picker dropdown added): the card grew an OUT device
+  // dropdown row (setSinkId picker) so the darwin baseline was regen'd in
+  // this PR. Linux baseline pending a `task vrt:update` run on linux CI.
+  'linux/audioOut',
   // BACKDRAFT (video feedback generator): darwin baseline captured on this
   // machine via VRT_SCENES (SHAPES sources → frozen feedback tunnel/spiral,
   // params.freeze=1 holds the accumulator). The spatial-transform feedback

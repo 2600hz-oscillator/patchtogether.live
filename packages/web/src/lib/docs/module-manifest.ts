@@ -79,7 +79,9 @@ const DESCRIPTIONS: Record<string, string> = {
   wavetableVco:
     'Wavetable oscillator that morphs saw -> square -> triangle -> sine across a 16-frame table.',
   audioOut:
-    'Terminal stereo output. Two mono inputs (L, R) routed to the host AudioContext destination.',
+    'Terminal stereo output. Two mono inputs (L, R) routed to the host AudioContext destination. Optional output-device dropdown via setSinkId (Chromium 110+).',
+  audioIn:
+    'System audio input source. Stream from a user-selected mic/line-in/interface via getUserMedia; L+R outputs are fanned out from mono sources or split from stereo. Card owns the permission prompt + device dropdown + devicechange refresh.',
   vca: 'Voltage-controlled amplifier. Multiplies the audio input by base + (cv * cvAmount).',
   mixer: 'Four-channel mono summing mixer with master gain.',
   adsr: 'Gate-triggered attack-decay-sustain-release envelope. Outputs CV.',

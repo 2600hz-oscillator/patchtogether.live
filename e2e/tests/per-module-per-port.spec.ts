@@ -81,6 +81,7 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   gamepad:    'no gamepad attached in test browser; covered by gamepad.spec.ts',
   joystick:   'no joystick movement in test browser; covered by joystick.spec.ts',
   numpadPlus: 'requires keypresses on numpad; covered by numpad-related specs',
+  audioIn:    'audioIn: requires explicit click-to-enable for mic permission; covered by audio-in.spec.ts with fake-device project',
   // ── MIDI-driven ──
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock:   'requires MIDI device; covered by midiclock.spec.ts',
