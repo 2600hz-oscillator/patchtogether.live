@@ -20,7 +20,7 @@ vi.mock('./db.js', () => ({
   sql: () => sqlTagMock,
 }));
 
-const { leaveRackspace } = await import('./rackspaces');
+const { leaveRackspace, seedRackspaceForTest } = await import('./rackspaces');
 
 interface LeaveRow {
   rack_exists: boolean;
@@ -63,5 +63,80 @@ describe('leaveRackspace', () => {
     mockLeaveRow({ rack_exists: false, is_owner: false, is_member: false, deleted: false });
     const result = await leaveRackspace('r_nope', 'user_guest');
     expect(result).toBe('not-found');
+  });
+});
+
+describe('seedRackspaceForTest', () => {
+  beforeEach(() => {
+    sqlTagMock.mockReset();
+  });
+
+  it('returns the inserted rackspace shape (no snapshot)', async () => {
+    // Only the racks INSERT is invoked; rack_snapshots is skipped when snapshot
+    // is absent.
+    sqlTagMock.mockResolvedValueOnce([
+      {
+        id: 'r_seedtest1',
+        owner_user_id: 'test_seed_xyz',
+        name: 'Test rackspace',
+        created_at: '2026-05-30T08:00:00Z',
+      },
+    ]);
+    const result = await seedRackspaceForTest({
+      ownerUserId: 'test_seed_xyz',
+      name: 'Test rackspace',
+    });
+    expect(result.id).toBe('r_seedtest1');
+    expect(result.ownerUserId).toBe('test_seed_xyz');
+    expect(result.memberUserIds).toEqual(['test_seed_xyz']);
+    expect(sqlTagMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('inserts rack + rack_snapshots when snapshot is provided', async () => {
+    sqlTagMock.mockResolvedValueOnce([
+      {
+        id: 'r_seedtest2',
+        owner_user_id: 'test_seed_qrs',
+        name: 'With snapshot',
+        created_at: '2026-05-30T08:00:00Z',
+      },
+    ]);
+    // Snapshot path is a separate `await sql()\`...\``; it just needs to
+    // resolve (the route doesn't read its return value).
+    sqlTagMock.mockResolvedValueOnce([]);
+    const snapshot = new Uint8Array([1, 2, 3, 4, 5]);
+    const result = await seedRackspaceForTest({
+      ownerUserId: 'test_seed_qrs',
+      name: 'With snapshot',
+      snapshot,
+    });
+    expect(result.id).toBe('r_seedtest2');
+    expect(sqlTagMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips the snapshot insert when bytes are empty', async () => {
+    sqlTagMock.mockResolvedValueOnce([
+      {
+        id: 'r_seedtest3',
+        owner_user_id: 'test_seed_abc',
+        name: 'Empty snap',
+        created_at: '2026-05-30T08:00:00Z',
+      },
+    ]);
+    await seedRackspaceForTest({
+      ownerUserId: 'test_seed_abc',
+      name: 'Empty snap',
+      snapshot: new Uint8Array(0),
+    });
+    // Only the racks insert; the empty Uint8Array shouldn't trigger the
+    // snapshot INSERT.
+    expect(sqlTagMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws on no-row return (id collision)', async () => {
+    sqlTagMock.mockResolvedValueOnce([]);
+    await expect(
+      seedRackspaceForTest({ ownerUserId: 'test_seed_zzz', name: 'collide' }),
+    ).rejects.toThrow(/no row/);
   });
 });
