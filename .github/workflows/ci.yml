@@ -196,6 +196,62 @@ jobs:
         run: flox activate -- task art
 
   # -----------------------------------------------------------------------
+  # build — the PRODUCTION bundle gate. Runs `task build` (dsp:build +
+  # `vite build` for the web app) on a clean runner with NO deploy and NO
+  # Cloudflare token. This is the only required-path job that exercises the
+  # production bundler.
+  #
+  # WHY THIS EXISTS (Clerk #464 RCA, 2026-05-30): a broken bundle merged to
+  # main and broke dev for hours because NO required CI check ran the
+  # production bundler. typecheck (svelte-check) + unit (vitest) + e2e
+  # (dev-server) + VRT all pass while `vite build` fails — a transitive ESM
+  # export mismatch is only caught at bundle time, not by the dev server or
+  # the type checker. The only thing previously running `task build` was the
+  # non-required `Deploy → PR preview` job, so a broken bundle could merge.
+  #
+  # This job is wired into the REQUIRED umbrella `ci` job's `needs:` list
+  # (see below), so a broken production build fails the umbrella → blocks
+  # merge, with zero branch-ruleset change. Keep it FAST: build only, no
+  # preview, no smoke (those live in `task ci:smoke:prod-build`).
+  # -----------------------------------------------------------------------
+  build:
+    name: build (production bundle)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      # The full production build: dsp:build (Faust + JS worklets → dist) then
+      # `vite build` for the web app. No deploy, no Cloudflare token — purely a
+      # "does the prod bundle compile?" gate.
+      - name: Run production build (dsp + web)
+        run: flox activate -- task build
+
+  # -----------------------------------------------------------------------
   # e2e — Playwright E2E suite, sharded 8 ways. Each shard runs ~1/8 of the
   # 812 specs (file-level distribution) with 4 workers, on its own runner.
   # Per-shard wall-time ~3-4 min vs the previous ~5-6 min at 4 shards.
@@ -578,16 +634,23 @@ jobs:
   # behavioral-coverage — the heavy behavioral input-coverage sweep
   # (per-module-per-port-behavioral.spec.ts). ~100 module-level tests,
   # each iterating its module's inputs with 2-spawn control-vs-patched
-  # comparisons. Wall-time ~25-30 min total at 4 workers — too heavy to
-  # roll into the main 8-way shard matrix (would balloon each shard from
-  # ~3-4 min to ~8-10 min). Runs on its own dedicated runner with full
-  # DB + DOOM-asset + DSP setup so the @collab-style isolation pattern
-  # carries through.
+  # comparisons. Wall-time ~25-30 min UNSHARDED at 4 workers — too heavy
+  # to roll into the main 8-way shard matrix (would balloon each shard
+  # from ~3-4 min to ~8-10 min).
   #
-  # NOT a required status check yet — landing it as informational lets
-  # the gating decision happen separately after the new tier proves
-  # itself reliable across N runs. Promote to ci umbrella `needs:` list
-  # to make it blocking.
+  # SHARDED 6 ways (same pattern as the `e2e` job): a `shard: [1..6]/6`
+  # matrix with `--shard=${{matrix.shard}}/6` + blob reporter, then a
+  # `merge-behavioral-reports` job downloads all 6 blobs and merges them
+  # into a single HTML report. ~100 tests / 6 shards ≈ 17 tests/shard at 4
+  # workers each → a few minutes per shard instead of a ~50-min tail.
+  # Each shard runs on its own dedicated runner with full DB + DSP setup.
+  #
+  # NOT a required status check — landing it as informational lets the
+  # gating decision happen separately after the tier proves itself
+  # reliable. Stays `continue-on-error: true` (another agent is tuning
+  # its per-module thresholds separately; do not change its required-ness
+  # or its assertions). Promote to the `ci` umbrella `needs:` list to
+  # make it blocking once thresholds are tuned.
   #
   # TODO(behavioral-coverage): non-blocking until per-module threshold tuning lands.
   # Current spec (PR #471) uses a delta threshold that's too tight for modules with
@@ -598,7 +661,7 @@ jobs:
   # Tracking task TBD.
   # -----------------------------------------------------------------------
   behavioral-coverage:
-    name: behavioral input coverage
+    name: behavioral input coverage (shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
     # Informational lane: red here must NOT block PR merges. The job still runs
     # + reports a status, but `continue-on-error: true` makes GitHub treat any
@@ -606,9 +669,16 @@ jobs:
     # aggregators are unaffected. Remove once per-module thresholds are tuned
     # (see TODO above).
     continue-on-error: true
-    # 50 min ceiling: full sweep at 4 workers ~25-30 min; cushion for
-    # cold-cache CI runs + setup time.
-    timeout-minutes: 50
+    # 20 min ceiling per shard: sharded 6 ways the per-shard work is a few
+    # minutes; cushion for cold-cache CI runs + setup time.
+    timeout-minutes: 20
+
+    strategy:
+      # Don't fail-fast: surface independent failures across all 6 shards in
+      # one run rather than masking shards 2-6 when shard 1 trips a threshold.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
 
     services:
       postgres:
@@ -665,19 +735,92 @@ jobs:
       - name: Build DSP
         run: flox activate -- task dsp:build
 
-      - name: Run E2E (behavioral input coverage only, 4 workers, list reporter)
+      - name: Run E2E (behavioral input coverage, shard ${{ matrix.shard }}/6, 4 workers, blob reporter)
         run: |
           flox activate -- npx --workspace e2e playwright test \
             per-module-per-port-behavioral.spec.ts \
+            --shard=${{ matrix.shard }}/6 \
             --workers=4 \
-            --reporter=list
+            --reporter=blob
 
-      - name: Upload Playwright test-results on failure
+      - name: Upload blob report (behavioral shard ${{ matrix.shard }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # Default blob-report location is the cwd of the playwright
+          # invocation; we ran with `--workspace e2e` so the output lands at
+          # e2e/blob-report/.
+          name: behavioral-blob-report-${{ matrix.shard }}
+          path: e2e/blob-report
+          retention-days: 7
+
+      - name: Upload Playwright test-results on failure (behavioral shard ${{ matrix.shard }})
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results-behavioral
+          name: playwright-test-results-behavioral-shard-${{ matrix.shard }}
           path: e2e/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
+  # merge-behavioral-reports — downloads all 6 behavioral blob artifacts and
+  # merges them into a single HTML report. Mirrors the `merge-reports` job
+  # for the e2e shards. `if: always()` so we get an aggregated dashboard for
+  # triage even when a shard fails (continue-on-error keeps the behavioral
+  # lane non-blocking regardless).
+  #
+  # Path note (same as merge-reports): `npx --workspace e2e playwright ...`
+  # runs with cwd = e2e/, so we download the blobs INTO
+  # e2e/all-behavioral-blob-reports/ and pass the relative
+  # `./all-behavioral-blob-reports`.
+  # -----------------------------------------------------------------------
+  merge-behavioral-reports:
+    name: Merge behavioral Playwright reports
+    if: always()
+    needs: [behavioral-coverage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      - name: Download behavioral blob reports
+        uses: actions/download-artifact@v4
+        with:
+          path: e2e/all-behavioral-blob-reports
+          pattern: behavioral-blob-report-*
+          merge-multiple: true
+
+      - name: Merge into HTML report
+        run: |
+          flox activate -- npx --workspace e2e playwright merge-reports \
+            --reporter html \
+            ./all-behavioral-blob-reports
+
+      - name: Upload merged behavioral HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          # `playwright merge-reports --reporter html` writes to
+          # `playwright-report/` in the cwd (e2e/ via --workspace e2e).
+          name: behavioral-playwright-report
+          path: e2e/playwright-report
           retention-days: 14
 
   # -----------------------------------------------------------------------
@@ -695,7 +838,7 @@ jobs:
   ci:
     name: typecheck + unit + ART + E2E
     if: always()
-    needs: [typecheck, unit, art, e2e, collab, merge-reports]
+    needs: [typecheck, unit, art, build, e2e, collab, merge-reports]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -705,6 +848,7 @@ jobs:
           TYPECHECK: ${{ needs.typecheck.result }}
           UNIT: ${{ needs.unit.result }}
           ART: ${{ needs.art.result }}
+          BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
           COLLAB: ${{ needs.collab.result }}
           MERGE: ${{ needs.merge-reports.result }}
@@ -712,6 +856,7 @@ jobs:
           echo "typecheck:     $TYPECHECK"
           echo "unit:          $UNIT"
           echo "art:           $ART"
+          echo "build:         $BUILD"
           echo "e2e:           $E2E"
           echo "collab:        $COLLAB"
           echo "merge-reports: $MERGE"
@@ -721,6 +866,12 @@ jobs:
           # don't gate on `merge-reports` so a flaky report-merge step can't
           # block an otherwise-green run.
           #
+          # `build` is the PRODUCTION-bundle gate (`task build` = dsp:build +
+          # `vite build`). It's gated here so a broken prod bundle fails this
+          # already-required umbrella → blocks merge with no ruleset change.
+          # This closes the Clerk #464 gap where a broken bundle merged because
+          # no required check ran the production bundler.
+          #
           # `behavioral-coverage` (BEHAVIORAL) is INTENTIONALLY ABSENT from
           # both `needs:` above and this success check. It's informational
           # only (continue-on-error: true) until per-module thresholds are
@@ -728,6 +879,7 @@ jobs:
           if [[ "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
              || "$ART" != "success" \
+             || "$BUILD" != "success" \
              || "$E2E" != "success" ]]; then
           # NOTE: collab is informational (runs + reported above) but NOT blocking —
           # the @collab 2-context suite is timing-flaky on CI (relay). Dev verification
