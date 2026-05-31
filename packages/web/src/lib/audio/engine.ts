@@ -536,9 +536,28 @@ export class AudioEngine implements DomainEngine {
 
   /** Read the live AudioParam value for motorized fader rendering.
    *  Returns intrinsic + sample of any connected modulators (via the
-   *  per-param AnalyserNode tap), so faders visually track LFOs/envelopes. */
+   *  per-param AnalyserNode tap), so faders visually track LFOs/envelopes.
+   *
+   *  Intrinsic source = the JS-side `knobValues` cache, NOT the handle's
+   *  AudioParam.value. For Faust AudioWorkletNodes, AudioParam.value does
+   *  not reliably reflect setValueAtTime: Faust drives its params through
+   *  the worklet message port / its own param array, and never writes the
+   *  computed value back to the AudioParam, so .value sits at its
+   *  construction-time default (0 for VCA base, 0.005 for ADSR attack)
+   *  FOREVER — even with the AudioContext running and the knob set. Reading
+   *  .value therefore reports a node's params as their defaults regardless
+   *  of the spawned / dragged value — the "dead knob / display + engine read
+   *  0 on load" bug the slider-drag spec guards.
+   *
+   *  `knobValues` is the authoritative JS-side intrinsic: seeded from
+   *  node.params (falling back to def defaults) in addNode and kept in lock-
+   *  step by setParam — exactly the value the DSP is actually running. We
+   *  fall back to the handle's readParam only when the cache has no entry
+   *  (defensive; every materialized node seeds the cache for all its params),
+   *  so non-Faust handles whose .value IS live keep working too. */
   readParam(nodeId: string, paramId: string): number | undefined {
-    const intrinsic = this.nodes.get(nodeId)?.readParam(paramId);
+    const cached = this.knobValues.get(this.knobKey(nodeId, paramId));
+    const intrinsic = cached ?? this.nodes.get(nodeId)?.readParam(paramId);
     if (intrinsic === undefined) return undefined;
     const tap = this.paramTaps.get(this.paramTapKey(nodeId, paramId));
     if (!tap) return intrinsic;
