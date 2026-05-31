@@ -165,6 +165,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // Sits under Ports next to the other software-port voices; the full 404
   // module (sequencer + TD-3 UI) is queued as a follow-up.
   treeohvox: { top: 'Ports', sub: 'Ports' },
+  // CHOWKICK — synth-kick voice (port of chowdsp / Jatin Chowdhury's
+  // ChowKick, BSD-3-Clause). Sits with the headline external-software
+  // ports flat under the Ports header alongside cocoadelay + resofilter.
+  chowkick: { top: 'Ports', sub: 'Ports' },
 
   // ───────── Ports → Mutable (Émilie Gillet / MI archetype ports). ─────────
   rings: { top: 'Ports', sub: 'Mutable' },

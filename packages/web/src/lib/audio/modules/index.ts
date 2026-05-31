@@ -101,6 +101,9 @@ import { fourplexerDef } from './fourplexer';
 // in, dedicated SC pair (HPF-filterable on the detector only),
 // CV-modulatable threshold + envMag, env_out + env_inv_out for ducking.
 import { sidecarDef } from './sidecar';
+// CHOWKICK — synth-kick voice. Hand-port of ChowKick by Jatin Chowdhury /
+// chowdsp (BSD-3-Clause). Gate + pitch_cv + 15 knob CVs → mono kick out.
+import { chowkickDef } from './chowkick';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -228,6 +231,11 @@ export function registerAudioModules(): void {
   // env_out + env_inv_out expose the reduction envelope for cross-patch
   // ducking; env_out has NO hard clamp (envMag>1 → overshoot allowed).
   registerModule(sidecarDef);
+  // CHOWKICK — synth-kick voice (Jatin Chowdhury / chowdsp ChowKick port,
+  // BSD-3-Clause). Pulse + noise burst → resonant peaking filter with
+  // tanh saturation → tone LPF → level. Gate-triggered + 1V/oct + CV per
+  // knob (17 controls).
+  registerModule(chowkickDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

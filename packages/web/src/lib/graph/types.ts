@@ -481,6 +481,13 @@ type StandardModuleType =
   // for cross-patch ducking. env_out has NO hard clamp — at envMag>1 the
   // output overshoots 1.0 (documented contract for downstream modules).
   | 'sidecar'
+  // CHOWKICK — synth-kick voice. Hand-port of ChowKick by Jatin Chowdhury
+  // / chowdsp (BSD-3-Clause). Gate-triggered single-voice kick: pulse
+  // shaper (width/amp/decay/sustain) + noise burst (4 types) → 2nd-order
+  // resonant peaking filter (freq/Q/damping + tight/bounce tanh
+  // saturation) + tone LPF + level. 17 CV-able knobs/toggles + 1V/oct
+  // pitch CV.
+  | 'chowkick'
   // SCOREBOARD — 4-digit neon 7-segment counter widget (video domain).
   // SCORE gate input → counter += 1 on rising edge; RESET gate → 0.
   // Counter wraps at 10000. One colour-wheel knob for the lit-segment hue.
