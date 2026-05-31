@@ -148,6 +148,14 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // the continuous square-wave audio output that's emitting at the
   // length-derived frequency from cold start (snake length 4 → 110 Hz).
   nibbles:      { outputPort: 'snake' },
+  // BLUEBOX — DTMF dialer. Each of its 12 keys is push-to-talk: silent
+  // until a key is held, either via pointerdown on the card OR a gate
+  // ≥0.5 into the matching `gate_<name>` input. The default driver wires
+  // no upstream gate, so `out` stays at peak=0 and the alive smoke fails
+  // (same gate-only class as chowkick / treeohvox). Wire the sequencer
+  // gate into `gate_1` so the '1' key (697 + 1209 Hz) holds and `out`
+  // sounds inside the drive window.
+  bluebox:      { outputPort: 'out', gatePort: 'gate_1' },
 };
 
 /** Resolve the canonical driver for a module. Returns the override if

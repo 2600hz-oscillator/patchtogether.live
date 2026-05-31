@@ -185,6 +185,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Numpad-driven 4-layer × 16-step sequencer + live keyboard. Each numpad note key fires the active layer\'s pitch+gate immediately AND, when REC ARM (one-pass record on next play-from-start) or OVERDUB (always-recording) is on, writes the note to the nearest step on the active layer. Default keymap: 1=C, 2=C#, 3=D, 4=D#, 5=E, 6=F, 7=F#, 8=G, 9=G#, 0=A, /=A#, *=B; Numpad+ held = next note +1 octave, Numpad- = -1 octave. Octave 0-8 nudged via on-card arrows. CV inputs: clock (rising-edge external clock — internal BPM ignored while patched) + layer (CV value 0..1 selects active layer, otherwise the activeLayer param wins). CV outputs: l1_pitch / l1_gate ... l4_pitch / l4_gate (8 outputs total) so a patch can route each layer to its own downstream synth — basically a 4-track sequencer. When this module exists in the rack its keyboard listener captures Numpad* event.codes + preventDefault so other modules can\'t see the keys.',
   aquaTank:
     '4-channel feedback-delay-network (FDN) reverb / resonator. Four audio inputs feed a Hadamard mixing matrix wrapped in delay lines with per-line feedback (F1–F4), so energy recirculates and cross-mixes between the four channels — short feedback gives lush chorus/early-reflection ambience, long feedback turns it into a ringing metallic resonator. TILT skews the feedback balance across the four lines, DAMP rolls off high frequencies in the loop, CROSS sets how much the channels bleed into each other, SPREAD widens the stereo image, OUT trims level. Four direct mono outs (out1–out4) plus a summed stereo mix (mix_l / mix_r). One of the three ATLANTIS-PATCH support modules, but works standalone as a reverb, chorus, or feedback-resonance unit.',
+  bluebox:
+    'DTMF dialer with phreaker buttons. 12-key phone keypad — digits 0-9 emit the Bell-System dual-tone pair (row + col, e.g. "5" → 770 Hz + 1336 Hz); BLUEBOX emits a single 2600 Hz sine (the AT&T in-band supervisory tone that 1970s phreakers used to seize long-distance trunks); REDBOX emits 1700 + 2200 Hz summed (the US payphone coin-acceptance pair). Each key is push-to-talk — pointerdown on the card OR a gate cable into the matching gate_<name> input holds the key down. Multiple held keys sum, and shared frequencies (e.g. "1" and "4" both pull col=1209) collapse onto a single shared phase accumulator so simultaneous presses produce a louder tone, not a flam. No envelope or musical AD — bare on/off sines with a ~1 ms anti-click ramp at the boundary.',
   callsine:
     'Spectral-analysis additive resynthesizer (clean-room port of Warren\'s Spectrum / CallSine, MIT-licensed). Reads incoming mono audio, runs an FFT-based partial tracker (Hann window → peak detection → McAulay-Quatieri-lite tracking → optional F0 harmonic lock) and rebuilds the sound as an additive bank of up to 64 oscillators. Plaits-style macros: HARMONICS sets the partial count, TIMBRE the smoothing/slew time, MORPH the harmonic-LOCK strength (snaps partials to an F0 grid), LEVEL the output gain. A PITCH (V/oct) input transposes the whole resynth; a GATE input toggles FREEZE, latching the current partials at their current frequencies/amplitudes for sustained pads. Ships 14 voice models (SINES, SAW, SQR, PULSE25, TRI, RAMP, CHEBY3/5, HARDSYNC, FOLD, NOISE, FORMANT, SUBOSC, METAL) that swap the per-partial waveform from pure sinusoids to richer/inharmonic shapes.',
   samsloop:
@@ -986,6 +988,22 @@ function synthesizeFromBuildHelper(
         });
       }
     }
+    return { inputs, params };
+  }
+  if (type === 'bluebox') {
+    // BLUEBOX expands its 12 button gate-inputs + 12 button params via
+    // `BLUEBOX_BUTTON_NAMES.map(...)` — the literal-array extractor
+    // doesn't see them. Reproduce the static shape here.
+    const NAMES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'bluebox', 'redbox'];
+    const inputs: ManifestPort[] = NAMES.map((n) => ({ id: `gate_${n}`, type: 'gate' }));
+    const params: ManifestParam[] = NAMES.map((n) => ({
+      id: `btn_${n}`,
+      label: n === 'bluebox' || n === 'redbox' ? n.toUpperCase() : n,
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      curve: 'linear',
+    }));
     return { inputs, params };
   }
   return null;
