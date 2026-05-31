@@ -424,13 +424,15 @@ export const sequencerDef: AudioModuleDef = {
         // reset, which cancels the not-yet-sounded lookahead events and
         // re-anchors so exactly one step-0 gate fires.
         const stepDurNow = 60 / Math.max(1, readParam('bpm', 120)) / 4;
-        // prevScheduledStep0Time is the (future) audio-time of the most-recent
-        // step 0 the lookahead queued; it can sit slightly ahead of or behind
-        // ctx.currentTime when the reset is detected. Redundant ⇔ within one
-        // step-duration of "now" on either side.
+        // lastScheduledGateOnTime is the (future) audio-time of the most-recent
+        // gate-high the lookahead queued; it can sit slightly ahead of or behind
+        // ctx.currentTime when the reset is detected. Seeded to -Infinity, so
+        // Number.isFinite() screens out the "nothing scheduled yet / just
+        // stopped" case. Redundant ⇔ within one step-duration of "now" on
+        // either side.
         const nearWrap =
-          prevScheduledStep0Time !== null &&
-          Math.abs(ctx.currentTime - prevScheduledStep0Time) < stepDurNow;
+          Number.isFinite(lastScheduledGateOnTime) &&
+          Math.abs(ctx.currentTime - lastScheduledGateOnTime) < stepDurNow;
         if (!nearWrap) {
           // Genuine reset: drop the pending lookahead events so the re-anchored
           // step 0 is the only one that sounds, then restart at step 0.
