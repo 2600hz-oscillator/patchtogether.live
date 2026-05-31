@@ -1110,6 +1110,33 @@
     }
   }
 
+  /** MEDIA BURN — homage to Ant Farm's 1975 piece. Loads 15 PICTUREBOX
+   *  tiles reassembling the iconic Cadillac-into-TVs photo, plus a
+   *  CADILLAC positioned to demolish the rightmost column ~1s after
+   *  load. Same shape as loadGlitches: envelope → loadEnvelopeIntoStore.
+   *
+   *  Determinism: the envelope's CADILLAC node has NO spawnedAtMs, so
+   *  the overlay's `?? Date.now()` fallback makes load-time === spawn-
+   *  time. The 1-second-to-first-hit math (see media-burn-math.ts) holds
+   *  every load, in single-user AND multiplayer modes. */
+  async function loadMediaBurn() {
+    error = null;
+    booting = true;
+    try {
+      await ensureEngine();
+      const { loadMediaBurn: doLoad } = await import('$lib/ui/example-patches/media-burn');
+      const result = doLoad(ydoc, patch);
+      trace(`MEDIA BURN patch in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
+      await reconciler?.reconcile();
+      trace('MEDIA BURN live — 15 PICTUREBOX tiles + CADILLAC armed');
+    } catch (err) {
+      console.error(err);
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    } finally {
+      booting = false;
+    }
+  }
+
   function clearPatch() {
     ydoc.transact(() => {
       for (const id of Object.keys(patch.edges)) delete patch.edges[id];
@@ -3803,6 +3830,15 @@
         data-testid="load-glitches-btn"
       >
         {booting ? 'Loading…' : 'GLITCHES GET RICHES'}
+      </button>
+      <button
+        onclick={loadMediaBurn}
+        disabled={booting}
+        class="primary glitches"
+        title="Homage to Ant Farm's 1975 Media Burn — 15 PICTUREBOX tiles reassemble the photo, then a CADILLAC drives R→L and demolishes them ~1s after load."
+        data-testid="load-media-burn-btn"
+      >
+        {booting ? 'Loading…' : 'Media Burn'}
       </button>
       <button
         onclick={savePatch}
