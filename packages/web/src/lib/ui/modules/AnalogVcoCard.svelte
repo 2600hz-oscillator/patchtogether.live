@@ -69,7 +69,6 @@
 <style>
   .card {
     width: 240px;
-    min-height: 200px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;

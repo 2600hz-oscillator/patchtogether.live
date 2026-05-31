@@ -51,6 +51,6 @@
 </div>
 
 <style>
-  .qbrt-card { width: 280px; min-height: 240px; }
+  .qbrt-card { width: 280px; }
   .qbrt-card .fader-row { padding: 0 24px; margin-top: 14px; }
 </style>

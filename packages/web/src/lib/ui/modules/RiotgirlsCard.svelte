@@ -170,7 +170,6 @@
 <style>
   .riotgirls-card {
     width: 1100px;
-    min-height: 760px;
   }
   .grid {
     margin-top: 16px;

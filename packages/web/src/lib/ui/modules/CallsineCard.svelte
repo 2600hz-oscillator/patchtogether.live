@@ -88,7 +88,7 @@
 </div>
 
 <style>
-  .callsine-card { width: 340px; min-height: 240px; }
+  .callsine-card { width: 340px; }
   .callsine-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

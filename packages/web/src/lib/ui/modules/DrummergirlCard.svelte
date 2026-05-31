@@ -49,6 +49,6 @@
 </div>
 
 <style>
-  .drummergirl-card { width: 320px; min-height: 240px; }
+  .drummergirl-card { width: 320px; }
   .drummergirl-card .fader-row { padding: 0 24px; margin-top: 14px; }
 </style>

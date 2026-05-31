@@ -58,7 +58,6 @@
 <style>
   .charlottes-echos-card {
     width: 320px;
-    min-height: 220px;
   }
   .charlottes-echos-card .title {
     font-family: var(--font-display, inherit);

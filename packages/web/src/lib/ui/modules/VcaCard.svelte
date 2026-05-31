@@ -47,5 +47,5 @@
 </div>
 
 <style>
-  .vca-card { width: 160px; min-height: 180px; }
+  .vca-card { width: 160px; }
 </style>

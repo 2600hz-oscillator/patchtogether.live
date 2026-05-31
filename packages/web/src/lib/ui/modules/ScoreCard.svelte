@@ -1059,7 +1059,6 @@
 <style>
   .score-card {
     width: 720px;
-    min-height: 480px;
     padding-left: 0;
     padding-right: 0;
     position: relative;

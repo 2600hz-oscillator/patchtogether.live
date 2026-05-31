@@ -78,7 +78,7 @@
 </div>
 
 <style>
-  .macro-card { width: 320px; min-height: 240px; }
+  .macro-card { width: 320px; }
   .macro-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

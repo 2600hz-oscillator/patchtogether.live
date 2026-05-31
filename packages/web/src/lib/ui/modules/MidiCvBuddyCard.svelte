@@ -200,7 +200,7 @@
 </div>
 
 <style>
-  .midi-cv-buddy-card { width: 220px; min-height: 260px; }
+  .midi-cv-buddy-card { width: 220px; }
   .midi-cv-buddy-card .body {
     padding: 10px 14px 8px;
     display: flex;

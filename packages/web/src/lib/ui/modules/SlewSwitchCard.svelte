@@ -112,7 +112,6 @@
 <style>
   .mod-card {
     width: 320px;
-    min-height: 280px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;

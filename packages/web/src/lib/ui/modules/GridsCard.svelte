@@ -124,7 +124,7 @@
 </div>
 
 <style>
-  .grids-card { width: 320px; min-height: 260px; }
+  .grids-card { width: 320px; }
   .grids-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

@@ -103,7 +103,7 @@
 </div>
 
 <style>
-  .elements-card { width: 460px; min-height: 300px; }
+  .elements-card { width: 460px; }
   .elements-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

@@ -57,7 +57,7 @@
 </div>
 
 <style>
-  .lfo-card { width: 200px; min-height: 200px; }
+  .lfo-card { width: 200px; }
   .lfo-card .fader-row { padding: 0 30px; margin-top: 16px; gap: 12px; }
   .lfo-card .knob-row { display: flex; justify-content: center; margin-top: 16px; }
 </style>

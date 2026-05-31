@@ -58,7 +58,6 @@
 <style>
   .meowbox-card {
     width: 240px;
-    min-height: 240px;
     overflow: visible;
   }
   .meowbox-card .ear {
