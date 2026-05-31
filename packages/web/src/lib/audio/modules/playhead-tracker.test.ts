@@ -112,6 +112,56 @@ describe('createPlayheadTracker', () => {
     expect(p.currentAt(1.0)).toBe(5);
     expect(p.currentAt(1.5)).toBe(1);
   });
+
+  it('frozen-clock determinism: repeat reads at the same `now` are bit-identical', () => {
+    // This is the property that the e2e suspend/resume helper
+    // (e2e/tests/_scheduler-control.ts → freezeAudioClock) relies on:
+    // while AudioContext is suspended, ctx.currentTime is held constant, so
+    // every engine.read('currentStep') call returns the same answer.
+    //
+    // This test pins that contract at the tracker level (the e2e suspend
+    // does the real freezing in-browser). If a future "optimization" tries
+    // to e.g. extrapolate based on wall-clock between calls, this test will
+    // fail and force the author to revisit the determinism guarantee.
+    const p = createPlayheadTracker();
+    p.schedule(0, 0.0);
+    p.schedule(1, 0.5);
+    p.schedule(2, 1.0);
+    p.schedule(3, 1.5);
+
+    // Pick a "now" between scheduled events. Read 10 times — every read
+    // must return the same step.
+    const now = 1.2; // step 2 is sounding (started at 1.0); step 3 still future
+    const reads: number[] = [];
+    for (let i = 0; i < 10; i++) reads.push(p.currentAt(now));
+    for (const r of reads) expect(r).toBe(2);
+
+    // Even after a read advances the internal queue (GC of stale entries),
+    // a subsequent read at the same `now` is still 2.
+    expect(p.currentAt(now)).toBe(2);
+    expect(p.currentAt(now)).toBe(2);
+  });
+
+  it('frozen-clock determinism: scheduling new entries past `now` does not change the read at `now`', () => {
+    // Models what the lookahead scheduler does while AudioContext is
+    // suspended: tick() may continue to fire (Worker is unsuspended), but
+    // because ctx.currentTime is frozen the scheduler's
+    // playhead.schedule() calls always queue entries with atTime > now.
+    // The visual playhead must stay put.
+    const p = createPlayheadTracker();
+    p.schedule(0, 0.0);
+    p.schedule(1, 0.5);
+    const now = 0.6;
+    expect(p.currentAt(now)).toBe(1);
+
+    // While "suspended" at now=0.6, the scheduler queues several future
+    // entries (atTime > now). The read at the same now MUST stay 1.
+    p.schedule(2, 1.0);
+    p.schedule(3, 1.5);
+    p.schedule(4, 2.0);
+    expect(p.currentAt(now)).toBe(1);
+    expect(p.currentAt(now)).toBe(1);
+  });
 });
 
 describe('createPlayheadTrackerOf<T>', () => {
