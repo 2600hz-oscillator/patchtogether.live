@@ -195,7 +195,18 @@ export const sequencerDef: AudioModuleDef = {
     // Latency budget: ~TICK_MS (25 ms) from upstream pulse to step advance.
     const clockInGain = ctx.createGain();
     const clockInAnalyser = ctx.createAnalyser();
-    clockInAnalyser.fftSize = 2048; // ~42 ms at 48 kHz — must exceed TICK_MS
+    // #229: the external-clock edge detector scans the analyser ring buffer
+    // for the samples that arrived since the last tick. At fftSize=2048 the
+    // ring only holds ~42 ms — so when the main thread stalls longer than that
+    // (a canvas pan/drag event-storm can block for 80–150 ms), clock edges
+    // that arrived during the stall are OVERWRITTEN before the tick gets to
+    // read them. Those edges are lost ⇒ dropped/late steps ⇒ tempo jitter on
+    // EXTERNAL clock, which is exactly #229's "drag disturbs tempo even on
+    // MIDI clock". Widen the ring to 16384 samples (~341 ms at 48 kHz) so it
+    // comfortably outlasts any plausible main-thread stall — matching the
+    // headroom the internal-clock path already gets from the Worker tick +
+    // 200 ms lookahead. fftSize must be a power of two ≤ 32768.
+    clockInAnalyser.fftSize = 16384;
     clockInGain.connect(clockInAnalyser);
     const clockInBuffer = new Float32Array(clockInAnalyser.fftSize);
 
@@ -220,6 +231,28 @@ export const sequencerDef: AudioModuleDef = {
       clockOutSrc.offset.setValueAtTime(0, atTime + 0.01);
     }
 
+    // #224 reset-dedup helper ----------------------------------------------
+    // Cancel the gate / pitch / clock-out events the lookahead already queued
+    // into the audio thread's future, so a reset doesn't leave a stale step-0
+    // gate sounding ALONGSIDE the post-reset re-fire (the double-hit). This
+    // reuses the EXACT primitives the stop-transition path already ships with
+    // (gateSrc cancel+zero + polyPitch.silence), plus a clock-out cancel so a
+    // chained downstream sequencer isn't double-advanced by the same reset.
+    function clearPendingScheduledEvents(): void {
+      const now = ctx.currentTime;
+      gateSrc.offset.cancelScheduledValues(now);
+      gateSrc.offset.setValueAtTime(0, now);
+      clockOutSrc.offset.cancelScheduledValues(now);
+      clockOutSrc.offset.setValueAtTime(0, now);
+      polyPitch.silence(now);
+      // We just cancelled the (possibly future) onset that lastScheduledGateOnTime
+      // pointed at, so forget it — otherwise the #224 dedup would suppress the
+      // re-anchored step-0 of a genuine reset. After a clear, the next gate-high
+      // always sounds.
+      lastScheduledGateOnTime = -Infinity;
+    }
+    // ----------------------------------------------------------------------
+
     function isClockInConnected(): boolean {
       return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'clock');
     }
@@ -237,6 +270,10 @@ export const sequencerDef: AudioModuleDef = {
     let stepIndex = 0;
     let nextStepTime = ctx.currentTime + 0.05;
     let prevPlaying = false;
+    // #224: audio-time of the most-recent gate-high we scheduled. emitStep
+    // drops any gate-high scheduled within half a step of this, killing the
+    // clock-divided-reset double-hit at the scheduling layer (grid-independent).
+    let lastScheduledGateOnTime = -Infinity;
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
     // Lookahead 200 ms (was 100 ms) — gives the audio thread a 4x cushion
@@ -314,10 +351,28 @@ export const sequencerDef: AudioModuleDef = {
       }
       // The mono gate output goes high if ANY lane is gated this step.
       const anyGate = lanes.some((l) => l.gate === 1);
-      if (anyGate) {
+      // RESET-DEDUP (#224): refuse to schedule a gate-high closer than half a
+      // step to the previous one. A clock-divided reset coincident with the
+      // natural wrap makes BOTH the lookahead and the post-reset re-anchor try
+      // to schedule step 0 within the same beat — the audible double-hit. The
+      // 25 ms scheduler-tick grid means we can't reliably detect that case from
+      // stepIndex alone (the lookahead may have advanced between the wrap and
+      // the reset's detection), so we dedup at the SCHEDULING layer where it's
+      // grid-independent: the second near-coincident onset is dropped. A
+      // genuine mid-bar reset re-anchors far from the previous onset and still
+      // fires. -Infinity = none scheduled yet (first gate always sounds).
+      const minGapSec = (stepDurForGate || 0.001) * 0.5;
+      const tooClose = atTime - lastScheduledGateOnTime < minGapSec;
+      if (anyGate && !tooClose) {
+        lastScheduledGateOnTime = atTime;
         gateSrc.offset.setValueAtTime(1, atTime);
         gateSrc.offset.setValueAtTime(0, atTime + gateOff);
         // Backward-compat tracking: lastEmittedVOct mirrors lane 0 (root).
+        lastEmittedVOct = lanes[0]?.pitch ?? 0;
+        lastEmittedGate = 1;
+      } else if (anyGate && tooClose) {
+        // Duplicate near-coincident onset suppressed (#224). Treat as gated for
+        // JS observers so the playhead/voicing still reflect this step.
         lastEmittedVOct = lanes[0]?.pitch ?? 0;
         lastEmittedGate = 1;
       } else {
@@ -349,10 +404,41 @@ export const sequencerDef: AudioModuleDef = {
         if (live?.params) live.params.isPlaying = isPlaying ? 1 : 0;
       }
       if (ev.reset > 0) {
-        // Reset the step counter; next clock tick starts at step 0.
-        stepIndex = 0;
-        playhead.reset();
-        nextStepTime = ctx.currentTime + 0.05;
+        // #224 (cross-module reset double-hit), snap-to-boundary dedup.
+        //
+        // In internal-BPM mode the lookahead loop has ALREADY scheduled step
+        // gates up to LOOKAHEAD_S (200 ms) into the audio thread's future. A
+        // naive reset forces stepIndex=0 and re-anchors `nextStepTime` to
+        // "now" — but when the reset is a perfect integer division of the run
+        // clock, it lands right as the sequence is ALSO naturally wrapping to
+        // step 0. The lookahead already queued step 0's gate at the natural
+        // boundary; the re-anchor then queues a SECOND step-0 gate one beat
+        // later → the audible double-hit.
+        //
+        // We make the reset a true no-op WHEN it's redundant: if step 0 was
+        // scheduled within one step-duration of "now" (the sequence just
+        // wrapped to the downbeat on its own), the natural lookahead schedule
+        // is already exactly what the reset wants, so we leave stepIndex,
+        // nextStepTime, and the queued events untouched. A genuine mid-bar
+        // reset (its last step 0 is far from now) falls through to the real
+        // reset, which cancels the not-yet-sounded lookahead events and
+        // re-anchors so exactly one step-0 gate fires.
+        const stepDurNow = 60 / Math.max(1, readParam('bpm', 120)) / 4;
+        // prevScheduledStep0Time is the (future) audio-time of the most-recent
+        // step 0 the lookahead queued; it can sit slightly ahead of or behind
+        // ctx.currentTime when the reset is detected. Redundant ⇔ within one
+        // step-duration of "now" on either side.
+        const nearWrap =
+          prevScheduledStep0Time !== null &&
+          Math.abs(ctx.currentTime - prevScheduledStep0Time) < stepDurNow;
+        if (!nearWrap) {
+          // Genuine reset: drop the pending lookahead events so the re-anchored
+          // step 0 is the only one that sounds, then restart at step 0.
+          clearPendingScheduledEvents();
+          stepIndex = 0;
+          playhead.reset();
+          nextStepTime = ctx.currentTime + 0.05;
+        }
       }
       const queued = pickQueuedSlotFromEvents(ev);
       if (queued !== null && live) {
@@ -424,6 +510,9 @@ export const sequencerDef: AudioModuleDef = {
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
           polyPitch.silence(ctx.currentTime);
+          // Fresh play: the first step-0 gate must always sound (#224 dedup
+          // must not suppress it).
+          lastScheduledGateOnTime = -Infinity;
           // Reset clock-in detector so the first observed pulse counts.
           lastClockSample = 0;
           lastClockSampleTime = ctx.currentTime;
