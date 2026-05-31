@@ -344,10 +344,10 @@ jobs:
       # to 8-10 min) and runs in its own dedicated `behavioral-coverage`
       # job below. The test titles are matched via the
       # "BEHAVIORAL input coverage" describe block name.
-      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter, no @collab, no behavioral)
+      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter, no @collab, no @capacity, no behavioral)
         run: |
           flox activate -- npx --workspace e2e playwright test \
-            --grep-invert "@collab|BEHAVIORAL input coverage" \
+            --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
             --shard=${{ matrix.shard }}/8 \
             --reporter=blob
 
