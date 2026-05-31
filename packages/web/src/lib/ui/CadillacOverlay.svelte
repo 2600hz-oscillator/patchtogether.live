@@ -56,6 +56,16 @@
   let explosions = $state<{ id: string; x: number; y: number; t: number }[]>([]);
   // Tick counter forces a re-eval of derived position values from rAF.
   let frameTick = $state(0);
+  // Latched fallback spawn time per cadillac id, for cars whose node.data
+  // has NO `spawnedAtMs`. The MEDIA BURN demo envelope deliberately omits
+  // it (its "load-time === spawn-time" determinism design, see
+  // media-burn.ts). Without latching, the `?? now` fallback below would be
+  // re-read on EVERY rAF frame, so `now - spawnedAtMs` stayed ~0 and the
+  // car sat frozen at its start x — never reaching the tiles. We stamp the
+  // time once, the first frame we see such a car, so elapsed time advances
+  // normally. Plain Map (not $state): written + read inside the rAF-driven
+  // derived, which frameTick already re-evaluates each frame.
+  const fallbackSpawnAt = new Map<string, number>();
 
   $effect(() => {
     const off = bus.subscribe((snap) => {
@@ -107,7 +117,17 @@
     void frameTick;
     const now = Date.now();
     return cadillacs.map((car) => {
-      const spawnedAtMs = car.data.spawnedAtMs ?? now;
+      // Prefer the node's own spawn time. When absent (envelope-loaded
+      // demo cars), latch a fallback ONCE so elapsed time advances and
+      // the car actually drives — re-reading `now` every frame froze it.
+      let spawnedAtMs = car.data.spawnedAtMs;
+      if (spawnedAtMs == null) {
+        spawnedAtMs = fallbackSpawnAt.get(car.id);
+        if (spawnedAtMs == null) {
+          spawnedAtMs = now;
+          fallbackSpawnAt.set(car.id, now);
+        }
+      }
       const startX = car.position.x;
       const xFlow = currentX(now, spawnedAtMs, SPEED_PX_PER_SEC, startX);
       const yFlow = car.position.y;
