@@ -33,10 +33,19 @@ test.describe.configure({ mode: 'parallel' });
 interface NodePos { x: number; y: number }
 interface PatchNode { id: string; type: string; position: NodePos }
 
+// The rack auto-spawns a TIMELORDE clock singleton ("there is always a
+// clock" — see lib/audio/modules/timelorde-autospawn.ts, wired into
+// Canvas.svelte's snapshot effect). It lands in the shared Yjs doc, so it
+// shows up alongside each test's own nodes and inflates exact count/layout
+// assertions by one. It is intended product behavior, NOT a sync bug —
+// every node-counting @collab helper must exclude it. Filter by node TYPE
+// (robust to the `timelorde-<hash>` id scheme).
 async function readNodes(page: Page): Promise<PatchNode[]> {
   return await page.evaluate(() => {
     const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
-    return Object.values(w.__patch.nodes).filter(Boolean) as PatchNode[];
+    return (Object.values(w.__patch.nodes).filter(Boolean) as PatchNode[]).filter(
+      (n) => n.type !== 'timelorde',
+    );
   });
 }
 

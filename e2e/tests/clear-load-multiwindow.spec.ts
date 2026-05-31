@@ -216,6 +216,14 @@ test.describe('@collab B3 reconciler determinism', () => {
 
       // What the engine sees and what the canvas renders must converge.
       // Pre-B3 they could disagree.
+      //
+      // The rack auto-spawns a TIMELORDE clock singleton ("there is always a
+      // clock" — see lib/audio/modules/timelorde-autospawn.ts). It is an audio
+      // module, so it re-appears in BOTH the engine's audio-domain node map and
+      // the canvas DOM after the clear+load, alongside the parity nodes. It is
+      // NOT part of what this reconciler-determinism check asserts, so exclude
+      // it from both sides by filtering its `timelorde-<hash>` id prefix (the
+      // engine map is keyed by node id, not type).
       await expect
         .poll(
           async () =>
@@ -228,7 +236,9 @@ test.describe('@collab B3 reconciler determinism', () => {
               const eng = w.__engine();
               if (!eng) return null;
               const audio = eng.getDomain('audio');
-              return [...audio.nodes.keys()].sort();
+              return [...audio.nodes.keys()]
+                .filter((id) => !id.startsWith('timelorde-'))
+                .sort();
             }),
           { timeout: 4000 },
         )
@@ -237,7 +247,10 @@ test.describe('@collab B3 reconciler determinism', () => {
       const domIds = await s.pageB
         .locator('.svelte-flow__node')
         .evaluateAll((nodes) =>
-          nodes.map((n) => (n as HTMLElement).dataset.id).filter(Boolean).sort(),
+          nodes
+            .map((n) => (n as HTMLElement).dataset.id)
+            .filter((id): id is string => !!id && !id.startsWith('timelorde-'))
+            .sort(),
         );
       expect(domIds).toEqual(['parity-a', 'parity-b', 'parity-c']);
     } finally {
