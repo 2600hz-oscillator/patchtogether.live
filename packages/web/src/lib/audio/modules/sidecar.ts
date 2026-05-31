@@ -1,18 +1,21 @@
 // packages/web/src/lib/audio/modules/sidecar.ts
 //
-// SIDECAR — stereo sidechain compressor. Stereo audio in, stereo audio
-// out, dedicated SC pair (HPF-filterable on the detector path only),
-// CV-modulatable threshold + envMag, and two CV-shaped envelope outs
-// (env_out + env_inv_out) for cross-patch ducking.
+// SIDECAR — stereo sidechain ducker. The MAIN audio pair is the trigger
+// (e.g. a kick); the SIDECHAIN pair is the signal that gets ducked and
+// summed into the output (e.g. a pad/bass). The sidechain is ALWAYS
+// present at the output except when the main fires and pulls it down.
+// CV-modulatable threshold + envMag + inputLevel, and two CV-shaped
+// envelope outs (env_out + env_inv_out) for cross-patch ducking too.
 //
 // Topology in three sentences (full rationale in
 // packages/dsp/src/lib/compressor-dsp.ts):
-//   1. SC L/R go through a one-pole HPF (sc_hpf knob; 20–1000 Hz, default
-//      20 = effectively off) → |sL| + |sR| stereo-link peak detector.
+//   1. The MAIN pair goes through a one-pole detector HPF (sc_hpf knob;
+//      20–1000 Hz, default 20 = effectively off) → |aL| + |aR| stereo-link
+//      peak detector.
 //   2. log2 → 3-region soft-knee gain computer (threshold + knee + ratio,
 //      GMR 2012 eq 4) → asymmetric one-pole smoother (attack / release).
-//   3. The resulting gainDb (≤ 0) is converted back to linear via
-//      2^(gainDb/6.0205) and multiplied into the audio path.
+//   3. The resulting gainDb (≤ 0) becomes a duck gain (2^(gainDb/6.0205));
+//      output = MAIN passthrough + ducked(inputLevel · SIDECHAIN).
 //
 // env_out semantics — IMPORTANT, NOT a typical compressor envelope:
 //   env_out = (-gainDb / 24) * envMag, NO HARD CLAMP.
@@ -24,40 +27,40 @@
 //   pair: patch env_inv_out into a downstream VCA strength to make that
 //   VCA close when this compressor is reducing.
 //
-// SC normalling — feed-forward default:
-//   - sc_l_in + sc_r_in BOTH unpatched → SC := audio_l_in + audio_r_in
-//     (i.e. self-detect; SIDECAR behaves as a plain stereo compressor).
-//   - Only sc_l_in patched → sc_r := audio_r_in (mono SC + audio R-side).
-//   - Only sc_r_in patched → sc_l := audio_l_in (mirror).
-//   - Both SC inputs patched → external SC pair only (no audio leak into
-//     the detector). This is the bus-comp / ducker use case.
+// Channel normalling:
+//   - audio_r_in unpatched → audio_r := audio_l_in (mono main → stereo duck).
+//   - sc_r_in    unpatched → sc_r    := sc_l_in    (mono SC → both outputs).
+//   - sc pair unpatched entirely → 0 (nothing to duck; main still passes
+//     through to the output).
 //
-// Stereo-link is always on in v1 — the detector signal is |sL| + |sR|
-// summed, so a transient on either side reduces gain on BOTH audio
-// channels equally (no stereo image shift under compression). A toggle
-// is deferred to v2 if a single-channel use case appears.
+// Stereo-link is always on in v1 — the detector signal is |aL| + |aR|
+// summed (the MAIN pair), so a transient on either side ducks BOTH output
+// channels equally (no stereo image shift under ducking). A toggle is
+// deferred to v2 if a single-channel use case appears.
 //
 // Inputs:
-//   audio_l_in, audio_r_in (audio): stereo audio in.
-//   sc_l_in, sc_r_in       (audio): sidechain detector pair (see normalling
-//                                   rules above).
+//   audio_l_in, audio_r_in (audio): MAIN / trigger pair (detector + pass-
+//                                   through).
+//   sc_l_in, sc_r_in       (audio): SIDECHAIN pair — ducked + summed to out.
 //   threshold_cv           (cv):    summed into `threshold` AudioParam.
 //   env_mag_cv             (cv):    summed into `envMag` AudioParam.
+//   input_level_cv         (cv):    summed into `inputLevel` AudioParam.
 //
 // Outputs:
-//   audio_l_out, audio_r_out (audio): compressed stereo pair.
+//   audio_l_out, audio_r_out (audio): main + ducked sidechain stereo pair.
 //   env_out                  (audio at CV-rate): 0..∞ (overshoot allowed).
 //   env_inv_out              (audio at CV-rate): 1 - env_out (can go < 0).
 //
 // Params:
-//   threshold (-60..0 dB,   linear, default -18, CV)
-//   ratio     (1..20,        log,    default 4)
-//   attack    (0.1..200 ms,  log,    default 10)
-//   release   (1..2000 ms,   log,    default 100)
-//   knee      (0..24 dB,     linear, default 6)
-//   envMag    (0..2,         linear, default 1, CV)
-//   makeup    (0..24 dB,     linear, default 0)
-//   sc_hpf    (20..1000 Hz,  log,    default 20)
+//   threshold  (-60..0 dB,   linear, default -18, CV)
+//   ratio      (1..20,        log,    default 4)
+//   attack     (0.1..200 ms,  log,    default 10)
+//   release    (1..2000 ms,   log,    default 100)
+//   knee       (0..24 dB,     linear, default 6)
+//   envMag     (0..2,         linear, default 1, CV)
+//   inputLevel (0..2 [0–200%],linear, default 1, CV)
+//   makeup     (0..24 dB,     linear, default 0)
+//   sc_hpf     (20..1000 Hz,  log,    default 20)
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -82,8 +85,9 @@ export const sidecarDef: AudioModuleDef = {
     { id: 'audio_r_in',   type: 'audio' },
     { id: 'sc_l_in',      type: 'audio' },
     { id: 'sc_r_in',      type: 'audio' },
-    { id: 'threshold_cv', type: 'cv', paramTarget: 'threshold', cvScale: { mode: 'linear' } },
-    { id: 'env_mag_cv',   type: 'cv', paramTarget: 'envMag',    cvScale: { mode: 'linear' } },
+    { id: 'threshold_cv',   type: 'cv', paramTarget: 'threshold',  cvScale: { mode: 'linear' } },
+    { id: 'env_mag_cv',     type: 'cv', paramTarget: 'envMag',     cvScale: { mode: 'linear' } },
+    { id: 'input_level_cv', type: 'cv', paramTarget: 'inputLevel', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'audio_l_out', type: 'audio' },
@@ -104,8 +108,9 @@ export const sidecarDef: AudioModuleDef = {
     { id: 'attack',    label: 'Attack',    defaultValue: 10,   min: 0.1, max: 200,  curve: 'log',    units: 'ms' },
     { id: 'release',   label: 'Release',   defaultValue: 100,  min: 1,   max: 2000, curve: 'log',    units: 'ms' },
     { id: 'knee',      label: 'Knee',      defaultValue: 6,    min: 0,   max: 24,   curve: 'linear', units: 'dB' },
-    { id: 'envMag',    label: 'Env Mag',   defaultValue: 1,    min: 0,   max: 2,    curve: 'linear' },
-    { id: 'makeup',    label: 'Makeup',    defaultValue: 0,    min: 0,   max: 24,   curve: 'linear', units: 'dB' },
+    { id: 'envMag',     label: 'Env Mag',    defaultValue: 1,    min: 0,   max: 2,    curve: 'linear' },
+    { id: 'inputLevel', label: 'Input Lvl',  defaultValue: 1,    min: 0,   max: 2,    curve: 'linear', units: '%' },
+    { id: 'makeup',     label: 'Makeup',     defaultValue: 0,    min: 0,   max: 24,   curve: 'linear', units: 'dB' },
     { id: 'sc_hpf',    label: 'SC HPF',    defaultValue: 20,   min: 20,  max: 1000, curve: 'log',    units: 'Hz' },
   ],
 
@@ -142,8 +147,9 @@ export const sidecarDef: AudioModuleDef = {
         // CV → AudioParam. The `input` index is required by the engine's
         // adapter type but unused for param-targeted edges (the engine
         // connects the CV source directly into the AudioParam).
-        ['threshold_cv', { node: worklet, input: 0, param: params.get('threshold')! }],
-        ['env_mag_cv',   { node: worklet, input: 0, param: params.get('envMag')! }],
+        ['threshold_cv',   { node: worklet, input: 0, param: params.get('threshold')! }],
+        ['env_mag_cv',     { node: worklet, input: 0, param: params.get('envMag')! }],
+        ['input_level_cv', { node: worklet, input: 0, param: params.get('inputLevel')! }],
       ]),
       outputs: new Map([
         ['audio_l_out', { node: worklet, output: 0 }],

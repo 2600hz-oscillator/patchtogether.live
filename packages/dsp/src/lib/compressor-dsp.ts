@@ -13,22 +13,37 @@
 // uses the same log-domain gain-computer + one-pole smoother topology.
 // ─────────────────────────────────────────────────────────────────────────
 //
-// Topology (matches the spec in the feasibility plan):
+// Topology — DUCKER (sidechain compressor as a single box):
 //
-//   sc_l, sc_r ──► one-pole HPF (sc_hpf) ──► |sL| + |sR|  (stereo-link
-//                                                          peak detector)
-//                                              │
-//                                              ▼
-//                              log2 → 3-region soft-knee gain computer
-//                                              │
-//                                              ▼
-//                              asymmetric one-pole smoother (att / rel)
-//                                              │
-//                                              ▼
-//                                  gainDb (negative = reduction)
-//                                              │
-//                                              ▼
-//                                  lin = exp2(gainDb / 6.0205)
+//   The MAIN audio pair is the TRIGGER / detector (the "kick"). The
+//   SIDECHAIN pair is the signal that gets DUCKED + summed to the output
+//   (the "pad/bass"). This is the classic sidechain-pump patch as a
+//   self-contained module: the SC signal is always present at the output
+//   EXCEPT it gets pulled down whenever the MAIN input has signal.
+//
+//   audio_l, audio_r ─► one-pole HPF (sc_hpf) ─► |aL| + |aR|  (stereo-link
+//                                                              peak detector)
+//                                                  │
+//                                                  ▼
+//                                  log2 → 3-region soft-knee gain computer
+//                                                  │
+//                                                  ▼
+//                                  asymmetric one-pole smoother (att / rel)
+//                                                  │
+//                                                  ▼
+//                                      gainDb (negative = reduction)
+//                                                  │
+//                                                  ▼
+//                                      duckLin = exp2(gainDb / 6.0205)
+//
+//   sc_l, sc_r ─► × inputLevel (0..2) ─► × duckLin ─► × makeupLin ─┐
+//   audio_l, audio_r ────────────────────────────────────────────┤ (sum)
+//                                                                  ▼
+//                                                       out_l, out_r
+//
+//   So: out = MAIN passthrough + ducked(inputLevel · SIDECHAIN). When the
+//   main is silent, duckLin = 1 and the SC plays at full (inputLevel·makeup)
+//   volume. When the main fires, duckLin < 1 and the SC is pulled down.
 //
 // Magic number 6.0205 = 20*log10(2) — the conversion factor that turns
 // log2 → dB. Using log2/exp2 in the smoother lets the asymmetric one-pole
@@ -37,12 +52,17 @@
 // are dB-domain (i.e. exponential gain trajectories in the linear domain,
 // which matches how analog VCAs ramp).
 //
-// Sidechain stereo-link mode is always-on (no toggle in v1). The detector
-// signal is `|sL| + |sR|` — equivalent to the L+R sum-of-rectifiers used
-// by Faust's `co.compressor_stereo` and most hardware bus comps (SSL,
-// dbx-160). For mono sources the sum collapses to `2*|s|`, which the
-// gain computer's log curve handles cleanly (the +6 dB offset is absorbed
-// into the `threshold` knob's perceptual calibration).
+// Stereo-link mode is always-on (no toggle in v1). The detector signal is
+// `|aL| + |aR|` (the MAIN/trigger pair) — equivalent to the L+R
+// sum-of-rectifiers used by Faust's `co.compressor_stereo` and most
+// hardware bus comps (SSL, dbx-160). For mono sources the sum collapses to
+// `2*|a|`, which the gain computer's log curve handles cleanly (the +6 dB
+// offset is absorbed into the `threshold` knob's perceptual calibration).
+//
+// inputLevel — applied to the SIDECHAIN signal BEFORE ducking (0..2, i.e.
+// 0%..200%; default 1.0 = 100%). Lets a quiet pad be boosted into the mix.
+// It does NOT affect the detector (which reads the MAIN pair), so changing
+// it never alters how hard the main triggers the duck.
 //
 // env_out semantics (NO hard clamp — by design, per the user override):
 //   env_out = (-gainDb / envScaleDb) * envMag
@@ -247,14 +267,15 @@ export function envInvOut(envOutValue: number): number {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Compressor channel: the full per-sample pipeline as a single function.
+// Ducker channel: the full per-sample pipeline as a single function.
 // State lives in the caller-owned `SidecarState`. The worklet wraps this
 // in its sample loop; the tests drive it directly.
 //
 // Stereo-link: a single state object is used (one smoother + one HPF L +
 // one HPF R), because the gain reduction is computed from the combined
-// |sL|+|sR| detector signal. The same gain factor is then applied to both
-// audio channels.
+// |aL|+|aR| MAIN/trigger detector signal. The same gain factor is then
+// applied to BOTH sidechain channels (which are summed with the main pass-
+// through to form the output).
 // ─────────────────────────────────────────────────────────────────────────
 
 export interface SidecarState {
@@ -263,15 +284,22 @@ export interface SidecarState {
   smoother: SmootherState;
   thresholdSmoother: ParamSmoother;
   envMagSmoother: ParamSmoother;
+  inputLevelSmoother: ParamSmoother;
 }
 
-export function makeSidecarState(sr: number, thresholdInit = -18, envMagInit = 1): SidecarState {
+export function makeSidecarState(
+  sr: number,
+  thresholdInit = -18,
+  envMagInit = 1,
+  inputLevelInit = 1,
+): SidecarState {
   return {
     hpfL: makeHpfState(),
     hpfR: makeHpfState(),
     smoother: makeSmootherState(),
     thresholdSmoother: makeParamSmoother(thresholdInit, sr),
     envMagSmoother: makeParamSmoother(envMagInit, sr),
+    inputLevelSmoother: makeParamSmoother(inputLevelInit, sr),
   };
 }
 
@@ -284,13 +312,16 @@ export interface SidecarParams {
   knee: number;
   /** envMag (smoothed; pass the target). */
   envMag: number;
-  /** Makeup gain in dB (applied after compression). */
+  /** Makeup gain in dB (applied to the ducked sidechain, post-compression). */
   makeup: number;
+  /** Sidechain input level (0..2, smoothed). Applied to the SC pair before
+   *  ducking; does NOT touch the detector (which reads the MAIN pair). */
+  inputLevel: number;
   /** Attack time constant coefficient (precomputed via smootherCoef). */
   aAtt: number;
   /** Release time constant coefficient. */
   aRel: number;
-  /** Sidechain HPF coefficient (precomputed via hpfCoef). */
+  /** Detector HPF coefficient (precomputed via hpfCoef) on the MAIN pair. */
   hpfA: number;
 }
 
@@ -303,7 +334,13 @@ export interface SidecarOutputs {
   gainDb: number;
 }
 
-/** One sample through the full Sidecar pipeline. */
+/** One sample through the full Sidecar DUCKER pipeline.
+ *
+ *  - The MAIN pair (`audioL`/`audioR`) is the trigger: it drives the
+ *    detector AND passes straight through to the output.
+ *  - The SIDECHAIN pair (`scL`/`scR`) is gained by `inputLevel`, ducked by
+ *    the gain reduction the main triggers, then summed into the output.
+ */
 export function sidecarStep(
   audioL: number,
   audioR: number,
@@ -315,12 +352,13 @@ export function sidecarStep(
   // 1) Per-sample-smoothed scalar params (kill clicks on jumps).
   const thr = paramSmootherStep(p.threshold, state.thresholdSmoother);
   const eMg = paramSmootherStep(p.envMag, state.envMagSmoother);
+  const inLvl = paramSmootherStep(p.inputLevel, state.inputLevelSmoother);
 
-  // 2) Sidechain HPF (detector path only — does NOT touch the audio path).
-  const fL = hpfStep(scL, p.hpfA, state.hpfL);
-  const fR = hpfStep(scR, p.hpfA, state.hpfR);
+  // 2) Detector HPF — on the MAIN/trigger pair (NOT the SC signal path).
+  const fL = hpfStep(audioL, p.hpfA, state.hpfL);
+  const fR = hpfStep(audioR, p.hpfA, state.hpfR);
 
-  // 3) Stereo-link peak detector: |sL| + |sR|.
+  // 3) Stereo-link peak detector on the MAIN pair: |aL| + |aR|.
   const mag = Math.abs(fL) + Math.abs(fR);
 
   // 4) log2 of magnitude (floor to avoid -∞).
@@ -332,16 +370,20 @@ export function sidecarStep(
   // 6) Asymmetric smoother (attack / release).
   const gainDb = smootherStep(targetDb, p.aAtt, p.aRel, state.smoother);
 
-  // 7) Linear gain for the audio multiply (log2 → linear via 2^(dB/6.0205)).
-  const lin = Math.pow(2, gainDb / DB_PER_LOG2);
+  // 7) Linear duck gain (log2 → linear via 2^(dB/6.0205)). 1.0 when the
+  //    main is silent → SC passes at full volume; < 1.0 when ducking.
+  const duckLin = Math.pow(2, gainDb / DB_PER_LOG2);
 
-  // 8) Makeup (linear, post).
+  // 8) Makeup (linear, post) — applied to the ducked SC signal.
   const makeupLin = Math.pow(2, p.makeup / DB_PER_LOG2);
 
-  const outL = audioL * lin * makeupLin;
-  const outR = audioR * lin * makeupLin;
+  // 9) Output = MAIN passthrough + ducked(inputLevel · SIDECHAIN).
+  const duckedScL = scL * inLvl * duckLin * makeupLin;
+  const duckedScR = scR * inLvl * duckLin * makeupLin;
+  const outL = audioL + duckedScL;
+  const outR = audioR + duckedScR;
 
-  // 9) Envelope-out path (post-smoother, no clamp).
+  // 10) Envelope-out path (post-smoother, no clamp).
   const eo = envOut(gainDb, eMg);
   const eio = envInvOut(eo);
 
