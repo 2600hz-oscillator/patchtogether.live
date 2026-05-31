@@ -26,6 +26,43 @@
 // module, add an override here with the specific port(s) it needs
 // driven — same as the SOURCES list pattern in
 // e2e/tests/coverage-group-2-sources.spec.ts.
+//
+// SYSTEMIC GAP this map guards against: a gate/envelope-triggered AUDIO
+// voice (drum hit, 303) with NO override gets the DEFAULT driver — its
+// first audio/cv/gate/pitch output wired to a scope, NO upstream
+// sequencer — so its gate never fires, it stays silent, and the alive
+// smoke fails peak=0. This bit TREE.oh.VOX (#446) and chowkick (#462).
+//
+// AUDIT (2026-05-30): replicated per-module.spec.ts's EXACT enrolment
+// filter — a module gets a driven output-alive test iff `hasAudioOutput`
+// && NOT on the spec's SKIP_OUTPUT_ALIVE list && it has NO `audio`-typed
+// input (audio-input "effects" are auto-skipped) — against the emitted
+// manifest (e2e/.generated/registry-manifest.json). Exactly 11 modules
+// are enrolled+driven, and all 11 pass at --workers=4:
+//   • 9 already have overrides below: buggles, chowkick, drummergirl,
+//     dx7, macrooscillator, meowbox, nibbles, treeohvox, wavesculpt.
+//   • 2 self-run on the DEFAULT driver (no override needed, correctly):
+//       - noise → first output `white` (continuous white noise).
+//       - peaks → first output `out0`; its default `mode` is LFO, which
+//         free-runs with no trigger, so the default driver suffices.
+//         (If PEAKS' default mode ever changes to a gated drum voice it
+//         would become the at-risk case — flag it then.)
+//
+// NO module had the latent gap, so this audit added NO new entries
+// (needless overrides are churn).
+//
+// NOT enrolled (correctly out of scope for the AUDIO-alive check):
+//   • CV-only modules (`hasAudioOutput=false`): self-clocked CV/gate
+//     sources (MACSEQ / STAGES / MARBLES / GRIDS / SYMBIOTE / TIDES2 /
+//     LFO) and CV math (analogLogicMaths — outputs min/max/diff/sum/
+//     product, all `cv`). The spec never enrols them for the audio-alive
+//     check; CV/gate alive checks are a deferred slice (per-module.spec
+//     header).
+//   • Audio-input processors (filter / reverb / RINGS / ELEMENTS / …) —
+//     auto-skipped by the spec's hasAudioInput branch.
+// The lesson is productized in the `module-pr-checklist` repo skill:
+// every NEW gate/envelope-triggered AUDIO-output module MUST add an entry
+// here or its output-alive smoke is silently peak=0.
 
 import type { RegistryModule } from './_registry';
 
@@ -82,6 +119,10 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   meowbox:      { outputPort: 'L',     gatePort: 'gate', pitchPort: 'pitch' },
   // RIOTGIRLS drives the 4-voice DRUMMERGIRL + WT-VCO bank; trig1 fires voice 1.
   riotgirls:    { outputPort: 'outL',  gatePort: 'trig1' },
+  // CHOWKICK — ChowKick (chowdsp) kick drum; gate_in rising edge fires the
+  // pulse-shaper → resonator. Gate-only (no pitch). Bump amplitude + a
+  // longer decay so the kick clears the 0.005 alive-floor within the window.
+  chowkick:     { outputPort: 'audio_out', gatePort: 'gate_in', params: { amplitude: 1, decay: 0.6, sustain: 0.5, bounce: 0.4 } },
   // TREE.oh.VOX — TB-303 voice. pitch/gate ride on dedicated audio-rate
   // node ports (pitch_in / gate_in), NOT AudioParams, so the sequencer
   // gate must be wired to gate_in for the amp envelope to open. Without

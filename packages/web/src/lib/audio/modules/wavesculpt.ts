@@ -1481,12 +1481,67 @@ export const wavesculptDef: AudioModuleDef = {
           //     (pitch is for the WIGGLE rotation rate/magnitude; frame-
           //     rate detection would jitter and isn't worth the CPU).
           const ans = ensureScopeAnalysers();
-          for (let i = 0; i < NUM_OSC; i++) ans[i]!.getFloatTimeDomainData(scopeBufs![i]!);
-          const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-          if (nowMs - scopePitchLastMs > 80) {
-            scopePitchLastMs = nowMs;
+          // ---- VRT determinism hook ----
+          // The live analyser buffers carry whatever the audio thread last
+          // DMA'd in — even after ctx.suspend() the contents reflect the
+          // exact JS↔audio scheduling instant at suspend (varies by tens of
+          // microseconds = many audio frames run-to-run). For VRT capture
+          // we override the trace + pitch data with fixed synthetic per-osc
+          // sines so the BLINK SCOPES-TRIAL / REALITY-BASED-COMMUNITY scope
+          // textures are byte-identical across runs. Flag is the SAME one
+          // the card render reads (globalThis.__wavesculptVrtFreeze); it's
+          // never set in production. SCOPE module + e2e/audio paths are
+          // untouched — they don't gate on this flag.
+          const frozen =
+            (globalThis as unknown as { __wavesculptVrtFreeze?: boolean })
+              .__wavesculptVrtFreeze === true;
+          if (frozen) {
+            // Per-osc fixed pseudo-pitches: 220, 330, 440, 550 Hz. Distinct
+            // cycle counts within the 512-sample window give 4 visually
+            // distinguishable traces, and the pitch values feed the WIGGLE
+            // rate/magnitude predictably.
+            //
+            // SILENT-OSC PRESERVATION: we first peek at the live analyser
+            // peak to decide which voices were genuinely silent (gate-
+            // normalling left them self-sourced → no signal → flat trace).
+            // Silent voices get a zeroed buffer + pitch=null so the card's
+            // uActive amp-gate still suppresses them (the silent-osc
+            // regression test depends on this). Loud voices get the fixed
+            // synthetic sine. Threshold is generous — analyser peaks are in
+            // 0.3+ range for any audible voice; silent voices read ~0.
+            const frozenPitches = [220, 330, 440, 550];
+            const SILENT_THRESHOLD = 0.02;
+            for (let i = 0; i < NUM_OSC; i++) ans[i]!.getFloatTimeDomainData(scopeBufs![i]!);
             for (let i = 0; i < NUM_OSC; i++) {
-              scopePitches[i] = detectPitch(scopeBufs![i]!, ctx.sampleRate).hz;
+              const buf = scopeBufs![i]!;
+              let peak = 0;
+              for (let s = 0; s < buf.length; s++) {
+                const a = Math.abs(buf[s]!);
+                if (a > peak) peak = a;
+              }
+              if (peak < SILENT_THRESHOLD) {
+                // Silent voice: write a clean zero buffer (the analyser
+                // residual is itself noisy and would still show as a faint
+                // flat-line that drifts run-to-run). Pitch=null → no wiggle.
+                for (let s = 0; s < buf.length; s++) buf[s] = 0;
+                scopePitches[i] = null;
+              } else {
+                const cyclesInWindow = (i + 1) * 1.5; // 1.5 / 3 / 4.5 / 6
+                const amp = 0.85;
+                for (let s = 0; s < buf.length; s++) {
+                  buf[s] = amp * Math.sin((s / buf.length) * Math.PI * 2 * cyclesInWindow);
+                }
+                scopePitches[i] = frozenPitches[i]!;
+              }
+            }
+          } else {
+            for (let i = 0; i < NUM_OSC; i++) ans[i]!.getFloatTimeDomainData(scopeBufs![i]!);
+            const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+            if (nowMs - scopePitchLastMs > 80) {
+              scopePitchLastMs = nowMs;
+              for (let i = 0; i < NUM_OSC; i++) {
+                scopePitches[i] = detectPitch(scopeBufs![i]!, ctx.sampleRate).hz;
+              }
             }
           }
           return {
