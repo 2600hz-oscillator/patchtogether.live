@@ -447,18 +447,23 @@ const DRIVERS: Record<string, PerPortDriver> = {
     // fires the live-play path immediately via the keydown listener.
     params: { activeLayer: 0, octave: 4 },
     postSpawn: async (page) => {
-      // Hold Numpad1 (= C in the keymap) for 200ms so l1_gate stays high
-      // when the test window samples. The listener attaches in the
-      // factory; once the SUT mounts, the keydown fires immediately on
-      // the document object regardless of which element has focus.
+      // Hold Numpad2 (= C# in the keymap, semitone 1) so l1_gate stays
+      // high when the test window samples. We deliberately use C#
+      // (Numpad2) rather than C (Numpad1) because C4 = MIDI 60 = 0 V/oct
+      // — the l1_pitch ConstantSource emits exactly 0.0 V, which is at/
+      // below the scope peak floor (> 0.005). C#4 = MIDI 61 →
+      // midiToVOct(61) = (61-60)/12 ≈ +0.083 V, safely above the floor.
+      // The listener attaches in the factory; once the SUT mounts, the
+      // keydown fires immediately on the document object regardless of
+      // which element has focus.
       await page.evaluate(() => {
-        const code = 'Numpad1';
-        const ev = new KeyboardEvent('keydown', { code, key: '1', bubbles: true });
+        const code = 'Numpad2';
+        const ev = new KeyboardEvent('keydown', { code, key: '2', bubbles: true });
         document.dispatchEvent(ev);
         // Leave the key "held" — no keyup. The l1_gate output stays high.
       });
     },
-    note: 'NUMPAD+: dispatch synthetic Numpad1 keydown (held); l1_pitch + l1_gate emit',
+    note: 'NUMPAD+: dispatch synthetic Numpad2 (C#4) keydown (held); l1_pitch ≈ +0.083 V/oct + l1_gate emit',
   },
 
   // ───── MIDICLOCK — mock requestMIDIAccess + post clock messages ─────
