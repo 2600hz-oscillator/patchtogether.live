@@ -391,6 +391,24 @@ tasks:
       - task: vrt:strict
 
   # ---------------- Housekeeping ----------------
+  worktree:list:
+    desc: Show every git worktree + classification against the cap. Changes nothing.
+    cmds:
+      - bash scripts/worktree-guard.sh report
+
+  worktree:clean:
+    desc: Prune gone worktrees + remove ABANDONED ones (dead agent lock, clean, fully pushed).
+    cmds:
+      - bash scripts/worktree-guard.sh clean
+
+  worktree:guard:
+    desc: |
+      Enforce the repo worktree cap (default 10). Auto-removes abandoned worktrees,
+      then exits non-zero listing any that still need a human. RUN THIS BEFORE
+      creating a new worktree. Override the cap with WORKTREE_CAP=N.
+    cmds:
+      - bash scripts/worktree-guard.sh enforce
+
   clean:
     desc: Remove all build artifacts
     cmds:
