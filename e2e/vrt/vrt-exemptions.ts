@@ -398,7 +398,12 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // Audio domain — pure knob/fader cards, no canvas
   'adsr',                 // 4-knob envelope card
   'analogVco',            // 4-knob VCO card (waveform selector + tuning)
-  'audioOut',             // master out: meter + level + mute
+  // audioOut: removed from strict lane. This PR added the OUT device
+  // dropdown row (setSinkId picker), growing the card from 320x313 to
+  // 360x401. The darwin baseline was re-captured (f1cd0e5f); the linux
+  // baseline still shows the old 320x313 layout (pre-device-picker).
+  // Re-add once linux baseline is re-captured + linux/audioOut removed
+  // from EXEMPT_BASELINE_PAIRS.
   'buggles',              // bug-themed audio card
   'cartesian',            // 2D selector grid card (static)
   'charlottesEchos',      // delay/echo knob card
