@@ -22,11 +22,11 @@
 import { test, expect } from '@playwright/test';
 import { seedRackspace } from './_helpers';
 
-// seedRackspace requires DATABASE_URL (available in collab lane only).
-// Regular e2e shards don't have DB access — skip gracefully.
+// seedRackspace uses Neon's HTTP client; CI's localhost Postgres (DATABASE_URL)
+// doesn't work with the neon() tag. Gate on COLLAB_JOB like other collab tests.
 test.skip(
-  !process.env.DATABASE_URL,
-  'audio-gate tests require DATABASE_URL — run in collab lane or with DATABASE_URL set',
+  !!process.env.CI && !process.env.COLLAB_JOB,
+  'audio-gate tests require COLLAB_JOB=1 — Neon HTTP client cannot reach localhost Postgres in shard runners',
 );
 
 // Disable Chromium's autoplay-policy override so the AudioContext genuinely
