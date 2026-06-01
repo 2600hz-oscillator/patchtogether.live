@@ -39,6 +39,26 @@ describe('timelordeDef: shape', () => {
     const ids = timelordeDef.inputs.map((i) => i.id);
     expect(ids).toEqual(['clock', 'start_in', 'stop_in']);
   });
+
+  // Regression: the timelorde worklet had outputPulseEnd = new Int32Array(12)
+  // which silently dropped writes at index 12 (OUT_SWING). The def must
+  // declare exactly 13 outputs and swing must be the 13th so the per-port
+  // sweep catches any future miscount.
+  it('declares exactly 13 outputs (12 fixed divisions + swing)', () => {
+    expect(timelordeDef.outputs.length).toBe(13);
+  });
+
+  it('declares swing as the last output (index 12)', () => {
+    const swing = timelordeDef.outputs[12];
+    expect(swing?.id).toBe('swing');
+    expect(swing?.type).toBe('gate');
+  });
+
+  it('every output is declared as gate type', () => {
+    for (const out of timelordeDef.outputs) {
+      expect(out.type, `output ${out.id}`).toBe('gate');
+    }
+  });
 });
 
 // ---------------- transportEventsToRunState (pure) ----------------

@@ -149,7 +149,11 @@ class TimelordeProcessor extends AudioWorkletProcessor {
   // Currently-firing pulses: one per output (a new pulse that overlaps an
   // existing one truncates it — gates can't be "1.5"). We track each output's
   // pulse-end sample so process() can drop the gate at the right moment.
-  private outputPulseEnd = new Int32Array(12);
+  // Currently-firing pulses: 13 entries (indices 0..11 for the 12 fixed
+  // outputs + index 12 for swing, OUT_SWING). The old Int32Array(12)
+  // silently dropped every swing write (TypedArray out-of-bounds is a
+  // no-op) so the swing gate always read 0. Fixed by sizing to 13.
+  private outputPulseEnd = new Int32Array(13);
 
   // (v1) prevPlaying tracked stop-transition resets; v2 doesn't stop
   // the internal clock, so nothing to track here. Field removed.
@@ -199,7 +203,7 @@ class TimelordeProcessor extends AudioWorkletProcessor {
       // We do NOT advance sampleCount / internalPhase / pending, so on
       // resume the next process() block continues exactly where the
       // halted block would have, modulo this missing block of samples.
-      for (let o = 0; o < 12; o++) {
+      for (let o = 0; o < 13; o++) {
         const ch = outputs[o]?.[0];
         if (!ch) continue;
         for (let i = 0; i < blockLen; i++) ch[i] = 0;
@@ -242,9 +246,9 @@ class TimelordeProcessor extends AudioWorkletProcessor {
     const pulseWidthSamples = Math.max(1, Math.round(PULSE_WIDTH_S * sampleRate));
 
     // Output buffer refs. Default fill: drive each output low; pulses are
-    // raised back up below.
+    // raised back up below. Collect all 13 outputs (0..12 includes swing).
     const outBufs: Float32Array[] = [];
-    for (let o = 0; o < 12; o++) {
+    for (let o = 0; o < 13; o++) {
       const ch = outputs[o]?.[0];
       if (!ch) return true;
       outBufs.push(ch);
@@ -309,7 +313,7 @@ class TimelordeProcessor extends AudioWorkletProcessor {
       // advances so internal phase + the engine-side tick subscribers
       // (LIVECODE clocked() etc.) keep firing.
       const gateLevel = muteOutputs ? 0 : 1;
-      for (let o = 0; o < 12; o++) {
+      for (let o = 0; o < 13; o++) {
         outBufs[o]![i] = this.outputPulseEnd[o]! > absSample ? gateLevel : 0;
       }
     }
