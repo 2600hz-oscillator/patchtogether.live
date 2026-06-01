@@ -87,6 +87,48 @@ export async function waitForSoundingStep(
 }
 
 /**
+ * Atomically wait for `currentStep === target` AND immediately suspend the
+ * AudioContext in the same browser microtask — eliminates the Playwright
+ * round-trip race where the audio clock can advance past `target` in the
+ * ~50–200 ms between `waitForSoundingStep` returning to Node.js and a
+ * separate `freezeAudioClock` call completing.
+ *
+ * After this resolves the audio clock is suspended (same state as after
+ * `waitForSoundingStep` + `freezeAudioClock`) and every subsequent
+ * `readEngineValue` call is deterministic.
+ */
+export async function waitForSoundingStepAndFreeze(
+  page: Page,
+  nodeId: string,
+  target: number,
+  opts: { key?: string; timeoutMs?: number } = {},
+): Promise<void> {
+  const key = opts.key ?? 'currentStep';
+  const timeoutMs = opts.timeoutMs ?? 10_000;
+  const deadline = Date.now() + timeoutMs;
+  await page.evaluate(
+    async ({ id, k, t, dl }) => {
+      const w = globalThis as unknown as EngineGlobals & { Date: typeof Date };
+      const eng = w.__engine?.();
+      if (!eng) throw new Error('waitForSoundingStepAndFreeze: engine not ready');
+      while (Date.now() < dl) {
+        const node = w.__patch.nodes[id];
+        if (node) {
+          const v = eng.read(node, k);
+          if (typeof v === 'number' && v === t) {
+            try { await eng.ctx.suspend(); } catch { /* already suspended */ }
+            return;
+          }
+        }
+        await new Promise<void>((r) => setTimeout(r, 10));
+      }
+      throw new Error(`waitForSoundingStepAndFreeze: timeout waiting for ${id}.${k} === ${t}`);
+    },
+    { id: nodeId, k: key, t: target, dl: deadline },
+  );
+}
+
+/**
  * Wait until the engine reports a step in [lo, hi] (inclusive). Useful for
  * SCORE-style assertions where "around tick 4" maps to a small window because
  * the tickIndex granularity vs scheduler quantum can land ±1.
