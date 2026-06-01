@@ -40,6 +40,9 @@ import { noiseDef } from './noise';
 import { bugglesDef } from './buggles';
 import { wavecelDef } from './wavecel';
 import { warrenspectrumDef } from './warrenspectrum';
+// SYNESTHESIA — 4-band audio-analysis module (2 copies); derives env / gate /
+// VU level per spectral band to drive other audio/video modules.
+import { synesthesiaDef } from './synesthesia';
 import { stereovcaDef } from './stereovca';
 import { shimmershineDef } from './shimmershine';
 import { macrooscillatorDef } from './macrooscillator';
@@ -153,6 +156,7 @@ export function registerAudioModules(): void {
   registerModule(bugglesDef);
   registerModule(wavecelDef);
   registerModule(warrenspectrumDef);
+  registerModule(synesthesiaDef);
   registerModule(stereovcaDef);
   registerModule(shimmershineDef);
   registerModule(macrooscillatorDef);

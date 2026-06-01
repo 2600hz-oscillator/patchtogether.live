@@ -266,6 +266,7 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // FOXY — hybrid audio-visual: SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL.
   foxy: { top: 'Hybrid', sub: 'Hybrid' },
   warrenspectrum: { top: 'Hybrid', sub: 'Hybrid' },
+  synesthesia: { top: 'Hybrid', sub: 'Hybrid' },
   // PONG — research-prototype game module. CV-in paddles + gate-out scores,
   // visual game state on the card. Sits in Hybrid alongside the other
   // audio-engine-bound modules that also draw rich visuals.

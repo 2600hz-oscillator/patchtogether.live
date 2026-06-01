@@ -94,6 +94,13 @@ const SKIP_SPAWN: Record<string, string> = {
 // (~5-7 entries). Each has a one-line citation of the dedicated spec
 // that exercises the full path with the real asset present.
 const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
+  // ── Pure analysers whose outputs are input-conditional ──
+  // SYNESTHESIA derives per-band audio / envelope CV / gates from its mono
+  // inputs — every output is silent until a_in/b_in are driven AND a band
+  // crosses threshold, which the generic sweep doesn't set up per-output. The
+  // dedicated composite spec (VCO→VCA→ADSR←SEQUENCER→SYNESTHESIA) asserts that
+  // the correct bands trigger. Handle-presence + input-drive still run here.
+  synesthesia: 'outputs are input-conditional (band audio/env/gate); signal flow covered by the synesthesia composite spec',
   // ── File-input modules ──
   // Each needs a real decoder pipeline (Web Codecs for video, AudioBuffer
   // decode for samples) that we don't bring up inside the sweep. The

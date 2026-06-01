@@ -94,6 +94,13 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
  *  ≥10-char reason — the vrt-meta self-test enforces this. */
 export const EXEMPT_FROM_VRT: Record<string, string> = {
+  // SYNESTHESIA — 4-band audio-analysis module (2 copies). Card carries two
+  // live 10-bar VU canvases; the rest is static chrome (master + per-band
+  // gain knobs + handle rows). VRT baseline pending — capture darwin/linux
+  // baselines via a NOISE→a_in/b_in scene (meters lit, freeze-on-suspend) in
+  // the follow-up slice that also adds the per-band mono-video raster outputs.
+  // Functional coverage today: synesthesia-dsp unit tests + dsp build.
+  synesthesia: 'VRT baseline pending; unit (synesthesia-dsp) + build coverage. Capture darwin/linux baselines (NOISE-driven meters) in the follow-up slice.',
   // 4PLEXVID — 4-in/4-out video router. Card carries a live OUT-1 preview
   // canvas; the rest is static chrome (4 discrete selector knobs + handle
   // rows). VRT baseline pending platform-specific capture. Functional
