@@ -40,6 +40,12 @@ async function readNodes(page: Page): Promise<PatchNode[]> {
   });
 }
 
+// readUserNodes excludes the auto-spawned TIMELORDE singleton so @collab
+// count assertions see only the nodes the test itself added.
+async function readUserNodes(page: Page): Promise<PatchNode[]> {
+  return (await readNodes(page)).filter((n) => n.type !== 'timelorde');
+}
+
 async function readEdgeIds(page: Page): Promise<string[]> {
   return await page.evaluate(() => {
     const w = window as unknown as { __patch: { edges: Record<string, unknown> } };
@@ -570,7 +576,7 @@ test.describe('@collab', () => {
       });
       await expect
         .poll(
-          async () => (await readNodes(s.pageB)).length,
+          async () => (await readUserNodes(s.pageB)).length,
           { timeout: 2000 },
         )
         .toBe(2);

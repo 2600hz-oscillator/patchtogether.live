@@ -30,6 +30,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
   waitForSoundingStep,
+  waitForSoundingStepAndFreeze,
   waitForCurrentNoteId,
   freezeAudioClock,
   unfreezeAudioClock,
@@ -102,17 +103,15 @@ test('polyseqz: playhead matches sounding step (no off-by-one at start)', async 
     });
   });
 
-  // Wait for the audio thread to REPORT step 0 sounding (event-driven, not
-  // wall-clock), then freeze the audio clock so the read is deterministic.
-  await waitForSoundingStep(page, 'p', 0);
-  await freezeAudioClock(page);
+  // Atomically wait for step 0 sounding AND freeze — single browser round-trip
+  // eliminates the race where the clock advances past step 0 before freeze.
+  await waitForSoundingStepAndFreeze(page, 'p', 0);
   let step = await readEngineValue<number>(page, 'p', 'currentStep');
   expect(step).toBe(0);
 
   // Resume + advance to step 1.
   await unfreezeAudioClock(page);
-  await waitForSoundingStep(page, 'p', 1);
-  await freezeAudioClock(page);
+  await waitForSoundingStepAndFreeze(page, 'p', 1);
   step = await readEngineValue<number>(page, 'p', 'currentStep');
   expect(step).toBe(1);
 });
@@ -149,21 +148,18 @@ test('sequencer: playhead matches sounding step (no off-by-one at start)', async
     });
   });
 
-  // Wait for sounding step 0, then freeze + assert.
-  await waitForSoundingStep(page, 's', 0);
-  await freezeAudioClock(page);
+  // Atomically wait for step 0 sounding AND freeze.
+  await waitForSoundingStepAndFreeze(page, 's', 0);
   let step = await readEngineValue<number>(page, 's', 'currentStep');
   expect(step).toBe(0);
 
   // Cross-check: while frozen, repeat the read — must be identical.
-  // (Belt-and-suspenders proof that suspend really freezes the playhead.)
   const stepAgain = await readEngineValue<number>(page, 's', 'currentStep');
   expect(stepAgain).toBe(0);
 
   // Resume + advance to step 1.
   await unfreezeAudioClock(page);
-  await waitForSoundingStep(page, 's', 1);
-  await freezeAudioClock(page);
+  await waitForSoundingStepAndFreeze(page, 's', 1);
   step = await readEngineValue<number>(page, 's', 'currentStep');
   expect(step).toBe(1);
 });
@@ -198,14 +194,12 @@ test('drumseqz: playhead matches sounding step (no off-by-one at start)', async 
     });
   });
 
-  await waitForSoundingStep(page, 'd', 0);
-  await freezeAudioClock(page);
+  await waitForSoundingStepAndFreeze(page, 'd', 0);
   let step = await readEngineValue<number>(page, 'd', 'currentStep');
   expect(step).toBe(0);
 
   await unfreezeAudioClock(page);
-  await waitForSoundingStep(page, 'd', 1);
-  await freezeAudioClock(page);
+  await waitForSoundingStepAndFreeze(page, 'd', 1);
   step = await readEngineValue<number>(page, 'd', 'currentStep');
   expect(step).toBe(1);
 });

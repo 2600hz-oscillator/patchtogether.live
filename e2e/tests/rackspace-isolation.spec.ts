@@ -89,10 +89,21 @@ async function addNode(
 async function snapshot(page: import('@playwright/test').Page): Promise<PatchSnapshot> {
   return page.evaluate(() => {
     const w = window as unknown as {
-      __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+      __patch: {
+        nodes: Record<string, { type?: string }>;
+        edges: Record<string, unknown>;
+      };
     };
+    // The rack auto-spawns a TIMELORDE clock singleton ("there is always a
+    // clock" — see lib/audio/modules/timelorde-autospawn.ts). That node is
+    // part of EVERY rack's node set and is NOT a cross-rack leak, so this
+    // isolation spec must exclude it (it only cares whether one rack's USER
+    // nodes bleed into another). Filter by node TYPE.
     return {
-      nodes: Object.keys(w.__patch.nodes).sort(),
+      nodes: Object.entries(w.__patch.nodes)
+        .filter(([, n]) => n?.type !== 'timelorde')
+        .map(([id]) => id)
+        .sort(),
       edges: Object.keys(w.__patch.edges).sort(),
     };
   });
