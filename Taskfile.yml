@@ -1,4 +1,4 @@
-# Taskfile.yml — single command surface for patchtogether.live.
+# Taskfile.yml — single command surface for patchtogether.live. See docs/adr/ for architecture decisions.
 # Usage:
 #   task            # list available tasks
 #   task dev        # start dev server + DSP watch
