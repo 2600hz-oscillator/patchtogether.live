@@ -580,10 +580,13 @@ const DRIVERS: Record<string, PerPortDriver> = {
         if (api) await api.connect();
         const send = w.__fakeMidiSend;
         if (!send) return;
-        // Note-on, channel 1, MIDI 60 (C4), velocity 100. Held for the
-        // sample window so the gate stays high + pitch_cv + velocity_cv
-        // latch their values.
-        send([0x90, 60, 100]);
+        // Note-on, channel 1, MIDI 72 (C5 = +1.0 V/oct), velocity 100. Use
+        // MIDI 72 rather than 60 (C4) because midiToVOct(60) = 0 V — the
+        // same value pitch_cv starts at — so a C4 note-on produces no
+        // measurable delta on the scope. C5 maps to +1.0 V/oct which
+        // clears the 0.005 signal-floor check. Held for the sample window
+        // so gate stays high + pitch_cv + velocity_cv latch their values.
+        send([0x90, 72, 100]);
       }, sutId);
     },
     note: 'MIDICVBUDDY: mock requestMIDIAccess + send note-on; pitch_cv/gate/velocity_cv emit',
