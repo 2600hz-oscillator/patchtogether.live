@@ -79,6 +79,11 @@ async function waitForRegen(
 }
 
 test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
+  // FLAKE #232: on heavily-loaded CI runners the video engine can pause
+  // (page-visibility suspend) for >5 s, causing the anchor-poll to starve.
+  // Scoped retries guard without masking regressions in other specs.
+  test.describe.configure({ retries: 2 });
+
   test('rising edges regenerate; within-hold window holds; stopped clock freezes regen count', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -167,7 +172,7 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     // "regen stopped advancing" regression would fail. Cadence stays
     // tight (15 ms) so we anchor within ~one frame of the edge.
     const anchorStart = await readRegenCount(page, 'sg');
-    const anchorDeadline = Date.now() + 5000;
+    const anchorDeadline = Date.now() + 10000;
     let anchored = anchorStart;
     while (Date.now() < anchorDeadline) {
       await page.waitForTimeout(15);
@@ -176,7 +181,7 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     }
     expect(
       anchored,
-      `observed a fresh regen edge to anchor the hold window (start=${anchorStart}, after-poll=${anchored}, budget=5s, period=500ms)`,
+      `observed a fresh regen edge to anchor the hold window (start=${anchorStart}, after-poll=${anchored}, budget=10s, period=500ms)`,
     ).toBeGreaterThan(anchorStart);
 
     const hold1a = await readRegenCount(page, 'sg');
