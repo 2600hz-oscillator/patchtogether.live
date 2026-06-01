@@ -1,3 +1,27 @@
+// packages/web/src/lib/audio/modules/vca.ts
+//
+// VCA — voltage-controlled amplifier (mono).
+//
+// The standard Eurorack utility module: a single audio input multiplied by
+// `base + cvAmount * cv`. With nothing patched into CV and base=0 the VCA
+// is silent; with CV held at +1 and cvAmount=1 it passes the audio through
+// at unity. Faust-compiled DSP (packages/dsp/src/vca.dsp). A parallel
+// phase-inverted output (`audio_inv`) is a GainNode(-1) tap of the same
+// signal — useful for stereo widening, sidechain ducking, or mid/side
+// processing without needing an extra inverter module.
+//
+// Inputs:
+//   audio (audio): signal to be amplified / gated.
+//   cv (cv): control voltage; combined with the base knob and scaled by cvAmount.
+//
+// Outputs:
+//   audio (audio): the amplified output (audio * (base + cv * cvAmount)).
+//   audio_inv (audio): sign-inverted copy of the output (phase-flipped).
+//
+// Params:
+//   base (linear 0..1, default 0): static DC offset added to CV (unity gain when 1).
+//   cvAmount (linear -1..1, default 1): scale + sign of the CV input; negative inverts the CV.
+
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

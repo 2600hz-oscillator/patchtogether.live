@@ -6,7 +6,7 @@
 //
 // An explicit, draggable module: audio in → mono-video out. Each video
 // frame it takes a fixed run of audio samples (samplesPerFrame, ~800 at
-// 48k/60fps) and writes them as voltage-per-pixel into the 640×360 video
+// 48k/60fps) and writes them as voltage-per-pixel into the 640×480 video
 // frame in raster order; a scan cursor advances + WRAPS through the
 // frame across frames (~1.25 scanlines/frame at the default). Audio
 // sample value (~-1..+1 after gain) → pixel luminance. This is the
@@ -23,6 +23,23 @@
 // `drawFrame(canvas)` each video frame (videoSources entry); we paint via
 // a single RasterPainter so the on-card canvas + the video-out texture
 // share one accumulated framebuffer.
+//
+// Inputs:
+//   in (audio): the audio to rasterize.
+//   cursor (cv, paramTarget=cursor): displaces the scan cursor (pixel offset into the frame).
+//   samplesPerFrame (cv, paramTarget=samplesPerFrame): displaces samples-painted-per-frame.
+//   gain (cv, paramTarget=gain): displaces the input-gain knob before luminance mapping.
+//   wrap (cv, paramTarget=wrap): displaces the wrap-mode toggle.
+//
+// Outputs:
+//   thru (audio): clean audio passthrough (raster path is non-destructive).
+//   out (mono-video): the painted raster frame.
+//
+// Params:
+//   cursor (linear 0..307200 px, default 0): start position of the scan cursor.
+//   samplesPerFrame (log 16..8000, default 800): how many samples paint per frame.
+//   gain (log 0..8, default 1): input gain pre-luminance map.
+//   wrap (discrete 0..1, default 0): 0 = scan wraps + accumulates, 1 = clear-on-wrap.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -53,10 +70,10 @@ export const rasterizeDef: AudioModuleDef = {
     { id: 'out', type: 'mono-video' },
   ],
   params: [
-    // Scan cursor start offset, in pixels into the 640×360 = 230400-pixel
+    // Scan cursor start offset, in pixels into the 640×480 = 307200-pixel
     // frame. Moving it scrubs the running cursor; otherwise the cursor
     // drifts on its own.
-    { id: 'cursor',          label: 'Scan',   defaultValue: 0,   min: 0,   max: 230400, curve: 'linear', units: 'px' },
+    { id: 'cursor',          label: 'Scan',   defaultValue: 0,   min: 0,   max: 307200, curve: 'linear', units: 'px' },
     // Samples painted per frame. Default 800 ≈ 48k/60fps ≈ 1.25 scanlines.
     { id: 'samplesPerFrame', label: 'Samp/F', defaultValue: 800, min: 16,  max: 8000,   curve: 'log' },
     // Linear gain applied to each sample before the luminance map.
@@ -106,6 +123,56 @@ export const rasterizeDef: AudioModuleDef = {
       return buf.subarray(buf.length - count);
     }
 
+    // ── DETERMINISTIC VRT SEED ───────────────────────────────────────
+    // The live raster fill drifts with wall-clock timing: how many rAF
+    // ticks land before the VRT freeze (AudioContext.suspend) varies
+    // run-to-run by ±a few frames, and at default samplesPerFrame=800
+    // each frame advances the cursor ~1.25 scanlines. Over a 900ms
+    // settle that's ~50 lines of cursor wander → the band pattern
+    // visually matches across runs (same input frequency) but is
+    // shifted vertically by tens of rows, which busts the VRT pixel
+    // tolerance even with the freeze-on-suspend guard below. Same class
+    // of flake as FOXY's `__foxyVrtSeed` and PEAKSTATE's
+    // `__peakstateVrtSeed` (see those modules).
+    //
+    // When the harness sets `__rasterizeVrtSeed`, we RESET the painter
+    // then paint one deterministic full-frame fill from a fixed
+    // synthetic waveform (independent of the analyser + wall clock), and
+    // subsequent advance calls short-circuit — so every read('imageData')
+    // and bridge drawFrame returns the SAME pixels run-to-run. Fix for
+    // task #198.
+    let vrtSeeded = false;
+    function vrtSeedActive(): boolean {
+      return !!(globalThis as unknown as { __rasterizeVrtSeed?: boolean })
+        .__rasterizeVrtSeed;
+    }
+    function paintSeeded(): void {
+      painter.reset();
+      // Fixed synthetic sine — independent of any wall-clock / analyser
+      // refill. 261 Hz over the engine's video resolution at 48 kHz
+      // (matches the VRT scene's 261 Hz analogVco source so the BAND
+      // SPACING in the seeded baseline still looks like the live one).
+      const total = VIDEO_RES.width * VIDEO_RES.height;
+      const sr = 48000;
+      const freq = 261;
+      const buf = new Float32Array(total);
+      for (let i = 0; i < total; i++) {
+        buf[i] = Math.sin((2 * Math.PI * freq * i) / sr) * 0.9;
+      }
+      // Paint ONE full-frame fill. samplesPerFrame=total so the cursor
+      // sweeps the WHOLE frame in this one paint (no run-to-run cursor
+      // wander), and wrap=0 + cursor=0 means the next call (if any) would
+      // re-fill identically — but the early-return below means the
+      // painter is touched exactly once.
+      const seededParams: RasterizeDrawParams = {
+        cursor: 0,
+        samplesPerFrame: total,
+        gain: 1,
+        wrap: 0,
+      };
+      painter.paint(buf, seededParams);
+    }
+
     // Frame-advance dedup: both the cross-domain bridge's drawFrame() AND
     // the on-card canvas's read('imageData') want a fresh frame, and when
     // both fire in the same animation frame we must advance the painter
@@ -114,6 +181,12 @@ export const rasterizeDef: AudioModuleDef = {
     // calls within the same ~16ms slice paint at most once.
     let lastPaintMs = -1;
     function advanceOncePerFrame(): void {
+      // VRT seed mode: paint one deterministic frame, then HOLD it across
+      // subsequent calls so the snapshot is pixel-stable run-to-run.
+      if (vrtSeedActive()) {
+        if (!vrtSeeded) { vrtSeeded = true; paintSeeded(); }
+        return;
+      }
       // Freeze the painting when the AudioContext is suspended: there's no
       // fresh audio arriving, so advancing the drifting cursor would just
       // smear stale samples across the frame. Mirrors SCOPE's analyser-
@@ -132,7 +205,7 @@ export const rasterizeDef: AudioModuleDef = {
     }
 
     // The cross-domain bridge calls this each video frame with its own
-    // 640×360 canvas. Advance (deduped) then blit onto the bridge's canvas.
+    // 640×480 canvas. Advance (deduped) then blit onto the bridge's canvas.
     function drawFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
       advanceOncePerFrame();
       painter.blitTo(canvas);

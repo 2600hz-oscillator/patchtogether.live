@@ -46,7 +46,57 @@ export class HeldKeyTracker {
     this.held.clear();
   }
 
+  /** Modifier-state reconciliation (the "stuck Ctrl after a swallowed keyup"
+   *  fix). Some OS-level shortcuts (e.g. the macOS screenshot combo
+   *  Cmd+Shift+Ctrl+4) SWALLOW the modifier's keyup AND fire NO window blur /
+   *  visibility change — the page keeps focus — so the blur/visibility
+   *  releases never run and the modifier stays asserted forever (the gun fires
+   *  endlessly). Every keyboard event carries the CURRENT physical modifier
+   *  state, so on each event we reconcile: if we still think a modifier code is
+   *  held but the event reports that modifier UP, synthesise its release.
+   *
+   *  Crucially this releases ONLY modifier codes (Ctrl/Alt/Shift/Meta) — NOT
+   *  movement keys. That avoids re-introducing the round-4 bug where transient
+   *  re-render / element-blur churn dumped held movement keys. A movement key
+   *  has no entry in this map, so it is never touched here.
+   *
+   *  @param modifiers the live modifier state from the event
+   *    (ev.ctrlKey/altKey/shiftKey/metaKey, or getModifierState()).
+   *  @returns the codes released this call (for assertions / debugging). */
+  reconcileModifiers(modifiers: {
+    ctrl: boolean;
+    alt: boolean;
+    shift: boolean;
+    meta: boolean;
+  }): string[] {
+    if (this.held.size === 0) return [];
+    const released: string[] = [];
+    for (const code of MODIFIER_CODES) {
+      if (!this.held.has(code)) continue;
+      const stillDown = modifiers[MODIFIER_GROUP[code]!];
+      if (!stillDown) {
+        this.held.delete(code);
+        this.sink(code, false);
+        released.push(code);
+      }
+    }
+    return released;
+  }
+
   get size(): number {
     return this.held.size;
   }
 }
+
+/** The physical-modifier group each modifier KeyboardEvent.code belongs to. */
+const MODIFIER_GROUP: Record<string, 'ctrl' | 'alt' | 'shift' | 'meta'> = {
+  ControlLeft: 'ctrl',
+  ControlRight: 'ctrl',
+  AltLeft: 'alt',
+  AltRight: 'alt',
+  ShiftLeft: 'shift',
+  ShiftRight: 'shift',
+  MetaLeft: 'meta',
+  MetaRight: 'meta',
+};
+const MODIFIER_CODES = Object.keys(MODIFIER_GROUP);

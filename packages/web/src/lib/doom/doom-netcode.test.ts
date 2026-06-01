@@ -320,6 +320,50 @@ describe('DoomNetcode — arbiter election', () => {
 
     ncB.stop();
   });
+
+  // ── split-brain-proof owner authority ───────────────────────────────────
+  // The net arbiter must equal the rack host: the RACK OWNER, derived from
+  // reliable local ownership (user.isRackOwner), NOT a lex-min count. A guest
+  // — even one whose id sorts lex-smallest — must NEVER elect itself arbiter.
+  it('seats the OWNER as arbiter even when its id is NOT lex-smallest', () => {
+    const bus = new FakeAwarenessBus();
+    const awOwner = bus.create();
+    const awGuest = bus.create();
+    // owner id sorts lex-LARGE; guest id sorts lex-small.
+    awOwner.setLocalStateField('user', { id: 'zzz-owner', displayName: 'O', color: '#fff', isRackOwner: true });
+    awGuest.setLocalStateField('user', { id: 'aaa-guest', displayName: 'G', color: '#fff', isRackOwner: false });
+
+    const { runtime: rtO } = makeRuntime();
+    const { runtime: rtG } = makeRuntime();
+    const ncOwner = new DoomNetcode({ provider: makeProvider(awOwner), moduleId: 'm', localUserId: 'zzz-owner', runtime: rtO });
+    const ncGuest = new DoomNetcode({ provider: makeProvider(awGuest), moduleId: 'm', localUserId: 'aaa-guest', runtime: rtG });
+    ncOwner.start();
+    ncGuest.start();
+
+    // EXACTLY one arbiter, and it's the owner — never the lex-min guest.
+    expect(ncOwner.isArbiter()).toBe(true);
+    expect(ncGuest.isArbiter()).toBe(false);
+
+    ncOwner.stop();
+    ncGuest.stop();
+  });
+
+  it('a confirmed guest never elects itself arbiter even with only ITSELF visible', () => {
+    // Simulate the live split-brain: the guest is the ONLY state its awareness
+    // has (the owner hasn't propagated yet). A lex-min count over [guest] would
+    // pick the guest — the bug. With reliable local ownership it stays a guest.
+    const bus = new FakeAwarenessBus();
+    const awGuest = bus.create();
+    awGuest.setLocalStateField('user', { id: 'lonely-guest', displayName: 'G', color: '#fff', isRackOwner: false });
+
+    const { runtime } = makeRuntime();
+    const ncGuest = new DoomNetcode({ provider: makeProvider(awGuest), moduleId: 'm', localUserId: 'lonely-guest', runtime });
+    ncGuest.start();
+
+    expect(ncGuest.isArbiter()).toBe(false);
+
+    ncGuest.stop();
+  });
 });
 
 describe('DoomNetcode — peer-id mapping', () => {
@@ -757,5 +801,146 @@ describe('DoomNetcode — cross-peer ticcmd feed (slice 5)', () => {
     ncA.broadcastLocalTiccmd(0, { forwardmove: -50, sidemove: 0, angleturn: 0, buttons: 0 });
     expect(ticsAonB).toHaveLength(2);
     expect(ticsAonB[1]!.forwardmove).toBe(-50);
+  });
+
+  // ── write cap: bounded awareness writes (no per-frame storm) ─────────────
+  it('does NOT write awareness when the ticcmd is unchanged frame-to-frame (idle player)', () => {
+    const bus = new FakeAwarenessBus();
+    const aw = bus.create();
+    joinAs(aw, 'aaa');
+    const { runtime } = makeRuntime();
+    const nc = new DoomNetcode({ provider: makeProvider(aw), moduleId: 'm', localUserId: 'aaa', runtime });
+    nc.start();
+
+    // Count awareness writes to the ticcmd field via the FakeAwareness spy.
+    const fakeAw = (nc as unknown as { provider: { awareness: FakeAwareness } }).provider.awareness;
+    let ticcmdWrites = 0;
+    const realSet = fakeAw.setLocalStateField.bind(fakeAw);
+    fakeAw.setLocalStateField = (field: string, value: unknown) => {
+      if (field.includes(':ticcmd')) ticcmdWrites += 1;
+      realSet(field, value);
+    };
+
+    const idle = { forwardmove: 0, sidemove: 0, angleturn: 0, buttons: 0 };
+    // Simulate 60 rAF frames of a standing-still player.
+    for (let i = 0; i < 60; i++) nc.broadcastLocalTiccmd(0, { ...idle });
+
+    // Exactly ONE write for the initial state — NOT 60. The remaining 59
+    // identical frames are suppressed (the storm-prevention cap).
+    expect(ticcmdWrites).toBe(1);
+
+    // A real input change writes again (movement is never starved).
+    nc.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    expect(ticcmdWrites).toBe(2);
+  });
+});
+
+// ── Approach A: lockstep gap-fill (receiver re-injects last-known ticcmd) ────
+describe('DoomNetcode — lockstep gap-fill (steady/idle remote stays fed)', () => {
+  function twoPeers() {
+    const bus = new FakeAwarenessBus();
+    const awA = bus.create();
+    const awB = bus.create();
+    joinAs(awA, 'aaa'); // slot 0 (lex-min)
+    joinAs(awB, 'bbb'); // slot 1
+    const ticsAonB: TiccmdEnvelope[] = [];
+    const ticsBonA: TiccmdEnvelope[] = [];
+    const { runtime: rtA } = makeRuntime();
+    const { runtime: rtB } = makeRuntime();
+    const ncA = new DoomNetcode({
+      provider: makeProvider(awA), moduleId: 'm', localUserId: 'aaa', runtime: rtA,
+      onRemoteTiccmd: (e) => ticsBonA.push(e),
+    });
+    const ncB = new DoomNetcode({
+      provider: makeProvider(awB), moduleId: 'm', localUserId: 'bbb',
+      runtime: rtB, onRemoteTiccmd: (e) => ticsAonB.push(e),
+    });
+    ncA.start();
+    ncB.start();
+    return { ncA, ncB, ticsAonB, ticsBonA, awA };
+  }
+
+  it('re-injects a held key every tic even though the sender stopped writing (no starvation)', () => {
+    const { ncA, ncB, ticsAonB } = twoPeers();
+    // A presses + HOLDS forward once. Only-on-change cap → ONE awareness write.
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    expect(ticsAonB).toHaveLength(1); // delivered once via the drain
+    // A keeps holding: subsequent frames produce the SAME ticcmd → suppressed →
+    // B sees no NEW seq. Without gap-fill B would starve of A's input.
+    for (let i = 0; i < 5; i++) {
+      ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    }
+    expect(ticsAonB).toHaveLength(1); // confirm the cap suppressed re-writes
+    // B's render loop calls reinjectKnownTiccmds() each tic → A's CURRENT input
+    // is re-fed every tic so the C overlay never goes stale.
+    for (let i = 0; i < 10; i++) ncB.reinjectKnownTiccmds();
+    expect(ticsAonB).toHaveLength(11);
+    for (const e of ticsAonB) {
+      expect(e.slot).toBe(0);
+      expect(e.forwardmove).toBe(50);
+    }
+  });
+
+  it('re-injected value tracks the latest input (release stops the marine)', () => {
+    const { ncA, ncB, ticsAonB } = twoPeers();
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    ncB.reinjectKnownTiccmds();
+    expect(ticsAonB.at(-1)!.forwardmove).toBe(50);
+    // A releases → a new (idle) ticcmd is a real change → written + delivered.
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 0, sidemove: 0, angleturn: 0, buttons: 0 });
+    expect(ticsAonB.at(-1)!.forwardmove).toBe(0);
+    // Gap-fill now re-feeds the IDLE command, not the stale moving one.
+    ncB.reinjectKnownTiccmds();
+    expect(ticsAonB.at(-1)!.forwardmove).toBe(0);
+  });
+
+  it('stops re-injecting a peer that LEFT the rack (#287 phantom-movement guard)', () => {
+    const { ncA, ncB, ticsAonB, awA } = twoPeers();
+    ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: 0, buttons: 0 });
+    ncB.reinjectKnownTiccmds();
+    const before = ticsAonB.length;
+    expect(before).toBeGreaterThan(0);
+    // Peer A leaves the rack (its awareness state goes away). B recomputes
+    // membership on the resulting awareness update + must forget A's last input.
+    awA.setLocalState(null);
+    // Drive B's awareness handler so it recomputes membership (A now absent).
+    (ncB as unknown as { recomputeMembership: () => void }).recomputeMembership();
+    ncB.reinjectKnownTiccmds();
+    // No new re-injection of the departed peer's input.
+    expect(ticsAonB).toHaveLength(before);
+  });
+
+  it('does not re-inject anything before any remote ticcmd arrives', () => {
+    const { ncB, ticsAonB } = twoPeers();
+    ncB.reinjectKnownTiccmds();
+    ncB.reinjectKnownTiccmds();
+    expect(ticsAonB).toHaveLength(0);
+  });
+
+  // ── host-freeze guard: gap-fill NEVER re-feeds the local peer its own input ──
+  //
+  // The reported live bug: the instant a remote peer joins, the HOST stops
+  // moving its own marine. The per-rAF gap-fill (reinjectKnownTiccmds, #339) re-
+  // delivers every PRESENT remote peer's last-known ticcmd each tic. If the local
+  // peer's OWN ticcmd ever leaked into the lastKnownTiccmd table it would be re-
+  // fed onto the local console-player slot every tic — fighting/overwriting the
+  // marine's own freshly-built input → the host appears frozen. These pin that
+  // the table only ever holds OTHER peers' input, so gap-fill can never drive the
+  // local slot, no matter how many remote peers are present + being re-fed.
+  it('a peer who broadcasts every tic still never re-injects its OWN ticcmd (host-freeze guard)', () => {
+    const { ncA, ncB, ticsBonA, ticsAonB } = twoPeers();
+    // Both A (slot 0 — the "host") and B (slot 1) play continuously.
+    for (let i = 0; i < 5; i++) {
+      ncA.broadcastLocalTiccmd(0, { forwardmove: 50, sidemove: 0, angleturn: i, buttons: 0 });
+      ncB.broadcastLocalTiccmd(1, { forwardmove: 50, sidemove: 0, angleturn: i, buttons: 0 });
+    }
+    // A's render loop re-injects known REMOTE ticcmds every tic. None of them may
+    // ever carry A's OWN slot (0) — they are all B's (slot 1).
+    for (let i = 0; i < 10; i++) ncA.reinjectKnownTiccmds();
+    expect(ticsBonA.length).toBeGreaterThan(0); // B's input IS re-fed on A …
+    for (const e of ticsBonA) expect(e.slot).toBe(1); // … and ONLY at B's slot.
+    // Symmetrically B never re-injects its own slot-1 input.
+    for (let i = 0; i < 10; i++) ncB.reinjectKnownTiccmds();
+    for (const e of ticsAonB) expect(e.slot).toBe(0); // only A's (the host's) input.
   });
 });

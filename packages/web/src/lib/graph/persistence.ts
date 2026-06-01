@@ -35,6 +35,10 @@ import type { ModuleNode, Edge } from './types';
 interface AnyDomainDef {
   schemaVersion: number;
   migrate?: (data: unknown, fromVersion: number) => unknown;
+  /** Optional load-time edge-port rename keyed on the saved module version.
+   *  Returns a rewritten portId, or null to leave it unchanged. See
+   *  VideoModuleDef.migrateEdgePortId (DOOM's per-slot port migration, #353). */
+  migrateEdgePortId?: (portId: string, fromVersion: number) => string | null;
 }
 
 function getAnyDomainDef(type: string): AnyDomainDef | undefined {
@@ -54,6 +58,37 @@ export type LivePatch = {
 
 /** Bumped when the envelope format itself changes (not when modules change). */
 export const ENVELOPE_VERSION = 1 as const;
+
+/** Transient runtime / lobby fields that live on a module's `node.data` ONLY
+ * so they ride the Yjs sync (every peer agrees on the host's lobby state), but
+ * which DO NOT belong in a saved patch — a patch captures the rack TOPOLOGY
+ * (which modules exist, where they sit, how they're wired, their persistent
+ * params), not a particular session's live STATE.
+ *
+ * The canonical example is DOOM: `mpMode` ('single' | 'multi') is what gates
+ * the host's start-game dialog. If a patch is saved mid-session and reloaded
+ * later, the persisted `mpMode` would suppress the start dialog forever — the
+ * host would land on "Single-user rack — you're the host." with no way to
+ * launch (Bug #1, the load-from-patch repro). Same goes for `mpLive` (a
+ * host-published "game is running right now" flag), `players` (the live
+ * per-slot roster), and `pending` (in-flight join requests). None of those
+ * have any meaning across sessions.
+ *
+ * Whitelisted by module type — adding a new module's transient fields here is
+ * a deliberate, narrow opt-in, not a global filter. */
+const TRANSIENT_DATA_FIELDS_BY_TYPE: Readonly<Record<string, readonly string[]>> = {
+  doom: ['mpMode', 'mpLive', 'players', 'pending'],
+};
+
+/** Strip transient fields from `data` for the given module type (no-op when the
+ * type has no entry). Mutates in place; only call on plain objects you own,
+ * which the loader does after `tempYdoc.getMap('nodes').toJSON()`. */
+function stripTransientDataFields(type: string, data: unknown): void {
+  const fields = TRANSIENT_DATA_FIELDS_BY_TYPE[type];
+  if (!fields || !data || typeof data !== 'object') return;
+  const obj = data as Record<string, unknown>;
+  for (const field of fields) delete obj[field];
+}
 
 export interface PatchEnvelope {
   envelopeVersion: typeof ENVELOPE_VERSION;
@@ -207,6 +242,38 @@ export interface LoadResult {
 }
 
 /**
+ * Rewrite an edge's source/target portIds via the endpoint nodes' module-def
+ * `migrateEdgePortId` hook, when the saved version is behind the current def.
+ * Returns the edge unchanged when no endpoint migrates. Pure (returns a new
+ * object only when something actually changed). Exported for unit tests.
+ */
+export function migrateEdgeEndpoints(
+  edge: Edge,
+  nodes: Record<string, ModuleNode>,
+  moduleSchemas: Record<string, number>,
+): Edge {
+  const rewrite = (end: { nodeId: string; portId: string }): string => {
+    const node = nodes[end.nodeId];
+    if (!node) return end.portId;
+    const def = getAnyDomainDef(node.type);
+    if (!def?.migrateEdgePortId) return end.portId;
+    const from = moduleSchemas[node.type] ?? 1;
+    if (from >= def.schemaVersion) return end.portId;
+    return def.migrateEdgePortId(end.portId, from) ?? end.portId;
+  };
+  const newSourcePort = rewrite(edge.source);
+  const newTargetPort = rewrite(edge.target);
+  if (newSourcePort === edge.source.portId && newTargetPort === edge.target.portId) {
+    return edge;
+  }
+  return {
+    ...edge,
+    source: { ...edge.source, portId: newSourcePort },
+    target: { ...edge.target, portId: newTargetPort },
+  };
+}
+
+/**
  * Apply an envelope to the live patch + ydoc, replacing whatever's currently
  * loaded. Atomic: wrapped in a single transact so subscribers see one update.
  *
@@ -236,6 +303,26 @@ export function loadEnvelopeIntoStore(
   const diagnostics: LoadDiagnostic[] = [];
   const migratedNodes: Record<string, ModuleNode> = {};
   for (const [id, node] of Object.entries(loadedNodes)) {
+    // ---- BREAKING-CHANGE TYPE REMAP: ruttetra → reshaper ----
+    //
+    // The type id `ruttetra` originally belonged to a fragment-shader
+    // coordinate-REMAP effect (schemaVersion 1). That module was renamed
+    // to RESHAPER, and a NEW, behaviourally-different module — the
+    // authentic forward-scatter Rutt-Etra scope — took over the
+    // `ruttetra` type id (registered at schemaVersion 2).
+    //
+    // Persisted patches saved BEFORE the rename recorded their `ruttetra`
+    // nodes with the old schemaVersion (1) in the envelope's
+    // moduleSchemas. Loading them as the new RUTTETRA would silently swap
+    // the look. We detect the old saves by their recorded schemaVersion
+    // (< 2) and remap the node's `type` to `reshaper` so the original
+    // coord-remap behaviour is preserved. Saves recorded at >= 2 (or with
+    // no recorded version, which only happens for freshly-created nodes
+    // in the current build) are left as the new RUTTETRA.
+    if (node.type === 'ruttetra' && (envelope.moduleSchemas['ruttetra'] ?? 1) < 2) {
+      (node as { type: string }).type = 'reshaper';
+    }
+
     // Look up across both per-domain registries — video modules
     // (PICTUREBOX, CAMERA, LINES, ...) live in the video registry and
     // would otherwise be silently dropped on load. See
@@ -265,6 +352,12 @@ export function loadEnvelopeIntoStore(
         continue;
       }
     }
+    // Strip transient / session-state fields that persisted into the envelope
+    // (e.g. DOOM's mpMode lobby gate — see TRANSIENT_DATA_FIELDS_BY_TYPE). The
+    // toJSON() above severed Yjs proxies, so `migratedData` is a plain object
+    // we own and can safely mutate. Run AFTER migration so a per-module
+    // migrate() that touches transient fields still sees them in the input.
+    stripTransientDataFields(node.type, migratedData);
     migratedNodes[id] = { ...node, data: migratedData };
   }
 
@@ -285,7 +378,13 @@ export function loadEnvelopeIntoStore(
         });
         continue;
       }
-      livePatch.edges[edge.id] = edge;
+      // EDGE-PORT MIGRATION: when an endpoint's node is a type whose saved
+      // schemaVersion is behind the current def AND that def declares an
+      // edge-port migration, rewrite the portId. This keeps CV cables wired to
+      // DOOM's old bare gate ports (`up`/…) driving the p1 group (`p1_up`/…)
+      // after the single shared input set became four per-slot groups (#353).
+      const migrated = migrateEdgeEndpoints(edge, migratedNodes, envelope.moduleSchemas);
+      livePatch.edges[migrated.id] = migrated;
     }
   });
 

@@ -8,16 +8,57 @@
 //
 // Re-uses the existing wavetable-vco AudioWorklet processor without
 // modification — WAVVIZ is the SAME oscillator with extra post-fx.
+//
+// Inputs:
+//   pitch (pitch): V/oct pitch input, 0V = C4.
+//   fm (audio): audio-rate FM modulator (post-wavetable, pre-fold).
+//   wavePos (cv, paramTarget=wavePos): displaces the wavetable morph position.
+//   foldAmount (cv, linear, paramTarget=foldAmount): displaces the wavefold amount.
+//
+// Outputs:
+//   audio (audio): post-fold waveform output.
+//   scope (mono-video): live oscilloscope trace of the same post-fold signal.
+//
+// Params:
+//   tune (linear -36..36 st, default 0): coarse tune in semitones.
+//   fine (linear -100..100 ¢, default 0): fine tune cents.
+//   wavePos (linear 0..1, default 0): wavetable morph position.
+//   fmAmount (linear -1..1, default 0): FM input depth.
+//   foldAmount (linear 0..1, default 0): West-Coast wavefolder amount.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/wavetable-vco.js?url';
 import { buildFoldCurve } from '$lib/audio/fold-curve';
+import { patch as livePatch } from '$lib/graph/store';
 
+/** Synthetic-table dimensions used when no user preset is loaded. The
+ *  worklet's `'load'` message accepts ARBITRARY frameSize/frameCount, so
+ *  a user-preset load (typically 256×N from the bundled WAVs) overrides
+ *  these without any worklet change. */
 const FRAME_SIZE = 2048;
 const FRAME_COUNT = 16;
 
+/** Poll period for picking up node.data wavetable changes (mirrors WAVECEL). */
+const POLL_MS = 200;
+
 const loadedContexts = new WeakSet<BaseAudioContext>();
+
+/** Persisted wavetable selection on the WAVVIZ node. Optional — when absent,
+ *  the factory keeps the synthetic basic-shapes table loaded at spawn. */
+export interface WavvizData {
+  /** number[frames][samples] in [-1, +1]. Yjs-safe + structuredClone-safe. */
+  wavetableFrames?: number[][];
+  /** Friendly name (e.g. preset label) shown in the card. */
+  wavetableLabel?: string;
+}
+
+/** Stable signature for cheap change detection in the poll loop. */
+function wavvizFramesSignature(d: WavvizData | undefined): string {
+  const fs = d?.wavetableFrames;
+  if (!Array.isArray(fs) || fs.length === 0) return 'synth';
+  return `user:${fs.length}x${fs[0]!.length}:${d?.wavetableLabel ?? ''}`;
+}
 
 function generateBasicTable(): Float32Array {
   const table = new Float32Array(FRAME_SIZE * FRAME_COUNT);
@@ -107,12 +148,39 @@ export const wavvizDef: AudioModuleDef = {
       outputChannelCount: [1],
     });
 
-    const table = generateBasicTable();
-    const buf = table.buffer;
-    workletNode.port.postMessage(
-      { type: 'load', table: buf, frameSize: FRAME_SIZE, frameCount: FRAME_COUNT },
-      [buf]
-    );
+    // Initial table — either the user-persisted preset (from node.data) or
+    // the synthetic basic-shapes table. We post AT LEAST ONE 'load' message
+    // before audio starts so the worklet always has something to play.
+    function postTableFromData(data: WavvizData | undefined): void {
+      if (Array.isArray(data?.wavetableFrames) && data!.wavetableFrames!.length > 0) {
+        const fs = data!.wavetableFrames!;
+        const fcount = fs.length;
+        const fsize = fs[0]!.length;
+        const flat = new Float32Array(fcount * fsize);
+        for (let f = 0; f < fcount; f++) {
+          const row = fs[f]!;
+          // Defensive: rows shorter than fsize zero-pad implicitly via
+          // Float32Array init. Longer rows truncated.
+          const n = Math.min(row.length, fsize);
+          for (let s = 0; s < n; s++) flat[f * fsize + s] = row[s]!;
+        }
+        const buf = flat.buffer;
+        workletNode.port.postMessage(
+          { type: 'load', table: buf, frameSize: fsize, frameCount: fcount },
+          [buf],
+        );
+      } else {
+        const table = generateBasicTable();
+        const buf = table.buffer;
+        workletNode.port.postMessage(
+          { type: 'load', table: buf, frameSize: FRAME_SIZE, frameCount: FRAME_COUNT },
+          [buf],
+        );
+      }
+    }
+
+    let currentSignature = wavvizFramesSignature(node.data as WavvizData | undefined);
+    postTableFromData(node.data as WavvizData | undefined);
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
     for (const def of wavvizDef.params) {
@@ -138,6 +206,25 @@ export const wavvizDef: AudioModuleDef = {
     scopeAnalyser.fftSize = 2048;
     scopeAnalyser.smoothingTimeConstant = 0;
     outGain.connect(scopeAnalyser);
+
+    // Poll node.data for wavetable changes — when the card writes a new
+    // wavetableFrames (via the preset dropdown) we re-post the 'load'
+    // message. Same pattern as WAVECEL's poll loop.
+    let alive = true;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    function poll(): void {
+      if (!alive) return;
+      const live = livePatch.nodes[node.id];
+      if (live) {
+        const nextSig = wavvizFramesSignature(live.data as WavvizData | undefined);
+        if (nextSig !== currentSignature) {
+          currentSignature = nextSig;
+          postTableFromData(live.data as WavvizData | undefined);
+        }
+      }
+      pollTimer = setTimeout(poll, POLL_MS);
+    }
+    pollTimer = setTimeout(poll, POLL_MS);
 
     return {
       domain: 'audio',
@@ -170,6 +257,9 @@ export const wavvizDef: AudioModuleDef = {
         return params.get(paramId)?.value;
       },
       dispose() {
+        alive = false;
+        if (pollTimer !== null) clearTimeout(pollTimer);
+        pollTimer = null;
         workletNode.disconnect();
         shaper.disconnect();
         outGain.disconnect();

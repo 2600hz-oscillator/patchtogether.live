@@ -36,7 +36,7 @@ test('skins: switcher renders in topbar with default skin active', async ({ page
   await expect(page.getByTestId('skin-current-label')).toHaveText('Default');
 });
 
-test('skins: popover lists all 6 in-tree skins', async ({ page }) => {
+test('skins: popover lists all 8 in-tree skins', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await openSwitcher(page);
@@ -47,6 +47,8 @@ test('skins: popover lists all 6 in-tree skins', async ({ page }) => {
     'vaporwave',
     'vintage',
     'matrixcowboy',
+    'diner',
+    'lcars',
   ]) {
     await expect(page.getByTestId(`skin-option-${id}`)).toBeVisible();
   }
@@ -94,6 +96,8 @@ test('skins: each shipped skin sets the expected --bg', async ({ page }) => {
     { id: 'vaporwave', bg: '#0a0521' },
     { id: 'vintage', bg: '#1f1a10' },
     { id: 'matrixcowboy', bg: '#020805' },
+    { id: 'diner', bg: '#0a0420' },
+    { id: 'lcars', bg: '#000000' },
   ];
   for (const c of cases) {
     await openSwitcher(page);

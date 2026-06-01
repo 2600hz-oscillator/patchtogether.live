@@ -24,15 +24,17 @@
   //
   // Multiplayer (Yjs awareness): the user who spawned the module is the
   // "host" (lex-smallest current rack-member id on host departure;
-  // see doom-presence.ts → pickHost). The host runs the WASM, broadcasts
-  // a framebuffer envelope at ~10 Hz, and listens for non-self key
-  // envelopes (relayed from spectators) → pushes them into the runtime's
-  // key queue. Spectators don't load the WASM — they just decode + render
-  // the host's framebuffer + relay their own keystrokes back.
+  // see doom-presence.ts → pickHost). Each JOINED player runs its OWN WASM
+  // and renders its own POV. An unjoined spectator runs no WASM — its surface
+  // stays black (the DOOM attract screen) until it JOINS — and relays its own
+  // keystrokes to the host over a tiny key envelope.
   //
-  // The runtime + framebuffer broadcast layer is intentionally a thin
-  // wrapper around the doom-presence.ts encode/decode helpers — those
-  // helpers are exhaustively unit-tested and the card just plumbs them.
+  // NO FRAMEBUFFER MIRROR (relay-OOM fix): the host used to base64 its ~1.4 MB
+  // framebuffer into a Yjs awareness field at ~10 Hz so spectators could watch
+  // the host's screen. The Hocuspocus relay holds + rebroadcasts awareness in
+  // process memory, so that firehose OOM-killed it (exit 137), wiping shared
+  // state. The whole framebuffer-over-awareness path was removed; awareness now
+  // carries only tiny fields (key envelopes, host claim, join-request).
   //
   // Sound: stereo audio outputs (audio_l / audio_r) are wired through the
   // new video → audio cross-domain bridge (PR-A) but stay silent in v1
@@ -40,24 +42,33 @@
   // real audio.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { useProvider } from '$lib/multiplayer/provider-context';
   import { patch, ydoc } from '$lib/graph/store';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
-  import { doomDef, type DoomHandleExtras } from '$lib/video/modules/doom';
-  import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
+  import { type DoomHandleExtras } from '$lib/video/modules/doom';
+  // The per-slot CV-gate constants (CV_GATE_PORT_IDS / cvGatePortIdForSlot /
+  // DOOM_MP_SLOTS) used to drive inline <Handle> markup in this card; that
+  // markup now lives inside PatchPanel via buildDoomPatchPanelSections, so
+  // the imports here stay tight to what the script actually consumes.
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import { buildDoomPatchPanelSections } from '$lib/doom/doom-patchpanel-ports';
+  import { isOwnSlotCvGatePatched, isCvGatePatched } from '$lib/doom/doom-input-mode';
+  import {
+    bumpAwarenessUpdate,
+    bumpElectionRecompute,
+    readCounters,
+  } from '$lib/doom/doom-instrumentation';
   import { HeldKeyTracker } from '$lib/doom/held-keys';
   import {
     encodeKey,
     collectIncomingKeyPushes,
-    encodeFrame,
-    decodeFrame,
-    decodeFrameBuffer,
-    pickHost,
     type RelayCursor,
   } from '$lib/doom/doom-presence';
+  import { decideHostRole } from '$lib/doom/doom-host-authority';
+  import { electionAwarenessSignature } from '$lib/doom/doom-awareness-signature';
   import {
     serializeRoster,
     serializePending,
@@ -69,7 +80,6 @@
     assignSlots,
     promotePending,
     pruneRosterState,
-    hasUnjoinedSpectator as rosterHasUnjoinedSpectator,
     type DoomRoster,
     type DoomRosterState,
   } from '$lib/doom/doom-roster';
@@ -81,6 +91,12 @@
     type TiccmdEnvelope,
   } from '$lib/doom/doom-netcode';
   import {
+    LockstepTransport,
+    DEFAULT_INPUT_DELAY_TICS,
+    consolidatedTicFieldFor,
+    computeBarrierFloor,
+  } from '$lib/doom/doom-lockstep';
+  import {
     slotColorCss,
     slotLabel,
     slotBadge,
@@ -88,6 +104,13 @@
     spectatorBadge,
     type DoomViewerStatus,
   } from '$lib/doom/doom-player-identity';
+  import {
+    computeMpLive,
+    joinAffordance,
+    shouldHotJoinRelaunch,
+  } from '$lib/doom/doom-gating';
+  import { shouldOpenMultiplayer, guestWaitingState } from '$lib/doom/doom-session';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -101,6 +124,14 @@
   let loadError = $state<string | null>(null);
   let isHost = $state(true);          // true on first spawn; recomputed from awareness
   let memberIds = $state<string[]>([]); // including self
+  // Storm-throttle instrumentation (the multiplayer-hang guard). The probe
+  // reads these via the debug hook to assert that the EXPENSIVE election/roster
+  // recompute stays bounded per-second even while awareness updates flood in at
+  // the per-tic rate. Kept in MODULE scope (doom-instrumentation, keyed by node
+  // id) rather than as per-instance closure vars so they're MONOTONIC across a
+  // card remount — a hot-join relaunch (or SvelteFlow node remount) used to
+  // reset closure counters to 0 mid-run, which made the probe's
+  // (end - baseline) aggregate go NEGATIVE.
   // ---- Slice 3: per-peer instance model + roster ----
   //
   // ONE shared DOOM node lives on the canvas (the host spawned it; every
@@ -123,6 +154,30 @@
   let netStarted = $state(false);           // our DoomNetcode is running
   let isNetArbiter = $state(false);         // lex-min player == arbiter
   let netcode: DoomNetcode | null = null;
+  // ---- P1: true deterministic lockstep ----
+  //
+  // When a >1-player netgame launches, every peer runs a TRUE shared simulation:
+  // each appends its per-tic ticcmd to a Yjs Y.Array append-log, reads the log,
+  // consolidates an ordered per-tic TicSet, and feeds it into the WASM barrier
+  // (extras.receiveTicSet). The sim advances only over complete TicSets and
+  // PAUSES (never spins) when starved. This replaces the slice-5 last-value
+  // awareness overlay + the #339 reinject band-aid on the lockstep path, so
+  // monsters/barrels/health/positions are byte-identical across peers. A lone
+  // (numPlayers==1) game leaves lockstep OFF → single-player is byte-identical.
+  let lockstep: LockstepTransport | null = null;
+  let lockstepActive = $state(false);
+  // The next consolidated tic we still need to deliver (== engine recvtic).
+  let lockstepNextTic = 0;
+  // Highest local tic we've appended to the shared log (gap-free append cursor).
+  let lockstepAppendedThru = -1;
+  // Launch generation of the active lockstep game (== launchId). Namespaces the
+  // shared log + the per-peer consolidated-tic awareness floor field so a
+  // relaunch starts fresh (issue #348).
+  let lockstepGeneration = 0;
+  // Throttle the barrier-floor prune so we delete a stale prefix ~1–2×/sec, not
+  // every rAF (deleting an empty prefix is a no-op, but recomputing the floor +
+  // scanning the log each frame is wasted work). Wall-clock millis of last prune.
+  let lockstepLastPruneMs = 0;
   // ---- Slice 4: New Game dialog + Launch state ----
   //
   // The arbiter (rack host = lex-min member = player 0) picks mode/skill/
@@ -170,6 +225,43 @@
       if (!target.data) target.data = {};
       (target.data as Record<string, unknown>).mpMode = next;
     });
+  }
+  // ---- Round 5: host-authoritative "MP is live" signal ----
+  //
+  // A guest's Join button is enabled IFF the host is currently running a
+  // multiplayer game (in an active MP session, in-level). Rather than have the
+  // guest INFER that from racy awareness churn, the HOST writes a single Yjs-
+  // synced boolean leaf (node.data.mpLive) each tick; the guest reads it.
+  // mpLive == (mpMode==='multi' AND launched AND gamestate===GS_LEVEL). It is
+  // false at the lobby (no game yet), at intermission (between maps), and in
+  // single-player. Mirrored into $state like roster/mpMode (refreshed in
+  // syncRosterState) because a node-data edit arrives via the Yjs nodes
+  // observer, not Svelte's reactive proxy.
+  let mpLive = $state(false);
+  function readNodeMpLive(): boolean {
+    const target = patch.nodes[id];
+    return (target?.data as { mpLive?: unknown } | undefined)?.mpLive === true;
+  }
+  /** Host-only: persist the MP-live flag on the shared node. Only written when
+   *  it actually flips (avoids a per-tick Yjs write storm). Non-LOCAL_ORIGIN
+   *  session state, same rationale as mpMode / the roster leaves. */
+  function writeNodeMpLive(next: boolean): void {
+    if (readNodeMpLive() === next) return; // no-op when unchanged
+    ydoc.transact(() => {
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      (target.data as Record<string, unknown>).mpLive = next;
+    });
+  }
+  /** Host-only: recompute mpLive from our own session state + publish it if it
+   *  changed. Called from the render loop (gamestate is polled there) + on the
+   *  explicit session-mode transitions. */
+  function refreshMpLiveAsHost(): void {
+    if (!isHost) return;
+    const next = computeMpLive({ mpMode, launched, gamestate });
+    mpLive = next;
+    writeNodeMpLive(next);
   }
   /** Host action: open the multiplayer lobby. Seats the host as player 0 +
    *  starts everyone's roster/netcode path; guests then see Join. */
@@ -351,7 +443,17 @@
       if (loadStatus === 'idle') void tryLoad();
       return;
     }
+    // Own-slot-only CV routing (#353): bind the factory to this peer's slot so
+    // its CV-gate group drives the sim + other slots' CV is ignored locally.
+    extras.setOwnSlot(slot);
     extras.startNetGame(env.settings, slot);
+    // P1: arm true lockstep for a >1-player game. Both peers start the level at
+    // the same shared tic 0 (recvtic=gametic=0 after dgpt_start_netgame) with
+    // the same seed/settings (identical skill/episode/map/numPlayers → identical
+    // G_InitNew + RNG LUT), so the first consolidated TicSet (tic 0) is the
+    // shared start. The launchId is the log GENERATION so a (re)launch uses a
+    // fresh shared log. A lone game leaves lockstep OFF (single-player byte-exact).
+    setupLockstep(env.settings.numPlayers, slot, env.launchId);
     // G_InitNew runs synchronously inside dgpt_start_netgame, so the level is
     // loaded immediately. If for any reason it didn't take (gamestate still on
     // the demo screen), keep the pending launch so the render loop re-applies.
@@ -360,6 +462,40 @@
     } else {
       pendingLaunch = env;
     }
+  }
+
+  /** P1: (re)arm the lockstep barrier + transport for this launch. For a lone
+   *  game (numPlayers <= 1) it disarms lockstep entirely (single-player path).
+   *  Idempotent — a relaunch (next map / P2 restart) rebuilds the transport at
+   *  the new roster size and resets the shared tic clock to 0. */
+  function setupLockstep(numPlayers: number, slot: number, generation: number): void {
+    const extras = getExtras();
+    if (!extras) return;
+    if (numPlayers <= 1) {
+      extras.setLockstep(false);
+      extras.setInputDelay(0);
+      lockstep = null;
+      lockstepActive = false;
+      clearConsolidatedTicAwareness(lockstepGeneration);
+      return;
+    }
+    extras.setLockstep(true);
+    // INPUT-DELAY buffer: build local ticcmds D tics ahead of gametic so each
+    // peer's per-tic entry has ~D×28.5ms to propagate through the relay before
+    // the barrier needs it — the sim runs at 35Hz instead of stalling every tic
+    // waiting on an in-flight remote TicSet. Determinism is preserved (true tic
+    // numbers + identical consolidated TicSet per tic). Trade-off: the marine
+    // responds D tics (~171ms) later — normal netplay latency.
+    extras.setInputDelay(DEFAULT_INPUT_DELAY_TICS);
+    // A relaunch uses a fresh generation; clear our stale floor field from the
+    // PREVIOUS generation so it can't linger in awareness (issue #348).
+    if (generation !== lockstepGeneration) clearConsolidatedTicAwareness(lockstepGeneration);
+    lockstep = new LockstepTransport({ doc: ydoc, moduleId: id, slot, numPlayers, generation });
+    lockstepActive = true;
+    lockstepNextTic = 0;
+    lockstepAppendedThru = -1;
+    lockstepGeneration = generation;
+    lockstepLastPruneMs = 0;
   }
 
   /** Render-loop hook: if a launch is pending (runtime wasn't ready when the
@@ -373,9 +509,23 @@
    *  moves in our world. Ignores our own slot (the netcode already filters
    *  self, but guard defensively) + spectators (no runtime). */
   function applyRemoteTiccmd(env: TiccmdEnvelope): void {
-    if (mySlot !== null && env.slot === mySlot) return;
     const extras = getExtras();
     if (!extras) return;
+    // NEVER let a remote injection drive THIS peer's OWN console-player slot —
+    // its locally-built ticcmd (G_BuildTiccmd) is authoritative. This is the
+    // host-freeze guard: the per-rAF gap-fill (reinjectKnownTiccmds, #339) re-
+    // fires every present peer's last-known envelope each tic; if any of them
+    // carried (or a slot race made them appear to carry) OUR slot, re-injecting
+    // it would fight/overwrite our own marine's input → the host stops responding
+    // to its own keys the instant a remote peer is being re-fed. We compare
+    // against the AUTHORITATIVE C consoleplayer (getConsolePlayerState().slot),
+    // not just the reactive `mySlot` mirror, so a transient mirror lag during a
+    // relaunch can't open a window where a remote drives our own slot. (The C
+    // side also guards slot==localplayer; this is the JS-side belt-and-braces the
+    // regression test pins.) `mySlot` is kept as the cheap pre-check.
+    if (mySlot !== null && env.slot === mySlot) return;
+    const ownSlot = extras.getConsolePlayerState()?.slot;
+    if (ownSlot !== undefined && env.slot === ownSlot) return;
     extras.injectRemoteTiccmd(env.slot, {
       forwardmove: env.forwardmove,
       sidemove: env.sidemove,
@@ -399,10 +549,132 @@
     netcode.broadcastLocalTiccmd(mySlot, cmd);
   }
 
-  /** Last remote framebuffer received via awareness — spectator path. The
-   *  card-side rAF tick prefers this over `extras.snapshotFramebuffer()`
-   *  (which is null on spectator pages because they never load WASM). */
-  let lastRemoteFrame: Uint8Array | null = null;
+  /** Approach A — lockstep gap-fill. Each tic, re-apply every present remote
+   *  peer's last-known ticcmd (via the netcode) so a steady/idle remote peer's
+   *  marine stays driven in our world. The netcode fires onRemoteTiccmd →
+   *  applyRemoteTiccmd → injectRemoteTiccmd, refreshing the C overlay table.
+   *  Only meaningful for a joined player running a launched netgame. */
+  function reinjectRemoteTiccmds(): void {
+    if (!netcode) return;
+    if (mySlot === null) return;
+    if (!launched) return;
+    netcode.reinjectKnownTiccmds();
+  }
+
+  /** P1 true-lockstep pump (replaces broadcast + reinject on the lockstep path).
+   *  Each frame: (1) APPEND this peer's freshly-built local ticcmd(s) for the
+   *  tics the engine has built (maketic-1) to the shared ordered log; (2) DRAIN
+   *  every now-complete consolidated TicSet from the log, IN ORDER, into the
+   *  WASM barrier (extras.receiveTicSet). The engine then advances gametic up to
+   *  recvtic on its own runTic and PAUSES (never spins) when a TicSet is
+   *  missing. (3) The arbiter prunes consumed log entries. The sim never
+   *  free-runs and never busy-waits. */
+  function pumpLockstep(): void {
+    if (!lockstepActive || !lockstep) return;
+    if (mySlot === null || !launched) return;
+    const extras = getExtras();
+    if (!extras) return;
+
+    // (1) Append our local input for EVERY built-but-not-yet-logged tic (not
+    // just the latest): the engine can build several tics in one frame, so we
+    // walk from the last-appended tic up to maketic-1 and append each, reading
+    // that tic's exact ticcmd from the ring. This keeps the per-tic stream
+    // GAP-FREE — a gap would stall the barrier forever (the missing tic never
+    // consolidates). Each entry is tagged with its engine tic so every peer
+    // agrees which input belongs to which tic.
+    const maketic = extras.getMaketic();
+    for (let t = lockstepAppendedThru + 1; t <= maketic - 1; t++) {
+      const c = extras.readLocalTiccmdAt(t);
+      if (!c) break; // fell out of the ring (shouldn't happen at our cadence)
+      lockstep.appendLocal(t, c);
+      lockstepAppendedThru = t;
+    }
+
+    // (2) Drain ready TicSets in order, starting at the engine's recvtic. Each
+    // delivered set bumps recvtic in the WASM, releasing one more tic for the
+    // next runTic to advance.
+    lockstepNextTic = extras.getRecvtic();
+    lockstepNextTic = lockstep.drainReady(lockstepNextTic, (tic, numPlayers, set) => {
+      extras.receiveTicSet(tic, numPlayers, set);
+    });
+
+    // (3) Publish OUR highest-consolidated tic (engine recvtic) so the arbiter
+    // can compute the barrier floor across all live peers (issue #348). recvtic
+    // is the last tic we have a complete TicSet for + have advanced past, so
+    // everything below it is consumed on our side.
+    publishConsolidatedTic(extras.getRecvtic());
+
+    // (4) Arbiter prunes consumed entries below the BARRIER FLOOR so the log
+    // never grows unbounded → relay OOM. The floor = min(consolidated tic) over
+    // ALL live peers, computed from the published awareness values: it never
+    // drops a tic any live peer still needs (a slow/reconnecting peer holds the
+    // floor back; a hopelessly-wedged peer trips the transport's hard cap +
+    // must resync via synchronized restart). Throttled to ~2/sec — pruning a
+    // consumed prefix doesn't change what any peer simulates (determinism kept).
+    if (isNetArbiter) {
+      const now = Date.now();
+      if (now - lockstepLastPruneMs >= LOCKSTEP_PRUNE_INTERVAL_MS) {
+        lockstepLastPruneMs = now;
+        const floor = readBarrierFloor();
+        lockstep.pruneBelowFloor(floor);
+      }
+    }
+  }
+
+  /** Min interval between barrier-floor prunes (issue #348). ~2/sec keeps the
+   *  log bounded without rescanning it every rAF. */
+  const LOCKSTEP_PRUNE_INTERVAL_MS = 500;
+
+  /** Publish THIS peer's highest-consolidated tic (recvtic) onto its awareness
+   *  state, keyed by module + launch generation. Idempotent-cheap: skips the
+   *  write when the value is unchanged so an idle/paused peer doesn't churn
+   *  awareness. Read by the arbiter via readBarrierFloor (issue #348). */
+  let lastPublishedConsolidatedTic = -1;
+  function publishConsolidatedTic(recvtic: number): void {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return;
+    if (recvtic === lastPublishedConsolidatedTic) return;
+    lastPublishedConsolidatedTic = recvtic;
+    aw.setLocalStateField(consolidatedTicFieldFor(id, lockstepGeneration), { slot: mySlot, t: recvtic });
+  }
+
+  /** Clear our published consolidated-tic field for `generation` (on relaunch /
+   *  disarm) so a stale value can't drag a future floor to 0 (issue #348). */
+  function clearConsolidatedTicAwareness(generation: number): void {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return;
+    aw.setLocalStateField(consolidatedTicFieldFor(id, generation), null);
+    lastPublishedConsolidatedTic = -1;
+  }
+
+  /** Read every live peer's published consolidated tic from awareness and
+   *  compute the BARRIER FLOOR = min across all live slots (issue #348). A live
+   *  roster slot with no published value forces the floor to 0 (no prune) — the
+   *  conservative safety rule (never drop a tic a live peer might still need). */
+  function readBarrierFloor(): number {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return 0;
+    const numPlayers = Math.max(1, rosterSize(roster));
+    const field = consolidatedTicFieldFor(id, lockstepGeneration);
+    const bySlot: (number | undefined)[] = new Array(numPlayers).fill(undefined);
+    for (const [, state] of aw.getStates()) {
+      const v = (state as Record<string, unknown>)?.[field] as
+        | { slot?: number | null; t?: number }
+        | null
+        | undefined;
+      if (!v || typeof v.t !== 'number') continue;
+      const s = v.slot;
+      if (typeof s !== 'number' || s < 0 || s >= numPlayers) continue;
+      // Lowest report wins per slot if a slot somehow reports twice (shouldn't);
+      // conservative for the floor.
+      if (bySlot[s] === undefined || v.t < (bySlot[s] as number)) bySlot[s] = v.t;
+    }
+    return computeBarrierFloor(bySlot, numPlayers);
+  }
+
   /** Local user id used for host election. Resolved lazily from the
    *  provider's awareness `user.id` field (set by /r/[id]'s presence
    *  init OR by tests calling __setAwarenessUser). Falls back to a
@@ -435,6 +707,29 @@
       }
     }
     return out;
+  }
+
+  /** This client's OWN rack ownership, resolved from RELIABLE local identity
+   *  (the provider's LOCAL awareness `user.isRackOwner`, which the page set
+   *  from server data — NOT received over the network). This is the input that
+   *  makes host election split-brain-proof: a client trusts what IT knows about
+   *  itself, never a count of (possibly-empty) remote awareness.
+   *
+   *    true  → confirmed owner (data.rackspace.ownerUserId === currentUserId).
+   *    false → confirmed authed NON-owner (the rack has an owner; it's not me).
+   *    null  → anon member (no `isRackOwner` field published) OR no provider —
+   *            a rack with no owner concept, so the deterministic lex-min
+   *            fallback in decideHostRole applies.
+   *
+   *  multiplayer/presence.ts publishes `isRackOwner: true|false` for authed
+   *  users and OMITS the field for anon users, giving exactly this tri-state. */
+  function resolveLocalOwnership(): boolean | null {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return null;
+    const state = aw.getLocalState() as { user?: { isRackOwner?: boolean } } | null;
+    const flag = state?.user?.isRackOwner;
+    return flag === true ? true : flag === false ? false : null;
   }
 
   /** Resolve a rack user's display name from awareness presence (the `user`
@@ -479,26 +774,10 @@
   // Spectator/pending label + badge (empty for an active player).
   let specLabel = $derived<string>(spectatorLabel(viewerStatus, myPendingSlot));
   let specBadge = $derived<string>(spectatorBadge(viewerStatus, myPendingSlot));
-  // Slice 6: a peer that has no ACTIVE slot is spectating — it renders the
-  // host's framebuffer mirror rather than its own WASM. This covers BOTH the
-  // pure spectator (no slot, no loaded WASM) AND the pending late joiner (WASM
-  // loaded but its launched netgame hasn't started yet, so its own
-  // snapshotFramebuffer would show an idle demo screen — we must show the
-  // running game instead). Only an active, launched player renders its own POV.
-  let isSpectating = $derived<boolean>(mySlot === null && memberIds.length > 1);
-
-  // Push the spectator/player status down to the video module so it knows
-  // whether to render the host mirror (spectator) or tick + render its OWN
-  // real-time sim (active player). Critically, this runs on EVERY transition:
-  // a peer that spectated (received host frames) and then JOINED must flip
-  // back to its own sim — otherwise the module stays pinned to the slow
-  // ~10 Hz host mirror (the "player 2 only sees player 1's view, staggeringly
-  // slow" bug). $effect re-runs whenever isSpectating changes.
-  $effect(() => {
-    const spectating = isSpectating;
-    const extras = getExtras();
-    extras?.setSpectating(spectating);
-  });
+  // A peer with no ACTIVE slot is an unjoined spectator: it never loaded WASM,
+  // so its preview canvas stays black (the DOOM attract screen) until it JOINS
+  // and brings up its own runtime + POV. There is no host-framebuffer mirror to
+  // render anymore (relay-OOM fix) — a spectator simply shows nothing.
 
   function syncIdentity(): void {
     myUsername = resolveUsername(resolveLocalUserId());
@@ -529,6 +808,10 @@
     } else {
       loadStatus = 'ready';
       loadError = null;
+      // Own-slot-only CV routing (#353): the runtime now exists, so (re)apply
+      // this peer's slot — the $effect that tracks mySlot may have run while
+      // getExtras() was still null (WASM loading), so set it again here.
+      extras.setOwnSlot(mySlot);
     }
   }
 
@@ -611,6 +894,18 @@
       mpMode = 'multi';
       writeNodeMpMode('multi');
     }
+    // Round 5: a GUEST can only join when the host is currently running a
+    // multiplayer game (mpLive). The Join button is already disabled otherwise,
+    // but join() is also reachable via the dev/e2e hook — so guard here too.
+    // A guest never implicitly opens MP anymore: the host's "start a
+    // multiplayer game" is the single gate; after that, any guest Join is a
+    // valid one-click hot-join. (Already-seated guests fall through to the
+    // idempotent re-ensure below regardless.)
+    if (!isHost) {
+      const combinedNow = combinedRoster(readNodeRosterState());
+      const seated = slotForUser(combinedNow, me) !== null;
+      if (!seated && !mpLive) return; // no live game to hot-join — no-op
+    }
     // Already seated (active OR pending)? Just ensure our local instance is up.
     // A pending late joiner still loads its WASM now so it can spawn the moment
     // it's promoted at the next map, but it does NOT drive a marine yet (its
@@ -664,12 +959,22 @@
     // is what lets an anon/invite guest actually join when the host hasn't (or
     // can't) press Host Multiplayer first (the operator's "anon sees the widget
     // but no working Join" bug: mpMode stayed undefined, so the roster never
-    // opened). A request to play IS the decision to run MP. Only `mpMode==='single'`
-    // (the host explicitly chose solo) suppresses it. So: open MP when a level
-    // is already going OR someone wants in, unless the host locked single-player.
-    const wantsMp = mpMode === 'multi' || outstandingRequests.length > 0 || rosterSize(combinedRoster(cur)) > 0;
-    if (mpMode === 'single') return;            // host chose single-player — no roster
-    if (!wantsMp) return;                        // nobody wants MP yet — stay idle
+    // opened). A request to play IS the decision to run MP. A host's "Single
+    // Player" choice is only honoured on a genuinely SOLO rack. The moment
+    // OTHER members are present, a launched game must be JOINABLE (the owner's
+    // model: "others can Join IF a multiplayer game is running") — otherwise a
+    // host who clicked Single Player (or whose game launched before anyone
+    // joined) leaves every guest stuck on "Waiting…" with no working Join,
+    // forever (the round-6 deadlock fix). So with members present we always
+    // default to multiplayer.
+    const wantsMp = shouldOpenMultiplayer({
+      mpMode,
+      memberCount: memberIds.length,
+      outstandingRequests: outstandingRequests.length,
+      rosterSize: rosterSize(combinedRoster(cur)),
+      hostLaunched: launched,
+    });
+    if (!wantsMp) return; // solo rack with host on single, or nobody wants MP yet
     // Persist mpMode='multi' (once) so EVERY peer's Join affordance + lobby UI
     // converges, including the requester that triggered this.
     if (mpMode !== 'multi') {
@@ -705,22 +1010,50 @@
     // routes there.)
     const wasInProgress = isGameInProgress();
     const beforeActiveIds = new Set(Object.values(cur.active));
+    // SLOT-0 STABILITY (the "P1 becomes P2" flip): the arbiter is the rack host
+    // and MUST own slot 0. assignSlots seats owner-first, but its owner signal is
+    // resolveOwnerIds() — an awareness read of `user.isRackOwner` that can be
+    // momentarily EMPTY at the exact instant a guest's join-request lands (a
+    // fresh-connect/relay-backfill gap). If it is empty when BOTH the host and a
+    // lex-SMALLER guest are unseated requesters in the same pass, pure lex order
+    // hands slot 0 to the guest and bumps the host to slot 1 — the host's own
+    // consoleplayer flips to 1 (P1→P2) and its marine appears to "freeze" because
+    // it is now driving (and the relaunch reloads it as) the wrong slot. We know
+    // authoritatively, without any awareness read, that THIS peer is the arbiter
+    // (this function early-returns otherwise) and therefore the session leader →
+    // slot 0. So we always include `me` in the owner set fed to assignSlots. This
+    // is correct for an OWNED rack (the host is the owner) AND an anon rack (the
+    // arbiter is the deterministic lex-min leader, which still rightly takes slot
+    // 0). Union with the awareness owners so a DIFFERENT confirmed owner (should
+    // never happen for the arbiter, but defensive) is still respected.
+    const ownerIds = [...new Set([me, ...resolveOwnerIds()])];
     const { state: next, changed } = assignSlots(
       cur,
       filtered,
       false, // seat ACTIVE even mid-level — hot-drop, not next-map reservation
-      resolveOwnerIds(),
+      ownerIds,
     );
     if (changed) {
       writeNodeRosterState(next);
       roster = next.active;
       pending = next.pending;
-      // A new ACTIVE player was added while a level is running → hot-drop:
-      // re-launch the current map so the joiner spawns into it now.
+      // Round 5: a new ACTIVE player was added while a level is running →
+      // AUTOMATIC hot-drop. The arbiter re-launches the current map so the
+      // joiner spawns into it now (no manual host Launch step). This is the
+      // one-click hot-join: the guest's Join raised a request, the arbiter
+      // seated it active here, and this relaunch admits it within ~1-2s.
       const addedActive = Object.values(next.active).some(
         (uid) => !beforeActiveIds.has(uid),
       );
-      if (wasInProgress && addedActive) hotDropRelaunchCurrentMap();
+      if (
+        shouldHotJoinRelaunch({
+          isArbiter: isSessionArbiter(),
+          gameInProgress: wasInProgress,
+          addedActivePlayer: addedActive,
+        })
+      ) {
+        hotDropRelaunchCurrentMap();
+      }
     }
   }
 
@@ -783,6 +1116,17 @@
     }
     netStarted = false;
     isNetArbiter = false;
+    // P1: tear down the lockstep transport + disarm the engine barrier so a
+    // dropped/spectating peer doesn't keep a stale barrier armed.
+    const ex = getExtras();
+    try { ex?.setLockstep(false); } catch { /* runtime may be gone */ }
+    lockstep = null;
+    lockstepActive = false;
+    lockstepNextTic = 0;
+    lockstepAppendedThru = -1;
+    // Drop our consolidated-tic floor field so we don't pin a future floor at a
+    // stale value after we've left the game (issue #348).
+    clearConsolidatedTicAwareness(lockstepGeneration);
   }
 
   // Arbiter-side roster cleanup: when a player closes their tab they drop
@@ -802,18 +1146,6 @@
     }
   }
 
-  /** Does any CURRENT rack member need the host's framebuffer mirror? A member
-   *  needs it iff it is an UNJOINED spectator — it has neither an active slot
-   *  (it plays its own WASM) nor a pending slot (a pending late joiner also
-   *  runs its own WASM, idling until promoted). Self (the host) is always a
-   *  player, so it never counts. This gates the ~10 Hz framebuffer broadcast so
-   *  a fully-seated game (e.g. 2-player coop) sends none — the relay-OOM /
-   *  freeze fix. Reads the combined roster off the shared node so it reflects
-   *  the latest assignment, not a possibly-stale reactive mirror. */
-  function hasUnjoinedSpectator(): boolean {
-    return rosterHasUnjoinedSpectator(readNodeRosterState(), memberIds, resolveLocalUserId());
-  }
-
   // Keep local roster mirror + mySlot in sync with the shared node, and
   // tear down / spin up our netcode as our player status changes.
   function syncRosterState(): void {
@@ -823,6 +1155,10 @@
     // Refresh the host-chosen session mode (single / multi) from the node so
     // guests' lobby UI tracks the host's explicit choice.
     mpMode = readNodeMpMode();
+    // Round 5: refresh the host-authoritative "MP is live" flag. The host is
+    // the writer (refreshMpLiveAsHost), so it keeps its own computed value;
+    // guests adopt whatever the host published.
+    if (!isHost) mpLive = readNodeMpLive();
     const me = resolveLocalUserId();
     const prevSlot = mySlot;
     mySlot = slotForUser(cur.active, me);
@@ -886,8 +1222,83 @@
   // (latchKeyboard), which is the natural re-engage gesture.
   let kbReleased = $state(false);
 
+  // INPUT-MODE SWITCH (owner-approved): a DOOM node is driven by EITHER
+  // CV-gate jacks OR the keyboard, never both. If ANY of this node's
+  // CV-gate inputs (up/down/left/right/space/ctrl/alt) has an incoming
+  // edge, the node is "patched" → CV owns movement and the keyboard
+  // capture is inert (we never claim keys, so the sticky-latch / focus /
+  // `.selected` complexity below is short-circuited). Only when NO
+  // CV-gate input is patched does the keyboard path run.
+  //
+  // Recomputes when cables are added/removed. NOTE the edge set lives in a
+  // SyncedStore-over-Yjs proxy (patch.edges), which is NOT a Svelte $state rune
+  // — reading `patch.edges` inside a $derived does NOT register a Svelte
+  // dependency, so the old `void Object.keys(patch.edges).length` touch never
+  // re-ran when a cable was patched (the edge arrives via Yjs, not a Svelte
+  // signal). That was Bug 4: patching a CV gate did not flip cvGatePatched, so
+  // shouldClaimKey() never went inert and the keyboard kept driving DOOM. Fix:
+  // bump a real $state signal (edgesVersion) from a Yjs edges-map observer
+  // (attachEdgesObserver) and key the $derived on it, so it recomputes on every
+  // edge add/remove. The actual predicate is the pure `isCvGatePatched`.
+  let edgesVersion = $state(0);
+  // PER-SLOT (#353): the keyboard-vs-CV precedence is now per OWN slot. The card
+  // goes keyboard-inert only when THIS viewer's own slot group (p{mySlot+1}_*)
+  // has a CV edge — another player's CV must not gate your keyboard. A spectator
+  // (mySlot null) is never CV-patched (owns no group), so it keeps its keyboard
+  // relay path. cvGatePatched depends on both the edge set and mySlot.
+  //
+  // SINGLE-PLAYER FALLBACK (2026-05-29): in SP (mpMode!=='multi' / not launched),
+  // mySlot stays null but the host IS the lone player driving slot 0. The
+  // own-slot rule has no meaning then — ANY patched gate on this DOOM node
+  // means CV is in play and the keyboard should go inert (the factory's CV
+  // path applies the p1 group automatically in SP, see doom.ts setParam).
+  // Without this, patching GAMEPAD/LFO in SP still let keyboard double-drive
+  // the marine (bug #3 in SP).
+  let cvGatePatched = $derived<boolean>(
+    (void edgesVersion,
+      mySlot !== null
+        ? isOwnSlotCvGatePatched(Object.values(patch.edges), id, mySlot)
+        : isCvGatePatched(Object.values(patch.edges), id)),
+  );
+
+  // When a CV-gate cable is plugged WHILE keyboard keys are held, the
+  // keyboard path goes inert mid-hold and would never deliver the keyup —
+  // leaving the key stuck down in the WASM queue. Release everything held
+  // the instant we flip into CV-only mode (and drop the sticky latch so a
+  // later unpatch re-engages cleanly via a fresh click).
+  $effect(() => {
+    if (cvGatePatched) {
+      kbLatched = false;
+      releaseHeldKeys();
+    }
+    // Bug 4 HARD enforcement: gate the keyboard at the RUNTIME boundary, not
+    // just the window listener. `shouldClaimKey()` short-circuits the JS
+    // keydown/keyup capture, but the runtime is shared with the CV-gate path
+    // and an in-flight / OS-swallowed / autorepeat keypress (or any future
+    // caller) could still reach `setKeyForKeyboardCode`. Driving the runtime's
+    // keyboard-inert flag makes the keyboard truly inert while patched (and
+    // releases any keyboard-origin key still asserted in DOOM's gamekeydown[]
+    // so the marine can't keep walking), while the CV path stays live.
+    getExtras()?.setKeyboardInert(cvGatePatched);
+  });
+
+  // OWN-SLOT-ONLY CV routing (#353 Phase 2): tell the factory which slot this
+  // peer drives so the CV-gate path applies ONLY this slot's input group and
+  // ignores every other slot's CV locally (the deterministic, lockstep-safe
+  // rule). A spectator/unseated peer (mySlot null) drives no slot's CV. Re-runs
+  // whenever mySlot changes (join / promotion / drop) — getExtras() is null
+  // until the runtime exists, so we also re-apply on load via ensureLoaded's
+  // render-loop re-evaluation; this effect catches the steady-state changes.
+  $effect(() => {
+    getExtras()?.setOwnSlot(mySlot);
+  });
+
   function shouldClaimKey(): boolean {
     if (!cardEl) return false;
+    // Patched ⇒ CV-only. A CV-gate cable owns movement; the keyboard is
+    // inert (so we don't fight the CV edge-detector or double-drive the
+    // game). Unpatched ⇒ the keyboard path below runs as before.
+    if (cvGatePatched) return false;
     // a) Latched: the user clicked the card to take keyboard control + has not
     //    explicitly released it. This is the sticky path — it does NOT depend
     //    on the transient focus / `.selected` state that sync churn toggles.
@@ -933,6 +1344,24 @@
   function routeKey(code: string, pressed: boolean): boolean {
     const extras = getExtras();
     if (!extras) return false;
+    // q → KEY_ESCAPE intercept (2026-05-29). The real Escape is the card's
+    // explicit "give back the keyboard" gesture (unlatchKeyboard in the
+    // window listener), so a real Escape never reaches the DOOM engine.
+    // We therefore rebind `q` to send KEY_ESCAPE down so the in-game pause
+    // menu is still reachable from the keyboard while the card has focus.
+    if (code === 'KeyQ') {
+      if (isHost || mySlot !== null) {
+        // Translate ourselves into the underlying doomkey (KEY_ESCAPE = 27)
+        // rather than going through setKeyForKeyboardCode — KeyQ maps to a
+        // gameplay letter by default, and we want the menu, not 'q' typed.
+        extras.pushDoomKey(27, pressed);
+        return true;
+      }
+      // Spectator relay: forward the SAME doomkey envelope so the host's
+      // marine opens its menu on our behalf. Reuse the existing relay path.
+      relayDoomKeyToHost(27, pressed);
+      return true;
+    }
     // An ACTIVE player (host OR a joined guest at its own slot) drives its OWN
     // runtime — every player runs their own WASM + POV in the per-peer instance
     // model, so the key must reach the local sim, NOT be relayed to the host.
@@ -959,7 +1388,24 @@
   // arrow-key node-move + delete-on-Backspace). preventDefault +
   // stopPropagation here is what keeps the arrow keys from reaching SF's
   // node-move handler and the canvas's pan/zoom shortcuts.
+  /** Modifier-state reconciliation: on every keyboard event, if our tracker
+   *  thinks a modifier is held but the event reports it UP, release it (route
+   *  the keyup into the game). Catches the swallowed-keyup case (macOS
+   *  screenshot shortcut holds Ctrl, fires no blur/visibility, and eats the
+   *  keyup → the gun fires forever). Only ever releases MODIFIERS, never
+   *  movement keys, so it does not reintroduce the round-4 movement-dump bug.
+   *  Run BEFORE the down/up bookkeeping so a release for THIS event's own key
+   *  (e.g. an actual Ctrl keyup) is handled normally afterward. */
+  function reconcileHeldModifiers(ev: KeyboardEvent): void {
+    heldKeys.reconcileModifiers({
+      ctrl: ev.ctrlKey,
+      alt: ev.altKey,
+      shift: ev.shiftKey,
+      meta: ev.metaKey,
+    });
+  }
   function onWindowKeyDownCapture(ev: KeyboardEvent): void {
+    reconcileHeldModifiers(ev);
     if (!shouldClaimKey()) return;
     // Escape is the explicit "give back the keyboard" gesture for the sticky
     // latch — release control + drop held keys, and let the event through (do
@@ -980,6 +1426,10 @@
     heldKeys.down(ev.code, ev.repeat);
   }
   function onWindowKeyUpCapture(ev: KeyboardEvent): void {
+    // Reconcile first: a keyup whose own modifier the OS already dropped (or a
+    // keyup for some OTHER key that reveals a previously-swallowed modifier
+    // release) frees any stuck modifier here too.
+    reconcileHeldModifiers(ev);
     // Route the release if we currently CLAIM the keyboard OR we were
     // holding this key — the latter covers a keyup that lands after the
     // card was deselected (clicked another node), which the claim gate
@@ -1052,49 +1502,37 @@
     });
   }
 
+  /** Spectator relay variant that takes a raw doomkey constant rather than a
+   *  KeyboardEvent.code. Used by the q→KEY_ESCAPE intercept so a spectator can
+   *  open the host's pause menu without sending a literal 'q' (which would
+   *  type 'q' into the engine instead of opening the menu). */
+  function relayDoomKeyToHost(doomKey: number, pressed: boolean): void {
+    const provider = providerCtx.get();
+    if (!provider) return;
+    const me = resolveLocalUserId();
+    const env = encodeKey({
+      kind: 'key',
+      moduleId: id,
+      srcUserId: me,
+      doomKey,
+      pressed,
+      ts: Date.now(),
+    });
+    provider.awareness?.setLocalStateField(`doom:${id}:key`, env);
+    queueMicrotask(() => {
+      provider.awareness?.setLocalStateField(`doom:${id}:key`, null);
+    });
+  }
+
   // ---- Awareness wiring ----
-  let frameBroadcastInterval: ReturnType<typeof setInterval> | null = null;
   let awarenessOff: (() => void) | null = null;
   // Edge-trigger cursor for the host-side key relay: last key-envelope ts
   // relayed per source clientID. Without this, the host re-pushes a remote
-  // client's still-present key field on every awareness update (incl. its
-  // own 10 Hz frame broadcast) — a held/stale DOWNARROW then reads as the
-  // player being shoved backward continuously with no key pressed. See
+  // client's still-present key field on every awareness update (host election /
+  // cursor / presence churn) — a held/stale DOWNARROW then reads as the player
+  // being shoved backward continuously with no key pressed. See
   // doom-presence.ts → collectIncomingKeyPushes.
   const keyRelayCursor: RelayCursor = new Map();
-  /** Last frame envelope ts we decoded — guards against re-decoding the
-   *  same payload on every rAF tick (the base64 → bytes hop is ~5 ms). */
-  let lastDecodedFrameTs = 0;
-  /** Whether our awareness state currently carries a frame field. Lets us
-   *  clear it exactly once when we stop broadcasting (no spectators), instead
-   *  of writing null every 100 ms (which is itself awareness churn). */
-  let frameFieldSet = false;
-  function clearFrameFieldIfSet(): void {
-    if (!frameFieldSet) return;
-    frameFieldSet = false;
-    const provider = providerCtx.get();
-    provider?.awareness?.setLocalStateField(`doom:${id}:frame`, null);
-  }
-
-  function pollLatestRemoteFrame(): void {
-    const provider = providerCtx.get();
-    const aw = provider?.awareness;
-    if (!aw) return;
-    let newest: { ts: number; raw: unknown } | null = null;
-    aw.getStates().forEach((s) => {
-      const raw = (s as Record<string, unknown>)[`doom:${id}:frame`];
-      const ts = (raw as { ts?: number } | null)?.ts;
-      if (typeof ts !== 'number') return;
-      if (!newest || ts > newest.ts) newest = { ts, raw };
-    });
-    if (!newest) return;
-    const newestTs = (newest as { ts: number }).ts;
-    if (newestTs <= lastDecodedFrameTs) return;
-    const env = decodeFrame((newest as { raw: unknown }).raw);
-    if (!env || env.moduleId !== id) return;
-    lastRemoteFrame = decodeFrameBuffer(env);
-    lastDecodedFrameTs = newestTs;
-  }
 
   function attachAwareness(): void {
     const provider = providerCtx.get();
@@ -1116,17 +1554,30 @@
       if (!ids.includes(me)) ids.push(me);
       memberIds = ids;
       const myField = `doom:${id}:host`;
-      // Read all clients' "I am host for module X" claims; tiebreak via
-      // pickHost (lex-smallest).
+      // Read all clients' "I am host for module X" claims; used ONLY as the
+      // sticky current-host hint for the anon-rack fallback inside
+      // decideHostRole. It is NEVER what decides an OWNED rack — that comes
+      // from reliable LOCAL ownership, so a guest can't elect itself off a
+      // stale/empty claim set (the split-brain root).
       const candidates: string[] = [];
       states.forEach((s) => {
         const host = (s as Record<string, unknown>)[myField];
         if (typeof host === 'string') candidates.push(host);
       });
       const currentHost = candidates.length > 0 ? candidates.sort()[0]! : null;
-      // The rack owner (if present) is always the host; otherwise lex-min.
-      const newHost = pickHost(currentHost, ids, resolveOwnerIds());
-      isHost = newHost === me;
+      // SPLIT-BRAIN-PROOF host authority: trust what THIS client knows about
+      // ITSELF (resolveLocalOwnership) over any awareness count. A confirmed
+      // owner is host unconditionally; a confirmed guest is NEVER host (it
+      // waits for the owner even if its own awareness shows only itself); only
+      // a genuinely anon rack falls back to the deterministic lex-min election.
+      const decision = decideHostRole({
+        localUserId: me,
+        localIsOwner: resolveLocalOwnership(),
+        currentHost,
+        members: ids,
+        ownerIds: resolveOwnerIds(),
+      });
+      isHost = decision.role === 'host';
       // Only write our claim if it actually changed — otherwise every
       // recomputeHost would emit an awareness update which re-fires
       // 'update' which re-enters recomputeHost (infinite loop seen in
@@ -1158,32 +1609,23 @@
       for (const p of pushes) extras.pushDoomKey(p.doomKey, p.pressed);
     }
 
-    function onIncomingFrame(): void {
-      if (isHost) return;
-      // Slice 3: a JOINED player runs its own WASM + renders its own POV,
-      // so it must NOT overwrite its framebuffer with the host's mirror.
-      // Only unjoined spectators consume the remote-frame path.
-      if (mySlot !== null) return;
-      const states = aw!.getStates();
-      states.forEach((s) => {
-        const raw = (s as Record<string, unknown>)[`doom:${id}:frame`];
-        const env = decodeFrame(raw);
-        if (!env || env.moduleId !== id) return;
-        const buf = decodeFrameBuffer(env);
-        // Cache for the card-side render loop (spectator has no runtime,
-        // so extras.snapshotFramebuffer() returns null; we draw from this).
-        lastRemoteFrame = buf;
-        // Also push into the engine for the GL surface path (videoOut
-        // mirror, etc.).
-        const extras = getExtras();
-        if (extras) extras.pushRemoteFramebuffer(buf);
-      });
-    }
-
-    const update = (): void => {
+    // STORM THROTTLE (the multiplayer-hang fix). DOOM writes each joined peer's
+    // ticcmd to awareness every tic (~35 Hz/player); 2 players ≈ 70 awareness
+    // `update` events/sec. The election/roster/slot/identity machinery below is
+    // EXPENSIVE and depends ONLY on slow-changing fields (membership, ownership,
+    // host-claim, join-request, displayName) — never on the per-tic ticcmd /
+    // relay / signaling / key fields. So we compute a cheap signature of just
+    // those election-relevant fields and run the heavy recompute ONLY when it
+    // actually changed. A pure ticcmd update => signature unchanged => zero
+    // election work. This bounds the observer's per-second cost regardless of
+    // tic rate (was the root cause of both tabs hanging under active play).
+    //
+    // The cheap, already-edge-triggered key relay (onIncomingKey, deduped on
+    // its own cursor) still runs every update — it is what delivers spectator
+    // keypresses and must not be throttled, but it is O(states) + no writes.
+    let lastElectionSig: string | null = null;
+    const runElectionRecompute = (): void => {
       recomputeHost();
-      onIncomingKey();
-      onIncomingFrame();
       // Slice 3: the host prunes roster entries for departed members
       // (leave-by-disconnect).
       reconcileRosterAsArbiter();
@@ -1195,6 +1637,21 @@
       // Slice 5: refresh identity (username + slot color tint) on presence
       // churn — a peer's displayName may arrive after the roster slot.
       syncIdentity();
+      bumpElectionRecompute(id);
+    };
+    const update = (): void => {
+      // Always run the cheap edge-triggered spectator-key relay.
+      onIncomingKey();
+      // Only run the expensive election/roster pass when an election-relevant
+      // awareness field actually changed — NOT for the per-tic ticcmd storm.
+      const sig = electionAwarenessSignature(
+        aw!.getStates() as Map<number, Record<string, unknown> | undefined>,
+        id,
+      );
+      bumpAwarenessUpdate(id);
+      if (sig === lastElectionSig) return;
+      lastElectionSig = sig;
+      runElectionRecompute();
     };
     aw.on('update', update);
     awarenessOff = () => aw.off('update', update);
@@ -1211,69 +1668,19 @@
     // Slice 5: initial identity (username + slot color).
     syncIdentity();
 
-    // Host: broadcast a framebuffer ~10 Hz — but ONLY when an actual unjoined
-    // spectator needs it.
-    //
-    // FREEZE / RELAY-OOM FIX: the framebuffer is ~1 MB raw → ~1.37 MB base64,
-    // and at 10 Hz that is ~13.7 MB/s pushed into a single sticky awareness
-    // field. Awareness state is fanned to every connected peer through the one
-    // long-lived Hocuspocus relay process, so an unconditional host broadcast
-    // hammers the relay at >13 MB/s → it gets OOM-killed (confirmed in
-    // `fly logs -a patchtogether-server-dev`: repeated
-    // "Out of memory: Killed process … (node) total-vm:11.8 GB"). When the
-    // relay reboots, every peer's Yjs sync stalls → the gamestate AND the whole
-    // rack freeze, and any unflushed doc edit (e.g. the just-spawned DOOM node)
-    // is lost when the in-memory doc resets to the last persisted snapshot →
-    // the "DOOM module gone after re-enter" symptom.
-    //
-    // In the per-peer-WASM model EVERY joined player renders its OWN DOOM, so
-    // the mirror is only needed for a peer that is NOT a player (a pure unjoined
-    // spectator with no active AND no pending slot — a pending late joiner runs
-    // its own WASM too). So we broadcast only when such a spectator exists.
-    // 2-player coop (host + 1 joined guest) therefore sends ZERO framebuffer
-    // traffic — relieving the relay AND the awareness-churn that was dropping
-    // keyboard capture.
-    frameBroadcastInterval = setInterval(() => {
-      if (!isHost) {
-        clearFrameFieldIfSet();
-        return;
-      }
-      if (!hasUnjoinedSpectator()) {
-        // No spectator needs the mirror. Clear any frame we previously
-        // broadcast so the ~1.37 MB base64 payload doesn't linger in our
-        // awareness state (buffered on the relay), then stop sending.
-        clearFrameFieldIfSet();
-        return;
-      }
-      const extras = getExtras();
-      if (!extras) return;
-      const snap = extras.snapshotFramebuffer();
-      if (!snap) return;
-      try {
-        const env = encodeFrame({
-          moduleId: id,
-          hostUserId: resolveLocalUserId(),
-          width: 640,
-          height: 400,
-          framebuffer: snap,
-          ts: Date.now(),
-        });
-        aw.setLocalStateField(`doom:${id}:frame`, env);
-        frameFieldSet = true;
-      } catch {
-        // Encoding can throw on buffer mismatch — non-fatal, skip frame.
-      }
-    }, 100);
+    // NO framebuffer broadcast. The host used to push its ~1.4 MB framebuffer
+    // into a `doom:<id>:frame` awareness field at ~10 Hz so unjoined spectators
+    // could mirror its screen; the Hocuspocus relay fans + buffers awareness in
+    // process memory, so that ~13.7 MB/s firehose OOM-killed the relay (exit
+    // 137) → rack freeze + lost-node-on-rejoin. The path is removed: an unjoined
+    // spectator shows the DOOM attract/black screen until it JOINS and runs its
+    // own per-peer WASM. Awareness now carries only tiny fields.
   }
 
   function detachAwareness(): void {
     if (awarenessOff) {
       try { awarenessOff(); } catch { /* */ }
       awarenessOff = null;
-    }
-    if (frameBroadcastInterval !== null) {
-      clearInterval(frameBroadcastInterval);
-      frameBroadcastInterval = null;
     }
   }
 
@@ -1301,47 +1708,92 @@
         retryPendingLaunchIfNeeded();
         const ex = getExtras();
         if (ex) gamestate = ex.getGameState();
-        // Slice 5: broadcast our latest local ticcmd so peers move our marine
-        // in their worlds (cross-peer visibility). Cheap (4 small ints over a
-        // sticky awareness field, deduped by seq on receive).
-        broadcastLocalTiccmd();
+        if (lockstepActive) {
+          // P1 TRUE LOCKSTEP path: append our per-tic ticcmd to the shared
+          // ordered log + drain complete consolidated TicSets into the WASM
+          // barrier. The sim advances only over complete TicSets and pauses
+          // (never spins) when starved — shared state, not an input overlay.
+          // Replaces the slice-5 broadcast + #339 reinject band-aid here.
+          pumpLockstep();
+        } else {
+          // Non-lockstep (lone player / legacy free-run): slice-5 last-value
+          // awareness overlay + #339 gap-fill. Kept so single-player + any
+          // non-lockstep usage is unchanged.
+          broadcastLocalTiccmd();
+          reinjectRemoteTiccmds();
+        }
       }
+      // Round 5: the host publishes the "MP is live" flag every frame (the
+      // write is a no-op unless it actually flipped) so a guest's Join button
+      // enables the instant the host enters GS_LEVEL and disables at
+      // intermission / game end. Cheap: one node read + an early-out.
+      refreshMpLiveAsHost();
+      // Bug 3 ROBUSTNESS: re-push the keyboard-inert state into extras every
+      // frame (idempotent — extras/runtime no-op on no-change). The
+      // cvGatePatched $effect (above) fires the moment the derived flips,
+      // but its `getExtras()?.setKeyboardInert(...)` call is a no-op if
+      // extras is null at that instant — and the engine reconciler may
+      // materialize the doom node a beat AFTER the edge syncs (the order is
+      // not guaranteed under CI's slower scheduling). Without this rAF
+      // reapplication, the runtime keeps `keyboardInert=false` despite the
+      // CV gate being patched, and the e2e #3 test fails on the
+      // `isKeyboardInert()` read. Cheap: one map lookup + a boolean compare
+      // when no change (the extras + runtime setters both early-out).
+      getExtras()?.setKeyboardInert(cvGatePatched);
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {
-          // Active player: pull straight from its own live runtime.
-          // Spectator / pending late joiner (isSpectating): render the host's
-          // framebuffer mirror — a pure spectator has no runtime, and a pending
-          // joiner's runtime is idle (not launched), so in BOTH cases we prefer
-          // the remote frame over the local WASM snapshot.
+          // Pull straight from THIS peer's own live runtime. A joined player
+          // (or lone host) has a runtime → its own POV. A pure unjoined
+          // spectator never loaded WASM → snapshotFramebuffer() is null → the
+          // preview canvas stays black (the DOOM attract screen) until it
+          // JOINS. There is no host-framebuffer mirror to fall back to anymore
+          // (relay-OOM fix).
           const extras = getExtras();
-          let fb: Uint8Array | Uint8ClampedArray | null = null;
-          if (extras && !isSpectating) fb = extras.snapshotFramebuffer();
+          const runtimeReady = extras !== null && loadStatus === 'ready';
+          const fb: Uint8Array | Uint8ClampedArray | null =
+            runtimeReady ? extras.snapshotFramebuffer() : null;
+          // Pre-init canvas guard (Bug #2): snapshotFramebuffer() returns a
+          // live view into WASM linear memory at a fixed offset. Between
+          // module mount and the first I_FinishUpdate() that view points at
+          // uninitialized HEAPU8 bytes — whatever garbage happens to live
+          // there — which we used to blit straight to the canvas as the
+          // colorful pre-game corruption stripes. Two safeties:
+          //  1. Only call snapshotFramebuffer() when WASM finished loading
+          //     (loadStatus === 'ready'). Before that, paint #000 (matches
+          //     the CSS canvas background, so this is purely defensive).
+          //  2. Even when 'ready', if a three-point all-zero sample hits the
+          //     framebuffer (the post-malloc / pre-first-draw state) treat
+          //     it as not-yet-drawn and skip the blit.
+          // The three-point check is O(1) — we deliberately do NOT scan the
+          // full 1 MB framebuffer per frame.
           if (!fb) {
-            // Belt-and-suspenders: the awareness 'update' listener already
-            // populates lastRemoteFrame, but under load chromium can drop
-            // listener firings between heavy awareness payloads. Re-poll
-            // the latest frame envelope on every rAF tick so the canvas
-            // stays current even if no 'update' callback fired this frame.
-            pollLatestRemoteFrame();
-            fb = lastRemoteFrame;
-          }
-          if (fb) {
-            // Upload BGRA → RGBA via inline byte swap. 640×400 = 256k
-            // pixels = 1 MB; the swap is ~16ms on a slow laptop but
-            // tolerable at 10 Hz. The GL path inside the engine already
-            // does this swizzle at zero cost; we accept the cost here
-            // for the small CSS-pixel preview, which doesn't need to
-            // match the engine output bit-for-bit.
-            const img = ctx2d.createImageData(640, 400);
-            const out = img.data;
-            for (let i = 0; i < fb.length; i += 4) {
-              out[i]     = fb[i + 2]!; // R ← B
-              out[i + 1] = fb[i + 1]!; // G
-              out[i + 2] = fb[i]!;     // B ← R
-              out[i + 3] = 255;
+            ctx2d.fillStyle = '#000';
+            ctx2d.fillRect(0, 0, 640, 400);
+          } else {
+            const last = fb.length - 1;
+            const mid = Math.floor(fb.length / 2);
+            const allZeroSample = fb[0] === 0 && fb[last] === 0 && fb[mid] === 0;
+            if (allZeroSample) {
+              ctx2d.fillStyle = '#000';
+              ctx2d.fillRect(0, 0, 640, 400);
+            } else {
+              // Upload BGRA → RGBA via inline byte swap. 640×400 = 256k
+              // pixels = 1 MB; the swap is ~16ms on a slow laptop but
+              // tolerable at 10 Hz. The GL path inside the engine already
+              // does this swizzle at zero cost; we accept the cost here
+              // for the small CSS-pixel preview, which doesn't need to
+              // match the engine output bit-for-bit.
+              const img = ctx2d.createImageData(640, 400);
+              const out = img.data;
+              for (let i = 0; i < fb.length; i += 4) {
+                out[i]     = fb[i + 2]!; // R ← B
+                out[i + 1] = fb[i + 1]!; // G
+                out[i + 2] = fb[i]!;     // B ← R
+                out[i + 3] = 255;
+              }
+              ctx2d.putImageData(img, 0, 0);
             }
-            ctx2d.putImageData(img, 0, 0);
           }
         }
       }
@@ -1372,6 +1824,27 @@
     }
   }
 
+  // Bug 4 fix: observe the shared EDGES map so a cable add/remove (which
+  // arrives via Yjs, NOT a Svelte signal) bumps a real $state — the only thing
+  // the cvGatePatched $derived can track. Without this, patching a CV-gate jack
+  // never flipped the card into CV-only mode and the keyboard kept driving the
+  // game. observeDeep also catches a far-side patch in a multiplayer rack.
+  let edgesObserver: (() => void) | null = null;
+  function attachEdgesObserver(): void {
+    const edgesMap = ydoc.getMap('edges');
+    const handler = (): void => { edgesVersion++; };
+    edgesMap.observeDeep(handler);
+    edgesObserver = () => edgesMap.unobserveDeep(handler);
+    // Seed once in case edges are already present at mount (loaded patch).
+    edgesVersion++;
+  }
+  function detachEdgesObserver(): void {
+    if (edgesObserver) {
+      try { edgesObserver(); } catch { /* */ }
+      edgesObserver = null;
+    }
+  }
+
   // ---- Mount / unmount ----
   onMount(() => {
     startRenderLoop();
@@ -1379,6 +1852,7 @@
     // single-user `/` canvas skips quietly.
     attachAwareness();
     attachNodesObserver();
+    attachEdgesObserver();
     // Capture-phase window listeners (see header). Per-card instance,
     // not module-global — if there were ever >1 DOOM card on the rack
     // (maxInstances:1 prevents that today, but defensively…) each card
@@ -1421,6 +1895,18 @@
         if (typeof opts.map === 'number') mapNum = opts.map;
       },
       launch: () => launchGame(),
+      // e2e keyboard-claim hook: invoke the SAME sticky latch the card's
+      // "Click to capture keyboard" onclick fires (latchKeyboard), WITHOUT a
+      // DOM click/focus. A real user clicks to capture; that path is unchanged.
+      // This exists because in a 2-context Playwright test only one page holds
+      // focus/activeElement — a click+focus-based capture is unreliable for the
+      // backgrounded page (shouldClaimKey()'s focus branch flickers false, the
+      // dispatched keydown is dropped, and the marine never moves). Calling the
+      // latch directly flips kbLatched=true, which shouldClaimKey() honours
+      // regardless of focus/foreground, so input routing is deterministic in
+      // BOTH contexts. Dev-only (this whole __doomCards hook is stripped in
+      // prod); does not change real input/capture behaviour.
+      forceClaimKeyboard: () => latchKeyboard(),
       // Slice 6 e2e hook: drive the running level to its end so the polled
       // gamestate transitions to GS_INTERMISSION (the card re-opens the dialog
       // there). Lets the 2-context late-join test reach the next-map seating
@@ -1439,6 +1925,22 @@
         const ex = getExtras();
         return ex ? ex.getPlayerSlotState(slot) : null;
       },
+      // P1 e2e hooks: the deterministic state digest (the SHARED-STATE oracle —
+      // two lockstepped peers MUST agree) + the engine tic counters so a test
+      // can wait for both sims to reach the same tic before comparing.
+      stateChecksum: () => {
+        const ex = getExtras();
+        return ex ? ex.stateChecksum() : 0;
+      },
+      getTics: () => {
+        const ex = getExtras();
+        return ex
+          ? { maketic: ex.getMaketic(), gametic: ex.getGametic(), recvtic: ex.getRecvtic() }
+          : { maketic: 0, gametic: 0, recvtic: 0 };
+      },
+      // P1 diagnostic: shared-log size (so a test can see whether both peers'
+      // appends are landing in the SAME ordered log).
+      getLockstepLogSize: () => (lockstep ? lockstep.size() : -1),
       getState: () => ({
         roster: { ...roster },
         // Slice 6: the pending (late-join) map + this peer's pending slot +
@@ -1456,9 +1958,14 @@
         // so the real 2-user e2e can assert the lobby state + that the rack
         // owner (not a lex-min guest) is host/player 0.
         mpMode,
+        // Round 5: the host-authoritative "MP is live" flag a guest reads to
+        // enable/disable Join (host in a multi session, in-level). The real
+        // 2-user e2e asserts a guest's Join is disabled until this is true.
+        mpLive,
         ownerIds: resolveOwnerIds(),
         netcodePeers: netcode ? netcode.debugStats().peers : [],
         launched,
+        lockstepActive,
         gamestate,
         // New Game dialog selections (the custom dropdowns write these). The
         // mouse-pick e2e asserts a non-default MODE/SKILL took effect by
@@ -1476,6 +1983,19 @@
         // Slice 6 spectator/pending affordance text.
         specLabel,
         specBadge,
+        // Storm-throttle counters (multiplayer-hang guard): total awareness
+        // updates vs. how many actually triggered the expensive election/roster
+        // recompute. The probe samples these per-second to prove the heavy work
+        // stays bounded under the per-tic ticcmd flood.
+        awarenessUpdateCount: readCounters(id).awarenessUpdateCount,
+        electionRecomputeCount: readCounters(id).electionRecomputeCount,
+        // Real awareness-write rate driver (post-suppression). The probe
+        // samples this to measure the genuine per-tic ticcmd write rate.
+        ticcmdWriteCount: readCounters(id).ticcmdWriteCount,
+        // CV-gate input mode (Bug 4 guard): true => keyboard is inert (CV owns
+        // movement). The probe asserts this flips when a CV gate is patched.
+        cvGatePatched,
+        shouldClaimKey: shouldClaimKey(),
       }),
     };
   });
@@ -1486,6 +2006,7 @@
     stopRenderLoop();
     detachAwareness();
     detachNodesObserver();
+    detachEdgesObserver();
     stopNetcode();
     releaseHeldKeys();
     window.removeEventListener('keydown', onWindowKeyDownCapture, true);
@@ -1494,19 +2015,19 @@
     document.removeEventListener('visibilitychange', onVisibilityChange);
   });
 
-  // ---- Param row ----
-  function setParam(paramId: string) {
-    return (v: number): void => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
-  }
-  let running = $derived<number>(
-    node?.params['running'] ?? doomDef.params.find((p) => p.id === 'running')?.defaultValue ?? 1,
-  );
-  function toggleRunning(): void {
-    setParam('running')(running > 0.5 ? 0 : 1);
-  }
+  // ---- PatchPanel port descriptors ----
+  //
+  // The card has 37 handles (28 inputs + 9 outputs) — well past the legible
+  // inline threshold. Per the canonical PatchPanel pattern used by Hydrogen,
+  // RIOTGIRLS, MIXMSTRS, Pong et al., we collapse them under a corner
+  // trigger. Inputs are split into FOUR per-player sections (P1..P4 × 7
+  // gates); outputs ride on the first section so PatchPanel's sectioned-
+  // output path picks them up. The local viewer's section is labeled
+  // "Player N (you)" so the operator can see at a glance which gates drive
+  // their own marine — this replaces the inline #353 per-slot CSS
+  // emphasis (.hidden-slot-port). Shape contract lives in
+  // doom-patchpanel-ports.ts so it's unit-testable.
+  let patchPanelSections = $derived(buildDoomPatchPanelSections(mySlot));
 </script>
 
 <!-- role="application" + tabindex="0" + onclick: the card IS an
@@ -1563,7 +2084,7 @@
       <span class="player-badge spectator" data-testid="doom-spectator-badge" title={specLabel}>{specBadge}</span>
       <span class="player-label spectating" data-testid="doom-spectator-label">{specLabel}</span>
     {:else}
-      DOOM
+      <ModuleTitle {id} {data} defaultLabel="DOOM" inline />
     {/if}
     {#if isHost}
       <span class="host-badge" title="You are running the DOOM instance for this rack">HOST</span>
@@ -1581,6 +2102,22 @@
       <span class="spec-badge" title="Spectating — host is running the game">SPEC</span>
     {/if}
   </header>
+
+  <!-- All 37 handles (28 inputs + 9 outputs) live under the canonical
+       PatchPanel corner trigger — matches Hydrogen / RIOTGIRLS / MIXMSTRS /
+       Pong / 70-odd other cards. Inputs are split per-player (P1..P4) with
+       the local viewer's section labeled " (you)"; outputs render in the
+       single right column. The previous inline #353 slot-emphasis CSS
+       (.hidden-slot-port) is superseded by the section grouping — every
+       gate is still in the DOM (so cross-peer cables resolve + the
+       io-spec invariant holds), just collapsed under the trigger until
+       hovered/clicked open. -->
+  <PatchPanel
+    nodeId={id}
+    sections={patchPanelSections}
+    groupingStrategy="sectioned"
+    panelWidth={440}
+  >
 
   <div class="game-area">
     <canvas
@@ -1615,58 +2152,26 @@
     {/if}
   </div>
 
-  {#each CV_GATE_PORT_IDS as port, idx (port)}
-    {@const top = 56 + idx * 28}
-    {@const label = port === 'up' ? '↑'
-                  : port === 'down' ? '↓'
-                  : port === 'left' ? '←'
-                  : port === 'right' ? '→'
-                  : port.toUpperCase()}
-    <Handle
-      type="target"
-      position={Position.Left}
-      id={port}
-      style="top: {top}px; --handle-color: var(--cable-cv);"
-    />
-    <span class="port-label left" style="top: {top - 6}px;">{label}</span>
-  {/each}
-
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="out"
-    style="top: 56px; --handle-color: var(--cable-video, #c33);"
-  />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="audio_l"
-    style="top: 96px; --handle-color: var(--cable-audio);"
-  />
-  <span class="port-label right" style="top: 90px;">A-L</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="audio_r"
-    style="top: 124px; --handle-color: var(--cable-audio);"
-  />
-  <span class="port-label right" style="top: 118px;">A-R</span>
-
   {#if isHost && mpMode === undefined}
     <!-- Explicit host start choice (replaces the implicit "2nd member ⇒
          auto-start" detection). The host decides whether this DOOM session is
          single-player or a multiplayer lobby; the choice is stored on the node
          so guests see the lobby state. -->
     <div class="start-choice nodrag" data-testid="doom-start-choice">
-      <button
-        class="start-btn nodrag"
-        data-testid="doom-start-single"
-        onclick={() => void playSinglePlayer()}
-        title="Play DOOM solo (no netgame)"
-      >
-        Single Player
-      </button>
+      {#if memberIds.length <= 1}
+        <!-- Single Player is offered ONLY on a solo rack. With other members
+             present a launched game must be joinable (the owner's model), so we
+             don't offer a choice that would strand them on "Waiting…" — the
+             host starts a multiplayer session instead (deadlock fix). -->
+        <button
+          class="start-btn nodrag"
+          data-testid="doom-start-single"
+          onclick={() => void playSinglePlayer()}
+          title="Play DOOM solo (no netgame)"
+        >
+          Single Player
+        </button>
+      {/if}
       <button
         class="start-btn primary nodrag"
         data-testid="doom-start-multi"
@@ -1679,40 +2184,37 @@
   {/if}
 
   <div class="controls-row">
-    <button
-      class="run-btn nodrag"
-      onclick={toggleRunning}
-      title="Pause / resume the game loop"
-    >
-      {running > 0.5 ? 'Pause' : 'Run'}
-    </button>
-    {#if mpMode !== 'single' && !isHost && mySlot === null && myPendingSlot === null}
-      <!-- Join is offered to ANY unjoined non-host peer (including an anon/invite
-           guest — it carries a stable awareness user.id, so it shows + can claim
-           a slot like any member). Critically it shows even when mpMode is still
-           UNDEFINED (host hasn't pressed Host Multiplayer): the guest's Join IS
-           the signal to open multiplayer — the arbiter sees the join-request +
-           opens the lobby + seats the guest. This is the fix for the operator's
-           "anon sees the widget but there's no working Join" bug, where mpMode
-           stayed undefined so the guest had zero affordance. Only mpMode==='single'
-           (host explicitly chose solo) hides it. Fullness is the COMBINED active +
-           pending occupancy. While a level is running, joining HOT-DROPS the
-           joiner into the CURRENT map (the arbiter re-launches it with the new
-           player), so the label reflects an immediate join, not a next-map wait. -->
+    {#if !isHost}
+      <!-- Round 5: a non-host guest ALWAYS sees the Join button, but it is
+           DISABLED unless the host is currently running a multiplayer game
+           (mpLive — a host-authoritative Yjs-synced flag, not inferred from
+           racy awareness). The disabled state reads "Waiting for host to start
+           a multiplayer game…". When MP is live, Join is enabled and a click
+           is a ONE-CLICK HOT-JOIN: the arbiter seats the guest active +
+           auto-relaunches the current map so the guest drops in within ~1-2s.
+           The host never sees a Join button (it's already P1). Already-seated
+           peers don't either (joinAffordance returns show:false). -->
       {@const full = isFull(combinedRoster({ active: roster, pending }))}
-      <button
-        class="join-btn nodrag"
-        data-testid="doom-join-btn"
-        disabled={full}
-        onclick={() => void joinGame()}
-        title={full
-          ? 'DOOM is full (4 players)'
-          : isGameInProgress()
-            ? 'Join — hot-drop into the current map (it reloads with you in it)'
-            : 'Join this DOOM netgame as a player'}
-      >
-        {full ? 'Full' : isGameInProgress() ? 'Join (hot-drop)' : 'Join'}
-      </button>
+      {@const join = joinAffordance({
+        isHost,
+        alreadySeated: mySlot !== null || myPendingSlot !== null,
+        full,
+        mpLive,
+      })}
+      {#if join.show}
+        <button
+          class="join-btn nodrag"
+          data-testid="doom-join-btn"
+          disabled={!join.enabled}
+          onclick={() => void joinGame()}
+          title={join.reason}
+        >
+          {join.label}
+        </button>
+        {#if !join.enabled && !full}
+          <span class="join-waiting" data-testid="doom-join-waiting">{join.reason}</span>
+        {/if}
+      {/if}
     {/if}
   </div>
 
@@ -1871,10 +2373,15 @@
           </div>
         {/if}
       {:else}
-        <!-- Non-arbiter joined players: wait for the host to start. -->
+        <!-- Non-arbiter joined players: reflect the host-authoritative mpLive
+             so we NEVER say "Waiting for host to start…" while the host is in
+             fact in a live level (round-6 deadlock-copy fix). -->
+        {@const waiting = guestWaitingState({ ownInLevel: inLevel, hostMpLive: mpLive })}
         <div class="ng-waiting" data-testid="doom-waiting">
-          {#if inLevel}
+          {#if waiting === 'in-level'}
             In level — playing as P{mySlot + 1}
+          {:else if waiting === 'host-live-joining'}
+            Host is in a game — joining…
           {:else}
             Waiting for host to start…
           {/if}
@@ -1913,6 +2420,8 @@
       <small data-testid="doom-member-hint">Single-user rack — you're the host.</small>
     {/if}
   </footer>
+
+  </PatchPanel>
 </div>
 
 <style>
@@ -1977,6 +2486,14 @@
   .doom-card .join-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  /* Round 5: "Waiting for host to start a multiplayer game…" copy shown
+     beside the disabled Join button so the guest knows why it can't join. */
+  .doom-card .join-waiting {
+    font-size: 10px;
+    font-style: italic;
+    opacity: 0.8;
+    color: color-mix(in oklab, var(--cable-video, #c33) 70%, white);
   }
   .doom-card .host-badge {
     background: var(--cable-video, #c33);
@@ -2070,14 +2587,6 @@
     gap: 10px;
     padding: 0 10px 6px;
     flex-wrap: wrap;
-  }
-  .doom-card .run-btn {
-    font-size: 11px;
-    padding: 3px 8px;
-    background: var(--cable-video, #c33);
-    color: white;
-    border: none;
-    cursor: pointer;
   }
   .doom-card .newgame {
     padding: 0 10px 6px;
@@ -2204,16 +2713,11 @@
     font-style: italic;
     opacity: 0.85;
   }
-  .doom-card .port-label {
-    position: absolute;
-    font-size: 9px;
-    letter-spacing: 0.05em;
-    opacity: 0.85;
-    font-family: ui-monospace, monospace;
-    pointer-events: none;
-  }
-  .doom-card .port-label.left  { left: 14px; }
-  .doom-card .port-label.right { right: 14px; }
+  /* port-label + .hidden-slot-port CSS removed in the PatchPanel migration:
+     handles + their labels now live inside PatchPanel rows, so the inline
+     absolute-positioned labels are gone, and the slot-emphasis hide-rule is
+     replaced by the per-player sectioned grouping (local slot section is
+     labeled " (you)"). */
   .doom-card .hint {
     padding: 0 10px 8px;
     color: color-mix(in oklab, var(--cable-video, #c33) 70%, transparent);

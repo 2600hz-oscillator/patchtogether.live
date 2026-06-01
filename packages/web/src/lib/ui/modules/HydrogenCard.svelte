@@ -45,6 +45,7 @@
   } from '$lib/audio/modules/transport-helpers';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -269,7 +270,7 @@
 <div class="mod-card hydrogen-card" data-testid="hydrogen-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
-    HYDROGEN
+    <ModuleTitle {id} {data} defaultLabel="HYDROGEN" inline />
     <button
       type="button"
       class="kit-btn"

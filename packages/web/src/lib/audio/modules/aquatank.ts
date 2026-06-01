@@ -5,6 +5,23 @@
 // reverb / chorus / feedback-resonance unit too.
 //
 // DSP lives in packages/dsp/src/aquatank.ts.
+//
+// Inputs:
+//   in1..in4 (audio): four audio channel inputs feeding the Hadamard FDN matrix.
+//   fb1..fb4_cv (cv, linear, paramTarget=fb{N}): per-channel feedback ratio CV.
+//   tilt_cv (cv, linear, paramTarget=tilt): displaces the LF/HF tilt of the loop.
+//
+// Outputs:
+//   out1..out4 (audio): per-channel post-matrix outputs (use these for parallel routing).
+//   mix_l / mix_r (audio): stereo mix bus of out1..4 (spread-controlled stereo placement).
+//
+// Params:
+//   fb1..fb4 (linear 0..0.95, default 0.4): per-channel feedback ratio.
+//   tilt (linear -1..1, default 0): LF/HF balance in the loop.
+//   damp (linear 0..1, default 0.4): HF damping inside the matrix.
+//   crossMix (linear 0..1, default 0.5): inter-channel matrix coupling.
+//   spread (linear 0..1, default 0.7): per-channel stereo-pan width on the mix bus.
+//   outLevel (linear 0..1, default 0.6): mix-bus output gain.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

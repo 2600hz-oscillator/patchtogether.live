@@ -25,6 +25,7 @@ import { mixerVideoDef } from './mixer';
 import { cameraInputDef } from './camera-input';
 import { shapesDef } from './shapes';
 import { monoglitchDef } from './monoglitch';
+import { reshaperDef } from './reshaper';
 import { ruttetraDef } from './ruttetra';
 import { shapedrampsDef } from './shapedramps';
 import { vdelayDef } from './vdelay';
@@ -33,6 +34,14 @@ import { acidwarpDef } from './acidwarp';
 import { doomDef } from './doom';
 import { videoboxDef } from './videobox';
 import { videoVarispeedDef } from './videovarispeed';
+import { backdraftDef } from './backdraft';
+import { fourPlexVidDef } from './4plexvid';
+import { peakstateDef } from './peakstate';
+import { mandleblotDef } from './mandleblot';
+import { scoreboardDef } from './scoreboard';
+import { nibblesDef } from './nibbles';
+import { shapegenDef } from './shapegen';
+import { qbertDef } from './qbert';
 
 let registered = false;
 
@@ -67,8 +76,14 @@ export function registerVideoModules(): void {
   // original "Rutt-Etra-style" effect from PR-99, renamed when the real
   // raster-coordinate-remap RUTTETRA landed alongside SHAPEDRAMPS).
   registerVideoModule(monoglitchDef);
-  // RUTTETRA — true Rutt/Etra raster-scan-coordinate processor. Inputs
-  // X/Y are mono-video coordinate fields, Z is the source video.
+  // RESHAPER — fragment-shader raster-scan-coordinate REMAP (formerly
+  // RUTTETRA). Inputs X/Y are mono-video coordinate fields, Z is the
+  // source video. Persisted `ruttetra` nodes from before the rename load
+  // as `reshaper` (see graph/persistence.ts).
+  registerVideoModule(reshaperDef);
+  // RUTTETRA — AUTHENTIC forward-scatter Rutt-Etra scope (real line
+  // geometry; port of p10entrancer XYZ). One Z video input; internal
+  // shaped ramps bow each scanline by luma → additive 3D heightmap.
   registerVideoModule(ruttetraDef);
   // SHAPEDRAMPS — sync-locked ramp generator. Stable linear (h_lin/
   // v_lin) outputs for clean raster passthrough, plus shaped (h_out/
@@ -102,6 +117,47 @@ export function registerVideoModules(): void {
   // (streams downstream at ANY speed, decoupled from playbackRate) +
   // throttled reverse scrub (no per-frame currentTime seek).
   registerVideoModule(videoVarispeedDef);
+  // BACKDRAFT — video feedback generator. Crossfades two inputs (MIX),
+  // composites with a delayed + colour-processed copy of its OWN previous
+  // output (1-frame-lag feedback ring), with two key masks (LIGHTEN /
+  // DARKEN) modulating the feedback effect per-pixel.
+  registerVideoModule(backdraftDef);
+  // 4PLEXVID — 4-in / 4-out video router (video sibling of the audio
+  // 4Plexer). Each output selects one of the 4 inputs via its own
+  // selector knob; a per-output gate CV input advances the selector on
+  // each rising edge (1->2->3->4->1, wrapping). Discrete routing — never
+  // a blend.
+  registerVideoModule(fourPlexVidDef);
+  // PEAKSTATE — animated mandala generator (kaleidoscope mirror-arm pen
+  // trace, inspired by florianjs/Mandala-JS). Three outputs: mono_out
+  // (white pen), rgb_out (HSL hue cycling), out_3d (tilted + rotating
+  // bowl-twin "fake 3D"). 3D rotation rate ties to params.speed so the
+  // whole scene feels coupled.
+  registerVideoModule(peakstateDef);
+  // MANDLEBLOT — Mandelbrot fractal generator with zoom + rotation +
+  // RGB-cycling hue. Two outputs: mono escape-time field + colour palette.
+  // Log-mapped zoom 1×..1e6× (single-precision highp-float ceiling).
+  registerVideoModule(mandleblotDef);
+  // SCOREBOARD — 4-digit neon 7-segment counter widget. Two CV-gate
+  // inputs (SCORE / RESET) and a colour-wheel knob. Counter wraps at
+  // 10000 → 0. No audio output; pure video sink-style display.
+  registerVideoModule(scoreboardDef);
+  // NIBBLES — QBasic Nibbles snake game as a patchable video module.
+  // CV gate outputs (pellet/death/dir_change) + length CV + two audio
+  // outputs (continuous SNAKE square wave + envelope-gated GATED). Snake
+  // is driven by arrow keys when the card is focused, or by an internal
+  // best-effort bot when AUTO is on.
+  registerVideoModule(nibblesDef);
+  // SHAPEGEN — standalone 3D-shape generator extracted from FOXY's 3dShapeGen
+  // path. 3 video inputs (raster A/B/C), 1 video output, SIZE + ROT knobs,
+  // SOLIDS toggle that switches between vaporwave wireframe and lit
+  // canvas2D primitives. Shares the shape math + renderer with FOXY via
+  // shapegen-math.ts + shapegen-draw.ts.
+  registerVideoModule(shapegenDef);
+  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator. User-provided
+  // qbert.zip (gitignored, DOOM pattern). 4 CV inputs (coin/start gates +
+  // joy_x/joy_y), 4 outputs (out + audio_out + evt_die/evt_move/evt_level).
+  registerVideoModule(qbertDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

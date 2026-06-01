@@ -16,8 +16,12 @@ const DEFAULT_LOCAL = USE_PREVIEW ? 'http://localhost:4173' : 'http://localhost:
 const BASE_URL = process.env.E2E_BASE_URL ?? DEFAULT_LOCAL;
 // Skip the local webServer when targeting a deployed URL (live smoke). Detected
 // by E2E_BASE_URL being set to anything non-localhost.
+// E2E_SKIP_WEBSERVER=1 also skips it — used by local dev workflows that
+// already have a dev server running on a non-default port (multi-worktree
+// agent runs that need a per-worktree dev server).
 const IS_LOCAL_TARGET =
-  BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
+  (BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1'))
+  && process.env.E2E_SKIP_WEBSERVER !== '1';
 
 export default defineConfig({
   testDir: './tests',
@@ -60,10 +64,15 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      // Default project — every spec EXCEPT the camera + samsloop-mic
-      // specs lives here. Those move to their own projects so the
-      // fake-camera / fake-mic flags don't leak into unrelated tests.
-      testIgnore: ['**/camera-input.spec.ts', '**/samsloop-mic.spec.ts'],
+      // Default project — every spec EXCEPT the camera spec lives here.
+      // The camera spec needs the fake-camera flag, which we keep out
+      // of the default project so non-camera tests aren't affected by
+      // its non-deterministic getUserMedia behaviour. (SAMSLOOP's
+      // record path no longer goes through getUserMedia at all — it
+      // records from patched audio cables via an in-graph tap worklet,
+      // so the old samsloop-mic project / fake-mic flag is no longer
+      // needed.)
+      testIgnore: ['**/camera-input.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
@@ -71,27 +80,6 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             // COOP/COEP isolation only matters when the headers are set;
             // Playwright doesn't need extra flags for this.
-          ],
-        },
-      },
-    },
-    {
-      // SAMSLOOP mic-record path. getUserMedia({audio:true}) returns a
-      // synthetic mono beep stream from Chromium's fake audio device;
-      // good enough to exercise start → tap → samples → stop and verify
-      // node.data is populated. Lives in its own spec so other samsloop
-      // tests aren't affected by the fake-mic flag (which otherwise
-      // would make every spec's first getUserMedia call non-deterministic).
-      name: 'chromium-samsloop-mic',
-      testMatch: ['**/samsloop-mic.spec.ts'],
-      use: {
-        ...devices['Desktop Chrome'],
-        permissions: ['microphone'],
-        launchOptions: {
-          args: [
-            '--autoplay-policy=no-user-gesture-required',
-            '--use-fake-ui-for-media-stream',
-            '--use-fake-device-for-media-stream',
           ],
         },
       },

@@ -19,9 +19,11 @@
 //     without retrofits.
 //
 // Design notes:
-//   - VIDEO_RES is fixed at instantiate time. For the spike we keep it
-//     small (640×360) — cheap on every laptop, plenty for a demo render.
-//     Phase 1 bumps to 1280×720 once we've measured perf headroom.
+//   - VIDEO_RES is fixed at instantiate time. We render at 640×480 (4:3,
+//     NTSC/PAL CRT aesthetic) — matches the LZX analog-video heritage,
+//     PICTUREBOX's 640×480 encoder, and gives SM64 an integer 2× scale
+//     (320×240 → 640×480). 4:3 is also DOOM's native viewport ratio
+//     above the status bar; widescreen sources letterbox left/right.
 //   - We share ONE WebGL2 context + OffscreenCanvas across all video
 //     nodes. Each node has its own FBO + texture. OUTPUT modules
 //     subscribe to a downstream visible <canvas> by exposing a
@@ -32,10 +34,12 @@ import type { Edge, ModuleNode } from '$lib/graph/types';
 import type { DomainEngine } from '$lib/audio/engine';
 import { getVideoModuleDef, type VideoModuleDef } from './module-registry';
 import { createWaveformRenderer, type WaveformRenderer } from './waveform-video';
+import { buildCvBridgeMapping, mapCvBridgeValue, type CvBridgeMapping } from './cv-bridge-map';
 
-/** Resolution of every per-module FBO. Phase-0 keeps this small for
- *  fastest startup on the demo path; Phase 1 bumps it to 1280×720. */
-export const VIDEO_RES = { width: 640, height: 360 } as const;
+/** Resolution of every per-module FBO. 640×480 (4:3) matches the LZX
+ *  analog-video heritage, aligns with PICTUREBOX's encoder, and gives
+ *  SM64's 320×240 native an integer 2× scale. */
+export const VIDEO_RES = { width: 640, height: 480 } as const;
 
 /** Per-module surface — FBO + texture. Output modules can leave `fbo` null
  *  and consume their input textures directly. */
@@ -113,6 +117,25 @@ export interface VideoNodeHandle {
    *  The factory itself stays DOM-free (so it remains testable in
    *  jsdom); the bridge runs through this hook. */
   attachExternalSource?(kind: 'video' | 'image', el: HTMLElement | null): void;
+  /** Optional: subscribe to DISCRETE pulse events on a `gate`-typed
+   *  audioSources port (e.g. DOOM's `evt_kill` / `evt_door` / `evt_gun_pN`).
+   *  The callback fires synchronously when the module pulses the gate (via
+   *  the same `pulseGate(CSN)` helper that schedules the CSN offset 0→1→0).
+   *  Returns an unsubscribe fn. Modules that publish purely-continuous CV
+   *  on the same port set MAY omit this; the bridge then falls back to
+   *  analyser sampling.
+   *
+   *  WHY this exists alongside the analyser tap: a 10ms CSN pulse from a
+   *  `gate` source can be missed by 60fps analyser sampling (≥1 frame in
+   *  ~16ms has no overlap with the high window in the worst-case phase),
+   *  and CI's slower rAF cadence makes the miss reliable. The pulse
+   *  subscription is FRAME-INDEPENDENT — every `pulseGate` call fires the
+   *  callback exactly once, so no pulse is ever dropped regardless of how
+   *  often the video frame loop ticks. See PatchEngine.addSameDomainVideoCvBridge
+   *  for the consumer side (it subscribes for `sourceType==='gate'` edges and
+   *  dispatches a setParam(target, 1) → setParam(target, 0) pair into the
+   *  destination's per-tick edge detector). */
+  subscribePulse?(portId: string, cb: () => void): () => void;
   /** Tear down GL + non-GL resources. Idempotent. */
   dispose(): void;
 }
@@ -212,7 +235,10 @@ export class VideoEngine implements DomainEngine {
      *  strict typed-array signature for getFloatTimeDomainData is met. */
     buf: Float32Array<ArrayBuffer>;
     targetNodeId: string;
-    targetParamId: string;
+    /** Precomputed gate-vs-param mapping: gate targets pass the raw cv
+     *  through (the module edge-detects); continuous targets (with a
+     *  `cvScale` hint) sweep their full param range. See cv-bridge-map.ts. */
+    mapping: CvBridgeMapping;
     /** Disconnect the upstream AudioNode tap into our analyser. */
     teardown: () => void;
   }>();
@@ -365,6 +391,40 @@ export class VideoEngine implements DomainEngine {
   read(nodeId: string, key: string): unknown {
     const h = this.nodes.get(nodeId);
     return h?.read ? h.read(key) : undefined;
+  }
+
+  /** Resolve which UPSTREAM source node currently feeds `(thisNodeId,
+   *  inputId)`, by the same edge-ordering rule lookupInput() uses to pick the
+   *  texture. Returns the source node id, or null if nothing is wired.
+   *
+   *  This is the engine-state hook the multi-OUTPUT e2e asserts on: each
+   *  OUTPUT card must be driven by its OWN distinct source. Proving that via
+   *  resolved routing is deterministic on software GL, unlike diffing the two
+   *  cards' rendered framebuffer pixels (which flakes under CI rAF throttling
+   *  and can't distinguish "shared render path" from "two sources that happen
+   *  to look similar this frame"). */
+  resolveInputSourceId(thisNodeId: string, inputId: string): string | null {
+    if (this.videoTextureBridges.size > 0) {
+      const hits: Array<{ edgeId: string; srcId: string }> = [];
+      for (const [edgeId, b] of this.videoTextureBridges) {
+        if (b.edge.target.nodeId === thisNodeId && b.edge.target.portId === inputId) {
+          hits.push({ edgeId, srcId: b.edge.source.nodeId });
+        }
+      }
+      if (hits.length > 0) {
+        hits.sort((a, b) => a.edgeId.localeCompare(b.edgeId));
+        return hits[0]!.srcId;
+      }
+    }
+    const edges: Edge[] = [];
+    for (const e of this.edges.values()) {
+      if (e.target.nodeId === thisNodeId && e.target.portId === inputId) edges.push(e);
+    }
+    edges.sort((a, b) => a.id.localeCompare(b.id));
+    for (const e of edges) {
+      if (this.nodes.get(e.source.nodeId)) return e.source.nodeId;
+    }
+    return null;
   }
 
   /**
@@ -546,14 +606,19 @@ void main() {
     const meta = this.nodeMeta.get(targetNodeId);
     const def = meta ? getVideoModuleDef(meta.type) : undefined;
     const input = def?.inputs?.find((p) => p.id === targetPortId);
-    const targetParamId = input?.paramTarget ?? targetPortId;
+    // Branch gate-vs-param up front (see cv-bridge-map.ts): gate-style cv
+    // inputs (DOOM cv_<port>) get the RAW value so their edge detector
+    // fires; continuous params with a `cvScale` hint get the incoming ±1
+    // mapped across the param's full natural range (otherwise a bipolar
+    // source only exercises a sub-range + clamps → "one quadrant").
+    const mapping = buildCvBridgeMapping(input, targetPortId, def?.params, meta?.params);
     const bufLen = Math.max(32, analyser.fftSize);
     const buf = new Float32Array(new ArrayBuffer(bufLen * 4));
     this.cvBridges.set(edgeId, {
       analyser,
       buf,
       targetNodeId,
-      targetParamId,
+      mapping,
       teardown,
     });
   }
@@ -572,8 +637,11 @@ void main() {
       if (!handle) continue;
       bridge.analyser.getFloatTimeDomainData(bridge.buf);
       // Tail sample is "newest" in the rolling window analyser semantics.
-      const v = bridge.buf[bridge.buf.length - 1] ?? 0;
-      handle.setParam(bridge.targetParamId, v);
+      const raw = bridge.buf[bridge.buf.length - 1] ?? 0;
+      // Gate target: raw value through (module edge-detects). Continuous
+      // target: map ±1 across the param's full range (mirrors audio path).
+      const v = mapCvBridgeValue(bridge.mapping, raw);
+      handle.setParam(bridge.mapping.targetParamId, v);
     }
   }
 
@@ -920,6 +988,28 @@ void main() {
     if (!handle) return null;
     const src = handle.audioSources?.get(portId);
     return src ?? null;
+  }
+
+  /** Look up the live VideoNodeHandle for a given node id, or null if the
+   *  module hasn't been materialized yet. The PatchEngine's same-domain
+   *  video CV/gate bridge uses this to call `setParam` directly on a target
+   *  handle (frame-independent pulse dispatch) and to call `subscribePulse`
+   *  on a source handle. Lookup-only; the caller MUST NOT mutate the handle. */
+  getNodeHandle(nodeId: string): VideoNodeHandle | null {
+    return this.nodes.get(nodeId) ?? null;
+  }
+
+  /** Resolve a target node's input PORT id to the paramTarget the bridge
+   *  feeds via setParam (e.g. SCOREBOARD's `score` port → `scoreTrig`). The
+   *  same-domain CV/gate bridge needs this when bypassing addCvBridge's
+   *  internal lookup to dispatch discrete pulses straight to the module's
+   *  setParam. Falls back to the port id itself when there's no mapping
+   *  (the convention for modules whose input id == param id). */
+  resolveTargetParamId(targetNodeId: string, targetPortId: string): string {
+    const meta = this.nodeMeta.get(targetNodeId);
+    const def = meta ? getVideoModuleDef(meta.type) : undefined;
+    const input = def?.inputs?.find((p) => p.id === targetPortId);
+    return input?.paramTarget ?? targetPortId;
   }
 
   /** Vertex shader is shared across every module — they're all fullscreen

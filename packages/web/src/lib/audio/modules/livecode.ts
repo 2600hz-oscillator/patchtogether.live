@@ -9,6 +9,10 @@
 // because the existing PatchEngine dispatches by domain — and the rack
 // already requires an audio engine, so reusing it keeps the boot path
 // uncomplicated. The factory returns a no-op handle (no AudioNode work).
+//
+// Inputs: none.
+// Outputs: none.
+// Params: none. (User-edited source code lives in node.data.source, not as a ParamDef.)
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

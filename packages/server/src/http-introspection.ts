@@ -1,0 +1,272 @@
+// packages/server/src/http-introspection.ts
+//
+// Hocuspocus extension that exposes two HTTP routes on the SAME listener
+// the WS server uses (the Hocuspocus `Server` wraps `http.createServer`
+// and the `onRequest` hook lets extensions reply before the default 200
+// OK handler):
+//
+//   GET /health   — liveness probe. Returns 200 + `{ ok: true }`. Used by
+//                   Fly health checks + the live-smoke-alert workflow.
+//   GET /metrics  — JSON snapshot of process resources + Hocuspocus state.
+//                   Scraped by BetterStack / the live-smoke workflow to
+//                   catch relay memory blowouts BEFORE they OOM the Fly
+//                   machine (per memory `project_observability_priority.md`
+//                   — the relay OOM that went unalerted is the urgency).
+//
+// Auth: neither route is gated. `/health` has always been public on similar
+// services; `/metrics` is intentionally lightweight (no secrets, just
+// process counters) and serves as an internal scrape target — the Fly
+// machine isn't reachable from the public internet without going through
+// the app's domain, so anyone hitting it is already on the deploy path.
+//
+// Memory-alarm threshold: also drives the 30-s setInterval that logs a
+// `warn` line when rss > RELAY_MEM_WARN_MB and an `error` line when
+// rss > RELAY_MEM_CRIT_MB. This is the "alarm before OOM" half — the
+// /metrics endpoint is the "scrape after the fact" half.
+
+import type { Extension } from '@hocuspocus/server';
+
+// Structural subset of @hocuspocus/server's Hocuspocus instance we need.
+// Importing the deep d.ts path trips nodenext + verbatimModuleSyntax (see
+// the same workaround in heartbeat.ts).
+interface HocuspocusLike {
+  getConnectionsCount(): number;
+  getDocumentsCount(): number;
+}
+
+/** Process-level numbers that change at sub-second cadence. */
+export interface MetricsSnapshot {
+  ts: number;
+  boot_id: string;
+  uptime_s: number;
+  rss_mb: number;
+  heap_used_mb: number;
+  heap_total_mb: number;
+  ext_mb: number;
+  cpu_user_s: number;
+  cpu_system_s: number;
+  conns: number;
+  rooms: number;
+  persist_writes_per_min: number;
+}
+
+/** Pluggable deps so tests can pin the clock + memory readings. */
+export interface IntrospectionDeps {
+  now(): number;
+  /** Monotonic seconds since process boot. Mirrors `process.uptime()`. */
+  uptime(): number;
+  memoryUsage(): {
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+  };
+  cpuUsage(): { user: number; system: number };
+  setInterval(fn: () => void, ms: number): ReturnType<typeof setInterval>;
+  clearInterval(t: ReturnType<typeof setInterval>): void;
+  log(level: 'info' | 'warn' | 'error', msg: string): void;
+}
+
+const realDeps: IntrospectionDeps = {
+  now: () => Date.now(),
+  uptime: () => process.uptime(),
+  memoryUsage: () => process.memoryUsage(),
+  // `process.cpuUsage()` returns microseconds since boot when called with
+  // no arg. We divide by 1e6 in the snapshot below to land on seconds.
+  cpuUsage: () => process.cpuUsage(),
+  setInterval: (fn, ms) => setInterval(fn, ms),
+  clearInterval: (t) => clearInterval(t),
+  // eslint-disable-next-line no-console
+  log: (level, msg) => console[level](msg),
+};
+
+const BYTES_PER_MB = 1024 * 1024;
+const ALARM_CHECK_INTERVAL_MS = 30_000;
+const PERSIST_WINDOW_MS = 60_000;
+
+/** Read thresholds from env (or fall back to defaults sized for the
+ *  512 MB Fly machine — warn well below crit so we get a single noisy
+ *  log line before the OOM-killer territory). */
+export function readMemoryThresholds(
+  env: Record<string, string | undefined> = process.env,
+): { warnMb: number; critMb: number } {
+  const parse = (raw: string | undefined, fallback: number): number => {
+    if (raw == null) return fallback;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+  return {
+    warnMb: parse(env.RELAY_MEM_WARN_MB, 384),
+    critMb: parse(env.RELAY_MEM_CRIT_MB, 480),
+  };
+}
+
+/** Map an RSS reading to the log level it should fire at (or `null` for
+ *  "below warn — quiet"). Pure for ease of testing. */
+export function classifyMemory(
+  rssMb: number,
+  thresholds: { warnMb: number; critMb: number },
+): 'warn' | 'error' | null {
+  if (rssMb > thresholds.critMb) return 'error';
+  if (rssMb > thresholds.warnMb) return 'warn';
+  return null;
+}
+
+export interface IntrospectionExtension extends Extension {
+  /** Test-only: build a snapshot synchronously (skips the HTTP path). */
+  _snapshot(): MetricsSnapshot;
+  /** Test-only: invoke the alarm check once. */
+  _alarmTick(): void;
+}
+
+/**
+ * Build the extension. `hocuspocus` is the Hocuspocus instance the server
+ * was configured with, used to read live conn/room counts.
+ *
+ * Memory thresholds default to env-derived values but can be overridden
+ * for tests via `thresholdOverride`.
+ */
+export function createIntrospectionExtension(
+  hocuspocus: HocuspocusLike,
+  options: {
+    deps?: Partial<IntrospectionDeps>;
+    thresholdOverride?: { warnMb: number; critMb: number };
+    env?: Record<string, string | undefined>;
+  } = {},
+): IntrospectionExtension {
+  const deps: IntrospectionDeps = { ...realDeps, ...(options.deps ?? {}) };
+  const thresholds = options.thresholdOverride ?? readMemoryThresholds(options.env);
+
+  // Persisted across the process lifetime — a fresh boot gets a new id,
+  // so a downstream watcher can detect "the relay restarted" by id flip.
+  const bootId = newBootId(deps);
+
+  // Ring of persist-write timestamps inside the last PERSIST_WINDOW_MS.
+  // Bounded by the persist cadence so memory usage stays trivial.
+  let persistWrites: number[] = [];
+
+  // 30-s alarm timer — only started once `start()` is called by the
+  // extension lifecycle so tests that build the extension without an
+  // active timer don't leak intervals.
+  let alarmTimer: ReturnType<typeof setInterval> | null = null;
+
+  function snapshot(): MetricsSnapshot {
+    const mem = deps.memoryUsage();
+    const cpu = deps.cpuUsage();
+    const cutoff = deps.now() - PERSIST_WINDOW_MS;
+    // Trim the ring opportunistically each scrape; cheap O(n) for n ~ tens.
+    persistWrites = persistWrites.filter((t) => t >= cutoff);
+    return {
+      ts: deps.now(),
+      boot_id: bootId,
+      uptime_s: round(deps.uptime(), 3),
+      rss_mb: round(mem.rss / BYTES_PER_MB, 1),
+      heap_used_mb: round(mem.heapUsed / BYTES_PER_MB, 1),
+      heap_total_mb: round(mem.heapTotal / BYTES_PER_MB, 1),
+      ext_mb: round(mem.external / BYTES_PER_MB, 1),
+      cpu_user_s: round(cpu.user / 1_000_000, 3),
+      cpu_system_s: round(cpu.system / 1_000_000, 3),
+      conns: hocuspocus.getConnectionsCount(),
+      rooms: hocuspocus.getDocumentsCount(),
+      persist_writes_per_min: persistWrites.length,
+    };
+  }
+
+  function alarmTick(): void {
+    const mem = deps.memoryUsage();
+    const rssMb = round(mem.rss / BYTES_PER_MB, 1);
+    const level = classifyMemory(rssMb, thresholds);
+    if (level === null) return;
+    const tag = level === 'error' ? 'CRIT' : 'warn';
+    deps.log(
+      level,
+      `[relay-alarm] ${tag} rss=${rssMb}MB warn=${thresholds.warnMb}MB crit=${thresholds.critMb}MB ` +
+        `boot_id=${bootId} uptime_s=${round(deps.uptime(), 0)}`,
+    );
+  }
+
+  return {
+    extensionName: 'http-introspection',
+
+    async onConfigure() {
+      // Boot the alarm timer here so it's tied to the server lifecycle.
+      // We never stop it explicitly — the process exits with it.
+      if (alarmTimer === null) {
+        alarmTimer = deps.setInterval(alarmTick, ALARM_CHECK_INTERVAL_MS);
+      }
+    },
+
+    async onDestroy() {
+      if (alarmTimer !== null) {
+        deps.clearInterval(alarmTimer);
+        alarmTimer = null;
+      }
+    },
+
+    // Record a timestamp every time Hocuspocus stores a doc. Persist
+    // throughput is a useful proxy for "is the rack actually active"
+    // and pairs naturally with the conn/room counters.
+    async afterStoreDocument() {
+      persistWrites.push(deps.now());
+      // Keep the ring trimmed even if /metrics isn't being scraped.
+      const cutoff = deps.now() - PERSIST_WINDOW_MS;
+      if (persistWrites.length > 0 && persistWrites[0]! < cutoff) {
+        persistWrites = persistWrites.filter((t) => t >= cutoff);
+      }
+    },
+
+    async onRequest(payload) {
+      const url = payload.request.url ?? '/';
+      // Strip query — `/metrics?fresh=1` should match.
+      const path = url.split('?')[0];
+      if (path === '/health') {
+        payload.response.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        });
+        payload.response.end(JSON.stringify({ ok: true, boot_id: bootId }));
+        // Throw an empty error: Hocuspocus's Server.requestHandler treats
+        // this as "an extension already replied, skip the default 200 OK".
+        // (See the dist/hocuspocus-server.esm.js requestHandler: `if (error) throw error`
+        // is preceded by a `catch` that does nothing on falsy error — but
+        // crucially the catch returns BEFORE the default writeHead. Empty
+        // string is falsy and skips the rethrow.)
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw '';
+      }
+      if (path === '/metrics') {
+        const body = JSON.stringify(snapshot());
+        payload.response.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        });
+        payload.response.end(body);
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw '';
+      }
+      // Any other path: do nothing → default 200 OK from Hocuspocus.
+    },
+
+    _snapshot() {
+      return snapshot();
+    },
+    _alarmTick() {
+      alarmTick();
+    },
+  };
+}
+
+/** Round to `digits` decimals. Avoids JSON noise from raw float math. */
+function round(n: number, digits: number): number {
+  const m = 10 ** digits;
+  return Math.round(n * m) / m;
+}
+
+function newBootId(deps: Pick<IntrospectionDeps, 'now'>): string {
+  // Short id — the deploy doesn't need cryptographic uniqueness, just
+  // enough variation that a restart is obvious in the scrape stream.
+  return `${deps.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export const RELAY_MEM_ALARM_INTERVAL_MS = ALARM_CHECK_INTERVAL_MS;
+export const RELAY_PERSIST_WINDOW_MS = PERSIST_WINDOW_MS;

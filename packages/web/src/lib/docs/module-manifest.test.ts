@@ -32,6 +32,27 @@ describe('buildModuleManifest', () => {
     }
   });
 
+  // GUARD: every discovered module must carry a real, hand-written
+  // description in DESCRIPTIONS — never the describeModule() fallback
+  // placeholder. The docs site (/docs/modules + /docs/modules/[id]) renders
+  // straight from this manifest, so a module missing a DESCRIPTIONS entry
+  // ships a "Add a one-line description ..." placeholder to the live docs.
+  // This test fails the build the moment a new module lands without one,
+  // so description-less modules can't regress in.
+  it('NO module falls through to the description placeholder (every module documented)', () => {
+    // The exact sentinel emitted by describeModule() when DESCRIPTIONS has
+    // no entry for a module type.
+    const FALLBACK_MARKER =
+      'Add a one-line description in packages/web/src/lib/docs/module-manifest.ts:DESCRIPTIONS';
+    const undocumented = m.modules
+      .filter((mod) => mod.description.includes(FALLBACK_MARKER))
+      .map((mod) => `${mod.type} (${mod.file})`);
+    expect(
+      undocumented,
+      `Modules missing a real DESCRIPTIONS entry: ${undocumented.join(', ')}`,
+    ).toEqual([]);
+  });
+
   it('sequencer has the expected inputs / outputs / params (spot check vs registry)', () => {
     const seq = m.modules.find((x) => x.type === 'sequencer');
     expect(seq).toBeDefined();

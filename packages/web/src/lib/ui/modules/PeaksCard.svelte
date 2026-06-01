@@ -11,6 +11,7 @@
   import { peaksDef, peaksMath, PEAKS_MODE_NAMES, PEAKS_MAX_MODE, type PeaksMode } from '$lib/audio/modules/peaks';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -67,7 +68,7 @@
 
 <div class="mod-card peaks-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">PEAKS</header>
+  <ModuleTitle {id} {data} defaultLabel="PEAKS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="channel-row">
@@ -83,12 +84,12 @@
                  max={peaksDef.params.find((p) => p.id === 'k1_0')!.max!}
                  defaultValue={defaultFor('k1_0')}
                  label={knob0Labels.k1} curve="linear"
-                 onchange={set('k1_0')} readLive={live('k1_0')} />
+                 onchange={set('k1_0')} moduleId={id} paramId="k1_0" readLive={live('k1_0')} />
           <Fader value={k2_0} min={peaksDef.params.find((p) => p.id === 'k2_0')!.min!}
                  max={peaksDef.params.find((p) => p.id === 'k2_0')!.max!}
                  defaultValue={defaultFor('k2_0')}
                  label={knob0Labels.k2} curve="linear"
-                 onchange={set('k2_0')} readLive={live('k2_0')} />
+                 onchange={set('k2_0')} moduleId={id} paramId="k2_0" readLive={live('k2_0')} />
         </div>
       </div>
 
@@ -104,12 +105,12 @@
                  max={peaksDef.params.find((p) => p.id === 'k1_1')!.max!}
                  defaultValue={defaultFor('k1_1')}
                  label={knob1Labels.k1} curve="linear"
-                 onchange={set('k1_1')} readLive={live('k1_1')} />
+                 onchange={set('k1_1')} moduleId={id} paramId="k1_1" readLive={live('k1_1')} />
           <Fader value={k2_1} min={peaksDef.params.find((p) => p.id === 'k2_1')!.min!}
                  max={peaksDef.params.find((p) => p.id === 'k2_1')!.max!}
                  defaultValue={defaultFor('k2_1')}
                  label={knob1Labels.k2} curve="linear"
-                 onchange={set('k2_1')} readLive={live('k2_1')} />
+                 onchange={set('k2_1')} moduleId={id} paramId="k2_1" readLive={live('k2_1')} />
         </div>
       </div>
     </div>
@@ -118,7 +119,7 @@
 </div>
 
 <style>
-  .peaks-card { width: 320px; min-height: 240px; }
+  .peaks-card { width: 320px; }
   .peaks-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

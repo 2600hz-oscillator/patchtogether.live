@@ -26,8 +26,8 @@
 //     across all frames; the user wants "this frame, then N frames
 //     later, then 2N, then 3N..." which is what feedback-into-ring
 //     gives.
-//   - Memory bound: BUFFER_FRAMES textures × 640×360×4B ≈ 0.9MB per
-//     slot, ~16 MB total. Well under modest GPU budgets.
+//   - Memory bound: BUFFER_FRAMES textures × 640×480×4B ≈ 1.2MB per
+//     slot, ~40 MB total. Well under modest GPU budgets.
 //
 // CV inputs:
 //   - time_cv     -1..+1 sweeps full delayTime range (1..MAX_FRAMES)
@@ -36,12 +36,25 @@
 //
 // CV scaling: cvScale 'linear' on each input — bridge maps -1..+1 to the
 // target param's full natural range and sums it on top of the knob.
+//
+// Inputs:
+//   in (video): RGB source.
+//   time_cv / feedback_cv / mix_cv (cv, linear, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): wet + dry mix.
+//
+// Params:
+//   delayTime (linear 1..VDELAY_MAX_DELAY frames): delay in frames.
+//   feedback (linear 0..0.95): feedback ratio (capped below 1).
+//   mix (linear 0..1): dry/wet mix.
+//   colorShift (linear 0..1): per-tap colour shift on the feedback path.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 
 /** Ring buffer depth. 32 frames at 60fps = ~533ms max delay. Fits on a
- *  modest GPU at 640×360 (≈ 16 MB total — see header). */
+ *  modest GPU at 640×480 (≈ 40 MB total — see header). */
 export const VDELAY_BUFFER_FRAMES = 32;
 export const VDELAY_MAX_DELAY = VDELAY_BUFFER_FRAMES; // user-facing cap
 

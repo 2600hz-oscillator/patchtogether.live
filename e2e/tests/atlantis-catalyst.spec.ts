@@ -42,7 +42,14 @@ test('SCENECHANGE card mounts under new display label (type id unchanged)', asyn
 
   const card = page.locator('.svelte-flow__node-atlantisCatalyst');
   await expect(card).toHaveCount(1);
-  await expect(card).toContainText('SCENECHANGE');
+  // In-card title shows the bare-prefix auto-name (ATLANTISCATALYST) rather
+  // than the def's display label (SCENECHANGE) — the editable name button
+  // takes precedence over `defaultLabel` once `migrateAssignNames` runs at
+  // spawn (see $lib/multiplayer/module-naming.ts). The internal type id is
+  // still `atlantisCatalyst` (the `.svelte-flow__node-atlantisCatalyst`
+  // selector above is the canonical type-id check).
+  const nameButton = card.locator('[data-testid="name-label-button"]');
+  await expect(nameButton).toHaveText(/^ATLANTISCATALYST(\d+)?$/);
   expect(errors, errors.join('; ')).toEqual([]);
 });
 

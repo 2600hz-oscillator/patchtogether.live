@@ -6,7 +6,7 @@
   import AudioGate from '$lib/ui/AudioGate.svelte';
   import FeedbackBox from '$lib/ui/FeedbackBox.svelte';
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
-  import { ydoc, patch } from '$lib/graph/store';
+  import { ydoc, patch, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { makeEnvelope } from '$lib/graph/persistence';
   import { attachProvider } from '$lib/multiplayer/provider';
   import { createCarlController, type CarlController } from '$lib/carl/controller';
@@ -38,6 +38,7 @@
   import {
     resolvePresenceUser,
     getOrCreateAnonTabId,
+    distinctPresentUsers,
     type PresenceUser,
     type RemotePresence,
   } from '$lib/multiplayer/presence';
@@ -56,6 +57,18 @@
   let { data } = $props();
   let joining = $state(false);
   let joinError: string | null = $state(null);
+
+  // Rackspace isolation: bind the singleton patch/ydoc/undoManager to a
+  // fresh Y.Doc for THIS rackspace BEFORE anything else in the page
+  // touches the store. Without this, navigating /r/A → /r/B in the same
+  // JS context re-attached the provider for B to the doc that still
+  // held A's data, and A's nodes got uploaded into B's Hocuspocus room
+  // (the "edits leak across all 4 rackspaces" report). Idempotent for
+  // the same id; safe to call eagerly. The route also wraps the canvas
+  // in `{#key data.rackspace.id}` so every Svelte subscription tears
+  // down + reattaches when the bound rackspace changes — without that
+  // the proxies seen by `$derived`/`$effect` blocks would dangle.
+  if (data.isMember) bindRackspace(data.rackspace.id);
 
   // Stage B PR B-c (awareness): resolve a stable presence identity for this
   // session. Authed users pull displayName from Clerk's reactive context;
@@ -383,8 +396,30 @@
     };
   });
 
+  // SINGLE SOURCE OF TRUTH for both the presence dots AND the "N/4 members"
+  // count: distinct present users, de-duped by user.id from live awareness.
+  // Previously the count read the server DB `memberCount`
+  // (`rackspace.memberUserIds.length`) — authed-members-only + stale + missing
+  // anon-via-invite participants — while the dots read raw awareness states
+  // (one per tab). That divergence produced the "1/4 members, 2 dots" bug.
+  // Deriving both from one de-duped list guarantees count === dots.length.
+  // Multi-tab users collapse to one entry; anon-via-invite users are included.
+  let presentUsers = $derived(distinctPresentUsers(allPresences));
+  // Cap the displayed count at the rackspace member cap so we never show e.g.
+  // "5/4" if more tabs than the cap momentarily race in; the "/N" cap display
+  // is preserved.
+  let presentCount = $derived(
+    Math.min(presentUsers.length, data.rackspace.maxMembers),
+  );
+
   onDestroy(() => {
     provider?.destroy();
+    // Release this rackspace's Y.Doc + UndoManager so the next mount
+    // (e.g. user navigates to a different rackspace from the dashboard)
+    // starts from a clean slate. If the user re-enters the same
+    // rackspace, the +page.svelte top-level bindRackspace() above re-
+    // creates a fresh doc and the provider re-syncs from the server.
+    unbindRackspace();
   });
 
   async function join() {
@@ -441,17 +476,17 @@
       {/if}
       <span class="rackspace-name">{data.rackspace.name || 'Untitled'}</span>
       <span class="rackspace-id">{data.rackspace.id}</span>
-      <span class="member-count">
-        {data.rackspace.memberCount}/{data.rackspace.maxMembers} members
+      <span class="member-count" data-testid="member-count">
+        {presentCount}/{data.rackspace.maxMembers} members
       </span>
       <span class="presence-dots" data-testid="presence-dots" aria-label="Active users">
-        {#each allPresences as p (p.clientId)}
+        {#each presentUsers as u (u.id)}
           <span
             class="presence-dot"
             data-testid="presence-dot"
-            data-user-id={p.user.id}
-            style:background={p.user.color}
-            title={p.user.displayName}
+            data-user-id={u.id}
+            style:background={u.color}
+            title={u.displayName}
           ></span>
         {/each}
       </span>
@@ -571,12 +606,19 @@
         <UserButton />
       {/if}
     </div>
-    <Canvas
-      currentUserId={data.currentUserId ?? undefined}
-      {provider}
-      {presenceUser}
-      {audioGate}
-    />
+    <!-- {#key data.rackspace.id} forces a full Canvas remount when the
+         user navigates between rackspaces in the same JS context, so
+         every $derived/$effect inside Canvas tears down and reattaches
+         to the freshly-bound `patch`/`ydoc` proxies. Without this the
+         old proxies would dangle and updates wouldn't render. -->
+    {#key data.rackspace.id}
+      <Canvas
+        currentUserId={data.currentUserId ?? undefined}
+        {provider}
+        {presenceUser}
+        {audioGate}
+      />
+    {/key}
     <AudioGate gate={audioGate} />
   </div>
 {:else}

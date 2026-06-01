@@ -160,3 +160,46 @@ export function readRemotePresence(
   }
   return out;
 }
+
+/**
+ * Collapse a list of raw awareness presences into one entry PER DISTINCT
+ * user.id. Awareness has one state per connected tab (clientId), so a single
+ * user with two tabs open shows up twice in the raw list — and an authed
+ * member is NOT counted in the server's `memberUserIds` (DB) source if they
+ * joined anonymously via an invite link. This is the single source of truth
+ * for BOTH the presence dots and the "N/4 members" count: the count is always
+ * exactly `distinctPresentUsers(...).length`, so the number can never disagree
+ * with the number of dots rendered.
+ *
+ * De-dup rule: first-seen wins, keyed by `user.id` (Clerk userId for authed
+ * users, the stable anon-tab UUID for guests). Iteration order of
+ * `awareness.getStates()` is insertion order, so the earliest-connected tab's
+ * presence (color/name) is the one kept.
+ */
+export function distinctPresentUsers(presences: RemotePresence[]): PresenceUser[] {
+  const seen = new Set<string>();
+  const out: PresenceUser[] = [];
+  for (const p of presences) {
+    const user = p?.user;
+    if (!user || !user.id) continue;
+    if (seen.has(user.id)) continue;
+    seen.add(user.id);
+    out.push(user);
+  }
+  return out;
+}
+
+/**
+ * Number of DISTINCT present users (de-duped by user.id). Multi-tab users
+ * count once; anon-via-invite participants are included because they publish
+ * awareness like anyone else. Optionally capped (e.g. at the rackspace
+ * 4-total member cap) so the display never exceeds "/cap".
+ */
+export function countDistinctPresentUsers(
+  presences: RemotePresence[],
+  cap?: number,
+): number {
+  const n = distinctPresentUsers(presences).length;
+  if (typeof cap === 'number' && cap >= 0) return Math.min(n, cap);
+  return n;
+}

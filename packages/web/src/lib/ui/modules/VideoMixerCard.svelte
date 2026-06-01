@@ -6,6 +6,7 @@
   import { patch } from '$lib/graph/store';
   import { mixerVideoDef } from '$lib/video/modules/mixer';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -39,7 +40,7 @@
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">V-MIXER</header>
+  <ModuleTitle {id} {data} defaultLabel="V-MIXER" />
 
   {#each VIDEO_HANDLES as h}
     <Handle type="target" position={Position.Left} id={h.id} style={`top: ${h.y}px; --handle-color: var(--cable-video);`} />

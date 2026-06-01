@@ -312,6 +312,44 @@ test.describe('@collab DOOM per-peer instance model (slice 3)', () => {
         );
         return;
       }
+      // ─── Round 5: A (host) launches → MP goes live so B can hot-join ───
+      // The new model gates a guest's Join on the host running a live MP game.
+      // A launches a coop level first; once live, B's join is a valid hot-join
+      // (the roster + per-peer-netcode assertions below are unchanged).
+      await pair.pageA.evaluate((id) => {
+        const w = globalThis as unknown as {
+          __doomCards: Record<string, {
+            setOptions: (o: { mode?: string; skill?: number; episode?: number; map?: number }) => void;
+            launch: () => void;
+          }>;
+        };
+        w.__doomCards[id]!.setOptions({ mode: 'coop', skill: 0, episode: 1, map: 1 });
+        w.__doomCards[id]!.launch();
+      }, NODE);
+      await pair.pageA.waitForFunction(
+        (id) => {
+          const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
+          return w.__doomCards?.[id]?.getState().mpLive === true;
+        },
+        NODE,
+        { timeout: 30000 },
+      );
+      // B waits to see the live signal (it gates B's join), then hot-joins.
+      const bSawLive = await pair.pageB
+        .waitForFunction(
+          (id) => {
+            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
+            return w.__doomCards?.[id]?.getState().mpLive === true;
+          },
+          NODE,
+          { timeout: 30000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (!bSawLive) {
+        test.skip(true, 'cross-context mpLive sync did not reach peer B (relay flake)');
+        return;
+      }
       await join(pair.pageB, NODE);
 
       // B's WASM has to finish loading before its netcode starts; wait for

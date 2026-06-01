@@ -1,3 +1,31 @@
+// packages/web/src/lib/audio/modules/filter.ts
+//
+// FILTER — multi-mode resonant state-variable filter (LP / BP / HP).
+//
+// The bread-and-butter subtractive-synthesis filter. Faust-compiled DSP
+// (packages/dsp/src/filter.dsp): the Faust core implements LP/BP/HP
+// modes selectable via the `mode` param; cutoff and resonance are
+// continuously modulatable. CV inputs are routed through a ChannelMerger
+// onto the Faust node's per-sample CV channels (rather than via the
+// AudioParam fast path), so cutoff CV is audio-rate clean and the Faust
+// source's own ±5-octave-from-knob mapping is what defines the sweep
+// shape. Patch this after a VCO and before a VCA to get the textbook
+// "filter sweep" voice; modulate cutoff from an envelope or LFO.
+//
+// Inputs:
+//   audio (audio): signal to be filtered.
+//   cutoff (cv, paramTarget=cutoff): audio-rate cutoff CV. Maps -1..+1 to ±5 octaves
+//     around the cutoff knob (Faust-side mapping; engine-side cvScale is omitted on purpose).
+//   res (cv): resonance CV; sums into the resonance param at audio rate.
+//
+// Outputs:
+//   audio (audio): filtered output.
+//
+// Params:
+//   cutoff (log 20..20000 Hz, default 1000): center / corner frequency.
+//   resonance (linear 0..0.99, default 0.1): filter Q / emphasis.
+//   mode (discrete 0..2, default 0): 0=LP, 1=BP, 2=HP.
+
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

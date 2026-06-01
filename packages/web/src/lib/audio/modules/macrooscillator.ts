@@ -29,6 +29,29 @@
 // PR #27 and closed in favour of pure-TS engines (see DX7 PR #77 for the
 // same direction). This module follows the same convention: clean-room TS,
 // model-of-the-archetype rather than a literal port.
+//
+// Inputs:
+//   pitch (pitch): V/oct, 0V = C4. Sums with the note param.
+//   trig (gate): rising edge resets the oscillator phase accumulators.
+//   model_cv (cv, discrete, paramTarget=model): displaces the model selector.
+//   note_cv (cv, linear, paramTarget=note): displaces the note offset (±60 st).
+//   harm_cv (cv, linear, paramTarget=harmonics): displaces harmonics 0..1.
+//   timb_cv (cv, linear, paramTarget=timbre): displaces timbre 0..1.
+//   morph_cv (cv, linear, paramTarget=morph): displaces morph 0..1.
+//   level_cv (cv, linear, paramTarget=level): displaces output level 0..1.
+//
+// Outputs:
+//   out (audio): main audio output, post-LEVEL.
+//   aux (audio): per-model raw tap (sub-octave in VA, clean pre-distortion in WAVESHAPE).
+//     Not LEVEL-scaled — usable as sidechain / scope reference.
+//
+// Params:
+//   model (discrete 0..MACRO_MAX_MODEL, default 0): synthesis model picker.
+//   note (linear -60..60 st, default 0): semitones offset added to pitch CV.
+//   harmonics (linear 0..1, default 0.3): model-specific harmonics macro.
+//   timbre (linear 0..1, default 0.3): model-specific timbre macro.
+//   morph (linear 0..1, default 0.5): model-specific morph macro.
+//   level (linear 0..1, default 0.8): output level.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

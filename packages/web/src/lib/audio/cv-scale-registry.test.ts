@@ -98,6 +98,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // AudioParam fast path — the CV doesn't modulate any knob, it IS the
   // paddle position. Same shape as BUGGLES.clock_cv / chaos_cv above.
   pong: ['paddle_left', 'paddle_right'],
+  // SM64 stick_x_cv / stick_y_cv: bipolar CV sampled per scheduler-tick
+  // into a JS-side stepper (cvToStickValue maps -1..+1 → ±64 N64-native).
+  // No AudioParam fast path — the CV doesn't modulate any knob, it IS the
+  // analog stick position handed to the sm64js bundle's playerInput
+  // global. Same shape as PONG's paddle CVs above.
+  sm64: ['stick_x_cv', 'stick_y_cv'],
   // ANALOGLOGICMATHS a / b: raw bipolar signal inputs consumed directly by
   // the worklet's per-sample MIN/MAX/DIFF/SUM/PRODUCT. The module IS the
   // shaper — the user attenuverts via the attA / attB knobs (which DO carry
@@ -132,6 +138,19 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // routed through a WaveShaperNode. Same shape as cartesian's x_cv/y_cv
   // address selectors + buggles.chaos_cv.
   grids: ['mapX_cv', 'mapY_cv', 'bdDensity_cv', 'sdDensity_cv', 'hhDensity_cv', 'chaos_cv', 'swing_cv'],
+  // 4PLEXER in1..in4: raw signal inputs (audio OR cv) routed straight to
+  // the selected output by the worklet's per-output select — they are the
+  // signal being switched, NOT a knob modulator, so there is no AudioParam
+  // fast path and cvScale doesn't apply. Same shape as SLEWSWITCH.in1..in4.
+  // The gate1..gate4 advance inputs are `gate`-typed and so aren't checked.
+  fourplexer: ['in1', 'in2', 'in3', 'in4'],
+  // CHOWKICK pitch_cv: 1V/oct pitch CV consumed directly by the worklet —
+  // freq *= 2^pitch_cv applied per-sample. Same shape as dx7.pitch_cv and
+  // helm.pitch_cv: a V/oct fallback input with no paramTarget (a freq
+  // AudioParam additive cvScale would NOT be 1V/oct, so we route the
+  // pitch CV as its own audio-rate node input + apply the octave map
+  // inside the per-sample DSP).
+  chowkick: ['pitch_cv'],
 };
 
 describe('cv-scale / registry coverage', () => {

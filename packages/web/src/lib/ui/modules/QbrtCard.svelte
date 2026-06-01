@@ -7,6 +7,7 @@
   import { qbrtDef } from '$lib/audio/modules/qbrt';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -37,7 +38,7 @@
 
 <div class="mod-card qbrt-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">QBRT</header>
+  <ModuleTitle {id} {data} defaultLabel="QBRT" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -50,6 +51,6 @@
 </div>
 
 <style>
-  .qbrt-card { width: 280px; min-height: 240px; }
+  .qbrt-card { width: 280px; }
   .qbrt-card .fader-row { padding: 0 24px; margin-top: 14px; }
 </style>

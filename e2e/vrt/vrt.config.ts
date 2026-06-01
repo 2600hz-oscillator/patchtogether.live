@@ -29,15 +29,28 @@ const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const IS_LOCAL_TARGET =
   BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
 
+// `VRT_STRICT=1` narrows the spec set to ONLY vrt.spec.ts (the per-
+// module card-baseline pass, filtered to STRICT_VRT_MODULES inside the
+// spec). The auxiliary specs (composite scenes, playhead, interactions,
+// skins) lean harder on animated state + multi-card layout timing — they
+// belong to the informational lane (`task vrt`), not the gate.
+const STRICT_MATCH = ['vrt.spec.ts'];
+const FULL_MATCH = [
+  'vrt.spec.ts',
+  'vrt-wavesculpt-blink.spec.ts',
+  'vrt-composite.spec.ts',
+  'vrt-composite-coverage.spec.ts',
+  'playhead.spec.ts',
+  'interactions.spec.ts',
+  'groups.spec.ts',
+  'dashboard.spec.ts',
+  'skin-diner.spec.ts',
+  'skin-lcars.spec.ts',
+];
+
 export default defineConfig({
   testDir: '.',
-  testMatch: [
-    'vrt.spec.ts',
-    'playhead.spec.ts',
-    'interactions.spec.ts',
-    'groups.spec.ts',
-    'dashboard.spec.ts',
-  ],
+  testMatch: process.env.VRT_STRICT === '1' ? STRICT_MATCH : FULL_MATCH,
   // Single-worker by design. VRT screenshots care about exact pixel
   // output; running multiple workers in parallel against the same dev
   // server creates GPU contention + paint-timing variability that

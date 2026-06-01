@@ -1,0 +1,261 @@
+/*!
+   *  decimal.js v10.6.0
+   *  An arbitrary-precision Decimal type for JavaScript.
+   *  https://github.com/MikeMcl/decimal.js
+   *  Copyright (c) 2025 Michael Mclaughlin <M8ch88l@gmail.com>
+   *  MIT Licence
+   */
+
+/*!
+ * The buffer module from node.js, for the browser.
+ *
+ * @author   Feross Aboukhadijeh <http://feross.org>
+ * @license  MIT
+ */
+
+/*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
+
+/*! keydrown - v1.2.7 - 2020-10-01 - http://jeremyckahn.github.com/keydrown */
+
+/*! safe-buffer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+
+/**
+ * @license Fraction.js v4.3.7 31/08/2023
+ * https://www.xarg.org/2014/03/rational-numbers-in-javascript/
+ *
+ * Copyright (c) 2023, Robert Eisele (robert@raw.org)
+ * Dual licensed under the MIT or GPL Version 2 licenses.
+ **/
+
+/**
+ * event-lite.js - Light-weight EventEmitter (less than 1KB when gzipped)
+ *
+ * @copyright Yusuke Kawasaki
+ * @license MIT
+ * @constructor
+ * @see https://github.com/kawanet/event-lite
+ * @see http://kawanet.github.io/event-lite/EventLite.html
+ * @example
+ * var EventLite = require("event-lite");
+ *
+ * function MyClass() {...}             // your class
+ *
+ * EventLite.mixin(MyClass.prototype);  // import event methods
+ *
+ * var obj = new MyClass();
+ * obj.on("foo", function() {...});     // add event listener
+ * obj.once("bar", function() {...});   // add one-time event listener
+ * obj.emit("foo");                     // dispatch event
+ * obj.emit("bar");                     // dispatch another event
+ * obj.off("foo");                      // remove event listener
+ */
+
+/** @license URI.js v4.4.1 (c) 2011 Gary Court. License: http://github.com/garycourt/uri-js */
+
+//!
+
+//! (BLJ's) This properly handles long jumps from getting forward speed with
+
+//! (Exposed Ceilings) Because any point above a ceiling counts
+
+//! (OOB Object Crash) TRUNC overflow exception after 36 minutes
+
+//! (Obj Position Crash) If you got an object with height past 2^31, the game would crash.
+
+//! (Speed Crash) Crashes if Mario's speed exceeds or equals 2^15.
+
+//! (Speed Crash) Crashes if Mario's speed exceeds or equals 2^16.
+
+//! (Speed Crash) These casts can cause a crash if (dYaw * forwardVel / 12) or
+
+//! (Speed Crash) This crashes if Mario has more speed than 2^15 speed.
+
+//! (Unreferenced Walls) Since this only returns the first four walls,
+
+//! (Wall Overlaps) Because this doesn't update the x and z local variables,
+
+//! (forwardVel * 170) exceed or equal 2^31.
+
+//! -0x4000 not handled - can slide down a slope while facing perpendicular to it
+
+//! 10k glitch
+
+//! 16777216 (1 << 24), at which point it will freeze (due to floating-point
+
+//! @BUG Doesn't check for the vertical wind death floor.
+
+//! @bug C-Right and C-Up take precedence due to the way input is handled here
+
+//! @bug Interestingly, this means if Mario goes from outside
+
+//! @bug Missing return statement. This compiles to return `waterLevel`
+
+//! @bug This should check for 0x7FFF (CUTSCENE_LOOP)
+
+//! @bug since this event is only called for one frame, this handheld shake is turned off on the
+
+//! @bug unnecessary
+
+//! ACT_ENTERING_STAR_DOOR
+
+//! After ~6.47 days, paintings with RIPPLE_TRIGGER_CONTINUOUS will increment this to
+
+//! Although the Bob-omb's action is set to explode when the fuse timer expires,
+
+//! Always true since dy = 500, making d >= 500
+
+//! Because gCutsceneTimer is often set to 0x7FFF (CUTSCENE_LOOP), this conditional can only
+
+//! Because some objects allow these active flags to be set but don't
+
+//! Because this function runs no matter what, Mario is able to interrupt the bully's
+
+//! Both oAngleVelYaw and oAngleVelRoll aren't reset until the platform
+
+//! By strategically hitting a wall, steep slope, or another goomba, we can
+
+//! Can delay this if we get into a cutscene-unfriendly action after the
+
+//! Can overshoot if |*value| > 1/(dragStrength * 0.0001)
+
+//! Castle Lobby uses 0 to mean 'no special modes', but BBH uses 1...
+
+//! CotMC.
+
+//! Crash if mario's referenced ceiling is NULL (same for other hanging actions)
+
+//! Does nothing because focOffset[0] is always 0
+
+//! Does nothing because focOffset[1] is always 0
+
+//! Doesn't update mario's referenced floor (allows oob death when
+
+//! Duplicate camera trigger outside JRB door
+
+//! Hands-free holding. Bonking while no wall is referenced
+
+//! Hands-free holding. Landing on a slope or being pushed off a ledge while
+
+//! Hardcoded position checks determine which cutscene to play when Mario enters castle grounds.
+
+//! Hardcoded position. TTM's painting is close to an opposite wall, so just fix the pos.
+
+//! Heave hos have the grabbable interaction type but are not normally
+
+//! If Mario is near OOB, these floorY's can sometimes be -11000.
+
+//! If OBJ_MOVE_13 tracks bouncing, it overestimates, since velY
+
+//! If one object moves after collisions are detected and this code
+
+//! If the chain chomp gets stuck, it may never hit a wall, resulting
+
+//! If the platform is moving counterclockwise upward or
+
+//! If we move outside the goomba's drawing radius the frame it enters the
+
+//! If you press B to throw the shell, there is a ~5 frame window
+
+//! In Mario mode, the camera is zoomed out further than in lakitu mode (1400 vs 1200)
+
+//! In the success cutscene, when Mario jumps out face-first, only his gfx angle is updated. His
+
+//! It seems theoretically possible to get 2-3 goombas to repeatedly touch
+
+//! Maybe they meant to reverse yawGoal's sign?
+
+//! Never true
+
+//! No effect
+
+//! Not in the 0x8F mask
+
+//! OoB failsafe
+
+//! Possible division by zero
+
+//! Set each ParallelTrackingPoint's distThresh to 0 to make Mario truly run parallel to the path
+
+//! Sets the camera mode when leaving secret aquarium
+
+//! Since the search for floors starts at y + 160, we will sometimes grab
+
+//! Some wall checks are larger than the buffer, meaning wall checks can
+
+//! Speed is capped a frame late (butt slide HSG)
+
+//! TODO: Describe this glitch
+
+//! Technically possible that the room could still be 0 here
+
+//! The Big Bully that spawns from killing its 3 minions uses the knockback timer
+
+//! The wall may not be the gate
+
+//! This can happen even when the goomba is already in the air. It's
+
+//! This is attempting to use trig derivatives to rotate mario's speed.
+
+//! This makes the HOLP not update when the camera is far away, and it
+
+//! This maybe was supposed to be sTransitionTimer == -1? sTransitionUpdate
+
+//! This should be checked before calling is_pos_in_bounds. (It doesn't belong
+
+//! Tricky math: Since offset_rotated() flips Z offsets, you'd expect a positive Z offset to move
+
+//! Uncapped air speed. Net positive when moving forward.
+
+//! Unnecessary conditional, focusDistance is already bounded to 800
+
+//! Unnecessary use of double constants
+
+//! Water ceiling downwarp
+
+//! We only handle floor collision if the object does not enter
+
+//! When distThresh != 0, it causes Mario to move slightly towards the camera when running sideways
+
+//! When the wall is not completely vertical or there is a slight wall
+
+//! While the animation is playing, it is possible for the used object
+
+//! actual face angle isn't updated until after the cutscene.
+
+//! bitwise AND instead of boolean
+
+//! bully_backup_check() happens after this function, and has the potential to reset
+
+//! check for == due to overflow
+
+//! cvar4 is unused in this cutscene
+
+//! doorStatus is never DOOR_ENTER_LOBBY when cameraEvent == 6, because
+
+//! doorStatus is only used for the star door in the lobby, which uses
+
+//! doorStatus is reset every frame. CameraTriggers need to constantly set doorStatus
+
+//! f32 double conversion error accumulates on Wii VC causing the platform to rise up
+
+//! fall through
+
+//! imprecision?) and the painting will stop rippling. This happens to HMC, DDD, and
+
+//! incidentally.
+
+//! instead, cutscenes that last longer than 0x3FFF frames will never end on their own
+
+//! more close than open nodes
+
+//! next frame.
+
+//! outside the while loop because some events disable area processing)
+
+//! positive Z offset moves the camera "behind" Mario, away from the painting.
+
+//! returning uninitialized variable (not)
+
+//! the camera into the wall. However, Mario's faceAngle always points into the painting, so a
+
+//! yet another malformed light...

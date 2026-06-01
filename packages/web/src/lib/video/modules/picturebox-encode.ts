@@ -140,7 +140,15 @@ export async function base64ToImageBitmap(b64: string): Promise<ImageBitmap> {
   // TS's stricter generic widening trips up under svelte-check. The cast
   // is safe — we just allocated this Uint8Array against an ArrayBuffer.
   const blob = new Blob([bytes as BlobPart], { type: IMAGE_MIME });
+  // Decode bottom-up ('flipY') so that uploading with UNPACK_FLIP_Y_WEBGL=true
+  // (see picturebox.setImage) lands the image right-side-up under vUv sampling
+  // — the repo-wide orientation convention. EXIF rotation is irrelevant here:
+  // these bytes are our OWN re-encoded JPEG (drawn top-down onto an
+  // OffscreenCanvas in downscaleAndEncode, which strips EXIF), so 'from-image'
+  // was a no-op for rotation AND left the result upside-down. NOTE: Chromium
+  // ignores UNPACK_FLIP_Y_WEBGL for Blob-sourced ImageBitmaps, so baking the
+  // flip into the bitmap here is what actually corrects orientation.
   return await createImageBitmap(blob, {
-    imageOrientation: 'from-image' as ImageBitmapOptions['imageOrientation'],
+    imageOrientation: 'flipY' as ImageBitmapOptions['imageOrientation'],
   });
 }

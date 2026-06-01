@@ -86,6 +86,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   drummergirl: { top: 'Audio modules', sub: 'VCOs' },
   riotgirls: { top: 'Audio modules', sub: 'VCOs' },
   samsloop: { top: 'Audio modules', sub: 'VCOs' },
+  // BLUEBOX — DTMF dialer + phreaker buttons. Gate-triggered sound source
+  // (12 buttons → mono out), sits alongside the other gate-triggered
+  // voices in the VCOs row.
+  bluebox: { top: 'Audio modules', sub: 'VCOs' },
   // HELM + HYDROGEN moved to Ports (top-level, flat) — see the Ports
   // block below. The MI ports (rings, clouds, peaks, stages, blades,
   // macrooscillator, veils, warps) also moved to Ports/Mutable.
@@ -112,6 +116,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // ATLANTIS-PATCH support trio — see graph/types.ts for the full notes.
   slewSwitch: { top: 'Audio modules', sub: 'Utility' },
   atlantisCatalyst: { top: 'Audio modules', sub: 'Utility' },
+  // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
+  fourplexer: { top: 'Audio modules', sub: 'Utility' },
 
   // ───────── Audio modules → Effects ─────────
   filter: { top: 'Audio modules', sub: 'Effects' },
@@ -127,6 +133,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // Audio-in → audio-out → fundamentally an effect, even though it can
   // also act as a freeze-gated source when patched into its own feedback.
   callsine: { top: 'Audio modules', sub: 'Effects' },
+  // SIDECAR — stereo sidechain compressor (GMR 2012; Faust co.compressor_stereo
+  // as reference). Effects category — fundamentally a dynamics processor
+  // sitting in the audio chain.
+  sidecar: { top: 'Audio modules', sub: 'Effects' },
   // blades, warps, clouds → moved to Ports/Mutable.
   // cloudseed → moved to Ports (top-level).
 
@@ -145,11 +155,27 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   helm: { top: 'Ports', sub: 'Ports' },
   hydrogen: { top: 'Ports', sub: 'Ports' },
   cloudseed: { top: 'Ports', sub: 'Ports' },
+  // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0). Headline software
+  // delay port — one click in the picker, flat under the Ports header.
+  cocoadelay: { top: 'Ports', sub: 'Ports' },
+  // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
+  resofilter: { top: 'Ports', sub: 'Ports' },
+  // TREE.oh.VOX — TB-303 voice slice (port of Robin Schmidt's Open303).
+  // Sits under Ports next to the other software-port voices; the full 404
+  // module (sequencer + TD-3 UI) is queued as a follow-up.
+  treeohvox: { top: 'Ports', sub: 'Ports' },
+  // CHOWKICK — synth-kick voice (port of chowdsp / Jatin Chowdhury's
+  // ChowKick, BSD-3-Clause). Sits with the headline external-software
+  // ports flat under the Ports header alongside cocoadelay + resofilter.
+  chowkick: { top: 'Ports', sub: 'Ports' },
 
   // ───────── Ports → Mutable (Émilie Gillet / MI archetype ports). ─────────
   rings: { top: 'Ports', sub: 'Mutable' },
+  elements: { top: 'Ports', sub: 'Mutable' },
   clouds: { top: 'Ports', sub: 'Mutable' },
   peaks: { top: 'Ports', sub: 'Mutable' },
+  marbles: { top: 'Ports', sub: 'Mutable' },
+  symbiote: { top: 'Ports', sub: 'Mutable' },
   stages: { top: 'Ports', sub: 'Mutable' },
   tides2: { top: 'Ports', sub: 'Mutable' },
   blades: { top: 'Ports', sub: 'Mutable' },
@@ -173,10 +199,22 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   shapes: { top: 'Video modules', sub: 'Sources' },
   shapedramps: { top: 'Video modules', sub: 'Sources' },
   acidwarp: { top: 'Video modules', sub: 'Sources' },
+  // MANDLEBLOT — Mandelbrot fractal generator (mono + colour outputs).
+  mandleblot: { top: 'Video modules', sub: 'Sources' },
+  // PEAKSTATE — animated mandala generator (kaleidoscope mirror-arm pen
+  // trace + 3D-tube output). Self-driving video source.
+  peakstate: { top: 'Video modules', sub: 'Sources' },
   // DOOM — single-instance interactive video module. Cards are
   // keyboard-driven (focus-within ring) + CV-gate-driven; one host
   // per rack, spectators see the framebuffer over Yjs awareness.
   doom: { top: 'Video modules', sub: 'Sources' },
+  // NIBBLES — QBasic Nibbles snake game module. Video source with CV
+  // gate outputs (pellet/death/dir_change), length CV, + dual audio.
+  nibbles: { top: 'Video modules', sub: 'Sources' },
+  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator. CV-only control
+  // (coin/start gates + joy_x/joy_y CV) + event-gate outputs
+  // (move/die/level) alongside the video + mono audio.
+  qbert: { top: 'Video modules', sub: 'Sources' },
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   videobox: { top: 'Video modules', sub: 'Sources' },
   // VIDEOVARISPEED — local-file player with performant varispeed transport.
@@ -193,12 +231,26 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   destructor: { top: 'Video modules', sub: 'Processors' },
   feedback: { top: 'Video modules', sub: 'Processors' },
   vdelay: { top: 'Video modules', sub: 'Processors' },
+  // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
+  // + LIGHTEN/DARKEN key masks). Sits with the other feedback processors.
+  backdraft: { top: 'Video modules', sub: 'Processors' },
   monoglitch: { top: 'Video modules', sub: 'Processors' },
+  reshaper: { top: 'Video modules', sub: 'Processors' },
+  // SHAPEGEN — 3 video rasters → 3D-shape scene (extracted from FOXY).
+  // Categorized under Processors because the inputs drive the shape
+  // generation; the output is a rendered scene.
+  shapegen: { top: 'Video modules', sub: 'Processors' },
   ruttetra: { top: 'Video modules', sub: 'Processors' },
 
   // ───────── Video modules → Utilities ─────────
   videoMixer: { top: 'Video modules', sub: 'Utilities' },
   videoOut: { top: 'Video modules', sub: 'Utilities' },
+  // 4PLEXVID — 4-in / 4-out discrete video router (the video sibling of the
+  // audio 4Plexer). Per-output selector knob + gate-advanced rotation.
+  '4plexvid': { top: 'Video modules', sub: 'Utilities' },
+  // SCOREBOARD — 4-digit neon 7-segment counter widget. SCORE + RESET gate
+  // inputs; one COLOR knob; renders the count as a video signal.
+  scoreboard: { top: 'Video modules', sub: 'Utilities' },
   // BENTBOX is a CRT-emulation display — sits with the other outputs even
   // though it also functions as a destructive processor (the bending stage).
   bentbox: { top: 'Video modules', sub: 'Utilities' },
@@ -211,6 +263,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   wavviz: { top: 'Hybrid', sub: 'Hybrid' },
   swolevco: { top: 'Hybrid', sub: 'Hybrid' },
   wavecel: { top: 'Hybrid', sub: 'Hybrid' },
+  // FOXY — hybrid audio-visual: SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL.
+  foxy: { top: 'Hybrid', sub: 'Hybrid' },
   warrenspectrum: { top: 'Hybrid', sub: 'Hybrid' },
   // PONG — research-prototype game module. CV-in paddles + gate-out scores,
   // visual game state on the card. Sits in Hybrid alongside the other
@@ -219,12 +273,21 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // MODTRIS — research-prototype Tetris-clone game module. Gate-in controls
   // + gate-out events. Same bucket as PONG.
   modtris: { top: 'Hybrid', sub: 'Hybrid' },
+  // FROGGER — research-prototype Frogger port. 5 CV-gate inputs (up/down/
+  // left/right + start), 3 gate outputs (home/dead/level). Auto-starts on
+  // module-spawn via a synthesized start_gate pulse. Same bucket as PONG /
+  // MODTRIS.
+  frogger: { top: 'Hybrid', sub: 'Hybrid' },
+  // SM64 — sm64js pure-JS Super Mario 64 port (WTFPL). Single-instance
+  // (maxInstances:1) per rack. Bucket alongside the other game modules.
+  sm64: { top: 'Hybrid', sub: 'Hybrid' },
   // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
   wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
   // Meta-domain organizational tools live here — they don't fit
   // cleanly under audio or video and the user can re-bucket on dev.
   sticky: { top: 'Hybrid', sub: 'Hybrid' },
   group: { top: 'Hybrid', sub: 'Hybrid' },
+  cadillac: { top: 'Hybrid', sub: 'Hybrid' },
   livecode: { top: 'Hybrid', sub: 'Hybrid' },
   // Clocked runner — spawned programmatically by LIVECODE's clocked()
   // call. Listed alongside LIVECODE so users browsing the palette can

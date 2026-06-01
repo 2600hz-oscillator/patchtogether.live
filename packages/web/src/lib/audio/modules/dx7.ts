@@ -33,6 +33,20 @@
 //
 // On preset change, the host sends a `{type:'patch', voice}` message to the
 // worklet which rebuilds its internal patch state.
+//
+// Inputs:
+//   poly (polyPitchGate): polyphonic pitch+gate (preferred — up to 5 voices).
+//   pitch_cv (cv): mono V/oct (legacy single-voice route).
+//   gate (gate): mono gate (legacy single-voice route).
+//
+// Outputs:
+//   out (audio): mono mixed voice bus.
+//
+// Params:
+//   algorithm (discrete 1..32, default 5): DX7 algorithm index (live-editable).
+//   voiceCount (discrete 1..5, default 5): polyphony cap.
+//   level (linear 0..2, default 0.7): output level.
+//   transpose (linear -24..24 st, default 0): global transposition.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

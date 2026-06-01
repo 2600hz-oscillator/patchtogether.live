@@ -1,0 +1,215 @@
+name: Live Smoke Alert
+
+# Every 10 minutes: probe dev.patchtogether.live + the Hocuspocus relay,
+# and open a GH issue (which emails the watcher list — tmayshark@gmail.com
+# is the configured destination per the observability slice-1 plan) when a
+# probe trips. This is the backstop layer alongside BetterStack (set up
+# separately per docs/observability/setup-betterstack.md); it works whether
+# or not BetterStack is configured.
+#
+# Why this exists: per memory `project_observability_priority.md` the
+# previous relay OOM went UNALERTED — there was no probe of the Fly
+# machine's resources and no escalation when /health stopped responding.
+# The matching /metrics endpoint (packages/server/src/http-introspection.ts)
+# is the source of the rss_mb reading this workflow gates on.
+#
+# Required repo VARS (Settings → Secrets and variables → Actions → Variables):
+#   LIVE_SMOKE_WEB_URL    — e.g. https://dev.patchtogether.live (default if unset)
+#   LIVE_SMOKE_RELAY_URL  — e.g. https://patchtogether-server-dev.fly.dev
+#   LIVE_SMOKE_CRIT_MB    — RSS threshold above which we treat as CRIT (default 480)
+#
+# Required repo SECRETS:
+#   DEV_BETA_GATE_PASS    — basic-auth pass for dev.patchtogether.live's gate
+#                           (per memory `reference_beta_gate_creds.md`: user `beta`)
+#
+# State management (don't spam):
+#   We download the most-recent `live-smoke-state` artifact, decide whether
+#   to fire based on transitions or sustained-unhealthy >30 min, and
+#   re-upload the updated state. First run after merge has no artifact and
+#   fires only on TRUE unhealth — never opens an issue when state is
+#   absent + everything passes.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_fire:
+        description: 'Force-fire even if state says healthy (smoke-test the alert path)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: live-smoke-alert
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  smoke:
+    name: Probe + alert
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      WEB_URL: ${{ vars.LIVE_SMOKE_WEB_URL || 'https://dev.patchtogether.live' }}
+      RELAY_URL: ${{ vars.LIVE_SMOKE_RELAY_URL || 'https://patchtogether-server-dev.fly.dev' }}
+      RELAY_MEM_CRIT_MB: ${{ vars.LIVE_SMOKE_CRIT_MB || '480' }}
+      BETA_GATE_PASS: ${{ secrets.DEV_BETA_GATE_PASS }}
+      BETA_GATE_USER: beta
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore prior alert state
+        id: restore-state
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: live-smoke-state
+          workflow: live-smoke-alert.yml
+          path: ./.smoke-state
+          if_no_artifact_found: ignore
+
+      - name: Initialize state if missing
+        run: |
+          if [[ ! -f ./.smoke-state/alert-state.json ]]; then
+            mkdir -p ./.smoke-state
+            cat > ./.smoke-state/alert-state.json <<EOF
+          {
+            "healthy": true,
+            "first_unhealthy_ts": null,
+            "last_issue_run_id": null
+          }
+          EOF
+          fi
+          cat ./.smoke-state/alert-state.json
+
+      - name: Run smoke probe
+        id: probe
+        continue-on-error: true
+        run: bash scripts/live-smoke-alert.sh
+
+      - name: Parse probe output
+        id: parse
+        run: |
+          # Re-run, capture both stdout and exit code without --dry-run.
+          # The previous step already did the live probe; we re-extract its
+          # SMOKE_RESULT JSON from the captured log.
+          bash scripts/live-smoke-alert.sh > /tmp/smoke.out 2>&1 || true
+          cat /tmp/smoke.out
+          # Extract JSON between markers.
+          awk '/^<<SMOKE_RESULT>>$/,/^<<END_SMOKE_RESULT>>$/' /tmp/smoke.out \
+            | sed '1d;$d' > /tmp/smoke-result.json
+          echo "--- smoke-result.json ---"
+          cat /tmp/smoke-result.json
+          healthy=$(jq -r '.healthy' /tmp/smoke-result.json)
+          reason=$(jq -r '.reason' /tmp/smoke-result.json)
+          echo "healthy=$healthy" >> "$GITHUB_OUTPUT"
+          # Reason can contain newlines/quotes; use the heredoc form.
+          {
+            echo "reason<<EOF"
+            echo "$reason"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to fire
+        id: decide
+        run: |
+          healthy='${{ steps.parse.outputs.healthy }}'
+          force='${{ github.event.inputs.force_fire }}'
+          now=$(date -u +%s)
+          prev_healthy=$(jq -r '.healthy' ./.smoke-state/alert-state.json)
+          prev_first_unhealthy=$(jq -r '.first_unhealthy_ts // 0' ./.smoke-state/alert-state.json)
+
+          should_fire=false
+          new_first_unhealthy="null"
+
+          if [[ "$healthy" == "true" ]]; then
+            new_first_unhealthy="null"
+            should_fire=false
+          else
+            if [[ "$prev_first_unhealthy" == "0" || "$prev_first_unhealthy" == "null" ]]; then
+              new_first_unhealthy="$now"
+            else
+              new_first_unhealthy="$prev_first_unhealthy"
+            fi
+            # Fire on transition (prev healthy → now unhealthy)
+            if [[ "$prev_healthy" == "true" ]]; then
+              should_fire=true
+            else
+              # Sustained unhealthy: fire if > 30 min since first_unhealthy
+              age_s=$(( now - new_first_unhealthy ))
+              if [[ "$age_s" -gt 1800 ]]; then
+                should_fire=true
+              fi
+            fi
+          fi
+
+          if [[ "$force" == "true" ]]; then
+            should_fire=true
+          fi
+
+          # Persist new state for the next run.
+          jq -n \
+            --argjson healthy "$healthy" \
+            --argjson first_unhealthy "$new_first_unhealthy" \
+            --arg run_id "${{ github.run_id }}" \
+            '{
+              healthy: $healthy,
+              first_unhealthy_ts: $first_unhealthy,
+              last_issue_run_id: (if $healthy then null else $run_id end)
+            }' > ./.smoke-state/alert-state.json
+          cat ./.smoke-state/alert-state.json
+
+          echo "should_fire=$should_fire" >> "$GITHUB_OUTPUT"
+          echo "prev_healthy=$prev_healthy" >> "$GITHUB_OUTPUT"
+
+      - name: Persist updated state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-smoke-state
+          path: ./.smoke-state/alert-state.json
+          retention-days: 30
+          overwrite: true
+
+      - name: Open alert issue
+        if: steps.decide.outputs.should_fire == 'true'
+        uses: actions/github-script@v7
+        env:
+          REASON: ${{ steps.parse.outputs.reason }}
+          PREV_HEALTHY: ${{ steps.decide.outputs.prev_healthy }}
+        with:
+          script: |
+            const reason = process.env.REASON || 'no reason captured';
+            const transitioned = process.env.PREV_HEALTHY === 'true';
+            const tag = transitioned ? 'NEW' : 'SUSTAINED';
+            const body = [
+              `**Live smoke probe failed** (state: ${tag}).`,
+              '',
+              `**Reason:** ${reason}`,
+              '',
+              `**Web URL:** ${process.env.WEB_URL || 'https://dev.patchtogether.live'}`,
+              `**Relay URL:** ${process.env.RELAY_URL || 'https://patchtogether-server-dev.fly.dev'}`,
+              `**Crit RSS threshold:** ${process.env.RELAY_MEM_CRIT_MB || '480'} MB`,
+              '',
+              `Workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              `When a fix is in, close this issue. The workflow will not re-open it until the next state transition or 30+ min of sustained unhealth.`,
+              '',
+              `Notification path: this issue creation emails repo watchers, including tmayshark@gmail.com per the slice-1 plan.`,
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[CRIT] dev.patchtogether.live alert: ${reason.split(';')[0].slice(0, 80)}`,
+              body,
+              labels: ['observability', 'alert'],
+            });
+
+      - name: Fail the job if unhealthy
+        if: steps.parse.outputs.healthy != 'true'
+        run: |
+          echo "::error::live smoke probe failed: ${{ steps.parse.outputs.reason }}"
+          exit 1

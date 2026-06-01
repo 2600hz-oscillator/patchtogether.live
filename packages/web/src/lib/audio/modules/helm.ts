@@ -30,6 +30,40 @@
 // formant/feedback), arpeggiator, poly LFO, mod sources panel, BPM-locked LFO
 // frequencies, modulation matrix (mod sources are pre-wired to musically
 // sensible destinations in v1 — see the helm.ts worklet header).
+//
+// Inputs:
+//   pitch_cv (cv): mono V/oct (legacy / step-sequence-driven).
+//   gate (gate): mono gate.
+//   midi_in (cv): legacy CV channel (kept for parity with other DX7-style modules).
+//   seq_reset (gate): rising edge resets the internal step-sequencer.
+//
+// Outputs:
+//   out_l / out_r (audio): stereo mixed voices.
+//
+// Params (~45 — Helm's full v1 surface):
+//   voiceCount (discrete 1..8, default 6): polyphony cap.
+//   volume (linear 0..2, default 0.7): master gain.
+//   osc1Wave / osc2Wave (discrete 0..3, default 0/1): per-osc waveform (saw/square/tri/sine).
+//   osc1Trans / osc2Trans (linear -24..24 st, default 0/0): per-osc transposition.
+//   osc1Tune / osc2Tune (linear -100..100 c, default 0/7): per-osc cents fine-tune.
+//   osc1Unison / osc2Unison (discrete 1..7, default 1): per-osc unison voice count.
+//   osc1Detune / osc2Detune (linear 0..50 c, default 10): unison detune width.
+//   osc1Vol / osc2Vol (linear 0..1, default 0.8/0.6): per-osc level.
+//   subWave (discrete 0..3, default 3): sub-osc waveform.
+//   subVol (linear 0..1, default 0.4): sub-osc level.
+//   noiseVol (linear 0..1, default 0): noise mix.
+//   filterCutoff (log 20..20000 Hz, default 4000): filter cutoff.
+//   filterRes (linear 0.5..16, default 1.0): filter resonance.
+//   filterBlend (linear 0..2, default 0): LP/BP/HP crossfade.
+//   filterStyle (discrete 0..1, default 0): 12dB / 24dB pole count.
+//   filterDrive (linear 0.5..6, default 1.0): pre-filter drive.
+//   filterKeyTrack (linear -1..1, default 0.0): cutoff tracks pitch.
+//   ampAttack / ampDecay / ampSustain / ampRelease (linear, default see header): amp envelope.
+//   filAttack / filDecay / filSustain / filRelease + filEnvDepth: filter envelope.
+//   modAttack / modDecay / modSustain / modRelease + modEnvDepth: aux mod envelope.
+//   lfo1Wave / lfo1Freq / lfo1Amp + lfo2Wave / lfo2Freq / lfo2Amp: two LFOs.
+//   stepNumSteps / stepRate / stepSmooth / stepDepth: built-in step-sequencer LFO.
+//   spread (linear 0..1, default 0.3): stereo width.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

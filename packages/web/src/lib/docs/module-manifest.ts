@@ -89,7 +89,7 @@ const DESCRIPTIONS: Record<string, string> = {
   scope:
     '2-channel passthrough oscilloscope. Inputs flow unchanged to outputs while an AnalyserNode samples for display.',
   rasterize:
-    'Audio -> video raster mapper. Each video frame paints a fixed run of audio samples (samples/frame, ~800 at 48k/60fps) as voltage-per-pixel into the 640x360 frame in raster order; a scan cursor drifts + wraps through the frame. Faithful raster mapping (NOT an oscilloscope trace) - a steady tone paints drifting horizontal bands whose spacing tracks the audio frequency vs the line/frame rate. Fully untamed: no limiter, no anti-alias.',
+    'Audio -> video raster mapper. Each video frame paints a fixed run of audio samples (samples/frame, ~800 at 48k/60fps) as voltage-per-pixel into the 640x480 frame in raster order; a scan cursor drifts + wraps through the frame. Faithful raster mapping (NOT an oscilloscope trace) - a steady tone paints drifting horizontal bands whose spacing tracks the audio frequency vs the line/frame rate. Fully untamed: no limiter, no anti-alias.',
   sequencer: '32-step sequencer with internal BPM clock or external clock input.',
   lfo: 'Clockable LFO with four phase outputs (0deg / 90deg / 180deg / 270deg).',
   cartesian: '4x4 grid sequencer. Steps via clock; X/Y CV inputs scrub freely across the grid.',
@@ -139,8 +139,14 @@ const DESCRIPTIONS: Record<string, string> = {
     'Granular texture processor (Mutable Instruments Clouds archetype, Émilie Gillet, 2014, MIT-licensed) — 2-second stereo ring buffer + overlap-added grain cloud (up to 24 grains) + latched FREEZE. Six macros (Position / Size / Pitch / Density / Texture / Blend) with V/oct grain-pitch tracking on the pitch input. v1 ships GRANULAR mode only; STRETCH / LOOPING-DELAY / SPECTRAL modes deferred to follow-up.',
   rings:
     'Modal / sympathetic-string resonator (Mutable Instruments Rings archetype). Faithful TypeScript port of the eurorack/rings/ DSP (MIT-licensed). v1 ships two resonator models: (0) MODAL — bank of 24 parallel stiffness-stretched RBJ bandpasses with cosine-weighted Odd/Even pickup taps; (1) SYMPATHETIC — 2 parallel Karplus-Strong delay lines with one-pole damping. STRUCTURE/BRIGHTNESS/DAMPING/POSITION are the canonical Rings knobs; LEVEL is a soft-limited output gain. EXCITER in drives both engines; STRUM rising edge re-ignites a ~10ms noise burst (KS) or impulse (modal). Outputs odd / even — patch both for stereo. Polyphony 1; STRING+REVERB deferred.',
+  elements:
+    'Modal / physical-modeling voice (Mutable Instruments Elements archetype, Émilie Gillet, 2014, MIT-licensed). Faithful TypeScript port of the eurorack/elements/ DSP. An EXCITER section feeds a modal RESONATOR: BOW (FLOW noise + bow-table friction band-waveguide), BLOW (filtered noise through a waveguide TUBE when pushed past unity) and STRIKE (mallet impulse / particle cloud / plectrum, meta-morphed by MALLET) each have level + timbre. The RESONATOR is a bank of up to 64 parallel state-variable bandpasses: GEOMETRY stretches the partials (harmonic→inharmonic/bell), DAMPING sets Q/decay, BRIGHTNESS biases high-mode energy, POSITION drives a cosine-oscillator pickup comb with a slow-LFO second tap for the stereo aux channel. SPACE blends raw exciter → dry → reverb and widens the stereo spread. PITCH is V/oct, NOTE a ±60-semitone offset, STRENGTH an accent. Outputs main / aux (stereo). FAITHFUL: exciters, modal resonator, tube, envelope, stereo mixdown + soft-limit. SIMPLIFIED: SPACE reverb tail is a compact FDN-lite (not MI reverb.h); sample-ROM exciters use synthetic equivalents; STRING resonator model deferred.',
   peaks:
     'Dual-channel multi-mode utility (Mutable Instruments Peaks archetype, Émilie Gillet, 2013, MIT-licensed). Each channel selects one of five modes — KICK (sine carrier + pitch envelope + amp envelope), SNARE (body sine + filtered noise + decay), HIHAT (six-square metallic cluster + bandpass + decay), ENV (attack-decay envelope, CV-output 0..1, re-attacks on gate), LFO (sine/triangle/square, CV-output ±1, phase resets on gate). Two mode-dependent knobs per channel: knob1 = pitch/mix/brightness/attack/rate; knob2 = decay or waveshape. Gate input retriggers the active engine on rising edges. v1 ships five modes; multistage envelope / tap-LFO / BPF mode deferred to follow-up.',
+  marbles:
+    'Random sampler / clock generator (Mutable Instruments Marbles archetype, Émilie Gillet, MIT-licensed). Clean-room TypeScript port of the eurorack/marbles/ DSP. The T-section (t1 / t2 gates) generates clocked random gates via one of six models — COIN (complementary Bernoulli), CLUSTERS, DRUMS (18 built-in 8-step patterns), INDEP (independent Bernoulli), 3-STATE, MARKOV — with a déjà-vu loop that locks the random stream into a repeating pattern (RATE / T BIAS / T JITTER / DÉJÀ VU / LENGTH). The X-section (x1 / x2 / x3 CV) draws random voltages shaped by SPREAD (variance), X BIAS (mean), and STEPS (quantization amount + STEPS-knob portamento), snapped through a weight-aware variable-resolution quantizer onto one of six scales (C major / C minor / Pentatonic / Pelog / Raag Bhairav / Raag Shri), with its own déjà-vu loop shared across the three X channels via pseudo-random hash shifts. clk is the master clock. CV outs are ±1 (= ±5V). Beta-distribution sampling is approximated analytically vs the firmware\'s precomputed table; the déjà-vu / Markov / quantizer / lag logic is ported line-for-line.',
+  symbiote:
+    'Self-contained drum + bassline machine — Marbles core running the always-on "Symbiote" alt-firmware (Grids T-section + TB-3PO X-section). The T-section runs the Grids drum engine: BD / SD / HH on t1 / t2 / t3, with a DRUMS sub-mode (Émilie Gillet\'s 2D drum-map with bilinear node interpolation + perturbation, driven by MAP X / MAP Y / per-voice BD/SD/HH density) and a EUCLIDEAN sub-mode (shared step length, with a bipolar CHAOS knob: CCW adds probabilistic SD fills, CW rotates the pattern). The X-section runs a TB-3PO generative acid sequencer: ACID DENSITY morphs gate/slide/accent + pitch-change density, TRANSPOSE is ±18 semitones (1V/oct), ACID LEN is 1..32 steps, SCALE picks the in-scale degree set, SEED LOCK commits/reseeds the pattern. Outputs: t1/t2/t3 drum gates, x1 step clock, x2 1V/oct pitch (slewed on slides), x3 acid gate, y accent. ALWAYS in Symbiote mode — the hardware T-MODEL long-press and déjà-vu-button sub-mode toggle are dropped; sub-mode + all TB-3PO controls are normal params. Grids drum-maps are GPLv3 (AGPL-compatible); TB-3PO from the O&C Hemisphere applet.',
   warps:
     'Meta-modulator / signal masher (Mutable Instruments Warps archetype, Émilie Gillet, 2014, MIT-licensed). Clean-room pure-TypeScript port — four cross-modulation algorithms (0=XFADE equal-power crossfade, 1=RING-MOD digital ring modulation with TIMBRE drive, 2=XOR 16-bit bit-mash crossfaded against a 0.7-sum, 3=COMPARE Warps\' direct/threshold/window comparator suite). An internal carrier oscillator (sine / triangle / saw / square selectable via the SHAPE knob) drives the carrier path when carrier_in is unpatched, so the module is usable as a one-input ring modulator or with no inputs at all. PITCH is V/oct on the internal carrier; NOTE is a ±60-semitone offset. LEVEL 1 / LEVEL 2 scale the carrier and modulator inputs. Output is mono softclipped through x/(1+|x|). FOLD / ANALOG-RING / FREQUENCY-SHIFTER / DOPPLER / VOCODER algorithms deferred to a follow-up PR.',
   veils:
@@ -153,6 +159,16 @@ const DESCRIPTIONS: Record<string, string> = {
     'Tidal modulator / poly-slope generator (Mutable Instruments Tides 2018 archetype, Émilie Gillet, MIT-licensed). Clean-room TypeScript port of eurorack/tides2 (poly_slope_generator, ramp_generator, ramp_shaper, ramp_extractor). A versatile ramp / LFO / envelope generator with FOUR related outputs whose relationship is set by OUTPUT MODE: GATES (main slope + variant + end-of-attack + end-of-rise pulses), AMP (four amplitude-stepped copies — SHIFT pans a triangular gain window across the four), PHASE (four progressively phase-shifted copies — SHIFT sets the spread), FREQ (four frequency-divided/multiplied copies — SHIFT picks the ratio set from a 21-entry harmonic/subharmonic sequence). RAMP MODE selects AD (one-shot attack-decay), LOOP (free-running oscillator/LFO), or AR (gated attack-release, also follows an external clock). RANGE selects LFO (slow ≈0.03–30 Hz) / AUDIO (≈8 Hz–8 kHz) / TEMPO (external-clock-synced via the ramp extractor). FREQUENCY tracks 1 V/oct; SHAPE morphs the slope wave; SLOPE is the attack-vs-decay pulse width; SMOOTHNESS smooths (below 0.5) or wavefolds (above 0.5). v1 deviations from bit-exactness: the SHAPE morph is a procedural sine→triangle→ramp→expo bank rather than MI\'s binary lut_wavetable, the ramp extractor is a moving-average period predictor (rhythmic-pattern + constant-PW predictors folded in), and audio-range BLEP anti-aliasing is omitted.',
   cloudseed:
     'Exact algorithm port of Ghost Note Audio\'s CloudSeed reverb (MIT-licensed, github.com/GhostNoteAudio/CloudSeedCore). Stereo input cross-mixes then per-channel passes through: optional 1-pole HP + LP pre-EQ → modulated pre-delay → multitap early-reflection field (up to 256 taps, seed-deterministic) → AllpassDiffuser (up to 12 stages) → 12 parallel late-field DelayLine voices, each with optional in-loop AllpassDiffuser + LowShelf + HighShelf + LP, with T60-targeted feedback that produces a precise decay-seconds tail. Cross-seed control divides the L/R seeded delay layouts for stereo decorrelation. 45 parameters total — 7 macros (DRY / EARLY / LATE faders, INPUT MIX, LOW CUT, HIGH CUT, CROSS SEED) are exposed as AudioParams for CV summing; 38 toggle/integer/seed/modulation parameters live on the worklet\'s message port. Bundled v1 preset bank: DIVINE INSPIRATION (DarkPlate from Programs.h verbatim), SHORT ROOM, BRIGHT HALL, INFINITE PAD. Card footer cycles through the preset bank with click-numbered slots, prev/next arrows, and a live DECAY readout that reflects LateLineDecay\'s computed RT60.',
+  cocoadelay:
+    'Tape-style stereo delay — clean-room TypeScript port of Tilde Murray\'s Cocoa Delay (GPL-3.0). A 10-second stereo tape buffer read at a fractional position with 4-point Hermite interpolation; the read time is modulated two ways: an LFO (AMOUNT × sin at FREQUENCY) and a slow random DRIFT walk (AMOUNT × random, SPEED). Feedback is bipolar (−1..+1) with a STEREO offset that skews the L/R read times apart and a PAN with three modes (STATIC rotation, PING-PONG channel-swap on write, CIRCULAR rotating the wet image). DUCKING sidechains the wet level by an envelope follower on the dry input (AMOUNT, ATTACK, RELEASE). A multi-mode FILTER (1/2/4-pole or state-variable, with crossfade between modes) low-cuts + high-cuts inside the feedback path, and an Airwindows-style stateful DRIVE (PurestDrive × Spiral saturation, GAIN / MIX / FILTER, run 1–16 ITERATIONS) saturates the loop. DRY + WET set the output mix. TEMPO SYNC locks the delay time to a musical division (1/4, 1/8, dotted, triplet…) of a clock period measured from pulses on the CLOCK gate input; the CLK SRC dropdown labels whether that clock is the rack SYSTEM clock (TIMELORDE) or external MIDI (MIDICLOCK) — both arrive as the same pulse stream. When sync is Off the TIME knob is free-running milliseconds. CV inputs cover the musical params: time, feedback, mix, drive, LFO amount, drift, pan, ducking. CHARLOTTE\'S ECHOS is built from four of these engines chained in series.',
+  resofilter:
+    'Multi-mode filter — clean-room TypeScript port of gabrielsoule/resonarium\'s MultiFilter (Source/dsp/MultiFilter.{h,cpp}). 5 modes drawn straight from upstream\'s MultiFilter::Type enum and filterTextFunction: LP / HP / BP / Notch / Allpass. All five characters share a single Cytomic / Zavalishin TPT state-variable filter per channel, so the MODE knob is a pure output picker — switching modes mid-render is pop-free. Cutoff 20 Hz – 20 kHz (log), resonance 0..1 (k = 2 − 2·res, edge-of-self-oscillation at the top), per-param CV inputs (cutoff_cv, reso_cv) sum into the AudioParams with a 50 Hz internal one-pole smoother on cutoff to prevent the steep transfer function from clicking on rapid CV jumps. Stereo input (independent L/R SVF state). The card displays the long-form mode name (e.g. "Low-pass") in a label next to the MODE knob — the headline UX feature: the dial updates the text reactively as you turn it. Drive is intentionally omitted (upstream MultiFilter has no drive stage; saturation lives in WrappedSVF / Distortion which is out of scope for this port).',
+  chowkick:
+    'Synth-kick voice — hand-port of ChowKick by Jatin Chowdhury / chowdsp (github.com/Chowdhury-DSP/ChowKick, BSD-3-Clause). Gate-triggered single-voice kick built from a pulse shaper (Width / Amp / Decay / Sustain, modeled behaviorally from upstream\'s WDF diode-RC circuit) plus a gated noise burst (Amount / Decay / Cutoff + 4 noise types: Uniform / Gaussian / Pink / Velvet) summed into a 2nd-order resonant peaking filter (Freq + 1V/oct pitch CV, Q, Damping with the upstream\'s exponential G = 0.0001·(0.5/0.0001)^damp mapping, plus tanh-saturated feedback driven by Tight + Bounce per the BouncyFilterProc structure). A first-order tone LPF (50..2000 Hz) and dB level (-60..0) form the output stage; Portamento (0..100 ms) smooths freq under V/oct sweeps; LINK couples Q + Damping (midpoint blend) for a single "tightness" macro. All 17 knobs/toggles are CV-able with per-port cvScale hints (log/linear/discrete) per ADR-004. The card mirrors the source plugin\'s two-band UI (Pulse Shape + Resonant Filter) with live canvas previews of the envelope shape + filter response. Mono audio_out.',
+  sidecar:
+    'Stereo sidechain compressor — Giannoulis-Massberg-Reiss 2012 JAES topology (cross-checked against Faust\'s co.compressor_stereo). Stereo audio in, dedicated SC L/R inputs (with normalling fallback: both unpatched → self-detect on the audio pair, the typical "use this as a plain stereo comp" default). The SC detector path runs a one-pole HPF (sc_hpf 20..1000 Hz, default 20 = effectively off) for kick-immune bus compression, then |sL|+|sR| stereo-link rectifier → log2 → 3-region soft-knee gain computer → asymmetric one-pole smoother (attack 0.1..200 ms log, release 1..2000 ms log) → linear gain via 2^(gainDb/6.0205). Stereo-link is always on in v1 so transients never shift the image under compression. Two ENV outputs expose the reduction envelope for cross-patch ducking: env_out = (-gainDb / 24) * envMag (NO clamp — at envMag>1 the output can overshoot 1.0, by spec), and env_inv_out = 1 - env_out (the canonical "patch this into a VCA strength to make it close when the comp fires"). Threshold (-60..0 dB) and envMag (0..2) are CV-modulatable; ratio, attack, release, knee, makeup, and sc_hpf are knob-only. Per-sample param smoothing kills clicks on rapid threshold / envMag changes. The 6.0205 factor (= 20·log10(2)) is the GMR-canonical log2↔dB bridge that lets the smoother run cleanly in the dB domain.',
+  treeohvox:
+    'TB-303 voice slice — clean-room TypeScript port of the voice subset of Robin Schmidt\'s Open303 (MIT, https://github.com/RobinSchmidt/Open303). 6 canonical 303 knobs (TUNE ±12 st, CUTOFF 40 Hz – 6 kHz, RESONANCE 0..1, ENVELOPE 0..1, DECAY 50 ms – 3 s, ACCENT 0..1) plus pitch / gate / accent_in audio-rate inputs and per-knob CV. The DSP is the TB_303 mode of rosic::TeeBeeFilter (the diode-feedback ladder with feedback HP — NOT a Moog ladder; that is the whole point of Open303), the rosic::DecayEnvelope on cutoff, a simplified AR amp envelope mirroring rosic::AnalogEnvelope, and a polyBLEP saw replacing the BlendOscillator wavetable (the 303 character lives in the filter, not the oscillator). Cutoff is modulated per-sample via Open303\'s measured-mapping scaler+offset formula. All 6 knobs have an 80 Hz one-pole WtParamSmoother on the audio thread (per PR #435) so knob drags and CV ride pop-free through the steep filter. Accent boosts both amp peak and filter env contribution on accented notes. The full 404 module — sequencer + transpose + slide + waveform switch + TD-3 smiley — is queued as a follow-up.',
   livecode:
     'JS-runtime live-coding module — CodeMirror editor with port-aware autocomplete and red-underline diagnostics, hit Run, the rack reshapes itself. Exposes spawn / patch / unpatch / set / read / clock.* / clocked() / log. Every clocked() call spawns a CLOCKED runner that owns the subscription. No audio I/O — the card is a side-tool. Full API + examples at /docs/modules/livecode.',
   clockedRunner:
@@ -167,6 +183,44 @@ const DESCRIPTIONS: Record<string, string> = {
     'Connected USB / Bluetooth game controller as CV (stick axes + triggers) and gate (face / bumper / dpad / menu buttons). Reads navigator.getGamepads() at requestAnimationFrame rate. Browser security requires the user to press a button on the gamepad once before the browser exposes it. Outputs: lx / ly / rx / ry (cv ±1, Y inverted so +1 = up, 0.08 deadzone), lt / rt (cv 0..1), lb / rb / a / b / x / y / du / dd / dl / dr / start / back (gate). Standard mapping = Xbox layout; PlayStation + generic HID controllers that report \'standard\' mapping also work. Slot param picks which of up to 4 simultaneous controllers to read.',
   numpadPlus:
     'Numpad-driven 4-layer × 16-step sequencer + live keyboard. Each numpad note key fires the active layer\'s pitch+gate immediately AND, when REC ARM (one-pass record on next play-from-start) or OVERDUB (always-recording) is on, writes the note to the nearest step on the active layer. Default keymap: 1=C, 2=C#, 3=D, 4=D#, 5=E, 6=F, 7=F#, 8=G, 9=G#, 0=A, /=A#, *=B; Numpad+ held = next note +1 octave, Numpad- = -1 octave. Octave 0-8 nudged via on-card arrows. CV inputs: clock (rising-edge external clock — internal BPM ignored while patched) + layer (CV value 0..1 selects active layer, otherwise the activeLayer param wins). CV outputs: l1_pitch / l1_gate ... l4_pitch / l4_gate (8 outputs total) so a patch can route each layer to its own downstream synth — basically a 4-track sequencer. When this module exists in the rack its keyboard listener captures Numpad* event.codes + preventDefault so other modules can\'t see the keys.',
+  aquaTank:
+    '4-channel feedback-delay-network (FDN) reverb / resonator. Four audio inputs feed a Hadamard mixing matrix wrapped in delay lines with per-line feedback (F1–F4), so energy recirculates and cross-mixes between the four channels — short feedback gives lush chorus/early-reflection ambience, long feedback turns it into a ringing metallic resonator. TILT skews the feedback balance across the four lines, DAMP rolls off high frequencies in the loop, CROSS sets how much the channels bleed into each other, SPREAD widens the stereo image, OUT trims level. Four direct mono outs (out1–out4) plus a summed stereo mix (mix_l / mix_r). One of the three ATLANTIS-PATCH support modules, but works standalone as a reverb, chorus, or feedback-resonance unit.',
+  bluebox:
+    'DTMF dialer with phreaker buttons. 12-key phone keypad — digits 0-9 emit the Bell-System dual-tone pair (row + col, e.g. "5" → 770 Hz + 1336 Hz); BLUEBOX emits a single 2600 Hz sine (the AT&T in-band supervisory tone that 1970s phreakers used to seize long-distance trunks); REDBOX emits 1700 + 2200 Hz summed (the US payphone coin-acceptance pair). Each key is push-to-talk — pointerdown on the card OR a gate cable into the matching gate_<name> input holds the key down. Multiple held keys sum, and shared frequencies (e.g. "1" and "4" both pull col=1209) collapse onto a single shared phase accumulator so simultaneous presses produce a louder tone, not a flam. No envelope or musical AD — bare on/off sines with a ~1 ms anti-click ramp at the boundary.',
+  callsine:
+    'Spectral-analysis additive resynthesizer (clean-room port of Warren\'s Spectrum / CallSine, MIT-licensed). Reads incoming mono audio, runs an FFT-based partial tracker (Hann window → peak detection → McAulay-Quatieri-lite tracking → optional F0 harmonic lock) and rebuilds the sound as an additive bank of up to 64 oscillators. Plaits-style macros: HARMONICS sets the partial count, TIMBRE the smoothing/slew time, MORPH the harmonic-LOCK strength (snaps partials to an F0 grid), LEVEL the output gain. A PITCH (V/oct) input transposes the whole resynth; a GATE input toggles FREEZE, latching the current partials at their current frequencies/amplitudes for sustained pads. Ships 14 voice models (SINES, SAW, SQR, PULSE25, TRI, RAMP, CHEBY3/5, HARDSYNC, FOLD, NOISE, FORMANT, SUBOSC, METAL) that swap the per-partial waveform from pure sinusoids to richer/inharmonic shapes.',
+  samsloop:
+    'Loop-based sample player. Upload a small audio file (≤250 KB — wav / mp3 / m4a / ogg / flac / opus) or record from the microphone in place; the clip is decoded to mono and played back from a fractional read-cursor with linear interpolation, so a single rate control covers varispeed including reverse. The RATE slider spans −2 (reverse 2×) through +1 (forward unity, the centered no-op) to +2 (forward 2×), and a rate CV input sums on top (±1 V = ±100%). A TRIG gate retriggers the sample at the playback-window edge. Holds exactly one sample at a time — a new upload or recording replaces the previous buffer (no playlist, no slots), which keeps the per-instance memory ceiling deterministic.',
+  swolevco:
+    'Buchla 259-style complex waveform generator — the "swole VCO" of the lineup: a primary oscillator and a sine modulator in one module. The primary blends saw → triangle → square via the SYMMETRY control, then passes through a West-Coast wavefolder (FOLD). TIMBRE is audio-rate cross-modulation: the modulator FMs the primary (up to ~±4 semitones of deviation) for the classic Buchla harmonic complexity. Pitch is 1 V/oct (0 V = C4) with tune/fine knobs. Outputs the folded primary, the raw modulator, and a summed mix, plus a mono-video SCOPE output of the primary waveform for cross-domain video patching. Pure Web Audio, modeled after ILLOGIC\'s structure.',
+  wavecel:
+    'Stereo wavetable oscillator with morph, stereo spread, and a West-Coast wavefolder — a more advanced sibling of WAVETABLEVCO. MORPH scans the wavetable frame position, SPREAD detunes/widens the stereo image, FOLD adds wavefolding harmonics. Ships factory wavetables and accepts runtime upload of E352-format WAV wavetables (frames ride the Y.Doc out to every rack-mate). The card offers a 3D wavetable visualization in addition to the standard scope view.',
+  foxy:
+    'Hybrid audio-visual module that hides a whole signal chain in one box: a miniature SWOLEVCO drives an internal RASTERIZE (audio painted as a drifting raster), which is downsampled to 256×256 and run through a simplified RUTTETRA "XYZ" forward-scatter scope; the XYZ height field is converted in realtime into an animated wavetable (64 frames × 256 samples, throttled to ~24 Hz) fed to an internal WAVECEL wavetable VCO. The on-card 3D wavetable display visibly animates as the field evolves. Exposes WAVECEL\'s full control + IO surface (tune/fine/morph/spread/fold; pitch/fm + morph_cv/spread_cv/fold_cv; out_l/out_r + scope_out + wave3d_out) plus the mini-SWOLEVCO source controls and the XYZ shape/displacement knobs. The video stages run CPU-side on the main thread (no GL inside the audio node); only the WAVECEL stage is a real worklet.',
+  wavesculpt:
+    'Hybrid 4-oscillator 3D video synth. Four wavetable "wall oscillators" sit on the faces of a 3D unit box, each emitting a colored wave ribbon (RED / GREEN / BLUE / ALPHA) that points into the box; a single user camera renders the scene, positioned via an XY pad (X/Y) and a HEIGHT slider (Z). Audio out is the sum of the four oscillators, each weighted by its per-osc ADSR and by camera↔source distance — the distance gain is the single source of truth shared by audio and visuals, so "closer = louder = bigger ribbon" stays consistent across both domains. Per oscillator: tune/fine, wavetable morph, stereo spread, wavefolder, thickness, and ADSR; camera zoom + Y-rotation shape the view. All four oscillators run in one worklet for a tight audio-rate path.',
+  macseq:
+    '16-step sequencer with a per-step MACROOSCILLATOR voice picker. Each step carries an on/off gate, a MIDI note, and a synthesis-model index. Outputs PITCH (V/oct), GATE (fires on every on-step), CLOCK (a 10 ms pulse per advance for chaining), and MODELCV — a CV cable carrying the step\'s selected model index, rescaled into the project\'s bipolar ±1 convention so it lands on MACROOSCILLATOR\'s discrete model_cv input and reconstructs the integer at the other end. Empty model steps hold the last emitted model (the first emit defaults to model 0 / VA), so sparser patterns "leave it where it was." Lets one sequencer drive both the pitch and the timbre/engine of a MACROOSCILLATOR voice.',
+  atlantisCatalyst:
+    'SCENECHANGE (internal type id stays `atlantisCatalyst` for save compatibility) — a slow-drift "macro brain" that nudges a whole patch into new states without you touching every knob. Emits eight correlated band-limited random-walk CV outputs (drift1–drift8): a COHERENCE control sets how tightly each channel tracks a shared "weather" voltage versus wandering independently, and the drift rate ranges from a few seconds to minutes between scene changes. A scene_pulse gate fires on each transition to a new attractor, scene_idx CV reports the current scene for downstream sequencing, and a HYDROGEN-style transport row (play + scene1–4 gates) plus a manual NUDGE gate and a FREEZE latch give explicit scene recall. Pure JS (eight ConstantSourceNodes driven by a ~40 Hz orchestrator with smoothed transitions). The "catalyst-controller" of the Atlantis-patch concept.',
+  delay:
+    'Simple stereo delay line — time, feedback, and dry/wet mix. Built on Web Audio\'s native DelayNode with a feedback gain loop (input → delay → feedback → output, mixed with dry), the canonical delay topology. TIME ranges log from ~1 ms (slapback) to 2 s (ambient washes), FEEDBACK is linear 0–0.95 with a hard ceiling to prevent runaway self-oscillation, and a time CV input sums onto the knob. The same delay type backs WAVESCULPT\'s FX slot, so its character matches whether patched inline or used as a slot effect.',
+  attenumix:
+    'The simple mixer — a 4-channel attenuating mixer with per-channel direct outs and a master gain. Each channel\'s level is knob + CV summed and clamped to 0..1 (attenuators only attenuate, never boost), giving a per-channel direct out; all four sum into a master (0..2) with a tanh soft-clip so pushing the master past unity stays musical. Compared to VEILS (same quad-VCA-plus-mix topology) ATTENUMIX has no per-channel boost and no linear/exponential toggle — it is the no-surprises "the mixer" where every knob does exactly what it says. CV inputs are passthrough-by-design so a ±1 V LFO at knob=0 sweeps a channel\'s full open range.',
+  joystick:
+    'Manual XY controller emitting four bipolar CV outputs. Drag a virtual stick inside a square pad: center = (0, 0), the corners reach (±1, ±1). Outputs the raw X and Y plus their inversions (nx = −x, ny = −y) so you can drive quadrature or mirrored modulation from one hand without copying and inverting downstream. The card snaps back to center on pointer-up; at the audio layer the module is pure — whatever the position params say is what comes out (four ConstantSourceNodes).',
+  modtris:
+    'Interactive Tetris-clone game module (single-user research prototype). Five gate inputs (rotate_l / rotate_r / drop_fast / move_l / move_r) are rising-edge triggered to play the game; two gate outputs fire one 5 ms pulse per event — line_cleared (a Tetris emits four separate staggered pulses, one per line) and overfill (game over). Game logic runs at visual cadence on the main thread (no audio worklet), with a deterministic, tested state stepper. Patch a sequencer or controller into the inputs and route the cleared-line / overfill gates as triggers, turning gameplay into a modulation source. See docs/design/game-modules.md.',
+  frogger:
+    'Interactive Frogger game module (clean-room TypeScript port of Adrian Eyre\'s React Frogger, MIT-licensed). FULL CV-gate control with NO keyboard exposure on the module: five gate inputs (up_gate / down_gate / left_gate / right_gate / start_gate) are rising-edge triggered to play the game. The start_gate auto-fires once on module-spawn (a synthesized first-tick rising edge) so the user sees a running game by default — the upstream React app\'s pre-game InfoBoard ("click Start Game") is bypassed via this synthetic pulse. The same start_gate is rising-edge triggered by external CV to restart at any time. Three gate outputs fire one 5 ms pulse per event: home_gate (a frog reached one of the 5 home slots — fires up to 5 times per level), dead_gate (frog hit a vehicle, fell in water without a raft, or the per-level timer ran out), level_gate (all 5 homes filled — level complete). One knob: TIME (10..120 s, default 60) sets the per-level timer budget. Game logic runs at visual cadence on the main thread (no audio worklet); pure deterministic state stepper in frogger-state.ts. vizPassthrough: the on-card 14×13 grid canvas can be portaled into a containing GroupCard for cross-domain video out (same mechanism MODTRIS / PONG / SCOPE use). See docs/design/game-modules.md for the multi-user follow-up path.',
+  sm64:
+    'Super Mario 64 (sm64js pure-JS port, WTFPL) as a CV-stick + gate module. Single-instance per rack (maxInstances:1) — the upstream bundle uses module-level WebGL/Game singletons that cannot multi-instance without a 30-file refactor. IO mirrors the N64 controller minus L / D-pad / C-stick: two bipolar CV inputs (stick_x_cv / stick_y_cv, −1..+1 → ±64 N64-native, rounded + clamped) drive the analog stick, and nine gate inputs (a_gate / b_gate / z_gate / r_gate / c_up_gate / c_down_gate / c_left_gate / c_right_gate / start_gate, rising-edge with hysteresis) drive the buttons. start_gate auto-fires once on module-spawn IFF a ROM is present in IndexedDB — same BOOT-NOTE rationale as FROGGER. First spawn with no ROM in IDB surfaces the upstream\'s extract dropzone on the card (drop a US sm64.z64 → extracted assets persist in IDB; one-time per browser). One video output (out): the bundle\'s #gameCanvas mirrored each video frame via the cross-domain audio→video bridge — patch SM64 → VIDEO OUT / BENTBOX / chain video modules to send the same Mario render downstream (mirrors the DOOM `out` pattern). No audio outputs (the upstream\'s audio path is stub-only — TODO in src/index.js; matches FROGGER\'s no-audio profile). vizPassthrough on the on-card WebGL canvas so a containing GROUP can portal it across-domain (same mechanism as FROGGER / MODTRIS / PONG / SCOPE). Auto-downsamples to 320×240 on mobile / low-core devices (matchMedia max-width 1024px OR hardwareConcurrency < 8) and stays at 640×480 otherwise. Bundle is committed pre-built at /sm64js/sm64js.bundle.js (LFS, ~12 MB minified ES5); the upstream webpack is not wired into our build. See packages/web/native/sm64js/README.md for the regeneration recipe.',
+  pong:
+    'Interactive Pong game module (single-user research prototype). Two CV inputs (paddle_left / paddle_right) set each paddle\'s Y position; two gate outputs (score_left / score_right) fire one 5 ms pulse per scoring event, sample-accurate on the audio thread. The deterministic state stepper runs at visual cadence on the main thread (no audio worklet). Drive the paddles from LFOs / envelopes / joysticks and use the score gates as triggers — the game becomes a generative modulation source. Multiplayer is a planned additive follow-up (the design doc lays out the SyncedModuleDef path). See docs/design/game-modules.md.',
+  slewSwitch:
+    'Quad slew limiter combined with a 4→1 sequential CV switch. Four CV inputs each pass through an independent slew limiter (per-channel time constant 1 ms–5 s, CV-controllable) for portamento / smoothing, available on out1–out4. A step_clock gate advances a sequential switch that selects among the (slewed) channels and presents the result on `switched`, with a LENGTH (1–4) and MODE control, a crossfade time between selections, a reset gate, a step_idx CV, and an end-of-cycle (eoc) gate. One of the three ATLANTIS-PATCH support modules; broadly useful as a general CV smoother + router.',
+  fourplexer:
+    '4-in / 4-out discrete signal router for audio AND cv (they share the Web Audio substrate, so either cable type patches in and routes identically). Four signal inputs (in1..in4) and four signal outputs (out1..out4); each output has its own selector knob (sel1..sel4, shown 1..4 on the card) choosing which ONE of the four inputs that output carries — discrete, never a blend or in-between, with a ~4 ms declick crossfade on the switch so audio-rate inputs don\'t click. Each output also has its own GATE input (gate1..gate4): every rising edge advances that output\'s selector to the next input (1→2→3→4→1, wrapping). The four outputs are fully independent — different selections, different gate streams. Knobs are directly settable in the UI (click/drag to a position) and the selection persists in node params (synced + saved); a gate-advance posts the new index back so it persists exactly like a manual click. Defaults are a straight pass-through (out1=in1, out2=in2, out3=in3, out4=in4).',
   hydrogen:
     'Drum machine — first pass of a Hydrogen (https://github.com/hydrogen-music/hydrogen, GPL-2.0+) port. Bundles the stock TR-808 Emulation Kit (ArtemioLabs, GPL) — 16 single-layer instruments (Kick Long/Short, Snare 1/2, Clap, Hat Closed/Open/Pedal, Toms Hi/Mid/Low, Conga, Cymbal, Shaker, Clave, Cowbell) shipped as FLACs under /drumkits/tr808/. Internal 16-step pattern grid drives one-shot sample voices per step; the closed/open/pedal hi-hat triad shares a mute group so a closed-hat triggers chokes the open-hat tail (classic drum-machine behaviour, hard-coded since the source XML doesn\'t model it). Per-instrument vol/pan/A/D/S/R + mute + solo knobs on the PatchPanel section for that instrument; transport row (BPM 30-300, swing 0-0.75, master gain, PLAY) on the card body. Optional clock_in / reset_in gate inputs let TIMELORDE drive the sequencer (rising edges step the pattern; reset zeroes the playhead); per-instrument trig{0..15} gate inputs let other rack modules fire individual drums directly. DEFERRED to follow-up PRs: drumkit picker / .h2drumkit loader (currently the TR-808 kit is the only kit), per-step velocity (v1 cells are binary on/off), pattern pages + song mode, humanize / per-step micro-shift, multi-layer velocity samples, LADSPA-style per-channel FX bus (use SHIMMERSHINE / CHARLOTTES ECHOS / etc. downstream of the stereo out as patch-cable effects instead), polyphonic MIDI input (pair with MIDI-CV-BUDDY → trig{i} per drum until then).',
 };
@@ -188,6 +242,18 @@ const PORT_NOTES: Record<string, string> = {
   'vca.cv': 'Modulation CV (gain control).',
   'vca.audio_inv':
     'Sign-inverted audio output: -out (phase-flipped audio). Useful for stereo widening, side-chain feedback prevention, and mid/side processing. Different operation from ADSR.env_inv (which is 1 - env on a unipolar envelope).',
+  'fourplexer.in1': 'Signal input 1 (audio or cv — routes identically).',
+  'fourplexer.in2': 'Signal input 2 (audio or cv).',
+  'fourplexer.in3': 'Signal input 3 (audio or cv).',
+  'fourplexer.in4': 'Signal input 4 (audio or cv).',
+  'fourplexer.gate1': 'Rising edge advances OUT 1\'s selector (1→2→3→4→1).',
+  'fourplexer.gate2': 'Rising edge advances OUT 2\'s selector.',
+  'fourplexer.gate3': 'Rising edge advances OUT 3\'s selector.',
+  'fourplexer.gate4': 'Rising edge advances OUT 4\'s selector.',
+  'fourplexer.out1': 'Carries the input selected by sel1 (discrete).',
+  'fourplexer.out2': 'Carries the input selected by sel2 (discrete).',
+  'fourplexer.out3': 'Carries the input selected by sel3 (discrete).',
+  'fourplexer.out4': 'Carries the input selected by sel4 (discrete).',
   'mixer.in1': 'Channel 1 input.',
   'mixer.in2': 'Channel 2 input.',
   'mixer.in3': 'Channel 3 input.',
@@ -220,7 +286,7 @@ const PORT_NOTES: Record<string, string> = {
   'rasterize.in': 'Audio in - the signal rasterized into pixels.',
   'rasterize.thru': 'Audio passthrough (unmodified) so RASTERIZE can sit inline on a chain.',
   'rasterize.out':
-    'Mono-video output: the accumulated raster frame as a GL texture. Each video frame paints a run of audio samples (samples/frame) as voltage-per-pixel in raster order; the scan cursor drifts + wraps through the 640x360 frame. A steady tone paints drifting horizontal bands. Driven by the cross-domain video bridge calling RASTERIZE.drawFrame() each frame.',
+    'Mono-video output: the accumulated raster frame as a GL texture. Each video frame paints a run of audio samples (samples/frame) as voltage-per-pixel in raster order; the scan cursor drifts + wraps through the 640x480 frame. A steady tone paints drifting horizontal bands. Driven by the cross-domain video bridge calling RASTERIZE.drawFrame() each frame.',
   'rasterize.cursor': 'CV -> scan-cursor start offset (pixels). Scrubs where the run begins.',
   'rasterize.samplesPerFrame': 'CV -> samples painted per frame (1 pixel per sample).',
   'rasterize.gain': 'CV -> linear gain applied to each sample before the luminance map.',
@@ -418,6 +484,67 @@ const PORT_NOTES: Record<string, string> = {
   'rings.level_cv':  'CV → LEVEL (0..1) — soft-limited output gain.',
   'rings.odd':       'Primary output — odd-indexed mode sum (MODAL) or odd-tap string mix (SYMPATHETIC).',
   'rings.even':      'Secondary output — even-indexed mode sum / even-tap mix.',
+  // ELEMENTS
+  'elements.in':           'External excitation / audio in — summed into the BLOW path before the resonator.',
+  'elements.strike_in':    'External strike excitation — summed into the raw exciter bus (bypasses BLOW filtering).',
+  'elements.pitch':        'V/oct pitch input (A4 = 0 V).',
+  'elements.gate':         'Gate — rising edge triggers the exciter envelope; release lets it decay.',
+  'elements.note_cv':      'CV → NOTE (±60-semitone offset on top of pitch).',
+  'elements.env_cv':       'CV → ENV shape (0..1: percussive→sustained).',
+  'elements.bowlvl_cv':    'CV → BOW level (0..1).',
+  'elements.bowtim_cv':    'CV → BOW timbre (0..1).',
+  'elements.blowlvl_cv':   'CV → BLOW level (0..1); past unity engages the TUBE.',
+  'elements.blowmeta_cv':  'CV → FLOW / blow-meta (0..1).',
+  'elements.blowtim_cv':   'CV → BLOW timbre (0..1).',
+  'elements.strklvl_cv':   'CV → STRIKE level (0..1); past unity bleeds raw mallet into the output.',
+  'elements.strkmeta_cv':  'CV → MALLET / strike-meta (0..1: mallet→particles).',
+  'elements.strktim_cv':   'CV → STRIKE timbre (0..1).',
+  'elements.geom_cv':      'CV → GEOMETRY (0..1: harmonic→inharmonic/bell).',
+  'elements.bright_cv':    'CV → BRIGHTNESS (0..1).',
+  'elements.damp_cv':      'CV → DAMPING (0..1). Low = long ring; high = fast decay.',
+  'elements.pos_cv':       'CV → POSITION (0..1) — pickup comb position.',
+  'elements.space_cv':     'CV → SPACE (0..2) — raw/dry/reverb blend + stereo spread; ≥1.75 freezes.',
+  'elements.strength_cv':  'CV → STRENGTH (0..1) — exciter accent.',
+  'elements.main':         'Main (right) audio output.',
+  'elements.aux':          'Auxiliary (left) audio output — patch with main for stereo.',
+
+  // MARBLES
+  'marbles.rate_cv':    'CV → RATE (internal clock, semitone-scaled).',
+  'marbles.tmodel_cv':  'CV → T MODEL (discrete: 0=COIN, 1=CLUSTERS, 2=DRUMS, 3=INDEP, 4=3-STATE, 5=MARKOV).',
+  'marbles.tbias_cv':   'CV → T BIAS (0..1) — gate-model coin bias.',
+  'marbles.tjitter_cv': 'CV → T JITTER (0..1) — clock timing jitter.',
+  'marbles.dejavu_cv':  'CV → DÉJÀ VU (0..1) — T-section random-loop lock amount.',
+  'marbles.length_cv':  'CV → LENGTH (1..16) — déjà-vu loop length.',
+  'marbles.spread_cv':  'CV → SPREAD (0..1) — X random-voltage variance.',
+  'marbles.xbias_cv':   'CV → X BIAS (0..1) — X random-voltage mean.',
+  'marbles.steps_cv':   'CV → STEPS (0..1) — X quantization amount / portamento.',
+  'marbles.xdejavu_cv': 'CV → X DÉJÀ VU (0..1) — X-section random-loop lock.',
+  'marbles.scale_cv':   'CV → SCALE (discrete 0..5).',
+  'marbles.t1':         'T1 gate — first Bernoulli/coin/drum gate stream.',
+  'marbles.t2':         'T2 gate — complementary/second gate stream.',
+  'marbles.x1':         'X1 CV — quantized random voltage (±1 = ±5V).',
+  'marbles.x2':         'X2 CV — déjà-vu-shifted random voltage.',
+  'marbles.x3':         'X3 CV — déjà-vu-shifted random voltage.',
+  'marbles.clk':        'Master clock gate (master ramp < 0.5).',
+
+  // SYMBIOTE
+  'symbiote.rate_cv':        'CV → RATE (tempo, semitone-scaled).',
+  'symbiote.submode_cv':     'CV → sub-mode (discrete: 0=DRUMS 2D-map, 1=EUCLIDEAN).',
+  'symbiote.bd_cv':          'CV → BD density (0..1).',
+  'symbiote.sd_cv':          'CV → SD density (0..1).',
+  'symbiote.hh_cv':          'CV → HH density (0..1).',
+  'symbiote.chaos_cv':       'CV → CHAOS (bipolar) — DRUMS randomness or EUCLIDEAN SD-fill (CCW) / rotation (CW).',
+  'symbiote.aciddensity_cv': 'CV → TB-3PO acid density (0..1).',
+  'symbiote.transpose_cv':   'CV → TB-3PO transpose (±18 st, 1V/oct on hardware).',
+  'symbiote.acidlength_cv':  'CV → TB-3PO step length (1..32).',
+  'symbiote.scale_cv':       'CV → SCALE (discrete 0..5).',
+  'symbiote.t1':             'T1 gate — Grids BD (bass drum).',
+  'symbiote.t2':             'T2 gate — Grids SD (snare).',
+  'symbiote.t3':             'T3 gate — Grids HH (hi-hat).',
+  'symbiote.x1':             'X1 — TB-3PO step clock (8th-note square).',
+  'symbiote.x2':             'X2 — TB-3PO pitch CV (1V/oct, slewed on slides).',
+  'symbiote.x3':             'X3 — TB-3PO acid gate (held through slides).',
+  'symbiote.y':              'Y — TB-3PO accent gate (high only when accent ∧ gate).',
   // BLADES — dual SVF + COLOR + mix bus.
   'blades.in1':         'Filter 1 audio input. Routed through the COLOR pre-stage tanh before filter 1.',
   'blades.in2':         'Filter 2 audio input. Routed through the COLOR pre-stage tanh before filter 2. In SERIAL mix mode, in2 still drives out2 — only the mix bus ignores it.',
@@ -863,6 +990,22 @@ function synthesizeFromBuildHelper(
     }
     return { inputs, params };
   }
+  if (type === 'bluebox') {
+    // BLUEBOX expands its 12 button gate-inputs + 12 button params via
+    // `BLUEBOX_BUTTON_NAMES.map(...)` — the literal-array extractor
+    // doesn't see them. Reproduce the static shape here.
+    const NAMES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'bluebox', 'redbox'];
+    const inputs: ManifestPort[] = NAMES.map((n) => ({ id: `gate_${n}`, type: 'gate' }));
+    const params: ManifestParam[] = NAMES.map((n) => ({
+      id: `btn_${n}`,
+      label: n === 'bluebox' || n === 'redbox' ? n.toUpperCase() : n,
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      curve: 'linear',
+    }));
+    return { inputs, params };
+  }
   return null;
 }
 
@@ -993,10 +1136,25 @@ export function buildModuleManifest(
       // rasterize-map.ts that both the module factory + its tests use).
       // Not a ModuleDef.
       if (file.endsWith('-map.ts')) return false;
+      // -shapes.ts: FOXY's 3dShapeGen pure shape-generation / SDF / voxel
+      // math helpers (foxy-shapes.ts). Not a ModuleDef.
+      if (file.endsWith('-shapes.ts')) return false;
       // -engine.ts: pure-math worklet-engine mirror (e.g. stages-engine.ts).
       // Not a ModuleDef — exported only for the parallel module file's
       // import + the tests / ART scenarios.
       if (file.endsWith('-engine.ts')) return false;
+      // -resources.ts: generated lookup-table data (e.g. grids-resources.ts —
+      // the Grids drum-map node tables + Euclidean LUT used by SYMBIOTE).
+      // Not a ModuleDef.
+      if (file.endsWith('-resources.ts')) return false;
+      // -rate.ts: pure helpers for asymmetric / custom rate-param visual
+      // mappings (e.g. samsloop-rate.ts: knob ↔ rate piecewise math).
+      // Not a ModuleDef.
+      if (file.endsWith('-rate.ts')) return false;
+      // -record.ts: pure helpers for the SAMSLOOP recording feature
+      // (samsloop-record.ts: quantize / downsample / WAV header /
+      // maxSeconds-budget math). Not a ModuleDef.
+      if (file.endsWith('-record.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.
@@ -1009,6 +1167,9 @@ export function buildModuleManifest(
       // Shared per-user-view-state page-nav helpers (DRUMSEQZ / POLYSEQZ /
       // MACSEQ / Sequencer). Not a ModuleDef.
       if (file === 'sequencer-pages.ts') return false;
+      // TIMELORDE auto-spawn predicate + position helper consumed by
+      // Canvas.svelte's snapshot effect. Not a ModuleDef.
+      if (file === 'timelorde-autospawn.ts') return false;
       // HYDROGEN's supporting files: kit registry, per-kit data tables,
       // synth-utils. The module def lives in hydrogen.ts; everything
       // else with the `hydrogen-` prefix is implementation detail.

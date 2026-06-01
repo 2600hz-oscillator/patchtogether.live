@@ -55,3 +55,18 @@ describe('invites', () => {
     expect(await verifyInviteCode(id, tampered)).toBe(false);
   });
 });
+
+describe('invites — missing secret outside local dev', () => {
+  it('throws on first getInviteCode call when INVITE_SECRET is missing and NODE_ENV is not "development"', async () => {
+    // Fresh isolate: re-mock with no secret + non-dev NODE_ENV, then re-import
+    // so the module's `keyPromise` memo starts empty and `getSecret()` runs.
+    vi.resetModules();
+    vi.doMock('$env/dynamic/private', () => ({
+      env: { INVITE_SECRET: '', NODE_ENV: 'production' },
+    }));
+    const mod = await import('./invites');
+    await expect(mod.getInviteCode('r_anything')).rejects.toThrow(/INVITE_SECRET must be set/);
+    vi.doUnmock('$env/dynamic/private');
+    vi.resetModules();
+  });
+});

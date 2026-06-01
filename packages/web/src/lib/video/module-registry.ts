@@ -22,11 +22,28 @@ export interface VideoModuleDef {
   params: readonly ParamDef[];
   schemaVersion: number;
   migrate?: (data: unknown, fromVersion: number) => unknown;
+  /** Optional load-time EDGE-PORT migration. When a node of this type was saved
+   *  at a version below the current schemaVersion, the persistence loader calls
+   *  this for each edge endpoint (source OR target) that references this node,
+   *  passing the saved portId. Return a rewritten portId, or null to leave the
+   *  port unchanged. DOOM uses this to rewrite legacy bare cv-gate ports
+   *  (`up`/`down`/…) to their p1 group equivalents (`p1_up`/…) when the single
+   *  shared CV input set became four per-slot groups (#353, schemaVersion 1→2). */
+  migrateEdgePortId?: (portId: string, fromVersion: number) => string | null;
   factory: VideoModuleFactory;
   /** Optional hard cap on simultaneous instances (mirrors the audio side).
    *  Phase 0 modules don't enforce caps; Phase 1's INWARDS will (one
    *  webcam-using module max by default to avoid getUserMedia conflicts). */
   maxInstances?: number;
+  /** Owner-only instantiation: when set, only the rack OWNER may ADD this
+   *  module to the rack (the palette hides it for non-owners + the spawn path
+   *  refuses). DOOM sets this (round 5: host-only widget) — its multiplayer
+   *  flow is "owner adds DOOM → starts a game → guests one-click hot-join", so
+   *  a non-owner spawning their own DOOM node makes no sense in the one-shared-
+   *  node model. Single-user / no-provider racks have a sole de-facto owner, so
+   *  the gate only blocks an EXPLICIT non-owner (see canAddModule in
+   *  $lib/doom/doom-gating). */
+  ownerOnly?: boolean;
   /** Mirror of AudioModuleDef.undeletable — see that comment. No video
    *  module sets this today; the field is on this type so Canvas's
    *  union-typed defLookup can read `def.undeletable` without a

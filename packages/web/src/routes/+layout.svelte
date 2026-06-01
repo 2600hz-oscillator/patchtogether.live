@@ -4,7 +4,7 @@
   import '$lib/ui/modules/_module-card.css';
   import { ClerkProvider } from 'svelte-clerk';
   import { page } from '$app/state';
-  import { ydoc, patch } from '$lib/graph/store';
+  import { ydoc, patch, bindRackspace } from '$lib/graph/store';
   import { attachProvider } from '$lib/multiplayer/provider';
   import { createSharedClock } from '$lib/audio/shared-clock.svelte';
   import { setActiveSharedClock } from '$lib/audio/modules/lfo';
@@ -63,12 +63,20 @@
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).__attachProvider = async (rackspaceId: string, token?: string) => {
+      // Bind the singleton patch/ydoc to a fresh doc for this rackspace
+      // BEFORE attaching the provider. Without this, the dev-on-/ flow
+      // (used by e2e specs that simulate multi-rackspace navigation in
+      // one tab) would re-attach to the previous rackspace's leftover
+      // doc and corrupt the new room — same bug the prod /r/[id] route
+      // hits. After bindRackspace, the imported `ydoc` binding points at
+      // the freshly created Y.Doc, which is what we hand to attachProvider.
+      const bound = bindRackspace(rackspaceId);
       const effectiveToken = token ?? (await deriveAnonToken(rackspaceId));
       let onCapacityRejected: () => void = () => {};
       let onAuthRejected: (r: string) => void = () => {};
       const provider = attachProvider({
         rackspaceId,
-        ydoc,
+        ydoc: bound.ydoc,
         token: effectiveToken,
         debug: true,
         onCapacityRejected: () => onCapacityRejected(),
@@ -99,6 +107,12 @@
       // pass a `provider` prop. Dev-only path; prod /r/[id] still owns
       // the prop-based provider.
       (window as unknown as { __provider?: unknown }).__provider = provider;
+      // Refresh the __patch / __ydoc globals so tests that switched
+      // rackspaces in this tab see the FRESH proxies, not the previous
+      // rackspace's. Canvas.svelte sets these inside an $effect that only
+      // reruns on remount, which doesn't happen on `/`.
+      (window as unknown as { __patch?: unknown }).__patch = bound.patch;
+      (window as unknown as { __ydoc?: unknown }).__ydoc = bound.ydoc;
       return provider;
     };
 
@@ -318,6 +332,40 @@
       const { lfoDef } = await import('$lib/audio/modules/lfo');
       const state = lfoDef.computeStateAt(sharedTimeMs - epoch, node.params ?? { rate: 1 }, () => 0);
       return state.phase;
+    };
+
+    // Rackspace seed hook — wraps POST /api/test/seed-rackspace so e2e specs
+    // can spin up a fresh /r/[id] route without a Clerk session. Returns
+    // { id, inviteCode } the spec then uses to build /r/<id>?invite=<code>.
+    // The server endpoint is gated on RACKSPACE_SEED_ENABLED='1' OR
+    // NODE_ENV='development' — neither is set on prod, so this hook can be
+    // present even on the public bundle without risk.
+    //
+    // Optional `envelope` is a PatchEnvelope object (see lib/graph/persistence)
+    // whose base64 `update` field is stored verbatim into rack_snapshots so
+    // the Hocuspocus relay serves it on first connect. Pass `undefined` for
+    // a fresh empty rackspace.
+    interface SeedEnvelope { envelopeVersion: number; update: string }
+    interface SeedResp { id: string; inviteCode: string }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__seedRackspace = async (
+      envelope?: SeedEnvelope,
+      opts?: { name?: string; ownerUserId?: string },
+    ): Promise<SeedResp> => {
+      const body: Record<string, unknown> = {};
+      if (envelope !== undefined) body.envelope = envelope;
+      if (opts?.name) body.name = opts.name;
+      if (opts?.ownerUserId) body.ownerUserId = opts.ownerUserId;
+      const r = await fetch('/api/test/seed-rackspace', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const text = await r.text().catch(() => '<no body>');
+        throw new Error(`__seedRackspace failed: ${r.status} ${text.slice(0, 200)}`);
+      }
+      return (await r.json()) as SeedResp;
     };
   }
 

@@ -7,6 +7,7 @@
   import { analogVcoDef } from '$lib/audio/modules/analog-vco';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -52,7 +53,7 @@
 
 <div class="card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">Analog VCO</header>
+  <ModuleTitle {id} {data} defaultLabel="Analog VCO" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -68,7 +69,6 @@
 <style>
   .card {
     width: 240px;
-    min-height: 200px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;

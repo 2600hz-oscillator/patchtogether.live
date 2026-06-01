@@ -34,6 +34,18 @@
 // `linear` would HALVE the effective CV range (it computes
 // scale = (max-min)/2 = 1.0 — so it would only zero out the effect, not
 // improve it). Listed in cv-scale-registry.test.ts PASSTHROUGH_BY_DESIGN.
+//
+// Inputs:
+//   in1 / in2 / in3 / in4 (audio): four channel inputs.
+//   cv1 / cv2 / cv3 / cv4 (cv): per-channel raw bipolar CV (PASSTHROUGH).
+//
+// Outputs:
+//   out1 / out2 / out3 / out4 (audio): per-channel direct VCA outputs (pre-mix).
+//   mix (audio): tanh-soft-clipped sum of out1..4.
+//
+// Params:
+//   gain1 / gain2 / gain3 / gain4 (linear 0..2, default 0): per-channel knob (sums with CV).
+//   resp1..resp4 (discrete 0..1): per-channel response curve (0 = linear, 1 = exponential).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

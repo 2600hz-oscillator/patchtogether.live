@@ -18,17 +18,26 @@ const INVITE_LENGTH = 16; // hex chars; 64 bits of entropy, fine for share-URL b
 
 function getSecret(): string {
   const s = env.INVITE_SECRET;
-  if (!s || s.length < 32) {
-    // Fail loudly in prod, fall back to a fixed dev value locally so the
-    // route works without extra env wiring during PR-B-c development.
-    if (env.NODE_ENV === 'production') {
-      throw new Error('INVITE_SECRET must be set (>= 32 chars) in production');
-    }
-    return 'dev-only-invite-secret-change-me-x'.padEnd(32, '_');
+  if (s && s.length >= 32) return s;
+  // Strict-throw outside local dev. CF Pages (production AND preview) does
+  // NOT set NODE_ENV=development, so any missing/short secret there fails
+  // loud at first request — better a 500 in tail than a silent redirect-to-
+  // sign-in for anon-invite visitors. The Vite dev server (task dev / pnpm
+  // dev) explicitly sets NODE_ENV=development; that's the only env where we
+  // fall back to a fixed dev string so local work doesn't need extra wiring.
+  // Vitest sets env.INVITE_SECRET directly (see invites.test.ts), so it
+  // takes the happy path above without touching this branch.
+  if (env.NODE_ENV !== 'development') {
+    throw new Error('INVITE_SECRET must be set (>= 32 chars) outside local dev');
   }
-  return s;
+  console.warn('[invite] using dev-only secret fallback — local dev only');
+  return 'dev-only-invite-secret-change-me-x'.padEnd(32, '_');
 }
 
+// NOTE: keyPromise memoizes the FIRST getSecret() result for the lifetime of
+// this isolate. That makes a strict throw at first call the correct shape —
+// if we instead returned a wrong secret once, every subsequent request in
+// the same isolate would inherit it with no way to recover short of a redeploy.
 let keyPromise: Promise<CryptoKey> | null = null;
 function getKey(): Promise<CryptoKey> {
   if (!keyPromise) {

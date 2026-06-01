@@ -1,4 +1,40 @@
 // packages/web/src/lib/audio/modules/analog-vco.ts
+//
+// ANALOG VCO — classic analog-style voltage-controlled oscillator.
+//
+// One pitched oscillator emitting four simultaneous classic waveforms
+// (saw, square, triangle, sine), V/oct pitch tracking, audio-rate FM
+// and PM inputs, plus the standard tune / fine / pulse-width controls.
+// The DSP is Faust-compiled (see packages/dsp/src/analog-vco.dsp) and
+// hosted in a Faust AudioWorklet. A ChannelMerger routes the pitch /
+// FM / PM ports onto distinct input channels so per-port modulation
+// stays isolated; a ChannelSplitter exposes the four waveform tap-offs
+// on separate output ports. This is the project's bread-and-butter
+// pitched source — patch one into VCA → ADSR → AUDIO OUT for a one-osc
+// voice, or stack saw + square through a filter for a chorused bass.
+//
+// Inputs:
+//   pitch (pitch): V/oct pitch input, 0V = C4. Drives oscillator frequency.
+//   fm (audio): audio-rate frequency modulator, scaled by the fmAmount param.
+//   pm (audio): audio-rate phase modulator, scaled by the pmAmount param.
+//   tune (cv, linear, paramTarget=tune): displaces the tune knob (semitones).
+//   fine (cv, linear, paramTarget=fine): displaces the fine knob (cents).
+//   fmAmount (cv, linear, paramTarget=fmAmount): displaces the FM-depth knob.
+//   pmAmount (cv, linear, paramTarget=pmAmount): displaces the PM-depth knob.
+//
+// Outputs:
+//   saw (audio): naive sawtooth tap.
+//   square (audio): pulse/square tap; duty cycle set by the pw param.
+//   triangle (audio): triangle tap.
+//   sine (audio): sine tap.
+//
+// Params:
+//   tune (linear -36..36, default 0): coarse tune in semitones.
+//   fine (linear -100..100, default 0): fine tune in cents.
+//   fmAmount (linear -1..1, default 0): depth of the FM input.
+//   pmAmount (linear -1..1, default 0): depth of the PM input.
+//   pw (linear 0.05..0.95, default 0.5): square-wave pulse width / duty.
+
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

@@ -79,13 +79,22 @@ export const VRT_SCENES: Record<string, VrtScene> = {
 
   // RASTERIZE: drive the audio input with a 261 Hz sine (analogVco default
   // sine out, pitch 0 V/oct ≈ C4). RASTERIZE paints the audio samples as
-  // voltage-per-pixel into its 640×360 frame in raster order; a steady tone
-  // builds drifting horizontal bands. We bump samplesPerFrame to 6000 for
-  // the scene (vs the 800 default) so the cursor sweeps the whole frame
-  // within the settle window (~38 frames) and the baseline shows a filled,
-  // banded frame rather than a couple of painted scanlines. After settle we
-  // suspend the AudioContext; RASTERIZE freezes its painting on suspend
-  // (ctx.state === 'suspended'), so the on-card canvas is pixel-stable.
+  // voltage-per-pixel into its 640×480 frame in raster order; a steady tone
+  // builds horizontal bands (now 640×480 / 4:3 per pipeline flip).
+  //
+  // VRT determinism (task #198): freeze-on-AudioContext-suspend alone leaves
+  // the cursor at a wall-clock-dependent position (how many rAF ticks land
+  // before suspend resolves varies run-to-run by ±a few frames; at default
+  // samplesPerFrame each frame advances the cursor ~1.25 scanlines, so over
+  // a settle window the cursor wanders by tens of rows → same band pattern
+  // shifted vertically → 16%-pixel diffs busting the tolerance budget).
+  //
+  // We set `__rasterizeVrtSeed` BEFORE spawn so the factory's first paint
+  // is one deterministic full-frame fill from a fixed 261 Hz synthetic
+  // sine — no analyser, no wall clock, identical pixels every run. The
+  // analogVco source is still wired (the audio domain is exercised) but
+  // its samples never reach the painter while seed mode is active.
+  // Mirrors FOXY's `__foxyVrtSeed` + PEAKSTATE's `__peakstateVrtSeed`.
   rasterize: {
     nodes: [
       { id: 'src',   type: 'analogVco', position: { x: 60,  y: 60 }, domain: 'audio' },
@@ -94,7 +103,7 @@ export const VRT_SCENES: Record<string, VrtScene> = {
         type: 'rasterize',
         position: { x: 520, y: 60 },
         domain: 'audio',
-        params: { samplesPerFrame: 6000, gain: 1, cursor: 0, wrap: 0 },
+        params: { samplesPerFrame: 8000, gain: 1, cursor: 0, wrap: 0 },
       },
     ],
     edges: [
@@ -106,7 +115,22 @@ export const VRT_SCENES: Record<string, VrtScene> = {
         targetType: 'audio',
       },
     ],
-    settleMs: 900,
+    afterSpawn: async (page) => {
+      // Pin the seed BEFORE settle so the first paint is the
+      // deterministic one. The factory's advanceOncePerFrame checks the
+      // flag on every call and paints once-then-holds.
+      await page.evaluate(() => {
+        (globalThis as unknown as { __rasterizeVrtSeed?: boolean })
+          .__rasterizeVrtSeed = true;
+      });
+      // A couple of rAFs so the seed paint lands + the card's blit catches it.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(
+          () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+        );
+      }
+    },
+    settleMs: 300,
     freezeAudio: true,
   },
 
@@ -159,6 +183,228 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       // Let a few engine frames upload the frozen frame into the output FBO.
       await page.waitForTimeout(250);
     },
+  },
+
+  // RUTTETRA (authentic forward-scatter scope): SHAPES → RUTTETRA; pure
+  // function of a procedural, time-independent source → pixel-stable.
+  // The SHAPES source is a TRIANGLE (vertically asymmetric — apex up) so
+  // the baseline locks RUTTETRA's vertical ORIENTATION too: a Y-flip of
+  // the input sample (the fix in fix/ruttetra-input-vflip) visibly moves
+  // the apex, which a centered circle could not have caught.
+  ruttetra: {
+    nodes: [
+      { id: 'src',   type: 'shapes',   position: { x: 60,  y: 60 }, domain: 'video', params: { shape: 2, zoom: 2.2 } },
+      { id: 'vrt-1', type: 'ruttetra', position: { x: 520, y: 60 }, domain: 'video' },
+    ],
+    edges: [
+      {
+        id: 'e_src_ruttetra',
+        from: { nodeId: 'src',   portId: 'out' },
+        to:   { nodeId: 'vrt-1', portId: 'z'   },
+        sourceType: 'video',
+        targetType: 'video',
+      },
+    ],
+    freezeAudio: false,
+    settleMs: 400,
+  },
+
+  // FOXY (hybrid SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL): FOXY is
+  // SELF-DRIVING — its internal mini-SWOLEVCO feeds the raster, so it needs
+  // no upstream patch. We spawn it alone, let the internal chain run long
+  // enough for the raster to fill + the wavetable to build, then FREEZE the
+  // AudioContext. FOXY's bridge halts on suspend (ctx.state === 'suspended'),
+  // so the raster painting, XYZ field, and animated wavetable all stop on a
+  // fixed frame → pixel-stable across runs. The card's three preview
+  // canvases (RASTER / XYZ / live WAVETABLE) are INCLUDED in the diff (no
+  // mask) so the baseline proves the whole chain renders real content.
+  foxy: {
+    nodes: [
+      { id: 'vrt-1', type: 'foxy', position: { x: 120, y: 60 }, domain: 'audio' },
+    ],
+    edges: [],
+    // FOXY v2 has TWO drifting rasters + a Box; the live fill is timing-
+    // dependent, so freeze-on-suspend alone leaves >5% pixel drift between
+    // runs. We set `__foxyVrtSeed` so FOXY paints BOTH rasters once from fixed
+    // synthetic waveforms (no analyser, no wall-clock) → pixel-stable Box +
+    // wavetable. freezeAudio still suspends so nothing re-drifts after.
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        (globalThis as unknown as { __foxyVrtSeed?: boolean }).__foxyVrtSeed = true;
+      });
+      // A few rAFs so the seed paint lands + the wavetable display catches it.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    settleMs: 600,
+    freezeAudio: true,
+  },
+
+  // WAVESCULPT (alpha-rotate regression lock): pins the ALPHA layer VISIBLE
+  // at a non-zero rotation; render-freeze hook makes the time-driven render
+  // deterministic. Was VRT-exempt; de-exempted via the freeze.
+  wavesculpt: {
+    nodes: [
+      { id: 'src',   type: 'shapes',     position: { x: 60,  y: 60 }, domain: 'video' },
+      {
+        id: 'vrt-1',
+        type: 'wavesculpt',
+        position: { x: 520, y: 60 },
+        domain: 'audio',
+        params: {
+          rot: 0.3, pos_z: 0.35, zoom: 1.3,
+          thickness4: 0.9, alpha_brightness: 1.6, noise: 0, bloom: 0.45,
+        },
+      },
+    ],
+    edges: [
+      {
+        id: 'e_src_alpha',
+        from: { nodeId: 'src',   portId: 'out' },
+        to:   { nodeId: 'vrt-1', portId: 'alpha_in' },
+        sourceType: 'video',
+        targetType: 'video',
+      },
+    ],
+    freezeAudio: true,
+    settleMs: 500,
+    async afterSpawn(page) {
+      await page.evaluate(() => {
+        (globalThis as unknown as { __wavesculptVrtFreeze?: boolean }).__wavesculptVrtFreeze = true;
+      });
+      await page.evaluate(
+        () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+      );
+    },
+  },
+  // PEAKSTATE (animated mandala generator): the module is self-driving
+  // (internal pen + ring buffer + 3D rotation, no external signal). The
+  // pen trajectory is wall-clock driven, so two runs freeze at slightly
+  // different points along the trail. We set `__peakstateVrtSeed` so the
+  // module paints ONCE from a deterministic 120-sample ring + frozen
+  // rotation, then HOLDS that frame across subsequent draws → pixel-
+  // stable RGB preview + 3D + mono outputs. No audio is involved, so
+  // freezeAudio is false (the AudioContext suspend isn't what's freezing
+  // the render; the seed flag is).
+  peakstate: {
+    nodes: [
+      { id: 'vrt-1', type: 'peakstate', position: { x: 120, y: 60 }, domain: 'video' },
+    ],
+    edges: [],
+    freezeAudio: false,
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        (globalThis as unknown as { __peakstateVrtSeed?: boolean }).__peakstateVrtSeed = true;
+      });
+      // A few rAFs so the seed paint lands + the preview canvas catches it.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    settleMs: 500,
+  },
+
+  // BACKDRAFT (video feedback generator): drive in_a / in_b + both key
+  // masks from SHAPES sources, let the feedback loop settle, then FREEZE
+  // BACKDRAFT (params.freeze = 1) so the time-evolving accumulator holds
+  // its last output — pixel-stable across runs. We use SHAPES (fully
+  // procedural + time-independent: rotate 0, no uTime) for every input so
+  // the source + masks are identical every run; with BACKDRAFT frozen the
+  // captured frame is deterministic.
+  //
+  //   in_a    <- big centred circle  (the seed image being smeared)
+  //   in_b    <- tiled 5×5 squares    (crossfaded in by MIX=0.5)
+  //   lighten <- tiled triangles      (LIGHTEN boosts feedback where bright)
+  //   darken  <- big centred square   (DARKEN cuts feedback in the middle)
+  //
+  // The baseline should show a video-feedback TUNNEL/SPIRAL: the spatial
+  // transform (ZOOM 1.06 + ROTATE 6°/iter) re-zooms + re-rotates the
+  // fed-back frame a little each pass, so the echoes spiral inward into a
+  // tunnel — the iconic feedback look, not flat brightness accumulation.
+  // The triangle lighten-mask boosts the trail; the centre-square darken
+  // punches a dim hole. No audio is involved, so we don't freeze the
+  // AudioContext.
+  backdraft: {
+    nodes: [
+      // Sparse, SMALL sources (mostly black) so the transformed feedback
+      // echoes — not a flat source wash — dominate the frame. in_a = a
+      // tiny centred circle that the tunnel drags inward into a spiral;
+      // in_b = a few tiled squares. MIX leans hard toward in_a.
+      { id: 'src_a',  type: 'shapes', position: { x: 40,  y: 40  }, domain: 'video', params: { shape: 0, tile: 0, zoom: 0.28 } },
+      { id: 'src_b',  type: 'shapes', position: { x: 40,  y: 260 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 3, zoom: 0.45 } },
+      // lighten = tiled triangles → BOOST bands (feedback runs hot, → white).
+      { id: 'mask_l', type: 'shapes', position: { x: 40,  y: 480 }, domain: 'video', params: { shape: 2, tile: 1, tileN: 4, zoom: 0.9 } },
+      // darken = tiled squares in the CORNERS so it trims the outer trail
+      // but leaves the central tunnel/spiral intact + visible.
+      { id: 'mask_d', type: 'shapes', position: { x: 40,  y: 700 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 5, zoom: 0.5 } },
+      // ZOOM>1 + ROTATE≠0 => an inward-zooming, twisting tunnel (spiral).
+      // delay=0 taps the most-recent frame so the transform compounds every
+      // frame (deepest tunnel); high feedback keeps many echoes alive.
+      { id: 'vrt-1',  type: 'backdraft', position: { x: 520, y: 60 }, domain: 'video',
+        params: { mix: 0.12, feedback: 0.97, delay: 0, luma: 1.0, chroma: 1.5, r: 1.0, g: 1.0, b: 1.0,
+                  lighten: 1.0, darken: 0.5, zoom: 1.15, rotate: 16, offsetX: 0, offsetY: 0 } },
+    ],
+    edges: [
+      { id: 'e_a', from: { nodeId: 'src_a',  portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'in_a'    }, sourceType: 'mono-video', targetType: 'video' },
+      { id: 'e_b', from: { nodeId: 'src_b',  portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'in_b'    }, sourceType: 'mono-video', targetType: 'video' },
+      { id: 'e_l', from: { nodeId: 'mask_l', portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'lighten' }, sourceType: 'mono-video', targetType: 'video' },
+      { id: 'e_d', from: { nodeId: 'mask_d', portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'darken'  }, sourceType: 'mono-video', targetType: 'video' },
+    ],
+    freezeAudio: false,
+    settleMs: 700,
+    async afterSpawn(page) {
+      // Let the feedback loop run + settle (settleMs covers this), then
+      // FREEZE BACKDRAFT so its output stops evolving and the capture is
+      // pixel-stable. We set freeze AFTER the settle window so the trails
+      // have built up + the spatial transform has compounded into a deep
+      // tunnel/spiral before we pin the frame.
+      await page.waitForTimeout(1500);
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['vrt-1'];
+          if (n) n.params.freeze = 1;
+        });
+      });
+      // A few rAFs so the freeze param reaches the engine + the last
+      // pre-freeze frame is the one held + blitted.
+      await page.waitForTimeout(150);
+    },
+  },
+
+  // NIBBLES (snake game module): the game state is RNG-seeded and
+  // tick-driven, so the on-card framebuffer evolves frame-to-frame.
+  // We set globalThis.__nibblesVrtSeed BEFORE spawning so the factory
+  // seeds with a fixed value (mirrors FOXY's __foxyVrtSeed). With
+  // freezeAudio suspending the AudioContext the on-card preview poll
+  // stops pulling new ImageData snapshots, so the captured frame is
+  // pixel-stable run-to-run.
+  nibbles: {
+    nodes: [
+      { id: 'vrt-1', type: 'nibbles', position: { x: 80, y: 80 }, domain: 'video' },
+    ],
+    edges: [],
+    afterSpawn: async (page) => {
+      // Pin the RNG seed so the snake position + food placement are
+      // identical across runs. NIBBLES checks globalThis.__nibblesVrtSeed
+      // on each draw frame and one-shot-resets the game once it sees the
+      // flag — so setting it AFTER spawn is fine.
+      await page.evaluate(() => {
+        (globalThis as unknown as { __nibblesVrtSeed?: number }).__nibblesVrtSeed = 0xC0DE;
+      });
+      // A few rAFs so the seeded reset + paint land before we suspend audio.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    // Long enough that a few game ticks run + bake some snake motion + a
+    // pellet eat (per spec at default tick_ms=80ms, ~12 ticks/sec).
+    settleMs: 500,
+    freezeAudio: true,
   },
 };
 

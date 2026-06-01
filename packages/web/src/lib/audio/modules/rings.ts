@@ -9,6 +9,31 @@
 // together.live's MIT license. See packages/dsp/src/rings.ts for the
 // worklet DSP; the pure-math mirror in this file is what unit tests and
 // the ART scenario exercise.
+//
+// Inputs:
+//   in (audio): external excitation input (replaces internal exciter when patched).
+//   pitch (pitch): V/oct (1 unit = 1 octave). Sums with note.
+//   strum (gate): rising edge re-strums the resonator chord.
+//   model_cv (cv, discrete, paramTarget=model): displaces the resonator-model selector.
+//   note_cv (cv, linear, paramTarget=note): displaces the note offset (±60 st).
+//   str_cv (cv, linear, paramTarget=structure): displaces STRUCTURE.
+//   bright_cv (cv, linear, paramTarget=brightness): displaces BRIGHTNESS.
+//   damp_cv (cv, linear, paramTarget=damping): displaces DAMPING.
+//   pos_cv (cv, linear, paramTarget=position): displaces POSITION.
+//   level_cv (cv, linear, paramTarget=level): displaces LEVEL.
+//
+// Outputs:
+//   odd (audio): odd-mode resonator output.
+//   even (audio): even-mode resonator output (parallel companion to ODD).
+//
+// Params:
+//   model (discrete 0..RINGS_MAX_MODEL, default 0): resonator-model selector.
+//   note (linear -60..60 st, default 0): semitone offset from pitch CV.
+//   structure (linear 0..1, default 0.25): inharmonicity / structure macro.
+//   brightness (linear 0..1, default 0.5): high-end character.
+//   damping (linear 0..1, default 0.5): partial decay / damping.
+//   position (linear 0..1, default 0.5): pickup position along the resonator.
+//   level (linear 0..1, default 0.8): output level.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

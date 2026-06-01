@@ -211,7 +211,32 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
         { timeout: 15000 },
       );
 
-      // ─── B requests to join → arbiter assigns slot 1 (no clobber) ───
+      // ─── Round 5 NEW FLOW: A (host) LAUNCHES first → MP goes live ───
+      // The old flow had B join the pre-launch lobby then A launch. The new
+      // model gates a guest's Join on the host running a live MP game, so the
+      // host launches FIRST; B then one-click hot-joins the running level.
+      await pair.pageA.evaluate((id) => {
+        const w = globalThis as unknown as {
+          __doomCards: Record<string, {
+            setOptions: (o: { mode?: string; skill?: number; episode?: number; map?: number }) => void;
+            launch: () => void;
+          }>;
+        };
+        w.__doomCards[id]!.setOptions({ mode: 'coop', skill: 0, episode: 1, map: 1 });
+        w.__doomCards[id]!.launch();
+      }, NODE);
+      await pair.pageA.waitForFunction(
+        (args) => {
+          const [id, level] = args as [string, number];
+          const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { launched: boolean; gamestate: number } }> };
+          const st = w.__doomCards?.[id]?.getState();
+          return !!st && st.launched === true && st.gamestate === level;
+        },
+        [NODE, GS_LEVEL],
+        { timeout: 30000 },
+      );
+
+      // ─── B hot-joins the RUNNING game → arbiter assigns slot 1 + relaunches ─
       await join(pair.pageB, NODE);
 
       // Best-effort: wait for B's slot-1 assignment to round-trip back to B.
@@ -251,19 +276,7 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
         '1': 'bbb-userB',
       });
 
-      // ─── A picks coop + E1M1 + skill 1, hits Launch ───
-      await pair.pageA.evaluate((id) => {
-        const w = globalThis as unknown as {
-          __doomCards: Record<string, {
-            setOptions: (o: { mode?: string; skill?: number; episode?: number; map?: number }) => void;
-            launch: () => void;
-          }>;
-        };
-        w.__doomCards[id]!.setOptions({ mode: 'coop', skill: 0, episode: 1, map: 1 });
-        w.__doomCards[id]!.launch();
-      }, NODE);
-
-      // ─── Both peers' WASM enter the level (gamestate == GS_LEVEL) ───
+      // ─── B hot-dropped into the running level via the auto-relaunch ───
       for (const p of [pair.pageA, pair.pageB]) {
         await p.waitForFunction(
           (args) => {

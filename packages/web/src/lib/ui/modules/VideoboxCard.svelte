@@ -55,6 +55,7 @@
     formatFileSize,
     type StoredFileHandle,
   } from '$lib/video/video-file-store';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -682,7 +683,7 @@
   aria-label="VIDEOBOX video player"
 >
   <div class="stripe"></div>
-  <header class="title">VIDEOBOX</header>
+  <ModuleTitle {id} {data} defaultLabel="VIDEOBOX" />
 
   <Handle type="target" position={Position.Left}  id="play_trigger" style="top: 56px; --handle-color: var(--cable-gate);" />
   <span class="port-label left" style="top: 50px;">TRIG</span>
@@ -819,7 +820,9 @@
   x={ctxX}
   y={ctxY}
   title="VIDEOBOX"
-  onfullscreen={() => { ff.exit(); void fs.enter(); }}
+  availableScreens={fs.availableScreens}
+  onrequestscreens={() => void fs.loadScreens()}
+  onfullscreen={(screenId) => { ff.exit(); void fs.enter(screenId); }}
   onfullframe={() => ff.toggle(fullFrame)}
   isFullFrame={fullFrame}
   onclose={() => { ctxOpen = false; }}

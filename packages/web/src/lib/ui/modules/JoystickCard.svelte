@@ -18,6 +18,7 @@
   import { patch } from '$lib/graph/store';
   import { joystickDef, clampJoy } from '$lib/audio/modules/joystick';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -89,7 +90,7 @@
 
 <div class="mod-card joystick-card" data-testid="joystick-card" data-node-id={id}>
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">JOYSTICK</header>
+  <ModuleTitle {id} {data} defaultLabel="JOYSTICK" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="pad-wrap">
@@ -125,7 +126,6 @@
 <style>
   .joystick-card {
     width: 220px;
-    min-height: 240px;
   }
   .stripe {
     position: absolute;

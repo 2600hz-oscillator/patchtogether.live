@@ -69,4 +69,40 @@ describe('detectEdge — hysteresis CV → key-event', () => {
     expect(DEFAULT_RISE).toBe(0.6);
     expect(DEFAULT_FALL).toBe(0.4);
   });
+
+  // --- Bipolar / gamepad-shaped sources (the DOOM movement-input case) ---
+  // The bridge passes a gate-style cv through RAW (see cv-bridge-map.ts), so
+  // the detector sees the source's native range. A bipolar LFO swings -1..+1
+  // and a gamepad axis/button reads ±1; a FULL swing must press AND release.
+
+  it('a bipolar ±1 LFO swing presses on the up-half and releases on the down-half', () => {
+    const s = makeEdgeState();
+    const events: Array<{ pressed: boolean } | null> = [];
+    // One LFO cycle sampled: rises through +1, falls through -1, back up.
+    for (const sample of [0.0, 0.5, 0.9, 1.0, 0.5, -0.5, -1.0, -0.5, 0.0]) {
+      events.push(detectEdge(s, sample));
+    }
+    const filtered = events.filter((e) => e !== null);
+    expect(filtered).toEqual([
+      { pressed: true },   // crossed +0.6 going up
+      { pressed: false },  // crossed +0.4 going down (into negative territory)
+    ]);
+  });
+
+  it('a gamepad-shaped step from -1 (rest) to +1 (held) to -1 (released) toggles once each way', () => {
+    const s = makeEdgeState();
+    // Gamepad axes/buttons jump rather than ramp; the detector still works.
+    expect(detectEdge(s, -1)).toBeNull();              // at rest
+    expect(detectEdge(s, 1)).toEqual({ pressed: true }); // pressed
+    expect(detectEdge(s, 1)).toBeNull();                // held, no re-fire
+    expect(detectEdge(s, -1)).toEqual({ pressed: false }); // released
+    expect(detectEdge(s, -1)).toBeNull();               // stays released
+  });
+
+  it('a unipolar 0/1 gate (gamepad button → ConstantSource) presses and releases', () => {
+    const s = makeEdgeState();
+    expect(detectEdge(s, 0)).toBeNull();
+    expect(detectEdge(s, 1)).toEqual({ pressed: true });
+    expect(detectEdge(s, 0)).toEqual({ pressed: false });
+  });
 });

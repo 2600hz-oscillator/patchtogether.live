@@ -3,7 +3,7 @@
 // Shared test helpers for spawning arbitrary modules + edges via the dev-mode
 // `__patch` and `__ydoc` window globals (Canvas.svelte exposes these in dev).
 
-import type { Page } from '@playwright/test';
+import type { Page, APIRequestContext } from '@playwright/test';
 
 export interface SpawnNode {
   id: string;
@@ -144,9 +144,133 @@ export async function spawnPatch(
   throw lastErr ?? new Error('spawnPatch: exhausted retries with no error captured');
 }
 
+// ---------------- Rackspace seed helper ----------------
+//
+// Spec tests that target `/r/[id]` need a real rackspace row in the database;
+// the route's +page.server.ts loader 404s otherwise. Before this helper,
+// every such spec was either skip-pending-Clerk-seed or had to mock the
+// loader, which left whole integration paths uncovered (Codex coverage
+// finding #8).
+//
+// `seedRackspace(page, envelope?)` calls the dev-only POST /api/test/seed-rackspace
+// endpoint (gated server-side on RACKSPACE_SEED_ENABLED='1' OR NODE_ENV=development;
+// see routes/api/test/seed-rackspace/+server.ts) and returns the URL ready
+// for `page.goto`. The URL includes the HMAC-derived `?invite=<code>` query
+// string so anon visitors flow through /r/[id]/+page.server.ts's
+// unauthed-with-invite path — no Clerk session required.
+//
+// Optional `envelope` is a PatchEnvelope object (from
+// packages/web/src/lib/graph/persistence.ts) whose `update` field is stored
+// into rack_snapshots; the Hocuspocus relay serves it on first connect so
+// the rack appears pre-populated. Omit for a fresh empty rack.
+export interface SeedEnvelope {
+  envelopeVersion: number;
+  update: string;
+}
+
+export interface SeededRackspace {
+  /** Bare rackspace id (e.g. `r_abc23xy7`). */
+  id: string;
+  /** HMAC-derived invite code for anon access. */
+  inviteCode: string;
+  /** Full path to navigate to: `/r/<id>?invite=<code>`. */
+  url: string;
+}
+
+/**
+ * Seed a fresh rackspace via the test-only API and return navigation info.
+ *
+ * The page argument is used as a convenient `request` carrier so the call
+ * inherits Playwright's baseURL + any configured httpCredentials
+ * (beta-gate basic auth on the autotest tier). Doesn't navigate the page.
+ */
+export async function seedRackspace(
+  page: Page,
+  envelope?: SeedEnvelope,
+  opts?: { name?: string; ownerUserId?: string },
+): Promise<SeededRackspace> {
+  return seedRackspaceVia(page.request, envelope, opts);
+}
+
+/** Same as seedRackspace but accepts a raw APIRequestContext (e.g. from
+ *  a non-Page test scope, like @collab specs that share one request ctx). */
+export async function seedRackspaceVia(
+  request: APIRequestContext,
+  envelope?: SeedEnvelope,
+  opts?: { name?: string; ownerUserId?: string },
+): Promise<SeededRackspace> {
+  const body: Record<string, unknown> = {};
+  if (envelope !== undefined) body.envelope = envelope;
+  if (opts?.name) body.name = opts.name;
+  if (opts?.ownerUserId) body.ownerUserId = opts.ownerUserId;
+  const resp = await request.post('/api/test/seed-rackspace', {
+    data: body,
+    // Always send a JSON content-type so SvelteKit's body parser picks the
+    // right path even when body is `{}`.
+    headers: { 'content-type': 'application/json' },
+  });
+  if (!resp.ok()) {
+    const text = await resp.text().catch(() => '<no body>');
+    throw new Error(`seedRackspace: ${resp.status()} ${text.slice(0, 200)}`);
+  }
+  const json = (await resp.json()) as { id?: unknown; inviteCode?: unknown };
+  if (typeof json.id !== 'string' || typeof json.inviteCode !== 'string') {
+    throw new Error(`seedRackspace: malformed response: ${JSON.stringify(json)}`);
+  }
+  return {
+    id: json.id,
+    inviteCode: json.inviteCode,
+    url: `/r/${json.id}?invite=${json.inviteCode}`,
+  };
+}
+
 /** Read a status-bar field value (e.g., readStatus(page, 'nodes') → '5'). */
 export async function readStatus(page: Page, field: string): Promise<string> {
   const text = (await page.locator('.bottombar').textContent()) ?? '';
   const m = text.match(new RegExp(`${field}\\s*(\\S+)`));
   return m?.[1] ?? '';
+}
+
+/**
+ * Take a STICKY, focus-independent keyboard claim on a DOOM card, then VERIFY
+ * the runtime actually claims keys before any are dispatched.
+ *
+ * DETERMINISTIC CLAIM (the @collab marine-move de-flake — shared by all DOOM-MP
+ * specs): we do NOT rely on a DOM click/`.focus()`. In a 2-context Playwright
+ * test only ONE page holds focus/activeElement; the backgrounded page's
+ * document.activeElement stays on <body>, so a focus-based capture leaves
+ * shouldClaimKey()'s focus-within branch false, the dispatched keydown is
+ * silently dropped, and the marine never moves. Instead we invoke the card's
+ * `forceClaimKeyboard()` dev hook (the SAME latchKeyboard() the "Click to
+ * capture keyboard" onclick fires) which flips kbLatched=true — honoured by
+ * shouldClaimKey() REGARDLESS of focus/foreground — then POLL
+ * getState().shouldClaimKey === true to confirm the claim landed before keys
+ * are dispatched. Works identically on the foreground and the background page.
+ * (Real users still click to capture; that path is unchanged.)
+ */
+export async function claimKeyboard(page: Page, id: string, timeout = 5000): Promise<void> {
+  await page.evaluate(
+    (nid) =>
+      (
+        globalThis as unknown as {
+          __doomCards?: Record<string, { forceClaimKeyboard?: () => void }>;
+        }
+      ).__doomCards?.[nid]?.forceClaimKeyboard?.(),
+    id,
+  );
+  // Poll until the runtime confirms the claim landed (focus-independent). On
+  // failure we fall through: the dispatch still runs so the spec's own
+  // assertion surfaces a clear signal rather than a silent no-op.
+  await page
+    .waitForFunction(
+      (nid) =>
+        (
+          globalThis as unknown as {
+            __doomCards?: Record<string, { getState: () => { shouldClaimKey: boolean } }>;
+          }
+        ).__doomCards?.[nid]?.getState().shouldClaimKey === true,
+      id,
+      { timeout },
+    )
+    .catch(() => {});
 }

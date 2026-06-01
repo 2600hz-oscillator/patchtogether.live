@@ -10,6 +10,7 @@
   import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -38,7 +39,7 @@
 
 <div class="mod-card alm-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">ANALOGLOGICMATHS</header>
+  <ModuleTitle {id} {data} defaultLabel="ANALOGLOGICMATHS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -49,6 +50,6 @@
 </div>
 
 <style>
-  .alm-card { width: 220px; min-height: 240px; }
+  .alm-card { width: 220px; }
   .alm-card .fader-row { padding: 0 14px; margin-top: 16px; }
 </style>

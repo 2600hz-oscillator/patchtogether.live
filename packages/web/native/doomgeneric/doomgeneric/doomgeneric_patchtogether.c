@@ -66,6 +66,7 @@
 #include "d_player.h"
 #include "g_game.h"
 #include "p_mobj.h"
+#include "dgpt_events.h"
 
 // Forward decl — defined in g_game.c. Lets the JS-side e2e read the
 // player's actual in-game x/y/angle for regression checks on the
@@ -95,6 +96,26 @@ extern void DGPT_LoopSetNetgamePlayers(int num_players);
 // slice-7: arm scripted lockstep mode (the bit-exact determinism path). See
 // DGPT_LoopSetScripted in d_loop.c. Inert unless explicitly armed.
 extern void DGPT_LoopSetScripted(int enabled);
+
+// P1: arm the true-lockstep barrier + deliver a consolidated per-tic TicSet.
+// See DGPT_LoopSetLockstep / DGPT_LoopReceiveTicSet in d_loop.c.
+extern void DGPT_LoopSetLockstep(int enabled);
+extern void DGPT_LoopSetInputDelay(int tics);
+extern void DGPT_LoopReceiveTicSet(int tic,
+                                   int num_players,
+                                   const signed char *forwardmove,
+                                   const signed char *sidemove,
+                                   const short *angleturn,
+                                   const unsigned char *buttons,
+                                   const unsigned char *present);
+extern int DGPT_LoopGetMaketic(void);
+extern int DGPT_LoopGetGametic(void);
+extern int DGPT_LoopGetRecvtic(void);
+extern int DGPT_LoopReadLocalTiccmdAt(int tic,
+                                      signed char *forwardmove,
+                                      signed char *sidemove,
+                                      short *angleturn,
+                                      unsigned char *buttons);
 
 // slice-7: the engine's random-table indices (m_random.c). Folded into the
 // state checksum so a divergence in RNG advancement (the classic lockstep
@@ -126,6 +147,60 @@ extern int leveltime;
 // Lossy on overflow (oldest wins) — under normal human typing the queue
 // never fills; under stress (held-key autorepeat + frame-rate stall)
 // we'd rather drop than block.
+
+// ---- Phase-1 SP event ring buffer ----
+//
+// See dgpt_events.h for the encoding + rationale. Producer is whichever engine
+// site fired the event (P_KillMobj / EV_DoDoor / EV_VerticalDoor / P_FireWeapon
+// — all on the deterministic tic path). Consumer is the JS module factory,
+// draining once per surface tick AFTER runtime.runTic returns.
+//
+// IMPORTANT: this ring is intentionally OUTSIDE the netgame consistency
+// digest (dgpt_state_checksum reads RNG + mobj state only). Draining + pulsing
+// AudioParams from JS cannot influence the C-side deterministic state, so MP
+// bit-exact lockstep is preserved.
+
+static uint32_t dgpt_evt_ring[DGPT_EVT_RING_SIZE];
+static volatile int dgpt_evt_head = 0;  // writer-only (producer cursor)
+static volatile int dgpt_evt_tail = 0;  // reader-only (consumer cursor)
+
+void dgpt_evt_push(uint32_t type, int slot) {
+  // Pack: type in low 4 bits, slot in bits 4-5, rest reserved.
+  uint32_t e = (type & 0xFu) | ((((uint32_t)slot) & 0x3u) << 4);
+  int h = dgpt_evt_head;
+  dgpt_evt_ring[h & (DGPT_EVT_RING_SIZE - 1)] = e;
+  int next = (h + 1) & (DGPT_EVT_RING_SIZE - 1);
+  dgpt_evt_head = next;
+  // Overflow: if we lap the reader, advance tail by one (drop-oldest).
+  if (next == dgpt_evt_tail) {
+    dgpt_evt_tail = (dgpt_evt_tail + 1) & (DGPT_EVT_RING_SIZE - 1);
+  }
+}
+
+void dgpt_evt_push_typed(uint32_t type, uint32_t payload) {
+  // Pack: type in low 4 bits, 12-bit payload in bits 4..15. Used for
+  // KILL_TYPED to encode the mobjtype_t id alongside the kill event.
+  uint32_t e = (type & 0xFu) | ((payload & 0xFFFu) << 4);
+  int h = dgpt_evt_head;
+  dgpt_evt_ring[h & (DGPT_EVT_RING_SIZE - 1)] = e;
+  int next = (h + 1) & (DGPT_EVT_RING_SIZE - 1);
+  dgpt_evt_head = next;
+  if (next == dgpt_evt_tail) {
+    dgpt_evt_tail = (dgpt_evt_tail + 1) & (DGPT_EVT_RING_SIZE - 1);
+  }
+}
+
+int dgpt_drain_events(uint32_t *out, int max) {
+  int n = 0;
+  while (n < max && dgpt_evt_tail != dgpt_evt_head) {
+    out[n++] = dgpt_evt_ring[dgpt_evt_tail];
+    dgpt_evt_tail = (dgpt_evt_tail + 1) & (DGPT_EVT_RING_SIZE - 1);
+  }
+  return n;
+}
+
+int dgpt_evt_head_get(void) { return dgpt_evt_head; }
+int dgpt_evt_tail_get(void) { return dgpt_evt_tail; }
 
 #define DGPT_KEY_QUEUE_SIZE 256
 
@@ -520,6 +595,78 @@ void dgpt_inject_remote_ticcmd(int slot, int forwardmove, int sidemove,
 void dgpt_set_scripted(int enabled) {
   DGPT_LoopSetScripted(enabled);
 }
+
+// ---- P1: true-lockstep barrier (doom-mp-true-lockstep.md) ----
+//
+// dgpt_set_lockstep(enabled): arm/disarm the per-tic barrier. The live game
+// arms it for a >1-player netgame; SP + the slice-5 free-run path leave it off
+// (byte-identical behavior). When armed the engine never advances past the last
+// consolidated TicSet delivered via dgpt_receive_ticset, and TryRunTics returns
+// (never spins) when starved.
+void dgpt_set_lockstep(int enabled) {
+  DGPT_LoopSetLockstep(enabled);
+}
+
+// dgpt_set_input_delay(tics): the P1 INPUT-DELAY buffer. Under lockstep the
+// engine builds maketic this many tics AHEAD of gametic, so each peer's ticcmd
+// for tic G is produced + appended ~tics×28.5ms before the barrier needs it —
+// giving the relay time to propagate it so the sim runs at 35Hz instead of
+// stalling. Determinism is preserved (true tic numbers + identical consolidated
+// TicSet per tic); only WHEN the input is produced changes. The card sets ~6
+// for a >1-player netgame; 0 = default build-ahead. See DGPT_LoopSetInputDelay.
+void dgpt_set_input_delay(int tics) {
+  DGPT_LoopSetInputDelay(tics);
+}
+
+// dgpt_receive_ticset(tic, num_players, <per-slot fields for 4 slots>): deliver
+// the consolidated, ordered TicSet for one tic. We pass each slot's ticcmd as
+// scalar args (P1 caps at MAXPLAYERS=4) so the JS ccall surface stays trivial —
+// no heap marshalling. JS assembles the TicSet from the shared ordered append-
+// log (Y.Array) strictly in tic order, calling this once per tic. The `present`
+// bits mark which slots are in-game this tic (a dropped peer's bit is cleared).
+// Slots ≥ num_players are ignored. See DGPT_LoopReceiveTicSet in d_loop.c.
+void dgpt_receive_ticset(int tic, int num_players,
+                         int fwd0, int side0, int ang0, int btn0, int present0,
+                         int fwd1, int side1, int ang1, int btn1, int present1,
+                         int fwd2, int side2, int ang2, int btn2, int present2,
+                         int fwd3, int side3, int ang3, int btn3, int present3) {
+  signed char fwd[4]  = { (signed char)fwd0, (signed char)fwd1,
+                          (signed char)fwd2, (signed char)fwd3 };
+  signed char side[4] = { (signed char)side0, (signed char)side1,
+                          (signed char)side2, (signed char)side3 };
+  short ang[4]        = { (short)ang0, (short)ang1, (short)ang2, (short)ang3 };
+  unsigned char btn[4] = { (unsigned char)btn0, (unsigned char)btn1,
+                           (unsigned char)btn2, (unsigned char)btn3 };
+  unsigned char pres[4] = { (unsigned char)(present0 ? 1 : 0),
+                            (unsigned char)(present1 ? 1 : 0),
+                            (unsigned char)(present2 ? 1 : 0),
+                            (unsigned char)(present3 ? 1 : 0) };
+  DGPT_LoopReceiveTicSet(tic, num_players, fwd, side, ang, btn, pres);
+}
+
+// Engine tic counters for the JS lockstep driver. maketic = next tic to build
+// input for; gametic = tic about to run; recvtic = last consolidated TicSet
+// received. JS appends its local ticcmd for tic (maketic-1) to the shared log
+// and gates barrier delivery against gametic.
+int dgpt_get_maketic(void) { return DGPT_LoopGetMaketic(); }
+int dgpt_get_gametic(void) { return DGPT_LoopGetGametic(); }
+int dgpt_get_recvtic(void) { return DGPT_LoopGetRecvtic(); }
+
+// Read THIS peer's local ticcmd for a SPECIFIC built tic into a cached scalar
+// snapshot (same trivial-ccall-surface pattern as dgpt_has_local_ticcmd). The
+// JS lockstep pump calls dgpt_local_ticcmd_at(tic) then reads the four getters
+// to append that tic to the shared log. Returns 1 if the tic is available.
+static signed char  s_at_fwd;
+static signed char  s_at_side;
+static short        s_at_angle;
+static unsigned char s_at_buttons;
+int dgpt_local_ticcmd_at(int tic) {
+  return DGPT_LoopReadLocalTiccmdAt(tic, &s_at_fwd, &s_at_side, &s_at_angle, &s_at_buttons);
+}
+int dgpt_local_ticcmd_at_forwardmove(void) { return (int)s_at_fwd; }
+int dgpt_local_ticcmd_at_sidemove(void)    { return (int)s_at_side; }
+int dgpt_local_ticcmd_at_angleturn(void)   { return (int)s_at_angle; }
+int dgpt_local_ticcmd_at_buttons(void)     { return (int)s_at_buttons; }
 
 // dgpt_state_checksum(): a stable 32-bit digest of the deterministic game
 // state — enough to detect ANY divergence between two sims that should be in

@@ -5,6 +5,24 @@
 // the Atlantis demo as a general CV smoother + router.
 //
 // DSP lives in packages/dsp/src/slewswitch.ts (custom JS AudioWorklet).
+//
+// Inputs:
+//   in1..in4 (cv): four CV inputs for the per-channel slew limiter.
+//   step_clock (gate): rising edge advances the 4→1 sequential switch index.
+//   reset (gate): rising edge resets the switch index to 0.
+//   slew1..slew4_cv (cv, log, paramTarget=slew{N}): per-channel slew-time CV.
+//
+// Outputs:
+//   out1..out4 (cv): per-channel slewed direct outputs.
+//   switched (cv): the slewed signal at the currently-selected index (4→1 sequential switch).
+//   step_idx (cv): the current switch index (-1..+1 scaled to 0..length).
+//   eoc (gate): one-pulse end-of-cycle when the switch wraps.
+//
+// Params:
+//   slew1..slew4 (log 0.001..5 s, default 0.5): per-channel slew time.
+//   mode (discrete 0..2, default 0): switch mode (forward / reverse / ping-pong).
+//   length (discrete 1..4, default 4): active switch length.
+//   xfadeTime (log 0.001..2 s, default 0.05): smoothing on the switch index crossfade.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

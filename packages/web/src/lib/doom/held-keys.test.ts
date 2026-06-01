@@ -88,4 +88,71 @@ describe('HeldKeyTracker', () => {
     expect(sink).toHaveBeenCalledWith('ArrowRight', false);
     expect(t.has('ArrowRight')).toBe(false);
   });
+
+  // ── reconcileModifiers — the "stuck Ctrl after a swallowed keyup" fix ─────
+  const NONE_DOWN = { ctrl: false, alt: false, shift: false, meta: false };
+  const ALL_DOWN = { ctrl: true, alt: true, shift: true, meta: true };
+
+  it('reconcileModifiers releases a tracked modifier the event reports UP', () => {
+    const sink = vi.fn().mockReturnValue(true);
+    const t = new HeldKeyTracker(sink);
+    // Ctrl pressed (DOOM "fire"/run). Then a later event reports ctrlKey=false
+    // (the OS swallowed the keyup — macOS screenshot shortcut).
+    t.down('ControlLeft');
+    sink.mockClear();
+    const released = t.reconcileModifiers({ ...NONE_DOWN });
+    expect(released).toEqual(['ControlLeft']);
+    expect(sink).toHaveBeenCalledWith('ControlLeft', false);
+    expect(t.has('ControlLeft')).toBe(false);
+    expect(t.size).toBe(0);
+  });
+
+  it('reconcileModifiers keeps a modifier the event still reports DOWN', () => {
+    const sink = vi.fn().mockReturnValue(true);
+    const t = new HeldKeyTracker(sink);
+    t.down('ControlLeft');
+    sink.mockClear();
+    const released = t.reconcileModifiers({ ...ALL_DOWN });
+    expect(released).toEqual([]);
+    expect(sink).not.toHaveBeenCalled();
+    expect(t.has('ControlLeft')).toBe(true);
+  });
+
+  it('reconcileModifiers NEVER releases held movement keys (no round-4 dump)', () => {
+    const sink = vi.fn().mockReturnValue(true);
+    const t = new HeldKeyTracker(sink);
+    // Holding forward + strafe while NO modifier is down. An event reporting
+    // all modifiers up must NOT touch the movement keys.
+    t.down('KeyW');
+    t.down('ArrowLeft');
+    t.down('ControlLeft');
+    sink.mockClear();
+    const released = t.reconcileModifiers({ ...NONE_DOWN });
+    // Only the modifier was released; movement keys stay held.
+    expect(released).toEqual(['ControlLeft']);
+    expect(t.has('KeyW')).toBe(true);
+    expect(t.has('ArrowLeft')).toBe(true);
+    expect(sink).toHaveBeenCalledTimes(1);
+    expect(sink).toHaveBeenCalledWith('ControlLeft', false);
+  });
+
+  it('reconcileModifiers releases left+right of the same modifier independently', () => {
+    const sink = vi.fn().mockReturnValue(true);
+    const t = new HeldKeyTracker(sink);
+    t.down('ShiftLeft');
+    t.down('AltRight');
+    sink.mockClear();
+    // Shift still down, Alt dropped.
+    const released = t.reconcileModifiers({ ctrl: false, alt: false, shift: true, meta: false });
+    expect(released).toEqual(['AltRight']);
+    expect(t.has('ShiftLeft')).toBe(true);
+    expect(t.has('AltRight')).toBe(false);
+  });
+
+  it('reconcileModifiers is a no-op when nothing is held', () => {
+    const sink = vi.fn().mockReturnValue(true);
+    const t = new HeldKeyTracker(sink);
+    expect(t.reconcileModifiers({ ...NONE_DOWN })).toEqual([]);
+    expect(sink).not.toHaveBeenCalled();
+  });
 });

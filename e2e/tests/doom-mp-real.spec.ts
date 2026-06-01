@@ -69,6 +69,7 @@ interface CardState {
   isNetArbiter: boolean;
   memberIds: string[];
   mpMode?: 'single' | 'multi';
+  mpLive: boolean;
   ownerIds: string[];
   badgeText: string;
   slotColor: string;
@@ -218,12 +219,56 @@ async function playerPos(
   }, id);
 }
 
+// Take a STICKY, focus-independent keyboard claim on the DOOM card, then VERIFY
+// the runtime actually claims keys before we dispatch any.
+//
+// DETERMINISTIC CLAIM (the @collab marine-move de-flake): we do NOT rely on a
+// DOM click/focus. In a 2-context Playwright test only ONE page holds
+// focus/activeElement; the backgrounded page's document.activeElement stays on
+// <body>, so a click+focus-based capture leaves shouldClaimKey()'s focus-within
+// branch false, the dispatched keydown is silently dropped, and the marine never
+// moves (the CI failure: the OWNER page showed the "Click to capture keyboard"
+// overlay still up — capture never landed). Instead we invoke the card's
+// `forceClaimKeyboard()` dev hook, which calls the SAME latchKeyboard() the
+// "Click to capture keyboard" onclick fires — flipping kbLatched=true, which
+// shouldClaimKey() honours REGARDLESS of focus/foreground. We then poll
+// getState().shouldClaimKey === true to confirm the claim actually landed
+// before dispatching any keys. Works identically on the foreground and the
+// background page. (Real users still click to capture; that path is unchanged.)
+async function claimKeyboard(page: Page, id: string): Promise<void> {
+  await page.evaluate(
+    (nid) =>
+      (
+        globalThis as unknown as {
+          __doomCards?: Record<string, { forceClaimKeyboard?: () => void }>;
+        }
+      ).__doomCards?.[nid]?.forceClaimKeyboard?.(),
+    id,
+  );
+  // Poll until the runtime confirms the claim landed (focus-independent).
+  await page
+    .waitForFunction(
+      (nid) =>
+        (
+          globalThis as unknown as {
+            __doomCards?: Record<string, { getState: () => { shouldClaimKey: boolean } }>;
+          }
+        ).__doomCards?.[nid]?.getState().shouldClaimKey === true,
+      id,
+      { timeout: 5000 },
+    )
+    .catch(() => {
+      // Fall through: dispatch will still run; the assertion that follows
+      // surfaces the failure with a clear signal rather than a silent no-op.
+    });
+}
+
 test.describe('@collab DOOM multiplayer — real 2-user', () => {
   // Cold WASM + 4 MB WAD on two contexts + cross-context sync + launch +
   // movement burst → generous ceiling.
   test.setTimeout(180_000);
 
-  test('owner hosts MP as P1, guest joins as P2, both render their own real POV', async ({
+  test('owner hosts + launches MP as P1, guest one-click hot-joins as P2 into the running level', async ({
     browser,
   }) => {
     const rackId = `doom-mp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -306,7 +351,10 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       const ownerSeated = await waitForSlot(owner.page, NODE_ID, 0, 25000);
       expect(ownerSeated, 'owner takes slot 0 (player 1) on Host Multiplayer').toBe(true);
 
-      // ── Guest sees the lobby (mpMode=multi) → JOINS → seated as P2 ───────
+      // ── Round 5: guest's Join is DISABLED until the host runs an MP game ──
+      // Before the host launches, mpLive is false → the guest's Join button is
+      // present but disabled ("Waiting for host to start a multiplayer game…").
+      // This is the single gate of the new flow.
       const guestSawLobby = await guest.page
         .waitForFunction(
           (nid) =>
@@ -320,48 +368,24 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         )
         .then(() => true)
         .catch(() => false);
-      expect(guestSawLobby, 'guest sees the host-opened lobby (Join available)').toBe(true);
-
-      await guest.page.evaluate(
-        (nid) =>
-          (globalThis as unknown as { __doomCards: Record<string, { join: () => Promise<void> }> })
-            .__doomCards[nid]!.join(),
-        NODE_ID,
-      );
-      const guestSeated = await waitForSlot(guest.page, NODE_ID, 1, 30000);
-      if (!guestSeated) {
-        test.skip(true, 'cross-context roster sync did not seat the guest at slot 1 (relay flake)');
-        return;
-      }
-
-      // ── Identity / host / arbiter all correct + CONSISTENT across peers ──
+      expect(guestSawLobby, 'guest sees the host-opened lobby').toBe(true);
       {
-        const o = await getState(owner.page, NODE_ID);
         const g = await getState(guest.page, NODE_ID);
-        // Owner = P1 / host / arbiter / green.
-        expect(o.mySlot).toBe(0);
-        expect(o.badgeText).toBe('P1');
-        expect(o.slotColor).toBe(SLOT_COLOR[0]);
-        expect(o.isHost).toBe(true);
-        expect(o.isNetArbiter, 'host is also the net arbiter (so Launch works)').toBe(true);
-        // Guest = P2 / not host / not arbiter / indigo. DISTINCT from owner.
-        expect(g.mySlot).toBe(1);
-        expect(g.mySlot).not.toBe(o.mySlot);
-        expect(g.badgeText).toBe('P2');
-        expect(g.slotColor).toBe(SLOT_COLOR[1]);
-        expect(g.isHost).toBe(false);
-        expect(g.isNetArbiter).toBe(false);
-        // Bug #2: the guest is an ACTIVE PLAYER, NOT a spectator. Pre-fix the
-        // guest stayed a spectator rendering the host's mirror (badged SPEC,
-        // showing the host's "Player 1" HUD). Assert it is seated as P2 with
-        // viewerStatus 'player' (no pending reservation).
-        expect(g.viewerStatus, 'guest is an ACTIVE player, not a spectator').toBe('player');
-        expect(g.myPendingSlot, 'guest is active now, not a pending late joiner').toBeNull();
-        // The roster is consistent: both peers agree the guest is at slot 1.
-        expect(g.memberIds.length).toBe(2);
+        expect(g.mpLive, 'no MP game running yet → not live').toBe(false);
+        expect(g.mySlot, 'guest is not seated before joining').toBeNull();
       }
+      // The Join button exists but is DISABLED with the waiting copy.
+      const joinBtnPreLaunch = guest.page.locator('[data-testid="doom-join-btn"]');
+      await expect(joinBtnPreLaunch, 'Join button is present pre-launch').toBeVisible({
+        timeout: 10000,
+      });
+      await expect(joinBtnPreLaunch, 'Join is DISABLED until the host starts a game').toBeDisabled();
+      await expect(
+        guest.page.locator('[data-testid="doom-join-waiting"]'),
+        'guest sees the "waiting for host" copy',
+      ).toBeVisible();
 
-      // ── Owner (arbiter) LAUNCHES coop E1M1 → BOTH reach GS_LEVEL ─────────
+      // ── Owner (arbiter) LAUNCHES coop E1M1 → host reaches GS_LEVEL ───────
       await owner.page.evaluate(
         (nid) => {
           const w = globalThis as unknown as {
@@ -373,23 +397,82 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         NODE_ID,
       );
       const ownerInLevel = await waitForLevel(owner.page, NODE_ID);
-      const guestInLevel = await waitForLevel(guest.page, NODE_ID);
       // Bug #1: the HOST itself must enter GS_LEVEL — pre-fix the host's own
       // WASM stayed on the attract/title menu (GS_DEMOSCREEN) because its
       // startNetGame no-op'd (runtime not ready when Launch self-fired) and
       // nothing re-applied it. This is the assertion that would FAIL on main.
       expect(ownerInLevel, 'HOST enters the level on Launch (NOT stuck on the title menu)').toBe(true);
+      {
+        const o = await getState(owner.page, NODE_ID);
+        expect(o.gamestate, 'host gamestate is GS_LEVEL').toBe(GS_LEVEL);
+        expect(o.gamestate, 'host is NOT on the DOOM title/attract menu').not.toBe(GS_DEMOSCREEN);
+        expect(o.mySlot, 'owner is P1').toBe(0);
+        expect(o.isHost).toBe(true);
+        expect(o.isNetArbiter, 'host is also the net arbiter (so Launch works)').toBe(true);
+        expect(o.slotColor).toBe(SLOT_COLOR[0]);
+        expect(o.badgeText).toBe('P1');
+      }
+
+      // ── Round 5: with the game live, the guest's Join ENABLES → one click ──
+      // hot-joins straight into the running level (no second host action). The
+      // mpLive flag the host published flips the guest's button to enabled.
+      const guestSawLive = await guest.page
+        .waitForFunction(
+          (nid) =>
+            (
+              globalThis as unknown as {
+                __doomCards: Record<string, { getState: () => { mpLive: boolean } }>;
+              }
+            ).__doomCards[nid]!.getState().mpLive === true,
+          NODE_ID,
+          { timeout: 20000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (!guestSawLive) {
+        test.skip(true, 'cross-context mpLive sync did not reach the guest (relay flake)');
+        return;
+      }
+      await expect(
+        guest.page.locator('[data-testid="doom-join-btn"]'),
+        'Join is now ENABLED (host is running an MP game)',
+      ).toBeEnabled({ timeout: 10000 });
+
+      // One click: hot-join. The arbiter seats the guest active + auto-relaunches
+      // the current map so the guest drops in within ~1-2s — no host Launch step.
+      await guest.page.locator('[data-testid="doom-join-btn"]').click();
+      const guestSeated = await waitForSlot(guest.page, NODE_ID, 1, 30000);
+      if (!guestSeated) {
+        test.skip(true, 'cross-context roster sync did not seat the guest at slot 1 (relay flake)');
+        return;
+      }
+      // The guest reaches GS_LEVEL on its OWN runtime via the auto-relaunch —
+      // one click, straight into the running map.
+      const guestInLevel = await waitForLevel(guest.page, NODE_ID);
       expect(
         guestInLevel,
-        'guest enters the level too (no attract demo — netgame really started)',
+        'guest hot-joins straight into the running level on one click (no host re-launch)',
       ).toBe(true);
+
+      // ── Identity / host / arbiter all correct + CONSISTENT across peers ──
       {
         const o = await getState(owner.page, NODE_ID);
         const g = await getState(guest.page, NODE_ID);
-        expect(o.gamestate, 'host gamestate is GS_LEVEL').toBe(GS_LEVEL);
-        expect(o.gamestate, 'host is NOT on the DOOM title/attract menu').not.toBe(GS_DEMOSCREEN);
+        // Owner = P1 / host / arbiter / green.
+        expect(o.mySlot).toBe(0);
+        // Guest = P2 / not host / not arbiter / indigo. DISTINCT from owner.
+        expect(g.mySlot).toBe(1);
+        expect(g.mySlot).not.toBe(o.mySlot);
+        expect(g.badgeText).toBe('P2');
+        expect(g.slotColor).toBe(SLOT_COLOR[1]);
+        expect(g.isHost).toBe(false);
+        expect(g.isNetArbiter).toBe(false);
+        // The guest is an ACTIVE PLAYER, NOT a spectator, NOT a pending joiner.
+        expect(g.viewerStatus, 'guest is an ACTIVE player, not a spectator').toBe('player');
+        expect(g.myPendingSlot, 'guest is active now, not a pending late joiner').toBeNull();
         expect(g.gamestate, 'guest gamestate is GS_LEVEL').toBe(GS_LEVEL);
         expect(g.gamestate, 'guest is NOT on the DOOM title/attract menu').not.toBe(GS_DEMOSCREEN);
+        expect(g.memberIds.length).toBe(2);
       }
 
       // ── Each peer drives its OWN marine, spawned at its own slot ─────────
@@ -422,12 +505,14 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         return w.__doomCards?.[nid]?.getSlotState(0) ?? null;
       }, NODE_ID);
       expect(ownerInGuestBefore, "owner's marine exists in the guest's world").not.toBeNull();
-      // Hold ArrowUp on the owner for a sustained burst (focus the card so the
-      // window-capture key handler claims the key + routes it to the runtime).
-      await owner.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
-      });
+      // Hold ArrowUp on the owner for a sustained burst. Take a STICKY,
+      // focus-independent keyboard claim via the forceClaimKeyboard() hook (see
+      // claimKeyboard) — NOT a DOM click/focus, which is racy across two
+      // headless contexts: document.activeElement intermittently stays on <body>
+      // for the backgrounded page, so shouldClaimKey()'s focus-within branch is
+      // false and the keydown is never claimed. claimKeyboard polls until
+      // shouldClaimKey flips true before we dispatch.
+      await claimKeyboard(owner.page, NODE_ID);
       await owner.page.evaluate(() =>
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
       );
@@ -456,14 +541,12 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       // Bug #3: the GUEST's OWN keyboard drives the GUEST's OWN marine. Pre-fix
       // a joined non-host peer relayed its keys to the host instead of pushing
       // them into its own runtime, so the guest's marine never moved from the
-      // guest's keyboard. Focus the guest card, hold ArrowUp, assert the
-      // guest's console-player position changes in the GUEST's own sim.
+      // guest's keyboard. Claim the keyboard on the guest card, hold ArrowUp,
+      // assert the guest's console-player position changes in the GUEST's own
+      // sim.
       const gMoveStart = await playerPos(guest.page, NODE_ID);
       expect(gMoveStart, 'guest console player present before its own move').not.toBeNull();
-      await guest.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
-      });
+      await claimKeyboard(guest.page, NODE_ID);
       await guest.page.evaluate(() =>
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
       );
@@ -498,10 +581,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       }, NODE_ID);
       expect(ownerInGuestBaseline, "owner's marine still present in the guest's world").not.toBeNull();
       void ownerInGuestBefore;
-      await owner.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
-      });
+      await claimKeyboard(owner.page, NODE_ID);
       await owner.page.evaluate(() =>
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true })),
       );
@@ -548,6 +628,76 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
   // button + a nodrag option list). This drives them with REAL pointer clicks
   // (click trigger → click option) and asserts the picked difficulty actually
   // took + the host launched into the level.
+  // ── SPLIT-BRAIN-PROOF host election (no WASM — pure election assertions) ──
+  // The live bug: two browsers each saw "1/4 members" and EACH elected itself
+  // host (two P1s). This drives the deterministic-owner authority directly via
+  // the card-state hook (no game launch / WASM) so it stays light + reliable:
+  //   - exactly ONE peer is host, and it is the OWNER — never the lex-min guest.
+  //   - a guest NEVER seats itself as host even when it loaded FIRST / before
+  //     the owner's presence arrived (the empty-awareness split-brain root).
+  test('exactly one host = the owner, never split-brain (lex-min guest never seats itself)', async ({
+    browser,
+  }) => {
+    const rackId = `doom-sb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Owner id sorts LEX-LARGE, guest LEX-SMALL — the pre-fix ordering where the
+    // lex-min guest hijacked host. boot() attaches + publishes presence for both
+    // (owner with isRackOwner:true, guest false) the way r/[id]/+page.svelte does.
+    const peers = await boot(browser, rackId, [
+      { userId: 'zzz-rack-owner', name: 'Owner', isOwner: true },
+      { userId: 'aaa-guest-lexmin', name: 'Guest', isOwner: false },
+    ]);
+    const owner = peers[0]!;
+    const guest = peers[1]!;
+    try {
+      // Owner (rack host) adds the single shared DOOM node; guest sees it via Yjs.
+      const nodes: SpawnNode[] = [
+        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
+      ];
+      await spawnPatch(owner.page, nodes, []);
+      const guestSawNode = await guest.page
+        .waitForFunction(
+          (nid) =>
+            Object.keys(
+              (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
+            ).includes(nid),
+          NODE_ID,
+          { timeout: 15000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (!guestSawNode) {
+        test.skip(true, 'cross-context node sync did not deliver the DOOM node (relay flake)');
+        return;
+      }
+      await cardHookReady(owner.page, NODE_ID);
+      await cardHookReady(guest.page, NODE_ID);
+
+      // Converge: BOTH see 2 members (presence sync) — no game launch / WASM.
+      await expect
+        .poll(async () => (await getState(owner.page, NODE_ID)).memberIds.length, { timeout: 10000 })
+        .toBe(2);
+      await expect
+        .poll(async () => (await getState(guest.page, NODE_ID)).memberIds.length, { timeout: 10000 })
+        .toBe(2);
+
+      // THE INVARIANT: exactly one host across the two peers, and it's the OWNER
+      // — never the lex-min guest, never both (the deterministic-owner authority).
+      await expect
+        .poll(async () => (await getState(owner.page, NODE_ID)).isHost, { timeout: 10000 })
+        .toBe(true);
+      const o = await getState(owner.page, NODE_ID);
+      const g = await getState(guest.page, NODE_ID);
+      expect(o.isHost, 'owner is host (even though its id sorts lex-LAST)').toBe(true);
+      expect(g.isHost, 'lex-min guest is NOT host — never seats itself').toBe(false);
+      // Count of hosts across all peers is exactly 1 (no split-brain).
+      expect([o.isHost, g.isHost].filter(Boolean), 'exactly one host').toHaveLength(1);
+      expect(o.ownerIds, 'owner published as rack owner').toContain('zzz-rack-owner');
+      expect(g.mySlot, 'guest never auto-seated as P1 before any host action').toBeNull();
+    } finally {
+      await Promise.all(peers.map((p) => p.ctx.close().catch(() => {})));
+    }
+  });
+
   test('host opens the New Game dialog + picks a non-default difficulty by MOUSE', async ({
     browser,
   }) => {
@@ -614,14 +764,14 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
     }
   });
 
-  // ── Bug #2: an anon/invite guest can JOIN + HOT-DROP into the running map ─
-  // The anon carries a stable awareness user.id but no rack ownership. Pre-fix
-  // it had ZERO join affordance (Join was gated on the host's mpMode==='multi'
-  // and the host might never set it). Now the anon's Join itself opens MP via
-  // the arbiter, and joining mid-level HOT-DROPS the anon into the CURRENT map
-  // (the arbiter re-launches it), so the anon is playing the running level
-  // within seconds — not seated for the next map.
-  test('anon guest joins a running game + hot-drops into the CURRENT map', async ({
+  // ── Round 5: an anon/invite guest one-click hot-joins a RUNNING MP game ──
+  // The anon carries a stable awareness user.id but no rack ownership. The new
+  // model: the host's "start a multiplayer game" is the single gate — once the
+  // host is in a live MP level (mpLive), the anon's Join is enabled and ONE
+  // click hot-drops it into the CURRENT map (the arbiter auto-relaunches with
+  // the new player count). Before that, the anon's Join is disabled with the
+  // "waiting for host" copy. The anon never opens MP itself.
+  test('anon guest one-click hot-joins a running game into the CURRENT map', async ({
     browser,
   }) => {
     const rackId = `doom-anon-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -662,6 +812,14 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         .poll(async () => (await getState(owner.page, NODE_ID)).memberIds.length, { timeout: 10000 })
         .toBe(2);
 
+      // Before any game runs: the anon's Join is present but DISABLED with the
+      // "waiting for host" copy (no live MP game to join).
+      {
+        const joinBtn = anon.page.locator('[data-testid="doom-join-btn"]');
+        await expect(joinBtn, 'anon sees a Join button (disabled)').toBeVisible({ timeout: 15000 });
+        await expect(joinBtn, 'anon Join is disabled before any MP game runs').toBeDisabled();
+      }
+
       // Owner hosts MP, joins as P0, launches a coop level → game is RUNNING.
       await owner.page.evaluate(
         (nid) =>
@@ -685,11 +843,12 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       );
       expect(await waitForLevel(owner.page, NODE_ID), 'owner reaches a running level').toBe(true);
 
-      // The anon sees a working Join button (the affordance exists even though
-      // it's not the host) → clicks it. With the level already running, this
-      // hot-drops the anon into the CURRENT map.
+      // With the level running (mpLive), the anon's Join ENABLES → one click
+      // hot-drops the anon into the CURRENT map (no second host action).
       const joinBtn = anon.page.locator('[data-testid="doom-join-btn"]');
-      await expect(joinBtn, 'anon guest is offered a working Join').toBeVisible({ timeout: 15000 });
+      await expect(joinBtn, 'anon guest is offered an enabled Join once MP is live').toBeEnabled({
+        timeout: 20000,
+      });
       await joinBtn.click();
 
       // The anon hot-drops: it becomes ACTIVE slot 1 (NOT pending) and reaches

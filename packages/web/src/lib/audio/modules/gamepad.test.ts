@@ -99,4 +99,32 @@ describe('gamepad def shape', () => {
       expect(defOut?.type).toBe(o.type);
     }
   });
+
+  // Bug #1 — button-LED labels match the output port labels. The card
+  // used to hard-code uppercase IDs (`{btn.toUpperCase()}`) for the LED
+  // row while the port labels for the d-pad rendered chevron glyphs
+  // (⬆⬇⬅⮕ per the GAMEPAD_OUTPUTS table). Card-side fix: render
+  // GAMEPAD_OUTPUTS[id].label for each LED. This test pins the LABELS
+  // table so anyone who edits the def's d-pad labels has to update the
+  // expected text here too — and any drift between the LED row and the
+  // port row is caught at build time, not by a user looking at it.
+  it('d-pad output port labels use the U+2B0x chevron family (LED row mirror)', () => {
+    const cables = Object.fromEntries(GAMEPAD_OUTPUTS.map((o) => [o.id, o.label]));
+    expect(cables['du']).toBe('⬆');
+    expect(cables['dd']).toBe('⬇');
+    expect(cables['dl']).toBe('⬅');
+    expect(cables['dr']).toBe('⮕');
+  });
+
+  it('face/shoulder/start/back output port labels are the canonical strings (LED row mirror)', () => {
+    const cables = Object.fromEntries(GAMEPAD_OUTPUTS.map((o) => [o.id, o.label]));
+    expect(cables['lb']).toBe('LB');
+    expect(cables['rb']).toBe('RB');
+    expect(cables['a']).toBe('A');
+    expect(cables['b']).toBe('B');
+    expect(cables['x']).toBe('X');
+    expect(cables['y']).toBe('Y');
+    expect(cables['start']).toBe('STA');
+    expect(cables['back']).toBe('SEL');
+  });
 });

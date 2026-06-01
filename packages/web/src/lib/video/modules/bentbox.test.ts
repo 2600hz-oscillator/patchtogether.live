@@ -6,7 +6,16 @@
 // without booting WebGL.
 
 import { describe, expect, it } from 'vitest';
-import { bentboxDef, rgbToYiq, softClip, wavefold, yiqToRgb } from './bentbox';
+import {
+  bentboxDef,
+  bentboxMirrorUv,
+  bentboxMirrorGateTick,
+  makeBentboxMirrorGateState,
+  rgbToYiq,
+  softClip,
+  wavefold,
+  yiqToRgb,
+} from './bentbox';
 
 describe('BENTBOX pure helpers', () => {
   describe('rgbToYiq / yiqToRgb', () => {
@@ -135,11 +144,27 @@ describe('BENTBOX module def shape', () => {
     expect(bentboxDef.category).toBe('output');
   });
 
-  it('has the input video port + 12 CV inputs', () => {
+  it('has the input video port + 14 CV inputs (12 knobs + 2 mirror gates)', () => {
     const ins = bentboxDef.inputs;
     expect(ins.find((p) => p.id === 'in' && p.type === 'video')).toBeTruthy();
     const cvCount = ins.filter((p) => p.type === 'cv').length;
-    expect(cvCount).toBe(12);
+    expect(cvCount).toBe(14);
+  });
+
+  it('exposes mirror_x_gate / mirror_y_gate as raw (no cvScale) gate inputs', () => {
+    for (const [port, target] of [
+      ['mirror_x_gate', 'mirrorXGate'],
+      ['mirror_y_gate', 'mirrorYGate'],
+    ] as const) {
+      const g = bentboxDef.inputs.find((p) => p.id === port);
+      expect(g, port).toBeDefined();
+      expect(g?.type).toBe('cv');
+      expect(g?.cvScale).toBeUndefined(); // gate semantics — raw passthrough
+      expect(g?.paramTarget).toBe(target);
+    }
+    const byId = Object.fromEntries(bentboxDef.params.map((p) => [p.id, p]));
+    expect(byId.mirrorX).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+    expect(byId.mirrorY).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
   });
 
   it('every CV input has a matching paramTarget that exists in params', () => {
@@ -175,5 +200,89 @@ describe('BENTBOX module def shape', () => {
     ]) {
       expect(byId.get(id)?.defaultValue).toBe(0);
     }
+  });
+});
+
+describe('bentboxMirrorUv — kaleidoscope fold geometry', () => {
+  it('identity (both off) returns the UV unchanged', () => {
+    for (const [u, v] of [[0.1, 0.2], [0.9, 0.8], [0.5, 0.5]] as const) {
+      const out = bentboxMirrorUv(u, v, false, false);
+      expect(out.u).toBeCloseTo(u, 6);
+      expect(out.v).toBeCloseTo(v, 6);
+    }
+  });
+
+  it('MIRROR X folds the LEFT half over the right (right = mirror of left)', () => {
+    // Left half (u<0.5) unchanged.
+    expect(bentboxMirrorUv(0.2, 0.3, true, false).u).toBeCloseTo(0.2, 6);
+    // Right half mirrors the left: u -> 1-u. u=0.8 reads from u=0.2.
+    expect(bentboxMirrorUv(0.8, 0.3, true, false).u).toBeCloseTo(0.2, 6);
+    // Symmetric pair maps to the SAME source coord (right == mirrored left).
+    expect(bentboxMirrorUv(0.8, 0.3, true, false).u)
+      .toBeCloseTo(bentboxMirrorUv(0.2, 0.3, true, false).u, 6);
+    // v untouched.
+    expect(bentboxMirrorUv(0.8, 0.3, true, false).v).toBeCloseTo(0.3, 6);
+  });
+
+  it('MIRROR Y folds the visual TOP half into the bottom (keeps uv.y>=0.5)', () => {
+    // The fold KEEPS the high-uv.y half (the visual TOP) and reflects the low
+    // half via (1-uv.y) — verified via BACKDRAFT e2e to read as top→bottom.
+    expect(bentboxMirrorUv(0.3, 0.8, false, true).v).toBeCloseTo(0.8, 6); // high half kept
+    expect(bentboxMirrorUv(0.3, 0.2, false, true).v).toBeCloseTo(0.8, 6); // low half → 1-0.2
+    expect(bentboxMirrorUv(0.3, 0.2, false, true).v)
+      .toBeCloseTo(bentboxMirrorUv(0.3, 0.8, false, true).v, 6);
+    expect(bentboxMirrorUv(0.3, 0.2, false, true).u).toBeCloseTo(0.3, 6);
+  });
+
+  it('both on = 4-way symmetric (quadrant fold = kaleidoscope)', () => {
+    // All four quadrant-corners map to the SAME (kept) source coord.
+    const ref = bentboxMirrorUv(0.2, 0.8, true, true);
+    const a = bentboxMirrorUv(0.8, 0.8, true, true);
+    const b = bentboxMirrorUv(0.2, 0.2, true, true);
+    const c = bentboxMirrorUv(0.8, 0.2, true, true);
+    for (const q of [a, b, c]) {
+      expect(q.u).toBeCloseTo(ref.u, 6);
+      expect(q.v).toBeCloseTo(ref.v, 6);
+    }
+    expect(ref.u).toBeCloseTo(0.2, 6);
+    expect(ref.v).toBeCloseTo(0.8, 6);
+  });
+
+  it('is idempotent on the kept half (folding the output again is a no-op)', () => {
+    const once = bentboxMirrorUv(0.8, 0.2, true, true);
+    const twice = bentboxMirrorUv(once.u, once.v, true, true);
+    expect(twice.u).toBeCloseTo(once.u, 6);
+    expect(twice.v).toBeCloseTo(once.v, 6);
+  });
+});
+
+describe('bentboxMirrorGateTick — rising edge flips the axis', () => {
+  it('returns true exactly on the rising edge (hysteresis rise>0.6)', () => {
+    const st = makeBentboxMirrorGateState();
+    expect(bentboxMirrorGateTick(st.x, 0.0)).toBe(false);
+    expect(bentboxMirrorGateTick(st.x, 0.7)).toBe(true);   // rising edge
+    expect(bentboxMirrorGateTick(st.x, 0.9)).toBe(false);  // still high, no new edge
+    expect(bentboxMirrorGateTick(st.x, 0.3)).toBe(false);  // falling (no flip)
+    expect(bentboxMirrorGateTick(st.x, 0.7)).toBe(true);   // next rising edge
+  });
+
+  it('a value in the dead band (0.4..0.6) does not re-trigger', () => {
+    const st = makeBentboxMirrorGateState();
+    expect(bentboxMirrorGateTick(st.y, 0.7)).toBe(true);
+    expect(bentboxMirrorGateTick(st.y, 0.5)).toBe(false); // sticky in dead band
+    expect(bentboxMirrorGateTick(st.y, 0.55)).toBe(false);
+  });
+
+  it('toggling a boolean on each rising edge flips it (gate-driven kaleidoscope)', () => {
+    const st = makeBentboxMirrorGateState();
+    let mirrorX = 0;
+    const pulse = (v: number) => {
+      if (bentboxMirrorGateTick(st.x, v)) mirrorX = mirrorX >= 0.5 ? 0 : 1;
+    };
+    pulse(0.8); expect(mirrorX).toBe(1); // first edge → on
+    pulse(0.0);
+    pulse(0.8); expect(mirrorX).toBe(0); // second edge → off
+    pulse(0.0);
+    pulse(0.8); expect(mirrorX).toBe(1); // third edge → on
   });
 });

@@ -8,6 +8,7 @@ import { registerMetaModule } from '$lib/meta/module-registry';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 import { stickyDef } from './sticky';
 import { groupDef } from './group';
+import { cadillacDef } from './cadillac';
 
 let registered = false;
 
@@ -16,6 +17,7 @@ export function registerMetaModules(): void {
   registered = true;
   registerMetaModule(stickyDef);
   registerMetaModule(groupDef);
+  registerMetaModule(cadillacDef);
   // Refresh the published spec snapshot so window.__moduleSpecs picks up
   // the meta defs the same way the audio + video barrels do.
   exposeModuleSpecsForTests();

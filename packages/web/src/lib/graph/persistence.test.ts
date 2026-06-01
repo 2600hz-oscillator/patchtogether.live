@@ -17,6 +17,7 @@ import {
   parseEnvelope,
   serializeEnvelope,
   loadEnvelopeIntoStore,
+  migrateEdgeEndpoints,
   sanitizeFilename,
   ENVELOPE_VERSION,
   DEFAULT_FILENAME,
@@ -323,6 +324,240 @@ describe('persistence: round-trip', () => {
   });
 });
 
+// ---------------- DOOM transient-data stripping ----------------
+//
+// DOOM persists multiplayer lobby state (mpMode / mpLive / players / pending)
+// onto its node.data so every peer in the rack converges on the host's
+// session state via Yjs sync. But that state is SESSION-scoped, not
+// TOPOLOGY: a saved patch is a rack snapshot, not a particular game's live
+// status. If those fields ride a saved envelope into a future load, the
+// host's start-game dialog is gated on `mpMode === undefined` and so it
+// never re-renders — the user lands on a stuck "Single-user rack" splash
+// with no way to launch. The loader strips a per-module whitelist of these
+// transient fields off `node.data` post-migration so the load is a clean
+// topology restore (Bug #1 — the load-from-patch repro).
+describe('persistence: DOOM transient-field stripping', () => {
+  /** Minimal DOOM def — only needed so the loader sees `doom` as a known
+   *  type and runs its migration / strip pass. We register under the audio
+   *  domain because DOOM's real registry slot is video, but persistence
+   *  doesn't care which registry as long as some lookup matches; using audio
+   *  here avoids depending on the real video registry def's evolving shape. */
+  const doomStub: AudioModuleDef = {
+    type: 'doom',
+    domain: 'audio',
+    label: 'DOOM',
+    category: 'sources',
+    schemaVersion: 2,
+    inputs: [],
+    outputs: [],
+    params: [],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    factory: throwingFactory as any,
+  };
+
+  beforeAll(() => {
+    registerModule(doomStub);
+  });
+
+  it('strips mpMode / mpLive / players / pending off a loaded DOOM node', () => {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['d'] = {
+        id: 'd',
+        type: 'doom',
+        domain: 'audio',
+        position: { x: 10, y: 20 },
+        params: {},
+        data: {
+          name: 'DOOM',
+          mpMode: 'multi',
+          mpLive: true,
+          players: { p1: { userId: 'u-1' } },
+          pending: { p2: { userId: 'u-2' } },
+        },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+
+    const loaded = dest.store.nodes['d'];
+    expect(loaded).toBeDefined();
+    const data = loaded!.data as Record<string, unknown>;
+    expect(data.name).toBe('DOOM'); // persistent name preserved
+    expect('mpMode' in data).toBe(false);
+    expect('mpLive' in data).toBe(false);
+    expect('players' in data).toBe(false);
+    expect('pending' in data).toBe(false);
+  });
+
+  it('preserves DOOM persistent fields (position / params / data.name)', () => {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['d'] = {
+        id: 'd',
+        type: 'doom',
+        domain: 'audio',
+        position: { x: 123, y: 456 },
+        params: { volume: 0.42 },
+        data: {
+          name: 'My DOOM',
+          mpMode: 'single', // transient — should disappear
+        },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+
+    const loaded = dest.store.nodes['d'];
+    expect(loaded).toBeDefined();
+    expect(loaded!.position).toEqual({ x: 123, y: 456 });
+    expect(loaded!.params).toEqual({ volume: 0.42 });
+    expect((loaded!.data as Record<string, unknown>).name).toBe('My DOOM');
+    expect('mpMode' in (loaded!.data as object)).toBe(false);
+  });
+
+  it('does NOT strip the same field names off other module types', () => {
+    // Confidence check: the strip is type-keyed, so a hypothetical non-DOOM
+    // module that happens to carry an `mpMode` field on its data keeps it.
+    // Uses the existing testVcoDef (analogVco). This guards against the next
+    // person turning the whitelist into a global field filter.
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['v'] = {
+        id: 'v',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: { tune: 0, fine: 0 },
+        data: { mpMode: 'should-stay' },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    const loaded = dest.store.nodes['v'];
+    expect((loaded!.data as Record<string, unknown>).mpMode).toBe('should-stay');
+  });
+});
+
+// ---------------- ruttetra → reshaper breaking-change remap ----------------
+//
+// The `ruttetra` type id originally belonged to a fragment-shader coordinate
+// REMAP effect (schemaVersion 1). It was renamed to RESHAPER, and a NEW,
+// behaviourally-different module — the authentic forward-scatter Rutt-Etra
+// scope — took over the `ruttetra` id at schemaVersion 2. The loader detects
+// pre-rename saves by their recorded `moduleSchemas.ruttetra < 2` and remaps
+// the node's type to `reshaper` so old patches keep the look they were
+// authored with. These tests pin BOTH directions of that boundary so a future
+// edit can't silently downgrade a legitimately-new RUTTETRA — or fail to
+// preserve a genuinely-old coord-remap patch.
+
+describe('persistence: ruttetra → reshaper breaking-change remap', () => {
+  // Stub video defs mirroring the real registry shape the loader reads:
+  // RUTTETRA at v2, RESHAPER at v1. Only type + schemaVersion + (absent)
+  // migrate are consulted; factory is never called.
+  const reshaperStub: VideoModuleDef = {
+    type: 'reshaper',
+    domain: 'video',
+    label: 'RESHAPER',
+    category: 'output',
+    schemaVersion: 1,
+    inputs: [],
+    outputs: [{ id: 'out', type: 'video' }],
+    params: [],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    factory: throwingFactory as any,
+  };
+  const ruttetraStubV2: VideoModuleDef = {
+    type: 'ruttetra',
+    domain: 'video',
+    label: 'RUTTETRA',
+    category: 'output',
+    schemaVersion: 2,
+    inputs: [],
+    outputs: [{ id: 'out', type: 'video' }],
+    params: [],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    factory: throwingFactory as any,
+  };
+
+  beforeAll(() => {
+    registerVideoModule(reshaperStub);
+    registerVideoModule(ruttetraStubV2);
+  });
+
+  /** Hand-build an envelope carrying a single `ruttetra` node, with the
+   *  recorded ruttetra schemaVersion forced to `recordedVersion` (or omitted
+   *  entirely when `recordedVersion === undefined`). We can't drive this
+   *  through makeEnvelope because it always stamps the *current* registry
+   *  version (2), which is exactly the "new save" case — we need to fabricate
+   *  the *old* save shape. parseEnvelope is bypassed because it validates the
+   *  envelopeVersion, not moduleSchemas contents, and we want a raw object. */
+  function ruttetraEnvelope(recordedVersion: number | undefined) {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['rn'] = {
+        id: 'rn',
+        type: 'ruttetra',
+        domain: 'video',
+        position: { x: 10, y: 20 },
+        params: {},
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+    if (recordedVersion === undefined) {
+      delete env.moduleSchemas['ruttetra'];
+    } else {
+      env.moduleSchemas['ruttetra'] = recordedVersion;
+    }
+    return env;
+  }
+
+  it('keeps a NEW save (ruttetra recorded at schema 2) as ruttetra', () => {
+    // This is the add-module / current-build save path: makeEnvelope stamps
+    // ruttetra: 2, so the node must NOT be remapped.
+    const env = ruttetraEnvelope(2);
+    expect(env.moduleSchemas['ruttetra']).toBe(2);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+    expect(dest.store.nodes['rn']!.type).toBe('ruttetra');
+  });
+
+  it('remaps an OLD save (ruttetra recorded at schema 1) to reshaper', () => {
+    const env = ruttetraEnvelope(1);
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+    expect(dest.store.nodes['rn']!.type).toBe('reshaper');
+  });
+
+  it('remaps a key-less save (no recorded ruttetra schema) to reshaper', () => {
+    // A missing moduleSchemas.ruttetra can only come from an envelope authored
+    // before the new RUTTETRA existed in the registry — i.e. the id still meant
+    // the coord-remap — so the safe default is reshaper. (?? 1 < 2.)
+    const env = ruttetraEnvelope(undefined);
+    expect(env.moduleSchemas['ruttetra']).toBeUndefined();
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+    expect(dest.store.nodes['rn']!.type).toBe('reshaper');
+  });
+});
+
 // ---------------- Asset-bytes round-trip ----------------
 //
 // Regression net for the rackspace-persistence audit (see
@@ -626,5 +861,87 @@ describe('persistence: sanitizeFilename', () => {
   it('preserves spaces and unicode in the middle of the name', () => {
     expect(sanitizeFilename('my cool patch')).toBe('my cool patch.imp.json');
     expect(sanitizeFilename('café')).toBe('café.imp.json');
+  });
+});
+
+// ---------------- Edge-port migration (#353 DOOM per-slot ports) ----------------
+//
+// loadEnvelopeIntoStore rewrites edge endpoint portIds via the endpoint node's
+// module-def `migrateEdgePortId` hook when the saved version is behind the def.
+// DOOM uses this to rewrite legacy bare cv-gate ports (`up`/…) to the p1 group
+// (`p1_up`/…) when the single shared input set became four per-slot groups.
+
+/** A video def that renames bare cv-gate ports → p1_<id> for saves below v2. */
+const doomLikeDefV2: VideoModuleDef = {
+  type: 'doomLike',
+  domain: 'video',
+  label: 'DoomLike',
+  category: 'sources',
+  schemaVersion: 2,
+  inputs: [{ id: 'p1_up', type: 'cv', paramTarget: 'cv_p1_up' }],
+  outputs: [{ id: 'out', type: 'video' }],
+  params: [],
+  migrateEdgePortId(portId) {
+    return portId === 'up' ? 'p1_up' : null;
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  factory: throwingFactory as any,
+};
+
+describe('migrateEdgeEndpoints — DOOM per-slot port migration (#353)', () => {
+  beforeAll(() => registerVideoModule(doomLikeDefV2));
+
+  const nodes: Record<string, ModuleNode> = {
+    doom: { id: 'doom', type: 'doomLike', position: { x: 0, y: 0 }, params: {} } as ModuleNode,
+    lfo: { id: 'lfo', type: 'analogVco', position: { x: 0, y: 0 }, params: {} } as ModuleNode,
+  };
+  const baseEdge: Edge = {
+    id: 'e1',
+    source: { nodeId: 'lfo', portId: 'sine' },
+    target: { nodeId: 'doom', portId: 'up' },
+    sourceType: 'cv',
+    targetType: 'cv',
+  };
+
+  it('rewrites a legacy bare cv-gate target → p1_<id> when saved below v2', () => {
+    const migrated = migrateEdgeEndpoints(baseEdge, nodes, { doomLike: 1 });
+    expect(migrated.target.portId).toBe('p1_up');
+    expect(migrated.source.portId).toBe('sine'); // source (lfo) untouched
+    expect(migrated.id).toBe('e1');
+  });
+
+  it('leaves the edge unchanged when the saved version is already current', () => {
+    const migrated = migrateEdgeEndpoints(baseEdge, nodes, { doomLike: 2 });
+    expect(migrated).toBe(baseEdge); // same reference (no rewrite)
+  });
+
+  it('leaves non-migrating ports untouched (out/audio)', () => {
+    const e: Edge = { ...baseEdge, target: { nodeId: 'doom', portId: 'out' } };
+    const migrated = migrateEdgeEndpoints(e, nodes, { doomLike: 1 });
+    expect(migrated.target.portId).toBe('out');
+  });
+
+  it('end-to-end: a saved v1 patch with an LFO→DOOM `up` edge loads onto p1_up', () => {
+    // Build a v1 save: a doomLike node + an analogVco + an edge into bare `up`.
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['doom'] = { id: 'doom', type: 'doomLike', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
+      src.store.nodes['lfo'] = { id: 'lfo', type: 'analogVco', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
+      src.store.edges['e1'] = {
+        id: 'e1',
+        source: { nodeId: 'lfo', portId: 'sine' },
+        target: { nodeId: 'doom', portId: 'up' },
+        sourceType: 'cv',
+        targetType: 'cv',
+      } as Edge;
+    });
+    const env = makeEnvelope(src.ydoc);
+    // Force the recorded doomLike schema to the OLD version (a real v1 save).
+    env.moduleSchemas['doomLike'] = 1;
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+    expect(result.edgesLoaded).toBe(1);
+    expect(dest.store.edges['e1']!.target.portId).toBe('p1_up');
   });
 });

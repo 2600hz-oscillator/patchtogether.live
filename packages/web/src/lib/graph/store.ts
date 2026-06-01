@@ -1,8 +1,19 @@
 // packages/web/src/lib/graph/store.ts
 //
-// SyncedStore over Yjs from day 1 (D8). Phase 1 has no provider attached;
-// Phase 4 attaches a HocuspocusProvider and multiplayer turns on with no
-// changes to the consumer-facing API.
+// SyncedStore over Yjs. There is one logical patch graph at a time, exposed
+// as `patch` / `ydoc` / `undoManager` — but the underlying Y.Doc is REBOUND
+// every time the user enters a rackspace, so each rackspace gets a fresh,
+// isolated doc. Before this rebinding existed, the singleton Y.Doc was
+// shared across all rackspaces in the same JS context: navigating
+// `/r/A` → `/r/B` re-attached the provider for B to the same doc that
+// still held A's data, and A's nodes/edges were uploaded into B's room.
+// The result was the "edits leak across all 4 rackspaces" report.
+//
+// Consumers import the bindings as live ESM bindings (`import { patch,
+// ydoc } from '$lib/graph/store'`). When `bindRackspace(rackspaceId)`
+// reassigns them in this module, all import sites observe the new value.
+// The rackspace page wraps its canvas in `{#key rackspaceId}` so every
+// reactive subscription tears down and reattaches to the fresh proxy.
 
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import * as Y from 'yjs';
@@ -61,5 +72,166 @@ export function createUndoManager(ydoc: Y.Doc): Y.UndoManager {
   );
 }
 
-/** Singleton patch for Phase 1 (one canvas per page). Phase 3+ creates per-route. */
-export const { patch, ydoc, undoManager } = createPatch();
+// --- Rebindable singleton ------------------------------------------------
+//
+// `patch` / `ydoc` / `undoManager` are `let` exports so they form LIVE
+// import bindings: when `bindRackspace()` reassigns them below, every
+// `import { patch } from '$lib/graph/store'` consumer observes the new
+// value on the next read. Svelte's `$effect` / `$derived` runes don't
+// auto-rerun on a non-rune reassignment, so the rackspace page wraps
+// `<Canvas>` in `{#key data.rackspace.id}` to force a full remount of
+// subscribers when the rackspace id changes.
+
+let _bundle = createPatch();
+let _boundRackspaceId: string | null = null;
+
+/** Current Y.Doc backing the patch graph. Reassigned by bindRackspace(). */
+export let patch = _bundle.patch;
+/** Current low-level Y.Doc. */
+export let ydoc = _bundle.ydoc;
+/** Current UndoManager (tracks the current ydoc). */
+export let undoManager = _bundle.undoManager;
+
+// --- Bind event ----------------------------------------------------------
+//
+// Modules that capture (patch, ydoc) at construction time — most notably
+// the snapshot-bus singleton in `./snapshot.ts` — need to know when the
+// singleton trio has been swapped so they can re-point their internal
+// Yjs listeners at the new doc. A bare `export let` reassignment cannot
+// fire any callback, so we expose a tiny pub-sub here. Subscribers are
+// invoked synchronously after the new bundle is in place (so they see
+// fresh `patch` / `ydoc` reads via the import bindings) but BEFORE the
+// dev-only test-hook refresh below.
+//
+// Inversion-of-control: snapshot.ts is the consumer; store.ts has no
+// reference to snapshot.ts (would be circular).
+
+type BindListener = (patch: PatchProxy, ydoc: Y.Doc) => void;
+// Reuse the same shape the live exports do, without referencing them
+// (would create a self-circular type). The bound `patch` is a SyncedStore
+// proxy; the bound `ydoc` is a Y.Doc.
+type PatchProxy = ReturnType<typeof createPatch>['patch'];
+
+const _bindListeners = new Set<BindListener>();
+
+/**
+ * Subscribe to rackspace bind events. The callback fires every time
+ * `bindRackspace()` swaps in a new bundle (including the idempotent same-
+ * id path — no, actually idempotent calls do NOT fire; see bindRackspace
+ * for the early return). Returns an unsubscribe function.
+ */
+export function onBindRackspace(listener: BindListener): () => void {
+  _bindListeners.add(listener);
+  return () => {
+    _bindListeners.delete(listener);
+  };
+}
+
+/**
+ * Bind the singleton to a fresh store for `rackspaceId`. Idempotent for
+ * the same id — repeated calls are a no-op. Calling with a different id
+ * destroys the previous doc + UndoManager and swaps in a new trio.
+ *
+ * MUST be called BEFORE attaching the HocuspocusProvider for a rackspace.
+ * Otherwise the existing doc's contents (left over from a prior rackspace
+ * mount in the same JS context) get uploaded into the new rackspace's
+ * Hocuspocus room, corrupting it for every participant.
+ *
+ * Returns the new bindings so callers can capture stable references for
+ * the lifetime of one mount.
+ */
+export function bindRackspace(rackspaceId: string): {
+  patch: typeof patch;
+  ydoc: typeof ydoc;
+  undoManager: typeof undoManager;
+} {
+  if (_boundRackspaceId === rackspaceId) {
+    return { patch, ydoc, undoManager };
+  }
+  // Tear down the previous bundle so observers + Yjs internals don't leak
+  // across rackspace boundaries. UndoManager.destroy() unsubscribes its
+  // observer; ydoc.destroy() releases the doc + emits destroyed events.
+  try {
+    _bundle.undoManager.destroy();
+  } catch {
+    /* ignore */
+  }
+  try {
+    _bundle.ydoc.destroy();
+  } catch {
+    /* ignore */
+  }
+  _bundle = createPatch();
+  patch = _bundle.patch;
+  ydoc = _bundle.ydoc;
+  undoManager = _bundle.undoManager;
+  _boundRackspaceId = rackspaceId;
+  // Notify modules that captured the previous (patch, ydoc) by closure —
+  // most importantly the snapshot-bus singleton — so they re-point their
+  // Yjs `update` listeners at the new doc. Without this the bus stays
+  // attached to the now-destroyed previous doc and the reconciler + UI
+  // never observe further updates (the second-order bug behind the
+  // @collab clear-load regression after PR #432).
+  for (const fn of [..._bindListeners]) {
+    try {
+      fn(patch, ydoc);
+    } catch (err) {
+      console.error('[store] bind listener threw:', err);
+    }
+  }
+  // Refresh the dev-only test hooks (window.__patch / __ydoc are captured
+  // by Canvas.svelte's $effect on FIRST mount; Svelte 5 reactivity doesn't
+  // re-run that effect on a module-scope `let` reassignment, so the e2e
+  // harness would otherwise hold a stale reference to the pre-bind doc).
+  // Cheap unconditional refresh — production strips this branch via the
+  // testHooksEnabled gate inside Canvas, so the globals only exist there.
+  if (typeof globalThis !== 'undefined') {
+    type DevHooks = { __patch?: unknown; __ydoc?: unknown };
+    const g = globalThis as unknown as DevHooks;
+    if ('__patch' in g) g.__patch = patch;
+    if ('__ydoc' in g) g.__ydoc = ydoc;
+  }
+  return { patch, ydoc, undoManager };
+}
+
+/**
+ * Currently-bound rackspace id, or `null` if `bindRackspace()` has never
+ * been called. Exposed for tests + diagnostics.
+ */
+export function getBoundRackspaceId(): string | null {
+  return _boundRackspaceId;
+}
+
+/**
+ * Tear down the current bundle without binding a replacement. Used on
+ * navigation AWAY from a rackspace (e.g. back to the dashboard) so the
+ * next rackspace mount starts from a clean slate even if it shares an id
+ * with a previous mount.
+ */
+export function unbindRackspace(): void {
+  if (_boundRackspaceId === null) return;
+  try {
+    _bundle.undoManager.destroy();
+  } catch {
+    /* ignore */
+  }
+  try {
+    _bundle.ydoc.destroy();
+  } catch {
+    /* ignore */
+  }
+  _bundle = createPatch();
+  patch = _bundle.patch;
+  ydoc = _bundle.ydoc;
+  undoManager = _bundle.undoManager;
+  _boundRackspaceId = null;
+  // Re-point closure-captured consumers at the fresh empty bundle, same
+  // contract as bindRackspace().
+  for (const fn of [..._bindListeners]) {
+    try {
+      fn(patch, ydoc);
+    } catch (err) {
+      console.error('[store] bind listener threw:', err);
+    }
+  }
+}

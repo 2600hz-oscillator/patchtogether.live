@@ -81,6 +81,40 @@ export async function runFor(page: Page, ms: number): Promise<void> {
 }
 
 /**
+ * Poll a scope's analyser over `windowMs` and return the MAX peak seen.
+ * A single readScopeSnapshot only captures the ~50ms analyser buffer at
+ * one instant — for envelope-driven voices (e.g. a 303's single-decay
+ * amp env retriggered at 240 BPM) that instant can land in a decay
+ * trough, so the one-shot peak dips under the alive-floor and the test
+ * flakes. Max-holding across the whole drive window makes "does this
+ * voice ever make sound?" robust for percussive/decaying/gated sources
+ * without weakening the assertion (a truly silent module never crosses
+ * the floor). Returns running max peak/rms + the snapshot count.
+ */
+export async function readScopePeakOverWindow(
+  page: Page,
+  scopeNodeId: string,
+  windowMs: number,
+  pollMs = 60,
+): Promise<{ peak: number; rms: number; polls: number }> {
+  const deadline = Date.now() + windowMs;
+  let peak = 0;
+  let rms = 0;
+  let polls = 0;
+  while (Date.now() < deadline) {
+    const snap = await readScopeSnapshot(page, scopeNodeId);
+    if (snap) {
+      const s = summarize(snap.ch1);
+      if (s.peak > peak) peak = s.peak;
+      if (s.rms > rms) rms = s.rms;
+      polls++;
+    }
+    await page.waitForTimeout(pollMs);
+  }
+  return { peak, rms, polls };
+}
+
+/**
  * Mutate one node's `params` record inside a Yjs transaction. Tests
  * use this to retroactively change a knob value (e.g. master fader,
  * sequencer bpm) without re-spawning the patch. Wraps `__ydoc.transact`

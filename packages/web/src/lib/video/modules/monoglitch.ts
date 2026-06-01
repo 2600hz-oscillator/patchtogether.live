@@ -5,8 +5,10 @@
 // raster-coordinate-remap model landed in its own module. MONOGLITCH is
 // NOT a true Rutt/Etra raster-scan processor — it's a luma-driven
 // scanline-displacement glitch effect (a useful aesthetic in its own
-// right, just a different abstraction). For the real raster-coord
-// remap, see packages/web/src/lib/video/modules/ruttetra.ts.
+// right, just a different abstraction). For the coord-remap effect see
+// packages/web/src/lib/video/modules/reshaper.ts; for the authentic
+// forward-scatter scan scope see
+// packages/web/src/lib/video/modules/ruttetra.ts.
 //
 // Architecture parity with OUTPUT (videoOut, post-PR-85):
 //   - Renders into its own per-instance FBO. The card driving the visible
@@ -24,6 +26,21 @@
 // shifted by luminance × intensity. The H/V CV inputs act as additional
 // pan/zoom-style sweep offsets so plugging in saw LFOs makes the canvas
 // pan as expected.
+//
+// Inputs:
+//   in (video): RGB input (luma is extracted for the displacement amount).
+//   hRamp / vRamp / intensity (cv, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): glitched RGB.
+//
+// Params:
+//   hRamp (linear -1..1): horizontal sweep offset.
+//   vRamp (linear -1..1): vertical sweep offset.
+//   intensity (linear 0..1): luma-to-displacement scale.
+//   lines (linear 8..240): scanline count.
+//   spacing (linear 0..0.95): scanline duty cycle (1 = full bands, 0 = thin lines).
+//   tintR / tintG / tintB (linear 0..1): tint applied to the drawn bands.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

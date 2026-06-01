@@ -21,6 +21,15 @@
 // File-picker UX lives in PictureboxCard.svelte; this factory exposes
 // `setImage(bitmap)` via the handle's `read` channel so the card can
 // drive uploads. `setImage(null)` clears.
+//
+// Inputs:
+//   gain (cv, paramTarget=gain): displaces the gain knob.
+//
+// Outputs:
+//   out (image): the loaded image as a video-domain image source.
+//
+// Params:
+//   gain (linear 0..2): output gain (multiplies the image's RGB).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

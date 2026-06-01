@@ -303,11 +303,11 @@ describe('video — MONOGLITCH scanline-displacement output', () => {
   });
 });
 
-describe('video — RUTTETRA raster-scan-coordinate processor', () => {
+describe('video — RESHAPER raster-scan-coordinate REMAP (formerly RUTTETRA)', () => {
   it('is a chainable OUTPUT (1 video output) with 3 video + 3 cv inputs', () => {
-    const def = getVideoModuleDef('ruttetra')!;
+    const def = getVideoModuleDef('reshaper')!;
     expect(def).toBeDefined();
-    expect(def.label).toBe('RUTTETRA');
+    expect(def.label).toBe('RESHAPER');
     expect(def.category).toBe('output');
     expect(def.outputs).toHaveLength(1);
     expect(def.outputs[0]?.id).toBe('out');
@@ -322,15 +322,18 @@ describe('video — RUTTETRA raster-scan-coordinate processor', () => {
     }
   });
   it('every cv input declares paramTarget == its own id', () => {
-    const def = getVideoModuleDef('ruttetra')!;
+    const def = getVideoModuleDef('reshaper')!;
     for (const port of def.inputs.filter((i) => i.type === 'cv')) {
       expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
     }
   });
   it('exposes intensity/xDisp/yDisp/tintR/tintG/tintB params', () => {
-    const def = getVideoModuleDef('ruttetra')!;
+    const def = getVideoModuleDef('reshaper')!;
     const ids = def.params.map((p) => p.id).sort();
     expect(ids).toEqual(['intensity', 'tintB', 'tintG', 'tintR', 'xDisp', 'yDisp']);
+  });
+  it('keeps the legacy schemaVersion (1) so it is the migration target for old ruttetra saves', () => {
+    expect(getVideoModuleDef('reshaper')!.schemaVersion).toBe(1);
   });
 });
 

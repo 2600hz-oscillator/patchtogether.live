@@ -124,7 +124,7 @@ type StandardModuleType =
   // RASTERIZE — explicit audio→video raster mapper (crossing-the-streams
   // slice 1). audio in → mono-video out; each frame paints a fixed run of
   // audio samples as voltage-per-pixel in raster order, scan cursor drifts
-  // + wraps through the 640×360 frame. Faithful raster (NOT a scope trace)
+  // + wraps through the 640×480 frame. Faithful raster (NOT a scope trace)
   // — a steady tone paints drifting horizontal bands. Fully untamed.
   | 'rasterize'
   | 'lfo'
@@ -158,13 +158,19 @@ type StandardModuleType =
   // shipped as "RUTTETRA" (PR-99) but renamed once the actual Rutt/Etra
   // raster-coord-remap model landed under that name.
   | 'monoglitch'
-  // RUTTETRA — true Rutt/Etra raster-scan-coordinate processor. X/Y are
-  // mono-video coordinate fields, Z is the source video. Pair with
-  // SHAPEDRAMPS for shaped/folded/radial coordinate remaps.
+  // RESHAPER — fragment-shader raster-scan-coordinate REMAP (formerly
+  // RUTTETRA). X/Y are mono-video coordinate fields, Z is the source
+  // video. Pair with SHAPEDRAMPS for shaped/folded/radial coord remaps.
+  | 'reshaper'
+  // RUTTETRA — AUTHENTIC forward-scatter Rutt-Etra scope (real line
+  // geometry, port of p10entrancer XYZ). One Z video input; internal
+  // shaped ramps bow each scanline by luma → 3D heightmap. (This type id
+  // formerly belonged to the coord-remap, now RESHAPER — see migration in
+  // graph/persistence.ts.)
   | 'ruttetra'
   // SHAPEDRAMPS — sync-locked ramp generator. Stable linear h_lin/v_lin
   // outputs (clean raster passthrough) plus shaped h_out/v_out outputs
-  // (morphable for RUTTETRA's raster-coord remap).
+  // (morphable for RESHAPER's raster-coord remap).
   | 'shapedramps'
   // Video-domain modules (Phase 1 — .myrobots/plans/video-modules-mvp.md):
   | 'inwards'
@@ -203,6 +209,11 @@ type StandardModuleType =
   | 'buggles'
   // VDELAY — video delay + feedback echo (ring buffer of FBO textures).
   | 'vdelay'
+  // BACKDRAFT — video feedback generator. Crossfades two inputs (MIX) and
+  // composites with a delayed + colour-processed copy of its own previous
+  // output (1-frame-lag feedback ring); LIGHTEN/DARKEN key masks modulate
+  // the feedback effect per-pixel.
+  | 'backdraft'
   // BENTBOX — CRT display output simulating an NTSC composite signal bent
   // through an Archer-Video-Enhancer-style "AVEmod" feedback circuit. 12
   // CV-controllable bending knobs (timing/chroma/feedback/CRT).
@@ -210,10 +221,20 @@ type StandardModuleType =
   // ACIDWARP — 320×240 plasma video source with scene cycler. NTSC 4:3
   // output — pairs naturally with BENTBOX downstream.
   | 'acidwarp'
+  // MANDLEBLOT — Mandelbrot fractal generator. WebGL2 fragment shader,
+  // log-mapped zoom 1×..1e6×, rotation, RGB-cycling hue (mu + time +
+  // log(zoom) so colours shift as you zoom). Two outputs: mono escape-
+  // time field + colour palette pass.
+  | 'mandleblot'
   // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder. Loads
   // E352 Cloud Terrarium-format WAV wavetables; Card UI provides a 3D
   // wavetable visualization mode alongside the standard scope view.
   | 'wavecel'
+  // FOXY — hybrid audio-visual module. Internal chain: mini SWOLEVCO →
+  // RASTERIZE → 256×256 downsample → simplified RUTTETRA ("XYZ" window) →
+  // realtime XYZ→wavetable → internal WAVECEL VCO. Exposes WAVECEL's full
+  // param/IO surface plus the source + XYZ window controls.
+  | 'foxy'
   // WARRENSPECTRUM — stereo 8-band filterbank with vactrol-style ping
   // excitation + acidwarp video visualizer. Audio domain with a
   // cross-domain `viz_out` mono-video bridge for the EQ-curve+waveform+
@@ -250,12 +271,31 @@ type StandardModuleType =
   // (1) SYMPATHETIC — 2 parallel Karplus-Strong delay lines.
   // Polyphony 1 only; STRING + REVERB deferred to follow-up PRs.
   | 'rings'
+  // ELEMENTS — modal / physical-modeling voice (Mutable Instruments Elements
+  // archetype, Émilie Gillet, 2014, MIT-licensed). EXCITER (BOW/BLOW/STRIKE) →
+  // modal SVF resonator + tube + stereo pickup. Stereo main/aux out. SPACE
+  // reverb tail is a simplified FDN-lite; STRING resonator model deferred.
+  | 'elements'
   // PEAKS — dual-channel multi-mode utility (Mutable Instruments Peaks
   // archetype, Émilie Gillet, 2013, MIT-licensed). Each channel runs one
   // of five modes (KICK / SNARE / HIHAT / ENV / LFO) with two mode-
   // dependent knobs, a gate input, and CV-routed knob inputs. v1 ships
   // five modes; multistage envelope / tap-LFO / BPF mode deferred.
   | 'peaks'
+  // MARBLES — random sampler / Bernoulli-gate + quantized-CV generator
+  // (Mutable Instruments archetype, Émilie Gillet, MIT-licensed). T-section
+  // (t1/t2) runs COIN/CLUSTERS/DRUMS/INDEP/3-STATE/MARKOV gate models with
+  // déjà-vu Markov locking + jitter; X-section (x1/x2/x3) draws random
+  // voltages shaped by SPREAD/BIAS/STEPS through a weighted-scale quantizer
+  // with its own déjà-vu loop. clk is the master clock.
+  | 'marbles'
+  // SYMBIOTE — Marbles core running the always-on "Symbiote" alt-firmware:
+  // T-section = Grids drum engine (BD/SD/HH on t1/t2/t3, Drums 2D-map or
+  // Euclidean sub-mode), X-section = TB-3PO acid sequencer (x1 clock, x2
+  // 1V/oct pitch, x3 gate, y accent). Grids PatternGenerator + drum-maps are
+  // GPLv3 (Émilie Gillet); TB-3PO from the O&C Hemisphere applet. No hardware
+  // T-MODEL long-press / déjà-vu sub-mode toggle — all controls are params.
+  | 'symbiote'
   // WARPS — meta-modulator / signal masher (Mutable Instruments Warps
   // archetype, Émilie Gillet, 2014, MIT-licensed). Clean-room TypeScript
   // port. v1 ships 4 Xmod algorithms (XFADE / RING-MOD / XOR / COMPARE)
@@ -353,6 +393,24 @@ type StandardModuleType =
   // Single-user in this slice; multi-user via 30 Hz awareness snapshot is
   // a follow-up per docs/design/game-modules.md §2.
   | 'modtris'
+  // FROGGER — clean-room port of Adrian Eyre's Frogger (MIT-licensed). All
+  // 5 inputs are CV gates (up/down/left/right + start). The start_gate
+  // auto-fires once on module spawn so the user sees a running game by
+  // default (the upstream React app's pre-game InfoBoard is bypassed via
+  // this synthesized first-tick pulse — "boot" = module spawn). 3 gate
+  // outputs (home_gate, dead_gate, level_gate) fire one 5 ms pulse per
+  // event. vizPassthrough: true — the on-card canvas can be portaled into
+  // a containing GroupCard for cross-domain video out. Single-user; multi-
+  // user follows the same per-docs/design/game-modules.md path as MODTRIS.
+  | 'frogger'
+  // SM64 — Super Mario 64 (sm64js pure-JS port, WTFPL). Single-instance
+  // (maxInstances:1) per rack. CV stick (X/Y bipolar −1..+1 → ±64) +
+  // 9 gates (A/B/Z/R/C-up/C-down/C-left/C-right/Start). On first spawn
+  // without a ROM in IDB the card shows an upload dropzone — once the
+  // user supplies a US .z64, the bundle extracts assets into IDB and
+  // future spawns boot straight to a running game. No outputs;
+  // vizPassthrough on the canvas covers cross-domain video output.
+  | 'sm64'
   // JOYSTICK — manual XY pad. Outputs x, y, nx (= -x), ny (= -y) as CV.
   // No inputs in v1 (future: MIDI-mappable). Mirrors how an LFO emits
   // multiple inverted/quadrature outputs from a single source of motion.
@@ -394,7 +452,57 @@ type StandardModuleType =
   // sinusoidal peaks → additive bank (up to 64 oscillators). v1 ships two
   // voice models (SINES, SAW); scaffolded for 12+ follow-up models. Gate
   // input toggles FREEZE (latches the current spectrum).
-  | 'callsine';
+  | 'callsine'
+  // COCOA DELAY — port of Tilde Murray's Cocoa Delay (GPL-3.0). Stereo
+  // tape-style delay with LFO + DRIFT delay-time modulation, bipolar
+  // feedback + stereo offset + pan (static/ping-pong/circular), dry-env
+  // DUCKING, in-loop multi-mode FILTER (LP+HP), and stateful DRIVE
+  // saturation. Tempo-sync locks the time to a measured clock pulse
+  // (TIMELORDE system clock or external MIDI clock) at a musical division.
+  | 'cocoadelay'
+  // RESOFILTER — multi-mode filter, port of gabrielsoule/resonarium's
+  // MultiFilter (Source/dsp/MultiFilter.{h,cpp}). 5 modes drawn from the
+  // upstream MultiFilter::Type enum: LP / HP / BP / Notch / Allpass.
+  // Card displays the long-form mode name next to the MODE knob.
+  | 'resofilter'
+  // TREE.oh.VOX — TB-303-style bassline voice (Open303 voice slice port,
+  // MIT → AGPL). 6 knobs (TUNE / CUTOFF / RESONANCE / ENVELOPE / DECAY /
+  // ACCENT) + pitch / gate / accent_in inputs + per-knob CV. The full
+  // 404 module (sequencer + TD-3 UI) is queued as a follow-up.
+  | 'treeohvox'
+  // 4PLEXER — 4-in / 4-out discrete signal router. Each output has its own
+  // selector (which of in1..in4 it carries) + its own gate input that
+  // advances that selector on each rising edge (1→2→3→4→1). Audio + cv both
+  // route identically through the shared Web Audio substrate.
+  | 'fourplexer'
+  // SIDECAR — stereo sidechain compressor. Stereo audio in, dedicated SC
+  // pair (HPF-filterable on the detector path only), CV-modulatable
+  // threshold + envMag, and two CV-shaped env outs (env_out + env_inv_out)
+  // for cross-patch ducking. env_out has NO hard clamp — at envMag>1 the
+  // output overshoots 1.0 (documented contract for downstream modules).
+  | 'sidecar'
+  // CHOWKICK — synth-kick voice. Hand-port of ChowKick by Jatin Chowdhury
+  // / chowdsp (BSD-3-Clause). Gate-triggered single-voice kick: pulse
+  // shaper (width/amp/decay/sustain) + noise burst (4 types) → 2nd-order
+  // resonant peaking filter (freq/Q/damping + tight/bounce tanh
+  // saturation) + tone LPF + level. 17 CV-able knobs/toggles + 1V/oct
+  // pitch CV.
+  | 'chowkick'
+  // BLUEBOX — 12-key DTMF dialer with phreaker buttons. Digits 0-9 emit
+  // the Bell-System dual-tone pair; BLUEBOX emits a single 2600 Hz
+  // supervisory sine; REDBOX emits 1700+2200 Hz simultaneously. 12 audio-
+  // rate gate inputs (one per button) + 12 momentary AudioParams (one per
+  // button) — either source ≥0.5 holds the key down.
+  | 'bluebox'
+  // SCOREBOARD — 4-digit neon 7-segment counter widget (video domain).
+  // SCORE gate input → counter += 1 on rising edge; RESET gate → 0.
+  // Counter wraps at 10000. One colour-wheel knob for the lit-segment hue.
+  | 'scoreboard'
+  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator (video domain). User
+  // provides qbert.zip via `task setup:qbert`; gitignored. CV-only control
+  // (coin / start gates + bipolar joystick CV → 4-way diagonal); per-event
+  // gate outputs (move / die / level); mono audio output.
+  | 'qbert';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------

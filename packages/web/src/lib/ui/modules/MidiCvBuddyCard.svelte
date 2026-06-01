@@ -34,6 +34,7 @@
     VoicePriority,
   } from '$lib/audio/modules/midi-cv-buddy';
   import { noteNameForMidi } from '$lib/audio/note-entry';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -135,7 +136,7 @@
 
 <div class="mod-card midi-cv-buddy-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">MIDI-CV-BUDDY</header>
+  <ModuleTitle {id} {data} defaultLabel="MIDI-CV-BUDDY" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
@@ -199,7 +200,7 @@
 </div>
 
 <style>
-  .midi-cv-buddy-card { width: 220px; min-height: 260px; }
+  .midi-cv-buddy-card { width: 220px; }
   .midi-cv-buddy-card .body {
     padding: 10px 14px 8px;
     display: flex;

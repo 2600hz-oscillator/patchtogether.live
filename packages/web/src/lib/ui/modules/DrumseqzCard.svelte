@@ -36,6 +36,7 @@
     type TransportCardDeps,
   } from '$lib/audio/modules/transport-card';
   import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -349,7 +350,7 @@
 <div class="mod-card drumseqz-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
-    DRUMSEQZ
+    <ModuleTitle {id} {data} defaultLabel="DRUMSEQZ" inline />
     <button
       class="play-btn"
       class:playing={isPlaying}
@@ -403,7 +404,7 @@
             defaultValue={0}
             label={`E${t + 1}`}
             curve="discrete"
-            onchange={(v) => applyEuclidean(t, Math.round(v))}
+            onchange={(v) => applyEuclidean(t, Math.round(v))} moduleId={id} paramId={`trk${t + 1}_euclid`}
           />
           <input
             class="root-input"
@@ -459,7 +460,6 @@
 <style>
   .drumseqz-card {
     width: 820px;
-    min-height: 360px;
     padding-right: 0;
     padding-left: 0;
   }

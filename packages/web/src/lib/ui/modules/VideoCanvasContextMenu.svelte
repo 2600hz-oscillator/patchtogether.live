@@ -11,6 +11,8 @@
   // doesn't also fire. Right-click anywhere ELSE on the card still falls
   // through to the node menu.
 
+  import type { AvailableScreen } from './use-fullscreen.svelte';
+
   interface Props {
     open: boolean;
     /** Cursor screen-coords (anchor). */
@@ -18,7 +20,19 @@
     y: number;
     /** Title at the top — usually the module name. */
     title: string;
-    onfullscreen: () => void;
+    /** Fullscreen the video. Receives the chosen display id when the user
+     *  picks a specific monitor (Window Management API); undefined means the
+     *  current/primary display. */
+    onfullscreen: (screenId?: string) => void;
+    /** Multi-monitor displays available for targeted fullscreen. When more
+     *  than one is present we render a "Fullscreen on …" item per display;
+     *  with 0 or 1 we keep the single "Fullscreen" item (unsupported
+     *  browsers / single-monitor — byte-identical to before). */
+    availableScreens?: AvailableScreen[];
+    /** Called when the menu opens so the parent can lazily request the screen
+     *  list (the Window Management permission prompt must fire on this user
+     *  gesture). Optional; cards that don't support multi-monitor omit it. */
+    onrequestscreens?: () => void;
     /** Optional in-app "Full Frame" toggle: expand the card's video surface
      *  to consume the card border (hide knobs/jacks/labels), staying in the
      *  rack. Distinct from `onfullscreen` (true browser fullscreen). When
@@ -36,10 +50,16 @@
     y,
     title,
     onfullscreen,
+    availableScreens = [],
+    onrequestscreens,
     onfullframe,
     isFullFrame = false,
     onclose,
   }: Props = $props();
+
+  // Show per-display entries only when there's a genuine multi-monitor
+  // choice; otherwise the classic single "Fullscreen" item.
+  const multiMonitor = $derived(availableScreens.length > 1);
 
   // The menu is `position: fixed` and anchored at the cursor. For a card
   // whose canvas sits low/right in the viewport (e.g. BENTBOX, whose screen
@@ -77,6 +97,20 @@
     clampToViewport();
   });
 
+  // Opening the menu is a user gesture — the only moment we may invoke the
+  // Window Management API (it can prompt for permission). Ask the parent to
+  // populate the screen list now; the menu re-renders reactively if/when more
+  // than one display arrives.
+  let requestedThisOpen = false;
+  $effect(() => {
+    if (open && !requestedThisOpen) {
+      requestedThisOpen = true;
+      onrequestscreens?.();
+    } else if (!open) {
+      requestedThisOpen = false;
+    }
+  });
+
   $effect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -94,8 +128,8 @@
     };
   });
 
-  function pickFullscreen() {
-    onfullscreen();
+  function pickFullscreen(screenId?: string) {
+    onfullscreen(screenId);
     onclose();
   }
 
@@ -143,14 +177,29 @@
       data-testid="video-canvas-context-menu"
     >
       <div class="ctx-header">{title}</div>
-      <button
-        class="ctx-item"
-        onclick={pickFullscreen}
-        role="menuitem"
-        data-testid="ctx-fullscreen"
-      >
-        Fullscreen
-      </button>
+      {#if multiMonitor}
+        {#each availableScreens as screen (screen.id)}
+          <button
+            class="ctx-item"
+            onclick={() => pickFullscreen(screen.id)}
+            role="menuitem"
+            data-testid="ctx-fullscreen-{screen.id}"
+          >
+            {screen.isPrimary
+              ? 'Fullscreen on THIS DISPLAY'
+              : `Fullscreen on ${screen.label}`}
+          </button>
+        {/each}
+      {:else}
+        <button
+          class="ctx-item"
+          onclick={() => pickFullscreen()}
+          role="menuitem"
+          data-testid="ctx-fullscreen"
+        >
+          Fullscreen
+        </button>
+      {/if}
       {#if onfullframe}
         <button
           class="ctx-item"
