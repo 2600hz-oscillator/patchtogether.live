@@ -437,6 +437,14 @@ tasks:
     cmds:
       - bash scripts/worktree-guard.sh enforce
 
+  pr:conflict-sweep:
+    desc: |
+      After a merge to main, list the open PRs the merge just turned CONFLICTING
+      so they get rebased before they rot. Report-only. `-- --mine` for yours.
+      See CLAUDE.md "Post-merge conflict sweep".
+    cmds:
+      - bash scripts/pr-conflict-sweep.sh {{.CLI_ARGS}}
+
   clean:
     desc: Remove all build artifacts
     cmds:
