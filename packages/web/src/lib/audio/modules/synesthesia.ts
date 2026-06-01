@@ -12,14 +12,14 @@
 //   outputs: 0=audioA 1=audioB 2=slowA 3=slowB 4=fastA 5=fastB 6=gateA 7=gateB
 //            (each 4 channels = the 4 bands)
 // The factory fans each 4-channel output through a ChannelSplitter into 4 mono
-// GainNodes so every band/kind is an individually-patchable port.
-//
-// NOTE: per-band mono-video "rasterize" outputs (the audio→video bridge) are a
-// follow-up slice — see .myrobots/SYNESTHESIA/PLAN.md.
+// GainNodes so every band/kind is an individually-patchable port. Each band's
+// AUDIO tap also feeds a per-band mono-video "rasterize" output (audio→video):
+// an AnalyserNode → drawBandRaster() painting the band's samples as a raster.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/synesthesia.js?url';
+import { drawBandRaster } from './synesthesia-draw';
 
 const COPIES = ['a', 'b'] as const;
 const BANDS = [1, 2, 3, 4] as const;
@@ -61,13 +61,14 @@ export const synesthesiaDef: AudioModuleDef = {
     { id: 'a_in', type: 'audio' },
     { id: 'b_in', type: 'audio' },
   ],
-  // 2 copies × 4 bands × {audio, env_slow, env_fast, gate} = 32 outputs.
+  // 2 copies × 4 bands × {audio, env_slow, env_fast, gate, raster} = 40 outputs.
   outputs: COPIES.flatMap((c) =>
     BANDS.flatMap((b) => [
       { id: `${c}_band${b}_audio`,    type: 'audio' as const },
       { id: `${c}_band${b}_env_slow`, type: 'cv' as const },
       { id: `${c}_band${b}_env_fast`, type: 'cv' as const },
       { id: `${c}_band${b}_gate`,     type: 'gate' as const },
+      { id: `${c}_band${b}_raster`,   type: 'mono-video' as const },
     ]),
   ),
   params: [
@@ -112,9 +113,16 @@ export const synesthesiaDef: AudioModuleDef = {
 
     const splitters: ChannelSplitterNode[] = [];
     const outGains: GainNode[] = [];
+    const rasterAnalysers: AnalyserNode[] = [];
     const outputs = new Map<string, { node: AudioNode; output: number }>();
+    const videoSources = new Map<
+      string,
+      { analyser: AnalyserNode; sampleRate: number; drawFrame: (c: OffscreenCanvas | HTMLCanvasElement) => void }
+    >();
 
-    // Fan each 4-channel worklet output out into 4 mono GainNodes (one per band).
+    // Fan each 4-channel worklet output into 4 mono GainNodes (one per band).
+    // For the two AUDIO streams (copy A / B) we ALSO tap each band into an
+    // analyser feeding a per-band mono-video "rasterize" output (audio→video).
     for (const stream of OUT_STREAMS) {
       const splitter = ctx.createChannelSplitter(4);
       workletNode.connect(splitter, stream.outIndex, 0);
@@ -125,6 +133,32 @@ export const synesthesiaDef: AudioModuleDef = {
         splitter.connect(g, b, 0);
         outGains.push(g);
         outputs.set(`${stream.copy}_band${b + 1}_${stream.kind}`, { node: g, output: 0 });
+
+        if (stream.kind === 'audio') {
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 2048;
+          analyser.smoothingTimeConstant = 0;
+          g.connect(analyser);
+          // Route the analyser through the muted keep-alive so it stays pulled
+          // (and keeps filling) even when the raster output isn't patched.
+          analyser.connect(keepAlive);
+          rasterAnalysers.push(analyser);
+          const buf = new Float32Array(analyser.fftSize);
+          const drawFrame = (canvas: OffscreenCanvas | HTMLCanvasElement): void => {
+            const c2d = canvas.getContext('2d') as
+              | CanvasRenderingContext2D
+              | OffscreenCanvasRenderingContext2D
+              | null;
+            if (!c2d) return;
+            analyser.getFloatTimeDomainData(buf);
+            drawBandRaster(c2d, buf, canvas.width, canvas.height);
+          };
+          videoSources.set(`${stream.copy}_band${b + 1}_raster`, {
+            analyser,
+            sampleRate: ctx.sampleRate,
+            drawFrame,
+          });
+        }
       }
     }
 
@@ -152,6 +186,7 @@ export const synesthesiaDef: AudioModuleDef = {
       domain: 'audio',
       inputs,
       outputs,
+      videoSources,
       setParam(paramId, value) {
         params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
       },
@@ -165,6 +200,7 @@ export const synesthesiaDef: AudioModuleDef = {
       dispose() {
         try { workletNode.port.onmessage = null; } catch { /* ignore */ }
         for (const g of outGains) g.disconnect();
+        for (const a of rasterAnalysers) a.disconnect();
         for (const s of splitters) s.disconnect();
         keepAlive.disconnect();
         workletNode.disconnect();

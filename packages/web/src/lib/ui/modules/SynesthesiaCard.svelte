@@ -40,6 +40,7 @@
         { id: `${c}_band${b}_env_slow`, label: `B${b} SLOW ENV`,             cable: 'cv' as const },
         { id: `${c}_band${b}_env_fast`, label: `B${b} FAST ENV`,             cable: 'cv' as const },
         { id: `${c}_band${b}_gate`,     label: `B${b} GATE`,                 cable: 'gate' as const },
+        { id: `${c}_band${b}_raster`,   label: `B${b} RASTER`,               cable: 'mono-video' as const },
       ]),
     };
   }

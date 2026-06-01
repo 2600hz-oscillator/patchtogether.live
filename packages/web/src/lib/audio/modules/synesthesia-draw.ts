@@ -57,3 +57,37 @@ export function drawVuMeters(
     drawColumn(ctx, c * (colW + COL_GAP), colW, h, levels[c] ?? 0);
   }
 }
+
+/**
+ * Paint one band's time-domain samples as a raster image — the per-band
+ * "rasterize" video output (audio→video). Samples are laid down in raster
+ * order (row-major), tiling the analyser window across the frame; amplitude
+ * drives a green raster, so a steady tone shows drifting horizontal bands (the
+ * same idea as the RASTERIZE module). Stateless — paints the current window
+ * each video frame into the cross-domain bridge's canvas.
+ */
+export function drawBandRaster(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  samples: Float32Array,
+  w: number,
+  h: number,
+): void {
+  const n = samples.length;
+  if (n === 0 || w === 0 || h === 0) {
+    ctx.clearRect(0, 0, w, h);
+    return;
+  }
+  const img = ctx.createImageData(w, h);
+  const data = img.data;
+  const total = w * h;
+  for (let i = 0; i < total; i++) {
+    const s = samples[i % n]!;
+    const a = Math.min(1, Math.abs(s) * 3); // ×3 so typical band levels read
+    const o = i * 4;
+    data[o] = (a * 80) | 0; // R
+    data[o + 1] = (a * 255) | 0; // G — audio→green raster
+    data[o + 2] = (a * 120) | 0; // B
+    data[o + 3] = 255; // A
+  }
+  ctx.putImageData(img, 0, 0);
+}

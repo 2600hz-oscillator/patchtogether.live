@@ -421,6 +421,15 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
 // Each entry must cite the dedicated test that DOES cover the port's
 // downstream effect — otherwise we're hiding a coverage gap.
 const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
+  // ── SYNESTHESIA copy B input. The sweep drives each input then watches a
+  //    SINGLE canonical output (a_band1_audio, copy A). SYNESTHESIA is two
+  //    INDEPENDENT copies by design — b_in feeds copy B's b_* outputs and has
+  //    no path to any copy-A output, so it correctly shows no delta on the
+  //    observed port. a_in IS exercised here (perturbs a_band1_audio); the
+  //    copy-B path is covered by synesthesia-worklet.test.ts (copy A/B
+  //    isolation) + the synesthesia composite spec.
+  'synesthesia.b_in': 'copy B is independent; b_in perturbs b_* outputs, not the observed copy-A output (covered by synesthesia-worklet.test.ts + composite spec)',
+
   // ── SEQUENCER reset jumps the playhead but produces NO new output
   //    that scope can see beyond the gate train already firing; the
   //    `position_cv` port is the actual observable. Covered by sequencer
