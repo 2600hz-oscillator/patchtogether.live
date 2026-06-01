@@ -2,6 +2,8 @@
   import '@xyflow/svelte/dist/style.css';
   import './global.css';
   import '$lib/ui/modules/_module-card.css';
+  import { onMount } from 'svelte';
+  import { skinStore } from '$lib/ui/skins/skin-store.svelte';
   import { ClerkProvider } from 'svelte-clerk';
   import { page } from '$app/state';
   import { ydoc, patch, bindRackspace } from '$lib/graph/store';
@@ -33,6 +35,20 @@
   import { readBotSession } from '$lib/bot/session-lock';
 
   let { data, children } = $props();
+
+  // Apply the user's saved skin (localStorage["pt.skin"]) on EVERY route.
+  // The skin-store singleton reads + applies it to <html> in its constructor,
+  // but it was previously imported ONLY by canvas components (Canvas /
+  // SkinSwitcher / Fader) — so non-canvas routes (dashboard, sign-in, docs)
+  // and any hard reload fell back to the default theme. The most visible
+  // symptom: deleting a rackspace does a full reload of the dashboard, which
+  // re-parsed <html> and dropped the imperatively-applied skin vars. Importing
+  // the store here and re-asserting on mount keeps the chosen skin applied
+  // app-wide and across reloads. setSkin(current, persist=false) re-applies
+  // the already-loaded skin without rewriting localStorage.
+  onMount(() => {
+    skinStore.setSkin(skinStore.current, false);
+  });
 
   // Stage B PR B-b: expose attachProvider as a dev global so Playwright
   // @collab + @capacity + @auth tests can wire browser contexts to the

@@ -76,8 +76,11 @@
         error = body.message ?? `Delete failed: ${res.status}`;
         return;
       }
-      // Reload server data so the rack drops out of the list.
-      window.location.reload();
+      // Drop the card locally so the list updates without a full-page reload.
+      // A hard reload re-parsed <html> and lost the imperatively-applied skin
+      // CSS vars, reverting the theme to default (the skin store is only
+      // re-applied on layout mount). Mirrors leaveRack below.
+      rackspaces = rackspaces.filter((r) => r.id !== id);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
