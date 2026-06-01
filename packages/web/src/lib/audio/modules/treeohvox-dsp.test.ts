@@ -18,6 +18,7 @@ import {
   TbVoxAmpEnv,
   TbVoxFeedbackHp,
   PolyBlepSaw,
+  PolyBlepBlendOsc,
   TreeohvoxVoice,
   pitchCvToFreq,
   resonanceSkew,
@@ -31,6 +32,58 @@ import {
 } from '../../../../../dsp/src/lib/treeohvox-dsp';
 
 const SR = 48000;
+
+describe('PolyBlepBlendOsc — saw↔square waveform morph', () => {
+  function render(blend: number, freq = 220, n = 4096): Float32Array {
+    const osc = new PolyBlepBlendOsc(SR);
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) out[i] = osc.step(freq, blend);
+    return out;
+  }
+  /** Fraction of samples sitting on a plateau (|v| > 0.8). Saw ramps through
+   *  this band briefly; a square spends almost all its time there. */
+  function plateauFrac(buf: Float32Array): number {
+    let c = 0;
+    for (const v of buf) if (Math.abs(v) > 0.8) c++;
+    return c / buf.length;
+  }
+
+  /** RMS of (render(blend) − render(0)) — how far the morphed wave departs
+   *  from the pure saw. Grows monotonically as blend → square. */
+  function deviationFromSaw(blend: number): number {
+    const a = render(blend);
+    const saw = render(0);
+    let s = 0;
+    for (let i = 0; i < a.length; i++) {
+      const d = a[i]! - saw[i]!;
+      s += d * d;
+    }
+    return Math.sqrt(s / a.length);
+  }
+
+  it('blend=0 equals PolyBlepSaw sample-for-sample (saw default unchanged)', () => {
+    const blend = new PolyBlepBlendOsc(SR);
+    const saw = new PolyBlepSaw(SR);
+    for (let i = 0; i < 4096; i++) {
+      // Both return float64 (no Float32Array rounding), so the saw path must
+      // be exactly identical — proves the morph is a pure superset of the saw.
+      expect(blend.step(220, 0)).toBe(saw.step(220));
+    }
+  });
+
+  it('blend=1 is a poly-BLEP square: ~zero mean + mostly on ±1 plateaus', () => {
+    const sq = render(1);
+    const mean = sq.reduce((a, b) => a + b, 0) / sq.length;
+    expect(Math.abs(mean)).toBeLessThan(0.05); // 50% duty → balanced
+    expect(plateauFrac(sq)).toBeGreaterThan(0.85); // square sits on ±1
+  });
+
+  it('the morph is continuous + monotonic (deviation from saw grows with blend)', () => {
+    expect(deviationFromSaw(0)).toBe(0);
+    expect(deviationFromSaw(0.5)).toBeGreaterThan(0);
+    expect(deviationFromSaw(1)).toBeGreaterThan(deviationFromSaw(0.5));
+  });
+});
 
 // ────────────────────────────────────────────────────────────────────────────
 // pitchCvToFreq — 1V/oct sanity.

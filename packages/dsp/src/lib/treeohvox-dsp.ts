@@ -4,8 +4,8 @@
 // MIT, https://github.com/RobinSchmidt/Open303). MIT → AGPL is a one-way
 // compatible relicense.
 //
-// What's ported here (the VOICE only — sequencer / slide / waveform mixer
-// are the 404 follow-up):
+// What's ported here (the VOICE only — sequencer / slide are the 404
+// follow-up):
 //
 //   • TbVoxFilter          – the TB_303 mode of rosic::TeeBeeFilter
 //                             (rosic_TeeBeeFilter.{h,cpp}, the diode-
@@ -21,13 +21,15 @@
 //   • TbVoxFeedbackHp      – the 150 Hz highpass that sits in the
 //                             filter's feedback path. Open303 uses
 //                             rosic::OnePoleFilter::HIGHPASS at 150 Hz.
-//   • polyBlepSaw          – the BlendOscillator's SAW303 lookup is a
-//                             wavetable in Open303; we use a polyBLEP saw
-//                             at audio rate which produces a comparable
-//                             anti-aliased ramp without the wavetable
-//                             complexity (the 303 character lives in the
-//                             FILTER, not the oscillator — Robin S. notes
-//                             this in his own write-up).
+//   • PolyBlepBlendOsc     – Open303's BlendOscillator crossfades the SAW303 +
+//                             SQR303 wavetables; we reproduce the morph with a
+//                             single-phase polyBLEP saw↔square blend at audio
+//                             rate (the `waveform` knob: 0 = saw, 1 = square).
+//                             At blend 0 it is bit-identical to the prior
+//                             polyBLEP saw, so saw patches + ART baselines stay
+//                             unchanged. (The 303 character lives in the FILTER,
+//                             so the audio-rate blep matches the wavetable with
+//                             no audible cost — Robin S.'s own write-up note.)
 //   • envModScalerOffset    – the "measured mapping" math from
 //                             rosic::Open303::calculateEnvModScalerAndOffset()
 //                             (the empirical c0..sHiC constants).
@@ -393,6 +395,70 @@ export class PolyBlepSaw {
 }
 
 // ---------------------------------------------------------------------------
+// PolyBlepBlendOsc — saw↔square morph oscillator (Open303 BlendOscillator
+// archetype: BlendOscillator crossfades the SAW303 + SQR303 wavetables via a
+// "waveform" control). One shared phase accumulator; `blend` morphs saw (0) →
+// square (1). Both edges are polyBLEP-corrected so the morph stays anti-
+// aliased at any blend. At blend == 0 the output is BIT-IDENTICAL to
+// PolyBlepSaw (same naive ramp + same correction + same phase advance), so the
+// existing saw-only voice behaviour — and its ART baselines — are preserved.
+// ---------------------------------------------------------------------------
+export class PolyBlepBlendOsc {
+  private phase = 0;
+  constructor(private sr: number) {}
+
+  resetPhase(): void {
+    this.phase = 0;
+  }
+
+  step(freqHz: number, blend: number): number {
+    const dt = freqHz / this.sr;
+    const t = this.phase;
+
+    // --- saw tap (identical to PolyBlepSaw) ---
+    let saw = 2 * t - 1;
+    if (t < dt) {
+      const x = t / dt;
+      saw -= x + x - x * x - 1;
+    } else if (t > 1 - dt) {
+      const x = (t - 1) / dt;
+      saw -= x * x + x + x + 1;
+    }
+
+    const w = blend < 0 ? 0 : blend > 1 ? 1 : blend;
+    let out = saw;
+    if (w > 0) {
+      // --- square tap (50% duty): +2 rising edge at t=0, -2 falling at t=0.5 ---
+      let sq = t < 0.5 ? 1 : -1;
+      // Rising edge at 0 is the OPPOSITE sign to the saw's drop → ADD the blep.
+      if (t < dt) {
+        const x = t / dt;
+        sq += x + x - x * x - 1;
+      } else if (t > 1 - dt) {
+        const x = (t - 1) / dt;
+        sq += x * x + x + x + 1;
+      }
+      // Falling edge at 0.5: shift phase so the 0.5 boundary maps to 0/1, then
+      // SUBTRACT (same sign as the saw's downward step).
+      const tt = t < 0.5 ? t + 0.5 : t - 0.5;
+      if (tt < dt) {
+        const x = tt / dt;
+        sq -= x + x - x * x - 1;
+      } else if (tt > 1 - dt) {
+        const x = (tt - 1) / dt;
+        sq -= x * x + x + x + 1;
+      }
+      out = (1 - w) * saw + w * sq;
+    }
+
+    let next = t + dt;
+    if (next >= 1) next -= 1;
+    this.phase = next;
+    return out;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // envModScalerOffset — verbatim port of Open303's
 // rosic::Open303::calculateEnvModScalerAndOffset() with
 // `useMeasuredMapping == true` (which is the only branch ever taken in
@@ -471,6 +537,10 @@ export interface VoiceParams {
   decayMs: number;
   /** ACCENT knob — 0..1, scales the accent contribution to amp + filter. */
   accentAmount01: number;
+  /** WAVEFORM knob — 0 = saw, 1 = square; morphs the BlendOscillator. Optional
+   *  (defaults to 0 = pure saw) so existing callers + ART baselines are
+   *  unaffected. */
+  waveform?: number;
 }
 
 export interface NoteTrigger {
@@ -481,7 +551,7 @@ export interface NoteTrigger {
 }
 
 export class TreeohvoxVoice {
-  private osc: PolyBlepSaw;
+  private osc: PolyBlepBlendOsc;
   private filter: TbVoxFilter;
   private decayEnv: TbVoxDecayEnv;
   private ampEnv: TbVoxAmpEnv;
@@ -494,7 +564,7 @@ export class TreeohvoxVoice {
   private hadAccentLast = false;
 
   constructor(private sr: number, initial: VoiceParams) {
-    this.osc = new PolyBlepSaw(sr);
+    this.osc = new PolyBlepBlendOsc(sr);
     this.filter = new TbVoxFilter(sr);
     this.decayEnv = new TbVoxDecayEnv(sr, initial.decayMs);
     // 3 ms attack matches Open303's normalAttack default.
@@ -560,7 +630,7 @@ export class TreeohvoxVoice {
     else if (instCutoff > 20000) instCutoff = 20000;
     this.filter.setCutoffRes(instCutoff, this.params.resonance);
 
-    const oscOut = -this.osc.step(this.pitchHz); // Open303 inverts: `tmp = -oscillator.getSample()`
+    const oscOut = -this.osc.step(this.pitchHz, this.params.waveform ?? 0); // Open303 inverts: `tmp = -oscillator.getSample()`
     const filtered = this.filter.step(oscOut);
     const amp = this.ampEnv.step();
     return filtered * amp;

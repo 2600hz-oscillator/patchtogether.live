@@ -125,7 +125,7 @@
           min={0}
           max={1}
           defaultValue={defaultFor('envelope')}
-          label="Env"
+          label="EnvMod"
           curve="linear"
           onchange={set('envelope')}
           moduleId={id}
@@ -156,6 +156,18 @@
           moduleId={id}
           paramId="accent"
           readLive={live('accent')}
+        />
+        <Knob
+          value={paramVal('waveform')}
+          min={0}
+          max={1}
+          defaultValue={defaultFor('waveform')}
+          label="Wave"
+          curve="linear"
+          onchange={set('waveform')}
+          moduleId={id}
+          paramId="waveform"
+          readLive={live('waveform')}
         />
       </div>
     </div>
