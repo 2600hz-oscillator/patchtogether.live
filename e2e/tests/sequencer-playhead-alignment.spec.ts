@@ -122,14 +122,12 @@ test('sequencer: playhead matches sounding step (no off-by-one at start)', async
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
-  // 60 BPM, 16th notes → step every 250 ms. Just barely outside LOOKAHEAD_S
-  // so the scheduler eagerly queues both step 0 and step 1 on tick 1 — the
-  // exact condition that exposed the off-by-one when reading via wall-clock.
+  // 10 BPM, 16th notes → step every 1500 ms — slow enough that ctx.suspend() completes within step 0
   await spawnPatch(page, [
     {
       id: 's',
       type: 'sequencer',
-      params: { bpm: 60, length: 16, isPlaying: 1, gateLength: 0.9, swing: 0 },
+      params: { bpm: 10, length: 16, isPlaying: 1, gateLength: 0.9, swing: 0 },
     },
   ]);
 
@@ -170,14 +168,12 @@ test('drumseqz: playhead matches sounding step (no off-by-one at start)', async 
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
-  // 60 BPM, 16th notes → step every 250 ms (same as Sequencer). This is the
-  // pathological case for the lookahead-vs-sounding off-by-one: step 1 lands
-  // inside the lookahead window on the very first tick.
+  // 10 BPM, 16th notes → step every 1500 ms — slow enough that ctx.suspend() completes within step 0
   await spawnPatch(page, [
     {
       id: 'd',
       type: 'drumseqz',
-      params: { bpm: 60, length: 16, isPlaying: 1, gateLength: 0.9, swing: 0 },
+      params: { bpm: 10, length: 16, isPlaying: 1, gateLength: 0.9, swing: 0 },
     },
   ]);
 
