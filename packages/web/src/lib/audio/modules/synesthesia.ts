@@ -99,6 +99,17 @@ export const synesthesiaDef: AudioModuleDef = {
       outputChannelCount: [4, 4, 4, 4, 4, 4, 4, 4],
     });
 
+    // Keep-alive: an AudioWorkletNode only runs process() while it has a path
+    // to ctx.destination. SYNESTHESIA is an analyser — its outputs are often
+    // unpatched — so without this the worklet would never process: no VU
+    // levels, envelopes, or gates (the DOOM audio_l/audio_r orphan-silent
+    // class of bug; same fix samsloop's record tap uses). Route through a
+    // muted gain so it always runs but is inaudible.
+    const keepAlive = ctx.createGain();
+    keepAlive.gain.value = 0;
+    workletNode.connect(keepAlive);
+    keepAlive.connect(ctx.destination);
+
     const splitters: ChannelSplitterNode[] = [];
     const outGains: GainNode[] = [];
     const outputs = new Map<string, { node: AudioNode; output: number }>();
@@ -155,6 +166,7 @@ export const synesthesiaDef: AudioModuleDef = {
         try { workletNode.port.onmessage = null; } catch { /* ignore */ }
         for (const g of outGains) g.disconnect();
         for (const s of splitters) s.disconnect();
+        keepAlive.disconnect();
         workletNode.disconnect();
       },
     };
