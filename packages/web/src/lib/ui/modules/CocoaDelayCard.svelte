@@ -217,7 +217,6 @@
 <style>
   .cocoa-delay-card {
     width: 620px;
-    min-height: 360px;
     background: var(--cocoa-bg, #1a0f18);
     color: #ece2ea;
   }

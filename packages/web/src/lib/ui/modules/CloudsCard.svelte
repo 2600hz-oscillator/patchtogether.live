@@ -91,7 +91,7 @@
 </div>
 
 <style>
-  .clouds-card { width: 340px; min-height: 240px; }
+  .clouds-card { width: 340px; }
   .clouds-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

@@ -76,7 +76,7 @@
 </div>
 
 <style>
-  .warps-card { width: 320px; min-height: 240px; }
+  .warps-card { width: 320px; }
   .warps-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

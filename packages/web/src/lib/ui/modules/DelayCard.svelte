@@ -45,6 +45,6 @@
 </div>
 
 <style>
-  .delay-card { width: 200px; min-height: 180px; }
+  .delay-card { width: 200px; }
   .delay-card .fader-row { margin-top: 14px; padding: 0 18px; }
 </style>

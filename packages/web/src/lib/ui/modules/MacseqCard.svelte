@@ -292,7 +292,6 @@
 <style>
   .macseq-card {
     width: 880px;
-    min-height: 320px;
     padding-right: 0;
     padding-left: 0;
   }

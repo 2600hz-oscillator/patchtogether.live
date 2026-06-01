@@ -153,10 +153,6 @@
 <style>
   .mixmstrs-card {
     width: 520px;
-    min-height: 460px;
-  }
-  .mixmstrs-card.compact {
-    min-height: 200px;
   }
   .mixmstrs-card .title {
     display: flex;

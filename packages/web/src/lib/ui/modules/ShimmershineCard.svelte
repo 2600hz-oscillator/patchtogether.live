@@ -55,7 +55,7 @@
 </div>
 
 <style>
-  .shimmershine-card { width: 280px; min-height: 220px; }
+  .shimmershine-card { width: 280px; }
   .shimmershine-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

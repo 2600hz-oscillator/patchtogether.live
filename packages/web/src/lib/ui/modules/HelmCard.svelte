@@ -440,7 +440,6 @@
 <style>
   .helm-card {
     width: 720px;
-    min-height: 440px;
   }
   .helm-card .title {
     display: flex;
@@ -571,7 +570,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    min-height: 280px;
   }
   .helm-card .settings-head {
     display: flex;

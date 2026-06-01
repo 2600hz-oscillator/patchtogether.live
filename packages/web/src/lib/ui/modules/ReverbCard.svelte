@@ -38,6 +38,6 @@
 </div>
 
 <style>
-  .reverb-card { width: 200px; min-height: 180px; }
+  .reverb-card { width: 200px; }
   .reverb-card .fader-row { margin-top: 14px; padding: 0 18px; }
 </style>

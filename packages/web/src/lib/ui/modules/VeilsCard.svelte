@@ -105,7 +105,7 @@
 </div>
 
 <style>
-  .veils-card { width: 280px; min-height: 240px; }
+  .veils-card { width: 280px; }
   .veils-card .strips {
     display: flex;
     gap: 8px;

@@ -58,7 +58,6 @@
 <style>
   .card {
     width: 160px;
-    min-height: 170px;
     background-color: #000;
     background-image: linear-gradient(var(--module-bg), var(--module-bg));
     border: 1px solid var(--border);

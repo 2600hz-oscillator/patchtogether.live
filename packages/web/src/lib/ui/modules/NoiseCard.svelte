@@ -39,6 +39,6 @@
 </div>
 
 <style>
-  .noise-card { width: 160px; min-height: 180px; }
+  .noise-card { width: 160px; }
   .noise-card .fader-row { padding: 0 30px; margin-top: 16px; justify-content: center; }
 </style>
