@@ -49,6 +49,33 @@ concurrency:
 
 jobs:
   # -----------------------------------------------------------------------
+  # actionlint — lint the GitHub Actions workflow files themselves. Catches
+  # the class of bug that broke Deploy in #518: a `matrix.*` context used in
+  # a job-level `if:` (matrix is NOT available there), which GitHub rejects
+  # at parse time but `yaml.safe_load` (the only check we had) cannot detect.
+  # Pinned binary download (not the flox manifest — actionlint builds from
+  # source under nix, which would add wall-time to every flox-activate job).
+  # `-shellcheck=` disables the shellcheck integration so the gate stays
+  # focused on GHA syntax + context availability, without failing on
+  # pre-existing shell nits inside run: blocks. Wired into the `ci` umbrella
+  # below → a broken workflow blocks merge, no ruleset change (like `build`).
+  # -----------------------------------------------------------------------
+  actionlint:
+    name: actionlint (workflow lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install + run actionlint (pinned)
+        run: |
+          VER=1.7.12
+          curl -sSfL -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${VER}/actionlint_${VER}_linux_amd64.tar.gz"
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint -shellcheck=
+
+  # -----------------------------------------------------------------------
   # typecheck — `task typecheck` (npm run typecheck --workspaces). ~18 s of
   # actual work; ~70 s with setup. Independent of everything else.
   # -----------------------------------------------------------------------
@@ -540,6 +567,16 @@ jobs:
       # !process.env.COLLAB_JOB)` — skipped in the sharded matrix (shard
       # contention flake), RUN here (one worker, serial → reliable).
       COLLAB_JOB: '1'
+      # Run @collab against `vite preview` (the built bundle) instead of the
+      # `vite dev` server. The dev server's HMR client websocket drops under
+      # the CPU pressure of two browser contexts + DOOM WASM, triggering a
+      # full page reload mid-evaluate → spurious waitForFunction timeouts
+      # (the residual @collab flake, #232/#225 — see doom-mp-real.spec's
+      # `isTransientPageError` for the exact symptom). Preview serves static
+      # files (no HMR client, far lighter at runtime), which kills that flake
+      # class AND lowers overall CPU pressure behind the Yjs-sync stalls.
+      # Requires a web build step below (preview serves build output).
+      E2E_USE_PREVIEW: '1'
 
     steps:
       - name: Checkout (with LFS for ART/VRT baselines)
@@ -606,6 +643,14 @@ jobs:
 
       - name: Build DSP
         run: flox activate -- task dsp:build
+
+      # Build the web bundle so `vite preview` (E2E_USE_PREVIEW=1, set in env
+      # above) has something to serve. Runs after DSP + manifest + DOOM assets
+      # so the production build includes them, exactly like the prod-build
+      # smoke. This is what lets @collab run against the static bundle instead
+      # of the HMR dev server (the #232 flake fix).
+      - name: Build web (preview bundle for @collab)
+        run: flox activate -- task build:web
 
       # P1 true-lockstep: prove the LIVE barrier path (dgpt_set_lockstep +
       # dgpt_receive_ticset) is BIT-EXACT across N sims on a FRESH WASM build,
@@ -838,13 +883,14 @@ jobs:
   ci:
     name: typecheck + unit + ART + E2E
     if: always()
-    needs: [typecheck, unit, art, build, e2e, collab, merge-reports]
+    needs: [actionlint, typecheck, unit, art, build, e2e, collab, merge-reports]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
     steps:
       - name: Aggregate result
         env:
+          ACTIONLINT: ${{ needs.actionlint.result }}
           TYPECHECK: ${{ needs.typecheck.result }}
           UNIT: ${{ needs.unit.result }}
           ART: ${{ needs.art.result }}
@@ -853,6 +899,7 @@ jobs:
           COLLAB: ${{ needs.collab.result }}
           MERGE: ${{ needs.merge-reports.result }}
         run: |
+          echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
           echo "unit:          $UNIT"
           echo "art:           $ART"
@@ -876,7 +923,8 @@ jobs:
           # both `needs:` above and this success check. It's informational
           # only (continue-on-error: true) until per-module thresholds are
           # tuned — do NOT add a BEHAVIORAL env var or condition here.
-          if [[ "$TYPECHECK" != "success" \
+          if [[ "$ACTIONLINT" != "success" \
+             || "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
              || "$ART" != "success" \
              || "$BUILD" != "success" \
