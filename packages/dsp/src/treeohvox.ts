@@ -92,6 +92,7 @@ class TreeohvoxProcessor extends AudioWorkletProcessor {
   private envSm: WtParamSmoother;
   private decaySm: WtParamSmoother;
   private accentSm: WtParamSmoother;
+  private waveformSm: WtParamSmoother;
   // Gate edge detector — fires trigger() on the 0 → ≥0.5 transition.
   private lastGate = 0;
 
@@ -105,6 +106,7 @@ class TreeohvoxProcessor extends AudioWorkletProcessor {
       envAmount01: 0.5,
       decayMs: 600,
       accentAmount01: 0.5,
+      waveform: 0,
     };
     this.voice = new TreeohvoxVoice(sr, init);
     this.tuneSm = new WtParamSmoother(sr, 80);
@@ -113,6 +115,7 @@ class TreeohvoxProcessor extends AudioWorkletProcessor {
     this.envSm = new WtParamSmoother(sr, 80);
     this.decaySm = new WtParamSmoother(sr, 80);
     this.accentSm = new WtParamSmoother(sr, 80);
+    this.waveformSm = new WtParamSmoother(sr, 80);
     // Prime smoothers at the defaults so the first sample doesn't ramp
     // from zero into the user's chosen patch.
     this.tuneSm.prime(0);
@@ -121,6 +124,7 @@ class TreeohvoxProcessor extends AudioWorkletProcessor {
     this.envSm.prime(0.5);
     this.decaySm.prime(600);
     this.accentSm.prime(0.5);
+    this.waveformSm.prime(0);
   }
 
   static get parameterDescriptors() {
@@ -145,6 +149,8 @@ class TreeohvoxProcessor extends AudioWorkletProcessor {
       // env contribution on accented notes (accent_in high at the gate
       // rising edge).
       { name: 'accent',    defaultValue: 0.5,  minValue: 0,     maxValue: 1,     automationRate: 'a-rate' as const },
+      // WAVEFORM — 0 = saw, 1 = square; morphs the BlendOscillator (Open303).
+      { name: 'waveform',  defaultValue: 0,    minValue: 0,     maxValue: 1,     automationRate: 'a-rate' as const },
     ];
   }
 
@@ -177,6 +183,7 @@ class TreeohvoxProcessor extends AudioWorkletProcessor {
       const envAmt  = this.envSm.step(this.aval(parameters, 'envelope', s, 0.5));
       const decay   = this.decaySm.step(this.aval(parameters, 'decay',    s, 600));
       const accent  = this.accentSm.step(this.aval(parameters, 'accent',  s, 0.5));
+      const wave    = this.waveformSm.step(this.aval(parameters, 'waveform', s, 0));
 
       this.voice.setParams({
         tuneSemitones: tune,
@@ -185,6 +192,7 @@ class TreeohvoxProcessor extends AudioWorkletProcessor {
         envAmount01: envAmt,
         decayMs: decay,
         accentAmount01: accent,
+        waveform: wave,
       });
 
       // 2) Gate edge detection. The accent value is sampled AT the

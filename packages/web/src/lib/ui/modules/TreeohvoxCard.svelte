@@ -65,6 +65,7 @@
     { id: 'env_cv',    label: 'ENV',    cable: 'cv' },
     { id: 'decay_cv',  label: 'DCY',    cable: 'cv' },
     { id: 'accent_cv', label: 'ACC',    cable: 'cv' },
+    { id: 'waveform_cv', label: 'WAVE', cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'audio_out', label: 'OUT', cable: 'audio' },
@@ -125,7 +126,7 @@
           min={0}
           max={1}
           defaultValue={defaultFor('envelope')}
-          label="Env"
+          label="EnvMod"
           curve="linear"
           onchange={set('envelope')}
           moduleId={id}
@@ -156,6 +157,18 @@
           moduleId={id}
           paramId="accent"
           readLive={live('accent')}
+        />
+        <Knob
+          value={paramVal('waveform')}
+          min={0}
+          max={1}
+          defaultValue={defaultFor('waveform')}
+          label="Wave"
+          curve="linear"
+          onchange={set('waveform')}
+          moduleId={id}
+          paramId="waveform"
+          readLive={live('waveform')}
         />
       </div>
     </div>

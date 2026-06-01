@@ -60,6 +60,7 @@ export const treeohvoxDef: AudioModuleDef = {
     { id: 'env_cv',      type: 'cv', paramTarget: 'envelope',  cvScale: { mode: 'linear' } },
     { id: 'decay_cv',    type: 'cv', paramTarget: 'decay',     cvScale: { mode: 'linear' } },
     { id: 'accent_cv',   type: 'cv', paramTarget: 'accent',    cvScale: { mode: 'linear' } },
+    { id: 'waveform_cv', type: 'cv', paramTarget: 'waveform',  cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'audio_out', type: 'audio' },
@@ -77,7 +78,7 @@ export const treeohvoxDef: AudioModuleDef = {
     { id: 'resonance', label: 'Reso',     defaultValue: 0.5,  min: 0,    max: 1,     curve: 'linear' },
     // ENVELOPE — env-mod depth on cutoff. 0..1 maps to 0..100% in
     // Open303's calculateEnvModScalerAndOffset terms.
-    { id: 'envelope',  label: 'Env',      defaultValue: 0.5,  min: 0,    max: 1,     curve: 'linear' },
+    { id: 'envelope',  label: 'EnvMod',   defaultValue: 0.5,  min: 0,    max: 1,     curve: 'linear' },
     // DECAY — filter envelope decay time. 200 ms .. 2 s is the canonical
     // 303 range (Open303 normalDecay default is 1 s; Devil Fish mod
     // extends to 3 s — we cap at 3 s so DECAY can sweep into doom-y
@@ -89,6 +90,10 @@ export const treeohvoxDef: AudioModuleDef = {
     // hardware accent is a single boolean on/off, this knob makes the
     // depth controllable.
     { id: 'accent',    label: 'Accent',   defaultValue: 0.5,  min: 0,    max: 1,     curve: 'linear' },
+    // WAVEFORM — morphs the BlendOscillator: 0 = saw (classic 303), 1 = square.
+    // Open303's BlendOscillator crossfades SAW303↔SQR303; default 0 keeps the
+    // canonical saw voice (and existing ART baselines) unchanged.
+    { id: 'waveform',  label: 'Wave',     defaultValue: 0,    min: 0,    max: 1,     curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -146,6 +151,7 @@ export const treeohvoxDef: AudioModuleDef = {
         ['env_cv',      { node: workletNode, input: 0, param: params.get('envelope')! }],
         ['decay_cv',    { node: workletNode, input: 0, param: params.get('decay')! }],
         ['accent_cv',   { node: workletNode, input: 0, param: params.get('accent')! }],
+        ['waveform_cv', { node: workletNode, input: 0, param: params.get('waveform')! }],
       ]),
       outputs: new Map([
         ['audio_out', { node: workletNode, output: 0 }],
