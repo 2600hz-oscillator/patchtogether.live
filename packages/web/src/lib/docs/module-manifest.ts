@@ -76,6 +76,8 @@ const SRC_BASE =
 
 const DESCRIPTIONS: Record<string, string> = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  synesthesia:
+    'Audio-analysis module — two independent copies (A/B), each splitting a mono input into 4 spectral bands (0–200 / 200–500 / 500–2000 / 2000+ Hz) and deriving, per band: a gained audio tap, slow (500 ms) + fast (50 ms) envelope-follower CV, a hysteresis gate, a 10-bar green→red VU meter, and a mono-video raster (audio→video). Master gain (0.5–1.5×) sets the floor; per-band gain (1–2×) adds on top. Turns audio peaks into events/CV/video that drive other audio + video modules.',
   wavetableVco:
     'Wavetable oscillator that morphs saw -> square -> triangle -> sine across a 16-frame table.',
   audioOut:
