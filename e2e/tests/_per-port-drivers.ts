@@ -211,27 +211,57 @@ const DRIVERS: Record<string, PerPortDriver> = {
   },
   score: {
     params: { isPlaying: 1, bpm: 240 },
-    // SCORE's score-sheet data is a notes[] array; seeding 4 notes at
-    // midi=60 on consecutive ticks (bar 0..3) produces the same gate/pitch
-    // emission shape the existing scoreboard test uses.
+    // SCORE's score-sheet data is a notes[] array of ScoreNote objects.
+    // ScoreNote shape: { id, bar, tick, duration (NoteDuration string),
+    // midi, staffStep, accidental }.
+    //
+    // Pitfall 1: midi=60 (C4) maps to midiToVOct(60)=0 V/oct — the scope
+    // peak floor is >0.005, so C4 FAILS. Use midi=72 (C5 = +1.0 V/oct).
+    //
+    // Pitfall 2: the old driver used { tick: 0..3 } without a `bar` field.
+    // noteStartingAt() checks n.bar===bar && n.tick===tick — with bar
+    // missing (undefined), the note is NEVER found. Provide bar: 0.
+    //
+    // Pitfall 3: duration must be a NoteDuration string ('quarter'), not 1.
+    // tickWidth() would return undefined for an unknown duration and the
+    // gate-off schedule would be NaN → silent.
+    //
+    // Use loop=true so the sequence repeats and the scope catches the pitch/gate
+    // pulse within the 1.2s budget even with scheduler startup latency.
     data: {
+      loop: true,
       notes: [
-        { tick: 0,   midi: 60, duration: 1, velocity: 1 },
-        { tick: 1,   midi: 64, duration: 1, velocity: 1 },
-        { tick: 2,   midi: 67, duration: 1, velocity: 1 },
-        { tick: 3,   midi: 72, duration: 1, velocity: 1 },
+        { id: 'n1', bar: 0, tick: 0,  duration: 'quarter', midi: 72, staffStep: 0, accidental: null },
+        { id: 'n2', bar: 0, tick: 12, duration: 'quarter', midi: 76, staffStep: 2, accidental: null },
+        { id: 'n3', bar: 0, tick: 24, duration: 'quarter', midi: 79, staffStep: 4, accidental: null },
+        { id: 'n4', bar: 0, tick: 36, duration: 'quarter', midi: 81, staffStep: 5, accidental: null },
       ],
     },
-    note: 'SCORE: pre-seed 4 notes + isPlaying=1; gate/pitch/env/clock pulse',
+    note: 'SCORE: seed proper ScoreNote objects (midi=72+, bar=0, duration=quarter, loop=true) + isPlaying=1; pitch/gate/env/clock emit',
   },
   drumseqz: {
-    // Use trk1_euclid > 0 to make TRACK 1 fire on euclidean steps
-    // without needing per-cell data.steps seeding.
+    // trk{N}_euclid params are only applied to data.tracks by the card UI
+    // (DrumseqzCard.applyEuclidean) — setting them in params alone does not
+    // populate data.tracks, which remains all-off. Seed data.tracks directly:
+    // each track has every 4th step on (steps 0, 4, 8, …, 124 across 128 steps)
+    // so gate{1..4} fire on the first step and pitch{1..4} emit the track-root
+    // fallthrough (trk{N}_root default C3 = MIDI 48 = -1.0 V/oct, |abs| > 0.005).
     params: {
       isPlaying: 1, length: 16, bpm: 240, gateLength: 0.5,
-      trk1_euclid: 4, trk2_euclid: 4, trk3_euclid: 4, trk4_euclid: 4,
     },
-    note: 'DRUMSEQZ: enable euclidean rhythms on all 4 tracks + isPlaying=1; gates pulse',
+    data: {
+      tracks: (() => {
+        const ON: { on: boolean; midi: null } = { on: true, midi: null };
+        const OFF: { on: boolean; midi: null } = { on: false, midi: null };
+        // 4 tracks × 128 steps (STEP_COUNT). Steps 0, 4, 8, 12 on — Bjorklund
+        // 4/16 pattern, repeated across all 8 pages. At bpm=240 these fire
+        // within the first 200ms lookahead, well inside the 1.2s gate budget.
+        return Array.from({ length: 4 }, () =>
+          Array.from({ length: 128 }, (_, i) => (i % 4 === 0 ? ON : OFF))
+        );
+      })(),
+    },
+    note: 'DRUMSEQZ: seed data.tracks with 4-of-16 pattern on all 4 tracks + isPlaying=1; gate{1..4} pulse',
   },
   polyseqz: {
     params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 },
@@ -441,21 +471,38 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'GAMEPAD: inject navigator.getGamepads() shim with sticks + buttons held; CV/gate outs emit',
   },
 
-  // ───── NUMPAD+ — dispatch synthetic numpad keydown ─────
+  // ───── NUMPAD+ — seed all 4 layers via sequencer + keydown ─────
   numpadPlus: {
-    // Activate layer 1 (default) and keep transport stopped; the keydown
-    // fires the live-play path immediately via the keydown listener.
-    params: { activeLayer: 0, octave: 4 },
+    // Seed all 4 layers with on=true steps at midi=72 (C5 = +1.0 V/oct)
+    // and start the sequencer. The tick loop calls applyOutputs() which
+    // updates ALL 4 layers' pitch + gate outputs simultaneously based on
+    // the seeded step data — so l1_pitch/gate through l4_pitch/gate all
+    // emit without needing layer-specific keydowns.
+    //
+    // The postSpawn also dispatches Numpad2 (C#4, activeLayer=0) as
+    // belt-and-suspenders for l1_pitch/gate, in case the sequencer hasn't
+    // ticked yet when the scope window opens.
+    //
+    // Why midi=72 (C5) not midi=60 (C4): midiToVOct(60)=0 V, which fails
+    // the scope peak floor (>0.005). midiToVOct(72)=+1.0 V passes cleanly.
+    params: { activeLayer: 0, octave: 4, isPlaying: 1, bpm: 240 },
+    data: {
+      layers: (() => {
+        // 4 layers × 16 steps. Step 0 on=true + midi=72 on every layer so
+        // applyOutputs() sets pitch=+1.0 V/oct + gate=1 for each layer
+        // on the very first tick advance.
+        const ON = { on: true, midi: 72 };
+        const OFF = { on: false, midi: null };
+        return Array.from({ length: 4 }, () => [
+          ON,
+          ...Array.from({ length: 15 }, () => OFF),
+        ]);
+      })(),
+    },
     postSpawn: async (page) => {
-      // Hold Numpad2 (= C# in the keymap, semitone 1) so l1_gate stays
-      // high when the test window samples. We deliberately use C#
-      // (Numpad2) rather than C (Numpad1) because C4 = MIDI 60 = 0 V/oct
-      // — the l1_pitch ConstantSource emits exactly 0.0 V, which is at/
-      // below the scope peak floor (> 0.005). C#4 = MIDI 61 →
-      // midiToVOct(61) = (61-60)/12 ≈ +0.083 V, safely above the floor.
-      // The listener attaches in the factory; once the SUT mounts, the
-      // keydown fires immediately on the document object regardless of
-      // which element has focus.
+      // Belt-and-suspenders: also drive l1_pitch/gate via a held keydown so
+      // the output is non-zero even if the sequencer tick hasn't fired yet.
+      // Numpad2 = C# (semitone 1), octave 4 → MIDI 61 → +0.083 V/oct.
       await page.evaluate(() => {
         const code = 'Numpad2';
         const ev = new KeyboardEvent('keydown', { code, key: '2', bubbles: true });
@@ -463,7 +510,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
         // Leave the key "held" — no keyup. The l1_gate output stays high.
       });
     },
-    note: 'NUMPAD+: dispatch synthetic Numpad2 (C#4) keydown (held); l1_pitch ≈ +0.083 V/oct + l1_gate emit',
+    note: 'NUMPAD+: seed all 4 layers (midi=72) + isPlaying=1 + Numpad2 held; l{1..4}_pitch/gate all emit',
   },
 
   // ───── MIDICLOCK — mock requestMIDIAccess + post clock messages ─────
@@ -506,7 +553,18 @@ const DRIVERS: Record<string, PerPortDriver> = {
     postSpawn: async (page, sutId) => {
       // 1. Reach into the engine and call cardApi.connect() to wire the
       //    handler. Then pump 0xFA (start) + a burst of 0xF8 (clock)
-      //    messages so the divider counts down + emits a 1/4-note edge.
+      //    messages so the divider counts down + emits multiple 1/4-note
+      //    edges across the full 1.2s gate-poll budget.
+      //
+      // Why 120 ticks (was 30): default divisor=24, so 24 ticks = 1 edge.
+      // 120 ticks = 5 clock edges. The scope analyser covers only ~43ms
+      // per read (fftSize=2048 / 48kHz); with gate pulses spaced ~104ms
+      // apart at the timestamp lookahead, 5 pulses give the gate-poll loop
+      // many more chances to catch a hot sample and clear the 0.005 floor.
+      //
+      // We also fire a second burst 400ms later via setTimeout so the
+      // pulses spread across the 1.2s window instead of landing in a
+      // tight cluster at t0.
       await page.evaluate(async (id) => {
         const w = globalThis as unknown as {
           __engine?: () => {
@@ -526,12 +584,22 @@ const DRIVERS: Record<string, PerPortDriver> = {
         if (!send) return;
         // Start transport (raises run + emits midistart pulse).
         send([0xfa]);
-        // 30 clock ticks > divisor 24 (default = 1/4) → one clock edge.
-        for (let i = 0; i < 30; i++) send([0xf8]);
-        // Hold run high for the rest of the sample window.
+        // First burst: 5 clock edges (120 ticks ÷ divisor 24 = 5 edges).
+        for (let i = 0; i < 120; i++) send([0xf8]);
+        // Second burst at +300ms so the gate-poll loop catches pulses
+        // spread across the test window, not crammed at t=0.
+        setTimeout(() => {
+          if (!send) return;
+          for (let i = 0; i < 120; i++) send([0xf8]);
+        }, 300);
+        // Third burst at +700ms for more coverage.
+        setTimeout(() => {
+          if (!send) return;
+          for (let i = 0; i < 120; i++) send([0xf8]);
+        }, 700);
       }, sutId);
     },
-    note: 'MIDICLOCK: mock requestMIDIAccess + pump 0xFA + 30×0xF8; clock/run/midistart pulse',
+    note: 'MIDICLOCK: mock requestMIDIAccess + pump 0xFA + 360×0xF8 spread over 700ms; clock/run/midistart pulse',
   },
 
   // ───── MIDICVBUDDY — mock requestMIDIAccess + post note-on ─────

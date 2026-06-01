@@ -184,6 +184,16 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // NIBBLES `gated` is the snake oscillator passed through an internal
   // VCA that opens on `pellet` — silent until a pellet is eaten.
   'nibbles.gated': 'requires in-game pellet event to open internal VCA; covered by nibbles-related specs',
+  // ── QBERT partial: audio_out requires (a) the Q*Bert ROM zip at
+  // /roms/qbert/qbert.zip to initialize the runtime, and (b) coin
+  // insertion + game start + joystick movement to trigger the hop blip
+  // audio. Without the ROM in CI, loadQbertRoms() returns null + the
+  // runtime stays !initialized, so pumpAudio() always writes zeros.
+  // The evt_die / evt_move / evt_level gate outputs and the video `out`
+  // ARE covered by the same QBERT sweep test (evt_* via forcePulse;
+  // out via the test-pattern framebuffer). audio_out needs a dedicated
+  // spec with a seeded ROM or a PCM stub — covered by qbert-cv-joystick.spec.ts.
+  'qbert.audio_out': 'requires ROM + game start + movement to emit PCM; ROM absent in CI; covered by qbert-cv-joystick.spec.ts',
   // NIBBLES length_cv encodes snake length; at idle the snake has a
   // constant length so the CV is a steady DC value — but lengthToCv(4)
   // is below the SCOPE.ch1 peak floor (≈-0.93). When the snake eats /
