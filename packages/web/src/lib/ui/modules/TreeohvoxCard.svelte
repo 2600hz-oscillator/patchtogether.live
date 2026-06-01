@@ -65,6 +65,7 @@
     { id: 'env_cv',    label: 'ENV',    cable: 'cv' },
     { id: 'decay_cv',  label: 'DCY',    cable: 'cv' },
     { id: 'accent_cv', label: 'ACC',    cable: 'cv' },
+    { id: 'waveform_cv', label: 'WAVE', cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'audio_out', label: 'OUT', cable: 'audio' },
