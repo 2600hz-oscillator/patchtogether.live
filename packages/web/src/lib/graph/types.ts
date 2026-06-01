@@ -240,6 +240,9 @@ type StandardModuleType =
   // cross-domain `viz_out` mono-video bridge for the EQ-curve+waveform+
   // ping-flash visualization.
   | 'warrenspectrum'
+  // SYNESTHESIA — 4-band audio-analysis module (2 independent copies); per-band
+  // gain + VU meter + slow/fast envelope-follower CV + gate outputs.
+  | 'synesthesia'
   // STEREOVCA — stereo VCA + ring modulator. Same per-channel multiply
   // behaves as VCA gain (slow strength) or ring mod (audio-rate strength);
   // INDEPENDENT normalling on the audio and strength halves.

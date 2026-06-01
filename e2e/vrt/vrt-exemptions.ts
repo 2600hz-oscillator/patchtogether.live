@@ -435,6 +435,11 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // SYNESTHESIA: darwin baseline captured on this machine via VRT_SCENES
+  // (analogVco→a_in, band 2 lit, freeze-on-suspend). Linux baseline pending a
+  // `task vrt:update` run on linux CI; functional coverage is the
+  // synesthesia-dsp + worklet unit tests.
+  'linux/synesthesia',
   'linux/macrooscillator',
   'linux/samsloop',
   'linux/blades',

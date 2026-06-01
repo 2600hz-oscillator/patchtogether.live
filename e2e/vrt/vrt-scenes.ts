@@ -54,6 +54,29 @@ const LOBBY_CLIP = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.m
  *  this map fall back to the default vrt.spec.ts behaviour (spawn
  *  alone, no extra setup). */
 export const VRT_SCENES: Record<string, VrtScene> = {
+  // SYNESTHESIA: drive copy A's input with a 261 Hz sine (analogVco default
+  // 'sine' out, pitch 0 V/oct ≈ C4) so band 2 (200–500 Hz) lights its VU
+  // meter deterministically; copy B is left dark. After settle we freeze the
+  // AudioContext — the worklet stops posting snapshots, so the last meter
+  // levels hold and the two VU canvases are pixel-stable across runs.
+  synesthesia: {
+    nodes: [
+      { id: 'src',   type: 'analogVco',   position: { x: 60,  y: 60 }, domain: 'audio' },
+      { id: 'vrt-1', type: 'synesthesia', position: { x: 520, y: 60 }, domain: 'audio' },
+    ],
+    edges: [
+      {
+        id: 'e_src_syn',
+        from: { nodeId: 'src',   portId: 'sine' },
+        to:   { nodeId: 'vrt-1', portId: 'a_in' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      },
+    ],
+    settleMs: 500,
+    freezeAudio: true,
+  },
+
   // SCOPE: drive ch1 with a 220 Hz sine (analogVco default 'sine'
   // output, pitch defaults to 0 V/oct ≈ C4 ≈ 261 Hz). The scope's
   // default timeMs=20 ms window holds ~5 cycles — plenty of trace

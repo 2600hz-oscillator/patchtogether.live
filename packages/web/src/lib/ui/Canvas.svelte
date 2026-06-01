@@ -159,6 +159,8 @@
   import FoxyCard from '$lib/ui/modules/FoxyCard.svelte';
   // WARRENSPECTRUM — 8-band filterbank with vactrol ping + acidwarp video viz.
   import WarrenspectrumCard from '$lib/ui/modules/WarrenspectrumCard.svelte';
+  // SYNESTHESIA — 4-band audio-analysis module (2 copies) with 10-bar VU meters.
+  import SynesthesiaCard from '$lib/ui/modules/SynesthesiaCard.svelte';
   // STEREOVCA — stereo VCA + ring modulator.
   import StereovcaCard from '$lib/ui/modules/StereovcaCard.svelte';
   // SHIMMERSHINE — lush shimmer reverb (Schroeder tank + pitch-shifted feedback).
@@ -467,6 +469,7 @@
     wavecel: WavecelCard,
     foxy: FoxyCard,
     warrenspectrum: WarrenspectrumCard,
+    synesthesia: SynesthesiaCard,
     stereovca: StereovcaCard,
     shimmershine: ShimmershineCard,
     macrooscillator: MacrooscillatorCard,
