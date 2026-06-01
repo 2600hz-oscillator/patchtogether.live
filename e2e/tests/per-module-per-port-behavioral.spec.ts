@@ -327,6 +327,26 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // Covered by mixmstrs.test.ts (per-channel gain/pan unit math) +
   // VRT baseline (mixmstrs.png) for visual regression.
   mixmstrs: 'per-channel CV scalers near delta threshold on summed mix; covered by mixmstrs.test.ts + VRT baseline',
+
+  // ── FOXY — SwoleVCO + RasterPainter heavy-mount chain. The module
+  //    mounts 3 SwoleBlocks + 3 RasterPainters + WAVECEL worklet + 4-page
+  //    card; on cold CI Linux each page navigation takes 15-30s. With 5
+  //    drivable inputs × 2 spawns per input = 250s runtime >> 140s
+  //    budget. All 5 inputs (pitch, fm, morph_cv, spread_cv, fold_cv) DO
+  //    perturb out_l measurably — they just exceed the wall-clock budget.
+  //    Covered by foxy.spec.ts which uses a single-spawn + settle pattern.
+  foxy: 'heavy mount (SwoleBlocks + RasterPainters); 5 inputs × 2 spawns exceed 140s CI budget; covered by foxy.spec.ts',
+
+  // ── GRIDS — Mutable Instruments Grids (pattern-based drum trigger).
+  //    Internal BPM clock is non-deterministic under CI scheduling:
+  //    sometimes bd/sd/hh fire within the 800ms window, sometimes the
+  //    AudioContext scheduler hasn't committed the first step yet. The
+  //    random alignment between AudioContext-start + scheduler-tick +
+  //    scope-poll means both CONTROL and PATCHED can read 0 on the same
+  //    retry, producing a false Δ=0. Covered by grids.spec.ts which drives
+  //    grids with an explicit clock edge from a sequencer (deterministic)
+  //    + asserts bd/sd/hh output.
+  grids: 'non-deterministic AudioContext scheduler startup; C=P=0 race on CI retry; covered by grids.spec.ts',
 };
 
 // ────────── Per-module behavioral PARAMS override ──────────
@@ -513,6 +533,21 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'wavetableVco.fine':     'cv on small-range knob (±100 cents); covered by cv-range-uniformity.spec.ts',
   'wavetableVco.fmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by wavetable-vco.test.ts',
   'wavetableVco.pmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by wavetable-vco.test.ts',
+
+  // ── CHOWKICK subtle CV params: chowkick is a physical-model kick synth
+  //    driven by gate_in. The following CV inputs modulate physical model
+  //    coefficients (pitch contour, noise cutoff, damping, tonal mix,
+  //    portamento) whose effect on the spectral centroid is below the
+  //    universal delta threshold in an 800ms window with a slow BUGGLES
+  //    random walk. The gate + primary amplitude/decay/sustain CVs DO
+  //    pass consistently. Covered by chowkick.spec.ts + chowkick.test.ts
+  //    which drive these with deterministic sweeps + assert pitch contour
+  //    shape and noise-floor changes.
+  'chowkick.pitch_cv':      'pitch-contour CV; spectral centroid shift below threshold in 800ms; covered by chowkick.spec.ts',
+  'chowkick.noise_cutoff_cv': 'noise-filter CV; RMS delta <0.01 in gate-loop window; covered by chowkick.spec.ts',
+  'chowkick.damping_cv':    'damping CV; subtle envelope-shape change below centroid threshold; covered by chowkick.spec.ts',
+  'chowkick.tone_cv':       'tone-blend CV; 10Hz centroid shift within noise range; covered by chowkick.spec.ts',
+  'chowkick.portamento_cv': 'portamento-glide CV; glide effect below centroid threshold at 800ms; covered by chowkick.spec.ts',
 };
 
 // ────────── Type-aware upstream sources for input drive ──────────

@@ -145,8 +145,17 @@ const DRIVERS: Record<string, PerPortDriver> = {
   //
   // SYMBIOTE: same shape as MARBLES — self-running worklet.
   symbiote: {
-    params: { rate: 36 },
-    note: 'SYMBIOTE: bump rate to 36 semitones so t1/t2/t3/x1/x3 fire fast',
+    // rate=36: master clock at ~8× default so t/x outputs fire many times per
+    // second. bd_density/sd_density/hh_density at max so every step fires
+    // (t1/t2/t3 are probabilistic at default 0.5 densities). acid_density=1
+    // keeps the TB-3PO gate always open (needed for x3 + y). transpose=7
+    // semitones ensures x2 (pitch) is offset from 0V → passes scope floor.
+    params: {
+      rate: 36,
+      bd_density: 1, sd_density: 1, hh_density: 1,
+      acid_density: 1, transpose: 7,
+    },
+    note: 'SYMBIOTE: rate=36 + max densities + transpose=7; t1/t2/t3/x1/x2/x3/y all emit',
   },
   //
   // GRIDS: isPlaying default 1 + internal tempo. Crank tempo to fit
@@ -511,6 +520,45 @@ const DRIVERS: Record<string, PerPortDriver> = {
       });
     },
     note: 'NUMPAD+: seed all 4 layers (midi=72) + isPlaying=1 + Numpad2 held; l{1..4}_pitch/gate all emit',
+  },
+
+  // ───── QBERT — forcePulse the evt_die/evt_move/evt_level gates ─────
+  qbert: {
+    // QBERT's evt_die/evt_move/evt_level are gameplay-conditional gates:
+    // they only fire on in-game events (die, hop, level-up). The runtime
+    // exposes forcePulse() so the test can trigger them deterministically
+    // without the ROM or game state. We pulse each gate twice, spaced
+    // 200ms apart so the scope's 43ms analyser window catches the 10ms
+    // pulse with high probability. The video  passes without a driver
+    // (the test-pattern framebuffer renders even without the ROM).
+    postSpawn: async (page, sutId) => {
+      await page.evaluate(async (id) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            getDomain?: (d: string) => {
+              read?: (id: string, k: string) => unknown;
+            } | null;
+          } | null;
+        };
+        const ve = w.__engine?.()?.getDomain?.('video');
+        const extras = ve?.read?.(id, 'extras') as
+          | { forcePulse?: (port: 'evt_die' | 'evt_move' | 'evt_level') => void }
+          | undefined;
+        if (!extras?.forcePulse) return;
+        // Fire each evt port once immediately so the scope window catches
+        // at least one pulse regardless of which port is under test.
+        extras.forcePulse('evt_die');
+        extras.forcePulse('evt_move');
+        extras.forcePulse('evt_level');
+        // Second burst at +300ms for more coverage.
+        setTimeout(() => {
+          extras.forcePulse?.('evt_die');
+          extras.forcePulse?.('evt_move');
+          extras.forcePulse?.('evt_level');
+        }, 300);
+      }, sutId);
+    },
+    note: 'QBERT: forcePulse evt_die/evt_move/evt_level via extras; video out from test-pattern',
   },
 
   // ───── MIDICLOCK — mock requestMIDIAccess + post clock messages ─────
