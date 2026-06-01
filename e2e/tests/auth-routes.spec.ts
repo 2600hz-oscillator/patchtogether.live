@@ -25,6 +25,15 @@ test.describe('auth-route shape', () => {
     expect(['configured', 'missing']).toContain(body.auth);
     expect(typeof body.env.CLERK_SECRET_KEY).toBe('boolean');
     expect(typeof body.env.PUBLIC_CLERK_PUBLISHABLE_KEY).toBe('boolean');
+    // INVITE_SECRET presence + non-secret fingerprint (drift-detection input
+    // for the anon-handshake smoke). Fingerprint is null when unset; a
+    // `len=.. sha256:..` string otherwise — never the value itself.
+    expect(typeof body.env.INVITE_SECRET).toBe('boolean');
+    expect(
+      body.inviteSecretFingerprint === null ||
+        /^len=\d+ sha256:[0-9a-f]{8}$/.test(body.inviteSecretFingerprint),
+      `inviteSecretFingerprint must be null or a fingerprint string; got ${body.inviteSecretFingerprint}`,
+    ).toBe(true);
   });
 
   // Why "not 500" instead of "< 500": 503 is the *expected* response when
