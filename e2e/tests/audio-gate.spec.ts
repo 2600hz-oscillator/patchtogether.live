@@ -22,6 +22,13 @@
 import { test, expect } from '@playwright/test';
 import { seedRackspace } from './_helpers';
 
+// seedRackspace requires DATABASE_URL (available in collab lane only).
+// Regular e2e shards don't have DB access — skip gracefully.
+test.skip(
+  !process.env.DATABASE_URL,
+  'audio-gate tests require DATABASE_URL — run in collab lane or with DATABASE_URL set',
+);
+
 // Disable Chromium's autoplay-policy override so the AudioContext genuinely
 // starts suspended; the gate's whole reason to exist is to unblock the
 // suspended-by-policy state. Playwright requires test.use() at file top
