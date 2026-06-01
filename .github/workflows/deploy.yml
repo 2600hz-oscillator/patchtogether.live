@@ -18,9 +18,21 @@ name: Deploy
 #   so accidental prod deploys aren't possible from a routine merge.
 # - workflow_dispatch keeps any tier reachable manually if something goes sideways.
 #
+# Relay (Hocuspocus on Fly) deploy — mirrors the web tiers so the relay can't
+# drift from source (it had NO CD; a stale relay silently fails the live-smoke
+# /health + /metrics probes — what bit us 2026-06-01):
+#   dev + autotest  ←  push to main, ONLY when packages/server/** or fly.*.toml
+#                       changed (avoids needless WS-dropping relay restarts)
+#   prod            ←  version bump on main (each release ships the current relay)
+#   any tier        ←  workflow_dispatch (target input)
+# The relay deploy step no-ops (green) until FLY_API_TOKEN is set, so this rolls
+# out without a red pipeline.
+#
 # Required GitHub secrets:
 #   CLOUDFLARE_API_TOKEN  — Pages-deploy-scoped token
 #   CLOUDFLARE_ACCOUNT_ID — CF account id
+#   FLY_API_TOKEN         — Fly deploy token for the relay (`flyctl auth token`).
+#                           Optional: relay deploy steps skip cleanly if unset.
 #
 # Why each deploy job is self-contained (no shared build artifact):
 # wrangler's `pages deploy` re-bundles _worker.js with esbuild, so it needs
@@ -474,3 +486,95 @@ jobs:
           name: live-smoke-report
           path: e2e/playwright-report
           retention-days: 14
+
+  # ================= Relay (Hocuspocus on Fly) CD =================
+  # The relay has no CD otherwise and drifts stale (it returned plain `OK`
+  # for /health + /metrics for days while source served JSON — the live-smoke
+  # failure on 2026-06-01). These jobs keep it in lockstep with source.
+
+  # Detect whether THIS push touched the relay, so dev/autotest only redeploy
+  # the relay when its code/config actually changed (a relay redeploy briefly
+  # drops live Yjs/WS connections — don't do it on every web-only merge).
+  relay-changed:
+    name: Detect relay (packages/server) changes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.f.outputs.relay }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            relay:
+              - 'packages/server/**'
+              - 'fly.dev.toml'
+              - 'fly.autotest.toml'
+              - 'fly.prod.toml'
+
+  # dev + autotest: redeploy on main push WHEN the relay changed, or on a
+  # manual dispatch that targets the tier.
+  deploy-relay:
+    name: Deploy relay → ${{ matrix.tier }}
+    needs: [relay-changed]
+    # always() so the if still evaluates on workflow_dispatch (relay-changed is
+    # skipped then). Mirrors deploy-prod's pattern.
+    if: |
+      always()
+      && (
+        (github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && needs.relay-changed.outputs.changed == 'true')
+        || (github.event_name == 'workflow_dispatch'
+          && contains(github.event.inputs.target, matrix.tier))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [dev, autotest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy relay (${{ matrix.tier }})
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::warning::FLY_API_TOKEN not set — skipping relay deploy for ${{ matrix.tier }}. Wire the secret (flyctl auth token → gh secret set FLY_API_TOKEN) to enable relay CD."
+            exit 0
+          fi
+          flyctl deploy --config fly.${{ matrix.tier }}.toml --remote-only
+
+  # prod: redeploy on a version bump (mirrors the web prod gate) or a manual
+  # dispatch targeting prod — so each release ships the current relay.
+  deploy-relay-prod:
+    name: Deploy relay → prod
+    needs: [detect-version-bump, verify-ci]
+    if: |
+      always()
+      && (
+        (github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && needs.detect-version-bump.outputs.bumped == 'true')
+        || (github.event_name == 'workflow_dispatch'
+          && needs.verify-ci.result == 'success'
+          && contains(github.event.inputs.target, 'prod'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy relay (prod)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::warning::FLY_API_TOKEN not set — skipping prod relay deploy. Wire the secret to enable relay CD."
+            exit 0
+          fi
+          flyctl deploy --config fly.prod.toml --remote-only
