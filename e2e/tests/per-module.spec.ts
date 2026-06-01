@@ -63,6 +63,8 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // MIDI-CV-BUDDY / MIDICLOCK — depend on connected MIDI device.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock: 'requires MIDI device; covered by midiclock.spec.ts',
+  // AUDIO IN — captures live microphone input; no real audio device in CI.
+  audioIn: 'requires live mic input; no audio device in CI',
   // SCOPE — itself the canonical receiver. Wiring it into another
   // scope would be circular; skip.
   scope: 'is itself the canonical receiver',

@@ -94,6 +94,29 @@ const SKIP_SPAWN: Record<string, string> = {
 // (~5-7 entries). Each has a one-line citation of the dedicated spec
 // that exercises the full path with the real asset present.
 const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
+  // ── Hardware-input sources ──
+  gamepad:    'no gamepad attached in test browser; covered by gamepad.spec.ts',
+  joystick:   'no joystick movement in test browser; covered by joystick.spec.ts',
+  audioIn:    'requires live mic input; no audio device in CI; covered by audio-in.spec.ts',
+  // ── MIDI-driven ──
+  midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
+  // ── Clock / divider / sequencer-like modules that need an upstream clock ──
+  timelorde: 'clock divider; needs upstream clock; covered by timelorde-related specs',
+  grids:     'requires upstream clock to step; covered by grids-related specs',
+  marbles:   'requires UI-enabled internal clock; covered by marbles-related specs',
+  symbiote:  'requires UI-enabled internal clock; covered by symbiote-related specs',
+  stages:    'requires upstream segment gate; covered by stages-related specs',
+  tides2:    'requires upstream gate/pitch; covered by tides2-related specs',
+  macseq:    'requires toggled steps; covered by macseq-related specs',
+  // ── CV/gate utility modules with no self-running source ──
+  illogic:    'boolean logic on inputs; no upstream → no output; covered by illogic.spec.ts',
+  // ── User-toggled sequencer-like sources ──
+  sequencer: 'requires user-toggled step.on=true; covered by dedicated sequencer specs',
+  score:     'requires play_cv high + steps; covered by score.spec.ts',
+  drumseqz:  'requires toggled steps; covered by drumseqz specs',
+  polyseqz:  'requires toggled steps; covered by polyseqz specs',
+  // ── Button-press-driven instruments (silent until a key is pressed) ──
+  bluebox:   'silent until a button is pressed; covered by bluebox.spec.ts which clicks the keys',
   // ── File-input modules ──
   // Each needs a real decoder pipeline (Web Codecs for video, AudioBuffer
   // decode for samples) that we don't bring up inside the sweep. The
