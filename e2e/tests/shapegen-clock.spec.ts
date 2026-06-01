@@ -132,13 +132,13 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     // ---- 1. Wait for at least 2 regenerations (each rising edge fires
     //         exactly one + the first-draw regen seeds count to 1, so
     //         "≥ 3" means we've definitely seen at least 2 gate edges).
-    //         At 30 BPM (500 ms step period) this needs ~1 s; the 8 s
-    //         budget tolerates CI scheduler jitter + the audio-context
-    //         warm-up before the first lookahead window lands.
-    const advanced = await waitForRegen(page, 'sg', (n) => n >= 3, 8000);
+    //         At 30 BPM (500 ms step period) this needs ~1 s; the 15 s
+    //         budget tolerates CI scheduler jitter + audio-context cold
+    //         start (observed: 8 s budget starved on loaded runners).
+    const advanced = await waitForRegen(page, 'sg', (n) => n >= 3, 15000);
     expect(
       advanced.ok,
-      `regen advanced to ≥ 3 within 8 s (saw ${advanced.last})`,
+      `regen advanced to ≥ 3 within 15 s (saw ${advanced.last})`,
     ).toBe(true);
     expect(
       advanced.last,

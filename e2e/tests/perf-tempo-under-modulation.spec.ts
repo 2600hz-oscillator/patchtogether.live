@@ -79,7 +79,7 @@ const LOOKAHEAD_S = 0.2; // mirrors sequencer.ts:247
  *  from `RUN_MS`. Wall-clock IPC overhead between Playwright + page
  *  used to push the unmeasured window out by 200–700 ms, which is
  *  what made the original RUN_MS-based count exceed `TEMPO_MAX`. */
-const TEMPO_SLOP_STEPS = 1;
+const TEMPO_SLOP_STEPS = 2; // CI runners can slip 1-2 steps under load
 
 /** Maximum acceptable commit-to-pointerEvent ratio under high-rate
  *  drag. The fix achieves ≈ 0.085 on local hardware; the

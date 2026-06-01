@@ -75,6 +75,7 @@
   import { listMetaModuleDefs, getMetaModuleDef } from '$lib/meta/module-registry';
   import '$lib/meta/modules'; // auto-registers stickyDef
   import AnalogVcoCard from '$lib/ui/modules/AnalogVcoCard.svelte';
+  import AudioinCard from '$lib/ui/modules/AudioinCard.svelte';
   import AudioOutCard from '$lib/ui/modules/AudioOutCard.svelte';
   import VcaCard from '$lib/ui/modules/VcaCard.svelte';
   import MixerCard from '$lib/ui/modules/MixerCard.svelte';
@@ -404,6 +405,7 @@
 
   const nodeTypes = {
     analogVco: AnalogVcoCard,
+    audioIn: AudioinCard,
     audioOut: AudioOutCard,
     vca: VcaCard,
     mixer: MixerCard,

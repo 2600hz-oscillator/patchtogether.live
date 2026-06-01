@@ -4,6 +4,7 @@
 
 import { registerModule } from '$lib/audio/module-registry';
 import { analogVcoDef } from './analog-vco';
+import { audioInDef } from './audioin';
 import { audioOutDef } from './audio-out';
 import { vcaDef } from './vca';
 import { mixerDef } from './mixer';
@@ -119,6 +120,10 @@ export function registerAudioModules(): void {
   if (registered) return;
   registered = true;
   registerModule(analogVcoDef);
+  // AUDIO IN — system audio input (mic / line-in / interface) via
+  // getUserMedia. Card owns permission flow + device dropdown; engine
+  // factory just builds the L/R gain graph and exposes an attach hook.
+  registerModule(audioInDef);
   registerModule(audioOutDef);
   registerModule(vcaDef);
   registerModule(mixerDef);
