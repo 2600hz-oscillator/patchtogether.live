@@ -516,11 +516,14 @@ jobs:
 
   # dev + autotest: redeploy on main push WHEN the relay changed, or on a
   # manual dispatch that targets the tier.
-  deploy-relay:
-    name: Deploy relay → ${{ matrix.tier }}
+  # dev + autotest are two explicit jobs (not a matrix) because the per-tier
+  # dispatch gate needs the tier in the job-level `if:`, and the `matrix`
+  # context is NOT available there — referencing it makes GitHub reject the
+  # whole workflow ("workflow file issue"). These `if:`s use only `github` /
+  # `needs`, which ARE available at job level.
+  deploy-relay-dev:
+    name: Deploy relay → dev
     needs: [relay-changed]
-    # always() so the if still evaluates on workflow_dispatch (relay-changed is
-    # skipped then). Mirrors deploy-prod's pattern.
     if: |
       always()
       && (
@@ -528,26 +531,49 @@ jobs:
           && github.ref == 'refs/heads/main'
           && needs.relay-changed.outputs.changed == 'true')
         || (github.event_name == 'workflow_dispatch'
-          && contains(github.event.inputs.target, matrix.tier))
+          && contains(github.event.inputs.target, 'dev'))
       )
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        tier: [dev, autotest]
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - name: Deploy relay (${{ matrix.tier }})
+      - name: Deploy relay (dev)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "$FLY_API_TOKEN" ]; then
-            echo "::warning::FLY_API_TOKEN not set — skipping relay deploy for ${{ matrix.tier }}. Wire the secret (flyctl auth token → gh secret set FLY_API_TOKEN) to enable relay CD."
+            echo "::warning::FLY_API_TOKEN not set — skipping dev relay deploy. Wire the secret (flyctl auth token → gh secret set FLY_API_TOKEN) to enable relay CD."
             exit 0
           fi
-          flyctl deploy --config fly.${{ matrix.tier }}.toml --remote-only
+          flyctl deploy --config fly.dev.toml --remote-only
+
+  deploy-relay-autotest:
+    name: Deploy relay → autotest
+    needs: [relay-changed]
+    if: |
+      always()
+      && (
+        (github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && needs.relay-changed.outputs.changed == 'true')
+        || (github.event_name == 'workflow_dispatch'
+          && contains(github.event.inputs.target, 'autotest'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy relay (autotest)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::warning::FLY_API_TOKEN not set — skipping autotest relay deploy. Wire the secret to enable relay CD."
+            exit 0
+          fi
+          flyctl deploy --config fly.autotest.toml --remote-only
 
   # prod: redeploy on a version bump (mirrors the web prod gate) or a manual
   # dispatch targeting prod — so each release ships the current relay.
