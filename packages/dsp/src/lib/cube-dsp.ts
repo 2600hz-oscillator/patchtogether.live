@@ -56,6 +56,35 @@ export const CUBE_Z_STEPS = 64;
 /** HARD-material occupancy threshold: field density ≥ this counts as solid. */
 export const HARD_THRESHOLD = 0.5;
 
+/** Stereo L/R SPREAD depth at spread=1 (fraction of the cube depth the L slice
+ *  is read below center and the R slice above center). This does NOT change any
+ *  `sampleSlice` math — it's the explicit `depthOffset` the caller passes for
+ *  the L (−) and R (+) channels — so the deterministic ART `.f32` baselines
+ *  (which pin their own explicit depthOffsets) are unaffected. Shared by the
+ *  worklet (fallback path) and the web factory (production off-thread path) so
+ *  both agree on the spread amount. ±0.18 is clearly audible yet stays well
+ *  inside the unit cube's ±0.866 half-diagonal march extent. */
+export const CUBE_SPREAD_DEPTH = 0.18;
+
+/** Depth offset for the L (sign −1) / R (sign +1) channel given a spread knob in
+ *  [0,1]. Linear in spread; clamped. Pure so the worklet + factory + tests all
+ *  compute the identical offset. */
+export function spreadDepthOffset(spread: number, sign: number): number {
+  const s = spread < 0 ? 0 : spread > 1 ? 1 : spread;
+  return sign * CUBE_SPREAD_DEPTH * s;
+}
+
+/** True if a rendered slice waveform is effectively all-zero (the slice sits
+ *  fully outside the cube with WRAP off → silent by design). The worklet + the
+ *  factory use this to KEEP the last non-silent wave instead of dropping the
+ *  audio out while a param is being swept (issue #4). */
+export function isSilentWave(wave: Float32Array, eps = 1e-6): boolean {
+  for (let i = 0; i < wave.length; i++) {
+    if (Math.abs(wave[i] ?? 0) > eps) return false;
+  }
+  return true;
+}
+
 export type Material = 'smooth' | 'hard';
 
 /** Clamp to [0, 1]. */

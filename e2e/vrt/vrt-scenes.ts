@@ -301,40 +301,14 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       );
     },
   },
-  // CUBE (3D wavetable-navigator oscillator): drive pitch from an analogVco
-  // (0 V/oct ≈ C4) so the oscillator runs, with a rotated/morphed slice through
-  // the default tables (FLOOR=basic-shapes, WALL=harmonic-sweep,
-  // CEILING=basic-shapes). The card's 2D viz (surface-height silhouette +
-  // output waveform) is driven entirely by the worklet's slice SNAPSHOT, which
-  // is deterministic given the params + tables. After settle we freeze the
-  // AudioContext — the worklet stops posting snapshots, so the last frame holds
-  // and the two canvases are pixel-stable across runs.
-  cube: {
-    nodes: [
-      { id: 'src',   type: 'analogVco', position: { x: 60,  y: 60 }, domain: 'audio' },
-      {
-        id: 'vrt-1',
-        type: 'cube',
-        position: { x: 520, y: 60 },
-        domain: 'audio',
-        params: {
-          slice_rx: 0.7, slice_ry: 0.4, slice_y: 0.5,
-          morph_fc: 0.5, connect: 0.3, crush: 0, spread: 0.4, level: 1,
-        },
-      },
-    ],
-    edges: [
-      {
-        id: 'e_src_pitch',
-        from: { nodeId: 'src',   portId: 'sine' },
-        to:   { nodeId: 'vrt-1', portId: 'pitch' },
-        sourceType: 'audio',
-        targetType: 'cv',
-      },
-    ],
-    settleMs: 500,
-    freezeAudio: true,
-  },
+  // CUBE: NO scene. The card's headline visual is now a LIVE, rotating 3D
+  // WebGL2 render (issue #2) — the camera + rAF keep animating regardless of an
+  // AudioContext freeze, so the canvas can't be pinned to a deterministic single
+  // frame. CUBE therefore drops its VRT scene and masks its <canvas> elements
+  // (see VRT_MODULE_MASKS.cube); the VRT gate is the deterministic card chrome
+  // (knobs / dropdowns / toggles / handles). The 3D render + slice/spread math
+  // are covered by the cube-dsp unit tests, the worklet capture test, the
+  // node-ART baselines, and the per-port e2e.
   // PEAKSTATE (animated mandala generator): the module is self-driving
   // (internal pen + ring buffer + 3D rotation, no external signal). The
   // pen trajectory is wall-clock driven, so two runs freeze at slightly

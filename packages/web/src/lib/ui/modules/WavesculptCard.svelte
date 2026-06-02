@@ -43,6 +43,7 @@
     eyeFromCamera,
     distanceGain,
     WALL_LAYOUT,
+    VIDEO_WALL_FACES,
     installWavesculptFrameDrawer,
     uninstallWavesculptFrameDrawer,
     getWavesculptFrames,
@@ -158,6 +159,19 @@
   // BLINK scope-render controls.
   let scale  = $derived(pget('scale'));
   let wiggle = $derived(pget('wiggle'));
+
+  // ---- VIDEO WALL per-face controls (transparency + distort) ----
+  // Static face metadata for the UI labels (matches VIDEO_WALL_FACES).
+  const WALL_UI = [
+    { n: 1, face: 'FRONT' },
+    { n: 2, face: 'BACK' },
+    { n: 3, face: 'LEFT' },
+    { n: 4, face: 'RIGHT' },
+    { n: 5, face: 'FLOOR' },
+    { n: 6, face: 'CEILING' },
+  ];
+  function wallAlpha(n: number): number { return pget(`wall${n}_alpha`); }
+  function wallDistort(n: number): number { return pget(`wall${n}_distort`); }
 
   // ---- per-osc CHROMA base colour (RED/GRN/BLU only; ALP has none) ----
   // Each colour osc stores a packed 0xRRGGBB integer param. The native
@@ -462,6 +476,28 @@
   let alphaMaskDepthRb: WebGLRenderbuffer | null = null;
   let alphaInTex: WebGLTexture | null = null;
   let hasAlphaInPatched = false;
+
+  // ---- VIDEO WALLS (6 faces of the room) ----
+  // Each cross-domain video input wall1..wall6 is uploaded into one of these
+  // textures every frame and drawn as a quad on the matching box face inside
+  // the room. The wall program tessellates the face into a grid so the
+  // DISTORT control can displace the quad toward the room centre into a
+  // convex hemisphere (flat at distort=0, full dome at distort=1). A scratch
+  // canvas + 2D ctx services the self-feedback / audio-domain-source draw
+  // path (the source module's drawFrame paints into it; we then upload it).
+  let wallProgram: WebGLProgram | null = null;
+  let wallVao: WebGLVertexArrayObject | null = null;
+  let wallBuf: WebGLBuffer | null = null;
+  let wallTextures: (WebGLTexture | null)[] = [];
+  // Per-wall: is a source currently patched + did this frame's upload succeed.
+  let wallPatched: boolean[] = [false, false, false, false, false, false];
+  // Scratch 2D canvas reused for drawFrame-based (audio-domain / self) walls.
+  let wallScratchCanvas: OffscreenCanvas | HTMLCanvasElement | null = null;
+  // Wall grid tessellation. 16×16 quads gives a smooth dome at distort=1
+  // without an expensive vertex count (6 walls × 16×16×6 ≈ 9.2k verts).
+  const WALL_GRID = 16;
+  // Vertices per wall = GRID×GRID quads × 6 verts (two triangles).
+  const WALL_VERTS_PER = WALL_GRID * WALL_GRID * 6;
   // NEW v2: per-osc wavetable frame texture. 256 wide × 4 tall RGBA8.
   // R holds the sample value (0..255 = -1..+1 mapped to 0..1 = mid + half-range).
   // Updated each frame from the audio module's snapshot of the current
@@ -743,6 +779,79 @@ void main() {
   gl_Position = vec4(aPos, 0.0, 1.0);
 }`;
 
+  // ---- VIDEO WALL program (textured box faces with convex DISTORT) ----
+  //
+  // Geometry: per wall a flat grid quad on its face plane (the GRID×GRID
+  // tessellation lets us bend it). Attributes per vertex: aGx, aGy in [0..1]
+  // (grid UV across the face). The CPU sets, per draw, the face's two in-
+  // plane basis vectors (uU, uV), the face centre (uCentre) and the inward
+  // normal (uInward). The DISTORT amount (uDistort, 0..1) blends each vertex
+  // from its FLAT position on the face toward a HEMISPHERE bulging inward:
+  //
+  //   flat   = centre + uU*(gx*2-1) + uV*(gy*2-1)
+  //   dome   = flat   + uInward * bulge,  bulge = cos(r·π/2)*depth
+  //
+  // where r is the radial distance from the face centre (0 at centre, 1 at
+  // the rim). cos(r·π/2) is 1 at the centre and 0 at the rim → a smooth
+  // convex cap anchored to the face edges (the rim stays put so adjacent
+  // walls don't tear apart), bulging toward the room centre we look up into.
+  // A fisheye UV warp (sampling toward the centre as the dome bulges) sells
+  // the "looking up into a dome" read. distort=0 → flat quad, untouched.
+  const WALL_VS = `#version 300 es
+in float aGx;
+in float aGy;
+
+uniform mat4  uMVP;
+uniform vec3  uCentre;
+uniform vec3  uU;       // in-plane basis (half-extent already baked: spans -1..+1 face)
+uniform vec3  uV;
+uniform vec3  uInward;  // unit inward normal (toward room centre)
+uniform float uDistort; // 0 flat .. 1 full dome
+
+out vec2 vUv;
+
+void main() {
+  // Grid coord centred at the face: sx, sy in [-1..+1].
+  float sx = aGx * 2.0 - 1.0;
+  float sy = aGy * 2.0 - 1.0;
+  vec3 flatPos = uCentre + uU * sx + uV * sy;
+
+  // Radial distance from face centre, clamped to the unit disc.
+  float r = clamp(length(vec2(sx, sy)), 0.0, 1.0);
+  // Convex cap profile: 1 at centre → 0 at rim (rim anchored).
+  float cap = cos(r * 1.5707963);
+  // Bulge depth scales with distort. 0.95 ≈ almost a full hemisphere at
+  // distort=1 (the inward normal reaches nearly to the room centre).
+  float bulge = cap * uDistort * 0.95;
+  vec3 pos = flatPos + uInward * bulge;
+
+  gl_Position = uMVP * vec4(pos, 1.0);
+
+  // Fisheye UV: as the dome bulges, pull the sampling toward the centre so
+  // the texture appears wrapped over the inside of the cap. At distort=0 the
+  // UV is the flat grid UV (1:1). Mix by distort so the morph is continuous.
+  float warp = mix(1.0, 0.62, uDistort * (1.0 - r * 0.4));
+  vec2 fishUv = vec2(0.5) + vec2(sx, sy) * 0.5 * warp;
+  vUv = mix(vec2(aGx, aGy), fishUv, uDistort);
+}`;
+
+  const WALL_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+
+uniform sampler2D uWallTex;
+uniform float uWallAlpha;   // 0..1 transparency (1 = fully opaque)
+
+void main() {
+  vec3 c = texture(uWallTex, vUv).rgb;
+  // Premultiply-free additive-friendly: the scene pass uses standard alpha
+  // blending (SRC_ALPHA, ONE_MINUS_SRC_ALPHA), so the wall composites OVER
+  // the cleared scene by uWallAlpha. The ribbons (additive) then draw on
+  // top, so the walls read as the room's textured backdrop.
+  outColor = vec4(c, clamp(uWallAlpha, 0.0, 1.0));
+}`;
+
   // ---- BLINK scope program (modes 1 + 2) ----
   //
   // The two non-default BLINK modes draw each oscillator's signal as the
@@ -944,6 +1053,23 @@ void main() {
       for (let i = 0; i < RIBBON_SEGMENTS; i++) {
         verts.push(i, 0, osc);
         verts.push(i, 1, osc);
+      }
+    }
+    return new Float32Array(verts);
+  }
+
+  // One wall's tessellated grid quad. Attributes per vertex: aGx, aGy in
+  // [0..1]. Reused for ALL 6 walls (the per-face placement + distort is set
+  // via uniforms in drawWalls), so we build it once. gl.TRIANGLES list.
+  function buildWallGrid(): Float32Array {
+    const verts: number[] = [];
+    for (let gy = 0; gy < WALL_GRID; gy++) {
+      for (let gx = 0; gx < WALL_GRID; gx++) {
+        const x0 = gx / WALL_GRID, x1 = (gx + 1) / WALL_GRID;
+        const y0 = gy / WALL_GRID, y1 = (gy + 1) / WALL_GRID;
+        // Two triangles per cell.
+        verts.push(x0, y0, x1, y0, x1, y1);
+        verts.push(x0, y0, x1, y1, x0, y1);
       }
     }
     return new Float32Array(verts);
@@ -1240,14 +1366,7 @@ void main() {
   let scopeWigglePhase: number[] = [0, 0, 0, 0];
 
   function findAlphaInSource(): { nodeId: string; portId: string } | null {
-    for (const eid of Object.keys(patch.edges)) {
-      const e = patch.edges[eid];
-      if (!e) continue;
-      if (e.target?.nodeId === id && e.target?.portId === 'alpha_in') {
-        return { nodeId: e.source.nodeId, portId: e.source.portId };
-      }
-    }
-    return null;
+    return findInputSource('alpha_in');
   }
 
   function tryUploadAlphaIn(): void {
@@ -1281,6 +1400,175 @@ void main() {
     } catch {
       hasAlphaInPatched = false;
     }
+  }
+
+  /** Resolve the upstream (sourceNodeId, sourcePortId) currently patched
+   *  into one of this card's inputs by walking the live patch edges. Returns
+   *  null when the input is unpatched. Shared by the wall + alpha paths. */
+  function findInputSource(portId: string): { nodeId: string; portId: string } | null {
+    for (const eid of Object.keys(patch.edges)) {
+      const e = patch.edges[eid];
+      if (!e) continue;
+      if (e.target?.nodeId === id && e.target?.portId === portId) {
+        return { nodeId: e.source.nodeId, portId: e.source.portId };
+      }
+    }
+    return null;
+  }
+
+  /** Upload one frame from whatever is patched into wall{wallIdx+1} into
+   *  wallTextures[wallIdx]. Returns true if a frame was uploaded.
+   *
+   *  Source-domain handling (the cross-domain wiring):
+   *   - VIDEO-domain source (ACIDWARP, LINES, VIDEOBOX, …): selectively
+   *     render its FBO into the shared video-engine drawing buffer via
+   *     blitOutputToDrawingBuffer(), then upload videoEngine.canvas — the
+   *     SAME path alpha_in uses. This covers the per-port sweep (acidwarp).
+   *   - AUDIO-domain source with a mono-video output (RASTERIZE, FOXY's
+   *     viz, and crucially WAVESCULPT ITSELF): pull its drawFrame via the
+   *     audio engine's getVideoSource(), paint into a scratch 2D canvas,
+   *     then upload that. This is what makes SELF-FEEDBACK work — patching
+   *     this card's own video_out into a wall draws the card's last frame
+   *     (its FRAME_DRAWER blits renderCanvas), which the wall textures back
+   *     into the scene → recursive feedback through the BENTBOX prevFbo. We
+   *     deliberately DON'T special-case-block self-patching. */
+  function tryUploadWall(wallIdx: number): boolean {
+    if (!gl) return false;
+    const tex = wallTextures[wallIdx];
+    if (!tex) return false;
+    const src = findInputSource(`wall${wallIdx + 1}`);
+    if (!src) return false;
+    const e = engineCtx.get();
+    if (!e) return false;
+    const srcNode = patch.nodes[src.nodeId];
+    const srcDomain = srcNode?.domain ?? 'audio';
+
+    let imageSource: CanvasImageSource | undefined;
+    if (srcDomain === 'video') {
+      // Cross-domain: render the source video module's FBO into the shared
+      // drawing buffer, then sample that buffer.
+      let videoEngine: VideoEngine | undefined;
+      try { videoEngine = e.getDomain<VideoEngine>('video'); } catch { videoEngine = undefined; }
+      if (!videoEngine) return false;
+      try { videoEngine.blitOutputToDrawingBuffer(src.nodeId); } catch { return false; }
+      imageSource = videoEngine.canvas as CanvasImageSource | undefined;
+    } else {
+      // Audio-domain (incl. self): ask the audio engine for the source's
+      // mono-video drawFrame + render it into a scratch canvas.
+      let audioEngine: { getVideoSource?: (n: string, p: string) => { drawFrame?: (c: OffscreenCanvas | HTMLCanvasElement) => void } | null } | undefined;
+      try {
+        audioEngine = e.getDomain('audio') as unknown as typeof audioEngine;
+      } catch { audioEngine = undefined; }
+      const vsrc = audioEngine?.getVideoSource?.(src.nodeId, src.portId) ?? null;
+      if (!vsrc?.drawFrame) return false;
+      if (!wallScratchCanvas) {
+        if (typeof OffscreenCanvas !== 'undefined') {
+          wallScratchCanvas = new OffscreenCanvas(RES_W, RES_H);
+        } else if (typeof document !== 'undefined') {
+          const c = document.createElement('canvas');
+          c.width = RES_W; c.height = RES_H;
+          wallScratchCanvas = c;
+        } else {
+          return false;
+        }
+      }
+      try { vsrc.drawFrame(wallScratchCanvas); } catch { return false; }
+      imageSource = wallScratchCanvas as CanvasImageSource;
+    }
+    if (!imageSource) return false;
+    try {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(
+        gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE,
+        imageSource as TexImageSource,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Refresh all 6 wall textures from their patched sources. Records which
+   *  walls have live content in wallPatched[] (drawWalls skips the rest). */
+  function tryUploadWalls(): void {
+    for (let w = 0; w < 6; w++) {
+      wallPatched[w] = tryUploadWall(w);
+    }
+  }
+
+  /** Draw the textured + distortable wall quads onto their box faces into
+   *  the currently-bound (scene) FBO. Standard alpha blending so the wall
+   *  composites OVER the cleared scene; depth WRITE on so closer dome
+   *  geometry occludes correctly, but depth TEST against the ribbons is
+   *  handled by drawing walls FIRST (ribbons are additive + depth-disabled
+   *  and draw after, layering on top). uMVP is the live camera matrix. */
+  function drawWalls(g: WebGL2RenderingContext): void {
+    if (!wallProgram || !wallVao) return;
+    let anyPatched = false;
+    for (let w = 0; w < 6; w++) if (wallPatched[w]) { anyPatched = true; break; }
+    if (!anyPatched) return;
+
+    g.useProgram(wallProgram);
+    g.uniformMatrix4fv(g.getUniformLocation(wallProgram, 'uMVP'), false, mvpMat);
+    const uCentre  = g.getUniformLocation(wallProgram, 'uCentre');
+    const uU       = g.getUniformLocation(wallProgram, 'uU');
+    const uV       = g.getUniformLocation(wallProgram, 'uV');
+    const uInward  = g.getUniformLocation(wallProgram, 'uInward');
+    const uDistort = g.getUniformLocation(wallProgram, 'uDistort');
+    const uWallTex = g.getUniformLocation(wallProgram, 'uWallTex');
+    const uWallAlpha = g.getUniformLocation(wallProgram, 'uWallAlpha');
+
+    // Walls are opaque-ish backdrop quads: depth test + write so a bulged
+    // dome self-occludes; blend so transparency works.
+    g.enable(g.DEPTH_TEST);
+    g.depthFunc(g.LEQUAL);
+    g.depthMask(true);
+    g.enable(g.BLEND);
+    g.blendFunc(g.SRC_ALPHA, g.ONE_MINUS_SRC_ALPHA);
+    g.bindVertexArray(wallVao);
+
+    for (const face of VIDEO_WALL_FACES) {
+      const w = face.wallIdx;
+      if (!wallPatched[w]) continue;
+      const alpha01 = Math.max(0, Math.min(1,
+        ((node?.params?.[`wall${w + 1}_alpha`] as number | undefined) ?? 100) / 100));
+      if (alpha01 <= 0) continue; // fully transparent → skip
+      const distort = Math.max(0, Math.min(1,
+        (node?.params?.[`wall${w + 1}_distort`] as number | undefined) ?? 0));
+
+      // Build the face's frame: centre on the face plane (axis at sign·1),
+      // two in-plane basis vectors spanning the full -1..+1 face, and the
+      // inward normal (−sign on the face axis). The box is [-1,+1]^3.
+      const centre: [number, number, number] = [0, 0, 0];
+      centre[face.axis] = face.sign;
+      // Pick two world axes orthogonal to the face axis as the in-plane basis.
+      const a = face.axis;
+      const ax1 = (a + 1) % 3;
+      const ax2 = (a + 2) % 3;
+      const u: [number, number, number] = [0, 0, 0];
+      const v: [number, number, number] = [0, 0, 0];
+      u[ax1] = 1;
+      v[ax2] = 1;
+      const inward: [number, number, number] = [0, 0, 0];
+      inward[face.axis] = -face.sign;
+
+      g.uniform3f(uCentre, centre[0], centre[1], centre[2]);
+      g.uniform3f(uU, u[0], u[1], u[2]);
+      g.uniform3f(uV, v[0], v[1], v[2]);
+      g.uniform3f(uInward, inward[0], inward[1], inward[2]);
+      g.uniform1f(uDistort, distort);
+      g.uniform1f(uWallAlpha, alpha01);
+      g.activeTexture(g.TEXTURE0);
+      g.bindTexture(g.TEXTURE_2D, wallTextures[w]!);
+      g.uniform1i(uWallTex, 0);
+      g.drawArrays(g.TRIANGLES, 0, WALL_VERTS_PER);
+    }
+
+    g.bindVertexArray(null);
+    g.disable(g.BLEND);
+    g.disable(g.DEPTH_TEST);
+    g.depthMask(true);
   }
 
   /** Upload the current per-osc wavetable frames into the ribbon's
@@ -1468,6 +1756,7 @@ void main() {
     try {
       ribbonProgram = linkProgram(gl, RIBBON_VS, RIBBON_FS);
       bentboxProgram = linkProgram(gl, QUAD_VS, BENT_FS);
+      wallProgram = linkProgram(gl, WALL_VS, WALL_FS);
     } catch (err) {
       console.error('[WAVESCULPT] shader setup failed:', err);
       return false;
@@ -1510,6 +1799,34 @@ void main() {
       gl.vertexAttribPointer(qPosLoc, 2, gl.FLOAT, false, 0, 0);
     }
     gl.bindVertexArray(null);
+
+    // ---- VIDEO WALL geometry + per-face textures ----
+    wallVao = gl.createVertexArray();
+    gl.bindVertexArray(wallVao);
+    wallBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, wallBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, buildWallGrid(), gl.STATIC_DRAW);
+    const aGxLoc = gl.getAttribLocation(wallProgram!, 'aGx');
+    const aGyLoc = gl.getAttribLocation(wallProgram!, 'aGy');
+    const wStride = 2 * 4;
+    if (aGxLoc >= 0) { gl.enableVertexAttribArray(aGxLoc); gl.vertexAttribPointer(aGxLoc, 1, gl.FLOAT, false, wStride, 0); }
+    if (aGyLoc >= 0) { gl.enableVertexAttribArray(aGyLoc); gl.vertexAttribPointer(aGyLoc, 1, gl.FLOAT, false, wStride, 4); }
+    gl.bindVertexArray(null);
+
+    wallTextures = [];
+    for (let w = 0; w < 6; w++) {
+      const t = gl.createTexture();
+      if (t) {
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+          new Uint8Array([0, 0, 0, 255]));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      }
+      wallTextures.push(t);
+    }
 
     const fboA = createFboTex(gl, RES_W, RES_H, true);
     sceneFbo = fboA.fbo; sceneTex = fboA.tex; sceneDepthRb = fboA.depth;
@@ -1578,6 +1895,10 @@ void main() {
       if (alphaMaskDepthRb) gl.deleteRenderbuffer(alphaMaskDepthRb);
       if (alphaInTex) gl.deleteTexture(alphaInTex);
       if (waveTex) gl.deleteTexture(waveTex);
+      if (wallProgram) gl.deleteProgram(wallProgram);
+      if (wallVao) gl.deleteVertexArray(wallVao);
+      if (wallBuf) gl.deleteBuffer(wallBuf);
+      for (const t of wallTextures) if (t) gl.deleteTexture(t);
       if (ribbonSamplesBuf) gl.deleteBuffer(ribbonSamplesBuf);
       if (scopeProgram) gl.deleteProgram(scopeProgram);
       if (scopeVao) gl.deleteVertexArray(scopeVao);
@@ -1589,6 +1910,12 @@ void main() {
     scopeSamplesBuf = null;
     scopeTex = null;
     scopeInitDone = false;
+    wallProgram = null;
+    wallVao = null;
+    wallBuf = null;
+    wallTextures = [];
+    wallScratchCanvas = null;
+    wallPatched = [false, false, false, false, false, false];
     gl = null;
     renderCanvas = null;
   }
@@ -1598,6 +1925,7 @@ void main() {
     const g = gl;
 
     tryUploadAlphaIn();
+    tryUploadWalls();
     uploadWaveTex();
 
     g.bindFramebuffer(g.FRAMEBUFFER, sceneFbo);
@@ -1605,8 +1933,6 @@ void main() {
     g.clearColor(0, 0, 0, 1);
     g.clearDepth(1.0);
     g.clear(g.COLOR_BUFFER_BIT | g.DEPTH_BUFFER_BIT);
-
-    g.useProgram(ribbonProgram);
 
     // Camera setup — use the shared eyeFromCamera helper so zoom/rot
     // semantics stay paired with the audio side's distGain math.
@@ -1641,6 +1967,14 @@ void main() {
     mat4LookAt(viewMat, eye, [0, 0, 0], [0, 1, 0]);
     mat4Multiply(mvpMat, projMat, viewMat);
 
+    // VIDEO WALL pass — textured box faces (with convex DISTORT) drawn into
+    // the just-cleared scene FBO BEFORE the ribbons. The ribbons/scopes draw
+    // additively with depth disabled afterwards, so they layer on top of the
+    // room walls. drawWalls early-outs when no wall is patched, so the
+    // existing ribbon-only scene is byte-identical when no walls are wired.
+    drawWalls(g);
+
+    g.useProgram(ribbonProgram);
     const uMVP = g.getUniformLocation(ribbonProgram, 'uMVP');
     g.uniformMatrix4fv(uMVP, false, mvpMat);
 
@@ -2403,6 +2737,15 @@ void main() {
     { id: 'scale',     label: 'Sc', cable: 'cv' },
     { id: 'wiggle',    label: 'Wg', cable: 'cv' },
     { id: 'alpha_in',  label: 'A',  cable: 'video' },
+    // VIDEO WALLS — six cross-domain video inputs, one per box face. Each
+    // MUST render a handle (per-module-per-port handle-presence sweep reads
+    // the def's literal inputs). Labels match VIDEO_WALL_FACES.
+    { id: 'wall1',     label: 'W1·Fr', cable: 'video' },
+    { id: 'wall2',     label: 'W2·Bk', cable: 'video' },
+    { id: 'wall3',     label: 'W3·Lf', cable: 'video' },
+    { id: 'wall4',     label: 'W4·Rt', cable: 'video' },
+    { id: 'wall5',     label: 'W5·Fl', cable: 'video' },
+    { id: 'wall6',     label: 'W6·Ce', cable: 'video' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'L',         label: 'L',   cable: 'audio' },
@@ -2726,6 +3069,30 @@ void main() {
           <Knob value={bloom}              min={0}  max={1} defaultValue={0.4}  label="Bloom"     curve="linear" onchange={set('bloom')} moduleId={id} paramId="bloom"              readLive={live('bloom')} />
           <Knob value={noise}              min={0}  max={1} defaultValue={0.05} label="Noise"     curve="linear" onchange={set('noise')} moduleId={id} paramId="noise"              readLive={live('noise')} />
           <Knob value={master_gain}        min={0}  max={2} defaultValue={1}    label="Gain"      curve="linear" onchange={set('master_gain')} moduleId={id} paramId="master_gain"        readLive={live('master_gain')} />
+        </div>
+      </div>
+
+      <!-- VIDEO WALLS — per-face transparency + convex distort. Each row
+           pairs a TRANSPARENCY (0-100%) + DISTORT (flat→dome, 0-1) knob for
+           one face. Patch a video module into the matching wall{N} input
+           (handles in the patch panel) to texture that face; patch
+           WAVESCULPT's own OUT back into a wall for recursive feedback. -->
+      <div class="bent-section wall-section" data-testid="wavesculpt-wall-section">
+        <div class="bent-label">VIDEO WALLS</div>
+        <div class="wall-grid">
+          {#each WALL_UI as w (w.n)}
+            <div class="wall-cell" data-testid={`wavesculpt-wall-${w.n}`}>
+              <div class="wall-face-label">W{w.n} · {w.face}</div>
+              <div class="wall-knobs">
+                <Knob value={wallAlpha(w.n)} min={0} max={100} defaultValue={100}
+                  label="Alpha" units="%" curve="linear"
+                  onchange={set(`wall${w.n}_alpha`)} moduleId={id} paramId={`wall${w.n}_alpha`} readLive={live(`wall${w.n}_alpha`)} />
+                <Knob value={wallDistort(w.n)} min={0} max={1} defaultValue={0}
+                  label="Distort" curve="linear"
+                  onchange={set(`wall${w.n}_distort`)} moduleId={id} paramId={`wall${w.n}_distort`} readLive={live(`wall${w.n}_distort`)} />
+              </div>
+            </div>
+          {/each}
         </div>
       </div>
     </div>
@@ -3052,6 +3419,35 @@ void main() {
     grid-template-columns: repeat(6, 1fr);
     gap: 4px 6px;
     margin-top: 4px;
+  }
+  .wall-section { margin-top: 6px; }
+  .wall-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .wall-cell {
+    border: 1px solid var(--border-dim, rgba(255,255,255,0.08));
+    border-radius: 2px;
+    padding: 3px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: rgba(255,255,255,0.02);
+  }
+  .wall-face-label {
+    font-size: 0.5rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    text-align: center;
+  }
+  .wall-knobs {
+    display: flex;
+    gap: 2px;
+    justify-content: center;
   }
   .resize-handle {
     position: absolute;

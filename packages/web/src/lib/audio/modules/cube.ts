@@ -21,7 +21,18 @@
 //
 // Inputs:  pitch (V/oct node) + CV→AudioParam for slice_y/rx/ry/rz, morph_fc,
 //          connect, crush, tune.
-// Outputs: audio_out (stereo, exposed as a single stereo node).
+// Outputs: SEPARATE L and R audio ports (issue #1) — the worklet's 2-channel
+//          output is fanned out through a ChannelSplitter(2) so the ±SPREAD
+//          stereo width survives downstream (a single stereo port downmixes to
+//          mono into a mono input, erasing the spread).
+//
+// OFF-THREAD SLICE COMPUTE (issue #4): the expensive SURFACE-HEIGHT SCAN
+//   (sampleSlice) runs HERE on the main thread, not on the audio thread. On
+//   init the factory tells the worklet to go off-thread; the worklet then posts
+//   `paramsChanged` (cheap CV-summed scalars) whenever the slice needs a redo,
+//   the factory renders the L/R/center waveforms and posts them back via
+//   setWave. The audio thread only phase-accumulates → no dropouts. See the
+//   worklet header in packages/dsp/src/cube.ts for the protocol.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -33,6 +44,20 @@ import {
   getFactoryTable,
   DEFAULT_FACTORY_TABLE_ID,
 } from '$lib/audio/wavetable-factory-tables';
+// Pure field/slice DSP — imported via a RELATIVE path (not the `@patchtogether
+// .live/dsp/src/...` alias) for the same reason bluebox.ts does: worktrees may
+// not symlink the workspace package under node_modules, and the worklet asset
+// pipeline / TS path-alias rules don't reliably resolve TS source out of
+// node_modules/@patchtogether.live/dsp/src. sampleSlice here is the IDENTICAL
+// function the (fallback) worklet + node-ART run, so the off-thread waveform is
+// byte-for-byte what the on-thread path would have produced.
+import {
+  sampleSlice,
+  spreadDepthOffset,
+  isSilentWave,
+  type SliceParams,
+  type Material,
+} from '../../../../../dsp/src/lib/cube-dsp';
 
 const PROCESSOR_NAME = 'cube';
 const POLL_MS = 200;
@@ -107,8 +132,6 @@ export const cubeDef: AudioModuleDef = {
   label: 'CUBE',
   category: 'sources',
   schemaVersion: 1,
-  // Single stereo output port (the worklet's output 0 carries 2 channels), so
-  // there is no L/R port PAIR to declare — stereoPairs is omitted.
 
   inputs: [
     // V/oct pitch — the only audio-rate node input the worklet reads directly.
@@ -123,10 +146,14 @@ export const cubeDef: AudioModuleDef = {
     { id: 'crush',    type: 'cv', paramTarget: 'crush',    cvScale: { mode: 'linear' } },
     { id: 'tune',     type: 'cv', paramTarget: 'tune',     cvScale: { mode: 'linear' } },
   ],
-  // Stereo audio out. Declared as two ports forming one stereo pair (the
-  // factory exposes both from the worklet's single stereo output channels).
+  // SEPARATE L / R audio out (issue #1). The worklet's single 2-channel output
+  // is split by a ChannelSplitter(2) in the factory so each port carries one
+  // channel — patching L and R into mono inputs preserves the ±SPREAD width
+  // (a single stereo port would downmix to mono and erase it). LITERAL array —
+  // the module-manifest static extractor reads this directly.
   outputs: [
-    { id: 'audio_out', type: 'audio' },
+    { id: 'L', type: 'audio' },
+    { id: 'R', type: 'audio' },
   ],
   // LITERAL array — the module-manifest static extractor reads this directly.
   params: [
@@ -172,6 +199,13 @@ export const cubeDef: AudioModuleDef = {
     });
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
 
+    // Fan the worklet's 2-channel output into SEPARATE L / R node ports (issue
+    // #1) so the spread survives downstream. Each port carries one channel from
+    // the splitter (output 0 = L, output 1 = R). WAVESCULPT uses the same
+    // ChannelSplitter(2) → per-channel-port pattern.
+    const splitter = ctx.createChannelSplitter(2);
+    workletNode.connect(splitter);
+
     // Mirror initial knob values into worklet params (only the ones the
     // worklet actually declares; view_* + spread/fine handled below).
     for (const def of cubeDef.params) {
@@ -184,15 +218,6 @@ export const cubeDef: AudioModuleDef = {
     silence.offset.value = 0;
     silence.start();
     silence.connect(workletNode, 0, 0);
-
-    // ---------------- snapshot (viz) reception ----------------
-    let lastSnapshot: Float32Array | null = null;
-    workletNode.port.onmessage = (e: MessageEvent) => {
-      const m = e.data as { type?: string; wave?: Float32Array };
-      if (m && m.type === 'snapshot' && m.wave) {
-        lastSnapshot = m.wave;
-      }
-    };
 
     // ---------------- per-slot wavetable resolution + poll ----------------
     const resolvedSigs: Record<CubeSlot, string> = { floor: '', wall: '', ceiling: '' };
@@ -223,6 +248,68 @@ export const cubeDef: AudioModuleDef = {
     }
     resolveAndPostAll();
 
+    // ---------------- OFF-THREAD slice compute (issue #4) ----------------
+    //
+    // The worklet posts `paramsChanged` (cheap CV-summed scalars) when the slice
+    // needs a fresh render; we run the SURFACE-HEIGHT SCAN here on the main
+    // thread (identical sampleSlice math) and post the L/R/center waveforms
+    // back. The audio thread never touches the field math → no dropouts. We keep
+    // the last non-silent center wave for the viz too.
+    let lastSnapshot: Float32Array | null = null;
+    let lastCenterNonSilent: Float32Array | null = null;
+
+    function renderAndPostSlice(p: {
+      sliceY: number; rx: number; ry: number; rz: number;
+      morphFC: number; connect: number; crush: number; spread: number;
+      material: number; wrap: number;
+    }): void {
+      // All three tables must be loaded (resolveAndPostAll seeds defaults on
+      // spawn, so this is true almost immediately).
+      const floor = resolvedFrames.floor;
+      const wall = resolvedFrames.wall;
+      const ceiling = resolvedFrames.ceiling;
+      if (!floor.length || !wall.length || !ceiling.length) return;
+      const sp: SliceParams = {
+        sliceY: p.sliceY, rx: p.rx, ry: p.ry, rz: p.rz,
+        morphFC: p.morphFC, connect: p.connect, crush: p.crush,
+        material: (p.material >= 0.5 ? 'hard' : 'smooth') as Material,
+        wrap: p.wrap >= 0.5,
+      };
+      const dL = spreadDepthOffset(p.spread, -1);
+      const dR = spreadDepthOffset(p.spread, +1);
+      const center = sampleSlice(floor, wall, ceiling, sp, 0);
+      const waveL = dL === 0 ? center : sampleSlice(floor, wall, ceiling, sp, dL);
+      const waveR = dR === 0 ? center : sampleSlice(floor, wall, ceiling, sp, dR);
+      // Cache a non-silent center for the viz (the worklet handles the audio
+      // keep-last-non-silent rule itself).
+      if (!isSilentWave(center)) lastCenterNonSilent = center;
+      lastSnapshot = lastCenterNonSilent ?? center;
+      try {
+        workletNode.port.postMessage({ type: 'setWave', waveCenter: center, waveL, waveR });
+      } catch (err) {
+        console.error('[cube] setWave post failed', err);
+      }
+    }
+
+    workletNode.port.onmessage = (e: MessageEvent) => {
+      const m = e.data as
+        | { type?: string; wave?: Float32Array }
+        | (Parameters<typeof renderAndPostSlice>[0] & { type?: string });
+      if (!m || typeof m !== 'object') return;
+      if (m.type === 'paramsChanged') {
+        renderAndPostSlice(m as Parameters<typeof renderAndPostSlice>[0]);
+      } else if (m.type === 'snapshot' && (m as { wave?: Float32Array }).wave) {
+        // Fallback viz source (only if the worklet ever runs on-thread — it
+        // won't in production, but harmless to keep wired).
+        lastSnapshot = (m as { wave: Float32Array }).wave;
+      }
+    };
+
+    // Switch the worklet to off-thread compute. Defer slightly so the
+    // loadWavetable posts above are processed first (the worklet needs frames
+    // before its first paramsChanged → our render → setWave round-trip).
+    try { workletNode.port.postMessage({ type: 'offThread' }); } catch { /* */ }
+
     let alive = true;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     function poll(): void {
@@ -246,7 +333,8 @@ export const cubeDef: AudioModuleDef = {
         ['tune',     { node: workletNode, input: 0, param: params.get('tune')! }],
       ]),
       outputs: new Map([
-        ['audio_out', { node: workletNode, output: 0 }],
+        ['L', { node: splitter, output: 0 }],
+        ['R', { node: splitter, output: 1 }],
       ]),
       setParam(paramId, value) {
         live[paramId] = value;
@@ -275,6 +363,7 @@ export const cubeDef: AudioModuleDef = {
         try { silence.disconnect(); } catch { /* */ }
         try { workletNode.port.onmessage = null; } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }
+        try { splitter.disconnect(); } catch { /* */ }
       },
     };
   },
