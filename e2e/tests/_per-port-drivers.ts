@@ -469,6 +469,54 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'MOOG 911: drive .gate from SEQUENCER.gate; env / env_inv ramp on each note-on (T1→peak / T2→Esus / T3)',
   },
 
+  // ───── SAMPLE & HOLD — drive cv_in with a moving CV + gate_in with a clock ─────
+  //
+  // Both outputs (cv_out / cv_quant) are HELD/STEADY CV: a constant value
+  // reads as ~0 on the AC-style scope-peak floor, and with NO input cv_in
+  // sits at 0 V → cv_out = 0, cv_quant = quantize(0) = 0 (the maxPeak=0.0000
+  // failure). Fix by making the sampled value actually MOVE:
+  //   * cv_in   ← BUGGLES.smooth  — a slow ±CV random walk (the same source
+  //                                 the dedicated sample-hold.spec.ts uses).
+  //   * gate_in ← SEQUENCER.gate  — a 240-BPM clock so each rising edge
+  //                                 latches a NEW BUGGLES value.
+  // → cv_out becomes a staircase of nonzero held DC levels that step across
+  //   the poll window, and cv_quant snaps each held level to a scale note
+  //   (1 V/oct, away from 0 V since BUGGLES drifts off C). The peak-hold poll
+  //   loop catches the moving held value on both outputs. Mirrors the
+  //   ILLOGIC / SLEWSWITCH (BUGGLES + SEQUENCER upstream) driver shape.
+  sampleHold: {
+    upstream: () => ({
+      nodes: [bugglesCv('drv-bug'), sequencerGate('drv-seq').node],
+      edges: [
+        { id: 'e-drv-cvin',
+          from: { nodeId: 'drv-bug', portId: 'smooth' },
+          to:   { nodeId: 'sut',     portId: 'cv_in' },
+          sourceType: 'cv', targetType: 'cv' },
+        { id: 'e-drv-gate',
+          from: { nodeId: 'drv-seq', portId: 'gate' },
+          to:   { nodeId: 'sut',     portId: 'gate_in' },
+          sourceType: 'gate', targetType: 'gate' },
+      ],
+    }),
+    postSpawn: async (page) => {
+      // Seed sequencer steps so it actually fires (default steps are all off).
+      const seed = sequencerGate('drv-seq');
+      await page.evaluate((d) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['drv-seq'];
+          if (!n) return;
+          if (!n.data) n.data = {};
+          n.data.steps = d.steps;
+        });
+      }, seed.data);
+    },
+    note: 'SAMPLE & HOLD: drive cv_in from BUGGLES.smooth + gate_in from SEQUENCER.gate; cv_out/cv_quant latch moving nonzero held values',
+  },
+
   // ───── JOYSTICK — set pos_x/pos_y to nonzero ─────
   joystick: {
     params: { pos_x: 0.7, pos_y: 0.5 },
