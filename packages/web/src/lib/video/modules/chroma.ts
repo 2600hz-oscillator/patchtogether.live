@@ -167,6 +167,7 @@ export function migrateChroma(data: unknown, fromVersion: number): unknown {
 
 export const chromaDef: VideoModuleDef = {
   type: 'chroma',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'CHROMA',
   category: 'effects',

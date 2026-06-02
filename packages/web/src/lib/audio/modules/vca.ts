@@ -33,6 +33,7 @@ const PARAM_PREFIX = '/VCA';
 
 export const vcaDef: AudioModuleDef = {
   type: 'vca',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'VCA',
   category: 'utilities',

@@ -437,6 +437,7 @@ const DEFAULTS: BentboxParams = {
 
 export const bentboxDef: VideoModuleDef = {
   type: 'bentbox',
+  palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
   label: 'BENTBOX',
   category: 'output',

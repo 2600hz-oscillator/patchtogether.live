@@ -85,6 +85,7 @@ void main() {
 
 export const peakstateDef: VideoModuleDef = {
   type: 'peakstate',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'PEAKSTATE',
   // No 'video-effects' category in this registry (verified at write

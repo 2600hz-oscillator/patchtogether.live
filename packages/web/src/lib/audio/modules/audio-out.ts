@@ -41,6 +41,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const audioOutDef: AudioModuleDef = {
   type: 'audioOut',
+  palette: { top: 'Audio modules', sub: 'End of chain' },
   domain: 'audio',
   label: 'Audio Out',
   category: 'output',

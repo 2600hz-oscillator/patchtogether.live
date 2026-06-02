@@ -186,6 +186,7 @@ export const bladesMath = {
 
 export const bladesDef: AudioModuleDef = {
   type: 'blades',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'BLADES',
   category: 'filters',

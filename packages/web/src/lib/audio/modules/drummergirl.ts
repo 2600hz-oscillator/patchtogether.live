@@ -38,6 +38,7 @@ const PARAM_PREFIX = '/DRUMMERGIRL';
 
 export const drummergirlDef: AudioModuleDef = {
   type: 'drummergirl',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'DRUMMERGIRL',
   category: 'sources',

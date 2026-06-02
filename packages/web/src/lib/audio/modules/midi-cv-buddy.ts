@@ -288,6 +288,7 @@ export function webMidiAvailable(): boolean {
 
 export const midiCvBuddyDef: AudioModuleDef = {
   type: 'midiCvBuddy',
+  palette: { top: 'MIDI', sub: 'MIDI' },
   domain: 'audio',
   label: 'MIDI-CV-BUDDY',
   category: 'sources',

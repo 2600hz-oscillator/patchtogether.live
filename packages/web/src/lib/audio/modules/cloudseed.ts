@@ -420,6 +420,7 @@ export const CLOUDSEED_MESSAGE_PARAMS: ReadonlyArray<{ id: string; cppId: number
 
 export const cloudseedDef: AudioModuleDef = {
   type: 'cloudseed',
+  palette: { top: 'Ports', sub: 'Ports' },
   domain: 'audio',
   label: 'CLOUDSEED',
   category: 'effects',

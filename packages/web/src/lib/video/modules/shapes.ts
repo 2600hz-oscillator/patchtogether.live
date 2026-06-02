@@ -113,6 +113,7 @@ const DEFAULTS: ShapesParams = {
 
 export const shapesDef: VideoModuleDef = {
   type: 'shapes',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'SHAPES',
   category: 'sources',

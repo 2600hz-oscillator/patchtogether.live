@@ -28,6 +28,7 @@ import type { MetaModuleDef } from '$lib/meta/module-registry';
 
 export const cadillacDef: MetaModuleDef = {
   type: 'cadillac',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'meta',
   label: 'CADILLAC',
   category: 'tools',

@@ -65,6 +65,7 @@ export const DX7_DEFAULT_PRESET = 'E.PIANO 1';
 
 export const dx7Def: AudioModuleDef = {
   type: 'dx7',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'DX7',
   category: 'sources',

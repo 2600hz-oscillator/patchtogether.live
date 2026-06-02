@@ -114,6 +114,7 @@ export const attenumixMath = {
 
 export const attenumixDef: AudioModuleDef = {
   type: 'attenumix',
+  palette: { top: 'Audio modules', sub: 'Mixing' },
   domain: 'audio',
   label: 'ATTENUMIX',
   category: 'utilities',

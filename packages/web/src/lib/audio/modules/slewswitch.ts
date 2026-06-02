@@ -32,6 +32,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const slewSwitchDef: AudioModuleDef = {
   type: 'slewSwitch',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'SLEWSWITCH',
   category: 'utility',

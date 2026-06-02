@@ -176,6 +176,7 @@ export function resolveActiveLayer(
 
 export const numpadPlusDef: AudioModuleDef = {
   type: 'numpadPlus',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'NUMPAD+',
   category: 'sources',

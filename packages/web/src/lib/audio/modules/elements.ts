@@ -378,6 +378,7 @@ function accentSafe(strength: number): number { return 0.25 + 0.75 * strength; }
 // ──────────────────────────────── module def ───────────────────────────────
 export const elementsDef: AudioModuleDef = {
   type: 'elements',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'ELEMENTS',
   category: 'sources',

@@ -11,6 +11,7 @@
 
 import type { ModuleType, PortDef, ParamDef, Domain } from '$lib/graph/types';
 import type { VideoModuleFactory } from './engine';
+import type { PaletteCategory } from '$lib/audio/module-registry';
 
 export interface VideoModuleDef {
   type: ModuleType;
@@ -57,6 +58,13 @@ export interface VideoModuleDef {
    * + video viz uniformly when future video modules adopt it.
    */
   vizPassthrough?: boolean;
+  /** Palette classification — see {@link PaletteCategory}. Omitted =
+   *  Uncategorized. Lets a video module classify itself with no edit to the
+   *  shared module-categories map. */
+  palette?: PaletteCategory;
+  /** Card-component basename override (no '.svelte'). Only needed when the
+   *  `PascalCase(type)+'Card'` convention doesn't match the filename. */
+  card?: string;
 }
 
 const registry = new Map<ModuleType, VideoModuleDef>();

@@ -197,6 +197,7 @@ export const shimmershineMath = {
 
 export const shimmershineDef: AudioModuleDef = {
   type: 'shimmershine',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'SHIMMERSHINE',
   category: 'effects',

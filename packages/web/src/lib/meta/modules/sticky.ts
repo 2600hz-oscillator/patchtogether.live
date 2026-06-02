@@ -12,6 +12,7 @@ import type { MetaModuleDef } from '$lib/meta/module-registry';
 
 export const stickyDef: MetaModuleDef = {
   type: 'sticky',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'meta',
   label: 'STICKY',
   category: 'tools',

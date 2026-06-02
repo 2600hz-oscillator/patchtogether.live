@@ -855,6 +855,7 @@ export const macrooscillatorMath = {
 
 export const macrooscillatorDef: AudioModuleDef = {
   type: 'macrooscillator',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'MACROOSCILLATOR',
   category: 'sources',

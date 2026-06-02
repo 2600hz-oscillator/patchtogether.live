@@ -28,7 +28,10 @@ const {
   MODULE_CATEGORIES_PATH,
   MANIFEST_PATH,
   VRT_EXEMPTIONS_PATH,
+  CARD_MAP_TEST_PATH,
   audioModulePath,
+  videoModulePath,
+  metaModulePath,
   cardPath,
   moduleTestPath,
 } = __test_internals;
@@ -100,7 +103,7 @@ describe('parseArgs', () => {
 });
 
 describe('scaffold — happy path (audio)', () => {
-  it('writes all 8 expected outputs + leaves the registry edited', () => {
+  it('creates the module-owned files + carries palette; does NOT edit the shared registry files', () => {
     const res = scaffold({
       type: TEST_TYPE_A,
       domain: 'audio',
@@ -116,37 +119,41 @@ describe('scaffold — happy path (audio)', () => {
     expect(res.filesCreated).toContain(cardPath(toPascal(TEST_TYPE_A)));
     expect(res.filesCreated).toContain(moduleTestPath('audio', TEST_TYPE_A));
 
-    // 4-8) edits to manifest / vrt / registry / types / categories / canvas
+    // Edits limited to the 3 still-hand-maintained lists: manifest prose,
+    // VRT exemptions, the card-map test enumeration.
     expect(res.filesEdited).toContain(MANIFEST_PATH);
     expect(res.filesEdited).toContain(VRT_EXEMPTIONS_PATH);
-    expect(res.filesEdited).toContain(REGISTRY_PATHS.audio);
-    expect(res.filesEdited).toContain(GRAPH_TYPES_PATH);
-    expect(res.filesEdited).toContain(MODULE_CATEGORIES_PATH);
-    expect(res.filesEdited).toContain(CANVAS_PATH);
+    expect(res.filesEdited).toContain(CARD_MAP_TEST_PATH);
+
+    // The four conflict-prone shared files are NOT edited anymore.
+    expect(res.filesEdited).not.toContain(REGISTRY_PATHS.audio);
+    expect(res.filesEdited).not.toContain(GRAPH_TYPES_PATH);
+    expect(res.filesEdited).not.toContain(MODULE_CATEGORIES_PATH);
+    expect(res.filesEdited).not.toContain(CANVAS_PATH);
 
     // Sanity: every file actually exists on disk now.
     for (const f of res.filesCreated) {
       expect(existsSync(f), `created file should exist: ${f}`).toBe(true);
     }
 
-    // Sanity: the registry barrel mentions the new def's camelCase
-    // variable name.
-    const reg = readFileSync(REGISTRY_PATHS.audio, 'utf8');
-    expect(reg).toContain(`${toCamel(TEST_TYPE_A)}Def`);
-    expect(reg).toContain(`[new-module:${TEST_TYPE_A}]`);
+    // The def file itself carries the palette (self-classification) + the
+    // type, and is the AUTO-registered source of truth.
+    const def = readFileSync(audioModulePath(TEST_TYPE_A), 'utf8');
+    expect(def).toContain(`type: '${toCamel(TEST_TYPE_A)}'`);
+    expect(def).toContain(`palette: { top: 'Audio modules'`);
 
-    // Sanity: the StandardModuleType union has the new camelCase entry.
-    const graphTypes = readFileSync(GRAPH_TYPES_PATH, 'utf8');
-    expect(graphTypes).toMatch(new RegExp(`\\|\\s*'${toCamel(TEST_TYPE_A)}'`));
+    // The shared barrels / types / Canvas / categories are UNTOUCHED — no
+    // marker, no mention of the new module.
+    expect(readFileSync(REGISTRY_PATHS.audio, 'utf8')).not.toContain(`[new-module:${TEST_TYPE_A}]`);
+    expect(readFileSync(GRAPH_TYPES_PATH, 'utf8')).not.toMatch(
+      new RegExp(`\\|\\s*'${toCamel(TEST_TYPE_A)}'`),
+    );
+    expect(readFileSync(CANVAS_PATH, 'utf8')).not.toContain(`${toPascal(TEST_TYPE_A)}Card from`);
+    expect(readFileSync(MODULE_CATEGORIES_PATH, 'utf8')).not.toContain(`${toCamel(TEST_TYPE_A)}:`);
 
-    // Sanity: Canvas.svelte has the import + router entry.
-    const canvas = readFileSync(CANVAS_PATH, 'utf8');
-    expect(canvas).toContain(`${toPascal(TEST_TYPE_A)}Card from`);
-    expect(canvas).toContain(`${toCamel(TEST_TYPE_A)}: ${toPascal(TEST_TYPE_A)}Card,`);
-
-    // Sanity: module-categories has the entry.
-    const cats = readFileSync(MODULE_CATEGORIES_PATH, 'utf8');
-    expect(cats).toContain(`${toCamel(TEST_TYPE_A)}: { top: 'Audio modules'`);
+    // Card-map test enumeration now includes the new type.
+    const cardMap = readFileSync(CARD_MAP_TEST_PATH, 'utf8');
+    expect(cardMap).toContain(`'${toCamel(TEST_TYPE_A)}', // [new-module:${TEST_TYPE_A}]`);
 
     // Sanity: manifest has a DESCRIPTIONS entry (real, not the fallback
     // placeholder).
@@ -235,7 +242,8 @@ describe('undo', () => {
     expect(existsSync(moduleTestPath('audio', TEST_TYPE_A))).toBe(false);
     expect(result.filesDeleted.length).toBeGreaterThanOrEqual(3);
 
-    // Markers stripped from registries + edit files.
+    // Markers stripped from the still-edited lists (+ the legacy shared
+    // files, defensively — they shouldn't carry any markers now).
     const marker = `[new-module:${TEST_TYPE_A}]`;
     for (const f of [
       REGISTRY_PATHS.audio,
@@ -244,15 +252,11 @@ describe('undo', () => {
       MODULE_CATEGORIES_PATH,
       MANIFEST_PATH,
       VRT_EXEMPTIONS_PATH,
+      CARD_MAP_TEST_PATH,
     ]) {
       const src = readFileSync(f, 'utf8');
       expect(src.includes(marker), `${f} still contains marker after undo`).toBe(false);
     }
-
-    // And the StandardModuleType union no longer mentions the camelCase
-    // type — the most regression-sensitive of the edits.
-    const gt = readFileSync(GRAPH_TYPES_PATH, 'utf8');
-    expect(gt).not.toMatch(new RegExp(`\\|\\s*'${toCamel(TEST_TYPE_A)}'`));
   });
 
   it('is a no-op for a never-scaffolded type', () => {
@@ -263,27 +267,29 @@ describe('undo', () => {
 });
 
 describe('scaffold — video / meta domain stubs', () => {
-  it('emits a video-domain stub that wires into the video registry', () => {
+  it('emits a video-domain def that carries a Video-modules palette + auto-registers', () => {
     scaffold({
       type: TEST_TYPE_A, domain: 'video',
       label: 'MYTESTMOD', category: 'Sources',
       fromType: null, noCard: false, noTypecheck: true,
     });
-    const reg = readFileSync(REGISTRY_PATHS.video, 'utf8');
-    expect(reg).toContain(`${toCamel(TEST_TYPE_A)}Def`);
-    const cats = readFileSync(MODULE_CATEGORIES_PATH, 'utf8');
-    expect(cats).toContain(`${toCamel(TEST_TYPE_A)}: { top: 'Video modules'`);
+    // The def is the source of truth — palette lives on it; the glob barrel
+    // registers it; the shared video index is NOT edited.
+    const def = readFileSync(videoModulePath(TEST_TYPE_A), 'utf8');
+    expect(def).toContain(`palette: { top: 'Video modules'`);
+    expect(def).toContain(`type: '${toCamel(TEST_TYPE_A)}'`);
+    expect(readFileSync(REGISTRY_PATHS.video, 'utf8')).not.toContain(`${toCamel(TEST_TYPE_A)}Def`);
   });
 
-  it('emits a meta-domain stub that wires into the meta registry', () => {
+  it('emits a meta-domain def that carries a Hybrid palette + auto-registers', () => {
     scaffold({
       type: TEST_TYPE_A, domain: 'meta',
       label: 'MYTESTMOD', category: 'tools',
       fromType: null, noCard: false, noTypecheck: true,
     });
-    const reg = readFileSync(REGISTRY_PATHS.meta, 'utf8');
-    expect(reg).toContain(`${toCamel(TEST_TYPE_A)}Def`);
-    const cats = readFileSync(MODULE_CATEGORIES_PATH, 'utf8');
-    expect(cats).toContain(`${toCamel(TEST_TYPE_A)}: { top: 'Hybrid'`);
+    const def = readFileSync(metaModulePath(TEST_TYPE_A), 'utf8');
+    expect(def).toContain(`palette: { top: 'Hybrid'`);
+    expect(def).toContain(`type: '${toCamel(TEST_TYPE_A)}'`);
+    expect(readFileSync(REGISTRY_PATHS.meta, 'utf8')).not.toContain(`${toCamel(TEST_TYPE_A)}Def`);
   });
 });

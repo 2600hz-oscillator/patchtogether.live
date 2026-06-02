@@ -75,6 +75,7 @@ export function transportEventsToRunState(args: {
 
 export const timelordeDef: AudioModuleDef = {
   type: 'timelorde',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'TIMELORDE',
   category: 'modulation',

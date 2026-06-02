@@ -144,6 +144,7 @@ export interface Snes9xHandleExtras {
 
 export const snes9xDef: VideoModuleDef = {
   type: 'snes9x',
+  palette: { top: 'Games', sub: 'Emulators' },
   domain: 'video',
   label: 'SNES9X',
   // "games" category — same value the SM64 audio def uses. The palette

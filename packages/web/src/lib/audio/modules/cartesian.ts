@@ -94,6 +94,7 @@ export function defaultCells(): Cell[] {
 
 export const cartesianDef: AudioModuleDef = {
   type: 'cartesian',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'Cartesian',
   category: 'modulation',

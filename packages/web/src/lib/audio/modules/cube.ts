@@ -146,6 +146,7 @@ export function resolveSlotFrames(
 
 export const cubeDef: AudioModuleDef = {
   type: 'cube',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'CUBE',
   category: 'sources',

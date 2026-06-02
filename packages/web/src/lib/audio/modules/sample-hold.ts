@@ -67,6 +67,7 @@ const GATE_POLL_MS = 120;
 
 export const sampleHoldDef: AudioModuleDef = {
   type: 'sampleHold',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'SAMPLE & HOLD',
   category: 'utility',

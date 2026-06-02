@@ -158,6 +158,7 @@ export function tuneFineToHz(tuneSt: number, fineCents: number): number {
 // ScopeCard for GroupCard portal-hoisting.
 export const swolevcoDef: AudioModuleDef = {
   type: 'swolevco',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'SWOLEVCO',
   category: 'sources',

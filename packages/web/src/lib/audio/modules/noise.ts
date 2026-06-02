@@ -122,6 +122,7 @@ const BUFFER_SECONDS = 2;
 
 export const noiseDef: AudioModuleDef = {
   type: 'noise',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'NOISE',
   category: 'sources',

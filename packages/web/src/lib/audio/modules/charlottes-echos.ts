@@ -35,6 +35,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const charlottesEchosDef: AudioModuleDef = {
   type: 'charlottesEchos',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: "CHARLOTTE'S ECHOS",
   category: 'effects',

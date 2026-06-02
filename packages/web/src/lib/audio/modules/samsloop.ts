@@ -705,6 +705,7 @@ const POLL_MS = 200;
 
 export const samsloopDef: AudioModuleDef = {
   type: 'samsloop',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'SAMSLOOP',
   category: 'sources',

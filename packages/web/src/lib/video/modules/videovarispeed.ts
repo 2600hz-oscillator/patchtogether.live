@@ -162,6 +162,8 @@ const DEFAULTS: VideoVarispeedParams = {
 
 export const videoVarispeedDef: VideoModuleDef = {
   type: 'videovarispeed',
+  palette: { top: 'Video modules', sub: 'Sources' },
+  card: 'VideoVarispeedCard',
   domain: 'video',
   label: 'VIDEOVARISPEED',
   category: 'sources',

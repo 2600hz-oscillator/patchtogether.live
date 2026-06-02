@@ -243,6 +243,7 @@ export function mapModelIndexToCv(idx: number): number {
 
 export const macseqDef: AudioModuleDef = {
   type: 'macseq',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'MACSEQ',
   category: 'modulation',
