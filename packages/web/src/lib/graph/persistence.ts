@@ -13,6 +13,7 @@
 
 import * as Y from 'yjs';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
+import { getNodePosition, type XY } from '$lib/multiplayer/layouts';
 import {
   getModuleDef as getAudioModuleDef,
   listModuleDefs as listAudioModuleDefs,
@@ -173,6 +174,80 @@ export function makeEnvelope(ydoc: Y.Doc): PatchEnvelope {
     savedAt: new Date().toISOString(),
     moduleSchemas,
     update: bytesToBase64(Y.encodeStateAsUpdate(ydoc)),
+  };
+}
+
+/**
+ * Make a saved-performance envelope PORTABLE across loaders by baking the
+ * saving user's *displayed* positions into each node's canonical
+ * `node.position` and dropping the per-user `layouts` map.
+ *
+ * WHY: in multiplayer, drag-stop writes the moved card's position into
+ * `ydoc.getMap('layouts')[userId][nodeId]` (multiplayer/layouts.ts —
+ * setNodePosition), NOT into `node.position`, so each user sees their own
+ * layout. `makeEnvelope` snapshots the whole ydoc (including that per-user
+ * map), but on LOAD the loader is a *different* (or absent) user id, so
+ * `getNodePosition` misses the override and falls back to the stale spawn
+ * `node.position` — placements are lost. (Single-user saves are unaffected:
+ * drags fall through to `node.position` directly, and `savingUserId` is
+ * undefined here.)
+ *
+ * FIX: snapshot via `makeEnvelope`, decode the update into a THROWAWAY Y.Doc
+ * (never the live shared doc — we must not mutate the graph or broadcast to
+ * peers), rewrite every `node.position` to the saving user's resolved display
+ * position, clear the `layouts` map, and re-encode. The result reads correctly
+ * for ANY loader regardless of their user id.
+ *
+ * Pure: does not touch `ydoc`. When `savingUserId` is undefined the layouts
+ * map is empty/irrelevant, so this still produces a valid (positions already
+ * canonical) portable envelope — clearing the empty `layouts` map is a no-op.
+ */
+export function makePortableEnvelope(
+  ydoc: Y.Doc,
+  savingUserId: string | undefined,
+): PatchEnvelope {
+  const env = makeEnvelope(ydoc);
+
+  // Decode into a throwaway plain Y.Doc. We DON'T use SyncedStore here: we need
+  // to mutate the nested `position` Y.Map in place, and a raw Y.Doc traversal
+  // matches exactly how `makeEnvelope`/`loadEnvelopeIntoStore` read/write the
+  // structure (node = Y.Map, node.position = nested Y.Map with x/y).
+  const tempDoc = new Y.Doc();
+  Y.applyUpdate(tempDoc, base64ToBytes(env.update));
+
+  const nodes = tempDoc.getMap<Y.Map<unknown>>('nodes');
+  const layouts = tempDoc.getMap('layouts');
+
+  tempDoc.transact(() => {
+    for (const [nodeId, node] of nodes.entries()) {
+      if (!(node instanceof Y.Map)) continue;
+      const posMap = node.get('position');
+      // Current canonical position is the fallback when the user has no layout
+      // override for this node (matches Canvas's getNodePosition(...) call).
+      const defaultPos: XY =
+        posMap instanceof Y.Map
+          ? { x: Number(posMap.get('x')) || 0, y: Number(posMap.get('y')) || 0 }
+          : { x: 0, y: 0 };
+      const resolved = getNodePosition(tempDoc, savingUserId, nodeId, defaultPos);
+      if (posMap instanceof Y.Map) {
+        posMap.set('x', resolved.x);
+        posMap.set('y', resolved.y);
+      } else {
+        // Defensive: node had no position Y.Map (shouldn't happen for real
+        // nodes). Materialize one so the loader still gets a position.
+        const np = new Y.Map<number>();
+        np.set('x', resolved.x);
+        np.set('y', resolved.y);
+        node.set('position', np);
+      }
+    }
+    // Drop the now-baked per-user layouts so the snapshot is loader-agnostic.
+    for (const k of [...layouts.keys()]) layouts.delete(k);
+  });
+
+  return {
+    ...env,
+    update: bytesToBase64(Y.encodeStateAsUpdate(tempDoc)),
   };
 }
 
