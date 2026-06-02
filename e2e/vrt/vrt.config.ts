@@ -39,6 +39,7 @@ const FULL_MATCH = [
   'vrt.spec.ts',
   'vrt-wavesculpt-blink.spec.ts',
   'vrt-wavesculpt-walls.spec.ts',
+  'vrt-scope-modes.spec.ts',
   'vrt-composite.spec.ts',
   'vrt-composite-coverage.spec.ts',
   'vrt-synesthesia-composite.spec.ts',

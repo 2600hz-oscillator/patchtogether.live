@@ -99,12 +99,45 @@
     ch2Color = cs.getPropertyValue('--cable-pitch').trim() || ch2Color;
   });
 
+  // VRT determinism seed. Two live oscillators driving ch1/ch2 (the X/Y
+  // Lissajous case) are NOT phase-locked, so the figure's orientation drifts
+  // run-to-run → flaky pixel diffs even after freeze-on-suspend. When the
+  // harness sets globalThis.__scopeVrtSeed, the draw loop builds a FIXED
+  // synthetic snapshot (phase-locked sines at a chosen ratio) instead of the
+  // live analyser data — identical pixels every run. Mirrors FOXY's
+  // __foxyVrtSeed / PEAKSTATE's __peakstateVrtSeed / RASTERIZE's
+  // __rasterizeVrtSeed. No-op in production (the global is never set).
+  function vrtSeed():
+    | { ch1Freq: number; ch2Freq: number; ch2Phase?: number }
+    | null {
+    const s = (globalThis as unknown as {
+      __scopeVrtSeed?: { ch1Freq?: number; ch2Freq?: number; ch2Phase?: number } | boolean;
+    }).__scopeVrtSeed;
+    if (!s) return null;
+    const cfg = typeof s === 'object' ? s : {};
+    return { ch1Freq: cfg.ch1Freq ?? 220, ch2Freq: cfg.ch2Freq ?? 330, ch2Phase: cfg.ch2Phase ?? 0 };
+  }
+  function seededSnapshot(seed: { ch1Freq: number; ch2Freq: number; ch2Phase?: number }): ScopeSnapshot {
+    const n = 2048;
+    const sampleRate = 48000;
+    const ch1 = new Float32Array(n);
+    const ch2 = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      ch1[i] = Math.sin((2 * Math.PI * seed.ch1Freq * i) / sampleRate);
+      ch2[i] = Math.sin((2 * Math.PI * seed.ch2Freq * i) / sampleRate + (seed.ch2Phase ?? 0));
+    }
+    return { ch1, ch2, sampleRate };
+  }
+
   $effect(() => {
     if (!canvasEl) return;
     function tick() {
       const eng = engineCtx.get();
       if (eng && node && canvasEl) {
-        const snap = eng.read(node, 'snapshot') as ScopeSnapshot | undefined;
+        const seed = vrtSeed();
+        const snap = seed
+          ? seededSnapshot(seed)
+          : (eng.read(node, 'snapshot') as ScopeSnapshot | undefined);
         if (snap) draw(canvasEl, snap);
       }
       raf = requestAnimationFrame(tick);
