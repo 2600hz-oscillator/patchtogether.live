@@ -140,9 +140,13 @@ test.describe('Analog VCO FM × sync (two VCOs → scope)', () => {
     const wet = await captureA(page, { fmDepth: 0.6, syncBtoA: false });
 
     // Both are non-silent.
-    const rms = (b: Float32Array) => Math.sqrt(b.reduce((s, v) => s + v * v, 0) / b.length);
-    expect(rms(dry)).toBeGreaterThan(0.05);
-    expect(rms(wet)).toBeGreaterThan(0.05);
+    const rms = (b: Float32Array) => {
+      let s = 0;
+      for (let i = 0; i < b.length; i++) s += b[i]! * b[i]!;
+      return Math.sqrt(s / b.length);
+    };
+    expect(rms(dry.buf)).toBeGreaterThan(0.05);
+    expect(rms(wet.buf)).toBeGreaterThan(0.05);
 
     // FM brightens A: the spectral centroid rises once FM is applied (energy
     // spreads to sidebands above the C4 carrier).
@@ -242,10 +246,14 @@ test.describe('Analog VCO PW/PM on the MORPH output (bug fix)', () => {
     const wide = await captureMorph(page, { tune: 0, shape: 1, pw: 0.8 });
 
     // The fraction of positive samples (a duty proxy) must shift with PW.
-    const duty = (b: Float32Array) => b.reduce((s, v) => s + (v > 0 ? 1 : 0), 0) / b.length;
+    const duty = (b: Float32Array) => {
+      let pos = 0;
+      for (let i = 0; i < b.length; i++) if (b[i]! > 0) pos++;
+      return pos / b.length;
+    };
     expect(
-      Math.abs(duty(narrow) - duty(wide)),
-      `PW had no effect on the morph (duty narrow ${duty(narrow).toFixed(2)} vs wide ${duty(wide).toFixed(2)})`,
+      Math.abs(duty(narrow.buf) - duty(wide.buf)),
+      `PW had no effect on the morph (duty narrow ${duty(narrow.buf).toFixed(2)} vs wide ${duty(wide.buf).toFixed(2)})`,
     ).toBeGreaterThan(0.15);
 
     // Waveform differs materially.
