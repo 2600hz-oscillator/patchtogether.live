@@ -202,6 +202,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // resolved Q4 decision in .myrobots/MOOG/PLAN.md. SYS55-only + SYS35-only
   // modules land in their respective subs as later slices ship.
   moog921Vco: { top: 'Moog', sub: 'SYS55' },
+  // The 902 VCA (differential amplifier) is in BOTH systems (S35×3, S55×5) →
+  // shared → listed under SYS55, same as the 921.
+  moog902: { top: 'Moog', sub: 'SYS55' },
 
   // ───────── MIDI (hardware-bridge modules) ─────────
   // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI

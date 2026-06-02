@@ -118,6 +118,11 @@ import { cubeDef } from './cube';
 // Own-code polyBLEP VCO; four simultaneous waveform jacks + 1V/oct + linear
 // FM + hard/soft/off sync. Shared by SYS55 + SYS35.
 import { moog921VcoDef } from './moog921-vco';
+// MOOG 902 VCA — Moog System 55/35 clone, slice 3. Differential VCA with a
+// manual GAIN pot, summing CONTROL INPUTS (cv + fcv), a LIN/EXP response
+// switch, and a differential output pair (audio + audio_inv). Own-code gain
+// law forked from the repo's `vca` (no copyleft). Shared by SYS55 + SYS35.
+import { moog902Def } from './moog902';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -264,6 +269,12 @@ export function registerAudioModules(): void {
   // sawtooth/rectangular w/ variable pulse width) + 1V/oct + linear FM +
   // hard/soft/off sync. Own-code polyBLEP DSP (no copyleft).
   registerModule(moog921VcoDef);
+  // MOOG 902 VCA — Moog System 55/35 clone, slice 3. Differential VCA:
+  // manual GAIN pot ("fixed control voltage"), summing CONTROL INPUTS
+  // (cv + fcv), LINEAR/EXPONENTIAL response switch → ×2 at pot-max/CV=6V,
+  // ×3 ceiling near ~7.5V. Differential output pair (audio + audio_inv).
+  // Own-code gain law forked from the repo's vca (no copyleft).
+  registerModule(moog902Def);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

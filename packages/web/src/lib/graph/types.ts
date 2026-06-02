@@ -484,6 +484,14 @@ type StandardModuleType =
   // rectangular with variable pulse width), 1V/oct + linear-FM inputs, and a
   // hard/soft/off sync switch. Own-code polyBLEP DSP (permissive, no copyleft).
   | 'moog921Vco'
+  // MOOG 902 VCA — Moog System 55/35 clone, slice 3 (Moog → SYS55, shared by
+  // SYS35). Differential voltage-controlled amplifier: a manual GAIN pot
+  // ("fixed control voltage"), summing CONTROL INPUTS (cv + fcv), and a
+  // LINEAR / EXPONENTIAL response switch. Gain is ×2 (+6 dB) at pot-max OR
+  // CV=6 V, topping out at the ×3 ceiling near a control sum of ~7.5 V. Two
+  // complementary outputs (audio + audio_inv, the phase-inverted differential
+  // − twin). Own-code gain law forked from the repo's `vca` (no copyleft).
+  | 'moog902'
   // TREE.oh.VOX — TB-303-style bassline voice (Open303 voice slice port,
   // MIT → AGPL). 6 knobs (TUNE / CUTOFF / RESONANCE / ENVELOPE / DECAY /
   // ACCENT) + pitch / gate / accent_in inputs + per-knob CV. The full
