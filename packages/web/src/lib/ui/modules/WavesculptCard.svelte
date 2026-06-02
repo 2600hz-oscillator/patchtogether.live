@@ -843,12 +843,21 @@ out vec4 outColor;
 uniform sampler2D uWallTex;
 uniform float uWallAlpha;   // 0..1 transparency (1 = fully opaque)
 
+// REGRESSION FIX (waveform lines vs walls): the walls are a textured
+// BACKDROP; the waveform ribbons / BLINK scope traces are the FOREGROUND
+// energy and draw ADDITIVELY (SRC_ALPHA, ONE) on top of the scene. A wall
+// at full opacity (alpha 100, the default) used to fill the room near
+// saturation, leaving no additive headroom — the bright traces clamped into
+// the equally-bright wall and read as INVISIBLE (the "scopestrial" /
+// "reality based" community patches went blank). Dimming the wall to a true
+// backdrop level restores the additive headroom so the energy lines always
+// punch through, WITHOUT touching transparency / convex distort / self-
+// feedback (those are all upstream of this multiply). 0.6 keeps the wall
+// clearly legible while reserving ~40% additive headroom for the traces.
+const float WALL_BACKDROP_DIM = 0.6;
+
 void main() {
-  vec3 c = texture(uWallTex, vUv).rgb;
-  // Premultiply-free additive-friendly: the scene pass uses standard alpha
-  // blending (SRC_ALPHA, ONE_MINUS_SRC_ALPHA), so the wall composites OVER
-  // the cleared scene by uWallAlpha. The ribbons (additive) then draw on
-  // top, so the walls read as the room's textured backdrop.
+  vec3 c = texture(uWallTex, vUv).rgb * WALL_BACKDROP_DIM;
   outColor = vec4(c, clamp(uWallAlpha, 0.0, 1.0));
 }`;
 
