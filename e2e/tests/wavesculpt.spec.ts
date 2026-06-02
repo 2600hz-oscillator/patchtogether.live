@@ -835,4 +835,112 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
 
     expect(errors, 'no console / page errors during self-feedback loop').toEqual([]);
   });
+
+  // ──────────────── LINES-VS-WALLS REGRESSION + LUMINOSITY BANDPASS ────────────────
+
+  test('REGRESSION: SCOPES TRIAL waveform lines stay visible with an enclosing video wall', async ({ page }) => {
+    // #531 video walls drowned the additive scope traces — the "scopestrial"
+    // / "reality based" community patches went blank. Guard: SCOPES TRIAL with
+    // all 6 walls opaque (camera enclosed) must STILL light a substantial
+    // fraction of the frame (the bright traces punch through the backdrop-
+    // dimmed wall). We compare against the SAME scene with no walls to prove
+    // the traces aren't merely the wall content.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const setup = async (walls: boolean): Promise<void> => {
+      const wallParams: Record<string, number> = {};
+      if (walls) for (let n = 1; n <= 6; n++) { wallParams[`wall${n}_alpha`] = 100; wallParams[`wall${n}_distort`] = 0; }
+      const edges: Array<Record<string, unknown>> = [
+        { id: 'g', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },
+      ];
+      if (walls) for (let n = 1; n <= 6; n++) edges.push({ id: `e_wall${n}`, from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: `wall${n}` }, sourceType: 'video', targetType: 'video' });
+      await spawnPatch(page, [
+        { id: 'src', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4 } },
+        { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 80 }, domain: 'audio',
+          params: { blink_mode: 1, scale: 2, rot: 0.3, pos_z: 0.35, zoom: 1.3,
+            thickness1: 0.6, thickness2: 0.6, thickness3: 0.6, thickness4: 0.9, noise: 0, ...wallParams } },
+        { id: 'jo', type: 'joystick', position: { x: 60, y: 480 }, domain: 'audio' },
+      ], edges as never);
+      await page.evaluate(() => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> }; __engine?: () => { ctx: AudioContext } | null };
+        const n = w.__patch.nodes['jo']; if (n) n.params.pos_x = 1;
+        try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
+      });
+    };
+
+    // Count NEON-coloured trace pixels: a bright, channel-IMBALANCED pixel (a
+    // hot single/dual-channel neon line), distinguishing the traces from the
+    // near-grey/white wall grid. This is the population that vanished pre-fix.
+    const countTrace = (): Promise<number> => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+      if (!c) return 0;
+      const ctx = c.getContext('2d');
+      if (!ctx) return 0;
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      let trace = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i] ?? 0, g = data[i + 1] ?? 0, b = data[i + 2] ?? 0;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        // Bright + saturated (channel imbalance) → a neon trace, not the
+        // desaturated wall grid.
+        if (mx > 140 && mx - mn > 70) trace++;
+      }
+      return trace;
+    });
+
+    await setup(true);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+    await expect.poll(async () => countTrace(), {
+      message: 'SCOPES TRIAL traces invisible behind enclosing walls (the #531 regression)',
+      timeout: 5_000,
+      intervals: [200, 400, 800],
+    }).toBeGreaterThan(800);
+  });
+
+  test('LUMINOSITY → BANDPASS: lum_depth knob + per-wall sampling accepted, no errors', async ({ page }) => {
+    // The luminosity→bandpass feature: depth knob present + routes through the
+    // store; with walls patched + depth up the audio path runs (the card
+    // samples wall luminosity each frame + posts it to the worklet) with no
+    // console/page errors.
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'src', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4 } },
+      { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 80 }, domain: 'audio',
+        params: { blink_mode: 1, lum_depth: 0, wall1_alpha: 100, wall3_alpha: 100, noise: 0 } },
+      { id: 'jo', type: 'joystick', position: { x: 60, y: 480 }, domain: 'audio' },
+    ], [
+      { id: 'g', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },
+      { id: 'e_wall1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: 'wall1' }, sourceType: 'video', targetType: 'video' },
+      { id: 'e_wall3', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: 'wall3' }, sourceType: 'video', targetType: 'video' },
+    ]);
+    await expect(page.locator('[data-testid="wavesculpt-card"]')).toHaveCount(1);
+
+    // Drive the gate + resume audio, then dial lum_depth up via the store.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+        __engine?: () => { ctx: AudioContext } | null;
+      };
+      const jo = w.__patch.nodes['jo']; if (jo) jo.params.pos_x = 1;
+      w.__ydoc.transact(() => { const n = w.__patch.nodes['ws']; if (n) n.params.lum_depth = 1; });
+      try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
+    });
+    await page.waitForTimeout(600);
+
+    const depth = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      return w.__patch.nodes['ws']?.params.lum_depth ?? -1;
+    });
+    expect(depth, 'lum_depth routed through the store').toBe(1);
+
+    expect(errors, 'no console / page errors with luminosity-bandpass active').toEqual([]);
+  });
 });
