@@ -114,6 +114,10 @@ import { chowkickDef } from './chowkick';
 import { blueboxDef } from './bluebox';
 // CUBE — 3D wavetable-navigator oscillator (FLOOR/WALL/CEILING field + slice).
 import { cubeDef } from './cube';
+// MOOG 921 VCO — first module of the Moog System 55/35 clone initiative.
+// Own-code polyBLEP VCO; four simultaneous waveform jacks + 1V/oct + linear
+// FM + hard/soft/off sync. Shared by SYS55 + SYS35.
+import { moog921VcoDef } from './moog921-vco';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -255,6 +259,11 @@ export function registerAudioModules(): void {
   // slice as the played waveform (surface-height scan). V/oct, stereo ±5%
   // spread, SMOOTH/HARD material, 3D-bitcrush CRUSH, mirror-fold WRAP.
   registerModule(cubeDef);
+  // MOOG 921 VCO — Moog System 55/35 clone, slice 1. Voltage-controlled
+  // oscillator: ONE core → four simultaneous waveform jacks (sine/triangle/
+  // sawtooth/rectangular w/ variable pulse width) + 1V/oct + linear FM +
+  // hard/soft/off sync. Own-code polyBLEP DSP (no copyleft).
+  registerModule(moog921VcoDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
