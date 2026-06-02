@@ -229,6 +229,8 @@
   import FroggerCard from '$lib/ui/modules/FroggerCard.svelte';
   // SM64 — black-box wrapper around the upstream sm64js (WTFPL).
   import Sm64Card from '$lib/ui/modules/Sm64Card.svelte';
+  // SKIFREE — wrapper around the upstream skifree.js engine (MIT).
+  import SkifreeCard from '$lib/ui/modules/SkifreeCard.svelte';
   // JOYSTICK — manual XY pad CV source.
   import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
   // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
@@ -506,6 +508,7 @@
     modtris: ModtrisCard,
     frogger: FroggerCard,
     sm64: Sm64Card,
+    skifree: SkifreeCard,
     joystick: JoystickCard,
     gamepad: GamepadCard,
     numpadPlus: NumpadPlusCard,

@@ -262,6 +262,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (CV→playerInput map) + E2E (boot-into-running-game with the seeded
   // IDB fixture, or skip when fixture absent) provide coverage.
   sm64: 'fully animated 3D scene; no naturally still frame — VRT deferred. Unit + E2E provide coverage',
+  // SKIFREE — the skifree.js engine self-drives via requestAnimationFrame
+  // (terrain scrolls, snowboarders/yeti move, skier animation cycles) the
+  // moment the bundle loads, so there is no naturally still frame to
+  // baseline. Same rationale as FROGGER / SM64 / PONG. Unit (cvToCanvasCoord
+  // + gate hook) + E2E (e2e/tests/skifree.spec.ts: CV-cursor steering +
+  // crash/eaten → gate → SCOPE) provide coverage. Promote to a real VRT
+  // baseline once a deterministic-time render-freeze hook is added so the
+  // scene can be pinned at a known frame.
+  skifree: 'animated ski-slope (rAF-self-driven terrain + sprites + skier anim) defeats deterministic single-frame capture; unit + E2E provide coverage',
   // ANALOGLOGICMATHS first-slice PR: VRT baseline pending; ART + unit + E2E
   // provide coverage. Card is small (2 attenuverter knobs + patch panel) and
   // stable; a follow-up PR will capture darwin + linux baselines once the

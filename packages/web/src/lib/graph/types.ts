@@ -419,6 +419,12 @@ type StandardModuleType =
   // future spawns boot straight to a running game. No outputs;
   // vizPassthrough on the canvas covers cross-domain video output.
   | 'sm64'
+  // SKIFREE — the classic SkiFree (ski downhill, dodge trees/rocks, get
+  // chased + eaten by the yeti). skifree.js engine (MIT). Single-instance.
+  // x/y CV synthesize the mouse cursor the skier steers toward; gate fires
+  // a rising edge on crash / eaten-by-yeti; out is the game canvas (video).
+  // Native mouse steering when x/y unpatched + card focused (CV overrides).
+  | 'skifree'
   // JOYSTICK — manual XY pad. Outputs x, y, nx (= -x), ny (= -y) as CV.
   // No inputs in v1 (future: MIDI-mappable). Mirrors how an LFO emits
   // multiple inverted/quadrature outputs from a single source of motion.
