@@ -36,7 +36,7 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { cubeDef, CUBE_SLOTS, CUBE_DEFAULT_TABLES, type CubeSlot, type CubeData, type CubeSlotData } from '$lib/audio/modules/cube';
+  import { cubeDef, CUBE_SLOTS, CUBE_DEFAULT_TABLES, installCubeFrameDrawer, uninstallCubeFrameDrawer, type CubeSlot, type CubeData, type CubeSlotData } from '$lib/audio/modules/cube';
   import { getFactoryTables } from '$lib/audio/wavetable-factory-tables';
   import { WAVETABLE_PRESETS, loadWavetablePreset } from '$lib/audio/wavetable-presets';
   import { useEngine } from '$lib/audio/engine-context';
@@ -157,7 +157,8 @@
   const VOL = 24;                  // field voxel resolution per axis (CPU side)
   const SLICE_LAYERS = 28;         // alpha-blended Z-slice quads for the volume
   let glCanvas = $state<HTMLCanvasElement | null>(null);     // visible 3D canvas
-  let waveCanvas = $state<HTMLCanvasElement | null>(null);   // OUTPUT overlay
+  let waveCanvas = $state<HTMLCanvasElement | null>(null);   // OUTPUT waveform
+  let sliceCanvas = $state<HTMLCanvasElement | null>(null);  // 2D slice cross-section
   let raf: number | null = null;
 
   let offscreen: OffscreenCanvas | HTMLCanvasElement | null = null;
@@ -453,7 +454,12 @@
     const ey = dist * Math.sin(vrx);
     const ez = dist * Math.cos(vrx) * Math.cos(vry);
 
-    m4Perspective(projMat, 1.0, 1.0, 0.05, 20.0);
+    // The GL scene renders square (RES×RES) then blits to the (non-square) card
+    // canvas via drawImage, which stretches it. Pre-compensate by setting the
+    // projection aspect to the visible canvas aspect so the cube stays
+    // undistorted after the stretch (320×260 → ~1.23).
+    const vizAspect = glCanvas ? glCanvas.width / glCanvas.height : 1.0;
+    m4Perspective(projMat, 1.0, vizAspect, 0.05, 20.0);
     m4LookAt(viewMat, [ex, ey, ez], [0, 0, 0], [0, 1, 0]);
     m4Mul(mvpMat, projMat, viewMat);
     eulerMat(rotMat, srx, sry, srz);
@@ -501,17 +507,23 @@
     g.enableVertexAttribArray(wq); g.vertexAttribPointer(wq, 3, g.FLOAT, false, 0, 0);
     g.drawArrays(g.LINES, 0, 24);
 
-    // blit to the visible canvas
-    if (glCanvas && offscreen) {
-      const c2d = glCanvas.getContext('2d');
-      if (c2d) {
-        c2d.clearRect(0, 0, glCanvas.width, glCanvas.height);
-        c2d.drawImage(offscreen as CanvasImageSource, 0, 0, glCanvas.width, glCanvas.height);
-        c2d.fillStyle = 'rgba(255,255,255,0.55)';
-        c2d.font = '9px monospace';
-        c2d.fillText('CUBE', 5, 12);
-      }
-    }
+    // blit to the visible 3D canvas
+    if (glCanvas) blitCube(glCanvas);
+  }
+
+  // Blit the just-rendered GL scene (in `offscreen`) onto a target 2D canvas
+  // and stamp the CUBE label. Used for both the on-card canvas and the
+  // cross-domain video_out bridge canvas (which renders the SAME 3D cube view).
+  function blitCube(target: OffscreenCanvas | HTMLCanvasElement): void {
+    if (!offscreen) return;
+    const c2d = target.getContext('2d') as
+      | CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    if (!c2d) return;
+    c2d.clearRect(0, 0, target.width, target.height);
+    c2d.drawImage(offscreen as CanvasImageSource, 0, 0, target.width, target.height);
+    c2d.fillStyle = 'rgba(255,255,255,0.55)';
+    c2d.font = '9px monospace';
+    c2d.fillText('CUBE', 5, 12);
   }
 
   // OUTPUT waveform overlay (folded in from the worklet snapshot).
@@ -534,14 +546,127 @@
     ctx2d.fillText('OUTPUT', 5, 12);
   }
 
+  // ───────────────── 2D SLICE cross-section heatmap ─────────────────
+  //
+  // The square cross-section the slice PLANE cuts through the cube field: for
+  // each pixel (su, sv) of the slice square we rotate the local plane point by
+  // the slice euler angles (matching cube-dsp.rotate / the 3D plane shader),
+  // translate to the cube centre at height sliceY, and read the field DENSITY at
+  // that 3D point. The result is a heatmap showing the wavetable content the
+  // slice actually reads — across ALL THREE tables (floor↔ceiling morph + wall),
+  // so the floor / ceiling contribution is visible (not just the wall). This is
+  // the SLICE view from pre-v2 (#528), upgraded from a 1D silhouette to the true
+  // 2D square the user asked for. Rebuilt only when a shaping param changes.
+  const SLICE_RES = 56; // CPU sample grid per axis (kept small; bilinear-scaled)
+  let sliceImage: ImageData | null = null;
+  let lastSliceSig = '';
+  // Reusable scratch canvas to upscale the low-res slice grid smoothly.
+  let sliceScratch: HTMLCanvasElement | OffscreenCanvas | null = null;
+
+  function rotateVec(
+    x: number, y: number, z: number, rx: number, ry: number, rz: number,
+  ): [number, number, number] {
+    const cx = Math.cos(rx), sx = Math.sin(rx);
+    const cy = Math.cos(ry), sy = Math.sin(ry);
+    const cz = Math.cos(rz), sz = Math.sin(rz);
+    const x1 = x, y1 = y * cx - z * sx, z1 = y * sx + z * cx;       // X
+    const x2 = x1 * cy + z1 * sy, y2 = y1, z2 = -x1 * sy + z1 * cy; // Y
+    const x3 = x2 * cz - y2 * sz, y3 = x2 * sz + y2 * cz, z3 = z2;  // Z
+    return [x3, y3, z3];
+  }
+
+  function drawSlice(c: HTMLCanvasElement): void {
+    const ctx2d = c.getContext('2d'); if (!ctx2d) return;
+    const W = c.width, H = c.height;
+    const e = engineCtx.get();
+    const fr = (e && node ? e.read(node, 'frames') as
+      { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined : undefined);
+    if (!fr || !fr.floor.length || !fr.wall.length || !fr.ceiling.length) {
+      ctx2d.fillStyle = '#0a0c12'; ctx2d.fillRect(0, 0, W, H);
+      return;
+    }
+    const morphFC = liveParam('morph_fc', 0);
+    const connect = liveParam('connect', 0);
+    const materialHardV = liveParam('material', 0) >= 0.5;
+    const sliceY = liveParam('slice_y', 0.5);
+    const srx = liveParam('slice_rx', 0), sry = liveParam('slice_ry', 0), srz = liveParam('slice_rz', 0);
+    const fp: FieldParams = { morphFC, connect, material: (materialHardV ? 'hard' : 'smooth') as Material };
+
+    const sig = `${morphFC.toFixed(3)}|${connect.toFixed(3)}|${materialHardV ? 1 : 0}|` +
+      `${sliceY.toFixed(3)}|${srx.toFixed(3)}|${sry.toFixed(3)}|${srz.toFixed(3)}`;
+    if (sig !== lastSliceSig || !sliceImage) {
+      const img = ctx2d.createImageData(SLICE_RES, SLICE_RES);
+      for (let sv = 0; sv < SLICE_RES; sv++) {
+        // plane "other" axis in [-0.5, 0.5]; top row = +0.5.
+        const py = 0.5 - sv / (SLICE_RES - 1);
+        for (let su = 0; su < SLICE_RES; su++) {
+          const px = su / (SLICE_RES - 1) - 0.5; // scan axis
+          const [rxv, ryv, rzv] = rotateVec(px, py, 0, srx, sry, srz);
+          const x = rxv + 0.5, y = ryv + 0.5, z = rzv + sliceY;
+          let d = 0;
+          if (x >= 0 && x <= 1 && y >= 0 && y <= 1 && z >= 0 && z <= 1) {
+            const h = columnHeights(fr.floor, fr.wall, fr.ceiling, x, y);
+            d = fieldFromHeights(z, h, fp); // [0,1]
+          }
+          // teal→white density ramp (matches the 3D volume colour).
+          const r = 0.12 + (0.6 - 0.12) * d;
+          const g = 0.36 + (0.92 - 0.36) * d;
+          const b = 0.45 + (1.0 - 0.45) * d;
+          const o = (sv * SLICE_RES + su) * 4;
+          img.data[o] = Math.round(r * 255 * (0.15 + 0.85 * d));
+          img.data[o + 1] = Math.round(g * 255 * (0.15 + 0.85 * d));
+          img.data[o + 2] = Math.round(b * 255 * (0.15 + 0.85 * d));
+          img.data[o + 3] = 255;
+        }
+      }
+      sliceImage = img;
+      lastSliceSig = sig;
+    }
+
+    // Upscale the low-res grid onto the visible canvas with smoothing.
+    if (!sliceScratch) {
+      sliceScratch = typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(SLICE_RES, SLICE_RES)
+        : (() => { const cc = document.createElement('canvas'); cc.width = SLICE_RES; cc.height = SLICE_RES; return cc; })();
+    }
+    const sctx = sliceScratch.getContext('2d') as
+      | CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    if (sctx && sliceImage) {
+      sctx.putImageData(sliceImage, 0, 0);
+      ctx2d.imageSmoothingEnabled = true;
+      ctx2d.drawImage(sliceScratch as CanvasImageSource, 0, 0, W, H);
+    }
+    ctx2d.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx2d.strokeRect(0.5, 0.5, W - 1, H - 1);
+    ctx2d.fillStyle = 'rgba(255,255,255,0.6)'; ctx2d.font = '9px monospace';
+    ctx2d.fillText('SLICE', 5, 12);
+  }
+
+  // video_out frame-drawer: render the SAME 3D cube scene then blit it into the
+  // cross-domain bridge canvas. Installed by node id so the audio module's
+  // videoSources.drawFrame can delegate to it (mirrors WAVESCULPT's pattern).
+  function videoFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
+    if (!glReady && !glFailed) initGl();
+    if (!glReady) {
+      const c2d = canvas.getContext('2d') as
+        | CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+      if (c2d) { c2d.fillStyle = '#0a0c12'; c2d.fillRect(0, 0, canvas.width, canvas.height); }
+      return;
+    }
+    renderGl();          // refresh the GL scene into `offscreen`
+    blitCube(canvas);    // draw it onto the bridge canvas
+  }
+
   $effect(() => {
     if (!glReady && !glFailed) initGl();
+    if (id) installCubeFrameDrawer(id, videoFrame);
     function tick() {
       if (glReady) renderGl();
       const e = engineCtx.get();
       if (e && node) {
         const snap = e.read(node, 'snapshot') as Float32Array | undefined;
         if (snap && waveCanvas) drawWave(waveCanvas, snap);
+        if (sliceCanvas) drawSlice(sliceCanvas);
       }
       raf = requestAnimationFrame(tick);
     }
@@ -561,7 +686,11 @@
     } catch { /* */ }
     gl = null; offscreen = null; glReady = false;
   }
-  onDestroy(() => { if (raf !== null) cancelAnimationFrame(raf); disposeGl(); });
+  onDestroy(() => {
+    if (raf !== null) cancelAnimationFrame(raf);
+    if (id) uninstallCubeFrameDrawer(id);
+    disposeGl();
+  });
 
   // ───────────────── patch panel ports ─────────────────
   const inputs: PortDescriptor[] = [
@@ -573,11 +702,13 @@
     { id: 'morph_fc', label: 'MORPH',   cable: 'cv' },
     { id: 'connect',  label: 'CONNECT', cable: 'cv' },
     { id: 'crush',    label: 'CRUSH',   cable: 'cv' },
+    { id: 'fold_cv',  label: 'FOLD',    cable: 'cv' },
     { id: 'tune',     label: 'TUNE',    cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'L', label: 'L', cable: 'audio' },
     { id: 'R', label: 'R', cable: 'audio' },
+    { id: 'video_out', label: 'VIDEO', cable: 'mono-video' },
   ];
 
   const factoryTables = getFactoryTables();
@@ -589,6 +720,7 @@
     { pid: 'morph_fc', label: 'Morph' },
     { pid: 'connect', label: 'Connect' },
     { pid: 'crush', label: 'Crush' },
+    { pid: 'fold', label: 'Fold' },
     { pid: 'spread', label: 'Spread' },
     { pid: 'slice_y', label: 'Y' },
     { pid: 'slice_rx', label: 'Rot X' },
@@ -610,22 +742,32 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={360}>
     <div class="cube-body">
-      <!-- Visualization: the 3D cube (headline) + OUTPUT waveform overlay -->
+      <!-- Visualization: all THREE views — the 3D cube (headline) on top, the
+           2D SLICE cross-section + OUTPUT WAVEFORM side-by-side beneath. -->
       <div class="viz-col">
         <canvas
           bind:this={glCanvas}
           class="viz cube-viz"
           width={320}
-          height={320}
+          height={260}
           data-testid="cube-3d-viz"
         ></canvas>
-        <canvas
-          bind:this={waveCanvas}
-          class="viz wave-viz"
-          width={320}
-          height={64}
-          data-testid="cube-wave-viz"
-        ></canvas>
+        <div class="viz-row">
+          <canvas
+            bind:this={sliceCanvas}
+            class="viz slice-viz"
+            width={150}
+            height={120}
+            data-testid="cube-slice-viz"
+          ></canvas>
+          <canvas
+            bind:this={waveCanvas}
+            class="viz wave-viz"
+            width={162}
+            height={120}
+            data-testid="cube-wave-viz"
+          ></canvas>
+        </div>
       </div>
 
       <!-- Wavetable selectors -->
@@ -732,9 +874,11 @@
   }
   .cube-body { padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 8px; }
   .viz-col { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .viz-row { display: flex; gap: 6px; justify-content: center; }
   .viz { border-radius: 4px; background: #0a0c12; border: 1px solid rgba(255,255,255,0.08); }
-  .cube-viz { width: 320px; height: 320px; image-rendering: auto; }
-  .wave-viz { width: 320px; height: 64px; }
+  .cube-viz { width: 320px; height: 260px; image-rendering: auto; }
+  .slice-viz { width: 150px; height: 120px; image-rendering: auto; }
+  .wave-viz { width: 162px; height: 120px; }
   .wt-selects { display: flex; flex-direction: column; gap: 4px; }
   .wt-row { display: flex; align-items: center; gap: 6px; }
   .wt-label {

@@ -108,11 +108,11 @@ function rms(b: Float32Array): number { let s = 0; for (let i = 0; i < b.length;
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('cubeDef — module def shape', () => {
-  it('declares pitch + the documented CV inputs', () => {
+  it('declares pitch + the documented CV inputs (incl. fold_cv)', () => {
     expect(cubeDef.inputs.map((i) => i.id)).toEqual([
       'pitch',
       'slice_y', 'slice_rx', 'slice_ry', 'slice_rz',
-      'morph_fc', 'connect', 'crush', 'tune',
+      'morph_fc', 'connect', 'crush', 'fold_cv', 'tune',
     ]);
   });
 
@@ -124,9 +124,18 @@ describe('cubeDef — module def shape', () => {
     }
   });
 
-  it('declares SEPARATE L and R audio outputs (issue #1: spread survives mono inputs)', () => {
-    expect(cubeDef.outputs.map((o) => o.id)).toEqual(['L', 'R']);
-    expect(cubeDef.outputs.every((o) => o.type === 'audio')).toBe(true);
+  it('fold_cv input targets the fold param with linear cvScale', () => {
+    const p = cubeDef.inputs.find((i) => i.id === 'fold_cv')!;
+    expect(p.type).toBe('cv');
+    expect(p.paramTarget).toBe('fold');
+    expect(p.cvScale).toEqual({ mode: 'linear' });
+  });
+
+  it('declares SEPARATE L and R audio outputs + a mono-video out (issue #1 + video_out)', () => {
+    expect(cubeDef.outputs.map((o) => o.id)).toEqual(['L', 'R', 'video_out']);
+    expect(cubeDef.outputs.find((o) => o.id === 'L')!.type).toBe('audio');
+    expect(cubeDef.outputs.find((o) => o.id === 'R')!.type).toBe('audio');
+    expect(cubeDef.outputs.find((o) => o.id === 'video_out')!.type).toBe('mono-video');
   });
 
   it('declares the literal param array with documented ranges + defaults', () => {
@@ -136,6 +145,8 @@ describe('cubeDef — module def shape', () => {
     expect(byId.morph_fc).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
     expect(byId.connect).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
     expect(byId.crush).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+    // FOLD — West-coast wavefolder, linear, default 0 (pass-through).
+    expect(byId.fold).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
     expect(byId.spread).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
     expect(byId.slice_y).toMatchObject({ min: 0, max: 1, defaultValue: 0.5 });
     expect(byId.level).toMatchObject({ min: 0, max: 2, defaultValue: 1 });
@@ -309,6 +320,52 @@ describe('CUBE worklet — capture + audible output', () => {
     p.port.onmessage?.({ data: { type: 'setWave', waveCenter: silent, waveL: silent, waveR: silent } });
     const after = runProc(p, makeParams(), 0.05, voct);
     expect(peak(after.L), 'audio must not drop to silence on a param sweep').toBeGreaterThan(1e-3);
+  });
+
+  it('FOLD changes the output (on-thread) and stays bounded, identity at fold=0', async () => {
+    const Proc = await loadProcessor();
+    const voct = Math.log2(98 / 261.626);
+    // on-thread fallback (no offThread message) so the worklet applies fold itself.
+    const ps = makeParams({ morph_fc: 0.5, slice_rx: 0.5, level: 1 });
+
+    const pClean = new Proc(); loadAllTables(pClean);
+    const clean = runProc(pClean, { ...ps, fold: new Float32Array([0]) }, 0.2, voct);
+
+    const pFold = new Proc(); loadAllTables(pFold);
+    const folded = runProc(pFold, { ...ps, fold: new Float32Array([1]) }, 0.2, voct);
+
+    let differs = false;
+    for (let i = 0; i < clean.L.length; i++) {
+      // bounded: the worklet clamps to ±4 but the folder itself keeps |y|≤1·level.
+      expect(Number.isFinite(folded.L[i]!)).toBe(true);
+      if (Math.abs(clean.L[i]! - folded.L[i]!) > 1e-4) differs = true;
+    }
+    expect(differs, 'FOLD at max must reshape the waveform').toBe(true);
+    // fold=0 must equal an unfolded reference (identity) — re-render fold=0 and
+    // compare to `clean`.
+    const pClean2 = new Proc(); loadAllTables(pClean2);
+    const clean2 = runProc(pClean2, { ...ps, fold: new Float32Array([0]) }, 0.2, voct);
+    let maxIdentDiff = 0;
+    for (let i = 0; i < clean.L.length; i++) maxIdentDiff = Math.max(maxIdentDiff, Math.abs(clean.L[i]! - clean2.L[i]!));
+    expect(maxIdentDiff).toBeLessThan(1e-9);
+  });
+
+  it('off-thread: posts the fold amount in paramsChanged (converges to the knob)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    p.port.onmessage?.({ data: { type: 'offThread' } });
+    const voct = Math.log2(98 / 261.626);
+    // Many blocks so the fold smoother converges from primed-0 to the 0.7 knob.
+    const msgs = runProcCapture(p, makeParams({ fold: 0.7, slice_rx: 0.5 }), 400, voct);
+    const folds = msgs.filter((m) => m.type === 'paramsChanged').map((m) => m.fold as number);
+    expect(folds.length, 'expected paramsChanged messages').toBeGreaterThan(0);
+    expect(typeof folds[0]).toBe('number');
+    // The LAST posted fold has converged near the knob value (the recompute
+    // only fires on quantization-step crossings, so it lands a couple of steps
+    // shy of exact — within 0.05 proves the value is propagated).
+    expect(folds[folds.length - 1]!).toBeGreaterThan(0.65);
+    expect(folds[folds.length - 1]!).toBeLessThanOrEqual(0.7 + 1e-6);
   });
 
   it('material=HARD differs from SMOOTH for the same patch', async () => {

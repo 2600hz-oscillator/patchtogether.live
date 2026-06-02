@@ -60,6 +60,7 @@ import {
 } from './lib/wavetable-osc';
 import {
   sampleSlice,
+  applyFold,
   CUBE_SLICE_SIZE,
   spreadDepthOffset,
   isSilentWave,
@@ -131,6 +132,7 @@ interface ParamsChangedMessage {
   type: 'paramsChanged';
   sliceY: number; rx: number; ry: number; rz: number;
   morphFC: number; connect: number; crush: number; spread: number;
+  fold: number;
   material: 0 | 1; wrap: 0 | 1; tableEpoch: number;
 }
 
@@ -177,6 +179,7 @@ class CubeProcessor extends AudioWorkletProcessor {
   private smConnect: WtParamSmoother;
   private smCrush: WtParamSmoother;
   private smSpread: WtParamSmoother;
+  private smFold: WtParamSmoother;
   private smSliceY: WtParamSmoother;
   private smRx: WtParamSmoother;
   private smRy: WtParamSmoother;
@@ -198,6 +201,7 @@ class CubeProcessor extends AudioWorkletProcessor {
     this.smConnect = new WtParamSmoother(sampleRate);
     this.smCrush = new WtParamSmoother(sampleRate);
     this.smSpread = new WtParamSmoother(sampleRate);
+    this.smFold = new WtParamSmoother(sampleRate);
     this.smSliceY = new WtParamSmoother(sampleRate);
     this.smRx = new WtParamSmoother(sampleRate);
     this.smRy = new WtParamSmoother(sampleRate);
@@ -207,6 +211,7 @@ class CubeProcessor extends AudioWorkletProcessor {
     this.smConnect.prime(0);
     this.smCrush.prime(0);
     this.smSpread.prime(0);
+    this.smFold.prime(0);
     this.smSliceY.prime(0.5);
     this.smRx.prime(0);
     this.smRy.prime(0);
@@ -284,6 +289,7 @@ class CubeProcessor extends AudioWorkletProcessor {
       { name: 'connect',  defaultValue: 0,   minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
       { name: 'crush',    defaultValue: 0,   minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
       { name: 'spread',   defaultValue: 0,   minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
+      { name: 'fold',     defaultValue: 0,   minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
       { name: 'slice_y',  defaultValue: 0.5, minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
       { name: 'slice_rx', defaultValue: 0,   minValue: -3.1416, maxValue: 3.1416, automationRate: 'a-rate' as const },
       { name: 'slice_ry', defaultValue: 0,   minValue: -3.1416, maxValue: 3.1416, automationRate: 'a-rate' as const },
@@ -336,7 +342,7 @@ class CubeProcessor extends AudioWorkletProcessor {
    *  ON-THREAD fallback (unit test / standalone harness only): compute the
    *  L/R/center slice waveforms here, applying the same keep-last-non-silent
    *  rule as the posted path so a sweep outside the cube doesn't drop out. */
-  private maybeRecompute(sp: SliceParams, spread: number): boolean {
+  private maybeRecompute(sp: SliceParams, spread: number, fold: number): boolean {
     // Quantize the continuous shaping params so we don't churn every block on
     // float jitter — but finely enough that a sweep is smooth (~512 steps).
     const q = (v: number) => Math.round(v * 512);
@@ -345,7 +351,7 @@ class CubeProcessor extends AudioWorkletProcessor {
     const sig =
       `${this.tableEpoch}|${q(sp.morphFC)}|${q(sp.connect)}|${q(sp.crush)}|` +
       `${q(spread)}|${q(sp.sliceY)}|${q(sp.rx)}|${q(sp.ry)}|${q(sp.rz)}|` +
-      `${matBit}|${wrapBit}`;
+      `${q(fold)}|${matBit}|${wrapBit}`;
     if (sig === this.lastSig && this.haveWave) return false;
     this.lastSig = sig;
 
@@ -355,6 +361,7 @@ class CubeProcessor extends AudioWorkletProcessor {
         type: 'paramsChanged',
         sliceY: sp.sliceY, rx: sp.rx, ry: sp.ry, rz: sp.rz,
         morphFC: sp.morphFC, connect: sp.connect, crush: sp.crush, spread,
+        fold,
         material: matBit, wrap: wrapBit, tableEpoch: this.tableEpoch,
       };
       try { this.port.postMessage(msg); } catch { /* shim */ }
@@ -373,6 +380,14 @@ class CubeProcessor extends AudioWorkletProcessor {
       nextL = sampleSlice(this.floor, this.wall, this.ceiling, sp, dL);
       nextR = sampleSlice(this.floor, this.wall, this.ceiling, sp, dR);
     }
+    // FOLD (West-coast wavefolder): applied AFTER the slice is sampled and
+    // BEFORE the output level/gain, on BOTH L and R (and the center viz wave).
+    // applyFold is in-place + identity at fold=0, so the unfolded path stays
+    // byte-stable (ART baselines unaffected). nextL/nextR may alias `center`
+    // (spread=0) — fold center FIRST then derive, to avoid double-folding.
+    applyFold(center, fold);
+    if (nextL !== center) applyFold(nextL, fold);
+    if (nextR !== center && nextR !== nextL) applyFold(nextR, fold);
     this.adoptWave(center, 'center');
     this.adoptWave(nextL, 'L');
     this.adoptWave(nextR, 'R');
@@ -419,13 +434,14 @@ class CubeProcessor extends AudioWorkletProcessor {
     const connect = this.smConnect.step(this.aval(parameters, 'connect', 0));
     const crush = this.smCrush.step(this.aval(parameters, 'crush', 0));
     const spread = this.smSpread.step(this.aval(parameters, 'spread', 0));
+    const fold = this.smFold.step(this.aval(parameters, 'fold', 0));
     const sliceY = this.smSliceY.step(this.aval(parameters, 'slice_y', 0.5));
     const rx = this.smRx.step(this.aval(parameters, 'slice_rx', 0));
     const ry = this.smRy.step(this.aval(parameters, 'slice_ry', 0));
     const rz = this.smRz.step(this.aval(parameters, 'slice_rz', 0));
 
     const sp: SliceParams = { sliceY, rx, ry, rz, morphFC, connect, material, crush, wrap };
-    this.maybeRecompute(sp, spread);
+    this.maybeRecompute(sp, spread, fold);
 
     const pIn = inputs[0]?.[0];
     const levelArr = parameters.level;
