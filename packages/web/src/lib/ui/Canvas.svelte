@@ -257,6 +257,7 @@
   // The modules themselves stay registered + spawnable from the palette;
   // each is general-purpose far beyond the old Atlantis patch.
   import SlewSwitchCard from '$lib/ui/modules/SlewSwitchCard.svelte';
+  import SampleHoldCard from '$lib/ui/modules/SampleHoldCard.svelte';
   import FourPlexerCard from '$lib/ui/modules/FourPlexerCard.svelte';
   import AtlantisCatalystCard from '$lib/ui/modules/AtlantisCatalystCard.svelte';
   import AquaTankCard from '$lib/ui/modules/AquaTankCard.svelte';
@@ -529,6 +530,8 @@
     moog911: Moog911Card,
     moog902: Moog902VcaCard,
     slewSwitch: SlewSwitchCard,
+    // SAMPLE & HOLD — rising-edge S&H + scale quantizer (ungated = quantizer).
+    sampleHold: SampleHoldCard,
     // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
     fourplexer: FourPlexerCard,
     atlantisCatalyst: AtlantisCatalystCard,

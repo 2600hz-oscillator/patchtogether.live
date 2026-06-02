@@ -611,6 +611,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // baseline pending a `task vrt:update` run on linux CI (sub-pixel AA differs
   // across platforms); darwin is the regression gate here.
   'linux/resofilter',
+  // SAMPLE & HOLD / quantizer: darwin baseline captured on this machine
+  // (static SCALE-knob card + scale-name label — no canvas/animation, so it's
+  // deterministic). Linux baseline pending a `task vrt:update` run on linux CI
+  // (sub-pixel text AA differs across platforms); darwin is the regression gate
+  // here. Functional coverage is the sample-hold-dsp unit tests + the worklet
+  // capture test + the composite ART scenario + e2e/tests/sample-hold.spec.ts.
+  'linux/sampleHold',
   // FOXY (hybrid SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL): darwin
   // baseline captured on this machine via VRT_SCENES (self-driving internal
   // chain, frozen on AudioContext suspend). The pipeline mixes the
