@@ -54,6 +54,8 @@
     packColor01,
     unpackColor01,
     DEFAULT_OSC_COLOR_PACKED,
+    lineWallCrossings,
+    setWavesculptLuma,
     type WavesculptData,
     type WavesculptOscData,
   } from '$lib/audio/modules/wavesculpt';
@@ -156,6 +158,7 @@
   let chord_mode    = $derived(pget('chord_mode'));
   let chord_quality = $derived(pget('chord_quality'));
   let alpha_brightness = $derived(pget('alpha_brightness'));
+  let lum_depth = $derived(pget('lum_depth'));
   // BLINK scope-render controls.
   let scale  = $derived(pget('scale'));
   let wiggle = $derived(pget('wiggle'));
@@ -493,6 +496,16 @@
   let wallPatched: boolean[] = [false, false, false, false, false, false];
   // Scratch 2D canvas reused for drawFrame-based (audio-domain / self) walls.
   let wallScratchCanvas: OffscreenCanvas | HTMLCanvasElement | null = null;
+  // ---- LUMINOSITY → BANDPASS sampling ----
+  // Per wall we keep a small downsampled LUMINANCE grid (LUMA_GRID×LUMA_GRID,
+  // row-major, 0..1) refreshed on each successful wall upload. The line-vs-wall
+  // luminosity samples (for the bandpass) read from these tiny grids instead of
+  // doing a GPU readback per line per frame (cheap + off the hot GL path). A
+  // shared tiny 2D canvas downsamples each uploaded wall frame into the grid.
+  const LUMA_GRID = 16;
+  let wallLumaGrids: (Float32Array | null)[] = [null, null, null, null, null, null];
+  let lumaSampleCanvas: OffscreenCanvas | HTMLCanvasElement | null = null;
+  let lumaSampleCtx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null = null;
   // Wall grid tessellation. 16×16 quads gives a smooth dome at distort=1
   // without an expensive vertex count (6 walls × 16×16×6 ≈ 9.2k verts).
   const WALL_GRID = 16;
@@ -843,12 +856,21 @@ out vec4 outColor;
 uniform sampler2D uWallTex;
 uniform float uWallAlpha;   // 0..1 transparency (1 = fully opaque)
 
+// REGRESSION FIX (waveform lines vs walls): the walls are a textured
+// BACKDROP; the waveform ribbons / BLINK scope traces are the FOREGROUND
+// energy and draw ADDITIVELY (SRC_ALPHA, ONE) on top of the scene. A wall
+// at full opacity (alpha 100, the default) used to fill the room near
+// saturation, leaving no additive headroom — the bright traces clamped into
+// the equally-bright wall and read as INVISIBLE (the "scopestrial" /
+// "reality based" community patches went blank). Dimming the wall to a true
+// backdrop level restores the additive headroom so the energy lines always
+// punch through, WITHOUT touching transparency / convex distort / self-
+// feedback (those are all upstream of this multiply). 0.6 keeps the wall
+// clearly legible while reserving ~40% additive headroom for the traces.
+const float WALL_BACKDROP_DIM = 0.6;
+
 void main() {
-  vec3 c = texture(uWallTex, vUv).rgb;
-  // Premultiply-free additive-friendly: the scene pass uses standard alpha
-  // blending (SRC_ALPHA, ONE_MINUS_SRC_ALPHA), so the wall composites OVER
-  // the cleared scene by uWallAlpha. The ribbons (additive) then draw on
-  // top, so the walls read as the room's textured backdrop.
+  vec3 c = texture(uWallTex, vUv).rgb * WALL_BACKDROP_DIM;
   outColor = vec4(c, clamp(uWallAlpha, 0.0, 1.0));
 }`;
 
@@ -1483,10 +1505,91 @@ void main() {
         gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE,
         imageSource as TexImageSource,
       );
+      // Refresh this wall's downsampled luminance grid (for the luminosity →
+      // bandpass feature). Cheap: one drawImage downscale + a small readback.
+      refreshWallLumaGrid(wallIdx, imageSource);
       return true;
     } catch {
       return false;
     }
+  }
+
+  /** Downsample one uploaded wall frame into wallLumaGrids[wallIdx] (a
+   *  LUMA_GRID×LUMA_GRID row-major 0..1 luminance grid). Used by the
+   *  luminosity → bandpass sampler. Defensive: any failure leaves the grid
+   *  null (sampler then falls back to a neutral mid luminosity). */
+  function refreshWallLumaGrid(wallIdx: number, src: CanvasImageSource): void {
+    try {
+      if (!lumaSampleCanvas) {
+        if (typeof OffscreenCanvas !== 'undefined') {
+          lumaSampleCanvas = new OffscreenCanvas(LUMA_GRID, LUMA_GRID);
+        } else if (typeof document !== 'undefined') {
+          const c = document.createElement('canvas');
+          c.width = LUMA_GRID; c.height = LUMA_GRID;
+          lumaSampleCanvas = c;
+        } else return;
+        lumaSampleCtx = (lumaSampleCanvas as HTMLCanvasElement).getContext('2d', { willReadFrequently: true }) as
+          | OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
+      }
+      const ctx2d = lumaSampleCtx;
+      if (!ctx2d) return;
+      ctx2d.clearRect(0, 0, LUMA_GRID, LUMA_GRID);
+      ctx2d.drawImage(src, 0, 0, LUMA_GRID, LUMA_GRID);
+      const img = ctx2d.getImageData(0, 0, LUMA_GRID, LUMA_GRID).data;
+      let grid = wallLumaGrids[wallIdx];
+      if (!grid) { grid = new Float32Array(LUMA_GRID * LUMA_GRID); wallLumaGrids[wallIdx] = grid; }
+      for (let p = 0, q = 0; p < img.length; p += 4, q++) {
+        // Rec.601 luma, 0..1.
+        grid[q] = (0.299 * img[p]! + 0.587 * img[p + 1]! + 0.114 * img[p + 2]!) / 255;
+      }
+    } catch { /* leave grid as-is */ }
+  }
+
+  /** Sample a wall's luminance grid at in-face UV (0..1). Returns a neutral
+   *  mid (0.5) when no grid exists (wall unpatched / not yet sampled) so an
+   *  unpatched wall yields a moderate, non-extreme band — the line is neither
+   *  fully open nor silent. */
+  function sampleWallLuma(wallIdx: number, u: number, v: number): number {
+    const grid = wallLumaGrids[wallIdx];
+    if (!grid || !wallPatched[wallIdx]) return 0.5;
+    const gx = Math.max(0, Math.min(LUMA_GRID - 1, Math.round(u * (LUMA_GRID - 1))));
+    const gy = Math.max(0, Math.min(LUMA_GRID - 1, Math.round(v * (LUMA_GRID - 1))));
+    return grid[gy * LUMA_GRID + gx] ?? 0.5;
+  }
+
+  /** Per-frame: for each of the 4 osc lines, find the two walls it crosses,
+   *  sample the luminosity at the crossing centre points, and post the per-line
+   *  pair to the audio module (LUMA_REGISTRY → factory tick → worklet band-pass
+   *  params). The line ray uses the CURRENT BLINK mode's emit geometry: scope
+   *  corners/aims for modes 1/2, the ribbon wall/vec for mode 0. Skipped (cheap
+   *  early-out) when lum_depth is 0 — the feature is OFF so no sampling cost. */
+  function postLineLuminosities(): void {
+    const depth = (node?.params?.lum_depth as number | undefined) ?? 0;
+    if (depth <= 0) return;
+    const blinkMode = Math.round((node?.params?.blink_mode as number | undefined) ?? 0);
+    const lumA: [number, number, number, number] = [0.5, 0.5, 0.5, 0.5];
+    const lumB: [number, number, number, number] = [0.5, 0.5, 0.5, 0.5];
+    for (let i = 0; i < 4; i++) {
+      let origin: [number, number, number];
+      let dir: [number, number, number];
+      if (blinkMode > 0) {
+        origin = SCOPE_CORNERS[i]!;
+        dir = SCOPE_AIMS[i]!;
+      } else {
+        // Ribbon mode: emit from the wall source toward the origin (WALL_LAYOUT
+        // src + vec). Match the card's ribbon uSrc/uVec (the wall/vec0 arrays).
+        const wall = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]][i]! as [number, number, number];
+        const v0 = [[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0]][i]! as [number, number, number];
+        origin = wall;
+        dir = v0;
+      }
+      const cr = lineWallCrossings(origin, dir);
+      if (cr) {
+        lumA[i] = sampleWallLuma(cr[0].faceIdx, cr[0].u, cr[0].v);
+        lumB[i] = sampleWallLuma(cr[1].faceIdx, cr[1].u, cr[1].v);
+      }
+    }
+    setWavesculptLuma(id, { lumA, lumB });
   }
 
   /** Refresh all 6 wall textures from their patched sources. Records which
@@ -1916,6 +2019,9 @@ void main() {
     wallTextures = [];
     wallScratchCanvas = null;
     wallPatched = [false, false, false, false, false, false];
+    wallLumaGrids = [null, null, null, null, null, null];
+    lumaSampleCanvas = null;
+    lumaSampleCtx = null;
     gl = null;
     renderCanvas = null;
   }
@@ -1926,6 +2032,7 @@ void main() {
 
     tryUploadAlphaIn();
     tryUploadWalls();
+    postLineLuminosities();
     uploadWaveTex();
 
     g.bindFramebuffer(g.FRAMEBUFFER, sceneFbo);
@@ -3049,6 +3156,14 @@ void main() {
             value={alpha_brightness} min={0} max={2} defaultValue={1}
             label="A Bright" curve="linear"
             onchange={set('alpha_brightness')} moduleId={id} paramId="alpha_brightness" readLive={live('alpha_brightness')}
+          />
+          <!-- LUMINOSITY → BANDPASS depth. Automatic from the walls each line
+               crosses; 0 = OFF (lines unfiltered), 1 = full luminosity-shaped
+               band-pass (bright wall = wide-open, black = narrow). -->
+          <Knob
+            value={lum_depth} min={0} max={1} defaultValue={0}
+            label="LumBP" curve="linear"
+            onchange={set('lum_depth')} moduleId={id} paramId="lum_depth" readLive={live('lum_depth')}
           />
         </div>
       </div>
