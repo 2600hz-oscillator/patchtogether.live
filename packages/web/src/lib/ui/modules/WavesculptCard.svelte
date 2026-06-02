@@ -2248,6 +2248,10 @@ void main() {
 
   function tick() {
     rafId = null;
+    // Live camera/joystick poll first, every frame, BEFORE the early-return
+    // branches below — so the joystick dots track a patched gamepad (or LFO)
+    // at the full render cadence in ALL video modes, not just the 3D path.
+    pollCamLive();
     const mode = Math.round(video_mode);
     if (mode === 1) {
       // BIRDSEYE — pure-2D draw, bypass the WebGL ribbon renderer
@@ -2306,14 +2310,25 @@ void main() {
     rafId = requestAnimationFrame(tick);
   }
 
-  // Camera-CV live-poll loop. ONE cross-domain call per tick that
-  // pulls the entire camera snapshot from engine.read(node, 'camera')
-  // — the SAME shadow-analyser samples the spatial audio mix reads.
-  // This is the single-source-of-truth read: joystick dot, ribbon
-  // viewport (see WebGL tick above), and audio distGain all reflect
-  // the same instant. Cheap (1 call × 33 fps).
-  const CAM_POLL_MS = 30;
-  let camPollId: ReturnType<typeof setInterval> | null = null;
+  // Camera-CV live-poll. ONE cross-domain call per frame that pulls the
+  // entire camera snapshot from engine.read(node, 'camera') — the SAME
+  // shadow-analyser samples the spatial audio mix reads. This is the
+  // single-source-of-truth read: joystick dot, ribbon viewport (see the
+  // WebGL tick above), and audio distGain all reflect the same instant.
+  //
+  // Runs on rAF (driven from tick()), NOT a setInterval. A standalone
+  // setInterval(30ms) here was the gamepad-joystick regression: when a
+  // gamepad drives pos_x/pos_y the dot's only path to the screen is this
+  // poll (unlike a mouse drag, which writes node.params.* and re-renders
+  // the dot synchronously via Svelte reactivity). A setInterval callback
+  // gets STARVED + coalesced behind this card's own heavy WebGL render
+  // on a busy main thread, so the dot updated horribly slowly and looked
+  // like it couldn't reach the stick's extremes (it was just badly under-
+  // sampled). Riding rAF pins the poll to the render cadence (~60 Hz, the
+  // same rate the mouse path effectively gets) and — crucially — it can no
+  // longer be coalesced away by the render it shares a frame with. Audio
+  // SCHEDULING stays on the jank-immune scheduler-clock worker tick; only
+  // this UI/visual read moves to rAF (per the input-path convention).
   function pollCamLive() {
     const e = engineCtx.get();
     if (!e || !node) return;
@@ -2332,11 +2347,9 @@ void main() {
     initGl();
     installBridgeFrameDrawer();
     rafId = requestAnimationFrame(tick);
-    camPollId = setInterval(pollCamLive, CAM_POLL_MS);
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
-    if (camPollId !== null) clearInterval(camPollId);
     uninstallWavesculptFrameDrawer(id);
     disposeGl();
     if (resizeAbort) resizeAbort.abort();

@@ -34,26 +34,31 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  // Live snapshot poll. ~30Hz cadence (~33ms) — twice fast enough for
-  // visual smoothness on the on-card indicators without churning
-  // Svelte's reactivity graph at engine.read() rate.
+  // Live snapshot poll. Rides requestAnimationFrame (~60Hz) so the on-card
+  // stick dots / trigger bars / button LEDs track the controller in real
+  // time. A setInterval here gets starved + coalesced behind main-thread
+  // work, making the indicators lag; rAF pins the read to the paint cadence
+  // (the same cadence the gamepad factory's own poll runs at) and is
+  // naturally suspended when the tab is backgrounded. This is a UI/visual
+  // read only — audio scheduling stays on the scheduler-clock worker tick.
   let snapshot = $state<GamepadSnapshot>({
     connected: false,
     id: '',
     values: Object.fromEntries(GAMEPAD_OUTPUTS.map((o) => [o.id, 0])),
   });
-  const POLL_MS = 33;
-  let pollId: ReturnType<typeof setInterval> | null = null;
+  let rafId: number | null = null;
   function poll() {
     const e = engineCtx.get();
-    if (!e || !node) return;
-    const s = e.read(node, 'snapshot') as GamepadSnapshot | undefined;
-    if (s) snapshot = s;
+    if (e && node) {
+      const s = e.read(node, 'snapshot') as GamepadSnapshot | undefined;
+      if (s) snapshot = s;
+    }
+    rafId = requestAnimationFrame(poll);
   }
-  onMount(() => { pollId = setInterval(poll, POLL_MS); });
+  onMount(() => { rafId = requestAnimationFrame(poll); });
   onDestroy(() => {
-    if (pollId !== null) clearInterval(pollId);
-    pollId = null;
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    rafId = null;
   });
 
   // Pad-slot picker.
