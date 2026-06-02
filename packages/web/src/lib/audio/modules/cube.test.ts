@@ -32,6 +32,8 @@ type ProcInstance = {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;
   port: { onmessage: ((e: { data: unknown }) => void) | null; postMessage: (m: unknown) => void };
 };
+/** A captured outbound port message (worklet → main thread). */
+type PortMessage = { type?: string; [k: string]: unknown };
 type ProcCtor = new () => ProcInstance;
 let capturedProc: ProcCtor | null = null;
 async function loadProcessor(): Promise<ProcCtor> {
@@ -122,9 +124,9 @@ describe('cubeDef — module def shape', () => {
     }
   });
 
-  it('declares one stereo audio_out output', () => {
-    expect(cubeDef.outputs.map((o) => o.id)).toEqual(['audio_out']);
-    expect(cubeDef.outputs[0]!.type).toBe('audio');
+  it('declares SEPARATE L and R audio outputs (issue #1: spread survives mono inputs)', () => {
+    expect(cubeDef.outputs.map((o) => o.id)).toEqual(['L', 'R']);
+    expect(cubeDef.outputs.every((o) => o.type === 'audio')).toBe(true);
   });
 
   it('declares the literal param array with documented ranges + defaults', () => {
@@ -226,6 +228,87 @@ describe('CUBE worklet — capture + audible output', () => {
     let maxDiff = 0;
     for (let i = 0; i < L.length; i++) maxDiff = Math.max(maxDiff, Math.abs(L[i]! - R[i]!));
     expect(maxDiff).toBeGreaterThan(1e-5);
+  });
+
+  // ── Off-thread compute path (issue #4) ──
+
+  /** Drive a few blocks, capturing any outbound port messages. */
+  function runProcCapture(
+    proc: ProcInstance,
+    params: Record<string, Float32Array>,
+    blocks: number,
+    pitchVolt: number,
+  ): PortMessage[] {
+    const captured: PortMessage[] = [];
+    proc.port.postMessage = (m: unknown) => { captured.push(m as PortMessage); };
+    for (let b = 0; b < blocks; b++) {
+      const pitch = new Float32Array(BLOCK).fill(pitchVolt);
+      proc.process([[pitch]], [[new Float32Array(BLOCK), new Float32Array(BLOCK)]], params);
+    }
+    return captured;
+  }
+
+  it('off-thread mode posts paramsChanged instead of computing on the audio thread', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    p.port.onmessage?.({ data: { type: 'offThread' } });
+    const voct = Math.log2(98 / 261.626);
+    const msgs = runProcCapture(p, makeParams({ slice_rx: 0.5, morph_fc: 0.5 }), 4, voct);
+    // It must post at least one paramsChanged carrying the slice scalars …
+    const pc = msgs.find((m) => m.type === 'paramsChanged');
+    expect(pc, 'expected a paramsChanged message in off-thread mode').toBeTruthy();
+    expect(typeof pc!.sliceY).toBe('number');
+    expect(typeof pc!.spread).toBe('number');
+    // … and it must NOT have computed/played audio yet (no setWave received →
+    // no wave → output stays silent on the audio thread).
+    const out = new Float32Array(BLOCK);
+    p.process([[new Float32Array(BLOCK).fill(voct)]], [[out, new Float32Array(BLOCK)]], makeParams());
+    expect(peak(out)).toBe(0);
+  });
+
+  it('off-thread: plays the wave the main thread posts via setWave (L≠R at spread)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    p.port.onmessage?.({ data: { type: 'offThread' } });
+    // Simulate the factory: a clearly L≠R pair of waves.
+    const waveCenter = new Float32Array(FRAME_SIZE);
+    const waveL = new Float32Array(FRAME_SIZE);
+    const waveR = new Float32Array(FRAME_SIZE);
+    for (let i = 0; i < FRAME_SIZE; i++) {
+      const ph = (i / FRAME_SIZE) * Math.PI * 2;
+      waveCenter[i] = Math.sin(ph) * 0.5;
+      waveL[i] = Math.sin(ph) * 0.5;
+      waveR[i] = Math.sin(ph + 0.9) * 0.5; // phase-shifted → audibly different
+    }
+    p.port.onmessage?.({ data: { type: 'setWave', waveCenter, waveL, waveR } });
+    const voct = Math.log2(130.81 / 261.626);
+    const { L, R } = runProc(p, makeParams(), 0.1, voct);
+    expect(peak(L)).toBeGreaterThan(1e-3);
+    expect(peak(R)).toBeGreaterThan(1e-3);
+    let maxDiff = 0;
+    for (let i = 0; i < L.length; i++) maxDiff = Math.max(maxDiff, Math.abs(L[i]! - R[i]!));
+    expect(maxDiff).toBeGreaterThan(1e-3);
+  });
+
+  it('no dropout on a sweep that goes silent: keeps the last non-silent wave', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    p.port.onmessage?.({ data: { type: 'offThread' } });
+    const nonSilent = new Float32Array(FRAME_SIZE);
+    for (let i = 0; i < FRAME_SIZE; i++) nonSilent[i] = Math.sin((i / FRAME_SIZE) * Math.PI * 2) * 0.5;
+    p.port.onmessage?.({ data: { type: 'setWave', waveCenter: nonSilent, waveL: nonSilent, waveR: nonSilent } });
+    const voct = Math.log2(130.81 / 261.626);
+    const before = runProc(p, makeParams(), 0.05, voct);
+    expect(peak(before.L)).toBeGreaterThan(1e-3);
+    // Now the slice sweeps fully outside the cube → main thread would post an
+    // all-zero wave. The worklet must KEEP the previous non-silent wave.
+    const silent = new Float32Array(FRAME_SIZE); // all zeros
+    p.port.onmessage?.({ data: { type: 'setWave', waveCenter: silent, waveL: silent, waveR: silent } });
+    const after = runProc(p, makeParams(), 0.05, voct);
+    expect(peak(after.L), 'audio must not drop to silence on a param sweep').toBeGreaterThan(1e-3);
   });
 
   it('material=HARD differs from SMOOTH for the same patch', async () => {
