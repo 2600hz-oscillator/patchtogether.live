@@ -99,6 +99,10 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // ── MIDI-driven: same as hardware — no MIDI device in test browser.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock:   'requires MIDI device; covered by midiclock.spec.ts',
+  // Output-less MIDI sink: emits MIDI to an external device, has NO audio/CV
+  // output for the behavioral sweep to observe (already in EXEMPT_OUTPUT_EMIT).
+  // Input behavior is covered by midi-out-buddy.spec.ts (fake MIDIOutput).
+  midiOutBuddy: 'no observable audio/CV output (MIDI sink); covered by midi-out-buddy.spec.ts',
 
   // ── File-input sources: output is silent until a file is uploaded.
   //    No upstream signal can perturb that.
