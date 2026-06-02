@@ -1,5 +1,29 @@
 # Repository standards
 
+## Run NEW tests locally before pushing to CI
+
+When you add new behavior **and** new tests for it, you ALWAYS run **those
+specific tests** locally and confirm they pass **before** relying on CI — never
+push new code/tests and use CI as the first check that they pass.
+
+- Run the *specific* new test, not just "the suite I happened to touch": a new
+  module is auto-enrolled in the registry-driven sweeps (`per-module-per-port`
+  handle/emit, `behavioral`, `vrt.spec` per-card), so run those rows for your
+  module too — e.g. `flox activate -- npx --workspace e2e playwright test
+  per-module-per-port --grep <yourModuleId>` and `… vrt --grep <id>`, plus your
+  bespoke spec. Card UI change? run `task vrt` and inspect the diff.
+- Run from a **clean** state when the test loads built artifacts (e.g. a DSP
+  worklet dist or an ART baseline): `rm -rf packages/dsp/dist` first, because a
+  stale local build can mask an ENOENT/SHA failure that only shows up on a fresh
+  CI checkout.
+- Run `flox activate -- task typecheck` (svelte-check) in addition to vitest —
+  vitest is lenient where svelte-check is strict (e.g. import-less worklet
+  TS2306), so a test can pass vitest yet fail the typecheck gate.
+- This is the cheapest possible feedback loop; a CI cycle here is ~25 min under
+  load. Most of our recent red CI (per-port emit, stale SHA pins, missing
+  linux-VRT exemptions) was catchable locally with the exact spec for the new
+  module.
+
 ## Worktrees: hard cap of 10
 
 This repo accumulates abandoned `isolation: worktree` agent checkouts fast — each
