@@ -59,8 +59,6 @@ export const SNES_WRAM_SIZE = 0x20000; // 128 KB
 export class Snes9xRuntime {
   private mod: Snes9xModule;
   private romLoaded = false;
-  // Cached heap-buffer ArrayBuffer ref; when it changes, all views are stale.
-  private lastHeapBuffer: ArrayBufferLike | null = null;
 
   private constructor(mod: Snes9xModule) {
     this.mod = mod;
@@ -157,7 +155,6 @@ export class Snes9xRuntime {
     // the per-load ROM blob, which we free immediately). Kept for symmetry
     // with the DOOM runtime's dispose().
     this.romLoaded = false;
-    this.lastHeapBuffer = null;
   }
 }
 
