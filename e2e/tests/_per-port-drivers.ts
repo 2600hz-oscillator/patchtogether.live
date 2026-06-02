@@ -434,6 +434,41 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'ADSR: drive .gate from SEQUENCER.gate; env / env_inv ramp on each note-on',
   },
 
+  // ───── MOOG 911 EG — gate-driven contour generator (mirror ADSR) ─────
+  // The 911 is a CV/gate modulator: its env / env_inv outputs only move on
+  // a gate. Drive .gate from SEQUENCER.gate so the T1→peak / T2→Esus / T3
+  // contour runs and both outputs emit. ESUS defaults > 0 so the sustain
+  // hold keeps env nonzero across the poll window.
+  moog911: {
+    upstream: () => ({
+      nodes: [sequencerGate('drv-seq').node],
+      edges: [
+        {
+          id: 'e-drv-gate',
+          from: { nodeId: 'drv-seq', portId: 'gate' },
+          to:   { nodeId: 'sut',     portId: 'gate' },
+          sourceType: 'gate', targetType: 'gate',
+        },
+      ],
+    }),
+    postSpawn: async (page) => {
+      const seed = sequencerGate('drv-seq');
+      await page.evaluate((d) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['drv-seq'];
+          if (!n) return;
+          if (!n.data) n.data = {};
+          n.data.steps = d.steps;
+        });
+      }, seed.data);
+    },
+    note: 'MOOG 911: drive .gate from SEQUENCER.gate; env / env_inv ramp on each note-on (T1→peak / T2→Esus / T3)',
+  },
+
   // ───── JOYSTICK — set pos_x/pos_y to nonzero ─────
   joystick: {
     params: { pos_x: 0.7, pos_y: 0.5 },
@@ -729,6 +764,33 @@ const DRIVERS: Record<string, PerPortDriver> = {
       ],
     }),
     note: 'VIDEOOUT: drive .in with ACIDWARP.out; .out passes through with non-blank frames',
+  },
+
+  // ───── MOOG 902 VCA — drive the SIGNAL input so both outs emit ─────
+  //
+  // The 902 is an effect (signal in → amplified out), so it needs an
+  // upstream source to produce output. Wire an ANALOGVCO saw into the
+  // `audio` SIGNAL input; the GAIN pot's default (0.5 → 3 V control →
+  // ×1.0 in LINEAR mode) already passes the signal at unity, so both the
+  // `audio` (OUT) and `audio_inv` (OUT−, the differential − twin) outputs
+  // ring with no extra CV needed. The driver's presence also bypasses the
+  // effect-shape skip in the spec (hasDriverSetup), so the 902 goes through
+  // the normal output-emit path (slice-1/2-style driven-signal check).
+  moog902: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-vco', type: 'analogVco', position: { x: 60, y: 60 }, domain: 'audio' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-vco',
+          from: { nodeId: 'drv-vco', portId: 'saw' },
+          to:   { nodeId: 'sut',     portId: 'audio' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+      ],
+    }),
+    note: 'MOOG 902: drive SIGNAL with ANALOGVCO.saw; OUT + OUT− both pass the amplified signal (gain default ×1)',
   },
 };
 

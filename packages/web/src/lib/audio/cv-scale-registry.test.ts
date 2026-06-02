@@ -27,6 +27,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // already bounded 0.02..0.98 and the per-sample sum is clamped to that
   // range in the worklet, so a ±1 CV sweeps the full duty-cycle range.
   moog921Vco: ['width_cv'],
+  // moog902.{cv,fcv}: audio-rate summing CONTROL INPUTS. The worklet builds
+  // the control sum (gain knob + cvAmount*cv + fcv) per-sample and applies
+  // the LIN/EXP gain-law map + x3 clamp itself — NOT through the CV→AudioParam
+  // fast-path, so cvScale wouldn't apply (same shape as the 921's width_cv +
+  // the 904A's cutoff_cv/reso_cv).
+  moog902: ['cv', 'fcv'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
   // helm.{pitch_cv,gate,midi_in,seq_reset}: pitch_cv = V/oct fallback
@@ -110,6 +116,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // analog stick position handed to the sm64js bundle's playerInput
   // global. Same shape as PONG's paddle CVs above.
   sm64: ['stick_x_cv', 'stick_y_cv'],
+  // SKIFREE x / y: bipolar CV sampled per scheduler-tick into the bundle
+  // controller's setCursor (cvToCanvasCoord maps -1..+1 → 0..canvas-px). No
+  // AudioParam fast path — the CV doesn't modulate any knob, it IS the mouse-
+  // cursor position the skier steers toward. Same shape as PONG's paddle CVs
+  // and SM64's stick CVs above.
+  skifree: ['x', 'y'],
   // MIDI-OUT-BUDDY pitch / velocity: CV sampled at the gate rising edge in a
   // JS-side scheduler-tick (AnalyserNode tap), then converted to a MIDI note
   // number (V/oct → nearest semitone) / velocity (0..1 → 1..127). No
