@@ -31,6 +31,7 @@ export type TopCategory =
   | 'Audio modules'
   | 'Video modules'
   | 'Ports'
+  | 'Moog'
   | 'MIDI'
   | 'Hybrid'
   | 'Uncategorized';
@@ -58,6 +59,11 @@ export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
   // hydrogen, helm, cloudseed are headline ports the user wants one
   // click away. `Mutable` is the MI archetype-port sublist.
   Ports: ['Ports', 'Mutable'],
+  // Moog = the Moog System 55 / 35 clone family. Two sub-systems: SYS55
+  // (the big modular) + SYS35. Modules shared by BOTH systems are listed
+  // under SYS55 (resolved decision Q4 in .myrobots/MOOG/PLAN.md) — e.g.
+  // the 921 VCO. Mirrors the Ports→Mutable nesting precedent above.
+  Moog: ['SYS55', 'SYS35'],
   MIDI: ['MIDI'],
   Hybrid: ['Hybrid'],
   Uncategorized: ['Uncategorized'],
@@ -68,6 +74,7 @@ export const TOP_ORDER: readonly TopCategory[] = [
   'Audio modules',
   'Video modules',
   'Ports',
+  'Moog',
   'MIDI',
   'Hybrid',
   'Uncategorized',
@@ -188,6 +195,13 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   veils: { top: 'Ports', sub: 'Mutable' },
   warps: { top: 'Ports', sub: 'Mutable' },
   grids: { top: 'Ports', sub: 'Mutable' },
+
+  // ───────── Moog → SYS55 (Moog System 55 / 35 clone family) ─────────
+  // The 921 VCO is the first Moog module. It's shared by BOTH the System 55
+  // and System 35, so it's listed under SYS55 (the shared bucket) per the
+  // resolved Q4 decision in .myrobots/MOOG/PLAN.md. SYS55-only + SYS35-only
+  // modules land in their respective subs as later slices ship.
+  moog921Vco: { top: 'Moog', sub: 'SYS55' },
 
   // ───────── MIDI (hardware-bridge modules) ─────────
   // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI
@@ -336,6 +350,7 @@ export function groupDefs<D extends DefLike>(defs: readonly D[]): GroupedTop<D>[
     'Audio modules': {},
     'Video modules': {},
     Ports: {},
+    Moog: {},
     MIDI: {},
     Hybrid: {},
     Uncategorized: {},

@@ -384,6 +384,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // table pinned + processor smoke FFT + manifest sync) + E2E (per-button
   // peaks at the SCOPE analyser) provide coverage.
   bluebox: 'VRT baseline pending — deterministic keypad card (12 static buttons, no canvas/animation); capture via `task vrt:update` on each platform. Unit + E2E provide coverage.',
+  // MOOG 921 VCO — first Moog System 55/35 clone module. Deterministic beige
+  // faceplate (5 knobs + a 3-position SYNC switch, no canvas / animation) so
+  // it's a good VRT candidate; baselines are pending a `task vrt:update` run
+  // on each platform (this authoring worktree can't reliably boot the full
+  // faustwasm-backed dev server for capture). DSP unit (moog-vco-dsp.test.ts +
+  // moog921-vco.test.ts worklet) + ART (source-SHA-pinned .f32) + per-module-
+  // per-port e2e provide functional coverage. Promote into MODULES once the
+  // darwin + linux PNGs are captured.
+  moog921Vco: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs + 3-position SYNC switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards

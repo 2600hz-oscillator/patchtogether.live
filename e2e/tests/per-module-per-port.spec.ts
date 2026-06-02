@@ -622,6 +622,10 @@ test.describe('per-module per-port: outputs emit signal', () => {
       'wavviz',   // wavetable VCO with optional FM
       'wavetableVco',
       'swolevco',
+      // MOOG 921 VCO — a self-running oscillator: its four waveform jacks
+      // ring at default settings (C4) with no upstream. The audio-typed
+      // lin_fm / sync inputs are OPTIONAL modulation, not a required source.
+      'moog921Vco',
     ]);
     const hasUpstreamMediaInput = mod.inputs.some(
       (p) => p.type === 'audio' || p.type === 'video' || p.type === 'mono-video' || p.type === 'image',

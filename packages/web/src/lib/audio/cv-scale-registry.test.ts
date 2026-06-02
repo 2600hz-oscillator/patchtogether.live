@@ -21,6 +21,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   wavviz: ['wavePos'],
   // wavetableVco.wavePos: same as wavviz — audio-rate input, no paramTarget.
   wavetableVco: ['wavePos'],
+  // moog921Vco.width_cv: same shape as wavetableVco.wavePos — the worklet
+  // sums the WIDTH knob + this CV per-sample (audio-rate), NOT through the
+  // CV→AudioParam fast-path, so cvScale wouldn't apply. The width param is
+  // already bounded 0.02..0.98 and the per-sample sum is clamped to that
+  // range in the worklet, so a ±1 CV sweeps the full duty-cycle range.
+  moog921Vco: ['width_cv'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
   // helm.{pitch_cv,gate,midi_in,seq_reset}: pitch_cv = V/oct fallback

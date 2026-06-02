@@ -80,6 +80,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Audio-analysis module — two independent copies (A/B), each splitting a mono input into 4 spectral bands (0–200 / 200–500 / 500–2000 / 2000+ Hz) and deriving, per band: a gained audio tap, slow (500 ms) + fast (50 ms) envelope-follower CV, a hysteresis gate, a 10-bar green→red VU meter, and a mono-video raster (audio→video). Master gain (0.5–1.5×) sets the floor; per-band gain (1–2×) adds on top. Turns audio peaks into events/CV/video that drive other audio + video modules.',
   wavetableVco:
     'Wavetable oscillator that morphs saw -> square -> triangle -> sine across a 16-frame table.',
+  moog921Vco:
+    'Moog 921 voltage-controlled oscillator (first module of the Moog System 55/35 clone — categorized under Moog -> SYS55, shared by SYS35). Faithful to the original 921: ONE oscillator core presents FOUR simultaneous waveform jacks — sine, triangle, sawtooth, and rectangular with variable pulse width — all phase-coherent off the shared core. Pitch input is exponential 1V/oct (0V = C4); a dedicated LINEAR frequency-control input (lin_fm, scaled by the Lin FM depth) gives through-zero-style linear FM; a sync input drives the hard/soft/off SYNC switch (-1 soft / 0 off / +1 hard) for classic sync timbres. RANGE sets the coarse octave (+/-5 oct), FREQ the fine tune (+/-12 st), WIDTH the rectangular duty cycle (with audio-rate width_cv), LEVEL the output gain. DSP is own-code: a clean-room polyBLEP/polyBLAMP band-limited oscillator (not a port of any Moog schematic or copyleft source - permissive only). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
   audioOut:
     'Terminal stereo output. Two mono inputs (L, R) routed to the host AudioContext destination. Optional output-device dropdown via setSinkId (Chromium 110+).',
   audioIn:
@@ -244,6 +246,14 @@ const PORT_NOTES: Record<string, string> = {
   'wavetableVco.fm': 'Audio-rate FM input.',
   'wavetableVco.wavePos': 'CV -> wavetable scan position.',
   'wavetableVco.audio': 'Mixed wavetable output.',
+  'moog921Vco.pitch': 'V/oct pitch input (0V = C4). Exponential frequency control.',
+  'moog921Vco.lin_fm': "Linear frequency-control input (the 921's dedicated linear FM input); depth set by the Lin FM param.",
+  'moog921Vco.sync': 'External sync source. Rising edges reset/nudge the phase per the SYNC switch (soft/off/hard).',
+  'moog921Vco.width_cv': 'Audio-rate pulse-width CV. Summed onto the WIDTH knob per-sample in the worklet (PASSTHROUGH_BY_DESIGN — width param already bounded 0.02..0.98, sum is clamped to range).',
+  'moog921Vco.sine': 'Sine output.',
+  'moog921Vco.triangle': 'Triangle output.',
+  'moog921Vco.sawtooth': 'Band-limited sawtooth output.',
+  'moog921Vco.rectangular': 'Rectangular/pulse output; duty cycle = WIDTH.',
   'audioOut.L': 'Mono L -> host destination L.',
   'audioOut.R': 'Mono R -> host destination R.',
   'cube.L': 'Left audio out (slice read at -SPREAD depth). Separate from R so the stereo SPREAD survives mono inputs.',

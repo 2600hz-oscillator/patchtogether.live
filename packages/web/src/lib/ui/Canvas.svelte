@@ -238,6 +238,8 @@
   // WAVESCULPT — hybrid 4-osc synth (audio + 3D ribbon video).
   import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
   import CubeCard from '$lib/ui/modules/CubeCard.svelte';
+  // MOOG 921 VCO — first Moog System 55/35 clone module (beige faceplate).
+  import Moog921VcoCard from '$lib/ui/modules/Moog921VcoCard.svelte';
   // ATLANTIS-PATCH support trio. The "Visit Atlantis" demo button +
   // example-patches/atlantis.ts fixture were retired in favour of the
   // GLITCHES GET RICHES envelope-driven demo (see loadGlitches() below).
@@ -508,6 +510,7 @@
     wavesculpt: WavesculptCard,
     // CUBE — 3D wavetable-navigator oscillator (slice-readout + 3D viz).
     cube: CubeCard,
+    moog921Vco: Moog921VcoCard,
     slewSwitch: SlewSwitchCard,
     // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
     fourplexer: FourPlexerCard,
