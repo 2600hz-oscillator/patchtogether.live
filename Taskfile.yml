@@ -89,6 +89,46 @@ tasks:
         echo "QBERT: installed $SRC → packages/web/static/roms/qbert/qbert.zip"
         echo "QBERT: the zip is .gitignored — your local copy will not enter git history."
 
+  setup:snes9x:build:
+    desc: 'Build the SNES9X emulator WASM (snes9x2005/CAT SFC core) → packages/web/static/snes9x/snes9x.{js,wasm}. Requires emcc (provided by the flox env). Gitignored output, built on demand.'
+    cmds:
+      - bash packages/web/native/build-snes9x-wasm.sh
+
+  setup:snes9x:
+    desc: 'Install a SNES ROM into packages/web/static/roms/snes9x/game.sfc for the SNES9X module (see static/roms/snes9x/README.md). Accepts a .sfc/.smc/.fig or a .zip containing one. Usage: `task setup:snes9x ROM=/path/to/rom.sfc` — defaults to ~/Downloads/snes.sfc.'
+    vars:
+      ROM: '{{.ROM | default "~/Downloads/snes.sfc"}}'
+    cmds:
+      - mkdir -p packages/web/static/roms/snes9x
+      - |
+        SRC="{{.ROM}}"
+        SRC="${SRC/#\~/$HOME}"
+        if [ ! -f "$SRC" ]; then
+          echo "SNES9X: ROM not found at $SRC"
+          echo "        Pass ROM=/path/to/rom.sfc explicitly, or drop a .sfc at"
+          echo "        ~/Downloads/snes.sfc and re-run \`task setup:snes9x\`."
+          exit 1
+        fi
+        DEST=packages/web/static/roms/snes9x/game.sfc
+        case "$SRC" in
+          *.zip)
+            TMP="$(mktemp -d)"
+            unzip -o "$SRC" -d "$TMP" >/dev/null
+            INNER="$(find "$TMP" \( -iname '*.sfc' -o -iname '*.smc' -o -iname '*.fig' \) | head -1)"
+            if [ -z "$INNER" ]; then
+              echo "SNES9X: no .sfc/.smc/.fig inside $SRC"; rm -rf "$TMP"; exit 1
+            fi
+            cp "$INNER" "$DEST"
+            rm -rf "$TMP"
+            ;;
+          *)
+            cp "$SRC" "$DEST"
+            ;;
+        esac
+        echo "SNES9X: installed $SRC → $DEST"
+        echo "SNES9X: game.sfc is .gitignored — your local copy will not enter git history."
+        echo "SNES9X: run \`task setup:snes9x:build\` once to build the emulator WASM."
+
   # ---------------- Dev loop ----------------
   dev:
     desc: Start SvelteKit dev server (DSP built once up-front; use dev:full for live Faust watch)

@@ -124,6 +124,10 @@ export interface Snes9xHandleExtras {
   forcePulse(port: GateOutId): void;
   /** Test-only: read a WRAM byte (for e2e harness assertions). */
   readWram(addr: number): number;
+  /** Test-only: cumulative pulse count per gate output, so an e2e can
+   *  assert the clock_in → gate3 multiplier fired (>= one pulse per input
+   *  edge for ×1 passthrough, more when world+level > 1). */
+  pulseCount(port: GateOutId): number;
 }
 
 export const snes9xDef: VideoModuleDef = {
@@ -337,7 +341,9 @@ export const snes9xDef: VideoModuleDef = {
 
     // ---- Gate/CV emit -------------------------------------------------
     const EVT_PULSE_S = 0.01;
+    const pulseCounts = new Map<GateOutId, number>(GATE_OUT_IDS.map((id) => [id, 0]));
     function pulseGate(id: GateOutId): void {
+      pulseCounts.set(id, (pulseCounts.get(id) ?? 0) + 1);
       const ac = ctx.audioCtx;
       const src = gateSrc.get(id);
       if (!ac || !src) return;
@@ -466,6 +472,7 @@ export const snes9xDef: VideoModuleDef = {
       loadRomBytes: (bytes) => applyRom(bytes),
       forcePulse: (port) => pulseGate(port),
       readWram: (addr) => (runtime && romLoaded ? runtime.readWram(addr) : 0),
+      pulseCount: (port) => pulseCounts.get(port) ?? 0,
     };
 
     return {
