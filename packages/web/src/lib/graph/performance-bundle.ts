@@ -149,7 +149,12 @@ export function collectMidiDevices(
 ): MidiDeviceBinding[] {
   const out: MidiDeviceBinding[] = [];
   for (const node of Object.values(nodes)) {
-    if (!node || node.type !== 'midi-cv-buddy') continue;
+    // The registered module type is camelCase `midiCvBuddy` (see
+    // midi-cv-buddy.ts), NOT the kebab `midi-cv-buddy`. The old kebab
+    // literal never matched a real node, so saved performances silently
+    // dropped every MIDI-CV-BUDDY device selection (the unit test was
+    // vacuous because it used the same wrong kebab string).
+    if (!node || node.type !== 'midiCvBuddy') continue;
     const lastId = (node.data as { lastDeviceId?: unknown } | undefined)?.lastDeviceId;
     if (typeof lastId !== 'string' || lastId.length === 0) continue;
     const dev = resolve(lastId);
