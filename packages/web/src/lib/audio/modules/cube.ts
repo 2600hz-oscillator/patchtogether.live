@@ -53,6 +53,7 @@ import {
 // byte-for-byte what the on-thread path would have produced.
 import {
   sampleSlice,
+  applyFold,
   spreadDepthOffset,
   isSilentWave,
   type SliceParams,
@@ -62,6 +63,23 @@ import {
 const PROCESSOR_NAME = 'cube';
 const POLL_MS = 200;
 const loadedContexts = new WeakSet<BaseAudioContext>();
+
+// ---------- card → module frame-drawer registry (video_out) ----------
+//
+// The 3D CUBE WebGL render lives in CubeCard.svelte (the card owns the GL
+// context + offscreen canvas). The cross-domain video_out bridge needs a
+// drawFrame(canvas) callback; the card installs one here keyed by node id (the
+// SAME pattern WAVESCULPT uses for its video_out). When nothing is installed
+// (card not mounted / GL unavailable) the module's drawFrame paints black so
+// the bridge always has a valid frame.
+type FrameDrawer = (canvas: OffscreenCanvas | HTMLCanvasElement) => void;
+const FRAME_DRAWERS: Map<string, FrameDrawer> = new Map();
+export function installCubeFrameDrawer(nodeId: string, fn: FrameDrawer): void {
+  FRAME_DRAWERS.set(nodeId, fn);
+}
+export function uninstallCubeFrameDrawer(nodeId: string): void {
+  FRAME_DRAWERS.delete(nodeId);
+}
 
 export type CubeSlot = 'floor' | 'wall' | 'ceiling';
 export const CUBE_SLOTS: readonly CubeSlot[] = ['floor', 'wall', 'ceiling'];
@@ -144,6 +162,7 @@ export const cubeDef: AudioModuleDef = {
     { id: 'morph_fc', type: 'cv', paramTarget: 'morph_fc', cvScale: { mode: 'linear' } },
     { id: 'connect',  type: 'cv', paramTarget: 'connect',  cvScale: { mode: 'linear' } },
     { id: 'crush',    type: 'cv', paramTarget: 'crush',    cvScale: { mode: 'linear' } },
+    { id: 'fold_cv',  type: 'cv', paramTarget: 'fold',     cvScale: { mode: 'linear' } },
     { id: 'tune',     type: 'cv', paramTarget: 'tune',     cvScale: { mode: 'linear' } },
   ],
   // SEPARATE L / R audio out (issue #1). The worklet's single 2-channel output
@@ -154,6 +173,11 @@ export const cubeDef: AudioModuleDef = {
   outputs: [
     { id: 'L', type: 'audio' },
     { id: 'R', type: 'audio' },
+    // Cross-domain mono-video out (issue: video out of the 3D CUBE view). The
+    // card installs a frame-drawer that renders its live WebGL 3D cube into the
+    // bridge's canvas each video frame; patch this into VIDEOOUT / any video
+    // module. Mirrors WAVESCULPT.video_out + WARRENSPECTRUM.viz_out.
+    { id: 'video_out', type: 'mono-video' },
   ],
   // LITERAL array — the module-manifest static extractor reads this directly.
   params: [
@@ -162,6 +186,10 @@ export const cubeDef: AudioModuleDef = {
     { id: 'morph_fc', label: 'Morph',   defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
     { id: 'connect',  label: 'Connect', defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
     { id: 'crush',    label: 'Crush',   defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
+    // FOLD — West-coast wavefolder on the output (0 = pass-through, max = hard
+    // fold, adds harmonics). Applied in cube-dsp.applyFold after the slice is
+    // sampled, before LEVEL, on both L and R. CV via the fold_cv input.
+    { id: 'fold',     label: 'Fold',    defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
     { id: 'spread',   label: 'Spread',  defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
     { id: 'slice_y',  label: 'Y',       defaultValue: 0.5, min: 0,    max: 1,   curve: 'linear' },
     { id: 'slice_rx', label: 'Rot X',   defaultValue: 0,   min: -3.1416, max: 3.1416, curve: 'linear' },
@@ -205,6 +233,13 @@ export const cubeDef: AudioModuleDef = {
     // ChannelSplitter(2) → per-channel-port pattern.
     const splitter = ctx.createChannelSplitter(2);
     workletNode.connect(splitter);
+
+    // Video-out analyser tap (cross-domain mono-video). The bridge ignores the
+    // analyser when a drawFrame is supplied, but the videoSources contract still
+    // requires an AnalyserNode handle; tap the worklet's stereo output for it.
+    const videoAnalyser = ctx.createAnalyser();
+    videoAnalyser.fftSize = 256;
+    workletNode.connect(videoAnalyser);
 
     // Mirror initial knob values into worklet params (only the ones the
     // worklet actually declares; view_* + spread/fine handled below).
@@ -261,7 +296,7 @@ export const cubeDef: AudioModuleDef = {
     function renderAndPostSlice(p: {
       sliceY: number; rx: number; ry: number; rz: number;
       morphFC: number; connect: number; crush: number; spread: number;
-      material: number; wrap: number;
+      fold: number; material: number; wrap: number;
     }): void {
       // All three tables must be loaded (resolveAndPostAll seeds defaults on
       // spawn, so this is true almost immediately).
@@ -275,11 +310,19 @@ export const cubeDef: AudioModuleDef = {
         material: (p.material >= 0.5 ? 'hard' : 'smooth') as Material,
         wrap: p.wrap >= 0.5,
       };
+      const fold = p.fold ?? 0;
       const dL = spreadDepthOffset(p.spread, -1);
       const dR = spreadDepthOffset(p.spread, +1);
       const center = sampleSlice(floor, wall, ceiling, sp, 0);
       const waveL = dL === 0 ? center : sampleSlice(floor, wall, ceiling, sp, dL);
       const waveR = dR === 0 ? center : sampleSlice(floor, wall, ceiling, sp, dR);
+      // FOLD (West-coast wavefolder): AFTER the slice is sampled + BEFORE LEVEL,
+      // on BOTH L and R (and the center viz wave so the WAVEFORM view shows the
+      // FOLDED wave). In-place + identity at fold=0. waveL/waveR may alias
+      // `center` at spread=0, so fold center first then only the distinct ones.
+      applyFold(center, fold);
+      if (waveL !== center) applyFold(waveL, fold);
+      if (waveR !== center && waveR !== waveL) applyFold(waveR, fold);
       // Cache a non-silent center for the viz (the worklet handles the audio
       // keep-last-non-silent rule itself).
       if (!isSilentWave(center)) lastCenterNonSilent = center;
@@ -330,11 +373,36 @@ export const cubeDef: AudioModuleDef = {
         ['morph_fc', { node: workletNode, input: 0, param: params.get('morph_fc')! }],
         ['connect',  { node: workletNode, input: 0, param: params.get('connect')! }],
         ['crush',    { node: workletNode, input: 0, param: params.get('crush')! }],
+        ['fold_cv',  { node: workletNode, input: 0, param: params.get('fold')! }],
         ['tune',     { node: workletNode, input: 0, param: params.get('tune')! }],
       ]),
       outputs: new Map([
         ['L', { node: splitter, output: 0 }],
         ['R', { node: splitter, output: 1 }],
+      ]),
+      // Cross-domain mono-video: the bridge owns an OffscreenCanvas, calls
+      // drawFrame each video frame, then uploads the pixels to a GL texture for
+      // downstream video modules. drawFrame delegates to the card's installed
+      // 3D-cube frame-drawer (FRAME_DRAWERS); when none is installed it paints
+      // black so the bridge always has a valid frame.
+      videoSources: new Map([
+        ['video_out', {
+          analyser: videoAnalyser,
+          sampleRate: ctx.sampleRate,
+          drawFrame(canvas: OffscreenCanvas | HTMLCanvasElement) {
+            const fn = FRAME_DRAWERS.get(node.id);
+            if (fn) {
+              try { fn(canvas); return; } catch { /* fall through to black */ }
+            }
+            const c2d = canvas.getContext('2d') as
+              | CanvasRenderingContext2D
+              | OffscreenCanvasRenderingContext2D
+              | null;
+            if (!c2d) return;
+            c2d.fillStyle = '#000';
+            c2d.fillRect(0, 0, canvas.width, canvas.height);
+          },
+        }],
       ]),
       setParam(paramId, value) {
         live[paramId] = value;
@@ -364,6 +432,7 @@ export const cubeDef: AudioModuleDef = {
         try { workletNode.port.onmessage = null; } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }
         try { splitter.disconnect(); } catch { /* */ }
+        try { videoAnalyser.disconnect(); } catch { /* */ }
       },
     };
   },

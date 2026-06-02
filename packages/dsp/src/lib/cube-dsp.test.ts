@@ -30,6 +30,9 @@ import {
   wrapFold,
   heightAt,
   sampleSlice,
+  wavefold,
+  applyFold,
+  FOLD_MAX_DRIVE,
   type SliceParams,
   type Material,
 } from './cube-dsp';
@@ -405,5 +408,163 @@ describe('sampleSlice — surface-height scan readout', () => {
     const crushedLevels = new Set(Array.from(crushed).map((v) => Math.round(v * 1e4)));
     expect(crushedLevels.size).toBeLessThan(cleanLevels.size);
     expect(crushedLevels.size).toBeLessThanOrEqual(4);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// FOLD — West-coast wavefolder (wavefold / applyFold).
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('wavefold — West-coast wavefolder math', () => {
+  it('fold=0 is an exact identity for any sample (byte-stable unfolded path)', () => {
+    for (const x of [-1, -0.73, -0.1, 0, 0.1, 0.5, 0.999, 1]) {
+      expect(wavefold(x, 0)).toBe(x);
+    }
+    // Negative / out-of-[0,1] fold clamps to 0 → still identity.
+    expect(wavefold(0.42, -0.5)).toBe(0.42);
+  });
+
+  it('output is bounded in [-1,1] and finite for every fold amount + sample', () => {
+    for (let k = 0; k <= 1; k += 0.05) {
+      for (let x = -1; x <= 1; x += 0.01) {
+        const y = wavefold(x, k);
+        expect(Number.isFinite(y)).toBe(true);
+        expect(y).toBeGreaterThanOrEqual(-1.000001);
+        expect(y).toBeLessThanOrEqual(1.000001);
+      }
+    }
+  });
+
+  it('passes the ±1 endpoints straight through at low fold (π/2 scale)', () => {
+    // At k→0 the drive →1 so sin(π/2 · x) maps ±1 → ±1 exactly.
+    expect(wavefold(1, 1e-9)).toBeCloseTo(1, 6);
+    expect(wavefold(-1, 1e-9)).toBeCloseTo(-1, 6);
+  });
+
+  it('increasing fold injects fold-overs (more sign changes ⇒ more harmonics)', () => {
+    // A linear ramp -1→1 (one rising edge). Count sign changes in the folded
+    // output: the unfolded ramp has ~1, but folding it adds reflections, so the
+    // folded waveform crosses zero more times as fold rises = added harmonics.
+    const ramp = new Float32Array(512);
+    for (let i = 0; i < ramp.length; i++) ramp[i] = (i / (ramp.length - 1)) * 2 - 1;
+    const signChanges = (k: number): number => {
+      let prev = wavefold(ramp[0]!, k);
+      let n = 0;
+      for (let i = 1; i < ramp.length; i++) {
+        const y = wavefold(ramp[i]!, k);
+        if ((y >= 0) !== (prev >= 0)) n++;
+        prev = y;
+      }
+      return n;
+    };
+    const c0 = signChanges(0);
+    const cHalf = signChanges(0.5);
+    const cFull = signChanges(1);
+    expect(cHalf).toBeGreaterThan(c0);
+    expect(cFull).toBeGreaterThan(cHalf);
+  });
+
+  it('FOLD_MAX_DRIVE yields several fold-overs at full peak', () => {
+    // At x=1, k=1 the argument is π/2 · (1+FOLD_MAX_DRIVE) > 2π ⇒ the sine has
+    // wrapped past full cycles (multiple folds). Sanity-bound the constant.
+    expect(FOLD_MAX_DRIVE).toBeGreaterThanOrEqual(2);
+    const arg = (Math.PI / 2) * (1 + FOLD_MAX_DRIVE) * 1;
+    expect(arg).toBeGreaterThan(2 * Math.PI); // at least one full fold cycle
+  });
+});
+
+describe('applyFold — in-place fold across a slice waveform', () => {
+  it('fold=0 leaves the buffer untouched (same reference, identical values)', () => {
+    const w = new Float32Array([-1, -0.3, 0, 0.4, 1]);
+    const before = Float32Array.from(w);
+    const out = applyFold(w, 0);
+    expect(out).toBe(w); // returns the same array
+    for (let i = 0; i < w.length; i++) expect(w[i]).toBe(before[i]);
+  });
+
+  it('fold>0 changes the buffer in place and never produces NaN/Inf or out-of-range', () => {
+    const w = new Float32Array(256);
+    for (let i = 0; i < w.length; i++) w[i] = Math.sin((i / w.length) * Math.PI * 2);
+    const before = Float32Array.from(w);
+    applyFold(w, 0.8);
+    let changed = false;
+    for (let i = 0; i < w.length; i++) {
+      if (Math.abs(w[i]! - before[i]!) > 1e-9) changed = true;
+      expect(Number.isFinite(w[i]!)).toBe(true);
+      expect(w[i]!).toBeGreaterThanOrEqual(-1.000001);
+      expect(w[i]!).toBeLessThanOrEqual(1.000001);
+    }
+    expect(changed).toBe(true);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// SLICE-ACROSS-TABLES — the slice reads ALL THREE tables (not just the wall).
+// (Regression for the user's "the slice only shows the WALL" suspicion — the
+// DSP is correct; floor + ceiling DO influence the readout per the morph rule.)
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('sampleSlice — reads across floor / wall / ceiling', () => {
+  const sineInXTable = (): Float32Array[] => {
+    const t: Float32Array[] = [];
+    for (let f = 0; f < FRAMES; f++) {
+      const row = new Float32Array(COLS);
+      for (let c = 0; c < COLS; c++) row[c] = Math.sin((2 * Math.PI * c) / COLS);
+      t.push(row);
+    }
+    return t;
+  };
+  const base = (over: Partial<SliceParams> = {}): SliceParams => ({
+    sliceY: 0.5, rx: 0, ry: 0, rz: 0,
+    morphFC: 0, connect: 0, material: 'smooth', crush: 0, wrap: false, ...over,
+  });
+  const maxDiff = (a: Float32Array, b: Float32Array): number => {
+    let m = 0;
+    for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i]! - b[i]!));
+    return m;
+  };
+
+  const FLOOR_A = constTable(-1), FLOOR_B = rampInXTable(-1, 1);
+  const WALL_A = sineInXTable(), WALL_B = constTable(0.5);
+  const CEIL_A = rampInXTable(-1, 1), CEIL_B = constTable(0.8);
+
+  it('FLOOR table influences the readout at morphFC=0', () => {
+    const a = sampleSlice(FLOOR_A, WALL_A, CEIL_A, base({ morphFC: 0 }));
+    const b = sampleSlice(FLOOR_B, WALL_A, CEIL_A, base({ morphFC: 0 }));
+    expect(maxDiff(a, b)).toBeGreaterThan(0.05);
+  });
+
+  it('WALL table influences the readout', () => {
+    const a = sampleSlice(FLOOR_A, WALL_A, CEIL_A, base({ morphFC: 0 }));
+    const b = sampleSlice(FLOOR_A, WALL_B, CEIL_A, base({ morphFC: 0 }));
+    expect(maxDiff(a, b)).toBeGreaterThan(0.05);
+  });
+
+  it('CEILING table influences the readout at morphFC=1', () => {
+    const a = sampleSlice(FLOOR_A, WALL_A, CEIL_A, base({ morphFC: 1 }));
+    const b = sampleSlice(FLOOR_A, WALL_A, CEIL_B, base({ morphFC: 1 }));
+    expect(maxDiff(a, b)).toBeGreaterThan(0.05);
+  });
+
+  it('CEILING is correctly IGNORED at morphFC=0, FLOOR ignored at morphFC=1 (morph crossfade)', () => {
+    // By spec the morph crossfades floor↔ceiling: at 0 the ceiling is silent,
+    // at 1 the floor is silent. This is WHY a default patch (morphFC=0) "looks
+    // like only the wall+floor" — not a bug.
+    const cz = sampleSlice(FLOOR_A, WALL_A, CEIL_A, base({ morphFC: 0 }));
+    const cz2 = sampleSlice(FLOOR_A, WALL_A, CEIL_B, base({ morphFC: 0 }));
+    expect(maxDiff(cz, cz2)).toBeLessThan(1e-9); // ceiling has zero effect at m=0
+    const fz = sampleSlice(FLOOR_A, WALL_A, CEIL_A, base({ morphFC: 1 }));
+    const fz2 = sampleSlice(FLOOR_B, WALL_A, CEIL_A, base({ morphFC: 1 }));
+    expect(maxDiff(fz, fz2)).toBeLessThan(1e-9); // floor has zero effect at m=1
+  });
+
+  it('at mid-morph (0.5) ALL THREE tables influence the readout', () => {
+    const ref = sampleSlice(FLOOR_A, WALL_A, CEIL_A, base({ morphFC: 0.5 }));
+    const dFloor = maxDiff(ref, sampleSlice(FLOOR_B, WALL_A, CEIL_A, base({ morphFC: 0.5 })));
+    const dWall = maxDiff(ref, sampleSlice(FLOOR_A, WALL_B, CEIL_A, base({ morphFC: 0.5 })));
+    const dCeil = maxDiff(ref, sampleSlice(FLOOR_A, WALL_A, CEIL_B, base({ morphFC: 0.5 })));
+    expect(dFloor).toBeGreaterThan(0.02);
+    expect(dWall).toBeGreaterThan(0.02);
+    expect(dCeil).toBeGreaterThan(0.02);
   });
 });
