@@ -16,7 +16,6 @@
 //        - env_inv == 1 - env at every sample
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { readFile } from 'node:fs/promises';
 import { moog911Def } from './moog911';
 
 const SR = 48000;
@@ -99,29 +98,22 @@ let capturedProc: ProcCtor | null = null;
 
 async function loadProcessor(): Promise<ProcCtor> {
   if (capturedProc) return capturedProc;
-  // The moog911 worklet entry is import-less (it pulls in no helper libs), so
-  // it has NO top-level import/export and is NOT a TS module — a dynamic
-  // `import()` of the source can't typecheck it. Instead we eval the BUILT
-  // classic-script bundle (dist/moog911.js) via `new Function`, the exact
-  // pattern the ART harness uses to capture import-less worklets (see
-  // art/scenarios/analog-logic-maths/algebra.test.ts). This proves the
-  // shipped bundle is classic-evalable (no leaked top-level export — memory:
-  // dsp-worklet-no-top-level-export) AND exercises the real DSP. Requires
-  // `task dsp:build` to have run first (CI builds DSP before `task test`).
-  const g = globalThis as unknown as {
-    registerProcessor?: (n: string, c: ProcCtor) => void;
-    AudioWorkletProcessor?: unknown;
-    sampleRate?: number;
-  };
+  // Capture the registered processor class via the registerProcessor shim —
+  // the same pattern the sibling worklet tests use (cube / resofilter /
+  // chowkick / sidecar). We import the DSP *source* directly (vitest
+  // transpiles it) rather than reading the built dist/<name>.js bundle: the
+  // web unit suite has no guaranteed DSP-build step before it runs, so a
+  // dist read is order-dependent and ENOENTs on a clean CI checkout. The
+  // source self-shims AudioWorkletProcessor + registerProcessor (see
+  // dsp/src/moog911.ts) and NEVER top-level-exports its class (memory:
+  // dsp-worklet-no-top-level-export), so the import side-effect registers it.
+  // Relative path into the DSP source — worktrees may not have the workspace
+  // package symlinked under node_modules.
+  const g = globalThis as unknown as { registerProcessor?: (n: string, c: ProcCtor) => void };
   const prev = g.registerProcessor;
-  g.sampleRate = SR;
-  g.AudioWorkletProcessor = class { port = { postMessage: () => {}, onmessage: null }; };
   let registered: ProcCtor | null = null;
   g.registerProcessor = (_n, ctor) => { registered = ctor; };
-  const jsPath = new URL('../../../../../dsp/dist/moog911.js', import.meta.url);
-  const src = await readFile(jsPath, 'utf8');
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-  new Function(src).call(g);
+  await import('../../../../../dsp/src/moog911');
   g.registerProcessor = prev;
   if (!registered) throw new Error('moog911 processor did not register');
   capturedProc = registered;
