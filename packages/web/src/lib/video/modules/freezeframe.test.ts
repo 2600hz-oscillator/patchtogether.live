@@ -12,6 +12,7 @@ import {
   quantLevels,
   posterizeChannel,
   lumaOf,
+  shouldCapture,
   LUMA_WEIGHTS,
   QUANT_MAX_LEVELS,
   QUANT_MID_LEVELS,
@@ -136,6 +137,39 @@ describe('posterizeChannel', () => {
     expect(posterizeChannel(1, 32)).toBeCloseTo(1, 6);
     expect(posterizeChannel(1, 256)).toBeCloseTo(1, 6);
     expect(posterizeChannel(0, 32)).toBe(0);
+  });
+});
+
+describe('shouldCapture — sample & hold gate logic', () => {
+  it('always captures the first frame (seeds the hold buffer)', () => {
+    // holdSeeded=false → capture regardless of gate state.
+    expect(shouldCapture(false, 0, false)).toBe(true);
+    expect(shouldCapture(true, 0, false)).toBe(true);   // patched + low, but unseeded
+    expect(shouldCapture(true, 1, false)).toBe(true);
+  });
+
+  it('UNPATCHED gate → always live passthrough (capture every frame)', () => {
+    expect(shouldCapture(false, 0, true)).toBe(true);
+    expect(shouldCapture(false, 1, true)).toBe(true);
+    expect(shouldCapture(false, 0.5, true)).toBe(true);
+  });
+
+  it('PATCHED gate HIGH (>= 0.5) → capture (updates while open)', () => {
+    expect(shouldCapture(true, 0.5, true)).toBe(true);
+    expect(shouldCapture(true, 0.9, true)).toBe(true);
+    expect(shouldCapture(true, 1, true)).toBe(true);
+  });
+
+  it('PATCHED gate LOW (< 0.5) → freeze (skip capture, hold last frame)', () => {
+    expect(shouldCapture(true, 0, true)).toBe(false);
+    expect(shouldCapture(true, 0.49, true)).toBe(false);
+  });
+
+  it('an LFO square on the gate plays-while-high then freezes-when-low', () => {
+    // Simulate a gate going high → low → high while patched + seeded.
+    expect(shouldCapture(true, 1, true)).toBe(true);  // open: updates
+    expect(shouldCapture(true, 0, true)).toBe(false); // closed: frozen
+    expect(shouldCapture(true, 1, true)).toBe(true);  // reopened: updates
   });
 });
 

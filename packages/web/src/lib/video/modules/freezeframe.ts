@@ -131,6 +131,30 @@ export function lumaOf(r: number, g: number, b: number): number {
   return LUMA_WEIGHTS.r * r + LUMA_WEIGHTS.g * g + LUMA_WEIGHTS.b * b;
 }
 
+/** Gate threshold for "open" (capture) vs "closed" (freeze). */
+export const GATE_HIGH_THRESHOLD = 0.5;
+
+/**
+ * Pure sample-&-hold decision: should THIS frame capture the live input
+ * into the hold buffer (true) or freeze the last-held frame (false)?
+ *
+ *   - gate UNPATCHED → always capture (live passthrough);
+ *   - gate PATCHED   → capture only while the gate is HIGH (level >= 0.5);
+ *   - first frame    → always capture so the hold buffer seeds with real
+ *     content (a frozen-on-spawn gate would otherwise show black).
+ *
+ * Exported so the freeze logic is unit-testable without a GL context.
+ */
+export function shouldCapture(
+  gatePatched: boolean,
+  gateLevel: number,
+  holdSeeded: boolean,
+): boolean {
+  if (!holdSeeded) return true;       // seed the buffer on the first frame
+  if (!gatePatched) return true;      // unpatched = live passthrough
+  return gateLevel >= GATE_HIGH_THRESHOLD; // patched = capture while high
+}
+
 // ----------------------------------------------------------------------
 // GLSL — combined + per-channel/luma isolate passes share one shader.
 // `uMode` selects which output FBO this draw is producing.
@@ -357,17 +381,31 @@ export const freezeframeDef: VideoModuleDef = {
         const inputTex = frame.getInputTexture(node.id, 'video_in');
         const hasInput = !!inputTex;
 
+        // Deterministic test hook (e2e / VRT): when globalThis.
+        // __freezeframeForceGate is a number, treat the gate as PATCHED and
+        // use that number as the gate level. Mirrors NIBBLES'
+        // __nibblesForceLength — lets the harness pin freeze-vs-live state
+        // without a timing-flaky real LFO. No-op in production (global
+        // unset). undefined / non-number means "use the real CV path".
+        const forced = (globalThis as unknown as { __freezeframeForceGate?: number | undefined })
+          .__freezeframeForceGate;
+        const forcedGate = typeof forced === 'number' && Number.isFinite(forced)
+          ? forced
+          : null;
+
         // Is the gate patched? The CV bridge writes gateLevel every frame
         // while an edge exists; if we've seen a write within the grace
-        // window, the gate is connected.
-        const gatePatched = (currentFrame - gateWriteFrame) <= GATE_PATCH_GRACE;
+        // window, the gate is connected. The forced-gate hook also counts
+        // as patched.
+        const gatePatched = forcedGate !== null
+          || (currentFrame - gateWriteFrame) <= GATE_PATCH_GRACE;
         // Capture decision:
         //   unpatched gate → always capture (live passthrough);
         //   patched gate   → capture only while HIGH (level >= 0.5).
         //   Always capture the very first frame so a frozen-on-spawn gate
         //   still has SOMETHING in the hold buffer (else black).
-        const gateHigh = params.gateLevel >= 0.5;
-        const capture = !gatePatched || gateHigh || !holdSeeded;
+        const gateLevel = forcedGate !== null ? forcedGate : params.gateLevel;
+        const capture = shouldCapture(gatePatched, gateLevel, holdSeeded);
 
         // ---- HOLD pass: copy input → hold buffer (only when capturing) ----
         if (capture) {
