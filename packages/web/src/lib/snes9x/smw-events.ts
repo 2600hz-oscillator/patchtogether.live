@@ -16,9 +16,12 @@
 // and live-validated where noted against the real ROM in the snes9x WASM
 // core (see the Node probe in the PR description).
 //
-//   $7E0100  GAME MODE. 0x0E = overworld, 0x13 = in a level (and the
-//            0x10..0x14 fade transitions around them). [LIVE-VALIDATED:
-//            transitions 4→5→8→… observed booting the real ROM.]
+//   $7E0100  GAME MODE. 0x0E = overworld; 0x13 = LOAD-into-level transition;
+//            0x14 = the in-level MAIN game loop (the actual playable state).
+//            [LIVE-VALIDATED via the real-gameplay e2e (snes9x-gameplay-gates):
+//            the playthrough is at $14 throughout play; $13 is only the brief
+//            fade-in. The earlier "$13 = in a level" note was imprecise — the
+//            playable mode is $14. See GAME_MODE_LEVEL_MAIN.]
 //   $7E0DBE  LIVES, minus one (0x04 here = 5 lives shown). [LIVE-VALIDATED:
 //            read 0x04 on the title screen of the real ROM.]
 //   $7E0071  PLAYER ANIMATION TRIGGER. 0x09 = the death animation.
@@ -76,8 +79,19 @@ export const SPRITE_SLOTS = 12;
 export const PLAYER_ANIM_DEAD = 0x09;
 /** $7E0100 game-mode for the overworld map. */
 export const GAME_MODE_OVERWORLD = 0x0e;
-/** $7E0100 game-mode for being inside a level (the playable state). */
+/** $7E0100 game-mode for being inside a level (the playable state).
+ *  NOTE: VALIDATED against the real ROM (see snes9x-gameplay-gates.spec) —
+ *  $13 is the LOAD-into-level transition; the playable in-level main loop is
+ *  $14. The level-entry check uses GAME_MODE_LEVEL_MAIN. */
 export const GAME_MODE_LEVEL = 0x13;
+/** $7E0100 game-mode for the in-level MAIN game loop (the actual playable
+ *  state — confirmed via real-gameplay e2e: mode is $14 while playing). */
+export const GAME_MODE_LEVEL_MAIN = 0x14;
+/** Max plausible value of the $7E0DBE lives counter (lives-minus-1; SMW caps
+ *  the displayed count at 99 → stored 0x62). Larger values are uninitialised
+ *  RAM (e.g. 0x55 / 0xFF at boot), so a lives-"drop" out of that garbage is
+ *  NOT a real death. Guards the lives-decrement death fallback. */
+export const MAX_VALID_LIVES = 0x62;
 
 /** A sprite slot is ALIVE at status >= 0x08. */
 export function spriteIsAlive(status: number): boolean {
@@ -155,6 +169,7 @@ export function detectSmwEvents(
 ): SmwEvent[] {
   const events: SmwEvent[] = [];
 
+  const gameMode = read(ADDR_GAME_MODE);
   const anim = read(ADDR_PLAYER_ANIM);
   const lives = read(ADDR_LIVES);
   const translevel = read(ADDR_TRANSLEVEL);
@@ -188,8 +203,20 @@ export function detectSmwEvents(
   // Primary: $0071 rising edge into the 0x09 death anim.
   const animDeath = state.prevAnim !== PLAYER_ANIM_DEAD && anim === PLAYER_ANIM_DEAD;
   // Fallback: a lives DECREMENT (0DBE drops) corroborates a death for ROMs
-  // where $0071 doesn't follow the stock convention.
-  const livesDropped = lives < state.prevLives;
+  // where $0071 doesn't follow the stock convention. GUARDED so the
+  // uninitialised-RAM garbage at boot doesn't register a phantom death — the
+  // gameplay e2e exposed this: the raw `lives < prev` fired at boot frame ~18
+  // ($7E0DBE read 0x55 then settled to 0x00 while game-mode was still $00).
+  // We only trust the fallback when (a) the game mode is a real playing state
+  // (overworld $0e .. level $14 — boot/title are < $0e) AND (b) both lives
+  // readings are in the valid 0..99 range. A real life loss is a small,
+  // in-range decrement that happens while a game is actually running.
+  const inPlayState = gameMode >= GAME_MODE_OVERWORLD && gameMode <= GAME_MODE_LEVEL_MAIN;
+  const livesDropped =
+    lives < state.prevLives &&
+    state.prevLives <= MAX_VALID_LIVES &&
+    lives <= MAX_VALID_LIVES &&
+    inPlayState;
   if (animDeath || livesDropped) {
     events.push({ type: 'death' });
   }

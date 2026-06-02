@@ -128,6 +128,18 @@ export interface Snes9xHandleExtras {
    *  assert the clock_in → gate3 multiplier fired (>= one pulse per input
    *  edge for ×1 passthrough, more when world+level > 1). */
   pulseCount(port: GateOutId): number;
+  /** Test-only DETERMINISTIC frame step: set an exact joypad bitmask
+   *  (RETRO_DEVICE_ID_JOYPAD_*), run ONE emulated frame, then run the SAME
+   *  game-event detection + gate-emit path the live draw() loop uses. Lets a
+   *  gameplay e2e replay a committed, ROM-independent per-frame input fixture
+   *  and assert gate1 (kill) / gate2 (death) fire on REAL SMW play — bypassing
+   *  the timing-dependent rAF loop. No-op until a ROM is loaded. Returns the
+   *  game mode ($7E0100) after the step so the harness can track level entry. */
+  stepFrame(mask: number): number;
+  /** Test-only: enable/disable manual stepping. While enabled the engine's
+   *  draw() loop stops auto-advancing the emulator (so stepFrame() is the
+   *  exclusive frame driver). stepFrame() also enables it implicitly. */
+  setManualStep(on: boolean): void;
 }
 
 export const snes9xDef: VideoModuleDef = {
@@ -212,6 +224,13 @@ export const snes9xDef: VideoModuleDef = {
     // Detector + clock-multiplier state.
     const detector: SmwDetectorState = makeSmwDetectorState();
     const clockMul: ClockMultiplierState = makeClockMultiplierState();
+
+    // Test-only: when true, draw() stops auto-advancing the emulator so a
+    // gameplay e2e can drive frames DETERMINISTICALLY via extras.stepFrame()
+    // (the rAF loop would otherwise inject extra, timing-dependent frames +
+    // the held-button params, corrupting a scripted input sequence). draw()
+    // still re-renders the last framebuffer so the card stays live.
+    let manualStep = false;
 
     function applyRom(bytes: Uint8Array): boolean {
       if (!runtime) return false;
@@ -423,7 +442,7 @@ export const snes9xDef: VideoModuleDef = {
       fbo,
       texture,
       draw(_frame) {
-        if (runtime && romLoaded) {
+        if (runtime && romLoaded && !manualStep) {
           // Drive input → run one frame → detect events → upload frame.
           const held: Partial<Record<SnesButton, boolean>> = {};
           for (const b of SNES_BUTTONS) held[b] = buttonEdges.get(b)!.pressed;
@@ -477,6 +496,18 @@ export const snes9xDef: VideoModuleDef = {
       forcePulse: (port) => pulseGate(port),
       readWram: (addr) => (runtime && romLoaded ? runtime.readWram(addr) : 0),
       pulseCount: (port) => pulseCounts.get(port) ?? 0,
+      setManualStep: (on) => { manualStep = on; },
+      stepFrame: (mask) => {
+        if (!runtime || !romLoaded) return 0;
+        manualStep = true; // stepFrame is now the exclusive frame driver.
+        try { runtime.setInput(mask | 0); } catch { /* */ }
+        try { runtime.runFrame(); } catch { /* */ }
+        try { pumpAudio(); } catch { /* */ }
+        // Same detection + gate-emit path as draw() (kill→gate1, death→gate2).
+        try { updateGameEvents(); } catch { /* */ }
+        try { uploadFramebuffer(); } catch { /* */ }
+        try { return runtime.readWram(0x0100); } catch { return 0; }
+      },
     };
 
     return {

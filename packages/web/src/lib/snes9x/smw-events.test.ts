@@ -116,24 +116,52 @@ describe('detectSmwEvents — DEATH detection', () => {
 
   it('lives-decrement fallback fires a death, de-duped with the anim signal', () => {
     const st = makeSmwDetectorState();
-    detectSmwEvents(st, wramReader(wram({ [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 4 })));
+    detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: GAME_MODE_LEVEL, [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 4 })));
     // Lives drop 4→3 AND anim goes to 0x09 — must be exactly ONE death.
-    const evs = detectSmwEvents(st, wramReader(wram({ [ADDR_PLAYER_ANIM]: 0x09, [ADDR_LIVES]: 3 })));
+    const evs = detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: GAME_MODE_LEVEL, [ADDR_PLAYER_ANIM]: 0x09, [ADDR_LIVES]: 3 })));
     expect(evs.filter((e) => e.type === 'death')).toHaveLength(1);
   });
 
-  it('lives-decrement alone (no anim) still fires a death', () => {
+  it('lives-decrement alone (no anim) still fires a death while in a playing game mode', () => {
     const st = makeSmwDetectorState();
-    detectSmwEvents(st, wramReader(wram({ [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 4 })));
-    const evs = detectSmwEvents(st, wramReader(wram({ [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 3 })));
+    detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: GAME_MODE_LEVEL, [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 4 })));
+    const evs = detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: GAME_MODE_LEVEL, [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 3 })));
     expect(evs.filter((e) => e.type === 'death')).toHaveLength(1);
   });
 
   it('a 1-up (lives increment) is NOT a death', () => {
     const st = makeSmwDetectorState();
-    detectSmwEvents(st, wramReader(wram({ [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 4 })));
-    const evs = detectSmwEvents(st, wramReader(wram({ [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 5 })));
+    detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: GAME_MODE_LEVEL, [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 4 })));
+    const evs = detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: GAME_MODE_LEVEL, [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 5 })));
     expect(evs.filter((e) => e.type === 'death')).toHaveLength(0);
+  });
+
+  it('ignores a lives-"drop" from uninitialised boot RAM (no real game mode)', () => {
+    // Regression for the boot phantom death the gameplay e2e surfaced: at boot
+    // $7E0DBE reads garbage (e.g. 0x55) then settles to 0x00 while $7E0100 is
+    // still a non-playing mode ($00). That MUST NOT register a death.
+    const st = makeSmwDetectorState();
+    detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: 0x00, [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 0x55 })));
+    const evs = detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: 0x00, [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 0x00 })));
+    expect(evs.filter((e) => e.type === 'death')).toHaveLength(0);
+  });
+
+  it('ignores a lives-drop when the lives count is out of the valid 0..99 range', () => {
+    // Even in a playing mode, an out-of-range lives value (garbage) must not
+    // trigger the fallback — only a real, in-range decrement counts.
+    const st = makeSmwDetectorState();
+    detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: GAME_MODE_LEVEL, [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 0xff })));
+    const evs = detectSmwEvents(st, wramReader(wram({ [ADDR_GAME_MODE]: GAME_MODE_LEVEL, [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 0x70 })));
+    expect(evs.filter((e) => e.type === 'death')).toHaveLength(0);
+  });
+
+  it('the anim→0x09 death fires regardless of game mode (primary signal)', () => {
+    // The primary death signal (player anim rising into 0x09) is NOT gated on
+    // game mode — only the lives-drop FALLBACK is.
+    const st = makeSmwDetectorState();
+    detectSmwEvents(st, wramReader(wram({ [ADDR_PLAYER_ANIM]: 0x00, [ADDR_LIVES]: 4 })));
+    const evs = detectSmwEvents(st, wramReader(wram({ [ADDR_PLAYER_ANIM]: PLAYER_ANIM_DEAD, [ADDR_LIVES]: 4 })));
+    expect(evs.filter((e) => e.type === 'death')).toHaveLength(1);
   });
 });
 

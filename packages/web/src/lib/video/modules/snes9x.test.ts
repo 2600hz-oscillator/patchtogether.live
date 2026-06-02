@@ -172,4 +172,21 @@ describe('snes9xDef.factory — extras', () => {
     extras.forcePulse('gate1');
     expect(gate1.offset.setValueAtTime.mock.calls.length - before).toBe(2);
   });
+
+  it('exposes the deterministic stepFrame + setManualStep gameplay-e2e hooks', () => {
+    const { handle } = spawn();
+    const extras = handle.read!('extras') as {
+      stepFrame: (mask: number) => number;
+      setManualStep: (on: boolean) => void;
+      pulseCount: (p: string) => number;
+    };
+    expect(typeof extras.stepFrame).toBe('function');
+    expect(typeof extras.setManualStep).toBe('function');
+    // No ROM loaded → stepFrame is a safe no-op returning 0 (game mode),
+    // and emits no gate pulses.
+    const before = extras.pulseCount('gate1');
+    expect(extras.stepFrame(0xff)).toBe(0);
+    expect(extras.pulseCount('gate1')).toBe(before);
+    extras.setManualStep(true); // must not throw without a ROM
+  });
 });
