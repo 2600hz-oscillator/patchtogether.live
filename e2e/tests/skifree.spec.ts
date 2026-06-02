@@ -23,7 +23,6 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -67,18 +66,105 @@ async function waitForController(page: Page, timeout = 8000): Promise<boolean> {
   } catch { return false; }
 }
 
-async function forceCrash(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const w = globalThis as unknown as { __skifree?: { controller?: { _forceCrash(): void } } };
-    w.__skifree?.controller?._forceCrash();
-  });
+/** Wait until the game has actually BOOTED — i.e. the bundle's `player`
+ *  (Skier) instance exists. `window.SkiFree.create()` returns a controller
+ *  synchronously, but the game's classes (player/game) are only built after
+ *  the two sprite-sheet PNGs finish loading (loadImagesThen → buildGame), an
+ *  async step. Until then `_forceCrash`/`_forceEaten` are no-ops (`if
+ *  (!player) return;`), so firing immediately after `waitForController`
+ *  raced the image load and intermittently left the counters at 0. We detect
+ *  readiness by firing a probe crash and checking the controller's own
+ *  getState().crashes actually moves (the cheapest stable boot signal the
+ *  controller exposes; the probe crash is accounted for by reading the
+ *  baseline AFTER readiness in the event helper). */
+async function waitForGameReady(page: Page, timeout = 10000): Promise<boolean> {
+  try {
+    await page.waitForFunction(() => {
+      const w = globalThis as unknown as {
+        __skifree?: { controller?: { _forceCrash(): void; getState(): { crashes: number } } };
+      };
+      const ctl = w.__skifree?.controller;
+      if (!ctl) return false;
+      const before = ctl.getState().crashes;
+      ctl._forceCrash();
+      return ctl.getState().crashes > before;
+    }, { timeout, polling: 50 });
+    return true;
+  } catch { return false; }
 }
 
-async function forceEaten(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const w = globalThis as unknown as { __skifree?: { controller?: { _forceEaten(): void } } };
-    w.__skifree?.controller?._forceEaten();
-  });
+/**
+ * Force a crash / eaten event AND, in the SAME page-side evaluate, immediately
+ * sample the downstream SCOPE at sub-pulse granularity, max-holding the peak.
+ *
+ * Why in-page: the gate is a 10 ms ConstantSourceNode pulse and the SCOPE's
+ * analyser buffer is fftSize=2048 (~43 ms at 48 kHz). The pulse is only
+ * observable while it's still inside that ~43 ms tail window. A Playwright
+ * `forceX(); waitForTimeout(60); readScopeSnapshot()` loop adds a full
+ * page->node->page round-trip (plus a 60 ms gap) between firing the pulse and
+ * reading the scope, by which point the 10 ms excursion has reliably scrolled
+ * out of the analyser buffer — so the scope read always saw peak=0 even though
+ * the pulse genuinely reached the audio graph. Doing the fire + the rapid
+ * poll loop inside one evaluate removes that latency entirely and catches the
+ * pulse deterministically (the excursion is visible in the analyser tail for
+ * ~40 ms after the event, so a 250 ms in-page poll at ~2 ms cadence always
+ * lands ≥1 read on the high portion).
+ *
+ * Returns the max ch1 peak seen during the sampling window AND the controller's
+ * crash/eaten counters read in the same evaluate, so the caller asserts the
+ * counter that this very call advanced (no separate snapshot round-trip that
+ * could lag a scheduler tick behind).
+ */
+async function forceEventAndCapture(
+  page: Page,
+  event: 'crash' | 'eaten',
+  scopeNodeId: string,
+): Promise<{ peak: number; crashes: number; eaten: number; lastEvent: string | null }> {
+  return await page.evaluate(
+    async ({ evt, scId }) => {
+      const w = globalThis as unknown as {
+        __skifree?: {
+          controller?: {
+            _forceCrash(): void;
+            _forceEaten(): void;
+            getState(): { crashes: number; eaten: number; lastEvent: string | null };
+          };
+        };
+        __engine?: () => {
+          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const ctl = w.__skifree?.controller;
+      if (evt === 'crash') ctl?._forceCrash();
+      else ctl?._forceEaten();
+      const st = ctl?.getState() ?? { crashes: 0, eaten: 0, lastEvent: null };
+
+      const eng = w.__engine?.();
+      const scNode = w.__patch.nodes[scId];
+      let peak = 0;
+      if (eng && scNode) {
+        const t0 = performance.now();
+        // Sample for 250 ms at ~2 ms cadence. The pulse fires at
+        // ctx.currentTime+5 ms and is observable in the analyser tail for
+        // ~40 ms after it ends, so this window comfortably brackets it.
+        while (performance.now() - t0 < 250) {
+          const snap = eng.read(scNode, 'snapshot') as { ch1: Float32Array } | undefined;
+          if (snap && snap.ch1) {
+            const ch1 = snap.ch1;
+            for (let i = 0; i < ch1.length; i++) {
+              const a = Math.abs(ch1[i]);
+              if (a > peak) peak = a;
+            }
+            if (peak > 0.5) break; // got the pulse — stop early
+          }
+          await new Promise((r) => setTimeout(r, 2));
+        }
+      }
+      return { peak, crashes: st.crashes, eaten: st.eaten, lastEvent: st.lastEvent };
+    },
+    { evt: event, scId: scopeNodeId },
+  );
 }
 
 async function resumeAudio(page: Page): Promise<void> {
@@ -156,32 +242,34 @@ test('skifree: crash → gate pulse reaches a downstream SCOPE + crash counter i
   );
   await resumeAudio(page);
   expect(await waitForController(page), 'bundle controller should come up').toBe(true);
+  // Wait until the game has booted (sprite sheets loaded → player exists), else
+  // _forceCrash is a no-op and the counter never moves. (This probe itself
+  // fires one crash; we read the baseline AFTER it so the assertion measures
+  // only the crashes this test deliberately drives.)
+  expect(await waitForGameReady(page), 'game should boot (player ready)').toBe(true);
 
   const before = await readSkifreeSnapshot(page, 's');
   expect(before, 'snapshot should be readable').not.toBeNull();
   const crashesBefore = before!.crashes;
 
-  // Fire crashes in a windowed loop + poll the SCOPE: each crash pulses the
-  // 10 ms gate, and we want at least one pulse to land inside a scope frame.
-  // The crash COUNTER is the deterministic primary assertion; the SCOPE peak
-  // is the signal-flow (gate actually reaches the audio graph) assertion.
+  // Fire a crash and, in the same page-side evaluate, immediately sample the
+  // SCOPE at sub-pulse granularity so the 10 ms gate excursion is caught
+  // before it scrolls out of the analyser's ~43 ms buffer. Retry across a few
+  // crashes for robustness (each crash pulses an identical gate; the COUNTER
+  // is the deterministic primary assertion, the SCOPE peak the signal-flow
+  // assertion that the gate actually reaches the audio graph).
   let scopePeak = 0;
-  const deadline = Date.now() + 8000;
-  while (Date.now() < deadline) {
-    await forceCrash(page);
-    await page.waitForTimeout(60);
-    const snap = await readScopeSnapshot(page, 'sc');
-    if (snap) {
-      const p = summarize(snap.ch1).peak;
-      if (p > scopePeak) scopePeak = p;
-      if (scopePeak > 0.5) break;
-    }
+  let crashesNow = crashesBefore;
+  let lastEvent: string | null = null;
+  for (let i = 0; i < 5 && scopePeak <= 0.5; i++) {
+    const r = await forceEventAndCapture(page, 'crash', 'sc');
+    if (r.peak > scopePeak) scopePeak = r.peak;
+    crashesNow = r.crashes;
+    lastEvent = r.lastEvent;
   }
 
-  const after = await readSkifreeSnapshot(page, 's');
-  expect(after, 'snapshot should still be readable').not.toBeNull();
-  expect(after!.crashes, 'crash counter must increment').toBeGreaterThan(crashesBefore);
-  expect(after!.lastEvent).toBe('crash');
+  expect(crashesNow, 'crash counter must increment').toBeGreaterThan(crashesBefore);
+  expect(lastEvent).toBe('crash');
   expect(scopePeak, `gate pulse should reach SCOPE (peak=${scopePeak})`).toBeGreaterThan(0.5);
 });
 
@@ -200,26 +288,25 @@ test('skifree: eaten-by-yeti → gate pulse + eaten counter increments', async (
   );
   await resumeAudio(page);
   expect(await waitForController(page)).toBe(true);
+  // Wait until the game has booted before firing — see the crash test.
+  expect(await waitForGameReady(page), 'game should boot (player ready)').toBe(true);
 
   const before = await readSkifreeSnapshot(page, 's');
   const eatenBefore = before?.eaten ?? 0;
 
+  // Same in-page fire + fast-sample approach as the crash test (see
+  // forceEventAndCapture): the eaten path pulses the identical 10 ms gate.
   let scopePeak = 0;
-  const deadline = Date.now() + 8000;
-  while (Date.now() < deadline) {
-    await forceEaten(page);
-    await page.waitForTimeout(60);
-    const snap = await readScopeSnapshot(page, 'sc');
-    if (snap) {
-      const p = summarize(snap.ch1).peak;
-      if (p > scopePeak) scopePeak = p;
-      if (scopePeak > 0.5) break;
-    }
+  let eatenNow = eatenBefore;
+  let lastEvent: string | null = null;
+  for (let i = 0; i < 5 && scopePeak <= 0.5; i++) {
+    const r = await forceEventAndCapture(page, 'eaten', 'sc');
+    if (r.peak > scopePeak) scopePeak = r.peak;
+    eatenNow = r.eaten;
+    lastEvent = r.lastEvent;
   }
 
-  const after = await readSkifreeSnapshot(page, 's');
-  expect(after, 'snapshot should be readable').not.toBeNull();
-  expect(after!.eaten, 'eaten counter must increment').toBeGreaterThan(eatenBefore);
-  expect(after!.lastEvent).toBe('eaten');
+  expect(eatenNow, 'eaten counter must increment').toBeGreaterThan(eatenBefore);
+  expect(lastEvent).toBe('eaten');
   expect(scopePeak, `eaten gate pulse should reach SCOPE (peak=${scopePeak})`).toBeGreaterThan(0.5);
 });
