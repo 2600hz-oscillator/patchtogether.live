@@ -163,3 +163,103 @@ test('tempo-stability: baseline (no jank) sequencer advance rate matches BPM', a
   expect(advances).toBeGreaterThanOrEqual(EXPECTED_ADVANCES_MIN);
   expect(advances).toBeLessThanOrEqual(EXPECTED_ADVANCES_MAX);
 });
+
+// #229/#224 — catch-up correctness when a single stall outlasts the 200 ms
+// lookahead. The intermittent-jank test above never forms a backlog (its
+// 80 ms blocks are < the 200 ms lookahead). A real drag's dropped-frame
+// storm can exceed the cushion: when the scheduler tick finally runs, every
+// past-due step it tries to schedule gets clamped by Web Audio to "now" and
+// bunches into an audible double/triple-hit + tempo lurch. The fix drops the
+// past-due backlog (gate skipped, phase still advances) so the sequencer
+// resumes in-tempo with a brief silence instead of a bunch.
+//
+// Deterministic assertion: `pastDueEmits` (emit invoked with a past
+// timestamp) MUST stay 0 — that's logic-guaranteed by the drop guard, not
+// timing-dependent. `lateStepsDropped > 0` confirms the stall actually
+// exercised the catch-up path. Without the guard, pastDueEmits would be > 0.
+//
+// Parametrized across the step sequencers that advance with default (empty)
+// patterns. `score` shares the identical drop guard but needs loaded notes
+// to advance, so its regression coverage is a follow-up (the code path is
+// the same one proven here).
+for (const mod of ['sequencer', 'polyseqz', 'drumseqz'] as const) {
+  test(`tempo-stability: ${mod} drops the past-due backlog under a stall > lookahead, never bunches (#229/#224)`, async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const id = `j_${mod}`;
+    await spawnPatch(
+      page,
+      [{ id, type: mod, params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 } }],
+      [],
+    );
+
+    // Let the lookahead window fill normally for ~half a second first.
+    await page.waitForTimeout(600);
+
+    // One uninterrupted main-thread block well beyond the 200 ms lookahead —
+    // the catch-up case (vs. the intermittent sub-lookahead jank above). The
+    // scheduler-clock Worker keeps posting ticks during the block; they drain
+    // the moment the block ends and the first one hits the past-due backlog.
+    // 600 ms gives every grid (down to polyseqz's 8th notes) a ≥1-step
+    // backlog past the 200 ms cushion.
+    await page.evaluate(() => {
+      const end = performance.now() + 600;
+      let acc = 0;
+      while (performance.now() < end) {
+        acc += Math.sin(performance.now()) * Math.cos(performance.now());
+      }
+      return acc;
+    });
+
+    // Let the catch-up tick + a couple normal steps run.
+    await page.waitForTimeout(400);
+
+    const probe = await page.evaluate((nid) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const eng = w.__engine?.();
+      if (!eng) return { pastDueEmits: -1, lateStepsDropped: -1, advances: -1 };
+      const node = w.__patch.nodes[nid];
+      const num = (k: string) => {
+        const v = eng.read(node, k);
+        return typeof v === 'number' ? v : -1;
+      };
+      return {
+        pastDueEmits: num('pastDueEmits'),
+        lateStepsDropped: num('lateStepsDropped'),
+        advances: num('totalAdvances'),
+      };
+    }, id);
+
+    expect(
+      probe.lateStepsDropped,
+      `${mod}: a 600ms stall (> 200ms lookahead) must produce a dropped backlog (got ${probe.lateStepsDropped})`,
+    ).toBeGreaterThan(0);
+    expect(
+      probe.pastDueEmits,
+      `${mod}: no step may be scheduled in the past — that would clamp+bunch into a double-hit (got ${probe.pastDueEmits})`,
+    ).toBe(0);
+
+    // Recovery: it must keep advancing in-tempo after the stall.
+    const before = probe.advances;
+    await page.waitForTimeout(500);
+    const after = await page.evaluate((nid) => {
+      const w = globalThis as unknown as {
+        __engine: () => {
+          read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+        };
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const v = w.__engine().read(w.__patch.nodes[nid], 'totalAdvances');
+      return typeof v === 'number' ? v : -1;
+    }, id);
+    expect(after, `${mod}: must resume advancing after the stall`).toBeGreaterThan(before);
+  });
+}

@@ -340,6 +340,10 @@ export const drumseqzDef: AudioModuleDef = {
     // glitching the audio thread.
     const LOOKAHEAD_S = 0.2;
     const TICK_MS = SCHEDULER_TICK_MS;
+    // #229: drop past-due steps after a stall > lookahead instead of letting
+    // Web Audio clamp+bunch them onto "now" (audible double-hit + tempo lurch
+    // when dragging). 5 ms slack keeps ordinary near-now jitter sounding.
+    const LATE_DROP_EPS = 0.005;
 
     // Scheduler lookahead vs sounding-now: stepIndex is the NEXT step the
     // lookahead loop will queue; the tracker derives the playhead from the
@@ -348,10 +352,18 @@ export const drumseqzDef: AudioModuleDef = {
     // playhead lag.
     const playhead = createPlayheadTracker();
     let totalAdvances = 0;
+    // #229 instrumentation: lateStepsDropped = past-due steps whose gate we
+    // dropped after a stall; pastDueEmits = emitStep calls with a past
+    // timestamp (BUG canary, kept at 0 by the drop guard). See sequencer.ts.
+    let lateStepsDropped = 0;
+    let pastDueEmits = 0;
     const lastEmittedVOct = new Array<number>(TRACK_COUNT).fill(0);
     const lastEmittedGate = new Array<number>(TRACK_COUNT).fill(0);
 
     function emitStep(idx: number, atTime: number, stepDurForGate: number) {
+      // #229 canary: emitStep with a past timestamp = the drop guard failed
+      // and Web Audio is about to clamp+bunch this onto "now". Kept at 0.
+      if (atTime < ctx.currentTime - LATE_DROP_EPS) pastDueEmits++;
       const globalOct = readParam('octave', 0);
       const gateLengthFrac = readParam('gateLength', 0.5);
       const tracks = readTracks();
@@ -529,7 +541,12 @@ export const drumseqzDef: AudioModuleDef = {
               ? stepDurBase * (1 - swing * 0.5)
               : stepDurBase * (1 + swing * 0.5);
 
-            emitStep(stepIndex, nextStepTime, stepDur);
+            // #229: drop past-due backlog instead of bunching it onto "now".
+            if (nextStepTime < ctx.currentTime - LATE_DROP_EPS) {
+              lateStepsDropped++;
+            } else {
+              emitStep(stepIndex, nextStepTime, stepDur);
+            }
 
             const nextIdx = (stepIndex + 1) % length;
             const nextStartTime = nextStepTime + stepDur;
@@ -581,6 +598,8 @@ export const drumseqzDef: AudioModuleDef = {
       read(key) {
         if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
+        if (key === 'lateStepsDropped') return lateStepsDropped;
+        if (key === 'pastDueEmits') return pastDueEmits;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (typeof key === 'string' && key.startsWith('pitchVOct:')) {
           const i = Number.parseInt(key.slice('pitchVOct:'.length), 10);

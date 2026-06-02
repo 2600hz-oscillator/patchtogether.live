@@ -318,6 +318,10 @@ export const polyseqzDef: AudioModuleDef = {
     // run dry between scheduler ticks.
     const LOOKAHEAD_S = 0.2;
     const TICK_MS = SCHEDULER_TICK_MS;
+    // #229: drop past-due steps after a stall > lookahead instead of letting
+    // Web Audio clamp+bunch them onto "now" (audible double-hit + tempo lurch
+    // when dragging). 5 ms slack keeps ordinary near-now jitter sounding.
+    const LATE_DROP_EPS = 0.005;
 
     // Tracking for tests / introspection.
     let lastEmittedVOct = 0;
@@ -332,11 +336,19 @@ export const polyseqzDef: AudioModuleDef = {
     // scheduled step). Fixes the off-by-one playhead lag.
     const playhead = createPlayheadTracker();
     let totalAdvances = 0;
+    // #229 instrumentation: lateStepsDropped = past-due steps whose gate we
+    // dropped after a stall; pastDueEmits = emitStep calls with a past
+    // timestamp (BUG canary, kept at 0 by the drop guard). See sequencer.ts.
+    let lateStepsDropped = 0;
+    let pastDueEmits = 0;
 
     /** Schedule one step's chord at the given audio time. Per-voice gate-on
      *  is offset by an independent random sample from the humanize
      *  distribution (clamped so it never tries to schedule in the past). */
     function emitStep(idx: number, atTime: number, stepDurForGate: number) {
+      // #229 canary: emitStep with a past timestamp = the drop guard failed
+      // and Web Audio is about to clamp+bunch this onto "now". Kept at 0.
+      if (atTime < ctx.currentTime - LATE_DROP_EPS) pastDueEmits++;
       const octave = readParam('octave', 0);
       const gateLengthFrac = readParam('gateLength', 0.5);
       const humanize = readParam('humanize', 0);
@@ -561,7 +573,12 @@ export const polyseqzDef: AudioModuleDef = {
             // than the Sequencer's 16th default, which is more musically
             // appropriate for chord changes.
             const stepDur = 60 / bpm / 2;
-            emitStep(stepIndex, nextStepTime, stepDur);
+            // #229: drop past-due backlog instead of bunching it onto "now".
+            if (nextStepTime < ctx.currentTime - LATE_DROP_EPS) {
+              lateStepsDropped++;
+            } else {
+              emitStep(stepIndex, nextStepTime, stepDur);
+            }
             const nextIdx = (stepIndex + 1) % length;
             const nextStartTime = nextStepTime + stepDur;
             if (nextIdx === 0) {
@@ -623,6 +640,8 @@ export const polyseqzDef: AudioModuleDef = {
       read(key) {
         if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
+        if (key === 'lateStepsDropped') return lateStepsDropped;
+        if (key === 'pastDueEmits') return pastDueEmits;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (key === 'pitchVOct')  return lastEmittedVOct;
         if (key === 'gateValue')  return lastEmittedGate;

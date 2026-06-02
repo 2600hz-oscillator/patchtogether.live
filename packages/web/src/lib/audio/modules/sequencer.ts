@@ -283,6 +283,15 @@ export const sequencerDef: AudioModuleDef = {
     // "audible tempo jitter when dragging" and "stable tempo".
     const LOOKAHEAD_S = 0.2;
     const TICK_MS = SCHEDULER_TICK_MS;
+    // #229: if a main-thread stall outlasts the lookahead, the scheduler
+    // resumes with `nextStepTime` already behind `ctx.currentTime`. Steps
+    // more than this tolerance in the past are DROPPED (gate skipped, phase
+    // still advances) rather than scheduled — Web Audio would clamp a past
+    // time to "now" and bunch the whole backlog onto the present (the
+    // audible double-hit + tempo lurch when dragging, #224/#229). 5 ms of
+    // slack means ordinary near-now scheduling jitter still sounds (a hair
+    // late) instead of being dropped.
+    const LATE_DROP_EPS = 0.005;
 
     function readSteps(): Step[] {
       const live = livePatch.nodes[nodeId];
@@ -318,6 +327,12 @@ export const sequencerDef: AudioModuleDef = {
     const lastEmittedLaneGate = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
 
     function emitStep(idx: number, atTime: number, stepDurForGate: number) {
+      // #229 regression canary: emitStep invoked with a timestamp already in
+      // the past means the catch-up drop guard failed and Web Audio is about
+      // to clamp this (gate + clock pulse) onto "now" → bunching. Counted at
+      // the entry (gate-agnostic) so it trips even on all-off default steps.
+      // The drop guard keeps it at 0; the tempo-stability spec asserts that.
+      if (atTime < ctx.currentTime - LATE_DROP_EPS) pastDueEmits++;
       const octave = readParam('octave', 0);
       const gateLengthFrac = readParam('gateLength', 0.5);
       const steps = readSteps();
@@ -589,7 +604,17 @@ export const sequencerDef: AudioModuleDef = {
             const isOddStep = stepIndex % 2 === 1;
             const stepDur = isOddStep ? stepDurBase * (1 - swing * 0.5) : stepDurBase * (1 + swing * 0.5);
 
-            emitStep(stepIndex, nextStepTime, stepDur);
+            // #229: drop, don't pile up. If the main thread stalled longer
+            // than the lookahead, nextStepTime is already in the past; emitting
+            // it would clamp to "now" and bunch the backlog into an audible
+            // double-hit + tempo lurch. Skip the gate (and clock pulse) for
+            // past-due steps while still advancing phase/index below, so the
+            // sequencer resumes in-tempo from the present.
+            if (nextStepTime < ctx.currentTime - LATE_DROP_EPS) {
+              lateStepsDropped++;
+            } else {
+              emitStep(stepIndex, nextStepTime, stepDur);
+            }
 
             const nextIdx = (stepIndex + 1) % length;
             const nextStartTime = nextStepTime + stepDur;
@@ -622,6 +647,16 @@ export const sequencerDef: AudioModuleDef = {
     // playhead lag.
     const playhead = createPlayheadTracker();
     let totalAdvances = 0; // monotonic — useful for tests asserting "did we step N times"
+    // #229 instrumentation (catch-up correctness under main-thread stalls):
+    //   lateStepsDropped — steps whose scheduled time fell > LATE_DROP_EPS
+    //     behind ctx.currentTime (stall > lookahead) whose gate we dropped to
+    //     avoid bunching. Phase still advances, so tempo stays correct.
+    //   pastDueEmits — emitStep calls with a past timestamp (the BUG symptom:
+    //     Web Audio would clamp+bunch them onto "now"). The drop guard keeps
+    //     it at 0. Read by tempo-stability spec as a #224/#229 regression
+    //     canary (gate-agnostic, so it trips even on all-off default steps).
+    let lateStepsDropped = 0;
+    let pastDueEmits = 0;
     // Subscribe to the shared scheduler-clock — a Worker tick that's
     // immune to main-thread blocking. Replaces the legacy
     // `setTimeout(tick, TICK_MS)` self-loop, which would queue up behind
@@ -658,6 +693,8 @@ export const sequencerDef: AudioModuleDef = {
         if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
+        if (key === 'lateStepsDropped') return lateStepsDropped;
+        if (key === 'pastDueEmits') return pastDueEmits;
         // V/oct currently emitted on the pitch port (lane 0) — kept for
         // backward compat with existing tests / UI that didn't know about
         // polyphony.
