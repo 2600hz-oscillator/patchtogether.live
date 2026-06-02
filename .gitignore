@@ -77,3 +77,11 @@ e2e/.generated/
 # packages/web/static/roms/qbert/ documents the source + setup flow.
 packages/web/static/roms/qbert/*
 !packages/web/static/roms/qbert/README.md
+
+# SNES9X SNES ROM (user-provided; never commit binary ROM data). Follows
+# the DOOM .WAD / SM64 / QBERT pattern — contributors supply their own
+# .sfc/.smc via `task setup:snes9x` (it lands as game.sfc); the static dir
+# carries only README.md in git. README in packages/web/static/roms/snes9x/
+# documents the source + setup flow.
+packages/web/static/roms/snes9x/*
+!packages/web/static/roms/snes9x/README.md

@@ -339,6 +339,17 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // and the Z80 + runtime wire-up; e2e covers the ROM-missing card
   // render + the CV-joystick → evt_move gate path.
   qbert: 'live game-loop framebuffer + ROM is user-provided (gitignored); unit suites cover joy-cv translation + ROM zip parser + Z80 wire-up + runtime; e2e covers ROM-missing card + CV-joystick → evt_move path',
+  // SNES9X — Super Nintendo emulator (snes9x2005/CAT SFC → WASM). Same
+  // rationale as DOOM/QBERT: the card is a live game framebuffer (a
+  // "LOAD A ROM" dropzone overlay before a ROM is loaded, ROM-driven after)
+  // that defeats deterministic single-frame capture, AND the ROM is
+  // user-provided + gitignored so a CI-side VRT baseline can't be reproduced
+  // without a license-encumbered ROM in the runner. Coverage: the pure
+  // smw-events / clock-multiplier / snes-input / output-definitions unit
+  // suites (detection, multiplier, input mask, output-def panel data) +
+  // snes9x-runtime unit (mocked WASM shim) + the snes9x e2e (ROM-gated:
+  // video/audio/input + clock_in→gate3 multiply, skips when ROM absent).
+  snes9x: 'live game-loop framebuffer + ROM is user-provided (gitignored); pure unit suites cover SMW game-event detection + clock multiplier + input mask + output-definition panel + runtime shim; ROM-gated e2e covers video/audio/input + clock_in→gate3 multiply',
   // CALLSINE first-slice PR: VRT baseline pending; unit + ART + E2E
   // provide coverage. Card is a standard 6-fader layout (model + 5
   // continuous macros) — pinning baselines in a follow-up PR after

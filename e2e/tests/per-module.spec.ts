@@ -88,6 +88,12 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // and the cross-domain audio bridge is covered by the DOOM evt_kill
   // suite — same bridge.
   qbert: 'audio_out fires only on synthesized move events; covered by qbert-runtime.test.ts (PCM fill) + qbert-cv-joystick.spec.ts (gated by ROM presence)',
+  // SNES9X — ROM-gated emulator. audio_l/audio_r come from the SNES APU,
+  // which only produces sound once a user-provided SFC ROM is loaded; the ROM
+  // is gitignored and absent in CI, so the audio outs stay silent in the bare
+  // smoke. Dedicated coverage: snes9x-gameplay-gates.spec.ts (ROM-gated, real
+  // SMW play asserting gate1/gate2) + the snes9x unit tests.
+  snes9x: 'ROM-gated emulator; audio needs a user-provided SFC ROM (gitignored, absent in CI); covered by snes9x-gameplay-gates.spec.ts + snes9x unit tests',
   // VIDEOBOX — file-input source. Until the user picks a local video
   // file the audio outputs emit silent ConstantSourceNodes (so the
   // graph stays patchable), which by definition can't clear the
