@@ -114,6 +114,11 @@ function bugglesCv(bId = 'drv-bug'): SpawnNode {
   return { id: bId, type: 'buggles', position: { x: 60, y: 60 }, domain: 'audio' };
 }
 
+/** Continuous audio source — NOISE.white, self-running broadband signal. */
+function noiseAudio(nId = 'drv-noise'): SpawnNode {
+  return { id: nId, type: 'noise', position: { x: 60, y: 60 }, domain: 'audio', params: { level: 0.6 } };
+}
+
 // ────────── Per-module drivers ──────────
 //
 // Use sparse keys — modules not listed fall through to the default
@@ -434,6 +439,27 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'ADSR: drive .gate from SEQUENCER.gate; env / env_inv ramp on each note-on',
   },
 
+  // ───── MOOG CP3 console mixer — drive in1 from NOISE.white ─────
+  // CP3 is effect-shaped (audio inputs → audio out), so the sweep would
+  // normally skip its output-emit. Drive in1 with a self-running NOISE.white
+  // source: the summed (+) bus + its (−) inverse + the MULTIPLE (in1 fanned
+  // to mult1/mult2/mult3) all carry signal at default unity knobs. The
+  // ±reference outs (plus_twelve / minus_six) are constant DC and stay
+  // EXEMPT_OUTPUT_EMIT (static refs — handle-presence still pins them).
+  moogCp3: {
+    upstream: () => ({
+      nodes: [noiseAudio('drv-noise')],
+      edges: [
+        {
+          id: 'e-drv-in1',
+          from: { nodeId: 'drv-noise', portId: 'white' },
+          to:   { nodeId: 'sut',       portId: 'in1' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+      ],
+    }),
+    note: 'MOOG CP3: drive in1 from NOISE.white; out_positive/out_negative + multiple_one/two/three emit (ref outs stay EXEMPT static refs)',
+  },
   // ───── MOOG 911 EG — gate-driven contour generator (mirror ADSR) ─────
   // The 911 is a CV/gate modulator: its env / env_inv outputs only move on
   // a gate. Drive .gate from SEQUENCER.gate so the T1→peak / T2→Esus / T3

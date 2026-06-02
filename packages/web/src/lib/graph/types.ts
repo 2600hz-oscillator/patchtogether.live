@@ -494,6 +494,11 @@ type StandardModuleType =
   // rectangular with variable pulse width), 1V/oct + linear-FM inputs, and a
   // hard/soft/off sync switch. Own-code polyBLEP DSP (permissive, no copyleft).
   | 'moog921Vco'
+  // MOOG CP3 — console mixer slice of the Moog System 55/35 clone (Moog →
+  // SYS55, shared by SYS35). 4×1 summing mixer with a (+) and a (−) phase-
+  // inverted output, an attenuated 4th external input, a 1→3 MULTIPLE, and
+  // ±12V/−6V trunk-reference jacks. Own-code DSP forked from the repo `mixer`.
+  | 'moogCp3'
   // MOOG 904A VCF — Moog System 55/35 clone, slice 2 (Moog → SYS55, shared by
   // SYS35). Voltage-controlled transistor-ladder LOW-PASS filter, 24 dB/oct:
   // FIXED CONTROL VOLTAGE (cutoff) + RANGE switch (cutoff in 2-octave steps) +

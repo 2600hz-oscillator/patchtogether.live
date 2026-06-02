@@ -407,6 +407,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // per-port e2e provide functional coverage. Promote into MODULES once the
   // darwin + linux PNGs are captured.
   moog921Vco: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs + 3-position SYNC switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG CP3 console mixer — same beige-faceplate family as the 921.
+  // Deterministic (5 knobs, no canvas / animation) so it's a good VRT
+  // candidate; baselines are pending a `task vrt:update` run on each platform
+  // (same authoring-worktree capture limitation as the 921). DSP unit
+  // (moog-cp3-dsp.test.ts + moog-cp3.test.ts worklet) + ART (source-SHA-pinned
+  // .f32) + per-module-per-port e2e provide functional coverage. Promote into
+  // MODULES once the darwin + linux PNGs are captured.
+  moogCp3: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
   // MOOG 904A VCF — Moog System 55/35 clone slice 2. Same shape as the 921:
   // deterministic beige faceplate (2 knobs + a 3-position RANGE switch, no
   // canvas / animation), so a good VRT candidate; baselines are pending a
