@@ -61,7 +61,7 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // that bug — it'd modulate the wrong AudioParam. SCOPE's CV→param routing
   // needs an architectural fix (separate PR — see
   // .myrobots/plans/cv-range-standard.md "Deferred" section).
-  scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode'],
+  scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode', 'intensity'],
   // RASTERIZE: same architecture as SCOPE — CV inputs route through the
   // cross-domain CV bridge's setParam(portId), which writes into a JS-side
   // params record (read live by the per-frame painter). The `param`

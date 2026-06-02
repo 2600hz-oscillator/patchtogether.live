@@ -509,6 +509,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // old magenta-masked canvas — a follow-up `task vrt:update` run on
   // linux will re-capture, then this entry comes out.
   'linux/scope',
+  // SCOPE X/Y + INTENSITY scenes (vrt-scope-modes.spec.ts): darwin baselines
+  // captured here; linux pending a `task vrt:update` on linux CI (same as the
+  // base `linux/scope` card above). Without these the new scenes run on linux
+  // with no baseline and fail the required VRT check.
+  'linux/scope-xy-lissajous',
+  'linux/scope-intensity-dot',
+  'linux/scope-intensity-long',
   // VIDEO-OUT: this PR re-captures the darwin baseline with a real,
   // frozen VIDEOBOX frame driven through the output (via VRT_SCENES) to
   // prove the VIDEOBOX -> VIDEO-OUT path renders video content. VP9

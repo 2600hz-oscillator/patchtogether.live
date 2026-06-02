@@ -7,7 +7,18 @@
 import { describe, expect, it } from 'vitest';
 import { scopeDef } from './scope';
 import type { ModuleNode } from '$lib/graph/types';
-import { pixelFromSample, RANGE_MAX_AUDIO, RANGE_MAX_CV } from './scope-draw';
+import {
+  pixelFromSample,
+  RANGE_MAX_AUDIO,
+  RANGE_MAX_CV,
+  intensityToPersistScreens,
+  phosphorAlpha,
+  xyPixelX,
+  xyPixelY,
+  DEFAULT_INTENSITY,
+  DOT_SCREENS,
+  EDGE_ALPHA,
+} from './scope-draw';
 
 describe('SCOPE module def shape', () => {
   it('declares the mono-video output port', () => {
@@ -50,6 +61,7 @@ describe('SCOPE module def shape', () => {
         'ch1Scale', 'ch1Offset', 'ch1Range',
         'ch2Scale', 'ch2Offset', 'ch2Range',
         'mode',
+        'intensity',
       ].sort(),
     );
     for (const p of scopeDef.inputs) {
@@ -196,5 +208,120 @@ describe('SCOPE pixelFromSample (display-mode scaling)', () => {
   it('exposed display-range constants match the Eurorack convention', () => {
     expect(RANGE_MAX_AUDIO).toBe(1);
     expect(RANGE_MAX_CV).toBe(5);
+  });
+});
+
+// ---- Phosphor INTENSITY param + persistence mapping ----------------------
+
+describe('SCOPE intensity param def', () => {
+  it('exposes a linear 0..1 intensity param defaulting to 0.5 (12:00)', () => {
+    const p = scopeDef.params.find((q) => q.id === 'intensity');
+    expect(p, 'intensity param present').toBeDefined();
+    expect(p!.curve).toBe('linear');
+    expect(p!.min).toBe(0);
+    expect(p!.max).toBe(1);
+    // Default MUST be the 12:00 mid-point so the on-card render is the
+    // pixel-identical legacy path out of the box.
+    expect(p!.defaultValue).toBe(0.5);
+    expect(p!.defaultValue).toBe(DEFAULT_INTENSITY);
+  });
+
+  it('exposes an intensity CV input routing to itself', () => {
+    const inp = scopeDef.inputs.find((q) => q.id === 'intensity');
+    expect(inp, 'intensity CV input present').toBeDefined();
+    expect(inp!.type).toBe('cv');
+    expect((inp as { paramTarget?: string }).paramTarget).toBe('intensity');
+  });
+});
+
+describe('intensityToPersistScreens (INTENSITY -> persistence length in screens)', () => {
+  it('pins the three calibration endpoints: 7:00->dot, 12:00->1 screen, 5:00->2 screens', () => {
+    // 0.0 (7:00, min): a single moving DOT — near-zero trail.
+    expect(intensityToPersistScreens(0)).toBeCloseTo(DOT_SCREENS, 10);
+    expect(intensityToPersistScreens(0)).toBeLessThan(0.05);
+    // 0.5 (12:00, default): exactly ONE screen — matches today.
+    expect(intensityToPersistScreens(0.5)).toBeCloseTo(1, 10);
+    // 1.0 (5:00, max): TWO screens — twice as long-lived.
+    expect(intensityToPersistScreens(1)).toBeCloseTo(2, 10);
+  });
+
+  it('is strictly monotonic increasing across the knob travel', () => {
+    let prev = -Infinity;
+    for (let t = 0; t <= 1.0001; t += 0.05) {
+      const v = intensityToPersistScreens(Math.min(1, t));
+      expect(v, `persistScreens at intensity=${t.toFixed(2)} increases`).toBeGreaterThan(prev);
+      prev = v;
+    }
+  });
+
+  it('clamps out-of-range knob values to the endpoints', () => {
+    expect(intensityToPersistScreens(-1)).toBeCloseTo(DOT_SCREENS, 10);
+    expect(intensityToPersistScreens(2)).toBeCloseTo(2, 10);
+  });
+});
+
+describe('phosphorAlpha (trail brightness falls off with age)', () => {
+  it('is full brightness at the newest beam position (age 0)', () => {
+    expect(phosphorAlpha(0, 2)).toBeCloseTo(1, 10);
+    expect(phosphorAlpha(0, 0.5)).toBeCloseTo(1, 10);
+  });
+
+  it('decays monotonically with age (older = dimmer), reaching the faint edge floor', () => {
+    const persist = 2;
+    let prev = Infinity;
+    for (let age = 0; age <= persist; age += 0.1) {
+      const a = phosphorAlpha(age, persist);
+      expect(a, `alpha at age=${age.toFixed(1)} dims`).toBeLessThanOrEqual(prev + 1e-9);
+      prev = a;
+    }
+    // The oldest visible position lands at the fixed faint floor.
+    expect(phosphorAlpha(persist, persist)).toBeCloseTo(EDGE_ALPHA, 6);
+  });
+
+  it('a longer trail fades more gradually per-screen than a short one', () => {
+    // At the SAME absolute age (0.5 screens), a 2-screen trail is brighter
+    // than a 1-screen trail — phosphor "spread out" over a longer beam life.
+    const long = phosphorAlpha(0.5, 2);
+    const short = phosphorAlpha(0.5, 1);
+    expect(long).toBeGreaterThan(short);
+  });
+
+  it('positions older than the trail length are clamped to the edge floor (not negative)', () => {
+    expect(phosphorAlpha(5, 2)).toBeCloseTo(EDGE_ALPHA, 6);
+  });
+});
+
+// ---- X/Y (Lissajous) coordinate mapping ----------------------------------
+
+describe('xyPixelX / xyPixelY (signal -> display-square pixel)', () => {
+  const W = 200;
+  const H = 100;
+
+  it('AUDIO range: 0V sits at the center of the square', () => {
+    expect(xyPixelX(0, RANGE_MAX_AUDIO, 1, 0, W)).toBe(W / 2);
+    expect(xyPixelY(0, RANGE_MAX_AUDIO, 1, 0, H)).toBe(H / 2);
+  });
+
+  it('AUDIO range: +full-scale -> right/top edge, -full-scale -> left/bottom edge', () => {
+    // ch1 (+1) -> right edge; (-1) -> left edge.
+    expect(xyPixelX(1, RANGE_MAX_AUDIO, 1, 0, W)).toBe(W);
+    expect(xyPixelX(-1, RANGE_MAX_AUDIO, 1, 0, W)).toBe(0);
+    // ch2 (+1) -> top edge (y grows downward); (-1) -> bottom edge.
+    expect(xyPixelY(1, RANGE_MAX_AUDIO, 1, 0, H)).toBe(0);
+    expect(xyPixelY(-1, RANGE_MAX_AUDIO, 1, 0, H)).toBe(H);
+  });
+
+  it('CV range: ±5V maps to the edges; ±1V to 1/5 toward an edge', () => {
+    expect(xyPixelX(5, RANGE_MAX_CV, 1, 0, W)).toBe(W);
+    expect(xyPixelX(-5, RANGE_MAX_CV, 1, 0, W)).toBe(0);
+    // +1V -> 1/5 of half-width right of center.
+    expect(xyPixelX(1, RANGE_MAX_CV, 1, 0, W)).toBeCloseTo(W / 2 + (W / 2) / 5, 6);
+  });
+
+  it('offset shifts the center; scale stretches around it', () => {
+    // offset 0.5 (NDC) moves center right by quarter-width.
+    expect(xyPixelX(0, RANGE_MAX_AUDIO, 1, 0.5, W)).toBeCloseTo(W / 2 + (0.5 * W) / 2, 6);
+    // scale 2 on a 0.5 sample doubles its NDC deflection.
+    expect(xyPixelX(0.5, RANGE_MAX_AUDIO, 2, 0, W)).toBe(W); // 0.5*2 = 1.0 -> right edge
   });
 });
