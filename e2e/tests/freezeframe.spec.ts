@@ -22,8 +22,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-const OUT_CANVAS = 'canvas[data-testid="video-out-canvas"]';
-
 interface FrameSample {
   /** Compact per-pixel brightness fingerprint (one byte per sampled pixel).
    *  Comparing two fingerprints pixel-by-pixel gives a robust "fraction of
@@ -36,32 +34,10 @@ interface FrameSample {
   samples: number;
 }
 
-async function sampleFrame(page: Page): Promise<FrameSample | null> {
-  return page.locator(OUT_CANVAS).first().evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    const img = ctx.getImageData(0, 0, c.width, c.height);
-    const data = img.data;
-    let n = 0, nonZero = 0;
-    const colors = new Set<number>();
-    const fingerprint: number[] = [];
-    // Coarse stride keeps this fast; we sample ~every 4th pixel.
-    for (let i = 0; i < data.length; i += 16) {
-      const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
-      const v = (r + g + b) / 3;
-      if (v > 8) nonZero++;
-      fingerprint.push(Math.round(v));
-      // Bucket each channel to 5 bits (32 levels) so anti-alias / sampling
-      // noise doesn't inflate the distinct-colour count. Posterization to
-      // ≤32 levels per channel will still collapse buckets measurably.
-      const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
-      colors.add(key);
-      n++;
-    }
-    return { fingerprint, nonZero, distinctColors: colors.size, samples: n };
-  });
-}
+// NOTE: the frame-sampling logic (coarse-stride brightness fingerprint +
+// 5-bit-per-channel distinct-colour count) lives INLINE inside `stepAndSample`'s
+// single `page.evaluate` so the entire step→blit→sample is one round-trip — see
+// the PERF note below. There is no standalone `sampleFrame` round-trip helper.
 
 /** Fraction of sampled pixels whose brightness changed by > 8 (out of 255)
  *  between two frame fingerprints. ~0 ⇒ frozen; high ⇒ the frame moved. */
@@ -96,11 +72,25 @@ const FROZEN_FRACTION = 0.01; // <1% of pixels changed ⇒ held frame persists
 // they could sample mid-transition (flaky assertions) and, when paired with the
 // dep-reoptimization reload race, blow the whole 30 s test budget.
 
-/** Advance the video engine one deterministic frame and present every OUTPUT to
- *  its visible 2D canvas, independent of rAF throttling. No-op if the video
- *  engine isn't up yet (caller polls, so a transient miss is fine). */
-async function stepVideo(page: Page): Promise<void> {
-  await page.evaluate(() => {
+// PERF (the CI-vs-local gap): each `page.evaluate` is a cross-process round-trip
+// to the browser, and on a 4-vCPU CI runner with 4 Playwright workers a WebGL/
+// canvas-heavy test gets ~1 vCPU — so those round-trips are SLOW. The old helper
+// made one round-trip PER stepped frame PLUS one per sample, so a single poll
+// iteration (`stepAndSample(1)` + `stepAndSample(gap=6)`) cost ~9 round-trips,
+// and three poll phases blew the 30 s test budget under contention (confirmed:
+// the timeout fired mid-`page.evaluate`, at a DIFFERENT line on each attempt —
+// the hallmark of slow-but-correct, not a stuck poll). Fix: do the WHOLE
+// step-N-frames → blit → sample in ONE `page.evaluate` so a poll iteration is a
+// SINGLE round-trip regardless of how many engine frames it advances. Paired
+// with `test.setTimeout(90_000)` (mirroring DOOM) so the budget — not a
+// 30 s-default trip — governs.
+
+/** Step the video engine `n` deterministic frames, blit every OUTPUT to its
+ *  visible 2D canvas (independent of rAF throttling), then sample the first
+ *  OUTPUT canvas — all in a SINGLE in-page pass (one round-trip). Returns null
+ *  if the engine isn't up yet (caller polls, so a transient miss is fine). */
+async function stepAndSample(page: Page, n = 1): Promise<FrameSample | null> {
+  return page.evaluate((steps) => {
     const w = globalThis as unknown as {
       __engine?: () => {
         getDomain?: (d: string) => {
@@ -112,44 +102,81 @@ async function stepVideo(page: Page): Promise<void> {
       __patch?: { nodes: Record<string, { type: string }> };
     };
     const ve = w.__engine?.()?.getDomain?.('video');
-    if (!ve?.step) return;
-    ve.step();
-    // Blit each OUTPUT's FBO onto its visible <canvas> so the test's pixel read
-    // sees this freshly-stepped frame without waiting for the card's rAF tick.
+    if (!ve?.step) return null;
+
     const nodes = w.__patch?.nodes ?? {};
-    for (const [id, n] of Object.entries(nodes)) {
-      if (n.type !== 'videoOut') continue;
-      try {
-        ve.blitOutputToDrawingBuffer?.(id);
-      } catch { /* engine method shouldn't throw */ }
+    const outIds = Object.entries(nodes)
+      .filter(([, nd]) => nd.type === 'videoOut')
+      .map(([id]) => id);
+
+    // Advance `steps` engine frames, blitting each OUTPUT to its visible
+    // <canvas> every frame so the source keeps animating beneath a frozen
+    // hold (the headline sample-&-hold guarantee). Blitting only the final
+    // frame would let the OUTPUT canvas miss intermediate motion.
+    for (let s = 0; s < steps; s++) {
+      ve.step();
       const src = ve.canvas;
-      const el = document.querySelector<HTMLCanvasElement>(
-        `canvas[data-testid="video-out-canvas"][data-node-id="${id}"]`,
-      );
-      const ctx2d = el?.getContext('2d', { alpha: false });
-      if (src && el && ctx2d) {
-        // Black background + 4:3 aspect-fit, mirroring VideoOutCard.fitRect
-        // (ENGINE_W=640, ENGINE_H=480) so the test's blit matches the card's.
-        const cw = el.width, ch = el.height;
-        ctx2d.fillStyle = '#050608';
-        ctx2d.fillRect(0, 0, cw, ch);
-        const srcAspect = 640 / 480;
-        let x = 0, y = 0, dw = cw, dh = ch;
-        if (cw / ch > srcAspect) {
-          dh = ch; dw = Math.round(dh * srcAspect); x = Math.round((cw - dw) / 2); y = 0;
-        } else {
-          dw = cw; dh = Math.round(dw / srcAspect); x = 0; y = Math.round((ch - dh) / 2);
+      for (const id of outIds) {
+        try { ve.blitOutputToDrawingBuffer?.(id); } catch { /* shouldn't throw */ }
+        const el = document.querySelector<HTMLCanvasElement>(
+          `canvas[data-testid="video-out-canvas"][data-node-id="${id}"]`,
+        );
+        const ctx2d = el?.getContext('2d', { alpha: false });
+        if (src && el && ctx2d) {
+          // Black background + 4:3 aspect-fit, mirroring VideoOutCard.fitRect
+          // (ENGINE_W=640, ENGINE_H=480) so the test's blit matches the card's.
+          const cw = el.width, ch = el.height;
+          ctx2d.fillStyle = '#050608';
+          ctx2d.fillRect(0, 0, cw, ch);
+          const srcAspect = 640 / 480;
+          let x = 0, y = 0, dw = cw, dh = ch;
+          if (cw / ch > srcAspect) {
+            dh = ch; dw = Math.round(dh * srcAspect); x = Math.round((cw - dw) / 2); y = 0;
+          } else {
+            dw = cw; dh = Math.round(dw / srcAspect); x = 0; y = Math.round((ch - dh) / 2);
+          }
+          try { ctx2d.drawImage(src, x, y, dw, dh); } catch { /* not yet drawable */ }
         }
-        try { ctx2d.drawImage(src, x, y, dw, dh); } catch { /* not yet drawable */ }
       }
     }
-  });
+
+    // Sample the first OUTPUT canvas (same fingerprint logic as sampleFrame).
+    const c = document.querySelector<HTMLCanvasElement>(
+      'canvas[data-testid="video-out-canvas"]',
+    );
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return null;
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    const data = img.data;
+    let cnt = 0, nonZero = 0;
+    const colors = new Set<number>();
+    const fingerprint: number[] = [];
+    for (let i = 0; i < data.length; i += 32) {
+      const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
+      const v = (r + g + b) / 3;
+      if (v > 8) nonZero++;
+      fingerprint.push(Math.round(v));
+      const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+      colors.add(key);
+      cnt++;
+    }
+    return { fingerprint, nonZero, distinctColors: colors.size, samples: cnt };
+  }, n);
 }
 
-/** Step the engine `n` frames, then sample the OUTPUT canvas. */
-async function stepAndSample(page: Page, n = 1): Promise<FrameSample | null> {
-  for (let i = 0; i < n; i++) await stepVideo(page);
-  return sampleFrame(page);
+/** Sample now, advance `gap` frames, then sample again — both samples returned
+ *  from a SINGLE round-trip. Each poll iteration of waitForMoving/waitForFrozen
+ *  needs exactly this pair (sample A vs sample B `gap` steps later); fusing them
+ *  into one `page.evaluate` halves the cross-process latency under CI CPU
+ *  contention (was 2 round-trips/iteration, now 1). Returns nulls if the engine
+ *  isn't up yet. */
+async function stepSamplePair(
+  page: Page,
+  gap: number,
+): Promise<{ a: FrameSample | null; b: FrameSample | null }> {
+  const a = await stepAndSample(page, 1);
+  const b = await stepAndSample(page, gap);
+  return { a, b };
 }
 
 /**
@@ -162,13 +189,12 @@ async function stepAndSample(page: Page, n = 1): Promise<FrameSample | null> {
 async function waitForMoving(
   page: Page,
   minFraction: number,
-  { deadlineMs = 8000, gap = 6, label = 'frame' }: { deadlineMs?: number; gap?: number; label?: string } = {},
+  { deadlineMs = 12000, gap = 6, label = 'frame' }: { deadlineMs?: number; gap?: number; label?: string } = {},
 ): Promise<FrameSample> {
   const deadline = Date.now() + deadlineMs;
   let last = 0;
   do {
-    const a = await stepAndSample(page);
-    const b = await stepAndSample(page, gap);
+    const { a, b } = await stepSamplePair(page, gap);
     if (a && b) {
       last = changedFraction(a, b);
       if (last > minFraction) return b;
@@ -189,15 +215,14 @@ async function waitForMoving(
 async function waitForFrozen(
   page: Page,
   maxFraction: number,
-  { deadlineMs = 8000, gap = 10, stableNeeded = 3, label = 'frame' }: { deadlineMs?: number; gap?: number; stableNeeded?: number; label?: string } = {},
+  { deadlineMs = 12000, gap = 10, stableNeeded = 3, label = 'frame' }: { deadlineMs?: number; gap?: number; stableNeeded?: number; label?: string } = {},
 ): Promise<FrameSample> {
   const deadline = Date.now() + deadlineMs;
   let stable = 0;
   let last: FrameSample | null = null;
   let lastFrac = 1;
   do {
-    const a = await stepAndSample(page);
-    const b = await stepAndSample(page, gap);
+    const { a, b } = await stepSamplePair(page, gap);
     if (a && b) {
       lastFrac = changedFraction(a, b);
       if (lastFrac < maxFraction) {
@@ -222,7 +247,7 @@ async function waitForFrozen(
 async function waitForCondition(
   page: Page,
   pred: (s: FrameSample) => boolean,
-  { deadlineMs = 8000, label = 'frame' }: { deadlineMs?: number; label?: string } = {},
+  { deadlineMs = 12000, label = 'frame' }: { deadlineMs?: number; label?: string } = {},
 ): Promise<FrameSample> {
   const deadline = Date.now() + deadlineMs;
   let last: FrameSample | null = null;
@@ -247,6 +272,13 @@ async function waitForContent(
 
 test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
   test('(a) ungated = live passthrough; (b/c) gate high updates / gate low freezes', async ({ page }) => {
+    // WebGL/canvas-heavy + multi-phase deterministic polling. On CI this runs
+    // under 4 Playwright workers sharing 4 vCPU, so it gets ~1 vCPU and every
+    // `page.evaluate` round-trip (step+blit+sample) is slow — the cumulative
+    // cost of the three poll phases blew the 30 s default budget (the timeout
+    // fired mid-`page.evaluate`). Mirror DOOM's 90 s budget so the test's own
+    // internal poll deadlines, not Playwright's per-evaluate budget, govern.
+    test.setTimeout(90_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -326,6 +358,8 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
   });
 
   test('(d) raising QUANT knobs drops the distinct-colour count (posterize)', async ({ page }) => {
+    // Same CI CPU-contention budget as the gate scenario above (see note).
+    test.setTimeout(90_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
