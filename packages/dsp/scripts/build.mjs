@@ -19,7 +19,6 @@ import { join, basename, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build as esbuildBuild } from 'esbuild';
 import { buildWorkletForModule } from './build-worklet.mjs';
-import { combinedWorkletSource } from './worklet-sha.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = join(__dirname, '..');
@@ -95,9 +94,8 @@ async function buildDsp(filePath) {
 async function buildTs(filePath) {
   const name = basename(filePath, '.ts');
   if (onlyName && onlyName !== name) return null;
-  // Hash the entry + every inlined relative lib import (esbuild bundles them in),
-  // so a DSP change in lib/ doesn't pass the ART toolchain pin stale.
-  const sha = shortSha(await combinedWorkletSource(filePath));
+  const source = await readFile(filePath, 'utf8');
+  const sha = shortSha(source);
   await esbuildBuild({
     entryPoints: [filePath],
     outfile: join(DIST_DIR, `${name}.js`),

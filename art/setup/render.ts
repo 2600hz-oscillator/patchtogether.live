@@ -11,11 +11,6 @@ import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
-// Reuse the build's combined worklet+lib hash source so ART's source SHA and the
-// built .sha agree even when only an inlined lib/ file changed (e.g. cube-dsp).
-// Standalone dep-free helper (no esbuild/faustwasm), safe to import here.
-// @ts-expect-error — worklet-sha.mjs is plain ESM JS, no type declarations.
-import { combinedWorkletSource } from '../../packages/dsp/scripts/worklet-sha.mjs';
 
 export const SAMPLE_RATE = 48000;
 export const ART_DIR = new URL('../', import.meta.url).pathname;
@@ -75,21 +70,13 @@ export async function render(opts: RenderOptions): Promise<RenderResult> {
   return { buffer, channels: 1, sampleRate };
 }
 
-/** Compute the SHA-pin for a module's source (matches build.mjs).
- *
- *  Faust (.dsp): hash the single source file.
- *  Worklet (.ts): hash the entry PLUS every inlined relative lib/ import, since
- *  esbuild bundles them into dist/<name>.js (a lib-only DSP change must move the
- *  pin or ART passes stale — see combinedWorkletSource). */
+/** Compute the SHA-pin for a module's source file (matches build.mjs). */
 export async function moduleSourceSha(moduleName: string): Promise<string> {
   const dspPath = join(DSP_SRC_DIR, `${moduleName}.dsp`);
   const tsPath = join(DSP_SRC_DIR, `${moduleName}.ts`);
-  if (existsSync(dspPath)) {
-    const source = await readFile(dspPath, 'utf8');
-    return createHash('sha256').update(source).digest('hex').slice(0, 16);
-  }
-  const combined: string = await combinedWorkletSource(tsPath);
-  return createHash('sha256').update(combined).digest('hex').slice(0, 16);
+  const path = existsSync(dspPath) ? dspPath : tsPath;
+  const source = await readFile(path, 'utf8');
+  return createHash('sha256').update(source).digest('hex').slice(0, 16);
 }
 
 /** Read .sha companion file produced by the build. */
