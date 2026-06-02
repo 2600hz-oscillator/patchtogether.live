@@ -89,6 +89,7 @@
     { id: 'pitch',    cable: 'pitch' },
     { id: 'fm',       cable: 'audio' },
     { id: 'pm',       cable: 'audio' },
+    { id: 'sync',     label: 'SYNC',   cable: 'audio' },
     { id: 'tune',     cable: 'cv' },
     { id: 'fine',     cable: 'cv' },
     { id: 'fmAmount', label: 'FM AMT', cable: 'cv' },
@@ -101,6 +102,7 @@
     { id: 'triangle', cable: 'audio' },
     { id: 'sine',     cable: 'audio' },
     { id: 'morph',    cable: 'audio' },
+    { id: 'sync',     label: 'SYNC',   cable: 'audio' },
   ];
 </script>
 

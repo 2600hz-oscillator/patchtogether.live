@@ -16,14 +16,27 @@ describe('analogVcoDef: module def shape', () => {
     expect(analogVcoDef.category).toBe('sources');
   });
 
-  it('exposes inputs: pitch, fm, pm (audio-rate) + tune/fine/fmAmount/pmAmount/shape (cv)', () => {
+  it('exposes inputs: pitch, fm, pm, sync (audio-rate) + tune/fine/fmAmount/pmAmount/shape (cv)', () => {
     const ids = analogVcoDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['fine', 'fm', 'fmAmount', 'pitch', 'pm', 'pmAmount', 'shape', 'tune']);
+    expect(ids).toEqual(['fine', 'fm', 'fmAmount', 'pitch', 'pm', 'pmAmount', 'shape', 'sync', 'tune']);
   });
 
-  it('exposes 5 output ports (saw, square, triangle, sine, morph)', () => {
+  it('exposes 6 output ports (saw, square, triangle, sine, morph, sync)', () => {
     const ids = analogVcoDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['morph', 'saw', 'sine', 'square', 'triangle']);
+    expect(ids).toEqual(['morph', 'saw', 'sine', 'square', 'sync', 'triangle']);
+  });
+
+  it('sync input: audio-rate hard-sync input (no paramTarget)', () => {
+    const port = analogVcoDef.inputs.find((p) => p.id === 'sync');
+    expect(port).toBeDefined();
+    expect(port!.type).toBe('audio');
+    expect(port!.paramTarget).toBeUndefined();
+  });
+
+  it('sync output: audio-rate hard-sync pulse output', () => {
+    const port = analogVcoDef.outputs.find((p) => p.id === 'sync');
+    expect(port).toBeDefined();
+    expect(port!.type).toBe('audio');
   });
 
   it('exposes 6 params (tune, fine, fmAmount, pmAmount, pw, shape)', () => {
@@ -110,8 +123,8 @@ describe('analogVcoDef: module def shape', () => {
     }
   });
 
-  it('schemaVersion=4 (v1→v2 pmAmount; v2→v3 bipolar widen; v3→v4 shape morph param)', () => {
-    expect(analogVcoDef.schemaVersion).toBe(4);
+  it('schemaVersion=5 (v1→v2 pmAmount; v2→v3 bipolar widen; v3→v4 shape morph param; v4→v5 sync I/O)', () => {
+    expect(analogVcoDef.schemaVersion).toBe(5);
     expect(analogVcoDef.migrate).toBeDefined();
     // v1 → v4 seeds BOTH the missing pmAmount AND the new shape param at default 0.
     const migrated = analogVcoDef.migrate!({ params: { tune: 0 } }, 1) as { params: Record<string, number> };

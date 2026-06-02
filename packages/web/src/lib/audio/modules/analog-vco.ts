@@ -19,6 +19,9 @@
 //   pitch (pitch): V/oct pitch input, 0V = C4. Drives oscillator frequency.
 //   fm (audio): audio-rate frequency modulator, scaled by the fmAmount param.
 //   pm (audio): audio-rate phase modulator, scaled by the pmAmount param.
+//   sync (audio): hard-sync input. A rising edge (zero-crossing) hard-resets
+//     this oscillator's phase to 0 — wire master.sync_out → slave.sync. When
+//     UNPATCHED the VCO output is byte-identical to a VCO with no sync port.
 //   tune (cv, linear, paramTarget=tune): displaces the tune knob (semitones).
 //   fine (cv, linear, paramTarget=fine): displaces the fine knob (cents).
 //   fmAmount (cv, linear, paramTarget=fmAmount): displaces the FM-depth knob.
@@ -31,6 +34,8 @@
 //   triangle (audio): triangle tap.
 //   sine (audio): sine tap.
 //   morph (audio): continuous saw→sine→square crossfade set by the shape knob.
+//   sync (audio): hard-sync OUTPUT. A one-sample +1 pulse at each cycle
+//     boundary (phase wrap) so it can drive another VCO's sync input.
 //
 // Params:
 //   tune (linear -36..36, default 0): coarse tune in semitones.
@@ -55,7 +60,7 @@ export const analogVcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Analog VCO',
   category: 'sources',
-  schemaVersion: 4,
+  schemaVersion: 5,
   migrate(data, fromVersion) {
     const d = (data ?? {}) as { params?: Record<string, number> };
     const params = { ...(d.params ?? {}) };
@@ -74,12 +79,17 @@ export const analogVcoDef: AudioModuleDef = {
       // unchanged and the new morph output, if wired, starts as a bare saw.
       if (params.shape === undefined) params.shape = 0;
     }
+    // v4 → v5: `sync` input + `sync` output ports added (hard sync). No params
+    // change — these are pure I/O ports. Unwired `sync` input means the VCO
+    // output is byte-identical to v4, so legacy patches are unaffected.
     return { ...d, params };
   },
   inputs: [
     { id: 'pitch', type: 'pitch' },
     { id: 'fm',    type: 'audio' },
     { id: 'pm',    type: 'audio' },
+    // Hard-sync input (audio-rate). A rising edge resets the phase to 0.
+    { id: 'sync',  type: 'audio' },
     { id: 'tune',     type: 'cv', paramTarget: 'tune',     cvScale: { mode: 'linear' } },
     { id: 'fine',     type: 'cv', paramTarget: 'fine',     cvScale: { mode: 'linear' } },
     { id: 'fmAmount', type: 'cv', paramTarget: 'fmAmount', cvScale: { mode: 'linear' } },
@@ -92,6 +102,8 @@ export const analogVcoDef: AudioModuleDef = {
     { id: 'triangle', type: 'audio' },
     { id: 'sine',     type: 'audio' },
     { id: 'morph',    type: 'audio' },
+    // Hard-sync output: a one-sample pulse at each cycle boundary.
+    { id: 'sync',     type: 'audio' },
   ],
   params: [
     { id: 'tune',     label: 'Tune', defaultValue: 0,   min: -36,   max: 36,   curve: 'linear', units: 'semi' },
@@ -107,21 +119,28 @@ export const analogVcoDef: AudioModuleDef = {
 
     // ChannelMerger routes per-port mono signals to distinct channels of
     // Faust's single multi-channel input. This is what makes sequencer.pitch
-    // affect ONLY the pitch channel without bleeding into fm/pm.
-    const merger = ctx.createChannelMerger(3);
+    // affect ONLY the pitch channel without bleeding into fm/pm/sync.
+    // Channel map mirrors the DSP's process(pitch, fm, pm, sync):
+    //   0 = pitch, 1 = fm, 2 = pm, 3 = sync.
+    const merger = ctx.createChannelMerger(4);
     merger.connect(faustNode);
     // Feed silence to every merger input so the node stays in the active
     // processing graph even when nothing's externally patched. Without this,
     // a fresh module (no inputs connected) doesn't process and there's no audio.
+    // Silence on the sync channel (3) is what guarantees backward-compat: the
+    // DSP's rising-edge detector never fires on a constant 0, so phase reset is
+    // never triggered and the output is identical to a VCO with no sync port.
     const silence = ctx.createConstantSource();
     silence.offset.value = 0;
     silence.start();
     silence.connect(merger, 0, 0);
     silence.connect(merger, 0, 1);
     silence.connect(merger, 0, 2);
+    silence.connect(merger, 0, 3);
 
-    // Splitter for the 5-channel output (saw / square / triangle / sine / morph).
-    const splitter = ctx.createChannelSplitter(5);
+    // Splitter for the 6-channel output (saw / square / triangle / sine /
+    // morph / sync_out).
+    const splitter = ctx.createChannelSplitter(6);
     faustNode.connect(splitter);
 
     // Live single-cycle waveform tap. An AnalyserNode hangs off the MORPH
@@ -159,6 +178,7 @@ export const analogVcoDef: AudioModuleDef = {
         ['pitch', { node: merger, input: 0 }],
         ['fm',    { node: merger, input: 1 }],
         ['pm',    { node: merger, input: 2 }],
+        ['sync',  { node: merger, input: 3 }],
         // CV → AudioParam routing. The engine's addEdge fast-path uses `param`
         // to interpose the cvScale chain so an LFO ±1 sweeps the param's
         // natural range centered on the knob position.
@@ -174,6 +194,7 @@ export const analogVcoDef: AudioModuleDef = {
         ['triangle', { node: splitter, output: 2 }],
         ['sine',     { node: splitter, output: 3 }],
         ['morph',    { node: splitter, output: 4 }],
+        ['sync',     { node: splitter, output: 5 }],
       ]),
       setParam(paramId, value) {
         params.get(`${PARAM_PREFIX}/${paramId}`)?.setValueAtTime(value, ctx.currentTime);
