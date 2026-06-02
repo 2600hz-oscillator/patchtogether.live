@@ -9,11 +9,22 @@ name: CI
 #
 #   typecheck       ~30 s  | independent setup
 #   unit            ~90 s  | independent setup (server + web vitest)
-#   art             ~90 s  | independent setup (+ dsp:build)
-#   e2e (× 8)     ~3-4 min | matrix shards 1..8/8, blob reporter, own setup each
+#   dsp-build       ~1-2 min | compiles Faust worklets ONCE → dsp-dist artifact
+#                            | (cache hit ~10 s); art/build/e2e/collab/vrt/
+#                            | vrt-strict/behavioral `needs:` it + restore dist
+#   art             ~60 s  | needs: dsp-build (restores dist, dsp:build no-ops)
+#   e2e (× 8)     ~3-4 min | matrix shards 1..8/8, blob reporter, needs: dsp-build
 #   merge-reports   ~30 s  | needs: e2e — merges 8 blob-reports → HTML
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
-#   vrt             ~3-5 min | unchanged
+#   vrt             ~3-5 min | needs: dsp-build (restores dist)
+#
+# dsp-build dedupe (2026-06-01): the slow Faust compile used to run ~16× per
+# run (once per e2e shard, vrt, vrt-strict, behavioral shard, art, build).
+# It now runs ONCE in the `dsp-build` job, which caches + uploads
+# packages/dsp/dist/**; every downstream job `needs:` it and DOWNLOADS the
+# `dsp-dist` artifact. Jobs that call a `task` listing dsp:build as a dep
+# (art/vrt/vrt-strict/build) reuse the restored dist via the Taskfile
+# `status:` guard (dist/.dsp-srchash) — no double compile.
 #
 # Critical path: max(typecheck, unit, art, slowest-e2e-shard) + merge-reports
 # ≈ 4-5 min, vs the previous ~22 min single-runner pipeline. Setup is repeated
@@ -41,9 +52,11 @@ on:
       - '**/*.md'
       - '.myrobots/**'
       - 'LICENSE'
-  # Manual re-trigger on a branch — used by vrt-update.yml after it pushes
-  # regenerated baselines (a GITHUB_TOKEN push does not fire push/pull_request),
-  # so the required checks re-validate against the fresh baselines.
+  # Manual re-trigger on a branch (operator convenience). NOTE: a
+  # workflow_dispatch run does NOT count toward a PR's required-status-check
+  # gate (confirmed on #524) — so vrt-update.yml no longer dispatches this to
+  # re-validate; it close+reopens the PR to re-fire a `pull_request` run
+  # instead (see vrt-update.yml `revalidate`).
   workflow_dispatch:
 
 # Cancel in-progress runs for the same ref when a new commit lands.
@@ -189,11 +202,14 @@ jobs:
         run: flox activate -- task test
 
   # -----------------------------------------------------------------------
-  # art — Audio Regression Tests. Has a `dsp:build` dep (~4 s, baked into
-  # `task art`). ~57 s of work; ~130 s with setup.
+  # art — Audio Regression Tests. `task art` lists dsp:build as a dep, but we
+  # restore the dsp-build artifact first so that dep is a no-op (the dist's
+  # .dsp-srchash matches → Taskfile `status:` guard skips the Faust compile).
+  # ~57 s of work; ~130 s with setup.
   # -----------------------------------------------------------------------
   art:
     name: art
+    needs: dsp-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -220,10 +236,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deps-
 
+      # Restore the worklet dist built once by dsp-build, BEFORE `task art`
+      # (whose dsp:build dep then no-ops via the .dsp-srchash status guard).
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
       - name: Install workspace deps
         run: flox activate -- task install
 
-      - name: Run ART (Audio Regression Tests; dsp:build runs as task dep)
+      - name: Run ART (Audio Regression Tests; dsp:build dep no-ops on restored dist)
         run: flox activate -- task art
 
   # -----------------------------------------------------------------------
@@ -247,6 +271,7 @@ jobs:
   # -----------------------------------------------------------------------
   build:
     name: build (production bundle)
+    needs: dsp-build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -273,14 +298,110 @@ jobs:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
 
+      # Restore the worklet dist built once by dsp-build. `task build` lists
+      # dsp:build first, but the restored dist + matching .dsp-srchash makes
+      # that dep a no-op (status guard), so this job only runs `vite build` —
+      # which is the gate's actual purpose (catching web-bundle ESM mismatches,
+      # the Clerk #464 RCA). The dsp dist is the same artifact the prod compile
+      # would produce, and `vite build` still bundles it.
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
       - name: Install workspace deps
         run: flox activate -- task install
 
-      # The full production build: dsp:build (Faust + JS worklets → dist) then
+      # The production build: dsp:build (no-ops on the restored dist) then
       # `vite build` for the web app. No deploy, no Cloudflare token — purely a
       # "does the prod bundle compile?" gate.
       - name: Run production build (dsp + web)
         run: flox activate -- task build
+
+  # -----------------------------------------------------------------------
+  # dsp-build — compile the DSP worklets (Faust + esbuild) ONCE per run and
+  # publish packages/dsp/dist/** as an artifact for every downstream job to
+  # restore, instead of recompiling Faust ~16× (once per e2e shard ×8, vrt,
+  # vrt-strict, behavioral ×6, art, …).
+  #
+  # WHY (build-wall-time): `task dsp:build` (slow Faust compile) was a step or
+  # a transitive `deps:` in every job that boots the dev/preview server or runs
+  # ART — the worklets must be on disk at packages/dsp/dist/ before Vite imports
+  # the `?url`-suffixed .js/.wasm artifacts. Compiling it per-job dominated the
+  # cold-cache wall-time of the short jobs. Now it runs here once.
+  #
+  # MECHANISM (cache + artifact, belt-and-suspenders):
+  #   - actions/cache keyed on the hash of every DSP build input
+  #     (packages/dsp/src/**, packages/dsp/scripts/**, packages/dsp/package.json
+  #     — which pins @grame/faustwasm + esbuild — and .flox/env/manifest.toml,
+  #     which pins the Faust + Node toolchain). A cache HIT skips even this
+  #     job's Faust compile (restores dist in seconds); a MISS recompiles and
+  #     repopulates the cache for the next run.
+  #   - upload-artifact (`dsp-dist`) so downstream jobs DOWNLOAD a deterministic
+  #     copy via `needs: dsp-build` regardless of cache state — no dependence on
+  #     a cross-job cache race. The artifact includes dist/.dsp-srchash (the
+  #     source fingerprint) so the `dsp:build` Taskfile `status:` guard can skip
+  #     a transitive rebuild in jobs that call `task art|vrt|vrt:strict|build`.
+  #
+  # CORRECTNESS: downstream jobs `needs: dsp-build` and download the artifact
+  # at the START (before setup/dev-server), so a job never runs with a stale or
+  # missing dist. If a job still invokes a `task` that lists dsp:build as a dep,
+  # the restored dist + matching .dsp-srchash makes that dep a no-op (the
+  # `status:` guard in Taskfile.yml) — no double-build.
+  # -----------------------------------------------------------------------
+  dsp-build:
+    name: dsp-build (Faust worklets, once)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      # Cache the compiled worklet dist keyed on every DSP build input. A HIT
+      # restores packages/dsp/dist/** (incl. .dsp-srchash) and the build step
+      # below skips the Faust compile; a MISS recompiles + repopulates.
+      - name: Cache DSP dist
+        id: cache-dsp-dist
+        uses: actions/cache@v4
+        with:
+          path: packages/dsp/dist
+          key: ${{ runner.os }}-dsp-dist-${{ hashFiles('packages/dsp/src/**', 'packages/dsp/scripts/**', 'packages/dsp/package.json', '.flox/env/manifest.toml') }}
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      # On a cache HIT the restored dist already carries a matching
+      # .dsp-srchash, so the `status:` guard in `task dsp:build` makes this a
+      # no-op (prints "up to date"). On a MISS it runs the real Faust + esbuild
+      # compile and stamps the fingerprint.
+      - name: Build DSP worklets (Faust + esbuild)
+        run: flox activate -- task dsp:build
+
+      # Publish the dist for every downstream job to download via needs:.
+      - name: Upload DSP dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+          # Include the hidden .dsp-srchash fingerprint so the Taskfile
+          # `status:` guard can skip transitive rebuilds downstream.
+          include-hidden-files: true
+          retention-days: 1
 
   # -----------------------------------------------------------------------
   # e2e — Playwright E2E suite, sharded 8 ways. Each shard runs ~1/8 of the
@@ -295,6 +416,7 @@ jobs:
   # -----------------------------------------------------------------------
   e2e:
     name: e2e (shard ${{ matrix.shard }}/8)
+    needs: dsp-build
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -353,6 +475,17 @@ jobs:
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
+
+      # Restore the worklet dist built once by dsp-build. Several module
+      # Card.svelte files import `?url`-suffixed WASM/JS artifacts from
+      # packages/dsp/dist/; without them on disk the Vite dev server 500s on
+      # the import. Downloaded here (before the dev server boots) instead of
+      # recompiling Faust per shard.
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
 
       - name: Apply DB schema
         run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
@@ -431,12 +564,8 @@ jobs:
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
 
-      # Build DSP once before the dev server boots; several module Card.svelte
-      # files import `?url`-suffixed WASM artifacts from packages/dsp/dist/.
-      # Without the bundled DSP on disk Vite's dev server fails the import
-      # with a 500 + an HMR overlay during E2E.
-      - name: Build DSP
-        run: flox activate -- task dsp:build
+      # (DSP dist was restored from the dsp-build artifact above — no per-shard
+      # Faust compile.)
 
       # @collab multi-context specs are EXCLUDED from the sharded matrix
       # (--grep-invert @collab) and run in their own dedicated, non-sharded
@@ -565,6 +694,7 @@ jobs:
   # -----------------------------------------------------------------------
   collab:
     name: collab (@collab multi-context)
+    needs: dsp-build
     runs-on: ubuntu-latest
     # 40 min ceiling: the full @collab suite (~41 specs incl. cold DOOM WASM +
     # several 2-context boots) at 2 workers finishes well under this; a single
@@ -632,6 +762,14 @@ jobs:
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
 
+      # Restore the worklet dist built once by dsp-build (before task build:web,
+      # which bundles the dsp `?url` imports into the preview build).
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
       - name: Apply DB schema
         run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
 
@@ -689,8 +827,7 @@ jobs:
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
 
-      - name: Build DSP
-        run: flox activate -- task dsp:build
+      # (DSP dist was restored from the dsp-build artifact above.)
 
       # Build the web bundle so `vite preview` (E2E_USE_PREVIEW=1, set in env
       # above) has something to serve. Runs after DSP + manifest + DOOM assets
@@ -755,6 +892,7 @@ jobs:
   # -----------------------------------------------------------------------
   behavioral-coverage:
     name: behavioral input coverage (shard ${{ matrix.shard }}/6)
+    needs: dsp-build
     runs-on: ubuntu-latest
     # Informational lane: red here must NOT block PR merges. The job still runs
     # + reports a status, but `continue-on-error: true` makes GitHub treat any
@@ -819,14 +957,21 @@ jobs:
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
 
+      # Restore the worklet dist built once by dsp-build (before the dev server
+      # boots for the behavioral sweep).
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
       - name: Apply DB schema
         run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
 
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
 
-      - name: Build DSP
-        run: flox activate -- task dsp:build
+      # (DSP dist was restored from the dsp-build artifact above.)
 
       - name: Run E2E (behavioral input coverage, shard ${{ matrix.shard }}/6, 4 workers, blob reporter)
         run: |
@@ -931,7 +1076,7 @@ jobs:
   ci:
     name: typecheck + unit + ART + E2E
     if: always()
-    needs: [actionlint, typecheck, unit, art, build, e2e, collab, merge-reports]
+    needs: [actionlint, typecheck, unit, dsp-build, art, build, e2e, collab, merge-reports]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -941,6 +1086,7 @@ jobs:
           ACTIONLINT: ${{ needs.actionlint.result }}
           TYPECHECK: ${{ needs.typecheck.result }}
           UNIT: ${{ needs.unit.result }}
+          DSP_BUILD: ${{ needs.dsp-build.result }}
           ART: ${{ needs.art.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
@@ -950,6 +1096,7 @@ jobs:
           echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
           echo "unit:          $UNIT"
+          echo "dsp-build:     $DSP_BUILD"
           echo "art:           $ART"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
@@ -967,6 +1114,12 @@ jobs:
           # This closes the Clerk #464 gap where a broken bundle merged because
           # no required check ran the production bundler.
           #
+          # `dsp-build` compiles the Faust worklets ONCE and is a dependency of
+          # art/build/e2e/collab (+ vrt/behavioral). A failure there cascades to
+          # those jobs, but we gate on it explicitly so a broken DSP compile
+          # produces a clear, fast failure signal instead of a wall of
+          # confusing "artifact not found" downloads.
+          #
           # `behavioral-coverage` (BEHAVIORAL) is INTENTIONALLY ABSENT from
           # both `needs:` above and this success check. It's informational
           # only (continue-on-error: true) until per-module thresholds are
@@ -974,6 +1127,7 @@ jobs:
           if [[ "$ACTIONLINT" != "success" \
              || "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
+             || "$DSP_BUILD" != "success" \
              || "$ART" != "success" \
              || "$BUILD" != "success" \
              || "$E2E" != "success" ]]; then
@@ -1003,6 +1157,7 @@ jobs:
   # -----------------------------------------------------------------------
   vrt:
     name: VRT (visual regression)
+    needs: dsp-build
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -1056,6 +1211,15 @@ jobs:
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
+
+      # Restore the worklet dist built once by dsp-build, BEFORE `task vrt`
+      # (whose dsp:build dep then no-ops via the .dsp-srchash status guard);
+      # the VRT cards import `?url` artifacts from packages/dsp/dist/.
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
 
       - name: Apply DB schema
         run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
@@ -1152,6 +1316,7 @@ jobs:
   # -----------------------------------------------------------------------
   vrt-strict:
     name: vrt-strict (visual regression — strict subset)
+    needs: dsp-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -1182,6 +1347,15 @@ jobs:
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
+
+      # Restore the worklet dist built once by dsp-build, BEFORE `task
+      # vrt:strict` (whose dsp:build dep then no-ops via the .dsp-srchash
+      # status guard).
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
 
       # No DB needed for the strict subset (it's pure card-render baselines).
       # No DOOM WASM needed either — DOOM is in EXEMPT_FROM_VRT.
