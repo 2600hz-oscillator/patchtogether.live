@@ -346,6 +346,55 @@ export function wrapFold(coord: number): number {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// 5b. FOLD (West-coast wavefolder) — classic triangle/sine folding on the
+//     output sample. Adds harmonics as the amount increases; at 0 it is a
+//     pass-through identity. Applied AFTER the slice is sampled and BEFORE the
+//     output level/gain (see the worklet + the web factory).
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Drive gain at fold=1: how hard the signal is pushed into the sine folder.
+ *  ~4.0 gives roughly 2 extra fold-overs at full peak (±1) — a rich but bounded
+ *  West-coast timbre. Bigger = more folds = more harmonics. */
+export const FOLD_MAX_DRIVE = 4.0;
+
+/**
+ * West-coast wavefold of one sample x ∈ [-1, 1] for FOLD amount k ∈ [0, 1].
+ *
+ *   k = 0 → identity (exact pass-through, no harmonics added).
+ *   k > 0 → drive the sample by g = 1 + k·FOLD_MAX_DRIVE and pass it through a
+ *           sine folder sin(π/2 · g·x). Past ±1 the sine reflects (folds), the
+ *           hallmark of a triangle/sine wavefolder: each new fold-over injects a
+ *           fresh set of odd-ish harmonics while the output stays bounded in
+ *           [-1, 1] (|sin| ≤ 1). Monotonic in k at the low end (more fold), and
+ *           continuous at k = 0 (g → 1 ⇒ sin(π/2·x) ≈ x near 0, exact at the
+ *           ±1 endpoints; the explicit k≤0 short-circuit keeps it a true
+ *           identity so the unfolded baseline is byte-stable).
+ *
+ * Bounded by construction (output = sin(...) ∈ [-1, 1]); never NaN/Inf for
+ * finite x. The π/2 scale makes the folder pass ±1 through to ±1 at k→0.
+ */
+export function wavefold(x: number, k: number): number {
+  const kk = clamp01(k);
+  if (kk <= 0) return x;
+  const drive = 1 + kk * FOLD_MAX_DRIVE;
+  return Math.sin((Math.PI / 2) * drive * x);
+}
+
+/**
+ * Apply the wavefolder in place across a whole slice waveform (each sample in
+ * [-1, 1]). k = 0 leaves the buffer untouched (returns the same array). Used by
+ * the worklet (audio thread) + the web factory (off-thread render) so the played
+ * audio and the WAVEFORM viz both show the FOLDED wave.
+ */
+export function applyFold(wave: Float32Array, k: number): Float32Array {
+  if (clamp01(k) <= 0) return wave;
+  for (let i = 0; i < wave.length; i++) {
+    wave[i] = wavefold(wave[i] ?? 0, k);
+  }
+  return wave;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // 6. The slice plane + SURFACE-HEIGHT SCAN readout (§5.5 / §5.6).
 // ───────────────────────────────────────────────────────────────────────────
 

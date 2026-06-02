@@ -1,0 +1,189 @@
+# VRT: update baselines (on demand)
+#
+# Regenerates the Playwright VRT baselines under e2e/vrt/__screenshots__/ on
+# BOTH platforms and commits them back to the chosen branch:
+#   - linux baselines  → ubuntu-latest runner (postgres via service container)
+#   - darwin baselines → macos-latest runner  (postgres via the preinstalled host install)
+# then re-triggers ci.yml on the branch so the required VRT check re-validates
+# against the fresh baselines (a GITHUB_TOKEN push does NOT auto-trigger CI, so
+# we dispatch it explicitly — ci.yml must expose `workflow_dispatch`).
+#
+# This is the fast path for "update all VRTs": one dispatch regenerates every
+# scene on both platforms with --update-snapshots (no early-abort, no artifact
+# scraping). The regenerated baselines land as a commit ON the branch, so the
+# diff stays reviewable in the PR before merge.
+#
+# Usage:  gh workflow run vrt-update.yml -f ref=<branch>
+name: VRT update baselines
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to regenerate VRT baselines for
+        required: true
+        type: string
+
+permissions:
+  contents: write   # commit + push regenerated baselines back to the branch
+  actions: write    # dispatch ci.yml to re-validate
+
+concurrency:
+  group: vrt-update-${{ inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # linux baselines — mirrors the ci.yml `vrt` job (postgres service container),
+  # but runs vrt:update and commits the e2e/vrt/__screenshots__/**/linux/* PNGs.
+  # ---------------------------------------------------------------------------
+  linux:
+    name: regenerate linux baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+    steps:
+      - name: Checkout ${{ inputs.ref }} (LFS for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          lfs: true
+          persist-credentials: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+
+      - name: Regenerate VRT baselines (linux)
+        run: flox activate -- task vrt:update
+
+      - name: Commit + push linux baselines
+        run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "linux"
+
+  # ---------------------------------------------------------------------------
+  # darwin baselines — macos runner. Service containers can't run on macOS, so
+  # postgres comes from the preinstalled host install. Runs after `linux` so its
+  # commit rebases cleanly on top (the two platforms touch disjoint dirs).
+  # ---------------------------------------------------------------------------
+  darwin:
+    name: regenerate darwin baselines
+    runs-on: macos-latest
+    needs: linux
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+    steps:
+      - name: Checkout ${{ inputs.ref }} (LFS for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          lfs: true
+          persist-credentials: true
+
+      - name: Start PostgreSQL (host install)
+        run: |
+          set -euo pipefail
+          # macos-latest ships postgresql@14 via Homebrew (arm64 prefix /opt/homebrew).
+          brew install postgresql@14 >/dev/null 2>&1 || true
+          brew services start postgresql@14
+          PGBIN="$(brew --prefix postgresql@14)/bin"
+          for i in $(seq 1 30); do "$PGBIN/pg_isready" -h localhost && break || sleep 2; done
+          "$PGBIN/createuser" -s postgres 2>/dev/null || true
+          "$PGBIN/psql" -d postgres -c "ALTER USER postgres PASSWORD 'postgres';"
+          "$PGBIN/createdb" -O postgres patchtogether_test 2>/dev/null || true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+
+      - name: Regenerate VRT baselines (darwin)
+        run: flox activate -- task vrt:update
+
+      - name: Commit + push darwin baselines
+        run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "darwin"
+
+  # ---------------------------------------------------------------------------
+  # Re-validate: a GITHUB_TOKEN push does not trigger ci.yml, so dispatch it on
+  # the branch explicitly. Required checks then re-run against the fresh
+  # baselines (and auto-merge, if armed, proceeds when they go green).
+  # ---------------------------------------------------------------------------
+  revalidate:
+    name: re-trigger CI on ${{ inputs.ref }}
+    runs-on: ubuntu-latest
+    needs: [linux, darwin]
+    steps:
+      - name: Dispatch ci.yml on the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "${{ github.repository }}" --ref "${{ inputs.ref }}"

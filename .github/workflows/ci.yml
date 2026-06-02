@@ -41,6 +41,10 @@ on:
       - '**/*.md'
       - '.myrobots/**'
       - 'LICENSE'
+  # Manual re-trigger on a branch — used by vrt-update.yml after it pushes
+  # regenerated baselines (a GITHUB_TOKEN push does not fire push/pull_request),
+  # so the required checks re-validate against the fresh baselines.
+  workflow_dispatch:
 
 # Cancel in-progress runs for the same ref when a new commit lands.
 concurrency:

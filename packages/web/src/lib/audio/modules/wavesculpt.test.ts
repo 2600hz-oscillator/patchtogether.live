@@ -37,6 +37,9 @@ import {
   packColor01,
   unpackColor01,
   DEFAULT_OSC_COLOR_PACKED,
+  lineWallCrossings,
+  setWavesculptLuma,
+  getWavesculptLuma,
 } from './wavesculpt';
 
 describe('wavesculpt v2: module-def shape', () => {
@@ -333,6 +336,63 @@ describe('distanceGain', () => {
   });
 });
 
+describe('lineWallCrossings (luminosity → bandpass geometry)', () => {
+  it('a line straight through the box on the Z axis crosses FRONT + BACK at centre', () => {
+    // Origin at the −Z wall, aimed +Z → exits at +Z. Both crossings centred
+    // (u=v=0.5) since the ray is on the box centre line.
+    const cr = lineWallCrossings([0, 0, -1], [0, 0, 1]);
+    expect(cr).not.toBeNull();
+    const faces = [cr![0].faceIdx, cr![1].faceIdx].sort();
+    // FRONT (faceIdx 0, −Z) + BACK (faceIdx 1, +Z).
+    expect(faces).toEqual([0, 1]);
+    for (const c of cr!) {
+      expect(c.u).toBeCloseTo(0.5, 5);
+      expect(c.v).toBeCloseTo(0.5, 5);
+    }
+  });
+
+  it('a diagonal line crosses two DISTINCT faces with in-range UVs', () => {
+    // From the RED floor corner aimed up + inward (SCOPE_AIMS-like).
+    const cr = lineWallCrossings([-1, -1, -1], [1, 1, 1]);
+    expect(cr).not.toBeNull();
+    expect(cr![0].faceIdx).not.toBe(cr![1].faceIdx);
+    for (const c of cr!) {
+      expect(c.u).toBeGreaterThanOrEqual(0);
+      expect(c.u).toBeLessThanOrEqual(1);
+      expect(c.v).toBeGreaterThanOrEqual(0);
+      expect(c.v).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('returns null for a degenerate (zero-length) direction', () => {
+    expect(lineWallCrossings([0, 0, 0], [0, 0, 0])).toBeNull();
+  });
+
+  it('the two crossings are on opposite ends of the ray (distinct faces)', () => {
+    // X-axis line through origin → LEFT (−X) + RIGHT (+X).
+    const cr = lineWallCrossings([0, 0, 0], [1, 0, 0]);
+    expect(cr).not.toBeNull();
+    const faces = [cr![0].faceIdx, cr![1].faceIdx].sort();
+    expect(faces).toEqual([2, 3]); // LEFT=2, RIGHT=3
+  });
+});
+
+describe('LUMA_REGISTRY (card → factory luminosity hand-off)', () => {
+  it('round-trips per-line luminosity pairs', () => {
+    setWavesculptLuma('node-x', {
+      lumA: [0.1, 0.2, 0.3, 0.4],
+      lumB: [0.5, 0.6, 0.7, 0.8],
+    });
+    const got = getWavesculptLuma('node-x');
+    expect(got?.lumA).toEqual([0.1, 0.2, 0.3, 0.4]);
+    expect(got?.lumB).toEqual([0.5, 0.6, 0.7, 0.8]);
+  });
+
+  it('returns undefined for an unknown node', () => {
+    expect(getWavesculptLuma('does-not-exist')).toBeUndefined();
+  });
+});
+
 describe('voctToHz', () => {
   it('0V/oct = C4 = 261.626 Hz', () => {
     expect(voctToHz(0)).toBeCloseTo(261.626, 3);
@@ -487,6 +547,15 @@ describe('wavesculpt def: new ports + params landed', () => {
       expect((port as { paramTarget?: string } | undefined)?.paramTarget).toBe(`morph${i}`);
     }
   });
+  it('exposes a lum_depth param (luminosity → bandpass depth, OFF by default)', () => {
+    const p = wavesculptDef.params.find((pp) => pp.id === 'lum_depth')!;
+    expect(p, 'lum_depth param exists').toBeDefined();
+    expect(p.min).toBe(0);
+    expect(p.max).toBe(1);
+    expect(p.defaultValue, 'OFF by default (no surprise filtering)').toBe(0);
+    expect(p.curve).toBe('linear');
+  });
+
   it('exposes chord_mode + chord_quality params', () => {
     const ids = wavesculptDef.params.map((p) => p.id);
     expect(ids).toContain('chord_mode');

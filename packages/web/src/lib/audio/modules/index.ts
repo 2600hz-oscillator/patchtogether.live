@@ -86,6 +86,9 @@ import { wavesculptDef } from './wavesculpt';
 // 4-channel feedback matrix). General-purpose modules — the Atlantis demo
 // patch uses them together but each is useful on its own.
 import { slewSwitchDef } from './slewswitch';
+// SAMPLE & HOLD — rising-edge S&H + scale quantizer (continuous-quantizer
+// mode when gate_in is unpatched). Utility/CV.
+import { sampleHoldDef } from './sample-hold';
 import { atlantisCatalystDef } from './atlantis-catalyst';
 import { aquaTankDef } from './aquatank';
 // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
@@ -121,6 +124,10 @@ import { cubeDef } from './cube';
 // Own-code polyBLEP VCO; four simultaneous waveform jacks + 1V/oct + linear
 // FM + hard/soft/off sync. Shared by SYS55 + SYS35.
 import { moog921VcoDef } from './moog921-vco';
+// MOOG CP3 — console mixer slice of the Moog System 55/35 clone. 4×1 mixer
+// with (+) and (−) outputs, an attenuated 4th external input, a 1→3 MULTIPLE,
+// and ±reference trunk jacks. Own-code (forked from the repo `mixer`).
+import { moogCp3Def } from './moog-cp3';
 // MOOG 904A VCF — Moog System 55/35 clone, slice 2. Transistor-ladder LPF
 // (24 dB/oct) with RANGE switch + self-oscillating REGENERATION. Own-code
 // clean-room TPT ladder (shared lib moog-ladder-dsp; reused by 904B/904C).
@@ -232,6 +239,9 @@ export function registerAudioModules(): void {
   registerModule(wavesculptDef);
   // SLEWSWITCH — quad slew limiter + 4→1 sequential CV switch.
   registerModule(slewSwitchDef);
+  // SAMPLE & HOLD — rising-edge sample & hold + scale quantizer. Ungated =
+  // continuous quantizer (SKIFREE-style unpatched-input detection).
+  registerModule(sampleHoldDef);
   // ATLANTISCATALYST — 8-output slow-drift macro brain + scene transport.
   registerModule(atlantisCatalystDef);
   // AQUATANK — 4-channel Hadamard FDN feedback matrix (metallic resonance).
@@ -283,6 +293,11 @@ export function registerAudioModules(): void {
   // sawtooth/rectangular w/ variable pulse width) + 1V/oct + linear FM +
   // hard/soft/off sync. Own-code polyBLEP DSP (no copyleft).
   registerModule(moog921VcoDef);
+  // MOOG CP3 — Moog System 55/35 console mixer slice. 4×1 summing mixer with
+  // a (+) and a (−) phase-inverted output, an attenuated 4th external input,
+  // a 1→3 MULTIPLE, and ±12V/−6V trunk-reference jacks. Own-code DSP forked
+  // from the repo `mixer` (permissive, no copyleft).
+  registerModule(moogCp3Def);
   // MOOG 904A VCF — Moog System 55/35 clone, slice 2. Voltage-controlled
   // transistor-ladder low-pass filter (24 dB/oct): FIXED CONTROL VOLTAGE
   // (cutoff) + RANGE switch (2-oct steps) + summing 1V/oct CONTROL INPUTS +

@@ -407,6 +407,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // per-port e2e provide functional coverage. Promote into MODULES once the
   // darwin + linux PNGs are captured.
   moog921Vco: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs + 3-position SYNC switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG CP3 console mixer — same beige-faceplate family as the 921.
+  // Deterministic (5 knobs, no canvas / animation) so it's a good VRT
+  // candidate; baselines are pending a `task vrt:update` run on each platform
+  // (same authoring-worktree capture limitation as the 921). DSP unit
+  // (moog-cp3-dsp.test.ts + moog-cp3.test.ts worklet) + ART (source-SHA-pinned
+  // .f32) + per-module-per-port e2e provide functional coverage. Promote into
+  // MODULES once the darwin + linux PNGs are captured.
+  moogCp3: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
   // MOOG 904A VCF — Moog System 55/35 clone slice 2. Same shape as the 921:
   // deterministic beige faceplate (2 knobs + a 3-position RANGE switch, no
   // canvas / animation), so a good VRT candidate; baselines are pending a
@@ -603,6 +611,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // baseline pending a `task vrt:update` run on linux CI (sub-pixel AA differs
   // across platforms); darwin is the regression gate here.
   'linux/resofilter',
+  // SAMPLE & HOLD / quantizer: darwin baseline captured on this machine
+  // (static SCALE-knob card + scale-name label — no canvas/animation, so it's
+  // deterministic). Linux baseline pending a `task vrt:update` run on linux CI
+  // (sub-pixel text AA differs across platforms); darwin is the regression gate
+  // here. Functional coverage is the sample-hold-dsp unit tests + the worklet
+  // capture test + the composite ART scenario + e2e/tests/sample-hold.spec.ts.
+  'linux/sampleHold',
   // FOXY (hybrid SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL): darwin
   // baseline captured on this machine via VRT_SCENES (self-driving internal
   // chain, frozen on AudioContext suspend). The pipeline mixes the

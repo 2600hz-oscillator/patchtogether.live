@@ -27,6 +27,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // already bounded 0.02..0.98 and the per-sample sum is clamped to that
   // range in the worklet, so a ±1 CV sweeps the full duty-cycle range.
   moog921Vco: ['width_cv'],
+  // moogCp3.ext4: the 4th-input EXTERNAL jack — a raw signal (audio or cv)
+  // summed with in4 then attenuated by the attenuator4 knob, all at audio-
+  // rate inside the worklet. It's the SIGNAL being mixed, not a knob
+  // modulator routed onto an AudioParam, so cvScale doesn't apply. Same
+  // shape as slewSwitch.in1..in4 / fourplexer.in1..in4 (raw signal inputs
+  // the module itself shapes).
+  moogCp3: ['ext4'],
   // moog904a.{cutoff_cv,reso_cv}: audio-rate summing CONTROL INPUTS. The
   // worklet sums knob + CV per-sample (cutoff_cv via a 1V/oct exponential
   // map, reso_cv additively, both clamped to range) — NOT through the
@@ -156,6 +163,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // AudioParam fast path / cvScale would apply. The slew*_cv ports
   // (which DO target the slew{N} AudioParam) carry cvScale.
   slewSwitch: ['in1', 'in2', 'in3', 'in4'],
+  // SAMPLE & HOLD cv_in: the raw signal being sampled / quantized — consumed
+  // directly by the worklet (latched on the gate edge, snapped to the scale
+  // grid for cv_quant). It's NOT a knob modulator and has no paramTarget, so
+  // there is no AudioParam fast path / WaveShaperNode interposition that would
+  // apply. As a 1V/oct value any scaling would also corrupt the pitch
+  // quantization. Same shape as SLEWSWITCH.in1..in4 + CUBE.pitch.
+  sampleHold: ['cv_in'],
   // ATLANTISCATALYST seed_cv: bias-direction input read directly by the
   // JS orchestrator each tick (sampled into the next-scene picker).
   // Same shape as buggles.chaos_cv — no AudioParam fast path.

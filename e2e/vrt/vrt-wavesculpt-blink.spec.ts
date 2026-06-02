@@ -41,6 +41,14 @@ interface BlinkCase {
   // signal DOWNWARD, so voice 1 — first in the walk with an unpatched gate —
   // sources itself = no gate = silent. Used by the silent-osc regression case.
   gatePort?: string;
+  // When true, patch the SHAPES source into ALL SIX video walls at full
+  // opacity so the camera (inside the box) is fully enclosed by an opaque
+  // textured room. This is the LINES-VS-WALLS regression guard: before the
+  // backdrop-dim fix the bright scope traces were drowned by the saturated
+  // walls and read as INVISIBLE (the "scopestrial" / "reality based"
+  // community patches went blank). The baseline MUST show the energy traces
+  // still punching through the wall backdrop.
+  enclosingWalls?: boolean;
 }
 
 // Custom (non-default) CHROMA colours for the RED/GRN/BLU oscillators —
@@ -76,6 +84,13 @@ const CASES: BlinkCase[] = [
   // RED osc drew a flat mid-line trace = a non-animated straight tube. With
   // the uActive amp-gate it now contributes ZERO coverage → nothing.
   { name: 'reality-silent-osc', blinkMode: 2, wiggle: 0, gatePort: 'gate2' },
+  // LINES-VS-WALLS regression guard (#531 video-walls broke this): SCOPES
+  // TRIAL with ALL SIX walls opaque (camera fully enclosed in a textured
+  // room). EYEBALL: the bright scope traces are STILL clearly visible
+  // punching through the (backdrop-dimmed) wall grid — NOT a blank room. This
+  // is the exact failure mode the "scopestrial" / "reality based" community
+  // patches hit; the WALL_BACKDROP_DIM fix in WavesculptCard restores it.
+  { name: 'scopes-enclosing-walls', blinkMode: 1, wiggle: 0, enclosingWalls: true },
 ];
 
 test.describe.configure({ mode: 'default' });
@@ -113,6 +128,46 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
       // → gate1 (normalled to gates 2-4) makes all four voices audible so
       // the scope traces have signal. SCALE=2 + per-osc thickness so the
       // traces are clearly visible; noise off for a clean frozen frame.
+      // When enclosingWalls is set, texture the SHAPES source onto all six
+      // walls at full opacity (instead of using it as the ALPHA layer) so the
+      // camera is wrapped in an opaque room — the lines-vs-walls regression
+      // scene. Otherwise SHAPES → alpha_in (the original blink scenes).
+      const wallParams: Record<string, number> = {};
+      if (c.enclosingWalls) {
+        for (let n = 1; n <= 6; n++) {
+          wallParams[`wall${n}_alpha`] = 100;
+          wallParams[`wall${n}_distort`] = 0;
+        }
+      }
+      const edges = [
+        {
+          id: 'e_gate',
+          from: { nodeId: 'jo', portId: 'x' },
+          to: { nodeId: 'vrt-1', portId: c.gatePort ?? 'gate1' },
+          sourceType: 'cv',
+          targetType: 'gate',
+        },
+      ];
+      if (c.enclosingWalls) {
+        for (let n = 1; n <= 6; n++) {
+          edges.push({
+            id: `e_wall${n}`,
+            from: { nodeId: 'src', portId: 'out' },
+            to: { nodeId: 'vrt-1', portId: `wall${n}` },
+            sourceType: 'video',
+            targetType: 'video',
+          });
+        }
+      } else {
+        edges.push({
+          id: 'e_src_alpha',
+          from: { nodeId: 'src', portId: 'out' },
+          to: { nodeId: 'vrt-1', portId: 'alpha_in' },
+          sourceType: 'video',
+          targetType: 'video',
+        });
+      }
+
       await spawnPatch(
         page,
         [
@@ -129,27 +184,13 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
               rot: 0.3, pos_z: 0.35, zoom: 1.3,
               thickness1: 0.5, thickness2: 0.5, thickness3: 0.6, thickness4: 0.9,
               alpha_brightness: 1.6, noise: 0, bloom: 0.45,
+              ...wallParams,
               ...(c.params ?? {}),
             },
           },
           { id: 'jo', type: 'joystick', position: { x: 40, y: 480 }, domain: 'audio' },
         ],
-        [
-          {
-            id: 'e_src_alpha',
-            from: { nodeId: 'src', portId: 'out' },
-            to: { nodeId: 'vrt-1', portId: 'alpha_in' },
-            sourceType: 'video',
-            targetType: 'video',
-          },
-          {
-            id: 'e_gate',
-            from: { nodeId: 'jo', portId: 'x' },
-            to: { nodeId: 'vrt-1', portId: c.gatePort ?? 'gate1' },
-            sourceType: 'cv',
-            targetType: 'gate',
-          },
-        ],
+        edges,
       );
 
       // Drive the joystick to x=1 (gate high) + resume audio so the voices

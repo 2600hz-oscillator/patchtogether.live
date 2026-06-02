@@ -119,6 +119,32 @@ export function getWavesculptFrames(nodeId: string): Float32Array[][] | undefine
   return FRAMES_REGISTRY.get(nodeId);
 }
 
+// ---------- per-line LUMINOSITY registry (card → factory → worklet) ----------
+//
+// LUMINOSITY → BANDPASS feature. Each waveform line crosses two walls of the
+// 3D box; the CARD (main thread, it owns the WebGL render + wall textures)
+// samples the 0..1 luminosity at the two crossing centre points each frame and
+// writes the per-osc pair here. The audio FACTORY's tick() loop reads this
+// registry and pushes the values into the engine worklet's lumA{N}/lumB{N}
+// k-rate AudioParams (with setTargetAtTime smoothing — no zipper), exactly the
+// same off-thread param-posting pattern the morph CV path uses. The worklet
+// derives a per-line morphable band-pass from the pair (bright = wide-open,
+// black = narrow-nonzero). depthDefault keeps a sensible value before the card
+// has produced its first sample.
+export interface WavesculptLuma {
+  /** Luminosity (0..1) at the first wall crossing, per osc (index 0..3). */
+  lumA: [number, number, number, number];
+  /** Luminosity (0..1) at the second wall crossing, per osc. */
+  lumB: [number, number, number, number];
+}
+const LUMA_REGISTRY: Map<string, WavesculptLuma> = new Map();
+export function setWavesculptLuma(nodeId: string, luma: WavesculptLuma): void {
+  LUMA_REGISTRY.set(nodeId, luma);
+}
+export function getWavesculptLuma(nodeId: string): WavesculptLuma | undefined {
+  return LUMA_REGISTRY.get(nodeId);
+}
+
 // ---------- pure helpers (unit-testable) ----------
 
 /** Per-oscillator wall position + inward emission vector.
@@ -194,6 +220,73 @@ export const VIDEO_WALL_FACES: ReadonlyArray<{
   { wallIdx: 4, label: 'FLOOR',   axis: 1, sign: -1 },
   { wallIdx: 5, label: 'CEILING', axis: 1, sign:  1 },
 ];
+
+/** One wall a line crosses: which face (by VIDEO_WALL_FACES index) + the
+ *  in-face UV (0..1 across the face) at the crossing point. The card uses this
+ *  to sample that face's wall texture luminosity for the luminosity → bandpass
+ *  feature. */
+export interface LineWallCrossing {
+  /** Index into VIDEO_WALL_FACES (0..5) → wall texture wall${idx+1}. */
+  faceIdx: number;
+  /** In-face UV of the crossing, 0..1 each. */
+  u: number;
+  v: number;
+}
+
+/** Compute the TWO box-face crossings of a line passing THROUGH the unit box
+ *  [-1,+1]^3 along an infinite ray (origin + direction). Returns the entry +
+ *  exit faces (the two walls the line passes through) with the in-face UV at
+ *  each crossing — the "centre point where the line passes through the wall"
+ *  the luminosity is sampled at.
+ *
+ *  Method: slab method. For each of the 6 face planes (axis·sign at ±1) solve
+ *  for the ray parameter t where the ray hits that plane, keep the hits whose
+ *  in-plane coords land within the face (|other coords| <= 1 + eps), then take
+ *  the two with the smallest + largest t (entry + exit). The face UV maps the
+ *  two in-plane world axes from [-1,+1] to [0,1] (matching VIDEO_WALL_FACES'
+ *  in-plane basis ax1=(axis+1)%3, ax2=(axis+2)%3 in drawWalls).
+ *
+ *  Returns null only for a degenerate (zero-length) direction. Pure +
+ *  unit-tested. */
+export function lineWallCrossings(
+  origin: readonly [number, number, number],
+  direction: readonly [number, number, number],
+): [LineWallCrossing, LineWallCrossing] | null {
+  const d = direction;
+  const dlen = Math.hypot(d[0], d[1], d[2]);
+  if (dlen < 1e-9) return null;
+  const eps = 1e-4;
+  const hits: Array<{ t: number; faceIdx: number; u: number; v: number }> = [];
+  for (let f = 0; f < VIDEO_WALL_FACES.length; f++) {
+    const face = VIDEO_WALL_FACES[f]!;
+    const axis = face.axis;
+    const plane = face.sign; // axis coord at ±1
+    const dAxis = d[axis]!;
+    if (Math.abs(dAxis) < 1e-9) continue; // parallel to this face
+    const t = (plane - origin[axis]!) / dAxis;
+    // World hit point.
+    const hx = origin[0]! + d[0]! * t;
+    const hy = origin[1]! + d[1]! * t;
+    const hz = origin[2]! + d[2]! * t;
+    const hit: [number, number, number] = [hx, hy, hz];
+    const ax1 = (axis + 1) % 3;
+    const ax2 = (axis + 2) % 3;
+    const c1 = hit[ax1]!;
+    const c2 = hit[ax2]!;
+    if (Math.abs(c1) > 1 + eps || Math.abs(c2) > 1 + eps) continue; // off the face
+    const u = (Math.max(-1, Math.min(1, c1)) + 1) / 2;
+    const v = (Math.max(-1, Math.min(1, c2)) + 1) / 2;
+    hits.push({ t, faceIdx: f, u, v });
+  }
+  if (hits.length < 2) return null;
+  hits.sort((a, b) => a.t - b.t);
+  const entry = hits[0]!;
+  const exit = hits[hits.length - 1]!;
+  return [
+    { faceIdx: entry.faceIdx, u: entry.u, v: entry.v },
+    { faceIdx: exit.faceIdx, u: exit.u, v: exit.v },
+  ];
+}
 
 /** Distance-attenuated gain for one oscillator given the user camera
  *  position. Same formula as v1; documented in WALL_LAYOUT comment.
@@ -701,6 +794,13 @@ export const wavesculptDef: AudioModuleDef = {
     // overall strength. Applies in ALL blink modes (incl. the ribbon mode).
     ps.push({ id: 'wiggle', label: 'Wiggle', defaultValue: 0, min: 0, max: 1, curve: 'linear' });
     ps.push({ id: 'alpha_brightness', label: 'A.Bright', defaultValue: 1, min: 0, max: 2, curve: 'linear' });
+    // LUMINOSITY → BANDPASS depth. 0 = OFF (lines unfiltered), 1 = the
+    // luminosity at each line's two wall-crossing centre points fully shapes a
+    // morphable band-pass on that line's audio (bright = wide-open, black =
+    // narrow-nonzero). Automatic from the walls; this knob just scales the
+    // overall effect. The card samples luminosity main-thread + posts it to the
+    // worklet via the LUMA_REGISTRY → tick() → lumA{N}/lumB{N} param path.
+    ps.push({ id: 'lum_depth', label: 'LumBP', defaultValue: 0, min: 0, max: 1, curve: 'linear' });
     // Per-oscillator CHROMA base colour (packed 0xRRGGBB). One param per
     // colour osc — the picked colour tints that osc's ribbon (mode 0), its
     // SCOPES-TRIAL scope line, and its REALITY-BASED-COMMUNITY neon tube.
@@ -798,6 +898,8 @@ export const wavesculptDef: AudioModuleDef = {
         engineParams.get(k)?.setValueAtTime(live[k] ?? 0, ctx.currentTime);
       }
     }
+    // Mirror initial luminosity-bandpass depth.
+    engineParams.get('lumDepth')?.setValueAtTime(live.lum_depth ?? 0, ctx.currentTime);
 
     // ---------------- Per-osc audio chain ----------------
     //
@@ -1254,6 +1356,29 @@ export const wavesculptDef: AudioModuleDef = {
           } catch { /* */ }
         }
       }
+
+      // LUMINOSITY → BANDPASS push. The card samples the per-line wall-crossing
+      // luminosities each frame into LUMA_REGISTRY; mirror them into the
+      // worklet's lumA{N}/lumB{N} k-rate AudioParams here (setTargetAtTime
+      // smoothing on top of the in-worklet one-pole smoother → no zipper). The
+      // depth knob gates the whole effect. When no luminosity has been sampled
+      // yet (card not mounted) default to 1.0 (wide-open) so a depth>0 patch
+      // doesn't over-filter before the first video frame.
+      const lumDepth = Math.max(0, Math.min(1, live.lum_depth ?? 0));
+      try {
+        engineParams.get('lumDepth')?.setTargetAtTime(lumDepth, ctx.currentTime, 0.02);
+      } catch { /* */ }
+      const luma = LUMA_REGISTRY.get(node.id);
+      for (let i = 0; i < NUM_OSC; i++) {
+        const a = luma ? (luma.lumA[i] ?? 1) : 1;
+        const b = luma ? (luma.lumB[i] ?? 1) : 1;
+        try {
+          engineParams.get(`lumA${i + 1}`)?.setTargetAtTime(
+            Math.max(0, Math.min(1, a)), ctx.currentTime, 0.02);
+          engineParams.get(`lumB${i + 1}`)?.setTargetAtTime(
+            Math.max(0, Math.min(1, b)), ctx.currentTime, 0.02);
+        } catch { /* worklet may not have surfaced the param */ }
+      }
     }
 
     let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -1482,6 +1607,11 @@ export const wavesculptDef: AudioModuleDef = {
         if (paramId === 'rot')   sRot.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'scale')  sScale.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'wiggle') sWiggle.gain.gain.setValueAtTime(value, ctx.currentTime);
+        // Luminosity-bandpass depth → worklet lumDepth (tick() also pushes it,
+        // but write immediately so a knob turn responds without a tick delay).
+        if (paramId === 'lum_depth') {
+          try { engineParams.get('lumDepth')?.setValueAtTime(Math.max(0, Math.min(1, value)), ctx.currentTime); } catch { /* */ }
+        }
         // Per-osc morph knob → corresponding shadow gain. The shadow
         // is the single source of truth: tick() reads it and pushes
         // combined (knob + CV) into the worklet's morph{N} AudioParam.
@@ -1641,6 +1771,7 @@ export const wavesculptDef: AudioModuleDef = {
         alive = false;
         FRAME_DRAWERS.delete(node.id);
         FRAMES_REGISTRY.delete(node.id);
+        LUMA_REGISTRY.delete(node.id);
         if (intervalId !== null) clearInterval(intervalId);
         if (pollTimer !== null) clearTimeout(pollTimer);
         try { engineNode.disconnect(); } catch { /* */ }

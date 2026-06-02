@@ -451,6 +451,10 @@ type StandardModuleType =
   // make Schrader-style self-evolving "ecosystem" patches tractable.
   // SLEWSWITCH — quad slew limiter + 4→1 sequential CV switch.
   | 'slewSwitch'
+  // SAMPLE & HOLD — rising-edge sample & hold + scale quantizer. When gate_in
+  // is unpatched it becomes a pure continuous quantizer (SKIFREE-style
+  // unpatched-input detection at the graph level).
+  | 'sampleHold'
   // ATLANTISCATALYST — 8 correlated random-walk CV outputs + scene pulse
   // / scene index, with HYDROGEN-style transport CV for explicit jumps.
   | 'atlantisCatalyst'
@@ -494,6 +498,11 @@ type StandardModuleType =
   // rectangular with variable pulse width), 1V/oct + linear-FM inputs, and a
   // hard/soft/off sync switch. Own-code polyBLEP DSP (permissive, no copyleft).
   | 'moog921Vco'
+  // MOOG CP3 — console mixer slice of the Moog System 55/35 clone (Moog →
+  // SYS55, shared by SYS35). 4×1 summing mixer with a (+) and a (−) phase-
+  // inverted output, an attenuated 4th external input, a 1→3 MULTIPLE, and
+  // ±12V/−6V trunk-reference jacks. Own-code DSP forked from the repo `mixer`.
+  | 'moogCp3'
   // MOOG 904A VCF — Moog System 55/35 clone, slice 2 (Moog → SYS55, shared by
   // SYS35). Voltage-controlled transistor-ladder LOW-PASS filter, 24 dB/oct:
   // FIXED CONTROL VOLTAGE (cutoff) + RANGE switch (cutoff in 2-octave steps) +

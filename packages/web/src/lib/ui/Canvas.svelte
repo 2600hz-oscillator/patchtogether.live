@@ -243,6 +243,8 @@
   import CubeCard from '$lib/ui/modules/CubeCard.svelte';
   // MOOG 921 VCO — first Moog System 55/35 clone module (beige faceplate).
   import Moog921VcoCard from '$lib/ui/modules/Moog921VcoCard.svelte';
+  // MOOG CP3 — console mixer slice (beige faceplate).
+  import MoogCp3MixerCard from '$lib/ui/modules/MoogCp3MixerCard.svelte';
   // MOOG 904A VCF — Moog System 55/35 clone slice 2 (transistor-ladder LPF).
   import Moog904aVcfCard from '$lib/ui/modules/Moog904aVcfCard.svelte';
   // MOOG 911 EG — Moog System 55/35 contour generator (beige faceplate).
@@ -255,6 +257,7 @@
   // The modules themselves stay registered + spawnable from the palette;
   // each is general-purpose far beyond the old Atlantis patch.
   import SlewSwitchCard from '$lib/ui/modules/SlewSwitchCard.svelte';
+  import SampleHoldCard from '$lib/ui/modules/SampleHoldCard.svelte';
   import FourPlexerCard from '$lib/ui/modules/FourPlexerCard.svelte';
   import AtlantisCatalystCard from '$lib/ui/modules/AtlantisCatalystCard.svelte';
   import AquaTankCard from '$lib/ui/modules/AquaTankCard.svelte';
@@ -522,10 +525,13 @@
     // CUBE — 3D wavetable-navigator oscillator (slice-readout + 3D viz).
     cube: CubeCard,
     moog921Vco: Moog921VcoCard,
+    moogCp3: MoogCp3MixerCard,
     moog904a: Moog904aVcfCard,
     moog911: Moog911Card,
     moog902: Moog902VcaCard,
     slewSwitch: SlewSwitchCard,
+    // SAMPLE & HOLD — rising-edge S&H + scale quantizer (ungated = quantizer).
+    sampleHold: SampleHoldCard,
     // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
     fourplexer: FourPlexerCard,
     atlantisCatalyst: AtlantisCatalystCard,
