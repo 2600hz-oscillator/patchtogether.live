@@ -7,18 +7,34 @@
 // What this worklet owns:
 //   * Three loaded wavetables (FLOOR / WALL / CEILING), received via port
 //     messages ({type:'loadWavetable', slot:'floor'|'wall'|'ceiling', frames}).
-//   * Per-render-block recompute of the 256-sample slice waveform via
-//     cube-dsp.sampleSlice(...) — but ONLY when a slice-shaping param actually
-//     changed (recompute is ~256·96 field reads, far too costly to do every
-//     block unconditionally). Params are smoothed with WtParamSmoother so a
-//     knob drag de-zippers the recompute trigger.
-//   * Phase accumulation through the recomputed frame at the V/oct frequency
-//     (reusing lib/wavetable-osc's sampleSplit + linear sample interpolation).
-//   * Stereo L/R spread = ±5%: the L channel reads a slice rendered at
-//     depthOffset −0.05·spread, the R channel at +0.05·spread (PLAN §5.6). At
-//     spread=0 both reuse the center slice → mono.
+//   * Phase accumulation through three posted slice waveforms (L / R / center)
+//     at the V/oct frequency (reusing lib/wavetable-osc's sampleSplit + linear
+//     sample interpolation). This is the cheap hot path: a pointer-walk through
+//     256 floats — no field math on the audio thread.
+//
+// DROPOUT FIX (issue #4): the expensive SURFACE-HEIGHT SCAN (cube-dsp.sampleSlice
+//   — ~256·96 field reads, up to 3× for center/L/R) used to run INSIDE process()
+//   on the audio thread on every quantized param change, blocking the render and
+//   underrunning. The slice is now computed OFF the audio thread (on the main
+//   thread in the web factory) and pushed in via a {type:'setWave', waveL,
+//   waveR, waveCenter} port message. The worklet only ever phase-accumulates
+//   through the posted waves. A legacy on-thread fallback remains for the unit
+//   test / standalone harness path (no setWave ever posted): it is disabled the
+//   instant the first setWave arrives, so production never computes on-thread.
+//
+//   * Stereo L/R spread: the factory renders the L channel at a negative depth
+//     offset and the R channel at a positive one (bounded, musical) so the two
+//     posted waves differ audibly — and CUBE now exposes SEPARATE L and R output
+//     PORTS (issue #1) so the spread survives downstream (a single stereo port
+//     downmixes to mono into a mono input, erasing the spread). At spread=0 both
+//     posted waves equal the center slice → identical L/R (mono).
+//   * NO-SILENCE-ON-SWEEP (issue #4): if a freshly posted (or on-thread
+//     computed) wave is effectively all-zero — e.g. the slice rotated/moved
+//     fully outside the cube with WRAP off — the worklet KEEPS the previous
+//     non-silent wave instead of cutting to silence, so sweeping any param never
+//     drops the sound out.
 //   * Posting a viz snapshot (~30 Hz) of the current center-slice waveform to
-//     the card via port.
+//     the card via port (the card also renders the full 3D cube itself).
 //
 // IMPORTANT: this file does NOT `export` anything at the top level — top-level
 // exports leak into the bundled dist/cube.js + break the ART classic-script
@@ -32,7 +48,8 @@
 //                        input the worklet reads directly; the rest of the CV
 //                        inputs are summed into AudioParams by the factory.
 //
-// Outputs (one stereo output, 2 channels):
+// Outputs (one stereo output, 2 channels — the web factory fans these into
+// SEPARATE L and R node ports via a ChannelSplitter so the spread survives):
 //   outputs[0] = [L, R]
 
 import {
@@ -44,6 +61,8 @@ import {
 import {
   sampleSlice,
   CUBE_SLICE_SIZE,
+  spreadDepthOffset,
+  isSilentWave,
   type SliceParams,
   type Material,
 } from './lib/cube-dsp';
@@ -86,7 +105,34 @@ interface LoadMessage {
   slot: Slot;
   frames: number[][];
 }
-type IncomingMessage = LoadMessage;
+/** Off-thread slice push (issue #4): the main thread computed the three slice
+ *  waveforms (center / L / R) and hands them over so the audio thread never runs
+ *  the surface-height scan. Buffers are transferred (zero-copy) where possible. */
+interface SetWaveMessage {
+  type: 'setWave';
+  waveCenter: Float32Array;
+  waveL: Float32Array;
+  waveR: Float32Array;
+}
+/** Enable the off-thread compute path (issue #4). Sent once by the web factory
+ *  on init. Switches the worklet from the legacy on-thread surface-height scan
+ *  to posting a `paramsChanged` message whenever the (CV-summed) slice-shaping
+ *  params cross a quantization step — the factory then computes the slice and
+ *  posts it back via setWave. The unit-test / standalone harness never sends
+ *  this, so it keeps the self-sufficient on-thread fallback. */
+interface OffThreadMessage {
+  type: 'offThread';
+}
+type IncomingMessage = LoadMessage | SetWaveMessage | OffThreadMessage;
+
+/** Posted BY the worklet TO the main thread when the CV-summed slice-shaping
+ *  params change enough to need a fresh slice (off-thread mode only). */
+interface ParamsChangedMessage {
+  type: 'paramsChanged';
+  sliceY: number; rx: number; ry: number; rz: number;
+  morphFC: number; connect: number; crush: number; spread: number;
+  material: 0 | 1; wrap: 0 | 1; tableEpoch: number;
+}
 
 /** Read a single sample from a 256-sample frame at a fractional phase using the
  *  same (s1,s2,sFrac) split the wavetable engine uses. */
@@ -95,13 +141,6 @@ function readFrame(frame: Float32Array, phase: number): number {
   const a = frame[s1] ?? 0;
   const b = frame[s2] ?? 0;
   return a + (b - a) * sFrac;
-}
-
-/** Spread depth offset for the L (sign −1) / R (sign +1) channel: ±5% of the
- *  cube at spread=1, linearly scaled, clamped to spread∈[0,1]. */
-function spreadDepth(spread: number, sign: number): number {
-  const s = spread < 0 ? 0 : spread > 1 ? 1 : spread;
-  return sign * 0.05 * s;
 }
 
 // Not `export`ed at the top level by design — see the file-header note.
@@ -123,6 +162,15 @@ class CubeProcessor extends AudioWorkletProcessor {
   // The center (spread=0) slice — posted to the card as the viz snapshot.
   private waveCenter: Float32Array<ArrayBufferLike> = new Float32Array(CUBE_SLICE_SIZE);
   private haveWave = false;
+
+  // Off-thread path (issue #4): the web factory sends {type:'offThread'} on
+  // init → offThread=true. In that mode the audio thread NEVER runs the
+  // surface-height scan; instead it posts `paramsChanged` (cheap k-rate scalars)
+  // when the CV-summed shaping params cross a quantization step, and the main
+  // thread computes the slice + posts it back via setWave. The unit-test /
+  // standalone harness never sends `offThread`, so it keeps the self-sufficient
+  // on-thread fallback in maybeRecompute().
+  private offThread = false;
 
   // Smoothers for the slice-shaping params (de-zipper the recompute trigger).
   private smMorphFc: WtParamSmoother;
@@ -179,6 +227,23 @@ class CubeProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (e: MessageEvent) => {
       const m = e.data as IncomingMessage;
       if (!m || typeof m !== 'object') return;
+      if (m.type === 'offThread') {
+        this.offThread = true;
+        // Force a paramsChanged on the next block so the factory renders an
+        // initial slice immediately rather than waiting for the first knob move.
+        this.lastSig = '';
+        return;
+      }
+      if (m.type === 'setWave') {
+        // Off-thread slice push: adopt the three posted waveforms. Keep the
+        // previous non-silent wave if a channel arrived all-zero (slice swept
+        // outside the cube with WRAP off) so the audio never drops out.
+        this.adoptWave(m.waveCenter, 'center');
+        this.adoptWave(m.waveL, 'L');
+        this.adoptWave(m.waveR, 'R');
+        this.haveWave = true;
+        return;
+      }
       if (m.type === 'loadWavetable') {
         if (!SLOTS.includes(m.slot)) {
           console.error('[cube] invalid slot', m.slot);
@@ -248,29 +313,69 @@ class CubeProcessor extends AudioWorkletProcessor {
     return this.floor.length > 0 && this.wall.length > 0 && this.ceiling.length > 0;
   }
 
-  /** Recompute the L/R/center slice waveforms if the (quantized) slice
-   *  signature or a table changed. Returns true if a recompute occurred. */
+  /** Adopt one posted slice waveform into the named channel, but KEEP the
+   *  previous non-silent wave if the new one is effectively all-zero (the slice
+   *  swept fully outside the cube with WRAP off). This is the no-dropout rule
+   *  (issue #4): a normal param move never cuts the sound to silence. The very
+   *  first posted wave is always adopted (there's no prior wave to keep). */
+  private adoptWave(next: Float32Array | undefined, ch: 'center' | 'L' | 'R'): void {
+    if (!next || next.length === 0) return;
+    const w = next as Float32Array<ArrayBufferLike>;
+    if (this.haveWave && isSilentWave(next)) return; // keep last non-silent
+    if (ch === 'center') this.waveCenter = w;
+    else if (ch === 'L') this.waveL = w;
+    else this.waveR = w;
+  }
+
+  /** Decide what to do when the (quantized) slice signature or a table changed.
+   *
+   *  OFF-THREAD mode (production, issue #4): post a cheap `paramsChanged` scalar
+   *  message so the MAIN thread runs the surface-height scan + posts the slice
+   *  back via setWave. The audio thread does NO field math.
+   *
+   *  ON-THREAD fallback (unit test / standalone harness only): compute the
+   *  L/R/center slice waveforms here, applying the same keep-last-non-silent
+   *  rule as the posted path so a sweep outside the cube doesn't drop out. */
   private maybeRecompute(sp: SliceParams, spread: number): boolean {
-    // Quantize the continuous shaping params so we don't recompute every block
-    // on float jitter — but finely enough that a sweep is smooth (~512 steps).
+    // Quantize the continuous shaping params so we don't churn every block on
+    // float jitter — but finely enough that a sweep is smooth (~512 steps).
     const q = (v: number) => Math.round(v * 512);
+    const matBit: 0 | 1 = sp.material === 'hard' ? 1 : 0;
+    const wrapBit: 0 | 1 = sp.wrap ? 1 : 0;
     const sig =
       `${this.tableEpoch}|${q(sp.morphFC)}|${q(sp.connect)}|${q(sp.crush)}|` +
       `${q(spread)}|${q(sp.sliceY)}|${q(sp.rx)}|${q(sp.ry)}|${q(sp.rz)}|` +
-      `${sp.material}|${sp.wrap ? 1 : 0}`;
+      `${matBit}|${wrapBit}`;
     if (sig === this.lastSig && this.haveWave) return false;
     this.lastSig = sig;
 
-    const dL = spreadDepth(spread, -1);
-    const dR = spreadDepth(spread, +1);
-    this.waveCenter = sampleSlice(this.floor, this.wall, this.ceiling, sp, 0);
-    if (dL === 0 && dR === 0) {
-      this.waveL = this.waveCenter;
-      this.waveR = this.waveCenter;
-    } else {
-      this.waveL = sampleSlice(this.floor, this.wall, this.ceiling, sp, dL);
-      this.waveR = sampleSlice(this.floor, this.wall, this.ceiling, sp, dR);
+    if (this.offThread) {
+      // Hand the work to the main thread — no field scan on the audio thread.
+      const msg: ParamsChangedMessage = {
+        type: 'paramsChanged',
+        sliceY: sp.sliceY, rx: sp.rx, ry: sp.ry, rz: sp.rz,
+        morphFC: sp.morphFC, connect: sp.connect, crush: sp.crush, spread,
+        material: matBit, wrap: wrapBit, tableEpoch: this.tableEpoch,
+      };
+      try { this.port.postMessage(msg); } catch { /* shim */ }
+      return true;
     }
+
+    const dL = spreadDepthOffset(spread, -1);
+    const dR = spreadDepthOffset(spread, +1);
+    const center = sampleSlice(this.floor, this.wall, this.ceiling, sp, 0);
+    let nextL: Float32Array;
+    let nextR: Float32Array;
+    if (dL === 0 && dR === 0) {
+      nextL = center;
+      nextR = center;
+    } else {
+      nextL = sampleSlice(this.floor, this.wall, this.ceiling, sp, dL);
+      nextR = sampleSlice(this.floor, this.wall, this.ceiling, sp, dR);
+    }
+    this.adoptWave(center, 'center');
+    this.adoptWave(nextL, 'L');
+    this.adoptWave(nextR, 'R');
     this.haveWave = true;
     return true;
   }

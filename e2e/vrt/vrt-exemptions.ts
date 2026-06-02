@@ -37,6 +37,11 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // WAVVIZ / SWOLEVCO carry a video-out preview canvas.
   wavviz: [{ selector: 'canvas' }],
   swolevco: [{ selector: 'canvas' }],
+  // CUBE: live rotating 3D WebGL2 render (issue #2) + snapshot-driven OUTPUT
+  // scope — both animate continuously (camera + rAF), so mask the canvases and
+  // gate on the deterministic card chrome. No VRT scene (removed; the canvas
+  // can't be pinned to a single frame). Render correctness covered elsewhere.
+  cube: [{ selector: 'canvas' }],
   // WARRENSPECTRUM has the acidwarp video viz canvas.
   warrenspectrum: [{ selector: 'canvas' }],
   // SAMSLOOP — loop-based WAV sample player. The waveform canvas is
