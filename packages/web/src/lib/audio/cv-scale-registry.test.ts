@@ -27,6 +27,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // already bounded 0.02..0.98 and the per-sample sum is clamped to that
   // range in the worklet, so a ±1 CV sweeps the full duty-cycle range.
   moog921Vco: ['width_cv'],
+  // moogCp3.ext4: the 4th-input EXTERNAL jack — a raw signal (audio or cv)
+  // summed with in4 then attenuated by the attenuator4 knob, all at audio-
+  // rate inside the worklet. It's the SIGNAL being mixed, not a knob
+  // modulator routed onto an AudioParam, so cvScale doesn't apply. Same
+  // shape as slewSwitch.in1..in4 / fourplexer.in1..in4 (raw signal inputs
+  // the module itself shapes).
+  moogCp3: ['ext4'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
   // helm.{pitch_cv,gate,midi_in,seq_reset}: pitch_cv = V/oct fallback

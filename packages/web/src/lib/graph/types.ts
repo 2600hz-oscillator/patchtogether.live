@@ -484,6 +484,11 @@ type StandardModuleType =
   // rectangular with variable pulse width), 1V/oct + linear-FM inputs, and a
   // hard/soft/off sync switch. Own-code polyBLEP DSP (permissive, no copyleft).
   | 'moog921Vco'
+  // MOOG CP3 — console mixer slice of the Moog System 55/35 clone (Moog →
+  // SYS55, shared by SYS35). 4×1 summing mixer with a (+) and a (−) phase-
+  // inverted output, an attenuated 4th external input, a 1→3 MULTIPLE, and
+  // ±12V/−6V trunk-reference jacks. Own-code DSP forked from the repo `mixer`.
+  | 'moogCp3'
   // TREE.oh.VOX — TB-303-style bassline voice (Open303 voice slice port,
   // MIT → AGPL). 6 knobs (TUNE / CUTOFF / RESONANCE / ENVELOPE / DECAY /
   // ACCENT) + pitch / gate / accent_in inputs + per-knob CV. The full

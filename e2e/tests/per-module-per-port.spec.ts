@@ -285,6 +285,17 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   'illogic.nand': 'NAND inverse of AND; same probabilistic alignment; covered by illogic.spec.ts',
   'illogic.or':   'OR fires often but its complement NOT may miss; same shape; covered by illogic.spec.ts',
   'illogic.not':  'NOT inverse of in1>0.5; depends on bipolar BUGGLES range; covered by illogic.spec.ts',
+  // ── MOOG CP3 partial: the ±reference trunk outs are CONSTANT DC rails
+  // (+12V → +2.4, −6V → −1.2 normalized). The SCOPE.ch1 emit floor (0.005)
+  // is a peak-above-noise check tuned for AC signals; a steady DC offset
+  // isn't reliably read as "peak" by the analyser snapshot (it AC-couples).
+  // These are STATIC reference sources by design — handle-presence pins
+  // their existence + the DSP unit test asserts the exact constants. The
+  // mixer outs (out_positive / out_negative) + the MULTIPLE (multiple_one/
+  // two/three) ARE driven (NOISE.white → in1 via the per-port driver) +
+  // asserted.
+  'moogCp3.plus_twelve': 'constant +12V DC reference rail; static source (EXEMPT_OUTPUT_EMIT); exact value pinned by moog-cp3-dsp.test.ts',
+  'moogCp3.minus_six':   'constant −6V DC reference rail; static source (EXEMPT_OUTPUT_EMIT); exact value pinned by moog-cp3-dsp.test.ts',
 };
 
 // ────────── Per-port input-drive exemptions ──────────

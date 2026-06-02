@@ -82,6 +82,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Wavetable oscillator that morphs saw -> square -> triangle -> sine across a 16-frame table.',
   moog921Vco:
     'Moog 921 voltage-controlled oscillator (first module of the Moog System 55/35 clone — categorized under Moog -> SYS55, shared by SYS35). Faithful to the original 921: ONE oscillator core presents FOUR simultaneous waveform jacks — sine, triangle, sawtooth, and rectangular with variable pulse width — all phase-coherent off the shared core. Pitch input is exponential 1V/oct (0V = C4); a dedicated LINEAR frequency-control input (lin_fm, scaled by the Lin FM depth) gives through-zero-style linear FM; a sync input drives the hard/soft/off SYNC switch (-1 soft / 0 off / +1 hard) for classic sync timbres. RANGE sets the coarse octave (+/-5 oct), FREQ the fine tune (+/-12 st), WIDTH the rectangular duty cycle (with audio-rate width_cv), LEVEL the output gain. DSP is own-code: a clean-room polyBLEP/polyBLAMP band-limited oscillator (not a port of any Moog schematic or copyleft source - permissive only). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moogCp3:
+    'Moog CP3 / CP3A Console Panel — the console mixer slice of the Moog System 55/35 clone (categorized under Moog -> SYS55, shared by SYS35). A multi-function console: (1) a 4x1 summing mixer that presents a (+) output AND a (-) phase-inverted output simultaneously, max per-channel gain x2 (0.5 = unity, 1.0 = x2), mixing AC and/or DC voltages (audio AND cv alike — the per-sample sum is polarity- and DC-transparent); (2) the 4th input adds an EXTERNAL jack (ext4) plus an ATTENUATOR — at "10" (1.0) the attenuator is unity so a direct patch passes through unaltered; (3) a MULTIPLE — input 1 fanned out unaltered to three passthrough outs (1 -> 3); (4) trunk/reference jacks supplying a constant +12V and -6V reference (scaled into the project normalized CV convention). Four 25K-LIN input level knobs (shown 0-10) + the 4th-input attenuator. DSP is own-code: a forked + expanded version of the repo mixer (not a port of any Moog schematic or copyleft source — permissive only). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family). v1 omits the CP3A trunk/routing-switch matrix (the reference jacks are modeled as constant sources); the switch matrix is a planned follow-up.',
   audioOut:
     'Terminal stereo output. Two mono inputs (L, R) routed to the host AudioContext destination. Optional output-device dropdown via setSinkId (Chromium 110+).',
   audioIn:
@@ -254,6 +256,18 @@ const PORT_NOTES: Record<string, string> = {
   'moog921Vco.triangle': 'Triangle output.',
   'moog921Vco.sawtooth': 'Band-limited sawtooth output.',
   'moog921Vco.rectangular': 'Rectangular/pulse output; duty cycle = WIDTH.',
+  'moogCp3.in1': 'Mixer channel 1 input (audio or cv).',
+  'moogCp3.in2': 'Mixer channel 2 input (audio or cv).',
+  'moogCp3.in3': 'Mixer channel 3 input (audio or cv).',
+  'moogCp3.in4': 'Mixer channel 4 input (panel jack; audio or cv).',
+  'moogCp3.ext4': "4th-input EXTERNAL jack. Summed with in4 then scaled by the 4th-input ATTENUATOR (at \"10\"/1.0 = unity, direct patch passes unaltered). PASSTHROUGH_BY_DESIGN — it's the signal being attenuated, summed at audio-rate in the worklet, not a knob modulator.",
+  'moogCp3.out_positive': '(+) summed output: (in1*ch1 + in2*ch2 + in3*ch3 + ((in4+ext4)*att4)*ch4).',
+  'moogCp3.out_negative': '(-) output: the exact phase-inverse of the (+) output.',
+  'moogCp3.multiple_one': 'MULTIPLE out 1 — in1 passthrough (1 -> 3 multiple).',
+  'moogCp3.multiple_two': 'MULTIPLE out 2 — in1 passthrough (1 -> 3 multiple).',
+  'moogCp3.multiple_three': 'MULTIPLE out 3 — in1 passthrough (1 -> 3 multiple).',
+  'moogCp3.plus_twelve': 'Constant +12V trunk reference (normalized: +2.4 at +-5V = +-1).',
+  'moogCp3.minus_six': 'Constant -6V trunk reference (normalized: -1.2 at +-5V = +-1).',
   'audioOut.L': 'Mono L -> host destination L.',
   'audioOut.R': 'Mono R -> host destination R.',
   'cube.L': 'Left audio out (slice read at -SPREAD depth). Separate from R so the stereo SPREAD survives mono inputs.',

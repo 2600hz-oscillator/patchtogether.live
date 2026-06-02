@@ -118,6 +118,10 @@ import { cubeDef } from './cube';
 // Own-code polyBLEP VCO; four simultaneous waveform jacks + 1V/oct + linear
 // FM + hard/soft/off sync. Shared by SYS55 + SYS35.
 import { moog921VcoDef } from './moog921-vco';
+// MOOG CP3 — console mixer slice of the Moog System 55/35 clone. 4×1 mixer
+// with (+) and (−) outputs, an attenuated 4th external input, a 1→3 MULTIPLE,
+// and ±reference trunk jacks. Own-code (forked from the repo `mixer`).
+import { moogCp3Def } from './moog-cp3';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -264,6 +268,11 @@ export function registerAudioModules(): void {
   // sawtooth/rectangular w/ variable pulse width) + 1V/oct + linear FM +
   // hard/soft/off sync. Own-code polyBLEP DSP (no copyleft).
   registerModule(moog921VcoDef);
+  // MOOG CP3 — Moog System 55/35 console mixer slice. 4×1 summing mixer with
+  // a (+) and a (−) phase-inverted output, an attenuated 4th external input,
+  // a 1→3 MULTIPLE, and ±12V/−6V trunk-reference jacks. Own-code DSP forked
+  // from the repo `mixer` (permissive, no copyleft).
+  registerModule(moogCp3Def);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

@@ -202,6 +202,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // resolved Q4 decision in .myrobots/MOOG/PLAN.md. SYS55-only + SYS35-only
   // modules land in their respective subs as later slices ship.
   moog921Vco: { top: 'Moog', sub: 'SYS55' },
+  // The CP3 console mixer is in BOTH the System 55 and System 35, so it lives
+  // in the shared SYS55 bucket alongside the 921 (same Q4 decision).
+  moogCp3: { top: 'Moog', sub: 'SYS55' },
 
   // ───────── MIDI (hardware-bridge modules) ─────────
   // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI
