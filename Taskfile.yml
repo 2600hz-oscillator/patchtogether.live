@@ -171,8 +171,25 @@ tasks:
   # ---------------- DSP ----------------
   dsp:build:
     desc: Compile Faust + JS worklets to packages/dsp/dist
+    # Skip the (slow) Faust compile when a matching dist is already on disk.
+    # `status:` short-circuits the task when ALL listed commands exit 0:
+    #   - dist/.dsp-srchash exists, AND
+    #   - its content == the current hash of all DSP build inputs.
+    # In CI the `dsp-build` job compiles once and uploads packages/dsp/dist/**
+    # (incl. .dsp-srchash); every downstream job restores that artifact, so a
+    # job calling `task art|vrt|vrt:strict|build` (which all list dsp:build as a
+    # dep) REUSES the restored dist instead of recompiling Faust ~16× per run.
+    # Locally it makes back-to-back `task vrt` / `task art` runs instant after
+    # the first build. Edit any DSP source / build script / the flox manifest
+    # and the hash changes → the guard fails → a real rebuild runs.
+    status:
+      - test -f {{.DSP}}/dist/.dsp-srchash
+      - test "$(cat {{.DSP}}/dist/.dsp-srchash 2>/dev/null)" = "$(bash scripts/dsp-src-hash.sh)"
     cmds:
       - npm run build -w {{.DSP}}
+      # Stamp the source fingerprint so a later `task` invocation (or a CI job
+      # that restored this dist) can skip the rebuild via the `status:` guard.
+      - bash scripts/dsp-src-hash.sh > {{.DSP}}/dist/.dsp-srchash
 
   dsp:watch:
     desc: Watch packages/dsp/src and rebuild on save
