@@ -107,6 +107,12 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   audioIn:    'requires live mic input; no audio device in CI; covered by audio-in.spec.ts',
   // ── MIDI-driven ──
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
+  // MIDI-OUT-BUDDY emits MIDI to an external device, not audio/CV into the
+  // graph — it has ZERO output ports, so the "every output emits" sweep has
+  // nothing to assert. Listed here (like other output-less modules) so the
+  // sweep documents the intentional absence. Its CV→MIDI send path + the
+  // gate/pitch/velocity input handles are covered by midi-out-buddy.spec.ts.
+  midiOutBuddy: 'no audio/CV outputs (emits MIDI to external gear); covered by midi-out-buddy.spec.ts',
   // ── Clock / divider / sequencer-like modules that need an upstream clock ──
   timelorde: 'clock divider; needs upstream clock; covered by timelorde-related specs',
   grids:     'requires upstream clock to step; covered by grids-related specs',

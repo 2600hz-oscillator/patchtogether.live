@@ -194,6 +194,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // controller. MIDICLOCK is the transport-only sibling — clock/run/
   // start/stop gates from an external MIDI device (drives TIMELORDE.clock).
   midiCvBuddy: { top: 'MIDI', sub: 'MIDI' },
+  // MIDI CV BUDDY OUT is the output complement — gate/pitch/velocity CV in →
+  // MIDI notes out to an external device + channel.
+  midiOutBuddy: { top: 'MIDI', sub: 'MIDI' },
   midiclock: { top: 'MIDI', sub: 'MIDI' },
 
   // ───────── Video modules → Sources ─────────

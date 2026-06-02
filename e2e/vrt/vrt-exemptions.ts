@@ -220,6 +220,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // once the user has previously granted permission. Functional coverage
   // is e2e/tests/midi-cv-buddy.spec.ts.
   midiCvBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
+  // MIDI-OUT-BUDDY: same rationale as midiCvBuddy — the card's device picker
+  // depends on the connected MIDI OUTPUT list (no hardware in CI), and the
+  // pre-Connect state is just the "Connect MIDI…" button. Unit + E2E
+  // (fake-output capture) provide coverage. See e2e/tests/midi-out-buddy.spec.ts.
+  midiOutBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
   // MIDICLOCK: same rationale as midiCvBuddy — pre-Connect state shows a
   // "Connect MIDI…" button (deterministic) but post-connect the device list
   // depends on hardware that isn't present in CI. Unit + E2E (mock-MIDI smoke)

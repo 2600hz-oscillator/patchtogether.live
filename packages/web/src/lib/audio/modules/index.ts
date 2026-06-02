@@ -65,6 +65,7 @@ import { cloudseedDef } from './cloudseed';
 import { livecodeDef } from './livecode';
 import { clockedRunnerDef } from './clocked-runner';
 import { midiCvBuddyDef } from './midi-cv-buddy';
+import { midiOutBuddyDef } from './midi-out-buddy';
 import { midiclockDef } from './midiclock';
 import { helmDef } from './helm';
 import { hydrogenDef } from './hydrogen';
@@ -183,6 +184,7 @@ export function registerAudioModules(): void {
   registerModule(livecodeDef);
   registerModule(clockedRunnerDef);
   registerModule(midiCvBuddyDef);
+  registerModule(midiOutBuddyDef);
   registerModule(midiclockDef);
   registerModule(helmDef);
   registerModule(hydrogenDef);

@@ -213,6 +213,8 @@
   import ChowkickCard from '$lib/ui/modules/ChowkickCard.svelte';
   // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
   import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
+  // MIDI-OUT-BUDDY — gate/pitch/velocity CV → MIDI notes out to external gear.
+  import MidiOutBuddyCard from '$lib/ui/modules/MidiOutBuddyCard.svelte';
   // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
   import MidiclockCard from '$lib/ui/modules/MidiclockCard.svelte';
   import HelmCard from '$lib/ui/modules/HelmCard.svelte';
@@ -491,6 +493,7 @@
     tides2: Tides2Card,
     cloudseed: CloudseedCard,
     midiCvBuddy: MidiCvBuddyCard,
+    midiOutBuddy: MidiOutBuddyCard,
     midiclock: MidiclockCard,
     helm: HelmCard,
     hydrogen: HydrogenCard,

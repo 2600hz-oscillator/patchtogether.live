@@ -352,6 +352,11 @@ type StandardModuleType =
   // outputs. Monophonic with user-selectable voice priority (LAST / LOW /
   // HIGH), retrigger toggle, channel filter, and a device picker.
   | 'midiCvBuddy'
+  // MIDI-OUT-BUDDY (label "MIDI CV BUDDY OUT") — output complement of
+  // MIDI-CV-BUDDY. gate/pitch/velocity CV inputs → MIDI NoteOn/NoteOff sent
+  // to a selected external MIDI OUTPUT device + channel. Main-thread Web MIDI
+  // bridge (no worklet); terminal sink with no audio outputs.
+  | 'midiOutBuddy'
   // MIDICLOCK — hardware MIDI transport bridge. CLOCK (gate) at user-
   // selected subdivision (default quarter-note → TIMELORDE-compatible),
   // RUN (cv, 0/1), MIDISTART + MIDISTOP (one-shot gates). System Real-
