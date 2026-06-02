@@ -89,6 +89,13 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // fallback so the chrome (port handles + COLOR knob) diffs deterministically
   // when the module is promoted into MODULES without a registered scene.
   scoreboard: [{ selector: 'canvas' }],
+  // ANALOG VCO — now carries a live single-cycle waveform scope at the top of
+  // the card (off an AnalyserNode on the morph output). The trace is animated
+  // + device-/timing-dependent, so mask the canvas; the deterministic chrome
+  // (6 faders incl. the new Wave knob + the saw/square/triangle/sine/morph
+  // handle rows) is the regression gate. The morph DSP is covered by
+  // analog-vco-morph.test.ts; the scope-window logic by analog-vco-scope.test.ts.
+  analogVco: [{ selector: 'canvas' }],
 };
 
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
@@ -397,7 +404,10 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
 export const STRICT_VRT_MODULES = new Set<string>([
   // Audio domain — pure knob/fader cards, no canvas
   'adsr',                 // 4-knob envelope card
-  'analogVco',            // 4-knob VCO card (waveform selector + tuning)
+  // analogVco: removed from strict lane — the card now carries a live
+  // single-cycle waveform scope (animated canvas off the morph output), which
+  // disqualifies it from the no-animated-chrome strict subset. It stays in
+  // the full VRT lane with the scope canvas masked (see VRT_MODULE_MASKS).
   // audioOut: removed from strict lane. This PR added the OUT device
   // dropdown row (setSinkId picker), growing the card from 320x313 to
   // 360x401. The darwin baseline was re-captured (f1cd0e5f); the linux
@@ -489,6 +499,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // dropdown row (setSinkId picker) so the darwin baseline was regen'd in
   // this PR. Linux baseline pending a `task vrt:update` run on linux CI.
   'linux/audioOut',
+  // ANALOG VCO (live waveform scope + Wave morph knob added): the card grew a
+  // single-cycle scope canvas at the top + a 6th fader (Wave), so the darwin
+  // baseline was re-captured in this PR (canvas masked). Linux baseline pending
+  // a `task vrt:update` run on linux CI. Module also moved out of the strict
+  // VRT lane (animated chrome).
+  'linux/analogVco',
   // BACKDRAFT (video feedback generator): darwin baseline captured on this
   // machine via VRT_SCENES (SHAPES sources → frozen feedback tunnel/spiral,
   // params.freeze=1 holds the accumulator). The spatial-transform feedback

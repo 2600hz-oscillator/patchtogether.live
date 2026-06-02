@@ -1136,6 +1136,10 @@ export function buildModuleManifest(
       // both ScopeCard.svelte and the cross-domain video bridge use).
       // Not a ModuleDef.
       if (file.endsWith('-draw.ts')) return false;
+      // -scope.ts: on-card single-cycle waveform-scope helpers (cycle-window
+      // extraction + 2D draw, e.g. analog-vco-scope.ts used by AnalogVcoCard).
+      // Not a ModuleDef.
+      if (file.endsWith('-scope.ts')) return false;
       // -map.ts: pure raster/coordinate-mapping math helpers (e.g.
       // rasterize-map.ts that both the module factory + its tests use).
       // Not a ModuleDef.
