@@ -30,6 +30,7 @@
 export type TopCategory =
   | 'Audio modules'
   | 'Video modules'
+  | 'Games'
   | 'Ports'
   | 'Moog'
   | 'MIDI'
@@ -54,6 +55,12 @@ export interface CategoryEntry {
 export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
   'Audio modules': ['VCOs', 'Utility', 'Effects', 'Mixing', 'End of chain'],
   'Video modules': ['Sources', 'Processors', 'Utilities'],
+  // Games = playable game modules (emulators + in-house arcade ports) that
+  // emit game-event CV/GATE. Two subs: Emulators (load an external game
+  // engine / ROM — DOOM, SNES9X, Q*Bert) + Arcade (in-house ports —
+  // NIBBLES, PONG, MODTRIS, FROGGER). SM64/SKIFREE are also games but
+  // weren't in the move list; they stay in Hybrid for now.
+  Games: ['Emulators', 'Arcade'],
   // Ports = "ports of external software / hardware synths". `Ports`
   // (matching the top name) renders flat at the top level —
   // hydrogen, helm, cloudseed are headline ports the user wants one
@@ -73,6 +80,7 @@ export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
 export const TOP_ORDER: readonly TopCategory[] = [
   'Audio modules',
   'Video modules',
+  'Games',
   'Ports',
   'Moog',
   'MIDI',
@@ -236,24 +244,8 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // PEAKSTATE — animated mandala generator (kaleidoscope mirror-arm pen
   // trace + 3D-tube output). Self-driving video source.
   peakstate: { top: 'Video modules', sub: 'Sources' },
-  // DOOM — single-instance interactive video module. Cards are
-  // keyboard-driven (focus-within ring) + CV-gate-driven; one host
-  // per rack, spectators see the framebuffer over Yjs awareness.
-  doom: { top: 'Video modules', sub: 'Sources' },
-  // NIBBLES — QBasic Nibbles snake game module. Video source with CV
-  // gate outputs (pellet/death/dir_change), length CV, + dual audio.
-  nibbles: { top: 'Video modules', sub: 'Sources' },
-  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator. CV-only control
-  // (coin/start gates + joy_x/joy_y CV) + event-gate outputs
-  // (move/die/level) alongside the video + mono audio.
-  qbert: { top: 'Video modules', sub: 'Sources' },
-  // SNES9X — Super Nintendo emulator (snes9x2005/CAT SFC, MIT → WASM). Load-
-  // a-ROM game module with game-event CV/GATE outputs. Bucketed with the
-  // other game-emulator VIDEO modules (DOOM/QBERT/NIBBLES) under Video →
-  // Sources. (The spec called for a "Games" category; this repo's existing
-  // game emulators live in Video → Sources, so SNES9X follows that precedent
-  // for consistency rather than introducing a new top-level bucket.)
-  snes9x: { top: 'Video modules', sub: 'Sources' },
+  // DOOM / NIBBLES / QBERT / SNES9X — game modules → moved to the dedicated
+  // top-level "Games" category (see the Games block below).
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   videobox: { top: 'Video modules', sub: 'Sources' },
   // VIDEOVARISPEED — local-file player with performant varispeed transport.
@@ -309,23 +301,15 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   foxy: { top: 'Hybrid', sub: 'Hybrid' },
   warrenspectrum: { top: 'Hybrid', sub: 'Hybrid' },
   synesthesia: { top: 'Hybrid', sub: 'Hybrid' },
-  // PONG — research-prototype game module. CV-in paddles + gate-out scores,
-  // visual game state on the card. Sits in Hybrid alongside the other
-  // audio-engine-bound modules that also draw rich visuals.
-  pong: { top: 'Hybrid', sub: 'Hybrid' },
-  // MODTRIS — research-prototype Tetris-clone game module. Gate-in controls
-  // + gate-out events. Same bucket as PONG.
-  modtris: { top: 'Hybrid', sub: 'Hybrid' },
-  // FROGGER — research-prototype Frogger port. 5 CV-gate inputs (up/down/
-  // left/right + start), 3 gate outputs (home/dead/level). Auto-starts on
-  // module-spawn via a synthesized start_gate pulse. Same bucket as PONG /
-  // MODTRIS.
-  frogger: { top: 'Hybrid', sub: 'Hybrid' },
+  // PONG / MODTRIS / FROGGER — game modules → moved to the dedicated
+  // top-level "Games" category (see the Games block below).
   // SM64 — sm64js pure-JS Super Mario 64 port (WTFPL). Single-instance
-  // (maxInstances:1) per rack. Bucket alongside the other game modules.
+  // (maxInstances:1) per rack. NOTE: SM64 is also a game and could move to
+  // the new Games category; left in Hybrid for now (not in the move list).
   sm64: { top: 'Hybrid', sub: 'Hybrid' },
   // SKIFREE — skifree.js ski-downhill game (MIT). x/y CV cursor + crash/
-  // eaten gate + video out. Same Hybrid bucket as the other game modules.
+  // eaten gate + video out. NOTE: also a game — could move to the new Games
+  // category; left in Hybrid for now (not in the move list — pending user OK).
   skifree: { top: 'Hybrid', sub: 'Hybrid' },
   // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
   wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
@@ -344,6 +328,23 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // also spawn one manually (with an empty body) to be wired up by a
   // parent script later.
   clockedRunner: { top: 'Hybrid', sub: 'Hybrid' },
+
+  // ───────── Games (playable game modules → game-event CV/GATE) ─────────
+  // Two subs: Emulators (load an external game engine / ROM) + Arcade
+  // (in-house arcade-style ports). Each module here appears ONLY under
+  // Games (moved out of Video → Sources / Hybrid).
+  //
+  // Emulators — DOOM (doomgeneric WASM), SNES9X (snes9x2005/CAT SFC WASM,
+  // load-a-ROM), Q*Bert (Gottlieb 1982 arcade emulator).
+  doom: { top: 'Games', sub: 'Emulators' },
+  snes9x: { top: 'Games', sub: 'Emulators' },
+  qbert: { top: 'Games', sub: 'Emulators' },
+  // Arcade — in-house ports / clones with game-event gate outputs.
+  // NIBBLES (QBasic snake), PONG, MODTRIS (Tetris-clone), FROGGER.
+  nibbles: { top: 'Games', sub: 'Arcade' },
+  pong: { top: 'Games', sub: 'Arcade' },
+  modtris: { top: 'Games', sub: 'Arcade' },
+  frogger: { top: 'Games', sub: 'Arcade' },
 };
 
 /** Look up a module's category, falling back to Uncategorized. */
@@ -372,6 +373,7 @@ export function groupDefs<D extends DefLike>(defs: readonly D[]): GroupedTop<D>[
   const byTop: Record<TopCategory, Record<string, D[]>> = {
     'Audio modules': {},
     'Video modules': {},
+    Games: {},
     Ports: {},
     Moog: {},
     MIDI: {},
