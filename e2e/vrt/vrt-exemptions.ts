@@ -490,6 +490,16 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // dropdown so the darwin baseline was regen'd in this PR. Linux baseline
   // pending a `task vrt:update` run on linux CI.
   'linux/wavviz',
+  // CUBE (3D wavetable-navigator oscillator, first slice): darwin baseline
+  // captured on this machine via VRT_SCENES (analogVco → pitch, rotated/morphed
+  // slice through the default tables, freeze-on-suspend so the snapshot-driven
+  // 2D viz holds). The 2D surface-height + waveform canvases differ
+  // sub-thresholdly across platforms (canvas AA), so the linux baseline is
+  // pending a `task vrt:update` run on linux CI — functional coverage is the
+  // cube-dsp unit tests + cube worklet capture test + node-ART baselines +
+  // the per-port e2e. NOT in STRICT_VRT_MODULES (the missing linux baseline
+  // runs only in the informational full-VRT lane, not the merge gate).
+  'linux/cube',
   // AUDIO OUT (device picker dropdown added): the card grew an OUT device
   // dropdown row (setSinkId picker) so the darwin baseline was regen'd in
   // this PR. Linux baseline pending a `task vrt:update` run on linux CI.

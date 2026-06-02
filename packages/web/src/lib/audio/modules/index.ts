@@ -112,6 +112,8 @@ import { chowkickDef } from './chowkick';
 // 1700/2200 Hz). Each key = one momentary AudioParam + one audio-rate
 // gate input.
 import { blueboxDef } from './bluebox';
+// CUBE — 3D wavetable-navigator oscillator (FLOOR/WALL/CEILING field + slice).
+import { cubeDef } from './cube';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -248,6 +250,11 @@ export function registerAudioModules(): void {
   registerModule(chowkickDef);
   // BLUEBOX — DTMF dialer + phreaker buttons (2600 Hz / 1700+2200 Hz).
   registerModule(blueboxDef);
+  // CUBE — 3D wavetable-navigator oscillator: builds a 3D scalar field from
+  // three e352 wavetables (FLOOR/WALL/CEILING) + reads an arbitrary planar
+  // slice as the played waveform (surface-height scan). V/oct, stereo ±5%
+  // spread, SMOOTH/HARD material, 3D-bitcrush CRUSH, mirror-fold WRAP.
+  registerModule(cubeDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
