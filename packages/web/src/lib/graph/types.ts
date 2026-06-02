@@ -490,6 +490,12 @@ type StandardModuleType =
   // rectangular with variable pulse width), 1V/oct + linear-FM inputs, and a
   // hard/soft/off sync switch. Own-code polyBLEP DSP (permissive, no copyleft).
   | 'moog921Vco'
+  // MOOG 911 ENVELOPE GENERATOR — Moog System 55/35 clone (Moog → SYS55,
+  // shared by SYS35). A three-time-constant CONTOUR generator (NOT a literal
+  // ADSR): T1 attack → peak, T2 initial decay → Esus sustain level, hold
+  // while gated, T3 final decay on release (trigger-close forces T3). Own-
+  // code DSP (permissive). env + inverted env_inv CV outputs.
+  | 'moog911'
   // MOOG 902 VCA — Moog System 55/35 clone, slice 3 (Moog → SYS55, shared by
   // SYS35). Differential voltage-controlled amplifier: a manual GAIN pot
   // ("fixed control voltage"), summing CONTROL INPUTS (cv + fcv), and a

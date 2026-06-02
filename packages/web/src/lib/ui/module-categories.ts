@@ -202,6 +202,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // resolved Q4 decision in .myrobots/MOOG/PLAN.md. SYS55-only + SYS35-only
   // modules land in their respective subs as later slices ship.
   moog921Vco: { top: 'Moog', sub: 'SYS55' },
+  // The 911 Envelope Generator is shared by both the System 55 and System 35
+  // (S35 ×3, S55 ×6), so like the 921 it's listed under SYS55 (the shared
+  // bucket) per the resolved Q4 decision in .myrobots/MOOG/PLAN.md.
+  moog911: { top: 'Moog', sub: 'SYS55' },
   // The 902 VCA (differential amplifier) is in BOTH systems (S35×3, S55×5) →
   // shared → listed under SYS55, same as the 921.
   moog902: { top: 'Moog', sub: 'SYS55' },
