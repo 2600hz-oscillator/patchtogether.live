@@ -203,10 +203,28 @@ test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({
     });
   });
 
-  await page.waitForTimeout(800);
-
-  const peak = await readScopePeak(page, 'scope');
+  // Poll until the scope shows energy, with a bounded deadline — DO NOT do a
+  // single fixed-time read. The Scope's analyser only buffers the most recent
+  // ~46 ms (2048 samples @ ~44.1 kHz). A single read at a fixed offset is a
+  // STARTUP race: under CI load the AudioWorklet/engine can take a variable
+  // amount of time to begin producing, and a read taken before the first
+  // samples land (or before the analyser buffer has filled) returns exactly 0
+  // ("Echos scope peak (got 0)"). Time-series profiling confirmed the chain
+  // genuinely produces strong signal (peak ≈ 0.89) and that the only zero
+  // reads are the first 1–2 samples at startup — there are no mid-stream
+  // silent gaps once the wet tail is flowing. Polling until non-zero (matching
+  // the TIMELORDE test above) removes the race deterministically: the first
+  // moment the chain is audible satisfies the assertion, and the bounded
+  // deadline still fails loudly if the chain ever genuinely outputs nothing.
+  let peak = 0;
+  const start = Date.now();
+  while (Date.now() - start < 4000) {
+    peak = await readScopePeak(page, 'scope');
+    if (peak > 0.001) break;
+    await page.waitForTimeout(50);
+  }
   expect(peak, `Echos scope peak (got ${peak})`).toBeGreaterThan(0.001);
+  expect(errors, `Echos errors: ${errors.join('; ')}`).toEqual([]);
 });
 
 test('MIXMSTRS: passes channel 1 through to master out', async ({ page }) => {
