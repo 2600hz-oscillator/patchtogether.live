@@ -11,9 +11,11 @@
 // shape ever silently changes, this catches it before the e2e test even runs.
 
 import { describe, it, expect, beforeAll } from 'vitest';
+import * as Y from 'yjs';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import {
   makeEnvelope,
+  makePortableEnvelope,
   parseEnvelope,
   serializeEnvelope,
   loadEnvelopeIntoStore,
@@ -23,6 +25,7 @@ import {
   DEFAULT_FILENAME,
   type LivePatch,
 } from './persistence';
+import { setNodePosition } from '$lib/multiplayer/layouts';
 import type { ModuleNode, Edge } from './types';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { registerModule, getModuleDef } from '$lib/audio/module-registry';
@@ -943,5 +946,131 @@ describe('migrateEdgeEndpoints — DOOM per-slot port migration (#353)', () => {
     const result = loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
     expect(result.edgesLoaded).toBe(1);
     expect(dest.store.edges['e1']!.target.portId).toBe('p1_up');
+  });
+});
+
+describe('persistence: portable performance snapshot (per-user layout baking)', () => {
+  const USER = 'user-alice';
+
+  it('bakes the saving user\'s layout override into node.position and clears layouts', () => {
+    const { ydoc, store } = freshPatch();
+    ydoc.transact(() => {
+      store.nodes['vco'] = {
+        id: 'vco',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 100, y: 200 }, // stale spawn position
+        params: { tune: 5, fine: 0 },
+      };
+      store.nodes['out'] = {
+        id: 'out',
+        type: 'audioOut',
+        domain: 'audio',
+        position: { x: 600, y: 200 }, // stale spawn position
+        params: { master: 0.5 },
+      };
+    });
+    // Multiplayer drag-stop: the user moved both cards. These writes go to the
+    // per-user layouts map, NOT node.position (the bug's root cause).
+    setNodePosition(ydoc, USER, 'vco', { x: 333, y: 444 });
+    setNodePosition(ydoc, USER, 'out', { x: 999, y: 111 });
+    // Sanity: node.position is still the stale spawn position.
+    expect(ydoc.getMap('nodes').get('vco')).toBeDefined();
+    expect((ydoc.getMap('layouts').get(USER) as Y.Map<unknown> | undefined)?.size).toBe(2);
+
+    // Produce the portable envelope as the saving user.
+    const env = makePortableEnvelope(ydoc, USER);
+
+    // Load into a brand-new doc as a DIFFERENT (or absent) user — this is where
+    // the old non-portable snapshot lost placement.
+    const dest = freshPatch();
+    loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+
+    // Positions are now baked into node.position so any loader sees them.
+    expect(dest.store.nodes['vco']!.position).toEqual({ x: 333, y: 444 });
+    expect(dest.store.nodes['out']!.position).toEqual({ x: 999, y: 111 });
+    // The per-user layouts map is dropped from the portable snapshot.
+    expect(dest.ydoc.getMap('layouts').size).toBe(0);
+  });
+
+  it('does not mutate the live ydoc (temp-doc approach, no peer broadcast)', () => {
+    const { ydoc, store } = freshPatch();
+    ydoc.transact(() => {
+      store.nodes['vco'] = {
+        id: 'vco',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 100, y: 200 },
+        params: { tune: 5, fine: 0 },
+      };
+    });
+    setNodePosition(ydoc, USER, 'vco', { x: 333, y: 444 });
+
+    makePortableEnvelope(ydoc, USER);
+
+    // Live doc is untouched: node.position is still the spawn value and the
+    // user's layout override is still present.
+    expect(store.nodes['vco']!.position).toEqual({ x: 100, y: 200 });
+    const mine = ydoc.getMap('layouts').get(USER) as Y.Map<{ x: number; y: number }> | undefined;
+    expect(mine?.get('vco')).toEqual({ x: 333, y: 444 });
+  });
+
+  it('keeps a node with no layout override at its canonical node.position', () => {
+    const { ydoc, store } = freshPatch();
+    ydoc.transact(() => {
+      store.nodes['vco'] = {
+        id: 'vco',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 100, y: 200 },
+        params: { tune: 5, fine: 0 },
+      };
+      store.nodes['out'] = {
+        id: 'out',
+        type: 'audioOut',
+        domain: 'audio',
+        position: { x: 600, y: 200 },
+        params: { master: 0.5 },
+      };
+    });
+    // Only 'vco' was dragged; 'out' keeps its canonical position.
+    setNodePosition(ydoc, USER, 'vco', { x: 333, y: 444 });
+
+    const env = makePortableEnvelope(ydoc, USER);
+    const dest = freshPatch();
+    loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+
+    expect(dest.store.nodes['vco']!.position).toEqual({ x: 333, y: 444 });
+    expect(dest.store.nodes['out']!.position).toEqual({ x: 600, y: 200 });
+  });
+
+  it('single-user mode (no userId): node.position is canonical, snapshot round-trips unchanged', () => {
+    const { ydoc, store } = freshPatch();
+    ydoc.transact(() => {
+      store.nodes['vco'] = {
+        id: 'vco',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 100, y: 200 },
+        params: { tune: 5, fine: 0 },
+      };
+    });
+    // Single-user: setNodePosition is a no-op when userId is undefined; drags
+    // mutate node.position directly. Simulate a moved card:
+    ydoc.transact(() => {
+      (ydoc.getMap('nodes').get('vco') as Y.Map<unknown>).set('position', (() => {
+        const p = new Y.Map<number>();
+        p.set('x', 50);
+        p.set('y', 60);
+        return p;
+      })());
+    });
+
+    const env = makePortableEnvelope(ydoc, undefined);
+    const dest = freshPatch();
+    loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+
+    expect(dest.store.nodes['vco']!.position).toEqual({ x: 50, y: 60 });
+    expect(dest.ydoc.getMap('layouts').size).toBe(0);
   });
 });

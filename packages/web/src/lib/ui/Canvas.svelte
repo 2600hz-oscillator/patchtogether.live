@@ -19,6 +19,7 @@
   import { getDefaultSnapshotBus, type PatchSnapshot } from '$lib/graph/snapshot';
   import {
     makeEnvelope,
+    makePortableEnvelope,
     downloadEnvelope,
     pickAndLoadEnvelope,
     parseEnvelope,
@@ -1281,7 +1282,12 @@
       return;
     }
     try {
-      const envelope = makeEnvelope(ydoc);
+      // Portable snapshot: bake THIS user's displayed positions into
+      // node.position + drop the per-user layouts map, so the performance loads
+      // with correct placement for any future loader (incl. a different user or
+      // single-user reload). In single-user mode currentUserId is undefined and
+      // this is equivalent to makeEnvelope (positions are already canonical).
+      const envelope = makePortableEnvelope(ydoc, currentUserId);
       // Build the live node map (plain objects) for asset/device extraction.
       const nodes: Record<string, { id: string; type: string; data?: Record<string, unknown> | null; params?: Record<string, unknown> | null }> = {};
       for (const [id, n] of Object.entries(patch.nodes)) {
