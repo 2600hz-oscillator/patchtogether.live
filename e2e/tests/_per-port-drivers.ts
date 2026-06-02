@@ -460,6 +460,40 @@ const DRIVERS: Record<string, PerPortDriver> = {
     }),
     note: 'MOOG CP3: drive in1 from NOISE.white; out_positive/out_negative + multiple_one/two/three emit (ref outs stay EXEMPT static refs)',
   },
+  // ───── MOOG 911 EG — gate-driven contour generator (mirror ADSR) ─────
+  // The 911 is a CV/gate modulator: its env / env_inv outputs only move on
+  // a gate. Drive .gate from SEQUENCER.gate so the T1→peak / T2→Esus / T3
+  // contour runs and both outputs emit. ESUS defaults > 0 so the sustain
+  // hold keeps env nonzero across the poll window.
+  moog911: {
+    upstream: () => ({
+      nodes: [sequencerGate('drv-seq').node],
+      edges: [
+        {
+          id: 'e-drv-gate',
+          from: { nodeId: 'drv-seq', portId: 'gate' },
+          to:   { nodeId: 'sut',     portId: 'gate' },
+          sourceType: 'gate', targetType: 'gate',
+        },
+      ],
+    }),
+    postSpawn: async (page) => {
+      const seed = sequencerGate('drv-seq');
+      await page.evaluate((d) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['drv-seq'];
+          if (!n) return;
+          if (!n.data) n.data = {};
+          n.data.steps = d.steps;
+        });
+      }, seed.data);
+    },
+    note: 'MOOG 911: drive .gate from SEQUENCER.gate; env / env_inv ramp on each note-on (T1→peak / T2→Esus / T3)',
+  },
 
   // ───── JOYSTICK — set pos_x/pos_y to nonzero ─────
   joystick: {
@@ -756,6 +790,72 @@ const DRIVERS: Record<string, PerPortDriver> = {
       ],
     }),
     note: 'VIDEOOUT: drive .in with ACIDWARP.out; .out passes through with non-blank frames',
+  },
+
+  // ───── MOOG 904A VCF — self-oscillate so the audio out is driven ─────
+  //
+  // The 904A is an effect (audio in → low-pass out), but at REGENERATION=1
+  // the transistor ladder self-oscillates into a sustained VC sine at the
+  // cutoff frequency — no upstream source needed. Seed regeneration=1 +
+  // range=2 (mid band, audible) so the `audio` output rings on its own and
+  // the per-port outputs-emit check sees a real signal (slice-1-style
+  // driven-signal check). Without this it would be silent at the default
+  // regeneration=0 and need an upstream source like any other filter.
+  moog904a: {
+    params: { regeneration: 1, range: 2, cutoff: 800 },
+    note: 'MOOG 904A: regeneration=1 → ladder self-oscillates; audio out is a driven sine',
+  },
+  // ───── FREEZEFRAME — drive video_in so all 5 video outs emit ─────
+  //
+  // FREEZEFRAME is an effect (video in → posterized/S&H out), so it needs
+  // an upstream source. Wire ACIDWARP.out into video_in; with gate_in
+  // UNPATCHED the module passes the frame through LIVE, so all five video
+  // outs (video_out + r/g/b/luma_out) ring with non-blank frames. The
+  // driver's presence bypasses the effect-shape skip (hasDriverSetup) so
+  // the module goes through the normal per-output emit path (each out
+  // routed to VIDEOOUT.in by the sweep).
+  freezeframe: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-acid', type: 'acidwarp', position: { x: 60, y: 60 }, domain: 'video' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-acid',
+          from: { nodeId: 'drv-acid', portId: 'out' },
+          to:   { nodeId: 'sut',      portId: 'video_in' },
+          sourceType: 'video', targetType: 'video',
+        },
+      ],
+    }),
+    note: 'FREEZEFRAME: drive video_in with ACIDWARP.out (gate unpatched = live passthrough); all 5 video outs ring',
+  },
+
+  // ───── MOOG 902 VCA — drive the SIGNAL input so both outs emit ─────
+  //
+  // The 902 is an effect (signal in → amplified out), so it needs an
+  // upstream source to produce output. Wire an ANALOGVCO saw into the
+  // `audio` SIGNAL input; the GAIN pot's default (0.5 → 3 V control →
+  // ×1.0 in LINEAR mode) already passes the signal at unity, so both the
+  // `audio` (OUT) and `audio_inv` (OUT−, the differential − twin) outputs
+  // ring with no extra CV needed. The driver's presence also bypasses the
+  // effect-shape skip in the spec (hasDriverSetup), so the 902 goes through
+  // the normal output-emit path (slice-1/2-style driven-signal check).
+  moog902: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-vco', type: 'analogVco', position: { x: 60, y: 60 }, domain: 'audio' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-vco',
+          from: { nodeId: 'drv-vco', portId: 'saw' },
+          to:   { nodeId: 'sut',     portId: 'audio' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+      ],
+    }),
+    note: 'MOOG 902: drive SIGNAL with ANALOGVCO.saw; OUT + OUT− both pass the amplified signal (gain default ×1)',
   },
 };
 

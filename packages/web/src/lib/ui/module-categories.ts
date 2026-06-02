@@ -205,6 +205,16 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // The CP3 console mixer is in BOTH the System 55 and System 35, so it lives
   // in the shared SYS55 bucket alongside the 921 (same Q4 decision).
   moogCp3: { top: 'Moog', sub: 'SYS55' },
+  // The 904A VCF (transistor-ladder LPF) is in BOTH systems (S35×1, S55×2) →
+  // shared → listed under SYS55, same as the 921.
+  moog904a: { top: 'Moog', sub: 'SYS55' },
+  // The 911 Envelope Generator is shared by both the System 55 and System 35
+  // (S35 ×3, S55 ×6), so like the 921 it's listed under SYS55 (the shared
+  // bucket) per the resolved Q4 decision in .myrobots/MOOG/PLAN.md.
+  moog911: { top: 'Moog', sub: 'SYS55' },
+  // The 902 VCA (differential amplifier) is in BOTH systems (S35×3, S55×5) →
+  // shared → listed under SYS55, same as the 921.
+  moog902: { top: 'Moog', sub: 'SYS55' },
 
   // ───────── MIDI (hardware-bridge modules) ─────────
   // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI
@@ -256,6 +266,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   destructor: { top: 'Video modules', sub: 'Processors' },
   feedback: { top: 'Video modules', sub: 'Processors' },
   vdelay: { top: 'Video modules', sub: 'Processors' },
+  // FREEZEFRAME — video sample & hold + per-channel posterize. Gate-driven
+  // frame freeze with isolated r/g/b/luma video outs.
+  freezeframe: { top: 'Video modules', sub: 'Processors' },
   // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
   // + LIGHTEN/DARKEN key masks). Sits with the other feedback processors.
   backdraft: { top: 'Video modules', sub: 'Processors' },
@@ -307,6 +320,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // SM64 — sm64js pure-JS Super Mario 64 port (WTFPL). Single-instance
   // (maxInstances:1) per rack. Bucket alongside the other game modules.
   sm64: { top: 'Hybrid', sub: 'Hybrid' },
+  // SKIFREE — skifree.js ski-downhill game (MIT). x/y CV cursor + crash/
+  // eaten gate + video out. Same Hybrid bucket as the other game modules.
+  skifree: { top: 'Hybrid', sub: 'Hybrid' },
   // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
   wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
   // CUBE — 3D wavetable-navigator oscillator. Audio-only v1 but bucketed

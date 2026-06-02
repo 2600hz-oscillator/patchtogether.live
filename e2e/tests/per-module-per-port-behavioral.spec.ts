@@ -132,6 +132,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   modtris:  'gameplay-conditional outputs; covered by modtris-related specs',
   sm64:     'video output blank until US ROM extracted into IDB; covered by sm64-related specs',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
+  skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
 
   // ── Pure-passthrough sinks with no semantic transformation: VIDEOOUT
   //    just blits its input to canvas, so behavioral assertion would be

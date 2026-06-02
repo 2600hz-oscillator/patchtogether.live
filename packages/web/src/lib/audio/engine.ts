@@ -37,6 +37,15 @@ export interface AudioDomainNodeHandle {
    */
   read?(key: string): unknown;
   /**
+   * Optional: arbitrary per-module data WRITE (the inverse of `read`). Used by
+   * cards that compute a value browser-side and must push it into the running
+   * node — e.g. SYNESTHESIA's VIDEO mode, where the card reads the incoming
+   * video frame's pixels (only the DOM has the canvas), reduces them to R/G/B/
+   * Luma channel levels, and writes them to the worklet each frame. Modules
+   * that need no card→node push omit this.
+   */
+  write?(key: string, value: unknown): void;
+  /**
    * Optional: per-port AnalyserNode taps that surface this module's
    * audio output as a video-domain source (cross-domain handoff).
    *
@@ -105,6 +114,9 @@ export interface DomainEngine {
    *  (e.g. WARPS: 'modulator_cv' → param 'modulator'). */
   readModulatorTap?(nodeId: string, portId: string): number | undefined;
   read(nodeId: string, key: string): unknown;
+  /** Optional inverse of `read`: push card-computed data into a node (see the
+   *  handle's `write`). Only modules that need it implement it. */
+  write?(nodeId: string, key: string, value: unknown): void;
   dispose(): void;
 }
 
@@ -583,6 +595,11 @@ export class AudioEngine implements DomainEngine {
   read(nodeId: string, key: string): unknown {
     const handle = this.nodes.get(nodeId);
     return handle?.read ? handle.read(key) : undefined;
+  }
+
+  write(nodeId: string, key: string, value: unknown): void {
+    const handle = this.nodes.get(nodeId);
+    handle?.write?.(key, value);
   }
 
   /**
@@ -1447,6 +1464,12 @@ export class PatchEngine {
 
   read(node: ModuleNode, key: string): unknown {
     return this.getDomain(node.domain).read(node.id, key);
+  }
+
+  /** Push card-computed data into a node (inverse of `read`). No-ops if the
+   *  domain engine / handle doesn't implement `write`. */
+  write(node: ModuleNode, key: string, value: unknown): void {
+    this.getDomain(node.domain).write?.(node.id, key, value);
   }
 
   dispose(): void {

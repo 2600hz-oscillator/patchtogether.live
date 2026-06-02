@@ -113,6 +113,7 @@
   import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
+  import FreezeframeCard from '$lib/ui/modules/FreezeframeCard.svelte';
   // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
   // + LIGHTEN/DARKEN key masks).
   import BackdraftCard from '$lib/ui/modules/BackdraftCard.svelte';
@@ -229,6 +230,8 @@
   import FroggerCard from '$lib/ui/modules/FroggerCard.svelte';
   // SM64 — black-box wrapper around the upstream sm64js (WTFPL).
   import Sm64Card from '$lib/ui/modules/Sm64Card.svelte';
+  // SKIFREE — wrapper around the upstream skifree.js engine (MIT).
+  import SkifreeCard from '$lib/ui/modules/SkifreeCard.svelte';
   // JOYSTICK — manual XY pad CV source.
   import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
   // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
@@ -242,6 +245,12 @@
   import Moog921VcoCard from '$lib/ui/modules/Moog921VcoCard.svelte';
   // MOOG CP3 — console mixer slice (beige faceplate).
   import MoogCp3MixerCard from '$lib/ui/modules/MoogCp3MixerCard.svelte';
+  // MOOG 904A VCF — Moog System 55/35 clone slice 2 (transistor-ladder LPF).
+  import Moog904aVcfCard from '$lib/ui/modules/Moog904aVcfCard.svelte';
+  // MOOG 911 EG — Moog System 55/35 contour generator (beige faceplate).
+  import Moog911Card from '$lib/ui/modules/Moog911Card.svelte';
+  // MOOG 902 VCA — Moog System 55/35 clone slice 3 (differential amplifier).
+  import Moog902VcaCard from '$lib/ui/modules/Moog902VcaCard.svelte';
   // ATLANTIS-PATCH support trio. The "Visit Atlantis" demo button +
   // example-patches/atlantis.ts fixture were retired in favour of the
   // GLITCHES GET RICHES envelope-driven demo (see loadGlitches() below).
@@ -449,6 +458,7 @@
     ruttetra: RuttetraCard,
     shapedramps: ShapedrampsCard,
     vdelay: VdelayCard,
+    freezeframe: FreezeframeCard,
     backdraft: BackdraftCard,
     bentbox: BentboxCard,
     acidwarp: AcidwarpCard,
@@ -506,6 +516,7 @@
     modtris: ModtrisCard,
     frogger: FroggerCard,
     sm64: Sm64Card,
+    skifree: SkifreeCard,
     joystick: JoystickCard,
     gamepad: GamepadCard,
     numpadPlus: NumpadPlusCard,
@@ -514,6 +525,9 @@
     cube: CubeCard,
     moog921Vco: Moog921VcoCard,
     moogCp3: MoogCp3MixerCard,
+    moog904a: Moog904aVcfCard,
+    moog911: Moog911Card,
+    moog902: Moog902VcaCard,
     slewSwitch: SlewSwitchCard,
     // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
     fourplexer: FourPlexerCard,
@@ -610,6 +624,12 @@
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__connectDragState = connectDragState;
+      // Port hold-to-menu gesture phase, exposed as a getter so e2e reads
+      // the LIVE value. The drag-passes-to-xyflow spec polls this for the
+      // 'cancelled-move' phase — a deterministic signal that the
+      // pointermove cancelled the hold — instead of racing HOLD_FIRE_MS.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__portHoldPhase = () => holdPhase;
       // Lets E2E tests exercise the connect-commit path directly — the
       // same xyflow `Connection` envelope a real pointer drag would
       // synthesize. Used by the instrument-exposed-port-patching spec
@@ -2814,6 +2834,18 @@
   let holdStart: { x: number; y: number } | null = null;
   let holdInfo: ReturnType<typeof handleInfoFromEvent> | null = null;
   let holdMenuConsumed = false;
+  // Observable gesture phase for deterministic e2e (dev-only hook below).
+  // 'idle'           — no port-hold gesture in flight.
+  // 'armed'          — pointerdown on a handle; hold timer running, not yet
+  //                    fired or cancelled.
+  // 'cancelled-move' — a pointermove past the drag tolerance cancelled the
+  //                    hold; xyflow's drag-to-connect now owns the gesture.
+  //                    THIS is the signal the drag-passes-to-xyflow test
+  //                    polls for, so it never has to race HOLD_FIRE_MS.
+  // 'fired'          — the hold timer elapsed and the patch menu opened.
+  // 'released'       — pointerup ended an armed (un-moved) gesture.
+  let holdPhase: 'idle' | 'armed' | 'cancelled-move' | 'fired' | 'released' =
+    'idle';
 
   function clearHold(): void {
     if (holdTimer !== null) {
@@ -2846,6 +2878,7 @@
     portMenuOpen = true;
     connectDragState.beginCascade(info.nodeId);
     holdMenuConsumed = true;
+    holdPhase = 'fired';
   }
 
   $effect(() => {
@@ -2873,6 +2906,7 @@
       holdMenuConsumed = false;
       holdStart = { x: e.clientX, y: e.clientY };
       holdInfo = info;
+      holdPhase = 'armed';
       const startX = e.clientX;
       const startY = e.clientY;
       const startedInfo = info;
@@ -2892,6 +2926,7 @@
         // User is dragging — xyflow's drag-to-connect handles it from
         // here. Cancel our hold so the timer doesn't fire.
         clearHold();
+        holdPhase = 'cancelled-move';
       }
     };
     const onPointerUp = (e: PointerEvent) => {
@@ -2907,14 +2942,18 @@
       const startY = holdStart.y;
       const timerStillLive = holdTimer !== null;
       clearHold();
-      if (moved) return; // xyflow handled the drag
+      if (moved) {
+        holdPhase = 'cancelled-move';
+        return; // xyflow handled the drag
+      }
       if (timerStillLive) {
-        // Fast click before the 50ms hold — treat as same gesture, open menu.
+        // Fast click before the hold timer — treat as same gesture, open
+        // menu. openPortMenuAt sets holdPhase = 'fired'.
         openPortMenuAt(startX, startY, info);
       }
-      // If the timer already fired, the menu is already open and
-      // holdMenuConsumed === true; the click-suppress handler below
-      // will swallow the trailing click event.
+      // If the timer already fired the menu is open, holdPhase is 'fired'
+      // and holdMenuConsumed === true — leave it; the click-suppress
+      // handler below swallows the trailing click event.
     };
     const onClick = (e: MouseEvent) => {
       // Swallow the click that follows a hold-fire so it can't propagate

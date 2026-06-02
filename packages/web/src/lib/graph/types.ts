@@ -209,6 +209,10 @@ type StandardModuleType =
   | 'buggles'
   // VDELAY — video delay + feedback echo (ring buffer of FBO textures).
   | 'vdelay'
+  // FREEZEFRAME — video sample & hold + per-channel posterize. video_in +
+  // gate_in; 5 video outs (combined + isolated r/g/b/luma). Unpatched gate
+  // = live passthrough; patched gate captures-while-high, freezes-on-low.
+  | 'freezeframe'
   // BACKDRAFT — video feedback generator. Crossfades two inputs (MIX) and
   // composites with a delayed + colour-processed copy of its own previous
   // output (1-frame-lag feedback ring); LIGHTEN/DARKEN key masks modulate
@@ -419,6 +423,12 @@ type StandardModuleType =
   // future spawns boot straight to a running game. No outputs;
   // vizPassthrough on the canvas covers cross-domain video output.
   | 'sm64'
+  // SKIFREE — the classic SkiFree (ski downhill, dodge trees/rocks, get
+  // chased + eaten by the yeti). skifree.js engine (MIT). Single-instance.
+  // x/y CV synthesize the mouse cursor the skier steers toward; gate fires
+  // a rising edge on crash / eaten-by-yeti; out is the game canvas (video).
+  // Native mouse steering when x/y unpatched + card focused (CV overrides).
+  | 'skifree'
   // JOYSTICK — manual XY pad. Outputs x, y, nx (= -x), ny (= -y) as CV.
   // No inputs in v1 (future: MIDI-mappable). Mirrors how an LFO emits
   // multiple inverted/quadrature outputs from a single source of motion.
@@ -489,6 +499,29 @@ type StandardModuleType =
   // inverted output, an attenuated 4th external input, a 1→3 MULTIPLE, and
   // ±12V/−6V trunk-reference jacks. Own-code DSP forked from the repo `mixer`.
   | 'moogCp3'
+  // MOOG 904A VCF — Moog System 55/35 clone, slice 2 (Moog → SYS55, shared by
+  // SYS35). Voltage-controlled transistor-ladder LOW-PASS filter, 24 dB/oct:
+  // FIXED CONTROL VOLTAGE (cutoff) + RANGE switch (cutoff in 2-octave steps) +
+  // summing 1V/oct CONTROL INPUTS + REGENERATION (variable Q / internal
+  // feedback that self-oscillates into a clean sine VC generator near max).
+  // Own-code clean-room TPT/Zavalishin zero-delay-feedback ladder + Huovilainen
+  // tanh TECHNIQUE (shared lib moog-ladder-dsp; reused by 904B/904C). No
+  // LGPL/CC-BY-SA copyleft.
+  | 'moog904a'
+  // MOOG 911 ENVELOPE GENERATOR — Moog System 55/35 clone (Moog → SYS55,
+  // shared by SYS35). A three-time-constant CONTOUR generator (NOT a literal
+  // ADSR): T1 attack → peak, T2 initial decay → Esus sustain level, hold
+  // while gated, T3 final decay on release (trigger-close forces T3). Own-
+  // code DSP (permissive). env + inverted env_inv CV outputs.
+  | 'moog911'
+  // MOOG 902 VCA — Moog System 55/35 clone, slice 3 (Moog → SYS55, shared by
+  // SYS35). Differential voltage-controlled amplifier: a manual GAIN pot
+  // ("fixed control voltage"), summing CONTROL INPUTS (cv + fcv), and a
+  // LINEAR / EXPONENTIAL response switch. Gain is ×2 (+6 dB) at pot-max OR
+  // CV=6 V, topping out at the ×3 ceiling near a control sum of ~7.5 V. Two
+  // complementary outputs (audio + audio_inv, the phase-inverted differential
+  // − twin). Own-code gain law forked from the repo's `vca` (no copyleft).
+  | 'moog902'
   // TREE.oh.VOX — TB-303-style bassline voice (Open303 voice slice port,
   // MIT → AGPL). 6 knobs (TUNE / CUTOFF / RESONANCE / ENVELOPE / DECAY /
   // ACCENT) + pitch / gate / accent_in inputs + per-knob CV. The full
