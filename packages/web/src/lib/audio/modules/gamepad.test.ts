@@ -12,6 +12,8 @@ import {
   GAMEPAD_OUTPUTS,
   STICK_DEADZONE,
 } from './gamepad';
+import { scaleCv } from '$lib/audio/cv-scale';
+import { wavesculptDef } from './wavesculpt';
 
 describe('applyDeadzone', () => {
   it('returns 0 inside the deadzone band', () => {
@@ -126,5 +128,97 @@ describe('gamepad def shape', () => {
     expect(cables['y']).toBe('Y');
     expect(cables['start']).toBe('STA');
     expect(cables['back']).toBe('SEL');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GAMEPAD stick → WAVESCULPT camera-joystick mapping (full-range regression)
+//
+// The reported regression: patching a GAMEPAD stick to WAVESCULPT's X-Y
+// camera joystick couldn't reach the extremes ("full range doesn't work").
+// The end-to-end mapping a stick axis travels is:
+//
+//   raw axis  → applyDeadzone(raw)  → CV in [-1, +1]
+//             → scaleCv(cv, knob, min, max, {linear})  → effective param
+//
+// (the gamepad module emits the de-deadzoned CV; the engine's cv-scale
+// chain — see cv-scale.ts — applies the linear scaling onto the
+// destination param when the cable lands on a `cvScale:'linear'` port,
+// which pos_x/pos_y both are). This composed test pins that the FULL
+// param range is reachable, that centre is neutral, and that the Y axis
+// is inverted the way the camera convention expects — so a future tweak
+// to either half of the chain can't silently re-clamp the stick.
+// ---------------------------------------------------------------------------
+describe('GAMEPAD stick → WAVESCULPT camera mapping (composed full-range)', () => {
+  // WAVESCULPT pos_x / pos_y: bipolar ±1, default knob 0, linear cv-scale.
+  const posX = wavesculptDef.params.find((p) => p.id === 'pos_x')!;
+  const posY = wavesculptDef.params.find((p) => p.id === 'pos_y')!;
+  const posXPort = wavesculptDef.inputs.find((p) => p.id === 'pos_x')!;
+  const posYPort = wavesculptDef.inputs.find((p) => p.id === 'pos_y')!;
+
+  /** Stick X → pos_x effective value (no Y inversion). */
+  const stickToPosX = (raw: number, knob = posX.defaultValue) =>
+    scaleCv(applyDeadzone(raw), knob, posX.min, posX.max, posXPort.cvScale!);
+  /** Stick Y → pos_y effective value (gamepad inverts Y so +1 = stick up). */
+  const stickToPosY = (raw: number, knob = posY.defaultValue) =>
+    scaleCv(-applyDeadzone(raw), knob, posY.min, posY.max, posYPort.cvScale!);
+
+  it('camera ports are bipolar ±1 with a linear cv-scale (mapping precondition)', () => {
+    for (const [param, port] of [[posX, posXPort], [posY, posYPort]] as const) {
+      expect(param.min).toBe(-1);
+      expect(param.max).toBe(1);
+      expect(param.defaultValue).toBe(0);
+      expect(port.cvScale?.mode).toBe('linear');
+    }
+  });
+
+  it('full stick deflection reaches BOTH extremes of pos_x', () => {
+    // The core regression assertion: stick hard-right/left must hit ±1,
+    // not some fraction of it.
+    expect(stickToPosX(1)).toBeCloseTo(1, 5);
+    expect(stickToPosX(-1)).toBeCloseTo(-1, 5);
+    // Over-range raw (some pads report slightly > 1) still pins at the edge.
+    expect(stickToPosX(1.5)).toBeCloseTo(1, 5);
+    expect(stickToPosX(-1.5)).toBeCloseTo(-1, 5);
+  });
+
+  it('full stick deflection reaches BOTH extremes of pos_y (Y inverted)', () => {
+    // Stick pushed UP (raw axis = -1 per the W3C spec) → pos_y = +1.
+    expect(stickToPosY(-1)).toBeCloseTo(1, 5);
+    // Stick pushed DOWN (raw = +1) → pos_y = -1.
+    expect(stickToPosY(1)).toBeCloseTo(-1, 5);
+  });
+
+  it('centre stick is neutral (sits exactly on the knob value)', () => {
+    expect(stickToPosX(0)).toBe(0);
+    expect(stickToPosY(0)).toBe(0);
+    // Inside the deadzone band the dot must not drift off centre.
+    expect(stickToPosX(STICK_DEADZONE - 0.001)).toBe(0);
+    expect(stickToPosY(STICK_DEADZONE - 0.001)).toBe(0);
+  });
+
+  it('mapping is monotonic across the stick travel (no dead spots mid-range)', () => {
+    let prev = -Infinity;
+    for (let raw = -1; raw <= 1.0001; raw += 0.1) {
+      const v = stickToPosX(raw);
+      expect(v).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = v;
+    }
+    // Half-deflection lands roughly half-way (after the small dz renormalize)
+    // — i.e. the response is a genuine sweep, not a near-binary snap.
+    const half = stickToPosX(0.5);
+    expect(half).toBeGreaterThan(0.3);
+    expect(half).toBeLessThan(0.6);
+  });
+
+  it('the live knob recentres the sweep but the extremes stay clamped to ±1', () => {
+    // Knob nudged toward +0.5: the AudioParam clamps at its natural max, so
+    // a hard-right stick still pins at +1 (Eurorack "CV pushes the knob,
+    // outside the range it pins" semantics).
+    expect(stickToPosX(1, 0.5)).toBeCloseTo(1, 5);
+    // Centre stick now sits on the knob.
+    expect(stickToPosX(0, 0.5)).toBe(0.5);
+    // Hard-left still reaches the bottom of the range.
+    expect(stickToPosX(-1, 0.5)).toBeCloseTo(-0.5, 5);
   });
 });

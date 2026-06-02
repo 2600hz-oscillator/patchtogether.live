@@ -204,6 +204,61 @@ test.describe('GAMEPAD module', () => {
     ).toBeGreaterThan(0.5);
   });
 
+  test('GAMEPAD stick reaches BOTH extremes of WAVESCULPT.pos_x + moves the on-card joystick dot', async ({ page }) => {
+    // Regression: the gamepad-driven camera joystick couldn't reach the
+    // stick's extremes and the dot updated horribly slowly (the live-poll
+    // was on a setInterval that got starved behind the card's WebGL render;
+    // it now rides rAF). Assert (1) the full ±range is reachable via
+    // engine.readParam AND (2) the rendered dot tracks to each extreme.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
+    await spawnPatch(
+      page,
+      [
+        { id: 'gp', type: 'gamepad',    position: { x: 100, y: 200 } },
+        { id: 'ws', type: 'wavesculpt', position: { x: 600, y: 100 }, domain: 'audio' },
+      ],
+      [
+        {
+          id: 'e_gp_ws',
+          from: { nodeId: 'gp', portId: 'lx' },
+          to:   { nodeId: 'ws', portId: 'pos_x' },
+          sourceType: 'cv',
+          targetType: 'cv',
+        },
+      ],
+    );
+    await page.waitForTimeout(200);
+
+    const readPosX = () => page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => { readParam: (n: unknown, k: string) => unknown } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const eng = w.__engine?.();
+      const ws = w.__patch.nodes.ws;
+      if (!eng || !ws) return -99;
+      return (eng.readParam(ws, 'pos_x') as number | undefined) ?? -99;
+    });
+    // The dot's `left` (px) within the 110px pad: full-left ≈ 0, full-right ≈ 110.
+    const dotLeftPx = () => page.evaluate(() => {
+      const dot = document.querySelector('[data-testid="wavesculpt-pad"] .dot') as HTMLElement | null;
+      if (!dot) return -1;
+      return parseFloat(dot.style.left || '-1');
+    });
+
+    // Full RIGHT → pos_x near +1 → dot near the right edge (>80% of the pad).
+    await updateFakeGamepad(page, { axes: [1, 0, 0, 0] });
+    await expect.poll(readPosX, { timeout: 2000 }).toBeGreaterThan(0.9);
+    await expect.poll(dotLeftPx, { timeout: 2000 }).toBeGreaterThan(88);
+
+    // Full LEFT → pos_x near -1 → dot near the left edge (<20% of the pad).
+    await updateFakeGamepad(page, { axes: [-1, 0, 0, 0] });
+    await expect.poll(readPosX, { timeout: 2000 }).toBeLessThan(-0.9);
+    await expect.poll(dotLeftPx, { timeout: 2000 }).toBeLessThan(22);
+  });
+
   test('button press shows up as a gate (a-button)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
