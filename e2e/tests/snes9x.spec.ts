@@ -134,24 +134,17 @@ test.describe('SNES9X (ROM-gated)', () => {
     expect(nonBlack).toBeGreaterThan(100);
 
     // ── AUDIO: separate audio_l / audio_r sources exist ──
-    const hasStereo = await page.evaluate((id) => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
-          getAudioSourceNode?: (n: { id: string }, port: string) => unknown;
-        } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      const node = w.__patch.nodes[id];
-      if (!eng || !node) return false;
-      // The video module def declares audio_l/audio_r outputs; the spec just
-      // asserts the IO surface exists (signal-level content is the worklet's
-      // job + covered by the runtime audio unit test).
-      const specs = (globalThis as unknown as { __moduleSpecs?: Record<string, { outputs: { id: string }[] }> }).__moduleSpecs;
-      const outs = specs?.snes9x?.outputs?.map((o) => o.id) ?? [];
-      return outs.includes('audio_l') && outs.includes('audio_r');
-    }, 's');
+    // __moduleSpecs is an ARRAY of {type, outputs:[{id,type}]}; find snes9x.
+    const hasStereo = await page.evaluate(() => {
+      const specs = (globalThis as unknown as {
+        __moduleSpecs?: { type: string; outputs: { id: string; type: string }[] }[];
+      }).__moduleSpecs;
+      const spec = specs?.find((s) => s.type === 'snes9x');
+      const outs = spec?.outputs ?? [];
+      const l = outs.find((o) => o.id === 'audio_l');
+      const r = outs.find((o) => o.id === 'audio_r');
+      return l?.type === 'audio' && r?.type === 'audio';
+    });
     expect(hasStereo).toBe(true);
 
     // ── INPUT: a gamepad gate reaches the game ──
