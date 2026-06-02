@@ -28,6 +28,7 @@
     { id: 'ch2Offset', label: 'CH2 OFFSET (CV)', cable: 'cv' },
     { id: 'ch2Range',  label: 'CH2 RANGE (CV)',  cable: 'cv' },
     { id: 'mode',      label: 'XY MODE (CV)',    cable: 'cv' },
+    { id: 'intensity', label: 'INTENSITY (CV)',  cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'ch1_out', label: 'CHANNEL 1 OUT', cable: 'audio' },
@@ -54,6 +55,11 @@
   let ch2Offset = $derived(node?.params.ch2Offset ?? scopeDef.params[5]!.defaultValue);
   let ch2Range  = $derived(node?.params.ch2Range  ?? scopeDef.params[6]!.defaultValue);
   let xyMode    = $derived((node?.params.mode ?? 0) >= 0.5);
+  // Phosphor INTENSITY (beam persistence). Default 0.5 (12:00) = legacy
+  // render (pixel-identical). See scope-draw.intensityToPersistScreens.
+  let intensity = $derived(
+    (node?.params.intensity as number | undefined) ?? scopeDef.params[8]!.defaultValue,
+  );
 
   function setParam(paramId: string) {
     return (v: number) => {
@@ -149,6 +155,7 @@
         ch1Scale, ch1Offset, ch1Range,
         ch2Scale, ch2Offset, ch2Range,
         mode: node?.params.mode ?? 0,
+        intensity,
         ch1Color, ch2Color,
       },
       c.width,
@@ -190,7 +197,14 @@
       <span class="mode-ch">2</span>
       <span class="mode-label">{ch2Range >= 0.5 ? 'CV' : 'AUDIO'}</span>
     </button>
-    <button class="xy-btn" class:active={xyMode} onclick={toggleXY} title={xyMode ? 'Split mode' : 'XY mode'}>
+    <button
+      class="xy-btn"
+      class:active={xyMode}
+      data-testid="scope-xy-mode"
+      aria-pressed={xyMode}
+      onclick={toggleXY}
+      title={xyMode ? 'X/Y (Lissajous) mode — click for NORMAL (dual-trace)' : 'NORMAL (dual-trace) — click for X/Y (Lissajous)'}
+    >
       {xyMode ? 'XY' : '⇆'}
     </button>
   </header>
@@ -235,6 +249,10 @@
       <Fader value={ch1Offset} min={-1}   max={1}   defaultValue={0}  label="1 Y"             curve="linear" onchange={setParam('ch1Offset')} moduleId={id} paramId="ch1Offset" />
       <Fader value={ch2Scale}  min={0.1}  max={10}  defaultValue={1}  label="2 Sc"            curve="log"    onchange={setParam('ch2Scale')} moduleId={id} paramId="ch2Scale" />
       <Fader value={ch2Offset} min={-1}   max={1}   defaultValue={0}  label="2 Y"             curve="linear" onchange={setParam('ch2Offset')} moduleId={id} paramId="ch2Offset" />
+      <!-- Phosphor INTENSITY (beam persistence). 0.5 (12:00, centered) =
+           today's render; down toward 7:00 → a moving dot; up toward 5:00 →
+           a ~2-screen persistence trail. Display-only. -->
+      <Fader value={intensity} min={0}    max={1}   defaultValue={0.5} label="Inten"          curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
     </div>
   </PatchPanel>
 </div>

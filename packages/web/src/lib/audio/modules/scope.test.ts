@@ -50,6 +50,7 @@ describe('SCOPE module def shape', () => {
         'ch1Scale', 'ch1Offset', 'ch1Range',
         'ch2Scale', 'ch2Offset', 'ch2Range',
         'mode',
+        'intensity',
       ].sort(),
     );
     for (const p of scopeDef.inputs) {
