@@ -75,15 +75,175 @@ function changedFraction(a: FrameSample, b: FrameSample): number {
   return changed / len;
 }
 
-/** Spin the rAF loop a few times so the chain re-renders. */
-async function settle(page: Page, ms = 500): Promise<void> {
-  await page.waitForTimeout(ms);
-}
-
 // A live/animated frame moves a meaningful fraction of pixels between
 // samples; a frozen frame moves essentially none (identical held pixels).
 const LIVE_FRACTION = 0.05;   // >5% of pixels changed ⇒ the frame moved
 const FROZEN_FRACTION = 0.01; // <1% of pixels changed ⇒ held frame persists
+
+// The video chain renders on the engine's OWN requestAnimationFrame loop, which
+// the browser THROTTLES (to ~1 Hz, or pauses) whenever the tab is backgrounded
+// — and under the parallel-worker e2e fan-out only one tab is ever foreground.
+// The helpers below therefore:
+//   1. Drive `engine.step()` (and the per-OUTPUT blit) DIRECTLY from the test
+//      to advance the engine a frame regardless of rAF throttling — `step()` is
+//      the exact deterministic primitive the engine exposes for tests
+//      ("Test code calls this directly so it doesn't have to wait for rAF").
+//   2. Poll the OUTPUT canvas on a WALL-CLOCK cadence (not by awaiting the
+//      test's own requestAnimationFrame, which would itself stall in a
+//      backgrounded tab) until the observed behaviour matches, with a deadline.
+// This mirrors the proven `waitForLuma` pattern in 4plexvid.spec.ts. It replaces
+// the old fixed `settle(700)`/`settle(900)` sleeps that raced the render loop:
+// they could sample mid-transition (flaky assertions) and, when paired with the
+// dep-reoptimization reload race, blow the whole 30 s test budget.
+
+/** Advance the video engine one deterministic frame and present every OUTPUT to
+ *  its visible 2D canvas, independent of rAF throttling. No-op if the video
+ *  engine isn't up yet (caller polls, so a transient miss is fine). */
+async function stepVideo(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        getDomain?: (d: string) => {
+          step?: () => void;
+          blitOutputToDrawingBuffer?: (id: string) => void;
+          canvas?: CanvasImageSource;
+        } | null;
+      } | null;
+      __patch?: { nodes: Record<string, { type: string }> };
+    };
+    const ve = w.__engine?.()?.getDomain?.('video');
+    if (!ve?.step) return;
+    ve.step();
+    // Blit each OUTPUT's FBO onto its visible <canvas> so the test's pixel read
+    // sees this freshly-stepped frame without waiting for the card's rAF tick.
+    const nodes = w.__patch?.nodes ?? {};
+    for (const [id, n] of Object.entries(nodes)) {
+      if (n.type !== 'videoOut') continue;
+      try {
+        ve.blitOutputToDrawingBuffer?.(id);
+      } catch { /* engine method shouldn't throw */ }
+      const src = ve.canvas;
+      const el = document.querySelector<HTMLCanvasElement>(
+        `canvas[data-testid="video-out-canvas"][data-node-id="${id}"]`,
+      );
+      const ctx2d = el?.getContext('2d', { alpha: false });
+      if (src && el && ctx2d) {
+        // Black background + 4:3 aspect-fit, mirroring VideoOutCard.fitRect
+        // (ENGINE_W=640, ENGINE_H=480) so the test's blit matches the card's.
+        const cw = el.width, ch = el.height;
+        ctx2d.fillStyle = '#050608';
+        ctx2d.fillRect(0, 0, cw, ch);
+        const srcAspect = 640 / 480;
+        let x = 0, y = 0, dw = cw, dh = ch;
+        if (cw / ch > srcAspect) {
+          dh = ch; dw = Math.round(dh * srcAspect); x = Math.round((cw - dw) / 2); y = 0;
+        } else {
+          dw = cw; dh = Math.round(dw / srcAspect); x = 0; y = Math.round((ch - dh) / 2);
+        }
+        try { ctx2d.drawImage(src, x, y, dw, dh); } catch { /* not yet drawable */ }
+      }
+    }
+  });
+}
+
+/** Step the engine `n` frames, then sample the OUTPUT canvas. */
+async function stepAndSample(page: Page, n = 1): Promise<FrameSample | null> {
+  for (let i = 0; i < n; i++) await stepVideo(page);
+  return sampleFrame(page);
+}
+
+/**
+ * Poll (wall-clock cadence) until two samples spaced `gap` engine-steps apart
+ * show the frame MOVING by more than `minFraction`, then return the later
+ * sample. Proves the output is live/animated without a fixed sleep being "long
+ * enough". Throws a descriptive error (the test failure) if it never moves
+ * before `deadlineMs`.
+ */
+async function waitForMoving(
+  page: Page,
+  minFraction: number,
+  { deadlineMs = 8000, gap = 6, label = 'frame' }: { deadlineMs?: number; gap?: number; label?: string } = {},
+): Promise<FrameSample> {
+  const deadline = Date.now() + deadlineMs;
+  let last = 0;
+  do {
+    const a = await stepAndSample(page);
+    const b = await stepAndSample(page, gap);
+    if (a && b) {
+      last = changedFraction(a, b);
+      if (last > minFraction) return b;
+    }
+    await page.waitForTimeout(50);
+  } while (Date.now() < deadline);
+  throw new Error(`${label}: frame never moved past ${(minFraction * 100).toFixed(1)}% within ${deadlineMs}ms (last changed=${(last * 100).toFixed(1)}%)`);
+}
+
+/**
+ * Poll (wall-clock cadence) until the output has FROZEN: two samples spaced
+ * `gap` engine-steps apart that differ by less than `maxFraction`, observed
+ * `stableNeeded` times in a row (so we don't catch a single coincidentally-
+ * similar pair while the source is still tracking). Returns the last (frozen)
+ * sample. Throws if it never settles before `deadlineMs` — e.g. the freeze gate
+ * didn't take.
+ */
+async function waitForFrozen(
+  page: Page,
+  maxFraction: number,
+  { deadlineMs = 8000, gap = 10, stableNeeded = 3, label = 'frame' }: { deadlineMs?: number; gap?: number; stableNeeded?: number; label?: string } = {},
+): Promise<FrameSample> {
+  const deadline = Date.now() + deadlineMs;
+  let stable = 0;
+  let last: FrameSample | null = null;
+  let lastFrac = 1;
+  do {
+    const a = await stepAndSample(page);
+    const b = await stepAndSample(page, gap);
+    if (a && b) {
+      lastFrac = changedFraction(a, b);
+      if (lastFrac < maxFraction) {
+        stable++;
+        last = b;
+        if (stable >= stableNeeded) return b;
+      } else {
+        stable = 0;
+      }
+    }
+    await page.waitForTimeout(50);
+  } while (Date.now() < deadline);
+  if (last) return last;
+  throw new Error(`${label}: output never froze below ${(maxFraction * 100).toFixed(1)}% within ${deadlineMs}ms (last changed=${(lastFrac * 100).toFixed(1)}%)`);
+}
+
+/**
+ * Poll (wall-clock cadence) until a stepped+sampled frame satisfies `pred`, then
+ * return it. Generic deterministic wait: advances the engine each attempt so the
+ * test progresses even when rAF is throttled.
+ */
+async function waitForCondition(
+  page: Page,
+  pred: (s: FrameSample) => boolean,
+  { deadlineMs = 8000, label = 'frame' }: { deadlineMs?: number; label?: string } = {},
+): Promise<FrameSample> {
+  const deadline = Date.now() + deadlineMs;
+  let last: FrameSample | null = null;
+  do {
+    const s = await stepAndSample(page);
+    if (s) {
+      last = s;
+      if (pred(s)) return s;
+    }
+    await page.waitForTimeout(50);
+  } while (Date.now() < deadline);
+  throw new Error(`${label}: condition not met within ${deadlineMs}ms (last=${last ? JSON.stringify({ nonZero: last.nonZero, distinctColors: last.distinctColors }) : 'null'})`);
+}
+
+/** Poll until the output renders non-empty content (nonZero > 0). */
+async function waitForContent(
+  page: Page,
+  opts: { deadlineMs?: number; label?: string } = {},
+): Promise<FrameSample> {
+  return waitForCondition(page, (s) => s.nonZero > 0, { label: 'content', ...opts });
+}
 
 test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
   test('(a) ungated = live passthrough; (b/c) gate high updates / gate low freezes', async ({ page }) => {
@@ -119,54 +279,39 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     await expect(page.locator('.svelte-flow__node-videoOut'),    'OUTPUT visible').toBeVisible();
 
     // ---- (a) UNGATED: live passthrough — output keeps changing ----
-    await settle(page, 700);
-    const a1 = await sampleFrame(page);
-    await settle(page, 700);
-    const a2 = await sampleFrame(page);
-    expect(a1, 'sample a1').not.toBeNull();
-    expect(a2, 'sample a2').not.toBeNull();
-    if (!a1 || !a2) return;
-    expect(a1.nonZero, 'ungated output renders content').toBeGreaterThan(0);
-    // Animated source + live passthrough → many pixels change between samples.
-    const aChanged = changedFraction(a1, a2);
-    expect(
-      aChanged,
-      `ungated live passthrough: frame changes over time (changed=${(aChanged * 100).toFixed(1)}%)`,
-    ).toBeGreaterThan(LIVE_FRACTION);
+    // Drive the engine + poll until the frame is observably MOVING rather than
+    // sleeping a fixed 700 ms and hoping two distinct frames landed.
+    const a = await waitForMoving(page, LIVE_FRACTION, { label: 'ungated live passthrough' });
+    expect(a.nonZero, 'ungated output renders content').toBeGreaterThan(0);
 
     // ---- (b) GATE HIGH: output updates (tracks the live source) ----
     await page.evaluate(() => {
       (globalThis as unknown as { __freezeframeForceGate?: number }).__freezeframeForceGate = 1;
     });
-    await settle(page, 700);
-    const b1 = await sampleFrame(page);
-    await settle(page, 700);
-    const b2 = await sampleFrame(page);
-    expect(b1, 'sample b1').not.toBeNull();
-    expect(b2, 'sample b2').not.toBeNull();
-    if (!b1 || !b2) return;
-    expect(b1.nonZero, 'gate-high output renders content').toBeGreaterThan(0);
-    const bChanged = changedFraction(b1, b2);
-    expect(
-      bChanged,
-      `gate HIGH: output keeps updating (changed=${(bChanged * 100).toFixed(1)}%)`,
-    ).toBeGreaterThan(LIVE_FRACTION);
+    // Same deterministic wait — output must keep tracking the live source.
+    const b = await waitForMoving(page, LIVE_FRACTION, { label: 'gate HIGH keeps updating' });
+    expect(b.nonZero, 'gate-high output renders content').toBeGreaterThan(0);
 
     // ---- (c) GATE LOW: output FROZEN while source still animates ----
     await page.evaluate(() => {
       (globalThis as unknown as { __freezeframeForceGate?: number }).__freezeframeForceGate = 0;
     });
-    // One settle for the last open-gate frame to land in the hold buffer,
-    // then sample twice: the held frame must persist.
-    await settle(page, 500);
-    const c1 = await sampleFrame(page);
-    await settle(page, 900); // plenty of time for the source to have moved on
-    const c2 = await sampleFrame(page);
-    expect(c1, 'sample c1').not.toBeNull();
-    expect(c2, 'sample c2').not.toBeNull();
-    if (!c1 || !c2) return;
-    expect(c1.nonZero, 'frozen output still shows the held frame').toBeGreaterThan(0);
-    const cChanged = changedFraction(c1, c2);
+    // Poll until the output has settled into the held frame (no fixed sleep):
+    // the gate just went low, so within a few frames the hold buffer stops
+    // capturing and successive frames become identical. waitForFrozen requires
+    // the stable condition to hold several times in a row, so we can't catch a
+    // single coincidentally-similar pair while the source is still tracking.
+    const cFrozen = await waitForFrozen(page, FROZEN_FRACTION, { label: 'gate LOW freeze' });
+    expect(cFrozen.nonZero, 'frozen output still shows the held frame').toBeGreaterThan(0);
+
+    // Re-confirm the freeze persists across a wider gap WHILE the source keeps
+    // animating underneath — the headline guarantee of sample & hold. Stepping
+    // the engine 30 frames drives the (still-animating) source forward; the
+    // frozen OUTPUT must not follow it.
+    const cLater = await stepAndSample(page, 30);
+    expect(cLater, 'sample cLater').not.toBeNull();
+    if (!cLater) return;
+    const cChanged = changedFraction(cFrozen, cLater);
     expect(
       cChanged,
       `gate LOW: frozen frame persists while source animates (changed=${(cChanged * 100).toFixed(1)}%)`,
@@ -210,10 +355,9 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     await expect(page.locator('.svelte-flow__node-freezeframe'), 'FREEZEFRAME visible').toBeVisible();
     await expect(page.locator('.svelte-flow__node-videoOut'),    'OUTPUT visible').toBeVisible();
 
-    await settle(page, 800);
-    const full = await sampleFrame(page);
-    expect(full, 'full-depth sample').not.toBeNull();
-    if (!full) return;
+    // Poll the render loop until full-depth content is on screen (no fixed
+    // sleep): the source needs a few frames to produce a non-empty frame.
+    const full = await waitForContent(page, { label: 'full-depth' });
     expect(full.nonZero, 'full-depth output renders content').toBeGreaterThan(0);
 
     // Crank every QUANT knob to MAX (2 levels per channel → heavy posterize).
@@ -233,14 +377,17 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
       });
     });
 
-    await settle(page, 800);
-    const quantized = await sampleFrame(page);
-    expect(quantized, 'quantized sample').not.toBeNull();
-    if (!quantized) return;
+    // Poll the render loop until the param change has propagated and the
+    // posterization has actually collapsed the colour space — instead of
+    // sleeping 800 ms and asserting once. Posterizing to 2 levels per channel
+    // collapses the colour space hard, so the distinct-colour count must drop
+    // below the full-depth count.
+    const quantized = await waitForCondition(
+      page,
+      (s) => s.nonZero > 0 && s.distinctColors < full.distinctColors,
+      { label: 'posterize drops distinct colours' },
+    );
     expect(quantized.nonZero, 'quantized output still renders content').toBeGreaterThan(0);
-
-    // Posterizing to 2 levels per channel collapses the colour space hard:
-    // the distinct-colour count must drop substantially.
     expect(
       quantized.distinctColors,
       `posterize drops distinct colours (full=${full.distinctColors} quantized=${quantized.distinctColors})`,
