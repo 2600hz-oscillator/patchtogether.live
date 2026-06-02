@@ -57,10 +57,6 @@ saw(p) = 2.0 * p - 1.0;
 sqr(p) = select2(p < pw, 1.0, -1.0);
 tri(p) = (4.0 * abs(p - 0.5)) - 1.0;
 sn(p)  = sin(2.0 * ma.PI * p);
-// 50%-duty square for the morph endpoint — kept independent of the `pw` knob
-// so the morph's square end is the canonical ±1 square regardless of pulse
-// width (pw still shapes the dedicated `square` tap).
-sq50(p) = select2(p < 0.5, 1.0, -1.0);
 
 // ----- Continuous saw->sine->square morph (the 5th output) -----
 // Two-segment linear crossfade over a SHARED phase so the morph stays phase-
@@ -68,9 +64,20 @@ sq50(p) = select2(p < 0.5, 1.0, -1.0);
 // (mix = 2*shape); shape in [0.5,1] blends sine->square (mix = 2*shape-1).
 // At shape==0 the morph output is exactly the saw tap (2p-1), so wiring the
 // morph in place of saw with the knob at 0 reproduces the bare saw.
+//
+// PW FIX (this PR): the square endpoint of the morph now uses the SAME
+// pw-driven `sqr(p)` as the dedicated square tap (NOT a hardcoded 50% square).
+// Previously the morph used a fixed `sq50` so the PW knob was DEAD on the morph
+// output — the user's reported "PW doesn't work in MORPH mode" bug. Because
+// `sqr(p)` with the default pw=0.5 IS exactly `select2(p<0.5, 1, -1)`, the
+// morph is BYTE-IDENTICAL to the old behaviour at the default PW — only a
+// non-0.5 PW now (correctly) re-shapes the duty cycle of the morph's square
+// component, and that change blends continuously across the whole sine→square
+// half of the morph (shape >= 0.5), so PW is alive at every morph position
+// that contains square energy.
 morph(p) =
   (sn(p) * lo + saw(p) * (1.0 - lo)) * (shape < 0.5) +
-  (sq50(p) * hi + sn(p) * (1.0 - hi)) * (shape >= 0.5)
+  (sqr(p) * hi + sn(p) * (1.0 - hi)) * (shape >= 0.5)
 with {
   lo = 2.0 * shape;
   hi = 2.0 * shape - 1.0;
