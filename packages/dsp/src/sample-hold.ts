@@ -48,6 +48,20 @@ declare function registerProcessor(
   ctor: typeof AudioWorkletProcessor
 ): void;
 
+// Shim worklet globals when running outside AudioWorkletGlobalScope (vitest
+// captures the class via this shim — see the sample-hold.test.ts loader). In
+// the real worklet these globals already exist, so the guards are no-ops.
+const G = globalThis as unknown as {
+  AudioWorkletProcessor?: unknown;
+  registerProcessor?: unknown;
+};
+if (typeof G.AudioWorkletProcessor === 'undefined') {
+  G.AudioWorkletProcessor = class {};
+}
+if (typeof G.registerProcessor === 'undefined') {
+  G.registerProcessor = () => {};
+}
+
 class SampleHoldProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [

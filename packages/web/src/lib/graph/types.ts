@@ -441,6 +441,10 @@ type StandardModuleType =
   // make Schrader-style self-evolving "ecosystem" patches tractable.
   // SLEWSWITCH — quad slew limiter + 4→1 sequential CV switch.
   | 'slewSwitch'
+  // SAMPLE & HOLD — rising-edge sample & hold + scale quantizer. When gate_in
+  // is unpatched it becomes a pure continuous quantizer (SKIFREE-style
+  // unpatched-input detection at the graph level).
+  | 'sampleHold'
   // ATLANTISCATALYST — 8 correlated random-walk CV outputs + scene pulse
   // / scene index, with HYDROGEN-style transport CV for explicit jumps.
   | 'atlantisCatalyst'

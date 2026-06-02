@@ -83,6 +83,9 @@ import { wavesculptDef } from './wavesculpt';
 // 4-channel feedback matrix). General-purpose modules — the Atlantis demo
 // patch uses them together but each is useful on its own.
 import { slewSwitchDef } from './slewswitch';
+// SAMPLE & HOLD — rising-edge S&H + scale quantizer (continuous-quantizer
+// mode when gate_in is unpatched). Utility/CV.
+import { sampleHoldDef } from './sample-hold';
 import { atlantisCatalystDef } from './atlantis-catalyst';
 import { aquaTankDef } from './aquatank';
 // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
@@ -218,6 +221,9 @@ export function registerAudioModules(): void {
   registerModule(wavesculptDef);
   // SLEWSWITCH — quad slew limiter + 4→1 sequential CV switch.
   registerModule(slewSwitchDef);
+  // SAMPLE & HOLD — rising-edge sample & hold + scale quantizer. Ungated =
+  // continuous quantizer (SKIFREE-style unpatched-input detection).
+  registerModule(sampleHoldDef);
   // ATLANTISCATALYST — 8-output slow-drift macro brain + scene transport.
   registerModule(atlantisCatalystDef);
   // AQUATANK — 4-channel Hadamard FDN feedback matrix (metallic resonance).
