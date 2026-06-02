@@ -104,6 +104,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // analog stick position handed to the sm64js bundle's playerInput
   // global. Same shape as PONG's paddle CVs above.
   sm64: ['stick_x_cv', 'stick_y_cv'],
+  // MIDI-OUT-BUDDY pitch / velocity: CV sampled at the gate rising edge in a
+  // JS-side scheduler-tick (AnalyserNode tap), then converted to a MIDI note
+  // number (V/oct → nearest semitone) / velocity (0..1 → 1..127). No
+  // AudioParam fast path — the CV doesn't modulate a knob, it IS the outgoing
+  // MIDI note/velocity. Same shape as PONG / SM64's stepper CVs above.
+  midiOutBuddy: ['pitch', 'velocity'],
   // ANALOGLOGICMATHS a / b: raw bipolar signal inputs consumed directly by
   // the worklet's per-sample MIN/MAX/DIFF/SUM/PRODUCT. The module IS the
   // shaper — the user attenuverts via the attA / attB knobs (which DO carry
