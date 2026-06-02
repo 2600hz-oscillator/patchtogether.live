@@ -151,6 +151,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // pitch CV as its own audio-rate node input + apply the octave map
   // inside the per-sample DSP).
   chowkick: ['pitch_cv'],
+  // CUBE pitch: V/oct input consumed directly by the worklet as its own
+  // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
+  // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv /
+  // chowkick.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,
+  // connect, crush, tune) DO have paramTarget + cvScale:linear; only the raw
+  // V/oct pitch is passthrough-by-design.
+  cube: ['pitch'],
 };
 
 describe('cv-scale / registry coverage', () => {

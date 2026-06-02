@@ -462,6 +462,22 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    by atlantis-catalyst.spec.ts.
   'atlantisCatalyst.reset_cv': 'reset effect needs accumulated drift to observe; covered by atlantis-catalyst.spec.ts',
 
+  // ── CUBE morph_fc / connect / crush: each DOES shape the slice readout (the
+  //    cube-dsp unit tests + node-ART baselines prove morph picks floor↔ceiling
+  //    fill, connect morphs circle↔V, crush quantizes the grid+amplitude), but
+  //    at the sweep's default config (axis-aligned slice through the default
+  //    FLOOR=basic-shapes / WALL=harmonic-sweep / CEILING=basic-shapes tables) a
+  //    BUGGLES ±1V CV summed into the [0,1] param only nudges these across a
+  //    small excursion whose spectral/RMS change is below the sweep's centroid
+  //    threshold — same class as macrooscillator.harm_cv / swolevco.timbre.
+  //    pitch + slice_y/rx/ry/rz + tune all perturb (they pass the sweep). The
+  //    morph/connect/crush DSP is covered by cube-dsp.test.ts (each crosses many
+  //    levels), the cube worklet capture test (HARD vs SMOOTH differs), and the
+  //    node-ART per-config .f32 baselines (crushed / morph-ceiling / connect-vee).
+  'cube.morph_fc': 'morph floor↔ceiling fill is subtle at the default axis-aligned slice + default tables; ±1V excursion below centroid threshold — covered by cube-dsp.test.ts + node-ART morph-ceiling baseline',
+  'cube.connect':  'circle↔V connector reshape is subtle at the default slice/tables; ±1V excursion below centroid threshold — covered by cube-dsp.test.ts + node-ART connect-vee baseline',
+  'cube.crush':    'CRUSH is near-transparent at low values (only "eliminates substantial data" near max); a ±1V excursion off 0 barely moves RMS/centroid — covered by cube-dsp.test.ts (k=1 collapses levels) + node-ART crushed baseline',
+
   // ── macrooscillator harm_cv: harmonics CV has no audible effect
   //    on model 0 (simple sine) — the harmonics-mapped MI model
   //    space requires model_cv ALSO be driven. Covered by

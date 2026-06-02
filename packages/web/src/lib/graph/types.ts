@@ -468,6 +468,11 @@ type StandardModuleType =
   // upstream MultiFilter::Type enum: LP / HP / BP / Notch / Allpass.
   // Card displays the long-form mode name next to the MODE knob.
   | 'resofilter'
+  // CUBE — 3D wavetable-navigator oscillator. Builds a 3D scalar field from
+  // three e352 wavetables (FLOOR/WALL/CEILING) + reads an arbitrary planar
+  // slice through it as the played waveform (surface-height scan). V/oct,
+  // stereo ±5% spread, SMOOTH/HARD material, 3D-bitcrush CRUSH, mirror WRAP.
+  | 'cube'
   // TREE.oh.VOX — TB-303-style bassline voice (Open303 voice slice port,
   // MIT → AGPL). 6 knobs (TUNE / CUTOFF / RESONANCE / ENVELOPE / DECAY /
   // ACCENT) + pitch / gate / accent_in inputs + per-knob CV. The full
