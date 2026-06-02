@@ -20,26 +20,41 @@ import { describe, expect, it } from 'vitest';
 
 // ---- JS mirror of the .dsp shape primitives (shared phase p in [0,1)) ----
 const sawTap = (p: number) => 2 * p - 1;
-const sq50 = (p: number) => (p < 0.5 ? 1 : -1);
+// PW-driven rectangle, identical to the .dsp `sqr(p) = select2(p < pw, 1, -1)`.
+// At pw=0.5 this is exactly the canonical 50% square the morph used before the
+// PW fix — so the morph stays byte-identical at the default pw.
+const sqr = (p: number, pw: number) => (p < pw ? 1 : -1);
+const sq50 = (p: number) => sqr(p, 0.5);
 const sn = (p: number) => Math.sin(2 * Math.PI * p);
 
-// JS mirror of the .dsp `morph(p)` two-segment crossfade:
+// JS mirror of the POST-FIX .dsp `morph(p)` two-segment crossfade:
 //   shape∈[0,0.5): saw → sine, mix = 2*shape
 //   shape∈[0.5,1]: sine → square, mix = 2*shape - 1
-function morph(p: number, shape: number): number {
+// The square endpoint uses the pw-driven `sqr(p)` (NOT a hardcoded 50% square),
+// so PW shapes the morph's square component — the bug fix this PR validates.
+function morph(p: number, shape: number, pw = 0.5): number {
   if (shape < 0.5) {
     const lo = 2 * shape;
     return sn(p) * lo + sawTap(p) * (1 - lo);
   }
   const hi = 2 * shape - 1;
-  return sq50(p) * hi + sn(p) * (1 - hi);
+  return sqr(p, pw) * hi + sn(p) * (1 - hi);
 }
 
 // Render one cycle of `morph` at N points.
-function renderCycle(shape: number, n = 2048): Float32Array {
+function renderCycle(shape: number, n = 2048, pw = 0.5): Float32Array {
   const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) out[i] = morph(i / n, shape);
+  for (let i = 0; i < n; i++) out[i] = morph(i / n, shape, pw);
   return out;
+}
+
+function rms(a: Float32Array, b: Float32Array): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) {
+    const d = a[i]! - b[i]!;
+    s += d * d;
+  }
+  return Math.sqrt(s / a.length);
 }
 
 // Count zero-crossings over one PERIODIC cycle (wrap last→first so the
@@ -133,6 +148,75 @@ describe('analogVco morph: saw → sine → square', () => {
       for (const v of buf) {
         expect(v).toBeGreaterThanOrEqual(-1.0000001);
         expect(v).toBeLessThanOrEqual(1.0000001);
+      }
+    }
+  });
+});
+
+// ── PW FIX regression coverage (the user-reported "PW dead in MORPH mode") ──
+describe('analogVco morph: PW shapes the square component (bug fix)', () => {
+  it('pw=0.5 is BYTE-IDENTICAL to the pre-fix hardcoded 50% square (back-compat)', () => {
+    // The fix must not change the morph at the default PW — existing patches +
+    // ART/morph baselines stay valid.
+    for (const shape of [0, 0.25, 0.5, 0.75, 1]) {
+      for (let i = 0; i < 256; i++) {
+        const p = i / 256;
+        expect(morph(p, shape, 0.5)).toBe(sn(p) * 0 + 0 + (
+          shape < 0.5
+            ? sn(p) * (2 * shape) + sawTap(p) * (1 - 2 * shape)
+            : sq50(p) * (2 * shape - 1) + sn(p) * (1 - (2 * shape - 1))
+        ));
+      }
+    }
+  });
+
+  it('PW changes the morph duty cycle at the square end (shape=1)', () => {
+    // BEFORE the fix this was rms 0 — PW had no effect on the morph. Now a
+    // narrow vs wide pulse re-shapes the square endpoint substantially.
+    const narrow = renderCycle(1, 2048, 0.2);
+    const wide = renderCycle(1, 2048, 0.8);
+    expect(rms(narrow, wide)).toBeGreaterThan(0.5);
+    // The duty actually shifts: count the fraction of samples that are +1.
+    const dutyOf = (buf: Float32Array) => buf.reduce((a, v) => a + (v > 0 ? 1 : 0), 0) / buf.length;
+    expect(dutyOf(narrow)).toBeCloseTo(0.2, 1);
+    expect(dutyOf(wide)).toBeCloseTo(0.8, 1);
+  });
+
+  it('PW is alive continuously across the sine→square half of the morph', () => {
+    // PW energy grows monotonically as the morph blends in more square (the
+    // crossfade weight hi = 2*shape-1 scales the pw-driven rectangle).
+    let prev = -1;
+    for (const shape of [0.5, 0.6, 0.75, 0.9, 1.0]) {
+      const narrow = renderCycle(shape, 2048, 0.2);
+      const wide = renderCycle(shape, 2048, 0.8);
+      const r = rms(narrow, wide);
+      // shape=0.5 is pure sine (hi=0) → no square energy → PW has no effect.
+      if (shape === 0.5) {
+        expect(r).toBeLessThan(1e-9);
+      } else {
+        expect(r, `PW dead at shape=${shape}`).toBeGreaterThan(0.01);
+        expect(r, `PW effect not increasing toward square at shape=${shape}`).toBeGreaterThan(prev);
+      }
+      prev = r;
+    }
+  });
+
+  it('PW has NO effect on the saw→sine half (no square energy there)', () => {
+    for (const shape of [0, 0.1, 0.25, 0.4]) {
+      const narrow = renderCycle(shape, 2048, 0.2);
+      const wide = renderCycle(shape, 2048, 0.8);
+      expect(rms(narrow, wide), `PW leaked into saw half at shape=${shape}`).toBeLessThan(1e-9);
+    }
+  });
+
+  it('stays bounded in [-1,1] for extreme PW across the morph', () => {
+    for (const pw of [0.05, 0.5, 0.95]) {
+      for (let s = 0.5; s <= 1.0001; s += 0.1) {
+        const buf = renderCycle(Math.min(1, s), 2048, pw);
+        for (const v of buf) {
+          expect(v).toBeGreaterThanOrEqual(-1.0000001);
+          expect(v).toBeLessThanOrEqual(1.0000001);
+        }
       }
     }
   });
