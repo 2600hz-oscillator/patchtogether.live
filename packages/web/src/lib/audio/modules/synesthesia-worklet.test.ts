@@ -92,3 +92,108 @@ describe('synesthesia worklet — copy independence + band routing', () => {
     expect(sum(out[7]!)).toBe(0); // gate B
   });
 });
+
+// ───────────────────────── VIDEO mode ─────────────────────────
+
+/** Drive both copies for `blocks` quanta with the given mode params + post a
+ *  video-levels message into each copy first. Returns summed |x| per (out,band). */
+function runVideo(opts: {
+  blocks: number;
+  aMode: number;
+  bMode: number;
+  aLevels?: number[];
+  bLevels?: number[];
+}): { out: number[][]; snapshots: Array<{ levelsA: Float32Array; levelsB: Float32Array }> } {
+  const snapshots: Array<{ levelsA: Float32Array; levelsB: Float32Array }> = [];
+  const proc = new Processor();
+  // Capture the snapshot the worklet posts via this.port.postMessage.
+  proc.port = {
+    postMessage: (m: { type?: string; levelsA?: Float32Array; levelsB?: Float32Array }) => {
+      if (m?.type === 'snapshot') snapshots.push({ levelsA: m.levelsA!, levelsB: m.levelsB! });
+    },
+  };
+  // The card posts video levels; the worklet latches them in onVideoMessage.
+  if (opts.aLevels) proc.onVideoMessage({ type: 'video', copy: 'a', levels: opts.aLevels });
+  if (opts.bLevels) proc.onVideoMessage({ type: 'video', copy: 'b', levels: opts.bLevels });
+
+  const energy: number[][] = Array.from({ length: 8 }, () => [0, 0, 0, 0]);
+  const params = {
+    a_mode: new Float32Array([opts.aMode]),
+    b_mode: new Float32Array([opts.bMode]),
+  };
+  for (let blk = 0; blk < opts.blocks; blk++) {
+    const inputs: Float32Array[][] = [[], []]; // no audio input — video drives it
+    const outputs = mkOutputs();
+    proc.process(inputs, outputs, params);
+    for (let o = 0; o < 8; o++) {
+      for (let b = 0; b < 4; b++) {
+        const ch = outputs[o]![b]!;
+        let s = 0;
+        for (let i = 0; i < ch.length; i++) s += Math.abs(ch[i]!);
+        energy[o]![b]! += s;
+      }
+    }
+  }
+  return { out: energy, snapshots };
+}
+
+describe('synesthesia worklet — VIDEO mode (R/G/B/Luma channels)', () => {
+  it('latches posted video levels (clamped 0..1) into the target copy', () => {
+    const proc = new Processor();
+    proc.onVideoMessage({ type: 'video', copy: 'a', levels: [2, -1, 0.5, 0.25] });
+    // a.videoLevels is private; prove the clamp via observable output in VIDEO
+    // mode: an over-range R (2) is clamped to 1, a negative G (-1) to 0.
+    const outputs = mkOutputs();
+    proc.process([[], []], outputs, { a_mode: new Float32Array([1]), b_mode: new Float32Array([0]) });
+    const audioA0 = Math.max(...outputs[0]![0]!); // R channel band-audio
+    const audioA1 = Math.max(...outputs[0]![1]!); // G channel band-audio
+    expect(audioA0).toBeCloseTo(1, 5); // clamped to 1 (unity gain default)
+    expect(audioA1).toBe(0); // clamped to 0
+  });
+
+  it('solid RED frame in VIDEO mode lights channel 0 + fires its gate', () => {
+    // Copy A → VIDEO mode, fed a solid red frame: R=1, G=B=0, luma=0.299.
+    const { out, snapshots } = runVideo({
+      blocks: 120, aMode: 1, bMode: 0, aLevels: [1, 0, 0, 0.299],
+    });
+    const audioA = out[0]!; // band-audio (channel-level CV) for copy A
+    const gateA = out[6]!;
+    // Channel 0 (R) carries the most band-audio energy; G/B are silent.
+    expect(audioA[0]).toBe(Math.max(...audioA));
+    expect(audioA[1]).toBe(0);
+    expect(audioA[2]).toBe(0);
+    // R gate fired; G/B gates stayed closed.
+    expect(gateA[0]!).toBeGreaterThan(0);
+    expect(gateA[1]!).toBe(0);
+    expect(gateA[2]!).toBe(0);
+    // VU snapshot for copy A reflects the R channel being lit.
+    const last = snapshots[snapshots.length - 1]!;
+    expect(last.levelsA[0]!).toBeGreaterThan(0.4);
+    expect(last.levelsA[1]!).toBeCloseTo(0, 3);
+  });
+
+  it('switching A to VIDEO does NOT affect B (B stays AUDIO + silent w/o input)', () => {
+    const { out } = runVideo({ blocks: 60, aMode: 1, bMode: 0, aLevels: [1, 1, 1, 1] });
+    // Copy A (video, white) emits on all channels.
+    expect(out[0]!.reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
+    // Copy B is in AUDIO mode with no input → exactly silent across all outs.
+    for (const o of [1, 3, 5, 7]) {
+      expect(out[o]!.reduce((a, b) => a + b, 0)).toBe(0);
+    }
+  });
+
+  it('AUDIO mode (mode=0) ignores any posted video levels (no regression)', () => {
+    // Post video levels but keep copy A in AUDIO mode + give no audio input.
+    const { out } = runVideo({ blocks: 60, aMode: 0, bMode: 0, aLevels: [1, 1, 1, 1] });
+    // No audio input + audio mode → outputs stay silent (video levels ignored).
+    for (const o of [0, 2, 4, 6]) {
+      expect(out[o]!.reduce((a, b) => a + b, 0)).toBe(0);
+    }
+  });
+
+  it('white frame (all channels = 1) lights all four VU meters in copy B', () => {
+    const { snapshots } = runVideo({ blocks: 200, aMode: 0, bMode: 1, bLevels: [1, 1, 1, 1] });
+    const last = snapshots[snapshots.length - 1]!;
+    for (let c = 0; c < 4; c++) expect(last.levelsB[c]!).toBeGreaterThan(0.4);
+  });
+});
