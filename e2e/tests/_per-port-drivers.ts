@@ -730,6 +730,33 @@ const DRIVERS: Record<string, PerPortDriver> = {
     }),
     note: 'VIDEOOUT: drive .in with ACIDWARP.out; .out passes through with non-blank frames',
   },
+
+  // ───── MOOG 902 VCA — drive the SIGNAL input so both outs emit ─────
+  //
+  // The 902 is an effect (signal in → amplified out), so it needs an
+  // upstream source to produce output. Wire an ANALOGVCO saw into the
+  // `audio` SIGNAL input; the GAIN pot's default (0.5 → 3 V control →
+  // ×1.0 in LINEAR mode) already passes the signal at unity, so both the
+  // `audio` (OUT) and `audio_inv` (OUT−, the differential − twin) outputs
+  // ring with no extra CV needed. The driver's presence also bypasses the
+  // effect-shape skip in the spec (hasDriverSetup), so the 902 goes through
+  // the normal output-emit path (slice-1/2-style driven-signal check).
+  moog902: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-vco', type: 'analogVco', position: { x: 60, y: 60 }, domain: 'audio' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-vco',
+          from: { nodeId: 'drv-vco', portId: 'saw' },
+          to:   { nodeId: 'sut',     portId: 'audio' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+      ],
+    }),
+    note: 'MOOG 902: drive SIGNAL with ANALOGVCO.saw; OUT + OUT− both pass the amplified signal (gain default ×1)',
+  },
 };
 
 /** Look up a driver for a module. Returns null when no override
