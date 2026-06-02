@@ -24,8 +24,14 @@
 // All helpers are pure (no AudioContext, no Y.Doc) so vitest runs in a
 // node env without additional plumbing.
 
-export type SlotKey = '1' | '2' | '3' | '4';
-export const SLOT_KEYS: readonly SlotKey[] = ['1', '2', '3', '4'] as const;
+// feat/seq 8-slots: the slot envelope widened from 4 → 8. This is
+// backward-compatible — old 4-slot saves coerce with keys 5..8 defaulting
+// to null (coerceSlots iterates SLOT_KEYS), and modules that only render 4
+// slots are unaffected (QuicksaveControls renders SLOT_KEYS, so they all
+// pick up the extra buttons; no spec pins an exactly-4 count). Sequencer +
+// MACSEQ are the modules that actively USE all 8 + the NEXT/PREV/RANDOM nav.
+export type SlotKey = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8';
+export const SLOT_KEYS: readonly SlotKey[] = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
 
 /** A snapshot is whatever shape the module wants to persist into a slot.
  *  We don't care about the inner shape here — just that it's serializable. */
@@ -38,7 +44,7 @@ export type PendingMode = 'save' | 'load' | 'queue' | null;
 
 /** Default slots for a fresh module — all null. */
 export function defaultSlots(): SlotMap {
-  return { '1': null, '2': null, '3': null, '4': null };
+  return { '1': null, '2': null, '3': null, '4': null, '5': null, '6': null, '7': null, '8': null };
 }
 
 /** Coerce arbitrary input back into a SlotMap. Used both for migration
@@ -68,9 +74,79 @@ export function coercePendingMode(raw: unknown): PendingMode {
 
 /** Coerce an arbitrary value into a SlotKey (or null). Accepts numbers. */
 export function coerceSlotKey(raw: unknown): SlotKey | null {
-  if (raw === '1' || raw === '2' || raw === '3' || raw === '4') return raw;
-  if (raw === 1 || raw === 2 || raw === 3 || raw === 4) return String(raw) as SlotKey;
+  if (typeof raw === 'string' && SLOT_KEYS.includes(raw as SlotKey)) return raw as SlotKey;
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= SLOT_KEYS.length) {
+    return String(raw) as SlotKey;
+  }
   return null;
+}
+
+// ---------------- Occupied-slot navigation (NEXT / PREV / RANDOM) ----------------
+//
+// feat/seq quantized nav: the NEXT / PREV / RANDOM gate inputs jump the
+// playing pattern to another OCCUPIED slot at the next pattern end. A slot
+// is "occupied" iff it holds a saved snapshot. These helpers are pure (no
+// AudioContext, no Y.Doc) so the engine's sequence-end path + the unit
+// tests share one implementation.
+
+export type NavDirection = 'next' | 'prev' | 'random';
+
+/** Compute the ordered list of occupied slot keys from a SlotMap (a slot is
+ *  occupied iff its snapshot is non-null). Order follows SLOT_KEYS. */
+export function occupiedSlots(slots: SlotMap): SlotKey[] {
+  return SLOT_KEYS.filter((k) => slots[k] !== null);
+}
+
+/**
+ * Resolve the slot a NEXT / PREV / RANDOM nav lands on, given the set of
+ * occupied slots and the currently-playing slot.
+ *
+ * Contract (occupied-slot-aware):
+ *   - NO occupied slots                  → null (no-op).
+ *   - exactly ONE occupied slot          → always that slot (any direction).
+ *   - NEXT                               → the next occupied slot after
+ *                                          `current` in occupied order, WRAPPING
+ *                                          last → first.
+ *   - PREV                               → the prior occupied slot before
+ *                                          `current`, WRAPPING first → last.
+ *   - RANDOM                             → a (caller-supplied RNG) pick among
+ *                                          the occupied slots. Always within
+ *                                          the occupied set.
+ *
+ * `current` may be null (nothing loaded yet) or a slot that is no longer
+ * occupied (its snapshot was cleared). In those cases NEXT starts from the
+ * first occupied slot and PREV from the last — the wrap math degrades
+ * gracefully so a nav still lands somewhere occupied.
+ *
+ * `rng` defaults to Math.random; tests inject a deterministic generator.
+ */
+export function resolveNavTarget(
+  occupied: readonly SlotKey[],
+  current: SlotKey | null,
+  dir: NavDirection,
+  rng: () => number = Math.random,
+): SlotKey | null {
+  if (occupied.length === 0) return null;
+  if (occupied.length === 1) return occupied[0]!;
+
+  if (dir === 'random') {
+    const i = Math.min(occupied.length - 1, Math.max(0, Math.floor(rng() * occupied.length)));
+    return occupied[i]!;
+  }
+
+  // NEXT / PREV are circular over the occupied list. Find where `current`
+  // sits in that list; if it's not present (null or no longer occupied),
+  // anchor so NEXT yields the first occupied slot + PREV yields the last.
+  const curIdx = current === null ? -1 : occupied.indexOf(current);
+  const n = occupied.length;
+  if (dir === 'next') {
+    // curIdx===-1 → (−1+1)%n = 0 → first occupied slot.
+    return occupied[(curIdx + 1 + n) % n]!;
+  }
+  // prev. curIdx===-1 → (−1−1+n)%n = n−2; bump the anchor to n so it lands on
+  // the LAST occupied slot when nothing is loaded.
+  const anchor = curIdx === -1 ? n : curIdx;
+  return occupied[(anchor - 1 + n) % n]!;
 }
 
 // ---------------- Rising-edge detector ----------------

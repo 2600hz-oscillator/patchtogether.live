@@ -13,6 +13,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import {
@@ -30,6 +31,17 @@
   import { parseNoteName } from '$lib/audio/note-entry';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
   import type { ModuleNode } from '$lib/graph/types';
+  import {
+    handleSlotClick,
+    readSlots,
+    readPendingMode,
+    readQueuedSlot,
+    readLastLoadedSlot,
+    setPendingMode,
+    setQueuedSlot,
+    type TransportCardDeps,
+  } from '$lib/audio/modules/transport-card';
+  import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -144,6 +156,66 @@
     writeSteps(arr);
   }
 
+  // ---------------- Quicksave + transport ----------------
+  //
+  // Parity with the base Sequencer's 8-slot quicksave. The snapshot captures
+  // MACSEQ's per-step {on, midi, model} grid + bpm/length/octave/gateLength.
+
+  const transportDeps: TransportCardDeps = {
+    nodeId: id,
+    patch,
+    transact: (fn) => ydoc.transact(fn),
+    snapshot: (): Snapshot => {
+      const t = patch.nodes[id];
+      return {
+        steps: readStepsCopy().map((s) => ({ on: s.on, midi: s.midi, model: s.model })),
+        bpm: t?.params.bpm ?? 120,
+        length: t?.params.length ?? 16,
+        octave: t?.params.octave ?? 0,
+        gateLength: t?.params.gateLength ?? 0.5,
+      };
+    },
+    applySnapshot: (snap: Snapshot) => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      ydoc.transact(() => {
+        if (Array.isArray(snap.steps)) {
+          if (!t.data) t.data = {};
+          // Deep-clone via coerceSteps so the same Y.Map doesn't land at two
+          // paths (the snap usually still lives inside slots[N]).
+          (t.data as Record<string, unknown>).steps = coerceSteps(snap.steps).map((s) => ({
+            on: s.on,
+            midi: s.midi,
+            model: s.model,
+          }));
+        }
+        for (const k of ['bpm', 'length', 'octave', 'gateLength'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') t.params[k] = v;
+        }
+      });
+    },
+  };
+
+  let slots = $derived((void cardVersion, readSlots(node)));
+  let pendingMode = $derived<PendingMode>((void cardVersion, readPendingMode(node)));
+  let queuedSlot = $derived<SlotKey | null>((void cardVersion, readQueuedSlot(node)));
+  let lastLoadedSlot = $derived<SlotKey | null>((void cardVersion, readLastLoadedSlot(node)));
+
+  function onSetMode(m: PendingMode) { setPendingMode(transportDeps, m); }
+  function onSlotClick(k: SlotKey) { handleSlotClick(transportDeps, k); }
+  function onPlayToggle() { togglePlay(); }
+  function onReset() {
+    // RESET: clear any pending queue + nudge the engine's prev/cur transition
+    // (which resets stepIndex to 0). Mirrors SequencerCard.onReset.
+    const wasPlaying = isPlaying;
+    setQueuedSlot(transportDeps, null);
+    set('isPlaying')(0);
+    if (wasPlaying) {
+      requestAnimationFrame(() => set('isPlaying')(1));
+    }
+  }
+
   // ---------------- Test hooks (gated on testHooksEnabled) ----------------
   //
   // The Playwright suite drives MACSEQ via these globals — see
@@ -206,6 +278,19 @@
 
   const inputs: PortDescriptor[] = [
     { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
+    { id: 'play_cv',   label: 'PLAY GATE',     cable: 'gate' },
+    { id: 'reset_cv',  label: 'RESET GATE',    cable: 'gate' },
+    { id: 'queue1_cv', label: 'PLAY QUEUE 1',  cable: 'gate' },
+    { id: 'queue2_cv', label: 'PLAY QUEUE 2',  cable: 'gate' },
+    { id: 'queue3_cv', label: 'PLAY QUEUE 3',  cable: 'gate' },
+    { id: 'queue4_cv', label: 'PLAY QUEUE 4',  cable: 'gate' },
+    { id: 'queue5_cv', label: 'PLAY QUEUE 5',  cable: 'gate' },
+    { id: 'queue6_cv', label: 'PLAY QUEUE 6',  cable: 'gate' },
+    { id: 'queue7_cv', label: 'PLAY QUEUE 7',  cable: 'gate' },
+    { id: 'queue8_cv', label: 'PLAY QUEUE 8',  cable: 'gate' },
+    { id: 'next_cv',   label: 'NEXT',          cable: 'gate' },
+    { id: 'prev_cv',   label: 'PREV',          cable: 'gate' },
+    { id: 'random_cv', label: 'RANDOM',        cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'pitch',   label: 'PITCH',    cable: 'pitch' },
@@ -286,6 +371,19 @@
       <Fader value={octave}     min={-2}  max={2}    defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')} moduleId={id} paramId="octave"     readLive={live('octave')} />
       <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} moduleId={id} paramId="gateLength" readLive={live('gateLength')} />
     </div>
+
+    <QuicksaveControls
+      nodeId={id}
+      {slots}
+      {pendingMode}
+      {queuedSlot}
+      {lastLoadedSlot}
+      {isPlaying}
+      {onSetMode}
+      {onSlotClick}
+      {onPlayToggle}
+      {onReset}
+    />
   </PatchPanel>
 </div>
 

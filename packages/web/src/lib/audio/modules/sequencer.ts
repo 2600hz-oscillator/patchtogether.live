@@ -44,14 +44,19 @@ import {
 import {
   createTransportCv,
   pickQueuedSlotFromEvents,
+  pickNavFromEvents,
   TRANSPORT_CV_PORT_DEFS,
+  EXTENDED_TRANSPORT_CV_PORT_DEFS,
 } from './transport-cv';
 import {
   coerceSlots,
   coerceSlotKey,
   isInputPortConnected,
   shouldSequencerRun,
+  occupiedSlots,
+  resolveNavTarget,
   type SlotKey,
+  type NavDirection,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { createPlayheadTracker } from './playhead-tracker';
@@ -144,6 +149,12 @@ export const sequencerDef: AudioModuleDef = {
     //   reset_cv     → rising edge resets stepIndex to 0
     //   queue1..4_cv → rising edge sets node.data.queuedSlot to N
     ...TRANSPORT_CV_PORT_DEFS,
+    // feat/seq 8-slots + quantized nav:
+    //   queue5..8_cv → rising edge queues slot 5..8 (applied on sequence-end)
+    //   next_cv      → at next pattern end, jump to the next OCCUPIED slot
+    //   prev_cv      → ... prior occupied slot (wraps)
+    //   random_cv    → ... a random occupied slot
+    ...EXTENDED_TRANSPORT_CV_PORT_DEFS,
   ],
   outputs: [
     // Stage-1 polyphony: pitch is a 10-channel polyPitchGate cable. When a
@@ -221,8 +232,9 @@ export const sequencerDef: AudioModuleDef = {
     let lastClockSampleTime = ctx.currentTime;
     const CLOCK_THRESHOLD = 0.5;
 
-    // Shared transport CV inputs (play_cv, reset_cv, queue{1..4}_cv).
-    const transportCv = createTransportCv(ctx);
+    // Shared transport CV inputs (play_cv, reset_cv, queue{1..8}_cv +
+    // next/prev/random nav gates — opted in via { extended: true }).
+    const transportCv = createTransportCv(ctx, { extended: true });
     let lastTransportPollTime = ctx.currentTime;
     let totalSequenceEnds = 0;
 
@@ -460,7 +472,18 @@ export const sequencerDef: AudioModuleDef = {
       const queued = pickQueuedSlotFromEvents(ev);
       if (queued !== null && live) {
         if (!live.data) live.data = {};
-        (live.data as Record<string, unknown>).queuedSlot = queued;
+        const d = live.data as Record<string, unknown>;
+        d.queuedSlot = queued;
+        // An explicit slot queue supersedes a pending NEXT/PREV/RANDOM nav.
+        d.queuedNav = null;
+      }
+      // NEXT / PREV / RANDOM nav gates: latch the direction to apply at the
+      // next sequence-end (quantized, NOT immediate). A later explicit slot
+      // queue (above) clears it; a later nav overwrites the prior nav.
+      const nav = pickNavFromEvents(ev);
+      if (nav !== null && live) {
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).queuedNav = nav;
       }
       return isPlaying;
     }
@@ -473,10 +496,25 @@ export const sequencerDef: AudioModuleDef = {
       const live = livePatch.nodes[nodeId];
       if (!live) return false;
       const data = live.data as Record<string, unknown> | undefined;
-      const queuedRaw = data?.queuedSlot;
-      const queued = coerceSlotKey(queuedRaw);
-      if (!queued) return false;
       const slots = coerceSlots(data?.slots);
+      // An explicit queued slot wins; otherwise resolve a pending NEXT/PREV/
+      // RANDOM nav into a concrete OCCUPIED slot. Both are quantized to here
+      // (sequence-end). Nav over no/one occupied slot degrades per
+      // resolveNavTarget's contract.
+      let queued = coerceSlotKey(data?.queuedSlot);
+      if (!queued) {
+        const navRaw = data?.queuedNav;
+        const nav: NavDirection | null =
+          navRaw === 'next' || navRaw === 'prev' || navRaw === 'random' ? navRaw : null;
+        if (nav) {
+          const current = coerceSlotKey(data?.lastLoadedSlot);
+          queued = resolveNavTarget(occupiedSlots(slots), current, nav);
+          // Consume the nav regardless of whether it resolved (no occupied
+          // slots → null → drop it so it doesn't re-fire every loop).
+          if (data) data.queuedNav = null;
+        }
+      }
+      if (!queued) return false;
       const snap = slots[queued];
       if (!snap) {
         // Slot is empty — drop the queue.
