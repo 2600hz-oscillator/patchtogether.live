@@ -154,6 +154,16 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // def doesn't match — sm64 is invisible to this sweep regardless.
   // Kept here for documentation of the underlying blocker.)
   sm64: 'video out blank until US ROM is extracted into IDB; covered by sm64-related specs (post-extract render)',
+  // ── SNES9X: the snes9x2005 WASM core renders nothing until a ROM is
+  // loaded, and the ROM is user-provided + gitignored (absent in CI), so
+  // the card shows the "LOAD A ROM" dropzone + every output is inert. The
+  // game-event gates (gate1 KILL / gate2 DEATH) only fire on real gameplay
+  // (or forcePulse); gate3 multiplies clock_in (needs an in-level world+
+  // level → a ROM); cv1 reads the world from WRAM (needs a ROM). Handle-
+  // presence still pins every input/output port here; signal flow is
+  // covered by the ROM-gated snes9x e2e (video/audio/input + clock_in→gate3)
+  // and the pure unit suites (detection / multiplier / input mask).
+  snes9x: 'all outputs need a loaded ROM (user-provided, gitignored, absent in CI); event gates fire on gameplay/forcePulse; covered by the ROM-gated snes9x e2e + pure unit suites',
   // ── Driver page.evaluate / postSpawn hangs ──
   // These modules' drivers time out under CI load — the per-output
   // serial loop (8 × 20 s, 7 × 20 s) exhausts the test budget before

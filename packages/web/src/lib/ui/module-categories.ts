@@ -247,6 +247,13 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // (coin/start gates + joy_x/joy_y CV) + event-gate outputs
   // (move/die/level) alongside the video + mono audio.
   qbert: { top: 'Video modules', sub: 'Sources' },
+  // SNES9X — Super Nintendo emulator (snes9x2005/CAT SFC, MIT → WASM). Load-
+  // a-ROM game module with game-event CV/GATE outputs. Bucketed with the
+  // other game-emulator VIDEO modules (DOOM/QBERT/NIBBLES) under Video →
+  // Sources. (The spec called for a "Games" category; this repo's existing
+  // game emulators live in Video → Sources, so SNES9X follows that precedent
+  // for consistency rather than introducing a new top-level bucket.)
+  snes9x: { top: 'Video modules', sub: 'Sources' },
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   videobox: { top: 'Video modules', sub: 'Sources' },
   // VIDEOVARISPEED — local-file player with performant varispeed transport.

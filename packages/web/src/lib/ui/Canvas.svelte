@@ -264,6 +264,9 @@
   import DoomCard from '$lib/ui/modules/DoomCard.svelte';
   import NibblesCard from '$lib/ui/modules/NibblesCard.svelte';
   import QbertCard from '$lib/ui/modules/QbertCard.svelte';
+  // SNES9X — Super Nintendo emulator (snes9x2005/CAT SFC → WASM). Load-a-ROM
+  // game module with game-event CV/GATE outputs.
+  import Snes9xCard from '$lib/ui/modules/Snes9xCard.svelte';
   // VIDEOBOX — local-file video player with multiplayer playhead sync.
   import VideoboxCard from '$lib/ui/modules/VideoboxCard.svelte';
   // VIDEOVARISPEED — local-file player with performant varispeed transport.
@@ -549,6 +552,8 @@
     nibbles: NibblesCard,
     // QBERT — Q*Bert (Gottlieb 1982) arcade emulator.
     qbert: QbertCard,
+    // SNES9X — Super Nintendo emulator (load-a-ROM + game-event CV/GATE outs).
+    snes9x: Snes9xCard,
     // VIDEOBOX — local-file video player with multiplayer playhead sync.
     videobox: VideoboxCard,
     // VIDEOVARISPEED — local-file player with performant varispeed transport.
@@ -1717,6 +1722,23 @@
     const n = patch.nodes[ctxMenuNodeId];
     if (!n || n.type !== 'group') return false;
     return (n.data as { expanded?: boolean } | undefined)?.expanded === true;
+  });
+
+  // SNES9X — the right-clicked node is a snes9x with a ROM loaded → offer
+  // the "see output definition for CV/GATES" menu item. The ROM-loaded check
+  // reads the engine extras; defaults to false when the engine/extras aren't
+  // available (the item just doesn't show).
+  let ctxMenuCanSeeSnesOutputDef = $derived.by<boolean>(() => {
+    void snapshot;
+    if (!ctxMenuNodeId || ctxMenuNodeType !== 'snes9x') return false;
+    const n = patch.nodes[ctxMenuNodeId];
+    if (!n || !engine) return false;
+    try {
+      const extras = engine.read(n, 'extras') as { romLoaded?: () => boolean } | undefined;
+      return extras?.romLoaded?.() === true;
+    } catch {
+      return false;
+    }
   });
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
@@ -4088,6 +4110,15 @@
   isGroup={ctxMenuNodeType === 'group'}
   groupExpanded={ctxMenuGroupExpanded}
   canSaveGroup={Boolean(currentUserId) && ctxMenuNodeType === 'group'}
+  canSeeSnesOutputDef={ctxMenuCanSeeSnesOutputDef}
+  onseesnesoutputdef={() => {
+    if (!ctxMenuNodeId) return;
+    // The Snes9xCard listens for this window event keyed by node id +
+    // opens its per-ROM CV/GATE output-definition panel.
+    window.dispatchEvent(
+      new CustomEvent('snes9x:show-output-def', { detail: { nodeId: ctxMenuNodeId } }),
+    );
+  }}
   ondelete={() => {
     if (!ctxMenuNodeId) return;
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);

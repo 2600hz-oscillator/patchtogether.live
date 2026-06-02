@@ -43,6 +43,7 @@ import { scoreboardDef } from './scoreboard';
 import { nibblesDef } from './nibbles';
 import { shapegenDef } from './shapegen';
 import { qbertDef } from './qbert';
+import { snes9xDef } from './snes9x';
 
 let registered = false;
 
@@ -165,6 +166,13 @@ export function registerVideoModules(): void {
   // qbert.zip (gitignored, DOOM pattern). 4 CV inputs (coin/start gates +
   // joy_x/joy_y), 4 outputs (out + audio_out + evt_die/evt_move/evt_level).
   registerVideoModule(qbertDef);
+  // SNES9X — Super Nintendo emulator (snes9x2005 / CAT SFC libretro core,
+  // MIT → WASM under native/snes9x/). User-provided ROM (gitignored, DOOM
+  // pattern). clock_in + 12 SNES gamepad gate inputs; video out + separate
+  // audio_l/audio_r + 4 gate (gate1..4) + 4 CV (cv1..4) outputs. Reads SNES
+  // WRAM each frame for SMW game-event detection (kill/death/clock-mult/
+  // world-CV). maxInstances: 1.
+  registerVideoModule(snes9xDef);
   // Re-expose module specs so the (audio + video) combined snapshot
   // lands on window.__moduleSpecs. The audio barrel already calls this
   // after registering its own defs; we redo it here so the e2e

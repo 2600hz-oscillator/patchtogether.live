@@ -554,7 +554,17 @@ type StandardModuleType =
   // provides qbert.zip via `task setup:qbert`; gitignored. CV-only control
   // (coin / start gates + bipolar joystick CV → 4-way diagonal); per-event
   // gate outputs (move / die / level); mono audio output.
-  | 'qbert';
+  | 'qbert'
+  // SNES9X — Super Nintendo emulator (snes9x2005 / CAT SFC libretro core,
+  // MIT, compiled to WASM under native/snes9x/). Load-a-ROM (user-provided +
+  // gitignored, DOOM pattern). LOCKED 256x224/239 video + 32 kHz stereo
+  // audio. Inputs: clock_in (gate) + the full SNES gamepad (12 gates).
+  // Outputs: video out, separate audio_l/audio_r (ChannelSplitter), 4 GATE
+  // (gate1..4) + 4 CV (cv1..4). Game-event detection reads SNES WRAM each
+  // frame at documented SMW addresses (kill→gate1, death→gate2, clock-mult
+  // ×(world+level)→gate3, world→cv1). A right-click "see output definition
+  // for CV/GATES" panel documents the per-ROM mapping. maxInstances: 1.
+  | 'snes9x';
 export type ModuleType = StandardModuleType | (string & {});
 
 // ---------------- Port + parameter schemas ----------------
