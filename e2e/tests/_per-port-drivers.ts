@@ -434,6 +434,41 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'ADSR: drive .gate from SEQUENCER.gate; env / env_inv ramp on each note-on',
   },
 
+  // ───── MOOG 911 EG — gate-driven contour generator (mirror ADSR) ─────
+  // The 911 is a CV/gate modulator: its env / env_inv outputs only move on
+  // a gate. Drive .gate from SEQUENCER.gate so the T1→peak / T2→Esus / T3
+  // contour runs and both outputs emit. ESUS defaults > 0 so the sustain
+  // hold keeps env nonzero across the poll window.
+  moog911: {
+    upstream: () => ({
+      nodes: [sequencerGate('drv-seq').node],
+      edges: [
+        {
+          id: 'e-drv-gate',
+          from: { nodeId: 'drv-seq', portId: 'gate' },
+          to:   { nodeId: 'sut',     portId: 'gate' },
+          sourceType: 'gate', targetType: 'gate',
+        },
+      ],
+    }),
+    postSpawn: async (page) => {
+      const seed = sequencerGate('drv-seq');
+      await page.evaluate((d) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['drv-seq'];
+          if (!n) return;
+          if (!n.data) n.data = {};
+          n.data.steps = d.steps;
+        });
+      }, seed.data);
+    },
+    note: 'MOOG 911: drive .gate from SEQUENCER.gate; env / env_inv ramp on each note-on (T1→peak / T2→Esus / T3)',
+  },
+
   // ───── JOYSTICK — set pos_x/pos_y to nonzero ─────
   joystick: {
     params: { pos_x: 0.7, pos_y: 0.5 },

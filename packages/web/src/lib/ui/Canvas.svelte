@@ -229,6 +229,8 @@
   import FroggerCard from '$lib/ui/modules/FroggerCard.svelte';
   // SM64 — black-box wrapper around the upstream sm64js (WTFPL).
   import Sm64Card from '$lib/ui/modules/Sm64Card.svelte';
+  // SKIFREE — wrapper around the upstream skifree.js engine (MIT).
+  import SkifreeCard from '$lib/ui/modules/SkifreeCard.svelte';
   // JOYSTICK — manual XY pad CV source.
   import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
   // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
@@ -240,6 +242,8 @@
   import CubeCard from '$lib/ui/modules/CubeCard.svelte';
   // MOOG 921 VCO — first Moog System 55/35 clone module (beige faceplate).
   import Moog921VcoCard from '$lib/ui/modules/Moog921VcoCard.svelte';
+  // MOOG 911 EG — Moog System 55/35 contour generator (beige faceplate).
+  import Moog911Card from '$lib/ui/modules/Moog911Card.svelte';
   // MOOG 902 VCA — Moog System 55/35 clone slice 3 (differential amplifier).
   import Moog902VcaCard from '$lib/ui/modules/Moog902VcaCard.svelte';
   // ATLANTIS-PATCH support trio. The "Visit Atlantis" demo button +
@@ -507,6 +511,7 @@
     modtris: ModtrisCard,
     frogger: FroggerCard,
     sm64: Sm64Card,
+    skifree: SkifreeCard,
     joystick: JoystickCard,
     gamepad: GamepadCard,
     numpadPlus: NumpadPlusCard,
@@ -514,6 +519,7 @@
     // CUBE — 3D wavetable-navigator oscillator (slice-readout + 3D viz).
     cube: CubeCard,
     moog921Vco: Moog921VcoCard,
+    moog911: Moog911Card,
     moog902: Moog902VcaCard,
     slewSwitch: SlewSwitchCard,
     // SAMPLE & HOLD — rising-edge S&H + scale quantizer (ungated = quantizer).

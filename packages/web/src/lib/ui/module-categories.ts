@@ -204,6 +204,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // resolved Q4 decision in .myrobots/MOOG/PLAN.md. SYS55-only + SYS35-only
   // modules land in their respective subs as later slices ship.
   moog921Vco: { top: 'Moog', sub: 'SYS55' },
+  // The 911 Envelope Generator is shared by both the System 55 and System 35
+  // (S35 ×3, S55 ×6), so like the 921 it's listed under SYS55 (the shared
+  // bucket) per the resolved Q4 decision in .myrobots/MOOG/PLAN.md.
+  moog911: { top: 'Moog', sub: 'SYS55' },
   // The 902 VCA (differential amplifier) is in BOTH systems (S35×3, S55×5) →
   // shared → listed under SYS55, same as the 921.
   moog902: { top: 'Moog', sub: 'SYS55' },
@@ -309,6 +313,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // SM64 — sm64js pure-JS Super Mario 64 port (WTFPL). Single-instance
   // (maxInstances:1) per rack. Bucket alongside the other game modules.
   sm64: { top: 'Hybrid', sub: 'Hybrid' },
+  // SKIFREE — skifree.js ski-downhill game (MIT). x/y CV cursor + crash/
+  // eaten gate + video out. Same Hybrid bucket as the other game modules.
+  skifree: { top: 'Hybrid', sub: 'Hybrid' },
   // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
   wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
   // CUBE — 3D wavetable-navigator oscillator. Audio-only v1 but bucketed
