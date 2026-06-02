@@ -766,6 +766,32 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'VIDEOOUT: drive .in with ACIDWARP.out; .out passes through with non-blank frames',
   },
 
+  // ───── FREEZEFRAME — drive video_in so all 5 video outs emit ─────
+  //
+  // FREEZEFRAME is an effect (video in → posterized/S&H out), so it needs
+  // an upstream source. Wire ACIDWARP.out into video_in; with gate_in
+  // UNPATCHED the module passes the frame through LIVE, so all five video
+  // outs (video_out + r/g/b/luma_out) ring with non-blank frames. The
+  // driver's presence bypasses the effect-shape skip (hasDriverSetup) so
+  // the module goes through the normal per-output emit path (each out
+  // routed to VIDEOOUT.in by the sweep).
+  freezeframe: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-acid', type: 'acidwarp', position: { x: 60, y: 60 }, domain: 'video' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-acid',
+          from: { nodeId: 'drv-acid', portId: 'out' },
+          to:   { nodeId: 'sut',      portId: 'video_in' },
+          sourceType: 'video', targetType: 'video',
+        },
+      ],
+    }),
+    note: 'FREEZEFRAME: drive video_in with ACIDWARP.out (gate unpatched = live passthrough); all 5 video outs ring',
+  },
+
   // ───── MOOG 902 VCA — drive the SIGNAL input so both outs emit ─────
   //
   // The 902 is an effect (signal in → amplified out), so it needs an

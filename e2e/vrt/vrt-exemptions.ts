@@ -73,6 +73,11 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   ruttetra: [{ selector: 'canvas' }],
   shapedramps: [{ selector: 'canvas' }],
   vdelay: [{ selector: 'canvas' }],
+  // FREEZEFRAME carries a live video_out preview canvas; mask it so the
+  // deterministic chrome (4 QUANT knobs + VID/GATE/OUT/R/G/B/L handle rows)
+  // is the regression gate. The S&H + posterize correctness is covered by
+  // freezeframe.test.ts (unit) + the freezeframe e2e (pixel sampling).
+  freezeframe: [{ selector: 'canvas' }],
   // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the
   // deterministic chrome (4 selector knobs + handle rows) diffs while the
   // live render is excluded. (Kept here for the follow-up baseline; the
@@ -614,6 +619,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/unityscalemathematik',
   'linux/vdelay',
   'linux/warrenspectrum',
+  // FREEZEFRAME (video sample & hold + per-channel posterize): darwin
+  // baseline captured on this machine (live preview canvas masked — see
+  // VRT_MODULE_MASKS). linux baseline pending a `task vrt:update` run on
+  // linux CI; the deterministic chrome (4 QUANT knobs + 7 handle rows) is
+  // the same across platforms but the masked-canvas chrome PNG can shift
+  // sub-thresholdly under linux Chromium timing.
+  'linux/freezeframe',
   // MANDLEBLOT (Mandelbrot fractal generator): darwin baseline captured on
   // this machine (canvas masked — the colour pass cycles hue with uTime, so
   // the canvas region is non-deterministic; the chrome around it diffs).

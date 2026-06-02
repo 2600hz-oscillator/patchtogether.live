@@ -260,6 +260,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   destructor: { top: 'Video modules', sub: 'Processors' },
   feedback: { top: 'Video modules', sub: 'Processors' },
   vdelay: { top: 'Video modules', sub: 'Processors' },
+  // FREEZEFRAME — video sample & hold + per-channel posterize. Gate-driven
+  // frame freeze with isolated r/g/b/luma video outs.
+  freezeframe: { top: 'Video modules', sub: 'Processors' },
   // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
   // + LIGHTEN/DARKEN key masks). Sits with the other feedback processors.
   backdraft: { top: 'Video modules', sub: 'Processors' },

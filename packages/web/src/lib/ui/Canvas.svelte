@@ -113,6 +113,7 @@
   import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
+  import FreezeframeCard from '$lib/ui/modules/FreezeframeCard.svelte';
   // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
   // + LIGHTEN/DARKEN key masks).
   import BackdraftCard from '$lib/ui/modules/BackdraftCard.svelte';
@@ -453,6 +454,7 @@
     ruttetra: RuttetraCard,
     shapedramps: ShapedrampsCard,
     vdelay: VdelayCard,
+    freezeframe: FreezeframeCard,
     backdraft: BackdraftCard,
     bentbox: BentboxCard,
     acidwarp: AcidwarpCard,

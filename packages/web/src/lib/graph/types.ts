@@ -209,6 +209,10 @@ type StandardModuleType =
   | 'buggles'
   // VDELAY — video delay + feedback echo (ring buffer of FBO textures).
   | 'vdelay'
+  // FREEZEFRAME — video sample & hold + per-channel posterize. video_in +
+  // gate_in; 5 video outs (combined + isolated r/g/b/luma). Unpatched gate
+  // = live passthrough; patched gate captures-while-high, freezes-on-low.
+  | 'freezeframe'
   // BACKDRAFT — video feedback generator. Crossfades two inputs (MIX) and
   // composites with a delayed + colour-processed copy of its own previous
   // output (1-frame-lag feedback ring); LIGHTEN/DARKEN key masks modulate
