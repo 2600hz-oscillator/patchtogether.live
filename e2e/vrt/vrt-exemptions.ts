@@ -407,6 +407,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // per-port e2e provide functional coverage. Promote into MODULES once the
   // darwin + linux PNGs are captured.
   moog921Vco: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs + 3-position SYNC switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 904A VCF — Moog System 55/35 clone slice 2. Same shape as the 921:
+  // deterministic beige faceplate (2 knobs + a 3-position RANGE switch, no
+  // canvas / animation), so a good VRT candidate; baselines are pending a
+  // `task vrt:update` run on each platform (this authoring worktree can't
+  // reliably boot the full faustwasm-backed dev server for capture). DSP unit
+  // (moog-ladder-dsp.test.ts + moog904a.test.ts worklet) + ART (source-SHA-
+  // pinned .f32 self-osc) + per-module-per-port e2e provide functional
+  // coverage. Promote into MODULES once the darwin + linux PNGs are captured.
+  moog904a: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 3-position RANGE switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned self-osc) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
   // MOOG 911 EG — Moog System 55/35 contour generator. Deterministic beige
   // faceplate (4 knobs: T1 / T2 / ESUS / T3, no canvas / animation) like the
   // 921; baselines pending a `task vrt:update` run on each platform. DSP unit

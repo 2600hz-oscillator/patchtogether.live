@@ -636,6 +636,13 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // ring at default settings (C4) with no upstream. The audio-typed
       // lin_fm / sync inputs are OPTIONAL modulation, not a required source.
       'moog921Vco',
+      // MOOG 904A VCF — an effect (audio in → low-pass out), BUT its
+      // REGENERATION self-oscillates: the per-port driver seeds
+      // regeneration=1 so the ladder rings as a VC sine generator with no
+      // upstream, making its `audio` output a driven signal we can assert
+      // (slice-1-style driven-signal check). Without the driver it would be
+      // silent at default regeneration=0.
+      'moog904a',
       // ANALOG VCO — self-running oscillator: saw/square/triangle/sine/morph
       // ring at C4 with no upstream and `sync` (sync_out) pulses once per
       // cycle. Its audio-typed fm / pm / sync inputs are OPTIONAL modulation,

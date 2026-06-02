@@ -494,6 +494,15 @@ type StandardModuleType =
   // rectangular with variable pulse width), 1V/oct + linear-FM inputs, and a
   // hard/soft/off sync switch. Own-code polyBLEP DSP (permissive, no copyleft).
   | 'moog921Vco'
+  // MOOG 904A VCF — Moog System 55/35 clone, slice 2 (Moog → SYS55, shared by
+  // SYS35). Voltage-controlled transistor-ladder LOW-PASS filter, 24 dB/oct:
+  // FIXED CONTROL VOLTAGE (cutoff) + RANGE switch (cutoff in 2-octave steps) +
+  // summing 1V/oct CONTROL INPUTS + REGENERATION (variable Q / internal
+  // feedback that self-oscillates into a clean sine VC generator near max).
+  // Own-code clean-room TPT/Zavalishin zero-delay-feedback ladder + Huovilainen
+  // tanh TECHNIQUE (shared lib moog-ladder-dsp; reused by 904B/904C). No
+  // LGPL/CC-BY-SA copyleft.
+  | 'moog904a'
   // MOOG 911 ENVELOPE GENERATOR — Moog System 55/35 clone (Moog → SYS55,
   // shared by SYS35). A three-time-constant CONTOUR generator (NOT a literal
   // ADSR): T1 attack → peak, T2 initial decay → Esus sustain level, hold
