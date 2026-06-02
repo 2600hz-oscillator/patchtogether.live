@@ -63,6 +63,13 @@
 //   scale (cv, linear, paramTarget=scale): ribbon scale CV.
 //   wiggle (cv, linear, paramTarget=wiggle): per-osc wiggle/wobble CV.
 //   alpha_in (video): optional video stream blended as alpha mask over the render.
+//   wall{1..6} (video): six cross-domain VIDEO INPUTS, one per face of the
+//     3D room (the camera is INSIDE the box). Each is textured onto its box
+//     face by the card, blended by a per-wall TRANSPARENCY (wall{N}_alpha,
+//     0..100%) and morphable flat→convex-dome via a per-wall DISTORT
+//     (wall{N}_distort, 0..1). Self-patching video_out → wall{N} produces
+//     recursive video feedback ("feedback madness"). Face map: 1=FRONT(−Z),
+//     2=BACK(+Z), 3=LEFT(−X), 4=RIGHT(+X), 5=FLOOR(−Y), 6=CEILING(+Y).
 //
 // Outputs:
 //   L / R (audio): stereo audio mix (per-osc summed in the worklet).
@@ -152,6 +159,40 @@ export const WALL_LAYOUT: ReadonlyArray<{ src: [number, number, number]; vec: [n
   { src: [ 0,  0.0, 1], vec: [ 0,  0.0, -1] },
   // ALPHA — -Z wall, 75% up (y=+0.5), aimed at origin.
   { src: [ 0,  0.5, -1], vec: [ 0, -0.5, 1] },
+];
+
+/** VIDEO WALL face mapping — the 6 faces of the 3D room (unit box
+ *  [-1,+1]^3) that the cross-domain video inputs wall1..wall6 texture
+ *  onto. The camera lives INSIDE this box, so each face is seen from the
+ *  inside. Single source of truth for both the audio def's port docs and
+ *  the card's wall-geometry builder.
+ *
+ *  Per face:
+ *    wallIdx — 0-based index → port id `wall${wallIdx + 1}`.
+ *    label   — human face name.
+ *    axis    — which world axis the face is perpendicular to (0=X,1=Y,2=Z).
+ *    sign    — +1 / −1 position of the face along that axis (the plane is at
+ *              sign·1 on `axis`). The inward normal is therefore −sign on
+ *              `axis` (faces look toward the room centre).
+ *
+ *  Mapping (front is −Z = the wall in front of the camera at rot=0, matching
+ *  the ALPHA oscillator's −Z wall in WALL_LAYOUT):
+ *    wall1 → FRONT   (−Z)   wall2 → BACK    (+Z)
+ *    wall3 → LEFT    (−X)   wall4 → RIGHT   (+X)
+ *    wall5 → FLOOR   (−Y)   wall6 → CEILING (+Y)
+ */
+export const VIDEO_WALL_FACES: ReadonlyArray<{
+  wallIdx: number;
+  label: string;
+  axis: 0 | 1 | 2;
+  sign: 1 | -1;
+}> = [
+  { wallIdx: 0, label: 'FRONT',   axis: 2, sign: -1 },
+  { wallIdx: 1, label: 'BACK',    axis: 2, sign:  1 },
+  { wallIdx: 2, label: 'LEFT',    axis: 0, sign: -1 },
+  { wallIdx: 3, label: 'RIGHT',   axis: 0, sign:  1 },
+  { wallIdx: 4, label: 'FLOOR',   axis: 1, sign: -1 },
+  { wallIdx: 5, label: 'CEILING', axis: 1, sign:  1 },
 ];
 
 /** Distance-attenuated gain for one oscillator given the user camera
@@ -558,6 +599,25 @@ export const wavesculptDef: AudioModuleDef = {
     { id: 'scale',  type: 'cv', paramTarget: 'scale',  cvScale: { mode: 'linear' } },
     { id: 'wiggle', type: 'cv', paramTarget: 'wiggle', cvScale: { mode: 'linear' } },
     { id: 'alpha_in', type: 'video' },
+    // VIDEO WALLS — six cross-domain video inputs, one per face of the 3D
+    // room (the camera lives INSIDE the box). Each is textured onto its box
+    // face by the card (see WavesculptCard's wall pass), blended by a per-
+    // wall TRANSPARENCY (wall{N}_alpha) and morphable from a flat quad to a
+    // convex dome via a per-wall DISTORT (wall{N}_distort). Face mapping
+    // (single source of truth = VIDEO_WALL_FACES below):
+    //   wall1 → FRONT (−Z)   wall2 → BACK  (+Z)
+    //   wall3 → LEFT  (−X)   wall4 → RIGHT (+X)
+    //   wall5 → FLOOR (−Y)   wall6 → CEILING (+Y)
+    // Listed LITERALLY (not generated in a loop) so the module-manifest
+    // static extractor + the per-module-per-port handle-presence sweep see
+    // every port. Self-patching WAVESCULPT.video_out → any wall{N} is
+    // allowed (and intended) — it produces recursive video feedback.
+    { id: 'wall1', type: 'video' },
+    { id: 'wall2', type: 'video' },
+    { id: 'wall3', type: 'video' },
+    { id: 'wall4', type: 'video' },
+    { id: 'wall5', type: 'video' },
+    { id: 'wall6', type: 'video' },
   ],
   outputs: [
     { id: 'L', type: 'audio' },
@@ -664,6 +724,29 @@ export const wavesculptDef: AudioModuleDef = {
     ps.push({ id: 'bloom',              defaultValue: 0.4,  min: 0,  max: 1, curve: 'linear', label: 'Bloom' });
     ps.push({ id: 'noise',              defaultValue: 0.05, min: 0,  max: 1, curve: 'linear', label: 'Noise' });
     ps.push({ id: 'master_gain',        defaultValue: 1,    min: 0,  max: 2, curve: 'linear', label: 'Gain' });
+    // ---------------- VIDEO WALL controls (per face × 6) ----------------
+    // wall{N}_alpha   — TRANSPARENCY, 0..100 (%): 0 = wall invisible,
+    //                   100 = fully opaque. The card blends the wall video
+    //                   over the scene by alpha/100.
+    // wall{N}_distort — DISTORT, 0..1: 0 = flat quad on the face plane,
+    //                   1 = convex hemisphere bulging toward the room centre
+    //                   (a dome/fisheye we look up into). Continuous morph,
+    //                   implemented in the wall geometry (vertex displacement
+    //                   toward the box centre). Listed LITERALLY for the
+    //                   static manifest extractor. Defaults: alpha 100 (so a
+    //                   freshly-patched wall is visible), distort 0 (flat).
+    ps.push({ id: 'wall1_alpha',   label: 'W1 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall1_distort', label: 'W1 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall2_alpha',   label: 'W2 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall2_distort', label: 'W2 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall3_alpha',   label: 'W3 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall3_distort', label: 'W3 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall4_alpha',   label: 'W4 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall4_distort', label: 'W4 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall5_alpha',   label: 'W5 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall5_distort', label: 'W5 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall6_alpha',   label: 'W6 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall6_distort', label: 'W6 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
     return ps;
   })(),
 

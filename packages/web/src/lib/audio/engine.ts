@@ -1005,6 +1005,28 @@ export class PatchEngine {
       this.addSameDomainVideoCvBridge(edge);
       return;
     }
+    // SAME-DOMAIN audio VIDEO-FRAME edge (2026-06-01). An audio-domain
+    // module can expose a mono-video/video OUTPUT (WAVESCULPT's video_out,
+    // FOXY's scope_out/wave3d_out, …) AND consume a video INPUT card-side
+    // (WAVESCULPT's wall1..wall6 / alpha_in — the card reads the source's
+    // `videoSources` frame directly via getVideoSource). A cable between two
+    // AUDIO modules carrying a video frame is therefore NOT an audio-graph
+    // edge: the audio engine has no AudioNode for a video port and would
+    // throw "no source/target port". The frame handoff is done out-of-band
+    // by the consuming card walking patch.edges, so the engine simply
+    // ignores this edge. This is what makes WAVESCULPT video_out → its own
+    // wall{N} (recursive video feedback / "feedback madness") work without
+    // the reconciler erroring — self-patching is allowed, not blocked.
+    if (
+      sourceDomain === 'audio'
+      && (targetDomain === undefined || targetDomain === 'audio')
+      && (edge.sourceType === 'mono-video'
+        || edge.sourceType === 'video'
+        || edge.sourceType === 'image'
+        || edge.sourceType === 'keys')
+    ) {
+      return;
+    }
     const engine = this.getDomain(sourceDomain);
     engine.addEdge(edge);
   }
