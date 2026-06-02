@@ -11,6 +11,16 @@
 //   inputs:  0 = copy A in, 1 = copy B in   (mono)
 //   outputs: 0=audioA 1=audioB 2=slowA 3=slowB 4=fastA 5=fastB 6=gateA 7=gateB
 //            (each 4 channels = the 4 bands)
+//
+// VIDEO mode (per copy, independent): a_mode/b_mode params (0=AUDIO, 1=VIDEO).
+// In VIDEO mode the 4 lanes become R/G/B/Luma of the patched frame: the CARD
+// reads the incoming video frame's pixels (only the DOM has the canvas; the
+// worklet can't), averages them to 4 channel levels via videoChannelLevels(),
+// and writes them to the worklet via handle.write('video_levels_a'|'_b', …)
+// each frame. The worklet sample-and-holds the levels through the same env/
+// gate/meter stage. The cross-domain video inputs a_video_in/b_video_in are
+// consumed card-side (WAVESCULPT wall precedent) — the engine ignores the
+// audio↔audio video-frame edge.
 // The factory fans each 4-channel output through a ChannelSplitter into 4 mono
 // GainNodes so every band/kind is an individually-patchable port. Each band's
 // AUDIO tap also feeds a per-band mono-video "rasterize" output (audio→video):
@@ -40,6 +50,7 @@ const OUT_STREAMS: Array<{ outIndex: number; copy: 'a' | 'b'; kind: string; type
 const PARAM_DEFAULTS: Record<string, number> = {};
 for (const c of COPIES) {
   PARAM_DEFAULTS[`${c}_master`] = 1;
+  PARAM_DEFAULTS[`${c}_mode`] = 0; // 0 = AUDIO (spectral bands), 1 = VIDEO (R/G/B/Luma)
   for (const b of BANDS) PARAM_DEFAULTS[`${c}_gain${b}`] = 1;
 }
 
@@ -60,6 +71,13 @@ export const synesthesiaDef: AudioModuleDef = {
   inputs: [
     { id: 'a_in', type: 'audio' },
     { id: 'b_in', type: 'audio' },
+    // Cross-domain VIDEO inputs (one per copy). In VIDEO mode the card reads
+    // the patched frame's pixels and writes R/G/B/Luma channel levels to the
+    // worklet. The frame handoff is done card-side (the engine ignores an
+    // audio↔audio video-frame edge — see PatchEngine.addEdge), matching
+    // WAVESCULPT's wall inputs.
+    { id: 'a_video_in', type: 'video' },
+    { id: 'b_video_in', type: 'video' },
   ],
   // 2 copies × 4 bands × {audio, env_slow, env_fast, gate, raster} = 40 outputs.
   // Written as a literal list (not a flatMap) so the docs module-manifest's
@@ -109,6 +127,10 @@ export const synesthesiaDef: AudioModuleDef = {
     { id: 'b_band4_raster',   type: 'mono-video' },
   ],
   params: [
+    // Per-copy MODE: 0 = AUDIO (spectral bands), 1 = VIDEO (R/G/B/Luma). Each
+    // copy switches independently. Discrete 0/1 (a toggle on the card).
+    { id: 'a_mode', label: 'A Mode', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    { id: 'b_mode', label: 'B Mode', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
     // Master gain: 0.5×@7:00 → 1.5×@5:00 (unity at 12:00) — raises/lowers floor.
     { id: 'a_master', label: 'A Mas', defaultValue: 1, min: 0.5, max: 1.5, curve: 'linear' },
     { id: 'b_master', label: 'B Mas', defaultValue: 1, min: 0.5, max: 1.5, curve: 'linear' },
@@ -231,6 +253,19 @@ export const synesthesiaDef: AudioModuleDef = {
       read(key) {
         if (key === 'snapshot') return { levelsA, levelsB } satisfies SynesthesiaSnapshot;
         return undefined;
+      },
+      // VIDEO mode: the card reads the patched frame's pixels, computes the
+      // R/G/B/Luma channel levels, and writes them here each video frame. We
+      // forward to the worklet, which sample-and-holds them across the quantum.
+      // Keys: 'video_levels_a' / 'video_levels_b'; value is a length-4 array.
+      write(key, value) {
+        const copy = key === 'video_levels_b' ? 'b' : key === 'video_levels_a' ? 'a' : null;
+        if (!copy || !Array.isArray(value)) return;
+        try {
+          workletNode.port.postMessage({ type: 'video', copy, levels: value as number[] });
+        } catch {
+          /* port may be closed during teardown */
+        }
       },
       dispose() {
         try { workletNode.port.onmessage = null; } catch { /* ignore */ }
