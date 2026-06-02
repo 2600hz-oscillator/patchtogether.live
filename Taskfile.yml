@@ -196,6 +196,41 @@ tasks:
     cmds:
       - npm run watch -w {{.DSP}}
 
+  dsp:fetch-dist:
+    desc: |
+      [local dev-loop] Populate packages/dsp/dist by COPYING a prebuilt dist from
+      the primary checkout (or a sibling worktree, or $DSP_DIST_SRC) instead of
+      compiling Faust. For fresh worktrees / envs without the Faust toolchain so
+      single-test runs (e2e/vrt/art) don't fail on a missing DSP bundle. Never
+      runs in CI; the normal `task dsp:build` path is unchanged.
+    cmds:
+      - bash scripts/dsp-fetch-dist.sh
+
+  dsp:ensure:
+    desc: |
+      [local dev-loop] Make sure packages/dsp/dist exists with the LEAST work:
+      reuse a current dist via the dsp:build status-guard if possible; otherwise
+      compile with Faust if available; otherwise fall back to copying a prebuilt
+      dist (dsp:fetch-dist). Used by the single-test targets so they never fail on
+      a missing/uncompilable DSP bundle.
+    cmds:
+      - |
+        # Fast path: a current dist already satisfies the dsp:build status guard.
+        if [ -f {{.DSP}}/dist/.dsp-srchash ] \
+           && [ "$(cat {{.DSP}}/dist/.dsp-srchash 2>/dev/null)" = "$(bash scripts/dsp-src-hash.sh)" ]; then
+          echo "[dsp:ensure] dist is current — nothing to do"
+          exit 0
+        fi
+        # Prefer a real Faust build when the toolchain is present.
+        if command -v faust >/dev/null 2>&1 \
+           && [ -f node_modules/@grame/faustwasm/scripts/faust2wasm.js ]; then
+          echo "[dsp:ensure] Faust available — building dist"
+          task dsp:build
+        else
+          echo "[dsp:ensure] Faust unavailable — copying a prebuilt dist"
+          task dsp:fetch-dist
+        fi
+
   # ---------------- Type check / lint ----------------
   typecheck:
     desc: Type-check every workspace
@@ -222,6 +257,32 @@ tasks:
       - npm test -w {{.SERVER}}
       - npm test -w {{.WEB}}
       - task: test:scripts
+
+  test:one:
+    desc: |
+      [local dev-loop] Run ONE vitest file (or -t name filter), fast, no full
+      suite. Pass a path and/or a `-t <name>` after `--`. Defaults to the web
+      package; set PKG=dsp|server|art|web to target another workspace.
+      Examples:
+        task test:one -- src/lib/ui/canvas/organize.test.ts
+        task test:one -- organize -t "deterministic"
+        task test:one PKG=dsp -- cube     # PKG=… goes BEFORE the `--`
+    vars:
+      PKG: '{{.PKG | default "web"}}'
+    cmds:
+      # `vitest run <positional>` treats a bare arg as a filename substring
+      # filter, so passing either a path or a partial name Just Works. We add
+      # the package's own config explicitly so the right env/alias is used.
+      - |
+        case "{{.PKG}}" in
+          web)    DIR=packages/web    CFG=vitest.config.ts ;;
+          dsp)    DIR=packages/dsp    CFG=vitest.config.ts ;;
+          server) DIR=packages/server CFG=vitest.config.ts ;;
+          art)    DIR=art             CFG=vitest.config.ts ;;
+          *) echo "test:one: unknown PKG '{{.PKG}}' (use web|dsp|server|art)"; exit 2 ;;
+        esac
+        echo "[test:one] $DIR vitest run {{.CLI_ARGS}}"
+        npm exec -w "$DIR" -- vitest run --config "$CFG" {{.CLI_ARGS}}
 
   test:scripts:
     desc: Run repo-root scripts/ tests (scaffolder + future repo-wide tooling)
@@ -259,6 +320,18 @@ tasks:
     deps: [dsp:build]
     cmds:
       - npm run art:update -w {{.ART}}
+
+  art:one:
+    desc: |
+      [local dev-loop] Run ONE ART scenario by file-path or name filter, fast.
+      Uses dsp:ensure (copies a prebuilt dist on Faust-less worktrees) so it
+      never fails on a missing DSP bundle. Examples:
+        task art:one -- moog911
+        task art:one -- scenarios/meowbox/meow-c4.test.ts
+        task art:one -- -t "tracks 1V/oct"
+    deps: [dsp:ensure]
+    cmds:
+      - npm exec -w {{.ART}} -- vitest run --config vitest.config.ts {{.CLI_ARGS}}
 
   # ---------------- Visual Regression Tests (Playwright VRT) ----------------
   # Baselines live under e2e/vrt/__screenshots__/ and are LFS-tracked (see
@@ -299,6 +372,37 @@ tasks:
     cmds:
       - npm run vrt:update -w {{.E2E}} -- {{.CLI_ARGS}}
 
+  vrt:one:
+    desc: |
+      [local dev-loop] Run ONE VRT scene by grep, 1 worker. Pass a card/module
+      grep after `--`. Reuses a long-lived dev server if one is up
+      (`task e2e:serve`) — vrt.config has reuseExistingServer:true — else boots
+      one for this run. Uses dsp:ensure so Faust-less worktrees still work.
+      Examples:
+        task vrt:one -- adsr
+        task vrt:one -- --grep "scope"
+        HEADED=1 task vrt:one -- adsr
+    deps: [dsp:ensure, test:emit-manifest]
+    cmds:
+      - |
+        # Same robust routing as e2e:one (see comments there): a bare word/phrase
+        # becomes a convenience --grep; paths + raw flags pass through verbatim.
+        eval "set -- {{.CLI_ARGS}}"
+        case "${1:-}" in
+          '')                 GREP_PREFIX="" ;;
+          -*)                 GREP_PREFIX="" ;;
+          */*|*.spec.ts|*.ts) GREP_PREFIX="" ;;
+          *)                  GREP_PREFIX="--grep" ;;
+        esac
+        HEADED_FLAG=""; [ "${HEADED:-0}" = "1" ] && HEADED_FLAG="--headed"
+        # `npm run vrt -w` runs from the e2e package dir (so spec paths + the
+        # vrt/vrt.config.ts reference resolve) and already passes --config.
+        if [ -n "$GREP_PREFIX" ]; then
+          npm run vrt -w {{.E2E}} -- --workers=1 $HEADED_FLAG --grep "$*"
+        else
+          npm run vrt -w {{.E2E}} -- --workers=1 $HEADED_FLAG "$@"
+        fi
+
   vrt:gallery:
     desc: Build the VRT gallery HTML (docs/vrt/) from the latest baselines + last test-results
     cmds:
@@ -318,6 +422,84 @@ tasks:
     deps: [test:emit-manifest]
     cmds:
       - npm test -w {{.E2E}} -- {{.CLI_ARGS}}
+
+  e2e:serve:
+    desc: |
+      [local dev-loop] Boot ONE long-lived app server and leave it up, so many
+      `task e2e:one` / `task vrt:one` runs reuse it instead of paying the
+      ~5-10s server boot every time. Readies the DSP dist (dsp:ensure, Faust-less
+      OK) + registry manifest first, then starts the server in the background.
+      E2E_PREVIEW=1 serves the prod `vite preview` build (port 4173) instead of
+      the dev server (port 5173). Tear down with `task e2e:stop`.
+    deps: [dsp:ensure, test:emit-manifest]
+    cmds:
+      # Build the prod bundle first when serving preview (preview needs a build).
+      - |
+        if [ "${E2E_PREVIEW:-0}" = "1" ]; then
+          echo "[e2e:serve] E2E_PREVIEW=1 → building web for preview"
+          npm run build -w {{.WEB}}
+        fi
+      - bash scripts/dev-server.sh start
+
+  e2e:stop:
+    desc: '[local dev-loop] Stop the long-lived server started by e2e:serve (frees the port). E2E_PREVIEW=1 to stop the preview server.'
+    cmds:
+      - bash scripts/dev-server.sh stop
+
+  e2e:status:
+    desc: '[local dev-loop] Report whether the long-lived e2e server is up. E2E_PREVIEW=1 to check the preview server.'
+    cmds:
+      - bash scripts/dev-server.sh status
+
+  e2e:one:
+    desc: |
+      [local dev-loop] Run ONE e2e spec/test against the ALREADY-RUNNING server
+      (1 worker, line reporter). Fails fast with a hint if no server is up — run
+      `task e2e:serve` once first. Pass a spec path and/or `--grep <name>` after
+      `--`; a bare word becomes a --grep. HEADED=1 to watch. E2E_PREVIEW=1 to
+      target the preview server. Examples:
+        task e2e:serve                         # once
+        task e2e:one -- tests/ai-smoke.spec.ts
+        task e2e:one -- adsr                   # grep
+        HEADED=1 task e2e:one -- tests/audio-gate.spec.ts
+    deps: [test:emit-manifest]
+    cmds:
+      # Fail fast (clear message) if the persistent server isn't up — we set
+      # E2E_SKIP_WEBSERVER so Playwright won't silently boot its own (which
+      # would defeat the reuse-and-go-fast point).
+      - bash scripts/dev-server.sh assert-up
+      - |
+        # go-task preserves the caller's quoting in CLI_ARGS (a multi-word
+        # `--grep "a b c"` arrives as `--grep 'a b c'`). `eval set --` re-parses
+        # it into "$@" so a quoted grep survives word-splitting.
+        eval "set -- {{.CLI_ARGS}}"
+        # Arg routing for ergonomics, based on the FIRST token:
+        #   - starts with `-`        → raw playwright flags, pass through as-is
+        #   - looks like a path/spec → positional file filter (has `/` or .ts)
+        #   - otherwise a bare word  → convenience --grep on test titles, and we
+        #     keep ALL remaining tokens together so `task e2e:one -- foo bar`
+        #     greps the title "foo bar".
+        case "${1:-}" in
+          '')                 GREP_PREFIX="" ;;
+          -*)                 GREP_PREFIX="" ;;
+          */*|*.spec.ts|*.ts) GREP_PREFIX="" ;;
+          *)                  GREP_PREFIX="--grep" ;;
+        esac
+        HEADED_FLAG=""; [ "${HEADED:-0}" = "1" ] && HEADED_FLAG="--headed"
+        PORT=5173; [ "${E2E_PREVIEW:-0}" = "1" ] && PORT=4173
+        # `npm test -w` runs `playwright test` FROM the e2e package dir so spec
+        # paths (tests/foo.spec.ts) resolve against testDir. E2E_SKIP_WEBSERVER
+        # tells playwright.config NOT to boot its own server — we reuse the
+        # long-lived one (asserted up above), which is the whole speed-up.
+        if [ -n "$GREP_PREFIX" ]; then
+          E2E_SKIP_WEBSERVER=1 E2E_USE_PREVIEW="${E2E_PREVIEW:-}" \
+          E2E_BASE_URL="http://localhost:$PORT" \
+            npm test -w {{.E2E}} -- --workers=1 --reporter=list $HEADED_FLAG --grep "$*"
+        else
+          E2E_SKIP_WEBSERVER=1 E2E_USE_PREVIEW="${E2E_PREVIEW:-}" \
+          E2E_BASE_URL="http://localhost:$PORT" \
+            npm test -w {{.E2E}} -- --workers=1 --reporter=list $HEADED_FLAG "$@"
+        fi
 
   e2e:no-collab:
     desc: 'E2E EXCLUDING the @collab multi-context specs (they run in their own non-sharded CI job — the in-memory Hocuspocus relay flakes under shard contention). Used by the sharded CI matrix.'

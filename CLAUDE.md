@@ -24,6 +24,64 @@ push new code/tests and use CI as the first check that they pass.
   linux-VRT exemptions) was catchable locally with the exact spec for the new
   module.
 
+## Running ONE test locally (fast dev loop)
+
+Dedicated `*:one` targets run a SINGLE test without the full suite, and a
+long-lived server lets you iterate e2e/VRT specs without re-booting it each run.
+All run through `flox activate -- …`.
+
+**Unit / vitest — `task test:one`** (defaults to the web package; `PKG=dsp|server|art`):
+
+```sh
+flox activate -- task test:one -- src/lib/ui/canvas/organize.test.ts   # one file
+flox activate -- task test:one -- organize -t "deterministic"          # file + name filter
+flox activate -- task test:one PKG=dsp -- cube                         # another workspace (PKG before --)
+```
+
+**E2E / Playwright — boot the server ONCE, then run single specs against it:**
+
+```sh
+flox activate -- task e2e:serve                       # start the dev server (port 5173) + leave it up
+flox activate -- task e2e:one -- tests/ai-smoke.spec.ts   # a spec file
+flox activate -- task e2e:one -- "title is patchtogether"  # a bare word/phrase → --grep ONE test
+HEADED=1 flox activate -- task e2e:one -- tests/audio-gate.spec.ts   # watch it
+flox activate -- task e2e:stop                        # tear down (don't leak dev-servers)
+```
+
+`e2e:one` runs 1 worker + line reporter and **fails fast** with a hint if the
+server isn't up. It reuses the warm server via Playwright's `reuseExistingServer`
+(`E2E_SKIP_WEBSERVER=1`), so steady-state single-test iteration is ~1.5s of test
+time vs ~4s when each run boots its own server — and SvelteKit's on-demand route
+compilation stays warm across runs. Add `E2E_PREVIEW=1` to serve/target the prod
+`vite preview` build (port 4173) instead of dev. `task e2e:status` shows whether
+the server is up.
+
+**One VRT scene — `task vrt:one`** (reuses the same dev server if up):
+
+```sh
+flox activate -- task vrt:one -- adsr        # one card by grep
+HEADED=1 flox activate -- task vrt:one -- scope
+```
+
+**One ART scenario — `task art:one`**:
+
+```sh
+flox activate -- task art:one -- moog911                          # by name
+flox activate -- task art:one -- scenarios/meowbox/meow-c4.test.ts   # by path
+```
+
+**Fresh worktree without Faust?** The `*:one` audio targets depend on
+`task dsp:ensure`, which reuses a current `packages/dsp/dist`, else builds with
+Faust if available, else copies a prebuilt dist from the primary checkout
+(`task dsp:fetch-dist`). So single-test runs don't fail on a missing DSP bundle
+even before `@grame/faustwasm`/the Faust CLI is set up. (CI is unaffected — it
+always compiles via the dedicated `dsp-build` job.)
+
+> Note: the clean-state advice above (`rm -rf packages/dsp/dist`) still applies
+> when you specifically want to catch a stale-artifact / SHA failure — run a real
+> `task dsp:build` after, not `dsp:fetch-dist`, so you're testing this worktree's
+> actual sources.
+
 ## Worktrees: hard cap of 10
 
 This repo accumulates abandoned `isolation: worktree` agent checkouts fast — each
