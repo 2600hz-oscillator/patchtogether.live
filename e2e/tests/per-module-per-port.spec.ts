@@ -626,6 +626,12 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // ring at default settings (C4) with no upstream. The audio-typed
       // lin_fm / sync inputs are OPTIONAL modulation, not a required source.
       'moog921Vco',
+      // ANALOG VCO — self-running oscillator: saw/square/triangle/sine/morph
+      // ring at C4 with no upstream and `sync` (sync_out) pulses once per
+      // cycle. Its audio-typed fm / pm / sync inputs are OPTIONAL modulation,
+      // not a required source — so the outputs-emit sweep (incl. the new
+      // sync_out) applies, same as moog921Vco / wavetableVco.
+      'analogVco',
     ]);
     const hasUpstreamMediaInput = mod.inputs.some(
       (p) => p.type === 'audio' || p.type === 'video' || p.type === 'mono-video' || p.type === 'image',
