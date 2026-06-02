@@ -722,4 +722,117 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     for (let i = 0; i < n; i++) if (Math.abs((mode1.data[i] ?? 0) - (mode2.data[i] ?? 0)) > 24) diff++;
     expect(diff, 'SCOPES TRIAL and REALITY BASED COMMUNITY render differently').toBeGreaterThan(20);
   });
+
+  // ──────────────── VIDEO WALLS ────────────────
+
+  test('VIDEO WALL: an external video source textures a box face (wall1) — bright content appears', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // SHAPES (a bright static test pattern) → wall1 (FRONT face), full
+    // transparency. The textured wall should add a substantial population of
+    // bright pixels vs the same scene with no wall patched.
+    await spawnPatch(page, [
+      { id: 'pat', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4 } },
+      { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 100 }, domain: 'audio',
+        params: { wall1_alpha: 100, wall1_distort: 0, rot: 0.3, pos_z: 0.2, zoom: 1.2, noise: 0 } },
+    ], [
+      { id: 'e_wall1', from: { nodeId: 'pat', portId: 'out' }, to: { nodeId: 'ws', portId: 'wall1' }, sourceType: 'video', targetType: 'video' },
+    ]);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+
+    // The wall pass adds bright textured pixels — poll for a healthy
+    // population of near-white pixels (the SHAPES pattern is white-on-black).
+    await expect.poll(async () => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+      if (!c) return 0;
+      const ctx = c.getContext('2d');
+      if (!ctx) return 0;
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      let bright = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if ((data[i] ?? 0) > 150 && (data[i + 1] ?? 0) > 150 && (data[i + 2] ?? 0) > 150) bright++;
+      }
+      return bright;
+    }), {
+      message: 'wall1 video texture never appeared (no bright wall pixels)',
+      timeout: 4_000,
+      intervals: [200, 400, 600],
+    }).toBeGreaterThan(1000);
+
+    expect(errors, 'no console / page errors with a wall patched').toEqual([]);
+  });
+
+  test('SELF-FEEDBACK: patching WAVESCULPT video_out → its own wall1 is allowed + renders (feedback madness)', async ({ page }) => {
+    // The card must NOT special-case-block self-patching: video_out → wall1
+    // forms a frame-delayed recursive feedback loop (the wall textures the
+    // card's own previous frame back into the scene through the BENTBOX
+    // prevFbo). Assert the self-edge is accepted AND the canvas keeps
+    // rendering content with no console/page errors (no re-entrancy crash,
+    // no infinite loop).
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // Drive a gate so the ribbons have energy that the feedback loop can
+    // smear/recurse; feedback_gain up so the self-loop visibly compounds.
+    await spawnPatch(page, [
+      { id: 'jo', type: 'joystick', position: { x: 40, y: 400 }, domain: 'audio' },
+      { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 100 }, domain: 'audio',
+        params: { wall1_alpha: 80, wall1_distort: 0.3, rot: 0.25, zoom: 1.2, feedback_gain: 0.6, noise: 0 } },
+    ], [
+      // SELF-LOOP: the card's own video output into its own wall input.
+      { id: 'e_self', from: { nodeId: 'ws', portId: 'video_out' }, to: { nodeId: 'ws', portId: 'wall1' }, sourceType: 'mono-video', targetType: 'video' },
+      { id: 'e_gate', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },
+    ]);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+
+    // The self-edge exists in the patch store (not rejected).
+    const hasSelfEdge = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { edges: Record<string, { source: { nodeId: string; portId: string }; target: { nodeId: string; portId: string } }> } };
+      return Object.values(w.__patch.edges).some(
+        (e) => e.source.nodeId === e.target.nodeId && e.target.portId === 'wall1' && e.source.portId === 'video_out',
+      );
+    });
+    expect(hasSelfEdge, 'WAVESCULPT video_out → its own wall1 self-edge accepted').toBe(true);
+
+    // Drive the joystick high so the voices generate energy, then let the
+    // recursive feedback run a number of frames.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __engine?: () => { ctx: AudioContext } | null;
+      };
+      const n = w.__patch.nodes['jo'];
+      if (n) n.params.pos_x = 1;
+      try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
+    });
+
+    // The recursive render keeps producing content (poll for non-black).
+    await expect.poll(async () => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+      if (!c) return false;
+      const ctx = c.getContext('2d');
+      if (!ctx) return false;
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      let lit = 0;
+      for (let i = 0; i < data.length; i += 4 * 16) {
+        if (((data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0)) > 60) lit++;
+      }
+      return lit > 50;
+    }), {
+      message: 'self-feedback loop produced no rendered content',
+      timeout: 5_000,
+      intervals: [200, 400, 800],
+    }).toBe(true);
+
+    expect(errors, 'no console / page errors during self-feedback loop').toEqual([]);
+  });
 });
