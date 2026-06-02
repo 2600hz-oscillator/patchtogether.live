@@ -393,6 +393,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // per-port e2e provide functional coverage. Promote into MODULES once the
   // darwin + linux PNGs are captured.
   moog921Vco: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs + 3-position SYNC switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 911 EG — Moog System 55/35 contour generator. Deterministic beige
+  // faceplate (4 knobs: T1 / T2 / ESUS / T3, no canvas / animation) like the
+  // 921; baselines pending a `task vrt:update` run on each platform. DSP unit
+  // (moog911.test.ts worklet — 3-stage contour) + ART (source-SHA-pinned
+  // .f32) + per-module-per-port e2e (gate-driven env emit) provide functional
+  // coverage. Promote into MODULES once darwin + linux PNGs are captured.
+  moog911: 'VRT baseline pending — deterministic beige Moog faceplate (4 knobs T1/T2/ESUS/T3, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards

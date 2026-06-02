@@ -118,6 +118,10 @@ import { cubeDef } from './cube';
 // Own-code polyBLEP VCO; four simultaneous waveform jacks + 1V/oct + linear
 // FM + hard/soft/off sync. Shared by SYS55 + SYS35.
 import { moog921VcoDef } from './moog921-vco';
+// MOOG 911 EG — Moog System 55/35 contour generator (envelope). Own-code
+// 3-stage T1→peak / T2→Esus / T3 contour; gate-driven, +inverted tap.
+// Shared by SYS55 + SYS35.
+import { moog911Def } from './moog911';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -264,6 +268,12 @@ export function registerAudioModules(): void {
   // sawtooth/rectangular w/ variable pulse width) + 1V/oct + linear FM +
   // hard/soft/off sync. Own-code polyBLEP DSP (no copyleft).
   registerModule(moog921VcoDef);
+  // MOOG 911 ENVELOPE GENERATOR — Moog System 55/35 clone. A three-time-
+  // constant CONTOUR generator (NOT a literal ADSR): T1 attack → peak,
+  // T2 initial decay → Esus (sustain level), hold while gated, T3 final
+  // decay on release (trigger-close forces T3). Own-code DSP (no copyleft).
+  // env + inverted env_inv outputs. Shared by SYS55 + SYS35 (→ SYS55).
+  registerModule(moog911Def);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
