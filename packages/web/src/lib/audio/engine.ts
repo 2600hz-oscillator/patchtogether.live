@@ -37,6 +37,15 @@ export interface AudioDomainNodeHandle {
    */
   read?(key: string): unknown;
   /**
+   * Optional: arbitrary per-module data WRITE (the inverse of `read`). Used by
+   * cards that compute a value browser-side and must push it into the running
+   * node — e.g. SYNESTHESIA's VIDEO mode, where the card reads the incoming
+   * video frame's pixels (only the DOM has the canvas), reduces them to R/G/B/
+   * Luma channel levels, and writes them to the worklet each frame. Modules
+   * that need no card→node push omit this.
+   */
+  write?(key: string, value: unknown): void;
+  /**
    * Optional: per-port AnalyserNode taps that surface this module's
    * audio output as a video-domain source (cross-domain handoff).
    *
@@ -105,6 +114,9 @@ export interface DomainEngine {
    *  (e.g. WARPS: 'modulator_cv' → param 'modulator'). */
   readModulatorTap?(nodeId: string, portId: string): number | undefined;
   read(nodeId: string, key: string): unknown;
+  /** Optional inverse of `read`: push card-computed data into a node (see the
+   *  handle's `write`). Only modules that need it implement it. */
+  write?(nodeId: string, key: string, value: unknown): void;
   dispose(): void;
 }
 
@@ -585,6 +597,11 @@ export class AudioEngine implements DomainEngine {
     return handle?.read ? handle.read(key) : undefined;
   }
 
+  write(nodeId: string, key: string, value: unknown): void {
+    const handle = this.nodes.get(nodeId);
+    handle?.write?.(key, value);
+  }
+
   /**
    * Cross-domain bridge support: return the AudioNode + output index for a
    * given (nodeId, portId) so callers (the cross-domain CV bridge created by
@@ -1003,6 +1020,28 @@ export class PatchEngine {
       && (edge.sourceType === 'cv' || edge.sourceType === 'gate')
     ) {
       this.addSameDomainVideoCvBridge(edge);
+      return;
+    }
+    // SAME-DOMAIN audio VIDEO-FRAME edge (2026-06-01). An audio-domain
+    // module can expose a mono-video/video OUTPUT (WAVESCULPT's video_out,
+    // FOXY's scope_out/wave3d_out, …) AND consume a video INPUT card-side
+    // (WAVESCULPT's wall1..wall6 / alpha_in — the card reads the source's
+    // `videoSources` frame directly via getVideoSource). A cable between two
+    // AUDIO modules carrying a video frame is therefore NOT an audio-graph
+    // edge: the audio engine has no AudioNode for a video port and would
+    // throw "no source/target port". The frame handoff is done out-of-band
+    // by the consuming card walking patch.edges, so the engine simply
+    // ignores this edge. This is what makes WAVESCULPT video_out → its own
+    // wall{N} (recursive video feedback / "feedback madness") work without
+    // the reconciler erroring — self-patching is allowed, not blocked.
+    if (
+      sourceDomain === 'audio'
+      && (targetDomain === undefined || targetDomain === 'audio')
+      && (edge.sourceType === 'mono-video'
+        || edge.sourceType === 'video'
+        || edge.sourceType === 'image'
+        || edge.sourceType === 'keys')
+    ) {
       return;
     }
     const engine = this.getDomain(sourceDomain);
@@ -1425,6 +1464,12 @@ export class PatchEngine {
 
   read(node: ModuleNode, key: string): unknown {
     return this.getDomain(node.domain).read(node.id, key);
+  }
+
+  /** Push card-computed data into a node (inverse of `read`). No-ops if the
+   *  domain engine / handle doesn't implement `write`. */
+  write(node: ModuleNode, key: string, value: unknown): void {
+    this.getDomain(node.domain).write?.(node.id, key, value);
   }
 
   dispose(): void {

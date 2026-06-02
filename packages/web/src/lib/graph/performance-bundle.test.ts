@@ -61,7 +61,7 @@ describe('collectAssetRefs', () => {
 describe('collectMidiDevices', () => {
   it('keys MIDI-CV-BUDDY device by NAME via the id resolver', () => {
     const nodes = {
-      m1: { id: 'm1', type: 'midi-cv-buddy', data: { lastDeviceId: 'unstable-id-42' } },
+      m1: { id: 'm1', type: 'midiCvBuddy', data: { lastDeviceId: 'unstable-id-42' } },
     };
     const out = collectMidiDevices(nodes, (id) =>
       id === 'unstable-id-42' ? { name: 'Launchpad Mini', manufacturer: 'Focusrite' } : null,
@@ -72,12 +72,22 @@ describe('collectMidiDevices', () => {
   });
 
   it('skips a node whose saved id no longer resolves (device absent at save)', () => {
-    const nodes = { m1: { id: 'm1', type: 'midi-cv-buddy', data: { lastDeviceId: 'gone' } } };
+    const nodes = { m1: { id: 'm1', type: 'midiCvBuddy', data: { lastDeviceId: 'gone' } } };
     expect(collectMidiDevices(nodes, () => null)).toEqual([]);
   });
 
   it('skips a node with no saved device', () => {
-    const nodes = { m1: { id: 'm1', type: 'midi-cv-buddy', data: { lastDeviceId: null } } };
+    const nodes = { m1: { id: 'm1', type: 'midiCvBuddy', data: { lastDeviceId: null } } };
+    expect(collectMidiDevices(nodes, () => ({ name: 'X' }))).toEqual([]);
+  });
+
+  // Regression guard: the registered type is camelCase `midiCvBuddy`. The old
+  // code (and this test) used the kebab `midi-cv-buddy`, which never matched a
+  // real node — so device selections silently vanished from saved performances
+  // and this test was vacuous. Assert the kebab string is NOT collected so we
+  // can't quietly regress to it.
+  it('does NOT match the kebab "midi-cv-buddy" (wrong type — would be vacuous)', () => {
+    const nodes = { m1: { id: 'm1', type: 'midi-cv-buddy', data: { lastDeviceId: 'x' } } };
     expect(collectMidiDevices(nodes, () => ({ name: 'X' }))).toEqual([]);
   });
 });
@@ -112,7 +122,7 @@ describe('makePerformanceBundle', () => {
         type: 'videobox',
         data: { fileMeta: { handleId: 'h-1', name: 'a.mp4', size: 5, duration: 3 } },
       },
-      m1: { id: 'm1', type: 'midi-cv-buddy', data: { lastDeviceId: 'dev' } },
+      m1: { id: 'm1', type: 'midiCvBuddy', data: { lastDeviceId: 'dev' } },
       g1: { id: 'g1', type: 'gamepad', params: { padIndex: 0 } },
     };
     const bundle = makePerformanceBundle({

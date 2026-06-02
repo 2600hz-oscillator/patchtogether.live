@@ -16,19 +16,51 @@ describe('analogVcoDef: module def shape', () => {
     expect(analogVcoDef.category).toBe('sources');
   });
 
-  it('exposes inputs: pitch, fm, pm (audio-rate) + tune/fine/fmAmount/pmAmount (cv)', () => {
+  it('exposes inputs: pitch, fm, pm, sync (audio-rate) + tune/fine/fmAmount/pmAmount/shape (cv)', () => {
     const ids = analogVcoDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['fine', 'fm', 'fmAmount', 'pitch', 'pm', 'pmAmount', 'tune']);
+    expect(ids).toEqual(['fine', 'fm', 'fmAmount', 'pitch', 'pm', 'pmAmount', 'shape', 'sync', 'tune']);
   });
 
-  it('exposes 4 output ports (saw, square, triangle, sine)', () => {
+  it('exposes 6 output ports (saw, square, triangle, sine, morph, sync)', () => {
     const ids = analogVcoDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['saw', 'sine', 'square', 'triangle']);
+    expect(ids).toEqual(['morph', 'saw', 'sine', 'square', 'sync', 'triangle']);
   });
 
-  it('exposes 5 params (tune, fine, fmAmount, pmAmount, pw)', () => {
+  it('sync input: audio-rate hard-sync input (no paramTarget)', () => {
+    const port = analogVcoDef.inputs.find((p) => p.id === 'sync');
+    expect(port).toBeDefined();
+    expect(port!.type).toBe('audio');
+    expect(port!.paramTarget).toBeUndefined();
+  });
+
+  it('sync output: audio-rate hard-sync pulse output', () => {
+    const port = analogVcoDef.outputs.find((p) => p.id === 'sync');
+    expect(port).toBeDefined();
+    expect(port!.type).toBe('audio');
+  });
+
+  it('exposes 6 params (tune, fine, fmAmount, pmAmount, pw, shape)', () => {
     const ids = analogVcoDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['fine', 'fmAmount', 'pmAmount', 'pw', 'tune']);
+    expect(ids).toEqual(['fine', 'fmAmount', 'pmAmount', 'pw', 'shape', 'tune']);
+  });
+
+  it('shape param: 0..1, default 0 (=saw, back-compat for the morph output)', () => {
+    const param = analogVcoDef.params.find((p) => p.id === 'shape')!;
+    expect(param.min).toBe(0);
+    expect(param.max).toBe(1);
+    expect(param.defaultValue).toBe(0);
+  });
+
+  it('shape CV input: paramTarget=shape, cvScale=linear', () => {
+    const port = analogVcoDef.inputs.find((p) => p.id === 'shape');
+    expect(port!.type).toBe('cv');
+    expect(port!.paramTarget).toBe('shape');
+    expect(port!.cvScale).toEqual({ mode: 'linear' });
+  });
+
+  it('morph output: audio-rate', () => {
+    const port = analogVcoDef.outputs.find((p) => p.id === 'morph');
+    expect(port!.type).toBe('audio');
   });
 
   it('tune CV input: paramTarget=tune, cvScale=linear, ±36 semi range', () => {
@@ -91,16 +123,22 @@ describe('analogVcoDef: module def shape', () => {
     }
   });
 
-  it('schemaVersion=3 (v1→v2 pmAmount migration; v2→v3 bipolar fm/pmAmount widen)', () => {
-    expect(analogVcoDef.schemaVersion).toBe(3);
+  it('schemaVersion=5 (v1→v2 pmAmount; v2→v3 bipolar widen; v3→v4 shape morph param; v4→v5 sync I/O)', () => {
+    expect(analogVcoDef.schemaVersion).toBe(5);
     expect(analogVcoDef.migrate).toBeDefined();
-    // v1 → v3 still seeds the missing pmAmount param at default 0.
+    // v1 → v4 seeds BOTH the missing pmAmount AND the new shape param at default 0.
     const migrated = analogVcoDef.migrate!({ params: { tune: 0 } }, 1) as { params: Record<string, number> };
     expect(migrated.params.pmAmount).toBe(0);
+    expect(migrated.params.shape).toBe(0);
     expect(migrated.params.tune).toBe(0);
-    // v2 → v3 is a no-op: old [0..1] values are a legal subset of [-1..+1].
+    // v2 → v4: bipolar widen is a no-op (old [0..1] ⊂ [-1..+1]); shape seeded at 0.
     const v2 = analogVcoDef.migrate!({ params: { fmAmount: 0.5, pmAmount: 0.25 } }, 2) as { params: Record<string, number> };
     expect(v2.params.fmAmount).toBe(0.5);
     expect(v2.params.pmAmount).toBe(0.25);
+    expect(v2.params.shape).toBe(0);
+    // v3 → v4: only the shape param is added.
+    const v3 = analogVcoDef.migrate!({ params: { tune: 12, shape: undefined as unknown as number } }, 3) as { params: Record<string, number> };
+    expect(v3.params.tune).toBe(12);
+    expect(v3.params.shape).toBe(0);
   });
 });

@@ -16,6 +16,8 @@ import {
   GateDetector,
   MeterBallistics,
   renderSynesthesia,
+  renderSynesthesiaVideo,
+  videoChannelLevels,
   SYN_NUM_BANDS,
   ENV_FAST_MS,
   ENV_SLOW_MS,
@@ -167,6 +169,142 @@ describe('synesthesia-dsp — render shape', () => {
     const r = renderSynesthesia(sine(440, 0.02), { sr: SR });
     for (const stream of [r.audio, r.envSlow, r.envFast, r.gate, r.level]) {
       expect(stream).toHaveLength(SYN_NUM_BANDS);
+    }
+  });
+});
+
+// ───────────────────────── VIDEO mode ─────────────────────────
+
+/** Build a w·h RGBA buffer filled with a single colour (0..255 per channel). */
+function solidFrame(r: number, g: number, b: number, w = 8, h = 8): Uint8ClampedArray {
+  const buf = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) {
+    const o = i * 4;
+    buf[o] = r; buf[o + 1] = g; buf[o + 2] = b; buf[o + 3] = 255;
+  }
+  return buf;
+}
+
+describe('synesthesia-dsp — videoChannelLevels (R/G/B/Luma extraction)', () => {
+  it('solid RED → R≈1, G/B≈0, luma≈0.299', () => {
+    const [r, g, b, l] = videoChannelLevels(solidFrame(255, 0, 0));
+    expect(r).toBeCloseTo(1, 5);
+    expect(g).toBeCloseTo(0, 5);
+    expect(b).toBeCloseTo(0, 5);
+    expect(l).toBeCloseTo(0.299, 3); // luma of pure red
+  });
+
+  it('solid GREEN → G≈1, R/B≈0, luma≈0.587', () => {
+    const [r, g, b, l] = videoChannelLevels(solidFrame(0, 255, 0));
+    expect(g).toBeCloseTo(1, 5);
+    expect(r).toBeCloseTo(0, 5);
+    expect(b).toBeCloseTo(0, 5);
+    expect(l).toBeCloseTo(0.587, 3);
+  });
+
+  it('solid BLUE → B≈1, R/G≈0, luma≈0.114', () => {
+    const [r, g, b, l] = videoChannelLevels(solidFrame(0, 0, 255));
+    expect(b).toBeCloseTo(1, 5);
+    expect(r).toBeCloseTo(0, 5);
+    expect(g).toBeCloseTo(0, 5);
+    expect(l).toBeCloseTo(0.114, 3);
+  });
+
+  it('solid WHITE → R=G=B=1 AND luma=1 (the white-redlines-luma rule)', () => {
+    const [r, g, b, l] = videoChannelLevels(solidFrame(255, 255, 255));
+    expect(r).toBeCloseTo(1, 5);
+    expect(g).toBeCloseTo(1, 5);
+    expect(b).toBeCloseTo(1, 5);
+    expect(l).toBeCloseTo(1, 5); // white maxes luma too
+  });
+
+  it('solid BLACK → all ≈0', () => {
+    const [r, g, b, l] = videoChannelLevels(solidFrame(0, 0, 0));
+    expect(r).toBe(0);
+    expect(g).toBe(0);
+    expect(b).toBe(0);
+    expect(l).toBe(0);
+  });
+
+  it('mid-gray → R=G=B=0.5, luma=0.5 (coeffs sum to 1)', () => {
+    const [r, g, b, l] = videoChannelLevels(solidFrame(128, 128, 128));
+    expect(r).toBeCloseTo(128 / 255, 5);
+    expect(l).toBeCloseTo(128 / 255, 5);
+    expect(g).toBeCloseTo(r, 5);
+    expect(b).toBeCloseTo(r, 5);
+  });
+
+  it('empty buffer → [0,0,0,0] (no divide-by-zero)', () => {
+    expect(videoChannelLevels(new Uint8ClampedArray(0))).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe('synesthesia-dsp — VIDEO mode gain scaling matches audio mode', () => {
+  it('band-audio output = level · combinedGain(master, gain), per channel', () => {
+    const levels = [1, 0.5, 0.25, 0.8] as const;
+    const master = 1.2;
+    const gains: [number, number, number, number] = [1, 1.5, 2, 1.25];
+    // One frame, hold a single sample so we read the instantaneous scaled value.
+    const r = renderSynesthesiaVideo([levels], { sr: SR, master, gains, holdSamples: 1 });
+    for (let c = 0; c < SYN_NUM_BANDS; c++) {
+      const expected = levels[c]! * combinedGain(master, gains[c]!);
+      expect(r.audio[c]![0]).toBeCloseTo(expected, 6);
+    }
+  });
+
+  it('uses the SAME combinedGain clamp law (master 0.5 + min gain → 0.5×)', () => {
+    const r = renderSynesthesiaVideo([[1, 1, 1, 1]], { sr: SR, master: 0.5, gains: [1, 1, 1, 1], holdSamples: 1 });
+    for (let c = 0; c < SYN_NUM_BANDS; c++) expect(r.audio[c]![0]).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('synesthesia-dsp — VIDEO mode drives envelope/gate followers from levels', () => {
+  it('a held high RED level opens the gate; sustained low keeps it closed', () => {
+    // ~120 ms of solid red (R=1, others 0), then ~600 ms of black.
+    const hold = Math.round(SR * 0.12);
+    const sil = Math.round(SR * 0.6);
+    const onFrames = Array.from({ length: 1 }, () => [1, 0, 0, 0.299] as const);
+    const offFrames = Array.from({ length: 1 }, () => [0, 0, 0, 0] as const);
+    const r = renderSynesthesiaVideo(
+      [...onFrames.map((f) => f)],
+      { sr: SR, holdSamples: hold },
+    );
+    // R channel (index 0) gate opens while red is held.
+    expect(Math.max(...r.gate[0]!)).toBe(1);
+    // The G/B channels never opened (they stayed at 0).
+    expect(Math.max(...r.gate[1]!)).toBe(0);
+    expect(Math.max(...r.gate[2]!)).toBe(0);
+
+    // Now red then black: gate closes by the end.
+    const r2 = renderSynesthesiaVideo(
+      [[1, 0, 0, 0.299], [0, 0, 0, 0]],
+      { sr: SR, holdSamples: Math.max(hold, sil) },
+    );
+    const g0 = r2.gate[0]!;
+    expect(Math.max(...g0)).toBe(1); // opened during the red hold
+    expect(g0[g0.length - 1]).toBe(0); // closed after black
+  });
+
+  it('envelope follower rises with the held level (fast tracks, slow lags)', () => {
+    const r = renderSynesthesiaVideo(
+      [[1, 0, 0, 0.299]],
+      { sr: SR, holdSamples: Math.round(SR * 0.1) },
+    );
+    const fast0 = r.envFast[0]!;
+    const slow0 = r.envSlow[0]!;
+    // Instant-attack peak followers charge to the level; both end near 1.
+    expect(fast0[fast0.length - 1]!).toBeCloseTo(1, 2);
+    expect(slow0[slow0.length - 1]!).toBeCloseTo(1, 2);
+  });
+
+  it('meter level tracks the held channel level (white → all four meters high)', () => {
+    const r = renderSynesthesiaVideo(
+      [[1, 1, 1, 1]],
+      { sr: SR, holdSamples: Math.round(SR * 0.3) },
+    );
+    for (let c = 0; c < SYN_NUM_BANDS; c++) {
+      const m = r.level[c]!;
+      expect(m[m.length - 1]!).toBeGreaterThan(0.6);
     }
   });
 });

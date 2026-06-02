@@ -301,6 +301,14 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       );
     },
   },
+  // CUBE: NO scene. The card's headline visual is now a LIVE, rotating 3D
+  // WebGL2 render (issue #2) — the camera + rAF keep animating regardless of an
+  // AudioContext freeze, so the canvas can't be pinned to a deterministic single
+  // frame. CUBE therefore drops its VRT scene and masks its <canvas> elements
+  // (see VRT_MODULE_MASKS.cube); the VRT gate is the deterministic card chrome
+  // (knobs / dropdowns / toggles / handles). The 3D render + slice/spread math
+  // are covered by the cube-dsp unit tests, the worklet capture test, the
+  // node-ART baselines, and the per-port e2e.
   // PEAKSTATE (animated mandala generator): the module is self-driving
   // (internal pen + ring buffer + 3D rotation, no external signal). The
   // pen trajectory is wall-clock driven, so two runs freeze at slightly

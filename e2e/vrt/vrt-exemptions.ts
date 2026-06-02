@@ -37,6 +37,11 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // WAVVIZ / SWOLEVCO carry a video-out preview canvas.
   wavviz: [{ selector: 'canvas' }],
   swolevco: [{ selector: 'canvas' }],
+  // CUBE: live rotating 3D WebGL2 render (issue #2) + snapshot-driven OUTPUT
+  // scope — both animate continuously (camera + rAF), so mask the canvases and
+  // gate on the deterministic card chrome. No VRT scene (removed; the canvas
+  // can't be pinned to a single frame). Render correctness covered elsewhere.
+  cube: [{ selector: 'canvas' }],
   // WARRENSPECTRUM has the acidwarp video viz canvas.
   warrenspectrum: [{ selector: 'canvas' }],
   // SAMSLOOP — loop-based WAV sample player. The waveform canvas is
@@ -68,6 +73,11 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   ruttetra: [{ selector: 'canvas' }],
   shapedramps: [{ selector: 'canvas' }],
   vdelay: [{ selector: 'canvas' }],
+  // FREEZEFRAME carries a live video_out preview canvas; mask it so the
+  // deterministic chrome (4 QUANT knobs + VID/GATE/OUT/R/G/B/L handle rows)
+  // is the regression gate. The S&H + posterize correctness is covered by
+  // freezeframe.test.ts (unit) + the freezeframe e2e (pixel sampling).
+  freezeframe: [{ selector: 'canvas' }],
   // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the
   // deterministic chrome (4 selector knobs + handle rows) diffs while the
   // live render is excluded. (Kept here for the follow-up baseline; the
@@ -89,6 +99,13 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // fallback so the chrome (port handles + COLOR knob) diffs deterministically
   // when the module is promoted into MODULES without a registered scene.
   scoreboard: [{ selector: 'canvas' }],
+  // ANALOG VCO — now carries a live single-cycle waveform scope at the top of
+  // the card (off an AnalyserNode on the morph output). The trace is animated
+  // + device-/timing-dependent, so mask the canvas; the deterministic chrome
+  // (6 faders incl. the new Wave knob + the saw/square/triangle/sine/morph
+  // handle rows) is the regression gate. The morph DSP is covered by
+  // analog-vco-morph.test.ts; the scope-window logic by analog-vco-scope.test.ts.
+  analogVco: [{ selector: 'canvas' }],
 };
 
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
@@ -220,6 +237,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // once the user has previously granted permission. Functional coverage
   // is e2e/tests/midi-cv-buddy.spec.ts.
   midiCvBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
+  // MIDI-OUT-BUDDY: same rationale as midiCvBuddy — the card's device picker
+  // depends on the connected MIDI OUTPUT list (no hardware in CI), and the
+  // pre-Connect state is just the "Connect MIDI…" button. Unit + E2E
+  // (fake-output capture) provide coverage. See e2e/tests/midi-out-buddy.spec.ts.
+  midiOutBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
   // MIDICLOCK: same rationale as midiCvBuddy — pre-Connect state shows a
   // "Connect MIDI…" button (deterministic) but post-connect the device list
   // depends on hardware that isn't present in CI. Unit + E2E (mock-MIDI smoke)
@@ -245,6 +267,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (CV→playerInput map) + E2E (boot-into-running-game with the seeded
   // IDB fixture, or skip when fixture absent) provide coverage.
   sm64: 'fully animated 3D scene; no naturally still frame — VRT deferred. Unit + E2E provide coverage',
+  // SKIFREE — the skifree.js engine self-drives via requestAnimationFrame
+  // (terrain scrolls, snowboarders/yeti move, skier animation cycles) the
+  // moment the bundle loads, so there is no naturally still frame to
+  // baseline. Same rationale as FROGGER / SM64 / PONG. Unit (cvToCanvasCoord
+  // + gate hook) + E2E (e2e/tests/skifree.spec.ts: CV-cursor steering +
+  // crash/eaten → gate → SCOPE) provide coverage. Promote to a real VRT
+  // baseline once a deterministic-time render-freeze hook is added so the
+  // scene can be pinned at a known frame.
+  skifree: 'animated ski-slope (rAF-self-driven terrain + sprites + skier anim) defeats deterministic single-frame capture; unit + E2E provide coverage',
   // ANALOGLOGICMATHS first-slice PR: VRT baseline pending; ART + unit + E2E
   // provide coverage. Card is small (2 attenuverter knobs + patch panel) and
   // stable; a follow-up PR will capture darwin + linux baselines once the
@@ -367,6 +398,41 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // table pinned + processor smoke FFT + manifest sync) + E2E (per-button
   // peaks at the SCOPE analyser) provide coverage.
   bluebox: 'VRT baseline pending — deterministic keypad card (12 static buttons, no canvas/animation); capture via `task vrt:update` on each platform. Unit + E2E provide coverage.',
+  // MOOG 921 VCO — first Moog System 55/35 clone module. Deterministic beige
+  // faceplate (5 knobs + a 3-position SYNC switch, no canvas / animation) so
+  // it's a good VRT candidate; baselines are pending a `task vrt:update` run
+  // on each platform (this authoring worktree can't reliably boot the full
+  // faustwasm-backed dev server for capture). DSP unit (moog-vco-dsp.test.ts +
+  // moog921-vco.test.ts worklet) + ART (source-SHA-pinned .f32) + per-module-
+  // per-port e2e provide functional coverage. Promote into MODULES once the
+  // darwin + linux PNGs are captured.
+  moog921Vco: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs + 3-position SYNC switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 904A VCF — Moog System 55/35 clone slice 2. Same shape as the 921:
+  // deterministic beige faceplate (2 knobs + a 3-position RANGE switch, no
+  // canvas / animation), so a good VRT candidate; baselines are pending a
+  // `task vrt:update` run on each platform (this authoring worktree can't
+  // reliably boot the full faustwasm-backed dev server for capture). DSP unit
+  // (moog-ladder-dsp.test.ts + moog904a.test.ts worklet) + ART (source-SHA-
+  // pinned .f32 self-osc) + per-module-per-port e2e provide functional
+  // coverage. Promote into MODULES once the darwin + linux PNGs are captured.
+  moog904a: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 3-position RANGE switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned self-osc) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 911 EG — Moog System 55/35 contour generator. Deterministic beige
+  // faceplate (4 knobs: T1 / T2 / ESUS / T3, no canvas / animation) like the
+  // 921; baselines pending a `task vrt:update` run on each platform. DSP unit
+  // (moog911.test.ts worklet — 3-stage contour) + ART (source-SHA-pinned
+  // .f32) + per-module-per-port e2e (gate-driven env emit) provide functional
+  // coverage. Promote into MODULES once darwin + linux PNGs are captured.
+  moog911: 'VRT baseline pending — deterministic beige Moog faceplate (4 knobs T1/T2/ESUS/T3, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 902 VCA — Moog System 55/35 clone slice 3. Same shape as the 921 +
+  // 904A: a deterministic beige faceplate (2 knobs + a 2-position LIN/EXP
+  // switch, no canvas / animation), so a good VRT candidate; baselines are
+  // pending a `task vrt:update` run on each platform (this authoring worktree
+  // can't reliably boot the full dev server for capture). DSP unit
+  // (moog902.test.ts: gain-law + ×2-at-6V + ×3-ceiling + CV summing + inverted
+  // output) + ART (source-SHA-pinned .f32) + per-module-per-port e2e provide
+  // functional coverage. Promote into MODULES once the darwin + linux PNGs are
+  // captured.
+  moog902: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 2-position LIN/EXP switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
@@ -397,7 +463,10 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
 export const STRICT_VRT_MODULES = new Set<string>([
   // Audio domain — pure knob/fader cards, no canvas
   'adsr',                 // 4-knob envelope card
-  'analogVco',            // 4-knob VCO card (waveform selector + tuning)
+  // analogVco: removed from strict lane — the card now carries a live
+  // single-cycle waveform scope (animated canvas off the morph output), which
+  // disqualifies it from the no-animated-chrome strict subset. It stays in
+  // the full VRT lane with the scope canvas masked (see VRT_MODULE_MASKS).
   // audioOut: removed from strict lane. This PR added the OUT device
   // dropdown row (setSinkId picker), growing the card from 320x313 to
   // 360x401. The darwin baseline was re-captured (f1cd0e5f); the linux
@@ -449,6 +518,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // old magenta-masked canvas — a follow-up `task vrt:update` run on
   // linux will re-capture, then this entry comes out.
   'linux/scope',
+  // SCOPE X/Y + INTENSITY scenes (vrt-scope-modes.spec.ts): darwin baselines
+  // captured here; linux pending a `task vrt:update` on linux CI (same as the
+  // base `linux/scope` card above). Without these the new scenes run on linux
+  // with no baseline and fail the required VRT check.
+  'linux/scope-xy-lissajous',
+  'linux/scope-intensity-dot',
+  'linux/scope-intensity-long',
   // VIDEO-OUT: this PR re-captures the darwin baseline with a real,
   // frozen VIDEOBOX frame driven through the output (via VRT_SCENES) to
   // prove the VIDEOBOX -> VIDEO-OUT path renders video content. VP9
@@ -485,10 +561,26 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // dropdown so the darwin baseline was regen'd in this PR. Linux baseline
   // pending a `task vrt:update` run on linux CI.
   'linux/wavviz',
+  // CUBE (3D wavetable-navigator oscillator, first slice): darwin baseline
+  // captured on this machine via VRT_SCENES (analogVco → pitch, rotated/morphed
+  // slice through the default tables, freeze-on-suspend so the snapshot-driven
+  // 2D viz holds). The 2D surface-height + waveform canvases differ
+  // sub-thresholdly across platforms (canvas AA), so the linux baseline is
+  // pending a `task vrt:update` run on linux CI — functional coverage is the
+  // cube-dsp unit tests + cube worklet capture test + node-ART baselines +
+  // the per-port e2e. NOT in STRICT_VRT_MODULES (the missing linux baseline
+  // runs only in the informational full-VRT lane, not the merge gate).
+  'linux/cube',
   // AUDIO OUT (device picker dropdown added): the card grew an OUT device
   // dropdown row (setSinkId picker) so the darwin baseline was regen'd in
   // this PR. Linux baseline pending a `task vrt:update` run on linux CI.
   'linux/audioOut',
+  // ANALOG VCO (live waveform scope + Wave morph knob added): the card grew a
+  // single-cycle scope canvas at the top + a 6th fader (Wave), so the darwin
+  // baseline was re-captured in this PR (canvas masked). Linux baseline pending
+  // a `task vrt:update` run on linux CI. Module also moved out of the strict
+  // VRT lane (animated chrome).
+  'linux/analogVco',
   // BACKDRAFT (video feedback generator): darwin baseline captured on this
   // machine via VRT_SCENES (SHAPES sources → frozen feedback tunnel/spiral,
   // params.freeze=1 holds the accumulator). The spatial-transform feedback
@@ -543,6 +635,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/unityscalemathematik',
   'linux/vdelay',
   'linux/warrenspectrum',
+  // FREEZEFRAME (video sample & hold + per-channel posterize): darwin
+  // baseline captured on this machine (live preview canvas masked — see
+  // VRT_MODULE_MASKS). linux baseline pending a `task vrt:update` run on
+  // linux CI; the deterministic chrome (4 QUANT knobs + 7 handle rows) is
+  // the same across platforms but the masked-canvas chrome PNG can shift
+  // sub-thresholdly under linux Chromium timing.
+  'linux/freezeframe',
   // MANDLEBLOT (Mandelbrot fractal generator): darwin baseline captured on
   // this machine (canvas masked — the colour pass cycles hue with uTime, so
   // the canvas region is non-deterministic; the chrome around it diffs).

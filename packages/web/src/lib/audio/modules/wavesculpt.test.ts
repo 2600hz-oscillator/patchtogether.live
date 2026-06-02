@@ -16,6 +16,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   wavesculptDef,
   WALL_LAYOUT,
+  VIDEO_WALL_FACES,
   distanceGain,
   eyeFromCamera,
   ribbonStripRange,
@@ -69,6 +70,53 @@ describe('wavesculpt v2: module-def shape', () => {
     const ai = wavesculptDef.inputs.find((p) => p.id === 'alpha_in');
     expect(ai, 'alpha_in port exists').toBeDefined();
     expect(ai!.type).toBe('video');
+  });
+
+  it('declares 6 video WALL inputs (wall1..wall6), all video-typed', () => {
+    const inIds = wavesculptDef.inputs.map((p) => p.id);
+    for (let i = 1; i <= 6; i++) {
+      const port = wavesculptDef.inputs.find((p) => p.id === `wall${i}`);
+      expect(port, `wall${i} port exists`).toBeDefined();
+      expect(port!.type, `wall${i} is video-typed`).toBe('video');
+    }
+    // No duplicates among the inputs (the new walls don't collide with
+    // anything — also re-asserted globally in the unique-ids test).
+    expect(new Set(inIds).size).toBe(inIds.length);
+  });
+
+  it('declares a TRANSPARENCY + DISTORT param per wall (12 total)', () => {
+    for (let i = 1; i <= 6; i++) {
+      const a = wavesculptDef.params.find((p) => p.id === `wall${i}_alpha`);
+      expect(a, `wall${i}_alpha exists`).toBeDefined();
+      expect(a!.min, `wall${i}_alpha min 0%`).toBe(0);
+      expect(a!.max, `wall${i}_alpha max 100%`).toBe(100);
+      expect(a!.defaultValue, `wall${i}_alpha default 100% (visible)`).toBe(100);
+
+      const d = wavesculptDef.params.find((p) => p.id === `wall${i}_distort`);
+      expect(d, `wall${i}_distort exists`).toBeDefined();
+      expect(d!.min, `wall${i}_distort min 0 (flat)`).toBe(0);
+      expect(d!.max, `wall${i}_distort max 1 (dome)`).toBe(1);
+      expect(d!.defaultValue, `wall${i}_distort default 0 (flat)`).toBe(0);
+    }
+  });
+
+  it('VIDEO_WALL_FACES maps all 6 faces to distinct axis/sign of the unit box', () => {
+    expect(VIDEO_WALL_FACES.length).toBe(6);
+    // wallIdx 0..5 in order.
+    expect(VIDEO_WALL_FACES.map((f) => f.wallIdx)).toEqual([0, 1, 2, 3, 4, 5]);
+    // Every (axis, sign) pair is unique → 6 distinct box faces, no overlap.
+    const faces = new Set(VIDEO_WALL_FACES.map((f) => `${f.axis}:${f.sign}`));
+    expect(faces.size).toBe(6);
+    // Every axis (0=X,1=Y,2=Z) appears exactly twice (a + and − face).
+    for (const axis of [0, 1, 2]) {
+      const onAxis = VIDEO_WALL_FACES.filter((f) => f.axis === axis);
+      expect(onAxis.length, `axis ${axis} has +/- faces`).toBe(2);
+      expect(new Set(onAxis.map((f) => f.sign)).size).toBe(2);
+    }
+    // Documented mapping: wall1=FRONT(−Z), wall4=RIGHT(+X), wall6=CEILING(+Y).
+    expect(VIDEO_WALL_FACES[0]).toMatchObject({ label: 'FRONT', axis: 2, sign: -1 });
+    expect(VIDEO_WALL_FACES[3]).toMatchObject({ label: 'RIGHT', axis: 0, sign: 1 });
+    expect(VIDEO_WALL_FACES[5]).toMatchObject({ label: 'CEILING', axis: 1, sign: 1 });
   });
 
   it('declares L + R audio outputs and a video output', () => {

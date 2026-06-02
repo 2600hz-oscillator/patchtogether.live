@@ -21,6 +21,24 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   wavviz: ['wavePos'],
   // wavetableVco.wavePos: same as wavviz — audio-rate input, no paramTarget.
   wavetableVco: ['wavePos'],
+  // moog921Vco.width_cv: same shape as wavetableVco.wavePos — the worklet
+  // sums the WIDTH knob + this CV per-sample (audio-rate), NOT through the
+  // CV→AudioParam fast-path, so cvScale wouldn't apply. The width param is
+  // already bounded 0.02..0.98 and the per-sample sum is clamped to that
+  // range in the worklet, so a ±1 CV sweeps the full duty-cycle range.
+  moog921Vco: ['width_cv'],
+  // moog904a.{cutoff_cv,reso_cv}: audio-rate summing CONTROL INPUTS. The
+  // worklet sums knob + CV per-sample (cutoff_cv via a 1V/oct exponential
+  // map, reso_cv additively, both clamped to range) — NOT through the
+  // CV→AudioParam fast-path, so cvScale wouldn't apply (same shape as the
+  // 921's width_cv).
+  moog904a: ['cutoff_cv', 'reso_cv'],
+  // moog902.{cv,fcv}: audio-rate summing CONTROL INPUTS. The worklet builds
+  // the control sum (gain knob + cvAmount*cv + fcv) per-sample and applies
+  // the LIN/EXP gain-law map + x3 clamp itself — NOT through the CV→AudioParam
+  // fast-path, so cvScale wouldn't apply (same shape as the 921's width_cv +
+  // the 904A's cutoff_cv/reso_cv).
+  moog902: ['cv', 'fcv'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
   // helm.{pitch_cv,gate,midi_in,seq_reset}: pitch_cv = V/oct fallback
@@ -49,7 +67,7 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // that bug — it'd modulate the wrong AudioParam. SCOPE's CV→param routing
   // needs an architectural fix (separate PR — see
   // .myrobots/plans/cv-range-standard.md "Deferred" section).
-  scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode'],
+  scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode', 'intensity'],
   // RASTERIZE: same architecture as SCOPE — CV inputs route through the
   // cross-domain CV bridge's setParam(portId), which writes into a JS-side
   // params record (read live by the per-frame painter). The `param`
@@ -104,6 +122,18 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // analog stick position handed to the sm64js bundle's playerInput
   // global. Same shape as PONG's paddle CVs above.
   sm64: ['stick_x_cv', 'stick_y_cv'],
+  // SKIFREE x / y: bipolar CV sampled per scheduler-tick into the bundle
+  // controller's setCursor (cvToCanvasCoord maps -1..+1 → 0..canvas-px). No
+  // AudioParam fast path — the CV doesn't modulate any knob, it IS the mouse-
+  // cursor position the skier steers toward. Same shape as PONG's paddle CVs
+  // and SM64's stick CVs above.
+  skifree: ['x', 'y'],
+  // MIDI-OUT-BUDDY pitch / velocity: CV sampled at the gate rising edge in a
+  // JS-side scheduler-tick (AnalyserNode tap), then converted to a MIDI note
+  // number (V/oct → nearest semitone) / velocity (0..1 → 1..127). No
+  // AudioParam fast path — the CV doesn't modulate a knob, it IS the outgoing
+  // MIDI note/velocity. Same shape as PONG / SM64's stepper CVs above.
+  midiOutBuddy: ['pitch', 'velocity'],
   // ANALOGLOGICMATHS a / b: raw bipolar signal inputs consumed directly by
   // the worklet's per-sample MIN/MAX/DIFF/SUM/PRODUCT. The module IS the
   // shaper — the user attenuverts via the attA / attB knobs (which DO carry
@@ -151,6 +181,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // pitch CV as its own audio-rate node input + apply the octave map
   // inside the per-sample DSP).
   chowkick: ['pitch_cv'],
+  // CUBE pitch: V/oct input consumed directly by the worklet as its own
+  // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
+  // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv /
+  // chowkick.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,
+  // connect, crush, tune) DO have paramTarget + cvScale:linear; only the raw
+  // V/oct pitch is passthrough-by-design.
+  cube: ['pitch'],
 };
 
 describe('cv-scale / registry coverage', () => {

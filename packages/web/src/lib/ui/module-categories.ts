@@ -31,6 +31,7 @@ export type TopCategory =
   | 'Audio modules'
   | 'Video modules'
   | 'Ports'
+  | 'Moog'
   | 'MIDI'
   | 'Hybrid'
   | 'Uncategorized';
@@ -58,6 +59,11 @@ export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
   // hydrogen, helm, cloudseed are headline ports the user wants one
   // click away. `Mutable` is the MI archetype-port sublist.
   Ports: ['Ports', 'Mutable'],
+  // Moog = the Moog System 55 / 35 clone family. Two sub-systems: SYS55
+  // (the big modular) + SYS35. Modules shared by BOTH systems are listed
+  // under SYS55 (resolved decision Q4 in .myrobots/MOOG/PLAN.md) — e.g.
+  // the 921 VCO. Mirrors the Ports→Mutable nesting precedent above.
+  Moog: ['SYS55', 'SYS35'],
   MIDI: ['MIDI'],
   Hybrid: ['Hybrid'],
   Uncategorized: ['Uncategorized'],
@@ -68,6 +74,7 @@ export const TOP_ORDER: readonly TopCategory[] = [
   'Audio modules',
   'Video modules',
   'Ports',
+  'Moog',
   'MIDI',
   'Hybrid',
   'Uncategorized',
@@ -189,11 +196,31 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   warps: { top: 'Ports', sub: 'Mutable' },
   grids: { top: 'Ports', sub: 'Mutable' },
 
+  // ───────── Moog → SYS55 (Moog System 55 / 35 clone family) ─────────
+  // The 921 VCO is the first Moog module. It's shared by BOTH the System 55
+  // and System 35, so it's listed under SYS55 (the shared bucket) per the
+  // resolved Q4 decision in .myrobots/MOOG/PLAN.md. SYS55-only + SYS35-only
+  // modules land in their respective subs as later slices ship.
+  moog921Vco: { top: 'Moog', sub: 'SYS55' },
+  // The 904A VCF (transistor-ladder LPF) is in BOTH systems (S35×1, S55×2) →
+  // shared → listed under SYS55, same as the 921.
+  moog904a: { top: 'Moog', sub: 'SYS55' },
+  // The 911 Envelope Generator is shared by both the System 55 and System 35
+  // (S35 ×3, S55 ×6), so like the 921 it's listed under SYS55 (the shared
+  // bucket) per the resolved Q4 decision in .myrobots/MOOG/PLAN.md.
+  moog911: { top: 'Moog', sub: 'SYS55' },
+  // The 902 VCA (differential amplifier) is in BOTH systems (S35×3, S55×5) →
+  // shared → listed under SYS55, same as the 921.
+  moog902: { top: 'Moog', sub: 'SYS55' },
+
   // ───────── MIDI (hardware-bridge modules) ─────────
   // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI
   // controller. MIDICLOCK is the transport-only sibling — clock/run/
   // start/stop gates from an external MIDI device (drives TIMELORDE.clock).
   midiCvBuddy: { top: 'MIDI', sub: 'MIDI' },
+  // MIDI CV BUDDY OUT is the output complement — gate/pitch/velocity CV in →
+  // MIDI notes out to an external device + channel.
+  midiOutBuddy: { top: 'MIDI', sub: 'MIDI' },
   midiclock: { top: 'MIDI', sub: 'MIDI' },
 
   // ───────── Video modules → Sources ─────────
@@ -236,6 +263,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   destructor: { top: 'Video modules', sub: 'Processors' },
   feedback: { top: 'Video modules', sub: 'Processors' },
   vdelay: { top: 'Video modules', sub: 'Processors' },
+  // FREEZEFRAME — video sample & hold + per-channel posterize. Gate-driven
+  // frame freeze with isolated r/g/b/luma video outs.
+  freezeframe: { top: 'Video modules', sub: 'Processors' },
   // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
   // + LIGHTEN/DARKEN key masks). Sits with the other feedback processors.
   backdraft: { top: 'Video modules', sub: 'Processors' },
@@ -287,8 +317,15 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // SM64 — sm64js pure-JS Super Mario 64 port (WTFPL). Single-instance
   // (maxInstances:1) per rack. Bucket alongside the other game modules.
   sm64: { top: 'Hybrid', sub: 'Hybrid' },
+  // SKIFREE — skifree.js ski-downhill game (MIT). x/y CV cursor + crash/
+  // eaten gate + video out. Same Hybrid bucket as the other game modules.
+  skifree: { top: 'Hybrid', sub: 'Hybrid' },
   // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
   wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
+  // CUBE — 3D wavetable-navigator oscillator. Audio-only v1 but bucketed
+  // under Hybrid alongside the other 3D-WebGL viz oscillators (a cross-domain
+  // viz_out video raster is a planned follow-up — see PLAN §6/§10 Q8).
+  cube: { top: 'Hybrid', sub: 'Hybrid' },
   // Meta-domain organizational tools live here — they don't fit
   // cleanly under audio or video and the user can re-bucket on dev.
   sticky: { top: 'Hybrid', sub: 'Hybrid' },
@@ -329,6 +366,7 @@ export function groupDefs<D extends DefLike>(defs: readonly D[]): GroupedTop<D>[
     'Audio modules': {},
     'Video modules': {},
     Ports: {},
+    Moog: {},
     MIDI: {},
     Hybrid: {},
     Uncategorized: {},

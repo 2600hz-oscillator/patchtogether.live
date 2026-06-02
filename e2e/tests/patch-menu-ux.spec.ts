@@ -91,17 +91,36 @@ test('click+drag on a port within the hold threshold does NOT open the menu (dra
 
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  // Drag well past the 4px tolerance — the first pointermove must
-  // land BEFORE the 50ms hold timer fires. We issue a single
-  // un-stepped jump (no `steps:` argument) so Playwright fires one
-  // pointermove right away rather than batching N over time. On slow
-  // CI runners with multi-step drags, all the pointermoves could land
-  // after the 50ms threshold, leaving the hold-fire menu to open.
+  // The pointerdown arms the hold gesture. Confirm it's armed before we
+  // drag, so the move we issue next is guaranteed to act on a live hold
+  // (not a gesture that hasn't registered yet).
+  await page.waitForFunction(
+    () =>
+      (globalThis as unknown as { __portHoldPhase?: () => string })
+        .__portHoldPhase?.() === 'armed',
+  );
+
+  // Drag well past the 4px tolerance. The product cancels the pending
+  // hold the moment a pointermove crosses the tolerance, flipping its
+  // gesture phase to 'cancelled-move'. We poll for THAT phase rather
+  // than racing the wall-clock HOLD_FIRE_MS timer: on a slow CI runner
+  // the synthetic pointermove can be delivered to the product's capture
+  // listener late, but once it IS delivered the hold is cancelled
+  // deterministically — so waiting for 'cancelled-move' proves the drag
+  // took over before we assert the menu never opened.
   await page.mouse.move(cx + 60, cy + 40);
   await page.mouse.move(cx + 120, cy + 60);
-  // Menu must NOT have appeared.
+  await page.waitForFunction(
+    () =>
+      (globalThis as unknown as { __portHoldPhase?: () => string })
+        .__portHoldPhase?.() === 'cancelled-move',
+  );
+
+  // Hold was cancelled by the drag → menu must NOT have appeared.
   await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
   await page.mouse.up();
+  // And it must STAY closed after release (no fast-click fallback fires,
+  // because the gesture was already cancelled by movement).
   await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
 });
 

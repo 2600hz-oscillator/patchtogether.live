@@ -99,6 +99,10 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // ── MIDI-driven: same as hardware — no MIDI device in test browser.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock:   'requires MIDI device; covered by midiclock.spec.ts',
+  // Output-less MIDI sink: emits MIDI to an external device, has NO audio/CV
+  // output for the behavioral sweep to observe (already in EXEMPT_OUTPUT_EMIT).
+  // Input behavior is covered by midi-out-buddy.spec.ts (fake MIDIOutput).
+  midiOutBuddy: 'no observable audio/CV output (MIDI sink); covered by midi-out-buddy.spec.ts',
 
   // ── File-input sources: output is silent until a file is uploaded.
   //    No upstream signal can perturb that.
@@ -128,6 +132,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   modtris:  'gameplay-conditional outputs; covered by modtris-related specs',
   sm64:     'video output blank until US ROM extracted into IDB; covered by sm64-related specs',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
+  skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
 
   // ── Pure-passthrough sinks with no semantic transformation: VIDEOOUT
   //    just blits its input to canvas, so behavioral assertion would be
@@ -461,6 +466,22 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    drift hasn't moved enough for reset to show a delta. Covered
   //    by atlantis-catalyst.spec.ts.
   'atlantisCatalyst.reset_cv': 'reset effect needs accumulated drift to observe; covered by atlantis-catalyst.spec.ts',
+
+  // ── CUBE morph_fc / connect / crush: each DOES shape the slice readout (the
+  //    cube-dsp unit tests + node-ART baselines prove morph picks floor↔ceiling
+  //    fill, connect morphs circle↔V, crush quantizes the grid+amplitude), but
+  //    at the sweep's default config (axis-aligned slice through the default
+  //    FLOOR=basic-shapes / WALL=harmonic-sweep / CEILING=basic-shapes tables) a
+  //    BUGGLES ±1V CV summed into the [0,1] param only nudges these across a
+  //    small excursion whose spectral/RMS change is below the sweep's centroid
+  //    threshold — same class as macrooscillator.harm_cv / swolevco.timbre.
+  //    pitch + slice_y/rx/ry/rz + tune all perturb (they pass the sweep). The
+  //    morph/connect/crush DSP is covered by cube-dsp.test.ts (each crosses many
+  //    levels), the cube worklet capture test (HARD vs SMOOTH differs), and the
+  //    node-ART per-config .f32 baselines (crushed / morph-ceiling / connect-vee).
+  'cube.morph_fc': 'morph floor↔ceiling fill is subtle at the default axis-aligned slice + default tables; ±1V excursion below centroid threshold — covered by cube-dsp.test.ts + node-ART morph-ceiling baseline',
+  'cube.connect':  'circle↔V connector reshape is subtle at the default slice/tables; ±1V excursion below centroid threshold — covered by cube-dsp.test.ts + node-ART connect-vee baseline',
+  'cube.crush':    'CRUSH is near-transparent at low values (only "eliminates substantial data" near max); a ±1V excursion off 0 barely moves RMS/centroid — covered by cube-dsp.test.ts (k=1 collapses levels) + node-ART crushed baseline',
 
   // ── macrooscillator harm_cv: harmonics CV has no audible effect
   //    on model 0 (simple sine) — the harmonics-mapped MI model

@@ -147,16 +147,21 @@ tasks:
 
   # ---------------- Unit + integration tests ----------------
   test:
-    desc: Run unit/integration tests (server + web only — ART + E2E are run via dedicated tasks)
-    # NOTE: deliberately scoped to server + web. Using
+    desc: Run unit/integration tests (dsp + server + web — ART + E2E are run via dedicated tasks)
+    # NOTE: deliberately scoped to dsp + server + web. Using
     # `npm test --workspaces --if-present` would also invoke `art` (vitest) and
     # `e2e` (playwright), which are heavier suites with their own task targets
     # — and `task ci` would then run them twice. See chore/build-perf PR.
+    #
+    # dsp's `test` target runs the pure-lib unit suite (e.g. cube-dsp.test.ts);
+    # it has its own vitest.config.ts (node env, no AudioContext/WASM). Older
+    # DSP-lib tests still live under web/ via relative import — both run.
     #
     # Side effect: emits e2e/.generated/registry-manifest.json via
     # packages/web/src/lib/dev/registry-manifest.test.ts. Downstream
     # `task e2e` + `task vrt` read it via e2e/tests/_registry.ts.
     cmds:
+      - npm test -w {{.DSP}}
       - npm test -w {{.SERVER}}
       - npm test -w {{.WEB}}
       - task: test:scripts

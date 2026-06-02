@@ -406,6 +406,70 @@ describe('PatchEngine — video → audio cross-domain bridge', () => {
 
     pe.dispose();
   });
+
+  // ── SAME-DOMAIN audio video-frame edge (WAVESCULPT video_out → wall self-loop) ──
+  it('no-ops a same-domain audio video-frame edge (WAVESCULPT video_out → its own wall) without throwing', async () => {
+    // Regression for the WAVESCULPT video-walls self-feedback path. An
+    // audio-domain module can expose a mono-video OUTPUT and consume a
+    // video INPUT card-side (the card reads the source's videoSources frame
+    // directly). A cable between two audio modules carrying a video frame is
+    // NOT an audio-graph edge — the audio engine has no AudioNode for a
+    // video port and would throw "no source/target port". PatchEngine.addEdge
+    // must recognise the video cable type + no-op so self-patching
+    // (video_out → own wall) is ALLOWED, producing recursive video feedback.
+    const WALL_SELF_DEF: AudioModuleDef = {
+      type: 'videoWallSelfTestModule',
+      domain: 'audio',
+      label: 'WallSelf',
+      category: 'sources',
+      schemaVersion: 1,
+      // A video INPUT + a mono-video OUTPUT — neither is wired on the audio
+      // graph. The engine must skip the edge BEFORE looking up audio ports.
+      inputs: [{ id: 'wall1', type: 'video' }],
+      outputs: [{ id: 'video_out', type: 'mono-video' }],
+      params: [],
+      async factory(_ctx, _node) {
+        return {
+          domain: 'audio' as const,
+          inputs: new Map(),
+          outputs: new Map(),
+          setParam(_id, _v) { /* */ },
+          readParam(_id) { return undefined; },
+          dispose() { /* */ },
+        };
+      },
+    };
+    registerModule(WALL_SELF_DEF);
+
+    const ctx = makeFakeAudioContext();
+    const ae = new AudioEngine(ctx);
+    const pe = new PatchEngine();
+    pe.registerDomain(ae);
+
+    const node: ModuleNode = {
+      id: 'ws', type: 'videoWallSelfTestModule', domain: 'audio',
+      position: { x: 0, y: 0 }, params: {},
+    };
+    await ae.addNode(node);
+
+    // The self-loop: video_out → its own wall1. mono-video upcasts to video.
+    const edge: Edge = {
+      id: 'e_self',
+      source: { nodeId: 'ws', portId: 'video_out' },
+      target: { nodeId: 'ws', portId: 'wall1' },
+      sourceType: 'mono-video',
+      targetType: 'video',
+    };
+    // MUST NOT throw (pre-fix: AudioEngine.addEdge threw "no source port
+    // video_out on ws" because video_out isn't in the audio outputs map).
+    expect(() => pe.addEdge(edge, 'audio', 'audio')).not.toThrow();
+    // No audio connections were issued for a video-frame edge.
+    expect(connectionLog.filter((c) => c.kind === 'connect')).toEqual([]);
+    // removeEdge is symmetric + also doesn't throw.
+    expect(() => pe.removeEdge(edge, 'audio')).not.toThrow();
+
+    pe.dispose();
+  });
 });
 
 // =========================================================================
