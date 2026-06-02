@@ -118,6 +118,10 @@ import { cubeDef } from './cube';
 // Own-code polyBLEP VCO; four simultaneous waveform jacks + 1V/oct + linear
 // FM + hard/soft/off sync. Shared by SYS55 + SYS35.
 import { moog921VcoDef } from './moog921-vco';
+// MOOG 904A VCF — Moog System 55/35 clone, slice 2. Transistor-ladder LPF
+// (24 dB/oct) with RANGE switch + self-oscillating REGENERATION. Own-code
+// clean-room TPT ladder (shared lib moog-ladder-dsp; reused by 904B/904C).
+import { moog904aDef } from './moog904a';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
 
@@ -264,6 +268,12 @@ export function registerAudioModules(): void {
   // sawtooth/rectangular w/ variable pulse width) + 1V/oct + linear FM +
   // hard/soft/off sync. Own-code polyBLEP DSP (no copyleft).
   registerModule(moog921VcoDef);
+  // MOOG 904A VCF — Moog System 55/35 clone, slice 2. Voltage-controlled
+  // transistor-ladder low-pass filter (24 dB/oct): FIXED CONTROL VOLTAGE
+  // (cutoff) + RANGE switch (2-oct steps) + summing 1V/oct CONTROL INPUTS +
+  // REGENERATION (variable Q / self-oscillates into a sine near max).
+  // Own-code clean-room TPT ladder DSP (no LGPL/CC-BY-SA copyleft).
+  registerModule(moog904aDef);
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

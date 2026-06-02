@@ -27,6 +27,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // already bounded 0.02..0.98 and the per-sample sum is clamped to that
   // range in the worklet, so a ±1 CV sweeps the full duty-cycle range.
   moog921Vco: ['width_cv'],
+  // moog904a.{cutoff_cv,reso_cv}: audio-rate summing CONTROL INPUTS. The
+  // worklet sums knob + CV per-sample (cutoff_cv via a 1V/oct exponential
+  // map, reso_cv additively, both clamped to range) — NOT through the
+  // CV→AudioParam fast-path, so cvScale wouldn't apply (same shape as the
+  // 921's width_cv).
+  moog904a: ['cutoff_cv', 'reso_cv'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
   // helm.{pitch_cv,gate,midi_in,seq_reset}: pitch_cv = V/oct fallback

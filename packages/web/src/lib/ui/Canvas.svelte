@@ -240,6 +240,8 @@
   import CubeCard from '$lib/ui/modules/CubeCard.svelte';
   // MOOG 921 VCO — first Moog System 55/35 clone module (beige faceplate).
   import Moog921VcoCard from '$lib/ui/modules/Moog921VcoCard.svelte';
+  // MOOG 904A VCF — Moog System 55/35 clone slice 2 (transistor-ladder LPF).
+  import Moog904aVcfCard from '$lib/ui/modules/Moog904aVcfCard.svelte';
   // ATLANTIS-PATCH support trio. The "Visit Atlantis" demo button +
   // example-patches/atlantis.ts fixture were retired in favour of the
   // GLITCHES GET RICHES envelope-driven demo (see loadGlitches() below).
@@ -511,6 +513,7 @@
     // CUBE — 3D wavetable-navigator oscillator (slice-readout + 3D viz).
     cube: CubeCard,
     moog921Vco: Moog921VcoCard,
+    moog904a: Moog904aVcfCard,
     slewSwitch: SlewSwitchCard,
     // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
     fourplexer: FourPlexerCard,

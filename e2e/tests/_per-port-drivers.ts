@@ -730,6 +730,20 @@ const DRIVERS: Record<string, PerPortDriver> = {
     }),
     note: 'VIDEOOUT: drive .in with ACIDWARP.out; .out passes through with non-blank frames',
   },
+
+  // ───── MOOG 904A VCF — self-oscillate so the audio out is driven ─────
+  //
+  // The 904A is an effect (audio in → low-pass out), but at REGENERATION=1
+  // the transistor ladder self-oscillates into a sustained VC sine at the
+  // cutoff frequency — no upstream source needed. Seed regeneration=1 +
+  // range=2 (mid band, audible) so the `audio` output rings on its own and
+  // the per-port outputs-emit check sees a real signal (slice-1-style
+  // driven-signal check). Without this it would be silent at the default
+  // regeneration=0 and need an upstream source like any other filter.
+  moog904a: {
+    params: { regeneration: 1, range: 2, cutoff: 800 },
+    note: 'MOOG 904A: regeneration=1 → ladder self-oscillates; audio out is a driven sine',
+  },
 };
 
 /** Look up a driver for a module. Returns null when no override

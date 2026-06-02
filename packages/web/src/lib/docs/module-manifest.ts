@@ -82,6 +82,8 @@ const DESCRIPTIONS: Record<string, string> = {
     'Wavetable oscillator that morphs saw -> square -> triangle -> sine across a 16-frame table.',
   moog921Vco:
     'Moog 921 voltage-controlled oscillator (first module of the Moog System 55/35 clone — categorized under Moog -> SYS55, shared by SYS35). Faithful to the original 921: ONE oscillator core presents FOUR simultaneous waveform jacks — sine, triangle, sawtooth, and rectangular with variable pulse width — all phase-coherent off the shared core. Pitch input is exponential 1V/oct (0V = C4); a dedicated LINEAR frequency-control input (lin_fm, scaled by the Lin FM depth) gives through-zero-style linear FM; a sync input drives the hard/soft/off SYNC switch (-1 soft / 0 off / +1 hard) for classic sync timbres. RANGE sets the coarse octave (+/-5 oct), FREQ the fine tune (+/-12 st), WIDTH the rectangular duty cycle (with audio-rate width_cv), LEVEL the output gain. DSP is own-code: a clean-room polyBLEP/polyBLAMP band-limited oscillator (not a port of any Moog schematic or copyleft source - permissive only). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog904a:
+    'Moog 904A Voltage Controlled Low Pass Filter (slice 2 of the Moog System 55/35 clone — categorized under Moog -> SYS55, shared by SYS35). The classic Moog transistor-LADDER low-pass filter, 24 dB/oct. Cutoff is set by the FIXED CONTROL VOLTAGE (Cutoff) pot, shifted in 2-octave steps by the RANGE switch (1/2/3 = x1/x4/x16), and swept by the summing 1V/oct CONTROL INPUT (cutoff_cv — each volt = one octave, summed per-sample). REGENERATION is the variable Q / internal feedback: at low settings it is a clean low-pass; turned toward max it sharpens into a strong resonant peak and SELF-OSCILLATES into a clean sine VC oscillator at the cutoff frequency (reso_cv modulates it). Signature Moog growl comes from a tanh saturation per ladder stage that also self-limits the resonance so it stays bounded. DSP is own-code, CLEAN-ROOM: a TPT/Zavalishin zero-delay-feedback ladder (stable under audio-rate cutoff modulation) re-derived from the unpatented textbook algorithm plus the Huovilainen tanh-per-loop technique — NOT a port of the LGPLv3 Huovilainen code, the CC-BY-SA musicdsp model, or any Moog schematic (permissive only). The shared moog-ladder-dsp lib it is built on is reused by the 904B (HPF) + 904C (coupler) in later slices. Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
   audioOut:
     'Terminal stereo output. Two mono inputs (L, R) routed to the host AudioContext destination. Optional output-device dropdown via setSinkId (Chromium 110+).',
   audioIn:
@@ -254,6 +256,9 @@ const PORT_NOTES: Record<string, string> = {
   'moog921Vco.triangle': 'Triangle output.',
   'moog921Vco.sawtooth': 'Band-limited sawtooth output.',
   'moog921Vco.rectangular': 'Rectangular/pulse output; duty cycle = WIDTH.',
+  'moog904a.audio': 'Signal in (the audio to filter) / 24 dB/oct low-pass out (self-oscillating sine near regeneration=1).',
+  'moog904a.cutoff_cv': 'Summing 1V/oct CONTROL INPUT. Each volt shifts the cutoff one octave; summed onto the Cutoff knob + RANGE per-sample in the worklet (PASSTHROUGH_BY_DESIGN — the worklet owns the exponential map + clamp).',
+  'moog904a.reso_cv': 'REGENERATION CV. Summed onto the Regen knob per-sample in the worklet (PASSTHROUGH_BY_DESIGN — clamped 0..1); push toward 1 to drive self-oscillation.',
   'audioOut.L': 'Mono L -> host destination L.',
   'audioOut.R': 'Mono R -> host destination R.',
   'cube.L': 'Left audio out (slice read at -SPREAD depth). Separate from R so the stereo SPREAD survives mono inputs.',
