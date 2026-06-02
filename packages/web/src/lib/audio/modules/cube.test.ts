@@ -10,7 +10,7 @@
 //      yields nonzero stereo output; an unloaded CUBE is silent; spread > 0
 //      separates L/R.
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import {
   cubeDef,
   CUBE_SLOTS,
@@ -18,6 +18,8 @@ import {
   resolveSlotFrames,
 } from './cube';
 import { getFactoryTable, framesToPlain } from '$lib/audio/wavetable-factory-tables';
+import { patch } from '$lib/graph/store';
+import type { ModuleNode } from '$lib/graph/types';
 
 const SR = 48000;
 const BLOCK = 128;
@@ -162,6 +164,15 @@ describe('cubeDef — module def shape', () => {
   it('params is a LITERAL array (manifest static extractor requirement)', () => {
     expect(Array.isArray(cubeDef.params)).toBe(true);
     expect(cubeDef.params.length).toBeGreaterThan(10);
+  });
+
+  it('declares a view-only SCREEN on/off param (default ON, discrete, NOT CV-routed)', () => {
+    const byId = Object.fromEntries(cubeDef.params.map((p) => [p.id, p] as const));
+    // Screen defaults ON (1) so a freshly-spawned CUBE renders its viz.
+    expect(byId.screen_on).toMatchObject({ min: 0, max: 1, defaultValue: 1, curve: 'discrete' });
+    // View-only: no CV input targets it + the worklet has no such parameter
+    // descriptor (it's a card-read perf toggle, NOT an audio param).
+    expect(cubeDef.inputs.some((i) => i.paramTarget === 'screen_on')).toBe(false);
   });
 
   it('claims sources category', () => {
@@ -384,5 +395,137 @@ describe('CUBE worklet — capture + audible output', () => {
       if (Math.abs(smooth.L[i]! - hard.L[i]!) > 1e-4) { differs = true; break; }
     }
     expect(differs).toBe(true);
+  });
+
+  it('screen_on is a CARD-only toggle, NOT a worklet audio parameter', async () => {
+    const Proc = await loadProcessor();
+    const descriptors =
+      (Proc as unknown as { parameterDescriptors?: Array<{ name: string }> }).parameterDescriptors ?? [];
+    const names = descriptors.map((d) => d.name);
+    // The worklet must declare NO screen_on parameter (audio path untouched);
+    // the view-only camera params are likewise card-read, not worklet params.
+    expect(names).not.toContain('screen_on');
+    expect(names).toContain('morph_fc'); // sanity: descriptors were actually read
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 3) Wavetable RELOAD (issue: loading a DIFFERENT table after one is loaded).
+//
+// Drives cubeDef.factory() against a mock Web Audio env that records every
+// port.postMessage, then mutates the LIVE patch node.data (what the card's
+// selectFactory/selectPreset/onSlotFileChange do) and advances the poll timer.
+// The factory MUST re-post a fresh {type:'loadWavetable'} for the changed slot
+// — proving a second/different table replaces the first (the v4 reload fix).
+// ─────────────────────────────────────────────────────────────────────────
+
+interface CubeMockNode {
+  __type: string;
+  connect: (...a: unknown[]) => unknown;
+  disconnect: (...a: unknown[]) => void;
+  [k: string]: unknown;
+}
+type Posted = { type?: string; slot?: string; frames?: number[][]; [k: string]: unknown };
+
+function makeCubeMockEnv(): { ctx: unknown; posts: Posted[] } {
+  const posts: Posted[] = [];
+  function audioParam(initial = 0) {
+    return { value: initial, setValueAtTime: vi.fn(function (this: { value: number }, v: number) { this.value = v; }) };
+  }
+  function makeNode(type: string, extra: Record<string, unknown> = {}): CubeMockNode {
+    return { __type: type, connect: vi.fn(() => undefined), disconnect: vi.fn(), ...extra };
+  }
+  const ctx = {
+    currentTime: 0,
+    sampleRate: 48000,
+    audioWorklet: { addModule: vi.fn(async () => {}) },
+    createChannelSplitter: () => makeNode('splitter'),
+    createAnalyser: () => makeNode('analyser', { fftSize: 256 }),
+    createConstantSource: () => makeNode('const', { offset: audioParam(0), start: vi.fn(), stop: vi.fn() }),
+  };
+  const params = new Map<string, ReturnType<typeof audioParam>>();
+  class FakeAudioWorkletNode {
+    __type = 'engine';
+    port = { postMessage: (m: unknown) => { posts.push(m as Posted); }, onmessage: null as ((e: MessageEvent) => void) | null };
+    parameters = { get: (k: string) => { let p = params.get(k); if (!p) { p = audioParam(0); params.set(k, p); } return p; } };
+    connect = vi.fn(() => undefined);
+    disconnect = vi.fn();
+    constructor(_c: unknown, _n: string, _o?: unknown) { /* */ }
+  }
+  (globalThis as unknown as { AudioWorkletNode: typeof FakeAudioWorkletNode }).AudioWorkletNode = FakeAudioWorkletNode;
+  return { ctx, posts };
+}
+
+function makeCubeNode(id: string): ModuleNode {
+  return { id, type: 'cube', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: {} } as unknown as ModuleNode;
+}
+function loadsFor(posts: Posted[], slot: string): Posted[] {
+  return posts.filter((m) => m.type === 'loadWavetable' && m.slot === slot);
+}
+
+describe('cube factory: wavetable reload replaces the current table', () => {
+  afterEach(() => {
+    delete (globalThis as unknown as { AudioWorkletNode?: unknown }).AudioWorkletNode;
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('re-posts loadWavetable when a slot is switched to a DIFFERENT factory table', async () => {
+    vi.useFakeTimers();
+    const id = 'cube-reload-1';
+    patch.nodes[id] = makeCubeNode(id);
+    const { ctx, posts } = makeCubeMockEnv();
+    const handle = await cubeDef.factory(ctx as never, patch.nodes[id] as never);
+
+    // Spawn posts an initial loadWavetable for floor (its default table).
+    const initialFloor = loadsFor(posts, 'floor');
+    expect(initialFloor.length).toBeGreaterThan(0);
+    const firstFrames = initialFloor.at(-1)!.frames;
+
+    // Card switches FLOOR to a DIFFERENT factory table (selectFactory writes
+    // node.data.floor.source). Pick any factory id that isn't the default.
+    const altId = CUBE_DEFAULT_TABLES.floor === 'harmonic-sweep' ? 'basic-shapes' : 'harmonic-sweep';
+    const t = patch.nodes[id]!;
+    (t.data as Record<string, unknown>).floor = { source: `factory:${altId}` };
+
+    // The factory polls node.data — advance past one poll interval.
+    await vi.advanceTimersByTimeAsync(250);
+
+    const afterFloor = loadsFor(posts, 'floor');
+    expect(afterFloor.length, 'a reload must re-post loadWavetable for floor').toBeGreaterThan(initialFloor.length);
+    // …and the posted frames actually CHANGED (the new table replaced the old).
+    expect(afterFloor.at(-1)!.frames).not.toEqual(firstFrames);
+
+    handle.dispose?.();
+    delete patch.nodes[id];
+  });
+
+  it('re-posts loadWavetable when a slot is loaded with a USER table, then a different USER table', async () => {
+    vi.useFakeTimers();
+    const id = 'cube-reload-2';
+    patch.nodes[id] = makeCubeNode(id);
+    const { ctx, posts } = makeCubeMockEnv();
+    const handle = await cubeDef.factory(ctx as never, patch.nodes[id] as never);
+
+    const wallBefore = loadsFor(posts, 'wall').length;
+
+    // First USER load (e.g. a parsed .wav / preset → source:'user' + frames).
+    const framesA = [Array.from({ length: FRAME_SIZE }, (_, i) => Math.sin((i / FRAME_SIZE) * Math.PI * 2))];
+    const t = patch.nodes[id]!;
+    (t.data as Record<string, unknown>).wall = { source: 'user', frames: framesA, label: 'AAA' };
+    await vi.advanceTimersByTimeAsync(250);
+    const afterA = loadsFor(posts, 'wall');
+    expect(afterA.length).toBeGreaterThan(wallBefore);
+
+    // Second, DIFFERENT USER load — the reload bug was that this no-op'd.
+    const framesB = [Array.from({ length: FRAME_SIZE }, (_, i) => (i < FRAME_SIZE / 2 ? 0.5 : -0.5))];
+    (t.data as Record<string, unknown>).wall = { source: 'user', frames: framesB, label: 'BBB' };
+    await vi.advanceTimersByTimeAsync(250);
+    const afterB = loadsFor(posts, 'wall');
+    expect(afterB.length, 'loading a DIFFERENT user table must re-post').toBeGreaterThan(afterA.length);
+    expect(afterB.at(-1)!.frames).toEqual(framesB);
+
+    handle.dispose?.();
+    delete patch.nodes[id];
   });
 });
