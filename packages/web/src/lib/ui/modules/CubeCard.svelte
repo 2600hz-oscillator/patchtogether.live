@@ -30,15 +30,16 @@
   // output handles.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { patch, ydoc } from '$lib/graph/store';
   import { cubeDef, CUBE_SLOTS, CUBE_DEFAULT_TABLES, installCubeFrameDrawer, uninstallCubeFrameDrawer, type CubeSlot, type CubeData, type CubeSlotData } from '$lib/audio/modules/cube';
-  import { getFactoryTables } from '$lib/audio/wavetable-factory-tables';
+  import { getFactoryTables, framesToPlain } from '$lib/audio/wavetable-factory-tables';
   import { WAVETABLE_PRESETS, loadWavetablePreset } from '$lib/audio/wavetable-presets';
+  import { parseE352Wav } from '$lib/audio/wavetable-parser';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import {
@@ -47,6 +48,10 @@
     type FieldParams,
     type Material,
   } from '../../../../../dsp/src/lib/cube-dsp';
+
+  // CUBE video_out source port — used to detect a downstream consumer so the
+  // viz can keep rendering even when the screen is toggled OFF (item #2).
+  const VIDEO_OUT_PORT_ID = 'video_out';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -74,6 +79,39 @@
   let materialHard = $derived(paramVal('material') >= 0.5);
   function toggleWrap(): void { set('wrap')(wrapOn ? 0 : 1); }
   function toggleMaterial(): void { set('material')(materialHard ? 0 : 1); }
+
+  // ───────────────── SCREEN on/off + downstream detection (item #2) ─────────────────
+  //
+  // SCREEN OFF + video_out UNPATCHED ⇒ skip ALL visual computation (the rAF GL
+  // render loop AND the display-only field/slice/wave draws). Audio is untouched.
+  // When the screen is ON, *or* video_out has a downstream consumer, the viz
+  // renders as normal (a patched video_out must keep emitting frames).
+  let screenOn = $derived(paramVal('screen_on') >= 0.5);
+  function toggleScreen(): void { set('screen_on')(screenOn ? 0 : 1); }
+
+  // patch.edges is a Yjs-backed proxy; reading it in a $derived isn't reactive
+  // on its own. Mirror DoomCard's pattern: an edges-map observer bumps a real
+  // $state signal so videoOutPatched re-derives when a cable is added/removed
+  // (including a far-side patch in a multiplayer rack).
+  let edgesVersion = $state(0);
+  let videoOutPatched = $derived<boolean>(
+    (void edgesVersion,
+      Object.values(patch.edges ?? {}).some(
+        (e) => e?.source?.nodeId === id && e?.source?.portId === VIDEO_OUT_PORT_ID,
+      )),
+  );
+  // Should the viz compute/render at all this frame? (the central perf gate.)
+  let vizActive = $derived<boolean>(screenOn || videoOutPatched);
+  let edgesObserver: (() => void) | null = null;
+  function attachEdgesObserver(): void {
+    try {
+      const edgesMap = ydoc.getMap('edges');
+      const handler = (): void => { edgesVersion++; };
+      edgesMap.observeDeep(handler);
+      edgesObserver = () => { try { edgesMap.unobserveDeep(handler); } catch { /* */ } };
+      edgesVersion++; // seed for an already-patched cable at mount
+    } catch { /* ydoc unavailable (test env) — videoOutPatched stays false */ }
+  }
 
   // ───────────────── per-slot wavetable selection (node.data) ─────────────────
   const SLOT_LABEL: Record<CubeSlot, string> = { floor: 'FLOOR', wall: 'WALL', ceiling: 'CEILING' };
@@ -105,7 +143,26 @@
     }
     return src;
   }
+  // A cheap signature of WHICH table each slot currently holds, so the viz
+  // rebuilds (item #1: viz updates on reload + item #3: only when it must).
+  // Reads node.data (reactive via the snapshot bus) so it changes the instant a
+  // table is swapped. Doesn't include frame contents — the source/label change
+  // on every distinct table, which is enough to invalidate the cached field.
+  function slotTableSig(slot: CubeSlot): string {
+    const sd = slotData(slot);
+    return `${sd.source ?? `factory:${CUBE_DEFAULT_TABLES[slot]}`}:${sd.label ?? ''}:${sd.frames?.length ?? 0}`;
+  }
+  let tableSig = $derived(`${slotTableSig('floor')}|${slotTableSig('wall')}|${slotTableSig('ceiling')}`);
+
   let slotStatus = $state<Record<CubeSlot, string | null>>({ floor: null, wall: null, ceiling: null });
+  // RELOAD FIX (item #1): the preset <select> gets its OWN selection state that
+  // is reset to '' after every load — so re-picking the SAME preset (or a
+  // different one) ALWAYS fires `change` (a controlled <select> whose bound
+  // value never changes won't re-fire on re-select). The old combined dropdown
+  // pinned its value to 'user' after any load, so loading a different table
+  // could silently no-op. Mirrors WAVESCULPT's separate preset selector +
+  // file-input value reset.
+  let presetSelection = $state<Record<CubeSlot, string>>({ floor: '', wall: '', ceiling: '' });
 
   function ensureSlot(slot: CubeSlot): CubeSlotData | null {
     const t = patch.nodes[id];
@@ -135,11 +192,41 @@
       slotStatus[slot] = `loaded ${parsed.frames.length} frames`;
     } catch (err) {
       slotStatus[slot] = err instanceof Error ? err.message : String(err);
+    } finally {
+      // Reset so the SAME preset can be picked again (re-fires `change`).
+      presetSelection[slot] = '';
+    }
+  }
+  function onPresetChange(slot: CubeSlot, ev: Event): void {
+    const v = (ev.target as HTMLSelectElement).value;
+    if (!v) return;
+    void selectPreset(slot, v);
+  }
+  // File LOAD (item #1): parse a user .wav into the slot, then ALWAYS reset
+  // input.value so re-selecting the same/different file fires `change` again.
+  async function onSlotFileChange(slot: CubeSlot, ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    slotStatus[slot] = 'parsing…';
+    try {
+      const buf = await file.arrayBuffer();
+      const parsed = parseE352Wav(buf);
+      const sd = ensureSlot(slot); if (!sd) return;
+      sd.source = 'user';
+      sd.frames = framesToPlain(parsed.frames);
+      sd.label = file.name.replace(/\.wav$/i, '').toUpperCase().slice(0, 24);
+      slotStatus[slot] = `loaded ${parsed.frames.length} frames`;
+    } catch (err) {
+      slotStatus[slot] = err instanceof Error ? err.message : String(err);
+    } finally {
+      try { input.value = ''; } catch { /* */ }
     }
   }
   function onSlotChange(slot: CubeSlot, ev: Event): void {
     const sel = ev.target as HTMLSelectElement;
     const v = sel.value;
+    if (v === 'user') return; // synthetic option — ignore (keeps the loaded table)
     if (v.startsWith('factory:')) selectFactory(slot, v.slice('factory:'.length));
     else if (v.startsWith('preset:')) void selectPreset(slot, v.slice('preset:'.length));
   }
@@ -175,6 +262,12 @@
   // Field signature so we only rebuild the (cheap but non-trivial) volume
   // texture when a shaping param actually changed — NOT every frame.
   let lastFieldSig = '';
+  // Scene signature (field + slice + camera) — perf item #3: the GL draw calls
+  // are SKIPPED entirely when nothing the picture depends on changed since the
+  // last rendered frame, so an idle CUBE costs ~0 GPU work instead of a full
+  // re-draw every rAF. Reset to '' to force the next frame to render.
+  let lastSceneSig = '';
+  let renderedOnce = false;
 
   // ---- minimal mat4 helpers (mirrors WavesculptCard's) ----
   function m4Mul(out: Float32Array, a: Float32Array, b: Float32Array): void {
@@ -391,11 +484,15 @@
   }
 
   // Rebuild the field volume atlas from the live shaping params + loaded tables.
-  function rebuildVolume(g: WebGL2RenderingContext, fp: FieldParams): void {
+  // Returns true only if the rebuild actually uploaded (frames were ready) —
+  // item #4: on mount the engine frames may not be resolved on the very first
+  // frame, so the caller must NOT cache the field signature until a real upload
+  // happened, else the cube stays empty until a param change bumps the sig.
+  function rebuildVolume(g: WebGL2RenderingContext, fp: FieldParams): boolean {
     const e = engineCtx.get();
     const fr = (e && node ? e.read(node, 'frames') as
       { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined : undefined);
-    if (!fr || !fr.floor.length || !fr.wall.length || !fr.ceiling.length) return;
+    if (!fr || !fr.floor.length || !fr.wall.length || !fr.ceiling.length) return false;
     const atlas = new Uint8Array(ATLAS_W * ATLAS_H);
     const denom = VOL - 1; // VOL is a fixed >1 const, so never zero
     for (let zi = 0; zi < VOL; zi++) {
@@ -417,6 +514,7 @@
     g.bindTexture(g.TEXTURE_2D, volTex);
     g.pixelStorei(g.UNPACK_ALIGNMENT, 1);
     g.texSubImage2D(g.TEXTURE_2D, 0, 0, 0, ATLAS_W, ATLAS_H, g.RED, g.UNSIGNED_BYTE, atlas);
+    return true;
   }
 
   // ---- live param reads (knob + CV via the engine) ----
@@ -431,8 +529,11 @@
   const mvpMat = new Float32Array(16);
   const rotMat = new Float32Array(16);
 
-  function renderGl(): void {
-    if (!gl || !glReady) return;
+  // `force` (used by the video_out frame-drawer) bypasses the scene-dirty skip
+  // so the bridge always receives a freshly-rendered frame even when nothing
+  // changed. Returns true if a GL draw happened this call.
+  function renderGl(force = false): boolean {
+    if (!gl || !glReady) return false;
     const g = gl;
 
     // Live shaping params drive the field; view params drive the camera.
@@ -443,12 +544,31 @@
     const sliceY = liveParam('slice_y', 0.5);
     const srx = liveParam('slice_rx', 0), sry = liveParam('slice_ry', 0), srz = liveParam('slice_rz', 0);
 
-    const fsig = `${morphFC.toFixed(3)}|${connect.toFixed(3)}|${materialHardV ? 1 : 0}`;
-    if (fsig !== lastFieldSig) { rebuildVolume(g, fp); lastFieldSig = fsig; }
-
     // Camera (view-only).
     const zoom = Math.max(0.3, Math.min(3, liveParam('view_zoom', 1)));
     const vrx = liveParam('view_rot_x', 0.6), vry = liveParam('view_rot_y', 0.7);
+
+    // PERF (item #3): skip the whole draw when neither the field, the slice, nor
+    // the camera moved since the last rendered frame. tsig folds in the loaded
+    // tables (item #1: a reload invalidates the cached field). Coarse rounding
+    // (~1e-3) avoids re-rendering on float jitter while staying visually smooth.
+    const tsig = tableSig;
+    const q = (v: number) => Math.round(v * 1000);
+    const sceneSig =
+      `${q(morphFC)}|${q(connect)}|${materialHardV ? 1 : 0}|${q(sliceY)}|` +
+      `${q(srx)}|${q(sry)}|${q(srz)}|${q(zoom)}|${q(vrx)}|${q(vry)}|${tsig}`;
+    if (!force && renderedOnce && sceneSig === lastSceneSig) return false;
+    lastSceneSig = sceneSig;
+
+    // Rebuild the volume texture only when the field/tables changed. Cache the
+    // signature ONLY on a successful upload (item #4) so a first frame that runs
+    // before the engine resolves the tables doesn't wedge an empty cube.
+    const fsig = `${q(morphFC)}|${q(connect)}|${materialHardV ? 1 : 0}|${tsig}`;
+    if (fsig !== lastFieldSig) {
+      if (rebuildVolume(g, fp)) lastFieldSig = fsig;
+      else lastSceneSig = ''; // frames not ready yet → re-attempt next frame
+    }
+
     const dist = 2.6 / zoom;
     const ex = dist * Math.cos(vrx) * Math.sin(vry);
     const ey = dist * Math.sin(vrx);
@@ -507,8 +627,13 @@
     g.enableVertexAttribArray(wq); g.vertexAttribPointer(wq, 3, g.FLOAT, false, 0, 0);
     g.drawArrays(g.LINES, 0, 24);
 
-    // blit to the visible 3D canvas
-    if (glCanvas) blitCube(glCanvas);
+    renderedOnce = true;
+    // Blit to the visible on-card 3D canvas only when the screen is ON. When
+    // the screen is OFF but video_out is patched we still RENDER into `offscreen`
+    // (so the bridge frame is live) but the card itself shows the placeholder.
+    if (glCanvas && screenOn) blitCube(glCanvas);
+    else if (glCanvas && !screenOn) { screenOffPainted = false; paintScreenOff(); }
+    return true;
   }
 
   // Blit the just-rendered GL scene (in `offscreen`) onto a target 2D canvas
@@ -560,6 +685,7 @@
   const SLICE_RES = 56; // CPU sample grid per axis (kept small; bilinear-scaled)
   let sliceImage: ImageData | null = null;
   let lastSliceSig = '';
+  let slicePainted = false; // perf: true once the slice canvas holds the current sig
   // Reusable scratch canvas to upscale the low-res slice grid smoothly.
   let sliceScratch: HTMLCanvasElement | OffscreenCanvas | null = null;
 
@@ -593,7 +719,10 @@
     const fp: FieldParams = { morphFC, connect, material: (materialHardV ? 'hard' : 'smooth') as Material };
 
     const sig = `${morphFC.toFixed(3)}|${connect.toFixed(3)}|${materialHardV ? 1 : 0}|` +
-      `${sliceY.toFixed(3)}|${srx.toFixed(3)}|${sry.toFixed(3)}|${srz.toFixed(3)}`;
+      `${sliceY.toFixed(3)}|${srx.toFixed(3)}|${sry.toFixed(3)}|${srz.toFixed(3)}|${tableSig}`;
+    // PERF (item #3): nothing changed + already painted → skip the whole redraw
+    // (the expensive SLICE_RES² field grid AND the upscale blit).
+    if (sig === lastSliceSig && slicePainted && sliceImage) return;
     if (sig !== lastSliceSig || !sliceImage) {
       const img = ctx2d.createImageData(SLICE_RES, SLICE_RES);
       for (let sv = 0; sv < SLICE_RES; sv++) {
@@ -640,11 +769,14 @@
     ctx2d.strokeRect(0.5, 0.5, W - 1, H - 1);
     ctx2d.fillStyle = 'rgba(255,255,255,0.6)'; ctx2d.font = '9px monospace';
     ctx2d.fillText('SLICE', 5, 12);
+    slicePainted = true;
   }
 
   // video_out frame-drawer: render the SAME 3D cube scene then blit it into the
   // cross-domain bridge canvas. Installed by node id so the audio module's
   // videoSources.drawFrame can delegate to it (mirrors WAVESCULPT's pattern).
+  // `force=true`: the bridge pulls frames on its own clock, so it must always
+  // get a freshly-rendered scene regardless of the on-card scene-dirty skip.
   function videoFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
     if (!glReady && !glFailed) initGl();
     if (!glReady) {
@@ -653,22 +785,70 @@
       if (c2d) { c2d.fillStyle = '#0a0c12'; c2d.fillRect(0, 0, canvas.width, canvas.height); }
       return;
     }
-    renderGl();          // refresh the GL scene into `offscreen`
+    renderGl(true);      // refresh the GL scene into `offscreen` (forced)
     blitCube(canvas);    // draw it onto the bridge canvas
   }
+
+  // Paint the on-card 3D canvas a flat "screen off" panel (only when actually
+  // visible — the bridge canvas is unaffected so a patched video_out still gets
+  // live frames via videoFrame()). Cheap + idempotent.
+  let screenOffPainted = false;
+  function paintScreenOff(): void {
+    if (screenOffPainted || !glCanvas) return;
+    const c2d = glCanvas.getContext('2d') as CanvasRenderingContext2D | null;
+    if (!c2d) return;
+    c2d.fillStyle = '#0a0c12';
+    c2d.fillRect(0, 0, glCanvas.width, glCanvas.height);
+    c2d.fillStyle = 'rgba(255,255,255,0.28)';
+    c2d.font = '11px monospace';
+    c2d.fillText('SCREEN OFF', 10, 20);
+    screenOffPainted = true;
+  }
+
+  // PERF (item #2 + #3): throttle the viz to ~30 FPS (the 3D cube reads as
+  // smooth at 30; halving the rAF cadence ~halves the per-frame GPU+CPU cost),
+  // and skip the whole loop body when the viz is inactive (screen OFF AND
+  // video_out unpatched). Snapshot dirty-tracking avoids redundant wave redraws.
+  const VIZ_FRAME_MS = 1000 / 30;
+  let lastFrameTs = 0;
+  let lastSnapRef: Float32Array | null = null;
 
   $effect(() => {
     if (!glReady && !glFailed) initGl();
     if (id) installCubeFrameDrawer(id, videoFrame);
-    function tick() {
+    // Read the reactive viz gate so this $effect re-runs when the screen toggle
+    // flips or a video_out cable is added/removed — re-seeding the dirty flags
+    // so the picture catches up the instant it becomes active again.
+    void vizActive;
+    lastSceneSig = '';
+    lastSliceSig = '';
+    slicePainted = false;
+    screenOffPainted = false;
+    lastSnapRef = null;
+    function tick(ts: number) {
+      raf = requestAnimationFrame(tick);
+      if (!vizActive) {
+        // Visuals are entirely OFF — paint the placeholder ONCE, do no compute.
+        paintScreenOff();
+        return;
+      }
+      // FPS throttle: bail until ~1/30 s has elapsed.
+      if (ts - lastFrameTs < VIZ_FRAME_MS) return;
+      lastFrameTs = ts;
       if (glReady) renderGl();
       const e = engineCtx.get();
       if (e && node) {
-        const snap = e.read(node, 'snapshot') as Float32Array | undefined;
-        if (snap && waveCanvas) drawWave(waveCanvas, snap);
-        if (sliceCanvas) drawSlice(sliceCanvas);
+        // Only the on-card display draws gate on screenOn; a video_out-only
+        // consumer is served by the bridge's own videoFrame() pulls.
+        if (screenOn) {
+          const snap = e.read(node, 'snapshot') as Float32Array | undefined;
+          if (snap && snap !== lastSnapRef && waveCanvas) {
+            drawWave(waveCanvas, snap);
+            lastSnapRef = snap;
+          }
+          if (sliceCanvas) drawSlice(sliceCanvas);
+        }
       }
-      raf = requestAnimationFrame(tick);
     }
     raf = requestAnimationFrame(tick);
     return () => { if (raf !== null) cancelAnimationFrame(raf); raf = null; };
@@ -686,9 +866,13 @@
     } catch { /* */ }
     gl = null; offscreen = null; glReady = false;
   }
+  onMount(() => {
+    attachEdgesObserver();
+  });
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
     if (id) uninstallCubeFrameDrawer(id);
+    if (edgesObserver) { edgesObserver(); edgesObserver = null; }
     disposeGl();
   });
 
@@ -770,7 +954,12 @@
         </div>
       </div>
 
-      <!-- Wavetable selectors -->
+      <!-- Wavetable selectors. The FACTORY dropdown is the steady-state source
+           selector (+ the synthetic USER option so a loaded table shows its
+           filename and survives reload). The PRESET dropdown + file LOAD button
+           are separate (RELOAD FIX, item #1): the preset <select> resets to
+           blank after each load and the file <input> resets its value, so
+           re-selecting the same OR a different table ALWAYS re-fires `change`. -->
       <div class="wt-selects">
         {#each CUBE_SLOTS as slot (slot)}
           <div class="wt-row">
@@ -781,16 +970,9 @@
               onchange={(ev) => onSlotChange(slot, ev)}
               data-testid={`cube-${slot}-select`}
             >
-              <optgroup label="Factory">
-                {#each factoryTables as t (t.id)}
-                  <option value={`factory:${t.id}`}>{t.label}</option>
-                {/each}
-              </optgroup>
-              <optgroup label="Presets">
-                {#each WAVETABLE_PRESETS as p (p.id)}
-                  <option value={`preset:${p.id}`}>{p.label}</option>
-                {/each}
-              </optgroup>
+              {#each factoryTables as t (t.id)}
+                <option value={`factory:${t.id}`}>{t.label}</option>
+              {/each}
               <!-- Synthetic option so a loaded user table (source:'user') has a
                    matching <option> + the dropdown shows its filename (issue #3,
                    persists across reload since it reads node.data). -->
@@ -798,6 +980,25 @@
                 <option value="user">USER · {slotLabel(slot)}</option>
               {/if}
             </select>
+            <select
+              class="wt-select preset-select"
+              value={presetSelection[slot]}
+              onchange={(ev) => onPresetChange(slot, ev)}
+              data-testid={`cube-${slot}-preset-select`}
+            >
+              <option value="">— preset —</option>
+              {#each WAVETABLE_PRESETS as p (p.id)}
+                <option value={p.id}>{p.label}</option>
+              {/each}
+            </select>
+            <label class="upload-btn" data-testid={`cube-${slot}-load`}>
+              <input
+                type="file"
+                accept=".wav,audio/wav"
+                onchange={(ev) => onSlotFileChange(slot, ev)}
+              />
+              <span>LOAD</span>
+            </label>
             {#if slotStatus[slot]}
               <span class="wt-status">{slotStatus[slot]}</span>
             {/if}
@@ -821,6 +1022,13 @@
           data-testid="cube-material-toggle"
           title="MATERIAL: SMOOTH (continuous density) or HARD (binary solid)"
         >MAT: {materialHard ? 'HARD' : 'SMOOTH'}</button>
+        <button
+          class="toggle"
+          class:on={screenOn}
+          onclick={toggleScreen}
+          data-testid="cube-screen-toggle"
+          title="SCREEN: turn the 3D viz OFF to save performance. When OFF and VIDEO is unpatched, ALL visual computation is skipped (audio keeps running)."
+        >SCRN: {screenOn ? 'ON' : 'OFF'}</button>
       </div>
 
       <!-- Audio knobs -->
@@ -880,17 +1088,26 @@
   .slice-viz { width: 150px; height: 120px; image-rendering: auto; }
   .wave-viz { width: 162px; height: 120px; }
   .wt-selects { display: flex; flex-direction: column; gap: 4px; }
-  .wt-row { display: flex; align-items: center; gap: 6px; }
+  .wt-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
   .wt-label {
     font-family: var(--font-mono, monospace);
     font-size: 0.6rem; letter-spacing: 0.04em; color: #9fb6c9;
     width: 52px; flex: none;
   }
   .wt-select {
-    flex: 1; font-size: 0.62rem; background: #1b1f29; color: #ece8e2;
+    flex: 1; min-width: 80px; font-size: 0.62rem; background: #1b1f29; color: #ece8e2;
     border: 1px solid rgba(255,255,255,0.12); border-radius: 3px; padding: 2px 4px;
   }
-  .wt-status { font-size: 0.52rem; color: #7fd6a0; white-space: nowrap; max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+  .preset-select { flex: 0 1 96px; min-width: 70px; }
+  .upload-btn {
+    flex: none; display: inline-flex; align-items: center; cursor: pointer;
+    font-family: var(--font-mono, monospace); font-size: 0.55rem; color: #9fb6c9;
+    background: #1b1f29; border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 3px; padding: 2px 6px;
+  }
+  .upload-btn input[type='file'] { display: none; }
+  .upload-btn:hover { background: #232838; color: #d9f4ff; }
+  .wt-status { font-size: 0.52rem; color: #7fd6a0; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; flex-basis: 100%; }
   .toggles { display: flex; gap: 8px; }
   .toggle {
     flex: 1; font-family: var(--font-mono, monospace); font-size: 0.6rem;
