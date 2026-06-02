@@ -782,6 +782,19 @@ function parsePortList(body: string): ManifestPort[] {
       { id: 'queue4_cv', type: 'gate' },
     );
   }
+  // feat/seq 8-slots — Sequencer + MACSEQ spread EXTENDED_TRANSPORT_CV_PORT_DEFS
+  // after the base set: queue5..8_cv + next/prev/random_cv nav gates.
+  if (/\.\.\.EXTENDED_TRANSPORT_CV_PORT_DEFS\b/.test(body)) {
+    out.push(
+      { id: 'queue5_cv', type: 'gate' },
+      { id: 'queue6_cv', type: 'gate' },
+      { id: 'queue7_cv', type: 'gate' },
+      { id: 'queue8_cv', type: 'gate' },
+      { id: 'next_cv',   type: 'gate' },
+      { id: 'prev_cv',   type: 'gate' },
+      { id: 'random_cv', type: 'gate' },
+    );
+  }
   const parts = splitTopLevelObjects(body);
   for (const part of parts) {
     const id = (part.match(/\bid:\s*['"]([^'"]+)['"]/) || [])[1];

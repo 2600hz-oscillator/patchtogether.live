@@ -297,6 +297,13 @@
     { id: 'queue2_cv', label: 'PLAY QUEUE 2',  cable: 'gate' },
     { id: 'queue3_cv', label: 'PLAY QUEUE 3',  cable: 'gate' },
     { id: 'queue4_cv', label: 'PLAY QUEUE 4',  cable: 'gate' },
+    { id: 'queue5_cv', label: 'PLAY QUEUE 5',  cable: 'gate' },
+    { id: 'queue6_cv', label: 'PLAY QUEUE 6',  cable: 'gate' },
+    { id: 'queue7_cv', label: 'PLAY QUEUE 7',  cable: 'gate' },
+    { id: 'queue8_cv', label: 'PLAY QUEUE 8',  cable: 'gate' },
+    { id: 'next_cv',   label: 'NEXT',          cable: 'gate' },
+    { id: 'prev_cv',   label: 'PREV',          cable: 'gate' },
+    { id: 'random_cv', label: 'RANDOM',        cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'pitch', cable: 'polyPitchGate' },

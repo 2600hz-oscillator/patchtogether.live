@@ -12,13 +12,24 @@ import {
   isRisingEdge,
   resolveSlotClick,
   shouldSequencerRun,
+  occupiedSlots,
+  resolveNavTarget,
+  type SlotKey,
 } from './transport-helpers';
 
 describe('defaultSlots / coerceSlots', () => {
-  it('defaults all 4 slots to null', () => {
+  it('defaults all 8 slots to null (feat/seq 8-slots)', () => {
     const s = defaultSlots();
-    expect(Object.keys(s).sort()).toEqual(['1', '2', '3', '4']);
+    expect(Object.keys(s).sort()).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
     for (const k of SLOT_KEYS) expect(s[k]).toBeNull();
+  });
+
+  it('backward-compat: a 4-slot save coerces with 5..8 defaulting to null', () => {
+    const old = { '1': { steps: [1] }, '2': null, '3': { foo: 'bar' }, '4': null };
+    const out = coerceSlots(old);
+    expect(out['1']).toEqual({ steps: [1] });
+    expect(out['3']).toEqual({ foo: 'bar' });
+    for (const k of ['5', '6', '7', '8'] as const) expect(out[k]).toBeNull();
   });
 
   it('coerces null / undefined / non-objects to defaults', () => {
@@ -60,16 +71,106 @@ describe('coercePendingMode / coerceSlotKey', () => {
     expect(coercePendingMode(123)).toBeNull();
   });
 
-  it('coerceSlotKey accepts strings and numbers in 1..4', () => {
+  it('coerceSlotKey accepts strings and numbers in 1..8 (feat/seq 8-slots)', () => {
     expect(coerceSlotKey('1')).toBe('1');
     expect(coerceSlotKey(2)).toBe('2');
     expect(coerceSlotKey(4)).toBe('4');
+    expect(coerceSlotKey('5')).toBe('5');
+    expect(coerceSlotKey(8)).toBe('8');
   });
 
   it('rejects out-of-range', () => {
-    expect(coerceSlotKey('5')).toBeNull();
+    expect(coerceSlotKey('9')).toBeNull();
     expect(coerceSlotKey(0)).toBeNull();
+    expect(coerceSlotKey(9)).toBeNull();
+    expect(coerceSlotKey(2.5)).toBeNull();
     expect(coerceSlotKey('whatever')).toBeNull();
+  });
+});
+
+describe('occupiedSlots', () => {
+  it('returns only the keys whose snapshot is non-null, in SLOT_KEYS order', () => {
+    const slots = coerceSlots({
+      '1': { a: 1 }, '3': { a: 3 }, '4': { a: 4 }, '5': { a: 5 }, '6': { a: 6 },
+    });
+    expect(occupiedSlots(slots)).toEqual(['1', '3', '4', '5', '6']);
+  });
+
+  it('empty map → empty list', () => {
+    expect(occupiedSlots(defaultSlots())).toEqual([]);
+  });
+
+  it('all occupied → all 8 keys', () => {
+    const slots = coerceSlots(Object.fromEntries(SLOT_KEYS.map((k) => [k, { a: 1 }])));
+    expect(occupiedSlots(slots)).toEqual([...SLOT_KEYS]);
+  });
+});
+
+describe('resolveNavTarget (occupied-slot-aware NEXT / PREV / RANDOM)', () => {
+  const occ = (...keys: string[]) => keys as SlotKey[];
+
+  it('NO occupied slots → null no-op for every direction', () => {
+    expect(resolveNavTarget(occ(), '3', 'next')).toBeNull();
+    expect(resolveNavTarget(occ(), '3', 'prev')).toBeNull();
+    expect(resolveNavTarget(occ(), null, 'random', () => 0.5)).toBeNull();
+    expect(resolveNavTarget(occ(), null, 'next')).toBeNull();
+  });
+
+  it('exactly ONE occupied slot → always that slot (any direction, any current)', () => {
+    expect(resolveNavTarget(occ('2'), '2', 'next')).toBe('2');
+    expect(resolveNavTarget(occ('2'), '5', 'prev')).toBe('2');
+    expect(resolveNavTarget(occ('2'), null, 'random', () => 0.99)).toBe('2');
+    expect(resolveNavTarget(occ('7'), '7', 'next')).toBe('7');
+  });
+
+  it('NEXT walks forward through the occupied set and WRAPS last → first', () => {
+    // occupied = {1,3,4,5,6}; spec example mirror of PREV.
+    const o = occ('1', '3', '4', '5', '6');
+    expect(resolveNavTarget(o, '1', 'next')).toBe('3');
+    expect(resolveNavTarget(o, '3', 'next')).toBe('4');
+    expect(resolveNavTarget(o, '4', 'next')).toBe('5');
+    expect(resolveNavTarget(o, '5', 'next')).toBe('6');
+    // wrap: last → first
+    expect(resolveNavTarget(o, '6', 'next')).toBe('1');
+  });
+
+  it('PREV walks backward through the occupied set and WRAPS first → last', () => {
+    // Spec example: occupied = {1,3,4,5,6}, playing 3 → PREV→1, another PREV→6.
+    const o = occ('1', '3', '4', '5', '6');
+    expect(resolveNavTarget(o, '3', 'prev')).toBe('1');
+    expect(resolveNavTarget(o, '1', 'prev')).toBe('6'); // wrap first → last
+    expect(resolveNavTarget(o, '6', 'prev')).toBe('5');
+    expect(resolveNavTarget(o, '4', 'prev')).toBe('3');
+  });
+
+  it('current not in the occupied set (null / cleared) anchors NEXT→first, PREV→last', () => {
+    const o = occ('2', '4', '7');
+    expect(resolveNavTarget(o, null, 'next')).toBe('2');
+    expect(resolveNavTarget(o, null, 'prev')).toBe('7');
+    // '5' is not occupied → treated like "no anchor".
+    expect(resolveNavTarget(o, '5', 'next')).toBe('2');
+    expect(resolveNavTarget(o, '5', 'prev')).toBe('7');
+  });
+
+  it('RANDOM always lands within the occupied set (sweeps the rng range)', () => {
+    const o = occ('1', '4', '6', '8');
+    // rng 0 → first, just-under-1 → last, mid → middle.
+    expect(resolveNavTarget(o, '4', 'random', () => 0)).toBe('1');
+    expect(resolveNavTarget(o, '4', 'random', () => 0.999999)).toBe('8');
+    expect(resolveNavTarget(o, '4', 'random', () => 0.5)).toBe('6');
+    // Exhaustive: 1000 picks across the unit interval stay in-set.
+    const set = new Set(o);
+    for (let i = 0; i < 1000; i++) {
+      const r = i / 1000;
+      const got = resolveNavTarget(o, '4', 'random', () => r);
+      expect(got).not.toBeNull();
+      expect(set.has(got!)).toBe(true);
+    }
+  });
+
+  it('RANDOM clamps a degenerate rng that returns exactly 1.0', () => {
+    const o = occ('1', '2', '3');
+    expect(resolveNavTarget(o, '1', 'random', () => 1.0)).toBe('3');
   });
 });
 
