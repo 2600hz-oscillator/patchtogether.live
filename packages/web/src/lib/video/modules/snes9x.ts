@@ -262,7 +262,6 @@ export const snes9xDef: VideoModuleDef = {
     let rightGain: GainNode | null = null;
     let pcmWorklet: AudioWorkletNode | null = null;
     let pcmKeepAlive: GainNode | null = null;
-    let pumpInterval: ReturnType<typeof setInterval> | null = null;
     // Gate outs (ConstantSourceNode pulsed 0→1→0). CV outs (ConstantSourceNode
     // held at the CV value).
     const gateSrc = new Map<GateOutId, ConstantSourceNode>();
@@ -323,20 +322,25 @@ export const snes9xDef: VideoModuleDef = {
         wnode.connect(pcmKeepAlive);
         pcmKeepAlive.connect(ac.destination);
       }
-      // Pump the core's per-frame audio into the worklet at ~60 Hz.
-      pumpInterval = setInterval(() => {
-        if (!pcmWorklet || !runtime || !romLoaded) return;
-        const a = runtime.getAudio(); // interleaved S16 stereo this frame
-        if (a.length < 2) return;
-        const n = a.length >> 1;
-        const left = new Float32Array(n);
-        const right = new Float32Array(n);
-        for (let i = 0; i < n; i++) {
-          left[i] = (a[i * 2] ?? 0) / 32768;
-          right[i] = (a[i * 2 + 1] ?? 0) / 32768;
-        }
-        pcmWorklet.port.postMessage({ type: 'pcm', left, right });
-      }, 16);
+    }
+
+    /** Drain the core's per-frame stereo audio into the worklet. Called
+     *  EXACTLY ONCE per emulated frame from draw() (right after runFrame),
+     *  not on a free-running timer — getAudio() returns the audio produced
+     *  by the most recent runFrame, so timer-decoupled draining would
+     *  double-send or drop a frame's audio. */
+    function pumpAudio(): void {
+      if (!pcmWorklet || !runtime || !romLoaded) return;
+      const a = runtime.getAudio(); // interleaved S16 stereo this frame
+      if (a.length < 2) return;
+      const n = a.length >> 1;
+      const left = new Float32Array(n);
+      const right = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        left[i] = (a[i * 2] ?? 0) / 32768;
+        right[i] = (a[i * 2 + 1] ?? 0) / 32768;
+      }
+      pcmWorklet.port.postMessage({ type: 'pcm', left, right });
     }
 
     // ---- Gate/CV emit -------------------------------------------------
@@ -425,6 +429,7 @@ export const snes9xDef: VideoModuleDef = {
           for (const b of SNES_BUTTONS) held[b] = buttonEdges.get(b)!.pressed;
           try { runtime.setInput(buildInputMask(held)); } catch { /* */ }
           try { runtime.runFrame(); } catch { /* never break the engine */ }
+          try { pumpAudio(); } catch { /* */ }
           try { updateGameEvents(); } catch { /* */ }
           try { uploadFramebuffer(); } catch { /* */ }
         }
@@ -446,7 +451,6 @@ export const snes9xDef: VideoModuleDef = {
         gl.deleteTexture(texture);
         gl.deleteTexture(sourceTex);
         gl.deleteProgram(program);
-        if (pumpInterval !== null) { clearInterval(pumpInterval); pumpInterval = null; }
         for (const n of [pcmWorklet, pcmKeepAlive, leftGain, rightGain]) {
           if (n) { try { n.disconnect(); } catch { /* */ } }
         }
