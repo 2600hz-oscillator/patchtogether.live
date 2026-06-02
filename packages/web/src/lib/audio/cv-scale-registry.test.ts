@@ -33,6 +33,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // CV→AudioParam fast-path, so cvScale wouldn't apply (same shape as the
   // 921's width_cv).
   moog904a: ['cutoff_cv', 'reso_cv'],
+  // moog902.{cv,fcv}: audio-rate summing CONTROL INPUTS. The worklet builds
+  // the control sum (gain knob + cvAmount*cv + fcv) per-sample and applies
+  // the LIN/EXP gain-law map + x3 clamp itself — NOT through the CV→AudioParam
+  // fast-path, so cvScale wouldn't apply (same shape as the 921's width_cv +
+  // the 904A's cutoff_cv/reso_cv).
+  moog902: ['cv', 'fcv'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
   // helm.{pitch_cv,gate,midi_in,seq_reset}: pitch_cv = V/oct fallback
@@ -61,7 +67,7 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // that bug — it'd modulate the wrong AudioParam. SCOPE's CV→param routing
   // needs an architectural fix (separate PR — see
   // .myrobots/plans/cv-range-standard.md "Deferred" section).
-  scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode'],
+  scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode', 'intensity'],
   // RASTERIZE: same architecture as SCOPE — CV inputs route through the
   // cross-domain CV bridge's setParam(portId), which writes into a JS-side
   // params record (read live by the per-frame painter). The `param`
@@ -116,6 +122,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // analog stick position handed to the sm64js bundle's playerInput
   // global. Same shape as PONG's paddle CVs above.
   sm64: ['stick_x_cv', 'stick_y_cv'],
+  // SKIFREE x / y: bipolar CV sampled per scheduler-tick into the bundle
+  // controller's setCursor (cvToCanvasCoord maps -1..+1 → 0..canvas-px). No
+  // AudioParam fast path — the CV doesn't modulate any knob, it IS the mouse-
+  // cursor position the skier steers toward. Same shape as PONG's paddle CVs
+  // and SM64's stick CVs above.
+  skifree: ['x', 'y'],
   // MIDI-OUT-BUDDY pitch / velocity: CV sampled at the gate rising edge in a
   // JS-side scheduler-tick (AnalyserNode tap), then converted to a MIDI note
   // number (V/oct → nearest semitone) / velocity (0..1 → 1..127). No

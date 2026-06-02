@@ -113,6 +113,7 @@
   import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
   import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
   import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
+  import FreezeframeCard from '$lib/ui/modules/FreezeframeCard.svelte';
   // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
   // + LIGHTEN/DARKEN key masks).
   import BackdraftCard from '$lib/ui/modules/BackdraftCard.svelte';
@@ -229,6 +230,8 @@
   import FroggerCard from '$lib/ui/modules/FroggerCard.svelte';
   // SM64 — black-box wrapper around the upstream sm64js (WTFPL).
   import Sm64Card from '$lib/ui/modules/Sm64Card.svelte';
+  // SKIFREE — wrapper around the upstream skifree.js engine (MIT).
+  import SkifreeCard from '$lib/ui/modules/SkifreeCard.svelte';
   // JOYSTICK — manual XY pad CV source.
   import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
   // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
@@ -242,6 +245,10 @@
   import Moog921VcoCard from '$lib/ui/modules/Moog921VcoCard.svelte';
   // MOOG 904A VCF — Moog System 55/35 clone slice 2 (transistor-ladder LPF).
   import Moog904aVcfCard from '$lib/ui/modules/Moog904aVcfCard.svelte';
+  // MOOG 911 EG — Moog System 55/35 contour generator (beige faceplate).
+  import Moog911Card from '$lib/ui/modules/Moog911Card.svelte';
+  // MOOG 902 VCA — Moog System 55/35 clone slice 3 (differential amplifier).
+  import Moog902VcaCard from '$lib/ui/modules/Moog902VcaCard.svelte';
   // ATLANTIS-PATCH support trio. The "Visit Atlantis" demo button +
   // example-patches/atlantis.ts fixture were retired in favour of the
   // GLITCHES GET RICHES envelope-driven demo (see loadGlitches() below).
@@ -449,6 +456,7 @@
     ruttetra: RuttetraCard,
     shapedramps: ShapedrampsCard,
     vdelay: VdelayCard,
+    freezeframe: FreezeframeCard,
     backdraft: BackdraftCard,
     bentbox: BentboxCard,
     acidwarp: AcidwarpCard,
@@ -506,6 +514,7 @@
     modtris: ModtrisCard,
     frogger: FroggerCard,
     sm64: Sm64Card,
+    skifree: SkifreeCard,
     joystick: JoystickCard,
     gamepad: GamepadCard,
     numpadPlus: NumpadPlusCard,
@@ -514,6 +523,8 @@
     cube: CubeCard,
     moog921Vco: Moog921VcoCard,
     moog904a: Moog904aVcfCard,
+    moog911: Moog911Card,
+    moog902: Moog902VcaCard,
     slewSwitch: SlewSwitchCard,
     // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
     fourplexer: FourPlexerCard,

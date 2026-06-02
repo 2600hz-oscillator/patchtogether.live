@@ -29,6 +29,7 @@ import { reshaperDef } from './reshaper';
 import { ruttetraDef } from './ruttetra';
 import { shapedrampsDef } from './shapedramps';
 import { vdelayDef } from './vdelay';
+import { freezeframeDef } from './freezeframe';
 import { bentboxDef } from './bentbox';
 import { acidwarpDef } from './acidwarp';
 import { doomDef } from './doom';
@@ -92,6 +93,12 @@ export function registerVideoModules(): void {
   // VDELAY — video delay + feedback echo (visual analog to CHARLOTTE'S
   // ECHOS). Ring buffer of FBO textures, configurable delay/feedback/mix.
   registerVideoModule(vdelayDef);
+  // FREEZEFRAME — video sample & hold + per-channel posterize. video_in +
+  // gate_in; 5 video outs (combined video_out + isolated r/g/b/luma_out).
+  // Unpatched gate = live passthrough; patched gate captures-while-high +
+  // freezes-on-low. Four QUANT knobs reduce per-channel colour depth
+  // (256 -> 32 -> 2 levels across the sweep).
+  registerVideoModule(freezeframeDef);
   // BENTBOX — CRT output simulating an NTSC composite signal bent through
   // an Archer-Video-Enhancer-style "AVEmod" feedback circuit. 12 CV-controllable
   // bending knobs (timing drift, chroma corruption, wavefolding, recursion).

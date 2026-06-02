@@ -285,6 +285,16 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   'illogic.nand': 'NAND inverse of AND; same probabilistic alignment; covered by illogic.spec.ts',
   'illogic.or':   'OR fires often but its complement NOT may miss; same shape; covered by illogic.spec.ts',
   'illogic.not':  'NOT inverse of in1>0.5; depends on bipolar BUGGLES range; covered by illogic.spec.ts',
+  // ── SKIFREE partial: the `gate` output fires ONLY on a crash / eaten-by-
+  // yeti event, which requires the skier to actually hit terrain — random
+  // obstacle spawns won't reliably land inside the sweep window. The `out`
+  // video port renders the animated game canvas (no still frame; the bundle
+  // self-drives via rAF), outside the sweep's deterministic sampling. Both
+  // are covered by e2e/tests/skifree.spec.ts which drives the skier into a
+  // crash (and an eat) via the controller's _forceCrash / _forceEaten hooks
+  // and asserts the gate pulse reaches a downstream SCOPE.
+  'skifree.gate': 'fires only on in-game crash/eaten event; covered by e2e/tests/skifree.spec.ts (_forceCrash/_forceEaten → gate → SCOPE)',
+  'skifree.out':  'animated game canvas (rAF self-driven, no still frame); covered by e2e/tests/skifree.spec.ts + skifree.test.ts (CV→cursor + gate hook)',
 };
 
 // ────────── Per-port input-drive exemptions ──────────
@@ -633,6 +643,12 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // (slice-1-style driven-signal check). Without the driver it would be
       // silent at default regeneration=0.
       'moog904a',
+      // ANALOG VCO — self-running oscillator: saw/square/triangle/sine/morph
+      // ring at C4 with no upstream and `sync` (sync_out) pulses once per
+      // cycle. Its audio-typed fm / pm / sync inputs are OPTIONAL modulation,
+      // not a required source — so the outputs-emit sweep (incl. the new
+      // sync_out) applies, same as moog921Vco / wavetableVco.
+      'analogVco',
     ]);
     const hasUpstreamMediaInput = mod.inputs.some(
       (p) => p.type === 'audio' || p.type === 'video' || p.type === 'mono-video' || p.type === 'image',

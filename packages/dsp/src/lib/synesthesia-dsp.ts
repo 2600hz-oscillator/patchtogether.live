@@ -149,6 +149,148 @@ export interface SynesthesiaRender {
   level: Float32Array[];
 }
 
+// ───────────────────────── VIDEO mode ─────────────────────────
+//
+// In VIDEO mode a copy's 4 "bands" become the R, G, B and LUMA channels of an
+// incoming video frame instead of spectral bands. The card reads the frame's
+// pixels (browser-side, where the canvas lives) and reduces them to four 0..1
+// channel levels via `videoChannelLevels`; those levels then drive the SAME
+// envelope-follower + gate-detector + meter the audio bands use, and become a
+// steady CV-like band-audio output. This keeps the analysis/output stage
+// identical across modes — only the source of the per-band scalar differs.
+
+/** Channel index within a copy's 4 lanes when in VIDEO mode. */
+export const SYN_VIDEO_CHANNELS = ['R', 'G', 'B', 'L'] as const;
+
+// ITU-R BT.601 luma coefficients.
+const LUMA_R = 0.299;
+const LUMA_G = 0.587;
+const LUMA_B = 0.114;
+
+/**
+ * Reduce an RGBA pixel buffer (length = w·h·4, 0..255 per channel — the layout
+ * `CanvasRenderingContext2D.getImageData().data` returns) to four normalized
+ * 0..1 channel levels [avgR, avgG, avgB, luma]:
+ *   - avgR/avgG/avgB = mean of that channel over all pixels, ÷255.
+ *   - luma           = 0.299·avgR + 0.587·avgG + 0.114·avgB (BT.601).
+ *
+ * A FULL REDLINE on one channel occurs when the frame is a solid block of that
+ * colour: solid red → R≈1 (G,B≈0); solid white → R=G=B=1 → luma=1 too. A black
+ * frame → all ≈0 (the gate floor still keeps the gate closed, not undefined).
+ *
+ * Returns [0,0,0,0] for an empty/degenerate buffer so callers never divide by
+ * zero. Ignores the alpha channel.
+ */
+export function videoChannelLevels(rgba: Uint8ClampedArray | Uint8Array): [number, number, number, number] {
+  const px = (rgba.length / 4) | 0;
+  if (px <= 0) return [0, 0, 0, 0];
+  let sr = 0, sg = 0, sb = 0;
+  for (let i = 0; i < px; i++) {
+    const o = i * 4;
+    sr += rgba[o]!;
+    sg += rgba[o + 1]!;
+    sb += rgba[o + 2]!;
+  }
+  const r = sr / px / 255;
+  const g = sg / px / 255;
+  const b = sb / px / 255;
+  const l = LUMA_R * r + LUMA_G * g + LUMA_B * b;
+  return [r, g, b, l];
+}
+
+export interface SynesthesiaVideoFrameOut {
+  /** Per-channel scaled level after combinedGain (the CV-like band-audio out). */
+  audio: [number, number, number, number];
+  envSlow: [number, number, number, number];
+  envFast: [number, number, number, number];
+  gate: [number, number, number, number];
+  /** Meter level (0..1) for the VU display. */
+  level: [number, number, number, number];
+}
+
+/**
+ * One copy's VIDEO-mode followers — fed the per-frame R/G/B/Luma levels at the
+ * audio sample rate (the card pushes a level; the worklet sample-and-holds it
+ * across the render quantum). Mirrors the per-band stage of `runCopy`: each
+ * channel level is scaled by `combinedGain(master, gain)` EXACTLY like audio
+ * mode, then run through fast/slow envelopes, a gate, and the VU meter.
+ */
+export class SynesthesiaVideoCopy {
+  private fast: EnvFollower[];
+  private slow: EnvFollower[];
+  private gate: GateDetector[];
+  private meter: MeterBallistics[];
+  constructor(sr: number) {
+    const idx = [0, 1, 2, 3];
+    this.fast = idx.map(() => new EnvFollower(sr, ENV_FAST_MS));
+    this.slow = idx.map(() => new EnvFollower(sr, ENV_SLOW_MS));
+    this.gate = idx.map(() => new GateDetector());
+    this.meter = idx.map(() => new MeterBallistics(sr));
+  }
+  /**
+   * Advance one sample. `levels` are the held R/G/B/Luma channel levels (0..1);
+   * `master`/`gains` apply the same gain law as audio mode. Returns the
+   * per-channel audio/env/gate/level scalars for this sample.
+   */
+  step(
+    levels: ArrayLike<number>,
+    master: number,
+    gains: ArrayLike<number>,
+  ): SynesthesiaVideoFrameOut {
+    const audio: [number, number, number, number] = [0, 0, 0, 0];
+    const envSlow: [number, number, number, number] = [0, 0, 0, 0];
+    const envFast: [number, number, number, number] = [0, 0, 0, 0];
+    const gate: [number, number, number, number] = [0, 0, 0, 0];
+    const level: [number, number, number, number] = [0, 0, 0, 0];
+    for (let c = 0; c < SYN_NUM_BANDS; c++) {
+      const g = combinedGain(master, gains[c] ?? 1);
+      const a = (levels[c] ?? 0) * g;
+      audio[c] = a;
+      envFast[c] = this.fast[c]!.step(a);
+      envSlow[c] = this.slow[c]!.step(a);
+      gate[c] = this.gate[c]!.step(envFast[c]!);
+      level[c] = this.meter[c]!.step(a);
+    }
+    return { audio, envSlow, envFast, gate, level };
+  }
+}
+
+/**
+ * Pure offline render of ONE copy in VIDEO mode. `levels` is the per-FRAME
+ * sequence of [R,G,B,Luma] tuples (e.g. one entry per video frame); each is
+ * held for `holdSamples` audio samples. Used by the unit tests to prove the
+ * level → envelope/gate/meter path matches audio-mode behaviour.
+ */
+export function renderSynesthesiaVideo(
+  levels: ArrayLike<number>[],
+  opts: { sr: number; master?: number; gains?: [number, number, number, number]; holdSamples?: number },
+): SynesthesiaRender {
+  const { sr } = opts;
+  const master = opts.master ?? 1;
+  const gains = opts.gains ?? [1, 1, 1, 1];
+  const hold = opts.holdSamples ?? 1;
+  const n = levels.length * hold;
+  const idx = [0, 1, 2, 3];
+  const mk = (): Float32Array[] => idx.map(() => new Float32Array(n));
+  const audio = mk(), envSlow = mk(), envFast = mk(), gate = mk(), level = mk();
+  const copy = new SynesthesiaVideoCopy(sr);
+  let s = 0;
+  for (const frame of levels) {
+    for (let h = 0; h < hold; h++) {
+      const out = copy.step(frame, master, gains);
+      for (let c = 0; c < SYN_NUM_BANDS; c++) {
+        audio[c]![s] = out.audio[c]!;
+        envFast[c]![s] = out.envFast[c]!;
+        envSlow[c]![s] = out.envSlow[c]!;
+        gate[c]![s] = out.gate[c]!;
+        level[c]![s] = out.level[c]!;
+      }
+      s++;
+    }
+  }
+  return { audio, envSlow, envFast, gate, level };
+}
+
 /**
  * Pure offline render of ONE copy of the SYNESTHESIA circuit. Used by unit
  * tests and ART. Returns per-band arrays (4 entries each, length input.length).

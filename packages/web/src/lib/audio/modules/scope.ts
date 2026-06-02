@@ -25,6 +25,7 @@
 //   ch1Scale / ch1Offset / ch1Range (cv, paramTarget=…): displace channel-1 vertical scale / Y offset / display range mode.
 //   ch2Scale / ch2Offset / ch2Range (cv, paramTarget=…): the same for channel 2.
 //   mode (cv, paramTarget=mode): toggles XY-vs-time display.
+//   intensity (cv, paramTarget=intensity): phosphor beam persistence.
 //
 // Outputs:
 //   ch1_out (audio): clean ch1 passthrough (no scope-side processing).
@@ -37,6 +38,11 @@
 //   ch1Offset / ch2Offset (linear -1..1, default 0): per-channel Y offset.
 //   ch1Range / ch2Range (discrete 0..1, default 0): per-channel range mode (0 = bipolar ±1, 1 = unipolar 0..1).
 //   mode (discrete 0..1, default 0): 0 = time-domain, 1 = XY (ch1 vs ch2).
+//   intensity (linear 0..1, default 0.5): phosphor beam persistence. 0.5
+//     (12:00) = today's render (one screen, full brightness, PIXEL-IDENTICAL
+//     to pre-PR); 0 (7:00) = a single moving dot; 1 (5:00) = a ~2-screen
+//     persistence trail. Applies in both NORMAL + XY modes. Display-only —
+//     never touches the audio path.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -77,6 +83,7 @@ export const scopeDef: AudioModuleDef = {
     { id: 'ch2Offset', type: 'cv', paramTarget: 'ch2Offset' },
     { id: 'ch2Range',  type: 'cv', paramTarget: 'ch2Range' },
     { id: 'mode',      type: 'cv', paramTarget: 'mode' },
+    { id: 'intensity', type: 'cv', paramTarget: 'intensity' },
   ],
   outputs: [
     { id: 'ch1_out', type: 'audio' },
@@ -102,6 +109,10 @@ export const scopeDef: AudioModuleDef = {
     { id: 'ch2Range',  label: 'Ch2 R',  defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
     // 0 = split (two stacked traces), 1 = XY (ch1 vs ch2 plot).
     { id: 'mode',      label: 'XY',    defaultValue: 0,  min: 0,    max: 1,   curve: 'discrete' },
+    // Phosphor beam persistence (display-only). 0.5 (12:00) = legacy render
+    // (one screen, full brightness, pixel-identical); 0 (7:00) = a single
+    // moving dot; 1 (5:00) = ~2-screen persistence trail with phosphor fade.
+    { id: 'intensity', label: 'Inten', defaultValue: 0.5, min: 0,   max: 1,   curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -143,6 +154,7 @@ export const scopeDef: AudioModuleDef = {
       ch2Offset: (node.params ?? {}).ch2Offset ?? 0,
       ch2Range:  (node.params ?? {}).ch2Range  ?? 0,
       mode:      (node.params ?? {}).mode      ?? 0,
+      intensity: (node.params ?? {}).intensity ?? 0.5,
     };
 
     function readSnapshot(): ScopeSnapshot {
@@ -175,6 +187,7 @@ export const scopeDef: AudioModuleDef = {
         ch2Offset: params.ch2Offset!,
         ch2Range:  params.ch2Range!,
         mode:      params.mode!,
+        intensity: params.intensity!,
       };
       drawScope(ctx2d, snap, dp, canvas.width, canvas.height);
     }
@@ -204,6 +217,7 @@ export const scopeDef: AudioModuleDef = {
         ['ch2Offset', { node: gain2, input: 0, param: gain2.gain }],
         ['ch2Range',  { node: gain2, input: 0, param: gain2.gain }],
         ['mode',      { node: gain1, input: 0, param: gain1.gain }],
+        ['intensity', { node: gain1, input: 0, param: gain1.gain }],
       ]),
       outputs: new Map([
         ['ch1_out', { node: gain1, output: 0 }],
