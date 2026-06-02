@@ -75,6 +75,9 @@ import { froggerDef } from './frogger';
 // SM64 — black-box wrapper around the upstream sm64js pure-JS port
 // (WTFPL). Bundle committed at static/sm64js/sm64js.bundle.js.
 import { sm64Def } from './sm64';
+// SKIFREE — wrapper around the upstream skifree.js engine (MIT). Bundle
+// committed at static/skifree/skifree.bundle.js (built from native/skifree/).
+import { skifreeDef } from './skifree';
 import { joystickDef } from './joystick';
 import { gamepadDef } from './gamepad';
 import { numpadPlusDef } from './numpad-plus';
@@ -196,6 +199,9 @@ export function registerAudioModules(): void {
   // SM64 — single-instance Super Mario 64 game module. CV-stick + 9
   // gate inputs map 1:1 to the N64 controller (minus L / D-pad / C-stick).
   registerModule(sm64Def);
+  // SKIFREE — single-instance ski-downhill game. x/y CV steer the skier
+  // (cursor); gate fires on crash / eaten-by-yeti; out is the game canvas.
+  registerModule(skifreeDef);
   // JOYSTICK — manual XY pad emitting x/y + inverted nx/ny CV outputs.
   registerModule(joystickDef);
   // GAMEPAD — USB/Bluetooth game controller (Xbox / PS / generic HID)

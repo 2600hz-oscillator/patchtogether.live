@@ -290,6 +290,9 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   // SM64 — sm64js pure-JS Super Mario 64 port (WTFPL). Single-instance
   // (maxInstances:1) per rack. Bucket alongside the other game modules.
   sm64: { top: 'Hybrid', sub: 'Hybrid' },
+  // SKIFREE — skifree.js ski-downhill game (MIT). x/y CV cursor + crash/
+  // eaten gate + video out. Same Hybrid bucket as the other game modules.
+  skifree: { top: 'Hybrid', sub: 'Hybrid' },
   // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
   wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
   // CUBE — 3D wavetable-navigator oscillator. Audio-only v1 but bucketed

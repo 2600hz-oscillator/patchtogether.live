@@ -104,6 +104,12 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // analog stick position handed to the sm64js bundle's playerInput
   // global. Same shape as PONG's paddle CVs above.
   sm64: ['stick_x_cv', 'stick_y_cv'],
+  // SKIFREE x / y: bipolar CV sampled per scheduler-tick into the bundle
+  // controller's setCursor (cvToCanvasCoord maps -1..+1 → 0..canvas-px). No
+  // AudioParam fast path — the CV doesn't modulate any knob, it IS the mouse-
+  // cursor position the skier steers toward. Same shape as PONG's paddle CVs
+  // and SM64's stick CVs above.
+  skifree: ['x', 'y'],
   // MIDI-OUT-BUDDY pitch / velocity: CV sampled at the gate rising edge in a
   // JS-side scheduler-tick (AnalyserNode tap), then converted to a MIDI note
   // number (V/oct → nearest semitone) / velocity (0..1 → 1..127). No
