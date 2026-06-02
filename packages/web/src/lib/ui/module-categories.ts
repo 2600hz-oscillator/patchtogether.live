@@ -292,6 +292,10 @@ export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
   sm64: { top: 'Hybrid', sub: 'Hybrid' },
   // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
   wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
+  // CUBE — 3D wavetable-navigator oscillator. Audio-only v1 but bucketed
+  // under Hybrid alongside the other 3D-WebGL viz oscillators (a cross-domain
+  // viz_out video raster is a planned follow-up — see PLAN §6/§10 Q8).
+  cube: { top: 'Hybrid', sub: 'Hybrid' },
   // Meta-domain organizational tools live here — they don't fit
   // cleanly under audio or video and the user can re-bucket on dev.
   sticky: { top: 'Hybrid', sub: 'Hybrid' },
