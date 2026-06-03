@@ -76,6 +76,16 @@ const SRC_BASE =
 
 const DESCRIPTIONS: Record<string, string> = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  moog992:
+    'Moog 992 Control Voltage Panel (Moog System 55/35 clone — categorized under Moog -> SYS55). A passive CV summer/attenuator: four CV inputs each pass through a per-channel ATTENUATOR (0..1) into a common summing bus (cv_out). Channel 4 is SIGNAL-INVERTING — its attenuator subtracts from the sum — so the panel can both add and cancel control voltages. No audio path; pure CV math (own-code, permissive). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog993:
+    'Moog 993 Trigger & Envelope Voltages Panel (Moog System 55/35 clone — categorized under Moog -> SYS55). A passive routing patch-bay: two S-trigger inputs (FROM 1 / FROM 2) feed three trigger outputs, each output independently selecting OFF / FROM 1 / FROM 2 via its ROUTE switch; two envelope-CV inputs pass straight through to two envelope outputs. Routing logic only (own-code, permissive). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog994:
+    'Moog 994 Dual Multiples (Moog System 55/35 clone — categorized under Moog -> SYS55, shared by SYS35). Two independent passive MULTIPLES: each input is fanned out unaltered to three paralleled outputs (a_in -> a1/a2/a3, b_in -> b1/b2/b3). Type-agnostic — splits audio or CV alike. No knobs, no DSP (a unity passthrough split in the factory). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog995:
+    'Moog 995 Attenuators (Moog System 55/35 clone — categorized under Moog -> SYS55, shared by SYS35). Three independent passive variable ATTENUATORS, each input -> level knob (0..unity) -> output. Reduces control or audio amplitude (own-code per-channel gain, permissive). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog984:
+    'Moog 984 4-Channel Matrix Mixer (Moog System 55/35 clone — categorized under Moog -> SYS55). A 4-in x 4-out matrix: each of the 16 cross-points (m_ij) has an independent level knob, so any input can be summed into any output at any amount (out_j = sum over i of in_i * m_ij). Cross-points default to 0 (a fresh matrix is silent until dialed). Own-code gain matrix (permissive). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
   synesthesia:
     'Audio/video-analysis module — two independent copies (A/B), each switchable between AUDIO and VIDEO mode. In AUDIO mode a copy splits its mono input into 4 spectral bands (0–200 / 200–500 / 500–2000 / 2000+ Hz). In VIDEO mode the 4 lanes become the R/G/B/Luma channels of a patched video frame (a_video_in / b_video_in cross-domain inputs): the card averages the frame to per-channel 0..1 levels (solid red maxes R, solid white maxes all incl. luma). In BOTH modes each lane derives a gained audio/CV tap, slow (500 ms) + fast (50 ms) envelope-follower CV, a hysteresis gate, a 10-bar green→red VU meter, and a mono-video raster. Master gain (0.5–1.5×) sets the floor; per-band gain (1–2×) adds on top. Turns audio peaks OR video colour into events/CV/video that drive other audio + video modules.',
   wavetableVco:
