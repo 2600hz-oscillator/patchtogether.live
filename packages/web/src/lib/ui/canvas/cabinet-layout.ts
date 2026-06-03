@@ -16,17 +16,40 @@
 
 /** Horizontal gap between adjacent cards within a row (px). */
 export const GAP = 24;
-/** Vertical stride between the two cabinet rows (px). Generous so the
- *  tallest card in row 1 can never reach into row 2. The fixed-filter
- *  banks (moog907a/moog914) render ~650-900px tall — far beyond a nominal
- *  card — so this stride is sized to clear the tallest realistically-
- *  rendered row-1 card with headroom. */
-export const ROW_HEIGHT = 960;
+/** Vertical gap between the bottom of the tallest row-1 card and the top of
+ *  row 2 (px). Small — the two cabinet rows sit tight, like the real
+ *  stacked Moog cabinets. The actual row-2 Y is computed from the MAX card
+ *  height in row 1 (see computeCabinetLayout) rather than a fixed stride, so
+ *  rows never overlap AND never drift far apart. */
+export const ROW_GAP = 40;
 /** Top-left origin for the whole cabinet in flow space. */
 export const ORIGIN = { x: 80, y: 80 };
 
 /** Fallback width for any type whose card width we don't have on hand. */
 export const DEFAULT_CARD_WIDTH = 240;
+/** Fallback height for a nominal moogafakkin card (px). Most cards render
+ *  ~200-360px tall; 400 leaves headroom so a row never overlaps the next. */
+export const DEFAULT_CARD_HEIGHT = 400;
+
+/**
+ * Card render HEIGHT by module type-id (px). Only the anomalously TALL cards
+ * need an entry — the fixed-filter banks render as a long vertical strip of
+ * band controls, the sequencer is taller than a nominal card. Everything else
+ * uses DEFAULT_CARD_HEIGHT. Used solely to compute the row-2 Y offset so the
+ * two rows pack tight without overlapping. Slight over-estimates are safe
+ * (they add a little gap); under-estimates would overlap, so these carry
+ * headroom over the measured render heights (907a ~655, 914 ~891).
+ */
+export const CARD_HEIGHTS: Record<string, number> = {
+  moog907a: 700,
+  moog914: 920,
+  moog960: 460,
+};
+
+/** Height of a card by type-id, falling back to DEFAULT_CARD_HEIGHT. */
+export function cardHeight(type: string): number {
+  return CARD_HEIGHTS[type] ?? DEFAULT_CARD_HEIGHT;
+}
 
 /**
  * Card render width by module type-id (px). These mirror the `width={N}`
@@ -66,9 +89,24 @@ export function cardWidth(type: string): number {
 
 // Cabinet row contents, in left-to-right order, from the Moog service-
 // manual figures. Row 1 = upper cabinet, row 2 = lower cabinet.
+// Photo reference: the real System 35 reads left-to-right as oscillator
+// drivers + oscillators + noise (top of the tier), then the fixed-filter
+// bank + filters + VCAs + envelopes. We keep that reading order but put the
+// TALL fixed-filter bank (907a) in row 2 so the rows pack tight.
 const SYSTEM_35: { row1: string[]; row2: string[] } = {
-  // Fig 47 upper: fixed-filter + filters + VCAs + envelopes
+  // Row 1 (top): oscillator drivers + slave oscillators + 923 noise + VCO.
   row1: [
+    'moog921a',
+    'moog921b',
+    'moog921b',
+    'moog923',
+    'moog921a',
+    'moog921b',
+    'moog921b',
+    'moog921Vco',
+  ],
+  // Row 2 (bottom): fixed-filter bank + filters + VCAs + envelopes.
+  row2: [
     'moog907a',
     'moog904b',
     'moog904a',
@@ -78,17 +116,6 @@ const SYSTEM_35: { row1: string[]; row2: string[] } = {
     'moog911',
     'moog911',
     'moog911',
-  ],
-  // Fig 47 lower: oscillator-driver / oscillators + noise + sequencer-row
-  row2: [
-    'moog921a',
-    'moog921b',
-    'moog921b',
-    'moog923',
-    'moog921a',
-    'moog921b',
-    'moog921b',
-    'moog921Vco',
   ],
 };
 
@@ -160,8 +187,12 @@ export function computeCabinetLayout(system: CabinetSystem): CabinetPlacement[] 
     }
   };
 
+  // Row 2 sits directly below the TALLEST card in row 1 (+ a small gap), so
+  // the two cabinet rows pack tight like the real stacked Moog cabinets
+  // instead of being a fixed stride apart.
+  const row1MaxHeight = row1.reduce((m, t) => Math.max(m, cardHeight(t)), 0);
   layRow(row1, ORIGIN.y);
-  layRow(row2, ORIGIN.y + ROW_HEIGHT);
+  layRow(row2, ORIGIN.y + row1MaxHeight + ROW_GAP);
 
   return placements;
 }
