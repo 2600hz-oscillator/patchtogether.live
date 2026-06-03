@@ -76,6 +76,8 @@ const SRC_BASE =
 
 const DESCRIPTIONS: Record<string, string> = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  moog960:
+    'Moog 960 Sequential Controller (Moog System 55 clone — categorized under Moog -> SYS55). A 3-row x 8-step analog step sequencer. Each column has a knob per row (24 step pots); on each advance every row outputs its current column value as CV (row1/row2/row3), scaled by that row\'s RANGE (x1/x2/x4). Steps advance on an external CLOCK input (rising edge) or, when unpatched, an internal RATE clock; CLOCK OUT pulses each advance. Per-column NORMAL/SKIP/STOP switches skip a column or halt the run; START/STOP gate inputs reset/halt. v1; per-step trigger jacks, third-row-controls-timing, x2 parallel outs + 1V/oct clock CV deferred. Own-code (forks the repo sequencer). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
   moog911a:
     'Moog 911A Dual Trigger Delay (Moog System 55 clone — categorized under Moog -> SYS55). Two trigger delays for staggering envelope generators. Each trigger input fires its output after a DELAY time (2 ms..10 s log). A MODE switch sets coupling: OFF (independent — trig1->out1, trig2->out2), PARALLEL (trig1 fires BOTH delays), SERIES (trig1 fires delay1->out1, whose pulse then fires delay2->out2). Own-code timing (clean-room). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
   moog961:

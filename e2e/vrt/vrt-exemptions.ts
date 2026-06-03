@@ -767,6 +767,8 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/moog961',
   'linux/moog962',
   'linux/moog912',
+  // Moog 960 sequencer (batch 6): darwin baseline captured locally; linux pending.
+  'linux/moog960',
   // ---- darwin-side QUARANTINE: pre-existing flakes verified on main
   // (reproduced by reverting the cards-shrink-to-fit CSS in PR #447 and
   // re-running VRT — same failures on a clean main checkout). Quarantined
