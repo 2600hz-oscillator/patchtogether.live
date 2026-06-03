@@ -24,11 +24,33 @@ push new code/tests and use CI as the first check that they pass.
   linux-VRT exemptions) was catchable locally with the exact spec for the new
   module.
 
+### Flake-check NEW/changed tests **3×** locally before opening an MR
+
+A single green local run proves pass/fail — it does **not** prove the test is
+**stable**. Any test you **add** or **seriously change** must pass **3× in a row
+locally with no flakes** before you push it for CI. (Scope this to the new/changed
+test — you do **not** run the whole suite 3×.) Use the `REPEAT` env var on the
+`*:one` targets (see next section):
+
+```sh
+REPEAT=3 flox activate -- task test:one -- my-new-thing      # unit (loops vitest 3×)
+REPEAT=3 flox activate -- task art:one  -- my-scenario       # ART
+REPEAT=3 flox activate -- task e2e:one  -- my-spec           # e2e (--repeat-each=3)
+REPEAT=3 flox activate -- task vrt:one  -- my-card           # VRT
+```
+
+The run **fails on the first failing iteration**, so a flake can't hide behind a
+later green run. If it flakes locally, fix the flake (diagnose run-bug vs.
+test-bug — never just re-run) *before* the MR. A flake that only reproduces under
+CI load (e.g. a `@collab` relay-contention timeout) still gets root-caused, not
+tolerated — see the `feedback_no_flake_tolerance` discipline.
+
 ## Running ONE test locally (fast dev loop)
 
 Dedicated `*:one` targets run a SINGLE test without the full suite, and a
 long-lived server lets you iterate e2e/VRT specs without re-booting it each run.
-All run through `flox activate -- …`.
+All run through `flox activate -- …`. Prefix any of them with `REPEAT=3` to run
+the test 3× and bail on the first failure — the pre-MR flake-check (above).
 
 **Unit / vitest — `task test:one`** (defaults to the web package; `PKG=dsp|server|art`):
 

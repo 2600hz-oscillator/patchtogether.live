@@ -95,12 +95,15 @@ test.describe('@collab', () => {
   test('rename in A appears in B inside the in-card title (peer Yjs sync)', async ({
     browser,
   }) => {
-    // The full 2-context relay flow (2× goto+networkidle + attachProvider
-    // relay-connect + spawn + rename + two peer-sync polls + DOM asserts)
-    // exceeds the default 30s test timeout under CI relay contention (it
-    // passes locally; failed on CI #557 with a 30s test-timeout, not an
-    // assertion mismatch). Give it headroom.
-    test.setTimeout(60_000);
+    // The full 2-context relay flow (2× goto + attachProvider relay-connect +
+    // spawn + rename + peer-sync polls + DOM asserts) is long. Its internal
+    // waits alone sum to ~40s of polls, so a 60s test budget left only ~15s for
+    // two page loads + relay attach + UI typing under CI contention — too thin:
+    // it timed out at 60s on #561's collab run (rename never reached B). 90s
+    // gives real headroom over the stacked internal timeouts. (The actual flake
+    // root-cause — an unbounded `fill()` hang when the inline editor hadn't
+    // opened yet — is fixed below with an explicit editor-visible wait.)
+    test.setTimeout(90_000);
     const rackspaceId = `title-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
@@ -173,8 +176,25 @@ test.describe('@collab', () => {
       await expect(titleA.first()).toBeVisible({ timeout: 10_000 });
       await titleA.locator('[data-testid="name-label-button"]').first().click();
       const inputA = pageA.locator('[data-testid="name-label-input"]');
+      // FLAKE FIX: wait for the inline editor to actually open before filling.
+      // Playwright's default actionTimeout is unbounded, so a bare
+      // `inputA.fill()` when the click hadn't yet opened the editor (a real
+      // race under CI contention) blocks until the *test* timeout — the 60s
+      // hang seen on #561 (trace's last action was this click; the rename
+      // never committed, so B stayed on the auto-name). A bounded visible-wait
+      // turns that into a fast, clear, retryable failure instead of a hang.
+      await expect(inputA).toBeVisible({ timeout: 10_000 });
       await inputA.fill('SHARED_LEAD');
       await inputA.press('Enter');
+
+      // Confirm the rename committed in A's OWN card first, so a sync failure
+      // below is unambiguously a peer-propagation problem (B) and not a missed
+      // local edit (A). Cheap, and it localizes future failures.
+      await expect(
+        pageA
+          .locator('.svelte-flow__node-wavesculpt header.title [data-testid="name-label-button"]')
+          .first(),
+      ).toHaveText('SHARED_LEAD', { timeout: 10_000 });
 
       // B's in-card title must update to the new value via Y.Doc sync.
       await expect
