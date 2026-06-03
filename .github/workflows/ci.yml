@@ -1018,11 +1018,12 @@ jobs:
     name: behavioral input coverage (shard ${{ matrix.shard }}/6)
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
-    # GATED lane (2026-06-03): the per-port stabilization pass landed, so this
-    # is now a real gate via the `ci` umbrella (`needs:` + failure check). Each
-    # failing input is either driven (BEHAVIORAL_PARAMS) or has a justified
-    # BEHAVIORAL_SWEEP_EXEMPT/MODULE_EXEMPT with a DSP-test pointer. (Was
-    # `continue-on-error: true` while informational; removed now that it gates.)
+    # INFORMATIONAL lane (un-gated 2026-06-03 after a premature 1x gate flaked
+    # on moog911): red here must NOT block PR merges. The per-port stabilization
+    # pass (#562) + driver-params/exempts landed, but the lane needs a proper 3x
+    # flake-purge (moog911/drummergirl + any others) before it can gate reliably.
+    # Re-add to the `ci` umbrella's needs + failure check only once 3x-clean.
+    continue-on-error: true
     # 20 min ceiling per shard: sharded 6 ways the per-shard work is a few
     # minutes; cushion for cold-cache CI runs + setup time.
     timeout-minutes: 20
@@ -1219,7 +1220,7 @@ jobs:
     # prebuilt web bundle #557), so depending on it no longer risks the 40-min
     # wait #555 removed. merge-reports stays OUT (cosmetic, never gated).
     # behavioral stays OUT too (still informational — see note in the check).
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, collab, behavioral-coverage]
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, collab]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1235,7 +1236,6 @@ jobs:
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
           COLLAB: ${{ needs.collab.result }}
-          BEHAVIORAL: ${{ needs.behavioral-coverage.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
@@ -1246,10 +1246,11 @@ jobs:
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
           echo "collab:        $COLLAB"
-          echo "behavioral:    $BEHAVIORAL"
           # `e2e` is a matrix; its aggregated result is `success` only if all
-          # shards succeeded. `collab` + `behavioral-coverage` are now GATED
-          # (checked below). `merge-reports` stays OUT (cosmetic; never gated).
+          # shards succeeded. `collab` is GATED (checked below). `behavioral` is
+          # INFORMATIONAL again — gating it on a single clean run (#562) was
+          # premature; it flaked on moog911 on the very next PR. Re-gate only
+          # after a proper 3x flake-purge. `merge-reports` also stays OUT.
           #
           # `build` is the PRODUCTION-bundle gate (`task build` = dsp:build +
           # `vite build`). It's gated here so a broken prod bundle fails this
@@ -1281,11 +1282,10 @@ jobs:
              || "$ART" != "success" \
              || "$BUILD" != "success" \
              || "$E2E" != "success" \
-             || "$COLLAB" != "success" \
-             || "$BEHAVIORAL" != "success" ]]; then
-          # collab + behavioral are now GATED (2026-06-03): collab's relay flake
-          # was fixed (#558, fast via #557); behavioral's per-port pass made the
-          # lane clean (driver-params + justified exempts).
+             || "$COLLAB" != "success" ]]; then
+          # collab is GATED; behavioral is INFORMATIONAL again (un-gated — the
+          # 1x gate flaked on moog911 on the next PR). Do NOT re-add $BEHAVIORAL
+          # here until the lane is verified 3x-clean (proper flake-purge).
             echo "::error::One or more required CI jobs failed."
             exit 1
           fi
