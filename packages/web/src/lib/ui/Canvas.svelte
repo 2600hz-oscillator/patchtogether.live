@@ -46,7 +46,9 @@
   import {
     exportBindings as exportMidiBindings,
     importBindings as importMidiBindings,
+    connect as connectMidiLearn,
   } from '$lib/midi/midi-learn.svelte';
+  import { getMidiClockSource } from '$lib/midi/midi-clock-source';
 
   function persistenceLoad(env: unknown, ydocArg: typeof ydoc, patchArg: typeof patch) {
     // Validate via parseEnvelope when a raw object is passed; if already typed,
@@ -75,220 +77,12 @@
   // Meta-domain registry — sticky notes etc. (no engine binding).
   import { listMetaModuleDefs, getMetaModuleDef } from '$lib/meta/module-registry';
   import '$lib/meta/modules'; // auto-registers stickyDef
-  import AnalogVcoCard from '$lib/ui/modules/AnalogVcoCard.svelte';
-  import AudioinCard from '$lib/ui/modules/AudioinCard.svelte';
-  import AudioOutCard from '$lib/ui/modules/AudioOutCard.svelte';
-  import VcaCard from '$lib/ui/modules/VcaCard.svelte';
-  import MixerCard from '$lib/ui/modules/MixerCard.svelte';
-  import AdsrCard from '$lib/ui/modules/AdsrCard.svelte';
-  import FilterCard from '$lib/ui/modules/FilterCard.svelte';
-  import ReverbCard from '$lib/ui/modules/ReverbCard.svelte';
-  import DelayCard from '$lib/ui/modules/DelayCard.svelte';
-  import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
-  import RasterizeCard from '$lib/ui/modules/RasterizeCard.svelte';
-  import SequencerCard from '$lib/ui/modules/SequencerCard.svelte';
-  import WavetableVcoCard from '$lib/ui/modules/WavetableVcoCard.svelte';
-  import LfoCard from '$lib/ui/modules/LfoCard.svelte';
-  import CartesianCard from '$lib/ui/modules/CartesianCard.svelte';
-  import DestroyCard from '$lib/ui/modules/DestroyCard.svelte';
-  import QbrtCard from '$lib/ui/modules/QbrtCard.svelte';
-  import DrummergirlCard from '$lib/ui/modules/DrummergirlCard.svelte';
-  import MeowboxCard from '$lib/ui/modules/MeowboxCard.svelte';
-  import MixmstrsCard from '$lib/ui/modules/MixmstrsCard.svelte';
-  import TimelordeCard from '$lib/ui/modules/TimelordeCard.svelte';
-  import CharlottesEchosCard from '$lib/ui/modules/CharlottesEchosCard.svelte';
-  import RiotgirlsCard from '$lib/ui/modules/RiotgirlsCard.svelte';
-  import ScoreCard from '$lib/ui/modules/ScoreCard.svelte';
-  import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
-  import PolyseqzCard from '$lib/ui/modules/PolyseqzCard.svelte';
-  import GridsCard from '$lib/ui/modules/GridsCard.svelte';
-  import WavvizCard from '$lib/ui/modules/WavvizCard.svelte';
-  // SWOLEVCO — Buchla 259-style complex VCO with built-in scope output.
-  import SwolevcoCard from '$lib/ui/modules/SwolevcoCard.svelte';
-  import LinesCard from '$lib/ui/modules/LinesCard.svelte';
-  import VideoOutCard from '$lib/ui/modules/VideoOutCard.svelte';
-  import ShapesCard from '$lib/ui/modules/ShapesCard.svelte';
-  import MonoglitchCard from '$lib/ui/modules/MonoglitchCard.svelte';
-  import ReshaperCard from '$lib/ui/modules/ReshaperCard.svelte';
-  import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
-  import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
-  import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
-  import FreezeframeCard from '$lib/ui/modules/FreezeframeCard.svelte';
-  // BACKDRAFT — video feedback generator (crossfade + delayed self-feedback
-  // + LIGHTEN/DARKEN key masks).
-  import BackdraftCard from '$lib/ui/modules/BackdraftCard.svelte';
-  import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
-  // ACIDWARP — 320×240 plasma video source with scene cycler.
-  import AcidwarpCard from '$lib/ui/modules/AcidwarpCard.svelte';
-  // SHAPEGEN — standalone 3D-shape generator extracted from FOXY (3 video
-  // rasters in, 1 video out, SIZE + ROT knobs, SOLIDS toggle).
-  import ShapegenCard from '$lib/ui/modules/ShapegenCard.svelte';
-  // MANDLEBLOT — Mandelbrot fractal generator (mono + colour outputs,
-  // CV-controllable zoom, RGB-cycling hue with log(zoom) coupling).
-  import MandleblotCard from '$lib/ui/modules/MandleblotCard.svelte';
-  // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
-  import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
-  import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
-  import DestructorCard from '$lib/ui/modules/DestructorCard.svelte';
-  import ChromaCard from '$lib/ui/modules/ChromaCard.svelte';
-  import LumaCard from '$lib/ui/modules/LumaCard.svelte';
-  // CHROMAKEY / LUMAKEY — proper 2-input compositors (fg + bg). CHROMA
-  // and LUMA are now their original-spec single-input color processors.
-  import ChromakeyCard from '$lib/ui/modules/ChromakeyCard.svelte';
-  import LumakeyCard from '$lib/ui/modules/LumakeyCard.svelte';
-  import ColorizerCard from '$lib/ui/modules/ColorizerCard.svelte';
-  import FeedbackCard from '$lib/ui/modules/FeedbackCard.svelte';
-  import VideoMixerCard from '$lib/ui/modules/VideoMixerCard.svelte';
-  // CAMERA input (local-only) — see .myrobots/plans/module-camera-input.md.
-  import CameraInputCard from '$lib/ui/modules/CameraInputCard.svelte';
-  // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
-  import IllogicCard from '$lib/ui/modules/IllogicCard.svelte';
-  // UNITYSCALEMATHEMATIK — bipolar CV shaper (unity scaler + 2 linear/expo
-  // attenuvert sections).
-  import UnityscalemathematikCard from '$lib/ui/modules/UnityscalemathematikCard.svelte';
-  // ANALOGLOGICMATHS — analog-logic mixer (MIN/MAX/DIFF/SUM/PRODUCT) inspired
-  // by Mystic Instruments ANA. Continuous-signal counterpart to ILLOGIC's
-  // digital boolean logic.
-  import AnalogLogicMathsCard from '$lib/ui/modules/AnalogLogicMathsCard.svelte';
-  import Dx7Card from '$lib/ui/modules/Dx7Card.svelte';
-  // NOISE — basic noise source (white / pink / brown).
-  import NoiseCard from '$lib/ui/modules/NoiseCard.svelte';
-  // BUGGLES — chaotic random voltage source (wogglebug-style).
-  import BugglesCard from '$lib/ui/modules/BugglesCard.svelte';
-  // WAVECEL — stereo wavetable VCO (E352 WAV loader, 3D viz, spread, fold).
-  import WavecelCard from '$lib/ui/modules/WavecelCard.svelte';
-  // FOXY — hybrid SWOLEVCO→RASTERIZE→XYZ→realtime-wavetable→WAVECEL.
-  import FoxyCard from '$lib/ui/modules/FoxyCard.svelte';
-  // WARRENSPECTRUM — 8-band filterbank with vactrol ping + acidwarp video viz.
-  import WarrenspectrumCard from '$lib/ui/modules/WarrenspectrumCard.svelte';
-  // SYNESTHESIA — 4-band audio-analysis module (2 copies) with 10-bar VU meters.
-  import SynesthesiaCard from '$lib/ui/modules/SynesthesiaCard.svelte';
-  // STEREOVCA — stereo VCA + ring modulator.
-  import StereovcaCard from '$lib/ui/modules/StereovcaCard.svelte';
-  // SHIMMERSHINE — lush shimmer reverb (Schroeder tank + pitch-shifted feedback).
-  import ShimmershineCard from '$lib/ui/modules/ShimmershineCard.svelte';
-  // MACROOSCILLATOR — Plaits-style macro oscillator (VA + waveshape models).
-  import MacrooscillatorCard from '$lib/ui/modules/MacrooscillatorCard.svelte';
-  // SAMSLOOP — loop-based WAV sample player with varispeed + reverse.
-  import SamsloopCard from '$lib/ui/modules/SamsloopCard.svelte';
-  // CLOUDS — granular texture processor (Mutable Instruments Clouds archetype).
-  import CloudsCard from '$lib/ui/modules/CloudsCard.svelte';
-  // MACSEQ — 16-step sequencer with per-step macrooscillator voice picker.
-  import MacseqCard from '$lib/ui/modules/MacseqCard.svelte';
-  // RINGS — modal / sympathetic-string resonator (Mutable Instruments Rings port).
-  import RingsCard from '$lib/ui/modules/RingsCard.svelte';
-  import ElementsCard from '$lib/ui/modules/ElementsCard.svelte';
-  // PEAKS — dual-channel multi-mode utility (Peaks archetype, kick/snare/hihat/env/lfo).
-  import PeaksCard from '$lib/ui/modules/PeaksCard.svelte';
-  // MARBLES — random sampler / clock generator (Mutable Instruments Marbles port).
-  import MarblesCard from '$lib/ui/modules/MarblesCard.svelte';
-  // SYMBIOTE — Marbles core + Grids drums + TB-3PO acid (always-on Symbiote firmware).
-  import SymbioteCard from '$lib/ui/modules/SymbioteCard.svelte';
-  // WARPS — meta-modulator / signal masher (Mutable Instruments Warps archetype).
-  import WarpsCard from '$lib/ui/modules/WarpsCard.svelte';
-  // VEILS — quad VCA + soft-clip summing mix (Mutable Instruments archetype).
-  import VeilsCard from '$lib/ui/modules/VeilsCard.svelte';
-  // ATTENUMIX — the simple 4-channel attenuating mixer (per-channel direct outs + master + tanh soft-clip on mix).
-  import AttenumixCard from '$lib/ui/modules/AttenumixCard.svelte';
-  // BLADES — dual SVF VCF + COLOR overdrive + mix bus (Blades archetype).
-  import BladesCard from '$lib/ui/modules/BladesCard.svelte';
-  // STAGES — 6-segment cascadable function generator (Mutable Instruments Stages archetype).
-  import StagesCard from '$lib/ui/modules/StagesCard.svelte';
-  // TIDES2 — tidal modulator / poly-slope generator (Mutable Instruments Tides 2018 archetype).
-  import Tides2Card from '$lib/ui/modules/Tides2Card.svelte';
-  // CLOUDSEED — exact port of Ghost Note Audio CloudSeed reverb (MIT).
-  import CloudseedCard from '$lib/ui/modules/CloudseedCard.svelte';
-  // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port, MIT).
-  import CallsineCard from '$lib/ui/modules/CallsineCard.svelte';
-  // BLUEBOX — DTMF dialer with phreaker buttons (2600 Hz / 1700+2200 Hz).
-  import BlueboxCard from '$lib/ui/modules/BlueboxCard.svelte';
-  // COCOA DELAY — Tilde Murray's Cocoa Delay (GPL-3.0).
-  import CocoaDelayCard from '$lib/ui/modules/CocoaDelayCard.svelte';
-  // RESOFILTER — multi-mode filter (port of gabrielsoule/resonarium MultiFilter).
-  import ResofilterCard from '$lib/ui/modules/ResofilterCard.svelte';
-  // SIDECAR — stereo sidechain compressor (GMR 2012 topology).
-  import SidecarCard from '$lib/ui/modules/SidecarCard.svelte';
-  // TREE.oh.VOX — TB-303 voice slice (Open303 port).
-  import TreeohvoxCard from '$lib/ui/modules/TreeohvoxCard.svelte';
-  // CHOWKICK — synth-kick voice (ChowKick port by Jatin Chowdhury / chowdsp).
-  import ChowkickCard from '$lib/ui/modules/ChowkickCard.svelte';
-  // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
-  import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
-  // MIDI-OUT-BUDDY — gate/pitch/velocity CV → MIDI notes out to external gear.
-  import MidiOutBuddyCard from '$lib/ui/modules/MidiOutBuddyCard.svelte';
-  // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
-  import MidiclockCard from '$lib/ui/modules/MidiclockCard.svelte';
-  import HelmCard from '$lib/ui/modules/HelmCard.svelte';
-  // HYDROGEN — TR-808 drum-machine module (first pass of the Hydrogen port).
-  import HydrogenCard from '$lib/ui/modules/HydrogenCard.svelte';
-  // PONG — interactive game module (research prototype).
-  import PongCard from '$lib/ui/modules/PongCard.svelte';
-  // MODTRIS — Tetris-clone game module (research prototype).
-  import ModtrisCard from '$lib/ui/modules/ModtrisCard.svelte';
-  // FROGGER — clean-room port of Adrian Eyre's Frogger (MIT). CV-gate-only
-  // input set with an auto-start-on-spawn semantic on start_gate.
-  import FroggerCard from '$lib/ui/modules/FroggerCard.svelte';
-  // SM64 — black-box wrapper around the upstream sm64js (WTFPL).
-  import Sm64Card from '$lib/ui/modules/Sm64Card.svelte';
-  // SKIFREE — wrapper around the upstream skifree.js engine (MIT).
-  import SkifreeCard from '$lib/ui/modules/SkifreeCard.svelte';
-  // JOYSTICK — manual XY pad CV source.
-  import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
-  // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
-  import GamepadCard from '$lib/ui/modules/GamepadCard.svelte';
-  // NUMPAD+ — 4-layer numpad-driven step sequencer + live keyboard.
-  import NumpadPlusCard from '$lib/ui/modules/NumpadPlusCard.svelte';
-  // WAVESCULPT — hybrid 4-osc synth (audio + 3D ribbon video).
-  import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
-  import CubeCard from '$lib/ui/modules/CubeCard.svelte';
-  // MOOG 921 VCO — first Moog System 55/35 clone module (beige faceplate).
-  import Moog921VcoCard from '$lib/ui/modules/Moog921VcoCard.svelte';
-  // MOOG CP3 — console mixer slice (beige faceplate).
-  import MoogCp3MixerCard from '$lib/ui/modules/MoogCp3MixerCard.svelte';
-  // MOOG 904A VCF — Moog System 55/35 clone slice 2 (transistor-ladder LPF).
-  import Moog904aVcfCard from '$lib/ui/modules/Moog904aVcfCard.svelte';
-  // MOOG 911 EG — Moog System 55/35 contour generator (beige faceplate).
-  import Moog911Card from '$lib/ui/modules/Moog911Card.svelte';
-  // MOOG 902 VCA — Moog System 55/35 clone slice 3 (differential amplifier).
-  import Moog902VcaCard from '$lib/ui/modules/Moog902VcaCard.svelte';
-  // ATLANTIS-PATCH support trio. The "Visit Atlantis" demo button +
-  // example-patches/atlantis.ts fixture were retired in favour of the
-  // GLITCHES GET RICHES envelope-driven demo (see loadGlitches() below).
-  // The modules themselves stay registered + spawnable from the palette;
-  // each is general-purpose far beyond the old Atlantis patch.
-  import SlewSwitchCard from '$lib/ui/modules/SlewSwitchCard.svelte';
-  import SampleHoldCard from '$lib/ui/modules/SampleHoldCard.svelte';
-  import FourPlexerCard from '$lib/ui/modules/FourPlexerCard.svelte';
-  import AtlantisCatalystCard from '$lib/ui/modules/AtlantisCatalystCard.svelte';
-  import AquaTankCard from '$lib/ui/modules/AquaTankCard.svelte';
-  // DOOM — interactive single-instance video module; maxInstances: 1.
-  // Keyboard input on focus + 7 CV-gate inputs + stereo audio outputs
-  // (silent in v1 — slice 8 wires real PCM).
-  import DoomCard from '$lib/ui/modules/DoomCard.svelte';
-  import NibblesCard from '$lib/ui/modules/NibblesCard.svelte';
-  import QbertCard from '$lib/ui/modules/QbertCard.svelte';
-  // SNES9X — Super Nintendo emulator (snes9x2005/CAT SFC → WASM). Load-a-ROM
-  // game module with game-event CV/GATE outputs.
-  import Snes9xCard from '$lib/ui/modules/Snes9xCard.svelte';
-  // VIDEOBOX — local-file video player with multiplayer playhead sync.
-  import VideoboxCard from '$lib/ui/modules/VideoboxCard.svelte';
-  // VIDEOVARISPEED — local-file player with performant varispeed transport.
-  import VideoVarispeedCard from '$lib/ui/modules/VideoVarispeedCard.svelte';
-  import FourPlexVidCard from '$lib/ui/modules/FourPlexVidCard.svelte';
-  // PEAKSTATE — animated mandala generator (kaleidoscope mirror-arm pen
-  // trace). Three video outputs: mono, RGB (hue-cycling), and a tilted
-  // rotating "fake 3D" bowl-twin.
-  import PeakstateCard from '$lib/ui/modules/PeakstateCard.svelte';
-  // SCOREBOARD — 4-digit neon 7-segment counter widget (SCORE + RESET gates).
-  import ScoreboardCard from '$lib/ui/modules/ScoreboardCard.svelte';
-  // STICKY — meta-domain paper-style sticky note (no engine binding).
-  import StickyCard from '$lib/ui/modules/StickyCard.svelte';
-  // GROUP — meta-domain N-modules-as-one card (no engine binding).
-  import GroupCard from '$lib/ui/modules/GroupCard.svelte';
-  // LIVECODE — JS-runtime live-coding module (no audio I/O); see /docs/modules/livecode.
-  import LivecodeCard from '$lib/ui/modules/LivecodeCard.svelte';
-  // CLOCKED runner — per-clocked()-call mini-LIVECODE spawned by the main card.
-  import ClockedRunnerCard from '$lib/ui/modules/ClockedRunnerCard.svelte';
+  // Module cards are resolved GLOB-DRIVEN from $lib/ui/modules/*Card.svelte
+  // via $lib/ui/modules-card-map — no hand-maintained per-card import list
+  // (that append-edit was a top cross-PR conflict source). A new module just
+  // drops its XyzCard.svelte here (matching the PascalCase(type)+Card
+  // convention, or declaring `card` on its def) and is picked up automatically.
+  import { buildNodeTypes } from '$lib/ui/modules-card-map';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
   // Canvas no longer renders the label directly.
@@ -424,156 +218,15 @@
     presenceUser ? presenceUser.isRackOwner === true : undefined,
   );
 
-  const nodeTypes = {
-    analogVco: AnalogVcoCard,
-    audioIn: AudioinCard,
-    audioOut: AudioOutCard,
-    vca: VcaCard,
-    mixer: MixerCard,
-    adsr: AdsrCard,
-    filter: FilterCard,
-    reverb: ReverbCard,
-    delay: DelayCard,
-    scope: ScopeCard,
-    rasterize: RasterizeCard,
-    sequencer: SequencerCard,
-    wavetableVco: WavetableVcoCard,
-    lfo: LfoCard,
-    cartesian: CartesianCard,
-    destroy: DestroyCard,
-    qbrt: QbrtCard,
-    drummergirl: DrummergirlCard,
-    meowbox: MeowboxCard,
-    mixmstrs: MixmstrsCard,
-    timelorde: TimelordeCard,
-    charlottesEchos: CharlottesEchosCard,
-    riotgirls: RiotgirlsCard,
-    score: ScoreCard,
-    drumseqz: DrumseqzCard,
-    polyseqz: PolyseqzCard,
-    wavviz: WavvizCard,
-    swolevco: SwolevcoCard,
-    // Video-domain (Phase 0):
-    lines: LinesCard,
-    videoOut: VideoOutCard,
-    shapes: ShapesCard,
-    monoglitch: MonoglitchCard,
-    reshaper: ReshaperCard,
-    ruttetra: RuttetraCard,
-    shapedramps: ShapedrampsCard,
-    vdelay: VdelayCard,
-    freezeframe: FreezeframeCard,
-    backdraft: BackdraftCard,
-    bentbox: BentboxCard,
-    acidwarp: AcidwarpCard,
-    shapegen: ShapegenCard,
-    mandleblot: MandleblotCard,
-    peakstate: PeakstateCard,
-    // Video-domain (Phase 1):
-    inwards: InwardsCard,
-    picturebox: PictureboxCard,
-    destructor: DestructorCard,
-    chroma: ChromaCard,
-    luma: LumaCard,
-    chromakey: ChromakeyCard,
-    lumakey: LumakeyCard,
-    colorizer: ColorizerCard,
-    feedback: FeedbackCard,
-    videoMixer: VideoMixerCard,
-    // CAMERA input (local-only):
-    cameraInput: CameraInputCard,
-    illogic: IllogicCard,
-    unityscalemathematik: UnityscalemathematikCard,
-    analogLogicMaths: AnalogLogicMathsCard,
-    dx7: Dx7Card,
-    noise: NoiseCard,
-    buggles: BugglesCard,
-    wavecel: WavecelCard,
-    foxy: FoxyCard,
-    warrenspectrum: WarrenspectrumCard,
-    synesthesia: SynesthesiaCard,
-    stereovca: StereovcaCard,
-    shimmershine: ShimmershineCard,
-    macrooscillator: MacrooscillatorCard,
-    samsloop: SamsloopCard,
-    clouds: CloudsCard,
-    macseq: MacseqCard,
-    rings: RingsCard,
-    elements: ElementsCard,
-    peaks: PeaksCard,
-    marbles: MarblesCard,
-    symbiote: SymbioteCard,
-    warps: WarpsCard,
-    veils: VeilsCard,
-    grids: GridsCard,
-    attenumix: AttenumixCard,
-    blades: BladesCard,
-    stages: StagesCard,
-    tides2: Tides2Card,
-    cloudseed: CloudseedCard,
-    midiCvBuddy: MidiCvBuddyCard,
-    midiOutBuddy: MidiOutBuddyCard,
-    midiclock: MidiclockCard,
-    helm: HelmCard,
-    hydrogen: HydrogenCard,
-    pong: PongCard,
-    modtris: ModtrisCard,
-    frogger: FroggerCard,
-    sm64: Sm64Card,
-    skifree: SkifreeCard,
-    joystick: JoystickCard,
-    gamepad: GamepadCard,
-    numpadPlus: NumpadPlusCard,
-    wavesculpt: WavesculptCard,
-    // CUBE — 3D wavetable-navigator oscillator (slice-readout + 3D viz).
-    cube: CubeCard,
-    moog921Vco: Moog921VcoCard,
-    moogCp3: MoogCp3MixerCard,
-    moog904a: Moog904aVcfCard,
-    moog911: Moog911Card,
-    moog902: Moog902VcaCard,
-    slewSwitch: SlewSwitchCard,
-    // SAMPLE & HOLD — rising-edge S&H + scale quantizer (ungated = quantizer).
-    sampleHold: SampleHoldCard,
-    // 4PLEXER — 4-in / 4-out discrete signal router (per-output gate-advanced selector).
-    fourplexer: FourPlexerCard,
-    atlantisCatalyst: AtlantisCatalystCard,
-    aquaTank: AquaTankCard,
-    // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
-    callsine: CallsineCard,
-    // BLUEBOX — DTMF dialer with two phreaker buttons.
-    bluebox: BlueboxCard,
-    cocoadelay: CocoaDelayCard,
-    // RESOFILTER — Resonarium MultiFilter port (5 modes, named-mode label).
-    resofilter: ResofilterCard,
-    // SIDECAR — stereo sidechain compressor (GMR 2012; Faust co.compressor_stereo).
-    sidecar: SidecarCard,
-    // TREE.oh.VOX — TB-303 voice slice (Open303 port).
-    treeohvox: TreeohvoxCard,
-    // CHOWKICK — synth-kick voice (ChowKick by Jatin Chowdhury / chowdsp, BSD-3-Clause).
-    chowkick: ChowkickCard,
-    // DOOM — single-instance interactive video module.
-    doom: DoomCard,
-    // NIBBLES — QBasic Nibbles snake game module.
-    nibbles: NibblesCard,
-    // QBERT — Q*Bert (Gottlieb 1982) arcade emulator.
-    qbert: QbertCard,
-    // SNES9X — Super Nintendo emulator (load-a-ROM + game-event CV/GATE outs).
-    snes9x: Snes9xCard,
-    // VIDEOBOX — local-file video player with multiplayer playhead sync.
-    videobox: VideoboxCard,
-    // VIDEOVARISPEED — local-file player with performant varispeed transport.
-    videovarispeed: VideoVarispeedCard,
-    // 4PLEXVID — 4-in / 4-out video router with per-output gate-advanced selector.
-    '4plexvid': FourPlexVidCard,
-    // SCOREBOARD — 4-digit neon 7-segment counter widget.
-    scoreboard: ScoreboardCard,
-    // Meta-domain (no engine binding):
-    sticky: StickyCard,
-    group: GroupCard,
-    livecode: LivecodeCard,
-    clockedRunner: ClockedRunnerCard,
-  };
+  // The SvelteFlow node-component map, derived from EVERY registered def
+  // (audio + video + meta) via the glob-driven card resolver. Adding a
+  // module needs no edit here. Built once at module scope (the registries
+  // self-register on the barrel imports above, so the lists are populated).
+  const nodeTypes = buildNodeTypes([
+    ...listModuleDefs(),
+    ...listVideoModuleDefs(),
+    ...listMetaModuleDefs(),
+  ]);
 
   let audioCtx: AudioContext | null = $state(null);
   let engine: PatchEngine | null = $state(null);
@@ -857,7 +510,7 @@
   // actually ran" signal — under parallel-worker stress an HMR
   // reload can drop the script reload, and waiting on the marker is
   // the cleanest way to detect it.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__timelordeAutospawnDebug = {
       runs: 0,
@@ -869,7 +522,7 @@
     };
   }
   $effect(() => {
-    if (import.meta.env.DEV) {
+    if (testHooksEnabled()) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const g = globalThis as any;
       g.__timelordeAutospawnDebug = {
@@ -2589,7 +2242,7 @@
   // dev-only hook flips its `open` prop directly so the visual surface can
   // be captured independently of auth state. Same pattern as the other
   // `__*` test hooks in this file.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__openSavedGroupsPicker = () => {
       savedGroupsPickerOpen = true;
@@ -3700,7 +3353,7 @@
 
   // Dev-only: expose helpers so @collab Playwright tests can drive the
   // awareness layer without wiring real Clerk auth + pointer events.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__setLocalCursor = (x: number, y: number) => {
@@ -3738,6 +3391,33 @@
       (globalThis as any).__midiTestInstall = () => {
         installSimulatedMidiDevice();
         return true;
+      };
+      // midi-learn singleton API for e2e. The midi REGRESSION spec needs to
+      // drive exportBindings/importBindings/connect against the SAME module
+      // singleton the app uses. It previously did `import('/src/lib/midi/...')`
+      // inside page.evaluate, which only resolves under the Vite DEV server —
+      // under the prebuilt `vite preview` bundle (E2E_USE_PREVIEW=1) that
+      // /src/ path 404s. Exposing the already-bundled functions here keeps the
+      // spec working against the production-like build.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiLearnApi = {
+        exportBindings: () => exportMidiBindings(),
+        importBindings: (b: unknown[]) => importMidiBindings(b as Parameters<typeof importMidiBindings>[0]),
+        connect: () => connectMidiLearn(),
+      };
+      // midi-clock-source singleton accessor — same /src/-import-under-preview
+      // problem as __midiLearnApi above (the MIDI Clock BPM-derivation spec).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiClockSource = () => getMidiClockSource();
+      // picturebox encode/decode helpers — the video-orientation PICTUREBOX
+      // spec drives the REAL production encode→decode path to inject a test
+      // image. Lazily imported (the bundled $lib specifier, NOT a /src/ URL)
+      // so it resolves under `vite preview` too. Lazy keeps the video chunk
+      // out of the main canvas bundle for non-test prod builds.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__pictureboxEncode = async () => {
+        const m = await import('$lib/video/modules/picturebox-encode');
+        return { downscaleAndEncode: m.downscaleAndEncode, base64ToImageBitmap: m.base64ToImageBitmap };
       };
     });
   }
@@ -3807,8 +3487,9 @@
   });
 
   // Dev-only: expose undoManager so e2e tests can assert state without
-  // racing against the captureTimeout debouncer. Stripped in prod.
-  if (import.meta.env.DEV) {
+  // racing against the captureTimeout debouncer. Gated on testHooksEnabled()
+  // so it's present in the preview bundle (VITE_E2E_HOOKS=1) too.
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__undoManager = undoManager;

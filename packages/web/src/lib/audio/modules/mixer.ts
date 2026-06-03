@@ -30,6 +30,7 @@ const PARAM_PREFIX = '/Mixer';
 
 export const mixerDef: AudioModuleDef = {
   type: 'mixer',
+  palette: { top: 'Audio modules', sub: 'Mixing' },
   domain: 'audio',
   label: 'Mixer',
   category: 'utilities',

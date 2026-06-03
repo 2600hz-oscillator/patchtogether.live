@@ -515,6 +515,7 @@ export const callsineMath = {
 
 export const callsineDef: AudioModuleDef = {
   type: 'callsine',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'CALLSINE',
   // CallSine is fundamentally audio-in → audio-out (a resynth, not a

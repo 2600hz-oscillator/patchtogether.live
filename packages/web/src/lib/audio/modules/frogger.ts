@@ -75,6 +75,7 @@ const SCHEDULE_CUSHION_S = 0.005;
 
 export const froggerDef: AudioModuleDef = {
   type: 'frogger',
+  palette: { top: 'Games', sub: 'Arcade' },
   domain: 'audio',
   label: 'FROGGER',
   category: 'games',

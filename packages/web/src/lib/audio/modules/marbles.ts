@@ -159,6 +159,7 @@ export const marblesMath = {
 
 export const marblesDef: AudioModuleDef = {
   type: 'marbles',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'MARBLES',
   category: 'sources',

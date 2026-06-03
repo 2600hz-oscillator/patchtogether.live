@@ -82,6 +82,7 @@ const DEFAULTS: LumakeyParams = {
 
 export const lumakeyDef: VideoModuleDef = {
   type: 'lumakey',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'LUMAKEY',
   category: 'effects',

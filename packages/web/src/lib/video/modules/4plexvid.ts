@@ -102,6 +102,8 @@ const GATE_IDS = ['gate1', 'gate2', 'gate3', 'gate4'] as const;
 export const fourPlexVidDef: VideoModuleDef = {
   // Type id is '4plexvid'. ModuleType accepts arbitrary strings.
   type: '4plexvid',
+  palette: { top: 'Video modules', sub: 'Utilities' },
+  card: 'FourPlexVidCard',
   domain: 'video',
   label: '4PLEXVID',
   category: 'utilities',

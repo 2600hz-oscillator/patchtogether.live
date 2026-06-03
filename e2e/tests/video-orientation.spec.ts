@@ -411,9 +411,19 @@ test.describe('video orientation — PICTUREBOX image source', () => {
       const blob: Blob = await new Promise((res) => cv.toBlob((b) => res(b!), 'image/jpeg', 0.85));
       // Drive the REAL production encode/decode helpers (same functions the
       // card uses) so the orientation under test is the shipped behavior.
-      const mod = await import('/src/lib/video/modules/picturebox-encode.ts' as string);
-      const b64: string = await (mod as { downscaleAndEncode: (b: Blob) => Promise<string> }).downscaleAndEncode(blob);
-      const bmp: ImageBitmap = await (mod as { base64ToImageBitmap: (s: string) => Promise<ImageBitmap> }).base64ToImageBitmap(b64);
+      // Resolved via the app-exposed test hook (gated on testHooksEnabled) so
+      // it works under the prebuilt `vite preview` bundle (E2E_USE_PREVIEW=1),
+      // where a `/src/...` dynamic import would 404.
+      const wm = globalThis as unknown as {
+        __pictureboxEncode?: () => Promise<{
+          downscaleAndEncode: (b: Blob) => Promise<string>;
+          base64ToImageBitmap: (s: string) => Promise<ImageBitmap>;
+        }>;
+      };
+      if (!wm.__pictureboxEncode) throw new Error('__pictureboxEncode missing — test-hooks build expected');
+      const mod = await wm.__pictureboxEncode();
+      const b64: string = await mod.downscaleAndEncode(blob);
+      const bmp: ImageBitmap = await mod.base64ToImageBitmap(b64);
       const extras = w.__engine?.()?.getDomain('video')?.read('pic', 'extras') as { setImage: (b: ImageBitmap) => void } | undefined;
       if (!extras) throw new Error('no picturebox extras');
       extras.setImage(bmp);

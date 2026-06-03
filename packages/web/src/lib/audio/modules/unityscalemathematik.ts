@@ -79,6 +79,7 @@ export const unityScaleMath = {
 
 export const unityscalemathematikDef: AudioModuleDef = {
   type: 'unityscalemathematik',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'UNITYSCALEMATHEMATIK',
   category: 'utilities',

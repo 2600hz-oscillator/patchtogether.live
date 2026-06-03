@@ -254,6 +254,7 @@ export const cloudsMath = {
 
 export const cloudsDef: AudioModuleDef = {
   type: 'clouds',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'CLOUDS',
   category: 'effects',

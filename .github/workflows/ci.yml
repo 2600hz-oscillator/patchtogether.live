@@ -10,10 +10,16 @@ name: CI
 #   typecheck       ~30 s  | independent setup
 #   unit            ~90 s  | independent setup (server + web vitest)
 #   dsp-build       ~1-2 min | compiles Faust worklets ONCE → dsp-dist artifact
-#                            | (cache hit ~10 s); art/build/e2e/collab/vrt/
-#                            | vrt-strict/behavioral `needs:` it + restore dist
+#                            | (cache hit ~10 s); art/build/build-web/e2e/collab
+#                            | /vrt/vrt-strict/behavioral `needs:` it + restore
+#   build-web       ~2-3 min | needs: dsp-build; builds the Vite/SvelteKit
+#                            | preview bundle ONCE (VITE_E2E_HOOKS=1) → the
+#                            | web-preview-dist artifact the e2e shards serve
 #   art             ~60 s  | needs: dsp-build (restores dist, dsp:build no-ops)
-#   e2e (× 8)     ~3-4 min | matrix shards 1..8/8, blob reporter, needs: dsp-build
+#   e2e (× 8)     ~3-4 min | matrix shards 1..8/8, blob reporter; needs:
+#                            | [dsp-build, build-web]; runs E2E_USE_PREVIEW=1
+#                            | against the prebuilt bundle (`vite preview`,
+#                            | :4173) instead of booting `vite dev` per shard
 #   merge-reports   ~30 s  | needs: e2e — merges 8 blob-reports → HTML
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
 #   vrt             ~3-5 min | needs: dsp-build (restores dist)
@@ -150,7 +156,11 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # AWS ECR Public mirror of the official Docker Hub image — Docker
+        # Hub's registry-1.docker.io intermittently times out the service-
+        # container pull (recurring CI flake). ECR Public has no rate limits
+        # and is far more reliable. Same image, different (mirror) registry.
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -404,54 +414,51 @@ jobs:
           retention-days: 1
 
   # -----------------------------------------------------------------------
-  # e2e — Playwright E2E suite, sharded 8 ways. Each shard runs ~1/8 of the
-  # 812 specs (file-level distribution) with 4 workers, on its own runner.
-  # Per-shard wall-time ~3-4 min vs the previous ~5-6 min at 4 shards.
+  # build-web — build the SvelteKit/Vite production bundle ONCE per run and
+  # publish .svelte-kit/output/** as the `web-preview-dist` artifact. Every
+  # e2e shard downloads it and runs Playwright against `vite preview`
+  # (E2E_USE_PREVIEW=1) instead of booting `vite dev` per shard.
   #
-  # Reporter is `blob` so we can merge all 8 shards into a single HTML report
-  # via the `merge-reports` job. Each shard uploads its blob artifact;
-  # merge-reports downloads them all and runs `playwright merge-reports`.
+  # WHY (2026-06-02): each e2e shard used to boot the Vite DEV server
+  # (`npm run dev`, :5173), which compiles routes on-demand on first page load
+  # — slow on every shard — and, worse, triggers a dep re-optimization + a
+  # client reload mid-test that flaked the video specs (it broke #551). A
+  # PREBUILT `vite preview` (:4173) serves the static, minified bundle: no
+  # on-demand compile, no HMR client, and no dep-reopt reload class. The build
+  # runs once here instead of 8× (and is far cheaper than 8 cold dev-server
+  # first-loads). This mirrors the `collab` job, which already builds + runs
+  # @collab against preview for the same #232/#225 reload-flake reason.
   #
-  # DB schema + DOOM assets are needed (same as the previous monolithic job).
+  # VITE_E2E_HOOKS=1 is REQUIRED at BUILD time: the e2e helpers drive the
+  # dev-only window globals (`__patch`, `__ydoc`, `__ensureEngine`, …) that
+  # Canvas.svelte gates behind `testHooksEnabled()` (packages/web/src/lib/
+  # dev/test-hooks.ts). In a prod build `import.meta.env.DEV` is false, so
+  # those hooks are tree-shaken OUT unless VITE_E2E_HOOKS=1 is set — exactly
+  # the flag the autotest deploy tier already uses (deploy.yml). Without it,
+  # every spawnPatch-based spec would fail with "__ensureEngine is not a
+  # function". It's a build-time Vite var (baked into the bundle), so it must
+  # be set on `task build:web`, not at preview runtime.
+  #
+  # The DOOM/SNES9X WASM + DOOM1.WAD static assets are baked into the bundle
+  # here (vite build copies the whole static/ tree into
+  # .svelte-kit/output/client/), so the e2e shards no longer build WASM or
+  # fetch the WAD — they're inside the downloaded artifact.
   # -----------------------------------------------------------------------
-  e2e:
-    name: e2e (shard ${{ matrix.shard }}/8)
+  build-web:
+    name: build-web (preview bundle, once)
     needs: dsp-build
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    strategy:
-      # Don't fail-fast: if shard 1 fails on a flake, we still want shards
-      # 2-8 to surface independent failures in the same run rather than
-      # forcing two consecutive CI cycles to triage.
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
-
-    services:
-      # Postgres for the persistence layer (Stage B1+). Both the SvelteKit
-      # webServer and the Hocuspocus server read DATABASE_URL.
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
-
     steps:
-      - name: Checkout (with LFS for ART/VRT baselines)
+      - name: Checkout
         uses: actions/checkout@v4
         with:
+          # REQUIRED: large static game bundles (e.g. static/sm64js/sm64js.bundle.js,
+          # ~12 MB) are stored in git-LFS. Without lfs:true the build bakes the LFS
+          # *pointer* (text starting `version https://git-lfs...`) into the preview
+          # artifact; loading it as a <script> throws "Unexpected identifier 'https'"
+          # and breaks the sm64 e2e shards. Every other job already checks out lfs:true.
           lfs: true
 
       - name: Install Flox
@@ -473,29 +480,23 @@ jobs:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
 
-      - name: Install workspace deps + Playwright Chromium
-        run: flox activate -- task setup
-
-      # Restore the worklet dist built once by dsp-build. Several module
-      # Card.svelte files import `?url`-suffixed WASM/JS artifacts from
-      # packages/dsp/dist/; without them on disk the Vite dev server 500s on
-      # the import. Downloaded here (before the dev server boots) instead of
-      # recompiling Faust per shard.
+      # Restore the worklet dist built once by dsp-build, BEFORE `task
+      # build:web` — `vite build` bundles the `?url`-suffixed DSP artifacts
+      # from packages/dsp/dist/, so they must be on disk first.
       - name: Download DSP dist artifact
         uses: actions/download-artifact@v4
         with:
           name: dsp-dist
           path: packages/dsp/dist
 
-      - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+      - name: Install workspace deps
+        run: flox activate -- task install
 
-      # DOOM WASM blob — emcc-compiled from vendored doomgeneric. Cache key
-      # is the hash of native/build-doom-wasm.sh + the entire vendored source
-      # tree, so any contributor edit to either invalidates and triggers a
-      # rebuild. Output is .gitignored (per packages/web/.gitignore) so a hit
-      # restores doom.{js,wasm} into static/doom/ in place. Cache miss runs
-      # the build via flox (emcc is in the flox manifest).
+      # DOOM/SNES9X WASM + DOOM1.WAD are static-served assets (under
+      # packages/web/static/). `vite build` copies static/ into the client
+      # output, so they need to be present here to be baked into the preview
+      # artifact the e2e shards download. Same cache+build pattern as the
+      # e2e/collab/vrt jobs.
       - name: Cache DOOM WASM artifact
         id: cache-doom-wasm
         uses: actions/cache@v4
@@ -509,15 +510,6 @@ jobs:
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
 
-      # SNES9X WASM blob — emcc-compiled from the vendored snes9x2005 core +
-      # snes9x_bridge.c. Same cache+build pattern as DOOM above: key is the
-      # hash of build-snes9x-wasm.sh + the entire vendored native/snes9x tree.
-      # Output is .gitignored (packages/web/.gitignore) so a hit restores
-      # snes9x.{js,wasm} into static/snes9x/ in place; a miss runs the build
-      # via flox (emcc is in the flox manifest). The SNES ROM itself stays
-      # user-provided + gitignored, so the e2e ROM-gated spec skips in CI —
-      # but the no-ROM dropzone smoke + the module's page-load import need the
-      # WASM present.
       - name: Cache SNES9X WASM artifact
         id: cache-snes9x-wasm
         uses: actions/cache@v4
@@ -531,10 +523,6 @@ jobs:
         if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
 
-      # DOOM1.WAD — shareware game data fetched from doomgeneric upstream.
-      # ~4 MB, never changes; cache key includes the upstream URL so a
-      # mirror-swap invalidates. Without this, the e2e DOOM gameplay spec
-      # would see "WAD missing" overlay even after the WASM builds OK.
       - name: Cache DOOM1.WAD (shareware)
         id: cache-doom-wad
         uses: actions/cache@v4
@@ -545,27 +533,155 @@ jobs:
       - name: Download DOOM1.WAD (shareware)
         if: steps.cache-doom-wad.outputs.cache-hit != 'true'
         run: |
-          # Slitaz mirror — verified 200 OK + correct SHA-1 as of 2026-05.
-          # The doomgeneric upstream raw URL referenced in DOWNLOAD_INSTRUCTIONS.md
-          # 404s; if slitaz also goes dark, swap in another mirror from
-          # https://doomwiki.org/wiki/Shareware and update the doc.
           curl -L --fail --silent --show-error \
             -o packages/web/static/doom/DOOM1.WAD \
             https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
-          # SHA-1 check — loud-fails if the mirror's swapped under us so a
-          # corrupted WAD doesn't poison the actions/cache for a week.
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
             | shasum -a 1 -c -
 
+      # Build the web app with the e2e test hooks compiled IN (see job header).
+      # dsp:build is NOT a dep of `task build:web` (only `task build`), and the
+      # dist was restored above, so this is purely `vite build`.
+      - name: Build web (preview bundle, test hooks enabled)
+        env:
+          VITE_E2E_HOOKS: '1'
+        run: flox activate -- task build:web
+
+      # `vite preview` (adapter-cloudflare) serves from .svelte-kit/output/
+      # (client + prerendered + server) — NOT packages/web/build/, which the
+      # cloudflare adapter leaves empty for the preview path. Upload that tree;
+      # the static DOOM/SNES9X/skifree assets are inside output/client/.
+      - name: Upload web preview bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+          include-hidden-files: true
+          retention-days: 1
+
+  # -----------------------------------------------------------------------
+  # e2e — Playwright E2E suite, sharded 8 ways. Each shard runs ~1/8 of the
+  # 812 specs (file-level distribution) with 4 workers, on its own runner.
+  # Per-shard wall-time ~3-4 min vs the previous ~5-6 min at 4 shards.
+  #
+  # Reporter is `blob` so we can merge all 8 shards into a single HTML report
+  # via the `merge-reports` job. Each shard uploads its blob artifact;
+  # merge-reports downloads them all and runs `playwright merge-reports`.
+  #
+  # DB schema + DOOM assets are needed (same as the previous monolithic job).
+  # -----------------------------------------------------------------------
+  e2e:
+    name: e2e (shard ${{ matrix.shard }}/8)
+    needs: [dsp-build, build-web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      # Don't fail-fast: if shard 1 fails on a flake, we still want shards
+      # 2-8 to surface independent failures in the same run rather than
+      # forcing two consecutive CI cycles to triage.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+
+    services:
+      # Postgres for the persistence layer (Stage B1+). Both the SvelteKit
+      # webServer and the Hocuspocus server read DATABASE_URL.
+      postgres:
+        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
+        # Docker Hub service-container pull.
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      # Run against the prebuilt `vite preview` (:4173) instead of `vite dev`
+      # (:5173). The bundle is built ONCE in the `build-web` job and downloaded
+      # below. Preview serves the static minified bundle: no per-shard
+      # on-demand compile, and no dep-reopt client reload (the class that
+      # flaked the video specs / broke #551 under dev). See playwright.config.ts
+      # USE_PREVIEW / webServer.
+      E2E_USE_PREVIEW: '1'
+
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      # NOTE: no `.svelte-kit` cache here anymore. Under E2E_USE_PREVIEW this
+      # job no longer builds the web app — the `output/` tree comes ONLY from
+      # the web-preview-dist artifact downloaded below. Caching `.svelte-kit`
+      # would risk leaving a stale `output/` from a prior build under it; the
+      # base scaffolding (tsconfig/ambient/generated) is regenerated by the
+      # `svelte-kit sync` prepare hook during `task setup`'s npm install.
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      # Restore the worklet dist built once by dsp-build. Under E2E_USE_PREVIEW
+      # the served bundle already inlines the `?url` DSP artifacts (vite build
+      # resolved + copied them into .svelte-kit/output/client), so preview
+      # doesn't read packages/dsp/dist/ at runtime — but the node-side e2e
+      # harness still references it for a few specs, so keep it on disk. Cheap
+      # download; no per-shard Faust compile.
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
+      # Download the web bundle built ONCE by build-web. `vite preview`
+      # (E2E_USE_PREVIEW=1, set in env above) serves from
+      # packages/web/.svelte-kit/output, so the artifact restores there. The
+      # bundle already contains the DOOM/SNES9X WASM + DOOM1.WAD + skifree
+      # static assets (vite build copied static/ into output/client/), so this
+      # shard no longer builds WASM or fetches the WAD.
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
       # Refresh the registry manifest the way `task e2e` does locally — this
       # is normally a `task test:emit-manifest` dep on `task e2e`, but here we
-      # call playwright directly so the shard flag can be threaded in.
-      # Cheap (~3 s).
+      # call playwright directly so the shard flag can be threaded in. The
+      # manifest (e2e/.generated/registry-manifest.json) is read by the
+      # Playwright TEST process, not the served app, so it's still emitted
+      # per-shard (not part of the web-preview-dist artifact). Cheap (~3 s).
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
 
-      # (DSP dist was restored from the dsp-build artifact above — no per-shard
-      # Faust compile.)
+      # (DSP dist + the prebuilt web bundle were restored above — no per-shard
+      # Faust compile, no WASM build, no WAD fetch, no dev-server boot. The
+      # Playwright webServer runs `vite preview` against the downloaded
+      # output/.)
 
       # @collab multi-context specs are EXCLUDED from the sharded matrix
       # (--grep-invert @collab) and run in their own dedicated, non-sharded
@@ -703,7 +819,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17
+        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
+        # Docker Hub service-container pull.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -913,7 +1031,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17
+        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
+        # Docker Hub service-container pull.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -1076,7 +1196,7 @@ jobs:
   ci:
     name: typecheck + unit + ART + E2E
     if: always()
-    needs: [actionlint, typecheck, unit, dsp-build, art, build, e2e, collab, merge-reports]
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, collab, merge-reports]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1087,6 +1207,7 @@ jobs:
           TYPECHECK: ${{ needs.typecheck.result }}
           UNIT: ${{ needs.unit.result }}
           DSP_BUILD: ${{ needs.dsp-build.result }}
+          BUILD_WEB: ${{ needs.build-web.result }}
           ART: ${{ needs.art.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
@@ -1097,6 +1218,7 @@ jobs:
           echo "typecheck:     $TYPECHECK"
           echo "unit:          $UNIT"
           echo "dsp-build:     $DSP_BUILD"
+          echo "build-web:     $BUILD_WEB"
           echo "art:           $ART"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
@@ -1115,10 +1237,16 @@ jobs:
           # no required check ran the production bundler.
           #
           # `dsp-build` compiles the Faust worklets ONCE and is a dependency of
-          # art/build/e2e/collab (+ vrt/behavioral). A failure there cascades to
-          # those jobs, but we gate on it explicitly so a broken DSP compile
-          # produces a clear, fast failure signal instead of a wall of
+          # art/build/build-web/e2e/collab (+ vrt/behavioral). A failure there
+          # cascades to those jobs, but we gate on it explicitly so a broken DSP
+          # compile produces a clear, fast failure signal instead of a wall of
           # confusing "artifact not found" downloads.
+          #
+          # `build-web` builds the Vite/SvelteKit preview bundle ONCE; the 8
+          # e2e shards download it and run against `vite preview`. It's gated
+          # here so a broken web build (or a missing test-hooks bundle) fails
+          # this umbrella → the e2e shards would otherwise fail confusingly on
+          # an "artifact not found" download.
           #
           # `behavioral-coverage` (BEHAVIORAL) is INTENTIONALLY ABSENT from
           # both `needs:` above and this success check. It's informational
@@ -1128,6 +1256,7 @@ jobs:
              || "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
              || "$DSP_BUILD" != "success" \
+             || "$BUILD_WEB" != "success" \
              || "$ART" != "success" \
              || "$BUILD" != "success" \
              || "$E2E" != "success" ]]; then
@@ -1163,7 +1292,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17
+        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
+        # Docker Hub service-container pull.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

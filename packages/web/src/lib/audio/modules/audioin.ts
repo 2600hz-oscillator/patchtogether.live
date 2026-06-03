@@ -80,6 +80,8 @@ export interface AudioInAttachPayload {
 
 export const audioInDef: AudioModuleDef = {
   type: 'audioIn',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
+  card: 'AudioinCard',
   domain: 'audio',
   label: 'AUDIO IN',
   category: 'sources',

@@ -56,6 +56,7 @@ export function meowboxBaseFreqHz(pitchVolts: number, pitchSemis = 0): number {
 
 export const meowboxDef: AudioModuleDef = {
   type: 'meowbox',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'MEOWBOX',
   category: 'sources',

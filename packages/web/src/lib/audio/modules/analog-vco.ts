@@ -57,6 +57,7 @@ const PARAM_PREFIX = '/Analog_VCO';
 
 export const analogVcoDef: AudioModuleDef = {
   type: 'analogVco',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'Analog VCO',
   category: 'sources',

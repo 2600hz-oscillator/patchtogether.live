@@ -94,6 +94,7 @@ const DEFAULTS: FeedbackParams = {
 
 export const feedbackDef: VideoModuleDef = {
   type: 'feedback',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'FEEDBACK',
   category: 'effects',

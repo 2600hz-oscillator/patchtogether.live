@@ -163,6 +163,7 @@ const DEFAULTS: ChromakeyParams = {
 
 export const chromakeyDef: VideoModuleDef = {
   type: 'chromakey',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'CHROMAKEY',
   category: 'effects',

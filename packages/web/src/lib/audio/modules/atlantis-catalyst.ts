@@ -204,6 +204,7 @@ export const atlantisCatalystDef: AudioModuleDef = {
   // Type id stays `atlantisCatalyst` for back-compat with saved rackspaces;
   // only the display label flipped to SCENECHANGE.
   type: 'atlantisCatalyst',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'SCENECHANGE',
   category: 'modulation',

@@ -102,6 +102,7 @@ const DATA_DEFAULTS: Pick<PictureboxData, 'imageBytes' | 'imageMime' | 'imageNam
 
 export const pictureboxDef: VideoModuleDef = {
   type: 'picturebox',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'PICTUREBOX',
   category: 'sources',

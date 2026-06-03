@@ -37,6 +37,7 @@ const PARAM_PREFIX = '/Filter';
 
 export const filterDef: AudioModuleDef = {
   type: 'filter',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'Filter',
   category: 'filters',

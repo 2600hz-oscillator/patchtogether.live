@@ -50,6 +50,7 @@ const MAX_FEEDBACK = 0.95;
 
 export const delayDef: AudioModuleDef = {
   type: 'delay',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'DELAY',
   category: 'effects',

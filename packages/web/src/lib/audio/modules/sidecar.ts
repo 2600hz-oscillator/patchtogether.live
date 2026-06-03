@@ -71,6 +71,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const sidecarDef: AudioModuleDef = {
   type: 'sidecar',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'SIDECAR',
   category: 'processors',

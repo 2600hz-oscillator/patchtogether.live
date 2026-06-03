@@ -142,6 +142,7 @@ const BURST_PULSE_MS = 4;    // each burst pulse width
 
 export const bugglesDef: AudioModuleDef = {
   type: 'buggles',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'BUGGLES',
   category: 'modulation',

@@ -180,6 +180,7 @@ export function shouldAutoDownsample(
 
 export const sm64Def: AudioModuleDef = {
   type: 'sm64',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'SM64',
   category: 'games',

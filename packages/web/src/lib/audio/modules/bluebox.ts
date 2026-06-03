@@ -96,6 +96,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const blueboxDef: AudioModuleDef = {
   type: 'bluebox',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'BLUEBOX',
   // BLUEBOX is a sound source (12 audio-rate gate ins → 1 audio out), so

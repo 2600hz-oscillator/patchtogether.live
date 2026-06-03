@@ -263,6 +263,7 @@ export interface HelmCardApi {
 
 export const helmDef: AudioModuleDef = {
   type: 'helm',
+  palette: { top: 'Ports', sub: 'Ports' },
   domain: 'audio',
   label: 'HELM',
   category: 'sources',
