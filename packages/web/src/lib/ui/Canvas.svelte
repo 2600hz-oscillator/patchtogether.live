@@ -46,7 +46,9 @@
   import {
     exportBindings as exportMidiBindings,
     importBindings as importMidiBindings,
+    connect as connectMidiLearn,
   } from '$lib/midi/midi-learn.svelte';
+  import { getMidiClockSource } from '$lib/midi/midi-clock-source';
 
   function persistenceLoad(env: unknown, ydocArg: typeof ydoc, patchArg: typeof patch) {
     // Validate via parseEnvelope when a raw object is passed; if already typed,
@@ -508,7 +510,7 @@
   // actually ran" signal — under parallel-worker stress an HMR
   // reload can drop the script reload, and waiting on the marker is
   // the cleanest way to detect it.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__timelordeAutospawnDebug = {
       runs: 0,
@@ -520,7 +522,7 @@
     };
   }
   $effect(() => {
-    if (import.meta.env.DEV) {
+    if (testHooksEnabled()) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const g = globalThis as any;
       g.__timelordeAutospawnDebug = {
@@ -2240,7 +2242,7 @@
   // dev-only hook flips its `open` prop directly so the visual surface can
   // be captured independently of auth state. Same pattern as the other
   // `__*` test hooks in this file.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__openSavedGroupsPicker = () => {
       savedGroupsPickerOpen = true;
@@ -3351,7 +3353,7 @@
 
   // Dev-only: expose helpers so @collab Playwright tests can drive the
   // awareness layer without wiring real Clerk auth + pointer events.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__setLocalCursor = (x: number, y: number) => {
@@ -3389,6 +3391,33 @@
       (globalThis as any).__midiTestInstall = () => {
         installSimulatedMidiDevice();
         return true;
+      };
+      // midi-learn singleton API for e2e. The midi REGRESSION spec needs to
+      // drive exportBindings/importBindings/connect against the SAME module
+      // singleton the app uses. It previously did `import('/src/lib/midi/...')`
+      // inside page.evaluate, which only resolves under the Vite DEV server —
+      // under the prebuilt `vite preview` bundle (E2E_USE_PREVIEW=1) that
+      // /src/ path 404s. Exposing the already-bundled functions here keeps the
+      // spec working against the production-like build.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiLearnApi = {
+        exportBindings: () => exportMidiBindings(),
+        importBindings: (b: unknown[]) => importMidiBindings(b as Parameters<typeof importMidiBindings>[0]),
+        connect: () => connectMidiLearn(),
+      };
+      // midi-clock-source singleton accessor — same /src/-import-under-preview
+      // problem as __midiLearnApi above (the MIDI Clock BPM-derivation spec).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiClockSource = () => getMidiClockSource();
+      // picturebox encode/decode helpers — the video-orientation PICTUREBOX
+      // spec drives the REAL production encode→decode path to inject a test
+      // image. Lazily imported (the bundled $lib specifier, NOT a /src/ URL)
+      // so it resolves under `vite preview` too. Lazy keeps the video chunk
+      // out of the main canvas bundle for non-test prod builds.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__pictureboxEncode = async () => {
+        const m = await import('$lib/video/modules/picturebox-encode');
+        return { downscaleAndEncode: m.downscaleAndEncode, base64ToImageBitmap: m.base64ToImageBitmap };
       };
     });
   }
@@ -3458,8 +3487,9 @@
   });
 
   // Dev-only: expose undoManager so e2e tests can assert state without
-  // racing against the captureTimeout debouncer. Stripped in prod.
-  if (import.meta.env.DEV) {
+  // racing against the captureTimeout debouncer. Gated on testHooksEnabled()
+  // so it's present in the preview bundle (VITE_E2E_HOOKS=1) too.
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__undoManager = undoManager;

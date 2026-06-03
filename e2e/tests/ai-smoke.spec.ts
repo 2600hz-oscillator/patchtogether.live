@@ -181,6 +181,10 @@ test.describe('AI smoke check', () => {
   });
 
   test('detach-on-grab: starting a drag from a patched input removes the existing cable', async ({ page }) => {
+    // #87: macOS-headless SvelteFlow/xyflow limitation — synthetic page.mouse drags never
+    // fire xyflow's onconnectstart, so the cable-detach never runs (fails identically under
+    // the dev server, i.e. NOT a preview regression). Runs + passes on Linux CI (the gate).
+    test.skip(process.platform === 'darwin', 'macOS-headless xyflow synthetic-mouse limit (#87); runs on Linux CI');
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
