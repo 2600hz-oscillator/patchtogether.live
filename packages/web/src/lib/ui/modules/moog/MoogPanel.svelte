@@ -122,9 +122,17 @@
     padding: 4px 8px 5px;
     /* The ModuleTitle text must read against the black plate; override the
      * scoped --text just for the plate so the title is the engraved-cream
-     * Moog logotype colour rather than the body's dark engraving. */
+     * Moog logotype colour rather than the body's dark engraving.
+     *
+     * `color: var(--text)` is REQUIRED here, not just the token re-bind:
+     * ModuleTitle's text is `color: inherit`, and without an explicit color
+     * declaration the plate inherits the *computed* dark color from
+     * `.moog-panel { color: var(--text) }` (evaluated there as #1c1812) — the
+     * re-bound --text never gets re-evaluated, so the title rendered
+     * dark-on-dark. Setting color here re-evaluates --text to the cream. */
     --text: #e8dcc0;
     --text-dim: #b6a684;
+    color: var(--text);
   }
 
   .moog-body {
@@ -163,5 +171,27 @@
   .moog-body :global(.range-label),
   .moog-body :global(.mode-label) {
     color: var(--text);
+  }
+
+  /*
+   * Patch-panel labels — the OTHER half of the dark-on-dark bug.
+   *
+   * The faceplate re-binds --text/--text-dim to dark engraved tones for the
+   * beige plate, but the patch panel pops out on its OWN near-black field
+   * (`.patch-panel { background: rgba(14,17,22,.97); color: var(--text) }`),
+   * so those dark tokens cascade in and the port-row labels + section headers
+   * render dark-on-dark (the "921b has no labels" report — it's every Moog
+   * card). #560 mistakenly assumed the popover was "untouched"; it inherits
+   * the faceplate token re-binds.
+   *
+   * Re-point the tokens to the engraved-cream pair JUST for the patch-panel
+   * subtree — exactly what .moog-title-plate does for the dark title plate.
+   * `.patch-panel` already declares `color: var(--text)` so the re-bind takes
+   * effect on the row labels (color: inherit); --text-dim covers the subgroup
+   * titles + port counts.
+   */
+  .moog-body :global(.patch-panel) {
+    --text: #e8dcc0;
+    --text-dim: #b6a684;
   }
 </style>
