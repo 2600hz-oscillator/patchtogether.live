@@ -452,6 +452,36 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // functional coverage. Promote into MODULES once the darwin + linux PNGs are
   // captured.
   moog902: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 2-position LIN/EXP switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 921A OSCILLATOR DRIVER — Moog System 55/35 clone (batch 1, ships with
+  // the 921B). CV processor (NOT a sound source): generates the freq_bus /
+  // width_bus control voltages that drive N 921B's — NO audio ports.
+  // Deterministic beige faceplate (2 knobs + a 2-position RANGE switch, no
+  // canvas / animation), so a good VRT candidate; baselines pending a
+  // `task vrt:update` run on each platform (the e2e-heavy authoring worktree
+  // can't run VRT browsers). DSP unit (moog921a.test.ts worklet — exponential
+  // freq mapping + width passthrough) + ART (source-SHA-pinned .f32) +
+  // per-module-per-port e2e provide functional coverage. Promote into MODULES
+  // once the darwin + linux PNGs are captured (TODO: later PR baselines them).
+  moog921a: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 2-position RANGE switch, no canvas/animation); CV-only driver (no audio ports). Capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 921B OSCILLATOR — Moog System 55/35 clone (batch 1, ships with the
+  // 921A). Slave VCO driven by a 921A bus; four fixed-level waveform outs.
+  // Deterministic beige faceplate (4 knobs + a 3-position SYNC switch, no
+  // canvas / animation), so a good VRT candidate; baselines pending a
+  // `task vrt:update` run on each platform. DSP unit (moog921b.test.ts worklet
+  // — bus-slaved freq/width + AC/DC FM + sync) + ART (source-SHA-pinned .f32
+  // sine) + per-module-per-port e2e provide functional coverage. Promote into
+  // MODULES once the darwin + linux PNGs are captured (TODO: later PR).
+  moog921b: 'VRT baseline pending — deterministic beige Moog faceplate (4 knobs + 3-position SYNC switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned sine) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 904B VCF — Moog System 55/35 clone (batch 1). 24 dB/oct ladder HPF
+  // (the high-pass companion to the 904A); reuses the shared ladder lib via
+  // hpDerive (input - lp4). Deterministic beige faceplate (1 knob + a
+  // 2-position RANGE switch, no canvas / animation), so a good VRT candidate;
+  // baselines pending a `task vrt:update` run on each platform. DSP unit
+  // (moog904b.test.ts worklet — high-pass derivation + range/cv map) + ART
+  // (source-SHA-pinned .f32) + per-module-per-port e2e provide functional
+  // coverage. Promote into MODULES once the darwin + linux PNGs are captured
+  // (TODO: later PR baselines them).
+  moog904b: 'VRT baseline pending — deterministic beige Moog faceplate (1 knob + 2-position RANGE switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
