@@ -761,6 +761,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/moog904c',
   'linux/moog907a',
   'linux/moog914',
+  // Moog batch 5 (911A trig delay, 961 interface, 962 seq switch, 912 env
+  // follower): darwin baselines captured locally; linux pending CI capture.
+  'linux/moog911a',
+  'linux/moog961',
+  'linux/moog962',
+  'linux/moog912',
   // ---- darwin-side QUARANTINE: pre-existing flakes verified on main
   // (reproduced by reverting the cards-shrink-to-fit CSS in PR #447 and
   // re-running VRT — same failures on a clean main checkout). Quarantined
