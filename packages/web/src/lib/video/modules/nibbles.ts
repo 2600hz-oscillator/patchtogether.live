@@ -149,6 +149,7 @@ export interface NibblesHandleExtras {
 
 export const nibblesDef: VideoModuleDef = {
   type: 'nibbles',
+  palette: { top: 'Games', sub: 'Arcade' },
   domain: 'video',
   label: 'NIBBLES',
   category: 'sources',

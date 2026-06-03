@@ -63,6 +63,7 @@ const SCHEDULE_CUSHION_S = 0.005;
 
 export const pongDef: AudioModuleDef = {
   type: 'pong',
+  palette: { top: 'Games', sub: 'Arcade' },
   domain: 'audio',
   label: 'PONG',
   category: 'games',

@@ -242,6 +242,7 @@ export const RUTTETRA_GRID = { cols: COLS, rows: ROWS } as const;
 
 export const ruttetraDef: VideoModuleDef = {
   type: 'ruttetra',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'RUTTETRA',
   category: 'output',

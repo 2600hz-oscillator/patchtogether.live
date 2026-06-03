@@ -45,6 +45,8 @@ interface SelMessage {
 
 export const fourplexerDef: AudioModuleDef = {
   type: 'fourplexer',
+  palette: { top: 'Audio modules', sub: 'Utility' },
+  card: 'FourPlexerCard',
   domain: 'audio',
   label: '4PLEXER',
   category: 'utility',

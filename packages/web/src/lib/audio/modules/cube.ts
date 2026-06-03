@@ -146,6 +146,7 @@ export function resolveSlotFrames(
 
 export const cubeDef: AudioModuleDef = {
   type: 'cube',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'CUBE',
   category: 'sources',
@@ -206,6 +207,13 @@ export const cubeDef: AudioModuleDef = {
     { id: 'view_rot_x', label: 'View X', defaultValue: 0.6, min: -3.1416, max: 3.1416, curve: 'linear' },
     { id: 'view_rot_y', label: 'View Y', defaultValue: 0.7, min: -3.1416, max: 3.1416, curve: 'linear' },
     { id: 'view_rot_z', label: 'View Z', defaultValue: 0,   min: -3.1416, max: 3.1416, curve: 'linear' },
+    // SCREEN on/off (view-only, NOT audio): 1 = the 3D viz screen renders,
+    // 0 = the screen is OFF. When OFF *and* video_out is unpatched the card
+    // skips ALL visual computation (the rAF render loop + the display-only
+    // field/slice/wave draws) — the biggest perf win for CUBE — while audio
+    // keeps running untouched. Discrete; ignored by the worklet (the card reads
+    // it). Persisted on node.params so the toggle survives reload. (v4 perf.)
+    { id: 'screen_on',  label: 'Screen', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

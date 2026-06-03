@@ -148,6 +148,7 @@ export const stagesMath = {
 
 export const stagesDef: AudioModuleDef = {
   type: 'stages',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'STAGES',
   category: 'modulation',

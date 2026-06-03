@@ -32,16 +32,22 @@
 //                              tolerates missing files.
 //   --no-typecheck             skip the final `task typecheck` step.
 //
-// What it emits:
-//   1. packages/web/src/lib/<domain>/modules/<file>.ts        (module def)
-//   2. packages/web/src/lib/ui/modules/<Type>Card.svelte      (card stub)
+// What it emits — CREATES the module's OWN files + touches only 3 small
+// hand-maintained lists. It NO LONGER edits the shared registry/types/Canvas/
+// categories files (those are now glob-driven / per-def — that's the whole
+// point of the codegen-registry change):
+//   1. packages/web/src/lib/<domain>/modules/<file>.ts        (module def — carries `palette`; AUTO-registers via glob barrel)
+//   2. packages/web/src/lib/ui/modules/<Type>Card.svelte      (card stub — AUTO-resolved via PascalCase convention)
 //   3. packages/web/src/lib/<domain>/modules/<file>.test.ts   (shape test)
-//   4. packages/web/src/lib/docs/module-manifest.ts           (DESCRIPTIONS entry)
+//   4. packages/web/src/lib/docs/module-manifest.ts           (DESCRIPTIONS entry — still hand-maintained prose)
 //   5. e2e/vrt/vrt-exemptions.ts                              (pending baseline)
-//   6. packages/web/src/lib/<domain>/modules/index.ts         (registry)
-//   7. packages/web/src/lib/graph/types.ts                    (StandardModuleType)
-//   8. packages/web/src/lib/ui/Canvas.svelte                  (card router)
-//      + packages/web/src/lib/ui/module-categories.ts         (palette)
+//   6. packages/web/src/lib/ui/modules-card-map.test.ts       (EXPECTED_NODE_TYPES — the one lossless-migration guard line)
+//
+// NOT TOUCHED ANYMORE (the cross-PR conflict files this change removed):
+//   - <domain>/modules/index.ts   → glob auto-registers every def
+//   - graph/types.ts              → ModuleType is an open branded string
+//   - ui/Canvas.svelte            → nodeTypes is glob-derived from the cards
+//   - ui/module-categories.ts     → the def's `palette` field is the source
 //
 // Anti-patterns (per Codex finding #12 spec):
 //   * The output is COMPILABLE STUBS only. We do not invent worklet code
@@ -96,16 +102,27 @@ function moduleSourcePath(domain: Domain, type: string): string {
 function cardPath(pascal: string): string {
   return rp('packages/web/src/lib/ui/modules', `${pascal}Card.svelte`);
 }
+// The barrels still exist as the auto-registration entry points, but the
+// scaffolder NO LONGER edits them — registration is glob-driven, so dropping
+// the def file is enough. Kept here only for the undo path (older scaffolds
+// that predate the glob may have left marker lines behind).
 const REGISTRY_PATHS = {
   audio: rp('packages/web/src/lib/audio/modules/index.ts'),
   video: rp('packages/web/src/lib/video/modules/index.ts'),
   meta: rp('packages/web/src/lib/meta/modules/index.ts'),
 } as const;
+// These four shared files are NO LONGER edited per-module (the whole point of
+// the codegen-registry change): the type union is open, the card map is glob-
+// driven, the palette lives on the def. Paths retained ONLY so the undo path
+// can strip any legacy `// [new-module:…]` markers left by pre-glob scaffolds.
 const GRAPH_TYPES_PATH = rp('packages/web/src/lib/graph/types.ts');
 const CANVAS_PATH = rp('packages/web/src/lib/ui/Canvas.svelte');
 const MODULE_CATEGORIES_PATH = rp('packages/web/src/lib/ui/module-categories.ts');
+// Still hand-maintained (scoped follow-up): the docs DESCRIPTIONS prose + the
+// VRT exemption list + the one card-map test that enumerates every type.
 const MANIFEST_PATH = rp('packages/web/src/lib/docs/module-manifest.ts');
 const VRT_EXEMPTIONS_PATH = rp('e2e/vrt/vrt-exemptions.ts');
+const CARD_MAP_TEST_PATH = rp('packages/web/src/lib/ui/modules-card-map.test.ts');
 
 // ───────────────────────────────────────────────────────────────────────────
 // CLI parsing.
@@ -209,6 +226,20 @@ function defaultCategory(domain: Domain): string {
   if (domain === 'audio') return 'utility';
   if (domain === 'video') return 'Sources';
   return 'tools';
+}
+
+interface PaletteEntry {
+  top: string;
+  sub: string;
+}
+
+/** Default Add-module-picker bucket per domain. Mirrors the legal tops/subs
+ *  in $lib/ui/module-categories.ts (TOP_ORDER + SUB_ORDER). The human nudges
+ *  it in the generated def. */
+function defaultPalette(domain: Domain): PaletteEntry {
+  if (domain === 'audio') return { top: 'Audio modules', sub: 'Utility' };
+  if (domain === 'video') return { top: 'Video modules', sub: 'Utilities' };
+  return { top: 'Hybrid', sub: 'Hybrid' };
 }
 
 function printUsage(): void {
@@ -436,7 +467,13 @@ function maybeCommentOut(body: string, sourceModule: string | null): { body: str
   return { body: banner, commented: true };
 }
 
-function audioStub(type: string, label: string, category: string, shape: ClonedShape | null): string {
+function audioStub(
+  type: string,
+  label: string,
+  category: string,
+  palette: PaletteEntry,
+  shape: ClonedShape | null,
+): string {
   const varName = `${toCamel(type)}Def`;
   const sourceModule = shape?.sourceType ?? null;
   const rawInputs = shape?.inputsBody ?? defaultInputsBody();
@@ -450,8 +487,9 @@ function audioStub(type: string, label: string, category: string, shape: ClonedS
 //
 // ${label} — TODO write a one-line description.
 //
-// Generated by scripts/new-module.ts. The stub compiles, registers, and
-// passes shape tests; the human fills in the worklet + param math.
+// Generated by scripts/new-module.ts. The stub compiles, AUTO-registers
+// (glob-driven barrel), and passes shape tests; the human fills in the
+// worklet + param math.
 //
 // Inputs: TODO.
 // Outputs: TODO.
@@ -462,6 +500,9 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const ${varName}: AudioModuleDef = {
   type: '${toCamel(type)}',
+  // palette = the Add-module picker grouping. Edit to taste (valid tops/subs
+  // live in $lib/ui/module-categories.ts: TOP_ORDER + SUB_ORDER).
+  palette: { top: '${palette.top}', sub: '${palette.sub}' },
   domain: 'audio',
   label: '${label}',
   category: '${category}',
@@ -504,7 +545,13 @@ ${params}
 `;
 }
 
-function videoStub(type: string, label: string, category: string, shape: ClonedShape | null): string {
+function videoStub(
+  type: string,
+  label: string,
+  category: string,
+  palette: PaletteEntry,
+  shape: ClonedShape | null,
+): string {
   const varName = `${toCamel(type)}Def`;
   const sourceModule = shape?.sourceType ?? null;
   const rawInputs = shape?.inputsBody ?? defaultInputsBody();
@@ -517,14 +564,18 @@ function videoStub(type: string, label: string, category: string, shape: ClonedS
 //
 // ${label} — TODO write a one-line description.
 //
-// Generated by scripts/new-module.ts. The stub compiles, registers, and
-// passes shape tests; the human fills in the shader + param math.
+// Generated by scripts/new-module.ts. The stub compiles, AUTO-registers
+// (glob-driven barrel), and passes shape tests; the human fills in the
+// shader + param math.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle } from '$lib/video/engine';
 
 export const ${varName}: VideoModuleDef = {
   type: '${toCamel(type)}',
+  // palette = the Add-module picker grouping. Edit to taste (valid tops/subs
+  // live in $lib/ui/module-categories.ts: TOP_ORDER + SUB_ORDER).
+  palette: { top: '${palette.top}', sub: '${palette.sub}' },
   domain: 'video',
   label: '${label}',
   category: '${category}',
@@ -565,19 +616,23 @@ ${params}
 `;
 }
 
-function metaStub(type: string, label: string, category: string): string {
+function metaStub(type: string, label: string, category: string, palette: PaletteEntry): string {
   const varName = `${toCamel(type)}Def`;
   return `// packages/web/src/lib/meta/modules/${type}.ts
 //
 // ${label} — TODO write a one-line description. (meta domain — no engine
 // binding, no ports.)
 //
-// Generated by scripts/new-module.ts.
+// Generated by scripts/new-module.ts. AUTO-registers via the glob-driven
+// meta barrel — no shared-registry edit required.
 
 import type { MetaModuleDef } from '$lib/meta/module-registry';
 
 export const ${varName}: MetaModuleDef = {
   type: '${toCamel(type)}',
+  // palette = the Add-module picker grouping. Edit to taste (valid tops/subs
+  // live in $lib/ui/module-categories.ts: TOP_ORDER + SUB_ORDER).
+  palette: { top: '${palette.top}', sub: '${palette.sub}' },
   domain: 'meta',
   label: '${label}',
   category: '${category}',
@@ -715,142 +770,23 @@ function appendBeforeMatch(filePath: string, pattern: RegExp, block: string): vo
   writeFileSync(filePath, next);
 }
 
-function addStandardModuleTypeEntry(type: string): void {
-  // Append to the union: insert a new `| '<camel>'` line with a
-  // trailing `// [new-module:<type>]` marker comment so the undo pass
-  // can remove the SINGLE line it added. Without the marker on the
-  // union line itself, undo would have to know how many lines of
-  // generated comment were preceeding the union entry — fragile.
-  //
-  // Anchor: the closing `;` that ends the union, just before
-  // `export type ModuleType = StandardModuleType`. We insert our line
-  // BEFORE the `;` so the union grows.
+function addCardMapTestEntry(type: string): void {
+  // The glob-driven card map (modules-card-map.test.ts) enumerates every
+  // module type as EXPECTED_NODE_TYPES — the one intentional shared touch
+  // for a new module (a single array line, not a registry append). Insert
+  // the camelCase id with a marker comment so undo can strip it.
   const camel = toCamel(type);
-  const src = readFileSync(GRAPH_TYPES_PATH, 'utf8');
-  if (src.includes(`'${camel}'`) && src.includes(`StandardModuleType`)) {
-    const unionRe = /\| '([a-zA-Z0-9]+)'(\s*;\s*\n\s*export type ModuleType)/;
-    const m = src.match(unionRe);
-    if (m && m[1] === camel) return;
-  }
-  // One-line union extension. The marker comment lives on the SAME line
-  // as the `| '<camel>'` payload (after a /* … */ block comment, NOT a
-  // `//` line comment) so the closing `;` can sit on the next line
-  // without becoming part of a `//` comment trailer. removeMarkerLines()
-  // matches the marker text anywhere on a line, so undo deletes the
-  // single line cleanly.
-  const unionLine = `  | '${camel}' /* [new-module:${type}] */`;
-  const anchorRe = /(;\s*\nexport type ModuleType\s*=\s*StandardModuleType)/;
-  const am = src.match(anchorRe);
-  if (!am || am.index === undefined) {
-    throw new Error(`could not find StandardModuleType closing anchor in ${GRAPH_TYPES_PATH}`);
-  }
-  // Insertion point: just BEFORE the `;` so the new `| '<camel>'` line
-  // sits as the last union member with the `;` on its own line below.
-  // Result:
-  //   | 'scoreboard'
-  //   | 'mytestmod' /* [new-module:mytestmod] */
-  // ;
-  // export type ModuleType = StandardModuleType | (string & {});
-  // Trailing `\n` before `;` is legal TypeScript.
-  const next = src.slice(0, am.index) + '\n' + unionLine + '\n' + src.slice(am.index);
-  writeFileSync(GRAPH_TYPES_PATH, next);
-}
-
-function addRegistryEntry(domain: Domain, type: string): void {
-  const path = REGISTRY_PATHS[domain];
-  const camel = toCamel(type);
-  const varName = `${camel}Def`;
-  const src = readFileSync(path, 'utf8');
-
-  // 1) Append the import line. We anchor on the first
-  //    `let registered = false;` line so the import block ends right
-  //    before it.
-  const importBlock = `import { ${varName} } from './${type}'; // [new-module:${type}]\n`;
-  const importAnchor = /\nlet registered = false;/;
-  const im = src.match(importAnchor);
-  if (!im || im.index === undefined) {
-    throw new Error(`could not find import-anchor in ${path}`);
-  }
-  let next = src.slice(0, im.index + 1) + importBlock + src.slice(im.index + 1);
-
-  // 2) Append the registerModule line. We anchor on the
-  //    `exposeModuleSpecsForTests();` call which closes the register
-  //    function — our `registerXModule(...)` lands just BEFORE it.
-  const registerFn = domain === 'audio'
-    ? 'registerModule'
-    : domain === 'video'
-      ? 'registerVideoModule'
-      : 'registerMetaModule';
-  const registerBlock =
-    `  ${registerFn}(${varName}); // [new-module:${type}]\n`;
-  const registerAnchor = /\n(\s*)(exposeModuleSpecsForTests\(\);)/;
-  const rm = next.match(registerAnchor);
-  if (!rm || rm.index === undefined) {
-    throw new Error(`could not find exposeModuleSpecsForTests anchor in ${path}`);
-  }
-  next = next.slice(0, rm.index + 1) + registerBlock + next.slice(rm.index + 1);
-  writeFileSync(path, next);
-}
-
-function addCanvasEntry(type: string, pascal: string): void {
-  const src = readFileSync(CANVAS_PATH, 'utf8');
-  // 1) Import. Anchor: the StickyCard import line is a stable late-in-list
-  //    sentinel, but the safest universal anchor is the comment block right
-  //    above `// Meta-domain` or the StickyCard import.
-  const importLine =
-    `  import ${pascal}Card from '$lib/ui/modules/${pascal}Card.svelte'; // [new-module:${type}]\n`;
-  // Anchor on the first occurrence of `import StickyCard from` — it's
-  // present in every checkout and lives near the end of the import block.
-  const importAnchor = /\n(\s*)(import StickyCard from)/;
-  const im = src.match(importAnchor);
-  if (!im || im.index === undefined) {
-    throw new Error(`could not find StickyCard import anchor in ${CANVAS_PATH}`);
-  }
-  let next = src.slice(0, im.index + 1) + importLine + src.slice(im.index + 1);
-
-  // 2) Router entry. Find the `// Meta-domain (no engine binding):` comment
-  //    and inject just BEFORE it. That keeps meta entries at the bottom of
-  //    the router and our entry above them.
-  const routerLine =
-    `    ${toCamel(type)}: ${pascal}Card, // [new-module:${type}]\n`;
-  const routerAnchor = /\n(\s*)(\/\/ Meta-domain \(no engine binding\):)/;
-  const rm = next.match(routerAnchor);
-  if (!rm || rm.index === undefined) {
-    // Fallback anchor: the StickyCard router entry (which is always present).
-    const altAnchor = /\n(\s*)(sticky: StickyCard,)/;
-    const am = next.match(altAnchor);
-    if (!am || am.index === undefined) {
-      throw new Error(`could not find Canvas router anchor in ${CANVAS_PATH}`);
-    }
-    next = next.slice(0, am.index + 1) + routerLine + next.slice(am.index + 1);
-  } else {
-    next = next.slice(0, rm.index + 1) + routerLine + next.slice(rm.index + 1);
-  }
-  writeFileSync(CANVAS_PATH, next);
-}
-
-function addModuleCategoriesEntry(type: string, domain: Domain): void {
-  // Append a single entry inside the MODULE_CATEGORIES object literal.
-  // Default sub-bucket = a permissive but legal bucket per domain.
-  const camel = toCamel(type);
-  const entry = domain === 'audio'
-    ? `  ${camel}: { top: 'Audio modules', sub: 'Utility' }, // [new-module:${type}]\n`
-    : domain === 'video'
-      ? `  ${camel}: { top: 'Video modules', sub: 'Utilities' }, // [new-module:${type}]\n`
-      : `  ${camel}: { top: 'Hybrid', sub: 'Hybrid' }, // [new-module:${type}]\n`;
-
-  const src = readFileSync(MODULE_CATEGORIES_PATH, 'utf8');
-  // Anchor on the closing `};` of MODULE_CATEGORIES — locate the `export
-  // const MODULE_CATEGORIES` block and inject before its closing brace.
-  const startRe = /export const MODULE_CATEGORIES\s*:\s*Record<string, CategoryEntry>\s*=\s*{/;
+  const src = readFileSync(CARD_MAP_TEST_PATH, 'utf8');
+  const startRe = /const EXPECTED_NODE_TYPES = \[/;
   const startM = src.match(startRe);
   if (!startM || startM.index === undefined) {
-    throw new Error(`could not find MODULE_CATEGORIES start in ${MODULE_CATEGORIES_PATH}`);
+    throw new Error(`could not find EXPECTED_NODE_TYPES start in ${CARD_MAP_TEST_PATH}`);
   }
-  const openIdx = src.indexOf('{', startM.index);
-  const { endIdx } = sliceMatchedBrackets(src, openIdx, '{', '}');
-  const next = src.slice(0, endIdx) + entry + src.slice(endIdx);
-  writeFileSync(MODULE_CATEGORIES_PATH, next);
+  const openIdx = src.indexOf('[', startM.index);
+  const { endIdx } = sliceMatchedBrackets(src, openIdx, '[', ']');
+  const entry = `\n  '${camel}', // [new-module:${type}]`;
+  const next = src.slice(0, endIdx) + entry + '\n' + src.slice(endIdx);
+  writeFileSync(CARD_MAP_TEST_PATH, next);
 }
 
 function addManifestDescriptionEntry(type: string, label: string): void {
@@ -976,7 +912,10 @@ function undo(type: string): UndoResult {
     filesDeleted.push(cardPath(pascal));
   }
 
-  // Strip marker lines from the in-place edit files.
+  // Strip marker lines from the in-place edit files. The current scaffolder
+  // only edits MANIFEST + VRT + the card-map test; the registry/types/Canvas/
+  // categories paths are retained here purely to clean up markers a LEGACY
+  // (pre-glob) scaffold may have left behind.
   for (const f of [
     REGISTRY_PATHS.audio,
     REGISTRY_PATHS.video,
@@ -986,6 +925,7 @@ function undo(type: string): UndoResult {
     MODULE_CATEGORIES_PATH,
     MANIFEST_PATH,
     VRT_EXEMPTIONS_PATH,
+    CARD_MAP_TEST_PATH,
   ]) {
     if (removeMarkerLines(f, marker)) filesEdited.push(f);
   }
@@ -1007,15 +947,16 @@ function scaffold(opts: ScaffoldOpts): ScaffoldResult {
   const camel = toCamel(opts.type);
   const pascal = toPascal(opts.type);
 
-  // Pre-flight: refuse if the module is already registered (= the
-  // StandardModuleType union, the registry, or the source file already
-  // mentions it). Keeps re-runs from creating duplicate registrations.
-  const graphSrc = readFileSync(GRAPH_TYPES_PATH, 'utf8');
-  const camelInUnion = new RegExp(`\\|\\s*'${camel}'`).test(graphSrc);
+  // Pre-flight: refuse if the module's def file already exists OR it's
+  // already enumerated in the card-map test. (The type union is open + the
+  // registry is glob-driven, so the def file is the source of truth for
+  // "already exists".) Keeps re-runs from creating duplicates.
+  const cardMapSrc = readFileSync(CARD_MAP_TEST_PATH, 'utf8');
+  const camelInTest = new RegExp(`'${camel}'\\s*,`).test(cardMapSrc);
   const fileExists = existsSync(moduleSourcePath(opts.domain, opts.type));
-  if (camelInUnion || fileExists) {
+  if (camelInTest || fileExists) {
     throw new Error(
-      `type '${opts.type}' (camelCase '${camel}') already exists in the registry — ` +
+      `type '${opts.type}' (camelCase '${camel}') already exists — ` +
       `run \`--undo ${opts.type}\` to remove the previous scaffold first, ` +
       `or pick a different module id.`,
     );
@@ -1031,18 +972,21 @@ function scaffold(opts: ScaffoldOpts): ScaffoldResult {
 
   const filesCreated: string[] = [];
   const filesEdited: string[] = [];
+  const palette = defaultPalette(opts.domain);
 
-  // 1) Module def file.
+  // 1) Module def file. Carries `palette` (its own category — no shared map
+  //    edit) and AUTO-registers via the glob-driven barrel (no index edit).
   const modulePath = moduleSourcePath(opts.domain, opts.type);
   const moduleStub =
-    opts.domain === 'audio' ? audioStub(opts.type, opts.label, opts.category, shape)
-    : opts.domain === 'video' ? videoStub(opts.type, opts.label, opts.category, shape)
-    : metaStub(opts.type, opts.label, opts.category);
+    opts.domain === 'audio' ? audioStub(opts.type, opts.label, opts.category, palette, shape)
+    : opts.domain === 'video' ? videoStub(opts.type, opts.label, opts.category, palette, shape)
+    : metaStub(opts.type, opts.label, opts.category, palette);
   mkdirSync(dirname(modulePath), { recursive: true });
   writeFileSync(modulePath, moduleStub);
   filesCreated.push(modulePath);
 
-  // 2) Card (skipped with --no-card).
+  // 2) Card (skipped with --no-card). Resolved GLOB-DRIVEN by the PascalCase
+  //    convention — no Canvas import/router edit.
   if (!opts.noCard) {
     const cp = cardPath(pascal);
     mkdirSync(dirname(cp), { recursive: true });
@@ -1055,7 +999,7 @@ function scaffold(opts: ScaffoldOpts): ScaffoldResult {
   writeFileSync(testPath, shapeTestStub(opts.type, opts.domain));
   filesCreated.push(testPath);
 
-  // 4) Manifest description (DESCRIPTIONS map in module-manifest.ts).
+  // 4) Manifest description (DESCRIPTIONS map — still hand-maintained prose).
   addManifestDescriptionEntry(opts.type, opts.label);
   filesEdited.push(MANIFEST_PATH);
 
@@ -1063,18 +1007,13 @@ function scaffold(opts: ScaffoldOpts): ScaffoldResult {
   addVrtExemption(opts.type);
   filesEdited.push(VRT_EXEMPTIONS_PATH);
 
-  // 6) Registry barrel + StandardModuleType union + module-categories.
-  addRegistryEntry(opts.domain, opts.type);
-  filesEdited.push(REGISTRY_PATHS[opts.domain]);
-  addStandardModuleTypeEntry(opts.type);
-  filesEdited.push(GRAPH_TYPES_PATH);
-  addModuleCategoriesEntry(opts.type, opts.domain);
-  filesEdited.push(MODULE_CATEGORIES_PATH);
-
-  // 7) Canvas card router (skipped with --no-card).
+  // 6) Card-map test enumeration — the ONE intentional shared touch left
+  //    (a single line in the EXPECTED_NODE_TYPES array, guarding that no
+  //    module silently loses its card). NOT a registry/types/Canvas/
+  //    categories append — those are all auto-derived now.
   if (!opts.noCard) {
-    addCanvasEntry(opts.type, pascal);
-    filesEdited.push(CANVAS_PATH);
+    addCardMapTestEntry(opts.type);
+    filesEdited.push(CARD_MAP_TEST_PATH);
   }
 
   return { filesCreated, filesEdited };
@@ -1176,6 +1115,7 @@ export const __test_internals = {
   MODULE_CATEGORIES_PATH,
   MANIFEST_PATH,
   VRT_EXEMPTIONS_PATH,
+  CARD_MAP_TEST_PATH,
   audioModulePath,
   videoModulePath,
   metaModulePath,

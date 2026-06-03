@@ -33,6 +33,7 @@ const PARAM_PREFIX = '/DESTROY';
 
 export const destroyDef: AudioModuleDef = {
   type: 'destroy',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'DESTROY',
   category: 'effects',

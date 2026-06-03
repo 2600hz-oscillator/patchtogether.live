@@ -48,6 +48,7 @@ import { RasterPainter, type RasterizeDrawParams } from './rasterize-draw';
 
 export const rasterizeDef: AudioModuleDef = {
   type: 'rasterize',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'Rasterize',
   category: 'utilities',

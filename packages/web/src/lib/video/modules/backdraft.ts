@@ -544,6 +544,7 @@ export function backdraftEffectiveDelayMs(
 
 export const backdraftDef: VideoModuleDef = {
   type: 'backdraft',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'BACKDRAFT',
   category: 'effects',

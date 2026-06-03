@@ -244,6 +244,7 @@ function tr808Default(i: number, key: 'gain' | 'pan' | 'A' | 'D' | 'S' | 'R'): n
 
 export const hydrogenDef: AudioModuleDef = {
   type: 'hydrogen',
+  palette: { top: 'Ports', sub: 'Ports' },
   label: 'HYDROGEN',
   domain: 'audio',
   category: 'sources',

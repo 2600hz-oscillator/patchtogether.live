@@ -246,6 +246,7 @@ const RASTER_H = FOXY_FIELD_SIZE;
 
 export const foxyDef: AudioModuleDef = {
   type: 'foxy',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'FOXY',
   category: 'sources',

@@ -124,6 +124,7 @@ const DEFAULTS: ReshaperParams = {
 
 export const reshaperDef: VideoModuleDef = {
   type: 'reshaper',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'RESHAPER',
   category: 'output',

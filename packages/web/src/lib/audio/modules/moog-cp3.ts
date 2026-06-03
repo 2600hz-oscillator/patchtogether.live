@@ -48,6 +48,8 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moogCp3Def: AudioModuleDef = {
   type: 'moogCp3',
+  palette: { top: 'Moog', sub: 'SYS55' },
+  card: 'MoogCp3MixerCard',
   domain: 'audio',
   label: 'Moog CP3 Mixer',
   category: 'utilities',

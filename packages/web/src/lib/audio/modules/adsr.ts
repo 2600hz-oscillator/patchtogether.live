@@ -40,6 +40,7 @@ const PARAM_PREFIX = '/ADSR';
 
 export const adsrDef: AudioModuleDef = {
   type: 'adsr',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'ADSR',
   category: 'modulation',

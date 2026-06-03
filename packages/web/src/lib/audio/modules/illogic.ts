@@ -110,6 +110,7 @@ function thresholdCurve(threshold = 0.5, size = 4096): Float32Array<ArrayBuffer>
 
 export const illogicDef: AudioModuleDef = {
   type: 'illogic',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'ILLOGIC',
   category: 'utilities',

@@ -101,6 +101,7 @@ function generateBasicTable(): Float32Array {
 // ScopeCard uses for GroupCard portal-hoisting.
 export const wavvizDef: AudioModuleDef = {
   type: 'wavviz',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'WAVVIZ',
   category: 'sources',

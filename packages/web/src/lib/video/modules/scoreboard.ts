@@ -101,6 +101,7 @@ export function scoreboardWrap(score: number): number {
 
 export const scoreboardDef: VideoModuleDef = {
   type: 'scoreboard',
+  palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
   label: 'SCOREBOARD',
   category: 'utilities',

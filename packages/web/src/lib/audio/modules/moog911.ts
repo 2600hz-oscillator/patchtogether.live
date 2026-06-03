@@ -45,6 +45,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog911Def: AudioModuleDef = {
   type: 'moog911',
+  palette: { top: 'Moog', sub: 'SYS55' },
   domain: 'audio',
   label: 'Moog 911 EG',
   category: 'modulation',

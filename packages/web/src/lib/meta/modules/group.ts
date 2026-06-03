@@ -22,6 +22,7 @@ import type { GroupData, ExposedPort } from '$lib/graph/group-projection';
 
 export const groupDef: MetaModuleDef = {
   type: 'group',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'meta',
   label: 'GROUP',
   category: 'tools',

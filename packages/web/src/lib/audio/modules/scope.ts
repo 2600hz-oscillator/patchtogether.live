@@ -54,6 +54,7 @@ export type { PitchResult } from '$lib/audio/pitch-detect';
 
 export const scopeDef: AudioModuleDef = {
   type: 'scope',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'Scope',
   category: 'utilities',

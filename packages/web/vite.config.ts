@@ -26,6 +26,28 @@ export default defineConfig({
   // at DSP build time (packages/dsp/scripts/build-worklet.mjs); the parent
   // thread still uses @grame/faustwasm's MonoAudioWorkletNode wrapper but
   // doesn't depend on .toString() at runtime.
+  optimizeDeps: {
+    // Pre-bundle deps that Vite's startup dep-scanner can't reach. The
+    // scanner crawls *static* imports from the SvelteKit entry but does NOT
+    // expand `import.meta.glob(...)` (Vite's glob plugin rewrites those later,
+    // during transform, after the scan). The module-card map
+    // (`modules-card-map.ts`) and the audio/video/meta module barrels now load
+    // every card / def via eager `import.meta.glob` instead of the old
+    // hand-maintained static import lists in Canvas.svelte. `@xyflow/svelte`'s
+    // sub-package `@xyflow/system` is reachable ONLY through those glob-imported
+    // card components, so without this hint it's discovered on the FIRST page
+    // load → Vite force-re-optimizes deps mid-flight and triggers a full client
+    // reload. On a loaded CI runner (multiple e2e shards × workers sharing one
+    // dev server) that reload lands while a test's dynamic route import is
+    // in flight, surfacing as a 504 "Outdated Optimize Dep" +
+    // "Failed to fetch dynamically imported module …/nodes/3.js" and a flaky
+    // failure (notably macseq.spec — the macrooscillator never gets a chance
+    // to emit audio because the page reloaded out from under the test).
+    // Including it here puts it in the initial optimize pass, so there's no
+    // late re-optimization and no reload race. Keep in sync with any new dep
+    // that becomes reachable only via the module/card globs.
+    include: ['@xyflow/system'],
+  },
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',

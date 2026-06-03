@@ -88,6 +88,7 @@ const DEFAULTS: CameraParams = {
 
 export const cameraInputDef: VideoModuleDef = {
   type: 'cameraInput',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'CAMERA',
   category: 'sources',

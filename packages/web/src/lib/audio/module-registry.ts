@@ -9,6 +9,19 @@ import type { ModuleDef, ModuleType, ParamDef, PortDef, Domain } from '$lib/grap
 import type { AudioModuleFactory } from './engine';
 
 /**
+ * Palette classification — the nested "Add module" picker grouping. Lives on
+ * the def so adding a module needs NO edit to the shared module-categories
+ * map (that append-edit was a top cross-PR conflict source). `top` is the
+ * top-level palette row, `sub` the sub-folder within it. When omitted, the
+ * module falls into the "Uncategorized" bucket (and the categories unit test
+ * nudges the contributor to classify it). See $lib/ui/module-categories.ts.
+ */
+export interface PaletteCategory {
+  top: string;
+  sub: string;
+}
+
+/**
  * Module-grouping Phase 4 — exposed controls.
  *
  * A module declares its "exposable" controls so a containing group can opt
@@ -107,6 +120,18 @@ export interface AudioModuleDef {
    * Set on: drumseqz, polyseqz, macseq, sequencer, score.
    */
   exposesSequence?: boolean;
+  /**
+   * Palette classification (nested Add-module picker grouping). Declared here
+   * so the def is the single source of truth — no edit to the shared
+   * module-categories map required. Omitted = Uncategorized.
+   */
+  palette?: PaletteCategory;
+  /**
+   * Card-component basename override (no '.svelte'), e.g. 'AudioinCard'.
+   * ONLY needed when the default convention `PascalCase(type)+'Card'` doesn't
+   * match the actual component filename. Resolved by $lib/ui/modules-card-map.
+   */
+  card?: string;
   factory: AudioModuleFactory;
 }
 

@@ -104,6 +104,7 @@ export function defaultSteps(): Step[] {
 
 export const sequencerDef: AudioModuleDef = {
   type: 'sequencer',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'Sequencer',
   category: 'modulation',

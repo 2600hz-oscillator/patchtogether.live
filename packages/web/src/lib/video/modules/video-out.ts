@@ -70,6 +70,7 @@ void main() {
 
 export const videoOutDef: VideoModuleDef = {
   type: 'videoOut',
+  palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
   label: 'OUTPUT',
   category: 'output',

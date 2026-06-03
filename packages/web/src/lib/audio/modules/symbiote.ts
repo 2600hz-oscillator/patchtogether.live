@@ -184,6 +184,7 @@ export const symbioteMath = {
 
 export const symbioteDef: AudioModuleDef = {
   type: 'symbiote',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'SYMBIOTE',
   category: 'sources',

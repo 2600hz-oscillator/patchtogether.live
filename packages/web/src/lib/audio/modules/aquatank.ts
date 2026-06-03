@@ -31,6 +31,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const aquaTankDef: AudioModuleDef = {
   type: 'aquaTank',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'AQUATANK',
   category: 'effects',

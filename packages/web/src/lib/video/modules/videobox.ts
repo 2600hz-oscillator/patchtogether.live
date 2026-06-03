@@ -113,6 +113,7 @@ const DEFAULTS: VideoboxParams = {
 
 export const videoboxDef: VideoModuleDef = {
   type: 'videobox',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'VIDEOBOX',
   category: 'sources',

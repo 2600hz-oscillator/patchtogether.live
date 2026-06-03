@@ -66,6 +66,7 @@ export const RESOFILTER_MAX_MODE = RESOFILTER_MODE_COUNT - 1;
 
 export const resofilterDef: AudioModuleDef = {
   type: 'resofilter',
+  palette: { top: 'Ports', sub: 'Ports' },
   domain: 'audio',
   label: 'RESOFILTER',
   category: 'processors',

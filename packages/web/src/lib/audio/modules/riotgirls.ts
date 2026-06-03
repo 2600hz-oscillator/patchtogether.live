@@ -309,6 +309,7 @@ export function equalPowerPan(pan: number): { l: number; r: number } {
 
 export const riotgirlsDef: AudioModuleDef = {
   type: 'riotgirls',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'RIOTGIRLS',
   category: 'sources',

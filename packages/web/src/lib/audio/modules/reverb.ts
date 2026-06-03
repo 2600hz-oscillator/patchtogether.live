@@ -32,6 +32,7 @@ const PARAM_PREFIX = '/Reverb';
 
 export const reverbDef: AudioModuleDef = {
   type: 'reverb',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'Reverb',
   category: 'effects',

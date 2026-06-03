@@ -170,6 +170,7 @@ export const warpsMath = {
 
 export const warpsDef: AudioModuleDef = {
   type: 'warps',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'WARPS',
   category: 'effects',

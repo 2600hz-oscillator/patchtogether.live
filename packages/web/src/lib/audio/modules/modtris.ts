@@ -61,6 +61,7 @@ const SCHEDULE_CUSHION_S = 0.005;
 
 export const modtrisDef: AudioModuleDef = {
   type: 'modtris',
+  palette: { top: 'Games', sub: 'Arcade' },
   domain: 'audio',
   label: 'MODTRIS',
   category: 'games',

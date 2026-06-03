@@ -63,6 +63,7 @@ const DEFAULTS: ColorizerParams = {
 
 export const colorizerDef: VideoModuleDef = {
   type: 'colorizer',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'COLORIZER',
   category: 'effects',
