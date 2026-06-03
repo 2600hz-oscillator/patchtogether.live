@@ -95,6 +95,12 @@ test.describe('@collab', () => {
   test('rename in A appears in B inside the in-card title (peer Yjs sync)', async ({
     browser,
   }) => {
+    // The full 2-context relay flow (2× goto+networkidle + attachProvider
+    // relay-connect + spawn + rename + two peer-sync polls + DOM asserts)
+    // exceeds the default 30s test timeout under CI relay contention (it
+    // passes locally; failed on CI #557 with a 30s test-timeout, not an
+    // assertion mismatch). Give it headroom.
+    test.setTimeout(60_000);
     const rackspaceId = `title-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
@@ -150,7 +156,8 @@ test.describe('@collab', () => {
               };
               return w.__patch.nodes['ws-sync']?.data?.name;
             }),
-          { timeout: 4000 },
+          // Relay propagation under CI contention can exceed 4s.
+          { timeout: 12000 },
         )
         .toMatch(/WAVESCULPT/);
 
@@ -158,7 +165,7 @@ test.describe('@collab', () => {
       const titleA = pageA
         .locator('.svelte-flow__node-wavesculpt header.title')
         .filter({ has: pageA.locator('[data-testid="name-label-button"]') });
-      await expect(titleA.first()).toBeVisible({ timeout: 5_000 });
+      await expect(titleA.first()).toBeVisible({ timeout: 10_000 });
       await titleA.locator('[data-testid="name-label-button"]').first().click();
       const inputA = pageA.locator('[data-testid="name-label-input"]');
       await inputA.fill('SHARED_LEAD');
@@ -176,20 +183,22 @@ test.describe('@collab', () => {
               };
               return w.__patch.nodes['ws-sync']?.data?.name;
             }),
-          { timeout: 4000 },
+          // Relay propagation under CI contention can exceed 4s.
+          { timeout: 12000 },
         )
         .toBe('SHARED_LEAD');
 
       // And the DOM in B reflects it (the in-card title text is the
-      // peer-synced value, not a stale snapshot).
+      // peer-synced value, not a stale snapshot). Generous timeout for the
+      // DOM to re-render after the Y.Doc sync lands under contention.
       await expect(
         pageB
           .locator('.svelte-flow__node-wavesculpt header.title [data-testid="name-label-button"]')
           .first(),
-      ).toHaveText('SHARED_LEAD');
+      ).toHaveText('SHARED_LEAD', { timeout: 10_000 });
 
       // Overhead badge stays gone on the peer too.
-      await expect(pageB.locator('.node-name-toolbar')).toHaveCount(0);
+      await expect(pageB.locator('.node-name-toolbar')).toHaveCount(0, { timeout: 10_000 });
     } finally {
       await Promise.all([ctxA.close(), ctxB.close()]);
     }
