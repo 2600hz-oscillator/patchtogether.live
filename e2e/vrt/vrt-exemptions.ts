@@ -717,6 +717,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/moog921a',
   'linux/moog921b',
   'linux/moog904b',
+  // Moog batch-2 (992/993/994/995/984): darwin baselines captured locally;
+  // linux pending a `task vrt:update` on linux CI. Static beige faceplates
+  // (no animation); functional coverage is moog99x/moog984.test.ts.
+  'linux/moog992',
+  'linux/moog993',
+  'linux/moog994',
+  'linux/moog995',
+  'linux/moog984',
   // ---- darwin-side QUARANTINE: pre-existing flakes verified on main
   // (reproduced by reverting the cards-shrink-to-fit CSS in PR #447 and
   // re-running VRT — same failures on a clean main checkout). Quarantined

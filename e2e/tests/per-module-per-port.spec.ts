@@ -123,6 +123,14 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   macseq:    'requires toggled steps; covered by macseq-related specs',
   // ── CV/gate utility modules with no self-running source ──
   illogic:    'boolean logic on inputs; no upstream → no output; covered by illogic.spec.ts',
+  // Moog batch-2 passive routers: like 994/995/984 (auto-skipped as audio
+  // effect-shape) but with CV/gate ports, so the audio-only auto-skip misses
+  // them. moog992 sums attenuated CV (silent w/o a driven cv input); moog993
+  // routes triggers (silent w/o a driven trig input). Wiring + summing/routing
+  // is pinned by moog992.test.ts / moog993.test.ts. Handle-presence +
+  // input-drive still run here.
+  moog992:    'passive CV summer/attenuator; output is input-conditional; covered by moog992.test.ts',
+  moog993:    'passive trigger/envelope router; output is input-conditional; covered by moog993.test.ts',
   // ── User-toggled sequencer-like sources ──
   sequencer: 'requires user-toggled step.on=true; covered by dedicated sequencer specs',
   score:     'requires play_cv high + steps; covered by score.spec.ts',
