@@ -92,6 +92,25 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   wavviz:       { outputPort: 'audio', params: { tune: 0, fine: 0, wavePos: 0.5, fmAmount: 0, foldAmount: 0 } },
   // SWOLEVCO primary out, no upstream needed.
   swolevco:     { outputPort: 'out',   params: { tune: 0, fine: 0, timbre: 0.3, symmetry: 0.5, fold: 0, ratio: 0 } },
+  // MOOG 921B — slave VCO. With freq_bus unpatched the worklet defaults to
+  // 0 V/oct → C4 and width_bus normals to 0.5 (square), so all four waveform
+  // jacks ring at default fine=0 / range=0 / level=1 with NO upstream driver
+  // (it can self-stand without a 921A). Pin the canonical out to `sine` (the
+  // alive smoke + behavioral observed tap); the audio-typed dc_mod / ac_mod /
+  // sync inputs are OPTIONAL modulation, so it's listed in the spec's
+  // NOT_EFFECT_DESPITE_AUDIO_INPUT set (like moog921Vco) to take the normal
+  // outputs-emit path.
+  moog921b:     { outputPort: 'sine',  params: { fine: 0, range: 0, modAmount: 0, syncMode: 0, level: 1 } },
+  // MOOG 921A — CV-only oscillator DRIVER (no audio ports). Its freq_bus /
+  // width_bus outputs are STEADY DC at defaults (frequency=0 → 0 V; width=0.5),
+  // which the AC-coupled SCOPE analyser can't read as a peak — so the per-port
+  // driver in _per-port-drivers.ts wires a moving BUGGLES CV into freq_cv +
+  // width_cv to make BOTH bus outputs AC. The canonical out is freq_bus.
+  moog921a:     { outputPort: 'freq_bus' },
+  // MOOG 904B — 24 dB/oct ladder HPF (effect: audio in → high-pass out). Needs
+  // an upstream source; the per-port driver wires an ANALOGVCO saw into `audio`
+  // with a low cutoff so the saw passes. Canonical out is `audio`.
+  moog904b:     { outputPort: 'audio' },
   // SAMSLOOP needs a sample loaded to sound — defer (covered by samsloop.spec.ts).
   // Stamp the spawn check only.
   samsloop:     { outputPort: 'out_l' },

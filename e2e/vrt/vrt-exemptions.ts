@@ -452,6 +452,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // functional coverage. Promote into MODULES once the darwin + linux PNGs are
   // captured.
   moog902: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 2-position LIN/EXP switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 921A / 921B / 904B (batch 1) — PROMOTED out of EXEMPT_FROM_VRT: darwin
+  // baselines captured in this PR (the shared MoogPanel label fix is what makes
+  // the engraved-black control captions legible on the beige faceplate, so the
+  // baselines pin the FIXED appearance). All three are deterministic beige Moog
+  // faceplates (knobs + a discrete RANGE/SYNC switch, no canvas / animation).
+  // Linux baselines are darwin-only for now — see EXEMPT_BASELINE_PAIRS
+  // (linux/moog921a, linux/moog921b, linux/moog904b) pending a `task vrt:update`
+  // run on linux CI. DSP unit + ART (source-SHA-pinned .f32) + per-module-
+  // per-port e2e provide the functional coverage.
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
@@ -698,6 +707,16 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/nibbles-cv-50',
   'linux/nibbles-cv-75',
   'linux/nibbles-cv-max',
+  // MOOG 921A / 921B / 904B (batch 1) — promoted out of EXEMPT_FROM_VRT with
+  // darwin baselines captured on this machine (deterministic beige Moog
+  // faceplates with now-legible engraved-black labels from the shared MoogPanel
+  // fix; no canvas/animation). Linux baselines pending a `task vrt:update` run
+  // on linux CI (sub-pixel text AA differs across platforms) — darwin is the
+  // regression gate here. Same darwin-only pattern as the other 5 Moog cards'
+  // eventual capture.
+  'linux/moog921a',
+  'linux/moog921b',
+  'linux/moog904b',
   // ---- darwin-side QUARANTINE: pre-existing flakes verified on main
   // (reproduced by reverting the cards-shrink-to-fit CSS in PR #447 and
   // re-running VRT — same failures on a clean main checkout). Quarantined

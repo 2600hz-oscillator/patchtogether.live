@@ -130,4 +130,38 @@
   .moog-body {
     padding-top: 8px;
   }
+
+  /*
+   * Control labels — engraved-black, NOT washed-out dim.
+   *
+   * BUG (every Moog card): the stock Knob / Fader render their caption as
+   * `<div class="label">` coloured `var(--text-dim)`, and the per-card
+   * switch captions (.sync-label / .range-label / .mode-label) do the same.
+   * On the dark default skin --text-dim (#888) is a legible secondary grey,
+   * but MoogPanel re-binds --text-dim to the faceplate's muted beige-brown
+   * (#5a5040) so those labels wash straight into the brushed-beige
+   * faceplate (only ~5:1 over the lightest brushed-metal streak) and read
+   * as "missing". On a real Moog faceplate the control engravings are
+   * BLACK, so the captions should use the engraved --text (#1c1812, ~11:1),
+   * not the dim token.
+   *
+   * We can't just darken --text-dim wholesale: the SAME token is consumed
+   * by the patch-panel popover (which has its OWN dark background), where a
+   * dark dim tone would vanish dark-on-dark — i.e. it'd only move the bug.
+   * So we re-point the on-faceplate control captions specifically to the
+   * engraved --text. Scoped to .moog-body so the dark popover is untouched.
+   *
+   * :global() because the Knob/Fader `.label` is scoped to those control
+   * components and the switch captions are scoped to each card; this is the
+   * single shared place the Moog faceplate dresses its nested controls, so
+   * every Moog card (921 / 904A / 902 / 911 / CP3 + future slices) gets the
+   * visible labels for free — same intent as the token re-binds above.
+   */
+  .moog-body :global(.knob-wrap .label),
+  .moog-body :global(.fader-wrap .label),
+  .moog-body :global(.sync-label),
+  .moog-body :global(.range-label),
+  .moog-body :global(.mode-label) {
+    color: var(--text);
+  }
 </style>
