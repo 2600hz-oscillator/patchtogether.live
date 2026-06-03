@@ -748,6 +748,15 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/moog994',
   'linux/moog995',
   'linux/moog984',
+  // Moog batch 3+4 (903A noise, 923 noise+filters, 904C coupler, 907A/914
+  // filter banks): darwin baselines captured locally; linux pending a
+  // `task vrt:update` on linux CI. Functional coverage is the per-module
+  // unit tests + per-port sweep.
+  'linux/moog903a',
+  'linux/moog923',
+  'linux/moog904c',
+  'linux/moog907a',
+  'linux/moog914',
   // ---- darwin-side QUARANTINE: pre-existing flakes verified on main
   // (reproduced by reverting the cards-shrink-to-fit CSS in PR #447 and
   // re-running VRT — same failures on a clean main checkout). Quarantined
