@@ -20,24 +20,23 @@
 // series rounded to the conventional fixed-filter-bank values; they are facts
 // about a 1/3-octave grid, not a copyrightable schematic.
 //
-// ── 914 (full bank) ──
-// The twelve classic Moog-914 1/3-octave band centers, in Hz:
-//   125, 175, 250, 350, 500, 700, 1000, 1400, 2000, 2800, 4000, 5600
-// (each step ≈ a 1/3-octave, ratio ~1.4 — the standard 1-2-3 / 1.25-1.6-2
-// 1/3-octave decade pattern). These are the BANDPASS sections; the 914 also
-// has a fixed low-pass below the lowest band and a fixed high-pass above the
-// highest, which both modules model with bookend biquads.
+// Frequencies below are the documented Moog values (confirmed against the
+// modularsynthesis.com Moog archive + multiple 914/907A clone references —
+// the modularsynthesis 907 service notes give the shelf corners, and the
+// 914/907A clone makers agree on the band grid). Not a guess.
 //
-// ── 907A (subset) ──
-// OPEN QUESTION — the exact 907A (System 35) center frequencies are not
-// pinned down in our reference material. The 907A is the smaller fixed bank,
-// so we model it as a STANDARD-RANGE SUBSET of the same 1/3-octave series:
-// the eight middle bands
+// ── 914 (full bank, System 55) ──
+// The twelve classic Moog-914 1/3-octave bandpass centers, in Hz:
+//   125, 175, 250, 350, 500, 700, 1000, 1400, 2000, 2800, 4000, 5600
+// plus a fixed LOW-PASS shelf at 100 Hz (passes below the lowest band) and a
+// fixed HIGH-PASS shelf at 7.5 kHz (passes above the highest band).
+//
+// ── 907A (System 35) ──
+// EIGHT bandpass centers — the standard-range middle of the same grid:
 //   250, 350, 500, 700, 1000, 1400, 2000, 2800
-// (the 914 series with the two lowest + two highest bands dropped). This keeps
-// 907A and 914 sharing one grid (they differ only by which slice of the same
-// series they expose) and centers the 907A on the musically useful mid-band.
-// Revisit if authoritative 907A band centers surface.
+// plus a low shelf with max output ~175 Hz and a high shelf with max output
+// ~6.6 kHz (per the modularsynthesis 907 service notes). 907A and 914 share
+// one grid + factory; they differ only by which slice + the shelf corners.
 
 /** Bandpass Q shared by every band of both fixed filter banks. A 1/3-octave
  *  band has a fractional bandwidth of ~2^(1/3)−2^(−1/3) ≈ 0.46 of its center,
@@ -54,11 +53,20 @@ export const FILTERBANK_914_CENTERS: number[] = [
 ];
 
 /** The 907A (System 35) fixed-filter-bank center frequencies (Hz) — the
- *  standard-range eight-band subset of the 914 series (see Open Question in
- *  the file header). */
+ *  documented eight-band standard range (250 Hz … 2.8 kHz). */
 export const FILTERBANK_907A_CENTERS: number[] = [
   250, 350, 500, 700, 1000, 1400, 2000, 2800,
 ];
+
+/** End-shelf corner frequencies (Hz). The fixed filter bank bookends its
+ *  bandpass cells with a LOW-PASS shelf below the lowest band and a HIGH-PASS
+ *  shelf above the highest band. Documented Moog values:
+ *    914 — LP 100 Hz, HP 7.5 kHz   (extended range)
+ *    907A — LP ~175 Hz, HP ~6.6 kHz (standard range) */
+export const FILTERBANK_914_LP_HZ = 100;
+export const FILTERBANK_914_HP_HZ = 7500;
+export const FILTERBANK_907A_LP_HZ = 175;
+export const FILTERBANK_907A_HP_HZ = 6600;
 
 /** Stable per-band param id for the Nth (1-based) bandpass band, e.g.
  *  band1, band2, … Used by both the module def's `params` array and the

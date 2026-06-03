@@ -34,6 +34,8 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import {
   FILTERBANK_914_CENTERS,
+  FILTERBANK_914_LP_HZ,
+  FILTERBANK_914_HP_HZ,
   FILTERBANK_Q,
   bandParamId,
 } from '../../../../../dsp/src/lib/moog-filterbank-dsp';
@@ -74,6 +76,14 @@ export const moog914Def: AudioModuleDef = {
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    return buildFilterBank(ctx, node, moog914Def, CENTERS, FILTERBANK_Q);
+    return buildFilterBank(
+      ctx,
+      node,
+      moog914Def,
+      CENTERS,
+      FILTERBANK_Q,
+      FILTERBANK_914_LP_HZ,
+      FILTERBANK_914_HP_HZ,
+    );
   },
 };

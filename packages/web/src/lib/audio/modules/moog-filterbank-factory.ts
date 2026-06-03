@@ -37,6 +37,10 @@ export function buildFilterBank(
   def: AudioModuleDef,
   centers: readonly number[],
   q: number,
+  /** Low-pass shelf corner (Hz) — passes the spectrum BELOW the lowest band. */
+  lpHz: number,
+  /** High-pass shelf corner (Hz) — passes the spectrum ABOVE the highest band. */
+  hpHz: number,
 ): AudioDomainNodeHandle {
   const initial = node.params ?? {};
   const levelOf = (id: string): number =>
@@ -78,18 +82,18 @@ export function buildFilterBank(
     gainByParam[paramId] = level;
   }
 
-  // Fixed HIGH-PASS section: rolls off below the lowest band's center, so the
-  // HP knob controls how much of the top of the spectrum the bank passes.
-  addSection('highpass', centers[0]!, q, 'hp');
+  // Fixed HIGH-PASS shelf above the highest band (914: 7.5 kHz, 907A: 6.6 kHz),
+  // so the HP knob controls how much of the TOP of the spectrum the bank passes.
+  addSection('highpass', hpHz, q, 'hp');
 
   // The N fixed BANDPASS sections (low → high), one per center frequency.
   centers.forEach((freq, i) => {
     addSection('bandpass', freq, q, bandParamId(i + 1));
   });
 
-  // Fixed LOW-PASS section: rolls off above the highest band's center, so the
-  // LP knob controls how much of the bottom of the spectrum the bank passes.
-  addSection('lowpass', centers[centers.length - 1]!, q, 'lp');
+  // Fixed LOW-PASS shelf below the lowest band (914: 100 Hz, 907A: 175 Hz), so
+  // the LP knob controls how much of the BOTTOM of the spectrum the bank passes.
+  addSection('lowpass', lpHz, q, 'lp');
 
   return {
     domain: 'audio',
