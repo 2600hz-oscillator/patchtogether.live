@@ -109,7 +109,12 @@ test.describe('@collab', () => {
     try {
       for (const p of [pageA, pageB]) {
         await p.goto('/');
-        await p.waitForLoadState('networkidle');
+        // NB: no waitForLoadState('networkidle') here — with the live
+        // Hocuspocus relay WebSocket open, the network never goes idle, so
+        // networkidle hangs to the test timeout under CI contention (the
+        // root cause of the in-card-title flake: 60s timeout on attempt 1,
+        // pass on retry). The waitForFunction below is the real readiness
+        // signal (the test-hook provider is installed once the app booted).
         await p.waitForFunction(
           () =>
             typeof (window as unknown as { __attachProvider?: unknown })
