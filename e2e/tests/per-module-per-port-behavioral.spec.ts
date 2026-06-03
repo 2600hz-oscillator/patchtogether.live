@@ -73,14 +73,6 @@ const SKIP_SPAWN: Record<string, string> = {
   group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
   helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
   cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
-  // TEMPORARY (gate-now, 2026-06-03): riotgirls' DESTROY/Reverb FX bus
-  // (v{1-4}_sendA/sendB, returnA/returnB, bc_* bitcrush, rv_* reverb) is
-  // unwired in MVP-A — those ~10 declared inputs have no audio path to output
-  // (confirmed: patched===control). A few busy-bus subtle CVs also sit near the
-  // metric floor. The FX bus is being WIRED in the riotgirls MVP-B follow-up,
-  // which REMOVES this module-exempt + restores per-port coverage. Until then,
-  // module-exempt so the now-gated lane stays green.
-  riotgirls: 'TEMPORARY: DESTROY/Reverb FX bus unwired in MVP-A (~10 inert inputs); being wired in the MVP-B follow-up which removes this exempt + restores per-port coverage; covered by riotgirls.spec.ts + riotgirls.test.ts',
 };
 
 // ────────── Module-level behavioral exemptions ──────────
@@ -465,6 +457,31 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // CVs sit BELOW threshold under the dominant strike and are exempted as the
   // intrinsically-quiet-exciter subtle class; see BEHAVIORAL_SWEEP_EXEMPT.
   elements: { strikeLevel: 0.6, bowLevel: 0.5, blowLevel: 0.5, strength: 0.5 },
+  // riotgirls — open the aux FX bus so the DESTROY/Reverb ports perturb the
+  // output. The driver + context gate fire VOICE 1 (trig1) and OPEN ALL four
+  // voices' sends + both return levels with HEADROOM so the whole FX bus carries
+  // signal. With this:
+  //   * vN_sendA / vN_sendB CV modulates each per-voice send level,
+  //   * returnA / returnB CV modulates the wet-return level into the master sum,
+  //   * bc_* (decimate/bits/wet) reshapes the DESTROY (bitcrush) path,
+  //   * rv_* (size/damp/mix) reshapes the Reverb path.
+  // bc_wet=1 keeps DESTROY's crush fully wet (so bc_decimate/bits move the output);
+  // rv_mix=0.5 keeps the reverb path half-wet with headroom for rv_* to swing it.
+  // Verified locally: ALL 53 drivable riotgirls inputs perturb outL (no
+  // BEHAVIORAL_SWEEP_EXEMPT needed) — opening every voice's send (not just
+  // voice 1's) lets the context-gate-fired transients hit both FX buses, so the
+  // per-voice sends + returns + bc_*/rv_* all clear the delta metric.
+  riotgirls: {
+    v1_volume: 1.6, v1_decay: 0.4,
+    v1_sendA: 0.6, v1_sendB: 0.6,
+    v2_sendA: 0.6, v2_sendB: 0.6,
+    v3_sendA: 0.6, v3_sendB: 0.6,
+    v4_sendA: 0.6, v4_sendB: 0.6,
+    returnA: 0.7, returnB: 0.7,
+    bc_decimate: 1, bc_bits: 16, bc_wet: 1,
+    rv_size: 0.6, rv_damp: 0.3, rv_mix: 0.5,
+    flt_cutoff: 18000,
+  },
 };
 
 // ────────── Per-port behavioral exemptions ──────────
