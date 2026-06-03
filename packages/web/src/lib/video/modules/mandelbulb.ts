@@ -51,6 +51,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { VIDEO_RES } from '$lib/video/engine';
 
 // ----------------------------------------------------------------------
 // Pure-TS reference of the Mandelbulb distance estimate (DE).
@@ -114,13 +115,35 @@ export function jsEyeDistanceFromZoom(zoom: number): number {
   return 2.2 / z;
 }
 
+// ----------------------------------------------------------------------
+// Adaptive-quality render budget (CI software-GL feasibility, PR #561).
+//
+// The raymarch is the dominant per-frame cost AND its shader-link cost on
+// software GL (Mesa/SwiftShader, e.g. CI runners with no GPU) is what was
+// blocking the registry sweeps. Two levers keep both feasible:
+//
+//   1. RENDER_SCALE — render the bulb into a REDUCED-resolution FBO
+//      (RENDER_W×RENDER_H) instead of the full 640×480; the engine's copy
+//      shader (and the card preview's drawImage) upscale it with LINEAR
+//      filtering. Fragment count scales with the square of the linear scale,
+//      so 0.5 quarters the per-frame fragment-shader work — the biggest win.
+//   2. Smaller step / shadow / iteration budgets in the shader below, so each
+//      surviving fragment is cheaper too.
+//
+// The look stays acceptable (a 320×240 raymarch upscaled to a 200×150 card
+// preview is visually indistinguishable; downstream video_out consumers get a
+// LINEAR-upscaled 640×480 frame).
+const RENDER_SCALE = 0.5;
+const RENDER_W = Math.max(1, Math.round(VIDEO_RES.width * RENDER_SCALE));   // 320
+const RENDER_H = Math.max(1, Math.round(VIDEO_RES.height * RENDER_SCALE));  // 240
+
 const FRAG_SRC = `#version 300 es
 precision highp float;
 
 in vec2 vUv;
 out vec4 outColor;
 
-uniform vec2  uResolution;   // engine framebuffer res
+uniform vec2  uResolution;   // raymarch framebuffer res (reduced)
 uniform float uEyeDist;      // camera distance from the bulb (post-zoom map)
 uniform float uRotX;         // orbit pitch (radians)
 uniform float uRotY;         // orbit yaw (radians)
@@ -129,10 +152,13 @@ uniform float uIterations;   // fractal iteration budget (4..30)
 uniform float uHue;          // palette shift 0..1
 
 const float BAILOUT  = ${MANDELBULB_BAILOUT.toFixed(1)};
-const int   MAX_ITER = 30;     // upper bound for the fractal loop (uIterations gates it)
-const int   MAX_STEP = 192;    // raymarch step budget
+// Budgets trimmed for software-GL feasibility (PR #561). MAX_ITER caps the
+// fractal loop (uIterations still gates it per-frame); MAX_STEP/shadow steps
+// bound the raymarch. The look holds at the reduced render resolution.
+const int   MAX_ITER = 16;     // upper bound for the fractal loop (uIterations gates it)
+const int   MAX_STEP = 96;     // raymarch step budget
 const float MAX_DIST  = 6.0;   // far plane
-const float SURF_EPS  = 0.0008; // hit epsilon (~half-pixel at this res)
+const float SURF_EPS  = 0.0016; // hit epsilon (~half-pixel at the reduced res)
 
 // Mandelbulb distance estimate (mirrors jsDistanceEstimate in TS).
 float mandelbulbDE(vec3 pos) {
@@ -165,16 +191,17 @@ vec3 calcNormal(vec3 p) {
   ));
 }
 
-// Soft shadow march toward the light.
+// Soft shadow march toward the light. Step budget trimmed (PR #561) — the
+// shadow is a soft attenuation term, so a shorter march reads the same.
 float softShadow(vec3 ro, vec3 rd) {
   float res = 1.0;
   float t = 0.02;
-  for (int i = 0; i < 48; i++) {
+  for (int i = 0; i < 24; i++) {
     if (t > 3.0) break;
     float h = mandelbulbDE(ro + rd * t);
-    if (h < 0.0008) return 0.0;
+    if (h < 0.0016) return 0.0;
     res = min(res, 8.0 * h / t);
-    t += clamp(h, 0.01, 0.2);
+    t += clamp(h, 0.02, 0.2);
   }
   return clamp(res, 0.0, 1.0);
 }
@@ -272,6 +299,50 @@ export const MANDELBULB_DEFAULTS: Readonly<MandelbulbParams> = DEFAULTS;
 /** Auto-spin yaw rate, radians/sec (the reference auto-rotates). */
 export const AUTOSPIN_RATE = 0.25;
 
+/**
+ * Allocate an RGBA8 FBO + texture at an ARBITRARY size (the engine's
+ * `ctx.createFbo()` is fixed at full engine res; MANDELBULB renders at a
+ * REDUCED resolution for software-GL feasibility — see RENDER_SCALE). LINEAR
+ * filtering so the engine's copy shader / the card's drawImage upscale the
+ * reduced render smoothly. Throws on alloc failure (caller never catches —
+ * a GL that can't make a 320×240 RGBA8 FBO can't run any video module).
+ */
+function createRenderTarget(
+  gl: WebGL2RenderingContext,
+  width: number,
+  height: number,
+): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
+  const tex = gl.createTexture();
+  if (!tex) throw new Error('mandelbulb: createTexture failed');
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  const fbo = gl.createFramebuffer();
+  if (!fbo) {
+    gl.deleteTexture(tex);
+    throw new Error('mandelbulb: createFramebuffer failed');
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  if (status !== gl.FRAMEBUFFER_COMPLETE) {
+    gl.deleteTexture(tex);
+    gl.deleteFramebuffer(fbo);
+    throw new Error(`mandelbulb: framebuffer incomplete: 0x${status.toString(16)}`);
+  }
+  // Clear to opaque black so the very first frame (before the deferred shader
+  // compile lands) reads as a clean black panel rather than garbage.
+  gl.viewport(0, 0, width, height);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { fbo, texture: tex };
+}
+
 export const mandelbulbDef: VideoModuleDef = {
   type: 'mandelbulb',
   palette: { top: 'Video modules', sub: 'Sources' },
@@ -307,16 +378,63 @@ export const mandelbulbDef: VideoModuleDef = {
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
-    const program = ctx.compileFragment(FRAG_SRC);
-    const uResolution = gl.getUniformLocation(program, 'uResolution');
-    const uEyeDist    = gl.getUniformLocation(program, 'uEyeDist');
-    const uRotX       = gl.getUniformLocation(program, 'uRotX');
-    const uRotY       = gl.getUniformLocation(program, 'uRotY');
-    const uPower      = gl.getUniformLocation(program, 'uPower');
-    const uIterations = gl.getUniformLocation(program, 'uIterations');
-    const uHue        = gl.getUniformLocation(program, 'uHue');
 
-    const { fbo, texture } = ctx.createFbo();
+    // ──────────────────────────────────────────────────────────────────
+    // DEFERRED SHADER COMPILE (PR #561 — CI software-GL fix).
+    //
+    // Linking the heavy raymarch fragment shader is slow on software GL
+    // (Mesa / SwiftShader — CI runners have no GPU): getProgramParameter(
+    // LINK_STATUS) forces a synchronous compile that can take many seconds.
+    // Doing it inside this factory blocked the SYNCHRONOUS reconcile path
+    // (PatchEngine → VideoEngine.addNode → factory()), which in turn blocked
+    // the main thread and starved Svelte's render — so the card's handles
+    // never painted and the registry sweeps (io-spec-consistency,
+    // per-module-per-port) timed out spawning the card.
+    //
+    // Fix: the factory does ONLY cheap work synchronously — allocate the
+    // (reduced-res) FBO + texture so `surface.texture` is valid immediately
+    // and the handle/card render right away. The expensive compileFragment +
+    // uniform lookups are deferred to the FIRST draw(), which runs off rAF
+    // and therefore never blocks the reconcile/render of the card's handles.
+    // ──────────────────────────────────────────────────────────────────
+
+    // Reduced-resolution render target (adaptive quality). Allocated eagerly
+    // (cheap: a texImage2D + framebuffer alloc — no shader link), so the
+    // engine's lookupInput / blitOutputToDrawingBuffer have a valid texture
+    // from frame 0. The engine's copy shader + the card's drawImage upscale it.
+    const { fbo, texture } = createRenderTarget(gl, RENDER_W, RENDER_H);
+
+    let program: WebGLProgram | null = null;
+    let glFailed = false;
+    let uResolution: WebGLUniformLocation | null = null;
+    let uEyeDist: WebGLUniformLocation | null = null;
+    let uRotX: WebGLUniformLocation | null = null;
+    let uRotY: WebGLUniformLocation | null = null;
+    let uPower: WebGLUniformLocation | null = null;
+    let uIterations: WebGLUniformLocation | null = null;
+    let uHue: WebGLUniformLocation | null = null;
+
+    /** Lazily compile+link the raymarch program on the first draw. Returns
+     *  false if compile is unavailable/failed (engine then leaves the FBO at
+     *  its cleared init — a black frame — instead of crashing the loop). */
+    function ensureProgram(): boolean {
+      if (program) return true;
+      if (glFailed) return false;
+      try {
+        program = ctx.compileFragment(FRAG_SRC);
+      } catch {
+        glFailed = true;
+        return false;
+      }
+      uResolution = gl.getUniformLocation(program, 'uResolution');
+      uEyeDist    = gl.getUniformLocation(program, 'uEyeDist');
+      uRotX       = gl.getUniformLocation(program, 'uRotX');
+      uRotY       = gl.getUniformLocation(program, 'uRotY');
+      uPower      = gl.getUniformLocation(program, 'uPower');
+      uIterations = gl.getUniformLocation(program, 'uIterations');
+      uHue        = gl.getUniformLocation(program, 'uHue');
+      return true;
+    }
 
     const params: MandelbulbParams = { ...DEFAULTS, ...(node.params as Partial<MandelbulbParams>) };
 
@@ -349,9 +467,15 @@ export const mandelbulbDef: VideoModuleDef = {
           : true;
         if (!screenOn && !outConnected) {
           // Render nothing this frame — leave the FBO holding whatever it
-          // last had (or its cleared init). Biggest perf win at idle.
+          // last had (or its cleared init). Biggest perf win at idle, AND it
+          // keeps the (slow) shader compile deferred for as long as the bulb
+          // is never actually displayed.
           return;
         }
+
+        // Lazily compile the raymarch program on the first frame we actually
+        // need to draw (NOT in the synchronous factory — see the block above).
+        if (!ensureProgram() || !program) return;
 
         // Resolve shader inputs from the live params.
         const eyeDist = jsEyeDistanceFromZoom(params.zoom);
@@ -372,7 +496,9 @@ export const mandelbulbDef: VideoModuleDef = {
         lastSceneSig = sceneSig;
 
         g.useProgram(program);
-        g.uniform2f(uResolution, ctx.res.width, ctx.res.height);
+        // uResolution drives the per-pixel aspect; it must match the REDUCED
+        // render size (RENDER_W×RENDER_H), not the engine's full res.
+        g.uniform2f(uResolution, RENDER_W, RENDER_H);
         g.uniform1f(uEyeDist, eyeDist);
         g.uniform1f(uRotX, rotX);
         g.uniform1f(uRotY, rotY);
@@ -381,7 +507,7 @@ export const mandelbulbDef: VideoModuleDef = {
         g.uniform1f(uHue, hue);
 
         g.bindFramebuffer(g.FRAMEBUFFER, fbo);
-        g.viewport(0, 0, ctx.res.width, ctx.res.height);
+        g.viewport(0, 0, RENDER_W, RENDER_H);
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);
         renderedOnce = true;
@@ -389,7 +515,7 @@ export const mandelbulbDef: VideoModuleDef = {
       dispose() {
         gl.deleteFramebuffer(fbo);
         gl.deleteTexture(texture);
-        gl.deleteProgram(program);
+        if (program) gl.deleteProgram(program);
       },
     };
 
