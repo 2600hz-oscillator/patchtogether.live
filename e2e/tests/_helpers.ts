@@ -123,10 +123,21 @@ export async function spawnPatch(
         { nodes, edges }
       );
 
-      // Wait for Svelte Flow to render the requested nodes.
+      // Wait for Svelte Flow to render the requested nodes. Assert by node ID
+      // (SvelteFlow tags each wrapper with `data-id="<nodeId>"`) rather than a
+      // TOTAL-count equality: a synced rackspace auto-spawns the singleton
+      // TIMELORDE clock, and in the 2-context @collab flow that auto-spawn can
+      // land AFTER spawnPatch's clear+rebuild transact (the provider-sync poll
+      // in Canvas fires on its own cadence). Under the prebuilt `vite preview`
+      // bundle the app boots fast enough that this race is deterministic, so a
+      // strict `=== nodes.length` saw `doom + timelorde` (2 ≠ 1) and timed
+      // out. Waiting for the exact requested IDs is both race-proof AND more
+      // precise — it verifies the nodes we asked for actually mounted, instead
+      // of trusting a count that an auto-spawned node can spuriously satisfy.
       await page.waitForFunction(
-        (n) => document.querySelectorAll('.svelte-flow__node').length === n,
-        nodes.length,
+        (ids) =>
+          ids.every((id) => document.querySelector(`.svelte-flow__node[data-id="${id}"]`) !== null),
+        nodes.map((n) => n.id),
         { timeout: 5000 }
       );
       return;

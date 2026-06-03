@@ -45,6 +45,18 @@ const SKIP_RENDER: Record<string, string> = {
   // overlay + handle count, filtering the expected 404). The handle
   // count + CV path are also covered by per-module-per-port specs.
   qbert: 'fetches user-provided ROM (404s on clean checkout); covered by e2e/tests/qbert-rom-missing.spec.ts',
+  // SNES9X auto-fetches /roms/snes9x/game.sfc at spawn (DOOM-style autoload).
+  // On a clean checkout (no user-provided ROM) that 404s by design — the card
+  // shows the "LOAD A ROM" dropzone. The 404 surfaces as a Chromium console
+  // error that this strict "no console errors" smoke rejects. Under the
+  // prebuilt `vite preview` server the static 404 is returned synchronously,
+  // so it lands before the assertion every time (under the dev server the
+  // async autoload occasionally lost the race → latent flake). Same shape as
+  // qbert. Dedicated coverage that tolerates the expected 404: the no-ROM
+  // dropzone path in e2e/tests/snes9x.spec.ts (+ snes9x-gameplay-gates.spec.ts
+  // when a ROM is installed); handle count + CV/GATE wiring also covered by
+  // the per-module-per-port specs.
+  snes9x: 'fetches user-provided ROM (404s on clean checkout); covered by e2e/tests/snes9x.spec.ts',
 };
 
 test.describe.configure({ mode: 'parallel' });

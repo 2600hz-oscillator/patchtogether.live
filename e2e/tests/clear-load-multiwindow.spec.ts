@@ -162,19 +162,33 @@ test.describe('@collab B3 reconciler determinism', () => {
         });
       });
 
-      // Listener canvas MUST render the 5 module cards. This is the heart
-      // of the regression: pre-fix, the audio engine had the nodes (so
+      // Listener canvas MUST render the 5 example module cards. This is the
+      // heart of the regression: pre-fix, the audio engine had the nodes (so
       // sound played) but Svelte Flow's bind-stomp could leave the canvas
       // empty. We poll the actual DOM so we're testing what the user sees.
+      //
+      // Assert the 5 EXAMPLE ids are all rendered (not a TOTAL count === 5): a
+      // synced rackspace auto-spawns the singleton TIMELORDE clock, so the
+      // listener's total node count is 5 example + 1 timelorde = 6 (and a
+      // re-mount race can briefly show a 7th). The regression this guards is
+      // "the listener renders the loaded patch within 500 ms" — checking the
+      // exact example ids appear within that budget is both faithful to that
+      // and robust to the unrelated auto-spawn. (The per-id visibility loop
+      // below then re-confirms each card painted.)
+      const EXAMPLE_IDS = ['b3-seq', 'b3-vco', 'b3-adsr', 'b3-vca', 'b3-out'];
       await expect
         .poll(
           async () =>
-            await s.pageB
-              .locator('.svelte-flow__node')
-              .count(),
+            await s.pageB.evaluate(
+              (ids) =>
+                ids.every(
+                  (id) => document.querySelector(`.svelte-flow__node[data-id="${id}"]`) !== null,
+                ),
+              EXAMPLE_IDS,
+            ),
           { timeout: 500, intervals: [50, 100, 100, 100, 150] },
         )
-        .toBe(5);
+        .toBe(true);
 
       // Each node id we published should appear as a DOM element on the
       // listener side — id-by-id so a flake on a single missing card is

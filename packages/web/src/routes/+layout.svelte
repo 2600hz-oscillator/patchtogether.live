@@ -33,6 +33,7 @@
   import { createMikeController, type MikeController } from '$lib/mike/controller';
   import { evictMikePatch } from '$lib/mike/driver';
   import { readBotSession } from '$lib/bot/session-lock';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   let { data, children } = $props();
 
@@ -57,9 +58,20 @@
   // via the same dev-only HMAC secret used by lib/server/invites.ts and
   // packages/server/src/auth.ts. Tests can also pass an explicit `token`
   // to drive the rejection paths (e.g. `'clerk:invalid'`).
+  //
+  // Gated on testHooksEnabled() (NOT bare import.meta.env.DEV): these hooks
+  // must also be present in the prebuilt `vite preview` bundle the e2e shards
+  // run against (E2E_USE_PREVIEW=1), which is a PROD build where
+  // import.meta.env.DEV is false. testHooksEnabled() returns true under DEV
+  // *or* when VITE_E2E_HOOKS=1 is baked in at build time (the autotest/dev
+  // deploy + the build-web CI job set it). Same gate Canvas.svelte uses for
+  // its __patch/__ydoc/__ensureEngine globals — keep them in lockstep, else
+  // every @collab/@auth/@clock-sync/livecode spec fails under preview with
+  // "__attachProvider is not a function". Plain prod (flag unset) ships this
+  // code but never installs the globals.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let _activeProviderRef: any = null;
-  if (import.meta.env.DEV && typeof window !== 'undefined') {
+  if (testHooksEnabled() && typeof window !== 'undefined') {
     // MUST stay in lockstep with the dev fallback in invites.ts and
     // auth.ts. If you change one, change all three.
     const DEV_INVITE_SECRET = 'dev-only-invite-secret-change-me-x'.padEnd(32, '_');

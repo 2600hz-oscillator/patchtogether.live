@@ -377,8 +377,9 @@ export function __test_clearBindings(): void {
 // through exactly the same `handleMidi` path a real device uses, so learn
 // capture + binding dispatch are exercised end-to-end.
 //
-// Guarded behind `import.meta.env.DEV` at the call site (Canvas.svelte) so
-// the window hook is stripped from production bundles.
+// Guarded behind `testHooksEnabled()` at the call site (Canvas.svelte) so
+// the window hook is absent from plain production bundles but present in the
+// preview/autotest bundle built with VITE_E2E_HOOKS=1.
 let simSender: ((channel: number, cc: number, value: number) => void) | null = null;
 
 export function installSimulatedMidiDevice(): (channel: number, cc: number, value: number) => void {

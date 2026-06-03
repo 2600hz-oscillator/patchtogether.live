@@ -183,9 +183,13 @@ test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 
     return w.__persistence?.save?.();
   });
   expect(envelope, '__persistence.save() unavailable — DEV build expected').toBeTruthy();
-  const bindingsExport = await page.evaluate(async () => {
-    const mod = await import('/src/lib/midi/midi-learn.svelte.ts' as string);
-    return (mod as { exportBindings: () => unknown[] }).exportBindings();
+  const bindingsExport = await page.evaluate(() => {
+    // Use the app-exposed test hook (gated on testHooksEnabled) rather than a
+    // `/src/...` dynamic import, so this resolves under the prebuilt `vite
+    // preview` bundle (E2E_USE_PREVIEW=1) as well as the dev server.
+    const w = window as unknown as { __midiLearnApi?: { exportBindings: () => unknown[] } };
+    if (!w.__midiLearnApi) throw new Error('__midiLearnApi missing — test-hooks build expected');
+    return w.__midiLearnApi.exportBindings();
   });
   expect((bindingsExport as Array<{ cc: number }>).some((b) => b.cc === 30),
     'exportBindings must include the just-learned CC 30').toBe(true);
@@ -232,9 +236,10 @@ test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 
   // entry (registered at step 1's mount) starts dispatching immediately.
   // Pre-PR-#389, the binding lands without a setter (registerSetter was a
   // conditional no-op when bindings.has(key) was false) → CCs go nowhere.
-  await page.evaluate(async (incoming) => {
-    const mod = await import('/src/lib/midi/midi-learn.svelte.ts' as string);
-    (mod as { importBindings: (b: unknown[]) => void }).importBindings(incoming as unknown[]);
+  await page.evaluate((incoming) => {
+    const w = window as unknown as { __midiLearnApi?: { importBindings: (b: unknown[]) => void } };
+    if (!w.__midiLearnApi) throw new Error('__midiLearnApi missing — test-hooks build expected');
+    w.__midiLearnApi.importBindings(incoming as unknown[]);
   }, bindingsExport);
   // The badge confirms the binding was rehydrated.
   await expect(cardAfter.locator('.midi-badge')).toContainText('CC 30');
@@ -244,8 +249,9 @@ test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 
   // Without it our mock's onmidimessage is null and no CC ever reaches
   // handleMidi. This is independent of the bug.
   await page.evaluate(async () => {
-    const mod = await import('/src/lib/midi/midi-learn.svelte.ts' as string);
-    await (mod as { connect: () => Promise<boolean> }).connect();
+    const w = window as unknown as { __midiLearnApi?: { connect: () => Promise<boolean> } };
+    if (!w.__midiLearnApi) throw new Error('__midiLearnApi missing — test-hooks build expected');
+    await w.__midiLearnApi.connect();
   });
   await waitForMidiSubscription(page, 1);
 
@@ -391,13 +397,15 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
   });
   await sendClockBurst(page, 60, 50);
 
-  // Read the derived BPM out of the source singleton. Dynamic-import via the
-  // Vite dev server's /src/... path (same trick video-orientation.spec.ts uses).
-  const derivedBpm = await page.evaluate(async () => {
-    const mod = await import('/src/lib/midi/midi-clock-source.ts' as string);
-    return (mod as { getMidiClockSource: () => { getBpm: () => number | null } })
-      .getMidiClockSource()
-      .getBpm();
+  // Read the derived BPM out of the source singleton via the app-exposed test
+  // hook (gated on testHooksEnabled) — resolves under `vite preview` too,
+  // unlike a `/src/...` dynamic import which only the dev server serves.
+  const derivedBpm = await page.evaluate(() => {
+    const w = window as unknown as {
+      __midiClockSource?: () => { getBpm: () => number | null };
+    };
+    if (!w.__midiClockSource) throw new Error('__midiClockSource missing — test-hooks build expected');
+    return w.__midiClockSource().getBpm();
   });
 
   expect(derivedBpm, 'midi-clock-source.getBpm() returned null — pulses never reached the singleton').not.toBeNull();
@@ -410,11 +418,12 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
     w.__mockMidi.stop();
   });
   await page.waitForTimeout(50);
-  const afterStop = await page.evaluate(async () => {
-    const mod = await import('/src/lib/midi/midi-clock-source.ts' as string);
-    return (mod as { getMidiClockSource: () => { getBpm: () => number | null } })
-      .getMidiClockSource()
-      .getBpm();
+  const afterStop = await page.evaluate(() => {
+    const w = window as unknown as {
+      __midiClockSource?: () => { getBpm: () => number | null };
+    };
+    if (!w.__midiClockSource) throw new Error('__midiClockSource missing — test-hooks build expected');
+    return w.__midiClockSource().getBpm();
   });
   expect(afterStop).toBeNull();
 
