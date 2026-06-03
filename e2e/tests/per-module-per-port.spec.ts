@@ -1097,6 +1097,14 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       // unconditionally to (n * 1.5s + 30s) baseline so any module finishes
       // with ~1× margin on top of the iteration cost.
       test.setTimeout(Math.max(30_000, mod.inputs.length * 1500 + 30_000));
+      // Heavy-WebGL-mount video modules: wiring a cable drives the card, which
+      // renders a heavy GLSL raymarch. Fast on a GPU but slow on CI's software
+      // GL (SwiftShader) — mandelbulb's 6-input budget (39s) timed out on
+      // shard 6 even after the deferred-compile + adaptive-quality fix. Give it
+      // the same 90s heavy-mount headroom the outputs-emit test grants
+      // foxy/atlantisCatalyst. (Inputs are also covered by the now-gated
+      // behavioral lane, which proves all 6 CV inputs perturb mono_out.)
+      if (mod.type === 'mandelbulb') test.setTimeout(90_000);
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
