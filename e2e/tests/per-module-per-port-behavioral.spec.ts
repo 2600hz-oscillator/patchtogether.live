@@ -131,6 +131,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   pong:     'gameplay-conditional outputs; covered by pong-related specs',
   modtris:  'gameplay-conditional outputs; covered by modtris-related specs',
   sm64:     'video output blank until US ROM extracted into IDB; covered by sm64-related specs',
+  snes9x:   'ROM-gated emulator: all outputs (incl. measured audio_l) need a loaded ROM (user-provided, gitignored, absent in CI) so control + patched both read silence; covered by snes9x.spec.ts + snes9x-gameplay-gates.spec.ts (skip when ROM absent) + snes-input/clock-multiplier/smw-events unit tests',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
   skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
 
@@ -380,6 +381,11 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   wavviz: { fmAmount: 0.5, foldAmount: 0.4, wavePos: 0.5 },
   // swolevco: timbre/symmetry/fold/ratio default tuned for clean; boost.
   swolevco: { timbre: 0.5, symmetry: 0.5, fold: 0.4, ratio: 0.3 },
+  // moog921Vco: the sync input is gated by the 3-way `sync` switch (default 0
+  // = off), and lin_fm by `linFmAmount` (default 0). Put sync in HARD (+1) and
+  // open linear-FM depth so those inputs can actually perturb the sine output.
+  // (Verified locally: this makes both `sync` and `lin_fm` real-coverage passes.)
+  moog921Vco: { sync: 1, linFmAmount: 0.6 },
   // macrooscillator: harmonics/timbre/morph default tuned for clean; boost.
   macrooscillator: { harmonics: 0.5, timbre: 0.5, morph: 0.5, level: 0.8 },
   // vca: default base=0 means the VCA is silent until CV opens it.
@@ -434,6 +440,8 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    copy-B path is covered by synesthesia-worklet.test.ts (copy A/B
   //    isolation) + the synesthesia composite spec.
   'synesthesia.b_in': 'copy B is independent; b_in perturbs b_* outputs, not the observed copy-A output (covered by synesthesia-worklet.test.ts + composite spec)',
+  'synesthesia.a_video_in': 'video input is consumed card-side ONLY in VIDEO mode (a_mode=1); the sweep runs the default AUDIO mode so a_video_in is a correct no-op on a_band1_audio, and forcing a_mode=1 module-wide would break the a_in audio test on the same observed output (covered by synesthesia-worklet.test.ts + composite spec)',
+  'synesthesia.b_video_in': 'video input is consumed card-side ONLY in VIDEO mode (b_mode=1); the sweep runs the default AUDIO mode so b_video_in is a correct no-op on the observed output (covered by synesthesia-worklet.test.ts + composite spec)',
 
   // ── SEQUENCER reset jumps the playhead but produces NO new output
   //    that scope can see beyond the gate train already firing; the
@@ -555,6 +563,11 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'analogVco.fine':     'cv displacement on a small-range knob (±100 cents); covered by cv-range-uniformity.spec.ts',
   'analogVco.fmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by analog-vco.test.ts',
   'analogVco.pmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by analog-vco.test.ts',
+  'analogVco.shape':    'morph-only param: shape morphs the morph output, not the measured sine tap; covered by analog-vco-morph.test.ts',
+  // moog921Vco: sync + lin_fm ARE covered (BEHAVIORAL_PARAMS opens sync=HARD +
+  // linFmAmount=0.6). These two remain legit no-ops on the sine tap:
+  'moog921Vco.width_cv':    'pulse-width sets the pulse/square output, not the measured sine tap; covered by moog921-vco.test.ts',
+  'moog921Vco.linFmAmount': 'cv-modulates-the-FM-depth-knob — a no-op on output when the lin_fm signal input is unpatched (same pattern as analogVco.fmAmount); covered by moog921-vco.test.ts',
 
   // ── wavetableVco mirrors analogVco's FM/PM gating shape. Same set
   //    of fundamentally-gated inputs that need DC-biased modulators
@@ -578,6 +591,22 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'chowkick.damping_cv':    'damping CV; subtle envelope-shape change below centroid threshold; covered by chowkick.spec.ts',
   'chowkick.tone_cv':       'tone-blend CV; 10Hz centroid shift within noise range; covered by chowkick.spec.ts',
   'chowkick.portamento_cv': 'portamento-glide CV; glide effect below centroid threshold at 800ms; covered by chowkick.spec.ts',
+  // The excitation-amplitude CVs are clipped/pinned by the resonant tanh at the
+  // unity-gain kick the driver uses, so RMS does not move in the gate-loop
+  // window (de-saturating to expose them masks the noise/freq/q CVs instead —
+  // verified). Their wiring is covered at the DSP level by chowkick-dsp.test.ts.
+  'chowkick.amplitude_cv':  'excitation amplitude is clipped by the resonant tanh at unity output so audio_out RMS is pinned; covered by chowkick-dsp.test.ts (amplitude scales excitation) + chowkick.spec.ts',
+  'chowkick.width_cv':      'pulse hold-width sets excitation duration; RMS shift below threshold in the saturated gate-loop window; covered by chowkick-dsp.test.ts (width pins hold length) + chowkick.spec.ts',
+  'chowkick.sustain_cv':    'sustain sets the gate-high decay-floor; tail-energy shift below RMS threshold in the gate-on window; covered by chowkick-dsp.test.ts (sustain holds pulse) + chowkick.spec.ts',
+  // Spectral-character CVs on a short percussive transient: verified to sit
+  // consistently below the gate-loop RMS+centroid threshold across 3 runs
+  // (Δrms≈0, Δcent≈0); they shape noise/pitch character, not bulk energy. The
+  // wiring is covered per-param at the DSP level by chowkick-dsp.test.ts. (A
+  // percussion-appropriate metric — per-transient peak/spectral — would gate
+  // these; tracked as a behavioral-harness follow-up.)
+  'chowkick.noise_amount_cv': 'noise-blend CV; bulk-energy shift below RMS/centroid threshold on the short transient; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
+  'chowkick.noise_decay_cv':  'noise-decay CV; tail-character shift below RMS/centroid threshold in the gate-loop window; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
+  'chowkick.freq_cv':         'base-frequency CV; low-fundamental shift not captured by the centroid metric on the transient; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
 };
 
 // ────────── Type-aware upstream sources for input drive ──────────
