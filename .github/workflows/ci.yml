@@ -453,6 +453,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # REQUIRED: large static game bundles (e.g. static/sm64js/sm64js.bundle.js,
+          # ~12 MB) are stored in git-LFS. Without lfs:true the build bakes the LFS
+          # *pointer* (text starting `version https://git-lfs...`) into the preview
+          # artifact; loading it as a <script> throws "Unexpected identifier 'https'"
+          # and breaks the sm64 e2e shards. Every other job already checks out lfs:true.
+          lfs: true
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
