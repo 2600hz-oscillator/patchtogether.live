@@ -15,6 +15,13 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 // full-musical-range mapping. New entries here MUST be justified in
 // .myrobots/plans/cv-range-standard.md.
 const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
+  // moog992 cv1..cv4: a passive CV PANEL — these inputs are the signals being
+  // attenuated + summed into cv_out (no paramTarget, not modulating a knob), so
+  // cvScale doesn't apply. The per-channel attenuator knobs scale them.
+  moog992: ['cv1', 'cv2', 'cv3', 'cv4'],
+  // moog993 env_in1/env_in2: a passive routing panel — envelope CV passes
+  // straight through to env_out1/2 (no paramTarget); not scaled.
+  moog993: ['env_in1', 'env_in2'],
   // filter.dsp: cutoffCv → pow(2, 5*cv) ±5 octaves; resCv: additive clamp.
   filter: ['cutoff', 'res'],
   // wavviz.wavePos: audio-rate input (no paramTarget); not subject to scaling.
