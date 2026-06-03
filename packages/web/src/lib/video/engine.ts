@@ -75,6 +75,18 @@ export interface VideoFrameContext {
    * and render a sensible default (typically: skip drawing, or write zeros).
    */
   getInputTexture(thisNodeId: string, inputId: string): WebGLTexture | null;
+  /**
+   * Optional: does this node's output drive at least one downstream edge
+   * (intra-domain video edge OR a cross-domain video→audio/texture bridge)?
+   *
+   * A perf-gated SOURCE module (e.g. MANDELBULB's screen-off gate) reads
+   * this in draw() to decide whether it can skip its (expensive) render
+   * when its on-card screen is also off — there is then nobody to see the
+   * frame, so the work is pure waste. Modules MUST treat an absent helper
+   * (older engine builds / test mocks) as "connected" so they never wrongly
+   * go dark.
+   */
+  isOutputConnected?(thisNodeId: string): boolean;
 }
 
 export interface VideoNodeHandle {
@@ -502,6 +514,7 @@ export class VideoEngine implements DomainEngine {
       time: (performance.now() - this.startTime) / 1000,
       frame: this.frameCount++,
       getInputTexture: (thisNodeId, inputId) => this.lookupInput(thisNodeId, inputId),
+      isOutputConnected: (thisNodeId) => this.isOutputConnected(thisNodeId),
     };
     for (const id of this.topoOrder) {
       const handle = this.nodes.get(id);
@@ -930,6 +943,31 @@ void main() {
       if (src.surface.texture) return src.surface.texture;
     }
     return null;
+  }
+
+  /**
+   * Does `thisNodeId`'s output drive at least one downstream consumer?
+   *
+   * True if any edge originates at this node (an intra-domain video edge to
+   * another video module's input, OR a cross-domain bridge whose source is
+   * this node). Perf-gated SOURCE modules read this via
+   * VideoFrameContext.isOutputConnected to skip their render when nobody
+   * downstream — and no on-card screen — would ever see the frame.
+   *
+   * Cheap O(edges); only called from per-frame draws of modules that opt
+   * into the gate (currently MANDELBULB), so the linear scan is fine.
+   */
+  private isOutputConnected(thisNodeId: string): boolean {
+    for (const e of this.edges.values()) {
+      if (e.source.nodeId === thisNodeId) return true;
+    }
+    // Cross-domain video→audio / video→texture bridges also count as a
+    // consumer: their edge's source is this node even if the destination
+    // lives in another engine (so the edge isn't in topo `adj`).
+    for (const b of this.videoTextureBridges.values()) {
+      if (b.sourceNodeId === thisNodeId) return true;
+    }
+    return false;
   }
 
   // -------- Shared GL helpers exposed to module factories --------
