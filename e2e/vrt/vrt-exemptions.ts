@@ -93,6 +93,10 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // E2E. Pinning the canvas as well would need a deterministic-time
   // hook on the engine clock — deferred to a follow-up.
   mandleblot: [{ selector: 'canvas' }],
+  // MANDELBULB — live ray-marched 3D fractal preview + auto-spin; mask the
+  // canvas so the deterministic chrome (6 knobs + SPIN/SCRN toggles + CV
+  // handle rows + VIDEO out) is the regression gate.
+  mandelbulb: [{ selector: 'canvas' }],
   // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
   // preview canvas; the counter starts at 0 on factory mount (or 1234 when
   // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
@@ -289,6 +293,17 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // is impossible without freezing the engine clock. Pattern/palette unit
   // coverage in acidwarp-patterns.test.ts; integration coverage via E2E.
   acidwarp: 'animated palette rotation + auto scene cycler defeats deterministic capture; unit + E2E provide coverage',
+  // MANDELBULB — WebGL2 ray-marched 3D Mandelbulb fractal video source.
+  // The card carries a live preview canvas of the raymarch, and the bulb
+  // auto-spins by default (autospin param) so every frame differs — a
+  // deterministic single-frame baseline is impossible without freezing the
+  // engine clock + pinning autospin. The DE/shading correctness is covered
+  // by mandelbulb-math.test.ts (pure distance estimate) + mandelbulb.test.ts
+  // (def shape). TODO(follow-up): add a __mandelbulbVrtSeed deterministic-time
+  // + spin-off freeze hook and capture darwin/linux baselines, then promote
+  // into MODULES (the VRT_MODULE_MASKS canvas mask above covers the live
+  // preview if it's promoted before the seed path is finished).
+  mandelbulb: 'VRT baseline pending — live raymarch preview + auto-spin defeats deterministic single-frame capture; unit (mandelbulb-math DE + def shape) + E2E provide coverage. TODO: add __mandelbulbVrtSeed freeze hook + capture darwin/linux baselines in a follow-up PR.',
   // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
   // ports), VRT baseline pending. Unit + E2E provide coverage.
   joystick: 'VRT baseline pending; unit + E2E provide coverage. UI is small + stable — pinning baselines in a follow-up PR.',
