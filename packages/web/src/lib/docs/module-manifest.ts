@@ -76,6 +76,14 @@ const SRC_BASE =
 
 const DESCRIPTIONS: Record<string, string> = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  moog911a:
+    'Moog 911A Dual Trigger Delay (Moog System 55 clone — categorized under Moog -> SYS55). Two trigger delays for staggering envelope generators. Each trigger input fires its output after a DELAY time (2 ms..10 s log). A MODE switch sets coupling: OFF (independent — trig1->out1, trig2->out2), PARALLEL (trig1 fires BOTH delays), SERIES (trig1 fires delay1->out1, whose pulse then fires delay2->out2). Own-code timing (clean-room). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog961:
+    'Moog 961 Interface (Moog System 55 clone — categorized under Moog -> SYS55). A trigger-format converter / interface: audio crossing the SENSITIVITY threshold fires V-triggers (two parallel outs); an S-trigger input passes through to the V-trigger outs; and V-trigger inputs convert to S-trigger outs — one matching the input gate duration, one re-shaped to a fixed SWITCH-ON-TIME pulse (40 ms..4 s). (In our graph all triggers are gates; the S/V polarity distinction is cosmetic — the timing behaviors are modeled.) Own-code. Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog962:
+    'Moog 962 Sequential Switch (Moog System 55 clone — categorized under Moog -> SYS55). Routes one of up to three signal inputs to a single output, advancing to the next input on each SHIFT (V-trigger) rising edge — a gate-advanced selector (shares the FOURPLEXER selector logic, trimmed to 3-in/1-out). STAGES sets how many inputs are cycled (2 or 3). Own-code. Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog912:
+    'Moog 912 Envelope Follower (Moog System 55 clone — categorized under Moog -> SYS55). Tracks the amplitude envelope of an audio input and outputs it as a control voltage, plus a gate when the envelope is above threshold. SENSITIVITY sets the input drive; SMOOTHING sets how fast the envelope tracks (envelope-detector lowpass). Pure Web Audio (rectify -> lowpass -> CV; threshold -> gate). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
   moog903a:
     'Moog 903A Random Signal Generator (Moog System 55/35 clone — categorized under Moog -> SYS55). Passive white + pink noise source with two independent audio taps (WHITE = flat spectrum; PINK = -3 dB/oct, Voss-McCartney), scaled by a single LEVEL knob. No inputs. Own-code (public-domain noise technique). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
   moog923:

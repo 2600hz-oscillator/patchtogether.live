@@ -22,6 +22,10 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // moog993 env_in1/env_in2: a passive routing panel — envelope CV passes
   // straight through to env_out1/2 (no paramTarget); not scaled.
   moog993: ['env_in1', 'env_in2'],
+  // moog962 in1..in3: a sequential SWITCH — the inputs are the signals being
+  // routed to `out` (no paramTarget, not modulating a knob), so cvScale doesn't
+  // apply. The shift gate advances which one passes.
+  moog962: ['in1', 'in2', 'in3'],
   // filter.dsp: cutoffCv → pow(2, 5*cv) ±5 octaves; resCv: additive clamp.
   filter: ['cutoff', 'res'],
   // wavviz.wavePos: audio-rate input (no paramTarget); not subject to scaling.

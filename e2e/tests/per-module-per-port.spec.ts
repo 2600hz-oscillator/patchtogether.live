@@ -138,6 +138,13 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // input-drive still run here.
   moog992:    'passive CV summer/attenuator; output is input-conditional; covered by moog992.test.ts',
   moog993:    'passive trigger/envelope router; output is input-conditional; covered by moog993.test.ts',
+  // Batch-5 input-conditional outputs: moog911a fires a brief delayed pulse only
+  // after an input trigger (not in the generic emit window — timing in
+  // trigger-delay-dsp.test.ts); moog962's output carries only the currently-
+  // selected input (the sweep drives one input, not the selected one — selector
+  // in moog962-dsp.test.ts).
+  moog911a:   'trigger-delay; outputs are delayed pulses on an input trigger (input-conditional); covered by trigger-delay-dsp.test.ts',
+  moog962:    'sequential switch; output carries only the selected input (input-conditional); covered by moog962-dsp.test.ts',
   // ── User-toggled sequencer-like sources ──
   sequencer: 'requires user-toggled step.on=true; covered by dedicated sequencer specs',
   score:     'requires play_cv high + steps; covered by score.spec.ts',
