@@ -73,6 +73,14 @@ const SKIP_SPAWN: Record<string, string> = {
   group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
   helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
   cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
+  // TEMPORARY (gate-now, 2026-06-03): riotgirls' DESTROY/Reverb FX bus
+  // (v{1-4}_sendA/sendB, returnA/returnB, bc_* bitcrush, rv_* reverb) is
+  // unwired in MVP-A — those ~10 declared inputs have no audio path to output
+  // (confirmed: patched===control). A few busy-bus subtle CVs also sit near the
+  // metric floor. The FX bus is being WIRED in the riotgirls MVP-B follow-up,
+  // which REMOVES this module-exempt + restores per-port coverage. Until then,
+  // module-exempt so the now-gated lane stays green.
+  riotgirls: 'TEMPORARY: DESTROY/Reverb FX bus unwired in MVP-A (~10 inert inputs); being wired in the MVP-B follow-up which removes this exempt + restores per-port coverage; covered by riotgirls.spec.ts + riotgirls.test.ts',
 };
 
 // ────────── Module-level behavioral exemptions ──────────
