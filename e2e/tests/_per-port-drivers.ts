@@ -905,6 +905,69 @@ const DRIVERS: Record<string, PerPortDriver> = {
     }),
     note: 'MOOG 902: drive SIGNAL with ANALOGVCO.saw; OUT + OUT− both pass the amplified signal (gain default ×1)',
   },
+
+  // ───── MOOG 904B HPF — drive the SIGNAL input so the audio out emits ─────
+  //
+  // The 904B is an effect (audio in → 24 dB/oct high-pass out), so it needs an
+  // upstream source. Wire an ANALOGVCO saw (harmonic-rich) into the `audio`
+  // SIGNAL input + seed a LOW cutoff (100 Hz) so the C4 saw passes the HPF
+  // mostly intact and the `audio` output rings well above the scope's emit
+  // floor. (At the default 1000 Hz cutoff the 261 Hz fundamental + low
+  // harmonics are deep in the stopband, leaving only thin high partials.) The
+  // driver's presence bypasses the effect-shape skip in the spec
+  // (hasDriverSetup), so the 904B goes through the normal output-emit path.
+  moog904b: {
+    params: { cutoff: 100, range: 1 },
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-vco', type: 'analogVco', position: { x: 60, y: 60 }, domain: 'audio' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-vco',
+          from: { nodeId: 'drv-vco', portId: 'saw' },
+          to:   { nodeId: 'sut',     portId: 'audio' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+      ],
+    }),
+    note: 'MOOG 904B: drive SIGNAL with ANALOGVCO.saw + cutoff=100 Hz (LOW range) so the C4 saw passes the high-pass; audio out is a driven signal',
+  },
+
+  // ───── MOOG 921A driver — drive the CONTROL INPUTS so both CV buses move ─────
+  //
+  // The 921A is a CV-only oscillator DRIVER (no audio ports). Its freq_bus /
+  // width_bus outputs are STEADY DC at defaults (frequency=0 → 0 V/oct;
+  // width=0.5), and the SCOPE's AC-coupled analyser doesn't read a constant DC
+  // offset as a "peak". So wire a self-running BUGGLES.smooth (slow ±5 V random
+  // CV) into BOTH summing CONTROL INPUTS (freq_cv + width_cv) — the worklet sums
+  // them per-sample onto the buses, making freq_bus AND width_bus AC signals the
+  // scope reads as a real peak. (Same shape as the CV-utility ctx wiring; here
+  // it's an explicit upstream because the 921A has no audio input the
+  // effect-shape ctx wiring would otherwise feed.) The driver's presence also
+  // takes the module through the normal output-emit path.
+  moog921a: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-bug', type: 'buggles', position: { x: 60, y: 60 }, domain: 'audio', params: { rate: 0.7, smoothness: 0.2, chaos: 0.3 } },
+      ],
+      edges: [
+        {
+          id: 'e-drv-bug-freq',
+          from: { nodeId: 'drv-bug', portId: 'smooth' },
+          to:   { nodeId: 'sut',     portId: 'freq_cv' },
+          sourceType: 'cv', targetType: 'pitch',
+        },
+        {
+          id: 'e-drv-bug-width',
+          from: { nodeId: 'drv-bug', portId: 'smooth' },
+          to:   { nodeId: 'sut',     portId: 'width_cv' },
+          sourceType: 'cv', targetType: 'cv',
+        },
+      ],
+    }),
+    note: 'MOOG 921A: drive freq_cv + width_cv with BUGGLES.smooth so both CV bus outputs (freq_bus/width_bus) are AC (DC at defaults → scope reads no peak)',
+  },
 };
 
 /** Look up a driver for a module. Returns null when no override

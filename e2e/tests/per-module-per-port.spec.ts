@@ -657,6 +657,13 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // ring at default settings (C4) with no upstream. The audio-typed
       // lin_fm / sync inputs are OPTIONAL modulation, not a required source.
       'moog921Vco',
+      // MOOG 921B — slave VCO (batch 1). Like the 921 VCO it self-runs: with
+      // freq_bus unpatched the worklet reads 0 V/oct → C4 and width_bus normals
+      // to 0.5 (square), so all four waveform jacks (sine/triangle/saw/rect)
+      // ring at default fine=0 / range=0 / level=1. The audio-typed dc_mod /
+      // ac_mod / sync inputs are OPTIONAL modulation (linear-FM + sync), not a
+      // required source — so it takes the normal outputs-emit path.
+      'moog921b',
       // MOOG 904A VCF — an effect (audio in → low-pass out), BUT its
       // REGENERATION self-oscillates: the per-port driver seeds
       // regeneration=1 so the ladder rings as a VC sine generator with no

@@ -386,6 +386,13 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // open linear-FM depth so those inputs can actually perturb the sine output.
   // (Verified locally: this makes both `sync` and `lin_fm` real-coverage passes.)
   moog921Vco: { sync: 1, linFmAmount: 0.6 },
+  // moog921b: same gating shape as the 921 VCO. The dc_mod / ac_mod linear-FM
+  // inputs are gated by `modAmount` (default 0 → no FM), and the `sync` input by
+  // the 3-way `syncMode` switch (default 0 = off). Open modAmount + put syncMode
+  // in HARD (+1) so all three audio-typed modulation inputs actually perturb the
+  // observed sine output. (Verified locally: makes dc_mod / ac_mod / sync real-
+  // coverage passes; width_bus is exempt — it shapes the rect/saw, not the sine.)
+  moog921b: { modAmount: 0.7, syncMode: 1 },
   // macrooscillator: harmonics/timbre/morph default tuned for clean; boost.
   macrooscillator: { harmonics: 0.5, timbre: 0.5, morph: 0.5, level: 0.8 },
   // vca: default base=0 means the VCA is silent until CV opens it.
@@ -568,6 +575,20 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   // linFmAmount=0.6). These two remain legit no-ops on the sine tap:
   'moog921Vco.width_cv':    'pulse-width sets the pulse/square output, not the measured sine tap; covered by moog921-vco.test.ts',
   'moog921Vco.linFmAmount': 'cv-modulates-the-FM-depth-knob — a no-op on output when the lin_fm signal input is unpatched (same pattern as analogVco.fmAmount); covered by moog921-vco.test.ts',
+
+  // moog921A driver — observed output is `freq_bus`. freq_cv (the pitch CONTROL
+  // INPUT) IS covered: driving it moves freq_bus. width_cv feeds the SEPARATE
+  // `width_bus` output (not freq_bus), so it correctly shows no delta on the
+  // observed port — same independent-output shape as synesthesia's b_in. The
+  // width passthrough is pinned by moog921a.test.ts (worklet width-bus sum).
+  'moog921a.width_cv': 'width_cv feeds the separate width_bus output, not the observed freq_bus (independent CV buses by design, like synesthesia.b_in); width passthrough pinned by moog921a.test.ts',
+
+  // moog921B slave VCO — observed output is `sine`. freq_bus (pitch), dc_mod,
+  // ac_mod + sync ARE covered (freq_bus is the pitch; BEHAVIORAL_PARAMS opens
+  // modAmount=0.7 + syncMode=HARD so the FM + sync inputs perturb the sine).
+  // width_bus shapes the rectangular/saw duty cycle, NOT the sine tap — the
+  // identical legit no-op as moog921Vco.width_cv. Pinned by moog921b.test.ts.
+  'moog921b.width_bus': 'pulse-width sets the rect/saw duty cycle, not the measured sine tap (same shape as moog921Vco.width_cv); covered by moog921b.test.ts',
 
   // ── wavetableVco mirrors analogVco's FM/PM gating shape. Same set
   //    of fundamentally-gated inputs that need DC-biased modulators
