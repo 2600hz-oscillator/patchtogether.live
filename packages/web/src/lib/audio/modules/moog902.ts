@@ -7,7 +7,7 @@
 // phase-inverted twin), with a LINEAR / EXPONENTIAL response switch.
 //
 // The 902 appears in BOTH systems (S35×3, S55×5) → shared → categorized
-// under Moog → SYS55 (the shared bucket, mirroring the 921 VCO + 904A VCF).
+// under Clones → moogafakkin (the shared bucket, mirroring the 921 VCO + 904A VCF).
 //
 // GAIN LAW: gain is driven by a control sum in volts —
 //   control = gainKnob(0..6 V) + fcv (fixed-control-voltage bias) +
@@ -51,10 +51,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog902Def: AudioModuleDef = {
   type: 'moog902',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog902VcaCard',
   domain: 'audio',
-  label: 'Moog 902 VCA',
+  label: 'moogafakkin 902 VCA',
   category: 'utilities',
   schemaVersion: 1,
 

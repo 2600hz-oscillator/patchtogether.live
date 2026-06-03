@@ -58,7 +58,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="Moog 911 EG" width={232}>
+<MoogPanel {id} {data} defaultLabel="moogafakkin 911 EG" width={232}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Contour controls: T1 (attack) + T2 (initial decay). -->
     <div class="knob-row" data-testid="moog911-time-row">

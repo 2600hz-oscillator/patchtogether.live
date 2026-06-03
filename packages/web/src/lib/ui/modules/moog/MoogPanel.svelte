@@ -8,7 +8,7 @@
   // REUSE CONTRACT (read this before adding the next Moog module):
   //   Every Moog card wraps its body in <MoogPanel>:
   //
-  //     <MoogPanel {id} {data} defaultLabel="Moog 921 VCO">
+  //     <MoogPanel {id} {data} defaultLabel="moogafakkin 921 VCO">
   //       <PatchPanel nodeId={id} {inputs} {outputs}>
   //         …knobs / switches…
   //       </PatchPanel>

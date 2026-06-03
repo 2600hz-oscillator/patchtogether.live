@@ -25,15 +25,15 @@ beforeAll(() => {
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog921bDef: module def shape', () => {
-  it('declares type=moog921b, label="Moog 921B Osc", category=sources, schemaVersion=1', () => {
+  it('declares type=moog921b, label="moogafakkin 921B Osc", category=sources, schemaVersion=1', () => {
     expect(moog921bDef.type).toBe('moog921b');
-    expect(moog921bDef.label).toBe('Moog 921B Osc');
+    expect(moog921bDef.label).toBe('moogafakkin 921B Osc');
     expect(moog921bDef.category).toBe('sources');
     expect(moog921bDef.schemaVersion).toBe(1);
   });
 
-  it('is categorized under Moog → SYS55', () => {
-    expect(moog921bDef.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('is categorized under Clones → moogafakkin', () => {
+    expect(moog921bDef.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
   });
 
   it('exposes the 921B inputs: freq_bus, width_bus, dc_mod, ac_mod, sync', () => {

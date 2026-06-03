@@ -25,7 +25,7 @@
 // Params:
 //   level (linear 0..1, default 0.8): master gain applied to BOTH taps.
 //
-// Categorized under Moog → SYS55 (the shared SYS55/SYS35 bucket, mirroring the
+// Categorized under Clones → moogafakkin (the shared SYS55/SYS35 bucket, mirroring the
 // CP3 / 921A / 992). Category 'sources' because it generates signal.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
@@ -39,7 +39,7 @@ const BUFFER_SECONDS = 2;
 
 export const moog903aDef: AudioModuleDef = {
   type: 'moog903a',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog903aCard',
   domain: 'audio',
   label: '903A Random Signal Generator',

@@ -24,9 +24,9 @@ beforeAll(() => {
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moogCp3Def: module def shape', () => {
-  it('declares type=moogCp3, label="Moog CP3 Mixer", category=utilities, schemaVersion=1', () => {
+  it('declares type=moogCp3, label="moogafakkin CP3 Mixer", category=utilities, schemaVersion=1', () => {
     expect(moogCp3Def.type).toBe('moogCp3');
-    expect(moogCp3Def.label).toBe('Moog CP3 Mixer');
+    expect(moogCp3Def.label).toBe('moogafakkin CP3 Mixer');
     expect(moogCp3Def.category).toBe('utilities');
     expect(moogCp3Def.schemaVersion).toBe(1);
   });

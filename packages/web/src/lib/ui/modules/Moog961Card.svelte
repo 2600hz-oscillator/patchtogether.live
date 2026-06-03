@@ -58,7 +58,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="Moog 961 Interface" width={220}>
+<MoogPanel {id} {data} defaultLabel="moogafakkin 961 Interface" width={220}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- SENSITIVITY (audio→trigger threshold) + SWITCH-ON TIME (col-B pulse). -->
     <div class="knob-row" data-testid="moog961-knob-row">

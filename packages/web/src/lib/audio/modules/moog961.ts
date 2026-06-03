@@ -37,10 +37,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog961Def: AudioModuleDef = {
   type: 'moog961',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog961Card',
   domain: 'audio',
-  label: 'Moog 961 Interface',
+  label: 'moogafakkin 961 Interface',
   category: 'utilities',
   schemaVersion: 1,
 

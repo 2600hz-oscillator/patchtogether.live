@@ -73,7 +73,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="Moog 921B Osc" width={252}>
+<MoogPanel {id} {data} defaultLabel="moogafakkin 921B Osc" width={252}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- FREQUENCY (fine) + RANGE footage + LEVEL. -->
     <div class="knob-row" data-testid="moog921b-freq-row">

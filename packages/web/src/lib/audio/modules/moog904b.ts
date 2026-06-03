@@ -7,7 +7,7 @@
 // pot, a two-position RANGE switch (LOW 4 Hz–20 kHz / HIGH = +1.5 oct), a
 // summing 1 V/oct CONTROL INPUT, and — unlike the 904A — NO regeneration /
 // resonance knob (the hardware 904B has no resonance pot). Shared by SYS55 +
-// SYS35 → categorized under Moog → SYS55 (the shared bucket).
+// SYS35 → categorized under Clones → moogafakkin (the shared bucket).
 //
 // DSP: own-code, CLEAN-ROOM — CONSUMES the same shared transistor-ladder
 // core the 904A uses (packages/dsp/src/moog904b.ts via
@@ -36,10 +36,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog904bDef: AudioModuleDef = {
   type: 'moog904b',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog904bVcfCard',
   domain: 'audio',
-  label: 'Moog 904B VCF',
+  label: 'moogafakkin 904B VCF',
   category: 'filters',
   schemaVersion: 1,
 

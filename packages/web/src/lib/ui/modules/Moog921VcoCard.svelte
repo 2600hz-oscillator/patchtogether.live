@@ -77,7 +77,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="Moog 921 VCO" width={252}>
+<MoogPanel {id} {data} defaultLabel="moogafakkin 921 VCO" width={252}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Frequency section: RANGE (octave) + FREQ (fine). -->
     <div class="knob-row" data-testid="moog921-freq-row">

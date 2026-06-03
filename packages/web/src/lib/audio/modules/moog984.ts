@@ -56,9 +56,9 @@ const CROSS_PARAMS: ParamDef[] = (() => {
 
 export const moog984Def: AudioModuleDef = {
   type: 'moog984',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   domain: 'audio',
-  label: 'Moog 984 Matrix',
+  label: 'moogafakkin 984 Matrix',
   category: 'utilities',
   schemaVersion: 1,
 

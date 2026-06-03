@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog907a.test.ts
 //
-// Two test layers for the MOOG 907A FIXED FILTER BANK (Moog System 35 clone):
+// Two test layers for the MOOG 907A FIXED FILTER BANK (moogafakkin System 35 clone):
 //   1. Module-def shape — pins the 907A's I/O surface (single audio in, single
 //      audio out, the hp / band1..band8 / lp param array driven by the SHARED
 //      FILTERBANK_907A_CENTERS table) so a refactor that silently drops a port
@@ -39,8 +39,8 @@ describe('moog907aDef: module def shape', () => {
     expect(moog907aDef.schemaVersion).toBe(1);
   });
 
-  it('lives in the Moog → SYS35 palette bucket and uses the Moog907aCard', () => {
-    expect(moog907aDef.palette).toEqual({ top: 'Moog', sub: 'SYS35' });
+  it('lives in the Clones → moogafakkin palette bucket and uses the Moog907aCard', () => {
+    expect(moog907aDef.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
     expect(moog907aDef.card).toBe('Moog907aCard');
   });
 

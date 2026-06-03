@@ -3,7 +3,7 @@
 // MOOG 911A DUAL TRIGGER DELAY — Moog System 55/35 clone (batch 5 utility
 // cluster). Two independent trigger delays with a coupling MODE. A gate on an
 // input is detected on its RISING edge; after a programmed delay the matching
-// output emits a short (~1 ms) gate pulse. Categorized under Moog → SYS55.
+// output emits a short (~1 ms) gate pulse. Categorized under Clones → moogafakkin.
 //
 // DSP: own-code pure timing (packages/dsp/src/lib/trigger-delay-dsp.ts —
 // DualTriggerDelay) wrapped by the worklet packages/dsp/src/moog911a.ts.
@@ -40,10 +40,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog911aDef: AudioModuleDef = {
   type: 'moog911a',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog911aCard',
   domain: 'audio',
-  label: 'Moog 911A Trig Delay',
+  label: 'moogafakkin 911A Trig Delay',
   category: 'modulation',
   schemaVersion: 1,
 

@@ -34,7 +34,7 @@ export type TopCategory =
   | 'Video modules'
   | 'Games'
   | 'Ports'
-  | 'Moog'
+  | 'Clones'
   | 'MIDI'
   | 'Hybrid'
   | 'Uncategorized';
@@ -68,11 +68,12 @@ export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
   // hydrogen, helm, cloudseed are headline ports the user wants one
   // click away. `Mutable` is the MI archetype-port sublist.
   Ports: ['Ports', 'Mutable'],
-  // Moog = the Moog System 55 / 35 clone family. Two sub-systems: SYS55
-  // (the big modular) + SYS35. Modules shared by BOTH systems are listed
-  // under SYS55 (resolved decision Q4 in .myrobots/MOOG/PLAN.md) — e.g.
-  // the 921 VCO. Mirrors the Ports→Mutable nesting precedent above.
-  Moog: ['SYS55', 'SYS35'],
+  // Clones = clone families of external hardware/software synths. First
+  // member: the `moogafakkin` System 55 / 35 clone family (the renamed
+  // ex-"Moog" set — System 55 big modular + System 35; shared modules listed
+  // once under the single moogafakkin subfolder). More clone families can
+  // join this top-level group later. Mirrors the Ports→Mutable nesting.
+  Clones: ['moogafakkin'],
   MIDI: ['MIDI'],
   Hybrid: ['Hybrid'],
   Uncategorized: ['Uncategorized'],
@@ -84,7 +85,7 @@ export const TOP_ORDER: readonly TopCategory[] = [
   'Video modules',
   'Games',
   'Ports',
-  'Moog',
+  'Clones',
   'MIDI',
   'Hybrid',
   'Uncategorized',
@@ -150,7 +151,7 @@ export function groupDefs<D extends DefLike>(defs: readonly D[]): GroupedTop<D>[
     'Video modules': {},
     Games: {},
     Ports: {},
-    Moog: {},
+    Clones: {},
     MIDI: {},
     Hybrid: {},
     Uncategorized: {},

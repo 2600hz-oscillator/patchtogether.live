@@ -4,7 +4,7 @@
 // clone initiative (.myrobots/MOOG/). The CP3 is the console's multi-function
 // mixer: a 4×1 summing mixer that also presents a (−) inverted output, an
 // attenuated 4th external input, a 1→3 MULTIPLE, and ±reference trunk jacks.
-// Shared by SYS55 + SYS35 (categorized under Moog → SYS55 per the plan's
+// Shared by SYS55 + SYS35 (categorized under Clones → moogafakkin per the plan's
 // resolved Q4).
 //
 // DSP: own-code (packages/dsp/src/moog-cp3.ts + lib/moog-cp3-dsp.ts) — a
@@ -48,10 +48,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moogCp3Def: AudioModuleDef = {
   type: 'moogCp3',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'MoogCp3MixerCard',
   domain: 'audio',
-  label: 'Moog CP3 Mixer',
+  label: 'moogafakkin CP3 Mixer',
   category: 'utilities',
   schemaVersion: 1,
 

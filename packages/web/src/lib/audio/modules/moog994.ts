@@ -5,7 +5,7 @@
 // busses. Patch a signal into a group's input jack and it appears, unaltered,
 // on that group's three output jacks. Two such busses (A + B) per panel.
 //
-// Categorized under Moog → SYS55 (the shared SYS55/SYS35 bucket, like the
+// Categorized under Clones → moogafakkin (the shared SYS55/SYS35 bucket, like the
 // CP3 / 921A / 902).
 //
 // PASSIVE / PURE WEB AUDIO: no DSP worklet, no Faust. A multiple is literally
@@ -32,10 +32,10 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const moog994Def: AudioModuleDef = {
   type: 'moog994',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog994Card',
   domain: 'audio',
-  label: 'Moog 994 Mult',
+  label: 'moogafakkin 994 Mult',
   category: 'utilities',
   schemaVersion: 1,
 

@@ -59,7 +59,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="Moog 923 Filt/Noise" width={220}>
+<MoogPanel {id} {data} defaultLabel="moogafakkin 923 Filt/Noise" width={220}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- LEVEL (noise gain) + LO PASS / HI PASS filter corners. -->
     <div class="knob-row" data-testid="moog923-knobs">

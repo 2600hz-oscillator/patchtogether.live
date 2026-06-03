@@ -60,7 +60,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="Moog 911A Trig Delay" width={200}>
+<MoogPanel {id} {data} defaultLabel="moogafakkin 911A Trig Delay" width={200}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="knob-row" data-testid="moog911a-knobs">
       <Knob

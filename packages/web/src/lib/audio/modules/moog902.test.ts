@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog902.test.ts
 //
-// Two test layers for the MOOG 902 VCA (Moog System 55/35 clone, slice 3):
+// Two test layers for the MOOG 902 VCA (moogafakkin System 55/35 clone, slice 3):
 //   1. Module-def shape — pins the 902's I/O surface (the SIGNAL `audio`
 //      input + the summing `cv` / `fcv` CONTROL INPUTS, the differential
 //      output pair `audio` + `audio_inv`, the literal param array) so a
@@ -24,9 +24,9 @@ beforeAll(() => {
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog902Def: module def shape', () => {
-  it('declares type=moog902, label="Moog 902 VCA", category=utilities, schemaVersion=1', () => {
+  it('declares type=moog902, label="moogafakkin 902 VCA", category=utilities, schemaVersion=1', () => {
     expect(moog902Def.type).toBe('moog902');
-    expect(moog902Def.label).toBe('Moog 902 VCA');
+    expect(moog902Def.label).toBe('moogafakkin 902 VCA');
     expect(moog902Def.category).toBe('utilities');
     expect(moog902Def.schemaVersion).toBe(1);
   });
