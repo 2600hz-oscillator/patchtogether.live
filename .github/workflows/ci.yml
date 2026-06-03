@@ -156,7 +156,11 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # AWS ECR Public mirror of the official Docker Hub image — Docker
+        # Hub's registry-1.docker.io intermittently times out the service-
+        # container pull (recurring CI flake). ECR Public has no rate limits
+        # and is far more reliable. Same image, different (mirror) registry.
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -577,7 +581,9 @@ jobs:
       # Postgres for the persistence layer (Stage B1+). Both the SvelteKit
       # webServer and the Hocuspocus server read DATABASE_URL.
       postgres:
-        image: postgres:17
+        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
+        # Docker Hub service-container pull.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -806,7 +812,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17
+        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
+        # Docker Hub service-container pull.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -1016,7 +1024,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17
+        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
+        # Docker Hub service-container pull.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -1275,7 +1285,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17
+        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
+        # Docker Hub service-container pull.
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
