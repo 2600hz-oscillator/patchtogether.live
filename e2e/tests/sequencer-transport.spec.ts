@@ -210,6 +210,38 @@ for (const s of SEQUENCERS) {
       );
     });
 
+    test(`${s.type}: saves to ALL 8 slots in sequence (regression — slot ≥2 silently failed)`, async ({
+      page,
+    }) => {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: s.spawnParams }]);
+
+      const SLOTS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
+      // SAVE each slot in turn. SAVE mode disarms after each click, so re-arm
+      // before every slot — exactly the user flow (save slot 1, then slot 2…).
+      // Pre-fix the 2nd save threw inside the Y.Doc transact (slots['1'] was an
+      // already-integrated Y.Map that `{ ...coerceSlots() }` re-parented), so
+      // only slot 1 ever filled. This runs across every sequencer that shares
+      // the quicksave helpers (sequencer/drumseqz/score/polyseqz/macseq).
+      for (const k of SLOTS) {
+        await page.locator(`[data-testid="quicksave-mode-save-${s.nodeId}"]`).click();
+        await page.locator(`[data-testid="quicksave-slot-${s.nodeId}-${k}"]`).click();
+      }
+      // Every slot must now report filled — pre-fix, 2..8 stayed empty.
+      for (const k of SLOTS) {
+        await expect(
+          page.locator(`[data-testid="quicksave-slot-${s.nodeId}-${k}"]`),
+        ).toHaveAttribute('data-has-data', 'true');
+      }
+      // LOAD works off a high slot too (not just slot 1).
+      await page.locator(`[data-testid="quicksave-mode-load-${s.nodeId}"]`).click();
+      await page.locator(`[data-testid="quicksave-slot-${s.nodeId}-7"]`).click();
+      await expect(
+        page.locator(`[data-testid="quicksave-slot-${s.nodeId}-7"]`),
+      ).toHaveClass(/last-loaded/);
+    });
+
     test(`${s.type}: QUEUE arms queuedSlot in node.data`, async ({ page }) => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
