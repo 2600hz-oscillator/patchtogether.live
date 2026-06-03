@@ -76,6 +76,16 @@ const SRC_BASE =
 
 const DESCRIPTIONS: Record<string, string> = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  moog903a:
+    'Moog 903A Random Signal Generator (Moog System 55/35 clone — categorized under Moog -> SYS55). Passive white + pink noise source with two independent audio taps (WHITE = flat spectrum; PINK = -3 dB/oct, Voss-McCartney), scaled by a single LEVEL knob. No inputs. Own-code (public-domain noise technique). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog923:
+    'Moog 923 Filters / Noise Source (Moog System 35 clone — categorized under Moog -> SYS35). White + pink noise outputs PLUS a fixed filter utility on an external audio input: independent low-pass and high-pass taps with LO PASS / HI PASS cutoff knobs (log-mapped ~40 Hz-20 kHz). Own-code (noise generator + biquad filters). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog904c:
+    'Moog 904C Voltage Controlled Filter Coupler (Moog System 55/35 clone — categorized under Moog -> SYS55). Chains an internal Moog-ladder low-pass + high-pass into a CV-controlled BAND-PASS / band-reject: CUTOFF, WIDTH (LP/HP spread) and MODE (BP to BR) knobs plus a 1V/oct cutoff CV input. DSP composes two MoogLadder instances (own-code clean-room ladder). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog907a:
+    'Moog 907A Fixed Filter Bank (Moog System 35 clone — categorized under Moog -> SYS35). Non-VC fixed filter bank: a high-pass + low-pass + several fixed center-frequency band-pass cells (12 dB/oct), each with its own level knob, summed to one output. Shares the moog-filterbank center-frequency lib with the 914. Own-code (textbook biquad bank). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
+  moog914:
+    'Moog 914 Extended-Range Fixed Filter Bank (Moog System 55 clone — categorized under Moog -> SYS55). The extended fixed filter bank: 1 high-pass + 1 low-pass + 12 fixed center-frequency band-pass cells (12 dB/oct), each level-knob-controlled, summed to one output. Shares the moog-filterbank center-frequency lib with the 907A. Own-code (textbook biquad bank). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
   moog992:
     'Moog 992 Control Voltage Panel (Moog System 55/35 clone — categorized under Moog -> SYS55). A passive CV summer/attenuator: four CV inputs each pass through a per-channel ATTENUATOR (0..1) into a common summing bus (cv_out). Channel 4 is SIGNAL-INVERTING — its attenuator subtracts from the sum — so the panel can both add and cancel control voltages. No audio path; pure CV math (own-code, permissive). Beige Moog faceplate (the intrinsic always-on look shared by the Moog module family).',
   moog993:
@@ -1256,6 +1266,10 @@ export function buildModuleManifest(
       // (samsloop-record.ts: quantize / downsample / WAV header /
       // maxSeconds-budget math). Not a ModuleDef.
       if (file.endsWith('-record.ts')) return false;
+      // -factory.ts: shared Web-Audio factory-builder helpers (e.g.
+      // moog-filterbank-factory.ts: buildFilterBank() shared by 907A + 914).
+      // Not a ModuleDef.
+      if (file.endsWith('-factory.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.
