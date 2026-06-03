@@ -30,6 +30,26 @@ flox activate -- task test -- run -t "filter coeffs" # vitest -t
 flox activate -- task art -- run                     # ART = vitest under the hood
 ```
 
+## Flake-check NEW/changed tests 3× before an MR
+
+A green run proves pass/fail, not **stability**. Any test you **add** or
+**seriously change** must pass **3× in a row locally** before you push it — scoped
+to that test, not the whole suite. Prefix the `*:one` targets (see the
+CLAUDE.md "Running ONE test locally" section) with `REPEAT=3`:
+
+```sh
+REPEAT=3 flox activate -- task test:one -- my-thing   # unit (loops vitest 3×)
+REPEAT=3 flox activate -- task art:one  -- my-scn     # ART
+REPEAT=3 flox activate -- task e2e:one  -- my-spec    # e2e (--repeat-each=3)
+REPEAT=3 flox activate -- task vrt:one  -- my-card    # VRT
+```
+
+It **bails on the first failing iteration**, so a flake can't hide behind a later
+green run. Flake locally → fix it (diagnose run-bug vs test-bug, never just
+re-run) before the MR. `@collab` specs are relay/DB-heavy and flake under *CI*
+load specifically — verify those on CI rather than hammering the local machine,
+but still root-cause every failure (see `feedback_no_flake_tolerance`).
+
 ## Updating baselines
 
 ART:

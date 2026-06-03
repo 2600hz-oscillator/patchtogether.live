@@ -263,10 +263,14 @@ tasks:
       [local dev-loop] Run ONE vitest file (or -t name filter), fast, no full
       suite. Pass a path and/or a `-t <name>` after `--`. Defaults to the web
       package; set PKG=dsp|server|art|web to target another workspace.
+      REPEAT=N runs it N times in a row and FAILS on the first failing run — the
+      flake-check you owe any NEW/changed test before opening an MR (REPEAT=3 is
+      the standard; see CLAUDE.md "Flake-check NEW tests 3×").
       Examples:
         task test:one -- src/lib/ui/canvas/organize.test.ts
         task test:one -- organize -t "deterministic"
         task test:one PKG=dsp -- cube     # PKG=… goes BEFORE the `--`
+        REPEAT=3 task test:one -- organize    # flake-check: 3 clean runs required
     vars:
       PKG: '{{.PKG | default "web"}}'
     cmds:
@@ -281,8 +285,16 @@ tasks:
           art)    DIR=art             CFG=vitest.config.ts ;;
           *) echo "test:one: unknown PKG '{{.PKG}}' (use web|dsp|server|art)"; exit 2 ;;
         esac
-        echo "[test:one] $DIR vitest run {{.CLI_ARGS}}"
-        npm exec -w "$DIR" -- vitest run --config "$CFG" {{.CLI_ARGS}}
+        # vitest has no native --repeat-each, so loop. REPEAT defaults to 1
+        # (normal single run); REPEAT=3 is the pre-MR flake-check (exit on the
+        # first failing run so a flake is never masked by a later green run).
+        N="${REPEAT:-1}"
+        for r in $(seq 1 "$N"); do
+          [ "$N" -gt 1 ] && echo "[test:one] flake-check run $r/$N"
+          echo "[test:one] $DIR vitest run {{.CLI_ARGS}}"
+          npm exec -w "$DIR" -- vitest run --config "$CFG" {{.CLI_ARGS}} \
+            || { echo "[test:one] FAILED on run $r/$N (flake or real failure)"; exit 1; }
+        done
 
   test:scripts:
     desc: Run repo-root scripts/ tests (scaffolder + future repo-wide tooling)
@@ -325,13 +337,22 @@ tasks:
     desc: |
       [local dev-loop] Run ONE ART scenario by file-path or name filter, fast.
       Uses dsp:ensure (copies a prebuilt dist on Faust-less worktrees) so it
-      never fails on a missing DSP bundle. Examples:
+      never fails on a missing DSP bundle. REPEAT=N runs it N times and fails on
+      the first failing run (the pre-MR flake-check; REPEAT=3 is the standard).
+      Examples:
         task art:one -- moog911
         task art:one -- scenarios/meowbox/meow-c4.test.ts
         task art:one -- -t "tracks 1V/oct"
+        REPEAT=3 task art:one -- moog911    # flake-check: 3 clean runs required
     deps: [dsp:ensure]
     cmds:
-      - npm exec -w {{.ART}} -- vitest run --config vitest.config.ts {{.CLI_ARGS}}
+      - |
+        N="${REPEAT:-1}"
+        for r in $(seq 1 "$N"); do
+          [ "$N" -gt 1 ] && echo "[art:one] flake-check run $r/$N"
+          npm exec -w {{.ART}} -- vitest run --config vitest.config.ts {{.CLI_ARGS}} \
+            || { echo "[art:one] FAILED on run $r/$N (flake or real failure)"; exit 1; }
+        done
 
   # ---------------- Visual Regression Tests (Playwright VRT) ----------------
   # Baselines live under e2e/vrt/__screenshots__/ and are LFS-tracked (see
@@ -378,10 +399,13 @@ tasks:
       grep after `--`. Reuses a long-lived dev server if one is up
       (`task e2e:serve`) — vrt.config has reuseExistingServer:true — else boots
       one for this run. Uses dsp:ensure so Faust-less worktrees still work.
+      REPEAT=N adds Playwright --repeat-each=N (the pre-MR flake-check for a
+      new/changed VRT scene; REPEAT=3 is the standard).
       Examples:
         task vrt:one -- adsr
         task vrt:one -- --grep "scope"
         HEADED=1 task vrt:one -- adsr
+        REPEAT=3 task vrt:one -- adsr    # flake-check: scene rendered 3×
     deps: [dsp:ensure, test:emit-manifest]
     cmds:
       - |
@@ -395,12 +419,13 @@ tasks:
           *)                  GREP_PREFIX="--grep" ;;
         esac
         HEADED_FLAG=""; [ "${HEADED:-0}" = "1" ] && HEADED_FLAG="--headed"
+        REPEAT_FLAG=""; [ "${REPEAT:-1}" -gt 1 ] && REPEAT_FLAG="--repeat-each=${REPEAT}"
         # `npm run vrt -w` runs from the e2e package dir (so spec paths + the
         # vrt/vrt.config.ts reference resolve) and already passes --config.
         if [ -n "$GREP_PREFIX" ]; then
-          npm run vrt -w {{.E2E}} -- --workers=1 $HEADED_FLAG --grep "$*"
+          npm run vrt -w {{.E2E}} -- --workers=1 $HEADED_FLAG $REPEAT_FLAG --grep "$*"
         else
-          npm run vrt -w {{.E2E}} -- --workers=1 $HEADED_FLAG "$@"
+          npm run vrt -w {{.E2E}} -- --workers=1 $HEADED_FLAG $REPEAT_FLAG "$@"
         fi
 
   vrt:gallery:
@@ -457,11 +482,14 @@ tasks:
       (1 worker, line reporter). Fails fast with a hint if no server is up — run
       `task e2e:serve` once first. Pass a spec path and/or `--grep <name>` after
       `--`; a bare word becomes a --grep. HEADED=1 to watch. E2E_PREVIEW=1 to
-      target the preview server. Examples:
+      target the preview server. REPEAT=N adds Playwright --repeat-each=N — the
+      pre-MR flake-check you owe any new/changed e2e test (REPEAT=3 standard).
+      Examples:
         task e2e:serve                         # once
         task e2e:one -- tests/ai-smoke.spec.ts
         task e2e:one -- adsr                   # grep
         HEADED=1 task e2e:one -- tests/audio-gate.spec.ts
+        REPEAT=3 task e2e:one -- adsr          # flake-check: 3 clean runs required
     deps: [test:emit-manifest]
     cmds:
       # Fail fast (clear message) if the persistent server isn't up — we set
@@ -486,6 +514,7 @@ tasks:
           *)                  GREP_PREFIX="--grep" ;;
         esac
         HEADED_FLAG=""; [ "${HEADED:-0}" = "1" ] && HEADED_FLAG="--headed"
+        REPEAT_FLAG=""; [ "${REPEAT:-1}" -gt 1 ] && REPEAT_FLAG="--repeat-each=${REPEAT}"
         PORT=5173; [ "${E2E_PREVIEW:-0}" = "1" ] && PORT=4173
         # `npm test -w` runs `playwright test` FROM the e2e package dir so spec
         # paths (tests/foo.spec.ts) resolve against testDir. E2E_SKIP_WEBSERVER
@@ -494,11 +523,11 @@ tasks:
         if [ -n "$GREP_PREFIX" ]; then
           E2E_SKIP_WEBSERVER=1 E2E_USE_PREVIEW="${E2E_PREVIEW:-}" \
           E2E_BASE_URL="http://localhost:$PORT" \
-            npm test -w {{.E2E}} -- --workers=1 --reporter=list $HEADED_FLAG --grep "$*"
+            npm test -w {{.E2E}} -- --workers=1 --reporter=list $HEADED_FLAG $REPEAT_FLAG --grep "$*"
         else
           E2E_SKIP_WEBSERVER=1 E2E_USE_PREVIEW="${E2E_PREVIEW:-}" \
           E2E_BASE_URL="http://localhost:$PORT" \
-            npm test -w {{.E2E}} -- --workers=1 --reporter=list $HEADED_FLAG "$@"
+            npm test -w {{.E2E}} -- --workers=1 --reporter=list $HEADED_FLAG $REPEAT_FLAG "$@"
         fi
 
   e2e:no-collab:
