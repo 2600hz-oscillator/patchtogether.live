@@ -537,6 +537,10 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // `task vrt:update` run on linux CI; functional coverage is the
   // synesthesia-dsp + worklet unit tests.
   'linux/synesthesia',
+  // FLIPPER: darwin baseline captured locally; linux pending a `task vrt:update`
+  // on linux CI. Static card (no animation); functional coverage is
+  // flipper-dsp.test.ts.
+  'linux/flipper',
   'linux/macrooscillator',
   'linux/samsloop',
   'linux/blades',
