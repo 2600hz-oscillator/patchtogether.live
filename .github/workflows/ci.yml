@@ -1214,13 +1214,13 @@ jobs:
   ci:
     name: typecheck + unit + ART + E2E
     if: always()
-    # collab + merge-reports are INTENTIONALLY NOT in `needs`: they're
-    # informational (never in the failure check below), so listing them here
-    # only made this required gate WAIT for them — and the @collab job hangs up
-    # to its 40-min timeout on a flaky relay, delaying every merge by that long
-    # for no gating value. Off `needs`, the gate posts as soon as the truly-
-    # required jobs finish; collab still runs + reports as its own check.
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e]
+    # collab is now a REAL GATE (re-added 2026-06-03): the @collab relay flake
+    # was root-caused + fixed (in-card-title networkidle hang #558; doom-4context
+    # graceful resource-skip) and the job is fast (~6.5 min — it consumes the
+    # prebuilt web bundle #557), so depending on it no longer risks the 40-min
+    # wait #555 removed. merge-reports stays OUT (cosmetic, never gated).
+    # behavioral stays OUT too (still informational — see note in the check).
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, collab]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1235,6 +1235,7 @@ jobs:
           ART: ${{ needs.art.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
+          COLLAB: ${{ needs.collab.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
@@ -1244,12 +1245,11 @@ jobs:
           echo "art:           $ART"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
+          echo "collab:        $COLLAB"
           # `e2e` is a matrix; its aggregated result is `success` only if all
-          # shards succeeded. `collab` + `merge-reports` are deliberately NOT
-          # depended-on or checked here (see the `needs:` note above): collab is
-          # the timing-flaky @collab relay suite (informational until stabilized)
-          # and merge-reports is a cosmetic report-merge step — neither should
-          # gate or delay the merge.
+          # shards succeeded. `collab` is now GATED (checked below) — the relay
+          # flake was root-caused + fixed and the job is fast. `merge-reports`
+          # stays OUT (cosmetic report-merge step; never gated).
           #
           # `build` is the PRODUCTION-bundle gate (`task build` = dsp:build +
           # `vite build`). It's gated here so a broken prod bundle fails this
@@ -1280,10 +1280,12 @@ jobs:
              || "$BUILD_WEB" != "success" \
              || "$ART" != "success" \
              || "$BUILD" != "success" \
-             || "$E2E" != "success" ]]; then
-          # NOTE: collab is informational (runs + reported above) but NOT blocking —
-          # the @collab 2-context suite is timing-flaky on CI (relay). Dev verification
-          # is the real bar; see task #97 for stabilizing it into a hard gate.
+             || "$E2E" != "success" \
+             || "$COLLAB" != "success" ]]; then
+          # collab is now GATED (2026-06-03): the @collab relay flake was
+          # root-caused + fixed (#558) and the job is fast + stable (#557).
+          # behavioral remains informational (continue-on-error) until its
+          # near-threshold metric is sorted — do NOT add it here yet.
             echo "::error::One or more required CI jobs failed."
             exit 1
           fi
