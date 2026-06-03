@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog912.test.ts
 //
-// Two test layers for the MOOG 912 ENVELOPE FOLLOWER (Moog System 55/35 clone):
+// Two test layers for the MOOG 912 ENVELOPE FOLLOWER (moogafakkin System 55/35 clone):
 //   1. Module-def shape — pins the 912's I/O surface (single audio in, the env
 //      (cv) + gate outputs, the sensitivity/smoothing param array) so a
 //      refactor that silently drops a port / param fails loudly (the
@@ -82,8 +82,8 @@ describe('moog912Def: module def shape', () => {
     expect(moog912Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Moog → SYS55 palette bucket and uses the Moog912Card', () => {
-    expect(moog912Def.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('lives in the Clones → moogafakkin palette bucket and uses the Moog912Card', () => {
+    expect(moog912Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
     expect(moog912Def.card).toBe('Moog912Card');
     expect(moog912Def.domain).toBe('audio');
   });

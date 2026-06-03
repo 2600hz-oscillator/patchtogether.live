@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog923.test.ts
 //
-// Two test layers for the MOOG 923 FILTERS / NOISE SOURCE (Moog System 35
+// Two test layers for the MOOG 923 FILTERS / NOISE SOURCE (moogafakkin System 35
 // clone):
 //   1. Module-def shape — pins the 923's I/O surface (single audio input;
 //      white/pink/lp/hp outputs; the literal level/lpCutoff/hpCutoff param
@@ -28,8 +28,8 @@ describe('moog923Def: module def shape', () => {
     expect(moog923Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Moog → SYS35 palette bucket and uses the Moog923Card', () => {
-    expect(moog923Def.palette).toEqual({ top: 'Moog', sub: 'SYS35' });
+  it('lives in the Clones → moogafakkin palette bucket and uses the Moog923Card', () => {
+    expect(moog923Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
     expect(moog923Def.card).toBe('Moog923Card');
   });
 

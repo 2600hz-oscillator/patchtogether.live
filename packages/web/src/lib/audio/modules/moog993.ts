@@ -4,7 +4,7 @@
 // clone initiative (.myrobots/MOOG/). The 993 is a patch-bay convenience
 // panel: a configurable TRIGGER ROUTER (three trigger outs, each selecting
 // one of two trigger sources, or OFF) plus two unity ENVELOPE-CV passthroughs.
-// Categorized under Moog → SYS55 (the shared bucket, mirroring the CP3 / 921A).
+// Categorized under Clones → moogafakkin (the shared bucket, mirroring the CP3 / 921A).
 //
 // PASSIVE ROUTING — no DSP. Pure Web Audio graph (GainNodes only): each
 // trigger output is a summing GainNode fed by BOTH trigger sources through
@@ -33,10 +33,10 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const moog993Def: AudioModuleDef = {
   type: 'moog993',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog993Card',
   domain: 'audio',
-  label: 'Moog 993 Trig',
+  label: 'moogafakkin 993 Trig',
   category: 'modulation',
   schemaVersion: 1,
 

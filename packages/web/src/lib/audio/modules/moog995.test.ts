@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog995.test.ts
 //
-// Two test layers for the MOOG 995 ATTENUATORS (Moog System 55/35 clone —
+// Two test layers for the MOOG 995 ATTENUATORS (moogafakkin System 55/35 clone —
 // three INDEPENDENT passive variable attenuators):
 //   1. Module-def shape — pins the 995's I/O surface (in1..in3 → out1..out3
 //      audio ports, the atten1..atten3 param array) so a refactor that silently
@@ -19,16 +19,16 @@ import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog995Def: module def shape', () => {
-  it('declares type=moog995, label="Moog 995 Atten", category=utilities, domain=audio, schemaVersion=1', () => {
+  it('declares type=moog995, label="moogafakkin 995 Atten", category=utilities, domain=audio, schemaVersion=1', () => {
     expect(moog995Def.type).toBe('moog995');
-    expect(moog995Def.label).toBe('Moog 995 Atten');
+    expect(moog995Def.label).toBe('moogafakkin 995 Atten');
     expect(moog995Def.category).toBe('utilities');
     expect(moog995Def.domain).toBe('audio');
     expect(moog995Def.schemaVersion).toBe(1);
   });
 
-  it('is filed under the Moog → SYS55 palette bucket', () => {
-    expect(moog995Def.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('is filed under the Clones → moogafakkin palette bucket', () => {
+    expect(moog995Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
   });
 
   it('exposes the three audio inputs: in1..in3', () => {

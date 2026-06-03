@@ -34,10 +34,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog962Def: AudioModuleDef = {
   type: 'moog962',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog962Card',
   domain: 'audio',
-  label: 'Moog 962 Seq Switch',
+  label: 'moogafakkin 962 Seq Switch',
   // 'utilities' to bucket alongside the sibling Moog routing/utility modules
   // (CP3 / 902 / 961 / 984 / 994 / 995) in the palette tree.
   category: 'utilities',

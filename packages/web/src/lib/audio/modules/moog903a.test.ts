@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog903a.test.ts
 //
-// Two test layers for the MOOG 903A RANDOM SIGNAL GENERATOR (Moog System 55/35
+// Two test layers for the MOOG 903A RANDOM SIGNAL GENERATOR (moogafakkin System 55/35
 // clone):
 //   1. Module-def shape — pins the 903A's I/O surface (NO inputs, the two
 //      independent white/pink audio outputs, the single literal `level` param)
@@ -28,8 +28,8 @@ describe('moog903aDef: module def shape', () => {
     expect(moog903aDef.schemaVersion).toBe(1);
   });
 
-  it('lives in the Moog → SYS55 palette bucket and uses the Moog903aCard', () => {
-    expect(moog903aDef.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('lives in the Clones → moogafakkin palette bucket and uses the Moog903aCard', () => {
+    expect(moog903aDef.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
     expect(moog903aDef.card).toBe('Moog903aCard');
     expect(moog903aDef.domain).toBe('audio');
   });

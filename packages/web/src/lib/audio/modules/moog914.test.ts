@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog914.test.ts
 //
-// Two test layers for the MOOG 914 EXTENDED FIXED FILTER BANK (Moog System 55
+// Two test layers for the MOOG 914 EXTENDED FIXED FILTER BANK (moogafakkin System 55
 // clone):
 //   1. Module-def shape — pins the 914's I/O surface (single audio in, single
 //      audio out, the hp / band1..band12 / lp param array driven by the SHARED
@@ -41,8 +41,8 @@ describe('moog914Def: module def shape', () => {
     expect(moog914Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Moog → SYS55 palette bucket and uses the Moog914Card', () => {
-    expect(moog914Def.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('lives in the Clones → moogafakkin palette bucket and uses the Moog914Card', () => {
+    expect(moog914Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
     expect(moog914Def.card).toBe('Moog914Card');
   });
 

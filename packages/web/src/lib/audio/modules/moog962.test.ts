@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog962.test.ts
 //
-// Two test layers for the MOOG 962 SEQUENTIAL SWITCH (Moog System 55 clone):
+// Two test layers for the MOOG 962 SEQUENTIAL SWITCH (moogafakkin System 55 clone):
 //   1. Module-def shape — pins the 962's I/O surface (in1..in3 + shift inputs,
 //      the single out output, the literal `stages` param) so a refactor that
 //      silently drops a port / param fails loudly (the per-module-per-port
@@ -26,16 +26,16 @@ vi.mock('@patchtogether.live/dsp/dist/moog962.js?url', () => ({ default: 'moog96
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog962Def: module def shape', () => {
-  it('declares type=moog962, label="Moog 962 Seq Switch", category=utilities, schemaVersion=1', () => {
+  it('declares type=moog962, label="moogafakkin 962 Seq Switch", category=utilities, schemaVersion=1', () => {
     expect(moog962Def.type).toBe('moog962');
-    expect(moog962Def.label).toBe('Moog 962 Seq Switch');
+    expect(moog962Def.label).toBe('moogafakkin 962 Seq Switch');
     expect(moog962Def.category).toBe('utilities');
     expect(moog962Def.schemaVersion).toBe(1);
     expect(moog962Def.domain).toBe('audio');
   });
 
-  it('lives in the Moog → SYS55 palette bucket and uses the Moog962Card', () => {
-    expect(moog962Def.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('lives in the Clones → moogafakkin palette bucket and uses the Moog962Card', () => {
+    expect(moog962Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
     expect(moog962Def.card).toBe('Moog962Card');
   });
 

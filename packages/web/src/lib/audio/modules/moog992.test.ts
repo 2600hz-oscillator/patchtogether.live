@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog992.test.ts
 //
-// Two test layers for the MOOG 992 CV PANEL (Moog System 55/35 clone):
+// Two test layers for the MOOG 992 CV PANEL (moogafakkin System 55/35 clone):
 //   1. Module-def shape — pins the 992's I/O surface (cv1..cv4 inputs, the
 //      single cv_out output, the literal atten1..atten4 param array) so a
 //      refactor that silently drops a port / param fails loudly (the
@@ -27,8 +27,8 @@ describe('moog992Def: module def shape', () => {
     expect(moog992Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Moog → SYS55 palette bucket and uses the Moog992Card', () => {
-    expect(moog992Def.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('lives in the Clones → moogafakkin palette bucket and uses the Moog992Card', () => {
+    expect(moog992Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
     expect(moog992Def.card).toBe('Moog992Card');
   });
 

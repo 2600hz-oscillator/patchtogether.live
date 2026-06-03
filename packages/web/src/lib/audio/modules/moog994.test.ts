@@ -19,15 +19,15 @@ import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog994Def: module def shape', () => {
-  it('declares type=moog994, label="Moog 994 Mult", category=utilities, schemaVersion=1', () => {
+  it('declares type=moog994, label="moogafakkin 994 Mult", category=utilities, schemaVersion=1', () => {
     expect(moog994Def.type).toBe('moog994');
-    expect(moog994Def.label).toBe('Moog 994 Mult');
+    expect(moog994Def.label).toBe('moogafakkin 994 Mult');
     expect(moog994Def.category).toBe('utilities');
     expect(moog994Def.schemaVersion).toBe(1);
   });
 
-  it('classifies under the Moog → SYS55 palette bucket', () => {
-    expect(moog994Def.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('classifies under the Clones → moogafakkin palette bucket', () => {
+    expect(moog994Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
   });
 
   it('exposes the two group inputs: a_in + b_in (both audio)', () => {

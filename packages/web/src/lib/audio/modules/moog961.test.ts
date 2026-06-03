@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/modules/moog961.test.ts
 //
-// Two test layers for the MOOG 961 INTERFACE (Moog System 55 clone, batch 5):
+// Two test layers for the MOOG 961 INTERFACE (moogafakkin System 55 clone, batch 5):
 //   1. Module-def shape — pins the 961's I/O surface (audio_in + 3 gate inputs,
 //      4 gate outputs, the sensitivity / switchOnTime param array) so a
 //      refactor that silently drops a port / param fails loudly (the
@@ -139,13 +139,13 @@ function countHigh(buf: Float32Array): number {
 describe('moog961Def — module def shape', () => {
   it('declares type=moog961, label, category=utilities, schemaVersion=1', () => {
     expect(moog961Def.type).toBe('moog961');
-    expect(moog961Def.label).toBe('Moog 961 Interface');
+    expect(moog961Def.label).toBe('moogafakkin 961 Interface');
     expect(moog961Def.category).toBe('utilities');
     expect(moog961Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Moog → SYS55 palette bucket and uses the Moog961Card', () => {
-    expect(moog961Def.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('lives in the Clones → moogafakkin palette bucket and uses the Moog961Card', () => {
+    expect(moog961Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
     expect(moog961Def.card).toBe('Moog961Card');
     expect(moog961Def.domain).toBe('audio');
   });

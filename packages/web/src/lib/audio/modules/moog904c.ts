@@ -7,7 +7,7 @@
 // BAND-PASS (LP above the cutoff, HP below it). A MODE control crossfades
 // that band-pass to its complement (a band-REJECT / notch).
 //
-// The 904C is the System-55 coupler → categorized under Moog → SYS55 (the
+// The 904C is the System-55 coupler → categorized under Clones → moogafakkin (the
 // shared bucket, mirroring the 904A LPF + 904B HPF).
 //
 // DSP: own-code, CLEAN-ROOM transistor-ladder core
@@ -42,7 +42,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog904cDef: AudioModuleDef = {
   type: 'moog904c',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog904cCard',
   domain: 'audio',
   label: '904C Voltage Controlled Filter Coupler',

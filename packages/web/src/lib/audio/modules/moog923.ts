@@ -37,7 +37,7 @@
 //     mapped LOG to ~40 Hz .. 20 kHz inside the factory.
 //   hpCutoff (linear 0..1, default 0.5): high-pass corner; same log map.
 //
-// Categorized under Moog → SYS35 (mirroring the CP3 / 921A SYS55 bucket).
+// Categorized under Clones → moogafakkin (mirroring the CP3 / 921A SYS55 bucket).
 // Category 'filter' because the headline feature is the LP/HP filter pair.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
@@ -61,7 +61,7 @@ export function cutoffToHz(norm: number): number {
 
 export const moog923Def: AudioModuleDef = {
   type: 'moog923',
-  palette: { top: 'Moog', sub: 'SYS35' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog923Card',
   domain: 'audio',
   label: '923 Filters / Noise Source',

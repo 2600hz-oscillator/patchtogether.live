@@ -23,13 +23,13 @@ import type { ModuleNode } from '$lib/graph/types';
 describe('moog960Def: module def shape', () => {
   it('declares type=moog960, label, category=modulation, schemaVersion=1', () => {
     expect(moog960Def.type).toBe('moog960');
-    expect(moog960Def.label).toBe('Moog 960 Sequencer');
+    expect(moog960Def.label).toBe('moogafakkin 960 Sequencer');
     expect(moog960Def.category).toBe('modulation');
     expect(moog960Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Moog → SYS55 palette bucket and uses the Moog960Card', () => {
-    expect(moog960Def.palette).toEqual({ top: 'Moog', sub: 'SYS55' });
+  it('lives in the Clones → moogafakkin palette bucket and uses the Moog960Card', () => {
+    expect(moog960Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
     expect(moog960Def.card).toBe('Moog960Card');
   });
 

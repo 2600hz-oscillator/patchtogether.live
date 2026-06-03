@@ -24,9 +24,9 @@ beforeAll(() => {
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog904aDef: module def shape', () => {
-  it('declares type=moog904a, label="Moog 904A VCF", category=filters, schemaVersion=1', () => {
+  it('declares type=moog904a, label="moogafakkin 904A VCF", category=filters, schemaVersion=1', () => {
     expect(moog904aDef.type).toBe('moog904a');
-    expect(moog904aDef.label).toBe('Moog 904A VCF');
+    expect(moog904aDef.label).toBe('moogafakkin 904A VCF');
     expect(moog904aDef.category).toBe('filters');
     expect(moog904aDef.schemaVersion).toBe(1);
   });

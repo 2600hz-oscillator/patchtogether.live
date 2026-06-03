@@ -5,7 +5,7 @@
 // variable attenuators. Each channel is just a level pot that scales its input
 // from full mute (0) up to unity (1) — never boosting. No mixing, no summing,
 // no CV: three parallel "turn it down" knobs. Shared by SYS55 + SYS35
-// (categorized under Moog → SYS55, the shared bucket, mirroring the CP3).
+// (categorized under Clones → moogafakkin, the shared bucket, mirroring the CP3).
 //
 // DSP: NONE. This is a pure Web Audio graph — three GainNodes — so there's no
 // worklet and no Faust .dsp. Passive attenuation maps exactly onto a GainNode
@@ -30,9 +30,9 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const moog995Def: AudioModuleDef = {
   type: 'moog995',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   domain: 'audio',
-  label: 'Moog 995 Atten',
+  label: 'moogafakkin 995 Atten',
   category: 'utilities',
   schemaVersion: 1,
 

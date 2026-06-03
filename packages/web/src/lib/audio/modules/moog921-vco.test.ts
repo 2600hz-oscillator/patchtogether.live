@@ -23,9 +23,9 @@ beforeAll(() => {
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog921VcoDef: module def shape', () => {
-  it('declares type=moog921Vco, label="Moog 921 VCO", category=sources, schemaVersion=1', () => {
+  it('declares type=moog921Vco, label="moogafakkin 921 VCO", category=sources, schemaVersion=1', () => {
     expect(moog921VcoDef.type).toBe('moog921Vco');
-    expect(moog921VcoDef.label).toBe('Moog 921 VCO');
+    expect(moog921VcoDef.label).toBe('moogafakkin 921 VCO');
     expect(moog921VcoDef.category).toBe('sources');
     expect(moog921VcoDef.schemaVersion).toBe(1);
   });

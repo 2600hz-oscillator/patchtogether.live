@@ -27,9 +27,9 @@ beforeAll(() => {
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog911Def: module def shape', () => {
-  it('declares type=moog911, label="Moog 911 EG", category=modulation, schemaVersion=1', () => {
+  it('declares type=moog911, label="moogafakkin 911 EG", category=modulation, schemaVersion=1', () => {
     expect(moog911Def.type).toBe('moog911');
-    expect(moog911Def.label).toBe('Moog 911 EG');
+    expect(moog911Def.label).toBe('moogafakkin 911 EG');
     expect(moog911Def.category).toBe('modulation');
     expect(moog911Def.schemaVersion).toBe(1);
   });

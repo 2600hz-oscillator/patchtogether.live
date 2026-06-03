@@ -45,7 +45,7 @@
 //     (1 Hz at 1.0 .. 50 Hz at 0.0). MORE smoothing = LOWER cutoff = SLOWER
 //     env. (See SMOOTH_MIN_HZ / SMOOTH_MAX_HZ below.)
 //
-// Categorized under Moog → SYS55 (the shared SYS55/SYS35 bucket, mirroring the
+// Categorized under Clones → moogafakkin (the shared SYS55/SYS35 bucket, mirroring the
 // CP3 / 921A / 992). Category 'modulation' because it produces CV/gate control.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
@@ -102,7 +102,7 @@ export function buildGateCurve(threshold = GATE_THRESHOLD, len = 1024): Float32A
 
 export const moog912Def: AudioModuleDef = {
   type: 'moog912',
-  palette: { top: 'Moog', sub: 'SYS55' },
+  palette: { top: 'Clones', sub: 'moogafakkin' },
   card: 'Moog912Card',
   domain: 'audio',
   label: '912 Envelope Follower',
