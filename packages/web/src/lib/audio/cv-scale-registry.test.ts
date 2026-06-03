@@ -46,6 +46,24 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // fast-path, so cvScale wouldn't apply (same shape as the 921's width_cv +
   // the 904A's cutoff_cv/reso_cv).
   moog902: ['cv', 'fcv'],
+  // moog904b.cutoff_cv: audio-rate summing 1 V/oct CONTROL INPUT. The worklet
+  // sums knob + CV per-sample, applying the 1 V/oct exponential map itself
+  // (cutoffHz *= 2^cutoff_cv, then clamped 4..20000 Hz) — NOT through the
+  // CV→AudioParam fast-path, so cvScale wouldn't apply (same shape as the
+  // 904A's cutoff_cv: a 1 V/oct jack mapped inside the DSP).
+  moog904b: ['cutoff_cv'],
+  // moog921a.width_cv: audio-rate summing WIDTH CONTROL INPUT. The worklet
+  // sums the WIDTH knob + this CV per-sample (clamped 0..1) onto width_bus —
+  // NOT through the CV→AudioParam fast-path, so cvScale wouldn't apply (same
+  // shape as the 921 VCO's width_cv). (freq_cv is `pitch`-typed → not checked.)
+  moog921a: ['width_cv'],
+  // moog921b.{freq_bus,width_bus}: audio-rate CONTROL INPUTS from a 921A driver
+  // — the slave VCO reads them per-sample as ITS pitch (freq_bus, V/oct) and
+  // pulse width (width_bus). They have NO paramTarget by design (no matching
+  // knob — they ARE the slaved pitch/width supplied by the master driver), so
+  // there's no AudioParam fast-path to scale. Same passthrough shape as the
+  // 921 VCO's width_cv / dx7.pitch_cv (a raw control signal mapped in the DSP).
+  moog921b: ['freq_bus', 'width_bus'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
   // helm.{pitch_cv,gate,midi_in,seq_reset}: pitch_cv = V/oct fallback

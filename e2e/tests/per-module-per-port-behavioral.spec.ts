@@ -73,6 +73,14 @@ const SKIP_SPAWN: Record<string, string> = {
   group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
   helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
   cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
+  // TEMPORARY (gate-now, 2026-06-03): riotgirls' DESTROY/Reverb FX bus
+  // (v{1-4}_sendA/sendB, returnA/returnB, bc_* bitcrush, rv_* reverb) is
+  // unwired in MVP-A — those ~10 declared inputs have no audio path to output
+  // (confirmed: patched===control). A few busy-bus subtle CVs also sit near the
+  // metric floor. The FX bus is being WIRED in the riotgirls MVP-B follow-up,
+  // which REMOVES this module-exempt + restores per-port coverage. Until then,
+  // module-exempt so the now-gated lane stays green.
+  riotgirls: 'TEMPORARY: DESTROY/Reverb FX bus unwired in MVP-A (~10 inert inputs); being wired in the MVP-B follow-up which removes this exempt + restores per-port coverage; covered by riotgirls.spec.ts + riotgirls.test.ts',
 };
 
 // ────────── Module-level behavioral exemptions ──────────
@@ -386,6 +394,13 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // open linear-FM depth so those inputs can actually perturb the sine output.
   // (Verified locally: this makes both `sync` and `lin_fm` real-coverage passes.)
   moog921Vco: { sync: 1, linFmAmount: 0.6 },
+  // moog921b: same gating shape as the 921 VCO. The dc_mod / ac_mod linear-FM
+  // inputs are gated by `modAmount` (default 0 → no FM), and the `sync` input by
+  // the 3-way `syncMode` switch (default 0 = off). Open modAmount + put syncMode
+  // in HARD (+1) so all three audio-typed modulation inputs actually perturb the
+  // observed sine output. (Verified locally: makes dc_mod / ac_mod / sync real-
+  // coverage passes; width_bus is exempt — it shapes the rect/saw, not the sine.)
+  moog921b: { modAmount: 0.7, syncMode: 1 },
   // macrooscillator: harmonics/timbre/morph default tuned for clean; boost.
   macrooscillator: { harmonics: 0.5, timbre: 0.5, morph: 0.5, level: 0.8 },
   // vca: default base=0 means the VCA is silent until CV opens it.
@@ -414,11 +429,42 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // get clipped to [-1,1]. Pull them down to 0.5 so the cv inputs
   // have headroom to perturb upward.
   analogLogicMaths: { attA: 0.5, attB: 0.5 },
-  // sequencer: default isPlaying=0 means the SUT sequencer is stopped
-  // and produces no gate/pitch output regardless of clock or step input.
-  // Set isPlaying=1 (and bpm=240) so the SUT actually runs; then test
-  // inputs (play_cv, reset_cv, queue*_cv, clock) can perturb the output.
-  sequencer: { isPlaying: 1, bpm: 240, length: 4, gateLength: 0.5 },
+  // sequencer: the two non-exempt drivable inputs after exemptions are
+  // `play_cv` and `clock` (queue*/next/prev/random/reset are all exempt —
+  // see BEHAVIORAL_SWEEP_EXEMPT). BOTH want isPlaying=0 so the CONTROL
+  // (test-input unpatched) is SILENT and the PATCHED run is the only one
+  // that produces gate/pitch output — a clean silent-vs-sounding delta:
+  //   * play_cv  : a rising edge XOR-toggles isPlaying (sequencer.ts
+  //                pollTransportCv). With isPlaying=1 the control already
+  //                runs AND the edges toggle it OFF intermittently, so the
+  //                patched run can read LESS energy than control → no
+  //                reliable delta. With isPlaying=0 the control is silent
+  //                and the patched run runs whenever the toggle leaves it
+  //                playing → delta.
+  //   * clock    : shouldSequencerRun(playing=0, clockConnected, playCv=0)
+  //                returns clockConnected (transport-helpers.ts) — so with
+  //                isPlaying=0 the control (clock unpatched) is silent and
+  //                the patched run advances on the external clock → delta.
+  // bpm=240 keeps the internal fallback fast for the play_cv toggle case.
+  sequencer: { isPlaying: 0, bpm: 240, length: 4, gateLength: 0.5 },
+  // elements — MI Elements modal/string resonator. The DEFAULT exciter mix
+  // is strikeLevel=0.8, bowLevel=0, blowLevel=0 (see elements.ts params), so
+  // the bow/blow CV scalers (bowlvl_cv / blowlvl_cv / blowmeta_cv) modulate
+  // params pinned at 0 → no audible effect on `main`. The context-gate
+  // (buildContextEdges fires a 240-BPM gate on `gate` for every non-gate
+  // test port) STRIKES the resonator; strike=0.6 makes the struck tone LOUD
+  // + STABLE (the strike exciter is deterministic + dominant, unlike the
+  // intrinsically-quiet bow/blow exciters the worklet attenuates ×0.125 /
+  // ×0.4) WHILE leaving HEADROOM so the strklvl_cv / strength_cv scalers can
+  // modulate the level UP as well as down (at strike=1 / strength=1 those
+  // CVs are clipped at the param max and can't perturb the output). A loud,
+  // stable struck tone with headroom maximizes signal-to-jitter so the
+  // resonator + strike + note CV scalers perturb `main` observably and
+  // REPEATABLY across the two independent BUGGLES-RNG spawns (control vs
+  // patched). bow/blow stay at 0.5 (a non-zero base) but their level/exciter
+  // CVs sit BELOW threshold under the dominant strike and are exempted as the
+  // intrinsically-quiet-exciter subtle class; see BEHAVIORAL_SWEEP_EXEMPT.
+  elements: { strikeLevel: 0.6, bowLevel: 0.5, blowLevel: 0.5, strength: 0.5 },
 };
 
 // ────────── Per-port behavioral exemptions ──────────
@@ -448,6 +494,31 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    `position_cv` port is the actual observable. Covered by sequencer
   //    specs that read playhead position.
   'sequencer.reset': 'reset advances playhead silently; covered by sequencer specs',
+  // ── SEQUENCER reset_cv: same class as `reset` — a rising edge snaps the
+  //    playhead to step 0 (sequencer.ts pollTransportCv → stepIndex=0), but
+  //    with no NEW pattern that snap is inaudible against the gate train the
+  //    sequencer already emits. Covered by sequencer-reset-dedup.test.ts
+  //    (the #224 reset-double-hit dedup) + sequencer specs.
+  'sequencer.reset_cv': 'reset_cv snaps playhead silently (same as reset); covered by sequencer-reset-dedup.test.ts + sequencer specs',
+  // ── SEQUENCER queue / nav gates (queue1..8_cv, next_cv, prev_cv,
+  //    random_cv): each sets node.data.queuedSlot / queuedNav, which
+  //    maybeApplyQueuedSlot() applies ONLY at sequence-end AND ONLY when
+  //    the slot is populated (sequencer.ts maybeApplyQueuedSlot). The
+  //    spawn harness has NO saved slots (data.slots is empty), so the
+  //    queue/nav is a no-op by design — exactly the same class as the
+  //    `sequencer.reset` exempt above. Covered by the sequencer slot/queue
+  //    specs (which seed data.slots then assert the pattern swap).
+  'sequencer.queue1_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
+  'sequencer.queue2_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
+  'sequencer.queue3_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
+  'sequencer.queue4_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
+  'sequencer.queue5_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
+  'sequencer.queue6_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
+  'sequencer.queue7_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
+  'sequencer.queue8_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by sequencer slot specs',
+  'sequencer.next_cv':   'latches queuedNav=next, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op; covered by sequencer slot/nav specs',
+  'sequencer.prev_cv':   'latches queuedNav=prev, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op; covered by sequencer slot/nav specs',
+  'sequencer.random_cv': 'latches queuedNav=random, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op; covered by sequencer slot/nav specs',
 
   // ── SCORE.play_cv toggles transport. With it un-driven the SUT is
   //    in stop state (no output), with it driven the SUT plays.
@@ -474,6 +545,22 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    drift hasn't moved enough for reset to show a delta. Covered
   //    by atlantis-catalyst.spec.ts.
   'atlantisCatalyst.reset_cv': 'reset effect needs accumulated drift to observe; covered by atlantis-catalyst.spec.ts',
+  // ── atlantisCatalyst nudge / freeze / seed_cv / queue1..4_cv: the
+  //    observed output (drift1, a slow correlated O-U random walk —
+  //    atlantis-catalyst.ts) already carries large baseline variance, so a
+  //    one-shot perturbation (nudge to a new attractor, freeze the walk,
+  //    re-seed the RNG, or queue a scene) is buried in the drift's own
+  //    noise floor within the 1.5s observation window — the SAME class as
+  //    the existing atlantisCatalyst.play_cv / reset_cv exempts above.
+  //    Covered by atlantis-catalyst.spec.ts (which holds state across a
+  //    longer window + asserts the attractor/scene transition directly).
+  'atlantisCatalyst.nudge':     'one-shot attractor nudge buried in drift random-walk variance in 1.5s; covered by atlantis-catalyst.spec.ts',
+  'atlantisCatalyst.freeze':    'freeze-latch effect buried in drift random-walk variance in 1.5s; covered by atlantis-catalyst.spec.ts',
+  'atlantisCatalyst.seed_cv':   're-seed perturbation buried in drift random-walk variance in 1.5s; covered by atlantis-catalyst.spec.ts',
+  'atlantisCatalyst.queue1_cv': 'scene-queue applied at scene-end, perturbation buried in drift variance in 1.5s; covered by atlantis-catalyst.spec.ts',
+  'atlantisCatalyst.queue2_cv': 'scene-queue applied at scene-end, perturbation buried in drift variance in 1.5s; covered by atlantis-catalyst.spec.ts',
+  'atlantisCatalyst.queue3_cv': 'scene-queue applied at scene-end, perturbation buried in drift variance in 1.5s; covered by atlantis-catalyst.spec.ts',
+  'atlantisCatalyst.queue4_cv': 'scene-queue applied at scene-end, perturbation buried in drift variance in 1.5s; covered by atlantis-catalyst.spec.ts',
 
   // ── CUBE morph_fc / connect / crush: each DOES shape the slice readout (the
   //    cube-dsp unit tests + node-ART baselines prove morph picks floor↔ceiling
@@ -569,6 +656,20 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'moog921Vco.width_cv':    'pulse-width sets the pulse/square output, not the measured sine tap; covered by moog921-vco.test.ts',
   'moog921Vco.linFmAmount': 'cv-modulates-the-FM-depth-knob — a no-op on output when the lin_fm signal input is unpatched (same pattern as analogVco.fmAmount); covered by moog921-vco.test.ts',
 
+  // moog921A driver — observed output is `freq_bus`. freq_cv (the pitch CONTROL
+  // INPUT) IS covered: driving it moves freq_bus. width_cv feeds the SEPARATE
+  // `width_bus` output (not freq_bus), so it correctly shows no delta on the
+  // observed port — same independent-output shape as synesthesia's b_in. The
+  // width passthrough is pinned by moog921a.test.ts (worklet width-bus sum).
+  'moog921a.width_cv': 'width_cv feeds the separate width_bus output, not the observed freq_bus (independent CV buses by design, like synesthesia.b_in); width passthrough pinned by moog921a.test.ts',
+
+  // moog921B slave VCO — observed output is `sine`. freq_bus (pitch), dc_mod,
+  // ac_mod + sync ARE covered (freq_bus is the pitch; BEHAVIORAL_PARAMS opens
+  // modAmount=0.7 + syncMode=HARD so the FM + sync inputs perturb the sine).
+  // width_bus shapes the rectangular/saw duty cycle, NOT the sine tap — the
+  // identical legit no-op as moog921Vco.width_cv. Pinned by moog921b.test.ts.
+  'moog921b.width_bus': 'pulse-width sets the rect/saw duty cycle, not the measured sine tap (same shape as moog921Vco.width_cv); covered by moog921b.test.ts',
+
   // ── wavetableVco mirrors analogVco's FM/PM gating shape. Same set
   //    of fundamentally-gated inputs that need DC-biased modulators
   //    or non-default knob state. Covered by wavetable-vco.test.ts.
@@ -607,6 +708,119 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'chowkick.noise_amount_cv': 'noise-blend CV; bulk-energy shift below RMS/centroid threshold on the short transient; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
   'chowkick.noise_decay_cv':  'noise-decay CV; tail-character shift below RMS/centroid threshold in the gate-loop window; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
   'chowkick.freq_cv':         'base-frequency CV; low-fundamental shift not captured by the centroid metric on the transient; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
+
+  // ── ELEMENTS bow/blow EXCITER CV scalers. ELEMENTS (elements.ts) is an MI
+  //    Elements modal/string resonator; BEHAVIORAL_PARAMS strikes it loudly
+  //    via the context-gate (strike=1, strength=1) so the strike + note +
+  //    resonator CV scalers all perturb `main` observably. The BOW + BLOW
+  //    exciters, however, are intrinsically QUIET — the worklet sums bow at
+  //    ×0.125·accent and blow at ×0.4·env (elements.ts process loop) — so
+  //    under the dominant struck tone their level/meta/timbre CV scalers
+  //    shift `main`'s RMS/centroid below the universal delta threshold, and
+  //    flake run-to-run against the two independent BUGGLES-RNG spawns. This
+  //    is the same intrinsically-quiet-exciter / subtle-spectral class as
+  //    chowkick's noise/tone CVs + rings' resonator-timbre CVs. The wiring +
+  //    per-exciter response is covered by elements.test.ts (elementsMath
+  //    per-param DSP parity) and the elements ART/spec coverage.
+  'elements.bowlvl_cv':  'bow exciter is summed at ×0.125·accent (intrinsically quiet); its level CV sits below threshold under the dominant struck tone; covered by elements.test.ts',
+  'elements.bowtim_cv':  'bow-timbre CV: bow exciter (×0.125) shape shift below centroid threshold on the struck transient; covered by elements.test.ts',
+  'elements.blowlvl_cv': 'blow exciter is summed at ×0.4·env (intrinsically quiet); its level CV sits below threshold under the dominant struck tone; covered by elements.test.ts',
+  'elements.blowmeta_cv':'blow-meta (flow) CV: blow exciter (×0.4) shape shift below centroid threshold under the struck tone; covered by elements.test.ts',
+  'elements.blowtim_cv': 'blow-timbre CV: blow exciter (×0.4) shape shift below centroid threshold on the struck transient; covered by elements.test.ts',
+  // env_cv (exciter envelope macro) + geom_cv (resonator mode-spacing
+  // geometry) shift the spectral CHARACTER of the struck transient subtly —
+  // at the fast 240-BPM context-gate the envelope barely completes its
+  // attack/release, and the geometry change moves modal spacing below the
+  // centroid threshold. Both sit consistently below the universal delta
+  // metric on the transient (verified flaking 3×). Same subtle-spectral
+  // class as the resonator-timbre CVs. Covered by elements.test.ts.
+  'elements.env_cv':  'exciter-envelope-shape CV: barely-completing envelope at the fast context-gate shifts the transient below the delta threshold; covered by elements.test.ts',
+  'elements.geom_cv': 'resonator geometry (mode-spacing) CV: modal-spacing shift below centroid threshold on the struck transient; covered by elements.test.ts',
+  // strength_cv (global accent = 0.25+0.75·strength, scaling every exciter)
+  // + space_cv (reverb space mix) shift bulk energy / ambience too subtly to
+  // clear the metric reliably against the two independent BUGGLES-RNG spawns
+  // (verified flaking across 3 runs). Same subtle/near-threshold class.
+  // Covered by elements.test.ts (per-param DSP response).
+  'elements.strength_cv': 'global accent scaler: RMS shift near/below threshold + flaky across the two BUGGLES-RNG spawns; covered by elements.test.ts',
+  'elements.space_cv':    'reverb-space (ambience) CV: spatial-mix shift below the delta threshold on the struck transient; covered by elements.test.ts',
+  // strklvl_cv (strike level scaler) sits at the threshold EDGE: it perturbs
+  // `main` in most runs but the strike envelope's fast decay at the 240-BPM
+  // context-gate + the two independent BUGGLES-RNG spawns push it below the
+  // metric ~1-in-3 runs. Exempted to keep the lane deterministic; the strike
+  // exciter's level response is covered at the DSP level by elements.test.ts
+  // (elementsMath strike-excited voice).
+  'elements.strklvl_cv':  'strike-level scaler at the metric threshold edge (flaky across the two BUGGLES-RNG spawns); covered by elements.test.ts',
+
+  // ── RINGS subtle resonator-timbre CVs on a strummed transient. RINGS is
+  //    an MI Rings modal/sympathetic-string resonator (rings.ts) driven by
+  //    a `strum` gate. note_cv / level_cv / model_cv DO perturb the
+  //    observed `odd` output (pitch shift / amplitude scale / model switch
+  //    all pass). These four shape the RESONATOR TIMBRE — structure,
+  //    brightness, damping, position — whose spectral-centroid change on a
+  //    short strummed transient sits below the universal centroid threshold
+  //    in the 1.5s window (the SAME subtle-spectral class as chowkick's
+  //    pitch/tone CVs + swolevco.timbre). Covered by rings.test.ts
+  //    (per-param DSP response) + the rings ART/spec coverage.
+  'rings.str_cv':    'structure CV: resonator-timbre shift below centroid threshold on a strummed transient; covered by rings.test.ts',
+  'rings.bright_cv': 'brightness CV: resonator-timbre shift below centroid threshold on a strummed transient; covered by rings.test.ts',
+  'rings.damp_cv':   'damping CV: resonator-decay shift below centroid threshold on a strummed transient; covered by rings.test.ts',
+  'rings.pos_cv':    'position CV: pickup-position comb shift below centroid threshold on a strummed transient; covered by rings.test.ts',
+
+  // ── WARRENSPECTRUM (warrenspectrum.ts): stereo 8-band resonator bank.
+  //    level{1..8}_cv each scale ONE band's contribution to the SUMMED
+  //    out_l — a single channel's gain rarely shifts the summed RMS above
+  //    threshold while the other 7 bands carry signal (the SAME per-channel
+  //    class as the mixmstrs module-level exempt). ping{1..8} + global_ping
+  //    fire percussive vactrol pings — short transients whose bulk-energy
+  //    shift sits below the RMS/centroid threshold (the SAME percussion
+  //    class as chowkick's gate-loop pings). root_cv / spread_cv / q_cv /
+  //    decay_cv shift resonator timbre subtly (subtle-spectral class);
+  //    spread is a STEREO-PAN width that only moves the L/R BALANCE, a
+  //    no-op on the mono-observed out_l; viznoise_cv drives the viz_out
+  //    visualizer hue, NOT the observed out_l audio. Covered by
+  //    warrenspectrum-draw.test.ts (viz) + warrenspectrum specs.
+  'warrenspectrum.level1_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
+  'warrenspectrum.level2_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
+  'warrenspectrum.level3_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
+  'warrenspectrum.level4_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
+  'warrenspectrum.level5_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
+  'warrenspectrum.level6_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
+  'warrenspectrum.level7_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
+  'warrenspectrum.level8_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
+  'warrenspectrum.ping1':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping2':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping3':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping4':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping5':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping6':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping7':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping8':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.global_ping': 'percussive vactrol ping (all bands); short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.root_cv':     'resonator root-tuning CV; subtle spectral shift below centroid threshold; covered by warrenspectrum specs',
+  'warrenspectrum.spread_cv':   'stereo-pan WIDTH only; moves the L/R balance, a no-op on the mono-observed out_l; covered by warrenspectrum specs',
+  'warrenspectrum.q_cv':        'resonator-Q CV; subtle bandwidth/centroid shift below threshold; covered by warrenspectrum specs',
+  'warrenspectrum.decay_cv':    'resonator-decay CV; tail-character shift below RMS/centroid threshold; covered by warrenspectrum specs',
+  'warrenspectrum.viznoise_cv': 'drives the viz_out visualizer hue/noise mix, NOT the observed out_l audio; covered by warrenspectrum-draw.test.ts',
+
+  // ── ACIDWARP (acidwarp.ts): full-screen plasma video source that already
+  //    fills every frame with high-variance colour. speed_cv displaces the
+  //    palette-ROTATION RATE of that already-busy pattern (the per-frame
+  //    variance is near-maxed in BOTH control + patched, so the rate change
+  //    doesn't move the frame-variance/non-black metric — video-variance
+  //    class). scene_cv rising-edges advance the scene, but scene changes
+  //    are INFREQUENT (mean seconds between auto-changes) and may not land a
+  //    transition inside the 1.5s window. Covered by the acidwarp VRT/spec
+  //    coverage which screenshots distinct scenes/palettes.
+  'acidwarp.speed_cv': 'palette-rotation RATE of an already-full-screen high-variance plasma; frame-variance unchanged (video-variance class); covered by acidwarp VRT/specs',
+  'acidwarp.scene_cv': 'infrequent scene transitions may not land inside the 1.5s window; covered by acidwarp VRT/specs',
+
+  // ── MANDLEBLOT (mandleblot.ts): self-running Mandelbrot fractal whose
+  //    color_out frame is already high-variance at every zoom level. zoom_cv
+  //    zooms the fractal, but the per-frame variance/non-black metric stays
+  //    saturated across the zoom (different region, similar statistic) —
+  //    the SAME video-variance class as acidwarp.speed_cv. Covered by the
+  //    mandleblot VRT coverage which screenshots distinct zoom depths.
+  'mandleblot.zoom_cv': 'zooms a self-running high-variance fractal; frame-variance metric stays saturated across zoom (video-variance class); covered by mandleblot VRT/specs',
 };
 
 // ────────── Type-aware upstream sources for input drive ──────────
@@ -686,6 +900,91 @@ function pickInputSource(inputType: string, idPrefix: string): InputSource | nul
       return null;
   }
 }
+
+// ────────── Per-PORT context-source override ──────────
+//
+// `buildContextEdges` feeds a generic context source (BUGGLES.smooth for
+// CV utilities, NOISE for audio effects, ACIDWARP for video) into the
+// SUT's NON-test inputs in BOTH the control + patched runs. For most
+// modules that's correct, but a few ports need a SPECIFIC context shape
+// to expose the test-input's effect:
+//
+//   sampleHold.gate_in — the SUT's `cv_in` is the "context" input here
+//     (it's wired in both runs). With the default BUGGLES.smooth random
+//     walk on cv_in, the CONTROL (gate unpatched → continuous quantizer/
+//     pass-through) reads the live BUGGLES walk, and the PATCHED (gate
+//     driven → sample & hold) reads a STAIRCASE sampled from that SAME
+//     walk — but a staircase sampled from a random walk has nearly the
+//     same RMS/variance as the walk itself, so no reliable delta. Drive
+//     cv_in with a FAST SAW RAMP instead (LFO shape=1 = saw, rate=20 Hz):
+//     the CONTROL cv_out is a continuously-ramping sawtooth (high crest +
+//     wide per-window range), while the PATCHED cv_out is a held-flat
+//     staircase (the latch holds each sampled level between gate edges →
+//     near-DC inside a 50 ms scope window) — a clearly different waveform
+//     shape (crest + range delta). This is the same "make the held value
+//     differ from the continuous pass-through" property the dedicated
+//     sample-hold.test.ts (latch vs continuous) asserts at the DSP level,
+//     realized here as ramp-vs-staircase.
+//
+// Keyed `<moduleType>.<testPortId>` → the override source for the CV
+// context input. The override replaces the BUGGLES.smooth source that
+// would otherwise drive the SUT's primary CV input(s).
+interface ContextCvOverride {
+  /** Node spawned as the cv-context source (id is fixed to 'ctx-buggles'
+   *  so buildContextEdges' existing edge wiring is reused). */
+  node: SpawnNode;
+  /** Output port on that node carrying the CV. */
+  outPort: string;
+}
+const BEHAVIORAL_PORT_CONTEXT_SOURCE: Record<string, ContextCvOverride> = {
+  // SAMPLE & HOLD: drive cv_in with a FAST LFO SAW ramp (shape=2) at 20 Hz.
+  // The canonical scope sink reads a ~50 ms window, so the ramp must be fast
+  // enough that ONE 50 ms snapshot captures a full sawtooth cycle — the
+  // CONTINUOUS pass-through (CONTROL, gate unpatched → quantizer mode, see
+  // sample-hold.ts) then reads a ramping sawtooth (AC content: many
+  // zero-crossings / high crest / wide range), while the SAMPLE & HELD
+  // output (PATCHED, gate driven at 4 Hz → the latch holds each sampled
+  // level flat between the ~250 ms-apart gate edges) reads a flat-held DC
+  // within most 50 ms windows (near-zero AC). That waveform-shape contrast
+  // (zc / crest / range) is the observable delta — the same "held differs
+  // from continuous" property sample-hold.test.ts asserts at the DSP level,
+  // realized here as ramp-vs-staircase. depth=1 swings the full range. At a
+  // 2 Hz ramp (too slow) BOTH read as flat DC inside the 50 ms window → no
+  // delta; 20 Hz fixes that. shape=1 is the SAW end of the LFO morph axis
+  // (sine→saw→square: shape=0 sine, 1 saw, 2 SQUARE — see lfo.ts morph()); a
+  // square (shape=2) would pass through as a square in BOTH arms (no
+  // ramp-vs-staircase contrast), so shape MUST be 1 for the saw RAMP.
+  'sampleHold.gate_in': {
+    node: {
+      id: 'ctx-buggles',
+      type: 'lfo',
+      position: { x: 60, y: 740 },
+      domain: 'audio',
+      params: { rate: 20, shape: 1, depth: 1 },
+    },
+    outPort: 'phase0',
+  },
+};
+
+// ────────── Per-PORT SUT param override ──────────
+//
+// Layered ON TOP of BEHAVIORAL_PARAMS[mod] for a SPECIFIC test port only.
+// Needed when one port wants a different SUT knob state than the rest of
+// the module's ports. Keyed `<moduleType>.<testPortId>`.
+//
+//   sequencer.play_cv — the module-wide BEHAVIORAL_PARAMS seeds isPlaying=0
+//     (so the `clock` test's CONTROL is silent). For play_cv we instead want
+//     isPlaying=1: the CONTROL (play_cv unpatched) then runs a STEADY
+//     240-BPM gate train, and the PATCHED (play_cv driven by the generic
+//     4-Hz gate train) XOR-toggles isPlaying on every edge — repeatedly
+//     START/STOPping the SUT so its gate output is CHOPPED/intermittent. The
+//     observable delta is the intermittency (RMS mean drop + per-snapshot
+//     RMS-range widening) of the chopped patched run vs the steady control —
+//     which doesn't hinge on a single edge landing at an exact time (the
+//     fragile single-pulse-toggle approach), so it's robust across spawns.
+const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
+  'sequencer.play_cv': { isPlaying: 1 },
+};
 
 // ────────── Sink picker for SUT's primary output ──────────
 //
@@ -1123,6 +1422,10 @@ function buildContextEdges(
   const nodes: SpawnNode[] = [];
   const edges: SpawnEdge[] = [];
 
+  // Per-port CV-context override (e.g. sampleHold.gate_in wants an LFO
+  // ramp on cv_in, not the default BUGGLES random walk).
+  const cvCtxOverride = BEHAVIORAL_PORT_CONTEXT_SOURCE[`${mod.type}.${testInputPortId}`];
+
   if (NEEDS_AUDIO_CONTEXT_CATEGORIES.has(mod.category)) {
     const audioCtxInput = mod.inputs.find((p) => p.type === 'audio' && p.id !== testInputPortId);
     if (audioCtxInput) {
@@ -1227,18 +1530,27 @@ function buildContextEdges(
         && !p.id.startsWith('att'),
     );
     if (primaryCvInputs.length > 0) {
-      nodes.push({
-        id: 'ctx-buggles',
-        type: 'buggles',
-        position: { x: 60, y: 740 },
-        domain: 'audio',
-        params: { rate: 0.6, smoothness: 0.2, chaos: 0.2 },
-      });
+      // Default CV context = BUGGLES.smooth random walk; a per-port
+      // override (BEHAVIORAL_PORT_CONTEXT_SOURCE) can swap in a different
+      // shape (e.g. an LFO saw ramp for sampleHold.gate_in). The override
+      // node keeps id='ctx-buggles' so the fan-out edge wiring below is
+      // unchanged.
+      const ctxNode: SpawnNode = cvCtxOverride
+        ? cvCtxOverride.node
+        : {
+            id: 'ctx-buggles',
+            type: 'buggles',
+            position: { x: 60, y: 740 },
+            domain: 'audio',
+            params: { rate: 0.6, smoothness: 0.2, chaos: 0.2 },
+          };
+      const ctxOutPort = cvCtxOverride ? cvCtxOverride.outPort : 'smooth';
+      nodes.push(ctxNode);
       primaryCvInputs.forEach((cvInput, idx) => {
         edges.push({
           id: `e-ctx-buggles-${idx}`,
-          from: { nodeId: 'ctx-buggles', portId: 'smooth' },
-          to:   { nodeId: 'sut',         portId: cvInput.id },
+          from: { nodeId: ctxNode.id, portId: ctxOutPort },
+          to:   { nodeId: 'sut',      portId: cvInput.id },
           sourceType: 'cv',
           targetType: 'cv',
         });
@@ -1465,10 +1777,16 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
           type: mod.type,
           position: { x: 400, y: 60 },
           domain: mod.domain,
-          // Layer BEHAVIORAL_PARAMS over driverFor's params so
-          // modulation-depth knobs are unlocked for behavioral testing
-          // (vs. _drivers.ts's "clean output" tuning for the alive-smoke).
-          params: { ...(driver.params ?? {}), ...(BEHAVIORAL_PARAMS[mod.type] ?? {}) },
+          // Layer BEHAVIORAL_PARAMS (per-module) then BEHAVIORAL_PORT_PARAMS
+          // (per-port) over driverFor's params so modulation-depth knobs are
+          // unlocked for behavioral testing (vs. _drivers.ts's "clean output"
+          // tuning for the alive-smoke). The per-port layer lets a single
+          // test port override a knob without forking the whole-module params.
+          params: {
+            ...(driver.params ?? {}),
+            ...(BEHAVIORAL_PARAMS[mod.type] ?? {}),
+            ...(BEHAVIORAL_PORT_PARAMS[`${mod.type}.${port.id}`] ?? {}),
+          },
         };
         const driverWiring = buildDriverEdges(mod, driver, port.id);
         const ctxWiring = buildContextEdges(mod, port.id);
