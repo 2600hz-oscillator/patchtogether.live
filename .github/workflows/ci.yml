@@ -810,7 +810,7 @@ jobs:
   # -----------------------------------------------------------------------
   collab:
     name: collab (@collab multi-context)
-    needs: dsp-build
+    needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     # 40 min ceiling: the full @collab suite (~41 specs incl. cold DOOM WASM +
     # several 2-context boots) at 2 workers finishes well under this; a single
@@ -880,8 +880,8 @@ jobs:
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
 
-      # Restore the worklet dist built once by dsp-build (before task build:web,
-      # which bundles the dsp `?url` imports into the preview build).
+      # Restore the worklet dist built once by dsp-build — needed at runtime
+      # alongside the downloaded preview bundle, exactly like the e2e shards.
       - name: Download DSP dist artifact
         uses: actions/download-artifact@v4
         with:
@@ -947,13 +947,19 @@ jobs:
 
       # (DSP dist was restored from the dsp-build artifact above.)
 
-      # Build the web bundle so `vite preview` (E2E_USE_PREVIEW=1, set in env
-      # above) has something to serve. Runs after DSP + manifest + DOOM assets
-      # so the production build includes them, exactly like the prod-build
-      # smoke. This is what lets @collab run against the static bundle instead
-      # of the HMR dev server (the #232 flake fix).
-      - name: Build web (preview bundle for @collab)
-        run: flox activate -- task build:web
+      # @collab runs under `vite preview` (E2E_USE_PREVIEW=1, set in env above).
+      # DOWNLOAD the prebuilt bundle the `build-web` job already produced instead
+      # of rebuilding it here — a full `task build:web` ran on EVERY collab run
+      # (not cache-gated) and was the main reason this job blew its 40-min ceiling
+      # and got cancelled (the e2e shards already consume this same artifact).
+      # The bundle bakes in the DOOM/SNES9X/WAD static assets, so the specs get
+      # them from here; the cache-gated DOOM/WAD steps above remain for the C-side
+      # lockstep-barrier oracle, which builds + runs DOOM independently.
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
 
       # P1 true-lockstep: prove the LIVE barrier path (dgpt_set_lockstep +
       # dgpt_receive_ticset) is BIT-EXACT across N sims on a FRESH WASM build,
