@@ -1010,7 +1010,7 @@ jobs:
   # -----------------------------------------------------------------------
   behavioral-coverage:
     name: behavioral input coverage (shard ${{ matrix.shard }}/6)
-    needs: dsp-build
+    needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     # Informational lane: red here must NOT block PR merges. The job still runs
     # + reports a status, but `continue-on-error: true` makes GitHub treat any
@@ -1077,13 +1077,23 @@ jobs:
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
 
-      # Restore the worklet dist built once by dsp-build (before the dev server
-      # boots for the behavioral sweep).
+      # Restore the worklet dist built once by dsp-build, then the prebuilt
+      # preview bundle from build-web. The behavioral sweep runs under
+      # E2E_USE_PREVIEW (vite preview) like the e2e shards, so the served app
+      # is prebuilt — no on-demand dev-server compile, which was flaking some
+      # shards under load (drummergirl/moog911/sequencer passed once the
+      # server was warm).
       - name: Download DSP dist artifact
         uses: actions/download-artifact@v4
         with:
           name: dsp-dist
           path: packages/dsp/dist
+
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
 
       - name: Apply DB schema
         run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
@@ -1094,6 +1104,8 @@ jobs:
       # (DSP dist was restored from the dsp-build artifact above.)
 
       - name: Run E2E (behavioral input coverage, shard ${{ matrix.shard }}/6, 4 workers, blob reporter)
+        env:
+          E2E_USE_PREVIEW: '1'
         run: |
           flox activate -- npx --workspace e2e playwright test \
             per-module-per-port-behavioral.spec.ts \
