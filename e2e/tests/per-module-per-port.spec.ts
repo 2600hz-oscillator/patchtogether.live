@@ -101,6 +101,13 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // dedicated composite spec (VCO→VCA→ADSR←SEQUENCER→SYNESTHESIA) asserts that
   // the correct bands trigger. Handle-presence + input-drive still run here.
   synesthesia: 'outputs are input-conditional (band audio/env/gate); signal flow covered by the synesthesia composite spec',
+  // FLIPPER is a gate flip-flop: each output only fires on alternate input
+  // rising edges (FLIP on the 1st, FLOP on the 2nd, …), so the generic
+  // "drive input → measure this output emits" sweep can't trigger the right
+  // output per port. The alternating logic (incl. either-input + gate
+  // duration) is exhaustively proven by packages/dsp/src/lib/flipper-dsp.test.ts.
+  // Handle-presence + input-drive still run here.
+  flipper: 'gate flip-flop; FLIP/FLOP fire on alternate input edges (not per-output drivable); logic covered by flipper-dsp.test.ts',
   // ── Hardware-input sources ──
   gamepad:    'no gamepad attached in test browser; covered by gamepad.spec.ts',
   joystick:   'no joystick movement in test browser; covered by joystick.spec.ts',
