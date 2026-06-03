@@ -660,6 +660,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const wavesculptDef: AudioModuleDef = {
   type: 'wavesculpt',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'WAVESCULPT',
   category: 'sources',

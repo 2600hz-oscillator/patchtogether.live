@@ -79,6 +79,7 @@ function generateBasicTable(): Float32Array {
 
 export const wavetableVcoDef: AudioModuleDef = {
   type: 'wavetableVco',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'Wavetable VCO',
   category: 'sources',

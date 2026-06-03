@@ -116,6 +116,7 @@ export function migrateLuma(data: unknown, fromVersion: number): unknown {
 
 export const lumaDef: VideoModuleDef = {
   type: 'luma',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'LUMA',
   category: 'effects',

@@ -124,6 +124,7 @@ export interface QbertHandleExtras {
 
 export const qbertDef: VideoModuleDef = {
   type: 'qbert',
+  palette: { top: 'Games', sub: 'Emulators' },
   domain: 'video',
   label: 'QBERT',
   category: 'sources',

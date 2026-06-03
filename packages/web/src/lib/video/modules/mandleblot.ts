@@ -216,6 +216,7 @@ export const MANDLEBLOT_DEFAULTS: Readonly<MandleblotParams> = DEFAULTS;
 
 export const mandleblotDef: VideoModuleDef = {
   type: 'mandleblot',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'MANDLEBLOT',
   category: 'video-effects',

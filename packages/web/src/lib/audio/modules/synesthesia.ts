@@ -63,6 +63,7 @@ export interface SynesthesiaSnapshot {
 
 export const synesthesiaDef: AudioModuleDef = {
   type: 'synesthesia',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'SYNESTHESIA',
   category: 'hybrid',

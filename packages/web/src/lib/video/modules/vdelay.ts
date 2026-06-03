@@ -152,6 +152,7 @@ export function vdelayMix(input: number, tap: number, mixAmount: number): number
 
 export const vdelayDef: VideoModuleDef = {
   type: 'vdelay',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'VDELAY',
   category: 'effects',

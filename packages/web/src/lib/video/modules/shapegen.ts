@@ -144,6 +144,7 @@ void main() {
 
 export const shapegenDef: VideoModuleDef = {
   type: 'shapegen',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'SHAPEGEN',
   category: 'video-effects',

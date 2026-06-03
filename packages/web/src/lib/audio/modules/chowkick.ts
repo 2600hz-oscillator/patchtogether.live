@@ -44,6 +44,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const chowkickDef: AudioModuleDef = {
   type: 'chowkick',
+  palette: { top: 'Ports', sub: 'Ports' },
   domain: 'audio',
   label: 'CHOWKICK',
   category: 'sources',

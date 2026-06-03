@@ -132,6 +132,7 @@ export interface GamepadSnapshot {
 
 export const gamepadDef: AudioModuleDef = {
   type: 'gamepad',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'GAMEPAD',
   category: 'utility',

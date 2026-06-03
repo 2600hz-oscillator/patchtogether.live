@@ -117,6 +117,7 @@ export function speedKnobToMultiplier(knob: number): number {
 
 export const acidwarpDef: VideoModuleDef = {
   type: 'acidwarp',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'ACIDWARP',
   category: 'sources',

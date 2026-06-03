@@ -86,6 +86,7 @@ const DEFAULTS: DestructorParams = {
 
 export const destructorDef: VideoModuleDef = {
   type: 'destructor',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'DESTRUCTOR',
   category: 'effects',

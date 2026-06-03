@@ -52,6 +52,7 @@ export function clampJoy(v: number): number {
 
 export const joystickDef: AudioModuleDef = {
   type: 'joystick',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'JOYSTICK',
   category: 'utility',

@@ -205,6 +205,7 @@ export const peaksMath = {
 
 export const peaksDef: AudioModuleDef = {
   type: 'peaks',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'PEAKS',
   category: 'modulation',

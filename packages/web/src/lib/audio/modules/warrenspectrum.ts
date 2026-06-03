@@ -74,6 +74,7 @@ export interface WarrenspectrumSnapshotMessage {
 
 export const warrenspectrumDef: AudioModuleDef = {
   type: 'warrenspectrum',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   // v2 adds: tuning_mode, root, q, spread, bleed params; 8 band returns
   // (band1_in..band8_in audio inputs); 8 per-band sends (band1_out..

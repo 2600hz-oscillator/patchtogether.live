@@ -91,6 +91,7 @@ export const stereoVcaMath = {
 
 export const stereovcaDef: AudioModuleDef = {
   type: 'stereovca',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'STEREOVCA',
   category: 'utilities',

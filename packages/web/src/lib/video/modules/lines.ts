@@ -99,6 +99,7 @@ const DEFAULTS: LinesParams = {
 
 export const linesDef: VideoModuleDef = {
   type: 'lines',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'LINES',
   category: 'sources',

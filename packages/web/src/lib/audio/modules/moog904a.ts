@@ -45,6 +45,8 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog904aDef: AudioModuleDef = {
   type: 'moog904a',
+  palette: { top: 'Moog', sub: 'SYS55' },
+  card: 'Moog904aVcfCard',
   domain: 'audio',
   label: 'Moog 904A VCF',
   category: 'filters',

@@ -200,6 +200,7 @@ const DEFAULTS: ShapedrampsParams = {
 
 export const shapedrampsDef: VideoModuleDef = {
   type: 'shapedramps',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'SHAPEDRAMPS',
   category: 'sources',

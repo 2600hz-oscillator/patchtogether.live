@@ -76,6 +76,7 @@ const DEFAULTS: MixerParams = {
 export const mixerVideoDef: VideoModuleDef = {
   // Type id is 'videoMixer' to avoid clashing with the audio 'mixer' module.
   type: 'videoMixer',
+  palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
   label: 'V-MIXER',
   category: 'utilities',

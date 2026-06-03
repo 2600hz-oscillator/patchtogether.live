@@ -103,6 +103,7 @@ function readScoreData(nodeId: string): ScoreData {
 
 export const scoreDef: AudioModuleDef = {
   type: 'score',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'Score',
   category: 'modulation',

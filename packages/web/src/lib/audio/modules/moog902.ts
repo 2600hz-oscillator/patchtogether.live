@@ -51,6 +51,8 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog902Def: AudioModuleDef = {
   type: 'moog902',
+  palette: { top: 'Moog', sub: 'SYS55' },
+  card: 'Moog902VcaCard',
   domain: 'audio',
   label: 'Moog 902 VCA',
   category: 'utilities',

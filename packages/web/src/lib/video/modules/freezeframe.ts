@@ -270,6 +270,7 @@ export const GATE_PATCH_GRACE = 3;
 
 export const freezeframeDef: VideoModuleDef = {
   type: 'freezeframe',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'FREEZEFRAME',
   category: 'effects',

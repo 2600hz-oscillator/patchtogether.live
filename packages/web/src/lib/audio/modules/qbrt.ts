@@ -41,6 +41,7 @@ const PARAM_PREFIX = '/QBRT';
 
 export const qbrtDef: AudioModuleDef = {
   type: 'qbrt',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'QBRT',
   category: 'filters',

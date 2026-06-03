@@ -106,6 +106,7 @@ function resolveFrames(data: WavecelData | undefined): ResolvedFrames {
 // ScopeCard for GroupCard portal-hoisting.
 export const wavecelDef: AudioModuleDef = {
   type: 'wavecel',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'WAVECEL',
   category: 'sources',

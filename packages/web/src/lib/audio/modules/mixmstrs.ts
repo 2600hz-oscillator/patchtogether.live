@@ -143,6 +143,7 @@ function buildInputs(): PortDef[] {
 
 export const mixmstrsDef: AudioModuleDef = {
   type: 'mixmstrs',
+  palette: { top: 'Audio modules', sub: 'Mixing' },
   domain: 'audio',
   label: 'MIXMSTRS',
   category: 'utilities',

@@ -141,6 +141,7 @@ export const tides2Math = {
 
 export const tides2Def: AudioModuleDef = {
   type: 'tides2',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'TIDES2',
   category: 'modulation',

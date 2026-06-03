@@ -224,6 +224,7 @@ export function webMidiAvailable(): boolean {
 
 export const midiOutBuddyDef: AudioModuleDef = {
   type: 'midiOutBuddy',
+  palette: { top: 'MIDI', sub: 'MIDI' },
   domain: 'audio',
   label: 'MIDI CV BUDDY OUT',
   category: 'output',

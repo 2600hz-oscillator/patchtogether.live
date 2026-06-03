@@ -131,6 +131,7 @@ export interface SkifreeController {
 
 export const skifreeDef: AudioModuleDef = {
   type: 'skifree',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'SKIFREE',
   category: 'games',

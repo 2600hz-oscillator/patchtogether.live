@@ -269,6 +269,7 @@ export interface DoomHandleExtras {
 
 export const doomDef: VideoModuleDef = {
   type: 'doom',
+  palette: { top: 'Games', sub: 'Emulators' },
   domain: 'video',
   label: 'DOOM',
   category: 'sources',
