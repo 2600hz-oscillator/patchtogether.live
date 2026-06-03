@@ -112,15 +112,30 @@
       : [],
   );
 
-  // Search mode: flat filtered list. Preserves the Enter-picks-first
-  // behavior + the existing palette.spec.ts E2E tests.
-  let filtered = $derived(
-    allDefs.filter((d) => {
-      if (!search) return true;
-      const q = search.toLowerCase();
-      return d.label.toLowerCase().includes(q) || d.type.toLowerCase().includes(q);
-    })
-  );
+  // Search mode: flat filtered list, RANKED so the most relevant match is
+  // first (Enter picks filtered[0]). Without ranking a plain substring filter
+  // returns defs in registry/alphabetical order, so typing a module's exact
+  // name could surface an alphabetically-earlier substring match first (e.g.
+  // "Reverb" → "moogafakkin 905 Spring Reverb" before the module literally
+  // named "Reverb"). We score exact > prefix > substring (label or type),
+  // stable within each tier so the prior order is otherwise preserved.
+  function searchRank(d: { label: string; type: string }, q: string): number {
+    const label = d.label.toLowerCase();
+    const type = d.type.toLowerCase();
+    if (label === q || type === q) return 0; // exact name/type
+    if (label.startsWith(q) || type.startsWith(q)) return 1; // prefix
+    if (label.includes(q) || type.includes(q)) return 2; // substring
+    return -1; // no match
+  }
+  let filtered = $derived.by(() => {
+    if (!search) return allDefs;
+    const q = search.toLowerCase();
+    return allDefs
+      .map((d, i) => ({ d, i, rank: searchRank(d, q) }))
+      .filter((x) => x.rank >= 0)
+      .sort((a, b) => a.rank - b.rank || a.i - b.i) // stable: keep input order within a tier
+      .map((x) => x.d);
+  });
 
   // Nested mode: top → sub → defs. Unknown modules surface in an
   // Uncategorized bucket so newly-landed modules from parallel agents
