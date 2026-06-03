@@ -76,6 +76,8 @@ const SRC_BASE =
 
 const DESCRIPTIONS: Record<string, string> = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  flipper:
+    'Gate flip-flop. Two gate inputs and two gate outputs (FLIP, FLOP). A gate on EITHER input alternately fires FLIP, then FLOP, then back — the first gate after load fires FLIP. While a gate is high it is mirrored to the currently-selected output (keeping the trigger width) and the other output stays silent. Use it to split one trigger stream into two alternating streams (e.g. ping-pong two envelopes / two voices).',
   synesthesia:
     'Audio/video-analysis module — two independent copies (A/B), each switchable between AUDIO and VIDEO mode. In AUDIO mode a copy splits its mono input into 4 spectral bands (0–200 / 200–500 / 500–2000 / 2000+ Hz). In VIDEO mode the 4 lanes become the R/G/B/Luma channels of a patched video frame (a_video_in / b_video_in cross-domain inputs): the card averages the frame to per-channel 0..1 levels (solid red maxes R, solid white maxes all incl. luma). In BOTH modes each lane derives a gained audio/CV tap, slow (500 ms) + fast (50 ms) envelope-follower CV, a hysteresis gate, a 10-bar green→red VU meter, and a mono-video raster. Master gain (0.5–1.5×) sets the floor; per-band gain (1–2×) adds on top. Turns audio peaks OR video colour into events/CV/video that drive other audio + video modules.',
   wavetableVco:
