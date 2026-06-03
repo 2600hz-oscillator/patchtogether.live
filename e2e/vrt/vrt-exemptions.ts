@@ -293,17 +293,16 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // is impossible without freezing the engine clock. Pattern/palette unit
   // coverage in acidwarp-patterns.test.ts; integration coverage via E2E.
   acidwarp: 'animated palette rotation + auto scene cycler defeats deterministic capture; unit + E2E provide coverage',
-  // MANDELBULB — WebGL2 ray-marched 3D Mandelbulb fractal video source.
-  // The card carries a live preview canvas of the raymarch, and the bulb
-  // auto-spins by default (autospin param) so every frame differs — a
-  // deterministic single-frame baseline is impossible without freezing the
-  // engine clock + pinning autospin. The DE/shading correctness is covered
-  // by mandelbulb-math.test.ts (pure distance estimate) + mandelbulb.test.ts
-  // (def shape). TODO(follow-up): add a __mandelbulbVrtSeed deterministic-time
-  // + spin-off freeze hook and capture darwin/linux baselines, then promote
-  // into MODULES (the VRT_MODULE_MASKS canvas mask above covers the live
-  // preview if it's promoted before the seed path is finished).
-  mandelbulb: 'VRT baseline pending — live raymarch preview + auto-spin defeats deterministic single-frame capture; unit (mandelbulb-math DE + def shape) + E2E provide coverage. TODO: add __mandelbulbVrtSeed freeze hook + capture darwin/linux baselines in a follow-up PR.',
+  // MANDELBULB — promoted into MODULES (no longer exempt). The card carries
+  // a live ray-marched 3D preview canvas that auto-spins by default, so the
+  // canvas region is non-deterministic; it's MASKED via VRT_MODULE_MASKS
+  // (`mandelbulb: [{ selector: 'canvas' }]`, same as MANDLEBLOT / CUBE /
+  // ACIDWARP-family video cards) and the surrounding deterministic chrome
+  // (6 knobs ZOOM/ROT X/ROT Y/POWER/DETAIL/HUE + SPIN/SCRN toggles + 6 CV
+  // handle rows + VIDEO out) is the regression gate. Darwin baseline captured
+  // here; linux baseline pending a `task vrt:update` run on linux CI (see
+  // EXEMPT_BASELINE_PAIRS → linux/mandelbulb). DE/shading correctness is
+  // additionally covered by mandelbulb-math.test.ts + mandelbulb.test.ts.
   // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
   // ports), VRT baseline pending. Unit + E2E provide coverage.
   joystick: 'VRT baseline pending; unit + E2E provide coverage. UI is small + stable — pinning baselines in a follow-up PR.',
@@ -691,6 +690,15 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // `<canvas>` masking timing on linux Chromium can shift the chrome PNG
   // sub-thresholdly — darwin is the regression gate here.
   'linux/mandleblot',
+  // MANDELBULB (WebGL2 ray-marched 3D fractal video source): darwin baseline
+  // captured on this machine (live raymarch preview + auto-spin canvas masked
+  // via VRT_MODULE_MASKS — every frame differs, so the canvas region is
+  // non-deterministic; the chrome around it diffs). The linux baseline is
+  // pending a `task vrt:update` run on linux CI; the shader pipeline is the
+  // same across platforms but Playwright's `<canvas>` masking timing on linux
+  // Chromium can shift the chrome PNG sub-thresholdly — darwin is the
+  // regression gate here. Same rationale as MANDLEBLOT above.
+  'linux/mandelbulb',
   // NIBBLES (new snake-game video module): darwin baseline captured on this
   // machine via VRT_SCENES (__nibblesVrtSeed pins the RNG → deterministic
   // snake + food placement; freezeAudio suspends the rAF preview poll). The
