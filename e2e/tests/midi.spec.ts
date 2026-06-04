@@ -53,6 +53,51 @@ async function clearMidiBindings(page: Page): Promise<void> {
 }
 
 // ============================================================================
+// Case #0 — REGRESSION: no Web-MIDI permission prompt on page load.
+// ============================================================================
+//
+// The bug: the app popped the browser "Control and reprogram your MIDI
+// devices" prompt on boot / on loading a non-MIDI patch. Web MIDI must be
+// requested STRICTLY ON DEMAND. This asserts the call count is 0:
+//   (a) immediately after page load (before any interaction), and
+//   (b) after loading the GLITCHES demo patch (which contains NO MIDI module)
+//       + the auto-spawned TIMELORDE — the realistic "patch loaded on boot"
+//       path the old eager trigger fired on.
+
+test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+  // Count requestMIDIAccess calls from before the very first navigation.
+  await installMidiMock(page);
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  // (a) Bare page load — nothing mounted yet, must not have prompted.
+  const callsAfterLoad = await page.evaluate(() => {
+    const w = window as unknown as { __mockMidi?: { accessCallCount(): number } };
+    return w.__mockMidi ? w.__mockMidi.accessCallCount() : -1;
+  });
+  expect(callsAfterLoad, 'navigator.requestMIDIAccess was called on bare page load (eager-prompt regression)').toBe(0);
+
+  // (b) Load the demo patch (non-MIDI) + reconcile + auto-spawn TIMELORDE.
+  //     This is the boot+patch path the eager trigger used to fire on.
+  await page.getByRole('button', { name: 'GLITCHES GET RICHES' }).click();
+  await expect(page.locator('.svelte-flow__node').first()).toBeVisible({ timeout: 20_000 });
+  // Let factory timers (e.g. COCOA DELAY's 16ms syncPeriod poll, if any) run.
+  await page.waitForTimeout(300);
+
+  const callsAfterPatch = await page.evaluate(() => {
+    const w = window as unknown as { __mockMidi?: { accessCallCount(): number } };
+    return w.__mockMidi ? w.__mockMidi.accessCallCount() : -1;
+  });
+  expect(callsAfterPatch, 'navigator.requestMIDIAccess was called while loading a non-MIDI patch (eager-prompt regression)').toBe(0);
+
+  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+});
+
+// ============================================================================
 // Case #1 — Plain CC reception drives a learned param.
 // ============================================================================
 //
@@ -348,11 +393,16 @@ test('@midi NoteOn / NoteOff drives MIDI-CV-BUDDY gate', async ({ page }) => {
 // ============================================================================
 //
 // midi-clock-source is a separate subscriber (not the midi-learn singleton)
-// that holds its own `access` reference + `onmidimessage` handler. It
-// auto-attaches when its first consumer asks for it — COCOADELAY is currently
-// the only consumer (it reads getMidiClockSource().getBeatPeriodS() to drive
-// its delay's sync period). Spawning COCOADELAY therefore triggers the
-// `navigator.requestMIDIAccess` call against our mock.
+// that holds its own `access` reference + `onmidimessage` handler. It attaches
+// strictly ON DEMAND: navigator.requestMIDIAccess fires only on the first
+// tempo READ (getBpm()/getBeatPeriodS()), NOT on construction. COCOADELAY only
+// reads the MIDI tempo when its clockSource is set to MIDI, so merely spawning
+// a default-System COCOADELAY must NOT prompt (the page-load-prompt fix).
+//
+// This test therefore explicitly performs the on-demand READ
+// (__midiClockSource().getBpm()) to trigger requestMIDIAccess against our mock,
+// then asserts the subscription attaches + pulses derive BPM — and FIRST
+// asserts that spawning alone did NOT yet request access.
 //
 // We assert directly against the source's `.getBpm()` by dynamic-importing
 // the module from the page context (Vite dev server serves source modules
@@ -374,9 +424,9 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
-  // COCOADELAY's engine factory calls getMidiClockSource(), which lazy-
-  // constructs the singleton + calls navigator.requestMIDIAccess against
-  // our mock + wires onmidimessage to the mock's only input.
+  // COCOADELAY's engine factory constructs the MIDI clock-source singleton,
+  // but on its DEFAULT System clock it must NOT read the tempo and so must NOT
+  // call navigator.requestMIDIAccess (the page-load-prompt regression).
   await spawnPatch(
     page,
     [{ id: 'cd', type: 'cocoadelay', position: { x: 120, y: 120 }, domain: 'audio' }],
@@ -384,6 +434,22 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
   );
   const card = page.locator('.svelte-flow__node-cocoadelay');
   await expect(card).toHaveCount(1, { timeout: 10_000 });
+
+  // REGRESSION: spawning a default-System COCOADELAY alone must not prompt.
+  const callsAfterSpawn = await page.evaluate(() => {
+    const w = window as unknown as { __mockMidi?: { accessCallCount(): number } };
+    return w.__mockMidi ? w.__mockMidi.accessCallCount() : -1;
+  });
+  expect(callsAfterSpawn, 'spawning a default-System COCOADELAY requested MIDI access (eager-prompt regression)').toBe(0);
+
+  // Now perform the ON-DEMAND tempo read (what selecting MIDI clock / a MIDI
+  // consumer does): the first getBpm() triggers requestMIDIAccess against our
+  // mock + wires onmidimessage to the mock's only input.
+  await page.evaluate(() => {
+    const w = window as unknown as { __midiClockSource?: () => { getBpm: () => number | null } };
+    if (!w.__midiClockSource) throw new Error('__midiClockSource missing — test-hooks build expected');
+    w.__midiClockSource().getBpm();
+  });
 
   // The clock source attaches asynchronously (the awaited requestMIDIAccess
   // promise + the iteration over access.inputs). Wait for the handler to

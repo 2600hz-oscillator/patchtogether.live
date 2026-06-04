@@ -223,6 +223,12 @@ export const cocoaDelayDef: AudioModuleDef = {
     // on the main thread and feed it to the worklet via the `syncPeriod`
     // AudioParam. ~60 Hz is plenty (tempo changes are gestural); a patched
     // `clock` gate still overrides this inside the DSP.
+    //
+    // The MIDI clock source is constructed here (cheap, no I/O) but we ONLY
+    // READ it (getBeatPeriodS) when the user has actually selected MIDI as the
+    // clockSource. Reading is what triggers navigator.requestMIDIAccess(), so
+    // spawning a COCOA DELAY on the default System clock must NOT touch the
+    // MIDI source — that would pop the browser permission prompt unprompted.
     const syncPeriodParam = params.get('syncPeriod');
     const nodeId = node.id;
     const midiClock = getMidiClockSource();
@@ -235,10 +241,14 @@ export const cocoaDelayDef: AudioModuleDef = {
           ? (live.params['clockSource'] as number)
           : (node.params?.['clockSource'] as number | undefined)) ?? 0,
       );
+      // Only read the MIDI tempo (and thus request MIDI access) when MIDI is
+      // the selected clock. System keeps null and never prompts.
+      const midiBeatPeriodS =
+        clockSource === CLOCK_SOURCE_MIDI ? midiClock.getBeatPeriodS() : null;
       const period = resolveSyncPeriodS(
         clockSource,
         livePatch.nodes,
-        midiClock.getBeatPeriodS(),
+        midiBeatPeriodS,
       );
       syncPeriodParam.setValueAtTime(period, ctx.currentTime);
     }

@@ -13,10 +13,14 @@
 //   * Any number of consumers (COCOA today, more later) can subscribe to one
 //     canonical MIDI tempo, exactly like every sequencer rides one TIMELORDE.
 //
-// It auto-attaches: the first consumer that calls getMidiClockSource() (in a
-// browser with Web MIDI) triggers navigator.requestMIDIAccess() lazily; the
-// derived BPM is then readable synchronously via .getBpm(). Consumers that
-// can't get MIDI access (no Web MIDI, denied) simply read null and fall back.
+// It attaches strictly ON DEMAND: constructing the source does NOT touch Web
+// MIDI. navigator.requestMIDIAccess() (which shows the browser permission
+// prompt) is only fired the FIRST TIME a consumer actually READS the tempo —
+// i.e. calls getBpm()/getBeatPeriodS(). Holding the source object for period
+// math while the user has NOT chosen MIDI as the clock therefore never
+// prompts. Once access resolves the derived BPM is readable synchronously.
+// Consumers that can't get MIDI access (no Web MIDI, denied) simply read null
+// and fall back.
 
 import {
   webMidiAvailable,
@@ -74,6 +78,10 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
   let pulsePeriodMs: number | null = null;
   let access: MidiAccessLike | null = null;
   let running = true; // assume free-running clock if no Start/Stop framing
+  // ON-DEMAND access: not requested at construction. ensureAccess() fires the
+  // browser permission prompt exactly once, lazily, on the first tempo read.
+  let accessRequested = false;
+  let destroyed = false;
 
   function ingest(status: number, atMs: number): void {
     if (status === STATUS_STOP) {
@@ -110,6 +118,11 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
   }
 
   function getBpm(): number | null {
+    // Reading the tempo is the ON-DEMAND trigger: only a consumer that has
+    // actually chosen MIDI as its clock reads the BPM, so requesting MIDI
+    // access here (and not at construction) keeps the permission prompt
+    // strictly tied to a real MIDI-clock action — never a mere spawn/boot.
+    ensureAccess();
     return fresh() ? bpm : null;
   }
 
@@ -118,7 +131,7 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
     return b !== null ? 60 / b : null;
   }
 
-  // ---- lazy auto-attach to all MIDI inputs ----
+  // ---- on-demand auto-attach to all MIDI inputs ----
   function handle(ev: MidiEventLike): void {
     const data = ev.data;
     if (data.length < 1) return;
@@ -128,10 +141,21 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
     if (!access) return;
     for (const inp of access.inputs.values()) inp.onmidimessage = handle;
   }
-  if (deps.available()) {
+  /** Fire navigator.requestMIDIAccess() once, lazily. No-op after the first
+   *  call (and after destroy()), so polling getBpm() prompts at most once. */
+  function ensureAccess(): void {
+    if (accessRequested || destroyed) return;
+    accessRequested = true;
+    if (!deps.available()) return;
     deps
       .requestAccess()
       .then((a) => {
+        if (destroyed) {
+          // destroyed mid-flight — don't attach a now-orphaned access.
+          for (const inp of a.inputs.values()) inp.onmidimessage = null;
+          a.onstatechange = null;
+          return;
+        }
         access = a;
         attachAll();
         access.onstatechange = () => attachAll();
@@ -146,6 +170,7 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
     getBeatPeriodS,
     ingest,
     destroy() {
+      destroyed = true;
       if (access) {
         for (const inp of access.inputs.values()) inp.onmidimessage = null;
         access.onstatechange = null;
@@ -160,7 +185,10 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
 
 let singleton: MidiClockSource | null = null;
 
-/** Lazily construct (and auto-attach) the process-wide MIDI clock source. */
+/** Lazily construct the process-wide MIDI clock source. Constructing it does
+ *  NOT request Web MIDI access — that happens on the first getBpm()/
+ *  getBeatPeriodS() read (see createMidiClockSource). A consumer can hold this
+ *  object for period math without prompting until it actually reads the tempo. */
 export function getMidiClockSource(): MidiClockSource {
   if (!singleton) singleton = createMidiClockSource();
   return singleton;
