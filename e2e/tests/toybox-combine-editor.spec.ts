@@ -91,7 +91,11 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
       return lit > c.width * c.height * 0.1;
     },
     { time },
-    { timeout: 10_000 },
+    // CI's software WebGL renderer starves the main thread; producing a
+    // non-black frozen composite (multi-layer combine + OBJ/texmap passes)
+    // can take well past 10s under load. The test budget is 60s; give the
+    // render-readiness poll generous headroom so it isn't the bottleneck.
+    { timeout: 30_000 },
   );
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
   return page.evaluate(() => {
