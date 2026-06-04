@@ -792,7 +792,7 @@ jobs:
           # `playwright-report/` in the cwd. We ran with `--workspace e2e`
           # so that's `e2e/playwright-report/`.
           path: e2e/playwright-report
-          retention-days: 14
+          retention-days: 30
 
   # -----------------------------------------------------------------------
   # collab — the @collab multi-context Playwright specs, run on a SINGLE,
@@ -970,11 +970,39 @@ jobs:
       - name: DOOM true-lockstep barrier acceptance (bit-exact, fresh build)
         run: flox activate -- node packages/web/native/doomgeneric/tests/lockstep-barrier.acceptance.mjs
 
-      # Single worker, serial — no shard contention. `task collab` is
-      # `playwright test --grep @collab --workers=1`. Generous per-job timeout
-      # (25 min) absorbs the cold DOOM WASM + 2-context boot.
-      - name: Run @collab specs (single non-sharded worker)
-        run: flox activate -- task collab
+      # @collab on a dedicated runner — modest 2-worker parallelism (mirrors
+      # `task collab`'s grep + workers), generous per-job timeout absorbs the
+      # cold DOOM WASM + 2-context boot. We invoke playwright DIRECTLY here
+      # (instead of `task collab`) only so we can force a BROWSABLE HTML report
+      # alongside the console list output — `--reporter=list,html` writes to
+      # e2e/playwright-report/ (--workspace e2e sets cwd to e2e/). This changes
+      # the REPORTER ONLY, not WHAT @collab tests (same grep, same workers, same
+      # DATABASE_URL + COLLAB_JOB=1 + E2E_USE_PREVIEW env from the job `env:`).
+      # PLAYWRIGHT_HTML_OPEN=never keeps the html reporter from auto-serving the
+      # report (which would hang the job in CI).
+      - name: Run @collab specs (single non-sharded runner, html report)
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --grep "@collab|@capacity" \
+            --workers=2 \
+            --reporter=list,html
+
+      # Always upload the browsable HTML report so the @collab lane is as
+      # inspectable as e2e/behavioral/vrt (those merge blobs → html; @collab is
+      # single-runner so it writes html directly). Mirrors retention=30 of the
+      # other browsable reports.
+      - name: Upload Playwright HTML report (@collab)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collab-playwright-report
+          # `playwright test --reporter=html` writes to playwright-report/ in
+          # the cwd; we ran with `--workspace e2e`, so that's
+          # e2e/playwright-report/.
+          path: e2e/playwright-report
+          retention-days: 30
 
       - name: Upload Playwright test-results on failure (@collab)
         if: failure()
@@ -1197,7 +1225,7 @@ jobs:
           # `playwright-report/` in the cwd (e2e/ via --workspace e2e).
           name: behavioral-playwright-report
           path: e2e/playwright-report
-          retention-days: 14
+          retention-days: 30
 
   # -----------------------------------------------------------------------
   # ci (umbrella) — gates branch protection. Required status check named
@@ -1429,7 +1457,7 @@ jobs:
         with:
           name: vrt-gallery
           path: docs/vrt
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload Playwright VRT report
         if: always()
@@ -1437,7 +1465,7 @@ jobs:
         with:
           name: vrt-playwright-report
           path: e2e/vrt/report
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload Playwright VRT test-results (actual + diff PNGs)
         if: failure()
