@@ -66,6 +66,12 @@ test.describe('VRT: every module card matches its baseline', () => {
 
       await page.goto('/');
       await page.waitForLoadState('networkidle');
+      // Wait for the webfont to finish loading BEFORE any screenshot. On a slow
+      // font load the card text renders in a fallback face and every text glyph
+      // diffs against the baseline — a broad, intermittent VRT flake that gets
+      // reliably triggered by pages with more text (e.g. extra topbar buttons).
+      // networkidle does not guarantee font readiness; document.fonts.ready does.
+      await page.evaluate(() => document.fonts.ready);
 
       // Use a registered scene if one exists for this module type
       // (drives the card's canvas with real content so the baseline
