@@ -155,6 +155,8 @@ const DESCRIPTIONS: Record<string, string> = {
   mixmstrs:
     'Singleton 4xstereo mixer with EQ, per-channel compressor (single-dial macro + power-user thresh/ratio), two stereo aux sends/returns. 41 params.',
   timelorde: 'Singleton master clock. Internal or external BPM, twelve clock-divider outputs.',
+  toybox:
+    'Swappable fragment-shader video source — the foundation of a planned 4-layer shader/video/OBJ compositor (combine graph, CV targets, presets, node editor). PHASE 1 ships a SINGLE renderable layer (index 0) drawn straight to the module video output: pick a content entry from the bundled MIT shader bank (GEN: noise-fbm domain-warped simplex FBM, worley-cells animated cellular noise; FX: hsv-plasma sine-interference plasma → HSV→RGB, cos-gradient IQ cosine-palette rings) and tweak its declared float params on per-content faders. The content catalog + per-shader param schema live in a static manifest (packages/web/static/toybox/manifest.json); GLSL is fetched lazily on selection (never JS-bundled) and compiled per content, cached. Each shader uses iTime (engine seconds) + iResolution + its own float uniforms. Persistence: node.data.layers is a 4-length array of { kind, contentId, params } — P1 renders only layer 0, but the persisted shape is already the 4-layer shape so later phases (layers 1-3 + a combine pass) need no migration. One video output (out).',
   charlottesEchos: 'Destructive multi-head stereo delay. Pitch-shifted feedback with decay.',
   riotgirls:
     '4-voice drum machine. 3x DRUMMERGIRL + 1x Wavetable VCO/ADSR/VCA, per-voice equal-power pan, master QBRT filter, stereo out.',

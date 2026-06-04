@@ -66,6 +66,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   videoMixer: [{ selector: 'canvas' }],
   shapes: [{ selector: 'canvas' }],
   monoglitch: [{ selector: 'canvas' }],
+  // TOYBOX — swappable fragment-shader source. The card carries a live
+  // animated preview canvas (the layer-0 shader runs off the engine clock),
+  // so the canvas region is non-deterministic in the standard solo-spawn
+  // VRT; mask it and gate on the deterministic chrome (CONTENT dropdown +
+  // per-param faders + OUT handle). The real shader-render correctness is
+  // proven by the dedicated frozen VRT (vrt-toybox.spec.ts) which pins
+  // iTime via window.__toyboxFreeze and includes the canvas in the diff.
+  toybox: [{ selector: 'canvas' }],
   // RESHAPER (formerly RUTTETRA): coord-remap; canvas masked (flat content
   // when X/Y/Z unpatched).
   reshaper: [{ selector: 'canvas' }],
@@ -738,6 +746,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // thresholdly across platforms; linux baseline pending a `task vrt:update`
   // run on linux CI.
   'linux/nibbles',
+  // TOYBOX (swappable fragment-shader source, Phase 1): darwin baseline
+  // captured on this machine (live animated preview canvas masked via
+  // VRT_MODULE_MASKS — the layer-0 shader runs off the engine clock, so the
+  // canvas region is non-deterministic; the chrome around it diffs). The
+  // linux baseline is pending a `task vrt:update` run on linux CI; the
+  // shader pipeline is the same across platforms but the masked-canvas
+  // chrome PNG can shift sub-thresholdly under linux Chromium timing —
+  // darwin is the regression gate here. The dedicated frozen render proof
+  // (real per-shader content, distinct across the 4 entries) lives in
+  // e2e/vrt/vrt-toybox.spec.ts, also darwin-only by the same precedent.
+  'linux/toybox',
   // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
   // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
   // `__nibblesForceLength` test hook. Darwin baselines captured on this
