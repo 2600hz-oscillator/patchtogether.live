@@ -100,6 +100,7 @@
 //   luma / chroma (cv, linear, paramTarget=…): per-channel feedback colour CV.
 //   r / g / b (cv, linear, paramTarget=…): per-channel feedback gain CV (-1..2).
 //   lighten_cv / darken_cv (cv, linear, paramTarget=…): displaces mask amounts.
+//   pixelate (cv, linear, paramTarget=pixelate): displaces the PIXELATE amount.
 //   zoom / rotate / offsetx / offsety (cv, linear, paramTarget=…): affine-warp CV.
 //   mirror_x_gate / mirror_y_gate (cv, paramTarget=…Gate): rising edge toggles mirror.
 //
@@ -113,6 +114,7 @@
 //   luma / chroma (linear -1..2): feedback luma / chroma gain (negative inverts).
 //   r / g / b (linear -1..2): per-channel feedback gain.
 //   lighten / darken (linear 0..1): per-pixel scaling-mask amounts.
+//   pixelate (linear 0..1): reduce the SOURCE resolution (0 = identity, 1 = 1 cell).
 //   zoom (linear BACKDRAFT_ZOOM_MIN..MAX): per-pass zoom on the feedback tap.
 //   rotate (linear BACKDRAFT_ROTATE_MIN..MAX): per-pass rotation.
 //   offsetX / offsetY (linear BACKDRAFT_OFFSET_MIN..MAX): per-pass translation.
@@ -204,6 +206,13 @@ uniform float uOffY;        // UV translation y (per iteration)
 uniform float uMirrorX;
 uniform float uMirrorY;
 
+// PIXELATE — reduce the resolution of the SOURCE (in_a/in_b) sampling.
+// 0 = identity (no snapping, bit-exact), rising = blockier, 1 = the whole
+// frame collapses to a single 1×1 cell (one averaged/representative colour).
+// uRes is the source resolution in cells at pixelate=0 (so pixelate≈0 ≈ 1:1).
+uniform float uPixelate; // 0..1
+uniform float uRes;      // source resolution in cells (e.g. fbo width)
+
 const float MAX_EFFECT_SCALE = ${BACKDRAFT_MAX_EFFECT_SCALE.toFixed(1)};
 
 float luma(vec3 c) {
@@ -245,9 +254,22 @@ void main() {
   // composited frame (source + feedback), so the DISPLAYED content mirrors.
   vec2 uv = mirrorUv(vUv);
 
+  // PIXELATE — snap the SOURCE sampling UV to a coarse grid BEFORE sampling
+  // in_a/in_b, reducing the input's effective resolution. The
+  // "if (uPixelate > 0.0)" gate is LOAD-BEARING: at PIXELATE=0 we do NOT snap,
+  // so the source sampling is bit-identical to the original. As PIXELATE rises
+  // the grid coarsens from uRes cells down to 1 cell; at 1.0 the whole frame
+  // collapses to a single cell (one representative colour). Applied to the
+  // source UV only — the feedback tap + masks keep their own UVs.
+  vec2 srcUv = uv;
+  if (uPixelate > 0.0) {
+    float cells = max(1.0, mix(uRes, 1.0, clamp(uPixelate, 0.0, 1.0)));
+    srcUv = (floor(srcUv * cells) + 0.5) / cells; // snap to cell centres
+  }
+
   // Source = crossfade of the two inputs (zero where unpatched).
-  vec3 a = uHasA > 0.5 ? texture(uA, uv).rgb : vec3(0.0);
-  vec3 b = uHasB > 0.5 ? texture(uB, uv).rgb : vec3(0.0);
+  vec3 a = uHasA > 0.5 ? texture(uA, srcUv).rgb : vec3(0.0);
+  vec3 b = uHasB > 0.5 ? texture(uB, srcUv).rgb : vec3(0.0);
   vec3 source = mix(a, b, clamp(uMix, 0.0, 1.0));
 
   // Fed-back frame (delayed previous output), sampled through the spatial
@@ -292,6 +314,7 @@ export interface BackdraftParams {
   b: number;         // -1..+2
   lighten: number;   // 0..1
   darken: number;    // 0..1
+  pixelate: number;  // 0..1 — reduce source resolution (0 = identity, 1 = 1 cell)
   // Spatial feedback transform (per iteration). Defaults = identity.
   zoom: number;      // BACKDRAFT_ZOOM_MIN..MAX (1 = no tunnel)
   rotate: number;    // BACKDRAFT_ROTATE_MIN..MAX degrees (0 = no spiral)
@@ -321,6 +344,8 @@ const DEFAULTS: BackdraftParams = {
   b: 1.0,
   lighten: 1.0,
   darken: 1.0,
+  // PIXELATE neutral = 0 → no resolution reduction (identity source sampling).
+  pixelate: 0,
   // Spatial transform neutral = identity (no tunnel/spiral/trail) so the
   // out-of-box behaviour matches the original 1:1 feedback tap exactly.
   zoom: 1.0,
@@ -414,6 +439,36 @@ export function backdraftFeedbackUv(
   px = rx / z;
   py = ry / z;
   return { u: px + 0.5, v: py + 0.5 };
+}
+
+/**
+ * Pure PIXELATE snap — the exact CPU mirror of the shader's source-UV snap.
+ * Reduces the input's effective resolution by snapping a UV to a coarse grid:
+ *
+ *   pixelate <= 0      → returns the UV UNCHANGED (identity; the shader's
+ *                        `if (uPixelate > 0.0)` gate skips the snap, so the
+ *                        output is bit-identical to the un-pixelated path).
+ *   0 < pixelate < 1   → snaps to a grid of `cells` cell-centres, where
+ *                        cells = mix(res, 1, pixelate) (coarsens from `res`
+ *                        cells down toward 1 as pixelate rises).
+ *   pixelate >= 1      → cells = 1 → every UV maps to the single centre
+ *                        (0.5, 0.5): the whole frame is one cell / one colour.
+ *
+ * Exported so the unit tests + the shader share one definition of the grid.
+ */
+export function backdraftPixelateUv(
+  u: number,
+  v: number,
+  pixelate: number,
+  res: number,
+): { u: number; v: number } {
+  if (pixelate <= 0) return { u, v };
+  const p = Math.min(1, pixelate);
+  const cells = Math.max(1, res * (1 - p) + 1 * p); // mix(res, 1, p)
+  return {
+    u: (Math.floor(u * cells) + 0.5) / cells,
+    v: (Math.floor(v * cells) + 0.5) / cells,
+  };
 }
 
 /**
@@ -572,6 +627,7 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'b',           type: 'cv', paramTarget: 'b',        cvScale: { mode: 'linear' } },
     { id: 'lighten_cv',  type: 'cv', paramTarget: 'lighten',  cvScale: { mode: 'linear' } },
     { id: 'darken_cv',   type: 'cv', paramTarget: 'darken',   cvScale: { mode: 'linear' } },
+    { id: 'pixelate',    type: 'cv', paramTarget: 'pixelate', cvScale: { mode: 'linear' } },
     // Spatial feedback transform CV (linear; bipolar where signed).
     { id: 'zoom',        type: 'cv', paramTarget: 'zoom',     cvScale: { mode: 'linear' } },
     { id: 'rotate',      type: 'cv', paramTarget: 'rotate',   cvScale: { mode: 'linear' } },
@@ -597,6 +653,9 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'b',        label: 'B',        defaultValue: DEFAULTS.b,        min: -1, max: 2,                     curve: 'linear' },
     { id: 'lighten',  label: 'Lighten',  defaultValue: DEFAULTS.lighten,  min: 0,  max: 1,                     curve: 'linear' },
     { id: 'darken',   label: 'Darken',   defaultValue: DEFAULTS.darken,   min: 0,  max: 1,                     curve: 'linear' },
+    // PIXELATE — reduce the source resolution. 0 = identity (output unchanged),
+    // 1 = the whole frame collapses to one cell (one representative colour).
+    { id: 'pixelate', label: 'Pixelate', defaultValue: DEFAULTS.pixelate, min: 0,  max: 1,                     curve: 'linear' },
     // Spatial feedback transform — identity defaults (no tunnel/spiral/trail).
     { id: 'zoom',     label: 'Zoom',     defaultValue: DEFAULTS.zoom,     min: BACKDRAFT_ZOOM_MIN,   max: BACKDRAFT_ZOOM_MAX,   curve: 'linear' },
     { id: 'rotate',   label: 'Rotate',   defaultValue: DEFAULTS.rotate,   min: BACKDRAFT_ROTATE_MIN, max: BACKDRAFT_ROTATE_MAX, curve: 'linear' },
@@ -649,6 +708,8 @@ export const backdraftDef: VideoModuleDef = {
     const uOffY = u('uOffY');
     const uMirrorX = u('uMirrorX');
     const uMirrorY = u('uMirrorY');
+    const uPixelate = u('uPixelate');
+    const uRes = u('uRes');
 
     // Ring buffer of OUTPUT frames + a dedicated current-output FBO. We
     // render the composite into ring[head] (which IS this frame's output),
@@ -798,6 +859,12 @@ export const backdraftDef: VideoModuleDef = {
         // MIRROR kaleidoscope fold (applied to the FINAL output sampling UV).
         g.uniform1f(uMirrorX, params.mirrorX >= 0.5 ? 1.0 : 0.0);
         g.uniform1f(uMirrorY, params.mirrorY >= 0.5 ? 1.0 : 0.0);
+
+        // PIXELATE — clamp to [0,1]; the source resolution (in cells) is the
+        // FBO width so pixelate≈0 ≈ 1:1, and the shader's `if (uPixelate>0)`
+        // gate keeps pixelate=0 bit-identical. At 1 → 1 cell → flat colour.
+        g.uniform1f(uPixelate, Math.max(0, Math.min(1, params.pixelate)));
+        g.uniform1f(uRes, ctx.res.width);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);

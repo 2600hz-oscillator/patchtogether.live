@@ -97,8 +97,12 @@ export const installMidiMockScript = `
     onstatechange: null,
   };
 
+  // Track how many times requestMIDIAccess is called so tests can assert the
+  // on-demand contract (e.g. spawning a default-System COCOADELAY must NOT
+  // request access; only an explicit MIDI action / tempo read does).
+  let accessCalls = 0;
   // eslint-disable-next-line no-unused-vars
-  navigator.requestMIDIAccess = async (_opts) => access;
+  navigator.requestMIDIAccess = async (_opts) => { accessCalls++; return access; };
 
   function dispatch(bytes) {
     const data = new Uint8Array(bytes);
@@ -140,6 +144,10 @@ export const installMidiMockScript = `
       for (const h of inputHandlers.values()) if (typeof h === 'function') n++;
       return n;
     },
+    /** How many times the app has called navigator.requestMIDIAccess. The
+     *  on-demand-prompt regression asserts this stays 0 until a real MIDI
+     *  action (tempo read / MIDI-clock select / MIDI Learn / MIDI module). */
+    accessCallCount() { return accessCalls; },
   };
 })();
 `;
