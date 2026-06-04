@@ -61,7 +61,7 @@ test('right-click on a module opens the Docs entry, which opens the per-module d
 }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Load example' }).click();
+  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   // Right-click on the analog VCO card — its module type is 'analogVco', so

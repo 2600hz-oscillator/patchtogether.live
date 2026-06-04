@@ -14,7 +14,7 @@ test.describe('MiniMap', () => {
   test('renders and reflects the canvas viewport', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     const minimap = page.locator('.svelte-flow__minimap');
@@ -66,7 +66,7 @@ test.describe('Cable hover affordances', () => {
     // path is unreachable.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6, { timeout: 10_000 });
 
     const firstEdge = page.locator('.svelte-flow__edge').first();
@@ -91,7 +91,7 @@ test.describe('Cable hover affordances', () => {
     // Load example: 5 nodes, 6 edges. The Sequencer (vd-seq) only touches
     // 2 of the 6 edges (seq.pitch→vco and seq.gate→adsr), so the remaining
     // 4 should dim when we hover the Sequencer card.
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6, { timeout: 10_000 });
 
     const seqNode = page.locator('.svelte-flow__node-sequencer').first();
@@ -154,7 +154,7 @@ test.describe('Undo / redo', () => {
   test('Cmd-Z reverts a node deletion (right-click → Delete)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
 
@@ -176,7 +176,7 @@ test.describe('Undo / redo', () => {
   test('Cmd-Z is ignored while focus is in a text input (no hijack of native undo)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // Focus a sequencer note input — pressing Cmd-Z there should not pull
