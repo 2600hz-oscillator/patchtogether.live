@@ -211,6 +211,13 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
 //
 // Keep this list tight too (~10-15 entries).
 const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
+  // ── MANDELBULB: audio_out is silent UNLESS the SLICE toggle is ON (default
+  // OFF — the backwards-compat video-identity guarantee), and bringing it up
+  // needs a worklet load + an off-thread bulb-slice scan that exceeds the
+  // bare-spawn sweep budget. The PORT is still pinned by the handle-presence dim;
+  // the slice→waveform→audio path is covered by the mandelbulb factory unit
+  // tests (slice-on wiring posts a setWave) + the mandelbulb-osc worklet test.
+  'mandelbulb.audio_out': 'silent until the SLICE toggle is ON (default off); covered by mandelbulb.test.ts (factory slice-on wiring) + mandelbulb-osc.test.ts',
   // ── DOOM: video out is fine BUT WASM init + game tic exceeds sweep budget;
   // audio + gate outputs are gameplay/forcePulse-conditional. Whole-module
   // skip is wrong because the module legitimately renders a video frame on

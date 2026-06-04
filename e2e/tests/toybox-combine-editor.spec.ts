@@ -91,7 +91,11 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
       return lit > c.width * c.height * 0.1;
     },
     { time },
-    { timeout: 10_000 },
+    // CI's software WebGL renderer starves the main thread; producing a
+    // non-black frozen composite (multi-layer combine + OBJ/texmap passes)
+    // can take well past 10s under load. The test budget is 60s; give the
+    // render-readiness poll generous headroom so it isn't the bottleneck.
+    { timeout: 30_000 },
   );
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
   return page.evaluate(() => {
@@ -212,29 +216,40 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
     await clickEd(page, `toybox-inport-${outId}-in0`);
 
     // (a) PERSISTENCE: node.data.combine reflects the user's nodes + edges.
-    const persisted = await page.evaluate(
-      ({ opId, outId }) => {
-        const w = globalThis as unknown as PatchGlobal;
-        const c = w.__patch.nodes['tb']?.data?.combine as
-          | {
-              nodes?: Array<{ id: string; kind: string }>;
-              edges?: Array<{ from: string; to: string; toPort: string }>;
-            }
-          | undefined;
-        const edges = c?.edges ?? [];
-        return {
-          hasOp: (c?.nodes ?? []).some((n) => n.id === opId && n.kind === 'map'),
-          srcIn0: edges.some((e) => e.from === 'src0' && e.to === opId && e.toPort === 'in0'),
-          srcIn1: edges.some((e) => e.from === 'src1' && e.to === opId && e.toPort === 'in1'),
-          opToOut: edges.some((e) => e.from === opId && e.to === outId && e.toPort === 'in0'),
-        };
-      },
-      { opId, outId },
-    );
-    expect(persisted.hasOp, 'op node persisted').toBe(true);
-    expect(persisted.srcIn0, 'src0 → op.in0 persisted').toBe(true);
-    expect(persisted.srcIn1, 'src1 → op.in1 persisted').toBe(true);
-    expect(persisted.opToOut, 'op → output.in0 persisted').toBe(true);
+    // POLL rather than assert-once: the wiring clicks use noWaitAfter (load-
+    // bearing for CI speed), so the Yjs write from the final edge can lag the
+    // read by a few frames under the WebGL compositor's main-thread starvation.
+    // A single evaluate then intermittently sees the pre-write edge set
+    // ('op → output.in0 persisted' === false). Polling absorbs that lag.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            ({ opId, outId }) => {
+              const w = globalThis as unknown as PatchGlobal;
+              const c = w.__patch.nodes['tb']?.data?.combine as
+                | {
+                    nodes?: Array<{ id: string; kind: string }>;
+                    edges?: Array<{ from: string; to: string; toPort: string }>;
+                  }
+                | undefined;
+              const edges = c?.edges ?? [];
+              return {
+                hasOp: (c?.nodes ?? []).some((n) => n.id === opId && n.kind === 'map'),
+                srcIn0: edges.some((e) => e.from === 'src0' && e.to === opId && e.toPort === 'in0'),
+                srcIn1: edges.some((e) => e.from === 'src1' && e.to === opId && e.toPort === 'in1'),
+                opToOut: edges.some((e) => e.from === opId && e.to === outId && e.toPort === 'in0'),
+              };
+            },
+            { opId, outId },
+          ),
+        {
+          timeout: 15_000,
+          intervals: [200, 400, 800, 1500],
+          message: 'combine graph nodes + edges persisted to node.data.combine',
+        },
+      )
+      .toMatchObject({ hasOp: true, srcIn0: true, srcIn1: true, opToOut: true });
 
     // (b) OUTPUT CHANGED: the MAP op (layer0 × layer1) now feeds the output, so
     // the composite differs from the layer-0-only baseline.

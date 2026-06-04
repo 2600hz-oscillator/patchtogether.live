@@ -111,6 +111,15 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // (def shape) + videovarispeed-transport.test.ts (varispeed math) +
   // videovarispeed-output.spec.ts (wired-up output path).
   videovarispeed: 'needs uploaded video file to emit non-silence; covered by videovarispeed.test.ts + videovarispeed-transport.test.ts + videovarispeed-output.spec.ts',
+  // MANDELBULB — audio_out is a CONDITIONAL output: it emits a silent
+  // ConstantSourceNode until the user enables the SLICE toggle (default off),
+  // at which point the slice→waveform→audio path posts a real wavetable. The
+  // bare 800ms smoke never toggles the slice, so audio_out stays at zero —
+  // identical reasoning to the per-module-per-port.spec.ts exemption
+  // ('mandelbulb.audio_out'). Dedicated coverage: mandelbulb.test.ts (factory
+  // slice-on wiring posts setWave) + mandelbulb-osc.test.ts (worklet) +
+  // mandelbulb-slice.test.ts (slice→waveform extraction).
+  mandelbulb: 'audio_out is gated behind the SLICE toggle (silent until slice ON + driven); covered by mandelbulb.test.ts + mandelbulb-osc.test.ts + mandelbulb-slice.test.ts',
 };
 
 // Reference list of modules that can't spawn under bare spawnPatch —
