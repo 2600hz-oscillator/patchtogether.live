@@ -306,6 +306,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // BENTBOX — CRT-emulation OUTPUT. Frame feedback + per-line sync jitter
   // animated by uTime defeats a deterministic single-frame baseline.
   bentbox: 'animated CRT simulation (feedback + per-line time drift) defeats deterministic capture; unit + E2E provide coverage',
+  // B3NTB0X — circuit-level NTSC composite re-arch (encode->bend->decode->CRT).
+  // The composite carrier drifts per-frame (subcarrier drift + recovered sync
+  // offset) and the CRT pass carries frame persistence, so a single-frame
+  // baseline flaps. Same rationale as BENTBOX/ACIDWARP. Unit (encode->demod
+  // round-trip + nonlinearity bounds in b3ntb0x.test.ts) + E2E provide coverage.
+  b3ntb0x: 'animated NTSC composite simulation (per-line sync drift + frame persistence) defeats deterministic capture; unit (encode->demod round-trip) + E2E provide coverage',
   // ACIDWARP — 320×240 plasma with rotating palette + auto scene cycler.
   // Both rotation and scene-advance are time-driven; deterministic capture
   // is impossible without freezing the engine clock. Pattern/palette unit
