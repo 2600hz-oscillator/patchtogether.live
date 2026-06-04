@@ -16,6 +16,10 @@ import { spawnPatch } from './_helpers';
 
 test.describe('B3NTB0X — NTSC composite re-arch output', () => {
   test('spawns + canvas mounts + decodes a non-black frame', async ({ page }) => {
+    // WebGL video modules compile + warm slowly on CI's software renderer
+    // (SwiftShader) against the preview build — the 30s default is tight for a
+    // goto + networkidle + spawnPatch + 4-pass float pipeline warm-up.
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -78,6 +82,11 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
   });
 
   test('Sync Crush + Enhance visibly change the decoded output (the bend proof point)', async ({ page }) => {
+    // TWO full captures (each: goto + networkidle + spawnPatch + GL warm-up), so
+    // this needs ~2× the single-capture budget. On CI's SwiftShader software
+    // renderer that blows past the 30s default — it timed out (not an assertion
+    // failure) on the first CI run. 90s gives both captures headroom.
+    test.setTimeout(90_000);
     // Sample the same scene at rest vs heavily-bent. A real composite signal
     // path means high gain into the clip (Sync Crush) + HF peaking (Enhance)
     // mangle the demodulated frame — so the two captures must differ.
@@ -133,6 +142,7 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
   });
 
   test('CV-bending knobs mutate params via the patch store', async ({ page }) => {
+    test.setTimeout(60_000); // CI SwiftShader GL warm-up (see above)
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
