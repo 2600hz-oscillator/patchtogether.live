@@ -24,6 +24,7 @@
   import {
     DEFAULT_CONTENT_ID,
     DEFAULT_MODEL_ID,
+    LAYER_COUNT,
     MATCAP_STYLES,
     ensureToyboxCatalog,
     getContent,
@@ -214,6 +215,16 @@
     mat.matcap = parseInt((ev.target as HTMLSelectElement).value, 10) || 0;
   }
 
+  /** Pick the OBJ's SURFACE source: 'MATCAP' (-1) or another layer's rendered
+   *  output (a layer INDEX 0..LAYER_COUNT-1) UV-mapped onto the mesh. Scalar
+   *  in-place set on the existing material (Yjs-safe — never rebuild material). */
+  function onSurfaceChange(ev: Event) {
+    const mat = ensureMaterial();
+    if (!mat) return;
+    const v = parseInt((ev.target as HTMLSelectElement).value, 10);
+    mat.surfaceSource = Number.isFinite(v) && v >= 0 ? v : -1;
+  }
+
   /** Setter for one numeric OBJ-material field (transform/spin/tint). */
   const setMat = (key: keyof ToyboxObjMaterial) => (v: number) => {
     const mat = ensureMaterial();
@@ -224,6 +235,12 @@
   function matVal(key: keyof ToyboxObjMaterial): number {
     const v = currentMaterial[key];
     return typeof v === 'number' ? v : 0;
+  }
+
+  /** surfaceMix defaults to 1 (full texture) when unset — the engine's default. */
+  function surfaceMixVal(): number {
+    const v = currentMaterial.surfaceMix;
+    return typeof v === 'number' ? v : 1;
   }
 
   const setParam = (pid: string) => (v: number) => {
@@ -732,6 +749,27 @@
         {/each}
       </select>
     </div>
+    <!-- SURFACE source: MATCAP (default) or another layer's rendered output
+         UV-mapped onto the mesh. The card edits LAYER 0, so we offer LAYER 1..3
+         (a layer can't texture itself). Meaningful when those layers have
+         content (today seeded via presets / the live store). -->
+    <div class="content-row">
+      <label class="content-label" for={`toybox-surface-${id}`}>SURFACE</label>
+      <select
+        id={`toybox-surface-${id}`}
+        class="content-select"
+        data-testid="toybox-surface-select"
+        value={String(currentMaterial.surfaceSource ?? -1)}
+        onchange={onSurfaceChange}
+      >
+        <option value="-1">MATCAP</option>
+        {#each Array(LAYER_COUNT) as _, i (i)}
+          {#if i !== 0}
+            <option value={String(i)}>LAYER {i}</option>
+          {/if}
+        {/each}
+      </select>
+    </div>
 
     <div class="knob-grid" data-testid="toybox-controls">
       <Knob value={matVal('rotX')} min={-3.14159} max={3.14159} defaultValue={0.3}
@@ -750,6 +788,8 @@
         label="TINT G" curve="linear" onchange={setMat('tintG')} moduleId={id} paramId="tintG" />
       <Knob value={matVal('tintB')} min={0} max={1} defaultValue={1}
         label="TINT B" curve="linear" onchange={setMat('tintB')} moduleId={id} paramId="tintB" />
+      <Knob value={surfaceMixVal()} min={0} max={1} defaultValue={1}
+        label="SURF MIX" curve="linear" onchange={setMat('surfaceMix')} moduleId={id} paramId="surfaceMix" />
     </div>
   {:else if currentKind === 'gen' || currentKind === 'shader'}
     <div class="content-row">

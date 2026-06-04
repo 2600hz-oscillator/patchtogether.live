@@ -157,6 +157,40 @@
       }
     },
     {
+      "id": "textured-sphere",
+      "label": "TEXTURED SPHERE",
+      "note": "Texmap showcase: layer 0 = a sphere whose SURFACE is layer 1's worley field (material.surfaceSource = 1), UV-mapped onto the mesh instead of a flat matcap. Layer 1 renders the worley shader (also the OUTPUT base so the field shows around the textured sphere).",
+      "layers": [
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "sphere", "rotX": 0.3, "rotY": 0.6, "rotZ": 0.0,
+            "scale": 1.0, "spin": 0.0, "matcap": 0, "tintR": 1.0, "tintG": 1.0, "tintB": 1.0,
+            "surfaceSource": 1, "surfaceMix": 1.0
+          }
+        },
+        { "kind": "gen", "contentId": "worley-cells", "params": { "density": 6.0, "edge": 1.0, "speed": 0.6 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "fade1", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 1.0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "fade1", "toPort": "in0" },
+          { "id": "e1", "from": "src0", "to": "fade1", "toPort": "in1" },
+          { "id": "e2", "from": "fade1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {}
+    },
+    {
       "id": "reactor-field",
       "label": "REACTOR FIELD",
       "note": "Multi-stage gen + obj + shader: noise screen-mapped with worley, then a neon teapot luma-keyed over the field.",
