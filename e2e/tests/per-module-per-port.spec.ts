@@ -1134,7 +1134,11 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       // the same 90s heavy-mount headroom the outputs-emit test grants
       // foxy/atlantisCatalyst. (Inputs are also covered by the now-gated
       // behavioral lane, which proves all 6 CV inputs perturb mono_out.)
-      if (mod.type === 'mandelbulb') test.setTimeout(90_000);
+      // Generalized to ALL video-domain modules — every WebGL card (toybox,
+      // cube, hypercube, quadralogical, b3ntb0x, ruttetra, …) renders its
+      // handles slowly on CI's SwiftShader, so wiring cables to them needs the
+      // same heavy-mount headroom, not just mandelbulb.
+      if (mod.domain === 'video') test.setTimeout(90_000);
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
