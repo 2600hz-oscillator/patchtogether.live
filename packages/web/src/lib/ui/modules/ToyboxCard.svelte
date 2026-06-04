@@ -2,15 +2,22 @@
   // ToyboxCard — UI for the TOYBOX swappable fragment-shader source (P1).
   //
   // Card layout:
+  //   - LAYER selector: a row of LAYER_COUNT tabs (1-indexed labels, 0-indexed
+  //     state). Picks which layer (node.data.layers[activeLayer]) every control
+  //     below edits. A populated layer (kind !== 'off') shows a dot.
+  //   - LAYER-KIND dropdown: shader/gen (content) vs OBJ (3D mesh) vs OFF.
   //   - CONTENT dropdown: pick a shader/gen from the bundled bank. Writing
-  //     the selection mutates node.data.layers[0] (kind + contentId + resets
-  //     params to the content's manifest defaults), which rides Y.Doc out to
-  //     rack-mates and is read live by the factory.
+  //     the selection mutates node.data.layers[activeLayer] (kind + contentId +
+  //     resets params to the content's manifest defaults), which rides Y.Doc out
+  //     to rack-mates and is read live by the factory.
   //   - One fader per declared float-uniform param of the selected content
   //     (the manifest is the single source of truth). Faders write to
-  //     node.data.layers[0].params[<id>].
+  //     node.data.layers[activeLayer].params[<id>].
   //   - Live output preview (blitOutputToDrawingBuffer + drawImage from the
   //     video engine canvas — the MANDELBULB / ACIDWARP pattern).
+  //
+  // All per-layer mutations go through graph/toybox-layers.ts (Yjs in-place;
+  // never spread-reassign a live Y type — repo standard).
   //
   // VRT: exposes window.__toyboxFreeze(time) which pins the engine-side
   // iTime to a constant (so the shader render is pixel-stable) AND pauses
@@ -28,7 +35,6 @@
     MATCAP_STYLES,
     ensureToyboxCatalog,
     getContent,
-    getContentMeta,
     getModelMeta,
     getModelObj,
     listAllContent,
@@ -84,6 +90,16 @@
   } from '$lib/video/toybox-cv-routes';
   import { setCvRoute } from '$lib/graph/toybox-cv-routes';
   import { loadToyboxPreset } from '$lib/graph/toybox-presets';
+  import {
+    clampLayerIndex,
+    setLayerKind,
+    setLayerContent,
+    setLayerParam,
+    setLayerModel,
+    setLayerMatcap,
+    setLayerSurfaceSource,
+    setLayerMaterialField,
+  } from '$lib/graph/toybox-layers';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -118,126 +134,132 @@
     })();
   });
 
-  /** Layer 0 from the live store (the card edits layer 0; the combine DAG +
-   *  layers 1-3 are programmatic for now). */
-  function layer0(): ToyboxLayer | undefined {
-    const layers = (node?.data?.layers as ToyboxLayer[] | undefined);
-    return layers?.[0];
+  // ───────────────────── PER-LAYER EDITING (the LAYER selector) ─────────────────────
+  //
+  // The card edits ANY of the LAYER_COUNT layers; `activeLayer` (0-indexed) is
+  // the currently-selected one. Every per-layer control below targets
+  // node.data.layers[activeLayer] via the graph/toybox-layers.ts mutators
+  // (Yjs in-place). The combine DAG composites all 4 layers regardless.
+  let activeLayer = $state(0);
+
+  // Per-layer reads must reflect BOTH (a) a LOCAL mutation immediately after the
+  // control fires AND (b) an EXTERNAL/remote write (a rack-mate, a preset, or a
+  // test seeding via __ydoc.transact). Two codebase facts make that non-trivial:
+  //   1. The snapshot `node` prop keeps node.data as the LIVE Y proxy (a STABLE
+  //      reference across snapshots — only node.params is fresh-copied). So the
+  //      layers ARRAY ref never changes: a derived that only depends on it would
+  //      short-circuit (=== unchanged) and not re-run on a nested-scalar write.
+  //   2. The bus→xyflow re-render lags the local onchange by a tick, so reading
+  //      off `node` right after a local mutation sees the OLD value.
+  // Fix: every per-layer derived calls readLiveLayers(), which reads BOTH
+  // triggers so the derived re-runs on either:
+  //   - `node` (whose wrapper identity is fresh each snapshot) → external/remote
+  //     writes (rack-mate / preset / __ydoc.transact), and
+  //   - `layersRev` (each control bumps it after mutating) → the immediate
+  //     post-onchange read; we then read the LIVE patch proxy (not the lagging
+  //     snapshot) so the new value is visible the instant the bump lands.
+  // (Mirrors the combine editor bumping selectedNodeId after each mutate.)
+  let layersRev = $state(0);
+  function bumpRev(): void {
+    layersRev++;
   }
+
+  /** Read the live layers array, registering BOTH reactive triggers as deps:
+   *  `node` (a fresh wrapper each snapshot → external/remote writes) and
+   *  `layersRev` (bumped by each local control → the immediate post-onchange
+   *  read). Returns the LIVE patch proxy (reflects a local transact write the
+   *  instant the bump lands; the snapshot lags a tick), falling back to the
+   *  snapshot prop for the initial paint. Called from every per-layer derived so
+   *  each re-runs on either trigger — the proxy array's reference is stable, so a
+   *  derived depending only on a memoised `liveLayers` would short-circuit. */
+  function readLiveLayers(): ToyboxLayer[] | undefined {
+    void node; // dep: external/remote writes (snapshot pushes a new node wrapper)
+    void layersRev; // dep: local mutation (control bumps after the transact)
+    const live = patch.nodes[id]?.data?.layers as ToyboxLayer[] | undefined;
+    return live ?? (node?.data?.layers as ToyboxLayer[] | undefined);
+  }
+
+  /** Which layers are populated (kind !== 'off') — drives the tab dots. Read
+   *  every entry so adding content to any layer re-evaluates the badges. */
+  let layerPopulated = $derived.by<boolean[]>(() => {
+    const ls = readLiveLayers();
+    const out: boolean[] = [];
+    for (let i = 0; i < LAYER_COUNT; i++) {
+      const k = ls?.[i]?.kind;
+      out.push(!!k && k !== 'off');
+    }
+    return out;
+  });
+
   // The layer's kind selects which control cluster shows: shader/gen → content
   // dropdown + param faders; obj → model dropdown + transform/matcap controls.
-  let currentKind = $derived<ToyboxLayerKind>(layer0()?.kind ?? 'gen');
+  let currentKind = $derived.by<ToyboxLayerKind>(() => readLiveLayers()?.[activeLayer]?.kind ?? 'off');
   let isObj = $derived(currentKind === 'obj');
-  let currentContentId = $derived(layer0()?.contentId ?? DEFAULT_CONTENT_ID);
+  let currentContentId = $derived.by<string>(
+    () => readLiveLayers()?.[activeLayer]?.contentId ?? DEFAULT_CONTENT_ID,
+  );
   // Derive from the reactive `catalog` (not the module-level lookup) so the
   // faders appear as soon as the manifest loads, and re-derive when the
   // selected content changes.
   let currentMeta = $derived(catalog.find((c) => c.id === currentContentId));
 
   // ----- OBJ-layer derived state -----
-  let currentMaterial = $derived(layer0()?.material ?? makeDefaultObjMaterial());
+  let currentMaterial = $derived.by<ToyboxObjMaterial>(
+    () => readLiveLayers()?.[activeLayer]?.material ?? makeDefaultObjMaterial(),
+  );
   let currentModelId = $derived(currentMaterial.modelId ?? DEFAULT_MODEL_ID);
 
   /** Read a live param value for the selected content, defaulting to the
    *  manifest default when the layer hasn't set it. */
   function paramVal(pid: string): number {
-    const v = layer0()?.params?.[pid];
+    const v = readLiveLayers()?.[activeLayer]?.params?.[pid];
     if (typeof v === 'number') return v;
     return currentMeta?.params.find((p) => p.id === pid)?.default ?? 0;
   }
 
-  /** Ensure node.data.layers[0] exists + return it (mutable, store-backed). */
-  function ensureLayer0(): ToyboxLayer | null {
-    const t = patch.nodes[id];
-    if (!t) return null;
-    if (!t.data) t.data = {};
-    const d = t.data as { layers?: ToyboxLayer[] };
-    if (!Array.isArray(d.layers) || d.layers.length === 0) d.layers = makeDefaultLayers();
-    return d.layers[0]!;
-  }
-
-  /** Ensure layer 0 has a material object + return it (mutable). */
-  function ensureMaterial(): ToyboxObjMaterial | null {
-    const l0 = ensureLayer0();
-    if (!l0) return null;
-    if (!l0.material) l0.material = makeDefaultObjMaterial();
-    return l0.material;
+  /** Switch the active layer index (clamped to a valid index). */
+  function selectLayer(i: number): void {
+    activeLayer = clampLayerIndex(i);
   }
 
   // The layer-KIND selector: 'gen'/'shader' route through content; 'obj' is the
-  // 3D mesh layer; 'off' renders nothing.
+  // 3D mesh layer; 'off' renders nothing. Seeds the kind's default content for
+  // an empty layer (toybox-layers.setLayerKind mirrors the original init).
   function onKindChange(ev: Event) {
-    const sel = (ev.target as HTMLSelectElement).value as ToyboxLayerKind;
-    const l0 = ensureLayer0();
-    if (!l0) return;
-    l0.kind = sel;
-    if (sel === 'obj') {
-      // Seed a material (+ default model + its preferred matcap) if missing.
-      if (!l0.material) {
-        const mat = makeDefaultObjMaterial(DEFAULT_MODEL_ID);
-        const mm = getModelMeta(DEFAULT_MODEL_ID);
-        if (mm && typeof mm.matcap === 'number') mat.matcap = mm.matcap;
-        l0.material = mat;
-      }
-    } else if (sel === 'gen' || sel === 'shader') {
-      // Make sure there's a content id to render.
-      if (!l0.contentId) {
-        const meta = getContentMeta(DEFAULT_CONTENT_ID);
-        l0.contentId = DEFAULT_CONTENT_ID;
-        l0.kind = meta?.family === 'GEN' ? 'gen' : 'shader';
-        const params: Record<string, number> = {};
-        if (meta) for (const p of meta.params) params[p.id] = p.default;
-        l0.params = params;
-      }
-    }
+    setLayerKind(id, activeLayer, (ev.target as HTMLSelectElement).value as ToyboxLayerKind);
+    bumpRev();
   }
 
   function onContentChange(ev: Event) {
     const sel = (ev.target as HTMLSelectElement).value;
     if (!sel) return;
-    const meta = getContentMeta(sel);
-    if (!meta) return;
-    const l0 = ensureLayer0();
-    if (!l0) return;
-    l0.kind = meta.family === 'GEN' ? 'gen' : 'shader';
-    l0.contentId = sel;
-    // Reset params to the new content's defaults so faders start sensibly.
-    const params: Record<string, number> = {};
-    for (const p of meta.params) params[p.id] = p.default;
-    l0.params = params;
+    setLayerContent(id, activeLayer, sel);
+    bumpRev();
   }
 
   function onModelChange(ev: Event) {
     const sel = (ev.target as HTMLSelectElement).value;
     if (!sel) return;
-    const mat = ensureMaterial();
-    if (!mat) return;
-    mat.modelId = sel;
-    const mm = getModelMeta(sel);
-    if (mm && typeof mm.matcap === 'number') mat.matcap = mm.matcap;
+    setLayerModel(id, activeLayer, sel);
+    bumpRev();
   }
 
   function onMatcapChange(ev: Event) {
-    const mat = ensureMaterial();
-    if (!mat) return;
-    mat.matcap = parseInt((ev.target as HTMLSelectElement).value, 10) || 0;
+    setLayerMatcap(id, activeLayer, parseInt((ev.target as HTMLSelectElement).value, 10) || 0);
+    bumpRev();
   }
 
   /** Pick the OBJ's SURFACE source: 'MATCAP' (-1) or another layer's rendered
-   *  output (a layer INDEX 0..LAYER_COUNT-1) UV-mapped onto the mesh. Scalar
-   *  in-place set on the existing material (Yjs-safe — never rebuild material). */
+   *  output (a layer INDEX 0..LAYER_COUNT-1) UV-mapped onto the mesh. */
   function onSurfaceChange(ev: Event) {
-    const mat = ensureMaterial();
-    if (!mat) return;
-    const v = parseInt((ev.target as HTMLSelectElement).value, 10);
-    mat.surfaceSource = Number.isFinite(v) && v >= 0 ? v : -1;
+    setLayerSurfaceSource(id, activeLayer, parseInt((ev.target as HTMLSelectElement).value, 10));
+    bumpRev();
   }
 
   /** Setter for one numeric OBJ-material field (transform/spin/tint). */
   const setMat = (key: keyof ToyboxObjMaterial) => (v: number) => {
-    const mat = ensureMaterial();
-    if (!mat) return;
-    (mat as unknown as Record<string, number>)[key as string] = v;
+    setLayerMaterialField(id, activeLayer, key, v);
+    bumpRev();
   };
 
   function matVal(key: keyof ToyboxObjMaterial): number {
@@ -252,10 +274,8 @@
   }
 
   const setParam = (pid: string) => (v: number) => {
-    const l0 = ensureLayer0();
-    if (!l0) return;
-    if (!l0.params) l0.params = {};
-    l0.params[pid] = v;
+    setLayerParam(id, activeLayer, pid, v);
+    bumpRev();
   };
 
   // ───────────────────── COMBINE GRAPH EDITOR (Phase 4) ─────────────────────
@@ -871,9 +891,32 @@
     </div>
   {/if}
 
-  <!-- LAYER KIND selector: shader/gen (content) vs OBJ (3D mesh). -->
+  <!-- LAYER-INDEX selector: a tab per layer (1-indexed labels, 0-indexed state).
+       Picks which of node.data.layers[] every control below edits. A populated
+       layer (kind !== 'off') shows a dot so empties are visible at a glance. -->
+  <div class="layer-tabs" data-testid="toybox-layer-tabs" role="tablist" aria-label="layer selector">
+    {#each Array(LAYER_COUNT) as _, i (i)}
+      <button
+        type="button"
+        class="layer-tab {activeLayer === i ? 'active' : ''}"
+        data-testid={`toybox-layer-tab-${i}`}
+        data-active={activeLayer === i}
+        data-populated={layerPopulated[i]}
+        role="tab"
+        aria-selected={activeLayer === i}
+        title={`LAYER ${i + 1}${layerPopulated[i] ? ' (populated)' : ' (empty)'}`}
+        onclick={() => selectLayer(i)}
+      >
+        L{i + 1}
+        {#if layerPopulated[i]}<span class="layer-dot" data-testid={`toybox-layer-dot-${i}`}></span>{/if}
+      </button>
+    {/each}
+  </div>
+
+  <!-- LAYER KIND selector: shader/gen (content) vs OBJ (3D mesh) vs OFF. Edits
+       the kind of the ACTIVE layer (the tab selected above). -->
   <div class="content-row">
-    <label class="content-label" for={`toybox-kind-${id}`}>LAYER</label>
+    <label class="content-label" for={`toybox-kind-${id}`}>KIND</label>
     <select
       id={`toybox-kind-${id}`}
       class="content-select"
@@ -886,6 +929,14 @@
       <option value="off">OFF</option>
     </select>
   </div>
+
+  {#if currentKind === 'off'}
+    <!-- Empty layer: prompt the user to pick a kind (choosing one initialises
+         the layer's content via setLayerKind). -->
+    <div class="layer-empty" data-testid="toybox-layer-empty">
+      LAYER {activeLayer + 1} is empty — pick a KIND above
+    </div>
+  {/if}
 
   {#if isObj}
     <!-- OBJ layer: model dropdown + matcap + transform/spin/tint controls. -->
@@ -918,9 +969,10 @@
       </select>
     </div>
     <!-- SURFACE source: MATCAP (default) or another layer's rendered output
-         UV-mapped onto the mesh. The card edits LAYER 0, so we offer LAYER 1..3
-         (a layer can't texture itself). Meaningful when those layers have
-         content (today seeded via presets / the live store). -->
+         UV-mapped onto the mesh. We offer every layer EXCEPT the active one (a
+         layer can't texture itself — the engine guards self/cycle anyway). The
+         option VALUE is the 0-indexed layer index; the LABEL is 1-indexed to
+         match the LAYER tabs. -->
     <div class="content-row">
       <label class="content-label" for={`toybox-surface-${id}`}>SURFACE</label>
       <select
@@ -932,8 +984,8 @@
       >
         <option value="-1">MATCAP</option>
         {#each Array(LAYER_COUNT) as _, i (i)}
-          {#if i !== 0}
-            <option value={String(i)}>LAYER {i}</option>
+          {#if i !== activeLayer}
+            <option value={String(i)}>LAYER {i + 1}</option>
           {/if}
         {/each}
       </select>
@@ -1302,6 +1354,54 @@
     padding: 3px 4px;
   }
   .content-select:hover { border-color: var(--accent-dim); }
+
+  /* ───────── LAYER-INDEX selector (tabs) ───────── */
+  .layer-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 14px;
+    margin-bottom: 8px;
+  }
+  .layer-tab {
+    position: relative;
+    flex: 1;
+    background: var(--module-bg);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.04em;
+    padding: 3px 0;
+    cursor: pointer;
+  }
+  .layer-tab:hover { border-color: var(--accent-dim); color: var(--text); }
+  .layer-tab.active {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-glow, rgba(255, 255, 255, 0.04));
+  }
+  /* Populated badge: a small dot in the top-right of the tab. */
+  .layer-dot {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--cable-video);
+  }
+  .layer-empty {
+    margin: 0 14px 8px;
+    padding: 6px 8px;
+    border: 1px dashed var(--border);
+    border-radius: 3px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.58rem;
+    color: var(--text-dim);
+    text-align: center;
+  }
+
   .knob-grid {
     margin-top: 4px;
     padding: 0 14px;

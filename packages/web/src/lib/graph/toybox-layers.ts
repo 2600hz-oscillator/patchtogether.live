@@ -1,0 +1,185 @@
+// packages/web/src/lib/graph/toybox-layers.ts
+//
+// TOYBOX per-layer editing — Yjs mutators for node.data.layers[<index>].
+//
+// The card edits ANY of the LAYER_COUNT layers (the layer-INDEX selector picks
+// which). Each layer's kind / contentId / params / material live in
+// node.data.layers[i]; the video factory reads them live per-frame, and the
+// writes ride the Y.Doc out to rack-mates.
+//
+// CRITICAL (the in-place trap — same as toybox-combine.ts / toybox-presets.ts /
+// [[yjs-save-load-real-ydoc]]): once node.data.layers has synced, its entries
+// are live Y.Maps and `layers[i].params` / `.material` are live Y types. We must
+// NEVER spread-and-reassign a live Y type into a fresh array/object (Yjs throws
+// "Type already integrated"). So every mutator here:
+//   - assigns SCALAR fields directly (layer.kind = x, material.matcap = n), and
+//   - REPLACES a sub-object's contents by clearing-in-place then re-setting keys
+//     (params), pushing only plain objects when a fresh layer/material is seeded.
+//
+// All writes go through the patch proxy inside ONE LOCAL_ORIGIN transaction.
+// The pure-ish ensureLayer* helpers below are also driveable without a txn for
+// unit tests (the patch proxy still routes them through the Y.Doc).
+
+import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+import {
+  DEFAULT_CONTENT_ID,
+  DEFAULT_MODEL_ID,
+  LAYER_COUNT,
+  getContentMeta,
+  getModelMeta,
+  makeDefaultLayers,
+  makeDefaultObjMaterial,
+  type ToyboxLayer,
+  type ToyboxLayerKind,
+  type ToyboxObjMaterial,
+} from '$lib/video/toybox-content';
+
+/** Clamp an arbitrary value to a valid layer index (0..LAYER_COUNT-1). */
+export function clampLayerIndex(i: unknown): number {
+  const n = typeof i === 'number' && Number.isFinite(i) ? Math.floor(i) : 0;
+  return Math.min(LAYER_COUNT - 1, Math.max(0, n));
+}
+
+/**
+ * Ensure node.data.layers exists (seed a fully-defaulted array in place if
+ * absent/empty), then ensure the entry at `index` exists, and return it. The
+ * returned layer is the LIVE, store-backed object (mutate its fields directly).
+ * Returns null if the node doesn't exist.
+ */
+export function ensureLayer(nodeId: string, index: number): ToyboxLayer | null {
+  const idx = clampLayerIndex(index);
+  const target = patch.nodes[nodeId];
+  if (!target) return null;
+  if (!target.data) (target as { data: Record<string, unknown> }).data = {};
+  const d = target.data as { layers?: ToyboxLayer[] };
+  if (!Array.isArray(d.layers) || d.layers.length === 0) d.layers = makeDefaultLayers();
+  // Pad to LAYER_COUNT in place (push plain 'off' layers) so any index resolves.
+  while (d.layers.length < LAYER_COUNT) {
+    d.layers.push({ kind: 'off', contentId: null, params: {} });
+  }
+  return d.layers[idx]!;
+}
+
+/** Ensure layer `index` has a material object + return it (live, mutable). */
+export function ensureMaterial(nodeId: string, index: number): ToyboxObjMaterial | null {
+  const layer = ensureLayer(nodeId, index);
+  if (!layer) return null;
+  if (!layer.material) layer.material = makeDefaultObjMaterial();
+  return layer.material;
+}
+
+/**
+ * Set a layer's KIND. Seeds the kind's default content in place when switching
+ * an empty/uninitialised layer INTO a renderable kind (mirrors the card's
+ * original layer-0 init):
+ *   - 'obj' → seed a material (+ default model + its preferred matcap) if absent.
+ *   - 'gen' | 'shader' → seed a contentId + param defaults if absent.
+ *   - 'off' / 'video' → just set the kind.
+ */
+export function setLayerKind(nodeId: string, index: number, kind: ToyboxLayerKind): void {
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    layer.kind = kind;
+    if (kind === 'obj') {
+      if (!layer.material) {
+        const mat = makeDefaultObjMaterial(DEFAULT_MODEL_ID);
+        const mm = getModelMeta(DEFAULT_MODEL_ID);
+        if (mm && typeof mm.matcap === 'number') mat.matcap = mm.matcap;
+        layer.material = mat;
+      }
+    } else if (kind === 'gen' || kind === 'shader') {
+      if (!layer.contentId) {
+        const meta = getContentMeta(DEFAULT_CONTENT_ID);
+        layer.contentId = DEFAULT_CONTENT_ID;
+        layer.kind = meta?.family === 'GEN' ? 'gen' : 'shader';
+        setParamsInPlace(layer, meta ? Object.fromEntries(meta.params.map((p) => [p.id, p.default])) : {});
+      }
+    }
+  }, LOCAL_ORIGIN);
+}
+
+/**
+ * Select a fragment-shader/gen content for a layer. Resolves the kind from the
+ * content family + resets params to the content's manifest defaults (so faders
+ * start sensibly), all IN PLACE on the live layer.
+ */
+export function setLayerContent(nodeId: string, index: number, contentId: string): void {
+  const meta = getContentMeta(contentId);
+  if (!meta) return;
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    layer.kind = meta.family === 'GEN' ? 'gen' : 'shader';
+    layer.contentId = contentId;
+    setParamsInPlace(layer, Object.fromEntries(meta.params.map((p) => [p.id, p.default])));
+  }, LOCAL_ORIGIN);
+}
+
+/** Set one float param on a layer (the content faders). In place on .params. */
+export function setLayerParam(nodeId: string, index: number, pid: string, value: number): void {
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    if (!layer.params) layer.params = {};
+    layer.params[pid] = value;
+  }, LOCAL_ORIGIN);
+}
+
+/** Pick the OBJ model for a layer; also adopt the model's preferred matcap. */
+export function setLayerModel(nodeId: string, index: number, modelId: string): void {
+  ydoc.transact(() => {
+    const mat = ensureMaterial(nodeId, index);
+    if (!mat) return;
+    mat.modelId = modelId;
+    const mm = getModelMeta(modelId);
+    if (mm && typeof mm.matcap === 'number') mat.matcap = mm.matcap;
+  }, LOCAL_ORIGIN);
+}
+
+/** Set the OBJ matcap style index for a layer. */
+export function setLayerMatcap(nodeId: string, index: number, matcap: number): void {
+  ydoc.transact(() => {
+    const mat = ensureMaterial(nodeId, index);
+    if (!mat) return;
+    mat.matcap = Number.isFinite(matcap) ? matcap : 0;
+  }, LOCAL_ORIGIN);
+}
+
+/**
+ * Pick the OBJ SURFACE source: -1 (MATCAP) or a layer INDEX (0..LAYER_COUNT-1)
+ * whose rendered output UV-maps onto the mesh. Scalar in-place set.
+ */
+export function setLayerSurfaceSource(nodeId: string, index: number, source: number): void {
+  ydoc.transact(() => {
+    const mat = ensureMaterial(nodeId, index);
+    if (!mat) return;
+    mat.surfaceSource = Number.isFinite(source) && source >= 0 ? source : -1;
+  }, LOCAL_ORIGIN);
+}
+
+/** Set one numeric OBJ-material field (transform/spin/tint/surfaceMix). */
+export function setLayerMaterialField(
+  nodeId: string,
+  index: number,
+  key: keyof ToyboxObjMaterial,
+  value: number,
+): void {
+  ydoc.transact(() => {
+    const mat = ensureMaterial(nodeId, index);
+    if (!mat) return;
+    (mat as unknown as Record<string, number>)[key as string] = value;
+  }, LOCAL_ORIGIN);
+}
+
+/** Replace a layer's params map contents IN PLACE (clear keys, then set fresh).
+ *  Never reassigns the .params object if it already exists (a live Y.Map). */
+function setParamsInPlace(layer: ToyboxLayer, params: Record<string, number>): void {
+  if (!layer.params || typeof layer.params !== 'object') {
+    layer.params = { ...params };
+    return;
+  }
+  const cur = layer.params;
+  for (const k of Object.keys(cur)) delete cur[k];
+  for (const [k, v] of Object.entries(params)) cur[k] = v;
+}
