@@ -52,58 +52,32 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { VIDEO_RES } from '$lib/video/engine';
+// SINGLE SOURCE OF TRUTH for the Mandelbulb DE. The iteration math + bailout
+// were moved to the DSP lib (packages/dsp/src/lib/mandelbulb-de.ts) so the
+// bulb-slice readout + the mandelbulb-osc worklet share the EXACT same function
+// the GLSL shader below mirrors. Imported via a RELATIVE path (not the
+// `@patchtogether.live/dsp/src/...` alias) for the same reason cube.ts /
+// bluebox.ts do: worktrees may not symlink the workspace package under
+// node_modules, and the TS path-alias rules don't reliably resolve TS source
+// out of node_modules/@patchtogether.live/dsp/src. RE-EXPORTED below so
+// mandelbulb-math.test.ts's `./mandelbulb` import path still resolves them.
+import {
+  jsDistanceEstimate,
+  MANDELBULB_BAILOUT,
+} from '../../../../../dsp/src/lib/mandelbulb-de';
+// Audio (slice → waveform) lib + worklet — used only when the `slice` toggle is
+// ON. The DE move above keeps these and the GLSL shader algebra in lock-step.
+import {
+  mbSampleSlice,
+  type MbSliceParams,
+} from '../../../../../dsp/src/lib/mandelbulb-slice';
+import mandelbulbOscWorkletUrl from '@patchtogether.live/dsp/dist/mandelbulb-osc.js?url';
 
-// ----------------------------------------------------------------------
-// Pure-TS reference of the Mandelbulb distance estimate (DE).
-//
-// Identical algebra to the GLSL `mandelbulbDE` below — the only port is
-// syntax (Math.* vs GLSL builtins). Unit-tested so the iteration math is
-// verified outside GL. Returns the signed-distance estimate from `p` to
-// the Mandelbulb surface for the given power + iteration budget.
-// ----------------------------------------------------------------------
-
-export const MANDELBULB_BAILOUT = 2.5;
-
-/**
- * Mandelbulb distance estimate at point p=(px,py,pz).
- *   - power:   the fractal exponent (8 = the classic Mandelbulb).
- *   - iters:   fractal iteration budget (~20).
- * Standard DE: 0.5 * log(r) * r / dr.
- */
-export function jsDistanceEstimate(
-  px: number,
-  py: number,
-  pz: number,
-  power: number,
-  iters: number,
-): number {
-  let zx = px;
-  let zy = py;
-  let zz = pz;
-  let dr = 1.0;
-  let r = 0.0;
-  for (let i = 0; i < iters; i++) {
-    r = Math.sqrt(zx * zx + zy * zy + zz * zz);
-    if (r > MANDELBULB_BAILOUT) break;
-    // Convert to polar.
-    let theta = Math.acos(zz / r);
-    let phi = Math.atan2(zy, zx);
-    dr = Math.pow(r, power - 1.0) * power * dr + 1.0;
-    // Scale + rotate the point.
-    const zr = Math.pow(r, power);
-    theta *= power;
-    phi *= power;
-    // Convert back to cartesian + translate by the original point.
-    const sinTheta = Math.sin(theta);
-    zx = zr * sinTheta * Math.cos(phi) + px;
-    zy = zr * sinTheta * Math.sin(phi) + py;
-    zz = zr * Math.cos(theta) + pz;
-  }
-  // 0.5 * log(r) * r / dr. Guard r=0 (a point exactly at origin never
-  // escapes; log(0) = -inf) by clamping r to a tiny epsilon.
-  const rr = Math.max(r, 1e-12);
-  return (0.5 * Math.log(rr) * rr) / dr;
-}
+// Re-export the DE reference + bailout so existing import paths
+// (mandelbulb-math.test.ts → './mandelbulb') keep resolving them — the DE is
+// now the DSP lib's single definition, just surfaced here for the GLSL-gen,
+// the unit suite, and the camera-zoom helper that sit beside it.
+export { jsDistanceEstimate, MANDELBULB_BAILOUT };
 
 /**
  * Map the camera-zoom knob (0.3..3) to the eye distance from the bulb.
@@ -281,6 +255,13 @@ interface MandelbulbParams {
   hue: number;        // 0..1     — palette shift
   autospin: number;   // 0/1      — auto-rotate the yaw (view-only, discrete)
   screen_on: number;  // 0/1      — SCRN perf gate (view-only, discrete)
+  // ── slice → waveform → audio (default OFF = byte-identical-to-today video) ──
+  slice: number;      // 0/1      — SLICE toggle: OFF = video-only (no audio node);
+                      //            ON = overlay the fixed-size slice + emit audio_out
+  slice_y: number;    // fractal-space plane offset along its rotated normal
+  slice_rx: number;   // -π..π    — slice plane Euler pitch
+  slice_ry: number;   // -π..π    — slice plane Euler yaw
+  slice_rz: number;   // -π..π    — slice plane Euler roll
 }
 
 const DEFAULTS: MandelbulbParams = {
@@ -292,7 +273,19 @@ const DEFAULTS: MandelbulbParams = {
   hue: 0.55,
   autospin: 1,
   screen_on: 1,
+  // SLICE defaults OFF so spawning a MANDELBULB is byte-identical to today:
+  // video-only, NO audio node created (see the factory's slice gate).
+  slice: 0,
+  slice_y: 0,
+  slice_rx: 0,
+  slice_ry: 0,
+  slice_rz: 0,
 };
+
+/** Fractal-space half-extent of the slice_y knob's travel. The slice plane
+ *  offset along its normal sweeps [-MB_SLICE_Y_RANGE, +MB_SLICE_Y_RANGE] so the
+ *  plane can scan all the way through the bulb (which lives in |p| < ~1.2). */
+export const MB_SLICE_Y_RANGE = 1.2;
 
 export const MANDELBULB_DEFAULTS: Readonly<MandelbulbParams> = DEFAULTS;
 
@@ -360,10 +353,24 @@ export const mandelbulbDef: VideoModuleDef = {
     { id: 'power_cv',    type: 'cv', paramTarget: 'power',    cvScale: { mode: 'linear' } },
     { id: 'detail_cv',   type: 'cv', paramTarget: 'detail',   cvScale: { mode: 'linear' } },
     { id: 'hue_cv',      type: 'cv', paramTarget: 'hue',      cvScale: { mode: 'linear' } },
+    // SLICE spatial controls — knob + CV each (same convention as the camera
+    // controls above). These drive the bulb-slice readout, NOT the camera, so a
+    // ±1 CV sweeps the full plane offset / rotation range.
+    { id: 'slice_y_cv',  type: 'cv', paramTarget: 'slice_y',  cvScale: { mode: 'linear' } },
+    { id: 'slice_rx_cv', type: 'cv', paramTarget: 'slice_rx', cvScale: { mode: 'linear' } },
+    { id: 'slice_ry_cv', type: 'cv', paramTarget: 'slice_ry', cvScale: { mode: 'linear' } },
+    { id: 'slice_rz_cv', type: 'cv', paramTarget: 'slice_rz', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     // Mono-video cross-domain out (like CUBE.video_out / ACIDWARP.out).
     { id: 'video_out', type: 'mono-video' },
+    // Mono AUDIO cross-domain out — the bulb-slice readout played as a wavetable
+    // oscillator. The PORT is ALWAYS declared (so the handle-presence sweep pins
+    // it), but it only carries SOUND when the `slice` toggle is ON: with slice
+    // OFF the factory never creates the audio node, so audioSources has no entry
+    // for this port and it stays silent (video output is byte-identical to
+    // today). Cross-domain via VideoNodeHandle.audioSources (the DOOM pattern).
+    { id: 'audio_out', type: 'audio' },
   ],
   params: [
     { id: 'zoom',      label: 'Zoom',  defaultValue: DEFAULTS.zoom,      min: 0.3,            max: 3,             curve: 'log' },
@@ -374,6 +381,14 @@ export const mandelbulbDef: VideoModuleDef = {
     { id: 'hue',       label: 'Hue',   defaultValue: DEFAULTS.hue,       min: 0,              max: 1,             curve: 'linear' },
     { id: 'autospin',  label: 'Spin',  defaultValue: DEFAULTS.autospin,  min: 0,              max: 1,             curve: 'discrete' },
     { id: 'screen_on', label: 'Screen',defaultValue: DEFAULTS.screen_on, min: 0,              max: 1,             curve: 'discrete' },
+    // SLICE toggle (discrete, default OFF) + the four slice-plane controls
+    // (knob + CV each). slice_y travels ±MB_SLICE_Y_RANGE in FRACTAL units so
+    // the plane scans through the whole bulb; rotations are the standard ±π.
+    { id: 'slice',     label: 'Slice', defaultValue: DEFAULTS.slice,     min: 0,              max: 1,             curve: 'discrete' },
+    { id: 'slice_y',   label: 'Y',     defaultValue: DEFAULTS.slice_y,   min: -MB_SLICE_Y_RANGE, max: MB_SLICE_Y_RANGE, curve: 'linear' },
+    { id: 'slice_rx',  label: 'S Rot X',defaultValue: DEFAULTS.slice_rx, min: -Math.PI,       max: Math.PI,       curve: 'linear' },
+    { id: 'slice_ry',  label: 'S Rot Y',defaultValue: DEFAULTS.slice_ry, min: -Math.PI,       max: Math.PI,       curve: 'linear' },
+    { id: 'slice_rz',  label: 'S Rot Z',defaultValue: DEFAULTS.slice_rz, min: -Math.PI,       max: Math.PI,       curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -443,6 +458,107 @@ export const mandelbulbDef: VideoModuleDef = {
     let lastTime = -1;
     let lastSceneSig = '';
     let renderedOnce = false;
+
+    // ──────────────────────────────────────────────────────────────────
+    // SLICE → WAVEFORM → AUDIO (default OFF; the DOOM audioSources bridge).
+    //
+    // When the `slice` toggle is ON we run the bulb-slice readout
+    // (mbSampleSlice — fixed-size, camera-independent) on the MAIN thread
+    // whenever a slice-shaping param changes (recompute-on-change, NOT per
+    // audio sample — the bulb DE is expensive), post the 256-sample waveform to
+    // the mandelbulb-osc worklet, and expose that worklet as the `audio_out`
+    // audio source. When slice is OFF we never create the audio node at all, so
+    // the video render path is byte-identical to today (the backwards-compat
+    // guarantee). The chain is set up LAZILY the first time slice goes ON.
+    //
+    // audioSources is published only AFTER the (async) worklet module loads;
+    // notifyAudioSourcesChanged re-resolves any audio bridge that was wired
+    // before the node existed (the same swap-and-notify dance VIDEOBOX uses).
+    // ──────────────────────────────────────────────────────────────────
+    const audioSources = new Map<string, { node: AudioNode; output: number }>();
+    let oscNode: AudioWorkletNode | null = null;
+    let oscGain: GainNode | null = null;          // published in audioSources (stable identity)
+    let oscSilence: ConstantSourceNode | null = null; // keeps the worklet's process() alive
+    let oscLoadStarted = false;
+    let lastSliceSig = '';
+
+    /** Read the live slice-shaping params (knob value here; CV is summed into the
+     *  AudioParam in CUBE, but MANDELBULB's slice math runs on the main thread,
+     *  so we read the engine-resolved param via setParam-tracked `params`). */
+    function recomputeSlice(force = false): void {
+      if (!oscNode) return;
+      const sp: MbSliceParams = {
+        sliceY: params.slice_y,
+        rx: params.slice_rx,
+        ry: params.slice_ry,
+        rz: params.slice_rz,
+        power: Math.max(1, Math.min(12, params.power)),
+        iters: Math.max(4, Math.min(30, Math.round(params.detail))),
+      };
+      // Quantize so float jitter doesn't churn the (expensive) scan every call.
+      const q = (v: number) => Math.round(v * 1000);
+      const sig = `${q(sp.sliceY)}|${q(sp.rx)}|${q(sp.ry)}|${q(sp.rz)}|${q(sp.power)}|${sp.iters}`;
+      if (!force && sig === lastSliceSig) return;
+      lastSliceSig = sig;
+      const wave = mbSampleSlice(sp);
+      try {
+        oscNode.port.postMessage({ type: 'setWave', wave }, [wave.buffer]);
+      } catch {
+        // Transfer can fail in some shims — fall back to a structured-clone post.
+        try { oscNode.port.postMessage({ type: 'setWave', wave: mbSampleSlice(sp) }); } catch { /* */ }
+      }
+    }
+
+    /** Lazily stand up the audio chain the first time slice is ON. No-op if
+     *  there's no AudioContext (jsdom / video engine running standalone) or if
+     *  it has already been set up. */
+    function ensureAudio(): void {
+      const ac = ctx.audioCtx;
+      if (!ac || oscLoadStarted) return;
+      oscLoadStarted = true;
+      // Persistent GainNode published up front (stable identity so a bridge
+      // wired before the worklet loads captures THIS node and lights up
+      // retroactively once we connect the worklet into it).
+      oscGain = ac.createGain();
+      oscGain.gain.value = 1;
+      audioSources.set('audio_out', { node: oscGain, output: 0 });
+      void (async () => {
+        try {
+          await ac.audioWorklet.addModule(mandelbulbOscWorkletUrl);
+          const n = new AudioWorkletNode(ac, 'mandelbulb-osc', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [1],
+          });
+          oscNode = n;
+          if (oscGain) n.connect(oscGain);
+          // Keep the worklet's process() running even with nothing patched into
+          // a (future) pitch input — Chromium prunes an orphan worklet. A
+          // gain(0) → destination keep-alive (the DOOM/videobox pattern).
+          oscSilence = ac.createConstantSource();
+          oscSilence.offset.value = 0;
+          oscSilence.start();
+          oscSilence.connect(n, 0, 0);
+          if ('destination' in ac && ac.destination) {
+            const keep = ac.createGain();
+            keep.gain.value = 0;
+            n.connect(keep);
+            keep.connect(ac.destination);
+          }
+          // Push the initial slice immediately + re-resolve any pre-wired bridge.
+          recomputeSlice(true);
+          ctx.notifyAudioSourcesChanged?.(node.id);
+        } catch {
+          // Worklet load failed (CSP / missing dist) — audio_out stays silent;
+          // the placeholder gain remains so the bridge contract holds.
+        }
+      })();
+    }
+
+    // Set up audio at construction ONLY if slice is already ON (e.g. a reloaded
+    // patch). Slice OFF on spawn ⇒ no audio node is ever created → video
+    // identity. A later toggle ON (setParam) calls ensureAudio().
+    if (params.slice >= 0.5) ensureAudio();
 
     const surface: VideoNodeSurface = {
       fbo,
@@ -519,14 +635,33 @@ export const mandelbulbDef: VideoModuleDef = {
       },
     };
 
+    // Params that change the bulb-slice waveform (so a fresh scan must run).
+    // The camera params (zoom / rotate_x / rotate_y / hue) are deliberately
+    // ABSENT — the slice is camera-independent, so orbiting/zooming the view
+    // never re-renders the audio (the fixed-size-under-zoom guarantee).
+    const SLICE_PARAMS = new Set([
+      'slice_y', 'slice_rx', 'slice_ry', 'slice_rz', 'power', 'detail',
+    ]);
+
     return {
       domain: 'video',
       surface,
+      audioSources,
       setParam(paramId, value) {
         if (paramId in params) {
           (params as unknown as Record<string, number>)[paramId] = value;
           // Any param change re-dirties the scene so the throttle re-renders.
           lastSceneSig = '';
+          // SLICE toggle ON ⇒ lazily stand up the audio chain (no-op if already
+          // up, or if there's no AudioContext). It is never torn down on OFF —
+          // the worklet just keeps playing the last wave at gain through the
+          // bridge; with no bridge wired it is inaudible. The "no audio node on
+          // a slice-OFF spawn" guarantee is about CONSTRUCTION, which the
+          // `params.slice >= 0.5` gate above honours.
+          if (paramId === 'slice' && value >= 0.5) ensureAudio();
+          // A slice-shaping param moved ⇒ recompute + repost the waveform (only
+          // matters once the audio chain exists; recomputeSlice no-ops if not).
+          if (SLICE_PARAMS.has(paramId)) recomputeSlice();
         }
       },
       readParam(paramId) {
@@ -536,9 +671,17 @@ export const mandelbulbDef: VideoModuleDef = {
         if (key === 'eyeDist') return jsEyeDistanceFromZoom(params.zoom);
         if (key === 'screenOn') return params.screen_on >= 0.5;
         if (key === 'autospin') return params.autospin >= 0.5;
+        if (key === 'slice') return params.slice >= 0.5;
         return undefined;
       },
-      dispose() { surface.dispose(); },
+      dispose() {
+        surface.dispose();
+        // Tear down the audio chain (if it was ever created).
+        if (oscSilence) { try { oscSilence.stop(); } catch { /* */ } try { oscSilence.disconnect(); } catch { /* */ } }
+        if (oscNode) { try { oscNode.disconnect(); } catch { /* */ } }
+        if (oscGain) { try { oscGain.disconnect(); } catch { /* */ } }
+        oscSilence = null; oscNode = null; oscGain = null;
+      },
     };
   },
 };

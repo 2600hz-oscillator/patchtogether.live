@@ -96,14 +96,17 @@ test.describe('@collab', () => {
     browser,
   }) => {
     // The full 2-context relay flow (2× goto + attachProvider relay-connect +
-    // spawn + rename + peer-sync polls + DOM asserts) is long. Its internal
-    // waits alone sum to ~40s of polls, so a 60s test budget left only ~15s for
-    // two page loads + relay attach + UI typing under CI contention — too thin:
-    // it timed out at 60s on #561's collab run (rename never reached B). 90s
-    // gives real headroom over the stacked internal timeouts. (The actual flake
-    // root-cause — an unbounded `fill()` hang when the inline editor hadn't
-    // opened yet — is fixed below with an explicit editor-visible wait.)
-    test.setTimeout(90_000);
+    // spawn + rename + peer-sync polls + DOM asserts) is long. The peer-sync
+    // robustness fix below raises the two cross-context Yjs polls (spawn-sync +
+    // rename-sync) to 25s each so relay propagation A→relay→B has real headroom
+    // under CI CPU contention — the cause of all 4 recent collab failures, where
+    // the rename never reached B inside the old 12s. Two 25s polls (50s worst
+    // case) + two page loads + relay attach + editor-visible waits + UI typing
+    // would crowd a 90s budget, so we raise it to 120s. The earlier flake
+    // root-cause (an unbounded `fill()` hang when the inline editor hadn't yet
+    // opened) is also fixed below with an explicit bounded editor-visible wait,
+    // so a genuine failure surfaces fast rather than burning the full budget.
+    test.setTimeout(120_000);
     const rackspaceId = `title-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
@@ -153,6 +156,16 @@ test.describe('@collab', () => {
       });
 
       // B must see the spawn + the auto-assigned name.
+      //
+      // FLAKE FIX (peer-sync robustness): poll the UNDERLYING peer-synced
+      // value (B's __patch graph, fed by the Y.Doc), not just the rendered
+      // DOM, and give relay propagation real headroom. The 90s test budget
+      // (see setTimeout above) easily absorbs a larger inner poll: under CI
+      // CPU contention cross-context Yjs propagation A→relay→B can stall well
+      // past the old 12s (the timeout seen in all 4 recent collab failures).
+      // The explicit `intervals` backs the poll OFF (250ms→500ms→1s) so we
+      // don't hammer pageB.evaluate every few ms while the relay catches up —
+      // tight polling under contention is itself part of the CPU starvation.
       await expect
         .poll(
           async () =>
@@ -164,8 +177,7 @@ test.describe('@collab', () => {
               };
               return w.__patch.nodes['ws-sync']?.data?.name;
             }),
-          // Relay propagation under CI contention can exceed 4s.
-          { timeout: 12000 },
+          { timeout: 25000, intervals: [250, 500, 1000] },
         )
         .toMatch(/WAVESCULPT/);
 
@@ -197,6 +209,14 @@ test.describe('@collab', () => {
       ).toHaveText('SHARED_LEAD', { timeout: 10_000 });
 
       // B's in-card title must update to the new value via Y.Doc sync.
+      // Same robustness as the spawn-sync poll above: assert the UNDERLYING
+      // peer-synced value first (B's __patch graph, the Y.Doc-fed source of
+      // truth) with a 25s budget + backed-off intervals so the rename has
+      // real headroom to propagate A→relay→B under CI contention. This is
+      // the relay-converge gate: once B's Y.Doc reports SHARED_LEAD the
+      // subsequent DOM re-render is local + fast, so the DOM assert below
+      // won't be the thing that times out — it just confirms the rendered
+      // title is the synced value, not a stale snapshot.
       await expect
         .poll(
           async () =>
@@ -208,19 +228,19 @@ test.describe('@collab', () => {
               };
               return w.__patch.nodes['ws-sync']?.data?.name;
             }),
-          // Relay propagation under CI contention can exceed 4s.
-          { timeout: 12000 },
+          { timeout: 25000, intervals: [250, 500, 1000] },
         )
         .toBe('SHARED_LEAD');
 
       // And the DOM in B reflects it (the in-card title text is the
-      // peer-synced value, not a stale snapshot). Generous timeout for the
-      // DOM to re-render after the Y.Doc sync lands under contention.
+      // peer-synced value, not a stale snapshot). The Y.Doc already reports
+      // SHARED_LEAD (poll above), so this is a local re-render — a generous
+      // timeout still covers a slow Svelte flush under contention.
       await expect(
         pageB
           .locator('.svelte-flow__node-wavesculpt header.title [data-testid="name-label-button"]')
           .first(),
-      ).toHaveText('SHARED_LEAD', { timeout: 10_000 });
+      ).toHaveText('SHARED_LEAD', { timeout: 15_000 });
 
       // Overhead badge stays gone on the peer too.
       await expect(pageB.locator('.node-name-toolbar')).toHaveCount(0, { timeout: 10_000 });
