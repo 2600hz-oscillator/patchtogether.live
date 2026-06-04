@@ -353,6 +353,54 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    grids with an explicit clock edge from a sequencer (deterministic)
   //    + asserts bd/sd/hh output.
   grids: 'non-deterministic AudioContext scheduler startup; C=P=0 race on CI retry; covered by grids.spec.ts',
+
+  // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
+  //    batch-5). These are PURE gain / patch-bay / format-converter /
+  //    trigger-delay modules: their observed output is a passive function
+  //    of an UPSTREAM audio/trigger SOURCE that the behavioral driver does
+  //    not supply on the channels the universal sink observes. With no
+  //    upstream signal the CONTROL and PATCHED runs both read the SAME idle
+  //    value (silent C=P=0.000, or the constant idle CV C=P=0.500 the
+  //    sequencer rows hold before the first clock-advanced step), so the
+  //    delta can NEVER cross the threshold → they fail 100% of runs. The
+  //    `inputs-accept` dim in per-module-per-port.spec.ts STILL pins wire-up
+  //    for every port, and each module's own unit test pins its routing /
+  //    conversion / gain math directly (where the upstream source IS
+  //    supplied). Same intrinsic-no-observable-delta class as the
+  //    audioOut / videoOut passthrough sinks above.
+  //
+  // moog984 — 4-channel matrix MIXER (passive routing/mix). out1 sums its
+  // in1..in4 audio inputs; with no upstream audio source on the OTHER
+  // channels both runs read silence (C=P=0.000). Covered by moog984.test.ts.
+  moog984:  'passive 4-ch matrix mixer; out is silent (C=P=0.000) until an upstream audio source feeds the channels the sink observes (driver supplies none); pure-gain math pinned by moog984.test.ts',
+  // moog993 — trigger & envelope voltages patch-bay panel. trig_out mirrors
+  // an upstream trigger; with no upstream trigger on trig_from2 both runs
+  // read silence (C=P=0.000). Covered by moog993.test.ts.
+  moog993:  'trigger/envelope patch-bay panel; trig_out is silent (C=P=0.000) until an upstream trigger feeds the observed channel (driver supplies none on trig_from2); routing pinned by moog993.test.ts',
+  // moog961 — S-trig ↔ V-trig format CONVERTER. v_out mirrors an upstream
+  // gate; with no upstream gate on v_in_a/v_in_b both runs read silence
+  // (C=P=0.000). Covered by moog961.test.ts.
+  moog961:  'S-trig/V-trig format converter; v_out is silent (C=P=0.000) until an upstream gate feeds v_in_a/v_in_b (driver supplies none on those channels); conversion pinned by moog961.test.ts',
+  // moog911a — dual trigger DELAY. out mirrors a delayed upstream trigger;
+  // with no upstream trigger on trig1/trig2 both runs read silence
+  // (C=P=0.000). Covered by moog911a.test.ts.
+  moog911a: 'dual trigger-delay utility; out is silent (C=P=0.000) until an upstream trigger feeds trig1/trig2 (driver supplies none); delay/coupling pinned by moog911a.test.ts',
+  // moog960 — sequential CONTROLLER (analog step sequencer). The row CV
+  // outputs hold a CONSTANT idle value (C=P=0.500) until an upstream clock
+  // advances the column pointer; the driver supplies no clock on the
+  // observed row, so clock/start/stop never perturb the constant. Covered
+  // by moog960.test.ts.
+  moog960:  'analog step-sequencer (sequential controller); row CV outputs hold a constant idle value (C=P=0.500) until an upstream clock advances the column pointer (driver supplies none on the observed row); step/clock logic pinned by moog960.test.ts',
+
+  // ── MANDELBULB — heavy ray-marched 3D fractal video source. Each frame
+  //    is a full GPU ray-march; the behavioral sweep's 2-spawn × per-input
+  //    iteration (11 drivable CV inputs × 2 spawns × multi-second settle)
+  //    consistently exceeds the per-test wall-clock budget on cold CI Linux
+  //    (the test times out at 162s in BOTH recent failing runs — NOT a
+  //    delta failure on any single port). Same heavy-mount-exceeds-budget
+  //    class as the `foxy` exemption above. Covered by mandelbulb-related
+  //    VRT/specs which screenshot the fractal at distinct parameter values.
+  mandelbulb: 'heavy ray-marched 3D fractal; 2-spawn × per-input sweep exceeds the 162s CI test budget (times out, not a per-port delta failure — same class as foxy); covered by mandelbulb VRT/specs',
 };
 
 // ────────── Per-module behavioral PARAMS override ──────────
@@ -594,6 +642,42 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'cube.morph_fc': 'morph floor↔ceiling fill is subtle at the default axis-aligned slice + default tables; ±1V excursion below centroid threshold — covered by cube-dsp.test.ts + node-ART morph-ceiling baseline',
   'cube.connect':  'circle↔V connector reshape is subtle at the default slice/tables; ±1V excursion below centroid threshold — covered by cube-dsp.test.ts + node-ART connect-vee baseline',
   'cube.crush':    'CRUSH is near-transparent at low values (only "eliminates substantial data" near max); a ±1V excursion off 0 barely moves RMS/centroid — covered by cube-dsp.test.ts (k=1 collapses levels) + node-ART crushed baseline',
+  // connect_strength / space_crush / space_diffuse — the SAME subtle-slice
+  // class as cube.morph_fc/connect/crush above: each shapes the slice/space
+  // readout (connect_strength scales the circle↔V blend, space_crush /
+  // space_diffuse reshape the spatialiser), but at the default axis-aligned
+  // slice + default tables a BUGGLES ±1V CV summed into the [0,1] param nudges
+  // RMS/centroid below the sweep's threshold (Δrms≈0.001-0.007, straddling the
+  // ~0.01 floor) → near-threshold jitter that flakes red. Covered by
+  // cube-dsp.test.ts (per-param DSP response) + the cube node-ART baselines.
+  // slice_y — the slice-NAVIGATOR Y axis. slice_rx/ry/rz (rotation) all
+  // perturb with big deltas (they pass), but the Y translation is the
+  // constrained axis at the default axis-aligned slice: a ±1V excursion only
+  // shifts the readout a little, so Δrms straddles the ~0.01 floor
+  // (Δμrms≈0.005, Δrange≈0.000) → near-threshold jitter that flakes red.
+  // Covered by cube-dsp.test.ts (slice-position DSP response).
+  'cube.slice_y':          'slice-navigator Y translation is the constrained axis at the default axis-aligned slice; ±1V excursion straddles the ~0.01 RMS threshold (jitter) — covered by cube-dsp.test.ts',
+  'cube.connect_strength': 'connect-blend scaler is subtle at the default slice/tables; ±1V excursion straddles the ~0.01 RMS threshold (jitter) — covered by cube-dsp.test.ts + node-ART connect-vee baseline',
+  'cube.space_crush':      'space-crush reshape is subtle at the default slice/tables; ±1V excursion below the centroid/RMS threshold — covered by cube-dsp.test.ts + node-ART crushed baseline',
+  'cube.space_diffuse':    'space-diffuse reshape is subtle at the default slice/tables; ±1V excursion below the centroid/RMS threshold — covered by cube-dsp.test.ts',
+
+  // ── HYPERCUBE morph_fc / connect / crush / alpha — HYPERCUBE is the same
+  //    wavetable-cube-navigator family as CUBE (cube field → rotatable
+  //    slice → wave), so these CV inputs are the IDENTICAL subtle-slice class
+  //    as the cube.morph_fc/connect/crush exempts above. Each DOES shape the
+  //    slice readout (morph picks floor↔ceiling fill, connect morphs the
+  //    connector, crush quantizes the grid, alpha cross-fades the holo table),
+  //    but at the sweep's default axis-aligned slice through the default tables
+  //    a BUGGLES ±1V CV summed into the [0,1] param nudges RMS/centroid below
+  //    the sweep's threshold (Δrms/Δcent straddle the ~0.01 / few-Hz floor) →
+  //    near-threshold jitter that flakes red across the two independent
+  //    BUGGLES-RNG spawns. pitch + Y + rot_x/y/z + tune + fold all perturb
+  //    (they pass the sweep). Covered by hypercube.test.ts (per-param DSP
+  //    response, mirroring cube-dsp.test.ts).
+  'hypercube.morph_fc': 'morph floor↔ceiling fill is subtle at the default axis-aligned slice + default tables; ±1V excursion below centroid threshold (cube-family class) — covered by hypercube.test.ts',
+  'hypercube.connect':  'circle↔V connector reshape is subtle at the default slice/tables; ±1V excursion below centroid threshold (cube-family class) — covered by hypercube.test.ts',
+  'hypercube.crush':    'CRUSH is near-transparent off 0; a ±1V excursion barely moves RMS/centroid (cube-family class) — covered by hypercube.test.ts',
+  'hypercube.alpha':    'alpha holo cross-fade is subtle at the default slice/tables; ±1V excursion straddles the ~0.01 RMS threshold (jitter, cube-family class) — covered by hypercube.test.ts',
 
   // ── macrooscillator harm_cv: harmonics CV has no audible effect
   //    on model 0 (simple sine) — the harmonics-mapped MI model
@@ -725,6 +809,15 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'chowkick.noise_amount_cv': 'noise-blend CV; bulk-energy shift below RMS/centroid threshold on the short transient; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
   'chowkick.noise_decay_cv':  'noise-decay CV; tail-character shift below RMS/centroid threshold in the gate-loop window; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
   'chowkick.freq_cv':         'base-frequency CV; low-fundamental shift not captured by the centroid metric on the transient; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
+  // q_cv (resonance) + decay_cv (amplitude-envelope decay) sit at the metric
+  // threshold EDGE on the short percussive transient: q_cv shifts the resonant
+  // filter bandwidth (Δrms≈0.008-0.017, straddling the ~0.01 floor) and
+  // decay_cv shapes the tail length — both perturb in some runs but fall below
+  // the RMS/centroid threshold in others (near-threshold jitter, same subtle/
+  // percussion-transient class as the chowkick CVs above). The wiring +
+  // per-param response is pinned at the DSP level by chowkick-dsp.test.ts.
+  'chowkick.q_cv':            'resonance CV; bandwidth shift straddles the ~0.01 RMS threshold on the short transient (jitter); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
+  'chowkick.decay_cv':        'amplitude-decay CV; tail-length shift near/below the RMS/centroid threshold on the gate-loop transient (jitter); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
 
   // ── ELEMENTS bow/blow EXCITER CV scalers. ELEMENTS (elements.ts) is an MI
   //    Elements modal/string resonator; BEHAVIORAL_PARAMS strikes it loudly
@@ -838,7 +931,46 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    the SAME video-variance class as acidwarp.speed_cv. Covered by the
   //    mandleblot VRT coverage which screenshots distinct zoom depths.
   'mandleblot.zoom_cv': 'zooms a self-running high-variance fractal; frame-variance metric stays saturated across zoom (video-variance class); covered by mandleblot VRT/specs',
+
+  // ── DX7 poly (polyPitchGate): the universal sink reads DX7's summed
+  //    mono `out`. Driving the poly note/gate input DOES retrigger the FM
+  //    voice (zc/centroid wobble visibly: Δzc≈8-10, Δcent≈28-47Hz), but the
+  //    BULK-ENERGY metric the sweep keys on (mean RMS) barely moves
+  //    (Δμrms≈0.003, Δrange≈0.013) because the patched poly-note overlaps the
+  //    context-gate's existing voice at a similar amplitude — the delta
+  //    straddles the ~0.01 RMS floor and flakes red across the two
+  //    independent spawns. The pitch + the algorithm/op params PASS. The poly
+  //    note→voice path is pinned by dx7.test.ts (per-voice FM-operator math)
+  //    + the dx7 ART/spec coverage. (A pitch/zc-keyed metric would gate this;
+  //    see the systemic-fix TODO at the BEHAVIORAL_SWEEP_EXEMPT header below.)
+  'dx7.poly': 'poly note/gate retriggers the FM voice (zc/centroid wobble) but mean-RMS delta straddles the ~0.01 floor under the overlapping context-gate voice (jitter); covered by dx7.test.ts + dx7 ART/specs',
+
+  // ── aquaTank fb3_cv (feedback-tank channel-3 send CV): aquaTank is a
+  //    multi-tap feedback reverb/delay tank whose observed out1 sits at a
+  //    very LOW idle RMS (≈0.005). fb3_cv scales ONE of several parallel
+  //    feedback channels' send into the summed tank — a single channel's
+  //    feedback gain rarely shifts the already-tiny summed RMS above the
+  //    threshold while the other taps carry the tank (Δμrms≈0.000,
+  //    Δrange≈0.001) — the SAME per-channel-on-a-quiet-sum class as the
+  //    warrenspectrum.level*_cv / mixmstrs exempts. fb1_cv/fb2_cv + the other
+  //    inputs perturb (they pass). Covered by aquatank.test.ts (per-channel
+  //    feedback-gain math).
+  'aquaTank.fb3_cv': 'channel-3 feedback-send CV; single-tap gain shift below the RMS threshold on the quiet (~0.005) summed tank output (warrenspectrum/mixmstrs per-channel class); covered by aquatank.test.ts',
 };
+
+// TODO(behavioral-coverage, systemic fix — tracks the header note + the
+// behavioral-coverage TODO in .github/workflows/ci.yml): the Class-A
+// near-threshold entries above (cube*/hypercube.*, chowkick.q_cv/decay_cv,
+// dx7.poly, aquaTank.fb3_cv, and the existing swolevco/elements/rings/
+// warrenspectrum families) all straddle a SINGLE universal delta threshold
+// that is too coarse for subtle CV→audio effects. The right long-term fix is a
+// MORE SENSITIVE / per-port-CALIBRATED metric (e.g. a pitch/zc-keyed metric for
+// retrigger inputs, a per-transient peak/spectral metric for percussion, and
+// per-port thresholds sized to each port's measured unperturbed-jitter floor)
+// which would SHRINK this exempt list instead of growing it. The per-port
+// exempt is the fast path to a reliable, low-flake gate today; the calibrated
+// metric is the follow-up that lets these ports re-enter the sweep with real
+// signal.
 
 // ────────── Type-aware upstream sources for input drive ──────────
 //
