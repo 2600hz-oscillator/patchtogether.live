@@ -231,6 +231,11 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // connect, crush, tune) DO have paramTarget + cvScale:linear; only the raw
   // V/oct pitch is passthrough-by-design.
   cube: ['pitch'],
+  // HYPERCUBE (the 4D tesseract sibling of CUBE): identical V/oct pitch shape —
+  // pitch is the raw audio-rate node input with no paramTarget. Its OTHER cv
+  // inputs (slice_y/rx/ry/rz, morph_fc, connect, crush, fold_cv, ALPHA, tune)
+  // all carry paramTarget + cvScale:linear; only the V/oct pitch is passthrough.
+  hypercube: ['pitch'],
 };
 
 describe('cv-scale / registry coverage', () => {
