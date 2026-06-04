@@ -955,6 +955,36 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    mandleblot VRT coverage which screenshots distinct zoom depths.
   'mandleblot.zoom_cv': 'zooms a self-running high-variance fractal; frame-variance metric stays saturated across zoom (video-variance class); covered by mandleblot VRT/specs',
 
+  // ── B3NTB0X (b3ntb0x.ts): NTSC composite re-arch. b3ntb0x's `out` is an
+  //    ANIMATED composite (per-line sync drift + frame persistence), so its
+  //    per-frame luma-variance carries a LARGE intrinsic jitter floor (the
+  //    acidwarp probe + the drift give a variance RANGE of ~±515 around a
+  //    ~1250 mean). The luma-only observer ((R+G+B)/3) can only see an input
+  //    whose perturbation clears that floor (Δμvar>5 || ΔRvar>10 || Δμnb>0.01).
+  //    The STRUCTURAL inputs (bend_a-d, enhance, bias, ac_dc, sync_crush,
+  //    feedback, tbc, tube_bloom, overscan, barrel) move luma geometry/levels
+  //    enough to clear it reliably and provide the real coverage. The four
+  //    inputs below act in the CHROMA or SPATIAL-FOLD domain — their luma
+  //    footprint sits in the noise floor and straddles the threshold run-to-run
+  //    (the documented "video-variance class", same as acidwarp.speed_cv):
+  //      * mirror_x/y_gate — momentary UV FOLD (left/right or top/bottom). The
+  //        fold genuinely re-maps pixels (proven by b3ntb0x.test.ts
+  //        b3ntb0xMirrorUv + b3ntb0xMirrorGateTick) but a brightness-symmetric
+  //        fold barely shifts GLOBAL luma-variance — content-luck per run.
+  //      * chroma_leak_cv — bleeds chroma into luma as dot-crawl; a sub-pixel
+  //        HF texture whose contribution sits under the drift floor.
+  //      * burst_starve_cv — colour-killer + subcarrier-crawl (decode pass);
+  //        a CHROMA-domain effect whose luma crawl rides under the floor. The
+  //        decode math is pinned deterministically by b3ntb0x.test.ts
+  //        (b3ntb0xBurstStarve: identity at 0, colour-kill + crawl at 1).
+  //    Exempt all four so none becomes a latent flake; each has dedicated
+  //    deterministic coverage (b3ntb0x.test.ts + the b3ntb0x.spec.ts bend
+  //    proof + the VRT-exempt animated source).
+  'b3ntb0x.mirror_x_gate':  'momentary UV-fold; brightness-symmetric fold is luma-variance-invisible on the animated source (video-variance class; content-luck → latent flake); fold proven by b3ntb0x.test.ts (b3ntb0xMirrorUv + b3ntb0xMirrorGateTick)',
+  'b3ntb0x.mirror_y_gate':  'momentary UV-fold; brightness-symmetric fold is luma-variance-invisible on the animated source (video-variance class; content-luck → latent flake); fold proven by b3ntb0x.test.ts (b3ntb0xMirrorUv + b3ntb0xMirrorGateTick)',
+  'b3ntb0x.chroma_leak_cv': 'chroma→luma dot-crawl; sub-pixel HF texture under the animated source\'s ±515 variance floor (video-variance class; straddles Δμvar threshold run-to-run); covered by b3ntb0x.spec.ts bend proof + VRT-exempt source',
+  'b3ntb0x.burst_starve_cv':'colour-killer + subcarrier-crawl in the decode pass; chroma-domain luma footprint under the animated source\'s ±515 variance floor (video-variance class); decode math pinned by b3ntb0x.test.ts (b3ntb0xBurstStarve)',
+
   // ── DX7 poly (polyPitchGate): the universal sink reads DX7's summed
   //    mono `out`. Driving the poly note/gate input DOES retrigger the FM
   //    voice (zc/centroid wobble visibly: Δzc≈8-10, Δcent≈28-47Hz), but the

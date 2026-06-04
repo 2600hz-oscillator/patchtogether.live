@@ -32,6 +32,8 @@ import {
   regionTagForColumn,
   burstVoltage,
   b3ntb0xMirrorUv,
+  b3ntb0xBurstStarve,
+  BURST_STARVE_CRAWL,
   SYNC_TIP_VOLTAGE,
   BLANK_VOLTAGE,
   REGION_SYNC,
@@ -233,6 +235,53 @@ describe('B3NTB0X mirror gate edge detect', () => {
     expect(b3ntb0xMirrorGateTick(st.x, 0.9)).toBe(false);
     expect(b3ntb0xMirrorGateTick(st.x, 0.3)).toBe(false);
     expect(b3ntb0xMirrorGateTick(st.x, 0.7)).toBe(true);
+  });
+});
+
+describe('B3NTB0X burst starve (decode colour-killer + subcarrier crawl)', () => {
+  it('is the identity at burstStarve=0 (no kill, no crawl)', () => {
+    const r = b3ntb0xBurstStarve(0.4, -0.3, 0);
+    expect(r.i).toBeCloseTo(0.4, 6);
+    expect(r.q).toBeCloseTo(-0.3, 6);
+    expect(r.lumaCrawl).toBeCloseTo(0, 6);
+  });
+
+  it('fully kills chroma + crawls all subcarrier energy into luma at burstStarve=1', () => {
+    const i = 0.4, q = -0.3;
+    const r = b3ntb0xBurstStarve(i, q, 1);
+    expect(r.i).toBeCloseTo(0, 6);
+    expect(r.q).toBeCloseTo(0, 6);
+    // crawl = (|i|+|q|) * 1 * BURST_STARVE_CRAWL
+    expect(r.lumaCrawl).toBeCloseTo((Math.abs(i) + Math.abs(q)) * BURST_STARVE_CRAWL, 6);
+  });
+
+  it('is monotonic: more starve → less chroma, more luma crawl', () => {
+    const i = 0.5, q = 0.2;
+    let prevChroma = Infinity;
+    let prevCrawl = -Infinity;
+    for (const s of [0, 0.25, 0.5, 0.75, 1]) {
+      const r = b3ntb0xBurstStarve(i, q, s);
+      const chromaMag = Math.abs(r.i) + Math.abs(r.q);
+      expect(chromaMag).toBeLessThanOrEqual(prevChroma + 1e-9);
+      expect(r.lumaCrawl).toBeGreaterThanOrEqual(prevCrawl - 1e-9);
+      prevChroma = chromaMag;
+      prevCrawl = r.lumaCrawl;
+    }
+  });
+
+  it('clamps out-of-range starve to [0,1]', () => {
+    const lo = b3ntb0xBurstStarve(0.4, -0.3, -2);
+    expect(lo.i).toBeCloseTo(0.4, 6); // clamped to 0 → identity
+    expect(lo.lumaCrawl).toBeCloseTo(0, 6);
+    const hi = b3ntb0xBurstStarve(0.4, -0.3, 5);
+    expect(hi.i).toBeCloseTo(0, 6); // clamped to 1 → full kill
+  });
+
+  it('a grey (zero-chroma) signal has nothing to starve (no crawl, no change)', () => {
+    const r = b3ntb0xBurstStarve(0, 0, 1);
+    expect(r.i).toBeCloseTo(0, 6);
+    expect(r.q).toBeCloseTo(0, 6);
+    expect(r.lumaCrawl).toBeCloseTo(0, 6);
   });
 });
 

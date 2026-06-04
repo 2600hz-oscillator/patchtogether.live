@@ -291,6 +291,7 @@ uniform sampler2D uEncode;  // helper truth (A=region tag, B=clean phase)
 uniform float uChromaLeak;  // 0..1 — chroma the LP leaks into luma (dot crawl)
 uniform float uLumaPeak;    // 0..1 — decode-side unsharp on Y
 uniform float uTbc;         // 0..1 — line-relock strength
+uniform float uBurstStarve; // 0..1 — colour-burst starvation (decoder loses lock)
 
 const float PI = 3.14159265;
 const float TWO_PI = 6.2831853;
@@ -360,6 +361,24 @@ void main() {
   float Y = ySum / wSum;
   float I = iSum / wSum;
   float Q = qSum / wSum;
+
+  // BURST STARVE: starving the colour burst robs the decoder of its phase /
+  // ACC reference. Two faithful consequences, both keyed off uBurstStarve:
+  //   1) COLOUR KILLER — chroma gain collapses toward 0 -> the picture
+  //      desaturates toward monochrome.
+  //   2) SUBCARRIER CRAWL — with no burst lock the chroma subcarrier is no
+  //      longer cleanly notched out of luma, so its RAW (pre-kill) energy
+  //      crawls into the B&W picture as dot-crawl / herringbone. That is a
+  //      real LUMINANCE change (not just chroma), so it survives a luma-only
+  //      observer — the colour killer alone would be invisible to one.
+  // (CPU mirror + unit test: b3ntb0xBurstStarve in b3ntb0x-dsp.ts. Keep the
+  //  0.35 crawl strength in sync with BURST_STARVE_CRAWL there.)
+  float burstStarve = clamp(uBurstStarve, 0.0, 1.0);
+  float subcarrierEnergy = abs(I) + abs(Q); // pre-kill, for the luma crawl
+  float colourKill = 1.0 - burstStarve;
+  I *= colourKill;
+  Q *= colourKill;
+  Y += subcarrierEnergy * burstStarve * 0.35;
 
   // CHROMA LEAK: let some chroma energy bleed into luma (under-filtered
   // chroma -> dot crawl on the luma). Intentional.
@@ -637,6 +656,7 @@ export const b3ntb0xDef: VideoModuleDef = {
       uChromaLeak: gl.getUniformLocation(decodeProgram, 'uChromaLeak'),
       uLumaPeak: gl.getUniformLocation(decodeProgram, 'uLumaPeak'),
       uTbc: gl.getUniformLocation(decodeProgram, 'uTbc'),
+      uBurstStarve: gl.getUniformLocation(decodeProgram, 'uBurstStarve'),
     };
     const cU = {
       uDecode: gl.getUniformLocation(crtProgram, 'uDecode'),
@@ -740,6 +760,7 @@ export const b3ntb0xDef: VideoModuleDef = {
         g.uniform1f(dU.uChromaLeak, clamp01(params.chroma_leak));
         g.uniform1f(dU.uLumaPeak, clamp01(params.luma_peak));
         g.uniform1f(dU.uTbc, clamp01(params.tbc));
+        g.uniform1f(dU.uBurstStarve, clamp01(params.burst_starve));
         ctx.drawFullscreenQuad();
 
         // ---- PASS 4: CRTDisplay -> CRT ping-pong (engine res RGBA8) ----

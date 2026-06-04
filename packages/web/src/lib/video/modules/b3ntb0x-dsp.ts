@@ -282,3 +282,32 @@ export function b3ntb0xMirrorUv(
     v: mirrorY ? (v >= 0.5 ? v : 1 - v) : v,
   };
 }
+
+// ---------------------------------------------------------------------------
+// BURST STARVE (decode-side colour-burst starvation).
+// ---------------------------------------------------------------------------
+
+/** Strength of the subcarrier-into-luma crawl at full burst starvation. The
+ *  DECODE shader (b3ntb0x.ts DECODE_FRAG) keeps an inline copy of this
+ *  constant; this is the unit-tested source of truth. */
+export const BURST_STARVE_CRAWL = 0.35;
+
+/** Pure CPU mirror of the DECODE pass's BURST STARVE math (see b3ntb0x.ts
+ *  DECODE_FRAG). Starving the colour burst (`burstStarve` 0→1) robs the
+ *  decoder of its phase / ACC reference, with two faithful consequences:
+ *    1) COLOUR KILLER — chroma gain (i,q) collapses toward 0 (desaturation).
+ *    2) SUBCARRIER CRAWL — the RAW (pre-kill) subcarrier energy |i|+|q| is no
+ *       longer notched out of luma, so a fraction crawls into Y as dot-crawl.
+ *  Returns the post-kill chroma + the luma crawl term to ADD to Y. At
+ *  `burstStarve` 0 this is the identity (i,q unchanged, lumaCrawl 0); the GLSL
+ *  inlines the same arithmetic so the two cannot diverge silently. */
+export function b3ntb0xBurstStarve(
+  i: number,
+  q: number,
+  burstStarve: number,
+): { i: number; q: number; lumaCrawl: number } {
+  const s = Math.max(0, Math.min(1, burstStarve));
+  const subcarrierEnergy = Math.abs(i) + Math.abs(q); // pre-kill, for the crawl
+  const colourKill = 1 - s;
+  return { i: i * colourKill, q: q * colourKill, lumaCrawl: subcarrierEnergy * s * BURST_STARVE_CRAWL };
+}
