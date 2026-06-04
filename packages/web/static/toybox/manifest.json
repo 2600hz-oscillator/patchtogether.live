@@ -57,5 +57,140 @@
     { "id": "sphere",     "label": "SPHERE",       "builtin": "sphere",    "matcap": 0, "license": "builtin" },
     { "id": "torus",      "label": "TORUS",        "builtin": "torus",     "matcap": 1, "license": "builtin" },
     { "id": "hypercube",  "label": "HYPERCUBE",    "builtin": "hypercube", "matcap": 2, "license": "builtin" }
+  ],
+  "presets": [
+    {
+      "id": "plasma-dissolve",
+      "label": "PLASMA DISSOLVE",
+      "note": "Shader-only crossfade: hsv-plasma faded over cos-gradient. cv1 drives the fade.",
+      "layers": [
+        { "kind": "shader", "contentId": "hsv-plasma",   "params": { "speed": 1.0, "hue": 0.2, "sat": 1.0 } },
+        { "kind": "shader", "contentId": "cos-gradient",  "params": { "speed": 0.5, "phase": 0.0, "scale": 3.0 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "fade1", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0.5 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "fade1", "toPort": "in0" },
+          { "id": "e1", "from": "src1", "to": "fade1", "toPort": "in1" },
+          { "id": "e2", "from": "fade1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "combine", "nodeId": "fade1", "param": "amount" }
+      }
+    },
+    {
+      "id": "cow-on-camera",
+      "label": "COW ON CAMERA",
+      "note": "OBJ luma-keyed over a generated backdrop: the chrome Spot floats over a worley field. cv3 spins the cow. (Layer 0 substitutes bundled worley-cells for a live video feed — TOYBOX has no video input port.)",
+      "layers": [
+        { "kind": "gen", "contentId": "worley-cells", "params": { "density": 6.0, "edge": 1.0, "speed": 0.6 } },
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "spot", "rotX": 0.3, "rotY": 0.6, "rotZ": 0.0,
+            "scale": 1.0, "spin": 0.6, "matcap": 0, "tintR": 1.0, "tintG": 1.0, "tintB": 1.0
+          }
+        },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "lk1", "kind": "lumakey", "x": 120, "y": 40, "params": { "amount": 0.05, "soft": 0.1, "invert": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "lk1", "toPort": "in0" },
+          { "id": "e1", "from": "src1", "to": "lk1", "toPort": "in1" },
+          { "id": "e2", "from": "lk1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv3": { "target": "layer", "layer": 1, "param": "material:spin" }
+      }
+    },
+    {
+      "id": "worley-bloom",
+      "label": "WORLEY BLOOM",
+      "note": "Three-source chain: worley chroma-keyed over a gradient, screen-mapped with plasma. cv2 drives the map mix, cv5 the worley density. (Layer 1 substitutes bundled cos-gradient for a live video feed.)",
+      "layers": [
+        { "kind": "gen", "contentId": "worley-cells", "params": { "density": 8.0, "edge": 1.2, "speed": 0.5 } },
+        { "kind": "gen", "contentId": "cos-gradient", "params": { "speed": 0.4, "phase": 0.3, "scale": 4.0 } },
+        { "kind": "shader", "contentId": "hsv-plasma", "params": { "speed": 0.8, "hue": 0.6, "sat": 1.0 } },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "ck1", "kind": "chromakey", "x": 120, "y": 14, "params": { "amount": 0.3, "soft": 0.1, "key": 0.33 } },
+          { "id": "map1", "kind": "map", "x": 120, "y": 118, "params": { "amount": 0.7, "mode": 1 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 66 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "ck1", "toPort": "in0" },
+          { "id": "e1", "from": "src1", "to": "ck1", "toPort": "in1" },
+          { "id": "e2", "from": "ck1", "to": "map1", "toPort": "in0" },
+          { "id": "e3", "from": "src2", "to": "map1", "toPort": "in1" },
+          { "id": "e4", "from": "map1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv2": { "target": "combine", "nodeId": "map1", "param": "amount" },
+        "cv5": { "target": "layer", "layer": 0, "param": "density" }
+      }
+    },
+    {
+      "id": "reactor-field",
+      "label": "REACTOR FIELD",
+      "note": "Multi-stage gen + obj + shader: noise screen-mapped with worley, then a neon teapot luma-keyed over the field.",
+      "layers": [
+        { "kind": "gen", "contentId": "noise-fbm",    "params": { "scale": 2.0, "speed": 0.4, "warp": 0.8 } },
+        { "kind": "gen", "contentId": "worley-cells",  "params": { "density": 6.0, "edge": 1.0, "speed": 0.6 } },
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "teapot", "rotX": 0.5, "rotY": 0.7, "rotZ": 0.0,
+            "scale": 1.0, "spin": 0.4, "matcap": 2, "tintR": 1.0, "tintG": 1.0, "tintB": 1.0
+          }
+        },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "map1", "kind": "map", "x": 120, "y": 14, "params": { "amount": 1.0, "mode": 1 } },
+          { "id": "lk1", "kind": "lumakey", "x": 120, "y": 118, "params": { "amount": 0.05, "soft": 0.1, "invert": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 66 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "map1", "toPort": "in0" },
+          { "id": "e1", "from": "src1", "to": "map1", "toPort": "in1" },
+          { "id": "e2", "from": "map1", "to": "lk1", "toPort": "in0" },
+          { "id": "e3", "from": "src2", "to": "lk1", "toPort": "in1" },
+          { "id": "e4", "from": "lk1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {}
+    }
   ]
 }

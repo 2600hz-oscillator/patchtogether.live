@@ -30,7 +30,10 @@
 // node.data.combine (ToyboxCombine). The card mutates the live node (rides
 // Y.Doc); the factory reads the live node each frame.
 //
-// Inputs:  (none)
+// Inputs:  cv1..cv8 (cv) — a FIXED pool of generic CV ports (Phase 5). Each is
+//          routed to an addressed layer/combine/obj param via node.data.cvRoutes
+//          and re-scaled to that param's range inside setParam (see
+//          toybox-cv-routes.ts). The generic ports stay neutral-linear.
 // Outputs: out (video) — the composited frame.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
@@ -45,13 +48,28 @@ import {
   getContentMeta,
   getModelMeta,
   getModelObj,
-  makeDefaultCombine,
   makeDefaultLayers,
   makeDefaultObjMaterial,
   type ToyboxCombine,
   type ToyboxLayer,
   type ToyboxObjMaterial,
 } from '$lib/video/toybox-content';
+import {
+  OP_SHADER_INDEX,
+  isCombineGraph,
+  makeDefaultCombineGraph,
+  topoSort,
+  type ToyboxCombineGraph,
+  type ToyboxOpKind,
+} from '$lib/video/toybox-combine-graph';
+import {
+  CV_PORT_IDS,
+  isCvPortId,
+  resolveRoute,
+  scaleRoutedValue,
+  type CvRouteTarget,
+  type CvRoutes,
+} from '$lib/video/toybox-cv-routes';
 import { parseObj } from '$lib/video/obj-parse';
 import { makePrimitive, type BuiltinPrimitive } from '$lib/video/primitives';
 import type { Mesh } from '$lib/video/mesh';
@@ -146,7 +164,19 @@ export const toyboxDef: VideoModuleDef = {
   label: 'TOYBOX',
   category: 'sources',
   schemaVersion: 1,
-  inputs: [],
+  // PHASE 5 — a FIXED pool of 8 generic CV input ports. A layer's shader (and
+  // its uniforms) is chosen at runtime, so we can't declare a port per possible
+  // uniform; instead the card routes each generic cv port to an addressed param
+  // via node.data.cvRoutes, and setParam (below) resolves + RE-SCALES the value
+  // to that param's range. Each port carries a neutral cvScale:{mode:'linear'}
+  // hint but NO paramTarget — so the cv-bridge degrades to RAW passthrough
+  // (buildCvBridgeMapping can't resolve a param named 'cvN') and hands setParam
+  // the raw ±1 sample; TOYBOX does the per-target range scaling itself.
+  inputs: CV_PORT_IDS.map((id) => ({
+    id,
+    type: 'cv' as const,
+    cvScale: { mode: 'linear' as const },
+  })),
   outputs: [
     { id: 'out', type: 'video' },
   ],
@@ -310,11 +340,24 @@ export const toyboxDef: VideoModuleDef = {
     const cuTop = gl.getUniformLocation(combineProgram, 'uTop');
     const cuOp = gl.getUniformLocation(combineProgram, 'uOp');
     const cuAmount = gl.getUniformLocation(combineProgram, 'uAmount');
+    const cuSoft = gl.getUniformLocation(combineProgram, 'uSoft');
+    const cuInvert = gl.getUniformLocation(combineProgram, 'uInvert');
+    const cuKey = gl.getUniformLocation(combineProgram, 'uKey');
+    const cuMode = gl.getUniformLocation(combineProgram, 'uMode');
 
-    // Two ping-pong scratch FBOs for chained combine steps (so we never read
-    // and write the same texture in one pass).
-    const scratchA = ctx.createFbo();
-    const scratchB = ctx.createFbo();
+    // Scratch FBO POOL for the combine pass. The legacy linear chain needs two
+    // ping-pong targets; the Phase-4 GRAPH needs one target PER op node (each
+    // op writes its result into its own scratch so downstream ops can sample
+    // it). The pool grows on demand (an op node added in the editor can need a
+    // fresh target) + every entry is freed in dispose().
+    const scratchPool: { fbo: WebGLFramebuffer; texture: WebGLTexture }[] = [];
+    function scratch(i: number): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
+      while (scratchPool.length <= i) scratchPool.push(ctx.createFbo());
+      return scratchPool[i]!;
+    }
+    // Seed two (the linear-chain ping-pong minimum).
+    const scratchA = scratch(0);
+    const scratchB = scratch(1);
 
     // ---- live node helpers ----
     function liveLayers(): ToyboxLayer[] {
@@ -327,18 +370,70 @@ export const toyboxDef: VideoModuleDef = {
       while (out.length < LAYER_COUNT) out.push({ kind: 'off', contentId: null, params: {} });
       return out;
     }
-    function liveCombine(): ToyboxCombine {
+    /** The live combine field — either the Phase-4 GRAPH ({nodes,edges}) or the
+     *  legacy linear chain ({steps}). Falls back to the default GRAPH so a card
+     *  that has never been edited still composites like the Phase-1..3 default. */
+    function liveCombineRaw(): ToyboxCombineGraph | ToyboxCombine {
       const live = livePatch.nodes[node.id];
       const raw =
-        (live?.data?.combine as ToyboxCombine | undefined) ??
-        (node.data?.combine as ToyboxCombine | undefined);
-      if (!raw || !Array.isArray(raw.steps)) return makeDefaultCombine();
-      return raw;
+        (live?.data?.combine as unknown) ?? (node.data?.combine as unknown);
+      if (isCombineGraph(raw)) return raw as ToyboxCombineGraph;
+      if (raw && Array.isArray((raw as ToyboxCombine).steps)) return raw as ToyboxCombine;
+      return makeDefaultCombineGraph();
+    }
+
+    /** The live cvRoutes map (Phase 5). Absent → no routes (all generic cv
+     *  ports unrouted, their setParam writes ignored). */
+    function liveCvRoutes(): CvRoutes {
+      const live = livePatch.nodes[node.id];
+      const raw =
+        (live?.data?.cvRoutes as CvRoutes | undefined) ??
+        (node.data?.cvRoutes as CvRoutes | undefined);
+      return raw && typeof raw === 'object' ? raw : {};
     }
 
     function frozenTime(): number | null {
       const g = globalThis as unknown as { __toyboxFreezeTime?: number | null };
       return typeof g.__toyboxFreezeTime === 'number' ? g.__toyboxFreezeTime : null;
+    }
+
+    // ---- PHASE 5: per-port CV base (modulation centre) snapshot ----
+    //
+    // The cv-bridge writes setParam(cvN, raw) every frame with the raw ±1
+    // sample. We re-scale that across the routed param's range CENTRED on the
+    // param's CURRENT value — but if we centred on the live (already-CV-written)
+    // value each frame it would drift away unboundedly. So, mirroring the audio
+    // cv-bridge's bake-once-at-attach semantics, we SNAPSHOT the param's value
+    // as the modulation centre the first time a (port → target/param) routing is
+    // seen, and re-snapshot only when that routing CHANGES (different target,
+    // param, or no route). The signature captures the routing identity.
+    const cvBase = new Map<string, { sig: string; base: number }>();
+
+    /** Apply a raw cv sample arriving on generic port `portId`: resolve its
+     *  route against the LIVE layers/combine, re-scale across the target param's
+     *  range (centred on the snapshot base), and write it into the live param. */
+    function applyCvRoute(portId: string, raw: number): void {
+      const routes = liveCvRoutes();
+      const route = routes[portId] as CvRouteTarget | null | undefined;
+      if (!route) {
+        // Unrouted → drop any stale base snapshot + ignore (no-op).
+        cvBase.delete(portId);
+        return;
+      }
+      const layers = liveLayers();
+      const combine = liveCombineRaw();
+      const resolved = resolveRoute(route, layers, combine);
+      if (!resolved) {
+        cvBase.delete(portId);
+        return;
+      }
+      // Snapshot / refresh the modulation centre when the routing identity
+      // changes (so the sweep re-centres on the user's knob after a re-route).
+      const sig = `${route.target}|${route.layer ?? ''}|${route.nodeId ?? ''}|${route.param}`;
+      const prev = cvBase.get(portId);
+      const base = prev && prev.sig === sig ? prev.base : resolved.current;
+      if (!prev || prev.sig !== sig) cvBase.set(portId, { sig, base });
+      resolved.apply(scaleRoutedValue(raw, base, resolved.min, resolved.max));
     }
 
     // ---- Fixed camera (perspective) for the OBJ pass. Looks down -Z at the
@@ -458,6 +553,14 @@ export const toyboxDef: VideoModuleDef = {
       return drew;
     }
 
+    /** Extra (op-dependent) combine params beyond `amount`. */
+    interface CombineExtra {
+      soft?: number;
+      invert?: number;
+      key?: number;
+      mode?: number;
+    }
+
     /** Run one combine step: blend `topTex` over `baseTex` into `dstFbo`. */
     function combineStep(
       baseTex: WebGLTexture,
@@ -465,6 +568,7 @@ export const toyboxDef: VideoModuleDef = {
       dstFbo: WebGLFramebuffer,
       op: number,
       amount: number,
+      extra?: CombineExtra,
     ): void {
       const g = gl;
       g.bindFramebuffer(g.FRAMEBUFFER, dstFbo);
@@ -478,11 +582,113 @@ export const toyboxDef: VideoModuleDef = {
       if (cuTop) g.uniform1i(cuTop, 1);
       if (cuOp) g.uniform1i(cuOp, op);
       if (cuAmount) g.uniform1f(cuAmount, amount);
+      if (cuSoft) g.uniform1f(cuSoft, extra?.soft ?? 0);
+      if (cuInvert) g.uniform1f(cuInvert, extra?.invert ?? 0);
+      // chromakey: default key colour 'green' (0.33) matches the prior shader.
+      if (cuKey) g.uniform1f(cuKey, extra?.key ?? 0.33);
+      if (cuMode) g.uniform1f(cuMode, extra?.mode ?? 0);
       ctx.drawFullscreenQuad();
       g.activeTexture(g.TEXTURE0);
     }
 
     const OP_INDEX: Record<string, number> = { fade: 0, lumakey: 1, chromakey: 2, map: 3 };
+
+    /**
+     * Evaluate the legacy LINEAR chain ({steps}) via ping-pong scratch, exactly
+     * as Phases 1-3 did. Returns the accumulator texture (layer 0 base + folded
+     * steps).
+     */
+    function evalLinear(combine: ToyboxCombine, produced: boolean[]): WebGLTexture {
+      let accTex = layerTargets[0]!.texture;
+      let scratchFront = scratchA;
+      let scratchBack = scratchB;
+      for (const step of combine.steps) {
+        const li = step.layer;
+        if (li < 1 || li >= LAYER_COUNT) continue;
+        if (!produced[li]) continue; // empty layer → skip
+        const op = OP_INDEX[step.op] ?? 0;
+        combineStep(accTex, layerTargets[li]!.texture, scratchFront.fbo, op, step.amount);
+        accTex = scratchFront.texture;
+        const t = scratchFront; scratchFront = scratchBack; scratchBack = t;
+      }
+      return accTex;
+    }
+
+    /**
+     * Evaluate the Phase-4 combine GRAPH ({nodes,edges}) and return the texture
+     * feeding the OUTPUT node. Topo-sorts the DAG (Kahn), evaluates each op node
+     * into its OWN scratch FBO (so downstream ops can sample it), and returns
+     * the texture wired into the OUTPUT node's in0. An invalid graph (no OUTPUT,
+     * or OUTPUT's input unwired / its upstream unresolved) returns null → the
+     * caller renders BLACK. Never loops (topoSort drops cycle members).
+     */
+    function evalGraph(graph: ToyboxCombineGraph, produced: boolean[]): WebGLTexture | null {
+      const { order } = topoSort(graph);
+      // texForNode[id] = the texture each node OUTPUTS (sources → layer tex;
+      // ops → their scratch result). undefined = unresolved (no/missing input).
+      const texForNode = new Map<string, WebGLTexture | null>();
+      // Assign a scratch slot to each op node (deterministic by topo order),
+      // starting past the two reserved ping-pong slots so they don't collide
+      // if some future caller mixes paths in one frame.
+      let scratchSlot = 0;
+      const opOf = (kind: string): number | null =>
+        kind === 'fade' || kind === 'lumakey' || kind === 'chromakey' || kind === 'map'
+          ? OP_SHADER_INDEX[kind as ToyboxOpKind]
+          : null;
+
+      for (const id of order) {
+        const n = graph.nodes.find((x) => x.id === id);
+        if (!n) continue;
+        if (n.kind === 'source') {
+          const li = typeof n.layer === 'number' ? n.layer : -1;
+          // A source with no content → null (unwired/black downstream).
+          texForNode.set(id, li >= 0 && li < LAYER_COUNT && produced[li] ? layerTargets[li]!.texture : null);
+          continue;
+        }
+        if (n.kind === 'output') {
+          // Resolved when step 3 copies; nothing to compute here.
+          continue;
+        }
+        const op = opOf(n.kind);
+        if (op === null) {
+          texForNode.set(id, null);
+          continue;
+        }
+        // Gather this op's two inputs from incoming edges.
+        const inEdge = (port: string) => graph.edges.find((e) => e.to === id && e.toPort === port);
+        const baseE = inEdge('in0');
+        const topE = inEdge('in1');
+        const baseTex = baseE ? texForNode.get(baseE.from) ?? null : null;
+        const topTex = topE ? texForNode.get(topE.from) ?? null : null;
+        // If neither input is wired, this op produces nothing (null).
+        if (!baseTex && !topTex) {
+          texForNode.set(id, null);
+          continue;
+        }
+        // A missing base behaves as black; a missing top means "just the base".
+        const slot = scratch(2 + scratchSlot++); // past the 2 ping-pong slots
+        const p = n.params ?? {};
+        const amount = typeof p.amount === 'number' ? p.amount : 1;
+        const extra = { soft: p.soft, invert: p.invert, key: p.key, mode: p.mode };
+        if (baseTex && !topTex) {
+          // Top unwired → pass the base through (copy: fade at amount 0).
+          combineStep(baseTex, baseTex, slot.fbo, 0, 0);
+        } else if (!baseTex && topTex) {
+          // Base unwired → the top IS the result (copy).
+          combineStep(topTex, topTex, slot.fbo, 0, 0);
+        } else {
+          combineStep(baseTex!, topTex!, slot.fbo, op, amount, extra);
+        }
+        texForNode.set(id, slot.texture);
+      }
+
+      // The OUTPUT node's in0 edge tells us the final texture.
+      const out = graph.nodes.find((x) => x.kind === 'output');
+      if (!out) return null;
+      const outE = graph.edges.find((e) => e.to === out.id && e.toPort === 'in0');
+      if (!outE) return null;
+      return texForNode.get(outE.from) ?? null;
+    }
 
     const surface: VideoNodeSurface = {
       fbo: outFbo,
@@ -496,31 +702,23 @@ export const toyboxDef: VideoModuleDef = {
         const produced: boolean[] = [];
         for (let i = 0; i < LAYER_COUNT; i++) produced[i] = renderLayer(i, layers, time);
 
-        // 2) Combine: start from layer 0, fold in active steps via ping-pong
-        //    (so we never sample + render the same texture in one pass).
-        const combine = liveCombine();
-        let accTex = layerTargets[0]!.texture;
-        let scratchFront = scratchA;
-        let scratchBack = scratchB;
-        for (const step of combine.steps) {
-          const li = step.layer;
-          if (li < 1 || li >= LAYER_COUNT) continue;
-          if (!produced[li]) continue; // empty layer → skip
-          const op = OP_INDEX[step.op] ?? 0;
-          combineStep(accTex, layerTargets[li]!.texture, scratchFront.fbo, op, step.amount);
-          accTex = scratchFront.texture;
-          // ping-pong
-          const t = scratchFront; scratchFront = scratchBack; scratchBack = t;
-        }
+        // 2) Combine: evaluate the live combine (Phase-4 GRAPH or legacy chain).
+        const combine = liveCombineRaw();
+        const accTex = isCombineGraph(combine)
+          ? evalGraph(combine as ToyboxCombineGraph, produced)
+          : evalLinear(combine as ToyboxCombine, produced);
 
-        // 3) Copy the accumulator into the OUTPUT fbo (always, so `out`
-        //    samples a consistent texture even with zero combine steps).
+        // 3) Copy the result into the OUTPUT fbo. A null result (invalid/
+        //    disconnected output, or every source empty) → BLACK, never a crash.
         g.bindFramebuffer(g.FRAMEBUFFER, outFbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.clearColor(0, 0, 0, 1);
         g.clear(g.COLOR_BUFFER_BIT);
-        // op 0 (fade) at amount 0 = pure base → straight copy of accTex.
-        combineStep(accTex, accTex, outFbo, 0, 0);
+        if (accTex) {
+          // op 0 (fade) at amount 0 = pure base → straight copy of accTex.
+          combineStep(accTex, accTex, outFbo, 0, 0);
+        }
+        // else: leave the black clear (disconnected output renders black).
 
         g.bindFramebuffer(g.FRAMEBUFFER, null);
       },
@@ -532,10 +730,11 @@ export const toyboxDef: VideoModuleDef = {
           gl.deleteTexture(t.texture);
           gl.deleteRenderbuffer(t.depth);
         }
-        gl.deleteFramebuffer(scratchA.fbo);
-        gl.deleteTexture(scratchA.texture);
-        gl.deleteFramebuffer(scratchB.fbo);
-        gl.deleteTexture(scratchB.texture);
+        for (const s of scratchPool) {
+          gl.deleteFramebuffer(s.fbo);
+          gl.deleteTexture(s.texture);
+        }
+        scratchPool.length = 0;
         for (const c of programs.values()) gl.deleteProgram(c.program);
         programs.clear();
         gl.deleteProgram(objProgram);
@@ -552,7 +751,13 @@ export const toyboxDef: VideoModuleDef = {
     return {
       domain: 'video',
       surface,
-      setParam() { /* no numeric engine params — content/material live in node.data */ },
+      setParam(portId, value) {
+        // PHASE 5: a generic cv pool port (cv1..cv8) → resolve its route +
+        // re-scale into the addressed live layer/combine param. Any other
+        // portId is ignored (TOYBOX has no numeric engine params — content /
+        // material / combine all live in node.data).
+        if (isCvPortId(portId)) applyCvRoute(portId, value);
+      },
       readParam() { return undefined; },
       read(key) {
         if (key === 'fboTexture') return surface.texture;
@@ -620,7 +825,11 @@ out vec4 outColor;
 uniform sampler2D uBase;
 uniform sampler2D uTop;
 uniform int uOp;        // 0 fade, 1 lumakey, 2 chromakey, 3 map
-uniform float uAmount;
+uniform float uAmount;  // op-dependent: fade.t / lumakey.thr / chromakey.tol / map.mix
+uniform float uSoft;    // lumakey/chromakey edge softness (0 = hard)
+uniform float uInvert;  // lumakey: >0.5 flips the keep test
+uniform float uKey;     // chromakey: which colour to key (0 R .. 0.33 G .. 0.66 B)
+uniform float uMode;    // map: 0 = multiply, 1 = screen
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 
@@ -629,22 +838,32 @@ void main() {
   vec4 t = texture(uTop, vUv);
   vec3 outc = b.rgb;
   float a = clamp(uAmount, 0.0, 1.0);
+  float soft = max(0.0, uSoft);
   if (uOp == 0) {
     // FADE: alpha-aware crossfade by amount (premultiplied over base).
     float k = a * t.a;
     outc = mix(b.rgb, t.rgb, k);
   } else if (uOp == 1) {
-    // LUMAKEY: keep top where its luma exceeds the threshold (= amount).
-    float keep = step(a, luma(t.rgb)) * t.a;
+    // LUMAKEY: keep top where its luma exceeds the threshold (= amount). SOFT
+    // feathers the cut; INVERT flips it (keep BELOW the threshold instead).
+    float l = luma(t.rgb);
+    float keep = smoothstep(a - soft, a + soft + 0.0001, l);
+    if (uInvert > 0.5) keep = 1.0 - keep;
+    keep *= t.a;
     outc = mix(b.rgb, t.rgb, keep);
   } else if (uOp == 2) {
-    // CHROMAKEY: drop top where it is near-green (amount = tolerance).
-    float g = t.g - max(t.r, t.b);
-    float key = 1.0 - smoothstep(0.0, max(0.001, a), g);
+    // CHROMAKEY: drop top where it is near the KEY colour (R/G/B by uKey);
+    // amount = tolerance, soft = edge feather.
+    float chan = uKey < 0.25 ? (t.r - max(t.g, t.b))
+               : uKey < 0.58 ? (t.g - max(t.r, t.b))
+               :               (t.b - max(t.r, t.g));
+    float key = 1.0 - smoothstep(a, a + soft + 0.001, chan);
     outc = mix(b.rgb, t.rgb, key * t.a);
   } else {
-    // MAP: multiply (top modulates base), mixed in by amount.
-    vec3 m = b.rgb * t.rgb;
+    // MAP: top modulates base (MULTIPLY or SCREEN by uMode), mixed by amount.
+    vec3 m = uMode > 0.5
+      ? (1.0 - (1.0 - b.rgb) * (1.0 - t.rgb))  // screen
+      : b.rgb * t.rgb;                          // multiply
     outc = mix(b.rgb, m, a * t.a);
   }
   outColor = vec4(outc, 1.0);

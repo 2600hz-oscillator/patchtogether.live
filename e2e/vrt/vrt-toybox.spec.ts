@@ -298,3 +298,460 @@ test.describe('VRT: TOYBOX OBJ layer frozen render', () => {
     });
   }
 });
+
+// ── Phase 4: the user-EDITABLE combine GRAPH. Two baselines:
+//   1. combine-composite — a NON-DEFAULT combine graph (a MAP op multiplying
+//      layer 0 × layer 1, routed to OUTPUT) frozen at a fixed iTime; proves the
+//      DAG engine evaluates an edited graph to the expected composite (distinct
+//      from the layer-0-only default).
+//   2. combine-editor — the bespoke SVG node editor itself in a DETERMINISTIC
+//      state (default graph, freshly seeded, editor open); proves the boxes +
+//      ports + cables render. The SVG is static data (no animation) so it's
+//      pixel-stable.
+
+/** Set a NON-DEFAULT combine graph that reroutes the OUTPUT to a different
+ *  source than the layer-0 default: layer 1 (worley) → a FADE pass → OUTPUT.
+ *  This proves the DAG engine honours an edited graph (the output is layer 1,
+ *  not the default base layer 0). A single source shader keeps the frozen
+ *  composite pixel-deterministic across page loads (a multiply of two shaders
+ *  raced on compile order; one shader does not). */
+async function setCombineAndFreeze(page: Page, time: number): Promise<void> {
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['tb'];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      // Layer 0 (the default base) is a plain noise; layer 1 (worley) is the
+      // one we REROUTE to the output via the edited graph.
+      n.data.layers = [
+        { kind: 'gen', contentId: 'noise-fbm', params: {} },
+        { kind: 'gen', contentId: 'worley-cells', params: {} },
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'off', contentId: null, params: {} },
+      ];
+      // Edited GRAPH: src1 → FADE(t 0 = pass-through) → OUTPUT. The OUTPUT now
+      // shows LAYER 1, not the default layer-0 base — a clearly non-default
+      // composite proving the engine evaluates the user's graph.
+      n.data.combine = {
+        nodes: [
+          { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+          { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+          { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+          { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+          { id: 'passop', kind: 'fade', x: 120, y: 60, params: { amount: 0 } },
+          { id: 'out', kind: 'output', x: 286, y: 66 },
+        ],
+        edges: [
+          { id: 'e1', from: 'src1', to: 'passop', toPort: 'in0' },
+          { id: 'e3', from: 'passop', to: 'out', toPort: 'in0' },
+        ],
+      };
+    });
+  });
+  // Poll until the FROZEN composite is STABLE — both layer shaders compiled +
+  // rendered AND two consecutive freeze captures match. (A single ">lit"
+  // threshold can snapshot a frame where only layer 0 has compiled, so the
+  // multiply composite differs run-to-run; requiring stability gates that out.)
+  await page.waitForFunction(
+    ({ time }) => {
+      const g = globalThis as unknown as {
+        __toyboxFreeze?: (t?: number) => void;
+        __toyboxPrevSig?: string;
+      };
+      g.__toyboxFreeze?.(time);
+      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0;
+      let r = 0, gg = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      }
+      if (lit <= canvas.width * canvas.height * 0.05) return false;
+      // Coarse signature (rounded average) — stable once both shaders rendered.
+      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
+      const prev = g.__toyboxPrevSig;
+      g.__toyboxPrevSig = sig;
+      return prev === sig;
+    },
+    { time },
+    { timeout: 10_000 },
+  );
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
+// ── Phase 5: CV-ROUTE proof. A TOYBOX with cv2 routed to a FADE op's `t`
+// (amount) crossfading layer 0 (noise) ↔ layer 1 (cos-gradient). We drive the
+// GENERIC cv2 port through the ENGINE's real setParam(cv2, ±1) — the exact
+// Phase-5 path — which resolves cvRoutes.cv2, re-scales the ±1 across the fade
+// param's 0..1 range (centred on the op's amount=0.5), and writes it into the
+// live combine param. Two baselines: cv2 = -1 (→ amount 0, shows layer 0) vs
+// cv2 = +1 (→ amount 1, shows layer 1). They MUST differ — proving a CV moves
+// the composite via the generic pool + per-param routing.
+
+/** Seed the cv2→fade.t patch, drive the generic cv2 port to `raw` through the
+ *  engine's setParam (the real bridge path), freeze + wait for a stable frame. */
+async function setCvRouteAndFreeze(page: Page, raw: number, time: number): Promise<void> {
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+  // Seed layers + a crossfade combine graph + the cv2→fade.t route (once;
+  // re-seeding is idempotent for the same content).
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['tb'];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      n.data.layers = [
+        { kind: 'gen', contentId: 'noise-fbm', params: {} },
+        { kind: 'gen', contentId: 'cos-gradient', params: {} },
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'off', contentId: null, params: {} },
+      ];
+      // FADE crossfade: src0 (base) ↔ src1 (top), amount seeded at 0.5 (the
+      // modulation centre cv2 sweeps around). cv2 = -1 → 0 (base), +1 → 1 (top).
+      n.data.combine = {
+        nodes: [
+          { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+          { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+          { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+          { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+          { id: 'xf', kind: 'fade', x: 120, y: 40, params: { amount: 0.5 } },
+          { id: 'out', kind: 'output', x: 286, y: 40 },
+        ],
+        edges: [
+          { id: 'e0', from: 'src0', to: 'xf', toPort: 'in0' },
+          { id: 'e1', from: 'src1', to: 'xf', toPort: 'in1' },
+          { id: 'e2', from: 'xf', to: 'out', toPort: 'in0' },
+        ],
+      };
+      // Route the generic cv2 port → the FADE op's amount (t).
+      n.data.cvRoutes = { cv2: { target: 'combine', nodeId: 'xf', param: 'amount' } };
+    });
+  });
+  // Drive the GENERIC cv2 port via the engine's real setParam path (resolves
+  // the route + re-scales + writes the live combine param).
+  await page.evaluate(
+    ({ raw }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => unknown;
+      };
+      type VE = { setParam: (nodeId: string, paramId: string, value: number) => void };
+      type Eng = { getDomain: <T>(d: string) => T };
+      const e = (w.__engine ? (w.__engine() as Eng) : undefined);
+      try {
+        e?.getDomain<VE>('video')?.setParam('tb', 'cv2', raw);
+      } catch { /* */ }
+    },
+    { raw },
+  );
+  // Poll until the frozen composite stabilises (both shaders compiled +
+  // rendered AND two consecutive captures match). Re-drive cv2 each poll so the
+  // route keeps writing the live param while shaders finish compiling.
+  await page.waitForFunction(
+    ({ time, raw }) => {
+      const w = globalThis as unknown as {
+        __toyboxFreeze?: (t?: number) => void;
+        __toyboxPrevSig?: string;
+        __engine?: () => unknown;
+      };
+      type VE = { setParam: (nodeId: string, paramId: string, value: number) => void };
+      type Eng = { getDomain: <T>(d: string) => T };
+      try {
+        const e = w.__engine ? (w.__engine() as Eng) : undefined;
+        e?.getDomain<VE>('video')?.setParam('tb', 'cv2', raw);
+      } catch { /* */ }
+      w.__toyboxFreeze?.(time);
+      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0, r = 0, gg = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      }
+      if (lit <= canvas.width * canvas.height * 0.05) return false;
+      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
+      const prev = w.__toyboxPrevSig;
+      w.__toyboxPrevSig = sig;
+      return prev === sig;
+    },
+    { time, raw },
+    { timeout: 10_000 },
+  );
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
+test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
+  for (const drive of [
+    { name: 'cv2-low', raw: -1 },   // fade t → 0 : shows layer 0 (noise)
+    { name: 'cv2-high', raw: 1 },   // fade t → 1 : shows layer 1 (cos-gradient)
+  ]) {
+    test(`cv2 → fade.t driven ${drive.name} composites distinctly`, async ({ page }) => {
+      test.skip(
+        VRT_PLATFORM === 'linux',
+        `linux/toybox-${drive.name}: darwin baseline only; linux pending a vrt:update on CI`,
+      );
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('console', (m) => {
+        if (m.type() === 'error') errors.push(m.text());
+      });
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+        [],
+      );
+      const card = page.locator('.svelte-flow__node-toybox').first();
+      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      await pinViewport(page);
+
+      await setCvRouteAndFreeze(page, drive.raw, 2.0);
+
+      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      await expect(canvas).toHaveScreenshot(`${drive.name}.png`, { maskColor: '#ff00ff' });
+
+      expect(
+        errors.filter((e) => !e.includes('AudioContext')),
+        'no console / page errors',
+      ).toEqual([]);
+    });
+  }
+});
+
+// ── Phase 6: the bundled PRESETS — the headline proof that load → layers
+// (incl video/obj substitutes + gen + shader) → combine DAG → cv renders an
+// end-to-end composite. Each baseline LOADS a preset via the debug hook
+// window.__toyboxLoadPreset(id) (the same in-place Yjs mutation the dropdown
+// fires), freezes iTime, and waits until the composited preview is STABLE (the
+// async GLSL/OBJ fetches landed + two consecutive captures match), then
+// snapshots. The four presets MUST be visibly distinct (different sources +
+// combine ops).
+
+const PRESETS: Array<{ id: string; time: number }> = [
+  { id: 'plasma-dissolve', time: 4.0 },
+  { id: 'cow-on-camera',   time: 1.0 },
+  { id: 'worley-bloom',    time: 2.0 },
+  { id: 'reactor-field',   time: 3.0 },
+];
+
+/** Load a bundled preset via the debug hook, freeze iTime, wait until the
+ *  composited preview is non-black AND stable across two captures. */
+async function loadPresetAndFreeze(page: Page, presetId: string, time: number): Promise<void> {
+  // Resume the clock first so newly-referenced GLSL/OBJ compile + render.
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+  // Wait for the hook to exist (catalog loaded), then load the preset.
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __toyboxLoadPreset?: unknown }).__toyboxLoadPreset === 'function',
+    undefined,
+    { timeout: 10_000 },
+  );
+  await page.evaluate(async (presetId) => {
+    const g = globalThis as unknown as { __toyboxLoadPreset?: (id: string) => Promise<boolean> };
+    await g.__toyboxLoadPreset?.(presetId);
+  }, presetId);
+  // Reset the stability tracker so it can't carry a prior preset's signature.
+  await page.evaluate(() => {
+    (globalThis as unknown as { __toyboxPrevSig?: string }).__toyboxPrevSig = '';
+  });
+  // Poll until the FROZEN composite is non-black AND stable (two consecutive
+  // freeze captures match → all sources compiled + the DAG settled).
+  await page.waitForFunction(
+    ({ time }) => {
+      const g = globalThis as unknown as {
+        __toyboxFreeze?: (t?: number) => void;
+        __toyboxPrevSig?: string;
+      };
+      g.__toyboxFreeze?.(time);
+      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0, r = 0, gg = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      }
+      // ≥2% lit covers the framed-OBJ presets (cow / reactor) too.
+      if (lit <= canvas.width * canvas.height * 0.02) return false;
+      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
+      const prev = g.__toyboxPrevSig;
+      g.__toyboxPrevSig = sig;
+      return prev === sig;
+    },
+    { time },
+    { timeout: 15_000 },
+  );
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
+test.describe('VRT: TOYBOX Phase-6 presets', () => {
+  for (const p of PRESETS) {
+    test(`preset ${p.id} composites end-to-end`, async ({ page }) => {
+      test.skip(
+        VRT_PLATFORM === 'linux',
+        `linux/toybox-preset-${p.id}: darwin baseline only; linux pending a vrt:update on CI`,
+      );
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('console', (m) => {
+        if (m.type() === 'error') errors.push(m.text());
+      });
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+        [],
+      );
+      const card = page.locator('.svelte-flow__node-toybox').first();
+      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      await pinViewport(page);
+
+      await loadPresetAndFreeze(page, p.id, p.time);
+
+      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      await expect(canvas).toHaveScreenshot(`preset-${p.id}.png`, { maskColor: '#ff00ff' });
+
+      expect(
+        errors.filter((e) => !e.includes('AudioContext')),
+        'no console / page errors',
+      ).toEqual([]);
+    });
+  }
+});
+
+test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
+  test('a non-default combine graph composites the expected frozen output', async ({ page }) => {
+    test.skip(
+      VRT_PLATFORM === 'linux',
+      'linux/toybox-combine-composite: darwin baseline only; linux pending a vrt:update on CI',
+    );
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+      [],
+    );
+    const card = page.locator('.svelte-flow__node-toybox').first();
+    await card.waitFor({ state: 'visible', timeout: 10_000 });
+    await pinViewport(page);
+
+    await setCombineAndFreeze(page, 2.0);
+
+    const canvas = page.locator('[data-testid="toybox-canvas"]');
+    await expect(canvas).toHaveScreenshot('combine-composite.png', { maskColor: '#ff00ff' });
+
+    expect(
+      errors.filter((e) => !e.includes('AudioContext')),
+      'no console / page errors',
+    ).toEqual([]);
+  });
+
+  test('the bespoke SVG node editor renders the default graph deterministically', async ({ page }) => {
+    test.skip(
+      VRT_PLATFORM === 'linux',
+      'linux/toybox-combine-editor: darwin baseline only; linux pending a vrt:update on CI',
+    );
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+      [],
+    );
+    const card = page.locator('.svelte-flow__node-toybox').first();
+    await card.waitFor({ state: 'visible', timeout: 10_000 });
+    await pinViewport(page);
+
+    // Open the editor on the DEFAULT graph (seed it deterministically), so the
+    // SVG shows the 4 sources + 3 fade ops + OUTPUT with their cables.
+    await page.locator('[data-testid="toybox-combine-toggle"]').click({ force: true });
+    const svg = page.locator('[data-testid="toybox-graph-svg"]');
+    await svg.waitFor({ state: 'visible', timeout: 5_000 });
+    // Seed the default graph (the first add seeds + the SVG re-renders with it).
+    // We do NOT add a node — instead force the default seed via the engine read:
+    // touching the combine through a no-op param set on an existing default op.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      // Seed the default graph explicitly (deterministic content) so the SVG is
+      // identical run-to-run regardless of any prior edits.
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['tb'];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        n.data.combine = {
+          nodes: [
+            { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+            { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+            { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+            { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+            { id: 'op1', kind: 'fade', x: 120, y: 14, params: { amount: 0 } },
+            { id: 'op2', kind: 'fade', x: 120, y: 66, params: { amount: 0 } },
+            { id: 'op3', kind: 'fade', x: 120, y: 118, params: { amount: 0 } },
+            { id: 'out', kind: 'output', x: 286, y: 66 },
+          ],
+          edges: [
+            { id: 'e1', from: 'src0', to: 'op1', toPort: 'in0' },
+            { id: 'e2', from: 'src1', to: 'op1', toPort: 'in1' },
+            { id: 'e3', from: 'op1', to: 'op2', toPort: 'in0' },
+            { id: 'e4', from: 'src2', to: 'op2', toPort: 'in1' },
+            { id: 'e5', from: 'op2', to: 'op3', toPort: 'in0' },
+            { id: 'e6', from: 'src3', to: 'op3', toPort: 'in1' },
+            { id: 'e7', from: 'op3', to: 'out', toPort: 'in0' },
+          ],
+        };
+      });
+    });
+    // Settle a frame so the SVG reflects the seeded graph.
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    await expect(svg).toHaveScreenshot('combine-editor.png', { maskColor: '#ff00ff' });
+
+    expect(
+      errors.filter((e) => !e.includes('AudioContext')),
+      'no console / page errors',
+    ).toEqual([]);
+  });
+});
