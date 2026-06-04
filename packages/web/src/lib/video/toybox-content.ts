@@ -45,12 +45,33 @@ export interface ToyboxContent {
   params: ToyboxParamDef[];
 }
 
+/** A 3D model entry (Phase 3 — the OBJ layer). Either a bundled OBJ fetched
+ *  lazily from `obj`, or a procedural built-in primitive named by `builtin`
+ *  (no asset file). The factory generates/loads the mesh on selection. */
+export interface ToyboxModel {
+  /** Stable storage id (also the OBJ filename stem when `obj` is set). */
+  id: string;
+  /** Display label (dropdown). */
+  label: string;
+  /** Public URL of the bundled OBJ source. Omit for built-in primitives. */
+  obj?: string;
+  /** Built-in procedural primitive id ('cube' | 'sphere' | 'torus' |
+   *  'hypercube'); set instead of `obj` for asset-free meshes. */
+  builtin?: 'cube' | 'sphere' | 'torus' | 'hypercube';
+  /** Default matcap style index for this model (0..MATCAP_STYLES-1). */
+  matcap?: number;
+  /** SPDX license tag (provenance — surfaced in docs/LICENSES). */
+  license?: string;
+}
+
 interface ToyboxManifest {
   version: number;
   /** FX family entries. */
   shaders: ToyboxContent[];
   /** GEN family entries. */
   gen: ToyboxContent[];
+  /** 3D model entries (Phase 3 OBJ layer). Optional for older manifests. */
+  models?: ToyboxModel[];
 }
 
 /** Public path to the static manifest. */
@@ -61,6 +82,8 @@ export const TOYBOX_MANIFEST_URL = '/toybox/manifest.json';
 let manifestPromise: Promise<ToyboxManifest> | null = null;
 let catalog: ToyboxContent[] | null = null;
 let byId: Map<string, ToyboxContent> | null = null;
+let modelCatalog: ToyboxModel[] | null = null;
+let modelById: Map<string, ToyboxModel> | null = null;
 
 /** Fetch + parse the static manifest once; cached for the session. */
 async function loadManifest(): Promise<ToyboxManifest> {
@@ -75,6 +98,8 @@ async function loadManifest(): Promise<ToyboxManifest> {
       const gen = Array.isArray(json.gen) ? json.gen : [];
       catalog = [...gen, ...shaders];
       byId = new Map(catalog.map((c) => [c.id, c]));
+      modelCatalog = Array.isArray(json.models) ? json.models : [];
+      modelById = new Map(modelCatalog.map((m) => [m.id, m]));
       return json;
     })();
   }
@@ -112,6 +137,50 @@ export async function listAllContent(): Promise<ToyboxContent[]> {
  *  ensureToyboxCatalog() can use this on the hot path. */
 export function getContentMeta(id: string): ToyboxContent | undefined {
   return byId?.get(id);
+}
+
+// ---------------- Model catalog (Phase 3 OBJ layer) ----------------
+
+/** All model entries (the manifest's `models` array). Empty until
+ *  ensureToyboxCatalog() has resolved. */
+export async function listModels(): Promise<ToyboxModel[]> {
+  await loadManifest();
+  return modelCatalog ?? [];
+}
+
+/** Synchronous model lookup (manifest must have loaded). */
+export function getModelMeta(id: string): ToyboxModel | undefined {
+  return modelById?.get(id);
+}
+
+/** The default model id (first model entry) for a fresh OBJ layer. */
+export const DEFAULT_MODEL_ID = 'spot';
+
+const objCache = new Map<string, Promise<string>>();
+
+/**
+ * Fetch the OBJ source text for a model id, lazily + cached. Resolves the
+ * manifest first, then fetches `model.obj`. Built-in primitives (no `obj`
+ * URL) are generated procedurally by the factory and never reach here —
+ * throws if called for one. Throws on unknown id or fetch error.
+ */
+export async function getModelObj(id: string): Promise<{ meta: ToyboxModel; obj: string }> {
+  await loadManifest();
+  const meta = modelById?.get(id);
+  if (!meta) throw new Error(`TOYBOX: unknown model id '${id}'`);
+  if (!meta.obj) throw new Error(`TOYBOX: model '${id}' is a built-in primitive (no OBJ to fetch)`);
+  let p = objCache.get(id);
+  if (!p) {
+    p = (async () => {
+      const res = await fetch(meta.obj!);
+      if (!res.ok) {
+        throw new Error(`TOYBOX obj fetch ${meta.obj} → ${res.status} ${res.statusText}`);
+      }
+      return res.text();
+    })();
+    objCache.set(id, p);
+  }
+  return { meta, obj: await p };
 }
 
 /** The default content id (first GEN entry) used when a fresh TOYBOX layer
@@ -153,23 +222,102 @@ export async function getContent(id: string): Promise<{ meta: ToyboxContent; gls
 
 // ---------------- Layer model (persisted in node.data.layers) ----------------
 
-/** What a single TOYBOX layer holds. Phase 1 only renders index 0, but the
- *  array is sized to LAYER_COUNT so the persisted shape is already the
- *  Phase-2 (4-layer) shape — no migration needed when layers 1..3 light up. */
-export interface ToyboxLayer {
-  /** 'shader' (FX) | 'gen' (GEN). Distinguishes the source family; both
-   *  compile + render identically in P1 — the tag drives later combine
-   *  routing + UI grouping. */
-  kind: 'shader' | 'gen';
-  /** Selected content id (manifest entry). Null = empty layer (renders nothing). */
-  contentId: string | null;
-  /** Per-param values keyed by ToyboxParamDef.id. Missing keys fall back to
-   *  the param's manifest default at draw time. */
-  params: Record<string, number>;
+/** The kind of source a TOYBOX layer renders.
+ *   - 'shader' (FX) / 'gen' (GEN): a fragment-shader content entry.
+ *   - 'obj': a 3D mesh (bundled OBJ or built-in primitive), matcap-shaded
+ *            into the layer's FBO with depth testing (Phase 3).
+ *   - 'video': reserved (a sampled input texture) — renders nothing yet.
+ *   - 'off': explicitly empty (renders nothing). */
+export type ToyboxLayerKind = 'shader' | 'gen' | 'obj' | 'video' | 'off';
+
+/** Transform + matcap material for an OBJ-kind layer (Phase 3). All numeric
+ *  so they are CV-target-ready later; the OBJ render pass reads them every
+ *  frame from the live layer. */
+export interface ToyboxObjMaterial {
+  /** Model id (manifest `models` entry — bundled OBJ or built-in primitive). */
+  modelId: string;
+  /** Static rotation about each axis (radians). */
+  rotX: number;
+  rotY: number;
+  rotZ: number;
+  /** Uniform scale multiplier applied ON TOP of the mesh's auto-frame fit. */
+  scale: number;
+  /** Auto-rotation rate (radians/sec about Y, added to rotY at draw time). */
+  spin: number;
+  /** Procedural matcap style index (0..MATCAP_STYLES-1). */
+  matcap: number;
+  /** RGB tint multiplied over the matcap. */
+  tintR: number;
+  tintG: number;
+  tintB: number;
 }
 
-/** Number of layers a TOYBOX node persists. P1 renders only index 0. */
+/** Number of procedural matcap styles the OBJ shader provides. */
+export const MATCAP_STYLES = 3;
+
+/** Default OBJ material for a fresh OBJ layer. */
+export function makeDefaultObjMaterial(modelId = DEFAULT_MODEL_ID): ToyboxObjMaterial {
+  return {
+    modelId,
+    rotX: 0.3,
+    rotY: 0.6,
+    rotZ: 0,
+    scale: 1,
+    spin: 0.4,
+    matcap: 0,
+    tintR: 1,
+    tintG: 1,
+    tintB: 1,
+  };
+}
+
+/** What a single TOYBOX layer holds. The array is sized to LAYER_COUNT; each
+ *  layer renders into its own FBO and the combine DAG reduces them to the
+ *  output. */
+export interface ToyboxLayer {
+  /** Source kind — see {@link ToyboxLayerKind}. */
+  kind: ToyboxLayerKind;
+  /** Selected fragment-shader content id (for shader/gen kinds). Null = empty. */
+  contentId: string | null;
+  /** Per-param values keyed by ToyboxParamDef.id (shader/gen kinds). Missing
+   *  keys fall back to the param's manifest default at draw time. */
+  params: Record<string, number>;
+  /** OBJ transform + matcap material (only meaningful for kind === 'obj'). */
+  material?: ToyboxObjMaterial;
+}
+
+/** Number of layers a TOYBOX node persists + renders. */
 export const LAYER_COUNT = 4;
+
+// ---------------- Combine DAG (reduce layers → output) ----------------
+
+/** A combine operation in the per-node combine graph. Each step combines an
+ *  accumulator (the running composite, starting at layer 0) with one further
+ *  layer texture using `op`. The output is the final accumulator. */
+export type ToyboxCombineOp = 'fade' | 'lumakey' | 'chromakey' | 'map';
+
+export interface ToyboxCombineStep {
+  /** Layer index (1..LAYER_COUNT-1) to combine into the accumulator. */
+  layer: number;
+  /** How to blend it. */
+  op: ToyboxCombineOp;
+  /** Mix amount / threshold (0..1), op-dependent. */
+  amount: number;
+}
+
+export interface ToyboxCombine {
+  steps: ToyboxCombineStep[];
+}
+
+/** Build the default combine: a straight chain that fades each subsequent
+ *  active layer over the accumulator at full amount. Layer 0 is the base. */
+export function makeDefaultCombine(): ToyboxCombine {
+  const steps: ToyboxCombineStep[] = [];
+  for (let i = 1; i < LAYER_COUNT; i++) {
+    steps.push({ layer: i, op: 'fade', amount: 0 });
+  }
+  return { steps };
+}
 
 /** Build a fresh, fully-defaulted layer array (4 layers; layer 0 seeded with
  *  the default GEN content + its param defaults, layers 1..3 empty). Used by
@@ -181,6 +329,6 @@ export function makeDefaultLayers(): ToyboxLayer[] {
   const params: Record<string, number> = {};
   if (meta) for (const p of meta.params) params[p.id] = p.default;
   const layer0: ToyboxLayer = { kind: 'gen', contentId: DEFAULT_CONTENT_ID, params };
-  const empty = (): ToyboxLayer => ({ kind: 'shader', contentId: null, params: {} });
+  const empty = (): ToyboxLayer => ({ kind: 'off', contentId: null, params: {} });
   return [layer0, empty(), empty(), empty()];
 }

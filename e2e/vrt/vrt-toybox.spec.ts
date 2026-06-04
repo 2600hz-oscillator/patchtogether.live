@@ -40,6 +40,25 @@ const CONTENTS: Array<{ id: string; kind: 'gen' | 'shader'; time: number }> = [
 
 test.describe.configure({ mode: 'default' });
 
+/**
+ * Pin the Svelte Flow viewport to a fixed transform (scale 1) so the captured
+ * canvas DOM box is always the same pixel size. Without this, `fitView`
+ * auto-zooms to fit the single spawned node at a zoom that depends on
+ * layout/paint timing, so the screenshot element size drifts run-to-run
+ * (340×255 vs 372×279). We freeze the transform AND kill the zoom transition
+ * so the canvas renders at its intrinsic 200×150 (× devicePixelRatio).
+ */
+async function pinViewport(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
+    if (!vp) return;
+    vp.style.transition = 'none';
+    vp.style.transform = 'translate(0px, 0px) scale(1)';
+  });
+  // Settle one rAF so the new transform is applied before capture.
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
 /** Point TOYBOX layer 0 at `id`, freeze iTime to `time`, wait until the
  *  frozen preview canvas is non-black (shader compiled + rendered). */
 async function setContentAndFreeze(page: Page, id: string, kind: string, time: number): Promise<void> {
@@ -104,6 +123,98 @@ async function setContentAndFreeze(page: Page, id: string, kind: string, time: n
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 }
 
+// ── Phase 3: OBJ models. Each baseline freezes a FIXED matcap + FIXED
+// rotation (spin = 0, so the model pose is fully deterministic at any pinned
+// iTime), proving the OBJ pass renders recognizable LIT 3D geometry into the
+// layer FBO and the combine stage carries it to the module output. `spot`
+// (a bundled CC0 OBJ with computed flat normals + quad fan-triangulation),
+// `teapot` (a bundled CC0 OBJ with explicit normals), and `sphere` (a built-
+// in procedural primitive, no asset file) cover all three mesh sources.
+const MODELS: Array<{ id: string; matcap: number; time: number }> = [
+  { id: 'teapot', matcap: 0, time: 1.0 }, // CHROME
+  { id: 'spot',   matcap: 1, time: 1.0 }, // CLAY
+  { id: 'sphere', matcap: 2, time: 1.0 }, // NEON (builtin primitive)
+];
+
+/** Point TOYBOX layer 0 at an OBJ model with a fixed pose + matcap, freeze
+ *  iTime, wait until the frozen preview canvas shows lit geometry. */
+async function setObjAndFreeze(
+  page: Page,
+  modelId: string,
+  matcap: number,
+  time: number,
+): Promise<void> {
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+
+  await page.evaluate(
+    ({ modelId, matcap }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['tb'];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        n.data.layers = [
+          {
+            kind: 'obj',
+            contentId: null,
+            params: {},
+            // Fixed pose (spin = 0 → deterministic) + fixed matcap/tint.
+            material: {
+              modelId,
+              rotX: 0.5,
+              rotY: 0.7,
+              rotZ: 0,
+              scale: 1,
+              spin: 0,
+              matcap,
+              tintR: 1,
+              tintG: 1,
+              tintB: 1,
+            },
+          },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+        ];
+      });
+    },
+    { modelId, matcap },
+  );
+
+  // Poll until the frozen preview shows lit (non-black) geometry — the async
+  // OBJ fetch+parse+upload (or primitive build) has landed + a frame rendered.
+  await page.waitForFunction(
+    ({ time }) => {
+      const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+      g.__toyboxFreeze?.(time);
+      const canvas = document.querySelector(
+        '[data-testid="toybox-canvas"]',
+      ) as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+      }
+      // A framed 3D model fills a smaller fraction than a fullscreen shader;
+      // require a visible-but-modest lit area (≥2% of the preview).
+      return lit > (canvas.width * canvas.height) * 0.02;
+    },
+    { time },
+    { timeout: 10_000 },
+  );
+
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
 test.describe('VRT: TOYBOX per-content frozen render', () => {
   for (const c of CONTENTS) {
     test(`${c.id} renders real frozen content`, async ({ page }) => {
@@ -129,11 +240,54 @@ test.describe('VRT: TOYBOX per-content frozen render', () => {
 
       const card = page.locator('.svelte-flow__node-toybox').first();
       await card.waitFor({ state: 'visible', timeout: 10_000 });
+      await pinViewport(page);
 
       await setContentAndFreeze(page, c.id, c.kind, c.time);
 
       const canvas = page.locator('[data-testid="toybox-canvas"]');
       await expect(canvas).toHaveScreenshot(`${c.id}.png`, {
+        maskColor: '#ff00ff',
+      });
+
+      expect(
+        errors.filter((e) => !e.includes('AudioContext')),
+        'no console / page errors',
+      ).toEqual([]);
+    });
+  }
+});
+
+test.describe('VRT: TOYBOX OBJ layer frozen render', () => {
+  for (const m of MODELS) {
+    test(`obj ${m.id} renders recognizable lit 3D geometry`, async ({ page }) => {
+      test.skip(
+        VRT_PLATFORM === 'linux',
+        `linux/toybox-obj-${m.id}: darwin baseline only; linux pending a vrt:update on CI`,
+      );
+
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('console', (msg) => {
+        if (msg.type() === 'error') errors.push(msg.text());
+      });
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+
+      await spawnPatch(
+        page,
+        [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+        [],
+      );
+
+      const card = page.locator('.svelte-flow__node-toybox').first();
+      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      await pinViewport(page);
+
+      await setObjAndFreeze(page, m.id, m.matcap, m.time);
+
+      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      await expect(canvas).toHaveScreenshot(`obj-${m.id}.png`, {
         maskColor: '#ff00ff',
       });
 

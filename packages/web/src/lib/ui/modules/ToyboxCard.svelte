@@ -23,12 +23,20 @@
   import { patch } from '$lib/graph/store';
   import {
     DEFAULT_CONTENT_ID,
+    DEFAULT_MODEL_ID,
+    MATCAP_STYLES,
     ensureToyboxCatalog,
     getContentMeta,
+    getModelMeta,
     listAllContent,
+    listModels,
     makeDefaultLayers,
+    makeDefaultObjMaterial,
     type ToyboxContent,
     type ToyboxLayer,
+    type ToyboxLayerKind,
+    type ToyboxModel,
+    type ToyboxObjMaterial,
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -44,12 +52,15 @@
   const CANVAS_W = 200;
   const CANVAS_H = Math.round(CANVAS_W * (ENGINE_H / ENGINE_W)); // 150
 
-  // ----- Content catalog (loaded from the static manifest) -----
+  // ----- Content + model catalogs (loaded from the static manifest) -----
   let catalog: ToyboxContent[] = $state([]);
+  let models: ToyboxModel[] = $state([]);
+  const MATCAP_LABELS = ['CHROME', 'CLAY', 'NEON'];
   onMount(() => {
     void (async () => {
       await ensureToyboxCatalog();
       catalog = await listAllContent();
+      models = await listModels();
       // Seed a fully-defaulted layer array if the node has none yet, so the
       // factory + card agree on layer 0's content from first paint.
       const t = patch.nodes[id];
@@ -62,16 +73,25 @@
     })();
   });
 
-  /** Layer 0 from the live store (P1 renders only this layer). */
+  /** Layer 0 from the live store (the card edits layer 0; the combine DAG +
+   *  layers 1-3 are programmatic for now). */
   function layer0(): ToyboxLayer | undefined {
     const layers = (node?.data?.layers as ToyboxLayer[] | undefined);
     return layers?.[0];
   }
+  // The layer's kind selects which control cluster shows: shader/gen → content
+  // dropdown + param faders; obj → model dropdown + transform/matcap controls.
+  let currentKind = $derived<ToyboxLayerKind>(layer0()?.kind ?? 'gen');
+  let isObj = $derived(currentKind === 'obj');
   let currentContentId = $derived(layer0()?.contentId ?? DEFAULT_CONTENT_ID);
   // Derive from the reactive `catalog` (not the module-level lookup) so the
   // faders appear as soon as the manifest loads, and re-derive when the
   // selected content changes.
   let currentMeta = $derived(catalog.find((c) => c.id === currentContentId));
+
+  // ----- OBJ-layer derived state -----
+  let currentMaterial = $derived(layer0()?.material ?? makeDefaultObjMaterial());
+  let currentModelId = $derived(currentMaterial.modelId ?? DEFAULT_MODEL_ID);
 
   /** Read a live param value for the selected content, defaulting to the
    *  manifest default when the layer hasn't set it. */
@@ -91,6 +111,42 @@
     return d.layers[0]!;
   }
 
+  /** Ensure layer 0 has a material object + return it (mutable). */
+  function ensureMaterial(): ToyboxObjMaterial | null {
+    const l0 = ensureLayer0();
+    if (!l0) return null;
+    if (!l0.material) l0.material = makeDefaultObjMaterial();
+    return l0.material;
+  }
+
+  // The layer-KIND selector: 'gen'/'shader' route through content; 'obj' is the
+  // 3D mesh layer; 'off' renders nothing.
+  function onKindChange(ev: Event) {
+    const sel = (ev.target as HTMLSelectElement).value as ToyboxLayerKind;
+    const l0 = ensureLayer0();
+    if (!l0) return;
+    l0.kind = sel;
+    if (sel === 'obj') {
+      // Seed a material (+ default model + its preferred matcap) if missing.
+      if (!l0.material) {
+        const mat = makeDefaultObjMaterial(DEFAULT_MODEL_ID);
+        const mm = getModelMeta(DEFAULT_MODEL_ID);
+        if (mm && typeof mm.matcap === 'number') mat.matcap = mm.matcap;
+        l0.material = mat;
+      }
+    } else if (sel === 'gen' || sel === 'shader') {
+      // Make sure there's a content id to render.
+      if (!l0.contentId) {
+        const meta = getContentMeta(DEFAULT_CONTENT_ID);
+        l0.contentId = DEFAULT_CONTENT_ID;
+        l0.kind = meta?.family === 'GEN' ? 'gen' : 'shader';
+        const params: Record<string, number> = {};
+        if (meta) for (const p of meta.params) params[p.id] = p.default;
+        l0.params = params;
+      }
+    }
+  }
+
   function onContentChange(ev: Event) {
     const sel = (ev.target as HTMLSelectElement).value;
     if (!sel) return;
@@ -104,6 +160,34 @@
     const params: Record<string, number> = {};
     for (const p of meta.params) params[p.id] = p.default;
     l0.params = params;
+  }
+
+  function onModelChange(ev: Event) {
+    const sel = (ev.target as HTMLSelectElement).value;
+    if (!sel) return;
+    const mat = ensureMaterial();
+    if (!mat) return;
+    mat.modelId = sel;
+    const mm = getModelMeta(sel);
+    if (mm && typeof mm.matcap === 'number') mat.matcap = mm.matcap;
+  }
+
+  function onMatcapChange(ev: Event) {
+    const mat = ensureMaterial();
+    if (!mat) return;
+    mat.matcap = parseInt((ev.target as HTMLSelectElement).value, 10) || 0;
+  }
+
+  /** Setter for one numeric OBJ-material field (transform/spin/tint). */
+  const setMat = (key: keyof ToyboxObjMaterial) => (v: number) => {
+    const mat = ensureMaterial();
+    if (!mat) return;
+    (mat as unknown as Record<string, number>)[key as string] = v;
+  };
+
+  function matVal(key: keyof ToyboxObjMaterial): number {
+    const v = currentMaterial[key];
+    return typeof v === 'number' ? v : 0;
   }
 
   const setParam = (pid: string) => (v: number) => {
@@ -217,33 +301,100 @@
     ></canvas>
   </div>
 
+  <!-- LAYER KIND selector: shader/gen (content) vs OBJ (3D mesh). -->
   <div class="content-row">
-    <label class="content-label" for={`toybox-content-${id}`}>CONTENT</label>
+    <label class="content-label" for={`toybox-kind-${id}`}>LAYER</label>
     <select
-      id={`toybox-content-${id}`}
+      id={`toybox-kind-${id}`}
       class="content-select"
-      data-testid="toybox-content-select"
-      value={currentContentId}
-      onchange={onContentChange}
+      data-testid="toybox-kind-select"
+      value={currentKind}
+      onchange={onKindChange}
     >
-      {#each catalog as c (c.id)}
-        <option value={c.id}>{c.family} · {c.label}</option>
-      {/each}
+      <option value="gen">SHADER</option>
+      <option value="obj">OBJ</option>
+      <option value="off">OFF</option>
     </select>
   </div>
 
-  <div class="knob-grid" data-testid="toybox-controls">
-    {#if currentMeta}
-      {#each currentMeta.params as p (p.id)}
-        <Knob
-          value={paramVal(p.id)}
-          min={p.min} max={p.max} defaultValue={p.default}
-          label={p.label} curve={p.curve}
-          onchange={setParam(p.id)} moduleId={id} paramId={p.id}
-        />
-      {/each}
-    {/if}
-  </div>
+  {#if isObj}
+    <!-- OBJ layer: model dropdown + matcap + transform/spin/tint controls. -->
+    <div class="content-row">
+      <label class="content-label" for={`toybox-model-${id}`}>MODEL</label>
+      <select
+        id={`toybox-model-${id}`}
+        class="content-select"
+        data-testid="toybox-model-select"
+        value={currentModelId}
+        onchange={onModelChange}
+      >
+        {#each models as m (m.id)}
+          <option value={m.id}>{m.label}</option>
+        {/each}
+      </select>
+    </div>
+    <div class="content-row">
+      <label class="content-label" for={`toybox-matcap-${id}`}>MATCAP</label>
+      <select
+        id={`toybox-matcap-${id}`}
+        class="content-select"
+        data-testid="toybox-matcap-select"
+        value={String(currentMaterial.matcap)}
+        onchange={onMatcapChange}
+      >
+        {#each Array(MATCAP_STYLES) as _, i (i)}
+          <option value={String(i)}>{MATCAP_LABELS[i] ?? `STYLE ${i}`}</option>
+        {/each}
+      </select>
+    </div>
+
+    <div class="knob-grid" data-testid="toybox-controls">
+      <Knob value={matVal('rotX')} min={-3.14159} max={3.14159} defaultValue={0.3}
+        label="ROT X" curve="linear" onchange={setMat('rotX')} moduleId={id} paramId="rotX" />
+      <Knob value={matVal('rotY')} min={-3.14159} max={3.14159} defaultValue={0.6}
+        label="ROT Y" curve="linear" onchange={setMat('rotY')} moduleId={id} paramId="rotY" />
+      <Knob value={matVal('rotZ')} min={-3.14159} max={3.14159} defaultValue={0}
+        label="ROT Z" curve="linear" onchange={setMat('rotZ')} moduleId={id} paramId="rotZ" />
+      <Knob value={matVal('scale')} min={0.25} max={3} defaultValue={1}
+        label="SCALE" curve="linear" onchange={setMat('scale')} moduleId={id} paramId="scale" />
+      <Knob value={matVal('spin')} min={0} max={3} defaultValue={0.4}
+        label="SPIN" curve="linear" onchange={setMat('spin')} moduleId={id} paramId="spin" />
+      <Knob value={matVal('tintR')} min={0} max={1} defaultValue={1}
+        label="TINT R" curve="linear" onchange={setMat('tintR')} moduleId={id} paramId="tintR" />
+      <Knob value={matVal('tintG')} min={0} max={1} defaultValue={1}
+        label="TINT G" curve="linear" onchange={setMat('tintG')} moduleId={id} paramId="tintG" />
+      <Knob value={matVal('tintB')} min={0} max={1} defaultValue={1}
+        label="TINT B" curve="linear" onchange={setMat('tintB')} moduleId={id} paramId="tintB" />
+    </div>
+  {:else if currentKind === 'gen' || currentKind === 'shader'}
+    <div class="content-row">
+      <label class="content-label" for={`toybox-content-${id}`}>CONTENT</label>
+      <select
+        id={`toybox-content-${id}`}
+        class="content-select"
+        data-testid="toybox-content-select"
+        value={currentContentId}
+        onchange={onContentChange}
+      >
+        {#each catalog as c (c.id)}
+          <option value={c.id}>{c.family} · {c.label}</option>
+        {/each}
+      </select>
+    </div>
+
+    <div class="knob-grid" data-testid="toybox-controls">
+      {#if currentMeta}
+        {#each currentMeta.params as p (p.id)}
+          <Knob
+            value={paramVal(p.id)}
+            min={p.min} max={p.max} defaultValue={p.default}
+            label={p.label} curve={p.curve}
+            onchange={setParam(p.id)} moduleId={id} paramId={p.id}
+          />
+        {/each}
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
