@@ -297,6 +297,17 @@ export interface ToyboxObjMaterial {
   tintR: number;
   tintG: number;
   tintB: number;
+  /** OPTIONAL surface-texture source (Phase 6 texmap): the LAYER INDEX
+   *  (0..LAYER_COUNT-1) whose rendered FBO is UV-mapped onto the mesh as a
+   *  surface texture in place of (blended with) the matcap. undefined or a
+   *  negative / out-of-range / self value = matcap-only. Choosing a layer index
+   *  (not a node id) mirrors the combine source nodes' `layer:number` and is
+   *  kind-agnostic, so a future 'video' layer's frame works identically. */
+  surfaceSource?: number;
+  /** OPTIONAL blend amount (0..1) of the sampled surface texture over the
+   *  matcap. undefined → 1 (full texture replace-over-matcap) when a valid
+   *  surfaceSource is set. */
+  surfaceMix?: number;
 }
 
 /** Number of procedural matcap styles the OBJ shader provides. */

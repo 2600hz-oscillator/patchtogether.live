@@ -220,6 +220,33 @@ export function parseObj(src: string): ParsedMesh {
   // render pass's fixed camera every model frames sanely. Guard zero-extent.
   const scale = ext > 1e-9 ? 2 / ext : 1;
 
+  // ---- Planar-UV fallback for OBJs with ZERO authored `vt` lines ----
+  // Models with no texture coords (teapot/chess-pawn) emit every vertex with
+  // uv (0,0) above, so a surface-texture lookup would sample a single texel.
+  // Synthesize a deterministic planar XY projection over the model bounds:
+  // u = (px - min.x)/extX, v = (py - min.y)/extY. This is a pure function of
+  // position, so it does NOT affect dedup correctness (identical pos → identical
+  // synthesized uv). Models WITH `vt` (spot) are untouched — the matcap path
+  // ignores uv entirely, so adding planar uv to these models is harmless to the
+  // existing matcap baselines. The projection emits a top-origin v (1 - rawV)
+  // so it matches the OBJ-v flip the surface shader applies (which un-flips
+  // authored bottom-origin uv); the planar fallback therefore looks upright.
+  if (uvs.length === 0) {
+    const extX = max[0] - min[0];
+    const extY = max[1] - min[1];
+    const invX = extX > 1e-9 ? 1 / extX : 0;
+    const invY = extY > 1e-9 ? 1 / extY : 0;
+    for (let i = 0; i < interleavedList.length; i += FLOATS_PER_VERT) {
+      const px = interleavedList[i]!;
+      const py = interleavedList[i + 1]!;
+      const u = (px - min[0]) * invX;
+      const v = (py - min[1]) * invY;
+      interleavedList[i + 6] = u;
+      // Emit top-origin v so the shader's 1.0 - v flip lands it upright.
+      interleavedList[i + 7] = 1 - v;
+    }
+  }
+
   return {
     interleaved: new Float32Array(interleavedList),
     indices: new Uint32Array(indices),

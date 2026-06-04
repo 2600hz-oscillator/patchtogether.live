@@ -766,6 +766,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // clicks + a live-output delta).
   'linux/toybox-combine-composite',
   'linux/toybox-combine-editor',
+  // TOYBOX Phase 6 texmap (OBJ surface = another layer's rendered output,
+  // UV-mapped): the obj-tex-sphere (primitive uv) + obj-tex-teapot (zero-vt
+  // PLANAR-UV fallback) frozen renders + the textured-sphere preset are darwin
+  // baselines captured locally; linux pending a `task vrt:update` on linux CI
+  // (same WebGL/shader pipeline, sub-threshold cross-platform paint timing).
+  // Functional coverage: toybox-surface.test.ts (render-order + cycle/self
+  // guard) + obj-parse.test.ts (planar-uv fallback) + the texmap e2e
+  // (e2e/tests/toybox-texture-source.spec.ts).
+  'linux/toybox-obj-tex-sphere',
+  'linux/toybox-obj-tex-teapot',
+  'linux/toybox-preset-textured-sphere',
   // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
   // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
   // `__nibblesForceLength` test hook. Darwin baselines captured on this

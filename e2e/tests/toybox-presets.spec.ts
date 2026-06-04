@@ -74,6 +74,14 @@ const PRESETS: Array<{
     combineNodeIds: ['src0', 'src1', 'src2', 'src3', 'map1', 'lk1', 'out'],
     cvRoutes: {},
   },
+  {
+    // Phase-6 texmap showcase: layer 0 OBJ sphere whose SURFACE = layer 1's
+    // worley field (material.surfaceSource = 1).
+    id: 'textured-sphere',
+    expectKinds: ['obj', 'gen', 'off', 'off'],
+    combineNodeIds: ['src0', 'src1', 'src2', 'src3', 'fade1', 'out'],
+    cvRoutes: {},
+  },
 ];
 
 async function pinViewport(page: Page): Promise<void> {

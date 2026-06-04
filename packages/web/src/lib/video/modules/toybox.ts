@@ -71,6 +71,7 @@ import {
   type CvRoutes,
 } from '$lib/video/toybox-cv-routes';
 import { parseObj } from '$lib/video/obj-parse';
+import { resolveRenderOrder } from '$lib/video/toybox-surface';
 import { makePrimitive, type BuiltinPrimitive } from '$lib/video/primitives';
 import type { Mesh } from '$lib/video/mesh';
 import {
@@ -115,8 +116,11 @@ precision highp float;
 in vec3 vNormal;
 in vec2 vUv;
 out vec4 outColor;
-uniform int uMatcap;     // style index 0..${MATCAP_STYLES - 1}
+uniform int uMatcap;       // style index 0..${MATCAP_STYLES - 1}
 uniform vec3 uTint;
+uniform sampler2D uSurface; // another layer's rendered FBO (texmap)
+uniform int uUseSurface;    // 1 = blend the sampled layer over the matcap
+uniform float uSurfaceMix;  // 0..1 blend amount (1 = full texture replace)
 
 // Procedural hemispheric matcap. muv in [0,1]^2 from the (camera-space)
 // normal; r = distance from the matcap centre (1 at the silhouette edge).
@@ -153,7 +157,13 @@ void main() {
   vec3 n = normalize(vNormal);
   // Map normal.xy → matcap uv (the canonical sphere-normal matcap lookup).
   vec2 muv = n.xy * 0.5 + 0.5;
-  vec3 col = matcap(muv, uMatcap) * uTint;
+  vec3 mat = matcap(muv, uMatcap);
+  // Texmap: sample the bound source-layer FBO by the mesh UV. OBJ v is
+  // bottom-origin vs GL top-origin, so flip v. When uUseSurface=0 the bound
+  // texture (this layer's own FBO) is ignored entirely → pure matcap.
+  vec3 surf = texture(uSurface, vec2(vUv.x, 1.0 - vUv.y)).rgb;
+  vec3 outc = (uUseSurface == 1) ? mix(mat, surf, clamp(uSurfaceMix, 0.0, 1.0)) : mat;
+  vec3 col = outc * uTint;
   outColor = vec4(col, 1.0);
 }`;
 
@@ -211,6 +221,23 @@ export const toyboxDef: VideoModuleDef = {
       layerTargets.push({ fbo, texture, depth });
     }
 
+    // A tiny 1×1 placeholder texture for the OBJ surface sampler when a layer
+    // has NO surface source. We must bind SOME texture (the sampler is always
+    // declared), but binding the layer's OWN FBO colour texture while rendering
+    // into that FBO is a WebGL feedback loop (undefined → black/incomplete on
+    // many drivers), so we bind this inert dummy instead. uUseSurface=0 means
+    // the shader never samples it; it only keeps the sampler state defined.
+    const dummyTex = gl.createTexture();
+    if (!dummyTex) throw new Error('TOYBOX: createTexture (dummy surface) failed');
+    gl.bindTexture(gl.TEXTURE_2D, dummyTex);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+      new Uint8Array([0, 0, 0, 255]),
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
     // ---------------- Fragment-shader content programs ----------------
     interface CompiledShader {
       program: WebGLProgram;
@@ -253,6 +280,9 @@ export const toyboxDef: VideoModuleDef = {
     const uNormalMat = gl.getUniformLocation(objProgram, 'uNormalMat');
     const uMatcap = gl.getUniformLocation(objProgram, 'uMatcap');
     const uTint = gl.getUniformLocation(objProgram, 'uTint');
+    const uSurface = gl.getUniformLocation(objProgram, 'uSurface');
+    const uUseSurface = gl.getUniformLocation(objProgram, 'uUseSurface');
+    const uSurfaceMix = gl.getUniformLocation(objProgram, 'uSurfaceMix');
 
     interface GpuMesh {
       vao: WebGLVertexArrayObject;
@@ -450,8 +480,14 @@ export const toyboxDef: VideoModuleDef = {
      * Render an OBJ-kind layer into target FBO `i`. Returns true if it drew.
      * Restores GL state (DEPTH_TEST off, VAO unbound) so combine's fullscreen
      * quads are not corrupted.
+     *
+     * `safeSource` (resolved per-frame in draw()) is the layer index whose
+     * already-rendered FBO is SAFE to UV-map onto this mesh as a surface
+     * texture, or -1 = matcap-only. It is guaranteed (by resolveRenderOrder) to
+     * be in-range, non-self, non-cyclic, and rendered BEFORE this layer this
+     * frame — so binding it can never create a WebGL feedback loop.
      */
-    function renderObjLayer(i: number, layer: ToyboxLayer, time: number): boolean {
+    function renderObjLayer(i: number, layer: ToyboxLayer, time: number, safeSource: number): boolean {
       const mat: ToyboxObjMaterial = layer.material ?? makeDefaultObjMaterial();
       const modelId = mat.modelId;
       if (!modelId) return false;
@@ -493,6 +529,25 @@ export const toyboxDef: VideoModuleDef = {
       if (uNormalMat) g.uniformMatrix3fv(uNormalMat, false, nrm);
       if (uMatcap) g.uniform1i(uMatcap, Math.max(0, Math.min(MATCAP_STYLES - 1, Math.round(mat.matcap))));
       if (uTint) g.uniform3f(uTint, mat.tintR, mat.tintG, mat.tintB);
+
+      // Texmap: when this layer has a SAFE surface source (rendered earlier this
+      // frame, non-self, non-cyclic), bind that layer's FBO colour texture and
+      // flip uUseSurface on. Otherwise bind an inert 1×1 DUMMY texture (NOT this
+      // layer's own FBO colour texture — that would be a WebGL feedback loop with
+      // the current render target, undefined → black on many drivers). The
+      // sampler stays defined; uUseSurface=0 means the shader ignores it.
+      // TEXTURE0 is safe: combineStep re-binds TEXTURE0/1 + resets
+      // activeTexture(TEXTURE0), so the unit state self-heals before the
+      // fullscreen-quad combine passes.
+      const useSurf = safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i;
+      g.activeTexture(g.TEXTURE0);
+      g.bindTexture(g.TEXTURE_2D, useSurf ? layerTargets[safeSource]!.texture : dummyTex);
+      if (uSurface) g.uniform1i(uSurface, 0);
+      if (uUseSurface) g.uniform1i(uUseSurface, useSurf ? 1 : 0);
+      if (uSurfaceMix) {
+        const mix = typeof mat.surfaceMix === 'number' ? mat.surfaceMix : 1;
+        g.uniform1f(uSurfaceMix, useSurf ? mix : 0);
+      }
 
       g.bindVertexArray(m.vao);
       g.drawElements(g.TRIANGLES, m.indexCount, g.UNSIGNED_INT, 0);
@@ -538,15 +593,17 @@ export const toyboxDef: VideoModuleDef = {
       g.clear(g.COLOR_BUFFER_BIT);
     }
 
-    /** Render layer `i` into its FBO; returns whether it produced content. */
-    function renderLayer(i: number, layers: ToyboxLayer[], time: number): boolean {
+    /** Render layer `i` into its FBO; returns whether it produced content.
+     *  `safeSource` is the per-frame texmap source index for an OBJ layer (or
+     *  -1; ignored for non-OBJ layers). */
+    function renderLayer(i: number, layers: ToyboxLayer[], time: number, safeSource: number): boolean {
       const layer = layers[i];
       if (!layer) {
         clearLayer(i);
         return false;
       }
       let drew = false;
-      if (layer.kind === 'obj') drew = renderObjLayer(i, layer, time);
+      if (layer.kind === 'obj') drew = renderObjLayer(i, layer, time, safeSource);
       else if (layer.kind === 'shader' || layer.kind === 'gen') drew = renderShaderLayer(i, layer, time);
       // 'video' / 'off' → nothing.
       if (!drew) clearLayer(i);
@@ -698,9 +755,16 @@ export const toyboxDef: VideoModuleDef = {
         const time = frozenTime() ?? frame.time;
         const layers = liveLayers();
 
-        // 1) Render every layer into its own FBO.
-        const produced: boolean[] = [];
-        for (let i = 0; i < LAYER_COUNT; i++) produced[i] = renderLayer(i, layers, time);
+        // 1) Render every layer into its own FBO. The SEQUENCE follows a
+        //    per-frame dependency order so an OBJ layer that UV-maps another
+        //    layer's FBO (material.surfaceSource) renders AFTER that source —
+        //    while still writing produced[trueIndex] so the combine graph (which
+        //    indexes layerTargets[N] by TRUE layer index) is unaffected. A
+        //    cyclic / self / out-of-range surfaceSource degrades to matcap-only
+        //    (safeSource = -1) — never a WebGL feedback loop.
+        const produced: boolean[] = new Array(LAYER_COUNT).fill(false);
+        const { order, safeSource } = resolveRenderOrder(layers);
+        for (const i of order) produced[i] = renderLayer(i, layers, time, safeSource[i] ?? -1);
 
         // 2) Combine: evaluate the live combine (Phase-4 GRAPH or legacy chain).
         const combine = liveCombineRaw();
@@ -730,6 +794,7 @@ export const toyboxDef: VideoModuleDef = {
           gl.deleteTexture(t.texture);
           gl.deleteRenderbuffer(t.depth);
         }
+        gl.deleteTexture(dummyTex);
         for (const s of scratchPool) {
           gl.deleteFramebuffer(s.fbo);
           gl.deleteTexture(s.texture);
