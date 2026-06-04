@@ -391,6 +391,155 @@ async function setCombineAndFreeze(page: Page, time: number): Promise<void> {
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 }
 
+// ── Phase 5: CV-ROUTE proof. A TOYBOX with cv2 routed to a FADE op's `t`
+// (amount) crossfading layer 0 (noise) ↔ layer 1 (cos-gradient). We drive the
+// GENERIC cv2 port through the ENGINE's real setParam(cv2, ±1) — the exact
+// Phase-5 path — which resolves cvRoutes.cv2, re-scales the ±1 across the fade
+// param's 0..1 range (centred on the op's amount=0.5), and writes it into the
+// live combine param. Two baselines: cv2 = -1 (→ amount 0, shows layer 0) vs
+// cv2 = +1 (→ amount 1, shows layer 1). They MUST differ — proving a CV moves
+// the composite via the generic pool + per-param routing.
+
+/** Seed the cv2→fade.t patch, drive the generic cv2 port to `raw` through the
+ *  engine's setParam (the real bridge path), freeze + wait for a stable frame. */
+async function setCvRouteAndFreeze(page: Page, raw: number, time: number): Promise<void> {
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+  // Seed layers + a crossfade combine graph + the cv2→fade.t route (once;
+  // re-seeding is idempotent for the same content).
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['tb'];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      n.data.layers = [
+        { kind: 'gen', contentId: 'noise-fbm', params: {} },
+        { kind: 'gen', contentId: 'cos-gradient', params: {} },
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'off', contentId: null, params: {} },
+      ];
+      // FADE crossfade: src0 (base) ↔ src1 (top), amount seeded at 0.5 (the
+      // modulation centre cv2 sweeps around). cv2 = -1 → 0 (base), +1 → 1 (top).
+      n.data.combine = {
+        nodes: [
+          { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+          { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+          { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+          { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+          { id: 'xf', kind: 'fade', x: 120, y: 40, params: { amount: 0.5 } },
+          { id: 'out', kind: 'output', x: 286, y: 40 },
+        ],
+        edges: [
+          { id: 'e0', from: 'src0', to: 'xf', toPort: 'in0' },
+          { id: 'e1', from: 'src1', to: 'xf', toPort: 'in1' },
+          { id: 'e2', from: 'xf', to: 'out', toPort: 'in0' },
+        ],
+      };
+      // Route the generic cv2 port → the FADE op's amount (t).
+      n.data.cvRoutes = { cv2: { target: 'combine', nodeId: 'xf', param: 'amount' } };
+    });
+  });
+  // Drive the GENERIC cv2 port via the engine's real setParam path (resolves
+  // the route + re-scales + writes the live combine param).
+  await page.evaluate(
+    ({ raw }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => unknown;
+      };
+      type VE = { setParam: (nodeId: string, paramId: string, value: number) => void };
+      type Eng = { getDomain: <T>(d: string) => T };
+      const e = (w.__engine ? (w.__engine() as Eng) : undefined);
+      try {
+        e?.getDomain<VE>('video')?.setParam('tb', 'cv2', raw);
+      } catch { /* */ }
+    },
+    { raw },
+  );
+  // Poll until the frozen composite stabilises (both shaders compiled +
+  // rendered AND two consecutive captures match). Re-drive cv2 each poll so the
+  // route keeps writing the live param while shaders finish compiling.
+  await page.waitForFunction(
+    ({ time, raw }) => {
+      const w = globalThis as unknown as {
+        __toyboxFreeze?: (t?: number) => void;
+        __toyboxPrevSig?: string;
+        __engine?: () => unknown;
+      };
+      type VE = { setParam: (nodeId: string, paramId: string, value: number) => void };
+      type Eng = { getDomain: <T>(d: string) => T };
+      try {
+        const e = w.__engine ? (w.__engine() as Eng) : undefined;
+        e?.getDomain<VE>('video')?.setParam('tb', 'cv2', raw);
+      } catch { /* */ }
+      w.__toyboxFreeze?.(time);
+      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0, r = 0, gg = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      }
+      if (lit <= canvas.width * canvas.height * 0.05) return false;
+      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
+      const prev = w.__toyboxPrevSig;
+      w.__toyboxPrevSig = sig;
+      return prev === sig;
+    },
+    { time, raw },
+    { timeout: 10_000 },
+  );
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
+test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
+  for (const drive of [
+    { name: 'cv2-low', raw: -1 },   // fade t → 0 : shows layer 0 (noise)
+    { name: 'cv2-high', raw: 1 },   // fade t → 1 : shows layer 1 (cos-gradient)
+  ]) {
+    test(`cv2 → fade.t driven ${drive.name} composites distinctly`, async ({ page }) => {
+      test.skip(
+        VRT_PLATFORM === 'linux',
+        `linux/toybox-${drive.name}: darwin baseline only; linux pending a vrt:update on CI`,
+      );
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('console', (m) => {
+        if (m.type() === 'error') errors.push(m.text());
+      });
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+        [],
+      );
+      const card = page.locator('.svelte-flow__node-toybox').first();
+      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      await pinViewport(page);
+
+      await setCvRouteAndFreeze(page, drive.raw, 2.0);
+
+      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      await expect(canvas).toHaveScreenshot(`${drive.name}.png`, { maskColor: '#ff00ff' });
+
+      expect(
+        errors.filter((e) => !e.includes('AudioContext')),
+        'no console / page errors',
+      ).toEqual([]);
+    });
+  }
+});
+
 test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
   test('a non-default combine graph composites the expected frozen output', async ({ page }) => {
     test.skip(

@@ -30,7 +30,10 @@
 // node.data.combine (ToyboxCombine). The card mutates the live node (rides
 // Y.Doc); the factory reads the live node each frame.
 //
-// Inputs:  (none)
+// Inputs:  cv1..cv8 (cv) — a FIXED pool of generic CV ports (Phase 5). Each is
+//          routed to an addressed layer/combine/obj param via node.data.cvRoutes
+//          and re-scaled to that param's range inside setParam (see
+//          toybox-cv-routes.ts). The generic ports stay neutral-linear.
 // Outputs: out (video) — the composited frame.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
@@ -59,6 +62,14 @@ import {
   type ToyboxCombineGraph,
   type ToyboxOpKind,
 } from '$lib/video/toybox-combine-graph';
+import {
+  CV_PORT_IDS,
+  isCvPortId,
+  resolveRoute,
+  scaleRoutedValue,
+  type CvRouteTarget,
+  type CvRoutes,
+} from '$lib/video/toybox-cv-routes';
 import { parseObj } from '$lib/video/obj-parse';
 import { makePrimitive, type BuiltinPrimitive } from '$lib/video/primitives';
 import type { Mesh } from '$lib/video/mesh';
@@ -153,7 +164,19 @@ export const toyboxDef: VideoModuleDef = {
   label: 'TOYBOX',
   category: 'sources',
   schemaVersion: 1,
-  inputs: [],
+  // PHASE 5 — a FIXED pool of 8 generic CV input ports. A layer's shader (and
+  // its uniforms) is chosen at runtime, so we can't declare a port per possible
+  // uniform; instead the card routes each generic cv port to an addressed param
+  // via node.data.cvRoutes, and setParam (below) resolves + RE-SCALES the value
+  // to that param's range. Each port carries a neutral cvScale:{mode:'linear'}
+  // hint but NO paramTarget — so the cv-bridge degrades to RAW passthrough
+  // (buildCvBridgeMapping can't resolve a param named 'cvN') and hands setParam
+  // the raw ±1 sample; TOYBOX does the per-target range scaling itself.
+  inputs: CV_PORT_IDS.map((id) => ({
+    id,
+    type: 'cv' as const,
+    cvScale: { mode: 'linear' as const },
+  })),
   outputs: [
     { id: 'out', type: 'video' },
   ],
@@ -359,9 +382,58 @@ export const toyboxDef: VideoModuleDef = {
       return makeDefaultCombineGraph();
     }
 
+    /** The live cvRoutes map (Phase 5). Absent → no routes (all generic cv
+     *  ports unrouted, their setParam writes ignored). */
+    function liveCvRoutes(): CvRoutes {
+      const live = livePatch.nodes[node.id];
+      const raw =
+        (live?.data?.cvRoutes as CvRoutes | undefined) ??
+        (node.data?.cvRoutes as CvRoutes | undefined);
+      return raw && typeof raw === 'object' ? raw : {};
+    }
+
     function frozenTime(): number | null {
       const g = globalThis as unknown as { __toyboxFreezeTime?: number | null };
       return typeof g.__toyboxFreezeTime === 'number' ? g.__toyboxFreezeTime : null;
+    }
+
+    // ---- PHASE 5: per-port CV base (modulation centre) snapshot ----
+    //
+    // The cv-bridge writes setParam(cvN, raw) every frame with the raw ±1
+    // sample. We re-scale that across the routed param's range CENTRED on the
+    // param's CURRENT value — but if we centred on the live (already-CV-written)
+    // value each frame it would drift away unboundedly. So, mirroring the audio
+    // cv-bridge's bake-once-at-attach semantics, we SNAPSHOT the param's value
+    // as the modulation centre the first time a (port → target/param) routing is
+    // seen, and re-snapshot only when that routing CHANGES (different target,
+    // param, or no route). The signature captures the routing identity.
+    const cvBase = new Map<string, { sig: string; base: number }>();
+
+    /** Apply a raw cv sample arriving on generic port `portId`: resolve its
+     *  route against the LIVE layers/combine, re-scale across the target param's
+     *  range (centred on the snapshot base), and write it into the live param. */
+    function applyCvRoute(portId: string, raw: number): void {
+      const routes = liveCvRoutes();
+      const route = routes[portId] as CvRouteTarget | null | undefined;
+      if (!route) {
+        // Unrouted → drop any stale base snapshot + ignore (no-op).
+        cvBase.delete(portId);
+        return;
+      }
+      const layers = liveLayers();
+      const combine = liveCombineRaw();
+      const resolved = resolveRoute(route, layers, combine);
+      if (!resolved) {
+        cvBase.delete(portId);
+        return;
+      }
+      // Snapshot / refresh the modulation centre when the routing identity
+      // changes (so the sweep re-centres on the user's knob after a re-route).
+      const sig = `${route.target}|${route.layer ?? ''}|${route.nodeId ?? ''}|${route.param}`;
+      const prev = cvBase.get(portId);
+      const base = prev && prev.sig === sig ? prev.base : resolved.current;
+      if (!prev || prev.sig !== sig) cvBase.set(portId, { sig, base });
+      resolved.apply(scaleRoutedValue(raw, base, resolved.min, resolved.max));
     }
 
     // ---- Fixed camera (perspective) for the OBJ pass. Looks down -Z at the
@@ -679,7 +751,13 @@ export const toyboxDef: VideoModuleDef = {
     return {
       domain: 'video',
       surface,
-      setParam() { /* no numeric engine params — content/material live in node.data */ },
+      setParam(portId, value) {
+        // PHASE 5: a generic cv pool port (cv1..cv8) → resolve its route +
+        // re-scale into the addressed live layer/combine param. Any other
+        // portId is ignored (TOYBOX has no numeric engine params — content /
+        // material / combine all live in node.data).
+        if (isCvPortId(portId)) applyCvRoute(portId, value);
+      },
       readParam() { return undefined; },
       read(key) {
         if (key === 'fboTexture') return surface.texture;

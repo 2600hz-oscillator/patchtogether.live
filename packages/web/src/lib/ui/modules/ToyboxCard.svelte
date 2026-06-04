@@ -60,6 +60,16 @@
     deleteCombineNode,
     setCombineNodeParam,
   } from '$lib/graph/toybox-combine';
+  import {
+    CV_PORT_IDS,
+    listCvTargets,
+    listCvParams,
+    encodeTargetValue,
+    decodeTargetValue,
+    type CvRoutes,
+    type CvRouteTarget,
+  } from '$lib/video/toybox-cv-routes';
+  import { setCvRoute } from '$lib/graph/toybox-cv-routes';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -368,6 +378,120 @@
       : [],
   );
 
+  // ───────────────────── CV ROUTING TAB (Phase 5) ─────────────────────
+  //
+  // A FIXED pool of 8 generic CV input ports (cv1..cv8) routed to addressed
+  // params via node.data.cvRoutes. Each row is a two-dropdown selector:
+  //   [target ▾ = layer0..3 / a combine op] [param ▾ = that target's params].
+  // The available targets/params are derived LIVE from the layers' content
+  // params + the combine op nodes (toybox-cv-routes.ts). Selecting writes the
+  // route through the Yjs mutator (graph/toybox-cv-routes.ts); the factory's
+  // setParam(cvN) resolves + re-scales each sample into the live param.
+
+  let cvOpen = $state(false);
+
+  /** The live layers + combine the dropdowns enumerate targets/params from. */
+  let liveLayersForCv = $derived(node?.data?.layers as ToyboxLayer[] | undefined);
+  let liveCombineForCv = $derived((node?.data as { combine?: unknown } | undefined)?.combine);
+
+  /** Target options (layers + combine ops), live. */
+  let cvTargets = $derived(listCvTargets(liveLayersForCv, liveCombineForCv));
+
+  // Per-port reactive maps. We iterate ALL ports inside ONE $derived.by so every
+  // route key is READ (and thus tracked) every recompute — without this, adding
+  // a 2nd route to the in-place-mutated cvRoutes Y-proxy wouldn't invalidate a
+  // per-port helper that only read its own key (the Y-proxy object reference
+  // doesn't change on a key add). cvRoutesView is read first so the whole map is
+  // a dependency.
+  let cvRoutesView = $derived.by<Record<string, CvRouteTarget | null>>(() => {
+    const live = (node?.data as { cvRoutes?: CvRoutes } | undefined)?.cvRoutes;
+    const out: Record<string, CvRouteTarget | null> = {};
+    for (const p of CV_PORT_IDS) {
+      const r = live && typeof live === 'object' ? live[p] : undefined;
+      // Copy to a plain object so the snapshot is stable + every field is read.
+      out[p] = r ? { target: r.target, layer: r.layer, nodeId: r.nodeId, param: r.param } : null;
+    }
+    return out;
+  });
+
+  /** The current route for a generic cv port (or null). */
+  function routeFor(portId: string): CvRouteTarget | null {
+    return cvRoutesView[portId] ?? null;
+  }
+
+  /** The selected target dropdown value for a port (encoded), '' if unrouted. */
+  function targetValueFor(portId: string): string {
+    const r = routeFor(portId);
+    if (!r) return '';
+    return encodeTargetValue(r);
+  }
+
+  /** Param options per port for its currently-selected target (live). Derived
+   *  over the full route view + live layers/combine so each row updates when any
+   *  route OR the underlying target's param set changes. */
+  let cvParamOptionsView = $derived.by<Record<string, ReturnType<typeof listCvParams>>>(() => {
+    const out: Record<string, ReturnType<typeof listCvParams>> = {};
+    for (const p of CV_PORT_IDS) {
+      const r = cvRoutesView[p];
+      out[p] = r ? listCvParams(r, liveLayersForCv, liveCombineForCv) : [];
+    }
+    return out;
+  });
+
+  /** Param options for a port's currently-selected target (live). */
+  function paramOptionsFor(portId: string) {
+    return cvParamOptionsView[portId] ?? [];
+  }
+
+  /** Pick a target for a generic cv port. Clears the port when '' (none);
+   *  otherwise sets the target + auto-selects its FIRST param so the route is
+   *  immediately live (a target with no param wouldn't drive anything). */
+  function onCvTargetChange(portId: string, ev: Event): void {
+    const value = (ev.target as HTMLSelectElement).value;
+    if (!value) {
+      setCvRoute(id, portId, null);
+      return;
+    }
+    const decoded = decodeTargetValue(value);
+    if (!decoded) return;
+    const params = listCvParams(decoded, liveLayersForCv, liveCombineForCv);
+    const param = routeKeepParam(portId, decoded, params) ?? params[0]?.id;
+    if (!param) {
+      // Target has no params (e.g. an OFF layer) → clear rather than route to nothing.
+      setCvRoute(id, portId, null);
+      return;
+    }
+    setCvRoute(id, portId, { ...decoded, param });
+  }
+
+  /** If the port's existing route already targets `decoded` with a param that
+   *  the new param set still contains, keep it (avoids resetting on a no-op). */
+  function routeKeepParam(
+    portId: string,
+    decoded: { target: 'layer' | 'combine'; layer?: number; nodeId?: string },
+    params: { id: string }[],
+  ): string | undefined {
+    const r = routeFor(portId);
+    if (
+      r &&
+      r.target === decoded.target &&
+      r.layer === decoded.layer &&
+      r.nodeId === decoded.nodeId &&
+      params.some((p) => p.id === r.param)
+    ) {
+      return r.param;
+    }
+    return undefined;
+  }
+
+  /** Pick a param for a generic cv port (within its current target). */
+  function onCvParamChange(portId: string, ev: Event): void {
+    const param = (ev.target as HTMLSelectElement).value;
+    const r = routeFor(portId);
+    if (!r || !param) return;
+    setCvRoute(id, portId, { ...r, param });
+  }
+
   // ----- Live preview pull (MANDELBULB pattern) -----
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
@@ -461,6 +585,19 @@
     style="top: 56px; --handle-color: var(--cable-video);"
   />
   <span class="port-label right" style="top: 50px;">OUT</span>
+
+  <!-- PHASE 5: the 8 generic CV input ports (cv1..cv8). Real input handles —
+       the outer canvas draws CV cables to them; each is routed to a param via
+       the CV tab below. Stacked down the left edge. -->
+  {#each CV_PORT_IDS as cvId, i (cvId)}
+    <Handle
+      type="target"
+      position={Position.Left}
+      id={cvId}
+      style={`top: ${44 + i * 22}px; --handle-color: var(--cable-cv);`}
+    />
+    <span class="port-label left" style={`top: ${38 + i * 22}px;`}>{cvId.toUpperCase()}</span>
+  {/each}
 
   <div class="screen-wrap">
     <canvas
@@ -720,6 +857,57 @@
       {/if}
     {/if}
   </div>
+
+  <!-- ───────── CV ROUTING (Phase 5) ───────── -->
+  <div class="cv-section" data-testid="toybox-cv-section">
+    <button
+      type="button"
+      class="combine-toggle"
+      data-testid="toybox-cv-toggle"
+      aria-expanded={cvOpen}
+      onclick={() => (cvOpen = !cvOpen)}
+    >
+      {cvOpen ? '▾' : '▸'} CV
+    </button>
+
+    {#if cvOpen}
+      <div class="cv-rows" data-testid="toybox-cv-rows">
+        {#each CV_PORT_IDS as cvId (cvId)}
+          {@const paramOpts = paramOptionsFor(cvId)}
+          <div class="cv-row" data-testid={`toybox-cv-row-${cvId}`}>
+            <span class="cv-port">{cvId.toUpperCase()}</span>
+            <select
+              class="cv-select"
+              data-testid={`toybox-cv-target-${cvId}`}
+              value={targetValueFor(cvId)}
+              onchange={(e) => onCvTargetChange(cvId, e)}
+              aria-label={`${cvId} target`}
+            >
+              <option value="">— none —</option>
+              {#each cvTargets as t (t.value)}
+                <option value={t.value}>{t.label}</option>
+              {/each}
+            </select>
+            <select
+              class="cv-select"
+              data-testid={`toybox-cv-param-${cvId}`}
+              value={routeFor(cvId)?.param ?? ''}
+              onchange={(e) => onCvParamChange(cvId, e)}
+              disabled={paramOpts.length === 0}
+              aria-label={`${cvId} param`}
+            >
+              {#if paramOpts.length === 0}
+                <option value="">—</option>
+              {/if}
+              {#each paramOpts as p (p.id)}
+                <option value={p.id}>{p.label}</option>
+              {/each}
+            </select>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -755,6 +943,7 @@
     font-family: ui-monospace, monospace;
   }
   .port-label.right { right: 14px; }
+  .port-label.left { left: 14px; }
   .screen-wrap {
     margin: 12px auto 8px;
     width: 200px;
@@ -926,4 +1115,42 @@
     letter-spacing: 0.05em;
   }
   .combine-params .knob-grid { padding: 0; }
+
+  /* ───────── CV ROUTING (Phase 5) ───────── */
+  .cv-section {
+    margin-top: 8px;
+    padding: 8px 12px 0;
+    border-top: 1px solid var(--border);
+  }
+  .cv-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 6px 0 2px;
+  }
+  .cv-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .cv-port {
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    color: var(--cable-cv, var(--text-dim));
+    width: 26px;
+    flex: 0 0 auto;
+  }
+  .cv-select {
+    flex: 1 1 0;
+    min-width: 0;
+    background: var(--module-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    padding: 2px 3px;
+  }
+  .cv-select:hover { border-color: var(--accent-dim); }
+  .cv-select:disabled { opacity: 0.5; }
 </style>
