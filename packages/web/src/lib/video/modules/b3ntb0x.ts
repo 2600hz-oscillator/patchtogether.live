@@ -446,7 +446,7 @@ void main() {
   // --- Barrel distortion: bend outward about center; mask outside. ---
   vec2 cc = a - 0.5;
   float r2 = dot(cc, cc);
-  a = 0.5 + cc * (1.0 + uBarrel * 0.30 * r2);
+  a = 0.5 + cc * (1.0 + uBarrel * 0.42 * r2);
 
   // Outside the curved active area -> black bezel.
   if (a.x < 0.0 || a.x > 1.0 || a.y < 0.0 || a.y > 1.0) {
@@ -462,10 +462,30 @@ void main() {
   col += texture(uDecode, a + vec2(2.0 * dx, 0.0)).rgb * 0.05;
   col += texture(uDecode, a - vec2(2.0 * dx, 0.0)).rgb * 0.05;
 
-  // --- BLOOM: bright-pass added back. ---
+  // --- BLOOM / HALATION: bright areas SPILL into their neighbours (the glass +
+  //     phosphor glow). A real spatial gather of the bright-pass — horizontally
+  //     biased (the beam smears along the line) — added back, so highlights bleed
+  //     and bloom instead of just getting brighter in place. Off at 0 (guarded).
   if (uTubeBloom > 0.0) {
-    float luma = dot(col, vec3(0.299, 0.587, 0.114));
-    col += smoothstep(0.55, 1.0, luma) * uTubeBloom * 0.5;
+    vec3 glow = vec3(0.0);
+    float wsum = 0.0;
+    for (int i = -4; i <= 4; i++) {
+      for (int j = -2; j <= 2; j++) {
+        vec2 off = vec2(float(i) * 2.0 * dx, float(j) * 1.5 / LINES);
+        vec3 s = texture(uDecode, a + off).rgb;
+        float bright = max(dot(s, vec3(0.299, 0.587, 0.114)) - 0.4, 0.0);
+        // horizontally-biased gaussian (beam wider along the scanline)
+        float gw = exp(-(float(i * i) * 0.12 + float(j * j) * 0.6));
+        glow += s * bright * gw;
+        wsum += gw;
+      }
+    }
+    vec3 halo = (glow / max(wsum, 1e-3)) * uTubeBloom * 2.8;
+    halo *= vec3(1.0, 0.97, 0.90);                 // warm phosphor glow (CRT halation runs warm)
+    col += halo;
+    // Highlight blow-out: the brightest phosphors saturate the tube + wash toward white.
+    float hi = smoothstep(0.85, 1.3, dot(col, vec3(0.299, 0.587, 0.114)));
+    col = mix(col, vec3(max(max(col.r, col.g), col.b)), hi * uTubeBloom * 0.4);
   }
 
   // --- SCANLINE GAP (240p), field parity offsets the gap half a line. ---
@@ -474,15 +494,23 @@ void main() {
                                  smoothstep(1.0, 0.6, lineFrac);
   col *= scanDark;
 
-  // --- APERTURE / PHOSPHOR RGB-triad mask. ---
-  float colIdx = floor(a.x * 640.0 * 3.0);
-  float phase = mod(colIdx, 3.0);
-  vec3 mask = vec3(
-    phase < 0.5 ? 1.15 : 0.85,
-    (phase >= 0.5 && phase < 1.5) ? 1.15 : 0.85,
-    phase >= 1.5 ? 1.15 : 0.85
-  );
-  col *= mask;
+  // --- APERTURE-GRILLE PHOSPHOR (screen-space, smooth, BLENDED). ---
+  // The phosphor stripes are a property of the physical SCREEN, not the picture,
+  // so key them off gl_FragCoord (the real output pixel) — they stay straight
+  // while the image warps behind them (that's what reads as "image behind glass"
+  // instead of an RGB pattern painted INTO the picture). Smooth cosine lobes
+  // (period 3px = one R/G/B triad) instead of hard 1.15/0.85 bands, mean lifted
+  // to ~1 so it doesn't net-darken, then MIXED toward neutral so the underlying
+  // video colour reads through the grille rather than being replaced by it.
+  float ph = gl_FragCoord.x * (TWO_PI / 3.0);
+  vec3 grille = 0.55 + 0.45 * cos(ph - vec3(0.0, 1.0, 2.0) * (TWO_PI / 3.0));
+  grille *= 1.0 / 0.55;                       // lift mean to ~1 (no net darkening)
+  col *= mix(vec3(1.0), grille, 0.6);         // 60% grille / 40% flat → present but image reads through
+
+  // --- VIGNETTE: corners fall off with the glass curvature, selling the bulge
+  //     (scaled by barrel + a touch of overscan; identity when both are 0). ---
+  float vig = 1.0 - (uBarrel * 0.65 + uOverscan * 0.22) * r2 * 1.8;
+  col *= clamp(vig, 0.0, 1.0);
 
   vec3 cur = clamp(col, 0.0, 1.0);
 
