@@ -945,17 +945,42 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    see the systemic-fix TODO at the BEHAVIORAL_SWEEP_EXEMPT header below.)
   'dx7.poly': 'poly note/gate retriggers the FM voice (zc/centroid wobble) but mean-RMS delta straddles the ~0.01 floor under the overlapping context-gate voice (jitter); covered by dx7.test.ts + dx7 ART/specs',
 
-  // ── aquaTank fb3_cv (feedback-tank channel-3 send CV): aquaTank is a
-  //    multi-tap feedback reverb/delay tank whose observed out1 sits at a
-  //    very LOW idle RMS (≈0.005). fb3_cv scales ONE of several parallel
-  //    feedback channels' send into the summed tank — a single channel's
-  //    feedback gain rarely shifts the already-tiny summed RMS above the
-  //    threshold while the other taps carry the tank (Δμrms≈0.000,
-  //    Δrange≈0.001) — the SAME per-channel-on-a-quiet-sum class as the
-  //    warrenspectrum.level*_cv / mixmstrs exempts. fb1_cv/fb2_cv + the other
-  //    inputs perturb (they pass). Covered by aquatank.test.ts (per-channel
-  //    feedback-gain math).
-  'aquaTank.fb3_cv': 'channel-3 feedback-send CV; single-tap gain shift below the RMS threshold on the quiet (~0.005) summed tank output (warrenspectrum/mixmstrs per-channel class); covered by aquatank.test.ts',
+  // ── aquaTank fb{1..4}_cv (feedback-tank per-channel feedback-send CVs):
+  //    aquaTank is a 4-channel Hadamard-FDN feedback reverb/delay tank. The
+  //    behavioral sink observes out1 — ONE tank tap — which sits at a very LOW
+  //    idle RMS (≈0.005) because the driver supplies no upstream audio on the
+  //    in1..in4 channels (only the effect-context noise on the first audio
+  //    input). Each fb{N}_cv scales ONE of the four parallel feedback channels'
+  //    send ratio (paramTarget=fb{N}); a single channel's feedback-gain change
+  //    is diffused across the Hadamard matrix and barely shifts the already-tiny
+  //    out1 RMS — DETERMINISTICALLY sub-threshold across runs (verified in run
+  //    26945471026: fb4_cv Δμrms=0.001/Δr=0.004; fb1_cv/fb2_cv straddle the same
+  //    ~0.01 floor on out1 and flip run-to-run). This is the SAME
+  //    per-channel-on-a-quiet-sum class as warrenspectrum.level*_cv / mixmstrs.
+  //    in1..in4 (the audio path) + tilt_cv perturb out1 (they pass). The
+  //    per-channel feedback-gain math is pinned directly by aquatank.test.ts.
+  //    (All four exempted together — proactively, not whack-a-mole-per-shard —
+  //    since they are the identical structural class on the same quiet tap.)
+  'aquaTank.fb1_cv': 'channel-1 feedback-send CV; single-tap gain shift below/straddling the RMS threshold on the quiet (~0.005) out1 tank tap (warrenspectrum/mixmstrs per-channel class); covered by aquatank.test.ts',
+  'aquaTank.fb2_cv': 'channel-2 feedback-send CV; single-tap gain shift below/straddling the RMS threshold on the quiet (~0.005) out1 tank tap (warrenspectrum/mixmstrs per-channel class); covered by aquatank.test.ts',
+  'aquaTank.fb3_cv': 'channel-3 feedback-send CV; single-tap gain shift below the RMS threshold on the quiet (~0.005) out1 tank tap (warrenspectrum/mixmstrs per-channel class); covered by aquatank.test.ts',
+  'aquaTank.fb4_cv': 'channel-4 feedback-send CV; single-tap gain shift below the RMS threshold on the quiet (~0.005) out1 tank tap (warrenspectrum/mixmstrs per-channel class); covered by aquatank.test.ts',
+
+  // ── blades voct1 / voct2 (per-filter V/oct CV): BLADES is a dual ZDF-SVF
+  //    VCF whose observed `mix` bus sums both filters' (noise-driven) outputs.
+  //    voct{N} offsets filter N's cutoff in OCTAVES as knob·2^(voctN) — a UNITY
+  //    (×1) octave scaler — whereas the cutoff{N}_cv inputs enter as knob·2^(cv·5),
+  //    a ×5 scaler. With BUGGLES.smooth's modest swing the ×1 octave offset moves
+  //    the LP-filtered-noise spectral centroid only a few Hz (run 26945471026:
+  //    voct1 Δμrms=0.002, Δcent=4Hz against a control centroid noise-band of
+  //    ±85Hz — i.e. the shift is buried in the noise-driven output's OWN
+  //    per-snapshot centroid jitter), while the ×5 cutoff{N}_cv inputs DO clear
+  //    the metric (they pass). voct1 hard-failed + voct2 (identical structural
+  //    class on filter 2) straddles, so both are exempted together. The V/oct →
+  //    cutoff octave mapping is pinned directly by blades.test.ts (cutoffHz:
+  //    knob·2^(voct+cv·5)) + the blades DSP/ART coverage.
+  'blades.voct1': 'V/oct CV on filter-1 cutoff is a ×1 octave scaler (vs cutoff1_cv\'s ×5); the centroid shift of LP-filtered noise is buried in the output\'s own ±85Hz per-snapshot centroid jitter (Δcent≈4Hz); cutoff1_cv passes — covered by blades.test.ts (cutoffHz octave mapping)',
+  'blades.voct2': 'V/oct CV on filter-2 cutoff is a ×1 octave scaler (vs cutoff2_cv\'s ×5); same buried-in-noise-band class as blades.voct1; cutoff2_cv passes — covered by blades.test.ts (cutoffHz octave mapping)',
 };
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
