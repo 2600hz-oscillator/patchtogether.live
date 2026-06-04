@@ -41,6 +41,25 @@
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import {
+    OP_KINDS,
+    OP_PARAMS,
+    inPortsFor,
+    hasOutPort,
+    isCombineGraph,
+    makeDefaultCombineGraph,
+    type ToyboxCombineGraph,
+    type ToyboxGraphNode,
+    type ToyboxInPort,
+    type ToyboxOpKind,
+  } from '$lib/video/toybox-combine-graph';
+  import {
+    addCombineNode,
+    connectCombine,
+    deleteCombineEdge,
+    deleteCombineNode,
+    setCombineNodeParam,
+  } from '$lib/graph/toybox-combine';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -196,6 +215,158 @@
     if (!l0.params) l0.params = {};
     l0.params[pid] = v;
   };
+
+  // ───────────────────── COMBINE GRAPH EDITOR (Phase 4) ─────────────────────
+  //
+  // The card edits node.data.combine — a small DAG of source/op/output nodes
+  // reduced by the video factory each frame. We render a bespoke SVG mini-editor
+  // (NOT a nested @xyflow/svelte): node boxes + port dots + bezier cables. Every
+  // mutation rides the Yjs patch proxy (graph/toybox-combine.ts), triggers the
+  // factory's reconcile, and updates the live preview above.
+
+  // Editor canvas geometry (SVG user units). Op nodes tile a wrapping 2-column
+  // middle grid (see opSlotXY) so adding many ops stays inside this box; the SVG
+  // scales to the card width via width:100% (viewBox is the coordinate system).
+  const G_W = 356;
+  const G_H = 230;
+  const NODE_W = 64;
+  const NODE_H = 34;
+  const PORT_R = 4;
+
+  /** Live combine graph from the store (default graph until the card edits it). */
+  let graph = $derived.by<ToyboxCombineGraph>(() => {
+    const c = (node?.data as { combine?: unknown } | undefined)?.combine;
+    return isCombineGraph(c) ? (c as ToyboxCombineGraph) : makeDefaultCombineGraph();
+  });
+
+  // Editor interaction state.
+  let editorOpen = $state(false);
+  /** A pending output port we clicked first (click-port-then-port connect). */
+  let pendingFrom = $state<string | null>(null);
+  /** The currently-selected op node (its params show in the side strip). */
+  let selectedNodeId = $state<string | null>(null);
+  /** Transient connect-rejection message for the user. */
+  let connectMsg = $state<string | null>(null);
+
+  function nodeById(gid: string): ToyboxGraphNode | undefined {
+    return graph.nodes.find((n) => n.id === gid);
+  }
+
+  /** Layout: SOURCE col on the left, ops in the middle (their own x/y), OUTPUT
+   *  on the right. We honour each node's stored x/y for ops; source/output get a
+   *  fixed column so they're always findable. */
+  function nodeXY(n: ToyboxGraphNode): { x: number; y: number } {
+    return { x: n.x, y: n.y };
+  }
+
+  /** Centre of a node's OUTPUT port (right edge mid). */
+  function outPortXY(n: ToyboxGraphNode): { x: number; y: number } {
+    const { x, y } = nodeXY(n);
+    return { x: x + NODE_W, y: y + NODE_H / 2 };
+  }
+
+  /** Centre of a node's input port `port`. Op nodes stack in0 (upper) + in1
+   *  (lower) on the left edge; output has the single in0 mid-left. */
+  function inPortXY(n: ToyboxGraphNode, port: ToyboxInPort): { x: number; y: number } {
+    const { x, y } = nodeXY(n);
+    const ports = inPortsFor(n.kind);
+    if (ports.length <= 1) return { x, y: y + NODE_H / 2 };
+    const idx = ports.indexOf(port);
+    const frac = (idx + 1) / (ports.length + 1);
+    return { x, y: y + NODE_H * frac };
+  }
+
+  /** Bezier path string between two points (horizontal control handles). */
+  function cablePath(a: { x: number; y: number }, b: { x: number; y: number }): string {
+    const dx = Math.max(24, Math.abs(b.x - a.x) * 0.5);
+    return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+  }
+
+  /** A short glyph/label for a node box. */
+  function nodeLabel(n: ToyboxGraphNode): string {
+    if (n.kind === 'source') return `L${n.layer ?? 0}`;
+    if (n.kind === 'output') return 'OUT';
+    return n.kind.toUpperCase().slice(0, 5);
+  }
+
+  function clearConnectMsg(): void {
+    connectMsg = null;
+  }
+
+  // ---- interactions ----
+
+  function onAddOp(kind: ToyboxOpKind): void {
+    const newId = addCombineNode(id, kind);
+    if (newId) selectedNodeId = newId;
+    clearConnectMsg();
+  }
+
+  /** Click a node's OUTPUT port → arm it as the connect source. */
+  function onOutPortClick(gid: string): void {
+    const n = nodeById(gid);
+    if (!n || !hasOutPort(n.kind)) return;
+    pendingFrom = pendingFrom === gid ? null : gid; // toggle off if re-clicked
+    clearConnectMsg();
+  }
+
+  /** Click a node's INPUT port → if a source is armed, create the edge. */
+  function onInPortClick(gid: string, port: ToyboxInPort): void {
+    if (!pendingFrom) {
+      connectMsg = 'pick an output dot first';
+      return;
+    }
+    const from = pendingFrom;
+    const res = connectCombine(id, from, gid, port);
+    pendingFrom = null;
+    if (!res.ok) {
+      connectMsg =
+        res.error === 'cycle' ? 'rejected: would create a cycle'
+        : res.error === 'occupied' ? 'that input is already wired'
+        : res.error === 'self-loop' ? 'cannot wire a node to itself'
+        : res.error === 'no-out-port' ? 'that node has no output'
+        : 'cannot connect';
+    } else {
+      connectMsg = null;
+    }
+  }
+
+  function onNodeClick(gid: string): void {
+    const n = nodeById(gid);
+    if (!n) return;
+    // Source/output have no params; op nodes open the side strip.
+    selectedNodeId = n.kind === 'source' || n.kind === 'output' ? null : gid;
+    clearConnectMsg();
+  }
+
+  function onDeleteNode(gid: string): void {
+    deleteCombineNode(id, gid);
+    if (selectedNodeId === gid) selectedNodeId = null;
+    clearConnectMsg();
+  }
+
+  function onDeleteEdge(edgeId: string): void {
+    deleteCombineEdge(id, edgeId);
+    clearConnectMsg();
+  }
+
+  /** Live param value for the selected op node (manifest default fallback). */
+  function combineParamVal(n: ToyboxGraphNode, pid: string): number {
+    const v = n.params?.[pid];
+    if (typeof v === 'number') return v;
+    const def = OP_PARAMS[n.kind as ToyboxOpKind]?.find((p) => p.id === pid);
+    return def?.default ?? 0;
+  }
+
+  const setCombineParam = (gid: string, pid: string) => (v: number) => {
+    setCombineNodeParam(id, gid, pid, v);
+  };
+
+  let selectedNode = $derived(selectedNodeId ? nodeById(selectedNodeId) : undefined);
+  let selectedParams = $derived(
+    selectedNode && selectedNode.kind !== 'source' && selectedNode.kind !== 'output'
+      ? OP_PARAMS[selectedNode.kind as ToyboxOpKind] ?? []
+      : [],
+  );
 
   // ----- Live preview pull (MANDELBULB pattern) -----
   let canvasEl: HTMLCanvasElement | null = $state(null);
@@ -395,6 +566,160 @@
       {/if}
     </div>
   {/if}
+
+  <!-- ───────── COMBINE GRAPH EDITOR (Phase 4) ───────── -->
+  <div class="combine-section" data-testid="toybox-combine-section">
+    <button
+      type="button"
+      class="combine-toggle"
+      data-testid="toybox-combine-toggle"
+      aria-expanded={editorOpen}
+      onclick={() => (editorOpen = !editorOpen)}
+    >
+      {editorOpen ? '▾' : '▸'} COMBINE GRAPH
+    </button>
+
+    {#if editorOpen}
+      <!-- Add-node menu: insert a fade / lumakey / chromakey / map op. -->
+      <div class="add-row" data-testid="toybox-add-row">
+        <span class="add-label">ADD</span>
+        {#each OP_KINDS as k (k)}
+          <button
+            type="button"
+            class="add-btn"
+            data-testid={`toybox-add-${k}`}
+            onclick={() => onAddOp(k)}
+          >{k}</button>
+        {/each}
+      </div>
+
+      {#if connectMsg}
+        <div class="connect-msg" data-testid="toybox-connect-msg">{connectMsg}</div>
+      {/if}
+      {#if pendingFrom}
+        <div class="connect-msg armed" data-testid="toybox-pending">
+          armed: {pendingFrom} → click an input dot
+        </div>
+      {/if}
+
+      <!-- Bespoke SVG node editor: boxes + port dots + bezier cables. -->
+      <div class="graph-wrap">
+        <svg
+          class="graph-svg"
+          viewBox={`0 0 ${G_W} ${G_H}`}
+          preserveAspectRatio="xMidYMid meet"
+          data-testid="toybox-graph-svg"
+        >
+          <!-- Edges (cables) drawn under the nodes. -->
+          {#each graph.edges as e (e.id)}
+            {@const fromN = nodeById(e.from)}
+            {@const toN = nodeById(e.to)}
+            {#if fromN && toN}
+              <path
+                class="cable"
+                data-testid={`toybox-edge-${e.id}`}
+                d={cablePath(outPortXY(fromN), inPortXY(toN, e.toPort))}
+                onclick={() => onDeleteEdge(e.id)}
+                role="button"
+                tabindex="-1"
+                aria-label={`delete edge ${e.id}`}
+              />
+            {/if}
+          {/each}
+
+          <!-- Nodes (boxes + ports). -->
+          {#each graph.nodes as n (n.id)}
+            {@const xy = nodeXY(n)}
+            <g
+              class="gnode {n.kind} {selectedNodeId === n.id ? 'sel' : ''}"
+              data-testid={`toybox-gnode-${n.id}`}
+              data-kind={n.kind}
+            >
+              <rect
+                x={xy.x}
+                y={xy.y}
+                width={NODE_W}
+                height={NODE_H}
+                rx="4"
+                class="gnode-rect"
+                onclick={() => onNodeClick(n.id)}
+                role="button"
+                tabindex="-1"
+                aria-label={`node ${n.id}`}
+              />
+              <text x={xy.x + NODE_W / 2} y={xy.y + NODE_H / 2 + 3} class="gnode-label">
+                {nodeLabel(n)}
+              </text>
+
+              <!-- input ports (left) -->
+              {#each inPortsFor(n.kind) as port (port)}
+                {@const p = inPortXY(n, port)}
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={PORT_R}
+                  class="port in"
+                  data-testid={`toybox-inport-${n.id}-${port}`}
+                  onclick={() => onInPortClick(n.id, port)}
+                  role="button"
+                  tabindex="-1"
+                  aria-label={`input ${port} of ${n.id}`}
+                />
+              {/each}
+
+              <!-- output port (right) -->
+              {#if hasOutPort(n.kind)}
+                {@const op = outPortXY(n)}
+                <circle
+                  cx={op.x}
+                  cy={op.y}
+                  r={PORT_R}
+                  class="port out {pendingFrom === n.id ? 'armed' : ''}"
+                  data-testid={`toybox-outport-${n.id}`}
+                  onclick={() => onOutPortClick(n.id)}
+                  role="button"
+                  tabindex="-1"
+                  aria-label={`output of ${n.id}`}
+                />
+              {/if}
+
+              <!-- delete affordance (op nodes only) -->
+              {#if n.kind !== 'source' && n.kind !== 'output'}
+                <text
+                  x={xy.x + NODE_W - 7}
+                  y={xy.y + 10}
+                  class="gnode-del"
+                  data-testid={`toybox-delnode-${n.id}`}
+                  onclick={() => onDeleteNode(n.id)}
+                  role="button"
+                  tabindex="-1"
+                  aria-label={`delete node ${n.id}`}
+                >×</text>
+              {/if}
+            </g>
+          {/each}
+        </svg>
+      </div>
+
+      <!-- Selected op node → its params in a side strip. -->
+      {#if selectedNode && selectedParams.length > 0}
+        <div class="combine-params" data-testid="toybox-combine-params" data-node={selectedNode.id}>
+          <div class="combine-params-title">{selectedNode.kind.toUpperCase()} · {selectedNode.id}</div>
+          <div class="knob-grid">
+            {#each selectedParams as p (p.id)}
+              <Knob
+                value={combineParamVal(selectedNode, p.id)}
+                min={p.min} max={p.max} defaultValue={p.default}
+                label={p.label} curve="linear"
+                onchange={setCombineParam(selectedNode.id, p.id)}
+                moduleId={id} paramId={`combine:${selectedNode.id}:${p.id}`}
+              />
+            {/each}
+          </div>
+        </div>
+      {/if}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -479,4 +804,126 @@
     gap: 12px 4px;
     justify-items: center;
   }
+
+  /* ───────── COMBINE GRAPH EDITOR (Phase 4) ───────── */
+  .combine-section {
+    margin-top: 10px;
+    padding: 0 12px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+  .combine-toggle {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    font-family: ui-monospace, monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    padding: 2px 0;
+  }
+  .combine-toggle:hover { color: var(--text); }
+  .add-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin: 6px 0;
+  }
+  .add-label {
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    color: var(--text-dim);
+  }
+  .add-btn {
+    background: var(--module-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    cursor: pointer;
+  }
+  .add-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
+  .connect-msg {
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    margin: 2px 0;
+  }
+  .connect-msg.armed { color: var(--accent); }
+  .graph-wrap {
+    width: 100%;
+    background: #06080c;
+    border: 1px solid var(--cable-video);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 4px 0;
+  }
+  .graph-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  /* nodes */
+  .gnode-rect {
+    fill: #11161f;
+    stroke: var(--border);
+    stroke-width: 1;
+    cursor: pointer;
+  }
+  .gnode.source .gnode-rect { fill: #0f1a14; stroke: #2f6b4a; }
+  .gnode.output .gnode-rect { fill: #1a1410; stroke: #8a5a2f; }
+  .gnode.sel .gnode-rect { stroke: var(--accent); stroke-width: 2; }
+  .gnode-rect:hover { stroke: var(--accent-dim); }
+  .gnode-label {
+    fill: var(--text);
+    font-family: ui-monospace, monospace;
+    font-size: 9px;
+    text-anchor: middle;
+    pointer-events: none;
+    user-select: none;
+  }
+  .gnode-del {
+    fill: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    text-anchor: middle;
+    cursor: pointer;
+  }
+  .gnode-del:hover { fill: #e05050; }
+  .port {
+    fill: #0a0d12;
+    stroke: var(--cable-video);
+    stroke-width: 1.5;
+    cursor: pointer;
+  }
+  .port.in:hover { fill: var(--accent-dim); }
+  .port.out:hover { fill: var(--accent-dim); }
+  .port.out.armed { fill: var(--accent); stroke: var(--accent); }
+  .cable {
+    fill: none;
+    stroke: var(--cable-video);
+    stroke-width: 1.5;
+    opacity: 0.85;
+    cursor: pointer;
+  }
+  .cable:hover { stroke: #e05050; opacity: 1; }
+  .combine-params {
+    margin-top: 6px;
+    border-top: 1px dashed var(--border);
+    padding-top: 6px;
+  }
+  .combine-params-title {
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    letter-spacing: 0.05em;
+  }
+  .combine-params .knob-grid { padding: 0; }
 </style>

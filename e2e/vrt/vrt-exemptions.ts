@@ -757,6 +757,15 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // (real per-shader content, distinct across the 4 entries) lives in
   // e2e/vrt/vrt-toybox.spec.ts, also darwin-only by the same precedent.
   'linux/toybox',
+  // TOYBOX Phase 4 (the bespoke SVG combine-graph editor): the combine-composite
+  // frozen render + the deterministic editor-SVG capture are darwin baselines
+  // captured locally; linux pending a `task vrt:update` on linux CI (same
+  // shader/SVG pipeline, sub-threshold cross-platform paint timing). Functional
+  // coverage: toybox-combine*.test.ts (graph mutations + Yjs round-trip) +
+  // e2e/tests/toybox-combine-editor.spec.ts (add/connect/cycle-reject via real
+  // clicks + a live-output delta).
+  'linux/toybox-combine-composite',
+  'linux/toybox-combine-editor',
   // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
   // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
   // `__nibblesForceLength` test hook. Darwin baselines captured on this
