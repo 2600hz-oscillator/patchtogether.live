@@ -16,11 +16,11 @@ name: CI
 #                            | preview bundle ONCE (VITE_E2E_HOOKS=1) → the
 #                            | web-preview-dist artifact the e2e shards serve
 #   art             ~60 s  | needs: dsp-build (restores dist, dsp:build no-ops)
-#   e2e (× 8)     ~3-4 min | matrix shards 1..8/8, blob reporter; needs:
+#   e2e (× 10)    ~3-4 min | matrix shards 1..10/10, blob reporter; needs:
 #                            | [dsp-build, build-web]; runs E2E_USE_PREVIEW=1
 #                            | against the prebuilt bundle (`vite preview`,
 #                            | :4173) instead of booting `vite dev` per shard
-#   merge-reports   ~30 s  | needs: e2e — merges 8 blob-reports → HTML
+#   merge-reports   ~30 s  | needs: e2e — merges the blob-reports → HTML
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
 #   vrt             ~3-5 min | needs: dsp-build (restores dist)
 #
@@ -36,8 +36,10 @@ name: CI
 # ≈ 4-5 min, vs the previous ~22 min single-runner pipeline. Setup is repeated
 # per-job (npm cache makes it ~70 s each), which is the deliberate trade-off
 # the plan accepted in exchange for parallelism. Free-tier concurrency cap
-# is 20 concurrent jobs; the full pipeline tops out at ~14 (8 e2e + typecheck
-# + unit + art + vrt + merge-reports + ci), still under cap.
+# is 20 concurrent jobs; the full pipeline tops out at ~16 (10 e2e + typecheck
+# + unit + art + vrt + merge-reports + ci), still under cap. (Behavioral's 6
+# shards no longer run per-PR — see its `if:` guard — so they don't add to the
+# per-PR peak; on a main-push/label run they overlap but stay under cap.)
 #
 # Branch ruleset note: the "main: green PRs only" ruleset (id 16042163)
 # requires the status check `typecheck + unit + ART + E2E`. The `ci` umbrella
@@ -53,6 +55,14 @@ on:
       - '.myrobots/**'
       - 'LICENSE'
   pull_request:
+    # `labeled` is included so adding the 'behavioral' label to an open PR
+    # re-fires CI and lets the (otherwise-skipped) behavioral lane run on
+    # demand — see the `if:` guard on behavioral-coverage /
+    # merge-behavioral-reports. The other three are the GitHub default set
+    # (opened/synchronize/reopened); we list them explicitly because once
+    # `types:` is declared the default no longer applies. Path filters below
+    # are unchanged.
+    types: [opened, synchronize, reopened, labeled]
     branches: [main]
     paths-ignore:
       - '**/*.md'
@@ -560,29 +570,38 @@ jobs:
           retention-days: 1
 
   # -----------------------------------------------------------------------
-  # e2e — Playwright E2E suite, sharded 8 ways. Each shard runs ~1/8 of the
+  # e2e — Playwright E2E suite, sharded 10 ways. Each shard runs ~1/10 of the
   # 812 specs (file-level distribution) with 4 workers, on its own runner.
-  # Per-shard wall-time ~3-4 min vs the previous ~5-6 min at 4 shards.
+  # Bumped 8 → 10 (2026-06-04, #51): at 8 the slow toybox/WebGL specs
+  # clustered into one shard (~9 min long pole vs ~5 min for the rest); 10
+  # shards carry ~80% the tests each, spreading the heavy specs and shortening
+  # the long pole. Still a REQUIRED gate (only the shard COUNT changed).
   #
-  # Reporter is `blob` so we can merge all 8 shards into a single HTML report
+  # Reporter is `blob` so we can merge all shards into a single HTML report
   # via the `merge-reports` job. Each shard uploads its blob artifact;
-  # merge-reports downloads them all and runs `playwright merge-reports`.
+  # merge-reports downloads them all by PATTERN (blob-report-*, count-agnostic)
+  # and runs `playwright merge-reports` — no aggregator change for the bump.
   #
   # DB schema + DOOM assets are needed (same as the previous monolithic job).
   # -----------------------------------------------------------------------
   e2e:
-    name: e2e (shard ${{ matrix.shard }}/8)
+    name: e2e (shard ${{ matrix.shard }}/10)
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     strategy:
       # Don't fail-fast: if shard 1 fails on a flake, we still want shards
-      # 2-8 to surface independent failures in the same run rather than
+      # 2-10 to surface independent failures in the same run rather than
       # forcing two consecutive CI cycles to triage.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        # 10 shards (was 8): the slow toybox/WebGL specs clustered into one
+        # shard (~9 min long pole vs ~5 min for the rest). Spreading across 10
+        # carries ~80% the tests per shard → the heavy specs distribute and the
+        # long pole shortens. merge-reports is count-agnostic (downloads
+        # blob-report-* by pattern), so no aggregator change is needed.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     services:
       # Postgres for the persistence layer (Stage B1+). Both the SvelteKit
@@ -698,11 +717,11 @@ jobs:
       # to 8-10 min) and runs in its own dedicated `behavioral-coverage`
       # job below. The test titles are matched via the
       # "BEHAVIORAL input coverage" describe block name.
-      - name: Run E2E (shard ${{ matrix.shard }}/8, blob reporter, no @collab, no @capacity, no behavioral)
+      - name: Run E2E (shard ${{ matrix.shard }}/10, blob reporter, no @collab, no @capacity, no behavioral)
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
-            --shard=${{ matrix.shard }}/8 \
+            --shard=${{ matrix.shard }}/10 \
             --reporter=blob
 
       - name: Upload blob report (shard ${{ matrix.shard }})
@@ -725,10 +744,11 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
-  # merge-reports — downloads all 8 e2e blob artifacts and merges them into
-  # a single HTML report. Uploaded as `playwright-report` so the artifact
-  # name matches what reviewers expect (and what the previous monolithic
-  # workflow uploaded).
+  # merge-reports — downloads ALL e2e blob artifacts (by the count-agnostic
+  # `blob-report-*` pattern, so the 8 → 10 shard bump needs no change here) and
+  # merges them into a single HTML report. Uploaded as `playwright-report` so
+  # the artifact name matches what reviewers expect (and what the previous
+  # monolithic workflow uploaded).
   #
   # `if: always()` so we still get a merged report even if one shard failed
   # — that's the whole point of an aggregated dashboard for triage.
@@ -1044,6 +1064,15 @@ jobs:
   # -----------------------------------------------------------------------
   behavioral-coverage:
     name: behavioral input coverage (shard ${{ matrix.shard }}/6)
+    # INFORMATIONAL lane (continue-on-error, NOT in the `ci` umbrella's needs) —
+    # so to cut per-PR runner contention it no longer runs on every PR. It runs
+    # ONLY on: push-to-main, manual workflow_dispatch, or a PR explicitly
+    # labeled 'behavioral' (apply the label to opt a PR in — the `labeled`
+    # pull_request type above re-fires CI). Normal PRs SKIP it. Main-merge
+    # frequency + the on-demand label give enough coverage while it's still a
+    # tuning lane. Re-add it (sharded) to the per-PR gate when it becomes a real
+    # required check (#42).
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'behavioral'))
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     # INFORMATIONAL lane (un-gated 2026-06-03 after a premature 1x gate flaked
@@ -1180,7 +1209,18 @@ jobs:
   # -----------------------------------------------------------------------
   merge-behavioral-reports:
     name: Merge behavioral Playwright reports
-    if: always()
+    # Gate this on the SAME event condition as behavioral-coverage so it's
+    # skipped on normal PRs (no behavioral shards ran → nothing to merge), and
+    # wrap it in always() so that ON the runs where behavioral DOES run
+    # (push-to-main / dispatch / 'behavioral'-labeled PR) we still get the
+    # aggregated HTML report even when a shard failed. continue-on-error on the
+    # shards keeps the lane non-blocking regardless.
+    if: |
+      always() && (
+        github.event_name == 'push'
+        || github.event_name == 'workflow_dispatch'
+        || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'behavioral'))
+      )
     needs: [behavioral-coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
