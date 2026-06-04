@@ -111,6 +111,7 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // ── Hardware-input sources ──
   gamepad:    'no gamepad attached in test browser; covered by gamepad.spec.ts',
   joystick:   'no joystick movement in test browser; covered by joystick.spec.ts',
+  moog956:    'ribbon controller; pitch/gate emitted only while the ribbon is touched (no pointer drag in the per-port harness); covered by moog956.test.ts',
   audioIn:    'requires live mic input; no audio device in CI; covered by audio-in.spec.ts',
   // ── MIDI-driven ──
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
