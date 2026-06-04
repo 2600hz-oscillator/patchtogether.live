@@ -83,6 +83,7 @@
   // drops its XyzCard.svelte here (matching the PascalCase(type)+Card
   // convention, or declaring `card` on its def) and is picked up automatically.
   import { buildNodeTypes } from '$lib/ui/modules-card-map';
+  import { computeCabinetLayout } from '$lib/ui/canvas/cabinet-layout';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
   // Canvas no longer renders the label directly.
@@ -778,6 +779,48 @@
       trace('voice demo in store; reconciler instantiating');
       await reconciler?.reconcile();
       trace('voice demo live — sequencer playing 8-note motif');
+    } catch (err) {
+      console.error(err);
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    } finally {
+      booting = false;
+    }
+  }
+
+  /** "moogafakkin System 35/55" — spawn a full Moog cabinet, positioned to
+   *  mirror the real service-manual cabinet layout (two rows, left-to-right,
+   *  non-overlapping). The geometry comes from the pure
+   *  computeCabinetLayout() helper; we filter each placement through the
+   *  live module registry (skipping any unregistered type) and write ALL
+   *  the nodes in ONE Yjs transaction so the cabinet is a single undo step
+   *  and a single multiplayer broadcast. nextDefaultName is recomputed per
+   *  node AFTER the prior insert (it scans patch.nodes, which we've already
+   *  mutated) so numbering stays unique across the batch. */
+  async function spawnCabinet(system: '35' | '55') {
+    error = null;
+    booting = true;
+    try {
+      await ensureEngine();
+      const placements = computeCabinetLayout(system);
+      ydoc.transact(() => {
+        for (const { type, x, y } of placements) {
+          // Skip gracefully if a type isn't registered — don't crash the
+          // whole cabinet over one missing module.
+          if (!getModuleDef(type as Parameters<typeof getModuleDef>[0])) continue;
+          const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
+          const autoName = nextDefaultName(patch.nodes, type as Parameters<typeof nextDefaultName>[1]);
+          patch.nodes[id] = {
+            id,
+            type,
+            domain: 'audio',
+            position: { x, y },
+            params: {},
+            data: { name: autoName },
+          };
+        }
+      }, LOCAL_ORIGIN);
+      trace(`spawned moogafakkin System ${system} cabinet (${placements.length} modules)`);
+      await reconciler?.reconcile();
     } catch (err) {
       console.error(err);
       error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -3591,6 +3634,22 @@
     <h1>2600hz</h1>
     <div class="actions">
       <button onclick={openPaletteFromButton}>+ Add module</button>
+      <button
+        onclick={() => spawnCabinet('55')}
+        disabled={booting}
+        data-testid="moog-system-55-btn"
+        title="Spawn a full moogafakkin System 55 cabinet — every module laid out in two rows mirroring the real Moog cabinet (Fig 48)."
+      >
+        {booting ? 'Loading…' : 'moogafakkin System 55'}
+      </button>
+      <button
+        onclick={() => spawnCabinet('35')}
+        disabled={booting}
+        data-testid="moog-system-35-btn"
+        title="Spawn a full moogafakkin System 35 cabinet — every module laid out in two rows mirroring the real Moog cabinet (Fig 47)."
+      >
+        {booting ? 'Loading…' : 'moogafakkin System 35'}
+      </button>
       <button onclick={loadExample} disabled={booting} class="primary">
         {booting ? 'Loading…' : 'Load example'}
       </button>
