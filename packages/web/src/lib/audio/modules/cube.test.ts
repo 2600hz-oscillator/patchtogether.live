@@ -110,16 +110,20 @@ function rms(b: Float32Array): number { let s = 0; for (let i = 0; i < b.length;
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('cubeDef — module def shape', () => {
-  it('declares pitch + the documented CV inputs (incl. fold_cv)', () => {
+  it('declares pitch + the documented CV inputs (incl. fold_cv + space/connect_strength)', () => {
     expect(cubeDef.inputs.map((i) => i.id)).toEqual([
       'pitch',
       'slice_y', 'slice_rx', 'slice_ry', 'slice_rz',
-      'morph_fc', 'connect', 'crush', 'fold_cv', 'tune',
+      'morph_fc', 'connect', 'connect_strength', 'crush',
+      'space_crush', 'space_diffuse', 'fold_cv', 'tune',
     ]);
   });
 
   it('CV inputs target the right params with linear cvScale', () => {
-    for (const id of ['slice_y', 'slice_rx', 'slice_ry', 'slice_rz', 'morph_fc', 'connect', 'crush', 'tune']) {
+    for (const id of [
+      'slice_y', 'slice_rx', 'slice_ry', 'slice_rz', 'morph_fc', 'connect',
+      'connect_strength', 'crush', 'space_crush', 'space_diffuse', 'tune',
+    ]) {
       const p = cubeDef.inputs.find((i) => i.id === id)!;
       expect(p.paramTarget, id).toBe(id);
       expect(p.cvScale, id).toEqual({ mode: 'linear' });
@@ -146,6 +150,11 @@ describe('cubeDef — module def shape', () => {
     expect(byId.fine).toMatchObject({ min: -100, max: 100, defaultValue: 0 });
     expect(byId.morph_fc).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
     expect(byId.connect).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+    // CONNECT STRENGTH + SPACE CRUSH + SPACE DIFFUSE — all min0/max1/default0
+    // (off=identity), CV-routable, linear.
+    expect(byId.connect_strength).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
+    expect(byId.space_crush).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
+    expect(byId.space_diffuse).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
     expect(byId.crush).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
     // FOLD — West-coast wavefolder, linear, default 0 (pass-through).
     expect(byId.fold).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
@@ -406,6 +415,22 @@ describe('CUBE worklet — capture + audible output', () => {
     // the view-only camera params are likewise card-read, not worklet params.
     expect(names).not.toContain('screen_on');
     expect(names).toContain('morph_fc'); // sanity: descriptors were actually read
+  });
+
+  it('the worklet declares space_crush / space_diffuse / connect_strength a-rate params (default 0, [0,1])', async () => {
+    const Proc = await loadProcessor();
+    const descriptors =
+      (Proc as unknown as {
+        parameterDescriptors?: Array<{ name: string; defaultValue: number; minValue: number; maxValue: number; automationRate: string }>;
+      }).parameterDescriptors ?? [];
+    for (const name of ['space_crush', 'space_diffuse', 'connect_strength']) {
+      const d = descriptors.find((x) => x.name === name);
+      expect(d, `worklet must declare ${name}`).toBeTruthy();
+      expect(d!.defaultValue, name).toBe(0);
+      expect(d!.minValue, name).toBe(0);
+      expect(d!.maxValue, name).toBe(1);
+      expect(d!.automationRate, name).toBe('a-rate');
+    }
   });
 });
 
