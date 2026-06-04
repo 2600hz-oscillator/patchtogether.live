@@ -26,10 +26,13 @@
     DEFAULT_MODEL_ID,
     MATCAP_STYLES,
     ensureToyboxCatalog,
+    getContent,
     getContentMeta,
     getModelMeta,
+    getModelObj,
     listAllContent,
     listModels,
+    listPresets,
     makeDefaultLayers,
     makeDefaultObjMaterial,
     type ToyboxContent,
@@ -37,6 +40,7 @@
     type ToyboxLayerKind,
     type ToyboxModel,
     type ToyboxObjMaterial,
+    type ToyboxPreset,
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -70,6 +74,7 @@
     type CvRouteTarget,
   } from '$lib/video/toybox-cv-routes';
   import { setCvRoute } from '$lib/graph/toybox-cv-routes';
+  import { loadToyboxPreset } from '$lib/graph/toybox-presets';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -84,12 +89,14 @@
   // ----- Content + model catalogs (loaded from the static manifest) -----
   let catalog: ToyboxContent[] = $state([]);
   let models: ToyboxModel[] = $state([]);
+  let presets: ToyboxPreset[] = $state([]);
   const MATCAP_LABELS = ['CHROME', 'CLAY', 'NEON'];
   onMount(() => {
     void (async () => {
       await ensureToyboxCatalog();
       catalog = await listAllContent();
       models = await listModels();
+      presets = await listPresets();
       // Seed a fully-defaulted layer array if the node has none yet, so the
       // factory + card agree on layer 0's content from first paint.
       const t = patch.nodes[id];
@@ -492,6 +499,52 @@
     setCvRoute(id, portId, { ...r, param });
   }
 
+  // ───────────────────── PRESETS (Phase 6) ─────────────────────
+  //
+  // A dropdown of the bundled presets (manifest `presets[]`). Selecting one
+  // writes its layers/combine/cvRoutes into node.data IN PLACE (the Yjs mutator
+  // graph/toybox-presets.ts) so the factory renders the preset's composite next
+  // frame, then PREFETCHES any GLSL/OBJ the preset references so the first paint
+  // is snappy (the factory's fetch is lazy, but warming the cache avoids a black
+  // flash). Exposes a debug __toyboxLoadPreset(id) hook for VRT/e2e determinism.
+
+  let presetSel = $state('');
+
+  /** Prefetch every content shader / OBJ a preset references (warm the cache).
+   *  Best-effort: failures are swallowed (the factory retries on its own). */
+  function prefetchPresetAssets(preset: ToyboxPreset): void {
+    for (const layer of preset.layers ?? []) {
+      if ((layer.kind === 'shader' || layer.kind === 'gen') && layer.contentId) {
+        void getContent(layer.contentId).catch(() => {});
+      } else if (layer.kind === 'obj' && layer.material) {
+        const modelId = layer.material.modelId;
+        const meta = modelId ? getModelMeta(modelId) : undefined;
+        // Built-in primitives have no OBJ to fetch (the factory builds them).
+        if (meta?.obj) void getModelObj(modelId).catch(() => {});
+      }
+    }
+  }
+
+  /** Load a preset by id: mutate node.data in place + prefetch its assets.
+   *  Resolves true if the preset existed + applied. */
+  async function loadPreset(presetId: string): Promise<boolean> {
+    const ok = await loadToyboxPreset(id, presetId);
+    if (ok) {
+      const p = presets.find((x) => x.id === presetId);
+      if (p) prefetchPresetAssets(p);
+    }
+    return ok;
+  }
+
+  function onPresetChange(ev: Event): void {
+    const value = (ev.target as HTMLSelectElement).value;
+    if (!value) return;
+    void loadPreset(value);
+    // Reset the dropdown to the placeholder so re-selecting the same preset
+    // re-fires (presets are "apply" actions, not a persisted selection).
+    presetSel = '';
+  }
+
   // ----- Live preview pull (MANDELBULB pattern) -----
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
@@ -552,7 +605,11 @@
     const g = globalThis as unknown as {
       __toyboxFreeze?: (time?: number) => void;
       __toyboxFreezeTime?: number | null;
+      __toyboxLoadPreset?: (presetId: string) => Promise<boolean>;
     };
+    // VRT/e2e determinism hook: load a bundled preset by id into THIS node's
+    // data (in place) + prefetch its assets. Returns the apply verdict.
+    g.__toyboxLoadPreset = (presetId: string) => loadPreset(presetId);
     g.__toyboxFreeze = (time?: number) => {
       if (typeof time === 'number') {
         g.__toyboxFreezeTime = time;
@@ -608,6 +665,26 @@
       data-node-id={id}
     ></canvas>
   </div>
+
+  <!-- PRESETS (Phase 6): pick a bundled preset → writes layers/combine/cvRoutes
+       into node.data in place. An "apply" action (resets to placeholder). -->
+  {#if presets.length > 0}
+    <div class="content-row">
+      <label class="content-label" for={`toybox-preset-${id}`}>PRESET</label>
+      <select
+        id={`toybox-preset-${id}`}
+        class="content-select"
+        data-testid="toybox-preset-select"
+        value={presetSel}
+        onchange={onPresetChange}
+      >
+        <option value="">— load preset… —</option>
+        {#each presets as p (p.id)}
+          <option value={p.id}>{p.label}</option>
+        {/each}
+      </select>
+    </div>
+  {/if}
 
   <!-- LAYER KIND selector: shader/gen (content) vs OBJ (3D mesh). -->
   <div class="content-row">

@@ -540,6 +540,113 @@ test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
   }
 });
 
+// ── Phase 6: the bundled PRESETS — the headline proof that load → layers
+// (incl video/obj substitutes + gen + shader) → combine DAG → cv renders an
+// end-to-end composite. Each baseline LOADS a preset via the debug hook
+// window.__toyboxLoadPreset(id) (the same in-place Yjs mutation the dropdown
+// fires), freezes iTime, and waits until the composited preview is STABLE (the
+// async GLSL/OBJ fetches landed + two consecutive captures match), then
+// snapshots. The four presets MUST be visibly distinct (different sources +
+// combine ops).
+
+const PRESETS: Array<{ id: string; time: number }> = [
+  { id: 'plasma-dissolve', time: 4.0 },
+  { id: 'cow-on-camera',   time: 1.0 },
+  { id: 'worley-bloom',    time: 2.0 },
+  { id: 'reactor-field',   time: 3.0 },
+];
+
+/** Load a bundled preset via the debug hook, freeze iTime, wait until the
+ *  composited preview is non-black AND stable across two captures. */
+async function loadPresetAndFreeze(page: Page, presetId: string, time: number): Promise<void> {
+  // Resume the clock first so newly-referenced GLSL/OBJ compile + render.
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+  // Wait for the hook to exist (catalog loaded), then load the preset.
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __toyboxLoadPreset?: unknown }).__toyboxLoadPreset === 'function',
+    undefined,
+    { timeout: 10_000 },
+  );
+  await page.evaluate(async (presetId) => {
+    const g = globalThis as unknown as { __toyboxLoadPreset?: (id: string) => Promise<boolean> };
+    await g.__toyboxLoadPreset?.(presetId);
+  }, presetId);
+  // Reset the stability tracker so it can't carry a prior preset's signature.
+  await page.evaluate(() => {
+    (globalThis as unknown as { __toyboxPrevSig?: string }).__toyboxPrevSig = '';
+  });
+  // Poll until the FROZEN composite is non-black AND stable (two consecutive
+  // freeze captures match → all sources compiled + the DAG settled).
+  await page.waitForFunction(
+    ({ time }) => {
+      const g = globalThis as unknown as {
+        __toyboxFreeze?: (t?: number) => void;
+        __toyboxPrevSig?: string;
+      };
+      g.__toyboxFreeze?.(time);
+      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0, r = 0, gg = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      }
+      // ≥2% lit covers the framed-OBJ presets (cow / reactor) too.
+      if (lit <= canvas.width * canvas.height * 0.02) return false;
+      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
+      const prev = g.__toyboxPrevSig;
+      g.__toyboxPrevSig = sig;
+      return prev === sig;
+    },
+    { time },
+    { timeout: 15_000 },
+  );
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
+test.describe('VRT: TOYBOX Phase-6 presets', () => {
+  for (const p of PRESETS) {
+    test(`preset ${p.id} composites end-to-end`, async ({ page }) => {
+      test.skip(
+        VRT_PLATFORM === 'linux',
+        `linux/toybox-preset-${p.id}: darwin baseline only; linux pending a vrt:update on CI`,
+      );
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('console', (m) => {
+        if (m.type() === 'error') errors.push(m.text());
+      });
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+        [],
+      );
+      const card = page.locator('.svelte-flow__node-toybox').first();
+      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      await pinViewport(page);
+
+      await loadPresetAndFreeze(page, p.id, p.time);
+
+      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      await expect(canvas).toHaveScreenshot(`preset-${p.id}.png`, { maskColor: '#ff00ff' });
+
+      expect(
+        errors.filter((e) => !e.includes('AudioContext')),
+        'no console / page errors',
+      ).toEqual([]);
+    });
+  }
+});
+
 test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
   test('a non-default combine graph composites the expected frozen output', async ({ page }) => {
     test.skip(
