@@ -63,7 +63,7 @@
   const outputs: PortDescriptor[] = [{ id: 'audio', cable: 'audio' }];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 904B VCF" width={236}>
+<MoogPanel {id} {data} defaultLabel="904B VCF" width={236}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- FIXED CONTROL VOLTAGE (cutoff). No regeneration knob on the 904B. -->
     <div class="knob-row" data-testid="moog904b-knob-row">

@@ -22,15 +22,15 @@ beforeAll(() => {
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog904bDef: module def shape', () => {
-  it('declares type=moog904b, label="moogafakkin 904B VCF", category=filters, schemaVersion=1', () => {
+  it('declares type=moog904b, label="904B VCF", category=filters, schemaVersion=1', () => {
     expect(moog904bDef.type).toBe('moog904b');
-    expect(moog904bDef.label).toBe('moogafakkin 904B VCF');
+    expect(moog904bDef.label).toBe('904B VCF');
     expect(moog904bDef.category).toBe('filters');
     expect(moog904bDef.schemaVersion).toBe(1);
   });
 
-  it('is categorized under Clones → moogafakkin and uses the Moog904bVcfCard', () => {
-    expect(moog904bDef.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+  it('is categorized under Ports → moogafakkin and uses the Moog904bVcfCard', () => {
+    expect(moog904bDef.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
     expect(moog904bDef.card).toBe('Moog904bVcfCard');
   });
 

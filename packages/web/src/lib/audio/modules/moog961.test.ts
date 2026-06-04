@@ -139,13 +139,13 @@ function countHigh(buf: Float32Array): number {
 describe('moog961Def — module def shape', () => {
   it('declares type=moog961, label, category=utilities, schemaVersion=1', () => {
     expect(moog961Def.type).toBe('moog961');
-    expect(moog961Def.label).toBe('moogafakkin 961 Interface');
+    expect(moog961Def.label).toBe('961 Interface');
     expect(moog961Def.category).toBe('utilities');
     expect(moog961Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Clones → moogafakkin palette bucket and uses the Moog961Card', () => {
-    expect(moog961Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+  it('lives in the Ports → moogafakkin palette bucket and uses the Moog961Card', () => {
+    expect(moog961Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
     expect(moog961Def.card).toBe('Moog961Card');
     expect(moog961Def.domain).toBe('audio');
   });

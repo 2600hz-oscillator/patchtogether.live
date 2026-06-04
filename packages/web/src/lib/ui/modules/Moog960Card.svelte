@@ -101,7 +101,7 @@
   const rows = Array.from({ length: ROWS }, (_, i) => i + 1);
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 960 Sequencer" width={520}>
+<MoogPanel {id} {data} defaultLabel="960 Sequencer" width={520}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="seq960" data-testid={`moog960-grid-${id}`}>
       <!-- Column index header row (highlights the active column). -->

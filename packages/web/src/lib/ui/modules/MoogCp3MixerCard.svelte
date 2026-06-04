@@ -66,7 +66,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin CP3 Mixer" width={264}>
+<MoogPanel {id} {data} defaultLabel="CP3 Mixer" width={264}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Four input level knobs (25K-LIN, shown 0–10). -->
     <div class="knob-row" data-testid="moog-cp3-levels">

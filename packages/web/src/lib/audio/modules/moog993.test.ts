@@ -18,12 +18,12 @@ import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog993Def: module def shape', () => {
-  it('declares type=moog993, label="moogafakkin 993 Trig", category=modulation, schemaVersion=1', () => {
+  it('declares type=moog993, label="993 Trig", category=modulation, schemaVersion=1', () => {
     expect(moog993Def.type).toBe('moog993');
-    expect(moog993Def.label).toBe('moogafakkin 993 Trig');
+    expect(moog993Def.label).toBe('993 Trig');
     expect(moog993Def.category).toBe('modulation');
     expect(moog993Def.schemaVersion).toBe(1);
-    expect(moog993Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+    expect(moog993Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
   });
 
   it('exposes the four inputs: trig_from1/2 (gate) + env_in1/2 (cv)', () => {

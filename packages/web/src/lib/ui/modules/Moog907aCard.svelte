@@ -59,7 +59,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 907A Filter Bank" width={200}>
+<MoogPanel {id} {data} defaultLabel="907A Filter Bank" width={200}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Vertical column of small band-level knobs: HP, band1..N, LP. -->
     <div class="band-column" data-testid="moog907a-bands">

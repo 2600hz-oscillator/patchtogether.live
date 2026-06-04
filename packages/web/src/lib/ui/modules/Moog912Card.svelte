@@ -54,7 +54,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 912 Env Follow" width={200}>
+<MoogPanel {id} {data} defaultLabel="912 Env Follow" width={200}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="knob-row" data-testid="moog912-knobs">
       <Knob value={sensitivity} min={0} max={1} defaultValue={0.7} label="Sens" curve="linear" onchange={setParam('sensitivity')} moduleId={id} paramId="sensitivity" readLive={readLive('sensitivity')} />

@@ -30,7 +30,7 @@
 //     the channel passes at unity. atten4 is applied as a NEGATIVE gain
 //     (−atten4) so channel 4 inverts.
 //
-// Categorized under Clones → moogafakkin (the shared SYS55/SYS35 bucket, mirroring the
+// Categorized under Ports → moogafakkin (the shared SYS55/SYS35 bucket, mirroring the
 // CP3 / 921A). Category 'modulation' because it routes CV.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
@@ -38,7 +38,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const moog992Def: AudioModuleDef = {
   type: 'moog992',
-  palette: { top: 'Clones', sub: 'moogafakkin' },
+  palette: { top: 'Ports', sub: 'moogafakkin' },
   card: 'Moog992Card',
   domain: 'audio',
   label: '992 Control Voltage Panel',
