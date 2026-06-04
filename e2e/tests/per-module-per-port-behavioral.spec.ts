@@ -970,20 +970,25 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
 
   // (aquaTank moved to BEHAVIORAL_MODULE_EXEMPT — its observed out1 is
   //  intrinsically near-silent (~0.005 RMS) so MANY ports straddle the
-  //  floor, not just a couple; whack-a-mole per-port doesn't converge.)
+  //  floor, NOT just the fb*_cv sends: a 3× local flake-check showed in3
+  //  (an AUDIO input) jitter too, so the per-port fb{1..4}_cv approach
+  //  doesn't converge. Module-level exempt is the reliable fix.)
 
-  // ── BLADES voct1 / voct2 (per-voice V/oct pitch CVs): BLADES is a dual SVF
-  //    VCF + COLOR overdrive + mix bus (MI Blades archetype). The observed
-  //    `mix` output sits at a LOW idle RMS (≈0.047) — it's a FILTER, not an
-  //    oscillator, so it only colours an upstream excitation. A V/oct shift on
-  //    one voice retunes that voice's filter centre but barely moves the summed
-  //    mix RMS (Δμrms≈0.002, Δrange≈0.004), straddling the ~0.01 floor →
-  //    near-threshold jitter (voct1 surfaced as a flaky failure; voct2 is the
-  //    identical per-voice-pitch class, exempt to de-flake the pair). The
-  //    cutoff/resonance/COLOR + audio inputs perturb (they pass). Covered by
-  //    blades.test.ts (per-voice filter math) + blades.spec.ts.
-  'blades.voct1': 'per-voice V/oct pitch CV on a filter (not an oscillator); retunes the voice centre but the summed mix-RMS shift straddles the ~0.01 floor on the quiet (~0.047) mix (jitter); covered by blades.test.ts + blades.spec.ts',
-  'blades.voct2': 'per-voice V/oct pitch CV on a filter (not an oscillator); retunes the voice centre but the summed mix-RMS shift straddles the ~0.01 floor on the quiet (~0.047) mix (jitter); covered by blades.test.ts + blades.spec.ts',
+  // ── blades voct1 / voct2 (per-filter V/oct CV): BLADES is a dual ZDF-SVF
+  //    VCF whose observed `mix` bus sums both filters' (noise-driven) outputs.
+  //    voct{N} offsets filter N's cutoff in OCTAVES as knob·2^(voctN) — a UNITY
+  //    (×1) octave scaler — whereas the cutoff{N}_cv inputs enter as knob·2^(cv·5),
+  //    a ×5 scaler. With BUGGLES.smooth's modest swing the ×1 octave offset moves
+  //    the LP-filtered-noise spectral centroid only a few Hz (run 26945471026:
+  //    voct1 Δμrms=0.002, Δcent=4Hz against a control centroid noise-band of
+  //    ±85Hz — i.e. the shift is buried in the noise-driven output's OWN
+  //    per-snapshot centroid jitter), while the ×5 cutoff{N}_cv inputs DO clear
+  //    the metric (they pass). voct1 hard-failed + voct2 (identical structural
+  //    class on filter 2) straddles, so both are exempted together. The V/oct →
+  //    cutoff octave mapping is pinned directly by blades.test.ts (cutoffHz:
+  //    knob·2^(voct+cv·5)) + the blades DSP/ART coverage.
+  'blades.voct1': 'V/oct CV on filter-1 cutoff is a ×1 octave scaler (vs cutoff1_cv\'s ×5); the centroid shift of LP-filtered noise is buried in the output\'s own ±85Hz per-snapshot centroid jitter (Δcent≈4Hz); cutoff1_cv passes — covered by blades.test.ts (cutoffHz octave mapping)',
+  'blades.voct2': 'V/oct CV on filter-2 cutoff is a ×1 octave scaler (vs cutoff2_cv\'s ×5); same buried-in-noise-band class as blades.voct1; cutoff2_cv passes — covered by blades.test.ts (cutoffHz octave mapping)',
 };
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
