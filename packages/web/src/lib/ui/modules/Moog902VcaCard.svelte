@@ -69,7 +69,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 902 VCA" width={236}>
+<MoogPanel {id} {data} defaultLabel="902 VCA" width={236}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- GAIN ("fixed control voltage") + CV depth. -->
     <div class="knob-row" data-testid="moog902-knob-row">

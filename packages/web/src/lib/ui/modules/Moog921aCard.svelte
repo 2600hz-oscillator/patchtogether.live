@@ -66,7 +66,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 921A Driver" width={236}>
+<MoogPanel {id} {data} defaultLabel="921A Driver" width={236}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- FREQUENCY + WIDTH pots. -->
     <div class="knob-row" data-testid="moog921a-knob-row">

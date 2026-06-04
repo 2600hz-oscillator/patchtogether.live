@@ -3,7 +3,7 @@
 // MOOG 921A OSCILLATOR DRIVER — Moog System 55/35 clone (batch 1, shipped
 // with the 921B oscillator). A CV PROCESSOR, not a sound source: it
 // generates the two CONTROL VOLTAGES on a bus that drive N slaved 921B's.
-// Shared by SYS55 + SYS35 → categorized under Clones → moogafakkin (the shared
+// Shared by SYS55 + SYS35 → categorized under Ports → moogafakkin (the shared
 // bucket, mirroring the 921 VCO + 904A).
 //
 // CV-ONLY: NO audio inputs, NO audio outputs. The two outputs (freq_bus,
@@ -43,9 +43,9 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog921aDef: AudioModuleDef = {
   type: 'moog921a',
-  palette: { top: 'Clones', sub: 'moogafakkin' },
+  palette: { top: 'Ports', sub: 'moogafakkin' },
   domain: 'audio',
-  label: 'moogafakkin 921A Driver',
+  label: '921A Driver',
   category: 'modulation',
   schemaVersion: 1,
 

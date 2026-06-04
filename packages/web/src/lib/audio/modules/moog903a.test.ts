@@ -28,8 +28,8 @@ describe('moog903aDef: module def shape', () => {
     expect(moog903aDef.schemaVersion).toBe(1);
   });
 
-  it('lives in the Clones → moogafakkin palette bucket and uses the Moog903aCard', () => {
-    expect(moog903aDef.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+  it('lives in the Ports → moogafakkin palette bucket and uses the Moog903aCard', () => {
+    expect(moog903aDef.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
     expect(moog903aDef.card).toBe('Moog903aCard');
     expect(moog903aDef.domain).toBe('audio');
   });

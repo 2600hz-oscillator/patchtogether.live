@@ -8,7 +8,7 @@
 // that self-oscillates into a clean sine VC generator near max.
 //
 // The 904A appears in BOTH systems (S35×1, S55×2) → shared → categorized
-// under Clones → moogafakkin (the shared bucket, mirroring the 921 VCO).
+// under Ports → moogafakkin (the shared bucket, mirroring the 921 VCO).
 //
 // DSP: own-code, CLEAN-ROOM transistor-ladder core
 // (packages/dsp/src/moog904a.ts + lib/moog-ladder-dsp.ts) — re-derived from
@@ -45,10 +45,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog904aDef: AudioModuleDef = {
   type: 'moog904a',
-  palette: { top: 'Clones', sub: 'moogafakkin' },
+  palette: { top: 'Ports', sub: 'moogafakkin' },
   card: 'Moog904aVcfCard',
   domain: 'audio',
-  label: 'moogafakkin 904A VCF',
+  label: '904A VCF',
   category: 'filters',
   schemaVersion: 1,
 

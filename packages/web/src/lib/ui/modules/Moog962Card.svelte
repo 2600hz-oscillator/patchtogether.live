@@ -54,7 +54,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 962 Seq Switch" width={200}>
+<MoogPanel {id} {data} defaultLabel="962 Seq Switch" width={200}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- STAGES: how many inputs the SHIFT gate cycles through (2 or 3). -->
     <div class="knob-row" data-testid="moog962-stages">

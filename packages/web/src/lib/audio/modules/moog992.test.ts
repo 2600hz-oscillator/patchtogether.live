@@ -27,8 +27,8 @@ describe('moog992Def: module def shape', () => {
     expect(moog992Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Clones → moogafakkin palette bucket and uses the Moog992Card', () => {
-    expect(moog992Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+  it('lives in the Ports → moogafakkin palette bucket and uses the Moog992Card', () => {
+    expect(moog992Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
     expect(moog992Def.card).toBe('Moog992Card');
   });
 

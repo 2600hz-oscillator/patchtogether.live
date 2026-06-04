@@ -34,7 +34,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 994 Mult" width={180}>
+<MoogPanel {id} {data} defaultLabel="994 Mult" width={180}>
   <!-- Passive multiple: no controls, just the fan-out patch panel. -->
   <PatchPanel nodeId={id} {inputs} {outputs} />
 </MoogPanel>

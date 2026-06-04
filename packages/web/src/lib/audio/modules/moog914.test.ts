@@ -41,8 +41,8 @@ describe('moog914Def: module def shape', () => {
     expect(moog914Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Clones → moogafakkin palette bucket and uses the Moog914Card', () => {
-    expect(moog914Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+  it('lives in the Ports → moogafakkin palette bucket and uses the Moog914Card', () => {
+    expect(moog914Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
     expect(moog914Def.card).toBe('Moog914Card');
   });
 

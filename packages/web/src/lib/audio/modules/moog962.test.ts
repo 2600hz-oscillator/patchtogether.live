@@ -26,16 +26,16 @@ vi.mock('@patchtogether.live/dsp/dist/moog962.js?url', () => ({ default: 'moog96
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog962Def: module def shape', () => {
-  it('declares type=moog962, label="moogafakkin 962 Seq Switch", category=utilities, schemaVersion=1', () => {
+  it('declares type=moog962, label="962 Seq Switch", category=utilities, schemaVersion=1', () => {
     expect(moog962Def.type).toBe('moog962');
-    expect(moog962Def.label).toBe('moogafakkin 962 Seq Switch');
+    expect(moog962Def.label).toBe('962 Seq Switch');
     expect(moog962Def.category).toBe('utilities');
     expect(moog962Def.schemaVersion).toBe(1);
     expect(moog962Def.domain).toBe('audio');
   });
 
-  it('lives in the Clones → moogafakkin palette bucket and uses the Moog962Card', () => {
-    expect(moog962Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+  it('lives in the Ports → moogafakkin palette bucket and uses the Moog962Card', () => {
+    expect(moog962Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
     expect(moog962Def.card).toBe('Moog962Card');
   });
 

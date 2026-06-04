@@ -5,7 +5,7 @@
 // CONTROL INPUTS (it has no 1V/oct jack of its own — the 921A is the master
 // driver). Presents FOUR fixed-level simultaneous waveform outs off one
 // common core, 1 Hz–40 kHz. Shared by SYS55 + SYS35 → categorized under
-// Clones → moogafakkin (the shared bucket, mirroring the 921 VCO + 904A).
+// Ports → moogafakkin (the shared bucket, mirroring the 921 VCO + 904A).
 //
 // DSP forks the shared own-code Moog VCO core (the same clean-room
 // polyBLEP/polyBLAMP band-limited oscillator + hard/soft sync the 921 VCO
@@ -44,9 +44,9 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog921bDef: AudioModuleDef = {
   type: 'moog921b',
-  palette: { top: 'Clones', sub: 'moogafakkin' },
+  palette: { top: 'Ports', sub: 'moogafakkin' },
   domain: 'audio',
-  label: 'moogafakkin 921B Osc',
+  label: '921B Osc',
   category: 'sources',
   schemaVersion: 1,
 
