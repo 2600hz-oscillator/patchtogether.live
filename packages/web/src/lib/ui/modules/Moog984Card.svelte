@@ -70,7 +70,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 984 Matrix" width={300}>
+<MoogPanel {id} {data} defaultLabel="984 Matrix" width={300}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- 4×4 cross-point matrix: rows = inputs, columns = outputs. A leading
          header row labels the output columns; each row is prefixed with its

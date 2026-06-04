@@ -23,16 +23,16 @@ import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog905Def: module def shape', () => {
-  it('declares type=moog905, label="moogafakkin 905 Spring Reverb", category=processors, schemaVersion=1', () => {
+  it('declares type=moog905, label="905 Spring Reverb", category=processors, schemaVersion=1', () => {
     expect(moog905Def.type).toBe('moog905');
-    expect(moog905Def.label).toBe('moogafakkin 905 Spring Reverb');
+    expect(moog905Def.label).toBe('905 Spring Reverb');
     expect(moog905Def.category).toBe('processors');
     expect(moog905Def.schemaVersion).toBe(1);
     expect(moog905Def.domain).toBe('audio');
   });
 
-  it('lives in the Clones → moogafakkin palette bucket and uses the Moog905Card', () => {
-    expect(moog905Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+  it('lives in the Ports → moogafakkin palette bucket and uses the Moog905Card', () => {
+    expect(moog905Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
     expect(moog905Def.card).toBe('Moog905Card');
   });
 

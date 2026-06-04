@@ -110,7 +110,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 956 Ribbon" width={240}>
+<MoogPanel {id} {data} defaultLabel="956 Ribbon" width={240}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="ribbon-wrap">
       <div

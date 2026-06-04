@@ -60,7 +60,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 993 Trig" width={220}>
+<MoogPanel {id} {data} defaultLabel="993 Trig" width={220}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Three ROUTE selectors: 0 = OFF / 1 = FROM 1 / 2 = FROM 2. -->
     <div class="knob-row" data-testid="moog993-routes">
