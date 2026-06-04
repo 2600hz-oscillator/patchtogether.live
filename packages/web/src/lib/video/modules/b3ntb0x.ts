@@ -592,11 +592,15 @@ export const b3ntb0xDef: VideoModuleDef = {
     const decodeProgram = ctx.compileFragment(DECODE_FRAG);
     const crtProgram = ctx.compileFragment(CRT_FRAG);
 
-    // Oversampled float FBOs for encode + bend ping-pong.
+    // Oversampled float FBOs for encode + bend ping-pong. createFloatFbo is
+    // optional on the interface (test mocks omit it) but the real engine always
+    // provides it; assert here rather than degrade silently.
+    if (!ctx.createFloatFbo) throw new Error('B3NTB0X: engine ctx lacks createFloatFbo');
+    const createFloatFbo = ctx.createFloatFbo.bind(ctx);
     const osWidth = ctx.res.width * OVERSAMPLE;
-    const fboEncode = ctx.createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
-    const fboBendA = ctx.createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
-    const fboBendB = ctx.createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
+    const fboEncode = createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
+    const fboBendA = createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
+    const fboBendB = createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
     // True iff the GPU could give us real float targets (else reduced precision).
     const isFloat = fboEncode.isFloat && fboBendA.isFloat && fboBendB.isFloat;
 

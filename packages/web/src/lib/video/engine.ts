@@ -192,8 +192,13 @@ export interface VideoEngineContext {
    * attachment needs `OES_texture_float_linear` and will silently read 0.0
    * without it (see waveform-video.ts:216-224) — default composite-voltage
    * targets to NEAREST and do any low-pass in the shader.
+   *
+   * OPTIONAL on the interface only so hand-built test-mock contexts (which
+   * never instantiate a float-using module) don't have to stub it. The REAL
+   * VideoEngine always provides it via context(); a factory that needs it can
+   * assert its presence (b3ntb0x does).
    */
-  createFloatFbo(
+  createFloatFbo?(
     width?: number,
     height?: number,
     opts?: { filter?: 'nearest' | 'linear'; precision?: 'half' | 'full' },
