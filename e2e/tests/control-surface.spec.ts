@@ -131,3 +131,99 @@ test('send a control to a surface → proxy appears, drives the source, survives
   expect(await readSurfaceBindings(page, 'cs-1')).toEqual([]);
   await expect(surface.locator('[data-testid="control-surface-empty"]')).toBeVisible();
 });
+
+// ── helpers reused from midi-learn.spec for the MIDI-mapped check ──
+async function installSimMidi(page: Page): Promise<void> {
+  await page.waitForFunction(() => typeof (globalThis as unknown as {
+    __midiTestInstall?: () => boolean;
+  }).__midiTestInstall === 'function');
+  await page.evaluate(() => {
+    (globalThis as unknown as { __midiTestInstall: () => boolean }).__midiTestInstall();
+  });
+}
+async function injectCc(page: Page, channel: number, cc: number, value: number): Promise<void> {
+  await page.evaluate(({ channel, cc, value }) => {
+    const w = globalThis as unknown as { __midiTestInject?: (c: number, cc: number, v: number) => boolean };
+    if (typeof w.__midiTestInject !== 'function') throw new Error('__midiTestInject missing — DEV build expected');
+    w.__midiTestInject(channel, cc, value);
+  }, { channel, cc, value });
+}
+
+test('multiple controls from multiple modules: grouped, lock/unlock + move, MIDI-mapped works on the proxy', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await installSimMidi(page);
+  // Two source modules + a surface.
+  await spawnPatch(page, [
+    { id: 'cs-1', type: 'controlSurface', position: { x: 760, y: 60 }, domain: 'meta' },
+    { id: 'adsr-1', type: 'adsr', position: { x: 60, y: 60 }, domain: 'audio' },
+    { id: 'adsr-2', type: 'adsr', position: { x: 60, y: 420 }, domain: 'audio' },
+  ]);
+  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
+
+  // Send THREE controls from TWO modules (this is the path that used to break
+  // after the first send).
+  const sends: Array<[string, string]> = [['adsr-1', 'Attack'], ['adsr-1', 'Decay'], ['adsr-2', 'Attack']];
+  for (const [nodeId, label] of sends) {
+    const ctrl = page.locator(`.svelte-flow__node[data-id="${nodeId}"]`).locator(`[role="slider"][aria-label="${label}"]`);
+    await ctrl.click({ button: 'right' });
+    await page.locator('[data-testid="ctx-surface-cs-1"]').click();
+    // The control menu portals an overlay; wait for it to close before the next
+    // right-click (otherwise the lingering overlay intercepts the click).
+    await expect(page.locator('[data-testid="control-context-menu"]')).toHaveCount(0);
+  }
+
+  // All three proxies present, grouped into TWO module boxes.
+  await expect(surface.locator('[data-testid="control-surface-knob-adsr-1-attack"]')).toBeVisible();
+  await expect(surface.locator('[data-testid="control-surface-knob-adsr-1-decay"]')).toBeVisible();
+  await expect(surface.locator('[data-testid="control-surface-knob-adsr-2-attack"]')).toBeVisible();
+  await expect(surface.locator('[data-testid="control-surface-group"]')).toHaveCount(2);
+  expect(await readSurfaceBindings(page, 'cs-1')).toHaveLength(3);
+
+  // MIDI-mapped param works THROUGH the surface: learn on the proxy, inject a
+  // CC, the proxy shows the binding badge (shared moduleId:paramId key).
+  const proxyAttack = surface.locator('[data-testid="control-surface-knob-adsr-1-attack"]');
+  await proxyAttack.locator('[role="slider"]').click({ button: 'right' });
+  await page.locator('[data-testid="control-context-menu"] [data-testid="ctx-midi-learn"]').click();
+  await injectCc(page, 0, 41, 100);
+  await expect(proxyAttack.locator('.midi-badge')).toContainText('CC 41');
+  // ...and the SAME binding shows on the source card (one control, two views).
+  await expect(
+    page.locator('.svelte-flow__node[data-id="adsr-1"]').locator('[role="slider"][aria-label="Attack"]')
+      .locator('xpath=ancestor-or-self::*[contains(@class,"fader-wrap") or contains(@class,"knob-wrap")][1]')
+      .locator('.midi-badge'),
+  ).toContainText('CC 41');
+
+  await page.keyboard.press('Escape'); // dismiss any lingering control menu
+
+  const box = surface.locator('[data-testid="control-surface-group"][data-source-id="adsr-1"]');
+  const lockBtn = surface.locator('[data-testid="control-surface-lock"]');
+
+  // Surface defaults to UNLOCKED → dragging a group box records a position.
+  await expect(surface).toHaveAttribute('data-locked', 'false');
+  const b1 = await box.boundingBox();
+  if (b1) {
+    await page.mouse.move(b1.x + 18, b1.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(b1.x + 100, b1.y + 80, { steps: 6 });
+    await page.mouse.up();
+  }
+  const layout = await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
+    return (w.__patch.nodes['cs-1']?.data as { layout?: Record<string, { x: number; y: number }> })?.layout ?? null;
+  });
+  expect(layout && layout['adsr-1']).toBeTruthy(); // unlocked drag persisted a position
+
+  // Lock → boxes freeze (dragging no longer moves them).
+  await lockBtn.click();
+  await expect(surface).toHaveAttribute('data-locked', 'true');
+  const beforeLocked = await box.boundingBox();
+  if (beforeLocked) {
+    await page.mouse.move(beforeLocked.x + 18, beforeLocked.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(beforeLocked.x + 120, beforeLocked.y + 90, { steps: 5 });
+    await page.mouse.up();
+  }
+  const afterLocked = await box.boundingBox();
+  if (beforeLocked && afterLocked) expect(Math.abs(afterLocked.x - beforeLocked.x)).toBeLessThan(4);
+});
