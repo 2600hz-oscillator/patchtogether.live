@@ -18,3 +18,25 @@ and compatible with this repository's licensing.
 Note: "re-authored" means the algorithm/technique was reimplemented from the
 public mathematical formulation, not pasted from the upstream file. All four
 upstream reference modules are themselves MIT-licensed.
+
+---
+
+# TOYBOX model bank — licenses (Phase 3 OBJ layer)
+
+Every mesh in `models/` is **CC0 1.0 / public-domain**, fetched + license-
+verified from its named source. No attribution is legally required; the
+provenance is recorded here as good practice. The built-in primitives
+(CUBE / SPHERE / TORUS / HYPERCUBE) are generated procedurally in-house
+(`packages/web/src/lib/video/primitives.ts`) and ship no asset file. The OBJ
+**parser** and the **matcap shader** are this project's own code, and the
+matcap is synthesized procedurally in-shader (no matcap image asset), so the
+entire OBJ layer has zero copied-asset license surface.
+
+| Asset | SPDX | Source | URL |
+| --- | --- | --- | --- |
+| `models/spot.obj` (Spot the cow, control mesh) | CC0-1.0 (public domain) | Keenan Crane — 3D Model Repository (`spot.zip`); README: "As the sole author of this data, I hereby release it into the public domain." | https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/ |
+| `models/teapot.obj` (Utah-teapot, low-poly) | CC0-1.0 | drummyfish — "32 Low Poly Models"; file header: "by drummyfish, released under CC0 1.0, public domain" | https://opengameart.org/content/32-low-poly-models |
+| `models/chess-pawn.obj` (chess pawn prop) | CC0-1.0 | drummyfish — "32 Low Poly Models"; file header: "by drummyfish, released under CC0 1.0, public domain" | https://opengameart.org/content/32-low-poly-models |
+
+Built-in primitives (no asset file): `cube`, `sphere`, `torus`, `hypercube`
+— procedurally generated, this project's own code.

@@ -48,5 +48,14 @@
         { "id": "speed",   "label": "SPEED",   "min": 0.0, "max": 3.0,  "default": 0.6, "curve": "linear" }
       ]
     }
+  ],
+  "models": [
+    { "id": "spot",       "label": "SPOT THE COW", "obj": "/toybox/models/spot.obj",       "matcap": 1, "license": "CC0-1.0" },
+    { "id": "teapot",     "label": "UTAH TEAPOT",  "obj": "/toybox/models/teapot.obj",     "matcap": 0, "license": "CC0-1.0" },
+    { "id": "chess-pawn", "label": "CHESS PAWN",   "obj": "/toybox/models/chess-pawn.obj", "matcap": 2, "license": "CC0-1.0" },
+    { "id": "cube",       "label": "CUBE",         "builtin": "cube",      "matcap": 0, "license": "builtin" },
+    { "id": "sphere",     "label": "SPHERE",       "builtin": "sphere",    "matcap": 0, "license": "builtin" },
+    { "id": "torus",      "label": "TORUS",        "builtin": "torus",     "matcap": 1, "license": "builtin" },
+    { "id": "hypercube",  "label": "HYPERCUBE",    "builtin": "hypercube", "matcap": 2, "license": "builtin" }
   ]
 }
