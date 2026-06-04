@@ -225,6 +225,11 @@ export interface FieldParams {
   /** CONNECT STRENGTH s ∈ [0,1]: 0 = today; >0 pushes the connector's interior
    *  control point out of the cube (overshoot) for a more dramatic base swell. */
   connectStrength?: number;
+  /** HYPERCUBE ALPHA a ∈ [0,1]: the slice's 4th-dimension (w) coordinate. The
+   *  field's occupancy is blended toward the HOLO cell `f4 = (1-a)*f3 + a*dH` —
+   *  a genuine tesseract cross-section. UNDEFINED (or no holoH) ⇒ the plain 3-
+   *  table CUBE field, byte-for-byte. a=0 also collapses f4→f3. CV-able. */
+  alpha?: number;
   /** Material readout: SMOOTH = continuous density, HARD = binary in/out. */
   material: Material;
 }
@@ -234,11 +239,19 @@ export interface ColumnHeights {
   floorH: number;
   wallH: number;
   ceilH: number;
+  /** HYPERCUBE 4th-table (HOLO) height at this column, in [0,1]. UNDEFINED
+   *  when no holo table is supplied (the plain CUBE path) — fieldFromHeights
+   *  then returns the EXACT 3-table f3 result. */
+  holoH?: number;
 }
 
 /**
  * Read the three source heights for a horizontal position (x, y). x → sample-
  * phase (u), y → frame (v) of each table (field orientation Q1 default).
+ *
+ * HYPERCUBE: `holoFrames` is a TRAILING OPTIONAL arg. When supplied, the 4th
+ * (HOLO) table's height is read into `holoH`; when omitted, `holoH` is left
+ * `undefined` so fieldFromHeights takes the byte-identical 3-table path.
  */
 export function columnHeights(
   floorFrames: readonly Float32Array[],
@@ -246,11 +259,13 @@ export function columnHeights(
   ceilFrames: readonly Float32Array[],
   x: number,
   y: number,
+  holoFrames?: readonly Float32Array[],
 ): ColumnHeights {
   return {
     floorH: heightAt(floorFrames, x, y),
     wallH: heightAt(wallFrames, x, y),
     ceilH: heightAt(ceilFrames, x, y),
+    holoH: holoFrames ? heightAt(holoFrames, x, y) : undefined,
   };
 }
 
@@ -277,9 +292,24 @@ export function fieldFromHeights(
   const cs = p.connectStrength ?? 0;
   const dF = occ(z, h.floorH, h.wallH, p.connect, cs);
   const dC = occ(z, h.ceilH, h.wallH, p.connect, cs);
-  const f = (1 - m) * dF + m * dC;
-  if (p.material === 'hard') return f >= HARD_THRESHOLD ? 1 : 0;
-  return clamp01(f);
+  const f3 = (1 - m) * dF + m * dC;
+  // ── PLAIN CUBE path (off = byte-identity) ──
+  // When there's no HOLO height OR no ALPHA, return the EXACT current f3
+  // material/clamp result — verbatim, no extra arithmetic (load-bearing for
+  // the off-thread byte-identity guarantee + the untouched CUBE baselines).
+  if (h.holoH === undefined || p.alpha === undefined) {
+    if (p.material === 'hard') return f3 >= HARD_THRESHOLD ? 1 : 0;
+    return clamp01(f3);
+  }
+  // ── HYPERCUBE tesseract cross-section ──
+  // dH = the HOLO cell's occupancy (the 4th table connected to the wall);
+  // f4 = (1-a)*f3 + a*dH blends the field toward it as ALPHA rises. a=0
+  // collapses f4→f3 exactly (1*f3 + 0*dH = f3) so HYPERCUBE-off is identity.
+  const dH = occ(z, h.holoH, h.wallH, p.connect, cs);
+  const a = clamp01(p.alpha);
+  const f4 = (1 - a) * f3 + a * dH;
+  if (p.material === 'hard') return f4 >= HARD_THRESHOLD ? 1 : 0;
+  return clamp01(f4);
 }
 
 /**
@@ -566,6 +596,11 @@ export interface SliceParams {
   spaceDiffuse?: number;
   /** CONNECT STRENGTH s ∈ [0,1]: overshoot the connector's base (0 = off). */
   connectStrength?: number;
+  /** HYPERCUBE ALPHA a ∈ [0,1]: the slice's 4th-dimension (w) coordinate.
+   *  Threaded into the FieldParams the ray march builds; UNDEFINED (or no
+   *  holoFrames passed to sampleSlice/rayDepth) ⇒ the plain 3-table CUBE
+   *  render, byte-for-byte. CV-able; default off. */
+  alpha?: number;
   /** WRAP toggle: out-of-cube coords mirror-fold back in when true. */
   wrap: boolean;
 }
@@ -649,11 +684,16 @@ export function rayDepth(
   ray: SliceRay,
   p: SliceParams,
   diffuseTarget: DiffuseTarget | null = null,
+  holoFrames?: readonly Float32Array[],
 ): number {
   const fp: FieldParams = {
     morphFC: p.morphFC,
     connect: p.connect,
     connectStrength: p.connectStrength ?? 0,
+    // HYPERCUBE ALPHA — only bites when holoFrames is also supplied (the
+    // columnHeights call below leaves holoH undefined without it, so
+    // fieldFromHeights stays on the byte-identical 3-table path).
+    alpha: p.alpha,
     material: p.material,
   };
   const sd = p.spaceDiffuse ?? 0;
@@ -690,7 +730,7 @@ export function rayDepth(
     const cx = crushCoord(spaceCrushCoord(x, sc), p.crush);
     const cy = crushCoord(spaceCrushCoord(y, sc), p.crush);
     const cz = crushCoord(spaceCrushCoord(z, sc), p.crush);
-    const h = columnHeights(floorFrames, wallFrames, ceilFrames, cx, cy);
+    const h = columnHeights(floorFrames, wallFrames, ceilFrames, cx, cy, holoFrames);
     acc += fieldFromHeights(cz, h, fp);
     counted++;
   }
@@ -718,11 +758,16 @@ export function sampleSlice(
   ceilFrames: readonly Float32Array[],
   p: SliceParams,
   depthOffset = 0,
+  holoFrames?: readonly Float32Array[],
 ): Float32Array {
   const out = new Float32Array(CUBE_SLICE_SIZE);
   // SPACE DIFFUSE target: resolve the emptiest wall ONCE per render (it depends
   // only on the field, not the diffuse amount → stable while the knob moves;
   // re-evaluated only when the tables/morph/connect change). null when off.
+  // NOTE lowestInfoFace samples the plain 3-table field (no holo) — the diffuse
+  // GRAVITY DIRECTION is intentionally HYPERCUBE-independent, mirroring how it
+  // already ignores the diffuse amount itself ("latch on table change"). The
+  // per-ray march below DOES use the alpha-blended field via holoFrames.
   const sd = p.spaceDiffuse ?? 0;
   const tgt =
     sd > 0
@@ -730,12 +775,13 @@ export function sampleSlice(
           morphFC: p.morphFC,
           connect: p.connect,
           connectStrength: p.connectStrength ?? 0,
+          alpha: p.alpha,
           material: p.material,
         })
       : null;
   for (let n = 0; n < CUBE_SLICE_SIZE; n++) {
     const ray = sliceRay(n, p, depthOffset);
-    const depth = rayDepth(floorFrames, wallFrames, ceilFrames, ray, p, tgt);
+    const depth = rayDepth(floorFrames, wallFrames, ceilFrames, ray, p, tgt, holoFrames);
     const crushed = crush(depth, p.crush); // amplitude crush in [0,1]
     out[n] = clampRange(crushed * 2 - 1, -1, 1); // → [-1, 1]
   }
