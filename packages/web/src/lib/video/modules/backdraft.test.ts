@@ -23,6 +23,7 @@ import {
   backdraftEffectScale,
   backdraftEffectiveDelayMs,
   backdraftFeedbackUv,
+  backdraftPixelateUv,
   backdraftClockTick,
   backdraftTapIndex,
   makeBackdraftClockState,
@@ -200,6 +201,68 @@ describe('backdraftFeedbackUv — spatial feedback-tap transform', () => {
   });
 });
 
+describe('backdraftPixelateUv — source-resolution reduction (grid snap)', () => {
+  const RES = 512;
+
+  it('pixelate=0 is IDENTITY (no snap → bit-identical source sampling)', () => {
+    for (const [u, v] of [[0.123, 0.789], [0, 0], [1, 1], [0.5, 0.5]] as const) {
+      const out = backdraftPixelateUv(u, v, 0, RES);
+      // EXACTLY unchanged (===), not just close — the HARD INVARIANT.
+      expect(out.u).toBe(u);
+      expect(out.v).toBe(v);
+    }
+  });
+
+  it('pixelate>0 snaps the UV to a coarse grid of cell centres', () => {
+    // 4 cells across: centres at 0.125, 0.375, 0.625, 0.875.
+    // cells = mix(res, 1, p) = 4 → solve p: 4 = res*(1-p)+p → p=(res-4)/(res-1).
+    const cells = 4;
+    const p = (RES - cells) / (RES - 1);
+    const out = backdraftPixelateUv(0.3, 0.7, p, RES);
+    // 0.3*4=1.2 → floor 1 → (1+0.5)/4 = 0.375; 0.7*4=2.8 → floor 2 → 0.625.
+    expect(out.u).toBeCloseTo(0.375, 6);
+    expect(out.v).toBeCloseTo(0.625, 6);
+  });
+
+  it('pixelate=1 collapses EVERY UV to the single centre cell (one colour)', () => {
+    // Any UV in [0,1) → cells=1 → (floor(uv)+0.5)/1 = 0.5: the whole frame is
+    // one cell. (The exact-1.0 frame boundary is measure-zero + reads the same
+    // edge texel via CLAMP_TO_EDGE, so it's irrelevant to the "one colour" look.)
+    for (const [u, v] of [[0.0, 0.0], [0.3, 0.7], [0.99, 0.01], [0.5, 0.5]] as const) {
+      const out = backdraftPixelateUv(u, v, 1, RES);
+      expect(out.u).toBeCloseTo(0.5, 6);
+      expect(out.v).toBeCloseTo(0.5, 6);
+    }
+  });
+
+  it('near-zero pixelate ≈ identity (cells ≈ res, sub-pixel snap)', () => {
+    // A tiny pixelate snaps to a grid as fine as the source resolution, so the
+    // sampled coordinate is within one source texel (1/res) of the original.
+    const out = backdraftPixelateUv(0.5, 0.5, 1e-6, RES);
+    expect(Math.abs(out.u - 0.5)).toBeLessThanOrEqual(1 / RES);
+    expect(Math.abs(out.v - 0.5)).toBeLessThanOrEqual(1 / RES);
+  });
+
+  it('blockier as pixelate rises (cells coarsen → distant UVs share a cell)', () => {
+    // The cell COUNT shrinks monotonically as pixelate rises, so two UVs that
+    // land in different cells at low pixelate collapse into the SAME cell once
+    // the grid is coarse enough. At p≈0.999 cells = mix(512,1,p) ≈ 1.5 → only
+    // ~1 cell across, so 0.30 and 0.45 snap to the same representative colour.
+    const coarse = 0.999;
+    const hiA = backdraftPixelateUv(0.30, 0.30, coarse, RES);
+    const hiB = backdraftPixelateUv(0.45, 0.45, coarse, RES);
+    expect(hiA.u).toBeCloseTo(hiB.u, 6);
+    expect(hiA.v).toBeCloseTo(hiB.v, 6);
+
+    // Cell size grows with pixelate: the snap step (cell width) at a coarser
+    // pixelate is strictly larger than at a finer one. Measure via two UVs
+    // one source-texel apart and see how big the snapped jump becomes.
+    const fineCells = RES * (1 - 0.2) + 0.2;      // mix(res,1,0.2)
+    const coarseCells = RES * (1 - 0.9) + 0.9;    // mix(res,1,0.9)
+    expect(coarseCells).toBeLessThan(fineCells);  // fewer cells = bigger blocks
+  });
+});
+
 describe('backdraftClockTick — rising-edge → pulse-period measurement', () => {
   it('measures the interval between the last two rising edges', () => {
     const st = makeBackdraftClockState();
@@ -344,6 +407,9 @@ describe('backdraft module def — params + ports', () => {
     expect(byId.lighten).toMatchObject({ min: 0, max: 1 });
     expect(byId.darken).toMatchObject({ min: 0, max: 1 });
 
+    // PIXELATE — source-resolution reduction; 0 = identity (HARD INVARIANT).
+    expect(byId.pixelate).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+
     // Spatial feedback transform — identity defaults so existing behaviour
     // is unchanged out of the box (no tunnel/spiral/trail at defaults).
     expect(byId.zoom).toMatchObject({ min: BACKDRAFT_ZOOM_MIN, max: BACKDRAFT_ZOOM_MAX, defaultValue: 1.0 });
@@ -364,6 +430,8 @@ describe('backdraft module def — params + ports', () => {
       .map((p) => p.paramTarget);
     for (const id of [
       'mix', 'feedback', 'delay', 'luma', 'chroma', 'r', 'g', 'b', 'lighten', 'darken',
+      // PIXELATE is CV-wired too
+      'pixelate',
       // spatial feedback transform is CV-wired too
       'zoom', 'rotate', 'offsetX', 'offsetY',
     ]) {
