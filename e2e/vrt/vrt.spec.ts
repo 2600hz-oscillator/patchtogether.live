@@ -66,11 +66,15 @@ test.describe('VRT: every module card matches its baseline', () => {
 
       await page.goto('/');
       await page.waitForLoadState('networkidle');
-      // Wait for the webfont to finish loading BEFORE any screenshot. On a slow
-      // font load the card text renders in a fallback face and every text glyph
-      // diffs against the baseline — a broad, intermittent VRT flake that gets
-      // reliably triggered by pages with more text (e.g. extra topbar buttons).
-      // networkidle does not guarantee font readiness; document.fonts.ready does.
+      // Settle any @font-face load before screenshot. NOTE: the default
+      // (unskinned) page card text is `system-ui` — there is no bundled
+      // *card* webfont (the only @font-face is Bravura, applied solely to
+      // SCORE's SMuFL glyphs, and it isn't even triggered unless a SCORE
+      // card mounts). So for the vast majority of cards this resolves
+      // instantly and does NOT swap a fallback face for a webfont. It's
+      // kept as a correctness belt for SCORE + skinned scenes; the chronic
+      // broad text-only flake is NOT a webfont race (see the layout-settle
+      // loop below for the real cause + fix).
       await page.evaluate(() => document.fonts.ready);
 
       // Use a registered scene if one exists for this module type
@@ -92,11 +96,50 @@ test.describe('VRT: every module card matches its baseline', () => {
       const card = page.locator(`.svelte-flow__node-${mod.type}`).first();
       await card.waitFor({ state: 'visible', timeout: 10_000 });
 
-      // Settle: wait one rAF tick after the card mounts so any one-frame
-      // post-mount layout shift (Svelte $effect fires async to DOM
-      // attach) is done before we snap.
-      await page.evaluate(
-        () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+      // Settle: wait until the card's layout box stops changing across
+      // consecutive animation frames before we snap.
+      //
+      // Background on the chronic broad text-only VRT flake this guards
+      // against: card text (title / knob+fader labels / port labels)
+      // renders in `system-ui` — there is NO card webfont, so
+      // `document.fonts.ready` (above) is a no-op for card glyphs. The
+      // card box height is fractional (e.g. 317.531px from a 0.85rem /
+      // line-height:normal title), and that fractional height rasterises
+      // to a whole-pixel screenshot that can land one device pixel
+      // taller/shorter than a baseline captured under slightly different
+      // settle timing. A 1px vertical shift relands every text row on a
+      // new scanline, so EVERY glyph diffs and the card trips the
+      // maxDiffPixelRatio budget ("expected 319px, received 318px") —
+      // intermittently, because the AA jitter only sometimes pushes it
+      // over the threshold. It is a layout/raster-rounding issue, NOT a
+      // fallback-vs-webfont swap.
+      //
+      // Two-part fix: (1) baselines were recaptured against the settled
+      // render so the committed height is the deterministic one; (2) this
+      // loop replaces the old single-rAF settle — a single rAF can snap
+      // inside the unsettled post-mount frame, and a Svelte $effect can
+      // reflow a frame later. Polling getBoundingClientRect() until the
+      // rounded height is stable for several frames in a row makes the
+      // capture deterministic on BOTH platforms.
+      await card.evaluate(
+        (el) =>
+          new Promise<void>((resolve) => {
+            let lastH = -1;
+            let stable = 0;
+            const tick = () => {
+              const h = Math.round(el.getBoundingClientRect().height);
+              if (h === lastH) {
+                // Require 3 identical consecutive frames so a late
+                // $effect-driven reflow can't sneak in after we snap.
+                if (++stable >= 3) return resolve();
+              } else {
+                stable = 0;
+                lastH = h;
+              }
+              requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+          }),
       );
 
       // Resolve the masking rects on the actual rendered card. Masks
