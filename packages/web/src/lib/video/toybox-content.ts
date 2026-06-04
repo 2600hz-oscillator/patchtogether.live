@@ -273,9 +273,27 @@ export async function getContent(id: string): Promise<{ meta: ToyboxContent; gls
  *   - 'shader' (FX) / 'gen' (GEN): a fragment-shader content entry.
  *   - 'obj': a 3D mesh (bundled OBJ or built-in primitive), matcap-shaded
  *            into the layer's FBO with depth testing (Phase 3).
- *   - 'video': reserved (a sampled input texture) — renders nothing yet.
+ *   - 'image': a still image (PICTUREBOX-style: file → ImageBitmap →
+ *              texImage2D). The image bytes ride the Y.Doc (data on the layer)
+ *              so rack-mates see the same picture; each peer decodes + uploads
+ *              into the layer's FBO. Silent (idle pattern) until a file is set.
+ *   - 'video': a local-file video player (VIDEOBOX-style: File → <video> →
+ *              GL texture via the frame-upload pump, looping). The element is
+ *              card-owned + LOCAL (video bytes are not synced — only the file
+ *              metadata, like VIDEOBOX). Silent until a file is set.
  *   - 'off': explicitly empty (renders nothing). */
-export type ToyboxLayerKind = 'shader' | 'gen' | 'obj' | 'video' | 'off';
+export type ToyboxLayerKind = 'shader' | 'gen' | 'obj' | 'image' | 'video' | 'off';
+
+/** How an OBJ layer maps its SURFACE source onto the mesh (Phase 7 projection):
+ *   - 'uv': the source FBO is sampled by the mesh's own UV coords (the Phase-6
+ *           default texmap).
+ *   - 'projective': the source is PROJECTED onto the mesh from a viewpoint (a
+ *           projector view-projection). Each fragment's world position is
+ *           transformed into the projector's clip space and the source sampled
+ *           there, with front-facing + in-frustum guards (no back-wrap, no
+ *           projection behind the projector). This is the "video projector
+ *           mapped onto geometry" / projection-mapping look. */
+export type ToyboxSurfaceMode = 'uv' | 'projective';
 
 /** Transform + matcap material for an OBJ-kind layer (Phase 3). All numeric
  *  so they are CV-target-ready later; the OBJ render pass reads them every
@@ -308,10 +326,74 @@ export interface ToyboxObjMaterial {
    *  matcap. undefined → 1 (full texture replace-over-matcap) when a valid
    *  surfaceSource is set. */
   surfaceMix?: number;
+  /** OPTIONAL surface-mapping mode (Phase 7). undefined → 'uv' (the Phase-6
+   *  default: sample the source by the mesh UVs). 'projective' projects the
+   *  source from a viewpoint (see {@link ToyboxSurfaceMode}). */
+  surfaceMode?: ToyboxSurfaceMode;
+  /** PROJECTIVE mode: when truthy (>0.5 when persisted as a number) the
+   *  projector view IS the render camera (the projection appears "painted on"
+   *  from the viewer). When false the projector uses projPos/projDir below.
+   *  Stored numerically (0/1) so it is CV-target-uniform with the rest of the
+   *  material. */
+  projUseCamera?: number;
+  /** PROJECTIVE mode: projector eye position (world space). Ignored when
+   *  projUseCamera is set. Defaults make a projector in front of the mesh
+   *  looking back toward the origin. */
+  projPosX?: number;
+  projPosY?: number;
+  projPosZ?: number;
+  /** PROJECTIVE mode: projector look direction (world space; need not be
+   *  normalised — the math normalises). Ignored when projUseCamera is set. */
+  projDirX?: number;
+  projDirY?: number;
+  projDirZ?: number;
+  /** PROJECTIVE mode: projector vertical field-of-view (radians). Wider = the
+   *  image spreads over more of the mesh. Defaults to the render FOV. */
+  projFov?: number;
 }
 
 /** Number of procedural matcap styles the OBJ shader provides. */
 export const MATCAP_STYLES = 3;
+
+/** Default projector field-of-view (radians) — matches the render camera's
+ *  50°. Used when material.projFov is unset. */
+export const DEFAULT_PROJ_FOV = (50 * Math.PI) / 180;
+
+/** Default projector eye + look (world space) when material.projPos* / projDir*
+ *  are unset: a projector in front of the mesh at z=+2.5 looking back at the
+ *  origin (down -Z), so a fresh projective surface paints from the front. */
+export const DEFAULT_PROJ = {
+  posX: 0,
+  posY: 0,
+  posZ: 2.5,
+  dirX: 0,
+  dirY: 0,
+  dirZ: -1,
+} as const;
+
+/** Resolve a material's projector eye + look + fov, applying defaults for any
+ *  unset field. PURE — shared by the GL pass + card so they agree. */
+export function resolveProjector(mat: ToyboxObjMaterial): {
+  pos: [number, number, number];
+  dir: [number, number, number];
+  fov: number;
+} {
+  const num = (v: number | undefined, d: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : d;
+  return {
+    pos: [
+      num(mat.projPosX, DEFAULT_PROJ.posX),
+      num(mat.projPosY, DEFAULT_PROJ.posY),
+      num(mat.projPosZ, DEFAULT_PROJ.posZ),
+    ],
+    dir: [
+      num(mat.projDirX, DEFAULT_PROJ.dirX),
+      num(mat.projDirY, DEFAULT_PROJ.dirY),
+      num(mat.projDirZ, DEFAULT_PROJ.dirZ),
+    ],
+    fov: num(mat.projFov, DEFAULT_PROJ_FOV),
+  };
+}
 
 /** Default OBJ material for a fresh OBJ layer. */
 export function makeDefaultObjMaterial(modelId = DEFAULT_MODEL_ID): ToyboxObjMaterial {
@@ -329,6 +411,15 @@ export function makeDefaultObjMaterial(modelId = DEFAULT_MODEL_ID): ToyboxObjMat
   };
 }
 
+/** Media metadata for a 'video' layer (VIDEOBOX-style). The video bytes are
+ *  NOT synced (videos are large + local-file); only the filename rides the
+ *  Y.Doc so rack-mates see "{name}" + the card prompts each peer to pick their
+ *  own copy. The card owns the <video> element. */
+export interface ToyboxVideoMeta {
+  /** Source filename, surfaced in the card UI. */
+  name: string | null;
+}
+
 /** What a single TOYBOX layer holds. The array is sized to LAYER_COUNT; each
  *  layer renders into its own FBO and the combine DAG reduces them to the
  *  output. */
@@ -342,6 +433,13 @@ export interface ToyboxLayer {
   params: Record<string, number>;
   /** OBJ transform + matcap material (only meaningful for kind === 'obj'). */
   material?: ToyboxObjMaterial;
+  /** IMAGE layer: base64-encoded JPEG bytes (PICTUREBOX-style, synced over
+   *  Y.Doc). Null until a file is picked. The card decodes + uploads. */
+  imageBytes?: string | null;
+  /** IMAGE layer: source filename, surfaced in the card UI. */
+  imageName?: string | null;
+  /** VIDEO layer: local-file metadata (filename). The bytes are not synced. */
+  videoMeta?: ToyboxVideoMeta;
 }
 
 /** Number of layers a TOYBOX node persists + renders. */
