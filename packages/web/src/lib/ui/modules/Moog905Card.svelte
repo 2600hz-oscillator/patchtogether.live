@@ -53,7 +53,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 905 Spring Reverb" width={220}>
+<MoogPanel {id} {data} defaultLabel="905 Spring Reverb" width={220}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- MIX (dry↔wet), DECAY (tail), SIZE (spring length / chirp). -->
     <div class="knob-row" data-testid="moog905-knobs">

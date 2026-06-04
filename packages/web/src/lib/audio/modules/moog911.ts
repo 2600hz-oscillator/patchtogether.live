@@ -4,7 +4,7 @@
 //
 // Slice of the Moog System 55 / 35 clone initiative (.myrobots/MOOG/),
 // after the 921 VCO. The 911 ships in BOTH systems (S35 ×3, S55 ×6), so
-// like the 921 it's categorized under Clones → moogafakkin (the shared bucket).
+// like the 921 it's categorized under Ports → moogafakkin (the shared bucket).
 //
 // NOT a literal ADSR — the 911 is a three-time-constant CONTOUR generator
 // with a single sustain LEVEL:
@@ -45,9 +45,9 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog911Def: AudioModuleDef = {
   type: 'moog911',
-  palette: { top: 'Clones', sub: 'moogafakkin' },
+  palette: { top: 'Ports', sub: 'moogafakkin' },
   domain: 'audio',
-  label: 'moogafakkin 911 EG',
+  label: '911 EG',
   category: 'modulation',
   schemaVersion: 1,
 

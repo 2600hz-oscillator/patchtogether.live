@@ -6,7 +6,7 @@
 // waveform jacks (sine / triangle / sawtooth / rectangular with variable
 // pulse width), 1V/oct + linear frequency-control inputs, and a
 // hard/soft/off sync switch. Shared by SYS55 + SYS35 (categorized under
-// Clones → moogafakkin per the plan's resolved Q4).
+// Ports → moogafakkin per the plan's resolved Q4).
 //
 // DSP: own-code polyBLEP oscillator (packages/dsp/src/moog921-vco.ts +
 // lib/moog-vco-dsp.ts) — permissive, not a port of any Moog schematic or
@@ -48,9 +48,9 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog921VcoDef: AudioModuleDef = {
   type: 'moog921Vco',
-  palette: { top: 'Clones', sub: 'moogafakkin' },
+  palette: { top: 'Ports', sub: 'moogafakkin' },
   domain: 'audio',
-  label: 'moogafakkin 921 VCO',
+  label: '921 VCO',
   category: 'sources',
   schemaVersion: 1,
 

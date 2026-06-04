@@ -49,7 +49,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 903A Noise" width={180}>
+<MoogPanel {id} {data} defaultLabel="903A Noise" width={180}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Single LEVEL knob driving both taps. -->
     <div class="knob-row" data-testid="moog903a-level">

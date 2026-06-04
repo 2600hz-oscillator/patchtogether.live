@@ -52,15 +52,15 @@ describe('ribbonToVOct', () => {
 
 // ───────────────────── Layer 2: module-def shape ─────────────────────
 describe('moog956Def: module def shape', () => {
-  it('declares type=moog956, label="moogafakkin 956 Ribbon", category=utility, schemaVersion=1', () => {
+  it('declares type=moog956, label="956 Ribbon", category=utility, schemaVersion=1', () => {
     expect(moog956Def.type).toBe('moog956');
-    expect(moog956Def.label).toBe('moogafakkin 956 Ribbon');
+    expect(moog956Def.label).toBe('956 Ribbon');
     expect(moog956Def.category).toBe('utility');
     expect(moog956Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Clones → moogafakkin palette bucket and uses the Moog956Card', () => {
-    expect(moog956Def.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+  it('lives in the Ports → moogafakkin palette bucket and uses the Moog956Card', () => {
+    expect(moog956Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
     expect(moog956Def.card).toBe('Moog956Card');
     expect(moog956Def.domain).toBe('audio');
   });

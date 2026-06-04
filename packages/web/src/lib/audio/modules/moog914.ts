@@ -16,7 +16,7 @@
 // ONLY in which center array they import — 914 uses the full 12-band series.
 //
 // NO CV: a FIXED filter bank — the band centers are constants from the shared
-// moog-filterbank-dsp lib. Categorized under Clones → moogafakkin; category 'filters'.
+// moog-filterbank-dsp lib. Categorized under Ports → moogafakkin; category 'filters'.
 //
 // Inputs:
 //   audio (audio): the signal to filter.
@@ -45,7 +45,7 @@ const CENTERS = FILTERBANK_914_CENTERS;
 
 export const moog914Def: AudioModuleDef = {
   type: 'moog914',
-  palette: { top: 'Clones', sub: 'moogafakkin' },
+  palette: { top: 'Ports', sub: 'moogafakkin' },
   card: 'Moog914Card',
   domain: 'audio',
   label: '914 Extended Fixed Filter Bank',

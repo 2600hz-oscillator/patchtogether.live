@@ -57,7 +57,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 992 CV" width={220}>
+<MoogPanel {id} {data} defaultLabel="992 CV" width={220}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Four per-channel attenuators (Ch 4 is signal-inverting). -->
     <div class="knob-row" data-testid="moog992-attens">

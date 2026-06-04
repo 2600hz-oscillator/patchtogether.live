@@ -34,7 +34,6 @@ export type TopCategory =
   | 'Video modules'
   | 'Games'
   | 'Ports'
-  | 'Clones'
   | 'MIDI'
   | 'Hybrid'
   | 'Uncategorized';
@@ -66,14 +65,11 @@ export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
   // Ports = "ports of external software / hardware synths". `Ports`
   // (matching the top name) renders flat at the top level —
   // hydrogen, helm, cloudseed are headline ports the user wants one
-  // click away. `Mutable` is the MI archetype-port sublist.
-  Ports: ['Ports', 'Mutable'],
-  // Clones = clone families of external hardware/software synths. First
-  // member: the `moogafakkin` System 55 / 35 clone family (the renamed
-  // ex-"Moog" set — System 55 big modular + System 35; shared modules listed
-  // once under the single moogafakkin subfolder). More clone families can
-  // join this top-level group later. Mirrors the Ports→Mutable nesting.
-  Clones: ['moogafakkin'],
+  // click away. `Mutable` is the MI archetype-port sublist. `moogafakkin`
+  // is the System 55 / 35 clone family (the renamed ex-"Moog" set — System
+  // 55 big modular + System 35; shared modules listed once under the single
+  // moogafakkin subfolder). Mirrors the Mutable nesting.
+  Ports: ['Ports', 'Mutable', 'moogafakkin'],
   MIDI: ['MIDI'],
   Hybrid: ['Hybrid'],
   Uncategorized: ['Uncategorized'],
@@ -85,7 +81,6 @@ export const TOP_ORDER: readonly TopCategory[] = [
   'Video modules',
   'Games',
   'Ports',
-  'Clones',
   'MIDI',
   'Hybrid',
   'Uncategorized',
@@ -151,7 +146,6 @@ export function groupDefs<D extends DefLike>(defs: readonly D[]): GroupedTop<D>[
     'Video modules': {},
     Games: {},
     Ports: {},
-    Clones: {},
     MIDI: {},
     Hybrid: {},
     Uncategorized: {},

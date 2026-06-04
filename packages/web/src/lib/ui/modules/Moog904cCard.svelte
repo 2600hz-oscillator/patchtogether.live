@@ -55,7 +55,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 904C Coupler" width={220}>
+<MoogPanel {id} {data} defaultLabel="904C Coupler" width={220}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Band centre + LP/HP spread + band-pass ↔ notch. -->
     <div class="knob-row" data-testid="moog904c-knobs">

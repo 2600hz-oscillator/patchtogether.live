@@ -25,15 +25,15 @@ beforeAll(() => {
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog921aDef: module def shape', () => {
-  it('declares type=moog921a, label="moogafakkin 921A Driver", category=modulation, schemaVersion=1', () => {
+  it('declares type=moog921a, label="921A Driver", category=modulation, schemaVersion=1', () => {
     expect(moog921aDef.type).toBe('moog921a');
-    expect(moog921aDef.label).toBe('moogafakkin 921A Driver');
+    expect(moog921aDef.label).toBe('921A Driver');
     expect(moog921aDef.category).toBe('modulation');
     expect(moog921aDef.schemaVersion).toBe(1);
   });
 
-  it('is categorized under Clones → moogafakkin', () => {
-    expect(moog921aDef.palette).toEqual({ top: 'Clones', sub: 'moogafakkin' });
+  it('is categorized under Ports → moogafakkin', () => {
+    expect(moog921aDef.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
   });
 
   it('exposes the 921A inputs: freq_cv (pitch) + width_cv (cv)', () => {

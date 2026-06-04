@@ -56,7 +56,7 @@
   ];
 </script>
 
-<MoogPanel {id} {data} defaultLabel="moogafakkin 995 Atten" width={200}>
+<MoogPanel {id} {data} defaultLabel="995 Atten" width={200}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Three independent attenuator level knobs (0..unity, 1.0 = direct patch). -->
     <div class="knob-row" data-testid="moog995-attenuators">
