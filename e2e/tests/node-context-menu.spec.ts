@@ -5,6 +5,7 @@
 //   - Unpatch all: keeps node, removes every edge touching it
 
 import { test, expect } from '@playwright/test';
+import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -66,4 +67,29 @@ test('node context menu: Unpatch all keeps the node, removes only edges touching
   await expect(page.locator('.svelte-flow__node-vca')).toHaveCount(1);
   // 6 starting edges − 4 touching VCA = 2 remaining
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(2);
+});
+
+test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps Docs/Duplicate/Delete', async ({ page }) => {
+  // TOYBOX is a node-map module — its in-card combine editor owns disconnects,
+  // so the generic card menu's "Unpatch all" is hidden for type==='toybox'.
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+    [],
+  );
+  const card = page.locator('.svelte-flow__node-toybox').first();
+  await card.waitFor({ state: 'visible', timeout: 10_000 });
+
+  // Right-click the card title (a non-control region) to open the module menu.
+  await card.locator('.title').click({ button: 'right' });
+  const menu = page.locator('[role="menu"][aria-label="Module actions"]');
+  await expect(menu).toBeVisible();
+
+  // Unpatch all is ABSENT; Docs / Duplicate / Delete are present.
+  await expect(menu.locator('[role="menuitem"]', { hasText: 'Unpatch all' })).toHaveCount(0);
+  await expect(menu.locator('[role="menuitem"]', { hasText: 'Docs' })).toHaveCount(1);
+  await expect(menu.locator('[role="menuitem"]', { hasText: 'Duplicate' })).toHaveCount(1);
+  await expect(menu.locator('[role="menuitem"]', { hasText: 'Delete' })).toHaveCount(1);
 });

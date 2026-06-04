@@ -64,6 +64,27 @@ export interface ToyboxModel {
   license?: string;
 }
 
+/** A bundled PRESET (Phase 6): a fully-specified TOYBOX patch — layers +
+ *  combine GRAPH + cvRoutes — using ONLY bundled content. Selecting one writes
+ *  these into node.data (in place). The combine/cvRoutes are stored as plain
+ *  JSON in the manifest; the loader copies them through structuredClone-style
+ *  plain-object rebuilds before pushing into the live Y types. */
+export interface ToyboxPreset {
+  /** Stable storage id (also the dropdown value). */
+  id: string;
+  /** Display label (dropdown). */
+  label: string;
+  /** Human note (provenance / what the preset shows). */
+  note?: string;
+  /** The full layer array (LAYER_COUNT entries). */
+  layers: ToyboxLayer[];
+  /** The combine GRAPH ({nodes,edges}) — typed loosely here to avoid a cycle
+   *  with toybox-combine-graph; the loader/factory treat it as the graph. */
+  combine: { nodes: unknown[]; edges: unknown[] };
+  /** The CV routing map (cv1..cv8 → target/param). */
+  cvRoutes: Record<string, unknown>;
+}
+
 interface ToyboxManifest {
   version: number;
   /** FX family entries. */
@@ -72,6 +93,8 @@ interface ToyboxManifest {
   gen: ToyboxContent[];
   /** 3D model entries (Phase 3 OBJ layer). Optional for older manifests. */
   models?: ToyboxModel[];
+  /** Bundled presets (Phase 6). Optional for older manifests. */
+  presets?: ToyboxPreset[];
 }
 
 /** Public path to the static manifest. */
@@ -84,6 +107,8 @@ let catalog: ToyboxContent[] | null = null;
 let byId: Map<string, ToyboxContent> | null = null;
 let modelCatalog: ToyboxModel[] | null = null;
 let modelById: Map<string, ToyboxModel> | null = null;
+let presetCatalog: ToyboxPreset[] | null = null;
+let presetById: Map<string, ToyboxPreset> | null = null;
 
 /** Fetch + parse the static manifest once; cached for the session. */
 async function loadManifest(): Promise<ToyboxManifest> {
@@ -100,6 +125,8 @@ async function loadManifest(): Promise<ToyboxManifest> {
       byId = new Map(catalog.map((c) => [c.id, c]));
       modelCatalog = Array.isArray(json.models) ? json.models : [];
       modelById = new Map(modelCatalog.map((m) => [m.id, m]));
+      presetCatalog = Array.isArray(json.presets) ? json.presets : [];
+      presetById = new Map(presetCatalog.map((p) => [p.id, p]));
       return json;
     })();
   }
@@ -151,6 +178,26 @@ export async function listModels(): Promise<ToyboxModel[]> {
 /** Synchronous model lookup (manifest must have loaded). */
 export function getModelMeta(id: string): ToyboxModel | undefined {
   return modelById?.get(id);
+}
+
+// ---------------- Preset catalog (Phase 6) ----------------
+
+/** All bundled presets (the manifest's `presets` array). Empty until
+ *  ensureToyboxCatalog() has resolved. */
+export async function listPresets(): Promise<ToyboxPreset[]> {
+  await loadManifest();
+  return presetCatalog ?? [];
+}
+
+/** Synchronous preset lookup (manifest must have loaded). */
+export function getPresetMeta(id: string): ToyboxPreset | undefined {
+  return presetById?.get(id);
+}
+
+/** Fetch the manifest (if needed) then return the preset by id, or undefined. */
+export async function getPreset(id: string): Promise<ToyboxPreset | undefined> {
+  await loadManifest();
+  return presetById?.get(id);
 }
 
 /** The default model id (first model entry) for a fresh OBJ layer. */
@@ -250,6 +297,17 @@ export interface ToyboxObjMaterial {
   tintR: number;
   tintG: number;
   tintB: number;
+  /** OPTIONAL surface-texture source (Phase 6 texmap): the LAYER INDEX
+   *  (0..LAYER_COUNT-1) whose rendered FBO is UV-mapped onto the mesh as a
+   *  surface texture in place of (blended with) the matcap. undefined or a
+   *  negative / out-of-range / self value = matcap-only. Choosing a layer index
+   *  (not a node id) mirrors the combine source nodes' `layer:number` and is
+   *  kind-agnostic, so a future 'video' layer's frame works identically. */
+  surfaceSource?: number;
+  /** OPTIONAL blend amount (0..1) of the sampled surface texture over the
+   *  matcap. undefined → 1 (full texture replace-over-matcap) when a valid
+   *  surfaceSource is set. */
+  surfaceMix?: number;
 }
 
 /** Number of procedural matcap styles the OBJ shader provides. */

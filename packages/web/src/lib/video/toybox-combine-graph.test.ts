@@ -1,0 +1,265 @@
+// packages/web/src/lib/video/toybox-combine-graph.test.ts
+//
+// Pure-function coverage for the TOYBOX Phase-4 combine GRAPH: the default
+// graph shape, topo-sort (Kahn), cycle detection, and the connect/add/delete
+// validators the editor + Yjs mutators are built on. Mirrors how the linear
+// combine + the topo-sort elsewhere are unit-tested.
+import { describe, it, expect } from 'vitest';
+import { LAYER_COUNT } from './toybox-content';
+import {
+  OP_KINDS,
+  OP_PARAMS,
+  defaultOpParams,
+  inPortsFor,
+  hasOutPort,
+  isCombineGraph,
+  makeDefaultCombineGraph,
+  makeOpNode,
+  validateConnect,
+  wouldCreateCycle,
+  topoSort,
+  canDeleteNode,
+  edgesTouching,
+  outputNode,
+  nextNodeId,
+  nextEdgeId,
+  type ToyboxCombineGraph,
+  type ToyboxGraphNode,
+} from './toybox-combine-graph';
+
+/** A clone so mutations in one test never leak into another. */
+function defGraph(): ToyboxCombineGraph {
+  const g = makeDefaultCombineGraph();
+  return JSON.parse(JSON.stringify(g));
+}
+
+describe('makeDefaultCombineGraph', () => {
+  const g = makeDefaultCombineGraph();
+  it('has one SOURCE per layer + exactly one OUTPUT', () => {
+    const sources = g.nodes.filter((n) => n.kind === 'source');
+    const outs = g.nodes.filter((n) => n.kind === 'output');
+    expect(sources).toHaveLength(LAYER_COUNT);
+    expect(outs).toHaveLength(1);
+    // sources map 1:1 onto layer indices 0..LAYER_COUNT-1
+    expect(sources.map((s) => s.layer).sort()).toEqual(
+      Array.from({ length: LAYER_COUNT }, (_, i) => i),
+    );
+  });
+  it('is a valid DAG (topo-sorts every node)', () => {
+    const { ok, order } = topoSort(g);
+    expect(ok).toBe(true);
+    expect(order).toHaveLength(g.nodes.length);
+  });
+  it('every op node carries default params + the OUTPUT is reachable from src0', () => {
+    const out = outputNode(g)!;
+    // Walk back from OUTPUT: there must be a path to at least one source.
+    const reachesSource = (start: string): boolean => {
+      const seen = new Set<string>();
+      const stack = [start];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        if (seen.has(cur)) continue;
+        seen.add(cur);
+        const n = g.nodes.find((x) => x.id === cur);
+        if (n?.kind === 'source') return true;
+        for (const e of g.edges) if (e.to === cur) stack.push(e.from);
+      }
+      return false;
+    };
+    expect(reachesSource(out.id)).toBe(true);
+  });
+  it('round-trips through JSON (persistence shape is plain data)', () => {
+    expect(isCombineGraph(JSON.parse(JSON.stringify(g)))).toBe(true);
+  });
+});
+
+describe('isCombineGraph', () => {
+  it('accepts a {nodes,edges} shape', () => {
+    expect(isCombineGraph({ nodes: [], edges: [] })).toBe(true);
+  });
+  it('rejects the legacy linear {steps} shape + junk', () => {
+    expect(isCombineGraph({ steps: [] })).toBe(false);
+    expect(isCombineGraph(null)).toBe(false);
+    expect(isCombineGraph(undefined)).toBe(false);
+    expect(isCombineGraph(42)).toBe(false);
+  });
+});
+
+describe('ports', () => {
+  it('sources have no input port + have an output', () => {
+    expect(inPortsFor('source')).toEqual([]);
+    expect(hasOutPort('source')).toBe(true);
+  });
+  it('op nodes have in0 + in1 + an output', () => {
+    for (const k of OP_KINDS) {
+      expect(inPortsFor(k)).toEqual(['in0', 'in1']);
+      expect(hasOutPort(k)).toBe(true);
+    }
+  });
+  it('output has a single input + no output port', () => {
+    expect(inPortsFor('output')).toEqual(['in0']);
+    expect(hasOutPort('output')).toBe(false);
+  });
+});
+
+describe('defaultOpParams', () => {
+  it('seeds every declared param at its default for each op', () => {
+    for (const k of OP_KINDS) {
+      const p = defaultOpParams(k);
+      for (const def of OP_PARAMS[k]) expect(p[def.id]).toBe(def.default);
+    }
+  });
+});
+
+describe('topoSort', () => {
+  it('orders dependencies before dependents', () => {
+    const g = defGraph();
+    const { order } = topoSort(g);
+    const pos = new Map(order.map((id, i) => [id, i]));
+    for (const e of g.edges) {
+      expect(pos.get(e.from)!).toBeLessThan(pos.get(e.to)!);
+    }
+  });
+  it('reports ok=false + omits cycle members when a cycle exists', () => {
+    // Two nodes pointing at each other → neither has indegree 0 → both omitted.
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'a', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'b', kind: 'fade', x: 0, y: 0, params: {} },
+      ],
+      edges: [
+        { id: 'e1', from: 'a', to: 'b', toPort: 'in0' },
+        { id: 'e2', from: 'b', to: 'a', toPort: 'in0' },
+      ],
+    };
+    const { ok, order } = topoSort(g);
+    expect(ok).toBe(false);
+    expect(order).toHaveLength(0);
+  });
+  it('is robust to edges referencing missing endpoints', () => {
+    const g: ToyboxCombineGraph = {
+      nodes: [{ id: 'a', kind: 'source', x: 0, y: 0, layer: 0 }],
+      edges: [{ id: 'e1', from: 'a', to: 'ghost', toPort: 'in0' }],
+    };
+    const { order } = topoSort(g);
+    expect(order).toEqual(['a']);
+  });
+});
+
+describe('wouldCreateCycle', () => {
+  it('detects a back-edge', () => {
+    const g = defGraph();
+    // OUTPUT's upstream chain ends at op1..op3 / sources. Wiring OUTPUT → op1
+    // (impossible via UI since OUTPUT has no out port, but tests the predicate)
+    // would close a loop because op1 → ... → OUTPUT already exists.
+    const out = outputNode(g)!;
+    const op1 = g.nodes.find((n) => n.id === 'op1')!;
+    expect(wouldCreateCycle(g, out.id, op1.id)).toBe(true);
+  });
+  it('allows a forward edge', () => {
+    const g = defGraph();
+    // src0 → op2.in1 does not create a cycle (op2 doesn't reach src0).
+    expect(wouldCreateCycle(g, 'src0', 'op2')).toBe(false);
+  });
+  it('treats a self-edge as a cycle', () => {
+    const g = defGraph();
+    expect(wouldCreateCycle(g, 'op1', 'op1')).toBe(true);
+  });
+});
+
+describe('validateConnect', () => {
+  it('accepts a legal new edge to a free input port', () => {
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'src0', kind: 'source', x: 0, y: 0, layer: 0 },
+        { id: 'op1', kind: 'fade', x: 0, y: 0, params: {} },
+      ],
+      edges: [],
+    };
+    const r = validateConnect(g, 'src0', 'op1', 'in0');
+    expect(r.ok).toBe(true);
+    expect(r.edge).toMatchObject({ from: 'src0', to: 'op1', toPort: 'in0' });
+  });
+  it('rejects a missing endpoint', () => {
+    const g = defGraph();
+    expect(validateConnect(g, 'nope', 'op1', 'in0').error).toBe('missing-node');
+  });
+  it('rejects a self-loop', () => {
+    const g = defGraph();
+    expect(validateConnect(g, 'op1', 'op1', 'in0').error).toBe('self-loop');
+  });
+  it('rejects connecting FROM the output node (no out port)', () => {
+    const g = defGraph();
+    const out = outputNode(g)!;
+    expect(validateConnect(g, out.id, 'op1', 'in0').error).toBe('no-out-port');
+  });
+  it('rejects an already-occupied input port', () => {
+    const g = defGraph();
+    // op1.in0 is wired (src0 → op1) in the default chain.
+    expect(validateConnect(g, 'src1', 'op1', 'in0').error).toBe('occupied');
+  });
+  it('rejects an edge that would create a cycle', () => {
+    // Build a chain a → b → c, then try c → a (closes the loop).
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'a', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'b', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'c', kind: 'fade', x: 0, y: 0, params: {} },
+      ],
+      edges: [
+        { id: 'e1', from: 'a', to: 'b', toPort: 'in0' },
+        { id: 'e2', from: 'b', to: 'c', toPort: 'in0' },
+      ],
+    };
+    expect(validateConnect(g, 'c', 'a', 'in0').error).toBe('cycle');
+  });
+  it('rejects a bad input port on a node', () => {
+    const g = defGraph();
+    const out = outputNode(g)!;
+    // OUTPUT only has in0 — wiring to in1 is invalid.
+    expect(validateConnect(g, 'src0', out.id, 'in1').error).toBe('bad-in-port');
+  });
+});
+
+describe('makeOpNode', () => {
+  it('returns a node with a fresh unique id + default params', () => {
+    const g = defGraph();
+    const n = makeOpNode(g, 'lumakey');
+    expect(g.nodes.some((x) => x.id === n.id)).toBe(false); // not yet inserted
+    expect(n.kind).toBe('lumakey');
+    expect(n.params).toEqual(defaultOpParams('lumakey'));
+  });
+});
+
+describe('delete helpers', () => {
+  it('source + output nodes cannot be deleted; op nodes can', () => {
+    const g = defGraph();
+    expect(canDeleteNode(g, 'src0')).toBe(false);
+    expect(canDeleteNode(g, outputNode(g)!.id)).toBe(false);
+    expect(canDeleteNode(g, 'op1')).toBe(true);
+    expect(canDeleteNode(g, 'ghost')).toBe(false);
+  });
+  it('edgesTouching lists every edge in or out of a node', () => {
+    const g = defGraph();
+    // op1: src0 → op1.in0, src1 → op1.in1, op1 → op2.in0 = 3 edges.
+    const touching = edgesTouching(g, 'op1');
+    expect(touching.length).toBe(3);
+  });
+});
+
+describe('id generators', () => {
+  it('nextNodeId / nextEdgeId avoid collisions', () => {
+    const g = defGraph();
+    expect(g.nodes.some((n) => n.id === nextNodeId(g))).toBe(false);
+    expect(g.edges.some((e) => e.id === nextEdgeId(g))).toBe(false);
+  });
+});
+
+describe('default graph composites like the Phase-1..3 base', () => {
+  it('every fold op is a FADE at amount 0 (base passes through)', () => {
+    const g = makeDefaultCombineGraph();
+    const ops = g.nodes.filter((n: ToyboxGraphNode) => n.kind === 'fade');
+    expect(ops.length).toBe(LAYER_COUNT - 1);
+    for (const o of ops) expect(o.params?.amount).toBe(0);
+  });
+});
