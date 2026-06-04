@@ -76,6 +76,8 @@ const SRC_BASE =
 
 const DESCRIPTIONS: Record<string, string> = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  moog905:
+    'moogafakkin 905 Spring Reverberation (moogafakkin System 55 clone — categorized under Clones -> moogafakkin). The classic spring-tank reverb: metallic, dispersive, with the characteristic "boing"/chirp on transients. In-house dispersive-allpass spring model — a cascaded all-pass chain (the dispersion) feeding a modulated feedback delay with damping. MIX blends dry/wet, DECAY sets the tail length, SIZE the spring length/character. Own-code (clean-room; feedback-clamped for stability). Beige moogafakkin faceplate (the intrinsic always-on look shared by the moogafakkin module family).',
   moog960:
     'moogafakkin 960 Sequential Controller (moogafakkin System 55 clone — categorized under Clones -> moogafakkin). A 3-row x 8-step analog step sequencer. Each column has a knob per row (24 step pots); on each advance every row outputs its current column value as CV (row1/row2/row3), scaled by that row\'s RANGE (x1/x2/x4). Steps advance on an external CLOCK input (rising edge) or, when unpatched, an internal RATE clock; CLOCK OUT pulses each advance. Per-column NORMAL/SKIP/STOP switches skip a column or halt the run; START/STOP gate inputs reset/halt. v1; per-step trigger jacks, third-row-controls-timing, x2 parallel outs + 1V/oct clock CV deferred. Own-code (forks the repo sequencer). Beige moogafakkin faceplate (the intrinsic always-on look shared by the moogafakkin module family).',
   moog911a:
