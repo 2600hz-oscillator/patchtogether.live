@@ -115,6 +115,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // fallback so the chrome (port handles + COLOR knob) diffs deterministically
   // when the module is promoted into MODULES without a registered scene.
   scoreboard: [{ selector: 'canvas' }],
+  // QUADRALOGICAL — 4-input video mixer. The card carries a live on-card MIX
+  // preview canvas (blitOutputToDrawingBuffer off the engine clock), so the
+  // canvas region is non-deterministic in the standard solo-spawn VRT; mask it
+  // and gate on the deterministic chrome (XY pad + yellow diamond + 8-button
+  // transition row + dynamic faders + FG/BG toggle + handle rows). The
+  // weight-model + composite correctness is covered by the unit suite
+  // (quadralogical.test.ts) + the dedicated e2e (quadralogical.spec.ts).
+  quadralogical: [{ selector: 'canvas' }],
   // ANALOG VCO — now carries a live single-cycle waveform scope at the top of
   // the card (off an AnalyserNode on the morph output). The trace is animated
   // + device-/timing-dependent, so mask the canvas; the deterministic chrome
@@ -413,6 +421,16 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   chromakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
   // LUMAKEY — new 2-input compositor; same rationale as CHROMAKEY.
   lumakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
+  // QUADRALOGICAL — Phase 1 of the 4-input video mixer (joystick weight model +
+  // 45° yellow diamond + MIX/PREVIEW outputs + cross-dissolve). The card carries
+  // a live on-card MIX preview canvas (masked via VRT_MODULE_MASKS) so the
+  // canvas is non-deterministic in the solo-spawn VRT. Functional coverage:
+  // quadralogical.test.ts (weight-model corners/edges/center/diamond + sum=1 +
+  // normalizeInputs forward-fill + cross-dissolve parity) + e2e/tests/
+  // quadralogical.spec.ts (4 colored CHROMA inputs → MIX non-black + corner
+  // dominance + 2×2 PREVIEW tile + freeze-holds-still). Promote into MODULES +
+  // capture darwin/linux baselines (via the optional VRT scene) in Phase 2.
+  quadralogical: 'VRT baseline pending — Phase 1 of the 4-input video mixer; card carries a live MIX preview canvas (masked). Unit (weight-model + normalling + cross-dissolve parity) + e2e (4-color composite + corner dominance + 2×2 preview + freeze) provide coverage. Promote + capture darwin/linux baselines via the VRT scene in Phase 2.',
   // CHROMA — v3 reshape (this PR) changed the card layout + stripe colour
   // entirely (was a 5-fader mask-extractor; now a 3-fader hue-shifter +
   // tint swatch). Old baselines were deleted; regenerate via
