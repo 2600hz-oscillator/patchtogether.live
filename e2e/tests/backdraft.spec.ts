@@ -212,6 +212,71 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     expect(changedFrac, 'a real fraction of pixels move (tunnel geometry)').toBeGreaterThan(0.05);
   });
 
+  test('PIXELATE reduces the source resolution (1.0 → flat frame; 0 → unchanged)', async ({ page }) => {
+    // Drive BACKDRAFT with a structured source and NO feedback, so the output
+    // ≈ the (pixelated) source. At pixelate=1 the whole frame collapses to one
+    // representative colour → near-zero spatial variance (a flat block). At
+    // pixelate=0 the frame keeps its full structure (HARD INVARIANT: identity).
+    async function captureVariance(pixelate: number): Promise<number> {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [
+          { id: 'src_a', type: 'shapes',    position: { x: 40,  y: 40 }, domain: 'video',
+            params: { shape: 1, tile: 1, tileN: 6, zoom: 0.8 } },
+          { id: 'bd',    type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video',
+            params: { mix: 0, feedback: 0, delay: 16, pixelate } },
+          { id: 'v-out', type: 'videoOut',  position: { x: 980, y: 80 }, domain: 'video' },
+        ],
+        [
+          { id: 'e_a',   from: { nodeId: 'src_a', portId: 'out' }, to: { nodeId: 'bd',    portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
+          { id: 'e_out', from: { nodeId: 'bd',    portId: 'out' }, to: { nodeId: 'v-out', portId: 'in'   }, sourceType: 'video',      targetType: 'video' },
+        ],
+      );
+      const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+      await expect(canvas).toHaveCount(1);
+      await page.waitForTimeout(400);
+      // Freeze for a stable read.
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) n.params.freeze = 1; });
+      });
+      await page.waitForTimeout(120);
+      const v = await canvas.evaluate((el) => {
+        const c = el as HTMLCanvasElement;
+        const ctx = c.getContext('2d');
+        if (!ctx) return -1;
+        // Sample only the INTERIOR (centre 60%) so the video-out letterbox
+        // border (black bars around the 4:3 fit) can't inflate the variance —
+        // we want the variance of the rendered IMAGE, not its frame.
+        const x0 = Math.floor(c.width * 0.2), x1 = Math.ceil(c.width * 0.8);
+        const y0 = Math.floor(c.height * 0.2), y1 = Math.ceil(c.height * 0.8);
+        const d = ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+        let n = 0, sum = 0, sumSq = 0;
+        for (let i = 0; i < d.length; i += 16) {
+          const lum = (d[i]! + d[i + 1]! + d[i + 2]!) / 3;
+          sum += lum; sumSq += lum * lum; n++;
+        }
+        const mean = sum / n;
+        return sumSq / n - mean * mean; // variance
+      });
+      return v;
+    }
+
+    const varFull = await captureVariance(0);   // identity → keeps structure
+    const varFlat = await captureVariance(1);    // collapsed → one colour
+
+    expect(varFull, 'pixelate=0 keeps the source structure').toBeGreaterThan(40);
+    // pixelate=1 collapses the source to a single representative colour → the
+    // interior is essentially flat. Far flatter than the full-structure frame.
+    expect(varFlat, 'pixelate=1 collapses to a near-flat frame').toBeLessThan(5);
+    expect(varFlat, 'pixelate=1 is far flatter than pixelate=0').toBeLessThan(varFull / 8);
+  });
+
   test('DELAY CLOCK input overrides the DELAY knob (CLK badge appears when patched)', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
