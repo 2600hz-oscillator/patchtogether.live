@@ -605,8 +605,11 @@ export interface SliceParams {
   wrap: boolean;
 }
 
-/** Rotate a vector by Euler angles (rx, ry, rz), applied X then Y then Z. */
-function rotate(
+/** Rotate a vector by Euler angles (rx, ry, rz), applied X then Y then Z.
+ *  EXPORTED (PR feat/mandelbulb-slice) so the MANDELBULB bulb-slice readout can
+ *  reuse the IDENTICAL slice-plane rotation geometry (so its 2D slice viz +
+ *  3D plane + audio readout all agree on where the plane sits). */
+export function rotate(
   x: number,
   y: number,
   z: number,
