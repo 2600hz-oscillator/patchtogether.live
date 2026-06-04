@@ -32,7 +32,6 @@
     groupBindingsByModule,
     setSurfaceLocked,
     setSurfaceGroupPosition,
-    removeBindingFromSurface,
     type ControlBinding,
   } from '$lib/graph/control-surface';
 
@@ -160,8 +159,8 @@
     drag = null;
   }
 
+  let surfaceTitle = $derived(surfaceData.name ?? 'this surface');
   function toggleLock() { setSurfaceLocked(id, !locked); }
-  function unbind(moduleId: string, paramId: string) { removeBindingFromSurface(id, moduleId, paramId); }
 </script>
 
 <svelte:window onpointermove={onPointerMove} onpointerup={onPointerUp} onpointercancel={onPointerUp} />
@@ -209,8 +208,7 @@
                 class="cs-knob"
                 data-testid={`control-surface-knob-${g.moduleId}-${c.paramId}`}
                 onpointerdown={(e) => e.stopPropagation()}
-                oncontextmenu={(e) => { if (!locked) { e.preventDefault(); e.stopPropagation(); unbind(g.moduleId, c.paramId); } }}
-                title={locked ? c.label : `${c.label} — right-click to remove`}
+                title={`${c.label} — right-click for “Remove from ${surfaceTitle}”`}
               >
                 <Knob
                   value={readParam(g.moduleId, c.paramId, c.def)}
