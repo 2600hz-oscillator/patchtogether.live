@@ -83,7 +83,9 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
       return lit > c.width * c.height * 0.1;
     },
     { time },
-    { timeout: 10_000 },
+    // CI's software WebGL renderer starves the main thread; a lit frozen
+    // composite can take well past 10s. Match toybox-combine-editor's 30s.
+    { timeout: 30_000 },
   );
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
   return page.evaluate(() => {
@@ -187,7 +189,7 @@ async function setup(page: Page): Promise<void> {
 
 test.describe('TOYBOX node-map contextual menu', () => {
   test('per-target menu items are correct + Escape closes', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -269,7 +271,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
   });
 
   test('HEADLINE: build a 2-op chain, then right-click the final node → Patch to output', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -333,7 +335,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
   });
 
   test('canvas menu: Clear node map empties edges, Reset to default restores them', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
