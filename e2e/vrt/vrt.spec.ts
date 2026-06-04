@@ -25,6 +25,7 @@ import {
   VRT_MODULE_MASKS,
 } from './vrt-exemptions';
 import { applyVrtScene, VRT_SCENES } from './vrt-scenes';
+import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -64,18 +65,26 @@ test.describe('VRT: every module card matches its baseline', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
+      // Pin card text to the bundled Inter (sans) + JetBrains Mono (mono)
+      // faces BEFORE first paint. The app's generic stacks (`--font-ui:
+      // 'Inter', system-ui, …` with Inter NOT bundled; `ui-monospace,
+      // monospace` for labels) otherwise resolve via the runner's
+      // fontconfig to whatever face is installed — a selection that is NOT
+      // stable run-to-run, so the SAME commit renders card glyphs with
+      // different shapes AND different metrics (a wider face → +Npx card
+      // width; a taller line-box → +1px height) and the screenshot
+      // hard-fails on the dimension mismatch. Bundling + force-applying a
+      // single deterministic face removes that nondeterminism at the root.
+      // See e2e/vrt/_fonts.ts for the full root-cause writeup.
+      await pinVrtFonts(page);
+
       await page.goto('/');
       await page.waitForLoadState('networkidle');
-      // Settle any @font-face load before screenshot. NOTE: the default
-      // (unskinned) page card text is `system-ui` — there is no bundled
-      // *card* webfont (the only @font-face is Bravura, applied solely to
-      // SCORE's SMuFL glyphs, and it isn't even triggered unless a SCORE
-      // card mounts). So for the vast majority of cards this resolves
-      // instantly and does NOT swap a fallback face for a webfont. It's
-      // kept as a correctness belt for SCORE + skinned scenes; the chronic
-      // broad text-only flake is NOT a webfont race (see the layout-settle
-      // loop below for the real cause + fix).
-      await page.evaluate(() => document.fonts.ready);
+      // Decode + apply the bundled faces, then await document.fonts.ready,
+      // so no screenshot is taken while a face is still pending. (Bravura,
+      // for SCORE's SMuFL glyphs, is the only OTHER @font-face and is also
+      // covered by document.fonts.ready here.)
+      await awaitVrtFonts(page);
 
       // Use a registered scene if one exists for this module type
       // (drives the card's canvas with real content so the baseline
