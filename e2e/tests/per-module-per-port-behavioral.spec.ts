@@ -354,6 +354,23 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    + asserts bd/sd/hh output.
   grids: 'non-deterministic AudioContext scheduler startup; C=P=0 race on CI retry; covered by grids.spec.ts',
 
+  // ── aquaTank — 4-in multi-tap feedback reverb/delay TANK. Driven by the
+  //    universal driver's transient excitation (no sustained input), the
+  //    tank's observed out1 decays to an intrinsically near-silent idle RMS
+  //    (≈0.005) within the observation window. At that noise floor MANY of
+  //    its ports straddle the universal delta threshold run-to-run — not just
+  //    a couple: the fb{1..4}_cv per-tap sends, in3 (and siblings) audio
+  //    inputs, etc. all flake near Δ≈0.001-0.002. Per-port whack-a-mole
+  //    doesn't converge (fb3_cv → fb4_cv → in3 surfaced across successive
+  //    runs/repeats), so this is a MODULE-level exempt of the intrinsically-
+  //    quiet-output class (cf. the elements bow/blow exciter family). The
+  //    `inputs-accept` dim still pins wire-up for every port, and the
+  //    per-tap feedback + routing math is pinned by aquatank.test.ts where a
+  //    sustained source is supplied. (A louder/sustained driver source +
+  //    per-port calibrated thresholds — the systemic fix below — would let
+  //    these ports re-enter the sweep.)
+  aquaTank: 'multi-tap feedback tank; observed out1 is intrinsically near-silent (~0.005 RMS) on a transient excitation so MANY ports straddle the delta floor run-to-run (fb*_cv + in* all flake); covered by aquatank.test.ts (per-tap feedback/routing math with a sustained source)',
+
   // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
   //    batch-5). These are PURE gain / patch-bay / format-converter /
   //    trigger-delay modules: their observed output is a passive function
@@ -678,6 +695,12 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'hypercube.connect':  'circle↔V connector reshape is subtle at the default slice/tables; ±1V excursion below centroid threshold (cube-family class) — covered by hypercube.test.ts',
   'hypercube.crush':    'CRUSH is near-transparent off 0; a ±1V excursion barely moves RMS/centroid (cube-family class) — covered by hypercube.test.ts',
   'hypercube.alpha':    'alpha holo cross-fade is subtle at the default slice/tables; ±1V excursion straddles the ~0.01 RMS threshold (jitter, cube-family class) — covered by hypercube.test.ts',
+  // slice_y — the constrained slice-navigator Y axis, identical to cube.slice_y
+  // above: slice_rx/ry/rz (rotation) perturb with big deltas (they pass), but
+  // the Y translation only nudges the readout at the default axis-aligned slice
+  // so Δrms straddles the ~0.01 floor (Δμrms≈0.007, Δrange≈0.000) → jitter
+  // (passes 2/3 runs, fails the 3rd). Covered by hypercube.test.ts.
+  'hypercube.slice_y':  'slice-navigator Y translation is the constrained axis at the default axis-aligned slice; ±1V excursion straddles the ~0.01 RMS threshold (jitter, cube-family class) — covered by hypercube.test.ts',
 
   // ── macrooscillator harm_cv: harmonics CV has no audible effect
   //    on model 0 (simple sine) — the harmonics-mapped MI model
@@ -945,24 +968,29 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    see the systemic-fix TODO at the BEHAVIORAL_SWEEP_EXEMPT header below.)
   'dx7.poly': 'poly note/gate retriggers the FM voice (zc/centroid wobble) but mean-RMS delta straddles the ~0.01 floor under the overlapping context-gate voice (jitter); covered by dx7.test.ts + dx7 ART/specs',
 
-  // ── aquaTank fb3_cv (feedback-tank channel-3 send CV): aquaTank is a
-  //    multi-tap feedback reverb/delay tank whose observed out1 sits at a
-  //    very LOW idle RMS (≈0.005). fb3_cv scales ONE of several parallel
-  //    feedback channels' send into the summed tank — a single channel's
-  //    feedback gain rarely shifts the already-tiny summed RMS above the
-  //    threshold while the other taps carry the tank (Δμrms≈0.000,
-  //    Δrange≈0.001) — the SAME per-channel-on-a-quiet-sum class as the
-  //    warrenspectrum.level*_cv / mixmstrs exempts. fb1_cv/fb2_cv + the other
-  //    inputs perturb (they pass). Covered by aquatank.test.ts (per-channel
-  //    feedback-gain math).
-  'aquaTank.fb3_cv': 'channel-3 feedback-send CV; single-tap gain shift below the RMS threshold on the quiet (~0.005) summed tank output (warrenspectrum/mixmstrs per-channel class); covered by aquatank.test.ts',
+  // (aquaTank moved to BEHAVIORAL_MODULE_EXEMPT — its observed out1 is
+  //  intrinsically near-silent (~0.005 RMS) so MANY ports straddle the
+  //  floor, not just a couple; whack-a-mole per-port doesn't converge.)
+
+  // ── BLADES voct1 / voct2 (per-voice V/oct pitch CVs): BLADES is a dual SVF
+  //    VCF + COLOR overdrive + mix bus (MI Blades archetype). The observed
+  //    `mix` output sits at a LOW idle RMS (≈0.047) — it's a FILTER, not an
+  //    oscillator, so it only colours an upstream excitation. A V/oct shift on
+  //    one voice retunes that voice's filter centre but barely moves the summed
+  //    mix RMS (Δμrms≈0.002, Δrange≈0.004), straddling the ~0.01 floor →
+  //    near-threshold jitter (voct1 surfaced as a flaky failure; voct2 is the
+  //    identical per-voice-pitch class, exempt to de-flake the pair). The
+  //    cutoff/resonance/COLOR + audio inputs perturb (they pass). Covered by
+  //    blades.test.ts (per-voice filter math) + blades.spec.ts.
+  'blades.voct1': 'per-voice V/oct pitch CV on a filter (not an oscillator); retunes the voice centre but the summed mix-RMS shift straddles the ~0.01 floor on the quiet (~0.047) mix (jitter); covered by blades.test.ts + blades.spec.ts',
+  'blades.voct2': 'per-voice V/oct pitch CV on a filter (not an oscillator); retunes the voice centre but the summed mix-RMS shift straddles the ~0.01 floor on the quiet (~0.047) mix (jitter); covered by blades.test.ts + blades.spec.ts',
 };
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
 // behavioral-coverage TODO in .github/workflows/ci.yml): the Class-A
 // near-threshold entries above (cube*/hypercube.*, chowkick.q_cv/decay_cv,
-// dx7.poly, aquaTank.fb3_cv, and the existing swolevco/elements/rings/
-// warrenspectrum families) all straddle a SINGLE universal delta threshold
+// dx7.poly, blades.voct{1,2}, the module-level aquaTank quiet-tank exempt, and
+// the existing swolevco/elements/rings/warrenspectrum families) all straddle a SINGLE universal delta threshold
 // that is too coarse for subtle CV→audio effects. The right long-term fix is a
 // MORE SENSITIVE / per-port-CALIBRATED metric (e.g. a pitch/zc-keyed metric for
 // retrigger inputs, a per-transient peak/spectral metric for percussion, and
