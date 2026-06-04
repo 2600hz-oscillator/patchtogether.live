@@ -162,7 +162,10 @@ export const cubeDef: AudioModuleDef = {
     { id: 'slice_rz', type: 'cv', paramTarget: 'slice_rz', cvScale: { mode: 'linear' } },
     { id: 'morph_fc', type: 'cv', paramTarget: 'morph_fc', cvScale: { mode: 'linear' } },
     { id: 'connect',  type: 'cv', paramTarget: 'connect',  cvScale: { mode: 'linear' } },
+    { id: 'connect_strength', type: 'cv', paramTarget: 'connect_strength', cvScale: { mode: 'linear' } },
     { id: 'crush',    type: 'cv', paramTarget: 'crush',    cvScale: { mode: 'linear' } },
+    { id: 'space_crush',   type: 'cv', paramTarget: 'space_crush',   cvScale: { mode: 'linear' } },
+    { id: 'space_diffuse', type: 'cv', paramTarget: 'space_diffuse', cvScale: { mode: 'linear' } },
     { id: 'fold_cv',  type: 'cv', paramTarget: 'fold',     cvScale: { mode: 'linear' } },
     { id: 'tune',     type: 'cv', paramTarget: 'tune',     cvScale: { mode: 'linear' } },
   ],
@@ -186,7 +189,16 @@ export const cubeDef: AudioModuleDef = {
     { id: 'fine',     label: 'Fine',    defaultValue: 0,   min: -100, max: 100, curve: 'linear', units: '¢' },
     { id: 'morph_fc', label: 'Morph',   defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
     { id: 'connect',  label: 'Connect', defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
+    // CONNECT STRENGTH — overshoot the connector's interior control point "out of
+    // the cube" for a dramatic base swell (0 = today's exact shape). Lives next
+    // to CONNECT. CV via the connect_strength input.
+    { id: 'connect_strength', label: 'Cnct Str', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     { id: 'crush',    label: 'Crush',   defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
+    // SPACE CRUSH — independent spatial voxelization of the FIELD lookup coords
+    // (chunky voxels, 0 = transparent). SPACE DIFFUSE — gravity pulling the
+    // sample cloud toward the cube's emptiest wall (0 = off). Both CV-routed.
+    { id: 'space_crush',   label: 'Space Crush',  defaultValue: 0, min: 0, max: 1, curve: 'linear' },
+    { id: 'space_diffuse', label: 'Space Diffuse', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     // FOLD — West-coast wavefolder on the output (0 = pass-through, max = hard
     // fold, adds harmonics). Applied in cube-dsp.applyFold after the slice is
     // sampled, before LEVEL, on both L and R. CV via the fold_cv input.
@@ -305,6 +317,7 @@ export const cubeDef: AudioModuleDef = {
       sliceY: number; rx: number; ry: number; rz: number;
       morphFC: number; connect: number; crush: number; spread: number;
       fold: number; material: number; wrap: number;
+      spaceCrush?: number; spaceDiffuse?: number; connectStrength?: number;
     }): void {
       // All three tables must be loaded (resolveAndPostAll seeds defaults on
       // spawn, so this is true almost immediately).
@@ -315,6 +328,9 @@ export const cubeDef: AudioModuleDef = {
       const sp: SliceParams = {
         sliceY: p.sliceY, rx: p.rx, ry: p.ry, rz: p.rz,
         morphFC: p.morphFC, connect: p.connect, crush: p.crush,
+        spaceCrush: p.spaceCrush ?? 0,
+        spaceDiffuse: p.spaceDiffuse ?? 0,
+        connectStrength: p.connectStrength ?? 0,
         material: (p.material >= 0.5 ? 'hard' : 'smooth') as Material,
         wrap: p.wrap >= 0.5,
       };
@@ -380,7 +396,10 @@ export const cubeDef: AudioModuleDef = {
         ['slice_rz', { node: workletNode, input: 0, param: params.get('slice_rz')! }],
         ['morph_fc', { node: workletNode, input: 0, param: params.get('morph_fc')! }],
         ['connect',  { node: workletNode, input: 0, param: params.get('connect')! }],
+        ['connect_strength', { node: workletNode, input: 0, param: params.get('connect_strength')! }],
         ['crush',    { node: workletNode, input: 0, param: params.get('crush')! }],
+        ['space_crush',   { node: workletNode, input: 0, param: params.get('space_crush')! }],
+        ['space_diffuse', { node: workletNode, input: 0, param: params.get('space_diffuse')! }],
         ['fold_cv',  { node: workletNode, input: 0, param: params.get('fold')! }],
         ['tune',     { node: workletNode, input: 0, param: params.get('tune')! }],
       ]),

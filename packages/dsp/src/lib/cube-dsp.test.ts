@@ -27,6 +27,10 @@ import {
   crushCoord,
   crushGridSteps,
   crushLevels,
+  spaceCrushCoord,
+  spaceCrushGridSteps,
+  diffusePull,
+  lowestInfoFace,
   wrapFold,
   heightAt,
   sampleSlice,
@@ -566,5 +570,101 @@ describe('sampleSlice — reads across floor / wall / ceiling', () => {
     expect(dFloor).toBeGreaterThan(0.02);
     expect(dWall).toBeGreaterThan(0.02);
     expect(dCeil).toBeGreaterThan(0.02);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// OFF = EXACT IDENTITY — SPACE CRUSH / SPACE DIFFUSE / CONNECT STRENGTH.
+//
+// The cube ART harness compares at tier B (rms < 1e-4), which canNOT prove
+// byte-identity. These tests are the real proof that all three new controls at
+// their OFF (0) value are bit-identical to the prior behavior — exact `===`,
+// not toBeCloseTo. (See the CUBE design adversarial review, finding G1.)
+// ───────────────────────────────────────────────────────────────────────────
+describe('off = exact identity (new CUBE controls)', () => {
+  function legacyOcc(z: number, bottom: number, top: number, connect: number): number {
+    const lo = Math.min(bottom, top);
+    const hi = Math.max(bottom, top);
+    const zz = Math.max(0, Math.min(1, z));
+    if (zz <= lo) return 1;
+    if (zz >= hi) return 0;
+    const span = hi - lo;
+    if (span <= 1e-9) return zz < hi ? 1 : 0;
+    const t = (zz - lo) / span;
+    const c = Math.max(0, Math.min(1, connect));
+    const circle = Math.sqrt(Math.max(0, 1 - t * t));
+    const vee = 1 - t;
+    return Math.max(0, Math.min(1, circle * (1 - c) + vee * c));
+  }
+
+  it('occ(...,connectStrength=0) === the legacy occ formula, exactly, over a grid', () => {
+    for (let bi = 0; bi <= 4; bi++) {
+      for (let ti = 0; ti <= 4; ti++) {
+        for (let zi = 0; zi <= 8; zi++) {
+          for (let ci = 0; ci <= 4; ci++) {
+            const b = bi / 4, t = ti / 4, z = zi / 8, c = ci / 4;
+            expect(occ(z, b, t, c, 0)).toBe(legacyOcc(z, b, t, c));
+            // the default 4-arg call must also be identical (no 5th arg path)
+            expect(occ(z, b, t, c)).toBe(legacyOcc(z, b, t, c));
+          }
+        }
+      }
+    }
+  });
+
+  it('spaceCrushCoord(c,0) === c and diffusePull(c,0,dir) === c (no arithmetic at off)', () => {
+    for (let i = 0; i <= 20; i++) {
+      const c = i / 20;
+      expect(spaceCrushCoord(c, 0)).toBe(c);
+      expect(diffusePull(c, 0, 1)).toBe(c);
+      expect(diffusePull(c, 0, -1)).toBe(c);
+    }
+    // spaceCrushGridSteps stays transparent until the grid actually drops below 256
+    expect(spaceCrushGridSteps(0)).toBe(256);
+  });
+
+  it('sampleSlice with all three controls at OFF === the legacy params, byte-for-byte', () => {
+    const floorT = rampInXTable(-1, 1);
+    const wallT = constTable(0.0);
+    const ceilT = rampInXTable(-1, 1);
+    const legacy: SliceParams = {
+      sliceY: 0.5, rx: 0.6, ry: 0.3, rz: 0.2,
+      morphFC: 0.4, connect: 0.3, material: 'smooth', crush: 0.2, wrap: true,
+    };
+    const withOff: SliceParams = { ...legacy, spaceCrush: 0, spaceDiffuse: 0, connectStrength: 0 };
+    const a = sampleSlice(floorT, wallT, ceilT, legacy);
+    const b = sampleSlice(floorT, wallT, ceilT, withOff);
+    expect(b.length).toBe(a.length);
+    for (let i = 0; i < a.length; i++) expect(b[i]).toBe(a[i]); // exact ===
+  });
+
+  it('each control at NON-zero actually changes the wave (sanity, not just off-safe)', () => {
+    const floorT = rampInXTable(-1, 1);
+    const wallT = constTable(0.0);
+    const ceilT = rampInXTable(-1, 1);
+    const base: SliceParams = {
+      sliceY: 0.5, rx: 0.3, ry: 0.2, rz: 0, morphFC: 0.5, connect: 0.2,
+      material: 'smooth', crush: 0, wrap: false,
+    };
+    const rms = (x: Float32Array, y: Float32Array) => {
+      let s = 0; for (let i = 0; i < x.length; i++) { const d = x[i]! - y[i]!; s += d * d; }
+      return Math.sqrt(s / x.length);
+    };
+    const clean = sampleSlice(floorT, wallT, ceilT, base);
+    expect(rms(clean, sampleSlice(floorT, wallT, ceilT, { ...base, spaceCrush: 1 }))).toBeGreaterThan(1e-3);
+    expect(rms(clean, sampleSlice(floorT, wallT, ceilT, { ...base, spaceDiffuse: 1 }))).toBeGreaterThan(1e-3);
+    expect(rms(clean, sampleSlice(floorT, wallT, ceilT, { ...base, connectStrength: 1 }))).toBeGreaterThan(1e-3);
+  });
+
+  it('lowestInfoFace is deterministic + stable across calls (latch invariant)', () => {
+    const floorT = constTable(-1);
+    const wallT = rampInXTable(-1, 1);
+    const ceilT = rampInXTable(-1, 1);
+    const fp = { morphFC: 0.5, connect: 0.3, connectStrength: 0, material: 'smooth' as const };
+    const a = lowestInfoFace(floorT, wallT, ceilT, fp);
+    const b = lowestInfoFace(floorT, wallT, ceilT, fp);
+    expect(a).toEqual(b); // same field → same target (no chatter)
+    expect(a.axis).toBeGreaterThanOrEqual(0);
+    expect([-1, 1]).toContain(a.dir);
   });
 });

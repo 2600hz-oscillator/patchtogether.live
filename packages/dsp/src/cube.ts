@@ -133,6 +133,7 @@ interface ParamsChangedMessage {
   sliceY: number; rx: number; ry: number; rz: number;
   morphFC: number; connect: number; crush: number; spread: number;
   fold: number;
+  spaceCrush: number; spaceDiffuse: number; connectStrength: number;
   material: 0 | 1; wrap: 0 | 1; tableEpoch: number;
 }
 
@@ -184,6 +185,9 @@ class CubeProcessor extends AudioWorkletProcessor {
   private smRx: WtParamSmoother;
   private smRy: WtParamSmoother;
   private smRz: WtParamSmoother;
+  private smSpaceCrush: WtParamSmoother;
+  private smSpaceDiffuse: WtParamSmoother;
+  private smConnectStrength: WtParamSmoother;
 
   // Cached slice signature so we only recompute the (expensive) slice when a
   // shaping param crossed a quantization step or a table swapped.
@@ -206,6 +210,9 @@ class CubeProcessor extends AudioWorkletProcessor {
     this.smRx = new WtParamSmoother(sampleRate);
     this.smRy = new WtParamSmoother(sampleRate);
     this.smRz = new WtParamSmoother(sampleRate);
+    this.smSpaceCrush = new WtParamSmoother(sampleRate);
+    this.smSpaceDiffuse = new WtParamSmoother(sampleRate);
+    this.smConnectStrength = new WtParamSmoother(sampleRate);
     // Prime to defaults so the first block doesn't ramp from 0.
     this.smMorphFc.prime(0);
     this.smConnect.prime(0);
@@ -216,6 +223,9 @@ class CubeProcessor extends AudioWorkletProcessor {
     this.smRx.prime(0);
     this.smRy.prime(0);
     this.smRz.prime(0);
+    this.smSpaceCrush.prime(0);
+    this.smSpaceDiffuse.prime(0);
+    this.smConnectStrength.prime(0);
     // Snapshot every ~1/30 s worth of samples.
     this.snapInterval = Math.max(1, Math.round(sampleRate / 30));
 
@@ -288,6 +298,9 @@ class CubeProcessor extends AudioWorkletProcessor {
       { name: 'morph_fc', defaultValue: 0,   minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
       { name: 'connect',  defaultValue: 0,   minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
       { name: 'crush',    defaultValue: 0,   minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
+      { name: 'space_crush',      defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'a-rate' as const },
+      { name: 'space_diffuse',    defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'a-rate' as const },
+      { name: 'connect_strength', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'a-rate' as const },
       { name: 'spread',   defaultValue: 0,   minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
       { name: 'fold',     defaultValue: 0,   minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
       { name: 'slice_y',  defaultValue: 0.5, minValue: 0,    maxValue: 1, automationRate: 'a-rate' as const },
@@ -351,7 +364,8 @@ class CubeProcessor extends AudioWorkletProcessor {
     const sig =
       `${this.tableEpoch}|${q(sp.morphFC)}|${q(sp.connect)}|${q(sp.crush)}|` +
       `${q(spread)}|${q(sp.sliceY)}|${q(sp.rx)}|${q(sp.ry)}|${q(sp.rz)}|` +
-      `${q(fold)}|${matBit}|${wrapBit}`;
+      `${q(fold)}|${matBit}|${wrapBit}` +
+      `|${q(sp.spaceCrush ?? 0)}|${q(sp.spaceDiffuse ?? 0)}|${q(sp.connectStrength ?? 0)}`;
     if (sig === this.lastSig && this.haveWave) return false;
     this.lastSig = sig;
 
@@ -362,6 +376,9 @@ class CubeProcessor extends AudioWorkletProcessor {
         sliceY: sp.sliceY, rx: sp.rx, ry: sp.ry, rz: sp.rz,
         morphFC: sp.morphFC, connect: sp.connect, crush: sp.crush, spread,
         fold,
+        spaceCrush: sp.spaceCrush ?? 0,
+        spaceDiffuse: sp.spaceDiffuse ?? 0,
+        connectStrength: sp.connectStrength ?? 0,
         material: matBit, wrap: wrapBit, tableEpoch: this.tableEpoch,
       };
       try { this.port.postMessage(msg); } catch { /* shim */ }
@@ -433,6 +450,9 @@ class CubeProcessor extends AudioWorkletProcessor {
     const morphFC = this.smMorphFc.step(this.aval(parameters, 'morph_fc', 0));
     const connect = this.smConnect.step(this.aval(parameters, 'connect', 0));
     const crush = this.smCrush.step(this.aval(parameters, 'crush', 0));
+    const spaceCrush = this.smSpaceCrush.step(this.aval(parameters, 'space_crush', 0));
+    const spaceDiffuse = this.smSpaceDiffuse.step(this.aval(parameters, 'space_diffuse', 0));
+    const connectStrength = this.smConnectStrength.step(this.aval(parameters, 'connect_strength', 0));
     const spread = this.smSpread.step(this.aval(parameters, 'spread', 0));
     const fold = this.smFold.step(this.aval(parameters, 'fold', 0));
     const sliceY = this.smSliceY.step(this.aval(parameters, 'slice_y', 0.5));
@@ -440,7 +460,10 @@ class CubeProcessor extends AudioWorkletProcessor {
     const ry = this.smRy.step(this.aval(parameters, 'slice_ry', 0));
     const rz = this.smRz.step(this.aval(parameters, 'slice_rz', 0));
 
-    const sp: SliceParams = { sliceY, rx, ry, rz, morphFC, connect, material, crush, wrap };
+    const sp: SliceParams = {
+      sliceY, rx, ry, rz, morphFC, connect, material, crush, wrap,
+      spaceCrush, spaceDiffuse, connectStrength,
+    };
     this.maybeRecompute(sp, spread, fold);
 
     const pIn = inputs[0]?.[0];
