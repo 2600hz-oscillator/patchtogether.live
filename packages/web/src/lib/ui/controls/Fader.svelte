@@ -29,6 +29,14 @@
     learnSpecRune,
     bindingsRune,
   } from '$lib/midi/midi-learn.svelte';
+  import { patch } from '$lib/graph/store';
+  import {
+    listControlSurfaces,
+    readSurfaceData,
+    hasBinding as surfaceHasBinding,
+    addBindingToSurface,
+    removeBindingFromSurface,
+  } from '$lib/graph/control-surface';
 
   /** A single inline glyph anchored at a normalized [0,1] fraction along the
    *  fader track. Used by the LFO-shape sliders to render sine/tri/saw/square
@@ -118,9 +126,20 @@
   let ctxOpen = $state(false);
   let ctxX = $state(0);
   let ctxY = $state(0);
+  let ctxSurfaces = $state<Array<{ id: string; name: string; bound: boolean }>>([]);
+
+  function refreshSurfaces() {
+    if (!moduleId || !paramId) { ctxSurfaces = []; return; }
+    ctxSurfaces = listControlSurfaces(patch.nodes).map((s) => ({
+      id: s.id,
+      name: s.name,
+      bound: surfaceHasBinding(readSurfaceData(patch.nodes[s.id]), moduleId!, paramId!),
+    }));
+  }
 
   function openContextMenu(e: MouseEvent) {
     if (!moduleId || !paramId) return; // feature off when not addressable
+    refreshSurfaces();
     // Plain right-click on a wired fader opens the control menu (MIDI Learn /
     // Forget). stopPropagation keeps the event off the node menu; the node
     // menu (Docs / Duplicate / Unpatch all / Delete) is still reachable by
@@ -140,6 +159,14 @@
     if (!moduleId || !paramId) return;
     clearBinding(moduleId, paramId);
     bumpBindingTick();
+  }
+  function onSendToSurface(surfaceId: string) {
+    if (!moduleId || !paramId) return;
+    addBindingToSurface(surfaceId, moduleId, paramId);
+  }
+  function onRemoveFromSurface(surfaceId: string) {
+    if (!moduleId || !paramId) return;
+    removeBindingFromSurface(surfaceId, moduleId, paramId);
   }
 
   // Register / unregister this fader's setter so a binding loaded from
@@ -484,6 +511,9 @@
     onlearn={onLearnPick}
     onforget={onForgetPick}
     onclose={() => (ctxOpen = false)}
+    surfaces={ctxSurfaces}
+    onsendtosurface={onSendToSurface}
+    onremovefromsurface={onRemoveFromSurface}
   />
 {/if}
 

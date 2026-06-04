@@ -166,6 +166,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // the pure collision math; E2E covers the deletion + self-destruct +
   // TIMELORDE-survives flows.
   cadillac: 'no card render — roaming overlay sprite, not a SvelteFlow node body. Unit (collision math) + E2E (deletion, self-destruct, timelorde-survives) provide coverage.',
+  // CONTROL SURFACE — meta module whose entire body is binding-dependent
+  // (proxied controls vary per patch); a fresh surface is just a blank
+  // square + lock button. No stable module-specific pixels worth
+  // fingerprinting. Covered by control-surface.test.ts (model) + the
+  // control-surface e2e (spawn → send → proxy drives source → collapse).
+  controlSurface: 'content is binding-dependent (proxied controls vary by patch); empty state is a blank square. Covered by control-surface.test.ts + control-surface.spec.ts.',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.
@@ -769,6 +775,7 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/moog912',
   // Moog 960 sequencer (batch 6): darwin baseline captured locally; linux pending.
   'linux/moog960',
+  'linux/moog956',
   'linux/moog905',
   // ---- darwin-side QUARANTINE: pre-existing flakes verified on main
   // (reproduced by reverting the cards-shrink-to-fit CSS in PR #447 and
