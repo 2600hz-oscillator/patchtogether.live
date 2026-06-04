@@ -1402,6 +1402,12 @@
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
+    // A right-click INSIDE the TOYBOX in-card combine-graph SVG is handled by
+    // that editor's own contextual menu (ToyboxNodeMenu). Don't also open the
+    // generic module menu for it — belt-and-suspenders against the capture-phase
+    // event race (the SVG's element-level stopImmediatePropagation can't undo a
+    // document/xyflow listener that already fired earlier in the path).
+    if ((event.target as Element | null)?.closest?.('[data-testid="toybox-graph-svg"]')) return;
     const me = event as MouseEvent;
     ctxMenuPos = { x: me.clientX, y: me.clientY };
     ctxMenuNodeId = node.id;
@@ -2406,6 +2412,11 @@
   }
 
   function onPortContextMenu(e: MouseEvent) {
+    // Right-clicks inside the TOYBOX combine-graph SVG are owned by that editor's
+    // own contextual menu — never resolve them to the generic port-patch cascade
+    // (the SVG's port dots are not svelte-flow handles, so handleInfoFromEvent
+    // already returns null, but guard explicitly for clarity + robustness).
+    if ((e.target as Element | null)?.closest?.('[data-testid="toybox-graph-svg"]')) return;
     const info = handleInfoFromEvent(e);
     if (!info) return;
     openPortMenu(e, info);

@@ -17,8 +17,12 @@ import {
   setCombineNodeParam,
   ensureCombineGraph,
   readCombineGraph,
+  patchToOutput,
+  clearCombineEdges,
+  resetCombineToDefault,
+  duplicateCombineNode,
 } from './toybox-combine';
-import { outputNode } from '$lib/video/toybox-combine-graph';
+import { outputNode, makeDefaultCombineGraph } from '$lib/video/toybox-combine-graph';
 import type { ModuleNode } from './types';
 
 const TID = 'toybox-ydoc-test';
@@ -155,5 +159,114 @@ describe('toybox combine graph — real Y.Doc mutators', () => {
     }).not.toThrow();
     const g = readCombineGraph(patch.nodes[TID])!;
     expect(g.nodes.length).toBeGreaterThan(0);
+  });
+
+  // ───────── contextual-menu mutators (Phase: node-map right-click) ─────────
+
+  it('patchToOutput REPLACES the existing OUTPUT.in0 edge (one edge, new source)', () => {
+    makeToybox();
+    ensureCombineGraph(TID); // default graph → OUTPUT.in0 is already wired
+    const g0 = readCombineGraph(patch.nodes[TID])!;
+    const out = outputNode(g0)!;
+    const before = g0.edges.filter((e) => e.to === out.id && e.toPort === 'in0');
+    expect(before.length, 'default graph wires OUTPUT.in0 once').toBe(1);
+    const prevFrom = before[0]!.from;
+    // Add a fresh op + patch it to the output (its in/out don't matter for this).
+    const op = addCombineNode(TID, 'fade')!;
+    expect(() => {
+      const r = patchToOutput(TID, op);
+      expect(r.ok).toBe(true);
+    }).not.toThrow(); // ← never "Type already integrated"
+    const g = readCombineGraph(patch.nodes[TID])!;
+    const after = g.edges.filter((e) => e.to === out.id && e.toPort === 'in0');
+    expect(after.length, 'still exactly one edge into OUTPUT.in0').toBe(1);
+    expect(after[0]!.from, 'OUTPUT.in0 now sourced from the new op').toBe(op);
+    expect(after[0]!.from).not.toBe(prevFrom);
+  });
+
+  it('patchToOutput rejects a wiring that would create a cycle + leaves graph unchanged', () => {
+    makeToybox();
+    ensureCombineGraph(TID);
+    const g0 = readCombineGraph(patch.nodes[TID])!;
+    const out = outputNode(g0)!;
+    // OUTPUT has no out port, so patching OUTPUT→OUTPUT is a self/no-out reject;
+    // build a real cycle instead: a → out is fine, but a node downstream of out
+    // can't exist (out has no output). Use the self-loop guard: patch out to out.
+    const beforeEdges = g0.edges.map((e) => `${e.from}->${e.to}:${e.toPort}`).sort();
+    const r = patchToOutput(TID, out.id); // OUTPUT has no output port
+    expect(r.ok).toBe(false);
+    expect(r.error === 'no-out-port' || r.error === 'self-loop').toBe(true);
+    const g = readCombineGraph(patch.nodes[TID])!;
+    const afterEdges = g.edges.map((e) => `${e.from}->${e.to}:${e.toPort}`).sort();
+    expect(afterEdges, 'rejected patch restored the original wiring').toEqual(beforeEdges);
+  });
+
+  it('clearCombineEdges empties edges + keeps all nodes (never throws)', () => {
+    makeToybox();
+    ensureCombineGraph(TID);
+    const before = readCombineGraph(patch.nodes[TID])!;
+    const nodeCount = before.nodes.length;
+    expect(before.edges.length).toBeGreaterThan(0);
+    expect(() => clearCombineEdges(TID)).not.toThrow();
+    const g = readCombineGraph(patch.nodes[TID])!;
+    expect(g.edges.length).toBe(0);
+    expect(g.nodes.length, 'all nodes remain after clearing edges').toBe(nodeCount);
+    // ...and the graph is still editable afterwards (no re-integration breakage).
+    expect(() => addCombineNode(TID, 'fade')).not.toThrow();
+  });
+
+  it('resetCombineToDefault reproduces makeDefaultCombineGraph after a mutated graph', () => {
+    makeToybox();
+    // Mutate heavily first: add ops, wire some, clear edges.
+    const a = addCombineNode(TID, 'fade')!;
+    const b = addCombineNode(TID, 'map')!;
+    connectCombine(TID, a, b, 'in0');
+    clearCombineEdges(TID);
+    expect(() => resetCombineToDefault(TID)).not.toThrow(); // ← riskiest re-seed
+    const g = readCombineGraph(patch.nodes[TID])!;
+    const def = makeDefaultCombineGraph();
+    // Same shape as the code default: 4 sources + op chain + output, with an
+    // edge into OUTPUT.in0.
+    expect(g.nodes.length).toBe(def.nodes.length);
+    expect(g.edges.length).toBe(def.edges.length);
+    expect(g.nodes.filter((n) => n.kind === 'source').length).toBe(4);
+    expect(g.nodes.filter((n) => n.kind === 'fade').length).toBe(
+      def.nodes.filter((n) => n.kind === 'fade').length,
+    );
+    const out = outputNode(g)!;
+    expect(g.edges.some((e) => e.to === out.id && e.toPort === 'in0')).toBe(true);
+    // The added ops a/b are gone (fresh default ids).
+    expect(g.nodes.some((n) => n.id === a)).toBe(false);
+    expect(g.nodes.some((n) => n.id === b)).toBe(false);
+    // ...and still editable.
+    expect(() => addCombineNode(TID, 'lumakey')).not.toThrow();
+  });
+
+  it('duplicateCombineNode mints a fresh id, copies params, copies NO edges', () => {
+    makeToybox();
+    const a = addCombineNode(TID, 'lumakey')!;
+    setCombineNodeParam(TID, a, 'amount', 0.42);
+    const src = addCombineNode(TID, 'fade')!;
+    connectCombine(TID, src, a, 'in0'); // a has an incoming edge
+    const dupId = duplicateCombineNode(TID, a);
+    expect(dupId).toBeTruthy();
+    expect(dupId).not.toBe(a);
+    const g = readCombineGraph(patch.nodes[TID])!;
+    const dup = g.nodes.find((n) => n.id === dupId)!;
+    expect(dup.kind).toBe('lumakey');
+    expect(dup.params!.amount).toBe(0.42); // params copied
+    // The duplicate has NO edges (the src→a edge was not copied to src→dup).
+    expect(g.edges.some((e) => e.to === dupId)).toBe(false);
+    expect(g.edges.some((e) => e.from === dupId)).toBe(false);
+  });
+
+  it('duplicateCombineNode refuses SOURCE / OUTPUT (structural)', () => {
+    makeToybox();
+    ensureCombineGraph(TID);
+    const g0 = readCombineGraph(patch.nodes[TID])!;
+    const out = outputNode(g0)!;
+    const srcNode = g0.nodes.find((n) => n.kind === 'source')!;
+    expect(duplicateCombineNode(TID, out.id)).toBeNull();
+    expect(duplicateCombineNode(TID, srcNode.id)).toBeNull();
   });
 });

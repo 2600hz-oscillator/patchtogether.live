@@ -53,9 +53,11 @@
     hasOutPort,
     isCombineGraph,
     makeDefaultCombineGraph,
+    edgesTouching,
     type ToyboxCombineGraph,
     type ToyboxGraphNode,
     type ToyboxInPort,
+    type ToyboxNodeKind,
     type ToyboxOpKind,
   } from '$lib/video/toybox-combine-graph';
   import {
@@ -64,7 +66,13 @@
     deleteCombineEdge,
     deleteCombineNode,
     setCombineNodeParam,
+    setCombineNodePosition,
+    patchToOutput,
+    clearCombineEdges,
+    resetCombineToDefault,
+    duplicateCombineNode,
   } from '$lib/graph/toybox-combine';
+  import ToyboxNodeMenu from './ToyboxNodeMenu.svelte';
   import {
     CV_PORT_IDS,
     listCvTargets,
@@ -380,6 +388,166 @@
 
   function onDeleteEdge(edgeId: string): void {
     deleteCombineEdge(id, edgeId);
+    clearConnectMsg();
+  }
+
+  // ───────── CONTEXTUAL RIGHT-CLICK MENU (node / port / edge / canvas) ─────────
+  //
+  // A single oncontextmenu handler on the <svg> classifies what was right-clicked
+  // (via e.target.closest() reading the data-* attributes already on the rendered
+  // elements) and opens ONE $state-driven menu (ToyboxNodeMenu). Right-click is
+  // purely additive — the existing click-to-wire UX is untouched.
+
+  interface ToyboxMenuState {
+    open: boolean;
+    x: number;
+    y: number;
+    kind: 'node' | 'port' | 'edge' | 'canvas';
+    nodeId?: string;
+    nodeKind?: ToyboxNodeKind;
+    port?: ToyboxInPort;
+    dir?: 'in' | 'out';
+    edgeId?: string;
+    /** SVG-user-unit click point (canvas target → "Add node here"). */
+    ux?: number;
+    uy?: number;
+  }
+  let toyboxMenu = $state<ToyboxMenuState | null>(null);
+
+  /** Map a screen-px point to SVG user units via the live screen CTM inverse. */
+  function svgUserPoint(svg: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } {
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const u = pt.matrixTransform(ctm.inverse());
+    return { x: u.x, y: u.y };
+  }
+
+  /** The single contextmenu handler on the combine SVG. Classifies the target
+   *  (port > edge > node > canvas) and opens the contextual menu. ALWAYS
+   *  suppresses the native menu + any bubbling to xyflow's onnodecontextmenu /
+   *  Canvas's port-menu listener. */
+  function onGraphCtx(e: MouseEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    const target = e.target as Element | null;
+    const svg = e.currentTarget as SVGSVGElement;
+    if (!target) return;
+
+    // PORT (output dot) — testid `toybox-outport-${nodeId}`.
+    const outEl = target.closest('[data-testid^="toybox-outport-"]');
+    if (outEl) {
+      const gid = outEl.getAttribute('data-testid')!.slice('toybox-outport-'.length);
+      toyboxMenu = { open: true, x: e.clientX, y: e.clientY, kind: 'port', nodeId: gid, dir: 'out', nodeKind: nodeById(gid)?.kind };
+      return;
+    }
+    // PORT (input dot) — testid `toybox-inport-${nodeId}-${port}`.
+    const inEl = target.closest('[data-testid^="toybox-inport-"]');
+    if (inEl) {
+      const rest = inEl.getAttribute('data-testid')!.slice('toybox-inport-'.length);
+      const lastDash = rest.lastIndexOf('-');
+      const gid = rest.slice(0, lastDash);
+      const port = rest.slice(lastDash + 1) as ToyboxInPort;
+      toyboxMenu = { open: true, x: e.clientX, y: e.clientY, kind: 'port', nodeId: gid, dir: 'in', port, nodeKind: nodeById(gid)?.kind };
+      return;
+    }
+    // EDGE — testid `toybox-edge-${edgeId}`.
+    const edgeEl = target.closest('[data-testid^="toybox-edge-"]');
+    if (edgeEl) {
+      const edgeId = edgeEl.getAttribute('data-testid')!.slice('toybox-edge-'.length);
+      toyboxMenu = { open: true, x: e.clientX, y: e.clientY, kind: 'edge', edgeId };
+      return;
+    }
+    // NODE — testid `toybox-gnode-${nodeId}`; kind read off data-kind on the <g>.
+    const nodeEl = target.closest('[data-testid^="toybox-gnode-"]');
+    if (nodeEl) {
+      const gid = nodeEl.getAttribute('data-testid')!.slice('toybox-gnode-'.length);
+      const nodeKind = (nodeEl.getAttribute('data-kind') as ToyboxNodeKind | null) ?? nodeById(gid)?.kind;
+      toyboxMenu = { open: true, x: e.clientX, y: e.clientY, kind: 'node', nodeId: gid, nodeKind };
+      return;
+    }
+    // CANVAS (empty background) — capture the SVG-user-unit click point.
+    const u = svgUserPoint(svg, e.clientX, e.clientY);
+    toyboxMenu = { open: true, x: e.clientX, y: e.clientY, kind: 'canvas', ux: u.x, uy: u.y };
+  }
+
+  function closeToyboxMenu(): void {
+    toyboxMenu = null;
+  }
+
+  /** Surface a connect/patch rejection through the existing connectMsg banner. */
+  function showConnectError(error: string | undefined): void {
+    connectMsg =
+      error === 'cycle' ? 'rejected: would create a cycle'
+      : error === 'occupied' ? 'that input is already wired'
+      : error === 'self-loop' ? 'cannot wire a node to itself'
+      : error === 'no-out-port' ? 'that node has no output'
+      : 'cannot connect';
+  }
+
+  function doPatchToOutput(gid: string): void {
+    const res = patchToOutput(id, gid);
+    if (!res.ok) showConnectError(res.error);
+    else clearConnectMsg();
+  }
+
+  /** Remove EVERY edge touching `gid` (in or out). */
+  function doDisconnect(gid: string): void {
+    for (const eid of edgesTouching(graph, gid)) deleteCombineEdge(id, eid);
+    clearConnectMsg();
+  }
+
+  /** Remove only the edges at one specific port of a node. For an output dot,
+   *  that's every edge leaving the node; for an input dot, the single edge into
+   *  that port. */
+  function doDisconnectPort(gid: string, dir: 'in' | 'out', port?: ToyboxInPort): void {
+    const toRemove =
+      dir === 'out'
+        ? graph.edges.filter((e) => e.from === gid)
+        : graph.edges.filter((e) => e.to === gid && e.toPort === port);
+    for (const e of toRemove) deleteCombineEdge(id, e.id);
+    clearConnectMsg();
+  }
+
+  function doDuplicate(gid: string): void {
+    const newId = duplicateCombineNode(id, gid);
+    if (newId) selectedNodeId = newId;
+    clearConnectMsg();
+  }
+
+  /** Add an op node at the right-clicked SVG-user-unit point (centred on it). */
+  function doAddNodeAt(kind: ToyboxOpKind, ux?: number, uy?: number): void {
+    const newId = addCombineNode(id, kind);
+    if (newId) {
+      if (typeof ux === 'number' && typeof uy === 'number') {
+        setCombineNodePosition(id, newId, ux - NODE_W / 2, uy - NODE_H / 2);
+      }
+      selectedNodeId = newId;
+    }
+    clearConnectMsg();
+  }
+
+  function doClearNodeMap(): void {
+    clearCombineEdges(id);
+    selectedNodeId = null;
+    clearConnectMsg();
+  }
+
+  function doResetToDefault(): void {
+    resetCombineToDefault(id);
+    selectedNodeId = null;
+    pendingFrom = null;
+    clearConnectMsg();
+  }
+
+  /** Arm a node's output as the connect source (reuses click-to-wire). */
+  function doBeginWire(gid: string): void {
+    const n = nodeById(gid);
+    if (!n || !hasOutPort(n.kind)) return;
+    pendingFrom = gid;
     clearConnectMsg();
   }
 
@@ -863,21 +1031,31 @@
           viewBox={`0 0 ${G_W} ${G_H}`}
           preserveAspectRatio="xMidYMid meet"
           data-testid="toybox-graph-svg"
+          oncontextmenu={onGraphCtx}
         >
           <!-- Edges (cables) drawn under the nodes. -->
           {#each graph.edges as e (e.id)}
             {@const fromN = nodeById(e.from)}
             {@const toN = nodeById(e.to)}
             {#if fromN && toN}
+              {@const d = cablePath(outPortXY(fromN), inPortXY(toN, e.toPort))}
+              <!-- Wide transparent hit-path (drawn FIRST, under the visible
+                   cable) carries the edge's identity (testid) + interactions, so
+                   both click-to-delete and the contextual right-click land
+                   reliably on a thin diagonal bezier. Being the previous sibling
+                   lets :hover tint the visible cable via `+ .cable`. -->
               <path
-                class="cable"
+                class="cable-hit"
                 data-testid={`toybox-edge-${e.id}`}
-                d={cablePath(outPortXY(fromN), inPortXY(toN, e.toPort))}
+                d={d}
                 onclick={() => onDeleteEdge(e.id)}
                 role="button"
                 tabindex="-1"
                 aria-label={`delete edge ${e.id}`}
               />
+              <!-- Visible cosmetic cable (no pointer events; the hit-path above
+                   catches interactions). -->
+              <path class="cable" d={d} />
             {/if}
           {/each}
 
@@ -974,6 +1152,28 @@
       {/if}
     {/if}
   </div>
+
+  <!-- Contextual right-click menu for the combine-graph editor. -->
+  <ToyboxNodeMenu
+    open={!!toyboxMenu?.open}
+    x={toyboxMenu?.x ?? 0}
+    y={toyboxMenu?.y ?? 0}
+    kind={toyboxMenu?.kind ?? 'canvas'}
+    nodeKind={toyboxMenu?.nodeKind}
+    dir={toyboxMenu?.dir}
+    port={toyboxMenu?.port}
+    onpatchtooutput={() => { if (toyboxMenu?.nodeId) doPatchToOutput(toyboxMenu.nodeId); }}
+    ondisconnect={() => { if (toyboxMenu?.nodeId) doDisconnect(toyboxMenu.nodeId); }}
+    onduplicate={() => { if (toyboxMenu?.nodeId) doDuplicate(toyboxMenu.nodeId); }}
+    ondeletenode={() => { if (toyboxMenu?.nodeId) onDeleteNode(toyboxMenu.nodeId); }}
+    ondisconnectport={() => { if (toyboxMenu?.nodeId && toyboxMenu.dir) doDisconnectPort(toyboxMenu.nodeId, toyboxMenu.dir, toyboxMenu.port); }}
+    onbeginwire={() => { if (toyboxMenu?.nodeId) doBeginWire(toyboxMenu.nodeId); }}
+    ondeleteedge={() => { if (toyboxMenu?.edgeId) onDeleteEdge(toyboxMenu.edgeId); }}
+    onaddnode={(k) => doAddNodeAt(k, toyboxMenu?.ux, toyboxMenu?.uy)}
+    onclear={doClearNodeMap}
+    onreset={doResetToDefault}
+    onclose={closeToyboxMenu}
+  />
 
   <!-- ───────── CV ROUTING (Phase 5) ───────── -->
   <div class="cv-section" data-testid="toybox-cv-section">
@@ -1216,9 +1416,18 @@
     stroke: var(--cable-video);
     stroke-width: 1.5;
     opacity: 0.85;
+    pointer-events: none; /* the wide hit-path below catches interactions */
+  }
+  /* Wide transparent hit-path: easy to click / right-click despite the
+     hairline visible cable. It's the PREVIOUS sibling of its visible cable, so
+     hovering it tints the cable via `+ .cable`. */
+  .cable-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 10;
     cursor: pointer;
   }
-  .cable:hover { stroke: #e05050; opacity: 1; }
+  .cable-hit:hover + .cable { stroke: #e05050; opacity: 1; }
   .combine-params {
     margin-top: 6px;
     border-top: 1px dashed var(--border);
