@@ -883,6 +883,28 @@
     }
   }
 
+  /** Identifiers for the "Load example…" topbar dropdown. Each maps to one
+   *  of the existing example loaders/spawners (kept byte-for-byte identical
+   *  to the buttons they replaced). */
+  type ExampleKey = 'sequenced-vco' | 'system-55' | 'system-35' | 'media-burn' | 'glitches';
+
+  /** Action-menu dispatcher for the "Load example…" `<select>`. It's an
+   *  action menu (not a persistent value), so we reset the bound value back
+   *  to the placeholder after dispatching, letting the user re-select the
+   *  same example to load it again. */
+  let exampleChoice = $state('');
+  async function onExampleChosen(key: ExampleKey) {
+    switch (key) {
+      case 'sequenced-vco': await loadExample(); break;
+      case 'system-55':     await spawnCabinet('55'); break;
+      case 'system-35':     await spawnCabinet('35'); break;
+      case 'media-burn':    await loadMediaBurn(); break;
+      case 'glitches':      await loadGlitches(); break;
+    }
+    // Reset back to the placeholder so this stays an action menu.
+    exampleChoice = '';
+  }
+
   function clearPatch() {
     ydoc.transact(() => {
       for (const id of Object.keys(patch.edges)) delete patch.edges[id];
@@ -3634,43 +3656,26 @@
     <h1>2600hz</h1>
     <div class="actions">
       <button onclick={openPaletteFromButton}>+ Add module</button>
-      <button
-        onclick={() => spawnCabinet('55')}
+      <!-- "Load example…" is an ACTION menu, not a persistent value: each
+           option spawns/loads its example exactly as the old standalone
+           buttons did, then onExampleChosen() resets the value back to the
+           placeholder so the same example can be re-loaded. Replaces the
+           old System 55/35, Load example, GLITCHES, and Media Burn buttons. -->
+      <select
+        class="primary load-example"
+        data-testid="load-example-select"
+        bind:value={exampleChoice}
         disabled={booting}
-        data-testid="moog-system-55-btn"
-        title="Spawn a full moogafakkin System 55 cabinet — every module laid out in two rows mirroring the real Moog cabinet (Fig 48)."
+        onchange={(e) => onExampleChosen(e.currentTarget.value as ExampleKey)}
+        title="Load a curated example patch or spawn a full Moog cabinet."
       >
-        {booting ? 'Loading…' : 'moogafakkin System 55'}
-      </button>
-      <button
-        onclick={() => spawnCabinet('35')}
-        disabled={booting}
-        data-testid="moog-system-35-btn"
-        title="Spawn a full moogafakkin System 35 cabinet — every module laid out in two rows mirroring the real Moog cabinet (Fig 47)."
-      >
-        {booting ? 'Loading…' : 'moogafakkin System 35'}
-      </button>
-      <button onclick={loadExample} disabled={booting} class="primary">
-        {booting ? 'Loading…' : 'Load example'}
-      </button>
-      <button
-        onclick={loadGlitches}
-        disabled={booting}
-        class="primary glitches"
-        title="Audio+video demo patch — loads a curated rackspace with PICTUREBOX (pre-loaded with glitch.jpg), Rutt-Etra, LFOs, drum machine, and modulation. Streams immediately."
-        data-testid="load-glitches-btn"
-      >
-        {booting ? 'Loading…' : 'GLITCHES GET RICHES'}
-      </button>
-      <button
-        onclick={loadMediaBurn}
-        disabled={booting}
-        class="primary glitches"
-        title="Homage to Ant Farm's 1975 Media Burn — 15 PICTUREBOX tiles reassemble the photo, then a CADILLAC drives R→L and demolishes them ~1s after load."
-        data-testid="load-media-burn-btn"
-      >
-        {booting ? 'Loading…' : 'Media Burn'}
-      </button>
+        <option value="" disabled selected>{booting ? 'Loading…' : 'Load example…'}</option>
+        <option value="sequenced-vco">Sequenced VCO</option>
+        <option value="system-55">System 55</option>
+        <option value="system-35">System 35</option>
+        <option value="media-burn">Media Burn</option>
+        <option value="glitches">Glitches Get Riches</option>
+      </select>
       <button
         onclick={savePatch}
         disabled={nodeCount === 0}
@@ -4012,6 +4017,29 @@
   .topbar button.primary.glitches:hover:not(:disabled) {
     background: linear-gradient(135deg, #3a6ea8 0%, #25416a 100%);
     border-color: #6ba0d4;
+  }
+  /* "Load example…" dropdown — styled to read as the primary curated-demo
+     control, mirroring the visual weight of the buttons it replaced. */
+  .topbar select.load-example {
+    background: var(--cable-audio);
+    color: #1a1d23;
+    border: 1px solid var(--cable-audio);
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .topbar select.load-example:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  /* The dropdown's expanded options render in the OS-native menu, which
+     ignores the dark control colors above; force readable contrast. */
+  .topbar select.load-example option {
+    background: #2a2f3a;
+    color: var(--text);
   }
   .topbar button:disabled {
     opacity: 0.4;

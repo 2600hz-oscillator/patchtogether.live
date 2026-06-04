@@ -11,7 +11,7 @@ test.describe.configure({ mode: 'parallel' });
 test('node context menu: right-click opens, Escape closes', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Load example' }).click();
+  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   // Right-click on the VCO card BACKGROUND (its title bar). Right-clicking a
@@ -29,7 +29,7 @@ test('node context menu: right-click opens, Escape closes', async ({ page }) => 
 test('node context menu: Delete removes the node + all edges touching it', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Load example' }).click();
+  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
 
@@ -52,7 +52,7 @@ test('node context menu: Delete removes the node + all edges touching it', async
 test('node context menu: Unpatch all keeps the node, removes only edges touching it', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Load example' }).click();
+  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
 

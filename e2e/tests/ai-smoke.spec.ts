@@ -36,7 +36,7 @@ test.describe('AI smoke check', () => {
     expect(isolated, 'crossOriginIsolated must be true').toBe(true);
   });
 
-  test('canvas: topbar + Load example button render', async ({ page }) => {
+  test('canvas: topbar + Load example dropdown render', async ({ page }) => {
     const cc = captureConsole(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
@@ -44,8 +44,8 @@ test.describe('AI smoke check', () => {
     const h1 = page.locator('h1', { hasText: '2600hz' });
     await expect(h1, 'topbar h1 missing').toBeVisible();
 
-    const spawnBtn = page.getByRole('button', { name: 'Load example' });
-    await expect(spawnBtn, 'Load example button missing').toBeVisible();
+    const spawnBtn = page.getByTestId('load-example-select');
+    await expect(spawnBtn, 'Load example dropdown missing').toBeVisible();
 
     const errors = cc.pageErrors.length + cc.errors.length;
     if (errors > 0) {
@@ -76,7 +76,7 @@ test.describe('AI smoke check', () => {
   test('canvas: Load example creates 5 Svelte Flow nodes @smoke', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     const nodes = page.locator('.svelte-flow__node');
     await expect(nodes, 'expected 5 module-card nodes after Load example').toHaveCount(5, {
       timeout: 10_000,
@@ -86,7 +86,7 @@ test.describe('AI smoke check', () => {
   test('canvas: spawned nodes are VISUALLY rendered (non-zero bounding rect)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // Bounding rects: cards must be visible on screen (width × height > 0
@@ -114,7 +114,7 @@ test.describe('AI smoke check', () => {
   test('fader: dragging visibly moves the thumb (motorized state reflection)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // First fader on the Analog VCO card = TUNE.
@@ -277,7 +277,7 @@ test.describe('AI smoke check', () => {
   test('clear: Clear button removes all nodes + edges from patch + DOM', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
 
@@ -294,7 +294,7 @@ test.describe('AI smoke check', () => {
   test('node-drag: dragging a card persists position back to the patch graph', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     const vco = page.locator('.svelte-flow__node-analogVco');
@@ -326,7 +326,7 @@ test.describe('AI smoke check', () => {
     const cc = captureConsole(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
 
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
