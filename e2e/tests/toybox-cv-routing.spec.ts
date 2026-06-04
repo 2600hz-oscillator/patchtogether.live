@@ -126,21 +126,40 @@ async function readData(page: Page) {
   });
 }
 
-/** Select a value in the [target ▾] then [param ▾] of a cv row (UI path). */
+/** Select a value in the [target ▾] then [param ▾] of a cv row (UI path).
+ *
+ *  noWaitAfter:true is load-bearing on CI: these <select>s drive plain Svelte
+ *  onchange handlers (write cvRoutes) and never navigate, but Playwright's
+ *  default post-action "waiting for scheduled navigations to finish" window is
+ *  pathologically slow here (~2s/select) because TOYBOX's WebGL rAF compositor
+ *  starves the main thread. Six selects × ~2s of no-op nav-wait pushed the test
+ *  past its 30s budget on CI (it passes in ~5s locally). Skipping the wait
+ *  reclaims that time. */
 async function routeViaUi(
   page: Page,
   port: string,
   targetValue: string,
   paramValue: string,
 ): Promise<void> {
-  await page.locator(`[data-testid="toybox-cv-target-${port}"]`).selectOption(targetValue);
+  await page
+    .locator(`[data-testid="toybox-cv-target-${port}"]`)
+    .selectOption(targetValue, { noWaitAfter: true });
   // Selecting a target auto-picks its first param; explicitly choose the one we
   // want (the param dropdown re-populates from the chosen target).
-  await page.locator(`[data-testid="toybox-cv-param-${port}"]`).selectOption(paramValue);
+  await page
+    .locator(`[data-testid="toybox-cv-param-${port}"]`)
+    .selectOption(paramValue, { noWaitAfter: true });
 }
 
 test.describe('TOYBOX CV routing (Phase 5)', () => {
   test('routes cv1→shader, cv2→combine, cv3→obj via the CV tab + drives each', async ({ page }) => {
+    // TOYBOX runs a WebGL rAF compositor; on CI's software renderer every
+    // Playwright op (select / click / evaluate) is slow, and this test does
+    // many of them (6 selects + ~7 drive/read evaluates). Give it headroom
+    // beyond the 30s default (mirrors the heavy-video specs). noWaitAfter on the
+    // selects already removes the bulk of the CI inflation; this is the safety
+    // margin so a slow runner doesn't clip the tail.
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -160,8 +179,9 @@ test.describe('TOYBOX CV routing (Phase 5)', () => {
 
     await seedDemoPatch(page);
 
-    // Open the CV tab.
-    await page.locator('[data-testid="toybox-cv-toggle"]').click({ force: true });
+    // Open the CV tab. noWaitAfter: pure section-toggle onclick, never navigates
+    // (see routeViaUi for why the post-click nav-wait is costly on CI).
+    await page.locator('[data-testid="toybox-cv-toggle"]').click({ force: true, noWaitAfter: true });
     await page.locator('[data-testid="toybox-cv-rows"]').waitFor({ state: 'visible', timeout: 5_000 });
 
     // ── (a) cv1 → SHADER param (layer 0 'speed') via the UI ──

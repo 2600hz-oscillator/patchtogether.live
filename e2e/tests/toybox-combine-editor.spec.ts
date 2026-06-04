@@ -112,15 +112,30 @@ function dist(a: [number, number, number], b: [number, number, number]): number 
 
 /** Click an editor control by testid. force:true bypasses the fixed bottombar
  *  footer's pointer-interception over the lower card region — the elements are
- *  visible + in the DOM; only the overlay actionability check is in the way. */
+ *  visible + in the DOM; only the overlay actionability check is in the way.
+ *
+ *  noWaitAfter:true is the load-bearing bit for CI: these are pure in-card
+ *  onclick handlers (toggle a section, add an op, arm/wire a port) that never
+ *  navigate. Without it, Playwright spends its default "waiting for scheduled
+ *  navigations to finish" window after EVERY click. On CI that settle is
+ *  pathologically slow (~3s/click) because TOYBOX's WebGL rAF compositor
+ *  starves the main thread, so the 6-click wiring sequence that runs in ~4s
+ *  locally balloons past the 30s test budget and the last click times out.
+ *  Skipping the no-op post-click navigation wait reclaims that time. */
 async function clickEd(page: Page, testid: string): Promise<void> {
-  await page.locator(`[data-testid="${testid}"]`).click({ force: true });
+  await page.locator(`[data-testid="${testid}"]`).click({ force: true, noWaitAfter: true });
 }
 
 test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
   test('add a node + wire it via clicks; persists to node.data + changes the output', async ({
     page,
   }) => {
+    // TOYBOX runs a WebGL rAF compositor; on CI's software renderer the main
+    // thread is slow enough that the multi-step wiring UI flow needs headroom
+    // beyond the 30s default (mirrors the heavy-video specs e.g. freezeframe /
+    // picturebox-limits). noWaitAfter on clicks already removes the bulk of the
+    // CI inflation; this is belt-and-suspenders.
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -236,6 +251,9 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
   });
 
   test('cycle-creating edges are rejected by the editor (output stays valid)', async ({ page }) => {
+    // See the sibling test: TOYBOX's WebGL compositor makes the CI main thread
+    // slow, so the add-op + wire-op + reject-cycle click flow needs headroom.
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
