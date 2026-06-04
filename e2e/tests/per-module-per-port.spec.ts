@@ -700,6 +700,13 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // not a required source — so the outputs-emit sweep (incl. the new
       // sync_out) applies, same as moog921Vco / wavetableVco.
       'analogVco',
+      // TOYBOX — a self-running compositor SOURCE: layer 0 defaults to a GEN
+      // shader that renders with no upstream, so `out` emits a live frame even
+      // bare-spawned. Its layer0_in..layer3_in video inputs are OPTIONAL
+      // per-layer feeds (only sampled when a layer's kind is 'video'), not a
+      // required source — so it takes the normal outputs-emit path, not the
+      // effect-shape skip.
+      'toybox',
     ]);
     const hasUpstreamMediaInput = mod.inputs.some(
       (p) => p.type === 'audio' || p.type === 'video' || p.type === 'mono-video' || p.type === 'image',

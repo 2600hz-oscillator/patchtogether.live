@@ -506,6 +506,20 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'synesthesia.a_video_in': 'video input is consumed card-side ONLY in VIDEO mode (a_mode=1); the sweep runs the default AUDIO mode so a_video_in is a correct no-op on a_band1_audio, and forcing a_mode=1 module-wide would break the a_in audio test on the same observed output (covered by synesthesia-worklet.test.ts + composite spec)',
   'synesthesia.b_video_in': 'video input is consumed card-side ONLY in VIDEO mode (b_mode=1); the sweep runs the default AUDIO mode so b_video_in is a correct no-op on the observed output (covered by synesthesia-worklet.test.ts + composite spec)',
 
+  // ── TOYBOX layer<i>_in: a per-layer video input is ONLY sampled when
+  //    that layer's kind is set to 'video' (node.data.layers[i].kind). The
+  //    default spawn has layer0='gen' + layers1-3='off', so none of the four
+  //    inputs feed the combine → a correct no-op on the observed output. The
+  //    generic sweep seeds only `params` (not `data.layers`), so it can't flip
+  //    a layer to video mode. Same class as synesthesia.a_video_in above.
+  //    Covered by toybox-video-input.spec.ts (drives layer0_in with a video
+  //    source + layer0 kind='video' + asserts the output changes) + the
+  //    per-combine-mode VRT.
+  'toybox.layer0_in': 'video input sampled only when layer0 kind=video (data-side, not param); covered by toybox-video-input.spec.ts + combine VRT',
+  'toybox.layer1_in': 'video input sampled only when layer1 kind=video (data-side, not param); covered by toybox-video-input.spec.ts + combine VRT',
+  'toybox.layer2_in': 'video input sampled only when layer2 kind=video (data-side, not param); covered by toybox-video-input.spec.ts + combine VRT',
+  'toybox.layer3_in': 'video input sampled only when layer3 kind=video (data-side, not param); covered by toybox-video-input.spec.ts + combine VRT',
+
   // ── SEQUENCER reset jumps the playhead but produces NO new output
   //    that scope can see beyond the gate train already firing; the
   //    `position_cv` port is the actual observable. Covered by sequencer

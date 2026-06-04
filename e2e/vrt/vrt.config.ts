@@ -45,6 +45,7 @@ const FULL_MATCH = [
   'vrt-synesthesia-composite.spec.ts',
   'vrt-synesthesia-video.spec.ts',
   'vrt-toybox.spec.ts',
+  'vrt-toybox-combine.spec.ts',
   'playhead.spec.ts',
   'interactions.spec.ts',
   'groups.spec.ts',
