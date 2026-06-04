@@ -27,7 +27,7 @@
   //   relative path (the bluebox.ts pattern), so the picture matches the sound.
   //
   // PatchPanel exposes EVERY input handle (pitch + 8 CVs) + the L / R audio
-  // output handles.
+  // output handles + the SYNC sine reference + the VIDEO out.
 
   import type { NodeProps } from '@xyflow/svelte';
   import { onDestroy, onMount } from 'svelte';
@@ -960,6 +960,10 @@
   const outputs: PortDescriptor[] = [
     { id: 'L', label: 'L', cable: 'audio' },
     { id: 'R', label: 'R', cable: 'audio' },
+    // SYNC — a pure sine at the playback fundamental, phase-locked to the L/R
+    // slice readout. Hard-sync other oscillators to CUBE or use it as a clean
+    // reference / sub.
+    { id: 'sync', label: 'SYNC', cable: 'audio' },
     { id: 'video_out', label: 'VIDEO', cable: 'mono-video' },
   ];
 

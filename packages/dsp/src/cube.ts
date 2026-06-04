@@ -48,9 +48,17 @@
 //                        input the worklet reads directly; the rest of the CV
 //                        inputs are summed into AudioParams by the factory.
 //
-// Outputs (one stereo output, 2 channels — the web factory fans these into
-// SEPARATE L and R node ports via a ChannelSplitter so the spread survives):
-//   outputs[0] = [L, R]
+// Outputs:
+//   outputs[0] = [L, R] — the slice audio (one stereo output, 2 channels; the
+//                web factory fans these into SEPARATE L and R node ports via a
+//                ChannelSplitter so the spread survives). BYTE-IDENTICAL to the
+//                pre-SYNC behavior — the SYNC output below is purely additive.
+//   outputs[1] = [SYNC] — a pure SINE at the playback fundamental, PHASE-LOCKED
+//                to the slice readout (it reuses the SAME `phase` accumulator, so
+//                it tracks pitch + tune + fine exactly and stays in lock with the
+//                main output). Players hard-sync other oscillators to CUBE or use
+//                it as a clean reference / sub. Mono, ~±1. NOT scaled by LEVEL
+//                (it's a reference, not part of the voice's loudness).
 
 import {
   WtParamSmoother,
@@ -430,13 +438,25 @@ class CubeProcessor extends AudioWorkletProcessor {
     const out = outputs[0];
     const outL = out?.[0];
     const outR = out?.[1] ?? out?.[0];
-    if (!outL) return true;
-    const n = outL.length;
+    // SYNC reference output (output 1, mono). Optional — older graphs / harnesses
+    // may construct the node with a single output; guard so the slice path is
+    // untouched when it's absent.
+    const outSync = outputs[1]?.[0];
+    // Chrome hands `process()` an EMPTY channel array for any output that has no
+    // active downstream connection — so when ONLY `sync` is patched, outputs[0]
+    // is [] (outL undefined) and vice-versa. Drive the block off whichever
+    // output is live; bail only if nothing is connected at all. (Previously this
+    // bailed on `!outL`, which silenced SYNC whenever the L/R output was the
+    // unpatched one.)
+    const n = outL?.length ?? outSync?.length ?? 0;
+    if (n === 0) return true;
 
-    // Silent until all three tables are loaded.
+    // Silent until all three tables are loaded. SYNC tracks the voice: no voice
+    // (no tables) → no reference tone, so it stays silent here too.
     if (!this.framesLoaded()) {
-      outL.fill(0);
+      if (outL) outL.fill(0);
       if (outR && outR !== outL) outR.fill(0);
+      if (outSync) outSync.fill(0);
       return true;
     }
 
@@ -488,8 +508,13 @@ class CubeProcessor extends AudioWorkletProcessor {
       const phaseN = this.phase;
       const l = readFrame(this.waveL, phaseN) * level;
       const r = readFrame(this.waveR, phaseN) * level;
-      outL[i] = clampRange(l, -4, 4);
+      if (outL) outL[i] = clampRange(l, -4, 4);
       if (outR && outR !== outL) outR[i] = clampRange(r, -4, 4);
+      // SYNC: a pure SINE at the playback fundamental, read from the SAME phase
+      // accumulator as the slice → automatically PHASE-LOCKED to the main output
+      // (it advances by the identical freq/sr step per sample). Not gain-scaled
+      // by LEVEL — it's a clean ±1 reference / sub for hard-syncing downstream.
+      if (outSync) outSync[i] = Math.sin(2 * Math.PI * phaseN);
     }
     void frameLen;
 
