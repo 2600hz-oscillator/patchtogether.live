@@ -191,6 +191,23 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    spawn-once-perturb pattern.
   bentbox: 'deep shader chain; needs longer settle window than 1.5s; covered by bentbox.spec.ts',
 
+  // ── b3ntb0x — bentbox's circuit-level NTSC re-arch (4-pass encode→bend→
+  //    decode→CRT). Its `out` is a heavily ANIMATED composite: per-line sync
+  //    drift + frame persistence + the (itself-animated) acidwarp probe give a
+  //    per-frame luma-variance with a HUGE intrinsic jitter floor — the control
+  //    run alone measures var≈1270 ±580. Sampling 5 snapshots × 2 spawns, the
+  //    mean-of-5 has a standard error far larger than any input's footprint:
+  //    the SAME input (bend_a) reads Δμvar≈63 one run and ≈2.8 the next, so the
+  //    metric can't reliably distinguish ANY input from the source's own
+  //    animation — every input straddles the Δμvar>5 threshold run-to-run.
+  //    Whole-module exempt (same class as bentbox / mandelbulb animated video).
+  //    Coverage is deterministic + stronger: 35 unit tests (the encode→demod
+  //    ROUND-TRIP proves the carrier path is a real invertible signal, plus
+  //    burst-starve colour-kill/crawl + mirror folds + gate edges) and a
+  //    real-GL e2e (b3ntb0x.spec.ts: non-black decode + Sync-Crush/Enhance bend
+  //    proof + CV param mutation). VRT-exempt for the same animation reason.
+  b3ntb0x: 'animated NTSC composite with a ±580 per-frame variance floor that swamps every input in the 5-snapshot window (bend_a swings Δμvar 63→2.8 run-to-run); whole-module exempt (bentbox/mandelbulb animated-video class); covered by b3ntb0x.test.ts (35 unit, incl. encode→demod round-trip + burst-starve) + b3ntb0x.spec.ts real-GL bend proof',
+
   // ── reshaper / ruttetra — coordinate-displacement video effects
   //    where x/y inputs displace pixels from the z input. Even with
   //    intensity=1, RASTERIZE-from-noise on x/y produces displacements
@@ -955,35 +972,9 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    mandleblot VRT coverage which screenshots distinct zoom depths.
   'mandleblot.zoom_cv': 'zooms a self-running high-variance fractal; frame-variance metric stays saturated across zoom (video-variance class); covered by mandleblot VRT/specs',
 
-  // ── B3NTB0X (b3ntb0x.ts): NTSC composite re-arch. b3ntb0x's `out` is an
-  //    ANIMATED composite (per-line sync drift + frame persistence), so its
-  //    per-frame luma-variance carries a LARGE intrinsic jitter floor (the
-  //    acidwarp probe + the drift give a variance RANGE of ~±515 around a
-  //    ~1250 mean). The luma-only observer ((R+G+B)/3) can only see an input
-  //    whose perturbation clears that floor (Δμvar>5 || ΔRvar>10 || Δμnb>0.01).
-  //    The STRUCTURAL inputs (bend_a-d, enhance, bias, ac_dc, sync_crush,
-  //    feedback, tbc, tube_bloom, overscan, barrel) move luma geometry/levels
-  //    enough to clear it reliably and provide the real coverage. The four
-  //    inputs below act in the CHROMA or SPATIAL-FOLD domain — their luma
-  //    footprint sits in the noise floor and straddles the threshold run-to-run
-  //    (the documented "video-variance class", same as acidwarp.speed_cv):
-  //      * mirror_x/y_gate — momentary UV FOLD (left/right or top/bottom). The
-  //        fold genuinely re-maps pixels (proven by b3ntb0x.test.ts
-  //        b3ntb0xMirrorUv + b3ntb0xMirrorGateTick) but a brightness-symmetric
-  //        fold barely shifts GLOBAL luma-variance — content-luck per run.
-  //      * chroma_leak_cv — bleeds chroma into luma as dot-crawl; a sub-pixel
-  //        HF texture whose contribution sits under the drift floor.
-  //      * burst_starve_cv — colour-killer + subcarrier-crawl (decode pass);
-  //        a CHROMA-domain effect whose luma crawl rides under the floor. The
-  //        decode math is pinned deterministically by b3ntb0x.test.ts
-  //        (b3ntb0xBurstStarve: identity at 0, colour-kill + crawl at 1).
-  //    Exempt all four so none becomes a latent flake; each has dedicated
-  //    deterministic coverage (b3ntb0x.test.ts + the b3ntb0x.spec.ts bend
-  //    proof + the VRT-exempt animated source).
-  'b3ntb0x.mirror_x_gate':  'momentary UV-fold; brightness-symmetric fold is luma-variance-invisible on the animated source (video-variance class; content-luck → latent flake); fold proven by b3ntb0x.test.ts (b3ntb0xMirrorUv + b3ntb0xMirrorGateTick)',
-  'b3ntb0x.mirror_y_gate':  'momentary UV-fold; brightness-symmetric fold is luma-variance-invisible on the animated source (video-variance class; content-luck → latent flake); fold proven by b3ntb0x.test.ts (b3ntb0xMirrorUv + b3ntb0xMirrorGateTick)',
-  'b3ntb0x.chroma_leak_cv': 'chroma→luma dot-crawl; sub-pixel HF texture under the animated source\'s ±515 variance floor (video-variance class; straddles Δμvar threshold run-to-run); covered by b3ntb0x.spec.ts bend proof + VRT-exempt source',
-  'b3ntb0x.burst_starve_cv':'colour-killer + subcarrier-crawl in the decode pass; chroma-domain luma footprint under the animated source\'s ±515 variance floor (video-variance class); decode math pinned by b3ntb0x.test.ts (b3ntb0xBurstStarve)',
+  // (b3ntb0x is WHOLE-MODULE exempt in BEHAVIORAL_MODULE_EXEMPT — its animated
+  //  composite's ±580 variance floor swamps EVERY input, not just a few, so a
+  //  per-port carve-out can't make it reliable. See that entry for the detail.)
 
   // ── DX7 poly (polyPitchGate): the universal sink reads DX7's summed
   //    mono `out`. Driving the poly note/gate input DOES retrigger the FM
