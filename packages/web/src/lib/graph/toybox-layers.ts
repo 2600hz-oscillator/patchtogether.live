@@ -32,6 +32,7 @@ import {
   type ToyboxLayer,
   type ToyboxLayerKind,
   type ToyboxObjMaterial,
+  type ToyboxSurfaceMode,
 } from '$lib/video/toybox-content';
 
 /** Clamp an arbitrary value to a valid layer index (0..LAYER_COUNT-1). */
@@ -74,7 +75,9 @@ export function ensureMaterial(nodeId: string, index: number): ToyboxObjMaterial
  * original layer-0 init):
  *   - 'obj' → seed a material (+ default model + its preferred matcap) if absent.
  *   - 'gen' | 'shader' → seed a contentId + param defaults if absent.
- *   - 'off' / 'video' → just set the kind.
+ *   - 'image' / 'video' → just set the kind (the card drives the file picker;
+ *     image bytes / video metadata land on the layer when a file is chosen).
+ *   - 'off' → just set the kind.
  */
 export function setLayerKind(nodeId: string, index: number, kind: ToyboxLayerKind): void {
   ydoc.transact(() => {
@@ -169,6 +172,59 @@ export function setLayerMaterialField(
     const mat = ensureMaterial(nodeId, index);
     if (!mat) return;
     (mat as unknown as Record<string, number>)[key as string] = value;
+  }, LOCAL_ORIGIN);
+}
+
+/**
+ * Set the OBJ SURFACE-mapping mode (Phase 7): 'uv' (sample the source by mesh
+ * UVs — the default) or 'projective' (project the source from a viewpoint).
+ * Scalar string field, in place.
+ */
+export function setLayerSurfaceMode(
+  nodeId: string,
+  index: number,
+  mode: ToyboxSurfaceMode,
+): void {
+  ydoc.transact(() => {
+    const mat = ensureMaterial(nodeId, index);
+    if (!mat) return;
+    mat.surfaceMode = mode === 'projective' ? 'projective' : 'uv';
+  }, LOCAL_ORIGIN);
+}
+
+/**
+ * Set an IMAGE layer's encoded bytes + filename (PICTUREBOX-style; both ride the
+ * Y.Doc so rack-mates see the same picture). Pass bytes=null to clear back to the
+ * idle pattern. Writes both fields in ONE transact so peers see one update.
+ */
+export function setLayerImage(
+  nodeId: string,
+  index: number,
+  bytes: string | null,
+  name: string | null,
+): void {
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    layer.imageBytes = bytes;
+    layer.imageName = name;
+  }, LOCAL_ORIGIN);
+}
+
+/**
+ * Set a VIDEO layer's filename metadata (VIDEOBOX-style: only the NAME rides the
+ * Y.Doc — the bytes are local-file + card-owned). Replaces videoMeta in place
+ * (or seeds it). Pass null to clear.
+ */
+export function setLayerVideoName(nodeId: string, index: number, name: string | null): void {
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    if (!layer.videoMeta || typeof layer.videoMeta !== 'object') {
+      layer.videoMeta = { name };
+    } else {
+      layer.videoMeta.name = name;
+    }
   }, LOCAL_ORIGIN);
 }
 

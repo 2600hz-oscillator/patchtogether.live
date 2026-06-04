@@ -24,7 +24,10 @@ import {
   setLayerModel,
   setLayerMatcap,
   setLayerSurfaceSource,
+  setLayerSurfaceMode,
   setLayerMaterialField,
+  setLayerImage,
+  setLayerVideoName,
 } from './toybox-layers';
 import {
   DEFAULT_CONTENT_ID,
@@ -245,5 +248,74 @@ describe('real-Y.Doc in-place trap (second write to a synced layer)', () => {
     expect(layers()[0]!.contentId).toBe('hsv-plasma');
     expect(layers()[1]!.material!.modelId).toBe(DEFAULT_MODEL_ID);
     expect(layers()[2]!.contentId).toBe('cos-gradient');
+  });
+});
+
+describe('image / video input layer kinds (#39)', () => {
+  it('setLayerKind → image / video just sets the kind (no content/material seed)', () => {
+    makeToybox();
+    setLayerKind(TID, 1, 'image');
+    expect(layers()[1]!.kind).toBe('image');
+    expect(layers()[1]!.material).toBeUndefined();
+    expect(layers()[1]!.contentId).toBeNull();
+
+    setLayerKind(TID, 2, 'video');
+    expect(layers()[2]!.kind).toBe('video');
+    expect(layers()[2]!.material).toBeUndefined();
+  });
+
+  it('setLayerImage writes bytes + name on the targeted layer (synced fields)', () => {
+    makeToybox();
+    setLayerKind(TID, 1, 'image');
+    setLayerImage(TID, 1, 'BASE64BYTES==', 'cat.jpg');
+    expect(layers()[1]!.imageBytes).toBe('BASE64BYTES==');
+    expect(layers()[1]!.imageName).toBe('cat.jpg');
+    // A second write (now a synced Y type) must not throw + must update.
+    expect(() => setLayerImage(TID, 1, 'OTHER==', 'dog.jpg')).not.toThrow();
+    expect(layers()[1]!.imageBytes).toBe('OTHER==');
+    expect(layers()[1]!.imageName).toBe('dog.jpg');
+    // Clearing.
+    setLayerImage(TID, 1, null, null);
+    expect(layers()[1]!.imageBytes).toBeNull();
+    expect(layers()[1]!.imageName).toBeNull();
+  });
+
+  it('setLayerVideoName writes ONLY the filename (no bytes); replaces in place', () => {
+    makeToybox();
+    setLayerKind(TID, 2, 'video');
+    setLayerVideoName(TID, 2, 'clip.mp4');
+    expect(layers()[2]!.videoMeta!.name).toBe('clip.mp4');
+    // Second write mutates the now-synced videoMeta in place (no throw).
+    expect(() => setLayerVideoName(TID, 2, 'clip2.webm')).not.toThrow();
+    expect(layers()[2]!.videoMeta!.name).toBe('clip2.webm');
+    // No image bytes leaked onto a video layer.
+    expect(layers()[2]!.imageBytes).toBeUndefined();
+  });
+});
+
+describe('projective surface mode (#45)', () => {
+  it('setLayerSurfaceMode flips between uv + projective on the OBJ material', () => {
+    makeToybox();
+    setLayerKind(TID, 0, 'obj');
+    // default (unset) → engine treats as 'uv'; explicit set persists.
+    setLayerSurfaceMode(TID, 0, 'projective');
+    expect(layers()[0]!.material!.surfaceMode).toBe('projective');
+    setLayerSurfaceMode(TID, 0, 'uv');
+    expect(layers()[0]!.material!.surfaceMode).toBe('uv');
+    // unrecognised falls back to 'uv'.
+    setLayerSurfaceMode(TID, 0, 'bogus' as unknown as 'uv');
+    expect(layers()[0]!.material!.surfaceMode).toBe('uv');
+  });
+
+  it('projector numeric fields (projUseCamera / projPos* / projFov) ride setLayerMaterialField', () => {
+    makeToybox();
+    setLayerKind(TID, 0, 'obj');
+    setLayerMaterialField(TID, 0, 'projUseCamera', 1);
+    setLayerMaterialField(TID, 0, 'projPosZ', 2.5);
+    setLayerMaterialField(TID, 0, 'projFov', 1.1);
+    const mat = layers()[0]!.material!;
+    expect(mat.projUseCamera).toBe(1);
+    expect(mat.projPosZ).toBe(2.5);
+    expect(mat.projFov).toBe(1.1);
   });
 });
