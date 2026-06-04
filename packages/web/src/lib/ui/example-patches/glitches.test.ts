@@ -16,7 +16,7 @@
 //      bundled image bytes attached.
 //
 // The audio engine is NOT exercised here — that half of the load path is
-// covered by the @load-tagged Playwright spec (glitches-button.spec.ts).
+// covered by the @load-tagged Playwright spec (load-example-dropdown.spec.ts).
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';

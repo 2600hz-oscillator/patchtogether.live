@@ -103,6 +103,10 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
   for (const mod of REGISTRY) {
     const skipReason = SKIP_DEF_VS_UI[mod.type];
     const fn = async ({ page }: { page: Page }): Promise<void> => {
+      // WebGL-heavy cards (mandelbulb/toybox/cube/quadralogical/b3ntb0x/…)
+      // paint their connection handles slowly on CI's software renderer, so the
+      // 30s default times out while handles are still mounting. Give headroom.
+      test.setTimeout(60_000);
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
@@ -116,6 +120,15 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
       ]);
 
       const cardClass = `svelte-flow__node-${mod.type}`;
+      // Wait for ALL handles to render before snapshotting their ids. A bare
+      // count() taken mid-render undercounts (or nth(i) times out) on slow GL
+      // cards → flaky id-mismatch / getAttribute timeout. Settling on the
+      // def's port total is deterministic and only costs time for slow cards.
+      const expectedHandles = mod.inputs.length + mod.outputs.length;
+      await expect(
+        page.locator(`.${cardClass}`).locator('.svelte-flow__handle'),
+        `${mod.type}: all ${expectedHandles} handles rendered before reading ids`,
+      ).toHaveCount(expectedHandles, { timeout: 45_000 });
       const { inputs: handleInputs, outputs: handleOutputs } = await readHandleIds(
         page,
         cardClass,

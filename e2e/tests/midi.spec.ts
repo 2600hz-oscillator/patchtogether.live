@@ -83,7 +83,7 @@ test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page
 
   // (b) Load the demo patch (non-MIDI) + reconcile + auto-spawn TIMELORDE.
   //     This is the boot+patch path the eager trigger used to fire on.
-  await page.getByRole('button', { name: 'GLITCHES GET RICHES' }).click();
+  await page.getByTestId('load-example-select').selectOption('glitches');
   await expect(page.locator('.svelte-flow__node').first()).toBeVisible({ timeout: 20_000 });
   // Let factory timers (e.g. COCOA DELAY's 16ms syncPeriod poll, if any) run.
   await page.waitForTimeout(300);

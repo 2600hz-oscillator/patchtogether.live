@@ -309,7 +309,7 @@ set('out', 'master',   0.4);`;
 
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: /load example/i }).click();
+  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
     return Object.keys(w.__patch.nodes).length >= 5;
