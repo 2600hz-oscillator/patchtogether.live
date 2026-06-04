@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "note": "TOYBOX Phase 1 content bank. Each entry declares its float-uniform params — the single source of truth for the card faders (and later CV targets). GLSL is fetched lazily from `glsl` on selection (NOT JS-bundled). GEN families live under `gen`, FX families under `shaders`.",
+  "shaders": [
+    {
+      "id": "hsv-plasma",
+      "label": "HSV PLASMA",
+      "family": "FX",
+      "glsl": "/toybox/shaders/hsv-plasma.frag.glsl",
+      "params": [
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 1.0, "curve": "linear" },
+        { "id": "hue",   "label": "HUE",   "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear" },
+        { "id": "sat",   "label": "SAT",   "min": 0.0, "max": 1.0, "default": 1.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "cos-gradient",
+      "label": "COS GRADIENT",
+      "family": "FX",
+      "glsl": "/toybox/shaders/cos-gradient.frag.glsl",
+      "params": [
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 0.5, "curve": "linear" },
+        { "id": "phase", "label": "PHASE", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear" },
+        { "id": "scale", "label": "SCALE", "min": 0.5, "max": 8.0, "default": 3.0, "curve": "linear" }
+      ]
+    }
+  ],
+  "gen": [
+    {
+      "id": "noise-fbm",
+      "label": "NOISE FBM",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/noise-fbm.frag.glsl",
+      "params": [
+        { "id": "scale", "label": "SCALE", "min": 0.5, "max": 6.0, "default": 2.0, "curve": "linear" },
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 2.0, "default": 0.4, "curve": "linear" },
+        { "id": "warp",  "label": "WARP",  "min": 0.0, "max": 2.0, "default": 0.8, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "worley-cells",
+      "label": "WORLEY CELLS",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/worley-cells.frag.glsl",
+      "params": [
+        { "id": "density", "label": "DENSITY", "min": 1.0, "max": 16.0, "default": 6.0, "curve": "linear" },
+        { "id": "edge",    "label": "EDGE",    "min": 0.0, "max": 2.0,  "default": 1.0, "curve": "linear" },
+        { "id": "speed",   "label": "SPEED",   "min": 0.0, "max": 3.0,  "default": 0.6, "curve": "linear" }
+      ]
+    }
+  ],
+  "models": [
+    { "id": "spot",       "label": "SPOT THE COW", "obj": "/toybox/models/spot.obj",       "matcap": 1, "license": "CC0-1.0" },
+    { "id": "teapot",     "label": "UTAH TEAPOT",  "obj": "/toybox/models/teapot.obj",     "matcap": 0, "license": "CC0-1.0" },
+    { "id": "chess-pawn", "label": "CHESS PAWN",   "obj": "/toybox/models/chess-pawn.obj", "matcap": 2, "license": "CC0-1.0" },
+    { "id": "cube",       "label": "CUBE",         "builtin": "cube",      "matcap": 0, "license": "builtin" },
+    { "id": "sphere",     "label": "SPHERE",       "builtin": "sphere",    "matcap": 0, "license": "builtin" },
+    { "id": "torus",      "label": "TORUS",        "builtin": "torus",     "matcap": 1, "license": "builtin" },
+    { "id": "hypercube",  "label": "HYPERCUBE",    "builtin": "hypercube", "matcap": 2, "license": "builtin" }
+  ]
+}

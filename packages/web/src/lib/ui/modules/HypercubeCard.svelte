@@ -1,33 +1,21 @@
 <script lang="ts">
-  // CubeCard — 3D wavetable-navigator oscillator UI (slice 4).
+  // HypercubeCard — 4D tesseract oscillator UI (sibling of CubeCard).
   //
-  // Controls:
-  //   • 3 wavetable dropdowns (FLOOR / WALL / CEILING), each picking a factory
-  //     table or a baked preset (reuses WAVESCULPT's loader + list — writes
-  //     node.data[slot] so the cube factory's poll loop posts loadWavetable).
-  //   • Knobs: TUNE / FINE / MORPH / CONNECT / CRUSH / SPREAD / Y /
-  //     ROT X / ROT Y / ROT Z / LEVEL.
-  //   • Toggles: WRAP (silent↔mirror-fold), MATERIAL (SMOOTH↔HARD).
-  //   • View-only camera: ZOOM / VIEW X / VIEW Y / VIEW Z — transform the
-  //     visualization only (no effect on sound or selected slice).
+  // Cloned from CubeCard, extended for HYPERCUBE:
+  //   • a FOURTH wavetable dropdown (HOLO) — auto via the HYPERCUBE_SLOTS loop.
+  //   • an ALPHA knob + ALPHA CV port (the slice's 4th-dimension w coordinate).
+  //   • the rendered field is the ALPHA-BLENDED tesseract cross-section
+  //     (f4 = (1-alpha)·f3 + alpha·dH) so the picture matches the sound — the
+  //     SHARED cube-dsp.fieldFromHeights handles the blend when given holoH +
+  //     alpha (no-op when absent, so ALPHA=0 looks exactly like a 3-table CUBE).
+  //   • SCHLEGEL TESSERACT viz: an inner cube (the HOLO / alpha=1 field) nested
+  //     inside the outer cube (the alpha=0 field), with 8 connector edges — the
+  //     classic cube-within-a-cube tesseract projection. The live selection slice
+  //     plane lerps inward toward the inner cube as ALPHA rises (alpha = the w
+  //     depth). rebuildVolume + cubeEdges are reused for both cubes.
   //
-  // Visualization (issue #2): an actual rotatable 3D WebGL2 render of the CUBE.
-  //   The scalar field ("the cube" — the floor/wall/ceiling morph volume) is
-  //   sampled on the CPU into a small voxel volume and drawn as a back-to-front
-  //   alpha-blended stack of axis-aligned Z-slices (translucent voxel volume).
-  //   The live SELECTION SLICE is rendered as a square plane cutting through the
-  //   cube, positioned by slice_y + rotated by slice_rx/ry/rz — exactly the
-  //   plane the surface-height scan reads. The view-only camera (view_zoom +
-  //   view_rot_x/y/z) orbits it. The OUTPUT waveform readout (from the worklet
-  //   snapshot) is folded in as a 2D overlay.
-  //
-  //   Pipeline reuses WAVESCULPT's proven approach: a private OffscreenCanvas +
-  //   WebGL2 (scene FBO → blit to the visible <canvas> via drawImage). The field
-  //   math is the SAME pure cube-dsp.ts the worklet/ART run — imported via a
-  //   relative path (the bluebox.ts pattern), so the picture matches the sound.
-  //
-  // PatchPanel exposes EVERY input handle (pitch + 8 CVs) + the L / R audio
-  // output handles + the SYNC sine reference + the VIDEO out.
+  // PatchPanel exposes EVERY input handle (pitch + 9 CVs incl. ALPHA) + the
+  // L / R audio output handles + the video_out.
 
   import type { NodeProps } from '@xyflow/svelte';
   import { onDestroy, onMount } from 'svelte';
@@ -36,7 +24,7 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
-  import { cubeDef, CUBE_SLOTS, CUBE_DEFAULT_TABLES, installCubeFrameDrawer, uninstallCubeFrameDrawer, type CubeSlot, type CubeData, type CubeSlotData } from '$lib/audio/modules/cube';
+  import { hypercubeDef, HYPERCUBE_SLOTS, HYPERCUBE_DEFAULT_TABLES, installHypercubeFrameDrawer, uninstallHypercubeFrameDrawer, type HypercubeSlot, type HypercubeData, type HypercubeSlotData } from '$lib/audio/modules/hypercube';
   import { getFactoryTables, framesToPlain } from '$lib/audio/wavetable-factory-tables';
   import { WAVETABLE_PRESETS, loadWavetablePreset } from '$lib/audio/wavetable-presets';
   import { parseE352Wav } from '$lib/audio/wavetable-parser';
@@ -45,16 +33,10 @@
   import {
     columnHeights,
     fieldFromHeights,
-    spaceCrushCoord,
-    diffusePull,
-    lowestInfoFace,
     type FieldParams,
-    type DiffuseTarget,
     type Material,
   } from '../../../../../dsp/src/lib/cube-dsp';
 
-  // CUBE video_out source port — used to detect a downstream consumer so the
-  // viz can keep rendering even when the screen is toggled OFF (item #2).
   const VIDEO_OUT_PORT_ID = 'video_out';
 
   let { id, data }: NodeProps = $props();
@@ -62,9 +44,9 @@
   const engineCtx = useEngine();
 
   const defaultFor = (pid: string): number =>
-    cubeDef.params.find((p) => p.id === pid)!.defaultValue;
-  const minFor = (pid: string): number => cubeDef.params.find((p) => p.id === pid)!.min;
-  const maxFor = (pid: string): number => cubeDef.params.find((p) => p.id === pid)!.max;
+    hypercubeDef.params.find((p) => p.id === pid)!.defaultValue;
+  const minFor = (pid: string): number => hypercubeDef.params.find((p) => p.id === pid)!.min;
+  const maxFor = (pid: string): number => hypercubeDef.params.find((p) => p.id === pid)!.max;
 
   function paramVal(k: string): number {
     const v = node?.params?.[k];
@@ -84,19 +66,10 @@
   function toggleWrap(): void { set('wrap')(wrapOn ? 0 : 1); }
   function toggleMaterial(): void { set('material')(materialHard ? 0 : 1); }
 
-  // ───────────────── SCREEN on/off + downstream detection (item #2) ─────────────────
-  //
-  // SCREEN OFF + video_out UNPATCHED ⇒ skip ALL visual computation (the rAF GL
-  // render loop AND the display-only field/slice/wave draws). Audio is untouched.
-  // When the screen is ON, *or* video_out has a downstream consumer, the viz
-  // renders as normal (a patched video_out must keep emitting frames).
+  // ───────────────── SCREEN on/off + downstream detection ─────────────────
   let screenOn = $derived(paramVal('screen_on') >= 0.5);
   function toggleScreen(): void { set('screen_on')(screenOn ? 0 : 1); }
 
-  // patch.edges is a Yjs-backed proxy; reading it in a $derived isn't reactive
-  // on its own. Mirror DoomCard's pattern: an edges-map observer bumps a real
-  // $state signal so videoOutPatched re-derives when a cable is added/removed
-  // (including a far-side patch in a multiplayer rack).
   let edgesVersion = $state(0);
   let videoOutPatched = $derived<boolean>(
     (void edgesVersion,
@@ -104,7 +77,6 @@
         (e) => e?.source?.nodeId === id && e?.source?.portId === VIDEO_OUT_PORT_ID,
       )),
   );
-  // Should the viz compute/render at all this frame? (the central perf gate.)
   let vizActive = $derived<boolean>(screenOn || videoOutPatched);
   let edgesObserver: (() => void) | null = null;
   function attachEdgesObserver(): void {
@@ -113,77 +85,57 @@
       const handler = (): void => { edgesVersion++; };
       edgesMap.observeDeep(handler);
       edgesObserver = () => { try { edgesMap.unobserveDeep(handler); } catch { /* */ } };
-      edgesVersion++; // seed for an already-patched cable at mount
+      edgesVersion++;
     } catch { /* ydoc unavailable (test env) — videoOutPatched stays false */ }
   }
 
   // ───────────────── per-slot wavetable selection (node.data) ─────────────────
-  const SLOT_LABEL: Record<CubeSlot, string> = { floor: 'FLOOR', wall: 'WALL', ceiling: 'CEILING' };
+  const SLOT_LABEL: Record<HypercubeSlot, string> = { floor: 'FLOOR', wall: 'WALL', ceiling: 'CEILING', holo: 'HOLO' };
 
-  function slotData(slot: CubeSlot): CubeSlotData {
-    const d = (node?.data ?? {}) as CubeData;
-    return (d[slot] as CubeSlotData | undefined) ?? {};
+  function slotData(slot: HypercubeSlot): HypercubeSlotData {
+    const d = (node?.data ?? {}) as HypercubeData;
+    return (d[slot] as HypercubeSlotData | undefined) ?? {};
   }
-  // The <select> value MUST equal an existing <option> value or the dropdown
-  // renders blank. A loaded preset/file stores source:'user' (+ a label), which
-  // matches no factory:/preset: option — so (issue #3) we select the synthetic
-  // 'user' option and render it labelled with the stored filename. This mirrors
-  // WAVESCULPT's oscSource/oscLabel + `<option value="user">USER · …` pattern,
-  // and because it reads straight from node.data it survives a patch reload.
-  function slotSelectValue(slot: CubeSlot): string {
+  function slotSelectValue(slot: HypercubeSlot): string {
     const sd = slotData(slot);
     if (sd.source === 'user') return 'user';
-    return sd.source ?? `factory:${CUBE_DEFAULT_TABLES[slot]}`;
+    return sd.source ?? `factory:${HYPERCUBE_DEFAULT_TABLES[slot]}`;
   }
-  /** Human label of the currently-loaded table for a slot (the loaded filename
-   *  for a user table, else the factory table's label). */
-  function slotLabel(slot: CubeSlot): string {
+  function slotLabel(slot: HypercubeSlot): string {
     const sd = slotData(slot);
     if (sd.source === 'user') return sd.label ?? 'USER';
-    const src = sd.source ?? `factory:${CUBE_DEFAULT_TABLES[slot]}`;
+    const src = sd.source ?? `factory:${HYPERCUBE_DEFAULT_TABLES[slot]}`;
     if (src.startsWith('factory:')) {
       const fid = src.slice('factory:'.length);
       return factoryTables.find((t) => t.id === fid)?.label ?? fid;
     }
     return src;
   }
-  // A cheap signature of WHICH table each slot currently holds, so the viz
-  // rebuilds (item #1: viz updates on reload + item #3: only when it must).
-  // Reads node.data (reactive via the snapshot bus) so it changes the instant a
-  // table is swapped. Doesn't include frame contents — the source/label change
-  // on every distinct table, which is enough to invalidate the cached field.
-  function slotTableSig(slot: CubeSlot): string {
+  function slotTableSig(slot: HypercubeSlot): string {
     const sd = slotData(slot);
-    return `${sd.source ?? `factory:${CUBE_DEFAULT_TABLES[slot]}`}:${sd.label ?? ''}:${sd.frames?.length ?? 0}`;
+    return `${sd.source ?? `factory:${HYPERCUBE_DEFAULT_TABLES[slot]}`}:${sd.label ?? ''}:${sd.frames?.length ?? 0}`;
   }
-  let tableSig = $derived(`${slotTableSig('floor')}|${slotTableSig('wall')}|${slotTableSig('ceiling')}`);
+  let tableSig = $derived(HYPERCUBE_SLOTS.map((s) => slotTableSig(s)).join('|'));
 
-  let slotStatus = $state<Record<CubeSlot, string | null>>({ floor: null, wall: null, ceiling: null });
-  // RELOAD FIX (item #1): the preset <select> gets its OWN selection state that
-  // is reset to '' after every load — so re-picking the SAME preset (or a
-  // different one) ALWAYS fires `change` (a controlled <select> whose bound
-  // value never changes won't re-fire on re-select). The old combined dropdown
-  // pinned its value to 'user' after any load, so loading a different table
-  // could silently no-op. Mirrors WAVESCULPT's separate preset selector +
-  // file-input value reset.
-  let presetSelection = $state<Record<CubeSlot, string>>({ floor: '', wall: '', ceiling: '' });
+  let slotStatus = $state<Record<HypercubeSlot, string | null>>({ floor: null, wall: null, ceiling: null, holo: null });
+  let presetSelection = $state<Record<HypercubeSlot, string>>({ floor: '', wall: '', ceiling: '', holo: '' });
 
-  function ensureSlot(slot: CubeSlot): CubeSlotData | null {
+  function ensureSlot(slot: HypercubeSlot): HypercubeSlotData | null {
     const t = patch.nodes[id];
     if (!t) return null;
     if (!t.data) t.data = {};
-    const d = t.data as CubeData;
+    const d = t.data as HypercubeData;
     if (!d[slot]) (d as Record<string, unknown>)[slot] = {};
-    return d[slot] as CubeSlotData;
+    return d[slot] as HypercubeSlotData;
   }
-  function selectFactory(slot: CubeSlot, factoryId: string): void {
+  function selectFactory(slot: HypercubeSlot, factoryId: string): void {
     const sd = ensureSlot(slot); if (!sd) return;
     sd.source = `factory:${factoryId}`;
     delete sd.frames;
     delete sd.label;
     slotStatus[slot] = null;
   }
-  async function selectPreset(slot: CubeSlot, presetId: string): Promise<void> {
+  async function selectPreset(slot: HypercubeSlot, presetId: string): Promise<void> {
     const preset = WAVETABLE_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
     slotStatus[slot] = `loading ${preset.label}…`;
@@ -197,18 +149,15 @@
     } catch (err) {
       slotStatus[slot] = err instanceof Error ? err.message : String(err);
     } finally {
-      // Reset so the SAME preset can be picked again (re-fires `change`).
       presetSelection[slot] = '';
     }
   }
-  function onPresetChange(slot: CubeSlot, ev: Event): void {
+  function onPresetChange(slot: HypercubeSlot, ev: Event): void {
     const v = (ev.target as HTMLSelectElement).value;
     if (!v) return;
     void selectPreset(slot, v);
   }
-  // File LOAD (item #1): parse a user .wav into the slot, then ALWAYS reset
-  // input.value so re-selecting the same/different file fires `change` again.
-  async function onSlotFileChange(slot: CubeSlot, ev: Event): Promise<void> {
+  async function onSlotFileChange(slot: HypercubeSlot, ev: Event): Promise<void> {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
@@ -227,29 +176,30 @@
       try { input.value = ''; } catch { /* */ }
     }
   }
-  function onSlotChange(slot: CubeSlot, ev: Event): void {
+  function onSlotChange(slot: HypercubeSlot, ev: Event): void {
     const sel = ev.target as HTMLSelectElement;
     const v = sel.value;
-    if (v === 'user') return; // synthetic option — ignore (keeps the loaded table)
+    if (v === 'user') return;
     if (v.startsWith('factory:')) selectFactory(slot, v.slice('factory:'.length));
     else if (v.startsWith('preset:')) void selectPreset(slot, v.slice('preset:'.length));
   }
 
-  // ═══════════════ 3D CUBE VISUALIZATION (WebGL2) — issue #2 ═══════════════
+  // ═══════════════ SCHLEGEL TESSERACT VISUALIZATION (WebGL2) ═══════════════
   //
-  // Renders the actual 3D box: the scalar field as a back-to-front alpha-blended
-  // stack of axis-aligned Z-slices (translucent voxel volume) sampling a small
-  // CPU-computed field texture, the live selection slice as a square plane
-  // cutting through it, the cube wireframe for orientation, and the OUTPUT
-  // waveform from the worklet snapshot as a 2D overlay. The view-only camera
-  // (view_zoom / view_rot_x/y/z) orbits the scene.
+  // Two nested cubes: the OUTER cube renders the alpha=0 field (the base 3-table
+  // CUBE), the INNER cube (scaled toward the centre) renders the alpha=1 field
+  // (fully HOLO-blended), with 8 connector edges between matching corners — the
+  // classic Schlegel diagram of a tesseract. The volume slice-stack itself uses
+  // the LIVE alpha-blended field so the picture matches the sound. The selection
+  // slice plane lerps inward (toward the inner cube) as ALPHA rises.
 
-  const RES = 320;                 // square offscreen render resolution
-  const VOL = 24;                  // field voxel resolution per axis (CPU side)
-  const SLICE_LAYERS = 28;         // alpha-blended Z-slice quads for the volume
-  let glCanvas = $state<HTMLCanvasElement | null>(null);     // visible 3D canvas
-  let waveCanvas = $state<HTMLCanvasElement | null>(null);   // OUTPUT waveform
-  let sliceCanvas = $state<HTMLCanvasElement | null>(null);  // 2D slice cross-section
+  const RES = 320;
+  const VOL = 24;
+  const SLICE_LAYERS = 28;
+  const INNER_SCALE = 0.5;       // Schlegel inner cube size (fraction of outer)
+  let glCanvas = $state<HTMLCanvasElement | null>(null);
+  let waveCanvas = $state<HTMLCanvasElement | null>(null);
+  let sliceCanvas = $state<HTMLCanvasElement | null>(null);
   let raf: number | null = null;
 
   let offscreen: OffscreenCanvas | HTMLCanvasElement | null = null;
@@ -259,21 +209,17 @@
   let volProgram: WebGLProgram | null = null;
   let planeProgram: WebGLProgram | null = null;
   let wireProgram: WebGLProgram | null = null;
-  let quadBuf: WebGLBuffer | null = null;     // unit quad [-0.5,0.5]^2
-  let layerBuf: WebGLBuffer | null = null;    // per-layer z index
-  let wireBuf: WebGLBuffer | null = null;     // cube edge line segments
-  let volTex: WebGLTexture | null = null;     // VOL×VOL×VOL field as 2D atlas
-  // Field signature so we only rebuild the (cheap but non-trivial) volume
-  // texture when a shaping param actually changed — NOT every frame.
+  let quadBuf: WebGLBuffer | null = null;
+  let layerBuf: WebGLBuffer | null = null;
+  let wireBuf: WebGLBuffer | null = null;        // outer cube edges
+  let innerWireBuf: WebGLBuffer | null = null;   // inner (Schlegel) cube edges
+  let connectorBuf: WebGLBuffer | null = null;   // 8 corner-to-corner connectors
+  let volTex: WebGLTexture | null = null;
   let lastFieldSig = '';
-  // Scene signature (field + slice + camera) — perf item #3: the GL draw calls
-  // are SKIPPED entirely when nothing the picture depends on changed since the
-  // last rendered frame, so an idle CUBE costs ~0 GPU work instead of a full
-  // re-draw every rAF. Reset to '' to force the next frame to render.
   let lastSceneSig = '';
   let renderedOnce = false;
 
-  // ---- minimal mat4 helpers (mirrors WavesculptCard's) ----
+  // ---- minimal mat4 helpers ----
   function m4Mul(out: Float32Array, a: Float32Array, b: Float32Array): void {
     for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
       let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r]! * b[c * 4 + k]!;
@@ -307,18 +253,13 @@
     out[14] = -(fz[0]! * eye[0]! + fz[1]! * eye[1]! + fz[2]! * eye[2]!);
     out[15] = 1;
   }
-  // Euler rotation (X→Y→Z) matching cube-dsp.rotate() so the rendered plane sits
-  // where the slice actually reads.
   function eulerMat(out: Float32Array, rx: number, ry: number, rz: number): void {
     const cx = Math.cos(rx), sx = Math.sin(rx);
     const cy = Math.cos(ry), sy = Math.sin(ry);
     const cz = Math.cos(rz), sz = Math.sin(rz);
-    // Combined R = Rz·Ry·Rx applied to a column vector (matches the dsp's
-    // x→y→z application order on (px,0,0) and (0,0,1)).
     const m00 = cy * cz, m01 = sx * sy * cz - cx * sz, m02 = cx * sy * cz + sx * sz;
     const m10 = cy * sz, m11 = sx * sy * sz + cx * cz, m12 = cx * sy * sz - sx * cz;
     const m20 = -sy,     m21 = sx * cy,                m22 = cx * cy;
-    // column-major 4x4
     out[0] = m00; out[1] = m10; out[2] = m20; out[3] = 0;
     out[4] = m01; out[5] = m11; out[6] = m21; out[7] = 0;
     out[8] = m02; out[9] = m12; out[10] = m22; out[11] = 0;
@@ -346,16 +287,11 @@
     return p;
   }
 
-  // The field volume is uploaded as a 2D ATLAS texture: VOL z-layers laid out in
-  // a grid (atlasCols × atlasRows), each VOL×VOL, so we avoid TEXTURE_3D /
-  // sampler3D portability concerns. The volume-slice fragment shader samples its
-  // own z-layer; the plane shader trilinearly samples across two adjacent layers.
   const ATLAS_COLS = 5;
-  const ATLAS_ROWS = Math.ceil(VOL / ATLAS_COLS); // 5 → 5 rows for VOL=24 (25 cells)
+  const ATLAS_ROWS = Math.ceil(VOL / ATLAS_COLS);
   const ATLAS_W = ATLAS_COLS * VOL;
   const ATLAS_H = ATLAS_ROWS * VOL;
 
-  // GLSL helper: sample the field atlas at integer z-layer + (u,v) in [0,1].
   const ATLAS_SAMPLE = `
     float atlasAt(sampler2D atlas, float zi, vec2 uv) {
       zi = clamp(zi, 0.0, ${(VOL - 1).toFixed(1)});
@@ -367,16 +303,16 @@
 
   const VOL_VS = `#version 300 es
   precision highp float;
-  in vec2 aQuad;       // [-0.5,0.5]^2
-  in float aLayer;     // 0..SLICE_LAYERS-1
+  in vec2 aQuad;
+  in float aLayer;
   uniform mat4 uMVP;
   out vec2 vUV; out float vZ;
   void main(){
-    float t = aLayer / ${(SLICE_LAYERS - 1).toFixed(1)}; // 0..1 along Z
+    float t = aLayer / ${(SLICE_LAYERS - 1).toFixed(1)};
     vUV = aQuad + 0.5;
     vZ = t;
-    vec3 p = vec3(aQuad + 0.5, t);   // unit cube [0,1]^3
-    gl_Position = uMVP * vec4(p - 0.5, 1.0); // center the cube on origin
+    vec3 p = vec3(aQuad + 0.5, t);
+    gl_Position = uMVP * vec4(p - 0.5, 1.0);
   }`;
   const VOL_FS = `#version 300 es
   precision highp float;
@@ -388,24 +324,26 @@
     float zi = vZ * ${(VOL - 1).toFixed(1)};
     float d = atlasAt(uAtlas, floor(zi + 0.5), vUV);
     if (d < 0.02) discard;
-    // teal→white density ramp, low per-layer alpha so the stack reads as volume
-    vec3 col = mix(vec3(0.12,0.36,0.45), vec3(0.6,0.92,1.0), d);
+    // violet→white density ramp (distinguishes HYPERCUBE from CUBE's teal)
+    vec3 col = mix(vec3(0.34,0.18,0.5), vec3(0.85,0.7,1.0), d);
     frag = vec4(col, d * 0.14);
   }`;
 
   const PLANE_VS = `#version 300 es
   precision highp float;
-  in vec2 aQuad;       // [-0.5,0.5]^2 scan square
+  in vec2 aQuad;
   uniform mat4 uMVP;
-  uniform mat4 uRot;   // slice euler rotation
+  uniform mat4 uRot;
   uniform float uSliceY;
+  uniform float uShrink;   // ALPHA-driven inward lerp (Schlegel w-depth)
   out vec3 vPos;
   void main(){
-    // square in plane local space (scan axis = x, the other = y), normal = z
-    vec3 local = vec3(aQuad.x, aQuad.y, 0.0);
+    vec3 local = vec3(aQuad.x, aQuad.y, 0.0) * uShrink;
     vec3 world = (uRot * vec4(local, 1.0)).xyz + vec3(0.0, 0.0, uSliceY - 0.5) + vec3(0.5);
     vPos = world;
-    gl_Position = uMVP * vec4(world - 0.5, 1.0);
+    // scale the whole plane toward the cube centre by uShrink (alpha → inner cube)
+    vec3 centered = (world - 0.5) * uShrink;
+    gl_Position = uMVP * vec4(centered, 1.0);
   }`;
   const PLANE_FS = `#version 300 es
   precision highp float;
@@ -414,31 +352,47 @@
   out vec4 frag;
   ${ATLAS_SAMPLE}
   void main(){
-    // tint the plane by the field density it cuts through
     float zi = clamp(vPos.z, 0.0, 1.0) * ${(VOL - 1).toFixed(1)};
     float d = atlasAt(uAtlas, floor(zi + 0.5), clamp(vPos.xy, 0.0, 1.0));
-    vec3 hot = mix(vec3(1.0,0.55,0.15), vec3(1.0,0.9,0.4), d);
+    vec3 hot = mix(vec3(1.0,0.4,0.7), vec3(1.0,0.85,0.55), d);
     frag = vec4(hot, 0.42 + d * 0.4);
   }`;
 
   const WIRE_VS = `#version 300 es
   precision highp float;
-  in vec3 aPos;        // cube corners in [0,1]
+  in vec3 aPos;
   uniform mat4 uMVP;
   void main(){ gl_Position = uMVP * vec4(aPos - 0.5, 1.0); }`;
   const WIRE_FS = `#version 300 es
   precision highp float;
+  uniform vec4 uColor;
   out vec4 frag;
-  void main(){ frag = vec4(0.55, 0.72, 0.85, 0.5); }`;
+  void main(){ frag = uColor; }`;
 
-  function cubeEdges(): Float32Array {
+  // Cube edges scaled about the centre (0.5,0.5,0.5) by `scale` — used for both
+  // the outer (scale=1) and inner Schlegel (scale=INNER_SCALE) cubes.
+  function cubeEdges(scale = 1): Float32Array {
     const c = [
       [0,0,0],[1,0,0],[1,1,0],[0,1,0],
       [0,0,1],[1,0,1],[1,1,1],[0,1,1],
-    ];
+    ].map(([x, y, z]) => [0.5 + (x! - 0.5) * scale, 0.5 + (y! - 0.5) * scale, 0.5 + (z! - 0.5) * scale]);
     const e = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
     const out: number[] = [];
     for (const [a, b] of e) { out.push(...c[a!]!, ...c[b!]!); }
+    return new Float32Array(out);
+  }
+  // The 8 connector edges of a Schlegel tesseract: each outer corner → the
+  // matching inner-cube corner.
+  function connectorEdges(scale: number): Float32Array {
+    const corners = [
+      [0,0,0],[1,0,0],[1,1,0],[0,1,0],
+      [0,0,1],[1,0,1],[1,1,1],[0,1,1],
+    ];
+    const out: number[] = [];
+    for (const [x, y, z] of corners) {
+      const inner = [0.5 + (x! - 0.5) * scale, 0.5 + (y! - 0.5) * scale, 0.5 + (z! - 0.5) * scale];
+      out.push(x!, y!, z!, ...inner);
+    }
     return new Float32Array(out);
   }
 
@@ -468,7 +422,15 @@
 
       wireBuf = g.createBuffer();
       g.bindBuffer(g.ARRAY_BUFFER, wireBuf);
-      g.bufferData(g.ARRAY_BUFFER, cubeEdges(), g.STATIC_DRAW);
+      g.bufferData(g.ARRAY_BUFFER, cubeEdges(1), g.STATIC_DRAW);
+
+      innerWireBuf = g.createBuffer();
+      g.bindBuffer(g.ARRAY_BUFFER, innerWireBuf);
+      g.bufferData(g.ARRAY_BUFFER, cubeEdges(INNER_SCALE), g.STATIC_DRAW);
+
+      connectorBuf = g.createBuffer();
+      g.bindBuffer(g.ARRAY_BUFFER, connectorBuf);
+      g.bufferData(g.ARRAY_BUFFER, connectorEdges(INNER_SCALE), g.STATIC_DRAW);
 
       volTex = g.createTexture();
       g.bindTexture(g.TEXTURE_2D, volTex);
@@ -481,52 +443,33 @@
       glReady = true;
       return true;
     } catch (err) {
-      console.warn('[cube] WebGL2 init failed; falling back to 2D', err);
+      console.warn('[hypercube] WebGL2 init failed; falling back to 2D', err);
       glFailed = true; glReady = false;
       return false;
     }
   }
 
-  // Rebuild the field volume atlas from the live shaping params + loaded tables.
-  // Returns true only if the rebuild actually uploaded (frames were ready) —
-  // item #4: on mount the engine frames may not be resolved on the very first
-  // frame, so the caller must NOT cache the field signature until a real upload
-  // happened, else the cube stays empty until a param change bumps the sig.
-  function rebuildVolume(
-    g: WebGL2RenderingContext,
-    fp: FieldParams,
-    sc: number,
-    sd: number,
-    diffuseTarget: DiffuseTarget | null,
-  ): boolean {
+  // Rebuild the field volume atlas from the live shaping params + 4 loaded
+  // tables. `fp` carries the ALPHA + the holo frames are read here so the
+  // rendered field is the ALPHA-BLENDED tesseract cross-section (picture matches
+  // the sound — fieldFromHeights handles the blend, no-op at alpha=0 / no holo).
+  function rebuildVolume(g: WebGL2RenderingContext, fp: FieldParams): boolean {
     const e = engineCtx.get();
     const fr = (e && node ? e.read(node, 'frames') as
-      { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined : undefined);
-    if (!fr || !fr.floor.length || !fr.wall.length || !fr.ceiling.length) return false;
+      { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[]; holo: Float32Array[] } | undefined : undefined);
+    if (!fr || !fr.floor.length || !fr.wall.length || !fr.ceiling.length || !fr.holo.length) return false;
     const atlas = new Uint8Array(ATLAS_W * ATLAS_H);
-    const denom = VOL - 1; // VOL is a fixed >1 const, so never zero
+    const denom = VOL - 1;
     for (let zi = 0; zi < VOL; zi++) {
       const cellCol = zi % ATLAS_COLS;
       const cellRow = Math.floor(zi / ATLAS_COLS);
-      const z0 = zi / denom;
+      const z = zi / denom;
       for (let yi = 0; yi < VOL; yi++) {
-        const y0 = yi / denom;
+        const y = yi / denom;
         for (let xi = 0; xi < VOL; xi++) {
-          const x0 = xi / denom;
-          // SPACE DIFFUSE (pull toward the emptiest wall) THEN SPACE CRUSH
-          // (voxelize the lookup coords) — same compose order the DSP scan runs,
-          // so the picture matches the sound. Both identity at 0.
-          let x = x0, y = y0, z = z0;
-          if (diffuseTarget) {
-            if (diffuseTarget.axis === 0) x = diffusePull(x, sd, diffuseTarget.dir);
-            else if (diffuseTarget.axis === 1) y = diffusePull(y, sd, diffuseTarget.dir);
-            else z = diffusePull(z, sd, diffuseTarget.dir);
-          }
-          x = spaceCrushCoord(x, sc);
-          y = spaceCrushCoord(y, sc);
-          z = spaceCrushCoord(z, sc);
-          const h = columnHeights(fr.floor, fr.wall, fr.ceiling, x, y);
-          const d = fieldFromHeights(z, h, fp); // [0,1]
+          const x = xi / denom;
+          const h = columnHeights(fr.floor, fr.wall, fr.ceiling, x, y, fr.holo);
+          const d = fieldFromHeights(z, h, fp); // [0,1], alpha-blended
           const px = cellCol * VOL + xi;
           const py = cellRow * VOL + yi;
           atlas[py * ATLAS_W + px] = Math.max(0, Math.min(255, Math.round(d * 255)));
@@ -539,7 +482,6 @@
     return true;
   }
 
-  // ---- live param reads (knob + CV via the engine) ----
   function liveParam(pid: string, fallback: number): number {
     const e = engineCtx.get();
     if (e && node) { const v = e.readParam(node, pid); if (typeof v === 'number') return v; }
@@ -551,66 +493,43 @@
   const mvpMat = new Float32Array(16);
   const rotMat = new Float32Array(16);
 
-  // `force` (used by the video_out frame-drawer) bypasses the scene-dirty skip
-  // so the bridge always receives a freshly-rendered frame even when nothing
-  // changed. Returns true if a GL draw happened this call.
+  function drawWire(g: WebGL2RenderingContext, buf: WebGLBuffer | null, count: number, color: [number, number, number, number]): void {
+    if (!buf) return;
+    g.uniform4f(g.getUniformLocation(wireProgram!, 'uColor'), color[0], color[1], color[2], color[3]);
+    const wq = g.getAttribLocation(wireProgram!, 'aPos');
+    g.bindBuffer(g.ARRAY_BUFFER, buf);
+    g.enableVertexAttribArray(wq); g.vertexAttribPointer(wq, 3, g.FLOAT, false, 0, 0);
+    g.drawArrays(g.LINES, 0, count);
+  }
+
   function renderGl(force = false): boolean {
     if (!gl || !glReady) return false;
     const g = gl;
 
-    // Live shaping params drive the field; view params drive the camera.
     const morphFC = liveParam('morph_fc', 0);
     const connect = liveParam('connect', 0);
-    const connectStrength = liveParam('connect_strength', 0);
-    const spaceCrush = liveParam('space_crush', 0);
-    const spaceDiffuse = liveParam('space_diffuse', 0);
     const materialHardV = liveParam('material', 0) >= 0.5;
-    const fp: FieldParams = {
-      morphFC, connect, connectStrength,
-      material: (materialHardV ? 'hard' : 'smooth') as Material,
-    };
+    const alpha = Math.max(0, Math.min(1, liveParam('alpha', 0)));
+    const fp: FieldParams = { morphFC, connect, alpha, material: (materialHardV ? 'hard' : 'smooth') as Material };
     const sliceY = liveParam('slice_y', 0.5);
     const srx = liveParam('slice_rx', 0), sry = liveParam('slice_ry', 0), srz = liveParam('slice_rz', 0);
 
-    // Camera (view-only).
     const zoom = Math.max(0.3, Math.min(3, liveParam('view_zoom', 1)));
     const vrx = liveParam('view_rot_x', 0.6), vry = liveParam('view_rot_y', 0.7);
 
-    // PERF (item #3): skip the whole draw when neither the field, the slice, nor
-    // the camera moved since the last rendered frame. tsig folds in the loaded
-    // tables (item #1: a reload invalidates the cached field). Coarse rounding
-    // (~1e-3) avoids re-rendering on float jitter while staying visually smooth.
     const tsig = tableSig;
     const q = (v: number) => Math.round(v * 1000);
     const sceneSig =
-      `${q(morphFC)}|${q(connect)}|${q(connectStrength)}|${q(spaceCrush)}|${q(spaceDiffuse)}|` +
-      `${materialHardV ? 1 : 0}|${q(sliceY)}|` +
+      `${q(morphFC)}|${q(connect)}|${materialHardV ? 1 : 0}|${q(alpha)}|${q(sliceY)}|` +
       `${q(srx)}|${q(sry)}|${q(srz)}|${q(zoom)}|${q(vrx)}|${q(vry)}|${tsig}`;
     if (!force && renderedOnce && sceneSig === lastSceneSig) return false;
     lastSceneSig = sceneSig;
 
-    // SPACE DIFFUSE target: resolve the emptiest wall ONCE per render (depends
-    // only on the field, not the diffuse amount → latches on table/morph change,
-    // matching the DSP scan). null when off so OFF stays a true identity.
-    let diffuseTarget: DiffuseTarget | null = null;
-    if (spaceDiffuse > 0) {
-      const e = engineCtx.get();
-      const frd = (e && node ? e.read(node, 'frames') as
-        { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined : undefined);
-      if (frd && frd.floor.length && frd.wall.length && frd.ceiling.length) {
-        diffuseTarget = lowestInfoFace(frd.floor, frd.wall, frd.ceiling, fp);
-      }
-    }
-
-    // Rebuild the volume texture only when the field/tables changed. Cache the
-    // signature ONLY on a successful upload (item #4) so a first frame that runs
-    // before the engine resolves the tables doesn't wedge an empty cube.
-    const fsig =
-      `${q(morphFC)}|${q(connect)}|${q(connectStrength)}|${q(spaceCrush)}|${q(spaceDiffuse)}|` +
-      `${materialHardV ? 1 : 0}|${tsig}`;
+    // Field sig folds in ALPHA (the blended field changes with it).
+    const fsig = `${q(morphFC)}|${q(connect)}|${materialHardV ? 1 : 0}|${q(alpha)}|${tsig}`;
     if (fsig !== lastFieldSig) {
-      if (rebuildVolume(g, fp, spaceCrush, spaceDiffuse, diffuseTarget)) lastFieldSig = fsig;
-      else lastSceneSig = ''; // frames not ready yet → re-attempt next frame
+      if (rebuildVolume(g, fp)) lastFieldSig = fsig;
+      else lastSceneSig = '';
     }
 
     const dist = 2.6 / zoom;
@@ -618,10 +537,6 @@
     const ey = dist * Math.sin(vrx);
     const ez = dist * Math.cos(vrx) * Math.cos(vry);
 
-    // The GL scene renders square (RES×RES) then blits to the (non-square) card
-    // canvas via drawImage, which stretches it. Pre-compensate by setting the
-    // projection aspect to the visible canvas aspect so the cube stays
-    // undistorted after the stretch (320×260 → ~1.23).
     const vizAspect = glCanvas ? glCanvas.width / glCanvas.height : 1.0;
     m4Perspective(projMat, 1.0, vizAspect, 0.05, 20.0);
     m4LookAt(viewMat, [ex, ey, ez], [0, 0, 0], [0, 1, 0]);
@@ -630,16 +545,16 @@
 
     g.bindFramebuffer(g.FRAMEBUFFER, null);
     g.viewport(0, 0, RES, RES);
-    g.clearColor(0.039, 0.047, 0.07, 1);
+    g.clearColor(0.05, 0.04, 0.08, 1);
     g.clear(g.COLOR_BUFFER_BIT | g.DEPTH_BUFFER_BIT);
     g.enable(g.BLEND);
     g.blendFunc(g.SRC_ALPHA, g.ONE_MINUS_SRC_ALPHA);
-    g.disable(g.DEPTH_TEST); // translucent stack composites order-independently enough
+    g.disable(g.DEPTH_TEST);
 
     g.activeTexture(g.TEXTURE0);
     g.bindTexture(g.TEXTURE_2D, volTex);
 
-    // 1) volume slice stack (instanced quads, one per Z layer)
+    // 1) volume slice stack (the alpha-blended field)
     g.useProgram(volProgram);
     g.uniformMatrix4fv(g.getUniformLocation(volProgram!, 'uMVP'), false, mvpMat);
     g.uniform1i(g.getUniformLocation(volProgram!, 'uAtlas'), 0);
@@ -652,37 +567,33 @@
     g.drawArraysInstanced(g.TRIANGLE_STRIP, 0, 4, SLICE_LAYERS);
     g.vertexAttribDivisor(vl, 0);
 
-    // 2) the live selection slice plane
+    // 2) the live selection slice plane — lerps inward (toward the inner cube)
+    //    by ALPHA: shrink from full size (alpha=0) to INNER_SCALE (alpha=1).
+    const shrink = 1 - (1 - INNER_SCALE) * alpha;
     g.useProgram(planeProgram);
     g.uniformMatrix4fv(g.getUniformLocation(planeProgram!, 'uMVP'), false, mvpMat);
     g.uniformMatrix4fv(g.getUniformLocation(planeProgram!, 'uRot'), false, rotMat);
     g.uniform1f(g.getUniformLocation(planeProgram!, 'uSliceY'), sliceY);
+    g.uniform1f(g.getUniformLocation(planeProgram!, 'uShrink'), shrink);
     g.uniform1i(g.getUniformLocation(planeProgram!, 'uAtlas'), 0);
     const pq = g.getAttribLocation(planeProgram!, 'aQuad');
     g.bindBuffer(g.ARRAY_BUFFER, quadBuf);
     g.enableVertexAttribArray(pq); g.vertexAttribPointer(pq, 2, g.FLOAT, false, 0, 0);
     g.drawArrays(g.TRIANGLE_STRIP, 0, 4);
 
-    // 3) cube wireframe
+    // 3) the Schlegel tesseract: outer cube + inner cube + 8 connectors.
     g.useProgram(wireProgram);
     g.uniformMatrix4fv(g.getUniformLocation(wireProgram!, 'uMVP'), false, mvpMat);
-    const wq = g.getAttribLocation(wireProgram!, 'aPos');
-    g.bindBuffer(g.ARRAY_BUFFER, wireBuf);
-    g.enableVertexAttribArray(wq); g.vertexAttribPointer(wq, 3, g.FLOAT, false, 0, 0);
-    g.drawArrays(g.LINES, 0, 24);
+    drawWire(g, wireBuf, 24, [0.7, 0.6, 0.9, 0.55]);          // outer (alpha=0 field)
+    drawWire(g, innerWireBuf, 24, [1.0, 0.55, 0.85, 0.5 + 0.4 * alpha]); // inner (HOLO)
+    drawWire(g, connectorBuf, 16, [0.6, 0.5, 0.8, 0.18 + 0.4 * alpha]);  // connectors
 
     renderedOnce = true;
-    // Blit to the visible on-card 3D canvas only when the screen is ON. When
-    // the screen is OFF but video_out is patched we still RENDER into `offscreen`
-    // (so the bridge frame is live) but the card itself shows the placeholder.
     if (glCanvas && screenOn) blitCube(glCanvas);
     else if (glCanvas && !screenOn) { screenOffPainted = false; paintScreenOff(); }
     return true;
   }
 
-  // Blit the just-rendered GL scene (in `offscreen`) onto a target 2D canvas
-  // and stamp the CUBE label. Used for both the on-card canvas and the
-  // cross-domain video_out bridge canvas (which renders the SAME 3D cube view).
   function blitCube(target: OffscreenCanvas | HTMLCanvasElement): void {
     if (!offscreen) return;
     const c2d = target.getContext('2d') as
@@ -692,17 +603,16 @@
     c2d.drawImage(offscreen as CanvasImageSource, 0, 0, target.width, target.height);
     c2d.fillStyle = 'rgba(255,255,255,0.55)';
     c2d.font = '9px monospace';
-    c2d.fillText('CUBE', 5, 12);
+    c2d.fillText('HYPERCUBE', 5, 12);
   }
 
-  // OUTPUT waveform overlay (folded in from the worklet snapshot).
   function drawWave(c: HTMLCanvasElement, wave: Float32Array): void {
     const ctx2d = c.getContext('2d'); if (!ctx2d) return;
     const W = c.width, H = c.height;
-    ctx2d.fillStyle = '#0a0c12'; ctx2d.fillRect(0, 0, W, H);
+    ctx2d.fillStyle = '#0c0a12'; ctx2d.fillRect(0, 0, W, H);
     ctx2d.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx2d.beginPath(); ctx2d.moveTo(0, H / 2); ctx2d.lineTo(W, H / 2); ctx2d.stroke();
-    ctx2d.strokeStyle = '#5ad1ff'; ctx2d.lineWidth = 1.5;
+    ctx2d.strokeStyle = '#c79bff'; ctx2d.lineWidth = 1.5;
     ctx2d.beginPath();
     const n = wave.length;
     for (let i = 0; i < n; i++) {
@@ -715,22 +625,11 @@
     ctx2d.fillText('OUTPUT', 5, 12);
   }
 
-  // ───────────────── 2D SLICE cross-section heatmap ─────────────────
-  //
-  // The square cross-section the slice PLANE cuts through the cube field: for
-  // each pixel (su, sv) of the slice square we rotate the local plane point by
-  // the slice euler angles (matching cube-dsp.rotate / the 3D plane shader),
-  // translate to the cube centre at height sliceY, and read the field DENSITY at
-  // that 3D point. The result is a heatmap showing the wavetable content the
-  // slice actually reads — across ALL THREE tables (floor↔ceiling morph + wall),
-  // so the floor / ceiling contribution is visible (not just the wall). This is
-  // the SLICE view from pre-v2 (#528), upgraded from a 1D silhouette to the true
-  // 2D square the user asked for. Rebuilt only when a shaping param changes.
-  const SLICE_RES = 56; // CPU sample grid per axis (kept small; bilinear-scaled)
+  // ───────────────── 2D SLICE cross-section heatmap (alpha-blended) ─────────────────
+  const SLICE_RES = 56;
   let sliceImage: ImageData | null = null;
   let lastSliceSig = '';
-  let slicePainted = false; // perf: true once the slice canvas holds the current sig
-  // Reusable scratch canvas to upscale the low-res slice grid smoothly.
+  let slicePainted = false;
   let sliceScratch: HTMLCanvasElement | OffscreenCanvas | null = null;
 
   function rotateVec(
@@ -739,9 +638,9 @@
     const cx = Math.cos(rx), sx = Math.sin(rx);
     const cy = Math.cos(ry), sy = Math.sin(ry);
     const cz = Math.cos(rz), sz = Math.sin(rz);
-    const x1 = x, y1 = y * cx - z * sx, z1 = y * sx + z * cx;       // X
-    const x2 = x1 * cy + z1 * sy, y2 = y1, z2 = -x1 * sy + z1 * cy; // Y
-    const x3 = x2 * cz - y2 * sz, y3 = x2 * sz + y2 * cz, z3 = z2;  // Z
+    const x1 = x, y1 = y * cx - z * sx, z1 = y * sx + z * cx;
+    const x2 = x1 * cy + z1 * sy, y2 = y1, z2 = -x1 * sy + z1 * cy;
+    const x3 = x2 * cz - y2 * sz, y3 = x2 * sz + y2 * cz, z3 = z2;
     return [x3, y3, z3];
   }
 
@@ -750,62 +649,38 @@
     const W = c.width, H = c.height;
     const e = engineCtx.get();
     const fr = (e && node ? e.read(node, 'frames') as
-      { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined : undefined);
-    if (!fr || !fr.floor.length || !fr.wall.length || !fr.ceiling.length) {
-      ctx2d.fillStyle = '#0a0c12'; ctx2d.fillRect(0, 0, W, H);
+      { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[]; holo: Float32Array[] } | undefined : undefined);
+    if (!fr || !fr.floor.length || !fr.wall.length || !fr.ceiling.length || !fr.holo.length) {
+      ctx2d.fillStyle = '#0c0a12'; ctx2d.fillRect(0, 0, W, H);
       return;
     }
     const morphFC = liveParam('morph_fc', 0);
     const connect = liveParam('connect', 0);
-    const connectStrength = liveParam('connect_strength', 0);
-    const spaceCrush = liveParam('space_crush', 0);
-    const spaceDiffuse = liveParam('space_diffuse', 0);
     const materialHardV = liveParam('material', 0) >= 0.5;
+    const alpha = Math.max(0, Math.min(1, liveParam('alpha', 0)));
     const sliceY = liveParam('slice_y', 0.5);
     const srx = liveParam('slice_rx', 0), sry = liveParam('slice_ry', 0), srz = liveParam('slice_rz', 0);
-    const fp: FieldParams = {
-      morphFC, connect, connectStrength,
-      material: (materialHardV ? 'hard' : 'smooth') as Material,
-    };
-    // SPACE DIFFUSE target: resolve the emptiest wall ONCE per draw (latches on
-    // the field, not the knob), matching the 3D rebuild + the DSP scan. null off.
-    const diffuseTarget: DiffuseTarget | null =
-      spaceDiffuse > 0 ? lowestInfoFace(fr.floor, fr.wall, fr.ceiling, fp) : null;
+    const fp: FieldParams = { morphFC, connect, alpha, material: (materialHardV ? 'hard' : 'smooth') as Material };
 
-    const sig = `${morphFC.toFixed(3)}|${connect.toFixed(3)}|${connectStrength.toFixed(3)}|` +
-      `${spaceCrush.toFixed(3)}|${spaceDiffuse.toFixed(3)}|${materialHardV ? 1 : 0}|` +
+    const sig = `${morphFC.toFixed(3)}|${connect.toFixed(3)}|${materialHardV ? 1 : 0}|${alpha.toFixed(3)}|` +
       `${sliceY.toFixed(3)}|${srx.toFixed(3)}|${sry.toFixed(3)}|${srz.toFixed(3)}|${tableSig}`;
-    // PERF (item #3): nothing changed + already painted → skip the whole redraw
-    // (the expensive SLICE_RES² field grid AND the upscale blit).
     if (sig === lastSliceSig && slicePainted && sliceImage) return;
     if (sig !== lastSliceSig || !sliceImage) {
       const img = ctx2d.createImageData(SLICE_RES, SLICE_RES);
       for (let sv = 0; sv < SLICE_RES; sv++) {
-        // plane "other" axis in [-0.5, 0.5]; top row = +0.5.
         const py = 0.5 - sv / (SLICE_RES - 1);
         for (let su = 0; su < SLICE_RES; su++) {
-          const px = su / (SLICE_RES - 1) - 0.5; // scan axis
+          const px = su / (SLICE_RES - 1) - 0.5;
           const [rxv, ryv, rzv] = rotateVec(px, py, 0, srx, sry, srz);
-          let x = rxv + 0.5, y = ryv + 0.5, z = rzv + sliceY;
-          // SPACE DIFFUSE (toward the emptiest wall) THEN SPACE CRUSH (voxelize
-          // the lookup coords) — same compose order as the DSP scan + 3D rebuild.
-          if (diffuseTarget) {
-            if (diffuseTarget.axis === 0) x = diffusePull(x, spaceDiffuse, diffuseTarget.dir);
-            else if (diffuseTarget.axis === 1) y = diffusePull(y, spaceDiffuse, diffuseTarget.dir);
-            else z = diffusePull(z, spaceDiffuse, diffuseTarget.dir);
-          }
-          x = spaceCrushCoord(x, spaceCrush);
-          y = spaceCrushCoord(y, spaceCrush);
-          z = spaceCrushCoord(z, spaceCrush);
+          const x = rxv + 0.5, y = ryv + 0.5, z = rzv + sliceY;
           let d = 0;
           if (x >= 0 && x <= 1 && y >= 0 && y <= 1 && z >= 0 && z <= 1) {
-            const h = columnHeights(fr.floor, fr.wall, fr.ceiling, x, y);
-            d = fieldFromHeights(z, h, fp); // [0,1]
+            const h = columnHeights(fr.floor, fr.wall, fr.ceiling, x, y, fr.holo);
+            d = fieldFromHeights(z, h, fp);
           }
-          // teal→white density ramp (matches the 3D volume colour).
-          const r = 0.12 + (0.6 - 0.12) * d;
-          const g = 0.36 + (0.92 - 0.36) * d;
-          const b = 0.45 + (1.0 - 0.45) * d;
+          const r = 0.34 + (0.85 - 0.34) * d;
+          const g = 0.18 + (0.7 - 0.18) * d;
+          const b = 0.5 + (1.0 - 0.5) * d;
           const o = (sv * SLICE_RES + su) * 4;
           img.data[o] = Math.round(r * 255 * (0.15 + 0.85 * d));
           img.data[o + 1] = Math.round(g * 255 * (0.15 + 0.85 * d));
@@ -817,7 +692,6 @@
       lastSliceSig = sig;
     }
 
-    // Upscale the low-res grid onto the visible canvas with smoothing.
     if (!sliceScratch) {
       sliceScratch = typeof OffscreenCanvas !== 'undefined'
         ? new OffscreenCanvas(SLICE_RES, SLICE_RES)
@@ -837,32 +711,24 @@
     slicePainted = true;
   }
 
-  // video_out frame-drawer: render the SAME 3D cube scene then blit it into the
-  // cross-domain bridge canvas. Installed by node id so the audio module's
-  // videoSources.drawFrame can delegate to it (mirrors WAVESCULPT's pattern).
-  // `force=true`: the bridge pulls frames on its own clock, so it must always
-  // get a freshly-rendered scene regardless of the on-card scene-dirty skip.
   function videoFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
     if (!glReady && !glFailed) initGl();
     if (!glReady) {
       const c2d = canvas.getContext('2d') as
         | CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-      if (c2d) { c2d.fillStyle = '#0a0c12'; c2d.fillRect(0, 0, canvas.width, canvas.height); }
+      if (c2d) { c2d.fillStyle = '#0c0a12'; c2d.fillRect(0, 0, canvas.width, canvas.height); }
       return;
     }
-    renderGl(true);      // refresh the GL scene into `offscreen` (forced)
-    blitCube(canvas);    // draw it onto the bridge canvas
+    renderGl(true);
+    blitCube(canvas);
   }
 
-  // Paint the on-card 3D canvas a flat "screen off" panel (only when actually
-  // visible — the bridge canvas is unaffected so a patched video_out still gets
-  // live frames via videoFrame()). Cheap + idempotent.
   let screenOffPainted = false;
   function paintScreenOff(): void {
     if (screenOffPainted || !glCanvas) return;
     const c2d = glCanvas.getContext('2d') as CanvasRenderingContext2D | null;
     if (!c2d) return;
-    c2d.fillStyle = '#0a0c12';
+    c2d.fillStyle = '#0c0a12';
     c2d.fillRect(0, 0, glCanvas.width, glCanvas.height);
     c2d.fillStyle = 'rgba(255,255,255,0.28)';
     c2d.font = '11px monospace';
@@ -870,20 +736,13 @@
     screenOffPainted = true;
   }
 
-  // PERF (item #2 + #3): throttle the viz to ~30 FPS (the 3D cube reads as
-  // smooth at 30; halving the rAF cadence ~halves the per-frame GPU+CPU cost),
-  // and skip the whole loop body when the viz is inactive (screen OFF AND
-  // video_out unpatched). Snapshot dirty-tracking avoids redundant wave redraws.
   const VIZ_FRAME_MS = 1000 / 30;
   let lastFrameTs = 0;
   let lastSnapRef: Float32Array | null = null;
 
   $effect(() => {
     if (!glReady && !glFailed) initGl();
-    if (id) installCubeFrameDrawer(id, videoFrame);
-    // Read the reactive viz gate so this $effect re-runs when the screen toggle
-    // flips or a video_out cable is added/removed — re-seeding the dirty flags
-    // so the picture catches up the instant it becomes active again.
+    if (id) installHypercubeFrameDrawer(id, videoFrame);
     void vizActive;
     lastSceneSig = '';
     lastSliceSig = '';
@@ -893,18 +752,14 @@
     function tick(ts: number) {
       raf = requestAnimationFrame(tick);
       if (!vizActive) {
-        // Visuals are entirely OFF — paint the placeholder ONCE, do no compute.
         paintScreenOff();
         return;
       }
-      // FPS throttle: bail until ~1/30 s has elapsed.
       if (ts - lastFrameTs < VIZ_FRAME_MS) return;
       lastFrameTs = ts;
       if (glReady) renderGl();
       const e = engineCtx.get();
       if (e && node) {
-        // Only the on-card display draws gate on screenOn; a video_out-only
-        // consumer is served by the bridge's own videoFrame() pulls.
         if (screenOn) {
           const snap = e.read(node, 'snapshot') as Float32Array | undefined;
           if (snap && snap !== lastSnapRef && waveCanvas) {
@@ -927,6 +782,8 @@
       if (quadBuf) gl.deleteBuffer(quadBuf);
       if (layerBuf) gl.deleteBuffer(layerBuf);
       if (wireBuf) gl.deleteBuffer(wireBuf);
+      if (innerWireBuf) gl.deleteBuffer(innerWireBuf);
+      if (connectorBuf) gl.deleteBuffer(connectorBuf);
       if (volTex) gl.deleteTexture(volTex);
     } catch { /* */ }
     gl = null; offscreen = null; glReady = false;
@@ -936,7 +793,7 @@
   });
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
-    if (id) uninstallCubeFrameDrawer(id);
+    if (id) uninstallHypercubeFrameDrawer(id);
     if (edgesObserver) { edgesObserver(); edgesObserver = null; }
     disposeGl();
   });
@@ -950,36 +807,27 @@
     { id: 'slice_rz', label: 'ROT Z',   cable: 'cv' },
     { id: 'morph_fc', label: 'MORPH',   cable: 'cv' },
     { id: 'connect',  label: 'CONNECT', cable: 'cv' },
-    { id: 'connect_strength', label: 'CNCT STR', cable: 'cv' },
     { id: 'crush',    label: 'CRUSH',   cable: 'cv' },
-    { id: 'space_crush',   label: 'SPC CRUSH', cable: 'cv' },
-    { id: 'space_diffuse', label: 'SPC DIFF',  cable: 'cv' },
     { id: 'fold_cv',  label: 'FOLD',    cable: 'cv' },
+    { id: 'alpha',    label: 'ALPHA',   cable: 'cv' },
     { id: 'tune',     label: 'TUNE',    cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'L', label: 'L', cable: 'audio' },
     { id: 'R', label: 'R', cable: 'audio' },
-    // SYNC — a pure sine at the playback fundamental, phase-locked to the L/R
-    // slice readout. Hard-sync other oscillators to CUBE or use it as a clean
-    // reference / sub.
-    { id: 'sync', label: 'SYNC', cable: 'audio' },
     { id: 'video_out', label: 'VIDEO', cable: 'mono-video' },
   ];
 
   const factoryTables = getFactoryTables();
 
-  // Knob descriptor list (driven from the def so ranges/curves stay in sync).
   const KNOBS: Array<{ pid: string; label: string; units?: string }> = [
     { pid: 'tune', label: 'Tune', units: 'st' },
     { pid: 'fine', label: 'Fine', units: '¢' },
     { pid: 'morph_fc', label: 'Morph' },
     { pid: 'connect', label: 'Connect' },
-    { pid: 'connect_strength', label: 'Cnct Str' },
     { pid: 'crush', label: 'Crush' },
-    { pid: 'space_crush', label: 'Space Crush' },
-    { pid: 'space_diffuse', label: 'Space Diffuse' },
     { pid: 'fold', label: 'Fold' },
+    { pid: 'alpha', label: 'Alpha' },
     { pid: 'spread', label: 'Spread' },
     { pid: 'slice_y', label: 'Y' },
     { pid: 'slice_rx', label: 'Rot X' },
@@ -995,21 +843,19 @@
   ];
 </script>
 
-<div class="mod-card cube-card">
+<div class="mod-card hypercube-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <ModuleTitle {id} {data} defaultLabel="CUBE" />
+  <ModuleTitle {id} {data} defaultLabel="HYPERCUBE" />
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={360}>
     <div class="cube-body">
-      <!-- Visualization: all THREE views — the 3D cube (headline) on top, the
-           2D SLICE cross-section + OUTPUT WAVEFORM side-by-side beneath. -->
       <div class="viz-col">
         <canvas
           bind:this={glCanvas}
           class="viz cube-viz"
           width={320}
           height={260}
-          data-testid="cube-3d-viz"
+          data-testid="hypercube-3d-viz"
         ></canvas>
         <div class="viz-row">
           <canvas
@@ -1017,40 +863,31 @@
             class="viz slice-viz"
             width={150}
             height={120}
-            data-testid="cube-slice-viz"
+            data-testid="hypercube-slice-viz"
           ></canvas>
           <canvas
             bind:this={waveCanvas}
             class="viz wave-viz"
             width={162}
             height={120}
-            data-testid="cube-wave-viz"
+            data-testid="hypercube-wave-viz"
           ></canvas>
         </div>
       </div>
 
-      <!-- Wavetable selectors. The FACTORY dropdown is the steady-state source
-           selector (+ the synthetic USER option so a loaded table shows its
-           filename and survives reload). The PRESET dropdown + file LOAD button
-           are separate (RELOAD FIX, item #1): the preset <select> resets to
-           blank after each load and the file <input> resets its value, so
-           re-selecting the same OR a different table ALWAYS re-fires `change`. -->
       <div class="wt-selects">
-        {#each CUBE_SLOTS as slot (slot)}
+        {#each HYPERCUBE_SLOTS as slot (slot)}
           <div class="wt-row">
             <span class="wt-label">{SLOT_LABEL[slot]}</span>
             <select
               class="wt-select"
               value={slotSelectValue(slot)}
               onchange={(ev) => onSlotChange(slot, ev)}
-              data-testid={`cube-${slot}-select`}
+              data-testid={`hypercube-${slot}-select`}
             >
               {#each factoryTables as t (t.id)}
                 <option value={`factory:${t.id}`}>{t.label}</option>
               {/each}
-              <!-- Synthetic option so a loaded user table (source:'user') has a
-                   matching <option> + the dropdown shows its filename (issue #3,
-                   persists across reload since it reads node.data). -->
               {#if slotSelectValue(slot) === 'user'}
                 <option value="user">USER · {slotLabel(slot)}</option>
               {/if}
@@ -1059,14 +896,14 @@
               class="wt-select preset-select"
               value={presetSelection[slot]}
               onchange={(ev) => onPresetChange(slot, ev)}
-              data-testid={`cube-${slot}-preset-select`}
+              data-testid={`hypercube-${slot}-preset-select`}
             >
               <option value="">— preset —</option>
               {#each WAVETABLE_PRESETS as p (p.id)}
                 <option value={p.id}>{p.label}</option>
               {/each}
             </select>
-            <label class="upload-btn" data-testid={`cube-${slot}-load`}>
+            <label class="upload-btn" data-testid={`hypercube-${slot}-load`}>
               <input
                 type="file"
                 accept=".wav,audio/wav"
@@ -1081,32 +918,30 @@
         {/each}
       </div>
 
-      <!-- Toggles -->
       <div class="toggles">
         <button
           class="toggle"
           class:on={wrapOn}
           onclick={toggleWrap}
-          data-testid="cube-wrap-toggle"
+          data-testid="hypercube-wrap-toggle"
           title="WRAP: out-of-cube slice is silent (off) or mirror-folds back in (on)"
         >WRAP: {wrapOn ? 'ON' : 'OFF'}</button>
         <button
           class="toggle"
           class:on={materialHard}
           onclick={toggleMaterial}
-          data-testid="cube-material-toggle"
+          data-testid="hypercube-material-toggle"
           title="MATERIAL: SMOOTH (continuous density) or HARD (binary solid)"
         >MAT: {materialHard ? 'HARD' : 'SMOOTH'}</button>
         <button
           class="toggle"
           class:on={screenOn}
           onclick={toggleScreen}
-          data-testid="cube-screen-toggle"
-          title="SCREEN: turn the 3D viz OFF to save performance. When OFF and VIDEO is unpatched, ALL visual computation is skipped (audio keeps running)."
+          data-testid="hypercube-screen-toggle"
+          title="SCREEN: turn the viz OFF to save performance. When OFF and VIDEO is unpatched, ALL visual computation is skipped (audio keeps running)."
         >SCRN: {screenOn ? 'ON' : 'OFF'}</button>
       </div>
 
-      <!-- Audio knobs -->
       <div class="knobs">
         {#each KNOBS as k (k.pid)}
           <Knob
@@ -1125,7 +960,6 @@
         {/each}
       </div>
 
-      <!-- View-only camera controls -->
       <div class="view-section">
         <div class="view-head">VIEW (visualization only)</div>
         <div class="knobs view-knobs">
@@ -1150,15 +984,15 @@
 </div>
 
 <style>
-  .cube-card {
+  .hypercube-card {
     width: 360px;
-    background: var(--cube-bg, #12141b);
+    background: var(--hypercube-bg, #15121d);
     color: #ece8e2;
   }
   .cube-body { padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 8px; }
   .viz-col { display: flex; flex-direction: column; gap: 6px; align-items: center; }
   .viz-row { display: flex; gap: 6px; justify-content: center; }
-  .viz { border-radius: 4px; background: #0a0c12; border: 1px solid rgba(255,255,255,0.08); }
+  .viz { border-radius: 4px; background: #0c0a12; border: 1px solid rgba(255,255,255,0.08); }
   .cube-viz { width: 320px; height: 260px; image-rendering: auto; }
   .slice-viz { width: 150px; height: 120px; image-rendering: auto; }
   .wave-viz { width: 162px; height: 120px; }
@@ -1166,32 +1000,32 @@
   .wt-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
   .wt-label {
     font-family: var(--font-mono, monospace);
-    font-size: 0.6rem; letter-spacing: 0.04em; color: #9fb6c9;
+    font-size: 0.6rem; letter-spacing: 0.04em; color: #b9a6d6;
     width: 52px; flex: none;
   }
   .wt-select {
-    flex: 1; min-width: 80px; font-size: 0.62rem; background: #1b1f29; color: #ece8e2;
+    flex: 1; min-width: 80px; font-size: 0.62rem; background: #1f1b29; color: #ece8e2;
     border: 1px solid rgba(255,255,255,0.12); border-radius: 3px; padding: 2px 4px;
   }
   .preset-select { flex: 0 1 96px; min-width: 70px; }
   .upload-btn {
     flex: none; display: inline-flex; align-items: center; cursor: pointer;
-    font-family: var(--font-mono, monospace); font-size: 0.55rem; color: #9fb6c9;
-    background: #1b1f29; border: 1px solid rgba(255,255,255,0.14);
+    font-family: var(--font-mono, monospace); font-size: 0.55rem; color: #b9a6d6;
+    background: #1f1b29; border: 1px solid rgba(255,255,255,0.14);
     border-radius: 3px; padding: 2px 6px;
   }
   .upload-btn input[type='file'] { display: none; }
-  .upload-btn:hover { background: #232838; color: #d9f4ff; }
-  .wt-status { font-size: 0.52rem; color: #7fd6a0; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; flex-basis: 100%; }
+  .upload-btn:hover { background: #2a2438; color: #e9d9ff; }
+  .wt-status { font-size: 0.52rem; color: #a07fd6; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; flex-basis: 100%; }
   .toggles { display: flex; gap: 8px; }
   .toggle {
     flex: 1; font-family: var(--font-mono, monospace); font-size: 0.6rem;
     padding: 4px 6px; border-radius: 3px; cursor: pointer;
-    background: #1b1f29; color: #9fb6c9; border: 1px solid rgba(255,255,255,0.14);
+    background: #1f1b29; color: #b9a6d6; border: 1px solid rgba(255,255,255,0.14);
   }
-  .toggle.on { background: #1f5e74; color: #d9f4ff; border-color: #3a9cc0; }
+  .toggle.on { background: #4a2f74; color: #e9d9ff; border-color: #8a5cc0; }
   .knobs { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; justify-content: flex-start; }
   .view-section { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px; }
-  .view-head { font-family: var(--font-mono, monospace); font-size: 0.55rem; letter-spacing: 0.04em; color: #8294a4; margin-bottom: 4px; }
+  .view-head { font-family: var(--font-mono, monospace); font-size: 0.55rem; letter-spacing: 0.04em; color: #948294; margin-bottom: 4px; }
   .view-knobs { gap: 12px; }
 </style>

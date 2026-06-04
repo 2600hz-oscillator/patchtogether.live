@@ -22,9 +22,12 @@
 // Inputs:  pitch (V/oct node) + CV→AudioParam for slice_y/rx/ry/rz, morph_fc,
 //          connect, crush, tune.
 // Outputs: SEPARATE L and R audio ports (issue #1) — the worklet's 2-channel
-//          output is fanned out through a ChannelSplitter(2) so the ±SPREAD
+//          output 0 is fanned out through a ChannelSplitter(2) so the ±SPREAD
 //          stereo width survives downstream (a single stereo port downmixes to
-//          mono into a mono input, erasing the spread).
+//          mono into a mono input, erasing the spread). Plus a SYNC port — a
+//          pure sine at the playback fundamental, phase-locked to the slice
+//          readout (the worklet's mono output 1), exposed directly for
+//          hard-syncing other oscillators or a clean reference / sub.
 //
 // OFF-THREAD SLICE COMPUTE (issue #4): the expensive SURFACE-HEIGHT SCAN
 //   (sampleSlice) runs HERE on the main thread, not on the audio thread. On
@@ -177,6 +180,12 @@ export const cubeDef: AudioModuleDef = {
   outputs: [
     { id: 'L', type: 'audio' },
     { id: 'R', type: 'audio' },
+    // SYNC — a pure SINE at the playback fundamental, PHASE-LOCKED to the L/R
+    // slice readout (the worklet reads it off the SAME phase accumulator). Hard-
+    // sync other oscillators to CUBE or use it as a clean reference / sub. Mono;
+    // mapped from the worklet's 2nd output (index 1). Additive — the L/R slice
+    // audio is byte-identical to before.
+    { id: 'sync', type: 'audio' },
     // Cross-domain mono-video out (issue: video out of the 3D CUBE view). The
     // card installs a frame-drawer that renders its live WebGL 3D cube into the
     // bridge's canvas each video frame; patch this into VIDEOOUT / any video
@@ -238,12 +247,15 @@ export const cubeDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    // One stereo output. pitch is the only node input (input 0); the rest of
-    // the CV inputs sum into AudioParams.
+    // Two outputs: output 0 = the stereo L/R slice audio (fanned into separate
+    // L/R ports via the ChannelSplitter below), output 1 = the mono SYNC sine
+    // (a phase-locked reference, exposed directly as the `sync` port). pitch is
+    // the only node input (input 0); the rest of the CV inputs sum into
+    // AudioParams.
     const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
       numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
+      numberOfOutputs: 2,
+      outputChannelCount: [2, 1],
     });
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
 
@@ -252,14 +264,14 @@ export const cubeDef: AudioModuleDef = {
     // the splitter (output 0 = L, output 1 = R). WAVESCULPT uses the same
     // ChannelSplitter(2) → per-channel-port pattern.
     const splitter = ctx.createChannelSplitter(2);
-    workletNode.connect(splitter);
+    workletNode.connect(splitter, 0); // output 0 = stereo L/R slice audio
 
     // Video-out analyser tap (cross-domain mono-video). The bridge ignores the
     // analyser when a drawFrame is supplied, but the videoSources contract still
     // requires an AnalyserNode handle; tap the worklet's stereo output for it.
     const videoAnalyser = ctx.createAnalyser();
     videoAnalyser.fftSize = 256;
-    workletNode.connect(videoAnalyser);
+    workletNode.connect(videoAnalyser, 0); // output 0 = stereo L/R slice audio
 
     // Mirror initial knob values into worklet params (only the ones the
     // worklet actually declares; view_* + spread/fine handled below).
@@ -406,6 +418,9 @@ export const cubeDef: AudioModuleDef = {
       outputs: new Map([
         ['L', { node: splitter, output: 0 }],
         ['R', { node: splitter, output: 1 }],
+        // SYNC sine: the worklet's 2nd output (index 1), mono, exposed directly
+        // (no splitter — it's already single-channel). Phase-locked reference.
+        ['sync', { node: workletNode, output: 1 }],
       ]),
       // Cross-domain mono-video: the bridge owns an OffscreenCanvas, calls
       // drawFrame each video frame, then uploads the pixels to a GL texture for
