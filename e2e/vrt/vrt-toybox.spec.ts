@@ -553,6 +553,7 @@ const PRESETS: Array<{ id: string; time: number }> = [
   { id: 'plasma-dissolve', time: 4.0 },
   { id: 'cow-on-camera',   time: 1.0 },
   { id: 'worley-bloom',    time: 2.0 },
+  { id: 'textured-sphere', time: 2.0 }, // Phase-6 texmap showcase
   { id: 'reactor-field',   time: 3.0 },
 ];
 
@@ -638,6 +639,153 @@ test.describe('VRT: TOYBOX Phase-6 presets', () => {
 
       const canvas = page.locator('[data-testid="toybox-canvas"]');
       await expect(canvas).toHaveScreenshot(`preset-${p.id}.png`, { maskColor: '#ff00ff' });
+
+      expect(
+        errors.filter((e) => !e.includes('AudioContext')),
+        'no console / page errors',
+      ).toEqual([]);
+    });
+  }
+});
+
+// ── Phase 6: TEXMAP — an OBJ layer UV-mapping ANOTHER layer's rendered output
+// as a SURFACE TEXTURE (material.surfaceSource) instead of a flat matcap. Each
+// baseline seeds layer 1 = a deterministic shader (worley) and layer 0 = an OBJ
+// (sphere → authored-uv-less primitive uv path; teapot → the zero-vt PLANAR-UV
+// fallback) with material.surfaceSource = 1, spin = 0. The combine OUTPUT shows
+// layer 0 (the textured mesh). Proves the mesh shows the shader field on its
+// surface (NOT a flat matcap), the render-order pass renders layer 1 before the
+// OBJ pass binds it, and the planar-uv fallback gives the teapot real texels.
+
+const TEXMAP_MODELS: Array<{ id: string; time: number }> = [
+  { id: 'sphere', time: 2.0 }, // builtin primitive
+  { id: 'teapot', time: 2.0 }, // zero-vt OBJ → planar-uv fallback
+];
+
+/** Seed layer 1 = worley shader + layer 0 = OBJ with surfaceSource=1, the
+ *  combine OUTPUT = layer 0, freeze iTime, wait for a stable lit frame. */
+async function setObjTexturedAndFreeze(page: Page, modelId: string, time: number): Promise<void> {
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+  await page.evaluate(
+    ({ modelId }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['tb'];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        n.data.layers = [
+          {
+            kind: 'obj',
+            contentId: null,
+            params: {},
+            material: {
+              modelId,
+              rotX: 0.5,
+              rotY: 0.7,
+              rotZ: 0,
+              scale: 1,
+              spin: 0,
+              matcap: 0,
+              tintR: 1,
+              tintG: 1,
+              tintB: 1,
+              surfaceSource: 1, // ← UV-map layer 1's rendered output
+              surfaceMix: 1,
+            },
+          },
+          { kind: 'gen', contentId: 'worley-cells', params: { density: 6, edge: 1, speed: 0.6 } },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+        ];
+        // OUTPUT shows layer 0 (the textured mesh): fade amount 0 passes the base.
+        n.data.combine = {
+          nodes: [
+            { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+            { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+            { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+            { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+            { id: 'pass', kind: 'fade', x: 120, y: 40, params: { amount: 0 } },
+            { id: 'out', kind: 'output', x: 286, y: 40 },
+          ],
+          edges: [
+            { id: 'e0', from: 'src0', to: 'pass', toPort: 'in0' },
+            { id: 'e1', from: 'src1', to: 'pass', toPort: 'in1' },
+            { id: 'e2', from: 'pass', to: 'out', toPort: 'in0' },
+          ],
+        };
+      });
+    },
+    { modelId },
+  );
+  // Poll until the FROZEN composite is non-black AND stable (the worley shader
+  // compiled + rendered, the OBJ mesh loaded, and two consecutive captures
+  // match → the texmap pass settled).
+  await page.evaluate(() => {
+    (globalThis as unknown as { __toyboxPrevSig?: string }).__toyboxPrevSig = '';
+  });
+  await page.waitForFunction(
+    ({ time }) => {
+      const g = globalThis as unknown as {
+        __toyboxFreeze?: (t?: number) => void;
+        __toyboxPrevSig?: string;
+      };
+      g.__toyboxFreeze?.(time);
+      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0, r = 0, gg = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      }
+      if (lit <= canvas.width * canvas.height * 0.02) return false;
+      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
+      const prev = g.__toyboxPrevSig;
+      g.__toyboxPrevSig = sig;
+      return prev === sig;
+    },
+    { time },
+    { timeout: 15_000 },
+  );
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
+test.describe('VRT: TOYBOX OBJ surface-texture', () => {
+  for (const m of TEXMAP_MODELS) {
+    test(`obj ${m.id} shows a layer's rendered output as a surface texture`, async ({ page }) => {
+      test.skip(
+        VRT_PLATFORM === 'linux',
+        `linux/toybox-obj-tex-${m.id}: darwin baseline only; linux pending a vrt:update on CI`,
+      );
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('console', (msg) => {
+        if (msg.type() === 'error') errors.push(msg.text());
+      });
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+        [],
+      );
+      const card = page.locator('.svelte-flow__node-toybox').first();
+      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      await pinViewport(page);
+
+      await setObjTexturedAndFreeze(page, m.id, m.time);
+
+      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      await expect(canvas).toHaveScreenshot(`obj-tex-${m.id}.png`, { maskColor: '#ff00ff' });
 
       expect(
         errors.filter((e) => !e.includes('AudioContext')),

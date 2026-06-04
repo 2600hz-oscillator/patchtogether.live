@@ -219,9 +219,15 @@
       <button class="ctx-item" onclick={pickDuplicate} role="menuitem">
         Duplicate
       </button>
-      <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
-        Unpatch all
-      </button>
+      <!-- TOYBOX is a node-map module: "Unpatch all" (remove every cable
+           touching the module) is confusing alongside the in-card combine
+           graph's own per-node disconnect, so it's hidden for type==='toybox'.
+           The combine editor's contextual menu provides node-map disconnects. -->
+      {#if nodeType !== 'toybox'}
+        <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
+          Unpatch all
+        </button>
+      {/if}
     {/if}
     <button class="ctx-item danger" onclick={pickDelete} role="menuitem">
       {isGroup ? 'Delete instrument + modules' : 'Delete'}

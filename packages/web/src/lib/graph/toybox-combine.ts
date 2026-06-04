@@ -37,6 +37,9 @@ import {
   edgeIndex,
   nodeIndex,
   findNode,
+  outputNode,
+  nextNodeId,
+  defaultOpParams,
 } from '$lib/video/toybox-combine-graph';
 
 /** Read a node's combine field as a GRAPH. Returns undefined for absent or
@@ -160,6 +163,93 @@ export function setCombineNodePosition(
     n.x = x; // set in place
     n.y = y;
   });
+}
+
+/**
+ * Patch a node's output → the OUTPUT node's single input (in0), REPLACING
+ * whatever was wired there. This is the contextual-menu "Patch to output"
+ * action. Because OUTPUT.in0 is normally already wired (validateConnect would
+ * reject with 'occupied'), we splice the existing in0 edge out FIRST, then
+ * validate + push the new edge — all inside the SAME transaction so the swap is
+ * atomic (no transient disconnected output). The cycle / self-loop / no-out-port
+ * guards in validateConnect still apply (e.g. wiring the OUTPUT to itself, or a
+ * node that would form a loop, is rejected and the old edge is restored).
+ * Returns the connect verdict so the caller can surface the rejection reason.
+ */
+export function patchToOutput(
+  nodeId: string,
+  fromGid: string,
+): { ok: boolean; error?: ConnectError } {
+  let result: { ok: boolean; error?: ConnectError } = { ok: false, error: 'missing-node' };
+  mutateCombine(nodeId, (g) => {
+    const out = outputNode(g);
+    if (!out) {
+      result = { ok: false, error: 'missing-node' };
+      return;
+    }
+    // Remember the existing in0 edge so we can restore it if the new connect is
+    // rejected (cycle / self-loop). Splice it out IN PLACE first so the new
+    // connect doesn't hit the 'occupied' guard.
+    const existingIdx = g.edges.findIndex((e) => e.to === out.id && e.toPort === 'in0');
+    const existing = existingIdx >= 0 ? { ...g.edges[existingIdx]! } : null;
+    if (existingIdx >= 0) g.edges.splice(existingIdx, 1);
+    const v = validateConnect(g, fromGid, out.id, 'in0');
+    result = { ok: v.ok, error: v.error };
+    if (v.ok && v.edge) {
+      g.edges.push(v.edge); // append the new plain edge in place
+    } else if (existing) {
+      // Rejected — restore the previous wiring (push a fresh plain object).
+      g.edges.push(existing);
+    }
+  });
+  return result;
+}
+
+/** Remove ALL edges from the combine graph IN PLACE, keeping every node. The
+ *  output renders BLACK until something is rewired (defensive at eval time).
+ *  The contextual menu's "Clear node map" action. */
+export function clearCombineEdges(nodeId: string): void {
+  mutateCombine(nodeId, (g) => {
+    g.edges.splice(0, g.edges.length); // empty in place — never reassign
+  });
+}
+
+/** Reset the combine graph to the default wiring (4 sources → fade chain →
+ *  output). Splices BOTH arrays empty in place, then re-seeds the default graph
+ *  by pushing plain objects one-by-one (mirrors the seed loop in mutateCombine).
+ *  The contextual menu's "Reset to default" action. */
+export function resetCombineToDefault(nodeId: string): void {
+  mutateCombine(nodeId, (g) => {
+    g.nodes.splice(0, g.nodes.length); // empty both in place
+    g.edges.splice(0, g.edges.length);
+    const def = makeDefaultCombineGraph();
+    for (const n of def.nodes) g.nodes.push(n); // push plain objects one-by-one
+    for (const e of def.edges) g.edges.push(e);
+  });
+}
+
+/** Duplicate an OP node: mint a fresh id, copy its kind + every param, and
+ *  offset its editor position. Edges are NOT copied (mirrors Canvas's
+ *  duplicateNode). No-op for SOURCE / OUTPUT (structural) or unknown ids.
+ *  Returns the new node's id, or null. */
+export function duplicateCombineNode(nodeId: string, targetNodeId: string): string | null {
+  let newId: string | null = null;
+  mutateCombine(nodeId, (g) => {
+    const src = findNode(g, targetNodeId);
+    if (!src) return;
+    if (src.kind === 'source' || src.kind === 'output') return; // structural
+    const id = nextNodeId(g, 'op');
+    const params = { ...(src.params ?? defaultOpParams(src.kind as ToyboxOpKind)) };
+    g.nodes.push({
+      id,
+      kind: src.kind,
+      x: (src.x ?? 0) + 12,
+      y: (src.y ?? 0) + 12,
+      params, // plain object copy of the source's params
+    });
+    newId = id;
+  });
+  return newId;
 }
 
 export type { ToyboxGraphNode };

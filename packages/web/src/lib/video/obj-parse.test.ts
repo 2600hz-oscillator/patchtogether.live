@@ -216,6 +216,109 @@ f 1/1 2/2 3/3 4/4
   });
 });
 
+describe('parseObj — UV round-trip (distinct per-corner vt)', () => {
+  // A unit quad whose four corners carry the four distinct uv corners. Proves
+  // each unique (u,v) lands on the right interleaved vertex via MESH_OFFSET_UV
+  // (floats [6],[7]).
+  const QUAD = `
+v 0 0 0
+v 1 0 0
+v 1 1 0
+v 0 1 0
+vt 0 0
+vt 1 0
+vt 1 1
+vt 0 1
+vn 0 0 1
+f 1/1/1 2/2/1 3/3/1 4/4/1
+`;
+  const mesh = parseObj(QUAD);
+
+  it('maps each distinct corner uv to the vertex at that position', () => {
+    // For each of the 4 unique vertices, the uv must equal the position's xy
+    // (this quad was authored so vt == position.xy).
+    for (let i = 0; i < mesh.vertexCount; i++) {
+      const v = vert(mesh, i);
+      expect(close(v[6]!, v[0]!)).toBe(true); // u == px
+      expect(close(v[7]!, v[1]!)).toBe(true); // v == py
+    }
+  });
+});
+
+describe('parseObj — planar-UV fallback for zero-vt models', () => {
+  // A unit quad in XY with NO `vt` lines. Before the fallback every vertex got
+  // uv (0,0); the fallback synthesizes a planar XY projection over the bounds.
+  // bounds: x∈[0,2], y∈[0,2]. Emitted v is top-origin (1 - rawV) so the surface
+  // shader's 1.0 - v flip lands it upright.
+  const NOVT = `
+v 0 0 0
+v 2 0 0
+v 2 2 0
+v 0 2 0
+vn 0 0 1
+f 1//1 2//1 3//1 4//1
+`;
+  const mesh = parseObj(NOVT);
+
+  it('no longer collapses every uv to (0,0)', () => {
+    let distinct = new Set<string>();
+    for (let i = 0; i < mesh.vertexCount; i++) {
+      const v = vert(mesh, i);
+      distinct.add(`${v[6]!.toFixed(3)},${v[7]!.toFixed(3)}`);
+    }
+    expect(distinct.size).toBeGreaterThan(1);
+  });
+
+  it('min-XY corner → u 0 (and max-XY corner → u 1) over the bounds', () => {
+    // The vertex at (0,0) maps to u=0; the vertex at (2,2) maps to u=1.
+    const at = (px: number, py: number) => {
+      for (let i = 0; i < mesh.vertexCount; i++) {
+        const v = vert(mesh, i);
+        if (close(v[0]!, px) && close(v[1]!, py)) return v;
+      }
+      return null;
+    };
+    const minV = at(0, 0)!;
+    const maxV = at(2, 2)!;
+    expect(minV).not.toBeNull();
+    expect(maxV).not.toBeNull();
+    expect(close(minV[6]!, 0)).toBe(true); // u at min-x = 0
+    expect(close(maxV[6]!, 1)).toBe(true); // u at max-x = 1
+    // v is top-origin: min-y → v 1, max-y → v 0 (so the shader flip lands upright).
+    expect(close(minV[7]!, 1)).toBe(true);
+    expect(close(maxV[7]!, 0)).toBe(true);
+  });
+});
+
+describe('parseObj — models WITH vt are NOT touched by the fallback', () => {
+  // Authored uv that is NOT a planar projection of position — proves the
+  // fallback does not overwrite real vt.
+  const WITHVT = `
+v 0 0 0
+v 1 0 0
+v 1 1 0
+vt 0.25 0.75
+vt 0.5 0.5
+vt 0.9 0.1
+vn 0 0 1
+f 1/1/1 2/2/1 3/3/1
+`;
+  const mesh = parseObj(WITHVT);
+
+  it('keeps the authored uv (does not synthesize a planar projection)', () => {
+    const at = (px: number, py: number) => {
+      for (let i = 0; i < mesh.vertexCount; i++) {
+        const v = vert(mesh, i);
+        if (close(v[0]!, px) && close(v[1]!, py)) return v;
+      }
+      return null;
+    };
+    const v0 = at(0, 0)!;
+    expect(close(v0[6]!, 0.25)).toBe(true);
+    expect(close(v0[7]!, 0.75)).toBe(true);
+  });
+});
+
 describe('parseObj — robustness', () => {
   it('ignores comments / o / g / s / mtllib / usemtl', () => {
     const src = `
