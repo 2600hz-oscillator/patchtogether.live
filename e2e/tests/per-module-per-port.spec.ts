@@ -1138,7 +1138,14 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       // cube, hypercube, quadralogical, b3ntb0x, ruttetra, …) renders its
       // handles slowly on CI's SwiftShader, so wiring cables to them needs the
       // same heavy-mount headroom, not just mandelbulb.
-      if (mod.domain === 'video') test.setTimeout(90_000);
+      // ...but a FLAT 90s under-budgets HIGH-INPUT-COUNT video modules: b3ntb0x
+      // has 19 inputs, and wiring 19 cables each driving its 4-pass float
+      // pipeline on SwiftShader exceeds 90s (timed out on shard 7 — passed in
+      // ~16s locally on a real GPU). Scale the video budget by input count too,
+      // with 90s as the floor for light video cards.
+      if (mod.domain === 'video') {
+        test.setTimeout(Math.max(90_000, mod.inputs.length * 6_000 + 30_000));
+      }
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));

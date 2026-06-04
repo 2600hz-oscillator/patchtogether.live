@@ -174,6 +174,35 @@ export interface VideoEngineContext {
   /** Allocate an RGBA8 framebuffer + texture at engine resolution.
    *  Returns both so the caller can both render-into and sample-from. */
   createFbo(): { fbo: WebGLFramebuffer; texture: WebGLTexture };
+  /**
+   * Allocate a FLOAT (RGBA16F / RGBA32F) framebuffer + texture at the
+   * given size (defaults to engine resolution). Used by modules that need
+   * signed / out-of-[0,1] precision in an intermediate render target — e.g.
+   * B3NTB0X's NTSC composite-voltage pass (sync tip at -0.3, overdrive
+   * headroom > 1.0) and future #44 Shadertoy work. KEPT GENERIC — it is NOT
+   * NTSC-specific.
+   *
+   * Requires `EXT_color_buffer_float` to make RGBA16F/RGBA32F RENDERABLE
+   * (a COLOR_ATTACHMENT); the extension is fetched + cached once. When the
+   * extension is ABSENT (some mobile GPUs / headless CI), this gracefully
+   * DEGRADES to RGBA8/UNSIGNED_BYTE at the same size and reports
+   * `isFloat: false` so the caller can surface a "reduced precision" badge.
+   *
+   * Filter defaults to NEAREST. WARNING: LINEAR on a float colour
+   * attachment needs `OES_texture_float_linear` and will silently read 0.0
+   * without it (see waveform-video.ts:216-224) — default composite-voltage
+   * targets to NEAREST and do any low-pass in the shader.
+   *
+   * OPTIONAL on the interface only so hand-built test-mock contexts (which
+   * never instantiate a float-using module) don't have to stub it. The REAL
+   * VideoEngine always provides it via context(); a factory that needs it can
+   * assert its presence (b3ntb0x does).
+   */
+  createFloatFbo?(
+    width?: number,
+    height?: number,
+    opts?: { filter?: 'nearest' | 'linear'; precision?: 'half' | 'full' },
+  ): { fbo: WebGLFramebuffer; texture: WebGLTexture; isFloat: boolean; width: number; height: number };
   /** Issue the fullscreen quad draw call. Caller has already bound their
    *  framebuffer and program + uniforms. Used by every module's draw(). */
   drawFullscreenQuad(): void;
@@ -308,6 +337,15 @@ export class VideoEngine implements DomainEngine {
   private startTime = performance.now();
   private frameCount = 0;
   private rafId: number | null = null;
+
+  /**
+   * Lazily-resolved `EXT_color_buffer_float` support, cached after the first
+   * createFloatFbo() call. `null` = not yet probed; `true`/`false` once
+   * `gl.getExtension` has been asked exactly once. The extension is what
+   * makes RGBA16F/RGBA32F a RENDERABLE colour attachment; sampling a float
+   * texture does not need it.
+   */
+  private floatColorBufferExt: boolean | null = null;
 
   // Cached topological order — recomputed on graph mutations.
   private topoOrder: string[] = [];
@@ -978,6 +1016,7 @@ void main() {
       res: this.res,
       compileFragment: (src) => this.compileFragmentImpl(src),
       createFbo: () => this.createFboImpl(),
+      createFloatFbo: (w, h, o) => this.createFloatFboImpl(w, h, o),
       drawFullscreenQuad: () => this.drawFullscreenQuadImpl(),
       audioCtx: this.audioCtx ?? undefined,
       notifyAudioSourcesChanged: (nodeId) => this.audioSourcesChangedListener?.(nodeId),
@@ -1142,6 +1181,96 @@ void main() {
       throw new Error(`VideoEngine: framebuffer incomplete: 0x${status.toString(16)}`);
     }
     return { fbo, texture: tex };
+  }
+
+  /**
+   * Allocate a FLOAT (RGBA16F default, RGBA32F for precision:'full') FBO +
+   * texture at the given size, degrading to RGBA8 when the GPU can't render
+   * float. See the VideoEngineContext.createFloatFbo doc for the contract.
+   *
+   * Mirrors createFboImpl above but: (1) caller-chosen w/h (createFbo
+   * hardcodes engine res), (2) RGBA16F/RGBA32F internalformat + HALF_FLOAT/
+   * FLOAT type when EXT_color_buffer_float is present, (3) NEAREST filter by
+   * default (LINEAR on a float attachment silently reads 0.0 without
+   * OES_texture_float_linear — see waveform-video.ts), (4) on float
+   * framebuffer-incomplete it deletes + retries once as RGBA8 (degrade)
+   * rather than throwing, throwing only if RGBA8 is ALSO incomplete.
+   */
+  private createFloatFboImpl(
+    width: number = this.res.width,
+    height: number = this.res.height,
+    opts?: { filter?: 'nearest' | 'linear'; precision?: 'half' | 'full' },
+  ): { fbo: WebGLFramebuffer; texture: WebGLTexture; isFloat: boolean; width: number; height: number } {
+    const gl = this.gl;
+    // Probe the renderable-float extension exactly once, cache the result.
+    if (this.floatColorBufferExt === null) {
+      this.floatColorBufferExt = gl.getExtension('EXT_color_buffer_float') != null;
+    }
+    const wantFloat = this.floatColorBufferExt;
+    const filter = opts?.filter === 'linear' ? gl.LINEAR : gl.NEAREST;
+
+    // Build a texture of the requested storage type. Factored so the
+    // float-incomplete degrade path can re-run it as RGBA8.
+    const buildTexture = (asFloat: boolean): WebGLTexture | null => {
+      const t = gl.createTexture();
+      if (!t) return null;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      if (asFloat) {
+        if (opts?.precision === 'full') {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
+        } else {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+        }
+      } else {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      }
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return t;
+    };
+
+    const attach = (
+      asFloat: boolean,
+    ): { fbo: WebGLFramebuffer; texture: WebGLTexture } | { incomplete: true } | null => {
+      const tex = buildTexture(asFloat);
+      if (!tex) return null;
+      const fbo = gl.createFramebuffer();
+      if (!fbo) {
+        gl.deleteTexture(tex);
+        return null;
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      if (status !== gl.FRAMEBUFFER_COMPLETE) {
+        gl.deleteTexture(tex);
+        gl.deleteFramebuffer(fbo);
+        return { incomplete: true };
+      }
+      return { fbo, texture: tex };
+    };
+
+    if (wantFloat) {
+      const r = attach(true);
+      if (r && !('incomplete' in r)) {
+        return { fbo: r.fbo, texture: r.texture, isFloat: true, width, height };
+      }
+      // Float framebuffer incomplete (extension reported present but the
+      // driver refuses this format) OR createTexture/Framebuffer failed —
+      // fall through to the RGBA8 degrade path rather than throwing.
+      this.floatColorBufferExt = false;
+    }
+
+    // Degrade (or non-float request): RGBA8.
+    const r8 = attach(false);
+    if (!r8) throw new Error('VideoEngine: createFloatFbo createTexture/Framebuffer failed');
+    if ('incomplete' in r8) {
+      throw new Error('VideoEngine: createFloatFbo framebuffer incomplete (RGBA8 fallback also failed)');
+    }
+    return { fbo: r8.fbo, texture: r8.texture, isFloat: false, width, height };
   }
 
   private drawFullscreenQuadImpl(): void {

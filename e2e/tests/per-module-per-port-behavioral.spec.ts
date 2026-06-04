@@ -191,6 +191,23 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    spawn-once-perturb pattern.
   bentbox: 'deep shader chain; needs longer settle window than 1.5s; covered by bentbox.spec.ts',
 
+  // ── b3ntb0x — bentbox's circuit-level NTSC re-arch (4-pass encode→bend→
+  //    decode→CRT). Its `out` is a heavily ANIMATED composite: per-line sync
+  //    drift + frame persistence + the (itself-animated) acidwarp probe give a
+  //    per-frame luma-variance with a HUGE intrinsic jitter floor — the control
+  //    run alone measures var≈1270 ±580. Sampling 5 snapshots × 2 spawns, the
+  //    mean-of-5 has a standard error far larger than any input's footprint:
+  //    the SAME input (bend_a) reads Δμvar≈63 one run and ≈2.8 the next, so the
+  //    metric can't reliably distinguish ANY input from the source's own
+  //    animation — every input straddles the Δμvar>5 threshold run-to-run.
+  //    Whole-module exempt (same class as bentbox / mandelbulb animated video).
+  //    Coverage is deterministic + stronger: 35 unit tests (the encode→demod
+  //    ROUND-TRIP proves the carrier path is a real invertible signal, plus
+  //    burst-starve colour-kill/crawl + mirror folds + gate edges) and a
+  //    real-GL e2e (b3ntb0x.spec.ts: non-black decode + Sync-Crush/Enhance bend
+  //    proof + CV param mutation). VRT-exempt for the same animation reason.
+  b3ntb0x: 'animated NTSC composite with a ±580 per-frame variance floor that swamps every input in the 5-snapshot window (bend_a swings Δμvar 63→2.8 run-to-run); whole-module exempt (bentbox/mandelbulb animated-video class); covered by b3ntb0x.test.ts (35 unit, incl. encode→demod round-trip + burst-starve) + b3ntb0x.spec.ts real-GL bend proof',
+
   // ── reshaper / ruttetra — coordinate-displacement video effects
   //    where x/y inputs displace pixels from the z input. Even with
   //    intensity=1, RASTERIZE-from-noise on x/y produces displacements
@@ -954,6 +971,10 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    the SAME video-variance class as acidwarp.speed_cv. Covered by the
   //    mandleblot VRT coverage which screenshots distinct zoom depths.
   'mandleblot.zoom_cv': 'zooms a self-running high-variance fractal; frame-variance metric stays saturated across zoom (video-variance class); covered by mandleblot VRT/specs',
+
+  // (b3ntb0x is WHOLE-MODULE exempt in BEHAVIORAL_MODULE_EXEMPT — its animated
+  //  composite's ±580 variance floor swamps EVERY input, not just a few, so a
+  //  per-port carve-out can't make it reliable. See that entry for the detail.)
 
   // ── DX7 poly (polyPitchGate): the universal sink reads DX7's summed
   //    mono `out`. Driving the poly note/gate input DOES retrigger the FM
