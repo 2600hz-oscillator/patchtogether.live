@@ -24,12 +24,10 @@ import {
   __resetMidiClockSourceForTests,
 } from './midi-clock-source';
 import { resolveSyncPeriodS } from '../audio/modules/cocoadelay';
+import type { MidiAccessLike } from '../audio/modules/midi-cv-buddy';
 
 /** A minimal MIDIAccess-like that resolves with no inputs. */
-function fakeAccess(): {
-  inputs: Map<string, { onmidimessage: unknown }>;
-  onstatechange: unknown;
-} {
+function fakeAccess(): MidiAccessLike {
   return { inputs: new Map(), onstatechange: null };
 }
 
@@ -168,7 +166,7 @@ describe('COCOA DELAY sync bridge: only the MIDI clock-source touches Web MIDI',
       const nodes = { tl: { type: 'timelorde', params: { bpm: 120 } } };
 
       // Mirror cocoadelay.pushSyncPeriod's gate: read MIDI ONLY for MIDI src.
-      const clockSource = CLOCK_SOURCE_SYSTEM;
+      const clockSource: number = CLOCK_SOURCE_SYSTEM;
       const midiBeatPeriodS =
         clockSource === CLOCK_SOURCE_MIDI ? src.getBeatPeriodS() : null;
       const period = resolveSyncPeriodS(clockSource, nodes, midiBeatPeriodS);
