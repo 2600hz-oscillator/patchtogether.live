@@ -110,16 +110,20 @@ function rms(b: Float32Array): number { let s = 0; for (let i = 0; i < b.length;
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('cubeDef — module def shape', () => {
-  it('declares pitch + the documented CV inputs (incl. fold_cv)', () => {
+  it('declares pitch + the documented CV inputs (incl. fold_cv + space/connect_strength)', () => {
     expect(cubeDef.inputs.map((i) => i.id)).toEqual([
       'pitch',
       'slice_y', 'slice_rx', 'slice_ry', 'slice_rz',
-      'morph_fc', 'connect', 'crush', 'fold_cv', 'tune',
+      'morph_fc', 'connect', 'connect_strength', 'crush',
+      'space_crush', 'space_diffuse', 'fold_cv', 'tune',
     ]);
   });
 
   it('CV inputs target the right params with linear cvScale', () => {
-    for (const id of ['slice_y', 'slice_rx', 'slice_ry', 'slice_rz', 'morph_fc', 'connect', 'crush', 'tune']) {
+    for (const id of [
+      'slice_y', 'slice_rx', 'slice_ry', 'slice_rz', 'morph_fc', 'connect',
+      'connect_strength', 'crush', 'space_crush', 'space_diffuse', 'tune',
+    ]) {
       const p = cubeDef.inputs.find((i) => i.id === id)!;
       expect(p.paramTarget, id).toBe(id);
       expect(p.cvScale, id).toEqual({ mode: 'linear' });
@@ -133,11 +137,20 @@ describe('cubeDef — module def shape', () => {
     expect(p.cvScale).toEqual({ mode: 'linear' });
   });
 
-  it('declares SEPARATE L and R audio outputs + a mono-video out (issue #1 + video_out)', () => {
-    expect(cubeDef.outputs.map((o) => o.id)).toEqual(['L', 'R', 'video_out']);
+  it('declares SEPARATE L and R audio outputs + a SYNC sine + a mono-video out (issue #1 + video_out)', () => {
+    expect(cubeDef.outputs.map((o) => o.id)).toEqual(['L', 'R', 'sync', 'video_out']);
     expect(cubeDef.outputs.find((o) => o.id === 'L')!.type).toBe('audio');
     expect(cubeDef.outputs.find((o) => o.id === 'R')!.type).toBe('audio');
     expect(cubeDef.outputs.find((o) => o.id === 'video_out')!.type).toBe('mono-video');
+  });
+
+  it('declares a SYNC audio output (phase-locked sine reference) WITHOUT removing the main L/R output', () => {
+    const sync = cubeDef.outputs.find((o) => o.id === 'sync');
+    expect(sync, 'CUBE must expose a `sync` output port').toBeTruthy();
+    expect(sync!.type).toBe('audio');
+    // The pre-existing main audio output is still present (additive change).
+    expect(cubeDef.outputs.find((o) => o.id === 'L')!.type).toBe('audio');
+    expect(cubeDef.outputs.find((o) => o.id === 'R')!.type).toBe('audio');
   });
 
   it('declares the literal param array with documented ranges + defaults', () => {
@@ -146,6 +159,11 @@ describe('cubeDef — module def shape', () => {
     expect(byId.fine).toMatchObject({ min: -100, max: 100, defaultValue: 0 });
     expect(byId.morph_fc).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
     expect(byId.connect).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+    // CONNECT STRENGTH + SPACE CRUSH + SPACE DIFFUSE — all min0/max1/default0
+    // (off=identity), CV-routable, linear.
+    expect(byId.connect_strength).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
+    expect(byId.space_crush).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
+    expect(byId.space_diffuse).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
     expect(byId.crush).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
     // FOLD — West-coast wavefolder, linear, default 0 (pass-through).
     expect(byId.fold).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
@@ -217,6 +235,146 @@ describe('CUBE worklet — capture + audible output', () => {
     expect(maxDiff).toBeLessThan(1e-6);
     // No NaN/Inf.
     expect(L.findIndex((v) => !Number.isFinite(v))).toBe(-1);
+  });
+
+  // ── SYNC reference output (worklet output 1, mono, phase-locked sine) ──
+
+  /** Run the processor with TWO outputs ([L,R] + mono SYNC). Returns L/R/sync. */
+  function runProc2(
+    proc: ProcInstance,
+    params: Record<string, Float32Array>,
+    seconds: number,
+    pitchVolt: number,
+  ): { L: Float32Array; R: Float32Array; sync: Float32Array } {
+    const total = Math.round(SR * seconds);
+    const L = new Float32Array(total);
+    const R = new Float32Array(total);
+    const S = new Float32Array(total);
+    let g = 0;
+    while (g < total) {
+      const len = Math.min(BLOCK, total - g);
+      const pitch = new Float32Array(len).fill(pitchVolt);
+      const outL = new Float32Array(len);
+      const outR = new Float32Array(len);
+      const outS = new Float32Array(len);
+      proc.process([[pitch]], [[outL, outR], [outS]], params);
+      for (let i = 0; i < len; i++) {
+        L[g + i] = outL[i] as number;
+        R[g + i] = outR[i] as number;
+        S[g + i] = outS[i] as number;
+      }
+      g += len;
+    }
+    return { L, R, sync: S };
+  }
+
+  it('SYNC (output 1) emits a non-silent, bounded (~±1) sine', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    const voct = Math.log2(65.41 / 261.626); // C2
+    const { sync } = runProc2(p, makeParams({ level: 1 }), 0.25, voct);
+    expect(peak(sync)).toBeGreaterThan(0.5); // a full-scale sine is always loud
+    expect(peak(sync)).toBeLessThanOrEqual(1 + 1e-6); // bounded ±1
+    expect(sync.findIndex((v) => !Number.isFinite(v))).toBe(-1);
+  });
+
+  it('SYNC is a pure sine at the PLAYBACK FUNDAMENTAL (zero-crossings ≈ freq)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    const freq = 110; // A2
+    const voct = Math.log2(freq / 261.626);
+    const seconds = 0.5;
+    const { sync } = runProc2(p, makeParams(), seconds, voct);
+    // Count upward zero-crossings → one per cycle. A sine at `freq` over
+    // `seconds` has ≈ freq·seconds cycles. Allow a small tolerance for the
+    // partial cycle at the boundaries.
+    let ups = 0;
+    for (let i = 1; i < sync.length; i++) {
+      if ((sync[i - 1] ?? 0) < 0 && (sync[i] ?? 0) >= 0) ups++;
+    }
+    const expectedCycles = freq * seconds; // 55
+    expect(ups).toBeGreaterThanOrEqual(expectedCycles - 2);
+    expect(ups).toBeLessThanOrEqual(expectedCycles + 2);
+  });
+
+  it('SYNC is PHASE-LOCKED to the slice readout (reads the SAME phase accumulator)', async () => {
+    // The worklet advances ONE phase accumulator per sample (phase += freq/sr,
+    // wrapped to [0,1)) and reads BOTH the slice AND the SYNC sine from it. So
+    // SYNC[i] must equal sin(2π·phase_i) for the IDENTICAL accumulated phase the
+    // slice uses. Reconstruct that exact accumulation here and compare sample by
+    // sample — a tight match proves it's the same phase variable (not a drifting
+    // independent oscillator).
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    const freq = 130.81; // C3
+    const voct = Math.log2(freq / 261.626);
+    const seconds = 0.2;
+    const { sync } = runProc2(p, makeParams(), seconds, voct);
+    // Mirror the worklet's per-sample phase accumulation (default tune/fine=0).
+    const C4 = 261.626;
+    const f = C4 * Math.pow(2, voct);
+    let phase = 0;
+    let maxErr = 0;
+    for (let i = 0; i < sync.length; i++) {
+      phase += f / SR;
+      while (phase >= 1) phase -= 1;
+      const expected = Math.sin(2 * Math.PI * phase);
+      maxErr = Math.max(maxErr, Math.abs((sync[i] ?? 0) - expected));
+    }
+    // Floating-point accumulation over thousands of samples drifts only at the
+    // ULP level; a generous-but-tight bound proves SYNC is the same phase.
+    expect(maxErr, 'SYNC is not locked to the slice phase accumulator').toBeLessThan(1e-3);
+  });
+
+  it('SYNC still emits when ONLY output 1 is connected (output 0 absent)', async () => {
+    // Chrome passes process() an EMPTY channel array for an output with no
+    // downstream connection. When a player patches ONLY the `sync` port, the
+    // worklet receives outputs[0] = [] (no L/R channels) and outputs[1] = [SYNC].
+    // The block must STILL advance the phase + write the sine — regression for
+    // the per-port emit failure where bailing on a missing L silenced SYNC.
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    const voct = Math.log2(110 / 261.626);
+    const total = Math.round(SR * 0.1);
+    const S = new Float32Array(total);
+    let g = 0;
+    while (g < total) {
+      const len = Math.min(BLOCK, total - g);
+      const pitch = new Float32Array(len).fill(voct);
+      const outS = new Float32Array(len);
+      // outputs[0] is an EMPTY array (no connected L/R), outputs[1] = [SYNC].
+      p.process([[pitch]], [[], [outS]], makeParams());
+      for (let i = 0; i < len; i++) S[g + i] = outS[i] as number;
+      g += len;
+    }
+    expect(peak(S), 'SYNC must emit even when L/R is unpatched').toBeGreaterThan(0.5);
+    expect(S.findIndex((v) => !Number.isFinite(v))).toBe(-1);
+  });
+
+  it('BACKWARDS-COMPAT: output 0 (L/R slice) is byte-identical with vs without the SYNC output', async () => {
+    const Proc = await loadProcessor();
+    const voct = Math.log2(98 / 261.626); // G2
+    const ps = makeParams({ morph_fc: 0.5, slice_rx: 0.4, spread: 0.6, level: 1 });
+
+    // (a) legacy single-output construction: [[L, R]] only.
+    const pOld = new Proc(); loadAllTables(pOld);
+    const old = runProc(pOld, ps, 0.2, voct);
+
+    // (b) new two-output construction: [[L, R], [SYNC]].
+    const pNew = new Proc(); loadAllTables(pNew);
+    const neu = runProc2(pNew, ps, 0.2, voct);
+
+    // The slice audio must be bit-for-bit identical (the SYNC output is purely
+    // additive — the phase accumulator + slice read are untouched).
+    let maxDiff = 0;
+    for (let i = 0; i < old.L.length; i++) {
+      maxDiff = Math.max(maxDiff, Math.abs(old.L[i]! - neu.L[i]!), Math.abs(old.R[i]! - neu.R[i]!));
+    }
+    expect(maxDiff, 'main L/R output changed when adding SYNC').toBe(0);
   });
 
   it('is silent until all three tables are loaded', async () => {
@@ -407,6 +565,22 @@ describe('CUBE worklet — capture + audible output', () => {
     expect(names).not.toContain('screen_on');
     expect(names).toContain('morph_fc'); // sanity: descriptors were actually read
   });
+
+  it('the worklet declares space_crush / space_diffuse / connect_strength a-rate params (default 0, [0,1])', async () => {
+    const Proc = await loadProcessor();
+    const descriptors =
+      (Proc as unknown as {
+        parameterDescriptors?: Array<{ name: string; defaultValue: number; minValue: number; maxValue: number; automationRate: string }>;
+      }).parameterDescriptors ?? [];
+    for (const name of ['space_crush', 'space_diffuse', 'connect_strength']) {
+      const d = descriptors.find((x) => x.name === name);
+      expect(d, `worklet must declare ${name}`).toBeTruthy();
+      expect(d!.defaultValue, name).toBe(0);
+      expect(d!.minValue, name).toBe(0);
+      expect(d!.maxValue, name).toBe(1);
+      expect(d!.automationRate, name).toBe('a-rate');
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -495,6 +669,27 @@ describe('cube factory: wavetable reload replaces the current table', () => {
     expect(afterFloor.length, 'a reload must re-post loadWavetable for floor').toBeGreaterThan(initialFloor.length);
     // …and the posted frames actually CHANGED (the new table replaced the old).
     expect(afterFloor.at(-1)!.frames).not.toEqual(firstFrames);
+
+    handle.dispose?.();
+    delete patch.nodes[id];
+  });
+
+  it('factory exposes a `sync` output (worklet output 1) alongside L/R + video_out', async () => {
+    const id = 'cube-sync-1';
+    patch.nodes[id] = makeCubeNode(id);
+    const { ctx } = makeCubeMockEnv();
+    const handle = await cubeDef.factory(ctx as never, patch.nodes[id] as never);
+
+    const outs = handle.outputs as Map<string, { node: unknown; output: number }>;
+    // The pre-existing L/R slice ports survive…
+    expect(outs.has('L')).toBe(true);
+    expect(outs.has('R')).toBe(true);
+    // …and the new SYNC port is mapped to the worklet's 2nd output (index 1).
+    expect(outs.has('sync'), 'factory must expose a `sync` output handle').toBe(true);
+    expect(outs.get('sync')!.output).toBe(1);
+    // Video out still present.
+    const vids = handle.videoSources as Map<string, unknown> | undefined;
+    expect(vids?.has('video_out')).toBe(true);
 
     handle.dispose?.();
     delete patch.nodes[id];

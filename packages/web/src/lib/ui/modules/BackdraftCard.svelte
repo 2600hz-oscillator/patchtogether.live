@@ -296,6 +296,9 @@
   {#if !hideControls}<span class="port-label left" style="top: 594px;">MX</span>{/if}
   <Handle type="target" position={Position.Left} id="mirror_y_gate" style="top: 628px; --handle-color: var(--cable-cv);" />
   {#if !hideControls}<span class="port-label left" style="top: 622px;">MY</span>{/if}
+  <!-- PIXELATE CV — displaces the source-resolution reduction (0..1). -->
+  <Handle type="target" position={Position.Left} id="pixelate" style="top: 656px; --handle-color: var(--cable-cv);" />
+  {#if !hideControls}<span class="port-label left" style="top: 650px;">PX</span>{/if}
 
   <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
   {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
@@ -370,6 +373,7 @@
       <Fader value={p('b')}        min={-1} max={2}                     defaultValue={pdef('b')}        label="B"    curve="linear" onchange={setParam('b')}        moduleId={id} paramId="b" />
       <Fader value={p('lighten')}  min={0}  max={1}                     defaultValue={pdef('lighten')}  label="Lgt"  curve="linear" onchange={setParam('lighten')}  moduleId={id} paramId="lighten" />
       <Fader value={p('darken')}   min={0}  max={1}                     defaultValue={pdef('darken')}   label="Drk"  curve="linear" onchange={setParam('darken')}   moduleId={id} paramId="darken" />
+      <Fader value={p('pixelate')} min={0}  max={1}                     defaultValue={pdef('pixelate')} label="Pix"  curve="linear" onchange={setParam('pixelate')} moduleId={id} paramId="pixelate" />
       <Fader value={p('zoom')}     min={BACKDRAFT_ZOOM_MIN}   max={BACKDRAFT_ZOOM_MAX}   defaultValue={pdef('zoom')}    label="Zoom" curve="linear" onchange={setParam('zoom')}    moduleId={id} paramId="zoom" />
       <Fader value={p('rotate')}   min={BACKDRAFT_ROTATE_MIN} max={BACKDRAFT_ROTATE_MAX} units="°" defaultValue={pdef('rotate')} label="Rot"  curve="linear" onchange={setParam('rotate')}  moduleId={id} paramId="rotate" />
       <Fader value={p('offsetX')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetX')} label="OffX" curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />

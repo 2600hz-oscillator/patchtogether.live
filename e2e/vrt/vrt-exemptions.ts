@@ -42,6 +42,10 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // gate on the deterministic card chrome. No VRT scene (removed; the canvas
   // can't be pinned to a single frame). Render correctness covered elsewhere.
   cube: [{ selector: 'canvas' }],
+  // HYPERCUBE: same as CUBE — a live rotating WebGL2 Schlegel-tesseract render +
+  // snapshot-driven OUTPUT scope, both animate continuously, so mask the
+  // canvases and gate on the deterministic card chrome.
+  hypercube: [{ selector: 'canvas' }],
   // WARRENSPECTRUM has the acidwarp video viz canvas.
   warrenspectrum: [{ selector: 'canvas' }],
   // SAMSLOOP — loop-based WAV sample player. The waveform canvas is
@@ -62,6 +66,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   videoMixer: [{ selector: 'canvas' }],
   shapes: [{ selector: 'canvas' }],
   monoglitch: [{ selector: 'canvas' }],
+  // TOYBOX — swappable fragment-shader source. The card carries a live
+  // animated preview canvas (the layer-0 shader runs off the engine clock),
+  // so the canvas region is non-deterministic in the standard solo-spawn
+  // VRT; mask it and gate on the deterministic chrome (CONTENT dropdown +
+  // per-param faders + OUT handle). The real shader-render correctness is
+  // proven by the dedicated frozen VRT (vrt-toybox.spec.ts) which pins
+  // iTime via window.__toyboxFreeze and includes the canvas in the diff.
+  toybox: [{ selector: 'canvas' }],
   // RESHAPER (formerly RUTTETRA): coord-remap; canvas masked (flat content
   // when X/Y/Z unpatched).
   reshaper: [{ selector: 'canvas' }],
@@ -623,6 +635,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // the per-port e2e. NOT in STRICT_VRT_MODULES (the missing linux baseline
   // runs only in the informational full-VRT lane, not the merge gate).
   'linux/cube',
+  // HYPERCUBE (the 4D tesseract sibling of CUBE): same canvas-AA story as cube
+  // — a live WebGL2 Schlegel-tesseract render + a snapshot-driven 2D viz, so the
+  // canvases are masked and the darwin baseline was captured in this PR. Linux
+  // baseline is pending a `task vrt:update` run on linux CI. Functional coverage
+  // = the shared cube-dsp HYPERCUBE unit tests (off=identity + alpha audibility)
+  // + the hypercube worklet capture test + the hypercube node-ART baselines +
+  // the per-port e2e. NOT in STRICT_VRT_MODULES.
+  'linux/hypercube',
   // AUDIO OUT (device picker dropdown added): the card grew an OUT device
   // dropdown row (setSinkId picker) so the darwin baseline was regen'd in
   // this PR. Linux baseline pending a `task vrt:update` run on linux CI.
@@ -726,6 +746,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // thresholdly across platforms; linux baseline pending a `task vrt:update`
   // run on linux CI.
   'linux/nibbles',
+  // TOYBOX (swappable fragment-shader source, Phase 1): darwin baseline
+  // captured on this machine (live animated preview canvas masked via
+  // VRT_MODULE_MASKS — the layer-0 shader runs off the engine clock, so the
+  // canvas region is non-deterministic; the chrome around it diffs). The
+  // linux baseline is pending a `task vrt:update` run on linux CI; the
+  // shader pipeline is the same across platforms but the masked-canvas
+  // chrome PNG can shift sub-thresholdly under linux Chromium timing —
+  // darwin is the regression gate here. The dedicated frozen render proof
+  // (real per-shader content, distinct across the 4 entries) lives in
+  // e2e/vrt/vrt-toybox.spec.ts, also darwin-only by the same precedent.
+  'linux/toybox',
   // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
   // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
   // `__nibblesForceLength` test hook. Darwin baselines captured on this

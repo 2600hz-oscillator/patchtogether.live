@@ -156,27 +156,51 @@ function mutateSurface(surfaceId: string, fn: (data: ControlSurfaceData) => void
   }, LOCAL_ORIGIN);
 }
 
+// CRITICAL: the mutators below mutate node.data IN PLACE (push / splice / set a
+// single key). They must NEVER rebuild-and-reassign an array/object that holds
+// live Yjs types. Once a binding/screen/layout entry has synced it becomes a
+// Y.Map; spreading it into a fresh array (`data.bindings = [...old, new]`)
+// re-integrates the already-integrated Y type and Yjs throws "Type already
+// integrated" — which is exactly why a SECOND send-to-surface broke the whole
+// surface (the first add, on an absent array, worked; the second spread the
+// now-integrated first entry). Same trap as the sequencer save-to-slot bug
+// ([[yjs-save-load-real-ydoc]]). Append plain objects; the new entry integrates
+// cleanly and existing ones are untouched. (The pure with* helpers above stay
+// for unit assertions; they are NOT used to write live Y state.)
+
 export function addBindingToSurface(surfaceId: string, moduleId: string, paramId: string): void {
   mutateSurface(surfaceId, (data) => {
-    data.bindings = withBindingAdded(data, moduleId, paramId);
+    if (!data.bindings) data.bindings = [];
+    if (!hasBinding(data, moduleId, paramId)) {
+      data.bindings.push({ moduleId, paramId }); // append a NEW plain object, in place
+    }
   });
 }
 
 export function removeBindingFromSurface(surfaceId: string, moduleId: string, paramId: string): void {
   mutateSurface(surfaceId, (data) => {
-    data.bindings = withBindingRemoved(data, moduleId, paramId);
+    const arr = data.bindings;
+    if (!arr) return;
+    const idx = arr.findIndex((b) => b.moduleId === moduleId && b.paramId === paramId);
+    if (idx >= 0) arr.splice(idx, 1); // remove in place
   });
 }
 
 export function addScreenToSurface(surfaceId: string, moduleId: string): void {
   mutateSurface(surfaceId, (data) => {
-    data.screens = withScreenAdded(data, moduleId);
+    if (!data.screens) data.screens = [];
+    if (!hasScreen(data, moduleId)) {
+      data.screens.push({ moduleId }); // append in place
+    }
   });
 }
 
 export function removeScreenFromSurface(surfaceId: string, moduleId: string): void {
   mutateSurface(surfaceId, (data) => {
-    data.screens = withScreenRemoved(data, moduleId);
+    const arr = data.screens;
+    if (!arr) return;
+    const idx = arr.findIndex((s) => s.moduleId === moduleId);
+    if (idx >= 0) arr.splice(idx, 1); // remove in place
   });
 }
 
@@ -188,9 +212,8 @@ export function setSurfaceLocked(surfaceId: string, locked: boolean): void {
 
 export function setSurfaceGroupPosition(surfaceId: string, moduleId: string, x: number, y: number): void {
   mutateSurface(surfaceId, (data) => {
-    const layout = { ...(data.layout ?? {}) };
-    layout[moduleId] = { x, y };
-    data.layout = layout;
+    if (!data.layout) data.layout = {};
+    data.layout[moduleId] = { x, y }; // set a single key in place (never spread the map)
   });
 }
 

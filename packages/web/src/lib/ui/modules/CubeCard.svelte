@@ -27,7 +27,7 @@
   //   relative path (the bluebox.ts pattern), so the picture matches the sound.
   //
   // PatchPanel exposes EVERY input handle (pitch + 8 CVs) + the L / R audio
-  // output handles.
+  // output handles + the SYNC sine reference + the VIDEO out.
 
   import type { NodeProps } from '@xyflow/svelte';
   import { onDestroy, onMount } from 'svelte';
@@ -45,7 +45,11 @@
   import {
     columnHeights,
     fieldFromHeights,
+    spaceCrushCoord,
+    diffusePull,
+    lowestInfoFace,
     type FieldParams,
+    type DiffuseTarget,
     type Material,
   } from '../../../../../dsp/src/lib/cube-dsp';
 
@@ -488,7 +492,13 @@
   // item #4: on mount the engine frames may not be resolved on the very first
   // frame, so the caller must NOT cache the field signature until a real upload
   // happened, else the cube stays empty until a param change bumps the sig.
-  function rebuildVolume(g: WebGL2RenderingContext, fp: FieldParams): boolean {
+  function rebuildVolume(
+    g: WebGL2RenderingContext,
+    fp: FieldParams,
+    sc: number,
+    sd: number,
+    diffuseTarget: DiffuseTarget | null,
+  ): boolean {
     const e = engineCtx.get();
     const fr = (e && node ? e.read(node, 'frames') as
       { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined : undefined);
@@ -498,11 +508,23 @@
     for (let zi = 0; zi < VOL; zi++) {
       const cellCol = zi % ATLAS_COLS;
       const cellRow = Math.floor(zi / ATLAS_COLS);
-      const z = zi / denom;
+      const z0 = zi / denom;
       for (let yi = 0; yi < VOL; yi++) {
-        const y = yi / denom;
+        const y0 = yi / denom;
         for (let xi = 0; xi < VOL; xi++) {
-          const x = xi / denom;
+          const x0 = xi / denom;
+          // SPACE DIFFUSE (pull toward the emptiest wall) THEN SPACE CRUSH
+          // (voxelize the lookup coords) — same compose order the DSP scan runs,
+          // so the picture matches the sound. Both identity at 0.
+          let x = x0, y = y0, z = z0;
+          if (diffuseTarget) {
+            if (diffuseTarget.axis === 0) x = diffusePull(x, sd, diffuseTarget.dir);
+            else if (diffuseTarget.axis === 1) y = diffusePull(y, sd, diffuseTarget.dir);
+            else z = diffusePull(z, sd, diffuseTarget.dir);
+          }
+          x = spaceCrushCoord(x, sc);
+          y = spaceCrushCoord(y, sc);
+          z = spaceCrushCoord(z, sc);
           const h = columnHeights(fr.floor, fr.wall, fr.ceiling, x, y);
           const d = fieldFromHeights(z, h, fp); // [0,1]
           const px = cellCol * VOL + xi;
@@ -539,8 +561,14 @@
     // Live shaping params drive the field; view params drive the camera.
     const morphFC = liveParam('morph_fc', 0);
     const connect = liveParam('connect', 0);
+    const connectStrength = liveParam('connect_strength', 0);
+    const spaceCrush = liveParam('space_crush', 0);
+    const spaceDiffuse = liveParam('space_diffuse', 0);
     const materialHardV = liveParam('material', 0) >= 0.5;
-    const fp: FieldParams = { morphFC, connect, material: (materialHardV ? 'hard' : 'smooth') as Material };
+    const fp: FieldParams = {
+      morphFC, connect, connectStrength,
+      material: (materialHardV ? 'hard' : 'smooth') as Material,
+    };
     const sliceY = liveParam('slice_y', 0.5);
     const srx = liveParam('slice_rx', 0), sry = liveParam('slice_ry', 0), srz = liveParam('slice_rz', 0);
 
@@ -555,17 +583,33 @@
     const tsig = tableSig;
     const q = (v: number) => Math.round(v * 1000);
     const sceneSig =
-      `${q(morphFC)}|${q(connect)}|${materialHardV ? 1 : 0}|${q(sliceY)}|` +
+      `${q(morphFC)}|${q(connect)}|${q(connectStrength)}|${q(spaceCrush)}|${q(spaceDiffuse)}|` +
+      `${materialHardV ? 1 : 0}|${q(sliceY)}|` +
       `${q(srx)}|${q(sry)}|${q(srz)}|${q(zoom)}|${q(vrx)}|${q(vry)}|${tsig}`;
     if (!force && renderedOnce && sceneSig === lastSceneSig) return false;
     lastSceneSig = sceneSig;
 
+    // SPACE DIFFUSE target: resolve the emptiest wall ONCE per render (depends
+    // only on the field, not the diffuse amount → latches on table/morph change,
+    // matching the DSP scan). null when off so OFF stays a true identity.
+    let diffuseTarget: DiffuseTarget | null = null;
+    if (spaceDiffuse > 0) {
+      const e = engineCtx.get();
+      const frd = (e && node ? e.read(node, 'frames') as
+        { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined : undefined);
+      if (frd && frd.floor.length && frd.wall.length && frd.ceiling.length) {
+        diffuseTarget = lowestInfoFace(frd.floor, frd.wall, frd.ceiling, fp);
+      }
+    }
+
     // Rebuild the volume texture only when the field/tables changed. Cache the
     // signature ONLY on a successful upload (item #4) so a first frame that runs
     // before the engine resolves the tables doesn't wedge an empty cube.
-    const fsig = `${q(morphFC)}|${q(connect)}|${materialHardV ? 1 : 0}|${tsig}`;
+    const fsig =
+      `${q(morphFC)}|${q(connect)}|${q(connectStrength)}|${q(spaceCrush)}|${q(spaceDiffuse)}|` +
+      `${materialHardV ? 1 : 0}|${tsig}`;
     if (fsig !== lastFieldSig) {
-      if (rebuildVolume(g, fp)) lastFieldSig = fsig;
+      if (rebuildVolume(g, fp, spaceCrush, spaceDiffuse, diffuseTarget)) lastFieldSig = fsig;
       else lastSceneSig = ''; // frames not ready yet → re-attempt next frame
     }
 
@@ -713,12 +757,23 @@
     }
     const morphFC = liveParam('morph_fc', 0);
     const connect = liveParam('connect', 0);
+    const connectStrength = liveParam('connect_strength', 0);
+    const spaceCrush = liveParam('space_crush', 0);
+    const spaceDiffuse = liveParam('space_diffuse', 0);
     const materialHardV = liveParam('material', 0) >= 0.5;
     const sliceY = liveParam('slice_y', 0.5);
     const srx = liveParam('slice_rx', 0), sry = liveParam('slice_ry', 0), srz = liveParam('slice_rz', 0);
-    const fp: FieldParams = { morphFC, connect, material: (materialHardV ? 'hard' : 'smooth') as Material };
+    const fp: FieldParams = {
+      morphFC, connect, connectStrength,
+      material: (materialHardV ? 'hard' : 'smooth') as Material,
+    };
+    // SPACE DIFFUSE target: resolve the emptiest wall ONCE per draw (latches on
+    // the field, not the knob), matching the 3D rebuild + the DSP scan. null off.
+    const diffuseTarget: DiffuseTarget | null =
+      spaceDiffuse > 0 ? lowestInfoFace(fr.floor, fr.wall, fr.ceiling, fp) : null;
 
-    const sig = `${morphFC.toFixed(3)}|${connect.toFixed(3)}|${materialHardV ? 1 : 0}|` +
+    const sig = `${morphFC.toFixed(3)}|${connect.toFixed(3)}|${connectStrength.toFixed(3)}|` +
+      `${spaceCrush.toFixed(3)}|${spaceDiffuse.toFixed(3)}|${materialHardV ? 1 : 0}|` +
       `${sliceY.toFixed(3)}|${srx.toFixed(3)}|${sry.toFixed(3)}|${srz.toFixed(3)}|${tableSig}`;
     // PERF (item #3): nothing changed + already painted → skip the whole redraw
     // (the expensive SLICE_RES² field grid AND the upscale blit).
@@ -731,7 +786,17 @@
         for (let su = 0; su < SLICE_RES; su++) {
           const px = su / (SLICE_RES - 1) - 0.5; // scan axis
           const [rxv, ryv, rzv] = rotateVec(px, py, 0, srx, sry, srz);
-          const x = rxv + 0.5, y = ryv + 0.5, z = rzv + sliceY;
+          let x = rxv + 0.5, y = ryv + 0.5, z = rzv + sliceY;
+          // SPACE DIFFUSE (toward the emptiest wall) THEN SPACE CRUSH (voxelize
+          // the lookup coords) — same compose order as the DSP scan + 3D rebuild.
+          if (diffuseTarget) {
+            if (diffuseTarget.axis === 0) x = diffusePull(x, spaceDiffuse, diffuseTarget.dir);
+            else if (diffuseTarget.axis === 1) y = diffusePull(y, spaceDiffuse, diffuseTarget.dir);
+            else z = diffusePull(z, spaceDiffuse, diffuseTarget.dir);
+          }
+          x = spaceCrushCoord(x, spaceCrush);
+          y = spaceCrushCoord(y, spaceCrush);
+          z = spaceCrushCoord(z, spaceCrush);
           let d = 0;
           if (x >= 0 && x <= 1 && y >= 0 && y <= 1 && z >= 0 && z <= 1) {
             const h = columnHeights(fr.floor, fr.wall, fr.ceiling, x, y);
@@ -885,13 +950,20 @@
     { id: 'slice_rz', label: 'ROT Z',   cable: 'cv' },
     { id: 'morph_fc', label: 'MORPH',   cable: 'cv' },
     { id: 'connect',  label: 'CONNECT', cable: 'cv' },
+    { id: 'connect_strength', label: 'CNCT STR', cable: 'cv' },
     { id: 'crush',    label: 'CRUSH',   cable: 'cv' },
+    { id: 'space_crush',   label: 'SPC CRUSH', cable: 'cv' },
+    { id: 'space_diffuse', label: 'SPC DIFF',  cable: 'cv' },
     { id: 'fold_cv',  label: 'FOLD',    cable: 'cv' },
     { id: 'tune',     label: 'TUNE',    cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'L', label: 'L', cable: 'audio' },
     { id: 'R', label: 'R', cable: 'audio' },
+    // SYNC — a pure sine at the playback fundamental, phase-locked to the L/R
+    // slice readout. Hard-sync other oscillators to CUBE or use it as a clean
+    // reference / sub.
+    { id: 'sync', label: 'SYNC', cable: 'audio' },
     { id: 'video_out', label: 'VIDEO', cable: 'mono-video' },
   ];
 
@@ -903,7 +975,10 @@
     { pid: 'fine', label: 'Fine', units: '¢' },
     { pid: 'morph_fc', label: 'Morph' },
     { pid: 'connect', label: 'Connect' },
+    { pid: 'connect_strength', label: 'Cnct Str' },
     { pid: 'crush', label: 'Crush' },
+    { pid: 'space_crush', label: 'Space Crush' },
+    { pid: 'space_diffuse', label: 'Space Diffuse' },
     { pid: 'fold', label: 'Fold' },
     { pid: 'spread', label: 'Spread' },
     { pid: 'slice_y', label: 'Y' },

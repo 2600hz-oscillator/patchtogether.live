@@ -27,8 +27,15 @@ import {
   crushCoord,
   crushGridSteps,
   crushLevels,
+  spaceCrushCoord,
+  spaceCrushGridSteps,
+  diffusePull,
+  lowestInfoFace,
   wrapFold,
   heightAt,
+  columnHeights,
+  fieldFromHeights,
+  clamp01,
   sampleSlice,
   wavefold,
   applyFold,
@@ -566,5 +573,207 @@ describe('sampleSlice — reads across floor / wall / ceiling', () => {
     expect(dFloor).toBeGreaterThan(0.02);
     expect(dWall).toBeGreaterThan(0.02);
     expect(dCeil).toBeGreaterThan(0.02);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// OFF = EXACT IDENTITY — SPACE CRUSH / SPACE DIFFUSE / CONNECT STRENGTH.
+//
+// The cube ART harness compares at tier B (rms < 1e-4), which canNOT prove
+// byte-identity. These tests are the real proof that all three new controls at
+// their OFF (0) value are bit-identical to the prior behavior — exact `===`,
+// not toBeCloseTo. (See the CUBE design adversarial review, finding G1.)
+// ───────────────────────────────────────────────────────────────────────────
+describe('off = exact identity (new CUBE controls)', () => {
+  function legacyOcc(z: number, bottom: number, top: number, connect: number): number {
+    const lo = Math.min(bottom, top);
+    const hi = Math.max(bottom, top);
+    const zz = Math.max(0, Math.min(1, z));
+    if (zz <= lo) return 1;
+    if (zz >= hi) return 0;
+    const span = hi - lo;
+    if (span <= 1e-9) return zz < hi ? 1 : 0;
+    const t = (zz - lo) / span;
+    const c = Math.max(0, Math.min(1, connect));
+    const circle = Math.sqrt(Math.max(0, 1 - t * t));
+    const vee = 1 - t;
+    return Math.max(0, Math.min(1, circle * (1 - c) + vee * c));
+  }
+
+  it('occ(...,connectStrength=0) === the legacy occ formula, exactly, over a grid', () => {
+    for (let bi = 0; bi <= 4; bi++) {
+      for (let ti = 0; ti <= 4; ti++) {
+        for (let zi = 0; zi <= 8; zi++) {
+          for (let ci = 0; ci <= 4; ci++) {
+            const b = bi / 4, t = ti / 4, z = zi / 8, c = ci / 4;
+            expect(occ(z, b, t, c, 0)).toBe(legacyOcc(z, b, t, c));
+            // the default 4-arg call must also be identical (no 5th arg path)
+            expect(occ(z, b, t, c)).toBe(legacyOcc(z, b, t, c));
+          }
+        }
+      }
+    }
+  });
+
+  it('spaceCrushCoord(c,0) === c and diffusePull(c,0,dir) === c (no arithmetic at off)', () => {
+    for (let i = 0; i <= 20; i++) {
+      const c = i / 20;
+      expect(spaceCrushCoord(c, 0)).toBe(c);
+      expect(diffusePull(c, 0, 1)).toBe(c);
+      expect(diffusePull(c, 0, -1)).toBe(c);
+    }
+    // spaceCrushGridSteps stays transparent until the grid actually drops below 256
+    expect(spaceCrushGridSteps(0)).toBe(256);
+  });
+
+  it('sampleSlice with all three controls at OFF === the legacy params, byte-for-byte', () => {
+    const floorT = rampInXTable(-1, 1);
+    const wallT = constTable(0.0);
+    const ceilT = rampInXTable(-1, 1);
+    const legacy: SliceParams = {
+      sliceY: 0.5, rx: 0.6, ry: 0.3, rz: 0.2,
+      morphFC: 0.4, connect: 0.3, material: 'smooth', crush: 0.2, wrap: true,
+    };
+    const withOff: SliceParams = { ...legacy, spaceCrush: 0, spaceDiffuse: 0, connectStrength: 0 };
+    const a = sampleSlice(floorT, wallT, ceilT, legacy);
+    const b = sampleSlice(floorT, wallT, ceilT, withOff);
+    expect(b.length).toBe(a.length);
+    for (let i = 0; i < a.length; i++) expect(b[i]).toBe(a[i]); // exact ===
+  });
+
+  it('each control at NON-zero actually changes the wave (sanity, not just off-safe)', () => {
+    const floorT = rampInXTable(-1, 1);
+    const wallT = constTable(0.0);
+    const ceilT = rampInXTable(-1, 1);
+    const base: SliceParams = {
+      sliceY: 0.5, rx: 0.3, ry: 0.2, rz: 0, morphFC: 0.5, connect: 0.2,
+      material: 'smooth', crush: 0, wrap: false,
+    };
+    const rms = (x: Float32Array, y: Float32Array) => {
+      let s = 0; for (let i = 0; i < x.length; i++) { const d = x[i]! - y[i]!; s += d * d; }
+      return Math.sqrt(s / x.length);
+    };
+    const clean = sampleSlice(floorT, wallT, ceilT, base);
+    expect(rms(clean, sampleSlice(floorT, wallT, ceilT, { ...base, spaceCrush: 1 }))).toBeGreaterThan(1e-3);
+    expect(rms(clean, sampleSlice(floorT, wallT, ceilT, { ...base, spaceDiffuse: 1 }))).toBeGreaterThan(1e-3);
+    expect(rms(clean, sampleSlice(floorT, wallT, ceilT, { ...base, connectStrength: 1 }))).toBeGreaterThan(1e-3);
+  });
+
+  it('lowestInfoFace is deterministic + stable across calls (latch invariant)', () => {
+    const floorT = constTable(-1);
+    const wallT = rampInXTable(-1, 1);
+    const ceilT = rampInXTable(-1, 1);
+    const fp = { morphFC: 0.5, connect: 0.3, connectStrength: 0, material: 'smooth' as const };
+    const a = lowestInfoFace(floorT, wallT, ceilT, fp);
+    const b = lowestInfoFace(floorT, wallT, ceilT, fp);
+    expect(a).toEqual(b); // same field → same target (no chatter)
+    expect(a.axis).toBeGreaterThanOrEqual(0);
+    expect([-1, 1]).toContain(a.dir);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// HYPERCUBE — the 4th (HOLO) table + ALPHA axis (the tesseract cross-section).
+//
+// HARD INVARIANT: off = EXACT identity. With NO holo table (or NO alpha) the
+// f3 path must be byte-for-byte today's CUBE; with a holo table present but
+// ALPHA=0 the field collapses f4→f3 (1*f3 + 0*dH = f3) so it equals the plain
+// 3-table render exactly. These are exact `===` proofs (the ART harness only
+// compares at RMS tier B, which can't prove byte-identity). ALPHA=1 with a
+// non-trivial HOLO table must AUDIBLY change the wave (RMS > 1e-3).
+// ───────────────────────────────────────────────────────────────────────────
+describe('HYPERCUBE — HOLO table + ALPHA (off = exact identity)', () => {
+  const FLOOR = rampInXTable(-1, 1);
+  const WALL = constTable(0.0);
+  const CEIL = rampInXTable(-1, 1);
+  // A non-trivial HOLO table that genuinely differs from floor/ceiling so
+  // ALPHA=1 has audible bite (a sinusoidal relief across x).
+  const HOLO = (() => {
+    const t: Float32Array[] = [];
+    for (let f = 0; f < FRAMES; f++) {
+      const row = new Float32Array(COLS);
+      for (let c = 0; c < COLS; c++) row[c] = Math.sin((2 * Math.PI * c) / COLS);
+      t.push(row);
+    }
+    return t;
+  })();
+
+  const base = (over: Partial<SliceParams> = {}): SliceParams => ({
+    sliceY: 0.5, rx: 0.6, ry: 0.3, rz: 0.2,
+    morphFC: 0.4, connect: 0.3, material: 'smooth', crush: 0.2, wrap: true, ...over,
+  });
+  const rms = (x: Float32Array, y: Float32Array): number => {
+    let s = 0; for (let i = 0; i < x.length; i++) { const d = x[i]! - y[i]!; s += d * d; }
+    return Math.sqrt(s / x.length);
+  };
+
+  it('columnHeights leaves holoH undefined without holoFrames, sets it with', () => {
+    const h0 = columnHeights(FLOOR, WALL, CEIL, 0.3, 0.7);
+    expect(h0.holoH).toBeUndefined();
+    const h1 = columnHeights(FLOOR, WALL, CEIL, 0.3, 0.7, HOLO);
+    expect(h1.holoH).toBe(heightAt(HOLO, 0.3, 0.7));
+    // The 3 base heights are identical either way (no holo influence on them).
+    expect(h1.floorH).toBe(h0.floorH);
+    expect(h1.wallH).toBe(h0.wallH);
+    expect(h1.ceilH).toBe(h0.ceilH);
+  });
+
+  it('fieldFromHeights: holoH undefined OR alpha undefined === the f3 path, exactly', () => {
+    // Reconstruct today's f3 result inline and compare byte-for-byte.
+    const f3 = (z: number, m: number, connect: number, mat: Material): number => {
+      const h = columnHeights(FLOOR, WALL, CEIL, 0.42, 0.6);
+      const dF = occ(z, h.floorH, h.wallH, connect, 0);
+      const dC = occ(z, h.ceilH, h.wallH, connect, 0);
+      const f = (1 - clamp01(m)) * dF + clamp01(m) * dC;
+      return mat === 'hard' ? (f >= 0.5 ? 1 : 0) : clamp01(f);
+    };
+    for (let zi = 0; zi <= 8; zi++) {
+      const z = zi / 8;
+      for (const mat of ['smooth', 'hard'] as Material[]) {
+        const fp = { morphFC: 0.4, connect: 0.3, material: mat };
+        // (a) no holoH at all → f3
+        const hNo = columnHeights(FLOOR, WALL, CEIL, 0.42, 0.6);
+        expect(fieldFromHeights(z, hNo, { ...fp, alpha: 0.7 })).toBe(f3(z, 0.4, 0.3, mat));
+        // (b) holoH present but alpha undefined → f3
+        const hYes = columnHeights(FLOOR, WALL, CEIL, 0.42, 0.6, HOLO);
+        expect(fieldFromHeights(z, hYes, fp)).toBe(f3(z, 0.4, 0.3, mat));
+        // (c) holoH present + alpha=0 collapses f4→f3 exactly
+        expect(fieldFromHeights(z, hYes, { ...fp, alpha: 0 })).toBe(f3(z, 0.4, 0.3, mat));
+      }
+    }
+  });
+
+  it('sampleSlice with NO holoFrames === today (byte-for-byte, ignores alpha)', () => {
+    const legacy = sampleSlice(FLOOR, WALL, CEIL, base());
+    // Same call but with an ALPHA set in params + no holo table: must be identical.
+    const withAlphaNoHolo = sampleSlice(FLOOR, WALL, CEIL, base({ alpha: 1 }));
+    expect(withAlphaNoHolo.length).toBe(legacy.length);
+    for (let i = 0; i < legacy.length; i++) expect(withAlphaNoHolo[i]).toBe(legacy[i]);
+  });
+
+  it('sampleSlice with holo present + ALPHA=0 === the plain 3-table render, byte-for-byte', () => {
+    const threeTable = sampleSlice(FLOOR, WALL, CEIL, base());
+    const fourTableAlpha0 = sampleSlice(FLOOR, WALL, CEIL, base({ alpha: 0 }), 0, HOLO);
+    expect(fourTableAlpha0.length).toBe(threeTable.length);
+    for (let i = 0; i < threeTable.length; i++) expect(fourTableAlpha0[i]).toBe(threeTable[i]);
+  });
+
+  it('sampleSlice with holo + ALPHA=1 AUDIBLY differs from ALPHA=0 (RMS > 1e-3)', () => {
+    const alpha0 = sampleSlice(FLOOR, WALL, CEIL, base({ alpha: 0 }), 0, HOLO);
+    const alpha1 = sampleSlice(FLOOR, WALL, CEIL, base({ alpha: 1 }), 0, HOLO);
+    expect(rms(alpha0, alpha1)).toBeGreaterThan(1e-3);
+    // …and a mid ALPHA sits strictly between the two (continuous morph, no jump).
+    const alphaMid = sampleSlice(FLOOR, WALL, CEIL, base({ alpha: 0.5 }), 0, HOLO);
+    expect(rms(alpha0, alphaMid)).toBeGreaterThan(0);
+    expect(rms(alphaMid, alpha1)).toBeGreaterThan(0);
+    expect(rms(alpha0, alphaMid)).toBeLessThan(rms(alpha0, alpha1));
+  });
+
+  it('rayDepth threads holoFrames + alpha (ALPHA=1 with holo ≠ no-holo)', () => {
+    // Build one ray and march it with/without holo at alpha=1.
+    const sp = base({ alpha: 1 });
+    const a = sampleSlice(FLOOR, WALL, CEIL, sp);            // no holo → f3 path
+    const b = sampleSlice(FLOOR, WALL, CEIL, sp, 0, HOLO);   // holo + alpha=1
+    expect(rms(a, b)).toBeGreaterThan(1e-3);
   });
 });

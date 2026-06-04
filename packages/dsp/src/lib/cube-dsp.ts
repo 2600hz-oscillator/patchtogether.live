@@ -176,7 +176,13 @@ export function heightAt(
  * `top` < `bottom` is tolerated (the connector spans whichever pair) — we always
  * fill from the lower height upward to the higher one.
  */
-export function occ(z: number, bottom: number, top: number, connect: number): number {
+export function occ(
+  z: number,
+  bottom: number,
+  top: number,
+  connect: number,
+  connectStrength = 0,
+): number {
   const lo = Math.min(bottom, top);
   const hi = Math.max(bottom, top);
   const zz = clamp01(z);
@@ -187,8 +193,22 @@ export function occ(z: number, bottom: number, top: number, connect: number): nu
 
   const t = (zz - lo) / span; // 0 at bottom height, 1 at top height
   const c = clamp01(connect);
-  const circle = Math.sqrt(Math.max(0, 1 - t * t)); // half-ellipse bulge
-  const vee = 1 - t; // linear ramp ("V" to the floor)
+  const s = clamp01(connectStrength);
+  if (s <= 0) {
+    // OFF = today's EXACT path (verbatim) — load-bearing for byte-identity.
+    const circle = Math.sqrt(Math.max(0, 1 - t * t)); // half-ellipse bulge
+    const vee = 1 - t; // linear ramp ("V" to the floor)
+    return clamp01(circle * (1 - c) + vee * c);
+  }
+  // CONNECT STRENGTH > 0 — push the shape's interior control point "out of the
+  // cube": LIFT each profile so its base region overshoots past density 1, then
+  // clamp back into the cube. The endpoints stay anchored (the zz<=lo / zz>=hi
+  // guards above return 1 / 0 regardless), so the connector still touches the
+  // floor/ceiling — but the solid band near the base swells dramatically as the
+  // 3rd point is pushed further out (lift 1→3 across s).
+  const lift = 1 + s * 2;
+  const circle = clamp01(Math.sqrt(Math.max(0, 1 - t * t)) * lift);
+  const vee = clamp01((1 - t) * lift);
   return clamp01(circle * (1 - c) + vee * c);
 }
 
@@ -202,6 +222,14 @@ export interface FieldParams {
   morphFC: number;
   /** CONNECTION MORPH c ∈ [0,1]: circle arc ↔ sawtooth-V (see occ). */
   connect: number;
+  /** CONNECT STRENGTH s ∈ [0,1]: 0 = today; >0 pushes the connector's interior
+   *  control point out of the cube (overshoot) for a more dramatic base swell. */
+  connectStrength?: number;
+  /** HYPERCUBE ALPHA a ∈ [0,1]: the slice's 4th-dimension (w) coordinate. The
+   *  field's occupancy is blended toward the HOLO cell `f4 = (1-a)*f3 + a*dH` —
+   *  a genuine tesseract cross-section. UNDEFINED (or no holoH) ⇒ the plain 3-
+   *  table CUBE field, byte-for-byte. a=0 also collapses f4→f3. CV-able. */
+  alpha?: number;
   /** Material readout: SMOOTH = continuous density, HARD = binary in/out. */
   material: Material;
 }
@@ -211,11 +239,19 @@ export interface ColumnHeights {
   floorH: number;
   wallH: number;
   ceilH: number;
+  /** HYPERCUBE 4th-table (HOLO) height at this column, in [0,1]. UNDEFINED
+   *  when no holo table is supplied (the plain CUBE path) — fieldFromHeights
+   *  then returns the EXACT 3-table f3 result. */
+  holoH?: number;
 }
 
 /**
  * Read the three source heights for a horizontal position (x, y). x → sample-
  * phase (u), y → frame (v) of each table (field orientation Q1 default).
+ *
+ * HYPERCUBE: `holoFrames` is a TRAILING OPTIONAL arg. When supplied, the 4th
+ * (HOLO) table's height is read into `holoH`; when omitted, `holoH` is left
+ * `undefined` so fieldFromHeights takes the byte-identical 3-table path.
  */
 export function columnHeights(
   floorFrames: readonly Float32Array[],
@@ -223,11 +259,13 @@ export function columnHeights(
   ceilFrames: readonly Float32Array[],
   x: number,
   y: number,
+  holoFrames?: readonly Float32Array[],
 ): ColumnHeights {
   return {
     floorH: heightAt(floorFrames, x, y),
     wallH: heightAt(wallFrames, x, y),
     ceilH: heightAt(ceilFrames, x, y),
+    holoH: holoFrames ? heightAt(holoFrames, x, y) : undefined,
   };
 }
 
@@ -251,11 +289,27 @@ export function fieldFromHeights(
   p: FieldParams,
 ): number {
   const m = clamp01(p.morphFC);
-  const dF = occ(z, h.floorH, h.wallH, p.connect);
-  const dC = occ(z, h.ceilH, h.wallH, p.connect);
-  const f = (1 - m) * dF + m * dC;
-  if (p.material === 'hard') return f >= HARD_THRESHOLD ? 1 : 0;
-  return clamp01(f);
+  const cs = p.connectStrength ?? 0;
+  const dF = occ(z, h.floorH, h.wallH, p.connect, cs);
+  const dC = occ(z, h.ceilH, h.wallH, p.connect, cs);
+  const f3 = (1 - m) * dF + m * dC;
+  // ── PLAIN CUBE path (off = byte-identity) ──
+  // When there's no HOLO height OR no ALPHA, return the EXACT current f3
+  // material/clamp result — verbatim, no extra arithmetic (load-bearing for
+  // the off-thread byte-identity guarantee + the untouched CUBE baselines).
+  if (h.holoH === undefined || p.alpha === undefined) {
+    if (p.material === 'hard') return f3 >= HARD_THRESHOLD ? 1 : 0;
+    return clamp01(f3);
+  }
+  // ── HYPERCUBE tesseract cross-section ──
+  // dH = the HOLO cell's occupancy (the 4th table connected to the wall);
+  // f4 = (1-a)*f3 + a*dH blends the field toward it as ALPHA rises. a=0
+  // collapses f4→f3 exactly (1*f3 + 0*dH = f3) so HYPERCUBE-off is identity.
+  const dH = occ(z, h.holoH, h.wallH, p.connect, cs);
+  const a = clamp01(p.alpha);
+  const f4 = (1 - a) * f3 + a * dH;
+  if (p.material === 'hard') return f4 >= HARD_THRESHOLD ? 1 : 0;
+  return clamp01(f4);
 }
 
 /**
@@ -326,6 +380,129 @@ export function crush(value: number, k: number): number {
   if (levels >= 256) return value;
   const v = clamp01(value);
   return Math.round(v * (levels - 1)) / (levels - 1);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// 4b. SPACE CRUSH — independent spatial voxelization of the FIELD itself.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Spatial grid steps for SPACE CRUSH amount k ∈ [0,1], INDEPENDENT of CRUSH.
+ *   k = 0 → 256 (transparent); k = 1 → 6 (chunky voxels). Linear, rounded.
+ * Distinct range from crushGridSteps (256→4) so the two crushers read
+ * differently when stacked. SPACE CRUSH voxelizes the (x,y,z) LOOKUP coords —
+ * coarsening the volumetric data the slice intersects — whereas CRUSH also
+ * quantizes the output amplitude.
+ */
+export function spaceCrushGridSteps(k: number): number {
+  const kk = clamp01(k);
+  return Math.max(2, Math.round(256 + (6 - 256) * kk));
+}
+
+/**
+ * Snap a coordinate in [0,1] onto the SPACE-CRUSH voxel grid (cell centers).
+ * k = 0 → identity (returns the literal argument before any float math). Snaps
+ * to cell centers so the result stays in [0,1] and is monotonic in `coord`.
+ */
+export function spaceCrushCoord(coord: number, k: number): number {
+  const kk = clamp01(k);
+  if (kk <= 0) return coord; // OFF = exact identity, no arithmetic
+  const n = spaceCrushGridSteps(k);
+  if (n >= 256) return coord;
+  const c = clamp01(coord);
+  const cell = Math.min(n - 1, Math.floor(c * n));
+  return (cell + 0.5) / n;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// 4c. SPACE DIFFUSE — gravity toward the cube's lowest-information wall.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** A cube face: axis 0=x,1=y,2=z; dir +1 = high face, -1 = low face. */
+export interface DiffuseTarget {
+  axis: 0 | 1 | 2;
+  dir: -1 | 1;
+}
+
+/** Default gravity face when the field has no clear emptiest wall (ties /
+ *  uniform field): the top (z-high), which is usually emptiest anyway. */
+export const DIFFUSE_DEFAULT_TARGET: DiffuseTarget = { axis: 2, dir: 1 };
+
+/** Relative margin the winning (emptiest) half must beat the runner-up by
+ *  before we trust it; below this we fall back to the default face. Keeps the
+ *  gravity direction from chattering as the field morphs continuously. */
+const DIFFUSE_MARGIN = 0.05;
+
+/**
+ * Find the lowest-information cube FACE — the emptiest wall the cloud should be
+ * pulled toward. "Information" = summed field density over a half-space, sampled
+ * on a coarse GRID³ (default 8 → ~512 field reads). Deterministic (no RNG), and
+ * depends ONLY on the field (tables + FieldParams), NOT on the diffuse amount —
+ * so turning SPACE DIFFUSE never changes the target (it only re-evaluates when
+ * the tables/morph/connect change = "latch on table change"). Returns the
+ * default face when the winner doesn't clear DIFFUSE_MARGIN over the runner-up.
+ */
+export function lowestInfoFace(
+  floorFrames: readonly Float32Array[],
+  wallFrames: readonly Float32Array[],
+  ceilFrames: readonly Float32Array[],
+  p: FieldParams,
+  grid = 8,
+): DiffuseTarget {
+  // sums[axis][half]: half 0 = low (coord < 0.5), half 1 = high.
+  const sums = [
+    [0, 0],
+    [0, 0],
+    [0, 0],
+  ];
+  const step = 1 / grid;
+  for (let i = 0; i < grid; i++) {
+    const x = (i + 0.5) * step;
+    const hx = x < 0.5 ? 0 : 1;
+    for (let j = 0; j < grid; j++) {
+      const y = (j + 0.5) * step;
+      const hy = y < 0.5 ? 0 : 1;
+      const h = columnHeights(floorFrames, wallFrames, ceilFrames, x, y);
+      for (let kk = 0; kk < grid; kk++) {
+        const z = (kk + 0.5) * step;
+        const hz = z < 0.5 ? 0 : 1;
+        const d = fieldFromHeights(z, h, p);
+        sums[0][hx] += d;
+        sums[1][hy] += d;
+        sums[2][hz] += d;
+      }
+    }
+  }
+  // Candidate = each (axis, half); emptiest = smallest sum. Deterministic order.
+  const cands: Array<{ axis: 0 | 1 | 2; dir: -1 | 1; sum: number }> = [
+    { axis: 0, dir: -1, sum: sums[0][0] },
+    { axis: 0, dir: 1, sum: sums[0][1] },
+    { axis: 1, dir: -1, sum: sums[1][0] },
+    { axis: 1, dir: 1, sum: sums[1][1] },
+    { axis: 2, dir: -1, sum: sums[2][0] },
+    { axis: 2, dir: 1, sum: sums[2][1] },
+  ];
+  cands.sort((a, b) => a.sum - b.sum); // ascending; stable tiebreak by order
+  const best = cands[0];
+  const next = cands[1];
+  const denom = Math.max(1e-9, next.sum);
+  if ((next.sum - best.sum) / denom < DIFFUSE_MARGIN) {
+    return DIFFUSE_DEFAULT_TARGET; // ambiguous → predictable default (top)
+  }
+  return { axis: best.axis, dir: best.dir };
+}
+
+/**
+ * Pull a coordinate c ∈ [0,1] toward a face (dir) by amount k ∈ [0,1]. k = 0 →
+ * identity (returns the literal argument). kk² ease: gentle at low knob, strong
+ * near 1. Moving the sample positions deforms what the slice intersects → the
+ * cloud spreads toward the emptiest wall and the sound changes.
+ */
+export function diffusePull(c: number, k: number, dir: -1 | 1): number {
+  const kk = clamp01(k);
+  if (kk <= 0) return c; // OFF = exact identity, no arithmetic
+  const target = dir > 0 ? 1 : 0;
+  return c + (target - c) * (kk * kk);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -413,6 +590,17 @@ export interface SliceParams {
   material: Material;
   /** CRUSH k ∈ [0,1]. */
   crush: number;
+  /** SPACE CRUSH k ∈ [0,1]: voxelize the field lookup coords (default 0 = off). */
+  spaceCrush?: number;
+  /** SPACE DIFFUSE k ∈ [0,1]: pull the cloud toward the emptiest wall (0 = off). */
+  spaceDiffuse?: number;
+  /** CONNECT STRENGTH s ∈ [0,1]: overshoot the connector's base (0 = off). */
+  connectStrength?: number;
+  /** HYPERCUBE ALPHA a ∈ [0,1]: the slice's 4th-dimension (w) coordinate.
+   *  Threaded into the FieldParams the ray march builds; UNDEFINED (or no
+   *  holoFrames passed to sampleSlice/rayDepth) ⇒ the plain 3-table CUBE
+   *  render, byte-for-byte. CV-able; default off. */
+  alpha?: number;
   /** WRAP toggle: out-of-cube coords mirror-fold back in when true. */
   wrap: boolean;
 }
@@ -498,8 +686,21 @@ export function rayDepth(
   ceilFrames: readonly Float32Array[],
   ray: SliceRay,
   p: SliceParams,
+  diffuseTarget: DiffuseTarget | null = null,
+  holoFrames?: readonly Float32Array[],
 ): number {
-  const fp: FieldParams = { morphFC: p.morphFC, connect: p.connect, material: p.material };
+  const fp: FieldParams = {
+    morphFC: p.morphFC,
+    connect: p.connect,
+    connectStrength: p.connectStrength ?? 0,
+    // HYPERCUBE ALPHA — only bites when holoFrames is also supplied (the
+    // columnHeights call below leaves holoH undefined without it, so
+    // fieldFromHeights stays on the byte-identical 3-table path).
+    alpha: p.alpha,
+    material: p.material,
+  };
+  const sd = p.spaceDiffuse ?? 0;
+  const sc = p.spaceCrush ?? 0;
   const [ox, oy, oz] = ray.origin;
   const [dx, dy, dz] = ray.dir;
   // March a fixed extent centered on the origin so depth grows with how much
@@ -513,6 +714,14 @@ export function rayDepth(
     let x = ox + dx * t;
     let y = oy + dy * t;
     let z = oz + dz * t;
+    // SPACE DIFFUSE — warp the sample toward the emptiest wall BEFORE the
+    // inside-test, so the cloud spreads (and rays warped out read quieter via
+    // the /CUBE_RAY_STEPS normalizer). diffuseTarget is null when sd === 0.
+    if (diffuseTarget) {
+      if (diffuseTarget.axis === 0) x = diffusePull(x, sd, diffuseTarget.dir);
+      else if (diffuseTarget.axis === 1) y = diffusePull(y, sd, diffuseTarget.dir);
+      else z = diffusePull(z, sd, diffuseTarget.dir);
+    }
     const inside = x >= 0 && x <= 1 && y >= 0 && y <= 1 && z >= 0 && z <= 1;
     if (!inside) {
       if (!p.wrap) continue; // out-of-cube → silent (no contribution)
@@ -520,10 +729,11 @@ export function rayDepth(
       y = wrapFold(y);
       z = wrapFold(z);
     }
-    const cx = crushCoord(x, p.crush);
-    const cy = crushCoord(y, p.crush);
-    const cz = crushCoord(z, p.crush);
-    const h = columnHeights(floorFrames, wallFrames, ceilFrames, cx, cy);
+    // SPACE CRUSH voxelizes the lookup coords, THEN CRUSH snaps (compose).
+    const cx = crushCoord(spaceCrushCoord(x, sc), p.crush);
+    const cy = crushCoord(spaceCrushCoord(y, sc), p.crush);
+    const cz = crushCoord(spaceCrushCoord(z, sc), p.crush);
+    const h = columnHeights(floorFrames, wallFrames, ceilFrames, cx, cy, holoFrames);
     acc += fieldFromHeights(cz, h, fp);
     counted++;
   }
@@ -551,11 +761,30 @@ export function sampleSlice(
   ceilFrames: readonly Float32Array[],
   p: SliceParams,
   depthOffset = 0,
+  holoFrames?: readonly Float32Array[],
 ): Float32Array {
   const out = new Float32Array(CUBE_SLICE_SIZE);
+  // SPACE DIFFUSE target: resolve the emptiest wall ONCE per render (it depends
+  // only on the field, not the diffuse amount → stable while the knob moves;
+  // re-evaluated only when the tables/morph/connect change). null when off.
+  // NOTE lowestInfoFace samples the plain 3-table field (no holo) — the diffuse
+  // GRAVITY DIRECTION is intentionally HYPERCUBE-independent, mirroring how it
+  // already ignores the diffuse amount itself ("latch on table change"). The
+  // per-ray march below DOES use the alpha-blended field via holoFrames.
+  const sd = p.spaceDiffuse ?? 0;
+  const tgt =
+    sd > 0
+      ? lowestInfoFace(floorFrames, wallFrames, ceilFrames, {
+          morphFC: p.morphFC,
+          connect: p.connect,
+          connectStrength: p.connectStrength ?? 0,
+          alpha: p.alpha,
+          material: p.material,
+        })
+      : null;
   for (let n = 0; n < CUBE_SLICE_SIZE; n++) {
     const ray = sliceRay(n, p, depthOffset);
-    const depth = rayDepth(floorFrames, wallFrames, ceilFrames, ray, p);
+    const depth = rayDepth(floorFrames, wallFrames, ceilFrames, ray, p, tgt, holoFrames);
     const crushed = crush(depth, p.crush); // amplitude crush in [0,1]
     out[n] = clampRange(crushed * 2 - 1, -1, 1); // → [-1, 1]
   }
