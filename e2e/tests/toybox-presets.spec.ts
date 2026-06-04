@@ -222,10 +222,23 @@ test.describe('TOYBOX presets (Phase 6)', () => {
     await card.waitFor({ state: 'visible', timeout: 10_000 });
     await pinViewport(page);
 
-    // The dropdown is populated once the manifest presets load.
+    // The dropdown is populated from the static manifest (the SOURCE OF TRUTH),
+    // not this spec's hand-maintained apply-list — so derive the expected option
+    // count from the manifest itself. This keeps the count correct as presets are
+    // added (e.g. projection-map) without re-touching the inline PRESETS array,
+    // and avoids the off-by-one this assertion hit when the apply-list lagged.
     const sel = page.locator('[data-testid="toybox-preset-select"]');
     await sel.waitFor({ state: 'visible', timeout: 10_000 });
-    await expect(sel.locator('option')).toHaveCount(PRESETS.length + 1); // + placeholder
+    const manifestPresetCount = await page.evaluate(async () => {
+      const r = await fetch('/toybox/manifest.json');
+      const m = (await r.json()) as { presets?: unknown[] };
+      return Array.isArray(m.presets) ? m.presets.length : 0;
+    });
+    // Sanity: the manifest must contain at least the presets this spec applies.
+    expect(manifestPresetCount).toBeGreaterThanOrEqual(PRESETS.length);
+    // + 1 placeholder option. Generous timeout: the WebGL rAF compositor starves
+    // CI's main thread, so the manifest fetch + Svelte option render can lag.
+    await expect(sel.locator('option')).toHaveCount(manifestPresetCount + 1, { timeout: 15_000 });
 
     // Select WORLEY BLOOM via the dropdown → applies it to node.data.
     // noWaitAfter: the select is a pure in-card onchange (no navigation); without

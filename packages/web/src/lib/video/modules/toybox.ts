@@ -54,6 +54,8 @@ import {
   type ToyboxLayer,
   type ToyboxObjMaterial,
 } from '$lib/video/toybox-content';
+import { buildProjectorViewProj, projectorFromMaterial } from '$lib/video/toybox-projective';
+import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
 import {
   OP_SHADER_INDEX,
   isCombineGraph,
@@ -102,12 +104,16 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUv;
 uniform mat4 uMVP;
+uniform mat4 uModel;       // model→world (for projective surface mapping)
 uniform mat3 uNormalMat;
-out vec3 vNormal;
+out vec3 vNormal;          // world-space normal (used for matcap + projective front-face)
 out vec2 vUv;
+out vec3 vWorldPos;        // world-space position (projective mapping)
 void main() {
   vNormal = normalize(uNormalMat * aNormal);
   vUv = aUv;
+  vec4 world = uModel * vec4(aPos, 1.0);
+  vWorldPos = world.xyz;
   gl_Position = uMVP * vec4(aPos, 1.0);
 }`;
 
@@ -115,12 +121,16 @@ const OBJ_FRAG_SRC = `#version 300 es
 precision highp float;
 in vec3 vNormal;
 in vec2 vUv;
+in vec3 vWorldPos;
 out vec4 outColor;
 uniform int uMatcap;       // style index 0..${MATCAP_STYLES - 1}
 uniform vec3 uTint;
 uniform sampler2D uSurface; // another layer's rendered FBO (texmap)
 uniform int uUseSurface;    // 1 = blend the sampled layer over the matcap
 uniform float uSurfaceMix;  // 0..1 blend amount (1 = full texture replace)
+uniform int uProjMode;      // 0 = UV-map the surface; 1 = PROJECTIVE
+uniform mat4 uProjVP;       // projector view-projection (projective mode)
+uniform vec3 uProjEye;      // projector eye world pos (projective front-face)
 
 // Procedural hemispheric matcap. muv in [0,1]^2 from the (camera-space)
 // normal; r = distance from the matcap centre (1 at the silhouette edge).
@@ -158,14 +168,55 @@ void main() {
   // Map normal.xy → matcap uv (the canonical sphere-normal matcap lookup).
   vec2 muv = n.xy * 0.5 + 0.5;
   vec3 mat = matcap(muv, uMatcap);
-  // Texmap: sample the bound source-layer FBO by the mesh UV. OBJ v is
-  // bottom-origin vs GL top-origin, so flip v. When uUseSurface=0 the bound
-  // texture (this layer's own FBO) is ignored entirely → pure matcap.
-  vec3 surf = texture(uSurface, vec2(vUv.x, 1.0 - vUv.y)).rgb;
-  vec3 outc = (uUseSurface == 1) ? mix(mat, surf, clamp(uSurfaceMix, 0.0, 1.0)) : mat;
+
+  vec3 outc = mat;
+  if (uUseSurface == 1) {
+    float mixAmt = clamp(uSurfaceMix, 0.0, 1.0);
+    if (uProjMode == 1) {
+      // PROJECTIVE: transform the world position into the projector's clip
+      // space, divide by w, and sample the source there. Guards (no back-wrap,
+      // no projection behind the projector, no spill outside the frustum) make
+      // the projection fall back to the matcap rather than smearing.
+      vec4 clip = uProjVP * vec4(vWorldPos, 1.0);
+      if (clip.w > 1e-4) {
+        vec3 ndc = clip.xyz / clip.w;          // [-1,1]
+        vec2 ps = ndc.xy * 0.5 + 0.5;          // [0,1] texcoords
+        // FRONT-FACING: the surface normal must point toward the projector,
+        // else the image wraps onto the far side of the mesh.
+        vec3 toProj = normalize(uProjEye - vWorldPos);
+        bool front = dot(n, toProj) > 0.0;
+        bool inFrustum = ps.x >= 0.0 && ps.x <= 1.0 && ps.y >= 0.0 && ps.y <= 1.0
+                         && ndc.z >= -1.0 && ndc.z <= 1.0;
+        if (front && inFrustum) {
+          // Source FBO is GL top-origin; flip v to match the UV path.
+          vec3 surf = texture(uSurface, vec2(ps.x, 1.0 - ps.y)).rgb;
+          outc = mix(mat, surf, mixAmt);
+        }
+        // else: outside the projection cone / behind it → keep the matcap.
+      }
+    } else {
+      // UV-map: sample the bound source-layer FBO by the mesh UV. OBJ v is
+      // bottom-origin vs GL top-origin, so flip v.
+      vec3 surf = texture(uSurface, vec2(vUv.x, 1.0 - vUv.y)).rgb;
+      outc = mix(mat, surf, mixAmt);
+    }
+  }
   vec3 col = outc * uTint;
   outColor = vec4(col, 1.0);
 }`;
+
+/** Handle extras exposed via the TOYBOX node's `read('extras')` channel. The
+ *  card drives per-layer image/video input through these — addressing a LAYER
+ *  index because TOYBOX is one engine node hosting up to LAYER_COUNT input
+ *  layers (vs PICTUREBOX/VIDEOBOX which are one module = one source). */
+export interface ToyboxHandleExtras {
+  /** Upload an ImageBitmap/HTMLImageElement into layer `i`'s source texture
+   *  (PICTUREBOX-style). Pass null to clear it back to the idle pattern. */
+  setLayerImage(i: number, bitmap: ImageBitmap | HTMLImageElement | null): void;
+  /** Attach a card-owned <video> element to layer `i`'s frame-upload pump
+   *  (VIDEOBOX-style). Pass null to detach. */
+  attachLayerVideo(i: number, el: HTMLVideoElement | null): void;
+}
 
 export const toyboxDef: VideoModuleDef = {
   type: 'toybox',
@@ -277,12 +328,16 @@ export const toyboxDef: VideoModuleDef = {
     // ---------------- OBJ mesh program + per-model GPU buffers ----------------
     const objProgram = compileObjProgram(gl);
     const uMVP = gl.getUniformLocation(objProgram, 'uMVP');
+    const uModel = gl.getUniformLocation(objProgram, 'uModel');
     const uNormalMat = gl.getUniformLocation(objProgram, 'uNormalMat');
     const uMatcap = gl.getUniformLocation(objProgram, 'uMatcap');
     const uTint = gl.getUniformLocation(objProgram, 'uTint');
     const uSurface = gl.getUniformLocation(objProgram, 'uSurface');
     const uUseSurface = gl.getUniformLocation(objProgram, 'uUseSurface');
     const uSurfaceMix = gl.getUniformLocation(objProgram, 'uSurfaceMix');
+    const uProjMode = gl.getUniformLocation(objProgram, 'uProjMode');
+    const uProjVP = gl.getUniformLocation(objProgram, 'uProjVP');
+    const uProjEye = gl.getUniformLocation(objProgram, 'uProjEye');
 
     interface GpuMesh {
       vao: WebGLVertexArrayObject;
@@ -374,6 +429,90 @@ export const toyboxDef: VideoModuleDef = {
     const cuInvert = gl.getUniformLocation(combineProgram, 'uInvert');
     const cuKey = gl.getUniformLocation(combineProgram, 'uKey');
     const cuMode = gl.getUniformLocation(combineProgram, 'uMode');
+
+    // ---------------- Input-source (image / video) program ----------------
+    // A fullscreen-quad passthrough that samples a source texture into the layer
+    // FBO. When no source is present it paints the same dark-teal idle pattern as
+    // PICTUREBOX/VIDEOBOX so an empty input layer reads as "alive but empty".
+    // Re-implements the VIDEOBOX/PICTUREBOX sample path INSIDE toybox (this IS
+    // toybox work — toybox owns its layer render factory).
+    const inputProgram = compileInputProgram(gl);
+    const iuTex = gl.getUniformLocation(inputProgram, 'uTex');
+    const iuHasInput = gl.getUniformLocation(inputProgram, 'uHasInput');
+    const iuGain = gl.getUniformLocation(inputProgram, 'uGain');
+
+    // Per-layer IMAGE source textures (PICTUREBOX-style: the card uploads an
+    // ImageBitmap via the layer extras → texImage2D here). Lazily created.
+    interface ImageSource {
+      tex: WebGLTexture;
+      hasImage: boolean;
+    }
+    const imageSources = new Map<number, ImageSource>();
+    function ensureImageSource(i: number): ImageSource {
+      let src = imageSources.get(i);
+      if (!src) {
+        const tex = gl.createTexture();
+        if (!tex) throw new Error('TOYBOX: createTexture (layer image) failed');
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+          new Uint8Array([0, 0, 0, 255]));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        src = { tex, hasImage: false };
+        imageSources.set(i, src);
+      }
+      return src;
+    }
+    /** Upload an ImageBitmap/HTMLImageElement into layer `i`'s source texture
+     *  (or clear it when null). Driven by the card via the layer extras. */
+    function setLayerImage(i: number, bitmap: ImageBitmap | HTMLImageElement | null): void {
+      const idx = Math.trunc(i);
+      if (idx < 0 || idx >= LAYER_COUNT) return;
+      const src = ensureImageSource(idx);
+      if (!bitmap) {
+        src.hasImage = false;
+        return;
+      }
+      gl.bindTexture(gl.TEXTURE_2D, src.tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      src.hasImage = true;
+    }
+
+    // Per-layer VIDEO frame uploaders (VIDEOBOX-style rVFC-driven pump). The
+    // card attaches its own card-owned <video> element per video layer.
+    const videoUploaders = new Map<number, ReturnType<typeof createVideoFrameUploader>>();
+    function ensureVideoUploader(i: number): ReturnType<typeof createVideoFrameUploader> {
+      let up = videoUploaders.get(i);
+      if (!up) {
+        up = createVideoFrameUploader({ gl, width: ctx.res.width, height: ctx.res.height });
+        videoUploaders.set(i, up);
+      }
+      return up;
+    }
+    /** Attach (or detach with null) a card-owned <video> element to layer `i`. */
+    function attachLayerVideo(i: number, el: HTMLVideoElement | null): void {
+      const idx = Math.trunc(i);
+      if (idx < 0 || idx >= LAYER_COUNT) return;
+      const up = ensureVideoUploader(idx);
+      if (el) up.attach(el);
+      else up.detach();
+    }
+
+    // Handle extras — the card drives per-layer image/video uploads through
+    // these (read('extras')). The factory stays DOM-free (testable in jsdom);
+    // the card owns the file picker / ImageBitmap decode / <video> element and
+    // hands the result here, addressing a specific LAYER index (TOYBOX is ONE
+    // engine node with up to LAYER_COUNT input layers, so the per-module
+    // PICTUREBOX/VIDEOBOX setImage/attach pattern is generalised with an index).
+    const extras: ToyboxHandleExtras = {
+      setLayerImage,
+      attachLayerVideo,
+    };
 
     // Scratch FBO POOL for the combine pass. The legacy linear chain needs two
     // ping-pong targets; the Phase-4 GRAPH needs one target PER op node (each
@@ -469,6 +608,12 @@ export const toyboxDef: VideoModuleDef = {
     // ---- Fixed camera (perspective) for the OBJ pass. Looks down -Z at the
     //      origin from z=+3.2; the model is auto-framed to ~unit at the origin
     //      so any model fits. ----
+    // The render camera's eye + look direction in WORLD space (view =
+    // translation(0,0,-3.2) ⇒ eye at +z, looking down -Z). Shared with the
+    // projective surface mode's "use camera" option so the projector can ride
+    // the render viewpoint.
+    const CAMERA_EYE: [number, number, number] = [0, 0, 3.2];
+    const CAMERA_DIR: [number, number, number] = [0, 0, -1];
     function projView(): Mat4 {
       const aspect = ctx.res.width / ctx.res.height;
       const proj = perspective((50 * Math.PI) / 180, aspect, 0.1, 100);
@@ -526,6 +671,7 @@ export const toyboxDef: VideoModuleDef = {
 
       g.useProgram(objProgram);
       if (uMVP) g.uniformMatrix4fv(uMVP, false, mvp);
+      if (uModel) g.uniformMatrix4fv(uModel, false, model);
       if (uNormalMat) g.uniformMatrix3fv(uNormalMat, false, nrm);
       if (uMatcap) g.uniform1i(uMatcap, Math.max(0, Math.min(MATCAP_STYLES - 1, Math.round(mat.matcap))));
       if (uTint) g.uniform3f(uTint, mat.tintR, mat.tintG, mat.tintB);
@@ -547,6 +693,25 @@ export const toyboxDef: VideoModuleDef = {
       if (uSurfaceMix) {
         const mix = typeof mat.surfaceMix === 'number' ? mat.surfaceMix : 1;
         g.uniform1f(uSurfaceMix, useSurf ? mix : 0);
+      }
+
+      // PROJECTIVE surface mode (Phase 7): when this OBJ has a surface source AND
+      // material.surfaceMode === 'projective', project the source from a viewpoint
+      // instead of UV-mapping it. Build the projector view-projection (CPU) +
+      // upload it; the frag shader does the per-fragment world→clip transform +
+      // front-face / in-frustum guards. UV mode (default) leaves uProjMode=0.
+      const projective = useSurf && mat.surfaceMode === 'projective';
+      if (uProjMode) g.uniform1i(uProjMode, projective ? 1 : 0);
+      if (projective) {
+        const aspect = ctx.res.width / ctx.res.height;
+        const projector = projectorFromMaterial(
+          mat,
+          { eye: CAMERA_EYE, dir: CAMERA_DIR },
+          aspect,
+        );
+        const vp = buildProjectorViewProj(projector);
+        if (uProjVP) g.uniformMatrix4fv(uProjVP, false, vp);
+        if (uProjEye) g.uniform3f(uProjEye, projector.eye[0], projector.eye[1], projector.eye[2]);
       }
 
       g.bindVertexArray(m.vao);
@@ -593,6 +758,62 @@ export const toyboxDef: VideoModuleDef = {
       g.clear(g.COLOR_BUFFER_BIT);
     }
 
+    /**
+     * Render an IMAGE-kind layer (PICTUREBOX-style) into target FBO `i`. The
+     * card uploads an ImageBitmap into this layer's source texture via the
+     * handle extras (setLayerImage); here we sample it onto a fullscreen quad.
+     * Until a file is set the input shader paints its idle pattern (uHasInput=0)
+     * — so an image layer is ALWAYS "produced" (returns true), the same way
+     * PICTUREBOX always renders. Returns true so combine treats it as content.
+     */
+    function renderImageLayer(i: number): boolean {
+      const g = gl;
+      const target = layerTargets[i]!;
+      const src = imageSources.get(i);
+      const has = !!src && src.hasImage;
+      g.bindFramebuffer(g.FRAMEBUFFER, target.fbo);
+      g.viewport(0, 0, ctx.res.width, ctx.res.height);
+      g.useProgram(inputProgram);
+      g.activeTexture(g.TEXTURE0);
+      // Bind the layer's source texture when present, else the inert dummy (the
+      // shader ignores it when uHasInput=0, but the sampler must be defined).
+      g.bindTexture(g.TEXTURE_2D, has ? src!.tex : dummyTex);
+      if (iuTex) g.uniform1i(iuTex, 0);
+      if (iuHasInput) g.uniform1f(iuHasInput, has ? 1 : 0);
+      if (iuGain) g.uniform1f(iuGain, 1);
+      ctx.drawFullscreenQuad();
+      g.activeTexture(g.TEXTURE0);
+      return true;
+    }
+
+    /**
+     * Render a VIDEO-kind layer (VIDEOBOX-style) into target FBO `i`. The card
+     * attaches a card-owned <video> element via the handle extras
+     * (attachLayerVideo); the per-layer frame uploader pumps decoded frames into
+     * a GL texture at the element's decode cadence. Until a frame is ready the
+     * input shader paints its idle pattern. Returns true (always "produced").
+     */
+    function renderVideoLayer(i: number): boolean {
+      const g = gl;
+      const target = layerTargets[i]!;
+      const up = videoUploaders.get(i);
+      // Only pumps a GPU upload when rVFC reports a new decoded frame; otherwise
+      // rebinds the existing texture. Returns false until a frame is ready.
+      const ready = up ? up.uploadIfReady() : false;
+      const srcTex = up ? up.texture : null;
+      g.bindFramebuffer(g.FRAMEBUFFER, target.fbo);
+      g.viewport(0, 0, ctx.res.width, ctx.res.height);
+      g.useProgram(inputProgram);
+      g.activeTexture(g.TEXTURE0);
+      g.bindTexture(g.TEXTURE_2D, ready && srcTex ? srcTex : dummyTex);
+      if (iuTex) g.uniform1i(iuTex, 0);
+      if (iuHasInput) g.uniform1f(iuHasInput, ready && srcTex ? 1 : 0);
+      if (iuGain) g.uniform1f(iuGain, 1);
+      ctx.drawFullscreenQuad();
+      g.activeTexture(g.TEXTURE0);
+      return true;
+    }
+
     /** Render layer `i` into its FBO; returns whether it produced content.
      *  `safeSource` is the per-frame texmap source index for an OBJ layer (or
      *  -1; ignored for non-OBJ layers). */
@@ -605,7 +826,9 @@ export const toyboxDef: VideoModuleDef = {
       let drew = false;
       if (layer.kind === 'obj') drew = renderObjLayer(i, layer, time, safeSource);
       else if (layer.kind === 'shader' || layer.kind === 'gen') drew = renderShaderLayer(i, layer, time);
-      // 'video' / 'off' → nothing.
+      else if (layer.kind === 'image') drew = renderImageLayer(i);
+      else if (layer.kind === 'video') drew = renderVideoLayer(i);
+      // 'off' → nothing.
       if (!drew) clearLayer(i);
       return drew;
     }
@@ -800,10 +1023,16 @@ export const toyboxDef: VideoModuleDef = {
           gl.deleteTexture(s.texture);
         }
         scratchPool.length = 0;
+        // Per-layer input sources (image textures + video frame uploaders).
+        for (const src of imageSources.values()) gl.deleteTexture(src.tex);
+        imageSources.clear();
+        for (const up of videoUploaders.values()) up.dispose();
+        videoUploaders.clear();
         for (const c of programs.values()) gl.deleteProgram(c.program);
         programs.clear();
         gl.deleteProgram(objProgram);
         gl.deleteProgram(combineProgram);
+        gl.deleteProgram(inputProgram);
         for (const m of meshes.values()) {
           gl.deleteVertexArray(m.vao);
           gl.deleteBuffer(m.vbo);
@@ -826,6 +1055,7 @@ export const toyboxDef: VideoModuleDef = {
       readParam() { return undefined; },
       read(key) {
         if (key === 'fboTexture') return surface.texture;
+        if (key === 'extras') return extras;
         return undefined;
       },
       dispose() { surface.dispose(); },
@@ -936,4 +1166,44 @@ void main() {
 
 function compileCombineProgram(gl: WebGL2RenderingContext): WebGLProgram {
   return linkProgram(gl, COMBINE_VERT_SRC, COMBINE_FRAG_SRC);
+}
+
+// Input-source (image / video) pass: a fullscreen-quad passthrough that samples
+// a source texture into the layer FBO. When no source is bound it paints the
+// same dark-teal idle pattern as PICTUREBOX/VIDEOBOX so an empty input layer
+// reads as "alive but empty" rather than "broken". Mirrors the engine's
+// fullscreen-quad attribute layout (location 0 = aPos in clip space) so
+// ctx.drawFullscreenQuad() drives it; the source textures are uploaded with
+// UNPACK_FLIP_Y_WEBGL=true (PICTUREBOX/VIDEOBOX convention) so vUv samples them
+// upright.
+const INPUT_VERT_SRC = `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aPos;
+out vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+const INPUT_FRAG_SRC = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uTex;
+uniform float uHasInput;   // 0 = idle pattern, 1 = sample uTex
+uniform float uGain;       // RGB multiplier (reserved for future CV)
+void main() {
+  if (uHasInput < 0.5) {
+    // Idle: subtle dark teal with a faint vertical ramp (PICTUREBOX +
+    // VIDEOBOX idle look) so an empty input layer reads as alive-but-empty.
+    float v = vUv.y * 0.05;
+    outColor = vec4(0.04, 0.07, 0.09 + v, 1.0);
+    return;
+  }
+  vec3 col = texture(uTex, vUv).rgb * uGain;
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`;
+
+function compileInputProgram(gl: WebGL2RenderingContext): WebGLProgram {
+  return linkProgram(gl, INPUT_VERT_SRC, INPUT_FRAG_SRC);
 }

@@ -65,6 +65,63 @@ export function perspective(fovYRad: number, aspect: number, near: number, far: 
   return m;
 }
 
+/**
+ * Right-handed look-at VIEW matrix: positions a camera/projector at `eye`
+ * looking toward `center`, with `up` the rough up direction. Maps world space
+ * into the eye's view space (eye at origin, looking down -Z). Used to build a
+ * projector's view-projection for TOYBOX projective surface mapping.
+ *
+ * Degenerate inputs (eye == center, or `up` parallel to the look direction)
+ * fall back to a stable basis so the matrix is never NaN.
+ */
+export function lookAt(
+  eye: [number, number, number],
+  center: [number, number, number],
+  up: [number, number, number] = [0, 1, 0],
+): Mat4 {
+  // Forward = normalize(eye - center) (points AWAY from the target; +Z of view).
+  let fx = eye[0] - center[0];
+  let fy = eye[1] - center[1];
+  let fz = eye[2] - center[2];
+  let fl = Math.hypot(fx, fy, fz);
+  if (!fl || !Number.isFinite(fl)) {
+    fx = 0; fy = 0; fz = 1; fl = 1;
+  }
+  fx /= fl; fy /= fl; fz /= fl;
+
+  // Right = normalize(cross(up, forward)).
+  let rx = up[1] * fz - up[2] * fy;
+  let ry = up[2] * fx - up[0] * fz;
+  let rz = up[0] * fy - up[1] * fx;
+  let rl = Math.hypot(rx, ry, rz);
+  if (!rl || !Number.isFinite(rl)) {
+    // `up` is parallel to the look direction → pick an alternate up that
+    // can't be parallel (axis least aligned with forward) and redo cross.
+    const altUp: [number, number, number] = Math.abs(fy) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    rx = altUp[1] * fz - altUp[2] * fy;
+    ry = altUp[2] * fx - altUp[0] * fz;
+    rz = altUp[0] * fy - altUp[1] * fx;
+    rl = Math.hypot(rx, ry, rz) || 1;
+  }
+  rx /= rl; ry /= rl; rz /= rl;
+
+  // True up = cross(forward, right).
+  const ux = fy * rz - fz * ry;
+  const uy = fz * rx - fx * rz;
+  const uz = fx * ry - fy * rx;
+
+  // View = R^T with translation -R^T·eye. Column-major.
+  const m = new Float32Array(16);
+  m[0] = rx; m[4] = ry; m[8] = rz;
+  m[1] = ux; m[5] = uy; m[9] = uz;
+  m[2] = fx; m[6] = fy; m[10] = fz;
+  m[12] = -(rx * eye[0] + ry * eye[1] + rz * eye[2]);
+  m[13] = -(ux * eye[0] + uy * eye[1] + uz * eye[2]);
+  m[14] = -(fx * eye[0] + fy * eye[1] + fz * eye[2]);
+  m[15] = 1;
+  return m;
+}
+
 /** Translation matrix. */
 export function translation(x: number, y: number, z: number): Mat4 {
   const m = identity();

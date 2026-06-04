@@ -29,6 +29,11 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import {
+    downscaleAndEncode,
+    base64ToImageBitmap,
+  } from '$lib/video/modules/picturebox-encode';
+  import type { ToyboxHandleExtras } from '$lib/video/modules/toybox';
+  import {
     DEFAULT_CONTENT_ID,
     DEFAULT_MODEL_ID,
     LAYER_COUNT,
@@ -48,6 +53,7 @@
     type ToyboxModel,
     type ToyboxObjMaterial,
     type ToyboxPreset,
+    type ToyboxSurfaceMode,
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -98,7 +104,10 @@
     setLayerModel,
     setLayerMatcap,
     setLayerSurfaceSource,
+    setLayerSurfaceMode,
     setLayerMaterialField,
+    setLayerImage as setLayerImageData,
+    setLayerVideoName,
   } from '$lib/graph/toybox-layers';
 
   let { id, data }: NodeProps = $props();
@@ -277,6 +286,208 @@
     setLayerParam(id, activeLayer, pid, v);
     bumpRev();
   };
+
+  // ───────────────────── IMAGE / VIDEO INPUT LAYERS (#39) ─────────────────────
+  //
+  // An IMAGE layer is PICTUREBOX-style: the picked file is downscaled + JPEG-
+  // encoded + base64-stored on the LAYER (layer.imageBytes), which rides the
+  // Y.Doc so rack-mates see the same picture; each peer decodes the bytes into an
+  // ImageBitmap and uploads it into the layer's FBO via the TOYBOX handle extras.
+  //
+  // A VIDEO layer is VIDEOBOX-style: the file stays LOCAL (a card-owned <video>
+  // element via object-URL, looping + muted). Only the FILENAME rides the Y.Doc
+  // (layer.videoMeta.name) so rack-mates see "{name}" + pick their own copy. The
+  // engine's per-layer frame uploader pumps decoded frames into the layer FBO.
+
+  let inputError = $state<string | null>(null);
+  let inputLoading = $state(false);
+
+  /** The TOYBOX node's handle extras (per-layer image/video upload bridge), or
+   *  null while the engine hasn't materialised this node yet. */
+  function getExtras(): ToyboxHandleExtras | null {
+    const e = engineCtx.get();
+    if (!e) return null;
+    try {
+      const ve = e.getDomain<VideoEngine>('video');
+      return (ve.read(id, 'extras') as ToyboxHandleExtras | undefined) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // The active layer's persisted image/video metadata (reactive over both the
+  // local-mutation + remote-write triggers, like every per-layer read).
+  let currentImageName = $derived.by<string | null>(
+    () => readLiveLayers()?.[activeLayer]?.imageName ?? null,
+  );
+  let currentImageBytes = $derived.by<string | null>(
+    () => readLiveLayers()?.[activeLayer]?.imageBytes ?? null,
+  );
+  let currentVideoName = $derived.by<string | null>(
+    () => readLiveLayers()?.[activeLayer]?.videoMeta?.name ?? null,
+  );
+
+  // ---- IMAGE: decode persisted bytes → upload into the engine per layer ----
+  //
+  // Watch EVERY layer's imageBytes (not just the active one) so a remote peer's
+  // write to any image layer is applied locally. We track the last-applied bytes
+  // per layer so a snapshot-bus re-fire with unchanged bytes doesn't re-decode,
+  // and retry while the engine node hasn't materialised yet (PICTUREBOX pattern).
+  const lastAppliedImage = new Map<number, string | null>();
+  let imageApplyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleImageRetry(): void {
+    if (imageApplyTimer) return;
+    imageApplyTimer = setTimeout(() => {
+      imageApplyTimer = null;
+      // Clear the cache so applyImagesToEngine re-evaluates every layer.
+      lastAppliedImage.clear();
+      void applyImagesToEngine();
+    }, 100);
+  }
+
+  async function applyImagesToEngine(): Promise<void> {
+    const extras = getExtras();
+    const layers = patch.nodes[id]?.data?.layers as ToyboxLayer[] | undefined;
+    if (!layers) return;
+    let pendingNode = false;
+    for (let i = 0; i < LAYER_COUNT; i++) {
+      const layer = layers[i];
+      if (!layer || layer.kind !== 'image') {
+        // Non-image layer → ensure any prior image is cleared once.
+        if (lastAppliedImage.get(i) !== undefined && extras) {
+          extras.setLayerImage(i, null);
+          lastAppliedImage.set(i, undefined as unknown as string | null);
+        }
+        continue;
+      }
+      const bytes = layer.imageBytes ?? null;
+      if (bytes === lastAppliedImage.get(i)) continue;
+      if (!extras) { pendingNode = true; continue; }
+      lastAppliedImage.set(i, bytes);
+      if (!bytes) { extras.setLayerImage(i, null); continue; }
+      try {
+        const bitmap = await base64ToImageBitmap(bytes);
+        extras.setLayerImage(i, bitmap);
+      } catch (err) {
+        console.warn('[toybox] image decode failed:', err);
+      }
+    }
+    // The engine node wasn't ready for at least one image layer — retry.
+    if (pendingNode) scheduleImageRetry();
+  }
+
+  // Re-run whenever ANY layer's imageBytes changes (the readLiveLayers triggers
+  // fire on local + remote writes). Reading every layer's bytes registers them.
+  $effect(() => {
+    const ls = readLiveLayers();
+    for (let i = 0; i < LAYER_COUNT; i++) void ls?.[i]?.imageBytes;
+    void applyImagesToEngine();
+  });
+
+  async function onImageFileChange(ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    inputLoading = true;
+    inputError = null;
+    try {
+      const base64 = await downscaleAndEncode(file);
+      setLayerImageData(id, activeLayer, base64, file.name);
+      bumpRev();
+      // The $effect picks up the new bytes + uploads on the next microtask —
+      // same path a remote peer's write takes (no special-casing).
+    } catch (err) {
+      inputError = err instanceof Error ? err.message : String(err);
+    } finally {
+      inputLoading = false;
+      try { input.value = ''; } catch { /* */ }
+    }
+  }
+
+  // ---- VIDEO: card-owned <video> element per video layer ----
+  //
+  // The element + object-URL are LOCAL (never synced). Created on file pick for a
+  // layer, attached to the engine's per-layer frame uploader, looped + muted +
+  // autoplaying so the layer animates. Only the filename rides the Y.Doc.
+  const videoEls = new Map<number, HTMLVideoElement>();
+  const videoUrls = new Map<number, string>();
+  let videoAttachTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Attach layer `i`'s card-owned <video> element to the engine (retry until
+   *  the engine node exists). */
+  function ensureVideoAttached(i: number, attempt = 0): void {
+    const el = videoEls.get(i);
+    if (!el) return;
+    const extras = getExtras();
+    if (extras) { extras.attachLayerVideo(i, el); return; }
+    if (attempt >= 50) return;
+    videoAttachTimer = setTimeout(() => ensureVideoAttached(i, attempt + 1), 100);
+  }
+
+  async function onVideoFileChange(ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    inputError = null;
+    if (!file.type.startsWith('video/')) {
+      inputError = `Not a video file: ${file.type || file.name}`;
+      try { input.value = ''; } catch { /* */ }
+      return;
+    }
+    const layerIdx = activeLayer;
+    // Free a prior object URL for this layer.
+    const prevUrl = videoUrls.get(layerIdx);
+    if (prevUrl) { try { URL.revokeObjectURL(prevUrl); } catch { /* */ } }
+    const url = URL.createObjectURL(file);
+    videoUrls.set(layerIdx, url);
+    // Reuse (or create) a card-owned <video> for this layer.
+    let el = videoEls.get(layerIdx);
+    if (!el) {
+      el = document.createElement('video');
+      el.muted = true;
+      el.loop = true;
+      el.playsInline = true;
+      videoEls.set(layerIdx, el);
+    }
+    el.src = url;
+    try { await el.play(); } catch { /* autoplay may be blocked until a gesture; the picker click IS one */ }
+    ensureVideoAttached(layerIdx);
+    // Only the filename rides the Y.Doc (bytes stay local, VIDEOBOX-style).
+    setLayerVideoName(id, layerIdx, file.name);
+    bumpRev();
+    try { input.value = ''; } catch { /* */ }
+  }
+
+  // ───────────────────── PROJECTIVE SURFACE MODE (#45) ─────────────────────
+  //
+  // When an OBJ layer has a SURFACE source set, it can map that source onto the
+  // mesh by UV (the default) or PROJECTIVELY (project from a viewpoint). The
+  // projector either rides the render camera (projUseCamera) or uses an explicit
+  // pos/dir/fov. All material fields ride the Y.Doc + are read live by the engine.
+
+  /** True iff the active OBJ layer has a valid surface source (projective mode is
+   *  only meaningful then — with no source there is nothing to project). */
+  let hasSurfaceSource = $derived.by<boolean>(() => {
+    const s = currentMaterial.surfaceSource;
+    return typeof s === 'number' && s >= 0 && s < LAYER_COUNT && s !== activeLayer;
+  });
+  let surfaceMode = $derived.by<ToyboxSurfaceMode>(
+    () => (currentMaterial.surfaceMode === 'projective' ? 'projective' : 'uv'),
+  );
+  let projUseCamera = $derived.by<boolean>(
+    () => (currentMaterial.projUseCamera ?? 0) > 0.5,
+  );
+
+  function onSurfaceModeChange(ev: Event): void {
+    setLayerSurfaceMode(id, activeLayer, (ev.target as HTMLSelectElement).value as ToyboxSurfaceMode);
+    bumpRev();
+  }
+
+  function onProjUseCameraChange(ev: Event): void {
+    setLayerMaterialField(id, activeLayer, 'projUseCamera', (ev.target as HTMLInputElement).checked ? 1 : 0);
+    bumpRev();
+  }
 
   // ───────────────────── COMBINE GRAPH EDITOR (Phase 4) ─────────────────────
   //
@@ -832,6 +1043,18 @@
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
+    if (imageApplyTimer) { clearTimeout(imageApplyTimer); imageApplyTimer = null; }
+    if (videoAttachTimer) { clearTimeout(videoAttachTimer); videoAttachTimer = null; }
+    // Detach + release every card-owned video element / object URL so we don't
+    // leak blobs or leave the engine pumping a torn-down element.
+    const extras = getExtras();
+    for (const [i, el] of videoEls) {
+      try { extras?.attachLayerVideo(i, null); } catch { /* */ }
+      try { el.pause(); el.removeAttribute('src'); el.load(); } catch { /* */ }
+    }
+    for (const url of videoUrls.values()) { try { URL.revokeObjectURL(url); } catch { /* */ } }
+    videoEls.clear();
+    videoUrls.clear();
   });
 </script>
 
@@ -926,6 +1149,8 @@
     >
       <option value="gen">SHADER</option>
       <option value="obj">OBJ</option>
+      <option value="image">IMAGE</option>
+      <option value="video">VIDEO</option>
       <option value="off">OFF</option>
     </select>
   </div>
@@ -991,6 +1216,60 @@
       </select>
     </div>
 
+    {#if hasSurfaceSource}
+      <!-- SURFACE MODE: how the source maps onto the mesh — UV (sample by the
+           mesh's own UVs, the default) vs PROJECTIVE (project from a viewpoint:
+           the "video projector aimed at geometry" / projection-mapping look). -->
+      <div class="content-row">
+        <label class="content-label" for={`toybox-surfmode-${id}`}>MAP</label>
+        <select
+          id={`toybox-surfmode-${id}`}
+          class="content-select"
+          data-testid="toybox-surfmode-select"
+          value={surfaceMode}
+          onchange={onSurfaceModeChange}
+        >
+          <option value="uv">UV</option>
+          <option value="projective">PROJECTIVE</option>
+        </select>
+      </div>
+
+      {#if surfaceMode === 'projective'}
+        <!-- Projector controls: USE CAMERA pins the projector to the render
+             viewpoint ("painted on from the viewer"); otherwise the explicit
+             pos/dir/fov knobs aim a projector at the mesh. -->
+        <div class="content-row">
+          <label class="proj-camera-label">
+            <input
+              type="checkbox"
+              data-testid="toybox-proj-usecamera"
+              checked={projUseCamera}
+              onchange={onProjUseCameraChange}
+            />
+            <span>USE CAMERA</span>
+          </label>
+        </div>
+        {#if !projUseCamera}
+          <div class="knob-grid" data-testid="toybox-proj-controls">
+            <Knob value={matVal('projPosX')} min={-5} max={5} defaultValue={0}
+              label="POS X" curve="linear" onchange={setMat('projPosX')} moduleId={id} paramId="projPosX" />
+            <Knob value={matVal('projPosY')} min={-5} max={5} defaultValue={0}
+              label="POS Y" curve="linear" onchange={setMat('projPosY')} moduleId={id} paramId="projPosY" />
+            <Knob value={matVal('projPosZ')} min={-5} max={5} defaultValue={2.5}
+              label="POS Z" curve="linear" onchange={setMat('projPosZ')} moduleId={id} paramId="projPosZ" />
+            <Knob value={matVal('projDirX')} min={-1} max={1} defaultValue={0}
+              label="DIR X" curve="linear" onchange={setMat('projDirX')} moduleId={id} paramId="projDirX" />
+            <Knob value={matVal('projDirY')} min={-1} max={1} defaultValue={0}
+              label="DIR Y" curve="linear" onchange={setMat('projDirY')} moduleId={id} paramId="projDirY" />
+            <Knob value={matVal('projDirZ')} min={-1} max={1} defaultValue={-1}
+              label="DIR Z" curve="linear" onchange={setMat('projDirZ')} moduleId={id} paramId="projDirZ" />
+            <Knob value={matVal('projFov') || 0.8726646} min={0.2} max={2.6} defaultValue={0.8726646}
+              label="FOV" curve="linear" onchange={setMat('projFov')} moduleId={id} paramId="projFov" />
+          </div>
+        {/if}
+      {/if}
+    {/if}
+
     <div class="knob-grid" data-testid="toybox-controls">
       <Knob value={matVal('rotX')} min={-3.14159} max={3.14159} defaultValue={0.3}
         label="ROT X" curve="linear" onchange={setMat('rotX')} moduleId={id} paramId="rotX" />
@@ -1037,6 +1316,50 @@
             onchange={setParam(p.id)} moduleId={id} paramId={p.id}
           />
         {/each}
+      {/if}
+    </div>
+  {:else if currentKind === 'image'}
+    <!-- IMAGE layer: file picker (PICTUREBOX-style). Bytes ride the Y.Doc so
+         rack-mates see the same picture; each peer decodes + uploads. -->
+    <div class="input-picker" data-testid="toybox-image-picker">
+      <label class="pick-btn">
+        <input
+          type="file"
+          accept="image/*"
+          data-testid="toybox-image-input"
+          onchange={onImageFileChange}
+        />
+        <span>{inputLoading ? 'Loading…' : 'Choose image…'}</span>
+      </label>
+      {#if currentImageName}
+        <div class="filename" title={currentImageName} data-testid="toybox-image-filename">{currentImageName}</div>
+      {/if}
+      {#if currentImageBytes}
+        <div class="sync-hint" data-testid="toybox-image-synced">synced (640×480)</div>
+      {/if}
+      {#if inputError}
+        <div class="input-error" data-testid="toybox-input-error">{inputError}</div>
+      {/if}
+    </div>
+  {:else if currentKind === 'video'}
+    <!-- VIDEO layer: file picker (VIDEOBOX-style). The element is card-owned +
+         LOCAL (bytes not synced); only the filename rides the Y.Doc. -->
+    <div class="input-picker" data-testid="toybox-video-picker">
+      <label class="pick-btn">
+        <input
+          type="file"
+          accept="video/*"
+          data-testid="toybox-video-input"
+          onchange={onVideoFileChange}
+        />
+        <span>Choose video…</span>
+      </label>
+      {#if currentVideoName}
+        <div class="filename" title={currentVideoName} data-testid="toybox-video-filename">{currentVideoName}</div>
+        <div class="sync-hint" data-testid="toybox-video-local">local file (not synced)</div>
+      {/if}
+      {#if inputError}
+        <div class="input-error" data-testid="toybox-input-error">{inputError}</div>
       {/if}
     </div>
   {/if}
@@ -1410,6 +1733,58 @@
     gap: 12px 4px;
     justify-items: center;
   }
+
+  /* ───────── IMAGE / VIDEO input pickers (#39) ───────── */
+  .input-picker {
+    margin: 4px 14px 8px;
+    text-align: center;
+  }
+  .pick-btn {
+    display: inline-block;
+    padding: 4px 10px;
+    background: var(--cable-video);
+    color: #000;
+    border-radius: 2px;
+    font-size: 0.65rem;
+    font-family: ui-monospace, monospace;
+    cursor: pointer;
+    user-select: none;
+  }
+  .pick-btn:hover { filter: brightness(1.1); }
+  .pick-btn input { display: none; }
+  .input-picker .filename {
+    margin-top: 6px;
+    font-size: 0.58rem;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .input-picker .sync-hint {
+    margin-top: 2px;
+    font-size: 0.52rem;
+    color: var(--cable-video);
+    font-family: ui-monospace, monospace;
+    opacity: 0.6;
+  }
+  .input-picker .input-error {
+    margin-top: 6px;
+    font-size: 0.58rem;
+    color: #f87171;
+    font-family: ui-monospace, monospace;
+  }
+  /* ───────── projective surface controls (#45) ───────── */
+  .proj-camera-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .proj-camera-label input { cursor: pointer; }
 
   /* ───────── COMBINE GRAPH EDITOR (Phase 4) ───────── */
   .combine-section {

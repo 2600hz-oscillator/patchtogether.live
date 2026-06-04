@@ -225,6 +225,44 @@
         ]
       },
       "cvRoutes": {}
+    },
+    {
+      "id": "projection-map",
+      "label": "PROJECTION MAP",
+      "note": "Projection mapping (#45): layer 0 = a torus whose SURFACE is layer 1's plasma field PROJECTED onto the mesh from a front viewpoint (surfaceMode 'projective'), instead of UV-wrapped — the 'video projector aimed at geometry' look. Front-facing + in-frustum guards keep the projection off the back faces. Layer 1 also renders behind as the OUTPUT base. cv3 spins the torus through the projection.",
+      "layers": [
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "torus", "rotX": 0.4, "rotY": 0.6, "rotZ": 0.0,
+            "scale": 1.0, "spin": 0.3, "matcap": 1, "tintR": 1.0, "tintG": 1.0, "tintB": 1.0,
+            "surfaceSource": 1, "surfaceMix": 1.0, "surfaceMode": "projective",
+            "projUseCamera": 0, "projPosX": 0.0, "projPosY": 0.0, "projPosZ": 2.5,
+            "projDirX": 0.0, "projDirY": 0.0, "projDirZ": -1.0, "projFov": 0.9
+          }
+        },
+        { "kind": "shader", "contentId": "hsv-plasma", "params": { "speed": 0.8, "hue": 0.55, "sat": 1.0 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "fade1", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 1.0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "fade1", "toPort": "in0" },
+          { "id": "e1", "from": "src0", "to": "fade1", "toPort": "in1" },
+          { "id": "e2", "from": "fade1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv3": { "target": "layer", "layer": 0, "param": "material:spin" }
+      }
     }
   ]
 }
