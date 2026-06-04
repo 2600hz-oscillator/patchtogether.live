@@ -21,6 +21,14 @@
     onlearn: () => void;
     onforget: () => void;
     onclose: () => void;
+    /** Control surfaces this control can be sent to. `bound` = the control is
+     *  already on that surface (we offer "Remove from" instead of "Send to").
+     *  Omitted/empty → the surface section is hidden (no surfaces in patch). */
+    surfaces?: Array<{ id: string; name: string; bound: boolean }>;
+    /** Add this control as a pointer on the given surface. */
+    onsendtosurface?: (surfaceId: string) => void;
+    /** Remove this control's pointer from the given surface. */
+    onremovefromsurface?: (surfaceId: string) => void;
   }
 
   let {
@@ -33,6 +41,9 @@
     onlearn,
     onforget,
     onclose,
+    surfaces = [],
+    onsendtosurface,
+    onremovefromsurface,
   }: Props = $props();
 
   $effect(() => {
@@ -49,6 +60,11 @@
 
   function pickLearn() { onlearn(); onclose(); }
   function pickForget() { onforget(); onclose(); }
+  function pickSurface(s: { id: string; bound: boolean }) {
+    if (s.bound) onremovefromsurface?.(s.id);
+    else onsendtosurface?.(s.id);
+    onclose();
+  }
 
   // Portal the menu to <body>. The control menu is rendered inside a
   // SvelteFlow node, which lives under `.svelte-flow__viewport` — an element
@@ -105,6 +121,21 @@
           Forget {bindingLabel ?? 'binding'}
         </button>
       {/if}
+      {#if surfaces.length > 0}
+        <div class="ctx-divider" role="separator"></div>
+        {#each surfaces as s (s.id)}
+          <button
+            class="ctx-item"
+            class:subtle={s.bound}
+            onclick={() => pickSurface(s)}
+            role="menuitem"
+            data-testid={`ctx-surface-${s.id}`}
+            data-bound={s.bound ? 'true' : 'false'}
+          >
+            {s.bound ? `Remove from ${s.name}` : `Send to ${s.name}`}
+          </button>
+        {/each}
+      {/if}
     </div>
   </div>
 {/if}
@@ -114,6 +145,11 @@
     position: fixed;
     inset: 0;
     z-index: 200;
+  }
+  .ctx-divider {
+    height: 1px;
+    margin: 4px 0;
+    background: #353b46;
   }
   .ctx-menu {
     position: fixed;

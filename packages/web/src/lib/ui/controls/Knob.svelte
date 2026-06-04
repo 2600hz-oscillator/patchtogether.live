@@ -20,6 +20,14 @@
     learnSpecRune,
     bindingsRune,
   } from '$lib/midi/midi-learn.svelte';
+  import { patch } from '$lib/graph/store';
+  import {
+    listControlSurfaces,
+    readSurfaceData,
+    hasBinding as surfaceHasBinding,
+    addBindingToSurface,
+    removeBindingFromSurface,
+  } from '$lib/graph/control-surface';
 
   interface Props {
     value: number;
@@ -75,9 +83,22 @@
   let ctxOpen = $state(false);
   let ctxX = $state(0);
   let ctxY = $state(0);
+  // Control surfaces this knob can be sent to — snapshotted when the menu
+  // opens (surfaces rarely change mid-menu; recomputed each open).
+  let ctxSurfaces = $state<Array<{ id: string; name: string; bound: boolean }>>([]);
+
+  function refreshSurfaces() {
+    if (!moduleId || !paramId) { ctxSurfaces = []; return; }
+    ctxSurfaces = listControlSurfaces(patch.nodes).map((s) => ({
+      id: s.id,
+      name: s.name,
+      bound: surfaceHasBinding(readSurfaceData(patch.nodes[s.id]), moduleId!, paramId!),
+    }));
+  }
 
   function openContextMenu(e: MouseEvent) {
     if (!moduleId || !paramId) return;
+    refreshSurfaces();
     // Plain right-click on a wired knob opens the control menu (MIDI Learn /
     // Forget). We stopPropagation so the event does NOT bubble to the node
     // menu — right-clicking the card *background* still gets the node menu
@@ -98,6 +119,14 @@
     if (!moduleId || !paramId) return;
     clearBinding(moduleId, paramId);
     bumpBindingTick();
+  }
+  function onSendToSurface(surfaceId: string) {
+    if (!moduleId || !paramId) return;
+    addBindingToSurface(surfaceId, moduleId, paramId);
+  }
+  function onRemoveFromSurface(surfaceId: string) {
+    if (!moduleId || !paramId) return;
+    removeBindingFromSurface(surfaceId, moduleId, paramId);
   }
   onMount(() => {
     if (!moduleId || !paramId) return;
@@ -286,6 +315,9 @@
     onlearn={onLearnPick}
     onforget={onForgetPick}
     onclose={() => (ctxOpen = false)}
+    surfaces={ctxSurfaces}
+    onsendtosurface={onSendToSurface}
+    onremovefromsurface={onRemoveFromSurface}
   />
 {/if}
 
