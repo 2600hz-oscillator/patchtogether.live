@@ -133,6 +133,9 @@ async function freezeUntilNonBlack(page: Page, time: number): Promise<number> {
 
 test.describe('TOYBOX presets (Phase 6)', () => {
   test('each preset loads into node.data + renders a non-black composite', async ({ page }) => {
+    // Heaviest toybox spec — applies every preset and renders each; the WebGL
+    // compositor's CI main-thread starvation needs headroom past the 30s default.
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -190,6 +193,10 @@ test.describe('TOYBOX presets (Phase 6)', () => {
   });
 
   test('the in-card PRESET dropdown applies a preset to node.data', async ({ page }) => {
+    // TOYBOX's WebGL rAF compositor starves the CI main thread (software
+    // renderer), so the goto + spawn + two preset applies + node.data polls
+    // blow the default 30s budget. Same headroom as the combine-editor specs.
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -213,7 +220,9 @@ test.describe('TOYBOX presets (Phase 6)', () => {
     await expect(sel.locator('option')).toHaveCount(PRESETS.length + 1); // + placeholder
 
     // Select WORLEY BLOOM via the dropdown → applies it to node.data.
-    await sel.selectOption('worley-bloom');
+    // noWaitAfter: the select is a pure in-card onchange (no navigation); without
+    // it Playwright sits in the multi-second nav-settle window on CI per action.
+    await sel.selectOption('worley-bloom', { noWaitAfter: true });
     await expect
       .poll(async () => (await readData(page)).combine.nodes?.map((n) => n.id).join(','))
       .toBe('src0,src1,src2,src3,ck1,map1,out');
@@ -225,7 +234,7 @@ test.describe('TOYBOX presets (Phase 6)', () => {
 
     // Loading a SECOND preset over the first cleanly REPLACES node.data
     // (the in-place trap — must not leave stale nodes/routes).
-    await sel.selectOption('plasma-dissolve');
+    await sel.selectOption('plasma-dissolve', { noWaitAfter: true });
     await expect
       .poll(async () => (await readData(page)).combine.nodes?.map((n) => n.id).join(','))
       .toBe('src0,src1,src2,src3,fade1,out');
