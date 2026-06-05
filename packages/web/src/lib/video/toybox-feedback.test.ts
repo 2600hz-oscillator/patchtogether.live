@@ -15,6 +15,8 @@ import {
   feedbackModeById,
   feedbackUniforms,
   feedbackResetState,
+  FEEDBACK_MODE_PARAMS,
+  feedbackParamsForMode,
 } from './toybox-feedback';
 import { OP_PARAMS } from './toybox-combine-graph';
 
@@ -187,5 +189,51 @@ describe('feedbackResetState — the Reset-feedback token diff', () => {
     // collapses to 0, which IS a change → one clear (safe: a corrupt/absent
     // param re-initialises the buffer rather than freezing stale state).
     expect(feedbackResetState(2, {})).toEqual({ clear: true, token: 0 });
+  });
+});
+
+// The "Configure feedback" popover renders the per-mode relevant param subset.
+// This map MUST stay in lock-step with the modes + the OP_PARAMS schema, or the
+// popover would render knobs for params the engine doesn't read (or miss ones it
+// does). Pure data → deterministic guard.
+describe('FEEDBACK_MODE_PARAMS — per-mode relevant param subset', () => {
+  const validIds = new Set(OP_PARAMS.feedback.map((p) => p.id));
+
+  it('maps every one of the 12 modes (0..11)', () => {
+    for (let m = 0; m < FEEDBACK_MODE_COUNT; m++) {
+      expect(FEEDBACK_MODE_PARAMS[m], `mode ${m} mapped`).toBeDefined();
+      expect(FEEDBACK_MODE_PARAMS[m]!.length, `mode ${m} non-empty`).toBeGreaterThan(0);
+    }
+  });
+
+  it('only references real OP_PARAMS["feedback"] float param ids (never `mode`)', () => {
+    for (const [m, ids] of Object.entries(FEEDBACK_MODE_PARAMS)) {
+      for (const id of ids) {
+        expect(validIds.has(id), `mode ${m} param "${id}" exists in schema`).toBe(true);
+        expect(id, `mode ${m} must not list the discrete "mode"`).not.toBe('mode');
+      }
+    }
+  });
+
+  it('has no duplicate param ids within a mode', () => {
+    for (const [m, ids] of Object.entries(FEEDBACK_MODE_PARAMS)) {
+      expect(new Set(ids).size, `mode ${m} has no dupes`).toBe(ids.length);
+    }
+  });
+
+  it('includes `decay` for every mode (the loop persistence is always relevant)', () => {
+    for (let m = 0; m < FEEDBACK_MODE_COUNT; m++) {
+      expect(FEEDBACK_MODE_PARAMS[m], `mode ${m} includes decay`).toContain('decay');
+    }
+  });
+
+  it('feedbackParamsForMode clamps + falls back safely', () => {
+    expect(feedbackParamsForMode(0)).toEqual(FEEDBACK_MODE_PARAMS[0]);
+    expect(feedbackParamsForMode(11)).toEqual(FEEDBACK_MODE_PARAMS[11]);
+    // out-of-range / garbage → clamped to a valid mode, never empty
+    expect(feedbackParamsForMode(999).length).toBeGreaterThan(0);
+    expect(feedbackParamsForMode(-5).length).toBeGreaterThan(0);
+    expect(feedbackParamsForMode(NaN).length).toBeGreaterThan(0);
+    expect(feedbackParamsForMode('x' as unknown as number).length).toBeGreaterThan(0);
   });
 });

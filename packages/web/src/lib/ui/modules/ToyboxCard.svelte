@@ -99,6 +99,7 @@
   import { FEEDBACK_MODES } from '$lib/video/toybox-feedback';
   import ToyboxNodeMenu from './ToyboxNodeMenu.svelte';
   import ToyboxKeyerConfig from './ToyboxKeyerConfig.svelte';
+  import ToyboxFeedbackConfig from './ToyboxFeedbackConfig.svelte';
   import {
     CV_PORT_IDS,
     listCvTargets,
@@ -911,6 +912,50 @@
   $effect(() => {
     if (keyerConfig && (!keyerNode || !isKeyerKind(keyerNode.kind))) {
       keyerConfig = null;
+    }
+  });
+
+  // ── FEEDBACK CONFIG popover (FEEDBACK "Configure feedback…") ──
+  // Same shape as the keyer popover: an explicit, discoverable right-click entry
+  // for picking the feedback MODE + its relevant params (the per-node knob strip
+  // still exposes everything when the node is selected). MIDI/CONTROLSURFACE
+  // sync rides the `combine:<nodeId>:<param>` paramId convention in the Knob.
+  interface FeedbackConfigState {
+    open: boolean;
+    x: number;
+    y: number;
+    nodeId: string;
+  }
+  let feedbackConfig = $state<FeedbackConfigState | null>(null);
+
+  /** Open the feedback-config popover for a node (no-op for non-feedback nodes). */
+  function doConfigureFeedback(gid: string, x: number, y: number): void {
+    const n = nodeById(gid);
+    if (!n || n.kind !== 'feedback') return;
+    feedbackConfig = { open: true, x, y, nodeId: gid };
+  }
+
+  function closeFeedbackConfig(): void {
+    feedbackConfig = null;
+  }
+
+  // A fresh SNAPSHOT (not the live proxy) keyed on layersRev: the popover swaps
+  // its visible knob set when the MODE changes, which is an IN-PLACE Yjs param
+  // mutation — a $derived returning the same proxy reference would not re-run the
+  // child's deriveds (the #60 stale-derived-on-syncedStore gotcha). Spreading
+  // params into a new object + reading layersRev makes the prop reference change
+  // on every edit so the popover re-renders. (The side strip dodged this by
+  // showing ALL feedback knobs; the popover filters per mode, so it must react.)
+  let feedbackConfigNode = $derived.by<ToyboxGraphNode | undefined>(() => {
+    void layersRev;
+    if (!feedbackConfig) return undefined;
+    const n = nodeById(feedbackConfig.nodeId);
+    return n ? { id: n.id, kind: n.kind, x: n.x, y: n.y, params: { ...(n.params ?? {}) } } : undefined;
+  });
+  // Close the popover if its node disappears or stops being a feedback node.
+  $effect(() => {
+    if (feedbackConfig && (!feedbackConfigNode || feedbackConfigNode.kind !== 'feedback')) {
+      feedbackConfig = null;
     }
   });
 
@@ -2185,6 +2230,7 @@
     port={toyboxMenu?.port}
     onpatchtooutput={() => { if (toyboxMenu?.nodeId) doPatchToOutput(toyboxMenu.nodeId); }}
     onconfigure={() => { if (toyboxMenu?.nodeId) doConfigureKeyer(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
+    onconfigurefeedback={() => { if (toyboxMenu?.nodeId) doConfigureFeedback(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
     onresetfeedback={() => { if (toyboxMenu?.nodeId) doResetFeedback(toyboxMenu.nodeId); }}
     ondisconnect={() => { if (toyboxMenu?.nodeId) doDisconnect(toyboxMenu.nodeId); }}
     onduplicate={() => { if (toyboxMenu?.nodeId) doDuplicate(toyboxMenu.nodeId); }}
@@ -2208,6 +2254,19 @@
     onparam={(pid, v) => { if (keyerConfig) { setCombineNodeParam(id, keyerConfig.nodeId, pid, v); bumpRev(); } }}
     moduleId={id}
     onclose={closeKeyerConfig}
+  />
+
+  <!-- Feedback-config popover (FEEDBACK "Configure feedback…"). -->
+  <ToyboxFeedbackConfig
+    open={!!feedbackConfig?.open && !!feedbackConfigNode}
+    x={feedbackConfig?.x ?? 0}
+    y={feedbackConfig?.y ?? 0}
+    node={feedbackConfigNode}
+    displayName={feedbackConfig ? nodeLabel(feedbackConfigNode ?? ({ id: feedbackConfig.nodeId } as ToyboxGraphNode)) : ''}
+    onmode={(m) => { if (feedbackConfig) { setFeedbackMode(feedbackConfig.nodeId, m); bumpRev(); } }}
+    onparam={(pid, v) => { if (feedbackConfig) { setCombineNodeParam(id, feedbackConfig.nodeId, pid, v); bumpRev(); } }}
+    moduleId={id}
+    onclose={closeFeedbackConfig}
   />
   </div><!-- /toybox-col-center -->
 
