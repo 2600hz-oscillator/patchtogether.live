@@ -102,7 +102,9 @@ test('pong: ball moves across simulated time (game-loop ticks)', async ({ page }
     .toBe(true);
 });
 
-test('pong: CV source patched into paddle_left moves the on-screen paddle', async ({ page }) => {
+// QUARANTINE(e2e-flake-purge): failed 1/5 passes under retries=0 (paddle-move
+// timing flake). See .myrobots/e2e-quarantine.md.
+test.fixme('pong: CV source patched into paddle_left moves the on-screen paddle', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   // BUGGLES is the simplest CV source we have. Its `smooth` output is a

@@ -219,7 +219,9 @@ test.describe('TOYBOX input layer kinds (#39)', () => {
 });
 
 test.describe('TOYBOX projective surface mode (#45)', () => {
-  test('projective mapping renders non-black AND differs from UV mode', async ({ page }) => {
+  // QUARANTINE(e2e-flake-purge): failed 2/5 passes under retries=0 — heavy
+  // projective WebGL near the 60s budget. See .myrobots/e2e-quarantine.md.
+  test.fixme('projective mapping renders non-black AND differs from UV mode', async ({ page }) => {
     test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -298,7 +300,9 @@ test.describe('TOYBOX projective surface mode (#45)', () => {
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
   });
 
-  test('the PROJECTION MAP preset loads + renders non-black', async ({ page }) => {
+  // QUARANTINE(e2e-flake-purge): failed 3/5 passes under retries=0 — heavy
+  // projective WebGL near the 60s budget. See .myrobots/e2e-quarantine.md.
+  test.fixme('the PROJECTION MAP preset loads + renders non-black', async ({ page }) => {
     test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

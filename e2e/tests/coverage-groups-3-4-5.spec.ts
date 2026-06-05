@@ -456,7 +456,9 @@ for (const seq of [
   });
 }
 
-test('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page }) => {
+// QUARANTINE(e2e-flake-purge): failed 1/5 passes under retries=0 (SCORE tick/
+// note-resolve timing flake; tracked separately as #12). See .myrobots/e2e-quarantine.md.
+test.fixme('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 

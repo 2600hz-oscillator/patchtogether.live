@@ -31,7 +31,9 @@ async function trigger(page: Page, nodeId: string) {
 }
 
 test.describe('@aut PatchPanel acceptance flow', () => {
-  test('ADSR click-open, drag-from-Sequencer, outside-click closes', async ({ page }) => {
+  // QUARANTINE(e2e-flake-purge): failed 3/5 passes under retries=0 (drag/open
+  // timing flake). See .myrobots/e2e-quarantine.md.
+  test.fixme('ADSR click-open, drag-from-Sequencer, outside-click closes', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 

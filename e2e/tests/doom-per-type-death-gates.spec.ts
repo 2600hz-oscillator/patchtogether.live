@@ -124,7 +124,11 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('DOOM per-type death gates: every new gate routes via forcePulse → SCOPE.ch1', () => {
   for (const pair of PAIRS) {
-    test(`${pair.id} (${pair.desc}): pulse propagates through the audio bridge`, async ({ page }) => {
+    // QUARANTINE(e2e-flake-purge): evt_kill_demon failed 1/5 passes under
+    // retries=0 (occasional bridge-propagation timing flake); the other PAIRS
+    // pass 5/5. See .myrobots/e2e-quarantine.md.
+    const t = pair.id === 'evt_kill_demon' ? test.fixme : test;
+    t(`${pair.id} (${pair.desc}): pulse propagates through the audio bridge`, async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => {
