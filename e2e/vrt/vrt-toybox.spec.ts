@@ -908,7 +908,13 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
         };
       });
     });
-    // Settle a frame so the SVG reflects the seeded graph.
+    // Settle so the SVG reflects the seeded graph. The seed is an EXTERNAL Yjs
+    // write (no local layersRev bump), so the card's node-label derivation runs
+    // off the svelte-flow `node` snapshot wrapper, which propagates a tick or two
+    // AFTER the transact. Wait for the unique ordinal labels (#56/#58: "L1",
+    // "FADE 1") to actually render before snapshotting — one rAF can race ahead
+    // of the snapshot push.
+    await expect(page.locator('[data-testid="toybox-graph-svg"] .gnode-label').first()).toHaveText('L1', { timeout: 5_000 });
     await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
     await expect(svg).toHaveScreenshot('combine-editor.png', { maskColor: '#ff00ff' });
 
