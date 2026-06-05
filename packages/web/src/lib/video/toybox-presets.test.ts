@@ -3,7 +3,7 @@
 // Phase-6 manifest-PRESET validation. Reads the REAL static manifest
 // (packages/web/static/toybox/manifest.json) and asserts every bundled preset
 // is structurally sound + self-contained:
-//   - 6 presets, with the expected ids,
+//   - 12 presets, with the expected ids,
 //   - each references ONLY bundled content / models (no dangling ids),
 //   - each combine field is a valid GRAPH ({nodes,edges}) that topo-sorts
 //     cleanly to a wired OUTPUT (so it renders, not black),
@@ -53,7 +53,7 @@ const modelIds = new Set(manifest.models.map((m) => m.id));
 const materialParamIds = new Set(MATERIAL_PARAMS.map((p) => p.id));
 
 describe('TOYBOX manifest presets', () => {
-  it('declares exactly the 8 expected presets', () => {
+  it('declares exactly the 12 expected presets', () => {
     expect(presets.map((p) => p.id)).toEqual([
       'plasma-dissolve',
       'cow-on-camera',
@@ -61,8 +61,12 @@ describe('TOYBOX manifest presets', () => {
       'textured-sphere',
       'reactor-field',
       'projection-map',
-      'eroded-terrain',
-      'cyber-fuji-2020',
+      'growing-peak',
+      'mountain-weather',
+      'glitch-tv',
+      'spiral-feedback',
+      'wave-interference',
+      'cat-feedback',
     ]);
   });
 

@@ -6,7 +6,8 @@
 // into the maze-of-stripes look that a Gray-Scott reaction-diffusion settles
 // into, with a slow breathing animation. Single-pass + deterministic (no
 // iChannel feedback) — the "still" in the name distinguishes it from a true
-// multi-buffer RD sim (which the eroded-terrain preset shows is possible).
+// multi-buffer RD sim (which the growing-mountain preset shows is possible via
+// the same ping-pong feedback infra).
 //
 // Re-authored (clean-room, MIT) from:
 //   * value-noise + domain-warp shaping (the analytic RD-look technique:

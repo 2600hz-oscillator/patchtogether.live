@@ -6,9 +6,9 @@
 //      through the mainImage->main shim + full uniform set,
 //   2. a FRAG shader (frag-invert-scan) VISIBLY TRANSFORMS the layer below it
 //      (the FRAG composite differs from the raw layer-below composite),
-//   3. the multi-buffer EROSION preset renders NON-BLACK after advancing several
-//      step()s (feedback convergence), AND a simulated iMouse click changes the
-//      output (the click-to-paint grows the terrain).
+//   3. the multi-buffer GROWING-PEAK preset renders NON-BLACK after advancing
+//      several step()s (feedback convergence), AND a simulated iMouse click
+//      changes the output (the click-to-grow raises the terrain).
 //
 // CI runs e2e on SwiftShader (slow). The multi-buffer raymarch is the most
 // expensive thing TOYBOX does — generous timeouts per the
@@ -229,14 +229,12 @@ test.describe('TOYBOX Shadertoy runtime', () => {
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no errors').toEqual([]);
   });
 
-  test('the multi-buffer eroded-terrain preset renders + click-to-paint changes it', async ({ page }) => {
-    // The heaviest TOYBOX path on SwiftShader: a 4-pass float raymarch with
-    // feedback. The un-reduced version (20 step()s/poll up to 120s + a 60-step
-    // click loop = 100-260 heavy frames) timed out at 180s on CI AND starved the
-    // rest of the shard (even a trivial undo test in the same shard hit its 30s
-    // budget). We only need to prove the 4-pass pipeline RUNS + RESPONDS here —
-    // full erosion convergence + the pretty island are the darwin VRT's job —
-    // so we advance a tiny fixed batch of heavy frames and bound the budget.
+  test('the multi-buffer growing-peak preset renders + click-to-grow changes it', async ({ page }) => {
+    // The heaviest TOYBOX path on SwiftShader: a multi-pass float raymarch with
+    // feedback. We only need to prove the multi-pass pipeline RUNS + RESPONDS
+    // here — full growth convergence + the pretty peak are the darwin VRT's job —
+    // so we advance a tiny fixed batch of heavy frames and bound the budget (the
+    // un-reduced version starved the shard per ci-swiftshader-video-e2e-timeouts).
     test.setTimeout(90_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -244,7 +242,7 @@ test.describe('TOYBOX Shadertoy runtime', () => {
 
     await spawnToybox(page);
 
-    // Load the bundled multi-buffer preset (fetches the 4 pass GLSL files +
+    // Load the bundled multi-buffer preset (fetches the pass GLSL files +
     // Common, assembles layer.project, writes node.data in place).
     await page.waitForFunction(
       () => typeof (globalThis as unknown as STGlobal).__toyboxLoadPreset === 'function',
@@ -254,14 +252,14 @@ test.describe('TOYBOX Shadertoy runtime', () => {
     await page.evaluate(async () => {
       const w = globalThis as unknown as STGlobal;
       w.__toyboxFreeze?.();
-      await w.__toyboxLoadPreset?.('eroded-terrain');
+      await w.__toyboxLoadPreset?.('growing-peak');
     });
 
     // Advance a SMALL fixed batch of heavy frames — enough to raymarch the
-    // sky+island and fill the ping-pong buffers. The raymarch fills most of the
-    // frame from the first frames (sky/sea are non-black regardless of erosion
-    // convergence), so a tiny batch clears the non-black bar without the
-    // shard-starving 100+ frame loop the original used.
+    // sky+peak and fill the ping-pong heightmap buffer. The raymarch fills most
+    // of the frame from the first frames (the weather sky is non-black regardless
+    // of growth convergence), so a tiny batch clears the non-black bar without
+    // the shard-starving 100+ frame loop the original used.
     await page.evaluate(() => {
       const w = globalThis as unknown as STGlobal;
       const ve = w.__engine?.().getDomain<VideoEngineLike>('video');
@@ -270,18 +268,18 @@ test.describe('TOYBOX Shadertoy runtime', () => {
     });
 
     const beforeClick = await sampleCanvas(page);
-    expect(beforeClick.lit, 'erosion preset renders non-black').toBeGreaterThan(beforeClick.total * 0.05);
+    expect(beforeClick.lit, 'growing-peak preset renders non-black').toBeGreaterThan(beforeClick.total * 0.05);
 
     // Simulate a held iMouse press in the centre of the terrain (engine px) and
-    // run more steps — the painted heightmap grows where the cursor is, changing
-    // the rendered output (click-to-paint grows the mountain).
+    // run more steps — the growable heightmap rises where the cursor is, changing
+    // the rendered output (click-to-grow raises the mountain).
     await page.evaluate(() => {
       const w = globalThis as unknown as STGlobal;
       const ve = w.__engine?.().getDomain<VideoEngineLike>('video');
       if (!ve) return;
       // Engine res is 640×480; press near the centre, button down (z>0, w>0).
-      // A short held-press batch is enough to paint a bump into BufferA and
-      // propagate it through B→Image so the composite signature differs.
+      // A short held-press batch is enough to raise a bump into BufferA and
+      // propagate it through Image so the composite signature differs.
       for (let i = 0; i < 10; i++) {
         ve.setMouse('tb', 320, 240, 320, 240); // held press at centre
         ve.step();
@@ -293,8 +291,8 @@ test.describe('TOYBOX Shadertoy runtime', () => {
     });
     const afterClick = await sampleCanvas(page);
 
-    // The painted bump changes the terrain → the composite signature differs.
-    expect(afterClick.sig, 'iMouse click-to-paint changes the terrain').not.toEqual(beforeClick.sig);
+    // The raised bump changes the terrain → the composite signature differs.
+    expect(afterClick.sig, 'iMouse click-to-grow changes the terrain').not.toEqual(beforeClick.sig);
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no errors').toEqual([]);
   });
 });

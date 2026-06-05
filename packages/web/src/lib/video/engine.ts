@@ -654,7 +654,7 @@ export class VideoEngine implements DomainEngine {
 
     // Per-frame timing for Shadertoy iTimeDelta / iFrameRate. Clamp the delta
     // to a sane window so a tab-backgrounded long-gap frame doesn't blow up a
-    // dt-scaled shader (the erosion buffer divides by iFrameRate).
+    // dt-scaled shader (a feedback buffer that divides by iFrameRate).
     const now = performance.now();
     const dt = Math.min(0.1, Math.max(0, (now - this.lastStepTime) / 1000));
     this.lastStepTime = now;
