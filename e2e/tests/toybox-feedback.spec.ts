@@ -284,13 +284,15 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
       });
     });
 
-    // The very NEXT rendered frame clears the buffer, then re-seeds from ONE
-    // frame of input — so it's measurably DIMMER than the fully-accumulated
-    // trails (the buffer was emptied).
-    const justAfterReset = await stepAndAverage(page, 2.0, 1);
-    expect(
-      lum(justAfterReset),
-      'right after reset the accumulated trails are gone (buffer cleared)',
-    ).toBeLessThan(lum(accumulated) - 10);
+    // The clear takes effect once the Yjs `_reset` token PROPAGATES to the engine
+    // and a frame renders — 1-2 frames locally, but slower under CI load (a single
+    // step can read the pre-propagation token → buffer still full → flake). Poll:
+    // step + measure until the buffer is measurably dimmer than the fully-
+    // accumulated trails. (ADDITIVE re-accumulates over ~16 frames, so there's a
+    // wide post-clear dim window for the poll to land in.)
+    const accumLum = lum(accumulated);
+    await expect
+      .poll(async () => lum(await stepAndAverage(page, 2.0, 1)), { timeout: 30_000 })
+      .toBeLessThan(accumLum - 10);
   });
 });
