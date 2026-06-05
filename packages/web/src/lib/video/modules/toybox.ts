@@ -42,6 +42,12 @@
 //          toybox-cv-routes.ts / toybox-cv-math.ts). The card reads live per-
 //          input values back via the `inputs` handle-extras bridge to drive the
 //          always-on inline scopes.
+//          inA / inB (video) — two patched-feed VIDEO inputs. A VIDEO-kind
+//          layer whose `videoSource` is 'inA'/'inB' sources the texture patched
+//          into that port (frame.getInputTexture) instead of a local file /
+//          camera, blitted through the same inputProgram fullscreen quad into
+//          the layer FBO (so combine + UV-texmap + projective surface mapping
+//          compose on a live patched feed). Unpatched / unselected → idle pattern.
 // Outputs: out (video) — the composited frame.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
@@ -285,14 +291,26 @@ export const toyboxDef: VideoModuleDef = {
   // auto-detects the source kind and envelope-follows audio. The neutral
   // cvScale:{mode:'linear'} hint + NO paramTarget keep the bridge in RAW
   // passthrough (it hands setParam the raw signal); TOYBOX shapes it itself.
-  inputs: CV_PORT_IDS.map((id) => ({
-    id,
-    // `modsignal` accepts cv, gate, OR audio (canConnect scopes audio→non-audio
-    // to this type only). The port IDs stay cv1..cv6 (so isCvPortId / setParam /
-    // presets / cvRoutes are untouched); only the cable TYPE widens.
-    type: 'modsignal' as const,
-    cvScale: { mode: 'linear' as const },
-  })),
+  inputs: [
+    ...CV_PORT_IDS.map((id) => ({
+      id,
+      // `modsignal` accepts cv, gate, OR audio (canConnect scopes audio→non-audio
+      // to this type only). The port IDs stay cv1..cv6 (so isCvPortId / setParam /
+      // presets / cvRoutes are untouched); only the cable TYPE widens.
+      type: 'modsignal' as const,
+      cvScale: { mode: 'linear' as const },
+    })),
+    // Two VIDEO input ports (VID A / VID B), AFTER the 6 cv ports so cv1..cv6
+    // ordering is undisturbed (the card + CV routing read ports by id). A
+    // VIDEO-kind layer can select 'inA'/'inB' as its source (layer.videoSource)
+    // — the layer then sources the patched feed instead of a local file/camera,
+    // composing through the SAME inputProgram fullscreen-quad blit into the
+    // layer FBO (so UV-texmap + projective surface mapping just work on it).
+    // The default patch selects NEITHER, so a feed patched into inA/inB without
+    // a layer pointing at it is a correct no-op (see EXEMPT_INPUT_DRIVE).
+    { id: 'inA', type: 'video' as const },
+    { id: 'inB', type: 'video' as const },
+  ],
   outputs: [
     { id: 'out', type: 'video' },
   ],
@@ -1111,27 +1129,51 @@ export const toyboxDef: VideoModuleDef = {
     }
 
     /**
-     * Render a VIDEO-kind layer (VIDEOBOX-style) into target FBO `i`. The card
-     * attaches a card-owned <video> element via the handle extras
-     * (attachLayerVideo); the per-layer frame uploader pumps decoded frames into
-     * a GL texture at the element's decode cadence. Until a frame is ready the
-     * input shader paints its idle pattern. Returns true (always "produced").
+     * Render a VIDEO-kind layer into target FBO `i`. The layer's `videoSource`
+     * selects where the texture comes from:
+     *   - 'inA' / 'inB' (PATCHED FEED): the texture patched into this TOYBOX
+     *     node's video input port — `frame.getInputTexture(node.id, 'inA'|'inB')`.
+     *     Null (unpatched) → idle pattern. Blitted through the SAME inputProgram
+     *     fullscreen quad as the file/camera path, so the layer FBO holds the
+     *     patched feed and combine + OBJ UV-texmap + projective surface mapping
+     *     all compose on it identically.
+     *   - 'file' / 'camera' (the #603 default): a card-owned <video> element
+     *     attached via the handle extras (attachLayerVideo); the per-layer frame
+     *     uploader pumps decoded frames into a GL texture at decode cadence.
+     * Until a source frame is ready the input shader paints its idle pattern.
+     * Returns true (always "produced"), exactly like the file path.
+     *
+     * `frame` is OPTIONAL (trailing): a direct unit-caller that doesn't thread a
+     * frame degrades to the file/camera path with no patched-input lookup,
+     * rather than crashing. The live draw() always passes it.
      */
-    function renderVideoLayer(i: number): boolean {
+    function renderVideoLayer(i: number, layer: ToyboxLayer, frame?: VideoFrameContext): boolean {
       const g = gl;
       const target = layerTargets[i]!;
-      const up = videoUploaders.get(i);
-      // Only pumps a GPU upload when rVFC reports a new decoded frame; otherwise
-      // rebinds the existing texture. Returns false until a frame is ready.
-      const ready = up ? up.uploadIfReady() : false;
-      const srcTex = up ? up.texture : null;
+
+      // Resolve the source texture for the layer's videoSource.
+      let srcTex: WebGLTexture | null = null;
+      const source = layer.videoSource;
+      if (source === 'inA' || source === 'inB') {
+        // PATCHED FEED: bind the texture on this node's video input port. Null
+        // (no cable / source has no texture) → idle pattern (uHasInput=0).
+        srcTex = frame ? frame.getInputTexture(node.id, source) : null;
+      } else {
+        // FILE / CAMERA (#603 path): pump the card-owned <video> uploader. Only
+        // re-uploads when rVFC reports a new decoded frame; else rebinds the
+        // existing texture. Null until a frame is ready.
+        const up = videoUploaders.get(i);
+        const ready = up ? up.uploadIfReady() : false;
+        srcTex = ready && up ? up.texture : null;
+      }
+
       g.bindFramebuffer(g.FRAMEBUFFER, target.fbo);
       g.viewport(0, 0, ctx.res.width, ctx.res.height);
       g.useProgram(inputProgram);
       g.activeTexture(g.TEXTURE0);
-      g.bindTexture(g.TEXTURE_2D, ready && srcTex ? srcTex : dummyTex);
+      g.bindTexture(g.TEXTURE_2D, srcTex ?? dummyTex);
       if (iuTex) g.uniform1i(iuTex, 0);
-      if (iuHasInput) g.uniform1f(iuHasInput, ready && srcTex ? 1 : 0);
+      if (iuHasInput) g.uniform1f(iuHasInput, srcTex ? 1 : 0);
       if (iuGain) g.uniform1f(iuGain, 1);
       ctx.drawFullscreenQuad();
       g.activeTexture(g.TEXTURE0);
@@ -1158,7 +1200,7 @@ export const toyboxDef: VideoModuleDef = {
       else if (layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag')
         drew = renderShaderLayer(i, layer, time, frame, safeSource);
       else if (layer.kind === 'image') drew = renderImageLayer(i);
-      else if (layer.kind === 'video') drew = renderVideoLayer(i);
+      else if (layer.kind === 'video') drew = renderVideoLayer(i, layer, frame);
       // 'off' → nothing.
       if (!drew) clearLayer(i);
       return drew;

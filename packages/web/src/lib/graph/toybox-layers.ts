@@ -34,7 +34,11 @@ import {
   type ToyboxLayerKind,
   type ToyboxObjMaterial,
   type ToyboxSurfaceMode,
+  type ToyboxVideoSource,
 } from '$lib/video/toybox-content';
+
+/** The valid VIDEO-source values (kept in sync with ToyboxVideoSource). */
+const VIDEO_SOURCES: readonly ToyboxVideoSource[] = ['inA', 'inB', 'file', 'camera'];
 
 /** Map a content family tag to the layer kind it materialises as. */
 function kindForFamily(family: string | undefined): ToyboxLayerKind {
@@ -244,6 +248,26 @@ export function setLayerVideoName(nodeId: string, index: number, name: string | 
     } else {
       layer.videoMeta.name = name;
     }
+  }, LOCAL_ORIGIN);
+}
+
+/**
+ * Set a VIDEO layer's SOURCE: 'inA'/'inB' (a patched feed off the TOYBOX video
+ * input port), 'file' (a local-file <video>), or 'camera' (the webcam). Scalar
+ * in-place set (no Y-type reassign). An unrecognised value falls back to 'file'
+ * (the #603 default). The factory reads layer.videoSource live each frame to
+ * pick where renderVideoLayer pulls the texture.
+ */
+export function setLayerVideoSource(
+  nodeId: string,
+  index: number,
+  source: ToyboxVideoSource,
+): void {
+  const next: ToyboxVideoSource = VIDEO_SOURCES.includes(source) ? source : 'file';
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    layer.videoSource = next;
   }, LOCAL_ORIGIN);
 }
 
