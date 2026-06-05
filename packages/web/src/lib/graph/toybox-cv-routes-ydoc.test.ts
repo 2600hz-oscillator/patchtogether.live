@@ -9,6 +9,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { patch } from '$lib/graph/store';
 import { setCvRoute, clearCvRoute, readCvRoutes } from './toybox-cv-routes';
+import { addCombineNode, deleteCombineNode } from './toybox-combine';
+import { findOrphanedRoutes, type CvRoutes } from '$lib/video/toybox-cv-routes';
+import { makeDefaultCombineGraph } from '$lib/video/toybox-combine-graph';
+import { makeDefaultLayers } from '$lib/video/toybox-content';
 import type { ModuleNode } from './types';
 
 const TID = 'toybox-cvroutes-ydoc-test';
@@ -74,5 +78,62 @@ describe('toybox cvRoutes — real Y.Doc mutator', () => {
   it('readCvRoutes returns {} for a node with no cvRoutes', () => {
     makeToybox();
     expect(readCvRoutes(patch.nodes[TID])).toEqual({});
+  });
+});
+
+// #60: the card's prune effect = findOrphanedRoutes(live routes, live layers,
+// live combine) → clearCvRoute(each). Drive that against the REAL Y.Doc (state
+// persists) so a stale mapping is forgotten when the tree changes underneath it,
+// and a still-valid route survives.
+describe('toybox cv orphan auto-unmap — real Y.Doc tree mutations', () => {
+  /** Seed live layers + a default combine graph on the node, in place. */
+  function seedTree(): void {
+    const t = patch.nodes[TID]!;
+    if (!t.data) (t as { data: Record<string, unknown> }).data = {};
+    const data = t.data as { layers?: unknown; combine?: unknown };
+    // layers: default (layer0 = gen, 1..3 off). Push plain clones in place.
+    data.layers = [];
+    for (const l of makeDefaultLayers()) (data.layers as unknown[]).push(JSON.parse(JSON.stringify(l)));
+    // combine: default graph.
+    data.combine = { nodes: [], edges: [] };
+    const def = makeDefaultCombineGraph();
+    const g = data.combine as { nodes: unknown[]; edges: unknown[] };
+    for (const n of def.nodes) g.nodes.push(JSON.parse(JSON.stringify(n)));
+    for (const e of def.edges) g.edges.push(JSON.parse(JSON.stringify(e)));
+  }
+
+  /** Replicate the card's prune: clear every orphaned route in place. */
+  function prune(): string[] {
+    const data = patch.nodes[TID]?.data as
+      | { layers?: never[]; combine?: unknown; cvRoutes?: CvRoutes }
+      | undefined;
+    const orphans = findOrphanedRoutes(data?.cvRoutes, data?.layers, data?.combine);
+    for (const port of orphans) clearCvRoute(TID, port);
+    return orphans;
+  }
+
+  it('unmaps a route to a DELETED combine node; keeps a valid one', () => {
+    makeToybox();
+    seedTree();
+    const newId = addCombineNode(TID, 'chromakey')!;
+    setCvRoute(TID, 'cv1', { target: 'combine', nodeId: newId, param: 'amount' });
+    setCvRoute(TID, 'cv2', { target: 'combine', nodeId: 'op1', param: 'amount' });
+    expect(prune()).toEqual([]); // both resolvable → nothing pruned
+
+    deleteCombineNode(TID, newId); // orphans cv1
+    expect(prune()).toEqual(['cv1']);
+
+    const routes = readCvRoutes(patch.nodes[TID]);
+    expect(routes.cv1 ?? null).toBeNull(); // unmapped + persisted
+    expect(routes.cv2).toMatchObject({ nodeId: 'op1', param: 'amount' }); // survived
+  });
+
+  it('idempotent: a second prune finds nothing (no loop)', () => {
+    makeToybox();
+    seedTree();
+    setCvRoute(TID, 'cv1', { target: 'combine', nodeId: 'op1', param: 'amount' });
+    deleteCombineNode(TID, 'op1');
+    expect(prune()).toEqual(['cv1']);
+    expect(prune()).toEqual([]); // settled — the card's effect won't loop
   });
 });
