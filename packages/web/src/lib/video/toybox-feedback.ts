@@ -152,3 +152,34 @@ export function feedbackResetState(
   const token = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
   return { clear: token !== prevToken, token };
 }
+
+/**
+ * Which float params each feedback MODE actually uses, in display order (the
+ * `mode` discrete selector is handled separately; these are the knobs). The
+ * "Configure feedback" popover renders ONLY the relevant subset for the active
+ * mode so it stays focused (the full per-node knob strip still exposes every
+ * param when the node is selected). `decay` is the loop's persistence and is
+ * relevant to every recursive mode, so it appears for all.
+ *
+ * Param ids MUST exist in OP_PARAMS['feedback']; the unit test asserts that.
+ */
+export const FEEDBACK_MODE_PARAMS: Readonly<Record<number, readonly string[]>> = {
+  0: ['zoom', 'rotate', 'decay'], // TUNNEL — Droste zoom + spin + persistence
+  1: ['scaleP', 'rotate', 'tx', 'ty', 'decay'], // GEOMETRIC — affine drift
+  2: ['slitPos', 'slitWidth', 'decay'], // SLIT — slit-scan window
+  3: ['decay', 'gain'], // ADDITIVE — glowing trails
+  4: ['gain', 'decay'], // DIFF — motion ghosts
+  5: ['blur', 'decay'], // BLUR — smoke / diffusion
+  6: ['gain', 'decay'], // EDGE — growing line webs
+  7: ['hue', 'decay'], // COLOR — channel cycling
+  8: ['flow', 'decay'], // DISPLACE — liquid self-displacement
+  9: ['gain', 'thresh', 'decay'], // REACTION — reaction-diffusion
+  10: ['thresh', 'decay'], // LUMAGATE — bright-structure persistence
+  11: ['flow', 'rotate', 'decay'], // VECTOR — LZX flow-field advection
+};
+
+/** The relevant float-param ids for a feedback mode (clamped to a valid mode).
+ *  Falls back to a sensible core set if a mode is somehow unmapped. */
+export function feedbackParamsForMode(mode: unknown): readonly string[] {
+  return FEEDBACK_MODE_PARAMS[clampFeedbackMode(mode)] ?? ['decay'];
+}

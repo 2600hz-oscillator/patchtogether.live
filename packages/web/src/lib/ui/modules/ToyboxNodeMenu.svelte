@@ -43,6 +43,8 @@
     onpatchtooutput: () => void;
     /** NODE (keyer op) only: open the keyer-config popover for this node. */
     onconfigure: () => void;
+    /** NODE (feedback op) only: open the feedback-config popover (mode + params). */
+    onconfigurefeedback: () => void;
     /** NODE (feedback op) only: clear this feedback node's ping-pong buffers. */
     onresetfeedback: () => void;
     ondisconnect: () => void;
@@ -67,6 +69,7 @@
     port,
     onpatchtooutput,
     onconfigure,
+    onconfigurefeedback,
     onresetfeedback,
     ondisconnect,
     onduplicate,
@@ -215,6 +218,12 @@
         >Configure keyer…</button>
       {/if}
       {#if isFeedback}
+        <button
+          class="ctx-item"
+          role="menuitem"
+          data-testid="toybox-menu-configure-feedback"
+          onclick={() => pick(onconfigurefeedback)}
+        >Configure feedback…</button>
         <button
           class="ctx-item"
           role="menuitem"

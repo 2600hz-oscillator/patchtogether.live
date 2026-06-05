@@ -14,6 +14,16 @@ import { defineConfig, devices } from '@playwright/test';
 const USE_PREVIEW = process.env.E2E_USE_PREVIEW === '1';
 const DEFAULT_LOCAL = USE_PREVIEW ? 'http://localhost:4173' : 'http://localhost:5173';
 const BASE_URL = process.env.E2E_BASE_URL ?? DEFAULT_LOCAL;
+
+// E2E_SWIFTSHADER=1 forces Chromium's WebGL onto the SwiftShader software
+// rasterizer (via ANGLE). Headless Linux CI runners have no GPU → they get
+// SwiftShader for free; a local Mac/desktop uses the real GPU and CANNOT
+// otherwise reproduce the CI-only software-renderer timeouts/flakes in the
+// WebGL/video specs. Set it for a faithful local flake-check.
+const SWIFTSHADER_ARGS =
+  process.env.E2E_SWIFTSHADER === '1'
+    ? ['--use-gl=angle', '--use-angle=swiftshader', '--use-cmd-decoder=passthrough']
+    : [];
 // Skip the local webServer when targeting a deployed URL (live smoke). Detected
 // by E2E_BASE_URL being set to anything non-localhost.
 // E2E_SKIP_WEBSERVER=1 also skips it — used by local dev workflows that
@@ -79,6 +89,7 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             // COOP/COEP isolation only matters when the headers are set;
             // Playwright doesn't need extra flags for this.
+            ...SWIFTSHADER_ARGS,
           ],
         },
       },
@@ -99,6 +110,7 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
+            ...SWIFTSHADER_ARGS,
           ],
         },
       },
@@ -121,6 +133,7 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
+            ...SWIFTSHADER_ARGS,
           ],
         },
       },
