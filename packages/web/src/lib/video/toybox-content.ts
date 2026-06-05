@@ -29,8 +29,12 @@ export interface ToyboxParamDef {
   curve: 'linear' | 'log' | 'exp' | 'discrete';
 }
 
-/** Family tag — which palette bucket the content came from. */
-export type ToyboxFamily = 'GEN' | 'FX';
+/** Family tag — which palette bucket the content came from.
+ *   - GEN: generative content (NO scene input — Shader A synthwave, noise, …).
+ *   - FX:  a fragment effect that recolours/displaces the composite below it.
+ *   - FRAG: a Shadertoy fragment shader receiving the below-composite as
+ *           iChannel0 (the FRAG kind in the card; recolour / displace / FX). */
+export type ToyboxFamily = 'GEN' | 'FX' | 'FRAG';
 
 /** A catalog entry: metadata + the URL to lazily fetch its GLSL. */
 export interface ToyboxContent {
@@ -43,6 +47,16 @@ export interface ToyboxContent {
   glsl: string;
   /** Declared float-uniform params (card faders + later CV targets). */
   params: ToyboxParamDef[];
+  /** When true, the GLSL is written in the SHADERTOY convention (`void
+   *  mainImage(out vec4, in vec2)` + iTime/iResolution-as-vec3/iMouse/…) and
+   *  the factory wraps it via the mainImage→main shim + the full Shadertoy
+   *  uniform set. Hand-authored engine shaders (plain `main()`) omit this. */
+  shadertoy?: boolean;
+  /** What this content receives as iChannel0:
+   *   - 'none'  (default): GENERATIVE — no scene input (GEN family).
+   *   - 'scene': the COMPOSITED layers below are bound to iChannel0 (FRAG
+   *              family — recolour/displace/feedback FX on the layers beneath). */
+  input?: 'none' | 'scene';
 }
 
 /** A 3D model entry (Phase 3 — the OBJ layer). Either a bundled OBJ fetched
@@ -236,6 +250,10 @@ export async function getModelObj(id: string): Promise<{ meta: ToyboxModel; obj:
 export const DEFAULT_CONTENT_ID = 'noise-fbm';
 /* (the default first-slice id; the manifest's first GEN entry) */
 
+/** The default content id for a fresh FRAG layer (a Shadertoy fragment shader
+ *  that receives the composited layers below as iChannel0). */
+export const DEFAULT_FRAG_CONTENT_ID = 'frag-invert-scan';
+
 // ---------------- Lazy GLSL fetch ----------------
 
 const glslCache = new Map<string, Promise<string>>();
@@ -270,7 +288,12 @@ export async function getContent(id: string): Promise<{ meta: ToyboxContent; gls
 // ---------------- Layer model (persisted in node.data.layers) ----------------
 
 /** The kind of source a TOYBOX layer renders.
- *   - 'shader' (FX) / 'gen' (GEN): a fragment-shader content entry.
+ *   - 'shader' (FX) / 'gen' (GEN): a fragment-shader content entry. GEN is
+ *            generative (no scene input); a shader/FX recolours.
+ *   - 'frag' (FRAG): a Shadertoy fragment shader receiving the COMPOSITED
+ *            layers BELOW as iChannel0 (recolour / displace / feedback FX).
+ *            Distinct from 'gen' (which gets no scene input). May itself be a
+ *            single Shadertoy pass OR a multi-buffer project (layer.project).
  *   - 'obj': a 3D mesh (bundled OBJ or built-in primitive), matcap-shaded
  *            into the layer's FBO with depth testing (Phase 3).
  *   - 'image': a still image (PICTUREBOX-style: file → ImageBitmap →
@@ -282,7 +305,7 @@ export async function getContent(id: string): Promise<{ meta: ToyboxContent; gls
  *              card-owned + LOCAL (video bytes are not synced — only the file
  *              metadata, like VIDEOBOX). Silent until a file is set.
  *   - 'off': explicitly empty (renders nothing). */
-export type ToyboxLayerKind = 'shader' | 'gen' | 'obj' | 'image' | 'video' | 'off';
+export type ToyboxLayerKind = 'shader' | 'gen' | 'frag' | 'obj' | 'image' | 'video' | 'off';
 
 /** How an OBJ layer maps its SURFACE source onto the mesh (Phase 7 projection):
  *   - 'uv': the source FBO is sampled by the mesh's own UV coords (the Phase-6
@@ -440,6 +463,25 @@ export interface ToyboxLayer {
   imageName?: string | null;
   /** VIDEO layer: local-file metadata (filename). The bytes are not synced. */
   videoMeta?: ToyboxVideoMeta;
+  /** SHADERTOY multi-buffer project (a 'gen' or 'frag' layer can host one):
+   *  Common + N buffer passes + an Image pass with iChannelN wiring. When
+   *  present the factory renders the project's pass chain (own FBOs, ping-pong
+   *  feedback, iMouse click-paint) into the layer FBO INSTEAD of the single
+   *  content shader. Plain JSON (Yjs-safe). Shape mirrors ShadertoyProject in
+   *  toybox-shadertoy.ts (typed loosely here to avoid an import cycle). */
+  project?: {
+    common?: string;
+    passes: Array<{ id: string; src: string; channels: unknown[]; float?: boolean }>;
+  };
+  /** PRESET-ONLY lazy descriptor for a multi-buffer project: instead of inlining
+   *  the (large) GLSL in the manifest, a preset layer carries the pass FILE URLs
+   *  + channel wiring here; the preset loader fetches each `url` and assembles
+   *  `project` (with `src` filled in) before writing the layer. Stripped after
+   *  resolution. Mirrors the GLSL-is-lazy-fetched-never-bundled convention. */
+  projectRef?: {
+    common?: string; // URL of the shared Common GLSL (optional)
+    passes: Array<{ id: string; url: string; channels: unknown[]; float?: boolean }>;
+  };
 }
 
 /** Number of layers a TOYBOX node persists + renders. */
