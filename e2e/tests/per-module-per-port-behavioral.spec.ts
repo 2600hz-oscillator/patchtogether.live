@@ -134,6 +134,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   snes9x:   'ROM-gated emulator: all outputs (incl. measured audio_l) need a loaded ROM (user-provided, gitignored, absent in CI) so control + patched both read silence; covered by snes9x.spec.ts + snes9x-gameplay-gates.spec.ts (skip when ROM absent) + snes-input/clock-multiplier/smw-events unit tests',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
   skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
+  gibribbon: 'gameplay-conditional outputs (evt_hit/miss/fire/kill/gameover fire on in-game judgement; health_cv is idle DC); covered by gibribbon.spec.ts (forcePulse) + gibribbon-events.test.ts',
 
   // ── Pure-passthrough sinks with no semantic transformation: VIDEOOUT
   //    just blits its input to canvas, so behavioral assertion would be

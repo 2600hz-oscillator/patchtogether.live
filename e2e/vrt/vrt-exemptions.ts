@@ -285,6 +285,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   pong: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
   // MODTRIS research prototype: same rationale as PONG.
   modtris: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
+  // GIBRIBBON — Vib-Ribbon-style ribbon scroller: the ribbon + sprites scroll
+  // continuously (per-frame scroll + clock-driven spawns), so no naturally
+  // still frame. Same rationale as PONG / MODTRIS / FROGGER. Pure event
+  // generator + WAD sprite decoder are unit-tested; e2e/tests/gibribbon.spec.ts
+  // covers spawn→clear→score, miss→degrade, + every event gate → SCOPE bridge.
+  gibribbon: 'animated scrolling ribbon + sprites defeat deterministic single-frame capture; gibribbon-events + wad-sprites unit tests + gibribbon.spec.ts provide coverage',
   // FROGGER research prototype: sprite-tick advances every ~10 ms of game-
   // time + the start_gate auto-fire on first tick produces a moving frame
   // by the time Playwright snapshots. Same rationale as PONG / MODTRIS;
