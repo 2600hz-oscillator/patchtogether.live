@@ -117,6 +117,13 @@ async function setParams(page: import('@playwright/test').Page, params: Record<s
 }
 
 test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
+  // The Phase-2 per-edge 8-effect mix shader is heavier than Phase 1; spawning
+  // 4 video inputs + rendering/sampling the mix several times per test exceeds
+  // the 30s default on CI's SwiftShader software renderer (timed out on
+  // shard 8). Give the whole suite a video-domain budget (matches the other
+  // heavy WebGL e2e; see repo memory ci-swiftshader-video-e2e-timeouts).
+  test.describe.configure({ timeout: 120_000 });
+
   test('4 colored CHROMA inputs → MIX renders non-black; corner-drag makes that input dominate; center is a 4-way blend', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
