@@ -56,8 +56,10 @@ describe('toyboxDef shape', () => {
     expect(toyboxDef.params).toEqual([]);
   });
 
-  it('is schemaVersion 2 with a migrate hook', () => {
-    expect(toyboxDef.schemaVersion).toBe(2);
+  it('is schemaVersion 3 with a migrate hook', () => {
+    // v3 = chromakey single `key` channel-select → keyR/keyG/keyB HSV key
+    // (v2 was the 8→6 cv7/cv8 route strip).
+    expect(toyboxDef.schemaVersion).toBe(3);
     expect(typeof toyboxDef.migrate).toBe('function');
   });
 });

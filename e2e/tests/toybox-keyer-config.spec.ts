@@ -127,7 +127,10 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
       return lit > c.width * c.height * 0.05;
     },
     { time },
-    { timeout: 30_000 },
+    // 60s (not 30s): the FIRST frozenAverage is a cold toybox-pipeline warm-up
+    // on CI's SwiftShader, which can exceed 30s; the 120s test budget covers it
+    // and subsequent (warm) calls return immediately.
+    { timeout: 60_000 },
   );
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
   return page.evaluate(() => {
