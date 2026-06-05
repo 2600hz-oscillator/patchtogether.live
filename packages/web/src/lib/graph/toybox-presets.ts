@@ -35,6 +35,59 @@ function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
+// Cache fetched pass GLSL by URL so re-loading a multi-buffer preset doesn't
+// re-fetch (mirrors getContent's glslCache).
+const passSrcCache = new Map<string, Promise<string>>();
+function fetchPassSrc(url: string): Promise<string> {
+  let p = passSrcCache.get(url);
+  if (!p) {
+    p = (async () => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`TOYBOX preset pass fetch ${url} → ${res.status}`);
+      return res.text();
+    })();
+    passSrcCache.set(url, p);
+  }
+  return p;
+}
+
+/**
+ * Resolve any layer.projectRef (lazy multi-buffer descriptor: pass FILE URLs +
+ * channel wiring) into an inline layer.project (with each pass's `src` fetched).
+ * Returns a NEW preset (deep-cloned) with projectRef removed + project filled.
+ * Pure-ish: no Yjs writes; just fetch + assemble. On a fetch failure it leaves
+ * the layer without a project (the factory then renders the layer's content /
+ * nothing — never crashes).
+ */
+export async function resolvePresetProjects(preset: ToyboxPreset): Promise<ToyboxPreset> {
+  const out = clone(preset);
+  await Promise.all(
+    out.layers.map(async (layer) => {
+      const ref = (layer as ToyboxLayer).projectRef;
+      if (!ref || !Array.isArray(ref.passes)) return;
+      try {
+        const [common, ...passSrcs] = await Promise.all([
+          ref.common ? fetchPassSrc(ref.common) : Promise.resolve(''),
+          ...ref.passes.map((p) => fetchPassSrc(p.url)),
+        ]);
+        (layer as ToyboxLayer).project = {
+          common: common || undefined,
+          passes: ref.passes.map((p, i) => ({
+            id: p.id,
+            src: passSrcs[i] ?? '',
+            channels: p.channels,
+            float: p.float,
+          })),
+        };
+      } catch (err) {
+        console.warn(`[TOYBOX] preset '${preset.id}' project fetch failed:`, err);
+      }
+      delete (layer as ToyboxLayer).projectRef;
+    }),
+  );
+  return out;
+}
+
 /**
  * Ensure `node.data[key]` is an array, then replace its contents IN PLACE with
  * fresh plain clones of `items` (splice to 0, then push). Never reassigns the
@@ -128,5 +181,16 @@ export async function loadToyboxPreset(nodeId: string, presetId: string): Promis
     return false;
   }
   if (!preset) return false;
-  return applyPresetToNode(nodeId, preset);
+  // Resolve any lazy multi-buffer project refs (fetch the pass GLSL) before
+  // writing — so a Shadertoy-project preset (e.g. the eroded terrain) lands with
+  // inline `project` sources the factory can compile.
+  let resolved = preset;
+  try {
+    resolved = await resolvePresetProjects(preset);
+  } catch {
+    // Network/parse failure: fall back to the unresolved preset (its non-project
+    // layers still apply). The factory tolerates a missing project.
+    resolved = preset;
+  }
+  return applyPresetToNode(nodeId, resolved);
 }

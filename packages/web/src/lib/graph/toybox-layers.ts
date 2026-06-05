@@ -23,6 +23,7 @@
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import {
   DEFAULT_CONTENT_ID,
+  DEFAULT_FRAG_CONTENT_ID,
   DEFAULT_MODEL_ID,
   LAYER_COUNT,
   getContentMeta,
@@ -34,6 +35,13 @@ import {
   type ToyboxObjMaterial,
   type ToyboxSurfaceMode,
 } from '$lib/video/toybox-content';
+
+/** Map a content family tag to the layer kind it materialises as. */
+function kindForFamily(family: string | undefined): ToyboxLayerKind {
+  if (family === 'GEN') return 'gen';
+  if (family === 'FRAG') return 'frag';
+  return 'shader'; // FX (and any legacy family) → 'shader'
+}
 
 /** Clamp an arbitrary value to a valid layer index (0..LAYER_COUNT-1). */
 export function clampLayerIndex(i: unknown): number {
@@ -74,7 +82,9 @@ export function ensureMaterial(nodeId: string, index: number): ToyboxObjMaterial
  * an empty/uninitialised layer INTO a renderable kind (mirrors the card's
  * original layer-0 init):
  *   - 'obj' → seed a material (+ default model + its preferred matcap) if absent.
- *   - 'gen' | 'shader' → seed a contentId + param defaults if absent.
+ *   - 'gen' | 'shader' → seed a generative contentId + param defaults if absent.
+ *   - 'frag' → seed a FRAG contentId (a Shadertoy shader that receives the
+ *     composited layers below as iChannel0) + its param defaults if absent.
  *   - 'image' / 'video' → just set the kind (the card drives the file picker;
  *     image bytes / video metadata land on the layer when a file is chosen).
  *   - 'off' → just set the kind.
@@ -91,11 +101,20 @@ export function setLayerKind(nodeId: string, index: number, kind: ToyboxLayerKin
         if (mm && typeof mm.matcap === 'number') mat.matcap = mm.matcap;
         layer.material = mat;
       }
+    } else if (kind === 'frag') {
+      // Switching INTO frag: if there's no FRAG/Shadertoy content selected yet,
+      // seed the default FRAG shader. A layer that already had gen/shader content
+      // keeps it (a FX shader can run as a scene-input FRAG too).
+      if (!layer.contentId) {
+        const meta = getContentMeta(DEFAULT_FRAG_CONTENT_ID);
+        layer.contentId = DEFAULT_FRAG_CONTENT_ID;
+        setParamsInPlace(layer, meta ? Object.fromEntries(meta.params.map((p) => [p.id, p.default])) : {});
+      }
     } else if (kind === 'gen' || kind === 'shader') {
       if (!layer.contentId) {
         const meta = getContentMeta(DEFAULT_CONTENT_ID);
         layer.contentId = DEFAULT_CONTENT_ID;
-        layer.kind = meta?.family === 'GEN' ? 'gen' : 'shader';
+        layer.kind = kindForFamily(meta?.family);
         setParamsInPlace(layer, meta ? Object.fromEntries(meta.params.map((p) => [p.id, p.default])) : {});
       }
     }
@@ -113,7 +132,7 @@ export function setLayerContent(nodeId: string, index: number, contentId: string
   ydoc.transact(() => {
     const layer = ensureLayer(nodeId, index);
     if (!layer) return;
-    layer.kind = meta.family === 'GEN' ? 'gen' : 'shader';
+    layer.kind = kindForFamily(meta.family);
     layer.contentId = contentId;
     setParamsInPlace(layer, Object.fromEntries(meta.params.map((p) => [p.id, p.default])));
   }, LOCAL_ORIGIN);
