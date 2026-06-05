@@ -13,7 +13,13 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { patch } from '$lib/graph/store';
-import { applyPresetToData, applyPresetToNode, loadToyboxPreset } from './toybox-presets';
+import {
+  applyPresetToData,
+  applyPresetToNode,
+  loadToyboxPreset,
+  applyDataBlobToData,
+  applyDataBlobToNode,
+} from './toybox-presets';
 import { LAYER_COUNT, type ToyboxPreset } from '$lib/video/toybox-content';
 import type { ModuleNode } from './types';
 
@@ -141,6 +147,78 @@ describe('applyPresetToData (pure)', () => {
     const layers = data.layers as typeof PRESET_A.layers;
     expect(layers).toHaveLength(LAYER_COUNT);
     for (let i = 1; i < LAYER_COUNT; i++) expect(layers[i]!.kind).toBe('off');
+  });
+});
+
+/** A full node.data blob (USER preset / imported bundle shape) — like a preset
+ *  but ALSO carries cvInputs + extra top-level fields applyPresetToData ignores. */
+function fullBlob(): Record<string, unknown> {
+  return {
+    layers: [
+      { kind: 'video', contentId: null, params: {}, videoSource: 'file', videoName: 'clip.mp4' },
+      { kind: 'gen', contentId: 'worley-cells', params: { density: 5 } },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+    ],
+    combine: {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+        { id: 'out', kind: 'output', x: 286, y: 40 },
+      ],
+      edges: [{ id: 'e0', from: 'src0', to: 'out', toPort: 'in0' }],
+    },
+    cvRoutes: { cv1: { target: 'layer', layer: 1, param: 'density' } },
+    cvInputs: { cv1: { scale: 3, offset: 0.2 } },
+    activeLayer: 1,
+  };
+}
+
+describe('applyDataBlobToData (pure, full-blob restore)', () => {
+  it('restores layers/combine/cvRoutes AND cvInputs + extra fields onto empty data', () => {
+    const data: Record<string, unknown> = {};
+    applyDataBlobToData(data, fullBlob());
+
+    const layers = data.layers as Array<Record<string, unknown>>;
+    expect(layers).toHaveLength(4);
+    expect(layers[0]!.videoName).toBe('clip.mp4');
+    const combine = data.combine as { nodes: { id: string }[]; edges: unknown[] };
+    expect(combine.nodes.map((n) => n.id)).toEqual(['src0', 'out']);
+    expect((data.cvRoutes as Record<string, unknown>).cv1).toMatchObject({ param: 'density' });
+    // cvInputs (NOT handled by applyPresetToData) is restored here.
+    expect((data.cvInputs as Record<string, { scale: number }>).cv1.scale).toBe(3);
+    // Arbitrary extra top-level field carried through.
+    expect(data.activeLayer).toBe(1);
+  });
+
+  it('deep-clones (no shared refs with the source blob)', () => {
+    const blob = fullBlob();
+    const data: Record<string, unknown> = {};
+    applyDataBlobToData(data, blob);
+    (data.layers as Array<Record<string, unknown>>)[1]!.contentId = 'CHANGED';
+    expect((blob.layers as Array<Record<string, unknown>>)[1]!.contentId).toBe('worley-cells');
+  });
+});
+
+describe('applyDataBlobToNode — real Y.Doc (in-place full restore)', () => {
+  it('restores a full blob over a synced preset without throwing (in-place trap)', () => {
+    makeToybox();
+    // First integrate a preset so layers/combine/cvRoutes are live Y types.
+    applyPresetToNode(TID, PRESET_A);
+    const d = patch.nodes[TID]!.data as Record<string, unknown>;
+    expect((d.layers as unknown[]).length).toBe(LAYER_COUNT);
+    // Now restore a FULL blob (incl. cvInputs) over the synced node.
+    expect(() => applyDataBlobToNode(TID, fullBlob())).not.toThrow();
+
+    const layers = d.layers as Array<Record<string, unknown>>;
+    expect(layers[0]!.videoName).toBe('clip.mp4');
+    const routes = d.cvRoutes as Record<string, unknown>;
+    expect(routes.cv3).toBeUndefined(); // PRESET_A's route cleared
+    expect(routes.cv1).toMatchObject({ param: 'density' });
+    expect((d.cvInputs as Record<string, { scale: number }>).cv1.scale).toBe(3);
+  });
+
+  it('returns false for a missing node', () => {
+    expect(applyDataBlobToNode('no-such-node', fullBlob())).toBe(false);
   });
 });
 

@@ -123,7 +123,20 @@
     drawToyboxInputScope,
     type ToyboxScopeColors,
   } from '$lib/video/toybox-scope-draw';
-  import { loadToyboxPreset } from '$lib/graph/toybox-presets';
+  import { loadToyboxPreset, applyDataBlobToNode } from '$lib/graph/toybox-presets';
+  import {
+    listUserPresets,
+    saveUserPreset,
+    getUserPreset,
+    deleteUserPreset,
+    type ToyboxUserPreset,
+  } from '$lib/video/toybox-user-presets';
+  import {
+    exportToyboxPreset,
+    importToyboxPreset,
+    MAX_VIDEO_BYTES,
+    type ToyboxPresetVideo,
+  } from '$lib/video/toybox-preset-io';
   import {
     clampLayerIndex,
     setLayerKind,
@@ -670,6 +683,13 @@
     inputError = null;
     if (!file.type.startsWith('video/')) {
       inputError = `Not a video file: ${file.type || file.name}`;
+      try { input.value = ''; } catch { /* */ }
+      return;
+    }
+    // Reject oversized videos before attaching (matches the import cap so a clip
+    // that can't EXPORT is rejected at upload, not silently truncated later).
+    if (file.size > MAX_VIDEO_BYTES) {
+      inputError = `Video is ${(file.size / 1048576).toFixed(0)} MB — exceeds the ${(MAX_VIDEO_BYTES / 1048576).toFixed(0)} MB limit`;
       try { input.value = ''; } catch { /* */ }
       return;
     }
@@ -1544,6 +1564,203 @@
 
   let presetSel = $state('');
 
+  // ── USER presets (#61): SAVE the live node.data to a localStorage registry, so
+  // saved patches appear in the PRESET dropdown ALONGSIDE the bundled ones (the
+  // `user:<id>` prefix on the option value tells onPresetChange which loader to
+  // use). EXPORT/IMPORT carry the FULL state — incl. loaded videos — as a .zip.
+  let userPresets = $state<ToyboxUserPreset[]>([]);
+  let savingPreset = $state(false); // SAVE name input is showing
+  let saveName = $state('');
+  let presetError = $state<string | null>(null);
+  let presetNotice = $state<string | null>(null);
+  let importInputEl: HTMLInputElement | null = $state(null);
+
+  function refreshUserPresets(): void {
+    userPresets = listUserPresets();
+  }
+
+  /** Read THIS node's live data blob as PLAIN JSON (off the Yjs proxy), for save
+   *  / export. Returns null if the node has no data yet. */
+  function readLiveDataBlob(): Record<string, unknown> | null {
+    const live = patch.nodes[id]?.data ?? node?.data;
+    if (!live || typeof live !== 'object') return null;
+    try {
+      return JSON.parse(JSON.stringify(live)) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The node's display name (user-set node.data.name) or 'TOYBOX' — used as the
+   *  default SAVE name + the EXPORT filename. */
+  function nodeDisplayName(): string {
+    const nm = (patch.nodes[id]?.data?.name ?? node?.data?.name) as string | undefined;
+    return (typeof nm === 'string' ? nm.trim() : '') || 'TOYBOX';
+  }
+
+  /** Open the inline name input for a SAVE (defaults to the node's name). */
+  function beginSavePreset(): void {
+    presetError = null;
+    presetNotice = null;
+    saveName = nodeDisplayName();
+    savingPreset = true;
+  }
+  function cancelSavePreset(): void {
+    savingPreset = false;
+    saveName = '';
+  }
+
+  /** Commit the SAVE: serialise live node.data into the localStorage registry. */
+  function commitSavePreset(): void {
+    const blob = readLiveDataBlob();
+    if (!blob) { presetError = 'Nothing to save yet'; return; }
+    const entry = saveUserPreset(saveName, blob);
+    if (!entry) {
+      presetError = 'Could not save (storage full or blocked)';
+      return;
+    }
+    refreshUserPresets();
+    savingPreset = false;
+    saveName = '';
+    presetError = null;
+    presetNotice = `Saved "${entry.label}" (videos export-only)`;
+  }
+
+  /** Delete a saved user preset by id (from the SAVED list under the dropdown). */
+  function removeUserPreset(presetId: string): void {
+    deleteUserPreset(presetId);
+    refreshUserPresets();
+  }
+
+  /** Apply a SAVED user preset by id: restore its full node.data blob in place
+   *  (cvInputs incl.). Note: a saved preset has NO video bytes (localStorage
+   *  can't hold them) — the layer keeps its videoName but the user must re-pick
+   *  the file (or IMPORT a .zip) to see the clip again. */
+  function loadUserPreset(presetId: string): boolean {
+    const up = getUserPreset(presetId);
+    if (!up) return false;
+    return applyDataBlobToNode(id, up.data);
+  }
+
+  // ── EXPORT (#61): bundle node.data + each layer's LOADED video bytes into a
+  // `.toybox.zip` and trigger a browser download.
+  let exporting = $state(false);
+
+  /** Resolve a layer's loaded video bytes from its card-owned object URL. Skips
+   *  layers with no local file source (patched feeds / camera / no video). */
+  async function resolveLayerVideos(
+    blob: Record<string, unknown>,
+  ): Promise<ToyboxPresetVideo[]> {
+    const out: ToyboxPresetVideo[] = [];
+    const layers = (blob.layers as Array<Record<string, unknown>> | undefined) ?? [];
+    for (let i = 0; i < layers.length; i++) {
+      const url = videoUrls.get(i);
+      if (!url) continue; // no LOADED local video for this layer
+      try {
+        const resp = await fetch(url);
+        const ab = await (await resp.blob()).arrayBuffer();
+        const bytes = new Uint8Array(ab);
+        const name = (layers[i]?.videoName as string | undefined) || `layer-${i}.mp4`;
+        out.push({ layer: i, name, bytes });
+      } catch {
+        // A torn-down / revoked URL: skip (the preset still exports without it).
+      }
+    }
+    return out;
+  }
+
+  async function exportPreset(): Promise<void> {
+    presetError = null;
+    presetNotice = null;
+    const blob = readLiveDataBlob();
+    if (!blob) { presetError = 'Nothing to export yet'; return; }
+    exporting = true;
+    try {
+      const videos = await resolveLayerVideos(blob);
+      const label = nodeDisplayName();
+      const bytes = exportToyboxPreset({ data: blob, videos, label, savedAt: Date.now() });
+      // Trigger a browser download of the .zip.
+      const fileBlob = new Blob([bytes as unknown as BlobPart], { type: 'application/zip' });
+      const url = URL.createObjectURL(fileBlob);
+      const safe = label.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 60) || 'TOYBOX';
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safe}.toybox.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoke after the click has had a chance to start the download.
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* */ } }, 4000);
+      presetNotice = `Exported ${safe}.toybox.zip${videos.length ? ` (+${videos.length} video${videos.length === 1 ? '' : 's'})` : ''}`;
+    } catch (err) {
+      presetError = err instanceof Error ? err.message : String(err);
+    } finally {
+      exporting = false;
+    }
+  }
+
+  // ── IMPORT (#61): read a `.toybox.zip`, restore node.data in place, and
+  // re-attach each imported video as a fresh object URL on its layer.
+  let importing = $state(false);
+
+  function triggerImport(): void {
+    presetError = null;
+    presetNotice = null;
+    importInputEl?.click();
+  }
+
+  /** Attach imported video bytes to layer `i` as a fresh card-owned <video>
+   *  (mirrors onVideoFileChange's attach path). */
+  function attachImportedVideo(i: number, bytes: Uint8Array, name: string): void {
+    // Free any prior local source for this layer first.
+    const prevUrl = videoUrls.get(i);
+    if (prevUrl) { try { URL.revokeObjectURL(prevUrl); } catch { /* */ } }
+    const prevStream = videoStreams.get(i);
+    if (prevStream) {
+      for (const t of prevStream.getTracks()) { try { t.stop(); } catch { /* */ } }
+      videoStreams.delete(i);
+    }
+    const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart]));
+    videoUrls.set(i, url);
+    const el = ensureVideoEl(i);
+    el.srcObject = null;
+    el.src = url;
+    void el.play().catch(() => { /* autoplay may need a gesture; the import click was one */ });
+    ensureVideoAttached(i);
+    // Persist the source + filename (the data blob already carried videoName, but
+    // be explicit so the layer's File source is selected + named consistently).
+    setLayerVideoSource(id, i, 'file');
+    setLayerVideoName(id, i, name);
+  }
+
+  async function onImportFileChange(ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    presetError = null;
+    presetNotice = null;
+    importing = true;
+    try {
+      const ab = await file.arrayBuffer();
+      const bundle = importToyboxPreset(ab); // throws clear msgs on corrupt/foreign/oversized
+      // Restore the data blob IN PLACE (cvInputs incl.), then re-attach videos.
+      const ok = applyDataBlobToNode(id, bundle.data);
+      if (!ok) { presetError = 'Could not apply imported preset'; return; }
+      for (const v of bundle.videos) attachImportedVideo(v.layer, v.bytes, v.name);
+      bumpRev();
+      presetNotice = `Imported "${bundle.label ?? 'preset'}"${bundle.videos.length ? ` (+${bundle.videos.length} video${bundle.videos.length === 1 ? '' : 's'})` : ''}`;
+    } catch (err) {
+      presetError = err instanceof Error ? err.message : String(err);
+    } finally {
+      importing = false;
+      try { input.value = ''; } catch { /* */ }
+    }
+  }
+
+  onMount(() => {
+    refreshUserPresets();
+  });
+
   /** Prefetch every content shader / OBJ a preset references (warm the cache).
    *  Best-effort: failures are swallowed (the factory retries on its own). */
   function prefetchPresetAssets(preset: ToyboxPreset): void {
@@ -1580,7 +1797,16 @@
   function onPresetChange(ev: Event): void {
     const value = (ev.target as HTMLSelectElement).value;
     if (!value) return;
-    void loadPreset(value);
+    presetError = null;
+    presetNotice = null;
+    if (value.startsWith('user:')) {
+      // A SAVED user preset — restore its full node.data blob (videos export-only).
+      const ok = loadUserPreset(value.slice('user:'.length));
+      if (ok) bumpRev();
+      else presetError = 'Saved preset not found';
+    } else {
+      void loadPreset(value);
+    }
     // Reset the dropdown to the placeholder so re-selecting the same preset
     // re-fires (presets are "apply" actions, not a persisted selection).
     presetSel = '';
@@ -1810,9 +2036,11 @@
     ></canvas>
   </div>
 
-  <!-- PRESETS (Phase 6): pick a bundled preset → writes layers/combine/cvRoutes
-       into node.data in place. An "apply" action (resets to placeholder). -->
-  {#if presets.length > 0}
+  <!-- PRESETS (Phase 6 + #61): pick a BUNDLED or a SAVED user preset → writes
+       node.data in place. SAVE the live patch to a localStorage registry;
+       EXPORT/IMPORT carry the FULL patch (incl. loaded videos) as a .toybox.zip.
+       Loading a preset is an "apply" action (the select resets to placeholder). -->
+  <div class="preset-section" data-testid="toybox-preset-section">
     <div class="content-row">
       <label class="content-label" for={`toybox-preset-${id}`}>PRESET</label>
       <select
@@ -1823,12 +2051,105 @@
         onchange={onPresetChange}
       >
         <option value="">— load preset… —</option>
-        {#each presets as p (p.id)}
-          <option value={p.id}>{p.label}</option>
-        {/each}
+        {#if userPresets.length > 0}
+          <optgroup label="Saved">
+            {#each userPresets as up (up.id)}
+              <option value={`user:${up.id}`}>★ {up.label}</option>
+            {/each}
+          </optgroup>
+        {/if}
+        {#if presets.length > 0}
+          <optgroup label="Bundled">
+            {#each presets as p (p.id)}
+              <option value={p.id}>{p.label}</option>
+            {/each}
+          </optgroup>
+        {/if}
       </select>
     </div>
-  {/if}
+
+    <!-- SAVE / EXPORT / IMPORT actions -->
+    {#if savingPreset}
+      <div class="preset-save-row" data-testid="toybox-preset-save-row">
+        <input
+          class="preset-name-input"
+          type="text"
+          data-testid="toybox-preset-name-input"
+          placeholder="Preset name"
+          bind:value={saveName}
+          onkeydown={(e) => { if (e.key === 'Enter') commitSavePreset(); else if (e.key === 'Escape') cancelSavePreset(); }}
+        />
+        <button
+          type="button"
+          class="preset-btn"
+          data-testid="toybox-preset-save-confirm"
+          onclick={commitSavePreset}
+        >OK</button>
+        <button
+          type="button"
+          class="preset-btn ghost"
+          data-testid="toybox-preset-save-cancel"
+          onclick={cancelSavePreset}
+        >✕</button>
+      </div>
+    {:else}
+      <div class="preset-actions" data-testid="toybox-preset-actions">
+        <button
+          type="button"
+          class="preset-btn"
+          data-testid="toybox-preset-save"
+          onclick={beginSavePreset}
+        >SAVE</button>
+        <button
+          type="button"
+          class="preset-btn"
+          data-testid="toybox-preset-export"
+          disabled={exporting}
+          onclick={() => void exportPreset()}
+        >{exporting ? 'EXPORT…' : 'EXPORT'}</button>
+        <button
+          type="button"
+          class="preset-btn"
+          data-testid="toybox-preset-import"
+          disabled={importing}
+          onclick={triggerImport}
+        >{importing ? 'IMPORT…' : 'IMPORT'}</button>
+        <input
+          bind:this={importInputEl}
+          type="file"
+          accept=".zip"
+          class="visually-hidden"
+          data-testid="toybox-preset-import-input"
+          onchange={onImportFileChange}
+        />
+      </div>
+    {/if}
+
+    {#if presetError}
+      <div class="input-error" data-testid="toybox-preset-error">{presetError}</div>
+    {/if}
+    {#if presetNotice}
+      <div class="sync-hint" data-testid="toybox-preset-notice">{presetNotice}</div>
+    {/if}
+
+    <!-- Saved-preset manage list (delete) — only when the user has saved some. -->
+    {#if userPresets.length > 0}
+      <ul class="preset-saved-list" data-testid="toybox-preset-saved-list">
+        {#each userPresets as up (up.id)}
+          <li class="preset-saved-item" data-testid={`toybox-preset-saved-${up.id}`}>
+            <span class="preset-saved-name" title={up.label}>★ {up.label}</span>
+            <button
+              type="button"
+              class="preset-btn ghost preset-del"
+              data-testid={`toybox-preset-delete-${up.id}`}
+              title={`Delete "${up.label}"`}
+              onclick={() => removeUserPreset(up.id)}
+            >✕</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
 
   <!-- LAYER-INDEX selector: a tab per layer (1-indexed labels, 0-indexed state).
        Picks which of node.data.layers[] every control below edits. A populated
@@ -2725,6 +3046,90 @@
     font-size: 0.58rem;
     color: #f87171;
     font-family: ui-monospace, monospace;
+  }
+  /* ───────── user presets: SAVE / EXPORT / IMPORT (#61) ───────── */
+  .preset-section { margin-bottom: 6px; }
+  .preset-actions,
+  .preset-save-row {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+    align-items: center;
+  }
+  .preset-btn {
+    flex: 1 1 auto;
+    padding: 3px 6px;
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--text-dim);
+    border-radius: 2px;
+    font-size: 0.55rem;
+    font-family: ui-monospace, monospace;
+    cursor: pointer;
+    user-select: none;
+  }
+  .preset-btn:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
+  .preset-btn:disabled { opacity: 0.5; cursor: default; }
+  .preset-btn.ghost { flex: 0 0 auto; padding: 3px 7px; }
+  .preset-name-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 3px 6px;
+    background: var(--surface, #111);
+    color: var(--text);
+    border: 1px solid var(--text-dim);
+    border-radius: 2px;
+    font-size: 0.6rem;
+    font-family: ui-monospace, monospace;
+  }
+  .preset-section .input-error {
+    margin-top: 4px;
+    font-size: 0.55rem;
+    color: #f87171;
+    font-family: ui-monospace, monospace;
+  }
+  .preset-section .sync-hint {
+    margin-top: 4px;
+    font-size: 0.52rem;
+    color: var(--cable-video);
+    font-family: ui-monospace, monospace;
+    opacity: 0.7;
+  }
+  .preset-saved-list {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .preset-saved-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .preset-saved-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .preset-del { color: #f87171; border-color: transparent; }
+  .preset-del:hover { color: #fff; background: #f87171; }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
   }
   /* "Use bundled …" reset for a custom disk-loaded shader/OBJ. */
   .input-picker .clear-btn {
