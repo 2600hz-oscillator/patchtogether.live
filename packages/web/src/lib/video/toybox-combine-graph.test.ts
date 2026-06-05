@@ -21,6 +21,7 @@ import {
   isCombineGraph,
   makeDefaultCombineGraph,
   makeOpNode,
+  opSlotXY,
   validateConnect,
   wouldCreateCycle,
   topoSort,
@@ -314,6 +315,36 @@ describe('makeOpNode', () => {
     expect(g.nodes.some((x) => x.id === n.id)).toBe(false); // not yet inserted
     expect(n.kind).toBe('lumakey');
     expect(n.params).toEqual(defaultOpParams('lumakey'));
+  });
+
+  // Regression (user patch.imp #21): adding a LUMAKEY landed EXACTLY on top of an
+  // existing CHROMAKEY. Root cause: the lone op sat at slot 1's position (it was
+  // `op2`, created when an `op1` still existed, then `op1` was deleted), and the
+  // old code positioned the new op at opSlotXY(ops.length) = opSlotXY(1) — the
+  // same slot. The new node was independent (fresh id) but drawn stacked on the
+  // old one. makeOpNode must pick a FREE slot.
+  it('never stacks a new op on top of an existing op left at a non-zero slot', () => {
+    const slot1 = opSlotXY(1);
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+        { id: 'out', kind: 'output', x: 286, y: 66 },
+        // The lone op is `op2`, sitting at slot 1 (mirrors the user's patch).
+        { id: 'op2', kind: 'chromakey', x: slot1.x, y: slot1.y, params: defaultOpParams('chromakey') },
+      ],
+      edges: [],
+    };
+    const n = makeOpNode(g, 'lumakey');
+    expect(n.id).not.toBe('op2'); // independent node
+    expect(`${n.x},${n.y}`).not.toBe(`${slot1.x},${slot1.y}`); // NOT stacked on the chroma
+  });
+
+  it('places successive added ops at mutually-distinct grid slots (no overlaps)', () => {
+    const g = defGraph();
+    for (let i = 0; i < 5; i++) g.nodes.push(makeOpNode(g, 'lumakey'));
+    const ops = g.nodes.filter((x) => x.kind !== 'source' && x.kind !== 'output');
+    const positions = ops.map((x) => `${x.x},${x.y}`);
+    expect(new Set(positions).size).toBe(positions.length); // every op at a unique (x,y)
   });
 });
 
