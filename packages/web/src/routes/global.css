@@ -409,3 +409,37 @@ html[data-skin='lcars'] .topbar h1 {
     0 0 8px rgba(255, 153, 0, 0.4);
 }
 
+/* ── TRUE-FULLSCREEN video sizing (ONE place for ALL video outputs) ──────────
+ *
+ * Every video card (VIDEO OUT / b3ntb0x / VIDEOBOX / BENTBOX / TOYBOX / cube /
+ * mandelbulb / …) fullscreens a wrapper that holds the live <canvas>. They
+ * sized that wrapper with `width/height: 100%` — but a PERCENT height on the
+ * fullscreen element resolves against its IN-RACK parent (a card a few hundred
+ * px tall), NOT the screen, so the video showed as a small centered box with
+ * black on all four sides instead of filling the display.
+ *
+ * Fix once, globally: force the fullscreen element to the VIEWPORT (vw/dvh —
+ * unambiguous regardless of containing block) and let the inner <canvas>/<video>
+ * `object-fit: contain` against the drawing buffer's own aspect — so a 4:3
+ * source fills the full screen HEIGHT with black PILLARBOX bands on the sides
+ * (and letterbox bands for a wide source). `!important` beats the cards' inline
+ * `width/height:100%` + the canvas's inline `aspect-ratio`. Applies ONLY in true
+ * browser fullscreen (the :fullscreen pseudo); in-rack "full frame" is untouched. */
+:fullscreen {
+  width: 100vw !important;
+  height: 100dvh !important;
+  background: #000;
+}
+:fullscreen canvas,
+:fullscreen video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  aspect-ratio: auto !important;
+}
+/* When a card fullscreens the <canvas>/<video> itself (no wrapper), contain its
+ * own drawing buffer to the viewport too. */
+:fullscreen:is(canvas, video) {
+  object-fit: contain !important;
+}
+
