@@ -103,6 +103,7 @@ export interface FeedbackUniforms {
   slitPos: number;
   slitWidth: number;
   flow: number;
+  intensity: number;
 }
 
 /**
@@ -128,6 +129,7 @@ export function feedbackUniforms(params: Record<string, number> | undefined | nu
     slitPos: clamp(p.slitPos, 0, 1, 0.5),
     slitWidth: clamp(p.slitWidth, 0, 1, 0.1),
     flow: clamp(p.flow, 0, 1, 0),
+    intensity: clamp(p.intensity, 0, 1, 0.5),
   };
 }
 
@@ -164,18 +166,23 @@ export function feedbackResetState(
  * Param ids MUST exist in OP_PARAMS['feedback']; the unit test asserts that.
  */
 export const FEEDBACK_MODE_PARAMS: Readonly<Record<number, readonly string[]>> = {
-  0: ['zoom', 'rotate', 'decay'], // TUNNEL — Droste zoom + spin + persistence
-  1: ['scaleP', 'rotate', 'tx', 'ty', 'decay'], // GEOMETRIC — affine drift
+  // TUNNEL — recursive hall-of-mirrors; intensity is the wet/dry mix between the
+  // live input (dry) and the opaque mirrors (wet). zoom = how fast nested copies
+  // shrink, rotate = per-level spin.
+  0: ['zoom', 'rotate', 'intensity', 'decay'],
+  // GEOMETRIC — affine drift; intensity raises the feedback (luma-weighted)
+  // contribution for stronger trails/accumulation.
+  1: ['scaleP', 'rotate', 'tx', 'ty', 'intensity', 'decay'],
   2: ['slitPos', 'slitWidth', 'decay'], // SLIT — slit-scan window
   3: ['decay', 'gain'], // ADDITIVE — glowing trails
   4: ['gain', 'decay'], // DIFF — motion ghosts
   5: ['blur', 'decay'], // BLUR — smoke / diffusion
   6: ['gain', 'decay'], // EDGE — growing line webs
-  7: ['hue', 'decay'], // COLOR — channel cycling
-  8: ['flow', 'decay'], // DISPLACE — liquid self-displacement
+  7: ['hue', 'intensity', 'decay'], // COLOR — channel cycling (intensity = wet/dry)
+  8: ['flow', 'intensity', 'decay'], // DISPLACE — liquid self-displacement (intensity = wet/dry)
   9: ['gain', 'thresh', 'decay'], // REACTION — reaction-diffusion
   10: ['thresh', 'decay'], // LUMAGATE — bright-structure persistence
-  11: ['flow', 'rotate', 'decay'], // VECTOR — LZX flow-field advection
+  11: ['flow', 'rotate', 'intensity', 'decay'], // VECTOR — flow-field advection (intensity = wet/dry)
 };
 
 /** The relevant float-param ids for a feedback mode (clamped to a valid mode).
