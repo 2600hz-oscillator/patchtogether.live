@@ -149,6 +149,23 @@ export function setCombineNodeParam(
   });
 }
 
+/**
+ * Reset a FEEDBACK node's ping-pong buffers: bump its `_reset` token param (in
+ * place) so the engine clears both float buffers to black on the next render.
+ * The token is a monotonically-increasing counter persisted on the node's params
+ * (so a reset propagates to every collaborator + survives reload). No-op for a
+ * non-feedback / unknown node. The contextual menu's "Reset feedback" action.
+ */
+export function resetFeedbackNode(nodeId: string, targetNodeId: string): void {
+  mutateCombine(nodeId, (g) => {
+    const n = findNode(g, targetNodeId);
+    if (!n || n.kind !== 'feedback') return;
+    if (!n.params) n.params = {};
+    const prev = typeof n.params._reset === 'number' ? n.params._reset : 0;
+    n.params._reset = prev + 1; // set a single key in place (never spread params)
+  });
+}
+
 /** Move a node's editor position (in place) — cosmetic, but persisted so the
  *  layout round-trips through save/load + multiplayer. */
 export function setCombineNodePosition(

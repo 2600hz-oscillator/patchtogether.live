@@ -9,6 +9,8 @@ import { LAYER_COUNT } from './toybox-content';
 import {
   OP_KINDS,
   OP_PARAMS,
+  OP_SHADER_INDEX,
+  FEEDBACK_SHADER_INDEX,
   KEYER_OP_KINDS,
   isKeyerKind,
   combineDisplayNames,
@@ -94,10 +96,15 @@ describe('ports', () => {
     expect(inPortsFor('source')).toEqual([]);
     expect(hasOutPort('source')).toBe(true);
   });
-  it('op nodes have in0 + in1 + an output', () => {
+  it('blend op nodes have in0 + in1 + an output; FEEDBACK has only in0', () => {
     for (const k of OP_KINDS) {
-      expect(inPortsFor(k)).toEqual(['in0', 'in1']);
       expect(hasOutPort(k)).toBe(true);
+      if (k === 'feedback') {
+        // FEEDBACK's loop is INTERNAL (its own previous frame) — a single input.
+        expect(inPortsFor(k)).toEqual(['in0']);
+      } else {
+        expect(inPortsFor(k)).toEqual(['in0', 'in1']);
+      }
     }
   });
   it('output has a single input + no output port', () => {
@@ -112,6 +119,81 @@ describe('defaultOpParams', () => {
       const p = defaultOpParams(k);
       for (const def of OP_PARAMS[k]) expect(p[def.id]).toBe(def.default);
     }
+  });
+});
+
+describe('FEEDBACK op (the first STATEFUL combine node)', () => {
+  it('is a registered op kind in OP_KINDS', () => {
+    expect(OP_KINDS).toContain('feedback');
+  });
+  it('has a SENTINEL shader index (not a real combine uOp 0..3)', () => {
+    // FEEDBACK runs its own program; its OP_SHADER_INDEX must not collide with
+    // the four stateless blends (0=fade 1=lumakey 2=chromakey 3=map).
+    const idx = OP_SHADER_INDEX.feedback;
+    expect(idx).toBe(FEEDBACK_SHADER_INDEX);
+    expect([0, 1, 2, 3]).not.toContain(idx);
+  });
+  it('exposes a discrete MODE param (0..11) + the per-mode float superset', () => {
+    const params = OP_PARAMS.feedback;
+    const byId = Object.fromEntries(params.map((p) => [p.id, p]));
+    // The discrete mode selector.
+    expect(byId.mode).toMatchObject({ min: 0, max: 11, default: 0 });
+    // The 12 float params (CV-targetable + card knobs) with their ranges.
+    expect(byId.zoom).toMatchObject({ min: 0.5, max: 1, default: 0.95 });
+    expect(byId.scaleP).toMatchObject({ min: 0.5, max: 1.5, default: 1 });
+    expect(byId.decay).toMatchObject({ min: 0, max: 1.5, default: 0.9 });
+    expect(byId.gain).toMatchObject({ min: 0, max: 2, default: 1 });
+    expect(byId.thresh).toMatchObject({ min: 0, max: 1, default: 0.5 });
+    expect(byId.blur).toMatchObject({ min: 0, max: 4, default: 1 });
+    expect(byId.slitPos).toMatchObject({ min: 0, max: 1, default: 0.5 });
+    expect(byId.slitWidth).toMatchObject({ min: 0, max: 1, default: 0.1 });
+    expect(byId.flow).toMatchObject({ min: 0, max: 1, default: 0 });
+    // tx/ty/rotate/hue present.
+    for (const k of ['tx', 'ty', 'rotate', 'hue']) expect(byId[k]).toBeDefined();
+  });
+  it('defaultOpParams seeds every feedback param including mode', () => {
+    const p = defaultOpParams('feedback');
+    expect(p.mode).toBe(0);
+    for (const def of OP_PARAMS.feedback) expect(p[def.id]).toBe(def.default);
+  });
+  it('makeOpNode("feedback") mints a feedback node with default params', () => {
+    const g = defGraph();
+    const n = makeOpNode(g, 'feedback');
+    expect(n.kind).toBe('feedback');
+    expect(n.params?.mode).toBe(0);
+    expect(n.params?.zoom).toBe(0.95);
+  });
+  it('a feedback node can be deleted (it is a non-structural op)', () => {
+    const g = defGraph();
+    const n = makeOpNode(g, 'feedback');
+    g.nodes.push(n);
+    expect(canDeleteNode(g, n.id)).toBe(true);
+  });
+  it('a feedback node has a unique ordinal display name (FBK N)', () => {
+    const g = defGraph();
+    const a = makeOpNode(g, 'feedback'); g.nodes.push(a);
+    const b = makeOpNode(g, 'feedback'); g.nodes.push(b);
+    const names = combineDisplayNames(g);
+    expect(names.get(a.id)).toBe('FBK 1');
+    expect(names.get(b.id)).toBe('FBK 2');
+  });
+  it('connecting a source → feedback.in0 is valid; in1 is rejected (no such port)', () => {
+    const g = defGraph();
+    const fb = makeOpNode(g, 'feedback');
+    g.nodes.push(fb);
+    expect(validateConnect(g, 'src0', fb.id, 'in0').ok).toBe(true);
+    // FEEDBACK has no in1 — wiring it is a bad-in-port.
+    const bad = validateConnect(g, 'src1', fb.id, 'in1');
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toBe('bad-in-port');
+  });
+  it('a feedback node topo-sorts + can feed the output (DAG-valid)', () => {
+    const g = defGraph();
+    const fb = makeOpNode(g, 'feedback');
+    g.nodes.push(fb);
+    g.edges.push({ id: 'ef1', from: 'src0', to: fb.id, toPort: 'in0' });
+    const { ok } = topoSort(g);
+    expect(ok).toBe(true);
   });
 });
 

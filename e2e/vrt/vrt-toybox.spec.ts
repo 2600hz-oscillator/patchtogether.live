@@ -1139,3 +1139,131 @@ test.describe('VRT: TOYBOX FRAG over a base layer (content-bank)', () => {
     ).toEqual([]);
   });
 });
+
+// ── FEEDBACK — the first STATEFUL combine op. Each baseline wires src0 (noise)
+// → a FEEDBACK(mode) node → OUTPUT, then advances the ping-pong until it reaches
+// a FIXED POINT (a self-feedback loop fed by a STATIC frozen-iTime source settles
+// to a steady state) — so the captured frame is pixel-stable. The stability poll
+// (two consecutive freeze captures matching) IS the converge-to-fixed-point loop:
+// each __toyboxFreeze advances one feedback frame, and we keep going until the
+// coarse signature repeats. TUNNEL (recursive zoom) and BLUR (diffusion) reach
+// distinct steady states, proving the per-mode shader branch renders + the
+// ping-pong loop is wired. (ADDITIVE etc. saturate to a flat frame — less
+// interesting as a baseline; the e2e covers the saturating/reset dynamics.)
+
+const FEEDBACK_MODES_VRT: Array<{ name: string; mode: number; time: number }> = [
+  { name: 'tunnel', mode: 0, time: 2.0 }, // Droste / infinite zoom
+  { name: 'blur',   mode: 5, time: 2.0 }, // smoke / diffusion
+];
+
+/** Seed src0(noise) → FEEDBACK(mode) → OUTPUT, then advance the ping-pong until
+ *  it reaches a stable fixed point (two consecutive coarse signatures match). */
+async function setFeedbackAndFreeze(page: Page, mode: number, time: number): Promise<void> {
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+  await page.evaluate(
+    ({ mode }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['tb'];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        n.data.layers = [
+          { kind: 'gen', contentId: 'noise-fbm', params: {} },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+        ];
+        n.data.combine = {
+          nodes: [
+            { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+            { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+            { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+            { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+            { id: 'fb', kind: 'feedback', x: 120, y: 14, params: { mode } },
+            { id: 'out', kind: 'output', x: 286, y: 66 },
+          ],
+          edges: [
+            { id: 'e_src0_fb', from: 'src0', to: 'fb', toPort: 'in0' },
+            { id: 'e_fb_out', from: 'fb', to: 'out', toPort: 'in0' },
+          ],
+        };
+      });
+    },
+    { mode },
+  );
+  await page.evaluate(() => {
+    (globalThis as unknown as { __toyboxPrevSig?: string }).__toyboxPrevSig = '';
+  });
+  // Each freeze advances ONE feedback frame; keep advancing until the coarse
+  // signature repeats (the loop reached its fixed point) AND the frame is lit.
+  await page.waitForFunction(
+    ({ time }) => {
+      const g = globalThis as unknown as {
+        __toyboxFreeze?: (t?: number) => void;
+        __toyboxPrevSig?: string;
+      };
+      g.__toyboxFreeze?.(time);
+      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0, r = 0, gg = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      }
+      if (lit <= canvas.width * canvas.height * 0.05) return false;
+      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
+      const prev = g.__toyboxPrevSig;
+      g.__toyboxPrevSig = sig;
+      return prev === sig;
+    },
+    { time },
+    { timeout: 15_000 },
+  );
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
+test.describe('VRT: TOYBOX feedback (stateful combine op)', () => {
+  for (const f of FEEDBACK_MODES_VRT) {
+    test(`feedback ${f.name} converges to a stable composite`, async ({ page }) => {
+      test.skip(
+        VRT_PLATFORM === 'linux',
+        `linux/toybox-feedback-${f.name}: darwin baseline only; linux pending a vrt:update on CI`,
+      );
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('console', (m) => {
+        if (m.type() === 'error') errors.push(m.text());
+      });
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+        [],
+      );
+      const card = page.locator('.svelte-flow__node-toybox').first();
+      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      await pinViewport(page);
+
+      await setFeedbackAndFreeze(page, f.mode, f.time);
+
+      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      await expect(canvas).toHaveScreenshot(`feedback-${f.name}.png`, { maskColor: '#ff00ff' });
+
+      expect(
+        errors.filter((e) => !e.includes('AudioContext')),
+        'no console / page errors',
+      ).toEqual([]);
+    });
+  }
+});
