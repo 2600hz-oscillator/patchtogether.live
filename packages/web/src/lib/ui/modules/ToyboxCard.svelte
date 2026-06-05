@@ -94,7 +94,9 @@
     clearCombineEdges,
     resetCombineToDefault,
     duplicateCombineNode,
+    resetFeedbackNode,
   } from '$lib/graph/toybox-combine';
+  import { FEEDBACK_MODES } from '$lib/video/toybox-feedback';
   import ToyboxNodeMenu from './ToyboxNodeMenu.svelte';
   import ToyboxKeyerConfig from './ToyboxKeyerConfig.svelte';
   import {
@@ -1012,6 +1014,34 @@
       ? OP_PARAMS[selectedNode.kind as ToyboxOpKind] ?? []
       : [],
   );
+  // FEEDBACK exposes a discrete MODE param rendered as a <select> (not a knob),
+  // so we filter `mode` out of the auto-rendered knob grid for a feedback node
+  // (the other floats still knob-render). Non-feedback nodes are unaffected.
+  let selectedIsFeedback = $derived(selectedNode?.kind === 'feedback');
+  let selectedKnobParams = $derived(
+    selectedIsFeedback ? selectedParams.filter((p) => p.id !== 'mode') : selectedParams,
+  );
+
+  /** The selected FEEDBACK node's current mode id (clamped to 0..11). */
+  let selectedFeedbackMode = $derived.by<number>(() => {
+    if (!selectedIsFeedback || !selectedNode) return 0;
+    const v = selectedNode.params?.mode;
+    const m = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0;
+    return m < 0 ? 0 : m >= FEEDBACK_MODES.length ? FEEDBACK_MODES.length - 1 : m;
+  });
+
+  /** Set the selected feedback node's mode (writes the `mode` op param). */
+  function setFeedbackMode(gid: string, mode: number): void {
+    setCombineNodeParam(id, gid, 'mode', mode);
+    bumpRev();
+  }
+
+  /** Clear a feedback node's ping-pong buffers ("Reset feedback" menu action). */
+  function doResetFeedback(gid: string): void {
+    resetFeedbackNode(id, gid);
+    bumpRev();
+    clearConnectMsg();
+  }
 
   // ───────────────────── CV ROUTING TAB (Phase 5) ─────────────────────
   //
@@ -2110,8 +2140,26 @@
       {#if selectedNode && selectedParams.length > 0}
         <div class="combine-params" data-testid="toybox-combine-params" data-node={selectedNode.id}>
           <div class="combine-params-title">{selectedNode.kind.toUpperCase()} · {selectedNode.id}</div>
+          <!-- FEEDBACK: a discrete MODE selector (12 labelled modes). The other
+               floats auto-render as knobs below (the `mode` knob is filtered out
+               via selectedKnobParams). -->
+          {#if selectedIsFeedback}
+            <label class="fb-mode-row" data-testid="toybox-feedback-mode">
+              <span class="fb-mode-label">MODE</span>
+              <select
+                class="fb-mode-select"
+                data-testid="toybox-feedback-mode-select"
+                value={selectedFeedbackMode}
+                onchange={(e) => setFeedbackMode(selectedNode!.id, Number((e.currentTarget as HTMLSelectElement).value))}
+              >
+                {#each FEEDBACK_MODES as m (m.id)}
+                  <option value={m.id}>{m.id}. {m.label}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
           <div class="knob-grid">
-            {#each selectedParams as p (p.id)}
+            {#each selectedKnobParams as p (p.id)}
               <Knob
                 value={combineParamVal(selectedNode, p.id)}
                 min={p.min} max={p.max} defaultValue={p.default}
@@ -2137,6 +2185,7 @@
     port={toyboxMenu?.port}
     onpatchtooutput={() => { if (toyboxMenu?.nodeId) doPatchToOutput(toyboxMenu.nodeId); }}
     onconfigure={() => { if (toyboxMenu?.nodeId) doConfigureKeyer(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
+    onresetfeedback={() => { if (toyboxMenu?.nodeId) doResetFeedback(toyboxMenu.nodeId); }}
     ondisconnect={() => { if (toyboxMenu?.nodeId) doDisconnect(toyboxMenu.nodeId); }}
     onduplicate={() => { if (toyboxMenu?.nodeId) doDuplicate(toyboxMenu.nodeId); }}
     ondeletenode={() => { if (toyboxMenu?.nodeId) onDeleteNode(toyboxMenu.nodeId); }}
@@ -2558,6 +2607,8 @@
   }
   .gnode.source .gnode-rect { fill: #0f1a14; stroke: #2f6b4a; }
   .gnode.output .gnode-rect { fill: #1a1410; stroke: #8a5a2f; }
+  /* FEEDBACK (the stateful op) — a distinct purple so it reads as special. */
+  .gnode.feedback .gnode-rect { fill: #18121f; stroke: #7a4fb0; }
   .gnode.sel .gnode-rect { stroke: var(--accent); stroke-width: 2; }
   .gnode-rect:hover { stroke: var(--accent-dim); }
   .gnode-label {
@@ -2615,6 +2666,31 @@
     letter-spacing: 0.05em;
   }
   .combine-params .knob-grid { padding: 0; }
+
+  /* FEEDBACK node MODE selector (discrete; the other params are knobs). */
+  .fb-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .fb-mode-label {
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+  }
+  .fb-mode-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: var(--input-bg, #1a1d24);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    padding: 2px 4px;
+  }
 
   /* ───────── CV / MODULATION SECTION (6 inputs) ───────── */
   .cv-section {

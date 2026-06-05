@@ -3,12 +3,14 @@
   // combine-graph editor (the SVG node map inside ToyboxCard). It is AWARE of
   // what was right-clicked and offers only the relevant actions:
   //
-  //   NODE (op)     Patch to output · [Configure keyer] · Disconnect · Duplicate node · Delete node
+  //   NODE (op)     Patch to output · [Configure keyer] · [Reset feedback] · Disconnect · Duplicate node · Delete node
   //   NODE (source) Patch to output · Disconnect            (no Delete/Duplicate)
   //   NODE (output) Disconnect                              (structural endpoint)
   //
   //   "Configure keyer" shows ONLY for a LUMAKEY / CHROMAKEY node (isKeyerKind);
   //   it opens the keyer-config popover (ToyboxKeyerConfig) via onconfigure.
+  //   "Reset feedback" shows ONLY for a FEEDBACK node; it clears that node's
+  //   ping-pong float buffers (onresetfeedback → resetFeedbackNode mutator).
   //   PORT (output) Patch to output · Disconnect this port · Begin wire
   //   PORT (input)  Disconnect this port
   //   EDGE          Delete edge
@@ -41,6 +43,8 @@
     onpatchtooutput: () => void;
     /** NODE (keyer op) only: open the keyer-config popover for this node. */
     onconfigure: () => void;
+    /** NODE (feedback op) only: clear this feedback node's ping-pong buffers. */
+    onresetfeedback: () => void;
     ondisconnect: () => void;
     onduplicate: () => void;
     ondeletenode: () => void;
@@ -63,6 +67,7 @@
     port,
     onpatchtooutput,
     onconfigure,
+    onresetfeedback,
     ondisconnect,
     onduplicate,
     ondeletenode,
@@ -134,6 +139,8 @@
   let isOp = $derived(nodeKind !== 'source' && nodeKind !== 'output');
   // LUMAKEY / CHROMAKEY → offer "Configure keyer".
   let isKeyer = $derived(isKeyerKind(nodeKind));
+  // FEEDBACK (the stateful op) → offer "Reset feedback" (clears its ping-pong).
+  let isFeedback = $derived(nodeKind === 'feedback');
 
   // The menu header label per target.
   let headerLabel = $derived.by<string>(() => {
@@ -206,6 +213,14 @@
           data-testid="toybox-menu-configure-keyer"
           onclick={() => pick(onconfigure)}
         >Configure keyer…</button>
+      {/if}
+      {#if isFeedback}
+        <button
+          class="ctx-item"
+          role="menuitem"
+          data-testid="toybox-menu-reset-feedback"
+          onclick={() => pick(onresetfeedback)}
+        >Reset feedback</button>
       {/if}
       <button
         class="ctx-item"
