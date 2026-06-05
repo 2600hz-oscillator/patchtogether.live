@@ -261,10 +261,15 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
     await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
     await pinViewport(page);
 
-    // ADDITIVE so trails accumulate to a bright/saturated buffer to "reset away".
-    await seedFeedbackGraph(page, 3, { decay: 0.95 });
+    // TUNNEL (mode 0) builds a recursive zoom STRUCTURE over many frames. We
+    // deliberately avoid ADDITIVE here: additive CLAMP-saturates, so its
+    // post-clear frame instantly re-hits the same ceiling as the accumulated
+    // buffer → a brightness-delta reads IDENTICAL on CI (the flake we hit —
+    // accumulated 765 vs post-reset 765). TUNNEL's built-up structure vs a
+    // freshly-cleared, slowly-rebuilding buffer is unambiguously different.
+    await seedFeedbackGraph(page, 0, { zoom: 0.97, rotate: 0.04 });
     const accumulated = await stepAndAverage(page, 2.0, 16);
-    expect(lum(accumulated), 'trails accumulated to a bright buffer before reset').toBeGreaterThan(20);
+    expect(lum(accumulated), 'tunnel structure accumulated before reset').toBeGreaterThan(8);
 
     // Bump the reset token (engine clears both ping-pong textures to black). This
     // is exactly what the "Reset feedback" menu item does — resetFeedbackNode →
@@ -285,14 +290,13 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
     });
 
     // The clear takes effect once the Yjs `_reset` token PROPAGATES to the engine
-    // and a frame renders — 1-2 frames locally, but slower under CI load (a single
-    // step can read the pre-propagation token → buffer still full → flake). Poll:
-    // step + measure until the buffer is measurably dimmer than the fully-
-    // accumulated trails. (ADDITIVE re-accumulates over ~16 frames, so there's a
-    // wide post-clear dim window for the poll to land in.)
-    const accumLum = lum(accumulated);
+    // and a frame renders — 1-2 frames locally, slower under CI load. Poll:
+    // step + measure until the rendered frame visibly DIVERGES from the built-up
+    // tunnel (the clear collapses the structure; it then rebuilds slowly). We
+    // assert a DIFFERENCE (dist), not a brightness drop, so it's robust to render
+    // timing + direction on CI's SwiftShader.
     await expect
-      .poll(async () => lum(await stepAndAverage(page, 2.0, 1)), { timeout: 30_000 })
-      .toBeLessThan(accumLum - 10);
+      .poll(async () => dist(await stepAndAverage(page, 2.0, 1), accumulated), { timeout: 30_000 })
+      .toBeGreaterThan(8);
   });
 });
