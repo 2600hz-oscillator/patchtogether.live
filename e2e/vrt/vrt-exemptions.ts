@@ -421,16 +421,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   chromakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
   // LUMAKEY — new 2-input compositor; same rationale as CHROMAKEY.
   lumakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
-  // QUADRALOGICAL — Phase 1 of the 4-input video mixer (joystick weight model +
-  // 45° yellow diamond + MIX/PREVIEW outputs + cross-dissolve). The card carries
-  // a live on-card MIX preview canvas (masked via VRT_MODULE_MASKS) so the
-  // canvas is non-deterministic in the solo-spawn VRT. Functional coverage:
-  // quadralogical.test.ts (weight-model corners/edges/center/diamond + sum=1 +
-  // normalizeInputs forward-fill + cross-dissolve parity) + e2e/tests/
-  // quadralogical.spec.ts (4 colored CHROMA inputs → MIX non-black + corner
-  // dominance + 2×2 PREVIEW tile + freeze-holds-still). Promote into MODULES +
-  // capture darwin/linux baselines (via the optional VRT scene) in Phase 2.
-  quadralogical: 'VRT baseline pending — Phase 1 of the 4-input video mixer; card carries a live MIX preview canvas (masked). Unit (weight-model + normalling + cross-dissolve parity) + e2e (4-color composite + corner dominance + 2×2 preview + freeze) provide coverage. Promote + capture darwin/linux baselines via the VRT scene in Phase 2.',
+  // QUADRALOGICAL — 4-input video mixer (Phase 2: per-edge effects). The SOLO-
+  // spawn card carries a live on-card MIX preview canvas, so the SOLO VRT is
+  // still exempt (the canvas is non-deterministic when nothing is patched). The
+  // DETERMINISTIC composite VRT now lives in vrt-quadralogical.spec.ts — flat-
+  // colour sources → CHROMA(tintMix=1) → a frozen mix, one baseline per effect.
+  // Functional coverage: quadralogical.test.ts (weight model + edge-weight
+  // composite + all 8 blend2 branches + normalling) + e2e/tests/quadralogical
+  // .spec.ts (corner dominance + per-edge distinctness + independence + freeze).
+  quadralogical: 'SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched). The deterministic per-edge composite VRT is vrt-quadralogical.spec.ts (8 effect baselines, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (weight model + edge composite + all 8 blends) + e2e (corner dominance + per-edge distinctness/independence) provide coverage.',
   // CHROMA — v3 reshape (this PR) changed the card layout + stripe colour
   // entirely (was a 5-fader mask-extractor; now a 3-fader hue-shifter +
   // tint swatch). Old baselines were deleted; regenerate via
@@ -865,4 +864,21 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'darwin/wavesculpt-blink-scopes-trial-wiggle',
   // wavesculpt-blink-custom-colors: canvas-render timing variance flake, tracked as task #202
   'darwin/wavesculpt-blink-custom-colors',
+  // QUADRALOGICAL Phase-2 per-edge effect VRT scenes (vrt-quadralogical.spec.ts):
+  // darwin baselines captured on this machine (flat-colour sources → CHROMA
+  // tintMix=1 → deterministic mix, frozen on quad.freeze + AudioContext
+  // suspend). WebGL fragment blend math differs sub-thresholdly across GPU
+  // drivers, so the linux baselines are pending a `vrt-update.yml`
+  // workflow_dispatch on linux CI; the deterministic darwin captures are the
+  // regression gate here. Functional coverage = quadralogical.test.ts (all 8
+  // blend2 branches + edge-weight model) + e2e/tests/quadralogical.spec.ts
+  // (per-edge effect distinctness + independence).
+  'linux/edge-dissolve',
+  'linux/edge-add',
+  'linux/edge-multiply',
+  'linux/edge-wipe',
+  'linux/edge-chroma',
+  'linux/edge-luma',
+  'linux/edge-diff',
+  'linux/edge-iris',
 ]);
