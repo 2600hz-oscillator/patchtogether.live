@@ -1,12 +1,15 @@
 # TOYBOX shader bank — licenses
 
-Every shader in `shaders/` is **original code, re-authored clean-room** from
-the named MIT reference function modules below. No ShaderToy / CC-BY-NC code
-was copied. The helper functions (simplex noise, FBM octave-sum, Worley
-neighbour-scan, HSV→RGB, IQ cosine-palette) are standard, widely-published
-formulations transcribed into GLSL ES 300; the driving fields and colour
-ramps are this project's own. The whole bank is therefore unambiguously MIT
-and compatible with this repository's licensing.
+Most shaders in `shaders/` are **original code, re-authored clean-room** from
+the named MIT reference function modules below (the MIT table). The EXCEPTIONS
+are the explicitly-attributed **Shadertoy ports under CC BY 3.0** listed in the
+separate CC-BY table further down — those are verbatim ports kept under their
+original CC BY 3.0 attribution licence. **No CC-BY-NC / non-commercial code is
+used anywhere.** For the MIT bank: the helper functions (simplex noise, FBM
+octave-sum, Worley neighbour-scan, HSV→RGB, IQ cosine-palette) are standard,
+widely-published formulations transcribed into GLSL ES 300; the driving fields
+and colour ramps are this project's own — unambiguously MIT and compatible with
+this repository's licensing.
 
 | Asset | SPDX | Re-authored from (source) | URL |
 | --- | --- | --- | --- |
@@ -26,6 +29,22 @@ and compatible with this repository's licensing.
 | `shaders/frag-sdf-tunnel.frag.glsl` | MIT | Original — square-tunnel projection mapping iChannel0 onto the walls | (this project) |
 | `shaders/frag-moire.frag.glsl` | MIT | Original — two interfering ring gratings modulate/ripple iChannel0 | (this project) |
 | `shaders/frag-vhs-bars.frag.glsl` | MIT | Original — analog-VHS degrade (line jitter + tracking bar + chroma bleed + scanlines) of iChannel0 | (this project) |
+
+## Shadertoy ports — CC BY 3.0 (attribution required)
+
+These are verbatim Shadertoy ports run through TOYBOX's Shadertoy shim
+(`mainImage`→`main`). They are licensed **CC BY 3.0** and are used here under
+attribution to their original authors (the file headers carry the same notice).
+CC BY 3.0 permits commercial use + modification with attribution; it is NOT
+non-commercial.
+
+| Asset | SPDX | Author | Title |
+| --- | --- | --- | --- |
+| `shaders/synthwave-sunset.frag.glsl` | CC-BY-3.0 | Jan Mróz (jaszunio15) | "Synthwave sunset" |
+| `shaders/cyber-fuji.frag.glsl` | CC-BY-3.0 | Jan Mróz (jaszunio15) | "Cyber Fuji 2020" |
+| `shaders/erosion-common.glsl`, `erosion-bufferA.glsl`, `erosion-bufferB.glsl`, `erosion-bufferC.glsl`, `erosion-image.glsl` | CC-BY-3.0 | Jan Mróz / Rune Skovbo Johansen / Fewes (per the multi-buffer "ERODED TERRAIN ISLAND" port) | eroded-terrain multi-buffer |
+
+---
 
 Note: "re-authored" means the algorithm/technique was reimplemented from the
 public mathematical formulation, not pasted from the upstream file. The named

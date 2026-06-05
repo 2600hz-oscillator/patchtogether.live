@@ -126,6 +126,15 @@
       "params": []
     },
     {
+      "id": "cyber-fuji",
+      "label": "CYBER FUJI 2020",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/cyber-fuji.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": []
+    },
+    {
       "id": "noise-fbm",
       "label": "NOISE FBM",
       "family": "GEN",
@@ -496,6 +505,32 @@
             ]
           }
         },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {}
+    },
+    {
+      "id": "cyber-fuji-2020",
+      "label": "CYBER FUJI 2020",
+      "note": "Jan Mróz's 'Cyber Fuji 2020' (CC BY 3.0): an 80s synthwave Mt. Fuji + neon perspective grid + drifting clouds — a single-pass Shadertoy GEN on layer 1 routed straight to output.",
+      "layers": [
+        { "kind": "gen", "contentId": "cyber-fuji", "params": {} },
         { "kind": "off", "contentId": null, "params": {} },
         { "kind": "off", "contentId": null, "params": {} },
         { "kind": "off", "contentId": null, "params": {} }
