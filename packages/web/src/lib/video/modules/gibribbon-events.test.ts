@@ -231,3 +231,157 @@ describe('EVENT_BUTTON mapping', () => {
     expect(buttons).toEqual(['a', 'b', 'x', 'y']);
   });
 });
+
+// ── Phase-2 demo CV calibration ─────────────────────────────────────────────
+//
+// The bundled GIBRIBBON demo (gibribbon-demo.imp.json) drives cv1..cv4 from
+// SYNESTHESIA copy-A's four SLOW (500 ms) envelope-followers tracking a
+// sequenced MACROOSCILLATOR voice. We can't run the real DSP in vitest, so we
+// model the four slow envelopes ANALYTICALLY as the demo's rhythm produces
+// them, then push them through the SAME pure pipeline the factory uses
+// (clockTick → chooseSpawn → scroll) and assert the resulting event RATE is
+// game-appropriate and that all four event kinds appear. This is the
+// deterministic guard for GIB_TUNING.cvSpawnThreshold / minSpawnIntervalTicks
+// (and, indirectly, the SYNESTHESIA gain lift in the envelope generator).
+describe('GibRibbon — Phase-2 demo CV calibration (synthetic slow envelopes)', () => {
+  // Demo transport math (see gibribbon-demo.ts / build-gibribbon-demo-envelope.mjs):
+  //   TIMELORDE bpm=120 → 2× (8th) = 0.25 s clocks MACSEQ (1 step = 0.25 s),
+  //   1× (quarter) = 0.5 s is GIBRIBBON's scroll clock. So one GIBRIBBON clock
+  //   tick = 2 MACSEQ steps; KICK (every 8 steps) = every 4 GIBRIBBON ticks.
+  const MACSEQ_STEPS_PER_GIB_TICK = 2;
+  const KICK_PERIOD_STEPS = 8;
+
+  /**
+   * Model the four SLOW (500 ms) SYNESTHESIA copy-A envelopes at GIBRIBBON
+   * clock tick `tick`, plus the MACSEQ gate state on that tick.
+   *
+   * Bands (cv index → kind via the default cvEventMap [loop,jump,imp,zombie]):
+   *   cv1 (low,      loop)   — energised by KICK; slow swell, phase 0.
+   *   cv2 (low-mid,  jump)   — energised by SNARE (back-beat); phase shifted.
+   *   cv3 (mid,      imp)    — the FM/STRING/WAVESHAPE melodic voices; phase shifted.
+   *   cv4 (high,     zombie) — WAVESHAPE brightness / snare noise; phase shifted.
+   *
+   * Each band is a slow (period ≈ a few seconds) raised cosine in ~0.30..0.92,
+   * phase-staggered so the strongest band rotates over the bar — exactly the
+   * "four slow followers chase a moving spectral centroid" behaviour the real
+   * SYNESTHESIA produces. The gate is HIGH on the GIBRIBBON ticks that align
+   * with a KICK or SNARE MACSEQ step (the back-beat biases which band spawns).
+   */
+  function demoSample(tick: number): { cv: number[]; gate: boolean } {
+    // Slow swell with a multi-second period (8 GIBRIBBON ticks = 4 s = one
+    // KICK bar). Each band peaks (`0.5 - 0.5·cos` = 1 at `tick+phase = 4`) on
+    // a DISTINCT even tick (0/2/4/6) so the spectral centroid rotates across
+    // all four bands over the bar — i.e. each event kind gets its turn as the
+    // strongest channel on a rate-limiter-eligible tick. This mirrors how
+    // SYNESTHESIA's four slow followers each lead in turn as the sequenced
+    // voice moves through its kick/snare/melodic spectral content.
+    const period = 8;
+    const band = (phase: number, lo: number, hi: number): number => {
+      const c = 0.5 - 0.5 * Math.cos((2 * Math.PI * (tick + phase)) / period);
+      return lo + c * (hi - lo);
+    };
+    const cv = [
+      band(4, 0.30, 0.92), // cv1 low      (loop)   — peaks at tick 0, 8, …
+      band(2, 0.30, 0.90), // cv2 low-mid  (jump)   — peaks at tick 2, 10, …
+      band(0, 0.30, 0.88), // cv3 mid      (imp)    — peaks at tick 4, 12, …
+      band(-2, 0.28, 0.86), // cv4 high    (zombie) — peaks at tick 6, 14, …
+    ];
+    // GIBRIBBON tick → first MACSEQ step it covers.
+    const macseqStep = tick * MACSEQ_STEPS_PER_GIB_TICK;
+    const onKick = macseqStep % KICK_PERIOD_STEPS === 0;
+    const onSnare = macseqStep % KICK_PERIOD_STEPS === 4;
+    return { cv, gate: onKick || onSnare };
+  }
+
+  /** Run the demo's synthetic stream for `ticks` GIBRIBBON clock ticks and
+   *  collect the spawned-event kinds (one entry per spawn, in order).
+   *
+   *  We detect a spawn via the monotonic `nextEventId` (NOT by scanning
+   *  `s.events`, which scroll() prunes as events leave the ribbon). A clock
+   *  tick spawns at most ONE event (chooseSpawn returns ≤1 kind), at pos 1.0
+   *  with the highest id, so the just-spawned event is always still present in
+   *  `s.events` immediately after clockTick — read its kind there.
+   *
+   *  A COMPETENT PLAYER is simulated: after each clock tick we press the
+   *  correct button for any in-window event (judgePress with the matching
+   *  EVENT_BUTTON). This is what keeps the marine alive so we measure the pure
+   *  SPAWN rate over the whole window rather than the truncated rate up to an
+   *  unattended game-over (the demo is meant to be PLAYED). */
+  function runDemo(seed: number, ticks: number): GibEventKind[] {
+    const s = newGame(seed);
+    const spawned: GibEventKind[] = [];
+    let prevNextId = s.nextEventId;
+    for (let t = 0; t < ticks; t++) {
+      const { cv, gate } = demoSample(t);
+      clockTick(s, cv, gate);
+      if (s.nextEventId > prevNextId) {
+        const justSpawned = s.events.find((e) => e.id === s.nextEventId - 1);
+        if (justSpawned) spawned.push(justSpawned.kind);
+        prevNextId = s.nextEventId;
+      }
+      // Perfect-player clear: judge every in-window unresolved event so the
+      // marine survives the run (otherwise unattended misses end the game and
+      // truncate the rate we're trying to measure).
+      for (const ev of [...s.events]) {
+        if (!ev.resolved && Math.abs(ev.pos) <= GIB_TUNING.hitWindow) {
+          judgePress(s, EVENT_BUTTON[ev.kind]);
+        }
+      }
+    }
+    return spawned;
+  }
+
+  it('produces a game-appropriate event rate (~1 spawn per 1–3 scroll ticks)', () => {
+    const TICKS = 64; // 32 s of play at 0.5 s/tick.
+    const spawned = runDemo(0xc0de, TICKS);
+    // minSpawnIntervalTicks=2 caps the rate at 1 / 2 ticks; the floor is "often
+    // enough to be fun". Target ~1 per 1–3 ticks → spawns in [TICKS/3, TICKS/2].
+    const lo = Math.floor(TICKS / 3); // ~21
+    const hi = Math.ceil(TICKS / 2); // 32 (the hard cap)
+    expect(spawned.length).toBeGreaterThanOrEqual(lo);
+    expect(spawned.length).toBeLessThanOrEqual(hi);
+    // Express as a per-tick rate for the human-readable record.
+    const perTick = spawned.length / TICKS;
+    expect(perTick).toBeGreaterThanOrEqual(1 / 3);
+    expect(perTick).toBeLessThanOrEqual(1 / 2);
+  });
+
+  it('spawns ALL FOUR event kinds over a representative run', () => {
+    const spawned = runDemo(0xc0de, 64);
+    const kinds = new Set(spawned);
+    expect(kinds.has('loop')).toBe(true);
+    expect(kinds.has('jump')).toBe(true);
+    expect(kinds.has('imp')).toBe(true);
+    expect(kinds.has('zombie')).toBe(true);
+  });
+
+  it('honours minSpawnIntervalTicks: never two spawns on adjacent ticks', () => {
+    // Drive with all-bands-hot every tick: the rate limiter must still gate it
+    // to at most one spawn per 2 ticks (no carpet-bomb even at max energy).
+    const s = newGame(7);
+    const hot = [0.9, 0.9, 0.9, 0.9];
+    let lastSpawnAtTick = -10;
+    for (let t = 0; t < 40; t++) {
+      const before = s.nextEventId;
+      clockTick(s, hot, true);
+      if (s.nextEventId > before) {
+        expect(t - lastSpawnAtTick).toBeGreaterThanOrEqual(GIB_TUNING.minSpawnIntervalTicks);
+        lastSpawnAtTick = t;
+      }
+    }
+  });
+
+  it('the resting floor (all bands below threshold) still spawns NOTHING', () => {
+    // SYNESTHESIA at rest sits well under cvSpawnThreshold (0.42); confirm the
+    // lowered threshold did not turn silence into a spawn source.
+    const s = newGame(1);
+    for (let t = 0; t < 30; t++) clockTick(s, [0.2, 0.25, 0.15, 0.3], true);
+    expect(s.events.length).toBe(0);
+  });
+
+  it('is deterministic for the demo stream (same seed → identical kinds)', () => {
+    const a = runDemo(0xabcd, 50);
+    const b = runDemo(0xabcd, 50);
+    expect(a).toEqual(b);
+  });
+});
