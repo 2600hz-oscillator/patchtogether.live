@@ -38,6 +38,8 @@
     DEFAULT_MODEL_ID,
     LAYER_COUNT,
     MATCAP_STYLES,
+    MAX_CUSTOM_SOURCE_BYTES,
+    utf8ByteLength,
     ensureToyboxCatalog,
     getContent,
     getModelMeta,
@@ -133,6 +135,8 @@
     setLayerSurfaceMode,
     setLayerMaterialField,
     setLayerImage as setLayerImageData,
+    setLayerShaderSource,
+    setLayerObjSource,
     setLayerVideoName,
     setLayerVideoSource,
   } from '$lib/graph/toybox-layers';
@@ -393,6 +397,20 @@
   let currentVideoName = $derived.by<string | null>(
     () => readLiveLayers()?.[activeLayer]?.videoMeta?.name ?? null,
   );
+  // The active layer's CUSTOM disk-loaded shader / OBJ source metadata (both ride
+  // the Y.Doc, so reading them registers the per-layer triggers like the others).
+  let currentShaderName = $derived.by<string | null>(
+    () => readLiveLayers()?.[activeLayer]?.shaderName ?? null,
+  );
+  let currentShaderSrc = $derived.by<string | null>(
+    () => readLiveLayers()?.[activeLayer]?.shaderSrc ?? null,
+  );
+  let currentObjName = $derived.by<string | null>(
+    () => readLiveLayers()?.[activeLayer]?.objName ?? null,
+  );
+  let currentObjSrc = $derived.by<string | null>(
+    () => readLiveLayers()?.[activeLayer]?.objSrc ?? null,
+  );
   // The active layer's VIDEO source ('inA'|'inB'|'file'|'camera'). Absent →
   // 'file' (the #603 default, so existing video layers read unchanged).
   let currentVideoSource = $derived.by<ToyboxVideoSource>(
@@ -490,6 +508,74 @@
       inputLoading = false;
       try { input.value = ''; } catch { /* */ }
     }
+  }
+
+  // ---- CUSTOM SHADER / OBJ: disk-loaded text sources (ride the Y.Doc) ----
+  //
+  // A shader/gen/frag layer can load a custom GLSL (.glsl/.frag/.txt) from disk;
+  // an OBJ layer can load a custom .obj. The text is read with file.text(), size-
+  // capped (MAX_CUSTOM_SOURCE_BYTES — a sanity cap; the source rides the Y.Doc),
+  // and persisted on the layer via the same in-place Yjs mutator pattern the image
+  // path uses. The engine prefers the inline source over the bundled id.
+
+  async function readCappedText(file: File): Promise<string> {
+    const text = await file.text();
+    const bytes = utf8ByteLength(text);
+    if (bytes > MAX_CUSTOM_SOURCE_BYTES) {
+      throw new Error(
+        `File too large (${(bytes / 1024).toFixed(0)}KB > ${(MAX_CUSTOM_SOURCE_BYTES / 1024 / 1024).toFixed(0)}MB cap)`,
+      );
+    }
+    if (text.trim().length === 0) throw new Error('File is empty');
+    return text;
+  }
+
+  async function onShaderFileChange(ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    inputLoading = true;
+    inputError = null;
+    try {
+      const src = await readCappedText(file);
+      setLayerShaderSource(id, activeLayer, src, file.name);
+      bumpRev();
+    } catch (err) {
+      inputError = err instanceof Error ? err.message : String(err);
+    } finally {
+      inputLoading = false;
+      try { input.value = ''; } catch { /* */ }
+    }
+  }
+
+  function onClearShader(): void {
+    setLayerShaderSource(id, activeLayer, null, null);
+    bumpRev();
+    inputError = null;
+  }
+
+  async function onObjFileChange(ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    inputLoading = true;
+    inputError = null;
+    try {
+      const src = await readCappedText(file);
+      setLayerObjSource(id, activeLayer, src, file.name);
+      bumpRev();
+    } catch (err) {
+      inputError = err instanceof Error ? err.message : String(err);
+    } finally {
+      inputLoading = false;
+      try { input.value = ''; } catch { /* */ }
+    }
+  }
+
+  function onClearObj(): void {
+    setLayerObjSource(id, activeLayer, null, null);
+    bumpRev();
+    inputError = null;
   }
 
   // ---- VIDEO: card-owned <video> element per video layer ----
@@ -1810,6 +1896,35 @@
         {/each}
       </select>
     </div>
+    <!-- CUSTOM OBJ: load a Wavefront .obj from disk. The text rides the Y.Doc
+         (survives reload + exports + rack-mates parse it); the engine prefers it
+         over the MODEL dropdown above. -->
+    <div class="input-picker" data-testid="toybox-obj-picker">
+      <label class="pick-btn">
+        <input
+          type="file"
+          accept=".obj,text/plain"
+          data-testid="toybox-obj-input"
+          onchange={onObjFileChange}
+        />
+        <span>{inputLoading ? 'Loading…' : 'Load OBJ…'}</span>
+      </label>
+      {#if currentObjName}
+        <div class="filename" title={currentObjName} data-testid="toybox-obj-filename">{currentObjName}</div>
+      {/if}
+      {#if currentObjSrc}
+        <div class="sync-hint" data-testid="toybox-obj-synced">custom OBJ active (synced)</div>
+        <button
+          type="button"
+          class="clear-btn"
+          data-testid="toybox-obj-clear"
+          onclick={onClearObj}
+        >Use bundled model</button>
+      {/if}
+      {#if inputError}
+        <div class="input-error" data-testid="toybox-input-error">{inputError}</div>
+      {/if}
+    </div>
     <div class="content-row">
       <label class="content-label" for={`toybox-matcap-${id}`}>MATCAP</label>
       <select
@@ -1941,6 +2056,36 @@
         FRAG receives the layer below as iChannel0
       </div>
     {/if}
+
+    <!-- CUSTOM SHADER: load a GLSL (.glsl/.frag/.txt) from disk. The source rides
+         the Y.Doc (survives reload + exports + rack-mates compile it); the engine
+         prefers it over the CONTENT dropdown above. -->
+    <div class="input-picker" data-testid="toybox-shader-picker">
+      <label class="pick-btn">
+        <input
+          type="file"
+          accept=".glsl,.frag,.txt,text/plain"
+          data-testid="toybox-shader-input"
+          onchange={onShaderFileChange}
+        />
+        <span>{inputLoading ? 'Loading…' : 'Load shader…'}</span>
+      </label>
+      {#if currentShaderName}
+        <div class="filename" title={currentShaderName} data-testid="toybox-shader-filename">{currentShaderName}</div>
+      {/if}
+      {#if currentShaderSrc}
+        <div class="sync-hint" data-testid="toybox-shader-synced">custom shader active (synced)</div>
+        <button
+          type="button"
+          class="clear-btn"
+          data-testid="toybox-shader-clear"
+          onclick={onClearShader}
+        >Use bundled shader</button>
+      {/if}
+      {#if inputError}
+        <div class="input-error" data-testid="toybox-input-error">{inputError}</div>
+      {/if}
+    </div>
 
     <div class="knob-grid" data-testid="toybox-controls">
       {#if currentMeta}
@@ -2581,6 +2726,20 @@
     color: #f87171;
     font-family: ui-monospace, monospace;
   }
+  /* "Use bundled …" reset for a custom disk-loaded shader/OBJ. */
+  .input-picker .clear-btn {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 2px 8px;
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--text-dim);
+    border-radius: 2px;
+    font-size: 0.55rem;
+    font-family: ui-monospace, monospace;
+    cursor: pointer;
+  }
+  .input-picker .clear-btn:hover { color: var(--text); border-color: var(--text); }
   /* ───────── projective surface controls (#45) ───────── */
   .proj-camera-label {
     display: flex;

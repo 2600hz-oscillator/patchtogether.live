@@ -62,6 +62,8 @@ import {
   getContentMeta,
   getModelMeta,
   getModelObj,
+  customShaderKey,
+  customObjKey,
   makeDefaultLayers,
   makeDefaultObjMaterial,
   type ToyboxCombine,
@@ -395,27 +397,58 @@ export const toyboxDef: VideoModuleDef = {
     const inflightShader = new Set<string>();
     const failedShader = new Set<string>();
 
-    function ensureProgram(contentId: string): void {
-      if (programs.has(contentId) || inflightShader.has(contentId) || failedShader.has(contentId)) return;
-      inflightShader.add(contentId);
+    /**
+     * Ensure the compiled program for `cacheKey` exists. Two source modes:
+     *   - bundled content (inlineSrc omitted): fetch the GLSL by id from the
+     *     manifest (`getContent`), detect Shadertoy via the manifest flag OR the
+     *     mainImage convention, wrap with the content's declared params.
+     *   - custom disk-loaded shader (inlineSrc given, `cacheKey` is a
+     *     `custom-shader:<hash>` synthetic id): compile THAT source directly.
+     *     Shadertoy-vs-GEN is detected from the source alone; a custom shader
+     *     declares NO params (the card shows no faders) so we wrap with [].
+     *     Scene-input (FRAG) for a custom FRAG-layer shader is decided by the
+     *     CALLER (renderShaderLayer) from layer.kind, not the manifest.
+     * The failed-compile guard degrades a bad uploaded shader gracefully
+     * (console.warn, no crash) exactly like a bundled one.
+     */
+    function ensureProgram(cacheKey: string, inlineSrc?: string): void {
+      if (programs.has(cacheKey) || inflightShader.has(cacheKey) || failedShader.has(cacheKey)) return;
+      inflightShader.add(cacheKey);
       void (async () => {
         try {
-          const { meta, glsl } = await getContent(contentId);
-          // A content is Shadertoy if the manifest flags it OR the source uses
-          // the mainImage convention. Wrap it through the shim; engine shaders
-          // (plain main) compile as-is.
-          const isSt = meta.shadertoy === true || isShadertoySource(glsl);
-          const src = isSt
-            ? wrapShadertoySource(glsl, '', meta.params.map((p) => p.id))
-            : glsl;
+          let glsl: string;
+          let isSt: boolean;
+          let paramIds: string[];
+          let sceneInput: boolean;
+          if (typeof inlineSrc === 'string') {
+            // Custom disk-loaded source: compile directly, no manifest fetch.
+            glsl = inlineSrc;
+            isSt = isShadertoySource(glsl);
+            paramIds = []; // custom shaders declare no params
+            // A custom Shadertoy source that reads iChannel0 (a FRAG-style FX)
+            // gets the composited layers below bound to iChannel0 — same as a
+            // bundled scene-input content. Cheap textual probe; harmless when
+            // false (the shader just ignores the channel).
+            sceneInput = isSt && /\biChannel0\b/.test(glsl);
+          } else {
+            const { meta, glsl: fetched } = await getContent(cacheKey);
+            glsl = fetched;
+            // A content is Shadertoy if the manifest flags it OR the source uses
+            // the mainImage convention. Wrap it through the shim; engine shaders
+            // (plain main) compile as-is.
+            isSt = meta.shadertoy === true || isShadertoySource(glsl);
+            paramIds = meta.params.map((p) => p.id);
+            sceneInput = meta.input === 'scene';
+          }
+          const src = isSt ? wrapShadertoySource(glsl, '', paramIds) : glsl;
           const program = ctx.compileFragment(src);
           const uParams = new Map<string, WebGLUniformLocation | null>();
-          for (const p of meta.params) uParams.set(p.id, gl.getUniformLocation(program, p.id));
+          for (const pid of paramIds) uParams.set(pid, gl.getUniformLocation(program, pid));
           const u = stUni(program);
-          programs.set(contentId, {
+          programs.set(cacheKey, {
             program,
             shadertoy: isSt,
-            sceneInput: meta.input === 'scene',
+            sceneInput,
             uTime: gl.getUniformLocation(program, 'iTime'),
             uResolution: gl.getUniformLocation(program, 'iResolution'),
             uTimeDelta: u.uTimeDelta,
@@ -428,10 +461,10 @@ export const toyboxDef: VideoModuleDef = {
             uParams,
           });
         } catch (err) {
-          failedShader.add(contentId);
-          console.warn(`[TOYBOX] content '${contentId}' failed to compile:`, err);
+          failedShader.add(cacheKey);
+          console.warn(`[TOYBOX] content '${cacheKey}' failed to compile:`, err);
         } finally {
-          inflightShader.delete(contentId);
+          inflightShader.delete(cacheKey);
         }
       })();
     }
@@ -504,10 +537,25 @@ export const toyboxDef: VideoModuleDef = {
       };
     }
 
-    /** Ensure the GPU mesh for `modelId` is built. Built-in primitives are
-     *  generated synchronously; bundled OBJs are fetched + parsed async. */
-    function ensureMesh(modelId: string): void {
-      if (meshes.has(modelId) || inflightModel.has(modelId) || failedModel.has(modelId)) return;
+    /** Ensure the GPU mesh for `cacheKey` is built. Three source modes:
+     *   - inline custom OBJ (inlineObj given, `cacheKey` is a `custom-obj:<hash>`
+     *     synthetic id): parse THAT text directly (synchronous, no fetch);
+     *   - built-in primitive (cube/sphere/…): generated synchronously;
+     *   - bundled OBJ: fetched + parsed async by id.
+     *  The failed-parse guard degrades a bad uploaded OBJ gracefully. */
+    function ensureMesh(cacheKey: string, inlineObj?: string): void {
+      if (meshes.has(cacheKey) || inflightModel.has(cacheKey) || failedModel.has(cacheKey)) return;
+      // Custom disk-loaded OBJ: parse the inline text directly, synchronously.
+      if (typeof inlineObj === 'string') {
+        try {
+          meshes.set(cacheKey, uploadMesh(parseObj(inlineObj)));
+        } catch (err) {
+          failedModel.add(cacheKey);
+          console.warn(`[TOYBOX] custom OBJ '${cacheKey}' failed to parse:`, err);
+        }
+        return;
+      }
+      const modelId = cacheKey;
       const meta = getModelMeta(modelId);
       // Built-in primitive → synchronous (also handles the manifest-not-loaded
       // case if the id happens to be a known primitive name).
@@ -992,10 +1040,14 @@ export const toyboxDef: VideoModuleDef = {
      */
     function renderObjLayer(i: number, layer: ToyboxLayer, time: number, safeSource: number): boolean {
       const mat: ToyboxObjMaterial = layer.material ?? makeDefaultObjMaterial();
-      const modelId = mat.modelId;
-      if (!modelId) return false;
-      ensureMesh(modelId);
-      const m = meshes.get(modelId);
+      // A custom disk-loaded OBJ (layer.objSrc) takes precedence over the bundled
+      // material.modelId: parse THAT directly under a synthetic mesh-cache key.
+      const customObj =
+        typeof layer.objSrc === 'string' && layer.objSrc.length > 0 ? layer.objSrc : null;
+      const meshKey = customObj ? customObjKey(customObj) : mat.modelId;
+      if (!meshKey) return false;
+      ensureMesh(meshKey, customObj ?? undefined);
+      const m = meshes.get(meshKey);
       if (!m) return false; // still loading / failed → caller leaves it cleared
 
       const g = gl;
@@ -1124,9 +1176,16 @@ export const toyboxDef: VideoModuleDef = {
       }
 
       // ---- Single content shader ----
-      if (!layer.contentId) return false;
-      ensureProgram(layer.contentId);
-      const compiled = programs.get(layer.contentId);
+      // A custom disk-loaded source (layer.shaderSrc) takes precedence over the
+      // bundled contentId: compile THAT directly under a synthetic cache key.
+      const customSrc =
+        typeof layer.shaderSrc === 'string' && layer.shaderSrc.length > 0
+          ? layer.shaderSrc
+          : null;
+      const cacheKey = customSrc ? customShaderKey(customSrc) : layer.contentId;
+      if (!cacheKey) return false;
+      ensureProgram(cacheKey, customSrc ?? undefined);
+      const compiled = programs.get(cacheKey);
       if (!compiled) return false;
       g.bindFramebuffer(g.FRAMEBUFFER, target.fbo);
       g.viewport(0, 0, ctx.res.width, ctx.res.height);
@@ -1148,7 +1207,8 @@ export const toyboxDef: VideoModuleDef = {
         // Engine convention: iResolution is a vec2.
         g.uniform2f(compiled.uResolution, ctx.res.width, ctx.res.height);
       }
-      const meta = getContentMeta(layer.contentId);
+      // Custom disk-loaded shaders declare no params; only bundled content does.
+      const meta = customSrc ? null : layer.contentId ? getContentMeta(layer.contentId) : null;
       if (meta) {
         for (const p of meta.params) {
           const loc = compiled.uParams.get(p.id);

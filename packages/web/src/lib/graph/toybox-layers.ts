@@ -235,6 +235,49 @@ export function setLayerImage(
 }
 
 /**
+ * Set a SHADER (shader/gen/frag) layer's CUSTOM disk-loaded GLSL source +
+ * filename. Both ride the Y.Doc so the custom shader survives reload + exports
+ * cleanly + rack-mates compile the same source. The engine prefers shaderSrc
+ * over the bundled contentId when present (no params; Shadertoy-vs-GEN is
+ * auto-detected). Pass src=null to clear back to the selected bundled content.
+ * Writes both fields in ONE transact so peers see one update.
+ */
+export function setLayerShaderSource(
+  nodeId: string,
+  index: number,
+  src: string | null,
+  name: string | null,
+): void {
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    layer.shaderSrc = src;
+    layer.shaderName = name;
+  }, LOCAL_ORIGIN);
+}
+
+/**
+ * Set an OBJ layer's CUSTOM disk-loaded Wavefront OBJ text + filename. Both ride
+ * the Y.Doc (survives reload + exports + rack-mates parse the same mesh). The
+ * engine prefers objSrc over the bundled material.modelId when present. Pass
+ * src=null to clear back to the selected bundled model. Both fields in ONE
+ * transact.
+ */
+export function setLayerObjSource(
+  nodeId: string,
+  index: number,
+  src: string | null,
+  name: string | null,
+): void {
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    layer.objSrc = src;
+    layer.objName = name;
+  }, LOCAL_ORIGIN);
+}
+
+/**
  * Set a VIDEO layer's filename metadata (VIDEOBOX-style: only the NAME rides the
  * Y.Doc — the bytes are local-file + card-owned). Replaces videoMeta in place
  * (or seeds it). Pass null to clear.
