@@ -10,8 +10,9 @@
 // non-destructive load).
 
 import { describe, it, expect } from 'vitest';
-import { toyboxDef, migrateToyboxData } from './toybox';
+import { toyboxDef, migrateToyboxData, __FEEDBACK_FRAG_SRC_FOR_TEST } from './toybox';
 import { CV_PORT_IDS } from '$lib/video/toybox-cv-routes';
+import { FEEDBACK_MODE_COUNT } from '$lib/video/toybox-feedback';
 
 describe('toyboxDef shape', () => {
   it('is a video-source module with one video output', () => {
@@ -90,5 +91,26 @@ describe('migrateToyboxData — 8-input (cv1..cv8) patch loads as 6 inputs', () 
     expect(() => migrateToyboxData(null, 1)).not.toThrow();
     expect(() => migrateToyboxData(undefined, 1)).not.toThrow();
     expect(() => migrateToyboxData({}, 1)).not.toThrow();
+  });
+});
+
+describe('FEEDBACK fragment shader (the stateful op program)', () => {
+  it('declares the feedback + input samplers + the per-mode uniforms', () => {
+    const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
+    expect(src).toContain('uniform sampler2D uFeedback'); // previous frame
+    expect(src).toContain('uniform sampler2D uInput'); // upstream in0
+    expect(src).toContain('uniform int   uMode');
+    for (const u of ['uZoom', 'uRotate', 'uScaleP', 'uTx', 'uTy', 'uDecay', 'uGain', 'uThresh', 'uHue', 'uBlur', 'uSlitPos', 'uSlitWidth', 'uFlow']) {
+      expect(src, `declares ${u}`).toContain(u);
+    }
+  });
+  it('switches on every one of the 12 modes (uMode == 0 .. 10, else = 11)', () => {
+    const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
+    // Modes 0..10 are explicit `uMode == N`; mode 11 is the trailing else.
+    for (let m = 0; m < FEEDBACK_MODE_COUNT - 1; m++) {
+      expect(src, `handles uMode == ${m}`).toContain(`uMode == ${m}`);
+    }
+    // The trailing else covers the last mode (VECTOR, id 11).
+    expect(src).toContain('} else {');
   });
 });

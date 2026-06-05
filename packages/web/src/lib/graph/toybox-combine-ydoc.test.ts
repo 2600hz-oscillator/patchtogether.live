@@ -21,6 +21,7 @@ import {
   clearCombineEdges,
   resetCombineToDefault,
   duplicateCombineNode,
+  resetFeedbackNode,
 } from './toybox-combine';
 import { outputNode, makeDefaultCombineGraph } from '$lib/video/toybox-combine-graph';
 import type { ModuleNode } from './types';
@@ -268,5 +269,47 @@ describe('toybox combine graph — real Y.Doc mutators', () => {
     const srcNode = g0.nodes.find((n) => n.kind === 'source')!;
     expect(duplicateCombineNode(TID, out.id)).toBeNull();
     expect(duplicateCombineNode(TID, srcNode.id)).toBeNull();
+  });
+
+  it('adds a FEEDBACK node (1-input stateful op) + sets its mode in place', () => {
+    makeToybox();
+    const fb = addCombineNode(TID, 'feedback')!;
+    expect(fb).toBeTruthy();
+    let g = readCombineGraph(patch.nodes[TID])!;
+    let node = g.nodes.find((n) => n.id === fb)!;
+    expect(node.kind).toBe('feedback');
+    expect(node.params!.mode).toBe(0); // default mode
+    // Wire a source into its single in0 (it has no in1 — the loop is internal).
+    expect(connectCombine(TID, 'src0', fb, 'in0').ok).toBe(true);
+    expect(connectCombine(TID, 'src1', fb, 'in1').ok).toBe(false); // no such port
+    // Set the mode (move-when-edited): re-read picks up the live Y value.
+    setCombineNodeParam(TID, fb, 'mode', 3);
+    g = readCombineGraph(patch.nodes[TID])!;
+    node = g.nodes.find((n) => n.id === fb)!;
+    expect(node.params!.mode).toBe(3);
+  });
+
+  it('resetFeedbackNode bumps the _reset token in place (engine clears buffers)', () => {
+    makeToybox();
+    const fb = addCombineNode(TID, 'feedback')!;
+    // No token yet.
+    let node = readCombineGraph(patch.nodes[TID])!.nodes.find((n) => n.id === fb)!;
+    expect(node.params!._reset).toBeUndefined();
+    // First reset → token 1; second → token 2 (monotonic, never throws on the
+    // live Y.Map).
+    expect(() => resetFeedbackNode(TID, fb)).not.toThrow();
+    node = readCombineGraph(patch.nodes[TID])!.nodes.find((n) => n.id === fb)!;
+    expect(node.params!._reset).toBe(1);
+    resetFeedbackNode(TID, fb);
+    node = readCombineGraph(patch.nodes[TID])!.nodes.find((n) => n.id === fb)!;
+    expect(node.params!._reset).toBe(2);
+  });
+
+  it('resetFeedbackNode is a no-op on a non-feedback node', () => {
+    makeToybox();
+    const fade = addCombineNode(TID, 'fade')!;
+    resetFeedbackNode(TID, fade);
+    const node = readCombineGraph(patch.nodes[TID])!.nodes.find((n) => n.id === fade)!;
+    expect(node.params!._reset).toBeUndefined();
   });
 });

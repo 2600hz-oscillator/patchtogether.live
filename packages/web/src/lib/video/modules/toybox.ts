@@ -78,6 +78,7 @@ import {
   type ToyboxCombineGraph,
   type ToyboxOpKind,
 } from '$lib/video/toybox-combine-graph';
+import { feedbackUniforms } from '$lib/video/toybox-feedback';
 import {
   CV_PORT_IDS,
   isCvPortId,
@@ -558,6 +559,113 @@ export const toyboxDef: VideoModuleDef = {
     const cuKeyG = gl.getUniformLocation(combineProgram, 'uKeyG');
     const cuKeyB = gl.getUniformLocation(combineProgram, 'uKeyB');
     const cuMode = gl.getUniformLocation(combineProgram, 'uMode');
+
+    // ---------------- FEEDBACK program (the first STATEFUL combine op) --------
+    // Its own fullscreen-quad program: samples this node's PREVIOUS frame
+    // (uFeedback = the ping-pong back texture) + the upstream in0 (uInput) and
+    // writes a NEW frame. See FEEDBACK_FRAG_SRC + toybox-feedback.ts.
+    const feedbackProgram = compileFeedbackProgram(gl);
+    const fuFeedback = gl.getUniformLocation(feedbackProgram, 'uFeedback');
+    const fuInput = gl.getUniformLocation(feedbackProgram, 'uInput');
+    const fuHasInput = gl.getUniformLocation(feedbackProgram, 'uHasInput');
+    const fuTexel = gl.getUniformLocation(feedbackProgram, 'uTexel');
+    const fuMode = gl.getUniformLocation(feedbackProgram, 'uMode');
+    const fuZoom = gl.getUniformLocation(feedbackProgram, 'uZoom');
+    const fuRotate = gl.getUniformLocation(feedbackProgram, 'uRotate');
+    const fuScaleP = gl.getUniformLocation(feedbackProgram, 'uScaleP');
+    const fuTx = gl.getUniformLocation(feedbackProgram, 'uTx');
+    const fuTy = gl.getUniformLocation(feedbackProgram, 'uTy');
+    const fuDecay = gl.getUniformLocation(feedbackProgram, 'uDecay');
+    const fuGain = gl.getUniformLocation(feedbackProgram, 'uGain');
+    const fuThresh = gl.getUniformLocation(feedbackProgram, 'uThresh');
+    const fuHue = gl.getUniformLocation(feedbackProgram, 'uHue');
+    const fuBlur = gl.getUniformLocation(feedbackProgram, 'uBlur');
+    const fuSlitPos = gl.getUniformLocation(feedbackProgram, 'uSlitPos');
+    const fuSlitWidth = gl.getUniformLocation(feedbackProgram, 'uSlitWidth');
+    const fuFlow = gl.getUniformLocation(feedbackProgram, 'uFlow');
+
+    // ---------------- Per-feedback-node ping-pong float buffers ----------------
+    //
+    // Each FEEDBACK node in the combine graph owns a PING-PONG pair of float FBOs
+    // (RGBA32F via createFloatFbo, degrading to RGBA8 when the GPU can't render
+    // float — guarded). One frame: render into `front` while SAMPLING `back` (the
+    // previous frame), then swap. Keyed by the graph node id so adding/removing a
+    // feedback node allocs/frees its buffers (reconciled each frame against the
+    // live graph). `clearPending` forces both buffers cleared to black next
+    // render (the "Reset feedback" menu action bumps the reset counter the card
+    // writes to node.data; we diff it per node id).
+    interface FeedbackBuf {
+      front: { fbo: WebGLFramebuffer; texture: WebGLTexture };
+      back: { fbo: WebGLFramebuffer; texture: WebGLTexture };
+      /** True until both ping-pong textures have been cleared once (fresh alloc
+       *  or an explicit reset) — a fresh float texture's contents are undefined. */
+      clearPending: boolean;
+      /** Last-seen reset token for this node (node.data.combine node param
+       *  `_reset`); when it changes we re-arm clearPending. */
+      resetToken: number;
+    }
+    const feedbackBufs = new Map<string, FeedbackBuf>();
+
+    /** Allocate a ping-pong float-FBO pair for a feedback node. Guards
+     *  createFloatFbo being absent (test-mock contexts) → falls back to the
+     *  RGBA8 createFbo (degrade, never crash). */
+    function makeFeedbackBuf(): FeedbackBuf {
+      const alloc = () => {
+        if (ctx.createFloatFbo) {
+          // NEAREST filter: LINEAR on a float colour attachment silently reads
+          // 0.0 without OES_texture_float_linear (see engine.ts createFloatFbo /
+          // waveform-video.ts) — which made the whole feedback loop render black.
+          // The shader's spatial taps (tunnel/blur/displace) are fine on NEAREST
+          // at engine resolution; any smoothing is done in-shader.
+          const r = ctx.createFloatFbo(ctx.res.width, ctx.res.height, { filter: 'nearest', precision: 'full' });
+          return { fbo: r.fbo, texture: r.texture };
+        }
+        return ctx.createFbo();
+      };
+      return { front: alloc(), back: alloc(), clearPending: true, resetToken: 0 };
+    }
+
+    function freeFeedbackBuf(b: FeedbackBuf): void {
+      gl.deleteFramebuffer(b.front.fbo);
+      gl.deleteTexture(b.front.texture);
+      gl.deleteFramebuffer(b.back.fbo);
+      gl.deleteTexture(b.back.texture);
+    }
+
+    /** Reconcile the feedbackBufs map against the live graph's feedback node ids:
+     *  alloc a pair for any new feedback node, free + drop pairs whose node is
+     *  gone. Called once per frame from evalGraph before rendering. Returns the
+     *  set of live feedback ids (so the caller can look them up). */
+    function reconcileFeedbackBufs(graph: ToyboxCombineGraph): Set<string> {
+      const live = new Set<string>();
+      for (const n of graph.nodes) if (n.kind === 'feedback') live.add(n.id);
+      // Free buffers for removed feedback nodes.
+      for (const [nid, buf] of feedbackBufs) {
+        if (!live.has(nid)) {
+          freeFeedbackBuf(buf);
+          feedbackBufs.delete(nid);
+        }
+      }
+      // Alloc buffers for new feedback nodes.
+      for (const nid of live) {
+        if (!feedbackBufs.has(nid)) feedbackBufs.set(nid, makeFeedbackBuf());
+      }
+      return live;
+    }
+
+    /** Clear both of a feedback buffer's textures to black (fresh alloc / reset).
+     *  A freshly-created float texture has undefined contents, so we MUST clear
+     *  before the first sample to avoid reading garbage as the "previous frame". */
+    function clearFeedbackBuf(b: FeedbackBuf): void {
+      const g = gl;
+      for (const t of [b.front, b.back]) {
+        g.bindFramebuffer(g.FRAMEBUFFER, t.fbo);
+        g.viewport(0, 0, ctx.res.width, ctx.res.height);
+        g.clearColor(0, 0, 0, 1);
+        g.clear(g.COLOR_BUFFER_BIT);
+      }
+      b.clearPending = false;
+    }
 
     // ---------------- Input-source (image / video) program ----------------
     // A fullscreen-quad passthrough that samples a source texture into the layer
@@ -1266,6 +1374,59 @@ export const toyboxDef: VideoModuleDef = {
     const OP_INDEX: Record<string, number> = { fade: 0, lumakey: 1, chromakey: 2, map: 3 };
 
     /**
+     * Run ONE feedback step for a feedback node: render into `buf.front` while
+     * SAMPLING `buf.back` (the previous frame) + the upstream `inputTex`, then
+     * swap front↔back so this frame's output is next frame's previous. Returns
+     * the texture other nodes should sample (= the just-rendered front, which is
+     * `buf.back` AFTER the swap). `inputTex` null = in0 unwired (loop reads black
+     * for the input term). Uniforms are derived (clamped) from the node params by
+     * the pure feedbackUniforms() so a CV write + manual knob land identically.
+     */
+    function runFeedbackStep(
+      buf: FeedbackBuf,
+      inputTex: WebGLTexture | null,
+      params: Record<string, number> | undefined,
+    ): WebGLTexture {
+      const g = gl;
+      if (buf.clearPending) clearFeedbackBuf(buf);
+      const u = feedbackUniforms(params);
+      g.bindFramebuffer(g.FRAMEBUFFER, buf.front.fbo);
+      g.viewport(0, 0, ctx.res.width, ctx.res.height);
+      g.useProgram(feedbackProgram);
+      // uFeedback = previous frame (back), uInput = upstream in0.
+      g.activeTexture(g.TEXTURE0);
+      g.bindTexture(g.TEXTURE_2D, buf.back.texture);
+      if (fuFeedback) g.uniform1i(fuFeedback, 0);
+      g.activeTexture(g.TEXTURE1);
+      g.bindTexture(g.TEXTURE_2D, inputTex ?? dummyTex);
+      if (fuInput) g.uniform1i(fuInput, 1);
+      if (fuHasInput) g.uniform1f(fuHasInput, inputTex ? 1 : 0);
+      if (fuTexel) g.uniform2f(fuTexel, 1 / ctx.res.width, 1 / ctx.res.height);
+      if (fuMode) g.uniform1i(fuMode, u.mode);
+      if (fuZoom) g.uniform1f(fuZoom, u.zoom);
+      if (fuRotate) g.uniform1f(fuRotate, u.rotate);
+      if (fuScaleP) g.uniform1f(fuScaleP, u.scaleP);
+      if (fuTx) g.uniform1f(fuTx, u.tx);
+      if (fuTy) g.uniform1f(fuTy, u.ty);
+      if (fuDecay) g.uniform1f(fuDecay, u.decay);
+      if (fuGain) g.uniform1f(fuGain, u.gain);
+      if (fuThresh) g.uniform1f(fuThresh, u.thresh);
+      if (fuHue) g.uniform1f(fuHue, u.hue);
+      if (fuBlur) g.uniform1f(fuBlur, u.blur);
+      if (fuSlitPos) g.uniform1f(fuSlitPos, u.slitPos);
+      if (fuSlitWidth) g.uniform1f(fuSlitWidth, u.slitWidth);
+      if (fuFlow) g.uniform1f(fuFlow, u.flow);
+      ctx.drawFullscreenQuad();
+      g.activeTexture(g.TEXTURE0);
+      // Swap: this frame's output (front) becomes next frame's previous (back).
+      const t = buf.front;
+      buf.front = buf.back;
+      buf.back = t;
+      // Downstream nodes sample the JUST-RENDERED texture, now in `back`.
+      return buf.back.texture;
+    }
+
+    /**
      * Evaluate the legacy LINEAR chain ({steps}) via ping-pong scratch, exactly
      * as Phases 1-3 did. Returns the accumulator texture (layer 0 base + folded
      * steps).
@@ -1296,13 +1457,19 @@ export const toyboxDef: VideoModuleDef = {
      */
     function evalGraph(graph: ToyboxCombineGraph, produced: boolean[]): WebGLTexture | null {
       const { order } = topoSort(graph);
+      // Reconcile the per-feedback-node ping-pong float buffers against the live
+      // graph (alloc on add / free on remove) BEFORE rendering this frame's ops.
+      reconcileFeedbackBufs(graph);
       // texForNode[id] = the texture each node OUTPUTS (sources → layer tex;
-      // ops → their scratch result). undefined = unresolved (no/missing input).
+      // ops → their scratch result; feedback → its ping-pong result). undefined =
+      // unresolved (no/missing input).
       const texForNode = new Map<string, WebGLTexture | null>();
       // Assign a scratch slot to each op node (deterministic by topo order),
       // starting past the two reserved ping-pong slots so they don't collide
       // if some future caller mixes paths in one frame.
       let scratchSlot = 0;
+      // Only the STATELESS blend ops have a combineStep uOp index; FEEDBACK runs
+      // its own program (handled separately below).
       const opOf = (kind: string): number | null =>
         kind === 'fade' || kind === 'lumakey' || kind === 'chromakey' || kind === 'map'
           ? OP_SHADER_INDEX[kind as ToyboxOpKind]
@@ -1319,6 +1486,25 @@ export const toyboxDef: VideoModuleDef = {
         }
         if (n.kind === 'output') {
           // Resolved when step 3 copies; nothing to compute here.
+          continue;
+        }
+        if (n.kind === 'feedback') {
+          // STATEFUL: run the feedback program against this node's ping-pong
+          // buffer, sampling its own previous frame + the upstream in0. The loop
+          // is INTERNAL (in0 only); a missing in0 → input reads black. The buffer
+          // is guaranteed allocated by reconcileFeedbackBufs above.
+          const buf = feedbackBufs.get(id);
+          if (!buf) { texForNode.set(id, null); continue; }
+          const p = n.params ?? {};
+          // "Reset feedback" bumps `_reset`; re-arm the clear when it changes.
+          const token = typeof p._reset === 'number' ? p._reset : 0;
+          if (token !== buf.resetToken) {
+            buf.resetToken = token;
+            buf.clearPending = true;
+          }
+          const inEdge0 = graph.edges.find((e) => e.to === id && e.toPort === 'in0');
+          const inputTex = inEdge0 ? texForNode.get(inEdge0.from) ?? null : null;
+          texForNode.set(id, runFeedbackStep(buf, inputTex, p));
           continue;
         }
         const op = opOf(n.kind);
@@ -1429,8 +1615,12 @@ export const toyboxDef: VideoModuleDef = {
         for (const c of programs.values()) gl.deleteProgram(c.program);
         programs.clear();
         shadertoyRt.dispose();
+        // Per-feedback-node ping-pong float buffers (no GL leak).
+        for (const b of feedbackBufs.values()) freeFeedbackBuf(b);
+        feedbackBufs.clear();
         gl.deleteProgram(objProgram);
         gl.deleteProgram(combineProgram);
+        gl.deleteProgram(feedbackProgram);
         gl.deleteProgram(inputProgram);
         for (const m of meshes.values()) {
           gl.deleteVertexArray(m.vao);
@@ -1669,6 +1859,163 @@ void main() {
 function compileCombineProgram(gl: WebGL2RenderingContext): WebGLProgram {
   return linkProgram(gl, COMBINE_VERT_SRC, COMBINE_FRAG_SRC);
 }
+
+// ---------------- FEEDBACK shader (the first STATEFUL combine op) ------------
+//
+// FEEDBACK runs its OWN fullscreen-quad program (NOT combineStep): it samples
+// its OWN PREVIOUS frame (uFeedback, the ping-pong float buffer's back texture)
+// + the single upstream input (uInput), and writes a NEW frame that becomes next
+// frame's previous. The shader switches on uMode (0..11) — see toybox-feedback.ts
+// FEEDBACK_MODES for the catalogue. Most modes INJECT a little of uInput into the
+// loop each frame so it's driven (not just decaying to a constant). Ranges of the
+// uniforms match OP_PARAMS['feedback'] / feedbackUniforms().
+//
+// Float buffer: the previous frame is an RGBA32F (or degraded RGBA8) texture so
+// trails / additive accumulation / reaction-diffusion don't quantise to mush.
+const FEEDBACK_FRAG_SRC = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uFeedback;   // this node's PREVIOUS frame (ping-pong back)
+uniform sampler2D uInput;      // the upstream in0 texture (drives the loop)
+uniform float uHasInput;       // 0 = in0 unwired (input reads black)
+uniform vec2  uTexel;          // 1/resolution (for blur / edge taps)
+uniform int   uMode;           // 0..11 feedback mode
+uniform float uZoom;           // TUNNEL: per-frame zoom (.5..1)
+uniform float uRotate;         // TUNNEL/GEOMETRIC: per-frame rotation (±π)
+uniform float uScaleP;         // GEOMETRIC: per-frame scale (.5..1.5)
+uniform float uTx;             // GEOMETRIC: per-frame translate x (±1)
+uniform float uTy;             // GEOMETRIC: per-frame translate y (±1)
+uniform float uDecay;          // ADDITIVE/BLUR/EDGE: trail persistence (0..1.5)
+uniform float uGain;           // ADDITIVE/DISPLACE/REACTION: input/feedback gain (0..2)
+uniform float uThresh;         // LUMAGATE: luma threshold (0..1)
+uniform float uHue;            // COLOR: hue-rotate amount (0..1)
+uniform float uBlur;           // BLUR: tap radius scale (0..4)
+uniform float uSlitPos;        // SLIT: boundary x (0..1)
+uniform float uSlitWidth;      // SLIT: boundary feather (0..1)
+uniform float uFlow;           // VECTOR: advection strength (0..1)
+
+vec4 fb(vec2 uv) { return texture(uFeedback, clamp(uv, 0.0, 1.0)); }
+vec4 inp(vec2 uv) { return uHasInput > 0.5 ? texture(uInput, clamp(uv, 0.0, 1.0)) : vec4(0.0); }
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+mat2 rot(float a) {
+  float s = sin(a), c = cos(a);
+  return mat2(c, -s, s, c);
+}
+
+// Hue rotation by t turns (0..1) around the luma axis.
+vec3 hueRotate(vec3 col, float t) {
+  float a = t * 6.2831853;
+  vec3 k = vec3(0.57735);
+  float cs = cos(a), sn = sin(a);
+  return col * cs + cross(k, col) * sn + k * dot(k, col) * (1.0 - cs);
+}
+
+void main() {
+  vec2 uv = vUv;
+  vec4 prev = fb(uv);
+  vec4 src = inp(uv);
+  vec4 outc;
+
+  if (uMode == 0) {
+    // TUNNEL — Droste / infinite zoom: pull the loop toward centre + spin it,
+    // inject a little input so the tunnel always has fresh content to recurse.
+    vec2 p = (uv - 0.5) * uZoom;
+    p = rot(uRotate) * p;
+    p += 0.5;
+    vec3 loop = fb(p).rgb;
+    outc = vec4(mix(loop, src.rgb, 0.12 + 0.5 * src.a), 1.0);
+  } else if (uMode == 1) {
+    // GEOMETRIC — scale + rotate + translate the loop each frame (kaleido drift).
+    vec2 p = (uv - 0.5) * uScaleP;
+    p = rot(uRotate) * p;
+    p += vec2(uTx, uTy) * 0.1;
+    p += 0.5;
+    vec3 loop = fb(p).rgb;
+    outc = vec4(mix(loop, src.rgb, 0.12 + 0.5 * src.a), 1.0);
+  } else if (uMode == 2) {
+    // SLIT — slit-scan: a moving boundary; left of it holds the loop (trails),
+    // right shows the live input. slitWidth feathers the seam.
+    float edge = smoothstep(uSlitPos - uSlitWidth - 0.0001, uSlitPos + uSlitWidth, uv.x);
+    // Left region samples the loop shifted slightly so it scrolls (a slit-scan).
+    vec3 loop = fb(uv + vec2(0.0, 0.0)).rgb;
+    vec3 live = src.rgb;
+    outc = vec4(mix(loop, live, edge), 1.0);
+  } else if (uMode == 3) {
+    // ADDITIVE — prev*decay + input*gain (glowing trails; high decay saturates).
+    outc = vec4(prev.rgb * uDecay + src.rgb * uGain, 1.0);
+  } else if (uMode == 4) {
+    // DIFF — abs(input − prev): edge / motion ghosts. Feed a touch of input so a
+    // static scene still shows its outline rather than going black.
+    vec3 d = abs(src.rgb - prev.rgb);
+    outc = vec4(max(d, src.rgb * 0.04), 1.0);
+  } else if (uMode == 5) {
+    // BLUR — 4-tap diagonal blur of the loop * decay (smoke / diffusion). Inject
+    // input so the smoke has a continuous source.
+    float r = uBlur;
+    vec3 b =
+      fb(uv + uTexel * vec2( r,  r)).rgb +
+      fb(uv + uTexel * vec2(-r,  r)).rgb +
+      fb(uv + uTexel * vec2( r, -r)).rgb +
+      fb(uv + uTexel * vec2(-r, -r)).rgb;
+    b *= 0.25;
+    outc = vec4(b * uDecay + src.rgb * 0.15, 1.0);
+  } else if (uMode == 6) {
+    // EDGE — horizontal gradient of the loop fed back (growing line webs). Add a
+    // little input so the structure keeps regenerating.
+    float dx = uTexel.x * (1.0 + uBlur);
+    float e = abs(fb(uv + vec2(dx, 0.0)).r - fb(uv - vec2(dx, 0.0)).r) +
+              abs(fb(uv + vec2(0.0, dx)).r - fb(uv - vec2(0.0, dx)).r);
+    float v = clamp(e * 4.0 + prev.r * uDecay * 0.5 + luma(src.rgb) * 0.1, 0.0, 1.0);
+    outc = vec4(vec3(v), 1.0);
+  } else if (uMode == 7) {
+    // COLOR — hue-rotate the loop by uHue each frame (channel cycling). Blend a
+    // little input so the colours have a source to cycle.
+    vec3 c = hueRotate(prev.rgb, uHue * 0.1);
+    outc = vec4(mix(c, src.rgb, 0.1 + 0.4 * src.a), 1.0);
+  } else if (uMode == 8) {
+    // DISPLACE — self-displacement by the loop's RG (liquid / turbulence). Drive
+    // the field with the input so it doesn't freeze.
+    vec2 disp = fb(uv).rg - 0.5;
+    vec3 d = fb(uv + disp * 0.02 * uGain).rgb;
+    outc = vec4(mix(d, src.rgb, 0.08 + 0.4 * src.a), 1.0);
+  } else if (uMode == 9) {
+    // REACTION — logistic reaction-diffusion of a blurred channel (cells/spots).
+    float r = 1.0 + uBlur;
+    float b =
+      (fb(uv + uTexel * vec2( r, 0.0)).r +
+       fb(uv + uTexel * vec2(-r, 0.0)).r +
+       fb(uv + uTexel * vec2(0.0,  r)).r +
+       fb(uv + uTexel * vec2(0.0, -r)).r) * 0.25;
+    float v = b + uGain * 0.5 * b * (1.0 - b);
+    v = clamp(v + luma(src.rgb) * 0.05, 0.0, 1.0);
+    outc = vec4(vec3(v, v * 0.7, 1.0 - v), 1.0);
+  } else if (uMode == 10) {
+    // LUMAGATE — keep only bright structure (luma-key persistence). Feed input
+    // into the kept region so new bright pixels can join.
+    float m = step(uThresh, luma(prev.rgb));
+    vec3 kept = prev.rgb * m;
+    outc = vec4(max(kept, src.rgb * step(uThresh, luma(src.rgb))), 1.0);
+  } else {
+    // VECTOR (11) — LZX-style flow-field advection: the input's RG is a velocity
+    // field that advects the loop. flow scales the step.
+    vec2 flowv = src.rg - 0.5;
+    vec3 advected = fb(uv + flowv * 0.02 * uFlow).rgb;
+    outc = vec4(mix(advected, src.rgb, 0.06 + 0.3 * src.a), 1.0);
+  }
+
+  outColor = vec4(clamp(outc.rgb, 0.0, 8.0), 1.0);
+}`;
+
+function compileFeedbackProgram(gl: WebGL2RenderingContext): WebGLProgram {
+  return linkProgram(gl, COMBINE_VERT_SRC, FEEDBACK_FRAG_SRC);
+}
+
+/** TEST-ONLY: the feedback fragment GLSL, exposed so a unit test can assert the
+ *  shader switches on every one of the 12 modes (it is GLSL, not extractable as
+ *  a pure JS helper). Not used by the engine. */
+export const __FEEDBACK_FRAG_SRC_FOR_TEST = FEEDBACK_FRAG_SRC;
 
 /** TEST-ONLY: the combine fragment GLSL, exposed so a unit test can assert the
  *  chromakey HSV keying was ported from chromakey.ts verbatim (it is GLSL, not
