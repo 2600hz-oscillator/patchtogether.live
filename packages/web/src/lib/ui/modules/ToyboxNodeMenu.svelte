@@ -3,9 +3,12 @@
   // combine-graph editor (the SVG node map inside ToyboxCard). It is AWARE of
   // what was right-clicked and offers only the relevant actions:
   //
-  //   NODE (op)     Patch to output · Disconnect · Duplicate node · Delete node
+  //   NODE (op)     Patch to output · [Configure keyer] · Disconnect · Duplicate node · Delete node
   //   NODE (source) Patch to output · Disconnect            (no Delete/Duplicate)
   //   NODE (output) Disconnect                              (structural endpoint)
+  //
+  //   "Configure keyer" shows ONLY for a LUMAKEY / CHROMAKEY node (isKeyerKind);
+  //   it opens the keyer-config popover (ToyboxKeyerConfig) via onconfigure.
   //   PORT (output) Patch to output · Disconnect this port · Begin wire
   //   PORT (input)  Disconnect this port
   //   EDGE          Delete edge
@@ -16,7 +19,7 @@
   // matches convention). ToyboxCard owns the classify-target logic + opens this
   // with a small $state object; every action fires a callback then onclose().
 
-  import { OP_KINDS, type ToyboxNodeKind, type ToyboxOpKind, type ToyboxInPort } from '$lib/video/toybox-combine-graph';
+  import { OP_KINDS, isKeyerKind, type ToyboxNodeKind, type ToyboxOpKind, type ToyboxInPort } from '$lib/video/toybox-combine-graph';
 
   type MenuKind = 'node' | 'port' | 'edge' | 'canvas';
 
@@ -36,6 +39,8 @@
     port?: ToyboxInPort;
     // ---- action callbacks (ToyboxCard wires these to the mutators) ----
     onpatchtooutput: () => void;
+    /** NODE (keyer op) only: open the keyer-config popover for this node. */
+    onconfigure: () => void;
     ondisconnect: () => void;
     onduplicate: () => void;
     ondeletenode: () => void;
@@ -57,6 +62,7 @@
     dir,
     port,
     onpatchtooutput,
+    onconfigure,
     ondisconnect,
     onduplicate,
     ondeletenode,
@@ -126,6 +132,8 @@
   let isSource = $derived(nodeKind === 'source');
   let isOutput = $derived(nodeKind === 'output');
   let isOp = $derived(nodeKind !== 'source' && nodeKind !== 'output');
+  // LUMAKEY / CHROMAKEY → offer "Configure keyer".
+  let isKeyer = $derived(isKeyerKind(nodeKind));
 
   // The menu header label per target.
   let headerLabel = $derived.by<string>(() => {
@@ -190,6 +198,14 @@
           data-testid="toybox-menu-patch-output"
           onclick={() => pick(onpatchtooutput)}
         >Patch to output</button>
+      {/if}
+      {#if isKeyer}
+        <button
+          class="ctx-item"
+          role="menuitem"
+          data-testid="toybox-menu-configure-keyer"
+          onclick={() => pick(onconfigure)}
+        >Configure keyer…</button>
       {/if}
       <button
         class="ctx-item"
