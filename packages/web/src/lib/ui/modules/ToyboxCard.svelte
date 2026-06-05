@@ -91,10 +91,20 @@
     listCvParams,
     encodeTargetValue,
     decodeTargetValue,
+    getCvInput,
+    DEFAULT_INPUT_SCALE,
+    DEFAULT_INPUT_OFFSET,
     type CvRoutes,
     type CvRouteTarget,
+    type CvInputs,
   } from '$lib/video/toybox-cv-routes';
   import { setCvRoute } from '$lib/graph/toybox-cv-routes';
+  import { setCvScale, setCvOffset } from '$lib/graph/toybox-cv-inputs';
+  import type { ToyboxScopeSnapshot, ToyboxScopeState } from '$lib/video/modules/toybox';
+  import {
+    drawToyboxInputScope,
+    type ToyboxScopeColors,
+  } from '$lib/video/toybox-scope-draw';
   import { loadToyboxPreset } from '$lib/graph/toybox-presets';
   import {
     clampLayerIndex,
@@ -512,8 +522,10 @@
     return isCombineGraph(c) ? (c as ToyboxCombineGraph) : makeDefaultCombineGraph();
   });
 
-  // Editor interaction state.
-  let editorOpen = $state(false);
+  // Editor interaction state. Default OPEN: the wide 3-column card has a dedicated
+  // CENTER column for the combine graph, so it shows by default (no longer a
+  // space-saving collapse in the old single-column card).
+  let editorOpen = $state(true);
   /** A pending output port we clicked first (click-port-then-port connect). */
   let pendingFrom = $state<string | null>(null);
   /** The currently-selected op node (its params show in the side strip). */
@@ -811,7 +823,10 @@
   // route through the Yjs mutator (graph/toybox-cv-routes.ts); the factory's
   // setParam(cvN) resolves + re-scales each sample into the live param.
 
-  let cvOpen = $state(false);
+  // Default OPEN: the 6-input CV/MOD section is the headline of the wide card +
+  // lives in its own RIGHT column, so it shows by default (the always-on scopes
+  // are only useful when visible).
+  let cvOpen = $state(true);
 
   /** The live layers + combine the dropdowns enumerate targets/params from. */
   let liveLayersForCv = $derived(node?.data?.layers as ToyboxLayer[] | undefined);
@@ -915,6 +930,195 @@
     setCvRoute(id, portId, { ...r, param });
   }
 
+  // ── Per-input SCALE (attenuverter) + OFFSET (the modulation-shaping knobs) ──
+  //
+  // These live in node.data.cvInputs (a SIBLING of cvRoutes), so the OFFSET acts
+  // as a manual control value even with NO route. Read live (same dependency
+  // trick as cvRoutesView: iterate ALL ports in one $derived.by so every key is
+  // tracked). Defaults: scale +1, offset 0 (a fresh cable modulates at once).
+  let cvInputsView = $derived.by<Record<string, { scale: number; offset: number }>>(() => {
+    const live = (node?.data as { cvInputs?: CvInputs } | undefined)?.cvInputs;
+    const out: Record<string, { scale: number; offset: number }> = {};
+    for (const p of CV_PORT_IDS) out[p] = getCvInput(live, p);
+    return out;
+  });
+  function scaleFor(portId: string): number {
+    return cvInputsView[portId]?.scale ?? DEFAULT_INPUT_SCALE;
+  }
+  function offsetFor(portId: string): number {
+    return cvInputsView[portId]?.offset ?? DEFAULT_INPUT_OFFSET;
+  }
+  function onCvScaleChange(portId: string, v: number): void {
+    setCvScale(id, portId, v);
+  }
+  function onCvOffsetChange(portId: string, v: number): void {
+    setCvOffset(id, portId, v);
+  }
+
+  // ── Always-on inline scopes ──
+  //
+  // The CARD owns one ring buffer of recent NORMALIZED values per input. ONE
+  // batched read('cvScope') per rAF (joined to the preview pull below — NO new
+  // rAF loops) fills all 6 rings, then we draw each visible scope canvas. The
+  // scope is always-on: when a port is unpatched it shows the OFFSET level (kind
+  // 'idle'); a cv/gate/audio source shows its modulation trace (audio adds a
+  // raw-waveform overlay). The kind drives the AUDIO/CV badge + the trace color.
+  const SCOPE_RING = 64;
+  const SCOPE_W = 84;
+  const SCOPE_H = 22;
+  const scopeRings = new Map<string, Float32Array>();
+  const scopeCanvases = new Map<string, HTMLCanvasElement>();
+  // Per-port kind, surfaced for the badge (updated each scope tick from cvScope).
+  let scopeKinds = $state<Record<string, ToyboxScopeState['kind']>>({});
+
+  function ringFor(portId: string): Float32Array {
+    let r = scopeRings.get(portId);
+    if (!r) { r = new Float32Array(SCOPE_RING); scopeRings.set(portId, r); }
+    return r;
+  }
+
+  /** Push one normalized 0..1 sample into a port's ring (oldest→newest). */
+  function pushRing(portId: string, norm: number): void {
+    const r = ringFor(portId);
+    r.copyWithin(0, 1);
+    r[SCOPE_RING - 1] = Number.isFinite(norm) ? Math.max(0, Math.min(1, norm)) : 0;
+  }
+
+  /** Resolve a CSS custom property to a concrete color off an element (canvas
+   *  strokeStyle can't take a `var()`), with a hardcoded fallback that matches
+   *  the cable-color fallbacks used across the cards. */
+  function resolveColor(el: HTMLElement, varName: string, fallback: string): string {
+    try {
+      const v = getComputedStyle(el).getPropertyValue(varName).trim();
+      return v || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  /** Scope colors per kind, resolved off the canvas element so they track the
+   *  theme (cv, gate, audio each key off their cable color; idle is dim). */
+  function scopeColorsFor(el: HTMLElement, kind: ToyboxScopeState['kind']): ToyboxScopeColors {
+    const trace =
+      kind === 'audio' ? resolveColor(el, '--cable-audio', '#22c55e')
+      : kind === 'gate' ? resolveColor(el, '--cable-gate', '#f87171')
+      : kind === 'cv' ? resolveColor(el, '--cable-cv', '#4aa')
+      : resolveColor(el, '--text-dim', '#7a8a99');
+    return {
+      trace,
+      fill: kind === 'idle' ? 'rgba(120,120,120,0.10)' : 'rgba(120,200,255,0.12)',
+      wave: 'rgba(120,200,255,0.35)',
+      grid: 'rgba(255,255,255,0.07)',
+      bg: '#070a0e',
+    };
+  }
+
+  /** The video engine's TOYBOX handle for THIS node (or null). */
+  function videoHandle(): { read?: (k: string) => unknown } | null {
+    const e = engineCtx.get();
+    if (!e) return null;
+    try {
+      const ve = e.getDomain<VideoEngine>('video');
+      const h = (ve as unknown as { nodes?: Map<string, { read?: (k: string) => unknown }> }).nodes?.get(id);
+      return h ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Drive ALL 6 scopes from ONE batched read('cvScope'): push each port's
+   * normalized effective value into its ring + redraw its visible canvas. Joined
+   * to the preview rAF (see draw()) — adds NO new rAF loops, no per-knob
+   * readLive. Honors `frozen` (the freeze hook fills rings deterministically).
+   * Guards null engine/handle + try/catch so a transient engine error never
+   * nukes the preview loop. Gated on the CV section being open (scopes only draw
+   * when visible).
+   */
+  function tickScopes(): void {
+    if (!cvOpen || frozen) return;
+    const h = videoHandle();
+    let snap: ToyboxScopeSnapshot | undefined;
+    try {
+      snap = h?.read?.('cvScope') as ToyboxScopeSnapshot | undefined;
+    } catch {
+      return;
+    }
+    const kinds: Record<string, ToyboxScopeState['kind']> = {};
+    for (const portId of CV_PORT_IDS) {
+      const s = snap?.[portId];
+      const kind = s?.kind ?? 'idle';
+      kinds[portId] = kind;
+      // Normalize `effective` back into 0..1 against the param's [min,max] so the
+      // scope plots exactly like the param sweeps (matches the engine's mapping).
+      let norm = offsetFor(portId);
+      if (s) {
+        const span = s.max - s.min;
+        norm = span !== 0 ? (s.effective - s.min) / span : 0;
+      }
+      pushRing(portId, norm);
+      drawScopeCanvas(portId, kind, s?.wave);
+    }
+    scopeKinds = kinds;
+  }
+
+  function drawScopeCanvas(
+    portId: string,
+    kind: ToyboxScopeState['kind'],
+    wave?: Float32Array,
+  ): void {
+    const cvs = scopeCanvases.get(portId);
+    if (!cvs) return;
+    const ctx2d = cvs.getContext('2d', { alpha: false });
+    if (!ctx2d) return;
+    try {
+      drawToyboxInputScope(ctx2d, {
+        width: cvs.width,
+        height: cvs.height,
+        values: ringFor(portId),
+        wave: kind === 'audio' ? wave ?? null : null,
+        colors: scopeColorsFor(cvs, kind),
+      });
+    } catch { /* never let a draw error break the loop */ }
+  }
+
+  function registerScopeCanvas(portId: string, el: HTMLCanvasElement | null): void {
+    if (el) scopeCanvases.set(portId, el);
+    else scopeCanvases.delete(portId);
+  }
+
+  /** Svelte action: register a scope canvas for a port + clean up on destroy
+   *  (the canvases live in an {#each}, so a plain bind:this can't key by port). */
+  function registerScope(el: HTMLCanvasElement, portId: string) {
+    registerScopeCanvas(portId, el);
+    return {
+      destroy() { registerScopeCanvas(portId, null); },
+    };
+  }
+
+  /** The kind badge label for a port (drives the AUDIO/CV chip). */
+  function kindBadge(portId: string): string {
+    const k = scopeKinds[portId] ?? 'idle';
+    return k === 'audio' ? 'AUDIO' : k === 'gate' ? 'GATE' : k === 'cv' ? 'CV' : '—';
+  }
+
+  /** VRT determinism: fill each scope ring with a deterministic sine (phase by
+   *  port index + seed) so the frozen card screenshot is pixel-stable, then draw
+   *  each once. Independent of any live engine signal. */
+  function freezeScopes(seed: number): void {
+    const kinds: Record<string, ToyboxScopeState['kind']> = {};
+    CV_PORT_IDS.forEach((portId, idx) => {
+      const r = ringFor(portId);
+      const phase = (idx + 1) * 0.7 + seed;
+      for (let i = 0; i < SCOPE_RING; i++) {
+        r[i] = 0.5 + 0.4 * Math.sin((i / SCOPE_RING) * Math.PI * 2 * (idx + 1) + phase);
+      }
+      kinds[portId] = idx % 2 === 0 ? 'cv' : 'audio';
+      drawScopeCanvas(portId, kinds[portId]);
+    });
+    scopeKinds = kinds;
+  }
+
   // ───────────────────── PRESETS (Phase 6) ─────────────────────
   //
   // A dropdown of the bundled presets (manifest `presets[]`). Selecting one
@@ -1011,6 +1215,9 @@
     rafId = requestAnimationFrame(draw);
     if (frozen) return; // hold the last frame (VRT)
     blitOnce();
+    // Drive all 6 inline scopes from ONE batched read('cvScope') — joined to
+    // THIS rAF (after blitOnce), no separate loop, no per-knob readLive.
+    tickScopes();
   }
 
   onMount(() => {
@@ -1019,14 +1226,14 @@
     // shader render is deterministic, blit once with the new frozen frame,
     // then pause the preview pull. Call with no/undefined arg to resume.
     const g = globalThis as unknown as {
-      __toyboxFreeze?: (time?: number) => void;
+      __toyboxFreeze?: (time?: number, seed?: number) => void;
       __toyboxFreezeTime?: number | null;
       __toyboxLoadPreset?: (presetId: string) => Promise<boolean>;
     };
     // VRT/e2e determinism hook: load a bundled preset by id into THIS node's
     // data (in place) + prefetch its assets. Returns the apply verdict.
     g.__toyboxLoadPreset = (presetId: string) => loadPreset(presetId);
-    g.__toyboxFreeze = (time?: number) => {
+    g.__toyboxFreeze = (time?: number, seed?: number) => {
       if (typeof time === 'number') {
         g.__toyboxFreezeTime = time;
         // Force the engine to render one frame at the pinned time, then
@@ -1034,6 +1241,10 @@
         const e = engineCtx.get();
         try { e?.getDomain<VideoEngine>('video')?.step(); } catch { /* */ }
         blitOnce();
+        // Fill the 6 scope rings DETERMINISTICALLY from `seed` so the scopes are
+        // pixel-stable for VRT (a sine per port, phase-offset by the port index
+        // + seed). Then draw each once. frozen=true stops tickScopes after this.
+        freezeScopes(seed ?? 0);
         frozen = true;
       } else {
         g.__toyboxFreezeTime = null;
@@ -1071,9 +1282,10 @@
   />
   <span class="port-label right" style="top: 50px;">OUT</span>
 
-  <!-- PHASE 5: the 8 generic CV input ports (cv1..cv8). Real input handles —
-       the outer canvas draws CV cables to them; each is routed to a param via
-       the CV tab below. Stacked down the left edge. -->
+  <!-- The 6 generic modulation input ports (port ids cv1..cv6; LABELLED IN1..
+       IN6 in the UI). Real input handles — the outer canvas draws cables to
+       them; each is shaped (SCALE/OFFSET) + routed to a param in the CV section.
+       Stacked down the left edge. Typed `modsignal` so cv/gate/audio connect. -->
   {#each CV_PORT_IDS as cvId, i (cvId)}
     <Handle
       type="target"
@@ -1081,8 +1293,13 @@
       id={cvId}
       style={`top: ${44 + i * 22}px; --handle-color: var(--cable-cv);`}
     />
-    <span class="port-label left" style={`top: ${38 + i * 22}px;`}>{cvId.toUpperCase()}</span>
+    <span class="port-label left" style={`top: ${38 + i * 22}px;`}>IN{i + 1}</span>
   {/each}
+
+  <!-- 3-COLUMN BODY: LEFT = preview + layer editor, CENTER = combine graph,
+       RIGHT = the 6-input CV/modulation section. -->
+  <div class="toybox-cols" data-testid="toybox-cols">
+  <div class="toybox-col toybox-col-left" data-testid="toybox-col-left">
 
   <div class="screen-wrap">
     <canvas
@@ -1363,7 +1580,9 @@
       {/if}
     </div>
   {/if}
+  </div><!-- /toybox-col-left -->
 
+  <div class="toybox-col toybox-col-center" data-testid="toybox-col-center">
   <!-- ───────── COMBINE GRAPH EDITOR (Phase 4) ───────── -->
   <div class="combine-section" data-testid="toybox-combine-section">
     <button
@@ -1549,8 +1768,10 @@
     onreset={doResetToDefault}
     onclose={closeToyboxMenu}
   />
+  </div><!-- /toybox-col-center -->
 
-  <!-- ───────── CV ROUTING (Phase 5) ───────── -->
+  <div class="toybox-col toybox-col-right" data-testid="toybox-col-right">
+  <!-- ───────── CV / MODULATION SECTION (6 inputs) ───────── -->
   <div class="cv-section" data-testid="toybox-cv-section">
     <button
       type="button"
@@ -1559,52 +1780,105 @@
       aria-expanded={cvOpen}
       onclick={() => (cvOpen = !cvOpen)}
     >
-      {cvOpen ? '▾' : '▸'} CV
+      {cvOpen ? '▾' : '▸'} CV / MOD
     </button>
 
     {#if cvOpen}
       <div class="cv-rows" data-testid="toybox-cv-rows">
-        {#each CV_PORT_IDS as cvId (cvId)}
+        {#each CV_PORT_IDS as cvId, i (cvId)}
           {@const paramOpts = paramOptionsFor(cvId)}
+          {@const kind = scopeKinds[cvId] ?? 'idle'}
           <div class="cv-row" data-testid={`toybox-cv-row-${cvId}`}>
-            <span class="cv-port">{cvId.toUpperCase()}</span>
-            <select
-              class="cv-select"
-              data-testid={`toybox-cv-target-${cvId}`}
-              value={targetValueFor(cvId)}
-              onchange={(e) => onCvTargetChange(cvId, e)}
-              aria-label={`${cvId} target`}
-            >
-              <option value="">— none —</option>
-              {#each cvTargets as t (t.value)}
-                <option value={t.value}>{t.label}</option>
-              {/each}
-            </select>
-            <select
-              class="cv-select"
-              data-testid={`toybox-cv-param-${cvId}`}
-              value={routeFor(cvId)?.param ?? ''}
-              onchange={(e) => onCvParamChange(cvId, e)}
-              disabled={paramOpts.length === 0}
-              aria-label={`${cvId} param`}
-            >
-              {#if paramOpts.length === 0}
-                <option value="">—</option>
-              {/if}
-              {#each paramOpts as p (p.id)}
-                <option value={p.id}>{p.label}</option>
-              {/each}
-            </select>
+            <!-- row head: input label + auto-detected source-kind badge -->
+            <div class="cv-row-head">
+              <span class="cv-port">IN{i + 1}</span>
+              <span
+                class="cv-badge cv-badge-{kind}"
+                data-testid={`toybox-cv-badge-${cvId}`}
+                data-kind={kind}
+                title="auto-detected source type"
+              >{kindBadge(cvId)}</span>
+            </div>
+
+            <!-- target + param routing -->
+            <div class="cv-route">
+              <select
+                class="cv-select"
+                data-testid={`toybox-cv-target-${cvId}`}
+                value={targetValueFor(cvId)}
+                onchange={(e) => onCvTargetChange(cvId, e)}
+                aria-label={`IN${i + 1} target`}
+              >
+                <option value="">— none —</option>
+                {#each cvTargets as t (t.value)}
+                  <option value={t.value}>{t.label}</option>
+                {/each}
+              </select>
+              <select
+                class="cv-select"
+                data-testid={`toybox-cv-param-${cvId}`}
+                value={routeFor(cvId)?.param ?? ''}
+                onchange={(e) => onCvParamChange(cvId, e)}
+                disabled={paramOpts.length === 0}
+                aria-label={`IN${i + 1} param`}
+              >
+                {#if paramOpts.length === 0}
+                  <option value="">—</option>
+                {/if}
+                {#each paramOpts as p (p.id)}
+                  <option value={p.id}>{p.label}</option>
+                {/each}
+              </select>
+            </div>
+
+            <!-- attenuverter (SCALE) + OFFSET + always-on inline scope -->
+            <div class="cv-shape">
+              <div class="cv-knob" data-testid={`toybox-cv-scale-${cvId}`}>
+                <Knob
+                  value={scaleFor(cvId)}
+                  min={-1}
+                  max={1}
+                  defaultValue={DEFAULT_INPUT_SCALE}
+                  label="SCALE"
+                  onchange={(v) => onCvScaleChange(cvId, v)}
+                  moduleId={id}
+                  paramId={`${cvId}:scale`}
+                />
+              </div>
+              <div class="cv-knob" data-testid={`toybox-cv-offset-${cvId}`}>
+                <Knob
+                  value={offsetFor(cvId)}
+                  min={0}
+                  max={1}
+                  defaultValue={DEFAULT_INPUT_OFFSET}
+                  label="OFFSET"
+                  onchange={(v) => onCvOffsetChange(cvId, v)}
+                  moduleId={id}
+                  paramId={`${cvId}:offset`}
+                />
+              </div>
+              <canvas
+                class="cv-scope"
+                width={SCOPE_W}
+                height={SCOPE_H}
+                data-testid={`toybox-cv-scope-${cvId}`}
+                data-kind={kind}
+                use:registerScope={cvId}
+              ></canvas>
+            </div>
           </div>
         {/each}
       </div>
     {/if}
   </div>
+  </div><!-- /toybox-col-right -->
+  </div><!-- /toybox-cols -->
 </div>
 
 <style>
   .mod-card {
-    width: 240px;
+    /* Wide 3-column card (preview + layer editor | combine graph | CV section). */
+    width: 860px;
     min-height: 300px;
     background: var(--module-bg);
     border: 1px solid var(--border);
@@ -1615,6 +1889,29 @@
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
+
+  /* ── 3-column body ── */
+  .toybox-cols {
+    display: flex;
+    align-items: flex-start;
+    gap: 1px;
+    /* clear the left input-port labels (IN1..IN6 down the edge). */
+    padding-left: 30px;
+  }
+  .toybox-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .toybox-col-left { width: 250px; flex: 0 0 250px; }
+  .toybox-col-center {
+    width: 320px;
+    flex: 0 0 320px;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    padding: 0 4px;
+  }
+  .toybox-col-right { width: 256px; flex: 0 0 256px; padding-left: 4px; }
   :global(.svelte-flow__node:hover) .mod-card { border-color: var(--accent-dim); }
   :global(.svelte-flow__node.selected) .mod-card {
     border-color: var(--accent);
@@ -1917,29 +2214,67 @@
   }
   .combine-params .knob-grid { padding: 0; }
 
-  /* ───────── CV ROUTING (Phase 5) ───────── */
+  /* ───────── CV / MODULATION SECTION (6 inputs) ───────── */
   .cv-section {
-    margin-top: 8px;
-    padding: 8px 12px 0;
-    border-top: 1px solid var(--border);
+    padding: 2px 4px 0;
   }
   .cv-rows {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     margin: 6px 0 2px;
   }
   .cv-row {
     display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.015);
+  }
+  .cv-row-head {
+    display: flex;
     align-items: center;
-    gap: 4px;
+    justify-content: space-between;
   }
   .cv-port {
     font-family: ui-monospace, monospace;
-    font-size: 0.55rem;
+    font-size: 0.6rem;
     color: var(--cable-cv, var(--text-dim));
-    width: 26px;
-    flex: 0 0 auto;
+    font-weight: 600;
+  }
+  .cv-badge {
+    font-family: ui-monospace, monospace;
+    font-size: 0.5rem;
+    letter-spacing: 0.04em;
+    padding: 1px 4px;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .cv-badge-cv { color: var(--cable-cv, #4aa); border-color: var(--cable-cv, #4aa); }
+  .cv-badge-gate { color: var(--cable-gate, #f87171); border-color: var(--cable-gate, #f87171); }
+  .cv-badge-audio { color: var(--cable-audio, #22c55e); border-color: var(--cable-audio, #22c55e); }
+  .cv-badge-idle { opacity: 0.55; }
+  .cv-route {
+    display: flex;
+    gap: 3px;
+  }
+  .cv-shape {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .cv-knob { flex: 0 0 auto; transform: scale(0.82); transform-origin: left center; }
+  .cv-scope {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 22px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: #070a0e;
+    image-rendering: pixelated;
   }
   .cv-select {
     flex: 1 1 0;

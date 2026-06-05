@@ -1,35 +1,38 @@
 // packages/web/src/lib/video/toybox-cv-routes.ts
 //
-// TOYBOX Phase 5 — CV routing model + resolution (PURE: no Yjs, no GL).
+// TOYBOX CV/modulation routing model + resolution (PURE: no Yjs, no GL).
 //
 // A TOYBOX layer's shader (and thus its float uniforms) is chosen at RUNTIME,
 // so we cannot statically declare a CV input port per possible uniform.
-// Instead the def exposes a FIXED POOL of generic CV input ports (cv1..cv8),
-// and a data-driven ROUTING MAP (node.data.cvRoutes) says which addressed
-// param each generic port drives. The factory's setParam(cvN, value) looks up
-// the route, resolves the target param's declared min/max, RE-SCALES the
-// incoming -1..+1 value across that range (reusing scaleCv — the same helper
-// the cv-bridge uses), and writes it into the live layer/combine param so the
-// render updates next frame.
+// Instead the def exposes a FIXED POOL of generic input ports (cv1..cv6) — the
+// Structure-style modulation section. Each accepts EITHER a CV or an AUDIO
+// source (auto-detected at the bridge — see modules/toybox.ts + engine.ts), and
+// a data-driven ROUTING MAP (node.data.cvRoutes) says which addressed param
+// each port drives, plus a per-input bipolar SCALE (attenuverter) and OFFSET.
+//
+// The factory's setParam(cvN, value) looks up the route, resolves the target
+// param's declared min/max, applies the per-input SCALE + OFFSET in normalized
+// 0..1 space, maps that across the param range, and writes it into the live
+// layer/combine param so the render updates next frame. The SCALE/OFFSET math
+// is the PURE helper `effectiveCvValue` (unit-tested in toybox-cv-math.ts).
 //
 // The generic cv ports stay neutral-linear (the bridge does NOT scale them —
 // they have a cvScale:{mode:'linear'} hint but NO paramTarget, so
 // buildCvBridgeMapping degrades to raw passthrough and hands setParam the raw
-// ±1 sample). TOYBOX does the per-target range scaling HERE, because only the
-// route knows which param — and thus which range — the value is destined for.
+// signal). TOYBOX does the per-target SCALE/OFFSET + range mapping HERE, because
+// only the route knows which param — and thus which range — the value targets.
 //
 // This file is the SINGLE SOURCE OF TRUTH for:
 //   - the cv pool size + port ids (def + card + tests share these),
-//   - the route shape,
+//   - the route shape (incl. per-input scale/offset),
 //   - what params each target (a layer's content / an OBJ material / a combine
-//     op node) exposes, with their declared min/max (the re-scale range),
-//   - the pure resolve+rescale math (resolveRoute / scaleRoutedValue).
+//     op node) exposes, with their declared min/max (the map range).
 //
-// Unit-tested in toybox-cv-routes.test.ts; consumed by modules/toybox.ts
-// (setParam), ToyboxCard.svelte (the CV tab), and graph/toybox-cv-routes.ts
+// Unit-tested in toybox-cv-routes.test.ts; the pure SCALE/OFFSET math in
+// toybox-cv-math.test.ts; consumed by modules/toybox.ts (setParam),
+// ToyboxCard.svelte (the modulation section), and graph/toybox-cv-routes.ts
 // (the Yjs mutator).
 
-import { scaleCv } from '$lib/audio/cv-scale';
 import {
   LAYER_COUNT,
   getContentMeta,
@@ -42,24 +45,43 @@ import {
   type ToyboxOpKind,
 } from './toybox-combine-graph';
 
-/** Number of generic CV input ports the def declares. */
-export const CV_PORT_COUNT = 8;
+import {
+  DEFAULT_INPUT_SCALE,
+  DEFAULT_INPUT_OFFSET,
+} from './toybox-cv-math';
 
-/** The fixed pool of generic CV input port ids: 'cv1'..'cv8'. */
+export {
+  effectiveCvValue,
+  effectiveNorm,
+  foldCvToUnipolar,
+  followEnvelope,
+  makeEnvelopeFollower,
+  DEFAULT_INPUT_SCALE,
+  DEFAULT_INPUT_OFFSET,
+} from './toybox-cv-math';
+
+/** Number of generic CV/modulation input ports the def declares. */
+export const CV_PORT_COUNT = 6;
+
+/** The fixed pool of generic input port ids: 'cv1'..'cv6'. */
 export const CV_PORT_IDS: readonly string[] = Array.from(
   { length: CV_PORT_COUNT },
   (_, i) => `cv${i + 1}`,
 );
 
-/** True if `portId` is one of the generic cv pool ports (cv1..cv8). */
+/** True if `portId` is one of the generic input pool ports (cv1..cv6). */
 export function isCvPortId(portId: string): boolean {
   return CV_PORT_IDS.includes(portId);
 }
 
-/** One routing target: which addressable param a generic cv port drives.
+/** One routing target: which addressable param a generic input port drives.
  *   - target 'layer': layer[layer].param — a content uniform OR (for an OBJ
  *     layer) a material transform/tint field (param prefixed 'material:').
- *   - target 'combine': the combine GRAPH op node `nodeId`'s float param. */
+ *   - target 'combine': the combine GRAPH op node `nodeId`'s float param.
+ *
+ *  The per-input SCALE/OFFSET do NOT live here — they live in a SIBLING map
+ *  (`node.data.cvInputs`, see CvInput below), because OFFSET must be the manual
+ *  control value even with NO route, and a null route has nowhere to hang it. */
 export interface CvRouteTarget {
   target: 'layer' | 'combine';
   /** Layer index (0..LAYER_COUNT-1) — when target === 'layer'. */
@@ -74,6 +96,39 @@ export interface CvRouteTarget {
 /** The persisted routing map, keyed by cv port id. A null/absent entry means
  *  "this generic cv port is unrouted" (its writes are ignored). */
 export type CvRoutes = Partial<Record<string, CvRouteTarget | null>>;
+
+/**
+ * One input's modulation-shaping controls: the bipolar attenuverter (SCALE,
+ * −1..+1: 0 = off, +1 = full positive depth, <0 inverts) and the OFFSET
+ * (0..1: the manual / no-cable control value). Lives in a SIBLING map keyed by
+ * cv port id (`node.data.cvInputs`), INDEPENDENT of the route — so the OFFSET
+ * acts as a manual control even when the port has no route AND no cable (then
+ * the param parks at `min + offset*(max-min)`; see applyUnpatchedOffsets).
+ */
+export interface CvInput {
+  /** Bipolar attenuverter, −1..+1 (center 0 = off, <0 inverts). */
+  scale: number;
+  /** Manual / no-cable control value, 0..1 (0 = min, 1 = full range). */
+  offset: number;
+}
+
+/** The persisted per-input scale/offset map, keyed by cv port id. */
+export type CvInputs = Partial<Record<string, CvInput | null>>;
+
+/** Read one input's scale/offset off a live cvInputs map, filling defaults.
+ *  Defaults: scale = DEFAULT_INPUT_SCALE (+1, full passthrough — a fresh cable
+ *  modulates immediately), offset = DEFAULT_INPUT_OFFSET (0). */
+export function getCvInput(
+  inputs: CvInputs | undefined | null,
+  portId: string,
+): CvInput {
+  const e = inputs && typeof inputs === 'object' ? inputs[portId] : undefined;
+  return {
+    scale: typeof e?.scale === 'number' && Number.isFinite(e.scale) ? e.scale : DEFAULT_INPUT_SCALE,
+    offset:
+      typeof e?.offset === 'number' && Number.isFinite(e.offset) ? e.offset : DEFAULT_INPUT_OFFSET,
+  };
+}
 
 // ---------------- OBJ material param schema (the re-scale ranges) ----------------
 //
@@ -224,14 +279,16 @@ export function listCvParams(
 
 // ---------------- Resolve + re-scale (the setParam hot path) ----------------
 
-/** The resolved write target: the param's range, the param's CURRENT value
- *  (the modulation centre), and a setter that writes the re-scaled value into
- *  the live layer/combine param object in place. */
+/** The resolved write target: the param's range, the param's CURRENT value, and
+ *  a setter that writes the mapped value into the live layer/combine param
+ *  object in place. */
 export interface ResolvedRoute {
   min: number;
   max: number;
   /** The param's CURRENT value (defaulted to the schema default when unset).
-   *  This is the modulation centre passed to scaleRoutedValue as the knob. */
+   *  Surfaced for the card's live read-back; the value WRITTEN is computed by
+   *  effectiveCvValue(signal, scale, offset, min, max) (no longer centred on
+   *  this value — the attenuverter/offset model is absolute, not relative). */
   current: number;
   /** Write `value` into the live target param object (mutates in place). */
   apply: (value: number) => void;
@@ -304,20 +361,3 @@ export function resolveRoute(
   };
 }
 
-/**
- * Re-scale a raw cv sample (-1..+1) across the resolved param's range, centred
- * on the param's current value (the modulation centre, mirroring the audio +
- * cv-bridge knob semantics), and return the effective value to write.
- *
- * Reuses scaleCv (linear mode) — the SAME helper the cv-bridge uses — so a ±1
- * CV sweeps the param's FULL natural range. `knob` is the param's current value
- * (read live by the caller).
- */
-export function scaleRoutedValue(
-  raw: number,
-  knob: number,
-  min: number,
-  max: number,
-): number {
-  return scaleCv(raw, knob, min, max, { mode: 'linear' });
-}

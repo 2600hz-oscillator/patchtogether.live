@@ -26,11 +26,24 @@ export type Domain = StandardDomain | (string & {});
 //   video      — RGB animated video stream
 // Implicit upcasting `keys → mono-video`, `image → video`, `keys → image`
 // is allowed; the upcast is free at the shader layer. See `canConnect`.
+//
+//   modsignal  — a permissive MODULATION input that accepts EITHER a cv, gate,
+//                OR audio source. Used by TOYBOX's Structure-style 6-input
+//                modulation section: each input has an attenuverter + offset and
+//                auto-detects whether a cv-rate or audio-rate signal is patched
+//                (audio is envelope-followed by the cross-domain bridge). It is
+//                a TARGET-only type — no source ever emits `modsignal`, so the
+//                cable stripe keys off the SOURCE type (cv/audio/gate) and no new
+//                cable colour variant is needed (Canvas.svelte). Declaring this
+//                as its own type (rather than globally widening audio→cv) keeps
+//                the audio→cv connection rejected everywhere EXCEPT modsignal
+//                inputs.
 type StandardCableType =
   | 'audio'
   | 'pitch'
   | 'gate'
   | 'cv'
+  | 'modsignal'
   | 'polyPitchGate'
   | 'keys'
   | 'image'
@@ -105,6 +118,17 @@ export function canConnect(srcType: CableType, dstType: CableType): boolean {
   // bridge in Phase 1). Permit at the type level so the eventual bridge
   // doesn't change call-site type checks.
   if (srcType === 'cv' && isVideoCableType(dstType)) return true;
+
+  // modsignal MODULATION input (TOYBOX's 6-input section) accepts a cv, gate,
+  // OR audio source. This is the ONLY place audio→(non-audio) is permitted: it
+  // is scoped to the `modsignal` TARGET type, so audio→cv / audio→pitch etc.
+  // stay rejected everywhere else. The cross-domain bridge envelope-follows an
+  // audio source to a 0..1 modulation value (engine.ts → tickCvBridges); cv/gate
+  // sample-and-hold as usual. (modsignal→modsignal is covered by the equal-type
+  // check above; no source ever emits `modsignal`.)
+  if (dstType === 'modsignal') {
+    return srcType === 'cv' || srcType === 'gate' || srcType === 'audio';
+  }
 
   return false;
 }

@@ -1,11 +1,16 @@
 // packages/web/src/lib/graph/toybox-cv-routes.ts
 //
-// TOYBOX Phase 5 — Yjs mutator for the CV routing map (node.data.cvRoutes).
+// TOYBOX — Yjs mutator for the modulation routing map (node.data.cvRoutes).
 //
-// The card's CV tab edits which addressed param each generic cv pool port
-// (cv1..cv8) drives. Every edit writes node.data.cvRoutes through the patch
-// proxy inside a single LOCAL_ORIGIN transaction; the video factory reads the
-// live map each time a cv sample arrives (modules/toybox.ts → applyCvRoute).
+// The card's modulation section edits which addressed param each generic input
+// pool port (cv1..cv6) drives. Every edit writes node.data.cvRoutes through the
+// patch proxy inside a single LOCAL_ORIGIN transaction; the video factory reads
+// the live map each time a sample arrives (modules/toybox.ts → applyCvRoute).
+//
+// The per-input SCALE (attenuverter) + OFFSET are NOT here — they live in a
+// SIBLING map (node.data.cvInputs, see graph/toybox-cv-inputs.ts), because the
+// OFFSET must be the manual control value even when a port has NO route, and a
+// null route has nowhere to hang it.
 //
 // CRITICAL (same in-place trap as toybox-combine.ts / control-surface /
 // [[yjs-save-load-real-ydoc]]): mutate cvRoutes IN PLACE — SET a single key on
@@ -39,9 +44,11 @@ export function readCvRoutes(node: { data?: unknown } | undefined): CvRoutes {
 }
 
 /**
- * Set the route for one generic cv port (cv1..cv8). Pass a target to route it,
- * or null to clear it. Writes a NEW plain object for the value (in place) so the
- * Yjs map integrates a fresh entry rather than reassigning a live Y type.
+ * Set the target/param route for one generic input port (cv1..cv6). Pass a
+ * target to route it, or null to clear it. Writes a NEW plain object for the
+ * value (in place) so the Yjs map integrates a fresh entry rather than
+ * reassigning a live Y type. (SCALE/OFFSET are independent — see
+ * graph/toybox-cv-inputs.ts — and persist across a re-route.)
  */
 export function setCvRoute(
   nodeId: string,
@@ -63,7 +70,7 @@ export function setCvRoute(
   });
 }
 
-/** Clear a generic cv port's route (in place). */
+/** Clear a generic input port's route (in place). */
 export function clearCvRoute(nodeId: string, portId: string): void {
   setCvRoute(nodeId, portId, null);
 }

@@ -35,6 +35,11 @@ import type { DomainEngine } from '$lib/audio/engine';
 import { getVideoModuleDef, type VideoModuleDef } from './module-registry';
 import { createWaveformRenderer, type WaveformRenderer } from './waveform-video';
 import { buildCvBridgeMapping, mapCvBridgeValue, type CvBridgeMapping } from './cv-bridge-map';
+import {
+  followEnvelope,
+  makeEnvelopeFollower,
+  type EnvelopeFollower,
+} from './toybox-cv-math';
 
 /** Resolution of every per-module FBO. 640×480 (4:3) matches the LZX
  *  analog-video heritage, aligns with PICTUREBOX's encoder, and gives
@@ -115,6 +120,12 @@ export interface VideoNodeHandle {
   /** Apply a param value (fader change). Routes to a uniform or internal
    *  state that `draw()` reads next frame. */
   setParam(paramId: string, value: number): void;
+  /** Optional: hand the module the latest AUDIO time-domain window for a
+   *  modulation input (so its UI can draw a raw-waveform overlay). The
+   *  cross-domain AUDIO cv-bridge calls this once per frame for `audio`-sourced
+   *  modsignal edges only (cv/gate bridges never call it). TOYBOX implements it;
+   *  modules without a waveform overlay omit it. */
+  setParamWave?(paramId: string, window: Float32Array): void;
   /** Read a param's live value (motorized fader convention). For Phase 0
    *  this just returns the most-recently-set intrinsic value; once the
    *  CV→video bridge lands it will include modulator contributions. */
@@ -280,6 +291,15 @@ export class VideoEngine implements DomainEngine {
      *  through (the module edge-detects); continuous targets (with a
      *  `cvScale` hint) sweep their full param range. See cv-bridge-map.ts. */
     mapping: CvBridgeMapping;
+    /** The patched source's cable type ('cv' | 'gate' | 'audio'). An 'audio'
+     *  source is ENVELOPE-FOLLOWED (RMS over the analyser window) to a 0..1
+     *  value each frame; cv/gate take the tail sample. The target module
+     *  auto-detects the kind from the edge itself (see modules/toybox.ts). */
+    sourceType: string;
+    /** Per-bridge envelope-follower state, used ONLY for an `audio` source
+     *  (fast attack / slow release one-pole over the window RMS). null for
+     *  cv/gate (they take the tail sample). */
+    env: EnvelopeFollower | null;
     /** Disconnect the upstream AudioNode tap into our analyser. */
     teardown: () => void;
   }>();
@@ -643,6 +663,7 @@ void main() {
     targetNodeId: string,
     targetPortId: string,
     teardown: () => void,
+    sourceType = 'cv',
   ): void {
     const existing = this.cvBridges.get(edgeId);
     if (existing) {
@@ -670,6 +691,9 @@ void main() {
       buf,
       targetNodeId,
       mapping,
+      sourceType,
+      // Only an AUDIO source is envelope-followed; cv/gate take the tail sample.
+      env: sourceType === 'audio' ? makeEnvelopeFollower() : null,
       teardown,
     });
   }
@@ -687,7 +711,19 @@ void main() {
       const handle = this.nodes.get(bridge.targetNodeId);
       if (!handle) continue;
       bridge.analyser.getFloatTimeDomainData(bridge.buf);
-      // Tail sample is "newest" in the rolling window analyser semantics.
+      if (bridge.env) {
+        // AUDIO source: envelope-follow the whole window (RMS → fast-attack /
+        // slow-release one-pole) to a 0..1 modulation value. The target reads
+        // this as an already-unipolar signal (it does NOT re-fold audio). Also
+        // hand the raw window to the target so its UI can draw a waveform
+        // overlay (TOYBOX's inline scope).
+        const env = followEnvelope(bridge.env, bridge.buf);
+        const v = mapCvBridgeValue(bridge.mapping, env);
+        handle.setParam(bridge.mapping.targetParamId, v);
+        handle.setParamWave?.(bridge.mapping.targetParamId, bridge.buf);
+        continue;
+      }
+      // cv / gate: tail sample is "newest" in the rolling-window analyser.
       const raw = bridge.buf[bridge.buf.length - 1] ?? 0;
       // Gate target: raw value through (module edge-detects). Continuous
       // target: map ±1 across the param's full range (mirrors audio path).

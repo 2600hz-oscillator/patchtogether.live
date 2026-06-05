@@ -940,7 +940,16 @@ export class PatchEngine {
       targetDomain !== undefined
       && sourceDomain === 'audio'
       && targetDomain !== 'audio'
-      && (edge.sourceType === 'cv' || edge.sourceType === 'gate')
+      && (edge.sourceType === 'cv'
+        || edge.sourceType === 'gate'
+        // AUDIO → a `modsignal` modulation input (TOYBOX's 6-input section). An
+        // audio-rate source patched into a modsignal input is ENVELOPE-FOLLOWED
+        // by the sample-and-hold bridge (see VideoEngine.tickCvBridges) to a
+        // 0..1 modulation value — the same path cv/gate take. Scoped to the
+        // `modsignal` TARGET so audio → a video STREAM port (image/video/keys)
+        // still goes to the texture bridge below, and audio→cv stays rejected
+        // everywhere else. canConnect permits cv/gate/audio → modsignal.
+        || (edge.sourceType === 'audio' && edge.targetType === 'modsignal'))
     ) {
       // `cv` (LFO, gamepad sticks ±1) AND `gate` (gamepad buttons/dpad,
       // sequencer gates) both bridge audio → video the same way: the
@@ -1111,6 +1120,7 @@ export class PatchEngine {
         targetNodeId: string,
         targetParamId: string,
         teardown: () => void,
+        sourceType?: string,
       ) => void;
       gl?: WebGL2RenderingContext;
     };
@@ -1130,14 +1140,17 @@ export class PatchEngine {
       return;
     }
     const analyser = ae.ctx.createAnalyser();
-    analyser.fftSize = 32;
+    // An AUDIO source is envelope-followed (RMS over the window) by the bridge,
+    // so it needs a wider window than the 32-sample cv tail read. A cv/gate
+    // source still uses the tail sample, but a wider window is harmless there.
+    analyser.fftSize = edge.sourceType === 'audio' ? 1024 : 32;
     analyser.smoothingTimeConstant = 0;
     src.node.connect(analyser, src.output);
     const teardown = () => {
       try { src.node.disconnect(analyser, src.output); } catch { /* */ }
       try { analyser.disconnect(); } catch { /* */ }
     };
-    ve.addCvBridge!(edge.id, analyser, edge.target.nodeId, edge.target.portId, teardown);
+    ve.addCvBridge!(edge.id, analyser, edge.target.nodeId, edge.target.portId, teardown, edge.sourceType);
     this.cvBridgeEdgeIds.add(edge.id);
     // Success on retry → clear any pending entry for this edge id.
     this.pendingBridges.delete(edge.id);

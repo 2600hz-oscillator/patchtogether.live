@@ -30,10 +30,18 @@
 // node.data.combine (ToyboxCombine). The card mutates the live node (rides
 // Y.Doc); the factory reads the live node each frame.
 //
-// Inputs:  cv1..cv8 (cv) — a FIXED pool of generic CV ports (Phase 5). Each is
-//          routed to an addressed layer/combine/obj param via node.data.cvRoutes
-//          and re-scaled to that param's range inside setParam (see
-//          toybox-cv-routes.ts). The generic ports stay neutral-linear.
+// Inputs:  cv1..cv6 (cv) — a FIXED pool of generic modulation ports (the
+//          Structure-style 6-input section). Each accepts EITHER a CV or an
+//          AUDIO source: the cross-domain bridge auto-detects the patched
+//          source's type (engine.ts) — a cv source feeds its folded 0..1 sample
+//          straight; an audio source is ENVELOPE-FOLLOWED (RMS over the analyser
+//          window) to a 0..1 modulation value. Each port is routed to an
+//          addressed layer/combine/obj param via node.data.cvRoutes, with a
+//          per-input bipolar SCALE (attenuverter) + OFFSET; setParam applies
+//          effectiveCvValue(signal, scale, offset, min, max) (see
+//          toybox-cv-routes.ts / toybox-cv-math.ts). The card reads live per-
+//          input values back via the `inputs` handle-extras bridge to drive the
+//          always-on inline scopes.
 // Outputs: out (video) — the composited frame.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
@@ -68,9 +76,12 @@ import {
   CV_PORT_IDS,
   isCvPortId,
   resolveRoute,
-  scaleRoutedValue,
+  getCvInput,
+  effectiveCvValue,
+  foldCvToUnipolar,
   type CvRouteTarget,
   type CvRoutes,
+  type CvInputs,
 } from '$lib/video/toybox-cv-routes';
 import { parseObj } from '$lib/video/obj-parse';
 import { resolveRenderOrder } from '$lib/video/toybox-surface';
@@ -218,24 +229,57 @@ export interface ToyboxHandleExtras {
   attachLayerVideo(i: number, el: HTMLVideoElement | null): void;
 }
 
+/** One generic-input's live modulation snapshot, surfaced to the card's
+ *  always-on inline scope via the batched `read('cvScope')` channel. */
+export interface ToyboxScopeState {
+  /** The post scale+offset value mapped into the routed param's [min,max] (so
+   *  it normalizes EXACTLY like the param). When unrouted it falls back to the
+   *  raw 0..1 norm so the scope still shows the OFFSET/signal level. */
+  effective: number;
+  /** The routed param's range (the scope normalizes `effective` against this).
+   *  Defaults to 0..1 when there is no resolvable route. */
+  min: number;
+  max: number;
+  /** The auto-detected source kind: 'cv' | 'gate' | 'audio' from the inbound
+   *  edge's sourceType, or 'idle' when no cable is patched (so the scope is
+   *  ALWAYS-ON, showing the OFFSET level when idle). */
+  kind: 'cv' | 'gate' | 'audio' | 'idle';
+  /** A short rolling window of the most-recent audio time-domain samples
+   *  (−1..+1), present only for an AUDIO source — the scope draws it as a
+   *  raw-waveform overlay under the modulation trace. Absent for cv/gate/idle. */
+  wave?: Float32Array;
+}
+
+/** The batched cvScope snapshot the card reads ONCE per rAF: one entry per
+ *  generic input port id (cv1..cv6). */
+export type ToyboxScopeSnapshot = Record<string, ToyboxScopeState>;
+
 export const toyboxDef: VideoModuleDef = {
   type: 'toybox',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'TOYBOX',
   category: 'sources',
-  schemaVersion: 1,
-  // PHASE 5 — a FIXED pool of 8 generic CV input ports. A layer's shader (and
-  // its uniforms) is chosen at runtime, so we can't declare a port per possible
-  // uniform; instead the card routes each generic cv port to an addressed param
-  // via node.data.cvRoutes, and setParam (below) resolves + RE-SCALES the value
-  // to that param's range. Each port carries a neutral cvScale:{mode:'linear'}
-  // hint but NO paramTarget — so the cv-bridge degrades to RAW passthrough
-  // (buildCvBridgeMapping can't resolve a param named 'cvN') and hands setParam
-  // the raw ±1 sample; TOYBOX does the per-target range scaling itself.
+  schemaVersion: 2,
+  migrate: migrateToyboxData,
+  // A FIXED pool of 6 generic modulation input ports (the Structure-style
+  // section). A layer's shader (and its uniforms) is chosen at runtime, so we
+  // can't declare a port per possible uniform; instead the card routes each
+  // port to an addressed param via node.data.cvRoutes (with a per-input SCALE +
+  // OFFSET), and setParam (below) resolves + applies effectiveCvValue.
+  //
+  // Each port is typed `cv` but ACCEPTS BOTH cv AND audio sources: canConnect
+  // permits audio→cv, and the audio engine's cross-domain dispatch sends an
+  // audio-sourceType edge through the SAME sample-and-hold cv-bridge — which
+  // auto-detects the source kind and envelope-follows audio. The neutral
+  // cvScale:{mode:'linear'} hint + NO paramTarget keep the bridge in RAW
+  // passthrough (it hands setParam the raw signal); TOYBOX shapes it itself.
   inputs: CV_PORT_IDS.map((id) => ({
     id,
-    type: 'cv' as const,
+    // `modsignal` accepts cv, gate, OR audio (canConnect scopes audio→non-audio
+    // to this type only). The port IDs stay cv1..cv6 (so isCvPortId / setParam /
+    // presets / cvRoutes are untouched); only the cable TYPE widens.
+    type: 'modsignal' as const,
     cvScale: { mode: 'linear' as const },
   })),
   outputs: [
@@ -561,48 +605,168 @@ export const toyboxDef: VideoModuleDef = {
       return raw && typeof raw === 'object' ? raw : {};
     }
 
+    /** The live per-input scale/offset map (cvInputs). Absent → all defaults
+     *  (scale +1, offset 0 → a fresh cable modulates immediately). */
+    function liveCvInputs(): CvInputs {
+      const live = livePatch.nodes[node.id];
+      const raw =
+        (live?.data?.cvInputs as CvInputs | undefined) ??
+        (node.data?.cvInputs as CvInputs | undefined);
+      return raw && typeof raw === 'object' ? raw : {};
+    }
+
     function frozenTime(): number | null {
       const g = globalThis as unknown as { __toyboxFreezeTime?: number | null };
       return typeof g.__toyboxFreezeTime === 'number' ? g.__toyboxFreezeTime : null;
     }
 
-    // ---- PHASE 5: per-port CV base (modulation centre) snapshot ----
+    // ---- Per-input modulation state (drives the always-on inline scopes) ----
     //
-    // The cv-bridge writes setParam(cvN, raw) every frame with the raw ±1
-    // sample. We re-scale that across the routed param's range CENTRED on the
-    // param's CURRENT value — but if we centred on the live (already-CV-written)
-    // value each frame it would drift away unboundedly. So, mirroring the audio
-    // cv-bridge's bake-once-at-attach semantics, we SNAPSHOT the param's value
-    // as the modulation centre the first time a (port → target/param) routing is
-    // seen, and re-snapshot only when that routing CHANGES (different target,
-    // param, or no route). The signature captures the routing identity.
-    const cvBase = new Map<string, { sig: string; base: number }>();
+    // setParam(cvN, signal) lands here each frame via the cross-domain bridge
+    // (the bridge folds nothing — cv/gate arrive as the raw ±1/0..1 sample,
+    // audio arrives already-0..1 from followEnvelope; we detect which by the
+    // inbound edge's sourceType). We DON'T snapshot a modulation centre anymore:
+    // the value written = effectiveCvValue(unipolarSignal, scale, offset, min,
+    // max), a pure function of the live signal + the input's scale/offset, so
+    // there is no drift to defend against (the cvBase snapshot is gone).
+    const SCOPE_WAVE_LEN = 64;
+    interface InputRuntime {
+      /** Latest unipolar 0..1 signal (folded cv / audio envelope / 0). */
+      signal: number;
+      /** Latest audio time-domain window (−1..+1), only for audio sources. */
+      wave: Float32Array | null;
+    }
+    const inputRuntime = new Map<string, InputRuntime>();
+    function runtimeFor(portId: string): InputRuntime {
+      let r = inputRuntime.get(portId);
+      if (!r) { r = { signal: 0, wave: null }; inputRuntime.set(portId, r); }
+      return r;
+    }
 
-    /** Apply a raw cv sample arriving on generic port `portId`: resolve its
-     *  route against the LIVE layers/combine, re-scale across the target param's
-     *  range (centred on the snapshot base), and write it into the live param. */
-    function applyCvRoute(portId: string, raw: number): void {
-      const routes = liveCvRoutes();
-      const route = routes[portId] as CvRouteTarget | null | undefined;
-      if (!route) {
-        // Unrouted → drop any stale base snapshot + ignore (no-op).
-        cvBase.delete(portId);
-        return;
+    /** The inbound edge driving `portId` (a cable into this TOYBOX node's port),
+     *  or undefined when unpatched. Read off the LIVE patch each call (the card
+     *  draws/redraws cables off the same store). */
+    function inboundEdge(portId: string): { sourceType?: string } | undefined {
+      const edges = livePatch.edges;
+      if (!edges) return undefined;
+      for (const id of Object.keys(edges)) {
+        const e = edges[id];
+        if (e && e.target?.nodeId === node.id && e.target?.portId === portId) return e;
       }
+      return undefined;
+    }
+
+    /** The auto-detected source kind for a port (from the inbound edge's
+     *  sourceType), or 'idle' when no cable is patched. */
+    function kindFor(portId: string): ToyboxScopeState['kind'] {
+      const e = inboundEdge(portId);
+      const st = e?.sourceType;
+      if (st === 'audio') return 'audio';
+      if (st === 'gate') return 'gate';
+      if (st === 'cv' || st === 'pitch') return 'cv';
+      return 'idle';
+    }
+
+    /**
+     * Apply a signal arriving on generic port `portId` via the cv-bridge: fold
+     * it to the unipolar 0..1 convention (cv/gate fold, audio is already 0..1),
+     * resolve the route against the LIVE layers/combine, then write
+     * effectiveCvValue(signal, scale, offset, min, max). A no-op (but still
+     * records the signal for the scope) when unrouted/unresolvable.
+     */
+    function applyCvRoute(portId: string, raw: number): void {
+      const kind = kindFor(portId);
+      // audio → already a 0..1 envelope; cv/gate (and idle 'idle' samples) fold.
+      const signal = kind === 'audio' ? Math.max(0, Math.min(1, raw)) : foldCvToUnipolar(raw);
+      runtimeFor(portId).signal = signal;
+      const route = liveCvRoutes()[portId] as CvRouteTarget | null | undefined;
+      if (!route) return; // unrouted: the signal is recorded for the scope only
+      const resolved = resolveRoute(route, liveLayers(), liveCombineRaw());
+      if (!resolved) return;
+      const { scale, offset } = getCvInput(liveCvInputs(), portId);
+      resolved.apply(effectiveCvValue(signal, scale, offset, resolved.min, resolved.max));
+    }
+
+    /**
+     * Record the latest audio time-domain window for a port (for the scope's
+     * raw-waveform overlay). Called by the engine's audio cv-bridge only; cv/gate
+     * bridges never call it (the runtime.wave stays null → no overlay).
+     */
+    function setParamWave(portId: string, window: Float32Array): void {
+      if (!isCvPortId(portId)) return;
+      const r = runtimeFor(portId);
+      // Downsample into a fixed-length ring so the card draws a stable width.
+      let buf = r.wave;
+      if (!buf || buf.length !== SCOPE_WAVE_LEN) buf = new Float32Array(SCOPE_WAVE_LEN);
+      const step = window.length > 0 ? window.length / SCOPE_WAVE_LEN : 0;
+      for (let i = 0; i < SCOPE_WAVE_LEN; i++) {
+        buf[i] = window[Math.min(window.length - 1, Math.floor(i * step))] ?? 0;
+      }
+      r.wave = buf;
+    }
+
+    /**
+     * For every ROUTED port that has NO inbound cable, write the OFFSET-as-manual
+     * value (signal 0) into its param: min + clamp01(offset)*(max-min). When a
+     * cable IS patched the bridge's setParam owns the write, so we skip it (and
+     * also clear any stale audio wave). Called at the TOP of surface.draw.
+     */
+    function applyUnpatchedOffsets(): void {
+      const routes = liveCvRoutes();
+      const inputs = liveCvInputs();
+      for (const portId of CV_PORT_IDS) {
+        const route = routes[portId] as CvRouteTarget | null | undefined;
+        const patched = !!inboundEdge(portId);
+        if (patched) continue; // the cv-bridge owns the write this frame
+        // No cable: keep the scope/runtime in the "idle, signal 0" state so the
+        // scope shows the OFFSET level, and clear any leftover audio wave.
+        const r = runtimeFor(portId);
+        r.signal = 0;
+        r.wave = null;
+        if (!route) continue;
+        // OFFSET-as-manual is OPT-IN: only take over the param when the user has
+        // dialed an explicit cvInputs entry for this port. Until then a routed-
+        // but-unpatched port leaves the param at its AUTHORED value (so a preset
+        // that routes a port without setting scale/offset keeps its seeded combine
+        // /layer value, instead of being forced to OFFSET-default 0 = param min).
+        const entry = inputs[portId];
+        if (!entry || typeof entry !== 'object') continue;
+        const resolved = resolveRoute(route, liveLayers(), liveCombineRaw());
+        if (!resolved) continue;
+        const { scale, offset } = getCvInput(inputs, portId);
+        // signal 0 → norm = clamp01(offset); scale only matters for a live signal.
+        resolved.apply(effectiveCvValue(0, scale, offset, resolved.min, resolved.max));
+      }
+    }
+
+    /** Build the batched cvScope snapshot the card reads ONCE per rAF. Each
+     *  port: effective = the post scale+offset value mapped into the param's
+     *  [min,max] (or the raw norm over 0..1 when unrouted), kind, and the audio
+     *  wave overlay when present. */
+    function readCvScope(): ToyboxScopeSnapshot {
+      const routes = liveCvRoutes();
+      const inputs = liveCvInputs();
       const layers = liveLayers();
       const combine = liveCombineRaw();
-      const resolved = resolveRoute(route, layers, combine);
-      if (!resolved) {
-        cvBase.delete(portId);
-        return;
+      const out: ToyboxScopeSnapshot = {};
+      for (const portId of CV_PORT_IDS) {
+        const r = runtimeFor(portId);
+        const { scale, offset } = getCvInput(inputs, portId);
+        const route = routes[portId] as CvRouteTarget | null | undefined;
+        const resolved = route ? resolveRoute(route, layers, combine) : null;
+        const min = resolved?.min ?? 0;
+        const max = resolved?.max ?? 1;
+        const effective = effectiveCvValue(r.signal, scale, offset, min, max);
+        const kind = kindFor(portId);
+        out[portId] = {
+          effective,
+          min,
+          max,
+          kind,
+          ...(kind === 'audio' && r.wave ? { wave: r.wave } : {}),
+        };
       }
-      // Snapshot / refresh the modulation centre when the routing identity
-      // changes (so the sweep re-centres on the user's knob after a re-route).
-      const sig = `${route.target}|${route.layer ?? ''}|${route.nodeId ?? ''}|${route.param}`;
-      const prev = cvBase.get(portId);
-      const base = prev && prev.sig === sig ? prev.base : resolved.current;
-      if (!prev || prev.sig !== sig) cvBase.set(portId, { sig, base });
-      resolved.apply(scaleRoutedValue(raw, base, resolved.min, resolved.max));
+      return out;
     }
 
     // ---- Fixed camera (perspective) for the OBJ pass. Looks down -Z at the
@@ -976,6 +1140,12 @@ export const toyboxDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
         const time = frozenTime() ?? frame.time;
+        // OFFSET-as-manual: for any ROUTED port with no inbound cable, write the
+        // OFFSET value (signal 0) so the param tracks the OFFSET knob even with
+        // no modulator. A patched port is owned by the cv-bridge's setParam, so
+        // applyUnpatchedOffsets skips it. (When VRT-frozen, __toyboxFreeze owns
+        // the scope state + params, so we leave them pinned.)
+        if (frozenTime() === null) applyUnpatchedOffsets();
         const layers = liveLayers();
 
         // 1) Render every layer into its own FBO. The SEQUENCE follows a
@@ -1046,22 +1216,52 @@ export const toyboxDef: VideoModuleDef = {
       domain: 'video',
       surface,
       setParam(portId, value) {
-        // PHASE 5: a generic cv pool port (cv1..cv8) → resolve its route +
-        // re-scale into the addressed live layer/combine param. Any other
-        // portId is ignored (TOYBOX has no numeric engine params — content /
-        // material / combine all live in node.data).
+        // A generic modulation input (cv1..cv6) → fold the signal, resolve its
+        // route + apply the per-input scale/offset into the addressed live
+        // layer/combine param. Any other portId is ignored (TOYBOX has no
+        // numeric engine params — content / material / combine all live in
+        // node.data).
         if (isCvPortId(portId)) applyCvRoute(portId, value);
       },
+      // The engine's AUDIO cv-bridge hands us the latest time-domain window for
+      // a modulation input so the card's scope can draw a raw-waveform overlay
+      // (cv/gate bridges never call this). Stored per port; surfaced via
+      // read('cvScope').wave.
+      setParamWave,
       readParam() { return undefined; },
       read(key) {
         if (key === 'fboTexture') return surface.texture;
         if (key === 'extras') return extras;
+        // The batched per-input modulation snapshot the card reads ONCE per rAF
+        // to drive all 6 always-on inline scopes (effective/min/max/kind/wave).
+        if (key === 'cvScope') return readCvScope();
         return undefined;
       },
       dispose() { surface.dispose(); },
     };
   },
 };
+
+/**
+ * Migrate saved TOYBOX data forward (schemaVersion 1 → 2). v1 declared 8 generic
+ * input ports (cv1..cv8); v2 reduced the pool to 6. A saved patch may carry
+ * cvRoutes for the now-dropped cv7/cv8 — strip them so they don't linger (their
+ * setParam writes are already harmless no-ops, but a dangling route would show
+ * nothing in the 6-row UI). Edges wired to cv7/cv8 are tolerated by the engine
+ * (setParam to an unknown port no-ops); we don't rewrite them (there's no
+ * sensible remap target), so they simply stop doing anything. Pure: returns the
+ * (possibly mutated) data object.
+ */
+export function migrateToyboxData(data: unknown, fromVersion: number): unknown {
+  if (fromVersion >= 2 || !data || typeof data !== 'object') return data;
+  const d = data as { cvRoutes?: Record<string, unknown> };
+  if (d.cvRoutes && typeof d.cvRoutes === 'object') {
+    for (const key of Object.keys(d.cvRoutes)) {
+      if (!isCvPortId(key)) delete d.cvRoutes[key]; // drops cv7 / cv8 / anything stale
+    }
+  }
+  return data;
+}
 
 // ---------------- GLSL program compile helpers (raw, not the fullscreen
 //                  fragment path — the OBJ pass needs its own vertex shader) -

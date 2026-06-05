@@ -1,12 +1,13 @@
 // packages/web/src/lib/video/toybox-cv-routes.test.ts
 //
-// TOYBOX Phase 5 — CV routing + re-scaling coverage (PURE helpers). Proves the
-// three demonstrated assignment setups resolve + re-scale correctly:
+// TOYBOX — CV routing + scale/offset coverage (PURE helpers). Proves the
+// three demonstrated assignment setups resolve + map correctly:
 //   (a) cv → a SHADER param   (layer 0 content uniform),
 //   (b) cv → a COMBINE param  (a fade op node's amount/t),
 //   (c) cv → an OBJ param     (a layer's material spin/tint),
-// plus range re-scaling correctness (±1 sweeps the param's full range, centred
-// on the knob) and the no-route no-op.
+// plus the per-input attenuverter/offset map (signal 0..1 × scale + offset →
+// param range, via effectiveCvValue), getCvInput defaults, and the no-route
+// no-op. (The pure attenuverter math itself is covered in toybox-cv-math.test.)
 //
 // Shader-uniform routes need the content catalog (getContentMeta), which reads
 // the static manifest. We mock global fetch with the real manifest fixture +
@@ -18,7 +19,10 @@ import {
   CV_PORT_COUNT,
   isCvPortId,
   resolveRoute,
-  scaleRoutedValue,
+  getCvInput,
+  effectiveCvValue,
+  DEFAULT_INPUT_SCALE,
+  DEFAULT_INPUT_OFFSET,
   listCvTargets,
   listCvParams,
   encodeTargetValue,
@@ -26,7 +30,6 @@ import {
   MATERIAL_PARAMS,
   type CvRouteTarget,
 } from './toybox-cv-routes';
-import { scaleCv } from '$lib/audio/cv-scale';
 import { ensureToyboxCatalog, type ToyboxLayer } from './toybox-content';
 import { makeDefaultCombineGraph, type ToyboxCombineGraph } from './toybox-combine-graph';
 
@@ -84,15 +87,35 @@ function offLayer(): ToyboxLayer {
 
 describe('CV pool port ids', () => {
   it('declares exactly CV_PORT_COUNT generic ports cv1..cvN', () => {
-    expect(CV_PORT_COUNT).toBe(8);
-    expect(CV_PORT_IDS).toEqual(['cv1', 'cv2', 'cv3', 'cv4', 'cv5', 'cv6', 'cv7', 'cv8']);
+    expect(CV_PORT_COUNT).toBe(6);
+    expect(CV_PORT_IDS).toEqual(['cv1', 'cv2', 'cv3', 'cv4', 'cv5', 'cv6']);
   });
   it('isCvPortId recognises pool ports + rejects others', () => {
     expect(isCvPortId('cv1')).toBe(true);
-    expect(isCvPortId('cv8')).toBe(true);
+    expect(isCvPortId('cv6')).toBe(true);
+    expect(isCvPortId('cv7')).toBe(false); // pool shrank 8→6
+    expect(isCvPortId('cv8')).toBe(false);
     expect(isCvPortId('cv9')).toBe(false);
     expect(isCvPortId('speed')).toBe(false);
     expect(isCvPortId('out')).toBe(false);
+  });
+});
+
+describe('getCvInput (per-input scale/offset defaults)', () => {
+  it('defaults to full-passthrough (scale +1, offset 0) when absent', () => {
+    expect(getCvInput(undefined, 'cv1')).toEqual({ scale: 1, offset: 0 });
+    expect(getCvInput({}, 'cv1')).toEqual({ scale: 1, offset: 0 });
+    expect(DEFAULT_INPUT_SCALE).toBe(1);
+    expect(DEFAULT_INPUT_OFFSET).toBe(0);
+  });
+  it('reads a stored scale/offset and fills only the missing field', () => {
+    expect(getCvInput({ cv2: { scale: -0.5, offset: 0.3 } }, 'cv2')).toEqual({
+      scale: -0.5,
+      offset: 0.3,
+    });
+    // partial / non-finite fields fall back to the default per field.
+    expect(getCvInput({ cv3: { scale: 0.4 } as never }, 'cv3')).toEqual({ scale: 0.4, offset: 0 });
+    expect(getCvInput({ cv4: { scale: NaN, offset: 0.9 } }, 'cv4')).toEqual({ scale: 1, offset: 0.9 });
   });
 });
 
@@ -151,19 +174,22 @@ describe('listCvParams', () => {
   });
 });
 
-describe('scaleRoutedValue (range re-scaling)', () => {
-  it('matches scaleCv linear: ±1 sweeps the full range centred on the knob', () => {
-    // knob at the centre of a 0..3 range = 1.5; +1 → max (3), -1 → min (0).
-    expect(scaleRoutedValue(1, 1.5, 0, 3)).toBeCloseTo(3, 6);
-    expect(scaleRoutedValue(-1, 1.5, 0, 3)).toBeCloseTo(0, 6);
-    expect(scaleRoutedValue(0, 1.5, 0, 3)).toBeCloseTo(1.5, 6);
-    // Identical to the canonical helper the cv-bridge uses.
-    expect(scaleRoutedValue(0.5, 1.5, 0, 3)).toBeCloseTo(scaleCv(0.5, 1.5, 0, 3, { mode: 'linear' }), 6);
+describe('effectiveCvValue (signal × scale + offset → param range)', () => {
+  it('full passthrough (scale +1, offset 0): unipolar 0..1 sweeps the full range', () => {
+    expect(effectiveCvValue(0, 1, 0, 0, 3)).toBeCloseTo(0, 6);
+    expect(effectiveCvValue(1, 1, 0, 0, 3)).toBeCloseTo(3, 6);
+    expect(effectiveCvValue(0.5, 1, 0, 0, 3)).toBeCloseTo(1.5, 6);
+  });
+  it('offset 0.5 with no signal parks the param at its midpoint', () => {
+    expect(effectiveCvValue(0, 1, 0.5, 0, 3)).toBeCloseTo(1.5, 6);
+  });
+  it('scale 0 = off (param parks at offset); negative scale inverts', () => {
+    expect(effectiveCvValue(1, 0, 0.25, 0, 3)).toBeCloseTo(0.75, 6); // signal ignored
+    expect(effectiveCvValue(1, -1, 1, 0, 3)).toBeCloseTo(0, 6); // invert from the top
   });
   it('clamps beyond the natural range', () => {
-    // knob already at max + positive cv → clamps at max.
-    expect(scaleRoutedValue(1, 3, 0, 3)).toBeCloseTo(3, 6);
-    expect(scaleRoutedValue(-1, 0, 0, 3)).toBeCloseTo(0, 6);
+    expect(effectiveCvValue(1, 1, 0.9, 0, 3)).toBeCloseTo(3, 6);
+    expect(effectiveCvValue(0, 1, -0.5, 0, 3)).toBeCloseTo(0, 6);
   });
 });
 
@@ -176,8 +202,8 @@ describe('resolveRoute (a) cv → SHADER param', () => {
     expect(r!.min).toBe(0);
     expect(r!.max).toBe(3);
     expect(r!.current).toBe(1.5);
-    // +1 cv centred on the current (1.5) → max (3); written into the live params.
-    r!.apply(scaleRoutedValue(1, r!.current, r!.min, r!.max));
+    // full-scale unipolar signal (1) at default scale/offset → max (3).
+    r!.apply(effectiveCvValue(1, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, r!.min, r!.max));
     expect(layers[0]!.params!.speed).toBeCloseTo(3, 6);
   });
   it('uses the manifest default as the centre when the param is unset', () => {
@@ -197,12 +223,12 @@ describe('resolveRoute (b) cv → COMBINE param', () => {
     expect(r).not.toBeNull();
     expect(r!.min).toBe(0);
     expect(r!.max).toBe(1);
-    // current = 0; +1 cv centred on 0 → halfSpan above (0.5).
-    r!.apply(scaleRoutedValue(1, r!.current, r!.min, r!.max));
+    // half-scale signal at default scale/offset → range midpoint (0.5).
+    r!.apply(effectiveCvValue(0.5, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, r!.min, r!.max));
     expect(op.params!.amount).toBeCloseTo(0.5, 6);
-    // A fresh +1 from a knob re-centred at 0.5 reaches max (1).
+    // full-scale signal → max (1) regardless of the prior write (no drift).
     const r2 = resolveRoute(route, undefined, combine);
-    r2!.apply(scaleRoutedValue(1, r2!.current, r2!.min, r2!.max));
+    r2!.apply(effectiveCvValue(1, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, r2!.min, r2!.max));
     expect(op.params!.amount).toBeCloseTo(1, 6);
   });
 });
@@ -216,8 +242,8 @@ describe('resolveRoute (c) cv → OBJ param', () => {
     expect(r!.min).toBe(0);
     expect(r!.max).toBe(3);
     expect(r!.current).toBe(0);
-    // +1 cv centred on 0 → halfSpan above (1.5).
-    r!.apply(scaleRoutedValue(1, r!.current, r!.min, r!.max));
+    // half-scale signal → range midpoint (1.5).
+    r!.apply(effectiveCvValue(0.5, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, r!.min, r!.max));
     expect((layers[2]!.material as unknown as Record<string, number>).spin).toBeCloseTo(1.5, 6);
   });
   it('routes a material tint field across its 0..1 range', () => {
@@ -225,7 +251,7 @@ describe('resolveRoute (c) cv → OBJ param', () => {
     const r = resolveRoute({ target: 'layer', layer: 0, param: 'material:tintR' }, layers, undefined);
     expect(r!.min).toBe(0);
     expect(r!.max).toBe(1);
-    r!.apply(scaleRoutedValue(1, r!.current, r!.min, r!.max));
+    r!.apply(effectiveCvValue(1, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, r!.min, r!.max));
     expect((layers[0]!.material as unknown as Record<string, number>).tintR).toBeCloseTo(1, 6);
   });
 });
