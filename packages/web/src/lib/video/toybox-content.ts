@@ -443,6 +443,20 @@ export interface ToyboxVideoMeta {
   name: string | null;
 }
 
+/** Where a VIDEO-kind layer gets its texture:
+ *   - 'inA' / 'inB': a PATCHED FEED off the TOYBOX node's video input port of
+ *           the same id (frame.getInputTexture) — a live source patched in from
+ *           the rack (e.g. ACIDWARP / CAMERA / another module's video out). The
+ *           cable provides the feed; no local file needed.
+ *   - 'file': a local-file <video> player (VIDEOBOX-style: the card owns the
+ *           element + object-URL; only the filename rides the Y.Doc). The #603
+ *           default behaviour.
+ *   - 'camera': the device webcam streamed into the same card-owned <video>
+ *           (getUserMedia → srcObject), pumped through the same uploader.
+ *  Absent → treated as 'file' (the #603 default, so existing video layers are
+ *  unchanged). */
+export type ToyboxVideoSource = 'inA' | 'inB' | 'file' | 'camera';
+
 /** What a single TOYBOX layer holds. The array is sized to LAYER_COUNT; each
  *  layer renders into its own FBO and the combine DAG reduces them to the
  *  output. */
@@ -463,6 +477,10 @@ export interface ToyboxLayer {
   imageName?: string | null;
   /** VIDEO layer: local-file metadata (filename). The bytes are not synced. */
   videoMeta?: ToyboxVideoMeta;
+  /** VIDEO layer: where the texture comes from — a patched feed ('inA'/'inB'),
+   *  a local file ('file'), or the webcam ('camera'). Absent → 'file' (the #603
+   *  default, so saved video layers keep their behaviour). */
+  videoSource?: ToyboxVideoSource;
   /** SHADERTOY multi-buffer project (a 'gen' or 'frag' layer can host one):
    *  Common + N buffer passes + an Image pass with iChannelN wiring. When
    *  present the factory renders the project's pass chain (own FBOs, ping-pong

@@ -54,6 +54,7 @@
     type ToyboxObjMaterial,
     type ToyboxPreset,
     type ToyboxSurfaceMode,
+    type ToyboxVideoSource,
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
   import {
@@ -126,7 +127,15 @@
     setLayerMaterialField,
     setLayerImage as setLayerImageData,
     setLayerVideoName,
+    setLayerVideoSource,
   } from '$lib/graph/toybox-layers';
+
+  // The two VIDEO input ports (handles on the card's left edge). Ids match the
+  // def's inA/inB; the label is the human-facing VID A / VID B.
+  const VIDEO_IN_PORTS: ReadonlyArray<{ id: 'inA' | 'inB'; label: string }> = [
+    { id: 'inA', label: 'VID A' },
+    { id: 'inB', label: 'VID B' },
+  ];
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -362,6 +371,26 @@
   let currentVideoName = $derived.by<string | null>(
     () => readLiveLayers()?.[activeLayer]?.videoMeta?.name ?? null,
   );
+  // The active layer's VIDEO source ('inA'|'inB'|'file'|'camera'). Absent →
+  // 'file' (the #603 default, so existing video layers read unchanged).
+  let currentVideoSource = $derived.by<ToyboxVideoSource>(
+    () => readLiveLayers()?.[activeLayer]?.videoSource ?? 'file',
+  );
+
+  /** Change the active VIDEO layer's source. Selecting a patched feed
+   *  ('inA'/'inB') tears down any local <video>/webcam for the layer so we
+   *  don't hold a camera/decoder open while the feed comes off the cable. */
+  function onVideoSourceChange(ev: Event): void {
+    const next = (ev.target as HTMLSelectElement).value as ToyboxVideoSource;
+    const i = activeLayer;
+    setLayerVideoSource(id, i, next);
+    bumpRev();
+    if (next === 'inA' || next === 'inB') {
+      releaseVideoLayer(i);
+    } else if (next === 'camera') {
+      void startCamera(i);
+    }
+  }
 
   // ---- IMAGE: decode persisted bytes → upload into the engine per layer ----
   //
@@ -448,7 +477,22 @@
   // autoplaying so the layer animates. Only the filename rides the Y.Doc.
   const videoEls = new Map<number, HTMLVideoElement>();
   const videoUrls = new Map<number, string>();
+  // Webcam MediaStreams per layer (source='camera') — stopped on swap/destroy.
+  const videoStreams = new Map<number, MediaStream>();
   let videoAttachTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Get (or create) layer `i`'s card-owned <video> element. */
+  function ensureVideoEl(i: number): HTMLVideoElement {
+    let el = videoEls.get(i);
+    if (!el) {
+      el = document.createElement('video');
+      el.muted = true;
+      el.loop = true;
+      el.playsInline = true;
+      videoEls.set(i, el);
+    }
+    return el;
+  }
 
   /** Attach layer `i`'s card-owned <video> element to the engine (retry until
    *  the engine node exists). */
@@ -459,6 +503,56 @@
     if (extras) { extras.attachLayerVideo(i, el); return; }
     if (attempt >= 50) return;
     videoAttachTimer = setTimeout(() => ensureVideoAttached(i, attempt + 1), 100);
+  }
+
+  /** Tear down layer `i`'s LOCAL video source (file object-URL OR webcam
+   *  stream) + detach it from the engine. Used when a layer switches to a
+   *  PATCHED feed (inA/inB) — the cable provides the texture, so we shouldn't
+   *  keep a decoder/camera open — and on destroy. */
+  function releaseVideoLayer(i: number): void {
+    const stream = videoStreams.get(i);
+    if (stream) {
+      for (const t of stream.getTracks()) { try { t.stop(); } catch { /* */ } }
+      videoStreams.delete(i);
+    }
+    const url = videoUrls.get(i);
+    if (url) { try { URL.revokeObjectURL(url); } catch { /* */ } videoUrls.delete(i); }
+    const el = videoEls.get(i);
+    if (el) {
+      try { el.pause(); } catch { /* */ }
+      try { el.srcObject = null; } catch { /* */ }
+      try { el.removeAttribute('src'); el.load(); } catch { /* */ }
+    }
+    try { getExtras()?.attachLayerVideo(i, null); } catch { /* */ }
+  }
+
+  /** Start the device webcam into layer `i`'s card-owned <video> (source=
+   *  'camera'). The stream feeds the SAME per-layer uploader as the file path.
+   *  NOTE: the dedicated CAMERA module also uses getUserMedia; a browser allows
+   *  only so many concurrent captures, so this can fail with NotReadableError
+   *  if a camera is already in use elsewhere — surfaced as inputError. */
+  async function startCamera(i: number): Promise<void> {
+    inputError = null;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      inputError = 'Browser does not support camera capture';
+      return;
+    }
+    // Free any prior local source for this layer first.
+    const prevUrl = videoUrls.get(i);
+    if (prevUrl) { try { URL.revokeObjectURL(prevUrl); } catch { /* */ } videoUrls.delete(i); }
+    const prevStream = videoStreams.get(i);
+    if (prevStream) { for (const t of prevStream.getTracks()) { try { t.stop(); } catch { /* */ } } }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      videoStreams.set(i, stream);
+      const el = ensureVideoEl(i);
+      el.removeAttribute('src');
+      el.srcObject = stream;
+      try { await el.play(); } catch { /* a user gesture (the select change) should permit it */ }
+      ensureVideoAttached(i);
+    } catch (err) {
+      inputError = err instanceof Error ? err.message : String(err);
+    }
   }
 
   async function onVideoFileChange(ev: Event): Promise<void> {
@@ -472,24 +566,26 @@
       return;
     }
     const layerIdx = activeLayer;
-    // Free a prior object URL for this layer.
+    // Free a prior object URL for this layer + stop any webcam stream (a file
+    // pick implies source='file', overriding a prior camera capture).
     const prevUrl = videoUrls.get(layerIdx);
     if (prevUrl) { try { URL.revokeObjectURL(prevUrl); } catch { /* */ } }
+    const prevStream = videoStreams.get(layerIdx);
+    if (prevStream) {
+      for (const t of prevStream.getTracks()) { try { t.stop(); } catch { /* */ } }
+      videoStreams.delete(layerIdx);
+    }
     const url = URL.createObjectURL(file);
     videoUrls.set(layerIdx, url);
     // Reuse (or create) a card-owned <video> for this layer.
-    let el = videoEls.get(layerIdx);
-    if (!el) {
-      el = document.createElement('video');
-      el.muted = true;
-      el.loop = true;
-      el.playsInline = true;
-      videoEls.set(layerIdx, el);
-    }
+    const el = ensureVideoEl(layerIdx);
+    el.srcObject = null;
     el.src = url;
     try { await el.play(); } catch { /* autoplay may be blocked until a gesture; the picker click IS one */ }
     ensureVideoAttached(layerIdx);
-    // Only the filename rides the Y.Doc (bytes stay local, VIDEOBOX-style).
+    // Picking a file selects the 'file' source + persists the filename (bytes
+    // stay local, VIDEOBOX-style; only the name rides the Y.Doc).
+    setLayerVideoSource(id, layerIdx, 'file');
     setLayerVideoName(id, layerIdx, file.name);
     bumpRev();
     try { input.value = ''; } catch { /* */ }
@@ -1348,11 +1444,16 @@
     const extras = getExtras();
     for (const [i, el] of videoEls) {
       try { extras?.attachLayerVideo(i, null); } catch { /* */ }
-      try { el.pause(); el.removeAttribute('src'); el.load(); } catch { /* */ }
+      try { el.pause(); el.srcObject = null; el.removeAttribute('src'); el.load(); } catch { /* */ }
     }
     for (const url of videoUrls.values()) { try { URL.revokeObjectURL(url); } catch { /* */ } }
+    // Stop any live webcam capture (source='camera') so the camera light goes off.
+    for (const stream of videoStreams.values()) {
+      for (const t of stream.getTracks()) { try { t.stop(); } catch { /* */ } }
+    }
     videoEls.clear();
     videoUrls.clear();
+    videoStreams.clear();
   });
 </script>
 
@@ -1381,6 +1482,20 @@
       style={`top: ${44 + i * 22}px; --handle-color: var(--cable-cv);`}
     />
     <span class="port-label left" style={`top: ${38 + i * 22}px;`}>IN{i + 1}</span>
+  {/each}
+
+  <!-- Two VIDEO input ports (ids inA / inB; LABELLED VID A / VID B). A patched
+       feed (e.g. ACIDWARP / CAMERA / another module's video out) reaches a
+       VIDEO-kind layer that selects 'In A'/'In B' as its source. Stacked below
+       the 6 cv ports; the video cable colour distinguishes them. -->
+  {#each VIDEO_IN_PORTS as vp, i (vp.id)}
+    <Handle
+      type="target"
+      position={Position.Left}
+      id={vp.id}
+      style={`top: ${44 + (CV_PORT_IDS.length + i) * 22 + 8}px; --handle-color: var(--cable-video);`}
+    />
+    <span class="port-label left" style={`top: ${38 + (CV_PORT_IDS.length + i) * 22 + 8}px;`}>{vp.label}</span>
   {/each}
 
   <!-- 3-COLUMN BODY: LEFT = preview + layer editor, CENTER = combine graph,
@@ -1657,22 +1772,57 @@
       {/if}
     </div>
   {:else if currentKind === 'video'}
-    <!-- VIDEO layer: file picker (VIDEOBOX-style). The element is card-owned +
-         LOCAL (bytes not synced); only the filename rides the Y.Doc. -->
+    <!-- VIDEO layer. The SOURCE selector picks where the texture comes from:
+         In A / In B = a PATCHED FEED off the inA/inB video input ports (the
+         cable provides it — no local file); File = a card-owned local <video>
+         (VIDEOBOX-style; only the filename rides the Y.Doc); Camera = the
+         device webcam streamed into the same per-layer uploader. -->
     <div class="input-picker" data-testid="toybox-video-picker">
-      <label class="pick-btn">
-        <input
-          type="file"
-          accept="video/*"
-          data-testid="toybox-video-input"
-          onchange={onVideoFileChange}
-        />
-        <span>Choose video…</span>
-      </label>
-      {#if currentVideoName}
-        <div class="filename" title={currentVideoName} data-testid="toybox-video-filename">{currentVideoName}</div>
-        <div class="sync-hint" data-testid="toybox-video-local">local file (not synced)</div>
+      <div class="content-row">
+        <label class="content-label" for={`toybox-video-source-${id}`}>SOURCE</label>
+        <select
+          id={`toybox-video-source-${id}`}
+          class="content-select"
+          data-testid="toybox-video-source-select"
+          value={currentVideoSource}
+          onchange={onVideoSourceChange}
+        >
+          <option value="inA">In A</option>
+          <option value="inB">In B</option>
+          <option value="file">File</option>
+          <option value="camera">Camera</option>
+        </select>
+      </div>
+
+      {#if currentVideoSource === 'file'}
+        <label class="pick-btn">
+          <input
+            type="file"
+            accept="video/*"
+            data-testid="toybox-video-input"
+            onchange={onVideoFileChange}
+          />
+          <span>Choose video…</span>
+        </label>
+        {#if currentVideoName}
+          <div class="filename" title={currentVideoName} data-testid="toybox-video-filename">{currentVideoName}</div>
+          <div class="sync-hint" data-testid="toybox-video-local">local file (not synced)</div>
+        {/if}
+      {:else if currentVideoSource === 'camera'}
+        <button
+          type="button"
+          class="pick-btn cam-btn"
+          data-testid="toybox-video-camera"
+          onclick={() => startCamera(activeLayer)}
+        >Start camera</button>
+        <div class="sync-hint" data-testid="toybox-video-camera-hint">webcam (local, not synced)</div>
+      {:else}
+        <!-- In A / In B: the patch cable provides the feed; nothing to pick. -->
+        <div class="sync-hint" data-testid="toybox-video-patched">
+          patched feed — wire a video source into {currentVideoSource === 'inA' ? 'VID A' : 'VID B'}
+        </div>
       {/if}
+
       {#if inputError}
         <div class="input-error" data-testid="toybox-input-error">{inputError}</div>
       {/if}
@@ -2147,6 +2297,9 @@
   }
   .pick-btn:hover { filter: brightness(1.1); }
   .pick-btn input { display: none; }
+  /* The camera affordance reuses .pick-btn but is a real <button>; reset its
+     native chrome so it matches the file label. */
+  .cam-btn { border: none; margin-top: 6px; }
   .input-picker .filename {
     margin-top: 6px;
     font-size: 0.58rem;

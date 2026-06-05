@@ -28,6 +28,7 @@ import {
   setLayerMaterialField,
   setLayerImage,
   setLayerVideoName,
+  setLayerVideoSource,
 } from './toybox-layers';
 import {
   DEFAULT_CONTENT_ID,
@@ -290,6 +291,44 @@ describe('image / video input layer kinds (#39)', () => {
     expect(layers()[2]!.videoMeta!.name).toBe('clip2.webm');
     // No image bytes leaked onto a video layer.
     expect(layers()[2]!.imageBytes).toBeUndefined();
+  });
+});
+
+describe('video source selector — setLayerVideoSource (patched feed vs file/camera)', () => {
+  it('sets the layer videoSource across all 4 values; round-trips on a synced layer', () => {
+    makeToybox();
+    setLayerKind(TID, 1, 'video');
+    // Default (unset) — the factory treats absent as 'file' (#603 behaviour).
+    expect(layers()[1]!.videoSource).toBeUndefined();
+
+    setLayerVideoSource(TID, 1, 'inA');
+    expect(layers()[1]!.videoSource).toBe('inA');
+    // Second write to the now-synced layer must not throw (scalar in-place set).
+    expect(() => setLayerVideoSource(TID, 1, 'inB')).not.toThrow();
+    expect(layers()[1]!.videoSource).toBe('inB');
+
+    setLayerVideoSource(TID, 1, 'camera');
+    expect(layers()[1]!.videoSource).toBe('camera');
+    setLayerVideoSource(TID, 1, 'file');
+    expect(layers()[1]!.videoSource).toBe('file');
+  });
+
+  it('an unrecognised value falls back to file', () => {
+    makeToybox();
+    setLayerKind(TID, 0, 'video');
+    setLayerVideoSource(TID, 0, 'bogus' as unknown as 'file');
+    expect(layers()[0]!.videoSource).toBe('file');
+  });
+
+  it('targets only the active layer (leaves siblings untouched)', () => {
+    makeToybox();
+    setLayerKind(TID, 1, 'video');
+    setLayerKind(TID, 2, 'video');
+    setLayerVideoSource(TID, 1, 'inA');
+    setLayerVideoSource(TID, 2, 'inB');
+    expect(layers()[1]!.videoSource).toBe('inA');
+    expect(layers()[2]!.videoSource).toBe('inB');
+    expect(layers()[0]!.videoSource).toBeUndefined();
   });
 });
 
