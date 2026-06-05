@@ -35,6 +35,84 @@
         { "id": "phase", "label": "PHASE", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear" },
         { "id": "scale", "label": "SCALE", "min": 0.5, "max": 8.0, "default": 3.0, "curve": "linear" }
       ]
+    },
+    {
+      "id": "frag-iq-palette-map",
+      "label": "FRAG IQ-PALETTE",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-iq-palette-map.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "amount", "label": "AMOUNT", "min": 0.0, "max": 1.0, "default": 1.0, "curve": "linear" },
+        { "id": "shift",  "label": "SHIFT",  "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear" },
+        { "id": "spread", "label": "SPREAD", "min": 0.1, "max": 4.0, "default": 1.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-kaleido",
+      "label": "FRAG KALEIDO",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-kaleido.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "segments", "label": "SEGMENTS", "min": 2.0, "max": 16.0, "default": 6.0, "curve": "discrete" },
+        { "id": "spin",     "label": "SPIN",     "min": -2.0, "max": 2.0, "default": 0.4, "curve": "linear" },
+        { "id": "zoom",     "label": "ZOOM",     "min": 0.2, "max": 3.0,  "default": 1.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-metaballs-overlay",
+      "label": "FRAG METABALLS",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-metaballs-overlay.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "count",   "label": "COUNT",   "min": 1.0, "max": 6.0, "default": 4.0, "curve": "discrete" },
+        { "id": "radius",  "label": "RADIUS",  "min": 0.05, "max": 0.6, "default": 0.28, "curve": "linear" },
+        { "id": "refract", "label": "REFRACT", "min": 0.0, "max": 1.0, "default": 0.6, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-sdf-tunnel",
+      "label": "FRAG SDF-TUNNEL",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-sdf-tunnel.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 0.6, "curve": "linear" },
+        { "id": "twist", "label": "TWIST", "min": 0.0, "max": 3.0, "default": 0.8, "curve": "linear" },
+        { "id": "fog",   "label": "FOG",   "min": 0.0, "max": 1.0, "default": 0.7, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-moire",
+      "label": "FRAG MOIRE",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-moire.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "freq",     "label": "FREQ",     "min": 2.0, "max": 24.0, "default": 8.0, "curve": "linear" },
+        { "id": "beat",     "label": "BEAT",     "min": 0.0, "max": 0.5,  "default": 0.1, "curve": "linear" },
+        { "id": "displace", "label": "DISPLACE", "min": 0.0, "max": 2.0,  "default": 0.6, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-vhs-bars",
+      "label": "FRAG VHS-BARS",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-vhs-bars.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "jitter", "label": "JITTER", "min": 0.0, "max": 2.0, "default": 0.7, "curve": "linear" },
+        { "id": "bleed",  "label": "BLEED",  "min": 0.0, "max": 8.0, "default": 2.0, "curve": "linear" },
+        { "id": "bar",    "label": "BAR",    "min": 0.0, "max": 1.0, "default": 0.7, "curve": "linear" }
+      ]
     }
   ],
   "gen": [
@@ -68,6 +146,72 @@
         { "id": "edge",    "label": "EDGE",    "min": 0.0, "max": 2.0,  "default": 1.0, "curve": "linear" },
         { "id": "speed",   "label": "SPEED",   "min": 0.0, "max": 3.0,  "default": 0.6, "curve": "linear" }
       ]
+    },
+    {
+      "id": "voronoi-edges",
+      "label": "VORONOI EDGES",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/voronoi-edges.frag.glsl",
+      "params": [
+        { "id": "density", "label": "DENSITY", "min": 1.0, "max": 16.0, "default": 5.0, "curve": "linear" },
+        { "id": "edge",    "label": "EDGE",    "min": 0.0, "max": 2.0,  "default": 1.0, "curve": "linear" },
+        { "id": "speed",   "label": "SPEED",   "min": 0.0, "max": 3.0,  "default": 0.5, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "gradient-noise",
+      "label": "GRADIENT NOISE",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/gradient-noise.frag.glsl",
+      "params": [
+        { "id": "scale", "label": "SCALE", "min": 0.5, "max": 6.0, "default": 2.0, "curve": "linear" },
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 2.0, "default": 0.4, "curve": "linear" },
+        { "id": "gain",  "label": "GAIN",  "min": 0.3, "max": 0.75, "default": 0.5, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "hex-grid",
+      "label": "HEX GRID",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/hex-grid.frag.glsl",
+      "params": [
+        { "id": "scale", "label": "SCALE", "min": 1.0, "max": 24.0, "default": 8.0, "curve": "linear" },
+        { "id": "pulse", "label": "PULSE", "min": 0.0, "max": 1.0,  "default": 0.5, "curve": "linear" },
+        { "id": "edge",  "label": "EDGE",  "min": 0.25, "max": 3.0, "default": 1.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "truchet",
+      "label": "TRUCHET",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/truchet.frag.glsl",
+      "params": [
+        { "id": "scale", "label": "SCALE", "min": 1.0, "max": 16.0, "default": 6.0, "curve": "linear" },
+        { "id": "width", "label": "WIDTH", "min": 0.2, "max": 3.0,  "default": 1.0, "curve": "linear" },
+        { "id": "flow",  "label": "FLOW",  "min": 0.0, "max": 2.0,  "default": 0.6, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "star-field",
+      "label": "STAR FIELD",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/star-field.frag.glsl",
+      "params": [
+        { "id": "density", "label": "DENSITY", "min": 2.0, "max": 24.0, "default": 10.0, "curve": "linear" },
+        { "id": "speed",   "label": "SPEED",   "min": 0.0, "max": 3.0,  "default": 1.0,  "curve": "linear" },
+        { "id": "warp",    "label": "WARP",    "min": 0.0, "max": 2.0,  "default": 0.8,  "curve": "linear" }
+      ]
+    },
+    {
+      "id": "reaction-diffusion-still",
+      "label": "REACTION DIFFUSION",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/reaction-diffusion-still.frag.glsl",
+      "params": [
+        { "id": "scale",    "label": "SCALE",    "min": 0.5, "max": 4.0, "default": 1.5, "curve": "linear" },
+        { "id": "contrast", "label": "CONTRAST", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear" },
+        { "id": "drift",    "label": "DRIFT",    "min": 0.0, "max": 1.0, "default": 0.4, "curve": "linear" }
+      ]
     }
   ],
   "models": [
@@ -77,7 +221,15 @@
     { "id": "cube",       "label": "CUBE",         "builtin": "cube",      "matcap": 0, "license": "builtin" },
     { "id": "sphere",     "label": "SPHERE",       "builtin": "sphere",    "matcap": 0, "license": "builtin" },
     { "id": "torus",      "label": "TORUS",        "builtin": "torus",     "matcap": 1, "license": "builtin" },
-    { "id": "hypercube",  "label": "HYPERCUBE",    "builtin": "hypercube", "matcap": 2, "license": "builtin" }
+    { "id": "hypercube",  "label": "HYPERCUBE",    "builtin": "hypercube", "matcap": 2, "license": "builtin" },
+    { "id": "tetrahedron", "label": "TETRAHEDRON", "builtin": "tetrahedron", "matcap": 0, "license": "builtin" },
+    { "id": "octahedron",  "label": "OCTAHEDRON",  "builtin": "octahedron",  "matcap": 1, "license": "builtin" },
+    { "id": "icosahedron", "label": "ICOSAHEDRON", "builtin": "icosahedron", "matcap": 2, "license": "builtin" },
+    { "id": "cylinder",    "label": "CYLINDER",    "builtin": "cylinder",    "matcap": 0, "license": "builtin" },
+    { "id": "cone",        "label": "CONE",        "builtin": "cone",        "matcap": 1, "license": "builtin" },
+    { "id": "torus-knot",  "label": "TORUS KNOT",  "builtin": "torus-knot",  "matcap": 2, "license": "builtin" },
+    { "id": "banana",      "label": "BANANA",      "obj": "/toybox/models/banana.obj",  "matcap": 1, "license": "CC0-1.0" },
+    { "id": "snowman",     "label": "SNOWMAN",     "obj": "/toybox/models/snowman.obj", "matcap": 0, "license": "CC0-1.0" }
   ],
   "presets": [
     {

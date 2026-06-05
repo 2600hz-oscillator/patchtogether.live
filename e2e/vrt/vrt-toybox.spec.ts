@@ -38,6 +38,12 @@ const CONTENTS: Array<{ id: string; kind: 'gen' | 'shader'; time: number }> = [
   { id: 'cos-gradient',     kind: 'shader', time: 5.0 },
   // Shadertoy single-pass GEN port (mainImage->main shim, iResolution vec3).
   { id: 'synthwave-sunset', kind: 'gen',    time: 3.0 },
+  // Representative baseline for the expanded GEN bank (content-bank PR): one
+  // animated procedural pattern proves the new GEN shaders compile + render
+  // real frozen content. The rest of the new GEN/FRAG shaders are covered by
+  // the manifest-integrity unit (file-exists + uniform/param cross-check) +
+  // the live compile-smoke e2e; per-asset VRT baselines would bloat the gate.
+  { id: 'truchet',          kind: 'gen',    time: 2.0 },
 ];
 
 test.describe.configure({ mode: 'default' });
@@ -136,6 +142,12 @@ const MODELS: Array<{ id: string; matcap: number; time: number }> = [
   { id: 'teapot', matcap: 0, time: 1.0 }, // CHROME
   { id: 'spot',   matcap: 1, time: 1.0 }, // CLAY
   { id: 'sphere', matcap: 2, time: 1.0 }, // NEON (builtin primitive)
+  // Representative baseline for the expanded BUILTIN bank (content-bank PR):
+  // the icosahedron ("d20") proves a NEW procedural primitive generates valid
+  // lit geometry through the OBJ pass. The other new builtins (tetra/octa/
+  // cylinder/cone/torus-knot) are covered by primitives.test.ts (non-degenerate
+  // + unit normals + makePrimitive dispatch); per-asset VRT would bloat.
+  { id: 'icosahedron', matcap: 0, time: 1.0 }, // CHROME (builtin primitive)
 ];
 
 /** Point TOYBOX layer 0 at an OBJ model with a fixed pose + matcap, freeze
@@ -996,6 +1008,124 @@ test.describe('VRT: TOYBOX Shadertoy multi-buffer erosion', () => {
 
     const canvas = page.locator('[data-testid="toybox-canvas"]');
     await expect(canvas).toHaveScreenshot('preset-eroded-terrain.png', { maskColor: '#ff00ff' });
+
+    expect(
+      errors.filter((e) => !e.includes('AudioContext')),
+      'no console / page errors',
+    ).toEqual([]);
+  });
+});
+
+// ── Content-bank expansion: a representative FRAG baseline. A FRAG shader
+// RECEIVES the composited layer below as iChannel0 — so we seed layer 0 = a
+// deterministic GEN base (worley) + layer 1 = the FRAG (frag-kaleido) and route
+// the combine OUTPUT through the FRAG layer. The frozen capture proves the FRAG
+// shim wires iChannel0 to the layer beneath AND the FRAG visibly transforms it
+// (a kaleidoscope fold of the worley field, clearly distinct from the raw
+// worley GEN baseline). One FRAG baseline is representative; the other 5 new
+// FRAG shaders are covered by the manifest-integrity unit (mainImage + reads
+// iChannel0 + uniform/param cross-check) + the live compile-smoke e2e.
+
+/** Seed layer 0 = worley GEN, layer 1 = a FRAG shader, output through the FRAG
+ *  layer (so its iChannel0 = layer 0). Freeze + wait for a stable lit frame. */
+async function setFragOverBaseAndFreeze(page: Page, fragId: string, time: number): Promise<void> {
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+  await page.evaluate(
+    ({ fragId }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['tb'];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        n.data.layers = [
+          { kind: 'gen', contentId: 'worley-cells', params: { density: 6, edge: 1, speed: 0.6 } },
+          { kind: 'frag', contentId: fragId, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+        ];
+        // OUTPUT shows layer 1 (the FRAG, which itself samples layer 0 as
+        // iChannel0): fade amount 0 passes the in0 source (src1) through.
+        n.data.combine = {
+          nodes: [
+            { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+            { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+            { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+            { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+            { id: 'pass', kind: 'fade', x: 120, y: 40, params: { amount: 0 } },
+            { id: 'out', kind: 'output', x: 286, y: 40 },
+          ],
+          edges: [
+            { id: 'e0', from: 'src1', to: 'pass', toPort: 'in0' },
+            { id: 'e1', from: 'pass', to: 'out', toPort: 'in0' },
+          ],
+        };
+      });
+    },
+    { fragId },
+  );
+  await page.evaluate(() => {
+    (globalThis as unknown as { __toyboxPrevSig?: string }).__toyboxPrevSig = '';
+  });
+  await page.waitForFunction(
+    ({ time }) => {
+      const g = globalThis as unknown as {
+        __toyboxFreeze?: (t?: number) => void;
+        __toyboxPrevSig?: string;
+      };
+      g.__toyboxFreeze?.(time);
+      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0, r = 0, gg = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      }
+      if (lit <= canvas.width * canvas.height * 0.05) return false;
+      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
+      const prev = g.__toyboxPrevSig;
+      g.__toyboxPrevSig = sig;
+      return prev === sig;
+    },
+    { time },
+    { timeout: 15_000 },
+  );
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
+test.describe('VRT: TOYBOX FRAG over a base layer (content-bank)', () => {
+  test('frag-kaleido folds the layer below (iChannel0) into a mandala', async ({ page }) => {
+    test.skip(
+      VRT_PLATFORM === 'linux',
+      'linux/toybox-frag-kaleido: darwin baseline only; linux pending a vrt:update on CI',
+    );
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+      [],
+    );
+    const card = page.locator('.svelte-flow__node-toybox').first();
+    await card.waitFor({ state: 'visible', timeout: 10_000 });
+    await pinViewport(page);
+
+    await setFragOverBaseAndFreeze(page, 'frag-kaleido', 2.0);
+
+    const canvas = page.locator('[data-testid="toybox-canvas"]');
+    await expect(canvas).toHaveScreenshot('frag-kaleido.png', { maskColor: '#ff00ff' });
 
     expect(
       errors.filter((e) => !e.includes('AudioContext')),

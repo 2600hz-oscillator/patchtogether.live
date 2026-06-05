@@ -800,6 +800,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/toybox-obj-tex-sphere',
   'linux/toybox-obj-tex-teapot',
   'linux/toybox-preset-textured-sphere',
+  // TOYBOX content-bank expansion: representative frozen baselines for the new
+  // GEN shader (truchet), the new builtin primitive (icosahedron, an OBJ-pass
+  // render), and a FRAG shader over a base layer (frag-kaleido folds layer 0
+  // via iChannel0). Darwin baselines captured locally; linux pending a
+  // `task vrt:update` on linux CI (same WebGL/shader pipeline, sub-threshold
+  // cross-platform paint timing). The remaining new shaders/builtins are
+  // covered by toybox-manifest-integrity.test.ts + primitives.test.ts + the
+  // live compile-smoke e2e — per-asset VRT baselines would bloat the gate.
+  'linux/toybox-truchet',
+  'linux/toybox-obj-icosahedron',
+  'linux/toybox-frag-kaleido',
   // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
   // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
   // `__nibblesForceLength` test hook. Darwin baselines captured on this

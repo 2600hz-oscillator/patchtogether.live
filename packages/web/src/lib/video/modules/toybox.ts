@@ -511,7 +511,13 @@ export const toyboxDef: VideoModuleDef = {
       // case if the id happens to be a known primitive name).
       const builtin =
         (meta?.builtin as BuiltinPrimitive | undefined) ??
-        (['cube', 'sphere', 'torus', 'hypercube'].includes(modelId)
+        ((
+          [
+            'cube', 'sphere', 'torus', 'hypercube',
+            'tetrahedron', 'octahedron', 'icosahedron',
+            'cylinder', 'cone', 'torus-knot',
+          ] as const
+        ).includes(modelId as BuiltinPrimitive)
           ? (modelId as BuiltinPrimitive)
           : undefined);
       if (builtin) {

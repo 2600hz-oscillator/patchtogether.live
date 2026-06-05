@@ -69,9 +69,21 @@ export interface ToyboxModel {
   label: string;
   /** Public URL of the bundled OBJ source. Omit for built-in primitives. */
   obj?: string;
-  /** Built-in procedural primitive id ('cube' | 'sphere' | 'torus' |
-   *  'hypercube'); set instead of `obj` for asset-free meshes. */
-  builtin?: 'cube' | 'sphere' | 'torus' | 'hypercube';
+  /** Built-in procedural primitive id; set instead of `obj` for asset-free
+   *  meshes. Must be one of primitives.ts' BuiltinPrimitive ids ('cube' |
+   *  'sphere' | 'torus' | 'hypercube' | 'tetrahedron' | 'octahedron' |
+   *  'icosahedron' | 'cylinder' | 'cone' | 'torus-knot'). */
+  builtin?:
+    | 'cube'
+    | 'sphere'
+    | 'torus'
+    | 'hypercube'
+    | 'tetrahedron'
+    | 'octahedron'
+    | 'icosahedron'
+    | 'cylinder'
+    | 'cone'
+    | 'torus-knot';
   /** Default matcap style index for this model (0..MATCAP_STYLES-1). */
   matcap?: number;
   /** SPDX license tag (provenance — surfaced in docs/LICENSES). */

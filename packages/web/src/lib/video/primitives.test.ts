@@ -1,6 +1,19 @@
 // packages/web/src/lib/video/primitives.test.ts
 import { describe, it, expect } from 'vitest';
-import { cube, sphere, torus, hypercube, makePrimitive } from './primitives';
+import {
+  cube,
+  sphere,
+  torus,
+  hypercube,
+  tetrahedron,
+  octahedron,
+  icosahedron,
+  cylinder,
+  cone,
+  torusKnot,
+  makePrimitive,
+  type BuiltinPrimitive,
+} from './primitives';
 import { MESH_FLOATS_PER_VERT } from './mesh';
 
 function vert(mesh: { interleaved: Float32Array }, n: number): number[] {
@@ -117,19 +130,123 @@ describe('hypercube()', () => {
   });
 });
 
+// ---- Platonic solids (flat-shaded) ----
+
+describe('tetrahedron()', () => {
+  const m = tetrahedron();
+  it('is well-formed (4 triangular faces)', () => {
+    assertWellFormed(m);
+    expect(m.triangleCount).toBe(4);
+  });
+  it('all vertices lie on the unit sphere', () => {
+    for (let i = 0; i < m.vertexCount; i++) {
+      const v = vert(m, i);
+      expect(Math.abs(Math.hypot(v[0]!, v[1]!, v[2]!) - 1)).toBeLessThan(1e-3);
+    }
+  });
+});
+
+describe('octahedron()', () => {
+  const m = octahedron();
+  it('is well-formed (8 triangular faces)', () => {
+    assertWellFormed(m);
+    expect(m.triangleCount).toBe(8);
+  });
+  it('all vertices lie on the unit sphere (axis points)', () => {
+    for (let i = 0; i < m.vertexCount; i++) {
+      const v = vert(m, i);
+      expect(Math.abs(Math.hypot(v[0]!, v[1]!, v[2]!) - 1)).toBeLessThan(1e-3);
+    }
+  });
+});
+
+describe('icosahedron()', () => {
+  const m = icosahedron();
+  it('is well-formed (20 triangular faces)', () => {
+    assertWellFormed(m);
+    expect(m.triangleCount).toBe(20);
+  });
+  it('all vertices lie on the unit sphere', () => {
+    for (let i = 0; i < m.vertexCount; i++) {
+      const v = vert(m, i);
+      expect(Math.abs(Math.hypot(v[0]!, v[1]!, v[2]!) - 1)).toBeLessThan(1e-3);
+    }
+  });
+});
+
+// ---- Capped solids of revolution ----
+
+describe('cylinder()', () => {
+  const m = cylinder();
+  it('is well-formed', () => {
+    assertWellFormed(m);
+  });
+  it('has non-degenerate geometry', () => {
+    expect(m.vertexCount).toBeGreaterThan(0);
+    expect(m.triangleCount).toBeGreaterThan(0);
+  });
+  it('segment count scales triangle count', () => {
+    expect(cylinder(0.6, 0.9, 48).triangleCount).toBeGreaterThan(
+      cylinder(0.6, 0.9, 8).triangleCount,
+    );
+  });
+});
+
+describe('cone()', () => {
+  const m = cone();
+  it('is well-formed', () => {
+    assertWellFormed(m);
+  });
+  it('has an apex at the top (a single vertex group at max Y)', () => {
+    let maxY = -Infinity;
+    for (let i = 0; i < m.vertexCount; i++) maxY = Math.max(maxY, vert(m, i)[1]!);
+    // The apex is shared by the side fan; at least one vertex reaches the top.
+    let atApex = 0;
+    for (let i = 0; i < m.vertexCount; i++) {
+      if (Math.abs(vert(m, i)[1]! - maxY) < 1e-4 && Math.hypot(vert(m, i)[0]!, vert(m, i)[2]!) < 1e-4) atApex++;
+    }
+    expect(atApex).toBeGreaterThan(0);
+  });
+});
+
+describe('torusKnot()', () => {
+  const m = torusKnot();
+  it('is well-formed', () => {
+    assertWellFormed(m);
+  });
+  it('has non-degenerate swept-tube geometry', () => {
+    expect(m.vertexCount).toBeGreaterThan(100);
+    expect(m.triangleCount).toBeGreaterThan(100);
+  });
+});
+
 describe('makePrimitive()', () => {
+  const ALL: BuiltinPrimitive[] = [
+    'cube', 'sphere', 'torus', 'hypercube',
+    'tetrahedron', 'octahedron', 'icosahedron',
+    'cylinder', 'cone', 'torus-knot',
+  ];
   it('dispatches each builtin id', () => {
     expect(makePrimitive('cube').triangleCount).toBe(cube().triangleCount);
     expect(makePrimitive('sphere').vertexCount).toBe(sphere(24).vertexCount);
     expect(makePrimitive('torus').triangleCount).toBe(torus().triangleCount);
     expect(makePrimitive('hypercube').triangleCount).toBe(hypercube().triangleCount);
+    expect(makePrimitive('tetrahedron').triangleCount).toBe(tetrahedron().triangleCount);
+    expect(makePrimitive('octahedron').triangleCount).toBe(octahedron().triangleCount);
+    expect(makePrimitive('icosahedron').triangleCount).toBe(icosahedron().triangleCount);
+    expect(makePrimitive('cylinder').triangleCount).toBe(cylinder().triangleCount);
+    expect(makePrimitive('cone').triangleCount).toBe(cone().triangleCount);
+    expect(makePrimitive('torus-knot').triangleCount).toBe(torusKnot().triangleCount);
   });
-  it('every primitive carries a frame', () => {
-    for (const id of ['cube', 'sphere', 'torus', 'hypercube'] as const) {
+  it('every primitive carries a frame + non-degenerate, finite geometry', () => {
+    for (const id of ALL) {
       const m = makePrimitive(id);
       expect(m.frame.center).toHaveLength(3);
       expect(typeof m.frame.scale).toBe('number');
       expect(m.frame.scale).toBeGreaterThan(0);
+      expect(m.vertexCount).toBeGreaterThan(0);
+      expect(m.triangleCount).toBeGreaterThan(0);
+      expect(Array.from(m.interleaved).every((x) => Number.isFinite(x))).toBe(true);
     }
   });
 });
