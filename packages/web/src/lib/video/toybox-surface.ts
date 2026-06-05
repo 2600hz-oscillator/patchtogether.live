@@ -25,14 +25,27 @@ export interface SurfaceIntent {
 }
 
 /**
- * Read layer `i`'s material.surfaceSource defensively. Returns the source layer
- * index ONLY if it is a finite in-range number that is NOT the layer's own index
- * (self-reference is a WebGL feedback loop → rejected). Everything else
- * (undefined / -1 / NaN / out-of-range / self) → -1 (matcap-only).
+ * Read layer `i`'s render-dependency source defensively: the OTHER layer whose
+ * rendered FBO this layer needs as an input THIS frame. Two cases:
+ *   - 'obj' with material.surfaceSource: the texmap source layer.
+ *   - 'frag': a Shadertoy FRAG layer receives the COMPOSITED LAYER BELOW (index
+ *     i-1) as iChannel0 — so it depends on i-1 being rendered first.
+ *
+ * Returns the source layer index ONLY if it is a finite in-range number that is
+ * NOT the layer's own index (self-reference is a WebGL feedback loop → rejected).
+ * Everything else (undefined / -1 / NaN / out-of-range / self / layer 0 frag) →
+ * -1 (no input / matcap-only).
  */
 export function readSurfaceSource(layers: ToyboxLayer[], i: number): number {
   const layer = layers[i];
-  if (!layer || layer.kind !== 'obj') return -1;
+  if (!layer) return -1;
+  // FRAG layer: its scene input is the layer directly below (i-1).
+  if (layer.kind === 'frag') {
+    const src = i - 1;
+    if (src < 0 || src >= LAYER_COUNT) return -1; // layer 0 has nothing below
+    return src;
+  }
+  if (layer.kind !== 'obj') return -1;
   const raw = layer.material?.surfaceSource;
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return -1;
   const src = Math.trunc(raw);

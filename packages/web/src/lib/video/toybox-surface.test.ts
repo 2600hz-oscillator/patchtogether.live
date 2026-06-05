@@ -52,6 +52,28 @@ describe('readSurfaceSource — defensive normalisation', () => {
     layers[0] = { kind: 'gen', contentId: 'noise-fbm', params: {} };
     expect(readSurfaceSource(layers, 0)).toBe(-1);
   });
+
+  it('a FRAG layer depends on the layer directly below (i-1)', () => {
+    const layers = layersWith(['noobj', 'noobj', 'noobj', 'noobj']);
+    layers[0] = { kind: 'gen', contentId: 'noise-fbm', params: {} };
+    layers[1] = { kind: 'frag', contentId: 'invert', params: {} };
+    expect(readSurfaceSource(layers, 1)).toBe(0); // FRAG at L1 → scene = L0
+  });
+
+  it('a FRAG layer at index 0 has nothing below → -1', () => {
+    const layers = layersWith(['noobj', 'noobj', 'noobj', 'noobj']);
+    layers[0] = { kind: 'frag', contentId: 'invert', params: {} };
+    expect(readSurfaceSource(layers, 0)).toBe(-1);
+  });
+
+  it('orders the below-layer BEFORE a FRAG that samples it', () => {
+    const layers = layersWith(['noobj', 'noobj', 'noobj', 'noobj']);
+    layers[0] = { kind: 'gen', contentId: 'noise-fbm', params: {} };
+    layers[1] = { kind: 'frag', contentId: 'invert', params: {} };
+    const { order, safeSource } = resolveRenderOrder(layers);
+    expect(order.indexOf(0)).toBeLessThan(order.indexOf(1));
+    expect(safeSource[1]).toBe(0);
+  });
 });
 
 describe('resolveRenderOrder — ordering + safe-source guard', () => {

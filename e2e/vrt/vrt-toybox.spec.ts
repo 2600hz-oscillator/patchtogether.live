@@ -32,10 +32,12 @@ const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 // reproducible; different times per shader keep the baselines visually
 // distinct + interesting.
 const CONTENTS: Array<{ id: string; kind: 'gen' | 'shader'; time: number }> = [
-  { id: 'noise-fbm',    kind: 'gen',    time: 3.0 },
-  { id: 'worley-cells', kind: 'gen',    time: 2.0 },
-  { id: 'hsv-plasma',   kind: 'shader', time: 4.0 },
-  { id: 'cos-gradient', kind: 'shader', time: 5.0 },
+  { id: 'noise-fbm',        kind: 'gen',    time: 3.0 },
+  { id: 'worley-cells',     kind: 'gen',    time: 2.0 },
+  { id: 'hsv-plasma',       kind: 'shader', time: 4.0 },
+  { id: 'cos-gradient',     kind: 'shader', time: 5.0 },
+  // Shadertoy single-pass GEN port (mainImage->main shim, iResolution vec3).
+  { id: 'synthwave-sunset', kind: 'gen',    time: 3.0 },
 ];
 
 test.describe.configure({ mode: 'default' });
@@ -897,6 +899,103 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
     // Settle a frame so the SVG reflects the seeded graph.
     await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
     await expect(svg).toHaveScreenshot('combine-editor.png', { maskColor: '#ff00ff' });
+
+    expect(
+      errors.filter((e) => !e.includes('AudioContext')),
+      'no console / page errors',
+    ).toEqual([]);
+  });
+});
+
+// ── Shadertoy MULTI-BUFFER runtime: the eroded-terrain preset (Common +
+// BufferA/B/C + Image, RGBA32F feedback, raymarch). The feedback buffers need
+// MANY frames to converge (the painted heightmap + erosion ping-pong), so we
+// advance N engine step()s BEFORE freezing — a single-frame freeze would
+// snapshot an unconverged (run-to-run-varying) buffer. Deterministic once
+// converged: at a fixed iTime + no mouse the painted bump is the same each run.
+
+type VideoEngineStep = { step: () => void };
+
+/** Load the eroded-terrain preset, advance N steps so the feedback buffers
+ *  converge, then freeze at a fixed iTime and wait for a stable lit frame. */
+async function loadErosionAndFreeze(page: Page, time: number): Promise<void> {
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+    g.__toyboxFreeze?.();
+  });
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __toyboxLoadPreset?: unknown }).__toyboxLoadPreset === 'function',
+    undefined,
+    { timeout: 10_000 },
+  );
+  await page.evaluate(async () => {
+    const g = globalThis as unknown as { __toyboxLoadPreset?: (id: string) => Promise<boolean> };
+    await g.__toyboxLoadPreset?.('eroded-terrain');
+  });
+  await page.evaluate(() => {
+    (globalThis as unknown as { __toyboxPrevSig?: string }).__toyboxPrevSig = '';
+  });
+  // Poll: drive a batch of engine steps so the feedback converges, freeze at the
+  // fixed time, require non-black AND a stable signature across two captures.
+  await page.waitForFunction(
+    ({ time }) => {
+      const w = globalThis as unknown as {
+        __toyboxFreeze?: (t?: number) => void;
+        __toyboxPrevSig?: string;
+        __engine?: () => { getDomain: <T>(d: string) => T };
+      };
+      const ve = w.__engine?.().getDomain<VideoEngineStep>('video');
+      for (let i = 0; i < 20; i++) ve?.step();
+      w.__toyboxFreeze?.(time);
+      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!canvas) return false;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return false;
+      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+      let lit = 0, r = 0, gg = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      }
+      if (lit <= canvas.width * canvas.height * 0.1) return false;
+      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
+      const prev = w.__toyboxPrevSig;
+      w.__toyboxPrevSig = sig;
+      return prev === sig;
+    },
+    { time },
+    { timeout: 60_000 },
+  );
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
+test.describe('VRT: TOYBOX Shadertoy multi-buffer erosion', () => {
+  test('the eroded-terrain preset raymarches a converged frozen frame', async ({ page }) => {
+    test.skip(
+      VRT_PLATFORM === 'linux',
+      'linux/toybox-preset-eroded-terrain: darwin baseline only; linux pending a vrt:update on CI',
+    );
+    // The multi-pass float raymarch is the heaviest TOYBOX path on SwiftShader.
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+      [],
+    );
+    const card = page.locator('.svelte-flow__node-toybox').first();
+    await card.waitFor({ state: 'visible', timeout: 10_000 });
+    await pinViewport(page);
+
+    await loadErosionAndFreeze(page, 2.0);
+
+    const canvas = page.locator('[data-testid="toybox-canvas"]');
+    await expect(canvas).toHaveScreenshot('preset-eroded-terrain.png', { maskColor: '#ff00ff' });
 
     expect(
       errors.filter((e) => !e.includes('AudioContext')),

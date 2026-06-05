@@ -72,6 +72,25 @@ export interface VideoFrameContext {
   time: number;
   /** Current frame index (0, 1, 2, ...). Useful for "first-frame" guards. */
   frame: number;
+  /** Seconds since the PREVIOUS frame (Shadertoy iTimeDelta). ~1/60 typically;
+   *  0 on the first frame. OPTIONAL so hand-built test-mock contexts don't have
+   *  to stub it — Shadertoy-uniform modules default an absent value to 1/60. */
+  timeDelta?: number;
+  /** Estimated frames-per-second (Shadertoy iFrameRate), derived from the EMA
+   *  of recent frame deltas. ~60 in steady state. OPTIONAL (defaults to 60 in
+   *  consumers) so existing test mocks stay valid. */
+  frameRate?: number;
+  /**
+   * The latest pointer/iMouse vec4 for `thisNodeId`, in ENGINE pixel space
+   * (x left→right 0..resW, y BOTTOM→top 0..resH) with Shadertoy .z/.w press
+   * semantics. Returns [0,0,0,0] when no pointer has touched the node's preview
+   * (Shadertoy's untouched-iMouse convention). Modules that route iMouse into a
+   * shader read it once per frame; the card feeds it via `VideoEngine.setMouse`.
+   *
+   * OPTIONAL so existing module test mocks (which never thread iMouse) stay
+   * valid — consumers default an absent helper to the all-zero vec4.
+   */
+  getMouse?(thisNodeId: string): [number, number, number, number];
   /**
    * Look up the colour-attachment texture for the source side of an edge
    * terminating at this module's `inputId`. Returns null if no edge is
@@ -358,6 +377,22 @@ export class VideoEngine implements DomainEngine {
   private frameCount = 0;
   private rafId: number | null = null;
 
+  /** Wall-clock of the previous step() (for iTimeDelta / iFrameRate). */
+  private lastStepTime = performance.now();
+  /** Seconds since the previous frame, surfaced as iTimeDelta. 0 until measured. */
+  private timeDelta = 0;
+  /** EMA-smoothed FPS estimate, surfaced as iFrameRate. Seeded at 60. */
+  private frameRate = 60;
+
+  /**
+   * Per-node iMouse vec4 [x, y, z, w] in ENGINE pixel space (bottom-origin y,
+   * Shadertoy .z/.w press semantics — see toybox-shadertoy.ts mouseToVec4). The
+   * card computes this from pointer events on the preview canvas and pushes it
+   * via setMouse(); a module reads it through VideoFrameContext.getMouse() and
+   * sets the iMouse uniform on every Shadertoy pass. Absent → [0,0,0,0].
+   */
+  private mouseState = new Map<string, [number, number, number, number]>();
+
   /**
    * Lazily-resolved `EXT_color_buffer_float` support, cached after the first
    * createFloatFbo() call. `null` = not yet probed; `true`/`false` once
@@ -437,6 +472,7 @@ export class VideoEngine implements DomainEngine {
     handle.dispose();
     this.nodes.delete(nodeId);
     this.nodeMeta.delete(nodeId);
+    this.mouseState.delete(nodeId);
     this.topoStale = true;
   }
 
@@ -452,6 +488,19 @@ export class VideoEngine implements DomainEngine {
 
   setParam(nodeId: string, paramId: string, value: number): void {
     this.nodes.get(nodeId)?.setParam(paramId, value);
+  }
+
+  /**
+   * Push the latest iMouse vec4 for a node (Shadertoy semantics, ENGINE pixel
+   * space — bottom-origin y). The card's preview-canvas pointer handlers compute
+   * this (client px → engine px via the letterbox inverse + the .z/.w press
+   * state machine in toybox-shadertoy.ts) and call this each interaction; the
+   * module reads it via VideoFrameContext.getMouse() and sets the iMouse uniform
+   * on every Shadertoy pass. No-op-safe for unknown nodes (the state is keyed by
+   * id and simply read back later if/when the node exists).
+   */
+  setMouse(nodeId: string, x: number, y: number, z: number, w: number): void {
+    this.mouseState.set(nodeId, [x, y, z, w]);
   }
 
   readParam(nodeId: string, paramId: string): number | undefined {
@@ -567,10 +616,25 @@ export class VideoEngine implements DomainEngine {
     //     "before" intra-domain rendering each frame.
     this.tickVideoTextureBridges();
 
+    // Per-frame timing for Shadertoy iTimeDelta / iFrameRate. Clamp the delta
+    // to a sane window so a tab-backgrounded long-gap frame doesn't blow up a
+    // dt-scaled shader (the erosion buffer divides by iFrameRate).
+    const now = performance.now();
+    const dt = Math.min(0.1, Math.max(0, (now - this.lastStepTime) / 1000));
+    this.lastStepTime = now;
+    this.timeDelta = dt;
+    if (dt > 1e-4) {
+      // EMA over ~half a second so the rate is stable but tracks throttling.
+      this.frameRate = this.frameRate * 0.9 + (1 / dt) * 0.1;
+    }
+
     const ctx: VideoFrameContext = {
       gl: this.gl,
       time: (performance.now() - this.startTime) / 1000,
       frame: this.frameCount++,
+      timeDelta: this.timeDelta,
+      frameRate: this.frameRate,
+      getMouse: (thisNodeId) => this.mouseState.get(thisNodeId) ?? [0, 0, 0, 0],
       getInputTexture: (thisNodeId, inputId) => this.lookupInput(thisNodeId, inputId),
       isOutputConnected: (thisNodeId) => this.isOutputConnected(thisNodeId),
     };

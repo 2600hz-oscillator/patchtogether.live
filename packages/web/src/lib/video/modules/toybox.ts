@@ -45,7 +45,7 @@
 // Outputs: out (video) — the composited frame.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
-import type { VideoNodeHandle, VideoNodeSurface, VideoEngineContext } from '$lib/video/engine';
+import type { VideoNodeHandle, VideoNodeSurface, VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
 import { patch as livePatch } from '$lib/graph/store';
 import {
   DEFAULT_CONTENT_ID,
@@ -85,6 +85,17 @@ import {
 } from '$lib/video/toybox-cv-routes';
 import { parseObj } from '$lib/video/obj-parse';
 import { resolveRenderOrder } from '$lib/video/toybox-surface';
+import {
+  wrapShadertoySource,
+  isShadertoySource,
+  topoOrderPasses,
+  resolveChannels,
+  isShadertoyProject,
+  SHADERTOY_CHANNELS,
+  IMAGE_PASS_ID,
+  type ShadertoyProject,
+  type ShadertoyPass,
+} from '$lib/video/toybox-shadertoy';
 import { makePrimitive, type BuiltinPrimitive } from '$lib/video/primitives';
 import type { Mesh } from '$lib/video/mesh';
 import {
@@ -334,10 +345,30 @@ export const toyboxDef: VideoModuleDef = {
     gl.bindTexture(gl.TEXTURE_2D, null);
 
     // ---------------- Fragment-shader content programs ----------------
+    //
+    // A content program is EITHER a hand-authored engine shader (plain `main()`
+    // + iTime/iResolution-as-vec2 + its declared float params) OR a SHADERTOY
+    // shader (`void mainImage(out vec4, in vec2)` — wrapped by the mainImage→main
+    // shim + the FULL Shadertoy uniform set, with iResolution as a vec3). We grab
+    // the full Shadertoy uniform locations for every program; on a non-shadertoy
+    // shader the extra ones simply resolve null (harmless).
+    const stUni = collectShadertoyUniformGetters(gl);
     interface CompiledShader {
       program: WebGLProgram;
+      /** True when the source was wrapped through the Shadertoy mainImage shim
+       *  (iResolution is a vec3 + the full uniform set is live). */
+      shadertoy: boolean;
+      /** Receives the composited layers below as iChannel0 (FRAG family). */
+      sceneInput: boolean;
       uTime: WebGLUniformLocation | null;
       uResolution: WebGLUniformLocation | null;
+      uTimeDelta: WebGLUniformLocation | null;
+      uFrameRate: WebGLUniformLocation | null;
+      uFrame: WebGLUniformLocation | null;
+      uMouse: WebGLUniformLocation | null;
+      uDate: WebGLUniformLocation | null;
+      uChannel: Array<WebGLUniformLocation | null>;
+      uChannelRes: WebGLUniformLocation | null;
       uParams: Map<string, WebGLUniformLocation | null>;
     }
     const programs = new Map<string, CompiledShader>();
@@ -350,13 +381,30 @@ export const toyboxDef: VideoModuleDef = {
       void (async () => {
         try {
           const { meta, glsl } = await getContent(contentId);
-          const program = ctx.compileFragment(glsl);
+          // A content is Shadertoy if the manifest flags it OR the source uses
+          // the mainImage convention. Wrap it through the shim; engine shaders
+          // (plain main) compile as-is.
+          const isSt = meta.shadertoy === true || isShadertoySource(glsl);
+          const src = isSt
+            ? wrapShadertoySource(glsl, '', meta.params.map((p) => p.id))
+            : glsl;
+          const program = ctx.compileFragment(src);
           const uParams = new Map<string, WebGLUniformLocation | null>();
           for (const p of meta.params) uParams.set(p.id, gl.getUniformLocation(program, p.id));
+          const u = stUni(program);
           programs.set(contentId, {
             program,
+            shadertoy: isSt,
+            sceneInput: meta.input === 'scene',
             uTime: gl.getUniformLocation(program, 'iTime'),
             uResolution: gl.getUniformLocation(program, 'iResolution'),
+            uTimeDelta: u.uTimeDelta,
+            uFrameRate: u.uFrameRate,
+            uFrame: u.uFrame,
+            uMouse: u.uMouse,
+            uDate: u.uDate,
+            uChannel: u.uChannel,
+            uChannelRes: u.uChannelRes,
             uParams,
           });
         } catch (err) {
@@ -368,6 +416,16 @@ export const toyboxDef: VideoModuleDef = {
       })();
     }
     ensureProgram(DEFAULT_CONTENT_ID);
+
+    // ---------------- Shadertoy multi-buffer runtime ----------------
+    // A 'frag'/'gen' layer can host a multi-pass PROJECT (Common + buffer passes
+    // + an Image pass with iChannelN wiring). Each pass owns its own FBO(s); the
+    // runtime topo-orders producers before consumers, ping-pongs feedback passes
+    // (a `self` channel = the pass's PREVIOUS-frame texture), binds iChannel0-3 +
+    // iChannelResolution per pass, and renders the Image pass last into the
+    // layer's FBO. Float passes use createFloatFbo (RGBA32F → intBitsToFloat
+    // packing) and degrade to RGBA8 when the GPU can't render float.
+    const shadertoyRt = makeShadertoyRuntime(ctx, stUni, dummyTex, node.id);
 
     // ---------------- OBJ mesh program + per-model GPU buffers ----------------
     const objProgram = compileObjProgram(gl);
@@ -887,19 +945,73 @@ export const toyboxDef: VideoModuleDef = {
       return true;
     }
 
-    /** Render a fragment-shader (shader/gen) layer into target FBO `i`. */
-    function renderShaderLayer(i: number, layer: ToyboxLayer, time: number): boolean {
+    /**
+     * Render a fragment-shader (shader / gen / frag) layer into target FBO `i`.
+     *
+     * Three modes:
+     *   - a multi-buffer PROJECT (layer.project) → the Shadertoy runtime renders
+     *     the Common + buffer passes + Image pass into the layer FBO (own FBOs,
+     *     ping-pong feedback, iMouse click-paint, iChannelN wiring).
+     *   - a single Shadertoy content shader → wrapped via the mainImage shim; the
+     *     full Shadertoy uniform set is bound (iResolution=vec3, iMouse, iFrame,
+     *     iDate, iTimeDelta, iFrameRate). A FRAG/scene-input content gets the
+     *     below-layer FBO (`safeSource`) bound as iChannel0.
+     *   - a plain engine shader → iTime (float) + iResolution (vec2) + params.
+     *
+     * `frame` carries iFrame/iMouse/dt; `safeSource` is the resolved
+     * below/texmap layer index (or -1) for a FRAG/scene-input layer.
+     */
+    function renderShaderLayer(
+      i: number,
+      layer: ToyboxLayer,
+      time: number,
+      frame: VideoFrameContext,
+      safeSource: number,
+    ): boolean {
+      const g = gl;
+      const target = layerTargets[i]!;
+      const sceneTex =
+        safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i
+          ? layerTargets[safeSource]!.texture
+          : null;
+
+      // ---- Multi-buffer project ----
+      if (isShadertoyProject(layer.project)) {
+        return shadertoyRt.renderProject(
+          layer.project as unknown as ShadertoyProject,
+          i,
+          target.fbo,
+          time,
+          frame,
+          sceneTex,
+        );
+      }
+
+      // ---- Single content shader ----
       if (!layer.contentId) return false;
       ensureProgram(layer.contentId);
       const compiled = programs.get(layer.contentId);
       if (!compiled) return false;
-      const g = gl;
-      const target = layerTargets[i]!;
       g.bindFramebuffer(g.FRAMEBUFFER, target.fbo);
       g.viewport(0, 0, ctx.res.width, ctx.res.height);
       g.useProgram(compiled.program);
       if (compiled.uTime) g.uniform1f(compiled.uTime, time);
-      if (compiled.uResolution) g.uniform2f(compiled.uResolution, ctx.res.width, ctx.res.height);
+      if (compiled.shadertoy) {
+        // Shadertoy convention: iResolution is a vec3 (w, h, 1) + the full set.
+        if (compiled.uResolution) g.uniform3f(compiled.uResolution, ctx.res.width, ctx.res.height, 1);
+        setShadertoyFrameUniforms(g, compiled, frame, i);
+        // Scene-input (FRAG): bind the composited layer below as iChannel0.
+        const wantScene = compiled.sceneInput && !!sceneTex;
+        bindShadertoyChannels(g, compiled, [
+          wantScene ? sceneTex! : dummyTex,
+          dummyTex,
+          dummyTex,
+          dummyTex,
+        ]);
+      } else if (compiled.uResolution) {
+        // Engine convention: iResolution is a vec2.
+        g.uniform2f(compiled.uResolution, ctx.res.width, ctx.res.height);
+      }
       const meta = getContentMeta(layer.contentId);
       if (meta) {
         for (const p of meta.params) {
@@ -910,7 +1022,55 @@ export const toyboxDef: VideoModuleDef = {
         }
       }
       ctx.drawFullscreenQuad();
+      g.activeTexture(g.TEXTURE0);
       return true;
+    }
+
+    /** Set iTime-adjacent Shadertoy uniforms (delta, rate, frame, mouse, date)
+     *  on a compiled single-pass program from the frame context. */
+    function setShadertoyFrameUniforms(
+      g: WebGL2RenderingContext,
+      c: CompiledShader,
+      frame: VideoFrameContext,
+      nodeIdForMouse: number,
+    ): void {
+      if (c.uTimeDelta) g.uniform1f(c.uTimeDelta, frame.timeDelta ?? 1 / 60);
+      if (c.uFrameRate) g.uniform1f(c.uFrameRate, frame.frameRate ?? 60);
+      if (c.uFrame) g.uniform1i(c.uFrame, frame.frame | 0);
+      if (c.uMouse) {
+        const m = frame.getMouse ? frame.getMouse(node.id) : [0, 0, 0, 0];
+        g.uniform4f(c.uMouse, m[0]!, m[1]!, m[2]!, m[3]!);
+      }
+      if (c.uDate) {
+        const d = new Date();
+        const secs = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000;
+        g.uniform4f(c.uDate, d.getFullYear(), d.getMonth(), d.getDate(), secs);
+      }
+      void nodeIdForMouse;
+    }
+
+    /** Bind 4 textures to a compiled program's iChannel0-3 samplers + set
+     *  iChannelResolution[4] (engine res for all — our FBOs are engine-sized). */
+    function bindShadertoyChannels(
+      g: WebGL2RenderingContext,
+      c: CompiledShader,
+      texs: Array<WebGLTexture>,
+    ): void {
+      for (let s = 0; s < SHADERTOY_CHANNELS; s++) {
+        g.activeTexture(g.TEXTURE0 + s);
+        g.bindTexture(g.TEXTURE_2D, texs[s] ?? dummyTex);
+        if (c.uChannel[s]) g.uniform1i(c.uChannel[s]!, s);
+      }
+      if (c.uChannelRes) {
+        const res = new Float32Array(SHADERTOY_CHANNELS * 3);
+        for (let s = 0; s < SHADERTOY_CHANNELS; s++) {
+          res[s * 3] = ctx.res.width;
+          res[s * 3 + 1] = ctx.res.height;
+          res[s * 3 + 2] = 1;
+        }
+        g.uniform3fv(c.uChannelRes, res);
+      }
+      g.activeTexture(g.TEXTURE0);
     }
 
     /** Clear layer target `i` to transparent (empty layer). */
@@ -981,7 +1141,13 @@ export const toyboxDef: VideoModuleDef = {
     /** Render layer `i` into its FBO; returns whether it produced content.
      *  `safeSource` is the per-frame texmap source index for an OBJ layer (or
      *  -1; ignored for non-OBJ layers). */
-    function renderLayer(i: number, layers: ToyboxLayer[], time: number, safeSource: number): boolean {
+    function renderLayer(
+      i: number,
+      layers: ToyboxLayer[],
+      time: number,
+      safeSource: number,
+      frame: VideoFrameContext,
+    ): boolean {
       const layer = layers[i];
       if (!layer) {
         clearLayer(i);
@@ -989,7 +1155,8 @@ export const toyboxDef: VideoModuleDef = {
       }
       let drew = false;
       if (layer.kind === 'obj') drew = renderObjLayer(i, layer, time, safeSource);
-      else if (layer.kind === 'shader' || layer.kind === 'gen') drew = renderShaderLayer(i, layer, time);
+      else if (layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag')
+        drew = renderShaderLayer(i, layer, time, frame, safeSource);
       else if (layer.kind === 'image') drew = renderImageLayer(i);
       else if (layer.kind === 'video') drew = renderVideoLayer(i);
       // 'off' → nothing.
@@ -1157,7 +1324,7 @@ export const toyboxDef: VideoModuleDef = {
         //    (safeSource = -1) — never a WebGL feedback loop.
         const produced: boolean[] = new Array(LAYER_COUNT).fill(false);
         const { order, safeSource } = resolveRenderOrder(layers);
-        for (const i of order) produced[i] = renderLayer(i, layers, time, safeSource[i] ?? -1);
+        for (const i of order) produced[i] = renderLayer(i, layers, time, safeSource[i] ?? -1, frame);
 
         // 2) Combine: evaluate the live combine (Phase-4 GRAPH or legacy chain).
         const combine = liveCombineRaw();
@@ -1200,6 +1367,7 @@ export const toyboxDef: VideoModuleDef = {
         videoUploaders.clear();
         for (const c of programs.values()) gl.deleteProgram(c.program);
         programs.clear();
+        shadertoyRt.dispose();
         gl.deleteProgram(objProgram);
         gl.deleteProgram(combineProgram);
         gl.deleteProgram(inputProgram);
@@ -1406,4 +1574,286 @@ void main() {
 
 function compileInputProgram(gl: WebGL2RenderingContext): WebGLProgram {
   return linkProgram(gl, INPUT_VERT_SRC, INPUT_FRAG_SRC);
+}
+
+// ---------------- Shadertoy GLSL runtime (single-pass uniforms + multi-buffer)
+
+/** The full Shadertoy uniform locations for a compiled program. Shared between
+ *  single-pass content shaders + multi-buffer project passes. */
+interface ShadertoyUniformLocs {
+  uTimeDelta: WebGLUniformLocation | null;
+  uFrameRate: WebGLUniformLocation | null;
+  uFrame: WebGLUniformLocation | null;
+  uMouse: WebGLUniformLocation | null;
+  uDate: WebGLUniformLocation | null;
+  uChannel: Array<WebGLUniformLocation | null>;
+  uChannelRes: WebGLUniformLocation | null;
+}
+
+/** Build a getter that extracts the Shadertoy uniform locations from any
+ *  compiled program (returns nulls for the ones a given shader doesn't use). */
+function collectShadertoyUniformGetters(
+  gl: WebGL2RenderingContext,
+): (program: WebGLProgram) => ShadertoyUniformLocs {
+  return (program: WebGLProgram): ShadertoyUniformLocs => ({
+    uTimeDelta: gl.getUniformLocation(program, 'iTimeDelta'),
+    uFrameRate: gl.getUniformLocation(program, 'iFrameRate'),
+    uFrame: gl.getUniformLocation(program, 'iFrame'),
+    uMouse: gl.getUniformLocation(program, 'iMouse'),
+    uDate: gl.getUniformLocation(program, 'iDate'),
+    uChannel: [
+      gl.getUniformLocation(program, 'iChannel0'),
+      gl.getUniformLocation(program, 'iChannel1'),
+      gl.getUniformLocation(program, 'iChannel2'),
+      gl.getUniformLocation(program, 'iChannel3'),
+    ],
+    uChannelRes: gl.getUniformLocation(program, 'iChannelResolution'),
+  });
+}
+
+/** A compiled multi-buffer pass: program + uniforms + its ping-pong render
+ *  targets. Two FBOs so a `self` channel reads the PREVIOUS frame while we
+ *  render into the other; we swap front/back after the whole project renders. */
+interface CompiledStPass {
+  id: string;
+  src: string; // the resolved source (for change detection)
+  program: WebGLProgram;
+  uTime: WebGLUniformLocation | null;
+  uResolution: WebGLUniformLocation | null;
+  u: ShadertoyUniformLocs;
+  channels: ReturnType<typeof resolveChannels>;
+  float: boolean;
+  front: { fbo: WebGLFramebuffer; texture: WebGLTexture };
+  back: { fbo: WebGLFramebuffer; texture: WebGLTexture };
+}
+
+/** A compiled project keyed by a content signature so an edited project
+ *  recompiles. Holds the per-pass programs + the topo order. */
+interface CompiledStProject {
+  sig: string;
+  passes: Map<string, CompiledStPass>;
+  order: string[];
+  /** frame index when this project last rendered — drives iFrame reset on a
+   *  fresh project so the painted-buffer "reset in first frame" logic fires. */
+  localFrame: number;
+}
+
+interface ShadertoyRuntime {
+  /** Render a multi-buffer project into `layerFbo`. Returns true (it always
+   *  produces content once the passes compile). */
+  renderProject(
+    project: ShadertoyProject,
+    layerIndex: number,
+    layerFbo: WebGLFramebuffer,
+    time: number,
+    frame: VideoFrameContext,
+    sceneTex: WebGLTexture | null,
+  ): boolean;
+  dispose(): void;
+}
+
+/**
+ * Build the Shadertoy multi-buffer runtime. It compiles each pass through the
+ * mainImage→main shim (Common prepended), allocates ping-pong FBOs per pass
+ * (RGBA32F via createFloatFbo for `float` passes, RGBA8 otherwise), resolves
+ * iChannel0-3 to textures (another pass's CURRENT output / a `self` PREVIOUS
+ * frame / a keyboard stub / the scene composite / an inert dummy), and renders
+ * in topo order with the Image pass last into the layer FBO. Feedback buffers
+ * ping-pong: each pass renders into `front` (sampling `back` for `self`), then
+ * we swap after the frame so next frame's `back` is this frame's output.
+ */
+function makeShadertoyRuntime(
+  ctx: VideoEngineContext,
+  stUni: (program: WebGLProgram) => ShadertoyUniformLocs,
+  dummyTex: WebGLTexture,
+  nodeId: string,
+): ShadertoyRuntime {
+  const gl = ctx.gl;
+  const W = ctx.res.width;
+  const H = ctx.res.height;
+
+  // One keyboard stub (1×1 black) — Shadertoy's keyboard texture; we don't wire
+  // real keys yet, so texelFetch returns 0 (no reset / no toggles).
+  const keyboardTex = gl.createTexture();
+  if (!keyboardTex) throw new Error('TOYBOX: createTexture (keyboard stub) failed');
+  gl.bindTexture(gl.TEXTURE_2D, keyboardTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+
+  // Compiled projects keyed by layer index (each layer hosts at most one).
+  const compiled = new Map<number, CompiledStProject>();
+
+  /** A stable signature of the project's source so we recompile on edits. */
+  function projectSig(p: ShadertoyProject): string {
+    return JSON.stringify({
+      c: p.common ?? '',
+      p: p.passes.map((x) => ({ id: x.id, s: x.src, f: !!x.float, ch: x.channels })),
+    });
+  }
+
+  function makeTarget(float: boolean): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
+    if (float && ctx.createFloatFbo) {
+      const r = ctx.createFloatFbo(W, H, { filter: 'nearest', precision: 'full' });
+      return { fbo: r.fbo, texture: r.texture };
+    }
+    return ctx.createFbo();
+  }
+
+  function compileProject(project: ShadertoyProject): CompiledStProject {
+    const passes = new Map<string, CompiledStPass>();
+    for (const p of project.passes) {
+      // Project passes are always Shadertoy (mainImage) sources; wrap each with
+      // the shim + the shared Common chunk prepended.
+      const wrapped = wrapShadertoySource(p.src, project.common ?? '');
+      let program: WebGLProgram;
+      try {
+        program = ctx.compileFragment(wrapped);
+      } catch (err) {
+        console.warn(`[TOYBOX] shadertoy pass '${p.id}' failed to compile:`, err);
+        continue;
+      }
+      const u = stUni(program);
+      passes.set(p.id, {
+        id: p.id,
+        src: p.src,
+        program,
+        uTime: gl.getUniformLocation(program, 'iTime'),
+        uResolution: gl.getUniformLocation(program, 'iResolution'),
+        u,
+        channels: resolveChannels(p as ShadertoyPass),
+        float: !!p.float,
+        front: makeTarget(!!p.float),
+        back: makeTarget(!!p.float),
+      });
+    }
+    return { sig: projectSig(project), passes, order: topoOrderPasses(project), localFrame: 0 };
+  }
+
+  function disposePass(p: CompiledStPass): void {
+    gl.deleteProgram(p.program);
+    gl.deleteFramebuffer(p.front.fbo);
+    gl.deleteTexture(p.front.texture);
+    gl.deleteFramebuffer(p.back.fbo);
+    gl.deleteTexture(p.back.texture);
+  }
+  function disposeProject(cp: CompiledStProject): void {
+    for (const p of cp.passes.values()) disposePass(p);
+    cp.passes.clear();
+  }
+
+  /** Resolve one channel binding to a texture for the CURRENT frame.
+   *   - buffer: another pass's CURRENT-frame output (front, just rendered).
+   *   - self:   THIS pass's PREVIOUS frame (back).
+   *   - keyboard: the 1×1 stub.
+   *   - scene:  the composited layer below (or dummy when absent).
+   *   - none:   inert dummy. */
+  function channelTexture(
+    ch: ReturnType<typeof resolveChannels>[number],
+    selfPass: CompiledStPass,
+    byId: Map<string, CompiledStPass>,
+    sceneTex: WebGLTexture | null,
+  ): WebGLTexture {
+    switch (ch.type) {
+      case 'buffer': {
+        const src = byId.get(ch.pass);
+        return src ? src.front.texture : dummyTex;
+      }
+      case 'self':
+        return selfPass.back.texture;
+      case 'keyboard':
+        return keyboardTex;
+      case 'scene':
+        return sceneTex ?? dummyTex;
+      default:
+        return dummyTex;
+    }
+  }
+
+  function renderProject(
+    project: ShadertoyProject,
+    layerIndex: number,
+    layerFbo: WebGLFramebuffer,
+    time: number,
+    frame: VideoFrameContext,
+    sceneTex: WebGLTexture | null,
+  ): boolean {
+    // (Re)compile on first sight or when the source signature changes.
+    let cp = compiled.get(layerIndex);
+    const sig = projectSig(project);
+    if (!cp || cp.sig !== sig) {
+      if (cp) disposeProject(cp);
+      cp = compileProject(project);
+      compiled.set(layerIndex, cp);
+    }
+    if (cp.passes.size === 0) return false;
+
+    const date = new Date();
+    const dateSecs =
+      date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds() + date.getMilliseconds() / 1000;
+    const localFrame = cp.localFrame;
+
+    // Render each pass in topo order into its FRONT target (sampling BACK for a
+    // self channel = previous frame).
+    for (const id of cp.order) {
+      const p = cp.passes.get(id);
+      if (!p) continue;
+      const isImage = id === IMAGE_PASS_ID;
+      const dstFbo = isImage ? layerFbo : p.front.fbo;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dstFbo);
+      gl.viewport(0, 0, W, H);
+      gl.useProgram(p.program);
+      if (p.uTime) gl.uniform1f(p.uTime, time);
+      if (p.uResolution) gl.uniform3f(p.uResolution, W, H, 1);
+      if (p.u.uTimeDelta) gl.uniform1f(p.u.uTimeDelta, frame.timeDelta ?? 1 / 60);
+      if (p.u.uFrameRate) gl.uniform1f(p.u.uFrameRate, frame.frameRate ?? 60);
+      // iFrame is the PROJECT-LOCAL frame so the buffer's "if (iFrame < 2)"
+      // reset fires when the project is (re)loaded, not at engine boot.
+      if (p.u.uFrame) gl.uniform1i(p.u.uFrame, localFrame | 0);
+      if (p.u.uMouse) {
+        const m = frame.getMouse ? frame.getMouse(nodeId) : [0, 0, 0, 0];
+        gl.uniform4f(p.u.uMouse, m[0]!, m[1]!, m[2]!, m[3]!);
+      }
+      if (p.u.uDate) gl.uniform4f(p.u.uDate, date.getFullYear(), date.getMonth(), date.getDate(), dateSecs);
+      // Channels → textures + iChannelResolution.
+      for (let s = 0; s < SHADERTOY_CHANNELS; s++) {
+        const tex = channelTexture(p.channels[s]!, p, cp.passes, sceneTex);
+        gl.activeTexture(gl.TEXTURE0 + s);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        if (p.u.uChannel[s]) gl.uniform1i(p.u.uChannel[s]!, s);
+      }
+      if (p.u.uChannelRes) {
+        const res = new Float32Array(SHADERTOY_CHANNELS * 3);
+        for (let s = 0; s < SHADERTOY_CHANNELS; s++) {
+          res[s * 3] = W;
+          res[s * 3 + 1] = H;
+          res[s * 3 + 2] = 1;
+        }
+        gl.uniform3fv(p.u.uChannelRes, res);
+      }
+      ctx.drawFullscreenQuad();
+      gl.activeTexture(gl.TEXTURE0);
+    }
+
+    // Swap front/back on every buffer pass so this frame's output becomes next
+    // frame's `back` (the `self` previous-frame source). The Image pass renders
+    // straight into the layer FBO so it has nothing to swap.
+    for (const p of cp.passes.values()) {
+      if (p.id === IMAGE_PASS_ID) continue;
+      const t = p.front;
+      p.front = p.back;
+      p.back = t;
+    }
+    cp.localFrame = localFrame + 1;
+    return true;
+  }
+
+  function dispose(): void {
+    for (const cp of compiled.values()) disposeProject(cp);
+    compiled.clear();
+    gl.deleteTexture(keyboardTex);
+  }
+
+  return { renderProject, dispose };
 }

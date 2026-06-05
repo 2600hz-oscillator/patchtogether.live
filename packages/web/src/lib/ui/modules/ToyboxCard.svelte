@@ -56,6 +56,14 @@
     type ToyboxSurfaceMode,
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
+  import {
+    canvasToEnginePx,
+    makeMouseState,
+    mouseDown,
+    mouseMove,
+    mouseUp,
+    mouseToVec4,
+  } from '$lib/video/toybox-shadertoy';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import {
@@ -221,6 +229,24 @@
   // faders appear as soon as the manifest loads, and re-derive when the
   // selected content changes.
   let currentMeta = $derived(catalog.find((c) => c.id === currentContentId));
+
+  // The content dropdown is filtered by the active KIND:
+  //   - GEN (and legacy 'shader'): all NO-scene-input shaders (GEN + FX families)
+  //     — generative content that ignores the composite below.
+  //   - FRAG: FRAG-family shaders, which receive the composite below as
+  //     iChannel0 (recolour / displace / feedback FX).
+  // This keeps the GEN | FRAG split honest while legacy FX content stays reachable.
+  let contentChoices = $derived.by<ToyboxContent[]>(() => {
+    if (currentKind === 'frag') return catalog.filter((c) => c.family === 'FRAG');
+    if (currentKind === 'gen' || currentKind === 'shader')
+      return catalog.filter((c) => c.family === 'GEN' || c.family === 'FX');
+    return catalog;
+  });
+
+  /** The KIND selector value: collapse the legacy 'shader' kind onto 'gen' so a
+   *  pre-split FX layer still shows a selected option (both are no-scene-input
+   *  shader content under the GEN bucket). */
+  let kindSelectValue = $derived(currentKind === 'shader' ? 'gen' : currentKind);
 
   // ----- OBJ-layer derived state -----
   let currentMaterial = $derived.by<ToyboxObjMaterial>(
@@ -1134,13 +1160,20 @@
    *  Best-effort: failures are swallowed (the factory retries on its own). */
   function prefetchPresetAssets(preset: ToyboxPreset): void {
     for (const layer of preset.layers ?? []) {
-      if ((layer.kind === 'shader' || layer.kind === 'gen') && layer.contentId) {
+      if ((layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag') && layer.contentId) {
         void getContent(layer.contentId).catch(() => {});
       } else if (layer.kind === 'obj' && layer.material) {
         const modelId = layer.material.modelId;
         const meta = modelId ? getModelMeta(modelId) : undefined;
         // Built-in primitives have no OBJ to fetch (the factory builds them).
         if (meta?.obj) void getModelObj(modelId).catch(() => {});
+      }
+      // Multi-buffer project: warm each pass GLSL file (+ the Common chunk) so
+      // the first compile after load doesn't stall on the network fetch.
+      const ref = (layer as ToyboxLayer).projectRef;
+      if (ref && Array.isArray(ref.passes)) {
+        if (ref.common) void fetch(ref.common).catch(() => {});
+        for (const p of ref.passes) void fetch(p.url).catch(() => {});
       }
     }
   }
@@ -1185,6 +1218,57 @@
     return { x: 0, y: Math.round((ch - h) / 2), w, h };
   }
 
+  // ----- iMouse routing (Shadertoy click-to-paint etc.) -----
+  // The preview canvas's pointer events are mapped CLIENT px → ENGINE px (via the
+  // letterbox inverse, with the GL bottom-origin Y-flip) into a Shadertoy-style
+  // press state machine, then pushed to the engine each frame as the iMouse vec4.
+  const mouse = makeMouseState();
+
+  /** Map a pointer event on the preview canvas to engine px (or null if it
+   *  landed on the letterbox bars). Uses the canvas's CSS box → its intrinsic
+   *  pixel size → the engine letterbox rect. */
+  function pointerEnginePx(ev: PointerEvent): { x: number; y: number } | null {
+    if (!canvasEl) return null;
+    const box = canvasEl.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return null;
+    // Pointer in the canvas's INTRINSIC pixel space (CANVAS_W × CANVAS_H).
+    const cx = ((ev.clientX - box.left) / box.width) * canvasEl.width;
+    const cy = ((ev.clientY - box.top) / box.height) * canvasEl.height;
+    const rect = fitRect(canvasEl.width, canvasEl.height);
+    return canvasToEnginePx(cx, cy, rect, ENGINE_W, ENGINE_H);
+  }
+
+  /** Push the current iMouse vec4 to the engine for THIS node (called each rAF
+   *  + on every pointer event so a click is never missed between frames). */
+  function pushMouse(): void {
+    const e = engineCtx.get();
+    if (!e) return;
+    let ve: VideoEngine | undefined;
+    try { ve = e.getDomain<VideoEngine>('video'); } catch { return; }
+    if (!ve || typeof ve.setMouse !== 'function') return;
+    const v = mouseToVec4(mouse);
+    ve.setMouse(id, v[0], v[1], v[2], v[3]);
+  }
+
+  function onCanvasPointerDown(ev: PointerEvent): void {
+    const p = pointerEnginePx(ev);
+    if (!p) return;
+    try { canvasEl?.setPointerCapture(ev.pointerId); } catch { /* */ }
+    mouseDown(mouse, p.x, p.y);
+    pushMouse();
+  }
+  function onCanvasPointerMove(ev: PointerEvent): void {
+    const p = pointerEnginePx(ev);
+    if (!p) return;
+    mouseMove(mouse, p.x, p.y);
+    pushMouse();
+  }
+  function onCanvasPointerUp(ev: PointerEvent): void {
+    try { canvasEl?.releasePointerCapture(ev.pointerId); } catch { /* */ }
+    mouseUp(mouse);
+    pushMouse();
+  }
+
   function blitOnce(): void {
     const e = engineCtx.get();
     if (!e || !canvasEl) return;
@@ -1214,6 +1298,9 @@
   function draw() {
     rafId = requestAnimationFrame(draw);
     if (frozen) return; // hold the last frame (VRT)
+    // Advance + push the iMouse vec4 each frame so the Shadertoy .w click-frame
+    // sign is consumed (and a held .z sign keeps refreshing) even with no events.
+    pushMouse();
     blitOnce();
     // Drive all 6 inline scopes from ONE batched read('cvScope') — joined to
     // THIS rAF (after blitOnce), no separate loop, no per-knob readLive.
@@ -1308,6 +1395,11 @@
       height={CANVAS_H}
       data-testid="toybox-canvas"
       data-node-id={id}
+      style="touch-action: none;"
+      onpointerdown={onCanvasPointerDown}
+      onpointermove={onCanvasPointerMove}
+      onpointerup={onCanvasPointerUp}
+      onpointercancel={onCanvasPointerUp}
     ></canvas>
   </div>
 
@@ -1361,10 +1453,11 @@
       id={`toybox-kind-${id}`}
       class="content-select"
       data-testid="toybox-kind-select"
-      value={currentKind}
+      value={kindSelectValue}
       onchange={onKindChange}
     >
-      <option value="gen">SHADER</option>
+      <option value="gen">GEN</option>
+      <option value="frag">FRAG</option>
       <option value="obj">OBJ</option>
       <option value="image">IMAGE</option>
       <option value="video">VIDEO</option>
@@ -1507,7 +1600,7 @@
       <Knob value={surfaceMixVal()} min={0} max={1} defaultValue={1}
         label="SURF MIX" curve="linear" onchange={setMat('surfaceMix')} moduleId={id} paramId="surfaceMix" />
     </div>
-  {:else if currentKind === 'gen' || currentKind === 'shader'}
+  {:else if currentKind === 'gen' || currentKind === 'shader' || currentKind === 'frag'}
     <div class="content-row">
       <label class="content-label" for={`toybox-content-${id}`}>CONTENT</label>
       <select
@@ -1517,11 +1610,16 @@
         value={currentContentId}
         onchange={onContentChange}
       >
-        {#each catalog as c (c.id)}
+        {#each contentChoices as c (c.id)}
           <option value={c.id}>{c.family} · {c.label}</option>
         {/each}
       </select>
     </div>
+    {#if currentKind === 'frag'}
+      <div class="frag-hint" data-testid="toybox-frag-hint">
+        FRAG receives the layer below as iChannel0
+      </div>
+    {/if}
 
     <div class="knob-grid" data-testid="toybox-controls">
       {#if currentMeta}
@@ -2062,6 +2160,13 @@
     margin-top: 2px;
     font-size: 0.52rem;
     color: var(--cable-video);
+    font-family: ui-monospace, monospace;
+    opacity: 0.6;
+  }
+  .frag-hint {
+    margin-top: 2px;
+    font-size: 0.52rem;
+    color: var(--cable-cv);
     font-family: ui-monospace, monospace;
     opacity: 0.6;
   }

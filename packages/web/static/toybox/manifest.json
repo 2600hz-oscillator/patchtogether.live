@@ -3,6 +3,18 @@
   "note": "TOYBOX Phase 1 content bank. Each entry declares its float-uniform params — the single source of truth for the card faders (and later CV targets). GLSL is fetched lazily from `glsl` on selection (NOT JS-bundled). GEN families live under `gen`, FX families under `shaders`.",
   "shaders": [
     {
+      "id": "frag-invert-scan",
+      "label": "FRAG INVERT-SCAN",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-invert-scan.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "amount", "label": "AMOUNT", "min": 0.0, "max": 1.0,  "default": 1.0, "curve": "linear" },
+        { "id": "split",  "label": "SPLIT",  "min": 0.0, "max": 12.0, "default": 3.0, "curve": "linear" }
+      ]
+    },
+    {
       "id": "hsv-plasma",
       "label": "HSV PLASMA",
       "family": "FX",
@@ -26,6 +38,15 @@
     }
   ],
   "gen": [
+    {
+      "id": "synthwave-sunset",
+      "label": "SYNTHWAVE SUNSET",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/synthwave-sunset.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": []
+    },
     {
       "id": "noise-fbm",
       "label": "NOISE FBM",
@@ -263,6 +284,85 @@
       "cvRoutes": {
         "cv3": { "target": "layer", "layer": 0, "param": "material:spin" }
       }
+    },
+    {
+      "id": "eroded-terrain",
+      "label": "ERODED TERRAIN ISLAND",
+      "note": "Multi-buffer Shadertoy port (Jan Mróz/Rune Skovbo Johansen/Fewes): a 'frag' layer hosts a 4-pass project — Common + BufferA (raw heightmap painted by the mouse, RGBA32F, self-feedback + keyboard stub) + BufferB (erosion filter, RGBA32F, intBitsToFloat packing + texelFetch, reads BufferA) + BufferC (detail noise) + Image (raymarched terrain reading BufferB + BufferC). CLICK the preview to GROW the mountain (iMouse click-to-paint). Feedback buffers converge over several frames.",
+      "layers": [
+        {
+          "kind": "frag",
+          "contentId": null,
+          "params": {},
+          "projectRef": {
+            "common": "/toybox/shaders/erosion-common.glsl",
+            "passes": [
+              {
+                "id": "bufferA",
+                "url": "/toybox/shaders/erosion-bufferA.glsl",
+                "float": true,
+                "channels": [
+                  { "type": "self" },
+                  { "type": "keyboard" },
+                  { "type": "none" },
+                  { "type": "none" }
+                ]
+              },
+              {
+                "id": "bufferB",
+                "url": "/toybox/shaders/erosion-bufferB.glsl",
+                "float": true,
+                "channels": [
+                  { "type": "buffer", "pass": "bufferA" },
+                  { "type": "keyboard" },
+                  { "type": "none" },
+                  { "type": "none" }
+                ]
+              },
+              {
+                "id": "bufferC",
+                "url": "/toybox/shaders/erosion-bufferC.glsl",
+                "float": false,
+                "channels": [
+                  { "type": "none" },
+                  { "type": "none" },
+                  { "type": "none" },
+                  { "type": "none" }
+                ]
+              },
+              {
+                "id": "image",
+                "url": "/toybox/shaders/erosion-image.glsl",
+                "float": false,
+                "channels": [
+                  { "type": "buffer", "pass": "bufferB" },
+                  { "type": "buffer", "pass": "bufferC" },
+                  { "type": "buffer", "pass": "bufferC" },
+                  { "type": "none" }
+                ]
+              }
+            ]
+          }
+        },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {}
     }
   ]
 }
