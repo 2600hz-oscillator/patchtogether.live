@@ -3,7 +3,7 @@
 // Shared test helpers for spawning arbitrary modules + edges via the dev-mode
 // `__patch` and `__ydoc` window globals (Canvas.svelte exposes these in dev).
 
-import type { Page, APIRequestContext } from '@playwright/test';
+import { expect, type Page, type APIRequestContext } from '@playwright/test';
 
 export interface SpawnNode {
   id: string;
@@ -172,13 +172,45 @@ export async function ensureToyboxSectionOpen(
 ): Promise<void> {
   const content = page.locator(`[data-testid="${contentTestId}"]`);
   if (await content.isVisible().catch(() => false)) return;
+  // Cold SwiftShader (CI + local --use-angle=swiftshader) can take well over 5s
+  // to FIRST-paint the toybox card. Several sections (the combine editor) are
+  // open-by-default — clicking the toggle on a not-yet-rendered-but-open section
+  // would CLOSE it, then the old 5s wait timed out on now-hidden content (the
+  // systemic toybox setup flake). So give the content a generous window to appear
+  // naturally first; only toggle if it is genuinely still collapsed after that.
+  const appeared = await content
+    .waitFor({ state: 'visible', timeout: 12_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (appeared) return;
   await page.locator(`[data-testid="${toggleTestId}"]`).click({ force: true, noWaitAfter: true });
-  await content.waitFor({ state: 'visible', timeout: 5000 });
+  await content.waitFor({ state: 'visible', timeout: 15_000 });
 }
 
 /** Ensure the COMBINE GRAPH editor section is open (its SVG is visible). */
 export async function ensureCombineOpen(page: Page): Promise<void> {
   await ensureToyboxSectionOpen(page, 'toybox-combine-toggle', 'toybox-graph-svg');
+}
+
+/**
+ * Right-click a combine-graph node until its context menu opens. The single
+ * right-click can land before a freshly-added node is interactive on cold
+ * SwiftShader (the node map re-renders async), so the menu intermittently fails
+ * to open — the dominant toybox-node-menu / keyer-config flake. Retrying the
+ * (right-click → assert menu) pair makes it deterministic. Returns once the menu
+ * is visible; throws (with the node id) if it never opens within the budget.
+ */
+export async function openToyboxNodeMenu(page: Page, nodeId: string): Promise<void> {
+  const node = page.locator(`[data-testid="toybox-gnode-${nodeId}"]`);
+  await node.waitFor({ state: 'visible', timeout: 15_000 });
+  const menu = page.locator('[data-testid="toybox-node-menu"]');
+  await expect(
+    async () => {
+      await node.click({ button: 'right', force: true, noWaitAfter: true });
+      await expect(menu).toBeVisible({ timeout: 3_000 });
+    },
+    `node menu for ${nodeId} should open on right-click`,
+  ).toPass({ timeout: 20_000 });
 }
 
 /** Ensure the CV/MOD section is open (its rows are visible). */
