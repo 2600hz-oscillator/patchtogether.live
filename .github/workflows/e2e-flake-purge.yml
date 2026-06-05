@@ -1,0 +1,227 @@
+# e2e-flake-purge — run the FULL sharded e2e suite 5× (manual dispatch) to
+# identify every spec that is not 5×-stable on CI's Linux SwiftShader.
+#
+# WHY this exists (one-off-ish tool, kept for reuse): "run all e2e 5×, quarantine
+# anything that fails any pass" can't be done faithfully locally — local Mac
+# SwiftShader gives FALSE interaction failures and the dev port may be occupied.
+# This builds the DSP dist + preview bundle ONCE (same artifacts as ci.yml) then
+# fans out a `shard(1..10) × pass(1..5)` = 50-job matrix, each running the normal
+# `--shard=S/10` ONCE with `--retries=0` (so a flake shows as a FAILURE, not a
+# retry-masked pass). Download all 50 blob reports + merge → any test that failed
+# in ANY pass is a quarantine (`test.fixme`) candidate.
+#
+# Dispatch:  gh workflow run e2e-flake-purge.yml --ref <branch>
+# Each job is a normal ~8-12 min shard run (well within the 20 min timeout); the
+# 50 jobs drain in a few concurrency waves.
+name: e2e-flake-purge
+
+on:
+  workflow_dispatch: {}
+  # Push-triggered on a dedicated branch prefix so the purge runs from the
+  # PUSHED branch's own workflow file — no need for this file to live on the
+  # default branch (which would trigger a full red-e2e ci.yml run on main before
+  # the quarantine MR lands). `git push origin <work>:e2e-purge/run-N` fires it.
+  push:
+    branches: ['e2e-purge/**']
+
+# Don't let two purge runs (or a purge + its own re-dispatch) collide.
+concurrency:
+  group: e2e-flake-purge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- DSP worklets, once (verbatim from ci.yml dsp-build) ---
+  dsp-build:
+    name: dsp-build (Faust worklets, once)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Cache DSP dist
+        id: cache-dsp-dist
+        uses: actions/cache@v4
+        with:
+          path: packages/dsp/dist
+          key: ${{ runner.os }}-dsp-dist-${{ hashFiles('packages/dsp/src/**', 'packages/dsp/scripts/**', 'packages/dsp/package.json', '.flox/env/manifest.toml') }}
+      - name: Install workspace deps
+        run: flox activate -- task install
+      - name: Build DSP worklets (Faust + esbuild)
+        run: flox activate -- task dsp:build
+      - name: Upload DSP dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+          include-hidden-files: true
+          retention-days: 1
+
+  # --- Preview bundle, once (verbatim from ci.yml build-web) ---
+  build-web:
+    name: build-web (preview bundle, once)
+    needs: dsp-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+      - name: Install workspace deps
+        run: flox activate -- task install
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
+      - name: Build web (preview bundle, test hooks enabled)
+        env:
+          VITE_E2E_HOOKS: '1'
+        run: flox activate -- task build:web
+      - name: Upload web preview bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+          include-hidden-files: true
+          retention-days: 1
+
+  # --- The 5× fan-out: shard(1..10) × pass(1..5) = 50 jobs ---
+  e2e-purge:
+    name: e2e-purge (shard ${{ matrix.shard }}/10 pass ${{ matrix.pass }})
+    needs: [dsp-build, build-web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        pass: [1, 2, 3, 4, 5]
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      E2E_USE_PREVIEW: '1'
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+      # retries=0 so a flake is reported as a FAILURE (not a retry-masked pass):
+      # the whole point is to catch any test that isn't deterministically green.
+      - name: Run E2E (shard ${{ matrix.shard }}/10 pass ${{ matrix.pass }}, no @collab/@capacity/behavioral)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
+            --shard=${{ matrix.shard }}/10 \
+            --retries=0 \
+            --reporter=blob
+      - name: Upload blob report (shard ${{ matrix.shard }} pass ${{ matrix.pass }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-${{ matrix.shard }}-${{ matrix.pass }}
+          path: e2e/blob-report
+          retention-days: 7
