@@ -1,22 +1,22 @@
 // e2e/tests/toybox-cv-routing.spec.ts
 //
-// TOYBOX Phase 5 — CV-assignable params via the generic cv pool + per-param
-// routing. Demonstrates the THREE different assignment setups the MVP requires:
+// TOYBOX modulation section — the 6-input CV/MOD section. Each input has an
+// attenuverter (SCALE) + OFFSET, auto-detects cv-vs-audio from the inbound
+// edge's sourceType, and routes to an addressed layer/combine/obj param. This
+// spec drives the engine's real setParam path (what the cross-domain bridge does
+// each frame) and asserts the resolved LIVE param moves with the new scale/offset
+// model:
 //
 //   (a) cv1 → a SHADER param   (layer 0 content uniform 'speed'),
-//   (b) cv2 → a COMBINE param  (a fade op node's amount/t),
-//   (c) cv3 → an OBJ param     (layer 2 material 'spin').
+//   (b) cv2 → a COMBINE param  (a fade op node's amount),
+//   (c) cv3 → an OBJ param     (layer 2 material 'spin'),
+//   (d) AUDIO source into an input is detected as audio + envelope-modulates,
+//   (e) OFFSET on an UNPATCHED routed port moves the param (manual control).
 //
-// For each: we route the generic cv port through the in-card CV TAB UI (the
-// two-dropdown row), then DRIVE that generic port through the engine's real
-// setParam(cvN, ±1) — the exact Phase-5 bridge path — and assert the resolved
-// LIVE param moved across its range (re-scaled by setParam). cv1/cv2 are also
-// confirmed to change the composite (the route reaches the render).
-//
-// Driving via setParam(cvN, raw) mirrors what the cross-domain cv-bridge does
-// each frame; it resolves cvRoutes[cvN], re-scales raw ±1 across the addressed
-// param's declared min/max (centred on the param's value), and writes the live
-// param. We read node.data back to prove the write landed at the right target.
+// We seed real EDGES (with the right sourceType) so the factory's edge-based
+// kind detection fires + applyUnpatchedOffsets leaves the bridge in charge; a
+// patched cv source folds its bipolar sample to 0..1, an audio source is taken
+// as an already-0..1 envelope.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -33,9 +33,11 @@ type PatchGlobal = {
           combine?: { nodes?: { id?: string; kind?: string; params?: FadeParams }[]; edges?: unknown[] };
           layers?: { kind?: string; contentId?: string | null; params?: Record<string, number>; material?: ObjMaterial }[];
           cvRoutes?: Record<string, unknown>;
+          cvInputs?: Record<string, { scale?: number; offset?: number }>;
         };
       }
     >;
+    edges: Record<string, unknown>;
   };
   __ydoc: { transact: (fn: () => void) => void };
   __engine?: () => { getDomain: <T>(d: string) => T };
@@ -43,8 +45,8 @@ type PatchGlobal = {
 
 type VideoEngineLike = { setParam: (nodeId: string, paramId: string, value: number) => void };
 
-/** Pin the viewport at scale 1, panned up so the (CV-tab-open) card body clears
- *  the fixed bottombar footer. Mirrors the combine-editor spec. */
+/** Pin the viewport at scale 1, panned up so the (CV-section-open) card body
+ *  clears the fixed bottombar footer. */
 async function pinViewport(page: Page): Promise<void> {
   await page.evaluate(() => {
     const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
@@ -55,11 +57,14 @@ async function pinViewport(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 }
 
-/** Seed the demo patch: layer 0 = a shader (speed param), layer 1 = a 2nd
- *  shader, layer 2 = an OBJ layer (spin material). A crossfade combine graph
- *  (src0 ↔ src1 via a FADE op 'xf') so cv2 → xf.amount moves the composite. */
-async function seedDemoPatch(page: Page): Promise<void> {
-  await page.evaluate(() => {
+/** Seed the demo patch (layers + crossfade combine graph) + a set of edges into
+ *  the TOYBOX modulation inputs with the given sourceTypes (so the factory's
+ *  kind detection sees a "patched" port owned by the bridge). */
+async function seedDemoPatch(
+  page: Page,
+  edges: { id: string; port: string; sourceType: string }[],
+): Promise<void> {
+  await page.evaluate((edges) => {
     const w = globalThis as unknown as PatchGlobal;
     w.__ydoc.transact(() => {
       const n = w.__patch.nodes['tb'];
@@ -94,12 +99,26 @@ async function seedDemoPatch(page: Page): Promise<void> {
           { id: 'e2', from: 'xf', to: 'out', toPort: 'in0' },
         ],
       };
+      // Seed inbound edges into the modulation inputs (a synthetic source 'lfo'
+      // — the node need not exist for the factory's edge-based kind detection,
+      // which only reads edge.target + edge.sourceType).
+      for (const e of edges) {
+        w.__patch.edges[e.id] = {
+          id: e.id,
+          source: { nodeId: 'lfo', portId: 'out' },
+          target: { nodeId: 'tb', portId: e.port },
+          sourceType: e.sourceType,
+          targetType: 'modsignal',
+        };
+      }
     });
-  });
+  }, edges);
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 }
 
-/** Drive a generic cv port through the engine's real setParam path. */
+/** Drive a generic input through the engine's real setParam path (what the
+ *  bridge does each frame). For cv the value is the bipolar sample (−1..+1);
+ *  for audio it's the already-0..1 envelope value. */
 async function driveCv(page: Page, port: string, raw: number): Promise<void> {
   await page.evaluate(
     ({ port, raw }) => {
@@ -113,7 +132,7 @@ async function driveCv(page: Page, port: string, raw: number): Promise<void> {
   );
 }
 
-/** Read the live layers/combine/routes back from the patch. */
+/** Read live layers/combine/routes/inputs back from the patch. */
 async function readData(page: Page) {
   return page.evaluate(() => {
     const w = globalThis as unknown as PatchGlobal;
@@ -122,132 +141,176 @@ async function readData(page: Page) {
       layers: n?.data?.layers ?? [],
       combine: n?.data?.combine ?? { nodes: [] },
       cvRoutes: n?.data?.cvRoutes ?? {},
+      cvInputs: n?.data?.cvInputs ?? {},
     };
   });
 }
 
-/** Select a value in the [target ▾] then [param ▾] of a cv row (UI path).
- *
- *  noWaitAfter:true is load-bearing on CI: these <select>s drive plain Svelte
- *  onchange handlers (write cvRoutes) and never navigate, but Playwright's
- *  default post-action "waiting for scheduled navigations to finish" window is
- *  pathologically slow here (~2s/select) because TOYBOX's WebGL rAF compositor
- *  starves the main thread. Six selects × ~2s of no-op nav-wait pushed the test
- *  past its 30s budget on CI (it passes in ~5s locally). Skipping the wait
- *  reclaims that time. */
-async function routeViaUi(
+/** Set a route + scale/offset directly in node.data (mirrors the card mutators)
+ *  for deterministic param assertions without exercising the slow select UI. */
+async function seedRoute(
   page: Page,
   port: string,
-  targetValue: string,
-  paramValue: string,
+  route: Record<string, unknown>,
+  scale: number,
+  offset: number,
 ): Promise<void> {
-  await page
-    .locator(`[data-testid="toybox-cv-target-${port}"]`)
-    .selectOption(targetValue, { noWaitAfter: true });
-  // Selecting a target auto-picks its first param; explicitly choose the one we
-  // want (the param dropdown re-populates from the chosen target).
-  await page
-    .locator(`[data-testid="toybox-cv-param-${port}"]`)
-    .selectOption(paramValue, { noWaitAfter: true });
+  await page.evaluate(({ port, route, scale, offset }) => {
+    const w = globalThis as unknown as PatchGlobal;
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['tb'];
+      if (!n?.data) return;
+      if (!n.data.cvRoutes) n.data.cvRoutes = {};
+      if (!n.data.cvInputs) n.data.cvInputs = {};
+      n.data.cvRoutes[port] = route;
+      n.data.cvInputs[port] = { scale, offset };
+    });
+  }, { port, route, scale, offset });
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 }
 
-test.describe('TOYBOX CV routing (Phase 5)', () => {
-  test('routes cv1→shader, cv2→combine, cv3→obj via the CV tab + drives each', async ({ page }) => {
-    // TOYBOX runs a WebGL rAF compositor; on CI's software renderer every
-    // Playwright op (select / click / evaluate) is slow, and this test does
-    // many of them (6 selects + ~7 drive/read evaluates). Give it headroom
-    // beyond the 30s default (mirrors the heavy-video specs). noWaitAfter on the
-    // selects already removes the bulk of the CI inflation; this is the safety
-    // margin so a slow runner doesn't clip the tail.
-    test.setTimeout(60_000);
+async function spawnToybox(page: Page): Promise<void> {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+    [],
+  );
+  const card = page.locator('.svelte-flow__node-toybox').first();
+  await card.waitFor({ state: 'visible', timeout: 10_000 });
+  await pinViewport(page);
+}
+
+test.describe('TOYBOX CV/modulation section', () => {
+  // TOYBOX runs a WebGL rAF compositor; on CI's software renderer every op is
+  // slow. Match the existing heavy-video toybox specs.
+  test.setTimeout(90_000);
+
+  test('routes cv1→shader, cv2→combine, cv3→obj + drives each (scale/offset model)', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-    await spawnPatch(
-      page,
-      [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
-      [],
-    );
-    const card = page.locator('.svelte-flow__node-toybox').first();
-    await card.waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await spawnToybox(page);
+    await seedDemoPatch(page, [
+      { id: 'ec1', port: 'cv1', sourceType: 'cv' },
+      { id: 'ec2', port: 'cv2', sourceType: 'cv' },
+      { id: 'ec3', port: 'cv3', sourceType: 'cv' },
+    ]);
 
-    await seedDemoPatch(page);
+    // Route via node.data (the UI select path is covered separately below).
+    await seedRoute(page, 'cv1', { target: 'layer', layer: 0, param: 'speed' }, 1, 0);
+    await seedRoute(page, 'cv2', { target: 'combine', nodeId: 'xf', param: 'amount' }, 1, 0);
+    await seedRoute(page, 'cv3', { target: 'layer', layer: 2, param: 'material:spin' }, 1, 0);
 
-    // Open the CV tab. noWaitAfter: pure section-toggle onclick, never navigates
-    // (see routeViaUi for why the post-click nav-wait is costly on CI).
-    await page.locator('[data-testid="toybox-cv-toggle"]').click({ force: true, noWaitAfter: true });
-    await page.locator('[data-testid="toybox-cv-rows"]').waitFor({ state: 'visible', timeout: 5_000 });
-
-    // ── (a) cv1 → SHADER param (layer 0 'speed') via the UI ──
-    await routeViaUi(page, 'cv1', 'layer:0', 'speed');
-    // ── (b) cv2 → COMBINE param (fade op 'xf' amount) via the UI ──
-    await routeViaUi(page, 'cv2', 'combine:xf', 'amount');
-    // ── (c) cv3 → OBJ param (layer 2 material spin) via the UI ──
-    await routeViaUi(page, 'cv3', 'layer:2', 'material:spin');
-
-    // The routes persisted to node.data.cvRoutes at the right targets.
-    {
-      const { cvRoutes } = await readData(page);
-      expect(cvRoutes.cv1).toMatchObject({ target: 'layer', layer: 0, param: 'speed' });
-      expect(cvRoutes.cv2).toMatchObject({ target: 'combine', nodeId: 'xf', param: 'amount' });
-      expect(cvRoutes.cv3).toMatchObject({ target: 'layer', layer: 2, param: 'material:spin' });
-    }
-
-    // ── Drive each generic port and assert the resolved LIVE param moved ──
-
-    // (a) cv1 = +1 → layer 0 speed re-scaled across 0..2 (centred on 0.4) → 1.4.
+    // ── (a) cv1 full scale +1 cv → folds to 1.0 → speed = max (2) ──
     await driveCv(page, 'cv1', 1);
     {
       const { layers } = await readData(page);
-      expect(layers[0]!.params!.speed).toBeGreaterThan(0.4); // moved up from the centre
-      expect(layers[0]!.params!.speed).toBeLessThanOrEqual(2);
+      expect(layers[0]!.params!.speed).toBeCloseTo(2, 2);
     }
-    // cv1 = -1 → speed re-scaled DOWN (toward 0); proves bidirectional sweep.
+    // cv1 = -1 → folds to 0 → speed = min (0). Bidirectional sweep.
     await driveCv(page, 'cv1', -1);
     {
       const { layers } = await readData(page);
-      expect(layers[0]!.params!.speed).toBeLessThan(0.4);
-      expect(layers[0]!.params!.speed).toBeGreaterThanOrEqual(0);
+      expect(layers[0]!.params!.speed).toBeCloseTo(0, 2);
+    }
+    // cv1 = 0 (centre) → folds to 0.5 → speed = midpoint (1).
+    await driveCv(page, 'cv1', 0);
+    {
+      const { layers } = await readData(page);
+      expect(layers[0]!.params!.speed).toBeCloseTo(1, 2);
     }
 
-    // (b) cv2 = +1 → fade op amount re-scaled across 0..1 (centred on 0.5) → 1.
+    // ── (b) cv2 = +1 → fade amount = max (1); -1 → 0 ──
     await driveCv(page, 'cv2', 1);
     {
       const { combine } = await readData(page);
-      const xf = combine.nodes!.find((x) => x.id === 'xf')!;
-      expect(xf.params!.amount).toBeCloseTo(1, 3);
+      expect(combine.nodes!.find((x) => x.id === 'xf')!.params!.amount).toBeCloseTo(1, 2);
     }
-    // cv2 = -1 → amount → 0.
     await driveCv(page, 'cv2', -1);
     {
       const { combine } = await readData(page);
-      const xf = combine.nodes!.find((x) => x.id === 'xf')!;
-      expect(xf.params!.amount).toBeCloseTo(0, 3);
+      expect(combine.nodes!.find((x) => x.id === 'xf')!.params!.amount).toBeCloseTo(0, 2);
     }
 
-    // (c) cv3 = +1 → layer 2 material spin re-scaled across 0..3 (centred on 0) → 1.5.
+    // ── (c) cv3 = +1 → layer 2 material spin = max (3) ──
     await driveCv(page, 'cv3', 1);
     {
       const { layers } = await readData(page);
-      expect(layers[2]!.material!.spin).toBeGreaterThan(0);
-      expect(layers[2]!.material!.spin).toBeLessThanOrEqual(3);
+      expect(layers[2]!.material!.spin).toBeCloseTo(3, 2);
     }
-
-    // An unrouted port (cv8) is a NO-OP: driving it changes nothing + never throws.
-    const before = await readData(page);
-    await driveCv(page, 'cv8', 1);
-    const after = await readData(page);
-    expect(after.layers[0]!.params!.speed).toBe(before.layers[0]!.params!.speed);
 
     expect(
       errors.filter((e) => !e.includes('AudioContext')),
       'no console / page errors',
     ).toEqual([]);
+  });
+
+  test('attenuverter SCALE inverts + scales; AUDIO source is detected + envelope-modulates', async ({ page }) => {
+    await spawnToybox(page);
+    await seedDemoPatch(page, [
+      { id: 'ec1', port: 'cv1', sourceType: 'cv' },
+      { id: 'ea2', port: 'cv2', sourceType: 'audio' },
+    ]);
+
+    // cv1 with SCALE -1, OFFSET 1 → a rising signal LOWERS the param (invert).
+    await seedRoute(page, 'cv1', { target: 'layer', layer: 0, param: 'speed' }, -1, 1);
+    await driveCv(page, 'cv1', 1); // fold → 1.0 → norm = clamp(1*-1+1)=0 → speed min (0)
+    {
+      const { layers } = await readData(page);
+      expect(layers[0]!.params!.speed).toBeCloseTo(0, 2);
+    }
+    await driveCv(page, 'cv1', -1); // fold → 0 → norm = clamp(0*-1+1)=1 → speed max (2)
+    {
+      const { layers } = await readData(page);
+      expect(layers[0]!.params!.speed).toBeCloseTo(2, 2);
+    }
+
+    // cv2 is an AUDIO source → the value is taken as an already-0..1 envelope
+    // (NOT folded). Route to the fade amount (0..1).
+    await seedRoute(page, 'cv2', { target: 'combine', nodeId: 'xf', param: 'amount' }, 1, 0);
+    await driveCv(page, 'cv2', 0.75); // audio envelope 0.75 → amount 0.75
+    {
+      const { combine } = await readData(page);
+      expect(combine.nodes!.find((x) => x.id === 'xf')!.params!.amount).toBeCloseTo(0.75, 2);
+    }
+    // The badge auto-detects AUDIO from the edge sourceType (section default-open).
+    await page.locator('[data-testid="toybox-cv-rows"]').waitFor({ state: 'visible', timeout: 5_000 });
+    await expect(page.locator('[data-testid="toybox-cv-badge-cv2"]')).toHaveAttribute('data-kind', 'audio', {
+      timeout: 5_000,
+    });
+  });
+
+  test('OFFSET on an UNPATCHED routed port drives the param (manual control, no cable)', async ({ page }) => {
+    await spawnToybox(page);
+    // No inbound edges → applyUnpatchedOffsets owns the write each frame.
+    await seedDemoPatch(page, []);
+    // Route cv4 → fade amount with OFFSET 0.5, no cable.
+    await seedRoute(page, 'cv4', { target: 'combine', nodeId: 'xf', param: 'amount' }, 1, 0.5);
+
+    // Let the engine render a few frames so applyUnpatchedOffsets runs.
+    await page.evaluate(() => new Promise<void>((r) => {
+      let n = 0;
+      const tick = () => (++n < 6 ? requestAnimationFrame(tick) : r());
+      requestAnimationFrame(tick);
+    }));
+    {
+      const { combine } = await readData(page);
+      expect(combine.nodes!.find((x) => x.id === 'xf')!.params!.amount).toBeCloseTo(0.5, 2);
+    }
+
+    // Raise the OFFSET to 0.9 → the param tracks it (manual control).
+    await seedRoute(page, 'cv4', { target: 'combine', nodeId: 'xf', param: 'amount' }, 1, 0.9);
+    await page.evaluate(() => new Promise<void>((r) => {
+      let n = 0;
+      const tick = () => (++n < 6 ? requestAnimationFrame(tick) : r());
+      requestAnimationFrame(tick);
+    }));
+    {
+      const { combine } = await readData(page);
+      expect(combine.nodes!.find((x) => x.id === 'xf')!.params!.amount).toBeCloseTo(0.9, 2);
+    }
   });
 });

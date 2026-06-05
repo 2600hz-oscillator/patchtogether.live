@@ -416,8 +416,11 @@ function pickInputSource(inputType: string, idPrefix: string): InputSource | nul
       };
     case 'cv':
     case 'pitch':
+    case 'modsignal':
       // BUGGLES.smooth is a self-clocking CV source (no clock input
       // required), ranges ±5V, perfect for proving "input accepts cv".
+      // A `modsignal` input (TOYBOX's 6-input modulation section) accepts
+      // cv/gate/audio; cv is the canonical driver here.
       return {
         node: { id: `${idPrefix}-buggles`, type: 'buggles', position: { x: 60, y: 60 }, domain: 'audio' },
         outPort: 'smooth',

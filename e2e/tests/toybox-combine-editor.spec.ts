@@ -19,7 +19,7 @@
 // "output changed" assertion is a stable numeric delta, not a flaky pixel diff.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, ensureCombineOpen } from './_helpers';
 
 type PatchGlobal = {
   __patch: {
@@ -163,8 +163,8 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
     // Baseline output (default graph = layer 0 base, fades at amount 0).
     const before = await frozenAverage(page, 2.0);
 
-    // Open the editor.
-    await clickEd(page, 'toybox-combine-toggle');
+    // Open the editor (idempotent — the section defaults open in the wide card).
+    await ensureCombineOpen(page);
     await expect(page.locator('[data-testid="toybox-graph-svg"]')).toBeVisible();
 
     // The default graph seeds when the editor first reads it; force a seed by
@@ -286,7 +286,7 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
     await pinViewport(page);
     await seedTwoLayers(page);
 
-    await clickEd(page, 'toybox-combine-toggle');
+    await ensureCombineOpen(page);
     // Add two FRESH ops + chain a → b, then try b → a (a cycle) and assert it's
     // blocked. (Pick the just-added fade ops — the ones with NO incoming edges —
     // not the pre-wired default-chain ops.)

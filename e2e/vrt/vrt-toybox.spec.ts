@@ -23,7 +23,7 @@
 // Output: e2e/vrt/__screenshots__/vrt-toybox.spec.ts/{platform}/<id>.png
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, ensureCombineOpen } from '../tests/_helpers';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -853,7 +853,8 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
 
     // Open the editor on the DEFAULT graph (seed it deterministically), so the
     // SVG shows the 4 sources + 3 fade ops + OUTPUT with their cables.
-    await page.locator('[data-testid="toybox-combine-toggle"]').click({ force: true });
+    // Idempotent — the section defaults open in the wide 3-column card.
+    await ensureCombineOpen(page);
     const svg = page.locator('[data-testid="toybox-graph-svg"]');
     await svg.waitFor({ state: 'visible', timeout: 5_000 });
     // Seed the default graph (the first add seeds + the SVG re-renders with it).

@@ -155,6 +155,37 @@ export async function spawnPatch(
   throw lastErr ?? new Error('spawnPatch: exhausted retries with no error captured');
 }
 
+// ---------------- TOYBOX collapsible-section helpers ----------------
+//
+// TOYBOX's COMBINE GRAPH + CV/MOD sections default OPEN in the wide 3-column
+// card. Specs that previously clicked the toggle to OPEN now must be idempotent
+// (a blind click would CLOSE an already-open section). These ensure the section
+// is open without depending on its current state.
+
+/** Ensure a TOYBOX section is OPEN: only click the toggle when the section's
+ *  content (`contentTestId`) isn't already visible. Safe to call whatever the
+ *  default open-state is. */
+export async function ensureToyboxSectionOpen(
+  page: Page,
+  toggleTestId: string,
+  contentTestId: string,
+): Promise<void> {
+  const content = page.locator(`[data-testid="${contentTestId}"]`);
+  if (await content.isVisible().catch(() => false)) return;
+  await page.locator(`[data-testid="${toggleTestId}"]`).click({ force: true, noWaitAfter: true });
+  await content.waitFor({ state: 'visible', timeout: 5000 });
+}
+
+/** Ensure the COMBINE GRAPH editor section is open (its SVG is visible). */
+export async function ensureCombineOpen(page: Page): Promise<void> {
+  await ensureToyboxSectionOpen(page, 'toybox-combine-toggle', 'toybox-graph-svg');
+}
+
+/** Ensure the CV/MOD section is open (its rows are visible). */
+export async function ensureCvOpen(page: Page): Promise<void> {
+  await ensureToyboxSectionOpen(page, 'toybox-cv-toggle', 'toybox-cv-rows');
+}
+
 // ---------------- Rackspace seed helper ----------------
 //
 // Spec tests that target `/r/[id]` need a real rackspace row in the database;

@@ -21,7 +21,7 @@
 // async Yjs → reactive settle on node.data reads.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, ensureCombineOpen } from './_helpers';
 
 type CombineNode = { id: string; kind: string };
 type CombineEdge = { id: string; from: string; to: string; toPort: string };
@@ -178,7 +178,7 @@ async function setup(page: Page): Promise<void> {
   await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
   await pinViewport(page);
   await seedTwoLayers(page);
-  await clickEd(page, 'toybox-combine-toggle');
+  await ensureCombineOpen(page);
   await expect(page.locator('[data-testid="toybox-graph-svg"]')).toBeVisible();
   // seedTwoLayers deleted node.data.combine, so the default graph only exists
   // after the first mutation. Adding an op seeds the default in place first.
