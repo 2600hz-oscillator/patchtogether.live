@@ -41,6 +41,7 @@ import {
 import {
   OP_PARAMS,
   isCombineGraph,
+  combineDisplayNames,
   type ToyboxCombineGraph,
   type ToyboxOpKind,
 } from './toybox-combine-graph';
@@ -171,6 +172,41 @@ export function materialParamById(id: string): ToyboxMaterialParamDef | undefine
   return MATERIAL_PARAMS.find((p) => p.id === id);
 }
 
+// ---------------- IMAGE / VIDEO layer param schema (#57) ----------------
+//
+// An image/video-kind layer renders a still / video frame through the input
+// pass. Those passes now read two layer-level float params so the layer is a
+// usable CV target (#57): OPACITY (the layer's alpha — how much it contributes
+// when composited) and BRIGHTNESS (an RGB gain, the `uGain` the input shader
+// already declared). They live on the layer's `params` Record (every layer
+// carries one), so they round-trip through save/load like a shader uniform and
+// resolveRoute writes them in place. The factory's renderImageLayer /
+// renderVideoLayer read these each frame.
+
+export interface ToyboxImageVideoParamDef {
+  id: string;
+  label: string;
+  min: number;
+  max: number;
+  default: number;
+}
+
+/** Float params an IMAGE/VIDEO layer exposes (CV-target + manual). */
+export const IMAGE_VIDEO_PARAMS: readonly ToyboxImageVideoParamDef[] = [
+  { id: 'opacity', label: 'OPACITY', min: 0, max: 1, default: 1 },
+  { id: 'brightness', label: 'BRIGHT', min: 0, max: 2, default: 1 },
+];
+
+/** Read an image/video layer param off the layer's params map, defaulting. */
+export function imageVideoParamValue(
+  params: Record<string, number> | undefined | null,
+  id: string,
+): number {
+  const def = IMAGE_VIDEO_PARAMS.find((p) => p.id === id);
+  const v = params && typeof params === 'object' ? params[id] : undefined;
+  return typeof v === 'number' && Number.isFinite(v) ? v : def?.default ?? 0;
+}
+
 // ---------------- Target enumeration (UI dropdowns) ----------------
 
 /** A choosable target for the CV tab's [target ▾] dropdown. */
@@ -213,10 +249,28 @@ export function decodeTargetValue(
   return null;
 }
 
+/** Short tag for a layer kind, shown in its CV-target label. IMAGE/VIDEO are
+ *  tagged correctly (#57) so they no longer masquerade as 'SHD'. */
+function layerKindTag(kind: ToyboxLayer['kind'] | undefined): string {
+  switch (kind) {
+    case 'obj': return 'OBJ';
+    case 'off': return 'OFF';
+    case 'image': return 'IMG';
+    case 'video': return 'VID';
+    case 'shader': case 'gen': case 'frag': return 'SHD';
+    default: return 'OFF';
+  }
+}
+
 /**
  * Enumerate the targets the CV tab offers: the 4 layers + every combine op
  * node (sources/output have no params, so they're excluded). Pure over the
  * live layers + combine graph.
+ *
+ * Labels are 1-based (#56): "Layer 1 (SHD)" .. "Layer 4 (...)" — the INDEX
+ * stays 0-based (in `value`/`layer`) so patches/presets don't break. Combine
+ * ops use their UNIQUE ordinal display name (#58): "CHROMA 1", "LUMA 2", …
+ * instead of a raw kind, so two same-kind nodes are distinguishable.
  */
 export function listCvTargets(
   layers: readonly ToyboxLayer[] | undefined,
@@ -225,16 +279,21 @@ export function listCvTargets(
   const out: CvTargetOption[] = [];
   for (let i = 0; i < LAYER_COUNT; i++) {
     const layer = layers?.[i];
-    const kindTag = layer?.kind === 'obj' ? 'OBJ' : layer?.kind === 'off' ? 'OFF' : 'SHD';
-    out.push({ value: `layer:${i}`, label: `Layer ${i} (${kindTag})`, target: 'layer', layer: i });
+    out.push({
+      value: `layer:${i}`,
+      label: `Layer ${i + 1} (${layerKindTag(layer?.kind)})`,
+      target: 'layer',
+      layer: i,
+    });
   }
   if (isCombineGraph(combine)) {
     const g = combine as ToyboxCombineGraph;
+    const names = combineDisplayNames(g);
     for (const n of g.nodes) {
       if (n.kind === 'source' || n.kind === 'output') continue;
       out.push({
         value: `combine:${n.id}`,
-        label: `Combine ${n.id} (${n.kind})`,
+        label: names.get(n.id) ?? n.id,
         target: 'combine',
         nodeId: n.id,
       });
@@ -261,7 +320,11 @@ export function listCvParams(
     if (layer.kind === 'obj') {
       return MATERIAL_PARAMS.map((p) => ({ id: p.id, label: p.label, min: p.min, max: p.max }));
     }
-    if (layer.kind === 'shader' || layer.kind === 'gen') {
+    // IMAGE / VIDEO layers expose OPACITY + BRIGHTNESS as CV targets (#57).
+    if (layer.kind === 'image' || layer.kind === 'video') {
+      return IMAGE_VIDEO_PARAMS.map((p) => ({ id: p.id, label: p.label, min: p.min, max: p.max }));
+    }
+    if (layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag') {
       const meta = layer.contentId ? getContentMeta(layer.contentId) : undefined;
       if (!meta) return [];
       return meta.params.map((p) => ({ id: p.id, label: p.label, min: p.min, max: p.max }));
@@ -275,6 +338,34 @@ export function listCvParams(
   if (!n || n.kind === 'source' || n.kind === 'output') return [];
   const defs = OP_PARAMS[n.kind as ToyboxOpKind] ?? [];
   return defs.map((p) => ({ id: p.id, label: p.label, min: p.min, max: p.max }));
+}
+
+// ---------------- Orphan detection (auto-unmap) ----------------
+
+/**
+ * Find the cv ports whose route is now ORPHANED — its target layer/node no
+ * longer exists, became an un-routable kind (e.g. an 'off' layer), or its param
+ * is no longer in that target's schema. Returns the list of port ids whose
+ * route should be cleared (#60: when a change orphans a mapped CV, auto-unmap
+ * it). PURE: resolveRoute returns null for any unresolvable route, so "orphaned"
+ * is exactly "has a route that no longer resolves".
+ *
+ * A null/absent route is NOT orphaned (it's already unmapped). Only ports with a
+ * non-null route that fails to resolve are reported.
+ */
+export function findOrphanedRoutes(
+  routes: CvRoutes | undefined | null,
+  layers: readonly ToyboxLayer[] | undefined,
+  combine: unknown,
+): string[] {
+  if (!routes || typeof routes !== 'object') return [];
+  const out: string[] = [];
+  for (const portId of Object.keys(routes)) {
+    const route = routes[portId];
+    if (!route) continue; // already unmapped
+    if (resolveRoute(route, layers, combine) === null) out.push(portId);
+  }
+  return out;
 }
 
 // ---------------- Resolve + re-scale (the setParam hot path) ----------------
@@ -327,8 +418,22 @@ export function resolveRoute(
         apply: (v) => { material[def.field] = v; },
       };
     }
-    // Content (shader/gen) uniform.
-    if (layer.kind !== 'shader' && layer.kind !== 'gen') return null;
+    // IMAGE / VIDEO layer param (opacity / brightness) — stored on layer.params.
+    if (layer.kind === 'image' || layer.kind === 'video') {
+      const def = IMAGE_VIDEO_PARAMS.find((p) => p.id === route.param);
+      if (!def) return null;
+      if (!layer.params) return null;
+      const params = layer.params;
+      const cur = params[route.param];
+      return {
+        min: def.min,
+        max: def.max,
+        current: typeof cur === 'number' ? cur : def.default,
+        apply: (v) => { params[route.param] = v; },
+      };
+    }
+    // Content (shader/gen/frag) uniform.
+    if (layer.kind !== 'shader' && layer.kind !== 'gen' && layer.kind !== 'frag') return null;
     const meta = layer.contentId ? getContentMeta(layer.contentId) : undefined;
     const pdef = meta?.params.find((p) => p.id === route.param);
     if (!pdef) return null;

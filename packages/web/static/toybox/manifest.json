@@ -312,7 +312,7 @@
           { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
           { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
           { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
-          { "id": "ck1", "kind": "chromakey", "x": 120, "y": 14, "params": { "amount": 0.3, "soft": 0.1, "key": 0.33 } },
+          { "id": "ck1", "kind": "chromakey", "x": 120, "y": 14, "params": { "amount": 0.3, "soft": 0.1, "keyR": 0, "keyG": 1, "keyB": 0 } },
           { "id": "map1", "kind": "map", "x": 120, "y": 118, "params": { "amount": 0.7, "mode": 1 } },
           { "id": "out", "kind": "output", "x": 286, "y": 66 }
         ],
