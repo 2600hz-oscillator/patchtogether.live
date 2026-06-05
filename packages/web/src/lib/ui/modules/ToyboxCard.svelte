@@ -73,7 +73,9 @@
     inPortsFor,
     hasOutPort,
     isCombineGraph,
+    isKeyerKind,
     makeDefaultCombineGraph,
+    combineDisplayNames,
     edgesTouching,
     type ToyboxCombineGraph,
     type ToyboxGraphNode,
@@ -94,6 +96,7 @@
     duplicateCombineNode,
   } from '$lib/graph/toybox-combine';
   import ToyboxNodeMenu from './ToyboxNodeMenu.svelte';
+  import ToyboxKeyerConfig from './ToyboxKeyerConfig.svelte';
   import {
     CV_PORT_IDS,
     listCvTargets,
@@ -101,13 +104,14 @@
     encodeTargetValue,
     decodeTargetValue,
     getCvInput,
+    findOrphanedRoutes,
     DEFAULT_INPUT_SCALE,
     DEFAULT_INPUT_OFFSET,
     type CvRoutes,
     type CvRouteTarget,
     type CvInputs,
   } from '$lib/video/toybox-cv-routes';
-  import { setCvRoute } from '$lib/graph/toybox-cv-routes';
+  import { setCvRoute, clearCvRoute } from '$lib/graph/toybox-cv-routes';
   import { setCvScale, setCvOffset } from '$lib/graph/toybox-cv-inputs';
   import type { ToyboxScopeSnapshot, ToyboxScopeState } from '$lib/video/modules/toybox';
   import {
@@ -215,6 +219,19 @@
     return live ?? (node?.data?.layers as ToyboxLayer[] | undefined);
   }
 
+  /** Read the live combine field the SAME way (#60): the LIVE patch proxy +
+   *  BOTH reactive triggers, so the CV section's derived target/param lists
+   *  recompute the instant a combine node is added / removed / retyped (a local
+   *  mutation bumps `layersRev`; a remote write pushes a fresh `node` wrapper).
+   *  Adding/retyping a node mutates the array IN PLACE, so a derived that read a
+   *  memoised reference would short-circuit — hence the explicit bump dep. */
+  function readLiveCombine(): unknown {
+    void node;
+    void layersRev;
+    const live = patch.nodes[id]?.data as { combine?: unknown } | undefined;
+    return live?.combine ?? (node?.data as { combine?: unknown } | undefined)?.combine;
+  }
+
   /** Which layers are populated (kind !== 'off') — drives the tab dots. Read
    *  every entry so adding content to any layer re-evaluates the badges. */
   let layerPopulated = $derived.by<boolean[]>(() => {
@@ -282,6 +299,7 @@
   function onKindChange(ev: Event) {
     setLayerKind(id, activeLayer, (ev.target as HTMLSelectElement).value as ToyboxLayerKind);
     bumpRev();
+    pruneOrphanRoutes(); // #60: retyping a layer (e.g. → off) orphans its routes
   }
 
   function onContentChange(ev: Event) {
@@ -289,6 +307,7 @@
     if (!sel) return;
     setLayerContent(id, activeLayer, sel);
     bumpRev();
+    pruneOrphanRoutes(); // #60: new content → a routed uniform may no longer exist
   }
 
   function onModelChange(ev: Event) {
@@ -638,9 +657,13 @@
   const NODE_H = 34;
   const PORT_R = 4;
 
-  /** Live combine graph from the store (default graph until the card edits it). */
+  /** Live combine graph from the store (default graph until the card edits it).
+   *  Reads via readLiveCombine so it tracks BOTH triggers (#60): a local combine
+   *  mutation bumps `layersRev`, a remote write pushes a fresh `node` wrapper —
+   *  so the editor + node names + CV target/param lists all refresh in lockstep
+   *  when nodes are added/removed/retyped. */
   let graph = $derived.by<ToyboxCombineGraph>(() => {
-    const c = (node?.data as { combine?: unknown } | undefined)?.combine;
+    const c = readLiveCombine();
     return isCombineGraph(c) ? (c as ToyboxCombineGraph) : makeDefaultCombineGraph();
   });
 
@@ -689,11 +712,22 @@
     return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
   }
 
-  /** A short glyph/label for a node box. */
+  /** Unique per-node display names (#56 1-based sources + #58 ordinal ops),
+   *  derived live so they recompute when nodes are added/removed/retyped. The
+   *  bump deps are explicit: `graph` returns the SAME live proxy reference after
+   *  an in-place node push, so a derived keyed only on `graph` would short-
+   *  circuit (it didn't change by ===) — read the bump triggers to force a
+   *  recompute on every structural mutation. */
+  let nodeNames = $derived.by(() => {
+    void node; void layersRev;
+    return combineDisplayNames(graph);
+  });
+
+  /** A short glyph/label for a node box — the node's UNIQUE display name
+   *  ("L1".."L4", "LUMA 1", "CHROMA 2", "OUT") so two same-kind nodes are
+   *  distinguishable in BOTH the node map and the CV-target label (#58). */
   function nodeLabel(n: ToyboxGraphNode): string {
-    if (n.kind === 'source') return `L${n.layer ?? 0}`;
-    if (n.kind === 'output') return 'OUT';
-    return n.kind.toUpperCase().slice(0, 5);
+    return nodeNames.get(n.id) ?? n.id;
   }
 
   function clearConnectMsg(): void {
@@ -705,6 +739,7 @@
   function onAddOp(kind: ToyboxOpKind): void {
     const newId = addCombineNode(id, kind);
     if (newId) selectedNodeId = newId;
+    bumpRev(); // #60: refresh node names + CV target/param lists immediately
     clearConnectMsg();
   }
 
@@ -725,6 +760,7 @@
     const from = pendingFrom;
     const res = connectCombine(id, from, gid, port);
     pendingFrom = null;
+    bumpRev(); // #60
     if (!res.ok) {
       connectMsg =
         res.error === 'cycle' ? 'rejected: would create a cycle'
@@ -748,11 +784,14 @@
   function onDeleteNode(gid: string): void {
     deleteCombineNode(id, gid);
     if (selectedNodeId === gid) selectedNodeId = null;
+    bumpRev(); // #60: refresh node names + CV lists
+    pruneOrphanRoutes(); // #60: unmap any CV route to the deleted node
     clearConnectMsg();
   }
 
   function onDeleteEdge(edgeId: string): void {
     deleteCombineEdge(id, edgeId);
+    bumpRev(); // #60 (edges never orphan a route — routes target nodes/params)
     clearConnectMsg();
   }
 
@@ -843,6 +882,36 @@
     toyboxMenu = null;
   }
 
+  // ── KEYER CONFIG popover (LUMAKEY / CHROMAKEY "Configure keyer…") ──
+  interface KeyerConfigState {
+    open: boolean;
+    x: number;
+    y: number;
+    nodeId: string;
+  }
+  let keyerConfig = $state<KeyerConfigState | null>(null);
+
+  /** Open the keyer-config popover for a node (no-op for non-keyer nodes). */
+  function doConfigureKeyer(gid: string, x: number, y: number): void {
+    const n = nodeById(gid);
+    if (!n || !isKeyerKind(n.kind)) return;
+    keyerConfig = { open: true, x, y, nodeId: gid };
+  }
+
+  function closeKeyerConfig(): void {
+    keyerConfig = null;
+  }
+
+  /** The live node the keyer popover edits (re-derived so its knobs/colour
+   *  reflect external edits + a retype/delete closes it). */
+  let keyerNode = $derived(keyerConfig ? nodeById(keyerConfig.nodeId) : undefined);
+  // Close the popover if its node disappears or stops being a keyer.
+  $effect(() => {
+    if (keyerConfig && (!keyerNode || !isKeyerKind(keyerNode.kind))) {
+      keyerConfig = null;
+    }
+  });
+
   /** Surface a connect/patch rejection through the existing connectMsg banner. */
   function showConnectError(error: string | undefined): void {
     connectMsg =
@@ -855,6 +924,7 @@
 
   function doPatchToOutput(gid: string): void {
     const res = patchToOutput(id, gid);
+    bumpRev(); // #60
     if (!res.ok) showConnectError(res.error);
     else clearConnectMsg();
   }
@@ -862,6 +932,7 @@
   /** Remove EVERY edge touching `gid` (in or out). */
   function doDisconnect(gid: string): void {
     for (const eid of edgesTouching(graph, gid)) deleteCombineEdge(id, eid);
+    bumpRev(); // #60
     clearConnectMsg();
   }
 
@@ -874,12 +945,14 @@
         ? graph.edges.filter((e) => e.from === gid)
         : graph.edges.filter((e) => e.to === gid && e.toPort === port);
     for (const e of toRemove) deleteCombineEdge(id, e.id);
+    bumpRev(); // #60
     clearConnectMsg();
   }
 
   function doDuplicate(gid: string): void {
     const newId = duplicateCombineNode(id, gid);
     if (newId) selectedNodeId = newId;
+    bumpRev(); // #60
     clearConnectMsg();
   }
 
@@ -892,12 +965,14 @@
       }
       selectedNodeId = newId;
     }
+    bumpRev(); // #60
     clearConnectMsg();
   }
 
   function doClearNodeMap(): void {
     clearCombineEdges(id);
     selectedNodeId = null;
+    bumpRev(); // #60
     clearConnectMsg();
   }
 
@@ -905,6 +980,8 @@
     resetCombineToDefault(id);
     selectedNodeId = null;
     pendingFrom = null;
+    bumpRev(); // #60
+    pruneOrphanRoutes(); // #60: reset replaces every op node → unmap stale routes
     clearConnectMsg();
   }
 
@@ -926,6 +1003,7 @@
 
   const setCombineParam = (gid: string, pid: string) => (v: number) => {
     setCombineNodeParam(id, gid, pid, v);
+    bumpRev(); // refresh the side-strip / keyer-popover live readback
   };
 
   let selectedNode = $derived(selectedNodeId ? nodeById(selectedNodeId) : undefined);
@@ -950,21 +1028,35 @@
   // are only useful when visible).
   let cvOpen = $state(true);
 
-  /** The live layers + combine the dropdowns enumerate targets/params from. */
-  let liveLayersForCv = $derived(node?.data?.layers as ToyboxLayer[] | undefined);
-  let liveCombineForCv = $derived((node?.data as { combine?: unknown } | undefined)?.combine);
+  /** The live layers + combine the dropdowns enumerate targets/params from.
+   *  Read through the live-proxy readers (#60) so the target/param OPTIONS
+   *  reactively recompute when a layer or combine node is added / removed /
+   *  retyped / recontented — `node?.data.*` alone lags a tick on a local edit
+   *  and doesn't invalidate on an in-place array push. */
+  let liveLayersForCv = $derived(readLiveLayers());
+  let liveCombineForCv = $derived(readLiveCombine());
 
-  /** Target options (layers + combine ops), live. */
-  let cvTargets = $derived(listCvTargets(liveLayersForCv, liveCombineForCv));
+  /** Target options (layers + combine ops), live. The live readers return the
+   *  SAME proxy reference after an in-place layer/node mutation, so a derived
+   *  keyed only on them would short-circuit (=== unchanged) and go STALE — the
+   *  exact bug the user hit adding a 3rd layer. Read the bump triggers directly
+   *  (#60) so this recomputes on every structural change. */
+  let cvTargets = $derived.by(() => {
+    void node; void layersRev;
+    return listCvTargets(liveLayersForCv, liveCombineForCv);
+  });
 
   // Per-port reactive maps. We iterate ALL ports inside ONE $derived.by so every
   // route key is READ (and thus tracked) every recompute — without this, adding
   // a 2nd route to the in-place-mutated cvRoutes Y-proxy wouldn't invalidate a
   // per-port helper that only read its own key (the Y-proxy object reference
   // doesn't change on a key add). cvRoutesView is read first so the whole map is
-  // a dependency.
+  // a dependency. Reads through the live proxy + bump triggers (#60) so it
+  // refreshes the instant a local re-route lands (not a tick later).
   let cvRoutesView = $derived.by<Record<string, CvRouteTarget | null>>(() => {
-    const live = (node?.data as { cvRoutes?: CvRoutes } | undefined)?.cvRoutes;
+    void node; void layersRev; // deps: remote snapshot + local mutation
+    const live = (patch.nodes[id]?.data as { cvRoutes?: CvRoutes } | undefined)?.cvRoutes
+      ?? (node?.data as { cvRoutes?: CvRoutes } | undefined)?.cvRoutes;
     const out: Record<string, CvRouteTarget | null> = {};
     for (const p of CV_PORT_IDS) {
       const r = live && typeof live === 'object' ? live[p] : undefined;
@@ -972,6 +1064,44 @@
       out[p] = r ? { target: r.target, layer: r.layer, nodeId: r.nodeId, param: r.param } : null;
     }
     return out;
+  });
+
+  // ── AUTO-UNMAP orphaned CV routes (#60) ──
+  // When a layer/combine-node/param a route targets stops existing (layer
+  // retyped to 'off', combine node deleted, content swapped so a uniform is
+  // gone, …), the route is ORPHANED: it resolves to nothing + shows an invalid
+  // selection. We CLEAR such routes so a stale mapping is forgotten rather than
+  // lingering. Done IMPERATIVELY after each local structural mutation (below) +
+  // reactively off the `node` snapshot for remote/preset changes — the raw
+  // syncedStore proxy is NOT a Svelte source, so a deep-proxy read in a $derived
+  // can't observe an in-place node splice (verified: it goes stale). We skip the
+  // prune until the catalog has loaded so a route to a shader uniform isn't
+  // false-pruned merely because getContentMeta hasn't resolved yet.
+  /** Clear every CV route that no longer resolves against the LIVE layers +
+   *  combine (#60 auto-unmap). Called IMPERATIVELY right after each structural
+   *  mutation (combine node/edge add/delete/retype, layer kind/content change) —
+   *  the raw syncedStore proxy is NOT a Svelte reactive source, so a reactive
+   *  $effect can't reliably observe an in-place node splice; an explicit call
+   *  after the mutation is deterministic. Reads the LIVE patch proxy (current
+   *  contents). Returns the ports it cleared. */
+  function pruneOrphanRoutes(): string[] {
+    const data = patch.nodes[id]?.data as
+      | { layers?: ToyboxLayer[]; combine?: unknown; cvRoutes?: CvRoutes }
+      | undefined;
+    if (!data?.cvRoutes) return [];
+    const orphans = findOrphanedRoutes(data.cvRoutes, data.layers, data.combine);
+    for (const portId of orphans) clearCvRoute(id, portId);
+    if (orphans.length) bumpRev();
+    return orphans;
+  }
+  // Safety net for EXTERNAL (remote / preset) changes: when a fresh `node`
+  // snapshot arrives (a rack-mate edited the tree, or a preset loaded), re-run
+  // the prune. `node` is the svelte-flow snapshot wrapper — a genuine Svelte dep
+  // — so this DOES fire on remote writes (unlike a deep-proxy read).
+  $effect(() => {
+    void node;
+    if (catalog.length === 0) return; // manifest not loaded → don't false-prune
+    pruneOrphanRoutes();
   });
 
   /** The current route for a generic cv port (or null). */
@@ -990,6 +1120,7 @@
    *  over the full route view + live layers/combine so each row updates when any
    *  route OR the underlying target's param set changes. */
   let cvParamOptionsView = $derived.by<Record<string, ReturnType<typeof listCvParams>>>(() => {
+    void node; void layersRev; // #60: recompute on layer/combine structural change
     const out: Record<string, ReturnType<typeof listCvParams>> = {};
     for (const p of CV_PORT_IDS) {
       const r = cvRoutesView[p];
@@ -2005,6 +2136,7 @@
     dir={toyboxMenu?.dir}
     port={toyboxMenu?.port}
     onpatchtooutput={() => { if (toyboxMenu?.nodeId) doPatchToOutput(toyboxMenu.nodeId); }}
+    onconfigure={() => { if (toyboxMenu?.nodeId) doConfigureKeyer(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
     ondisconnect={() => { if (toyboxMenu?.nodeId) doDisconnect(toyboxMenu.nodeId); }}
     onduplicate={() => { if (toyboxMenu?.nodeId) doDuplicate(toyboxMenu.nodeId); }}
     ondeletenode={() => { if (toyboxMenu?.nodeId) onDeleteNode(toyboxMenu.nodeId); }}
@@ -2015,6 +2147,18 @@
     onclear={doClearNodeMap}
     onreset={doResetToDefault}
     onclose={closeToyboxMenu}
+  />
+
+  <!-- Keyer-config popover (LUMAKEY / CHROMAKEY "Configure keyer…"). -->
+  <ToyboxKeyerConfig
+    open={!!keyerConfig?.open && !!keyerNode}
+    x={keyerConfig?.x ?? 0}
+    y={keyerConfig?.y ?? 0}
+    node={keyerNode}
+    displayName={keyerConfig ? nodeLabel(keyerNode ?? ({ id: keyerConfig.nodeId } as ToyboxGraphNode)) : ''}
+    onparam={(pid, v) => { if (keyerConfig) { setCombineNodeParam(id, keyerConfig.nodeId, pid, v); bumpRev(); } }}
+    moduleId={id}
+    onclose={closeKeyerConfig}
   />
   </div><!-- /toybox-col-center -->
 

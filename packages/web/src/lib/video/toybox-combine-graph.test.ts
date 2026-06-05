@@ -9,6 +9,10 @@ import { LAYER_COUNT } from './toybox-content';
 import {
   OP_KINDS,
   OP_PARAMS,
+  KEYER_OP_KINDS,
+  isKeyerKind,
+  combineDisplayNames,
+  combineNodeDisplayName,
   defaultOpParams,
   inPortsFor,
   hasOutPort,
@@ -261,5 +265,80 @@ describe('default graph composites like the Phase-1..3 base', () => {
     const ops = g.nodes.filter((n: ToyboxGraphNode) => n.kind === 'fade');
     expect(ops.length).toBe(LAYER_COUNT - 1);
     for (const o of ops) expect(o.params?.amount).toBe(0);
+  });
+});
+
+describe('chromakey OP_PARAMS (HSV key migration)', () => {
+  it('exposes amount(THRESHOLD) + soft(SHARPNESS) + keyR/keyG/keyB (green default)', () => {
+    const ck = OP_PARAMS.chromakey;
+    expect(ck.map((p) => p.id)).toEqual(['amount', 'soft', 'keyR', 'keyG', 'keyB']);
+    // the old single `key` channel-select scalar is gone.
+    expect(ck.some((p) => p.id === 'key')).toBe(false);
+    const byId = Object.fromEntries(ck.map((p) => [p.id, p]));
+    expect(byId.amount!.label).toBe('THRESHOLD');
+    expect(byId.soft!.label).toBe('SHARPNESS');
+    // green-screen default colour (0,1,0).
+    expect(byId.keyR!.default).toBe(0);
+    expect(byId.keyG!.default).toBe(1);
+    expect(byId.keyB!.default).toBe(0);
+    for (const id of ['keyR', 'keyG', 'keyB']) {
+      expect(byId[id]!.min).toBe(0);
+      expect(byId[id]!.max).toBe(1);
+    }
+  });
+  it('lumakey relabels amount→THRESHOLD, soft→SHARPNESS (UI surface only)', () => {
+    const byId = Object.fromEntries(OP_PARAMS.lumakey.map((p) => [p.id, p]));
+    expect(byId.amount!.label).toBe('THRESHOLD');
+    expect(byId.soft!.label).toBe('SHARPNESS');
+  });
+});
+
+describe('isKeyerKind / KEYER_OP_KINDS', () => {
+  it('lumakey + chromakey are keyers; fade/map/source/output are not', () => {
+    expect(KEYER_OP_KINDS).toEqual(['lumakey', 'chromakey']);
+    expect(isKeyerKind('lumakey')).toBe(true);
+    expect(isKeyerKind('chromakey')).toBe(true);
+    expect(isKeyerKind('fade')).toBe(false);
+    expect(isKeyerKind('map')).toBe(false);
+    expect(isKeyerKind('source')).toBe(false);
+    expect(isKeyerKind('output')).toBe(false);
+    expect(isKeyerKind(undefined)).toBe(false);
+  });
+});
+
+describe('combineDisplayNames (#56 1-based sources + #58 unique ops)', () => {
+  it('sources are 1-based L1..L4; output is OUT', () => {
+    const names = combineDisplayNames(makeDefaultCombineGraph());
+    expect(names.get('src0')).toBe('L1');
+    expect(names.get('src1')).toBe('L2');
+    expect(names.get('src3')).toBe('L4');
+    expect(names.get('out')).toBe('OUT');
+  });
+  it('default fade ops are FADE 1..3 in graph order', () => {
+    const names = combineDisplayNames(makeDefaultCombineGraph());
+    expect(names.get('op1')).toBe('FADE 1');
+    expect(names.get('op2')).toBe('FADE 2');
+    expect(names.get('op3')).toBe('FADE 3');
+  });
+  it('two same-kind nodes get distinct ordinals (LUMA 1 / LUMA 2)', () => {
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'a', kind: 'lumakey', x: 0, y: 0 },
+        { id: 'b', kind: 'chromakey', x: 0, y: 0 },
+        { id: 'c', kind: 'lumakey', x: 0, y: 0 },
+        { id: 'd', kind: 'chromakey', x: 0, y: 0 },
+      ],
+      edges: [],
+    };
+    const names = combineDisplayNames(g);
+    expect(names.get('a')).toBe('LUMA 1');
+    expect(names.get('c')).toBe('LUMA 2');
+    expect(names.get('b')).toBe('CHROMA 1');
+    expect(names.get('d')).toBe('CHROMA 2');
+  });
+  it('combineNodeDisplayName resolves a single id (falls back to id)', () => {
+    const g = makeDefaultCombineGraph();
+    expect(combineNodeDisplayName(g, 'op2')).toBe('FADE 2');
+    expect(combineNodeDisplayName(g, 'ghost')).toBe('ghost');
   });
 });

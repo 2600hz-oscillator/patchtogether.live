@@ -85,6 +85,7 @@ import {
   getCvInput,
   effectiveCvValue,
   foldCvToUnipolar,
+  imageVideoParamValue,
   type CvRouteTarget,
   type CvRoutes,
   type CvInputs,
@@ -277,7 +278,7 @@ export const toyboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'TOYBOX',
   category: 'sources',
-  schemaVersion: 2,
+  schemaVersion: 3,
   migrate: migrateToyboxData,
   // A FIXED pool of 6 generic modulation input ports (the Structure-style
   // section). A layer's shader (and its uniforms) is chosen at runtime, so we
@@ -553,7 +554,9 @@ export const toyboxDef: VideoModuleDef = {
     const cuAmount = gl.getUniformLocation(combineProgram, 'uAmount');
     const cuSoft = gl.getUniformLocation(combineProgram, 'uSoft');
     const cuInvert = gl.getUniformLocation(combineProgram, 'uInvert');
-    const cuKey = gl.getUniformLocation(combineProgram, 'uKey');
+    const cuKeyR = gl.getUniformLocation(combineProgram, 'uKeyR');
+    const cuKeyG = gl.getUniformLocation(combineProgram, 'uKeyG');
+    const cuKeyB = gl.getUniformLocation(combineProgram, 'uKeyB');
     const cuMode = gl.getUniformLocation(combineProgram, 'uMode');
 
     // ---------------- Input-source (image / video) program ----------------
@@ -566,6 +569,7 @@ export const toyboxDef: VideoModuleDef = {
     const iuTex = gl.getUniformLocation(inputProgram, 'uTex');
     const iuHasInput = gl.getUniformLocation(inputProgram, 'uHasInput');
     const iuGain = gl.getUniformLocation(inputProgram, 'uGain');
+    const iuOpacity = gl.getUniformLocation(inputProgram, 'uOpacity');
 
     // Per-layer IMAGE source textures (PICTUREBOX-style: the card uploads an
     // ImageBitmap via the layer extras → texImage2D here). Lazily created.
@@ -1114,7 +1118,7 @@ export const toyboxDef: VideoModuleDef = {
      * — so an image layer is ALWAYS "produced" (returns true), the same way
      * PICTUREBOX always renders. Returns true so combine treats it as content.
      */
-    function renderImageLayer(i: number): boolean {
+    function renderImageLayer(i: number, layer: ToyboxLayer): boolean {
       const g = gl;
       const target = layerTargets[i]!;
       const src = imageSources.get(i);
@@ -1128,7 +1132,9 @@ export const toyboxDef: VideoModuleDef = {
       g.bindTexture(g.TEXTURE_2D, has ? src!.tex : dummyTex);
       if (iuTex) g.uniform1i(iuTex, 0);
       if (iuHasInput) g.uniform1f(iuHasInput, has ? 1 : 0);
-      if (iuGain) g.uniform1f(iuGain, 1);
+      // BRIGHTNESS + OPACITY (#57): read off the layer's params (CV-writable).
+      if (iuGain) g.uniform1f(iuGain, imageVideoParamValue(layer.params, 'brightness'));
+      if (iuOpacity) g.uniform1f(iuOpacity, imageVideoParamValue(layer.params, 'opacity'));
       ctx.drawFullscreenQuad();
       g.activeTexture(g.TEXTURE0);
       return true;
@@ -1180,7 +1186,9 @@ export const toyboxDef: VideoModuleDef = {
       g.bindTexture(g.TEXTURE_2D, srcTex ?? dummyTex);
       if (iuTex) g.uniform1i(iuTex, 0);
       if (iuHasInput) g.uniform1f(iuHasInput, srcTex ? 1 : 0);
-      if (iuGain) g.uniform1f(iuGain, 1);
+      // BRIGHTNESS + OPACITY (#57): read off the layer's params (CV-writable).
+      if (iuGain) g.uniform1f(iuGain, imageVideoParamValue(layer.params, 'brightness'));
+      if (iuOpacity) g.uniform1f(iuOpacity, imageVideoParamValue(layer.params, 'opacity'));
       ctx.drawFullscreenQuad();
       g.activeTexture(g.TEXTURE0);
       return true;
@@ -1205,7 +1213,7 @@ export const toyboxDef: VideoModuleDef = {
       if (layer.kind === 'obj') drew = renderObjLayer(i, layer, time, safeSource);
       else if (layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag')
         drew = renderShaderLayer(i, layer, time, frame, safeSource);
-      else if (layer.kind === 'image') drew = renderImageLayer(i);
+      else if (layer.kind === 'image') drew = renderImageLayer(i, layer);
       else if (layer.kind === 'video') drew = renderVideoLayer(i, layer, frame);
       // 'off' → nothing.
       if (!drew) clearLayer(i);
@@ -1216,7 +1224,9 @@ export const toyboxDef: VideoModuleDef = {
     interface CombineExtra {
       soft?: number;
       invert?: number;
-      key?: number;
+      keyR?: number;
+      keyG?: number;
+      keyB?: number;
       mode?: number;
     }
 
@@ -1243,8 +1253,11 @@ export const toyboxDef: VideoModuleDef = {
       if (cuAmount) g.uniform1f(cuAmount, amount);
       if (cuSoft) g.uniform1f(cuSoft, extra?.soft ?? 0);
       if (cuInvert) g.uniform1f(cuInvert, extra?.invert ?? 0);
-      // chromakey: default key colour 'green' (0.33) matches the prior shader.
-      if (cuKey) g.uniform1f(cuKey, extra?.key ?? 0.33);
+      // chromakey: default key COLOUR is green-screen (0,1,0), matching the
+      // standalone CHROMAKEY module + chromakey OP_PARAMS defaults.
+      if (cuKeyR) g.uniform1f(cuKeyR, extra?.keyR ?? 0);
+      if (cuKeyG) g.uniform1f(cuKeyG, extra?.keyG ?? 1);
+      if (cuKeyB) g.uniform1f(cuKeyB, extra?.keyB ?? 0);
       if (cuMode) g.uniform1f(cuMode, extra?.mode ?? 0);
       ctx.drawFullscreenQuad();
       g.activeTexture(g.TEXTURE0);
@@ -1328,7 +1341,7 @@ export const toyboxDef: VideoModuleDef = {
         const slot = scratch(2 + scratchSlot++); // past the 2 ping-pong slots
         const p = n.params ?? {};
         const amount = typeof p.amount === 'number' ? p.amount : 1;
-        const extra = { soft: p.soft, invert: p.invert, key: p.key, mode: p.mode };
+        const extra = { soft: p.soft, invert: p.invert, keyR: p.keyR, keyG: p.keyG, keyB: p.keyB, mode: p.mode };
         if (baseTex && !topTex) {
           // Top unwired → pass the base through (copy: fade at amount 0).
           combineStep(baseTex, baseTex, slot.fbo, 0, 0);
@@ -1459,21 +1472,55 @@ export const toyboxDef: VideoModuleDef = {
 };
 
 /**
- * Migrate saved TOYBOX data forward (schemaVersion 1 → 2). v1 declared 8 generic
- * input ports (cv1..cv8); v2 reduced the pool to 6. A saved patch may carry
- * cvRoutes for the now-dropped cv7/cv8 — strip them so they don't linger (their
- * setParam writes are already harmless no-ops, but a dangling route would show
- * nothing in the 6-row UI). Edges wired to cv7/cv8 are tolerated by the engine
- * (setParam to an unknown port no-ops); we don't rewrite them (there's no
- * sensible remap target), so they simply stop doing anything. Pure: returns the
- * (possibly mutated) data object.
+ * Migrate saved TOYBOX data forward.
+ *
+ *  v1 → v2: v1 declared 8 generic input ports (cv1..cv8); v2 reduced the pool to
+ *    6. A saved patch may carry cvRoutes for the now-dropped cv7/cv8 — strip them
+ *    so they don't linger (their setParam writes are already harmless no-ops, but
+ *    a dangling route would show nothing in the 6-row UI). Edges wired to cv7/cv8
+ *    are tolerated by the engine (setParam to an unknown port no-ops); we don't
+ *    rewrite them (no sensible remap target), so they simply stop doing anything.
+ *
+ *  v2 → v3: the chromakey combine OP changed from a single `key` channel-select
+ *    scalar (0 = R, 0.33 = G, 0.66 = B) to an HSV key COLOUR (keyR/keyG/keyB
+ *    floats). Translate any saved combine chromakey node's `key` into the
+ *    matching primary RGB and drop the stale `key`. Also strips any chromakey
+ *    cvRoute that targeted the now-removed `key` param (its setParam would be a
+ *    no-op, but a dangling route would show nothing valid in the param dropdown).
+ *
+ * Pure: returns the (possibly mutated) data object.
  */
 export function migrateToyboxData(data: unknown, fromVersion: number): unknown {
-  if (fromVersion >= 2 || !data || typeof data !== 'object') return data;
-  const d = data as { cvRoutes?: Record<string, unknown> };
-  if (d.cvRoutes && typeof d.cvRoutes === 'object') {
+  if (fromVersion >= 3 || !data || typeof data !== 'object') return data;
+  const d = data as {
+    cvRoutes?: Record<string, { param?: string } | null>;
+    combine?: { nodes?: Array<{ kind?: string; params?: Record<string, number> }> };
+  };
+  if (fromVersion < 2 && d.cvRoutes && typeof d.cvRoutes === 'object') {
     for (const key of Object.keys(d.cvRoutes)) {
       if (!isCvPortId(key)) delete d.cvRoutes[key]; // drops cv7 / cv8 / anything stale
+    }
+  }
+  // v2 → v3: chromakey `key` scalar → keyR/keyG/keyB colour.
+  if (fromVersion < 3 && d.combine && Array.isArray(d.combine.nodes)) {
+    for (const n of d.combine.nodes) {
+      if (n?.kind !== 'chromakey' || !n.params || typeof n.params !== 'object') continue;
+      const p = n.params;
+      if (typeof p.key === 'number') {
+        // Map the old channel-select scalar to a primary RGB key colour.
+        const [r, g, b] = p.key < 0.25 ? [1, 0, 0] : p.key < 0.58 ? [0, 1, 0] : [0, 0, 1];
+        if (typeof p.keyR !== 'number') p.keyR = r;
+        if (typeof p.keyG !== 'number') p.keyG = g;
+        if (typeof p.keyB !== 'number') p.keyB = b;
+        delete p.key;
+      }
+    }
+  }
+  // v2 → v3: drop any chromakey cvRoute that pointed at the removed `key` param.
+  if (fromVersion < 3 && d.cvRoutes && typeof d.cvRoutes === 'object') {
+    for (const port of Object.keys(d.cvRoutes)) {
+      const route = d.cvRoutes[port];
+      if (route && route.param === 'key') d.cvRoutes[port] = null;
     }
   }
   return data;
@@ -1536,13 +1583,42 @@ out vec4 outColor;
 uniform sampler2D uBase;
 uniform sampler2D uTop;
 uniform int uOp;        // 0 fade, 1 lumakey, 2 chromakey, 3 map
-uniform float uAmount;  // op-dependent: fade.t / lumakey.thr / chromakey.tol / map.mix
-uniform float uSoft;    // lumakey/chromakey edge softness (0 = hard)
+uniform float uAmount;  // op-dependent: fade.t / lumakey.thr / chromakey.threshold / map.mix
+uniform float uSoft;    // lumakey/chromakey edge softness/sharpness (0 = hard)
 uniform float uInvert;  // lumakey: >0.5 flips the keep test
-uniform float uKey;     // chromakey: which colour to key (0 R .. 0.33 G .. 0.66 B)
+uniform float uKeyR;    // chromakey: key colour R (0..1)
+uniform float uKeyG;    // chromakey: key colour G (0..1)
+uniform float uKeyB;    // chromakey: key colour B (0..1)
 uniform float uMode;    // map: 0 = multiply, 1 = screen
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+// HSV conversion + hue distance, PORTED VERBATIM from modules/chromakey.ts so
+// the in-card chromakey op matches the standalone CHROMAKEY module's keying.
+vec3 rgbToHsv(vec3 c) {
+  float mx = max(c.r, max(c.g, c.b));
+  float mn = min(c.r, min(c.g, c.b));
+  float v = mx;
+  float d = mx - mn;
+  float s = (mx > 0.0001) ? d / mx : 0.0;
+  float h = 0.0;
+  if (d > 0.0001) {
+    if (mx == c.r) {
+      h = (c.g - c.b) / d;
+      if (h < 0.0) h += 6.0;
+    } else if (mx == c.g) {
+      h = (c.b - c.r) / d + 2.0;
+    } else {
+      h = (c.r - c.g) / d + 4.0;
+    }
+    h /= 6.0;
+  }
+  return vec3(h, s, v);
+}
+float hueDistance(float a, float b) {
+  float d = abs(a - b);
+  return min(d, 1.0 - d);
+}
 
 void main() {
   vec4 b = texture(uBase, vUv);
@@ -1555,21 +1631,31 @@ void main() {
     float k = a * t.a;
     outc = mix(b.rgb, t.rgb, k);
   } else if (uOp == 1) {
-    // LUMAKEY: keep top where its luma exceeds the threshold (= amount). SOFT
-    // feathers the cut; INVERT flips it (keep BELOW the threshold instead).
+    // LUMAKEY: keep top where its luma exceeds the THRESHOLD (= amount). SOFT
+    // (SHARPNESS) feathers the cut; INVERT flips it (keep BELOW instead).
     float l = luma(t.rgb);
     float keep = smoothstep(a - soft, a + soft + 0.0001, l);
     if (uInvert > 0.5) keep = 1.0 - keep;
     keep *= t.a;
     outc = mix(b.rgb, t.rgb, keep);
   } else if (uOp == 2) {
-    // CHROMAKEY: drop top where it is near the KEY colour (R/G/B by uKey);
-    // amount = tolerance, soft = edge feather.
-    float chan = uKey < 0.25 ? (t.r - max(t.g, t.b))
-               : uKey < 0.58 ? (t.g - max(t.r, t.b))
-               :               (t.b - max(t.r, t.g));
-    float key = 1.0 - smoothstep(a, a + soft + 0.001, chan);
-    outc = mix(b.rgb, t.rgb, key * t.a);
+    // CHROMAKEY: HSV hue-distance key (ported from modules/chromakey.ts).
+    // amount = THRESHOLD (how close to the key hue counts as keyed), soft =
+    // SHARPNESS (edge feather), keyR/G/B = the key COLOUR. A saturation gate
+    // pulls grey-ish pixels toward keep so shadows/highlights aren't keyed.
+    vec3 topHSV = rgbToHsv(t.rgb);
+    vec3 keyHSV = rgbToHsv(vec3(uKeyR, uKeyG, uKeyB));
+    float hd = hueDistance(topHSV.x, keyHSV.x);
+    float satGate = smoothstep(0.04, 0.18, topHSV.y);
+    float tol  = clamp(a, 0.0, 1.0);
+    float sft  = max(clamp(soft, 0.0, 0.5), 0.001);
+    float tolH  = tol * 0.5;
+    float softH = sft * 0.5;
+    float hueAlpha = smoothstep(tolH, tolH + softH, hd);
+    // alpha = how much of the TOP to KEEP (1 = keep, 0 = drop to base). Grey
+    // pixels (low saturation) are kept regardless of hue noise.
+    float keep = mix(1.0, hueAlpha, satGate);
+    outc = mix(b.rgb, t.rgb, keep * t.a);
   } else {
     // MAP: top modulates base (MULTIPLY or SCREEN by uMode), mixed by amount.
     vec3 m = uMode > 0.5
@@ -1583,6 +1669,11 @@ void main() {
 function compileCombineProgram(gl: WebGL2RenderingContext): WebGLProgram {
   return linkProgram(gl, COMBINE_VERT_SRC, COMBINE_FRAG_SRC);
 }
+
+/** TEST-ONLY: the combine fragment GLSL, exposed so a unit test can assert the
+ *  chromakey HSV keying was ported from chromakey.ts verbatim (it is GLSL, not
+ *  extractable as a pure JS helper). Not used by the engine. */
+export const __COMBINE_FRAG_SRC_FOR_TEST = COMBINE_FRAG_SRC;
 
 // Input-source (image / video) pass: a fullscreen-quad passthrough that samples
 // a source texture into the layer FBO. When no source is bound it paints the
@@ -1607,7 +1698,8 @@ in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uTex;
 uniform float uHasInput;   // 0 = idle pattern, 1 = sample uTex
-uniform float uGain;       // RGB multiplier (reserved for future CV)
+uniform float uGain;       // BRIGHTNESS: RGB multiplier (#57 CV target)
+uniform float uOpacity;    // OPACITY: written into alpha so combine fades it (#57 CV target)
 void main() {
   if (uHasInput < 0.5) {
     // Idle: subtle dark teal with a faint vertical ramp (PICTUREBOX +
@@ -1616,8 +1708,10 @@ void main() {
     outColor = vec4(0.04, 0.07, 0.09 + v, 1.0);
     return;
   }
+  // BRIGHTNESS scales RGB; OPACITY is written to alpha so the alpha-aware
+  // combine ops (fade/lumakey/chromakey/map all multiply by t.a) honour it.
   vec3 col = texture(uTex, vUv).rgb * uGain;
-  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+  outColor = vec4(clamp(col, 0.0, 1.0), clamp(uOpacity, 0.0, 1.0));
 }`;
 
 function compileInputProgram(gl: WebGL2RenderingContext): WebGLProgram {

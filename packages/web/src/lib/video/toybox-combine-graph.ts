@@ -98,19 +98,28 @@ export interface ToyboxOpParamDef {
 export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
   // FADE: crossfade base→top by t.
   fade: [{ id: 'amount', label: 'T', min: 0, max: 1, default: 1 }],
-  // LUMAKEY: keep top where luma exceeds threshold; soft widens the edge;
-  //          invert flips the test. (soft/invert reserved for the shader's
-  //          future use — persisted now so the editor round-trips them.)
+  // LUMAKEY: keep top where luma exceeds THRESHOLD (= amount); SHARPNESS (= soft)
+  //          widens/tightens the edge; invert flips the test. THRESHOLD/SHARPNESS
+  //          are the keyer-config popover's two controls (the keyer "Configure"
+  //          menu surface is purely a relabelling of these existing params).
   lumakey: [
-    { id: 'amount', label: 'THR', min: 0, max: 1, default: 0.5 },
-    { id: 'soft', label: 'SOFT', min: 0, max: 1, default: 0.1 },
+    { id: 'amount', label: 'THRESHOLD', min: 0, max: 1, default: 0.5 },
+    { id: 'soft', label: 'SHARPNESS', min: 0, max: 1, default: 0.1 },
     { id: 'invert', label: 'INVERT', min: 0, max: 1, default: 0 },
   ],
-  // CHROMAKEY: drop top near key colour; tol = tolerance; soft = edge feather.
+  // CHROMAKEY: HSV key (ported from modules/chromakey.ts). amount = THRESHOLD
+  //            (how close to the key hue counts as keyed), soft = SHARPNESS
+  //            (edge feather), keyR/keyG/keyB = the key COLOUR (0..1 floats,
+  //            green-screen default). The keyer-config popover edits all of
+  //            these (a colour picker drives keyR/G/B). Replaces the old single
+  //            `key` channel-select scalar (migrated forward — see
+  //            migrateToyboxData).
   chromakey: [
-    { id: 'amount', label: 'TOL', min: 0, max: 1, default: 0.3 },
-    { id: 'soft', label: 'SOFT', min: 0, max: 1, default: 0.1 },
-    { id: 'key', label: 'KEY', min: 0, max: 1, default: 0.33 },
+    { id: 'amount', label: 'THRESHOLD', min: 0, max: 1, default: 0.3 },
+    { id: 'soft', label: 'SHARPNESS', min: 0, max: 1, default: 0.1 },
+    { id: 'keyR', label: 'KEY R', min: 0, max: 1, default: 0 },
+    { id: 'keyG', label: 'KEY G', min: 0, max: 1, default: 1 },
+    { id: 'keyB', label: 'KEY B', min: 0, max: 1, default: 0 },
   ],
   // MAP: top modulates base (multiply), mixed in by mix.
   map: [
@@ -118,6 +127,65 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
     { id: 'mode', label: 'MODE', min: 0, max: 1, default: 0 },
   ],
 };
+
+/** Op kinds that are KEYERS (have a "Configure keyer" popover): lumakey +
+ *  chromakey. Used by the card's right-click menu to gate the action. */
+export const KEYER_OP_KINDS: readonly ToyboxOpKind[] = ['lumakey', 'chromakey'];
+
+/** True if `kind` is a keyer op (lumakey/chromakey) — i.e. it has a keyer
+ *  config popover. SOURCE/OUTPUT/fade/map are not keyers. */
+export function isKeyerKind(kind: ToyboxNodeKind | undefined): kind is 'lumakey' | 'chromakey' {
+  return kind === 'lumakey' || kind === 'chromakey';
+}
+
+// ---------------- Unique per-node display names (#58) ----------------
+//
+// Two LUMAKEY nodes used to render the same raw "LUMAK" glyph (and the same CV
+// target label), so they were indistinguishable. Each OP node gets a unique
+// ORDINAL display name within its kind — the N-th lumakey is "LUMA N", the N-th
+// chromakey "CHROMA N", etc. — assigned in stable graph order. SOURCE nodes are
+// "L1".."L4" (1-based label; the layer INDEX stays 0-based), OUTPUT is "OUT".
+
+/** Human display prefix per op kind (the ordinal is appended: "LUMA 1"). */
+const OP_DISPLAY_PREFIX: Record<ToyboxOpKind, string> = {
+  fade: 'FADE',
+  lumakey: 'LUMA',
+  chromakey: 'CHROMA',
+  map: 'MAP',
+};
+
+/**
+ * Build a stable map of nodeId → unique display name for every node in `g`.
+ *   - SOURCE: "L{layer+1}" (1-based LABEL; the index stays 0-based, #56).
+ *   - OUTPUT: "OUT".
+ *   - OP:     "{PREFIX} {ordinal}" where ordinal counts that kind in graph
+ *             order (1-based): the first lumakey is "LUMA 1", the second
+ *             "LUMA 2", a chromakey "CHROMA 1", etc.
+ * Pure over the node list; recomputes whenever nodes are added/removed/retyped.
+ */
+export function combineDisplayNames(g: ToyboxCombineGraph): Map<string, string> {
+  const out = new Map<string, string>();
+  const counts: Partial<Record<ToyboxOpKind, number>> = {};
+  for (const n of g.nodes) {
+    if (n.kind === 'source') {
+      out.set(n.id, `L${(typeof n.layer === 'number' ? n.layer : 0) + 1}`);
+    } else if (n.kind === 'output') {
+      out.set(n.id, 'OUT');
+    } else {
+      const kind = n.kind as ToyboxOpKind;
+      const next = (counts[kind] ?? 0) + 1;
+      counts[kind] = next;
+      out.set(n.id, `${OP_DISPLAY_PREFIX[kind] ?? kind.toUpperCase()} ${next}`);
+    }
+  }
+  return out;
+}
+
+/** The unique display name for a single node id within `g` (convenience wrapper
+ *  over {@link combineDisplayNames}; falls back to the id when not found). */
+export function combineNodeDisplayName(g: ToyboxCombineGraph, nodeId: string): string {
+  return combineDisplayNames(g).get(nodeId) ?? nodeId;
+}
 
 /** Default params for a freshly-inserted op node of `kind`. */
 export function defaultOpParams(kind: ToyboxOpKind): Record<string, number> {

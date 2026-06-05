@@ -27,8 +27,12 @@ import {
   listCvParams,
   encodeTargetValue,
   decodeTargetValue,
+  findOrphanedRoutes,
+  imageVideoParamValue,
+  IMAGE_VIDEO_PARAMS,
   MATERIAL_PARAMS,
   type CvRouteTarget,
+  type CvRoutes,
 } from './toybox-cv-routes';
 import { ensureToyboxCatalog, type ToyboxLayer } from './toybox-content';
 import { makeDefaultCombineGraph, type ToyboxCombineGraph } from './toybox-combine-graph';
@@ -83,6 +87,12 @@ function objLayer(material: Record<string, number>): ToyboxLayer {
 }
 function offLayer(): ToyboxLayer {
   return { kind: 'off', contentId: null, params: {} };
+}
+function imageLayer(params: Record<string, number> = {}): ToyboxLayer {
+  return { kind: 'image', contentId: null, params };
+}
+function videoLayer(params: Record<string, number> = {}): ToyboxLayer {
+  return { kind: 'video', contentId: null, params };
 }
 
 describe('CV pool port ids', () => {
@@ -149,6 +159,38 @@ describe('listCvTargets', () => {
     // No source/output node leaks into the target list.
     expect(combineTargets.some((t) => t.nodeId === 'src0' || t.nodeId === 'out')).toBe(false);
   });
+  it('labels layers 1-BASED but keeps 0-based indices/values (#56)', () => {
+    const layers = [shaderLayer('noise-fbm'), offLayer(), objLayer({ spin: 1 }), offLayer()];
+    const layerTargets = listCvTargets(layers, undefined).filter((t) => t.target === 'layer');
+    // Layer 1..4 in the LABEL; the value/layer index stays 0..3.
+    expect(layerTargets[0]).toMatchObject({ value: 'layer:0', layer: 0 });
+    expect(layerTargets[0]!.label).toMatch(/^Layer 1 /);
+    expect(layerTargets[3]).toMatchObject({ value: 'layer:3', layer: 3 });
+    expect(layerTargets[3]!.label).toMatch(/^Layer 4 /);
+  });
+  it('tags IMAGE/VIDEO layers correctly, not SHD (#57)', () => {
+    const layers = [imageLayer(), videoLayer(), shaderLayer('noise-fbm'), objLayer({})];
+    const t = listCvTargets(layers, undefined).filter((x) => x.target === 'layer');
+    expect(t[0]!.label).toContain('(IMG)');
+    expect(t[1]!.label).toContain('(VID)');
+    expect(t[2]!.label).toContain('(SHD)');
+    expect(t[3]!.label).toContain('(OBJ)');
+  });
+  it('uses unique combine display names, not raw kind (#58)', () => {
+    const combine: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 0, y: 0 },
+        { id: 'k1', kind: 'lumakey', x: 0, y: 0 },
+        { id: 'k2', kind: 'lumakey', x: 0, y: 0 },
+        { id: 'out', kind: 'output', x: 0, y: 0 },
+      ],
+      edges: [],
+    };
+    const labels = listCvTargets(undefined, combine)
+      .filter((t) => t.target === 'combine')
+      .map((t) => t.label);
+    expect(labels).toEqual(['LUMA 1', 'LUMA 2']);
+  });
 });
 
 describe('listCvParams', () => {
@@ -166,6 +208,21 @@ describe('listCvParams', () => {
   it('off layer → no params', () => {
     const layers = [offLayer(), offLayer(), offLayer(), offLayer()];
     expect(listCvParams({ target: 'layer', layer: 0 }, layers, undefined)).toEqual([]);
+  });
+  it('image / video layer → opacity + brightness (#57)', () => {
+    expect(IMAGE_VIDEO_PARAMS.map((p) => p.id)).toEqual(['opacity', 'brightness']);
+    const img = listCvParams({ target: 'layer', layer: 0 }, [imageLayer(), offLayer(), offLayer(), offLayer()], undefined);
+    expect(img.map((p) => p.id)).toEqual(['opacity', 'brightness']);
+    const vid = listCvParams({ target: 'layer', layer: 0 }, [videoLayer(), offLayer(), offLayer(), offLayer()], undefined);
+    expect(vid.map((p) => p.id)).toEqual(['opacity', 'brightness']);
+  });
+  it('combine chromakey op → keyR/keyG/keyB params (#59)', () => {
+    const combine: ToyboxCombineGraph = {
+      nodes: [{ id: 'ck', kind: 'chromakey', x: 0, y: 0, params: {} }],
+      edges: [],
+    };
+    const params = listCvParams({ target: 'combine', nodeId: 'ck' }, undefined, combine);
+    expect(params.map((p) => p.id)).toEqual(['amount', 'soft', 'keyR', 'keyG', 'keyB']);
   });
   it('combine fade op → its OP_PARAMS (amount, ...)', () => {
     const combine = makeDefaultCombineGraph();
@@ -281,5 +338,76 @@ describe('resolveRoute no-op / unresolvable cases', () => {
   it('returns null for an out-of-range layer index', () => {
     const layers: ToyboxLayer[] = [shaderLayer('noise-fbm'), offLayer(), offLayer(), offLayer()];
     expect(resolveRoute({ target: 'layer', layer: 9, param: 'speed' }, layers, undefined)).toBeNull();
+  });
+});
+
+describe('imageVideoParamValue', () => {
+  it('reads a stored value, defaults opacity=1 / brightness=1', () => {
+    expect(imageVideoParamValue({ opacity: 0.4, brightness: 1.5 }, 'opacity')).toBe(0.4);
+    expect(imageVideoParamValue({ opacity: 0.4 }, 'brightness')).toBe(1); // default
+    expect(imageVideoParamValue(undefined, 'opacity')).toBe(1);
+    expect(imageVideoParamValue({ opacity: NaN }, 'opacity')).toBe(1); // non-finite → default
+    expect(imageVideoParamValue({}, 'unknown')).toBe(0); // no def → 0
+  });
+});
+
+describe('resolveRoute (d) cv → IMAGE / VIDEO param (#57)', () => {
+  it('resolves an image-layer opacity, reports 0..1 + writes re-scaled', () => {
+    const layers: ToyboxLayer[] = [imageLayer({ opacity: 1 }), offLayer(), offLayer(), offLayer()];
+    const r = resolveRoute({ target: 'layer', layer: 0, param: 'opacity' }, layers, undefined);
+    expect(r).not.toBeNull();
+    expect(r!.min).toBe(0);
+    expect(r!.max).toBe(1);
+    expect(r!.current).toBe(1);
+    r!.apply(effectiveCvValue(0, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, r!.min, r!.max));
+    expect(layers[0]!.params!.opacity).toBeCloseTo(0, 6);
+  });
+  it('resolves a video-layer brightness across its 0..2 range', () => {
+    const layers: ToyboxLayer[] = [offLayer(), videoLayer({ brightness: 1 }), offLayer(), offLayer()];
+    const r = resolveRoute({ target: 'layer', layer: 1, param: 'brightness' }, layers, undefined);
+    expect(r!.min).toBe(0);
+    expect(r!.max).toBe(2);
+    r!.apply(effectiveCvValue(1, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, r!.min, r!.max));
+    expect(layers[1]!.params!.brightness).toBeCloseTo(2, 6);
+  });
+  it('returns null for an unknown image/video param', () => {
+    const layers: ToyboxLayer[] = [imageLayer(), offLayer(), offLayer(), offLayer()];
+    expect(resolveRoute({ target: 'layer', layer: 0, param: 'nope' }, layers, undefined)).toBeNull();
+  });
+});
+
+describe('findOrphanedRoutes (auto-unmap, #60)', () => {
+  it('reports a route whose layer became OFF; leaves a resolvable route alone', () => {
+    const combine = makeDefaultCombineGraph();
+    const layers: ToyboxLayer[] = [shaderLayer('noise-fbm', { scale: 2 }), offLayer(), offLayer(), offLayer()];
+    const routes: CvRoutes = {
+      cv1: { target: 'layer', layer: 0, param: 'scale' }, // resolvable
+      cv2: { target: 'layer', layer: 1, param: 'scale' }, // layer 1 is OFF → orphan
+    };
+    expect(findOrphanedRoutes(routes, layers, combine)).toEqual(['cv2']);
+  });
+  it('reports a route to a deleted combine node', () => {
+    const combine = makeDefaultCombineGraph();
+    const routes: CvRoutes = {
+      cv1: { target: 'combine', nodeId: 'op1', param: 'amount' }, // exists
+      cv2: { target: 'combine', nodeId: 'ghost', param: 'amount' }, // gone → orphan
+    };
+    expect(findOrphanedRoutes(routes, undefined, combine)).toEqual(['cv2']);
+  });
+  it('reports a route to a now-missing param (chromakey key after migration)', () => {
+    const combine: ToyboxCombineGraph = {
+      nodes: [{ id: 'ck', kind: 'chromakey', x: 0, y: 0, params: {} }],
+      edges: [],
+    };
+    const routes: CvRoutes = {
+      cv1: { target: 'combine', nodeId: 'ck', param: 'amount' }, // still valid
+      cv2: { target: 'combine', nodeId: 'ck', param: 'key' }, // removed param → orphan
+    };
+    expect(findOrphanedRoutes(routes, undefined, combine)).toEqual(['cv2']);
+  });
+  it('ignores null/absent routes (already unmapped)', () => {
+    const routes: CvRoutes = { cv1: null, cv2: undefined };
+    expect(findOrphanedRoutes(routes, undefined, makeDefaultCombineGraph())).toEqual([]);
+    expect(findOrphanedRoutes(undefined, undefined, undefined)).toEqual([]);
   });
 });
