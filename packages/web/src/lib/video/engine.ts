@@ -602,6 +602,42 @@ export class VideoEngine implements DomainEngine {
    *  doesn't have to wait for rAF. */
   step(): void {
     if (this.topoStale) this.recomputeTopo();
+
+    // E2E render-suppression hook (per-module-per-port sweeps only).
+    //
+    // When the e2e harness sets `globalThis.__videoEngineFreezeRender = true`
+    // (via Playwright's addInitScript, BEFORE the app boots), we keep the
+    // graph fully consistent — topo is recomputed above, nodes still mount
+    // in addNode (shaders compiled, FBOs allocated → handles render), edges
+    // still reconcile in addEdge — but SKIP the expensive per-frame work:
+    // the cross-domain bridge ticks and every module's GL draw() pass.
+    //
+    // Why this is correct AND scoped:
+    //   * The handle-presence and inputs-accept sweeps assert only at the
+    //     DOM / patch-graph level (a handle is a Svelte-Flow element; an
+    //     accepted edge is a graph-store entry). The heavy GL render is
+    //     purely incidental to those assertions, so freezing it changes
+    //     nothing they observe while eliminating the SwiftShader-bound
+    //     per-frame cost that timed out heavy cards (b3ntb0x, mandelbulb).
+    //   * NOTHING in production or any pixel-asserting spec (bespoke video
+    //     specs, VRT, behavioral) sets this flag, so those keep rendering
+    //     real pixels. The flag is opt-in per page, default-undefined.
+    //
+    // We still advance frame timing + the frame counter below so a later
+    // un-freeze resumes with sane iTime/iFrameRate (no jump).
+    const frozen =
+      (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
+        .__videoEngineFreezeRender === true;
+    if (frozen) {
+      const now = performance.now();
+      const dt = Math.min(0.1, Math.max(0, (now - this.lastStepTime) / 1000));
+      this.lastStepTime = now;
+      this.timeDelta = dt;
+      if (dt > 1e-4) this.frameRate = this.frameRate * 0.9 + (1 / dt) * 0.1;
+      this.frameCount++;
+      return;
+    }
+
     // 1. Sample every active cross-domain CV bridge BEFORE drawing this
     //    frame's modules. Each sample becomes the param value for the
     //    upcoming draw, so a frame's-worth of CV → video param coupling
