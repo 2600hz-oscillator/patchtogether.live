@@ -144,6 +144,87 @@ export function applyPresetToData(
 }
 
 /**
+ * Apply a VERBATIM toybox node.data blob (a USER preset or an IMPORTED bundle's
+ * `data`) onto a node's live `data` IN PLACE. Unlike applyPresetToData (which
+ * touches only the three bundled-preset fields), this restores the WHOLE blob —
+ * layers, combine, cvRoutes AND cvInputs (+ any future fields) — so a saved /
+ * imported patch round-trips exactly. Same in-place discipline: known live-Y
+ * containers (layers/combine arrays, cvRoutes/cvInputs maps) are cleared +
+ * repopulated rather than reassigned; everything else is set as a fresh plain
+ * clone. Exported (no Yjs wrapper) so unit tests can drive it on a plain object.
+ */
+export function applyDataBlobToData(
+  data: Record<string, unknown>,
+  blob: Record<string, unknown>,
+): void {
+  const src = clone(blob);
+
+  // --- layers (array of live Y types) ---
+  if (Array.isArray(src.layers)) {
+    replaceArrayInPlace(data, 'layers', src.layers as unknown[]);
+  }
+
+  // --- combine GRAPH ({nodes,edges} — nested live Y arrays) ---
+  if (src.combine && typeof src.combine === 'object') {
+    if (!data.combine || typeof data.combine !== 'object') data.combine = {};
+    const dstCombine = data.combine as Record<string, unknown>;
+    const srcCombine = src.combine as Record<string, unknown>;
+    replaceArrayInPlace(
+      dstCombine,
+      'nodes',
+      Array.isArray(srcCombine.nodes) ? (srcCombine.nodes as unknown[]) : [],
+    );
+    replaceArrayInPlace(
+      dstCombine,
+      'edges',
+      Array.isArray(srcCombine.edges) ? (srcCombine.edges as unknown[]) : [],
+    );
+    // Carry any other combine fields (none today, but keep it lossless).
+    for (const [k, v] of Object.entries(srcCombine)) {
+      if (k === 'nodes' || k === 'edges') continue;
+      dstCombine[k] = v;
+    }
+  }
+
+  // --- flat maps cleared-in-place then repopulated (live Y maps) ---
+  for (const key of ['cvRoutes', 'cvInputs'] as const) {
+    if (src[key] && typeof src[key] === 'object') {
+      if (!data[key] || typeof data[key] !== 'object') data[key] = {};
+      const dstMap = data[key] as Record<string, unknown>;
+      for (const k of Object.keys(dstMap)) delete dstMap[k];
+      for (const [k, v] of Object.entries(src[key] as Record<string, unknown>)) {
+        dstMap[k] = v;
+      }
+    }
+  }
+
+  // --- any remaining top-level fields → set as fresh plain clones ---
+  for (const [k, v] of Object.entries(src)) {
+    if (k === 'layers' || k === 'combine' || k === 'cvRoutes' || k === 'cvInputs') continue;
+    data[k] = v;
+  }
+}
+
+/**
+ * Apply a VERBATIM node.data blob onto the live node IN PLACE, inside one Yjs
+ * transaction tagged LOCAL_ORIGIN. Returns true if the node existed. Used by the
+ * card to LOAD a user preset (from the localStorage registry) and to RESTORE an
+ * IMPORTED `.toybox.zip` bundle's `data` — both carry a full node.data blob, not
+ * the slim bundled-preset shape, so they need this full-blob restore path.
+ */
+export function applyDataBlobToNode(nodeId: string, blob: Record<string, unknown>): boolean {
+  let applied = false;
+  ydoc.transact(() => {
+    const target = patch.nodes[nodeId];
+    if (!target) return;
+    if (!target.data) (target as { data: Record<string, unknown> }).data = {};
+    applyDataBlobToData(target.data as Record<string, unknown>, blob);
+    applied = true;
+  }, LOCAL_ORIGIN);
+  return applied;
+}
+
+/**
  * Apply a (already-resolved) preset onto the live node IN PLACE, inside one Yjs
  * transaction tagged LOCAL_ORIGIN. Returns true if the node existed. Separated
  * from loadToyboxPreset (which fetches the manifest) so callers/tests that
