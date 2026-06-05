@@ -227,3 +227,113 @@ test('multiple controls from multiple modules: grouped, lock/unlock + move, MIDI
   const afterLocked = await box.boundingBox();
   if (beforeLocked && afterLocked) expect(Math.abs(afterLocked.x - beforeLocked.x)).toBeLessThan(4);
 });
+
+// ── TOYBOX (nested node.data params) → control surface ──
+//
+// REGRESSION (this PR): TOYBOX controls do NOT live on node.params — material
+// fields are on node.data.layers[i].material, combine op params on
+// node.data.combine.nodes[].params — and the toybox def declares NO params. So
+// the surface's old registry+flat-read resolution silently dropped every toybox
+// binding (paramDefFor → undefined → empty group → nothing rendered). The param
+// adapter (control-surface-params.ts → toybox-control-params.ts) now resolves
+// these through the SAME live location the card knobs + CV routing use. This
+// spec proves a material SCALE and a combine fade-T proxy both RENDER on the
+// surface and DRIVE the live toybox node.
+
+async function seedToyboxAndBindings(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __patch: { nodes: Record<string, PatchNode> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const tb = w.__patch.nodes['toybox-1'];
+      if (!tb.data) tb.data = {};
+      // One OBJ layer (material → SCALE knob) + a minimal combine graph with a
+      // single fade op node 'op1' (the default-graph op id) exposing 'amount'.
+      (tb.data as Record<string, unknown>).layers = [
+        {
+          kind: 'obj',
+          contentId: null,
+          params: {},
+          material: { modelId: 'cube', rotX: 0.3, rotY: 0.6, rotZ: 0, scale: 1, spin: 0.4, matcap: 0, tintR: 1, tintG: 1, tintB: 1 },
+        },
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'off', contentId: null, params: {} },
+      ];
+      (tb.data as Record<string, unknown>).combine = {
+        nodes: [
+          { id: 'src0', kind: 'source', layer: 0, x: 0, y: 0 },
+          { id: 'src1', kind: 'source', layer: 1, x: 0, y: 0 },
+          { id: 'op1', kind: 'fade', x: 0, y: 0, params: { amount: 1 } },
+          { id: 'out', kind: 'output', x: 0, y: 0 },
+        ],
+        edges: [],
+      };
+      // Bind the toybox material SCALE + the combine fade amount onto the surface.
+      const cs = w.__patch.nodes['cs-1'];
+      if (!cs.data) cs.data = {};
+      (cs.data as Record<string, unknown>).bindings = [
+        { moduleId: 'toybox-1', paramId: 'scale' },
+        { moduleId: 'toybox-1', paramId: 'combine:op1:amount' },
+      ];
+    });
+  });
+}
+
+test('toybox material + combine params: proxy renders on the surface and drives the live node', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  // The TOYBOX card is WIDE (~880px) + tall and has its OWN SCALE knob; place
+  // the surface well to the right so its proxy knobs aren't occluded by the
+  // toybox card. spawnPatch's fitView zooms both into view, preserving the gap.
+  await spawnPatch(page, [
+    { id: 'toybox-1', type: 'toybox', position: { x: 0, y: 0 }, domain: 'video' },
+    { id: 'cs-1', type: 'controlSurface', position: { x: 1200, y: 0 }, domain: 'meta' },
+  ]);
+
+  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
+  await expect(surface).toBeVisible();
+
+  await seedToyboxAndBindings(page);
+
+  // BUG FIX: both proxies RENDER (before this PR the bindings resolved to
+  // undefined defs → the group was dropped → empty surface).
+  const scaleProxy = surface.locator('[data-testid="control-surface-knob-toybox-1-scale"]');
+  const fadeProxy = surface.locator('[data-testid="control-surface-knob-toybox-1-combine:op1:amount"]');
+  await expect(scaleProxy).toBeVisible();
+  await expect(fadeProxy).toBeVisible();
+  await expect(surface.locator('[data-testid="control-surface-empty"]')).toHaveCount(0);
+  await expect(surface.locator('[data-testid="control-surface-group-label"]')).toContainText('TOYBOX');
+
+  // The proxy is a POINTER into node.data: push the live material SCALE off its
+  // default, then reset via the proxy (double-click → default 1) — the live
+  // toybox material.scale must change (proxy writes node.data, not node.params).
+  await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
+    const mat = ((w.__patch.nodes['toybox-1'].data as { layers: Array<{ material: Record<string, number> }> }).layers[0].material);
+    mat.scale = 2.8;
+  });
+  await scaleProxy.locator('[role="slider"]').dblclick();
+  const scaleAfter = await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
+    return (w.__patch.nodes['toybox-1'].data as { layers: Array<{ material: Record<string, number> }> }).layers[0].material.scale;
+  });
+  expect(scaleAfter).toBe(1); // proxy reset the SOURCE material to the default
+
+  // Same for the COMBINE fade amount (lives on node.data.combine.nodes[op1].params).
+  await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
+    const g = (w.__patch.nodes['toybox-1'].data as { combine: { nodes: Array<{ id: string; params?: Record<string, number> }> } }).combine;
+    const op1 = g.nodes.find((n) => n.id === 'op1')!;
+    op1.params = { amount: 0.2 };
+  });
+  await fadeProxy.locator('[role="slider"]').dblclick();
+  const amountAfter = await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
+    const g = (w.__patch.nodes['toybox-1'].data as { combine: { nodes: Array<{ id: string; params?: Record<string, number> }> } }).combine;
+    return g.nodes.find((n) => n.id === 'op1')!.params!.amount;
+  });
+  expect(amountAfter).toBe(1); // fade T default is 1 → proxy reset the live op node
+});
