@@ -2,7 +2,7 @@
 //
 // QUADRALOGICAL (4-input video mixer) functional e2e.
 //
-// Graph (matches the Phase-1 spec request):
+// Graph:
 //   LINES → CHROMA(tint red)    → in1  \
 //   LINES → CHROMA(tint green)  → in2    QUADRALOGICAL → videoOut
 //   LINES → CHROMA(tint blue)   → in3  /
@@ -17,6 +17,14 @@
 //   4. the inner-diamond CENTER is a 4-way composite (distinct from any corner),
 //   5. the PREVIEW output (2×2 tile) emits when routed through a videoOut,
 //   6. FREEZE holds the MIX still (deterministic-capture hook).
+//
+// PHASE 2 additions:
+//   7. selecting a DIFFERENT effect on an edge VISIBLY changes the MIX (the
+//      "always dissolve" regression) — DISSOLVE vs MULTIPLY vs DIFF on the top
+//      edge produce distinct frames at the same joystick position,
+//   8. each of the 8 effects renders without error + produces a distinct frame,
+//   9. per-edge assignment is INDEPENDENT (changing edge 1–2 doesn't change the
+//      output when the joystick sits on a different edge).
 //
 // Pixel-exact determinism lives in the VRT suite; this is the behavioural gate.
 
@@ -93,7 +101,29 @@ async function setJoystick(page: import('@playwright/test').Page, x: number, y: 
   }, [x, y]);
 }
 
+// Write arbitrary params onto the quad node (per-edge fx + controls). Mutated
+// IN PLACE inside a Y.Doc transaction (node.params is a live Y.Map).
+async function setParams(page: import('@playwright/test').Page, params: Record<string, number>) {
+  await page.evaluate((p) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { params: Record<string, number> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['quad'];
+      if (n) for (const [k, v] of Object.entries(p)) n.params[k] = v;
+    });
+  }, params);
+}
+
 test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
+  // The Phase-2 per-edge 8-effect mix shader is heavier than Phase 1; spawning
+  // 4 video inputs + rendering/sampling the mix several times per test exceeds
+  // the 30s default on CI's SwiftShader software renderer (timed out on
+  // shard 8). Give the whole suite a video-domain budget (matches the other
+  // heavy WebGL e2e; see repo memory ci-swiftshader-video-e2e-timeouts).
+  test.describe.configure({ timeout: 120_000 });
+
   test('4 colored CHROMA inputs → MIX renders non-black; corner-drag makes that input dominate; center is a 4-way blend', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -235,5 +265,123 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
 
     expect(a.length).toBeGreaterThan(0);
     expect(b, 'frozen: two samples 200ms apart are identical').toEqual(a);
+  });
+
+  // ── Phase 2: per-edge effects ────────────────────────────────────────────
+
+  test('selecting a DIFFERENT effect on an edge VISIBLY changes the MIX (no more "always dissolve")', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, buildNodes(), buildEdges());
+    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+
+    // Sit ON the top edge (in1 red ↔ in2 green), midway → both contribute.
+    // Edge 1–2 is the active edge here.
+    await setJoystick(page, 0, 1);
+
+    // Capture the brightness signature for a given edge-1 effect. We average
+    // over a few frames so animation jitter doesn't dominate the comparison.
+    const sigForFx = async (fx: number): Promise<{ mean: number; r: number; g: number; b: number }> => {
+      await setParams(page, { edge1_fx: fx, edge1_amount: 1, edge1_param: 0.1 });
+      await page.waitForTimeout(350);
+      let mean = 0, r = 0, g = 0, b = 0; const N = 4;
+      for (let i = 0; i < N; i++) {
+        const s = await readStats(page);
+        mean += s!.mean; r += s!.r; g += s!.g; b += s!.b;
+        await page.waitForTimeout(60);
+      }
+      return { mean: mean / N, r: r / N, g: g / N, b: b / N };
+    };
+
+    const dissolve = await sigForFx(0);  // mid-grey-ish red+green average
+    const multiply = await sigForFx(2);  // red·green = dark → much DARKER
+    const diff = await sigForFx(6);      // |red-green| stays bright/saturated
+
+    // DISSOLVE vs MULTIPLY must differ a lot in overall brightness (multiply of
+    // two complementary colours darkens hard). This is the core regression: in
+    // Phase 1 every effect rendered identically (dissolve).
+    expect(multiply.mean, 'MULTIPLY noticeably darker than DISSOLVE')
+      .toBeLessThan(dissolve.mean - 6);
+    // DIFF differs from DISSOLVE too (different channel mix).
+    const diffDelta = Math.abs(diff.r - dissolve.r) + Math.abs(diff.g - dissolve.g) + Math.abs(diff.b - dissolve.b);
+    expect(diffDelta, 'DIFF frame differs from DISSOLVE frame').toBeGreaterThan(8);
+
+    expect(errors, 'no console / page errors').toEqual([]);
+  });
+
+  test('all 8 effects render on an edge without error + each is a distinct frame', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, buildNodes(), buildEdges());
+    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+
+    // Top edge active (in1 ↔ in2). A WIPE/IRIS at amount=0/0.5 makes the
+    // spatial split visible; CHROMA keys green; etc.
+    await setJoystick(page, 0, 1);
+
+    const sigs: Array<{ fx: number; mean: number; r: number; g: number; b: number; nz: number }> = [];
+    for (let fx = 0; fx < 8; fx++) {
+      await setParams(page, { edge1_fx: fx, edge1_amount: 0.5, edge1_param: 0.15, keyG: 1 });
+      await page.waitForTimeout(350);
+      const s = await readStats(page);
+      expect(s, `fx ${fx} canvas readable`).not.toBeNull();
+      // Every effect must render SOMETHING (not all-black) on a 2-colour edge.
+      expect(s!.nonZeroFrac, `fx ${fx} renders non-black`).toBeGreaterThan(0.02);
+      sigs.push({ fx, mean: s!.mean, r: s!.r, g: s!.g, b: s!.b, nz: s!.nonZeroFrac });
+    }
+
+    // The 8 signatures must not all collapse to one value — at least several
+    // are clearly distinct in the (r,g,b,mean) feature space. (Two effects can
+    // legitimately look similar at a given setting, so we count distinct ones
+    // rather than demand all-pairwise-distinct.)
+    const distinct = new Set(sigs.map((s) => `${Math.round(s.r / 6)}_${Math.round(s.g / 6)}_${Math.round(s.b / 6)}_${Math.round(s.mean / 6)}`));
+    expect(distinct.size, 'effects produce several visibly distinct frames').toBeGreaterThanOrEqual(4);
+
+    expect(errors, 'no console / page errors').toEqual([]);
+  });
+
+  test('per-edge assignment is INDEPENDENT (edge 1–2 fx does not affect a different active edge)', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, buildNodes(), buildEdges());
+    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+
+    // Sit on the BOTTOM edge (in3 blue ↔ in4 yellow) — that's edge 3–4. Edge
+    // 1–2's mass is ~0 here, so changing edge1_fx must NOT change the output.
+    await setJoystick(page, 0, -1);
+    // Make edge 3–4 a plain dissolve so the bottom-edge frame is stable.
+    await setParams(page, { edge3_fx: 0, edge1_fx: 0 });
+    await page.waitForTimeout(350);
+
+    const avgStats = async (): Promise<{ r: number; g: number; b: number }> => {
+      let r = 0, g = 0, b = 0; const N = 4;
+      for (let i = 0; i < N; i++) { const s = await readStats(page); r += s!.r; g += s!.g; b += s!.b; await page.waitForTimeout(60); }
+      return { r: r / N, g: g / N, b: b / N };
+    };
+
+    const before = await avgStats();
+    // Slam edge 1–2 to MULTIPLY — a dramatic change IF it leaked into this edge.
+    await setParams(page, { edge1_fx: 2, edge1_amount: 1 });
+    await page.waitForTimeout(350);
+    const after = await avgStats();
+
+    const delta = Math.abs(after.r - before.r) + Math.abs(after.g - before.g) + Math.abs(after.b - before.b);
+    // The bottom edge (3–4) frame should be essentially unchanged (small delta
+    // from animation only). Edge 1–2's effect is inactive at this joystick pos.
+    expect(delta, 'changing edge 1–2 fx does NOT perturb the edge 3–4 output').toBeLessThan(10);
+
+    expect(errors, 'no console / page errors').toEqual([]);
   });
 });

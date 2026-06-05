@@ -208,6 +208,18 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    proof + CV param mutation). VRT-exempt for the same animation reason.
   b3ntb0x: 'animated NTSC composite with a ±580 per-frame variance floor that swamps every input in the 5-snapshot window (bend_a swings Δμvar 63→2.8 run-to-run); whole-module exempt (bentbox/mandelbulb animated-video class); covered by b3ntb0x.test.ts (35 unit, incl. encode→demod round-trip + burst-starve) + b3ntb0x.spec.ts real-GL bend proof',
 
+  // ── quadralogical — animated 4-input video MIXER. Its per-edge inputs are
+  //    CONDITIONAL: edge{N}_fx/amount/param only affect the output when that
+  //    edge is active (joystick near it) and only for the relevant effect
+  //    (e.g. WIPE softness, IRIS feather); keyR/G/B only matter under CHROMA;
+  //    invert only when a key is keying. With the default centered joystick +
+  //    DISSOLVE edges + flat probe inputs, most don't perturb the luma-variance
+  //    metric — same animated-video / conditional-input class as b3ntb0x.
+  //    Whole-module exempt; covered by quadralogical.spec.ts (8-effect
+  //    distinctness + per-edge independence + the no-more-always-dissolve
+  //    regression), 8 composite VRTs, and unit (edgeWeights/blend2/HSV).
+  quadralogical: 'animated 4-input mixer with conditional per-edge inputs (edge fx/amount/param active only when that edge dominates + that effect is selected; keyR/G/B only under CHROMA); luma-variance sweep can\'t attribute deltas (animated-video class, cf b3ntb0x); covered by quadralogical.spec.ts (8-effect distinctness + per-edge independence) + 8 composite VRTs + unit (edgeWeights/blend2)',
+
   // ── reshaper / ruttetra — coordinate-displacement video effects
   //    where x/y inputs displace pixels from the z input. Even with
   //    intensity=1, RASTERIZE-from-noise on x/y produces displacements
