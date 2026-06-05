@@ -78,7 +78,7 @@ import {
   type ToyboxCombineGraph,
   type ToyboxOpKind,
 } from '$lib/video/toybox-combine-graph';
-import { feedbackUniforms } from '$lib/video/toybox-feedback';
+import { feedbackUniforms, feedbackResetState } from '$lib/video/toybox-feedback';
 import {
   CV_PORT_IDS,
   isCvPortId,
@@ -1497,9 +1497,11 @@ export const toyboxDef: VideoModuleDef = {
           if (!buf) { texForNode.set(id, null); continue; }
           const p = n.params ?? {};
           // "Reset feedback" bumps `_reset`; re-arm the clear when it changes.
-          const token = typeof p._reset === 'number' ? p._reset : 0;
-          if (token !== buf.resetToken) {
-            buf.resetToken = token;
+          // Decision extracted to the pure feedbackResetState() so it's
+          // deterministically unit-tested (the GL clear is e2e/VRT-only).
+          const reset = feedbackResetState(buf.resetToken, p);
+          if (reset.clear) {
+            buf.resetToken = reset.token;
             buf.clearPending = true;
           }
           const inEdge0 = graph.edges.find((e) => e.to === id && e.toPort === 'in0');

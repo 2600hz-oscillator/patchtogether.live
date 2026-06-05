@@ -130,3 +130,25 @@ export function feedbackUniforms(params: Record<string, number> | undefined | nu
     flow: clamp(p.flow, 0, 1, 0),
   };
 }
+
+/**
+ * The pure decision behind the "Reset feedback" menu action: the card bumps a
+ * monotonically-increasing `_reset` token in the node's params; the engine keeps
+ * the last token it saw per ping-pong buffer and clears both float textures to
+ * black on the frame the token changes. This extracts that diff so it is
+ * deterministically unit-testable (the GL clear itself can only be exercised in
+ * e2e/VRT, but the *decision* — "did the token change, what is the new token" —
+ * is the part that actually carries the reset, and it is pure).
+ *
+ * `_reset` is read tolerantly: absent / NaN / non-number → treated as token 0
+ * (matches a fresh node that has never been reset). Returns whether to arm a
+ * clear this frame plus the token to remember.
+ */
+export function feedbackResetState(
+  prevToken: number,
+  params: Record<string, number> | undefined | null,
+): { clear: boolean; token: number } {
+  const raw = params && typeof params === 'object' ? (params as Record<string, unknown>)._reset : undefined;
+  const token = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
+  return { clear: token !== prevToken, token };
+}

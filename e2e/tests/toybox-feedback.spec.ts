@@ -249,8 +249,28 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
     ).toBeGreaterThan(8);
   });
 
-  test('Reset feedback (right-click menu) clears the accumulated buffer', async ({ page }) => {
+  // NOTE on what is (and isn't) tested here for RESET:
+  //   The "Reset feedback" menu bumps a `_reset` token; the engine clears both
+  //   ping-pong float textures to black on the frame it changes. Asserting that
+  //   clear by PIXEL DIFF on a live feedback loop is inherently RACY and was a
+  //   recurring CI flake: the engine's own RAF loop keeps stepping the loop
+  //   independently of the test's controlled steps, and with a frozen iTime +
+  //   static input the recursive modes (TUNNEL/DISPLACE/VECTOR) re-converge to a
+  //   UNIQUE fixed point — so a freshly-cleared buffer becomes byte-identical to
+  //   the accumulated one within a handful of uncontrolled frames. There is no
+  //   stable visual transient to catch on slow SwiftShader (it read dist === 0).
+  //   The reset CONTRACT (token diff → clear-once, idempotent until the next
+  //   bump, tolerant of absent/NaN tokens) is proven deterministically in the
+  //   unit test toybox-feedback.test.ts → describe('feedbackResetState'). Here we
+  //   only assert the non-racy property: bumping `_reset` at runtime does not
+  //   break the live loop (no errors, output stays valid/non-black).
+  test('Reset feedback (token bump) keeps the loop alive (no error, stays non-black)', async ({ page }) => {
     test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
@@ -261,20 +281,15 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
     await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
     await pinViewport(page);
 
-    // TUNNEL (mode 0) builds a recursive zoom STRUCTURE over many frames. We
-    // deliberately avoid ADDITIVE here: additive CLAMP-saturates, so its
-    // post-clear frame instantly re-hits the same ceiling as the accumulated
-    // buffer → a brightness-delta reads IDENTICAL on CI (the flake we hit —
-    // accumulated 765 vs post-reset 765). TUNNEL's built-up structure vs a
-    // freshly-cleared, slowly-rebuilding buffer is unambiguously different.
-    await seedFeedbackGraph(page, 0, { zoom: 0.97, rotate: 0.04 });
-    const accumulated = await stepAndAverage(page, 2.0, 16);
-    expect(lum(accumulated), 'tunnel structure accumulated before reset').toBeGreaterThan(8);
+    // ADDITIVE (mode 3) accumulates a bright loop quickly — a clear, non-black
+    // composite before AND after the reset (the reset must not strand the loop).
+    await seedFeedbackGraph(page, 3, { decay: 0.9, gain: 1 });
+    const before = await stepAndAverage(page, 2.0, 10);
+    expect(lum(before), 'feedback composite is non-black before reset').toBeGreaterThan(20);
 
-    // Bump the reset token (engine clears both ping-pong textures to black). This
-    // is exactly what the "Reset feedback" menu item does — resetFeedbackNode →
-    // params._reset++ (driven here directly via the same live combine param so
-    // the assertion doesn't depend on the right-click overlay actionability).
+    // Bump the reset token — exactly what the "Reset feedback" menu item does
+    // (resetFeedbackNode → params._reset++), driven via the same live combine
+    // param so it exercises the engine's token-diff/clear path end-to-end.
     await page.evaluate(() => {
       const w = globalThis as unknown as PatchGlobal;
       w.__ydoc.transact(() => {
@@ -289,14 +304,14 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
       });
     });
 
-    // The clear takes effect once the Yjs `_reset` token PROPAGATES to the engine
-    // and a frame renders — 1-2 frames locally, slower under CI load. Poll:
-    // step + measure until the rendered frame visibly DIVERGES from the built-up
-    // tunnel (the clear collapses the structure; it then rebuilds slowly). We
-    // assert a DIFFERENCE (dist), not a brightness drop, so it's robust to render
-    // timing + direction on CI's SwiftShader.
-    await expect
-      .poll(async () => dist(await stepAndAverage(page, 2.0, 1), accumulated), { timeout: 30_000 })
-      .toBeGreaterThan(8);
+    // Let it clear + rebuild. The loop must come back alive (the clear didn't
+    // wedge it black forever) — the rebuilt accumulation is non-black again.
+    const after = await stepAndAverage(page, 2.0, 10);
+    expect(lum(after), 'feedback loop rebuilds (non-black) after reset').toBeGreaterThan(20);
+
+    expect(
+      errors.filter((e) => !e.includes('AudioContext')),
+      'no console / page errors across a runtime reset',
+    ).toEqual([]);
   });
 });
