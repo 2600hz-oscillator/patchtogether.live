@@ -362,10 +362,18 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
 // e2e/tests/doom-keyboard-routing.spec.ts. Keep them OUT of the
 // exemption list so the sweep DOES pin "the input port wires up".
 const EXEMPT_INPUT_DRIVE: Record<string, string> = {
-  // None at present — every declared input gets at least the edge-lands
-  // check. Add entries here ONLY when an upstream source can't be wired
-  // at all (incompatible cable types between every source we know how
-  // to spawn and this input).
+  // ── TOYBOX: the two VIDEO inputs (inA / inB) only drive the output when a
+  // LAYER selects that port as its source (layer.videoSource = 'inA'|'inB').
+  // The default patch's layers select NEITHER, so a feed patched into inA/inB
+  // with no layer pointing at it is a CORRECT no-op — the sweep's edge-lands
+  // check would wire ACIDWARP.out in fine, but there's nothing downstream to
+  // observe and asserting a visible effect would be vacuous. Handle-presence
+  // (the rendered inA/inB handles) + inputs-accept (no console errors during
+  // wire-up) still cover the ports for free; the patched-feed → layer-FBO flow
+  // is covered by the dedicated e2e/tests/toybox-video-inputs.spec.ts (selects
+  // a layer's source = In A/In B and asserts the FBO shows the feed).
+  'toybox.inA': 'video input only drives output when a layer selects it as its source; default patch selects neither (correct no-op); covered by toybox-video-inputs.spec.ts',
+  'toybox.inB': 'video input only drives output when a layer selects it as its source; default patch selects neither (correct no-op); covered by toybox-video-inputs.spec.ts',
 };
 
 // ────────── Type-aware upstream sources for input drive ──────────

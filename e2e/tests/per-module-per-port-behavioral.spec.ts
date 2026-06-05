@@ -600,6 +600,18 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'synesthesia.a_video_in': 'video input is consumed card-side ONLY in VIDEO mode (a_mode=1); the sweep runs the default AUDIO mode so a_video_in is a correct no-op on a_band1_audio, and forcing a_mode=1 module-wide would break the a_in audio test on the same observed output (covered by synesthesia-worklet.test.ts + composite spec)',
   'synesthesia.b_video_in': 'video input is consumed card-side ONLY in VIDEO mode (b_mode=1); the sweep runs the default AUDIO mode so b_video_in is a correct no-op on the observed output (covered by synesthesia-worklet.test.ts + composite spec)',
 
+  // ── TOYBOX video inputs (inA / inB). Same class as synesthesia's *_video_in:
+  //    a video input only reaches the composited output when a LAYER selects it
+  //    as its source (layer.videoSource = 'inA'|'inB'). The sweep spawns the
+  //    DEFAULT patch (layer 0 = the default GEN shader; no layer points at a
+  //    video port), so driving inA/inB is a correct no-op on the observed
+  //    output. The cv1..cv6 modulation inputs DO perturb (they're routed) and
+  //    are still exercised here. The patched-feed → layer-FBO → output flow is
+  //    covered by toybox-video-inputs.spec.ts (selects In A/In B + asserts the
+  //    feed reaches the output).
+  'toybox.inA': 'video input only reaches output when a layer selects it as its source; default patch selects neither (correct no-op); covered by toybox-video-inputs.spec.ts',
+  'toybox.inB': 'video input only reaches output when a layer selects it as its source; default patch selects neither (correct no-op); covered by toybox-video-inputs.spec.ts',
+
   // ── SEQUENCER reset jumps the playhead but produces NO new output
   //    that scope can see beyond the gate train already firing; the
   //    `position_cv` port is the actual observable. Covered by sequencer
