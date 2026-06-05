@@ -115,6 +115,34 @@ describe('canConnect — strict rejections', () => {
   });
 });
 
+describe('canConnect — modsignal (TOYBOX 6-input modulation) accepts cv/gate/audio', () => {
+  it('accepts cv → modsignal', () => {
+    expect(canConnect('cv', 'modsignal')).toBe(true);
+  });
+  it('accepts gate → modsignal', () => {
+    expect(canConnect('gate', 'modsignal')).toBe(true);
+  });
+  it('accepts audio → modsignal (envelope-followed by the bridge)', () => {
+    expect(canConnect('audio', 'modsignal')).toBe(true);
+  });
+  it('accepts modsignal → modsignal (equal types)', () => {
+    expect(canConnect('modsignal', 'modsignal')).toBe(true);
+  });
+  it('does NOT widen audio→cv: a normal cv input still rejects audio', () => {
+    // The whole point of a dedicated `modsignal` type: audio→cv stays rejected
+    // EVERYWHERE except a modsignal input.
+    expect(canConnect('audio', 'cv')).toBe(false);
+    expect(canConnect('audio', 'pitch')).toBe(false);
+  });
+  it('rejects video / pitch sources into a modsignal input', () => {
+    expect(canConnect('video', 'modsignal')).toBe(false);
+    expect(canConnect('image', 'modsignal')).toBe(false);
+    // pitch is CV-family but the bridge only handles cv/gate/audio; pitch is not
+    // a documented modulation source for the section.
+    expect(canConnect('pitch', 'modsignal')).toBe(false);
+  });
+});
+
 describe('isVideoCableType', () => {
   it('returns true for the four video-domain types', () => {
     for (const t of ['keys', 'image', 'mono-video', 'video'] as const) {
