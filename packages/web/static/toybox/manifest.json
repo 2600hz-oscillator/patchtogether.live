@@ -113,6 +113,58 @@
         { "id": "bleed",  "label": "BLEED",  "min": 0.0, "max": 8.0, "default": 2.0, "curve": "linear" },
         { "id": "bar",    "label": "BAR",    "min": 0.0, "max": 1.0, "default": 0.7, "curve": "linear" }
       ]
+    },
+    {
+      "id": "frag-scanline-blinds",
+      "label": "FRAG SCANLINE-BLINDS",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-scanline-blinds.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "bands", "label": "BANDS", "min": 4.0,  "max": 64.0, "default": 24.0, "curve": "linear" },
+        { "id": "tear",  "label": "TEAR",  "min": 0.0,  "max": 2.0,  "default": 0.8,  "curve": "linear" },
+        { "id": "bloom", "label": "BLOOM", "min": 0.0,  "max": 2.0,  "default": 0.8,  "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-datamosh-wave",
+      "label": "FRAG DATAMOSH-WAVE",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-datamosh-wave.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "wave",    "label": "WAVE",    "min": 0.0, "max": 2.0, "default": 1.0, "curve": "linear" },
+        { "id": "split",   "label": "SPLIT",   "min": 0.0, "max": 4.0, "default": 1.5, "curve": "linear" },
+        { "id": "rainbow", "label": "RAINBOW", "min": 0.0, "max": 1.0, "default": 0.7, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-zoom-warp",
+      "label": "FRAG ZOOM-WARP",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-zoom-warp.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "zoom",   "label": "ZOOM",   "min": -2.0, "max": 2.0, "default": 0.6, "curve": "linear" },
+        { "id": "twist",  "label": "TWIST",  "min": -3.0, "max": 3.0, "default": 0.8, "curve": "linear" },
+        { "id": "fringe", "label": "FRINGE", "min": 0.0,  "max": 4.0, "default": 1.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-edge-glow",
+      "label": "FRAG EDGE-GLOW",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-edge-glow.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "thresh", "label": "THRESH", "min": 0.0, "max": 1.0, "default": 0.15, "curve": "linear" },
+        { "id": "glow",   "label": "GLOW",   "min": 0.0, "max": 3.0, "default": 1.5,  "curve": "linear" },
+        { "id": "dark",   "label": "DARK",   "min": 0.0, "max": 1.0, "default": 0.7,  "curve": "linear" }
+      ]
     }
   ],
   "gen": [
@@ -126,13 +178,50 @@
       "params": []
     },
     {
-      "id": "cyber-fuji",
-      "label": "CYBER FUJI 2020",
+      "id": "growing-mountain",
+      "label": "GROWING MOUNTAIN",
       "family": "GEN",
-      "glsl": "/toybox/shaders/cyber-fuji.frag.glsl",
+      "glsl": "/toybox/shaders/growing-mountain.frag.glsl",
       "shadertoy": true,
       "input": "none",
-      "params": []
+      "params": [
+        { "id": "growth",   "label": "GROWTH",   "min": 0.0, "max": 2.0, "default": 0.0, "curve": "linear" },
+        { "id": "weather",  "label": "WEATHER",  "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear" },
+        { "id": "daynight", "label": "DAYNIGHT", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "flow-field",
+      "label": "FLOW FIELD",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/flow-field.frag.glsl",
+      "params": [
+        { "id": "scale", "label": "SCALE", "min": 0.5, "max": 6.0, "default": 2.0, "curve": "linear" },
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 1.0, "curve": "linear" },
+        { "id": "swirl", "label": "SWIRL", "min": 0.0, "max": 3.0, "default": 1.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "interference",
+      "label": "INTERFERENCE",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/interference.frag.glsl",
+      "params": [
+        { "id": "sources", "label": "SOURCES", "min": 1.0, "max": 8.0,  "default": 4.0,  "curve": "discrete" },
+        { "id": "freq",    "label": "FREQ",    "min": 4.0, "max": 60.0, "default": 24.0, "curve": "linear" },
+        { "id": "hue",     "label": "HUE",     "min": 0.0, "max": 1.0,  "default": 0.0,  "curve": "linear" }
+      ]
+    },
+    {
+      "id": "spiral-bloom",
+      "label": "SPIRAL BLOOM",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/spiral-bloom.frag.glsl",
+      "params": [
+        { "id": "arms",  "label": "ARMS",  "min": 1.0, "max": 12.0, "default": 5.0, "curve": "linear" },
+        { "id": "twist", "label": "TWIST", "min": -3.0, "max": 3.0, "default": 1.0, "curve": "linear" },
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0,  "default": 0.8, "curve": "linear" }
+      ]
     },
     {
       "id": "noise-fbm",
@@ -447,45 +536,23 @@
       }
     },
     {
-      "id": "eroded-terrain",
-      "label": "ERODED TERRAIN ISLAND",
-      "note": "Multi-buffer Shadertoy port (Jan Mróz/Rune Skovbo Johansen/Fewes): a 'frag' layer hosts a 4-pass project — Common + BufferA (raw heightmap painted by the mouse, RGBA32F, self-feedback + keyboard stub) + BufferB (erosion filter, RGBA32F, intBitsToFloat packing + texelFetch, reads BufferA) + BufferC (detail noise) + Image (raymarched terrain reading BufferB + BufferC). CLICK the preview to GROW the mountain (iMouse click-to-paint). Feedback buffers converge over several frames.",
+      "id": "growing-peak",
+      "label": "GROWING PEAK (WEATHER)",
+      "note": "ORIGINAL multi-buffer growable terrain (clean-room, this project): a 'frag' layer hosts a 3-pass project — Common (peak-common: hash/value-noise/ridge target) + BufferA (peak-bufferA: a GROWABLE heightmap, RGBA32F, self-feedback ping-pong, easing toward a ridge target so the peak RISES over many frames; iMouse click RAISES the height under the cursor) + Image (peak-image: a fixed-step height-tracer reading BufferA, with a day<->night sky, drifting clouds, distance fog + rain). CLICK the preview to GROW the mountain faster. Distinct from any eroded-island look — a single solitary growing peak under live weather. Buffers converge over several frames.",
       "layers": [
         {
           "kind": "frag",
           "contentId": null,
           "params": {},
           "projectRef": {
-            "common": "/toybox/shaders/erosion-common.glsl",
+            "common": "/toybox/shaders/peak-common.glsl",
             "passes": [
               {
                 "id": "bufferA",
-                "url": "/toybox/shaders/erosion-bufferA.glsl",
+                "url": "/toybox/shaders/peak-bufferA.glsl",
                 "float": true,
                 "channels": [
                   { "type": "self" },
-                  { "type": "keyboard" },
-                  { "type": "none" },
-                  { "type": "none" }
-                ]
-              },
-              {
-                "id": "bufferB",
-                "url": "/toybox/shaders/erosion-bufferB.glsl",
-                "float": true,
-                "channels": [
-                  { "type": "buffer", "pass": "bufferA" },
-                  { "type": "keyboard" },
-                  { "type": "none" },
-                  { "type": "none" }
-                ]
-              },
-              {
-                "id": "bufferC",
-                "url": "/toybox/shaders/erosion-bufferC.glsl",
-                "float": false,
-                "channels": [
-                  { "type": "none" },
                   { "type": "none" },
                   { "type": "none" },
                   { "type": "none" }
@@ -493,12 +560,12 @@
               },
               {
                 "id": "image",
-                "url": "/toybox/shaders/erosion-image.glsl",
+                "url": "/toybox/shaders/peak-image.glsl",
                 "float": false,
                 "channels": [
-                  { "type": "buffer", "pass": "bufferB" },
-                  { "type": "buffer", "pass": "bufferC" },
-                  { "type": "buffer", "pass": "bufferC" },
+                  { "type": "buffer", "pass": "bufferA" },
+                  { "type": "none" },
+                  { "type": "none" },
                   { "type": "none" }
                 ]
               }
@@ -526,11 +593,11 @@
       "cvRoutes": {}
     },
     {
-      "id": "cyber-fuji-2020",
-      "label": "CYBER FUJI 2020",
-      "note": "Jan Mróz's 'Cyber Fuji 2020' (CC BY 3.0): an 80s synthwave Mt. Fuji + neon perspective grid + drifting clouds — a single-pass Shadertoy GEN on layer 1 routed straight to output.",
+      "id": "mountain-weather",
+      "label": "MOUNTAIN WEATHER",
+      "note": "The single-pass GROWING MOUNTAIN GEN (original, clean-room) routed straight to output: an animated raymarched peak that grows over time under a day<->night sky with drifting clouds, fog, rain + lightning. CLICK the preview to grow the peak. cv1 boosts GROWTH, cv2 drives WEATHER intensity.",
       "layers": [
-        { "kind": "gen", "contentId": "cyber-fuji", "params": {} },
+        { "kind": "gen", "contentId": "growing-mountain", "params": { "growth": 0.0, "weather": 0.6, "daynight": 0.5 } },
         { "kind": "off", "contentId": null, "params": {} },
         { "kind": "off", "contentId": null, "params": {} },
         { "kind": "off", "contentId": null, "params": {} }
@@ -549,7 +616,145 @@
           { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
         ]
       },
-      "cvRoutes": {}
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 0, "param": "growth" },
+        "cv2": { "target": "layer", "layer": 0, "param": "weather" }
+      }
+    },
+    {
+      "id": "glitch-tv",
+      "label": "GLITCH TV",
+      "note": "Two original GLITCH FRAGs stacked over a flow field: layer 0 = FLOW FIELD (GEN), layer 1 = SCANLINE-BLINDS (FRAG, greyscale horizontal-hold) reading layer 0, layer 2 = DATAMOSH-WAVE (FRAG, rainbow VHS-corruption) reading the blinds output. OUTPUT shows the datamosh. cv4 drives the datamosh WAVE, cv5 the blinds TEAR.",
+      "layers": [
+        { "kind": "gen",   "contentId": "flow-field",           "params": { "scale": 2.0, "speed": 1.0, "swirl": 1.2 } },
+        { "kind": "frag",  "contentId": "frag-scanline-blinds", "params": { "bands": 24.0, "tear": 0.8, "bloom": 0.8 } },
+        { "kind": "frag",  "contentId": "frag-datamosh-wave",   "params": { "wave": 1.0, "split": 1.5, "rainbow": 0.8 } },
+        { "kind": "off",   "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src2", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv4": { "target": "layer", "layer": 2, "param": "wave" },
+        "cv5": { "target": "layer", "layer": 1, "param": "tear" }
+      }
+    },
+    {
+      "id": "spiral-feedback",
+      "label": "SPIRAL FEEDBACK",
+      "note": "A feedback mandala: layer 0 = SPIRAL BLOOM (GEN) fed through a FEEDBACK combine node in TUNNEL mode (droste zoom trails), then the EDGE-GLOW FRAG (layer 1) neon-outlines the result. Shows the stateful FEEDBACK op + a FRAG over a feedback chain. cv1 → feedback ZOOM, cv2 → feedback DECAY.",
+      "layers": [
+        { "kind": "gen",  "contentId": "spiral-bloom",   "params": { "arms": 5.0, "twist": 1.0, "speed": 0.8 } },
+        { "kind": "frag", "contentId": "frag-edge-glow",  "params": { "thresh": 0.15, "glow": 1.5, "dark": 0.6 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "fb1",  "kind": "feedback", "x": 120, "y": 14, "params": { "mode": 0, "zoom": 0.95, "rotate": 0.05, "decay": 0.92, "gain": 1.0 } },
+          { "id": "eg1",  "kind": "fade", "x": 120, "y": 80, "params": { "amount": 1.0 } },
+          { "id": "out",  "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "fb1", "toPort": "in0" },
+          { "id": "e1", "from": "fb1",  "to": "eg1", "toPort": "in0" },
+          { "id": "e2", "from": "src1", "to": "eg1", "toPort": "in1" },
+          { "id": "e3", "from": "eg1",  "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "combine", "nodeId": "fb1", "param": "zoom" },
+        "cv2": { "target": "combine", "nodeId": "fb1", "param": "decay" }
+      }
+    },
+    {
+      "id": "wave-interference",
+      "label": "WAVE INTERFERENCE",
+      "note": "INTERFERENCE (GEN) screen-mapped with a FLOW FIELD then zoom-warped: layer 0 = INTERFERENCE, layer 1 = FLOW FIELD, MAPped together, then the ZOOM-WARP FRAG (layer 2) swirls the composite. cv3 → zoom-warp TWIST, cv6 → map MIX.",
+      "layers": [
+        { "kind": "gen",  "contentId": "interference", "params": { "sources": 4.0, "freq": 24.0, "hue": 0.2 } },
+        { "kind": "gen",  "contentId": "flow-field",   "params": { "scale": 2.5, "speed": 0.8, "swirl": 1.5 } },
+        { "kind": "frag", "contentId": "frag-zoom-warp", "params": { "zoom": 0.6, "twist": 0.8, "fringe": 1.0 } },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "map1", "kind": "map", "x": 120, "y": 14, "params": { "amount": 0.7, "mode": 1 } },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 90, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "map1", "toPort": "in0" },
+          { "id": "e1", "from": "src1", "to": "map1", "toPort": "in1" },
+          { "id": "e2", "from": "src2", "to": "pass", "toPort": "in0" },
+          { "id": "e3", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv3": { "target": "layer", "layer": 2, "param": "twist" },
+        "cv6": { "target": "combine", "nodeId": "map1", "param": "amount" }
+      }
+    },
+    {
+      "id": "cat-feedback",
+      "label": "CAT FEEDBACK (drop your media)",
+      "note": "CAT-FEEDBACK demo wiring (#39/#44 spirit): an OBJ layer (layer 0, Spot the cow as the bundled CC0 stand-in mesh — drop a CC0 cat OBJ in if you have one) whose SURFACE is layer 1's VIDEO mapped onto the mesh (material.surfaceSource = 1) — DROP YOUR CAT VIDEO onto layer 1 (kind 'video', file source, contentId/videoMeta unset → user-supplied; nothing unverified is bundled). Layer 2 is a BACKGROUND image — DROP YOUR CAT PHOTO/BACKGROUND there (kind 'image', imageBytes null → user-supplied). The chain routes the surface-mapped cat OBJ through TWO FEEDBACK combine nodes in different modes (fb1 TUNNEL droste-zoom trails, fb2 ADDITIVE glow trails), lumakeyed over the background. cv1 → fb1 ZOOM, cv2 → fb2 DECAY, cv3 spins the cow. The DELIVERABLE is the wiring; media is user-supplied so no unverified-license asset ships.",
+      "layers": [
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "spot", "rotX": 0.3, "rotY": 0.6, "rotZ": 0.0,
+            "scale": 1.0, "spin": 0.4, "matcap": 0, "tintR": 1.0, "tintG": 1.0, "tintB": 1.0,
+            "surfaceSource": 1, "surfaceMix": 1.0
+          }
+        },
+        { "kind": "video", "contentId": null, "params": { "opacity": 1.0, "brightness": 1.0 }, "videoSource": "file", "videoMeta": { "name": null } },
+        { "kind": "image", "contentId": null, "params": { "opacity": 1.0, "brightness": 1.0 }, "imageBytes": null, "imageName": null },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "fb1", "kind": "feedback", "x": 120, "y": 14, "params": { "mode": 0, "zoom": 0.96, "rotate": 0.03, "decay": 0.9, "gain": 1.0 } },
+          { "id": "fb2", "kind": "feedback", "x": 120, "y": 66, "params": { "mode": 3, "decay": 0.85, "gain": 1.1 } },
+          { "id": "lk1", "kind": "lumakey", "x": 196, "y": 40, "params": { "amount": 0.05, "soft": 0.1, "invert": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "fb1", "toPort": "in0" },
+          { "id": "e1", "from": "fb1",  "to": "fb2", "toPort": "in0" },
+          { "id": "e2", "from": "src2", "to": "lk1", "toPort": "in0" },
+          { "id": "e3", "from": "fb2",  "to": "lk1", "toPort": "in1" },
+          { "id": "e4", "from": "lk1",  "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "combine", "nodeId": "fb1", "param": "zoom" },
+        "cv2": { "target": "combine", "nodeId": "fb2", "param": "decay" },
+        "cv3": { "target": "layer", "layer": 0, "param": "material:spin" }
+      }
     }
   ]
 }

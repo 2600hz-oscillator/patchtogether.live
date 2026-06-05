@@ -261,7 +261,8 @@ export type ShadertoyChannel =
 /** One pass of a Shadertoy project. `id` is unique within the project; the
  *  Image pass has id 'image'. `float: true` requests an RGBA32F render target
  *  (createFloatFbo, precision 'full') for passes that pack data via
- *  intBitsToFloat / need signed-/out-of-[0,1] precision (erosion buffers). */
+ *  intBitsToFloat / need signed-/out-of-[0,1] precision (e.g. a growable
+ *  heightmap feedback buffer). */
 export interface ShadertoyPass {
   /** Unique pass id ('image' for the final pass; 'bufferA'.. for buffers). */
   id: string;

@@ -29,6 +29,17 @@ this repository's licensing.
 | `shaders/frag-sdf-tunnel.frag.glsl` | MIT | Original — square-tunnel projection mapping iChannel0 onto the walls | (this project) |
 | `shaders/frag-moire.frag.glsl` | MIT | Original — two interfering ring gratings modulate/ripple iChannel0 | (this project) |
 | `shaders/frag-vhs-bars.frag.glsl` | MIT | Original — analog-VHS degrade (line jitter + tracking bar + chroma bleed + scanlines) of iChannel0 | (this project) |
+| `shaders/growing-mountain.frag.glsl` | MIT | Original — single-pass raymarched GROWING peak (ridge-fBm heightmap + growth envelope) under weather (day/night sky, drifting clouds, fog, rain, lightning), click-to-grow via iMouse | (this project) |
+| `shaders/peak-common.glsl` | MIT | Original — shared hash/value-noise/ridge-target helpers for the GROWING PEAK multi-buffer project | (this project) |
+| `shaders/peak-bufferA.glsl` | MIT | Original — growable self-feedback heightmap buffer (RGBA32F ping-pong easing toward a ridge target; iMouse click-to-raise) | (this project) |
+| `shaders/peak-image.glsl` | MIT | Original — fixed-step height-field raymarch of peak-bufferA into a weather sky | (this project) |
+| `shaders/flow-field.frag.glsl` | MIT | Original — curl-of-scalar-potential flow field, streamline-integrated + speed-ramped | (this project) |
+| `shaders/interference.frag.glsl` | MIT | Original — superposition of moving point-source circular wavefronts (moiré interference), hue-cycled | (this project) |
+| `shaders/spiral-bloom.frag.glsl` | MIT | Original — log-spiral polar petals, pulsing + hue-cycled (feedback-friendly mandala) | (this project) |
+| `shaders/frag-scanline-blinds.frag.glsl` | MIT | Original — greyscale horizontal-hold / venetian-blind glitch (banded horizontal tear + scanline modulation + radial highlight bloom + desaturation) of iChannel0 | (this project) |
+| `shaders/frag-datamosh-wave.frag.glsl` | MIT | Original — colourful datamosh (stacked-sine per-row warp + RGB/chroma split + rainbow hue bleed + block/line tearing + oversaturation) of iChannel0 | (this project) |
+| `shaders/frag-zoom-warp.frag.glsl` | MIT | Original — radial zoom + swirl polar remap with per-radius chroma fringe of iChannel0 (feedback-friendly) | (this project) |
+| `shaders/frag-edge-glow.frag.glsl` | MIT | Original — Sobel luma-gradient edge detector tinted with a hue-cycling neon glow over a darkened iChannel0 | (this project) |
 
 ## Shadertoy ports — CC BY 3.0 (attribution required)
 
@@ -41,8 +52,12 @@ non-commercial.
 | Asset | SPDX | Author | Title |
 | --- | --- | --- | --- |
 | `shaders/synthwave-sunset.frag.glsl` | CC-BY-3.0 | Jan Mróz (jaszunio15) | "Synthwave sunset" |
-| `shaders/cyber-fuji.frag.glsl` | CC-BY-3.0 | Jan Mróz (jaszunio15) | "Cyber Fuji 2020" |
-| `shaders/erosion-common.glsl`, `erosion-bufferA.glsl`, `erosion-bufferB.glsl`, `erosion-bufferC.glsl`, `erosion-image.glsl` | CC-BY-3.0 | Jan Mróz / Rune Skovbo Johansen / Fewes (per the multi-buffer "ERODED TERRAIN ISLAND" port) | eroded-terrain multi-buffer |
+
+> Note: the "Cyber Fuji 2020" GEN port and the 5-file "Eroded Terrain Island"
+> multi-buffer port were REMOVED (they were improperly bundled Shadertoy ports).
+> The multi-buffer runtime is now demonstrated by the ORIGINAL clean-room
+> `growing-peak` preset (peak-common/peak-bufferA/peak-image, MIT, above), and
+> the growing-terrain niche by the original single-pass `growing-mountain` GEN.
 
 ---
 
@@ -83,3 +98,29 @@ Built-in primitives (no asset file) — procedurally generated, this project's
 own code (`packages/web/src/lib/video/primitives.ts`), ZERO copied-asset
 license surface: `cube`, `sphere`, `torus`, `hypercube`, `tetrahedron`,
 `octahedron`, `icosahedron`, `cylinder`, `cone`, `torus-knot`.
+
+---
+
+# CAT FEEDBACK preset — media provenance
+
+The bundled `cat-feedback` preset is the OBJ-surface-mapped-video → multi-feedback
+DEMO WIRING. It bundles **NO new media**: a verifiable-CC0 cat OBJ / cat video /
+cat photo could not be sourced + license-verified clean-room, so per the
+no-fabricated-provenance discipline NOTHING unverified is shipped. Instead the
+preset is wired so the media is **user-supplied** and the deliverable is the
+correct routing:
+
+- **OBJ mesh** = `models/spot.obj` (the CC0 Spot the cow above) as a recognizable
+  animal-mesh STAND-IN. Drop a CC0 cat OBJ onto the layer to swap it.
+- **Cat video** (the OBJ surface) = layer 1, `kind: 'video'`, `videoSource: 'file'`,
+  `videoMeta.name: null`, `contentId: null` → **user drops their own cat video**.
+  It is `material.surfaceSource`-mapped (=1) onto the OBJ so it textures the mesh.
+- **Background** = layer 2, `kind: 'image'`, `imageBytes: null` → **user drops
+  their own cat photo / background**.
+- The surface-mapped OBJ runs through **two FEEDBACK combine nodes in different
+  modes** (fb1 = TUNNEL droste-zoom, fb2 = ADDITIVE glow trails), lumakeyed over
+  the background.
+
+No copied-asset license surface: the only bundled asset is the already-CC0 Spot
+mesh; the cat video + photo are local user files (the video bytes never ride the
+Y.Doc — VIDEOBOX behaviour — and the image is blank until the user picks one).

@@ -925,17 +925,17 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
   });
 });
 
-// ── Shadertoy MULTI-BUFFER runtime: the eroded-terrain preset (Common +
-// BufferA/B/C + Image, RGBA32F feedback, raymarch). The feedback buffers need
-// MANY frames to converge (the painted heightmap + erosion ping-pong), so we
-// advance N engine step()s BEFORE freezing — a single-frame freeze would
-// snapshot an unconverged (run-to-run-varying) buffer. Deterministic once
-// converged: at a fixed iTime + no mouse the painted bump is the same each run.
+// ── Shadertoy MULTI-BUFFER runtime: the growing-peak preset (Common +
+// BufferA self-feedback heightmap + Image raymarch, RGBA32F feedback). The
+// feedback buffer needs MANY frames to converge (the heightmap eases toward the
+// ridge target), so we advance N engine step()s BEFORE freezing — a single-frame
+// freeze would snapshot an unconverged (run-to-run-varying) buffer. Deterministic
+// once converged: at a fixed iTime + no mouse the grown peak is the same each run.
 
 type VideoEngineStep = { step: () => void };
 
-/** Load the eroded-terrain preset, advance N steps so the feedback buffers
- *  converge, then freeze at a fixed iTime and wait for a stable lit frame. */
+/** Load the growing-peak preset, advance N steps so the feedback buffer
+ *  converges, then freeze at a fixed iTime and wait for a stable lit frame. */
 async function loadErosionAndFreeze(page: Page, time: number): Promise<void> {
   await page.evaluate(() => {
     const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
@@ -948,7 +948,7 @@ async function loadErosionAndFreeze(page: Page, time: number): Promise<void> {
   );
   await page.evaluate(async () => {
     const g = globalThis as unknown as { __toyboxLoadPreset?: (id: string) => Promise<boolean> };
-    await g.__toyboxLoadPreset?.('eroded-terrain');
+    await g.__toyboxLoadPreset?.('growing-peak');
   });
   await page.evaluate(() => {
     (globalThis as unknown as { __toyboxPrevSig?: string }).__toyboxPrevSig = '';
@@ -987,11 +987,11 @@ async function loadErosionAndFreeze(page: Page, time: number): Promise<void> {
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 }
 
-test.describe('VRT: TOYBOX Shadertoy multi-buffer erosion', () => {
-  test('the eroded-terrain preset raymarches a converged frozen frame', async ({ page }) => {
+test.describe('VRT: TOYBOX Shadertoy multi-buffer growing peak', () => {
+  test('the growing-peak preset raymarches a converged frozen frame', async ({ page }) => {
     test.skip(
       VRT_PLATFORM === 'linux',
-      'linux/toybox-preset-eroded-terrain: darwin baseline only; linux pending a vrt:update on CI',
+      'linux/toybox-preset-growing-peak: darwin baseline only; linux pending a vrt:update on CI',
     );
     // The multi-pass float raymarch is the heaviest TOYBOX path on SwiftShader.
     test.setTimeout(120_000);
@@ -1013,7 +1013,7 @@ test.describe('VRT: TOYBOX Shadertoy multi-buffer erosion', () => {
     await loadErosionAndFreeze(page, 2.0);
 
     const canvas = page.locator('[data-testid="toybox-canvas"]');
-    await expect(canvas).toHaveScreenshot('preset-eroded-terrain.png', { maskColor: '#ff00ff' });
+    await expect(canvas).toHaveScreenshot('preset-growing-peak.png', { maskColor: '#ff00ff' });
 
     expect(
       errors.filter((e) => !e.includes('AudioContext')),

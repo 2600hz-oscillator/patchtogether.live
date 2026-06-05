@@ -263,8 +263,8 @@ export async function loadToyboxPreset(nodeId: string, presetId: string): Promis
   }
   if (!preset) return false;
   // Resolve any lazy multi-buffer project refs (fetch the pass GLSL) before
-  // writing — so a Shadertoy-project preset (e.g. the eroded terrain) lands with
-  // inline `project` sources the factory can compile.
+  // writing — so a Shadertoy-project preset (e.g. the growing-peak terrain)
+  // lands with inline `project` sources the factory can compile.
   let resolved = preset;
   try {
     resolved = await resolvePresetProjects(preset);

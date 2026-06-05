@@ -223,7 +223,27 @@ describe('topoOrderPasses', () => {
     expect(order).toEqual(['bufferA', 'image']);
   });
 
-  it('replicates the erosion topology (A self → B reads A → C noise → image reads B,C)', () => {
+  it('replicates the growing-peak topology (A self-feedback heightmap → image reads A)', () => {
+    // The bundled 'growing-peak' preset (the original multi-buffer growable
+    // terrain that replaced the erosion port): a float self-feedback heightmap
+    // (Buffer A, ping-pong) read by the raymarched Image pass.
+    const proj: ShadertoyProject = {
+      passes: [
+        pass('image', [{ type: 'buffer', pass: 'bufferA' }]),
+        pass('bufferA', [{ type: 'self' }], true),
+      ],
+    };
+    const order = topoOrderPasses(proj);
+    expect(order.indexOf('bufferA')).toBeLessThan(order.indexOf('image'));
+    expect(order[order.length - 1]).toBe('image');
+    // every pass appears exactly once.
+    expect(new Set(order).size).toBe(2);
+    expect(order.length).toBe(2);
+  });
+
+  it('still orders a deeper multi-buffer chain (A self → B reads A → C → image reads B,C)', () => {
+    // General multi-buffer runtime coverage beyond the bundled preset: producers
+    // before consumers, Image last, across a 4-pass dependency graph.
     const proj: ShadertoyProject = {
       passes: [
         pass('image', [
@@ -241,7 +261,6 @@ describe('topoOrderPasses', () => {
     expect(order.indexOf('bufferB')).toBeLessThan(order.indexOf('image'));
     expect(order.indexOf('bufferC')).toBeLessThan(order.indexOf('image'));
     expect(order[order.length - 1]).toBe('image');
-    // every pass appears exactly once.
     expect(new Set(order).size).toBe(4);
     expect(order.length).toBe(4);
   });
