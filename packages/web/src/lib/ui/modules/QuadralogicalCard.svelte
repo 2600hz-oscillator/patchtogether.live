@@ -9,10 +9,10 @@
   // region, and a corner a single input.
   //
   // Below the pad: an on-card preview canvas (shows the canonical MIX via
-  // blitOutputToDrawingBuffer, same pattern as BackdraftCard) + a FilterCard-
-  // style transition button row (8 modes; Phase-1 #0 DISSOLVE is the only live
-  // composite) + a per-transition DYNAMIC CONTROL AREA (faders from
-  // EFFECT_PARAMS[mode]) + an FG/BG toggle for the Phase-2 keyers.
+  // blitOutputToDrawingBuffer, same pattern as BackdraftCard) + FOUR PER-EDGE
+  // effect selectors (Edge 1–2 / 2–3 / 3–4 / 4–1), each a compact 8-mode
+  // dropdown with that edge's two control faders re-labelled for the selected
+  // effect (EFFECTS[fx]) + a shared chroma key-colour row for CHROMA edges.
   //
   // Per-axis MIDI: the pad right-click opens a BESPOKE 2-axis menu (Assign X /
   // Assign Y / Forget X / Forget Y) — ControlContextMenu is single-action so we
@@ -34,7 +34,8 @@
     quadWeights,
     clampJoy,
     TRANSITIONS,
-    EFFECT_PARAMS,
+    EFFECTS,
+    EDGES,
   } from '$lib/video/modules/quadralogical';
   import {
     beginLearn,
@@ -83,9 +84,8 @@
 
   let margin = $derived(pget('diamond_margin'));
   let sharp = $derived(pget('blend_sharp'));
-  let transition = $derived(Math.round(pget('transition')));
-  let fgIndex = $derived(Math.round(pget('fg_index')));
-  let bgIndex = $derived(Math.round(pget('bg_index')));
+  // Per-edge selected effects (one per edge slot 1–2 / 2–3 / 3–4 / 4–1).
+  let edgeFx = $derived(EDGES.map((e) => Math.round(pget(`${e.id}_fx`))));
 
   // Live weights for the dot tint (dominant input drives the ring colour) — the
   // SAME function the GLSL MIX uses, so the dot is 1:1 with the composite.
@@ -260,22 +260,22 @@
     if (learningX || learningY) cancelLearn();
   });
 
-  // ---- transition row + dynamic control area ----
-  function selectTransition(m: number): void {
+  // ---- per-edge effect selection ----
+  function selectEdgeFx(edgeId: string, fx: number): void {
     const t = patch.nodes[id];
-    if (t) t.params.transition = m;
+    if (t) t.params[`${edgeId}_fx`] = fx;
   }
-  let effectParams = $derived(EFFECT_PARAMS[transition] ?? []);
-
-  // FG/BG toggle: swap which two inputs are FG (keyed) vs BG (revealed). Used by
-  // the Phase-2 keyers; the toggle persists the indices now so the wiring is live.
-  function swapFgBg(): void {
-    const t = patch.nodes[id];
-    if (!t) return;
-    const fg = Math.round(t.params.fg_index ?? 0);
-    const bg = Math.round(t.params.bg_index ?? 1);
-    t.params.fg_index = bg;
-    t.params.bg_index = fg;
+  // The two control labels for an edge given its selected effect (null = hide
+  // that fader for this effect — e.g. DISSOLVE is pure ratio).
+  function ctrlLabels(fx: number): { amount: string | null; param: string | null } {
+    return EFFECTS[fx] ?? { amount: null, param: null };
+  }
+  // Any edge running CHROMA → expose the shared key-colour faders.
+  let anyChroma = $derived(edgeFx.some((fx) => fx === 4));
+  // Min/max lookups so the dynamic faders read the def's ranges.
+  function paramRange(pid: string): { min: number; max: number } {
+    const p = quadralogicalDef.params.find((x) => x.id === pid)!;
+    return { min: p.min, max: p.max };
   }
 
   // ---- patch panel ports ----
@@ -288,12 +288,17 @@
     { id: 'pos_y', label: 'Y', cable: 'cv' },
     { id: 'diamond_margin', label: 'DIAMOND', cable: 'cv' },
     { id: 'blend_sharp', label: 'SHARP', cable: 'cv' },
-    { id: 'amount', label: 'AMOUNT', cable: 'cv' },
-    { id: 'threshold', label: 'THR', cable: 'cv' },
-    { id: 'softness', label: 'SOFT', cable: 'cv' },
-    { id: 'wipe_angle', label: 'ANGLE', cable: 'cv' },
-    { id: 'feather', label: 'FEATHER', cable: 'cv' },
-    { id: 'radius', label: 'RADIUS', cable: 'cv' },
+    { id: 'edge1_amount', label: '1–2 AMT', cable: 'cv' },
+    { id: 'edge1_param', label: '1–2 PRM', cable: 'cv' },
+    { id: 'edge2_amount', label: '2–3 AMT', cable: 'cv' },
+    { id: 'edge2_param', label: '2–3 PRM', cable: 'cv' },
+    { id: 'edge3_amount', label: '3–4 AMT', cable: 'cv' },
+    { id: 'edge3_param', label: '3–4 PRM', cable: 'cv' },
+    { id: 'edge4_amount', label: '4–1 AMT', cable: 'cv' },
+    { id: 'edge4_param', label: '4–1 PRM', cable: 'cv' },
+    { id: 'keyR', label: 'KEY R', cable: 'cv' },
+    { id: 'keyG', label: 'KEY G', cable: 'cv' },
+    { id: 'keyB', label: 'KEY B', cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out', label: 'MIX', cable: 'video' },
@@ -368,53 +373,77 @@
         ></canvas>
       </div>
 
-      <!-- transition button row (8 modes; Phase-1 #0 DISSOLVE is live) -->
-      <div class="transition-row" data-testid="quadralogical-transitions">
-        {#each TRANSITIONS as label, i (label)}
-          <button
-            type="button"
-            class="t-btn nodrag"
-            class:active={transition === i}
-            class:phase2={i !== 0}
-            title={i === 0 ? 'Cross-Dissolve (live)' : `${label} — Phase 2 (falls through to Dissolve)`}
-            data-testid={`quadralogical-transition-${i}`}
-            onclick={() => selectTransition(i)}
-          >{label}</button>
+      <!-- FOUR per-edge effect slots: each edge of the joystick cycle
+           (1–2 / 2–3 / 3–4 / 4–1) selects its own effect + shows that
+           effect's two controls. -->
+      <div class="edges" data-testid="quadralogical-edges">
+        {#each EDGES as edge, e (edge.id)}
+          {@const fx = edgeFx[e]}
+          {@const labels = ctrlLabels(fx)}
+          <div class="edge-slot" data-testid={`quadralogical-edge-${e + 1}`}>
+            <div class="edge-head">
+              <span class="edge-name">EDGE {edge.label}</span>
+              <select
+                class="fx-select nodrag"
+                data-testid={`quadralogical-edge-${e + 1}-fx`}
+                value={fx}
+                onchange={(ev) => selectEdgeFx(edge.id, Number((ev.currentTarget as HTMLSelectElement).value))}
+                title={`Effect for edge ${edge.label}`}
+              >
+                {#each TRANSITIONS as label, i (label)}
+                  <option value={i}>{label}</option>
+                {/each}
+              </select>
+            </div>
+            {#if labels.amount || labels.param}
+              <div class="edge-faders">
+                {#if labels.amount}
+                  {@const r = paramRange(`${edge.id}_amount`)}
+                  <Fader
+                    value={pget(`${edge.id}_amount`)}
+                    min={r.min}
+                    max={r.max}
+                    defaultValue={defaultFor(`${edge.id}_amount`)}
+                    label={labels.amount}
+                    curve="linear"
+                    onchange={set(`${edge.id}_amount`)}
+                    readLive={live(`${edge.id}_amount`)}
+                    moduleId={id}
+                    paramId={`${edge.id}_amount`}
+                  />
+                {/if}
+                {#if labels.param}
+                  {@const r = paramRange(`${edge.id}_param`)}
+                  <Fader
+                    value={pget(`${edge.id}_param`)}
+                    min={r.min}
+                    max={r.max}
+                    defaultValue={defaultFor(`${edge.id}_param`)}
+                    label={labels.param}
+                    curve="linear"
+                    onchange={set(`${edge.id}_param`)}
+                    readLive={live(`${edge.id}_param`)}
+                    moduleId={id}
+                    paramId={`${edge.id}_param`}
+                  />
+                {/if}
+              </div>
+            {:else}
+              <p class="edge-hint">pure dissolve (joystick ratio)</p>
+            {/if}
+          </div>
         {/each}
       </div>
 
-      <!-- dynamic control area — per-transition faders -->
-      <div class="control-area" data-testid="quadralogical-controls">
-        {#if effectParams.length > 0}
-          <div class="fader-row">
-            {#each effectParams as p (p.id)}
-              <Fader
-                value={pget(p.id)}
-                min={quadralogicalDef.params.find((x) => x.id === p.id)!.min}
-                max={quadralogicalDef.params.find((x) => x.id === p.id)!.max}
-                defaultValue={defaultFor(p.id)}
-                label={p.label}
-                curve="linear"
-                onchange={set(p.id)}
-                readLive={live(p.id)}
-                moduleId={id}
-                paramId={p.id}
-              />
-            {/each}
-          </div>
-        {:else}
-          <p class="hint">Pure joystick blend — drag the pad.</p>
-        {/if}
-
-        <!-- FG/BG switch (for the Phase-2 chroma/luma keyers) -->
-        <button
-          type="button"
-          class="fgbg-btn nodrag"
-          data-testid="quadralogical-fgbg"
-          title="Swap which joystick input is foreground (keyed) vs background (revealed)"
-          onclick={swapFgBg}
-        >FG:IN{fgIndex + 1} ⇄ BG:IN{bgIndex + 1}</button>
-      </div>
+      <!-- shared chroma key colour (shown only when an edge runs CHROMA) -->
+      {#if anyChroma}
+        <div class="key-row" data-testid="quadralogical-keycolor">
+          <span class="key-label">CHROMA KEY</span>
+          <Fader value={pget('keyR')} min={0} max={1} defaultValue={defaultFor('keyR')} label="R" curve="linear" onchange={set('keyR')} readLive={live('keyR')} moduleId={id} paramId="keyR" />
+          <Fader value={pget('keyG')} min={0} max={1} defaultValue={defaultFor('keyG')} label="G" curve="linear" onchange={set('keyG')} readLive={live('keyG')} moduleId={id} paramId="keyG" />
+          <Fader value={pget('keyB')} min={0} max={1} defaultValue={defaultFor('keyB')} label="B" curve="linear" onchange={set('keyB')} readLive={live('keyB')} moduleId={id} paramId="keyB" />
+        </div>
+      {/if}
     </div>
   </PatchPanel>
 </div>
@@ -554,62 +583,77 @@
     image-rendering: pixelated;
     background: #050608;
   }
-  .transition-row {
+  /* four per-edge effect slots, laid out 2×2 so they're roomy not cramped */
+  .edges {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
     width: 100%;
     padding: 0 6px;
   }
-  .t-btn {
-    background: #2a2f3a;
-    color: var(--text-dim);
-    border: 1px solid #404652;
-    padding: 4px 4px;
-    font-size: 0.62rem;
-    border-radius: 3px;
-    cursor: pointer;
-    font-family: ui-monospace, monospace;
-    letter-spacing: 0.03em;
-  }
-  .t-btn.phase2 { opacity: 0.6; }
-  .t-btn.active {
-    background: var(--cable-video);
-    color: #06121a;
-    border-color: var(--cable-video);
-    opacity: 1;
-  }
-  .control-area {
+  .edge-slot {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
+    gap: 6px;
+    background: #161a22;
+    border: 1px solid #2c333f;
+    border-radius: 4px;
+    padding: 6px 8px;
+    min-height: 88px;
   }
-  .fader-row {
+  .edge-head {
     display: flex;
-    gap: 14px;
-    justify-content: center;
-    padding: 4px 0;
+    flex-direction: column;
+    gap: 3px;
   }
-  .hint {
-    font-size: 0.68rem;
+  .edge-name {
+    font-size: 0.58rem;
+    letter-spacing: 0.06em;
     color: var(--text-dim);
-    margin: 2px 0;
-    font-style: italic;
-  }
-  .fgbg-btn {
-    background: var(--module-bg, #20232a);
-    color: var(--text-dim);
-    border: 1px solid var(--border, #404652);
-    border-radius: 3px;
-    font-size: 0.64rem;
-    letter-spacing: 0.04em;
-    padding: 4px 10px;
-    cursor: pointer;
     font-family: ui-monospace, monospace;
   }
-  .fgbg-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+  .fx-select {
+    width: 100%;
+    background: #2a2f3a;
+    color: var(--text);
+    border: 1px solid #404652;
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 0.66rem;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
+  .fx-select:hover { border-color: var(--cable-video); }
+  .edge-faders {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    padding: 2px 0;
+  }
+  .edge-hint {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    margin: 4px 0;
+    font-style: italic;
+    text-align: center;
+  }
+  .key-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 4px 8px;
+    background: #161a22;
+    border: 1px solid #2c333f;
+    border-radius: 4px;
+  }
+  .key-label {
+    font-size: 0.58rem;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+  }
 
   /* bespoke 2-axis menu (mirrors ControlContextMenu chrome) */
   .ctx-overlay { position: fixed; inset: 0; z-index: 200; }
