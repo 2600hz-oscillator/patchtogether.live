@@ -229,6 +229,22 @@ describe('listCvParams', () => {
     const params = listCvParams({ target: 'combine', nodeId: 'op1' }, undefined, combine);
     expect(params.map((p) => p.id)).toContain('amount');
   });
+  it('combine FEEDBACK op → its mode + per-mode floats are all CV targets', () => {
+    const combine: ToyboxCombineGraph = {
+      nodes: [{ id: 'fb', kind: 'feedback', x: 0, y: 0, params: {} }],
+      edges: [],
+    };
+    // The feedback node shows up as a CV TARGET (it's a non-structural op).
+    const targets = listCvTargets(undefined, combine).filter((t) => t.target === 'combine');
+    expect(targets.some((t) => t.nodeId === 'fb')).toBe(true);
+    // …and every feedback param (mode + the floats) is a choosable CV param.
+    const params = listCvParams({ target: 'combine', nodeId: 'fb' }, undefined, combine);
+    const ids = params.map((p) => p.id);
+    expect(ids).toContain('mode');
+    expect(ids).toContain('zoom');
+    expect(ids).toContain('decay');
+    expect(ids).toContain('flow');
+  });
 });
 
 describe('effectiveCvValue (signal × scale + offset → param range)', () => {
@@ -287,6 +303,20 @@ describe('resolveRoute (b) cv → COMBINE param', () => {
     const r2 = resolveRoute(route, undefined, combine);
     r2!.apply(effectiveCvValue(1, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, r2!.min, r2!.max));
     expect(op.params!.amount).toBeCloseTo(1, 6);
+  });
+  it('resolves a FEEDBACK op float param (decay) + writes re-scaled in place', () => {
+    const combine: ToyboxCombineGraph = {
+      nodes: [{ id: 'fb', kind: 'feedback', x: 0, y: 0, params: { decay: 0.9 } }],
+      edges: [],
+    };
+    const route: CvRouteTarget = { target: 'combine', nodeId: 'fb', param: 'decay' };
+    const r = resolveRoute(route, undefined, combine);
+    expect(r).not.toBeNull();
+    expect(r!.min).toBe(0);
+    expect(r!.max).toBe(1.5);
+    // full-scale signal → max (1.5); the write lands on the live feedback node.
+    r!.apply(effectiveCvValue(1, DEFAULT_INPUT_SCALE, DEFAULT_INPUT_OFFSET, r!.min, r!.max));
+    expect(combine.nodes[0]!.params!.decay).toBeCloseTo(1.5, 6);
   });
 });
 

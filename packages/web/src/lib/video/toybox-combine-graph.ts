@@ -33,20 +33,39 @@
 import { LAYER_COUNT } from './toybox-content';
 
 /** The op a combine node performs. SOURCE/OUTPUT are structural endpoints. */
-export type ToyboxNodeKind = 'source' | 'fade' | 'lumakey' | 'chromakey' | 'map' | 'output';
+export type ToyboxNodeKind =
+  | 'source'
+  | 'fade'
+  | 'lumakey'
+  | 'chromakey'
+  | 'map'
+  | 'feedback'
+  | 'output';
 
-/** The four blend ops (the op-node kinds). Maps 1:1 to the combine shader's
- *  uOp index (fade 0, lumakey 1, chromakey 2, map 3). */
-export type ToyboxOpKind = 'fade' | 'lumakey' | 'chromakey' | 'map';
+/** The op-node kinds. The four STATELESS blends map 1:1 to the combine shader's
+ *  uOp index (fade 0, lumakey 1, chromakey 2, map 3). FEEDBACK is the first
+ *  STATEFUL op — it runs its OWN program (sampling its previous frame), so it
+ *  uses a SENTINEL shader index (FEEDBACK_SHADER_INDEX) and is never fed through
+ *  combineStep. It is still an "op" everywhere else (deletable, has params, is a
+ *  CV target, appears in the ADD menu). */
+export type ToyboxOpKind = 'fade' | 'lumakey' | 'chromakey' | 'map' | 'feedback';
 
-export const OP_KINDS: readonly ToyboxOpKind[] = ['fade', 'lumakey', 'chromakey', 'map'];
+export const OP_KINDS: readonly ToyboxOpKind[] = ['fade', 'lumakey', 'chromakey', 'map', 'feedback'];
 
-/** Combine-shader op index per op kind (must match COMBINE_FRAG_SRC uOp). */
+/** Sentinel uOp index for FEEDBACK: it never runs combineStep (it has its OWN
+ *  program), so this index must NOT collide with a real COMBINE_FRAG_SRC case
+ *  (0..3). The engine branches on the node KIND before any shader index lookup;
+ *  the index exists only so OP_SHADER_INDEX stays a total map over OP_KINDS. */
+export const FEEDBACK_SHADER_INDEX = 100;
+
+/** Combine-shader op index per op kind. fade/lumakey/chromakey/map match
+ *  COMBINE_FRAG_SRC uOp; feedback is the sentinel (own program). */
 export const OP_SHADER_INDEX: Record<ToyboxOpKind, number> = {
   fade: 0,
   lumakey: 1,
   chromakey: 2,
   map: 3,
+  feedback: FEEDBACK_SHADER_INDEX,
 };
 
 /** A node in the combine graph. `params` holds the op's float params keyed by
@@ -126,6 +145,29 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
     { id: 'amount', label: 'MIX', min: 0, max: 1, default: 1 },
     { id: 'mode', label: 'MODE', min: 0, max: 1, default: 0 },
   ],
+  // FEEDBACK (the first STATEFUL op): a discrete MODE selector (0..11; rendered
+  // as a <select>, NOT a knob — but exposed here so it round-trips + is a CV
+  // target) PLUS the SUPERSET of per-mode floats. Only the params relevant to
+  // the current mode actually affect the render, but ALL are listed so #611
+  // auto-renders them as card knobs + makes each one CV-assignable for free.
+  // Ranges/defaults MUST match toybox-feedback.ts feedbackUniforms() so a CV
+  // write + a manual knob land identically. See FEEDBACK_MODES for the modes.
+  feedback: [
+    { id: 'mode', label: 'MODE', min: 0, max: 11, default: 0 },
+    { id: 'zoom', label: 'ZOOM', min: 0.5, max: 1, default: 0.95 },
+    { id: 'rotate', label: 'ROTATE', min: -Math.PI, max: Math.PI, default: 0 },
+    { id: 'scaleP', label: 'SCALE', min: 0.5, max: 1.5, default: 1 },
+    { id: 'tx', label: 'TX', min: -1, max: 1, default: 0 },
+    { id: 'ty', label: 'TY', min: -1, max: 1, default: 0 },
+    { id: 'decay', label: 'DECAY', min: 0, max: 1.5, default: 0.9 },
+    { id: 'gain', label: 'GAIN', min: 0, max: 2, default: 1 },
+    { id: 'thresh', label: 'THRESH', min: 0, max: 1, default: 0.5 },
+    { id: 'hue', label: 'HUE', min: 0, max: 1, default: 0 },
+    { id: 'blur', label: 'BLUR', min: 0, max: 4, default: 1 },
+    { id: 'slitPos', label: 'SLIT POS', min: 0, max: 1, default: 0.5 },
+    { id: 'slitWidth', label: 'SLIT W', min: 0, max: 1, default: 0.1 },
+    { id: 'flow', label: 'FLOW', min: 0, max: 1, default: 0 },
+  ],
 };
 
 /** Op kinds that are KEYERS (have a "Configure keyer" popover): lumakey +
@@ -152,6 +194,7 @@ const OP_DISPLAY_PREFIX: Record<ToyboxOpKind, string> = {
   lumakey: 'LUMA',
   chromakey: 'CHROMA',
   map: 'MAP',
+  feedback: 'FBK',
 };
 
 /**
@@ -198,7 +241,11 @@ export function defaultOpParams(kind: ToyboxOpKind): Record<string, number> {
 export function inPortsFor(kind: ToyboxNodeKind): ToyboxInPort[] {
   if (kind === 'source') return [];
   if (kind === 'output') return ['in0'];
-  return ['in0', 'in1']; // op nodes
+  // FEEDBACK has a SINGLE input: the feedback loop is INTERNAL (its own previous
+  // frame), NOT a second cable. The blend ops (fade/lumakey/chromakey/map) take
+  // a base + top.
+  if (kind === 'feedback') return ['in0'];
+  return ['in0', 'in1']; // blend op nodes
 }
 
 /** Whether a node of `kind` has an output port (right-side dot). */
