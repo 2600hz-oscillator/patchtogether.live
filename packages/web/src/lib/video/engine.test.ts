@@ -11,13 +11,15 @@
 //     registry and vice versa.
 //   - module def shape sanity for both video modules (LINES + OUTPUT).
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canConnect, isVideoCableType } from '$lib/graph/types';
 import {
   listVideoModuleDefs,
   getVideoModuleDef,
   registerVideoModule,
 } from '$lib/video/module-registry';
+import { VideoEngine, type VideoNodeHandle } from '$lib/video/engine';
+import type { ModuleNode } from '$lib/graph/types';
 // Side-effect import auto-registers the Phase-0 video defs.
 import '$lib/video/modules';
 // NOTE: We DON'T import '$lib/audio/modules' here — the audio module
@@ -144,6 +146,102 @@ describe('video — module registry separation', () => {
       factory: (() => ({} as any)) as any,
     });
     expect(listVideoModuleDefs().length).toBe(before + 1);
+  });
+});
+
+describe('video — e2e render-suppression freeze (step() short-circuit)', () => {
+  // The per-module-per-port e2e sweeps set globalThis.__videoEngineFreezeRender
+  // to skip the (expensive, SwiftShader-bound) per-frame GL draw while keeping
+  // the graph consistent. This proves the seam: a frozen step() advances the
+  // frame counter but does NOT invoke any module's draw(); unfreezing resumes
+  // draws. No WebGL is needed — we feed a fake canvas + spy handle.
+
+  afterEach(() => {
+    delete (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
+      .__videoEngineFreezeRender;
+  });
+
+  // Minimal canvas whose getContext('webgl2') returns a stub the constructor
+  // accepts. step()'s freeze branch never touches gl, and the non-frozen path
+  // here only reaches our spy handle's draw() (we don't exercise real GL).
+  function makeEngineWithSpyNode(): { engine: VideoEngine; draw: ReturnType<typeof vi.fn> } {
+    const glStub = {} as unknown as WebGL2RenderingContext;
+    const canvas = {
+      width: 1,
+      height: 1,
+      getContext: () => glStub,
+    } as unknown as HTMLCanvasElement;
+
+    const engine = new VideoEngine({ canvas });
+
+    const draw = vi.fn();
+    const handle: VideoNodeHandle = {
+      domain: 'video',
+      surface: { fbo: null, texture: null, draw, dispose: () => {} },
+      setParam: () => {},
+      readParam: () => undefined,
+      dispose: () => {},
+    };
+
+    // A UNIQUE stub type so we don't clobber a real def in the shared registry.
+    const stubType = ('freeze-spy-' + Math.random().toString(36).slice(2)) as
+      ModuleNode['type'];
+    const node = {
+      id: 'spy',
+      type: stubType,
+      domain: 'video',
+      position: { x: 0, y: 0 },
+      params: {},
+    } as ModuleNode;
+
+    // Register the spy handle directly via a temporary def so addNode wires it
+    // into the engine's node map + topo (the path the real factory takes).
+    registerVideoModule({
+      type: stubType,
+      domain: 'video',
+      label: 'spy',
+      category: 'utilities',
+      schemaVersion: 1,
+      inputs: [],
+      outputs: [{ id: 'out', type: 'video' }],
+      params: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      factory: (() => handle) as any,
+    });
+    void engine.addNode(node);
+
+    return { engine, draw };
+  }
+
+  it('does NOT call any module draw() while frozen, but DOES when unfrozen', () => {
+    const { engine, draw } = makeEngineWithSpyNode();
+
+    // Frozen: step() must short-circuit before the per-module draw loop.
+    (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
+      .__videoEngineFreezeRender = true;
+    engine.step();
+    engine.step();
+    expect(draw, 'frozen step() must not invoke module draw()').not.toHaveBeenCalled();
+
+    // Unfrozen: normal per-frame draw resumes (proves freeze is opt-in only).
+    delete (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
+      .__videoEngineFreezeRender;
+    engine.step();
+    expect(draw, 'unfrozen step() must invoke module draw()').toHaveBeenCalledTimes(1);
+
+    engine.dispose();
+  });
+
+  it('an absent / non-true flag never freezes (default = render)', () => {
+    const { engine, draw } = makeEngineWithSpyNode();
+
+    // Wrong-type / falsy values are ignored — only strict `true` freezes.
+    (globalThis as unknown as { __videoEngineFreezeRender?: unknown })
+      .__videoEngineFreezeRender = 1 as unknown as boolean;
+    engine.step();
+    expect(draw, 'truthy-but-not-true must NOT freeze').toHaveBeenCalledTimes(1);
+
+    engine.dispose();
   });
 });
 
