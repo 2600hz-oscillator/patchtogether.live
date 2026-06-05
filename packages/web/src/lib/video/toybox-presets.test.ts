@@ -53,7 +53,7 @@ const modelIds = new Set(manifest.models.map((m) => m.id));
 const materialParamIds = new Set(MATERIAL_PARAMS.map((p) => p.id));
 
 describe('TOYBOX manifest presets', () => {
-  it('declares exactly the 7 expected presets', () => {
+  it('declares exactly the 8 expected presets', () => {
     expect(presets.map((p) => p.id)).toEqual([
       'plasma-dissolve',
       'cow-on-camera',
@@ -62,6 +62,7 @@ describe('TOYBOX manifest presets', () => {
       'reactor-field',
       'projection-map',
       'eroded-terrain',
+      'cyber-fuji-2020',
     ]);
   });
 

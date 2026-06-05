@@ -297,6 +297,67 @@ export async function getContent(id: string): Promise<{ meta: ToyboxContent; gls
   return { meta, glsl };
 }
 
+// ---------------- Custom disk-loaded sources (shader / OBJ) ----------------
+//
+// A layer can carry an INLINE source loaded from the user's disk:
+//   - shaderSrc (GLSL .glsl/.frag) → compiled directly instead of fetching a
+//     bundled content by id;
+//   - objSrc (Wavefront .obj text) → parsed directly instead of fetching a
+//     bundled model by id.
+// Both are PERSISTED on the layer (ride the Y.Doc), so they survive reload and
+// export cleanly. The engine keys its program/mesh caches by a SYNTHETIC id
+// derived from the source text (so two layers with identical custom source share
+// one compiled program, and a different source gets a fresh cache slot + its own
+// inflight/failed guard).
+
+/** Max byte size we accept for a disk-loaded shader/OBJ text source (sanity cap;
+ *  the source rides the Y.Doc so it must stay small — this is NOT the separate
+ *  50MB video cap). 2 MB of GLSL/OBJ text is enormous for either format. */
+export const MAX_CUSTOM_SOURCE_BYTES = 2 * 1024 * 1024;
+
+/** djb2 string hash → unsigned 32-bit, base-36. Cheap, stable, dependency-free —
+ *  good enough to dedup cache slots for identical custom source text (collisions
+ *  only mean two DIFFERENT sources would share a slot, which is astronomically
+ *  unlikely for human-authored shaders and at worst shows the wrong custom
+ *  shader, never a crash). PURE. */
+function hashSource(src: string): string {
+  let h = 5381;
+  for (let i = 0; i < src.length; i++) {
+    h = ((h << 5) + h + src.charCodeAt(i)) | 0; // h*33 + c, wrap to int32
+  }
+  return (h >>> 0).toString(36);
+}
+
+/** Synthetic program-cache key for an inline custom SHADER source. Stable for a
+ *  given source text; distinct from any manifest content id (the `custom-shader:`
+ *  prefix can never collide with a real id). PURE. */
+export function customShaderKey(src: string): string {
+  return `custom-shader:${hashSource(src)}`;
+}
+
+/** Synthetic mesh-cache key for an inline custom OBJ source. Distinct from any
+ *  manifest model id / built-in primitive name (the `custom-obj:` prefix). PURE. */
+export function customObjKey(src: string): string {
+  return `custom-obj:${hashSource(src)}`;
+}
+
+/** Byte length of a UTF-8 string (for the size cap check). PURE — uses TextEncoder
+ *  when available (browser + node), else falls back to a char-count approximation
+ *  that is always ≥ the conservative byte count for ASCII source. */
+export function utf8ByteLength(s: string): number {
+  if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(s).length;
+  // Fallback: count UTF-8 bytes manually (no TextEncoder in some old runtimes).
+  let bytes = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) bytes += 1;
+    else if (c < 0x800) bytes += 2;
+    else if (c >= 0xd800 && c <= 0xdbff) { bytes += 4; i++; } // surrogate pair
+    else bytes += 3;
+  }
+  return bytes;
+}
+
 // ---------------- Layer model (persisted in node.data.layers) ----------------
 
 /** The kind of source a TOYBOX layer renders.
@@ -487,6 +548,22 @@ export interface ToyboxLayer {
   imageBytes?: string | null;
   /** IMAGE layer: source filename, surfaced in the card UI. */
   imageName?: string | null;
+  /** CUSTOM SHADER (shader/gen/frag kind): the raw GLSL source loaded from the
+   *  user's disk, persisted on the layer (rides the Y.Doc, so it survives reload
+   *  + exports cleanly). When present the engine compiles THIS source instead of
+   *  fetching `contentId` from the manifest. Shadertoy-vs-GEN convention is
+   *  auto-detected (isShadertoySource). Custom shaders declare NO params (the
+   *  card shows no faders). Null/absent → fall back to `contentId`. */
+  shaderSrc?: string | null;
+  /** CUSTOM SHADER: source filename, surfaced in the card UI. */
+  shaderName?: string | null;
+  /** CUSTOM OBJ (obj kind): the raw Wavefront OBJ text loaded from the user's
+   *  disk, persisted on the layer (rides the Y.Doc). When present the engine
+   *  parses THIS text instead of fetching the bundled `material.modelId`.
+   *  Null/absent → fall back to `material.modelId`. */
+  objSrc?: string | null;
+  /** CUSTOM OBJ: source filename, surfaced in the card UI. */
+  objName?: string | null;
   /** VIDEO layer: local-file metadata (filename). The bytes are not synced. */
   videoMeta?: ToyboxVideoMeta;
   /** VIDEO layer: where the texture comes from — a patched feed ('inA'/'inB'),

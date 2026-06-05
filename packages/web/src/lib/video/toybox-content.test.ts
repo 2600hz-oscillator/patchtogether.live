@@ -10,10 +10,15 @@ import {
   MATCAP_STYLES,
   DEFAULT_MODEL_ID,
   DEFAULT_CONTENT_ID,
+  MAX_CUSTOM_SOURCE_BYTES,
   makeDefaultLayers,
   makeDefaultCombine,
   makeDefaultObjMaterial,
+  customShaderKey,
+  customObjKey,
+  utf8ByteLength,
 } from './toybox-content';
+import { isShadertoySource } from './toybox-shadertoy';
 
 describe('makeDefaultLayers', () => {
   const layers = makeDefaultLayers();
@@ -72,5 +77,55 @@ describe('makeDefaultObjMaterial', () => {
 describe('MATCAP_STYLES', () => {
   it('exposes at least 3 procedural matcap styles', () => {
     expect(MATCAP_STYLES).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('custom disk-loaded source keys (shader / OBJ)', () => {
+  const GEN = '#version 300 es\nprecision highp float;\nin vec2 vUv;\nout vec4 outColor;\nvoid main(){ outColor = vec4(1.0,0.0,1.0,1.0); }';
+  const ST = 'void mainImage(out vec4 o, in vec2 fc){ o = vec4(1.0); }';
+  const OBJ = 'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n';
+
+  it('customShaderKey is prefixed + deterministic for identical source', () => {
+    const k = customShaderKey(GEN);
+    expect(k.startsWith('custom-shader:')).toBe(true);
+    expect(customShaderKey(GEN)).toBe(k); // stable
+  });
+
+  it('customShaderKey differs for different source (cache slots do not collide)', () => {
+    expect(customShaderKey(GEN)).not.toBe(customShaderKey(ST));
+  });
+
+  it('customObjKey is prefixed, deterministic, and disjoint from shader keys', () => {
+    const k = customObjKey(OBJ);
+    expect(k.startsWith('custom-obj:')).toBe(true);
+    expect(customObjKey(OBJ)).toBe(k);
+    // The prefixes guarantee a custom OBJ key never collides with a shader key
+    // (or any manifest content/model id).
+    expect(k.startsWith('custom-shader:')).toBe(false);
+  });
+
+  it('a custom GEN source is NOT detected as Shadertoy (plain void main)', () => {
+    expect(isShadertoySource(GEN)).toBe(false);
+  });
+
+  it('a custom Shadertoy source (mainImage) IS detected as Shadertoy', () => {
+    expect(isShadertoySource(ST)).toBe(true);
+  });
+});
+
+describe('utf8ByteLength + MAX_CUSTOM_SOURCE_BYTES', () => {
+  it('counts ASCII bytes 1:1', () => {
+    expect(utf8ByteLength('abc')).toBe(3);
+    expect(utf8ByteLength('')).toBe(0);
+  });
+
+  it('counts multi-byte UTF-8 correctly', () => {
+    expect(utf8ByteLength('é')).toBe(2); // U+00E9 → 2 bytes
+    expect(utf8ByteLength('好')).toBe(3); // CJK → 3 bytes
+    expect(utf8ByteLength('𝄞')).toBe(4); // surrogate pair (musical symbol) → 4 bytes
+  });
+
+  it('exposes a 2MB sanity cap', () => {
+    expect(MAX_CUSTOM_SOURCE_BYTES).toBe(2 * 1024 * 1024);
   });
 });
