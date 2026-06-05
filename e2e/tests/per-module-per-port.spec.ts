@@ -568,6 +568,32 @@ function filterErrors(errors: string[]): string[] {
   );
 }
 
+// ────────── Heavy-WebGL render suppression ──────────
+//
+// The handle-presence + inputs-accept sweeps assert at the graph/DOM level
+// only (a Svelte-Flow handle element; a materialised edge in the patch
+// store). For heavy WebGL video modules the card's GL pipeline renders an
+// expensive frame on every rAF tick while we wire inputs one-by-one — pure
+// waste here, and brutal on CI's SwiftShader software renderer (b3ntb0x's
+// 4-pass float NTSC pipeline used to time out at 144s wiring 19 cables).
+//
+// This installs a page-scoped flag, BEFORE the app boots, that
+// VideoEngine.step() reads to skip its per-frame draw passes (the bridge
+// ticks + every module's GL draw) while still mounting cards, rendering
+// handles, and reconciling edges. Scoped to these sweeps only: nothing in
+// production or any pixel-asserting spec (bespoke video specs, VRT,
+// behavioral) sets it, so those keep rendering real pixels.
+//
+// addInitScript runs at document_start on every navigation for this page,
+// so a single call covers the spawnPatch re-navigations the inputs-accept
+// loop performs.
+async function freezeVideoRender(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
+      .__videoEngineFreezeRender = true;
+  });
+}
+
 // Helper: spawn a module solo (the canonical handle-presence + emit
 // setup), with a separate `extraNodes` / `extraEdges` for the upstream-
 // source or downstream-sink wiring.
@@ -606,6 +632,15 @@ test.describe('per-module per-port: handle presence', () => {
       continue;
     }
     test(title, async ({ page }) => {
+      // Suppress the heavy per-frame video GL render for the whole iteration.
+      // This sweep asserts only DOM-level handle presence; the engine still
+      // mounts the card (shaders compiled, FBOs allocated → handles render),
+      // it just skips the (SwiftShader-bound) per-frame draw passes that
+      // otherwise dominate the wall-time of heavy WebGL cards. See
+      // VideoEngine.step()'s __videoEngineFreezeRender branch. No-op for
+      // non-video modules (only the video engine reads the flag).
+      if (mod.domain === 'video') await freezeVideoRender(page);
+
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
@@ -1138,24 +1173,20 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       // unconditionally to (n * 1.5s + 30s) baseline so any module finishes
       // with ~1× margin on top of the iteration cost.
       test.setTimeout(Math.max(30_000, mod.inputs.length * 1500 + 30_000));
-      // Heavy-WebGL-mount video modules: wiring a cable drives the card, which
-      // renders a heavy GLSL raymarch. Fast on a GPU but slow on CI's software
-      // GL (SwiftShader) — mandelbulb's 6-input budget (39s) timed out on
-      // shard 6 even after the deferred-compile + adaptive-quality fix. Give it
-      // the same 90s heavy-mount headroom the outputs-emit test grants
-      // foxy/atlantisCatalyst. (Inputs are also covered by the now-gated
-      // behavioral lane, which proves all 6 CV inputs perturb mono_out.)
-      // Generalized to ALL video-domain modules — every WebGL card (toybox,
-      // cube, hypercube, quadralogical, b3ntb0x, ruttetra, …) renders its
-      // handles slowly on CI's SwiftShader, so wiring cables to them needs the
-      // same heavy-mount headroom, not just mandelbulb.
-      // ...but a FLAT 90s under-budgets HIGH-INPUT-COUNT video modules: b3ntb0x
-      // has 19 inputs, and wiring 19 cables each driving its 4-pass float
-      // pipeline on SwiftShader exceeds 90s (timed out on shard 7 — passed in
-      // ~16s locally on a real GPU). Scale the video budget by input count too,
-      // with 90s as the floor for light video cards.
+      // Video modules: we FREEZE the engine's per-frame GL render for this
+      // iteration (see freezeVideoRender + VideoEngine.step()). The wire-up
+      // assertions are graph/DOM-level — a materialised edge in the patch
+      // store, no console errors — so the heavy GLSL render (a 4-pass float
+      // NTSC pipeline for b3ntb0x, a raymarch for mandelbulb, …) is purely
+      // incidental. Freezing it removes the SwiftShader-bound per-input cost
+      // that used to force the giant `inputs * 6_000` budget below; with the
+      // render off, per-input work is DOM + addEdge only, so a small uniform
+      // headroom on top of the base scaling covers CI contention with ~2×
+      // margin. (Pixel-asserting coverage of these inputs lives in the
+      // bespoke video specs + the behavioral lane, which keep rendering.)
       if (mod.domain === 'video') {
-        test.setTimeout(Math.max(90_000, mod.inputs.length * 6_000 + 30_000));
+        await freezeVideoRender(page);
+        test.setTimeout(Math.max(45_000, mod.inputs.length * 2_000 + 30_000));
       }
 
       const errors: string[] = [];
