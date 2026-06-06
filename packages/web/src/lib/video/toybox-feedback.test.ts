@@ -84,6 +84,7 @@ describe('feedbackUniforms', () => {
       slitPos: 0.5,
       slitWidth: 0.1,
       flow: 0,
+      intensity: 0.5,
     });
   });
   it('passes through in-range values unchanged', () => {
@@ -114,6 +115,13 @@ describe('feedbackUniforms', () => {
     expect(u.zoom).toBe(0.95);
     expect(u.gain).toBe(1); // non-finite → default (NOT clamped to max — Inf is unsafe)
     expect(u.rotate).toBe(0);
+  });
+  it('clamps the new intensity (wet/dry) param into 0..1 with a 0.5 default', () => {
+    expect(feedbackUniforms(undefined).intensity).toBe(0.5); // default = half-wet
+    expect(feedbackUniforms({ intensity: 0.3 }).intensity).toBeCloseTo(0.3); // in range
+    expect(feedbackUniforms({ intensity: 2 }).intensity).toBe(1); // clamp max
+    expect(feedbackUniforms({ intensity: -1 }).intensity).toBe(0); // clamp min
+    expect(feedbackUniforms({ intensity: NaN }).intensity).toBe(0.5); // non-finite → default
   });
 
   // The uniform ranges/defaults MUST stay in lock-step with OP_PARAMS['feedback']
@@ -227,6 +235,18 @@ describe('FEEDBACK_MODE_PARAMS — per-mode relevant param subset', () => {
     for (let m = 0; m < FEEDBACK_MODE_COUNT; m++) {
       expect(FEEDBACK_MODE_PARAMS[m], `mode ${m} includes decay`).toContain('decay');
     }
+  });
+
+  it('exposes the new `intensity` (wet/dry) knob for the modes that use it', () => {
+    // The shader reads uIntensity in TUNNEL(0), GEOMETRIC(1), COLOR(7),
+    // DISPLACE(8), VECTOR(11); the popover must surface the knob for exactly
+    // those so the wet/dry mix is reachable. (Owner: at least TUNNEL + GEOMETRIC.)
+    for (const m of [0, 1, 7, 8, 11]) {
+      expect(FEEDBACK_MODE_PARAMS[m], `mode ${m} exposes intensity`).toContain('intensity');
+    }
+    // TUNNEL + GEOMETRIC are the explicitly-required ones.
+    expect(FEEDBACK_MODE_PARAMS[0]).toContain('intensity');
+    expect(FEEDBACK_MODE_PARAMS[1]).toContain('intensity');
   });
 
   it('feedbackParamsForMode clamps + falls back safely', () => {

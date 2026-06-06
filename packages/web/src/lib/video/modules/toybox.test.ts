@@ -57,10 +57,11 @@ describe('toyboxDef shape', () => {
     expect(toyboxDef.params).toEqual([]);
   });
 
-  it('is schemaVersion 3 with a migrate hook', () => {
+  it('is schemaVersion 4 with a migrate hook', () => {
+    // v4 = feedback gained the `intensity` (wet/dry mix) param (backfilled).
     // v3 = chromakey single `key` channel-select → keyR/keyG/keyB HSV key
     // (v2 was the 8→6 cv7/cv8 route strip).
-    expect(toyboxDef.schemaVersion).toBe(3);
+    expect(toyboxDef.schemaVersion).toBe(4);
     expect(typeof toyboxDef.migrate).toBe('function');
   });
 });
@@ -100,9 +101,28 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
     expect(src).toContain('uniform sampler2D uFeedback'); // previous frame
     expect(src).toContain('uniform sampler2D uInput'); // upstream in0
     expect(src).toContain('uniform int   uMode');
-    for (const u of ['uZoom', 'uRotate', 'uScaleP', 'uTx', 'uTy', 'uDecay', 'uGain', 'uThresh', 'uHue', 'uBlur', 'uSlitPos', 'uSlitWidth', 'uFlow']) {
+    for (const u of ['uZoom', 'uRotate', 'uScaleP', 'uTx', 'uTy', 'uDecay', 'uGain', 'uThresh', 'uHue', 'uBlur', 'uSlitPos', 'uSlitWidth', 'uFlow', 'uIntensity']) {
       expect(src, `declares ${u}`).toContain(u);
     }
+  });
+  it('declares + reads the wet/dry uIntensity uniform', () => {
+    const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
+    expect(src).toContain('uniform float uIntensity;');
+    // It is actually consumed (not just declared): the wet/dry mix references it.
+    expect(src).toContain('uIntensity');
+    expect((src.match(/uIntensity/g) ?? []).length).toBeGreaterThan(1);
+  });
+  it('TUNNEL drives its wet/dry mix off uIntensity (no flat-everywhere blend)', () => {
+    // The TUNNEL branch ends in the wet/dry mix `mix(src.rgb, hall, uIntensity)`
+    // (at full wet = the pure recursive hall; at full dry = the live input). The
+    // recursive Droste tap (single ring-gated feedback sample) replaced the prior
+    // unrolled HOM_LEVELS composite, which over-blended the flat full-frame source.
+    const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
+    const tunnel = src.slice(src.indexOf('if (uMode == 0)'), src.indexOf('} else if (uMode == 1)'));
+    expect(tunnel).toMatch(/mix\(\s*src\.rgb\s*,\s*hall\s*,\s*uIntensity\s*\)/);
+    // The prior implementation's flat-source over-composite must be GONE.
+    expect(tunnel).not.toContain('HOM_LEVELS');
+    expect(tunnel).not.toContain('0.10 + 0.35 * src.a');
   });
   it('switches on every one of the 12 modes (uMode == 0 .. 10, else = 11)', () => {
     const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
@@ -115,10 +135,11 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
   });
 
   it('TUNNEL (mode 0) is a ring-gated hall-of-mirrors, NOT a flat-source blend', () => {
-    // Guard the TUNNEL fix at the SHADER-SOURCE level: the source must enter only
-    // via the new outer RING; the interior is the recursive feedback tap. The old
-    // bug blended the flat full-frame source into every pixel — that exact shape
-    // (mixing src.rgb with `0.12 + 0.5 * src.a` everywhere) must NOT return.
+    // Guard the TUNNEL fix at the SHADER-SOURCE level: the live source must enter
+    // only via the new outer RING; the interior is the recursive feedback tap. The
+    // prior implementations blended the flat full-frame source into the interior —
+    // those exact shapes (`0.12 + 0.5 * src.a` and `0.10 + 0.35 * src.a`) must NOT
+    // return.
     const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
     const tunnel = src.slice(src.indexOf('if (uMode == 0)'), src.indexOf('} else if (uMode == 1)'));
     // It samples the previous frame at a zoomed/rotated tap (the recursion)…
@@ -128,7 +149,8 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
     expect(tunnel).toMatch(/fuv\.x\s*<\s*0\.0|fuv\.x\s*>\s*1\.0/);
     // …and decays the recursive interior (persistence toward the vanishing point).
     expect(tunnel).toMatch(/uDecay/);
-    // The old flat-everywhere blend must be GONE from the TUNNEL branch.
+    // The flat-into-interior blends from BOTH prior versions must be GONE.
     expect(tunnel).not.toContain('0.12 + 0.5 * src.a');
+    expect(tunnel).not.toContain('0.10 + 0.35 * src.a');
   });
 });

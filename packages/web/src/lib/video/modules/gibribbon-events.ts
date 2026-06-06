@@ -108,24 +108,68 @@ export interface GibTuning {
   /** Which cv channel index (0..3) maps to which event kind. The parent tunes
    *  this so a given Synesthesia band drives a given event. */
   cvEventMap: GibEventKind[];
+  /** COUNT-IN: clock ticks at the start of a fresh game during which NO event
+   *  spawns, so the opening reads as "3… 2… 1…" — the player orients to the
+   *  empty ribbon + lane before the first obstacle arrives instead of being hit
+   *  by a spawn on tick 1. The renderer shows a count-in overlay while
+   *  `tick <= countInTicks`. Small (a few ticks) so the game still starts fast. */
+  countInTicks: number;
 }
 
 /** Default tuning. Chosen so a 1× clock at a musical tempo gives a playable
  *  ~2-3 second approach per obstacle, and the four cv channels map 1:1 to the
  *  four event kinds in declaration order (cv1→loop, cv2→jump, cv3→imp,
- *  cv4→zombie). */
+ *  cv4→zombie).
+ *
+ *  Phase-2 (the bundled GIBRIBBON demo, gibribbon-demo.imp.json) calibration:
+ *  the demo drives cv1..cv4 from SYNESTHESIA copy-A's four SLOW (500 ms)
+ *  envelope-followers, which track the per-band energy of a sequenced
+ *  MACROOSCILLATOR voice. On that patch the four slow envelopes settle in the
+ *  ~0.3..0.9 range on energetic steps. With the old 0.5 threshold the two
+ *  quieter mid/high bands rarely crossed it, so imp/zombie almost never
+ *  spawned and the ribbon read as half-empty. Dropping cvSpawnThreshold to
+ *  0.42 lets all four bands become eligible while staying ABOVE the resting
+ *  floor (so silence still spawns nothing), and minSpawnIntervalTicks=2 caps
+ *  the rate at one spawn per two scroll ticks — a game-appropriate ~1 event
+ *  every 1–3 ticks, never an unplayable wall. Verified deterministically in
+ *  gibribbon-events.test.ts ("Phase-2 demo CV calibration") by feeding the
+ *  synthetic 4-slow-envelope streams this rhythm produces through
+ *  clockTick/chooseSpawn and asserting the rate + that all four kinds appear.
+ *  See the matching SYNESTHESIA copy-A master/band-gain lift in the envelope
+ *  generator (scripts/build-gibribbon-demo-envelope.mjs). */
 export const GIB_TUNING: GibTuning = {
   scrollPerClock: 0.18,
   scrollPerSecond: 0.22,
-  hitWindow: 0.09,
+  // hitWindow MUST keep the full window width (2·hitWindow) STRICTLY GREATER
+  // than scrollPerClock, with margin — otherwise a single clock-tick scroll jump
+  // (scrollPerClock applied in clockTick) can move an event from just inside
+  // +hitWindow to just past −hitWindow in one observable frame, skipping the
+  // |pos| ≤ hitWindow window entirely → a physically un-hittable forced miss
+  // (measured ~3.2% of events across random clock/frame phases when the two were
+  // EQUAL at 0.18 = 2·0.09). At 0.11 the window is 0.22 > 0.18 step (margin 0.04),
+  // so every event lands inside the window on at least one observable frame
+  // regardless of phase — proven by the zero-un-hittable phase-sweep simulation
+  // in gibribbon-events.test.ts. Scroll speeds are unchanged, so obstacle
+  // approach timing, game feel, and the Phase-2 demo calibration are unaffected;
+  // missPos (−0.12) still sits BEYOND the −0.11 window edge so the miss line
+  // remains past the hittable zone.
+  hitWindow: 0.11,
   missPos: -0.12,
-  cvSpawnThreshold: 0.5,
+  cvSpawnThreshold: 0.42,
   minSpawnIntervalTicks: 2,
   superStreak: 8,
   healStreak: 4,
   scorePerHit: 100,
   maxComboMult: 8,
   cvEventMap: ['loop', 'jump', 'imp', 'zombie'],
+  // ~2 ticks of count-in: at the 0.42 s internal-beat tempo that's ~0.84 s of
+  // empty ribbon before the first obstacle, enough to orient without delaying
+  // variety — all four event kinds still appear within the first ~5 s (the
+  // DROP-AND-PLAY bar). The first obstacle then takes ~1.5 s to approach, so the
+  // player still has ~2.3 s before the first thing to react to. (count-in=3
+  // phase-aligned badly with the autoplay rotation + rate-limiter and dropped
+  // early variety to 2 kinds — verified in gibcheck; 2 keeps it at 4.)
+  countInTicks: 2,
 };
 
 /**
@@ -179,6 +223,18 @@ export interface GibState {
   /** Set on the tick a hit/miss/fire happens, consumed by the factory to pulse
    *  the matching audio gate output. Cleared by `drainOutEvents`. */
   outQueue: GibOutEvent[];
+  /** Joystick AIM, set from the `x`/`y` axis inputs (and the card's own pad,
+   *  later). Both are bipolar −1..1 and are GENUINELY consumed:
+   *   - `aimX` shifts the judgement point left/right so a player can lead or
+   *     lag the beat — judgePress measures distance to (pos − aimX·hitWindow),
+   *     i.e. nudge the stick LEFT to clear an event slightly early, RIGHT to
+   *     clear it slightly late. It can't widen the window (the half-width is
+   *     unchanged), it only re-centres it, so it's a skill aid not an exploit.
+   *   - `aimY` raises/lowers the marine on the ribbon (consumed by the
+   *     renderer in gibribbon.ts via marineAimOffset) so the port visibly
+   *     moves the character — "marine vertical position", as advertised. */
+  aimX: number;
+  aimY: number;
 }
 
 /** Side-effect events the GL/audio shell drains each frame to pulse gates +
@@ -202,7 +258,16 @@ export function newGame(seed = 0xc0de): GibState {
     hits: 0,
     misses: 0,
     outQueue: [],
+    aimX: 0,
+    aimY: 0,
   };
+}
+
+/** Set the joystick AIM from the x/y axis inputs. Clamped to −1..1 so a hot
+ *  CV can't push the judgement point off the ribbon. Pure (in-place). */
+export function setAim(s: GibState, axisX: number, axisY: number): void {
+  s.aimX = Math.max(-1, Math.min(1, axisX || 0));
+  s.aimY = Math.max(-1, Math.min(1, axisY || 0));
 }
 
 /** xorshift32 — deterministic, fast, no library. Advances + returns 0..1. */
@@ -269,6 +334,8 @@ export function chooseSpawn(
   gateHigh: boolean,
   tuning: GibTuning = GIB_TUNING,
 ): GibEventKind | null {
+  // COUNT-IN: no spawns during the opening ticks (visible "get ready" beat).
+  if (s.tick <= tuning.countInTicks) return null;
   if (s.tick - s.lastSpawnTick < tuning.minSpawnIntervalTicks) return null;
 
   // Collect eligible channels (level over threshold).
@@ -355,12 +422,16 @@ export function judgePress(
   tuning: GibTuning = GIB_TUNING,
 ): GibEvent | null {
   if (s.health === 'dead') return null;
+  // AIM: the `x` axis re-centres the judgement point by up to one hit-window
+  // (lead the beat with the stick left, lag it right). The window HALF-WIDTH is
+  // unchanged, so it's a timing aid, not a free wider window.
+  const centre = s.aimX * tuning.hitWindow;
   let best: GibEvent | null = null;
   let bestDist = Infinity;
   for (const ev of s.events) {
     if (ev.resolved) continue;
     if (EVENT_BUTTON[ev.kind] !== button) continue;
-    const dist = Math.abs(ev.pos);
+    const dist = Math.abs(ev.pos - centre);
     if (dist <= tuning.hitWindow && dist < bestDist) {
       best = ev;
       bestDist = dist;
@@ -424,6 +495,45 @@ export function clockTick(
   if (isGameOver(s)) return;
   const kind = chooseSpawn(s, cv, gateHigh, tuning);
   if (kind) spawnEvent(s, kind);
+}
+
+/** One slot in the fixed READAHEAD prompt lane: the next-N unresolved events
+ *  in arrival order (nearest the marine first), each with the button to press
+ *  and a normalized `pos` so the lane renderer can show an approach indicator.
+ *  `hot` = the event is inside the timing window NOW (press it!). */
+export interface GibLaneSlot {
+  id: number;
+  kind: GibEventKind;
+  button: GibButton;
+  pos: number;
+  hot: boolean;
+}
+
+/**
+ * Build the fixed lookahead lane — the sorted queue of the next `count`
+ * upcoming (unresolved, on-screen) events, NEAREST the marine first, so a
+ * player can READ the next few buttons in stable left-to-right slots instead
+ * of chasing glyphs riding each obstacle. Pure: a function of the live events
+ * only. The renderer (gibribbon.ts) draws one fixed slot per entry; the e2e
+ * reads it to assert the queue is populated + varied.
+ */
+export function upcomingLane(
+  s: GibState,
+  count = 4,
+  tuning: GibTuning = GIB_TUNING,
+): GibLaneSlot[] {
+  const centre = s.aimX * tuning.hitWindow;
+  return s.events
+    .filter((ev) => !ev.resolved && ev.pos > -tuning.hitWindow && ev.pos <= 1.05)
+    .sort((a, b) => a.pos - b.pos) // nearest the marine first
+    .slice(0, count)
+    .map((ev) => ({
+      id: ev.id,
+      kind: ev.kind,
+      button: EVENT_BUTTON[ev.kind],
+      pos: ev.pos,
+      hot: Math.abs(ev.pos - centre) <= tuning.hitWindow,
+    }));
 }
 
 /** Drain + clear the queued side-effect events (gates / animations). */

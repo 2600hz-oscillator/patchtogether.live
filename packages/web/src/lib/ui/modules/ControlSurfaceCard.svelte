@@ -34,6 +34,7 @@
     setSurfaceGroupPosition,
     type ControlBinding,
   } from '$lib/graph/control-surface';
+  import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -53,12 +54,6 @@
     return readSurfaceData(patch.nodes[id]);
   });
   let locked = $derived(surfaceData.locked ?? false);
-
-  // Resolve a param def from whichever registry owns the source module.
-  function paramDefFor(sourceType: string, paramId: string): ParamDef | undefined {
-    const def = getModuleDef(sourceType) ?? getVideoModuleDef(sourceType);
-    return def?.params.find((p) => p.id === paramId);
-  }
 
   // Display name for a source module (its renamed name, else def label, else type).
   function sourceLabel(sourceId: string): string {
@@ -82,7 +77,11 @@
   }
 
   // Live groups: bindings grouped by module, dangling sources dropped, each
-  // binding resolved to a param def (skip params that no longer exist).
+  // binding resolved THROUGH the param adapter (resolveSurfaceParam) — so a flat
+  // node.params source (normal module) AND a nested node.data source (TOYBOX:
+  // material / combine / layer params) both resolve to a ParamDef + get/set
+  // bound to the SAME live location the source's own knobs use. Unresolvable
+  // bindings (param no longer exists) are skipped, as before.
   let groups = $derived.by<RenderGroup[]>(() => {
     void cardVersion;
     const out: RenderGroup[] = [];
@@ -91,9 +90,9 @@
       if (!sourceNode) continue; // source deleted → drop the whole group
       const controls: RenderControl[] = [];
       for (const b of g.bindings) {
-        const pd = paramDefFor(sourceNode.type, b.paramId);
-        if (!pd) continue;
-        controls.push({ paramId: b.paramId, label: pd.label ?? b.paramId, def: pd });
+        const resolved = resolveSurfaceParam(sourceNode, b.paramId);
+        if (!resolved) continue;
+        controls.push({ paramId: b.paramId, label: resolved.def.label ?? b.paramId, def: resolved.def });
       }
       if (controls.length === 0) continue;
       out.push({ moduleId: g.moduleId, label: sourceLabel(g.moduleId), controls });
@@ -104,23 +103,35 @@
   let isEmpty = $derived(groups.length === 0);
 
   // ── live param read / write (the pointer mechanism) ──
+  // Both route through the param adapter so TOYBOX's nested params read/write the
+  // right node.data location (material / combine / layer) instead of the missing
+  // node.params[paramId].
   function readParam(sourceId: string, paramId: string, def: ParamDef): number {
     void cardVersion;
     const live = patch.nodes[sourceId] as ModuleNode | undefined;
+    const resolved = resolveSurfaceParam(live, paramId);
+    if (resolved) return resolved.get();
     return (live?.params[paramId] ?? def.defaultValue ?? 0) as number;
   }
   function setParam(sourceId: string, paramId: string, value: number) {
-    const target = patch.nodes[sourceId];
-    if (!target) return;
-    target.params[paramId] = value;
+    const live = patch.nodes[sourceId] as ModuleNode | undefined;
+    const resolved = resolveSurfaceParam(live, paramId);
+    if (resolved) { resolved.set(value); return; }
+    if (live) live.params[paramId] = value;
   }
   function liveReader(sourceId: string, paramId: string) {
     return () => {
-      const e = engineCtx.get();
-      if (!e) return undefined;
       const live = patch.nodes[sourceId] as ModuleNode | undefined;
       if (!live) return undefined;
-      return e.readParam(live, paramId);
+      // The audio engine's readParam folds in intrinsic + connected-CV samples
+      // for a motorized tick. TOYBOX's engine readParam returns undefined (its
+      // params live in node.data), so fall back to the adapter's live get() —
+      // which also picks up per-frame CV writes into the same material/combine
+      // object.
+      const e = engineCtx.get();
+      const fromEngine = e ? e.readParam(live, paramId) : undefined;
+      if (typeof fromEngine === 'number') return fromEngine;
+      return resolveSurfaceParam(live, paramId)?.get();
     };
   }
 

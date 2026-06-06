@@ -64,6 +64,13 @@
      *  already started a drag, and we need to abort that drag before
      *  the menu commits.  */
     cancelConnection: () => void;
+    /** Mark an edge selected (or not) in xyflow's store. Headless Playwright
+     *  can't reliably click the thin SVG edge interaction band, so the
+     *  edge-delete e2e selects the edge through this real xyflow mutation
+     *  (the SAME `selected` flag a user's click sets), then presses the real
+     *  Backspace deleteKey — exercising xyflow's genuine KeyHandler →
+     *  deleteElements → ondelete teardown path end-to-end. */
+    setEdgeSelected: (id: string, selected: boolean) => void;
   }
 
   interface Props {
@@ -105,6 +112,9 @@
             (store as unknown as { _connection: unknown })._connection = initialConnection;
           }
         } catch { /* swallow — defensive */ }
+      },
+      setEdgeSelected: (id: string, selected: boolean) => {
+        flow.updateEdge(id, { selected });
       },
     };
     return () => {

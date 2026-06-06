@@ -210,9 +210,11 @@ async function seedFlatRedTunnel(page: Page): Promise<void> {
             { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
             { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
             { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
-            // mode 0 = TUNNEL; deep zoom (0.8) so the interior fills with the
-            // recursive nest; high decay so the nest persists deep enough to read.
-            { id: 'fb', kind: 'feedback', x: 120, y: 14, params: { mode: 0, zoom: 0.8, decay: 0.95 } },
+            // mode 0 = TUNNEL; intensity 1 = FULL WET (pure hall-of-mirrors, the
+            // case the fix targets — source only in the ring); deep zoom (0.8) so
+            // the interior fills with the recursive nest; high decay so the nest
+            // persists deep enough to read.
+            { id: 'fb', kind: 'feedback', x: 120, y: 14, params: { mode: 0, zoom: 0.8, decay: 0.95, intensity: 1 } },
             { id: 'out', kind: 'output', x: 286, y: 66 },
           ],
           edges: [
@@ -369,6 +371,65 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
       dist(tunnel, additive),
       'editing the feedback mode live changes the output',
     ).toBeGreaterThan(8);
+  });
+
+  test('the INTENSITY (wet/dry) knob changes the composite + TUNNEL hall-of-mirrors renders', async ({ page }) => {
+    // intensity is the wet/dry mix between the live input (dry) and the recursive
+    // feedback result (wet). We assert TWO things:
+    //   1. The knob measurably changes the composite. We use GEOMETRIC (mode 1),
+    //      where intensity raises the feedback ACCUMULATION — a strong, robust
+    //      mean-brightness signal (TUNNEL's recursive zoom of a near-uniform noise
+    //      field preserves the mean, so its global-average delta is tiny even
+    //      though the structure changes; brightness accumulation is the reliable
+    //      numeric handle for "the knob did something").
+    //   2. TUNNEL (mode 0) — the owner's headline hall-of-mirrors — renders
+    //      non-black at full wet.
+    // This also serves as a real-GPU shader-compile sanity check: a broken
+    // FEEDBACK program would page-error / render black here.
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+      [],
+    );
+    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
+    await pinViewport(page);
+
+    // GEOMETRIC (mode 1) low intensity: weak feedback → close to the live input.
+    await seedFeedbackGraph(page, 1, { intensity: 0.05, scaleP: 1.0, rotate: 0.02 });
+    const dry = await stepAndAverage(page, 2.0, 12);
+    expect(lum(dry), 'low-intensity feedback composite is non-black').toBeGreaterThan(20);
+
+    // GEOMETRIC full intensity: strong luma-weighted accumulation → much brighter
+    // trails. Fresh graph so the buffer starts clean.
+    await seedFeedbackGraph(page, 1, { intensity: 1, scaleP: 1.0, rotate: 0.02 });
+    const wet = await stepAndAverage(page, 2.0, 12);
+    expect(lum(wet), 'high-intensity feedback composite is non-black').toBeGreaterThan(20);
+
+    // The wet/dry knob measurably changes the composite (the uIntensity mix is
+    // wired through schema → uniform → engine → shader).
+    expect(
+      dist(dry, wet),
+      'the intensity (wet/dry) knob changes the feedback composite',
+    ).toBeGreaterThan(8);
+
+    // TUNNEL hall-of-mirrors (the owner's headline mode) renders non-black at
+    // full wet — the recursive nested-frame composite owns the output.
+    await seedFeedbackGraph(page, 0, { intensity: 1, zoom: 0.8 });
+    const tunnel = await stepAndAverage(page, 2.0, 12);
+    expect(lum(tunnel), 'TUNNEL hall-of-mirrors renders non-black at full wet').toBeGreaterThan(20);
+
+    expect(
+      errors.filter((e) => !e.includes('AudioContext')),
+      'no console / page errors',
+    ).toEqual([]);
   });
 
   // NOTE on what is (and isn't) tested here for RESET:

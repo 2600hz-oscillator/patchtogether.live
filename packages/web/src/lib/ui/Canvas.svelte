@@ -333,6 +333,11 @@
         screenToFlowPosition: (p: { x: number; y: number }) =>
           flowApi?.screenToFlowPosition(p) ?? p,
         getInternalNode: (id: string) => flowApi?.getInternalNode(id),
+        // Edge-delete e2e: headless Playwright can't click the thin SVG edge,
+        // so the spec selects it through xyflow's real `selected` mutation,
+        // then presses the real Backspace deleteKey.
+        setEdgeSelected: (id: string, selected: boolean) =>
+          flowApi?.setEdgeSelected(id, selected),
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__spawnAtFlowPos = (
@@ -883,10 +888,35 @@
     }
   }
 
+  /** GIBRIBBON game demo — load the bundled audio→video patch that drives
+   *  the GibRibbon game (PR #620) from a sequenced MACROOSCILLATOR voice
+   *  analysed by SYNESTHESIA. Same shape as loadMediaBurn: envelope →
+   *  loadEnvelopeIntoStore. TIMELORDE + MACSEQ free-run on load, so the
+   *  SYNESTHESIA slow envelopes start generating GibRibbon events
+   *  immediately (cv1..cv4 → loop/jump/imp/zombie; 1× → scroll clock;
+   *  MACSEQ gate → beat). See gibribbon-demo.ts + gibribbon-events.ts. */
+  async function loadGibribbonDemo() {
+    error = null;
+    booting = true;
+    try {
+      await ensureEngine();
+      const { loadGibribbonDemo: doLoad } = await import('$lib/ui/example-patches/gibribbon-demo');
+      const result = doLoad(ydoc, patch);
+      trace(`GIBRIBBON demo in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
+      await reconciler?.reconcile();
+      trace('GIBRIBBON demo live — sequenced voice → SYNESTHESIA → game events');
+    } catch (err) {
+      console.error(err);
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    } finally {
+      booting = false;
+    }
+  }
+
   /** Identifiers for the "Load example…" topbar dropdown. Each maps to one
    *  of the existing example loaders/spawners (kept byte-for-byte identical
    *  to the buttons they replaced). */
-  type ExampleKey = 'sequenced-vco' | 'system-55' | 'system-35' | 'media-burn' | 'glitches';
+  type ExampleKey = 'sequenced-vco' | 'system-55' | 'system-35' | 'media-burn' | 'glitches' | 'gibribbon-demo';
 
   /** Action-menu dispatcher for the "Load example…" `<select>`. It's an
    *  action menu (not a persistent value), so we reset the bound value back
@@ -900,6 +930,7 @@
       case 'system-35':     await spawnCabinet('35'); break;
       case 'media-burn':    await loadMediaBurn(); break;
       case 'glitches':      await loadGlitches(); break;
+      case 'gibribbon-demo': await loadGibribbonDemo(); break;
     }
     // Reset back to the placeholder so this stays an action menu.
     exampleChoice = '';
@@ -3686,6 +3717,7 @@
         <option value="system-35">System 35</option>
         <option value="media-burn">Media Burn</option>
         <option value="glitches">Glitches Get Riches</option>
+        <option value="gibribbon-demo">GIBRIBBON (game demo)</option>
       </select>
       <button
         onclick={savePatch}

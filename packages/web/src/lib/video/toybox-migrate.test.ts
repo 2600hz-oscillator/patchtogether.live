@@ -11,8 +11,8 @@ import { describe, it, expect } from 'vitest';
 import { migrateToyboxData, toyboxDef, __COMBINE_FRAG_SRC_FOR_TEST } from './modules/toybox';
 
 describe('migrateToyboxData v2 → v3 (chromakey key → keyR/keyG/keyB)', () => {
-  it('declares schemaVersion 3', () => {
-    expect(toyboxDef.schemaVersion).toBe(3);
+  it('declares schemaVersion 4', () => {
+    expect(toyboxDef.schemaVersion).toBe(4);
   });
   it('maps key=0.33 (green) → keyR0 keyG1 keyB0 and drops key', () => {
     const data = {
@@ -59,10 +59,37 @@ describe('migrateToyboxData v2 → v3 (chromakey key → keyR/keyG/keyB)', () =>
     expect(out.cvRoutes.cv1).toBeNull();
     expect(out.cvRoutes.cv2).toMatchObject({ param: 'amount' });
   });
-  it('is a no-op for data already at v3', () => {
+  it('does not touch chromakey params when migrating v3 → v4', () => {
     const data = { combine: { nodes: [{ id: 'ck', kind: 'chromakey', params: { keyR: 0, keyG: 1, keyB: 0 } }], edges: [] } };
     const out = migrateToyboxData(data, 3) as typeof data;
     expect(out.combine.nodes[0]!.params).toEqual({ keyR: 0, keyG: 1, keyB: 0 });
+  });
+  it('is a no-op for data already at v4', () => {
+    const data = { combine: { nodes: [{ id: 'fb', kind: 'feedback', params: { mode: 0, zoom: 0.9 } }], edges: [] } };
+    const out = migrateToyboxData(data, 4) as typeof data;
+    // No intensity backfill at the current version (already migrated).
+    expect(out.combine.nodes[0]!.params).toEqual({ mode: 0, zoom: 0.9 });
+  });
+});
+
+describe('migrateToyboxData v3 → v4 (feedback gains intensity wet/dry param)', () => {
+  it('backfills intensity = 0.5 on a feedback node missing it', () => {
+    const data = { combine: { nodes: [{ id: 'fb', kind: 'feedback', params: { mode: 0, zoom: 0.9 } }], edges: [] } };
+    const out = migrateToyboxData(data, 3) as { combine: { nodes: { params: Record<string, number> }[] } };
+    expect(out.combine.nodes[0]!.params.intensity).toBe(0.5);
+    // existing params untouched.
+    expect(out.combine.nodes[0]!.params.mode).toBe(0);
+    expect(out.combine.nodes[0]!.params.zoom).toBe(0.9);
+  });
+  it('preserves an existing intensity value (no clobber)', () => {
+    const data = { combine: { nodes: [{ id: 'fb', kind: 'feedback', params: { mode: 1, intensity: 0.9 } }], edges: [] } };
+    const out = migrateToyboxData(data, 3) as { combine: { nodes: { params: Record<string, number> }[] } };
+    expect(out.combine.nodes[0]!.params.intensity).toBe(0.9);
+  });
+  it('only touches feedback nodes (leaves fade/lumakey alone)', () => {
+    const data = { combine: { nodes: [{ id: 'f', kind: 'fade', params: { amount: 1 } }], edges: [] } };
+    const out = migrateToyboxData(data, 3) as { combine: { nodes: { params: Record<string, number> }[] } };
+    expect('intensity' in out.combine.nodes[0]!.params).toBe(false);
   });
   it('still strips dropped cv7/cv8 routes when migrating from v1', () => {
     const data = { cvRoutes: { cv1: { target: 'layer', layer: 0, param: 'x' }, cv7: { target: 'layer', layer: 0, param: 'y' } } };
