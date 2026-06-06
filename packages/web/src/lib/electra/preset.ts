@@ -89,6 +89,38 @@ export const PAGE_CONTROL = 1;
 export const PAGE_MIXMASTER = 2;
 export const PAGE_SYSTEM = 3;
 
+// ── Control LAYOUT grid (FW 3.0.5+, 1024x600 mk2 display) ──────────────────
+// Every control + group REQUIRES an on-screen `bounds` [x,y,w,h]; the firmware
+// does NO auto-positioning, so a control with no bounds renders nothing (the
+// page appears but is empty). These are the canonical Electra grid constants
+// (cross-confirmed by docs.electra.one preset format + the xot/ElectraOne
+// reference dumper): 6 columns x 6 rows of 146x56 cells. A page holds 3 control
+// sets stacked as 2-row bands; potId 1..6 = a band's top row, 7..12 = bottom.
+const CTRL_W = 146;
+const CTRL_H = 56;
+const COL_X = [20, 187, 354, 521, 688, 855] as const; // 6 column origins (pitch 167)
+const ROW_Y = [28, 118, 208, 298, 388, 478] as const; // 6 row origins (pitch 90)
+
+/** Bounds for a control at potId (1..12) within controlSetId (1..3). */
+function boundsForPotSet(potId: number, controlSetId: number): [number, number, number, number] {
+  const col = (potId - 1) % 6;
+  const row = (controlSetId - 1) * 2 + Math.floor((potId - 1) / 6);
+  return [COL_X[col] ?? 20, ROW_Y[Math.min(row, 5)] ?? 28, CTRL_W, CTRL_H];
+}
+
+/** Bounding box for a group spanning page-local slots [from..to] (1-based). */
+function boundsForSlotRange(from: number, to: number): [number, number, number, number] {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let s = from; s <= to; s++) {
+    const csId = Math.floor((s - 1) / POTS_PER_SET) + 1;
+    const potId = ((s - 1) % POTS_PER_SET) + 1;
+    const [x, y, w, h] = boundsForPotSet(potId, csId);
+    minX = Math.min(minX, x); minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h);
+  }
+  return [minX, minY, maxX - minX, maxY - minY];
+}
+
 // ──────────────────────────── formatter selection ────────────────────────────
 
 /** Pick the Lua formatter fn name for a param def (uploaded in the Lua layer). */
@@ -417,6 +449,18 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
       });
       s++;
     }
+  }
+
+  // Fill the REQUIRED on-screen rectangle for every control + group from its
+  // pot/control-set position. Without bounds the device builds the controls but
+  // draws nothing (the pages render empty) — this is the single field whose
+  // omission caused the blank-page bug on real hardware.
+  for (const c of controls) {
+    if (!c.bounds && c.potId) c.bounds = boundsForPotSet(c.potId, c.controlSetId);
+    if (c.visible === undefined) c.visible = true;
+  }
+  for (const g of groups) {
+    if (!g.bounds) g.bounds = boundsForSlotRange(g.from, g.to);
   }
 
   const pages: ElectraPage[] = [

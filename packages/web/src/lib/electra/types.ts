@@ -63,6 +63,9 @@ export interface ElectraGroup {
   /** Lowest pot/slot index covered (1-based, page-local). */
   from: number;
   to: number;
+  /** On-screen rectangle [x, y, width, height] — like controls, the firmware
+   *  needs this to draw the group's header box. */
+  bounds?: [number, number, number, number];
 }
 
 /** The MIDI message a control input/value binds to. */
@@ -114,6 +117,13 @@ export interface ElectraControl {
   values: ElectraValue[];
   /** RGB-ish color index the device renders (0..5). */
   color?: number;
+  /** On-screen rectangle [x, y, width, height] in the 1024x600 layout space.
+   *  REQUIRED by the firmware — a control with no bounds has no position and
+   *  the device draws nothing for it (the page renders but is empty). */
+  bounds?: [number, number, number, number];
+  /** Explicit visibility (default true). Emitted so the firmware never
+   *  defaults a control to hidden. */
+  visible?: boolean;
 }
 
 /** The whole preset document. */

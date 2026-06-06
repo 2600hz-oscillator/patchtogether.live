@@ -558,6 +558,12 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
   "preset": {
     "controls": [
       {
+        "bounds": [
+          20,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 1,
         "inputs": [
@@ -586,8 +592,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "overlayId": undefined,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          187,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 2,
         "inputs": [
@@ -616,8 +629,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "overlayId": undefined,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          354,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 3,
         "inputs": [
@@ -646,8 +666,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "overlayId": undefined,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          521,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 4,
         "inputs": [
@@ -676,8 +703,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "overlayId": 1,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          20,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 5,
         "inputs": [
@@ -704,8 +738,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          187,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 6,
         "inputs": [
@@ -732,8 +773,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          354,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 7,
         "inputs": [
@@ -760,8 +808,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          521,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 8,
         "inputs": [
@@ -788,8 +843,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          688,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 9,
         "inputs": [
@@ -816,8 +878,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          855,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 10,
         "inputs": [
@@ -844,8 +913,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          20,
+          118,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 11,
         "inputs": [
@@ -872,8 +948,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          187,
+          118,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 12,
         "inputs": [
@@ -900,8 +983,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          354,
+          118,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 13,
         "inputs": [
@@ -928,8 +1018,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          521,
+          118,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 14,
         "inputs": [
@@ -956,8 +1053,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          688,
+          118,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 15,
         "inputs": [
@@ -984,8 +1088,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          855,
+          118,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 16,
         "inputs": [
@@ -1012,8 +1123,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          20,
+          208,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 17,
         "inputs": [
@@ -1040,8 +1158,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          187,
+          208,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 18,
         "inputs": [
@@ -1068,8 +1193,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          354,
+          208,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 19,
         "inputs": [
@@ -1096,8 +1228,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          521,
+          208,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 20,
         "inputs": [
@@ -1124,8 +1263,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          688,
+          208,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 21,
         "inputs": [
@@ -1152,8 +1298,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          855,
+          208,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 22,
         "inputs": [
@@ -1180,8 +1333,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          20,
+          298,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 23,
         "inputs": [
@@ -1208,8 +1368,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          187,
+          298,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 24,
         "inputs": [
@@ -1236,8 +1403,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          354,
+          298,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 25,
         "inputs": [
@@ -1264,8 +1438,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          521,
+          298,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 26,
         "inputs": [
@@ -1292,8 +1473,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          688,
+          298,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 27,
         "inputs": [
@@ -1320,8 +1508,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          855,
+          298,
+          146,
+          56,
+        ],
         "controlSetId": 2,
         "id": 28,
         "inputs": [
@@ -1348,8 +1543,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": -12,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          20,
+          388,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 29,
         "inputs": [
@@ -1376,8 +1578,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          187,
+          388,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 30,
         "inputs": [
@@ -1404,8 +1613,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          354,
+          388,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 31,
         "inputs": [
@@ -1432,8 +1648,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          521,
+          388,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 32,
         "inputs": [
@@ -1460,8 +1683,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          688,
+          388,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 33,
         "inputs": [
@@ -1488,8 +1718,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          855,
+          388,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 34,
         "name": "VU1",
@@ -1510,8 +1747,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           },
         ],
         "variant": "thin",
+        "visible": true,
       },
       {
+        "bounds": [
+          20,
+          478,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 35,
         "name": "VU2",
@@ -1532,8 +1776,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           },
         ],
         "variant": "thin",
+        "visible": true,
       },
       {
+        "bounds": [
+          187,
+          478,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 36,
         "name": "VU3",
@@ -1554,8 +1805,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           },
         ],
         "variant": "thin",
+        "visible": true,
       },
       {
+        "bounds": [
+          354,
+          478,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 37,
         "name": "VU4",
@@ -1576,8 +1834,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           },
         ],
         "variant": "thin",
+        "visible": true,
       },
       {
+        "bounds": [
+          521,
+          478,
+          146,
+          56,
+        ],
         "controlSetId": 3,
         "id": 38,
         "name": "VUM",
@@ -1598,8 +1863,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           },
         ],
         "variant": "thin",
+        "visible": true,
       },
       {
+        "bounds": [
+          20,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 39,
         "inputs": [
@@ -1627,8 +1899,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 10,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          187,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 40,
         "mode": "momentary",
@@ -1647,8 +1926,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             },
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          354,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 41,
         "name": "SRC",
@@ -1668,8 +1954,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "overlayId": 2,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          521,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 42,
         "inputs": [
@@ -1695,8 +1988,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "min": 0,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          688,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 43,
         "inputs": [
@@ -1721,8 +2021,15 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "overlayId": 3,
           },
         ],
+        "visible": true,
       },
       {
+        "bounds": [
+          855,
+          28,
+          146,
+          56,
+        ],
         "controlSetId": 1,
         "id": 44,
         "mode": "toggle",
@@ -1743,6 +2050,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             },
           },
         ],
+        "visible": true,
       },
     ],
     "devices": [
@@ -1762,12 +2070,24 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
     ],
     "groups": [
       {
+        "bounds": [
+          20,
+          28,
+          313,
+          56,
+        ],
         "from": 1,
         "name": "OSC",
         "pageId": 1,
         "to": 2,
       },
       {
+        "bounds": [
+          354,
+          28,
+          313,
+          56,
+        ],
         "from": 3,
         "name": "FILTER",
         "pageId": 1,

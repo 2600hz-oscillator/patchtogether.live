@@ -118,6 +118,34 @@ describe('generatePreset — CONTROL page', () => {
   });
 });
 
+describe('generatePreset — control bounds (render placement)', () => {
+  it('every control gets an on-screen bounds + visible:true (else the device draws nothing)', () => {
+    const { preset } = generatePreset(baseInput());
+    expect(preset.controls.length).toBeGreaterThan(0);
+    for (const c of preset.controls) {
+      expect(Array.isArray(c.bounds), `${c.name} has bounds`).toBe(true);
+      expect(c.bounds).toHaveLength(4);
+      const [x, y, w, h] = c.bounds!;
+      expect(w).toBe(146);
+      expect(h).toBe(56);
+      expect(x).toBeGreaterThanOrEqual(20);
+      expect(x + w).toBeLessThanOrEqual(1024);
+      expect(y + h).toBeLessThanOrEqual(600);
+      expect(c.visible).toBe(true);
+    }
+  });
+
+  it('places potId/controlSetId on the canonical FW-3.0.5 grid', () => {
+    const { preset } = generatePreset(baseInput());
+    const at = (page: number, cs: number, pot: number) =>
+      preset.controls.find((c) => c.pageId === page && c.controlSetId === cs && c.potId === pot);
+    expect(at(1, 1, 1)?.bounds).toEqual([20, 28, 146, 56]); // top-left cell
+    const p7 = at(1, 1, 7);
+    if (p7) expect(p7.bounds).toEqual([20, 118, 146, 56]); // 2nd row of top band
+    for (const g of preset.groups) expect(g.bounds).toHaveLength(4);
+  });
+});
+
 describe('generatePreset — MIXMASTER page', () => {
   it('emits 29 writable controls + a 5-meter read-only row', () => {
     const { preset, allocations } = generatePreset(baseInput());
