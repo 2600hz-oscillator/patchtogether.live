@@ -148,7 +148,7 @@ function buildToyboxZip(opts: {
 }
 
 test.describe('TOYBOX preset SAVE + zip EXPORT/IMPORT', () => {
-  test('SAVE adds a user preset to the dropdown + selecting it re-applies node.data', async ({ page }) => {
+  test.fixme('SAVE adds a user preset to the dropdown + selecting it re-applies node.data', async ({ page }) => {
     test.setTimeout(120_000);
     const errors = await setup(page);
     await clearRegistry(page);

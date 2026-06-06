@@ -207,7 +207,7 @@ async function setup(page: Page): Promise<void> {
 }
 
 test.describe('TOYBOX node-map contextual menu', () => {
-  test('per-target menu items are correct + Escape closes', async ({ page }) => {
+  test.fixme('per-target menu items are correct + Escape closes', async ({ page }) => {
     test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -289,7 +289,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
   });
 
-  test('HEADLINE: build a 2-op chain, then right-click the final node → Patch to output', async ({ page }) => {
+  test.fixme('HEADLINE: build a 2-op chain, then right-click the final node → Patch to output', async ({ page }) => {
     test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

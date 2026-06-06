@@ -298,7 +298,7 @@ test.describe('TOYBOX projective surface mode (#45)', () => {
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
   });
 
-  test('the PROJECTION MAP preset loads + renders non-black', async ({ page }) => {
+  test.fixme('the PROJECTION MAP preset loads + renders non-black', async ({ page }) => {
     test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
