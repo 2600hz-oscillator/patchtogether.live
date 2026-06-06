@@ -55,6 +55,7 @@
     type ToyboxModel,
     type ToyboxObjMaterial,
     type ToyboxPreset,
+    type ToyboxSceneInputSource,
     type ToyboxSurfaceMode,
     type ToyboxVideoSource,
   } from '$lib/video/toybox-content';
@@ -73,6 +74,7 @@
     OP_KINDS,
     OP_PARAMS,
     TOYBOX_SCHEMA_VERSION,
+    LAYER_INPUT_SOURCE,
     inPortsFor,
     hasOutPort,
     isCombineGraph,
@@ -156,6 +158,7 @@
     setLayerObjSource,
     setLayerVideoName,
     setLayerVideoSource,
+    setLayerSceneInputSource,
   } from '$lib/graph/toybox-layers';
 
   // The two VIDEO input ports (handles on the card's left edge). Ids match the
@@ -444,19 +447,37 @@
     () => readLiveLayers()?.[activeLayer]?.videoSource ?? 'file',
   );
 
-  /** Change the active VIDEO layer's source. Selecting a patched feed
-   *  ('inA'/'inB') tears down any local <video>/webcam for the layer so we
-   *  don't hold a camera/decoder open while the feed comes off the cable. */
+  /** Change the active VIDEO layer's source. Selecting a non-local feed
+   *  ('inA'/'inB'/'layerIn') tears down any local <video>/webcam for the layer so
+   *  we don't hold a camera/decoder open while the texture comes off the cable /
+   *  the internal LAYER INPUT tap. */
   function onVideoSourceChange(ev: Event): void {
     const next = (ev.target as HTMLSelectElement).value as ToyboxVideoSource;
     const i = activeLayer;
     setLayerVideoSource(id, i, next);
     bumpRev();
-    if (next === 'inA' || next === 'inB') {
+    if (next === 'inA' || next === 'inB' || next === 'layerIn') {
       releaseVideoLayer(i);
     } else if (next === 'camera') {
       void startCamera(i);
     }
+  }
+
+  // The active FRAG layer's scene-input source ('below'|'layer-input'). Absent →
+  // 'below' (the #603 default: iChannel0 = the composited layer below).
+  let currentSceneInputSource = $derived.by<ToyboxSceneInputSource>(
+    () => (readLiveLayers()?.[activeLayer]?.sceneInputSource === 'layer-input' ? 'layer-input' : 'below'),
+  );
+
+  /** Change the active FRAG layer's scene-input (iChannel0) source: the layer
+   *  below ('below') or the LAYER INPUT feedback tap ('layer-input'). */
+  function onSceneInputSourceChange(ev: Event): void {
+    setLayerSceneInputSource(
+      id,
+      activeLayer,
+      (ev.target as HTMLSelectElement).value as ToyboxSceneInputSource,
+    );
+    bumpRev();
   }
 
   // ---- IMAGE: decode persisted bytes → upload into the engine per layer ----
@@ -740,10 +761,13 @@
   // projector either rides the render camera (projUseCamera) or uses an explicit
   // pos/dir/fov. All material fields ride the Y.Doc + are read live by the engine.
 
-  /** True iff the active OBJ layer has a valid surface source (projective mode is
-   *  only meaningful then — with no source there is nothing to project). */
+  /** True iff the active OBJ layer has a valid surface source — a sibling LAYER
+   *  index OR the LAYER INPUT sentinel (prev-frame OUT). Projective mode + the
+   *  SURF MIX knob are only meaningful then (with no source there is nothing to
+   *  project / mix over the matcap). */
   let hasSurfaceSource = $derived.by<boolean>(() => {
     const s = currentMaterial.surfaceSource;
+    if (s === LAYER_INPUT_SOURCE) return true;
     return typeof s === 'number' && s >= 0 && s < LAYER_COUNT && s !== activeLayer;
   });
   let surfaceMode = $derived.by<ToyboxSurfaceMode>(
@@ -2377,11 +2401,14 @@
         {/each}
       </select>
     </div>
-    <!-- SURFACE source: MATCAP (default) or another layer's rendered output
-         UV-mapped onto the mesh. We offer every layer EXCEPT the active one (a
-         layer can't texture itself — the engine guards self/cycle anyway). The
-         option VALUE is the 0-indexed layer index; the LABEL is 1-indexed to
-         match the LAYER tabs. -->
+    <!-- SURFACE source: MATCAP (default), another layer's rendered output
+         UV-mapped onto the mesh, or LAYER INPUT (sample whatever node output is
+         wired into this layer's SOURCE-node in0 port in the combine graph —
+         Phase 1: the prev-frame OUT composite, a stable 1-frame feedback tap).
+         We offer every sibling layer EXCEPT the active one (a layer can't texture
+         itself — the engine guards self/cycle anyway). The sibling option VALUE
+         is the 0-indexed layer index; the LABEL is 1-indexed to match the LAYER
+         tabs. LAYER INPUT's value is the LAYER_INPUT_SOURCE sentinel (-2). -->
     <div class="content-row">
       <label class="content-label" for={`toybox-surface-${id}`}>SURFACE</label>
       <select
@@ -2392,6 +2419,7 @@
         onchange={onSurfaceChange}
       >
         <option value="-1">MATCAP</option>
+        <option value={String(LAYER_INPUT_SOURCE)}>LAYER INPUT</option>
         {#each Array(LAYER_COUNT) as _, i (i)}
           {#if i !== activeLayer}
             <option value={String(i)}>LAYER {i + 1}</option>
@@ -2490,8 +2518,27 @@
       </select>
     </div>
     {#if currentKind === 'frag'}
+      <!-- SCENE source: where the FRAG's iChannel0 comes from — the layer BELOW
+           (the #603 default) or LAYER INPUT (the node output wired into this
+           layer's combine in0 port; Phase 1: the prev-frame OUT composite, a
+           stable 1-frame feedback tap). -->
+      <div class="content-row">
+        <label class="content-label" for={`toybox-scene-src-${id}`}>SCENE</label>
+        <select
+          id={`toybox-scene-src-${id}`}
+          class="content-select"
+          data-testid="toybox-scene-source-select"
+          value={currentSceneInputSource}
+          onchange={onSceneInputSourceChange}
+        >
+          <option value="below">LAYER BELOW</option>
+          <option value="layer-input">LAYER INPUT</option>
+        </select>
+      </div>
       <div class="frag-hint" data-testid="toybox-frag-hint">
-        FRAG receives the layer below as iChannel0
+        {currentSceneInputSource === 'layer-input'
+          ? 'FRAG receives the LAYER INPUT tap (prev-frame OUT) as iChannel0'
+          : 'FRAG receives the layer below as iChannel0'}
       </div>
     {/if}
 
@@ -2580,6 +2627,7 @@
           <option value="inB">In B</option>
           <option value="file">File</option>
           <option value="camera">Camera</option>
+          <option value="layerIn">Layer Input</option>
         </select>
       </div>
 

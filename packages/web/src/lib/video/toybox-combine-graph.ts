@@ -591,9 +591,49 @@ export function exquisiteUniforms(
   };
 }
 
-/** The input ports a node of `kind` exposes (left-side dots in the editor). */
+/**
+ * The named sentinel for a "LAYER INPUT" texture source. A texture-source param
+ * (OBJ material.surfaceSource, VIDEO videoSource='layerIn', FRAG/shadertoy
+ * iChannel='layer-input') set to this value means "sample whatever node output
+ * is wired into this layer's SOURCE-node input port (src{i}.in0)". In Phase 1
+ * the wired tap is always resolved to the PREVIOUS frame's OUT composite
+ * (outTexture — the only already-retained tap), so a post-feedback OUT -> SURFACE
+ * loop reads one frame late and stays stable. The wired in0 edge expresses the
+ * INTENT + the loop; the sentinel selects it on the param side.
+ *
+ * Distinct from -1 (MATCAP / no source) and 0..LAYER_COUNT-1 (a sibling layer
+ * index). Negative so it never collides with a real layer index, and a NAMED
+ * constant so setLayerSurfaceSource can preserve it instead of flooring to -1.
+ */
+export const LAYER_INPUT_SOURCE = -2;
+
+/**
+ * True if edge `to`/`toPort` is a LAYER-INPUT (feedback-tap) edge: an in0 wire
+ * into a SOURCE node. SOURCE nodes are emit-only in the forward eval; their in0
+ * port exists ONLY to express a feedback tap that the render resolves one frame
+ * late (prev-frame OUT). Such an edge is BY DEFINITION a cycle (OUT -> src ->
+ * graph -> OUT), so it is exempted from cycle rejection (validateConnect) and
+ * dropped from the same-frame dependency order (topoSort) — exactly the discipline
+ * the shadertoy 'self' channel + propagateFreshness already use for a tap.
+ */
+export function isLayerInputEdge(
+  g: ToyboxCombineGraph,
+  to: string,
+  toPort: ToyboxInPort,
+): boolean {
+  if (toPort !== 'in0') return false;
+  const n = findNode(g, to);
+  return n?.kind === 'source';
+}
+
+/** The input ports a node of `kind` exposes (left-side dots in the editor).
+ *  SOURCE nodes expose a single 'in0' — the LAYER-INPUT (feedback-tap) port.
+ *  It is emit-only in the forward eval (hasOutPort('source') stays true); the
+ *  in0 port carries a feedback tap resolved one frame late at render, so wiring
+ *  it never adds a same-frame dependency (topoSort drops the edge). An unwired
+ *  in0 dot is a pure no-op (renders an unused port). */
 export function inPortsFor(kind: ToyboxNodeKind): ToyboxInPort[] {
-  if (kind === 'source') return [];
+  if (kind === 'source') return ['in0'];
   if (kind === 'output') return ['in0'];
   // EXQUISITE splices up to FOUR feeds (band i shows input i mod #wired).
   if (kind === 'exquisite') return ['in0', 'in1', 'in2', 'in3'];
@@ -732,6 +772,12 @@ export function topoSort(g: ToyboxCombineGraph): { order: string[]; ok: boolean 
   for (const e of g.edges) {
     // Skip edges referencing missing endpoints (robust to stale data).
     if (!indeg.has(e.from) || !indeg.has(e.to)) continue;
+    // Drop LAYER-INPUT (feedback-tap) edges: an in0 wire into a SOURCE node is
+    // resolved one frame late at render, NOT a same-frame dependency. Keeping it
+    // would give the SOURCE indegree>0 (no longer a root) and could form a cycle
+    // (OUT -> src -> ... -> OUT) that strands the whole graph. Excluding it keeps
+    // the eval a clean acyclic single pass (the SOURCE stays a root, indegree 0).
+    if (isLayerInputEdge(g, e.to, e.toPort)) continue;
     indeg.set(e.to, (indeg.get(e.to) ?? 0) + 1);
     out.get(e.from)!.push(e.to);
   }
@@ -891,7 +937,15 @@ export function validateConnect(
   if (g.edges.some((e) => e.to === to && e.toPort === toPort)) {
     return { ok: false, error: 'occupied' };
   }
-  if (wouldCreateCycle(g, from, to)) return { ok: false, error: 'cycle' };
+  // A LAYER-INPUT edge (in0 into a SOURCE node) is BY DEFINITION a feedback tap
+  // (e.g. OUT -> src0.in0), so it is EXEMPT from cycle rejection — the render
+  // resolves it one frame late (prev-frame OUT), never a same-frame loop, and
+  // topoSort drops it so the eval stays acyclic. The self-loop / no-out-port /
+  // occupied guards above still apply. A non-SOURCE destination keeps cycle
+  // rejection exactly as before.
+  if (!isLayerInputEdge(g, to, toPort) && wouldCreateCycle(g, from, to)) {
+    return { ok: false, error: 'cycle' };
+  }
   return { ok: true, edge: { id: nextEdgeId(g), from, to, toPort } };
 }
 

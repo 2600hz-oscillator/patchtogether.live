@@ -16,6 +16,11 @@
 // the FBO it is currently writing.
 
 import { LAYER_COUNT, type ToyboxLayer } from './toybox-content';
+import {
+  LAYER_INPUT_SOURCE,
+  isCombineGraph,
+  type ToyboxCombineGraph,
+} from './toybox-combine-graph';
 
 /** A layer's resolved surface-source intent, defensively normalised from the
  *  raw (possibly pre-feature / malformed) material.surfaceSource. */
@@ -163,4 +168,63 @@ export function resolveRenderOrder(layers: ToyboxLayer[]): RenderOrderResult {
   }
 
   return { order, safeSource };
+}
+
+// ---------------- LAYER INPUT (prev-frame OUT feedback tap) ----------------
+//
+// A texture-source param on layer `i` (OBJ material.surfaceSource, VIDEO
+// videoSource, a FRAG scene input) can be set to the LAYER-INPUT sentinel,
+// meaning "sample whatever node output is wired into this layer's SOURCE-node
+// input port (src{i}.in0)". In Phase 1 that resolves to the PREVIOUS frame's OUT
+// composite (outTexture — the only already-retained tap), so a post-feedback
+// OUT -> SURFACE loop reads one frame late and is stable.
+//
+// The decision needs TWO conditions, AND-ed: (a) the layer's source param
+// selects the sentinel, AND (b) the layer-i SOURCE node has a wired in0 edge
+// (the explicit feedback tap). Either missing → false (pure no-op: the param
+// falls through to MATCAP / below-layer / idle; an unwired in0 dot renders but is
+// read by no render path).
+
+/** True if a SOURCE node for layer `i` has a wired in0 (LAYER-INPUT tap) edge in
+ *  the combine graph. The src{i} node is matched by its `layer` field (defaulting
+ *  to a `src{i}` id only as a fallback), so a renamed/hand-authored source still
+ *  resolves. PURE — no GL. */
+export function layerHasInputEdge(combine: unknown, i: number): boolean {
+  if (!isCombineGraph(combine)) return false;
+  const g = combine as ToyboxCombineGraph;
+  // The SOURCE node(s) emitting layer i (normally exactly one).
+  const srcIds = new Set(
+    g.nodes
+      .filter((n) => n.kind === 'source' && (typeof n.layer === 'number' ? n.layer : 0) === i)
+      .map((n) => n.id),
+  );
+  if (srcIds.size === 0) return false;
+  return g.edges.some((e) => e.toPort === 'in0' && srcIds.has(e.to));
+}
+
+/** Does layer `i` want the LAYER INPUT (prev-frame OUT) tap as its texture
+ *  source THIS frame? True iff the layer's source param selects the LAYER-INPUT
+ *  sentinel AND the layer-i SOURCE node has a wired in0 edge. Pure; the GL pass
+ *  binds outTexture (retained prev-frame OUT) when true.
+ *
+ *   - OBJ:   material.surfaceSource === LAYER_INPUT_SOURCE.
+ *   - VIDEO: layer.videoSource === 'layerIn'.
+ *   - FRAG:  a scene-input shader whose sceneInputSource === 'layer-input'
+ *            (overrides the default below-layer iChannel0).
+ *  Any other kind → false. */
+export function layerInputWanted(layers: ToyboxLayer[], combine: unknown, i: number): boolean {
+  const layer = layers[i];
+  if (!layer) return false;
+  let selected = false;
+  if (layer.kind === 'obj') {
+    selected = layer.material?.surfaceSource === LAYER_INPUT_SOURCE;
+  } else if (layer.kind === 'video') {
+    selected = layer.videoSource === 'layerIn';
+  } else if (layer.kind === 'frag') {
+    selected = layer.sceneInputSource === 'layer-input';
+  } else {
+    return false;
+  }
+  if (!selected) return false;
+  return layerHasInputEdge(combine, i);
 }

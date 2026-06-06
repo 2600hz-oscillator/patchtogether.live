@@ -6,8 +6,19 @@
 // prove the ordering + cycle/self/out-of-range guards that keep the bind safe.
 
 import { describe, it, expect } from 'vitest';
-import { readSurfaceSource, resolveRenderOrder } from './toybox-surface';
+import {
+  readSurfaceSource,
+  resolveRenderOrder,
+  layerHasInputEdge,
+  layerInputWanted,
+} from './toybox-surface';
 import { LAYER_COUNT, makeDefaultObjMaterial, type ToyboxLayer } from './toybox-content';
+import {
+  LAYER_INPUT_SOURCE,
+  makeDefaultCombineGraph,
+  validateConnect,
+  type ToyboxCombineGraph,
+} from './toybox-combine-graph';
 
 /** Build a 4-layer array; `objSources[i]` (if a number) makes layer i an OBJ
  *  with material.surfaceSource = that value. Otherwise the layer is 'off'. */
@@ -131,5 +142,122 @@ describe('resolveRenderOrder — ordering + safe-source guard', () => {
     const { order } = resolveRenderOrder(layersWith([3, 'noobj', 'noobj', 'noobj']));
     expect([...order].sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
     expect(new Set(order).size).toBe(LAYER_COUNT);
+  });
+
+  it('a -2 (LAYER INPUT sentinel) surfaceSource does NOT register a sibling-layer dep', () => {
+    // The sentinel is resolved by layerInputWanted (prev-frame OUT), NOT a
+    // sibling-FBO texmap, so readSurfaceSource (negatives → -1) keeps safeSource -1.
+    const layers = layersWith([LAYER_INPUT_SOURCE, 'noobj', 'noobj', 'noobj']);
+    expect(readSurfaceSource(layers, 0)).toBe(-1);
+    const { safeSource } = resolveRenderOrder(layers);
+    expect(safeSource[0]).toBe(-1);
+  });
+});
+
+// ---------------- LAYER INPUT (prev-frame OUT feedback tap) ----------------
+
+/** A combine graph with a feedback-tap edge wired into src{i}.in0 (op1's output
+ *  → src{i}). Uses validateConnect (which exempts source-in0 from cycle
+ *  rejection) so the edge is the real shape the mutator pushes. */
+function graphWithTap(i: number): ToyboxCombineGraph {
+  const g = makeDefaultCombineGraph();
+  const v = validateConnect(g, 'op1', `src${i}`, 'in0');
+  expect(v.ok).toBe(true);
+  g.edges.push(v.edge!);
+  return g;
+}
+
+/** A 4-layer array where layer i is an OBJ whose surfaceSource is the sentinel. */
+function objLayerInputAt(i: number): ToyboxLayer[] {
+  const out: ToyboxLayer[] = [];
+  for (let j = 0; j < LAYER_COUNT; j++) {
+    if (j === i) {
+      const material = makeDefaultObjMaterial('sphere');
+      material.surfaceSource = LAYER_INPUT_SOURCE;
+      out.push({ kind: 'obj', contentId: null, params: {}, material });
+    } else {
+      out.push({ kind: 'off', contentId: null, params: {} });
+    }
+  }
+  return out;
+}
+
+describe('layerHasInputEdge — a wired SOURCE in0 tap', () => {
+  it('false on the default graph (no tap wired)', () => {
+    const g = makeDefaultCombineGraph();
+    for (let i = 0; i < LAYER_COUNT; i++) expect(layerHasInputEdge(g, i)).toBe(false);
+  });
+
+  it('true for exactly the layer whose source has a wired in0 edge', () => {
+    const g = graphWithTap(2);
+    expect(layerHasInputEdge(g, 2)).toBe(true);
+    expect(layerHasInputEdge(g, 0)).toBe(false);
+    expect(layerHasInputEdge(g, 1)).toBe(false);
+  });
+
+  it('false for a non-graph / legacy combine', () => {
+    expect(layerHasInputEdge({ steps: [] }, 0)).toBe(false);
+    expect(layerHasInputEdge(undefined, 0)).toBe(false);
+    expect(layerHasInputEdge(null, 0)).toBe(false);
+  });
+});
+
+describe('layerInputWanted — sentinel selected AND a wired tap', () => {
+  it('OBJ: true only when surfaceSource is the sentinel AND src.in0 is wired', () => {
+    const layers = objLayerInputAt(0);
+    // (a) sentinel + wired tap → wanted.
+    expect(layerInputWanted(layers, graphWithTap(0), 0)).toBe(true);
+    // (b) sentinel but NO wired tap → no-op (default graph).
+    expect(layerInputWanted(layers, makeDefaultCombineGraph(), 0)).toBe(false);
+  });
+
+  it('OBJ: false when the param is MATCAP / a sibling index even with a wired tap', () => {
+    const g = graphWithTap(0);
+    const matcap = objLayerInputAt(0);
+    matcap[0]!.material!.surfaceSource = -1;
+    expect(layerInputWanted(matcap, g, 0)).toBe(false);
+    const sibling = objLayerInputAt(0);
+    sibling[0]!.material!.surfaceSource = 1;
+    expect(layerInputWanted(sibling, g, 0)).toBe(false);
+  });
+
+  it('VIDEO: true only when videoSource is layerIn AND a wired tap', () => {
+    const layers: ToyboxLayer[] = [
+      { kind: 'video', contentId: null, params: {}, videoSource: 'layerIn' },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+    ];
+    expect(layerInputWanted(layers, graphWithTap(0), 0)).toBe(true);
+    expect(layerInputWanted(layers, makeDefaultCombineGraph(), 0)).toBe(false);
+    // A different videoSource → not wanted even with the tap.
+    layers[0] = { kind: 'video', contentId: null, params: {}, videoSource: 'file' };
+    expect(layerInputWanted(layers, graphWithTap(0), 0)).toBe(false);
+  });
+
+  it('FRAG: true only when sceneInputSource is layer-input AND a wired tap', () => {
+    const layers: ToyboxLayer[] = [
+      { kind: 'frag', contentId: 'invert', params: {}, sceneInputSource: 'layer-input' },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+    ];
+    expect(layerInputWanted(layers, graphWithTap(0), 0)).toBe(true);
+    expect(layerInputWanted(layers, makeDefaultCombineGraph(), 0)).toBe(false);
+    layers[0] = { kind: 'frag', contentId: 'invert', params: {}, sceneInputSource: 'below' };
+    expect(layerInputWanted(layers, graphWithTap(0), 0)).toBe(false);
+  });
+
+  it('other layer kinds (gen/shader/image/off) are never wanted', () => {
+    const g = graphWithTap(0);
+    for (const kind of ['gen', 'shader', 'image', 'off'] as const) {
+      const layers: ToyboxLayer[] = [
+        { kind, contentId: null, params: {} },
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'off', contentId: null, params: {} },
+      ];
+      expect(layerInputWanted(layers, g, 0)).toBe(false);
+    }
   });
 });

@@ -250,12 +250,17 @@ export function mouseToVec4(s: MouseState): [number, number, number, number] {
 /** A single iChannel binding for a pass. Discriminated union, all plain JSON
  *  (Yjs-safe). `buffer` samples another pass's output; `self` samples this
  *  pass's PREVIOUS frame (ping-pong feedback); `keyboard` is the stubbed
- *  keyboard texture; `none` binds an inert dummy (the sampler stays defined). */
+ *  keyboard texture; `scene` samples the composited layer below; `layer-input`
+ *  samples the LAYER INPUT feedback tap (Phase 1: the module's prev-frame OUT
+ *  composite — like `self`, a one-frame-late tap that is NOT a same-frame
+ *  dependency, so it's excluded from the pass topo-order); `none` binds an inert
+ *  dummy (the sampler stays defined). */
 export type ShadertoyChannel =
   | { type: 'buffer'; pass: string }
   | { type: 'self' }
   | { type: 'keyboard' }
   | { type: 'scene' }
+  | { type: 'layer-input' }
   | { type: 'none' };
 
 /** One pass of a Shadertoy project. `id` is unique within the project; the
