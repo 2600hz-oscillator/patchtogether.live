@@ -130,11 +130,131 @@ describe('GibRibbon scroll + miss judgement', () => {
   });
 });
 
+// ── Zero-un-hittable invariant (realistic clock-jump + dt-smooth frame loop) ──
+//
+// THE BUG (adversarial playability review of #631): if the per-clock-tick scroll
+// step (scrollPerClock, applied inside clockTick) is NOT strictly smaller than
+// the full hit-window width (2·hitWindow), then at certain accumulator phases a
+// single clock-tick jump moves an event from just inside +hitWindow to just past
+// −hitWindow in ONE observable frame — the |pos| ≤ hitWindow window is never
+// observed and the event is a PHYSICALLY UN-HITTABLE forced miss. With the old
+// tuning (scrollPerClock 0.18 == 2·hitWindow 2·0.09 = 0.18) this hit ~3.2% of
+// events across random phases.
+//
+// This suite reconstructs the REALISTIC frame loop EXACTLY as gibribbon.ts draw()
+// runs it — per frame: accumulate dt → fire any due clockTick (the scrollPerClock
+// JUMP) → then a smooth scroll(scrollPerSecond·dt) → THEN the frame is observable
+// (the player can only see / judgePress the post-frame pos). It sweeps the clock
+// phase (where a clock tick lands relative to the frame cadence) across many
+// offsets AND several frame rates, and asserts that EVERY spawned event has at
+// least one observable frame inside the window. This LOCKS the fix: it fails if
+// anyone ever sets 2·hitWindow ≤ scrollPerClock again.
+describe('GibRibbon zero-un-hittable (realistic clock+dt frame loop, phase sweep)', () => {
+  const INTERNAL_BEAT_S = 0.42; // gibribbon.ts INTERNAL_BEAT_S (autoplay tempo)
+
+  /**
+   * Simulate ONE event spawned at pos 1.0 through the realistic frame loop and
+   * return whether it was EVER observable inside the hit window.
+   *
+   * `phase01` ∈ [0,1) seeds where the clock-tick accumulator sits at spawn
+   * (i.e. the sub-beat phase) — this is the lever that exposed the bug. `fps`
+   * sets the smooth-scroll frame cadence. We drive the SAME pure primitives the
+   * factory uses: scroll(tuning.scrollPerClock) for the clock jump (what
+   * clockTick applies) and scroll(scrollPerSecond·dt) for the smooth motion.
+   */
+  function eventEverInWindow(phase01: number, fps: number): boolean {
+    const dt = 1 / fps;
+    const s = newGame(1);
+    const ev = spawnEvent(s, 'loop'); // pos 1.0
+    let beatAcc = phase01 * INTERNAL_BEAT_S;
+    let t = 0;
+    let everInWindow = false;
+    // Run until the event scrolls off the left (scroll() prunes at pos ≤ −0.4)
+    // or a generous timeout. We read ev.pos BEFORE pruning each frame.
+    while (t < 30) {
+      t += dt;
+      beatAcc += dt;
+      // Clock tick(s) due this frame → the authoritative scrollPerClock JUMP,
+      // applied BEFORE the smooth scroll, exactly as draw() orders it.
+      while (beatAcc >= INTERNAL_BEAT_S) {
+        beatAcc -= INTERNAL_BEAT_S;
+        scroll(s, GIB_TUNING.scrollPerClock);
+      }
+      // Smooth scroll for this frame.
+      scroll(s, GIB_TUNING.scrollPerSecond * dt);
+      // OBSERVABLE pos this frame: what the player sees / judgePress reads. The
+      // event may have been pruned (pos ≤ −0.4) once it's left the ribbon.
+      const live = s.events.find((e) => e.id === ev.id);
+      if (!live) break; // fully scrolled off → no more chances
+      if (Math.abs(live.pos) <= GIB_TUNING.hitWindow) everInWindow = true;
+    }
+    return everInWindow;
+  }
+
+  it('the per-clock-tick step is STRICTLY LESS than the full window width (with margin)', () => {
+    const windowWidth = 2 * GIB_TUNING.hitWindow;
+    // Strictly less is the hard invariant; we also require real margin so phase
+    // jitter / fp rounding can't sneak an event across in one jump.
+    expect(GIB_TUNING.scrollPerClock).toBeLessThan(windowWidth);
+    expect(windowWidth - GIB_TUNING.scrollPerClock).toBeGreaterThanOrEqual(0.02);
+    // The miss line stays BEYOND the window edge (so an event isn't judged a miss
+    // before it has had an in-window frame to be hit).
+    expect(GIB_TUNING.missPos).toBeLessThan(-GIB_TUNING.hitWindow);
+  });
+
+  it('ZERO un-hittable events across a dense phase sweep at multiple frame rates', () => {
+    const PHASES = 400; // dense sub-beat phase sweep
+    for (const fps of [24, 30, 45, 60, 90, 120, 144]) {
+      let unhittable = 0;
+      for (let p = 0; p < PHASES; p++) {
+        const phase01 = p / PHASES;
+        if (!eventEverInWindow(phase01, fps)) unhittable++;
+      }
+      // The whole point: not a low rate, EXACTLY zero. Message names the offender.
+      expect(
+        unhittable,
+        `un-hittable events at ${fps}fps: ${unhittable}/${PHASES} ` +
+          `(step=${GIB_TUNING.scrollPerClock}, window=${2 * GIB_TUNING.hitWindow})`,
+      ).toBe(0);
+    }
+  });
+
+  it('REGRESSION GUARD: the OLD overlapping tuning (step == window) WAS un-hittable', () => {
+    // Prove the simulation actually detects the flaw — re-run the realistic loop
+    // with the pre-fix numbers (scrollPerClock 0.18, hitWindow 0.09 → window
+    // 0.18 == step) and confirm it surfaces un-hittable events. This stops the
+    // zero-result above from being vacuously green (e.g. if the loop were wrong).
+    const OLD_STEP = 0.18;
+    const OLD_WINDOW = 0.09;
+    const dt = 1 / 30;
+    let unhittable = 0;
+    const PHASES = 400;
+    for (let p = 0; p < PHASES; p++) {
+      let pos = 1.0;
+      let beatAcc = (p / PHASES) * INTERNAL_BEAT_S;
+      let t = 0;
+      let everInWindow = false;
+      while (pos > -0.4 && t < 30) {
+        t += dt;
+        beatAcc += dt;
+        while (beatAcc >= INTERNAL_BEAT_S) {
+          beatAcc -= INTERNAL_BEAT_S;
+          pos -= OLD_STEP;
+        }
+        pos -= GIB_TUNING.scrollPerSecond * dt;
+        if (Math.abs(pos) <= OLD_WINDOW) everInWindow = true;
+      }
+      if (!everInWindow) unhittable++;
+    }
+    expect(unhittable).toBeGreaterThan(0); // the old tuning genuinely had a hole
+  });
+});
+
 describe('GibRibbon hit judgement', () => {
   it('a correct in-window button press resolves the matching event as a HIT', () => {
     const s = newGame(1);
     const ev = spawnEvent(s, 'jump'); // jump → button 'b'
-    ev.pos = 0.02; // inside hitWindow (0.09)
+    ev.pos = 0.02; // inside hitWindow (0.11)
     const hit = judgePress(s, EVENT_BUTTON.jump);
     expect(hit).toBe(ev);
     expect(ev.outcome).toBe('hit');

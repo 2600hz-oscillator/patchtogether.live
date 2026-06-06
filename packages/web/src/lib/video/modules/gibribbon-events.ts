@@ -140,7 +140,20 @@ export interface GibTuning {
 export const GIB_TUNING: GibTuning = {
   scrollPerClock: 0.18,
   scrollPerSecond: 0.22,
-  hitWindow: 0.09,
+  // hitWindow MUST keep the full window width (2·hitWindow) STRICTLY GREATER
+  // than scrollPerClock, with margin — otherwise a single clock-tick scroll jump
+  // (scrollPerClock applied in clockTick) can move an event from just inside
+  // +hitWindow to just past −hitWindow in one observable frame, skipping the
+  // |pos| ≤ hitWindow window entirely → a physically un-hittable forced miss
+  // (measured ~3.2% of events across random clock/frame phases when the two were
+  // EQUAL at 0.18 = 2·0.09). At 0.11 the window is 0.22 > 0.18 step (margin 0.04),
+  // so every event lands inside the window on at least one observable frame
+  // regardless of phase — proven by the zero-un-hittable phase-sweep simulation
+  // in gibribbon-events.test.ts. Scroll speeds are unchanged, so obstacle
+  // approach timing, game feel, and the Phase-2 demo calibration are unaffected;
+  // missPos (−0.12) still sits BEYOND the −0.11 window edge so the miss line
+  // remains past the hittable zone.
+  hitWindow: 0.11,
   missPos: -0.12,
   cvSpawnThreshold: 0.42,
   minSpawnIntervalTicks: 2,
