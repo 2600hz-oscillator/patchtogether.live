@@ -18,6 +18,10 @@
 // test.setTimeout (CI's software WebGL starves the main thread — see repo memory
 // ci-swiftshader-video-e2e-timeouts), pinViewport, clickEd(force+noWaitAfter),
 // expect.poll for the async Yjs → reactive settle on node.data reads.
+// Budget bumped to 180s (#633): the node-batch added 12 combine ops to shard 9;
+// under that heavier load the LUMAKEY mouse-drag config test crossed the old
+// 120s ceiling on SwiftShader (it passes in ~11s locally on a real GPU —
+// verified — so this is the load-flake, not a regression).
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, ensureCombineOpen } from './_helpers';
@@ -135,7 +139,7 @@ async function setup(page: Page): Promise<void> {
 
 test.describe('TOYBOX keyer-config + CV refinements', () => {
   test('LUMAKEY: Configure keyer → THRESHOLD changes the node param + output', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -190,7 +194,7 @@ test.describe('TOYBOX keyer-config + CV refinements', () => {
   });
 
   test('CHROMAKEY: Configure keyer shows a COLOR PICKER that drives keyR/keyG/keyB', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -229,7 +233,7 @@ test.describe('TOYBOX keyer-config + CV refinements', () => {
   });
 
   test('non-keyer node (fade) has NO Configure keyer item', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await setup(page);
     const fade = (await findNodeId(page, 'fade'))!;
     await rightClickEd(page, `toybox-gnode-${fade}`);
@@ -239,7 +243,7 @@ test.describe('TOYBOX keyer-config + CV refinements', () => {
   });
 
   test('UNIQUE node names (#58): two LUMAKEY nodes render LUMA 1 / LUMA 2', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await setup(page);
     // Add the two LUMAKEYs ONE AT A TIME, settling each into node.data before the
     // next click: two rapid add-lumakey clicks intermittently land before the
@@ -269,7 +273,7 @@ test.describe('TOYBOX keyer-config + CV refinements', () => {
   });
 
   test('CV REACTIVITY (#60): a newly-contented 3rd layer appears as a CV target with params', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await setup(page);
 
     // Open CV section + count the layer targets visible in IN1's target dropdown.
@@ -313,7 +317,7 @@ test.describe('TOYBOX keyer-config + CV refinements', () => {
   });
 
   test('ORPHAN auto-unmap (#60): deleting a routed combine node clears its CV route', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await setup(page);
 
     // Add a chromakey node + route IN2 → it.

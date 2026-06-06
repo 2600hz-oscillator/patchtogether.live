@@ -15,6 +15,12 @@
 //
 // CI runs e2e on SwiftShader (slow) — generous per-test budgets per the
 // ci-swiftshader-video-e2e-timeouts discipline. DOM/data + coarse-pixel only.
+// Budgets bumped to 180s (#633): the toybox node-batch added 12 combine ops to
+// shard 9, increasing the per-shard load enough that these video-domain renders
+// occasionally crossed the old 90/120s ceilings on SwiftShader UNDER LOAD (they
+// pass in <3s locally on a real GPU — verified — so this is the load-flake, not
+// a regression). Lightening the work / reducing per-shard concurrency is the
+// deeper task-#64/#65 fix; here we just give the loaded shard the headroom.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -126,7 +132,7 @@ const NEW_PRESETS = ['mountain-weather', 'glitch-tv', 'spiral-feedback', 'wave-i
 test.describe('TOYBOX new content — GEN shaders render', () => {
   for (const id of NEW_GENS) {
     test(`GEN "${id}" renders non-black`, async ({ page }) => {
-      test.setTimeout(90_000);
+      test.setTimeout(180_000);
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -145,7 +151,7 @@ test.describe('TOYBOX new content — GEN shaders render', () => {
 test.describe('TOYBOX new content — FRAG shaders transform the layer below', () => {
   for (const id of NEW_FRAGS) {
     test(`FRAG "${id}" transforms the layer below`, async ({ page }) => {
-      test.setTimeout(90_000);
+      test.setTimeout(180_000);
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -202,7 +208,7 @@ test.describe('TOYBOX new content — FRAG shaders transform the layer below', (
 test.describe('TOYBOX new content — presets load + render', () => {
   for (const id of NEW_PRESETS) {
     test(`preset "${id}" loads + renders non-black`, async ({ page }) => {
-      test.setTimeout(120_000);
+      test.setTimeout(180_000);
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });

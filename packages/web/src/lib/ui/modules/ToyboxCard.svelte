@@ -92,6 +92,7 @@
     deleteCombineNode,
     setCombineNodeParam,
     setCombineNodePosition,
+    setCombineViewSize,
     patchToOutput,
     clearCombineEdges,
     resetCombineToDefault,
@@ -775,6 +776,50 @@
     const c = readLiveCombine();
     return isCombineGraph(c) ? (c as ToyboxCombineGraph) : makeDefaultCombineGraph();
   });
+
+  // ── Resizable node-graph view (persisted in node.data.combineView.h) ──────
+  // The graph panel is user-resizable (CSS `resize: vertical` on .graph-wrap).
+  // We persist the dragged height in node.data.combineView so it survives reload
+  // + preset round-trip + multiplayer (mirrors setCombineNodePosition). The SVG
+  // viewBox stays the fixed G_W:G_H coordinate space, so a taller wrap scales the
+  // content (more room for the node map) via preserveAspectRatio.
+  const GRAPH_MIN_H = 120;
+  const GRAPH_MAX_H = 600;
+  const GRAPH_DEFAULT_H = 230;
+  /** The persisted view height (CSS px), defaulting when unset. */
+  let combineViewH = $derived.by<number>(() => {
+    void node; void layersRev;
+    const live = (patch.nodes[id]?.data ?? node?.data) as { combineView?: { h?: number } } | undefined;
+    const h = live?.combineView?.h;
+    return typeof h === 'number' && Number.isFinite(h)
+      ? Math.min(GRAPH_MAX_H, Math.max(GRAPH_MIN_H, h))
+      : GRAPH_DEFAULT_H;
+  });
+  /** Svelte action: observe the .graph-wrap height + persist user resizes
+   *  (debounced). Only writes when the height actually changed beyond a px, so a
+   *  programmatic restore (the derived feeding the inline style) doesn't loop. */
+  function persistResize(el: HTMLElement) {
+    let last = el.getBoundingClientRect().height;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ro = new ResizeObserver(() => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (Math.abs(h - last) < 2) return;
+      last = h;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const clamped = Math.min(GRAPH_MAX_H, Math.max(GRAPH_MIN_H, h));
+        setCombineViewSize(id, clamped);
+        layersRev++; // bump the reactive trigger so combineViewH re-reads the write
+      }, 200);
+    });
+    ro.observe(el);
+    return {
+      destroy() {
+        if (timer) clearTimeout(timer);
+        ro.disconnect();
+      },
+    };
+  }
 
   // Editor interaction state. Default OPEN: the wide 3-column card has a dedicated
   // CENTER column for the combine graph, so it shows by default (no longer a
@@ -2538,8 +2583,15 @@
         </div>
       {/if}
 
-      <!-- Bespoke SVG node editor: boxes + port dots + bezier cables. -->
-      <div class="graph-wrap">
+      <!-- Bespoke SVG node editor: boxes + port dots + bezier cables. The wrap is
+           user-resizable (drag the bottom edge); the height persists in
+           node.data.combineView so it survives reload + preset round-trip. -->
+      <div
+        class="graph-wrap"
+        data-testid="toybox-graph-wrap"
+        style={`height: ${combineViewH}px;`}
+        use:persistResize
+      >
         <svg
           class="graph-svg"
           viewBox={`0 0 ${G_W} ${G_H}`}
@@ -3213,13 +3265,19 @@
     background: #06080c;
     border: 1px solid var(--cable-video);
     border-radius: 3px;
-    overflow: hidden;
+    /* User-resizable height (drag the bottom edge). overflow:auto is required for
+       the native CSS resize grip to appear; the persisted height feeds the inline
+       style so it round-trips. min/max keep the panel usable. */
+    resize: vertical;
+    overflow: auto;
+    min-height: 120px;
+    max-height: 600px;
     margin: 4px 0;
   }
   .graph-svg {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%;
   }
   /* nodes */
   .gnode-rect {
