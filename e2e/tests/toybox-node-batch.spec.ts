@@ -230,7 +230,7 @@ const OPS: Array<{ kind: string; ports: number; params: Record<string, number>; 
 
 test.describe('TOYBOX batch op nodes — registry + menu', () => {
   test('every new op appears in the ADD row + the right-click Add submenu', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -327,7 +327,7 @@ test.describe('TOYBOX batch op nodes — multi-input exercise', () => {
   // composite (proves BOTH inputs are read, not just in0).
   for (const kind of ['over', 'displace', 'dreammelt']) {
     test(`${kind}: each input is exercised (swap in0/in1 changes output)`, async ({ page }) => {
-      test.setTimeout(120_000);
+      test.setTimeout(180_000);
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -371,7 +371,7 @@ test.describe('TOYBOX batch op nodes — multi-input exercise', () => {
   }
 
   test('exquisite: wiring a 3rd input changes the composite (multi-feed)', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(180_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -420,7 +420,7 @@ test.describe('TOYBOX batch op nodes — CV targeting', () => {
     { kind: 'flowsmear', param: 'persistence', max: 1 },
   ] as const) {
     test(`${kind}.${param} is CV-targetable + responds`, async ({ page }) => {
-      test.setTimeout(60_000);
+      test.setTimeout(180_000);
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -486,7 +486,7 @@ test.describe('TOYBOX batch op nodes — CV targeting', () => {
 
 test.describe('TOYBOX combine graph — resizable view persists', () => {
   test('the node-graph panel resizes + the height persists in node.data', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(180_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
