@@ -5,7 +5,7 @@
 // example", "GLITCHES GET RICHES", and "Media Burn" buttons with a single
 // <select> action-menu.
 //
-// This is the adversarial gate: for EACH of the 5 options we select it and
+// This is the adversarial gate: for EACH of the 6 options we select it and
 // assert the patch ACTUALLY loaded (not merely that the option exists):
 //   - Sequenced VCO  → the default voice demo (sequencer→VCO→ADSR→VCA→out;
 //                       5 audio nodes with the well-known vd-* ids).
@@ -13,6 +13,8 @@
 //   - System 35      → 17 non-overlapping moog* cabinet cards.
 //   - Media Burn     → 15 PICTUREBOX tiles + 1 CADILLAC.
 //   - Glitches Get Riches → >5 nodes incl. a PICTUREBOX carrying imageBytes.
+//   - GIBRIBBON (game demo) → 5 nodes (timelorde/macseq/macrooscillator/
+//                       synesthesia/gibribbon) wired audio→video into the game.
 //
 // It also asserts the dropdown is an ACTION menu: after a selection the
 // bound value resets to the placeholder, so the same example re-loads.
@@ -79,12 +81,12 @@ async function assertNoOverlaps(page: Page, nodes: PatchNode[]) {
   }
 }
 
-test('dropdown exposes exactly the 5 examples + the placeholder, and the old standalone buttons are gone', async ({ page }) => {
+test('dropdown exposes exactly the 6 examples + the placeholder, and the old standalone buttons are gone', async ({ page }) => {
   await ready(page);
   const select = page.getByTestId('load-example-select');
   await expect(select).toHaveCount(1);
 
-  // Option labels (placeholder + 5 examples, in order).
+  // Option labels (placeholder + 6 examples, in order).
   const labels = await select.locator('option').allTextContents();
   expect(labels).toEqual([
     'Load example…',
@@ -93,6 +95,7 @@ test('dropdown exposes exactly the 5 examples + the placeholder, and the old sta
     'System 35',
     'Media Burn',
     'Glitches Get Riches',
+    'GIBRIBBON (game demo)',
   ]);
 
   // The retired standalone buttons must no longer be present.
@@ -211,6 +214,69 @@ test('Glitches Get Riches option loads the demo patch with a PICTUREBOX carrying
   expect(pictureboxInfo.length, 'envelope has a PICTUREBOX node').toBeGreaterThan(0);
   expect(pictureboxInfo[0].imageBytesLen, 'PICTUREBOX carries image bytes').toBeGreaterThan(1000);
   expect(pictureboxInfo[0].imageMime).toBe('image/jpeg');
+
+  expect(errors, errors.join('\n')).toEqual([]);
+});
+
+test('GIBRIBBON (game demo) option loads the 5-node audio→video game-driver chain', async ({ page }) => {
+  test.setTimeout(60_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    const text = m.text();
+    // GIBRIBBON fetches the shareware DOOM1.WAD for its character sprites. The
+    // WAD is user-provided + gitignored (ROM-distribution pattern; DOOM ships
+    // it via a setup script, it is NOT bundled into this build), so its absence
+    // is EXPECTED here — the game cleanly falls back to the white line-art
+    // ribbon + stick-figure marine (which is what the non-black-canvas assert
+    // below verifies). Ignore the benign 404 for that resource; everything else
+    // is still a hard failure.
+    if (/Failed to load resource:.*404/i.test(text)) return;
+    errors.push(`console.error: ${text}`);
+  });
+
+  await ready(page);
+  expect((await readNodes(page)).filter((n) => n.type === 'gibribbon').length).toBe(0);
+
+  await page.getByTestId('load-example-select').selectOption('gibribbon-demo');
+
+  // The demo lands its 5 nodes: the audio chain + the GIBRIBBON video card.
+  await expect
+    .poll(async () => (await readNodes(page)).filter((n) => n.type === 'gibribbon').length, { timeout: 15_000 })
+    .toBe(1);
+  const types = (await readNodes(page)).map((n) => n.type).sort();
+  expect(types).toEqual(['gibribbon', 'macrooscillator', 'macseq', 'synesthesia', 'timelorde']);
+
+  // The GIBRIBBON card renders + its game canvas paints a non-black frame
+  // (the ribbon line-art draws even before the WAD sprites resolve). The card
+  // blits the engine's snapshot ImageData into its data-testid="gibribbon-screen"
+  // canvas; sample its pixels and assert at least one non-black pixel.
+  const gibNode = (await readNodes(page)).find((n) => n.type === 'gibribbon')!;
+  await expect(page.locator(`.svelte-flow__node[data-id="${gibNode.id}"]`)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('gibribbon-screen')).toBeVisible({ timeout: 15_000 });
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const canvas = document.querySelector(
+            '[data-testid="gibribbon-screen"]',
+          ) as HTMLCanvasElement | null;
+          if (!canvas || !canvas.width || !canvas.height) return false;
+          const c2d = canvas.getContext('2d');
+          if (!c2d) return false;
+          const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+          for (let i = 0; i < data.length; i += 4) {
+            if (data[i] > 8 || data[i + 1] > 8 || data[i + 2] > 8) return true;
+          }
+          return false;
+        }),
+      { message: 'GIBRIBBON card canvas paints a non-black frame', timeout: 20_000 },
+    )
+    .toBe(true);
+
+  // Action menu: value resets to the placeholder.
+  await expect.poll(async () => page.getByTestId('load-example-select').inputValue()).toBe('');
 
   expect(errors, errors.join('\n')).toEqual([]);
 });
