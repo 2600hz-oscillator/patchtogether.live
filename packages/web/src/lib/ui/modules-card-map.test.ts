@@ -48,7 +48,12 @@ const EXPECTED_NODE_TYPES = [
   'swolevco', 'symbiote', 'synesthesia', 'tides2', 'timelorde', 'treeohvox',
   'unityscalemathematik', 'vca', 'vdelay', 'veils', 'videoMixer', 'videoOut',
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
-  'wavetableVco', 'wavviz',
+  'wavetableVco', 'wavviz', 'writeseq',
+
+
+
+
+
 
 
 

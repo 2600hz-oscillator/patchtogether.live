@@ -297,6 +297,19 @@ const DRIVERS: Record<string, PerPortDriver> = {
     ] },
     note: 'MACSEQ: 4 steps on + isPlaying=1; pitch/gate/modelcv/clock pulse',
   },
+  writeseq: {
+    // Recording step-sequencer. Seed 4 on-steps + isPlaying=1 so the internal
+    // clock plays them and pitch/gate/clock emit (record/pass-through are
+    // additive — the seeded grid alone produces output). midi 60/64/67/72.
+    params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.5 },
+    data: { steps: [
+      { on: true, midi: 60 },
+      { on: true, midi: 64 },
+      { on: true, midi: 67 },
+      { on: true, midi: 72 },
+    ] },
+    note: 'WRITESEQ: 4 steps on + isPlaying=1; pitch/gate/clock pulse',
+  },
   hydrogen: {
     // Toggle every cell on track 0 (BD) so the kick fires on every step.
     params: { isPlaying: 1, bpm: 240, gain: 1 },
