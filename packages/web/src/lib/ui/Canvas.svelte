@@ -333,6 +333,11 @@
         screenToFlowPosition: (p: { x: number; y: number }) =>
           flowApi?.screenToFlowPosition(p) ?? p,
         getInternalNode: (id: string) => flowApi?.getInternalNode(id),
+        // Edge-delete e2e: headless Playwright can't click the thin SVG edge,
+        // so the spec selects it through xyflow's real `selected` mutation,
+        // then presses the real Backspace deleteKey.
+        setEdgeSelected: (id: string, selected: boolean) =>
+          flowApi?.setEdgeSelected(id, selected),
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__spawnAtFlowPos = (
