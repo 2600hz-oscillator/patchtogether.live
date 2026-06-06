@@ -60,6 +60,7 @@ import {
   judgePress,
   drainOutEvents,
   healthToCv,
+  autoplayCv,
   EVENT_BUTTON,
   GIB_TUNING,
   type GibState,
@@ -98,6 +99,9 @@ interface GibParams {
   clock: number; gate: number;
   axis_x: number; axis_y: number;
   btn_a: number; btn_b: number; btn_x: number; btn_y: number;
+  // AUTOPLAY (default ON): run the internal clock so a bare card self-plays.
+  // Set 0 to require an external clock (pure deterministic / musical control).
+  autoplay: number;
 }
 
 const DEFAULTS: GibParams = {
@@ -105,6 +109,7 @@ const DEFAULTS: GibParams = {
   clock: 0, gate: 0,
   axis_x: 0, axis_y: 0,
   btn_a: 0, btn_b: 0, btn_x: 0, btn_y: 0,
+  autoplay: 1,
 };
 
 /** Card-facing handle. The card reads the framebuffer + score via these. */
@@ -193,6 +198,9 @@ export const gibribbonDef: VideoModuleDef = {
     { id: 'cv4', label: 'CV4', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
     { id: 'clock', label: 'CLOCK', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
     { id: 'gate', label: 'GATE', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
+    // AUTOPLAY (default ON): the card self-plays on an internal clock when no
+    // external clock is patched. Turn OFF for pure external/deterministic clock.
+    { id: 'autoplay', label: 'AUTOPLAY', defaultValue: 1, min: 0, max: 1, curve: 'linear' as const },
     { id: 'axis_x', label: 'X', defaultValue: 0, min: -1, max: 1, curve: 'linear' as const },
     { id: 'axis_y', label: 'Y', defaultValue: 0, min: -1, max: 1, curve: 'linear' as const },
     { id: 'btn_a', label: 'A', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
@@ -343,6 +351,21 @@ export const gibribbonDef: VideoModuleDef = {
       a: makeEdgeState(), b: makeEdgeState(), x: makeEdgeState(), y: makeEdgeState(),
     };
     // `gate` is sampled (not edge-judged) — its level just biases spawns.
+
+    // ── Internal clock (AUTOPLAY) ──────────────────────────────────────────
+    // A GibRibbon card with no external clock patched used to sit inert (marine
+    // running in place, ZERO events) because clockTick only fired on an external
+    // `clock` rising edge. A game must self-play on drop, so when no external
+    // clock has ticked recently we run an INTERNAL clock at a default tempo and
+    // synthesize the spawn CV (autoplayCv). An external clock train takes over
+    // instantly (the optional "musical mode") and suppresses the internal one.
+    let extClockEdges = 0; // bumped on every external clock rising edge
+    let extClockEdgesSeen = 0; // last value observed in draw()
+    let extClockIdleS = Infinity; // seconds since the last external clock edge
+    let internalBeatAccS = 0; // autoplay beat-phase accumulator
+    let autoBeat = 0; // autoplay beat counter (drives autoplayCv)
+    const EXTERNAL_CLOCK_TIMEOUT_S = 1.5; // no ext clock this long → autoplay
+    const INTERNAL_BEAT_S = 0.42; // autoplay tempo (~one obstacle beat)
 
     function judgeButton(button: GibButton): void {
       const hit = judgePress(state, button);
@@ -594,6 +617,29 @@ export const gibribbonDef: VideoModuleDef = {
         lastDrawTimeS = tNow;
         animTick += 1;
 
+        // AUTOPLAY: drive an INTERNAL clock when no external clock is patched, so
+        // a freshly-dropped card actually plays (spawns events) instead of just
+        // scrolling an empty ribbon. An external clock train (seen within
+        // EXTERNAL_CLOCK_TIMEOUT_S) owns the beat and suppresses this.
+        if (extClockEdges !== extClockEdgesSeen) {
+          extClockEdgesSeen = extClockEdges;
+          extClockIdleS = 0;
+        } else {
+          extClockIdleS += dt;
+        }
+        const externalClockActive = extClockIdleS < EXTERNAL_CLOCK_TIMEOUT_S;
+        if (params.autoplay > 0.5 && !externalClockActive && dt > 0 && state.health !== 'dead') {
+          internalBeatAccS += dt;
+          // Guard against a long-hidden-tab dt spike flooding ticks.
+          let guard = 8;
+          while (internalBeatAccS >= INTERNAL_BEAT_S && guard-- > 0) {
+            internalBeatAccS -= INTERNAL_BEAT_S;
+            autoBeat += 1;
+            clockTick(state, autoplayCv(autoBeat), true);
+          }
+          drainGameEvents();
+        }
+
         // Smooth scroll between clock beats (the clock pulse is the
         // authoritative beat; this just interpolates motion).
         if (dt > 0 && state.health !== 'dead') {
@@ -658,6 +704,7 @@ export const gibribbonDef: VideoModuleDef = {
         if (paramId === 'clock') {
           const ev = detectEdge(clockEdge, value);
           if (ev && ev.pressed) {
+            extClockEdges += 1; // mark MUSICAL mode → suppresses the internal clock
             const cv = [params.cv1, params.cv2, params.cv3, params.cv4];
             clockTick(state, cv, params.gate > 0.5);
             drainGameEvents();
