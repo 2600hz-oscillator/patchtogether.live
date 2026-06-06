@@ -197,6 +197,30 @@ test('gibribbon: card mounts cleanly + 640×360 canvas renders the white ribbon'
   expect(real).toEqual([]);
 });
 
+test('gibribbon: AUTOPLAY — a bare card (no clock/CV patched) self-plays', async ({ page }) => {
+  // REGRESSION: a freshly-dropped GibRibbon card used to sit inert — marine
+  // running in place, ZERO events — because clockTick only fired on an external
+  // clock edge. The internal autoplay clock must drive the game with nothing
+  // patched. With no button presses the spawned events MISS → the health ladder
+  // degrades from the initial 'healthy', proving the game is actually running.
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
+  ]);
+  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+
+  const health0 = await readStr(page, 'g', 'health'); // 'healthy' at start
+  // No setParam at all — the card must self-play on its internal clock and,
+  // unpressed, degrade off the starting rung within a few seconds.
+  await expect
+    .poll(async () => (await readStr(page, 'g', 'health')) !== health0, {
+      timeout: 15_000,
+      intervals: [500, 1000, 1500, 2000],
+    })
+    .toBe(true);
+});
+
 test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it (score up)', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
@@ -204,6 +228,10 @@ test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it 
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
   await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+
+  // Deterministic control: turn OFF autoplay (the internal self-play clock) so
+  // this test owns every spawn via the external clock below.
+  await setParam(page, 'g', 'autoplay', 0);
 
   expect(await readNum(page, 'g', 'score')).toBe(0);
 
@@ -259,6 +287,10 @@ test('gibribbon: a missed event degrades the marine (health drops below healthy)
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
   await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+
+  // Deterministic control: OFF autoplay so only the controlled miss below drives
+  // the health ladder.
+  await setParam(page, 'g', 'autoplay', 0);
 
   expect(await readStr(page, 'g', 'health')).toBe('healthy');
 
