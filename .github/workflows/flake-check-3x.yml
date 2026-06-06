@@ -1,0 +1,419 @@
+# flake-check-3x — run ONE selected test 3× on CI to PROVE it is stable before
+# re-enabling it (a re-enable / un-quarantine candidate), or to reproduce a flake
+# a fix branch claims to have killed.
+#
+# WHY this exists: a single green CI run proves pass/fail; it does NOT prove
+# STABILITY. The repo standard (CLAUDE.md "Flake-check NEW tests 3×") requires a
+# test to pass 3× in a row with NO flake before it is trusted — and a flake that
+# only reproduces under CI load (SwiftShader, relay contention, shard pressure)
+# can't be caught on a local Mac. This workflow runs ONE test 3× on the SAME
+# infra ci.yml's e2e/collab lanes use, with NO retries, so a flake SHOWS rather
+# than being silently rescued by a retry.
+#
+# It runs on whatever ref it is dispatched against — a re-enable campaign
+# dispatches it against a fix branch:
+#   gh workflow run flake-check-3x.yml --ref <branch> -f suite=<suite> -f grep="<sel>"
+#
+# suite  → which lane's setup + runner to reproduce (e2e | collab | behavioral | unit | vrt)
+# grep   → a test-title substring (or, for unit, a spec path) that selects ONE test
+#
+# Mechanism per suite:
+#   e2e/collab/behavioral/vrt → playwright --repeat-each=3 --workers=1 --retries=0
+#       (--repeat-each runs the selected test 3×; --retries=0 means a single flake
+#        in any of the 3 turns the job RED — exactly the no-flake-tolerance bar).
+#   unit → vitest has no --repeat-each, so a bash `for` loop runs it 3× and
+#       `exit 1`s on the first failing iteration (a flake can't hide behind a
+#       later green run).
+#
+# The dsp-build + build-web prep jobs are byte-copied from the proven
+# e2e-flake-purge.yml template (which mirrors ci.yml) so they are already
+# CI-valid. They are gated OFF for the unit suite (which needs neither the DSP
+# dist nor the preview bundle), so a unit flake-check is a single fast job.
+name: flake-check-3x
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Which test lane to reproduce (selects setup + runner)'
+        required: true
+        type: choice
+        options:
+          - e2e
+          - collab
+          - behavioral
+          - unit
+          - vrt
+      grep:
+        description: 'Test-title substring (or, for unit, a spec path) selecting ONE test'
+        required: true
+        type: string
+
+# Don't let two flake-checks on the same ref+suite collide.
+concurrency:
+  group: flake-check-3x-${{ github.ref }}-${{ inputs.suite }}
+  cancel-in-progress: true
+
+jobs:
+  # --- DSP worklets, once (verbatim from e2e-flake-purge.yml dsp-build) ---
+  # Skipped for the `unit` suite (unit needs no DSP dist).
+  dsp-build:
+    name: dsp-build (Faust worklets, once)
+    if: inputs.suite != 'unit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Cache DSP dist
+        id: cache-dsp-dist
+        uses: actions/cache@v4
+        with:
+          path: packages/dsp/dist
+          key: ${{ runner.os }}-dsp-dist-${{ hashFiles('packages/dsp/src/**', 'packages/dsp/scripts/**', 'packages/dsp/package.json', '.flox/env/manifest.toml') }}
+      - name: Install workspace deps
+        run: flox activate -- task install
+      - name: Build DSP worklets (Faust + esbuild)
+        run: flox activate -- task dsp:build
+      - name: Upload DSP dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+          include-hidden-files: true
+          retention-days: 1
+
+  # --- Preview bundle, once (verbatim from e2e-flake-purge.yml build-web) ---
+  # Skipped for the `unit` suite (unit needs no preview bundle).
+  build-web:
+    name: build-web (preview bundle, once)
+    if: inputs.suite != 'unit'
+    needs: dsp-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+      - name: Install workspace deps
+        run: flox activate -- task install
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
+      - name: Build web (preview bundle, test hooks enabled)
+        env:
+          VITE_E2E_HOOKS: '1'
+        run: flox activate -- task build:web
+      - name: Upload web preview bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+          include-hidden-files: true
+          retention-days: 1
+
+  # -----------------------------------------------------------------------
+  # flake-check — run the ONE selected test 3× on the chosen lane's infra with
+  # NO retries (playwright) / a bail-on-first-fail loop (unit). A flake in ANY
+  # of the 3 turns the job RED. The DB service + DSP/preview artifacts +
+  # COLLAB_JOB/E2E_USE_PREVIEW env reproduce ci.yml's e2e/collab setup so the
+  # result is gate-faithful. Only the step matching `inputs.suite` runs (via
+  # per-step `if:`), so this one job handles all five suites.
+  #
+  # For `unit` this job needs neither the DSP dist nor the preview bundle, so it
+  # has no `needs:` on the (skipped) prep jobs — `if: always()` + per-need result
+  # checks would otherwise be required. Instead the prep jobs are listed in
+  # `needs:` with `if: always()` here so the job still runs when they're skipped
+  # (unit) AND waits for them when they run (e2e/collab/behavioral/vrt).
+  # -----------------------------------------------------------------------
+  flake-check:
+    name: flake-check 3x (${{ inputs.suite }})
+    needs: [dsp-build, build-web]
+    # Run even when the prep jobs are SKIPPED (unit suite). Bail if a prep job
+    # that DID run failed (e2e/collab/behavioral/vrt depend on its artifacts).
+    if: |
+      always()
+      && (needs.dsp-build.result == 'success' || needs.dsp-build.result == 'skipped')
+      && (needs.build-web.result == 'success' || needs.build-web.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    services:
+      # Postgres for e2e/collab/behavioral/vrt (the persistence layer + the
+      # @collab relay). Idle/unused for the `unit` suite. Cheap to leave up.
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      # collab opts the quarantined @collab specs back IN + runs against preview;
+      # harmless for the other suites (their grep won't hit @collab-gated tests).
+      COLLAB_JOB: '1'
+      E2E_USE_PREVIEW: '1'
+
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      # Unit needs only `task install`; the Playwright suites need Chromium too
+      # (`task setup` = install + playwright install). Run the cheaper one for
+      # unit so a unit flake-check stays fast.
+      - name: Install workspace deps (unit)
+        if: inputs.suite == 'unit'
+        run: flox activate -- task install
+
+      - name: Install workspace deps + Playwright Chromium (e2e/collab/behavioral/vrt)
+        if: inputs.suite != 'unit'
+        run: flox activate -- task setup
+
+      # --- Playwright-suite-only prep (skipped for unit) ---
+      - name: Download DSP dist artifact
+        if: inputs.suite != 'unit'
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
+      - name: Download web preview bundle artifact
+        if: inputs.suite != 'unit'
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+
+      - name: Apply DB schema
+        if: inputs.suite != 'unit'
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Emit registry manifest for E2E
+        if: inputs.suite != 'unit'
+        run: flox activate -- task test:emit-manifest
+
+      # ===================================================================
+      # The 3× run — exactly ONE of the steps below executes (per-suite `if:`).
+      # Each FAILS the job if any of the 3 repetitions fails, and echoes a clear
+      # PASS/FAIL summary line.
+      # ===================================================================
+
+      # e2e — repeat-each=3, 1 worker, NO retries → a single flake turns it red.
+      # The grep input is passed via env (not interpolated into the shell) to
+      # avoid script-injection on an untrusted workflow_dispatch input.
+      - name: Run e2e test 3x (no retries)
+        if: inputs.suite == 'e2e'
+        env:
+          GREP: ${{ inputs.grep }}
+        run: |
+          set -o pipefail
+          if flox activate -- npx --workspace e2e playwright test \
+              --grep "$GREP" \
+              --repeat-each=3 \
+              --workers=1 \
+              --retries=0 \
+              --reporter=list; then
+            echo "FLAKE-CHECK 3x: PASS for e2e $GREP"
+          else
+            echo "FLAKE-CHECK 3x: FAIL for e2e $GREP"
+            exit 1
+          fi
+
+      # collab — same, with COLLAB_JOB=1 + E2E_USE_PREVIEW=1 (set in job env) so
+      # the @collab-gated specs run, on a single serial worker.
+      - name: Run collab test 3x (no retries)
+        if: inputs.suite == 'collab'
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+          GREP: ${{ inputs.grep }}
+        run: |
+          set -o pipefail
+          if flox activate -- npx --workspace e2e playwright test \
+              --grep "$GREP" \
+              --repeat-each=3 \
+              --workers=1 \
+              --retries=0 \
+              --reporter=list; then
+            echo "FLAKE-CHECK 3x: PASS for collab $GREP"
+          else
+            echo "FLAKE-CHECK 3x: FAIL for collab $GREP"
+            exit 1
+          fi
+
+      # behavioral — scope to the behavioral sweep spec, then grep the one test.
+      - name: Run behavioral test 3x (no retries)
+        if: inputs.suite == 'behavioral'
+        env:
+          GREP: ${{ inputs.grep }}
+        run: |
+          set -o pipefail
+          if flox activate -- npx --workspace e2e playwright test \
+              per-module-per-port-behavioral \
+              --grep "$GREP" \
+              --repeat-each=3 \
+              --workers=1 \
+              --retries=0 \
+              --reporter=list; then
+            echo "FLAKE-CHECK 3x: PASS for behavioral $GREP"
+          else
+            echo "FLAKE-CHECK 3x: FAIL for behavioral $GREP"
+            exit 1
+          fi
+
+      # vrt — scope to the vrt spec set, then grep the one card.
+      - name: Run vrt test 3x (no retries)
+        if: inputs.suite == 'vrt'
+        env:
+          GREP: ${{ inputs.grep }}
+        run: |
+          set -o pipefail
+          if flox activate -- npx --workspace e2e playwright test \
+              vrt \
+              --grep "$GREP" \
+              --repeat-each=3 \
+              --workers=1 \
+              --retries=0 \
+              --reporter=list; then
+            echo "FLAKE-CHECK 3x: PASS for vrt $GREP"
+          else
+            echo "FLAKE-CHECK 3x: FAIL for vrt $GREP"
+            exit 1
+          fi
+
+      # unit — vitest has no --repeat-each, so loop 3× and bail on the first
+      # failing iteration. The selected test may live in any unit workspace
+      # (web|dsp|server), so we run all three with --passWithNoTests: the
+      # workspace(s) containing the test run it; the others pass-with-no-tests
+      # (so a non-match doesn't false-fail). If `grep` looks like a spec path
+      # (has a slash or a .ts extension) it is passed as vitest's positional
+      # FILENAME filter; otherwise it is passed as the `-t` TEST-TITLE filter —
+      # covering both selector forms the input accepts. A real test failure in
+      # its own workspace exits vitest non-zero → the loop exits 1.
+      - name: Run unit test 3x (loop, bail on first fail)
+        if: inputs.suite == 'unit'
+        env:
+          GREP: ${{ inputs.grep }}
+        run: |
+          set -u
+          # Selector form: path-like → positional file filter; else -t title filter.
+          if printf '%s' "$GREP" | grep -qE '/|\.ts$'; then
+            SELECTOR=(--passWithNoTests "$GREP")
+            echo "[flake-check] unit selector: FILE filter '$GREP'"
+          else
+            SELECTOR=(--passWithNoTests -t "$GREP")
+            echo "[flake-check] unit selector: TITLE filter -t '$GREP'"
+          fi
+          run_ws() {
+            # $1=workspace dir, $2=config flag (may be empty)
+            local dir="$1" cfg="$2"
+            if [ -n "$cfg" ]; then
+              flox activate -- npm exec -w "$dir" -- vitest run --config "$cfg" "${SELECTOR[@]}"
+            else
+              flox activate -- npm exec -w "$dir" -- vitest run "${SELECTOR[@]}"
+            fi
+          }
+          for i in 1 2 3; do
+            echo "::group::flake-check unit run $i/3"
+            run_ws packages/web    vitest.config.ts || { echo "FLAKE-CHECK 3x: FAIL for unit $GREP (web, run $i/3)"; exit 1; }
+            run_ws packages/dsp    vitest.config.ts || { echo "FLAKE-CHECK 3x: FAIL for unit $GREP (dsp, run $i/3)"; exit 1; }
+            run_ws packages/server ''               || { echo "FLAKE-CHECK 3x: FAIL for unit $GREP (server, run $i/3)"; exit 1; }
+            echo "::endgroup::"
+          done
+          echo "FLAKE-CHECK 3x: PASS for unit $GREP"
+
+      - name: Upload Playwright test-results on failure
+        if: failure() && inputs.suite != 'unit'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-check-test-results-${{ inputs.suite }}
+          path: e2e/test-results
+          retention-days: 14
