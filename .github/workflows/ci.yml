@@ -1282,13 +1282,16 @@ jobs:
   ci:
     name: typecheck + unit + ART + E2E
     if: always()
-    # collab is now a REAL GATE (re-added 2026-06-03): the @collab relay flake
-    # was root-caused + fixed (in-card-title networkidle hang #558; doom-4context
-    # graceful resource-skip) and the job is fast (~6.5 min — it consumes the
-    # prebuilt web bundle #557), so depending on it no longer risks the 40-min
-    # wait #555 removed. merge-reports stays OUT (cosmetic, never gated).
-    # behavioral stays OUT too (still informational — see note in the check).
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, collab]
+    # collab is TEMPORARILY UN-GATED (2026-06-06): it was re-added to this gate
+    # in #559 on the basis of ad-hoc de-flaking + a 3x re-run, but it never went
+    # through the systematic 5x flake-purge the e2e/behavioral lanes did (task
+    # #69). It kept blocking unrelated PRs on residual @collab relay flake. It is
+    # now INFORMATIONAL (runs on every PR, visible, but does NOT block) until the
+    # collab-flake-purge.yml 5x run identifies + quarantines the flaky @collab
+    # tests — then it gets re-gated as a RELIABLE check. Tracked by task #69.
+    # collab is intentionally removed from `needs:` so the umbrella does not even
+    # WAIT on it (keeps merge latency low). merge-reports/behavioral notes below.
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1303,7 +1306,6 @@ jobs:
           ART: ${{ needs.art.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
-          COLLAB: ${{ needs.collab.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
@@ -1313,9 +1315,11 @@ jobs:
           echo "art:           $ART"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
-          echo "collab:        $COLLAB"
+          echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
-          # shards succeeded. `collab` is GATED (checked below). `behavioral` is
+          # shards succeeded. `collab` is TEMPORARILY UN-GATED (informational —
+          # pending the 5x collab-flake-purge; see the needs: note above). It is
+          # deliberately NOT in the failing condition below. `behavioral` is
           # INFORMATIONAL again — gating it on a single clean run (#562) was
           # premature; it flaked on moog911 on the very next PR. Re-gate only
           # after a proper 3x flake-purge. `merge-reports` also stays OUT.
@@ -1349,9 +1353,9 @@ jobs:
              || "$BUILD_WEB" != "success" \
              || "$ART" != "success" \
              || "$BUILD" != "success" \
-             || "$E2E" != "success" \
-             || "$COLLAB" != "success" ]]; then
-          # collab is GATED; behavioral is INFORMATIONAL again (un-gated — the
+             || "$E2E" != "success" ]]; then
+          # collab is UN-GATED (informational, task #69); behavioral is also
+          # INFORMATIONAL (un-gated — the
           # 1x gate flaked on moog911 on the next PR). Do NOT re-add $BEHAVIORAL
           # here until the lane is verified 3x-clean (proper flake-purge).
             echo "::error::One or more required CI jobs failed."
