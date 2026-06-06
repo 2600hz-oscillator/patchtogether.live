@@ -105,7 +105,7 @@ import {
   type CvInputs,
 } from '$lib/video/toybox-cv-routes';
 import { parseObj } from '$lib/video/obj-parse';
-import { resolveRenderOrder } from '$lib/video/toybox-surface';
+import { resolveRenderOrder, layerInputWanted } from '$lib/video/toybox-surface';
 import {
   wrapShadertoySource,
   isShadertoySource,
@@ -1192,8 +1192,20 @@ export const toyboxDef: VideoModuleDef = {
      * texture, or -1 = matcap-only. It is guaranteed (by resolveRenderOrder) to
      * be in-range, non-self, non-cyclic, and rendered BEFORE this layer this
      * frame — so binding it can never create a WebGL feedback loop.
+     *
+     * `wantLayerIn` (LAYER INPUT, material.surfaceSource === LAYER_INPUT_SOURCE +
+     * a wired src.in0 edge): bind the PREV-FRAME OUT composite (outTexture, still
+     * holding last frame's result during STEP 1) as the surface texture instead
+     * of a sibling layer FBO. A stable 1-frame feedback tap — never the live,
+     * still-being-computed OUT.
      */
-    function renderObjLayer(i: number, layer: ToyboxLayer, time: number, safeSource: number): boolean {
+    function renderObjLayer(
+      i: number,
+      layer: ToyboxLayer,
+      time: number,
+      safeSource: number,
+      wantLayerIn: boolean,
+    ): boolean {
       const mat: ToyboxObjMaterial = layer.material ?? makeDefaultObjMaterial();
       // A custom disk-loaded OBJ (layer.objSrc) takes precedence over the bundled
       // material.modelId: parse THAT directly under a synthetic mesh-cache key.
@@ -1250,9 +1262,18 @@ export const toyboxDef: VideoModuleDef = {
       // TEXTURE0 is safe: combineStep re-binds TEXTURE0/1 + resets
       // activeTexture(TEXTURE0), so the unit state self-heals before the
       // fullscreen-quad combine passes.
-      const useSurf = safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i;
+      // LAYER INPUT takes precedence over a sibling-layer texmap: bind the retained
+      // prev-frame OUT (outTexture) as the surface texture. Safe vs a WebGL feedback
+      // loop because STEP 3 hasn't overwritten outTexture yet (it holds LAST frame's
+      // OUT), and we're writing into THIS layer's FBO (a different target).
+      const useLayerIn = wantLayerIn;
+      const useSurf =
+        useLayerIn || (safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i);
       g.activeTexture(g.TEXTURE0);
-      g.bindTexture(g.TEXTURE_2D, useSurf ? layerTargets[safeSource]!.texture : dummyTex);
+      g.bindTexture(
+        g.TEXTURE_2D,
+        useLayerIn ? outTexture : useSurf ? layerTargets[safeSource]!.texture : dummyTex,
+      );
       if (uSurface) g.uniform1i(uSurface, 0);
       if (uUseSurface) g.uniform1i(uUseSurface, useSurf ? 1 : 0);
       if (uSurfaceMix) {
@@ -1303,6 +1324,11 @@ export const toyboxDef: VideoModuleDef = {
      *
      * `frame` carries iFrame/iMouse/dt; `safeSource` is the resolved
      * below/texmap layer index (or -1) for a FRAG/scene-input layer.
+     *
+     * `wantLayerIn` (LAYER INPUT, sceneInputSource === 'layer-input' + a wired
+     * src.in0 edge): override the scene input (iChannel0 / a project's 'scene'
+     * channel) with the retained PREV-FRAME OUT (outTexture) instead of the
+     * below-layer FBO — a stable 1-frame feedback tap.
      */
     function renderShaderLayer(
       i: number,
@@ -1310,11 +1336,15 @@ export const toyboxDef: VideoModuleDef = {
       time: number,
       frame: VideoFrameContext,
       safeSource: number,
+      wantLayerIn: boolean,
     ): boolean {
       const g = gl;
       const target = layerTargets[i]!;
-      const sceneTex =
-        safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i
+      // LAYER INPUT overrides the below-layer scene source with the retained
+      // prev-frame OUT (safe: STEP 3 hasn't overwritten outTexture yet).
+      const sceneTex = wantLayerIn
+        ? outTexture
+        : safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i
           ? layerTargets[safeSource]!.texture
           : null;
 
@@ -1327,6 +1357,9 @@ export const toyboxDef: VideoModuleDef = {
           time,
           frame,
           sceneTex,
+          // LAYER INPUT channel ('layer-input'): always the retained prev-frame
+          // OUT (outTexture), independent of the scene override above.
+          outTexture,
         );
       }
 
@@ -1482,14 +1515,25 @@ export const toyboxDef: VideoModuleDef = {
      * frame degrades to the file/camera path with no patched-input lookup,
      * rather than crashing. The live draw() always passes it.
      */
-    function renderVideoLayer(i: number, layer: ToyboxLayer, frame?: VideoFrameContext): boolean {
+    function renderVideoLayer(
+      i: number,
+      layer: ToyboxLayer,
+      frame?: VideoFrameContext,
+      wantLayerIn = false,
+    ): boolean {
       const g = gl;
       const target = layerTargets[i]!;
 
       // Resolve the source texture for the layer's videoSource.
       let srcTex: WebGLTexture | null = null;
       const source = layer.videoSource;
-      if (source === 'inA' || source === 'inB') {
+      if (wantLayerIn) {
+        // LAYER INPUT (videoSource === 'layerIn' + a wired src.in0 edge): bind the
+        // retained prev-frame OUT (outTexture, still LAST frame's during STEP 1) —
+        // a stable 1-frame feedback tap. A patched feed is assumed live each frame,
+        // so layerFresh[i] stays true (default).
+        srcTex = outTexture;
+      } else if (source === 'inA' || source === 'inB') {
         // PATCHED FEED: bind the texture on this node's video input port. Null
         // (no cable / source has no texture) → idle pattern (uHasInput=0). A
         // patched feed is assumed live every engine frame (its upstream owns the
@@ -1529,25 +1573,32 @@ export const toyboxDef: VideoModuleDef = {
 
     /** Render layer `i` into its FBO; returns whether it produced content.
      *  `safeSource` is the per-frame texmap source index for an OBJ layer (or
-     *  -1; ignored for non-OBJ layers). */
+     *  -1; ignored for non-OBJ layers). `combine` is the live combine graph, used
+     *  to resolve the LAYER INPUT feedback tap (layerInputWanted) per layer. */
     function renderLayer(
       i: number,
       layers: ToyboxLayer[],
       time: number,
       safeSource: number,
       frame: VideoFrameContext,
+      combine: ToyboxCombineGraph | ToyboxCombine,
     ): boolean {
       const layer = layers[i];
       if (!layer) {
         clearLayer(i);
         return false;
       }
+      // LAYER INPUT: this layer's texture source is the prev-frame OUT tap (when
+      // the sentinel is selected AND the layer's SOURCE node has a wired in0
+      // edge). outTexture STILL holds the previous frame's OUT here (STEP 3 only
+      // overwrites it later), so binding it is a stable 1-frame feedback tap.
+      const wantLayerIn = layerInputWanted(layers, combine, i);
       let drew = false;
-      if (layer.kind === 'obj') drew = renderObjLayer(i, layer, time, safeSource);
+      if (layer.kind === 'obj') drew = renderObjLayer(i, layer, time, safeSource, wantLayerIn);
       else if (layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag')
-        drew = renderShaderLayer(i, layer, time, frame, safeSource);
+        drew = renderShaderLayer(i, layer, time, frame, safeSource, wantLayerIn);
       else if (layer.kind === 'image') drew = renderImageLayer(i, layer);
-      else if (layer.kind === 'video') drew = renderVideoLayer(i, layer, frame);
+      else if (layer.kind === 'video') drew = renderVideoLayer(i, layer, frame, wantLayerIn);
       // 'off' → nothing.
       if (!drew) clearLayer(i);
       return drew;
@@ -1980,11 +2031,19 @@ export const toyboxDef: VideoModuleDef = {
         // M2b: default every layer FRESH each frame; renderVideoLayer pins a
         // file/camera VIDEO layer to its uploader's new-frame signal below.
         layerFresh.fill(true);
+        // Read the live combine ONCE before STEP 1: a layer can source its
+        // texture from the LAYER INPUT feedback tap (prev-frame OUT), which is
+        // resolved against the live graph (layerInputWanted). It is a pure getter
+        // (no GL side-effects), so reading it here (vs only in STEP 2) is free.
+        // CRITICAL ORDERING: STEP 1 runs BEFORE STEP 3 overwrites outTexture, so
+        // binding outTexture during STEP 1 samples the PREVIOUS frame's OUT — the
+        // stable 1-frame tap, never the live still-being-computed result.
+        const combine = liveCombineRaw();
         const { order, safeSource } = resolveRenderOrder(layers);
-        for (const i of order) produced[i] = renderLayer(i, layers, time, safeSource[i] ?? -1, frame);
+        for (const i of order)
+          produced[i] = renderLayer(i, layers, time, safeSource[i] ?? -1, frame, combine);
 
         // 2) Combine: evaluate the live combine (Phase-4 GRAPH or legacy chain).
-        const combine = liveCombineRaw();
         const accTex = isCombineGraph(combine)
           ? evalGraph(combine as ToyboxCombineGraph, produced)
           : evalLinear(combine as ToyboxCombine, produced);
@@ -2980,6 +3039,7 @@ interface ShadertoyRuntime {
     time: number,
     frame: VideoFrameContext,
     sceneTex: WebGLTexture | null,
+    layerInTex?: WebGLTexture | null,
   ): boolean;
   dispose(): void;
 }
@@ -3080,12 +3140,15 @@ function makeShadertoyRuntime(
    *   - self:   THIS pass's PREVIOUS frame (back).
    *   - keyboard: the 1×1 stub.
    *   - scene:  the composited layer below (or dummy when absent).
+   *   - layer-input: the LAYER INPUT feedback tap (Phase 1: prev-frame OUT, a
+   *           one-frame-late tap like `self`; dummy when absent).
    *   - none:   inert dummy. */
   function channelTexture(
     ch: ReturnType<typeof resolveChannels>[number],
     selfPass: CompiledStPass,
     byId: Map<string, CompiledStPass>,
     sceneTex: WebGLTexture | null,
+    layerInTex: WebGLTexture | null,
   ): WebGLTexture {
     switch (ch.type) {
       case 'buffer': {
@@ -3098,6 +3161,8 @@ function makeShadertoyRuntime(
         return keyboardTex;
       case 'scene':
         return sceneTex ?? dummyTex;
+      case 'layer-input':
+        return layerInTex ?? dummyTex;
       default:
         return dummyTex;
     }
@@ -3110,6 +3175,7 @@ function makeShadertoyRuntime(
     time: number,
     frame: VideoFrameContext,
     sceneTex: WebGLTexture | null,
+    layerInTex: WebGLTexture | null = null,
   ): boolean {
     // (Re)compile on first sight or when the source signature changes.
     let cp = compiled.get(layerIndex);
@@ -3150,7 +3216,7 @@ function makeShadertoyRuntime(
       if (p.u.uDate) gl.uniform4f(p.u.uDate, date.getFullYear(), date.getMonth(), date.getDate(), dateSecs);
       // Channels → textures + iChannelResolution.
       for (let s = 0; s < SHADERTOY_CHANNELS; s++) {
-        const tex = channelTexture(p.channels[s]!, p, cp.passes, sceneTex);
+        const tex = channelTexture(p.channels[s]!, p, cp.passes, sceneTex, layerInTex);
         gl.activeTexture(gl.TEXTURE0 + s);
         gl.bindTexture(gl.TEXTURE_2D, tex);
         if (p.u.uChannel[s]) gl.uniform1i(p.u.uChannel[s]!, s);

@@ -34,6 +34,8 @@ import {
   inPortsFor,
   hasOutPort,
   isCombineGraph,
+  isLayerInputEdge,
+  LAYER_INPUT_SOURCE,
   makeDefaultCombineGraph,
   makeOpNode,
   opSlotXY,
@@ -109,8 +111,10 @@ describe('isCombineGraph', () => {
 });
 
 describe('ports', () => {
-  it('sources have no input port + have an output', () => {
-    expect(inPortsFor('source')).toEqual([]);
+  it('sources have a single in0 (LAYER-INPUT tap) port + still have an output', () => {
+    // SOURCE nodes gained an in0 input port for the LAYER INPUT feedback tap.
+    // hasOutPort stays true — a source still EMITS its layer FBO downstream.
+    expect(inPortsFor('source')).toEqual(['in0']);
     expect(hasOutPort('source')).toBe(true);
   });
   it('the classic blend ops have in0 + in1 + an output; FEEDBACK has only in0', () => {
@@ -326,6 +330,77 @@ describe('validateConnect', () => {
     const out = outputNode(g)!;
     // OUTPUT only has in0 — wiring to in1 is invalid.
     expect(validateConnect(g, 'src0', out.id, 'in1').error).toBe('bad-in-port');
+  });
+});
+
+describe('LAYER INPUT (feedback-tap) edges', () => {
+  it('LAYER_INPUT_SOURCE is a distinct negative sentinel (-2)', () => {
+    // Distinct from -1 (MATCAP / none) and 0..3 (a sibling layer index).
+    expect(LAYER_INPUT_SOURCE).toBe(-2);
+    expect(LAYER_INPUT_SOURCE).toBeLessThan(-1);
+  });
+
+  it('isLayerInputEdge: only an in0 wire into a SOURCE node is a tap', () => {
+    const g = defGraph();
+    // src0 IS a source — in0 into it is a tap.
+    expect(isLayerInputEdge(g, 'src0', 'in0')).toBe(true);
+    // in1 (sources have no in1) is not a tap; an op/output destination is not.
+    expect(isLayerInputEdge(g, 'src0', 'in1')).toBe(false);
+    expect(isLayerInputEdge(g, 'op1', 'in0')).toBe(false);
+    expect(isLayerInputEdge(g, outputNode(g)!.id, 'in0')).toBe(false);
+    expect(isLayerInputEdge(g, 'nope', 'in0')).toBe(false);
+  });
+
+  it('validateConnect ACCEPTS OUT -> src0.in0 even though it is a graph cycle', () => {
+    // Default graph: OUTPUT.in0 is fed by the last fade. Wiring the OUTPUT's
+    // FEEDER's output back into a source closes a loop — but a SOURCE-in0 tap is
+    // exempt from cycle rejection (it's a 1-frame feedback tap resolved at render).
+    const g = defGraph();
+    // Use the OUTPUT's upstream node (op3 in the default chain) as the "from"; it
+    // reaches the output, and wiring it into src0 would normally be a cycle since
+    // src0 -> ... -> that node already exists. Find a node that reaches src0.
+    // Simplest: src0 -> op1 -> ... ; wiring op1's output into src0.in0 is a cycle.
+    const r = validateConnect(g, 'op1', 'src0', 'in0');
+    expect(r.ok).toBe(true);
+    expect(r.edge).toMatchObject({ from: 'op1', to: 'src0', toPort: 'in0' });
+  });
+
+  it('a NON-source destination still rejects a cycle exactly as before', () => {
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'a', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'b', kind: 'fade', x: 0, y: 0, params: {} },
+      ],
+      edges: [{ id: 'e1', from: 'a', to: 'b', toPort: 'in0' }],
+    };
+    // b -> a closes a loop; a is not a source → still rejected.
+    expect(validateConnect(g, 'b', 'a', 'in0').error).toBe('cycle');
+  });
+
+  it('still rejects a self-loop / occupied source-in0 port', () => {
+    const g = defGraph();
+    // self-loop guard precedes the cycle exemption.
+    expect(validateConnect(g, 'src0', 'src0', 'in0').error).toBe('self-loop');
+    // Wire op1 -> src0.in0, then a second wire is rejected as occupied.
+    const ok = validateConnect(g, 'op1', 'src0', 'in0');
+    expect(ok.ok).toBe(true);
+    g.edges.push(ok.edge!);
+    expect(validateConnect(g, 'op2', 'src0', 'in0').error).toBe('occupied');
+  });
+
+  it('topoSort DROPS a layer-input edge: the source stays a root + the eval is acyclic', () => {
+    const g = defGraph();
+    // Wire op1's output back into src0.in0 (a feedback tap). Without the drop this
+    // closes a cycle (src0 -> op1 -> src0) that would strand the graph.
+    const v = validateConnect(g, 'op1', 'src0', 'in0');
+    expect(v.ok).toBe(true);
+    g.edges.push(v.edge!);
+    const { order, ok } = topoSort(g);
+    // Every node is still ordered (no node stranded by the would-be cycle).
+    expect(ok).toBe(true);
+    expect(order).toHaveLength(g.nodes.length);
+    // src0 still orders before op1 (the tap edge added no same-frame dependency).
+    expect(order.indexOf('src0')).toBeLessThan(order.indexOf('op1'));
   });
 });
 

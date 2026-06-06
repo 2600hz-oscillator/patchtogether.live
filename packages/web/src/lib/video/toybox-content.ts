@@ -526,9 +526,22 @@ export interface ToyboxVideoMeta {
  *           default behaviour.
  *   - 'camera': the device webcam streamed into the same card-owned <video>
  *           (getUserMedia → srcObject), pumped through the same uploader.
+ *   - 'layerIn': the LAYER INPUT feedback tap — whatever node output is wired
+ *           into this layer's SOURCE-node in0 port in the combine graph. In
+ *           Phase 1 it resolves to the PREVIOUS frame's OUT composite (a stable
+ *           1-frame tap; see toybox-surface.ts layerInputWanted). No edge wired →
+ *           idle pattern (a pure no-op).
  *  Absent → treated as 'file' (the #603 default, so existing video layers are
  *  unchanged). */
-export type ToyboxVideoSource = 'inA' | 'inB' | 'file' | 'camera';
+export type ToyboxVideoSource = 'inA' | 'inB' | 'file' | 'camera' | 'layerIn';
+
+/** Where a FRAG (scene-input) layer's iChannel0 comes from:
+ *   - 'below' (default / absent): the COMPOSITED LAYER BELOW (index i-1), the
+ *           #603 FRAG behaviour.
+ *   - 'layer-input': the LAYER INPUT feedback tap — whatever node output is wired
+ *           into this layer's SOURCE-node in0 port (Phase 1: prev-frame OUT). No
+ *           edge wired → falls back to 'below'. */
+export type ToyboxSceneInputSource = 'below' | 'layer-input';
 
 /** What a single TOYBOX layer holds. The array is sized to LAYER_COUNT; each
  *  layer renders into its own FBO and the combine DAG reduces them to the
@@ -567,9 +580,14 @@ export interface ToyboxLayer {
   /** VIDEO layer: local-file metadata (filename). The bytes are not synced. */
   videoMeta?: ToyboxVideoMeta;
   /** VIDEO layer: where the texture comes from — a patched feed ('inA'/'inB'),
-   *  a local file ('file'), or the webcam ('camera'). Absent → 'file' (the #603
-   *  default, so saved video layers keep their behaviour). */
+   *  a local file ('file'), the webcam ('camera'), or the LAYER INPUT feedback
+   *  tap ('layerIn'). Absent → 'file' (the #603 default, so saved video layers
+   *  keep their behaviour). */
   videoSource?: ToyboxVideoSource;
+  /** FRAG (scene-input) layer: where iChannel0 comes from — the COMPOSITED LAYER
+   *  BELOW ('below' / absent, the #603 default) or the LAYER INPUT feedback tap
+   *  ('layer-input', Phase 1: prev-frame OUT). */
+  sceneInputSource?: ToyboxSceneInputSource;
   /** SHADERTOY multi-buffer project (a 'gen' or 'frag' layer can host one):
    *  Common + N buffer passes + an Image pass with iChannelN wiring. When
    *  present the factory renders the project's pass chain (own FBOs, ping-pong
