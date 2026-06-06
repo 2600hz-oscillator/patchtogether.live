@@ -65,10 +65,11 @@
   const DEFAULT_HEIGHT = 240;
   const MIN_WIDTH = 240;
   const MIN_HEIGHT = 160;
-  // Engine render resolution — must match VIDEO_RES in
-  // packages/web/src/lib/video/engine.ts. Hardcoded here so we don't
-  // need to import the engine module just for this constant (it
-  // pulls in WebGL boot code).
+  // Engine render resolution — fallback only. The live engine's `res` may be
+  // larger / a different aspect when HD mode is on, so draw() reads the engine's
+  // actual canvas size each frame and the letterbox follows it. These constants
+  // are the SD default (matches VIDEO_RES) used before the engine exists or if a
+  // dimension reads 0.
   const ENGINE_W = 640;
   const ENGINE_H = 480;
 
@@ -140,11 +141,15 @@
     ctxOpen = true;
   }
 
-  /** Compute the aspect-fit destination rect for an engine-resolution
-   *  source drawn into a (cw, ch) canvas. Returns top-left (x, y) and
-   *  width/height of the letterbox-fit area. */
-  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
-    const srcAspect = ENGINE_W / ENGINE_H;
+  /** Compute the aspect-fit destination rect for a `srcAspect`-ratio source
+   *  drawn into a (cw, ch) canvas. Returns top-left (x, y) and width/height of
+   *  the letterbox-fit area. `srcAspect` is the LIVE engine aspect (so the
+   *  letterbox follows HD mode); defaults to the SD 4:3 constant. */
+  function fitRect(
+    cw: number,
+    ch: number,
+    srcAspect: number = ENGINE_W / ENGINE_H,
+  ): { x: number; y: number; w: number; h: number } {
     const dstAspect = cw / ch;
     if (dstAspect > srcAspect) {
       // Destination is wider than source: letterbox left/right.
@@ -193,10 +198,16 @@
       const src = videoEngine.canvas as CanvasImageSource;
       const cw = canvasEl.width;
       const ch = canvasEl.height;
+      // Live engine source aspect — follows HD mode (the engine may render at
+      // 1920×1080 / 1440×1080 etc.). Fall back to the SD 4:3 constant if the
+      // engine canvas reports a 0 dimension (mid-rebuild).
+      const ew = videoEngine.canvas.width || ENGINE_W;
+      const eh = videoEngine.canvas.height || ENGINE_H;
+      const srcAspect = ew / eh;
       // Black background, then aspect-fit blit with Y-flip.
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
-      const r = fitRect(cw, ch);
+      const r = fitRect(cw, ch, srcAspect);
       // drawImage() from a WebGL canvas already presents the GL drawing
       // buffer in top-left CSS orientation (the browser accounts for GL's
       // bottom-left origin). Procedural sources author against vUv and

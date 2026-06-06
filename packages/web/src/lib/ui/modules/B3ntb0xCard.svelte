@@ -27,6 +27,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { VideoEngine } from '$lib/video/engine';
+  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
   import type { ModuleNode } from '$lib/graph/types';
   import { b3ntb0xDef } from '$lib/video/modules/b3ntb0x';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -96,8 +97,11 @@
   /** Letterbox the engine frame at the PIPELINE aspect (ENGINE_W/ENGINE_H).
    *  Do NOT re-impose any other aspect — the 4:3 active area + overscan +
    *  barrel live inside the CRT shader. */
-  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
-    const SRC = ENGINE_W / ENGINE_H;
+  function fitRect(
+    cw: number,
+    ch: number,
+    SRC: number = ENGINE_W / ENGINE_H,
+  ): { x: number; y: number; w: number; h: number } {
     const dstAspect = cw / ch;
     if (dstAspect > SRC) {
       const h = ch;
@@ -131,7 +135,7 @@
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
-      const r = fitRect(cw, ch);
+      const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
       // drawImage from a WebGL canvas is already upright — no Y-flip.
       ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
     }

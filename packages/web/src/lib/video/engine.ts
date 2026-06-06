@@ -285,7 +285,12 @@ export class VideoEngine implements DomainEngine {
    *  context is WebGL2; modules never see the surface type. */
   readonly canvas: OffscreenCanvas | HTMLCanvasElement;
   readonly gl: WebGL2RenderingContext;
-  readonly res = VIDEO_RES;
+  /** Internal render resolution of every per-module FBO. Defaults to
+   *  VIDEO_RES (640×480) but can be overridden via the constructor `res`
+   *  option (HD mode passes a viewport-derived ~1080-line target). Fixed for
+   *  the lifetime of the engine — HD toggles rebuild a fresh VideoEngine at
+   *  the new res rather than mutating this in place (see hd-toggle plan §2). */
+  readonly res: { readonly width: number; readonly height: number };
 
   private nodes = new Map<string, VideoNodeHandle>();
   private nodeMeta = new Map<string, ModuleNode>();
@@ -415,7 +420,20 @@ export class VideoEngine implements DomainEngine {
   private copyProgram: WebGLProgram | null = null;
   private copyUTex: WebGLUniformLocation | null = null;
 
-  constructor(opts: { canvas?: OffscreenCanvas | HTMLCanvasElement } = {}) {
+  constructor(
+    opts: {
+      canvas?: OffscreenCanvas | HTMLCanvasElement;
+      /** Internal render resolution. Defaults to VIDEO_RES (640×480). HD mode
+       *  passes a viewport-derived target (see hd-toggle plan §3). Even-width/
+       *  height is assumed by the caller (computeHdRes rounds to even). */
+      res?: { width: number; height: number };
+    } = {},
+  ) {
+    // Assign res BEFORE any `this.res.*` read below (OffscreenCanvas sizing).
+    this.res =
+      opts.res && opts.res.width > 0 && opts.res.height > 0
+        ? { width: opts.res.width, height: opts.res.height }
+        : VIDEO_RES;
     if (opts.canvas) {
       this.canvas = opts.canvas;
     } else if (typeof OffscreenCanvas !== 'undefined') {
