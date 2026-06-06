@@ -456,7 +456,10 @@ for (const seq of [
   });
 }
 
-test('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page }) => {
+// QUARANTINED (task #12): SCORE-playhead currentNoteId is timing-nondeterministic
+// under CI load — read after runFor(200) lands on a tick before/after n0 (env-amplitude
+// /noteId nondeterminism). Fails even with gate retries=2 (shard-1 run 27047780743).
+test.fixme('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 

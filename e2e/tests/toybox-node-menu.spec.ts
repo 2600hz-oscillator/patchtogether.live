@@ -207,7 +207,12 @@ async function setup(page: Page): Promise<void> {
 }
 
 test.describe('TOYBOX node-map contextual menu', () => {
-  test('per-target menu items are correct + Escape closes', async ({ page }) => {
+  // QUARANTINED (heavy-menu tail flake): ~7 sequential right-click→menu cycles +
+  // Add-submenu expansion on CI's SwiftShader software WebGL intermittently times
+  // out (toybox-menu-add visibility) under main-thread starvation. Fails even with
+  // gate retries=2 (shard-10 run 27047780743). Local Mac SwiftShader gives false
+  // interaction failures for these toybox right-click specs, so not locally repro-able.
+  test.fixme('per-target menu items are correct + Escape closes', async ({ page }) => {
     test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
