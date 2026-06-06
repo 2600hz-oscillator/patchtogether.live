@@ -15,6 +15,8 @@ import {
   healthToCv,
   autoplayCv,
   isGameOver,
+  setAim,
+  upcomingLane,
   EVENT_BUTTON,
   GIB_TUNING,
   HEALTH_LADDER,
@@ -55,8 +57,9 @@ describe('GibRibbon event generator (pure)', () => {
   it('a hot CV channel spawns its mapped event kind', () => {
     // cv index 2 → 'imp' (default cvEventMap = [loop, jump, imp, zombie]).
     const s = newGame(7);
-    // Need ≥ minSpawnIntervalTicks ticks since lastSpawnTick; first tick is fine
-    // because lastSpawnTick seeds to -minSpawnIntervalTicks.
+    // Advance past the count-in (no spawns while tick <= countInTicks), then a
+    // hot channel spawns on the next tick.
+    s.tick = GIB_TUNING.countInTicks;
     clockTick(s, [0, 0, 0.95, 0], true);
     expect(s.events.length).toBe(1);
     expect(s.events[0]!.kind).toBe('imp');
@@ -64,19 +67,37 @@ describe('GibRibbon event generator (pure)', () => {
 
   it('rate-limits spawns to minSpawnIntervalTicks', () => {
     const s = newGame(7);
+    s.tick = GIB_TUNING.countInTicks; // past the count-in
     const hot = [0.95, 0, 0, 0]; // cv0 → loop
-    clockTick(s, hot, true); // tick 1: spawns
-    clockTick(s, hot, true); // tick 2: too soon (interval = 2)
-    expect(s.events.filter((e) => e.id <= 2).length).toBe(1);
-    clockTick(s, hot, true); // tick 3: 2 ticks elapsed → spawns again
-    expect(s.events.length).toBe(2);
+    clockTick(s, hot, true); // first post-count-in tick: spawns
+    const firstId = s.nextEventId - 1;
+    clockTick(s, hot, true); // next tick: too soon (interval = 2)
+    expect(s.events.filter((e) => e.id <= firstId).length).toBe(1);
+    expect(s.nextEventId - 1).toBe(firstId); // no new spawn
+    clockTick(s, hot, true); // 2 ticks elapsed → spawns again
+    expect(s.nextEventId - 1).toBe(firstId + 1);
   });
 
   it('on-beat gate picks the STRONGEST eligible channel', () => {
     const s = newGame(99);
+    s.tick = GIB_TUNING.countInTicks + 1; // past the count-in
     // cv0=loop (0.6), cv3=zombie (0.95) → zombie should win on the beat.
     const kind = chooseSpawn(s, [0.6, 0.0, 0.0, 0.95], true);
     expect(kind).toBe('zombie');
+  });
+
+  it('the count-in suppresses ALL spawns for the opening ticks', () => {
+    const s = newGame(7);
+    const hot = [0.95, 0.95, 0.95, 0.95];
+    // Every tick up to + including countInTicks must spawn nothing, even with
+    // all four channels hot.
+    for (let t = 0; t < GIB_TUNING.countInTicks; t++) {
+      clockTick(s, hot, true);
+      expect(s.events.length).toBe(0);
+    }
+    // The very next tick (tick = countInTicks + 1) is allowed to spawn.
+    clockTick(s, hot, true);
+    expect(s.events.length).toBe(1);
   });
 });
 
@@ -421,5 +442,131 @@ describe('GibRibbon AUTOPLAY cv (self-play when no external clock/CV patched)', 
     }
     expect(s.events.length + s.score).toBeGreaterThan(0); // events actually spawned
     expect(seen).toEqual(new Set<GibEventKind>(['loop', 'jump', 'imp', 'zombie']));
+  });
+
+  it('autoplay produces ≥3 distinct event kinds within the first ~14 beats', () => {
+    // DROP-AND-PLAY (gap #1): a bare card must show a VARIED stream quickly, not
+    // one kind on a loop. ~14 internal beats ≈ ~5.9 s at 0.42 s/beat — the
+    // window the e2e observes. Allow for the count-in eating the first ~3 beats.
+    const s = newGame(7);
+    const seen = new Set<GibEventKind>();
+    for (let b = 1; b <= 14; b++) {
+      clockTick(s, autoplayCv(b), true);
+      for (const ev of s.events) seen.add(ev.kind);
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ── Joystick AIM (gap item #1: x/y axes are genuinely consumed) ─────────────
+describe('GibRibbon joystick AIM (x/y axes)', () => {
+  it('setAim clamps both axes to −1..1', () => {
+    const s = newGame(1);
+    setAim(s, 5, -9);
+    expect(s.aimX).toBe(1);
+    expect(s.aimY).toBe(-1);
+    setAim(s, -0.4, 0.3);
+    expect(s.aimX).toBeCloseTo(-0.4);
+    expect(s.aimY).toBeCloseTo(0.3);
+  });
+
+  it('aimX re-centres the judgement point: an event one window EARLY clears with the stick right', () => {
+    // An event at pos = +hitWindow (just RIGHT of the marine, normally on the
+    // very edge) clears more comfortably when aimX pulls the centre right.
+    const base = newGame(1);
+    const e0 = spawnEvent(base, 'loop');
+    e0.pos = GIB_TUNING.hitWindow + 0.04; // just OUTSIDE the default window
+    expect(judgePress(base, EVENT_BUTTON.loop)).toBeNull(); // no aim → miss
+
+    const aimed = newGame(1);
+    setAim(aimed, 1, 0); // stick full right → centre shifts +hitWindow
+    const e1 = spawnEvent(aimed, 'loop');
+    e1.pos = GIB_TUNING.hitWindow + 0.04;
+    expect(judgePress(aimed, EVENT_BUTTON.loop)).toBe(e1); // now in the shifted window
+  });
+
+  it('aim does NOT widen the window — an event two windows away still misses', () => {
+    const s = newGame(1);
+    setAim(s, 1, 0);
+    const ev = spawnEvent(s, 'loop');
+    ev.pos = GIB_TUNING.hitWindow * 2.5; // beyond even the shifted window
+    expect(judgePress(s, EVENT_BUTTON.loop)).toBeNull();
+  });
+
+  it('aimY is stored for the renderer (marine vertical position) and clamped', () => {
+    const s = newGame(1);
+    setAim(s, 0, 2);
+    expect(s.aimY).toBe(1); // clamped; renderer reads this for marineAimOffset
+  });
+});
+
+// ── Lookahead lane (gap item #2: readable fixed prompt queue) ───────────────
+describe('GibRibbon lookahead lane (upcomingLane)', () => {
+  it('returns the next-N unresolved events NEAREST the marine first', () => {
+    const s = newGame(1);
+    const far = spawnEvent(s, 'imp'); far.pos = 0.9;
+    const mid = spawnEvent(s, 'jump'); mid.pos = 0.5;
+    const near = spawnEvent(s, 'loop'); near.pos = 0.1;
+    const lane = upcomingLane(s, 4);
+    expect(lane.map((l) => l.id)).toEqual([near.id, mid.id, far.id]);
+    expect(lane.map((l) => l.button)).toEqual(['a', 'b', 'x']); // loop,jump,imp
+  });
+
+  it('caps the lane at the requested slot count', () => {
+    const s = newGame(1);
+    for (let i = 0; i < 8; i++) { const e = spawnEvent(s, 'loop'); e.pos = 0.1 + i * 0.1; }
+    expect(upcomingLane(s, 4)).toHaveLength(4);
+  });
+
+  it('excludes resolved events and flags the in-window slot HOT', () => {
+    const s = newGame(1);
+    const hot = spawnEvent(s, 'loop'); hot.pos = 0.02; // in the window
+    const cold = spawnEvent(s, 'jump'); cold.pos = 0.6;
+    const cleared = spawnEvent(s, 'imp'); cleared.pos = 0.0; judgePress(s, EVENT_BUTTON.imp);
+    const lane = upcomingLane(s, 4);
+    expect(lane.find((l) => l.id === cleared.id)).toBeUndefined(); // resolved excluded
+    expect(lane.find((l) => l.id === hot.id)?.hot).toBe(true);
+    expect(lane.find((l) => l.id === cold.id)?.hot).toBe(false);
+  });
+
+  it('a self-playing stream populates a varied lane', () => {
+    const s = newGame(9);
+    for (let b = 1; b <= 30; b++) clockTick(s, autoplayCv(b), true);
+    const lane = upcomingLane(s, 4);
+    expect(lane.length).toBeGreaterThan(0);
+    // The lane buttons are a subset of the four ABXY buttons.
+    for (const l of lane) expect(['a', 'b', 'x', 'y']).toContain(l.button);
+  });
+});
+
+// ── Restart (gap item #5: game-over → fresh game) ───────────────────────────
+describe('GibRibbon restart (newGame after death)', () => {
+  it('a fresh game from a dead state resets health to healthy + score to 0', () => {
+    const s = newGame(1);
+    // Drive to death.
+    for (let i = 0; i < 4; i++) { const e = spawnEvent(s, 'loop'); e.pos = GIB_TUNING.missPos + 0.001; scroll(s, 0.01); }
+    expect(isGameOver(s)).toBe(true);
+    // The factory's reset() rebuilds via newGame — model that here.
+    const fresh = newGame(1);
+    expect(fresh.health).toBe('healthy');
+    expect(fresh.score).toBe(0);
+    expect(fresh.combo).toBe(0);
+    expect(fresh.events).toHaveLength(0);
+    expect(fresh.tick).toBe(0);
+    expect(isGameOver(fresh)).toBe(false);
+    // And a fresh game can be driven again (not permanently frozen): a
+    // perfect player (clears every in-window event) survives the whole run, so
+    // every tick advances — proving the restarted game is fully live.
+    for (let b = 1; b <= 20; b++) {
+      clockTick(fresh, autoplayCv(b), true);
+      for (const ev of [...fresh.events]) {
+        if (!ev.resolved && Math.abs(ev.pos) <= GIB_TUNING.hitWindow) {
+          judgePress(fresh, EVENT_BUTTON[ev.kind]);
+        }
+      }
+    }
+    expect(fresh.tick).toBe(20);
+    expect(isGameOver(fresh)).toBe(false);
+    expect(fresh.score).toBeGreaterThan(0); // it actually played + scored
   });
 });
