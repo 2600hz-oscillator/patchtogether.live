@@ -44,6 +44,14 @@ type PatchGlobal = {
   __toyboxFreeze?: (t?: number) => void;
 };
 
+// A custom Shadertoy source that fills the WHOLE frame with opaque RED — a flat,
+// distinctive full-frame source. Rides the layer as `shaderSrc` (no manifest
+// fetch), so the test is deterministic regardless of bundled content.
+const FLAT_RED_SHADER = `
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+}`;
+
 /** Pin the Svelte Flow viewport so the card body is in the visible region. */
 async function pinViewport(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -159,6 +167,65 @@ async function stepAndAverage(page: Page, time: number, steps: number): Promise<
   return average(page);
 }
 
+/** Mean RGB of a centred fractional region of the preview canvas (frac=0.5 reads
+ *  the central 50%×50%). Used to compare the tunnel INTERIOR vs the whole frame. */
+async function regionAverage(page: Page, frac: number): Promise<[number, number, number]> {
+  return page.evaluate((frac) => {
+    const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    const w = c.width, h = c.height;
+    const x0 = Math.floor((w * (1 - frac)) / 2);
+    const y0 = Math.floor((h * (1 - frac)) / 2);
+    const rw = Math.max(1, Math.floor(w * frac));
+    const rh = Math.max(1, Math.floor(h * frac));
+    const { data } = ctx.getImageData(x0, y0, rw, rh);
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i]!; g += data[i + 1]!; b += data[i + 2]!; n++;
+    }
+    return [r / n, g / n, b / n] as [number, number, number];
+  }, frac);
+}
+
+/** Seed a flat-RED layer (custom shaderSrc) → TUNNEL feedback node → OUTPUT, at a
+ *  deep-tunnel zoom so the recursive nest visibly fills the interior. The buffer
+ *  starts clean (fresh graph object → fresh ping-pong). */
+async function seedFlatRedTunnel(page: Page): Promise<void> {
+  await page.evaluate(
+    ({ shader }) => {
+      const w = globalThis as unknown as PatchGlobal;
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['tb'];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        n.data.layers = [
+          { kind: 'gen', contentId: null, shaderSrc: shader, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+        ] as unknown[];
+        n.data.combine = {
+          nodes: [
+            { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+            { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+            { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+            { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+            // mode 0 = TUNNEL; deep zoom (0.8) so the interior fills with the
+            // recursive nest; high decay so the nest persists deep enough to read.
+            { id: 'fb', kind: 'feedback', x: 120, y: 14, params: { mode: 0, zoom: 0.8, decay: 0.95 } },
+            { id: 'out', kind: 'output', x: 286, y: 66 },
+          ],
+          edges: [
+            { id: 'e_src0_fb', from: 'src0', to: 'fb', toPort: 'in0' },
+            { id: 'e_fb_out', from: 'fb', to: 'out', toPort: 'in0' },
+          ],
+        } as unknown as { nodes: unknown[]; edges: unknown[] };
+      });
+    },
+    { shader: FLAT_RED_SHADER },
+  );
+}
+
 function dist(a: [number, number, number], b: [number, number, number]): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
@@ -221,6 +288,61 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
       errors.filter((e) => !e.includes('AudioContext')),
       'no console / page errors',
     ).toEqual([]);
+  });
+
+  test('TUNNEL hall-of-mirrors: a flat-red source does NOT flood the interior', async ({ page }) => {
+    // The TUNNEL fix proven END-TO-END through the real GL shader: drive the
+    // feedback loop with a FLAT OPAQUE RED full-frame source over many frames. The
+    // OLD bug blended the flat full-frame source into every pixel (interior ≈ flat
+    // red). The FIX lets the source in ONLY at the new outer ring the zoom vacates,
+    // so the INTERIOR is the recursive, decay-dimmed nest — markedly darker than
+    // the flat source. We compare the central 40% region's red against the WHOLE
+    // frame's red: with the bug they'd be ~equal (red everywhere); with the fix the
+    // interior red is clearly LOWER than the full-frame red (the ring lifts the
+    // overall average, the interior is dim recursive content).
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+      [],
+    );
+    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
+    await pinViewport(page);
+
+    await seedFlatRedTunnel(page);
+    // Let the recursion recede deep enough that the nest darkens toward the
+    // vanishing point (deep zoom needs a good many frames to fill + dim).
+    await advance(page, 2.0, 36);
+
+    const whole = await average(page); // full frame (ring lifts this toward red)
+    const interior = await regionAverage(page, 0.25); // deep central 25% — the nest
+
+    // (a) RING carries the source: the full frame is meaningfully red overall.
+    expect(whole[0], 'the live red source enters at the outer ring').toBeGreaterThan(20);
+
+    // (b) THE FIX (the load-bearing assertion): the deep interior is NOT flooded by
+    //     the flat source — its red is clearly BELOW the full-frame red. The old
+    //     "blend the flat source into every pixel" bug made every pixel the same
+    //     flat red, so interior ≈ whole; the fix makes the bright ring lift the
+    //     whole-frame average well above the decay-dimmed interior. (Observed
+    //     locally: whole≈234, interior≈150 — a >70-wide gap; we require >20.)
+    expect(
+      interior[0],
+      'interior red is well below the full-frame red (recursion owns the interior, not flat source)',
+    ).toBeLessThan(whole[0] - 20);
+
+    // (c) and clearly below the source's own red (255): the deep interior is the
+    //     decay-dimmed receding nest, never the flat full-frame source colour. The
+    //     old bug would read ≈255 here.
+    expect(interior[0], 'deep interior is dim recursive content, not the flat source (255)').toBeLessThan(210);
+
+    expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
   });
 
   test('changing the mode at runtime changes the live output', async ({ page }) => {

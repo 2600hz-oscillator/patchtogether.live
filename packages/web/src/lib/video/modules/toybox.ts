@@ -2332,13 +2332,34 @@ void main() {
   vec4 outc;
 
   if (uMode == 0) {
-    // TUNNEL — Droste / infinite zoom: pull the loop toward centre + spin it,
-    // inject a little input so the tunnel always has fresh content to recurse.
-    vec2 p = (uv - 0.5) * uZoom;
-    p = rot(uRotate) * p;
-    p += 0.5;
-    vec3 loop = fb(p).rgb;
-    outc = vec4(mix(loop, src.rgb, 0.12 + 0.5 * src.a), 1.0);
+    // TUNNEL — a true recursive Droste / video-feedback tunnel: a camera pointed
+    // at its own monitor. Each frame the PREVIOUS frame is re-displayed scaled a
+    // touch LARGER about the centre + spun, so prior content recedes INWARD to a
+    // vanishing point (nested frames → infinite tunnel depth as the loop iterates).
+    // The live source enters ONLY at the new outer ring the zoom vacates — exactly
+    // the band that falls outside the previous frame. There is ZERO flat full-frame
+    // source in the interior: the interior is pure recursive feedback.
+    //
+    // uZoom (.5..1) is the per-frame contraction: smaller uZoom => deeper/faster
+    // tunnel. We sample the prev frame a factor 1/uZoom (>=1) further from centre,
+    // so what's near centre this frame came from a wider region last frame (=> it
+    // shrinks inward). uRotate spins the spiral; uDecay is the loop persistence
+    // (how fast the receding nest dims toward the vanishing point).
+    //
+    // The per-pixel ring/interior + tap geometry is mirrored EXACTLY by the pure
+    // tunnelTap() in toybox-feedback.ts (unit-tested: interior owns the frame, no
+    // flat-source bleed) — keep the two in lock-step if you touch either.
+    vec2 d = uv - 0.5;
+    d = rot(uRotate) * d;
+    float zoom = 1.0 / max(uZoom, 1e-3);     // .5..1 -> 2..1 (>= 1 => recede inward)
+    vec2 fuv = 0.5 + d * zoom;
+    // The tap is in the new outer ring exactly when it leaves the prev frame.
+    bool ring = fuv.x < 0.0 || fuv.x > 1.0 || fuv.y < 0.0 || fuv.y > 1.0;
+    vec3 mirror = fb(fuv).rgb * uDecay;       // recursive nesting, dimmed by decay
+    // Source ONLY in the new ring; the interior is pure recursive feedback. No
+    // flat full-frame source anywhere — a complete hall-of-mirrors.
+    vec3 hall = ring ? src.rgb : mirror;
+    outc = vec4(hall, 1.0);
   } else if (uMode == 1) {
     // GEOMETRIC — scale + rotate + translate the loop each frame (kaleido drift).
     vec2 p = (uv - 0.5) * uScaleP;

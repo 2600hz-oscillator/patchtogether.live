@@ -183,3 +183,114 @@ export const FEEDBACK_MODE_PARAMS: Readonly<Record<number, readonly string[]>> =
 export function feedbackParamsForMode(mode: unknown): readonly string[] {
   return FEEDBACK_MODE_PARAMS[clampFeedbackMode(mode)] ?? ['decay'];
 }
+
+// ---------------- TUNNEL (mode 0) — pure reference geometry ----------------
+//
+// The TUNNEL feedback mode is a true recursive Droste / video-feedback tunnel (a
+// camera pointed at its own monitor): each frame re-displays the PREVIOUS frame
+// scaled a touch LARGER about the centre + spun, so prior content recedes INWARD
+// to a vanishing point, and the live SOURCE enters ONLY at the new outer ring the
+// zoom vacates — there is ZERO flat full-frame source in the interior.
+//
+// The GLSL that ships this (FEEDBACK_FRAG_SRC, `uMode == 0`) is the executable
+// truth; these PURE functions mirror its per-pixel decision EXACTLY so the
+// behaviour ("interior = recursive feedback, source only in the ring") is
+// deterministically unit-testable without a GL context (SwiftShader pixel deltas
+// are documented-flaky — see toybox-feedback.spec.ts). Keep the two in lock-step.
+
+/** Where a TUNNEL output pixel reads its previous-frame tap, and whether that tap
+ *  falls in the new OUTER RING (outside the previous frame). Mirrors the GLSL:
+ *    d    = rot(uRotate) · (uv − 0.5)
+ *    zoom = 1 / max(uZoom, 1e-3)                 // .5..1 → 2..1, always ≥ 1
+ *    fuv  = 0.5 + d · zoom                        // sample further from centre
+ *    ring = fuv outside [0,1]²                    // the band the zoom vacated
+ *  `ring === true`  → this pixel shows the live source (the only place it enters).
+ *  `ring === false` → this pixel shows the recursive feedback tap at `fuv`. */
+export function tunnelTap(
+  uv: readonly [number, number],
+  uZoom: number,
+  uRotate: number,
+): { fuv: [number, number]; ring: boolean } {
+  const dx0 = uv[0] - 0.5;
+  const dy0 = uv[1] - 0.5;
+  const s = Math.sin(uRotate);
+  const c = Math.cos(uRotate);
+  // mat2(c,-s,s,c) * vec2 in GLSL column-major: x' = c*x - s*y, y' = s*x + c*y.
+  const dx = c * dx0 - s * dy0;
+  const dy = s * dx0 + c * dy0;
+  const zoom = 1 / Math.max(uZoom, 1e-3);
+  const fx = 0.5 + dx * zoom;
+  const fy = 0.5 + dy * zoom;
+  const ring = fx < 0 || fx > 1 || fy < 0 || fy > 1;
+  return { fuv: [fx, fy], ring };
+}
+
+/**
+ * A small pure CPU simulation of the TUNNEL recursion on an RGB grid — exactly
+ * what the GLSL ping-pong does over `frames` iterations, with BILINEAR sampling +
+ * edge-clamp (matching the shader's `texture()` filtering, so recursive content
+ * diffuses inward toward the vanishing point exactly as it does on the GPU).
+ * Used by the unit test to prove: at the converged state, the frame INTERIOR is
+ * NOT dominated by the flat source colour — the source only ever entered via the
+ * thin outer ring and the interior is owned by the (decayed) recursive feedback.
+ *
+ * PURE: identical inputs → identical output. `src` is the flat full-frame source
+ * colour; the buffer starts black.
+ */
+export function simulateTunnel(
+  size: number,
+  src: readonly [number, number, number],
+  uZoom: number,
+  uRotate: number,
+  uDecay: number,
+  frames: number,
+): Float32Array {
+  const n = size * size * 3;
+  let prev = new Float32Array(n); // starts black
+  let next = new Float32Array(n);
+  const at = (buf: Float32Array, ix: number, iy: number): [number, number, number] => {
+    const cx = Math.min(size - 1, Math.max(0, ix));
+    const cy = Math.min(size - 1, Math.max(0, iy));
+    const i = (cy * size + cx) * 3;
+    return [buf[i]!, buf[i + 1]!, buf[i + 2]!];
+  };
+  const sample = (buf: Float32Array, fx: number, fy: number): [number, number, number] => {
+    // bilinear + clamp-to-edge (matches the shader's texture()/clamp() on the tap)
+    const px = fx * (size - 1);
+    const py = fy * (size - 1);
+    const x0 = Math.floor(px), y0 = Math.floor(py);
+    const tx = px - x0, ty = py - y0;
+    const c00 = at(buf, x0, y0), c10 = at(buf, x0 + 1, y0);
+    const c01 = at(buf, x0, y0 + 1), c11 = at(buf, x0 + 1, y0 + 1);
+    const out: [number, number, number] = [0, 0, 0];
+    for (let k = 0; k < 3; k++) {
+      const a = c00[k]! * (1 - tx) + c10[k]! * tx;
+      const b = c01[k]! * (1 - tx) + c11[k]! * tx;
+      out[k] = a * (1 - ty) + b * ty;
+    }
+    return out;
+  };
+  for (let f = 0; f < frames; f++) {
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const uv: [number, number] = [(x + 0.5) / size, (y + 0.5) / size];
+        const { fuv, ring } = tunnelTap(uv, uZoom, uRotate);
+        const o = (y * size + x) * 3;
+        if (ring) {
+          next[o] = src[0];
+          next[o + 1] = src[1];
+          next[o + 2] = src[2];
+        } else {
+          const t = sample(prev, fuv[0], fuv[1]);
+          next[o] = t[0] * uDecay;
+          next[o + 1] = t[1] * uDecay;
+          next[o + 2] = t[2] * uDecay;
+        }
+      }
+    }
+    const tmp = prev;
+    prev = next;
+    next = tmp;
+  }
+  return prev;
+}

@@ -113,4 +113,22 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
     // The trailing else covers the last mode (VECTOR, id 11).
     expect(src).toContain('} else {');
   });
+
+  it('TUNNEL (mode 0) is a ring-gated hall-of-mirrors, NOT a flat-source blend', () => {
+    // Guard the TUNNEL fix at the SHADER-SOURCE level: the source must enter only
+    // via the new outer RING; the interior is the recursive feedback tap. The old
+    // bug blended the flat full-frame source into every pixel — that exact shape
+    // (mixing src.rgb with `0.12 + 0.5 * src.a` everywhere) must NOT return.
+    const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
+    const tunnel = src.slice(src.indexOf('if (uMode == 0)'), src.indexOf('} else if (uMode == 1)'));
+    // It samples the previous frame at a zoomed/rotated tap (the recursion)…
+    expect(tunnel).toMatch(/fb\(\s*fuv\s*\)/);
+    // …gates the live source to the band that leaves the previous frame (the ring),
+    expect(tunnel).toMatch(/ring/);
+    expect(tunnel).toMatch(/fuv\.x\s*<\s*0\.0|fuv\.x\s*>\s*1\.0/);
+    // …and decays the recursive interior (persistence toward the vanishing point).
+    expect(tunnel).toMatch(/uDecay/);
+    // The old flat-everywhere blend must be GONE from the TUNNEL branch.
+    expect(tunnel).not.toContain('0.12 + 0.5 * src.a');
+  });
 });
