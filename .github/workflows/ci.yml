@@ -234,14 +234,18 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout (LFS required for ART baselines)
+      # ART baselines (art/baselines/**/*.f32) are LFS-tracked. Check out
+      # WITHOUT LFS (lfs:false), then restore the LFS object store from an
+      # actions/cache keyed on the baseline file SHAs and `git lfs pull` — a
+      # cache HIT makes the pull a near-no-op (objects already on disk), a MISS
+      # fetches only the changed objects. This cuts repeated full-payload LFS
+      # downloads (the repo's exhausted-budget root cause) by ~95% while still
+      # giving the test the real float32 buffers (not the ~130-byte pointer
+      # files, which fail with "not a multiple of 4 — truncated or corrupt").
+      - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:
-          # ART baselines (art/baselines/**/*.f32) are LFS-tracked. Without
-          # this the test reads the ~130-byte LFS pointer file instead of
-          # the real float32 buffer and fails with "not a multiple of 4 —
-          # file is truncated or corrupt".
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -255,6 +259,22 @@ jobs:
           key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-deps-
+
+      # Cache the git-LFS object store keyed on the ART baseline file contents
+      # (the pointer files' tracked SHAs change when a baseline is re-pinned).
+      # A HIT restores .git/lfs so `git lfs pull` finds the objects locally and
+      # downloads nothing; a MISS fetches only the changed objects, then this
+      # cache repopulates for the next run.
+      - name: Cache git-LFS objects (ART baselines)
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-art-${{ hashFiles('art/baselines/**/*.f32', 'art/baselines/**/*.wav') }}
+          restore-keys: |
+            ${{ runner.os }}-lfs-art-
+
+      - name: Fetch ART LFS objects (no-op on cache hit)
+        run: flox activate -- git lfs pull --include "art/baselines/**"
 
       # Restore the worklet dist built once by dsp-build, BEFORE `task art`
       # (whose dsp:build dep then no-ops via the .dsp-srchash status guard).
@@ -633,10 +653,19 @@ jobs:
       E2E_USE_PREVIEW: '1'
 
     steps:
-      - name: Checkout (with LFS for ART/VRT baselines)
+      # No LFS here: this shard runs the FUNCTIONAL e2e suite (the @collab /
+      # @capacity / behavioral lanes are grep-inverted out) and serves the
+      # PREBUILT web-preview-dist artifact (downloaded below), which already
+      # bakes in the LFS-tracked SM64 bundle (build-web checks out lfs:true).
+      # No functional spec reads an LFS-tracked path directly: the ART .f32 /
+      # VRT .png baselines belong to the art/vrt jobs, the SM64 IDB fixture
+      # (e2e/fixtures/sm64-idb.bin) is user-provided + gitignored so sm64.spec
+      # skips when absent, and the runtime wavetables under static/wavetables/
+      # are ordinary blobs (not LFS). So skip the LFS payload entirely.
+      - name: Checkout (no LFS — functional e2e serves the prebuilt bundle)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -873,10 +902,17 @@ jobs:
       E2E_USE_PREVIEW: '1'
 
     steps:
-      - name: Checkout (with LFS for ART/VRT baselines)
+      # No LFS here: the @collab specs serve the PREBUILT web-preview-dist
+      # artifact (downloaded below), which already bakes the LFS-tracked SM64
+      # bundle (build-web checks out lfs:true). No @collab spec reads an
+      # LFS-tracked path directly (ART/VRT baselines belong to the art/vrt
+      # jobs; the SM64 IDB fixture is gitignored/user-provided). So skip the
+      # LFS payload — this is the multi-context functional lane, not a
+      # baseline consumer.
+      - name: Checkout (no LFS — @collab serves the prebuilt bundle)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1113,10 +1149,15 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
 
     steps:
-      - name: Checkout (with LFS for ART/VRT baselines)
+      # No LFS here: the behavioral sweep serves the PREBUILT web-preview-dist
+      # artifact (downloaded below, bakes the LFS-tracked SM64 bundle) and runs
+      # per-module-per-port-behavioral.spec.ts, which reads no LFS-tracked path
+      # directly (ART/VRT baselines belong to the art/vrt jobs). Skip the LFS
+      # payload.
+      - name: Checkout (no LFS — behavioral serves the prebuilt bundle)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1406,15 +1447,18 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
 
     steps:
-      - name: Checkout (LFS required for VRT baseline PNGs)
+      # VRT baselines live under e2e/vrt/__screenshots__/ and are LFS-tracked.
+      # Check out WITHOUT LFS, then restore the LFS object store from an
+      # actions/cache keyed on the baseline PNG SHAs and `git lfs pull` — a
+      # cache HIT makes the pull a near-no-op, a MISS fetches only the changed
+      # objects. This cuts the repeated full-payload LFS download (the
+      # exhausted-budget root cause) by ~95% while still giving
+      # `toHaveScreenshot` the real PNG bytes (not the ~130-byte pointer files,
+      # which otherwise diff as a giant failure on every card).
+      - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:
-          # MUST be true — VRT baselines live under e2e/vrt/__screenshots__/
-          # and are stored as LFS pointers in the regular tree. Without
-          # this, `toHaveScreenshot` compares against the pointer-file
-          # bytes (~130 bytes of metadata) instead of the real PNG and
-          # every test "fails" with a giant diff.
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1434,6 +1478,21 @@ jobs:
         with:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      # Cache the git-LFS object store keyed on the VRT baseline PNG contents
+      # (the pointer files' tracked SHAs change when a baseline is regenerated).
+      # A HIT restores .git/lfs so `git lfs pull` downloads nothing; a MISS
+      # fetches only the changed objects, then repopulates this cache.
+      - name: Cache git-LFS objects (VRT baselines)
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-vrt-${{ hashFiles('e2e/vrt/__screenshots__/**/*.png') }}
+          restore-keys: |
+            ${{ runner.os }}-lfs-vrt-
+
+      - name: Fetch VRT LFS objects (no-op on cache hit)
+        run: flox activate -- git lfs pull --include "e2e/vrt/__screenshots__/**"
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
@@ -1547,10 +1606,15 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout (LFS required for VRT baseline PNGs)
+      # VRT baselines are LFS-tracked under e2e/vrt/__screenshots__/. Check out
+      # WITHOUT LFS, then restore the LFS object store from cache + `git lfs
+      # pull` (HIT → no-op, MISS → fetch only changed objects). Same ~95%
+      # bandwidth cut as the full `vrt` job; the strict subset still needs the
+      # real PNG bytes for its pure-DOM card comparisons.
+      - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1570,6 +1634,20 @@ jobs:
         with:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      # Cache the git-LFS object store keyed on the VRT baseline PNG contents.
+      # Shares the same cache key namespace as the full `vrt` job so whichever
+      # runs first warms the cache for the other within the cache TTL.
+      - name: Cache git-LFS objects (VRT baselines)
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-vrt-${{ hashFiles('e2e/vrt/__screenshots__/**/*.png') }}
+          restore-keys: |
+            ${{ runner.os }}-lfs-vrt-
+
+      - name: Fetch VRT LFS objects (no-op on cache hit)
+        run: flox activate -- git lfs pull --include "e2e/vrt/__screenshots__/**"
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup

@@ -179,10 +179,16 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
       E2E_USE_PREVIEW: '1'
     steps:
-      - name: Checkout (with LFS for ART/VRT baselines)
+      # No LFS: this purge job runs the FUNCTIONAL e2e suite (@collab/@capacity/
+      # behavioral grep-inverted out) against the PREBUILT web-preview-dist
+      # artifact (downloaded below, bakes the LFS-tracked SM64 bundle). No
+      # functional spec reads an LFS-tracked path directly, so skip the payload
+      # — mirrors the ci.yml e2e shards' lfs:false (cuts LFS budget across the
+      # 50-job fan-out).
+      - name: Checkout (no LFS — functional e2e serves the prebuilt bundle)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
       - name: Install Flox
         uses: flox/install-flox-action@v2
       - name: Cache npm + Playwright browsers
