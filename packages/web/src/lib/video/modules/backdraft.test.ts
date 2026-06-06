@@ -12,6 +12,7 @@ import {
   BACKDRAFT_MAX_DELAY_MS,
   BACKDRAFT_MAX_EFFECT_SCALE,
   BACKDRAFT_MAX_FEEDBACK,
+  BACKDRAFT_HALL_LO,
   BACKDRAFT_ZOOM_MIN,
   BACKDRAFT_ZOOM_MAX,
   BACKDRAFT_ROTATE_MIN,
@@ -21,6 +22,7 @@ import {
   backdraftDef,
   backdraftDelayFrames,
   backdraftEffectScale,
+  backdraftHallComposite,
   backdraftEffectiveDelayMs,
   backdraftFeedbackUv,
   backdraftPixelateUv,
@@ -484,5 +486,118 @@ describe('backdraft module def — params + ports', () => {
   it('ring buffer covers the max delay at the assumed frame rate', () => {
     const neededFrames = Math.round((BACKDRAFT_MAX_DELAY_MS / 1000) * BACKDRAFT_FPS);
     expect(BACKDRAFT_BUFFER_FRAMES).toBeGreaterThan(neededFrames);
+  });
+});
+
+describe('backdraftHallComposite — additive ↔ ring-gated hall of mirrors', () => {
+  // An interior (in-frame tap) and a ring (out-of-frame tap) sample point.
+  const interiorUv = { u: 0.5, v: 0.5 };
+  const ringUv = { u: -0.2, v: 0.5 };
+  const src: [number, number, number] = [0.8, 0.2, 0.1]; // the live source
+  const prev: [number, number, number] = [0.3, 0.6, 0.9]; // the fed-back frame
+
+  it('HALL_LO sits in the top of the FB range, above the default feedback', () => {
+    expect(BACKDRAFT_HALL_LO).toBeGreaterThan(0.5);
+    expect(BACKDRAFT_HALL_LO).toBeLessThan(1);
+    // default feedback 0.85 → norm 0.425, comfortably below the ramp start.
+    expect(0.85 / BACKDRAFT_MAX_FEEDBACK).toBeLessThan(BACKDRAFT_HALL_LO);
+  });
+
+  it('below the ramp (default feedback) → pure additive accumulator', () => {
+    const out = backdraftHallComposite({
+      source: src,
+      fb: prev,
+      fbUv: interiorUv,
+      feedback: 0.85,
+      effectScale: 1,
+      hasTransform: true,
+    });
+    // out = clamp(source + prev * feedback * 1)
+    for (let i = 0; i < 3; i++) {
+      expect(out[i]).toBeCloseTo(Math.min(1, src[i] + prev[i] * 0.85), 5);
+    }
+  });
+
+  it('MAX feedback + transform + INTERIOR → pure feedback, ZERO source bleed', () => {
+    const out = backdraftHallComposite({
+      source: src,
+      fb: prev,
+      fbUv: interiorUv,
+      feedback: BACKDRAFT_MAX_FEEDBACK,
+      effectScale: 1,
+      hasTransform: true,
+    });
+    // hallAmt = 1, interior → fb * hallGain (hallGain = clamp(0.985*1) = 0.985).
+    // The flat source must NOT appear: out is a scalar multiple of prev only.
+    for (let i = 0; i < 3; i++) {
+      expect(out[i]).toBeCloseTo(Math.min(1, prev[i] * 0.985), 5);
+    }
+    // And it is provably independent of the source colour: swapping the source
+    // leaves the interior pixel unchanged (the hall-of-mirrors guarantee).
+    const out2 = backdraftHallComposite({
+      source: [0.05, 0.95, 0.55],
+      fb: prev,
+      fbUv: interiorUv,
+      feedback: BACKDRAFT_MAX_FEEDBACK,
+      effectScale: 1,
+      hasTransform: true,
+    });
+    for (let i = 0; i < 3; i++) expect(out2[i]).toBeCloseTo(out[i], 6);
+  });
+
+  it('MAX feedback + transform + RING → the live source enters here', () => {
+    const out = backdraftHallComposite({
+      source: src,
+      fb: prev,
+      fbUv: ringUv,
+      feedback: BACKDRAFT_MAX_FEEDBACK,
+      effectScale: 1,
+      hasTransform: true,
+    });
+    // hallAmt = 1, ring → source (clamped).
+    for (let i = 0; i < 3; i++) expect(out[i]).toBeCloseTo(Math.min(1, src[i]), 5);
+  });
+
+  it('IDENTITY transform at MAX feedback stays additive (no black-out)', () => {
+    const out = backdraftHallComposite({
+      source: src,
+      fb: prev,
+      fbUv: interiorUv,
+      feedback: BACKDRAFT_MAX_FEEDBACK,
+      effectScale: 1,
+      hasTransform: false, // identity → hallAmt forced to 0
+    });
+    for (let i = 0; i < 3; i++) {
+      expect(out[i]).toBeCloseTo(Math.min(1, src[i] + prev[i] * BACKDRAFT_MAX_FEEDBACK), 5);
+    }
+  });
+
+  it('hall persistence never blows out (interior ≤ prev, < 1) even at max mask', () => {
+    const out = backdraftHallComposite({
+      source: src,
+      fb: [1, 1, 1], // a fully bright fed-back frame
+      fbUv: interiorUv,
+      feedback: BACKDRAFT_MAX_FEEDBACK,
+      effectScale: BACKDRAFT_MAX_EFFECT_SCALE, // lighten mask wide open
+      hasTransform: true,
+    });
+    // hallGain is clamped to < 1 so a bright nest recedes (decays) rather than
+    // saturating to a frozen white frame.
+    for (let i = 0; i < 3; i++) {
+      expect(out[i]).toBeLessThan(1);
+      expect(out[i]).toBeCloseTo(0.985, 5);
+    }
+  });
+
+  it('darken mask (effectScale=0) blanks the hall interior', () => {
+    const out = backdraftHallComposite({
+      source: src,
+      fb: prev,
+      fbUv: interiorUv,
+      feedback: BACKDRAFT_MAX_FEEDBACK,
+      effectScale: 0, // darken fully closed → hallGain 0
+      hasTransform: true,
+    });
+    for (let i = 0; i < 3; i++) expect(out[i]).toBeCloseTo(0, 6);
   });
 });
